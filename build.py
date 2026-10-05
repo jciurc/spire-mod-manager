@@ -40,12 +40,18 @@ def main():
     os.makedirs(OUT)
 
     # Localization tables: localization/<lang>/<table>.json -> res://SpireModManager/localization/...
+    # Translations only need the keys they translate (missing keys fall back to eng), but every key
+    # must exist in eng, so a typo fails the build instead of showing nothing.
     files = {}
     loc_root = os.path.join(ROOT, 'localization')
+    eng = {name: json.load(open(os.path.join(loc_root, 'eng', name), encoding='utf-8'))
+           for name in os.listdir(os.path.join(loc_root, 'eng'))}
     for lang in os.listdir(loc_root):
         for name in os.listdir(os.path.join(loc_root, lang)):
             blob = open(os.path.join(loc_root, lang, name), 'rb').read()
-            json.loads(blob)  # fail the build on malformed JSON
+            unknown = set(json.loads(blob)) - set(eng.get(name, {}))  # also fails on malformed JSON
+            if unknown:
+                sys.exit(f'localization/{lang}/{name}: keys not in eng: {sorted(unknown)}')
             files[f'{MOD_ID}/localization/{lang}/{name}'] = blob
     pck.write(os.path.join(OUT, MOD_ID + '.pck'), files.items())
     json.dump(MANIFEST, open(os.path.join(OUT, MOD_ID + '.json'), 'w', encoding='utf-8'), indent=2)

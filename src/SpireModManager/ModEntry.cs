@@ -35,7 +35,7 @@ public static class ModEntry
     }
 }
 
-// Adds a "Restart" button to Settings > Modding, styled as a copy of the Get Mods button and placed
+// Adds a "Relaunch Game" button to Settings > Modding, styled as a copy of the Get Mods button and placed
 // at the right end of the pending-changes row.
 // Runs first: postfixes share one call chain, so an exception in another mod's postfix on this method
 // (Better Mod Menu 1.1.1 throws here on the 0.111 beta) would otherwise skip this one.
@@ -50,7 +50,7 @@ static class ModdingScreenPatch
             var template = __instance.GetNode<NButton>("%GetModsButton");
             // No signal flag: the copy must not inherit the Get Mods click handler.
             var button = (NButton)template.Duplicate((int)(Node.DuplicateFlags.Groups | Node.DuplicateFlags.Scripts | Node.DuplicateFlags.UseInstantiation));
-            button.Name = "SpireModManagerRestartButton";
+            button.Name = "SpireModManagerRelaunchButton";
             button.UniqueNameInOwner = false;
             __instance.AddChild(button);
 
@@ -64,12 +64,12 @@ static class ModdingScreenPatch
             button.Modulate = Colors.White;
 
             button.GetNode<MegaLabel>("Visuals/Label")
-                .SetTextAutoSize(new LocString("settings_ui", "SPIRE_MOD_MANAGER.RESTART_BUTTON").GetFormattedText());
+                .SetTextAutoSize(new LocString("settings_ui", "SPIRE_MOD_MANAGER.RELAUNCH_BUTTON").GetFormattedText());
             button.Connect(NClickableControl.SignalName.Released, Callable.From<NButton>(_ => ModEntry.Relaunch()));
         }
         catch (Exception e)
         {
-            Log.Error($"[{ModEntry.ModId}] Could not add the restart button: {e}");
+            Log.Error($"[{ModEntry.ModId}] Could not add the relaunch button: {e}");
         }
     }
 }
