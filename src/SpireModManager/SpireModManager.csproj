@@ -1,0 +1,22 @@
+<Project Sdk="Microsoft.NET.Sdk">
+
+  <PropertyGroup>
+    <TargetFramework>net9.0</TargetFramework>
+    <AssemblyName>SpireModManager</AssemblyName>
+    <RootNamespace>SpireModManager</RootNamespace>
+    <Nullable>enable</Nullable>
+    <LangVersion>latest</LangVersion>
+    <ImplicitUsings>enable</ImplicitUsings>
+    <CopyLocalLockFileAssemblies>false</CopyLocalLockFileAssemblies>
+    <GenerateDocumentationFile>false</GenerateDocumentationFile>
+    <SteamLibrary Condition="'$(SteamLibrary)' == ''">D:\SteamLibrary\steamapps</SteamLibrary>
+    <GameData>$(SteamLibrary)\common\Slay the Spire 2\data_sts2_windows_x86_64</GameData>
+  </PropertyGroup>
+
+  <ItemGroup>
+    <Reference Include="sts2" HintPath="$(GameData)\sts2.dll" Private="false" />
+    <Reference Include="GodotSharp" HintPath="$(GameData)\GodotSharp.dll" Private="false" />
+    <Reference Include="0Harmony" HintPath="$(GameData)\0Harmony.dll" Private="false" />
+  </ItemGroup>
+
+</Project>
