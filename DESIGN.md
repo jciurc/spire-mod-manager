@@ -16,6 +16,10 @@ Living document. Game facts live in the game-mod skill's `games/slay-the-spire-2
   - Sort order gets **its own panel**, separate from the categories layout.
   - Stretch goal: optional per-profile manual override of the order.
 - **Profiles** key mods by id + source, matching the game's `mod_list`.
+- **Languages:** English only for v1, set up for drop-in community translations (`TRANSLATING.md`).
+  Mod text must merge into the game's existing tables (`LocManager` only loads table names the game
+  has; mods can't add new ones); keys are prefixed `SPIRE_MOD_MANAGER.`. Missing keys fall back to
+  `eng` per key, and `build.py` rejects keys that aren't in `eng`.
 - Principles: flat, few files; fail soft (try/catch in every UI patch, `Priority.First` on shared
   `_Ready` postfixes); player text in loc tables; `affects_gameplay: false`.
 
@@ -34,9 +38,11 @@ Ease of use is the heart of the mod, not just its utility.
 Phases are a proposal; v1 is what ships first on the Workshop.
 
 ### v1: core manager
-- **Main menu entry:** "Spire Mod Manager" button in the bottom-right, above the vanilla patch notes
-  button (`%PatchNotesButton` on `NMainMenu`), with a subtle (!) when a relaunch is pending.
-- **Relaunch:** button relabelled "Relaunch Game" / "Launch with new changes". Pending-changes state
+- **Main menu entry:** "Spire Mod Manager" button in the lower-right corner, kept separate from the
+  main menu links, with a subtle (!) when a relaunch is pending. The vanilla "MODDED (n)" label and
+  version text live there too (`NDebugInfoLabelManager._moddedWarning`, hover lists loaded mods);
+  don't cover them.
+- **Relaunch:** button reads "Relaunch Game" for now; better messaging later. Pending-changes state
   is shared by the menu indicator and the manager.
 - **Own manager scene** + one-click switch to the vanilla Modding page.
 - **Draft layer:** every edit (toggle, move, category, tag) goes to a draft; Save / Discard,
@@ -69,7 +75,6 @@ Phases are a proposal; v1 is what ships first on the Workshop.
 
 ## Open
 
-- Languages beyond `eng` for v1.
 - Coexistence with Better Mod Menu: step aside or warn when it's loaded.
 - Workshop publishing flow, preview image, tags; building against beta vs stable.
 - Ideas raised, not committed: profiles linked to save slots, "Play vanilla" via `--nomods`,
