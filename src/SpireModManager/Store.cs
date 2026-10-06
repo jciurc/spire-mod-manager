@@ -11,8 +11,7 @@ namespace SpireModManager;
 // user://steam/<id>/mod_data/SpireModManager/manager.json
 //
 // Categories, aliases and notes belong to a mod id, so a Workshop copy and a local copy of the same
-// mod share them. Profiles name a source too, like the game's own mod list; a null source means
-// "every copy" (Better Mod Menu profiles are id-only).
+// mod share them. Profiles name a source too, like the game's own mod list (see Profiles).
 public class StoreData
 {
     public int Version { get; set; } = 1;
@@ -41,8 +40,12 @@ public class ModInfo
 public class Profile
 {
     public string Name { get; set; } = "";
-    public List<ModRef> Disabled { get; set; } = [];
+    public List<ProfileMod> Mods { get; set; } = [];
+    // Id-only list of disabled mods as imported from Better Mod Menu; Profiles.Prepare converts it to Mods.
+    public List<ModRef>? Disabled { get; set; }
 }
+
+public record ProfileMod(string Id, ModSource Source, bool Enabled);
 
 public record ModRef(string Id, ModSource? Source);
 
