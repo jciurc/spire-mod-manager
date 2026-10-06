@@ -20,6 +20,9 @@ static class MainMenuPatch
     {
         try
         {
+            // Load (and on first run import) saved data while the menu is idle, not on first screen open.
+            _ = Store.Data;
+
             var menu = __instance;
             var button = ModEntry.AddButton(menu, "SPIRE_MOD_MANAGER.MAIN_MENU_BUTTON", new Vector2(260, 70),
                 () => menu.SubmenuStack.PushSubmenuType<NModdingScreen>());
