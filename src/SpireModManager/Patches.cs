@@ -51,7 +51,7 @@ static class MainMenuPatch
     }
 }
 
-// Modding screen: "Relaunch Game" at the right end of the pending-changes row, and categories.
+// Modding screen: "Relaunch Game" at the right end of the pending-changes row, profiles and categories.
 [HarmonyPatch(typeof(NModdingScreen), nameof(NModdingScreen._Ready))]
 static class ModdingScreenPatch
 {
@@ -74,11 +74,37 @@ static class ModdingScreenPatch
 
         try
         {
+            ProfileBar.Attach(__instance);
+        }
+        catch (Exception e)
+        {
+            Log.Error($"[{ModEntry.ModId}] Could not set up profiles: {e}");
+        }
+
+        try
+        {
             CategoryList.Attach(__instance);
         }
         catch (Exception e)
         {
             Log.Error($"[{ModEntry.ModId}] Could not set up categories: {e}");
+        }
+    }
+}
+
+// Every tickbox change (and the game's own pending check) passes through here: the active profile follows it.
+[HarmonyPatch(typeof(NModdingScreen), nameof(NModdingScreen.OnModEnabledOrDisabled))]
+static class ModToggledPatch
+{
+    static void Postfix()
+    {
+        try
+        {
+            Profiles.Track();
+        }
+        catch (Exception e)
+        {
+            Log.Error($"[{ModEntry.ModId}] Could not update the active profile: {e}");
         }
     }
 }
