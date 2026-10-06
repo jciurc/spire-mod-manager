@@ -20,6 +20,8 @@ public class StoreData
     public Dictionary<string, ModInfo> Mods { get; set; } = [];
     public List<Profile> Profiles { get; set; } = [];
     public string? ActiveProfile { get; set; }
+    public bool VanillaView { get; set; }
+    public bool UncategorizedCollapsed { get; set; }
     public string? ImportedFrom { get; set; }
 }
 
