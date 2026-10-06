@@ -1,7 +1,7 @@
 # Spire Mod Manager: design
 
 Living document. Game facts live in the game-mod skill's `games/slay-the-spire-2.md`; background in
-`C:\repos\scratch\STS2-MOD-MANAGER-HANDOFF.md`.
+`C:\repos\gaming\slay the spire\STS2-MOD-MANAGER-HANDOFF.md`.
 
 ## Decided (2026-10-04)
 
