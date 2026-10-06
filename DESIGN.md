@@ -38,10 +38,9 @@ Ease of use is the heart of the mod, not just its utility.
 Phases are a proposal; v1 is what ships first on the Workshop.
 
 ### v1: core manager
-- **Main menu entry:** "Spire Mod Manager" button in the lower-right corner, kept separate from the
-  main menu links, with a subtle (!) when a relaunch is pending. The vanilla "MODDED (n)" label and
-  version text live there too (`NDebugInfoLabelManager._moddedWarning`, hover lists loaded mods);
-  don't cover them.
+- **Main menu entry:** "Spire Mod Manager" button in the lower-left corner, kept separate from the
+  main menu links, with the game's notification dot when a relaunch is pending. (The lower right
+  holds the vanilla "MODDED (n)" label and its hover list of loaded mods; too crowded.)
 - **Relaunch:** button reads "Relaunch Game" for now; better messaging later. Pending-changes state
   is shared by the menu indicator and the manager.
 - **Own manager scene** + one-click switch to the vanilla Modding page.
@@ -66,6 +65,8 @@ Phases are a proposal; v1 is what ships first on the Workshop.
   mods clearly marked. Explain each issue in plain words with a fix.
 - **Order presets** and **auto/smart sort** (dependencies first, then rules; may need Workshop data).
 - Per-profile load order override (stretch).
+- **Optional profile sync with the game's save slots** (`profile1..3`, `profile.save.last_profile_id`):
+  a mod profile can be linked to a save slot, so switching slots offers to switch mods (and relaunch).
 
 ### Later, maybe a standalone mod: content picker
 - Enable or disable individual cards, relics, events and so on from any mod, without disabling
@@ -77,6 +78,6 @@ Phases are a proposal; v1 is what ships first on the Workshop.
 
 - Coexistence with Better Mod Menu: step aside or warn when it's loaded.
 - Workshop publishing flow, preview image, tags; building against beta vs stable.
-- Ideas raised, not committed: profiles linked to save slots, "Play vanilla" via `--nomods`,
+- Ideas raised, not committed: "Play vanilla" via `--nomods`,
   auto-enable missing dependencies, `affects_gameplay` shown for multiplayer, profile share codes,
   importing BMM profiles.

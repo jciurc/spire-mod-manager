@@ -10,8 +10,8 @@ namespace SpireModManager;
 // here would also skip other mods' postfixes. Priority.First keeps ours from being skipped by theirs
 // (Better Mod Menu 1.1.1 throws in its NModdingScreen._Ready postfix on the 0.111 beta).
 
-// "Spire Mod Manager" button in the main menu's lower-right corner, just above the vanilla
-// "MODDED (n)" label, with a dot when a relaunch is pending.
+// "Spire Mod Manager" button in the main menu's lower-left corner (the lower right holds the vanilla
+// "MODDED (n)" label and its hover list), with a dot when a relaunch is pending.
 [HarmonyPatch(typeof(NMainMenu), nameof(NMainMenu._Ready))]
 static class MainMenuPatch
 {
@@ -25,14 +25,11 @@ static class MainMenuPatch
                 () => menu.SubmenuStack.PushSubmenuType<NModdingScreen>());
             button.Name = "SpireModManagerMenuButton";
 
-            // Below the mod list that pops up when hovering "MODDED (n)", so that list draws on top.
-            menu.MoveChild(button, menu.GetNode("%ModWarningContainer").GetIndex());
-
-            // Anchored to the bottom-right like "MODDED (n)" (right edge -8, top -33), 10px above it.
-            button.SetAnchorsPreset(Control.LayoutPreset.BottomRight);
-            button.OffsetRight = -8;
-            button.OffsetBottom = -43;
-            button.OffsetLeft = button.OffsetRight - 260;
+            // Mirrors the profile button's margins in the top-left corner (18, 16).
+            button.SetAnchorsPreset(Control.LayoutPreset.BottomLeft);
+            button.OffsetLeft = 18;
+            button.OffsetBottom = -16;
+            button.OffsetRight = button.OffsetLeft + 260;
             button.OffsetTop = button.OffsetBottom - 70;
 
             var dot = button.GetNode<Control>("Dot");
