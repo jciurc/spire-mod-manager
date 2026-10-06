@@ -53,6 +53,9 @@ def main():
             if unknown:
                 sys.exit(f'localization/{lang}/{name}: keys not in eng: {sorted(unknown)}')
             files[f'{MOD_ID}/localization/{lang}/{name}'] = blob
+    # Scenes: scenes/*.tscn -> res://SpireModManager/scenes/...
+    for name in os.listdir(os.path.join(ROOT, 'scenes')):
+        files[f'{MOD_ID}/scenes/{name}'] = open(os.path.join(ROOT, 'scenes', name), 'rb').read()
     pck.write(os.path.join(OUT, MOD_ID + '.pck'), files.items())
     json.dump(MANIFEST, open(os.path.join(OUT, MOD_ID + '.json'), 'w', encoding='utf-8'), indent=2)
 

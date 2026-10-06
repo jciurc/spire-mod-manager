@@ -1,0 +1,100 @@
+[gd_scene load_steps=8 format=3]
+
+[ext_resource type="Script" path="res://src/Core/Nodes/Screens/ModdingScreen/NModMenuButton.cs" id="1_btn"]
+[ext_resource type="Shader" path="res://shaders/hsv.gdshader" id="2_hsv"]
+[ext_resource type="Texture2D" path="res://images/packed/common_ui/event_button.png" id="3_img"]
+[ext_resource type="FontVariation" path="res://themes/kreon_bold_shared.tres" id="4_font"]
+[ext_resource type="Script" path="res://addons/mega_text/MegaLabel.cs" id="5_label"]
+[ext_resource type="Texture2D" path="res://images/packed/common_ui/notification_dot2.png" id="6_dot"]
+
+[sub_resource type="ShaderMaterial" id="ShaderMaterial_hsv"]
+resource_local_to_scene = true
+shader = ExtResource("2_hsv")
+shader_parameter/h = 1.0
+shader_parameter/s = 1.0
+shader_parameter/v = 1.0
+
+[sub_resource type="FontVariation" id="FontVariation_label"]
+base_font = ExtResource("4_font")
+spacing_glyph = 1
+
+; The Get Mods button from the vanilla Modding screen (NModMenuButton, same art, font and hover),
+; except the art is a 9-slice so the button can be wider than the texture's aspect ratio.
+; Visuals/Image stays a TextureRect because NModMenuButton reads it and animates its shader;
+; it draws nothing itself, and Frame inherits its material. Frame's size and scale are set in code.
+[node name="SpireModManagerButton" type="Control"]
+layout_mode = 3
+anchors_preset = 0
+offset_right = 170.0
+offset_bottom = 70.0
+script = ExtResource("1_btn")
+
+[node name="Visuals" type="Control" parent="."]
+layout_mode = 1
+anchors_preset = 15
+anchor_right = 1.0
+anchor_bottom = 1.0
+grow_horizontal = 2
+grow_vertical = 2
+mouse_filter = 2
+
+[node name="Image" type="TextureRect" parent="Visuals"]
+material = SubResource("ShaderMaterial_hsv")
+layout_mode = 1
+anchors_preset = 15
+anchor_right = 1.0
+anchor_bottom = 1.0
+grow_horizontal = 2
+grow_vertical = 2
+mouse_filter = 2
+
+[node name="Frame" type="NinePatchRect" parent="Visuals/Image"]
+use_parent_material = true
+layout_mode = 0
+offset_right = 284.0
+offset_bottom = 110.0
+mouse_filter = 2
+texture = ExtResource("3_img")
+patch_margin_left = 50
+patch_margin_right = 50
+
+[node name="Label" type="Label" parent="Visuals"]
+layout_mode = 1
+anchors_preset = 15
+anchor_right = 1.0
+anchor_bottom = 1.0
+offset_left = 16.0
+offset_right = -16.0
+grow_horizontal = 2
+grow_vertical = 2
+mouse_filter = 2
+theme_override_colors/font_color = Color(1, 0.964706, 0.886275, 1)
+theme_override_colors/font_shadow_color = Color(0, 0, 0, 0.188235)
+theme_override_colors/font_outline_color = Color(0.0756, 0.12084, 0.18, 1)
+theme_override_constants/line_spacing = -4
+theme_override_constants/shadow_offset_x = 3
+theme_override_constants/shadow_offset_y = 2
+theme_override_constants/outline_size = 12
+theme_override_constants/shadow_outline_size = 12
+theme_override_fonts/font = SubResource("FontVariation_label")
+theme_override_font_sizes/font_size = 24
+horizontal_alignment = 1
+vertical_alignment = 1
+script = ExtResource("5_label")
+AutoSizeEnabled = false
+MaxFontSize = 30
+
+[node name="Dot" type="TextureRect" parent="."]
+visible = false
+layout_mode = 1
+anchors_preset = 1
+anchor_left = 1.0
+anchor_right = 1.0
+offset_left = -30.0
+offset_top = -14.0
+offset_right = 10.0
+offset_bottom = 26.0
+mouse_filter = 2
+texture = ExtResource("6_dot")
+expand_mode = 1
+stretch_mode = 5

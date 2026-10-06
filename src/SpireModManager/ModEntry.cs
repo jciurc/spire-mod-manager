@@ -5,7 +5,7 @@ using MegaCrit.Sts2.Core.Logging;
 using MegaCrit.Sts2.Core.Modding;
 using MegaCrit.Sts2.Core.Nodes;
 using MegaCrit.Sts2.Core.Nodes.GodotExtensions;
-using MegaCrit.Sts2.Core.Nodes.Screens.ModdingScreen;
+using MegaCrit.Sts2.Core.Saves;
 using MegaCrit.Sts2.addons.mega_text;
 
 namespace SpireModManager;
@@ -14,6 +14,9 @@ namespace SpireModManager;
 public static class ModEntry
 {
     public const string ModId = "SpireModManager";
+
+    const string ButtonScenePath = $"res://{ModId}/scenes/menu_button.tscn";
+    const float ButtonArtHeight = 110; // event_button.png is 284x110
 
     public static void Init()
     {
@@ -33,43 +36,35 @@ public static class ModEntry
         else
             ((SceneTree)Engine.GetMainLoop()).Quit();
     }
-}
 
-// Adds a "Relaunch Game" button to Settings > Modding, styled as a copy of the Get Mods button and placed
-// at the right end of the pending-changes row.
-// Runs first: postfixes share one call chain, so an exception in another mod's postfix on this method
-// (Better Mod Menu 1.1.1 throws here on the 0.111 beta) would otherwise skip this one.
-[HarmonyPatch(typeof(NModdingScreen), nameof(NModdingScreen._Ready))]
-static class ModdingScreenPatch
-{
-    [HarmonyPriority(Priority.First)]
-    static void Postfix(NModdingScreen __instance)
+    // True when the saved mod list differs from what this session loaded, i.e. a relaunch would change
+    // something. Same test as the vanilla Modding screen's pending-changes warning.
+    public static bool HasPendingChanges()
     {
-        try
+        var settings = SaveManager.Instance.SettingsSave.ModSettings;
+        return ModManager.Mods.Any(mod =>
         {
-            var template = __instance.GetNode<NButton>("%GetModsButton");
-            // No signal flag: the copy must not inherit the Get Mods click handler.
-            var button = (NButton)template.Duplicate((int)(Node.DuplicateFlags.Groups | Node.DuplicateFlags.Scripts | Node.DuplicateFlags.UseInstantiation));
-            button.Name = "SpireModManagerRelaunchButton";
-            button.UniqueNameInOwner = false;
-            __instance.AddChild(button);
+            var disabled = settings?.IsModDisabled(mod) ?? false;
+            return (mod.state == ModLoadState.Disabled && !disabled) || (mod.state == ModLoadState.Loaded && disabled);
+        });
+    }
 
-            // Screen-space slot: right edge matches the mod info panel (x 1727), centred on the pending-changes row (y 1012-1056).
-            // Fixed size from the scene file (170x70): the template's runtime size and fade state aren't settled during _Ready.
-            var size = new Vector2(170, 70);
-            button.SetAnchorsPreset(Control.LayoutPreset.TopLeft);
-            button.Size = size;
-            button.Position = new Vector2(1727 - size.X, 1034 - size.Y / 2);
-            button.Visible = true;
-            button.Modulate = Colors.White;
+    // Adds a button in the style of the vanilla Get Mods button, sized freely (the art is a 9-slice).
+    public static NButton AddButton(Node parent, string locKey, Vector2 size, Action onPressed)
+    {
+        var button = ResourceLoader.Load<PackedScene>(ButtonScenePath).Instantiate<NButton>();
+        parent.AddChild(button);
+        button.Size = size;
+        button.PivotOffset = size / 2;
 
-            button.GetNode<MegaLabel>("Visuals/Label")
-                .SetTextAutoSize(new LocString("settings_ui", "SPIRE_MOD_MANAGER.RELAUNCH_BUTTON").GetFormattedText());
-            button.Connect(NClickableControl.SignalName.Released, Callable.From<NButton>(_ => ModEntry.Relaunch()));
-        }
-        catch (Exception e)
-        {
-            Log.Error($"[{ModEntry.ModId}] Could not add the relaunch button: {e}");
-        }
+        // Draw the art at its native height and scale it down, so the slanted corners keep their shape.
+        var frame = button.GetNode<NinePatchRect>("Visuals/Image/Frame");
+        var scale = size.Y / ButtonArtHeight;
+        frame.Scale = new Vector2(scale, scale);
+        frame.Size = size / scale;
+
+        button.GetNode<MegaLabel>("Visuals/Label").SetTextAutoSize(new LocString("settings_ui", locKey).GetFormattedText());
+        button.Connect(NClickableControl.SignalName.Released, Callable.From<NButton>(_ => onPressed()));
+        return button;
     }
 }
