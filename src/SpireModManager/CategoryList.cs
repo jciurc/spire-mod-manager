@@ -67,13 +67,25 @@ static class CategoryList
             Store.InfoFor(row.Mod?.manifest?.id)?.Category is { } name && known.Contains(name) ? name : null;
 
         var index = 0;
-        void AddSection(string title, List<NModMenuRow> members, bool collapsed, Action<bool> setCollapsed)
+        void Add(Control node)
+        {
+            node.AddToGroup(HeaderGroup);
+            content.AddChild(node);
+            content.MoveChild(node, index++);
+        }
+
+        void AddSection(string title, List<NModMenuRow> members, bool collapsed, Action<bool> setCollapsed, bool muted = false)
         {
             var header = ResourceLoader.Load<PackedScene>(HeaderScenePath).Instantiate<Control>();
-            header.AddToGroup(HeaderGroup);
-            content.AddChild(header);
-            content.MoveChild(header, index++);
-            header.GetNode<Label>("Title").Text = title;
+            Add(header);
+            var titleLabel = header.GetNode<Label>("Title");
+            titleLabel.Text = title;
+            if (muted)
+            {
+                // Not a category the player made: cream instead of gold, fainter background.
+                titleLabel.AddThemeColorOverride("font_color", new Color(1, 0.964706f, 0.886275f, 0.7f));
+                header.GetNode<ColorRect>("Background").Color = new Color(0.0756f, 0.12084f, 0.18f, 0.3f);
+            }
             header.GetNode<Label>("Count").Text = members.Count.ToString();
             foreach (var row in members)
                 content.MoveChild(row, index++);
@@ -113,8 +125,25 @@ static class CategoryList
                 category.Collapsed, c => category.Collapsed = c);
 
         var uncategorized = rows.Where(r => CategoryOf(r) == null).ToList();
-        if (uncategorized.Count > 0)
-            AddSection(new LocString("settings_ui", "SPIRE_MOD_MANAGER.UNCATEGORIZED").GetFormattedText(), uncategorized,
-                Store.Data.UncategorizedCollapsed, c => Store.Data.UncategorizedCollapsed = c);
+        if (uncategorized.Count == 0)
+            return;
+        if (categories.Count > 0)
+            Add(Divider());
+        AddSection(new LocString("settings_ui", "SPIRE_MOD_MANAGER.UNCATEGORIZED").GetFormattedText(), uncategorized,
+            Store.Data.UncategorizedCollapsed, c => Store.Data.UncategorizedCollapsed = c, muted: true);
+    }
+
+    // A thin gold line marking where the player's categories end and "Uncategorized" begins.
+    static Control Divider()
+    {
+        var divider = new Control { CustomMinimumSize = new Vector2(0, 12), MouseFilter = Control.MouseFilterEnum.Pass };
+        var line = new ColorRect { Color = new Color(0.937f, 0.784f, 0.318f, 0.5f), MouseFilter = Control.MouseFilterEnum.Ignore };
+        divider.AddChild(line);
+        line.SetAnchorsPreset(Control.LayoutPreset.HcenterWide);
+        line.OffsetLeft = 24;
+        line.OffsetRight = -24;
+        line.OffsetTop = -1;
+        line.OffsetBottom = 1;
+        return divider;
     }
 }

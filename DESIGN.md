@@ -44,6 +44,10 @@ Phases are a proposal; v1 is what ships first on the Workshop.
 - **Relaunch:** button reads "Relaunch Game" for now; better messaging later. Pending-changes state
   is shared by the menu indicator and the manager.
 - **Own manager scene** + one-click switch to the vanilla Modding page.
+  - MVP (built): category headers inside the vanilla screen's own row list, "Vanilla View" toggle.
+  - **Design overhaul:** the manager must look clearly like a third-party mod (ours), distinct from
+    both the vanilla page and Better Mod Menu, while staying in the game's art style. Its own
+    identity: title/branding, accent colour, layout.
 - **Draft layer:** every edit (toggle, move, category, tag) goes to a draft; Save / Discard,
   undo/redo, and a diff view (enabled, disabled, moved) before applying to `mod_list`.
 - **Profiles** (presets), by id + source; "Defaults" as a built-in profile.
@@ -51,6 +55,7 @@ Phases are a proposal; v1 is what ships first on the Workshop.
   global order by default.
 - **Categories** (custom, collapsible) and **tags** (custom + predefined) with clear markers,
   especially for gameplay-changing mods (`affects_gameplay`).
+  - "Uncategorized" sits last, below a divider, muted, and is hidden when empty (built).
 - **Search and filter** over name, alias, notes, author, tags, category, state.
 - **Alias and notes** per mod, visibly marked as user-written, original info one click away.
 - **Mod details:** manifest (version, game version, dependencies, `affects_gameplay`) plus Workshop
@@ -58,6 +63,8 @@ Phases are a proposal; v1 is what ships first on the Workshop.
   versions. The game already runs one batched `SteamUGC.CreateQueryUGCDetailsRequest` at startup
   (`ModManager.CheckSteamBranchSupport`), and each `Mod` has `workshopId`, so we can do the same
   once and cache it.
+  - **Link to the Workshop page** (`steam://url/CommunityFilePage/<workshopId>`, or the web URL via
+    `PlatformUtil.OpenUrl` like the vanilla Get Mods button).
 
 ### v2: smarter
 - **Compatibility audit:** missing/disabled dependencies, duplicates (`DisabledDuplicate`),
