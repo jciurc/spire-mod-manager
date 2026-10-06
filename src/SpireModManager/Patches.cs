@@ -51,7 +51,7 @@ static class MainMenuPatch
     }
 }
 
-// "Relaunch Game" button at the right end of the Modding screen's pending-changes row.
+// Modding screen: "Relaunch Game" at the right end of the pending-changes row, and categories.
 [HarmonyPatch(typeof(NModdingScreen), nameof(NModdingScreen._Ready))]
 static class ModdingScreenPatch
 {
@@ -70,6 +70,15 @@ static class ModdingScreenPatch
         catch (Exception e)
         {
             Log.Error($"[{ModEntry.ModId}] Could not add the relaunch button: {e}");
+        }
+
+        try
+        {
+            CategoryList.Attach(__instance);
+        }
+        catch (Exception e)
+        {
+            Log.Error($"[{ModEntry.ModId}] Could not set up categories: {e}");
         }
     }
 }
