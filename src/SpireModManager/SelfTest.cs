@@ -370,10 +370,29 @@ static class SelfTest
             handle.EmitSignal(Control.SignalName.GuiInput, new InputEventMouseMotion { GlobalPosition = to });
             await Wait(menu, 0.3);
             await Capture(screen, outDir, "13-blocked-drag");
+            var links = content.GetParent().GetChildren().Count(c => c.IsInGroup("SpireModManagerLinks"));
+            Check("dragging dims unrelated rows, lights linked ones, draws links",
+                Row("LocalModFixes")?.Modulate.A < 1 && Row("SmmTestLib")?.Modulate.A == 1 && links == 1, $"{links} links");
             handle.EmitSignal(Control.SignalName.GuiInput, new InputEventMouseButton { ButtonIndex = MouseButton.Left, Pressed = false, GlobalPosition = to });
             await Wait(menu, 0.5);
         }
         Check("a blocked drag doesn't move the row", Ids().SequenceEqual(after), string.Join(", ", Ids()));
+        await Wait(menu, 0.2);
+        Check("dropping restores the list look", Rows().All(r => r.Modulate == Colors.White)
+            && !content.GetParent().GetChildren().Any(c => c.IsInGroup("SpireModManagerLinks")));
+
+        // Hovering the framework shows a line to each mod that needs it.
+        if (Row("SmmTestLib") is { } libRow)
+        {
+            libRow.EmitSignal(Control.SignalName.MouseEntered);
+            await Wait(menu, 0.2);
+            var shown = content.GetParent().GetChildren().Count(c => c.IsInGroup("SpireModManagerLinks"));
+            await Capture(screen, outDir, "13b-hover-links");
+            libRow.EmitSignal(Control.SignalName.MouseExited);
+            await Wait(menu, 0.2);
+            Check("hover shows links to both dependents, and they go on leaving", shown == 2
+                && !content.GetParent().GetChildren().Any(c => c.IsInGroup("SpireModManagerLinks")), $"{shown} shown");
+        }
     }
 
     // Untick a mod through its real tickbox, review, undo/redo; undo a rename; revert all, and undo that.
