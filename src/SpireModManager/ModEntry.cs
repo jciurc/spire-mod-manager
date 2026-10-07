@@ -77,12 +77,48 @@ public static class ModEntry
     // environment (SteamAppId), so it attaches to the running Steam client without a Steam relaunch.
     public static void Relaunch()
     {
-        Log.Info($"[{ModId}] Relaunching with args: {string.Join(' ', OS.GetCmdlineArgs())}");
-        OS.SetRestartOnExit(true, OS.GetCmdlineArgs());
+        var args = RelaunchArgs();
+        Log.Info($"[{ModId}] Relaunching with args: {string.Join(' ', args)}");
+        OS.SetRestartOnExit(true, args);
         if (NGame.Instance is { } game)
             game.Quit();
         else
             ((SceneTree)Engine.GetMainLoop()).Quit();
+    }
+
+    // This session's arguments plus the current window mode, so the new copy opens the way this one looks
+    // instead of starting in a small window until the game applies its display settings. Window flags
+    // from an earlier relaunch are replaced, not repeated.
+    public static string[] RelaunchArgs()
+    {
+        var args = new List<string>();
+        var given = OS.GetCmdlineArgs();
+        for (var i = 0; i < given.Length; i++)
+        {
+            if (given[i] is "--fullscreen" or "-f" or "--maximized" or "-m" or "--windowed" or "-w")
+                continue;
+            if (given[i] is "--resolution" or "--position")
+            {
+                i++; // and its value
+                continue;
+            }
+            args.Add(given[i]);
+        }
+        switch (DisplayServer.WindowGetMode())
+        {
+            case DisplayServer.WindowMode.Fullscreen or DisplayServer.WindowMode.ExclusiveFullscreen:
+                args.Add("--fullscreen");
+                break;
+            case DisplayServer.WindowMode.Maximized:
+                args.Add("--maximized");
+                break;
+            default:
+                var size = DisplayServer.WindowGetSize();
+                var position = DisplayServer.WindowGetPosition();
+                args.AddRange(["--windowed", "--resolution", $"{size.X}x{size.Y}", "--position", $"{position.X},{position.Y}"]);
+                break;
+        }
+        return args.ToArray();
     }
 
     // True when the saved mod list differs from what this session loaded, i.e. a relaunch would change
