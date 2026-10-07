@@ -1,5 +1,6 @@
 using System.Text;
 using Godot;
+using MegaCrit.Sts2.Core.Localization;
 using MegaCrit.Sts2.Core.Modding;
 using MegaCrit.Sts2.Core.Nodes.CommonUi;
 using MegaCrit.Sts2.Core.Nodes.GodotExtensions;
@@ -36,6 +37,8 @@ static class SelfTest
             Check("no popup open", NModalContainer.Instance?.OpenModal == null,
                 NModalContainer.Instance?.OpenModal?.GetType().Name ?? "");
             Check("main menu button", menu.GetNodeOrNull("SpireModManagerMenuButton") != null);
+            Check("dev run marked", menu.GetTree().Root.Title.StartsWith("[DEV]") && menu.GetTree().Root.HasNode("SpireModManagerDevTag"),
+                menu.GetTree().Root.Title);
             await Capture(menu, outDir, "1-main-menu");
 
             var screen = menu.SubmenuStack.PushSubmenuType<NModdingScreen>();
@@ -78,6 +81,7 @@ static class SelfTest
             await Wait(menu, 1);
 
             await TestCategories(menu, screen, content, outDir);
+            await TestProfileEditing(menu, screen, outDir);
         }
         catch (Exception e)
         {
@@ -133,6 +137,46 @@ static class SelfTest
         CategoryList.Apply(content);
         await Wait(menu, 0.5);
         Check("delete returns the mod to Uncategorized", Store.InfoFor(modId)?.Category == null && Header(content, "Renamed") == null);
+    }
+
+    // New profile from the bar, renamed in its name box, then deleted while active.
+    static async Task TestProfileEditing(Node menu, NModdingScreen screen, string outDir)
+    {
+        var bar = screen.GetNode("ModsBorder/SpireModManagerProfileBar");
+        var name = bar.GetNode<LineEdit>("ProfileName");
+        var before = ModListState();
+        var count = Store.Data.Profiles.Count;
+        var start = Profiles.Active;
+
+        Click(bar.GetNode<NButton>("NewProfileButton"));
+        await Wait(menu, 0.5);
+        Check("New adds a profile and switches to it", Store.Data.Profiles.Count == count + 1 && Profiles.Active != start
+            && name.Text == Profiles.Active?.Name, name.Text);
+
+        name.GrabFocus();
+        name.Text = "Brother co-op";
+        name.EmitSignal(LineEdit.SignalName.TextSubmitted, name.Text);
+        await Wait(menu, 0.5);
+        Check("rename from the bar", Profiles.Active?.Name == "Brother co-op" && name.Text == "Brother co-op");
+
+        // The game's confirm popup, shown for the record; deletion itself goes through Profiles.Delete.
+        var body = new LocString("settings_ui", "SPIRE_MOD_MANAGER.DELETE_PROFILE_BODY");
+        body.Add("name", "Brother co-op");
+        _ = Menus.Confirm(new LocString("settings_ui", "SPIRE_MOD_MANAGER.DELETE_PROFILE_TITLE"), body);
+        await Wait(menu, 1);
+        await Capture(screen, outDir, "7-delete-profile-confirm");
+        NModalContainer.Instance?.Clear();
+        await Wait(menu, 0.5);
+
+        if (Profiles.Active is { } created)
+            Profiles.Delete(created, screen);
+        await Wait(menu, 0.5);
+        Check("delete the active profile switches to a neighbour", Store.Data.Profiles.Count == count && Profiles.Active != null
+            && Store.Data.Profiles.All(p => p.Name != "Brother co-op") && name.Text == Profiles.Active.Name);
+        if (start != null && Profiles.Active != start)
+            Profiles.SwitchTo(start, screen);
+        Check("mod list unchanged after new/rename/delete", before.SequenceEqual(ModListState()));
+        Check("last profile can't be deleted", Store.Data.Profiles.Count > 1 || !Profiles.Delete(Store.Data.Profiles[0], screen));
     }
 
     static Node? Header(Control content, string category) => content.GetNodeOrNull($"Category {category}");
