@@ -11,7 +11,7 @@ namespace SpireModManager;
 // there is simply nothing, and everything that uses it shows less.
 static class WorkshopInfo
 {
-    public record Details(DateTime Created, DateTime Updated, IReadOnlyList<string> Tags);
+    public record Details(DateTime Created, DateTime Updated, IReadOnlyList<string> Tags, IReadOnlyList<(string Min, string Max)> Branches);
 
     static readonly Dictionary<ulong, Details> Cache = [];
     static bool _started;
@@ -27,6 +27,16 @@ static class WorkshopInfo
             return;
         _started = true;
         _ = Query();
+    }
+
+    // The game branches the author marked as supported (min, max; empty = open-ended), if any.
+    static List<(string Min, string Max)> SupportedBranches(UGCQueryHandle_t handle, uint index)
+    {
+        var branches = new List<(string, string)>();
+        for (uint i = 0; i < SteamUGC.GetNumSupportedGameVersions(handle, index); i++)
+            if (SteamUGC.GetSupportedGameVersionData(handle, index, i, out var min, out var max, 999u))
+                branches.Add((min, max));
+        return branches;
     }
 
     static async Task Query()
@@ -49,7 +59,8 @@ static class WorkshopInfo
                     Cache[d.m_nPublishedFileId.m_PublishedFileId] = new Details(
                         DateTimeOffset.FromUnixTimeSeconds(d.m_rtimeCreated).LocalDateTime,
                         DateTimeOffset.FromUnixTimeSeconds(d.m_rtimeUpdated).LocalDateTime,
-                        d.m_rgchTags.Split(',', StringSplitOptions.RemoveEmptyEntries | StringSplitOptions.TrimEntries));
+                        d.m_rgchTags.Split(',', StringSplitOptions.RemoveEmptyEntries | StringSplitOptions.TrimEntries),
+                        SupportedBranches(result.m_handle, i));
             Log.Info($"[{ModEntry.ModId}] Workshop details for {Cache.Count} of {ids.Length} mods");
             Loaded?.Invoke();
         }

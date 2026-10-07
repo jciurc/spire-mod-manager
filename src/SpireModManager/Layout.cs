@@ -72,9 +72,11 @@ static class Layout
         var width = info.Size.X;
         // Title and link (left) beside a thumbnail of the mod image (right); description below; the
         // player's tags and notes and Open Folder along the bottom (ModDetails).
-        Place(info.GetNode<Control>("ModTitle"), new Vector4(20, 10, width - 230, 52));
-        Place(info.GetNode<Control>("ModImage"), new Vector4(width - 210, 12, width - 20, 118));
-        Place(info.GetNode<Control>("ModDescription"), new Vector4(22, 128, width - 22,
+        const float thumbWidth = 128, thumbHeight = 72; // 16:9, small: the title and text matter more
+        var inset = ModDetails.Inset;
+        Place(info.GetNode<Control>("ModTitle"), new Vector4(inset, 10, width - thumbWidth - 40, 52));
+        Place(info.GetNode<Control>("ModImage"), new Vector4(width - thumbWidth - 20, 16, width - 20, 16 + thumbHeight));
+        Place(info.GetNode<Control>("ModDescription"), new Vector4(inset, 100, width - inset,
             info.Size.Y - ModDetails.ButtonsFromBottom - ModDetails.YoursHeight - 8));
         ViewFont(info.GetNode<MegaRichTextLabel>("ModTitle"), InfoTitleSize);
         ViewFont(info.GetNode<MegaRichTextLabel>("ModDescription"), InfoTextSize);

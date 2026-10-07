@@ -1,6 +1,7 @@
 using Godot;
 using MegaCrit.Sts2.Core.Modding;
 using MegaCrit.Sts2.Core.Nodes.GodotExtensions;
+using MegaCrit.Sts2.Core.Platform;
 using MegaCrit.Sts2.Core.Nodes.Screens.ModdingScreen;
 using MegaCrit.Sts2.addons.mega_text;
 
@@ -37,24 +38,19 @@ static class ModDetails
         var title = container.GetNode<MegaRichTextLabel>("ModTitle");
         var description = container.GetNode<MegaRichTextLabel>("ModDescription");
         if (info?.Alias is { } alias)
-        {
             title.Text = alias;
-            description.Text = $"[gold]{Menus.Text("SPIRE_MOD_MANAGER.NAME")}[/gold]: {name}\n{description.Text}";
-        }
-        var tags = string.Join(", ", Tags.For(mod).Select(c => c.Text));
-        if (tags.Length > 0)
-            description.Text = $"[gold]{Menus.Text("SPIRE_MOD_MANAGER.TAGS")}[/gold]: {tags}\n{description.Text}";
-        description.Text += Facts(mod);
+        description.Text = Describe(mod, info?.Alias != null ? name : null);
 
         container.SetMeta(ModIdMeta, id ?? "");
         container.SetMeta(FolderMeta, mod.path);
 
-        // Under the title: the Workshop page as a link, or "Local mod".
-        var link = container.GetNodeOrNull<LinkButton>("SpireModManagerLink") ?? AddLink(container);
-        link.Visible = true;
+        // Under the title: "Source: Workshop ID 123" linking to its page, or "Source: Local mod".
+        var source = container.GetNodeOrNull<Control>(SourceName) ?? AddSource(container);
+        source.Visible = true;
+        var link = source.GetNode<LinkButton>("SpireModManagerLink");
         if (mod.workshopId is { } workshopId)
         {
-            link.Text = $"steamcommunity.com/sharedfiles/filedetails/?id={workshopId}";
+            link.Text = Menus.Format("SPIRE_MOD_MANAGER.WORKSHOP_ID", ("id", workshopId.ToString()));
             link.Uri = $"https://steamcommunity.com/sharedfiles/filedetails/?id={workshopId}";
             link.Disabled = false;
             link.Underline = LinkButton.UnderlineMode.OnHover;
@@ -77,39 +73,93 @@ static class ModDetails
         folder.Visible = Directory.Exists(mod.path);
     }
 
-    // Game version it was made for, dates, anything unusual about how it loaded, dependencies both ways.
-    static string Facts(Mod mod)
+    // The panel text in our views, top to bottom: anything wrong (red), the author, the description, then
+    // the facts: version, compatibility, the original name under an alias, Workshop dates and tags,
+    // dependencies both ways. Our tags aren't repeated here (the player's own are edited below; the
+    // automatic ones are on the row).
+    static string Describe(Mod mod, string? originalName)
     {
-        string Line(string key, string value) => $"\n[gold]{Menus.Text(key)}[/gold]: {value}";
-        var facts = "";
-        if (mod.manifest?.minGameVersion is { Length: > 0 } minimum)
-            facts += Line("SPIRE_MOD_MANAGER.GAME_VERSION", Menus.Format("SPIRE_MOD_MANAGER.GAME_VERSION_MIN", ("version", minimum)));
+        var text = new System.Text.StringBuilder();
+        void Fact(string key, string value) => text.Append($"[gold]{Menus.Text(key)}[/gold]: {value}\n");
+
+        if (Problems(mod) is { Count: > 0 } problems)
+            text.Append(string.Join("", problems.Select(p => $"[red]{p}[/red]\n"))).Append('\n');
+        Fact("SPIRE_MOD_MANAGER.AUTHOR", mod.manifest?.author ?? Menus.Text("SPIRE_MOD_MANAGER.UNKNOWN"));
+        text.Append('\n').Append(mod.manifest?.description ?? Menus.Text("SPIRE_MOD_MANAGER.NO_DESCRIPTION")).Append("\n\n");
+
+        Fact("SPIRE_MOD_MANAGER.VERSION", mod.manifest?.version ?? Menus.Text("SPIRE_MOD_MANAGER.UNKNOWN"));
+        Fact("SPIRE_MOD_MANAGER.COMPATIBILITY", Compatibility(mod));
+        if (originalName != null)
+            Fact("SPIRE_MOD_MANAGER.NAME", originalName);
         if (WorkshopInfo.For(mod) is { } workshop)
         {
-            facts += Line("SPIRE_MOD_MANAGER.UPDATED", $"{workshop.Updated:yyyy-MM-dd} ({Menus.Format("SPIRE_MOD_MANAGER.DAYS_AGO",
+            Fact("SPIRE_MOD_MANAGER.UPDATED", $"{workshop.Updated:yyyy-MM-dd} ({Menus.Format("SPIRE_MOD_MANAGER.DAYS_AGO",
                 ("days", ((int)(DateTime.Now - workshop.Updated).TotalDays).ToString()))})");
-            facts += Line("SPIRE_MOD_MANAGER.PUBLISHED", $"{workshop.Created:yyyy-MM-dd}");
+            Fact("SPIRE_MOD_MANAGER.PUBLISHED", $"{workshop.Created:yyyy-MM-dd}");
             if (workshop.Tags.Count > 0)
-                facts += Line("SPIRE_MOD_MANAGER.WORKSHOP_TAGS", string.Join(", ", workshop.Tags));
+                Fact("SPIRE_MOD_MANAGER.WORKSHOP_TAGS", string.Join(", ", workshop.Tags));
         }
-        if (mod.state is ModLoadState.Failed or ModLoadState.DisabledDuplicate)
-            facts += Line("SPIRE_MOD_MANAGER.STATE", Menus.Text(mod.state == ModLoadState.Failed
-                ? "SPIRE_MOD_MANAGER.STATE_FAILED" : "SPIRE_MOD_MANAGER.STATE_DUPLICATE"));
         string Names(IEnumerable<string> ids) => string.Join(", ", ids.Select(d => Dependencies.Find(d)?.manifest?.name ?? d));
         if (Dependencies.Of(mod) is { Count: > 0 } needs)
-            facts += Line("SPIRE_MOD_MANAGER.NEEDS_LABEL", Names(needs));
+            Fact("SPIRE_MOD_MANAGER.DEPENDENCIES", Names(needs));
         var neededBy = ModManager.Mods.Where(m => m != mod && Dependencies.Of(m).Contains(mod.manifest?.id ?? ""))
             .Select(m => m.manifest?.id ?? "").Distinct().ToList();
         if (neededBy.Count > 0)
-            facts += Line("SPIRE_MOD_MANAGER.NEEDED_BY", Names(neededBy));
-        return facts.Length > 0 ? "\n" + facts + "\n" : "";
+            Fact("SPIRE_MOD_MANAGER.NEEDED_BY", Names(neededBy));
+        return text.ToString().TrimEnd();
     }
+
+    // What stops the mod from working, in plain words: the game's own load errors (wrong game version or
+    // branch, bad files...), a duplicate copy, and, for a mod that's on, dependencies missing or off.
+    public static List<string> Problems(Mod mod)
+    {
+        var problems = (mod.errors ?? []).Select(e => e.GetFormattedText()).ToList();
+        if (mod.state == ModLoadState.Failed && problems.Count == 0)
+            problems.Add(Menus.Text("SPIRE_MOD_MANAGER.STATE_FAILED"));
+        if (mod.state == ModLoadState.DisabledDuplicate)
+            problems.Add(Menus.Text("SPIRE_MOD_MANAGER.STATE_DUPLICATE"));
+        if (Dependencies.IsOn(mod))
+            foreach (var id in Dependencies.Of(mod))
+            {
+                var dependency = Dependencies.Find(id);
+                if (dependency == null || !Dependencies.IsOn(dependency))
+                    problems.Add(Menus.Format(dependency == null ? "SPIRE_MOD_MANAGER.PROBLEM_DEP_MISSING" : "SPIRE_MOD_MANAGER.PROBLEM_DEP_OFF",
+                        ("mod", dependency?.manifest?.name ?? id)));
+            }
+        return problems;
+    }
+
+    // "0.110.1 or newer (this game: 0.111.0, beta)", plus the Workshop's supported branches when it lists any.
+    static string Compatibility(Mod mod)
+    {
+        var text = mod.manifest?.minGameVersion is { Length: > 0 } minimum
+            ? Menus.Format("SPIRE_MOD_MANAGER.GAME_VERSION_MIN", ("version", minimum))
+            : Menus.Text("SPIRE_MOD_MANAGER.ANY_VERSION");
+        var game = MegaCrit.Sts2.Core.Debug.ReleaseInfoManager.Instance.SemVer?.ToString();
+        var branch = Branch(PlatformUtil.GetPlatformBranch().ToName());
+        var current = string.Join(", ", new[] { game, branch }.Where(s => !string.IsNullOrEmpty(s)));
+        if (current.Length > 0)
+            text += $" [color=#fff6e299]({Menus.Format("SPIRE_MOD_MANAGER.THIS_GAME", ("version", current))})[/color]";
+        if (WorkshopInfo.For(mod)?.Branches is { Count: > 0 } branches)
+            text += "; " + Menus.Format("SPIRE_MOD_MANAGER.BRANCHES", ("branches", string.Join(", ", branches.Select(b =>
+                b.Min == b.Max ? Branch(b.Min) : $"{Branch(b.Min)}–{Branch(b.Max)}"))));
+        return text;
+    }
+
+    // The game's branch names in player words: "public" is the stable game, "public-beta" the beta.
+    static string Branch(string name) => name switch
+    {
+        "public" => Menus.Text("SPIRE_MOD_MANAGER.BRANCH_STABLE"),
+        "public-beta" => Menus.Text("SPIRE_MOD_MANAGER.BRANCH_BETA"),
+        "none" or "" => "",
+        _ => name,
+    };
 
     // Vanilla View or no mod shown: none of our additions.
     public static void HideButtons(Node container)
     {
         CommitEdits(container);
-        foreach (var name in new[] { "OpenFolderButton", "SpireModManagerLink", "SpireModManagerYours" })
+        foreach (var name in new[] { "OpenFolderButton", SourceName, "SpireModManagerYours" })
             if (container.GetNodeOrNull<Control>(name) is { } control)
                 control.Visible = false;
     }
@@ -117,7 +167,9 @@ static class ModDetails
     static string Meta(Node node, string key) => node.HasMeta(key) ? (string)node.GetMeta(key) : "";
 
     // Along the inside of the panel's bottom edge, whatever its size.
-    public const float ButtonsFromBottom = 72, YoursHeight = 190;
+    public const float ButtonsFromBottom = 72, YoursHeight = 214;
+    public const float Inset = 22; // left edge of everything in the panel: title, source, text, fields
+    const string SourceName = "SpireModManagerSource";
 
     static NButton AddButton(Control parent, string name, string locKey, float x, Action onPressed)
     {
@@ -129,64 +181,96 @@ static class ModDetails
         return button;
     }
 
-    static LinkButton AddLink(Control container)
+    static Control AddSource(Control container)
     {
-        var link = new LinkButton { Name = "SpireModManagerLink", FocusMode = Control.FocusModeEnum.None };
+        var line = new HBoxContainer { Name = SourceName };
+        line.AddThemeConstantOverride("separation", 6);
+        var term = new Label { Text = Menus.Text("SPIRE_MOD_MANAGER.SOURCE") };
+        Style(term, "res://themes/kreon_regular_shared.tres", 16, Gold);
+        line.AddChild(term);
+        var link = new LinkButton { Name = "SpireModManagerLink", FocusMode = Control.FocusModeEnum.None, SizeFlagsVertical = Control.SizeFlags.ShrinkCenter };
         link.AddThemeFontOverride("font", ResourceLoader.Load<Font>("res://themes/kreon_regular_shared.tres"));
-        link.AddThemeFontSizeOverride("font_size", 15);
+        link.AddThemeFontSizeOverride("font_size", 16);
         link.AddThemeColorOverride("font_color", new Color(0.6f, 0.8f, 1f));
         link.AddThemeColorOverride("font_hover_color", new Color(0.8f, 0.9f, 1f));
-        link.AddThemeColorOverride("font_disabled_color", new Color(Cream, 0.55f));
-        container.AddChild(link);
-        link.Position = new Vector2(24, 56);
-        return link;
+        link.AddThemeColorOverride("font_disabled_color", Cream);
+        line.AddChild(link);
+        container.AddChild(line);
+        line.Position = new Vector2(Inset, 54);
+        return line;
     }
 
-    // "Your tags" and "Your notes", edited in place above Open Folder. Saved on Enter (tags) or when focus
-    // leaves; switching to another mod saves first.
+    // "Tags" and "Notes", gold like the other terms, each with a pencil; below each, the player's text.
+    // At rest the fields look like plain text (the panel's cream); clicking one (or its pencil) shows the
+    // box and its hint. Saved on Enter (tags) or when focus leaves; switching to another mod saves first.
     static Control AddYours(Control container)
     {
         var box = new VBoxContainer { Name = "SpireModManagerYours" };
-        box.AddThemeConstantOverride("separation", 4);
+        box.AddThemeConstantOverride("separation", 2);
         container.AddChild(box);
         box.AnchorTop = box.AnchorBottom = box.AnchorRight = 1;
-        (box.OffsetLeft, box.OffsetRight, box.OffsetTop, box.OffsetBottom) = (22, -22, -ButtonsFromBottom - YoursHeight, -ButtonsFromBottom);
+        (box.OffsetLeft, box.OffsetRight, box.OffsetTop, box.OffsetBottom) = (Inset, -Inset, -ButtonsFromBottom - YoursHeight, -ButtonsFromBottom);
 
-        Label Caption(string key)
+        StyleBoxFlat Field(bool active)
         {
-            var label = new Label { Text = Menus.Text(key) };
-            Style(label, "res://themes/kreon_bold_shared.tres", 16, new Color(NotesColor));
-            box.AddChild(label);
-            return label;
-        }
-        StyleBoxFlat Field()
-        {
-            var style = new StyleBoxFlat { BgColor = new Color(0.0756f, 0.12084f, 0.18f, 0.7f), BorderColor = new Color(NotesColor) with { A = 0.35f },
-                ContentMarginLeft = 8, ContentMarginRight = 8, ContentMarginTop = 4, ContentMarginBottom = 4 };
+            var style = new StyleBoxFlat
+            {
+                BgColor = active ? new Color(0.0756f, 0.12084f, 0.18f, 0.7f) : Colors.Transparent,
+                BorderColor = active ? new Color(NotesColor) with { A = 0.35f } : Colors.Transparent,
+                ContentMarginLeft = 6, ContentMarginRight = 6, ContentMarginTop = 2, ContentMarginBottom = 2,
+            };
             style.SetBorderWidthAll(1);
             style.SetCornerRadiusAll(4);
             return style;
         }
+        void Editable(Control field, string hintKey, Action<string> setHint)
+        {
+            Style(field, "res://themes/kreon_regular_shared.tres", 18, Cream);
+            field.AddThemeColorOverride("font_placeholder_color", new Color(Cream, 0.4f));
+            field.AddThemeStyleboxOverride("normal", Field(false));
+            field.AddThemeStyleboxOverride("focus", Field(true));
+            field.FocusEntered += () => setHint(Menus.Text(hintKey));
+            field.FocusExited += () => setHint("");
+            field.MouseDefaultCursorShape = Control.CursorShape.Ibeam;
+        }
+        void Caption(string key, Control field)
+        {
+            var line = new HBoxContainer();
+            line.AddThemeConstantOverride("separation", 6);
+            var label = new Label { Text = Menus.Text(key) };
+            Style(label, "res://themes/kreon_regular_shared.tres", 18, Gold);
+            line.AddChild(label);
+            var pencil = new Button
+            {
+                Text = "✎", Flat = true, FocusMode = Control.FocusModeEnum.None, MouseDefaultCursorShape = Control.CursorShape.PointingHand,
+                SizeFlagsVertical = Control.SizeFlags.ShrinkCenter,
+            };
+            pencil.AddThemeFontSizeOverride("font_size", 15);
+            pencil.AddThemeColorOverride("font_color", new Color(Gold, 0.6f));
+            pencil.AddThemeColorOverride("font_hover_color", Gold);
+            pencil.Pressed += () => field.GrabFocus();
+            line.AddChild(pencil);
+            box.AddChild(line);
+            box.AddChild(field);
+        }
 
-        Caption("SPIRE_MOD_MANAGER.YOUR_TAGS");
-        var tags = new LineEdit { Name = "Tags", PlaceholderText = Menus.Text("SPIRE_MOD_MANAGER.TAGS_HINT"), MaxLength = 200 };
-        Style(tags, "res://themes/kreon_regular_shared.tres", 16, new Color(NotesColor));
-        tags.AddThemeStyleboxOverride("normal", Field());
-        tags.AddThemeStyleboxOverride("focus", Field());
-        box.AddChild(tags);
+        var tags = new LineEdit { Name = "Tags", MaxLength = 200, CustomMinimumSize = new Vector2(0, 32) };
+        Editable(tags, "SPIRE_MOD_MANAGER.TAGS_HINT", hint => tags.PlaceholderText = hint);
+        Caption("SPIRE_MOD_MANAGER.YOUR_TAGS", tags);
 
-        Caption("SPIRE_MOD_MANAGER.YOUR_NOTES");
         var notes = new TextEdit
         {
-            Name = "Notes", WrapMode = TextEdit.LineWrappingMode.Boundary, PlaceholderText = Menus.Text("SPIRE_MOD_MANAGER.NOTES_HINT"),
+            Name = "Notes", WrapMode = TextEdit.LineWrappingMode.Boundary, CustomMinimumSize = new Vector2(0, 4 * 24 + 8),
             SizeFlagsVertical = Control.SizeFlags.ExpandFill,
         };
-        Style(notes, "res://themes/kreon_regular_shared.tres", 16, new Color(NotesColor));
-        notes.AddThemeStyleboxOverride("normal", Field());
-        notes.AddThemeStyleboxOverride("focus", Field());
-        box.AddChild(notes);
+        Editable(notes, "SPIRE_MOD_MANAGER.NOTES_HINT", hint => notes.PlaceholderText = hint);
+        Caption("SPIRE_MOD_MANAGER.YOUR_NOTES", notes);
 
-        tags.TextSubmitted += _ => CommitEdits(container);
+        tags.TextSubmitted += _ =>
+        {
+            CommitEdits(container);
+            tags.ReleaseFocus();
+        };
         tags.FocusExited += () => CommitEdits(container);
         notes.FocusExited += () => CommitEdits(container);
         return box;

@@ -323,7 +323,7 @@ static class SelfTest
         Check("panel titles with the alias", panel.GetNode<RichTextLabel>("ModTitle").Text == "The Manager");
         Check("panel keeps the original name; notes in the notes field", description.Contains("Spire Mod Manager")
             && yours.GetNode<TextEdit>("Notes").Text == "Fixture note");
-        Check("a local mod says so instead of a Workshop link", panel.GetNode<LinkButton>("SpireModManagerLink") is { Disabled: true, Text: "Local mod" });
+        Check("a local mod says so instead of a Workshop link", panel.FindChild("SpireModManagerLink", true, false) is LinkButton { Disabled: true, Text: "Local mod" });
         await Capture(screen, outDir, "8-details-with-notes");
 
         // Tags and notes typed in the panel save when focus leaves.
