@@ -112,3 +112,83 @@ Jordan's notes of 2026-10-07 (from `spire manager notes.txt` in the scratch fold
 - [ ] show installed/removed mods that differ from preset
 - [ ] larger previewable screenshots on hover in details panel
 - [x] (fix) relaunch button briefly loads new game instance in lower resolution windowed mode instead of fullscreen (borderless)
+
+# Round 2
+
+Jordan's notes of 2026-10-07, second batch (same file), plus play feedback.
+
+## Layout
+
+- [ ] (fix) drag is choppy and bounces at the very top and bottom of the list
+- [ ] move Spire Manager button (main menu and mod menu) slightly down to line up with Vanilla / Load Order buttons
+- [ ] Ctrl+Z / Ctrl+Y shown under their buttons, formatted "Ctrl + Z"
+- [ ] remove history counter
+- [ ] move Changes diff to the right of the "Spire Mod Manager" title
+- [ ] equal x/y padding in the profile dropdown
+- [ ] shift content panels up: equal margin below header and above footer buttons
+- [ ] remove dependency connectors in Category view
+- [ ] narrower list, wider details
+- [ ] "Back" -> "Return"
+- [ ] "Vanilla Manager" is cramped: "Vanilla List"
+- [ ] Vanilla button in the Spire Manager button's spot (lower left); Load Order shifts over
+- [ ] Vanilla button on the Load Order page too (same spot)
+- [ ] Spire Mod Manager title and Changes diff in the same place on both views
+- [ ] "Load Order" title centred in the header on the Load Order page
+- [ ] remove the restart warning on the Load Order page
+- [ ] remove Relaunch on the Load Order page
+- [ ] Auto sort to the right of the search bar; less whitespace around the order warning
+- [ ] vanilla version/date watermark legible on our page (light text)
+- [ ] clicking anywhere outside the current input (header, details, footer, blank space) drops focus
+
+## Details panel
+
+- [ ] add "Dependencies: x, y"
+- [ ] thumbnail is not small enough
+- [ ] link text: "Source: Workshop ID ## (clickable)" / "Source: Local mod"
+- [ ] terms line up with the panel header
+- [ ] order: Author, description, Version, Game version, then the rest
+- [ ] "Game version" -> "Compatibility: x.y.z or newer" (+ stable/beta/current if it applies)
+- [ ] error indicator and message for incompatible mods (version, conflict, dependency, corrupt...)
+- [ ] no system tags in details
+- [ ] tags and notes fields look like the other terms while inactive
+- [ ] pencil right of the Tags and Notes terms
+- [ ] tag field: one line of space; notes: four lines
+- [ ] tag placeholder only while active: "Custom tags separated by commas.."
+- [ ] notes placeholder: "Custom notes.."
+
+## Tags
+
+- [ ] remove the "Visual only" tag
+
+## Rows
+
+- [ ] long titles truncated, with tooltip
+- [ ] inline name editing shows the original name behind the field (fix)
+- [ ] alias pencil only on row hover
+- [ ] a bit more space between pencil and name
+- [ ] clicking the pencil again closes (and accepts) the edit
+- [ ] clear button on the inline editor
+
+## Profiles
+
+- [ ] Save and Revert next to Profile
+- [ ] unsaved changes: "Profile: [dropdown]  Unsaved • [Save] [Save as new] [Discard]"
+- [ ] Save as new replaces New, Rename and Delete
+- [ ] unsaved profile kept as its own entry "Name (edited [time])" until saved or discarded; nothing destructive or unrevertable (UX to be worked out)
+
+## Backlog (round 2)
+
+- [ ] view enabled only / disabled only (sticky items when toggling)
+- [ ] view edited mods
+- [ ] enable all / disable all
+- [ ] filter by author
+- [ ] stylized Spire Mod Manager button (Jordan designs)
+- [ ] export/import/share mod collections and configuration
+- [ ] import BMM profiles from a settings page
+- [ ] export as BMM csv (or save into BMM's folder)
+- [ ] toggle between BMM and Spire Manager
+- [ ] keyboard navigation: up/down, space to select
+- [ ] multi-select and bulk actions in Category view
+- [ ] profile and category dropdowns use a radio-style mark (single choice)
+- [ ] auto update and polling
+- [ ] link to the game's patch notes
