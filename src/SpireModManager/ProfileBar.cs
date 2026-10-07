@@ -48,6 +48,8 @@ static class ProfileBar
             MaxLength = 40,
             CaretBlink = true,
             SelectAllOnFocus = true,
+            ContextMenuEnabled = false, // right-click opens our profile menu instead
+            Name = "ProfileName",
         };
         Style(name, "res://themes/kreon_bold_shared.tres", 28, Gold);
         foreach (var box in new[] { "normal", "focus", "read_only" })
@@ -113,6 +115,28 @@ static class ProfileBar
             if (Profiles.Active is { } active && name.Text != active.Name)
                 CommitRename();
         };
+        name.GuiInput += e =>
+        {
+            if (e is not InputEventMouseButton { ButtonIndex: MouseButton.Right, Pressed: false } || Profiles.Active is not { } active)
+                return;
+            name.AcceptEvent();
+            Menus.Show(bar, [
+                new MenuItem(Menus.Text("SPIRE_MOD_MANAGER.RENAME"), () =>
+                {
+                    name.GrabFocus();
+                    name.SelectAll();
+                }),
+                new MenuItem(Menus.Text("SPIRE_MOD_MANAGER.DELETE"), () => _ = Delete(active), Disabled: Store.Data.Profiles.Count <= 1),
+            ]);
+        };
+
+        async Task Delete(Profile profile)
+        {
+            var body = new LocString("settings_ui", "SPIRE_MOD_MANAGER.DELETE_PROFILE_BODY");
+            body.Add("name", profile.Name);
+            if (await Menus.Confirm(new LocString("settings_ui", "SPIRE_MOD_MANAGER.DELETE_PROFILE_TITLE"), body))
+                Profiles.Delete(profile, screen);
+        }
 
         // The bar lives as long as the screen; the event is static, so unsubscribe when it goes.
         Profiles.Switched += Refresh;

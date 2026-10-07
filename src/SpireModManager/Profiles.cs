@@ -100,6 +100,23 @@ static class Profiles
         return profile;
     }
 
+    // Never the last profile. Deleting the active one first switches to its neighbour.
+    public static bool Delete(Profile profile, NModdingScreen screen)
+    {
+        var list = Store.Data.Profiles;
+        if (list.Count <= 1 || !list.Contains(profile))
+            return false;
+        if (profile == Active)
+        {
+            var i = list.IndexOf(profile);
+            SwitchTo(list[i == list.Count - 1 ? i - 1 : i + 1], screen);
+        }
+        list.Remove(profile);
+        Store.Save();
+        Switched?.Invoke();
+        return true;
+    }
+
     public static bool Rename(Profile profile, string name)
     {
         name = name.Trim();
