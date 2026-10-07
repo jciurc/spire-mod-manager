@@ -119,7 +119,7 @@ static class Menus
         {
             BgColor = new Color(0.0756f, 0.12084f, 0.18f, 0.97f),
             BorderColor = new Color(Gold, 0.6f),
-            ContentMarginLeft = 12, ContentMarginRight = 12, ContentMarginTop = 8, ContentMarginBottom = 8,
+            ContentMarginLeft = 8, ContentMarginRight = 8, ContentMarginTop = 8, ContentMarginBottom = 8,
         };
         panel.SetBorderWidthAll(2);
         panel.SetCornerRadiusAll(6);
@@ -135,6 +135,9 @@ static class Menus
         menu.AddThemeColorOverride("font_hover_color", Colors.White);
         menu.AddThemeColorOverride("font_disabled_color", new Color(Cream, 0.4f));
         menu.AddThemeColorOverride("font_separator_color", Gold);
-        menu.AddThemeConstantOverride("v_separation", 10);
+        // The same room around an item's text across as down (the hover box shows it).
+        menu.AddThemeConstantOverride("v_separation", 12);
+        menu.AddThemeConstantOverride("item_start_padding", 12);
+        menu.AddThemeConstantOverride("item_end_padding", 12);
     }
 }
