@@ -23,6 +23,7 @@ static class MainMenuPatch
         {
             // Load (and on first run import) saved data while the menu is idle, not on first screen open.
             _ = Store.Data;
+            LoadOrder.RememberLoadedOrder(); // first main menu: the game's startup sorting is done
             ModEntry.MarkDevRun(__instance.GetTree());
 
             var menu = __instance;
@@ -112,15 +113,18 @@ static class ModdingScreenPatch
     }
 }
 
-// Every tickbox change (and the game's own pending check) passes through here: the active profile follows it.
+// Every tickbox change (and the game's own pending check) passes through here: the active profile follows
+// it, and a changed load order also counts as pending (the game only checks on/off).
 [HarmonyPatch(typeof(NModdingScreen), nameof(NModdingScreen.OnModEnabledOrDisabled))]
 static class ModToggledPatch
 {
-    static void Postfix()
+    static void Postfix(NModdingScreen __instance)
     {
         try
         {
             Profiles.Track();
+            if (LoadOrder.OrderChanged)
+                __instance.GetNode<Control>("%PendingChangesLabel").Visible = true;
         }
         catch (Exception e)
         {

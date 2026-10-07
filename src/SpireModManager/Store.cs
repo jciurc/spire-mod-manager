@@ -20,6 +20,7 @@ public class StoreData
     public List<Profile> Profiles { get; set; } = [];
     public string? ActiveProfile { get; set; }
     public bool VanillaView { get; set; }
+    public bool LoadOrderView { get; set; }
     public bool UncategorizedCollapsed { get; set; }
     public string? ImportedFrom { get; set; }
 }

@@ -23,22 +23,46 @@ static class CategoryList
     {
         var content = screen.GetNode<Control>("%ModsScrollContainer/Mask/Content");
 
-        NButton? toggle = null;
-        toggle = ModEntry.AddButton(screen, ToggleLabel(), new Vector2(220, 70), () =>
+        // Two view switches at the left end of the pending-changes row (y 1012-1056), from the mod list's
+        // left edge (x 255): Vanilla View and Load Order. Each turns the other off; pressing the lit one
+        // again goes back to categories, and its label says so.
+        NButton? vanilla = null, loadOrder = null;
+        void Switch(bool toVanilla)
         {
-            Store.Data.VanillaView = !Store.Data.VanillaView;
+            var data = Store.Data;
+            (data.VanillaView, data.LoadOrderView) = toVanilla ? (!data.VanillaView, false) : (false, !data.LoadOrderView);
             Store.Save();
-            toggle?.GetNode<MegaLabel>("Visuals/Label").SetTextAutoSize(new LocString("settings_ui", ToggleLabel()).GetFormattedText());
+            Label(vanilla, data.VanillaView ? "SPIRE_MOD_MANAGER.CATEGORY_VIEW" : "SPIRE_MOD_MANAGER.VANILLA_VIEW");
+            Label(loadOrder, data.LoadOrderView ? "SPIRE_MOD_MANAGER.CATEGORY_VIEW" : "SPIRE_MOD_MANAGER.LOAD_ORDER");
             Apply(content);
-        });
-        toggle.Name = "SpireModManagerViewToggle";
-        // Left end of the pending-changes row (y 1012-1056), aligned with the mod list's left edge (x 255).
-        toggle.Position = new Vector2(255, 1034 - 35);
+        }
+        vanilla = ModEntry.AddButton(screen, "SPIRE_MOD_MANAGER.VANILLA_VIEW", new Vector2(200, 70), () => Switch(true));
+        vanilla.Name = "SpireModManagerViewToggle";
+        vanilla.Position = new Vector2(255, 1034 - 35);
+        loadOrder = ModEntry.AddButton(screen, "SPIRE_MOD_MANAGER.LOAD_ORDER", new Vector2(200, 70), () => Switch(false));
+        loadOrder.Name = "SpireModManagerLoadOrderToggle";
+        loadOrder.Position = new Vector2(465, 1034 - 35);
+        // Labels for the saved view.
+        Label(vanilla, Store.Data.VanillaView ? "SPIRE_MOD_MANAGER.CATEGORY_VIEW" : "SPIRE_MOD_MANAGER.VANILLA_VIEW");
+        Label(loadOrder, Store.Data.LoadOrderView ? "SPIRE_MOD_MANAGER.CATEGORY_VIEW" : "SPIRE_MOD_MANAGER.LOAD_ORDER");
 
         Apply(content);
     }
 
-    static string ToggleLabel() => Store.Data.VanillaView ? "SPIRE_MOD_MANAGER.CATEGORY_VIEW" : "SPIRE_MOD_MANAGER.VANILLA_VIEW";
+    static void Label(NButton? button, string key) =>
+        button?.GetNode<MegaLabel>("Visuals/Label").SetTextAutoSize(new LocString("settings_ui", key).GetFormattedText());
+
+    // After a change that may need a relaunch: redraw, and let the screen recheck its pending warning.
+    public static void Redraw(Control content)
+    {
+        Apply(content);
+        for (var node = content.GetParent(); node != null; node = node.GetParent())
+            if (node is NModdingScreen screen)
+            {
+                screen.OnModEnabledOrDisabled();
+                return;
+            }
+    }
 
     public static void Apply(Control content)
     {
@@ -61,7 +85,11 @@ static class CategoryList
             row.SetMeta(RowMenuMeta, true);
             row.GuiInput += e =>
             {
-                if (e is InputEventMouseButton { ButtonIndex: MouseButton.Right, Pressed: false })
+                if (e is not InputEventMouseButton { ButtonIndex: MouseButton.Right, Pressed: false })
+                    return;
+                if (Store.Data.LoadOrderView)
+                    LoadOrder.ShowRowMenu(content, row, () => Redraw(content));
+                else
                     ShowRowMenu(content, row);
             };
         }
@@ -70,6 +98,13 @@ static class CategoryList
         var filter = content.HasMeta(FilterMeta) ? (string)content.GetMeta(FilterMeta) : "";
         var filtering = filter.Length > 0;
         bool Matches(NModMenuRow row) => !filtering || Search.Matches(row.Mod, filter);
+
+        if (Store.Data.LoadOrderView)
+        {
+            LoadOrder.Apply(content, rows, Matches, () => Redraw(content));
+            return;
+        }
+        LoadOrder.Undecorate(rows);
 
         if (Store.Data.VanillaView)
         {
