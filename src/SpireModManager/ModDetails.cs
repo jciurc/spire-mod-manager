@@ -259,7 +259,7 @@ static class ModDetails
             title.BbcodeEnabled = alias != null;
             title.Text = alias == null ? name : $"{Escape(alias)}  [color=#fff6e280][font_size=16]{Escape(name)}[/font_size][/color]";
             Layout.FontSize(title, vanilla ? Layout.RowTitleVanillaSize : Layout.RowTitleSize);
-            Pencil(row, title, !vanilla);
+            Pencil(row, title, !vanilla && !Store.Data.LoadOrderView); // Load Order is for ordering only
         }
     }
 

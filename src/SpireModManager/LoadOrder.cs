@@ -1,5 +1,6 @@
 using Godot;
 using MegaCrit.Sts2.Core.Modding;
+using MegaCrit.Sts2.Core.Nodes.CommonUi;
 using MegaCrit.Sts2.Core.Nodes.Screens.ModdingScreen;
 using MegaCrit.Sts2.Core.Saves;
 
@@ -21,6 +22,7 @@ static class LoadOrder
     static readonly Color Gold = new(0.937f, 0.784f, 0.318f);
     static readonly Color Blocked = new(0.9f, 0.25f, 0.25f);
     static readonly Color LinkFine = new(0.62f, 0.86f, 0.62f);
+    const float DragStart = 6; // px the mouse moves with the button down before a press becomes a drag
     const float EdgeScroll = 60, EdgeScrollSpeed = 700; // drag near an edge: px from it, px per second at the edge
     static List<string>? _loadedOrder;
 
@@ -46,6 +48,7 @@ static class LoadOrder
             content.MoveChild(row, i);
             row.Visible = matches(row);
             Decorate(content, row, i + 1, redraw);
+            OrderingOnly(row, true);
         }
     }
 
@@ -66,8 +69,24 @@ static class LoadOrder
                 }
             row.GetNode<Control>("Title").OffsetLeft -= HandleWidth;
             ModDetails.PlacePencil(row);
+            OrderingOnly(row, false);
         }
     }
+
+    // Load Order only orders: the whole row is a drag handle (move cursor), the tickbox is locked, and
+    // mods that are off are dimmed further. Off again in other views.
+    static void OrderingOnly(NModMenuRow row, bool on)
+    {
+        row.MouseDefaultCursorShape = on ? Control.CursorShape.Move : Control.CursorShape.Arrow;
+        var tickbox = row.GetNode<NTickbox>("Tickbox");
+        tickbox.SetEnabled(!on);
+        tickbox.MouseFilter = on ? Control.MouseFilterEnum.Ignore : Control.MouseFilterEnum.Stop;
+        row.Modulate = Rest(row);
+    }
+
+    // A row's look when nothing is being dragged.
+    static Color Rest(NModMenuRow row) =>
+        Store.Data.LoadOrderView && row.Mod is { } mod && !Dependencies.IsOn(mod) ? new Color(1, 1, 1, 0.4f) : Colors.White;
 
     // Moves a mod to a new position among the rows (0 = loads first) and saves the game's settings.
     public static void Move(Mod mod, int to, IList<NModMenuRow> rows)
@@ -247,11 +266,11 @@ static class LoadOrder
         number.AddThemeFontSizeOverride("font_size", 20);
         row.AddChild(number);
 
-        // Three short bars: the usual "grab here" grip. Stops the mouse so dragging it doesn't scroll the list.
+        // Three short bars: the usual "grab here" grip (the whole row drags; see below).
         var handle = new Control
         {
             Name = HandleName, AnchorBottom = 1, OffsetLeft = LinkGutter, OffsetRight = LinkGutter + 30,
-            MouseFilter = Control.MouseFilterEnum.Stop, MouseDefaultCursorShape = Control.CursorShape.Move,
+            MouseFilter = Control.MouseFilterEnum.Ignore,
         };
         for (var i = 0; i < 3; i++)
             handle.AddChild(new ColorRect
@@ -283,36 +302,55 @@ static class LoadOrder
         row.AddChild(picked);
         row.MoveChild(picked, 0);
 
+        // The whole row is the drag handle (the grip just shows it). A press picks the row (Ctrl toggles,
+        // Shift picks a range: those only change the selection); moving past a few pixels starts the drag,
+        // and the drop saves. A click without a drag on a row of a multi-selection picks just that row.
+        // Rows outlive this view, so the handler does nothing outside Load Order.
+        var pressed = false;
         var dragging = false;
+        var pressAt = Vector2.Zero;
         var mouseY = 0f; // where the last mouse event put the pointer
         ColorRect? marker = null;
-        handle.GuiInput += e =>
+        row.GuiInput += e =>
         {
+            if (!Store.Data.LoadOrderView)
+                return;
             switch (e)
             {
-                // Ctrl/Shift on a grip only changes the selection.
                 case InputEventMouseButton { ButtonIndex: MouseButton.Left, Pressed: true } modified
                     when modified.CtrlPressed || modified.ShiftPressed || modified.MetaPressed:
                     Pick(content, row, toggle: modified.CtrlPressed || modified.MetaPressed, range: modified.ShiftPressed);
-                    handle.AcceptEvent();
+                    row.AcceptEvent();
                     break;
                 case InputEventMouseButton { ButtonIndex: MouseButton.Left, Pressed: true } press:
+                    pressed = true;
+                    pressAt = press.GlobalPosition;
                     mouseY = press.GlobalPosition.Y;
                     if (row.Mod is not { } grabbed || !Picked.Contains(grabbed))
                         Pick(content, row, toggle: false, range: false);
-                    dragging = true;
-                    marker = new ColorRect { Color = Gold, Size = new Vector2(content.Size.X, 5), MouseFilter = Control.MouseFilterEnum.Ignore };
-                    content.GetParent().AddChild(marker); // the scroll mask: not a container, so it can sit anywhere
-                    content.GetTree().ProcessFrame += DragFrame;
-                    BeginDragLook(content, row);
                     CategoryList.Select(content, row); // grabbing a row selects it too
-                    handle.AcceptEvent();
+                    row.AcceptEvent(); // not a scroll of the list
                     break;
-                case InputEventMouseMotion motion when dragging:
+                case InputEventMouseMotion motion when pressed:
                     mouseY = motion.GlobalPosition.Y;
-                    handle.AcceptEvent(); // the marker and edge scrolling update every frame (DragFrame)
+                    if (!dragging && motion.GlobalPosition.DistanceTo(pressAt) > DragStart)
+                    {
+                        dragging = true;
+                        marker = new ColorRect { Color = Gold, Size = new Vector2(content.Size.X, 5), MouseFilter = Control.MouseFilterEnum.Ignore };
+                        content.GetParent().AddChild(marker); // the scroll mask: not a container, so it can sit anywhere
+                        content.GetTree().ProcessFrame += DragFrame;
+                        BeginDragLook(content, row);
+                    }
+                    row.AcceptEvent(); // the marker, lines and edge scrolling update every frame (DragFrame)
                     break;
-                case InputEventMouseButton { ButtonIndex: MouseButton.Left, Pressed: false } release when dragging:
+                case InputEventMouseButton { ButtonIndex: MouseButton.Left, Pressed: false } release when pressed:
+                    pressed = false;
+                    row.AcceptEvent();
+                    if (!dragging)
+                    {
+                        Pick(content, row, toggle: false, range: false);
+                        break;
+                    }
                     dragging = false;
                     content.GetTree().ProcessFrame -= DragFrame;
                     marker?.QueueFree();
@@ -332,7 +370,6 @@ static class LoadOrder
                         Move(mod, to, rows);
                         redraw();
                     }
-                    handle.AcceptEvent();
                     break;
             }
         };
@@ -355,6 +392,7 @@ static class LoadOrder
             var (gap, y) = Target(content, mouseY);
             // Kept inside the list's visible area (it clips), so the gap above the first row still shows.
             marker.GlobalPosition = new Vector2(content.GlobalPosition.X, Math.Clamp(y - 2, view.Position.Y, view.End.Y - 5));
+            ShowLinks(content, row, strong: true, drop: (gap, marker.GlobalPosition.Y + 2));
             // Red where dropping would load it before something it needs (or after something needing it).
             marker.Color = Destination(gap) is { } at && row.Mod is { } moving
                 && MoveBreaks(moving, at, content.GetChildren().OfType<NModMenuRow>().ToList()) ? Blocked : Gold;
@@ -446,18 +484,23 @@ static class LoadOrder
 
     // Tree-style lines in the left gutter from this row to each linked row: out from the row, along
     // the gutter, into the other row. Each link gets its own lane so they don't overlap.
-    public static void ShowLinks(Control content, NModMenuRow row, bool strong)
+    // While dragging, `drop` is where the row would land (gap index, screen y): its end of each line follows
+    // the drop marker, stretching and shrinking, and the colour says whether that drop works.
+    public static void ShowLinks(Control content, NModMenuRow row, bool strong, (int Gap, float Y)? drop = null)
     {
         HideLinks(content);
         var mask = content.GetParent<Control>();
-        float CenterY(Control r) => r.GetGlobalRect().GetCenter().Y - mask.GlobalPosition.Y;
+        float CenterY(Control r) => r == row && drop is { } d ? d.Y - mask.GlobalPosition.Y : r.GetGlobalRect().GetCenter().Y - mask.GlobalPosition.Y;
         var linked = Linked(content, row);
         var rows = content.GetChildren().OfType<NModMenuRow>().ToList();
         for (var i = 0; i < linked.Count; i++)
         {
             // Green when the pair is in a working order (what's needed loads first), red when it isn't.
             var needed = Dependencies.Of(row.Mod).Contains(linked[i].Mod?.manifest?.id ?? "");
-            var fine = needed ? rows.IndexOf(linked[i]) < rows.IndexOf(row) : rows.IndexOf(linked[i]) > rows.IndexOf(row);
+            var other = rows.IndexOf(linked[i]);
+            var fine = drop is { } at
+                ? needed ? other < at.Gap : other >= at.Gap
+                : needed ? other < rows.IndexOf(row) : other > rows.IndexOf(row);
             var lane = 4 + Math.Min(i, 3) * 3;
             var line = new Line2D
             {
@@ -498,7 +541,7 @@ static class LoadOrder
         if (content.HasMeta(DraggingMeta))
             content.RemoveMeta(DraggingMeta);
         foreach (var r in content.GetChildren().OfType<NModMenuRow>())
-            r.Modulate = Colors.White;
+            r.Modulate = Rest(r);
         HideLinks(content);
     }
 
