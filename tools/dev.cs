@@ -51,6 +51,7 @@ var start = new ProcessStartInfo(Path.Combine(DevDir, "SlayTheSpire2.exe"), ["--
     { WorkingDirectory = DevDir };
 if (args.Contains("--headless"))
     start.ArgumentList.Add("--headless");
+start.Environment["SPIRE_MOD_MANAGER_DEV"] = "1"; // the mod marks the window "[DEV]"
 if (mode == "launch")
 {
     Process.Start(start);
@@ -138,6 +139,7 @@ void PrepareSandbox(bool resetData)
     mods["mod_list"] = list;
     settings["mod_settings"] = mods;
     settings["seen_ea_disclaimer"] = true; // the one-time Early Access popup would cover every screenshot
+    settings["volume_master"] = 0.0;      // silent, so dev runs don't play over Jordan's game
     File.WriteAllText(settingsPath, settings.ToJsonString(new() { WriteIndented = true }));
 
     if (!resetData)

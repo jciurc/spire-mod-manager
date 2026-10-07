@@ -21,7 +21,34 @@ public static class ModEntry
     public static void Init()
     {
         new Harmony(ModId).PatchAll(typeof(ModEntry).Assembly);
-        Log.Info($"[{ModId}] Initialized");
+        Log.Info($"[{ModId}] Initialized{(IsDevRun ? " (dev run)" : "")}");
+    }
+
+    // Set by tools/dev.cs for its sandboxed runs, so they can't be mistaken for the real game.
+    public static bool IsDevRun { get; } = System.Environment.GetEnvironmentVariable("SPIRE_MOD_MANAGER_DEV") == "1";
+
+    // "[DEV]" in the window title (taskbar, Alt+Tab) and a small tag at the top of the screen.
+    public static void MarkDevRun(SceneTree tree)
+    {
+        if (!IsDevRun || tree.Root.HasNode("SpireModManagerDevTag"))
+            return;
+        if (!tree.Root.Title.StartsWith("[DEV]"))
+            tree.Root.Title = "[DEV] " + tree.Root.Title;
+        var layer = new CanvasLayer { Name = "SpireModManagerDevTag", Layer = 128 };
+        var tag = new Label
+        {
+            Text = "DEV SANDBOX",
+            HorizontalAlignment = HorizontalAlignment.Center,
+            MouseFilter = Control.MouseFilterEnum.Ignore,
+        };
+        tag.AddThemeColorOverride("font_color", new Color(1, 0.35f, 0.35f, 0.8f));
+        tag.AddThemeFontSizeOverride("font_size", 18);
+        layer.AddChild(tag);
+        tag.SetAnchorsPreset(Control.LayoutPreset.CenterTop);
+        tag.OffsetLeft = -100;
+        tag.OffsetRight = 100;
+        tag.OffsetTop = 4;
+        tree.Root.AddChild(layer);
     }
 
     // Starts a new copy of the game with the same arguments, then quits through the game's own path
