@@ -39,6 +39,9 @@ static class RowStrip
             strip.OffsetTop = -Height - 4;
             strip.OffsetBottom = -4;
 
+            foreach (var chip in Tags.For(row.Mod))
+                strip.AddChild(Tags.Make(chip));
+
             var (text, problem) = Needs(row.Mod, order);
             var note = new Label
             {

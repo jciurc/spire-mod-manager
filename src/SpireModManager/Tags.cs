@@ -1,0 +1,63 @@
+using Godot;
+using MegaCrit.Sts2.Core.Modding;
+
+namespace SpireModManager;
+
+// Small labels on each mod. Three are worked out from the mods themselves:
+// - Gameplay / Visual only, from the manifest's affects_gameplay (what multiplayer compares);
+// - Library, when another installed mod depends on it.
+// The player's own tags come from the notes editor. All of them are searchable.
+static class Tags
+{
+    public record Chip(string Text, Color Color);
+
+    static readonly Color Gameplay = new(0.95f, 0.55f, 0.3f);
+    static readonly Color Visual = new(0.45f, 0.75f, 0.95f);
+    static readonly Color Library = new(0.937f, 0.784f, 0.318f);
+    static readonly Color Custom = new(0.75f, 0.9f, 0.8f);
+
+    public static List<Chip> For(Mod? mod)
+    {
+        if (mod?.manifest is not { } manifest)
+            return [];
+        var chips = new List<Chip>
+        {
+            manifest.affectsGameplay
+                ? new Chip(Menus.Text("SPIRE_MOD_MANAGER.TAG_GAMEPLAY"), Gameplay)
+                : new Chip(Menus.Text("SPIRE_MOD_MANAGER.TAG_VISUAL"), Visual),
+        };
+        if (ModManager.Mods.Any(m => m != mod && Dependencies.Of(m).Contains(manifest.id)))
+            chips.Add(new Chip(Menus.Text("SPIRE_MOD_MANAGER.TAG_LIBRARY"), Library));
+        foreach (var tag in Store.InfoFor(manifest.id)?.Tags ?? [])
+            chips.Add(new Chip(tag, Custom));
+        return chips;
+    }
+
+    // "a, b ,c" -> ["a", "b", "c"], blanks and repeats dropped; null when there are none.
+    public static List<string>? Parse(string text)
+    {
+        var tags = text.Split(',', StringSplitOptions.RemoveEmptyEntries | StringSplitOptions.TrimEntries)
+            .Distinct(StringComparer.OrdinalIgnoreCase).ToList();
+        return tags.Count > 0 ? tags : null;
+    }
+
+    // A chip: tinted fill, border in the chip's colour, small text.
+    public static Control Make(Chip chip)
+    {
+        var box = new PanelContainer { MouseFilter = Control.MouseFilterEnum.Ignore, SizeFlagsVertical = Control.SizeFlags.ShrinkCenter };
+        var style = new StyleBoxFlat
+        {
+            BgColor = new Color(chip.Color, 0.18f), BorderColor = new Color(chip.Color, 0.8f),
+            ContentMarginLeft = 6, ContentMarginRight = 6, ContentMarginTop = 0, ContentMarginBottom = 0,
+        };
+        style.SetBorderWidthAll(1);
+        style.SetCornerRadiusAll(8);
+        box.AddThemeStyleboxOverride("panel", style);
+        var label = new Label { Text = chip.Text, MouseFilter = Control.MouseFilterEnum.Ignore };
+        label.AddThemeFontOverride("font", ResourceLoader.Load<Font>("res://themes/kreon_regular_shared.tres"));
+        label.AddThemeFontSizeOverride("font_size", 13);
+        label.AddThemeColorOverride("font_color", chip.Color);
+        box.AddChild(label);
+        return box;
+    }
+}

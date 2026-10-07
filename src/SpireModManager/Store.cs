@@ -36,6 +36,7 @@ public class ModInfo
     public string? Category { get; set; }
     public string? Alias { get; set; }
     public string? Notes { get; set; }
+    public List<string>? Tags { get; set; }
 }
 
 public class Profile
