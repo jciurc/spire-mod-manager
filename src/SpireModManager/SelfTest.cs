@@ -31,6 +31,11 @@ static class SelfTest
 
     static async Task Run(NMainMenu menu, string outDir)
     {
+        if (System.Environment.GetEnvironmentVariable("SPIRE_MOD_MANAGER_SELFTEST_MODE") == "real")
+        {
+            await RunReal(menu, outDir);
+            return;
+        }
         try
         {
             await Wait(menu, 3);
@@ -99,6 +104,65 @@ static class SelfTest
             await TestSearch(menu, screen, content, outDir);
             await TestLoadOrder(menu, screen, content, outDir);
             await TestHistory(menu, screen, content, outDir);
+        }
+        catch (Exception e)
+        {
+            Results.Add($"FAIL exception: {e}");
+        }
+        finally
+        {
+            File.WriteAllLines(Path.Combine(outDir, "results.txt"), Results);
+            menu.GetTree().Quit();
+        }
+    }
+
+    // --real: Jordan's own mods (all off) and data. No edits; a tour of the views for screenshots and
+    // timings, since this is the list size and naming the screen has to cope with.
+    static async Task RunReal(NMainMenu menu, string outDir)
+    {
+        try
+        {
+            await Wait(menu, 3);
+            var screen = menu.SubmenuStack.PushSubmenuType<NModdingScreen>();
+            await Wait(menu, 2);
+            var content = screen.GetNode<Control>("%ModsScrollContainer/Mask/Content");
+            var rows = content.GetChildren().OfType<NModMenuRow>().ToList();
+            Check($"rows ({rows.Count}) match mods ({ModManager.Mods.Count})", rows.Count == ModManager.Mods.Count);
+            Results.Add($"INFO categories: {Store.Data.Categories.Count}, profiles: {Store.Data.Profiles.Count}, " +
+                $"mods with notes: {Store.Data.Mods.Values.Count(m => m.Notes != null)}");
+
+            // A full redraw happens on every search keystroke and every edit: it has to stay quick.
+            var timer = System.Diagnostics.Stopwatch.StartNew();
+            for (var i = 0; i < 10; i++)
+                CategoryList.Apply(content);
+            var categoriesMs = timer.Elapsed.TotalMilliseconds / 10;
+            Check($"category view redraw {categoriesMs:0.0} ms", categoriesMs < 50);
+            await Wait(menu, 1);
+            await Capture(screen, outDir, "real-1-categories");
+
+            Click(screen.GetNode<NButton>("SpireModManagerLoadOrderToggle"));
+            await Wait(menu, 1);
+            timer.Restart();
+            for (var i = 0; i < 10; i++)
+                CategoryList.Apply(content);
+            var orderMs = timer.Elapsed.TotalMilliseconds / 10;
+            Check($"load order redraw {orderMs:0.0} ms", orderMs < 50);
+            await Capture(screen, outDir, "real-2-load-order");
+
+            var search = screen.GetNode<LineEdit>("ModsBorder/SpireModManagerSearch");
+            search.Text = "lib";
+            search.EmitSignal(LineEdit.SignalName.TextChanged, search.Text);
+            await Wait(menu, 0.5);
+            await Capture(screen, outDir, "real-3-search");
+            search.Text = "";
+            search.EmitSignal(LineEdit.SignalName.TextChanged, "");
+
+            Click(screen.GetNode<NButton>("SpireModManagerLoadOrderToggle"));
+            Click(screen.GetNode<NButton>("SpireModManagerViewToggle"));
+            await Wait(menu, 1);
+            await Capture(screen, outDir, "real-4-vanilla");
+            Click(screen.GetNode<NButton>("SpireModManagerViewToggle"));
+            await Wait(menu, 0.5);
         }
         catch (Exception e)
         {
