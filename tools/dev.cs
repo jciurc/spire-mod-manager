@@ -142,6 +142,8 @@ void PrepareSandbox(bool resetData)
     settings["mod_settings"] = mods;
     settings["seen_ea_disclaimer"] = true; // the one-time Early Access popup would cover every screenshot
     settings["volume_master"] = 0.0;      // silent, so dev runs don't play over Jordan's game
+    settings["fullscreen"] = false;       // a 1920x1080 window, easy to tell apart and to move aside
+    settings["window_size"] = new JsonObject { ["X"] = 1920, ["Y"] = 1080 };
     File.WriteAllText(settingsPath, settings.ToJsonString(new() { WriteIndented = true }));
 
     if (!resetData)
