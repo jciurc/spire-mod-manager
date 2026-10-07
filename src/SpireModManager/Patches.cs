@@ -2,6 +2,7 @@ using Godot;
 using HarmonyLib;
 using MegaCrit.Sts2.Core.Logging;
 using MegaCrit.Sts2.Core.Modding;
+using MegaCrit.Sts2.Core.Nodes.CommonUi;
 using MegaCrit.Sts2.Core.Nodes.Screens.MainMenu;
 using MegaCrit.Sts2.Core.Nodes.Screens.ModdingScreen;
 
@@ -180,5 +181,42 @@ static class ModInfoClearPatch
     static void Postfix(NModInfoContainer __instance)
     {
         ModDetails.HideButtons(__instance);
+    }
+}
+
+// Keyboard shortcuts on our Modding screen: Ctrl+Z undo, Ctrl+Y or Ctrl+Shift+Z redo, Ctrl+F search.
+// Unhandled keys only, so a focused text box keeps its own Ctrl+Z.
+[HarmonyPatch(typeof(NInputManager), "_UnhandledKeyInput")]
+static class ShortcutsPatch
+{
+    static void Postfix(InputEvent inputEvent)
+    {
+        try
+        {
+            if (inputEvent is not InputEventKey { Pressed: true, Echo: false, CtrlPressed: true } key
+                || HistoryBar.Screen is not { } screen || !GodotObject.IsInstanceValid(screen) || !screen.IsVisibleInTree()
+                || Store.Data.VanillaView)
+                return;
+            switch (key.Keycode)
+            {
+                case Key.Z when key.ShiftPressed:
+                case Key.Y:
+                    History.Redo();
+                    break;
+                case Key.Z:
+                    History.Undo();
+                    break;
+                case Key.F:
+                    screen.GetNodeOrNull<Control>("ModsBorder/SpireModManagerSearch")?.GrabFocus();
+                    break;
+                default:
+                    return;
+            }
+            screen.GetViewport().SetInputAsHandled();
+        }
+        catch (Exception e)
+        {
+            Log.Error($"[{ModEntry.ModId}] Shortcut failed: {e}");
+        }
     }
 }
