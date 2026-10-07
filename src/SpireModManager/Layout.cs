@@ -10,6 +10,7 @@ namespace SpireModManager;
 static class Layout
 {
     const string OriginalMeta = "spire_mod_manager_original";
+    const string FocusMeta = "spire_mod_manager_focus_release";
 
     // Screen-space boxes (left, top, right, bottom) in the game's 1920x1080 layout.
     static readonly Vector4 ListBox = new(190, 128, 1110, 990);
@@ -42,6 +43,23 @@ static class Layout
         // Profile bar and search sit at the top of the list in our views; Vanilla View hides them and gives
         // the list its full height back.
         var scroll = list.GetNode<Control>("ModsScrollContainer");
+
+        // The scene's mask clips drawing only (clip_children): rows scrolled out of view still took
+        // clicks above and below the list. Clipping contents clips their input too.
+        scroll.GetNode<Control>("Mask").ClipContents = true;
+
+        // A click on an empty part of the screen or list lets go of keyboard focus (search, rename boxes).
+        if (!screen.HasMeta(FocusMeta))
+        {
+            screen.SetMeta(FocusMeta, true);
+            void Release(InputEvent e)
+            {
+                if (e is InputEventMouseButton { Pressed: true })
+                    screen.GetViewport().GuiReleaseFocus();
+            }
+            screen.GuiInput += Release;
+            scroll.GuiInput += Release;
+        }
         if (!scroll.HasMeta(OriginalMeta))
             scroll.SetMeta(OriginalMeta, scroll.OffsetTop);
         var bar = list.GetNodeOrNull<Control>("SpireModManagerProfileBar");

@@ -99,6 +99,7 @@ static class SelfTest
             await Wait(menu, 1);
 
             await TestCategories(menu, screen, content, outDir);
+            await TestListFixes(menu, screen, content);
             await TestProfileEditing(menu, screen, outDir);
             await TestNotes(menu, screen, content, outDir);
             await TestSearch(menu, screen, content, outDir);
@@ -173,6 +174,40 @@ static class SelfTest
             File.WriteAllLines(Path.Combine(outDir, "results.txt"), Results);
             menu.GetTree().Quit();
         }
+    }
+
+    // Regressions from Jordan's 2026-10-07 notes: clicks outside the list, list height after collapsing,
+    // focus on empty clicks, inline buttons centred in their strip.
+    static async Task TestListFixes(Node menu, NModdingScreen screen, Control content)
+    {
+        Check("the list mask clips input", screen.GetNode<Control>("ModsBorder/ModsScrollContainer/Mask").ClipContents);
+
+        var collapsed = Store.Data.Categories.Select(c => c.Collapsed).ToList();
+        var uncategorized = Store.Data.UncategorizedCollapsed;
+        var open = content.Size.Y;
+        foreach (var c in Store.Data.Categories)
+            c.Collapsed = true;
+        Store.Data.UncategorizedCollapsed = true;
+        CategoryList.Apply(content);
+        await Wait(menu, 0.3);
+        Check("collapsing everything shrinks the list", content.Size.Y < open && Math.Abs(content.Size.Y - content.GetCombinedMinimumSize().Y) < 1,
+            $"{open} -> {content.Size.Y} (min {content.GetCombinedMinimumSize().Y})");
+        for (var i = 0; i < collapsed.Count; i++)
+            Store.Data.Categories[i].Collapsed = collapsed[i];
+        Store.Data.UncategorizedCollapsed = uncategorized;
+        CategoryList.Apply(content);
+        await Wait(menu, 0.3);
+
+        var search = screen.GetNode<Control>("ModsBorder/SpireModManagerSearch");
+        search.GrabFocus();
+        screen.EmitSignal(Control.SignalName.GuiInput, new InputEventMouseButton { ButtonIndex = MouseButton.Left, Pressed = true });
+        await Wait(menu, 0.1);
+        Check("a click on empty space releases focus", !search.HasFocus());
+
+        if (content.GetChildren().OfType<NModMenuRow>().FirstOrDefault(r => r.Visible)?.GetNodeOrNull<Control>("SpireModManagerStrip") is { } strip
+            && strip.GetNodeOrNull<Control>("Actions")?.GetChildOrNull<Control>(0) is { } button)
+            Check("inline buttons are centred in the strip", Math.Abs(button.GetGlobalRect().GetCenter().Y - strip.GetGlobalRect().GetCenter().Y) < 2,
+                $"{button.GetGlobalRect()} in {strip.GetGlobalRect()}");
     }
 
     // Row menu, new category renamed in place, assign, move, header menu, delete.
