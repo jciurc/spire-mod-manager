@@ -14,6 +14,9 @@ static class Profiles
 {
     static bool _applying;
 
+    // Raised after a switch, so the profile bar shows the new name whoever switched.
+    public static event Action? Switched;
+
     public static Profile? Active => Store.Data.Profiles.FirstOrDefault(p => p.Name == Store.Data.ActiveProfile);
 
     // First use: convert id-only profiles (Better Mod Menu's), and make sure one profile is active.
@@ -85,6 +88,7 @@ static class Profiles
         Store.Data.ActiveProfile = target.Name;
         Track(); // records mods the profile hadn't seen (now off)
         screen.OnModEnabledOrDisabled(); // pending-changes warning
+        Switched?.Invoke();
     }
 
     // A new profile starting from the current mod list.

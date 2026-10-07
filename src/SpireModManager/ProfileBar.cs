@@ -62,9 +62,12 @@ static class ProfileBar
         bar.AddChild(next);
         prev.Position = new Vector2(left, (Height - arrowSize) / 2);
         prev.Size = new Vector2(arrowSize, arrowSize);
-        name.SetAnchorsPreset(Control.LayoutPreset.FullRect);
+        // Full width between the arrows, vertically centred (a LineEdit draws its text at the top).
+        name.SetAnchorsPreset(Control.LayoutPreset.HcenterWide);
         name.OffsetLeft = left + arrowSize + 8;
         name.OffsetRight = -(right + arrowSize + 8);
+        name.OffsetTop = -24;
+        name.OffsetBottom = 24;
         next.SetAnchorsPreset(Control.LayoutPreset.CenterRight);
         next.OffsetLeft = -(right + arrowSize);
         next.OffsetRight = -right;
@@ -74,7 +77,6 @@ static class ProfileBar
         var newButton = ModEntry.AddButton(bar, "SPIRE_MOD_MANAGER.NEW_PROFILE", new Vector2(120, 52), () =>
         {
             Profiles.SwitchTo(Profiles.Add(), screen);
-            Refresh();
         });
         newButton.Name = "NewProfileButton";
         newButton.SetAnchorsPreset(Control.LayoutPreset.CenterRight);
@@ -95,7 +97,6 @@ static class ProfileBar
             var list = Store.Data.Profiles;
             var i = Profiles.Active is { } active ? list.IndexOf(active) : 0;
             Profiles.SwitchTo(list[((i + step) % list.Count + list.Count) % list.Count], screen);
-            Refresh();
         }
 
         void CommitRename()
@@ -113,6 +114,9 @@ static class ProfileBar
                 CommitRename();
         };
 
+        // The bar lives as long as the screen; the event is static, so unsubscribe when it goes.
+        Profiles.Switched += Refresh;
+        bar.TreeExiting += () => Profiles.Switched -= Refresh;
         Refresh();
     }
 
