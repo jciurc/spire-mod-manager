@@ -645,8 +645,9 @@ static class SelfTest
         var beforeRevert = History.CurrentMods();
         History.RevertMods();
         await Wait(menu, 0.3);
-        Check("Revert all restores the mod list as loaded", History.Loaded?.Mods.SequenceEqual(History.CurrentMods()) == true
-            && HistoryBar.Counts() == (0, 0) && On());
+        Check("Revert all restores the state from when the page opened", History.Entered?.Mods.SequenceEqual(History.CurrentMods()) == true
+            && History.AtEntered && HistoryBar.Counts() == (0, 0) && On(),
+            $"mods {History.Entered?.Mods.SequenceEqual(History.CurrentMods())}, at {History.AtEntered}, counts {HistoryBar.Counts()}, on {On()}");
         Press("UndoButton"); // the list view's history: on/off comes back; the order has its own history
         await Wait(menu, 0.3);
         Check("Revert all can be undone", beforeRevert.Select(m => (m.Id, m.Source, m.Enabled)).ToHashSet()

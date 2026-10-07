@@ -62,18 +62,30 @@ static class HistoryBar
         {
             undo.Disabled = !History.CanUndo;
             redo.Disabled = !History.CanRedo;
-            revert.Disabled = Describe().Count == 0;
+            revert.Disabled = History.AtEntered;
             var (on, off) = Counts();
             changes.Text = $"{Menus.Text("SPIRE_MOD_MANAGER.CHANGES")} [color={Added}]+{on}[/color] [color={Removed}]-{off}[/color]";
         }
         // After undo/redo/revert, everything on screen redraws from the restored state.
         void Restored()
         {
+            var info = screen.GetNode<NModInfoContainer>("%ModInfoContainer");
+            ModDetails.Forget(info); // its fields show the old state; don't save them over the restored one
             Profiles.RefreshTickboxes(screen);
             CategoryList.Redraw(content);
             Profiles.NotifySwitched();
-            screen.GetNode<NModInfoContainer>("%ModInfoContainer").Clear();
+            info.Clear();
         }
+        // Revert all goes back to how things were when the page opened (the game may reuse the screen).
+        History.Enter();
+        screen.VisibilityChanged += () =>
+        {
+            if (screen.IsVisibleInTree())
+            {
+                History.Enter();
+                Update();
+            }
+        };
         History.Changed += Update;
         History.Restored += Restored;
         Screen = screen;
