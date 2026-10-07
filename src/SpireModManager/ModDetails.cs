@@ -35,6 +35,9 @@ static class ModDetails
             title.Text = alias;
             description.Text = $"[gold]{Menus.Text("SPIRE_MOD_MANAGER.NAME")}[/gold]: {name}\n{description.Text}";
         }
+        var tags = string.Join(", ", Tags.For(mod).Select(c => c.Text));
+        if (tags.Length > 0)
+            description.Text = $"[gold]{Menus.Text("SPIRE_MOD_MANAGER.TAGS")}[/gold]: {tags}\n{description.Text}";
         if (info?.Notes is { } notes)
             description.Text += $"\n[color={NotesColor}][b]{Menus.Text("SPIRE_MOD_MANAGER.YOUR_NOTES")}[/b]\n{notes}[/color]\n";
 
@@ -117,6 +120,16 @@ static class ModDetails
         editor.AddChild(alias);
         y += 76;
 
+        Caption("SPIRE_MOD_MANAGER.TAGS");
+        var tags = new LineEdit
+        {
+            Name = "Tags", Text = string.Join(", ", info?.Tags ?? []), PlaceholderText = Menus.Text("SPIRE_MOD_MANAGER.TAGS_HINT"),
+            MaxLength = 200, Position = new Vector2(24, y), Size = new Vector2(container.Size.X - 48, 52),
+        };
+        Style(tags, "res://themes/kreon_regular_shared.tres", 24, Cream);
+        editor.AddChild(tags);
+        y += 76;
+
         Caption("SPIRE_MOD_MANAGER.YOUR_NOTES");
         var notes = new TextEdit
         {
@@ -128,7 +141,7 @@ static class ModDetails
 
         AddButton(editor, "SaveButton", "SPIRE_MOD_MANAGER.SAVE", 20, () =>
         {
-            Save(modId, alias.Text, notes.Text);
+            Save(modId, alias.Text, notes.Text, tags.Text);
             editor.QueueFree();
             Refresh(container, modId);
         });
@@ -137,13 +150,14 @@ static class ModDetails
         return editor;
     }
 
-    // Empty text clears the alias or notes. A mod with nothing left keeps its category.
-    public static void Save(string modId, string alias, string notes)
+    // Empty text clears the alias, notes or tags. A mod with nothing left keeps its category.
+    public static void Save(string modId, string alias, string notes, string tags = "")
     {
         if (!Store.Data.Mods.TryGetValue(modId, out var info))
             Store.Data.Mods[modId] = info = new ModInfo();
         info.Alias = alias.Trim() is { Length: > 0 } a ? a : null;
         info.Notes = notes.Trim() is { Length: > 0 } n ? n : null;
+        info.Tags = Tags.Parse(tags);
         Store.Save();
     }
 

@@ -16,7 +16,8 @@ static class Search
         if (mod?.manifest is not { } manifest)
             return false;
         var info = Store.InfoFor(manifest.id);
-        var haystack = string.Join('\n', manifest.name, manifest.id, manifest.author, info?.Alias, info?.Notes, info?.Category);
+        var haystack = string.Join('\n', [manifest.name, manifest.id, manifest.author, info?.Alias, info?.Notes, info?.Category,
+            .. Tags.For(mod).Select(c => c.Text)]);
         return filter.Split(' ', StringSplitOptions.RemoveEmptyEntries)
             .All(word => haystack.Contains(word, StringComparison.OrdinalIgnoreCase));
     }
