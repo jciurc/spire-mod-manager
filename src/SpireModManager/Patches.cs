@@ -43,6 +43,8 @@ static class MainMenuPatch
             }
             Refresh();
             menu.SubmenuStack.Connect(NSubmenuStack.SignalName.StackModified, Callable.From(Refresh));
+
+            SelfTest.MaybeStart(menu);
         }
         catch (Exception e)
         {
