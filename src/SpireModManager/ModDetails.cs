@@ -20,6 +20,11 @@ static class ModDetails
     // After the game fills the panel for a mod.
     public static void Fill(NModInfoContainer container, Mod mod)
     {
+        if (Store.Data.VanillaView) // the panel exactly as the game fills it
+        {
+            HideButtons(container);
+            return;
+        }
         var id = mod.manifest?.id;
         var info = Store.InfoFor(id);
         var name = mod.manifest?.name ?? id ?? "";
@@ -46,22 +51,29 @@ static class ModDetails
         workshop.Visible = mod.workshopId != null;
     }
 
+    public static void HideButtons(Node container)
+    {
+        foreach (var name in new[] { "EditNotesButton", "WorkshopPageButton" })
+            if (container.GetNodeOrNull<Control>(name) is { } button)
+                button.Visible = false;
+    }
+
     const string ModIdMeta = "spire_mod_manager_mod_id";
     const string ModNameMeta = "spire_mod_manager_mod_name";
     const string WorkshopIdMeta = "spire_mod_manager_workshop_id";
 
     static string Meta(Node node, string key) => node.HasMeta(key) ? (string)node.GetMeta(key) : "";
 
-    // Inside the info panel's bottom edge (901 tall); the game's description is shortened to end above them.
-    const float ButtonTop = 821, DescriptionBottom = 812;
+    // Along the inside of the panel's bottom edge, whatever its size (Layout ends the description above them).
+    const float ButtonsFromBottom = 80;
 
     static NButton AddButton(Control parent, string name, string locKey, float x, Action onPressed)
     {
         var button = ModEntry.AddButton(parent, locKey, new Vector2(220, 64), onPressed);
         button.Name = name;
-        button.Position = new Vector2(x, ButtonTop);
-        if (parent.GetNodeOrNull<Control>("ModDescription") is { } description && description.OffsetBottom > DescriptionBottom)
-            description.OffsetBottom = DescriptionBottom;
+        button.AnchorTop = button.AnchorBottom = 1;
+        (button.OffsetLeft, button.OffsetRight, button.OffsetTop, button.OffsetBottom) =
+            (x, x + 220, -ButtonsFromBottom, -ButtonsFromBottom + 64);
         return button;
     }
 
@@ -99,7 +111,7 @@ static class ModDetails
         var alias = new LineEdit
         {
             Name = "Alias", Text = info?.Alias ?? "", PlaceholderText = originalName, MaxLength = 80,
-            Position = new Vector2(24, y), Size = new Vector2(618, 52),
+            Position = new Vector2(24, y), Size = new Vector2(container.Size.X - 48, 52),
         };
         Style(alias, "res://themes/kreon_regular_shared.tres", 26, Cream);
         editor.AddChild(alias);
@@ -109,7 +121,7 @@ static class ModDetails
         var notes = new TextEdit
         {
             Name = "Notes", Text = info?.Notes ?? "", WrapMode = TextEdit.LineWrappingMode.Boundary,
-            Position = new Vector2(24, y), Size = new Vector2(618, ButtonTop - y - 16),
+            Position = new Vector2(24, y), Size = new Vector2(container.Size.X - 48, container.Size.Y - ButtonsFromBottom - y - 16),
         };
         Style(notes, "res://themes/kreon_regular_shared.tres", 24, new Color(NotesColor));
         editor.AddChild(notes);
@@ -141,10 +153,15 @@ static class ModDetails
         foreach (var row in rows)
         {
             var name = row.Mod?.manifest?.name ?? row.Mod?.manifest?.id ?? "";
-            var title = row.GetNode<RichTextLabel>("Title");
+            var title = row.GetNode<MegaRichTextLabel>("Title");
             var alias = vanilla ? null : Store.InfoFor(row.Mod?.manifest?.id)?.Alias;
+            // Our views: smaller text in a shorter row, and the title stretches with the (wider) row.
+            row.CustomMinimumSize = new Vector2(0, vanilla ? 72 : 64);
+            title.AnchorRight = vanilla ? 0 : 1;
+            title.OffsetRight = vanilla ? 562 : -150;
             title.BbcodeEnabled = alias != null;
-            title.Text = alias == null ? name : $"{Escape(alias)}  [color=#fff6e280][font_size=20]{Escape(name)}[/font_size][/color]";
+            title.Text = alias == null ? name : $"{Escape(alias)}  [color=#fff6e280][font_size=16]{Escape(name)}[/font_size][/color]";
+            Layout.FontSize(title, vanilla ? Layout.RowTitleVanillaSize : Layout.RowTitleSize);
         }
     }
 

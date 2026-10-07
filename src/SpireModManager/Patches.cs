@@ -110,6 +110,15 @@ static class ModdingScreenPatch
         {
             Log.Error($"[{ModEntry.ModId}] Could not set up categories: {e}");
         }
+
+        try
+        {
+            Layout.Apply(__instance); // last: it places everything above
+        }
+        catch (Exception e)
+        {
+            Log.Error($"[{ModEntry.ModId}] Could not lay out the screen: {e}");
+        }
     }
 }
 
@@ -158,8 +167,6 @@ static class ModInfoClearPatch
 {
     static void Postfix(NModInfoContainer __instance)
     {
-        foreach (var name in new[] { "EditNotesButton", "WorkshopPageButton" })
-            if (__instance.GetNodeOrNull<Control>(name) is { } button)
-                button.Visible = false;
+        ModDetails.HideButtons(__instance);
     }
 }

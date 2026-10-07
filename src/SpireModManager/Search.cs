@@ -8,7 +8,7 @@ namespace SpireModManager;
 // alias, notes or category (any case). Escape clears it.
 static class Search
 {
-    const float Height = 46;
+    const float Height = 38;
     static readonly Color Cream = new(1, 0.964706f, 0.886275f);
 
     public static bool Matches(Mod? mod, string filter)
@@ -35,7 +35,7 @@ static class Search
             MaxLength = 60,
         };
         box.AddThemeFontOverride("font", ResourceLoader.Load<Font>("res://themes/kreon_regular_shared.tres"));
-        box.AddThemeFontSizeOverride("font_size", 22);
+        box.AddThemeFontSizeOverride("font_size", 18);
         box.AddThemeColorOverride("font_color", Cream);
         box.AddThemeColorOverride("font_placeholder_color", new Color(Cream, 0.45f));
         var style = new StyleBoxFlat
@@ -50,9 +50,10 @@ static class Search
         box.SetAnchorsPreset(Control.LayoutPreset.TopWide);
         box.OffsetLeft = scroll.OffsetLeft;
         box.OffsetRight = scroll.OffsetRight;
-        box.OffsetTop = scroll.OffsetTop;
-        box.OffsetBottom = scroll.OffsetTop + Height;
-        scroll.OffsetTop += Height + 8;
+        // Under the profile bar (Layout then starts the list below both).
+        var top = border.GetNodeOrNull<Control>("SpireModManagerProfileBar") is { } bar ? bar.OffsetBottom + 8 : scroll.OffsetTop;
+        box.OffsetTop = top;
+        box.OffsetBottom = top + Height;
 
         box.TextChanged += text =>
         {
