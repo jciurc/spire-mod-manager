@@ -1,0 +1,30 @@
+{
+  "version": 1,
+  "categories": [
+    { "name": "Tools", "collapsed": false },
+    { "name": "Content", "collapsed": true }
+  ],
+  "mods": {
+    "SpireModManager": { "category": "Tools", "alias": "The Manager", "notes": "Fixture note" },
+    "BetterModMenu": { "category": "Tools" },
+    "BrandedMod": { "category": "Content" }
+  },
+  "profiles": [
+    {
+      "name": "Default",
+      "mods": [
+        { "id": "SpireModManager", "source": "ModsDirectory", "enabled": true },
+        { "id": "BetterModMenu", "source": "ModsDirectory", "enabled": false },
+        { "id": "BrandedMod", "source": "ModsDirectory", "enabled": true },
+        { "id": "LocalModFixes", "source": "ModsDirectory", "enabled": true }
+      ]
+    },
+    {
+      "name": "Minimal",
+      "mods": [
+        { "id": "SpireModManager", "source": "ModsDirectory", "enabled": true }
+      ]
+    }
+  ],
+  "active_profile": "Default"
+}

@@ -7,10 +7,10 @@ using MegaCrit.Sts2.Core.Saves;
 
 namespace SpireModManager;
 
-// In-game smoke test, run by tools/selftest.py. Does nothing unless the environment variable
+// In-game smoke test, run by `dotnet run tools/dev.cs test`. Does nothing unless the environment variable
 // SPIRE_MOD_MANAGER_SELFTEST names an output folder. Then, from the main menu: screenshots, opens the
 // Modding screen, checks our nodes, switches profile and back (the mod list must round-trip), toggles
-// the view, writes results.txt, and quits. The runner backs up and restores settings around it.
+// the view, writes results.txt, and quits. The runner uses the no-Steam dev sandbox, never real saves.
 static class SelfTest
 {
     const string EnvVar = "SPIRE_MOD_MANAGER_SELFTEST";
