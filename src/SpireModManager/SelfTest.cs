@@ -162,7 +162,7 @@ static class SelfTest
         var count = Store.Data.Profiles.Count;
         var start = Profiles.Active;
 
-        Click(bar.GetNode<NButton>("NewProfileButton"));
+        bar.FindChild("NewProfileButton", true, false)?.EmitSignal(BaseButton.SignalName.Pressed);
         await Wait(menu, 0.5);
         Check("New adds a profile and switches to it", Store.Data.Profiles.Count == count + 1 && Profiles.Active != start
             && name.Text == Profiles.Active?.Name, name.Text);

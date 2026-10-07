@@ -167,6 +167,17 @@ static class CategoryList
                 header.GetNode<ColorRect>("Background").Color = new Color(0.0756f, 0.12084f, 0.18f, 0.3f);
             }
             header.GetNode<Label>("Count").Text = (filtering ? members.Count(Matches) : members.Count).ToString();
+            if (category != null)
+            {
+                // The header menu's actions inline, right-aligned before the count.
+                var actions = Menus.InlineButtons(HeaderActions(content, category, compact: true), "Actions");
+                actions.Alignment = BoxContainer.AlignmentMode.End;
+                header.AddChild(actions);
+                actions.AnchorLeft = actions.AnchorRight = 1;
+                actions.AnchorBottom = 1;
+                (actions.OffsetLeft, actions.OffsetRight, actions.OffsetTop, actions.OffsetBottom) = (-340, -52, 8, -8);
+                titleLabel.OffsetRight = -350;
+            }
             foreach (var row in members)
                 content.MoveChild(row, index++);
 
@@ -242,16 +253,21 @@ static class CategoryList
         }
     }
 
-    public static PopupMenu ShowHeaderMenu(Control content, Category category)
+    public static PopupMenu ShowHeaderMenu(Control content, Category category) =>
+        Menus.Show(content, HeaderActions(content, category));
+
+    // Rename, up, down, delete: the header's right-click menu, and its inline buttons (compact labels).
+    static List<MenuItem> HeaderActions(Control content, Category category, bool compact = false)
     {
         var list = Store.Data.Categories;
         var index = list.IndexOf(category);
-        return Menus.Show(content, [
+        var suffix = compact ? "_SHORT" : "";
+        return [
             new MenuItem(Menus.Text("SPIRE_MOD_MANAGER.RENAME"), () => BeginRename(content, category)),
-            new MenuItem(Menus.Text("SPIRE_MOD_MANAGER.MOVE_UP"), () => Edit(() => Categories.Move(category, -1)), Disabled: index == 0),
-            new MenuItem(Menus.Text("SPIRE_MOD_MANAGER.MOVE_DOWN"), () => Edit(() => Categories.Move(category, 1)), Disabled: index == list.Count - 1),
+            new MenuItem(Menus.Text("SPIRE_MOD_MANAGER.MOVE_UP" + suffix), () => Edit(() => Categories.Move(category, -1)), Disabled: index == 0),
+            new MenuItem(Menus.Text("SPIRE_MOD_MANAGER.MOVE_DOWN" + suffix), () => Edit(() => Categories.Move(category, 1)), Disabled: index == list.Count - 1),
             new MenuItem(Menus.Text("SPIRE_MOD_MANAGER.DELETE"), () => _ = Delete()),
-        ]);
+        ];
 
         void Edit(Action change)
         {
