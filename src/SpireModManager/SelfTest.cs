@@ -597,6 +597,7 @@ static class SelfTest
         Check("tickbox change is listed under Changes", !On() && HistoryBar.Describe().Any(l => l.Contains("Test UI")),
             string.Join(" | ", HistoryBar.Describe()));
         Check("Changes counts it", HistoryBar.Counts().Off >= 1, $"{HistoryBar.Counts()}");
+        Check("a mod turned off since launch has a changed-colour title", row.GetNode<Control>("Title").Modulate == ModDetails.ChangedTitle);
         var changes = screen.GetNode<Control>(HistoryBar.ChangesName);
         changes.EmitSignal(Control.SignalName.MouseEntered);
         await Wait(menu, 0.3);
@@ -607,7 +608,7 @@ static class SelfTest
 
         Press("UndoButton");
         await Wait(menu, 0.3);
-        Check("undo turns it back on, tickbox included", On() && tickbox.IsTicked);
+        Check("undo turns it back on, tickbox included", On() && tickbox.IsTicked && row.GetNode<Control>("Title").Modulate != ModDetails.ChangedTitle);
         Press("RedoButton");
         await Wait(menu, 0.3);
         Check("redo turns it off again", !On() && !tickbox.IsTicked);

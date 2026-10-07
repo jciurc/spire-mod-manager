@@ -261,6 +261,26 @@ static class ModDetails
             Layout.FontSize(title, vanilla ? Layout.RowTitleVanillaSize : Layout.RowTitleSize);
             Pencil(row, title, !vanilla && !Store.Data.LoadOrderView); // Load Order is for ordering only
         }
+        MarkChanged(rows, vanilla);
+    }
+
+    // Our views: a mod turned on or off since launch has a soft gold title, so what a relaunch will change
+    // stands out. Otherwise the colour the game gave it (white, grey when off, red when it failed).
+    public static readonly Color ChangedTitle = new(1f, 0.82f, 0.45f);
+    const string TitleColorMeta = "spire_mod_manager_title_color";
+
+    public static void MarkChanged(IEnumerable<NModMenuRow> rows, bool vanilla)
+    {
+        var loaded = History.Loaded?.Mods.ToDictionary(m => (m.Id, m.Source), m => m.Enabled);
+        foreach (var row in rows)
+        {
+            var title = row.GetNode<Control>("Title");
+            if (!title.HasMeta(TitleColorMeta))
+                title.SetMeta(TitleColorMeta, title.Modulate);
+            var changed = !vanilla && loaded != null && row.Mod is { manifest.id: { } id } mod
+                && loaded.GetValueOrDefault((id, mod.modSource), true) != Dependencies.IsOn(mod);
+            title.Modulate = changed ? ChangedTitle : (Color)title.GetMeta(TitleColorMeta);
+        }
     }
 
     // The small pencil left of a row's title: edit the alias in place. The title moves right to make room
