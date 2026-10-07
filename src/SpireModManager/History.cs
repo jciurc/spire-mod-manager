@@ -172,7 +172,7 @@ static class History
     // On/off from the snapshot, order as it is now (entries the snapshot has and now lacks go last).
     static void ApplyStates(IReadOnlyList<ModEntry> mods)
     {
-        var states = mods.ToDictionary(m => (m.Id, m.Source), m => m.Enabled);
+        var states = mods.DistinctBy(m => (m.Id, m.Source)).ToDictionary(m => (m.Id, m.Source), m => m.Enabled);
         var now = CurrentMods();
         Apply(now.Select(m => m with { Enabled = states.TryGetValue((m.Id, m.Source), out var on) ? on : m.Enabled })
             .Concat(mods.Where(m => !now.Any(n => n.Id == m.Id && n.Source == m.Source))).ToList());
@@ -181,7 +181,7 @@ static class History
     // Order from the snapshot, on/off as it is now (entries the snapshot doesn't have go last).
     static void ApplyOrder(IReadOnlyList<ModEntry> mods)
     {
-        var position = mods.Select((m, i) => (m, i)).ToDictionary(p => (p.m.Id, p.m.Source), p => p.i);
+        var position = mods.Select((m, i) => (m, i)).DistinctBy(p => (p.m.Id, p.m.Source)).ToDictionary(p => (p.m.Id, p.m.Source), p => p.i);
         Apply(CurrentMods().OrderBy(m => position.TryGetValue((m.Id, m.Source), out var i) ? i : int.MaxValue).ToList());
     }
 
