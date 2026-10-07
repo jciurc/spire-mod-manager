@@ -11,8 +11,8 @@ static class RowStrip
 {
     const string StripName = "SpireModManagerStrip";
     const string StripMeta = "spire_mod_manager_strip";
-    const float Height = 24;
-    const float RightEdge = 580; // row-local x where the game's platform icon starts
+    const float Height = 22;
+    const float RightMargin = 144; // from the row's right edge: clear of the game's platform icon and tickbox
     static readonly Color Note = new(0.937f, 0.784f, 0.318f, 0.75f);
     static readonly Color Problem = new(1f, 0.45f, 0.4f);
 
@@ -34,7 +34,8 @@ static class RowStrip
             row.AddChild(strip);
             strip.AnchorTop = strip.AnchorBottom = 1;
             strip.OffsetLeft = title.OffsetLeft;
-            strip.OffsetRight = RightEdge;
+            strip.AnchorRight = 1;
+            strip.OffsetRight = -RightMargin;
             strip.OffsetTop = -Height - 4;
             strip.OffsetBottom = -4;
 
@@ -44,6 +45,7 @@ static class RowStrip
                 Name = "Needs", Text = text, SizeFlagsHorizontal = Control.SizeFlags.ExpandFill,
                 VerticalAlignment = VerticalAlignment.Center, ClipText = true, MouseFilter = Control.MouseFilterEnum.Ignore,
             };
+            note.AddThemeFontOverride("font", ResourceLoader.Load<Font>("res://themes/kreon_regular_shared.tres"));
             note.AddThemeFontSizeOverride("font_size", 15);
             note.AddThemeColorOverride("font_color", problem ? Problem : Note);
             strip.AddChild(note);

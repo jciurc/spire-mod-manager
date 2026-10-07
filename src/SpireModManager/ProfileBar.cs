@@ -5,10 +5,10 @@ using MegaCrit.Sts2.Core.Nodes.Screens.ModdingScreen;
 namespace SpireModManager;
 
 // Profile switcher across the top of the mod list: [Profile]  ◀ name ▶  [New].
-// The list's scroll area is pushed down to make room. The name is editable in place (Enter to rename).
+// Layout starts the list below it. The name is editable in place (Enter to rename).
 static class ProfileBar
 {
-    const float Height = 60;
+    const float Height = 50;
     static readonly Color Gold = new(0.937f, 0.784f, 0.318f);
     static readonly Color Cream = new(1, 0.964706f, 0.886275f);
 
@@ -25,7 +25,6 @@ static class ProfileBar
         bar.OffsetRight = scroll.OffsetRight;
         bar.OffsetTop = scroll.OffsetTop;
         bar.OffsetBottom = scroll.OffsetTop + Height;
-        scroll.OffsetTop += Height + 8;
 
         var background = new ColorRect { Color = new Color(0.0756f, 0.12084f, 0.18f, 0.6f), MouseFilter = Control.MouseFilterEnum.Ignore };
         bar.AddChild(background);
@@ -38,7 +37,7 @@ static class ProfileBar
             Position = new Vector2(16, 0),
             Size = new Vector2(100, Height),
         };
-        Style(caption, "res://themes/kreon_regular_shared.tres", 22, new Color(Cream, 0.7f));
+        Style(caption, "res://themes/kreon_regular_shared.tres", 18, new Color(Cream, 0.7f));
         bar.AddChild(caption);
 
         var name = new LineEdit
@@ -51,12 +50,12 @@ static class ProfileBar
             ContextMenuEnabled = false, // right-click opens our profile menu instead
             Name = "ProfileName",
         };
-        Style(name, "res://themes/kreon_bold_shared.tres", 28, Gold);
+        Style(name, "res://themes/kreon_bold_shared.tres", 22, Gold);
         foreach (var box in new[] { "normal", "focus", "read_only" })
             name.AddThemeStyleboxOverride(box, new StyleBoxEmpty());
 
         // Arrows and name between the caption and the New/Rename/Delete buttons.
-        const float arrowSize = 34, left = 120, right = 236;
+        const float arrowSize = 28, left = 120, right = 236;
         var prev = Arrow("res://images/packed/common_ui/settings_tiny_left_arrow.png");
         var next = Arrow("res://images/packed/common_ui/settings_tiny_right_arrow.png");
         bar.AddChild(prev);
@@ -68,8 +67,8 @@ static class ProfileBar
         name.SetAnchorsPreset(Control.LayoutPreset.HcenterWide);
         name.OffsetLeft = left + arrowSize + 8;
         name.OffsetRight = -(right + arrowSize + 8);
-        name.OffsetTop = -24;
-        name.OffsetBottom = 24;
+        name.OffsetTop = -20;
+        name.OffsetBottom = 20;
         next.SetAnchorsPreset(Control.LayoutPreset.CenterRight);
         next.OffsetLeft = -(right + arrowSize);
         next.OffsetRight = -right;
@@ -105,7 +104,7 @@ static class ProfileBar
             bar.AddChild(inline);
             inline.AnchorLeft = inline.AnchorRight = 1;
             inline.AnchorBottom = 1;
-            (inline.OffsetLeft, inline.OffsetRight, inline.OffsetTop, inline.OffsetBottom) = (-right + 4, -8, 12, -12);
+            (inline.OffsetLeft, inline.OffsetRight, inline.OffsetTop, inline.OffsetBottom) = (-right + 4, -8, 10, -10);
         }
 
         void Cycle(int step)

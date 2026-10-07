@@ -35,6 +35,8 @@ static class CategoryList
             Label(vanilla, data.VanillaView ? "SPIRE_MOD_MANAGER.CATEGORY_VIEW" : "SPIRE_MOD_MANAGER.VANILLA_VIEW");
             Label(loadOrder, data.LoadOrderView ? "SPIRE_MOD_MANAGER.CATEGORY_VIEW" : "SPIRE_MOD_MANAGER.LOAD_ORDER");
             Apply(content);
+            Layout.Apply(screen);
+            screen.GetNode<NModInfoContainer>("%ModInfoContainer").Clear(); // its text was filled for the old view
         }
         vanilla = ModEntry.AddButton(screen, "SPIRE_MOD_MANAGER.VANILLA_VIEW", new Vector2(200, 70), () => Switch(true));
         vanilla.Name = "SpireModManagerViewToggle";
@@ -160,6 +162,10 @@ static class CategoryList
             header.SetMeta(CategoryMeta, category?.Name ?? "");
             var titleLabel = header.GetNode<Label>("Title");
             titleLabel.Text = title;
+            // Our (smaller-text) views: a shorter header.
+            header.CustomMinimumSize = new Vector2(0, 44);
+            titleLabel.AddThemeFontSizeOverride("font_size", 22);
+            header.GetNode<Label>("Count").AddThemeFontSizeOverride("font_size", 18);
             if (muted)
             {
                 // Not a category the player made: cream instead of gold, fainter background.
@@ -175,7 +181,7 @@ static class CategoryList
                 header.AddChild(actions);
                 actions.AnchorLeft = actions.AnchorRight = 1;
                 actions.AnchorBottom = 1;
-                (actions.OffsetLeft, actions.OffsetRight, actions.OffsetTop, actions.OffsetBottom) = (-340, -52, 8, -8);
+                (actions.OffsetLeft, actions.OffsetRight, actions.OffsetTop, actions.OffsetBottom) = (-340, -52, 7, -7);
                 titleLabel.OffsetRight = -350;
             }
             foreach (var row in members)
