@@ -101,10 +101,23 @@ static class CategoryList
 
         if (Store.Data.LoadOrderView)
         {
-            LoadOrder.Apply(content, rows, Matches, () => Redraw(content));
+            void RedrawAll() => Redraw(content);
+            LoadOrder.Apply(content, rows, Matches, RedrawAll);
+            RowStrip.Apply(rows, row => LoadOrder.Actions(content, row, RedrawAll, compact: true));
+            LoadOrder.AddBanner(content, rows, RedrawAll, banner =>
+            {
+                banner.AddToGroup(HeaderGroup);
+                content.AddChild(banner);
+                content.MoveChild(banner, 0);
+            });
             return;
         }
         LoadOrder.Undecorate(rows);
+
+        if (Store.Data.VanillaView)
+            RowStrip.Remove(rows);
+        else
+            RowStrip.Apply(rows, row => [new MenuItem(Menus.Text("SPIRE_MOD_MANAGER.CATEGORY_BUTTON"), () => ShowRowMenu(content, row))]);
 
         if (Store.Data.VanillaView)
         {
