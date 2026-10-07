@@ -40,10 +40,6 @@ static class History
     public static bool CanUndo => Past[CurrentTrack].Count > 0;
     public static bool CanRedo => Future[CurrentTrack].Count > 0;
 
-    // Where the current view's history is: steps taken so far, and steps in all (including redoable ones).
-    public static (int Position, int Total) Position =>
-        (Past[CurrentTrack].Count, Past[CurrentTrack].Count + Future[CurrentTrack].Count);
-
     // The baseline, once, when the game has finished loading (first main menu).
     public static void Start()
     {
