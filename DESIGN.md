@@ -59,6 +59,32 @@ dragging, profile/save-slot sync, design overhaul. Inline action placement is ro
   (solid fill, border colour) are fine.
 - Our views should look clearly different from vanilla: more of the screen, smaller text.
 
+## Research: tags in other mod managers (2026-10-07)
+
+From general knowledge of the tools, not a fresh survey; worth checking against current versions.
+
+- **Mod Organizer 2:** categories (several per mod, one primary), coloured separators in the list, a filter
+  panel (by category, enabled state, conflicts, has notes, update available), flag icons per row (notes,
+  conflicts, updates), and highlighting of conflicting mods when one is selected.
+- **Vortex:** a category tree (seeded from Nexus), notes, sortable/filterable attribute columns (category,
+  type, version, source), and load-order rules ("load after X") shown as icons.
+- **r2modman / Thunderstore:** site-defined categories (Libraries, Tools, Mods, Cosmetic...) used as
+  filters and badges; flags like Deprecated.
+- **Nexus / Steam Workshop:** author-set or community-voted tags, used to browse and filter. Workshop tags
+  for StS2 mods mix language, type and purpose ("english", "QoL", "Tools & APIs").
+- **Better Mod Menu:** name colours by Workshop tag, groups.
+
+Ideas for us, roughly by value:
+1. **Click a chip to filter** the list by that tag (and a tag list in search, e.g. `tag:co-op`).
+2. **Status tags** worked out automatically: New (installed since last session), Updated (Workshop update
+   since last session), Failed, Duplicate, Missing dependency. Pairs with the "newly installed" and
+   "recently updated" backlog items.
+3. **Workshop tags as suggestions:** offer a mod's Workshop tags (minus language tags) as one-click own tags,
+   and use them for the finer Auto sort tiers (content vs QoL vs visual).
+4. **Tag manager:** rename or merge a tag across all mods; per-tag colour.
+5. **Bulk tagging** with multi-select.
+6. **Tag-driven actions:** "enable everything tagged co-op" as a profile shortcut; auto-category by tag.
+
 ## Backlog: load order
 
 - **Auto sort** by impact tier, then a dependency sweep, always respecting the player's manual order
