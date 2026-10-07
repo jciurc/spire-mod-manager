@@ -82,6 +82,7 @@ static class SelfTest
 
             await TestCategories(menu, screen, content, outDir);
             await TestProfileEditing(menu, screen, outDir);
+            await TestNotes(menu, screen, content, outDir);
         }
         catch (Exception e)
         {
@@ -177,6 +178,57 @@ static class SelfTest
             Profiles.SwitchTo(start, screen);
         Check("mod list unchanged after new/rename/delete", before.SequenceEqual(ModListState()));
         Check("last profile can't be deleted", Store.Data.Profiles.Count > 1 || !Profiles.Delete(Store.Data.Profiles[0], screen));
+    }
+
+    // The fixture gives SpireModManager an alias and notes; LocalModFixes gets them through the editor.
+    static async Task TestNotes(Node menu, NModdingScreen screen, Control content, string outDir)
+    {
+        var panel = screen.GetNode<NModInfoContainer>("%ModInfoContainer");
+        NModMenuRow? Row(string id) => content.GetChildren().OfType<NModMenuRow>().FirstOrDefault(r => r.Mod?.manifest?.id == id);
+        string RowTitle(string id) => Row(id)?.GetNode<RichTextLabel>("Title").Text ?? "";
+
+        if (Row(ModEntry.ModId) is not { } ours || Row("LocalModFixes") is not { } other)
+        {
+            Results.Add("SKIP notes: fixture mods missing");
+            return;
+        }
+        Check("row shows alias beside the name", RowTitle(ModEntry.ModId).StartsWith("The Manager") && RowTitle(ModEntry.ModId).Contains("Spire Mod Manager"),
+            RowTitle(ModEntry.ModId));
+        screen.OnRowSelected(ours);
+        await Wait(menu, 0.5);
+        var description = panel.GetNode<RichTextLabel>("ModDescription").Text;
+        Check("panel titles with the alias", panel.GetNode<RichTextLabel>("ModTitle").Text == "The Manager");
+        Check("panel keeps the original name and shows notes", description.Contains("Spire Mod Manager") && description.Contains("Fixture note"));
+        Check("Workshop button hidden for a local mod", panel.GetNodeOrNull<Control>("WorkshopPageButton")?.Visible == false);
+        await Capture(screen, outDir, "8-details-with-notes");
+
+        screen.OnRowSelected(other);
+        await Wait(menu, 0.5);
+        Click(panel.GetNode<NButton>("EditNotesButton"));
+        await Wait(menu, 0.5);
+        var editor = panel.GetNodeOrNull("NotesEditor");
+        Check("Edit Notes opens the editor", editor != null);
+        if (editor == null)
+            return;
+        editor.GetNode<LineEdit>("Alias").Text = "Fixes";
+        editor.GetNode<TextEdit>("Notes").Text = "Typed in the editor";
+        await Capture(screen, outDir, "9-notes-editor");
+        Click(editor.GetNode<NButton>("SaveButton"));
+        await Wait(menu, 0.5);
+        Check("save stores alias and notes", Store.InfoFor("LocalModFixes") is { Alias: "Fixes", Notes: "Typed in the editor" });
+        Check("save updates row and panel", RowTitle("LocalModFixes").StartsWith("Fixes")
+            && panel.GetNode<RichTextLabel>("ModDescription").Text.Contains("Typed in the editor"));
+        Check("Vanilla View shows plain names", await WithVanillaView(screen, menu, () => RowTitle(ModEntry.ModId) == "Spire Mod Manager"));
+    }
+
+    static async Task<bool> WithVanillaView(NModdingScreen screen, Node menu, Func<bool> check)
+    {
+        Click(screen.GetNode<NButton>("SpireModManagerViewToggle"));
+        await Wait(menu, 0.5);
+        var ok = check();
+        Click(screen.GetNode<NButton>("SpireModManagerViewToggle"));
+        await Wait(menu, 0.5);
+        return ok;
     }
 
     static Node? Header(Control content, string category) => content.GetNodeOrNull($"Category {category}");
