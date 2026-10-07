@@ -1,7 +1,7 @@
 // Dev runs of the game, kept apart from real play, so Jordan can play through Steam at the same time.
 //
-//   dotnet run tools/dev.cs test      build, reset the sandbox, run the in-game self-test
-//                                     (--headless: no window and no screenshots, UI dumps only;
+//   dotnet run tools/dev.cs test      build, reset the sandbox, run the in-game self-test headless
+//                                     (--window: with a window, for screenshots, kept behind others;
 //                                      --bmm: with Better Mod Menu loaded, to test stepping aside)
 //   dotnet run tools/dev.cs launch    build, open the game in the sandbox to poke at by hand
 //
@@ -35,7 +35,7 @@ var logPath = Path.Combine(root, "out", "dev.log");
 var mode = args.FirstOrDefault() ?? "test";
 
 if (mode is not ("test" or "launch"))
-    return Fail("usage: dotnet run tools/dev.cs [test [--headless] [--bmm]|launch]");
+    return Fail("usage: dotnet run tools/dev.cs [test [--window] [--bmm]|launch]");
 if (Process.GetProcessesByName("SlayTheSpire2").Any(p => ExePath(p)?.StartsWith(DevDir, StringComparison.OrdinalIgnoreCase) == true))
     return Fail($"A dev copy of the game is already running from {DevDir}.");
 
@@ -50,17 +50,15 @@ PrepareSandbox(mode == "test");
 
 var start = new ProcessStartInfo(Path.Combine(DevDir, "SlayTheSpire2.exe"), ["--force-steam", "off", "--log-file", logPath])
     { WorkingDirectory = DevDir };
-if (args.Contains("--headless"))
+// Tests run headless (no window, UI dumps only) unless --window asks for screenshots; then the window
+// is sent behind everything and focus handed back (see below), so Jordan's work isn't interrupted.
+var windowed = mode == "launch" || args.Contains("--window");
+if (!windowed)
     start.ArgumentList.Add("--headless");
 start.Environment["SPIRE_MOD_MANAGER_DEV"] = "1"; // the mod marks the window "[DEV]"
-// Test runs open their window without taking focus (Godot reads override.cfg beside the exe, here only
-// in the dev copy), so they don't pull the mouse and keyboard away from whatever Jordan is doing.
-// Manual launches leave it out: that window needs to be clickable.
-var overrideCfg = Path.Combine(DevDir, "override.cfg");
-if (mode == "test")
-    File.WriteAllText(overrideCfg, "[display]\n\nwindow/size/no_focus=true\n");
-else if (File.Exists(overrideCfg))
-    File.Delete(overrideCfg);
+if (File.Exists(Path.Combine(DevDir, "override.cfg")))
+    File.Delete(Path.Combine(DevDir, "override.cfg")); // an earlier no-focus experiment: it kept the window on top
+var previousForeground = GetForegroundWindow();
 
 if (mode == "launch")
 {
@@ -80,14 +78,20 @@ game.OutputDataReceived += (_, _) => { };
 game.ErrorDataReceived += (_, _) => { };
 game.BeginOutputReadLine();
 game.BeginErrorReadLine();
-// Watch the foreground window while it runs: the game should never take it.
-var focusTaken = 0;
+// With a window: as soon as it appears (and whenever it comes forward), push it to the bottom of the
+// window stack without activating it and give focus back to what was in front before.
 var deadline = DateTime.Now.AddSeconds(TimeoutSeconds);
-while (!game.WaitForExit(250) && DateTime.Now < deadline)
+while (!game.WaitForExit(100) && DateTime.Now < deadline)
 {
-    GetWindowThreadProcessId(GetForegroundWindow(), out var foreground);
-    if (foreground == game.Id)
-        focusTaken++;
+    if (!windowed)
+        continue;
+    game.Refresh();
+    var window = game.MainWindowHandle;
+    if (window == IntPtr.Zero || GetForegroundWindow() != window)
+        continue;
+    SetWindowPos(window, new IntPtr(1) /* HWND_BOTTOM */, 0, 0, 0, 0, 0x0001 | 0x0002 | 0x0010 /* NOSIZE|NOMOVE|NOACTIVATE */);
+    if (previousForeground != IntPtr.Zero)
+        SetForegroundWindow(previousForeground);
 }
 if (!game.HasExited)
 {
@@ -95,7 +99,6 @@ if (!game.HasExited)
     game.Kill();
     game.WaitForExit();
 }
-Console.WriteLine(focusTaken == 0 ? "focus: never taken" : $"focus: the game was in front for ~{focusTaken * 0.25:0.#}s");
 
 var results = Path.Combine(outDir, "results.txt");
 var text = File.Exists(results) ? File.ReadAllText(results) : "NO RESULTS (test did not finish)\n";
@@ -212,3 +215,9 @@ static extern IntPtr GetForegroundWindow();
 
 [DllImport("user32.dll")]
 static extern uint GetWindowThreadProcessId(IntPtr window, out int processId);
+
+[DllImport("user32.dll")]
+static extern bool SetWindowPos(IntPtr window, IntPtr insertAfter, int x, int y, int width, int height, uint flags);
+
+[DllImport("user32.dll")]
+static extern bool SetForegroundWindow(IntPtr window);
