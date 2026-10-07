@@ -2,7 +2,8 @@
 //
 //   dotnet run tools/dev.cs test      build, reset the sandbox, run the in-game self-test headless
 //                                     (--window: with a window, for screenshots, kept behind others;
-//                                      --bmm: with Better Mod Menu loaded, to test stepping aside)
+//                                      --bmm: with Better Mod Menu loaded, to test stepping aside;
+//                                      --real: Jordan's own mods, switched off, and a copy of his data)
 //   dotnet run tools/dev.cs launch    build, open the game in the sandbox to poke at by hand
 //
 // Isolation:
@@ -25,6 +26,7 @@ using System.Text.Json.Nodes;
 
 const string GameDir = @"D:\SteamLibrary\steamapps\common\Slay the Spire 2";
 const string DevDir = @"D:\sts2-dev";
+const string WorkshopDir = @"D:\SteamLibrary\steamapps\workshop\content\2868840";
 const string ModId = "SpireModManager";
 const int TimeoutSeconds = 150;
 var root = Path.GetDirectoryName(ScriptDir()) ?? ".";
@@ -33,6 +35,7 @@ var sandbox = Path.Combine(userData, "default", "1");
 var outDir = Path.Combine(root, "out", "selftest");
 var logPath = Path.Combine(root, "out", "dev.log");
 var mode = args.FirstOrDefault() ?? "test";
+var real = args.Contains("--real"); // Jordan's own mods (switched off) and a copy of his manager data
 
 if (mode is not ("test" or "launch"))
     return Fail("usage: dotnet run tools/dev.cs [test [--window] [--bmm]|launch]");
@@ -71,6 +74,8 @@ if (Directory.Exists(outDir))
     Directory.Delete(outDir, recursive: true);
 Directory.CreateDirectory(outDir);
 start.Environment["SPIRE_MOD_MANAGER_SELFTEST"] = outDir;
+if (real)
+    start.Environment["SPIRE_MOD_MANAGER_SELFTEST_MODE"] = "real";
 // The game echoes its whole log to stdout; we read the log file instead.
 start.RedirectStandardOutput = start.RedirectStandardError = true;
 var game = Process.Start(start) ?? throw new InvalidOperationException("could not start the game");
@@ -141,12 +146,22 @@ void SyncMods()
     foreach (var dir in Directory.GetDirectories(Path.Combine(GameDir, "mods")).Where(d => Path.GetFileName(d) != ModId))
         foreach (var file in Directory.EnumerateFiles(dir, "*", SearchOption.AllDirectories))
             Link(file, Path.Combine(mods, Path.GetRelativePath(Path.Combine(GameDir, "mods"), file)));
-    // Empty test mods with dependencies between them (tools/fixtures/mods), for the load order checks.
-    foreach (var file in Directory.EnumerateFiles(Path.Combine(root, "tools", "fixtures", "mods"), "*", SearchOption.AllDirectories))
+    if (real)
     {
-        var target = Path.Combine(mods, Path.GetRelativePath(Path.Combine(root, "tools", "fixtures", "mods"), file));
-        Directory.CreateDirectory(Path.GetDirectoryName(target) ?? mods);
-        File.Copy(file, target);
+        // --real: Jordan's Workshop mods too, as local folders (switched off in PrepareSandbox).
+        foreach (var dir in Directory.GetDirectories(WorkshopDir))
+            foreach (var file in Directory.EnumerateFiles(dir, "*", SearchOption.AllDirectories))
+                Link(file, Path.Combine(mods, "workshop-" + Path.GetFileName(dir), Path.GetRelativePath(dir, file)));
+    }
+    else
+    {
+        // Empty test mods with dependencies between them (tools/fixtures/mods), for the load order checks.
+        foreach (var file in Directory.EnumerateFiles(Path.Combine(root, "tools", "fixtures", "mods"), "*", SearchOption.AllDirectories))
+        {
+            var target = Path.Combine(mods, Path.GetRelativePath(Path.Combine(root, "tools", "fixtures", "mods"), file));
+            Directory.CreateDirectory(Path.GetDirectoryName(target) ?? mods);
+            File.Copy(file, target);
+        }
     }
     var ours = Path.Combine(mods, ModId);
     Directory.CreateDirectory(ours);
@@ -169,6 +184,11 @@ void PrepareSandbox(bool resetData)
     {
         (JsonNode)new JsonObject { ["id"] = "BetterModMenu", ["is_enabled"] = args.Contains("--bmm"), ["source"] = "mods_directory" },
     };
+    // --real: every other mod is listed but switched off, so none of their code runs (some write config
+    // files to the shared user folder); only the manager loads.
+    if (real)
+        foreach (var id in ManifestIds(Path.Combine(DevDir, "mods")).Where(id => id is not (ModId or "BetterModMenu")))
+            list.Add((JsonNode)new JsonObject { ["id"] = id, ["is_enabled"] = false, ["source"] = "mods_directory" });
     mods["mod_list"] = list;
     settings["mod_settings"] = mods;
     settings["seen_ea_disclaimer"] = true; // the one-time Early Access popup would cover every screenshot
@@ -183,7 +203,25 @@ void PrepareSandbox(bool resetData)
     if (Directory.Exists(data))
         Directory.Delete(data, recursive: true);
     Directory.CreateDirectory(data);
-    File.Copy(Path.Combine(root, "tools", "fixtures", "manager.json"), Path.Combine(data, "manager.json"));
+    // --real: a copy of Jordan's own manager data (read only; the original is never written).
+    var source = real
+        ? Directory.GetFiles(Path.Combine(userData, "steam"), "manager.json", SearchOption.AllDirectories)
+            .FirstOrDefault(f => f.Contains(Path.Combine("mod_data", ModId)))
+        : null;
+    File.Copy(source ?? Path.Combine(root, "tools", "fixtures", "manager.json"), Path.Combine(data, "manager.json"));
+}
+
+// Mod ids from the manifests under a mods folder (a manifest is a JSON file with "id" and "has_dll").
+static IEnumerable<string> ManifestIds(string mods)
+{
+    foreach (var file in Directory.EnumerateFiles(mods, "*.json", SearchOption.AllDirectories))
+    {
+        JsonObject? json;
+        try { json = JsonNode.Parse(File.ReadAllText(file)) as JsonObject; }
+        catch (Exception) { continue; } // not JSON (or not ours to judge)
+        if (json?["id"] is JsonValue id && json.ContainsKey("has_dll"))
+            yield return (string?)id ?? "";
+    }
 }
 
 static void Link(string target, string link)
