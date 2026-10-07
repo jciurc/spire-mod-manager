@@ -435,6 +435,26 @@ static class SelfTest
             Check("undo restores a category name", Store.Data.Categories.Any(c => c.Name == name) && Header(content, name) != null);
         }
 
+        // Keyboard: real key events through Godot's input pipeline.
+        if (Store.Data.Categories.FirstOrDefault() is { } keyed)
+        {
+            var original = keyed.Name;
+            Categories.Rename(keyed, "Ctrl Z me");
+            CategoryList.Apply(content);
+            Input.ParseInputEvent(new InputEventKey { Keycode = Key.Z, CtrlPressed = true, Pressed = true });
+            await Wait(menu, 0.3);
+            Check("Ctrl+Z undoes", Store.Data.Categories.Any(c => c.Name == original));
+            Input.ParseInputEvent(new InputEventKey { Keycode = Key.Y, CtrlPressed = true, Pressed = true });
+            await Wait(menu, 0.3);
+            Check("Ctrl+Y redoes", Store.Data.Categories.Any(c => c.Name == "Ctrl Z me"));
+            Input.ParseInputEvent(new InputEventKey { Keycode = Key.Z, CtrlPressed = true, Pressed = true });
+            await Wait(menu, 0.3);
+        }
+        Input.ParseInputEvent(new InputEventKey { Keycode = Key.F, CtrlPressed = true, Pressed = true });
+        await Wait(menu, 0.3);
+        Check("Ctrl+F focuses search", screen.GetNode<Control>("ModsBorder/SpireModManagerSearch").HasFocus());
+        screen.GetNode<Control>("ModsBorder/SpireModManagerSearch").ReleaseFocus();
+
         var beforeRevert = History.CurrentMods();
         History.RevertMods();
         await Wait(menu, 0.3);
