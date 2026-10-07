@@ -35,18 +35,41 @@ Ease of use is the heart of the mod, not just its utility.
 
 ## Status (2026-10-06)
 
-Built and covered by the in-game self-test (`dotnet run tools/dev.cs test`, 41 checks):
-main menu button with pending dot, Relaunch, Better Mod Menu import, categories (collapse, right-click
-assign/new/rename/move/delete, divider before Uncategorized), profiles (switch, new, rename, delete;
-active profile follows the tickboxes), aliases and notes (rows, info panel, editor), Workshop Page button,
-search, Load Order view (drag and drop, menu moves, order changes count as pending), Vanilla View,
-stepping aside when Better Mod Menu is loaded.
+Built and covered by the in-game self-test (`dotnet run tools/dev.cs test`, 49 checks):
+main menu button with pending dot, Relaunch, Better Mod Menu import, categories (collapse,
+assign/new/rename/move/delete from inline buttons or right-click, divider before Uncategorized),
+profiles (switch, new, rename, delete; active profile follows the tickboxes), aliases and notes (rows,
+info panel, editor), Workshop Page button, search, Load Order view (drag and drop, inline/menu moves,
+order changes count as pending), dependencies (note per row, red when missing/off/out of order; moves
+that break an enabled pair are blocked; Fix order banner), wide layout with smaller text (Vanilla View
+restores the game's), stepping aside when Better Mod Menu is loaded.
 
 Not built yet: draft layer (save/discard, undo/redo, diff), tags, Workshop metadata (needs Steam, so
 only testable in real play), compatibility audit, smart sort, profile/save-slot sync, design overhaul.
-Known gaps: the Load Order view shows the saved order, not the order after the game moves dependencies
-ahead; the Workshop Page button is untested (the dev sandbox has no Workshop mods); right-click menus
-are not discoverable yet (design overhaul).
+Known gaps: the Workshop Page button is untested (the dev sandbox has no Workshop mods); inline action
+placement is rough.
+
+## Design guidelines (Jordan, 2026-10-06)
+
+- Functionality and UX first, visual design after.
+- No AI-generated textures. Reuse the game's own elements where they fit; plain generated containers
+  (solid fill, border colour) are fine.
+- Our views should look clearly different from vanilla: more of the screen, smaller text.
+
+## Backlog: load order
+
+- **Auto sort** by impact tier, then a dependency sweep, always respecting the player's manual order
+  over the computed one: frameworks/libraries first, then content additions, then gameplay/QoL, then
+  UI/visual-only. (Today "Fix order" only moves dependencies ahead of what needs them.) Tiers need
+  signals: dependency counts, `affects_gameplay`, Workshop tags, our categories/tags.
+- **Dependency tree lines:** a tree-style line down the left side connecting a mod to its
+  dependencies/dependents, shown on hover and while dragging.
+- **Dragging feedback:** dim the list slightly while dragging; make the moving row and its landing spot
+  obvious. Dragging a mod lights up every mod linked to it (dependencies and dependents), with the
+  connecting line brighter, standing out from the dimmed list.
+- **Linked pushing:** a row moves freely while the order stays valid; when it reaches a mod it is linked
+  to, it pushes that mod along as a group. Dragging back without dropping unlinks them: the pushed mod
+  returns to the position it started from once the dragged row passes that point again.
 
 ## Features
 
