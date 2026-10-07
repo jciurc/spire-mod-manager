@@ -176,8 +176,24 @@ Jordan's notes of 2026-10-07, second batch (same file), plus play feedback.
 - [ ] Save as new replaces New, Rename and Delete
 - [ ] unsaved profile kept as its own entry "Name (edited [time])" until saved or discarded; nothing destructive or unrevertable (UX to be worked out)
 
+## Load Order (play feedback)
+
+- [ ] dependency connectors stretch and shrink while dragging
+- [ ] mod names in "Needs:" a different colour from "before/after"
+- [ ] no inline name editing on the Load Order page
+- [ ] whole row draggable with the move cursor; the right-side actions keep the normal cursor
+- [ ] tickboxes disabled on the Load Order page (ordering and profiles only)
+- [ ] disabled mods dimmer on the Load Order page
+- [ ] order warning sticky at the top
+
+## Category view (play feedback)
+
+- [ ] changed mods (since launch) shown in a different colour
+
 ## Backlog (round 2)
 
+- [ ] minimap scroll bar (like VS Code) marking notable items
+- [ ] banner when disabling a mod that enabled mods depend on (e.g. BaseLib)
 - [ ] view enabled only / disabled only (sticky items when toggling)
 - [ ] view edited mods
 - [ ] enable all / disable all
