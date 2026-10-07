@@ -1,7 +1,8 @@
 // Dev runs of the game, kept apart from real play, so Jordan can play through Steam at the same time.
 //
 //   dotnet run tools/dev.cs test      build, reset the sandbox, run the in-game self-test
-//                                     (--headless: no window and no screenshots, UI dumps only)
+//                                     (--headless: no window and no screenshots, UI dumps only;
+//                                      --bmm: with Better Mod Menu loaded, to test stepping aside)
 //   dotnet run tools/dev.cs launch    build, open the game in the sandbox to poke at by hand
 //
 // Isolation:
@@ -34,7 +35,7 @@ var logPath = Path.Combine(root, "out", "dev.log");
 var mode = args.FirstOrDefault() ?? "test";
 
 if (mode is not ("test" or "launch"))
-    return Fail("usage: dotnet run tools/dev.cs [test [--headless]|launch]");
+    return Fail("usage: dotnet run tools/dev.cs [test [--headless] [--bmm]|launch]");
 if (Process.GetProcessesByName("SlayTheSpire2").Any(p => ExePath(p)?.StartsWith(DevDir, StringComparison.OrdinalIgnoreCase) == true))
     return Fail($"A dev copy of the game is already running from {DevDir}.");
 
@@ -134,8 +135,9 @@ void PrepareSandbox(bool resetData)
     var mods = settings["mod_settings"] as JsonObject ?? [];
     mods["mods_enabled"] = true;
     var list = mods["mod_list"] as JsonArray ?? [];
-    if (!list.Any(m => (string?)m?["id"] == "BetterModMenu"))
-        list.Add((JsonNode)new JsonObject { ["id"] = "BetterModMenu", ["is_enabled"] = false, ["source"] = "mods_directory" });
+    if (list.FirstOrDefault(m => (string?)m?["id"] == "BetterModMenu") is not JsonObject bmm)
+        list.Add((JsonNode)(bmm = new JsonObject { ["id"] = "BetterModMenu", ["source"] = "mods_directory" }));
+    bmm["is_enabled"] = args.Contains("--bmm"); // --bmm: test how we step aside when it's loaded
     mods["mod_list"] = list;
     settings["mod_settings"] = mods;
     settings["seen_ea_disclaimer"] = true; // the one-time Early Access popup would cover every screenshot

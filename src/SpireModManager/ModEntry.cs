@@ -24,6 +24,27 @@ public static class ModEntry
         Log.Info($"[{ModId}] Initialized{(IsDevRun ? " (dev run)" : "")}");
     }
 
+    public static bool BetterModMenuLoaded =>
+        ModManager.Mods.Any(m => m.manifest?.id == "BetterModMenu" && m.state == ModLoadState.Loaded);
+
+    // Bottom-left of the Modding screen, where our view toggle would be.
+    public static void AddBetterModMenuNotice(Control screen)
+    {
+        var notice = new Label
+        {
+            Name = "SpireModManagerBmmNotice",
+            Text = new LocString("settings_ui", "SPIRE_MOD_MANAGER.BMM_NOTICE").GetFormattedText(),
+            AutowrapMode = TextServer.AutowrapMode.WordSmart,
+            VerticalAlignment = VerticalAlignment.Center,
+            Position = new Vector2(255, 1000),
+            Size = new Vector2(560, 68),
+        };
+        notice.AddThemeFontOverride("font", ResourceLoader.Load<Font>("res://themes/kreon_regular_shared.tres"));
+        notice.AddThemeFontSizeOverride("font_size", 18);
+        notice.AddThemeColorOverride("font_color", new Color(0.937f, 0.784f, 0.318f));
+        screen.AddChild(notice);
+    }
+
     // Set by tools/dev.cs for its sandboxed runs, so they can't be mistaken for the real game.
     public static bool IsDevRun { get; } = System.Environment.GetEnvironmentVariable("SPIRE_MOD_MANAGER_DEV") == "1";
 

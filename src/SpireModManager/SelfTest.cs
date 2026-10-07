@@ -46,6 +46,14 @@ static class SelfTest
             var content = screen.GetNode<Control>("%ModsScrollContainer/Mask/Content");
             var rows = content.GetChildren().OfType<NModMenuRow>().ToList();
             Check("relaunch button", screen.GetNodeOrNull("SpireModManagerRelaunchButton") != null);
+            if (ModEntry.BetterModMenuLoaded) // dev.cs test --bmm
+            {
+                Check("steps aside for Better Mod Menu", screen.GetNodeOrNull("SpireModManagerBmmNotice") != null
+                    && screen.GetNodeOrNull("ModsBorder/SpireModManagerProfileBar") == null
+                    && !content.GetChildren().Any(c => c.IsInGroup("SpireModManagerCategoryHeader")));
+                await Capture(screen, outDir, "2-better-mod-menu");
+                return;
+            }
             Check("view toggle", screen.GetNodeOrNull("SpireModManagerViewToggle") != null);
             Check("profile bar", screen.GetNodeOrNull("ModsBorder/SpireModManagerProfileBar") != null);
             Check($"rows ({rows.Count}) match mods ({ModManager.Mods.Count})", rows.Count == ModManager.Mods.Count);
@@ -88,8 +96,11 @@ static class SelfTest
         {
             Results.Add($"FAIL exception: {e}");
         }
-        File.WriteAllLines(Path.Combine(outDir, "results.txt"), Results);
-        menu.GetTree().Quit();
+        finally
+        {
+            File.WriteAllLines(Path.Combine(outDir, "results.txt"), Results);
+            menu.GetTree().Quit();
+        }
     }
 
     // Row menu, new category renamed in place, assign, move, header menu, delete.
