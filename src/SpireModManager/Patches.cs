@@ -76,6 +76,13 @@ static class ModdingScreenPatch
             Log.Error($"[{ModEntry.ModId}] Could not add the relaunch button: {e}");
         }
 
+        // Better Mod Menu rebuilds this same screen; two managers on one list fight. Step aside and say so.
+        if (ModEntry.BetterModMenuLoaded)
+        {
+            ModEntry.AddBetterModMenuNotice(__instance);
+            return;
+        }
+
         try
         {
             ProfileBar.Attach(__instance);
@@ -119,6 +126,8 @@ static class ModInfoFillPatch
 {
     static void Postfix(NModInfoContainer __instance, Mod mod)
     {
+        if (ModEntry.BetterModMenuLoaded)
+            return;
         try
         {
             ModDetails.Fill(__instance, mod);
