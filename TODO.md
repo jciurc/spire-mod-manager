@@ -188,6 +188,7 @@ Jordan's notes of 2026-10-07, second batch (same file), plus play feedback.
 
 ## Category view (play feedback)
 
+- [ ] Revert all goes back to the state when the Modding page was opened (the profile, or the profile *edited), not launch
 - [ ] changed mods (since launch) shown in a different colour
 
 ## Backlog (round 2)
