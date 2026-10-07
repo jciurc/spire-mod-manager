@@ -146,6 +146,7 @@ static class ModToggledPatch
         {
             Profiles.Track();
             History.Record(); // a tickbox change (Track only saves when the active profile changed)
+            ModDetails.MarkChanged(__instance.GetNode("%ModsScrollContainer/Mask/Content").GetChildren().OfType<NModMenuRow>(), Store.Data.VanillaView);
             Layout.UpdateDot(__instance);
             if (LoadOrder.OrderChanged)
                 __instance.GetNode<Control>("%PendingChangesLabel").Visible = true;
