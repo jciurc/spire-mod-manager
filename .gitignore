@@ -2,4 +2,3 @@ out/
 bin/
 obj/
 *.pck
-__pycache__/
