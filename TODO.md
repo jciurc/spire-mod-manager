@@ -111,4 +111,4 @@ Jordan's notes of 2026-10-07 (from `spire manager notes.txt` in the scratch fold
 - [ ] saveable load order presets
 - [ ] show installed/removed mods that differ from preset
 - [ ] larger previewable screenshots on hover in details panel
-- [ ] (fix) relaunch button briefly loads new game instance in lower resolution windowed mode instead of fullscreen (borderless)
+- [x] (fix) relaunch button briefly loads new game instance in lower resolution windowed mode instead of fullscreen (borderless)
