@@ -19,12 +19,16 @@ static class Layout
     const string StyleMeta = "spire_mod_manager_original_style";
     const string FocusMeta = "spire_mod_manager_focus_release";
     const string FontMeta = "spire_mod_manager_original_font";
+    const string WatermarkMeta = "spire_mod_manager_watermark";
 
     // Screen-space boxes (left, top, right, bottom) in the game's 1920x1080 layout.
-    static readonly Vector4 ListBox = new(175, 80, 1215, 990);
-    static readonly Vector4 InfoBox = new(1290, 80, 1900, 990); // clear of the list's scrollbar (list right + 6..54)
-    static readonly Vector4 CentredListBox = new(400, 80, 1500, 990);
+    // The panels sit midway between the page title and the bottom row of buttons.
+    static readonly Vector4 ListBox = new(175, 72, 1080, 984);
+    static readonly Vector4 InfoBox = new(1155, 72, 1900, 984); // clear of the list's scrollbar (list right + 6..54)
+    static readonly Vector4 CentredListBox = new(400, 72, 1500, 984);
     public const float BottomRowY = 999; // top of the 70px-tall buttons along the bottom
+    public const float CornerX = 18; // the lower-left corner button (here and on the main menu)
+    const float PageLeft = 175, TitleTop = 10, TitleBottom = 62;
 
     // Text sizes in our views (the game's in brackets): rows 20 (32), info title 32 (60), info text 18 (24).
     public const int RowTitleSize = 20, RowTitleVanillaSize = 32;
@@ -38,15 +42,25 @@ static class Layout
         var view = Current;
         var list = screen.GetNode<Control>("ModsBorder");
         var info = screen.GetNode<Control>("%ModInfoContainer");
-        Place(list, view == View.LoadOrder ? CentredListBox : ListBox);
+        var listBox = view == View.LoadOrder ? CentredListBox : ListBox;
+        Place(list, listBox);
         Place(info, InfoBox);
         info.Visible = view != View.LoadOrder;
 
-        // Page title: ours, smaller, top-left; the game's in Vanilla View.
+        // Page title: ours, smaller, top-left at the same spot in both our views (it belongs to the list, so
+        // it's placed relative to it); the game's in Vanilla View.
         var title = list.GetNode<MegaRichTextLabel>("%InstalledModsTitle");
-        Place(title, new Vector4(0, -66, 700, -14));
+        var dx = PageLeft - listBox.X;
+        Place(title, new Vector4(dx, TitleTop - listBox.Y, dx + 700, TitleBottom - listBox.Y));
         ViewFont(title, PageTitleSize);
-        title.SetTextAutoSize(new LocString("settings_ui", Wide ? "SPIRE_MOD_MANAGER.PAGE_TITLE" : "MODDING_SCREEN.INSTALLED_MODS_TITLE").GetFormattedText());
+        var titleText = new LocString("settings_ui", Wide ? "SPIRE_MOD_MANAGER.PAGE_TITLE" : "MODDING_SCREEN.INSTALLED_MODS_TITLE").GetFormattedText();
+        title.SetTextAutoSize(titleText);
+        var titleEnd = PageLeft + title.GetThemeFont("normal_font").GetStringSize(titleText, fontSize: PageTitleSize).X;
+
+        // Load Order: its name centred over the list.
+        var viewTitle = screen.GetNodeOrNull<Label>("SpireModManagerViewTitle") ?? AddViewTitle(screen);
+        viewTitle.Visible = view == View.LoadOrder;
+        viewTitle.Position = new Vector2((listBox.X + listBox.Z) / 2 - viewTitle.Size.X / 2, TitleTop + 8);
         foreach (var name in new[] { "%MakeModsButton", "%GetModsButton" })
             list.GetNode<Control>(name).Visible = !Wide;
 
@@ -104,31 +118,35 @@ static class Layout
                 top.Visible = Wide;
         scroll.OffsetTop = Wide && (search ?? bar) is { } lowest ? lowest.OffsetBottom + 6 : (float)scroll.GetMeta(OriginalMeta);
 
-        // Bottom row. Categories: Vanilla Manager and Load Order on the left; Undo/Redo/Changes and Relaunch
-        // on the right. Load Order: Back on the left, the same right side. Vanilla: only "Spire Manager",
-        // in the corner where the main menu button sits.
-        var left = list.OffsetLeft;
+        // Bottom row, left: the view switch in the lower-left corner (where the main menu button sits):
+        // "Vanilla List" in our views, "Spire Manager" in Vanilla View; then Load Order, which reads "Return"
+        // in Load Order. Right: Undo/Redo/Revert, then Relaunch (Categories only; Load Order has no
+        // Relaunch and no restart line).
         var vanillaToggle = screen.GetNodeOrNull<Control>("SpireModManagerViewToggle");
         var orderToggle = screen.GetNodeOrNull<Control>("SpireModManagerLoadOrderToggle");
+        var leftEnd = PageLeft;
         if (vanillaToggle != null)
         {
-            vanillaToggle.Visible = view != View.LoadOrder;
-            vanillaToggle.Position = view == View.Vanilla ? new Vector2(18, 1080 - 16 - vanillaToggle.Size.Y) : new Vector2(left, BottomRowY);
+            vanillaToggle.Position = new Vector2(CornerX, BottomRowY);
+            leftEnd = vanillaToggle.Position.X + vanillaToggle.Size.X;
         }
         if (orderToggle != null)
         {
             orderToggle.Visible = view != View.Vanilla;
-            orderToggle.Position = new Vector2(view == View.LoadOrder ? left : left + 210, BottomRowY);
+            orderToggle.Position = new Vector2(leftEnd + 12, BottomRowY);
+            if (orderToggle.Visible)
+                leftEnd = orderToggle.Position.X + orderToggle.Size.X;
         }
         if (screen.GetNodeOrNull<Control>("SpireModManagerBmmNotice") is { } notice)
-            notice.Position = new Vector2(left, BottomRowY + 1);
+            notice.Position = new Vector2(PageLeft, BottomRowY + 1);
 
         var right = view == View.LoadOrder ? list.OffsetRight : info.OffsetRight;
         if (screen.GetNodeOrNull<Control>("SpireModManagerRelaunchButton") is { } relaunch)
         {
-            relaunch.Visible = Wide;
+            relaunch.Visible = view == View.Categories;
             relaunch.Position = new Vector2(right - relaunch.Size.X, BottomRowY);
-            right = relaunch.Position.X - 12;
+            if (relaunch.Visible)
+                right = relaunch.Position.X - 12;
         }
         if (screen.GetNodeOrNull<Control>(HistoryBar.BarName) is { } history)
         {
@@ -137,22 +155,58 @@ static class Layout
             right = history.Position.X - 12;
         }
 
-        // "Changes +4 -3": above the info panel's left edge; in Load Order, above the list's right end.
+        // "Changes +4 -3": just right of the page title, the same in both our views.
         if (screen.GetNodeOrNull<Control>(HistoryBar.ChangesName) is { } changes)
         {
             changes.Visible = Wide;
-            changes.Position = view == View.LoadOrder
-                ? new Vector2(list.OffsetRight - changes.Size.X, list.OffsetTop - 34)
-                : new Vector2(info.OffsetLeft + 4, info.OffsetTop - 34);
+            changes.Position = new Vector2(titleEnd + 28, TitleTop + 16);
         }
         History.NotifyChanged(); // the buttons act on this view's history
 
-        // The game's "takes effect after a restart" line fits between the left and right buttons in our
-        // views (its text shrinks to fit), and goes back to its own place in Vanilla View.
-        var leftEnd = new[] { vanillaToggle, orderToggle }.Where(c => c is { Visible: true })
-            .Select(c => c is { } button ? button.Position.X + button.Size.X : left).DefaultIfEmpty(left).Max() + 12;
-        Place(screen.GetNode<Control>("%PendingChangesLabel"), new Vector4(leftEnd, 1000, right, 1068));
+        // The game's "takes effect after a restart" line fits between the left and right buttons in
+        // Categories (its text shrinks to fit), and goes back to its own place in Vanilla View.
+        var pending = screen.GetNode<Control>("%PendingChangesLabel");
+        Place(pending, new Vector4(leftEnd + 12, 1000, right, 1068));
+        pending.Modulate = view == View.LoadOrder ? Colors.Transparent : Colors.White; // the game sets Visible itself
+        Watermark(screen);
         UpdateDot(screen);
+    }
+
+    // The game's version and date in the top-right corner are dark grey, made for its brighter menu art; on
+    // our darker pages they turn light, and back when the page closes or in Vanilla View.
+    static void Watermark(Control screen)
+    {
+        Label? label = null;
+        for (var node = screen.GetParent(); node != null && label == null; node = node.GetParent())
+            label = node.GetNodeOrNull<Label>("ReleaseInfo");
+        if (label is not { } release)
+            return;
+        // The scene tints it with self_modulate (black, 30%).
+        if (!release.HasMeta(OriginalMeta))
+            release.SetMeta(OriginalMeta, release.SelfModulate);
+        void Set(bool light) =>
+            release.SelfModulate = light ? new Color(1, 0.964706f, 0.886275f, 0.5f) : (Color)release.GetMeta(OriginalMeta);
+        Set(Wide && screen.IsVisibleInTree());
+        if (!screen.HasMeta(WatermarkMeta))
+        {
+            screen.SetMeta(WatermarkMeta, true);
+            screen.VisibilityChanged += () => Set(Wide && screen.IsVisibleInTree());
+            screen.TreeExiting += () => Set(false);
+        }
+    }
+
+    static Label AddViewTitle(Control screen)
+    {
+        var label = new Label
+        {
+            Name = "SpireModManagerViewTitle", Text = Menus.Text("SPIRE_MOD_MANAGER.LOAD_ORDER"), Size = new Vector2(500, 40),
+            HorizontalAlignment = HorizontalAlignment.Center, MouseFilter = Control.MouseFilterEnum.Ignore,
+        };
+        label.AddThemeFontOverride("font", ResourceLoader.Load<Font>("res://themes/kreon_bold_shared.tres"));
+        label.AddThemeFontSizeOverride("font_size", 26);
+        label.AddThemeColorOverride("font_color", new Color(0.937f, 0.784f, 0.318f));
+        screen.AddChild(label);
+        return label;
     }
 
     // Vanilla View: the game's notification dot on "Spire Manager" while a relaunch is pending.
