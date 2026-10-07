@@ -9,7 +9,8 @@ namespace SpireModManager;
 // Each view steps through its own (Load Order view: Order; the others: List). A snapshot of everything
 // is taken after each change; undoing restores only that history's part and leaves the other as it is
 // now, so undoing an order change never flips a tickbox back. View choices and collapsed categories
-// aren't edits. The first snapshot is the state this session loaded with ("Revert all", "Changes").
+// aren't edits. The first snapshot is the state this session loaded with ("Changes"); Revert all goes
+// back to the state when the Modding page was opened.
 static class History
 {
     public enum Track { List, Order }
@@ -33,6 +34,7 @@ static class History
     public static event Action? Changed;
 
     public static Snapshot? Loaded { get; private set; }
+    public static Snapshot? Entered { get; private set; }
     public static Switch? LastSwitch { get; private set; }
     public static string? LaunchProfile { get; private set; }
 
@@ -67,6 +69,28 @@ static class History
         _current = now;
         Changed?.Invoke();
     }
+
+    // The Modding page opened: what Revert all goes back to.
+    // The active profile is brought in line with the tickboxes first (it can lag behind, e.g. after mods were
+    // installed), as part of the current state rather than a step of its own.
+    public static void Enter()
+    {
+        _restoring = true;
+        try
+        {
+            Profiles.Track();
+        }
+        finally
+        {
+            _restoring = false;
+        }
+        Entered = Take();
+        if (_current != null)
+            _current = Entered;
+    }
+
+    // Nothing to revert: the mod list and our data are as they were when the page opened.
+    public static bool AtEntered => Entered is { } e && Take() is var now && now.Store == e.Store && SameStates(now, e) && SameOrder(now, e);
 
     public static void NoteSwitch(string from, string to) => LastSwitch = new Switch(from, to, CurrentMods());
 
@@ -104,14 +128,23 @@ static class History
         Changed?.Invoke();
     }
 
-    // The game's mod list as this session loaded it (on/off and order); our data stays as it is. Undoable,
-    // in both histories.
+    // Everything as it was when the Modding page was opened: the mod list (on/off and order) and our data,
+    // active profile included (so the same profile, edited or not). Undoable, in both histories.
     public static void RevertMods()
     {
-        if (Loaded == null)
+        if (Entered == null)
             return;
-        Apply(Loaded.Mods);
-        Profiles.Track(); // the active profile follows now, so it's part of this one undo step
+        _restoring = true; // one undo step for the lot, recorded below
+        try
+        {
+            Apply(Entered.Mods);
+            Store.RestoreEdits(Entered.Store);
+            Profiles.Track(); // the active profile follows the restored tickboxes
+        }
+        finally
+        {
+            _restoring = false;
+        }
         Record();
         Restored?.Invoke();
         Changed?.Invoke();
