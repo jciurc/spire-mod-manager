@@ -75,11 +75,7 @@ static class Profiles
                 entry.IsEnabled = enabled;
             }
             SaveManager.Instance.SaveSettings();
-
-            var content = screen.GetNode("%ModsScrollContainer/Mask/Content");
-            foreach (var row in content.GetChildren().OfType<NModMenuRow>())
-                if (row.Mod is { } mod)
-                    row.GetNode<NTickbox>("Tickbox").IsTicked = !settings.IsModDisabled(mod);
+            RefreshTickboxes(screen);
         }
         finally
         {
@@ -90,6 +86,17 @@ static class Profiles
         screen.OnModEnabledOrDisabled(); // pending-changes warning
         Switched?.Invoke();
     }
+
+    // Ticks the screen's tickboxes to match the saved mod list (setting them doesn't fire their toggle).
+    public static void RefreshTickboxes(NModdingScreen screen)
+    {
+        var settings = SaveManager.Instance.SettingsSave.ModSettings;
+        foreach (var row in screen.GetNode("%ModsScrollContainer/Mask/Content").GetChildren().OfType<NModMenuRow>())
+            if (row.Mod is { } mod)
+                row.GetNode<NTickbox>("Tickbox").IsTicked = !(settings?.IsModDisabled(mod) ?? false);
+    }
+
+    public static void NotifySwitched() => Switched?.Invoke();
 
     // A new profile starting from the current mod list.
     public static Profile Add(string? name = null)
