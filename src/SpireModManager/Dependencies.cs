@@ -1,0 +1,70 @@
+using MegaCrit.Sts2.Core.Modding;
+using MegaCrit.Sts2.Core.Saves;
+
+namespace SpireModManager;
+
+// Hard dependencies from each mod's manifest. The game loads a mod after everything it depends on,
+// whatever the saved order says, and fails it if a dependency isn't loaded. Order rules only bind mods
+// that are both switched on: disabled mods can sit anywhere.
+static class Dependencies
+{
+    public static IReadOnlyList<string> Of(Mod? mod) =>
+        mod?.manifest?.dependencies?.Select(d => d.id).ToList() ?? [];
+
+    public static bool IsOn(Mod mod) => !(SaveManager.Instance.SettingsSave.ModSettings?.IsModDisabled(mod) ?? false);
+
+    // The installed copy of a mod id, preferring one that is on.
+    public static Mod? Find(string id) =>
+        ModManager.Mods.Where(m => m.manifest?.id == id).OrderByDescending(IsOn).FirstOrDefault();
+
+    public enum Problem { None, Missing, Off, LoadsBefore }
+
+    // What's wrong with one dependency of an enabled mod, given the order (index per mod) it would load in.
+    public static Problem Check(Mod mod, string dependency, IReadOnlyDictionary<Mod, int> order)
+    {
+        if (Find(dependency) is not { } dep)
+            return Problem.Missing;
+        if (!IsOn(dep))
+            return Problem.Off;
+        return order.TryGetValue(dep, out var d) && order.TryGetValue(mod, out var m) && d > m ? Problem.LoadsBefore : Problem.None;
+    }
+
+    // Enabled mods placed before an enabled mod they need.
+    public static List<(Mod Mod, Mod Needs)> OrderViolations(IReadOnlyList<Mod> order)
+    {
+        var index = order.Select((m, i) => (m, i)).ToDictionary(p => p.m, p => p.i);
+        return order.Where(IsOn)
+            .SelectMany(m => Of(m).Select(Find).OfType<Mod>().Where(d => IsOn(d) && index.TryGetValue(d, out var i) && i > index[m])
+                .Select(d => (m, d)))
+            .ToList();
+    }
+
+    // The order with every enabled dependency moved just ahead of what needs it, otherwise keeping the
+    // current order (the same rule the game applies at launch: a stable topological sort).
+    public static List<Mod> Fixed(IReadOnlyList<Mod> order)
+    {
+        var position = order.Select((m, i) => (m, i)).ToDictionary(p => p.m, p => p.i);
+        var waitingOn = order.ToDictionary(m => m, m => IsOn(m)
+            ? Of(m).Select(Find).OfType<Mod>().Where(d => IsOn(d) && position.ContainsKey(d) && d != m).Distinct().Count()
+            : 0);
+        var dependents = order.ToDictionary(m => m, _ => new List<Mod>());
+        foreach (var m in order.Where(IsOn))
+            foreach (var d in Of(m).Select(Find).OfType<Mod>().Where(d => IsOn(d) && position.ContainsKey(d) && d != m).Distinct())
+                dependents[d].Add(m);
+
+        var ready = new PriorityQueue<Mod, int>();
+        foreach (var m in order.Where(m => waitingOn[m] == 0))
+            ready.Enqueue(m, position[m]);
+        var result = new List<Mod>();
+        while (ready.TryDequeue(out var m, out _))
+        {
+            result.Add(m);
+            foreach (var next in dependents[m])
+                if (--waitingOn[next] == 0)
+                    ready.Enqueue(next, position[next]);
+        }
+        // A dependency cycle leaves mods behind: keep them in their old order at the end.
+        result.AddRange(order.Where(m => !result.Contains(m)));
+        return result;
+    }
+}

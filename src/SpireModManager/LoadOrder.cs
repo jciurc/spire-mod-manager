@@ -15,6 +15,7 @@ static class LoadOrder
     const string NumberName = "SpireModManagerNumber";
     const float HandleWidth = 64; // the row title shifts right by this much in this view
     static readonly Color Gold = new(0.937f, 0.784f, 0.318f);
+    static readonly Color Blocked = new(0.9f, 0.25f, 0.25f);
     static List<string>? _loadedOrder;
 
     // The order this session loaded with, taken once the game has finished its own startup sorting.
@@ -58,37 +59,99 @@ static class LoadOrder
     // Moves a mod to a new position among the rows (0 = loads first) and saves the game's settings.
     public static void Move(Mod mod, int to, IList<NModMenuRow> rows)
     {
+        var mods = Mods(rows);
+        mods.Remove(mod);
+        mods.Insert(Math.Clamp(to, 0, mods.Count), mod);
+        Save(mods);
+    }
+
+    // The installed mods in saved order.
+    public static List<Mod> Mods(IEnumerable<NModMenuRow> rows)
+    {
+        var list = SaveManager.Instance.SettingsSave.ModSettings?.ModList ?? [];
+        return rows.Select(r => r.Mod).OfType<Mod>().OrderBy(m => IndexOf(m, list)).ToList();
+    }
+
+    // Would putting `mod` at `to` load it before something it needs, or after something that needs it?
+    // Only pairs that are both on count, and only pairs involving the moved mod (old problems elsewhere
+    // don't block unrelated moves).
+    public static bool MoveBreaks(Mod mod, int to, IList<NModMenuRow> rows)
+    {
+        if (!Dependencies.IsOn(mod))
+            return false;
+        int Involving(List<Mod> order) => Dependencies.OrderViolations(order).Count(v => v.Mod == mod || v.Needs == mod);
+        var order = Mods(rows);
+        var before = Involving(order);
+        order.Remove(mod);
+        order.Insert(Math.Clamp(to, 0, order.Count), mod);
+        return Involving(order) > before;
+    }
+
+    // Moves each needed mod just ahead of what needs it, keeping everything else in place.
+    public static void FixOrder(IList<NModMenuRow> rows) => Save(Dependencies.Fixed(Mods(rows)));
+
+    // Top, up, down, bottom; a move that would break a dependency is disabled.
+    // compact: the short labels used for the inline buttons on each row.
+    public static List<MenuItem> Actions(Control content, NModMenuRow row, Action redraw, bool compact = false)
+    {
+        var rows = content.GetChildren().OfType<NModMenuRow>().ToList();
+        var at = rows.IndexOf(row);
+        MenuItem Item(string key, int to) => new(Menus.Text(key + (compact ? "_SHORT" : "")), () =>
+        {
+            if (row.Mod is { } mod)
+                Move(mod, to, rows);
+            redraw();
+        }, Disabled: to < 0 || to >= rows.Count || to == at || (row.Mod is { } m && MoveBreaks(m, to, rows)));
+        return [
+            Item("SPIRE_MOD_MANAGER.MOVE_TO_TOP", 0),
+            Item("SPIRE_MOD_MANAGER.MOVE_UP", at - 1),
+            Item("SPIRE_MOD_MANAGER.MOVE_DOWN", at + 1),
+            Item("SPIRE_MOD_MANAGER.MOVE_TO_BOTTOM", rows.Count - 1),
+        ];
+    }
+
+    public static PopupMenu ShowRowMenu(Control content, NModMenuRow row, Action redraw) =>
+        Menus.Show(content, Actions(content, row, redraw));
+
+    // When enabled mods sit above mods they need: a red bar at the top of the list with a Fix button.
+    // The game reorders them at launch anyway; this makes the saved order say what will happen.
+    public static void AddBanner(Control content, List<NModMenuRow> rows, Action redraw, Action<Control> add)
+    {
+        var problems = Dependencies.OrderViolations(Mods(rows)).Select(v => v.Mod).Distinct().Count();
+        if (problems == 0)
+            return;
+        var banner = new PanelContainer { Name = "OrderBanner", CustomMinimumSize = new Vector2(0, 48) };
+        banner.AddThemeStyleboxOverride("panel", new StyleBoxFlat
+        {
+            BgColor = new Color(0.45f, 0.1f, 0.1f, 0.6f), ContentMarginLeft = 12, ContentMarginRight = 8,
+        });
+        var line = new HBoxContainer();
+        banner.AddChild(line);
+        var text = new Label { Text = Menus.Format("SPIRE_MOD_MANAGER.ORDER_PROBLEMS", ("count", problems.ToString())),
+            SizeFlagsHorizontal = Control.SizeFlags.ExpandFill, VerticalAlignment = VerticalAlignment.Center,
+            AutowrapMode = TextServer.AutowrapMode.WordSmart };
+        text.AddThemeFontOverride("font", ResourceLoader.Load<Font>("res://themes/kreon_regular_shared.tres"));
+        text.AddThemeFontSizeOverride("font_size", 18);
+        line.AddChild(text);
+        line.AddChild(Menus.SmallButton(Menus.Text("SPIRE_MOD_MANAGER.FIX_ORDER"), () =>
+        {
+            FixOrder(content.GetChildren().OfType<NModMenuRow>().ToList());
+            redraw();
+        }, name: "FixOrderButton"));
+        add(banner);
+    }
+
+    // Writes a whole new order: installed mods as given, then entries for mods that aren't installed.
+    static void Save(List<Mod> mods)
+    {
         if (SaveManager.Instance.SettingsSave.ModSettings is not { } settings)
             return;
         var list = settings.ModList;
-        var mods = rows.Select(r => r.Mod).OfType<Mod>().OrderBy(m => IndexOf(m, list)).ToList();
-        mods.Remove(mod);
-        mods.Insert(Math.Clamp(to, 0, mods.Count), mod);
-
-        // Installed mods in their new order first, then entries for mods that aren't installed.
         var entries = mods.Select(m => list.FirstOrDefault(e => e.Id == m.manifest?.id && e.Source == m.modSource) ?? new SettingsSaveMod(m)).ToList();
         entries.AddRange(list.Where(e => !entries.Contains(e)));
         list.Clear();
         list.AddRange(entries);
         SaveManager.Instance.SaveSettings();
-    }
-
-    public static PopupMenu ShowRowMenu(Control content, NModMenuRow row, Action redraw)
-    {
-        var rows = content.GetChildren().OfType<NModMenuRow>().ToList();
-        var at = rows.IndexOf(row);
-        void To(int index)
-        {
-            if (row.Mod is { } mod)
-                Move(mod, index, rows);
-            redraw();
-        }
-        return Menus.Show(content, [
-            new MenuItem(Menus.Text("SPIRE_MOD_MANAGER.MOVE_TO_TOP"), () => To(0), Disabled: at == 0),
-            new MenuItem(Menus.Text("SPIRE_MOD_MANAGER.MOVE_UP"), () => To(at - 1), Disabled: at == 0),
-            new MenuItem(Menus.Text("SPIRE_MOD_MANAGER.MOVE_DOWN"), () => To(at + 1), Disabled: at == rows.Count - 1),
-            new MenuItem(Menus.Text("SPIRE_MOD_MANAGER.MOVE_TO_BOTTOM"), () => To(rows.Count - 1), Disabled: at == rows.Count - 1),
-        ]);
     }
 
     // Position number and a grip on the left of the row. Dragging the grip moves the row: a gold line
@@ -139,8 +202,11 @@ static class LoadOrder
                     handle.AcceptEvent();
                     break;
                 case InputEventMouseMotion motion when dragging && marker != null:
-                    var (_, y) = Target(content, motion.GlobalPosition.Y);
+                    var (gap, y) = Target(content, motion.GlobalPosition.Y);
                     marker.GlobalPosition = new Vector2(content.GlobalPosition.X, y - 1);
+                    // Red where dropping would load it before something it needs (or after something needing it).
+                    marker.Color = Destination(gap) is { } at && row.Mod is { } moving
+                        && MoveBreaks(moving, at, content.GetChildren().OfType<NModMenuRow>().ToList()) ? Blocked : Gold;
                     handle.AcceptEvent();
                     break;
                 case InputEventMouseButton { ButtonIndex: MouseButton.Left, Pressed: false } release when dragging:
@@ -148,17 +214,23 @@ static class LoadOrder
                     marker?.QueueFree();
                     marker = null;
                     var rows = content.GetChildren().OfType<NModMenuRow>().ToList();
-                    var (to, _) = Target(content, release.GlobalPosition.Y);
-                    var from = rows.IndexOf(row);
-                    if (row.Mod is { } mod && to != from && to != from + 1)
+                    if (Destination(Target(content, release.GlobalPosition.Y).Index) is { } to && row.Mod is { } mod
+                        && !MoveBreaks(mod, to, rows))
                     {
-                        Move(mod, to > from ? to - 1 : to, rows);
+                        Move(mod, to, rows);
                         redraw();
                     }
                     handle.AcceptEvent();
                     break;
             }
         };
+
+        // The index the row would take after leaving its slot, or null for its own gap.
+        int? Destination(int gap)
+        {
+            var from = content.GetChildren().OfType<NModMenuRow>().ToList().IndexOf(row);
+            return gap == from || gap == from + 1 ? null : gap > from ? gap - 1 : gap;
+        }
     }
 
 
