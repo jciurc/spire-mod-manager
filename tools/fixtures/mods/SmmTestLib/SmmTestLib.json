@@ -1,0 +1,11 @@
+{
+  "id": "SmmTestLib",
+  "name": "Test Framework",
+  "author": "Spire Mod Manager tests",
+  "description": "Empty mod for dev-sandbox tests.",
+  "version": "1.0.0",
+  "has_pck": false,
+  "has_dll": false,
+  "affects_gameplay": true,
+  "dependencies": []
+}
