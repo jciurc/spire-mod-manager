@@ -13,7 +13,10 @@ static class LoadOrder
 {
     const string HandleName = "SpireModManagerHandle";
     const string NumberName = "SpireModManagerNumber";
-    const float HandleWidth = 64; // the row title shifts right by this much in this view
+    const float HandleWidth = 84; // the row title shifts right by this much in this view
+    const float LinkGutter = 18; // left strip for the dependency lines
+    const string LinkGroup = "SpireModManagerLinks";
+    const string DraggingMeta = "spire_mod_manager_dragging";
     static readonly Color Gold = new(0.937f, 0.784f, 0.318f);
     static readonly Color Blocked = new(0.9f, 0.25f, 0.25f);
     static List<string>? _loadedOrder;
@@ -166,11 +169,12 @@ static class LoadOrder
         }
         row.GetNode<Control>("Title").OffsetLeft += HandleWidth;
 
+        // Left to right: the link gutter (dependency lines), the grip, the position number, then the title.
         number = new Label
         {
             Name = NumberName, Text = position.ToString(), HorizontalAlignment = HorizontalAlignment.Right,
             VerticalAlignment = VerticalAlignment.Center, MouseFilter = Control.MouseFilterEnum.Ignore,
-            Position = new Vector2(30, 0), Size = new Vector2(30, 72),
+            AnchorBottom = 1, OffsetLeft = LinkGutter + 30, OffsetRight = LinkGutter + 56,
         };
         number.AddThemeColorOverride("font_color", new Color(Gold, 0.8f));
         number.AddThemeFontSizeOverride("font_size", 20);
@@ -179,16 +183,29 @@ static class LoadOrder
         // Three short bars: the usual "grab here" grip. Stops the mouse so dragging it doesn't scroll the list.
         var handle = new Control
         {
-            Name = HandleName, Position = new Vector2(0, 0), Size = new Vector2(30, 72),
+            Name = HandleName, AnchorBottom = 1, OffsetLeft = LinkGutter, OffsetRight = LinkGutter + 30,
             MouseFilter = Control.MouseFilterEnum.Stop, MouseDefaultCursorShape = Control.CursorShape.Move,
         };
         for (var i = 0; i < 3; i++)
             handle.AddChild(new ColorRect
             {
-                Color = new Color(Gold, 0.7f), Position = new Vector2(6, 27 + i * 8), Size = new Vector2(18, 3),
+                Color = new Color(Gold, 0.7f), AnchorTop = 0.5f, AnchorBottom = 0.5f,
+                OffsetLeft = 6, OffsetRight = 24, OffsetTop = -9 + i * 8, OffsetBottom = -6 + i * 8,
                 MouseFilter = Control.MouseFilterEnum.Ignore,
             });
         row.AddChild(handle);
+
+        // Hover: show how this mod is linked to others.
+        row.MouseEntered += () =>
+        {
+            if (!content.HasMeta(DraggingMeta))
+                ShowLinks(content, row, strong: false);
+        };
+        row.MouseExited += () =>
+        {
+            if (!content.HasMeta(DraggingMeta))
+                HideLinks(content);
+        };
 
         var dragging = false;
         ColorRect? marker = null;
@@ -198,13 +215,16 @@ static class LoadOrder
             {
                 case InputEventMouseButton { ButtonIndex: MouseButton.Left, Pressed: true }:
                     dragging = true;
-                    marker = new ColorRect { Color = Gold, Size = new Vector2(content.Size.X, 3), MouseFilter = Control.MouseFilterEnum.Ignore };
+                    marker = new ColorRect { Color = Gold, Size = new Vector2(content.Size.X, 5), MouseFilter = Control.MouseFilterEnum.Ignore };
                     content.GetParent().AddChild(marker); // the scroll mask: not a container, so it can sit anywhere
+                    BeginDragLook(content, row);
                     handle.AcceptEvent();
                     break;
                 case InputEventMouseMotion motion when dragging && marker != null:
                     var (gap, y) = Target(content, motion.GlobalPosition.Y);
-                    marker.GlobalPosition = new Vector2(content.GlobalPosition.X, y - 1);
+                    // Kept inside the list's visible area (it clips), so the gap above the first row still shows.
+                    var top = content.GetParent<Control>().GlobalPosition.Y;
+                    marker.GlobalPosition = new Vector2(content.GlobalPosition.X, Math.Max(y - 2, top));
                     // Red where dropping would load it before something it needs (or after something needing it).
                     marker.Color = Destination(gap) is { } at && row.Mod is { } moving
                         && MoveBreaks(moving, at, content.GetChildren().OfType<NModMenuRow>().ToList()) ? Blocked : Gold;
@@ -214,6 +234,7 @@ static class LoadOrder
                     dragging = false;
                     marker?.QueueFree();
                     marker = null;
+                    EndDragLook(content);
                     var rows = content.GetChildren().OfType<NModMenuRow>().ToList();
                     if (Destination(Target(content, release.GlobalPosition.Y).Index) is { } to && row.Mod is { } mod
                         && !MoveBreaks(mod, to, rows))
@@ -234,6 +255,64 @@ static class LoadOrder
         }
     }
 
+
+    // Mods linked to this one by a dependency, either way, among the shown rows.
+    static List<NModMenuRow> Linked(Control content, NModMenuRow row)
+    {
+        if (row.Mod?.manifest?.id is not { } id)
+            return [];
+        var needs = Dependencies.Of(row.Mod).ToHashSet();
+        return content.GetChildren().OfType<NModMenuRow>()
+            .Where(r => r != row && r.Visible && r.Mod?.manifest?.id is { } other
+                && (needs.Contains(other) || Dependencies.Of(r.Mod).Contains(id)))
+            .ToList();
+    }
+
+    // Tree-style lines in the left gutter from this row to each linked row: out from the row, along
+    // the gutter, into the other row. Each link gets its own lane so they don't overlap.
+    public static void ShowLinks(Control content, NModMenuRow row, bool strong)
+    {
+        HideLinks(content);
+        var mask = content.GetParent<Control>();
+        float CenterY(Control r) => r.GetGlobalRect().GetCenter().Y - mask.GlobalPosition.Y;
+        var linked = Linked(content, row);
+        for (var i = 0; i < linked.Count; i++)
+        {
+            var lane = 4 + Math.Min(i, 3) * 3;
+            var line = new Line2D
+            {
+                Width = strong ? 3 : 2, DefaultColor = new Color(Gold, strong ? 1f : 0.55f),
+                Points = [new(LinkGutter, CenterY(row)), new(lane, CenterY(row)), new(lane, CenterY(linked[i])), new(LinkGutter, CenterY(linked[i]))],
+            };
+            line.AddToGroup(LinkGroup);
+            mask.AddChild(line);
+        }
+    }
+
+    public static void HideLinks(Control content)
+    {
+        foreach (var line in content.GetParent().GetChildren().Where(c => c.IsInGroup(LinkGroup)))
+            line.QueueFree();
+    }
+
+    // While dragging: the list dims, the dragged row and every row linked to it stay lit, links drawn strong.
+    static void BeginDragLook(Control content, NModMenuRow row)
+    {
+        content.SetMeta(DraggingMeta, true);
+        var lit = Linked(content, row).Append(row).ToHashSet();
+        foreach (var r in content.GetChildren().OfType<NModMenuRow>())
+            r.Modulate = lit.Contains(r) ? Colors.White : new Color(1, 1, 1, 0.35f);
+        row.Modulate = new Color(1.25f, 1.2f, 1.05f); // the one being moved, a touch brighter
+        ShowLinks(content, row, strong: true);
+    }
+
+    static void EndDragLook(Control content)
+    {
+        content.RemoveMeta(DraggingMeta);
+        foreach (var r in content.GetChildren().OfType<NModMenuRow>())
+            r.Modulate = Colors.White;
+        HideLinks(content);
+    }
 
     // The gap the mouse is nearest: the index a dropped row would take, and that gap's screen y.
     static (int Index, float Y) Target(Control content, float mouseY)
