@@ -52,6 +52,7 @@ static class CategoryList
         var rows = content.GetChildren().OfType<NModMenuRow>()
             .OrderBy(r => r.Mod is { } mod && order.TryGetValue(mod, out var i) ? i : int.MaxValue)
             .ToList();
+        ModDetails.ApplyRowTitles(rows, Store.Data.VanillaView);
 
         // Right-click a row to pick its category. Rows outlive Apply, so connect once.
         foreach (var row in rows.Where(r => !r.HasMeta(RowMenuMeta)))

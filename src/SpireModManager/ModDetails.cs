@@ -1,0 +1,169 @@
+using Godot;
+using MegaCrit.Sts2.Core.Modding;
+using MegaCrit.Sts2.Core.Nodes.GodotExtensions;
+using MegaCrit.Sts2.Core.Nodes.Screens.ModdingScreen;
+using MegaCrit.Sts2.Core.Platform;
+using MegaCrit.Sts2.addons.mega_text;
+
+namespace SpireModManager;
+
+// The player's alias and notes for a mod, kept visibly apart from the author's own text:
+// - rows show the alias with the original name small and dim beside it (not in Vanilla View);
+// - the info panel titles with the alias, lists the original name, and adds a "Your notes" section
+//   in its own colour, plus Edit Notes and Workshop Page buttons along the bottom.
+static class ModDetails
+{
+    const string NotesColor = "#9fd8ff"; // player-written text: light blue, never the author's cream/gold
+    static readonly Color Cream = new(1, 0.964706f, 0.886275f);
+    static readonly Color Gold = new(0.937f, 0.784f, 0.318f);
+
+    // After the game fills the panel for a mod.
+    public static void Fill(NModInfoContainer container, Mod mod)
+    {
+        var id = mod.manifest?.id;
+        var info = Store.InfoFor(id);
+        var name = mod.manifest?.name ?? id ?? "";
+        var title = container.GetNode<MegaRichTextLabel>("ModTitle");
+        var description = container.GetNode<MegaRichTextLabel>("ModDescription");
+        if (info?.Alias is { } alias)
+        {
+            title.Text = alias;
+            description.Text = $"[gold]{Menus.Text("SPIRE_MOD_MANAGER.NAME")}[/gold]: {name}\n{description.Text}";
+        }
+        if (info?.Notes is { } notes)
+            description.Text += $"\n[color={NotesColor}][b]{Menus.Text("SPIRE_MOD_MANAGER.YOUR_NOTES")}[/b]\n{notes}[/color]\n";
+
+        // The buttons are made once per panel and read the shown mod from the panel's metadata.
+        container.SetMeta(ModIdMeta, id ?? "");
+        container.SetMeta(ModNameMeta, name);
+        container.SetMeta(WorkshopIdMeta, mod.workshopId?.ToString() ?? "");
+        var edit = container.GetNodeOrNull<NButton>("EditNotesButton") ?? AddButton(container, "EditNotesButton",
+            "SPIRE_MOD_MANAGER.EDIT_NOTES", 20, () => OpenEditor(container, Meta(container, ModIdMeta), Meta(container, ModNameMeta)));
+        var workshop = container.GetNodeOrNull<NButton>("WorkshopPageButton") ?? AddButton(container, "WorkshopPageButton",
+            "SPIRE_MOD_MANAGER.WORKSHOP_PAGE", 426,
+            () => PlatformUtil.OpenUrl($"https://steamcommunity.com/sharedfiles/filedetails/?id={Meta(container, WorkshopIdMeta)}"));
+        edit.Visible = id != null;
+        workshop.Visible = mod.workshopId != null;
+    }
+
+    const string ModIdMeta = "spire_mod_manager_mod_id";
+    const string ModNameMeta = "spire_mod_manager_mod_name";
+    const string WorkshopIdMeta = "spire_mod_manager_workshop_id";
+
+    static string Meta(Node node, string key) => node.HasMeta(key) ? (string)node.GetMeta(key) : "";
+
+    // Inside the info panel's bottom edge (901 tall); the game's description is shortened to end above them.
+    const float ButtonTop = 821, DescriptionBottom = 812;
+
+    static NButton AddButton(Control parent, string name, string locKey, float x, Action onPressed)
+    {
+        var button = ModEntry.AddButton(parent, locKey, new Vector2(220, 64), onPressed);
+        button.Name = name;
+        button.Position = new Vector2(x, ButtonTop);
+        if (parent.GetNodeOrNull<Control>("ModDescription") is { } description && description.OffsetBottom > DescriptionBottom)
+            description.OffsetBottom = DescriptionBottom;
+        return button;
+    }
+
+    // Alias and notes editor laid over the info panel. Save stores and refreshes; Cancel leaves things as they were.
+    public static Control? OpenEditor(NModInfoContainer container, string modId, string originalName)
+    {
+        if (modId.Length == 0 || container.HasNode("NotesEditor"))
+            return null;
+        var info = Store.InfoFor(modId);
+        var editor = new Panel { Name = "NotesEditor" };
+        editor.AddThemeStyleboxOverride("panel", new StyleBoxFlat { BgColor = new Color(0.0756f, 0.12084f, 0.18f, 0.98f) });
+        container.AddChild(editor);
+        editor.SetAnchorsPreset(Control.LayoutPreset.FullRect);
+        // The panel's own text draws over anything added to it, so hide it while editing.
+        var covered = container.GetChildren().OfType<CanvasItem>().Where(c => c != editor && c.Visible).ToList();
+        foreach (var item in covered)
+            item.Visible = false;
+        editor.TreeExiting += () =>
+        {
+            foreach (var item in covered.Where(GodotObject.IsInstanceValid))
+                item.Visible = true;
+        };
+
+        var y = 24f;
+        Label Caption(string key)
+        {
+            var label = new Label { Text = Menus.Text(key), Position = new Vector2(24, y) };
+            Style(label, "res://themes/kreon_bold_shared.tres", 28, Gold);
+            editor.AddChild(label);
+            y += 44;
+            return label;
+        }
+
+        Caption("SPIRE_MOD_MANAGER.ALIAS");
+        var alias = new LineEdit
+        {
+            Name = "Alias", Text = info?.Alias ?? "", PlaceholderText = originalName, MaxLength = 80,
+            Position = new Vector2(24, y), Size = new Vector2(618, 52),
+        };
+        Style(alias, "res://themes/kreon_regular_shared.tres", 26, Cream);
+        editor.AddChild(alias);
+        y += 76;
+
+        Caption("SPIRE_MOD_MANAGER.YOUR_NOTES");
+        var notes = new TextEdit
+        {
+            Name = "Notes", Text = info?.Notes ?? "", WrapMode = TextEdit.LineWrappingMode.Boundary,
+            Position = new Vector2(24, y), Size = new Vector2(618, ButtonTop - y - 16),
+        };
+        Style(notes, "res://themes/kreon_regular_shared.tres", 24, new Color(NotesColor));
+        editor.AddChild(notes);
+
+        AddButton(editor, "SaveButton", "SPIRE_MOD_MANAGER.SAVE", 20, () =>
+        {
+            Save(modId, alias.Text, notes.Text);
+            editor.QueueFree();
+            Refresh(container, modId);
+        });
+        AddButton(editor, "CancelButton", "SPIRE_MOD_MANAGER.CANCEL", 426, editor.QueueFree);
+        alias.GrabFocus();
+        return editor;
+    }
+
+    // Empty text clears the alias or notes. A mod with nothing left keeps its category.
+    public static void Save(string modId, string alias, string notes)
+    {
+        if (!Store.Data.Mods.TryGetValue(modId, out var info))
+            Store.Data.Mods[modId] = info = new ModInfo();
+        info.Alias = alias.Trim() is { Length: > 0 } a ? a : null;
+        info.Notes = notes.Trim() is { Length: > 0 } n ? n : null;
+        Store.Save();
+    }
+
+    // Row titles: the alias with the original name beside it, or just the name in Vanilla View.
+    public static void ApplyRowTitles(IEnumerable<NModMenuRow> rows, bool vanilla)
+    {
+        foreach (var row in rows)
+        {
+            var name = row.Mod?.manifest?.name ?? row.Mod?.manifest?.id ?? "";
+            var title = row.GetNode<RichTextLabel>("Title");
+            var alias = vanilla ? null : Store.InfoFor(row.Mod?.manifest?.id)?.Alias;
+            title.BbcodeEnabled = alias != null;
+            title.Text = alias == null ? name : $"{Escape(alias)}  [color=#fff6e280][font_size=20]{Escape(name)}[/font_size][/color]";
+        }
+    }
+
+    // Row titles and the panel, after an edit.
+    static void Refresh(NModInfoContainer container, string modId)
+    {
+        if (container.GetParent()?.GetNodeOrNull<Control>("%ModsScrollContainer/Mask/Content") is not { } content)
+            return;
+        CategoryList.Apply(content);
+        if (content.GetChildren().OfType<NModMenuRow>().FirstOrDefault(r => r.Mod?.manifest?.id == modId)?.Mod is { } mod)
+            container.Fill(mod);
+    }
+
+    static string Escape(string text) => text.Replace("[", "[lb]");
+
+    static void Style(Control control, string font, int size, Color color)
+    {
+        control.AddThemeFontOverride("font", ResourceLoader.Load<Font>(font));
+        control.AddThemeFontSizeOverride("font_size", size);
+        control.AddThemeColorOverride("font_color", color);
+    }
+}
