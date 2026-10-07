@@ -17,6 +17,7 @@
     <Reference Include="sts2" HintPath="$(GameData)\sts2.dll" Private="false" />
     <Reference Include="GodotSharp" HintPath="$(GameData)\GodotSharp.dll" Private="false" />
     <Reference Include="0Harmony" HintPath="$(GameData)\0Harmony.dll" Private="false" />
+    <Reference Include="Steamworks.NET" HintPath="$(GameData)\Steamworks.NET.dll" Private="false" />
   </ItemGroup>
 
 </Project>

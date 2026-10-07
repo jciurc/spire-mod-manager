@@ -66,6 +66,14 @@ static class ModDetails
         var facts = Line("SPIRE_MOD_MANAGER.SOURCE", mod.workshopId is { } ws
             ? Menus.Format("SPIRE_MOD_MANAGER.SOURCE_WORKSHOP", ("id", ws.ToString()))
             : Menus.Text("SPIRE_MOD_MANAGER.SOURCE_LOCAL"));
+        if (WorkshopInfo.For(mod) is { } workshop)
+        {
+            facts += Line("SPIRE_MOD_MANAGER.UPDATED", $"{workshop.Updated:yyyy-MM-dd} ({Menus.Format("SPIRE_MOD_MANAGER.DAYS_AGO",
+                ("days", ((int)(DateTime.Now - workshop.Updated).TotalDays).ToString()))})");
+            facts += Line("SPIRE_MOD_MANAGER.PUBLISHED", $"{workshop.Created:yyyy-MM-dd}");
+            if (workshop.Tags.Count > 0)
+                facts += Line("SPIRE_MOD_MANAGER.WORKSHOP_TAGS", string.Join(", ", workshop.Tags));
+        }
         if (mod.state is ModLoadState.Failed or ModLoadState.DisabledDuplicate)
             facts += Line("SPIRE_MOD_MANAGER.STATE", Menus.Text(mod.state == ModLoadState.Failed
                 ? "SPIRE_MOD_MANAGER.STATE_FAILED" : "SPIRE_MOD_MANAGER.STATE_DUPLICATE"));
