@@ -231,10 +231,13 @@ static class SelfTest
             return;
         editor.GetNode<LineEdit>("Alias").Text = "Fixes";
         editor.GetNode<TextEdit>("Notes").Text = "Typed in the editor";
+        editor.GetNode<LineEdit>("Tags").Text = "co-op, Favorites, co-op";
         await Capture(screen, outDir, "9-notes-editor");
         Click(editor.GetNode<NButton>("SaveButton"));
         await Wait(menu, 0.5);
         Check("save stores alias and notes", Store.InfoFor("LocalModFixes") is { Alias: "Fixes", Notes: "Typed in the editor" });
+        Check("save stores tags, repeats dropped", Store.InfoFor("LocalModFixes")?.Tags?.SequenceEqual(["co-op", "Favorites"]) == true,
+            string.Join(", ", Store.InfoFor("LocalModFixes")?.Tags ?? []));
         Check("save updates row and panel", RowTitle("LocalModFixes").StartsWith("Fixes")
             && panel.GetNode<RichTextLabel>("ModDescription").Text.Contains("Typed in the editor"));
         Check("Vanilla View shows plain names", await WithVanillaView(screen, menu, () => RowTitle(ModEntry.ModId) == "Spire Mod Manager"));
@@ -257,6 +260,12 @@ static class SelfTest
         await Capture(screen, outDir, "10-search");
         var byAlias = await Shown("the manager");
         Check("search by alias", byAlias.SequenceEqual([ModEntry.ModId]), string.Join(", ", byAlias));
+        var byTag = await Shown("favorites");
+        Check("search by own tag", byTag.SequenceEqual(["LocalModFixes"]), string.Join(", ", byTag));
+        var libraries = await Shown("library");
+        Check("search by automatic tag", libraries.SequenceEqual(["SmmTestLib"]), string.Join(", ", libraries));
+        Check("automatic tags", Tags.For(Dependencies.Find("SmmTestLib")).Select(c => c.Text).SequenceEqual(["Gameplay", "Library"])
+            && Tags.For(Dependencies.Find("SmmTestUi")).Select(c => c.Text).SequenceEqual(["Visual only"]));
         var none = await Shown("zzz no such mod");
         Check("no match hides every row and header", none.Count == 0
             && !content.GetChildren().OfType<Control>().Any(c => c.IsInGroup("SpireModManagerCategoryHeader") && c.Visible));
