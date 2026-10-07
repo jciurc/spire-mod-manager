@@ -17,6 +17,7 @@ static class CategoryList
     const float DragThreshold = 12; // a press that moves further than this is a scroll, not a click
     const string RowMenuMeta = "spire_mod_manager_menu";
     const string CategoryMeta = "spire_mod_manager_category"; // on headers: the category name, "" for Uncategorized
+    public const string FilterMeta = "spire_mod_manager_filter"; // on the row container: the search text
 
     public static void Attach(NModdingScreen screen)
     {
@@ -65,12 +66,17 @@ static class CategoryList
             };
         }
 
+        // Search: rows that don't match hide; while searching, categories open to show their matches.
+        var filter = content.HasMeta(FilterMeta) ? (string)content.GetMeta(FilterMeta) : "";
+        var filtering = filter.Length > 0;
+        bool Matches(NModMenuRow row) => !filtering || Search.Matches(row.Mod, filter);
+
         if (Store.Data.VanillaView)
         {
             for (var i = 0; i < rows.Count; i++)
             {
                 content.MoveChild(rows[i], i);
-                rows[i].Visible = true;
+                rows[i].Visible = Matches(rows[i]);
             }
             return;
         }
@@ -90,6 +96,15 @@ static class CategoryList
 
         void AddSection(string title, List<NModMenuRow> members, bool collapsed, Action<bool> setCollapsed, Category? category = null)
         {
+            if (filtering && !members.Any(Matches))
+            {
+                foreach (var row in members)
+                {
+                    content.MoveChild(row, index++);
+                    row.Visible = false;
+                }
+                return;
+            }
             var muted = category == null;
             var header = ResourceLoader.Load<PackedScene>(HeaderScenePath).Instantiate<Control>();
             Add(header);
@@ -103,15 +118,16 @@ static class CategoryList
                 titleLabel.AddThemeColorOverride("font_color", new Color(1, 0.964706f, 0.886275f, 0.7f));
                 header.GetNode<ColorRect>("Background").Color = new Color(0.0756f, 0.12084f, 0.18f, 0.3f);
             }
-            header.GetNode<Label>("Count").Text = members.Count.ToString();
+            header.GetNode<Label>("Count").Text = (filtering ? members.Count(Matches) : members.Count).ToString();
             foreach (var row in members)
                 content.MoveChild(row, index++);
 
             void Show(bool isCollapsed)
             {
-                header.GetNode<Control>("Arrow").RotationDegrees = isCollapsed ? 0 : 90;
+                var open = filtering || !isCollapsed;
+                header.GetNode<Control>("Arrow").RotationDegrees = open ? 90 : 0;
                 foreach (var row in members)
-                    row.Visible = !isCollapsed;
+                    row.Visible = open && Matches(row);
             }
             Show(collapsed);
 
@@ -146,7 +162,7 @@ static class CategoryList
         var uncategorized = rows.Where(r => CategoryOf(r) == null).ToList();
         if (uncategorized.Count == 0)
             return;
-        if (categories.Count > 0)
+        if (categories.Count > 0 && !filtering)
             Add(Divider());
         AddSection(Menus.Text("SPIRE_MOD_MANAGER.UNCATEGORIZED"), uncategorized,
             Store.Data.UncategorizedCollapsed, c => Store.Data.UncategorizedCollapsed = c);

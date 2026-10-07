@@ -91,6 +91,7 @@ static class SelfTest
             await TestCategories(menu, screen, content, outDir);
             await TestProfileEditing(menu, screen, outDir);
             await TestNotes(menu, screen, content, outDir);
+            await TestSearch(menu, screen, content, outDir);
         }
         catch (Exception e)
         {
@@ -230,6 +231,30 @@ static class SelfTest
         Check("save updates row and panel", RowTitle("LocalModFixes").StartsWith("Fixes")
             && panel.GetNode<RichTextLabel>("ModDescription").Text.Contains("Typed in the editor"));
         Check("Vanilla View shows plain names", await WithVanillaView(screen, menu, () => RowTitle(ModEntry.ModId) == "Spire Mod Manager"));
+    }
+
+    // By name, by alias (fixture: "The Manager"), no match, then cleared.
+    static async Task TestSearch(Node menu, NModdingScreen screen, Control content, string outDir)
+    {
+        var box = screen.GetNode<LineEdit>("ModsBorder/SpireModManagerSearch");
+        async Task<List<string>> Shown(string text)
+        {
+            box.Text = text;
+            box.EmitSignal(LineEdit.SignalName.TextChanged, text);
+            await Wait(menu, 0.3);
+            return content.GetChildren().OfType<NModMenuRow>().Where(r => r.Visible).Select(r => r.Mod?.manifest?.id ?? "").ToList();
+        }
+
+        var byName = await Shown("mod fixes");
+        Check("search by name", byName.SequenceEqual(["LocalModFixes"]), string.Join(", ", byName));
+        await Capture(screen, outDir, "10-search");
+        var byAlias = await Shown("the manager");
+        Check("search by alias", byAlias.SequenceEqual([ModEntry.ModId]), string.Join(", ", byAlias));
+        var none = await Shown("zzz no such mod");
+        Check("no match hides every row and header", none.Count == 0
+            && !content.GetChildren().OfType<Control>().Any(c => c.IsInGroup("SpireModManagerCategoryHeader") && c.Visible));
+        var cleared = await Shown("");
+        Check("clearing restores the list", cleared.Count > 0);
     }
 
     static async Task<bool> WithVanillaView(NModdingScreen screen, Node menu, Func<bool> check)
