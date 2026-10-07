@@ -7,5 +7,7 @@ so mod toggles apply without going through Steam (`NGame.Quit` saves first, then
 starts a new copy with the same arguments; the child inherits `SteamAppId`).
 
 - `affects_gameplay: false`, no dependencies.
-- Build and install: `python build.py` (needs the .NET 9 SDK; close the game first). `--no-install` only builds.
+- Build and install: `dotnet run build.cs` (needs the .NET 10 SDK; close the game first). `--no-install` only builds.
+- Dev runs, apart from real play (no Steam, separate save data): `dotnet run tools/dev.cs test` runs the in-game
+  self-test against a fixture; `dotnet run tools/dev.cs launch` opens the game in the sandbox to try things by hand.
 - Player text lives in `localization/<lang>/*.json`, packed into `SpireModManager.pck`.
