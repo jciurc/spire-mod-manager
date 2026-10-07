@@ -92,6 +92,7 @@ static class SelfTest
             await TestProfileEditing(menu, screen, outDir);
             await TestNotes(menu, screen, content, outDir);
             await TestSearch(menu, screen, content, outDir);
+            await TestLoadOrder(menu, screen, content, outDir);
         }
         catch (Exception e)
         {
@@ -255,6 +256,62 @@ static class SelfTest
             && !content.GetChildren().OfType<Control>().Any(c => c.IsInGroup("SpireModManagerCategoryHeader") && c.Visible));
         var cleared = await Shown("");
         Check("clearing restores the list", cleared.Count > 0);
+    }
+
+    // Load Order view: rows in the saved order with handles; move by menu action and by dragging a handle
+    // (real mouse events into its input handler); restore; back to categories.
+    static async Task TestLoadOrder(Node menu, NModdingScreen screen, Control content, string outDir)
+    {
+        List<NModMenuRow> Rows() => content.GetChildren().OfType<NModMenuRow>().ToList();
+        List<string> Ids() => Rows().Select(r => r.Mod?.manifest?.id ?? "").ToList();
+        List<string> Saved() => SaveManager.Instance.SettingsSave.ModSettings?.ModList
+            .Select(m => m.Id).Where(id => Ids().Contains(id)).ToList() ?? [];
+        var pending = screen.GetNode<Control>("%PendingChangesLabel");
+
+        Click(screen.GetNode<NButton>("SpireModManagerLoadOrderToggle"));
+        await Wait(menu, 0.5);
+        var start = Ids();
+        Check("load order view: saved order, handles, no headers", start.SequenceEqual(Saved())
+            && Rows().All(r => r.HasNode("SpireModManagerHandle"))
+            && !content.GetChildren().Any(c => c.IsInGroup("SpireModManagerCategoryHeader")), string.Join(", ", start));
+        Check("nothing pending before moving", !pending.Visible && !ModEntry.HasPendingChanges());
+
+        var last = Rows()[^1];
+        if (last.Mod is { } lastMod)
+            LoadOrder.Move(lastMod, 0, Rows());
+        CategoryList.Redraw(content);
+        await Wait(menu, 0.5);
+        Check("move to top saves the order", Ids()[0] == start[^1] && Saved()[0] == start[^1], string.Join(", ", Ids()));
+        Check("an order change is pending", pending.Visible && ModEntry.HasPendingChanges());
+
+        // Drag the first row's handle to just below the third row.
+        var first = Rows()[0];
+        var handle = first.GetNode<Control>("SpireModManagerHandle");
+        var from = handle.GetGlobalRect().GetCenter();
+        var to = new Vector2(from.X, Rows()[2].GetGlobalRect().End.Y - 4);
+        void Send(InputEvent e) => handle.EmitSignal(Control.SignalName.GuiInput, e);
+        Send(new InputEventMouseButton { ButtonIndex = MouseButton.Left, Pressed = true, GlobalPosition = from, Position = from });
+        Send(new InputEventMouseMotion { GlobalPosition = to, Position = to });
+        await Wait(menu, 0.3);
+        await Capture(screen, outDir, "11-load-order-drag");
+        Send(new InputEventMouseButton { ButtonIndex = MouseButton.Left, Pressed = false, GlobalPosition = to, Position = to });
+        await Wait(menu, 0.5);
+        var dragged = Ids();
+        Check("drag moves the row below the third", dragged.IndexOf(first.Mod?.manifest?.id ?? "") == 2 && dragged.SequenceEqual(Saved()),
+            string.Join(", ", dragged));
+
+        // Put the original order back: nothing pending again.
+        for (var i = 0; i < start.Count; i++)
+            if (Rows().FirstOrDefault(r => r.Mod?.manifest?.id == start[i])?.Mod is { } mod)
+                LoadOrder.Move(mod, i, Rows());
+        CategoryList.Redraw(content);
+        await Wait(menu, 0.5);
+        Check("restoring the order clears pending", Ids().SequenceEqual(start) && !ModEntry.HasPendingChanges());
+
+        Click(screen.GetNode<NButton>("SpireModManagerLoadOrderToggle"));
+        await Wait(menu, 0.5);
+        Check("category view takes the handles off", !Rows().Any(r => r.HasNode("SpireModManagerHandle"))
+            && content.GetChildren().Any(c => c.IsInGroup("SpireModManagerCategoryHeader")));
     }
 
     static async Task<bool> WithVanillaView(NModdingScreen screen, Node menu, Func<bool> check)
