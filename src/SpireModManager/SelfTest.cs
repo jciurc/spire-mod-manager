@@ -467,7 +467,7 @@ static class SelfTest
         var selected = Rows().FirstOrDefault(r => r.Mod == CategoryList.Selected);
         Check("category view takes the handles off", !Rows().Any(r => r.HasNode("SpireModManagerHandle"))
             && content.GetChildren().Any(c => c.IsInGroup("SpireModManagerCategoryHeader")));
-        Check("back from Load Order: titles in place (after the alias pencil)", Rows().All(r => r.GetNode<Control>("Title").OffsetLeft == 22),
+        Check("back from Load Order: titles in place (after the alias pencil)", Rows().All(r => r.GetNode<Control>("Title").OffsetLeft == 28),
             string.Join(", ", Rows().Select(r => r.GetNode<Control>("Title").OffsetLeft)));
         Check("back from Load Order: no lines or dimming", !content.GetParent().GetChildren().Any(c => c.IsInGroup("SpireModManagerLinks"))
             && Rows().All(r => r.Modulate == Colors.White));

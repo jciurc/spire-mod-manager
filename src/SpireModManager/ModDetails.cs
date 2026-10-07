@@ -21,7 +21,8 @@ static class ModDetails
     const string ModIdMeta = "spire_mod_manager_mod_id";
     const string FolderMeta = "spire_mod_manager_folder";
     const string PencilName = "SpireModManagerPencil";
-    const float PencilWidth = 22;
+    const float PencilWidth = 28;
+    const string PencilHoverMeta = "spire_mod_manager_pencil_hover";
 
     // After the game fills the panel for a mod.
     public static void Fill(NModInfoContainer container, Mod mod)
@@ -340,12 +341,55 @@ static class ModDetails
             tickbox.Scale = vanilla ? Vector2.One : new Vector2(0.72f, 0.72f);
             title.AnchorRight = vanilla ? 0 : 1;
             title.OffsetRight = vanilla ? 562 : -90;
-            title.BbcodeEnabled = alias != null;
-            title.Text = alias == null ? name : $"{Escape(alias)}  [color=#fff6e280][font_size=16]{Escape(name)}[/font_size][/color]";
+            title.BbcodeEnabled = true;
+            title.Text = Escape(name);
             Layout.FontSize(title, vanilla ? Layout.RowTitleVanillaSize : Layout.RowTitleSize);
             Pencil(row, title, !vanilla && !Store.Data.LoadOrderView); // Load Order is for ordering only
+            if (!vanilla)
+            {
+                // Fitted once this redraw has placed the title (Load Order moves it right).
+                var shown = row;
+                Callable.From(() => FitTitle(shown, name, alias)).CallDeferred();
+            }
         }
         MarkChanged(rows, vanilla);
+    }
+
+    // The alias with the original name small and dim beside it, or just the name, cut short with "…" when
+    // it doesn't fit (the original name goes first); hovering the row then shows it in full.
+    const int OriginalNameSize = 16;
+
+    static void FitTitle(NModMenuRow row, string name, string? alias)
+    {
+        if (!GodotObject.IsInstanceValid(row))
+            return;
+        var title = row.GetNode<MegaRichTextLabel>("Title");
+        var font = title.GetThemeFont("normal_font");
+        float Width(string text, int size) => font.GetStringSize(text, fontSize: size).X;
+        var room = title.Size.X - 4;
+        var main = Fit(alias ?? name, Layout.RowTitleSize, room);
+        var text = Escape(main);
+        var cut = main != (alias ?? name);
+        if (alias != null)
+        {
+            var left = room - Width(main + "  ", Layout.RowTitleSize);
+            var original = left > Width("……", OriginalNameSize) ? Fit(name, OriginalNameSize, left) : "";
+            cut |= original != name;
+            if (original.Length > 0)
+                text += $"  [color=#fff6e280][font_size={OriginalNameSize}]{Escape(original)}[/font_size][/color]";
+        }
+        title.SetTextAutoSize(text);
+        row.TooltipText = cut ? (alias != null ? $"{alias}\n{name}" : name) : "";
+
+        string Fit(string full, int size, float width)
+        {
+            if (Width(full, size) <= width)
+                return full;
+            var length = full.Length;
+            while (length > 0 && Width(full[..length].TrimEnd() + "…", size) > width)
+                length--;
+            return length > 0 ? full[..length].TrimEnd() + "…" : "";
+        }
     }
 
     // Our views: a mod turned on or off since launch has a soft gold title, so what a relaunch will change
@@ -355,7 +399,7 @@ static class ModDetails
 
     public static void MarkChanged(IEnumerable<NModMenuRow> rows, bool vanilla)
     {
-        var loaded = History.Loaded?.Mods.ToDictionary(m => (m.Id, m.Source), m => m.Enabled);
+        var loaded = History.Loaded?.Mods.DistinctBy(m => (m.Id, m.Source)).ToDictionary(m => (m.Id, m.Source), m => m.Enabled);
         foreach (var row in rows)
         {
             var title = row.GetNode<Control>("Title");
@@ -394,9 +438,30 @@ static class ModDetails
             pencil.AddThemeColorOverride("font_hover_color", new Color(NotesColor));
             row.AddChild(pencil);
             title.OffsetLeft += PencilWidth;
-            pencil.Pressed += () => BeginAliasEdit(row);
+            // A second click while editing closes the box (and keeps what was typed).
+            pencil.Pressed += () =>
+            {
+                if (row.GetNodeOrNull<Control>("AliasBox") is { } open)
+                    open.ReleaseFocus();
+                else
+                    BeginAliasEdit(row);
+            };
+            // Shown while the mouse is over the row (or the box is open); still there to click when faded out.
+            pencil.Modulate = Colors.Transparent;
+            if (!row.HasMeta(PencilHoverMeta))
+            {
+                row.SetMeta(PencilHoverMeta, true);
+                row.MouseEntered += () => ShowPencil(row, true);
+                row.MouseExited += () => ShowPencil(row, row.HasNode("AliasBox"));
+            }
         }
         PlacePencil(row);
+    }
+
+    static void ShowPencil(NModMenuRow row, bool show)
+    {
+        if (row.GetNodeOrNull<Control>(PencilName) is { } pencil)
+            pencil.Modulate = show ? Colors.White : Colors.Transparent;
     }
 
     // Just left of the title, wherever the title currently starts (Load Order moves it for its grip).
@@ -405,7 +470,7 @@ static class ModDetails
         if (row.GetNodeOrNull<Button>(PencilName) is not { } pencil)
             return;
         pencil.Position = new Vector2(row.GetNode<Control>("Title").OffsetLeft - PencilWidth, 2);
-        pencil.Size = new Vector2(PencilWidth, 28);
+        pencil.Size = new Vector2(PencilWidth - 6, 28); // a small gap before the title
     }
 
     // A text box over the row's title: Enter or clicking away saves the alias (empty removes it), Escape cancels.
@@ -417,10 +482,17 @@ static class ModDetails
         var box = new LineEdit
         {
             Name = "AliasBox", Text = Store.InfoFor(id)?.Alias ?? "", PlaceholderText = row.Mod?.manifest?.name ?? id,
-            SelectAllOnFocus = true, MaxLength = 80,
+            SelectAllOnFocus = true, MaxLength = 80, ClearButtonEnabled = true,
         };
         Style(box, "res://themes/kreon_regular_shared.tres", 18, new Color(NotesColor));
+        var field = new StyleBoxFlat { BgColor = new Color(0.05f, 0.08f, 0.12f), BorderColor = new Color(NotesColor) with { A = 0.5f }, ContentMarginLeft = 6, ContentMarginRight = 4 };
+        field.SetBorderWidthAll(1);
+        field.SetCornerRadiusAll(4);
+        box.AddThemeStyleboxOverride("normal", field);
+        box.AddThemeStyleboxOverride("focus", field);
         row.AddChild(box);
+        title.Visible = false; // not showing through behind the box
+        ShowPencil(row, true);
         box.Position = new Vector2(title.OffsetLeft, 2);
         box.Size = new Vector2(Math.Max(240, row.Size.X - title.OffsetLeft - 160), 30);
         box.GrabFocus();
@@ -435,6 +507,7 @@ static class ModDetails
                 SetAlias(id, box.Text);
             row.RemoveChild(box);
             box.QueueFree();
+            title.Visible = true;
             if (CategoryList.ScreenOf(row) is { } screen)
                 Callable.From(() =>
                 {
