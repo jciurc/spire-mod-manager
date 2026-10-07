@@ -55,8 +55,8 @@ static class ProfileBar
         foreach (var box in new[] { "normal", "focus", "read_only" })
             name.AddThemeStyleboxOverride(box, new StyleBoxEmpty());
 
-        // Arrows and name between the caption and the New button.
-        const float arrowSize = 34, left = 120, right = 136;
+        // Arrows and name between the caption and the New/Rename/Delete buttons.
+        const float arrowSize = 34, left = 120, right = 236;
         var prev = Arrow("res://images/packed/common_ui/settings_tiny_left_arrow.png");
         var next = Arrow("res://images/packed/common_ui/settings_tiny_right_arrow.png");
         bar.AddChild(prev);
@@ -76,22 +76,36 @@ static class ProfileBar
         next.OffsetTop = -arrowSize / 2;
         next.OffsetBottom = arrowSize / 2;
 
-        var newButton = ModEntry.AddButton(bar, "SPIRE_MOD_MANAGER.NEW_PROFILE", new Vector2(120, 52), () =>
-        {
-            Profiles.SwitchTo(Profiles.Add(), screen);
-        });
-        newButton.Name = "NewProfileButton";
-        newButton.SetAnchorsPreset(Control.LayoutPreset.CenterRight);
-        newButton.OffsetLeft = -124;
-        newButton.OffsetRight = -4;
-        newButton.OffsetTop = -26;
-        newButton.OffsetBottom = 26;
+        // New, Rename, Delete: inline at the right, and the same items on right-click of the name.
+        List<MenuItem> Actions() => [
+            new(Menus.Text("SPIRE_MOD_MANAGER.NEW_PROFILE"), () => Profiles.SwitchTo(Profiles.Add(), screen)),
+            new(Menus.Text("SPIRE_MOD_MANAGER.RENAME"), () =>
+            {
+                name.GrabFocus();
+                name.SelectAll();
+            }),
+            new(Menus.Text("SPIRE_MOD_MANAGER.DELETE"), () =>
+            {
+                if (Profiles.Active is { } active)
+                    _ = Delete(active);
+            }, Disabled: Store.Data.Profiles.Count <= 1),
+        ];
+        HBoxContainer? inline = null;
 
         void Refresh()
         {
             name.Text = Profiles.Active?.Name ?? "";
             var several = Store.Data.Profiles.Count > 1;
             prev.Visible = next.Visible = several;
+
+            inline?.QueueFree(); // Delete's enabled state depends on how many profiles there are
+            inline = Menus.InlineButtons(Actions(), "Actions");
+            inline.Alignment = BoxContainer.AlignmentMode.End;
+            inline.GetChild<Button>(0).Name = "NewProfileButton";
+            bar.AddChild(inline);
+            inline.AnchorLeft = inline.AnchorRight = 1;
+            inline.AnchorBottom = 1;
+            (inline.OffsetLeft, inline.OffsetRight, inline.OffsetTop, inline.OffsetBottom) = (-right + 4, -8, 12, -12);
         }
 
         void Cycle(int step)
@@ -117,17 +131,10 @@ static class ProfileBar
         };
         name.GuiInput += e =>
         {
-            if (e is not InputEventMouseButton { ButtonIndex: MouseButton.Right, Pressed: false } || Profiles.Active is not { } active)
+            if (e is not InputEventMouseButton { ButtonIndex: MouseButton.Right, Pressed: false })
                 return;
             name.AcceptEvent();
-            Menus.Show(bar, [
-                new MenuItem(Menus.Text("SPIRE_MOD_MANAGER.RENAME"), () =>
-                {
-                    name.GrabFocus();
-                    name.SelectAll();
-                }),
-                new MenuItem(Menus.Text("SPIRE_MOD_MANAGER.DELETE"), () => _ = Delete(active), Disabled: Store.Data.Profiles.Count <= 1),
-            ]);
+            Menus.Show(bar, Actions());
         };
 
         async Task Delete(Profile profile)
