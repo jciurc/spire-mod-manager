@@ -119,6 +119,13 @@ void SyncMods()
     foreach (var dir in Directory.GetDirectories(Path.Combine(GameDir, "mods")).Where(d => Path.GetFileName(d) != ModId))
         foreach (var file in Directory.EnumerateFiles(dir, "*", SearchOption.AllDirectories))
             Link(file, Path.Combine(mods, Path.GetRelativePath(Path.Combine(GameDir, "mods"), file)));
+    // Empty test mods with dependencies between them (tools/fixtures/mods), for the load order checks.
+    foreach (var file in Directory.EnumerateFiles(Path.Combine(root, "tools", "fixtures", "mods"), "*", SearchOption.AllDirectories))
+    {
+        var target = Path.Combine(mods, Path.GetRelativePath(Path.Combine(root, "tools", "fixtures", "mods"), file));
+        Directory.CreateDirectory(Path.GetDirectoryName(target) ?? mods);
+        File.Copy(file, target);
+    }
     var ours = Path.Combine(mods, ModId);
     Directory.CreateDirectory(ours);
     foreach (var ext in new[] { ".pck", ".json", ".dll" })

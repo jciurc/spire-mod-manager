@@ -276,12 +276,13 @@ static class SelfTest
             && !content.GetChildren().Any(c => c.IsInGroup("SpireModManagerCategoryHeader")), string.Join(", ", start));
         Check("nothing pending before moving", !pending.Visible && !ModEntry.HasPendingChanges());
 
-        var last = Rows()[^1];
-        if (last.Mod is { } lastMod)
-            LoadOrder.Move(lastMod, 0, Rows());
+        // Moves use a mod with no dependencies either way, so no order rule can block them.
+        const string free = "LocalModFixes";
+        if (Rows().FirstOrDefault(r => r.Mod?.manifest?.id == free)?.Mod is { } freeMod)
+            LoadOrder.Move(freeMod, 0, Rows());
         CategoryList.Redraw(content);
         await Wait(menu, 0.5);
-        Check("move to top saves the order", Ids()[0] == start[^1] && Saved()[0] == start[^1], string.Join(", ", Ids()));
+        Check("move to top saves the order", Ids()[0] == free && Saved()[0] == free, string.Join(", ", Ids()));
         Check("an order change is pending", pending.Visible && ModEntry.HasPendingChanges());
 
         // Drag the first row's handle to just below the third row.
@@ -308,10 +309,65 @@ static class SelfTest
         await Wait(menu, 0.5);
         Check("restoring the order clears pending", Ids().SequenceEqual(start) && !ModEntry.HasPendingChanges());
 
+        await TestDependencies(menu, screen, content, outDir);
+
         Click(screen.GetNode<NButton>("SpireModManagerLoadOrderToggle"));
         await Wait(menu, 0.5);
         Check("category view takes the handles off", !Rows().Any(r => r.HasNode("SpireModManagerHandle"))
             && content.GetChildren().Any(c => c.IsInGroup("SpireModManagerCategoryHeader")));
+    }
+
+    // Fixture mods: SmmTestContent and SmmTestUi need SmmTestLib; BrandedMod needs BaseLib, which isn't there.
+    static async Task TestDependencies(Node menu, NModdingScreen screen, Control content, string outDir)
+    {
+        List<NModMenuRow> Rows() => content.GetChildren().OfType<NModMenuRow>().ToList();
+        List<string> Ids() => Rows().Select(r => r.Mod?.manifest?.id ?? "").ToList();
+        NModMenuRow? Row(string id) => Rows().FirstOrDefault(r => r.Mod?.manifest?.id == id);
+        string Note(string id) => Row(id)?.GetNodeOrNull<Label>("SpireModManagerStrip/Needs")?.Text ?? "";
+        if (Row("SmmTestLib") is not { Mod: { } lib } || Row("SmmTestContent") is not { Mod: { } dependent })
+        {
+            Results.Add("SKIP dependencies: test mods not installed");
+            return;
+        }
+        Check("dependency note names what it needs", Note("SmmTestContent").Contains("Test Framework"), Note("SmmTestContent"));
+        Check("missing dependency is called out", Note("BrandedMod").Contains("BaseLib") && Note("BrandedMod").Contains("not installed"),
+            Note("BrandedMod"));
+
+        // Force a bad order (as an old saved list might have): the needing mod above its framework.
+        LoadOrder.Move(dependent, Ids().IndexOf("SmmTestLib"), Rows());
+        CategoryList.Redraw(content);
+        await Wait(menu, 0.5);
+        Check("bad order: banner and warning", content.GetNodeOrNull("OrderBanner") != null && Note("SmmTestContent").Contains("loads after this"),
+            Note("SmmTestContent"));
+        await Capture(screen, outDir, "12-order-problem");
+
+        var before = Ids();
+        content.GetNode("OrderBanner").FindChild("FixOrderButton", true, false)?.EmitSignal(BaseButton.SignalName.Pressed);
+        await Wait(menu, 0.5);
+        var after = Ids();
+        Check("Fix order puts the framework first and nothing else moves",
+            after.IndexOf("SmmTestLib") < after.IndexOf("SmmTestContent") && after.IndexOf("SmmTestLib") < after.IndexOf("SmmTestUi")
+            && content.GetNodeOrNull("OrderBanner") == null
+            && after.Where(id => id != "SmmTestLib").SequenceEqual(before.Where(id => id != "SmmTestLib")),
+            string.Join(", ", after));
+
+        // Now a move above the framework is blocked: by the inline/menu actions and by dragging.
+        var rowContent = Row("SmmTestContent");
+        Check("moving above what it needs is disabled", rowContent != null && LoadOrder.MoveBreaks(dependent, 0, Rows())
+            && LoadOrder.Actions(content, rowContent, () => { })[0].Disabled);
+        var handle = rowContent?.GetNode<Control>("SpireModManagerHandle");
+        if (handle != null)
+        {
+            var from = handle.GetGlobalRect().GetCenter();
+            var to = new Vector2(from.X, Rows()[0].GetGlobalRect().Position.Y + 4);
+            handle.EmitSignal(Control.SignalName.GuiInput, new InputEventMouseButton { ButtonIndex = MouseButton.Left, Pressed = true, GlobalPosition = from });
+            handle.EmitSignal(Control.SignalName.GuiInput, new InputEventMouseMotion { GlobalPosition = to });
+            await Wait(menu, 0.3);
+            await Capture(screen, outDir, "13-blocked-drag");
+            handle.EmitSignal(Control.SignalName.GuiInput, new InputEventMouseButton { ButtonIndex = MouseButton.Left, Pressed = false, GlobalPosition = to });
+            await Wait(menu, 0.5);
+        }
+        Check("a blocked drag doesn't move the row", Ids().SequenceEqual(after), string.Join(", ", Ids()));
     }
 
     static async Task<bool> WithVanillaView(NModdingScreen screen, Node menu, Func<bool> check)
