@@ -36,7 +36,7 @@ static class CategoryList
             Label(loadOrder, data.LoadOrderView ? "SPIRE_MOD_MANAGER.BACK" : "SPIRE_MOD_MANAGER.LOAD_ORDER");
             Apply(content);
             Layout.Apply(screen);
-            screen.GetNode<NModInfoContainer>("%ModInfoContainer").Clear(); // its text was filled for the old view
+            RestoreSelection(screen, content);
         }
         vanilla = ModEntry.AddButton(screen, "SPIRE_MOD_MANAGER.VANILLA_VIEW", new Vector2(200, 70), () => Switch(true));
         vanilla.Name = "SpireModManagerViewToggle";
@@ -53,6 +53,65 @@ static class CategoryList
 
     static void Label(NButton? button, string key) =>
         button?.GetNode<MegaLabel>("Visuals/Label").SetTextAutoSize(new LocString("settings_ui", key).GetFormattedText());
+
+    // The mod selected on the Modding screen (kept by a patch on OnRowSelected), so a view switch can keep it.
+    public static Mod? Selected { get; set; }
+
+    public static NModdingScreen? ScreenOf(Node node)
+    {
+        for (var n = node.GetParent(); n != null; n = n.GetParent())
+            if (n is NModdingScreen screen)
+                return screen;
+        return null;
+    }
+
+    // Selects a row the way a click does: highlight and info panel.
+    public static void Select(Control content, NModMenuRow row) => ScreenOf(content)?.OnRowSelected(row);
+
+    // After a view switch: the same mod stays selected, its category opens if it was collapsed, and the
+    // list scrolls to it. Nothing selected: the info panel empties (it was filled for the old view).
+    static void RestoreSelection(NModdingScreen screen, Control content)
+    {
+        if (content.GetChildren().OfType<NModMenuRow>().FirstOrDefault(r => r.Mod == Selected && Selected != null) is not { } row)
+        {
+            screen.GetNode<NModInfoContainer>("%ModInfoContainer").Clear();
+            return;
+        }
+        if (!Store.Data.VanillaView && !Store.Data.LoadOrderView && !row.Visible)
+        {
+            if (Store.InfoFor(row.Mod?.manifest?.id)?.Category is { } name && Categories.Find(name) is { } category)
+                category.Collapsed = false;
+            else
+                Store.Data.UncategorizedCollapsed = false;
+            Store.Save();
+            Apply(content);
+        }
+        screen.OnRowSelected(row);
+        // Positions settle after this frame's layout.
+        screen.GetTree().CreateTimer(0.05).Timeout += () =>
+        {
+            if (GodotObject.IsInstanceValid(row))
+                ScrollTo(content, row);
+        };
+    }
+
+    // The game's scroll container eases its content towards a target position; these move that target.
+    static Control ScrollContainer(Control content) => content.GetParent().GetParent<Control>();
+
+    public static void ScrollBy(Control content, float pixels)
+    {
+        var scroll = ScrollContainer(content);
+        scroll.Set("_targetDragPosY", (float)scroll.Get("_targetDragPosY") + pixels);
+    }
+
+    // The row a third of the way down the visible list.
+    public static void ScrollTo(Control content, Control row)
+    {
+        var scroll = ScrollContainer(content);
+        var top = Math.Min(0, -row.Position.Y + scroll.Size.Y / 3);
+        var bottom = Math.Min(0, scroll.Size.Y - content.Size.Y);
+        scroll.Set("_targetDragPosY", Math.Max(top, bottom));
+    }
 
     // After a change that may need a relaunch: redraw, and let the screen recheck its pending warning.
     public static void Redraw(Control content)
@@ -119,6 +178,7 @@ static class CategoryList
             return;
         }
         LoadOrder.Undecorate(rows);
+        LoadOrder.Reset(content); // no Load Order lines or dimming outside it
 
         if (Store.Data.VanillaView)
             RowStrip.Remove(rows);

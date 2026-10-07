@@ -426,10 +426,23 @@ static class SelfTest
 
         await TestDependencies(menu, screen, content, outDir);
 
+        // Leaving Load Order: a plain category list again, the selected mod still selected, its collapsed
+        // category opened, no lines or dimming left behind.
+        if (Rows().FirstOrDefault(r => r.Mod?.manifest?.id == "LocalModFixes") is { Mod: { } kept } keptRow)
+        {
+            screen.OnRowSelected(keptRow);
+            Store.Data.UncategorizedCollapsed = true;
+        }
+        LoadOrder.ShowLinks(content, Rows()[0], strong: false);
         Click(screen.GetNode<NButton>("SpireModManagerLoadOrderToggle"));
         await Wait(menu, 0.5);
+        var selected = Rows().FirstOrDefault(r => r.Mod == CategoryList.Selected);
         Check("category view takes the handles off", !Rows().Any(r => r.HasNode("SpireModManagerHandle"))
             && content.GetChildren().Any(c => c.IsInGroup("SpireModManagerCategoryHeader")));
+        Check("back from Load Order: no lines or dimming", !content.GetParent().GetChildren().Any(c => c.IsInGroup("SpireModManagerLinks"))
+            && Rows().All(r => r.Modulate == Colors.White));
+        Check("the selection survives the switch, its category opened", selected?.Mod?.manifest?.id == "LocalModFixes"
+            && selected.Visible && !Store.Data.UncategorizedCollapsed);
     }
 
     // Fixture mods: SmmTestContent and SmmTestUi need SmmTestLib; BrandedMod needs BaseLib, which isn't there.
@@ -475,10 +488,10 @@ static class SelfTest
             && after.Where(id => id != "SmmTestLib").SequenceEqual(before.Where(id => id != "SmmTestLib")),
             string.Join(", ", after));
 
-        // Now a move above the framework is blocked: by the inline/menu actions and by dragging.
+        // A move above the framework is flagged but allowed: by the inline/menu actions and by dragging.
         var rowContent = Row("SmmTestContent");
-        Check("moving above what it needs is disabled", rowContent != null && LoadOrder.MoveBreaks(dependent, 0, Rows())
-            && LoadOrder.Actions(content, rowContent, () => { })[0].Disabled);
+        Check("moving above what it needs is flagged, not blocked", rowContent != null && LoadOrder.MoveBreaks(dependent, 0, Rows())
+            && !LoadOrder.Actions(content, rowContent, () => { })[0].Disabled);
         var handle = rowContent?.GetNode<Control>("SpireModManagerHandle");
         if (handle != null)
         {
@@ -491,10 +504,14 @@ static class SelfTest
             var links = content.GetParent().GetChildren().Count(c => c.IsInGroup("SpireModManagerLinks"));
             Check("dragging dims unrelated rows, lights linked ones, draws links",
                 Row("LocalModFixes")?.Modulate.A < 1 && Row("SmmTestLib")?.Modulate.A == 1 && links == 1, $"{links} links");
+            Check("grabbing a row selects it", CategoryList.Selected == dependent);
             handle.EmitSignal(Control.SignalName.GuiInput, new InputEventMouseButton { ButtonIndex = MouseButton.Left, Pressed = false, GlobalPosition = to });
             await Wait(menu, 0.5);
         }
-        Check("a blocked drag doesn't move the row", Ids().SequenceEqual(after), string.Join(", ", Ids()));
+        Check("a drag past a dependency goes through and is flagged", Ids()[0] == "SmmTestContent"
+            && content.GetNodeOrNull("OrderToolbar")?.FindChild("OrderProblems", true, false) != null, string.Join(", ", Ids()));
+        content.GetNode("OrderToolbar").FindChild("FixOrderButton", true, false)?.EmitSignal(BaseButton.SignalName.Pressed);
+        await Wait(menu, 0.5);
 
         // Auto sort: libraries, then gameplay, then visual-only; dependencies satisfied; one undo puts it back.
         var beforeSort = Ids();

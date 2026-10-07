@@ -9,7 +9,7 @@ Jordan's notes of 2026-10-07 (from `spire manager notes.txt` in the scratch fold
 - [x] display changes indicator on button
 - [x] remove Load Order button
 - [x] remove Relaunch Game button
-- [ ] persist and scroll to selected item when switching views, (auto expand category, load order page included)
+- [x] persist and scroll to selected item when switching views, (auto expand category, load order page included)
 
 
 ## Category View
@@ -38,17 +38,17 @@ Jordan's notes of 2026-10-07 (from `spire manager notes.txt` in the scratch fold
 - [x] Remove Vanilla button
 - [x] Update "Category View" -> "Back"
 - [x] remove steam/folder icons
-- [ ] clicking/holding drag handle should also select the item
-- [ ] remove Auto sort explanation <- we'll reintroduce it later
-- [ ] change incompatibility warning to "X mods will be automatically reordered (vanilla behavior) on launch based on dependencies" [Fix now]
-- [ ] let's remove the drag prevention when dragging into incompatible order. we'll just display the warning and let the user handle it
+- [x] clicking/holding drag handle should also select the item
+- [x] remove Auto sort explanation <- we'll reintroduce it later
+- [x] change incompatibility warning to "X mods will be automatically reordered (vanilla behavior) on launch based on dependencies" [Fix now]
+- [x] let's remove the drag prevention when dragging into incompatible order. we'll just display the warning and let the user handle it
 - [x] update "Needs X (loaded before), Y" -> "Needs: X before, Y" and color code before/after
-- [ ] color code connectors
-- [ ] remember last selected item when going back to category view
+- [x] color code connectors
+- [x] remember last selected item when going back to category view
 - [ ] multi selectable/draggable items with shift/ctrl/cmd
-- [ ] (fix) load order view ui/state is not cleared when changing back to category
-- [ ] (fix) container doesn't scroll when dragging near bounds
-- [ ] (fix) remove needs connector when on category view
+- [x] (fix) load order view ui/state is not cleared when changing back to category
+- [x] (fix) container doesn't scroll when dragging near bounds
+- [x] (fix) remove needs connector when on category view
 
 
 ## Changes

@@ -19,6 +19,8 @@ static class LoadOrder
     const string DraggingMeta = "spire_mod_manager_dragging";
     static readonly Color Gold = new(0.937f, 0.784f, 0.318f);
     static readonly Color Blocked = new(0.9f, 0.25f, 0.25f);
+    static readonly Color LinkFine = new(0.62f, 0.86f, 0.62f);
+    const float EdgeScroll = 48, EdgeScrollStep = 24; // drag near an edge: px from it, px per mouse move
     static List<string>? _loadedOrder;
 
     // The order this session loaded with, taken once the game has finished its own startup sorting.
@@ -104,7 +106,7 @@ static class LoadOrder
             if (row.Mod is { } mod)
                 Move(mod, to, rows);
             redraw();
-        }, Disabled: to < 0 || to >= rows.Count || to == at || (row.Mod is { } m && MoveBreaks(m, to, rows)));
+        }, Disabled: to < 0 || to >= rows.Count || to == at);
         return [
             Item("SPIRE_MOD_MANAGER.MOVE_TO_TOP", 0),
             Item("SPIRE_MOD_MANAGER.MOVE_UP", at - 1),
@@ -138,7 +140,7 @@ static class LoadOrder
             Name = problems > 0 ? "OrderProblems" : "OrderHint",
             Text = problems > 0
                 ? Menus.Format("SPIRE_MOD_MANAGER.ORDER_PROBLEMS", ("count", problems.ToString()))
-                : Menus.Text("SPIRE_MOD_MANAGER.ORDER_HINT"),
+                : "",
             SizeFlagsHorizontal = Control.SizeFlags.ExpandFill, VerticalAlignment = VerticalAlignment.Center,
             AutowrapMode = TextServer.AutowrapMode.WordSmart,
         };
@@ -243,6 +245,7 @@ static class LoadOrder
                     marker = new ColorRect { Color = Gold, Size = new Vector2(content.Size.X, 5), MouseFilter = Control.MouseFilterEnum.Ignore };
                     content.GetParent().AddChild(marker); // the scroll mask: not a container, so it can sit anywhere
                     BeginDragLook(content, row);
+                    CategoryList.Select(content, row); // grabbing a row selects it too
                     handle.AcceptEvent();
                     break;
                 case InputEventMouseMotion motion when dragging && marker != null:
@@ -253,6 +256,12 @@ static class LoadOrder
                     // Red where dropping would load it before something it needs (or after something needing it).
                     marker.Color = Destination(gap) is { } at && row.Mod is { } moving
                         && MoveBreaks(moving, at, content.GetChildren().OfType<NModMenuRow>().ToList()) ? Blocked : Gold;
+                    // Near the top or bottom edge, the list scrolls along.
+                    var view = content.GetParent<Control>().GetGlobalRect();
+                    if (motion.GlobalPosition.Y < view.Position.Y + EdgeScroll)
+                        CategoryList.ScrollBy(content, EdgeScrollStep);
+                    else if (motion.GlobalPosition.Y > view.End.Y - EdgeScroll)
+                        CategoryList.ScrollBy(content, -EdgeScrollStep);
                     handle.AcceptEvent();
                     break;
                 case InputEventMouseButton { ButtonIndex: MouseButton.Left, Pressed: false } release when dragging:
@@ -261,8 +270,8 @@ static class LoadOrder
                     marker = null;
                     EndDragLook(content);
                     var rows = content.GetChildren().OfType<NModMenuRow>().ToList();
-                    if (Destination(Target(content, release.GlobalPosition.Y).Index) is { } to && row.Mod is { } mod
-                        && !MoveBreaks(mod, to, rows))
+                    // Drops are allowed even where they break a dependency: the red line and the warning bar say so.
+                    if (Destination(Target(content, release.GlobalPosition.Y).Index) is { } to && row.Mod is { } mod)
                     {
                         Move(mod, to, rows);
                         redraw();
@@ -301,12 +310,16 @@ static class LoadOrder
         var mask = content.GetParent<Control>();
         float CenterY(Control r) => r.GetGlobalRect().GetCenter().Y - mask.GlobalPosition.Y;
         var linked = Linked(content, row);
+        var rows = content.GetChildren().OfType<NModMenuRow>().ToList();
         for (var i = 0; i < linked.Count; i++)
         {
+            // Green when the pair is in a working order (what's needed loads first), red when it isn't.
+            var needed = Dependencies.Of(row.Mod).Contains(linked[i].Mod?.manifest?.id ?? "");
+            var fine = needed ? rows.IndexOf(linked[i]) < rows.IndexOf(row) : rows.IndexOf(linked[i]) > rows.IndexOf(row);
             var lane = 4 + Math.Min(i, 3) * 3;
             var line = new Line2D
             {
-                Width = strong ? 3 : 2, DefaultColor = new Color(Gold, strong ? 1f : 0.55f),
+                Width = strong ? 3 : 2, DefaultColor = new Color(fine ? LinkFine : Blocked, strong ? 1f : 0.6f),
                 Points = [new(LinkGutter, CenterY(row)), new(lane, CenterY(row)), new(lane, CenterY(linked[i])), new(LinkGutter, CenterY(linked[i]))],
             };
             line.AddToGroup(LinkGroup);
@@ -331,9 +344,13 @@ static class LoadOrder
         ShowLinks(content, row, strong: true);
     }
 
-    static void EndDragLook(Control content)
+    static void EndDragLook(Control content) => Reset(content);
+
+    // Back to a plain list: no dimming, no lines. Also used when leaving Load Order.
+    public static void Reset(Control content)
     {
-        content.RemoveMeta(DraggingMeta);
+        if (content.HasMeta(DraggingMeta))
+            content.RemoveMeta(DraggingMeta);
         foreach (var r in content.GetChildren().OfType<NModMenuRow>())
             r.Modulate = Colors.White;
         HideLinks(content);
