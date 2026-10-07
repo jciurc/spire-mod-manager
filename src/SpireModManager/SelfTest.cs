@@ -288,7 +288,7 @@ static class SelfTest
         var start = Ids();
         Check("load order view: saved order, handles, no headers", start.SequenceEqual(Saved())
             && Rows().All(r => r.HasNode("SpireModManagerHandle"))
-            && !content.GetChildren().Any(c => c.IsInGroup("SpireModManagerCategoryHeader")), string.Join(", ", start));
+            && !content.GetChildren().Any(c => c.IsInGroup("SpireModManagerCategoryHeader") && c.Name != "OrderToolbar"), string.Join(", ", start));
         Check("nothing pending before moving", !pending.Visible && !ModEntry.HasPendingChanges());
 
         // Moves use a mod with no dependencies either way, so no order rule can block them.
@@ -352,17 +352,17 @@ static class SelfTest
         LoadOrder.Move(dependent, Ids().IndexOf("SmmTestLib"), Rows());
         CategoryList.Redraw(content);
         await Wait(menu, 0.5);
-        Check("bad order: banner and warning", content.GetNodeOrNull("OrderBanner") != null && Note("SmmTestContent").Contains("loads after this"),
+        Check("bad order: banner and warning", content.GetNodeOrNull("OrderToolbar")?.FindChild("OrderProblems", true, false) != null && Note("SmmTestContent").Contains("loads after this"),
             Note("SmmTestContent"));
         await Capture(screen, outDir, "12-order-problem");
 
         var before = Ids();
-        content.GetNode("OrderBanner").FindChild("FixOrderButton", true, false)?.EmitSignal(BaseButton.SignalName.Pressed);
+        content.GetNode("OrderToolbar").FindChild("FixOrderButton", true, false)?.EmitSignal(BaseButton.SignalName.Pressed);
         await Wait(menu, 0.5);
         var after = Ids();
         Check("Fix order puts the framework first and nothing else moves",
             after.IndexOf("SmmTestLib") < after.IndexOf("SmmTestContent") && after.IndexOf("SmmTestLib") < after.IndexOf("SmmTestUi")
-            && content.GetNodeOrNull("OrderBanner") == null
+            && content.GetNodeOrNull("OrderToolbar")?.FindChild("OrderProblems", true, false) == null
             && after.Where(id => id != "SmmTestLib").SequenceEqual(before.Where(id => id != "SmmTestLib")),
             string.Join(", ", after));
 
@@ -386,6 +386,21 @@ static class SelfTest
             await Wait(menu, 0.5);
         }
         Check("a blocked drag doesn't move the row", Ids().SequenceEqual(after), string.Join(", ", Ids()));
+
+        // Auto sort: libraries, then gameplay, then visual-only; dependencies satisfied; one undo puts it back.
+        var beforeSort = Ids();
+        content.GetNode("OrderToolbar").FindChild("AutoSortButton", true, false)?.EmitSignal(BaseButton.SignalName.Pressed);
+        await Wait(menu, 0.5);
+        int Tier(NModMenuRow r) => Tags.For(r.Mod).Any(c => c.Text == "Library") ? 0
+            : Tags.For(r.Mod).Any(c => c.Text == "Gameplay") ? 1 : 2;
+        var tiers = Rows().Select(Tier).ToList();
+        Check("auto sort: libraries, then gameplay, then visual-only, no dependency problems",
+            tiers.Zip(tiers.Skip(1)).All(p => p.First <= p.Second) && Dependencies.OrderViolations(LoadOrder.Mods(Rows())).Count == 0,
+            string.Join(", ", Ids()));
+        await Capture(screen, outDir, "13c-auto-sort");
+        History.Undo();
+        await Wait(menu, 0.5);
+        Check("one undo restores the order from before auto sort", Ids().SequenceEqual(beforeSort), string.Join(", ", Ids()));
         await Wait(menu, 0.2);
         Check("dropping restores the list look", Rows().All(r => r.Modulate == Colors.White)
             && !content.GetParent().GetChildren().Any(c => c.IsInGroup("SpireModManagerLinks")));
