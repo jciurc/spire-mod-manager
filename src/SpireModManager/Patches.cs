@@ -27,6 +27,7 @@ static class MainMenuPatch
             LoadOrder.RememberLoadedOrder(); // first main menu: the game's startup sorting is done
             Profiles.Prepare(); // one-time conversions belong to the baseline, not the undo history
             History.Start();
+            WorkshopInfo.Start(); // background Steam query; does nothing without Steam
             ModEntry.MarkDevRun(__instance.GetTree());
 
             var menu = __instance;
