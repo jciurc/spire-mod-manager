@@ -90,7 +90,7 @@ public static class ModEntry
     public static bool HasPendingChanges()
     {
         var settings = SaveManager.Instance.SettingsSave.ModSettings;
-        return ModManager.Mods.Any(mod =>
+        return LoadOrder.OrderChanged || ModManager.Mods.Any(mod =>
         {
             var disabled = settings?.IsModDisabled(mod) ?? false;
             return (mod.state == ModLoadState.Disabled && !disabled) || (mod.state == ModLoadState.Loaded && disabled);
