@@ -35,19 +35,22 @@ Ease of use is the heart of the mod, not just its utility.
 
 ## Status (2026-10-06)
 
-Built and covered by the in-game self-test (`dotnet run tools/dev.cs test`, 49 checks):
-main menu button with pending dot, Relaunch, Better Mod Menu import, categories (collapse,
-assign/new/rename/move/delete from inline buttons or right-click, divider before Uncategorized),
-profiles (switch, new, rename, delete; active profile follows the tickboxes), aliases and notes (rows,
-info panel, editor), Workshop Page button, search, Load Order view (drag and drop, inline/menu moves,
-order changes count as pending), dependencies (note per row, red when missing/off/out of order; moves
-that break an enabled pair are blocked; Fix order banner), wide layout with smaller text (Vanilla View
-restores the game's), stepping aside when Better Mod Menu is loaded.
+Built and covered by the in-game self-test (`dotnet run tools/dev.cs test`, 68 checks; `--real` tours
+Jordan's own 44 mods read-only): main menu button with pending dot, Relaunch, Better Mod Menu import,
+categories (collapse, assign/new/rename/move/delete from inline buttons or right-click, divider before
+Uncategorized), profiles (switch, new, rename, delete; active profile follows the tickboxes), aliases,
+notes and own tags (rows, info panel, editor), automatic tags (Gameplay / Visual only / Library), info
+panel facts (source, load problems, needs / needed by, Open Folder, Workshop Page), search (names,
+notes, tags), Load Order view (drag and drop with dimming and dependency lines, inline/menu moves, Fix
+order, Auto sort by tier, order changes pending), dependency notes per row, undo/redo with Ctrl+Z/Y,
+Changes since launch with Revert all, Ctrl+F, wide layout with smaller text (Vanilla View restores the
+game's), stepping aside when Better Mod Menu is loaded.
 
-Not built yet: draft layer (save/discard, undo/redo, diff), tags, Workshop metadata (needs Steam, so
-only testable in real play), compatibility audit, smart sort, profile/save-slot sync, design overhaul.
-Known gaps: the Workshop Page button is untested (the dev sandbox has no Workshop mods); inline action
-placement is rough.
+Built but only testable in real play (Steam): Workshop details (updated/published dates, Workshop
+tags), the Workshop Page button.
+
+Not built yet: compatibility audit beyond dependencies, finer auto-sort tiers, linked pushing while
+dragging, profile/save-slot sync, design overhaul. Inline action placement is rough.
 
 ## Design guidelines (Jordan, 2026-10-06)
 
