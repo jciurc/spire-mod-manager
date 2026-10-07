@@ -4,11 +4,12 @@ using MegaCrit.Sts2.Core.Nodes.Screens.ModdingScreen;
 
 namespace SpireModManager;
 
-// Profile switcher across the top of the mod list: [Profile]  ◀ name ▶  [New].
-// Layout starts the list below it. The name is editable in place (Enter to rename).
+// Profile picker across the top of the mod list: "Profile: [name ▾]" on the left, opening a list of
+// profiles; New, Rename and Delete on the right (also on right-click). Rename swaps the picker for a
+// text box (Enter or clicking away renames). Layout starts the list below the bar.
 static class ProfileBar
 {
-    const float Height = 50;
+    const float Height = 40;
     static readonly Color Gold = new(0.937f, 0.784f, 0.318f);
     static readonly Color Cream = new(1, 0.964706f, 0.886275f);
 
@@ -30,59 +31,45 @@ static class ProfileBar
         bar.AddChild(background);
         background.SetAnchorsPreset(Control.LayoutPreset.FullRect);
 
-        var caption = new Label
-        {
-            Text = new LocString("settings_ui", "SPIRE_MOD_MANAGER.PROFILE").GetFormattedText(),
-            VerticalAlignment = VerticalAlignment.Center,
-            Position = new Vector2(16, 0),
-            Size = new Vector2(100, Height),
-        };
-        Style(caption, "res://themes/kreon_regular_shared.tres", 18, new Color(Cream, 0.7f));
-        bar.AddChild(caption);
+        var row = new HBoxContainer { MouseFilter = Control.MouseFilterEnum.Ignore };
+        row.AddThemeConstantOverride("separation", 8);
+        bar.AddChild(row);
+        row.SetAnchorsPreset(Control.LayoutPreset.FullRect);
+        row.OffsetLeft = 12;
+        row.OffsetRight = -8;
 
+        var caption = new Label { Text = Menus.Text("SPIRE_MOD_MANAGER.PROFILE"), VerticalAlignment = VerticalAlignment.Center };
+        Style(caption, "res://themes/kreon_regular_shared.tres", 17, new Color(Cream, 0.7f));
+        row.AddChild(caption);
+
+        // The picker: the active profile's name and a small down arrow (the game's settings arrow, turned).
+        var picker = new Button
+        {
+            Name = "ProfilePicker", Flat = true, Alignment = HorizontalAlignment.Left, FocusMode = Control.FocusModeEnum.None,
+            MouseDefaultCursorShape = Control.CursorShape.PointingHand, SizeFlagsVertical = Control.SizeFlags.ShrinkCenter,
+            IconAlignment = HorizontalAlignment.Right, ExpandIcon = false,
+        };
+        Style(picker, "res://themes/kreon_bold_shared.tres", 19, Gold);
+        picker.AddThemeColorOverride("font_hover_color", Colors.White);
+        picker.AddThemeConstantOverride("h_separation", 8);
+        picker.AddThemeConstantOverride("icon_max_width", 14);
+        picker.Icon = DownArrow();
+        row.AddChild(picker);
+
+        // Rename: a text box in the picker's place while editing.
         var name = new LineEdit
         {
-            Alignment = HorizontalAlignment.Center,
-            Flat = true,
-            MaxLength = 40,
-            CaretBlink = true,
-            SelectAllOnFocus = true,
-            ContextMenuEnabled = false, // right-click opens our profile menu instead
-            Name = "ProfileName",
+            Name = "ProfileName", Visible = false, MaxLength = 40, SelectAllOnFocus = true, ContextMenuEnabled = false,
+            CustomMinimumSize = new Vector2(320, 0), SizeFlagsVertical = Control.SizeFlags.ShrinkCenter,
         };
-        Style(name, "res://themes/kreon_bold_shared.tres", 22, Gold);
-        foreach (var box in new[] { "normal", "focus", "read_only" })
-            name.AddThemeStyleboxOverride(box, new StyleBoxEmpty());
+        Style(name, "res://themes/kreon_bold_shared.tres", 19, Gold);
+        row.AddChild(name);
 
-        // Arrows and name between the caption and the New/Rename/Delete buttons.
-        const float arrowSize = 28, left = 120, right = 236;
-        var prev = Arrow("res://images/packed/common_ui/settings_tiny_left_arrow.png");
-        var next = Arrow("res://images/packed/common_ui/settings_tiny_right_arrow.png");
-        bar.AddChild(prev);
-        bar.AddChild(name);
-        bar.AddChild(next);
-        prev.Position = new Vector2(left, (Height - arrowSize) / 2);
-        prev.Size = new Vector2(arrowSize, arrowSize);
-        // Full width between the arrows, vertically centred (a LineEdit draws its text at the top).
-        name.SetAnchorsPreset(Control.LayoutPreset.HcenterWide);
-        name.OffsetLeft = left + arrowSize + 8;
-        name.OffsetRight = -(right + arrowSize + 8);
-        name.OffsetTop = -20;
-        name.OffsetBottom = 20;
-        next.SetAnchorsPreset(Control.LayoutPreset.CenterRight);
-        next.OffsetLeft = -(right + arrowSize);
-        next.OffsetRight = -right;
-        next.OffsetTop = -arrowSize / 2;
-        next.OffsetBottom = arrowSize / 2;
+        row.AddChild(new Control { SizeFlagsHorizontal = Control.SizeFlags.ExpandFill, MouseFilter = Control.MouseFilterEnum.Ignore });
 
-        // New, Rename, Delete: inline at the right, and the same items on right-click of the name.
         List<MenuItem> Actions() => [
             new(Menus.Text("SPIRE_MOD_MANAGER.NEW_PROFILE"), () => Profiles.SwitchTo(Profiles.Add(), screen)),
-            new(Menus.Text("SPIRE_MOD_MANAGER.RENAME"), () =>
-            {
-                name.GrabFocus();
-                name.SelectAll();
-            }),
+            new(Menus.Text("SPIRE_MOD_MANAGER.RENAME"), BeginRename),
             new(Menus.Text("SPIRE_MOD_MANAGER.DELETE"), () =>
             {
                 if (Profiles.Active is { } active)
@@ -93,47 +80,43 @@ static class ProfileBar
 
         void Refresh()
         {
-            name.Text = Profiles.Active?.Name ?? "";
-            var several = Store.Data.Profiles.Count > 1;
-            prev.Visible = next.Visible = several;
-
+            picker.Text = Profiles.Active?.Name ?? "";
+            name.Text = picker.Text;
             inline?.QueueFree(); // Delete's enabled state depends on how many profiles there are
             inline = Menus.InlineButtons(Actions(), "Actions");
-            inline.Alignment = BoxContainer.AlignmentMode.End;
             inline.GetChild<Button>(0).Name = "NewProfileButton";
-            bar.AddChild(inline);
-            inline.AnchorLeft = inline.AnchorRight = 1;
-            inline.AnchorBottom = 1;
-            (inline.OffsetLeft, inline.OffsetRight, inline.OffsetTop, inline.OffsetBottom) = (-right + 4, -8, 10, -10);
+            row.AddChild(inline);
         }
 
-        void Cycle(int step)
+        // The profile list, the active one ticked.
+        picker.Pressed += () => Menus.Show(bar, Store.Data.Profiles.Select(p =>
+            new MenuItem(p.Name, () => Profiles.SwitchTo(p, screen), Checked: p == Profiles.Active)).ToList());
+        picker.GuiInput += e =>
         {
-            var list = Store.Data.Profiles;
-            var i = Profiles.Active is { } active ? list.IndexOf(active) : 0;
-            Profiles.SwitchTo(list[((i + step) % list.Count + list.Count) % list.Count], screen);
-        }
+            if (e is InputEventMouseButton { ButtonIndex: MouseButton.Right, Pressed: false })
+                Menus.Show(bar, Actions());
+        };
 
+        void BeginRename()
+        {
+            picker.Visible = false;
+            name.Visible = true;
+            name.GrabFocus();
+            name.SelectAll();
+        }
         void CommitRename()
         {
             if (Profiles.Active is { } active && !Profiles.Rename(active, name.Text))
                 name.Text = active.Name; // empty or taken: put the old name back
-            name.ReleaseFocus();
+            name.Visible = false;
+            picker.Visible = true;
+            Refresh();
         }
-        prev.Pressed += () => Cycle(-1);
-        next.Pressed += () => Cycle(1);
         name.TextSubmitted += _ => CommitRename();
         name.FocusExited += () =>
         {
-            if (Profiles.Active is { } active && name.Text != active.Name)
+            if (name.Visible)
                 CommitRename();
-        };
-        name.GuiInput += e =>
-        {
-            if (e is not InputEventMouseButton { ButtonIndex: MouseButton.Right, Pressed: false })
-                return;
-            name.AcceptEvent();
-            Menus.Show(bar, Actions());
         };
 
         async Task Delete(Profile profile)
@@ -150,18 +133,14 @@ static class ProfileBar
         Refresh();
     }
 
-    static TextureButton Arrow(string texture)
+    // The game's small gold settings arrow, turned to point down, as a texture for the picker.
+    static Texture2D DownArrow()
     {
-        var arrow = new TextureButton
-        {
-            TextureNormal = ResourceLoader.Load<Texture2D>(texture),
-            IgnoreTextureSize = true,
-            StretchMode = TextureButton.StretchModeEnum.KeepAspectCentered,
-            MouseDefaultCursorShape = Control.CursorShape.PointingHand,
-        };
-        arrow.MouseEntered += () => arrow.SelfModulate = new Color(1.3f, 1.3f, 1.3f);
-        arrow.MouseExited += () => arrow.SelfModulate = Colors.White;
-        return arrow;
+        var image = ResourceLoader.Load<Texture2D>("res://images/packed/common_ui/settings_tiny_right_arrow.png").GetImage();
+        image.Decompress();
+        image.Rotate90(ClockDirection.Clockwise);
+        image.Resize(14, 14, Image.Interpolation.Lanczos);
+        return ImageTexture.CreateFromImage(image);
     }
 
     static void Style(Control control, string font, int size, Color color)

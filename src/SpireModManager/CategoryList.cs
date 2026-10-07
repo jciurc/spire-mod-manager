@@ -33,7 +33,7 @@ static class CategoryList
             (data.VanillaView, data.LoadOrderView) = toVanilla ? (!data.VanillaView, false) : (false, !data.LoadOrderView);
             Store.Save();
             Label(vanilla, data.VanillaView ? "SPIRE_MOD_MANAGER.CATEGORY_VIEW" : "SPIRE_MOD_MANAGER.VANILLA_VIEW");
-            Label(loadOrder, data.LoadOrderView ? "SPIRE_MOD_MANAGER.CATEGORY_VIEW" : "SPIRE_MOD_MANAGER.LOAD_ORDER");
+            Label(loadOrder, data.LoadOrderView ? "SPIRE_MOD_MANAGER.BACK" : "SPIRE_MOD_MANAGER.LOAD_ORDER");
             Apply(content);
             Layout.Apply(screen);
             screen.GetNode<NModInfoContainer>("%ModInfoContainer").Clear(); // its text was filled for the old view
@@ -46,7 +46,7 @@ static class CategoryList
         loadOrder.Position = new Vector2(465, 1034 - 35);
         // Labels for the saved view.
         Label(vanilla, Store.Data.VanillaView ? "SPIRE_MOD_MANAGER.CATEGORY_VIEW" : "SPIRE_MOD_MANAGER.VANILLA_VIEW");
-        Label(loadOrder, Store.Data.LoadOrderView ? "SPIRE_MOD_MANAGER.CATEGORY_VIEW" : "SPIRE_MOD_MANAGER.LOAD_ORDER");
+        Label(loadOrder, Store.Data.LoadOrderView ? "SPIRE_MOD_MANAGER.BACK" : "SPIRE_MOD_MANAGER.LOAD_ORDER");
 
         Apply(content);
     }
@@ -68,9 +68,10 @@ static class CategoryList
 
     public static void Apply(Control content)
     {
-        // The row container only grows by itself; shrink it to fit once this redraw settles (collapsing a
-        // category or filtering must shorten the scroll range too).
-        content.CallDeferred(Control.MethodName.ResetSize);
+        // The row container only grows by itself; shrink its height to fit once this redraw settles
+        // (collapsing a category or filtering must shorten the scroll range too). Only the height: its width
+        // comes from its anchors, and its minimum width is 0.
+        Callable.From(() => content.OffsetBottom = content.OffsetTop).CallDeferred();
         foreach (var header in content.GetChildren().Where(c => c.IsInGroup(HeaderGroup)))
         {
             content.RemoveChild(header);
@@ -166,9 +167,9 @@ static class CategoryList
             var titleLabel = header.GetNode<Label>("Title");
             titleLabel.Text = title;
             // Our (smaller-text) views: a shorter header.
-            header.CustomMinimumSize = new Vector2(0, 44);
-            titleLabel.AddThemeFontSizeOverride("font_size", 22);
-            header.GetNode<Label>("Count").AddThemeFontSizeOverride("font_size", 18);
+            header.CustomMinimumSize = new Vector2(0, 36);
+            titleLabel.AddThemeFontSizeOverride("font_size", 18);
+            header.GetNode<Label>("Count").AddThemeFontSizeOverride("font_size", 15);
             if (muted)
             {
                 // Not a category the player made: cream instead of gold, fainter background.
@@ -184,7 +185,7 @@ static class CategoryList
                 header.AddChild(actions);
                 actions.AnchorLeft = actions.AnchorRight = 1;
                 actions.AnchorBottom = 1;
-                (actions.OffsetLeft, actions.OffsetRight, actions.OffsetTop, actions.OffsetBottom) = (-340, -52, 7, -7);
+                (actions.OffsetLeft, actions.OffsetRight, actions.OffsetTop, actions.OffsetBottom) = (-340, -52, 5, -5);
                 titleLabel.OffsetRight = -350;
             }
             foreach (var row in members)

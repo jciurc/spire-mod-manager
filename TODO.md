@@ -4,45 +4,45 @@ Jordan's notes of 2026-10-07 (from `spire manager notes.txt` in the scratch fold
 
 ## Vanilla View
 
-- [ ] "Category View" -> "Spire Manager" on vanilla page only
-- [ ] move "Spire Manager" button to bottom left corner, same positioning/padding as main menu button
-- [ ] display changes indicator on button
-- [ ] remove Load Order button
-- [ ] remove Relaunch Game button
+- [x] "Category View" -> "Spire Manager" on vanilla page only
+- [x] move "Spire Manager" button to bottom left corner, same positioning/padding as main menu button
+- [x] display changes indicator on button
+- [x] remove Load Order button
+- [x] remove Relaunch Game button
 - [ ] persist and scroll to selected item when switching views, (auto expand category, load order page included)
 
 
 ## Category View
 
-- [ ] let's expand the content area even more
-- [ ] let's reduce font size and margins across the board
-- [ ] move page header closer to top left with smaller font
-- [ ] change "Installed Mods" -> "Spire Mod Manager" (non vanilla view only)
-- [ ] remove blue border around content panels
-- [ ] remove steam and folder icons
-- [ ] remove make/get mods buttons in our view
-- [ ] "Vanilla View" -> "Vanilla Manager"
-- [ ] let's use a dropdown for Profile selection, and left justify the profile name
-- [ ] update "Profile" label to "Profile:" [name, V <- dropdown handle icon]
-- [ ] color code and change "Needs" -> "Needs:"
+- [x] let's expand the content area even more
+- [x] let's reduce font size and margins across the board
+- [x] move page header closer to top left with smaller font
+- [x] change "Installed Mods" -> "Spire Mod Manager" (non vanilla view only)
+- [x] remove blue border around content panels
+- [x] remove steam and folder icons
+- [x] remove make/get mods buttons in our view
+- [x] "Vanilla View" -> "Vanilla Manager"
+- [x] let's use a dropdown for Profile selection, and left justify the profile name
+- [x] update "Profile" label to "Profile:" [name, V <- dropdown handle icon]
+- [x] color code and change "Needs" -> "Needs:"
 - [x] (fix) items are clickable outside of the container (above and below)
 - [x] (fix) container height/scrollbar does not shrink when collapsing categories
 - [x] (fix) element focus is not dismissed when clicking an empty area
-- [ ] (fix) slight overlap with scrollbar and details panel
+- [x] (fix) slight overlap with scrollbar and details panel
 - [x] (fix) inline category (and load order) buttons are not centered vertically
 
 
 ## load order view
 
-- [ ] should have distinct view, maybe remove details panel and center?
-- [ ] Remove Vanilla button
-- [ ] Update "Category View" -> "Back"
-- [ ] remove steam/folder icons
+- [x] should have distinct view, maybe remove details panel and center?
+- [x] Remove Vanilla button
+- [x] Update "Category View" -> "Back"
+- [x] remove steam/folder icons
 - [ ] clicking/holding drag handle should also select the item
 - [ ] remove Auto sort explanation <- we'll reintroduce it later
 - [ ] change incompatibility warning to "X mods will be automatically reordered (vanilla behavior) on launch based on dependencies" [Fix now]
 - [ ] let's remove the drag prevention when dragging into incompatible order. we'll just display the warning and let the user handle it
-- [ ] update "Needs X (loaded before), Y" -> "Needs: X before, Y" and color code before/after
+- [x] update "Needs X (loaded before), Y" -> "Needs: X before, Y" and color code before/after
 - [ ] color code connectors
 - [ ] remember last selected item when going back to category view
 - [ ] multi selectable/draggable items with shift/ctrl/cmd

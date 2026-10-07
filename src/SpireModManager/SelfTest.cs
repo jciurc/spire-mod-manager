@@ -180,7 +180,7 @@ static class SelfTest
     // focus on empty clicks, inline buttons centred in their strip.
     static async Task TestListFixes(Node menu, NModdingScreen screen, Control content)
     {
-        Check("the list mask clips input", screen.GetNode<Control>("ModsBorder/ModsScrollContainer/Mask").ClipContents);
+        Check("clicks above and below the list are blocked", screen.GetNode("ModsBorder/ModsScrollContainer/Mask").HasNode("SpireModManagerBlockTop"));
 
         var collapsed = Store.Data.Categories.Select(c => c.Collapsed).ToList();
         var uncategorized = Store.Data.UncategorizedCollapsed;
@@ -190,6 +190,7 @@ static class SelfTest
         Store.Data.UncategorizedCollapsed = true;
         CategoryList.Apply(content);
         await Wait(menu, 0.3);
+        Check("the list keeps its full width", Math.Abs(content.Size.X - content.GetParent<Control>().Size.X) < 1, $"{content.Size.X} of {content.GetParent<Control>().Size.X}");
         Check("collapsing everything shrinks the list", content.Size.Y < open && Math.Abs(content.Size.Y - content.GetCombinedMinimumSize().Y) < 1,
             $"{open} -> {content.Size.Y} (min {content.GetCombinedMinimumSize().Y})");
         for (var i = 0; i < collapsed.Count; i++)
@@ -262,7 +263,7 @@ static class SelfTest
     static async Task TestProfileEditing(Node menu, NModdingScreen screen, string outDir)
     {
         var bar = screen.GetNode("ModsBorder/SpireModManagerProfileBar");
-        var name = bar.GetNode<LineEdit>("ProfileName");
+        var name = (LineEdit)bar.FindChild("ProfileName", true, false);
         var before = ModListState();
         var count = Store.Data.Profiles.Count;
         var start = Profiles.Active;
@@ -437,7 +438,7 @@ static class SelfTest
         List<NModMenuRow> Rows() => content.GetChildren().OfType<NModMenuRow>().ToList();
         List<string> Ids() => Rows().Select(r => r.Mod?.manifest?.id ?? "").ToList();
         NModMenuRow? Row(string id) => Rows().FirstOrDefault(r => r.Mod?.manifest?.id == id);
-        string Note(string id) => Row(id)?.GetNodeOrNull<Label>("SpireModManagerStrip/Needs")?.Text ?? "";
+        string Note(string id) => Row(id)?.GetNodeOrNull<RichTextLabel>("SpireModManagerStrip/Needs")?.GetParsedText() ?? "";
         if (Row("SmmTestLib") is not { Mod: { } lib } || Row("SmmTestContent") is not { Mod: { } dependent })
         {
             Results.Add("SKIP dependencies: test mods not installed");
@@ -460,7 +461,7 @@ static class SelfTest
         LoadOrder.Move(dependent, Ids().IndexOf("SmmTestLib"), Rows());
         CategoryList.Redraw(content);
         await Wait(menu, 0.5);
-        Check("bad order: banner and warning", content.GetNodeOrNull("OrderToolbar")?.FindChild("OrderProblems", true, false) != null && Note("SmmTestContent").Contains("loads after this"),
+        Check("bad order: banner and warning", content.GetNodeOrNull("OrderToolbar")?.FindChild("OrderProblems", true, false) != null && Note("SmmTestContent").Contains("Test Framework after"),
             Note("SmmTestContent"));
         await Capture(screen, outDir, "12-order-problem");
 

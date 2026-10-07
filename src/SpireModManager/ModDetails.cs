@@ -50,10 +50,10 @@ static class ModDetails
         var edit = container.GetNodeOrNull<NButton>("EditNotesButton") ?? AddButton(container, "EditNotesButton",
             "SPIRE_MOD_MANAGER.EDIT_NOTES", 20, () => OpenEditor(container, Meta(container, ModIdMeta), Meta(container, ModNameMeta)));
         var workshop = container.GetNodeOrNull<NButton>("WorkshopPageButton") ?? AddButton(container, "WorkshopPageButton",
-            "SPIRE_MOD_MANAGER.WORKSHOP_PAGE", 260,
+            "SPIRE_MOD_MANAGER.WORKSHOP_PAGE", 210,
             () => PlatformUtil.OpenUrl($"https://steamcommunity.com/sharedfiles/filedetails/?id={Meta(container, WorkshopIdMeta)}"));
         var folder = container.GetNodeOrNull<NButton>("OpenFolderButton") ?? AddButton(container, "OpenFolderButton",
-            "SPIRE_MOD_MANAGER.OPEN_FOLDER", 500, () => OS.ShellOpen(Meta(container, FolderMeta)));
+            "SPIRE_MOD_MANAGER.OPEN_FOLDER", 400, () => OS.ShellOpen(Meta(container, FolderMeta)));
         edit.Visible = id != null;
         workshop.Visible = mod.workshopId != null;
         folder.Visible = Directory.Exists(mod.path);
@@ -106,11 +106,11 @@ static class ModDetails
 
     static NButton AddButton(Control parent, string name, string locKey, float x, Action onPressed)
     {
-        var button = ModEntry.AddButton(parent, locKey, new Vector2(220, 64), onPressed);
+        var button = ModEntry.AddButton(parent, locKey, new Vector2(180, 56), onPressed);
         button.Name = name;
         button.AnchorTop = button.AnchorBottom = 1;
         (button.OffsetLeft, button.OffsetRight, button.OffsetTop, button.OffsetBottom) =
-            (x, x + 220, -ButtonsFromBottom, -ButtonsFromBottom + 64);
+            (x, x + 180, -ButtonsFromBottom, -ButtonsFromBottom + 56);
         return button;
     }
 
@@ -179,7 +179,7 @@ static class ModDetails
             editor.QueueFree();
             Refresh(container, modId);
         });
-        AddButton(editor, "CancelButton", "SPIRE_MOD_MANAGER.CANCEL", 426, editor.QueueFree);
+        AddButton(editor, "CancelButton", "SPIRE_MOD_MANAGER.CANCEL", 210, editor.QueueFree);
         alias.GrabFocus();
         return editor;
     }
@@ -203,10 +203,15 @@ static class ModDetails
             var name = row.Mod?.manifest?.name ?? row.Mod?.manifest?.id ?? "";
             var title = row.GetNode<MegaRichTextLabel>("Title");
             var alias = vanilla ? null : Store.InfoFor(row.Mod?.manifest?.id)?.Alias;
-            // Our views: smaller text in a shorter row, and the title stretches with the (wider) row.
-            row.CustomMinimumSize = new Vector2(0, vanilla ? 72 : 64);
+            // Our views: smaller text in a shorter row with a smaller tickbox and no Steam/folder icon;
+            // the title stretches with the (wider) row.
+            row.CustomMinimumSize = new Vector2(0, vanilla ? 72 : 52);
+            row.GetNode<Control>("PlatformIcon").Visible = vanilla;
+            var tickbox = row.GetNode<Control>("Tickbox");
+            tickbox.PivotOffset = tickbox.Size / 2;
+            tickbox.Scale = vanilla ? Vector2.One : new Vector2(0.72f, 0.72f);
             title.AnchorRight = vanilla ? 0 : 1;
-            title.OffsetRight = vanilla ? 562 : -150;
+            title.OffsetRight = vanilla ? 562 : -90;
             title.BbcodeEnabled = alias != null;
             title.Text = alias == null ? name : $"{Escape(alias)}  [color=#fff6e280][font_size=16]{Escape(name)}[/font_size][/color]";
             Layout.FontSize(title, vanilla ? Layout.RowTitleVanillaSize : Layout.RowTitleSize);

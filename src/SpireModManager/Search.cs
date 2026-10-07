@@ -8,7 +8,7 @@ namespace SpireModManager;
 // alias, notes or category (any case). Escape clears it.
 static class Search
 {
-    const float Height = 38;
+    const float Height = 32;
     static readonly Color Cream = new(1, 0.964706f, 0.886275f);
 
     public static bool Matches(Mod? mod, string filter)
@@ -36,7 +36,7 @@ static class Search
             MaxLength = 60,
         };
         box.AddThemeFontOverride("font", ResourceLoader.Load<Font>("res://themes/kreon_regular_shared.tres"));
-        box.AddThemeFontSizeOverride("font_size", 18);
+        box.AddThemeFontSizeOverride("font_size", 16);
         box.AddThemeColorOverride("font_color", Cream);
         box.AddThemeColorOverride("font_placeholder_color", new Color(Cream, 0.45f));
         var style = new StyleBoxFlat

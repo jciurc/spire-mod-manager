@@ -11,10 +11,9 @@ static class RowStrip
 {
     const string StripName = "SpireModManagerStrip";
     const string StripMeta = "spire_mod_manager_strip";
-    const float Height = 22;
-    const float RightMargin = 144; // from the row's right edge: clear of the game's platform icon and tickbox
+    const float Height = 20;
+    const float RightMargin = 76; // from the row's right edge: clear of the (smaller) tickbox
     static readonly Color Note = new(0.937f, 0.784f, 0.318f, 0.75f);
-    static readonly Color Problem = new(1f, 0.45f, 0.4f);
 
     public static void Apply(IList<NModMenuRow> rows, Func<NModMenuRow, IEnumerable<MenuItem>> actions)
     {
@@ -42,15 +41,16 @@ static class RowStrip
             foreach (var chip in Tags.For(row.Mod))
                 strip.AddChild(Tags.Make(chip));
 
-            var (text, problem) = Needs(row.Mod, order);
-            var note = new Label
+            var note = new RichTextLabel
             {
-                Name = "Needs", Text = text, SizeFlagsHorizontal = Control.SizeFlags.ExpandFill,
-                VerticalAlignment = VerticalAlignment.Center, ClipText = true, MouseFilter = Control.MouseFilterEnum.Ignore,
+                Name = "Needs", Text = Needs(row.Mod, order, Store.Data.LoadOrderView), BbcodeEnabled = true, ScrollActive = false,
+                AutowrapMode = TextServer.AutowrapMode.Off, VerticalAlignment = VerticalAlignment.Center,
+                SizeFlagsHorizontal = Control.SizeFlags.ExpandFill, SizeFlagsVertical = Control.SizeFlags.Fill,
+                ClipContents = true, MouseFilter = Control.MouseFilterEnum.Ignore,
             };
-            note.AddThemeFontOverride("font", ResourceLoader.Load<Font>("res://themes/kreon_regular_shared.tres"));
-            note.AddThemeFontSizeOverride("font_size", 15);
-            note.AddThemeColorOverride("font_color", problem ? Problem : Note);
+            note.AddThemeFontOverride("normal_font", ResourceLoader.Load<Font>("res://themes/kreon_regular_shared.tres"));
+            note.AddThemeFontSizeOverride("normal_font_size", 14);
+            note.AddThemeColorOverride("default_color", Note);
             strip.AddChild(note);
             strip.AddChild(Menus.InlineButtons(actions(row), "Actions"));
         }
@@ -76,27 +76,33 @@ static class RowStrip
         old.QueueFree();
     }
 
-    // "Needs BaseLib, RitsuLib", marking each dependency that is missing, off, or later in the order.
-    static (string Text, bool Problem) Needs(Mod? mod, IReadOnlyDictionary<Mod, int> order)
+    // "Needs: BaseLib, RitsuLib" with each dependency coloured: green when fine, red (and why) when it is
+    // missing, off, or loads after this mod. In Load Order every one says "before" or "after".
+    // Disabled mods aren't checked: their dependencies don't matter until they're on.
+    static string Needs(Mod? mod, IReadOnlyDictionary<Mod, int> order, bool loadOrder)
     {
         var deps = Dependencies.Of(mod);
         if (mod == null || deps.Count == 0)
-            return ("", false);
+            return "";
         var on = Dependencies.IsOn(mod);
-        var problem = false;
         var parts = deps.Select(id =>
         {
-            var name = Dependencies.Find(id)?.manifest?.name ?? id;
+            var name = Escape(Dependencies.Find(id)?.manifest?.name ?? id);
             var issue = on ? Dependencies.Check(mod, id, order) : Dependencies.Problem.None;
-            problem |= issue != Dependencies.Problem.None;
-            return issue switch
+            var (text, color) = issue switch
             {
-                Dependencies.Problem.Missing => $"{name} ({Menus.Text("SPIRE_MOD_MANAGER.DEP_MISSING")})",
-                Dependencies.Problem.Off => $"{name} ({Menus.Text("SPIRE_MOD_MANAGER.DEP_OFF")})",
-                Dependencies.Problem.LoadsBefore => $"{name} ({Menus.Text("SPIRE_MOD_MANAGER.DEP_LOADS_AFTER")})",
-                _ => name,
+                Dependencies.Problem.Missing => ($"{name} {Menus.Text("SPIRE_MOD_MANAGER.DEP_MISSING")}", ProblemHex),
+                Dependencies.Problem.Off => ($"{name} {Menus.Text("SPIRE_MOD_MANAGER.DEP_OFF")}", ProblemHex),
+                Dependencies.Problem.LoadsBefore => ($"{name} {Menus.Text("SPIRE_MOD_MANAGER.DEP_AFTER")}", ProblemHex),
+                _ when loadOrder && on => ($"{name} {Menus.Text("SPIRE_MOD_MANAGER.DEP_BEFORE")}", FineHex),
+                _ => (name, on ? FineHex : null),
             };
-        }).ToList();
-        return (Menus.Format("SPIRE_MOD_MANAGER.NEEDS", ("mods", string.Join(", ", parts))), problem);
+            return color == null ? text : $"[color={color}]{text}[/color]";
+        });
+        return $"{Menus.Text("SPIRE_MOD_MANAGER.NEEDS_LABEL")}: {string.Join(", ", parts)}";
     }
+
+    const string FineHex = "#9fdc9f", ProblemHex = "#ff8070";
+
+    static string Escape(string text) => text.Replace("[", "[lb]");
 }
