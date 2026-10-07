@@ -192,6 +192,9 @@ static class ModDetails
         return box;
     }
 
+    // After an undo or revert: the fields show the old state, so they must not be saved over the restored one.
+    public static void Forget(Node container) => container.SetMeta(ModIdMeta, "");
+
     // Saves the panel's tag and note fields for the mod they belong to, if they changed.
     static void CommitEdits(Node container)
     {
