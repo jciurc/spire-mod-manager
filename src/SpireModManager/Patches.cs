@@ -94,6 +94,15 @@ static class ModdingScreenPatch
 
         try
         {
+            Search.Attach(__instance); // below the profile bar: each pushes the list down
+        }
+        catch (Exception e)
+        {
+            Log.Error($"[{ModEntry.ModId}] Could not set up search: {e}");
+        }
+
+        try
+        {
             CategoryList.Attach(__instance);
         }
         catch (Exception e)
