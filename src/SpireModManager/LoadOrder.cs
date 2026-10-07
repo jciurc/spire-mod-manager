@@ -118,30 +118,55 @@ static class LoadOrder
 
     // When enabled mods sit above mods they need: a red bar at the top of the list with a Fix button.
     // The game reorders them at launch anyway; this makes the saved order say what will happen.
-    public static void AddBanner(Control content, List<NModMenuRow> rows, Action redraw, Action<Control> add)
+    // A bar at the top of the Load Order list: a hint and Auto sort; when enabled mods sit above mods they
+    // need, it turns red, says how many, and offers Fix order. (The game reorders those at launch anyway;
+    // fixing makes the saved order say what will happen.)
+    public static void AddToolbar(Control content, List<NModMenuRow> rows, Action redraw, Action<Control> add)
     {
         var problems = Dependencies.OrderViolations(Mods(rows)).Select(v => v.Mod).Distinct().Count();
-        if (problems == 0)
-            return;
-        var banner = new PanelContainer { Name = "OrderBanner", CustomMinimumSize = new Vector2(0, 48) };
-        banner.AddThemeStyleboxOverride("panel", new StyleBoxFlat
+        var bar = new PanelContainer { Name = "OrderToolbar", CustomMinimumSize = new Vector2(0, 44) };
+        bar.AddThemeStyleboxOverride("panel", new StyleBoxFlat
         {
-            BgColor = new Color(0.45f, 0.1f, 0.1f, 0.6f), ContentMarginLeft = 12, ContentMarginRight = 8,
+            BgColor = problems > 0 ? new Color(0.45f, 0.1f, 0.1f, 0.6f) : new Color(0.0756f, 0.12084f, 0.18f, 0.6f),
+            ContentMarginLeft = 12, ContentMarginRight = 8,
         });
         var line = new HBoxContainer();
-        banner.AddChild(line);
-        var text = new Label { Text = Menus.Format("SPIRE_MOD_MANAGER.ORDER_PROBLEMS", ("count", problems.ToString())),
-            SizeFlagsHorizontal = Control.SizeFlags.ExpandFill, VerticalAlignment = VerticalAlignment.Center,
-            AutowrapMode = TextServer.AutowrapMode.WordSmart };
-        text.AddThemeFontOverride("font", ResourceLoader.Load<Font>("res://themes/kreon_regular_shared.tres"));
-        text.AddThemeFontSizeOverride("font_size", 18);
-        line.AddChild(text);
-        line.AddChild(Menus.SmallButton(Menus.Text("SPIRE_MOD_MANAGER.FIX_ORDER"), () =>
+        line.AddThemeConstantOverride("separation", 6);
+        bar.AddChild(line);
+        var text = new Label
         {
-            FixOrder(content.GetChildren().OfType<NModMenuRow>().ToList());
+            Name = problems > 0 ? "OrderProblems" : "OrderHint",
+            Text = problems > 0
+                ? Menus.Format("SPIRE_MOD_MANAGER.ORDER_PROBLEMS", ("count", problems.ToString()))
+                : Menus.Text("SPIRE_MOD_MANAGER.ORDER_HINT"),
+            SizeFlagsHorizontal = Control.SizeFlags.ExpandFill, VerticalAlignment = VerticalAlignment.Center,
+            AutowrapMode = TextServer.AutowrapMode.WordSmart,
+        };
+        text.AddThemeFontOverride("font", ResourceLoader.Load<Font>("res://themes/kreon_regular_shared.tres"));
+        text.AddThemeFontSizeOverride("font_size", 17);
+        line.AddChild(text);
+        void Do(Action<IList<NModMenuRow>> change)
+        {
+            change(content.GetChildren().OfType<NModMenuRow>().ToList());
             redraw();
-        }, name: "FixOrderButton"));
-        add(banner);
+        }
+        if (problems > 0)
+            line.AddChild(Menus.SmallButton(Menus.Text("SPIRE_MOD_MANAGER.FIX_ORDER"), () => Do(FixOrder), name: "FixOrderButton"));
+        line.AddChild(Menus.SmallButton(Menus.Text("SPIRE_MOD_MANAGER.AUTO_SORT"), () => Do(AutoSort), name: "AutoSortButton"));
+        add(bar);
+    }
+
+    // First pass at sorting by impact: libraries (mods others depend on), then gameplay mods, then
+    // visual-only mods, keeping the player's order within each tier; then dependencies move ahead of what
+    // needs them. One undoable step. (Later: finer tiers, e.g. content vs QoL, from Workshop tags.)
+    public static void AutoSort(IList<NModMenuRow> rows)
+    {
+        var mods = Mods(rows);
+        int Tier(Mod mod) =>
+            ModManager.Mods.Any(m => m != mod && Dependencies.Of(m).Contains(mod.manifest?.id ?? "")) ? 0
+            : mod.manifest?.affectsGameplay ?? true ? 1
+            : 2;
+        Save(Dependencies.Fixed(mods.OrderBy(Tier).ToList())); // OrderBy is stable: same-tier mods keep their order
     }
 
     // Writes a whole new order: installed mods as given, then entries for mods that aren't installed.
