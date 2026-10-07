@@ -412,6 +412,15 @@ static class SelfTest
         Check("missing dependency is called out", Note("BrandedMod").Contains("BaseLib") && Note("BrandedMod").Contains("not installed"),
             Note("BrandedMod"));
 
+        // The info panel: where it's from, and dependencies both ways.
+        var panel = screen.GetNode<NModInfoContainer>("%ModInfoContainer");
+        if (Row("SmmTestLib") is { } libSelected)
+            screen.OnRowSelected(libSelected);
+        await Wait(menu, 0.3);
+        var facts = panel.GetNode<RichTextLabel>("ModDescription").Text;
+        Check("panel: source, needed by, Open Folder", facts.Contains("mods folder") && facts.Contains("Needed by")
+            && facts.Contains("Test Content") && facts.Contains("Test UI") && panel.GetNode<Control>("OpenFolderButton").Visible, facts);
+
         // Force a bad order (as an old saved list might have): the needing mod above its framework.
         LoadOrder.Move(dependent, Ids().IndexOf("SmmTestLib"), Rows());
         CategoryList.Redraw(content);
