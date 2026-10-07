@@ -53,6 +53,15 @@ var start = new ProcessStartInfo(Path.Combine(DevDir, "SlayTheSpire2.exe"), ["--
 if (args.Contains("--headless"))
     start.ArgumentList.Add("--headless");
 start.Environment["SPIRE_MOD_MANAGER_DEV"] = "1"; // the mod marks the window "[DEV]"
+// Test runs open their window without taking focus (Godot reads override.cfg beside the exe, here only
+// in the dev copy), so they don't pull the mouse and keyboard away from whatever Jordan is doing.
+// Manual launches leave it out: that window needs to be clickable.
+var overrideCfg = Path.Combine(DevDir, "override.cfg");
+if (mode == "test")
+    File.WriteAllText(overrideCfg, "[display]\n\nwindow/size/no_focus=true\n");
+else if (File.Exists(overrideCfg))
+    File.Delete(overrideCfg);
+
 if (mode == "launch")
 {
     Process.Start(start);
@@ -71,12 +80,22 @@ game.OutputDataReceived += (_, _) => { };
 game.ErrorDataReceived += (_, _) => { };
 game.BeginOutputReadLine();
 game.BeginErrorReadLine();
-if (!game.WaitForExit(TimeoutSeconds * 1000))
+// Watch the foreground window while it runs: the game should never take it.
+var focusTaken = 0;
+var deadline = DateTime.Now.AddSeconds(TimeoutSeconds);
+while (!game.WaitForExit(250) && DateTime.Now < deadline)
+{
+    GetWindowThreadProcessId(GetForegroundWindow(), out var foreground);
+    if (foreground == game.Id)
+        focusTaken++;
+}
+if (!game.HasExited)
 {
     Console.WriteLine($"game still running after {TimeoutSeconds}s, killing it");
     game.Kill();
     game.WaitForExit();
 }
+Console.WriteLine(focusTaken == 0 ? "focus: never taken" : $"focus: the game was in front for ~{focusTaken * 0.25:0.#}s");
 
 var results = Path.Combine(outDir, "results.txt");
 var text = File.Exists(results) ? File.ReadAllText(results) : "NO RESULTS (test did not finish)\n";
@@ -187,3 +206,9 @@ static string ScriptDir([CallerFilePath] string path = "") => Path.GetDirectoryN
 
 [DllImport("kernel32.dll", CharSet = CharSet.Unicode, SetLastError = true)]
 static extern bool CreateHardLink(string fileName, string existingFileName, IntPtr securityAttributes);
+
+[DllImport("user32.dll")]
+static extern IntPtr GetForegroundWindow();
+
+[DllImport("user32.dll")]
+static extern uint GetWindowThreadProcessId(IntPtr window, out int processId);
