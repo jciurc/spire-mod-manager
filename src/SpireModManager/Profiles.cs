@@ -58,6 +58,7 @@ static class Profiles
 
     public static void SwitchTo(Profile target, NModdingScreen screen)
     {
+        var from = Store.Data.ActiveProfile;
         Track();
         var settings = SaveManager.Instance.SettingsSave.ModSettings ??= new ModSettings();
         _applying = true;
@@ -83,6 +84,8 @@ static class Profiles
         }
         Store.Data.ActiveProfile = target.Name;
         Track(); // records mods the profile hadn't seen (now off)
+        if (from != null && from != target.Name)
+            History.NoteSwitch(from, target.Name); // "Switched from X to Y" in Changes
         screen.OnModEnabledOrDisabled(); // pending-changes warning
         Switched?.Invoke();
     }

@@ -1,18 +1,24 @@
+using System.Text.Json.Nodes;
 using Godot;
 using MegaCrit.Sts2.Core.Modding;
 using MegaCrit.Sts2.Core.Nodes.Screens.ModdingScreen;
 
 namespace SpireModManager;
 
-// Undo, Redo and Changes, left of Relaunch Game. Changes opens a panel over the mod list listing what
-// differs from what this session loaded (mods turned on or off, load order) with Revert all, which puts
-// the game's mod list back as it was at launch (and can itself be undone).
+// Two pieces:
+// - The undo bar, left of Relaunch Game: Undo, Redo, Revert, with the shortcuts and where you are in the
+//   current view's history ("3/7").
+// - "Changes +4 -3" above the info panel (above the list in Load Order): how many mods are on and off
+//   compared with launch. Hovering it shows the details, anchored to it: switched profile, each mod
+//   enabled or disabled, load order moves, edited mods and profiles.
 static class HistoryBar
 {
     public const string BarName = "SpireModManagerHistory";
-    const string PanelName = "SpireModManagerChanges";
+    public const string ChangesName = "SpireModManagerChanges";
+    const string PanelName = "SpireModManagerChangesPanel";
     static readonly Color Cream = new(1, 0.964706f, 0.886275f);
     static readonly Color Gold = new(0.937f, 0.784f, 0.318f);
+    const string Added = "#a6e3a1", Removed = "#f2a3a3", GameplayName = "#f5c08f", VisualName = "#a8d0f0";
 
     // The screen our keyboard shortcuts act on, while it exists.
     public static NModdingScreen? Screen { get; private set; }
@@ -20,25 +26,45 @@ static class HistoryBar
     public static void Attach(NModdingScreen screen)
     {
         var content = screen.GetNode<Control>("%ModsScrollContainer/Mask/Content");
-        var bar = new HBoxContainer { Name = BarName, Alignment = BoxContainer.AlignmentMode.End, Size = new Vector2(300, 70) };
+
+        var bar = new HBoxContainer { Name = BarName, Alignment = BoxContainer.AlignmentMode.End, Size = new Vector2(440, 70) };
         bar.AddThemeConstantOverride("separation", 6);
         screen.AddChild(bar);
         var undo = Menus.SmallButton(Menus.Text("SPIRE_MOD_MANAGER.UNDO"), History.Undo, name: "UndoButton");
         var redo = Menus.SmallButton(Menus.Text("SPIRE_MOD_MANAGER.REDO"), History.Redo, name: "RedoButton");
-        var changes = Menus.SmallButton(Menus.Text("SPIRE_MOD_MANAGER.CHANGES"), () => Toggle(screen), name: "ChangesButton");
-        foreach (var button in new[] { undo, redo, changes })
+        var revert = Menus.SmallButton(Menus.Text("SPIRE_MOD_MANAGER.REVERT_ALL"), History.RevertMods, name: "RevertAllButton");
+        var where = new Label { Name = "HistoryPosition", VerticalAlignment = VerticalAlignment.Center, MouseFilter = Control.MouseFilterEnum.Ignore };
+        Style(where, 14, new Color(Cream, 0.55f));
+        foreach (var control in new Control[] { where, undo, redo, revert })
         {
-            button.SizeFlagsVertical = Control.SizeFlags.ShrinkCenter;
-            button.AddThemeFontSizeOverride("font_size", 18);
-            bar.AddChild(button);
+            control.SizeFlagsVertical = Control.SizeFlags.ShrinkCenter;
+            if (control is Button button)
+                button.AddThemeFontSizeOverride("font_size", 17);
+            bar.AddChild(control);
         }
+
+        var changes = new RichTextLabel
+        {
+            Name = ChangesName, BbcodeEnabled = true, FitContent = true, AutowrapMode = TextServer.AutowrapMode.Off,
+            ScrollActive = false, Size = new Vector2(400, 28), MouseFilter = Control.MouseFilterEnum.Stop,
+            MouseDefaultCursorShape = Control.CursorShape.Help,
+        };
+        changes.AddThemeFontOverride("normal_font", ResourceLoader.Load<Font>("res://themes/kreon_regular_shared.tres"));
+        changes.AddThemeFontSizeOverride("normal_font_size", 18);
+        changes.AddThemeColorOverride("default_color", Cream);
+        screen.AddChild(changes);
+        changes.MouseEntered += () => ShowDetails(screen, changes);
+        changes.MouseExited += () => screen.GetNodeOrNull(PanelName)?.QueueFree();
 
         void Update()
         {
             undo.Disabled = !History.CanUndo;
             redo.Disabled = !History.CanRedo;
-            if (screen.GetNodeOrNull<Control>(PanelName) is { } open)
-                Fill(screen, open);
+            revert.Disabled = Describe().Count == 0;
+            var (position, total) = History.Position;
+            where.Text = $"{Menus.Text("SPIRE_MOD_MANAGER.HOTKEYS")}   {position}/{total}";
+            var (on, off) = Counts();
+            changes.Text = $"{Menus.Text("SPIRE_MOD_MANAGER.CHANGES")} [color={Added}]+{on}[/color] [color={Removed}]-{off}[/color]";
         }
         // After undo/redo/revert, everything on screen redraws from the restored state.
         void Restored()
@@ -61,85 +87,131 @@ static class HistoryBar
         Update();
     }
 
-    public static Control? Toggle(NModdingScreen screen)
+    // The details panel, just under the Changes line.
+    static void ShowDetails(NModdingScreen screen, Control anchor)
     {
-        if (screen.GetNodeOrNull<Control>(PanelName) is { } open)
-        {
-            open.QueueFree();
-            return null;
-        }
-        var border = screen.GetNode<Control>("ModsBorder");
-        var panel = new PanelContainer { Name = PanelName };
+        screen.GetNodeOrNull(PanelName)?.QueueFree();
+        var panel = new PanelContainer { Name = PanelName, MouseFilter = Control.MouseFilterEnum.Ignore };
         var style = new StyleBoxFlat
         {
-            BgColor = new Color(0.0756f, 0.12084f, 0.18f, 0.97f), BorderColor = new Color(Gold, 0.6f),
-            ContentMarginLeft = 24, ContentMarginRight = 24, ContentMarginTop = 16, ContentMarginBottom = 16,
+            BgColor = new Color(0.05f, 0.08f, 0.12f, 0.97f), BorderColor = new Color(Gold, 0.5f),
+            ContentMarginLeft = 16, ContentMarginRight = 16, ContentMarginTop = 10, ContentMarginBottom = 10,
         };
-        style.SetBorderWidthAll(2);
+        style.SetBorderWidthAll(1);
+        style.SetCornerRadiusAll(6);
         panel.AddThemeStyleboxOverride("panel", style);
-        screen.AddChild(panel);
-        panel.Position = new Vector2(border.OffsetLeft + 40, border.OffsetTop + 60);
-        panel.Size = new Vector2(border.OffsetRight - border.OffsetLeft - 80, 0);
-        Fill(screen, panel);
-        return panel;
-    }
-
-    // Heading, one line per change, then Revert all and Close.
-    static void Fill(NModdingScreen screen, Control panel)
-    {
-        foreach (var child in panel.GetChildren())
+        var text = new RichTextLabel
         {
-            panel.RemoveChild(child);
-            child.QueueFree();
-        }
-        var lines = new VBoxContainer { Name = "Lines" };
-        lines.AddThemeConstantOverride("separation", 6);
-        panel.AddChild(lines);
-        lines.AddChild(Text(Menus.Text("SPIRE_MOD_MANAGER.CHANGES_TITLE"), 26, Gold, bold: true));
-
-        var changes = Describe();
-        foreach (var line in changes.DefaultIfEmpty(Menus.Text("SPIRE_MOD_MANAGER.NO_CHANGES")))
-            lines.AddChild(Text(line, 20, Cream));
-
-        var buttons = new HBoxContainer { Alignment = BoxContainer.AlignmentMode.End };
-        buttons.AddThemeConstantOverride("separation", 8);
-        buttons.AddChild(Menus.SmallButton(Menus.Text("SPIRE_MOD_MANAGER.REVERT_ALL"), History.RevertMods,
-            disabled: changes.Count == 0, name: "RevertAllButton"));
-        buttons.AddChild(Menus.SmallButton(Menus.Text("SPIRE_MOD_MANAGER.CLOSE"), () => panel.QueueFree(), name: "CloseButton"));
-        lines.AddChild(buttons);
+            BbcodeEnabled = true, FitContent = true, ScrollActive = false, CustomMinimumSize = new Vector2(420, 0),
+            MouseFilter = Control.MouseFilterEnum.Ignore, Text = string.Join("\n", Lines().Select(l => l.Rich)),
+        };
+        text.AddThemeFontOverride("normal_font", ResourceLoader.Load<Font>("res://themes/kreon_regular_shared.tres"));
+        text.AddThemeFontOverride("bold_font", ResourceLoader.Load<Font>("res://themes/kreon_bold_shared.tres"));
+        text.AddThemeFontSizeOverride("normal_font_size", 17);
+        text.AddThemeFontSizeOverride("bold_font_size", 17);
+        text.AddThemeColorOverride("default_color", Cream);
+        panel.AddChild(text);
+        screen.AddChild(panel);
+        panel.Position = anchor.Position + new Vector2(0, anchor.Size.Y + 4);
     }
 
-    // What differs from launch, in words: one line per mod switched on or off, one for the load order.
-    public static List<string> Describe()
+    // Mods on and off compared with launch.
+    public static (int On, int Off) Counts()
+    {
+        var changed = ModChanges(History.Loaded?.Mods ?? []);
+        return (changed.Count(c => c.Enabled), changed.Count(c => !c.Enabled));
+    }
+
+    // The overlay's lines as plain text (also what the self-test reads).
+    public static List<string> Describe() => Lines().Where(l => l.Counts).Select(l => l.Plain).ToList();
+
+    record Line(string Plain, string Rich, bool Counts = true);
+
+    static List<Line> Lines()
     {
         if (History.Loaded is not { } loaded)
             return [];
-        var before = loaded.Mods.ToDictionary(m => (m.Id, m.Source));
-        var now = History.CurrentMods();
-        string Name(string id) => Dependencies.Find(id)?.manifest?.name ?? id;
-        bool Installed(History.ModEntry m) => ModManager.Mods.Any(x => x.manifest?.id == m.Id && x.modSource == m.Source);
+        var lines = new List<Line>();
 
-        var lines = new List<string>();
-        foreach (var mod in now.Where(Installed))
+        // On a different profile than at launch: one "switched" line, then only what changed after the last
+        // switch (instead of every mod the switch turned on or off).
+        var since = loaded.Mods;
+        if (History.LastSwitch is { } switched && History.LaunchProfile is { } launch && Store.Data.ActiveProfile is { } active
+            && active != launch)
         {
-            var was = before.TryGetValue((mod.Id, mod.Source), out var b) ? b.Enabled : true; // no entry = on
-            if (was != mod.Enabled)
-                lines.Add(Menus.Format(mod.Enabled ? "SPIRE_MOD_MANAGER.CHANGE_ON" : "SPIRE_MOD_MANAGER.CHANGE_OFF", ("mod", Name(mod.Id))));
+            lines.Add(new Line(Menus.Format("SPIRE_MOD_MANAGER.CHANGE_SWITCH", ("from", launch), ("to", active)),
+                Menus.Format("SPIRE_MOD_MANAGER.CHANGE_SWITCH", ("from", $"[b]{Escape(launch)}[/b]"), ("to", $"[b]{Escape(active)}[/b]"))));
+            since = switched.After;
         }
-        var orderBefore = loaded.Mods.Where(Installed).Select(m => (m.Id, m.Source)).ToList();
-        var orderNow = now.Where(Installed).Select(m => (m.Id, m.Source)).ToList();
+        foreach (var (mod, enabled) in ModChanges(since))
+        {
+            var key = enabled ? "SPIRE_MOD_MANAGER.CHANGE_ON" : "SPIRE_MOD_MANAGER.CHANGE_OFF";
+            var name = mod.manifest?.name ?? mod.manifest?.id ?? "";
+            var nameColor = mod.manifest?.affectsGameplay ?? true ? GameplayName : VisualName;
+            lines.Add(new Line(Menus.Format(key, ("mod", name)),
+                $"[color={(enabled ? Added : Removed)}]{Menus.Format(key, ("mod", $"[color={nameColor}]{Escape(name)}[/color]"))}[/color]"));
+        }
+
+        var installed = (Func<History.ModEntry, bool>)(m => ModManager.Mods.Any(x => x.manifest?.id == m.Id && x.modSource == m.Source));
+        var orderBefore = loaded.Mods.Where(installed).Select(m => (m.Id, m.Source)).ToList();
+        var orderNow = History.CurrentMods().Where(installed).Select(m => (m.Id, m.Source)).ToList();
         var moved = orderNow.Where((m, i) => i >= orderBefore.Count || orderBefore[i] != m).Count();
         if (moved > 0)
-            lines.Add(Menus.Format("SPIRE_MOD_MANAGER.CHANGE_ORDER", ("count", moved.ToString())));
+            lines.Add(Plain(Menus.Format("SPIRE_MOD_MANAGER.CHANGE_ORDER", ("count", moved.ToString()))));
+
+        var (edited, profiles) = DataChanges(loaded.Store, Store.EditsJson());
+        if (edited > 0)
+            lines.Add(Plain(Menus.Format("SPIRE_MOD_MANAGER.CHANGE_EDITED", ("count", edited.ToString()))));
+        if (profiles > 0)
+            lines.Add(Plain(Menus.Format("SPIRE_MOD_MANAGER.CHANGE_PROFILES", ("count", profiles.ToString()))));
+
+        if (lines.Count == 0)
+            lines.Add(new Line("", Menus.Text("SPIRE_MOD_MANAGER.NO_CHANGES"), Counts: false));
         return lines;
     }
 
-    static Label Text(string text, int size, Color color, bool bold = false)
+    static Line Plain(string text) => new(text, Escape(text));
+
+    // Installed mods whose on/off differs from the given list (no entry = on).
+    static List<(Mod Mod, bool Enabled)> ModChanges(IReadOnlyList<History.ModEntry> before)
     {
-        var label = new Label { Text = text, AutowrapMode = TextServer.AutowrapMode.WordSmart };
-        label.AddThemeFontOverride("font", ResourceLoader.Load<Font>(bold ? "res://themes/kreon_bold_shared.tres" : "res://themes/kreon_regular_shared.tres"));
+        var then = before.ToDictionary(m => (m.Id, m.Source), m => m.Enabled);
+        var now = History.CurrentMods().ToDictionary(m => (m.Id, m.Source), m => m.Enabled);
+        return ModManager.Mods.Where(m => m.manifest?.id != null)
+            .Select(m => (Mod: m, Key: (m.manifest?.id ?? "", m.modSource)))
+            .Select(p => (p.Mod, Then: then.GetValueOrDefault(p.Key, true), Now: now.GetValueOrDefault(p.Key, true)))
+            .Where(p => p.Then != p.Now)
+            .Select(p => (p.Mod, p.Now))
+            .ToList();
+    }
+
+    // Mods whose category, alias, notes or tags changed; profiles added, removed or renamed.
+    static (int Edited, int Profiles) DataChanges(string before, string after)
+    {
+        try
+        {
+            var a = JsonNode.Parse(before)?.AsObject();
+            var b = JsonNode.Parse(after)?.AsObject();
+            var modsA = a?["mods"] as JsonObject ?? [];
+            var modsB = b?["mods"] as JsonObject ?? [];
+            var edited = modsA.Select(p => p.Key).Union(modsB.Select(p => p.Key))
+                .Count(id => !JsonNode.DeepEquals(modsA[id], modsB[id]));
+            HashSet<string> Names(JsonObject? o) => (o?["profiles"] as JsonArray ?? []).Select(p => (string?)p?["name"] ?? "").ToHashSet();
+            var profiles = Names(a).Except(Names(b)).Count() + Names(b).Except(Names(a)).Count();
+            return (edited, profiles);
+        }
+        catch (Exception)
+        {
+            return (0, 0);
+        }
+    }
+
+    static string Escape(string text) => text.Replace("[", "[lb]");
+
+    static void Style(Label label, int size, Color color)
+    {
+        label.AddThemeFontOverride("font", ResourceLoader.Load<Font>("res://themes/kreon_regular_shared.tres"));
         label.AddThemeFontSizeOverride("font_size", size);
         label.AddThemeColorOverride("font_color", color);
-        return label;
     }
 }

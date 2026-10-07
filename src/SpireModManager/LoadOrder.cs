@@ -55,8 +55,14 @@ static class LoadOrder
         {
             if (row.GetNodeOrNull(HandleName) is not { } handle)
                 continue;
-            handle.QueueFree();
-            row.GetNodeOrNull(NumberName)?.QueueFree();
+            // Out of the tree now, not at the end of the frame: a second redraw in the same frame must not
+            // find them and shift the title back again.
+            foreach (var node in new[] { handle, row.GetNodeOrNull(NumberName) })
+                if (node != null)
+                {
+                    row.RemoveChild(node);
+                    node.QueueFree();
+                }
             row.GetNode<Control>("Title").OffsetLeft -= HandleWidth;
         }
     }
