@@ -76,6 +76,8 @@ static class SelfTest
             await Capture(screen, outDir, "4-vanilla-view");
             Click(screen.GetNode<NButton>("SpireModManagerViewToggle"));
             await Wait(menu, 1);
+
+            await TestCategories(menu, screen, content, outDir);
         }
         catch (Exception e)
         {
@@ -84,6 +86,56 @@ static class SelfTest
         File.WriteAllLines(Path.Combine(outDir, "results.txt"), Results);
         menu.GetTree().Quit();
     }
+
+    // Row menu, new category renamed in place, assign, move, header menu, delete.
+    static async Task TestCategories(Node menu, NModdingScreen screen, Control content, string outDir)
+    {
+        const string modId = "LocalModFixes";
+        var row = content.GetChildren().OfType<NModMenuRow>().FirstOrDefault(r => r.Mod?.manifest?.id == modId);
+        if (row == null)
+        {
+            Results.Add($"SKIP categories: {modId} not installed");
+            return;
+        }
+
+        var rowMenu = CategoryList.ShowRowMenu(content, row);
+        await Wait(menu, 0.5);
+        Check("row menu lists categories", rowMenu?.ItemCount == Store.Data.Categories.Count + 4, $"{rowMenu?.ItemCount} items");
+        await Capture(screen, outDir, "5-row-menu");
+        rowMenu?.Hide();
+
+        var category = Categories.Add();
+        Categories.Assign(modId, category.Name);
+        CategoryList.Apply(content);
+        var box = CategoryList.BeginRename(content, category);
+        Check("rename box opens", box != null);
+        if (box != null)
+        {
+            box.Text = "Renamed";
+            box.EmitSignal(LineEdit.SignalName.TextSubmitted, box.Text);
+        }
+        await Wait(menu, 0.5);
+        Check("rename keeps the mod in the category", Store.InfoFor(modId)?.Category == "Renamed");
+        Check("renamed header shown", Header(content, "Renamed") != null);
+
+        Categories.Move(category, -1);
+        CategoryList.Apply(content);
+        await Wait(menu, 0.5);
+        var order = content.GetChildren().Select(c => c.Name.ToString()).ToList();
+        Check("moved up: header order follows", order.IndexOf("Category Renamed") < order.IndexOf($"Category {Store.Data.Categories.Last().Name}"));
+        Check("mod row sits under its header", content.GetChildren().IndexOf(row) == order.IndexOf("Category Renamed") + 1);
+        var headerMenu = CategoryList.ShowHeaderMenu(content, category);
+        await Wait(menu, 0.5);
+        await Capture(screen, outDir, "6-header-menu");
+        headerMenu.Hide();
+
+        Categories.Delete(category);
+        CategoryList.Apply(content);
+        await Wait(menu, 0.5);
+        Check("delete returns the mod to Uncategorized", Store.InfoFor(modId)?.Category == null && Header(content, "Renamed") == null);
+    }
+
+    static Node? Header(Control content, string category) => content.GetNodeOrNull($"Category {category}");
 
     static void Click(NButton button) => button.EmitSignal(NClickableControl.SignalName.Released, button);
 
