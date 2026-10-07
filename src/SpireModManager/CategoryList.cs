@@ -98,10 +98,12 @@ static class CategoryList
     // The game's scroll container eases its content towards a target position; these move that target.
     static Control ScrollContainer(Control content) => content.GetParent().GetParent<Control>();
 
+    // Kept within the list's ends: past them the container springs back, which looks like a bounce.
     public static void ScrollBy(Control content, float pixels)
     {
         var scroll = ScrollContainer(content);
-        scroll.Set("_targetDragPosY", (float)scroll.Get("_targetDragPosY") + pixels);
+        var bottom = Math.Min(0, content.GetParent<Control>().Size.Y - content.Size.Y);
+        scroll.Set("_targetDragPosY", Math.Clamp((float)scroll.Get("_targetDragPosY") + pixels, bottom, 0));
     }
 
     // The row a third of the way down the visible list.

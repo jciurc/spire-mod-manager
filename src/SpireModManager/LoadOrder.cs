@@ -21,7 +21,7 @@ static class LoadOrder
     static readonly Color Gold = new(0.937f, 0.784f, 0.318f);
     static readonly Color Blocked = new(0.9f, 0.25f, 0.25f);
     static readonly Color LinkFine = new(0.62f, 0.86f, 0.62f);
-    const float EdgeScroll = 48, EdgeScrollStep = 24; // drag near an edge: px from it, px per mouse move
+    const float EdgeScroll = 60, EdgeScrollSpeed = 700; // drag near an edge: px from it, px per second at the edge
     static List<string>? _loadedOrder;
 
     // The order this session loaded with, taken once the game has finished its own startup sorting.
@@ -253,6 +253,7 @@ static class LoadOrder
         row.MoveChild(picked, 0);
 
         var dragging = false;
+        var mouseY = 0f; // where the last mouse event put the pointer
         ColorRect? marker = null;
         handle.GuiInput += e =>
         {
@@ -264,34 +265,25 @@ static class LoadOrder
                     Pick(content, row, toggle: modified.CtrlPressed || modified.MetaPressed, range: modified.ShiftPressed);
                     handle.AcceptEvent();
                     break;
-                case InputEventMouseButton { ButtonIndex: MouseButton.Left, Pressed: true }:
+                case InputEventMouseButton { ButtonIndex: MouseButton.Left, Pressed: true } press:
+                    mouseY = press.GlobalPosition.Y;
                     if (row.Mod is not { } grabbed || !Picked.Contains(grabbed))
                         Pick(content, row, toggle: false, range: false);
                     dragging = true;
                     marker = new ColorRect { Color = Gold, Size = new Vector2(content.Size.X, 5), MouseFilter = Control.MouseFilterEnum.Ignore };
                     content.GetParent().AddChild(marker); // the scroll mask: not a container, so it can sit anywhere
+                    content.GetTree().ProcessFrame += DragFrame;
                     BeginDragLook(content, row);
                     CategoryList.Select(content, row); // grabbing a row selects it too
                     handle.AcceptEvent();
                     break;
-                case InputEventMouseMotion motion when dragging && marker != null:
-                    var (gap, y) = Target(content, motion.GlobalPosition.Y);
-                    // Kept inside the list's visible area (it clips), so the gap above the first row still shows.
-                    var top = content.GetParent<Control>().GlobalPosition.Y;
-                    marker.GlobalPosition = new Vector2(content.GlobalPosition.X, Math.Max(y - 2, top));
-                    // Red where dropping would load it before something it needs (or after something needing it).
-                    marker.Color = Destination(gap) is { } at && row.Mod is { } moving
-                        && MoveBreaks(moving, at, content.GetChildren().OfType<NModMenuRow>().ToList()) ? Blocked : Gold;
-                    // Near the top or bottom edge, the list scrolls along.
-                    var view = content.GetParent<Control>().GetGlobalRect();
-                    if (motion.GlobalPosition.Y < view.Position.Y + EdgeScroll)
-                        CategoryList.ScrollBy(content, EdgeScrollStep);
-                    else if (motion.GlobalPosition.Y > view.End.Y - EdgeScroll)
-                        CategoryList.ScrollBy(content, -EdgeScrollStep);
-                    handle.AcceptEvent();
+                case InputEventMouseMotion motion when dragging:
+                    mouseY = motion.GlobalPosition.Y;
+                    handle.AcceptEvent(); // the marker and edge scrolling update every frame (DragFrame)
                     break;
                 case InputEventMouseButton { ButtonIndex: MouseButton.Left, Pressed: false } release when dragging:
                     dragging = false;
+                    content.GetTree().ProcessFrame -= DragFrame;
                     marker?.QueueFree();
                     marker = null;
                     EndDragLook(content);
@@ -313,6 +305,29 @@ static class LoadOrder
                     break;
             }
         };
+
+        // Every frame while dragging: near the top or bottom edge the list scrolls, faster the closer the
+        // mouse is to the edge (smooth, and also while the mouse is still); the marker follows the gap under
+        // the mouse.
+        void DragFrame()
+        {
+            if (!GodotObject.IsInstanceValid(content) || !content.IsInsideTree() || marker == null)
+            {
+                ((SceneTree)Engine.GetMainLoop()).ProcessFrame -= DragFrame;
+                return;
+            }
+            var view = content.GetParent<Control>().GetGlobalRect();
+            var depth = Math.Max(view.Position.Y + EdgeScroll - mouseY, 0) - Math.Max(mouseY - (view.End.Y - EdgeScroll), 0);
+            if (depth != 0)
+                CategoryList.ScrollBy(content, Math.Clamp(depth / EdgeScroll, -1.5f, 1.5f) * EdgeScrollSpeed * (float)content.GetProcessDeltaTime());
+
+            var (gap, y) = Target(content, mouseY);
+            // Kept inside the list's visible area (it clips), so the gap above the first row still shows.
+            marker.GlobalPosition = new Vector2(content.GlobalPosition.X, Math.Clamp(y - 2, view.Position.Y, view.End.Y - 5));
+            // Red where dropping would load it before something it needs (or after something needing it).
+            marker.Color = Destination(gap) is { } at && row.Mod is { } moving
+                && MoveBreaks(moving, at, content.GetChildren().OfType<NModMenuRow>().ToList()) ? Blocked : Gold;
+        }
 
         // The index the row would take after leaving its slot, or null for its own gap.
         int? Destination(int gap)
