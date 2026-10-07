@@ -75,16 +75,17 @@ static class SelfTest
             if (Profiles.Active is { } start && Store.Data.Profiles.FirstOrDefault(p => p != start) is { } other)
             {
                 var before = ModListState();
+                var wasEdited = Profiles.Edited; // the fixture's list differs from its saved profile: an unsaved edit
                 Profiles.SwitchTo(other, screen);
                 await Wait(menu, 1);
                 Results.Add($"INFO switched to {other.Name}: {ModListState().Count(s => s.EndsWith("=on"))} on");
                 Check("our own mod stays on", !(SaveManager.Instance.SettingsSave.ModSettings?.ModList
                     .Any(m => m.Id == ModEntry.ModId && !m.IsEnabled) ?? false));
                 await Capture(screen, outDir, "3-other-profile");
-                Profiles.SwitchTo(start, screen);
+                Profiles.SwitchTo(start, screen, edited: wasEdited);
                 await Wait(menu, 1);
                 var after = ModListState();
-                Check("profile round trip restores the mod list", before.SequenceEqual(after),
+                Check("profile round trip (back to the edit, if it was on one) restores the mod list", before.SequenceEqual(after),
                     string.Join(", ", before.Except(after)));
             }
             else
@@ -104,6 +105,7 @@ static class SelfTest
             await TestCategories(menu, screen, content, outDir);
             await TestListFixes(menu, screen, content);
             await TestProfileEditing(menu, screen, outDir);
+            await TestUnsavedProfile(menu, screen, content, outDir);
             await TestNotes(menu, screen, content, outDir);
             await TestSearch(menu, screen, content, outDir);
             await TestLoadOrder(menu, screen, content, outDir);
@@ -270,10 +272,11 @@ static class SelfTest
         var before = ModListState();
         var count = Store.Data.Profiles.Count;
         var start = Profiles.Active;
+        var startEdited = Profiles.Edited;
 
-        bar.FindChild("NewProfileButton", true, false)?.EmitSignal(BaseButton.SignalName.Pressed);
+        bar.FindChild("SaveAsNewButton", true, false)?.EmitSignal(BaseButton.SignalName.Pressed);
         await Wait(menu, 0.5);
-        Check("New adds a profile and switches to it", Store.Data.Profiles.Count == count + 1 && Profiles.Active != start
+        Check("Save as new adds a profile and switches to it", Store.Data.Profiles.Count == count + 1 && Profiles.Active != start
             && name.Text == Profiles.Active?.Name, name.Text);
 
         name.GrabFocus();
@@ -297,9 +300,62 @@ static class SelfTest
         Check("delete the active profile switches to a neighbour", Store.Data.Profiles.Count == count && Profiles.Active != null
             && Store.Data.Profiles.All(p => p.Name != "Brother co-op") && name.Text == Profiles.Active.Name);
         if (start != null && Profiles.Active != start)
-            Profiles.SwitchTo(start, screen);
+            Profiles.SwitchTo(start, screen, edited: startEdited);
         Check("mod list unchanged after new/rename/delete", before.SequenceEqual(ModListState()));
         Check("last profile can't be deleted", Store.Data.Profiles.Count > 1 || !Profiles.Delete(Store.Data.Profiles[0], screen));
+    }
+
+    // Unsaved edits: a tickbox change leaves the saved profile alone and shows Unsaved; the edit survives
+    // switching away, can be picked again, discarded or saved.
+    static async Task TestUnsavedProfile(Node menu, NModdingScreen screen, Control content, string outDir)
+    {
+        var bar = screen.GetNode("ModsBorder/SpireModManagerProfileBar");
+        if (Profiles.Active is not { } profile || content.GetChildren().OfType<NModMenuRow>().FirstOrDefault(r => r.Mod?.manifest?.id == "SmmTestUi") is not { Mod: { } mod } row
+            || Store.Data.Profiles.FirstOrDefault(p => p != profile) is not { } other)
+        {
+            Results.Add("SKIP unsaved profile: needs two profiles and the test mods");
+            return;
+        }
+        var tickbox = row.GetNode<NTickbox>("Tickbox");
+        bool On() => Dependencies.IsOn(mod);
+        bool SavedOn() => profile.Mods.FirstOrDefault(m => m.Id == "SmmTestUi")?.Enabled ?? false;
+        async Task Toggle(bool on)
+        {
+            tickbox.IsTicked = on;
+            tickbox.EmitSignal(NTickbox.SignalName.Toggled, tickbox);
+            await Wait(menu, 0.3);
+        }
+        void Press(string name) => bar.FindChild(name, true, false)?.EmitSignal(BaseButton.SignalName.Pressed);
+        if (Profiles.Edited)
+            Profiles.Save(); // start clean: the fixture launches on an unsaved edit (its list differs from the profile)
+        var wasOn = On();
+
+        await Toggle(!wasOn);
+        Check("a tickbox change is an unsaved edit; the saved profile stays", Profiles.Edited && SavedOn() == wasOn
+            && bar.FindChild("Unsaved", true, false) is Control { Visible: true } && bar.FindChild("SaveProfileButton", true, false) != null,
+            $"edited {Profiles.Edited}, saved on {SavedOn()}, was on {wasOn}, now on {On()}, unsaved {(bar.FindChild("Unsaved", true, false) as Control)?.Visible}, save {bar.FindChild("SaveProfileButton", true, false) != null}");
+        await Capture(screen, outDir, "3b-unsaved-profile");
+
+        Profiles.SwitchTo(other, screen);
+        Profiles.SwitchTo(profile, screen);
+        await Wait(menu, 0.3);
+        Check("switching away and back: saved state, the edit kept", !Profiles.Edited && On() == wasOn && profile.Edited != null);
+        Profiles.SwitchTo(profile, screen, edited: true);
+        await Wait(menu, 0.3);
+        Check("the edit can be picked again", Profiles.Edited && On() != wasOn);
+
+        Press("DiscardButton");
+        await Wait(menu, 0.3);
+        Check("Discard goes back to the saved state and drops the edit", !Profiles.Edited && On() == wasOn && profile.Edited == null
+            && bar.FindChild("Unsaved", true, false) is Control { Visible: false });
+
+        await Toggle(!wasOn);
+        Press("SaveProfileButton");
+        await Wait(menu, 0.3);
+        Check("Save makes the edit the saved state", !Profiles.Edited && SavedOn() != wasOn && profile.Edited == null);
+        await Toggle(wasOn); // and back, saved, for the tests after
+        Press("SaveProfileButton");
+        await Wait(menu, 0.3);
     }
 
     // The fixture gives SpireModManager an alias and notes; LocalModFixes gets them through the editor.
