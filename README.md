@@ -11,6 +11,6 @@ starts a new copy with the same arguments; the child inherits `SteamAppId`).
 - Dev runs, apart from real play (a hard-linked game copy in `D:\sts2-dev` with its own mods folder,
   no Steam, separate save data and log), so the game can be played through Steam meanwhile:
   `dotnet run tools/dev.cs test` runs the in-game
-  self-test against a fixture (screenshots and UI dumps in out/selftest; add `--headless` for no window, dumps
-  only); `dotnet run tools/dev.cs launch` opens the game in the sandbox to try things by hand.
+  self-test headless against a fixture (UI dumps in out/selftest; add `--window` for screenshots too, with the
+  window kept behind others); `dotnet run tools/dev.cs launch` opens the game in the sandbox to try things by hand.
 - Player text lives in `localization/<lang>/*.json`, packed into `SpireModManager.pck`.
