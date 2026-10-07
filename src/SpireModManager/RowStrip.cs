@@ -89,20 +89,24 @@ static class RowStrip
         {
             var name = Escape(Dependencies.Find(id)?.manifest?.name ?? id);
             var issue = on ? Dependencies.Check(mod, id, order) : Dependencies.Problem.None;
-            var (text, color) = issue switch
+            // With a status word ("before", "after", "(off)"...), the name is plain and the word carries the colour;
+            // without one, the name does.
+            var (word, color) = issue switch
             {
-                Dependencies.Problem.Missing => ($"{name} {Menus.Text("SPIRE_MOD_MANAGER.DEP_MISSING")}", ProblemHex),
-                Dependencies.Problem.Off => ($"{name} {Menus.Text("SPIRE_MOD_MANAGER.DEP_OFF")}", ProblemHex),
-                Dependencies.Problem.LoadsBefore => ($"{name} {Menus.Text("SPIRE_MOD_MANAGER.DEP_AFTER")}", ProblemHex),
-                _ when loadOrder && on => ($"{name} {Menus.Text("SPIRE_MOD_MANAGER.DEP_BEFORE")}", FineHex),
-                _ => (name, on ? FineHex : null),
+                Dependencies.Problem.Missing => (Menus.Text("SPIRE_MOD_MANAGER.DEP_MISSING"), ProblemHex),
+                Dependencies.Problem.Off => (Menus.Text("SPIRE_MOD_MANAGER.DEP_OFF"), ProblemHex),
+                Dependencies.Problem.LoadsBefore => (Menus.Text("SPIRE_MOD_MANAGER.DEP_AFTER"), ProblemHex),
+                _ when loadOrder && on => (Menus.Text("SPIRE_MOD_MANAGER.DEP_BEFORE"), FineHex),
+                _ => (null, on ? FineHex : null),
             };
-            return color == null ? text : $"[color={color}]{text}[/color]";
+            if (word != null)
+                return $"[color={NameHex}]{name}[/color] [color={color}]{word}[/color]";
+            return color == null ? name : $"[color={color}]{name}[/color]";
         });
         return $"{Menus.Text("SPIRE_MOD_MANAGER.NEEDS_LABEL")}: {string.Join(", ", parts)}";
     }
 
-    const string FineHex = "#9fdc9f", ProblemHex = "#ff8070";
+    const string FineHex = "#9fdc9f", ProblemHex = "#ff8070", NameHex = "#fff6e2";
 
     static string Escape(string text) => text.Replace("[", "[lb]");
 }
