@@ -56,9 +56,12 @@ static class Layout
 
         // Inside the info panel: title, image and description, fitted to its new size.
         var width = info.Size.X;
-        Place(info.GetNode<Control>("ModTitle"), new Vector4(20, 12, width - 20, 60));
-        Place(info.GetNode<Control>("ModImage"), new Vector4(20, 66, width - 20, 340));
-        Place(info.GetNode<Control>("ModDescription"), new Vector4(22, 348, width - 22, info.Size.Y - 92));
+        // Title and link (left) beside a thumbnail of the mod image (right); description below; the
+        // player's tags and notes and Open Folder along the bottom (ModDetails).
+        Place(info.GetNode<Control>("ModTitle"), new Vector4(20, 10, width - 230, 52));
+        Place(info.GetNode<Control>("ModImage"), new Vector4(width - 210, 12, width - 20, 118));
+        Place(info.GetNode<Control>("ModDescription"), new Vector4(22, 128, width - 22,
+            info.Size.Y - ModDetails.ButtonsFromBottom - ModDetails.YoursHeight - 8));
         ViewFont(info.GetNode<MegaRichTextLabel>("ModTitle"), InfoTitleSize);
         ViewFont(info.GetNode<MegaRichTextLabel>("ModDescription"), InfoTextSize);
 

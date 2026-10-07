@@ -316,30 +316,35 @@ static class SelfTest
         screen.OnRowSelected(ours);
         await Wait(menu, 0.5);
         var description = panel.GetNode<RichTextLabel>("ModDescription").Text;
+        var yours = panel.GetNode<Control>("SpireModManagerYours");
         Check("panel titles with the alias", panel.GetNode<RichTextLabel>("ModTitle").Text == "The Manager");
-        Check("panel keeps the original name and shows notes", description.Contains("Spire Mod Manager") && description.Contains("Fixture note"));
-        Check("Workshop button hidden for a local mod", panel.GetNodeOrNull<Control>("WorkshopPageButton")?.Visible == false);
+        Check("panel keeps the original name; notes in the notes field", description.Contains("Spire Mod Manager")
+            && yours.GetNode<TextEdit>("Notes").Text == "Fixture note");
+        Check("a local mod says so instead of a Workshop link", panel.GetNode<LinkButton>("SpireModManagerLink") is { Disabled: true, Text: "Local mod" });
         await Capture(screen, outDir, "8-details-with-notes");
 
+        // Tags and notes typed in the panel save when focus leaves.
         screen.OnRowSelected(other);
         await Wait(menu, 0.5);
-        Click(panel.GetNode<NButton>("EditNotesButton"));
-        await Wait(menu, 0.5);
-        var editor = panel.GetNodeOrNull("NotesEditor");
-        Check("Edit Notes opens the editor", editor != null);
-        if (editor == null)
-            return;
-        editor.GetNode<LineEdit>("Alias").Text = "Fixes";
-        editor.GetNode<TextEdit>("Notes").Text = "Typed in the editor";
-        editor.GetNode<LineEdit>("Tags").Text = "co-op, Favorites, co-op";
-        await Capture(screen, outDir, "9-notes-editor");
-        Click(editor.GetNode<NButton>("SaveButton"));
-        await Wait(menu, 0.5);
-        Check("save stores alias and notes", Store.InfoFor("LocalModFixes") is { Alias: "Fixes", Notes: "Typed in the editor" });
-        Check("save stores tags, repeats dropped", Store.InfoFor("LocalModFixes")?.Tags?.SequenceEqual(["co-op", "Favorites"]) == true,
+        yours.GetNode<TextEdit>("Notes").Text = "Typed in the panel";
+        yours.GetNode<LineEdit>("Tags").Text = "co-op, Favorites, co-op";
+        await Capture(screen, outDir, "9-notes-editing");
+        yours.GetNode<TextEdit>("Notes").EmitSignal(Control.SignalName.FocusExited);
+        await Wait(menu, 0.3);
+        Check("panel saves notes", Store.InfoFor("LocalModFixes")?.Notes == "Typed in the panel");
+        Check("panel saves tags, repeats dropped", Store.InfoFor("LocalModFixes")?.Tags?.SequenceEqual(["co-op", "Favorites"]) == true,
             string.Join(", ", Store.InfoFor("LocalModFixes")?.Tags ?? []));
-        Check("save updates row and panel", RowTitle("LocalModFixes").StartsWith("Fixes")
-            && panel.GetNode<RichTextLabel>("ModDescription").Text.Contains("Typed in the editor"));
+
+        // The row's pencil edits the alias in place.
+        Check("rows have the alias pencil", Row("LocalModFixes")?.HasNode("SpireModManagerPencil") == true);
+        if (Row("LocalModFixes") is { } fixesRow && ModDetails.BeginAliasEdit(fixesRow) is { } aliasBox)
+        {
+            aliasBox.Text = "Fixes";
+            aliasBox.EmitSignal(LineEdit.SignalName.TextSubmitted, aliasBox.Text);
+        }
+        await Wait(menu, 0.5);
+        Check("pencil saves the alias, row and panel follow", Store.InfoFor("LocalModFixes")?.Alias == "Fixes" && RowTitle("LocalModFixes").StartsWith("Fixes")
+            && panel.GetNode<RichTextLabel>("ModTitle").Text == "Fixes");
         Check("Vanilla View shows plain names", await WithVanillaView(screen, menu, () => RowTitle(ModEntry.ModId) == "Spire Mod Manager"));
     }
 
@@ -439,7 +444,7 @@ static class SelfTest
         var selected = Rows().FirstOrDefault(r => r.Mod == CategoryList.Selected);
         Check("category view takes the handles off", !Rows().Any(r => r.HasNode("SpireModManagerHandle"))
             && content.GetChildren().Any(c => c.IsInGroup("SpireModManagerCategoryHeader")));
-        Check("back from Load Order: titles in place", Rows().All(r => r.GetNode<Control>("Title").OffsetLeft == 0),
+        Check("back from Load Order: titles in place (after the alias pencil)", Rows().All(r => r.GetNode<Control>("Title").OffsetLeft == 22),
             string.Join(", ", Rows().Select(r => r.GetNode<Control>("Title").OffsetLeft)));
         Check("back from Load Order: no lines or dimming", !content.GetParent().GetChildren().Any(c => c.IsInGroup("SpireModManagerLinks"))
             && Rows().All(r => r.Modulate == Colors.White));
@@ -469,7 +474,7 @@ static class SelfTest
             screen.OnRowSelected(libSelected);
         await Wait(menu, 0.3);
         var facts = panel.GetNode<RichTextLabel>("ModDescription").Text;
-        Check("panel: source, needed by, Open Folder", facts.Contains("mods folder") && facts.Contains("Needed by")
+        Check("panel: needed by, Open Folder", facts.Contains("Needed by")
             && facts.Contains("Test Content") && facts.Contains("Test UI") && panel.GetNode<Control>("OpenFolderButton").Visible, facts);
 
         // Force a bad order (as an old saved list might have): the needing mod above its framework.

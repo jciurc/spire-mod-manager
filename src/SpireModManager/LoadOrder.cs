@@ -64,6 +64,7 @@ static class LoadOrder
                     node.QueueFree();
                 }
             row.GetNode<Control>("Title").OffsetLeft -= HandleWidth;
+            ModDetails.PlacePencil(row);
         }
     }
 
@@ -201,6 +202,7 @@ static class LoadOrder
             return;
         }
         row.GetNode<Control>("Title").OffsetLeft += HandleWidth;
+        ModDetails.PlacePencil(row);
 
         // Left to right: the link gutter (dependency lines), the grip, the position number, then the title.
         number = new Label
