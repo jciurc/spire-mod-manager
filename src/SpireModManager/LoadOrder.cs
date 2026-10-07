@@ -281,10 +281,10 @@ static class LoadOrder
             });
         row.AddChild(handle);
 
-        // Hover: show how this mod is linked to others.
+        // Hover: show how this mod is linked to others (Load Order only; rows outlive the view).
         row.MouseEntered += () =>
         {
-            if (!content.HasMeta(DraggingMeta))
+            if (Store.Data.LoadOrderView && !content.HasMeta(DraggingMeta))
                 ShowLinks(content, row, strong: false);
         };
         row.MouseExited += () =>
@@ -514,8 +514,12 @@ static class LoadOrder
 
     public static void HideLinks(Control content)
     {
-        foreach (var line in content.GetParent().GetChildren().Where(c => c.IsInGroup(LinkGroup)))
+        var mask = content.GetParent();
+        foreach (var line in mask.GetChildren().Where(c => c.IsInGroup(LinkGroup)).ToList())
+        {
+            mask.RemoveChild(line); // now: they are redrawn every frame while dragging
             line.QueueFree();
+        }
     }
 
     // While dragging: the list dims, the dragged row and every row linked to it stay lit, links drawn strong.
