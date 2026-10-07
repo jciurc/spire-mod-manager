@@ -39,7 +39,7 @@ var real = args.Contains("--real"); // Jordan's own mods (switched off) and a co
 
 if (mode is not ("test" or "launch"))
     return Fail("usage: dotnet run tools/dev.cs [test [--window] [--bmm]|launch]");
-if (Process.GetProcessesByName("SlayTheSpire2").Any(p => ExePath(p)?.StartsWith(DevDir, StringComparison.OrdinalIgnoreCase) == true))
+if (Process.GetProcessesByName("SlayTheSpire2").Any(p => string.Equals(Path.GetDirectoryName(ExePath(p)), DevDir, StringComparison.OrdinalIgnoreCase)))
     return Fail($"A dev copy of the game is already running from {DevDir}.");
 
 var build = Process.Start("dotnet", ["run", Path.Combine(root, "build.cs"), "--no-install"]);
