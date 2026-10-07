@@ -105,8 +105,8 @@ static class Layout
                 if (e is InputEventMouseButton { Pressed: true })
                     screen.GetViewport().GuiReleaseFocus();
             }
-            screen.GuiInput += Release;
-            scroll.GuiInput += Release;
+            foreach (var area in new[] { screen, scroll, list, info })
+                area.GuiInput += Release; // blank space anywhere: page, list, its header, the info panel
         }
 
         PlaceList(list);
