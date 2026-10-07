@@ -80,7 +80,7 @@ static class Menus
             button.Name = name;
         StyleBoxFlat Box(Color background, Color border)
         {
-            var box = new StyleBoxFlat { BgColor = background, BorderColor = border, ContentMarginLeft = 8, ContentMarginRight = 8, ContentMarginTop = 1, ContentMarginBottom = 1 };
+            var box = new StyleBoxFlat { BgColor = background, BorderColor = border, ContentMarginLeft = 8, ContentMarginRight = 8, ContentMarginTop = 0, ContentMarginBottom = 0 };
             box.SetBorderWidthAll(1);
             box.SetCornerRadiusAll(3);
             return box;
@@ -101,11 +101,15 @@ static class Menus
     // The same actions a right-click menu offers, as a row of small buttons (headings are skipped).
     public static HBoxContainer InlineButtons(IEnumerable<MenuItem> items, string name)
     {
-        var box = new HBoxContainer { Name = name, MouseFilter = Control.MouseFilterEnum.Ignore };
+        var box = new HBoxContainer { Name = name, MouseFilter = Control.MouseFilterEnum.Ignore, SizeFlagsVertical = Control.SizeFlags.ShrinkCenter };
         box.AddThemeConstantOverride("separation", 4);
         foreach (var item in items)
             if (item.OnSelect is { } action)
-                box.AddChild(SmallButton(item.Label, action, item.Disabled));
+            {
+                var button = SmallButton(item.Label, action, item.Disabled);
+                button.SizeFlagsVertical = Control.SizeFlags.ShrinkCenter;
+                box.AddChild(button);
+            }
         return box;
     }
 

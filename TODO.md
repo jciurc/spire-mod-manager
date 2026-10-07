@@ -25,11 +25,11 @@ Jordan's notes of 2026-10-07 (from `spire manager notes.txt` in the scratch fold
 - [ ] let's use a dropdown for Profile selection, and left justify the profile name
 - [ ] update "Profile" label to "Profile:" [name, V <- dropdown handle icon]
 - [ ] color code and change "Needs" -> "Needs:"
-- [ ] (fix) items are clickable outside of the container (above and below)
-- [ ] (fix) container height/scrollbar does not shrink when collapsing categories
-- [ ] (fix) element focus is not dismissed when clicking an empty area
+- [x] (fix) items are clickable outside of the container (above and below)
+- [x] (fix) container height/scrollbar does not shrink when collapsing categories
+- [x] (fix) element focus is not dismissed when clicking an empty area
 - [ ] (fix) slight overlap with scrollbar and details panel
-- [ ] (fix) inline category (and load order) buttons are not centered vertically
+- [x] (fix) inline category (and load order) buttons are not centered vertically
 
 
 ## load order view

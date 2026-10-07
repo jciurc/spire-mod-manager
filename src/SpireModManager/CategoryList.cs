@@ -68,6 +68,9 @@ static class CategoryList
 
     public static void Apply(Control content)
     {
+        // The row container only grows by itself; shrink it to fit once this redraw settles (collapsing a
+        // category or filtering must shorten the scroll range too).
+        content.CallDeferred(Control.MethodName.ResetSize);
         foreach (var header in content.GetChildren().Where(c => c.IsInGroup(HeaderGroup)))
         {
             content.RemoveChild(header);
