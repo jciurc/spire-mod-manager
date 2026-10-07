@@ -74,7 +74,7 @@ Jordan's notes of 2026-10-07 (from `spire manager notes.txt` in the scratch fold
 
 ## tags
 
-- [ ] indicator for system tag vs custom tag <- something subtle, not sure what
+- [x] indicator for system tag vs custom tag <- something subtle, not sure what
 - [ ] let's do market research on additional tag features
 
 
