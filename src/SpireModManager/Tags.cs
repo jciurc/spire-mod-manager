@@ -3,8 +3,8 @@ using MegaCrit.Sts2.Core.Modding;
 
 namespace SpireModManager;
 
-// Small labels on each mod. Three are worked out from the mods themselves:
-// - Gameplay / Visual only, from the manifest's affects_gameplay (what multiplayer compares);
+// Small labels on each mod. Two are worked out from the mods themselves:
+// - Gameplay, from the manifest's affects_gameplay (what multiplayer compares; mods without it get no tag);
 // - Library, when another installed mod depends on it.
 // The player's own tags are typed in the info panel and drawn outline-only, so they read differently from
 // the automatic (filled) ones; hovering a chip says which it is. All tags are searchable.
@@ -13,7 +13,6 @@ static class Tags
     public record Chip(string Text, Color Color, bool Custom = false);
 
     static readonly Color Gameplay = new(0.95f, 0.55f, 0.3f);
-    static readonly Color Visual = new(0.45f, 0.75f, 0.95f);
     static readonly Color Library = new(0.937f, 0.784f, 0.318f);
     static readonly Color Custom = new(0.75f, 0.9f, 0.8f);
 
@@ -21,12 +20,9 @@ static class Tags
     {
         if (mod?.manifest is not { } manifest)
             return [];
-        var chips = new List<Chip>
-        {
-            manifest.affectsGameplay
-                ? new Chip(Menus.Text("SPIRE_MOD_MANAGER.TAG_GAMEPLAY"), Gameplay)
-                : new Chip(Menus.Text("SPIRE_MOD_MANAGER.TAG_VISUAL"), Visual),
-        };
+        var chips = new List<Chip>();
+        if (manifest.affectsGameplay)
+            chips.Add(new Chip(Menus.Text("SPIRE_MOD_MANAGER.TAG_GAMEPLAY"), Gameplay));
         if (ModManager.Mods.Any(m => m != mod && Dependencies.Of(m).Contains(manifest.id)))
             chips.Add(new Chip(Menus.Text("SPIRE_MOD_MANAGER.TAG_LIBRARY"), Library));
         foreach (var tag in Store.InfoFor(manifest.id)?.Tags ?? [])
