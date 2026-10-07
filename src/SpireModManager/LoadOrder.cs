@@ -126,44 +126,75 @@ static class LoadOrder
     public static PopupMenu ShowRowMenu(Control content, NModMenuRow row, Action redraw) =>
         Menus.Show(content, Actions(content, row, redraw));
 
-    // When enabled mods sit above mods they need: a red bar at the top of the list with a Fix button.
-    // The game reorders them at launch anyway; this makes the saved order say what will happen.
-    // A bar at the top of the Load Order list: a hint and Auto sort; when enabled mods sit above mods they
-    // need, it turns red, says how many, and offers Fix order. (The game reorders those at launch anyway;
-    // fixing makes the saved order say what will happen.)
-    public static void AddToolbar(Control content, List<NModMenuRow> rows, Action redraw, Action<Control> add)
+    // Above the list, outside its scrolling (so it stays put): Auto sort at the right end of the search
+    // box, and, when enabled mods sit above mods they need, a red line saying how many with "Fix now".
+    // (The game reorders those at launch anyway; fixing makes the saved order say what will happen.)
+    // Outside Load Order both hide.
+    public const string WarningName = "SpireModManagerOrderWarning", AutoSortName = "AutoSortButton";
+
+    public static void UpdateToolbar(Control content, List<NModMenuRow> rows, Action redraw)
     {
-        var problems = Dependencies.OrderViolations(Mods(rows)).Select(v => v.Mod).Distinct().Count();
-        var bar = new PanelContainer { Name = "OrderToolbar", CustomMinimumSize = new Vector2(0, 44) };
-        bar.AddThemeStyleboxOverride("panel", new StyleBoxFlat
-        {
-            BgColor = problems > 0 ? new Color(0.45f, 0.1f, 0.1f, 0.6f) : new Color(0.0756f, 0.12084f, 0.18f, 0.6f),
-            ContentMarginLeft = 12, ContentMarginRight = 8,
-        });
-        var line = new HBoxContainer();
-        line.AddThemeConstantOverride("separation", 6);
-        bar.AddChild(line);
-        var text = new Label
-        {
-            Name = problems > 0 ? "OrderProblems" : "OrderHint",
-            Text = problems > 0
-                ? Menus.Format("SPIRE_MOD_MANAGER.ORDER_PROBLEMS", ("count", problems.ToString()))
-                : "",
-            SizeFlagsHorizontal = Control.SizeFlags.ExpandFill, VerticalAlignment = VerticalAlignment.Center,
-            AutowrapMode = TextServer.AutowrapMode.WordSmart,
-        };
-        text.AddThemeFontOverride("font", ResourceLoader.Load<Font>("res://themes/kreon_regular_shared.tres"));
-        text.AddThemeFontSizeOverride("font_size", 17);
-        line.AddChild(text);
+        var border = content.GetParent().GetParent().GetParent<Control>();
+        var search = border.GetNodeOrNull<Control>("SpireModManagerSearch");
         void Do(Action<IList<NModMenuRow>> change)
         {
             change(content.GetChildren().OfType<NModMenuRow>().ToList());
             redraw();
         }
+
+        var on = Store.Data.LoadOrderView;
+        if (border.GetNodeOrNull<Button>(AutoSortName) is not { } sort)
+        {
+            sort = Menus.SmallButton(Menus.Text("SPIRE_MOD_MANAGER.AUTO_SORT"), () => Do(AutoSort), name: AutoSortName);
+            border.AddChild(sort);
+            sort.AnchorLeft = sort.AnchorRight = 1; // offsets from the right edge, like the search box's right end
+        }
+        sort.Visible = on && search != null;
+        if (search != null)
+        {
+            const float sortWidth = 110;
+            (sort.OffsetTop, sort.OffsetBottom) = (search.OffsetTop, search.OffsetBottom);
+            sort.OffsetRight = border.GetNode<Control>("ModsScrollContainer").OffsetRight;
+            sort.OffsetLeft = sort.OffsetRight - sortWidth;
+            search.OffsetRight = on ? sort.OffsetLeft - 8 : sort.OffsetRight;
+        }
+
+        var problems = on ? Dependencies.OrderViolations(Mods(rows)).Select(v => v.Mod).Distinct().Count() : 0;
+        if (border.GetNodeOrNull(WarningName) is { } old)
+        {
+            border.RemoveChild(old); // now, not at the end of the frame: a redraw in the same frame adds a new one
+            old.QueueFree();
+        }
         if (problems > 0)
-            line.AddChild(Menus.SmallButton(Menus.Text("SPIRE_MOD_MANAGER.FIX_ORDER"), () => Do(FixOrder), name: "FixOrderButton"));
-        line.AddChild(Menus.SmallButton(Menus.Text("SPIRE_MOD_MANAGER.AUTO_SORT"), () => Do(AutoSort), name: "AutoSortButton"));
-        add(bar);
+        {
+            var bar = new PanelContainer { Name = WarningName };
+            bar.AddThemeStyleboxOverride("panel", new StyleBoxFlat
+            {
+                BgColor = new Color(0.45f, 0.1f, 0.1f, 0.6f), ContentMarginLeft = 12, ContentMarginRight = 8, ContentMarginTop = 4, ContentMarginBottom = 4,
+            });
+            var line = new HBoxContainer();
+            line.AddThemeConstantOverride("separation", 6);
+            bar.AddChild(line);
+            var text = new Label
+            {
+                Name = "OrderProblems", Text = Menus.Format("SPIRE_MOD_MANAGER.ORDER_PROBLEMS", ("count", problems.ToString())),
+                SizeFlagsHorizontal = Control.SizeFlags.ExpandFill, VerticalAlignment = VerticalAlignment.Center,
+                AutowrapMode = TextServer.AutowrapMode.WordSmart,
+            };
+            text.AddThemeFontOverride("font", ResourceLoader.Load<Font>("res://themes/kreon_regular_shared.tres"));
+            text.AddThemeFontSizeOverride("font_size", 16);
+            line.AddChild(text);
+            var fix = Menus.SmallButton(Menus.Text("SPIRE_MOD_MANAGER.FIX_ORDER"), () => Do(FixOrder), name: "FixOrderButton");
+            fix.SizeFlagsVertical = Control.SizeFlags.ShrinkCenter;
+            line.AddChild(fix);
+            border.AddChild(bar);
+            bar.SetAnchorsPreset(Control.LayoutPreset.TopWide);
+            var scroll = border.GetNode<Control>("ModsScrollContainer");
+            (bar.OffsetLeft, bar.OffsetRight) = (scroll.OffsetLeft, scroll.OffsetRight);
+            var top = (search ?? scroll).OffsetBottom + 6;
+            (bar.OffsetTop, bar.OffsetBottom) = (top, top + 34);
+        }
+        Layout.PlaceList(border);
     }
 
     // First pass at sorting by impact: libraries (mods others depend on), then gameplay mods, then
