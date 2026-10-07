@@ -33,6 +33,21 @@ Ease of use is the heart of the mod, not just its utility.
 - **Fast:** work on a local draft layer over the game's `mod_list`, and do heavy work (Workshop queries,
   scans, audits) in the background, once, cached. Efficient lookups. It has to *feel* good.
 
+## Status (2026-10-06)
+
+Built and covered by the in-game self-test (`dotnet run tools/dev.cs test`, 41 checks):
+main menu button with pending dot, Relaunch, Better Mod Menu import, categories (collapse, right-click
+assign/new/rename/move/delete, divider before Uncategorized), profiles (switch, new, rename, delete;
+active profile follows the tickboxes), aliases and notes (rows, info panel, editor), Workshop Page button,
+search, Load Order view (drag and drop, menu moves, order changes count as pending), Vanilla View,
+stepping aside when Better Mod Menu is loaded.
+
+Not built yet: draft layer (save/discard, undo/redo, diff), tags, Workshop metadata (needs Steam, so
+only testable in real play), compatibility audit, smart sort, profile/save-slot sync, design overhaul.
+Known gaps: the Load Order view shows the saved order, not the order after the game moves dependencies
+ahead; the Workshop Page button is untested (the dev sandbox has no Workshop mods); right-click menus
+are not discoverable yet (design overhaul).
+
 ## Features
 
 Phases are a proposal; v1 is what ships first on the Workshop.
