@@ -87,6 +87,7 @@ void PrepareSandbox(bool resetData)
         list.Add((JsonNode)new JsonObject { ["id"] = "BetterModMenu", ["is_enabled"] = false, ["source"] = "mods_directory" });
     mods["mod_list"] = list;
     settings["mod_settings"] = mods;
+    settings["seen_ea_disclaimer"] = true; // the one-time Early Access popup would cover every screenshot
     File.WriteAllText(settingsPath, settings.ToJsonString(new() { WriteIndented = true }));
 
     if (!resetData)
