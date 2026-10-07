@@ -106,7 +106,7 @@ static class CategoryList
             void RedrawAll() => Redraw(content);
             LoadOrder.Apply(content, rows, Matches, RedrawAll);
             RowStrip.Apply(rows, row => LoadOrder.Actions(content, row, RedrawAll, compact: true));
-            LoadOrder.AddBanner(content, rows, RedrawAll, banner =>
+            LoadOrder.AddToolbar(content, rows, RedrawAll, banner =>
             {
                 banner.AddToGroup(HeaderGroup);
                 content.AddChild(banner);
