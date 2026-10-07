@@ -107,16 +107,7 @@ static class Layout
             scroll.GuiInput += Release;
         }
 
-        // Profile bar and search sit at the top of the list in our views; Vanilla View hides them and gives
-        // the list its full height back.
-        if (!scroll.HasMeta(OriginalMeta))
-            scroll.SetMeta(OriginalMeta, scroll.OffsetTop);
-        var bar = list.GetNodeOrNull<Control>("SpireModManagerProfileBar");
-        var search = list.GetNodeOrNull<Control>("SpireModManagerSearch");
-        foreach (var top in new[] { bar, search })
-            if (top != null)
-                top.Visible = Wide;
-        scroll.OffsetTop = Wide && (search ?? bar) is { } lowest ? lowest.OffsetBottom + 6 : (float)scroll.GetMeta(OriginalMeta);
+        PlaceList(list);
 
         // Bottom row, left: the view switch in the lower-left corner (where the main menu button sits):
         // "Vanilla List" in our views, "Spire Manager" in Vanilla View; then Load Order, which reads "Return"
@@ -207,6 +198,21 @@ static class Layout
         label.AddThemeColorOverride("font_color", new Color(0.937f, 0.784f, 0.318f));
         screen.AddChild(label);
         return label;
+    }
+
+    // Profile bar, search and (in Load Order, when shown) the order warning sit at the top of the list in our
+    // views; the list starts below the lowest. Vanilla View hides them and gives the list its full height back.
+    public static void PlaceList(Control list)
+    {
+        var scroll = list.GetNode<Control>("ModsScrollContainer");
+        if (!scroll.HasMeta(OriginalMeta))
+            scroll.SetMeta(OriginalMeta, scroll.OffsetTop);
+        var tops = new[] { "SpireModManagerProfileBar", "SpireModManagerSearch" }.Select(n => list.GetNodeOrNull<Control>(n)).OfType<Control>().ToList();
+        foreach (var top in tops)
+            top.Visible = Wide;
+        if (list.GetNodeOrNull<Control>(LoadOrder.WarningName) is { } warning)
+            tops.Add(warning);
+        scroll.OffsetTop = Wide && tops.Count > 0 ? tops.Max(t => t.OffsetBottom) + 6 : (float)scroll.GetMeta(OriginalMeta);
     }
 
     // Vanilla View: the game's notification dot on "Spire Manager" while a relaunch is pending.

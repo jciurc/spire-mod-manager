@@ -166,17 +166,12 @@ static class CategoryList
         var filtering = filter.Length > 0;
         bool Matches(NModMenuRow row) => !filtering || Search.Matches(row.Mod, filter);
 
+        LoadOrder.UpdateToolbar(content, rows, () => Redraw(content));
         if (Store.Data.LoadOrderView)
         {
             void RedrawAll() => Redraw(content);
             LoadOrder.Apply(content, rows, Matches, RedrawAll);
             RowStrip.Apply(rows, row => LoadOrder.Actions(content, row, RedrawAll, compact: true));
-            LoadOrder.AddToolbar(content, rows, RedrawAll, banner =>
-            {
-                banner.AddToGroup(HeaderGroup);
-                content.AddChild(banner);
-                content.MoveChild(banner, 0);
-            });
             return;
         }
         LoadOrder.Undecorate(rows);
