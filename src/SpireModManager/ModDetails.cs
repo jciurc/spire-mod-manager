@@ -38,6 +38,7 @@ static class ModDetails
         var tags = string.Join(", ", Tags.For(mod).Select(c => c.Text));
         if (tags.Length > 0)
             description.Text = $"[gold]{Menus.Text("SPIRE_MOD_MANAGER.TAGS")}[/gold]: {tags}\n{description.Text}";
+        description.Text += Facts(mod);
         if (info?.Notes is { } notes)
             description.Text += $"\n[color={NotesColor}][b]{Menus.Text("SPIRE_MOD_MANAGER.YOUR_NOTES")}[/b]\n{notes}[/color]\n";
 
@@ -45,18 +46,42 @@ static class ModDetails
         container.SetMeta(ModIdMeta, id ?? "");
         container.SetMeta(ModNameMeta, name);
         container.SetMeta(WorkshopIdMeta, mod.workshopId?.ToString() ?? "");
+        container.SetMeta(FolderMeta, mod.path);
         var edit = container.GetNodeOrNull<NButton>("EditNotesButton") ?? AddButton(container, "EditNotesButton",
             "SPIRE_MOD_MANAGER.EDIT_NOTES", 20, () => OpenEditor(container, Meta(container, ModIdMeta), Meta(container, ModNameMeta)));
         var workshop = container.GetNodeOrNull<NButton>("WorkshopPageButton") ?? AddButton(container, "WorkshopPageButton",
-            "SPIRE_MOD_MANAGER.WORKSHOP_PAGE", 426,
+            "SPIRE_MOD_MANAGER.WORKSHOP_PAGE", 260,
             () => PlatformUtil.OpenUrl($"https://steamcommunity.com/sharedfiles/filedetails/?id={Meta(container, WorkshopIdMeta)}"));
+        var folder = container.GetNodeOrNull<NButton>("OpenFolderButton") ?? AddButton(container, "OpenFolderButton",
+            "SPIRE_MOD_MANAGER.OPEN_FOLDER", 500, () => OS.ShellOpen(Meta(container, FolderMeta)));
         edit.Visible = id != null;
         workshop.Visible = mod.workshopId != null;
+        folder.Visible = Directory.Exists(mod.path);
+    }
+
+    // Where it's from, anything unusual about how it loaded, and its dependencies both ways.
+    static string Facts(Mod mod)
+    {
+        string Line(string key, string value) => $"\n[gold]{Menus.Text(key)}[/gold]: {value}";
+        var facts = Line("SPIRE_MOD_MANAGER.SOURCE", mod.workshopId is { } ws
+            ? Menus.Format("SPIRE_MOD_MANAGER.SOURCE_WORKSHOP", ("id", ws.ToString()))
+            : Menus.Text("SPIRE_MOD_MANAGER.SOURCE_LOCAL"));
+        if (mod.state is ModLoadState.Failed or ModLoadState.DisabledDuplicate)
+            facts += Line("SPIRE_MOD_MANAGER.STATE", Menus.Text(mod.state == ModLoadState.Failed
+                ? "SPIRE_MOD_MANAGER.STATE_FAILED" : "SPIRE_MOD_MANAGER.STATE_DUPLICATE"));
+        string Names(IEnumerable<string> ids) => string.Join(", ", ids.Select(d => Dependencies.Find(d)?.manifest?.name ?? d));
+        if (Dependencies.Of(mod) is { Count: > 0 } needs)
+            facts += Line("SPIRE_MOD_MANAGER.NEEDS_LABEL", Names(needs));
+        var neededBy = ModManager.Mods.Where(m => m != mod && Dependencies.Of(m).Contains(mod.manifest?.id ?? ""))
+            .Select(m => m.manifest?.id ?? "").Distinct().ToList();
+        if (neededBy.Count > 0)
+            facts += Line("SPIRE_MOD_MANAGER.NEEDED_BY", Names(neededBy));
+        return facts + "\n";
     }
 
     public static void HideButtons(Node container)
     {
-        foreach (var name in new[] { "EditNotesButton", "WorkshopPageButton" })
+        foreach (var name in new[] { "EditNotesButton", "WorkshopPageButton", "OpenFolderButton" })
             if (container.GetNodeOrNull<Control>(name) is { } button)
                 button.Visible = false;
     }
@@ -64,6 +89,7 @@ static class ModDetails
     const string ModIdMeta = "spire_mod_manager_mod_id";
     const string ModNameMeta = "spire_mod_manager_mod_name";
     const string WorkshopIdMeta = "spire_mod_manager_workshop_id";
+    const string FolderMeta = "spire_mod_manager_folder";
 
     static string Meta(Node node, string key) => node.HasMeta(key) ? (string)node.GetMeta(key) : "";
 
