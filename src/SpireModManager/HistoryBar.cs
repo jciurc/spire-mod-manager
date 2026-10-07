@@ -6,9 +6,8 @@ using MegaCrit.Sts2.Core.Nodes.Screens.ModdingScreen;
 namespace SpireModManager;
 
 // Two pieces:
-// - The undo bar, left of Relaunch Game: Undo, Redo, Revert, with the shortcuts and where you are in the
-//   current view's history ("3/7").
-// - "Changes +4 -3" above the info panel (above the list in Load Order): how many mods are on and off
+// - The undo bar, left of Relaunch Game: Undo, Redo (their shortcuts underneath), Revert.
+// - "Changes +4 -3" right of the page title: how many mods are on and off
 //   compared with launch. Hovering it shows the details, anchored to it: switched profile, each mod
 //   enabled or disabled, load order moves, edited mods and profiles.
 static class HistoryBar
@@ -27,20 +26,23 @@ static class HistoryBar
     {
         var content = screen.GetNode<Control>("%ModsScrollContainer/Mask/Content");
 
-        var bar = new HBoxContainer { Name = BarName, Alignment = BoxContainer.AlignmentMode.End, Size = new Vector2(440, 70) };
+        var bar = new HBoxContainer { Name = BarName, Alignment = BoxContainer.AlignmentMode.End, Size = new Vector2(300, 70) };
         bar.AddThemeConstantOverride("separation", 6);
         screen.AddChild(bar);
         var undo = Menus.SmallButton(Menus.Text("SPIRE_MOD_MANAGER.UNDO"), History.Undo, name: "UndoButton");
         var redo = Menus.SmallButton(Menus.Text("SPIRE_MOD_MANAGER.REDO"), History.Redo, name: "RedoButton");
         var revert = Menus.SmallButton(Menus.Text("SPIRE_MOD_MANAGER.REVERT_ALL"), History.RevertMods, name: "RevertAllButton");
-        var where = new Label { Name = "HistoryPosition", VerticalAlignment = VerticalAlignment.Center, MouseFilter = Control.MouseFilterEnum.Ignore };
-        Style(where, 14, new Color(Cream, 0.55f));
-        foreach (var control in new Control[] { where, undo, redo, revert })
+        // Each button with its shortcut (if any) in small text underneath.
+        foreach (var (button, keys) in new[] { (undo, "SPIRE_MOD_MANAGER.UNDO_KEYS"), (redo, "SPIRE_MOD_MANAGER.REDO_KEYS"), (revert, null) })
         {
-            control.SizeFlagsVertical = Control.SizeFlags.ShrinkCenter;
-            if (control is Button button)
-                button.AddThemeFontSizeOverride("font_size", 17);
-            bar.AddChild(control);
+            button.AddThemeFontSizeOverride("font_size", 17);
+            var column = new VBoxContainer { SizeFlagsVertical = Control.SizeFlags.ShrinkCenter, MouseFilter = Control.MouseFilterEnum.Ignore };
+            column.AddThemeConstantOverride("separation", 0);
+            column.AddChild(button);
+            var hint = new Label { Text = keys == null ? " " : Menus.Text(keys), HorizontalAlignment = HorizontalAlignment.Center, MouseFilter = Control.MouseFilterEnum.Ignore };
+            Style(hint, 13, new Color(Cream, 0.5f));
+            column.AddChild(hint);
+            bar.AddChild(column);
         }
 
         var changes = new RichTextLabel
@@ -61,8 +63,6 @@ static class HistoryBar
             undo.Disabled = !History.CanUndo;
             redo.Disabled = !History.CanRedo;
             revert.Disabled = Describe().Count == 0;
-            var (position, total) = History.Position;
-            where.Text = $"{Menus.Text("SPIRE_MOD_MANAGER.HOTKEYS")}   {position}/{total}";
             var (on, off) = Counts();
             changes.Text = $"{Menus.Text("SPIRE_MOD_MANAGER.CHANGES")} [color={Added}]+{on}[/color] [color={Removed}]-{off}[/color]";
         }
