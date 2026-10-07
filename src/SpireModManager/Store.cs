@@ -98,6 +98,29 @@ public static class Store
     {
         if (_data != null && !_readOnly)
             Write(_data);
+        History.Record();
+    }
+
+    // Our data minus view state (views, collapsed categories): what undo compares and restores.
+    public static string EditsJson()
+    {
+        var copy = JsonSerializer.Deserialize<StoreData>(JsonSerializer.Serialize(Data, Json), Json) ?? new StoreData();
+        copy.VanillaView = copy.LoadOrderView = copy.UncategorizedCollapsed = false;
+        foreach (var category in copy.Categories)
+            category.Collapsed = false;
+        return JsonSerializer.Serialize(copy, Json);
+    }
+
+    // Puts saved edits back, keeping the current view state.
+    public static void RestoreEdits(string json)
+    {
+        var restored = JsonSerializer.Deserialize<StoreData>(json, Json) ?? new StoreData();
+        var now = Data;
+        (restored.VanillaView, restored.LoadOrderView, restored.UncategorizedCollapsed) = (now.VanillaView, now.LoadOrderView, now.UncategorizedCollapsed);
+        foreach (var category in restored.Categories)
+            category.Collapsed = now.Categories.FirstOrDefault(c => c.Name == category.Name)?.Collapsed ?? false;
+        _data = restored;
+        Save();
     }
 
     // Writes to a temp file and swaps it in, so a crash mid-write can't leave a half-written file.

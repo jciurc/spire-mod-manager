@@ -56,8 +56,18 @@ static class Layout
         Move(screen, "SpireModManagerViewToggle", left);
         Move(screen, "SpireModManagerLoadOrderToggle", left + 210);
         Move(screen, "SpireModManagerBmmNotice", left);
+        // Relaunch at the info panel's right edge; Undo/Redo/Changes just left of it.
+        var right = info.OffsetRight;
         if (screen.GetNodeOrNull<Control>("SpireModManagerRelaunchButton") is { } relaunch)
-            relaunch.Position = new Vector2(info.OffsetRight - relaunch.Size.X, BottomRowY);
+        {
+            relaunch.Position = new Vector2(right - relaunch.Size.X, BottomRowY);
+            right = relaunch.Position.X - 12;
+        }
+        if (screen.GetNodeOrNull<Control>(HistoryBar.BarName) is { } history)
+        {
+            history.Position = new Vector2(right - history.Size.X, BottomRowY);
+            history.Visible = Wide;
+        }
     }
 
     // Wide: the given box. Vanilla: the box the scene had.

@@ -152,6 +152,7 @@ static class LoadOrder
         list.Clear();
         list.AddRange(entries);
         SaveManager.Instance.SaveSettings();
+        History.Record();
     }
 
     // Position number and a grip on the left of the row. Dragging the grip moves the row: a gold line

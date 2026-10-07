@@ -24,6 +24,8 @@ static class MainMenuPatch
             // Load (and on first run import) saved data while the menu is idle, not on first screen open.
             _ = Store.Data;
             LoadOrder.RememberLoadedOrder(); // first main menu: the game's startup sorting is done
+            Profiles.Prepare(); // one-time conversions belong to the baseline, not the undo history
+            History.Start();
             ModEntry.MarkDevRun(__instance.GetTree());
 
             var menu = __instance;
@@ -113,6 +115,15 @@ static class ModdingScreenPatch
 
         try
         {
+            HistoryBar.Attach(__instance);
+        }
+        catch (Exception e)
+        {
+            Log.Error($"[{ModEntry.ModId}] Could not set up undo: {e}");
+        }
+
+        try
+        {
             Layout.Apply(__instance); // last: it places everything above
         }
         catch (Exception e)
@@ -132,6 +143,7 @@ static class ModToggledPatch
         try
         {
             Profiles.Track();
+            History.Record(); // a tickbox change (Track only saves when the active profile changed)
             if (LoadOrder.OrderChanged)
                 __instance.GetNode<Control>("%PendingChangesLabel").Visible = true;
         }
