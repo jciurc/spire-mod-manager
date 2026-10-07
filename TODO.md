@@ -45,7 +45,7 @@ Jordan's notes of 2026-10-07 (from `spire manager notes.txt` in the scratch fold
 - [x] update "Needs X (loaded before), Y" -> "Needs: X before, Y" and color code before/after
 - [x] color code connectors
 - [x] remember last selected item when going back to category view
-- [ ] multi selectable/draggable items with shift/ctrl/cmd
+- [x] multi selectable/draggable items with shift/ctrl/cmd
 - [x] (fix) load order view ui/state is not cleared when changing back to category
 - [x] (fix) container doesn't scroll when dragging near bounds
 - [x] (fix) remove needs connector when on category view

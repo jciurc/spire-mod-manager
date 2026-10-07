@@ -424,6 +424,26 @@ static class SelfTest
         Check("drag moves the row below the third", dragged.IndexOf(first.Mod?.manifest?.id ?? "") == 2 && dragged.SequenceEqual(Saved()),
             string.Join(", ", dragged));
 
+        // Multi-select: pick the first and third rows, drag the first's grip below the last row; both move,
+        // in their order.
+        var all = Rows();
+        LoadOrder.Pick(content, all[0], toggle: false, range: false);
+        LoadOrder.Pick(content, all[2], toggle: true, range: false);
+        var pickedIds = new[] { all[0], all[2] }.Select(r => r.Mod?.manifest?.id ?? "").ToList();
+        Check("Ctrl-click picks a second row, both highlighted", LoadOrder.Selection.Count == 2
+            && Rows().Count(r => r.GetNodeOrNull<Control>("SpireModManagerPicked")?.Visible == true) == 2);
+        var grip = all[0].GetNode<Control>("SpireModManagerHandle");
+        var gripAt = grip.GetGlobalRect().GetCenter();
+        var bottom = new Vector2(gripAt.X, all[^1].GetGlobalRect().End.Y - 2);
+        grip.EmitSignal(Control.SignalName.GuiInput, new InputEventMouseButton { ButtonIndex = MouseButton.Left, Pressed = true, GlobalPosition = gripAt });
+        grip.EmitSignal(Control.SignalName.GuiInput, new InputEventMouseMotion { GlobalPosition = bottom });
+        await Wait(menu, 0.2);
+        await Capture(screen, outDir, "11b-multi-drag");
+        grip.EmitSignal(Control.SignalName.GuiInput, new InputEventMouseButton { ButtonIndex = MouseButton.Left, Pressed = false, GlobalPosition = bottom });
+        await Wait(menu, 0.5);
+        Check("dragging a multi-selection moves the group, in order", Ids().TakeLast(2).SequenceEqual(pickedIds), string.Join(", ", Ids()));
+        LoadOrder.ClearSelection(content);
+
         // Put the original order back: nothing pending again.
         for (var i = 0; i < start.Count; i++)
             if (Rows().FirstOrDefault(r => r.Mod?.manifest?.id == start[i])?.Mod is { } mod)
