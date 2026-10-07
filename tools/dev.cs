@@ -141,10 +141,12 @@ void PrepareSandbox(bool resetData)
     var settings = File.Exists(settingsPath) ? JsonNode.Parse(File.ReadAllText(settingsPath))?.AsObject() ?? [] : [];
     var mods = settings["mod_settings"] as JsonObject ?? [];
     mods["mods_enabled"] = true;
-    var list = mods["mod_list"] as JsonArray ?? [];
-    if (list.FirstOrDefault(m => (string?)m?["id"] == "BetterModMenu") is not JsonObject bmm)
-        list.Add((JsonNode)(bmm = new JsonObject { ["id"] = "BetterModMenu", ["source"] = "mods_directory" }));
-    bmm["is_enabled"] = args.Contains("--bmm"); // --bmm: test how we step aside when it's loaded
+    // A fresh mod list every run, so one run's toggles and order can't leak into the next: everything on
+    // (no entry = on) except Better Mod Menu (--bmm: on, to test how we step aside when it's loaded).
+    var list = new JsonArray
+    {
+        (JsonNode)new JsonObject { ["id"] = "BetterModMenu", ["is_enabled"] = args.Contains("--bmm"), ["source"] = "mods_directory" },
+    };
     mods["mod_list"] = list;
     settings["mod_settings"] = mods;
     settings["seen_ea_disclaimer"] = true; // the one-time Early Access popup would cover every screenshot
