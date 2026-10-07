@@ -35,10 +35,10 @@ static class MainMenuPatch
                 () => menu.SubmenuStack.PushSubmenuType<NModdingScreen>());
             button.Name = "SpireModManagerMenuButton";
 
-            // Mirrors the profile button's margins in the top-left corner (18, 16).
+            // Lower-left corner, level with the bottom row of buttons on the Modding screen.
             button.SetAnchorsPreset(Control.LayoutPreset.BottomLeft);
-            button.OffsetLeft = 18;
-            button.OffsetBottom = -16;
+            button.OffsetLeft = Layout.CornerX;
+            button.OffsetBottom = Layout.BottomRowY + 70 - 1080;
             button.OffsetRight = button.OffsetLeft + 260;
             button.OffsetTop = button.OffsetBottom - 70;
 

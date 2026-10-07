@@ -23,9 +23,8 @@ static class CategoryList
     {
         var content = screen.GetNode<Control>("%ModsScrollContainer/Mask/Content");
 
-        // Two view switches at the left end of the pending-changes row (y 1012-1056), from the mod list's
-        // left edge (x 255): Vanilla View and Load Order. Each turns the other off; pressing the lit one
-        // again goes back to categories, and its label says so.
+        // Two view switches along the bottom (Layout places them): Vanilla and Load Order. Each turns the
+        // other off; pressing the lit one again goes back to categories, and its label says so.
         NButton? vanilla = null, loadOrder = null;
         void Switch(bool toVanilla)
         {
@@ -40,10 +39,8 @@ static class CategoryList
         }
         vanilla = ModEntry.AddButton(screen, "SPIRE_MOD_MANAGER.VANILLA_VIEW", new Vector2(200, 70), () => Switch(true));
         vanilla.Name = "SpireModManagerViewToggle";
-        vanilla.Position = new Vector2(255, 1034 - 35);
         loadOrder = ModEntry.AddButton(screen, "SPIRE_MOD_MANAGER.LOAD_ORDER", new Vector2(200, 70), () => Switch(false));
         loadOrder.Name = "SpireModManagerLoadOrderToggle";
-        loadOrder.Position = new Vector2(465, 1034 - 35);
         // Labels for the saved view.
         Label(vanilla, Store.Data.VanillaView ? "SPIRE_MOD_MANAGER.CATEGORY_VIEW" : "SPIRE_MOD_MANAGER.VANILLA_VIEW");
         Label(loadOrder, Store.Data.LoadOrderView ? "SPIRE_MOD_MANAGER.BACK" : "SPIRE_MOD_MANAGER.LOAD_ORDER");
