@@ -65,10 +65,14 @@ static class ProfileBar
         Style(name, "res://themes/kreon_bold_shared.tres", 19, Gold);
         row.AddChild(name);
 
-        row.AddChild(new Control { SizeFlagsHorizontal = Control.SizeFlags.ExpandFill, MouseFilter = Control.MouseFilterEnum.Ignore });
+        // Beside the picker: "Unsaved •" with Save and Discard while the mod list differs from the saved
+        // profile, and Save as new always.
+        var unsaved = new Label { Name = "Unsaved", Text = Menus.Text("SPIRE_MOD_MANAGER.UNSAVED"), VerticalAlignment = VerticalAlignment.Center };
+        Style(unsaved, "res://themes/kreon_regular_shared.tres", 16, new Color(1f, 0.82f, 0.45f));
+        row.AddChild(unsaved);
+        HBoxContainer? inline = null;
 
         List<MenuItem> Actions() => [
-            new(Menus.Text("SPIRE_MOD_MANAGER.NEW_PROFILE"), () => Profiles.SwitchTo(Profiles.Add(), screen)),
             new(Menus.Text("SPIRE_MOD_MANAGER.RENAME"), BeginRename),
             new(Menus.Text("SPIRE_MOD_MANAGER.DELETE"), () =>
             {
@@ -76,21 +80,43 @@ static class ProfileBar
                     _ = Delete(active);
             }, Disabled: Store.Data.Profiles.Count <= 1),
         ];
-        HBoxContainer? inline = null;
 
         void Refresh()
         {
-            picker.Text = Profiles.Active?.Name ?? "";
-            name.Text = picker.Text;
-            inline?.QueueFree(); // Delete's enabled state depends on how many profiles there are
-            inline = Menus.InlineButtons(Actions(), "Actions");
-            inline.GetChild<Button>(0).Name = "NewProfileButton";
+            var edited = Profiles.Edited;
+            picker.Text = Profiles.Active is { } active ? edited ? EditedName(active) : active.Name : "";
+            name.Text = Profiles.Active?.Name ?? "";
+            unsaved.Visible = edited;
+            inline?.QueueFree();
+            List<MenuItem> buttons = edited
+                ? [
+                    new(Menus.Text("SPIRE_MOD_MANAGER.SAVE"), Profiles.Save),
+                    new(Menus.Text("SPIRE_MOD_MANAGER.SAVE_AS_NEW"), () => Profiles.SaveAsNew(screen)),
+                    new(Menus.Text("SPIRE_MOD_MANAGER.DISCARD"), () => Profiles.Discard(screen)),
+                ]
+                : [new(Menus.Text("SPIRE_MOD_MANAGER.SAVE_AS_NEW"), () => Profiles.SaveAsNew(screen))];
+            inline = Menus.InlineButtons(buttons, "Actions");
+            foreach (var (button, id) in inline.GetChildren().OfType<Button>().Zip(edited
+                ? new[] { "SaveProfileButton", "SaveAsNewButton", "DiscardButton" } : ["SaveAsNewButton"]))
+                button.Name = id;
             row.AddChild(inline);
         }
 
-        // The profile list, the active one ticked.
-        picker.Pressed += () => Menus.Show(bar, Store.Data.Profiles.Select(p =>
-            new MenuItem(p.Name, () => Profiles.SwitchTo(p, screen), Checked: p == Profiles.Active)).ToList());
+        // The profile list: each profile, and under it its unsaved edit if it has one; then rename and delete.
+        picker.Pressed += () =>
+        {
+            var items = new List<MenuItem>();
+            foreach (var p in Store.Data.Profiles)
+            {
+                var active = p == Profiles.Active;
+                items.Add(new MenuItem(p.Name, () => Profiles.SwitchTo(p, screen), Checked: active && !Profiles.Edited));
+                if (p.Edited != null)
+                    items.Add(new MenuItem(EditedName(p), () => Profiles.SwitchTo(p, screen, edited: true), Checked: active && Profiles.Edited));
+            }
+            items.Add(MenuItem.Heading(""));
+            items.AddRange(Actions());
+            Menus.Show(bar, items);
+        };
         picker.GuiInput += e =>
         {
             if (e is InputEventMouseButton { ButtonIndex: MouseButton.Right, Pressed: false })
@@ -131,6 +157,14 @@ static class ProfileBar
         Profiles.Switched += Refresh;
         bar.TreeExiting += () => Profiles.Switched -= Refresh;
         Refresh();
+    }
+
+    // "Modded (edited 14:32)", or with the date when it wasn't today.
+    static string EditedName(Profile profile)
+    {
+        var at = profile.EditedAt ?? DateTime.Now;
+        var when = at.Date == DateTime.Today ? at.ToString("HH:mm") : at.ToString("MMM d HH:mm");
+        return Menus.Format("SPIRE_MOD_MANAGER.EDITED_PROFILE", ("name", profile.Name), ("when", when));
     }
 
     // The game's small gold settings arrow, turned to point down, as a texture for the picker.
