@@ -98,6 +98,7 @@ static class SelfTest
             await TestNotes(menu, screen, content, outDir);
             await TestSearch(menu, screen, content, outDir);
             await TestLoadOrder(menu, screen, content, outDir);
+            await TestHistory(menu, screen, content, outDir);
         }
         catch (Exception e)
         {
@@ -373,6 +374,56 @@ static class SelfTest
             await Wait(menu, 0.5);
         }
         Check("a blocked drag doesn't move the row", Ids().SequenceEqual(after), string.Join(", ", Ids()));
+    }
+
+    // Untick a mod through its real tickbox, review, undo/redo; undo a rename; revert all, and undo that.
+    static async Task TestHistory(Node menu, NModdingScreen screen, Control content, string outDir)
+    {
+        const string modId = "SmmTestUi";
+        if (content.GetChildren().OfType<NModMenuRow>().FirstOrDefault(r => r.Mod?.manifest?.id == modId) is not { Mod: { } mod } row)
+        {
+            Results.Add("SKIP history: test mod not installed");
+            return;
+        }
+        var tickbox = row.GetNode<NTickbox>("Tickbox");
+        bool On() => !(SaveManager.Instance.SettingsSave.ModSettings?.IsModDisabled(mod) ?? false);
+        void Press(string name) => screen.FindChild(name, true, false)?.EmitSignal(BaseButton.SignalName.Pressed);
+
+        tickbox.IsTicked = false;
+        tickbox.EmitSignal(NTickbox.SignalName.Toggled, tickbox); // the game's own toggle handler writes the list
+        await Wait(menu, 0.3);
+        Check("tickbox change is listed under Changes", !On() && HistoryBar.Describe().Any(l => l.Contains("Test UI")),
+            string.Join(" | ", HistoryBar.Describe()));
+        Press("ChangesButton");
+        await Wait(menu, 0.3);
+        await Capture(screen, outDir, "14-changes");
+        Press("CloseButton");
+
+        Press("UndoButton");
+        await Wait(menu, 0.3);
+        Check("undo turns it back on, tickbox included", On() && tickbox.IsTicked);
+        Press("RedoButton");
+        await Wait(menu, 0.3);
+        Check("redo turns it off again", !On() && !tickbox.IsTicked);
+
+        if (Store.Data.Categories.FirstOrDefault() is { } category)
+        {
+            var name = category.Name;
+            Categories.Rename(category, "Undo me");
+            CategoryList.Apply(content);
+            Press("UndoButton");
+            await Wait(menu, 0.3);
+            Check("undo restores a category name", Store.Data.Categories.Any(c => c.Name == name) && Header(content, name) != null);
+        }
+
+        var beforeRevert = History.CurrentMods();
+        History.RevertMods();
+        await Wait(menu, 0.3);
+        Check("Revert all restores the mod list as loaded", History.Loaded?.Mods.SequenceEqual(History.CurrentMods()) == true
+            && HistoryBar.Describe().Count == 0 && On());
+        Press("UndoButton");
+        await Wait(menu, 0.3);
+        Check("Revert all can be undone", beforeRevert.SequenceEqual(History.CurrentMods()), string.Join(", ", History.CurrentMods()));
     }
 
     static async Task<bool> WithVanillaView(NModdingScreen screen, Node menu, Func<bool> check)
