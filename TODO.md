@@ -119,77 +119,77 @@ Jordan's notes of 2026-10-07, second batch (same file), plus play feedback.
 
 ## Layout
 
-- [ ] (fix) drag is choppy and bounces at the very top and bottom of the list
-- [ ] move Spire Manager button (main menu and mod menu) slightly down to line up with Vanilla / Load Order buttons
-- [ ] Ctrl+Z / Ctrl+Y shown under their buttons, formatted "Ctrl + Z"
-- [ ] remove history counter
-- [ ] move Changes diff to the right of the "Spire Mod Manager" title
-- [ ] equal x/y padding in the profile dropdown
-- [ ] shift content panels up: equal margin below header and above footer buttons
-- [ ] remove dependency connectors in Category view
-- [ ] narrower list, wider details
-- [ ] "Back" -> "Return"
-- [ ] "Vanilla Manager" is cramped: "Vanilla List"
-- [ ] Vanilla button in the Spire Manager button's spot (lower left); Load Order shifts over
-- [ ] Vanilla button on the Load Order page too (same spot)
-- [ ] Spire Mod Manager title and Changes diff in the same place on both views
-- [ ] "Load Order" title centred in the header on the Load Order page
-- [ ] remove the restart warning on the Load Order page
-- [ ] remove Relaunch on the Load Order page
-- [ ] Auto sort to the right of the search bar; less whitespace around the order warning
-- [ ] vanilla version/date watermark legible on our page (light text)
-- [ ] clicking anywhere outside the current input (header, details, footer, blank space) drops focus
+- [x] (fix) drag is choppy and bounces at the very top and bottom of the list
+- [x] move Spire Manager button (main menu and mod menu) slightly down to line up with Vanilla / Load Order buttons
+- [x] Ctrl+Z / Ctrl+Y shown under their buttons, formatted "Ctrl + Z"
+- [x] remove history counter
+- [x] move Changes diff to the right of the "Spire Mod Manager" title
+- [x] equal x/y padding in the profile dropdown
+- [x] shift content panels up: equal margin below header and above footer buttons
+- [x] remove dependency connectors in Category view
+- [x] narrower list, wider details
+- [x] "Back" -> "Return"
+- [x] "Vanilla Manager" is cramped: "Vanilla List"
+- [x] Vanilla button in the Spire Manager button's spot (lower left); Load Order shifts over
+- [x] Vanilla button on the Load Order page too (same spot)
+- [x] Spire Mod Manager title and Changes diff in the same place on both views
+- [x] "Load Order" title centred in the header on the Load Order page
+- [x] remove the restart warning on the Load Order page
+- [x] remove Relaunch on the Load Order page
+- [x] Auto sort to the right of the search bar; less whitespace around the order warning
+- [x] vanilla version/date watermark legible on our page (light text)
+- [x] clicking anywhere outside the current input (header, details, footer, blank space) drops focus
 
 ## Details panel
 
-- [ ] add "Dependencies: x, y"
-- [ ] thumbnail is not small enough
-- [ ] link text: "Source: Workshop ID ## (clickable)" / "Source: Local mod"
-- [ ] terms line up with the panel header
-- [ ] order: Author, description, Version, Game version, then the rest
-- [ ] "Game version" -> "Compatibility: x.y.z or newer" (+ stable/beta/current if it applies)
-- [ ] error indicator and message for incompatible mods (version, conflict, dependency, corrupt...)
-- [ ] no system tags in details
-- [ ] tags and notes fields look like the other terms while inactive
-- [ ] pencil right of the Tags and Notes terms
-- [ ] tag field: one line of space; notes: four lines
-- [ ] tag placeholder only while active: "Custom tags separated by commas.."
-- [ ] notes placeholder: "Custom notes.."
+- [x] add "Dependencies: x, y"
+- [x] thumbnail is not small enough
+- [x] link text: "Source: Workshop ID ## (clickable)" / "Source: Local mod"
+- [x] terms line up with the panel header
+- [x] order: Author, description, Version, Game version, then the rest
+- [x] "Game version" -> "Compatibility: x.y.z or newer" (+ stable/beta/current if it applies)
+- [x] error indicator and message for incompatible mods (version, conflict, dependency, corrupt...)
+- [x] no system tags in details
+- [x] tags and notes fields look like the other terms while inactive
+- [x] pencil right of the Tags and Notes terms
+- [x] tag field: one line of space; notes: four lines
+- [x] tag placeholder only while active: "Custom tags separated by commas.."
+- [x] notes placeholder: "Custom notes.."
 
 ## Tags
 
-- [ ] remove the "Visual only" tag
+- [x] remove the "Visual only" tag
 
 ## Rows
 
-- [ ] long titles truncated, with tooltip
-- [ ] inline name editing shows the original name behind the field (fix)
-- [ ] alias pencil only on row hover
-- [ ] a bit more space between pencil and name
-- [ ] clicking the pencil again closes (and accepts) the edit
-- [ ] clear button on the inline editor
+- [x] long titles truncated, with tooltip
+- [x] inline name editing shows the original name behind the field (fix)
+- [x] alias pencil only on row hover
+- [x] a bit more space between pencil and name
+- [x] clicking the pencil again closes (and accepts) the edit
+- [x] clear button on the inline editor
 
 ## Profiles
 
-- [ ] Save and Revert next to Profile
-- [ ] unsaved changes: "Profile: [dropdown]  Unsaved • [Save] [Save as new] [Discard]"
-- [ ] Save as new replaces New, Rename and Delete
-- [ ] unsaved profile kept as its own entry "Name (edited [time])" until saved or discarded; nothing destructive or unrevertable (UX to be worked out)
+- [x] Save and Revert next to Profile
+- [x] unsaved changes: "Profile: [dropdown]  Unsaved • [Save] [Save as new] [Discard]"
+- [x] Save as new replaces New, Rename and Delete
+- [x] unsaved profile kept as its own entry "Name (edited [time])" until saved or discarded; nothing destructive or unrevertable (UX to be worked out)
 
 ## Load Order (play feedback)
 
-- [ ] dependency connectors stretch and shrink while dragging
-- [ ] mod names in "Needs:" a different colour from "before/after"
-- [ ] no inline name editing on the Load Order page
-- [ ] whole row draggable with the move cursor; the right-side actions keep the normal cursor
-- [ ] tickboxes disabled on the Load Order page (ordering and profiles only)
-- [ ] disabled mods dimmer on the Load Order page
-- [ ] order warning sticky at the top
+- [x] dependency connectors stretch and shrink while dragging
+- [x] mod names in "Needs:" a different colour from "before/after"
+- [x] no inline name editing on the Load Order page
+- [x] whole row draggable with the move cursor; the right-side actions keep the normal cursor
+- [x] tickboxes disabled on the Load Order page (ordering and profiles only)
+- [x] disabled mods dimmer on the Load Order page
+- [x] order warning sticky at the top
 
 ## Category view (play feedback)
 
-- [ ] Revert all goes back to the state when the Modding page was opened (the profile, or the profile *edited), not launch
-- [ ] changed mods (since launch) shown in a different colour
+- [x] Revert all goes back to the state when the Modding page was opened (the profile, or the profile *edited), not launch
+- [x] changed mods (since launch) shown in a different colour
 
 ## Backlog (round 2)
 
