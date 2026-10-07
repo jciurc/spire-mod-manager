@@ -222,3 +222,10 @@ static class ShortcutsPatch
         }
     }
 }
+
+// Remembers the selected mod so switching views can keep it selected.
+[HarmonyPatch(typeof(NModdingScreen), nameof(NModdingScreen.OnRowSelected))]
+static class RowSelectedPatch
+{
+    static void Postfix(NModMenuRow row) => CategoryList.Selected = row.Mod;
+}
