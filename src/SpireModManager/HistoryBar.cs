@@ -14,6 +14,9 @@ static class HistoryBar
     static readonly Color Cream = new(1, 0.964706f, 0.886275f);
     static readonly Color Gold = new(0.937f, 0.784f, 0.318f);
 
+    // The screen our keyboard shortcuts act on, while it exists.
+    public static NModdingScreen? Screen { get; private set; }
+
     public static void Attach(NModdingScreen screen)
     {
         var content = screen.GetNode<Control>("%ModsScrollContainer/Mask/Content");
@@ -47,8 +50,11 @@ static class HistoryBar
         }
         History.Changed += Update;
         History.Restored += Restored;
+        Screen = screen;
         bar.TreeExiting += () =>
         {
+            if (Screen == screen)
+                Screen = null;
             History.Changed -= Update;
             History.Restored -= Restored;
         };
