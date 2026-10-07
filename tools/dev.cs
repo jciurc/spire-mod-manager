@@ -1,6 +1,7 @@
 // Dev runs of the game, kept apart from real play.
 //
 //   dotnet run tools/dev.cs test      build, install, reset the sandbox, run the in-game self-test
+//                                     (--headless: no window and no screenshots, UI dumps only)
 //   dotnet run tools/dev.cs launch    build, install, open the game in the sandbox to poke at by hand
 //
 // Dev runs start the exe with --force-steam off: no Steam presence (friends see nothing), no cloud,
@@ -10,7 +11,7 @@
 //
 // test: resets the sandbox to tools/fixtures (mods accepted, Better Mod Menu off, our manager.json),
 // sets SPIRE_MOD_MANAGER_SELFTEST so SelfTest.cs runs and quits, then prints out/selftest/results.txt
-// and our log lines. Screenshots land in out/selftest/*.png. Exit code 1 on any FAIL.
+// and our log lines. Screenshots (*.png) and UI dumps (*.txt) land in out/selftest. Exit code 1 on any FAIL.
 using System.Diagnostics;
 using System.Runtime.CompilerServices;
 using System.Text.Json.Nodes;
@@ -24,7 +25,7 @@ var outDir = Path.Combine(root, "out", "selftest");
 var mode = args.FirstOrDefault() ?? "test";
 
 if (mode is not ("test" or "launch"))
-    return Fail("usage: dotnet run tools/dev.cs [test|launch]");
+    return Fail("usage: dotnet run tools/dev.cs [test [--headless]|launch]");
 if (Process.GetProcessesByName("SlayTheSpire2").Length > 0)
     return Fail("Close the game first.");
 
@@ -36,6 +37,8 @@ if (build.ExitCode != 0)
 PrepareSandbox(mode == "test");
 
 var start = new ProcessStartInfo(Path.Combine(GameDir, "SlayTheSpire2.exe"), ["--force-steam", "off"]) { WorkingDirectory = GameDir };
+if (args.Contains("--headless"))
+    start.ArgumentList.Add("--headless");
 if (mode == "launch")
 {
     Process.Start(start);

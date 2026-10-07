@@ -1,3 +1,4 @@
+using System.Text;
 using Godot;
 using MegaCrit.Sts2.Core.Modding;
 using MegaCrit.Sts2.Core.Nodes.CommonUi;
@@ -35,7 +36,7 @@ static class SelfTest
             Check("no popup open", NModalContainer.Instance?.OpenModal == null,
                 NModalContainer.Instance?.OpenModal?.GetType().Name ?? "");
             Check("main menu button", menu.GetNodeOrNull("SpireModManagerMenuButton") != null);
-            await Screenshot(menu, outDir, "1-main-menu");
+            await Capture(menu, outDir, "1-main-menu");
 
             var screen = menu.SubmenuStack.PushSubmenuType<NModdingScreen>();
             await Wait(menu, 2);
@@ -48,7 +49,7 @@ static class SelfTest
             Results.Add($"INFO headers: {content.GetChildren().Count(c => c.IsInGroup("SpireModManagerCategoryHeader"))}, " +
                 $"profiles: {string.Join(", ", Store.Data.Profiles.Select(p => $"{p.Name} ({p.Mods.Count(m => m.Enabled)} on)"))}, " +
                 $"active: {Store.Data.ActiveProfile}");
-            await Screenshot(menu, outDir, "2-modding-screen");
+            await Capture(screen, outDir, "2-modding-screen");
 
             // Profile round trip: switch away and back; the game's mod list must end up as it started.
             if (Profiles.Active is { } start && Store.Data.Profiles.FirstOrDefault(p => p != start) is { } other)
@@ -59,7 +60,7 @@ static class SelfTest
                 Results.Add($"INFO switched to {other.Name}: {ModListState().Count(s => s.EndsWith("=on"))} on");
                 Check("our own mod stays on", !(SaveManager.Instance.SettingsSave.ModSettings?.ModList
                     .Any(m => m.Id == ModEntry.ModId && !m.IsEnabled) ?? false));
-                await Screenshot(menu, outDir, "3-other-profile");
+                await Capture(screen, outDir, "3-other-profile");
                 Profiles.SwitchTo(start, screen);
                 await Wait(menu, 1);
                 var after = ModListState();
@@ -72,7 +73,7 @@ static class SelfTest
             Click(screen.GetNode<NButton>("SpireModManagerViewToggle"));
             await Wait(menu, 1);
             Check("vanilla view hides headers", !content.GetChildren().Any(c => c.IsInGroup("SpireModManagerCategoryHeader")));
-            await Screenshot(menu, outDir, "4-vanilla-view");
+            await Capture(screen, outDir, "4-vanilla-view");
             Click(screen.GetNode<NButton>("SpireModManagerViewToggle"));
             await Wait(menu, 1);
         }
@@ -96,9 +97,45 @@ static class SelfTest
     static async Task Wait(Node node, double seconds) =>
         await node.ToSignal(node.GetTree().CreateTimer(seconds), SceneTreeTimer.SignalName.Timeout);
 
-    static async Task Screenshot(Node node, string outDir, string name)
+    // <name>.txt: the visible UI under root as an indented tree; <name>.png: a screenshot, unless the
+    // game runs headless (nothing is drawn then).
+    static async Task Capture(Node root, string outDir, string name)
     {
-        await node.ToSignal(RenderingServer.Singleton, RenderingServer.SignalName.FramePostDraw);
-        node.GetViewport().GetTexture().GetImage().SavePng(Path.Combine(outDir, name + ".png"));
+        var dump = new StringBuilder();
+        DumpTree(root, 0, dump);
+        File.WriteAllText(Path.Combine(outDir, name + ".txt"), dump.ToString());
+        if (DisplayServer.GetName() == "headless")
+            return;
+        await root.ToSignal(RenderingServer.Singleton, RenderingServer.SignalName.FramePostDraw);
+        root.GetViewport().GetTexture().GetImage().SavePng(Path.Combine(outDir, name + ".png"));
+    }
+
+    // One line per visible node: name, type, global rect for controls, and text or tick state.
+    // Hidden branches are skipped, like the screen itself.
+    static void DumpTree(Node node, int depth, StringBuilder dump)
+    {
+        if (node is CanvasItem { Visible: false })
+            return;
+        dump.Append(' ', depth * 2).Append(node.Name).Append(" [").Append(node.GetType().Name).Append(']');
+        if (node is Control control)
+        {
+            var rect = control.GetGlobalRect();
+            dump.Append($" ({rect.Position.X:0},{rect.Position.Y:0} {rect.Size.X:0}x{rect.Size.Y:0})");
+        }
+        var text = node switch
+        {
+            Label label => label.Text,
+            RichTextLabel rich => rich.Text,
+            LineEdit edit => edit.Text,
+            Button button => button.Text,
+            _ => "",
+        };
+        if (text.Length > 0)
+            dump.Append(" \"").Append(text.ReplaceLineEndings(" ")).Append('"');
+        if (node is NTickbox tickbox)
+            dump.Append(tickbox.IsTicked ? " ticked" : " unticked");
+        dump.AppendLine();
+        foreach (var child in node.GetChildren())
+            DumpTree(child, depth + 1, dump);
     }
 }
