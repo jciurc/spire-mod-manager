@@ -1,6 +1,7 @@
 using Godot;
 using HarmonyLib;
 using MegaCrit.Sts2.Core.Logging;
+using MegaCrit.Sts2.Core.Modding;
 using MegaCrit.Sts2.Core.Nodes.Screens.MainMenu;
 using MegaCrit.Sts2.Core.Nodes.Screens.ModdingScreen;
 
@@ -109,5 +110,34 @@ static class ModToggledPatch
         {
             Log.Error($"[{ModEntry.ModId}] Could not update the active profile: {e}");
         }
+    }
+}
+
+// Info panel: alias, the player's notes and the Edit Notes / Workshop Page buttons, after the game fills it.
+[HarmonyPatch(typeof(NModInfoContainer), nameof(NModInfoContainer.Fill))]
+static class ModInfoFillPatch
+{
+    static void Postfix(NModInfoContainer __instance, Mod mod)
+    {
+        try
+        {
+            ModDetails.Fill(__instance, mod);
+        }
+        catch (Exception e)
+        {
+            Log.Error($"[{ModEntry.ModId}] Could not add notes to the info panel: {e}");
+        }
+    }
+}
+
+// No mod shown: hide our panel buttons too.
+[HarmonyPatch(typeof(NModInfoContainer), nameof(NModInfoContainer.Clear))]
+static class ModInfoClearPatch
+{
+    static void Postfix(NModInfoContainer __instance)
+    {
+        foreach (var name in new[] { "EditNotesButton", "WorkshopPageButton" })
+            if (__instance.GetNodeOrNull<Control>(name) is { } button)
+                button.Visible = false;
     }
 }
