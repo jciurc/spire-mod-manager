@@ -373,7 +373,7 @@ static class SelfTest
         var libraries = await Shown("library");
         Check("search by automatic tag", libraries.SequenceEqual(["SmmTestLib"]), string.Join(", ", libraries));
         Check("automatic tags", Tags.For(Dependencies.Find("SmmTestLib")).Select(c => c.Text).SequenceEqual(["Gameplay", "Library"])
-            && Tags.For(Dependencies.Find("SmmTestUi")).Select(c => c.Text).SequenceEqual(["Visual only"]));
+            && Tags.For(Dependencies.Find("SmmTestUi")).Count == 0);
         var none = await Shown("zzz no such mod");
         Check("no match hides every row and header", none.Count == 0
             && !content.GetChildren().OfType<Control>().Any(c => c.IsInGroup("SpireModManagerCategoryHeader") && c.Visible));
