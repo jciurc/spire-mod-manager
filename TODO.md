@@ -193,6 +193,7 @@ Jordan's notes of 2026-10-07, second batch (same file), plus play feedback.
 
 ## Backlog (round 2)
 
+- [ ] tag for mods that need multiplayer sync (everyone must have them)
 - [ ] minimap scroll bar (like VS Code) marking notable items
 - [ ] banner when disabling a mod that enabled mods depend on (e.g. BaseLib)
 - [ ] view enabled only / disabled only (sticky items when toggling)

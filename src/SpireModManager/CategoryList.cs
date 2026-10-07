@@ -149,9 +149,6 @@ static class CategoryList
             row.SetMeta(RowMenuMeta, true);
             row.GuiInput += e =>
             {
-                // Load Order: a click on a row picks it (Ctrl toggles, Shift selects a range) for group moves.
-                if (Store.Data.LoadOrderView && e is InputEventMouseButton { ButtonIndex: MouseButton.Left, Pressed: true } click)
-                    LoadOrder.Pick(content, row, toggle: click.CtrlPressed || click.MetaPressed, range: click.ShiftPressed);
                 if (e is not InputEventMouseButton { ButtonIndex: MouseButton.Right, Pressed: false })
                     return;
                 if (Store.Data.LoadOrderView)

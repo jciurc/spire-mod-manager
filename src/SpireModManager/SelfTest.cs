@@ -413,7 +413,7 @@ static class SelfTest
         var handle = first.GetNode<Control>("SpireModManagerHandle");
         var from = handle.GetGlobalRect().GetCenter();
         var to = new Vector2(from.X, Rows()[2].GetGlobalRect().End.Y - 4);
-        void Send(InputEvent e) => handle.EmitSignal(Control.SignalName.GuiInput, e);
+        void Send(InputEvent e) => handle.GetParent().EmitSignal(Control.SignalName.GuiInput, e);
         Send(new InputEventMouseButton { ButtonIndex = MouseButton.Left, Pressed = true, GlobalPosition = from, Position = from });
         Send(new InputEventMouseMotion { GlobalPosition = to, Position = to });
         await Wait(menu, 0.3);
@@ -435,11 +435,11 @@ static class SelfTest
         var grip = all[0].GetNode<Control>("SpireModManagerHandle");
         var gripAt = grip.GetGlobalRect().GetCenter();
         var bottom = new Vector2(gripAt.X, all[^1].GetGlobalRect().End.Y - 2);
-        grip.EmitSignal(Control.SignalName.GuiInput, new InputEventMouseButton { ButtonIndex = MouseButton.Left, Pressed = true, GlobalPosition = gripAt });
-        grip.EmitSignal(Control.SignalName.GuiInput, new InputEventMouseMotion { GlobalPosition = bottom });
+        grip.GetParent().EmitSignal(Control.SignalName.GuiInput, new InputEventMouseButton { ButtonIndex = MouseButton.Left, Pressed = true, GlobalPosition = gripAt });
+        grip.GetParent().EmitSignal(Control.SignalName.GuiInput, new InputEventMouseMotion { GlobalPosition = bottom });
         await Wait(menu, 0.2);
         await Capture(screen, outDir, "11b-multi-drag");
-        grip.EmitSignal(Control.SignalName.GuiInput, new InputEventMouseButton { ButtonIndex = MouseButton.Left, Pressed = false, GlobalPosition = bottom });
+        grip.GetParent().EmitSignal(Control.SignalName.GuiInput, new InputEventMouseButton { ButtonIndex = MouseButton.Left, Pressed = false, GlobalPosition = bottom });
         await Wait(menu, 0.5);
         Check("dragging a multi-selection moves the group, in order", Ids().TakeLast(2).SequenceEqual(pickedIds), string.Join(", ", Ids()));
         LoadOrder.ClearSelection(content);
@@ -530,15 +530,15 @@ static class SelfTest
         {
             var from = handle.GetGlobalRect().GetCenter();
             var to = new Vector2(from.X, Rows()[0].GetGlobalRect().Position.Y + 4);
-            handle.EmitSignal(Control.SignalName.GuiInput, new InputEventMouseButton { ButtonIndex = MouseButton.Left, Pressed = true, GlobalPosition = from });
-            handle.EmitSignal(Control.SignalName.GuiInput, new InputEventMouseMotion { GlobalPosition = to });
+            handle.GetParent().EmitSignal(Control.SignalName.GuiInput, new InputEventMouseButton { ButtonIndex = MouseButton.Left, Pressed = true, GlobalPosition = from });
+            handle.GetParent().EmitSignal(Control.SignalName.GuiInput, new InputEventMouseMotion { GlobalPosition = to });
             await Wait(menu, 0.3);
             await Capture(screen, outDir, "13-blocked-drag");
             var links = content.GetParent().GetChildren().Count(c => c.IsInGroup("SpireModManagerLinks"));
             Check("dragging dims unrelated rows, lights linked ones, draws links",
                 Row("LocalModFixes")?.Modulate.A < 1 && Row("SmmTestLib")?.Modulate.A == 1 && links == 1, $"{links} links");
             Check("grabbing a row selects it", CategoryList.Selected == dependent);
-            handle.EmitSignal(Control.SignalName.GuiInput, new InputEventMouseButton { ButtonIndex = MouseButton.Left, Pressed = false, GlobalPosition = to });
+            handle.GetParent().EmitSignal(Control.SignalName.GuiInput, new InputEventMouseButton { ButtonIndex = MouseButton.Left, Pressed = false, GlobalPosition = to });
             await Wait(menu, 0.5);
         }
         Check("a drag past a dependency goes through and is flagged", Ids()[0] == "SmmTestContent"
@@ -561,7 +561,7 @@ static class SelfTest
         await Wait(menu, 0.5);
         Check("one undo restores the order from before auto sort", Ids().SequenceEqual(beforeSort), string.Join(", ", Ids()));
         await Wait(menu, 0.2);
-        Check("dropping restores the list look", Rows().All(r => r.Modulate == Colors.White)
+        Check("dropping restores the list look (only mods that are off stay dim)", Rows().All(r => r.Modulate == (r.Mod is { } m && !Dependencies.IsOn(m) ? new Color(1, 1, 1, 0.4f) : Colors.White))
             && !content.GetParent().GetChildren().Any(c => c.IsInGroup("SpireModManagerLinks")));
 
         // Hovering the framework shows a line to each mod that needs it.
