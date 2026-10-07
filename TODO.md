@@ -80,15 +80,15 @@ Jordan's notes of 2026-10-07 (from `spire manager notes.txt` in the scratch fold
 
 ## details panel
 
-- [ ] reduce screenshot size to thumbnail
-- [ ] move details closer to title
-- [ ] remove Notes button for editable inline textarea
-- [ ] editable tag field in panel
-- [ ] Alias will be inline editable in the list - needs design thought here - small pencil to left of title?
-- [ ] replace workshop page button with full clickable url positioned under mod title
-- [ ] local mods can show "Local mod" text instead of url
-- [ ] remove "From" item
-- [ ] show compatibility game version numbers, if available
+- [x] reduce screenshot size to thumbnail
+- [x] move details closer to title
+- [x] remove Notes button for editable inline textarea
+- [x] editable tag field in panel
+- [x] Alias will be inline editable in the list - needs design thought here - small pencil to left of title?
+- [x] replace workshop page button with full clickable url positioned under mod title
+- [x] local mods can show "Local mod" text instead of url
+- [x] remove "From" item
+- [x] show compatibility game version numbers, if available
 
 
 ## Backlog
