@@ -16,5 +16,7 @@
   "SPIRE_MOD_MANAGER.PROFILE": "Profile",
   "SPIRE_MOD_MANAGER.NEW_PROFILE": "New",
   "SPIRE_MOD_MANAGER.DEFAULT_PROFILE": "Default",
-  "SPIRE_MOD_MANAGER.NEW_PROFILE_NAME": "Profile {n}"
+  "SPIRE_MOD_MANAGER.NEW_PROFILE_NAME": "Profile {n}",
+  "SPIRE_MOD_MANAGER.DELETE_PROFILE_TITLE": "Delete profile?",
+  "SPIRE_MOD_MANAGER.DELETE_PROFILE_BODY": "Delete the profile [gold]{name}[/gold]? Your mods stay installed; only this saved selection goes."
 }
