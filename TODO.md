@@ -53,23 +53,23 @@ Jordan's notes of 2026-10-07 (from `spire manager notes.txt` in the scratch fold
 
 ## Changes
 
-- [ ] Move button to above details panel left aligned
-- [ ] Replace button with tooltip
-- [ ] Show diff count on button, "Changes +4-3"
-- [ ] Changes overlay is anchored to Changes text
-- [ ] Turned On/Off -> Enabled/Disabled
-- [ ] soft/pastel color coding in overlay, green=add, red=remove, mod name colored by tag(or category?)
-- [ ] move revert button next to undo/redo
-- [ ] include internal changes within overlay, x items edited (category/tag/details change), x profile changes
-- [ ] show "Switched from X profile to Y" in changelist instead of all mod changes, (include changes that differ from selected profile. diff count will still show total mod additions/removals)
+- [x] Move button to above details panel left aligned
+- [x] Replace button with tooltip
+- [x] Show diff count on button, "Changes +4-3"
+- [x] Changes overlay is anchored to Changes text
+- [x] Turned On/Off -> Enabled/Disabled
+- [x] soft/pastel color coding in overlay, green=add, red=remove, mod name colored by tag(or category?)
+- [x] move revert button next to undo/redo
+- [x] include internal changes within overlay, x items edited (category/tag/details change), x profile changes
+- [x] show "Switched from X profile to Y" in changelist instead of all mod changes, (include changes that differ from selected profile. diff count will still show total mod additions/removals)
 
 
 ## undo
 
-- [ ] show hotkeys near buttons
-- [ ] show history position and count near buttons
-- [ ] load order and list view should have separate history states
-- [ ] undo history notes mod changes and load order changes separately
+- [x] show hotkeys near buttons
+- [x] show history position and count near buttons
+- [x] load order and list view should have separate history states
+- [x] undo history notes mod changes and load order changes separately
 
 
 ## tags

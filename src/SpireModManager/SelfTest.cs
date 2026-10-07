@@ -439,6 +439,8 @@ static class SelfTest
         var selected = Rows().FirstOrDefault(r => r.Mod == CategoryList.Selected);
         Check("category view takes the handles off", !Rows().Any(r => r.HasNode("SpireModManagerHandle"))
             && content.GetChildren().Any(c => c.IsInGroup("SpireModManagerCategoryHeader")));
+        Check("back from Load Order: titles in place", Rows().All(r => r.GetNode<Control>("Title").OffsetLeft == 0),
+            string.Join(", ", Rows().Select(r => r.GetNode<Control>("Title").OffsetLeft)));
         Check("back from Load Order: no lines or dimming", !content.GetParent().GetChildren().Any(c => c.IsInGroup("SpireModManagerLinks"))
             && Rows().All(r => r.Modulate == Colors.White));
         Check("the selection survives the switch, its category opened", selected?.Mod?.manifest?.id == "LocalModFixes"
@@ -563,10 +565,14 @@ static class SelfTest
         await Wait(menu, 0.3);
         Check("tickbox change is listed under Changes", !On() && HistoryBar.Describe().Any(l => l.Contains("Test UI")),
             string.Join(" | ", HistoryBar.Describe()));
-        Press("ChangesButton");
+        Check("Changes counts it", HistoryBar.Counts().Off >= 1, $"{HistoryBar.Counts()}");
+        var changes = screen.GetNode<Control>(HistoryBar.ChangesName);
+        changes.EmitSignal(Control.SignalName.MouseEntered);
         await Wait(menu, 0.3);
+        Check("hovering Changes shows the details", screen.HasNode("SpireModManagerChangesPanel"));
         await Capture(screen, outDir, "14-changes");
-        Press("CloseButton");
+        changes.EmitSignal(Control.SignalName.MouseExited);
+        await Wait(menu, 0.2);
 
         Press("UndoButton");
         await Wait(menu, 0.3);
@@ -609,10 +615,37 @@ static class SelfTest
         History.RevertMods();
         await Wait(menu, 0.3);
         Check("Revert all restores the mod list as loaded", History.Loaded?.Mods.SequenceEqual(History.CurrentMods()) == true
-            && HistoryBar.Describe().Count == 0 && On());
+            && HistoryBar.Counts() == (0, 0) && On());
+        Press("UndoButton"); // the list view's history: on/off comes back; the order has its own history
+        await Wait(menu, 0.3);
+        Check("Revert all can be undone", beforeRevert.Select(m => (m.Id, m.Source, m.Enabled)).ToHashSet()
+            .SetEquals(History.CurrentMods().Select(m => (m.Id, m.Source, m.Enabled))), string.Join(", ", History.CurrentMods()));
+
+        // Separate histories: an order change made in Load Order isn't undone from the list view.
+        Click(screen.GetNode<NButton>("SpireModManagerLoadOrderToggle"));
+        await Wait(menu, 0.3);
+        var rows = content.GetChildren().OfType<NModMenuRow>().ToList();
+        if (rows.FirstOrDefault(r => r.Mod?.manifest?.id == "LocalModFixes")?.Mod is { } fixes)
+            LoadOrder.Move(fixes, 0, rows);
+        CategoryList.Redraw(content);
+        var orderAfterMove = History.CurrentMods().Select(m => m.Id).ToList();
+        Click(screen.GetNode<NButton>("SpireModManagerLoadOrderToggle"));
+        await Wait(menu, 0.3);
+        Categories.Rename(Store.Data.Categories[0], "List edit");
         Press("UndoButton");
         await Wait(menu, 0.3);
-        Check("Revert all can be undone", beforeRevert.SequenceEqual(History.CurrentMods()), string.Join(", ", History.CurrentMods()));
+        Check("list undo leaves the load order alone", History.CurrentMods().Select(m => m.Id).SequenceEqual(orderAfterMove)
+            && Store.Data.Categories.All(c => c.Name != "List edit"));
+
+        // A different profile than at launch reads as one "switched" line.
+        if (Store.Data.Profiles.FirstOrDefault(p => p.Name != Store.Data.ActiveProfile) is { } other && Profiles.Active is { } start)
+        {
+            Profiles.SwitchTo(other, screen);
+            Check("switching profile shows one switched line", HistoryBar.Describe().FirstOrDefault()?.StartsWith($"Switched from {History.LaunchProfile} to {other.Name}") == true,
+                string.Join(" | ", HistoryBar.Describe()));
+            Profiles.SwitchTo(start, screen);
+            Check("back on the launch profile, no switched line", !HistoryBar.Describe().Any(l => l.StartsWith("Switched")));
+        }
     }
 
     static async Task<bool> WithVanillaView(NModdingScreen screen, Node menu, Func<bool> check)

@@ -134,6 +134,16 @@ static class Layout
             right = history.Position.X - 12;
         }
 
+        // "Changes +4 -3": above the info panel's left edge; in Load Order, above the list's right end.
+        if (screen.GetNodeOrNull<Control>(HistoryBar.ChangesName) is { } changes)
+        {
+            changes.Visible = Wide;
+            changes.Position = view == View.LoadOrder
+                ? new Vector2(list.OffsetRight - changes.Size.X, list.OffsetTop - 34)
+                : new Vector2(info.OffsetLeft + 4, info.OffsetTop - 34);
+        }
+        History.NotifyChanged(); // the buttons act on this view's history
+
         // The game's "takes effect after a restart" line fits between the left and right buttons in our
         // views (its text shrinks to fit), and goes back to its own place in Vanilla View.
         var leftEnd = new[] { vanillaToggle, orderToggle }.Where(c => c is { Visible: true })
