@@ -15,6 +15,8 @@ static class CategoryList
     const string HeaderScenePath = $"res://{ModEntry.ModId}/scenes/category_header.tscn";
     const string HeaderGroup = "SpireModManagerCategoryHeader";
     const float DragThreshold = 12; // a press that moves further than this is a scroll, not a click
+    const string RowMenuMeta = "spire_mod_manager_menu";
+    const string CategoryMeta = "spire_mod_manager_category"; // on headers: the category name, "" for Uncategorized
 
     public static void Attach(NModdingScreen screen)
     {
@@ -37,7 +39,7 @@ static class CategoryList
 
     static string ToggleLabel() => Store.Data.VanillaView ? "SPIRE_MOD_MANAGER.CATEGORY_VIEW" : "SPIRE_MOD_MANAGER.VANILLA_VIEW";
 
-    static void Apply(Control content)
+    public static void Apply(Control content)
     {
         foreach (var header in content.GetChildren().Where(c => c.IsInGroup(HeaderGroup)))
         {
@@ -50,6 +52,17 @@ static class CategoryList
         var rows = content.GetChildren().OfType<NModMenuRow>()
             .OrderBy(r => r.Mod is { } mod && order.TryGetValue(mod, out var i) ? i : int.MaxValue)
             .ToList();
+
+        // Right-click a row to pick its category. Rows outlive Apply, so connect once.
+        foreach (var row in rows.Where(r => !r.HasMeta(RowMenuMeta)))
+        {
+            row.SetMeta(RowMenuMeta, true);
+            row.GuiInput += e =>
+            {
+                if (e is InputEventMouseButton { ButtonIndex: MouseButton.Right, Pressed: false })
+                    ShowRowMenu(content, row);
+            };
+        }
 
         if (Store.Data.VanillaView)
         {
@@ -74,10 +87,13 @@ static class CategoryList
             content.MoveChild(node, index++);
         }
 
-        void AddSection(string title, List<NModMenuRow> members, bool collapsed, Action<bool> setCollapsed, bool muted = false)
+        void AddSection(string title, List<NModMenuRow> members, bool collapsed, Action<bool> setCollapsed, Category? category = null)
         {
+            var muted = category == null;
             var header = ResourceLoader.Load<PackedScene>(HeaderScenePath).Instantiate<Control>();
             Add(header);
+            header.Name = category == null ? "Uncategorized" : $"Category {category.Name}";
+            header.SetMeta(CategoryMeta, category?.Name ?? "");
             var titleLabel = header.GetNode<Label>("Title");
             titleLabel.Text = title;
             if (muted)
@@ -106,6 +122,8 @@ static class CategoryList
             var pressedAt = Vector2.Zero;
             header.GuiInput += e =>
             {
+                if (category != null && e is InputEventMouseButton { ButtonIndex: MouseButton.Right, Pressed: false })
+                    ShowHeaderMenu(content, category);
                 if (e is not InputEventMouseButton { ButtonIndex: MouseButton.Left } click)
                     return;
                 if (click.Pressed)
@@ -122,15 +140,115 @@ static class CategoryList
 
         foreach (var category in categories)
             AddSection(category.Name, rows.Where(r => CategoryOf(r) == category.Name).ToList(),
-                category.Collapsed, c => category.Collapsed = c);
+                category.Collapsed, c => category.Collapsed = c, category);
 
         var uncategorized = rows.Where(r => CategoryOf(r) == null).ToList();
         if (uncategorized.Count == 0)
             return;
         if (categories.Count > 0)
             Add(Divider());
-        AddSection(new LocString("settings_ui", "SPIRE_MOD_MANAGER.UNCATEGORIZED").GetFormattedText(), uncategorized,
-            Store.Data.UncategorizedCollapsed, c => Store.Data.UncategorizedCollapsed = c, muted: true);
+        AddSection(Menus.Text("SPIRE_MOD_MANAGER.UNCATEGORIZED"), uncategorized,
+            Store.Data.UncategorizedCollapsed, c => Store.Data.UncategorizedCollapsed = c);
+    }
+
+    // Categories to move the mod into (its current one ticked), or a new one, named in place.
+    public static PopupMenu? ShowRowMenu(Control content, NModMenuRow row)
+    {
+        if (Store.Data.VanillaView || row.Mod?.manifest?.id is not { } id)
+            return null;
+        var current = Store.InfoFor(id)?.Category is { } name && Categories.Find(name) != null ? name : null;
+        var items = new List<MenuItem> { MenuItem.Heading(Menus.Text("SPIRE_MOD_MANAGER.CATEGORY")) };
+        foreach (var category in Store.Data.Categories)
+            items.Add(new MenuItem(category.Name, () => Move(category.Name), Checked: category.Name == current));
+        items.Add(new MenuItem(Menus.Text("SPIRE_MOD_MANAGER.UNCATEGORIZED"), () => Move(null), Checked: current == null));
+        items.Add(MenuItem.Heading(""));
+        items.Add(new MenuItem(Menus.Text("SPIRE_MOD_MANAGER.NEW_CATEGORY"), () =>
+        {
+            var category = Categories.Add();
+            Move(category.Name);
+            BeginRename(content, category);
+        }));
+        return Menus.Show(content, items);
+
+        void Move(string? category)
+        {
+            Categories.Assign(id, category);
+            Apply(content);
+        }
+    }
+
+    public static PopupMenu ShowHeaderMenu(Control content, Category category)
+    {
+        var list = Store.Data.Categories;
+        var index = list.IndexOf(category);
+        return Menus.Show(content, [
+            new MenuItem(Menus.Text("SPIRE_MOD_MANAGER.RENAME"), () => BeginRename(content, category)),
+            new MenuItem(Menus.Text("SPIRE_MOD_MANAGER.MOVE_UP"), () => Edit(() => Categories.Move(category, -1)), Disabled: index == 0),
+            new MenuItem(Menus.Text("SPIRE_MOD_MANAGER.MOVE_DOWN"), () => Edit(() => Categories.Move(category, 1)), Disabled: index == list.Count - 1),
+            new MenuItem(Menus.Text("SPIRE_MOD_MANAGER.DELETE"), () => _ = Delete()),
+        ]);
+
+        void Edit(Action change)
+        {
+            change();
+            Apply(content);
+        }
+
+        // Asks first when the category still holds mods; they move to Uncategorized.
+        async Task Delete()
+        {
+            var count = Categories.CountMods(category);
+            if (count > 0)
+            {
+                var body = new LocString("settings_ui", "SPIRE_MOD_MANAGER.DELETE_CATEGORY_BODY");
+                body.Add("name", category.Name);
+                body.Add("count", count);
+                if (!await Menus.Confirm(new LocString("settings_ui", "SPIRE_MOD_MANAGER.DELETE_CATEGORY_TITLE"), body))
+                    return;
+            }
+            Edit(() => Categories.Delete(category));
+        }
+    }
+
+    // Swaps the header's title for a text box; Enter or clicking away renames, Escape cancels.
+    public static LineEdit? BeginRename(Control content, Category category)
+    {
+        if (content.GetChildren().OfType<Control>().FirstOrDefault(c =>
+                c.IsInGroup(HeaderGroup) && c.HasMeta(CategoryMeta) && (string)c.GetMeta(CategoryMeta) == category.Name)
+            is not { } header)
+            return null;
+        var title = header.GetNode<Label>("Title");
+        var edit = new LineEdit { Name = "RenameBox", Text = category.Name, Flat = true, SelectAllOnFocus = true, MaxLength = 40 };
+        edit.AddThemeFontOverride("font", title.GetThemeFont("font"));
+        edit.AddThemeFontSizeOverride("font_size", title.GetThemeFontSize("font_size"));
+        edit.AddThemeColorOverride("font_color", title.GetThemeColor("font_color"));
+        header.AddChild(edit);
+        edit.SetAnchorsPreset(Control.LayoutPreset.FullRect);
+        edit.OffsetLeft = title.OffsetLeft;
+        edit.OffsetRight = title.OffsetRight;
+        edit.OffsetTop = 6;
+        edit.OffsetBottom = -6;
+        title.Visible = false;
+        edit.GrabFocus();
+
+        var done = false;
+        void Finish(bool commit)
+        {
+            if (done)
+                return;
+            done = true;
+            if (commit)
+                Categories.Rename(category, edit.Text); // empty or taken: keeps the old name
+            Callable.From(() => Apply(content)).CallDeferred(); // not while the box is handling its own signal
+        }
+        edit.TextSubmitted += _ => Finish(true);
+        edit.FocusExited += () => Finish(true);
+        edit.GuiInput += e =>
+        {
+            if (e is InputEventKey { Keycode: Key.Escape, Pressed: true })
+                Finish(false);
+        };
+        return edit;
     }
 
     // A thin gold line marking where the player's categories end and "Uncategorized" begins.
