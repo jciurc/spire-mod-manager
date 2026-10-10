@@ -169,6 +169,18 @@ static class SelfTest
             await Capture(screen, outDir, "real-4-vanilla");
             Click(screen.GetNode<NButton>("SpireModManagerViewToggle"));
             await Wait(menu, 0.5);
+
+            // Save as new with real clicks (this is a copy of the player's data): first an edit (a tickbox),
+            // then the button.
+            var tick = content.GetChildren().OfType<NModMenuRow>().First(r => r.Mod?.manifest?.id != ModEntry.ModId).GetNode<Control>("Tickbox");
+            var tickUnder = await RealClick(menu, tick);
+            Check("a real tickbox click makes an unsaved edit", Profiles.Edited, tickUnder);
+            var profiles = Store.Data.Profiles.Count;
+            var bar = screen.GetNode("ModsBorder/SpireModManagerProfileBar");
+            var under = await RealClick(menu, (Control)bar.FindChild("SaveAsNewButton", true, false));
+            Check("Save as new (a real click) adds a profile", Store.Data.Profiles.Count == profiles + 1, under);
+            Check("Save as new opens the name box", bar.FindChild("ProfileName", true, false) is LineEdit { Visible: true } box && box.HasFocus());
+            await Capture(screen, outDir, "real-5-save-as-new");
         }
         catch (Exception e)
         {
@@ -274,10 +286,10 @@ static class SelfTest
         var start = Profiles.Active;
         var startEdited = Profiles.Edited;
 
-        bar.FindChild("SaveAsNewButton", true, false)?.EmitSignal(BaseButton.SignalName.Pressed);
-        await Wait(menu, 0.5);
-        Check("Save as new adds a profile and switches to it", Store.Data.Profiles.Count == count + 1 && Profiles.Active != start
-            && name.Text == Profiles.Active?.Name, name.Text);
+        var under = await RealClick(menu, (Control)bar.FindChild("SaveAsNewButton", true, false));
+        await Wait(menu, 0.3);
+        Check("Save as new (a real click) adds a profile and switches to it", Store.Data.Profiles.Count == count + 1 && Profiles.Active != start
+            && name.Text == Profiles.Active?.Name, $"{name.Text}; under the mouse: {under}");
 
         name.GrabFocus();
         name.Text = "Brother co-op";
@@ -750,6 +762,22 @@ static class SelfTest
     static Node? Header(Control content, string category) => content.GetNodeOrNull($"Category {category}");
 
     static void Click(NButton button) => button.EmitSignal(NClickableControl.SignalName.Released, button);
+
+    // A real mouse click at the control's centre, through the game's input like a player's: catches anything
+    // drawn over it or eating the click. Returns the control under the mouse, for the report.
+    static async Task<string> RealClick(Node menu, Control target)
+    {
+        var at = target.GetGlobalRect().GetCenter();
+        Input.ParseInputEvent(new InputEventMouseMotion { Position = at, GlobalPosition = at });
+        await Wait(menu, 0.1);
+        var hovered = target.GetViewport().GuiGetHoveredControl();
+        // Described before the click: it may free them.
+        var where = $"{(hovered == null ? "nothing" : $"{hovered.Name} ({hovered.GetType().Name}) under {hovered.GetParent()?.Name}")} at {at}, rect {target.GetGlobalRect()}";
+        Input.ParseInputEvent(new InputEventMouseButton { ButtonIndex = MouseButton.Left, Pressed = true, Position = at, GlobalPosition = at });
+        Input.ParseInputEvent(new InputEventMouseButton { ButtonIndex = MouseButton.Left, Pressed = false, Position = at, GlobalPosition = at });
+        await Wait(menu, 0.3);
+        return where;
+    }
 
     static List<string> ModListState() =>
         SaveManager.Instance.SettingsSave.ModSettings?.ModList
