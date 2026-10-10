@@ -91,10 +91,10 @@ static class ProfileBar
             List<MenuItem> buttons = edited
                 ? [
                     new(Menus.Text("SPIRE_MOD_MANAGER.SAVE"), Profiles.Save),
-                    new(Menus.Text("SPIRE_MOD_MANAGER.SAVE_AS_NEW"), () => Profiles.SaveAsNew(screen)),
+                    new(Menus.Text("SPIRE_MOD_MANAGER.SAVE_AS_NEW"), SaveAsNew),
                     new(Menus.Text("SPIRE_MOD_MANAGER.DISCARD"), () => Profiles.Discard(screen)),
                 ]
-                : [new(Menus.Text("SPIRE_MOD_MANAGER.SAVE_AS_NEW"), () => Profiles.SaveAsNew(screen))];
+                : [new(Menus.Text("SPIRE_MOD_MANAGER.SAVE_AS_NEW"), SaveAsNew)];
             inline = Menus.InlineButtons(buttons, "Actions");
             foreach (var (button, id) in inline.GetChildren().OfType<Button>().Zip(edited
                 ? new[] { "SaveProfileButton", "SaveAsNewButton", "DiscardButton" } : ["SaveAsNewButton"]))
@@ -123,6 +123,12 @@ static class ProfileBar
                 Menus.Show(bar, Actions());
         };
 
+        // The copy gets a placeholder name ("Profile 3") with the name box open on it, to type a real one.
+        void SaveAsNew()
+        {
+            Profiles.SaveAsNew(screen);
+            Callable.From(BeginRename).CallDeferred();
+        }
         void BeginRename()
         {
             picker.Visible = false;
