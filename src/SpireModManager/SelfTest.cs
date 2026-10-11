@@ -286,9 +286,9 @@ static class SelfTest
         var start = Profiles.Active;
         var startEdited = Profiles.Edited;
 
-        var under = await RealClick(menu, (Control)bar.FindChild("SaveAsNewButton", true, false));
+        var under = await RealClick(menu, (Control)bar.FindChild(Profiles.Edited ? "SaveAsNewButton" : "NewProfileButton", true, false));
         await Wait(menu, 0.3);
-        Check("Save as new (a real click) adds a profile and switches to it", Store.Data.Profiles.Count == count + 1 && Profiles.Active != start
+        Check("New or Save as new (a real click) adds a profile and switches to it", Store.Data.Profiles.Count == count + 1 && Profiles.Active != start
             && name.Text == Profiles.Active?.Name, $"{name.Text}; under the mouse: {under}");
 
         name.GrabFocus();
@@ -341,11 +341,16 @@ static class SelfTest
         if (Profiles.Edited)
             Profiles.Save(); // start clean: the fixture launches on an unsaved edit (its list differs from the profile)
         var wasOn = On();
+        string ButtonNames() => string.Join(",", ((Node)bar.FindChild("Actions", true, false)).GetChildren().Select(c => c.Name.ToString()));
+        await Wait(menu, 0.2);
+        Check("saved profile: Save (greyed), New, Rename, Delete", ButtonNames() == "SaveProfileButton,NewProfileButton,RenameProfileButton,DeleteProfileButton"
+            && bar.FindChild("SaveProfileButton", true, false) is Button { Disabled: true }, ButtonNames());
 
         await Toggle(!wasOn);
         Check("a tickbox change is an unsaved edit; the saved profile stays", Profiles.Edited && SavedOn() == wasOn
             && bar.FindChild("Unsaved", true, false) is Control { Visible: true } && bar.FindChild("SaveProfileButton", true, false) != null,
             $"edited {Profiles.Edited}, saved on {SavedOn()}, was on {wasOn}, now on {On()}, unsaved {(bar.FindChild("Unsaved", true, false) as Control)?.Visible}, save {bar.FindChild("SaveProfileButton", true, false) != null}");
+        Check("edited profile: Save, Save as new, Revert, Delete", ButtonNames() == "SaveProfileButton,SaveAsNewButton,DiscardButton,DeleteProfileButton", ButtonNames());
         await Capture(screen, outDir, "3b-unsaved-profile");
 
         Profiles.SwitchTo(other, screen);
