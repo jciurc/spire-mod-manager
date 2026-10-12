@@ -353,3 +353,46 @@ Jordan's notes of 2026-10-12 (later).
 - [x] "Changes N" without load-order moves (they're next to "Mods enabled")
 - [x] the profile's mod count next to the picker (the list keeps its details)
 - [x] (fix) mods subscribed while the page is open appear at the bottom in the game's plain row style; they should look like ours, in place, at once
+
+# Round 8
+
+Jordan's notes of 2026-10-12 (evening).
+
+## Rows
+- [ ] all rows a little shorter
+- [ ] pills in the order Local, Library, Gameplay, Cosmetic, then custom; a "Local" tag for local mods
+- [ ] "Required for N" before "Needs: X" (both pages)
+- [ ] a "notepad" icon instead of ✎ for rows with an alias or notes; none in Load Order
+- [ ] a styled pencil button (right side of the row) opening the edit menu; none in Load Order
+- [ ] hover card for every mod: original name (id), enabled state, error, author, updated, custom tags and notes
+- [ ] (fix) the hover card sometimes stays open while using other parts of the page
+
+## Load Order
+- [ ] no tickboxes; Enable/Disable in the right-click menu
+- [ ] moved rows show "old → new" position, columns kept even
+- [ ] "Automatically sort for compatibility" left of Auto sort
+- [ ] warning text: "For compatibility, N mod(s) will be automatically reordered by the base game on relaunch."
+- [ ] a "!" with a tooltip on the Load Order button when that page has a warning
+
+## Main list
+- [ ] an error banner when there's a problem (e.g. a required mod is off)
+
+## Side panel
+- [ ] subtle darker background, no outline, a hover style on the clickable fields and the category picker
+- [ ] version in grey right of the title (no "v")
+- [ ] source line "<id> (<Workshop id>)" or "<id> (Local)"; Enabled/Disabled at the same size, grouped with it
+- [ ] dates as "October 12, 2026"
+- [ ] automatic tag pills next to the Tags label
+- [ ] compatibility above dependencies, in that group
+- [ ] thumbnail twice as big, a little further left
+
+## Changes
+- [ ] text left-justified, a little lower; the ↕ count to the right of "Changes"
+- [ ] tooltip titled "Changes since launch"; it names the enabled/disabled mods when there are fewer than 20
+- [ ] a mod's name in the changes list opens that mod; a Back button (where Close is) returns to the list; Back goes when another mod is picked or the page is left
+
+## Other
+- [ ] Ctrl+S saves the current profile
+
+## Backlog (round 8)
+- [ ] back/forward view history: previous active mod (opened in the panel), Load Order page changes; Vanilla View skipped
