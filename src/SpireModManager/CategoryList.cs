@@ -18,6 +18,7 @@ static class CategoryList
     const string RowMenuMeta = "spire_mod_manager_menu";
     const string CategoryMeta = "spire_mod_manager_category"; // on headers: the category name, "" for Uncategorized
     public const string FilterMeta = "spire_mod_manager_filter"; // on the row container: the search text
+    static readonly Dictionary<string, float> HeaderWidths = [];
 
     public static void Attach(NModdingScreen screen)
     {
@@ -348,7 +349,10 @@ static class CategoryList
             actions.AnchorBottom = 1;
             actions.GrowHorizontal = Control.GrowDirection.Begin;
             (actions.OffsetLeft, actions.OffsetRight, actions.OffsetTop, actions.OffsetBottom) = (-16, -16, 5, -5);
-            titleLabel.OffsetRight = -16 - actions.GetCombinedMinimumSize().X - 30;
+            var widthKey = string.Join("\n", actions.GetChildren().Select(c => c is Button b ? b.Text : "|"));
+            if (!HeaderWidths.TryGetValue(widthKey, out var actionsWidth))
+                HeaderWidths[widthKey] = actionsWidth = actions.GetCombinedMinimumSize().X; // measured once per set of labels: shaping text is slow
+            titleLabel.OffsetRight = -16 - actionsWidth - 30;
             foreach (var row in members)
                 content.MoveChild(row, index++);
 

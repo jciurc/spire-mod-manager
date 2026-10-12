@@ -121,6 +121,7 @@ static class SelfTest
             await TestPageBar(menu, screen, content, outDir);
             await TestRelaunchCheck(menu, screen, content, outDir);
             await TestLongDetails(menu, screen, content, outDir);
+            await TestPatchNotes(menu, screen, outDir);
             await TestHistory(menu, screen, content, outDir);
 
             // Leaving from Load Order: the page comes back on the main list.
@@ -183,6 +184,20 @@ static class SelfTest
                 CategoryList.Apply(content);
             var orderMs = timer.Elapsed.TotalMilliseconds / 10;
             Check($"load order redraw {orderMs:0.0} ms", orderMs < 50);
+
+            // A real Workshop mod's patch notes, read from Steam (network): the page's layout is still the one we read.
+            // (In the dev copy mods load from a folder, without Workshop ids: RitsuLib's then.)
+            var workshopMod = ModManager.Mods.FirstOrDefault(m => m.workshopId != null);
+            var workshopId = workshopMod?.workshopId ?? 3747602295UL;
+            {
+                var fetch = PatchNotes.Get(workshopId);
+                await Task.WhenAny(fetch, Task.Delay(15000));
+                if (fetch.IsCompletedSuccessfully)
+                    Check($"patch notes from the Workshop ({workshopMod?.manifest?.name ?? workshopId.ToString()}: {fetch.Result.Count} updates)", fetch.Result.Count > 0
+                        && fetch.Result.All(e => e.Notes.Length > 0 && e.Date.Year > 2020), fetch.Result.FirstOrDefault()?.Notes ?? "");
+                else
+                    Results.Add($"INFO patch notes not fetched ({(fetch.IsFaulted ? fetch.Exception?.InnerException?.Message : "timed out")})");
+            }
             await Capture(screen, outDir, "real-2-load-order");
 
             var search = screen.GetNode<LineEdit>("ModsBorder/SpireModManagerSearch");
@@ -1292,6 +1307,44 @@ static class SelfTest
         CategoryList.Redraw(content);
         screen.GetNode<NModInfoContainer>("%ModInfoContainer").Clear();
         await Wait(menu, 0.3);
+    }
+
+    // Patch notes from a made-up change notes page (the Workshop's layout; no network): read, shown in the
+    // panel with the mod's id, author and update, and Back to the details.
+    static async Task TestPatchNotes(Node menu, NModdingScreen screen, string outDir)
+    {
+        const string page = """
+            <div class="detailBox workshopAnnouncement noFooter changeLogCtn"><div class="changelog headline">Update: 7 Oct @ 7:53pm</div>
+            <p id="1791428000"><div class="bb_h2">English</div><br><div class="bb_h3">Fixed</div><br><ul class="bb_ul"><li>Cards no longer vanish when you &quot;retain&quot; them.</li><li>Fewer warnings in the log.</li></ul></p>
+            <div class="commentsLink changeLog">Discuss this update</div></div>
+            <div class="detailBox workshopAnnouncement noFooter changeLogCtn"><div class="changelog headline">Update: 1 Sep</div>
+            <p id="1788000000">First release. Includes [brackets] &amp; more.<br><b>Enjoy!</b></p>
+            </div>
+            """;
+        var entries = PatchNotes.Parse(page);
+        Check("patch notes: each update read, newest first, as text", entries.Count == 2 && entries[0].Date > entries[1].Date
+            && entries[0].Notes.Contains("[b]Fixed[/b]") && entries[0].Notes.Contains("  •  Cards no longer vanish when you \"retain\" them.")
+            && entries[1].Notes.Contains("[lb]brackets]") && entries[1].Notes.Contains("[b]Enjoy![/b]"), string.Join(" | ", entries.Select(e => e.Notes)));
+
+        PatchNotes.TestFetch = _ => Task.FromResult(page);
+        var mod = new Mod
+        {
+            path = "", modSource = ModSource.SteamWorkshop, workshopId = 42,
+            manifest = new ModManifest { id = "SmmPatchNotesTest", name = "Patch Notes Test", author = "Someone Careful" },
+        };
+        var info = screen.GetNode<Control>("%ModInfoContainer");
+        PatchNotes.Show(info, mod);
+        await Wait(menu, 0.4);
+        var view = info.GetNodeOrNull<Control>(PatchNotes.ViewName);
+        var head = view?.GetNodeOrNull<RichTextLabel>("Head")?.GetParsedText() ?? "";
+        var notes = view?.GetNodeOrNull<RichTextLabel>("Notes")?.GetParsedText() ?? "";
+        Check("the patch notes page: id, author, then each update by date", view is { Visible: true } && head.Contains("SmmPatchNotesTest") && head.Contains("Someone Careful")
+            && notes.Contains("Fewer warnings in the log.") && notes.Contains("2026"), $"{head} / {notes}");
+        await Capture(screen, outDir, "17-patch-notes");
+        view?.FindChild("PatchNotesBackButton", true, false)?.EmitSignal(BaseButton.SignalName.Pressed);
+        await Wait(menu, 0.2);
+        Check("Back returns to the details", view is { Visible: false } && info.GetNode<Control>("ModTitle").Visible);
+        PatchNotes.TestFetch = null;
     }
 
     // Untick a mod through its real tickbox, review, undo/redo; undo a rename; revert all, and undo that.
