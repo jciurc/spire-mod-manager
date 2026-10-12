@@ -137,12 +137,12 @@ sealed class ModField
         Load();
     }
 
-    // A mod's alias, notes and tags in a column (its right-click menu).
+    // A mod's alias, tags and notes in a column (its right-click menu), in the info panel's order.
     public static Control Column(string modId, Action<Kind> saved)
     {
         var column = new VBoxContainer { Name = "Fields", CustomMinimumSize = new Vector2(400, 0) };
         column.AddThemeConstantOverride("separation", 12);
-        foreach (var kind in new[] { Kind.Alias, Kind.Notes, Kind.Tags })
+        foreach (var kind in new[] { Kind.Alias, Kind.Tags, Kind.Notes })
             column.AddChild(new ModField(kind, () => modId, saved).Root);
         return column;
     }
