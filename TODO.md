@@ -246,3 +246,26 @@ Jordan's notes of 2026-10-11.
 ## Backlog (round 3)
 
 - [ ] in-game error log: collect and show errors (ours and other mods')
+
+# Round 4
+
+Jordan's notes of 2026-10-11 (evening), in his order.
+
+- [ ] (fix) "(off)" stays on a dependency that was just turned on (pending relaunch)
+- [ ] "Required for N mods" on mods others depend on
+- [ ] dimmer colour for "turned off, pending" vs "turned on, pending"
+- [ ] confirm, cancel and clear buttons on text inputs (profile name/rename, tags, notes)
+- [ ] Duplicate as a profile option
+- [ ] Save as new and Duplicate open the name box with the original name plus " (1)" (or the next free number)
+- [ ] renaming to a taken name warns
+- [ ] (fix) rename box stays open when Delete is clicked mid-rename
+- [ ] (fix) clicking the picker while its list is open closes it and opens it again
+- [ ] no visible "Name (edited x)" profiles: an unsaved profile shows "Name *" and keeps its edit behind the scenes
+- [ ] Save, Save as new and Discard ("Discard", not "Revert") beside the "Unsaved" label, which gets its own colour
+- [ ] no pencils by Tags and Notes; at rest, subtle "Click to add tags" / "Click to add notes"
+- [ ] placeholders without the dots ("Custom notes")
+- [ ] Alias field (below Tags, above Notes) in the info panel
+- [ ] Tags field right below the mod's details, with some margin; a bigger gap between Alias and Notes
+- [ ] row right-click menu: Add/Edit alias, Add/Edit notes, Add/Edit tags, each turning the menu into an inline editor (Save / Cancel back to the menu)
+- [ ] main menu button: Jordan's art (Pictures\symphony\design\spire manager button.png), our label, a hover look
+- [ ] right-click the main menu button to move it (soon, no rush)
