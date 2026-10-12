@@ -5,8 +5,9 @@ using MegaCrit.Sts2.Core.Nodes.Screens.ModdingScreen;
 namespace SpireModManager;
 
 // A thin line along the bottom of each mod row (not in Vanilla View): its tags, then what the mod needs,
-// red when a dependency is missing, off, or loads after it. The row title moves up to make room. The row's
-// actions are small buttons on the right, centred on the row like the tickbox; title and line stop short of them.
+// red when a dependency is missing, off, or loads after it, then (dim, at the end) who made it. The row title
+// moves up to make room. The row's actions are small buttons on the right, centred on the row like the
+// tickbox; title and line stop short of them.
 static class RowStrip
 {
     const string StripName = "SpireModManagerStrip";
@@ -47,7 +48,8 @@ static class RowStrip
             // (each keystroke in search) was most of a redraw's time.
             var chips = Tags.For(row.Mod);
             var text = string.Join("    ", new[] { RequiredFor(row.Mod), Needs(row.Mod, order, Store.Data.LoadOrderView) }.Where(s => s.Length > 0));
-            var says = $"{title.OffsetLeft}|{clear}|{string.Join("|", chips.Select(c => $"{c.Text}/{c.Color}/{c.Custom}"))}|{text}";
+            var author = row.Mod?.manifest?.author is { Length: > 0 } who ? Menus.Format("SPIRE_MOD_MANAGER.BY_AUTHOR", ("author", who)) : "";
+            var says = $"{title.OffsetLeft}|{clear}|{string.Join("|", chips.Select(c => $"{c.Text}/{c.Color}/{c.Custom}"))}|{text}|{author}";
             if (row.GetNodeOrNull<Control>(StripName) is { } kept && kept.HasMeta(SaysMeta) && (string)kept.GetMeta(SaysMeta) == says)
                 continue;
             Drop(row, StripName);
@@ -80,6 +82,15 @@ static class RowStrip
             note.AddThemeFontSizeOverride("normal_font_size", 14);
             note.AddThemeColorOverride("default_color", Note);
             strip.AddChild(note);
+            if (author.Length > 0)
+            {
+                // Who made it, quietly, at the end of the line.
+                var by = new Label { Name = "Author", Text = author, VerticalAlignment = VerticalAlignment.Center, MouseFilter = Control.MouseFilterEnum.Ignore };
+                by.AddThemeFontOverride("font", ResourceLoader.Load<Font>("res://themes/kreon_regular_shared.tres"));
+                by.AddThemeFontSizeOverride("font_size", 14);
+                by.AddThemeColorOverride("font_color", new Color(1, 0.964706f, 0.886275f, 0.45f));
+                strip.AddChild(by);
+            }
         }
     }
 

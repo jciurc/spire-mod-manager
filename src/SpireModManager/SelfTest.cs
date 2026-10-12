@@ -118,6 +118,7 @@ static class SelfTest
             await TestNewMod(menu, screen, content, outDir);
             await TestLoadOrder(menu, screen, content, outDir);
             await TestListBanner(menu, screen, content, outDir);
+            await TestPageBar(menu, screen, content, outDir);
             await TestHistory(menu, screen, content, outDir);
 
             // Leaving from Load Order: the page comes back on the main list.
@@ -1088,6 +1089,51 @@ static class SelfTest
         CategoryList.Redraw(content);
         await Wait(menu, 0.3);
         Check("fixed: the '!' goes", screen.GetNodeOrNull<Control>("SpireModManagerLoadOrderToggle/WarningBadge") is not { Visible: true });
+    }
+
+    // The bar under the search box: Enable all / Disable all for the page (or the search's matches),
+    // Expand all / Collapse all. Category headers: the same two inline, last. Rows: the author at the end.
+    static async Task TestPageBar(Node menu, NModdingScreen screen, Control content, string outDir)
+    {
+        List<NModMenuRow> Rows() => content.GetChildren().OfType<NModMenuRow>().ToList();
+        Control? Bar() => screen.FindChild(PageBar.Name, true, false) as Control;
+        void Press(string name) => Bar()?.FindChild(name, true, false)?.EmitSignal(BaseButton.SignalName.Pressed);
+        Check("page bar on the main list", Bar() is { Visible: true } bar && bar.FindChild("Scope", true, false) is Label { Text: var all } && all.StartsWith("All mods"));
+        await Capture(screen, outDir, "2d-page-bar");
+
+        var box = screen.GetNode<LineEdit>("ModsBorder/SpireModManagerSearch");
+        void Find(string text)
+        {
+            box.Text = text;
+            box.EmitSignal(LineEdit.SignalName.TextChanged, text);
+        }
+        Find("#Gameplay");
+        await Wait(menu, 0.3);
+        var matched = Rows().Where(r => SpireModManager.Search.Matches(r.Mod, "#Gameplay")).Select(r => r.Mod).OfType<Mod>().ToList();
+        var others = Rows().Select(r => r.Mod).OfType<Mod>().Except(matched).ToDictionary(m => m, Dependencies.IsOn);
+        Check("searching: the bar says it acts on the matches", (Bar()?.FindChild("Scope", true, false) as Label)?.Text.StartsWith("Search matches") == true);
+        Press("DisableAllButton");
+        await Wait(menu, 0.3);
+        Check("Disable all turns off just the matches", matched.All(m => !Dependencies.IsOn(m)) && others.All(p => Dependencies.IsOn(p.Key) == p.Value),
+            string.Join(", ", matched.Select(m => m.manifest?.id)));
+        History.Undo();
+        await Wait(menu, 0.3);
+        Find("");
+        await Wait(menu, 0.3);
+
+        Press("CollapseAllButton");
+        await Wait(menu, 0.3);
+        Check("Collapse all closes every category", Store.Data.Categories.All(c => c.Collapsed) && Store.Data.UncategorizedCollapsed && Rows().All(r => !r.Visible));
+        Press("ExpandAllButton");
+        await Wait(menu, 0.3);
+        Check("Expand all opens them again", Store.Data.Categories.All(c => !c.Collapsed) && !Store.Data.UncategorizedCollapsed && Rows().Any(r => r.Visible));
+
+        var headerButtons = (Header(content, Store.Data.Categories.First().Name) as Node)?.GetNodeOrNull("Actions")?.GetChildren().OfType<Button>().Select(b => b.Text).ToList() ?? [];
+        Check("category headers: Enable all, Disable all inline, last", headerButtons.TakeLast(2).SequenceEqual(["Enable all", "Disable all"]), string.Join(",", headerButtons));
+        var uncategorized = (content.GetNodeOrNull("Uncategorized")?.GetNodeOrNull("Actions")?.GetChildren().OfType<Button>().Select(b => b.Text).ToList()) ?? [];
+        Check("Uncategorized: just Enable all, Disable all", uncategorized.SequenceEqual(["Enable all", "Disable all"]), string.Join(",", uncategorized));
+        var author = Rows().FirstOrDefault(r => r.Mod?.manifest?.id == "LocalModFixes")?.GetNodeOrNull<Label>("SpireModManagerStrip/Author")?.Text;
+        Check("the author at the end of the row's line", author == "by symphony", author ?? "none");
     }
 
     // Untick a mod through its real tickbox, review, undo/redo; undo a rename; revert all, and undo that.

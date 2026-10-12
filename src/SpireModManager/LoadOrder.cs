@@ -243,6 +243,7 @@ static class LoadOrder
             Banner(border, search, orderText, [Menus.SmallButton(Menus.Text("SPIRE_MOD_MANAGER.FIX_ORDER"), () => Do(FixOrder), name: "FixOrderButton")]);
         else if (Layout.Current == Layout.View.Categories)
             ListBanner(content, border, search, mods, redraw);
+        PageBar.Update(content, border, rows);
         Layout.PlaceList(border);
     }
 

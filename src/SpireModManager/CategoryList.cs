@@ -283,17 +283,26 @@ static class CategoryList
             count.HorizontalAlignment = HorizontalAlignment.Left;
             count.AnchorLeft = 0;
             count.OffsetLeft = titleLabel.OffsetLeft + titleLabel.GetThemeFont("font").GetStringSize(title, fontSize: 18).X + 10;
+            // The header menu's actions inline, right-aligned: the category's own (not for Uncategorized), then
+            // Enable all / Disable all at the far right, over the rows' tickboxes.
+            var shown = members.Where(Matches).ToList();
+            var actions = Menus.InlineButtons(category == null ? [] : HeaderActions(content, category, compact: true), "Actions");
+            actions.AddThemeConstantOverride("separation", 4);
             if (category != null)
+                actions.AddChild(new Control { CustomMinimumSize = new Vector2(10, 0), MouseFilter = Control.MouseFilterEnum.Ignore });
+            foreach (var item in OnOffItems(content, shown))
             {
-                // The header menu's actions inline, right-aligned.
-                var actions = Menus.InlineButtons(HeaderActions(content, category, compact: true), "Actions");
-                actions.Alignment = BoxContainer.AlignmentMode.End;
-                header.AddChild(actions);
-                actions.AnchorLeft = actions.AnchorRight = 1;
-                actions.AnchorBottom = 1;
-                (actions.OffsetLeft, actions.OffsetRight, actions.OffsetTop, actions.OffsetBottom) = (-304, -16, 5, -5);
-                titleLabel.OffsetRight = -350;
+                var button = Menus.SmallButton(item.Label, item.OnSelect ?? (() => { }), item.Disabled);
+                button.SizeFlagsVertical = Control.SizeFlags.ShrinkCenter;
+                actions.AddChild(button);
             }
+            actions.Alignment = BoxContainer.AlignmentMode.End;
+            header.AddChild(actions);
+            actions.AnchorLeft = actions.AnchorRight = 1;
+            actions.AnchorBottom = 1;
+            actions.GrowHorizontal = Control.GrowDirection.Begin;
+            (actions.OffsetLeft, actions.OffsetRight, actions.OffsetTop, actions.OffsetBottom) = (-16, -16, 5, -5);
+            titleLabel.OffsetRight = -16 - actions.GetCombinedMinimumSize().X - 30;
             foreach (var row in members)
                 content.MoveChild(row, index++);
 
@@ -414,6 +423,16 @@ static class CategoryList
     // player's own categories, its actions. Uncategorized has only the first two.
     public static Node? ShowHeaderMenu(Control content, Category? category, List<NModMenuRow> members)
     {
+        var items = OnOffItems(content, members);
+        if (category != null)
+            items.AddRange([MenuItem.Heading(""), .. HeaderActions(content, category)]);
+        return Menus.Show(content, items);
+    }
+
+    // Enable all / Disable all for some rows (a category's, or the page's), as one undo step; each greyed out
+    // when there's nothing for it to do. This mod stays on.
+    public static List<MenuItem> OnOffItems(Control content, IEnumerable<NModMenuRow> members)
+    {
         var mods = members.Select(r => r.Mod).OfType<Mod>().ToList();
         void Set(bool on)
         {
@@ -422,14 +441,11 @@ static class CategoryList
             Dependencies.Set(mods, on, screen);
             Redraw(content);
         }
-        List<MenuItem> items =
+        return
         [
             new(Menus.Text("SPIRE_MOD_MANAGER.ENABLE_ALL"), () => Set(true), Disabled: mods.All(Dependencies.IsOn)),
             new(Menus.Text("SPIRE_MOD_MANAGER.DISABLE_ALL"), () => Set(false), Disabled: mods.All(m => !Dependencies.IsOn(m) || m.manifest?.id == ModEntry.ModId)),
         ];
-        if (category != null)
-            items.AddRange([MenuItem.Heading(""), .. HeaderActions(content, category)]);
-        return Menus.Show(content, items);
     }
 
     // Rename, up, down, delete: the header's right-click menu, and its inline buttons (compact labels).
