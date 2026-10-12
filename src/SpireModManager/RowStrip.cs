@@ -4,15 +4,18 @@ using MegaCrit.Sts2.Core.Nodes.Screens.ModdingScreen;
 
 namespace SpireModManager;
 
-// A thin line along the bottom of each mod row (not in Vanilla View): what the mod needs on the left,
-// red when a dependency is missing, off, or loads after it; the row's actions as small buttons on the right.
-// The row title moves up to make room.
+// A thin line along the bottom of each mod row (not in Vanilla View): its tags, then what the mod needs,
+// red when a dependency is missing, off, or loads after it. The row title moves up to make room. The row's
+// actions are small buttons on the right, centred on the row like the tickbox; title and line stop short of them.
 static class RowStrip
 {
     const string StripName = "SpireModManagerStrip";
+    public const string ActionsName = "SpireModManagerActions";
     const string StripMeta = "spire_mod_manager_strip";
     const float Height = 20;
     const float RightMargin = 76; // from the row's right edge: clear of the (smaller) tickbox
+    const float LoadOrderMargin = 20; // Load Order has no tickbox
+    const float ActionsGap = 12;
     static readonly Color Note = new(0.937f, 0.784f, 0.318f, 0.75f);
 
     public static void Apply(IList<NModMenuRow> rows, Func<NModMenuRow, IEnumerable<MenuItem>> actions)
@@ -28,13 +31,22 @@ static class RowStrip
                 row.SetMeta(StripMeta, true);
             }
 
+            var buttons = Menus.InlineButtons(actions(row), ActionsName);
+            row.AddChild(buttons);
+            buttons.AnchorLeft = buttons.AnchorRight = 1;
+            buttons.AnchorBottom = 1;
+            buttons.GrowHorizontal = Control.GrowDirection.Begin;
+            buttons.OffsetRight = buttons.OffsetLeft = Store.Data.LoadOrderView ? -LoadOrderMargin : -RightMargin;
+            var clear = buttons.OffsetRight - buttons.GetCombinedMinimumSize().X - ActionsGap;
+            title.OffsetRight = clear;
+
             var strip = new HBoxContainer { Name = StripName, MouseFilter = Control.MouseFilterEnum.Ignore };
             strip.AddThemeConstantOverride("separation", 6);
             row.AddChild(strip);
             strip.AnchorTop = strip.AnchorBottom = 1;
             strip.OffsetLeft = title.OffsetLeft;
             strip.AnchorRight = 1;
-            strip.OffsetRight = -RightMargin;
+            strip.OffsetRight = clear;
             strip.OffsetTop = -Height - 4;
             strip.OffsetBottom = -4;
 
@@ -52,7 +64,6 @@ static class RowStrip
             note.AddThemeFontSizeOverride("normal_font_size", 14);
             note.AddThemeColorOverride("default_color", Note);
             strip.AddChild(note);
-            strip.AddChild(Menus.InlineButtons(actions(row), "Actions"));
         }
     }
 
@@ -70,10 +81,12 @@ static class RowStrip
 
     static void RemoveStrip(NModMenuRow row)
     {
-        if (row.GetNodeOrNull(StripName) is not { } old)
-            return;
-        row.RemoveChild(old);
-        old.QueueFree();
+        foreach (var name in new[] { StripName, ActionsName })
+            if (row.GetNodeOrNull(name) is { } old)
+            {
+                row.RemoveChild(old);
+                old.QueueFree();
+            }
     }
 
     // "Needs: BaseLib, RitsuLib" with each dependency coloured: green when fine, red (and why) when it is

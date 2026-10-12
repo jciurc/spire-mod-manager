@@ -8,8 +8,9 @@ namespace SpireModManager;
 // A menu entry: a label and action, or a heading (no action) that separates groups.
 // Detail: dim text on the right. Radio: one of several choices (a dot marks the checked one). Badge: a
 // short mark after the label in its own colour (an unsaved profile's "*"). Tip: a tooltip (inline buttons).
+// Flat: an inline button drawn as just its text, no box (the row's pencil).
 record MenuItem(string Label, Action? OnSelect, bool Checked = false, bool Disabled = false, string? Detail = null,
-    bool Radio = false, (string Text, Color Color)? Badge = null, string? Tip = null)
+    bool Radio = false, (string Text, Color Color)? Badge = null, string? Tip = null, bool Flat = false)
 {
     public static MenuItem Heading(string label) => new(label, null);
 }
@@ -73,6 +74,17 @@ static class Menus
         return button;
     }
 
+    // Just the text: no box at rest, gold on hover (a quiet button among others, like the row's pencil).
+    public static void Flatten(Button button)
+    {
+        foreach (var state in new[] { "normal", "hover", "pressed", "disabled" })
+            button.AddThemeStyleboxOverride(state, new StyleBoxEmpty { ContentMarginLeft = 4, ContentMarginRight = 4 });
+        button.AddThemeColorOverride("font_color", new Color(Cream, 0.6f));
+        button.AddThemeColorOverride("font_hover_color", Gold);
+        button.AddThemeColorOverride("font_pressed_color", Gold);
+        button.AddThemeFontSizeOverride("font_size", 18);
+    }
+
     // The same actions a right-click menu offers, as a row of small buttons (headings are skipped).
     public static HBoxContainer InlineButtons(IEnumerable<MenuItem> items, string name)
     {
@@ -83,6 +95,8 @@ static class Menus
             {
                 var button = SmallButton(item.Label, action, item.Disabled);
                 button.TooltipText = item.Tip ?? "";
+                if (item.Flat)
+                    Flatten(button);
                 button.SizeFlagsVertical = Control.SizeFlags.ShrinkCenter;
                 box.AddChild(button);
             }
