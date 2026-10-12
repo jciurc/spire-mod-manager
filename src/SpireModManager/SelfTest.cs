@@ -478,10 +478,30 @@ static class SelfTest
         yours.GetNode<LineEdit>("Tags").Text = "co-op, Favorites, co-op";
         await Capture(screen, outDir, "9-notes-editing");
         yours.GetNode<TextEdit>("Notes").EmitSignal(Control.SignalName.FocusExited);
+        yours.GetNode<LineEdit>("Tags").EmitSignal(Control.SignalName.FocusExited);
         await Wait(menu, 0.3);
         Check("panel saves notes", Store.InfoFor("LocalModFixes")?.Notes == "Typed in the panel");
         Check("panel saves tags, repeats dropped", Store.InfoFor("LocalModFixes")?.Tags?.SequenceEqual(["co-op", "Favorites"]) == true,
             string.Join(", ", Store.InfoFor("LocalModFixes")?.Tags ?? []));
+
+        // Fields sit right under the details; Cancel puts the text back; the alias field retitles.
+        var details = panel.GetNode<Control>("ModDescription");
+        Check("the fields sit right below the details", Math.Abs(yours.OffsetTop - details.OffsetBottom - ModDetails.FieldsGap) < 1
+            && yours.OffsetBottom <= panel.Size.Y - ModDetails.ButtonsFromBottom + 1, $"{details.OffsetBottom} -> {yours.OffsetTop}..{yours.OffsetBottom}");
+        var notes = yours.GetNode<TextEdit>("Notes");
+        notes.GrabFocus();
+        await Wait(menu, 0.1);
+        Check("editing shows Save, Cancel and Clear", yours.FindChild("NotesButtons", true, false) is Control { Visible: true });
+        notes.Text = "Not wanted";
+        yours.FindChild("NotesCancel", true, false)?.EmitSignal(BaseButton.SignalName.Pressed);
+        await Wait(menu, 0.2);
+        Check("Cancel puts the notes back", notes.Text == "Typed in the panel" && Store.InfoFor("LocalModFixes")?.Notes == "Typed in the panel", notes.Text);
+        var aliasField = yours.GetNode<LineEdit>("Alias");
+        aliasField.Text = "Panel alias";
+        aliasField.EmitSignal(Control.SignalName.FocusExited);
+        await Wait(menu, 0.4);
+        Check("the alias field saves and retitles", Store.InfoFor("LocalModFixes")?.Alias == "Panel alias"
+            && panel.GetNode<RichTextLabel>("ModTitle").Text == "Panel alias" && RowTitle("LocalModFixes").StartsWith("Panel alias"));
 
         // The row's pencil edits the alias in place.
         Check("rows have the alias pencil", Row("LocalModFixes")?.HasNode("SpireModManagerPencil") == true);
