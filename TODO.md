@@ -504,3 +504,34 @@ Jordan's notes of 2026-10-12 (late night).
 
 ## Backlog (round 14)
 - [ ] click-to-search toggles: clicking a term that's the whole search clears it; with another search, a click replaces it (a second click removes it); Shift-click adds the term, or removes it if it's there already (tidying spaces), keeping the rest
+
+# Round 15
+
+Jordan's notes of 2026-10-12 (late night), with screenshots.
+
+## Info panel
+- [ ] patch notes: "Couldn't load" in the real game: drop the patch notes page (no more requests); "Patch notes" opens the mod's change notes on the Workshop instead
+- [ ] head order back to Author, Updated, Compatibility
+- [ ] "(N days ago)": green under 48 hours; "1 day ago"; under 24 hours "N hour(s) ago"
+- [ ] status still ~1 px lower than the source link
+- [ ] source text: "<id> (SteamID <workshop id>)"
+- [ ] alias: "Add alias" at rest, "An alternative title for the mod" while typing
+- [ ] notes (value and editor) 2 pt smaller
+
+## Rows
+- [ ] notepad even smaller, 1 px up and 1 px left
+- [ ] only the main title (alias) opens the card, not the original name beside it
+- [ ] the pencil to the right of the tickbox
+- [ ] the title is clipped by the tag line: taller rows with less space between them (same pitch)
+- [ ] highlights: hover dimmer, selected (the panel's mod) more visible / sunken; hover, focus, selected and picked the same size, 2 px wider each side, 4 px corners
+
+## Tooltips and text
+- [ ] grace period also between kinds of card (title card -> tag card)
+- [ ] long titles, authors, tags (and similar): cut with "…" (by the room there when possible); the full text in a native tooltip after 1 s; inside our cards a "Hold Alt to see full text" hint, Alt shows it all in a bigger card
+- [ ] the mod card: half a line before and after the alias
+
+## Other
+- [ ] bug: a search can say "Search matches (2)" while the list shows nothing
+- [ ] "All mods (n)" -> "Installed mods (n)"
+- [ ] Gameplay tag: "...will need it enabled for multiplayer."
+- [ ] Library tag: "This is a framework intended to be used by other mods; often has no effect when installed alone"
