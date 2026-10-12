@@ -5,7 +5,6 @@ namespace SpireModManager;
 
 // Small labels on each mod. These are worked out automatically:
 // - New, for a mod installed since the game started (it loads after a relaunch);
-// - Updated, when its Workshop page changed in the last week;
 // - Local, for a mod installed by hand rather than from the Workshop;
 // - Library, when another installed mod depends on it;
 // - Gameplay, from the manifest's affects_gameplay (what multiplayer compares; mods without it get no tag);
@@ -21,8 +20,6 @@ static class Tags
     static readonly Color Cosmetic = new(0.78f, 0.62f, 0.95f);
     static readonly Color Local = new(0.7f, 0.74f, 0.8f);
     static readonly Color New = new(0.5f, 0.84f, 0.78f);
-    static readonly Color Updated = new(0.55f, 0.78f, 1f);
-    const int RecentDays = 7;
     public static readonly Color CustomColor = new(0.75f, 0.9f, 0.8f);
 
     // Workshop tags that mean a mod is about looks (lower case, matched as whole words).
@@ -32,12 +29,11 @@ static class Tags
     {
         if (mod?.manifest is not { } manifest)
             return [];
-        // Always in this order: New or Updated (news first), Local, Library, Gameplay, Cosmetic, then the player's own.
+        // Always in this order: New, Local, Library, Gameplay, Cosmetic, then the player's own. (Updated lately is a
+        // pip by the title: RowTitles.)
         var chips = new List<Chip>();
         if (Installed.Mods.Contains(mod))
             chips.Add(new Chip(Menus.Text("SPIRE_MOD_MANAGER.TAG_NEW"), New, Tip: Menus.Text("SPIRE_MOD_MANAGER.TAG_NEW_TIP")));
-        else if (WorkshopInfo.For(mod) is { } workshop && (DateTime.Now - workshop.Updated).TotalDays < RecentDays)
-            chips.Add(new Chip(Menus.Text("SPIRE_MOD_MANAGER.TAG_UPDATED"), Updated, Tip: Menus.Format("SPIRE_MOD_MANAGER.TAG_UPDATED_TIP", ("date", ModDetails.Date(workshop.Updated)))));
         if (mod.workshopId == null)
             chips.Add(new Chip(Menus.Text("SPIRE_MOD_MANAGER.TAG_LOCAL"), Local, Tip: Menus.Text("SPIRE_MOD_MANAGER.TAG_LOCAL_TIP")));
         if (ModManager.Mods.Any(m => m != mod && Dependencies.Of(m).Contains(manifest.id)))
@@ -51,6 +47,11 @@ static class Tags
         return chips;
     }
 
+    // How to use something, at the foot of a card: small, bold, faint.
+    public static string Hint(string text) => $"[b][font_size=14][color=#fff6e280]{Escape(text)}[/color][/font_size][/b]";
+
+    static string Escape(string text) => text.Replace("[", "[lb]");
+
     static bool IsCosmetic(Mod mod) =>
         WorkshopInfo.For(mod)?.Tags.SelectMany(t => t.ToLowerInvariant().Split([' ', '&', '/', '-', ','], StringSplitOptions.RemoveEmptyEntries))
             .Any(word => CosmeticWords.Contains(word)) == true;
@@ -63,16 +64,20 @@ static class Tags
         return tags.Count > 0 ? tags : null;
     }
 
-    // A chip: tinted fill, border in the chip's colour, small text. clicked: what a click does (told whether
-    // Shift was held); the tooltip says so.
+    public const double CardDelay = 0.5;
+
+    // A chip: tinted fill, border in the chip's colour, small text. Hovering shows what it means on a card
+    // (with, when it's clickable, how to search for it underneath). clicked: what a click does (told whether
+    // Shift was held).
     public static Control Make(Chip chip, Action<bool>? clicked = null)
     {
         var tip = chip.Tip ?? Menus.Text(chip.Custom ? "SPIRE_MOD_MANAGER.TAG_CUSTOM_TIP" : "SPIRE_MOD_MANAGER.TAG_AUTO_TIP");
         var box = new PanelContainer
         {
             MouseFilter = Control.MouseFilterEnum.Pass, SizeFlagsVertical = Control.SizeFlags.ShrinkCenter,
-            TooltipText = clicked == null ? tip : $"{tip}\n{Menus.Text("SPIRE_MOD_MANAGER.TAG_CLICK_TIP")}",
         };
+        var card = clicked == null ? Escape(tip) : $"{Escape(tip)}\n\n{Hint(Menus.Text("SPIRE_MOD_MANAGER.TAG_CLICK_TIP"))}";
+        Hover.Watch(box, "SpireModManagerTagCard", CardDelay, () => card, width: 320);
         if (clicked != null)
         {
             (box.MouseFilter, box.MouseDefaultCursorShape) = (Control.MouseFilterEnum.Stop, Control.CursorShape.PointingHand);

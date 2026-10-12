@@ -4,21 +4,23 @@ using MegaCrit.Sts2.addons.mega_text;
 
 namespace SpireModManager;
 
-// Row titles in our views: the alias with the original name small and dim beside it (or just the name),
-// cut short with "…" when it doesn't fit, a small notepad when the player has an alias or notes for it
-// (main list), and the mod's card after hovering the row for a second. Titles of mods turned on or off
-// since launch are gold. Vanilla View: exactly as the game makes them.
+/// Row titles in our views: the alias with the original name small and dim beside it (or just the name),
+// cut short with "…" when it doesn't fit; right after the alias (or name), a small notepad when the player has
+// an alias or notes for it (main list); a red pip before it when the Workshop updated it lately. Hovering the
+// title shows the mod's card after half a second, the notepad after a tenth, the pip says when it was
+// updated. Titles of mods turned on or off since launch are gold. Vanilla View: exactly as the game makes them.
 static class RowTitles
 {
     const int OriginalNameSize = 16;
-    const float TitleShift = 12; // a little room before the title in our views
+    const float TitleShift = 12; // a little room before the title in our views (the pip sits there)
     const string ShiftMeta = "spire_mod_manager_title_shift";
-    const string HoverMeta = "spire_mod_manager_notes_hover";
     const string NotesCard = "SpireModManagerNotesCard";
-    const double NotesDelay = 1.0;
+    const double TitleDelay = 0.5, MarkDelay = 0.1;
+    public const int RecentDays = 7; // "updated lately"
 
     public const float RowHeight = 48; // our views (the game's: 72)
-    const string MarkName = "SpireModManagerEditedMark";
+    const string MarkName = "SpireModManagerEditedMark", HotName = "SpireModManagerTitleHover", PipName = "SpireModManagerUpdatedPip";
+    static readonly Color PipColor = new(0.95f, 0.33f, 0.3f);
 
     public static void Apply(IEnumerable<NModMenuRow> rows, bool vanilla)
     {
@@ -43,13 +45,14 @@ static class RowTitles
             title.BbcodeEnabled = true;
             title.Text = Escape(name);
             Layout.FontSize(title, vanilla ? Layout.RowTitleVanillaSize : Layout.RowTitleSize);
-            WatchHover(row);
-            // The notepad: the player has an alias or notes for it (main list only).
-            var marked = !vanilla && !Store.Data.LoadOrderView && info is { Alias: not null } or { Notes: not null };
-            if (row.GetNodeOrNull<TextureRect>(MarkName) is { } oldMark)
-                oldMark.Visible = false;
+            // Shown again by Fit, in our views.
+            foreach (var part in new[] { MarkName, HotName, PipName })
+                if (row.GetNodeOrNull<Control>(part) is { } old)
+                    old.Visible = false;
             if (!vanilla)
             {
+                // The notepad: the player has an alias or notes for it (main list only).
+                var marked = !Store.Data.LoadOrderView && info is { Alias: not null } or { Notes: not null };
                 // Fitted once this redraw has placed the title (Load Order moves it right).
                 var shown = row;
                 Callable.From(() => Fit(shown, name, info?.Alias, marked)).CallDeferred();
@@ -58,44 +61,83 @@ static class RowTitles
         MarkChanged(rows, vanilla);
     }
 
+    // The title text cut to fit; then the notepad, the hover area over the text, and the pip, placed by it.
     static void Fit(NModMenuRow row, string name, string? alias, bool marked)
     {
-        if (!GodotObject.IsInstanceValid(row))
+        if (!GodotObject.IsInstanceValid(row) || row.Mod is not { } mod)
             return;
         var title = row.GetNode<MegaRichTextLabel>("Title");
         var font = title.GetThemeFont("normal_font");
         float Width(string text, int size) => font.GetStringSize(text, fontSize: size).X;
-        const float markRoom = 22;
-        var room = title.Size.X - 4 - (marked ? markRoom : 0);
+        var markSize = Icons.Notepad.GetSize();
+        var markRoom = marked ? markSize.X + 12 : 0; // the notepad and a little air either side
+        var room = title.Size.X - 4 - markRoom;
         var main = Cut(alias ?? name, Layout.RowTitleSize, room);
         var text = Escape(main);
-        var used = Width(main, Layout.RowTitleSize);
+        var mainWidth = Width(main, Layout.RowTitleSize);
+        var used = mainWidth + markRoom;
         if (alias != null)
         {
-            var left = room - Width(main + "  ", Layout.RowTitleSize);
+            // After the notepad's room (spaces as wide as it), or the usual gap.
+            var space = Width(" ", Layout.RowTitleSize);
+            var gap = marked ? (int)Math.Ceiling(markRoom / space) : 2;
+            var left = room - mainWidth - gap * space + markRoom;
             var original = left > Width("……", OriginalNameSize) ? Cut(name, OriginalNameSize, left) : "";
             if (original.Length > 0)
             {
-                text += $"  [color=#fff6e280][font_size={OriginalNameSize}]{Escape(original)}[/font_size][/color]";
-                used += Width("  ", Layout.RowTitleSize) + Width(original, OriginalNameSize);
+                text += new string(' ', gap) + $"[color=#fff6e280][font_size={OriginalNameSize}]{Escape(original)}[/font_size][/color]";
+                used = mainWidth + gap * space + Width(original, OriginalNameSize);
             }
         }
         title.SetTextAutoSize(text);
+        var lineHeight = font.GetHeight(Layout.RowTitleSize);
+        var top = title.Position.Y + Math.Max(0, (title.Size.Y - lineHeight) / 2); // the text sits in the middle of the title's box
 
-        if (!marked)
-            return;
-        var mark = row.GetNodeOrNull<TextureRect>(MarkName);
-        if (mark == null)
+        // Hovering the text (not the whole row): the mod's card.
+        var hot = row.GetNodeOrNull<Control>(HotName);
+        if (hot == null)
         {
-            mark = new TextureRect
-            {
-                Name = MarkName, Texture = Icons.Notepad, StretchMode = TextureRect.StretchModeEnum.Keep,
-                MouseFilter = Control.MouseFilterEnum.Ignore, Modulate = new Color(0.91f, 0.81f, 0.48f, 0.75f),
-            };
-            row.AddChild(mark);
+            hot = new Control { Name = HotName, MouseFilter = Control.MouseFilterEnum.Pass };
+            row.AddChild(hot);
+            Hover.Watch(hot, NotesCard, TitleDelay, () => row.Mod is { } shown ? ModDetails.Card(shown) : null);
         }
-        mark.Visible = true;
-        mark.Position = new Vector2(title.Position.X + used + 9, title.Position.Y + 6);
+        (hot.Position, hot.Size, hot.Visible) = (new Vector2(title.Position.X, top), new Vector2(used, lineHeight), true);
+
+        if (marked)
+        {
+            var mark = row.GetNodeOrNull<TextureRect>(MarkName);
+            if (mark == null)
+            {
+                mark = new TextureRect
+                {
+                    Name = MarkName, Texture = Icons.Notepad, StretchMode = TextureRect.StretchModeEnum.Keep,
+                    MouseFilter = Control.MouseFilterEnum.Pass, Modulate = new Color(0.91f, 0.81f, 0.48f, 0.75f),
+                };
+                row.AddChild(mark);
+                Hover.Watch(mark, NotesCard, MarkDelay, () => row.Mod is { } shown ? ModDetails.Card(shown) : null);
+            }
+            mark.Visible = true;
+            mark.Position = new Vector2(title.Position.X + mainWidth + 6, top + (lineHeight - markSize.Y) / 2);
+        }
+
+        // Updated on the Workshop lately: a red pip before the title.
+        if (WorkshopInfo.For(mod) is { } workshop && (DateTime.Now - workshop.Updated).TotalDays < RecentDays)
+        {
+            var pip = row.GetNodeOrNull<TextureRect>(PipName);
+            if (pip == null)
+            {
+                pip = new TextureRect
+                {
+                    Name = PipName, Texture = Icons.Pip, StretchMode = TextureRect.StretchModeEnum.Keep, MouseFilter = Control.MouseFilterEnum.Pass,
+                    Modulate = PipColor,
+                };
+                row.AddChild(pip);
+                Hover.Watch(pip, NotesCard, MarkDelay, () => row.Mod is { } shown && WorkshopInfo.For(shown) is { } info
+                    ? Menus.Format("SPIRE_MOD_MANAGER.TAG_UPDATED_TIP", ("date", ModDetails.Date(info.Updated))) : null, width: 300);
+            }
+            pip.Visible = true;
+            pip.Position = new Vector2(title.Position.X - 11, top + (lineHeight - Icons.Pip.GetHeight()) / 2);
+        }
 
         string Cut(string full, int size, float width)
         {
@@ -107,36 +149,6 @@ static class RowTitles
             return length > 0 ? full[..length].TrimEnd() + "…" : "";
         }
     }
-
-    // A second over a row shows the mod's card (ModDetails.Card): names, state, problems, author, update, the
-    // player's tags and notes. It goes as soon as the mouse is off the row (or the row is gone).
-    static void WatchHover(NModMenuRow row)
-    {
-        if (row.HasMeta(HoverMeta))
-            return;
-        row.SetMeta(HoverMeta, 0);
-        row.MouseEntered += () =>
-        {
-            var token = (int)row.GetMeta(HoverMeta) + 1;
-            row.SetMeta(HoverMeta, token);
-            row.GetTree().CreateTimer(NotesDelay).Timeout += () =>
-            {
-                if (!GodotObject.IsInstanceValid(row) || (int)row.GetMeta(HoverMeta) != token || Store.Data.VanillaView
-                    || row.Mod is not { } mod || CategoryList.ScreenOf(row) is not { } screen || !Hovered(row))
-                    return;
-                Hover.Show(screen, NotesCard, ModDetails.Card(mod), Hover.Mouse(row) + new Vector2(16, 20), keep: () => Hovered(row));
-            };
-        };
-        row.MouseExited += () =>
-        {
-            if (Hovered(row))
-                return; // onto one of its own buttons
-            row.SetMeta(HoverMeta, (int)row.GetMeta(HoverMeta) + 1);
-        };
-    }
-
-    static bool Hovered(NModMenuRow row) =>
-        GodotObject.IsInstanceValid(row) && row.IsVisibleInTree() && !MenuPanel.IsOpen && row.GetGlobalRect().HasPoint(Hover.Mouse(row));
 
     // Our views: a mod turned on since launch has a bright gold title, one turned off a dim one, so what a
     // relaunch will change stands out. Otherwise the colour the game gave it (white, grey when off, red when

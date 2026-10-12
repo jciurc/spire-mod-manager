@@ -291,7 +291,12 @@ static class Layout
         if (!image.HasMeta(MinSizeMeta))
             image.SetMeta(MinSizeMeta, image.CustomMinimumSize);
         image.CustomMinimumSize = Wide ? Vector2.Zero : (Vector2)image.GetMeta(MinSizeMeta);
-        Place(image, new Vector4(width - thumbWidth - thumbRight, top + drop, width - thumbRight, top + drop + thumbHeight));
+        // The picture at its own shape inside the box, against the box's right edge.
+        var shown = image is TextureRect { Texture: { } texture } && texture.GetHeight() > 0
+            ? new Vector2(thumbWidth, thumbWidth * texture.GetHeight() / texture.GetWidth()) is var wide && wide.Y <= thumbHeight
+                ? wide : new Vector2(thumbHeight * texture.GetWidth() / texture.GetHeight(), thumbHeight)
+            : new Vector2(thumbWidth, thumbHeight);
+        Place(image, new Vector4(width - thumbRight - shown.X, top + drop, width - thumbRight, top + drop + shown.Y));
         Place(info.GetNode<Control>("ModDescription"), new Vector4(inset, below, width - inset,
             info.Size.Y - ModDetails.ButtonsFromBottom - ModDetails.FieldsGap));
     }

@@ -10,10 +10,10 @@ namespace SpireModManager;
 // The info panel in our views, top to bottom:
 // - the head, left of a large thumbnail: the mod's own name (click: scroll to it in the list) with its version
 //   in grey; "<id> (<Workshop id>)", linking to the Workshop page (or "(Local)"), and Enabled / Disabled /
-//   Pending restart; author, last update, size;
+//   Pending restart; author (click: search for their mods), last update, compatibility;
 // - anything wrong (red), the author's description;
-// - published, subscribers, Workshop tags;
-// - compatibility and dependencies both ways (click a name: scroll to it in the list and flash it);
+// - size, published, subscribers, Workshop tags;
+// - dependencies both ways (click a name: scroll to it in the list and flash it);
 // - the player's own Alias, Category, Tags and Notes (ModField), then Open Folder.
 // Vanilla View: the panel exactly as the game makes it.
 static class ModDetails
@@ -34,7 +34,7 @@ static class ModDetails
     public const float ButtonsFromBottom = 72;
     public const float Inset = 22; // left edge of everything in the panel: title, link, text, fields
     public const float FieldsGap = 18;
-    public const float ThumbWidth = 256, ThumbHeight = 144, ThumbRight = 36; // the mod's picture, top right
+    public const float ThumbWidth = 256, ThumbHeight = 144, ThumbRight = Inset; // the mod's picture, top right
 
     // The panel's own fields, one set per panel.
     static readonly Dictionary<ulong, List<ModField>> Fields = [];
@@ -145,22 +145,24 @@ static class ModDetails
         text.Append(mod.manifest?.description ?? Menus.Text("SPIRE_MOD_MANAGER.NO_DESCRIPTION")).Append("\n\n");
 
         var workshop = WorkshopInfo.For(mod);
+        var bytes = workshop?.Size is > 0 and var size ? size : FolderSize(mod.path);
+        if (bytes > 0)
+            Fact("SPIRE_MOD_MANAGER.SIZE", Bytes(bytes));
         if (workshop != null)
             Fact("SPIRE_MOD_MANAGER.PUBLISHED", Date(workshop.Created));
         if (workshop?.Subscribers is { } subscribers)
             Fact("SPIRE_MOD_MANAGER.SUBSCRIBERS", subscribers.ToString("N0"));
         if (workshop?.Tags.Count > 0)
             Fact("SPIRE_MOD_MANAGER.WORKSHOP_TAGS", Escape(string.Join(", ", workshop.Tags)));
-        if (workshop != null)
+        if (bytes > 0 || workshop != null)
             text.Append('\n');
 
-        // Will it run: the game version, then what it needs and what needs it.
+        // What it needs, and what needs it.
         string Links(IEnumerable<string> ids) => string.Join(", ", ids.Select(d =>
             $"[url=mod:{d}][color=#cfe3ff]{Escape(Dependencies.Find(d)?.manifest?.name ?? d)}[/color][/url]"));
         var needs = Dependencies.Of(mod);
         var neededBy = ModManager.Mods.Where(m => m != mod && Dependencies.Of(m).Contains(mod.manifest?.id ?? ""))
             .Select(m => m.manifest?.id ?? "").Distinct().ToList();
-        Fact("SPIRE_MOD_MANAGER.COMPATIBILITY", Compatibility(mod));
         if (needs.Count > 0)
             Fact("SPIRE_MOD_MANAGER.DEPENDENCIES", Links(needs));
         if (neededBy.Count > 0)
@@ -168,28 +170,28 @@ static class ModDetails
         return text.ToString().TrimEnd();
     }
 
-    // The head's short facts: author, last update (with how long ago), size.
+    // The head's short facts: author (click: search for their mods), last update (with how long ago), and
+    // which game versions it's made for.
     static string HeadFacts(Mod mod)
     {
         string Fact(string key, string value) => $"[color={GoldHex}]{Menus.Text(key)}[/color]: {value}";
-        var lines = new List<string> { Fact("SPIRE_MOD_MANAGER.AUTHOR", Escape(mod.manifest?.author ?? Menus.Text("SPIRE_MOD_MANAGER.UNKNOWN"))) };
+        var author = mod.manifest?.author is { Length: > 0 } who ? $"[url=author:{who}]{Escape(who)}[/url]" : Menus.Text("SPIRE_MOD_MANAGER.UNKNOWN");
+        var lines = new List<string> { Fact("SPIRE_MOD_MANAGER.AUTHOR", author) };
         var workshop = WorkshopInfo.For(mod);
         if (workshop != null)
             lines.Add(Fact("SPIRE_MOD_MANAGER.UPDATED", $"{Date(workshop.Updated)} [color={Disabled}]({Menus.Format("SPIRE_MOD_MANAGER.DAYS_AGO",
                 ("days", ((int)(DateTime.Now - workshop.Updated).TotalDays).ToString()))})[/color]"));
-        var bytes = workshop?.Size is > 0 and var size ? size : FolderSize(mod.path);
-        if (bytes > 0)
-            lines.Add(Fact("SPIRE_MOD_MANAGER.SIZE", Bytes(bytes)));
+        lines.Add(Fact("SPIRE_MOD_MANAGER.COMPATIBILITY", Compatibility(mod)));
         return string.Join("\n", lines);
     }
 
-    // The card shown after hovering a row: its names, state, anything wrong, author, last update, and the
-    // player's alias, tags and notes.
+    // The card shown after hovering a row's title: its id and state, anything wrong, author, last update, and
+    // the player's alias, tags and notes.
     public static string Card(Mod mod)
     {
         var id = mod.manifest?.id ?? "";
         var info = Store.InfoFor(id);
-        var lines = new List<string> { $"[b]{Escape(mod.manifest?.name ?? id)}[/b]  [color=#fff6e280]({Escape(id)})[/color]", Status(mod) };
+        var lines = new List<string> { $"[b]{Escape(id)}[/b]  [color=#fff6e280]•[/color]  {Status(mod)}" };
         lines.AddRange(Problems(mod).Select(p => $"[color={Problem}]{Escape(p)}[/color]"));
         string Fact(string key, string value) => $"[color=#e8cf7a]{Menus.Text(key)}[/color]: {value}";
         lines.Add(Fact("SPIRE_MOD_MANAGER.AUTHOR", Escape(mod.manifest?.author ?? Menus.Text("SPIRE_MOD_MANAGER.UNKNOWN"))));
@@ -357,10 +359,10 @@ static class ModDetails
         link.AddThemeColorOverride("font_hover_color", new Color(0.8f, 0.9f, 1f));
         link.AddThemeColorOverride("font_disabled_color", new Color(Cream, 0.6f));
         line.AddChild(link);
-        var dot = new Label { Name = "Dot", Text = "·", MouseFilter = Control.MouseFilterEnum.Ignore };
+        var dot = new Label { Name = "Dot", Text = "·", MouseFilter = Control.MouseFilterEnum.Ignore, VerticalAlignment = VerticalAlignment.Center };
         Style(dot, "res://themes/kreon_regular_shared.tres", 16, new Color(Cream, 0.4f));
         line.AddChild(dot);
-        var status = new Label { Name = "Status", MouseFilter = Control.MouseFilterEnum.Ignore };
+        var status = new Label { Name = "Status", MouseFilter = Control.MouseFilterEnum.Ignore, VerticalAlignment = VerticalAlignment.Center };
         Style(status, "res://themes/kreon_regular_shared.tres", 16, Cream);
         line.AddChild(status);
         container.AddChild(line);
@@ -373,13 +375,18 @@ static class ModDetails
     {
         var head = new RichTextLabel
         {
-            Name = HeadName, BbcodeEnabled = true, FitContent = true, ScrollActive = false, AutowrapMode = TextServer.AutowrapMode.Off,
-            ClipContents = true, MouseFilter = Control.MouseFilterEnum.Ignore,
+            Name = HeadName, BbcodeEnabled = true, FitContent = true, ScrollActive = false, AutowrapMode = TextServer.AutowrapMode.WordSmart,
+            MouseFilter = Control.MouseFilterEnum.Pass, MetaUnderlined = false,
         };
         Hover.Fonts(head, 16);
+        head.MetaClicked += meta =>
+        {
+            if (meta.AsString() is { } target && target.StartsWith("author:"))
+                Search.ByAuthor(container, target[7..], Input.IsKeyPressed(Key.Shift));
+        };
         container.AddChild(head);
         head.AnchorRight = 1;
-        (head.OffsetLeft, head.OffsetTop, head.OffsetRight, head.OffsetBottom) = (Inset, 88, -(ThumbWidth + ThumbRight + 20), 88 + 3 * 22);
+        (head.OffsetLeft, head.OffsetTop, head.OffsetRight, head.OffsetBottom) = (Inset, 88, -(ThumbWidth + ThumbRight + 20), 88);
         return head;
     }
 
