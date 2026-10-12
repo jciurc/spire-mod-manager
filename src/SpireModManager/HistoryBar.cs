@@ -6,11 +6,12 @@ using MegaCrit.Sts2.Core.Nodes.Screens.ModdingScreen;
 namespace SpireModManager;
 
 // Along the bottom right, before Relaunch Game:
-// - Two lines: "Mods enabled 23 (+1 -3) ↕2", how many mods are on now and how many were turned on and off
-//   and moved in the load order since launch; then "Changes 5", everything else that changed (mods installed
-//   since launch, edited mods, profiles). Hovering shows them apart; clicking opens (or closes) the full list
-//   in the right panel: switched profile, each mod enabled or disabled, each mod installed (and whether it
-//   loads after a relaunch), each move, each edit, profiles added or removed.
+// - Two lines: "Mods enabled 23 (+1 -3)", how many mods are on and how many were turned on and off since
+//   launch; then "Changes 5  ↕2": everything else that changed (mods installed since launch, edited mods,
+//   profiles), then the load-order moves. Hovering shows them apart (naming the mods when there are few);
+//   clicking opens (or closes) the full list in the right panel: switched profile, each mod enabled or
+//   disabled, each mod installed (and whether it loads after a relaunch), each move, each edit, profiles
+//   added or removed. A mod's name there opens it, with Back to the list.
 // - Undo, Redo (their shortcuts underneath), Revert all.
 static class HistoryBar
 {
@@ -18,8 +19,10 @@ static class HistoryBar
     public const string ChangesName = "SpireModManagerChanges";
     const string SummaryName = "SpireModManagerChangesPanel";
     public const string ViewName = "SpireModManagerChangesView";
+    public const string BackName = "SpireModManagerBackToChanges";
     const string HiddenMeta = "spire_mod_manager_hidden_by_changes";
     static readonly Color Cream = new(1, 0.964706f, 0.886275f);
+    const int NameLimit = 20; // the hover summary names mods turned on, off or installed when there are fewer
     const string Added = "#a6e3a1", Removed = "#f2a3a3", Moved = "#8ec5ff", Edited = "#e8cf7a", New = "#7fd6c8", Dim = "#fff6e280";
 
     // The screen our keyboard shortcuts act on, while it exists.
@@ -53,7 +56,7 @@ static class HistoryBar
         {
             Name = ChangesName, BbcodeEnabled = true, FitContent = true, AutowrapMode = TextServer.AutowrapMode.Off,
             ScrollActive = false, Size = new Vector2(320, 50), MouseFilter = Control.MouseFilterEnum.Stop,
-            MouseDefaultCursorShape = Control.CursorShape.PointingHand, HorizontalAlignment = HorizontalAlignment.Right,
+            MouseDefaultCursorShape = Control.CursorShape.PointingHand,
         };
         Hover.Fonts(changes, 17);
         changes.AddThemeConstantOverride("line_separation", -2);
@@ -64,7 +67,7 @@ static class HistoryBar
         {
             if (e is not InputEventMouseButton { ButtonIndex: MouseButton.Left, Pressed: false })
                 return;
-            // A second click closes the list again.
+            // A second click closes the list again; with Back showing (a mod opened from the list), it goes back.
             if (ListOpen(info))
                 CloseList(info);
             else
@@ -79,8 +82,9 @@ static class HistoryBar
             var (on, off, moved) = Counts();
             var enabled = ModManager.Mods.Count(m => m.manifest?.id is { } id && id != ModEntry.ModId && Dependencies.IsOn(m))
                 + Installed.Mods.Count(Installed.On); // on after a relaunch, new mods included
-            changes.Text = $"{Menus.Text("SPIRE_MOD_MANAGER.MODS_ENABLED")} {enabled} ([color={Added}]+{on}[/color] [color={Removed}]-{off}[/color])"
-                + $"  [color={Moved}]↕{moved}[/color]\n{Menus.Text("SPIRE_MOD_MANAGER.CHANGES")} [color={Edited}]{OtherChanges()}[/color]";
+            changes.Text = $"{Menus.Text("SPIRE_MOD_MANAGER.MODS_ENABLED")} {enabled} ([color={Added}]+{on}[/color] [color={Removed}]-{off}[/color])\n"
+                + $"{Menus.Text("SPIRE_MOD_MANAGER.CHANGES")} [color={Edited}]{OtherChanges()}[/color]  [color={Moved}]↕{moved}[/color]";
+            FitChanges(changes);
             if (info.GetNodeOrNull<Control>(ViewName) is { Visible: true } view)
                 FillList(view);
         }
@@ -104,6 +108,8 @@ static class HistoryBar
                 History.Enter();
                 Update();
             }
+            else
+                HideBack(info); // leaving the page
         };
         History.Changed += Update;
         History.Restored += Restored;
@@ -154,16 +160,33 @@ static class HistoryBar
     {
         if (History.Loaded is not { } loaded)
             return [];
-        var lines = new List<string>();
+        var lines = new List<string> { $"[b]{Menus.Text("SPIRE_MOD_MANAGER.CHANGES_TITLE")}[/b]" };
         if (Switch() is var (from, to))
             lines.Add(Menus.Format("SPIRE_MOD_MANAGER.CHANGE_SWITCH", ("from", $"[b]{Escape(from)}[/b]"), ("to", $"[b]{Escape(to)}[/b]")));
         var (on, off, moved) = Counts();
+        // Fewer than NameLimit mods turned on, off or installed: each by name under its count.
+        var changed = ModChanges(loaded.Mods);
+        var named = changed.Count + Installed.Mods.Count < NameLimit;
+        void Names(IEnumerable<string> names)
+        {
+            if (named)
+                lines.AddRange(names.Order().Select(n => $"    {Escape(n)}"));
+        }
         if (on > 0)
+        {
             lines.Add($"[color={Added}]{Menus.Format("SPIRE_MOD_MANAGER.SUMMARY_ON", ("count", on.ToString()))}[/color]");
+            Names(changed.Where(c => c.Enabled).Select(c => Name(c.Mod)));
+        }
         if (off > 0)
+        {
             lines.Add($"[color={Removed}]{Menus.Format("SPIRE_MOD_MANAGER.SUMMARY_OFF", ("count", off.ToString()))}[/color]");
+            Names(changed.Where(c => !c.Enabled).Select(c => Name(c.Mod)));
+        }
         if (Installed.Mods.Count is var installed and > 0)
+        {
             lines.Add($"[color={New}]{Menus.Format(installed == 1 ? "SPIRE_MOD_MANAGER.SUMMARY_INSTALLED_ONE" : "SPIRE_MOD_MANAGER.SUMMARY_INSTALLED", ("count", installed.ToString()))}[/color]");
+            Names(Installed.Mods.Select(m => $"{Name(m)} ({Menus.Text(Installed.On(m) ? "SPIRE_MOD_MANAGER.STATUS_ENABLED" : "SPIRE_MOD_MANAGER.STATUS_DISABLED")})"));
+        }
         if (moved > 0)
             lines.Add($"[color={Moved}]{Menus.Format("SPIRE_MOD_MANAGER.SUMMARY_ORDER", ("count", moved.ToString()))}[/color]");
         var (edited, profiles) = DataChanges(loaded.Store, Store.EditsJson());
@@ -177,7 +200,7 @@ static class HistoryBar
         if (profiles.Count > 0)
             lines.Add($"[color={Edited}]{Escape(Menus.Format(profiles.Count == 1 ? "SPIRE_MOD_MANAGER.CHANGE_PROFILES_SINGLE" : "SPIRE_MOD_MANAGER.CHANGE_PROFILES",
                 ("count", profiles.Count.ToString())))}[/color]");
-        if (lines.Count == 0)
+        if (lines.Count == 1) // just the title
             lines.Add(Menus.Text("SPIRE_MOD_MANAGER.NO_CHANGES"));
         return lines;
     }
@@ -199,18 +222,18 @@ static class HistoryBar
         foreach (var (mod, enabled) in ModChanges(loaded.Mods).OrderBy(c => !c.Enabled).ThenBy(c => Name(c.Mod)))
         {
             var key = enabled ? "SPIRE_MOD_MANAGER.CHANGE_ON" : "SPIRE_MOD_MANAGER.CHANGE_OFF";
-            entries.Add(new Entry(enabled ? "on" : "off", Menus.Format(key, ("mod", Name(mod))), Escape(Name(mod))));
+            entries.Add(new Entry(enabled ? "on" : "off", Menus.Format(key, ("mod", Name(mod))), Link(mod.manifest?.id, Name(mod))));
         }
         foreach (var mod in Installed.Mods.OrderBy(Name))
         {
             // Under the name: whether it loads after a relaunch.
             var state = Menus.Text(Installed.On(mod) ? "SPIRE_MOD_MANAGER.INSTALLED_ON" : "SPIRE_MOD_MANAGER.INSTALLED_OFF");
             entries.Add(new Entry("installed", Menus.Format("SPIRE_MOD_MANAGER.CHANGE_INSTALLED", ("mod", Name(mod)), ("state", state)),
-                $"{Escape(Name(mod))}\n        [color={Dim}][font_size=15]{Escape(state)}[/font_size][/color]"));
+                $"{Link(mod.manifest?.id, Name(mod))}\n        [color={Dim}][font_size=15]{Escape(state)}[/font_size][/color]"));
         }
         foreach (var (mod, before, after) in Moves())
             entries.Add(new Entry("order", Menus.Format("SPIRE_MOD_MANAGER.CHANGE_MOVED", ("mod", Name(mod)), ("from", before.ToString()), ("to", after.ToString())),
-                $"{Escape(Name(mod))}  [color={Dim}]{before} → {after}[/color]"));
+                $"{Link(mod.manifest?.id, Name(mod))}  [color={Dim}]{before} → {after}[/color]"));
         var (edited, profiles) = DataChanges(loaded.Store, Store.EditsJson());
         foreach (var (id, fields, alias) in edited)
         {
@@ -221,12 +244,15 @@ static class HistoryBar
                 : Menus.Text($"SPIRE_MOD_MANAGER.FIELD_{f.ToUpperInvariant()}"));
             var said = string.Join(", ", details);
             entries.Add(new Entry("edited", Menus.Format("SPIRE_MOD_MANAGER.CHANGE_EDITED_ONE", ("mod", name)) + $" ({said})",
-                $"{Escape(name)}  [color={Dim}]({Escape(said)})[/color]"));
+                $"{Link(id, name)}  [color={Dim}]({Escape(said)})[/color]"));
         }
         foreach (var line in profiles)
             entries.Add(new Entry("profiles", line, Escape(line)));
         return entries;
     }
+
+    // A mod's name that opens it (from the changes list).
+    static string Link(string? id, string name) => id == null ? Escape(name) : $"[url=mod:{id}]{Escape(name)}[/url]";
 
     public static bool ListOpen(Node info) => info.GetNodeOrNull<Control>(ViewName) is { Visible: true };
 
@@ -237,6 +263,7 @@ static class HistoryBar
             return false;
         var info = screen.GetNode<Control>("%ModInfoContainer");
         var view = info.GetNodeOrNull<Control>(ViewName) ?? AddList(info);
+        HideBack(info);
         if (!view.Visible)
         {
             // Everything else in the panel steps aside (and comes back when a mod is picked).
@@ -283,14 +310,70 @@ static class HistoryBar
         head.AddChild(close);
         view.AddChild(head);
 
+        var hint = new Label { Name = "Hint", Text = Menus.Text("SPIRE_MOD_MANAGER.CHANGES_OPEN_HINT") };
+        Style(hint, 15, new Color(Cream, 0.5f));
+        view.AddChild(hint);
+
+        // A mod's name opens it in the panel, with Back to return here.
         var list = new RichTextLabel
         {
             Name = "List", BbcodeEnabled = true, ScrollActive = true, SizeFlagsVertical = Control.SizeFlags.ExpandFill,
-            SelectionEnabled = false,
+            SelectionEnabled = false, MetaUnderlined = false,
         };
         Hover.Fonts(list, 18);
+        list.MetaClicked += meta =>
+        {
+            if (meta.AsString() is { } target && target.StartsWith("mod:") && CategoryList.ScreenOf(info) is { } screen)
+                OpenFromList(screen, target[4..]);
+        };
         view.AddChild(list);
         return view;
+    }
+
+    // From the changes list: the mod in the panel (and found in the list), Back where Close was.
+    public static void OpenFromList(NModdingScreen screen, string modId)
+    {
+        var content = screen.GetNode<Control>("%ModsScrollContainer/Mask/Content");
+        if (content.GetChildren().OfType<NModMenuRow>().FirstOrDefault(r => r.Mod?.manifest?.id == modId) is not { } row)
+            return;
+        CategoryList.Reveal(content, modId, flash: true);
+        screen.OnRowSelected(row); // fills the panel, which closes the list
+        var info = screen.GetNode<Control>("%ModInfoContainer");
+        if (info.GetNodeOrNull<Control>(BackName) is not { } back)
+        {
+            back = Menus.SmallButton(Menus.Text("SPIRE_MOD_MANAGER.BACK_TO_CHANGES"), () => ShowList(screen), name: BackName);
+            info.AddChild(back);
+            back.AnchorLeft = back.AnchorRight = 1;
+            back.GrowHorizontal = Control.GrowDirection.Begin;
+            (back.OffsetLeft, back.OffsetRight, back.OffsetTop) = (-ModDetails.Inset, -ModDetails.Inset, 21);
+        }
+        back.Visible = true;
+        Layout.PlaceInfo(info); // the thumbnail moves down for it
+        Callable.From(() => ModDetails.PlaceFields(info)).CallDeferred();
+    }
+
+    // Back goes once the panel shows something else: the list again, another mod, another view, another page.
+    public static void HideBack(Control info)
+    {
+        if (info.GetNodeOrNull<Control>(BackName) is not { Visible: true } back)
+            return;
+        back.Visible = false;
+        Layout.PlaceInfo(info);
+        Callable.From(() => ModDetails.PlaceFields(info)).CallDeferred();
+    }
+
+    // The two lines left-aligned, their left edge kept still as the counts change (unless they grow wider),
+    // ending at RightMeta (set by Layout: just left of Undo).
+    public const string RightMeta = "spire_mod_manager_right";
+    const float ChangesMinWidth = 240;
+
+    public static void FitChanges(RichTextLabel changes)
+    {
+        if (!changes.HasMeta(RightMeta))
+            return;
+        var width = Math.Max(ChangesMinWidth, changes.GetContentWidth() + 4);
+        changes.Size = new Vector2(width, changes.Size.Y);
+        changes.Position = new Vector2((float)changes.GetMeta(RightMeta) - width, changes.Position.Y);
     }
 
     // Sections with counts, each change on its own line.

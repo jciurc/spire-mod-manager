@@ -597,14 +597,29 @@ static class SelfTest
         var yours = panel.GetNode<Control>("SpireModManagerYours");
         LineEdit Line(string field) => yours.GetNode<LineEdit>($"{field}/Box");
         var notes = yours.GetNode<TextEdit>("Notes/Box");
-        Check("panel titles with the mod's own name; the alias is in its field", panel.GetNode<RichTextLabel>("ModTitle").Text == "Spire Mod Manager"
+        var titleText = panel.GetNode<RichTextLabel>("ModTitle").GetParsedText();
+        Check("panel titles with the mod's own name, the version beside it (no v); the alias is in its field",
+            titleText.StartsWith("Spire Mod Manager") && titleText.TrimEnd().EndsWith(" 0.1.0") && !titleText.Contains("v0.1.0")
             && Line("Alias").Text == "The Manager" && notes.Text == "Fixture note");
-        Check("status first: Enabled", description.StartsWith("Enabled"), description[..Math.Min(40, description.Length)]);
-        Check("the link line: id, version, local", panel.FindChild("SpireModManagerLink", true, false) is LinkButton { Disabled: true } link
-            && link.Text.StartsWith("SpireModManager v") && link.Text.EndsWith("(Local mod)"), (panel.FindChild("SpireModManagerLink", true, false) as LinkButton)?.Text ?? "");
+        var linkText = (panel.FindChild("SpireModManagerLink", true, false) as LinkButton)?.Text ?? "";
+        Check("the source line: id (Local), then Enabled", panel.FindChild("SpireModManagerLink", true, false) is LinkButton { Disabled: true }
+            && linkText == "SpireModManager (Local)" && panel.FindChild("SpireModManagerSource", true, false)?.GetNodeOrNull<Label>("Status")?.Text == "Enabled", linkText);
+        var headText = panel.GetNodeOrNull<RichTextLabel>("SpireModManagerHead")?.GetParsedText() ?? "";
+        Check("the head: author and size; the details start with the description", headText.Contains("Author: symphony") && headText.Contains("Size:")
+            && !description.StartsWith("Enabled") && description.Contains("Compatibility"), $"{headText} / {description[..Math.Min(60, description.Length)]}");
         Check("fields in order: Alias, Category, Tags, Notes", string.Join(",", yours.GetChildren().Select(c => c.Name.ToString())) == "Alias,Category,Tags,Notes",
             string.Join(",", yours.GetChildren().Select(c => c.Name.ToString())));
-        Check("the thumbnail stays small (the scene's minimum size lifted)", panel.GetNode<Control>("ModImage").Size.X <= 130, $"{panel.GetNode<Control>("ModImage").Size}");
+        Check("the thumbnail is 256 x 144 (the scene's minimum size lifted)", panel.GetNode<Control>("ModImage").Size == new Vector2(256, 144), $"{panel.GetNode<Control>("ModImage").Size}");
+        Check("automatic tags beside the Tags term", yours.GetNodeOrNull<Control>("Tags/Term/SystemTags") is { Visible: true } system && system.GetChildCount() > 0);
+        var image = panel.GetNode<TextureRect>("ModImage");
+        var description0 = panel.GetNode<Control>("ModDescription").OffsetTop;
+        image.Texture = ImageTexture.CreateFromImage(Image.CreateEmpty(16, 9, false, Image.Format.Rgba8));
+        Layout.PlaceInfo(panel);
+        var withPicture = panel.GetNode<Control>("ModDescription").OffsetTop;
+        image.Texture = null;
+        Layout.PlaceInfo(panel);
+        Check("no picture: the description starts under the head; with one, under the picture", description0 < 160 && withPicture >= 16 + ModDetails.ThumbHeight,
+            $"{description0} / {withPicture}");
         await Capture(screen, outDir, "8-details-with-notes");
 
         // Notes and tags typed in the panel save when focus leaves; notes are trimmed, tags tidied.
@@ -618,7 +633,7 @@ static class SelfTest
         await Wait(menu, 0.3);
         Check("panel saves notes, trimmed", Store.InfoFor("LocalModFixes")?.Notes == "Typed in the panel" && notes.Text == "Typed in the panel", notes.Text);
         Check("panel saves tags, repeats dropped; at rest they're pills", Store.InfoFor("LocalModFixes")?.Tags?.SequenceEqual(["co-op", "Favorites"]) == true
-            && yours.GetNode<Control>("Tags/CustomTags") is { Visible: true } pills && pills.GetChildCount() == 2,
+            && yours.GetNode<Control>("Tags/CustomTags") is { Visible: true } && yours.GetNode("Tags/CustomTags/Pills").GetChildCount() == 2,
             string.Join(", ", Store.InfoFor("LocalModFixes")?.Tags ?? []));
         await Capture(screen, outDir, "9-notes-editing");
 
@@ -1055,6 +1070,8 @@ static class SelfTest
         changes.EmitSignal(Control.SignalName.MouseEntered);
         await Wait(menu, 0.3);
         Check("hovering Changes shows the details", screen.HasNode("SpireModManagerChangesPanel"));
+        var summary = screen.GetNodeOrNull("SpireModManagerChangesPanel")?.FindChildren("*", "RichTextLabel", true, false).OfType<RichTextLabel>().FirstOrDefault()?.GetParsedText() ?? "";
+        Check("the summary is titled and names the mod turned off", summary.StartsWith("Changes since launch") && summary.Contains("Test UI"), summary);
         await Capture(screen, outDir, "14-changes");
         changes.EmitSignal(Control.SignalName.MouseExited);
         Hover.TestMouse = null;
@@ -1124,6 +1141,26 @@ static class SelfTest
         tickbox.IsTicked = !tickbox.IsTicked;
         tickbox.EmitSignal(NTickbox.SignalName.Toggled, tickbox);
         await Wait(menu, 0.3);
+
+        // A mod's name in the list opens it, with Back to the list; picking another mod takes Back away.
+        var listText = (info.FindChild("List", true, false) as RichTextLabel)?.Text ?? "";
+        Check("mod names in the changes list are links", listText.Contains("[url=mod:SmmTestUi]"), listText);
+        HistoryBar.OpenFromList(screen, "SmmTestUi");
+        await Wait(menu, 0.3);
+        var back = info.GetNodeOrNull<Control>(HistoryBar.BackName);
+        Check("a name opens that mod, with Back", !HistoryBar.ListOpen(info) && CategoryList.Selected?.manifest?.id == "SmmTestUi" && back is { Visible: true });
+        await Capture(screen, outDir, "14c-opened-from-changes");
+        back?.EmitSignal(BaseButton.SignalName.Pressed);
+        await Wait(menu, 0.2);
+        Check("Back returns to the list", HistoryBar.ListOpen(info) && back is { Visible: false });
+        HistoryBar.OpenFromList(screen, "SmmTestUi");
+        await Wait(menu, 0.2);
+        if (content.GetChildren().OfType<NModMenuRow>().FirstOrDefault(r => r.Mod?.manifest?.id is { } id && id != "SmmTestUi") is { } another)
+            screen.OnRowSelected(another);
+        await Wait(menu, 0.2);
+        Check("picking another mod takes Back away", back is { Visible: false });
+        ClickChanges(); // open again, for the close test below
+        await Wait(menu, 0.2);
         ClickChanges();
         await Wait(menu, 0.2);
         Check("clicking Changes again closes it", !HistoryBar.ListOpen(info));

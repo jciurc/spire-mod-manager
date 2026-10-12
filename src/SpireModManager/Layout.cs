@@ -69,21 +69,7 @@ static class Layout
         PanelStyle(list);
         PanelStyle(info);
 
-        // Inside the info panel: title, image and description, fitted to its new size.
-        var width = info.Size.X;
-        // Title and link (left) beside a thumbnail of the mod image (right); description below; the
-        // player's tags and notes and Open Folder along the bottom (ModDetails).
-        const float thumbWidth = 128, thumbHeight = 72; // 16:9, small: the title and text matter more
-        var inset = ModDetails.Inset;
-        Place(info.GetNode<Control>("ModTitle"), new Vector4(inset, 10, width - thumbWidth - 40, 52));
-        // The scene gives the image a 500x380 minimum size, which beats any smaller box: lifted in our views.
-        var image = info.GetNode<Control>("ModImage");
-        if (!image.HasMeta(MinSizeMeta))
-            image.SetMeta(MinSizeMeta, image.CustomMinimumSize);
-        image.CustomMinimumSize = Wide ? Vector2.Zero : (Vector2)image.GetMeta(MinSizeMeta);
-        Place(image, new Vector4(width - thumbWidth - 20, 16, width - 20, 16 + thumbHeight));
-        Place(info.GetNode<Control>("ModDescription"), new Vector4(inset, 90, width - inset,
-            info.Size.Y - ModDetails.ButtonsFromBottom - ModDetails.FieldsGap));
+        PlaceInfo(info);
         ViewFont(info.GetNode<MegaRichTextLabel>("ModTitle"), InfoTitleSize);
         ViewFont(info.GetNode<MegaRichTextLabel>("ModDescription"), InfoTextSize);
 
@@ -156,15 +142,20 @@ static class Layout
             right = right - buttonsWidth - 20;
         }
 
-        // "Mods enabled 23 (+1 -3) ↕2" over "Changes 5": just left of Undo, centred on the row.
+        // "Mods enabled 23 (+1 -3)" over "Changes 5  ↕2", left-aligned, just left of Undo.
         if (screen.GetNodeOrNull<RichTextLabel>(HistoryBar.ChangesName) is { } changes)
         {
             changes.Visible = Wide;
-            changes.Position = new Vector2(right - changes.Size.X, BottomRowY + 35 - changes.Size.Y / 2); // two lines, centred on the row
-            right = changes.Position.X + changes.Size.X - Math.Max(changes.GetContentWidth(), 160) - 16; // its text is right-aligned
+            changes.Position = new Vector2(changes.Position.X, BottomRowY + 41 - changes.Size.Y / 2); // two lines, a little below the row's middle
+            changes.SetMeta(HistoryBar.RightMeta, right);
+            HistoryBar.FitChanges(changes);
+            right = changes.Position.X - 16;
         }
         if (view != View.Categories)
+        {
             HistoryBar.CloseList(info); // the full changes list lives in the main list's panel
+            HistoryBar.HideBack(info);
+        }
         History.NotifyChanged(); // the buttons act on this view's history
 
         // The game's "takes effect after a restart" line fits between the left and right buttons in
@@ -276,6 +267,32 @@ static class Layout
     {
         if (screen.GetNodeOrNull<Control>("SpireModManagerViewToggle/Dot") is { } dot)
             dot.Visible = Current == View.Vanilla && ModEntry.HasPendingChanges();
+    }
+
+    // Inside the info panel, fitted to its size: the head (title, source and short facts, left) beside a
+    // large thumbnail of the mod image (right); the description below both; the player's fields and Open
+    // Folder along the bottom (ModDetails). With the changes list's Back button showing (top right), the
+    // thumbnail and everything under it move down to make room. A mod without a picture: the description
+    // starts right under the head.
+    public static void PlaceInfo(Control info)
+    {
+        const float top = 16;
+        var width = info.Size.X;
+        var inset = ModDetails.Inset;
+        var (thumbWidth, thumbHeight, thumbRight) = (ModDetails.ThumbWidth, ModDetails.ThumbHeight, ModDetails.ThumbRight);
+        var picture = info.GetNode<TextureRect>("ModImage").Texture != null;
+        var drop = picture && info.GetNodeOrNull<Control>(HistoryBar.BackName) is { Visible: true } ? 36 : 0;
+        var head = info.GetNodeOrNull<RichTextLabel>(ModDetails.HeadName) is { Visible: true } facts ? facts.OffsetTop + facts.GetContentHeight() : 86;
+        var below = Math.Max(head, picture ? top + drop + thumbHeight : 0) + 16;
+        Place(info.GetNode<Control>("ModTitle"), new Vector4(inset, 10, width - thumbWidth - thumbRight - 20, 52));
+        // The scene gives the image a 500x380 minimum size, which beats any smaller box: lifted in our views.
+        var image = info.GetNode<Control>("ModImage");
+        if (!image.HasMeta(MinSizeMeta))
+            image.SetMeta(MinSizeMeta, image.CustomMinimumSize);
+        image.CustomMinimumSize = Wide ? Vector2.Zero : (Vector2)image.GetMeta(MinSizeMeta);
+        Place(image, new Vector4(width - thumbWidth - thumbRight, top + drop, width - thumbRight, top + drop + thumbHeight));
+        Place(info.GetNode<Control>("ModDescription"), new Vector4(inset, below, width - inset,
+            info.Size.Y - ModDetails.ButtonsFromBottom - ModDetails.FieldsGap));
     }
 
     // Wide: the given box. Vanilla: the box the scene had.

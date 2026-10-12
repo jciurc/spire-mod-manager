@@ -8,12 +8,12 @@ using MegaCrit.Sts2.addons.mega_text;
 namespace SpireModManager;
 
 // The info panel in our views, top to bottom:
-// - the mod's own name (click: scroll to it in the list), a thumbnail beside it;
-// - "<id> v<version> (Workshop <id>)", linking to the Workshop page (or "(Local mod)");
-// - Enabled / Disabled / Pending restart, then anything wrong (red);
-// - the author's description;
-// - author, dates, size, subscribers, compatibility, Workshop tags;
-// - dependencies both ways (click a name: scroll to it in the list and flash it);
+// - the head, left of a large thumbnail: the mod's own name (click: scroll to it in the list) with its version
+//   in grey; "<id> (<Workshop id>)", linking to the Workshop page (or "(Local)"), and Enabled / Disabled /
+//   Pending restart; author, last update, size;
+// - anything wrong (red), the author's description;
+// - published, subscribers, Workshop tags;
+// - compatibility and dependencies both ways (click a name: scroll to it in the list and flash it);
 // - the player's own Alias, Category, Tags and Notes (ModField), then Open Folder.
 // Vanilla View: the panel exactly as the game makes it.
 static class ModDetails
@@ -23,14 +23,18 @@ static class ModDetails
     const string ModIdMeta = "spire_mod_manager_mod_id";
     const string FolderMeta = "spire_mod_manager_folder";
     const string FieldsName = "SpireModManagerYours";
-    const string LinkName = "SpireModManagerLink";
+    const string LinkName = "SpireModManagerLink", SourceName = "SpireModManagerSource";
+    public const string HeadName = "SpireModManagerHead";
     const string WiredMeta = "spire_mod_manager_wired";
     const string Enabled = "#a6e3a1", Disabled = "#fff6e299", Pending = "#f5b56b", Problem = "#ff8070";
+    const string GoldHex = "#efc851";
+    const int VersionSize = 20;
 
     // Along the inside of the panel's bottom edge, whatever its size.
     public const float ButtonsFromBottom = 72;
     public const float Inset = 22; // left edge of everything in the panel: title, link, text, fields
     public const float FieldsGap = 18;
+    public const float ThumbWidth = 256, ThumbHeight = 144, ThumbRight = 36; // the mod's picture, top right
 
     // The panel's own fields, one set per panel.
     static readonly Dictionary<ulong, List<ModField>> Fields = [];
@@ -47,28 +51,46 @@ static class ModDetails
         CommitEdits(container); // whatever was typed for the previous mod
         Wire(container);
         var id = mod.manifest?.id;
+        if (Meta(container, ModIdMeta) != (id ?? ""))
+            HistoryBar.HideBack(container); // another mod: no way back to the changes list (the same one refilled keeps it)
         container.SetMeta(ModIdMeta, id ?? "");
         container.SetMeta(FolderMeta, mod.path);
 
-        // The game titles it with the name; ours too (the alias is in the fields below).
-        container.GetNode<MegaRichTextLabel>("ModTitle").Text = mod.manifest?.name ?? id ?? "";
+        // The game titles it with the name; ours too, with the version in grey beside it (the alias is in the
+        // fields below).
+        var title = container.GetNode<MegaRichTextLabel>("ModTitle");
+        title.BbcodeEnabled = true;
+        var version = mod.manifest?.version is { Length: > 0 } v
+            ? $"  [color={Disabled}][font_size={VersionSize}]{Escape(v.TrimStart('v', 'V'))}[/font_size][/color]" : "";
+        title.Text = Escape(mod.manifest?.name ?? id ?? "") + version;
         container.GetNode<MegaRichTextLabel>("ModDescription").Text = Describe(mod);
 
-        var link = container.GetNodeOrNull<LinkButton>(LinkName) ?? AddLink(container);
-        link.Visible = true;
-        var version = mod.manifest?.version is { Length: > 0 } v ? $" v{v}" : "";
+        // "<id> (<Workshop id>)", a link to its Workshop page, or "<id> (Local)"; then whether it's on.
+        var source = container.GetNodeOrNull<Control>(SourceName) ?? AddSource(container);
+        source.Visible = true;
+        var link = source.GetNode<LinkButton>(LinkName);
         if (mod.workshopId is { } workshopId)
         {
-            link.Text = $"{id}{version} ({Menus.Format("SPIRE_MOD_MANAGER.WORKSHOP_ID", ("id", workshopId.ToString()))})";
+            link.Text = $"{id} ({workshopId})";
             link.Uri = $"https://steamcommunity.com/sharedfiles/filedetails/?id={workshopId}";
             (link.Disabled, link.Underline) = (false, LinkButton.UnderlineMode.OnHover);
         }
         else
         {
-            link.Text = $"{id}{version} ({Menus.Text("SPIRE_MOD_MANAGER.LOCAL_MOD")})";
+            link.Text = $"{id} ({Menus.Text("SPIRE_MOD_MANAGER.SOURCE_LOCAL")})";
             link.Uri = "";
             (link.Disabled, link.Underline) = (true, LinkButton.UnderlineMode.Never);
         }
+        var (state, color) = StatusParts(mod);
+        var status = source.GetNode<Label>("Status");
+        status.Text = state;
+        status.AddThemeColorOverride("font_color", Color.FromHtml(color));
+
+        // Beside the thumbnail: who made it, when it was last updated, how big it is.
+        var head = container.GetNodeOrNull<RichTextLabel>(HeadName) ?? AddHead(container);
+        head.Visible = true;
+        head.Text = HeadFacts(mod);
+        Layout.PlaceInfo(container); // the description goes under the head, or under the picture if there is one
 
         var yours = container.GetNodeOrNull<Control>(FieldsName) ?? AddFields(container);
         yours.Visible = id != null;
@@ -108,46 +130,57 @@ static class ModDetails
         };
     }
 
-    // Status, problems, the author's description, facts, dependencies; blank lines between the groups.
+    // Anything wrong, the author's description, more facts, then compatibility and dependencies; blank lines
+    // between the groups. (Name, version, source, status, author, update and size are in the head above.)
     static string Describe(Mod mod)
     {
         var text = new System.Text.StringBuilder();
         void Fact(string key, string value) => text.Append($"[gold]{Menus.Text(key)}[/gold]: {value}\n");
 
-        text.Append(Status(mod)).Append('\n');
-        foreach (var problem in Problems(mod))
+        var problems = Problems(mod);
+        foreach (var problem in problems)
             text.Append($"[color={Problem}]{Escape(problem)}[/color]\n");
-        text.Append('\n').Append(mod.manifest?.description ?? Menus.Text("SPIRE_MOD_MANAGER.NO_DESCRIPTION")).Append("\n\n");
+        if (problems.Count > 0)
+            text.Append('\n');
+        text.Append(mod.manifest?.description ?? Menus.Text("SPIRE_MOD_MANAGER.NO_DESCRIPTION")).Append("\n\n");
 
-        Fact("SPIRE_MOD_MANAGER.AUTHOR", Escape(mod.manifest?.author ?? Menus.Text("SPIRE_MOD_MANAGER.UNKNOWN")));
         var workshop = WorkshopInfo.For(mod);
         if (workshop != null)
-        {
-            Fact("SPIRE_MOD_MANAGER.PUBLISHED", $"{workshop.Created:yyyy-MM-dd}");
-            Fact("SPIRE_MOD_MANAGER.UPDATED", $"{workshop.Updated:yyyy-MM-dd} ({Menus.Format("SPIRE_MOD_MANAGER.DAYS_AGO",
-                ("days", ((int)(DateTime.Now - workshop.Updated).TotalDays).ToString()))})");
-        }
-        var bytes = workshop?.Size is > 0 and var size ? size : FolderSize(mod.path);
-        if (bytes > 0)
-            Fact("SPIRE_MOD_MANAGER.SIZE", Bytes(bytes));
+            Fact("SPIRE_MOD_MANAGER.PUBLISHED", Date(workshop.Created));
         if (workshop?.Subscribers is { } subscribers)
             Fact("SPIRE_MOD_MANAGER.SUBSCRIBERS", subscribers.ToString("N0"));
-        Fact("SPIRE_MOD_MANAGER.COMPATIBILITY", Compatibility(mod));
         if (workshop?.Tags.Count > 0)
             Fact("SPIRE_MOD_MANAGER.WORKSHOP_TAGS", Escape(string.Join(", ", workshop.Tags)));
+        if (workshop != null)
+            text.Append('\n');
 
+        // Will it run: the game version, then what it needs and what needs it.
         string Links(IEnumerable<string> ids) => string.Join(", ", ids.Select(d =>
             $"[url=mod:{d}][color=#cfe3ff]{Escape(Dependencies.Find(d)?.manifest?.name ?? d)}[/color][/url]"));
         var needs = Dependencies.Of(mod);
         var neededBy = ModManager.Mods.Where(m => m != mod && Dependencies.Of(m).Contains(mod.manifest?.id ?? ""))
             .Select(m => m.manifest?.id ?? "").Distinct().ToList();
-        if (needs.Count > 0 || neededBy.Count > 0)
-            text.Append('\n');
+        Fact("SPIRE_MOD_MANAGER.COMPATIBILITY", Compatibility(mod));
         if (needs.Count > 0)
             Fact("SPIRE_MOD_MANAGER.DEPENDENCIES", Links(needs));
         if (neededBy.Count > 0)
             Fact("SPIRE_MOD_MANAGER.NEEDED_BY", Links(neededBy));
         return text.ToString().TrimEnd();
+    }
+
+    // The head's short facts: author, last update (with how long ago), size.
+    static string HeadFacts(Mod mod)
+    {
+        string Fact(string key, string value) => $"[color={GoldHex}]{Menus.Text(key)}[/color]: {value}";
+        var lines = new List<string> { Fact("SPIRE_MOD_MANAGER.AUTHOR", Escape(mod.manifest?.author ?? Menus.Text("SPIRE_MOD_MANAGER.UNKNOWN"))) };
+        var workshop = WorkshopInfo.For(mod);
+        if (workshop != null)
+            lines.Add(Fact("SPIRE_MOD_MANAGER.UPDATED", $"{Date(workshop.Updated)} [color={Disabled}]({Menus.Format("SPIRE_MOD_MANAGER.DAYS_AGO",
+                ("days", ((int)(DateTime.Now - workshop.Updated).TotalDays).ToString()))})[/color]"));
+        var bytes = workshop?.Size is > 0 and var size ? size : FolderSize(mod.path);
+        if (bytes > 0)
+            lines.Add(Fact("SPIRE_MOD_MANAGER.SIZE", Bytes(bytes)));
+        return string.Join("\n", lines);
     }
 
     // The card shown after hovering a row: its names, state, anything wrong, author, last update, and the
@@ -178,13 +211,19 @@ static class ModDetails
     // loaded; Failed to load (red) when it's on but couldn't load.
     public static string Status(Mod mod)
     {
+        var (text, color) = StatusParts(mod);
+        return $"[color={color}]{text}[/color]";
+    }
+
+    static (string Text, string Color) StatusParts(Mod mod)
+    {
         var on = Dependencies.IsOn(mod);
         var loaded = mod.state == ModLoadState.Loaded;
         var (key, color) = on && mod.state == ModLoadState.Failed ? ("SPIRE_MOD_MANAGER.STATUS_FAILED", Problem)
             : on != loaded ? ("SPIRE_MOD_MANAGER.STATUS_PENDING", Pending)
             : on ? ("SPIRE_MOD_MANAGER.STATUS_ENABLED", Enabled)
             : ("SPIRE_MOD_MANAGER.STATUS_DISABLED", Disabled);
-        return $"[color={color}]{Menus.Text(key)}[/color]";
+        return (Menus.Text(key), color);
     }
 
     // What stops the mod from working, in plain words: the game's own load errors (wrong game version or
@@ -279,7 +318,7 @@ static class ModDetails
     public static void HideButtons(Node container)
     {
         CommitEdits(container);
-        foreach (var name in new[] { "OpenFolderButton", LinkName, FieldsName })
+        foreach (var name in new[] { "OpenFolderButton", SourceName, HeadName, FieldsName })
             if (container.GetNodeOrNull<Control>(name) is { } control)
                 control.Visible = false;
     }
@@ -306,17 +345,42 @@ static class ModDetails
         return button;
     }
 
-    static LinkButton AddLink(Control container)
+    // Under the title: the link (or local id), a dim dot, the status, all one size.
+    static Control AddSource(Control container)
     {
+        var line = new HBoxContainer { Name = SourceName, MouseFilter = Control.MouseFilterEnum.Ignore };
+        line.AddThemeConstantOverride("separation", 8);
         var link = new LinkButton { Name = LinkName, FocusMode = Control.FocusModeEnum.None };
         link.AddThemeFontOverride("font", ResourceLoader.Load<Font>("res://themes/kreon_regular_shared.tres"));
         link.AddThemeFontSizeOverride("font_size", 16);
         link.AddThemeColorOverride("font_color", new Color(0.6f, 0.8f, 1f));
         link.AddThemeColorOverride("font_hover_color", new Color(0.8f, 0.9f, 1f));
         link.AddThemeColorOverride("font_disabled_color", new Color(Cream, 0.6f));
-        container.AddChild(link);
-        link.Position = new Vector2(Inset, 56);
-        return link;
+        line.AddChild(link);
+        var dot = new Label { Name = "Dot", Text = "·", MouseFilter = Control.MouseFilterEnum.Ignore };
+        Style(dot, "res://themes/kreon_regular_shared.tres", 16, new Color(Cream, 0.4f));
+        line.AddChild(dot);
+        var status = new Label { Name = "Status", MouseFilter = Control.MouseFilterEnum.Ignore };
+        Style(status, "res://themes/kreon_regular_shared.tres", 16, Cream);
+        line.AddChild(status);
+        container.AddChild(line);
+        line.Position = new Vector2(Inset, 56);
+        return line;
+    }
+
+    // Left of the thumbnail, under the source line.
+    static RichTextLabel AddHead(Control container)
+    {
+        var head = new RichTextLabel
+        {
+            Name = HeadName, BbcodeEnabled = true, FitContent = true, ScrollActive = false, AutowrapMode = TextServer.AutowrapMode.Off,
+            ClipContents = true, MouseFilter = Control.MouseFilterEnum.Ignore,
+        };
+        Hover.Fonts(head, 16);
+        container.AddChild(head);
+        head.AnchorRight = 1;
+        (head.OffsetLeft, head.OffsetTop, head.OffsetRight, head.OffsetBottom) = (Inset, 88, -(ThumbWidth + ThumbRight + 20), 88 + 3 * 22);
+        return head;
     }
 
     // The player's own fields: Alias, Category (a picker), Tags and Notes.
@@ -361,15 +425,15 @@ static class ModDetails
         line.AddChild(term);
         var picker = new Button
         {
-            Name = "Picker", Flat = true, Alignment = HorizontalAlignment.Left, FocusMode = Control.FocusModeEnum.None,
-            MouseDefaultCursorShape = Control.CursorShape.PointingHand, SizeFlagsHorizontal = Control.SizeFlags.ShrinkBegin,
+            Name = "Picker", Alignment = HorizontalAlignment.Left, FocusMode = Control.FocusModeEnum.None,
+            MouseDefaultCursorShape = Control.CursorShape.PointingHand, SizeFlagsHorizontal = Control.SizeFlags.Fill,
         };
         Style(picker, "res://themes/kreon_regular_shared.tres", 18, Cream);
         picker.AddThemeColorOverride("font_hover_color", Colors.White);
         picker.AddThemeColorOverride("font_pressed_color", Cream);
-        var pad = new StyleBoxEmpty { ContentMarginLeft = 10, ContentMarginRight = 10, ContentMarginTop = 4, ContentMarginBottom = 4 };
-        foreach (var state in new[] { "normal", "hover", "pressed", "focus" })
-            picker.AddThemeStyleboxOverride(state, pad);
+        // The same box as the other fields: darker at rest, lighter under the mouse.
+        foreach (var (state, shade) in new[] { ("normal", ModField.Shade.Rest), ("hover", ModField.Shade.Hover), ("pressed", ModField.Shade.Active), ("focus", ModField.Shade.Rest) })
+            picker.AddThemeStyleboxOverride(state, ModField.Look(shade));
         picker.Pressed += () =>
         {
             if (content() is { } list && modId() is { } id)
@@ -382,7 +446,7 @@ static class ModDetails
 
     // The fields sit right under the mod's details: the description shrinks to its text (up to the room left
     // above the fields), and the fields follow it. Once the text is laid out, so deferred.
-    static void PlaceFields(Control container)
+    public static void PlaceFields(Control container)
     {
         if (container.GetNodeOrNull<Control>(FieldsName) is not { } yours)
             return;
