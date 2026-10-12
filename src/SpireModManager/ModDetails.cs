@@ -54,6 +54,7 @@ static class ModDetails
         if (Meta(container, ModIdMeta) != (id ?? ""))
             HistoryBar.HideBack(container); // another mod: no way back to the changes list (the same one refilled keeps it)
         PatchNotes.Close(container); // a mod picked (or refilled): its details again
+        RowTitles.Seen(mod, container); // opened: its "updated" gem goes
         container.SetMeta(ModIdMeta, id ?? "");
         container.SetMeta(FolderMeta, mod.path);
 
@@ -136,7 +137,11 @@ static class ModDetails
         {
             if (meta.AsString() is { } target && target.StartsWith("mod:") && Content() is { } content)
                 CategoryList.Reveal(content, target[4..], flash: false, focus: true);
+            else if (meta.AsString() is { } tag && tag.StartsWith("wtag:"))
+                Search.ByText(container, tag[5..], Input.IsKeyPressed(Key.Shift)); // a Workshop tag: plain words
         };
+        Hover.WatchLinks(description, "SpireModManagerTagCard", Tags.CardDelay,
+            meta => meta.StartsWith("wtag:") ? Tags.Hint(Menus.Text("SPIRE_MOD_MANAGER.SEARCH_CLICK_TIP")) : null, width: 320);
         CategoryList.WatchNames(description, Content); // hovering a name: its row lit (if in view), then its card
         // Hovering the thumbnail: the whole picture (our views).
         var image = container.GetNode<TextureRect>("ModImage");
@@ -167,7 +172,7 @@ static class ModDetails
         if (workshop?.Subscribers is { } subscribers)
             Fact("SPIRE_MOD_MANAGER.SUBSCRIBERS", subscribers.ToString("N0"));
         if (workshop?.Tags.Count > 0)
-            Fact("SPIRE_MOD_MANAGER.WORKSHOP_TAGS", Escape(string.Join(", ", workshop.Tags)));
+            Fact("SPIRE_MOD_MANAGER.WORKSHOP_TAGS", string.Join(", ", workshop.Tags.Select(t => $"[url=wtag:{t}]{Escape(t)}[/url]"))); // click: search for it
         if (bytes > 0 || workshop != null)
             text.Append('\n');
 
@@ -189,7 +194,7 @@ static class ModDetails
     static string HeadFacts(Mod mod)
     {
         string Fact(string key, string value) => $"[color={GoldHex}]{Menus.Text(key)}[/color]: {value}";
-        var author = mod.manifest?.author is { Length: > 0 } who ? $"[url=author:{who}]{Escape(who)}[/url]" : Menus.Text("SPIRE_MOD_MANAGER.UNKNOWN");
+        var author = mod.manifest?.author is { Length: > 0 } who ? $"[url=author:{who}]{Escape(Short(who))}[/url]" : Menus.Text("SPIRE_MOD_MANAGER.UNKNOWN");
         var lines = new List<string> { Fact("SPIRE_MOD_MANAGER.AUTHOR", author) };
         var workshop = WorkshopInfo.For(mod);
         if (workshop != null)
@@ -208,7 +213,7 @@ static class ModDetails
         var lines = new List<string> { $"[b]{Escape(id)}[/b]  [color=#fff6e280]•[/color]  {Status(mod)}" };
         lines.AddRange(Problems(mod).Select(p => $"[color={Problem}]{Escape(p)}[/color]"));
         string Fact(string key, string value) => $"[color=#e8cf7a]{Menus.Text(key)}[/color]: {value}";
-        lines.Add(Fact("SPIRE_MOD_MANAGER.AUTHOR", Escape(mod.manifest?.author ?? Menus.Text("SPIRE_MOD_MANAGER.UNKNOWN"))));
+        lines.Add(Fact("SPIRE_MOD_MANAGER.AUTHOR", Escape(Short(mod.manifest?.author ?? Menus.Text("SPIRE_MOD_MANAGER.UNKNOWN")))));
         if (WorkshopInfo.For(mod) is { } workshop)
             lines.Add(Fact("SPIRE_MOD_MANAGER.UPDATED", Date(workshop.Updated)));
         if (info?.Alias is { } alias)
@@ -219,6 +224,9 @@ static class ModDetails
             lines.Add($"[color=#e8cf7a]{Menus.Text("SPIRE_MOD_MANAGER.NOTES_TERM")}[/color]\n{Escape(notes)}");
         return string.Join("\n", lines);
     }
+
+    // Text cut after 200 characters (some authors write a paragraph where their name goes).
+    public static string Short(string text) => text.Length <= 200 ? text : text[..200].TrimEnd() + "…";
 
     // "October 12, 2026".
     public static string Date(DateTime date) => date.ToString("MMMM d, yyyy", System.Globalization.CultureInfo.InvariantCulture);
@@ -411,6 +419,8 @@ static class ModDetails
             if (meta.AsString() is { } target && target.StartsWith("author:"))
                 Search.ByAuthor(container, target[7..], Input.IsKeyPressed(Key.Shift));
         };
+        Hover.WatchLinks(head, "SpireModManagerTagCard", Tags.CardDelay,
+            meta => meta.StartsWith("author:") ? Tags.Hint(Menus.Text("SPIRE_MOD_MANAGER.SEARCH_CLICK_TIP")) : null, width: 320);
         container.AddChild(head);
         head.AnchorRight = 1;
         (head.OffsetLeft, head.OffsetTop, head.OffsetRight, head.OffsetBottom) = (Inset, 88, -(ThumbWidth + ThumbRight + 20), 88);

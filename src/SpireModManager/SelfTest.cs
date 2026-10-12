@@ -867,21 +867,18 @@ static class SelfTest
         ClickChip("SmmTestLib", "Gameplay", true);
         await Wait(menu, 0.3);
         Check("Shift-clicking another adds it", box.Text == "#Library #Gameplay" && Visible().SequenceEqual(["SmmTestLib"]), $"{box.Text}: {string.Join(", ", Visible())}");
-        // Authors the same way: the row's "by symphony" searches "@symphony"; Shift on a tag adds it after a space.
+        // Authors: from the info panel's author (the row's is plain text); Shift on a tag adds it after a space.
         await Shown("");
-        content.GetChildren().OfType<NModMenuRow>().FirstOrDefault(r => r.Mod?.manifest?.id == "LocalModFixes")?.GetNodeOrNull("SpireModManagerStrip/Author")?
-            .EmitSignal(Control.SignalName.GuiInput, new InputEventMouseButton { ButtonIndex = MouseButton.Left, Pressed = false });
+        var rowAuthor = content.GetChildren().OfType<NModMenuRow>().FirstOrDefault(r => r.Mod?.manifest?.id == "LocalModFixes")?.GetNodeOrNull<Label>("SpireModManagerStrip/Author");
+        Check("the row's author is plain: just the name, not clickable", rowAuthor is { Text: "symphony", MouseFilter: Control.MouseFilterEnum.Ignore });
+        var panelHead = screen.GetNode<Control>("%ModInfoContainer").GetNodeOrNull<RichTextLabel>("SpireModManagerHead");
+        panelHead?.EmitSignal(RichTextLabel.SignalName.MetaClicked, "author:symphony");
         await Wait(menu, 0.3);
-        Check("clicking a row's author searches for their mods", box.Text == "@symphony"
+        Check("the panel's author searches for their mods", box.Text == "@symphony"
             && Visible().Count > 0 && Visible().All(id => Dependencies.Find(id)?.manifest?.author == "symphony"), $"{box.Text}: {string.Join(", ", Visible())}");
         ClickChip("LocalModFixes", "Local", true);
         await Wait(menu, 0.3);
         Check("Shift-click on a tag adds it after a space", box.Text == "@symphony #Local", box.Text);
-        var panelHead = screen.GetNode<Control>("%ModInfoContainer").GetNodeOrNull<RichTextLabel>("SpireModManagerHead");
-        await Shown("");
-        panelHead?.EmitSignal(RichTextLabel.SignalName.MetaClicked, "author:symphony");
-        await Wait(menu, 0.3);
-        Check("the panel's author searches too", box.Text == "@symphony", box.Text);
         var local = await Shown("#local");
         Check("#tag matches the tag only, any case", local.Count > 1 && local.All(id => Tags.For(Dependencies.Find(id)).Any(c => c.Text == "Local")), string.Join(", ", local));
         var none = await Shown("zzz no such mod");
@@ -1035,7 +1032,7 @@ static class SelfTest
             screen.OnRowSelected(libSelected);
         await Wait(menu, 0.3);
         var facts = panel.GetNode<RichTextLabel>("ModDescription").Text;
-        Check("panel: needed by, Open Folder", facts.Contains("Needed by")
+        Check("panel: required for, Open Folder", facts.Contains("Required for")
             && facts.Contains("Test Content") && facts.Contains("Test UI") && panel.GetNode<Control>("OpenFolderButton").Visible, facts);
 
         // Force a bad order (as an old saved list might have): the needing mod above its framework.
@@ -1206,7 +1203,7 @@ static class SelfTest
         var uncategorized = (content.GetNodeOrNull("Uncategorized")?.GetNodeOrNull("Actions")?.GetChildren().OfType<Button>().Select(b => b.Text).ToList()) ?? [];
         Check("Uncategorized: just Enable all, Disable all", uncategorized.SequenceEqual(["Enable all", "Disable all"]), string.Join(",", uncategorized));
         var author = Rows().FirstOrDefault(r => r.Mod?.manifest?.id == "LocalModFixes")?.GetNodeOrNull<Label>("SpireModManagerStrip/Author")?.Text;
-        Check("the author at the end of the row's line", author == "by symphony", author ?? "none");
+        Check("the author at the end of the row's line", author == "symphony", author ?? "none");
 
         // Mod names in the panel: hovering lights the row (it's in view); clicking scrolls to it, selected look.
         if (Rows().FirstOrDefault(r => r.Mod?.manifest?.id == "SmmTestLib") is { } libRow
@@ -1356,6 +1353,17 @@ static class SelfTest
         await Wait(menu, 0.2);
         Check("Back returns to the details", view is { Visible: false } && info.GetNode<Control>("ModTitle").Visible);
         PatchNotes.TestFetch = null;
+
+        // Updated yesterday: unseen (the row's gem) until the mod is opened; seeing it is no edit (nothing to undo).
+        WorkshopInfo.TestSet(42, new WorkshopInfo.Details(DateTime.Now.AddDays(-30), DateTime.Now.AddDays(-1), [], [], 0, null));
+        var unseen = RowTitles.Unseen(mod) != null;
+        var couldUndo = History.CanUndo;
+        var changes = HistoryBar.Describe().Count;
+        RowTitles.Seen(mod, screen);
+        Check("a recent update is new until the mod is opened; seeing it isn't an edit", unseen && RowTitles.Unseen(mod) == null
+            && Store.Data.SeenUpdates.ContainsKey("SmmPatchNotesTest") && History.CanUndo == couldUndo && HistoryBar.Describe().Count == changes);
+        Store.Data.SeenUpdates.Remove("SmmPatchNotesTest");
+        WorkshopInfo.TestSet(42, null);
     }
 
     // Several mods at once on the main list: Select all in Uncategorized, Ctrl-click one away; the bar counts
@@ -1539,6 +1547,8 @@ static class SelfTest
         await Wait(menu, 0.3);
         var back = info.GetNodeOrNull<Control>(HistoryBar.BackName);
         Check("a name opens that mod, with Back", !HistoryBar.ListOpen(info) && CategoryList.Selected?.manifest?.id == "SmmTestUi" && back is { Visible: true });
+        if (content.GetChildren().OfType<NModMenuRow>().FirstOrDefault(r => r.Mod?.manifest?.id == "SmmTestUi")?.GetNodeOrNull<Panel>("SelectionHighlight") is { } shownLook)
+            Check("the selected row keeps the game's look, with slightly rounded corners", shownLook.GetThemeStylebox("panel") is StyleBoxFlat { BgColor.R: 1f, CornerRadiusTopLeft: RowTitles.CornerRadius } && shownLook.Modulate.A > 0.1f);
         await Capture(screen, outDir, "14c-opened-from-changes");
         back?.EmitSignal(BaseButton.SignalName.Pressed);
         await Wait(menu, 0.2);

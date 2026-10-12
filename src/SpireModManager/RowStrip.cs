@@ -56,7 +56,7 @@ static class RowStrip
             // (each keystroke in search) was most of a redraw's time.
             var chips = Tags.For(row.Mod);
             var text = string.Join("    ", new[] { RequiredFor(row.Mod), Needs(row.Mod, order, Store.Data.LoadOrderView) }.Where(s => s.Length > 0));
-            var author = row.Mod?.manifest?.author is { Length: > 0 } who ? Menus.Format("SPIRE_MOD_MANAGER.BY_AUTHOR", ("author", who)) : "";
+            var author = ModDetails.Short(row.Mod?.manifest?.author ?? "");
             var says = $"{title.OffsetLeft}|{clear}|{string.Join("|", chips.Select(c => $"{c.Text}/{c.Color}/{c.Custom}"))}|{text}|{author}";
             if (row.GetNodeOrNull<Control>(StripName) is { } kept && kept.HasMeta(SaysMeta) && (string)kept.GetMeta(SaysMeta) == says)
                 continue;
@@ -70,8 +70,8 @@ static class RowStrip
             strip.OffsetLeft = title.OffsetLeft;
             strip.AnchorRight = 1;
             strip.OffsetRight = clear;
-            strip.OffsetTop = -Height - 4;
-            strip.OffsetBottom = -4;
+            strip.OffsetTop = -Height - 2;
+            strip.OffsetBottom = -2;
 
             foreach (var chip in chips)
             {
@@ -87,31 +87,16 @@ static class RowStrip
                 ClipContents = true, MouseFilter = Control.MouseFilterEnum.Ignore,
             };
             note.AddThemeFontOverride("normal_font", ResourceLoader.Load<Font>("res://themes/kreon_regular_shared.tres"));
-            note.AddThemeFontSizeOverride("normal_font_size", 14);
+            note.AddThemeFontSizeOverride("normal_font_size", 13);
             note.AddThemeColorOverride("default_color", Note);
             strip.AddChild(note);
             if (author.Length > 0)
             {
-                // Who made it, quietly, at the end of the line.
-                // Who made it, quietly; click to see their other mods (Shift: add to the search).
-                var maker = row.Mod?.manifest?.author ?? "";
-                var by = new Label
-                {
-                    Name = "Author", Text = author, VerticalAlignment = VerticalAlignment.Center, MouseFilter = Control.MouseFilterEnum.Stop,
-                    MouseDefaultCursorShape = Control.CursorShape.PointingHand,
-                };
+                // Who made it, quietly. (Searching by author is in the info panel.)
+                var by = new Label { Name = "Author", Text = author, VerticalAlignment = VerticalAlignment.Center, MouseFilter = Control.MouseFilterEnum.Ignore };
                 by.AddThemeFontOverride("font", ResourceLoader.Load<Font>("res://themes/kreon_regular_shared.tres"));
-                by.AddThemeFontSizeOverride("font_size", 14);
+                by.AddThemeFontSizeOverride("font_size", 13);
                 by.AddThemeColorOverride("font_color", new Color(1, 0.964706f, 0.886275f, 0.45f));
-                by.GuiInput += e =>
-                {
-                    if (e is not InputEventMouseButton { ButtonIndex: MouseButton.Left } click)
-                        return;
-                    by.AcceptEvent(); // not the row's click too
-                    if (!click.Pressed)
-                        Search.ByAuthor(row, maker, click.ShiftPressed);
-                };
-                Hover.Watch(by, "SpireModManagerTagCard", Tags.CardDelay, () => Tags.Hint(Menus.Text("SPIRE_MOD_MANAGER.AUTHOR_CLICK_TIP")), width: 320);
                 strip.AddChild(by);
             }
         }

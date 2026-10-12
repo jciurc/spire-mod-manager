@@ -25,6 +25,8 @@ public class StoreData
     // Where the player moved the main menu button (top-left, in the game's 1920x1080 frame); null: the corner.
     public ScreenPoint? MenuButtonAt { get; set; }
     public string? ImportedFrom { get; set; }
+    // Workshop updates the player has seen (mod id -> the update time, Unix seconds): its pip goes. Not an edit.
+    public Dictionary<string, long> SeenUpdates { get; set; } = [];
 }
 
 public class Category
@@ -140,6 +142,7 @@ public static class Store
     {
         var copy = JsonSerializer.Deserialize<StoreData>(JsonSerializer.Serialize(Data, Json), Json) ?? new StoreData();
         copy.VanillaView = copy.LoadOrderView = copy.UncategorizedCollapsed = false;
+        copy.SeenUpdates = [];
         foreach (var category in copy.Categories)
             category.Collapsed = false;
         return JsonSerializer.Serialize(copy, Json);
@@ -151,6 +154,7 @@ public static class Store
         var restored = JsonSerializer.Deserialize<StoreData>(json, Json) ?? new StoreData();
         var now = Data;
         (restored.VanillaView, restored.LoadOrderView, restored.UncategorizedCollapsed) = (now.VanillaView, now.LoadOrderView, now.UncategorizedCollapsed);
+        restored.SeenUpdates = now.SeenUpdates;
         foreach (var category in restored.Categories)
             category.Collapsed = now.Categories.FirstOrDefault(c => c.Name == category.Name)?.Collapsed ?? false;
         _data = restored;

@@ -81,16 +81,15 @@ static class Selection
         foreach (var row in content.GetChildren().OfType<NModMenuRow>())
         {
             var on = Several && row.Mod is { } m && Picked.Contains(m);
-            var tint = row.GetNodeOrNull<ColorRect>(TintName);
+            var tint = row.GetNodeOrNull<Panel>(TintName);
             if (tint == null && !on)
                 continue;
             if (tint == null)
             {
-                tint = new ColorRect
-                {
-                    Name = TintName, Color = new Color(0.35f, 0.6f, 0.95f, 0.18f), MouseFilter = Control.MouseFilterEnum.Ignore,
-                    AnchorRight = 1, AnchorBottom = 1,
-                };
+                tint = new Panel { Name = TintName, MouseFilter = Control.MouseFilterEnum.Ignore, AnchorRight = 1, AnchorBottom = 1 };
+                var look = new StyleBoxFlat { BgColor = new Color(0.35f, 0.6f, 0.95f, 0.18f) };
+                look.SetCornerRadiusAll(RowTitles.CornerRadius);
+                tint.AddThemeStyleboxOverride("panel", look);
                 row.AddChild(tint);
                 row.MoveChild(tint, 0); // behind everything else in the row
             }

@@ -22,6 +22,15 @@ static class WorkshopInfo
 
     public static Details? For(Mod? mod) => mod?.workshopId is { } id && Cache.TryGetValue(id, out var details) ? details : null;
 
+    // Self-test only: details for a made-up Workshop id (the dev sandbox has no Steam), or none again.
+    public static void TestSet(ulong id, Details? details)
+    {
+        if (details == null)
+            Cache.Remove(id);
+        else
+            Cache[id] = details;
+    }
+
     public static void Start()
     {
         if (_started || !SteamInitializer.Initialized)

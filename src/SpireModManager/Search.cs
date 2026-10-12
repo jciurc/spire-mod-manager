@@ -48,11 +48,14 @@ static class Search
 
     public static void ByAuthor(Node near, string author, bool add) => Put(near, "@", author, add);
 
+    // Plain words (a Workshop tag): found in any field, like typing them.
+    public static void ByText(Node near, string text, bool add) => Put(near, "", text, add);
+
     static void Put(Node near, string kind, string value, bool add)
     {
         if (CategoryList.ScreenOf(near)?.GetNodeOrNull<LineEdit>("ModsBorder/SpireModManagerSearch") is not { } box)
             return;
-        var token = value.Contains(' ') ? $"{kind}\"{value}\"" : $"{kind}{value}";
+        var token = kind.Length == 0 ? value : value.Contains(' ') ? $"{kind}\"{value}\"" : $"{kind}{value}";
         var text = !add || box.Text.Trim().Length == 0 ? token : box.Text.Contains(token) ? box.Text : $"{box.Text.TrimEnd()} {token}";
         box.Text = text;
         box.CaretColumn = text.Length;
