@@ -229,10 +229,10 @@ Jordan's notes of 2026-10-11.
 ## Main list
 
 - [x] select/deselect all per category (header right-click: Enable all / Disable all)
-- [ ] select/deselect all for the whole page (Round 9: a bar between search and categories)
+- [x] select/deselect all for the whole page (Round 9: a bar between search and categories)
 - [ ] multi-select on the main page: move to a category, select/deselect
 - [ ] drag and drop: whole categories, single mods, multi-selections
-- [ ] author name on the row (right side, above the category button)
+- [x] author name on the row (Round 9: end of the tag line instead)
 - [x] category button shows the category's name
 - [ ] colour codes for categories and/or tags
 - [x] "Needs: X": X green when enabled, red when not
@@ -410,7 +410,7 @@ Jordan's notes of 2026-10-12 (late evening).
 
 - [x] install the latest (game closed)
 - [x] version 0.0.N, up by one per install (now 0.0.40); proper semver at release
-- [ ] whole-page controls in a new bar under the search box, above the categories (Enable all / Disable all)
-- [ ] category Enable all / Disable all inline, right of the rename/move buttons
-- [ ] author on the row, somewhere other than above the Category button
+- [x] whole-page controls in a new bar under the search box, above the categories (Enable all / Disable all)
+- [x] category Enable all / Disable all inline, right of the rename/move buttons
+- [x] author on the row, somewhere other than above the Category button (end of the tag line, dim)
 - [ ] then the relaunch check (round 3 note)
