@@ -17,7 +17,7 @@ static class RowStrip
 
     public static void Apply(IList<NModMenuRow> rows, Func<NModMenuRow, IEnumerable<MenuItem>> actions)
     {
-        var order = LoadOrder.Mods(rows).Select((m, i) => (m, i)).ToDictionary(p => p.m, p => p.i);
+        var order = LoadOrder.Mods(rows).Select((m, i) => (m, i)).DistinctBy(p => p.m).ToDictionary(p => p.m, p => p.i);
         foreach (var row in rows)
         {
             RemoveStrip(row);
