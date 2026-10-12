@@ -4,13 +4,40 @@ Short notes for Jordan: what to look for after each install. Newest first.
 
 ## Not installed yet
 
+- (nothing yet)
+
+## Installed 2026-10-12 (night): version 0.0.41
+
 Main list
 - A bar under the search box: "All mods (53)" (or "Search matches (4)" while searching), **Enable all / Disable all** for those mods (one undo step), and **Expand all / Collapse all** on the right.
 - Category headers: **Enable all / Disable all** at the far right, over the tickboxes (Uncategorized too). Greyed out when there's nothing to do.
-- Each row's tag line ends with the author, dim: "by symphony".
+- Search box says just "Search".
+
+Rows
+- The mod's card shows after **half a second over the title** (not the whole row). It starts with "id • Enabled".
+- The notepad is smaller and sits right after the title, before the original name. Hovering it shows the card after a tenth of a second.
+- **Grace period:** once a card closes, any other card (titles, notepads, tags, authors) opens at once for twice its delay. Moving down the list doesn't wait each time.
+- A **red pip** before the title marks a Workshop update in the last week (it replaces the Updated tag). Hover it for the date.
+- A little more room between the title and its tag line.
+- The author ends the tag line: **click "by symphony"** to show their mods, Shift-click to add them to the search.
+
+Tags
+- Hovering a tag shows a styled card: what it means, then, after a gap, how to search for it (small, faint).
+- Gameplay: "This mod affects gameplay. All players will need it installed for multiplayer."
+- Tags in the info panel work like the rows' (card, click to search, Shift to add).
+- Search: `#tag` matches a tag, `@author` an author (quotes for spaces: `@"Two Words"`).
+
+Info panel
+- Status sits on the source line's middle.
+- The thumbnail sits a little further right, the picture against the box's right edge.
+- Head: Author (click to search), Updated, Compatibility. Below the description: Size, Published, Subscribers, Workshop tags, then dependencies.
+- Alias placeholder: "Your nickname for the mod".
 
 Relaunch
 - If mods that are on won't load (a needed mod is off or missing), **Relaunch Game** lists them first. **Enable needed mods** and **Disable mods that can't load** fix them right there (undoable). Then **Relaunch**, or **Relaunch anyway**, **Cancel**, or Esc. If nothing's wrong, it relaunches straight away as before.
+
+Main menu
+- Move button: "Click to place · right-click or Esc to cancel". The cursor jumps to the button's left end, halfway up, so you hold it by its edge.
 
 ## Installed 2026-10-12 (evening): version 0.0.40
 
