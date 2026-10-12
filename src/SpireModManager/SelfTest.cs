@@ -830,12 +830,19 @@ static class SelfTest
         History.RevertMods();
         await Wait(menu, 0.3);
         Check("Revert all restores the state from when the page opened", History.Entered?.Mods.SequenceEqual(History.CurrentMods()) == true
-            && History.AtEntered && HistoryBar.Counts() == (0, 0) && On(),
+            && History.AtEntered && HistoryBar.Counts() is (0, 0, _) && On(),
             $"mods {History.Entered?.Mods.SequenceEqual(History.CurrentMods())}, at {History.AtEntered}, counts {HistoryBar.Counts()}, on {On()}");
         Press("UndoButton"); // the list view's history: on/off comes back; the order has its own history
         await Wait(menu, 0.3);
         Check("Revert all can be undone", beforeRevert.Select(m => (m.Id, m.Source, m.Enabled)).ToHashSet()
             .SetEquals(History.CurrentMods().Select(m => (m.Id, m.Source, m.Enabled))), string.Join(", ", History.CurrentMods()));
+        Check("after an undo the right panel lists the changes", screen.GetNode("%ModInfoContainer").GetNodeOrNull<Control>(HistoryBar.ViewName) is { Visible: true }
+            && screen.GetNode<Control>("%ModInfoContainer/ModTitle").Visible == false);
+        await Capture(screen, outDir, "14b-changes-list");
+        History.Enter(); // as when the page opens again
+        await Wait(menu, 0.2);
+        Check("on (re)entering the page, Undo and Revert all agree: nothing to undo", !History.CanUndo && History.AtEntered
+            && screen.FindChild("UndoButton", true, false) is BaseButton { Disabled: true } && screen.FindChild("RevertAllButton", true, false) is BaseButton { Disabled: true });
 
         // Separate histories: an order change made in Load Order isn't undone from the list view.
         Click(screen.GetNode<NButton>("SpireModManagerLoadOrderToggle"));
