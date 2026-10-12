@@ -453,7 +453,7 @@ Jordan's notes of 2026-10-12 (night), from the details page screenshot.
 
 ## Backlog (round 10)
 - [ ] long titles, descriptions, tags and other text: how they should fit
-- [ ] hover the thumbnail for 0.2 s: the full image (at most 800 wide or high)
+- [x] hover the thumbnail for 0.2 s: the full image (at most 800 wide or high)
 
 # Round 11 (after round 10)
 
