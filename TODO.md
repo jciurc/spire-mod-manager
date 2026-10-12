@@ -342,7 +342,7 @@ Jordan's notes of 2026-10-12.
 - [x] (fix) Move button: the button jumps to the mouse and then doesn't follow; the hint stays on screen (even on other pages); Esc puts it back
 
 ## Backlog (round 6)
-- [ ] click a tag to filter by it; Shift-click adds more tags
+- [x] click a tag to filter by it; Shift-click adds more tags (searches #tag)
 - [ ] profile details panel (start of the options page): name, updated date, Save/Rename/Duplicate/Delete, a description, linked load-order profile, enabled mods, unsaved changes as a diff
 
 # Round 7
