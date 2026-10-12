@@ -4,6 +4,10 @@ Short notes for Jordan: what to look for after each install. Newest first.
 
 ## Not installed yet
 
+- (nothing yet)
+
+## Installed 2026-10-12 (late night): version 0.0.42
+
 Rows (round 12)
 - Recently updated: a small **red gem** before the title instead of the dot. It goes once you open the mod (remembered between sessions, until its next update). The panel still says "Recently updated".
 - The update card ("Updated on the Workshop on …") is wider, so it doesn't wrap early.
