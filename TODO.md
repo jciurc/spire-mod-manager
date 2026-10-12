@@ -444,7 +444,7 @@ Jordan's notes of 2026-10-12 (night), from the details page screenshot.
 - [ ] "Recently updated" link on the details page (after the status) opens the mod's patch notes (when there are any): id, author, update date, the notes
 
 ## Tests
-- [ ] a mod with very long details (title, description, tags, notes...) as an ongoing screenshot of the edge case; not solved yet
+- [x] a mod with very long details (title, description, tags, notes...) as an ongoing screenshot of the edge case; not solved yet
 
 ## Added during round 10
 - [x] search placeholder: just "Search"
