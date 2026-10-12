@@ -2,6 +2,8 @@ using Godot;
 using HarmonyLib;
 using MegaCrit.Sts2.Core.Logging;
 using MegaCrit.Sts2.Core.Modding;
+using MegaCrit.Sts2.Core.Localization;
+using MegaCrit.Sts2.Core.Nodes;
 using MegaCrit.Sts2.Core.Nodes.CommonUi;
 using MegaCrit.Sts2.Core.Nodes.Screens.MainMenu;
 using MegaCrit.Sts2.Core.Nodes.Screens.ModdingScreen;
@@ -253,4 +255,36 @@ static class ShortcutsPatch
 static class RowSelectedPatch
 {
     static void Postfix(NModMenuRow row) => CategoryList.Selected = row.Mod;
+}
+
+// The game's "mod not loaded" popup when a mod is installed while it runs: our wording ("New Mod Added"), and
+// at most one every 30 seconds (subscribing to several mods at once used to stack them up).
+[HarmonyPatch(typeof(NGame), "OnNewModDetected")]
+static class NewModPopupPatch
+{
+    const ulong EveryMs = 30_000;
+    static ulong _lastShown;
+
+    static bool Prefix()
+    {
+        try
+        {
+            var now = Time.GetTicksMsec();
+            if ((_lastShown != 0 && now - _lastShown < EveryMs) || NModalContainer.Instance is not { } modals
+                || modals.GetChildren().OfType<NErrorPopup>().Any())
+                return false;
+            if (NErrorPopup.Create(new LocString("settings_ui", "SPIRE_MOD_MANAGER.NEW_MOD_TITLE"),
+                    new LocString("settings_ui", "SPIRE_MOD_MANAGER.NEW_MOD_BODY"), null, showReportBugButton: false) is { } popup)
+            {
+                modals.Add(popup);
+                _lastShown = now;
+            }
+            return false;
+        }
+        catch (Exception e)
+        {
+            Log.Error($"[{ModEntry.ModId}] Could not show the new mod popup, showing the game's: {e}");
+            return true;
+        }
+    }
 }

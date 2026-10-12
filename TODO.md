@@ -393,6 +393,8 @@ Jordan's notes of 2026-10-12 (evening).
 
 ## Other
 - [ ] Ctrl+S saves the current profile
+- [x] new mod popup: "New Mod Added" / "New mods were detected, and will require a restart to be enabled."; at most one per 30 s
 
 ## Backlog (round 8)
+- [ ] tag suggestions: tags already used across mods in a dropdown under the tag box, filtered as you type, arrow keys to pick, comma accepts
 - [ ] back/forward view history: previous active mod (opened in the panel), Load Order page changes; Vanilla View skipped
