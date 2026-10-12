@@ -109,10 +109,7 @@ static class HistoryBar
                 Update();
             }
             else
-            {
                 HideBack(info); // leaving the page
-                PatchNotes.Close(info);
-            }
         };
         History.Changed += Update;
         History.Restored += Restored;
@@ -266,7 +263,6 @@ static class HistoryBar
         var info = screen.GetNode<Control>("%ModInfoContainer");
         var view = info.GetNodeOrNull<Control>(ViewName) ?? AddList(info);
         HideBack(info);
-        PatchNotes.Close(info);
         if (!view.Visible)
         {
             // Everything else in the panel steps aside (and comes back when a mod is picked).
