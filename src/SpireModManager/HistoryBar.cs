@@ -7,9 +7,10 @@ namespace SpireModManager;
 
 // Along the bottom right, before Relaunch Game:
 // - Two lines: "Mods enabled 23 (+1 -3) ↕2", how many mods are on now and how many were turned on and off
-//   and moved in the load order since launch; then "Changes 5", everything else that changed (edited mods,
-//   profiles). Hovering shows them apart; clicking opens (or closes) the full list in the right
-//   panel: switched profile, each mod enabled or disabled, each move, each edit, profiles added or removed.
+//   and moved in the load order since launch; then "Changes 5", everything else that changed (mods installed
+//   since launch, edited mods, profiles). Hovering shows them apart; clicking opens (or closes) the full list
+//   in the right panel: switched profile, each mod enabled or disabled, each mod installed (and whether it
+//   loads after a relaunch), each move, each edit, profiles added or removed.
 // - Undo, Redo (their shortcuts underneath), Revert all.
 static class HistoryBar
 {
@@ -19,7 +20,7 @@ static class HistoryBar
     public const string ViewName = "SpireModManagerChangesView";
     const string HiddenMeta = "spire_mod_manager_hidden_by_changes";
     static readonly Color Cream = new(1, 0.964706f, 0.886275f);
-    const string Added = "#a6e3a1", Removed = "#f2a3a3", Moved = "#8ec5ff", Edited = "#e8cf7a", Dim = "#fff6e280";
+    const string Added = "#a6e3a1", Removed = "#f2a3a3", Moved = "#8ec5ff", Edited = "#e8cf7a", New = "#7fd6c8", Dim = "#fff6e280";
 
     // The screen our keyboard shortcuts act on, while it exists.
     public static NModdingScreen? Screen { get; private set; }
@@ -76,7 +77,8 @@ static class HistoryBar
             redo.Disabled = !History.CanRedo;
             revert.Disabled = History.AtEntered;
             var (on, off, moved) = Counts();
-            var enabled = ModManager.Mods.Count(m => m.manifest?.id is { } id && id != ModEntry.ModId && Dependencies.IsOn(m));
+            var enabled = ModManager.Mods.Count(m => m.manifest?.id is { } id && id != ModEntry.ModId && Dependencies.IsOn(m))
+                + Installed.Mods.Count(Installed.On); // on after a relaunch, new mods included
             changes.Text = $"{Menus.Text("SPIRE_MOD_MANAGER.MODS_ENABLED")} {enabled} ([color={Added}]+{on}[/color] [color={Removed}]-{off}[/color])"
                 + $"  [color={Moved}]↕{moved}[/color]\n{Menus.Text("SPIRE_MOD_MANAGER.CHANGES")} [color={Edited}]{OtherChanges()}[/color]";
             if (info.GetNodeOrNull<Control>(ViewName) is { Visible: true } view)
@@ -106,6 +108,7 @@ static class HistoryBar
         History.Changed += Update;
         History.Restored += Restored;
         Profiles.Switched += Update;
+        Installed.Added += Update;
         Screen = screen;
         bar.TreeExiting += () =>
         {
@@ -114,6 +117,7 @@ static class HistoryBar
             History.Changed -= Update;
             History.Restored -= Restored;
             Profiles.Switched -= Update;
+            Installed.Added -= Update;
         };
         Update();
     }
@@ -135,14 +139,14 @@ static class HistoryBar
         return (changed.Count(c => c.Enabled), changed.Count(c => !c.Enabled), Moves().Count);
     }
 
-    // The second line's count: edited mods, profiles added or removed, and a switched profile (moves are on
-    // the first line).
+    // The second line's count: mods installed since launch, edited mods, profiles added or removed, and a
+    // switched profile (moves are on the first line).
     static int OtherChanges()
     {
         if (History.Loaded is not { } loaded)
             return 0;
         var (edited, profiles) = DataChanges(loaded.Store, Store.EditsJson());
-        return edited.Count + profiles.Count + (Switch() != null ? 1 : 0);
+        return Installed.Mods.Count + edited.Count + profiles.Count + (Switch() != null ? 1 : 0);
     }
 
     // The summary's lines (BBCode): a switched profile, then each kind of change with its count.
@@ -158,6 +162,8 @@ static class HistoryBar
             lines.Add($"[color={Added}]{Menus.Format("SPIRE_MOD_MANAGER.SUMMARY_ON", ("count", on.ToString()))}[/color]");
         if (off > 0)
             lines.Add($"[color={Removed}]{Menus.Format("SPIRE_MOD_MANAGER.SUMMARY_OFF", ("count", off.ToString()))}[/color]");
+        if (Installed.Mods.Count is var installed and > 0)
+            lines.Add($"[color={New}]{Menus.Format(installed == 1 ? "SPIRE_MOD_MANAGER.SUMMARY_INSTALLED_ONE" : "SPIRE_MOD_MANAGER.SUMMARY_INSTALLED", ("count", installed.ToString()))}[/color]");
         if (moved > 0)
             lines.Add($"[color={Moved}]{Menus.Format("SPIRE_MOD_MANAGER.SUMMARY_ORDER", ("count", moved.ToString()))}[/color]");
         var (edited, profiles) = DataChanges(loaded.Store, Store.EditsJson());
@@ -194,6 +200,13 @@ static class HistoryBar
         {
             var key = enabled ? "SPIRE_MOD_MANAGER.CHANGE_ON" : "SPIRE_MOD_MANAGER.CHANGE_OFF";
             entries.Add(new Entry(enabled ? "on" : "off", Menus.Format(key, ("mod", Name(mod))), Escape(Name(mod))));
+        }
+        foreach (var mod in Installed.Mods.OrderBy(Name))
+        {
+            // Under the name: whether it loads after a relaunch.
+            var state = Menus.Text(Installed.On(mod) ? "SPIRE_MOD_MANAGER.INSTALLED_ON" : "SPIRE_MOD_MANAGER.INSTALLED_OFF");
+            entries.Add(new Entry("installed", Menus.Format("SPIRE_MOD_MANAGER.CHANGE_INSTALLED", ("mod", Name(mod)), ("state", state)),
+                $"{Escape(Name(mod))}\n        [color={Dim}][font_size=15]{Escape(state)}[/font_size][/color]"));
         }
         foreach (var (mod, before, after) in Moves())
             entries.Add(new Entry("order", Menus.Format("SPIRE_MOD_MANAGER.CHANGE_MOVED", ("mod", Name(mod)), ("from", before.ToString()), ("to", after.ToString())),
@@ -298,6 +311,7 @@ static class HistoryBar
             text.Append(line.Rich).Append('\n');
         Section("SPIRE_MOD_MANAGER.SECTION_ON", Added, "on");
         Section("SPIRE_MOD_MANAGER.SECTION_OFF", Removed, "off");
+        Section("SPIRE_MOD_MANAGER.SECTION_INSTALLED", New, "installed");
         Section("SPIRE_MOD_MANAGER.SECTION_ORDER", Moved, "order");
         Section("SPIRE_MOD_MANAGER.SECTION_EDITED", Edited, "edited");
         Section("SPIRE_MOD_MANAGER.SECTION_PROFILES", Edited, "profiles");

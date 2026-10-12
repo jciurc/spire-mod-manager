@@ -7,6 +7,7 @@ using MegaCrit.Sts2.Core.Nodes;
 using MegaCrit.Sts2.Core.Nodes.CommonUi;
 using MegaCrit.Sts2.Core.Nodes.Screens.MainMenu;
 using MegaCrit.Sts2.Core.Nodes.Screens.ModdingScreen;
+using MegaCrit.Sts2.Core.Saves;
 
 namespace SpireModManager;
 
@@ -141,7 +142,7 @@ static class ModToggledPatch
             CategoryList.RefreshStrips(content);
             ModDetails.Refresh(__instance); // its problems ("Needs X, which is off") follow too
             Layout.UpdateDot(__instance);
-            if (LoadOrder.OrderChanged)
+            if (LoadOrder.OrderChanged || Installed.Mods.Any(Installed.On)) // the game only checks mods it loaded
                 __instance.GetNode<Control>("%PendingChangesLabel").Visible = true;
         }
         catch (Exception e)
@@ -285,6 +286,29 @@ static class NewModPopupPatch
         {
             Log.Error($"[{ModEntry.ModId}] Could not show the new mod popup, showing the game's: {e}");
             return true;
+        }
+    }
+}
+
+// The game's tickbox only updates a mod's existing entry in the saved list, and a mod installed while the
+// game runs has none: unticking it changed nothing, and it would still load after a relaunch. Add the entry
+// first (on, the game's default), so the tickbox has something to change.
+[HarmonyPatch(typeof(NModMenuRow), "OnTickboxToggled")]
+static class NewModTogglePatch
+{
+    static void Prefix(NModMenuRow __instance)
+    {
+        try
+        {
+            if (__instance.Mod is not { manifest.id: { } id } mod)
+                return;
+            var settings = SaveManager.Instance.SettingsSave.ModSettings ??= new ModSettings();
+            if (!settings.ModList.Any(e => e.Id == id && e.Source == mod.modSource))
+                settings.ModList.Add(new SettingsSaveMod(mod) { IsEnabled = true });
+        }
+        catch (Exception e)
+        {
+            Log.Error($"[{ModEntry.ModId}] Could not add a saved entry for a new mod: {e}");
         }
     }
 }

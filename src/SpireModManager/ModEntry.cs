@@ -21,6 +21,7 @@ public static class ModEntry
     public static void Init()
     {
         new Harmony(ModId).PatchAll(typeof(ModEntry).Assembly);
+        Installed.Watch();
         Log.Info($"[{ModId}] Initialized{(IsDevRun ? " (dev run)" : "")}");
     }
 
@@ -131,11 +132,12 @@ public static class ModEntry
     }
 
     // True when the saved mod list differs from what this session loaded, i.e. a relaunch would change
-    // something. Same test as the vanilla Modding screen's pending-changes warning.
+    // something: the vanilla Modding screen's pending-changes test, plus the load order and mods installed
+    // since launch that are on.
     public static bool HasPendingChanges()
     {
         var settings = SaveManager.Instance.SettingsSave.ModSettings;
-        return LoadOrder.OrderChanged || ModManager.Mods.Any(mod =>
+        return LoadOrder.OrderChanged || Installed.Mods.Any(Installed.On) || ModManager.Mods.Any(mod =>
         {
             var disabled = settings?.IsModDisabled(mod) ?? false;
             return (mod.state == ModLoadState.Disabled && !disabled) || (mod.state == ModLoadState.Loaded && disabled);
