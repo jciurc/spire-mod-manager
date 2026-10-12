@@ -54,7 +54,7 @@ static class ModdingScreenPatch
         try
         {
             var size = new Vector2(220, 70);
-            var button = ModEntry.AddButton(__instance, "SPIRE_MOD_MANAGER.RELAUNCH_BUTTON", size, ModEntry.Relaunch);
+            var button = ModEntry.AddButton(__instance, "SPIRE_MOD_MANAGER.RELAUNCH_BUTTON", size, () => RelaunchCheck.Relaunch(__instance));
             button.Name = "SpireModManagerRelaunchButton";
 
             // Screen-space slot: right edge matches the mod info panel (x 1727), centred on the pending-changes row (y 1012-1056).
@@ -211,10 +211,10 @@ static class ModInfoClearPatch
 [HarmonyPatch(typeof(NInputManager), "_UnhandledKeyInput")]
 static class ShortcutsPatch
 {
-    // Escape closes an open menu of ours, and nothing else happens (the game would leave the page).
+    // Escape closes an open menu or dialog of ours, and nothing else happens (the game would leave the page).
     static bool Prefix(InputEvent inputEvent)
     {
-        if (inputEvent is not InputEventKey { Keycode: Key.Escape, Pressed: true, Echo: false } || !MenuPanel.Close())
+        if (inputEvent is not InputEventKey { Keycode: Key.Escape, Pressed: true, Echo: false } || !(MenuPanel.Close() || RelaunchCheck.Close()))
             return true;
         ((SceneTree)Engine.GetMainLoop()).Root.SetInputAsHandled();
         return false;
@@ -226,7 +226,7 @@ static class ShortcutsPatch
         {
             if (inputEvent is not InputEventKey { Pressed: true, Echo: false, CtrlPressed: true } key
                 || HistoryBar.Screen is not { } screen || !GodotObject.IsInstanceValid(screen) || !screen.IsVisibleInTree()
-                || Store.Data.VanillaView)
+                || Store.Data.VanillaView || RelaunchCheck.IsOpen)
                 return;
             switch (key.Keycode)
             {
