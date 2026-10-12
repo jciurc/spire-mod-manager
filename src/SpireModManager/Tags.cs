@@ -9,8 +9,8 @@ namespace SpireModManager;
 // - Library, when another installed mod depends on it;
 // - Gameplay, from the manifest's affects_gameplay (what multiplayer compares; mods without it get no tag);
 // - Cosmetic, when the mod's Workshop tags say it's about looks (skins, visuals, UI, textures).
-// The player's own tags are typed in the info panel or a mod's right-click menu and drawn outline-only, so
-// they read differently from the automatic (filled) ones. Hovering a chip explains it. All are searchable.
+// The player's own tags are typed in the info panel or a mod's right-click menu and drawn fainter, so they
+// read differently from the automatic ones. Hovering a chip explains it. All are searchable.
 static class Tags
 {
     public record Chip(string Text, Color Color, bool Custom = false, string? Tip = null);
@@ -76,7 +76,7 @@ static class Tags
         {
             MouseFilter = Control.MouseFilterEnum.Pass, SizeFlagsVertical = Control.SizeFlags.ShrinkCenter,
         };
-        var card = clicked == null ? Escape(tip) : $"{Escape(tip)}\n\n{Hint(Menus.Text("SPIRE_MOD_MANAGER.TAG_CLICK_TIP"))}";
+        var card = clicked == null ? Escape(tip) : $"{Escape(tip)}\n\n{Hint(Menus.Text("SPIRE_MOD_MANAGER.SEARCH_CLICK_TIP"))}";
         Hover.Watch(box, "SpireModManagerTagCard", CardDelay, () => card, width: 320);
         if (clicked != null)
         {
@@ -92,16 +92,15 @@ static class Tags
         }
         var style = new StyleBoxFlat
         {
-            // Automatic tags are filled; the player's own are outline only.
-            BgColor = new Color(chip.Color, chip.Custom ? 0f : 0.18f), BorderColor = new Color(chip.Color, chip.Custom ? 0.6f : 0.8f),
+            // No outline, small corners; the player's own tags are fainter than the automatic ones.
+            BgColor = new Color(chip.Color, chip.Custom ? 0.1f : 0.2f),
             ContentMarginLeft = 6, ContentMarginRight = 6, ContentMarginTop = 0, ContentMarginBottom = 0,
         };
-        style.SetBorderWidthAll(1);
-        style.SetCornerRadiusAll(8);
+        style.SetCornerRadiusAll(2);
         box.AddThemeStyleboxOverride("panel", style);
         var label = new Label { Text = chip.Text, MouseFilter = Control.MouseFilterEnum.Ignore };
         label.AddThemeFontOverride("font", ResourceLoader.Load<Font>("res://themes/kreon_regular_shared.tres"));
-        label.AddThemeFontSizeOverride("font_size", 13);
+        label.AddThemeFontSizeOverride("font_size", 12);
         label.AddThemeColorOverride("font_color", chip.Color);
         box.AddChild(label);
         return box;

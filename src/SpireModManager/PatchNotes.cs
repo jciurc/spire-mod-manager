@@ -107,12 +107,18 @@ static class PatchNotes
     }
 
     // The updates for a Workshop id: fetched once (again after a failure).
+    // Light on the network: only when the player opens a mod's notes, once per mod per session; after a failure
+    // (offline, or Steam asking us to slow down) nothing is asked again for a couple of minutes.
     public static Task<List<Entry>> Get(ulong workshopId)
     {
-        if (!Fetched.TryGetValue(workshopId, out var task) || task.IsFaulted)
-            Fetched[workshopId] = task = Fetch(workshopId);
+        var cooling = System.Environment.TickCount64 < _quietUntil;
+        if (!Fetched.TryGetValue(workshopId, out var task) || (task.IsFaulted && !cooling))
+            Fetched[workshopId] = task = cooling ? Task.FromException<List<Entry>>(new TimeoutException("waiting after a failed request")) : Fetch(workshopId);
         return task;
     }
+
+    const long QuietMs = 120_000;
+    static long _quietUntil;
 
     static async Task<List<Entry>> Fetch(ulong workshopId)
     {
@@ -123,9 +129,17 @@ static class PatchNotes
         {
             using var request = new System.Net.Http.HttpRequestMessage(System.Net.Http.HttpMethod.Get, $"https://steamcommunity.com/sharedfiles/filedetails/changelog/{workshopId}?l=english");
             request.Headers.UserAgent.ParseAdd("Mozilla/5.0 (SpireModManager)");
-            using var response = await Http.SendAsync(request);
-            response.EnsureSuccessStatusCode();
-            html = await response.Content.ReadAsStringAsync();
+            try
+            {
+                using var response = await Http.SendAsync(request);
+                response.EnsureSuccessStatusCode();
+                html = await response.Content.ReadAsStringAsync();
+            }
+            catch (Exception)
+            {
+                _quietUntil = System.Environment.TickCount64 + QuietMs;
+                throw;
+            }
         }
         return Parse(html);
     }
