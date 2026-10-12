@@ -43,7 +43,7 @@ static class RowStrip
 
             var note = new RichTextLabel
             {
-                Name = "Needs", Text = Needs(row.Mod, order, Store.Data.LoadOrderView), BbcodeEnabled = true, ScrollActive = false,
+                Name = "Needs", Text = string.Join("    ", new[] { Needs(row.Mod, order, Store.Data.LoadOrderView), RequiredFor(row.Mod) }.Where(s => s.Length > 0)), BbcodeEnabled = true, ScrollActive = false,
                 AutowrapMode = TextServer.AutowrapMode.Off, VerticalAlignment = VerticalAlignment.Center,
                 SizeFlagsHorizontal = Control.SizeFlags.ExpandFill, SizeFlagsVertical = Control.SizeFlags.Fill,
                 ClipContents = true, MouseFilter = Control.MouseFilterEnum.Ignore,
@@ -78,7 +78,8 @@ static class RowStrip
 
     // "Needs: BaseLib, RitsuLib" with each dependency coloured: green when fine, red (and why) when it is
     // missing, off, or loads after this mod. In Load Order every one says "before" or "after".
-    // Disabled mods aren't checked: their dependencies don't matter until they're on.
+    // Disabled mods aren't checked for problems (their dependencies don't matter until they're on), but each
+    // dependency is still green when it's on and red when it isn't.
     static string Needs(Mod? mod, IReadOnlyDictionary<Mod, int> order, bool loadOrder)
     {
         var deps = Dependencies.Of(mod);
@@ -97,7 +98,8 @@ static class RowStrip
                 Dependencies.Problem.Off => (Menus.Text("SPIRE_MOD_MANAGER.DEP_OFF"), ProblemHex),
                 Dependencies.Problem.LoadsBefore => (Menus.Text("SPIRE_MOD_MANAGER.DEP_AFTER"), ProblemHex),
                 _ when loadOrder && on => (Menus.Text("SPIRE_MOD_MANAGER.DEP_BEFORE"), FineHex),
-                _ => (null, on ? FineHex : null),
+                // A mod that's off: no problems to report yet, but each dependency still shows whether it's on.
+                _ => (null, Dependencies.Find(id) is { } dep && Dependencies.IsOn(dep) ? FineHex : ProblemHex),
             };
             if (word != null)
                 return $"[color={NameHex}]{name}[/color] [color={color}]{word}[/color]";
@@ -106,7 +108,19 @@ static class RowStrip
         return $"{Menus.Text("SPIRE_MOD_MANAGER.NEEDS_LABEL")}: {string.Join(", ", parts)}";
     }
 
-    const string FineHex = "#9fdc9f", ProblemHex = "#ff8070", NameHex = "#fff6e2";
+    // "Required for 3 mods": how many mods that are on need this one; red when this one is off.
+    static string RequiredFor(Mod? mod)
+    {
+        if (mod?.manifest?.id is not { } id)
+            return "";
+        var count = ModManager.Mods.Count(m => m != mod && Dependencies.IsOn(m) && Dependencies.Of(m).Contains(id));
+        if (count == 0)
+            return "";
+        var text = Menus.Format(count == 1 ? "SPIRE_MOD_MANAGER.REQUIRED_FOR_ONE" : "SPIRE_MOD_MANAGER.REQUIRED_FOR", ("count", count.ToString()));
+        return $"[color={(Dependencies.IsOn(mod) ? RequiredHex : ProblemHex)}]{text}[/color]";
+    }
+
+    const string FineHex = "#9fdc9f", ProblemHex = "#ff8070", NameHex = "#fff6e2", RequiredHex = "#e8cf7a";
 
     static string Escape(string text) => text.Replace("[", "[lb]");
 }
