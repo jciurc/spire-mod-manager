@@ -18,6 +18,8 @@ static class ProfileBar
     static readonly Color Cream = new(1, 0.964706f, 0.886275f);
     static readonly Color UnsavedColor = new(0.96f, 0.62f, 0.47f); // a soft coral: not gold, not an error
     static readonly Color WarningColor = new(1f, 0.5f, 0.44f);
+    static readonly Color UnsavedMark = new(1f, 0.42f, 0.42f); // the list's "*" for a profile with unsaved changes
+    const string UnsavedCard = "SpireModManagerUnsavedCard";
 
     enum Naming { Rename, Blank, Duplicate, SaveAsNew }
 
@@ -90,6 +92,18 @@ static class ProfileBar
         var unsaved = new Label { Name = "Unsaved", Text = Menus.Text("SPIRE_MOD_MANAGER.UNSAVED"), VerticalAlignment = VerticalAlignment.Center };
         Style(unsaved, "res://themes/kreon_regular_shared.tres", 16, UnsavedColor);
         row.AddChild(unsaved);
+        // Hovering it lists this profile's own unsaved changes (not everything since launch).
+        unsaved.MouseFilter = Control.MouseFilterEnum.Stop;
+        unsaved.MouseDefaultCursorShape = Control.CursorShape.Help;
+        unsaved.MouseEntered += () =>
+        {
+            var (on, off) = Profiles.UnsavedChanges();
+            var lines = new List<string> { Menus.Format("SPIRE_MOD_MANAGER.UNSAVED_TITLE", ("name", Profiles.Active?.Name ?? "")) };
+            lines.AddRange(on.Select(n => $"[color=#a6e3a1]+ {n.Replace("[", "[lb]")}[/color]"));
+            lines.AddRange(off.Select(n => $"[color=#f2a3a3]− {n.Replace("[", "[lb]")}[/color]"));
+            Hover.Show(screen, UnsavedCard, string.Join("\n", lines), unsaved.GlobalPosition + new Vector2(0, unsaved.Size.Y + 6), width: 320);
+        };
+        unsaved.MouseExited += () => Hover.Hide(screen, UnsavedCard);
         var unsavedButtons = ButtonBox("UnsavedButtons");
         row.AddChild(unsavedButtons);
 
@@ -124,8 +138,8 @@ static class ProfileBar
 
         // The profile list, the active one marked; a second press on the picker closes it.
         picker.Pressed += () => Menus.Show(bar, Store.Data.Profiles.Select(p => new MenuItem(
-                p.Edited != null ? $"{p.Name} *" : p.Name, () => Profiles.SwitchTo(p, screen),
-                Checked: p == Profiles.Active, Radio: true, Detail: Profiles.Details(p))).ToList(),
+                p.Name, () => Profiles.SwitchTo(p, screen), Checked: p == Profiles.Active, Radio: true, Detail: Profiles.Details(p),
+                Badge: p.Edited != null ? (" *", UnsavedMark) : null)).ToList(),
             at: picker.GlobalPosition + new Vector2(0, picker.Size.Y + 4), toggleKey: "profiles");
         picker.GuiInput += e =>
         {
