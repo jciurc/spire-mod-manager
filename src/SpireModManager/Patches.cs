@@ -13,8 +13,9 @@ using MegaCrit.Sts2.Core.Saves;
 namespace SpireModManager;
 
 // Every patch body is wrapped in try/catch: postfixes on one method share a call chain, so an exception
-// here would also skip other mods' postfixes. Priority.First keeps ours from being skipped by theirs
-// (Better Mod Menu 1.1.1 throws in its NModdingScreen._Ready postfix on the 0.111 beta).
+// here would also skip other mods' postfixes. Priority.First and HarmonyBefore keep ours from being skipped by
+// theirs (Better Mod Menu 1.1.1 throws in its NModdingScreen._Ready and OnRowSelected postfixes on the 0.111
+// beta). Better Mod Menu can run alongside: see Bmm.
 
 // "Spire Mod Manager" button in the main menu's lower-left corner (the lower right holds the vanilla
 // "MODDED (n)" label and its hover list), with a dot when a relaunch is pending.
@@ -66,13 +67,6 @@ static class ModdingScreenPatch
             Log.Error($"[{ModEntry.ModId}] Could not add the relaunch button: {e}");
         }
 
-        // Better Mod Menu rebuilds this same screen; two managers on one list fight. Step aside and say so.
-        if (ModEntry.BetterModMenuLoaded)
-        {
-            ModEntry.AddBetterModMenuNotice(__instance);
-            return;
-        }
-
         try
         {
             ProfileBar.Attach(__instance);
@@ -122,6 +116,28 @@ static class ModdingScreenPatch
         {
             Log.Error($"[{ModEntry.ModId}] Could not lay out the screen: {e}");
         }
+
+        // Better Mod Menu's _Ready postfix runs after this one and rebuilds the page its way (rows restyled, grouped,
+        // the list pushed down). Once that's done (deferred calls run in order, and its own deferred step comes after
+        // this): ours again, or its page in Vanilla View.
+        if (Bmm.Present)
+        {
+            var screen = __instance;
+            Callable.From(() =>
+            {
+                try
+                {
+                    if (!GodotObject.IsInstanceValid(screen))
+                        return;
+                    CategoryList.Apply(screen.GetNode<Control>("%ModsScrollContainer/Mask/Content"));
+                    Layout.Apply(screen);
+                }
+                catch (Exception e)
+                {
+                    Log.Error($"[{ModEntry.ModId}] Could not lay out the screen after Better Mod Menu: {e}");
+                }
+            }).CallDeferred();
+        }
     }
 }
 
@@ -130,11 +146,12 @@ static class ModdingScreenPatch
 [HarmonyPatch(typeof(NModdingScreen), nameof(NModdingScreen.OnModEnabledOrDisabled))]
 static class ModToggledPatch
 {
+    [HarmonyBefore(Bmm.HarmonyId)] // its postfix writes its profile file, which may throw
     static void Postfix(NModdingScreen __instance)
     {
         // Not while the screen is still adding its rows (it calls this once per row as it opens; ours are set up
-        // after), and not while Better Mod Menu runs the screen (see ModdingScreenPatch).
-        if (ModEntry.BetterModMenuLoaded || HistoryBar.Screen != __instance)
+        // after).
+        if (HistoryBar.Screen != __instance)
             return;
         try
         {
@@ -162,8 +179,8 @@ static class NewModPatch
 {
     static void Postfix(NModdingScreen __instance)
     {
-        if (ModEntry.BetterModMenuLoaded || HistoryBar.Screen != __instance)
-            return; // the screen's own setup (our parts come after), or Better Mod Menu's screen
+        if (HistoryBar.Screen != __instance)
+            return; // the screen's own setup (our parts come after)
         __instance.GetTree().CreateTimer(0.05).Timeout += () =>
         {
             try
@@ -179,14 +196,14 @@ static class NewModPatch
     }
 }
 
-// Info panel: our details and the player's fields, after the game fills it.
+// Info panel: our details and the player's fields, after the game fills it (and after Better Mod Menu: on our
+// views our title replaces its styled one, and our layout its description anchor).
 [HarmonyPatch(typeof(NModInfoContainer), nameof(NModInfoContainer.Fill))]
 static class ModInfoFillPatch
 {
+    [HarmonyAfter(Bmm.HarmonyId)]
     static void Postfix(NModInfoContainer __instance, Mod mod)
     {
-        if (ModEntry.BetterModMenuLoaded)
-            return;
         try
         {
             ModDetails.Fill(__instance, mod);
@@ -271,6 +288,7 @@ static class ShortcutsPatch
 [HarmonyPatch(typeof(NModdingScreen), nameof(NModdingScreen.OnRowSelected))]
 static class RowSelectedPatch
 {
+    [HarmonyBefore(Bmm.HarmonyId)] // Better Mod Menu 1.1.1 throws in its postfix here
     static void Postfix(NModMenuRow row) => CategoryList.Selected = row.Mod;
 }
 
@@ -348,8 +366,7 @@ static class RowLookPatch
     {
         try
         {
-            if (!ModEntry.BetterModMenuLoaded)
-                RowTitles.Look(row, RowState.Selected(row), focused ?? RowState.Focused(row));
+            RowTitles.Look(row, RowState.Selected(row), focused ?? RowState.Focused(row));
         }
         catch (Exception e)
         {

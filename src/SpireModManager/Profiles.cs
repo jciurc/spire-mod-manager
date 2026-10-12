@@ -29,8 +29,7 @@ static class Profiles
         foreach (var profile in data.Profiles.Where(p => p.Disabled != null))
         {
             var disabled = profile.Disabled?.Select(r => r.Id).ToHashSet() ?? [];
-            // Better Mod Menu stays off in converted profiles: this mod replaces it.
-            profile.Mods = Installed().Select(m => new ProfileMod(m.Id, m.Source, !disabled.Contains(m.Id) && m.Id != "BetterModMenu")).ToList();
+            profile.Mods = Installed().Select(m => new ProfileMod(m.Id, m.Source, !disabled.Contains(m.Id))).ToList();
             profile.Disabled = null;
             changed = true;
         }
@@ -91,7 +90,7 @@ static class Profiles
     {
         if (Active is not { Edited: not null } profile)
             return ([], []);
-        var changed = Current().Where(c => c.Id != ModEntry.ModId && c.Enabled != EnabledIn(profile.Mods, c.Id, c.Source)).ToList();
+        var changed = Current().Where(c => !Manager(c.Id) && c.Enabled != EnabledIn(profile.Mods, c.Id, c.Source)).ToList();
         string Name(ProfileMod m) => Dependencies.Find(m.Id)?.manifest?.name ?? m.Id;
         return (changed.Where(c => c.Enabled).Select(Name).ToList(), changed.Where(c => !c.Enabled).Select(Name).ToList());
     }
@@ -185,14 +184,14 @@ static class Profiles
     // Beside the picker: "12 mods", how many are on in the mod list right now (this mod not counted).
     public static string CountText()
     {
-        var on = Current().Count(m => m.Enabled && m.Id != ModEntry.ModId);
+        var on = Current().Count(m => m.Enabled && !Manager(m.Id));
         return Menus.Format(on == 1 ? "SPIRE_MOD_MANAGER.PROFILE_MODS_ONE" : "SPIRE_MOD_MANAGER.PROFILE_MODS", ("count", on.ToString()));
     }
 
     // For the profile list: "12 mods · Oct 11" (mods on, when last saved).
     public static string Details(Profile profile)
     {
-        var on = (profile.Edited ?? profile.Mods).Count(m => m.Enabled && m.Id != ModEntry.ModId);
+        var on = (profile.Edited ?? profile.Mods).Count(m => m.Enabled && !Manager(m.Id));
         var text = Menus.Format(on == 1 ? "SPIRE_MOD_MANAGER.PROFILE_MODS_ONE" : "SPIRE_MOD_MANAGER.PROFILE_MODS", ("count", on.ToString()));
         return profile.SavedAt is { } saved ? $"{text} · {saved:MMM d}" : text;
     }
@@ -205,7 +204,7 @@ static class Profiles
         {
             foreach (var mod in ModManager.Mods)
             {
-                if (mod.manifest?.id is not { } id)
+                if (mod.manifest?.id is not { } id || id == Bmm.ModId) // Better Mod Menu stays as it is
                     continue;
                 var enabled = id == ModEntry.ModId || EnabledIn(mods, id, mod.modSource);
                 var entry = settings.ModList.FirstOrDefault(e => e.Id == id && e.Source == mod.modSource);
@@ -222,12 +221,16 @@ static class Profiles
         }
     }
 
+    // Mod managers: this one (always on) and Better Mod Menu (left as it is). A profile never turns them on or off,
+    // and they aren't counted or listed as its changes.
+    static bool Manager(string id) => id is ModEntry.ModId or Bmm.ModId;
+
     static bool EnabledIn(List<ProfileMod> mods, string id, ModSource source) =>
         mods.FirstOrDefault(pm => pm.Id == id && pm.Source == source)?.Enabled ?? false;
 
-    // Same on/off for every installed mod (a mod a profile hasn't seen counts as off; this mod is always on).
+    // Same on/off for every installed mod (a mod a profile hasn't seen counts as off; the managers don't count).
     static bool Same(List<ProfileMod> current, List<ProfileMod> profile) =>
-        current.All(c => c.Id == ModEntry.ModId || c.Enabled == EnabledIn(profile, c.Id, c.Source));
+        current.All(c => Manager(c.Id) || c.Enabled == EnabledIn(profile, c.Id, c.Source));
 
     // The current list, plus the old list's entries for mods that aren't installed right now.
     static List<ProfileMod> Merge(List<ProfileMod> old, List<ProfileMod> current) =>

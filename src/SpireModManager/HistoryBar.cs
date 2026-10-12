@@ -337,7 +337,7 @@ static class HistoryBar
         if (content.GetChildren().OfType<NModMenuRow>().FirstOrDefault(r => r.Mod?.manifest?.id == modId) is not { } row)
             return;
         CategoryList.Reveal(content, modId, flash: true);
-        screen.OnRowSelected(row); // fills the panel, which closes the list
+        CategoryList.Select(screen, row); // fills the panel, which closes the list
         var info = screen.GetNode<Control>("%ModInfoContainer");
         if (info.GetNodeOrNull<Control>(BackName) is not { } back)
         {
