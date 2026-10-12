@@ -269,3 +269,16 @@ Jordan's notes of 2026-10-11 (evening), in his order.
 - [ ] row right-click menu: Add/Edit alias, Add/Edit notes, Add/Edit tags, each turning the menu into an inline editor (Save / Cancel back to the menu)
 - [ ] main menu button: Jordan's art (Pictures\symphony\design\spire manager button.png), our label, a hover look
 - [ ] right-click the main menu button to move it (soon, no rush)
+
+# Round 5
+
+Jordan's notes of 2026-10-11 (late).
+
+- [ ] (fix) Undo and Revert all buttons get out of sync
+- [ ] (fix) Load Order: hover dependency lines don't clear or follow when scrolling with the wheel (not dragging)
+- [ ] Load Order: a row is in the dragging state as soon as it's pressed (no need to move first)
+- [ ] a third count for load order in Changes, in blue: "Changes +0 -3 +0"; the tooltip's "Load order:" line in the same blue
+- [ ] Changes back down, left of the undo buttons
+- [ ] clicking Changes, Undo, Redo or Revert all shows the full changes list in the right panel
+- [ ] (fix) Undo empties the right panel
+- [ ] when only the profile changed, the tooltip still lists Enabled / Disabled / Load order lines
