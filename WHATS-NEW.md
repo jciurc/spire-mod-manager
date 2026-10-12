@@ -4,6 +4,9 @@ Short notes for Jordan: what to look for after each install. Newest first.
 
 ## Not installed yet
 
+Info panel
+- Hover the thumbnail for a fifth of a second: the whole picture, up to 800 px on its longer side.
+
 Picking several mods (main list)
 - **Ctrl-click** rows to pick them, **Shift-click** for a range, **Ctrl+A** for every mod shown. A category header's right-click menu has **Select all**. Picked rows are tinted blue. A plain click or **Esc** lets go.
 - **Right-click a picked mod**: on the left, the category for all of them (marked when they share one), New category, Enable all / Disable all. On the right, **"Editing N selected mods"** where the alias would be, then Tags and Notes:
