@@ -1361,17 +1361,6 @@ static class SelfTest
         await Wait(menu, 0.2);
         Check("Back returns to the details", view is { Visible: false } && info.GetNode<Control>("ModTitle").Visible);
         PatchNotes.TestFetch = null;
-
-        // Updated yesterday: unseen (the row's gem) until the mod is opened; seeing it is no edit (nothing to undo).
-        WorkshopInfo.TestSet(42, new WorkshopInfo.Details(DateTime.Now.AddDays(-30), DateTime.Now.AddDays(-1), [], [], 0, null));
-        var unseen = RowTitles.Unseen(mod) != null;
-        var couldUndo = History.CanUndo;
-        var changes = HistoryBar.Describe().Count;
-        RowTitles.Seen(mod, screen);
-        Check("a recent update is new until the mod is opened; seeing it isn't an edit", unseen && RowTitles.Unseen(mod) == null
-            && Store.Data.SeenUpdates.ContainsKey("SmmPatchNotesTest") && History.CanUndo == couldUndo && HistoryBar.Describe().Count == changes);
-        Store.Data.SeenUpdates.Remove("SmmPatchNotesTest");
-        WorkshopInfo.TestSet(42, null);
     }
 
     // Several mods at once on the main list: Select all in Uncategorized, Ctrl-click one away; the bar counts

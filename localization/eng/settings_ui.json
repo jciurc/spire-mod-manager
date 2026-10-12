@@ -78,7 +78,6 @@
   "SPIRE_MOD_MANAGER.TAG_LOCAL_TIP": "This mod is installed in the game's mods folder, not from the Steam Workshop",
   "SPIRE_MOD_MANAGER.TAG_NEW": "New",
   "SPIRE_MOD_MANAGER.TAG_NEW_TIP": "Installed since the game started; it loads after a relaunch",
-  "SPIRE_MOD_MANAGER.TAG_UPDATED_TIP": "Updated on the Workshop on {date}",
   "SPIRE_MOD_MANAGER.TAG_COSMETIC_TIP": "This mod adds visuals, such as character skins, battle animations, UI, or textures",
   "SPIRE_MOD_MANAGER.STATUS_ENABLED": "Enabled",
   "SPIRE_MOD_MANAGER.STATUS_DISABLED": "Disabled",
