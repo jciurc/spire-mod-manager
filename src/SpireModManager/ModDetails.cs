@@ -652,8 +652,12 @@ static class ModDetails
             {
                 row.SetMeta(PencilHoverMeta, true);
                 row.MouseEntered += () => ShowPencil(row, true);
-                row.MouseExited += () => ShowPencil(row, row.HasNode("AliasBox"));
+                // The row also "exits" when the mouse moves onto the pencil itself: only hide it once the mouse has
+                // really left the row.
+                row.MouseExited += () => ShowPencil(row, row.HasNode("AliasBox") || row.GetGlobalRect().HasPoint(row.GetGlobalMousePosition()));
             }
+            pencil.MouseEntered += () => ShowPencil(row, true);
+            pencil.MouseExited += () => ShowPencil(row, row.HasNode("AliasBox") || row.GetGlobalRect().HasPoint(row.GetGlobalMousePosition()));
         }
         PlacePencil(row);
     }
@@ -684,8 +688,12 @@ static class ModDetails
             Name = "AliasBox", Text = Store.InfoFor(id)?.Alias ?? "", PlaceholderText = row.Mod?.manifest?.name ?? id,
             SelectAllOnFocus = true, MaxLength = 80, ClearButtonEnabled = true,
         };
-        Style(box, "res://themes/kreon_regular_shared.tres", 18, new Color(NotesColor));
-        var field = new StyleBoxFlat { BgColor = new Color(0.05f, 0.08f, 0.12f), BorderColor = new Color(NotesColor) with { A = 0.5f }, ContentMarginLeft = 6, ContentMarginRight = 4 };
+        Style(box, "res://themes/kreon_regular_shared.tres", 17, new Color(NotesColor));
+        var field = new StyleBoxFlat
+        {
+            BgColor = new Color(0.05f, 0.08f, 0.12f), BorderColor = new Color(NotesColor) with { A = 0.5f },
+            ContentMarginLeft = 6, ContentMarginRight = 4, ContentMarginTop = 0, ContentMarginBottom = 0,
+        };
         field.SetBorderWidthAll(1);
         field.SetCornerRadiusAll(4);
         box.AddThemeStyleboxOverride("normal", field);
@@ -693,8 +701,9 @@ static class ModDetails
         row.AddChild(box);
         title.Visible = false; // not showing through behind the box
         ShowPencil(row, true);
-        box.Position = new Vector2(title.OffsetLeft, 2);
-        box.Size = new Vector2(Math.Max(240, row.Size.X - title.OffsetLeft - 160), 30);
+        // Over the title line only: the tags and notes below stay visible.
+        box.Position = new Vector2(title.OffsetLeft, 0);
+        box.Size = new Vector2(Math.Max(240, row.Size.X - title.OffsetLeft - 160), 26);
         box.GrabFocus();
 
         var done = false;
