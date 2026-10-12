@@ -9,8 +9,8 @@ namespace SpireModManager;
 //   their mod count and save date); while the mod list differs from the saved profile, "Unsaved •" and
 //   Save, Save as new, Discard beside it.
 // - Right: New, Duplicate, Rename, Delete (Rename and Delete also on right-click).
-// New, Duplicate, Save as new and Rename open a name box in the picker's place, with Save, Cancel and
-// Clear; a name that's empty or taken says so and can't be saved. Everything else hides meanwhile.
+// New, Duplicate, Save as new and Rename open a name box in the picker's place (with an inline ✕), Save
+// and Cancel; a name that's empty or taken says so and can't be saved. Everything else hides meanwhile.
 static class ProfileBar
 {
     const float Height = 40;
@@ -69,11 +69,15 @@ static class ProfileBar
         // The name box, in the picker's place while naming, with its buttons and a warning.
         var name = new LineEdit
         {
-            Name = "ProfileName", Visible = false, MaxLength = 40, SelectAllOnFocus = true, ContextMenuEnabled = false,
+            Name = "ProfileName", Visible = false, MaxLength = 40, SelectAllOnFocus = true, ContextMenuEnabled = false, ClearButtonEnabled = true,
             CustomMinimumSize = new Vector2(300, 0), SizeFlagsVertical = Control.SizeFlags.ShrinkCenter,
         };
         Style(name, "res://themes/kreon_bold_shared.tres", 19, Gold);
-        var field = new StyleBoxFlat { BgColor = new Color(0.05f, 0.08f, 0.12f), BorderColor = new Color(Gold, 0.6f), ContentMarginLeft = 8, ContentMarginRight = 8 };
+        var field = new StyleBoxFlat
+        {
+            BgColor = new Color(0.05f, 0.08f, 0.12f), BorderColor = new Color(Gold, 0.6f),
+            ContentMarginLeft = 10, ContentMarginRight = 8, ContentMarginTop = 3, ContentMarginBottom = 3,
+        };
         field.SetBorderWidthAll(1);
         field.SetCornerRadiusAll(4);
         name.AddThemeStyleboxOverride("normal", field);
@@ -235,12 +239,6 @@ static class ProfileBar
         AddButtons(nameButtons, [
             ("SaveNameButton", Menus.Text("SPIRE_MOD_MANAGER.SAVE"), () => CommitName()),
             ("CancelNameButton", Menus.Text("SPIRE_MOD_MANAGER.CANCEL"), EndNaming),
-            ("ClearNameButton", Menus.Text("SPIRE_MOD_MANAGER.CLEAR"), () =>
-            {
-                name.Clear();
-                name.GrabFocus();
-                CheckName();
-            }),
         ]);
         AddButtons(unsavedButtons, [
             ("SaveProfileButton", Menus.Text("SPIRE_MOD_MANAGER.SAVE"), Profiles.Save),
