@@ -3,18 +3,23 @@ using MegaCrit.Sts2.Core.Modding;
 
 namespace SpireModManager;
 
-// Small labels on each mod. Two are worked out from the mods themselves:
+// Small labels on each mod. Three are worked out automatically:
 // - Gameplay, from the manifest's affects_gameplay (what multiplayer compares; mods without it get no tag);
-// - Library, when another installed mod depends on it.
-// The player's own tags are typed in the info panel and drawn outline-only, so they read differently from
-// the automatic (filled) ones; hovering a chip says which it is. All tags are searchable.
+// - Library, when another installed mod depends on it;
+// - Cosmetic, when the mod's Workshop tags say it's about looks (skins, visuals, UI, textures).
+// The player's own tags are typed in the info panel or a mod's right-click menu and drawn outline-only, so
+// they read differently from the automatic (filled) ones. Hovering a chip explains it. All are searchable.
 static class Tags
 {
-    public record Chip(string Text, Color Color, bool Custom = false);
+    public record Chip(string Text, Color Color, bool Custom = false, string? Tip = null);
 
     static readonly Color Gameplay = new(0.95f, 0.55f, 0.3f);
     static readonly Color Library = new(0.937f, 0.784f, 0.318f);
-    static readonly Color Custom = new(0.75f, 0.9f, 0.8f);
+    static readonly Color Cosmetic = new(0.78f, 0.62f, 0.95f);
+    public static readonly Color CustomColor = new(0.75f, 0.9f, 0.8f);
+
+    // Workshop tags that mean a mod is about looks (lower case, matched as whole words).
+    static readonly string[] CosmeticWords = ["cosmetic", "cosmetics", "skin", "skins", "visual", "visuals", "ui", "texture", "textures", "art", "animation", "animations"];
 
     public static List<Chip> For(Mod? mod)
     {
@@ -22,13 +27,19 @@ static class Tags
             return [];
         var chips = new List<Chip>();
         if (manifest.affectsGameplay)
-            chips.Add(new Chip(Menus.Text("SPIRE_MOD_MANAGER.TAG_GAMEPLAY"), Gameplay));
+            chips.Add(new Chip(Menus.Text("SPIRE_MOD_MANAGER.TAG_GAMEPLAY"), Gameplay, Tip: Menus.Text("SPIRE_MOD_MANAGER.TAG_GAMEPLAY_TIP")));
         if (ModManager.Mods.Any(m => m != mod && Dependencies.Of(m).Contains(manifest.id)))
-            chips.Add(new Chip(Menus.Text("SPIRE_MOD_MANAGER.TAG_LIBRARY"), Library));
+            chips.Add(new Chip(Menus.Text("SPIRE_MOD_MANAGER.TAG_LIBRARY"), Library, Tip: Menus.Text("SPIRE_MOD_MANAGER.TAG_LIBRARY_TIP")));
+        if (IsCosmetic(mod))
+            chips.Add(new Chip(Menus.Text("SPIRE_MOD_MANAGER.TAG_COSMETIC"), Cosmetic, Tip: Menus.Text("SPIRE_MOD_MANAGER.TAG_COSMETIC_TIP")));
         foreach (var tag in Store.InfoFor(manifest.id)?.Tags ?? [])
-            chips.Add(new Chip(tag, Custom, Custom: true));
+            chips.Add(new Chip(tag, CustomColor, Custom: true));
         return chips;
     }
+
+    static bool IsCosmetic(Mod mod) =>
+        WorkshopInfo.For(mod)?.Tags.SelectMany(t => t.ToLowerInvariant().Split([' ', '&', '/', '-', ','], StringSplitOptions.RemoveEmptyEntries))
+            .Any(word => CosmeticWords.Contains(word)) == true;
 
     // "a, b ,c" -> ["a", "b", "c"], blanks and repeats dropped; null when there are none.
     public static List<string>? Parse(string text)
@@ -44,7 +55,7 @@ static class Tags
         var box = new PanelContainer
         {
             MouseFilter = Control.MouseFilterEnum.Pass, SizeFlagsVertical = Control.SizeFlags.ShrinkCenter,
-            TooltipText = Menus.Text(chip.Custom ? "SPIRE_MOD_MANAGER.TAG_CUSTOM_TIP" : "SPIRE_MOD_MANAGER.TAG_AUTO_TIP"),
+            TooltipText = chip.Tip ?? Menus.Text(chip.Custom ? "SPIRE_MOD_MANAGER.TAG_CUSTOM_TIP" : "SPIRE_MOD_MANAGER.TAG_AUTO_TIP"),
         };
         var style = new StyleBoxFlat
         {
