@@ -108,6 +108,11 @@ static class ModdingScreenPatch
         try
         {
             Layout.Apply(__instance); // last: it places everything above
+            // Workshop details arriving after the page opened: the info panel shows them (dates, tags).
+            var screen = __instance;
+            void Refill() => Callable.From(() => ModDetails.Refresh(screen)).CallDeferred();
+            WorkshopInfo.Loaded += Refill;
+            screen.TreeExiting += () => WorkshopInfo.Loaded -= Refill;
         }
         catch (Exception e)
         {
