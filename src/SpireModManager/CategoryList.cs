@@ -1,5 +1,6 @@
 using Godot;
 using MegaCrit.Sts2.Core.Localization;
+using MegaCrit.Sts2.Core.Logging;
 using MegaCrit.Sts2.Core.Modding;
 using MegaCrit.Sts2.Core.Nodes.GodotExtensions;
 using MegaCrit.Sts2.Core.Nodes.Screens.ModdingScreen;
@@ -34,7 +35,7 @@ static class CategoryList
             (data.VanillaView, data.LoadOrderView) = toVanilla ? (!data.VanillaView, false) : (false, !data.LoadOrderView);
             Selection.Clear(content); // a picked set belongs to the view it was picked in
             Store.Save();
-            Label(vanilla, data.VanillaView ? "SPIRE_MOD_MANAGER.CATEGORY_VIEW" : "SPIRE_MOD_MANAGER.VANILLA_VIEW");
+            Label(vanilla, data.VanillaView ? "SPIRE_MOD_MANAGER.CATEGORY_VIEW" : VanillaKey);
             Label(loadOrder, data.LoadOrderView ? "SPIRE_MOD_MANAGER.BACK" : "SPIRE_MOD_MANAGER.LOAD_ORDER");
             Apply(content);
             Layout.Apply(screen);
@@ -51,16 +52,19 @@ static class CategoryList
             if (screen.IsVisibleInTree() && Store.Data.LoadOrderView)
                 Switch(false);
         };
-        vanilla = ModEntry.AddButton(screen, "SPIRE_MOD_MANAGER.VANILLA_VIEW", new Vector2(200, 70), () => Switch(true));
+        vanilla = ModEntry.AddButton(screen, VanillaKey, new Vector2(200, 70), () => Switch(true));
         vanilla.Name = "SpireModManagerViewToggle";
         loadOrder = ModEntry.AddButton(screen, "SPIRE_MOD_MANAGER.LOAD_ORDER", new Vector2(200, 70), () => Switch(false));
         loadOrder.Name = "SpireModManagerLoadOrderToggle";
         // Labels for the saved view.
-        Label(vanilla, Store.Data.VanillaView ? "SPIRE_MOD_MANAGER.CATEGORY_VIEW" : "SPIRE_MOD_MANAGER.VANILLA_VIEW");
+        Label(vanilla, Store.Data.VanillaView ? "SPIRE_MOD_MANAGER.CATEGORY_VIEW" : VanillaKey);
         Label(loadOrder, Store.Data.LoadOrderView ? "SPIRE_MOD_MANAGER.BACK" : "SPIRE_MOD_MANAGER.LOAD_ORDER");
 
         Apply(content);
     }
+
+    // The toggle to the game's page names Better Mod Menu when that's whose page it is.
+    static string VanillaKey => Bmm.Present ? "SPIRE_MOD_MANAGER.BMM_VIEW" : "SPIRE_MOD_MANAGER.VANILLA_VIEW";
 
     static void Label(NButton? button, string key) =>
         button?.GetNode<MegaLabel>("Visuals/Label").SetTextAutoSize(new LocString("settings_ui", key).GetFormattedText());
@@ -77,7 +81,29 @@ static class CategoryList
     }
 
     // Selects a row the way a click does: highlight and info panel.
-    public static void Select(Control content, NModMenuRow row) => ScreenOf(content)?.OnRowSelected(row);
+    public static void Select(Control content, NModMenuRow row)
+    {
+        if (ScreenOf(content) is { } screen)
+            Select(screen, row);
+    }
+
+    // Another mod's postfix throwing here (Better Mod Menu 1.1.1 does on the 0.111 beta) mustn't stop ours: the
+    // game's part and our patch have run by then. Logged once.
+    static bool _selectFailed;
+
+    public static void Select(NModdingScreen screen, NModMenuRow row)
+    {
+        try
+        {
+            screen.OnRowSelected(row);
+        }
+        catch (Exception e)
+        {
+            if (!_selectFailed)
+                Log.Warn($"[{ModEntry.ModId}] Another mod failed while a row was selected (logged once): {e.Message}");
+            _selectFailed = true;
+        }
+    }
 
     // After a view switch: the same mod stays selected, its category opens if it was collapsed, and the
     // list scrolls to it. Nothing selected: the info panel empties (it was filled for the old view).
@@ -89,7 +115,7 @@ static class CategoryList
             return;
         }
         Expand(content, row);
-        screen.OnRowSelected(row);
+        Select(screen, row);
         ScrollSoon(content, row, flash: false);
     }
 
@@ -261,6 +287,14 @@ static class CategoryList
             content.RemoveChild(header);
             header.QueueFree();
         }
+        // Better Mod Menu's group headers too, on our views (it makes them again on its page, Vanilla View), and its
+        // row controls hidden (rows added since the page opened have them showing).
+        var screen = ScreenOf(content);
+        if (!Store.Data.VanillaView && screen != null)
+        {
+            Bmm.RemoveGroups(content);
+            Bmm.Show(screen, false);
+        }
 
         // Vanilla order is the game's mod order, which is how the screen first added the rows.
         var order = ModManager.Mods.Select((mod, i) => (mod, i)).ToDictionary(p => p.mod, p => p.i);
@@ -329,8 +363,10 @@ static class CategoryList
             for (var i = 0; i < rows.Count; i++)
             {
                 content.MoveChild(rows[i], i);
-                rows[i].Visible = Matches(rows[i]);
+                rows[i].Visible = Bmm.Present || Matches(rows[i]); // Better Mod Menu's page: its search and groups decide
             }
+            if (screen != null)
+                Bmm.Refresh(screen);
             return;
         }
 

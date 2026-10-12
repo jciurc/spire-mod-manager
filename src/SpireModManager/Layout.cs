@@ -1,5 +1,6 @@
 using Godot;
 using MegaCrit.Sts2.Core.Localization;
+using MegaCrit.Sts2.Core.Nodes.GodotExtensions;
 using MegaCrit.Sts2.Core.Nodes.Screens.ModdingScreen;
 using MegaCrit.Sts2.addons.mega_text;
 
@@ -21,6 +22,7 @@ static class Layout
     const string FontMeta = "spire_mod_manager_original_font";
     const string WatermarkMeta = "spire_mod_manager_watermark";
     const string MinSizeMeta = "spire_mod_manager_min_size";
+    const string BoxMeta = "spire_mod_manager_original_box", BarMeta = "spire_mod_manager_original_bar", AnchorMeta = "spire_mod_manager_original_anchor";
 
     // Screen-space boxes (left, top, right, bottom) in the game's 1920x1080 layout.
     // The panels sit midway between the page title and the bottom row of buttons.
@@ -31,6 +33,7 @@ static class Layout
     public const float CornerX = 18; // the lower-left corner button (here and on the main menu)
     const float PageLeft = 175, TitleTop = 10, TitleBottom = 62;
     const float UndoDrop = 7; // the undo buttons themselves (not their hints) centred on the bottom row
+    const float ReleaseInfoLeft = 1740; // the game's version and date, top right
 
     // Text sizes in our views (the game's in brackets): rows 20 (32), info title 32 (60), info text 18 (24).
     public const int RowTitleSize = 20, RowTitleVanillaSize = 32;
@@ -44,6 +47,13 @@ static class Layout
         var view = Current;
         var list = screen.GetNode<Control>("ModsBorder");
         var info = screen.GetNode<Control>("%ModInfoContainer");
+        // Better Mod Menu loaded too: paused while we place things (its re-layout follows every resize), and its push
+        // down of the list taken back. Vanilla View gives it the page again at the end.
+        if (Bmm.Present)
+        {
+            Bmm.Detach();
+            Bmm.Unpush(list);
+        }
         var listBox = view == View.LoadOrder ? CentredListBox : ListBox;
         Place(list, listBox);
         Place(info, InfoBox);
@@ -88,6 +98,13 @@ static class Layout
                 (blocker.OffsetTop, blocker.OffsetBottom) = top ? (-2000, 0) : (0, 2000);
             }
 
+        // Better Mod Menu clips the mask for its page; ours draw without it (the blockers above do its job). Its
+        // scrollbar lane (wider, midway to the info panel) is its page's too.
+        if (Bmm.Present)
+            mask.ClipContents = !Wide;
+        if ((scroll as NScrollableContainer)?.Scrollbar is { } bar)
+            SceneBar(bar, Wide);
+
         // A click on an empty part of the screen or list lets go of keyboard focus (search, rename boxes).
         if (!screen.HasMeta(FocusMeta))
         {
@@ -123,8 +140,6 @@ static class Layout
                 x = leftEnd + 12;
             }
         }
-        if (screen.GetNodeOrNull<Control>("SpireModManagerBmmNotice") is { } notice)
-            notice.Position = new Vector2(PageLeft, BottomRowY + 1);
 
         var right = view == View.LoadOrder ? list.OffsetRight : info.OffsetRight;
         if (screen.GetNodeOrNull<Control>("SpireModManagerRelaunchButton") is { } relaunch)
@@ -166,6 +181,19 @@ static class Layout
         Watermark(screen);
         BackLabel(screen);
         UpdateDot(screen);
+
+        // Better Mod Menu: hidden on our views, with a warning top right beside the page title (empty there in both),
+        // short of the game's version and date; its own page in Vanilla View.
+        if (Bmm.Present)
+        {
+            var warning = Bmm.Warning(screen);
+            warning.Visible = Wide;
+            (warning.Position, warning.Size) = (new Vector2(InfoBox.X, TitleTop), new Vector2(ReleaseInfoLeft - 16 - InfoBox.X, TitleBottom - TitleTop));
+            if (Wide)
+                Bmm.Show(screen, false);
+            else
+                Bmm.Attach(screen);
+        }
     }
 
     // "Main Menu" over the game's back arrow on our pages (it leaves the whole Modding page); not in Vanilla View.
@@ -236,10 +264,13 @@ static class Layout
     // hides them and gives the list its full height back.
     public static void PlaceList(Control list)
     {
+        // The scene's box each time (Better Mod Menu moves and resizes it on its page); in our views, the top set below.
         var scroll = list.GetNode<Control>("ModsScrollContainer");
-        if (!scroll.HasMeta(OriginalMeta))
-            scroll.SetMeta(OriginalMeta, scroll.OffsetTop);
-        var y = (float)scroll.GetMeta(OriginalMeta);
+        if (!scroll.HasMeta(BoxMeta))
+            scroll.SetMeta(BoxMeta, new Vector4(scroll.OffsetLeft, scroll.OffsetTop, scroll.OffsetRight, scroll.OffsetBottom));
+        var box = (Vector4)scroll.GetMeta(BoxMeta);
+        (scroll.OffsetLeft, scroll.OffsetRight, scroll.OffsetBottom) = (box.X, box.Z, box.W);
+        var y = box.Y;
         // Stacks one control below the last; null or hidden ones take no room.
         void Stack(Control? control, bool shown, float gap)
         {
@@ -260,7 +291,7 @@ static class Layout
             (sort.OffsetTop, sort.OffsetBottom) = (search.OffsetTop, search.OffsetBottom);
         Stack(list.GetNodeOrNull<Control>(LoadOrder.WarningName), Wide, 6);
         Stack(list.GetNodeOrNull<Control>(PageBar.Name), Current == View.Categories, 4);
-        scroll.OffsetTop = Wide ? y : (float)scroll.GetMeta(OriginalMeta);
+        scroll.OffsetTop = Wide ? y : box.Y;
     }
 
     // Vanilla View: the game's notification dot on "Spire Manager" while a relaunch is pending.
@@ -297,8 +328,29 @@ static class Layout
                 ? wide : new Vector2(thumbHeight * texture.GetWidth() / texture.GetHeight(), thumbHeight)
             : new Vector2(thumbWidth, thumbHeight);
         Place(image, new Vector4(width - thumbRight - shown.X, top + drop, width - thumbRight, top + drop + shown.Y));
-        Place(info.GetNode<Control>("ModDescription"), new Vector4(inset, below, width - inset,
+        // Better Mod Menu anchors the description to the panel's bottom on its page: the scene's anchor back first.
+        var description = info.GetNode<Control>("ModDescription");
+        if (!description.HasMeta(AnchorMeta))
+            description.SetMeta(AnchorMeta, description.AnchorBottom);
+        description.AnchorBottom = (float)description.GetMeta(AnchorMeta);
+        Place(description, new Vector4(inset, below, width - inset,
             info.Size.Y - ModDetails.ButtonsFromBottom - ModDetails.FieldsGap));
+    }
+
+    // The list's scrollbar as the scene had it (box, minimum width, mouse filter; saved the first time), back if
+    // restore. Better Mod Menu widens it and moves it midway to the info panel on its page.
+    static void SceneBar(Control bar, bool restore)
+    {
+        if (!bar.HasMeta(BarMeta))
+            bar.SetMeta(BarMeta, new Godot.Collections.Array
+                { new Vector4(bar.OffsetLeft, bar.OffsetTop, bar.OffsetRight, bar.OffsetBottom), bar.CustomMinimumSize, (int)bar.MouseFilter });
+        if (!restore)
+            return;
+        var saved = (Godot.Collections.Array)bar.GetMeta(BarMeta);
+        bar.CustomMinimumSize = (Vector2)saved[1];
+        var box = (Vector4)saved[0];
+        (bar.OffsetLeft, bar.OffsetTop, bar.OffsetRight, bar.OffsetBottom) = (box.X, box.Y, box.Z, box.W);
+        bar.MouseFilter = (Control.MouseFilterEnum)(int)saved[2];
     }
 
     // Wide: the given box. Vanilla: the box the scene had.
