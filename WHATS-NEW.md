@@ -4,6 +4,16 @@ Short notes for Jordan: what to look for after each install. Newest first.
 
 ## Not installed yet
 
+- (nothing yet)
+
+## Installed 2026-10-12
+
+Latest
+- Panel fields in the order Alias, Category, Tags, Notes (the right-click menu: Alias, Tags, Notes).
+- "Changes N" no longer counts load-order moves (they're the ↕ on the line above).
+- The profile bar shows how many mods are on, beside the profile's name.
+- Mods you subscribe to while the page is open show up in our row style, in their category, right away.
+
 Fixes
 - Main menu **Move button** works: the button moves by as much as the mouse does (no jump), a click puts it down, right-click or Esc cancels, and the hint goes away (also when you leave the menu).
 
@@ -104,9 +114,6 @@ Choices I made on my own; say if any should change.
 - **Load Order profiles**: I took your first option and removed the profile bar there; separate load-order profiles are in the backlog with load order presets.
 - **Main menu button art** is used only on the main menu; the corner button on our pages keeps the game's art.
 - **Notes inside the right-click menu** use a 4-line box in the menu, the same as tags and alias.
-- **Panel field order** is Alias, Category, Notes, Tags: your note said "tags below alias and notes", and the detailed order listed category after alias. If you meant Alias, Category, Tags, Notes, it's a one-line swap.
 - **The ✎ mark** on rows means "has your alias, notes or tags"; it isn't clickable (alias editing is in the menu and the panel now).
-- **Cosmetic** comes only from Workshop tags (skins, visuals, UI, textures, art, animation); local mods never get it.
 - **"Mods enabled"** counts mods that are on, not counting Spire Mod Manager itself.
-- **"Changes N"** adds up moves, edited mods, profiles added or removed, and a switched profile.
 - **Dependencies, clicked**, scroll the list and glow the row but don't change the panel; the panel's name, clicked, just scrolls.
