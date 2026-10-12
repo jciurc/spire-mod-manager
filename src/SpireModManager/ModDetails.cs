@@ -10,7 +10,7 @@ namespace SpireModManager;
 // The info panel in our views, top to bottom:
 // - the head, left of a large thumbnail: the mod's own name (click: scroll to it in the list) with its version
 //   in grey; "<id> (<Workshop id>)", linking to the Workshop page (or "(Local)"), and Enabled / Disabled /
-//   Pending restart; author (click: search for their mods), last update, compatibility;
+//   Pending restart; author (click: search for their mods), compatibility, last update (and a Patch notes link);
 // - anything wrong (red), the author's description;
 // - size, published, subscribers, Workshop tags;
 // - dependencies both ways (click a name: scroll to it in the list and flash it);
@@ -27,7 +27,7 @@ static class ModDetails
     public const string HeadName = "SpireModManagerHead";
     const string WiredMeta = "spire_mod_manager_wired";
     const string Enabled = "#a6e3a1", Disabled = "#fff6e299", Pending = "#f5b56b", Problem = "#ff8070";
-    const string GoldHex = "#efc851";
+    const string GoldHex = "#efc851", LinkHex = "#99ccff";
     const int VersionSize = 20;
 
     // Along the inside of the panel's bottom edge, whatever its size.
@@ -86,15 +86,8 @@ static class ModDetails
         var status = source.GetNode<Label>("Status");
         status.Text = state;
         status.AddThemeColorOverride("font_color", Color.FromHtml(color));
-        var notesLink = source.GetNode<LinkButton>("PatchNotesLink");
-        var recent = WorkshopInfo.For(mod) is { } updates && (DateTime.Now - updates.Updated).TotalDays < RowTitles.RecentDays;
-        notesLink.Visible = source.GetNode<Control>("NotesDot").Visible = mod.workshopId != null;
-        notesLink.Text = Menus.Text(recent ? "SPIRE_MOD_MANAGER.RECENTLY_UPDATED" : "SPIRE_MOD_MANAGER.PATCH_NOTES");
-        var linkColor = recent ? new Color(0.95f, 0.45f, 0.4f) : new Color(Cream, 0.6f);
-        notesLink.AddThemeColorOverride("font_color", linkColor);
-        notesLink.AddThemeColorOverride("font_hover_color", linkColor.Lightened(0.3f));
 
-        // Beside the thumbnail: who made it, when it was last updated, how big it is.
+        // Beside the thumbnail: who made it, which game versions, when it was last updated.
         var head = container.GetNodeOrNull<RichTextLabel>(HeadName) ?? AddHead(container);
         head.Visible = true;
         head.Text = HeadFacts(mod);
@@ -188,18 +181,17 @@ static class ModDetails
         return text.ToString().TrimEnd();
     }
 
-    // The head's short facts: author (click: search for their mods), last update (with how long ago), and
-    // which game versions it's made for.
+    // The head's short facts: author (click: search for their mods), which game versions it's made for, and the
+    // last update (how long ago; its patch notes).
     static string HeadFacts(Mod mod)
     {
         string Fact(string key, string value) => $"[color={GoldHex}]{Menus.Text(key)}[/color]: {value}";
         var author = mod.manifest?.author is { Length: > 0 } who ? $"[url=author:{who}]{Escape(Short(who))}[/url]" : Menus.Text("SPIRE_MOD_MANAGER.UNKNOWN");
-        var lines = new List<string> { Fact("SPIRE_MOD_MANAGER.AUTHOR", author) };
-        var workshop = WorkshopInfo.For(mod);
-        if (workshop != null)
+        var lines = new List<string> { Fact("SPIRE_MOD_MANAGER.AUTHOR", author), Fact("SPIRE_MOD_MANAGER.COMPATIBILITY", Compatibility(mod)) };
+        // The last update, how long ago, and (Workshop mods) a link to its patch notes.
+        if (WorkshopInfo.For(mod) is { } workshop)
             lines.Add(Fact("SPIRE_MOD_MANAGER.UPDATED", $"{Date(workshop.Updated)} [color={Disabled}]({Menus.Format("SPIRE_MOD_MANAGER.DAYS_AGO",
-                ("days", ((int)(DateTime.Now - workshop.Updated).TotalDays).ToString()))})[/color]"));
-        lines.Add(Fact("SPIRE_MOD_MANAGER.COMPATIBILITY", Compatibility(mod)));
+                ("days", ((int)(DateTime.Now - workshop.Updated).TotalDays).ToString()))})[/color]  [url=patchnotes][color={LinkHex}]{Menus.Text("SPIRE_MOD_MANAGER.PATCH_NOTES")}[/color][/url]"));
         return string.Join("\n", lines);
     }
 
@@ -386,19 +378,6 @@ static class ModDetails
         var status = new Label { Name = "Status", MouseFilter = Control.MouseFilterEnum.Ignore, VerticalAlignment = VerticalAlignment.Center };
         Style(status, "res://themes/kreon_regular_shared.tres", 16, Cream);
         line.AddChild(status);
-        // Workshop mods: their patch notes ("Recently updated", in the pip's red, after a recent update).
-        var notesDot = new Label { Name = "NotesDot", Text = "·", MouseFilter = Control.MouseFilterEnum.Ignore, VerticalAlignment = VerticalAlignment.Center };
-        Style(notesDot, "res://themes/kreon_regular_shared.tres", 16, new Color(Cream, 0.4f));
-        line.AddChild(notesDot);
-        var notes = new LinkButton { Name = "PatchNotesLink", FocusMode = Control.FocusModeEnum.None, Underline = LinkButton.UnderlineMode.OnHover };
-        notes.AddThemeFontOverride("font", ResourceLoader.Load<Font>("res://themes/kreon_regular_shared.tres"));
-        notes.AddThemeFontSizeOverride("font_size", 16);
-        notes.Pressed += () =>
-        {
-            if (Dependencies.Find(Meta(container, ModIdMeta)) is { } mod)
-                PatchNotes.Show(container, mod);
-        };
-        line.AddChild(notes);
         container.AddChild(line);
         line.Position = new Vector2(Inset, 56);
         return line;
@@ -417,6 +396,8 @@ static class ModDetails
         {
             if (meta.AsString() is { } target && target.StartsWith("author:"))
                 Search.ByAuthor(container, target[7..], Input.IsKeyPressed(Key.Shift));
+            else if (meta.AsString() == "patchnotes" && Dependencies.Find(Meta(container, ModIdMeta)) is { } shown)
+                PatchNotes.Show(container, shown);
         };
         Hover.WatchLinks(head, "SpireModManagerTagCard",
             meta => meta.StartsWith("author:") ? Tags.Hint(Menus.Text("SPIRE_MOD_MANAGER.SEARCH_CLICK_TIP")) : null, width: 320);

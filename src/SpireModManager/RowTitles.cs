@@ -6,16 +6,15 @@ using MegaCrit.Sts2.addons.mega_text;
 namespace SpireModManager;
 
 // Row titles in our views: the alias with the original name small and dim beside it (or just the name),
-// cut short with "…" when it doesn't fit; right after the alias (or name), a small notepad when the player has
-// an alias or notes for it (main list). Hovering the title shows the mod's card (Hover's delay), the notepad
-// at once. Titles of mods turned on or off since launch are gold. Vanilla View: exactly as the game makes them.
+// cut short with "…" when it doesn't fit; before it, a small notepad when the player has an alias or notes for it
+// (main list). Hovering the title shows the mod's card (Hover's delay), the notepad at once. Titles of mods
+// turned on or off since launch are gold. Vanilla View: exactly as the game makes them.
 static class RowTitles
 {
     const int OriginalNameSize = 16;
-    const float TitleShift = 12; // a little room before the title in our views
+    const float TitleShift = 18; // room before the title in our views (the notepad sits there)
     const string ShiftMeta = "spire_mod_manager_title_shift";
     const string NotesCard = "SpireModManagerNotesCard";
-    public const int RecentDays = 7; // "updated lately"
 
     public const float RowHeight = 48; // our views (the game's: 72)
     const string MarkName = "SpireModManagerEditedMark", HotName = "SpireModManagerTitleHover";
@@ -69,18 +68,16 @@ static class RowTitles
         var font = title.GetThemeFont("normal_font");
         float Width(string text, int size) => font.GetStringSize(text, fontSize: size).X;
         var markSize = Icons.Notepad.GetSize();
-        var markRoom = marked ? markSize.X + 12 : 0; // the notepad and a little air either side
-        var room = title.Size.X - 4 - markRoom;
+        var room = title.Size.X - 4;
         var main = Cut(alias ?? name, Layout.RowTitleSize, room);
         var text = Escape(main);
         var mainWidth = Width(main, Layout.RowTitleSize);
-        var used = mainWidth + markRoom;
+        var used = mainWidth;
         if (alias != null)
         {
-            // After the notepad's room (spaces as wide as it), or the usual gap.
             var space = Width(" ", Layout.RowTitleSize);
-            var gap = marked ? (int)Math.Ceiling(markRoom / space) : 2;
-            var left = room - mainWidth - gap * space + markRoom;
+            const int gap = 2;
+            var left = room - mainWidth - gap * space;
             var original = left > Width("……", OriginalNameSize) ? Cut(name, OriginalNameSize, left) : "";
             if (original.Length > 0)
             {
@@ -116,7 +113,7 @@ static class RowTitles
                 Hover.Watch(mark, NotesCard, () => row.Mod is { } shown ? ModDetails.Card(shown) : null, Hover.Timing.Instant);
             }
             mark.Visible = true;
-            mark.Position = new Vector2(title.Position.X + mainWidth + 6, top + (lineHeight - markSize.Y) / 2);
+            mark.Position = new Vector2(title.Position.X - markSize.X - 4, top + (lineHeight - markSize.Y) / 2); // in the room before the title
         }
 
         string Cut(string full, int size, float width)
