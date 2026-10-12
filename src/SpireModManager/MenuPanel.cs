@@ -16,9 +16,15 @@ static class MenuPanel
     // When each toggle key's menu last closed: a press on the control that opened it, arriving just after
     // the click that closed it, closes it instead of opening it again.
     static readonly Dictionary<string, ulong> ClosedAt = [];
+    static readonly Dictionary<string, PopupPanel> Open = [];
 
     public static PopupPanel? Show(Node owner, IReadOnlyList<MenuItem> items, Vector2? at = null, string? toggleKey = null)
     {
+        if (toggleKey != null && Open.TryGetValue(toggleKey, out var open) && GodotObject.IsInstanceValid(open) && open.Visible)
+        {
+            open.Hide();
+            return null;
+        }
         if (toggleKey != null && ClosedAt.TryGetValue(toggleKey, out var closed) && Time.GetTicksMsec() - closed < ReopenGuardMs)
             return null;
         var panel = new PopupPanel { Name = "SpireModManagerMenu", WrapControls = true };
@@ -42,6 +48,8 @@ static class MenuPanel
                 ClosedAt[toggleKey] = Time.GetTicksMsec();
             panel.QueueFree();
         };
+        if (toggleKey != null)
+            Open[toggleKey] = panel;
         owner.AddChild(panel);
         var viewport = owner.GetViewport();
         var position = at ?? viewport.GetMousePosition();
