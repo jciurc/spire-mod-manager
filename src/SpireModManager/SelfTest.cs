@@ -74,18 +74,19 @@ static class SelfTest
             // Profile round trip: switch away and back; the game's mod list must end up as it started.
             if (Profiles.Active is { } start && Store.Data.Profiles.FirstOrDefault(p => p != start) is { } other)
             {
+                if (Profiles.Edited)
+                    Profiles.Save(); // the fixture launches on an unsaved edit (its list differs from the profile)
                 var before = ModListState();
-                var wasEdited = Profiles.Edited; // the fixture's list differs from its saved profile: an unsaved edit
                 Profiles.SwitchTo(other, screen);
                 await Wait(menu, 1);
                 Results.Add($"INFO switched to {other.Name}: {ModListState().Count(s => s.EndsWith("=on"))} on");
                 Check("our own mod stays on", !(SaveManager.Instance.SettingsSave.ModSettings?.ModList
                     .Any(m => m.Id == ModEntry.ModId && !m.IsEnabled) ?? false));
                 await Capture(screen, outDir, "3-other-profile");
-                Profiles.SwitchTo(start, screen, edited: wasEdited);
+                Profiles.SwitchTo(start, screen);
                 await Wait(menu, 1);
                 var after = ModListState();
-                Check("profile round trip (back to the edit, if it was on one) restores the mod list", before.SequenceEqual(after),
+                Check("profile round trip restores the mod list", before.SequenceEqual(after),
                     string.Join(", ", before.Except(after)));
             }
             else
@@ -284,7 +285,6 @@ static class SelfTest
         var before = ModListState();
         var count = Store.Data.Profiles.Count;
         var start = Profiles.Active;
-        var startEdited = Profiles.Edited;
 
         var under = await RealClick(menu, (Control)bar.FindChild(Profiles.Edited ? "SaveAsNewButton" : "NewProfileButton", true, false));
         await Wait(menu, 0.3);
@@ -312,7 +312,7 @@ static class SelfTest
         Check("delete the active profile switches to a neighbour", Store.Data.Profiles.Count == count && Profiles.Active != null
             && Store.Data.Profiles.All(p => p.Name != "Brother co-op") && name.Text == Profiles.Active.Name);
         if (start != null && Profiles.Active != start)
-            Profiles.SwitchTo(start, screen, edited: startEdited);
+            Profiles.SwitchTo(start, screen);
         Check("mod list unchanged after new/rename/delete", before.SequenceEqual(ModListState()));
         Check("last profile can't be deleted", Store.Data.Profiles.Count > 1 || !Profiles.Delete(Store.Data.Profiles[0], screen));
     }
@@ -353,17 +353,27 @@ static class SelfTest
         Check("edited profile: Save, Save as new, Revert, Delete", ButtonNames() == "SaveProfileButton,SaveAsNewButton,DiscardButton,DeleteProfileButton", ButtonNames());
         await Capture(screen, outDir, "3b-unsaved-profile");
 
+        Check("the picker keeps the plain name", bar.FindChild("ProfilePicker", true, false) is Button { Text: var shown } && shown == profile.Name);
         Profiles.SwitchTo(other, screen);
+        var kept = Store.Data.Profiles.FirstOrDefault(p => p.Name.StartsWith($"{profile.Name} (edited"));
+        Check("leaving without saving keeps the edit as its own profile", kept != null && profile.Edited == null
+            && kept.Mods.FirstOrDefault(m => m.Id == "SmmTestUi")?.Enabled != wasOn, kept?.Name ?? "none");
         Profiles.SwitchTo(profile, screen);
         await Wait(menu, 0.3);
-        Check("switching away and back: saved state, the edit kept", !Profiles.Edited && On() == wasOn && profile.Edited != null);
-        Profiles.SwitchTo(profile, screen, edited: true);
-        await Wait(menu, 0.3);
-        Check("the edit can be picked again", Profiles.Edited && On() != wasOn);
+        Check("back on the profile: its saved state", !Profiles.Edited && On() == wasOn);
+        if (kept != null)
+        {
+            Profiles.SwitchTo(kept, screen);
+            await Wait(menu, 0.3);
+            Check("the kept edit loads like any profile", !Profiles.Edited && On() != wasOn);
+            Profiles.SwitchTo(profile, screen);
+            Profiles.Delete(kept, screen);
+        }
 
+        await Toggle(!wasOn);
         Press("DiscardButton");
         await Wait(menu, 0.3);
-        Check("Discard goes back to the saved state and drops the edit", !Profiles.Edited && On() == wasOn && profile.Edited == null
+        Check("Revert goes back to the saved state and drops the edit", !Profiles.Edited && On() == wasOn && profile.Edited == null
             && bar.FindChild("Unsaved", true, false) is Control { Visible: false });
 
         await Toggle(!wasOn);

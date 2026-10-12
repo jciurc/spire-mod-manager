@@ -8,8 +8,8 @@ namespace SpireModManager;
 
 // A profile is a snapshot of every mod's on/off state, by id + source like the game's mod list.
 // Changing the mod list doesn't change the saved profile: it becomes the profile's unsaved edit, shown as
-// "Unsaved" with Save, Save as new and Discard, and kept on disk as its own entry in the profile list
-// ("Name (edited 14:32)") until saved or discarded, so switching away never loses it.
+// "Unsaved" with Save, Save as new and Revert. Switching away without saving keeps the edit as a profile
+// of its own, "Name (edited 14:32)", so it is never lost.
 // Mods a profile has never seen are off in it. Spire Mod Manager itself is always on.
 static class Profiles
 {
@@ -46,12 +46,11 @@ static class Profiles
     }
 
     // Whether the mod list is the active profile's unsaved edit.
-    public static bool Edited => Store.Data.ActiveEdited && Active?.Edited != null;
+    public static bool Edited => Active?.Edited != null;
 
-    // After any change to the mod list: when it differs from the active profile's saved state it becomes
-    // that profile's unsaved edit (timestamped); back on the saved state, the profile is clean again and
-    // the last edit stays in the profile list until it is saved or discarded. Nothing is overwritten
-    // silently: saving is the player's choice.
+    // After any change to the mod list: when it differs from the active profile's saved state it is that
+    // profile's unsaved edit (timestamped); back on the saved state, the profile is clean again. Nothing is
+    // overwritten silently: saving is the player's choice.
     public static void Track()
     {
         if (_applying || Active is not { } profile)
@@ -59,36 +58,49 @@ static class Profiles
         var current = Current();
         if (Same(current, profile.Mods))
         {
-            if (!Store.Data.ActiveEdited)
+            if (profile.Edited == null)
                 return;
-            Store.Data.ActiveEdited = false;
+            (profile.Edited, profile.EditedAt) = (null, null);
         }
         else
         {
-            if (Store.Data.ActiveEdited && profile.Edited is { } edit && Same(current, edit))
+            if (profile.Edited is { } edit && Same(current, edit))
                 return;
             profile.Edited = Merge(profile.Edited ?? profile.Mods, current);
             profile.EditedAt = DateTime.Now;
-            Store.Data.ActiveEdited = true;
         }
         Store.Save();
         Switched?.Invoke(); // the bar shows "Unsaved" or not
     }
 
-    // Writes a profile's saved state (or its unsaved edit) to the mod list and makes it active.
-    public static void SwitchTo(Profile target, NModdingScreen screen, bool edited = false)
+    // Writes a profile's saved state to the mod list and makes it active. Leaving a profile with unsaved
+    // changes keeps them as a profile of their own, "Name (edited 14:32)", next to it.
+    public static void SwitchTo(Profile target, NModdingScreen screen)
     {
-        var from = Store.Data.ActiveProfile;
+        var from = Active;
         Track();
-        Apply(edited && target.Edited is { } edit ? edit : target.Mods, screen);
+        if (from != null && from != target && from.Edited is { } edit)
+        {
+            var list = Store.Data.Profiles;
+            list.Insert(list.IndexOf(from) + 1, new Profile { Name = UniqueName(EditedName(from)), Mods = edit });
+            (from.Edited, from.EditedAt) = (null, null);
+        }
+        Apply(target.Mods, screen);
         Store.Data.ActiveProfile = target.Name;
-        Store.Data.ActiveEdited = edited && target.Edited != null;
         Store.Save();
         Track(); // mods the profile hasn't seen are off now; that's still its saved state
-        if (from != null && from != target.Name)
-            History.NoteSwitch(from, target.Name); // "Switched from X to Y" in Changes
+        if (from != null && from != target)
+            History.NoteSwitch(from.Name, target.Name); // "Switched from X to Y" in Changes
         screen.OnModEnabledOrDisabled(); // pending-changes warning
         Switched?.Invoke();
+    }
+
+    // "Modded (edited 14:32)", or with the date when it wasn't today.
+    static string EditedName(Profile profile)
+    {
+        var at = profile.EditedAt ?? DateTime.Now;
+        var when = at.Date == DateTime.Today ? at.ToString("HH:mm") : at.ToString("MMM d HH:mm");
+        return Menus.Format("SPIRE_MOD_MANAGER.EDITED_PROFILE", ("name", profile.Name), ("when", when));
     }
 
     // The unsaved edit becomes the profile's saved state.
@@ -97,7 +109,7 @@ static class Profiles
         if (Active is not { } profile)
             return;
         profile.Mods = Merge(profile.Mods, Current());
-        (profile.Edited, profile.EditedAt, Store.Data.ActiveEdited) = (null, null, false);
+        (profile.Edited, profile.EditedAt) = (null, null);
         Store.Save();
         Switched?.Invoke();
     }
@@ -108,20 +120,21 @@ static class Profiles
         if (Active is not { } profile)
             return;
         Apply(profile.Mods, screen);
-        (profile.Edited, profile.EditedAt, Store.Data.ActiveEdited) = (null, null, false);
+        (profile.Edited, profile.EditedAt) = (null, null);
         Store.Save();
         screen.OnModEnabledOrDisabled();
         Switched?.Invoke();
     }
 
-    // The current mod list as a new profile, which becomes active. The old profile keeps its saved state,
-    // and its unsaved edit too (it's the player's to discard), so deleting the new one loses nothing.
+    // The current mod list as a new profile, which becomes active; the old profile goes back to its saved
+    // state (its edit now lives in the new one).
     public static Profile SaveAsNew(NModdingScreen screen)
     {
         var from = Active;
         var profile = Add();
+        if (from != null)
+            (from.Edited, from.EditedAt) = (null, null);
         Store.Data.ActiveProfile = profile.Name;
-        Store.Data.ActiveEdited = false;
         Store.Save();
         if (from != null)
             History.NoteSwitch(from.Name, profile.Name);
@@ -213,6 +226,15 @@ static class Profiles
         profile.Name = name;
         Store.Save();
         return true;
+    }
+
+    // The name itself, or "name 2", "name 3"... when it's taken.
+    static string UniqueName(string name)
+    {
+        var candidate = name;
+        for (var n = 2; Store.Data.Profiles.Any(p => p.Name == candidate); n++)
+            candidate = $"{name} {n}";
+        return candidate;
     }
 
     static string UniqueName()

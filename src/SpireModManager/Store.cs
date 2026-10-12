@@ -19,8 +19,6 @@ public class StoreData
     public Dictionary<string, ModInfo> Mods { get; set; } = [];
     public List<Profile> Profiles { get; set; } = [];
     public string? ActiveProfile { get; set; }
-    // The mod list is the active profile's unsaved edit (Profile.Edited), not its saved state.
-    public bool ActiveEdited { get; set; }
     public bool VanillaView { get; set; }
     public bool LoadOrderView { get; set; }
     public bool UncategorizedCollapsed { get; set; }
@@ -45,7 +43,7 @@ public class Profile
 {
     public string Name { get; set; } = "";
     public List<ProfileMod> Mods { get; set; } = [];
-    // Unsaved changes, kept (and selectable) until saved or discarded; null when there are none.
+    // The active profile's unsaved changes (the mod list as it is now); null when there are none.
     public List<ProfileMod>? Edited { get; set; }
     public DateTime? EditedAt { get; set; }
     // Id-only list of disabled mods as imported from Better Mod Menu; Profiles.Prepare converts it to Mods.
