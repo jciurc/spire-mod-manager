@@ -678,6 +678,45 @@ static class SelfTest
         await Wait(menu, 0.3);
         Check("new mod popup: our text, at most one per 30 s", NModalContainer.Instance?.OpenModal == null);
         Check("the profile bar shows how many mods are on", screen.FindChild("ProfileCount", true, false) is Label { Text: var count } && count.EndsWith("mods"));
+
+        // A mod installed while the game runs (made up here, the way the game announces one): Changes lists it
+        // as installed, with whether it loads after a relaunch; unticking it sticks (the game's tickbox alone
+        // changed nothing for a mod with no saved entry).
+        var fresh = new Mod
+        {
+            path = "", modSource = ModSource.ModsDirectory, state = ModLoadState.AddedAtRuntime,
+            manifest = new ModManifest { id = "SmmFreshMod", name = "Fresh Mod" },
+        };
+        var rowsBefore = content.GetChildren().OfType<NModMenuRow>().ToList();
+        typeof(ModManager).GetMethod("InvokeOnModDetected", System.Reflection.BindingFlags.NonPublic | System.Reflection.BindingFlags.Static)
+            ?.Invoke(null, [fresh]);
+        await Wait(menu, 0.4);
+        NModalContainer.Instance?.Clear();
+        Check("a mod installed now is listed as installed, loading after relaunch",
+            HistoryBar.Describe().Any(l => l.Contains("Installed: Fresh Mod") && l.Contains("loads after relaunch")), string.Join(" | ", HistoryBar.Describe()));
+        var freshRow = content.GetChildren().OfType<NModMenuRow>().Except(rowsBefore).FirstOrDefault(r => r.Mod == fresh);
+        if (freshRow != null)
+        {
+            var box = freshRow.GetNode<NTickbox>("Tickbox");
+            box.IsTicked = false;
+            box.EmitSignal(NTickbox.SignalName.Toggled, box);
+            await Wait(menu, 0.3);
+            Check("unticking a new mod is saved, and Changes says it's disabled",
+                SaveManager.Instance.SettingsSave.ModSettings?.IsModDisabled(fresh) == true
+                && HistoryBar.Describe().Any(l => l.Contains("Fresh Mod") && l.Contains("Disabled")), string.Join(" | ", HistoryBar.Describe()));
+            HistoryBar.ShowList(screen);
+            await Wait(menu, 0.2);
+            await Capture(screen, outDir, "10c-installed-change");
+            HistoryBar.CloseList(screen.GetNode<Control>("%ModInfoContainer"));
+            content.RemoveChild(freshRow);
+            freshRow.QueueFree();
+        }
+        else
+            Results.Add("FAIL a mod installed now gets a row");
+        Installed.Forget(fresh);
+        SaveManager.Instance.SettingsSave.ModSettings?.ModList.RemoveAll(e => e.Id == "SmmFreshMod");
+        History.Record();
+        CategoryList.Redraw(content); // the pending note too
         if (added != null)
         {
             content.RemoveChild(added);
