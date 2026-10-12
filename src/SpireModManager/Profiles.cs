@@ -77,14 +77,11 @@ static class Profiles
     // profile and coming back finds it as it was), its saved state otherwise.
     public static void SwitchTo(Profile target, NModdingScreen screen)
     {
-        var from = Active;
         Track(); // the profile being left keeps its edit
         Apply(target.Edited ?? target.Mods, screen);
         Store.Data.ActiveProfile = target.Name;
         Store.Save();
         Track(); // mods the profile hasn't seen are off now; that's still its saved state
-        if (from != null && from != target)
-            History.NoteSwitch(from.Name, target.Name); // "Switched from X to Y" in Changes
         screen.OnModEnabledOrDisabled(); // pending-changes warning
         Switched?.Invoke();
     }
@@ -136,8 +133,6 @@ static class Profiles
                 (from.Edited, from.EditedAt) = (null, null);
             Store.Data.ActiveProfile = profile.Name;
             Store.Save();
-            if (from != null)
-                History.NoteSwitch(from.Name, profile.Name);
             screen.OnModEnabledOrDisabled();
             Switched?.Invoke();
         }
