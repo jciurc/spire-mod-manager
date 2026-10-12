@@ -840,6 +840,21 @@ static class SelfTest
         ClickChip("SmmTestLib", "Gameplay", true);
         await Wait(menu, 0.3);
         Check("Shift-clicking another adds it", box.Text == "#Library #Gameplay" && Visible().SequenceEqual(["SmmTestLib"]), $"{box.Text}: {string.Join(", ", Visible())}");
+        // Authors the same way: the row's "by symphony" searches "@symphony"; Shift on a tag adds it after a space.
+        await Shown("");
+        content.GetChildren().OfType<NModMenuRow>().FirstOrDefault(r => r.Mod?.manifest?.id == "LocalModFixes")?.GetNodeOrNull("SpireModManagerStrip/Author")?
+            .EmitSignal(Control.SignalName.GuiInput, new InputEventMouseButton { ButtonIndex = MouseButton.Left, Pressed = false });
+        await Wait(menu, 0.3);
+        Check("clicking a row's author searches for their mods", box.Text == "@symphony"
+            && Visible().Count > 0 && Visible().All(id => Dependencies.Find(id)?.manifest?.author == "symphony"), $"{box.Text}: {string.Join(", ", Visible())}");
+        ClickChip("LocalModFixes", "Local", true);
+        await Wait(menu, 0.3);
+        Check("Shift-click on a tag adds it after a space", box.Text == "@symphony #Local", box.Text);
+        var panelHead = screen.GetNode<Control>("%ModInfoContainer").GetNodeOrNull<RichTextLabel>("SpireModManagerHead");
+        await Shown("");
+        panelHead?.EmitSignal(RichTextLabel.SignalName.MetaClicked, "author:symphony");
+        await Wait(menu, 0.3);
+        Check("the panel's author searches too", box.Text == "@symphony", box.Text);
         var local = await Shown("#local");
         Check("#tag matches the tag only, any case", local.Count > 1 && local.All(id => Tags.For(Dependencies.Find(id)).Any(c => c.Text == "Local")), string.Join(", ", local));
         var none = await Shown("zzz no such mod");
