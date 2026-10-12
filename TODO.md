@@ -459,4 +459,4 @@ Jordan's notes of 2026-10-12 (night), from the details page screenshot.
 
 Jordan's note of 2026-10-12 (night).
 
-- [ ] bulk editing on the main list: select mods (e.g. all of Uncategorized, Ctrl-click to drop one), right-click, change their category; the edit menu has the same controls minus Alias, which becomes "Editing N selected mods"
+- [x] bulk editing on the main list: select mods (e.g. all of Uncategorized, Ctrl-click to drop one), right-click, change their category; the edit menu has the same controls minus Alias, which becomes "Editing N selected mods"
