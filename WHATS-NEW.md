@@ -25,6 +25,14 @@ Info panel (round 15)
 - Source: "UndoAndRestartButton (SteamID 3794947020)". The status sits a pixel higher, level with it.
 - Alias: "Add alias" at rest, "An alternative title for the mod" while typing. Notes are 2 pt smaller.
 
+Fixes from the round 15 review
+- Vanilla View keeps the game's own row spacing (a change this round had squeezed it).
+- Rows sit a few pixels in from the list's sides, so the wider, rounded highlight isn't cut off at the edges.
+- Hovering a mod's name in the panel or changes list lights its row visibly again.
+- "Patch notes" works for a Workshop mod that also has a local copy with the same id.
+- An update under an hour old reads "(less than an hour ago)".
+- Holding Alt on a long card no longer leaves blank space at the bottom.
+
 Text (round 15)
 - "Installed mods (n)" on the bar under the search.
 - Gameplay tag: "...All players will need it enabled for multiplayer." Library tag: "This is a framework intended to be used by other mods; often has no effect when installed alone".
