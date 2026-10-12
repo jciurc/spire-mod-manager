@@ -241,8 +241,7 @@ Jordan's notes of 2026-10-11.
 
 ## Relaunch
 
-- [ ] warning before relaunch when enabled mods miss dependencies or are out of order: list the problem mods; offer enable required mods (listed), disable the incompatible ones, relaunch anyway, close
-  - next: RelaunchCheck dialog (list problems; Enable needed mods / Disable mods that can't load update it in place; Relaunch anyway; Cancel; Esc closes) wired to the Relaunch button; not started
+- [x] warning before relaunch when enabled mods miss dependencies or are out of order: list the problem mods; offer enable required mods (listed), disable the incompatible ones, relaunch anyway, close (dependencies only: the game fixes the order itself)
 - [x] main menu: tooltip or small "requires restart" text by the pending dot
 
 ## Backlog (round 3)
@@ -413,4 +412,4 @@ Jordan's notes of 2026-10-12 (late evening).
 - [x] whole-page controls in a new bar under the search box, above the categories (Enable all / Disable all)
 - [x] category Enable all / Disable all inline, right of the rename/move buttons
 - [x] author on the row, somewhere other than above the Category button (end of the tag line, dim)
-- [ ] then the relaunch check (round 3 note)
+- [x] then the relaunch check (round 3 note)
