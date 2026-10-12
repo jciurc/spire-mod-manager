@@ -8,13 +8,16 @@ Main list
 - A bar under the search box: "All mods (53)" (or "Search matches (4)" while searching), **Enable all / Disable all** for those mods (one undo step), and **Expand all / Collapse all** on the right.
 - Category headers: **Enable all / Disable all** at the far right, over the tickboxes (Uncategorized too). Greyed out when there's nothing to do.
 - Each row's tag line ends with the author, dim: "by symphony".
-- Click a tag on a row to show mods with it; Shift-click adds it to the search ("#tag" in search matches tags only).
-- New tags: **New** (installed this session) and **Updated** (Workshop update in the last week).
 
 ## Installed 2026-10-12 (evening): version 0.0.40
 
 Version
 - The mod now reads **0.0.40** (title in the info panel, game's mod list). The last number goes up by one with every install, so you can tell when there's a new build.
+
+Also in this build
+- Click a tag on a row to show mods with it; Shift-click adds it to the search ("#tag" in search matches tags only).
+- New tags: **New** (installed this session) and **Updated** (Workshop update in the last week).
+- Category right-click menu: **Enable all / Disable all**.
 
 Rows
 - A little shorter. Tags always in the order Local (new: hand-installed mods), Library, Gameplay, Cosmetic, then yours.
