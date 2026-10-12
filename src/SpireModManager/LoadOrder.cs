@@ -279,7 +279,7 @@ static class LoadOrder
             {
                 if (CategoryList.ScreenOf(content) is not { } screen)
                     return;
-                Dependencies.TurnOn(needed, screen);
+                Dependencies.Set(needed, true, screen);
                 redraw();
             }, name: "EnableNeededButton");
             enable.TooltipText = Menus.Format("SPIRE_MOD_MANAGER.ENABLE_NEEDED_TIP",
