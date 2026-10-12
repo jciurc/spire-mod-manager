@@ -7,10 +7,9 @@ using MegaCrit.Sts2.addons.mega_text;
 
 namespace SpireModManager;
 
-// The info panel in our views, top to bottom: the title (the player's alias if any), the Workshop page
-// link or "Local mod", a thumbnail of the mod's image beside them, the author's description and facts,
-// then the player's own tags and notes, edited right there (saved on Enter or clicking away), and Open
-// Folder. Player-written text is light blue, never the author's cream/gold.
+// The info panel in our views, top to bottom: the title (the player's alias if any), "Source:" (the
+// Workshop page or "Local mod"), a thumbnail beside them, problems, the author's description and facts,
+// then the player's own Tags, Alias and Notes right below them, edited in place, and Open Folder.
 // Rows show the alias with the original name small and dim beside it, and a pencil to edit it in place.
 // Vanilla View: the panel and rows exactly as the game makes them.
 static class ModDetails
@@ -64,10 +63,12 @@ static class ModDetails
             link.Underline = LinkButton.UnderlineMode.Never;
         }
 
-        var yours = container.GetNodeOrNull<Control>("SpireModManagerYours") ?? AddYours(container);
+        var yours = container.GetNodeOrNull<Control>(FieldsName) ?? AddYours(container);
         yours.Visible = id != null;
         yours.GetNode<LineEdit>("Tags").Text = string.Join(", ", info?.Tags ?? []);
+        yours.GetNode<LineEdit>("Alias").Text = info?.Alias ?? "";
         yours.GetNode<TextEdit>("Notes").Text = info?.Notes ?? "";
+        Callable.From(() => PlaceFields(container)).CallDeferred();
 
         var folder = container.GetNodeOrNull<NButton>("OpenFolderButton") ?? AddButton(container, "OpenFolderButton",
             "SPIRE_MOD_MANAGER.OPEN_FOLDER", 20, () => OS.ShellOpen(Meta(container, FolderMeta)));
@@ -169,7 +170,7 @@ static class ModDetails
     public static void HideButtons(Node container)
     {
         CommitEdits(container);
-        foreach (var name in new[] { "OpenFolderButton", SourceName, "SpireModManagerYours" })
+        foreach (var name in new[] { "OpenFolderButton", SourceName, FieldsName })
             if (container.GetNodeOrNull<Control>(name) is { } control)
                 control.Visible = false;
     }
@@ -177,7 +178,7 @@ static class ModDetails
     static string Meta(Node node, string key) => node.HasMeta(key) ? (string)node.GetMeta(key) : "";
 
     // Along the inside of the panel's bottom edge, whatever its size.
-    public const float ButtonsFromBottom = 72, YoursHeight = 214;
+    public const float ButtonsFromBottom = 72;
     public const float Inset = 22; // left edge of everything in the panel: title, source, text, fields
     const string SourceName = "SpireModManagerSource";
 
@@ -210,100 +211,183 @@ static class ModDetails
         return line;
     }
 
-    // "Tags" and "Notes", gold like the other terms, each with a pencil; below each, the player's text.
-    // At rest the fields look like plain text (the panel's cream); clicking one (or its pencil) shows the
-    // box and its hint. Saved on Enter (tags) or when focus leaves; switching to another mod saves first.
+    // The player's own fields: Tags, Alias and Notes, each a gold term with its field below. At rest a field
+    // reads like plain text (or a subtle "Click to add tags"); clicking it shows the box, its hint, and Save,
+    // Cancel and Clear on the term's line. Enter saves (Ctrl+Enter in Notes), Escape cancels, and clicking
+    // away saves too, so typed text is never lost. Switching to another mod saves first.
+    const string FieldsName = "SpireModManagerYours";
+    public const float YoursHeight = 280, FieldsGap = 18;
+
     static Control AddYours(Control container)
     {
-        var box = new VBoxContainer { Name = "SpireModManagerYours" };
+        var box = new VBoxContainer { Name = FieldsName };
         box.AddThemeConstantOverride("separation", 2);
         container.AddChild(box);
-        box.AnchorTop = box.AnchorBottom = box.AnchorRight = 1;
-        (box.OffsetLeft, box.OffsetRight, box.OffsetTop, box.OffsetBottom) = (Inset, -Inset, -ButtonsFromBottom - YoursHeight, -ButtonsFromBottom);
+        box.AnchorRight = 1;
+        (box.OffsetLeft, box.OffsetRight) = (Inset, -Inset);
 
-        StyleBoxFlat Field(bool active)
+        StyleBoxFlat Look(bool active)
         {
             var style = new StyleBoxFlat
             {
                 BgColor = active ? new Color(0.0756f, 0.12084f, 0.18f, 0.7f) : Colors.Transparent,
-                BorderColor = active ? new Color(NotesColor) with { A = 0.35f } : Colors.Transparent,
+                BorderColor = active ? new Color(Gold, 0.45f) : Colors.Transparent,
                 ContentMarginLeft = 6, ContentMarginRight = 6, ContentMarginTop = 2, ContentMarginBottom = 2,
             };
             style.SetBorderWidthAll(1);
             style.SetCornerRadiusAll(4);
             return style;
         }
-        void Editable(Control field, string hintKey, Action<string> setHint)
+
+        // A field: the term line (with its buttons, shown while editing) and the box itself.
+        void Field(Control field, string termKey, string restKey, string editKey, Func<string> stored, float gapBefore)
         {
-            Style(field, "res://themes/kreon_regular_shared.tres", 18, Cream);
-            field.AddThemeColorOverride("font_placeholder_color", new Color(Cream, 0.4f));
-            field.AddThemeStyleboxOverride("normal", Field(false));
-            field.AddThemeStyleboxOverride("focus", Field(true));
-            field.FocusEntered += () => setHint(Menus.Text(hintKey));
-            field.FocusExited += () => setHint("");
-            field.MouseDefaultCursorShape = Control.CursorShape.Ibeam;
-        }
-        void Caption(string key, Control field)
-        {
-            var line = new HBoxContainer();
-            line.AddThemeConstantOverride("separation", 6);
-            var label = new Label { Text = Menus.Text(key) };
-            Style(label, "res://themes/kreon_regular_shared.tres", 18, Gold);
-            line.AddChild(label);
-            var pencil = new Button
+            if (gapBefore > 0)
+                box.AddChild(new Control { CustomMinimumSize = new Vector2(0, gapBefore), MouseFilter = Control.MouseFilterEnum.Ignore });
+            void Set(string text)
             {
-                Text = "✎", Flat = true, FocusMode = Control.FocusModeEnum.None, MouseDefaultCursorShape = Control.CursorShape.PointingHand,
-                SizeFlagsVertical = Control.SizeFlags.ShrinkCenter,
-            };
-            pencil.AddThemeFontSizeOverride("font_size", 15);
-            pencil.AddThemeColorOverride("font_color", new Color(Gold, 0.6f));
-            pencil.AddThemeColorOverride("font_hover_color", Gold);
-            pencil.Pressed += () => field.GrabFocus();
-            line.AddChild(pencil);
-            box.AddChild(line);
+                if (field is LineEdit line)
+                    line.Text = text;
+                else
+                    ((TextEdit)field).Text = text;
+            }
+            void Hint(string key)
+            {
+                if (field is LineEdit line)
+                    line.PlaceholderText = Menus.Text(key);
+                else
+                    ((TextEdit)field).PlaceholderText = Menus.Text(key);
+            }
+
+            var term = new HBoxContainer { MouseFilter = Control.MouseFilterEnum.Ignore };
+            term.AddThemeConstantOverride("separation", 6);
+            var label = new Label { Text = Menus.Text(termKey), SizeFlagsHorizontal = Control.SizeFlags.ExpandFill };
+            Style(label, "res://themes/kreon_regular_shared.tres", 18, Gold);
+            term.AddChild(label);
+            var cancelling = false;
+            var buttons = Menus.InlineButtons([
+                new(Menus.Text("SPIRE_MOD_MANAGER.SAVE"), () => field.ReleaseFocus()), // leaving the field saves
+                new(Menus.Text("SPIRE_MOD_MANAGER.CANCEL"), Cancel),
+                new(Menus.Text("SPIRE_MOD_MANAGER.CLEAR"), () =>
+                {
+                    Set("");
+                    field.GrabFocus();
+                }),
+            ], $"{field.Name}Buttons");
+            foreach (var (button, id) in buttons.GetChildren().OfType<Button>().Zip(new[] { "Save", "Cancel", "Clear" }))
+                button.Name = $"{field.Name}{id}";
+            buttons.Visible = false;
+            term.AddChild(buttons);
+            box.AddChild(term);
+
+            Style(field, "res://themes/kreon_regular_shared.tres", 18, Cream);
+            field.AddThemeColorOverride("font_placeholder_color", new Color(Cream, 0.32f));
+            field.AddThemeStyleboxOverride("normal", Look(false));
+            field.AddThemeStyleboxOverride("focus", Look(true));
+            field.MouseDefaultCursorShape = Control.CursorShape.Ibeam;
+            Hint(restKey);
             box.AddChild(field);
+
+            void Cancel()
+            {
+                cancelling = true;
+                Set(stored());
+                field.ReleaseFocus();
+            }
+            field.FocusEntered += () =>
+            {
+                Hint(editKey);
+                buttons.Visible = true;
+            };
+            field.FocusExited += () =>
+            {
+                Hint(restKey);
+                buttons.Visible = false;
+                if (!cancelling)
+                    CommitField(container, field.Name);
+                cancelling = false;
+            };
+            field.GuiInput += e =>
+            {
+                switch (e)
+                {
+                    case InputEventKey { Keycode: Key.Escape, Pressed: true }:
+                        Cancel();
+                        field.AcceptEvent();
+                        break;
+                    case InputEventKey { Keycode: Key.Enter or Key.KpEnter, Pressed: true } enter when field is LineEdit || enter.CtrlPressed:
+                        field.ReleaseFocus();
+                        field.AcceptEvent();
+                        break;
+                }
+            };
         }
 
-        var tags = new LineEdit { Name = "Tags", MaxLength = 200, CustomMinimumSize = new Vector2(0, 32) };
-        Editable(tags, "SPIRE_MOD_MANAGER.TAGS_HINT", hint => tags.PlaceholderText = hint);
-        Caption("SPIRE_MOD_MANAGER.YOUR_TAGS", tags);
-
-        var notes = new TextEdit
+        string Stored(Func<ModInfo?, string> read) => read(Store.InfoFor(Meta(container, ModIdMeta)));
+        Field(new LineEdit { Name = "Tags", MaxLength = 200, CustomMinimumSize = new Vector2(0, 32) }, "SPIRE_MOD_MANAGER.YOUR_TAGS",
+            "SPIRE_MOD_MANAGER.TAGS_REST", "SPIRE_MOD_MANAGER.TAGS_HINT", () => Stored(i => string.Join(", ", i?.Tags ?? [])), 0);
+        Field(new LineEdit { Name = "Alias", MaxLength = 80, CustomMinimumSize = new Vector2(0, 32) }, "SPIRE_MOD_MANAGER.ALIAS",
+            "SPIRE_MOD_MANAGER.ALIAS_REST", "SPIRE_MOD_MANAGER.ALIAS_HINT", () => Stored(i => i?.Alias ?? ""), 8);
+        Field(new TextEdit
         {
             Name = "Notes", WrapMode = TextEdit.LineWrappingMode.Boundary, CustomMinimumSize = new Vector2(0, 4 * 24 + 8),
             SizeFlagsVertical = Control.SizeFlags.ExpandFill,
-        };
-        Editable(notes, "SPIRE_MOD_MANAGER.NOTES_HINT", hint => notes.PlaceholderText = hint);
-        Caption("SPIRE_MOD_MANAGER.YOUR_NOTES", notes);
-
-        tags.TextSubmitted += _ =>
-        {
-            CommitEdits(container);
-            tags.ReleaseFocus();
-        };
-        tags.FocusExited += () => CommitEdits(container);
-        notes.FocusExited += () => CommitEdits(container);
+        }, "SPIRE_MOD_MANAGER.YOUR_NOTES", "SPIRE_MOD_MANAGER.NOTES_REST", "SPIRE_MOD_MANAGER.NOTES_HINT", () => Stored(i => i?.Notes ?? ""), 16);
         return box;
+    }
+
+    // The fields sit right under the mod's details: the description shrinks to its text (up to the room
+    // left above the fields), and the fields follow it. Once the text is laid out, so deferred.
+    static void PlaceFields(Control container)
+    {
+        if (container.GetNodeOrNull<Control>(FieldsName) is not { } yours)
+            return;
+        var description = container.GetNode<RichTextLabel>("ModDescription");
+        var top = description.OffsetTop;
+        var room = container.Size.Y - ButtonsFromBottom - YoursHeight - FieldsGap - top;
+        var height = Math.Min(description.GetContentHeight() + 6, room);
+        description.OffsetBottom = top + height;
+        yours.OffsetTop = top + height + FieldsGap;
+        yours.OffsetBottom = yours.OffsetTop + YoursHeight;
     }
 
     // After an undo or revert: the fields show the old state, so they must not be saved over the restored one.
     public static void Forget(Node container) => container.SetMeta(ModIdMeta, "");
 
-    // Saves the panel's tag and note fields for the mod they belong to, if they changed.
+    // Saves the field being edited (if any) for the mod it belongs to: before the panel shows another mod.
+    // Only that field: the others may show text that has since changed elsewhere (the row's pencil).
     static void CommitEdits(Node container)
     {
-        if (container.GetNodeOrNull<Control>("SpireModManagerYours") is not { } yours || Meta(container, ModIdMeta) is not { Length: > 0 } id)
+        if (container.GetNodeOrNull<Control>(FieldsName) is { } yours)
+            foreach (var field in new[] { "Tags", "Alias", "Notes" })
+                if (yours.GetNode<Control>(field).HasFocus())
+                    CommitField(container, field);
+    }
+
+    // Saves one field if it changed. A new alias also retitles the panel and the row.
+    static void CommitField(Node container, string field)
+    {
+        if (container.GetNodeOrNull<Control>(FieldsName) is not { } yours || Meta(container, ModIdMeta) is not { Length: > 0 } id)
             return;
         var info = Store.InfoFor(id);
-        var tags = Tags.Parse(yours.GetNode<LineEdit>("Tags").Text);
-        var notes = yours.GetNode<TextEdit>("Notes").Text.Trim() is { Length: > 0 } n ? n : null;
-        if (notes == info?.Notes && (tags ?? []).SequenceEqual(info?.Tags ?? []))
-            return;
-        Edit(id, i =>
+        string? Trimmed(string text) => text.Trim() is { Length: > 0 } t ? t : null;
+        switch (field)
         {
-            i.Tags = tags;
-            i.Notes = notes;
-        });
+            case "Tags" when Tags.Parse(yours.GetNode<LineEdit>("Tags").Text) is var tags && !(tags ?? []).SequenceEqual(info?.Tags ?? []):
+                Edit(id, i => i.Tags = tags);
+                yours.GetNode<LineEdit>("Tags").Text = string.Join(", ", tags ?? []); // as saved: repeats and blanks dropped
+                break;
+            case "Alias" when Trimmed(yours.GetNode<LineEdit>("Alias").Text) is var alias && alias != info?.Alias:
+                Edit(id, i => i.Alias = alias);
+                if (container is NModInfoContainer panel && CategoryList.Selected is { } mod && mod.manifest?.id == id)
+                    Callable.From(() => panel.Fill(mod)).CallDeferred(); // the title and "Name:" line follow
+                break;
+            case "Notes" when Trimmed(yours.GetNode<TextEdit>("Notes").Text) is var notes && notes != info?.Notes:
+                Edit(id, i => i.Notes = notes);
+                break;
+            default:
+                return;
+        }
         RefreshRows(container);
     }
 

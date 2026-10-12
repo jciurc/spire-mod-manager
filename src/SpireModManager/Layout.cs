@@ -83,7 +83,7 @@ static class Layout
         image.CustomMinimumSize = Wide ? Vector2.Zero : (Vector2)image.GetMeta(MinSizeMeta);
         Place(image, new Vector4(width - thumbWidth - 20, 16, width - 20, 16 + thumbHeight));
         Place(info.GetNode<Control>("ModDescription"), new Vector4(inset, 100, width - inset,
-            info.Size.Y - ModDetails.ButtonsFromBottom - ModDetails.YoursHeight - 8));
+            info.Size.Y - ModDetails.ButtonsFromBottom - ModDetails.YoursHeight - ModDetails.FieldsGap));
         ViewFont(info.GetNode<MegaRichTextLabel>("ModTitle"), InfoTitleSize);
         ViewFont(info.GetNode<MegaRichTextLabel>("ModDescription"), InfoTextSize);
 
