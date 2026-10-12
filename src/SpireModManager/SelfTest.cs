@@ -255,7 +255,7 @@ static class SelfTest
         var corner = button.Position;
         var from = button.GetGlobalRect().GetCenter();
         var fake = from;
-        MenuButton.TestMouse = () => fake;
+        Hover.TestMouse = () => fake;
         void Mouse(Vector2 at) => fake = at;
         async Task Click(MouseButton which, Vector2 at)
         {
@@ -311,7 +311,7 @@ static class SelfTest
             MenuPanel.Press(third, "Reset position");
         await Wait(menu, 0.2);
         Check("Reset position puts it back in the corner", Store.Data.MenuButtonAt == null && button.Position == corner, $"{button.Position} vs {corner}");
-        MenuButton.TestMouse = null;
+        Hover.TestMouse = null;
     }
 
     // Row menu, new category renamed in place, assign, move, header menu, delete.
@@ -579,8 +579,9 @@ static class SelfTest
             Results.Add("SKIP notes: fixture mods missing");
             return;
         }
-        Check("row shows alias beside the name, and the edited mark", RowTitle(ModEntry.ModId).StartsWith("The Manager")
-            && RowTitle(ModEntry.ModId).Contains("Spire Mod Manager") && RowTitle(ModEntry.ModId).Contains("✎"), RowTitle(ModEntry.ModId));
+        Check("row shows alias beside the name, and the notepad mark", RowTitle(ModEntry.ModId).StartsWith("The Manager")
+            && RowTitle(ModEntry.ModId).Contains("Spire Mod Manager") && ours.GetNodeOrNull<Control>("SpireModManagerEditedMark") is { Visible: true },
+            RowTitle(ModEntry.ModId));
         Check("no alias pencil on rows", !ours.HasNode("SpireModManagerPencil"));
         screen.OnRowSelected(ours);
         await Wait(menu, 0.5);
@@ -631,12 +632,15 @@ static class SelfTest
         Check("the alias field saves, the row follows", Store.InfoFor("LocalModFixes")?.Alias == "Fixes" && RowTitle("LocalModFixes").StartsWith("Fixes"));
 
         // Hovering a row for a second shows its notes.
-        var mouse = other.GetGlobalRect().GetCenter();
-        Input.ParseInputEvent(new InputEventMouseMotion { Position = mouse, GlobalPosition = mouse });
+        Hover.TestMouse = () => other.GetGlobalRect().GetCenter();
         other.EmitSignal(Control.SignalName.MouseEntered);
         await Wait(menu, 1.3);
-        Check("a second over a row shows its notes", screen.HasNode("SpireModManagerNotesCard"));
+        Check("a second over a row shows its card", screen.HasNode("SpireModManagerNotesCard"));
         await Capture(screen, outDir, "9b-notes-hover");
+        Hover.TestMouse = () => new Vector2(5, 5);
+        await Wait(menu, 0.1);
+        Check("the card goes once the mouse is off the row", !screen.HasNode("SpireModManagerNotesCard"));
+        Hover.TestMouse = null;
         other.EmitSignal(Control.SignalName.MouseExited);
         Check("Vanilla View shows plain names", await WithVanillaView(screen, menu, () => RowTitle(ModEntry.ModId) == "Spire Mod Manager"));
     }
@@ -653,7 +657,7 @@ static class SelfTest
         await Wait(menu, 0.4);
         var added = content.GetChildren().OfType<NModMenuRow>().Except(before).FirstOrDefault();
         Check("a mod installed while the page is open gets our row style", added != null && added.HasNode("SpireModManagerStrip")
-            && added.CustomMinimumSize.Y == 52, added == null ? "no new row" : $"strip {added.HasNode("SpireModManagerStrip")}, height {added.CustomMinimumSize.Y}");
+            && added.CustomMinimumSize.Y == RowTitles.RowHeight, added == null ? "no new row" : $"strip {added.HasNode("SpireModManagerStrip")}, height {added.CustomMinimumSize.Y}");
         Check("the profile bar shows how many mods are on", screen.FindChild("ProfileCount", true, false) is Label { Text: var count } && count.EndsWith("mods"));
         if (added != null)
         {
@@ -684,8 +688,9 @@ static class SelfTest
         Check("search by own tag", byTag.SequenceEqual(["LocalModFixes"]), string.Join(", ", byTag));
         var libraries = await Shown("library");
         Check("search by automatic tag", libraries.SequenceEqual(["SmmTestLib"]), string.Join(", ", libraries));
-        Check("automatic tags", Tags.For(Dependencies.Find("SmmTestLib")).Select(c => c.Text).SequenceEqual(["Gameplay", "Library"])
-            && Tags.For(Dependencies.Find("SmmTestUi")).Count == 0);
+        Check("automatic tags, in order", Tags.For(Dependencies.Find("SmmTestLib")).Select(c => c.Text).SequenceEqual(["Local", "Library", "Gameplay"])
+            && Tags.For(Dependencies.Find("SmmTestUi")).Select(c => c.Text).SequenceEqual(["Local"]),
+            string.Join(", ", Tags.For(Dependencies.Find("SmmTestLib")).Select(c => c.Text)));
         var none = await Shown("zzz no such mod");
         Check("no match hides every row and header", none.Count == 0
             && !content.GetChildren().OfType<Control>().Any(c => c.IsInGroup("SpireModManagerCategoryHeader") && c.Visible));
@@ -923,11 +928,13 @@ static class SelfTest
         Check("Changes counts it", HistoryBar.Counts().Off >= 1, $"{HistoryBar.Counts()}");
         Check("a mod turned off since launch has a changed-colour title", row.GetNode<Control>("Title").Modulate == RowTitles.ChangedOffTitle);
         var changes = screen.GetNode<Control>(HistoryBar.ChangesName);
+        Hover.TestMouse = () => changes.GetGlobalRect().GetCenter();
         changes.EmitSignal(Control.SignalName.MouseEntered);
         await Wait(menu, 0.3);
         Check("hovering Changes shows the details", screen.HasNode("SpireModManagerChangesPanel"));
         await Capture(screen, outDir, "14-changes");
         changes.EmitSignal(Control.SignalName.MouseExited);
+        Hover.TestMouse = null;
         await Wait(menu, 0.2);
 
         Press("UndoButton");

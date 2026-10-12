@@ -109,7 +109,8 @@ static class ProfileBar
             var lines = new List<string> { Menus.Format("SPIRE_MOD_MANAGER.UNSAVED_TITLE", ("name", Profiles.Active?.Name ?? "")) };
             lines.AddRange(on.Select(n => $"[color=#a6e3a1]+ {n.Replace("[", "[lb]")}[/color]"));
             lines.AddRange(off.Select(n => $"[color=#f2a3a3]− {n.Replace("[", "[lb]")}[/color]"));
-            Hover.Show(screen, UnsavedCard, string.Join("\n", lines), unsaved.GlobalPosition + new Vector2(0, unsaved.Size.Y + 6), width: 320);
+            Hover.Show(screen, UnsavedCard, string.Join("\n", lines), unsaved.GlobalPosition + new Vector2(0, unsaved.Size.Y + 6), width: 320,
+                keep: () => unsaved.IsVisibleInTree() && unsaved.GetGlobalRect().HasPoint(Hover.Mouse(unsaved)));
         };
         unsaved.MouseExited += () => Hover.Hide(screen, UnsavedCard);
         var unsavedButtons = ButtonBox("UnsavedButtons");

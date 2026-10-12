@@ -9,12 +9,30 @@ static class Hover
     static readonly Color Cream = new(1, 0.964706f, 0.886275f);
     static readonly Color Gold = new(0.937f, 0.784f, 0.318f);
 
-    // at: the card's corner: its top-left, or with right/above, the matching corner. Kept on screen.
-    public static void Show(Node owner, string name, string bbcode, Vector2 at, bool right = false, bool above = false, float width = 380)
+    // Where the mouse is. The self-test sets it: during a test run the real cursor can be anywhere.
+    public static Func<Vector2>? TestMouse;
+    public static Vector2 Mouse(CanvasItem item) => TestMouse?.Invoke() ?? item.GetGlobalMousePosition();
+
+    // at: the card's corner: its top-left, or with right/above, the matching corner. Kept on screen. keep: checked
+    // every frame; the card goes as soon as it's false (so it can't be left behind when the mouse moves on
+    // without an exit event, a click opens something else, or the page changes).
+    public static void Show(Node owner, string name, string bbcode, Vector2 at, bool right = false, bool above = false, float width = 380,
+        Func<bool>? keep = null)
     {
         Hide(owner, name);
         var layer = new CanvasLayer { Name = name, Layer = 80 };
         owner.AddChild(layer);
+        if (keep != null)
+        {
+            var tree = owner.GetTree();
+            void Check()
+            {
+                if (!GodotObject.IsInstanceValid(owner) || !owner.IsInsideTree() || !keep())
+                    Hide(owner, name);
+            }
+            tree.ProcessFrame += Check;
+            layer.TreeExiting += () => tree.ProcessFrame -= Check;
+        }
         var panel = new PanelContainer { MouseFilter = Control.MouseFilterEnum.Ignore };
         var style = new StyleBoxFlat
         {
