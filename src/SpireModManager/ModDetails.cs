@@ -140,13 +140,13 @@ static class ModDetails
             else if (meta.AsString() is { } tag && tag.StartsWith("wtag:"))
                 Search.ByText(container, tag[5..], Input.IsKeyPressed(Key.Shift)); // a Workshop tag: plain words
         };
-        Hover.WatchLinks(description, "SpireModManagerTagCard", Tags.CardDelay,
+        Hover.WatchLinks(description, "SpireModManagerTagCard",
             meta => meta.StartsWith("wtag:") ? Tags.Hint(Menus.Text("SPIRE_MOD_MANAGER.SEARCH_CLICK_TIP")) : null, width: 320);
         CategoryList.WatchNames(description, Content); // hovering a name: its row lit (if in view), then its card
         // Hovering the thumbnail: the whole picture (our views).
         var image = container.GetNode<TextureRect>("ModImage");
         image.MouseFilter = Control.MouseFilterEnum.Pass;
-        Hover.Watch(image, "SpireModManagerPictureCard", 0.2, () => null, picture: () => Store.Data.VanillaView ? null : image.Texture);
+        Hover.Watch(image, "SpireModManagerPictureCard", () => null, picture: () => Store.Data.VanillaView ? null : image.Texture);
     }
 
     // Anything wrong, the author's description, more facts, then compatibility and dependencies; blank lines
@@ -419,7 +419,7 @@ static class ModDetails
             if (meta.AsString() is { } target && target.StartsWith("author:"))
                 Search.ByAuthor(container, target[7..], Input.IsKeyPressed(Key.Shift));
         };
-        Hover.WatchLinks(head, "SpireModManagerTagCard", Tags.CardDelay,
+        Hover.WatchLinks(head, "SpireModManagerTagCard",
             meta => meta.StartsWith("author:") ? Tags.Hint(Menus.Text("SPIRE_MOD_MANAGER.SEARCH_CLICK_TIP")) : null, width: 320);
         container.AddChild(head);
         head.AnchorRight = 1;

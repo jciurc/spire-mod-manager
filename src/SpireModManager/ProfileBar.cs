@@ -103,16 +103,14 @@ static class ProfileBar
         // Hovering it lists this profile's own unsaved changes (not everything since launch).
         unsaved.MouseFilter = Control.MouseFilterEnum.Stop;
         unsaved.MouseDefaultCursorShape = Control.CursorShape.Help;
-        unsaved.MouseEntered += () =>
+        Hover.Watch(unsaved, UnsavedCard, () =>
         {
             var (on, off) = Profiles.UnsavedChanges();
             var lines = new List<string> { Menus.Format("SPIRE_MOD_MANAGER.UNSAVED_TITLE", ("name", Profiles.Active?.Name ?? "")) };
             lines.AddRange(on.Select(n => $"[color=#a6e3a1]+ {n.Replace("[", "[lb]")}[/color]"));
             lines.AddRange(off.Select(n => $"[color=#f2a3a3]− {n.Replace("[", "[lb]")}[/color]"));
-            Hover.Show(screen, UnsavedCard, string.Join("\n", lines), unsaved.GlobalPosition + new Vector2(0, unsaved.Size.Y + 6), width: 320,
-                keep: () => unsaved.IsVisibleInTree() && unsaved.GetGlobalRect().HasPoint(Hover.Mouse(unsaved)));
-        };
-        unsaved.MouseExited += () => Hover.Hide(screen, UnsavedCard);
+            return string.Join("\n", lines);
+        }, width: 320, place: () => (unsaved.GlobalPosition + new Vector2(0, unsaved.Size.Y + 6), false, false));
         var unsavedButtons = ButtonBox("UnsavedButtons");
         row.AddChild(unsavedButtons);
 

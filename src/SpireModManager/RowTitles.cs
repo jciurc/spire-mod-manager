@@ -8,8 +8,8 @@ namespace SpireModManager;
 /// Row titles in our views: the alias with the original name small and dim beside it (or just the name),
 // cut short with "…" when it doesn't fit; right after the alias (or name), a small notepad when the player has
 // an alias or notes for it (main list); a red gem before it when the Workshop updated it lately and the player
-// hasn't opened it since. Hovering the title shows the mod's card after half a second, the notepad after a
-// tenth, the gem says when it was updated. Titles of mods turned on or off since launch are gold. Vanilla View:
+// hasn't opened it since. Hovering the title shows the mod's card (Hover's delay), the notepad at once, the
+// gem says when it was updated. Titles of mods turned on or off since launch are gold. Vanilla View:
 // exactly as the game makes them.
 static class RowTitles
 {
@@ -17,7 +17,6 @@ static class RowTitles
     const float TitleShift = 12; // a little room before the title in our views (the gem sits there)
     const string ShiftMeta = "spire_mod_manager_title_shift";
     const string NotesCard = "SpireModManagerNotesCard";
-    const double TitleDelay = 0.5, MarkDelay = 0.1;
     public const int RecentDays = 7; // "updated lately"
 
     public const float RowHeight = 48; // our views (the game's: 72)
@@ -101,7 +100,7 @@ static class RowTitles
         {
             hot = new Control { Name = HotName, MouseFilter = Control.MouseFilterEnum.Pass };
             row.AddChild(hot);
-            Hover.Watch(hot, NotesCard, TitleDelay, () => row.Mod is { } shown ? ModDetails.Card(shown) : null);
+            Hover.Watch(hot, NotesCard, () => row.Mod is { } shown ? ModDetails.Card(shown) : null);
         }
         (hot.Position, hot.Size, hot.Visible) = (new Vector2(title.Position.X, top), new Vector2(used, lineHeight), true);
 
@@ -116,7 +115,7 @@ static class RowTitles
                     MouseFilter = Control.MouseFilterEnum.Pass, Modulate = new Color(0.91f, 0.81f, 0.48f, 0.75f),
                 };
                 row.AddChild(mark);
-                Hover.Watch(mark, NotesCard, MarkDelay, () => row.Mod is { } shown ? ModDetails.Card(shown) : null);
+                Hover.Watch(mark, NotesCard, () => row.Mod is { } shown ? ModDetails.Card(shown) : null, Hover.Timing.Instant);
             }
             mark.Visible = true;
             mark.Position = new Vector2(title.Position.X + mainWidth + 6, top + (lineHeight - markSize.Y) / 2);
@@ -130,7 +129,7 @@ static class RowTitles
             {
                 gem = new TextureRect { Name = GemName, Texture = Icons.Gem, StretchMode = TextureRect.StretchModeEnum.Keep, MouseFilter = Control.MouseFilterEnum.Pass };
                 row.AddChild(gem);
-                Hover.Watch(gem, NotesCard, MarkDelay, () => row.Mod is { } shown && WorkshopInfo.For(shown) is { } info
+                Hover.Watch(gem, NotesCard, () => row.Mod is { } shown && WorkshopInfo.For(shown) is { } info
                     ? Menus.Format("SPIRE_MOD_MANAGER.TAG_UPDATED_TIP", ("date", ModDetails.Date(info.Updated))) : null, width: 420);
             }
             gem.Visible = true;

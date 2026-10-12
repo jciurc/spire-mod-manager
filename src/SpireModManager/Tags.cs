@@ -64,7 +64,6 @@ static class Tags
         return tags.Count > 0 ? tags : null;
     }
 
-    public const double CardDelay = 0.5;
 
     // A chip: tinted fill, border in the chip's colour, small text. Hovering shows what it means on a card
     // (with, when it's clickable, how to search for it underneath). clicked: what a click does (told whether
@@ -77,7 +76,7 @@ static class Tags
             MouseFilter = Control.MouseFilterEnum.Pass, SizeFlagsVertical = Control.SizeFlags.ShrinkCenter,
         };
         var card = clicked == null ? Escape(tip) : $"{Escape(tip)}\n\n{Hint(Menus.Text("SPIRE_MOD_MANAGER.SEARCH_CLICK_TIP"))}";
-        Hover.Watch(box, "SpireModManagerTagCard", CardDelay, () => card, width: 320);
+        Hover.Watch(box, "SpireModManagerTagCard", () => card, width: 320);
         if (clicked != null)
         {
             (box.MouseFilter, box.MouseDefaultCursorShape) = (Control.MouseFilterEnum.Stop, Control.CursorShape.PointingHand);

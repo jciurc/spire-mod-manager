@@ -670,7 +670,7 @@ static class SelfTest
         image.Texture = ImageTexture.CreateFromImage(Image.CreateEmpty(1600, 900, false, Image.Format.Rgba8));
         Hover.TestMouse = () => image.GetGlobalRect().GetCenter();
         image.EmitSignal(Control.SignalName.MouseEntered);
-        await Wait(menu, 0.35);
+        await Wait(menu, Hover.Delay + 0.15);
         var big = screen.GetNodeOrNull("SpireModManagerPictureCard")?.FindChildren("*", "TextureRect", true, false).OfType<TextureRect>().FirstOrDefault();
         Check("hovering the thumbnail shows the whole picture, at most 800 wide", big != null && big.Size.X == 800 && big.Size.Y == 450, $"{big?.Size}");
         Hover.TestMouse = () => new Vector2(5, 5);
@@ -714,9 +714,11 @@ static class SelfTest
         await Wait(menu, 0.4);
         Check("the alias field saves, the row follows", Store.InfoFor("LocalModFixes")?.Alias == "Fixes" && RowTitle("LocalModFixes").StartsWith("Fixes"));
 
-        // Hovering the title for half a second shows the mod's card (id and state first); the notepad, a tenth;
-        // after a card goes, another shows at once for twice its delay.
+        // Hover cards (Hover's rules): the title's after the delay (id and state first); a quick wobble off it
+        // keeps the card (wind-down); after a card goes, the next shows at once for the grace period; the
+        // notepad's shows and goes with the mouse, with no grace after it; one card at a time.
         bool CardShown() => screen.HasNode("SpireModManagerNotesCard");
+        int Cards() => screen.GetChildren().OfType<CanvasLayer>().Count(l => l.Name.ToString().StartsWith("SpireModManager") && l.Name.ToString().EndsWith("Card"));
         string CardText() => screen.GetNodeOrNull("SpireModManagerNotesCard")?.FindChildren("*", "RichTextLabel", true, false).OfType<RichTextLabel>().FirstOrDefault()?.GetParsedText() ?? "";
         async Task HoverOver(Control target, double seconds)
         {
@@ -732,24 +734,30 @@ static class SelfTest
         }
         var hot = other.GetNode<Control>("SpireModManagerTitleHover");
         var mark = other.GetNode<Control>("SpireModManagerEditedMark");
+        var oursHot = ours.GetNode<Control>("SpireModManagerTitleHover");
         Check("the notepad sits right after the alias, before the original name", mark.Position.X < other.GetNode<Control>("Title").Position.X + hot.Size.X - 20,
             $"mark at {mark.Position.X}, title text {other.GetNode<Control>("Title").Position.X}..+{hot.Size.X}");
-        await HoverOver(hot, 0.3);
-        Check("not yet at 0.3 s", !CardShown());
-        await Wait(menu, 0.35);
-        Check("half a second over the title shows the card: id and state first", CardShown() && CardText().StartsWith("LocalModFixes") && CardText().Contains("Enabled"), CardText());
+        await HoverOver(hot, Hover.Delay - 0.15);
+        Check("the title's card waits for the delay", !CardShown());
+        await Wait(menu, 0.3);
+        Check("after the delay, the title's card: id and state first", CardShown() && CardText().StartsWith("LocalModFixes") && CardText().Contains("Enabled"), CardText());
         await Capture(screen, outDir, "9b-notes-hover");
+        Hover.TestMouse = () => new Vector2(5, 5);
+        await menu.ToSignal(menu.GetTree(), SceneTree.SignalName.ProcessFrame);
+        Hover.TestMouse = () => hot.GetGlobalRect().GetCenter();
+        await Wait(menu, 0.1);
+        Check("a one-frame wobble off the title keeps the card (wind-down)", CardShown());
         await Leave(hot, 0.1);
         Check("the card goes once the mouse is off the title", !CardShown());
+        await HoverOver(oursHot, 0.05);
+        Check("within the grace period, the next title's card shows at once", CardShown() && CardText().StartsWith(ModEntry.ModId), CardText());
         await HoverOver(mark, 0.05);
-        Check("within the grace period, the notepad's card shows at once", CardShown());
-        await Leave(mark, 1.3);
+        Check("the notepad's card at once, and only one card at a time", CardShown() && CardText().StartsWith("LocalModFixes") && Cards() == 1, $"{Cards()} cards");
+        await Leave(mark, 0.05);
+        Check("the notepad's card goes with the mouse", !CardShown());
         await HoverOver(hot, 0.2);
-        Check("after the grace period, the title waits again", !CardShown());
+        Check("no grace period after the notepad: the title waits again", !CardShown());
         await Leave(hot, 0.3);
-        await HoverOver(mark, 0.2);
-        Check("the notepad's card after a tenth of a second", CardShown());
-        await Leave(mark, 0.1);
         Hover.TestMouse = null;
         Check("Vanilla View shows plain names", await WithVanillaView(screen, menu, () => RowTitle(ModEntry.ModId) == "Spire Mod Manager"));
     }
@@ -1466,7 +1474,7 @@ static class SelfTest
         var changes = screen.GetNode<Control>(HistoryBar.ChangesName);
         Hover.TestMouse = () => changes.GetGlobalRect().GetCenter();
         changes.EmitSignal(Control.SignalName.MouseEntered);
-        await Wait(menu, 0.3);
+        await Wait(menu, Hover.Delay + 0.15);
         Check("hovering Changes shows the details", screen.HasNode("SpireModManagerChangesPanel"));
         var summary = screen.GetNodeOrNull("SpireModManagerChangesPanel")?.FindChildren("*", "RichTextLabel", true, false).OfType<RichTextLabel>().FirstOrDefault()?.GetParsedText() ?? "";
         Check("the summary is titled and names the mod turned off", summary.StartsWith("Changes since launch") && summary.Contains("Test UI"), summary);
