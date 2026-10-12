@@ -45,6 +45,15 @@ public static class ModEntry
         screen.AddChild(notice);
     }
 
+    // A picture shipped in our pack (images/), loaded from its bytes: the pack holds plain PNGs, not
+    // imported textures. Null if it's missing.
+    public static Texture2D? Art(string file)
+    {
+        var bytes = Godot.FileAccess.GetFileAsBytes($"res://{ModId}/images/{file}");
+        var image = new Image();
+        return bytes.Length > 0 && image.LoadPngFromBuffer(bytes) == Error.Ok ? ImageTexture.CreateFromImage(image) : null;
+    }
+
     // Set by tools/dev.cs for its sandboxed runs, so they can't be mistaken for the real game.
     public static bool IsDevRun { get; } = System.Environment.GetEnvironmentVariable("SPIRE_MOD_MANAGER_DEV") == "1";
 
@@ -134,7 +143,9 @@ public static class ModEntry
     }
 
     // Adds a button in the style of the vanilla Get Mods button, sized freely (the art is a 9-slice).
-    public static NButton AddButton(Node parent, string locKey, Vector2 size, Action onPressed)
+    // art: our own picture instead of the game's button art, drawn whole (no 9-slice); hover and press
+    // still brighten and squash it like the game's buttons.
+    public static NButton AddButton(Node parent, string locKey, Vector2 size, Action onPressed, Texture2D? art = null)
     {
         var button = ResourceLoader.Load<PackedScene>(ButtonScenePath).Instantiate<NButton>();
         parent.AddChild(button);
@@ -143,7 +154,12 @@ public static class ModEntry
 
         // Draw the art at its native height and scale it down, so the slanted corners keep their shape.
         var frame = button.GetNode<NinePatchRect>("Visuals/Image/Frame");
-        var scale = size.Y / ButtonArtHeight;
+        if (art != null)
+        {
+            frame.Texture = art;
+            (frame.PatchMarginLeft, frame.PatchMarginRight) = (0, 0);
+        }
+        var scale = size.Y / (art?.GetHeight() ?? ButtonArtHeight);
         frame.Scale = new Vector2(scale, scale);
         frame.Size = size / scale;
 
