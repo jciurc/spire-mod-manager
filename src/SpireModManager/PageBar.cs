@@ -22,7 +22,10 @@ static class PageBar
             return;
 
         var filter = content.HasMeta(CategoryList.FilterMeta) ? (string)content.GetMeta(CategoryList.FilterMeta) : "";
-        var shown = rows.Where(r => filter.Length == 0 || Search.Matches(r.Mod, filter)).ToList();
+        // Picked mods (two or more) first: then the bar acts on them.
+        var picked = Selection.Several;
+        var shown = picked ? rows.Where(r => Selection.Contains(r.Mod)).ToList()
+            : rows.Where(r => filter.Length == 0 || Search.Matches(r.Mod, filter)).ToList();
         var categories = Store.Data.Categories;
         void Fold(bool collapsed)
         {
@@ -40,21 +43,25 @@ static class PageBar
         var scope = new Label
         {
             Name = "Scope", VerticalAlignment = VerticalAlignment.Center, MouseFilter = Control.MouseFilterEnum.Ignore,
-            Text = Menus.Format(filter.Length == 0 ? "SPIRE_MOD_MANAGER.PAGE_ALL" : "SPIRE_MOD_MANAGER.PAGE_MATCHES", ("count", shown.Count.ToString())),
+            Text = Menus.Format(picked ? "SPIRE_MOD_MANAGER.PAGE_SELECTED" : filter.Length == 0 ? "SPIRE_MOD_MANAGER.PAGE_ALL" : "SPIRE_MOD_MANAGER.PAGE_MATCHES",
+                ("count", shown.Count.ToString())),
         };
         scope.AddThemeFontOverride("font", ResourceLoader.Load<Font>("res://themes/kreon_regular_shared.tres"));
         scope.AddThemeFontSizeOverride("font_size", 15);
         scope.AddThemeColorOverride("font_color", new Color(1, 0.964706f, 0.886275f, 0.55f));
         bar.AddChild(scope);
-        bar.AddChild(Menus.InlineButtons(CategoryList.OnOffItems(content, shown), "OnOff"));
+        List<MenuItem> onOff = [.. CategoryList.OnOffItems(content, shown)];
+        if (picked)
+            onOff.Add(new MenuItem(Menus.Text("SPIRE_MOD_MANAGER.CLEAR_SELECTION"), () => Selection.Clear(content)));
+        bar.AddChild(Menus.InlineButtons(onOff, "OnOff"));
         bar.AddChild(new Control { SizeFlagsHorizontal = Control.SizeFlags.ExpandFill, MouseFilter = Control.MouseFilterEnum.Ignore });
         bar.AddChild(Menus.InlineButtons([
             new(Menus.Text("SPIRE_MOD_MANAGER.EXPAND_ALL"), () => Fold(false), Disabled: !anyCollapsed || filter.Length > 0),
             new(Menus.Text("SPIRE_MOD_MANAGER.COLLAPSE_ALL"), () => Fold(true), Disabled: !anyOpen || filter.Length > 0),
         ], "Folding"));
-        foreach (var (button, name) in bar.FindChildren("*", "Button", true, false).OfType<Button>()
-                     .Zip(new[] { "EnableAllButton", "DisableAllButton", "ExpandAllButton", "CollapseAllButton" }))
-            button.Name = name;
+        foreach (var (group, names) in new[] { ("OnOff", new[] { "EnableAllButton", "DisableAllButton", "ClearSelectionButton" }), ("Folding", ["ExpandAllButton", "CollapseAllButton"]) })
+            foreach (var (button, name) in bar.GetNode(group).GetChildren().OfType<Button>().Zip(names))
+                button.Name = name;
 
         border.AddChild(bar);
         bar.SetAnchorsPreset(Control.LayoutPreset.TopWide);

@@ -14,7 +14,6 @@ static class LoadOrder
 {
     const string HandleName = "SpireModManagerHandle";
     const string NumberName = "SpireModManagerNumber";
-    const string PickedName = "SpireModManagerPicked";
     const string WasName = "SpireModManagerWas";
     const float WasWidth = 44; // "12 →", kept for every row so the numbers line up
     const float HandleWidth = 84 + WasWidth; // the row title shifts right by this much in this view
@@ -79,7 +78,7 @@ static class LoadOrder
                 continue;
             // Out of the tree now, not at the end of the frame: a second redraw in the same frame must not
             // find them and shift the title back again.
-            foreach (var node in new[] { handle, row.GetNodeOrNull(NumberName), row.GetNodeOrNull(WasName), row.GetNodeOrNull(PickedName) })
+            foreach (var node in new[] { handle, row.GetNodeOrNull(NumberName), row.GetNodeOrNull(WasName) })
                 if (node != null)
                 {
                     row.RemoveChild(node);
@@ -438,15 +437,6 @@ static class LoadOrder
                 HideLinks(content);
         };
 
-        // Multi-select highlight, behind everything else in the row.
-        var picked = new ColorRect
-        {
-            Name = PickedName, Color = new Color(0.35f, 0.6f, 0.95f, 0.18f), Visible = false,
-            MouseFilter = Control.MouseFilterEnum.Ignore, AnchorRight = 1, AnchorBottom = 1,
-        };
-        row.AddChild(picked);
-        row.MoveChild(picked, 0);
-
         // The whole row is the drag handle (the grip just shows it). A press picks the row and starts the drag
         // at once (lit links, the drop line); the drop saves. Ctrl and Shift only change the selection. A
         // press and release without moving is a click: on a row of a multi-selection it picks just that row.
@@ -464,14 +454,14 @@ static class LoadOrder
             {
                 case InputEventMouseButton { ButtonIndex: MouseButton.Left, Pressed: true } modified
                     when modified.CtrlPressed || modified.ShiftPressed || modified.MetaPressed:
-                    Pick(content, row, toggle: modified.CtrlPressed || modified.MetaPressed, range: modified.ShiftPressed);
+                    Selection.Pick(content, row, toggle: modified.CtrlPressed || modified.MetaPressed, range: modified.ShiftPressed);
                     row.AcceptEvent();
                     break;
                 case InputEventMouseButton { ButtonIndex: MouseButton.Left, Pressed: true } press:
                     pressAt = press.GlobalPosition;
                     mouseY = press.GlobalPosition.Y;
-                    if (row.Mod is not { } grabbed || !Picked.Contains(grabbed))
-                        Pick(content, row, toggle: false, range: false);
+                    if (!Selection.Contains(row.Mod))
+                        Selection.Pick(content, row, toggle: false, range: false);
                     CategoryList.Select(content, row); // grabbing a row selects it too
                     dragging = true;
                     moved = false;
@@ -495,7 +485,7 @@ static class LoadOrder
                     EndDragLook(content);
                     if (!moved)
                     {
-                        Pick(content, row, toggle: false, range: false);
+                        Selection.Pick(content, row, toggle: false, range: false);
                         ShowLinks(content, row, strong: false); // still hovering it
                         break;
                     }
@@ -503,9 +493,9 @@ static class LoadOrder
                     // Drops are allowed even where they break a dependency: the red line and the warning bar say so.
                     // A multi-selection moves as one block.
                     var gapAt = Target(content, release.GlobalPosition.Y).Index;
-                    if (Picked.Count > 1 && row.Mod is { } lead && Picked.Contains(lead))
+                    if (Selection.Several && Selection.Contains(row.Mod))
                     {
-                        MoveGroup(Picked, gapAt, rows);
+                        MoveGroup(Selection.Mods, gapAt, rows);
                         redraw();
                     }
                     else if (Destination(gapAt) is { } to && row.Mod is { } mod)
@@ -549,56 +539,6 @@ static class LoadOrder
         }
     }
 
-
-    // Multi-selection in Load Order: Ctrl toggles a row, Shift selects the range from the last picked row,
-    // a plain click picks just one. Dragging any picked row moves them all.
-    static readonly HashSet<Mod> Picked = [];
-    static Mod? _anchor;
-
-    public static IReadOnlyCollection<Mod> Selection => Picked;
-
-    public static void Pick(Control content, NModMenuRow row, bool toggle, bool range)
-    {
-        if (row.Mod is not { } mod)
-            return;
-        var rows = content.GetChildren().OfType<NModMenuRow>().ToList();
-        if (range && _anchor != null && rows.FindIndex(r => r.Mod == _anchor) is >= 0 and var from)
-        {
-            var to = rows.IndexOf(row);
-            Picked.Clear();
-            for (var i = Math.Min(from, to); i <= Math.Max(from, to); i++)
-                if (rows[i].Visible && rows[i].Mod is { } m)
-                    Picked.Add(m);
-        }
-        else if (toggle)
-        {
-            if (!Picked.Remove(mod))
-                Picked.Add(mod);
-            _anchor = mod;
-        }
-        else
-        {
-            Picked.Clear();
-            Picked.Add(mod);
-            _anchor = mod;
-        }
-        ShowPicked(content);
-    }
-
-    public static void ClearSelection(Control content)
-    {
-        Picked.Clear();
-        _anchor = null;
-        ShowPicked(content);
-    }
-
-    static void ShowPicked(Control content)
-    {
-        var several = Picked.Count > 1; // one picked row is just the selection the game already shows
-        foreach (var row in content.GetChildren().OfType<NModMenuRow>())
-            if (row.GetNodeOrNull<Control>(PickedName) is { } highlight)
-                highlight.Visible = several && row.Mod is { } m && Picked.Contains(m);
-    }
 
     // Moves a group to a gap (index among all rows, as Target gives), keeping their relative order.
     public static void MoveGroup(IReadOnlyCollection<Mod> group, int gap, IList<NModMenuRow> rows)
@@ -682,7 +622,7 @@ static class LoadOrder
         content.SetMeta(DraggingMeta, true);
         var rows = content.GetChildren().OfType<NModMenuRow>().ToList();
         // Everything being moved (the row, or the whole multi-selection) plus whatever they're linked to.
-        var moving = rows.Where(r => r == row || (Picked.Count > 1 && r.Mod is { } m && Picked.Contains(m))).ToList();
+        var moving = rows.Where(r => r == row || (Selection.Several && Selection.Contains(r.Mod))).ToList();
         var lit = moving.SelectMany(r => Linked(content, r)).Concat(moving).ToHashSet();
         foreach (var r in rows)
             r.Modulate = lit.Contains(r) ? Colors.White : new Color(1, 1, 1, 0.35f);

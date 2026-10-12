@@ -31,6 +31,7 @@ static class CategoryList
         {
             var data = Store.Data;
             (data.VanillaView, data.LoadOrderView) = toVanilla ? (!data.VanillaView, false) : (false, !data.LoadOrderView);
+            Selection.Clear(content); // a picked set belongs to the view it was picked in
             Store.Save();
             Label(vanilla, data.VanillaView ? "SPIRE_MOD_MANAGER.CATEGORY_VIEW" : "SPIRE_MOD_MANAGER.VANILLA_VIEW");
             Label(loadOrder, data.LoadOrderView ? "SPIRE_MOD_MANAGER.BACK" : "SPIRE_MOD_MANAGER.LOAD_ORDER");
@@ -242,12 +243,31 @@ static class CategoryList
             row.SetMeta(RowMenuMeta, true);
             row.GuiInput += e =>
             {
+                // Main list picking (Load Order handles its own, with dragging): Ctrl or Shift picks without
+                // opening the mod in the panel; a plain click lets go of the picked set.
+                if (!Store.Data.LoadOrderView && !Store.Data.VanillaView && e is InputEventMouseButton { ButtonIndex: MouseButton.Left } click)
+                {
+                    if (click.CtrlPressed || click.ShiftPressed || click.MetaPressed)
+                    {
+                        if (click.Pressed)
+                            Selection.Pick(content, row, toggle: !click.ShiftPressed, range: click.ShiftPressed);
+                        row.AcceptEvent();
+                    }
+                    else if (!click.Pressed)
+                        Selection.Clear(content);
+                    return;
+                }
                 if (e is not InputEventMouseButton { ButtonIndex: MouseButton.Right, Pressed: false })
                     return;
                 if (Store.Data.LoadOrderView)
                     LoadOrder.ShowRowMenu(content, row, () => Redraw(content));
+                else if (Selection.Several && Selection.Contains(row.Mod))
+                    ShowBulkMenu(content);
                 else
+                {
+                    Selection.Clear(content); // a right-click elsewhere is about that one mod
                     ShowRowMenu(content, row);
+                }
             };
         }
 
@@ -265,8 +285,7 @@ static class CategoryList
             return;
         }
         LoadOrder.Undecorate(rows);
-        LoadOrder.Reset(content); // no Load Order lines, dimming or multi-selection outside it
-        LoadOrder.ClearSelection(content);
+        LoadOrder.Reset(content); // no Load Order lines or dimming outside it
 
         if (Store.Data.VanillaView)
             RowStrip.Remove(rows);
@@ -435,6 +454,53 @@ static class CategoryList
         return MenuPanel.Show(content, () => CategoryItems(content, id), side: _ => ModField.Column(id, _ => Edited(content)));
     }
 
+    // Two or more picked mods edited together: their category (marked when they share one), on or off; and on
+    // the right their tags and notes, under "Editing N selected mods" (where one mod's alias would be).
+    public static Node? ShowBulkMenu(Control content)
+    {
+        var ids = Selection.Mods.Select(m => m.manifest?.id).OfType<string>().ToList();
+        if (Store.Data.VanillaView || ids.Count == 0)
+            return null;
+        return MenuPanel.Show(content, () => BulkItems(content, ids), side: _ => ModField.BulkColumn(ids, _ => Edited(content)));
+    }
+
+    static IReadOnlyList<MenuItem> BulkItems(Control content, List<string> ids)
+    {
+        var shared = ids.Select(id => Store.InfoFor(id)?.Category is { } name && Categories.Find(name) != null ? name : null).Distinct().ToList();
+        var common = shared.Count == 1 ? shared[0] : "\n"; // not all the same: nothing marked
+        var items = new List<MenuItem> { MenuItem.Heading(Menus.Text("SPIRE_MOD_MANAGER.CATEGORY")) };
+        foreach (var category in Store.Data.Categories)
+            items.Add(new MenuItem(category.Name, () => Move(category.Name), Checked: category.Name == common, Radio: true));
+        items.Add(new MenuItem(Menus.Text("SPIRE_MOD_MANAGER.UNCATEGORIZED"), () => Move(null), Checked: common == null, Radio: true));
+        items.Add(MenuItem.Heading(""));
+        items.Add(new MenuItem(Menus.Text("SPIRE_MOD_MANAGER.NEW_CATEGORY"), () =>
+        {
+            Category? made = null;
+            Store.Batch(() =>
+            {
+                made = Categories.Add();
+                foreach (var id in ids)
+                    Categories.Assign(id, made.Name);
+            });
+            Edited(content);
+            if (made != null && BeginRename(content, made)?.GetParent() is Control header)
+                ScrollSoon(content, header, flash: false);
+        }));
+        items.Add(MenuItem.Heading(""));
+        items.AddRange(OnOffItems(content, content.GetChildren().OfType<NModMenuRow>().Where(r => ids.Contains(r.Mod?.manifest?.id ?? ""))));
+        return items;
+
+        void Move(string? category)
+        {
+            Store.Batch(() =>
+            {
+                foreach (var id in ids)
+                    Categories.Assign(id, category);
+            });
+            Edited(content);
+        }
+    }
+
     // After one of a mod's details changed: the rows and the info panel show it.
     public static void Edited(Control content)
     {
@@ -469,11 +535,12 @@ static class CategoryList
         }
     }
 
-    // Enable all / Disable all (the mods shown under it: all of them, or the search's matches), then, for the
-    // player's own categories, its actions. Uncategorized has only the first two.
+    // Enable all / Disable all / Select all (the mods shown under it: all of them, or the search's matches), then,
+    // for the player's own categories, its actions. Uncategorized has only the first three.
     public static Node? ShowHeaderMenu(Control content, Category? category, List<NModMenuRow> members)
     {
         var items = OnOffItems(content, members);
+        items.Add(new MenuItem(Menus.Text("SPIRE_MOD_MANAGER.SELECT_ALL"), () => Selection.Add(content, members), Disabled: members.Count == 0));
         if (category != null)
             items.AddRange([MenuItem.Heading(""), .. HeaderActions(content, category)]);
         return Menus.Show(content, items);

@@ -106,9 +106,33 @@ public static class Store
 
     public static void Save()
     {
+        if (_batching)
+            return; // Batch saves once at the end
         if (_data != null && !_readOnly)
             Write(_data);
         History.Record();
+    }
+
+    static bool _batching;
+
+    // Several edits as one: one save, one undo step (editing several mods at once).
+    public static void Batch(Action edits)
+    {
+        if (_batching)
+        {
+            edits();
+            return;
+        }
+        _batching = true;
+        try
+        {
+            edits();
+        }
+        finally
+        {
+            _batching = false;
+        }
+        Save();
     }
 
     // Our data minus view state (views, collapsed categories): what undo compares and restores.
