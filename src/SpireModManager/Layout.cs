@@ -30,7 +30,7 @@ static class Layout
     public const float BottomRowY = 999; // top of the 70px-tall buttons along the bottom
     public const float CornerX = 18; // the lower-left corner button (here and on the main menu)
     const float PageLeft = 175, TitleTop = 10, TitleBottom = 62;
-    const float UndoLift = 8; // the undo buttons and their shortcut hints sit a little above the screen's edge
+    const float UndoDrop = 7; // the undo buttons themselves (not their hints) centred on the bottom row
 
     // Text sizes in our views (the game's in brackets): rows 20 (32), info title 32 (60), info text 18 (24).
     public const int RowTitleSize = 20, RowTitleVanillaSize = 32;
@@ -82,8 +82,8 @@ static class Layout
             image.SetMeta(MinSizeMeta, image.CustomMinimumSize);
         image.CustomMinimumSize = Wide ? Vector2.Zero : (Vector2)image.GetMeta(MinSizeMeta);
         Place(image, new Vector4(width - thumbWidth - 20, 16, width - 20, 16 + thumbHeight));
-        Place(info.GetNode<Control>("ModDescription"), new Vector4(inset, 100, width - inset,
-            info.Size.Y - ModDetails.ButtonsFromBottom - ModDetails.YoursHeight - ModDetails.FieldsGap));
+        Place(info.GetNode<Control>("ModDescription"), new Vector4(inset, 90, width - inset,
+            info.Size.Y - ModDetails.ButtonsFromBottom - ModDetails.FieldsGap));
         ViewFont(info.GetNode<MegaRichTextLabel>("ModTitle"), InfoTitleSize);
         ViewFont(info.GetNode<MegaRichTextLabel>("ModDescription"), InfoTextSize);
 
@@ -151,16 +151,16 @@ static class Layout
         if (screen.GetNodeOrNull<Control>(HistoryBar.BarName) is { } history)
         {
             var buttonsWidth = history.GetCombinedMinimumSize().X; // its buttons, not its (wider) box
-            history.Position = new Vector2(right - history.Size.X, BottomRowY - UndoLift);
+            history.Position = new Vector2(right - history.Size.X, BottomRowY + UndoDrop);
             history.Visible = Wide;
             right = right - buttonsWidth - 20;
         }
 
-        // "Changes +4 -3 ↕2": just left of Undo, centred on the row.
+        // "Mods enabled 23 (+1 -3) ↕2" over "Changes 5": just left of Undo, centred on the row.
         if (screen.GetNodeOrNull<RichTextLabel>(HistoryBar.ChangesName) is { } changes)
         {
             changes.Visible = Wide;
-            changes.Position = new Vector2(right - changes.Size.X, BottomRowY + 35 - 14 - UndoLift);
+            changes.Position = new Vector2(right - changes.Size.X, BottomRowY + 35 - changes.Size.Y / 2); // two lines, centred on the row
             right = changes.Position.X + changes.Size.X - Math.Max(changes.GetContentWidth(), 160) - 16; // its text is right-aligned
         }
         if (view != View.Categories)
@@ -200,7 +200,7 @@ static class Layout
         // Centred over the arrow where it rests (-40,726, 200x110; it slides in from off-screen, so not read
         // from its position).
         label.Size = new Vector2(150, 24);
-        label.Position = new Vector2(0, 726 - 20);
+        label.Position = new Vector2(0, 726 - 27);
     }
 
     // The game's version and date in the top-right corner are dark grey, made for its brighter menu art; on
