@@ -395,10 +395,11 @@ Jordan's notes of 2026-10-12 (evening).
 - [x] new mod popup: "New Mod Added" / "New mods were detected, and will require a restart to be enabled."; at most one per 30 s
 
 ## Added during round 8
-- [ ] (bug) a newly installed mod isn't tracked right in the changes (enabled/disabled); show "Installed X" as its own change, with its (pending) on/off state under it
+- [x] (bug) a newly installed mod isn't tracked right in the changes (enabled/disabled); show "Installed X" as its own change, with its (pending) on/off state under it
 - [x] the pencil button subtle: no background, no outline
 - [x] (fix) the category and pencil buttons don't line up vertically with the tickbox
 
 ## Backlog (round 8)
+- [ ] profiles and mods installed mid-session: they aren't in the profile until a relaunch (switching profiles leaves them as they are)
 - [ ] tag suggestions: tags already used across mods in a dropdown under the tag box, filtered as you type, arrow keys to pick, comma accepts
 - [ ] back/forward view history: previous active mod (opened in the panel), Load Order page changes; Vanilla View skipped
