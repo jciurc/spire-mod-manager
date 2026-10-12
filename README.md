@@ -21,7 +21,9 @@ its own (the vanilla page stays one click away) and folds in Quick Relaunch's in
 - **Changes, undo, redo, revert:** "Changes +on -off ↕moved" since launch, with the full list in the info
   panel; Ctrl+Z / Ctrl+Y; Revert all goes back to how things were when you opened the page.
 - **Relaunch Game:** restarts in place in the same window mode, so changes apply without going through Steam.
-- **Better Mod Menu:** its data is imported on first run; when it's loaded, this mod steps aside.
+- **Better Mod Menu:** its data is imported on first run. Both can run together: its page takes the place of
+  the game's list (the "Better Mod Menu" button), a warning says some things may behave unexpectedly, and
+  profiles never turn it on or off.
 
 Your data is one JSON file per Steam account (`mod_data/SpireModManager/manager.json`, with backups);
 the game's own mod list stays the source of truth for what's on and the load order.
@@ -41,7 +43,7 @@ copy of the game in `D:\sts2-dev` with its own mods folder, no Steam, separate s
 
 - `dotnet run tools/dev.cs test`: the in-game self-test against fixture mods and data, headless. Results and
   UI dumps go to `out/selftest`; add `--window` for screenshots (the window stays behind others), `--bmm` to
-  test alongside Better Mod Menu, `--real` for a read-only tour with a copy of your own mods and data.
+  test alongside Better Mod Menu (`--bmm-after`: loaded after ours; `--bmm-local`: its local-fix build), `--real` for a read-only tour with a copy of your own mods and data.
 - `dotnet run tools/dev.cs launch`: opens the sandboxed game to try things by hand.
 - `dotnet run tools/pck.cs list|extract`: look inside the game's pack (scenes, images).
 

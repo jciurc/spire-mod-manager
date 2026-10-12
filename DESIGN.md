@@ -44,7 +44,7 @@ panel facts (source, load problems, needs / needed by, Open Folder, Workshop Pag
 notes, tags), Load Order view (drag and drop with dimming and dependency lines, inline/menu moves, Fix
 order, Auto sort by tier, order changes pending), dependency notes per row, undo/redo with Ctrl+Z/Y,
 Changes since launch with Revert all, Ctrl+F, wide layout with smaller text (Vanilla View restores the
-game's), stepping aside when Better Mod Menu is loaded.
+game's), running alongside Better Mod Menu (its page in place of Vanilla View, its parts hidden on ours).
 
 Built but only testable in real play (Steam): Workshop details (updated/published dates, Workshop
 tags), the Workshop Page button.
@@ -150,7 +150,6 @@ Phases are a proposal; v1 is what ships first on the Workshop.
 
 ## Open
 
-- Coexistence with Better Mod Menu: step aside or warn when it's loaded.
 - Workshop publishing flow, preview image, tags; building against beta vs stable.
 - Ideas raised, not committed: "Play vanilla" via `--nomods`,
   auto-enable missing dependencies, `affects_gameplay` shown for multiplayer, profile share codes,

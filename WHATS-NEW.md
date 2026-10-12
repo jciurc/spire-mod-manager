@@ -2,7 +2,14 @@
 
 Short notes for Jordan: what to look for after each install. Newest first.
 
-## Not installed yet
+## Installed 2026-10-12 (afternoon): version 0.0.45
+
+Better Mod Menu (round 17)
+- **Both can be on.** With Better Mod Menu enabled, our main list and Load Order work as usual. Its bars, row arrows and panel buttons are hidden there, and its groups don't show in our list.
+- A gold line at the top right says **"Better Mod Menu is also on…"**. Hover it for what that means.
+- The **Vanilla List** button is now called **Better Mod Menu** and opens its own page in place of the game's list. **Spire Manager** brings ours back. Switching back and forth should leave both pages where they were.
+- **Profiles never turn Better Mod Menu on or off**, like our own mod, and don't count it. Its profiles and ours stay separate. Both act on the game's one mod list: a change here also lands in its current profile, and switching its profile shows up here as unsaved changes.
+- Worth knowing: the Better Mod Menu you have installed (1.1.1) has its own errors on this beta (its panel buttons fail to load). Your local-fix build doesn't. Both pass our tests alongside us.
 
 Search (round 15)
 - **Fixed:** a search while scrolled down could show "Search matches (2)" over an empty list. The game's list stops scrolling once everything fits, which left the few matches above the view. The list now jumps to the top when it shrinks to fit (search, Collapse all, collapsing a category).
@@ -303,3 +310,7 @@ Choices I made on my own; say if any should change.
 - **"Across the board"** includes the thumbnail's full picture (0.2 s before, 0.4 s now), the Changes summary and the Unsaved card (both instant before).
 - **Cut text tooltips** are our own plain tooltip with a 1 s delay, not Godot's. The game sets Godot's tooltip delay once at startup for the whole window, so a per-element 1 s wasn't possible with it. Ours also follows the one-card-at-a-time rule.
 - **Sunken selected look**: a deeper blue fill with a dark rim, heavier along the top. Hover is a faint light-blue tint. Both easy to tune.
+- **Better Mod Menu's button**: "Vanilla List" is renamed "Better Mod Menu" while it's loaded, since that's whose page it opens.
+- **Profiles leave Better Mod Menu alone** (on or off as it is), like our own mod. Before, converted Better Mod Menu profiles switched it off, which would now turn it off at the next relaunch for anyone using both.
+- **The Better Mod Menu warning** is always shown on our pages while it's loaded (not dismissible), top right, and hidden on its own page so that page looks like its own.
+- **Enable all / Disable all** still include Better Mod Menu like any other mod.

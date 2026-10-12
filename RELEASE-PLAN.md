@@ -91,7 +91,7 @@
   - Time the screen open and one search keystroke.
 - **Long text that still overflows** (TODO Round 15): the panel title and version, the source line, and rows with many tags hiding the author.
 - **Undo And Restart compatibility:** it adds a panel at a fixed (0,318) in the info panel, over our fields. Re-place foreign children of the info panel below the description, then check in game.
-- **Mark our popups as ours:** add "Spire Mod Manager" to New Mod Added, Delete profile and Delete category. The New Mod popup replaces the game's popup even while BMM runs the page.
+- **Mark our popups as ours:** add "Spire Mod Manager" to New Mod Added, Delete profile and Delete category. The New Mod popup replaces the game's popup on BMM's page too.
 - **Relaunch wording:** our own pending line instead of the game's "restart" line (the wording part only).
 - **Review queue:** go through `WHATS-NEW.md` "For your review" (about 37 items) and prune its stale entries (see §8).
 - **Round 14 note:** answer the cut-off "notepad ... if the original" ask.
@@ -162,7 +162,7 @@
 - **Beta-only audience:** public-branch players will be confused. Widen the range the day 0.111+ reaches `public`.
 - **Branch fields:** one upload without `minBranch` serves a broken build to public players.
 - **Other mod managers** (five on the Workshop) patch the same screen, untested together. Likely the main source of bug reports.
-- **BMM users** see SMM "doing nothing" while BMM is loaded. The description must explain this.
+- **BMM users:** both run together now (round 17), but two managers on one page, with separate profiles, may confuse. The description should say what the warning means, and that BMM 1.1.1 has its own errors on the beta. The bridge reaches BMM internals by reflection; an update there can make our list jump again (the `--bmm` self-test catches it).
 - **Data is local only** (not in Steam Cloud). It doesn't follow players between PCs or a Steam Deck.
 - **Platforms:** relaunch is tested only on Windows; macOS, Linux and Deck are untested.
 - **Support:** without a public repo, bugs arrive as Workshop comments.
