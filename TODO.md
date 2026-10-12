@@ -465,9 +465,18 @@ Jordan's note of 2026-10-12 (night).
 
 Jordan's notes of 2026-10-12 (night).
 
-- [ ] the "Updated on" card wraps too early: 120 px wider
-- [ ] a slight radius (about 2 px) on the row's focus/active look
-- [ ] tags down another 2 px
-- [ ] recently updated: a gem instead of the round pip, a pixel further left; it goes once the mod is opened (the panel's "Recently updated" stays)
-- [ ] author on the row: no "by", not clickable (quick search only from the panel, which gets the search hint); author text cut after 200 characters
-- [ ] network: keep requests few and safe; the pip only from data we already have; patch notes fetched only for the mod opened
+- [x] the "Updated on" card wraps too early: 120 px wider
+- [x] a slight radius (about 2 px) on the row's focus/active look
+- [x] tags down another 2 px
+- [x] recently updated: a gem instead of the round pip, a pixel further left; it goes once the mod is opened (the panel's "Recently updated" stays)
+- [x] author on the row: no "by", not clickable (quick search only from the panel, which gets the search hint); author text cut after 200 characters
+- [x] network: keep requests few and safe; the pip only from data we already have; patch notes fetched only for the mod opened
+- [x] Workshop tags searchable as plain text (click them in the panel)
+- [x] tags, "Needs / Required for" and the row's author a size smaller
+- [x] side panel: "Needed by" reads "Required for"
+- [x] tag pills: 2 px corners, no outline (the player's own fainter)
+- [x] one search hint for every click-to-search: "Click: search this term; Shift-click: add to search"
+
+## Backlog (round 12)
+- [ ] delete / uninstall a mod from the manager
+- [ ] a dependency that isn't installed: click it to open its Workshop page (needs a way from a mod id to its Workshop id; not every mod is on the Workshop, then plain text with "(not installed)"); spike first
