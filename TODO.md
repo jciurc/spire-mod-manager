@@ -219,7 +219,7 @@ Jordan's notes of 2026-10-11.
 
 - [x] short date in the edited timestamp (moot: unsaved profiles show "Name *" now, no timestamp)
 - [x] dropdown: mod count and last updated next to each profile name
-- [ ] Load Order page: drop the profile bar, OR give load order its own profile system; each main profile links to the last load-order profile (if it has no link yet); show the linked load profile in the main profile's details
+- [x] Load Order page: drop the profile bar (done: dropped), OR give load order its own profile system; each main profile links to the last load-order profile (if it has no link yet); show the linked load profile in the main profile's details
 
 ## Changes
 
@@ -246,6 +246,7 @@ Jordan's notes of 2026-10-11.
 ## Backlog (round 3)
 
 - [ ] in-game error log: collect and show errors (ours and other mods')
+- [ ] load-order profiles of their own, linked from main profiles (pairs with saveable load order presets)
 
 # Round 4
 

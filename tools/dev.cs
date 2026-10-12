@@ -38,7 +38,7 @@ var mode = args.FirstOrDefault() ?? "test";
 var real = args.Contains("--real"); // Jordan's own mods (switched off) and a copy of his manager data
 
 if (mode is not ("test" or "launch"))
-    return Fail("usage: dotnet run tools/dev.cs [test [--window] [--bmm]|launch]");
+    return Fail("usage: dotnet run tools/dev.cs [test [--window] [--bmm] [--real]|launch]");
 if (Process.GetProcessesByName("SlayTheSpire2").Any(p => string.Equals(Path.GetDirectoryName(ExePath(p)), DevDir, StringComparison.OrdinalIgnoreCase)))
     return Fail($"A dev copy of the game is already running from {DevDir}.");
 
