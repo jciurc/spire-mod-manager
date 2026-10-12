@@ -30,6 +30,7 @@ static class Layout
     public const float BottomRowY = 999; // top of the 70px-tall buttons along the bottom
     public const float CornerX = 18; // the lower-left corner button (here and on the main menu)
     const float PageLeft = 175, TitleTop = 10, TitleBottom = 62;
+    const float UndoLift = 8; // the undo buttons and their shortcut hints sit a little above the screen's edge
 
     // Text sizes in our views (the game's in brackets): rows 20 (32), info title 32 (60), info text 18 (24).
     public const int RowTitleSize = 20, RowTitleVanillaSize = 32;
@@ -150,7 +151,7 @@ static class Layout
         if (screen.GetNodeOrNull<Control>(HistoryBar.BarName) is { } history)
         {
             var buttonsWidth = history.GetCombinedMinimumSize().X; // its buttons, not its (wider) box
-            history.Position = new Vector2(right - history.Size.X, BottomRowY);
+            history.Position = new Vector2(right - history.Size.X, BottomRowY - UndoLift);
             history.Visible = Wide;
             right = right - buttonsWidth - 20;
         }
@@ -159,7 +160,7 @@ static class Layout
         if (screen.GetNodeOrNull<RichTextLabel>(HistoryBar.ChangesName) is { } changes)
         {
             changes.Visible = Wide;
-            changes.Position = new Vector2(right - changes.Size.X, BottomRowY + 35 - 14);
+            changes.Position = new Vector2(right - changes.Size.X, BottomRowY + 35 - 14 - UndoLift);
             right = changes.Position.X + changes.Size.X - Math.Max(changes.GetContentWidth(), 160) - 16; // its text is right-aligned
         }
         if (view != View.Categories)
@@ -172,7 +173,34 @@ static class Layout
         Place(pending, new Vector4(leftEnd + 12, 1000, right, 1068));
         pending.Modulate = view == View.LoadOrder ? Colors.Transparent : Colors.White; // the game sets Visible itself
         Watermark(screen);
+        BackLabel(screen);
         UpdateDot(screen);
+    }
+
+    // "Main Menu" over the game's back arrow on our pages (it leaves the whole Modding page); not in Vanilla View.
+    static void BackLabel(Control screen)
+    {
+        if (!screen.HasNode("BackButton"))
+            return;
+        if (screen.GetNodeOrNull<Label>("SpireModManagerBackLabel") is not { } label)
+        {
+            label = new Label
+            {
+                Name = "SpireModManagerBackLabel", Text = Menus.Text("SPIRE_MOD_MANAGER.MAIN_MENU"),
+                HorizontalAlignment = HorizontalAlignment.Center, MouseFilter = Control.MouseFilterEnum.Ignore,
+            };
+            label.AddThemeFontOverride("font", ResourceLoader.Load<Font>("res://themes/kreon_bold_shared.tres"));
+            label.AddThemeFontSizeOverride("font_size", 18);
+            label.AddThemeColorOverride("font_color", new Color(1, 0.964706f, 0.886275f, 0.85f));
+            label.AddThemeColorOverride("font_outline_color", new Color(0.0756f, 0.12084f, 0.18f));
+            label.AddThemeConstantOverride("outline_size", 6);
+            screen.AddChild(label);
+        }
+        label.Visible = Wide;
+        // Centred over the arrow where it rests (-40,726, 200x110; it slides in from off-screen, so not read
+        // from its position).
+        label.Size = new Vector2(150, 24);
+        label.Position = new Vector2(0, 726 - 20);
     }
 
     // The game's version and date in the top-right corner are dark grey, made for its brighter menu art; on

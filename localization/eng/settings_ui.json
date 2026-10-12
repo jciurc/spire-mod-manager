@@ -94,6 +94,7 @@
   "SPIRE_MOD_MANAGER.CHANGES_CLICK": "Click for the full list",
   "SPIRE_MOD_MANAGER.CHANGES_TITLE": "Changes since launch",
   "SPIRE_MOD_MANAGER.CLOSE": "Close",
+  "SPIRE_MOD_MANAGER.MAIN_MENU": "Main Menu",
   "SPIRE_MOD_MANAGER.SECTION_ON": "Enabled ({count})",
   "SPIRE_MOD_MANAGER.SECTION_OFF": "Disabled ({count})",
   "SPIRE_MOD_MANAGER.SECTION_ORDER": "Load order ({count} moved)",
