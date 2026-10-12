@@ -460,3 +460,14 @@ Jordan's notes of 2026-10-12 (night), from the details page screenshot.
 Jordan's note of 2026-10-12 (night).
 
 - [x] bulk editing on the main list: select mods (e.g. all of Uncategorized, Ctrl-click to drop one), right-click, change their category; the edit menu has the same controls minus Alias, which becomes "Editing N selected mods"
+
+# Round 12
+
+Jordan's notes of 2026-10-12 (night).
+
+- [ ] the "Updated on" card wraps too early: 120 px wider
+- [ ] a slight radius (about 2 px) on the row's focus/active look
+- [ ] tags down another 2 px
+- [ ] recently updated: a gem instead of the round pip, a pixel further left; it goes once the mod is opened (the panel's "Recently updated" stays)
+- [ ] author on the row: no "by", not clickable (quick search only from the panel, which gets the search hint); author text cut after 200 characters
+- [ ] network: keep requests few and safe; the pip only from data we already have; patch notes fetched only for the mod opened
