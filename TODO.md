@@ -198,7 +198,7 @@ Jordan's notes of 2026-10-07, second batch (same file), plus play feedback.
 - [x] banner when disabling a mod that enabled mods depend on (e.g. BaseLib): the main-list banner (round 8)
 - [ ] view enabled only / disabled only (sticky items when toggling)
 - [ ] view edited mods
-- [ ] enable all / disable all
+- [x] enable all / disable all (per category, header right-click; whole page: see round 3)
 - [x] filter by author (search covers authors)
 - [x] stylized Spire Mod Manager button (Jordan designs)
 - [ ] export/import/share mod collections and configuration
@@ -228,7 +228,8 @@ Jordan's notes of 2026-10-11.
 
 ## Main list
 
-- [ ] select/deselect all for the whole page and per category
+- [x] select/deselect all per category (header right-click: Enable all / Disable all)
+- [ ] select/deselect all for the whole page (where should it live? ask Jordan)
 - [ ] multi-select on the main page: move to a category, select/deselect
 - [ ] drag and drop: whole categories, single mods, multi-selections
 - [ ] author name on the row (right side, above the category button)
