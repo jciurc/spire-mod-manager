@@ -21,7 +21,22 @@ Load Order
 Main list
 - A red banner when enabled mods need a mod that is off or not installed. **Show** steps through those mods. **Enable needed mods** turns on the ones that are installed, as one undo step.
 
+Info panel
+- Title with the version in grey beside it (no "v").
+- Under it: "SpireModManager (3456789012)" (links to the Workshop page) or "SpireModManager (Local)", then **Enabled / Disabled / Pending restart** at the same size.
+- Author, Updated (with "N days ago") and Size beside a thumbnail twice as big, a little further from the edge. A mod without a picture: the description moves up.
+- Dates read "October 12, 2026". Compatibility sits with Dependencies / Needed by at the bottom of the details.
+- Alias, Category, Tags and Notes sit in soft dark boxes: lighter under the mouse, darker while typing, no outlines. The automatic tag pills are on the Tags line, beside the word.
+
+Changes
+- Left-aligned and a little lower: "Mods enabled 5 (+1 -0)" over "Changes 2  ↕3".
+- The hover card is titled "Changes since launch". Under fewer than 20 mods turned on, off or installed, it lists them by name.
+- In the full list, click a mod's name to open it (the list says so). **Back** (top right) returns to the list. It goes away when you pick another mod or leave the page.
+- Mods installed while the game runs get their own "Installed" section, with whether each will load after relaunch. Unticking one now sticks (before, the game ignored it and loaded the mod anyway). They also count as pending.
+
 Other
+- **Ctrl+S** saves the profile (the Save button's tooltip says so).
+- Redraws are about a third faster on your full list.
 - New-mod popup: "New Mod Added" / "New mods were detected, and will require a restart to be enabled."; at most one every 30 seconds.
 
 ## Installed 2026-10-12
@@ -138,3 +153,9 @@ Choices I made on my own; say if any should change.
 - **Load Order "was" column**: launch positions count only mods installed now, so a mod added since launch shows no "was".
 - **The main-list banner** covers dependency problems only (off or missing). Load errors stay in the panel; say if you want them in the banner too.
 - **The pencil** is the plain ✎ glyph, faint until hovered (then gold), with no box.
+- **Panel head**: the space beside the bigger thumbnail holds Author, Updated and Size. Published, Subscribers and Workshop tags stay in the details below.
+- **Workshop number** shows bare, "(3456789012)", per your note; it's still the link to the page.
+- **Field boxes** are always faintly visible now, so the fields read as clickable. The category picker matches.
+- **"Mods enabled N"** includes mods installed this session that are on, since N is what will load after a relaunch. The (+ -) counts only cover mods that were here at launch.
+- **Back from a mod opened via Changes** sits top right. When the mod has a picture, the picture moves down to make room.
+- **The changes list** says "Click a mod to open it." under its title.
