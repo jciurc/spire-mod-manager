@@ -337,7 +337,9 @@ Jordan's notes of 2026-10-12.
 - [ ] (fix) after filtering while scrolled down, the first match hides behind the search bar
 
 ## Other
+- [ ] category mod count right after the category name
 - [ ] "Main Menu" label a few pixels higher
+- [ ] (fix) Move button: the button jumps to the mouse and then doesn't follow; the hint stays on screen (even on other pages); Esc puts it back
 
 ## Backlog (round 6)
 - [ ] click a tag to filter by it; Shift-click adds more tags
