@@ -53,6 +53,7 @@ static class ModDetails
         var id = mod.manifest?.id;
         if (Meta(container, ModIdMeta) != (id ?? ""))
             HistoryBar.HideBack(container); // another mod: no way back to the changes list (the same one refilled keeps it)
+        PatchNotes.Close(container); // a mod picked (or refilled): its details again
         container.SetMeta(ModIdMeta, id ?? "");
         container.SetMeta(FolderMeta, mod.path);
 
@@ -85,6 +86,13 @@ static class ModDetails
         var status = source.GetNode<Label>("Status");
         status.Text = state;
         status.AddThemeColorOverride("font_color", Color.FromHtml(color));
+        var notesLink = source.GetNode<LinkButton>("PatchNotesLink");
+        var recent = WorkshopInfo.For(mod) is { } updates && (DateTime.Now - updates.Updated).TotalDays < RowTitles.RecentDays;
+        notesLink.Visible = source.GetNode<Control>("NotesDot").Visible = mod.workshopId != null;
+        notesLink.Text = Menus.Text(recent ? "SPIRE_MOD_MANAGER.RECENTLY_UPDATED" : "SPIRE_MOD_MANAGER.PATCH_NOTES");
+        var linkColor = recent ? new Color(0.95f, 0.45f, 0.4f) : new Color(Cream, 0.6f);
+        notesLink.AddThemeColorOverride("font_color", linkColor);
+        notesLink.AddThemeColorOverride("font_hover_color", linkColor.Lightened(0.3f));
 
         // Beside the thumbnail: who made it, when it was last updated, how big it is.
         var head = container.GetNodeOrNull<RichTextLabel>(HeadName) ?? AddHead(container);
@@ -313,7 +321,7 @@ static class ModDetails
     public static void Refresh(Node screen)
     {
         if (Store.Data.VanillaView || screen.GetNodeOrNull<NModInfoContainer>("%ModInfoContainer") is not { } container
-            || HistoryBar.ListOpen(container) || CategoryList.Selected is not { } mod || Meta(container, ModIdMeta) != mod.manifest?.id)
+            || HistoryBar.ListOpen(container) || PatchNotes.Open(container) || CategoryList.Selected is not { } mod || Meta(container, ModIdMeta) != mod.manifest?.id)
             return;
         container.Fill(mod);
     }
@@ -367,6 +375,19 @@ static class ModDetails
         var status = new Label { Name = "Status", MouseFilter = Control.MouseFilterEnum.Ignore, VerticalAlignment = VerticalAlignment.Center };
         Style(status, "res://themes/kreon_regular_shared.tres", 16, Cream);
         line.AddChild(status);
+        // Workshop mods: their patch notes ("Recently updated", in the pip's red, after a recent update).
+        var notesDot = new Label { Name = "NotesDot", Text = "·", MouseFilter = Control.MouseFilterEnum.Ignore, VerticalAlignment = VerticalAlignment.Center };
+        Style(notesDot, "res://themes/kreon_regular_shared.tres", 16, new Color(Cream, 0.4f));
+        line.AddChild(notesDot);
+        var notes = new LinkButton { Name = "PatchNotesLink", FocusMode = Control.FocusModeEnum.None, Underline = LinkButton.UnderlineMode.OnHover };
+        notes.AddThemeFontOverride("font", ResourceLoader.Load<Font>("res://themes/kreon_regular_shared.tres"));
+        notes.AddThemeFontSizeOverride("font_size", 16);
+        notes.Pressed += () =>
+        {
+            if (Dependencies.Find(Meta(container, ModIdMeta)) is { } mod)
+                PatchNotes.Show(container, mod);
+        };
+        line.AddChild(notes);
         container.AddChild(line);
         line.Position = new Vector2(Inset, 56);
         return line;

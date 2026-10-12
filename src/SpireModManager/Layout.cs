@@ -155,6 +155,7 @@ static class Layout
         {
             HistoryBar.CloseList(info); // the full changes list lives in the main list's panel
             HistoryBar.HideBack(info);
+            PatchNotes.Close(info);
         }
         History.NotifyChanged(); // the buttons act on this view's history
 

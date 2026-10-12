@@ -33,14 +33,21 @@ static class RowStrip
                 row.SetMeta(StripMeta, true);
             }
 
-            // The buttons are made again each time (what they do depends on the row's place now).
-            Drop(row, ActionsName);
+            // The buttons, made again only when they'd differ: their labels and states, and in Load Order the
+            // row's place (what Up and Down do depends on it).
             var items = actions(row).ToList();
-            var buttons = Menus.InlineButtons(items, ActionsName);
-            row.AddChild(buttons);
-            buttons.AnchorLeft = buttons.AnchorRight = 1;
-            buttons.AnchorBottom = 1;
-            buttons.GrowHorizontal = Control.GrowDirection.Begin;
+            var place = Store.Data.LoadOrderView ? $"{row.GetIndex()}/{row.GetParent()?.GetChildCount()}" : "";
+            var does = $"{place}|{string.Join("|", items.Select(i => $"{i.Label}/{i.Disabled}/{i.Flat}/{i.Tip}"))}";
+            if (row.GetNodeOrNull<Control>(ActionsName) is not { } buttons || !buttons.HasMeta(SaysMeta) || (string)buttons.GetMeta(SaysMeta) != does)
+            {
+                Drop(row, ActionsName);
+                buttons = Menus.InlineButtons(items, ActionsName);
+                buttons.SetMeta(SaysMeta, does);
+                row.AddChild(buttons);
+                buttons.AnchorLeft = buttons.AnchorRight = 1;
+                buttons.AnchorBottom = 1;
+                buttons.GrowHorizontal = Control.GrowDirection.Begin;
+            }
             buttons.OffsetRight = buttons.OffsetLeft = Store.Data.LoadOrderView ? -LoadOrderMargin : -RightMargin;
             var clear = buttons.OffsetRight - Width(buttons, items) - ActionsGap;
             title.OffsetRight = clear;
