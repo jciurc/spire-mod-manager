@@ -16,10 +16,12 @@ static class Hover
     // Grace period: once a card opened by Watch has gone, for twice its delay any card shows at once (moving
     // along names or tags doesn't wait each time).
     static ulong _graceUntil;
+    const float PictureMax = 800;
 
     // A card over `trigger` after `delay` seconds of hovering it (at once in a grace period); it goes when the
-    // mouse leaves. card: its text, or null for none (asked when it opens).
-    public static void Watch(Control trigger, string name, double delay, Func<string?> card, float width = 380)
+    // mouse leaves. card: its text, or null for none (asked when it opens). picture: a picture card instead (to
+    // the left of the mouse), or null for none.
+    public static void Watch(Control trigger, string name, double delay, Func<string?> card, float width = 380, Func<Texture2D?>? picture = null)
     {
         bool Over() => GodotObject.IsInstanceValid(trigger) && trigger.IsVisibleInTree() && !MenuPanel.IsOpen
             && trigger.GetGlobalRect().HasPoint(Mouse(trigger));
@@ -29,7 +31,11 @@ static class Hover
             var mine = ++token;
             void Open()
             {
-                if (mine == token && Over() && card() is { } text && Owner(trigger) is { } owner)
+                if (mine != token || !Over() || Owner(trigger) is not { } owner)
+                    return;
+                if (picture?.Invoke() is { } image)
+                    Show(owner, name, "", Mouse(trigger) + new Vector2(-16, 20), right: true, keep: Over, grace: delay, picture: image);
+                else if (picture == null && card() is { } text)
                     Show(owner, name, text, Mouse(trigger) + new Vector2(16, 20), width: width, keep: Over, grace: delay);
             }
             if (Time.GetTicksMsec() < _graceUntil)
@@ -82,7 +88,7 @@ static class Hover
     // without an exit event, a click opens something else, or the page changes). grace: the delay it waited
     // (Watch), which starts a grace period when it goes.
     public static void Show(Node owner, string name, string bbcode, Vector2 at, bool right = false, bool above = false, float width = 380,
-        Func<bool>? keep = null, double grace = 0)
+        Func<bool>? keep = null, double grace = 0, Texture2D? picture = null)
     {
         Hide(owner, name);
         var layer = new CanvasLayer { Name = name, Layer = 80 };
@@ -111,13 +117,26 @@ static class Hover
         style.SetBorderWidthAll(1);
         style.SetCornerRadiusAll(6);
         panel.AddThemeStyleboxOverride("panel", style);
-        var text = new RichTextLabel
+        if (picture != null)
         {
-            BbcodeEnabled = true, FitContent = true, ScrollActive = false, CustomMinimumSize = new Vector2(width, 0),
-            MouseFilter = Control.MouseFilterEnum.Ignore, Text = bbcode,
-        };
-        Fonts(text, 17);
-        panel.AddChild(text);
+            // The whole picture, at most PictureMax on its longer side.
+            var scale = Math.Min(1f, PictureMax / Math.Max(picture.GetWidth(), picture.GetHeight()));
+            panel.AddChild(new TextureRect
+            {
+                Texture = picture, ExpandMode = TextureRect.ExpandModeEnum.IgnoreSize, StretchMode = TextureRect.StretchModeEnum.KeepAspectCentered,
+                CustomMinimumSize = picture.GetSize() * scale, MouseFilter = Control.MouseFilterEnum.Ignore,
+            });
+        }
+        else
+        {
+            var text = new RichTextLabel
+            {
+                BbcodeEnabled = true, FitContent = true, ScrollActive = false, CustomMinimumSize = new Vector2(width, 0),
+                MouseFilter = Control.MouseFilterEnum.Ignore, Text = bbcode,
+            };
+            Fonts(text, 17);
+            panel.AddChild(text);
+        }
         layer.AddChild(panel);
         panel.Position = at;
         Callable.From(() =>

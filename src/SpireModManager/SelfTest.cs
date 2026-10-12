@@ -666,6 +666,16 @@ static class SelfTest
         Layout.PlaceInfo(panel);
         Check("a square picture: full height, against the right edge", image.Size == new Vector2(ModDetails.ThumbHeight, ModDetails.ThumbHeight)
             && Math.Abs(image.Position.X + image.Size.X - (panel.Size.X - ModDetails.ThumbRight)) < 1, $"{image.Position} {image.Size} in {panel.Size}");
+        // Hovering it for a fifth of a second: the whole picture, at most 800 on its longer side.
+        image.Texture = ImageTexture.CreateFromImage(Image.CreateEmpty(1600, 900, false, Image.Format.Rgba8));
+        Hover.TestMouse = () => image.GetGlobalRect().GetCenter();
+        image.EmitSignal(Control.SignalName.MouseEntered);
+        await Wait(menu, 0.35);
+        var big = screen.GetNodeOrNull("SpireModManagerPictureCard")?.FindChildren("*", "TextureRect", true, false).OfType<TextureRect>().FirstOrDefault();
+        Check("hovering the thumbnail shows the whole picture, at most 800 wide", big != null && big.Size.X == 800 && big.Size.Y == 450, $"{big?.Size}");
+        Hover.TestMouse = () => new Vector2(5, 5);
+        await Wait(menu, 0.1);
+        Hover.TestMouse = null;
         image.Texture = null;
         Layout.PlaceInfo(panel);
         Check("no picture: the description starts under the head; with one, under the picture", description0 < 160 && withPicture >= 16 + ModDetails.ThumbHeight,
@@ -708,15 +718,15 @@ static class SelfTest
         // after a card goes, another shows at once for twice its delay.
         bool CardShown() => screen.HasNode("SpireModManagerNotesCard");
         string CardText() => screen.GetNodeOrNull("SpireModManagerNotesCard")?.FindChildren("*", "RichTextLabel", true, false).OfType<RichTextLabel>().FirstOrDefault()?.GetParsedText() ?? "";
-        async Task Hover(Control target, double seconds)
+        async Task HoverOver(Control target, double seconds)
         {
-            SpireModManager.Hover.TestMouse = () => target.GetGlobalRect().GetCenter();
+            Hover.TestMouse = () => target.GetGlobalRect().GetCenter();
             target.EmitSignal(Control.SignalName.MouseEntered);
             await Wait(menu, seconds);
         }
         async Task Leave(Control target, double seconds)
         {
-            SpireModManager.Hover.TestMouse = () => new Vector2(5, 5);
+            Hover.TestMouse = () => new Vector2(5, 5);
             target.EmitSignal(Control.SignalName.MouseExited);
             await Wait(menu, seconds);
         }
@@ -724,23 +734,23 @@ static class SelfTest
         var mark = other.GetNode<Control>("SpireModManagerEditedMark");
         Check("the notepad sits right after the alias, before the original name", mark.Position.X < other.GetNode<Control>("Title").Position.X + hot.Size.X - 20,
             $"mark at {mark.Position.X}, title text {other.GetNode<Control>("Title").Position.X}..+{hot.Size.X}");
-        await Hover(hot, 0.3);
+        await HoverOver(hot, 0.3);
         Check("not yet at 0.3 s", !CardShown());
         await Wait(menu, 0.35);
         Check("half a second over the title shows the card: id and state first", CardShown() && CardText().StartsWith("LocalModFixes") && CardText().Contains("Enabled"), CardText());
         await Capture(screen, outDir, "9b-notes-hover");
         await Leave(hot, 0.1);
         Check("the card goes once the mouse is off the title", !CardShown());
-        await Hover(mark, 0.05);
+        await HoverOver(mark, 0.05);
         Check("within the grace period, the notepad's card shows at once", CardShown());
         await Leave(mark, 1.3);
-        await Hover(hot, 0.2);
+        await HoverOver(hot, 0.2);
         Check("after the grace period, the title waits again", !CardShown());
         await Leave(hot, 0.3);
-        await Hover(mark, 0.2);
+        await HoverOver(mark, 0.2);
         Check("the notepad's card after a tenth of a second", CardShown());
         await Leave(mark, 0.1);
-        SpireModManager.Hover.TestMouse = null;
+        Hover.TestMouse = null;
         Check("Vanilla View shows plain names", await WithVanillaView(screen, menu, () => RowTitle(ModEntry.ModId) == "Spire Mod Manager"));
     }
 
