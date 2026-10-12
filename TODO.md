@@ -485,9 +485,9 @@ Jordan's notes of 2026-10-12 (night).
 
 Jordan's notes of 2026-10-12 (night).
 
-- [ ] one tooltip manager with the rules in one place: 400 ms delay everywhere, a 250 ms grace period after a card closes; the notepad's card instant (no delay, no grace: shows and hides with the mouse)
-- [ ] one card at a time: a newer card closes the one before
-- [ ] a 20 ms wind-down after leaving a trigger before the card goes
+- [x] one tooltip manager with the rules in one place: 400 ms delay everywhere, a 250 ms grace period after a card closes; the notepad's card instant (no delay, no grace: shows and hides with the mouse)
+- [x] one card at a time: a newer card closes the one before
+- [x] a 20 ms wind-down after leaving a trigger before the card goes
 
 ## Backlog (round 13)
 - [ ] a "Spire Mod Manager" mark on vanilla-looking popups of ours (delete profile, other destructive confirmations)

@@ -4,7 +4,11 @@ Short notes for Jordan: what to look for after each install. Newest first.
 
 ## Not installed yet
 
-- (nothing yet)
+Tooltips (round 13)
+- One set of rules for every hover card: it shows after **0.4 s**. After one closes, the next opens at once for **0.25 s** (the grace period). Leaving waits **20 ms** before the card goes, so a wobble off the edge doesn't close it.
+- The row's **notepad** card shows the moment you hover it and goes the moment you leave (no grace period after it).
+- Only **one card at a time**: a newer card closes the one before.
+- The Changes summary and the "Unsaved" card follow the same rules (they used to open instantly).
 
 ## Installed 2026-10-12 (late night): version 0.0.42
 
@@ -252,3 +256,4 @@ Choices I made on my own; say if any should change.
 - **Bulk notes**: leaving the box empty when their notes differ changes nothing. Clearing everyone's notes at once isn't possible yet.
 - **Your own tags** without an outline are a fainter fill of the same colour, to tell them from the automatic ones. Easy to tune.
 - **The update gem** is cleared by opening the mod in the panel (any way: clicking its row, its name somewhere, the changes list).
+- **"Across the board"** includes the thumbnail's full picture (0.2 s before, 0.4 s now), the Changes summary and the Unsaved card (both instant before).
