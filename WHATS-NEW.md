@@ -4,6 +4,10 @@ Short notes for Jordan: what to look for after each install. Newest first.
 
 ## Not installed yet
 
+- (nothing yet)
+
+## Installed 2026-10-11, evening
+
 Main menu
 - Your skyline button, with our label; it brightens on hover like the game's buttons.
 - Right-click it: **Move button** (it follows the mouse, click to place, right-click or Esc to cancel) or **Reset position**.
