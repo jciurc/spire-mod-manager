@@ -539,3 +539,19 @@ Jordan's notes of 2026-10-12 (late night), with screenshots.
 
 ## Backlog (round 15)
 - [ ] long text, still: the info panel's title (shrinks, version cut) and source line (runs off the panel); a row with many tags (the line clips at its edge, the author can be cut off)
+
+# Round 16: release (from RELEASE-PLAN.md)
+
+Blockers, in order (details and fixes in RELEASE-PLAN.md §2):
+- [ ] branch targeting: beta-only (min_game_version 0.111.0; minBranch public-beta on every upload), "(Beta)" in the Workshop title (needs Jordan's answer)
+- [ ] version 1.0.0 + manifest description; release mode in build.cs (no bump); main branch + v1.0.0 tag
+- [ ] build.cs --dist: only the dll, json and pck
+- [ ] fail soft on game updates: patch each class on its own, log what failed, keep the vanilla page with a notice; RowState lazy and null-safe; wrap the four unguarded patch bodies
+- [x] screen open with many mods: ModToggledPatch waits for our screen (was a full refresh per row)
+- [x] Load Order handlers connected once per row (+ self-test)
+- [ ] Store: backup step on its own; an unreadable manager.json moved aside, the newest backup loaded, a notice; null collections
+- [ ] copy pass (relaunch wording, one name, Vanilla List/View, enabled/disabled, tooltips, casing, profile rename in Changes)
+- [ ] first run: fixtures with no manager.json, and with BMM data (BMM on / off); an empty-state hint
+- [ ] uninstall / disable checked and documented
+- [ ] Workshop listing: image, description, tags, change note, dependencies []
+- [ ] a private Workshop upload tested end to end
