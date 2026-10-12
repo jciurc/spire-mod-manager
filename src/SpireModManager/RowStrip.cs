@@ -16,12 +16,14 @@ static class RowStrip
     const string SaysMeta = "spire_mod_manager_says"; // on a strip: what it shows, to know when to remake it
     const float Height = 20;
     const float TitleGap = 4; // more room between the title and the line under it
-    const float RightMargin = 76; // from the row's right edge: clear of the (smaller) tickbox
+    const float RightMargin = 84; // from the row's right edge: clear of the (smaller, moved) tickbox and the pencil
     const float LoadOrderMargin = 20; // Load Order has no tickbox
     const float ActionsGap = 12;
+    const float AuthorMax = 200; // px
     static readonly Color Note = new(0.937f, 0.784f, 0.318f, 0.75f);
 
-    public static void Apply(IList<NModMenuRow> rows, Func<NModMenuRow, IEnumerable<MenuItem>> actions)
+    // edge: a quiet button at the row's far right, past the tickbox (the main list's pencil), or none.
+    public static void Apply(IList<NModMenuRow> rows, Func<NModMenuRow, IEnumerable<MenuItem>> actions, Func<NModMenuRow, MenuItem>? edge = null)
     {
         var order = LoadOrder.Mods(rows).Select((m, i) => (m, i)).DistinctBy(p => p.m).ToDictionary(p => p.m, p => p.i);
         foreach (var row in rows)
@@ -32,6 +34,8 @@ static class RowStrip
                 title.OffsetBottom -= Height + TitleGap;
                 row.SetMeta(StripMeta, true);
             }
+
+            Edge(row, edge?.Invoke(row));
 
             // The buttons, made again only when they'd differ: their labels and states, and in Load Order the
             // row's place (what Up and Down do depends on it).
@@ -62,7 +66,7 @@ static class RowStrip
                 continue;
             Drop(row, StripName);
 
-            var strip = new HBoxContainer { Name = StripName, MouseFilter = Control.MouseFilterEnum.Ignore };
+            var strip = new HBoxContainer { Name = StripName, MouseFilter = Control.MouseFilterEnum.Ignore, ClipContents = true }; // too much for the line: cut at its edge, not under the buttons
             strip.SetMeta(SaysMeta, says);
             strip.AddThemeConstantOverride("separation", 6);
             row.AddChild(strip);
@@ -97,9 +101,38 @@ static class RowStrip
                 by.AddThemeFontOverride("font", ResourceLoader.Load<Font>("res://themes/kreon_regular_shared.tres"));
                 by.AddThemeFontSizeOverride("font_size", 13);
                 by.AddThemeColorOverride("font_color", new Color(1, 0.964706f, 0.886275f, 0.45f));
+                // A long one is cut with "…"; the whole name after a second over it.
+                var wide = by.GetThemeFont("font").GetStringSize(author, fontSize: 13).X;
+                if (wide > AuthorMax)
+                {
+                    (by.ClipText, by.TextOverrunBehavior, by.CustomMinimumSize, by.MouseFilter) =
+                        (true, TextServer.OverrunBehavior.TrimEllipsis, new Vector2(AuthorMax, 0), Control.MouseFilterEnum.Pass);
+                    Hover.Watch(by, "SpireModManagerFullText", () => author.Replace("[", "[lb]"), Hover.Timing.Slow);
+                }
                 strip.AddChild(by);
             }
         }
+    }
+
+    const string EdgeName = "SpireModManagerEdit";
+
+    static void Edge(NModMenuRow row, MenuItem? item)
+    {
+        var old = row.GetNodeOrNull<Button>(EdgeName);
+        if (item?.OnSelect is not { } action)
+        {
+            Drop(row, EdgeName);
+            return;
+        }
+        if (old != null)
+            return; // (what it does doesn't change: it opens this row's menu)
+        var button = Menus.SmallButton(item.Label, action, name: EdgeName);
+        Menus.Flatten(button);
+        button.TooltipText = item.Tip ?? "";
+        row.AddChild(button);
+        (button.AnchorLeft, button.AnchorRight, button.AnchorTop, button.AnchorBottom) = (1, 1, 0.5f, 0.5f);
+        button.GrowHorizontal = Control.GrowDirection.Begin;
+        (button.OffsetLeft, button.OffsetRight, button.OffsetTop, button.OffsetBottom) = (-2, -2, -13, 13);
     }
 
     // The buttons' width, measured once per set of labels (measuring shapes their text: slow for every row of
@@ -130,6 +163,7 @@ static class RowStrip
     {
         Drop(row, StripName);
         Drop(row, ActionsName);
+        Drop(row, EdgeName);
     }
 
     static void Drop(Node row, string name)

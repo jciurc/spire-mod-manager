@@ -14,10 +14,14 @@ static class RowTitles
     const int OriginalNameSize = 16;
     const float TitleShift = 18; // room before the title in our views (the notepad sits there)
     const string ShiftMeta = "spire_mod_manager_title_shift";
+    const string TickMeta = "spire_mod_manager_tick_shift";
+    const float TickShift = 8;
     const string NotesCard = "SpireModManagerNotesCard";
 
-    public const float RowHeight = 48; // our views (the game's: 72)
-    const string MarkName = "SpireModManagerEditedMark", HotName = "SpireModManagerTitleHover";
+    public const float RowHeight = 56; // our views (the game's: 72), with RowGap between rows
+    public const int RowGap = 8;
+    const string MarkName = "SpireModManagerEditedMark", HotName = "SpireModManagerTitleHover", RestName = "SpireModManagerOriginalName";
+    const string FullMeta = "spire_mod_manager_full_title";
 
     public static void Apply(IEnumerable<NModMenuRow> rows, bool vanilla)
     {
@@ -30,10 +34,15 @@ static class RowTitles
             // title stretches with the (wider) row.
             row.CustomMinimumSize = new Vector2(0, vanilla ? 72 : RowHeight);
             row.GetNode<Control>("PlatformIcon").Visible = vanilla;
-            Round(row.GetNode<Panel>("SelectionHighlight"), vanilla);
+            Look(row, RowState.Selected(row), RowState.Focused(row));
             var tickbox = row.GetNode<Control>("Tickbox");
             tickbox.PivotOffset = tickbox.Size / 2;
             tickbox.Scale = vanilla ? Vector2.One : new Vector2(0.68f, 0.68f);
+            // A little to the left in our views: the pencil goes past it, at the row's far right.
+            var tickShift = vanilla ? 0 : -TickShift;
+            var tickWas = row.HasMeta(TickMeta) ? (float)row.GetMeta(TickMeta) : 0;
+            (tickbox.OffsetLeft, tickbox.OffsetRight) = (tickbox.OffsetLeft + tickShift - tickWas, tickbox.OffsetRight + tickShift - tickWas);
+            row.SetMeta(TickMeta, tickShift);
             title.AnchorRight = vanilla ? 0 : 1;
             title.OffsetRight = vanilla ? 562 : -90;
             // Relative moves only: Load Order shifts the title too, for its grip.
@@ -44,7 +53,7 @@ static class RowTitles
             title.Text = Escape(name);
             Layout.FontSize(title, vanilla ? Layout.RowTitleVanillaSize : Layout.RowTitleSize);
             // Shown again by Fit, in our views.
-            foreach (var part in new[] { MarkName, HotName })
+            foreach (var part in new[] { MarkName, HotName, RestName })
                 if (row.GetNodeOrNull<Control>(part) is { } old)
                     old.Visible = false;
             if (!vanilla)
@@ -72,7 +81,7 @@ static class RowTitles
         var main = Cut(alias ?? name, Layout.RowTitleSize, room);
         var text = Escape(main);
         var mainWidth = Width(main, Layout.RowTitleSize);
-        var used = mainWidth;
+        (float X, float Width, bool Cut)? originalAt = null; // where the original name went, if shown
         if (alias != null)
         {
             var space = Width(" ", Layout.RowTitleSize);
@@ -82,7 +91,7 @@ static class RowTitles
             if (original.Length > 0)
             {
                 text += new string(' ', gap) + $"[color=#fff6e280][font_size={OriginalNameSize}]{Escape(original)}[/font_size][/color]";
-                used = mainWidth + gap * space + Width(original, OriginalNameSize);
+                originalAt = (mainWidth + gap * space, Width(original, OriginalNameSize), original != name);
             }
         }
         title.SetTextAutoSize(text);
@@ -95,9 +104,30 @@ static class RowTitles
         {
             hot = new Control { Name = HotName, MouseFilter = Control.MouseFilterEnum.Pass };
             row.AddChild(hot);
-            Hover.Watch(hot, NotesCard, () => row.Mod is { } shown ? ModDetails.Card(shown) : null);
+            // Cut short: the card starts with the whole title. (Alt: the card with nothing cut.)
+            var watched = hot;
+            string? Card(bool full) => row.Mod is { } shown
+                ? (watched.GetMeta(FullMeta, "").AsString() is { Length: > 0 } title ? $"[b]{Escape(title)}[/b]\n" : "") + ModDetails.Card(shown, full) : null;
+            Hover.Watch(hot, NotesCard, () => Card(false), full: () => Card(true));
         }
-        (hot.Position, hot.Size, hot.Visible) = (new Vector2(title.Position.X, top), new Vector2(used, lineHeight), true);
+        // Over the main title only (the alias), not the original name beside it.
+        (hot.Position, hot.Size, hot.Visible) = (new Vector2(title.Position.X, top), new Vector2(mainWidth, lineHeight), true);
+        hot.SetMeta(FullMeta, main != (alias ?? name) ? alias ?? name : "");
+        // The original name, when cut short: the whole of it in a plain tooltip (a second over it).
+        var rest = row.GetNodeOrNull<Control>(RestName);
+        if (rest == null)
+        {
+            rest = new Control { Name = RestName, MouseFilter = Control.MouseFilterEnum.Pass };
+            row.AddChild(rest);
+            var shown = rest;
+            Hover.Watch(rest, "SpireModManagerFullText", () => shown.GetMeta(FullMeta, "").AsString() is { Length: > 0 } whole ? Escape(whole) : null, Hover.Timing.Slow);
+        }
+        rest.Visible = originalAt is { Cut: true };
+        if (originalAt is { } at)
+        {
+            (rest.Position, rest.Size) = (new Vector2(title.Position.X + at.X, top), new Vector2(at.Width, lineHeight));
+            rest.SetMeta(FullMeta, name);
+        }
 
         if (marked)
         {
@@ -110,10 +140,11 @@ static class RowTitles
                     MouseFilter = Control.MouseFilterEnum.Pass, Modulate = new Color(0.91f, 0.81f, 0.48f, 0.75f),
                 };
                 row.AddChild(mark);
-                Hover.Watch(mark, NotesCard, () => row.Mod is { } shown ? ModDetails.Card(shown) : null, Hover.Timing.Instant);
+                Hover.Watch(mark, NotesCard, () => row.Mod is { } shown ? ModDetails.Card(shown) : null, Hover.Timing.Instant,
+                    full: () => row.Mod is { } shown ? ModDetails.Card(shown, full: true) : null);
             }
             mark.Visible = true;
-            mark.Position = new Vector2(title.Position.X - markSize.X - 4, top + (lineHeight - markSize.Y) / 2); // in the room before the title
+            mark.Position = new Vector2(title.Position.X - markSize.X - 5, top + (lineHeight - markSize.Y) / 2 - 1); // in the room before the title
         }
 
         string Cut(string full, int size, float width)
@@ -149,27 +180,53 @@ static class RowTitles
         }
     }
 
-    // The row's hover / selected look with slightly rounded corners in our views (the game's shape in Vanilla).
-    public const int CornerRadius = 2;
+    // The row's highlight (the game's SelectionHighlight panel) in our views: one shape for every state, a little
+    // wider than the game's, with rounded corners; under the mouse (or keyboard) a faint tint, the mod in the info
+    // panel a deeper, sunken one. Vanilla View: the game's own look. (Picked mods' tint uses the same shape.)
+    public const int CornerRadius = 4;
+    public static readonly Vector4 LookInset = new(-6, -3, 6, 3); // left, top, right, bottom offsets from the row
+    const string GameLookMeta = "spire_mod_manager_game_look", GameBoxMeta = "spire_mod_manager_game_box";
+    static readonly Color Gamelike = MegaCrit.Sts2.Core.Helpers.StsColors.darkBlue, GameSelected = MegaCrit.Sts2.Core.Helpers.StsColors.blue;
+    static StyleBoxFlat? _hover, _selected;
 
-    const string GameLookMeta = "spire_mod_manager_game_look";
-
-    // (The game's look is its own override on the panel: kept, and put back in Vanilla View.)
-    static void Round(Panel look, bool vanilla)
+    static StyleBoxFlat Box(Color fill, Color? rim = null)
     {
-        if (!look.HasMeta(GameLookMeta))
-            look.SetMeta(GameLookMeta, look.GetThemeStylebox("panel"));
-        var game = (StyleBox)look.GetMeta(GameLookMeta);
-        if (vanilla)
+        var box = new StyleBoxFlat { BgColor = fill };
+        box.SetCornerRadiusAll(CornerRadius);
+        if (rim is { } edge)
         {
-            look.AddThemeStyleboxOverride("panel", game);
+            // Sunken: a dark rim, heavier along the top.
+            box.BorderColor = edge;
+            box.SetBorderWidthAll(1);
+            box.BorderWidthTop = 2;
+        }
+        return box;
+    }
+
+    // Called on every change of the row's state (focus, selection; patches on the game's row) and each redraw.
+    public static void Look(NModMenuRow row, bool selected, bool focused)
+    {
+        if (row.GetNodeOrNull<Panel>("SelectionHighlight") is not { } look)
+            return;
+        if (!look.HasMeta(GameLookMeta))
+        {
+            look.SetMeta(GameLookMeta, look.GetThemeStylebox("panel"));
+            look.SetMeta(GameBoxMeta, new Vector4(look.OffsetLeft, look.OffsetTop, look.OffsetRight, look.OffsetBottom));
+        }
+        if (Store.Data.VanillaView)
+        {
+            // The game's panel, size and colours (as its row would set them).
+            look.AddThemeStyleboxOverride("panel", (StyleBox)look.GetMeta(GameLookMeta));
+            var box = (Vector4)look.GetMeta(GameBoxMeta);
+            (look.OffsetLeft, look.OffsetTop, look.OffsetRight, look.OffsetBottom) = (box.X, box.Y, box.Z, box.W);
+            look.Modulate = selected ? new Color(GameSelected, 0.25f) : focused ? new Color(Gamelike, 0.25f) : Colors.Transparent;
             return;
         }
-        if (game is not StyleBoxFlat flat || look.GetThemeStylebox("panel") is StyleBoxFlat current && current != game && current.CornerRadiusTopLeft == CornerRadius)
-            return; // not a shape we can round, or rounded already
-        var rounded = (StyleBoxFlat)flat.Duplicate();
-        rounded.SetCornerRadiusAll(CornerRadius);
-        look.AddThemeStyleboxOverride("panel", rounded);
+        _hover ??= Box(new Color(0.45f, 0.62f, 0.85f, 0.1f));
+        _selected ??= Box(new Color(0.16f, 0.3f, 0.48f, 0.55f), new Color(0.02f, 0.04f, 0.08f, 0.85f));
+        (look.OffsetLeft, look.OffsetTop, look.OffsetRight, look.OffsetBottom) = (LookInset.X, LookInset.Y, LookInset.Z, LookInset.W);
+        look.AddThemeStyleboxOverride("panel", selected ? _selected : _hover);
+        look.Modulate = selected || focused ? Colors.White : Colors.Transparent;
     }
 
     static string Escape(string text) => text.Replace("[", "[lb]");

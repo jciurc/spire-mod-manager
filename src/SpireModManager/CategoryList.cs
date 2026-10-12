@@ -156,7 +156,8 @@ static class CategoryList
                 Highlight(list, target[4..], false);
         };
         Hover.WatchLinks(label, "SpireModManagerNotesCard",
-            meta => meta.StartsWith("mod:") && Dependencies.Find(meta[4..]) is { } mod ? ModDetails.Card(mod) : null);
+            meta => meta.StartsWith("mod:") && Dependencies.Find(meta[4..]) is { } mod ? ModDetails.Card(mod) : null,
+            full: meta => meta.StartsWith("mod:") && Dependencies.Find(meta[4..]) is { } mod ? ModDetails.Card(mod, full: true) : null);
     }
 
     // Once positions settle after this frame's layout.
@@ -195,7 +196,13 @@ static class CategoryList
         scroll.Set("_targetDragPosY", Math.Clamp((float)scroll.Get("_targetDragPosY") + pixels, bottom, 0));
     }
 
-    public static void ScrollToTop(Control content) => ScrollContainer(content).Set("_targetDragPosY", 0f);
+    // At once: the game's container stops scrolling once the rows fit (DisableScrollingIfContentFits), so a
+    // target alone would never be reached once a search makes the list short.
+    public static void ScrollToTop(Control content)
+    {
+        if (ScrollContainer(content) is NScrollableContainer scroll)
+            scroll.InstantlyScrollToTop();
+    }
 
     // The row a third of the way down the visible list.
     public static void ScrollTo(Control content, Control row)
@@ -223,7 +230,25 @@ static class CategoryList
         // The row container only grows by itself; shrink its height to fit once this redraw settles
         // (collapsing a category or filtering must shorten the scroll range too). Only the height: its width
         // comes from its anchors, and its minimum width is 0.
-        Callable.From(() => content.OffsetBottom = content.OffsetTop).CallDeferred();
+        Callable.From(() =>
+        {
+            content.OffsetBottom = content.OffsetTop;
+            // Once it has its new size (one more step): short enough to fit, the game's container has stopped
+            // scrolling wherever it was, maybe with every row above the view, so back to the top (a search,
+            // Collapse all, a collapsed category). Moving it keeps its size, so shrink it again after.
+            Callable.From(() =>
+            {
+                if (!GodotObject.IsInstanceValid(content) || content.Size.Y > ScrollContainer(content).Size.Y)
+                    return;
+                ScrollToTop(content);
+                content.OffsetBottom = content.OffsetTop;
+            }).CallDeferred();
+        }).CallDeferred();
+        // Our views: taller rows, less space between them (the same pitch, more room inside a row).
+        if (Store.Data.VanillaView)
+            content.RemoveThemeConstantOverride("separation");
+        else
+            content.AddThemeConstantOverride("separation", RowTitles.RowGap);
         foreach (var header in content.GetChildren().Where(c => c.IsInGroup(HeaderGroup)))
         {
             content.RemoveChild(header);
@@ -281,7 +306,7 @@ static class CategoryList
         {
             void RedrawAll() => Redraw(content);
             LoadOrder.Apply(content, rows, Matches, RedrawAll);
-            RowStrip.Apply(rows, StripActions(content));
+            RowStrip.Apply(rows, StripActions(content), EdgeAction(content));
             return;
         }
         LoadOrder.Undecorate(rows);
@@ -290,7 +315,7 @@ static class CategoryList
         if (Store.Data.VanillaView)
             RowStrip.Remove(rows);
         else
-            RowStrip.Apply(rows, StripActions(content));
+            RowStrip.Apply(rows, StripActions(content), EdgeAction(content));
 
         if (Store.Data.VanillaView)
         {
@@ -425,10 +450,12 @@ static class CategoryList
     // alias, tags and notes) and its category, both opening its menu.
     static Func<NModMenuRow, IEnumerable<MenuItem>> StripActions(Control content) => Store.Data.LoadOrderView
         ? row => LoadOrder.Actions(content, row, () => Redraw(content), compact: true)
-        : row => [
-            new MenuItem("✎", () => ShowRowMenu(content, row), Tip: Menus.Text("SPIRE_MOD_MANAGER.EDIT_TIP"), Flat: true),
-            new MenuItem(CategoryName(row.Mod?.manifest?.id), () => ShowRowMenu(content, row), Tip: Menus.Text("SPIRE_MOD_MANAGER.CATEGORY_TIP")),
-        ];
+        : row => [new MenuItem(CategoryName(row.Mod?.manifest?.id), () => ShowRowMenu(content, row), Tip: Menus.Text("SPIRE_MOD_MANAGER.CATEGORY_TIP"))];
+
+    // The main list's pencil, past the tickbox at the row's far right: the mod's menu. None in Load Order.
+    static Func<NModMenuRow, MenuItem>? EdgeAction(Control content) => Store.Data.LoadOrderView
+        ? null
+        : row => new MenuItem("✎", () => ShowRowMenu(content, row), Tip: Menus.Text("SPIRE_MOD_MANAGER.EDIT_TIP"), Flat: true);
 
     // The mod's category, or "Uncategorized".
     public static string CategoryName(string? modId) =>
@@ -442,7 +469,7 @@ static class CategoryList
         LoadOrder.UpdateToolbar(content, rows, () => Redraw(content)); // the banner and the "!" follow on/off too
         if (Store.Data.VanillaView)
             return;
-        RowStrip.Apply(rows, StripActions(content));
+        RowStrip.Apply(rows, StripActions(content), EdgeAction(content));
     }
 
     // A mod's right-click menu: its category on the left (pick one, or a new one, named in place), its alias,

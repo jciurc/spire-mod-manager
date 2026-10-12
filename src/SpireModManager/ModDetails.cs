@@ -207,25 +207,27 @@ static class ModDetails
 
     // The card shown after hovering a row's title: its id and state, anything wrong, author, last update, and
     // the player's alias, tags and notes.
-    public static string Card(Mod mod)
+    // full: nothing cut short (the card held with Alt); otherwise long alias, tags, notes and author are cut.
+    public static string Card(Mod mod, bool full = false)
     {
+        string Cut(string text, int max) => full || text.Length <= max ? text : text[..max].TrimEnd() + "…";
         var id = mod.manifest?.id ?? "";
         var info = Store.InfoFor(id);
         var lines = new List<string> { $"[b]{Escape(id)}[/b]  [color=#fff6e280]•[/color]  {Status(mod)}" };
         lines.AddRange(Problems(mod).Select(p => $"[color={Problem}]{Escape(p)}[/color]"));
         string Fact(string key, string value) => $"[color=#e8cf7a]{Menus.Text(key)}[/color]: {value}";
-        lines.Add(Fact("SPIRE_MOD_MANAGER.AUTHOR", Escape(Short(mod.manifest?.author ?? Menus.Text("SPIRE_MOD_MANAGER.UNKNOWN")))));
+        lines.Add(Fact("SPIRE_MOD_MANAGER.AUTHOR", Escape(Cut(mod.manifest?.author ?? Menus.Text("SPIRE_MOD_MANAGER.UNKNOWN"), 80))));
         if (WorkshopInfo.For(mod) is { } workshop)
             lines.Add(Fact("SPIRE_MOD_MANAGER.UPDATED", Date(workshop.Updated)));
         if (info?.Alias is { } alias)
         {
             const string halfLine = "[font_size=8] [/font_size]"; // a little air around it
-            lines.AddRange([halfLine, Fact("SPIRE_MOD_MANAGER.ALIAS_TERM", Escape(alias)), halfLine]);
+            lines.AddRange([halfLine, Fact("SPIRE_MOD_MANAGER.ALIAS_TERM", Escape(Cut(alias, 80))), halfLine]);
         }
         if (info?.Tags is { Count: > 0 } tags)
-            lines.Add(Fact("SPIRE_MOD_MANAGER.TAGS_TERM", Escape(string.Join(", ", tags))));
+            lines.Add(Fact("SPIRE_MOD_MANAGER.TAGS_TERM", Escape(Cut(string.Join(", ", tags), 160))));
         if (info?.Notes is { } notes)
-            lines.Add($"[color=#e8cf7a]{Menus.Text("SPIRE_MOD_MANAGER.NOTES_TERM")}[/color]\n{Escape(notes)}");
+            lines.Add($"[color=#e8cf7a]{Menus.Text("SPIRE_MOD_MANAGER.NOTES_TERM")}[/color]\n{Escape(Cut(notes, 300))}");
         return string.Join("\n", lines);
     }
 
