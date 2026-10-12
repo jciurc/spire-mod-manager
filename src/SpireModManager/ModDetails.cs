@@ -22,6 +22,7 @@ static class ModDetails
     static readonly Color Gold = new(0.937f, 0.784f, 0.318f);
     const string ModIdMeta = "spire_mod_manager_mod_id";
     const string FolderMeta = "spire_mod_manager_folder";
+    const string WorkshopMeta = "spire_mod_manager_workshop";
     const string FieldsName = "SpireModManagerYours";
     const string LinkName = "SpireModManagerLink", SourceName = "SpireModManagerSource";
     public const string HeadName = "SpireModManagerHead";
@@ -55,6 +56,7 @@ static class ModDetails
             HistoryBar.HideBack(container); // another mod: no way back to the changes list (the same one refilled keeps it)
         container.SetMeta(ModIdMeta, id ?? "");
         container.SetMeta(FolderMeta, mod.path);
+        container.SetMeta(WorkshopMeta, mod.workshopId?.ToString() ?? ""); // this copy's (a local one can share its id)
 
         // The game titles it with the name; ours too, with the version in grey beside it (the alias is in the
         // fields below).
@@ -199,8 +201,9 @@ static class ModDetails
     public static string Ago(DateTime when)
     {
         var age = DateTime.Now - when;
-        var text = age.TotalHours < 24
-            ? (int)age.TotalHours is var hours && hours == 1 ? Menus.Text("SPIRE_MOD_MANAGER.HOUR_AGO") : Menus.Format("SPIRE_MOD_MANAGER.HOURS_AGO", ("hours", Math.Max(0, hours).ToString()))
+        var text = age.TotalHours < 1 ? Menus.Text("SPIRE_MOD_MANAGER.UNDER_AN_HOUR_AGO")
+            : age.TotalHours < 24
+            ? (int)age.TotalHours is var hours && hours == 1 ? Menus.Text("SPIRE_MOD_MANAGER.HOUR_AGO") : Menus.Format("SPIRE_MOD_MANAGER.HOURS_AGO", ("hours", hours.ToString()))
             : (int)age.TotalDays is var days && days == 1 ? Menus.Text("SPIRE_MOD_MANAGER.DAY_AGO") : Menus.Format("SPIRE_MOD_MANAGER.DAYS_AGO", ("days", days.ToString()));
         return $"[color={(age.TotalHours < 48 ? Enabled : Disabled)}]({text})[/color]";
     }
@@ -419,8 +422,8 @@ static class ModDetails
         {
             if (meta.AsString() is { } target && target.StartsWith("author:"))
                 Search.ByAuthor(container, target[7..], Input.IsKeyPressed(Key.Shift));
-            else if (meta.AsString() == "patchnotes" && Dependencies.Find(Meta(container, ModIdMeta)) is { workshopId: not null } shown)
-                OS.ShellOpen($"https://steamcommunity.com/sharedfiles/filedetails/changelog/{shown.workshopId}"); // the Workshop's change notes page
+            else if (meta.AsString() == "patchnotes" && Meta(container, WorkshopMeta) is { Length: > 0 } workshop)
+                OS.ShellOpen($"https://steamcommunity.com/sharedfiles/filedetails/changelog/{workshop}"); // the shown mod's change notes page
         };
         Hover.WatchLinks(head, "SpireModManagerTagCard",
             meta => meta.StartsWith("author:") ? Tags.Hint(Menus.Text("SPIRE_MOD_MANAGER.SEARCH_CLICK_TIP")) : null, width: 320);
