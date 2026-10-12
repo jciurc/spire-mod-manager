@@ -22,6 +22,8 @@ public class StoreData
     public bool VanillaView { get; set; }
     public bool LoadOrderView { get; set; }
     public bool UncategorizedCollapsed { get; set; }
+    // Where the player moved the main menu button (top-left, in the game's 1920x1080 frame); null: the corner.
+    public ScreenPoint? MenuButtonAt { get; set; }
     public string? ImportedFrom { get; set; }
 }
 
@@ -53,6 +55,8 @@ public class Profile
 }
 
 public record ProfileMod(string Id, ModSource Source, bool Enabled);
+
+public record ScreenPoint(float X, float Y);
 
 public record ModRef(string Id, ModSource? Source);
 

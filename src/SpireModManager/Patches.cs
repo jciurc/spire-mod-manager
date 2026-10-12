@@ -30,32 +30,9 @@ static class MainMenuPatch
             WorkshopInfo.Start(); // background Steam query; does nothing without Steam
             ModEntry.MarkDevRun(__instance.GetTree());
 
-            var menu = __instance;
-            // Jordan's art (a city skyline), shown at its own size so it stays crisp; the game's button art if
-            // it's missing.
-            var art = ModEntry.Art("main_menu_button.png");
-            var size = art?.GetSize() ?? new Vector2(260, 70);
-            var button = ModEntry.AddButton(menu, "SPIRE_MOD_MANAGER.MAIN_MENU_BUTTON", size,
-                () => menu.SubmenuStack.PushSubmenuType<NModdingScreen>(), art);
-            button.Name = "SpireModManagerMenuButton";
+            MenuButton.Add(__instance);
 
-            // Lower-left corner, its bottom level with the bottom row of buttons on the Modding screen.
-            button.SetAnchorsPreset(Control.LayoutPreset.BottomLeft);
-            button.OffsetLeft = Layout.CornerX;
-            button.OffsetBottom = Layout.BottomRowY + 70 - 1080;
-            button.OffsetRight = button.OffsetLeft + size.X;
-            button.OffsetTop = button.OffsetBottom - size.Y;
-
-            var dot = button.GetNode<Control>("Dot");
-            void Refresh()
-            {
-                button.Visible = !menu.SubmenuStack.SubmenusOpen;
-                dot.Visible = ModEntry.HasPendingChanges();
-            }
-            Refresh();
-            menu.SubmenuStack.Connect(NSubmenuStack.SignalName.StackModified, Callable.From(Refresh));
-
-            SelfTest.MaybeStart(menu);
+            SelfTest.MaybeStart(__instance);
         }
         catch (Exception e)
         {
