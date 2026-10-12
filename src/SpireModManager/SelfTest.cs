@@ -119,6 +119,7 @@ static class SelfTest
             await TestLoadOrder(menu, screen, content, outDir);
             await TestListBanner(menu, screen, content, outDir);
             await TestPageBar(menu, screen, content, outDir);
+            await TestRelaunchCheck(menu, screen, content, outDir);
             await TestHistory(menu, screen, content, outDir);
 
             // Leaving from Load Order: the page comes back on the main list.
@@ -1134,6 +1135,49 @@ static class SelfTest
         Check("Uncategorized: just Enable all, Disable all", uncategorized.SequenceEqual(["Enable all", "Disable all"]), string.Join(",", uncategorized));
         var author = Rows().FirstOrDefault(r => r.Mod?.manifest?.id == "LocalModFixes")?.GetNodeOrNull<Label>("SpireModManagerStrip/Author")?.Text;
         Check("the author at the end of the row's line", author == "by symphony", author ?? "none");
+    }
+
+    // Relaunch with mods that won't load (fixture: BrandedMod needs BaseLib, not installed; here the framework
+    // is turned off too): the dialog lists them; Enable needed mods, then Disable mods that can't load, fix
+    // them in place; Cancel and Esc close it. Never presses Relaunch (that would quit the test).
+    static async Task TestRelaunchCheck(Node menu, NModdingScreen screen, Control content, string outDir)
+    {
+        if (content.GetChildren().OfType<NModMenuRow>().FirstOrDefault(r => r.Mod?.manifest?.id == "SmmTestLib") is not { Mod: { } lib } libRow
+            || Dependencies.Find("BrandedMod") is not { } branded || !Dependencies.IsOn(branded))
+        {
+            Results.Add("SKIP relaunch check: fixture mods missing");
+            return;
+        }
+        var tickbox = libRow.GetNode<NTickbox>("Tickbox");
+        tickbox.IsTicked = false;
+        tickbox.EmitSignal(NTickbox.SignalName.Toggled, tickbox);
+        await Wait(menu, 0.3);
+        Node? Dialog() => menu.GetTree().Root.GetNodeOrNull(RelaunchCheck.Name);
+        string Body() => (Dialog()?.FindChild("Body", true, false) as RichTextLabel)?.GetParsedText() ?? "";
+        void Press(string name) => Dialog()?.FindChild(name, true, false)?.EmitSignal(BaseButton.SignalName.Pressed);
+
+        RelaunchCheck.Show(screen);
+        await Wait(menu, 0.3);
+        Check("relaunch check lists the mods that won't load", Body().Contains("BaseLib, which isn't installed") && Body().Contains("Test Framework, which is off"), Body());
+        await Capture(screen, outDir, "15-relaunch-check");
+        Press("EnableNeededButton");
+        await Wait(menu, 0.3);
+        Check("Enable needed mods fixes the off ones, the list updates", Dependencies.IsOn(lib) && !Body().Contains("Test Framework") && Body().Contains("BaseLib"), Body());
+        Press("DisableBrokenButton");
+        await Wait(menu, 0.3);
+        Check("Disable mods that can't load: nothing left, plain Relaunch", !Dependencies.IsOn(branded)
+            && Dialog()?.FindChild("RelaunchNowButton", true, false) is Button { Text: "Relaunch Game" }, Body());
+        Press("CancelRelaunchButton");
+        await Wait(menu, 0.2);
+        Check("Cancel closes it", Dialog() == null);
+        History.Undo(); // BrandedMod back on, as the fixture has it
+        await Wait(menu, 0.3);
+        RelaunchCheck.Show(screen);
+        await Wait(menu, 0.2);
+        Input.ParseInputEvent(new InputEventKey { Keycode = Key.Escape, Pressed = true });
+        await Wait(menu, 0.2);
+        Input.ParseInputEvent(new InputEventKey { Keycode = Key.Escape, Pressed = false });
+        Check("Esc closes it, and stays on the page", Dialog() == null && screen.IsVisibleInTree() && Dependencies.IsOn(branded));
     }
 
     // Untick a mod through its real tickbox, review, undo/redo; undo a rename; revert all, and undo that.
