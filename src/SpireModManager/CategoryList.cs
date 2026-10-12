@@ -18,6 +18,7 @@ static class CategoryList
     const string RowMenuMeta = "spire_mod_manager_menu";
     const string CategoryMeta = "spire_mod_manager_category"; // on headers: the category name, "" for Uncategorized
     public const string FilterMeta = "spire_mod_manager_filter"; // on the row container: the search text
+    const string GameGapMeta = "spire_mod_manager_game_gap", GameSidesMeta = "spire_mod_manager_game_sides";
     static readonly Dictionary<string, float> HeaderWidths = [];
 
     public static void Attach(NModdingScreen screen)
@@ -129,16 +130,16 @@ static class CategoryList
         {
             if (row.HasMeta(LitMeta))
             {
-                look.Modulate = (Color)row.GetMeta(LitMeta);
                 row.RemoveMeta(LitMeta);
+                RowTitles.Look(row, RowState.Selected(row), RowState.Focused(row)); // its own state again
             }
             return;
         }
         var view = ScrollContainer(content).GetGlobalRect();
-        if (!row.IsVisibleInTree() || !view.Intersects(row.GetGlobalRect()) || row.HasMeta(LitMeta))
-            return;
-        row.SetMeta(LitMeta, look.Modulate);
-        look.Modulate = look.Modulate.A > 0.1f ? look.Modulate : new Color(MegaCrit.Sts2.Core.Helpers.StsColors.darkBlue, 0.25f);
+        if (!row.IsVisibleInTree() || !view.Intersects(row.GetGlobalRect()) || row.HasMeta(LitMeta) || look.Modulate.A > 0.1f)
+            return; // not in view, lit already, or showing a look of its own (selected, under the mouse)
+        row.SetMeta(LitMeta, true);
+        RowTitles.Look(row, RowState.Selected(row), focused: true);
     }
 
     // Mod names (links "mod:<id>") in a text: hovering one lights its row and, after half a second, shows the
@@ -244,11 +245,17 @@ static class CategoryList
                 content.OffsetBottom = content.OffsetTop;
             }).CallDeferred();
         }).CallDeferred();
-        // Our views: taller rows, less space between them (the same pitch, more room inside a row).
-        if (Store.Data.VanillaView)
-            content.RemoveThemeConstantOverride("separation");
-        else
-            content.AddThemeConstantOverride("separation", RowTitles.RowGap);
+        // Our views: taller rows, less space between them (the same pitch, more room inside a row), and the rows a
+        // little in from the list's sides, so their wider highlight isn't cut off by its edges. Vanilla View: the
+        // game's own values back.
+        if (!content.HasMeta(GameGapMeta))
+        {
+            content.SetMeta(GameGapMeta, content.GetThemeConstant("separation"));
+            content.SetMeta(GameSidesMeta, new Vector2(content.OffsetLeft, content.OffsetRight));
+        }
+        var sides = (Vector2)content.GetMeta(GameSidesMeta);
+        content.AddThemeConstantOverride("separation", Store.Data.VanillaView ? (int)content.GetMeta(GameGapMeta) : RowTitles.RowGap);
+        (content.OffsetLeft, content.OffsetRight) = Store.Data.VanillaView ? (sides.X, sides.Y) : (sides.X - RowTitles.LookInset.X, sides.Y - RowTitles.LookInset.Z);
         foreach (var header in content.GetChildren().Where(c => c.IsInGroup(HeaderGroup)))
         {
             content.RemoveChild(header);

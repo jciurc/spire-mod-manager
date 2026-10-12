@@ -101,6 +101,8 @@ static class SelfTest
             await Wait(menu, 1);
             Check("vanilla view hides headers", !content.GetChildren().Any(c => c.IsInGroup("SpireModManagerCategoryHeader")));
             var border = screen.GetNode<Control>("ModsBorder");
+            Check("vanilla view: the game's row spacing and sides", content.GetThemeConstant("separation") == 16 && content.OffsetLeft == 0 && content.OffsetRight == 0,
+                $"separation {content.GetThemeConstant("separation")}, sides {content.OffsetLeft}..{content.OffsetRight}");
             Check("vanilla view restores the game's layout", border.OffsetLeft == 255 && border.OffsetRight == 994
                 && border.GetNode<Control>("ModsScrollContainer").OffsetTop == 8
                 && !border.GetNode<Control>("SpireModManagerProfileBar").Visible, $"{border.OffsetLeft}..{border.OffsetRight}");
@@ -262,7 +264,8 @@ static class SelfTest
         Store.Data.UncategorizedCollapsed = true;
         CategoryList.Apply(content);
         await Wait(menu, 0.3);
-        Check("the list keeps its full width", Math.Abs(content.Size.X - content.GetParent<Control>().Size.X) < 1, $"{content.Size.X} of {content.GetParent<Control>().Size.X}");
+        Check("the list keeps its width (a little in from the sides, for the rows' highlight)", Math.Abs(content.Size.X - (content.GetParent<Control>().Size.X + 2 * RowTitles.LookInset.X)) < 1,
+            $"{content.Size.X} of {content.GetParent<Control>().Size.X}");
         Check("collapsing everything shrinks the list", content.Size.Y < open && Math.Abs(content.Size.Y - content.GetCombinedMinimumSize().Y) < 1,
             $"{open} -> {content.Size.Y} (min {content.GetCombinedMinimumSize().Y})");
         for (var i = 0; i < collapsed.Count; i++)
@@ -395,7 +398,9 @@ static class SelfTest
         }
         // A right-click outside closes it and reaches what's under the mouse; showing the same menu again
         // (a second press on its button) closes it.
+        Hover.TestMouse = () => new Vector2(300, 300); // the menu opens there, well away from the press below
         CategoryList.ShowRowMenu(content, row);
+        Hover.TestMouse = null;
         await Wait(menu, 0.2);
         var outside = new Vector2(1500, 900);
         MenuPanel.Current?.GetNode<Control>("Catcher").EmitSignal(Control.SignalName.GuiInput,
@@ -1229,12 +1234,13 @@ static class SelfTest
             screen.OnRowSelected(libRow);
             await Wait(menu, 0.3);
             var description = screen.GetNode<RichTextLabel>("%ModInfoContainer/ModDescription");
-            var look = uiRow.GetNode<CanvasItem>("SelectionHighlight");
+            var look = uiRow.GetNode<Panel>("SelectionHighlight");
             var before = look.Modulate;
             description.EmitSignal(RichTextLabel.SignalName.MetaHoverStarted, "mod:SmmTestUi");
             var lit = look.Modulate;
+            var litFill = (look.GetThemeStylebox("panel") as StyleBoxFlat)?.BgColor.A ?? 0;
             description.EmitSignal(RichTextLabel.SignalName.MetaHoverEnded, "mod:SmmTestUi");
-            Check("hovering a mod's name in the panel lights its row, and lets go", lit.A > 0.1f && look.Modulate == before, $"{before} -> {lit} -> {look.Modulate}");
+            Check("hovering a mod's name in the panel lights its row (visibly), and lets go", lit.A * litFill > 0.05f && look.Modulate == before, $"{before} -> {lit} x {litFill} -> {look.Modulate}");
             description.EmitSignal(RichTextLabel.SignalName.MetaClicked, "mod:SmmTestUi");
             await Wait(menu, 0.3);
             Check("clicking it gives the row the selected look; the panel stays", uiRow.HasFocus() && CategoryList.Selected?.manifest?.id == "SmmTestLib");
@@ -1358,7 +1364,7 @@ static class SelfTest
         var link = info.FindChild("SpireModManagerLink", true, false) as LinkButton;
         Check("the source line: id (SteamID n)", link?.Text == "SmmWorkshopTest (SteamID 42)", link?.Text ?? "");
         Check("how long ago: hours under a day, one day singular, green under two days",
-            ModDetails.Ago(DateTime.Now.AddHours(-3)).Contains("(3 hours ago)") && ModDetails.Ago(DateTime.Now.AddMinutes(-70)).Contains("(1 hour ago)")
+            ModDetails.Ago(DateTime.Now.AddMinutes(-20)).Contains("(less than an hour ago)") && ModDetails.Ago(DateTime.Now.AddHours(-3)).Contains("(3 hours ago)") && ModDetails.Ago(DateTime.Now.AddMinutes(-70)).Contains("(1 hour ago)")
             && ModDetails.Ago(DateTime.Now.AddHours(-30)).Contains("(1 day ago)") && ModDetails.Ago(DateTime.Now.AddHours(-30)).Contains("#a6e3a1")
             && !ModDetails.Ago(DateTime.Now.AddDays(-3)).Contains("#a6e3a1"));
         WorkshopInfo.TestSet(42, null);

@@ -339,14 +339,15 @@ static class RowLookPatch
     static void Unfocused(NModMenuRow __instance) => Apply(__instance, focused: false);
 
     [HarmonyPostfix, HarmonyPatch(nameof(NModMenuRow.SetSelected))]
-    static void Selected(NModMenuRow __instance) => Apply(__instance, RowState.Focused(__instance));
+    static void Selected(NModMenuRow __instance) => Apply(__instance, focused: null);
 
-    static void Apply(NModMenuRow row, bool focused)
+    // focused: null for "as it is" (read from the row, inside the try: it's the game's private state).
+    static void Apply(NModMenuRow row, bool? focused)
     {
         try
         {
             if (!ModEntry.BetterModMenuLoaded)
-                RowTitles.Look(row, RowState.Selected(row), focused);
+                RowTitles.Look(row, RowState.Selected(row), focused ?? RowState.Focused(row));
         }
         catch (Exception e)
         {

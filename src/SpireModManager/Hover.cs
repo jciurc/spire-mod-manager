@@ -187,7 +187,9 @@ static class Hover
                     expanded = !expanded;
                     text.Text = expanded ? full! : shortText;
                     text.CustomMinimumSize = new Vector2(expanded ? FullWidth : width, 0);
-                    Callable.From(Place).CallDeferred();
+                    // Laid out at the new width first, then measured (after the panel has sorted its child).
+                    text.Size = new Vector2(expanded ? FullWidth : width, 0);
+                    Callable.From(() => Callable.From(Place).CallDeferred()).CallDeferred();
                 }
                 if (GodotObject.IsInstanceValid(owner) && owner.IsInsideTree() && keep())
                 {
