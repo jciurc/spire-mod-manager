@@ -4,6 +4,13 @@ Short notes for Jordan: what to look for after each install. Newest first.
 
 ## Not installed yet
 
+- (nothing yet)
+
+## Installed 2026-10-12 (evening): version 0.0.40
+
+Version
+- The mod now reads **0.0.40** (title in the info panel, game's mod list). The last number goes up by one with every install, so you can tell when there's a new build.
+
 Rows
 - A little shorter. Tags always in the order Local (new: hand-installed mods), Library, Gameplay, Cosmetic, then yours.
 - "Required for N" comes before "Needs:".
