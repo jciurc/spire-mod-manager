@@ -1,4 +1,5 @@
 using MegaCrit.Sts2.Core.Modding;
+using MegaCrit.Sts2.Core.Nodes.Screens.ModdingScreen;
 using MegaCrit.Sts2.Core.Saves;
 
 namespace SpireModManager;
@@ -27,6 +28,36 @@ static class Dependencies
         if (!IsOn(dep))
             return Problem.Off;
         return order.TryGetValue(dep, out var d) && order.TryGetValue(mod, out var m) && d > m ? Problem.LoadsBefore : Problem.None;
+    }
+
+    // Installed mods that are off but needed by an enabled mod, directly or through another one of these.
+    public static List<Mod> NeededOff(IEnumerable<Mod> mods)
+    {
+        var needed = new List<Mod>();
+        var waiting = new Queue<Mod>(mods.Where(IsOn));
+        while (waiting.TryDequeue(out var mod))
+            foreach (var dependency in Of(mod).Select(Find).OfType<Mod>())
+                if (!IsOn(dependency) && !needed.Contains(dependency))
+                {
+                    needed.Add(dependency);
+                    waiting.Enqueue(dependency);
+                }
+        return needed;
+    }
+
+    // Turns mods on in the saved list and ticks their boxes; the caller's redraw records it as one change.
+    public static void TurnOn(IEnumerable<Mod> mods, NModdingScreen screen)
+    {
+        var settings = SaveManager.Instance.SettingsSave.ModSettings ??= new ModSettings();
+        foreach (var mod in mods)
+        {
+            var entry = settings.ModList.FirstOrDefault(e => e.Id == mod.manifest?.id && e.Source == mod.modSource);
+            if (entry == null)
+                settings.ModList.Add(entry = new SettingsSaveMod(mod));
+            entry.IsEnabled = true;
+        }
+        SaveManager.Instance.SaveSettings();
+        Profiles.RefreshTickboxes(screen);
     }
 
     // Enabled mods placed before an enabled mod they need.

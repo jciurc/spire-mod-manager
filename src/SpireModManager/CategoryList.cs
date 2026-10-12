@@ -348,7 +348,7 @@ static class CategoryList
     static Func<NModMenuRow, IEnumerable<MenuItem>> StripActions(Control content) => Store.Data.LoadOrderView
         ? row => LoadOrder.Actions(content, row, () => Redraw(content), compact: true)
         : row => [
-            new MenuItem("✎", () => ShowRowMenu(content, row), Tip: Menus.Text("SPIRE_MOD_MANAGER.EDIT_TIP")),
+            new MenuItem("✎", () => ShowRowMenu(content, row), Tip: Menus.Text("SPIRE_MOD_MANAGER.EDIT_TIP"), Flat: true),
             new MenuItem(CategoryName(row.Mod?.manifest?.id), () => ShowRowMenu(content, row), Tip: Menus.Text("SPIRE_MOD_MANAGER.CATEGORY_TIP")),
         ];
 
@@ -360,9 +360,10 @@ static class CategoryList
     // follow at once, without a full redraw.
     public static void RefreshStrips(Control content)
     {
+        var rows = content.GetChildren().OfType<NModMenuRow>().ToList();
+        LoadOrder.UpdateToolbar(content, rows, () => Redraw(content)); // the banner and the "!" follow on/off too
         if (Store.Data.VanillaView)
             return;
-        var rows = content.GetChildren().OfType<NModMenuRow>().ToList();
         RowStrip.Apply(rows, StripActions(content));
     }
 

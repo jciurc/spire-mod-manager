@@ -117,6 +117,7 @@ static class SelfTest
             await TestSearch(menu, screen, content, outDir);
             await TestNewMod(menu, screen, content, outDir);
             await TestLoadOrder(menu, screen, content, outDir);
+            await TestListBanner(menu, screen, content, outDir);
             await TestHistory(menu, screen, content, outDir);
 
             // Leaving from Load Order: the page comes back on the main list.
@@ -242,10 +243,15 @@ static class SelfTest
         await Wait(menu, 0.1);
         Check("a click on empty space releases focus", !search.HasFocus());
 
-        if (content.GetChildren().OfType<NModMenuRow>().FirstOrDefault(r => r.Visible)?.GetNodeOrNull<Control>("SpireModManagerStrip") is { } strip
-            && strip.GetNodeOrNull<Control>("Actions")?.GetChildOrNull<Control>(0) is { } button)
-            Check("inline buttons are centred in the strip", Math.Abs(button.GetGlobalRect().GetCenter().Y - strip.GetGlobalRect().GetCenter().Y) < 2,
-                $"{button.GetGlobalRect()} in {strip.GetGlobalRect()}");
+        if (content.GetChildren().OfType<NModMenuRow>().FirstOrDefault(r => r.Visible) is { } shown
+            && shown.GetNodeOrNull<Control>(RowStrip.ActionsName)?.GetChildOrNull<Control>(0) is { } button)
+        {
+            var tick = shown.GetNode<Control>("Tickbox");
+            var tickY = tick.GetGlobalTransform() * (tick.Size / 2);
+            Check("row buttons line up with the tickbox", Math.Abs(button.GetGlobalRect().GetCenter().Y - tickY.Y) < 2,
+                $"button {button.GetGlobalRect()}, tickbox centre {tickY}");
+            Check("the pencil is flat (no box)", button.GetThemeStylebox("normal") is StyleBoxEmpty);
+        }
     }
 
     // Right-click the main menu button, Move button, click somewhere: it stays there; Reset puts it back.
@@ -737,6 +743,22 @@ static class SelfTest
         await Wait(menu, 0.5);
         Check("move to top saves the order", Ids()[0] == free && Saved()[0] == free, string.Join(", ", Ids()));
         Check("an order change is pending", pending.Visible && ModEntry.HasPendingChanges());
+        Check("load order: no tickboxes", Rows().All(r => !r.GetNode<Control>("Tickbox").Visible));
+        var wasText = Rows()[0].GetNodeOrNull<Label>("SpireModManagerWas")?.Text;
+        Check("a moved row shows where it was at launch", wasText == $"{start.IndexOf(free) + 1} →",
+            wasText ?? "none");
+        if (Rows().FirstOrDefault(r => r.Mod?.manifest?.id == "SmmTestUi") is { Mod: { } uiMod } uiRow)
+        {
+            var toggle = LoadOrder.Actions(content, uiRow, () => CategoryList.Redraw(content))[0];
+            toggle.OnSelect?.Invoke();
+            await Wait(menu, 0.3);
+            var offNow = !Dependencies.IsOn(uiMod);
+            var again = LoadOrder.Actions(content, uiRow, () => CategoryList.Redraw(content))[0];
+            again.OnSelect?.Invoke();
+            await Wait(menu, 0.3);
+            Check("load order menu: Disable, then Enable", toggle.Label == "Disable" && offNow && again.Label == "Enable" && Dependencies.IsOn(uiMod),
+                $"{toggle.Label}, off {offNow}, {again.Label}");
+        }
 
         // Drag the first row's handle to just below the third row.
         var first = Rows()[0];
@@ -848,6 +870,9 @@ static class SelfTest
         await Wait(menu, 0.5);
         Check("bad order: banner and warning", screen.FindChild("OrderProblems", true, false) != null && Note("SmmTestContent").Contains("Test Framework after"),
             Note("SmmTestContent"));
+        Check("order warning wording", (screen.FindChild("OrderProblems", true, false) as Label)?.Text.StartsWith("For compatibility, 1 mod will be automatically reordered") == true,
+            (screen.FindChild("OrderProblems", true, false) as Label)?.Text ?? "");
+        Check("Auto sort has its hint", screen.FindChild("AutoSortHint", true, false) is Label { Visible: true } hintLabel && hintLabel.Text.Contains("compatibility"));
         Check("order warning and Auto sort stay above the list, outside its scrolling",
             screen.FindChild("OrderProblems", true, false) is Node warning && !content.IsAncestorOf(warning)
             && screen.FindChild("AutoSortButton", true, false) is Control { Visible: true } sort && !content.IsAncestorOf(sort));
@@ -866,7 +891,7 @@ static class SelfTest
         // A move above the framework is flagged but allowed: by the inline/menu actions and by dragging.
         var rowContent = Row("SmmTestContent");
         Check("moving above what it needs is flagged, not blocked", rowContent != null && LoadOrder.MoveBreaks(dependent, 0, Rows())
-            && !LoadOrder.Actions(content, rowContent, () => { })[0].Disabled);
+            && !LoadOrder.Actions(content, rowContent, () => { }, compact: true)[0].Disabled);
         var handle = rowContent?.GetNode<Control>("SpireModManagerHandle");
         if (handle != null)
         {
@@ -918,6 +943,51 @@ static class SelfTest
             Check("hover shows links to both dependents, and they go on leaving", shown == 2
                 && !content.GetParent().GetChildren().Any(c => c.IsInGroup("SpireModManagerLinks")), $"{shown} shown");
         }
+    }
+
+    // Main list: a needed mod turned off gives a banner with "Enable needed mods" (one undoable step); a bad
+    // order shows a "!" on the Load Order button.
+    static async Task TestListBanner(Node menu, NModdingScreen screen, Control content, string outDir)
+    {
+        List<NModMenuRow> Rows() => content.GetChildren().OfType<NModMenuRow>().ToList();
+        NModMenuRow? Row(string id) => Rows().FirstOrDefault(r => r.Mod?.manifest?.id == id);
+        if (Layout.Current != Layout.View.Categories || Row("SmmTestLib") is not { Mod: { } lib } libRow || Row("SmmTestContent") is not { Mod: { } dependent })
+        {
+            Results.Add("SKIP list banner: not on the main list, or test mods not installed");
+            return;
+        }
+        var tickbox = libRow.GetNode<NTickbox>("Tickbox");
+        tickbox.IsTicked = false;
+        tickbox.EmitSignal(NTickbox.SignalName.Toggled, tickbox);
+        await Wait(menu, 0.3);
+        var text = (screen.FindChild("OrderProblems", true, false) as Label)?.Text ?? "";
+        Check("main list: a needed mod that is off gets a banner", text.Contains("need a mod that is turned off"), text);
+        await Capture(screen, outDir, "2b-list-banner");
+        screen.FindChild("EnableNeededButton", true, false)?.EmitSignal(BaseButton.SignalName.Pressed);
+        await Wait(menu, 0.3);
+        Check("Enable needed mods turns it on, banner says no more", Dependencies.IsOn(lib) && tickbox.IsTicked
+            && screen.FindChild("EnableNeededButton", true, false) == null
+            && (screen.FindChild("OrderProblems", true, false) as Label)?.Text.Contains("turned off") != true);
+        History.Undo();
+        await Wait(menu, 0.3);
+        Check("one undo turns it off again", !Dependencies.IsOn(lib));
+        tickbox.IsTicked = true;
+        tickbox.EmitSignal(NTickbox.SignalName.Toggled, tickbox);
+        await Wait(menu, 0.3);
+
+        var badge = screen.GetNodeOrNull<Control>("SpireModManagerLoadOrderToggle/WarningBadge");
+        Check("no order problem, no '!' on Load Order", badge is not { Visible: true });
+        LoadOrder.Move(dependent, LoadOrder.Mods(Rows()).IndexOf(lib), Rows());
+        CategoryList.Redraw(content);
+        await Wait(menu, 0.3);
+        badge = screen.GetNodeOrNull<Control>("SpireModManagerLoadOrderToggle/WarningBadge");
+        Check("a bad order puts a '!' with the warning on the Load Order button", badge is { Visible: true }
+            && screen.GetNode<Control>("SpireModManagerLoadOrderToggle").TooltipText.StartsWith("For compatibility"));
+        await Capture(screen, outDir, "2c-load-order-badge");
+        LoadOrder.FixOrder(Rows());
+        CategoryList.Redraw(content);
+        await Wait(menu, 0.3);
+        Check("fixed: the '!' goes", screen.GetNodeOrNull<Control>("SpireModManagerLoadOrderToggle/WarningBadge") is not { Visible: true });
     }
 
     // Untick a mod through its real tickbox, review, undo/redo; undo a rename; revert all, and undo that.
