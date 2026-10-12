@@ -65,6 +65,10 @@ static class ProfileBar
         picker.AddThemeConstantOverride("icon_max_width", 14);
         picker.Icon = DownArrow();
         row.AddChild(picker);
+        // How many mods are on in it right now, beside the name.
+        var count = new Label { Name = "ProfileCount", VerticalAlignment = VerticalAlignment.Center, MouseFilter = Control.MouseFilterEnum.Ignore };
+        Style(count, "res://themes/kreon_regular_shared.tres", 15, new Color(Cream, 0.5f));
+        row.AddChild(count);
 
         // The name box, in the picker's place while naming, with its buttons and a warning.
         var name = new LineEdit
@@ -131,6 +135,8 @@ static class ProfileBar
             var edited = Profiles.Edited;
             picker.Text = Profiles.Active?.Name ?? "";
             picker.Visible = !editing;
+            count.Visible = !editing;
+            count.Text = Profiles.CountText();
             (name.Visible, nameButtons.Visible) = (editing, editing);
             if (!editing)
                 warning.Visible = false;
@@ -253,8 +259,14 @@ static class ProfileBar
         ]);
 
         // The bar lives as long as the screen; the event is static, so unsubscribe when it goes.
+        void Recount() => count.Text = Profiles.CountText();
+        History.Changed += Recount; // every tickbox change
         Profiles.Switched += Refresh;
-        bar.TreeExiting += () => Profiles.Switched -= Refresh;
+        bar.TreeExiting += () =>
+        {
+            Profiles.Switched -= Refresh;
+            History.Changed -= Recount;
+        };
         Refresh();
     }
 
