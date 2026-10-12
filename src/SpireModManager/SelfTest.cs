@@ -719,6 +719,7 @@ static class SelfTest
         NModalContainer.Instance?.Clear();
         Check("a mod installed now is listed as installed, loading after relaunch",
             HistoryBar.Describe().Any(l => l.Contains("Installed: Fresh Mod") && l.Contains("loads after relaunch")), string.Join(" | ", HistoryBar.Describe()));
+        Check("a mod installed now gets a New tag, first", Tags.For(fresh).FirstOrDefault()?.Text == "New");
         var freshRow = content.GetChildren().OfType<NModMenuRow>().Except(rowsBefore).FirstOrDefault(r => r.Mod == fresh);
         if (freshRow != null)
         {
