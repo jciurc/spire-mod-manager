@@ -56,7 +56,6 @@ static class Layout
         ViewFont(title, PageTitleSize);
         var titleText = new LocString("settings_ui", Wide ? "SPIRE_MOD_MANAGER.PAGE_TITLE" : "MODDING_SCREEN.INSTALLED_MODS_TITLE").GetFormattedText();
         title.SetTextAutoSize(titleText);
-        var titleEnd = PageLeft + title.GetThemeFont("normal_font").GetStringSize(titleText, fontSize: PageTitleSize).X;
 
         // Load Order: its name centred over the list.
         var viewTitle = screen.GetNodeOrNull<Label>("SpireModManagerViewTitle") ?? AddViewTitle(screen);
@@ -117,24 +116,25 @@ static class Layout
 
         PlaceList(list);
 
-        // Bottom row, left: the view switch in the lower-left corner (where the main menu button sits):
-        // "Vanilla List" in our views, "Spire Manager" in Vanilla View; then Load Order, which reads "Return"
-        // in Load Order. Right: Undo/Redo/Revert, then Relaunch (Categories only; Load Order has no
-        // Relaunch and no restart line).
+        // Bottom row, left, from the lower-left corner (where the main menu button sits): "Vanilla List" then
+        // "Load Order" on the main list; "Spire Manager" alone in Vanilla View; "Return" alone in Load Order.
+        // Right: Changes, Undo/Redo/Revert, then Relaunch (main list only; Load Order has no Relaunch and no
+        // restart line).
         var vanillaToggle = screen.GetNodeOrNull<Control>("SpireModManagerViewToggle");
         var orderToggle = screen.GetNodeOrNull<Control>("SpireModManagerLoadOrderToggle");
         var leftEnd = PageLeft;
-        if (vanillaToggle != null)
+        var x = CornerX;
+        foreach (var (toggle, shown) in new[] { (vanillaToggle, view != View.LoadOrder), (orderToggle, view != View.Vanilla) })
         {
-            vanillaToggle.Position = new Vector2(CornerX, BottomRowY);
-            leftEnd = vanillaToggle.Position.X + vanillaToggle.Size.X;
-        }
-        if (orderToggle != null)
-        {
-            orderToggle.Visible = view != View.Vanilla;
-            orderToggle.Position = new Vector2(leftEnd + 12, BottomRowY);
-            if (orderToggle.Visible)
-                leftEnd = orderToggle.Position.X + orderToggle.Size.X;
+            if (toggle == null)
+                continue;
+            toggle.Visible = shown;
+            toggle.Position = new Vector2(x, BottomRowY);
+            if (shown)
+            {
+                leftEnd = x + toggle.Size.X;
+                x = leftEnd + 12;
+            }
         }
         if (screen.GetNodeOrNull<Control>("SpireModManagerBmmNotice") is { } notice)
             notice.Position = new Vector2(PageLeft, BottomRowY + 1);
@@ -149,17 +149,21 @@ static class Layout
         }
         if (screen.GetNodeOrNull<Control>(HistoryBar.BarName) is { } history)
         {
+            var buttonsWidth = history.GetCombinedMinimumSize().X; // its buttons, not its (wider) box
             history.Position = new Vector2(right - history.Size.X, BottomRowY);
             history.Visible = Wide;
-            right = history.Position.X - 12;
+            right = right - buttonsWidth - 20;
         }
 
-        // "Changes +4 -3": just right of the page title, the same in both our views.
-        if (screen.GetNodeOrNull<Control>(HistoryBar.ChangesName) is { } changes)
+        // "Changes +4 -3 ↕2": just left of Undo, centred on the row.
+        if (screen.GetNodeOrNull<RichTextLabel>(HistoryBar.ChangesName) is { } changes)
         {
             changes.Visible = Wide;
-            changes.Position = new Vector2(titleEnd + 28, TitleTop + 16);
+            changes.Position = new Vector2(right - changes.Size.X, BottomRowY + 35 - 14);
+            right = changes.Position.X + changes.Size.X - Math.Max(changes.GetContentWidth(), 160) - 16; // its text is right-aligned
         }
+        if (view != View.Categories)
+            HistoryBar.CloseList(info); // the full changes list lives in the main list's panel
         History.NotifyChanged(); // the buttons act on this view's history
 
         // The game's "takes effect after a restart" line fits between the left and right buttons in

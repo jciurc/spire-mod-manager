@@ -31,6 +31,7 @@ static class ModDetails
             HideButtons(container);
             return;
         }
+        HistoryBar.CloseList(container); // a mod picked: the panel is about it again
         CommitEdits(container); // whatever was typed for the previous mod
         var id = mod.manifest?.id;
         var info = Store.InfoFor(id);
