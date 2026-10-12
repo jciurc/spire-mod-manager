@@ -240,19 +240,35 @@ static class Layout
         return label;
     }
 
-    // Profile bar, search and (in Load Order, when shown) the order warning sit at the top of the list in our
-    // views; the list starts below the lowest. Vanilla View hides them and gives the list its full height back.
+    // Across the top of the list in our views, stacked: the profile bar (main list only), the search box (with
+    // Auto sort in Load Order) and Load Order's warning when shown; the list starts below them. Vanilla View
+    // hides them and gives the list its full height back.
     public static void PlaceList(Control list)
     {
         var scroll = list.GetNode<Control>("ModsScrollContainer");
         if (!scroll.HasMeta(OriginalMeta))
             scroll.SetMeta(OriginalMeta, scroll.OffsetTop);
-        var tops = new[] { "SpireModManagerProfileBar", "SpireModManagerSearch" }.Select(n => list.GetNodeOrNull<Control>(n)).OfType<Control>().ToList();
-        foreach (var top in tops)
-            top.Visible = Wide;
-        if (list.GetNodeOrNull<Control>(LoadOrder.WarningName) is { } warning)
-            tops.Add(warning);
-        scroll.OffsetTop = Wide && tops.Count > 0 ? tops.Max(t => t.OffsetBottom) + 6 : (float)scroll.GetMeta(OriginalMeta);
+        var y = (float)scroll.GetMeta(OriginalMeta);
+        // Stacks one control below the last; null or hidden ones take no room.
+        void Stack(Control? control, bool shown, float gap)
+        {
+            if (control == null)
+                return;
+            control.Visible = shown;
+            if (!shown)
+                return;
+            var height = control.OffsetBottom - control.OffsetTop;
+            (control.OffsetTop, control.OffsetBottom) = (y, y + height);
+            y += height + gap;
+        }
+        // Profiles belong to the main list; Load Order only orders, so it starts with the search box.
+        Stack(list.GetNodeOrNull<Control>("SpireModManagerProfileBar"), Current == View.Categories, 8);
+        var search = list.GetNodeOrNull<Control>("SpireModManagerSearch");
+        Stack(search, Wide, 6);
+        if (search != null && list.GetNodeOrNull<Control>(LoadOrder.AutoSortName) is { } sort)
+            (sort.OffsetTop, sort.OffsetBottom) = (search.OffsetTop, search.OffsetBottom);
+        Stack(list.GetNodeOrNull<Control>(LoadOrder.WarningName), Wide, 6);
+        scroll.OffsetTop = Wide ? y : (float)scroll.GetMeta(OriginalMeta);
     }
 
     // Vanilla View: the game's notification dot on "Spire Manager" while a relaunch is pending.
