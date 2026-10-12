@@ -105,8 +105,9 @@ static class ModDetails
         folder.Visible = Directory.Exists(mod.path);
     }
 
-    // Clicking the title scrolls to the mod in the list; clicking a dependency's name scrolls to that one and
-    // flashes it (the panel stays on this mod). Connected once per panel.
+    // Clicking the title scrolls to the mod in the list, a dependency's name to that one, each row taking the
+    // selected look (the panel stays on this mod). Hovering a name lights its row if it's in view, then shows
+    // its card. Connected once per panel.
     static void Wire(NModInfoContainer container)
     {
         if (container.HasMeta(WiredMeta))
@@ -119,15 +120,16 @@ static class ModDetails
         title.GuiInput += e =>
         {
             if (e is InputEventMouseButton { ButtonIndex: MouseButton.Left, Pressed: false } && Content() is { } content)
-                CategoryList.Reveal(content, Meta(container, ModIdMeta), flash: false);
+                CategoryList.Reveal(content, Meta(container, ModIdMeta), flash: false, focus: true);
         };
         var description = container.GetNode<RichTextLabel>("ModDescription");
         description.MetaUnderlined = false;
         description.MetaClicked += meta =>
         {
             if (meta.AsString() is { } target && target.StartsWith("mod:") && Content() is { } content)
-                CategoryList.Reveal(content, target[4..], flash: true);
+                CategoryList.Reveal(content, target[4..], flash: false, focus: true);
         };
+        CategoryList.WatchNames(description, Content); // hovering a name: its row lit (if in view), then its card
     }
 
     // Anything wrong, the author's description, more facts, then compatibility and dependencies; blank lines

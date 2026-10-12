@@ -326,6 +326,7 @@ static class HistoryBar
             if (meta.AsString() is { } target && target.StartsWith("mod:") && CategoryList.ScreenOf(info) is { } screen)
                 OpenFromList(screen, target[4..]);
         };
+        CategoryList.WatchNames(list, () => CategoryList.ScreenOf(info)?.GetNodeOrNull<Control>("%ModsScrollContainer/Mask/Content"));
         view.AddChild(list);
         return view;
     }

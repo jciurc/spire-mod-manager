@@ -104,17 +104,61 @@ static class CategoryList
     }
 
     // Scrolls a mod's row into view (its category opens if collapsed); flash: a short gold glow to find it
-    // by. The info panel doesn't change.
-    public static void Reveal(Control content, string modId, bool flash)
+    // by; focus: the row takes the "selected" look (as under the mouse or the keyboard) without becoming the
+    // info panel's mod. The info panel doesn't change.
+    public static void Reveal(Control content, string modId, bool flash, bool focus = false)
     {
         if (content.GetChildren().OfType<NModMenuRow>().FirstOrDefault(r => r.Mod?.manifest?.id == modId) is not { } row)
             return;
         Expand(content, row);
-        ScrollSoon(content, row, flash);
+        ScrollSoon(content, row, flash, focus);
+    }
+
+    // A mod's row in the "selected" look while its name is hovered elsewhere (the info panel, the changes
+    // list); only if it's in view: nothing scrolls. Off again: the look it had.
+    const string LitMeta = "spire_mod_manager_lit";
+
+    public static void Highlight(Control content, string modId, bool on)
+    {
+        if (content.GetChildren().OfType<NModMenuRow>().FirstOrDefault(r => r.Mod?.manifest?.id == modId) is not { } row
+            || row.GetNodeOrNull<CanvasItem>("SelectionHighlight") is not { } look)
+            return;
+        if (!on)
+        {
+            if (row.HasMeta(LitMeta))
+            {
+                look.Modulate = (Color)row.GetMeta(LitMeta);
+                row.RemoveMeta(LitMeta);
+            }
+            return;
+        }
+        var view = ScrollContainer(content).GetGlobalRect();
+        if (!row.IsVisibleInTree() || !view.Intersects(row.GetGlobalRect()) || row.HasMeta(LitMeta))
+            return;
+        row.SetMeta(LitMeta, look.Modulate);
+        look.Modulate = look.Modulate.A > 0.1f ? look.Modulate : new Color(MegaCrit.Sts2.Core.Helpers.StsColors.darkBlue, 0.25f);
+    }
+
+    // Mod names (links "mod:<id>") in a text: hovering one lights its row and, after half a second, shows the
+    // mod's card; clicking scrolls to it with the selected look.
+    public static void WatchNames(RichTextLabel label, Func<Control?> content)
+    {
+        label.MetaHoverStarted += meta =>
+        {
+            if (meta.AsString() is { } target && target.StartsWith("mod:") && content() is { } list)
+                Highlight(list, target[4..], true);
+        };
+        label.MetaHoverEnded += meta =>
+        {
+            if (meta.AsString() is { } target && target.StartsWith("mod:") && content() is { } list)
+                Highlight(list, target[4..], false);
+        };
+        Hover.WatchLinks(label, "SpireModManagerNotesCard", 0.5,
+            meta => meta.StartsWith("mod:") && Dependencies.Find(meta[4..]) is { } mod ? ModDetails.Card(mod) : null);
     }
 
     // Once positions settle after this frame's layout.
-    static void ScrollSoon(Control content, Control row, bool flash)
+    static void ScrollSoon(Control content, Control row, bool flash, bool focus = false)
     {
         content.GetTree().CreateTimer(0.05).Timeout += () =>
         {
@@ -123,6 +167,8 @@ static class CategoryList
             ScrollTo(content, row);
             if (flash)
                 Flash(row);
+            if (focus)
+                row.GrabFocus();
         };
     }
 

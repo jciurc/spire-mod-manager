@@ -1180,6 +1180,24 @@ static class SelfTest
         Check("Uncategorized: just Enable all, Disable all", uncategorized.SequenceEqual(["Enable all", "Disable all"]), string.Join(",", uncategorized));
         var author = Rows().FirstOrDefault(r => r.Mod?.manifest?.id == "LocalModFixes")?.GetNodeOrNull<Label>("SpireModManagerStrip/Author")?.Text;
         Check("the author at the end of the row's line", author == "by symphony", author ?? "none");
+
+        // Mod names in the panel: hovering lights the row (it's in view); clicking scrolls to it, selected look.
+        if (Rows().FirstOrDefault(r => r.Mod?.manifest?.id == "SmmTestLib") is { } libRow
+            && Rows().FirstOrDefault(r => r.Mod?.manifest?.id == "SmmTestUi") is { } uiRow)
+        {
+            screen.OnRowSelected(libRow);
+            await Wait(menu, 0.3);
+            var description = screen.GetNode<RichTextLabel>("%ModInfoContainer/ModDescription");
+            var look = uiRow.GetNode<CanvasItem>("SelectionHighlight");
+            var before = look.Modulate;
+            description.EmitSignal(RichTextLabel.SignalName.MetaHoverStarted, "mod:SmmTestUi");
+            var lit = look.Modulate;
+            description.EmitSignal(RichTextLabel.SignalName.MetaHoverEnded, "mod:SmmTestUi");
+            Check("hovering a mod's name in the panel lights its row, and lets go", lit.A > 0.1f && look.Modulate == before, $"{before} -> {lit} -> {look.Modulate}");
+            description.EmitSignal(RichTextLabel.SignalName.MetaClicked, "mod:SmmTestUi");
+            await Wait(menu, 0.3);
+            Check("clicking it gives the row the selected look; the panel stays", uiRow.HasFocus() && CategoryList.Selected?.manifest?.id == "SmmTestLib");
+        }
     }
 
     // Relaunch with mods that won't load (fixture: BrandedMod needs BaseLib, not installed; here the framework
