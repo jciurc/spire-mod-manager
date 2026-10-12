@@ -607,6 +607,18 @@ static class SelfTest
         Check("drag moves the row below the third", dragged.IndexOf(first.Mod?.manifest?.id ?? "") == 2 && dragged.SequenceEqual(Saved()),
             string.Join(", ", dragged));
 
+        // A press alone already shows the drag (dimmed list, drop line); releasing without moving changes nothing.
+        var pressed = Rows()[1];
+        var at = pressed.GetGlobalRect().GetCenter();
+        var orderBefore = Ids();
+        pressed.EmitSignal(Control.SignalName.GuiInput, new InputEventMouseButton { ButtonIndex = MouseButton.Left, Pressed = true, GlobalPosition = at });
+        await Wait(menu, 0.1);
+        Check("pressing a row starts the drag look at once", Rows().Any(r => r.Modulate.A < 0.5f && r != pressed)
+            && content.GetParent().GetChildren().OfType<ColorRect>().Any(c => c.Size.Y == 5));
+        pressed.EmitSignal(Control.SignalName.GuiInput, new InputEventMouseButton { ButtonIndex = MouseButton.Left, Pressed = false, GlobalPosition = at });
+        await Wait(menu, 0.3);
+        Check("a click without moving leaves the order alone", Ids().SequenceEqual(orderBefore));
+
         // Multi-select: pick the first and third rows, drag the first's grip below the last row; both move,
         // in their order.
         var all = Rows();
