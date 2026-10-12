@@ -25,6 +25,8 @@ static class Tags
     // Workshop tags that mean a mod is about looks (lower case, matched as whole words).
     static readonly string[] CosmeticWords = ["cosmetic", "cosmetics", "skin", "skins", "visual", "visuals", "ui", "texture", "textures", "art", "animation", "animations"];
 
+    const float ChipMax = 140; // px of text on a chip
+
     public static List<Chip> For(Mod? mod)
     {
         if (mod?.manifest is not { } manifest)
@@ -75,7 +77,10 @@ static class Tags
         {
             MouseFilter = Control.MouseFilterEnum.Pass, SizeFlagsVertical = Control.SizeFlags.ShrinkCenter,
         };
-        var card = clicked == null ? Escape(tip) : $"{Escape(tip)}\n\n{Hint(Menus.Text("SPIRE_MOD_MANAGER.SEARCH_CLICK_TIP"))}";
+        // A long tag is cut with "…" on the chip: its card starts with the whole of it.
+        var cut = ResourceLoader.Load<Font>("res://themes/kreon_regular_shared.tres").GetStringSize(chip.Text, fontSize: 12).X > ChipMax;
+        var about = (cut ? $"[b]{Escape(chip.Text)}[/b]\n" : "") + Escape(tip);
+        var card = clicked == null ? about : $"{about}\n\n{Hint(Menus.Text("SPIRE_MOD_MANAGER.SEARCH_CLICK_TIP"))}";
         Hover.Watch(box, "SpireModManagerTagCard", () => card, width: 320);
         if (clicked != null)
         {
@@ -101,6 +106,8 @@ static class Tags
         label.AddThemeFontOverride("font", ResourceLoader.Load<Font>("res://themes/kreon_regular_shared.tres"));
         label.AddThemeFontSizeOverride("font_size", 12);
         label.AddThemeColorOverride("font_color", chip.Color);
+        if (cut)
+            (label.ClipText, label.TextOverrunBehavior, label.CustomMinimumSize) = (true, TextServer.OverrunBehavior.TrimEllipsis, new Vector2(ChipMax, 0));
         box.AddChild(label);
         return box;
     }

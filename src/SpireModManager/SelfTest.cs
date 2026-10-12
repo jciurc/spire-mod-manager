@@ -203,6 +203,25 @@ static class SelfTest
             Click(screen.GetNode<NButton>("SpireModManagerViewToggle"));
             await Wait(menu, 0.5);
 
+            // Scrolled to the bottom, a search for one mod: it shows, in view. (The game's container stops scrolling
+            // once the rows fit; the rows used to stay above the view, an empty list under "Search matches".)
+            var scroller = content.GetParent().GetParent<Control>();
+            scroller.Set("_targetDragPosY", -100000f);
+            await Wait(menu, 1.5);
+            var scrolledTo = content.Position.Y;
+            var last = rows.Where(r => r.Mod?.manifest?.id != null).Last();
+            search.Text = last.Mod?.manifest?.id ?? "";
+            search.EmitSignal(LineEdit.SignalName.TextChanged, search.Text);
+            await Wait(menu, 0.5);
+            var view = scroller.GetNode<Control>("Mask").GetGlobalRect();
+            var shown = rows.Where(r => r.Visible).ToList();
+            Check("scrolled down, a narrow search shows its match in view", scrolledTo < -200 && shown.Count > 0 && shown.All(r => view.Encloses(r.GetGlobalRect())),
+                $"scrolled to {scrolledTo}, {shown.Count} shown, first at {shown.FirstOrDefault()?.GetGlobalRect()}, view {view}");
+            await Capture(screen, outDir, "real-5-search-scrolled");
+            search.Text = "";
+            search.EmitSignal(LineEdit.SignalName.TextChanged, "");
+            await Wait(menu, 0.3);
+
             // Save as new with real clicks (this is a copy of the player's data): first an edit (a tickbox),
             // then the button.
             var tick = content.GetChildren().OfType<NModMenuRow>().First(r => r.Mod?.manifest?.id != ModEntry.ModId).GetNode<Control>("Tickbox");
@@ -265,7 +284,10 @@ static class SelfTest
             var tickY = tick.GetGlobalTransform() * (tick.Size / 2);
             Check("row buttons line up with the tickbox", Math.Abs(button.GetGlobalRect().GetCenter().Y - tickY.Y) < 2,
                 $"button {button.GetGlobalRect()}, tickbox centre {tickY}");
-            Check("the pencil is flat (no box)", button.GetThemeStylebox("normal") is StyleBoxEmpty);
+            var pencil = shown.GetNodeOrNull<Button>("SpireModManagerEdit");
+            Check("the pencil: flat, past the tickbox, in line with it", pencil?.GetThemeStylebox("normal") is StyleBoxEmpty
+                && pencil.GetGlobalRect().Position.X >= tick.GetGlobalRect().End.X - 2 && Math.Abs(pencil.GetGlobalRect().GetCenter().Y - tickY.Y) < 2,
+                $"pencil {pencil?.GetGlobalRect()}, tickbox {tick.GetGlobalRect()}");
         }
     }
 
@@ -1298,6 +1320,9 @@ static class SelfTest
             await Wait(menu, 0.5);
             await Capture(screen, outDir, "16-long-details");
             Check("long details: the panel shows the made-up mod (see 16-long-details)", screen.GetNode<RichTextLabel>("%ModInfoContainer/ModTitle").GetParsedText().StartsWith("The Extraordinarily"));
+            var longAuthor = row.GetNodeOrNull<Label>("SpireModManagerStrip/Author");
+            var longTag = row.GetNodeOrNull("SpireModManagerStrip")?.GetChildren().OfType<PanelContainer>().Select(c => c.GetChildOrNull<Label>(0)).FirstOrDefault(l => l?.Text.StartsWith("really-long") == true);
+            Check("long details: the row's author and a long tag are cut with an ellipsis", longAuthor is { ClipText: true, TextOverrunBehavior: TextServer.OverrunBehavior.TrimEllipsis } && longTag is { ClipText: true });
             content.RemoveChild(row);
             row.QueueFree();
         }
@@ -1523,7 +1548,8 @@ static class SelfTest
         var back = info.GetNodeOrNull<Control>(HistoryBar.BackName);
         Check("a name opens that mod, with Back", !HistoryBar.ListOpen(info) && CategoryList.Selected?.manifest?.id == "SmmTestUi" && back is { Visible: true });
         if (content.GetChildren().OfType<NModMenuRow>().FirstOrDefault(r => r.Mod?.manifest?.id == "SmmTestUi")?.GetNodeOrNull<Panel>("SelectionHighlight") is { } shownLook)
-            Check("the selected row keeps the game's look, with slightly rounded corners", shownLook.GetThemeStylebox("panel") is StyleBoxFlat { BgColor.R: 1f, CornerRadiusTopLeft: RowTitles.CornerRadius } && shownLook.Modulate.A > 0.1f);
+            Check("the selected row: the sunken look, rounded, a little wider than the row", shownLook.GetThemeStylebox("panel") is StyleBoxFlat { CornerRadiusTopLeft: RowTitles.CornerRadius, BorderWidthTop: 2 }
+                && shownLook.Modulate == Colors.White && shownLook.OffsetLeft == RowTitles.LookInset.X);
         await Capture(screen, outDir, "14c-opened-from-changes");
         back?.EmitSignal(BaseButton.SignalName.Pressed);
         await Wait(menu, 0.2);

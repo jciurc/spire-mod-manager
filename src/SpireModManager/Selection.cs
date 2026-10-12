@@ -86,7 +86,9 @@ static class Selection
                 continue;
             if (tint == null)
             {
+                // The same shape as the row's own highlight.
                 tint = new Panel { Name = TintName, MouseFilter = Control.MouseFilterEnum.Ignore, AnchorRight = 1, AnchorBottom = 1 };
+                (tint.OffsetLeft, tint.OffsetTop, tint.OffsetRight, tint.OffsetBottom) = (RowTitles.LookInset.X, RowTitles.LookInset.Y, RowTitles.LookInset.Z, RowTitles.LookInset.W);
                 var look = new StyleBoxFlat { BgColor = new Color(0.35f, 0.6f, 0.95f, 0.18f) };
                 look.SetCornerRadiusAll(RowTitles.CornerRadius);
                 tint.AddThemeStyleboxOverride("panel", look);

@@ -7,14 +7,14 @@ static class Icons
 {
     static Texture2D? _notepad;
 
-    // A 10x12 page: an outline with a folded top-right corner and three ruled lines.
-    public static Texture2D Notepad => _notepad ??= Draw(10, 12, (x, y, w, h) =>
+    // An 8x10 page: an outline with a folded top-right corner and two ruled lines.
+    public static Texture2D Notepad => _notepad ??= Draw(8, 10, (x, y, w, h) =>
     {
         const int fold = 3;
         var inFold = x >= w - fold && y < fold;
         var edge = !inFold && (x == 0 || y == h - 1 || (x == w - 1 && y >= fold) || (y == 0 && x < w - fold));
         var foldLine = x - (w - fold) == y || (y == fold - 1 && x >= w - fold) || (x == w - fold && y < fold);
-        var ruled = y is 4 or 6 or 8 && x >= 2 && x <= w - 3;
+        var ruled = y is 4 or 6 && x >= 2 && x <= w - 3;
         return edge || foldLine ? 1f : ruled ? 0.7f : 0f;
     });
 

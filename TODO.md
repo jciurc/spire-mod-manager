@@ -535,3 +535,4 @@ Jordan's notes of 2026-10-12 (late night), with screenshots.
 - [ ] "All mods (n)" -> "Installed mods (n)"
 - [ ] Gameplay tag: "...will need it enabled for multiplayer."
 - [ ] Library tag: "This is a framework intended to be used by other mods; often has no effect when installed alone"
+- [ ] (backlog, round 15) rework the "requires relaunch" messaging: our own warning instead of the vanilla one, on our page only; a quick relaunch from the main menu or the profile switcher; spike first

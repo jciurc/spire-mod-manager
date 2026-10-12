@@ -5,6 +5,7 @@ using MegaCrit.Sts2.Core.Modding;
 using MegaCrit.Sts2.Core.Localization;
 using MegaCrit.Sts2.Core.Nodes;
 using MegaCrit.Sts2.Core.Nodes.CommonUi;
+using MegaCrit.Sts2.Core.Nodes.GodotExtensions;
 using MegaCrit.Sts2.Core.Nodes.Screens.MainMenu;
 using MegaCrit.Sts2.Core.Nodes.Screens.ModdingScreen;
 using MegaCrit.Sts2.Core.Saves;
@@ -324,4 +325,43 @@ static class NewModTogglePatch
             Log.Error($"[{ModEntry.ModId}] Could not add a saved entry for a new mod: {e}");
         }
     }
+}
+
+// The row's highlight follows our look (RowTitles.Look) whenever the game changes its state: under the mouse or
+// keyboard (focus), or the mod shown in the info panel (selected).
+[HarmonyPatch(typeof(NModMenuRow))]
+static class RowLookPatch
+{
+    [HarmonyPostfix, HarmonyPatch("OnFocus")]
+    static void Focused(NModMenuRow __instance) => Apply(__instance, focused: true);
+
+    [HarmonyPostfix, HarmonyPatch("OnUnfocus")]
+    static void Unfocused(NModMenuRow __instance) => Apply(__instance, focused: false);
+
+    [HarmonyPostfix, HarmonyPatch(nameof(NModMenuRow.SetSelected))]
+    static void Selected(NModMenuRow __instance) => Apply(__instance, RowState.Focused(__instance));
+
+    static void Apply(NModMenuRow row, bool focused)
+    {
+        try
+        {
+            if (!ModEntry.BetterModMenuLoaded)
+                RowTitles.Look(row, RowState.Selected(row), focused);
+        }
+        catch (Exception e)
+        {
+            Log.Error($"[{ModEntry.ModId}] Could not update a row's highlight: {e}");
+        }
+    }
+}
+
+// A row's own state, which the game keeps to itself.
+static class RowState
+{
+    static readonly AccessTools.FieldRef<NModMenuRow, bool> SelectedField = AccessTools.FieldRefAccess<NModMenuRow, bool>("_isSelected");
+    static readonly Func<NClickableControl, bool> FocusedGetter =
+        AccessTools.MethodDelegate<Func<NClickableControl, bool>>(AccessTools.PropertyGetter(typeof(NClickableControl), "IsFocused"));
+
+    public static bool Selected(NModMenuRow row) => SelectedField(row);
+    public static bool Focused(NModMenuRow row) => FocusedGetter(row);
 }
