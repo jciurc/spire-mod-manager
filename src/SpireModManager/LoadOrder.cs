@@ -15,7 +15,9 @@ static class LoadOrder
     const string HandleName = "SpireModManagerHandle";
     const string NumberName = "SpireModManagerNumber";
     const string PickedName = "SpireModManagerPicked";
-    const float HandleWidth = 84; // the row title shifts right by this much in this view
+    const string WasName = "SpireModManagerWas";
+    const float WasWidth = 44; // "12 →", kept for every row so the numbers line up
+    const float HandleWidth = 84 + WasWidth; // the row title shifts right by this much in this view
     const float LinkGutter = 18; // left strip for the dependency lines
     const string LinkGroup = "SpireModManagerLinks";
     const string DraggingMeta = "spire_mod_manager_dragging";
@@ -35,6 +37,8 @@ static class LoadOrder
     static IEnumerable<string> Order() =>
         SaveManager.Instance.SettingsSave.ModSettings?.ModList.Select(m => $"{m.Id}/{m.Source}") ?? [];
 
+    static string Key(Mod? mod) => $"{mod?.manifest?.id}/{mod?.modSource}";
+
     static int IndexOf(Mod? mod, List<SettingsSaveMod> list) =>
         mod?.manifest?.id is { } id && list.FindIndex(m => m.Id == id && m.Source == mod.modSource) is >= 0 and var i ? i : int.MaxValue;
 
@@ -53,12 +57,15 @@ static class LoadOrder
         }
         var list = SaveManager.Instance.SettingsSave.ModSettings?.ModList ?? [];
         var ordered = rows.OrderBy(r => IndexOf(r.Mod, list)).ToList();
+        // Where each one was at launch, among the mods installed now (1-based).
+        var installed = ordered.Select(r => Key(r.Mod)).ToHashSet();
+        var launch = (_loadedOrder ?? []).Where(installed.Contains).Distinct().Select((key, i) => (key, i)).ToDictionary(p => p.key, p => p.i + 1);
         for (var i = 0; i < ordered.Count; i++)
         {
             var row = ordered[i];
             content.MoveChild(row, i);
             row.Visible = matches(row);
-            Decorate(content, row, i + 1, redraw);
+            Decorate(content, row, i + 1, launch.GetValueOrDefault(Key(row.Mod)), redraw);
             OrderingOnly(row, true);
         }
     }
@@ -72,7 +79,7 @@ static class LoadOrder
                 continue;
             // Out of the tree now, not at the end of the frame: a second redraw in the same frame must not
             // find them and shift the title back again.
-            foreach (var node in new[] { handle, row.GetNodeOrNull(NumberName), row.GetNodeOrNull(PickedName) })
+            foreach (var node in new[] { handle, row.GetNodeOrNull(NumberName), row.GetNodeOrNull(WasName), row.GetNodeOrNull(PickedName) })
                 if (node != null)
                 {
                     row.RemoveChild(node);
@@ -83,12 +90,13 @@ static class LoadOrder
         }
     }
 
-    // Load Order only orders: the whole row is a drag handle (move cursor), the tickbox is locked, and
-    // mods that are off are dimmed further. Off again in other views.
+    // Load Order is about order: the whole row is a drag handle (move cursor), no tickbox (Enable/Disable is
+    // in the right-click menu), and mods that are off are dimmed further. Off again in other views.
     static void OrderingOnly(NModMenuRow row, bool on)
     {
         row.MouseDefaultCursorShape = on ? Control.CursorShape.Move : Control.CursorShape.Arrow;
         var tickbox = row.GetNode<NTickbox>("Tickbox");
+        tickbox.Visible = !on; // on and off are set from the right-click menu here
         tickbox.SetEnabled(!on);
         tickbox.MouseFilter = on ? Control.MouseFilterEnum.Ignore : Control.MouseFilterEnum.Stop;
         row.Modulate = Rest(row);
@@ -132,8 +140,8 @@ static class LoadOrder
     // Moves each needed mod just ahead of what needs it, keeping everything else in place.
     public static void FixOrder(IList<NModMenuRow> rows) => Save(Dependencies.Fixed(Mods(rows)));
 
-    // Top, up, down, bottom; a move that would break a dependency is disabled.
-    // compact: the short labels used for the inline buttons on each row.
+    // Disable (or Enable), then top, up, down, bottom; a move that would break a dependency is disabled.
+    // compact: the short labels used for the inline buttons on each row, moves only.
     public static List<MenuItem> Actions(Control content, NModMenuRow row, Action redraw, bool compact = false)
     {
         var rows = content.GetChildren().OfType<NModMenuRow>().ToList();
@@ -144,22 +152,39 @@ static class LoadOrder
                 Move(mod, to, rows);
             redraw();
         }, Disabled: to < 0 || to >= rows.Count || to == at);
-        return [
+        var moves = new List<MenuItem>
+        {
             Item("SPIRE_MOD_MANAGER.MOVE_TO_TOP", 0),
             Item("SPIRE_MOD_MANAGER.MOVE_UP", at - 1),
             Item("SPIRE_MOD_MANAGER.MOVE_DOWN", at + 1),
             Item("SPIRE_MOD_MANAGER.MOVE_TO_BOTTOM", rows.Count - 1),
-        ];
+        };
+        if (compact || row.Mod is not { } it)
+            return moves;
+        // No tickboxes in this view: on and off live here. The game's own handler does the work.
+        var on = Dependencies.IsOn(it);
+        moves.Insert(0, new MenuItem(Menus.Text(on ? "SPIRE_MOD_MANAGER.DISABLE_MOD" : "SPIRE_MOD_MANAGER.ENABLE_MOD"), () =>
+        {
+            var tickbox = row.GetNode<NTickbox>("Tickbox");
+            tickbox.IsTicked = !on;
+            tickbox.EmitSignal(NTickbox.SignalName.Toggled, tickbox);
+            redraw();
+        }));
+        return moves;
     }
 
     public static Node? ShowRowMenu(Control content, NModMenuRow row, Action redraw) =>
         Menus.Show(content, Actions(content, row, redraw));
 
     // Above the list, outside its scrolling (so it stays put): Auto sort at the right end of the search
-    // box, and, when enabled mods sit above mods they need, a red line saying how many with "Fix now".
-    // (The game reorders those at launch anyway; fixing makes the saved order say what will happen.)
-    // Outside Load Order both hide.
+    // box with a word on what it does, and a red banner when something needs attention. In Load Order:
+    // enabled mods sitting above mods they need, with "Fix now" (the game reorders those at launch anyway;
+    // fixing makes the saved order say what will happen). On the main list: enabled mods that need a mod
+    // that is off or missing, with a way to each and a fix for the off ones. Elsewhere, a "!" on the Load
+    // Order button says that page has a warning.
     public const string WarningName = "SpireModManagerOrderWarning", AutoSortName = "AutoSortButton";
+    const string AutoSortHintName = "AutoSortHint", BadgeName = "WarningBadge";
+    static int _nextProblem; // the main banner's "Show" steps through the mods with problems
 
     public static void UpdateToolbar(Control content, List<NModMenuRow> rows, Action redraw)
     {
@@ -178,52 +203,150 @@ static class LoadOrder
             border.AddChild(sort);
             sort.AnchorLeft = sort.AnchorRight = 1; // offsets from the right edge, like the search box's right end
         }
-        sort.Visible = on && search != null;
+        if (border.GetNodeOrNull<Label>(AutoSortHintName) is not { } hint)
+        {
+            hint = new Label
+            {
+                Name = AutoSortHintName, Text = Menus.Text("SPIRE_MOD_MANAGER.AUTO_SORT_HINT"), HorizontalAlignment = HorizontalAlignment.Right,
+                VerticalAlignment = VerticalAlignment.Center, MouseFilter = Control.MouseFilterEnum.Ignore,
+            };
+            hint.AddThemeFontOverride("font", ResourceLoader.Load<Font>("res://themes/kreon_regular_shared.tres"));
+            hint.AddThemeFontSizeOverride("font_size", 15);
+            hint.AddThemeColorOverride("font_color", new Color(1, 0.964706f, 0.886275f, 0.55f));
+            border.AddChild(hint);
+            hint.AnchorLeft = hint.AnchorRight = 1;
+        }
+        sort.Visible = hint.Visible = on && search != null;
         if (search != null)
         {
-            const float sortWidth = 110;
+            const float sortWidth = 110, gap = 8;
+            var hintWidth = hint.GetThemeFont("font").GetStringSize(hint.Text, fontSize: 15).X;
             (sort.OffsetTop, sort.OffsetBottom) = (search.OffsetTop, search.OffsetBottom);
+            (hint.OffsetTop, hint.OffsetBottom) = (search.OffsetTop, search.OffsetBottom);
             sort.OffsetRight = border.GetNode<Control>("ModsScrollContainer").OffsetRight;
             sort.OffsetLeft = sort.OffsetRight - sortWidth;
-            search.OffsetRight = on ? sort.OffsetLeft - 8 : sort.OffsetRight;
+            hint.OffsetRight = sort.OffsetLeft - gap;
+            hint.OffsetLeft = hint.OffsetRight - hintWidth;
+            search.OffsetRight = on ? hint.OffsetLeft - gap * 2 : sort.OffsetRight;
         }
 
-        var problems = on ? Dependencies.OrderViolations(Mods(rows)).Select(v => v.Mod).Distinct().Count() : 0;
+        var mods = Mods(rows);
+        var misordered = Dependencies.OrderViolations(mods).Select(v => v.Mod).Distinct().Count();
+        var orderText = Menus.Format(misordered == 1 ? "SPIRE_MOD_MANAGER.ORDER_PROBLEMS_ONE" : "SPIRE_MOD_MANAGER.ORDER_PROBLEMS", ("count", misordered.ToString()));
+        Badge(content, misordered > 0 && !on ? orderText : null);
         if (border.GetNodeOrNull(WarningName) is { } old)
         {
             border.RemoveChild(old); // now, not at the end of the frame: a redraw in the same frame adds a new one
             old.QueueFree();
         }
-        if (problems > 0)
-        {
-            var bar = new PanelContainer { Name = WarningName };
-            bar.AddThemeStyleboxOverride("panel", new StyleBoxFlat
-            {
-                BgColor = new Color(0.45f, 0.1f, 0.1f, 0.6f), ContentMarginLeft = 12, ContentMarginRight = 8, ContentMarginTop = 4, ContentMarginBottom = 4,
-            });
-            var line = new HBoxContainer();
-            line.AddThemeConstantOverride("separation", 6);
-            bar.AddChild(line);
-            var text = new Label
-            {
-                Name = "OrderProblems", Text = Menus.Format(problems == 1 ? "SPIRE_MOD_MANAGER.ORDER_PROBLEMS_ONE" : "SPIRE_MOD_MANAGER.ORDER_PROBLEMS", ("count", problems.ToString())),
-                SizeFlagsHorizontal = Control.SizeFlags.ExpandFill, VerticalAlignment = VerticalAlignment.Center,
-                AutowrapMode = TextServer.AutowrapMode.WordSmart,
-            };
-            text.AddThemeFontOverride("font", ResourceLoader.Load<Font>("res://themes/kreon_regular_shared.tres"));
-            text.AddThemeFontSizeOverride("font_size", 16);
-            line.AddChild(text);
-            var fix = Menus.SmallButton(Menus.Text("SPIRE_MOD_MANAGER.FIX_ORDER"), () => Do(FixOrder), name: "FixOrderButton");
-            fix.SizeFlagsVertical = Control.SizeFlags.ShrinkCenter;
-            line.AddChild(fix);
-            border.AddChild(bar);
-            bar.SetAnchorsPreset(Control.LayoutPreset.TopWide);
-            var scroll = border.GetNode<Control>("ModsScrollContainer");
-            (bar.OffsetLeft, bar.OffsetRight) = (scroll.OffsetLeft, scroll.OffsetRight);
-            var top = (search ?? scroll).OffsetBottom + 6;
-            (bar.OffsetTop, bar.OffsetBottom) = (top, top + 34);
-        }
+        if (on && misordered > 0)
+            Banner(border, search, orderText, [Menus.SmallButton(Menus.Text("SPIRE_MOD_MANAGER.FIX_ORDER"), () => Do(FixOrder), name: "FixOrderButton")]);
+        else if (Layout.Current == Layout.View.Categories)
+            ListBanner(content, border, search, mods, redraw);
         Layout.PlaceList(border);
+    }
+
+    // Main list: enabled mods that won't load as things stand.
+    static void ListBanner(Control content, Control border, Control? search, List<Mod> mods, Action redraw)
+    {
+        bool Needs(Mod mod, Func<Mod?, bool> problem) => Dependencies.IsOn(mod) && Dependencies.Of(mod).Any(id => problem(Dependencies.Find(id)));
+        var needOff = mods.Where(m => Needs(m, d => d != null && !Dependencies.IsOn(d))).ToList();
+        var needMissing = mods.Where(m => Needs(m, d => d == null)).ToList();
+        var broken = needOff.Concat(needMissing).Distinct().ToList();
+        if (broken.Count == 0)
+            return;
+        string Part(string key, int count) => Menus.Format(count == 1 ? key + "_ONE" : key, ("count", count.ToString()));
+        var text = string.Join(" ", new[]
+        {
+            needOff.Count > 0 ? Part("SPIRE_MOD_MANAGER.LIST_PROBLEMS_OFF", needOff.Count) : null,
+            needMissing.Count > 0 ? Part("SPIRE_MOD_MANAGER.LIST_PROBLEMS_MISSING", needMissing.Count) : null,
+        }.OfType<string>());
+
+        var show = Menus.SmallButton(Menus.Text("SPIRE_MOD_MANAGER.SHOW_PROBLEM"), () =>
+        {
+            var mod = broken[_nextProblem++ % broken.Count];
+            if (content.GetChildren().OfType<NModMenuRow>().FirstOrDefault(r => r.Mod == mod) is not { } row)
+                return;
+            CategoryList.Reveal(content, mod.manifest?.id ?? "", flash: true);
+            CategoryList.Select(content, row);
+        }, name: "ShowProblemButton");
+        show.TooltipText = Menus.Text("SPIRE_MOD_MANAGER.SHOW_PROBLEM_TIP");
+        List<Control> buttons = [show];
+        var needed = Dependencies.NeededOff(mods);
+        if (needed.Count > 0)
+        {
+            var enable = Menus.SmallButton(Menus.Text("SPIRE_MOD_MANAGER.ENABLE_NEEDED"), () =>
+            {
+                if (CategoryList.ScreenOf(content) is not { } screen)
+                    return;
+                Dependencies.TurnOn(needed, screen);
+                redraw();
+            }, name: "EnableNeededButton");
+            enable.TooltipText = Menus.Format("SPIRE_MOD_MANAGER.ENABLE_NEEDED_TIP",
+                ("mods", string.Join(", ", needed.Select(m => m.manifest?.name ?? m.manifest?.id))));
+            buttons.Add(enable);
+        }
+        Banner(border, search, text, buttons);
+    }
+
+    // A red line under the search box: text, then buttons on the right.
+    static void Banner(Control border, Control? search, string message, List<Control> buttons)
+    {
+        var bar = new PanelContainer { Name = WarningName };
+        bar.AddThemeStyleboxOverride("panel", new StyleBoxFlat
+        {
+            BgColor = new Color(0.45f, 0.1f, 0.1f, 0.6f), ContentMarginLeft = 12, ContentMarginRight = 8, ContentMarginTop = 4, ContentMarginBottom = 4,
+        });
+        var line = new HBoxContainer();
+        line.AddThemeConstantOverride("separation", 6);
+        bar.AddChild(line);
+        var text = new Label
+        {
+            Name = "OrderProblems", Text = message, SizeFlagsHorizontal = Control.SizeFlags.ExpandFill,
+            VerticalAlignment = VerticalAlignment.Center, AutowrapMode = TextServer.AutowrapMode.WordSmart,
+        };
+        text.AddThemeFontOverride("font", ResourceLoader.Load<Font>("res://themes/kreon_regular_shared.tres"));
+        text.AddThemeFontSizeOverride("font_size", 16);
+        line.AddChild(text);
+        foreach (var button in buttons)
+        {
+            button.SizeFlagsVertical = Control.SizeFlags.ShrinkCenter;
+            line.AddChild(button);
+        }
+        border.AddChild(bar);
+        bar.SetAnchorsPreset(Control.LayoutPreset.TopWide);
+        var scroll = border.GetNode<Control>("ModsScrollContainer");
+        (bar.OffsetLeft, bar.OffsetRight) = (scroll.OffsetLeft, scroll.OffsetRight);
+        var top = (search ?? scroll).OffsetBottom + 6;
+        (bar.OffsetTop, bar.OffsetBottom) = (top, top + 34);
+    }
+
+    // The "!" on the Load Order button, with the page's warning as its tooltip; null takes it off.
+    static void Badge(Control content, string? warning)
+    {
+        if (CategoryList.ScreenOf(content)?.GetNodeOrNull<Control>("SpireModManagerLoadOrderToggle") is not { } toggle)
+            return;
+        toggle.TooltipText = warning ?? "";
+        if (toggle.GetNodeOrNull<Control>(BadgeName) is not { } badge)
+        {
+            badge = new PanelContainer { Name = BadgeName, MouseFilter = Control.MouseFilterEnum.Ignore, Size = new Vector2(22, 22) };
+            var style = new StyleBoxFlat { BgColor = Blocked, BorderColor = new Color(0.1f, 0.02f, 0.02f, 0.9f) };
+            style.SetBorderWidthAll(2);
+            style.SetCornerRadiusAll(11);
+            badge.AddThemeStyleboxOverride("panel", style);
+            var mark = new Label
+            {
+                Text = "!", HorizontalAlignment = HorizontalAlignment.Center, VerticalAlignment = VerticalAlignment.Center,
+                MouseFilter = Control.MouseFilterEnum.Ignore,
+            };
+            mark.AddThemeFontOverride("font", ResourceLoader.Load<Font>("res://themes/kreon_bold_shared.tres"));
+            mark.AddThemeFontSizeOverride("font_size", 16);
+            mark.AddThemeColorOverride("font_color", Colors.White);
+            badge.AddChild(mark);
+            toggle.AddChild(badge);
+            badge.Position = new Vector2(toggle.Size.X - 26, 2); // the top right corner, inside the slanted edge
+        }
+        badge.Visible = warning != null;
     }
 
     // First pass at sorting by impact: libraries (mods others depend on), then gameplay mods, then
@@ -255,21 +378,33 @@ static class LoadOrder
 
     // Position number and a grip on the left of the row. Dragging the grip moves the row: a gold line
     // shows where it will land, and releasing saves. Made once per row; the number updates every redraw.
-    static void Decorate(Control content, NModMenuRow row, int position, Action redraw)
+    // wasAt: where it was at launch (0: unknown); shown dimly as "5 →" when it moved.
+    static void Decorate(Control content, NModMenuRow row, int position, int wasAt, Action redraw)
     {
+        var was = wasAt > 0 && wasAt != position ? $"{wasAt} →" : "";
         if (row.GetNodeOrNull<Label>(NumberName) is { } number)
         {
             number.Text = position.ToString();
+            row.GetNode<Label>(WasName).Text = was;
             return;
         }
         row.GetNode<Control>("Title").OffsetLeft += HandleWidth;
 
-        // Left to right: the link gutter (dependency lines), the grip, the position number, then the title.
+        // Left to right: the link gutter (dependency lines), the grip, the launch position (if it moved), the
+        // position now, then the title.
+        var wasLabel = new Label
+        {
+            Name = WasName, Text = was, HorizontalAlignment = HorizontalAlignment.Right, VerticalAlignment = VerticalAlignment.Center,
+            MouseFilter = Control.MouseFilterEnum.Ignore, AnchorBottom = 1, OffsetLeft = LinkGutter + 30, OffsetRight = LinkGutter + 30 + WasWidth,
+        };
+        wasLabel.AddThemeColorOverride("font_color", new Color(Gold, 0.4f));
+        wasLabel.AddThemeFontSizeOverride("font_size", 15);
+        row.AddChild(wasLabel);
         number = new Label
         {
             Name = NumberName, Text = position.ToString(), HorizontalAlignment = HorizontalAlignment.Right,
             VerticalAlignment = VerticalAlignment.Center, MouseFilter = Control.MouseFilterEnum.Ignore,
-            AnchorBottom = 1, OffsetLeft = LinkGutter + 30, OffsetRight = LinkGutter + 56,
+            AnchorBottom = 1, OffsetLeft = LinkGutter + 30 + WasWidth, OffsetRight = LinkGutter + 56 + WasWidth,
         };
         number.AddThemeColorOverride("font_color", new Color(Gold, 0.8f));
         number.AddThemeFontSizeOverride("font_size", 20);
