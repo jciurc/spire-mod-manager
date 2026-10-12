@@ -210,3 +210,39 @@ Jordan's notes of 2026-10-07, second batch (same file), plus play feedback.
 - [ ] profile and category dropdowns use a radio-style mark (single choice)
 - [ ] auto update and polling
 - [ ] link to the game's patch notes
+
+# Round 3
+
+Jordan's notes of 2026-10-11.
+
+## Profiles
+
+- [ ] short date in the edited timestamp
+- [ ] dropdown: mod count and last updated next to each profile name
+- [ ] Load Order page: drop the profile bar, OR give load order its own profile system; each main profile links to the last load-order profile (if it has no link yet); show the linked load profile in the main profile's details
+
+## Changes
+
+- [ ] tooltip lists the added/removed mods
+- [ ] clicking Changes shows the full changes in the right-side panel
+
+## Main list
+
+- [ ] select/deselect all for the whole page and per category
+- [ ] multi-select on the main page: move to a category, select/deselect
+- [ ] drag and drop: whole categories, single mods, multi-selections
+- [ ] author name on the row (right side, above the category button)
+- [ ] category button shows the category's name
+- [ ] colour codes for categories and/or tags
+- [ ] "Needs: X": X green when enabled, red when not
+- [ ] (fix) the changed (gold) title colour overrides custom colours
+- [ ] (fix) thumbnail in the right-side panel still wrong
+
+## Relaunch
+
+- [ ] warning before relaunch when enabled mods miss dependencies or are out of order: list the problem mods; offer enable required mods (listed), disable the incompatible ones, relaunch anyway, close
+- [ ] main menu: tooltip or small "requires restart" text by the pending dot
+
+## Backlog (round 3)
+
+- [ ] in-game error log: collect and show errors (ours and other mods')
