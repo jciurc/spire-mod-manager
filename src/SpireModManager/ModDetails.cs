@@ -14,7 +14,7 @@ namespace SpireModManager;
 // - the author's description;
 // - author, dates, size, subscribers, compatibility, Workshop tags;
 // - dependencies both ways (click a name: scroll to it in the list and flash it);
-// - the player's own Alias, Category, Notes and Tags (ModField), then Open Folder.
+// - the player's own Alias, Category, Tags and Notes (ModField), then Open Folder.
 // Vanilla View: the panel exactly as the game makes it.
 static class ModDetails
 {
@@ -296,7 +296,7 @@ static class ModDetails
         return link;
     }
 
-    // The player's own fields: Alias, Category (a picker), Notes and Tags.
+    // The player's own fields: Alias, Category (a picker), Tags and Notes.
     static Control AddFields(NModInfoContainer container)
     {
         var box = new VBoxContainer { Name = FieldsName };
@@ -321,8 +321,8 @@ static class ModDetails
         }
         Add(ModField.Kind.Alias);
         box.AddChild(CategoryPicker(container, Content, ModId));
-        Add(ModField.Kind.Notes);
         Add(ModField.Kind.Tags);
+        Add(ModField.Kind.Notes);
         Fields[container.GetInstanceId()] = fields;
         container.TreeExiting += () => Fields.Remove(container.GetInstanceId());
         return box;
