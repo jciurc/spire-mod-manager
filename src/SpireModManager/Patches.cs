@@ -128,6 +128,8 @@ static class ModToggledPatch
 {
     static void Postfix(NModdingScreen __instance)
     {
+        if (ModEntry.BetterModMenuLoaded) // paused while it runs the screen (see ModdingScreenPatch)
+            return;
         try
         {
             Profiles.Track();

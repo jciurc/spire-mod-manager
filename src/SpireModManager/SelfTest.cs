@@ -60,6 +60,9 @@ static class SelfTest
                 Check("steps aside for Better Mod Menu", screen.GetNodeOrNull("SpireModManagerBmmNotice") != null
                     && screen.GetNodeOrNull("ModsBorder/SpireModManagerProfileBar") == null
                     && !content.GetChildren().Any(c => c.IsInGroup("SpireModManagerCategoryHeader")));
+                screen.OnModEnabledOrDisabled(); // as a tickbox change does
+                await Wait(menu, 0.3);
+                Check("leaves Better Mod Menu's rows alone after a tickbox change", !rows.Any(r => r.HasNode("SpireModManagerStrip")));
                 await Capture(screen, outDir, "2-better-mod-menu");
                 return;
             }
