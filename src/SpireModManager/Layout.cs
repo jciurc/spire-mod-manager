@@ -259,6 +259,7 @@ static class Layout
         if (search != null && list.GetNodeOrNull<Control>(LoadOrder.AutoSortName) is { } sort)
             (sort.OffsetTop, sort.OffsetBottom) = (search.OffsetTop, search.OffsetBottom);
         Stack(list.GetNodeOrNull<Control>(LoadOrder.WarningName), Wide, 6);
+        Stack(list.GetNodeOrNull<Control>(PageBar.Name), Current == View.Categories, 4);
         scroll.OffsetTop = Wide ? y : (float)scroll.GetMeta(OriginalMeta);
     }
 
