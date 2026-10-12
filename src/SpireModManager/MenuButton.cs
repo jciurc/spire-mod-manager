@@ -79,32 +79,63 @@ static class MenuButton
         button.OffsetTop = button.OffsetBottom - size.Y;
     }
 
-    // The button follows the mouse; a click puts it down there (saved), a right-click or Escape puts it back.
-    // A see-through layer over the whole menu takes those clicks so nothing underneath is pressed.
+    // Move mode: the button follows the mouse (by how far it moves, so it doesn't jump); a left click puts it
+    // down there (remembered), a right-click or Escape puts it back. Its own layer above the whole menu
+    // shows the hint and keeps clicks off the menu underneath; the mouse and keys are read every frame, so
+    // nothing else on the menu can take them first. Leaving the menu cancels it.
+    public const string MoveLayerName = "SpireModManagerMoveLayer";
+
+    // The self-test sets where "the mouse" is: during a test run the real cursor can be anywhere.
+    public static Func<Vector2>? TestMouse;
+
     static void BeginMove(NMainMenu menu, Control button, Vector2 size)
     {
-        var start = button.Position;
-        var grab = size / 2;
-        var layer = new Control { Name = "SpireModManagerMoveLayer", MouseFilter = Control.MouseFilterEnum.Stop, MouseDefaultCursorShape = Control.CursorShape.Move };
+        if (menu.HasNode(MoveLayerName))
+            return;
+        var layer = new CanvasLayer { Name = MoveLayerName, Layer = 100 };
         menu.AddChild(layer);
-        layer.SetAnchorsPreset(Control.LayoutPreset.FullRect);
-        var hint = new Label { Text = Menus.Text("SPIRE_MOD_MANAGER.MOVE_HINT"), HorizontalAlignment = HorizontalAlignment.Center, MouseFilter = Control.MouseFilterEnum.Ignore };
+        var screen = menu.GetViewportRect().Size;
+        var blocker = new Control { MouseFilter = Control.MouseFilterEnum.Stop, MouseDefaultCursorShape = Control.CursorShape.Move, Size = screen };
+        layer.AddChild(blocker);
+        var hint = new Label
+        {
+            Text = Menus.Text("SPIRE_MOD_MANAGER.MOVE_HINT"), HorizontalAlignment = HorizontalAlignment.Center,
+            MouseFilter = Control.MouseFilterEnum.Ignore, Position = new Vector2(screen.X / 2 - 450, 90), Size = new Vector2(900, 40),
+        };
         hint.AddThemeFontOverride("font", ResourceLoader.Load<Font>("res://themes/kreon_bold_shared.tres"));
         hint.AddThemeFontSizeOverride("font_size", 22);
         hint.AddThemeColorOverride("font_color", new Color(1, 0.964706f, 0.886275f));
         hint.AddThemeColorOverride("font_outline_color", new Color(0.0756f, 0.12084f, 0.18f));
         hint.AddThemeConstantOverride("outline_size", 8);
-        layer.AddChild(hint);
-        var width = layer.GetViewportRect().Size.X;
-        (hint.Position, hint.Size) = (new Vector2(width / 2 - 450, 90), new Vector2(900, 40));
+        blocker.AddChild(hint);
 
+        var start = button.Position;
+        var startAnchors = Store.Data.MenuButtonAt;
         button.SetAnchorsPreset(Control.LayoutPreset.TopLeft);
-        button.Size = size;
-        var screen = layer.GetViewportRect().Size;
-        void Follow()
+        (button.Position, button.Size) = (start, size);
+        Vector2 Mouse() => TestMouse?.Invoke() ?? menu.GetViewport().GetMousePosition();
+        var mouseAtStart = Mouse();
+        // Buttons already held when move mode starts (the click on "Move button") don't count until released.
+        var leftWasDown = true;
+        var rightWasDown = true;
+        var tree = menu.GetTree();
+
+        void Frame()
         {
-            var mouse = layer.GetGlobalMousePosition() - grab;
-            button.Position = new Vector2(Math.Clamp(mouse.X, 0, screen.X - size.X), Math.Clamp(mouse.Y, 0, screen.Y - size.Y));
+            if (!GodotObject.IsInstanceValid(layer) || !layer.IsInsideTree() || !menu.IsVisibleInTree() || menu.SubmenuStack.SubmenusOpen)
+            {
+                End(keep: false);
+                return;
+            }
+            var offset = Mouse() - mouseAtStart;
+            button.Position = new Vector2(Math.Clamp(start.X + offset.X, 0, screen.X - size.X), Math.Clamp(start.Y + offset.Y, 0, screen.Y - size.Y));
+            var left = Input.IsMouseButtonPressed(MouseButton.Left);
+            var right = Input.IsMouseButtonPressed(MouseButton.Right);
+            if (Input.IsKeyPressed(Key.Escape) || (rightWasDown && !right && !leftWasDown))
+                End(keep: false);
+            else if (leftWasDown && !left && !rightWasDown)
+                End(keep: true);
+            (leftWasDown, rightWasDown) = (left, right);
         }
         var done = false;
         void End(bool keep)
@@ -112,41 +143,29 @@ static class MenuButton
             if (done)
                 return;
             done = true;
+            tree.ProcessFrame -= Frame;
             if (keep)
             {
                 Store.Data.MenuButtonAt = new ScreenPoint(button.Position.X, button.Position.Y);
                 Store.Save();
             }
             else
-                button.Position = start;
-            if (!keep && Store.Data.MenuButtonAt == null)
-                Place(button, size);
-            layer.QueueFree();
-        }
-        Follow();
-        layer.GuiInput += e =>
-        {
-            switch (e)
             {
-                case InputEventMouseMotion:
-                    Follow();
-                    break;
-                case InputEventMouseButton { ButtonIndex: MouseButton.Left, Pressed: false }:
-                    Follow();
-                    End(keep: true);
-                    break;
-                case InputEventMouseButton { ButtonIndex: MouseButton.Right, Pressed: false }:
-                    End(keep: false);
-                    break;
+                Store.Data.MenuButtonAt = startAnchors;
+                Place(button, size);
             }
-            layer.AcceptEvent();
-        };
-        layer.FocusMode = Control.FocusModeEnum.All;
-        layer.GrabFocus();
-        layer.GuiInput += e =>
+            if (GodotObject.IsInstanceValid(layer))
+            {
+                layer.GetParent()?.RemoveChild(layer);
+                layer.QueueFree();
+            }
+        }
+        // The held buttons from the menu click: seen released on the first frames, then the next press counts.
+        Callable.From(() =>
         {
-            if (e is InputEventKey { Keycode: Key.Escape, Pressed: true })
-                End(keep: false);
-        };
+            leftWasDown = Input.IsMouseButtonPressed(MouseButton.Left);
+            rightWasDown = Input.IsMouseButtonPressed(MouseButton.Right);
+            tree.ProcessFrame += Frame;
+        }).CallDeferred();
     }
 }
