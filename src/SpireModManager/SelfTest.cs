@@ -48,6 +48,7 @@ static class SelfTest
             Check("dev run marked", menu.GetTree().Root.Title.StartsWith("[DEV]") && menu.GetTree().Root.HasNode("SpireModManagerDevTag"),
                 menu.GetTree().Root.Title);
             await Capture(menu, outDir, "1-main-menu");
+            await TestMenuButtonMove(menu, outDir);
 
             var screen = menu.SubmenuStack.PushSubmenuType<NModdingScreen>();
             await Wait(menu, 2);
@@ -240,6 +241,36 @@ static class SelfTest
             && strip.GetNodeOrNull<Control>("Actions")?.GetChildOrNull<Control>(0) is { } button)
             Check("inline buttons are centred in the strip", Math.Abs(button.GetGlobalRect().GetCenter().Y - strip.GetGlobalRect().GetCenter().Y) < 2,
                 $"{button.GetGlobalRect()} in {strip.GetGlobalRect()}");
+    }
+
+    // Right-click the main menu button, Move button, click somewhere: it stays there; Reset puts it back.
+    static async Task TestMenuButtonMove(NMainMenu menu, string outDir)
+    {
+        if (menu.GetNodeOrNull<Control>("SpireModManagerMenuButton") is not { } button)
+            return;
+        var corner = button.Position;
+        button.EmitSignal(Control.SignalName.GuiInput, new InputEventMouseButton { ButtonIndex = MouseButton.Right, Pressed = false });
+        await Wait(menu, 0.3);
+        var popup = menu.FindChildren("SpireModManagerMenu", "", true, false).OfType<PopupPanel>().FirstOrDefault(p => p.Visible);
+        Check("right-click offers Move button", popup != null && MenuPanel.Labels(popup).Contains("Move button"));
+        if (popup == null)
+            return;
+        MenuPanel.Press(popup, "Move button");
+        await Wait(menu, 0.2);
+        var layer = menu.GetNodeOrNull<Control>("SpireModManagerMoveLayer");
+        await Capture(menu, outDir, "1b-move-button");
+        var to = new Vector2(900, 300);
+        Input.WarpMouse(to);
+        layer?.EmitSignal(Control.SignalName.GuiInput, new InputEventMouseButton { ButtonIndex = MouseButton.Left, Pressed = false, Position = to, GlobalPosition = to });
+        await Wait(menu, 0.3);
+        Check("a click places it and it's remembered", layer != null && Store.Data.MenuButtonAt != null && button.Position != corner,
+            $"{button.Position}, saved {Store.Data.MenuButtonAt}");
+        button.EmitSignal(Control.SignalName.GuiInput, new InputEventMouseButton { ButtonIndex = MouseButton.Right, Pressed = false });
+        await Wait(menu, 0.3);
+        if (menu.FindChildren("SpireModManagerMenu", "", true, false).OfType<PopupPanel>().FirstOrDefault(p => p.Visible) is { } again)
+            MenuPanel.Press(again, "Reset position");
+        await Wait(menu, 0.2);
+        Check("Reset position puts it back in the corner", Store.Data.MenuButtonAt == null && button.Position == corner, $"{button.Position} vs {corner}");
     }
 
     // Row menu, new category renamed in place, assign, move, header menu, delete.
