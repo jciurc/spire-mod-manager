@@ -161,6 +161,15 @@ static class SelfTest
                 CategoryList.Apply(content);
             var categoriesMs = timer.Elapsed.TotalMilliseconds / 10;
             Check($"category view redraw {categoriesMs:0.0} ms", categoriesMs < 50);
+            double Ms(Action action)
+            {
+                var watch = System.Diagnostics.Stopwatch.StartNew();
+                for (var i = 0; i < 10; i++)
+                    action();
+                return watch.Elapsed.TotalMilliseconds / 10;
+            }
+            Results.Add($"INFO of which: titles {Ms(() => RowTitles.Apply(rows, false)):0.0} ms, toolbar {Ms(() => LoadOrder.UpdateToolbar(content, rows, () => { })):0.0} ms, "
+                + $"strips and toolbar {Ms(() => CategoryList.RefreshStrips(content)):0.0} ms");
             await Wait(menu, 1);
             await Capture(screen, outDir, "real-1-categories");
 

@@ -44,6 +44,24 @@ static class Menus
         return text.GetFormattedText();
     }
 
+    // Its looks, made once and shared (every row has a few of these, remade on each redraw).
+    static readonly (string State, StyleBox Box)[] SmallBoxes =
+    [
+        ("normal", Box(new Color(0.0756f, 0.12084f, 0.18f, 0.7f), new Color(Gold, 0.35f))),
+        ("hover", Box(new Color(0.2f, 0.32f, 0.42f), Gold)),
+        ("pressed", Box(new Color(0.12f, 0.2f, 0.28f), Gold)),
+        ("disabled", Box(new Color(0.0756f, 0.12084f, 0.18f, 0.35f), new Color(Gold, 0.1f))),
+    ];
+    static readonly StyleBoxEmpty FlatBox = new() { ContentMarginLeft = 4, ContentMarginRight = 4 };
+
+    static StyleBoxFlat Box(Color background, Color border)
+    {
+        var box = new StyleBoxFlat { BgColor = background, BorderColor = border, ContentMarginLeft = 8, ContentMarginRight = 8, ContentMarginTop = 0, ContentMarginBottom = 0 };
+        box.SetBorderWidthAll(1);
+        box.SetCornerRadiusAll(3);
+        return box;
+    }
+
     // A plain, compact text button for inline actions: no art, a thin border, lit on hover.
     public static Button SmallButton(string text, Action onPressed, bool disabled = false, string? name = null)
     {
@@ -54,17 +72,8 @@ static class Menus
         };
         if (name != null)
             button.Name = name;
-        StyleBoxFlat Box(Color background, Color border)
-        {
-            var box = new StyleBoxFlat { BgColor = background, BorderColor = border, ContentMarginLeft = 8, ContentMarginRight = 8, ContentMarginTop = 0, ContentMarginBottom = 0 };
-            box.SetBorderWidthAll(1);
-            box.SetCornerRadiusAll(3);
-            return box;
-        }
-        button.AddThemeStyleboxOverride("normal", Box(new Color(0.0756f, 0.12084f, 0.18f, 0.7f), new Color(Gold, 0.35f)));
-        button.AddThemeStyleboxOverride("hover", Box(new Color(0.2f, 0.32f, 0.42f), Gold));
-        button.AddThemeStyleboxOverride("pressed", Box(new Color(0.12f, 0.2f, 0.28f), Gold));
-        button.AddThemeStyleboxOverride("disabled", Box(new Color(0.0756f, 0.12084f, 0.18f, 0.35f), new Color(Gold, 0.1f)));
+        foreach (var (state, box) in SmallBoxes)
+            button.AddThemeStyleboxOverride(state, box);
         button.AddThemeFontOverride("font", ResourceLoader.Load<Font>("res://themes/kreon_regular_shared.tres"));
         button.AddThemeFontSizeOverride("font_size", 16);
         button.AddThemeColorOverride("font_color", Cream);
@@ -78,7 +87,7 @@ static class Menus
     public static void Flatten(Button button)
     {
         foreach (var state in new[] { "normal", "hover", "pressed", "disabled" })
-            button.AddThemeStyleboxOverride(state, new StyleBoxEmpty { ContentMarginLeft = 4, ContentMarginRight = 4 });
+            button.AddThemeStyleboxOverride(state, FlatBox);
         button.AddThemeColorOverride("font_color", new Color(Cream, 0.6f));
         button.AddThemeColorOverride("font_hover_color", Gold);
         button.AddThemeColorOverride("font_pressed_color", Gold);

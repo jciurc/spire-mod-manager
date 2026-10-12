@@ -12,6 +12,7 @@ static class RowStrip
     const string StripName = "SpireModManagerStrip";
     public const string ActionsName = "SpireModManagerActions";
     const string StripMeta = "spire_mod_manager_strip";
+    const string SaysMeta = "spire_mod_manager_says"; // on a strip: what it shows, to know when to remake it
     const float Height = 20;
     const float RightMargin = 76; // from the row's right edge: clear of the (smaller) tickbox
     const float LoadOrderMargin = 20; // Load Order has no tickbox
@@ -23,7 +24,6 @@ static class RowStrip
         var order = LoadOrder.Mods(rows).Select((m, i) => (m, i)).DistinctBy(p => p.m).ToDictionary(p => p.m, p => p.i);
         foreach (var row in rows)
         {
-            RemoveStrip(row);
             var title = row.GetNode<Control>("Title");
             if (!row.HasMeta(StripMeta))
             {
@@ -31,16 +31,29 @@ static class RowStrip
                 row.SetMeta(StripMeta, true);
             }
 
-            var buttons = Menus.InlineButtons(actions(row), ActionsName);
+            // The buttons are made again each time (what they do depends on the row's place now).
+            Drop(row, ActionsName);
+            var items = actions(row).ToList();
+            var buttons = Menus.InlineButtons(items, ActionsName);
             row.AddChild(buttons);
             buttons.AnchorLeft = buttons.AnchorRight = 1;
             buttons.AnchorBottom = 1;
             buttons.GrowHorizontal = Control.GrowDirection.Begin;
             buttons.OffsetRight = buttons.OffsetLeft = Store.Data.LoadOrderView ? -LoadOrderMargin : -RightMargin;
-            var clear = buttons.OffsetRight - buttons.GetCombinedMinimumSize().X - ActionsGap;
+            var clear = buttons.OffsetRight - Width(buttons, items) - ActionsGap;
             title.OffsetRight = clear;
 
+            // The line itself only when what it says changed: making its nodes for every row on every redraw
+            // (each keystroke in search) was most of a redraw's time.
+            var chips = Tags.For(row.Mod);
+            var text = string.Join("    ", new[] { RequiredFor(row.Mod), Needs(row.Mod, order, Store.Data.LoadOrderView) }.Where(s => s.Length > 0));
+            var says = $"{title.OffsetLeft}|{clear}|{string.Join("|", chips.Select(c => $"{c.Text}/{c.Color}/{c.Custom}"))}|{text}";
+            if (row.GetNodeOrNull<Control>(StripName) is { } kept && kept.HasMeta(SaysMeta) && (string)kept.GetMeta(SaysMeta) == says)
+                continue;
+            Drop(row, StripName);
+
             var strip = new HBoxContainer { Name = StripName, MouseFilter = Control.MouseFilterEnum.Ignore };
+            strip.SetMeta(SaysMeta, says);
             strip.AddThemeConstantOverride("separation", 6);
             row.AddChild(strip);
             strip.AnchorTop = strip.AnchorBottom = 1;
@@ -50,12 +63,12 @@ static class RowStrip
             strip.OffsetTop = -Height - 4;
             strip.OffsetBottom = -4;
 
-            foreach (var chip in Tags.For(row.Mod))
+            foreach (var chip in chips)
                 strip.AddChild(Tags.Make(chip));
 
             var note = new RichTextLabel
             {
-                Name = "Needs", Text = string.Join("    ", new[] { RequiredFor(row.Mod), Needs(row.Mod, order, Store.Data.LoadOrderView) }.Where(s => s.Length > 0)), BbcodeEnabled = true, ScrollActive = false,
+                Name = "Needs", Text = text, BbcodeEnabled = true, ScrollActive = false,
                 AutowrapMode = TextServer.AutowrapMode.Off, VerticalAlignment = VerticalAlignment.Center,
                 SizeFlagsHorizontal = Control.SizeFlags.ExpandFill, SizeFlagsVertical = Control.SizeFlags.Fill,
                 ClipContents = true, MouseFilter = Control.MouseFilterEnum.Ignore,
@@ -65,6 +78,18 @@ static class RowStrip
             note.AddThemeColorOverride("default_color", Note);
             strip.AddChild(note);
         }
+    }
+
+    // The buttons' width, measured once per set of labels (measuring shapes their text: slow for every row of
+    // every redraw, and most rows share their labels).
+    static readonly Dictionary<string, float> Widths = [];
+
+    static float Width(Control buttons, List<MenuItem> items)
+    {
+        var key = string.Join("\n", items.Select(i => $"{i.Label}{(i.Flat ? "~" : "")}"));
+        if (!Widths.TryGetValue(key, out var width))
+            Widths[key] = width = buttons.GetCombinedMinimumSize().X;
+        return width;
     }
 
     public static void Remove(IEnumerable<NModMenuRow> rows)
@@ -81,12 +106,16 @@ static class RowStrip
 
     static void RemoveStrip(NModMenuRow row)
     {
-        foreach (var name in new[] { StripName, ActionsName })
-            if (row.GetNodeOrNull(name) is { } old)
-            {
-                row.RemoveChild(old);
-                old.QueueFree();
-            }
+        Drop(row, StripName);
+        Drop(row, ActionsName);
+    }
+
+    static void Drop(Node row, string name)
+    {
+        if (row.GetNodeOrNull(name) is not { } old)
+            return;
+        row.RemoveChild(old);
+        old.QueueFree();
     }
 
     // "Needs: BaseLib, RitsuLib" with each dependency coloured: green when fine, red (and why) when it is
