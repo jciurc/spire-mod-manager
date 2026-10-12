@@ -4,8 +4,8 @@ using MegaCrit.Sts2.Core.Nodes.Screens.ModdingScreen;
 
 namespace SpireModManager;
 
-// A search box under the profile bar. Every word typed must appear in the mod's name, id, author,
-// alias, notes or category (any case). Escape clears it.
+// A search box over the list. Every word typed must appear (any case) in the mod's name, id, author,
+// alias, notes, category or tags, or the whole query, spaces ignored, in one of them. Escape clears it.
 static class Search
 {
     const float Height = 32;
@@ -16,11 +16,17 @@ static class Search
         if (mod?.manifest is not { } manifest)
             return false;
         var info = Store.InfoFor(manifest.id);
-        var haystack = string.Join('\n', [manifest.name, manifest.id, manifest.author, info?.Alias, info?.Notes, info?.Category,
-            .. Tags.For(mod).Select(c => c.Text), .. WorkshopInfo.For(mod)?.Tags ?? []]);
-        return filter.Split(' ', StringSplitOptions.RemoveEmptyEntries)
-            .All(word => haystack.Contains(word, StringComparison.OrdinalIgnoreCase));
+        string?[] fields = [manifest.name, manifest.id, manifest.author, info?.Alias, info?.Notes, info?.Category,
+            .. Tags.For(mod).Select(c => c.Text), .. WorkshopInfo.For(mod)?.Tags ?? []];
+        var haystack = string.Join('\n', fields);
+        // Every word somewhere (any case), or the whole query with spaces ignored within one field: "mod fixes"
+        // finds "ModFixes" too.
+        var squeezed = Squeeze(filter);
+        return filter.Split(' ', StringSplitOptions.RemoveEmptyEntries).All(word => haystack.Contains(word, StringComparison.OrdinalIgnoreCase))
+            || fields.Any(f => f != null && Squeeze(f).Contains(squeezed, StringComparison.OrdinalIgnoreCase));
     }
+
+    static string Squeeze(string text) => string.Concat(text.Where(c => !char.IsWhiteSpace(c)));
 
     public static void Attach(NModdingScreen screen)
     {
@@ -60,6 +66,7 @@ static class Search
         {
             content.SetMeta(CategoryList.FilterMeta, text.Trim());
             CategoryList.Apply(content);
+            CategoryList.ScrollToTop(content); // the matches start at the top, not hidden above the view
         };
         box.GuiInput += e =>
         {
