@@ -423,9 +423,9 @@ Jordan's notes of 2026-10-12 (night), from the details page screenshot.
 - [x] thumbnail a little further right, the picture right-justified in its box
 - [x] Size moves to the top of the Published group; Compatibility goes under Updated (where Size was)
 - [x] alias placeholder: "Your nickname for the mod"
-- [ ] clicking a mod name in the panel: the row gets the "selected" look (blue, like hover / keyboard) when it scrolls into view, without becoming the panel's mod
-- [ ] hovering a dependency's name highlights its row (only if in view; no scrolling)
-- [ ] mod names in the panel: the mod's card after 0.5 s
+- [x] clicking a mod name in the panel: the row gets the "selected" look (blue, like hover / keyboard) when it scrolls into view, without becoming the panel's mod
+- [x] hovering a dependency's name highlights its row (only if in view; no scrolling)
+- [x] mod names in the panel: the mod's card after 0.5 s
 - [x] author clickable to search (Shift: add to the search; a space only when there's a search already); tags the same
 - [x] the panel's tags: same tooltip as the rows'
 
