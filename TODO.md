@@ -413,3 +413,39 @@ Jordan's notes of 2026-10-12 (late evening).
 - [x] category Enable all / Disable all inline, right of the rename/move buttons
 - [x] author on the row, somewhere other than above the Category button (end of the tag line, dim)
 - [x] then the relaunch check (round 3 note)
+
+# Round 10
+
+Jordan's notes of 2026-10-12 (night), from the details page screenshot.
+
+## Side panel
+- [ ] Enabled status sits a little low: centre it on the source link's line
+- [ ] thumbnail a little further right, the picture right-justified in its box
+- [ ] Size moves to the top of the Published group; Compatibility goes under Updated (where Size was)
+- [ ] alias placeholder: "Your nickname for the mod"
+- [ ] clicking a mod name in the panel: the row gets the "selected" look (blue, like hover / keyboard) when it scrolls into view, without becoming the panel's mod
+- [ ] hovering a dependency's name highlights its row (only if in view; no scrolling)
+- [ ] mod names in the panel: the mod's card after 0.5 s
+- [ ] author clickable to search (Shift: add to the search; a space only when there's a search already); tags the same
+- [ ] the panel's tags: same tooltip as the rows'
+
+## Rows
+- [ ] smaller notepad, right after the alias/title, before the original name
+- [ ] the hover card only over the mod's title, after 0.5 s
+- [ ] hovering the notepad: the card after 0.1 s
+- [ ] grace period: after a card closes, for 2x its delay, hovering anything with a card shows it at once
+- [ ] a little more room between the title and the tags
+- [ ] recently updated: a red pip left of the name instead of the Updated tag
+
+## Tooltips
+- [ ] tags use the styled card; Gameplay: "This mod affects gameplay. All players will need it installed for multiplayer."; then, after a gap, the search hint at the bottom in a subtle subheading font
+
+## Patch notes
+- [ ] "Recently updated" link on the details page (after the status) opens the mod's patch notes (when there are any): id, author, update date, the notes
+
+## Tests
+- [ ] a mod with very long details (title, description, tags, notes...) as an ongoing screenshot of the edge case; not solved yet
+
+## Backlog (round 10)
+- [ ] long titles, descriptions, tags and other text: how they should fit
+- [ ] hover the thumbnail for 0.2 s: the full image (at most 800 wide or high)
