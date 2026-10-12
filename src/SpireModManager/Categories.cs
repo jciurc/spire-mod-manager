@@ -7,13 +7,7 @@ static class Categories
 {
     public static Category? Find(string name) => Store.Data.Categories.FirstOrDefault(c => c.Name == name);
 
-    public static void Assign(string modId, string? category)
-    {
-        if (!Store.Data.Mods.TryGetValue(modId, out var info))
-            Store.Data.Mods[modId] = info = new ModInfo();
-        info.Category = category;
-        Store.Save();
-    }
+    public static void Assign(string modId, string? category) => Store.EditMod(modId, info => info.Category = category);
 
     public static Category Add()
     {
@@ -48,8 +42,12 @@ static class Categories
     // Its mods go back to Uncategorized.
     public static void Delete(Category category)
     {
-        foreach (var info in Store.Data.Mods.Values.Where(i => i.Category == category.Name))
+        foreach (var (id, info) in Store.Data.Mods.Where(p => p.Value.Category == category.Name).ToList())
+        {
             info.Category = null;
+            if (info is { Alias: null, Notes: null, Tags: null })
+                Store.Data.Mods.Remove(id); // nothing of ours left on it
+        }
         Store.Data.Categories.Remove(category);
         Store.Save();
     }

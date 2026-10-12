@@ -499,13 +499,7 @@ static class ModDetails
     public static void SetAlias(string modId, string alias) =>
         Edit(modId, info => info.Alias = alias.Trim() is { Length: > 0 } a ? a : null);
 
-    static void Edit(string modId, Action<ModInfo> change)
-    {
-        if (!Store.Data.Mods.TryGetValue(modId, out var info))
-            Store.Data.Mods[modId] = info = new ModInfo();
-        change(info);
-        Store.Save();
-    }
+    static void Edit(string modId, Action<ModInfo> change) => Store.EditMod(modId, change);
 
     // Row titles (alias, original name, pencil) after an edit made in the panel.
     static void RefreshRows(Node container)
