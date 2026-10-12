@@ -4,6 +4,10 @@ Short notes for Jordan: what to look for after each install. Newest first.
 
 ## Not installed yet
 
+- (nothing yet)
+
+## Installed 2026-10-12 (late night): version 0.0.43
+
 Tooltips (round 13)
 - One set of rules for every hover card: it shows after **0.4 s**. After one closes, the next opens at once for **0.25 s** (the grace period). Leaving waits **20 ms** before the card goes, so a wobble off the edge doesn't close it.
 - The row's **notepad** card shows the moment you hover it and goes the moment you leave (no grace period after it).
