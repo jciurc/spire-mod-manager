@@ -19,6 +19,7 @@
   "SPIRE_MOD_MANAGER.REQUIRED_FOR_ONE": "Required for 1 mod",
   "SPIRE_MOD_MANAGER.REQUIRED_FOR": "Required for {count} mods",
   "SPIRE_MOD_MANAGER.ORDER_PROBLEMS": "{count} mods will be automatically reordered (vanilla behavior) on launch based on dependencies.",
+  "SPIRE_MOD_MANAGER.ORDER_PROBLEMS_ONE": "1 mod will be automatically reordered (vanilla behavior) on launch based on dependencies.",
   "SPIRE_MOD_MANAGER.FIX_ORDER": "Fix now",
   "SPIRE_MOD_MANAGER.AUTO_SORT": "Auto sort",
   "SPIRE_MOD_MANAGER.CATEGORY_BUTTON": "Category",
