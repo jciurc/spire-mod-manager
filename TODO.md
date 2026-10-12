@@ -229,14 +229,14 @@ Jordan's notes of 2026-10-11.
 ## Main list
 
 - [x] select/deselect all per category (header right-click: Enable all / Disable all)
-- [ ] select/deselect all for the whole page (where should it live? ask Jordan)
+- [ ] select/deselect all for the whole page (Round 9: a bar between search and categories)
 - [ ] multi-select on the main page: move to a category, select/deselect
 - [ ] drag and drop: whole categories, single mods, multi-selections
 - [ ] author name on the row (right side, above the category button)
 - [x] category button shows the category's name
 - [ ] colour codes for categories and/or tags
 - [x] "Needs: X": X green when enabled, red when not
-- [ ] (fix) the changed (gold) title colour overrides custom colours
+- [x] (fix) the changed (gold) title colour overrides custom colours (Jordan: the Needs: names were all orange; fixed already)
 - [x] (fix) thumbnail in the right-side panel still wrong
 
 ## Relaunch
@@ -403,3 +403,14 @@ Jordan's notes of 2026-10-12 (evening).
 - [ ] profiles and mods installed mid-session: they aren't in the profile until a relaunch (switching profiles leaves them as they are)
 - [ ] tag suggestions: tags already used across mods in a dropdown under the tag box, filtered as you type, arrow keys to pick, comma accepts
 - [ ] back/forward view history: previous active mod (opened in the panel), Load Order page changes; Vanilla View skipped
+
+# Round 9
+
+Jordan's notes of 2026-10-12 (late evening).
+
+- [x] install the latest (game closed)
+- [x] version 0.0.N, up by one per install (now 0.0.40); proper semver at release
+- [ ] whole-page controls in a new bar under the search box, above the categories (Enable all / Disable all)
+- [ ] category Enable all / Disable all inline, right of the rename/move buttons
+- [ ] author on the row, somewhere other than above the Category button
+- [ ] then the relaunch check (round 3 note)
