@@ -114,6 +114,7 @@ static class SelfTest
             await TestNotes(menu, screen, content, outDir);
             await TestPendingNotes(menu, screen, content);
             await TestSearch(menu, screen, content, outDir);
+            await TestNewMod(menu, screen, content);
             await TestLoadOrder(menu, screen, content, outDir);
             await TestHistory(menu, screen, content, outDir);
 
@@ -592,7 +593,7 @@ static class SelfTest
         Check("status first: Enabled", description.StartsWith("Enabled"), description[..Math.Min(40, description.Length)]);
         Check("the link line: id, version, local", panel.FindChild("SpireModManagerLink", true, false) is LinkButton { Disabled: true } link
             && link.Text.StartsWith("SpireModManager v") && link.Text.EndsWith("(Local mod)"), (panel.FindChild("SpireModManagerLink", true, false) as LinkButton)?.Text ?? "");
-        Check("fields in order: Alias, Category, Notes, Tags", string.Join(",", yours.GetChildren().Select(c => c.Name.ToString())) == "Alias,Category,Notes,Tags",
+        Check("fields in order: Alias, Category, Tags, Notes", string.Join(",", yours.GetChildren().Select(c => c.Name.ToString())) == "Alias,Category,Tags,Notes",
             string.Join(",", yours.GetChildren().Select(c => c.Name.ToString())));
         Check("the thumbnail stays small (the scene's minimum size lifted)", panel.GetNode<Control>("ModImage").Size.X <= 130, $"{panel.GetNode<Control>("ModImage").Size}");
         await Capture(screen, outDir, "8-details-with-notes");
@@ -638,6 +639,28 @@ static class SelfTest
         await Capture(screen, outDir, "9b-notes-hover");
         other.EmitSignal(Control.SignalName.MouseExited);
         Check("Vanilla View shows plain names", await WithVanillaView(screen, menu, () => RowTitle(ModEntry.ModId) == "Spire Mod Manager"));
+    }
+
+    // A mod installed while the page is open (here: the game's own handler called again for a fixture mod):
+    // its row comes out in our style, in its place. The extra row goes again afterwards.
+    static async Task TestNewMod(Node menu, NModdingScreen screen, Control content)
+    {
+        var before = content.GetChildren().OfType<NModMenuRow>().ToList();
+        if (Dependencies.Find("SmmTestUi") is not { } mod)
+            return;
+        typeof(NModdingScreen).GetMethod("OnNewModDetected", System.Reflection.BindingFlags.NonPublic | System.Reflection.BindingFlags.Instance)
+            ?.Invoke(screen, [mod]);
+        await Wait(menu, 0.4);
+        var added = content.GetChildren().OfType<NModMenuRow>().Except(before).FirstOrDefault();
+        Check("a mod installed while the page is open gets our row style", added != null && added.HasNode("SpireModManagerStrip")
+            && added.CustomMinimumSize.Y == 52, added == null ? "no new row" : $"strip {added.HasNode("SpireModManagerStrip")}, height {added.CustomMinimumSize.Y}");
+        Check("the profile bar shows how many mods are on", screen.FindChild("ProfileCount", true, false) is Label { Text: var count } && count.EndsWith("mods"));
+        if (added != null)
+        {
+            content.RemoveChild(added);
+            added.QueueFree();
+            CategoryList.Apply(content);
+        }
     }
 
     // By name, by alias (fixture: "The Manager"), no match, then cleared.
