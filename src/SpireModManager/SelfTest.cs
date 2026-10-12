@@ -56,17 +56,8 @@ static class SelfTest
             var content = screen.GetNode<Control>("%ModsScrollContainer/Mask/Content");
             var rows = content.GetChildren().OfType<NModMenuRow>().ToList();
             Check("relaunch button", screen.GetNodeOrNull("SpireModManagerRelaunchButton") != null);
-            if (ModEntry.BetterModMenuLoaded) // dev.cs test --bmm
-            {
-                Check("steps aside for Better Mod Menu", screen.GetNodeOrNull("SpireModManagerBmmNotice") != null
-                    && screen.GetNodeOrNull("ModsBorder/SpireModManagerProfileBar") == null
-                    && !content.GetChildren().Any(c => c.IsInGroup("SpireModManagerCategoryHeader")));
-                screen.OnModEnabledOrDisabled(); // as a tickbox change does
-                await Wait(menu, 0.3);
-                Check("leaves Better Mod Menu's rows alone after a tickbox change", !rows.Any(r => r.HasNode("SpireModManagerStrip")));
-                await Capture(screen, outDir, "2-better-mod-menu");
-                return;
-            }
+            if (Bmm.Present) // dev.cs test --bmm
+                await TestBetterModMenu(menu, screen, content, outDir);
             Check("view toggle", screen.GetNodeOrNull("SpireModManagerViewToggle") != null);
             Check("profile bar", screen.GetNodeOrNull("ModsBorder/SpireModManagerProfileBar") != null);
             Check("our views use the wide layout", screen.GetNode<Control>("ModsBorder").OffsetLeft < 255 && screen.GetNode<Control>("%ModInfoContainer").OffsetRight > 1727);
@@ -103,9 +94,10 @@ static class SelfTest
             var border = screen.GetNode<Control>("ModsBorder");
             Check("vanilla view: the game's row spacing and sides", content.GetThemeConstant("separation") == 16 && content.OffsetLeft == 0 && content.OffsetRight == 0,
                 $"separation {content.GetThemeConstant("separation")}, sides {content.OffsetLeft}..{content.OffsetRight}");
-            Check("vanilla view restores the game's layout", border.OffsetLeft == 255 && border.OffsetRight == 994
-                && border.GetNode<Control>("ModsScrollContainer").OffsetTop == 8
-                && !border.GetNode<Control>("SpireModManagerProfileBar").Visible, $"{border.OffsetLeft}..{border.OffsetRight}");
+            if (!Bmm.Present) // its page lays the list out its own way (TestBetterModMenu)
+                Check("vanilla view restores the game's layout", border.OffsetLeft == 255 && border.OffsetRight == 994
+                    && border.GetNode<Control>("ModsScrollContainer").OffsetTop == 8
+                    && !border.GetNode<Control>("SpireModManagerProfileBar").Visible, $"{border.OffsetLeft}..{border.OffsetRight}");
             await Capture(screen, outDir, "4-vanilla-view");
             Click(screen.GetNode<NButton>("SpireModManagerViewToggle"));
             await Wait(menu, 1);
@@ -291,6 +283,127 @@ static class SelfTest
             Check("the pencil: flat, past the tickbox, in line with it", pencil?.GetThemeStylebox("normal") is StyleBoxEmpty
                 && pencil.GetGlobalRect().Position.X >= tick.GetGlobalRect().End.X - 2 && Math.Abs(pencil.GetGlobalRect().GetCenter().Y - tickY.Y) < 2,
                 $"pencil {pencil?.GetGlobalRect()}, tickbox {tick.GetGlobalRect()}");
+        }
+    }
+
+    // dev.cs test --bmm: Better Mod Menu loaded too. On our views its parts are hidden and our layout holds (its
+    // re-layout paused); Vanilla View is its page; going back and forth doesn't drift; profiles leave it alone.
+    static async Task TestBetterModMenu(NMainMenu menu, NModdingScreen screen, Control content, string outDir)
+    {
+        var ids = ModManager.Mods.Select(m => m.manifest?.id).ToList();
+        var border = screen.GetNode<Control>("ModsBorder");
+        var scroll = border.GetNode<Control>("ModsScrollContainer");
+        var info = screen.GetNode<Control>("%ModInfoContainer");
+        var mask = scroll.GetNode<Control>("Mask");
+        var chrome = screen.GetNodeOrNull<Control>("BetterModMenuChrome");
+        Results.Add($"INFO Better Mod Menu at {ids.IndexOf(Bmm.ModId)}, ours at {ids.IndexOf(ModEntry.ModId)} in the load order; " +
+            $"its bars {(chrome == null ? "not built (it failed on this game version)" : "built")}");
+        static bool Shown(Node? node) => node is CanvasItem { Visible: true };
+        List<Node> RowControls() => content.GetChildren().OfType<NModMenuRow>()
+            .Select(r => r.FindChild("RowCustomControls", true, false)).OfType<Node>().ToList();
+        bool Groups() => content.GetChildren().Any(c => c.Name.ToString().StartsWith("ModGroup"));
+        static string Box(Control c) => $"{c.OffsetLeft},{c.OffsetTop},{c.OffsetRight},{c.OffsetBottom}";
+
+        void OursHold(string when, float left)
+        {
+            Check($"{when}: the warning shows (no step-aside notice), with our search and toggles",
+                Shown(screen.GetNodeOrNull(Bmm.WarningName)) && screen.GetNodeOrNull("SpireModManagerBmmNotice") == null
+                && screen.GetNodeOrNull("SpireModManagerViewToggle") != null && screen.GetNodeOrNull("ModsBorder/SpireModManagerSearch") != null);
+            Check($"{when}: Better Mod Menu's bars, row controls and panel buttons hidden",
+                !Shown(chrome) && !RowControls().Any(Shown) && !Shown(info.GetNodeOrNull("BetterModMenuSelectedModActions")),
+                $"bars {Shown(chrome)}, row controls {RowControls().Count(Shown)}");
+            Check($"{when}: none of its groups in our list, every row there", !Groups()
+                && content.GetChildren().OfType<NModMenuRow>().Count() == ModManager.Mods.Count);
+            Check($"{when}: the list where ours goes, not pushed down or clipped", border.OffsetLeft == left && border.OffsetTop == 72
+                && !border.HasMeta("better_mod_menu_top_bar_room") && !mask.ClipContents, $"list {Box(border)}, clip {mask.ClipContents}");
+            Check($"{when}: the rows below our bars, inside the panel", border.GetGlobalRect().Grow(1).Encloses(scroll.GetGlobalRect())
+                && scroll.Size.Y > 500, $"rows {scroll.GetGlobalRect()}, panel {border.GetGlobalRect()}");
+            Check($"{when}: row titles ours (no colour of its own)", content.GetChildren().OfType<NModMenuRow>()
+                .All(r => r.GetNode<RichTextLabel>("Title") is { BbcodeEnabled: true } t && !t.HasThemeColorOverride("default_color")));
+        }
+
+        // Opening on our main list, after its deferred work.
+        OursHold("main list", 175);
+        Check("Better Mod Menu's button in place of Vanilla List", screen.GetNode<NButton>("SpireModManagerViewToggle")
+            .GetNode<Label>("Visuals/Label").Text == Menus.Text("SPIRE_MOD_MANAGER.BMM_VIEW"));
+
+        // Resizes don't set off its re-layout on our views.
+        var before = $"{Box(border)} | {Box(scroll)}";
+        foreach (var control in new[] { scroll, border.GetNode<Control>("%InstalledModsTitle"), info })
+            control.EmitSignal(Control.SignalName.Resized);
+        await Wait(menu, 0.3);
+        Check("our views: a resize leaves the list where it is", $"{Box(border)} | {Box(scroll)}" == before, $"{before} -> {Box(border)} | {Box(scroll)}");
+
+        // A mod shown in the panel: ours, with the description where ours goes (its Fill postfix runs first).
+        var row = content.GetChildren().OfType<NModMenuRow>().First(r => r.Visible && r.Mod?.manifest?.version is { Length: > 0 });
+        CategoryList.Select(screen, row);
+        await Wait(menu, 0.5);
+        var description = info.GetNode<Control>("ModDescription");
+        Check("our views: the panel's title and description ours", info.GetNode<RichTextLabel>("ModTitle").Text.Contains("[font_size=")
+            && description.AnchorBottom == 0 && description.GetGlobalRect().End.Y <= info.GetGlobalRect().End.Y + 1,
+            $"anchor {description.AnchorBottom}, description {description.GetGlobalRect()}, panel {info.GetGlobalRect()}");
+        await Capture(screen, outDir, "2-better-mod-menu-ours");
+
+        Click(screen.GetNode<NButton>("SpireModManagerLoadOrderToggle"));
+        await Wait(menu, 0.5);
+        OursHold("Load Order", 400);
+        Click(screen.GetNode<NButton>("SpireModManagerLoadOrderToggle"));
+        await Wait(menu, 0.5);
+
+        // Vanilla View: its page.
+        var make = border.GetNode<Control>("%MakeModsButton");
+        async Task<string> ToVanilla()
+        {
+            Click(screen.GetNode<NButton>("SpireModManagerViewToggle"));
+            await Wait(menu, 1);
+            Check("its page: none of ours (headers, strips, warning), the game's icons hidden, the list clipped",
+                !content.GetChildren().Any(c => c.IsInGroup("SpireModManagerCategoryHeader"))
+                && !content.GetChildren().OfType<NModMenuRow>().Any(r => Shown(r.GetNodeOrNull("SpireModManagerStrip")))
+                && !Shown(screen.GetNodeOrNull(Bmm.WarningName)) && mask.ClipContents
+                && content.GetChildren().OfType<NModMenuRow>().All(r => !Shown(r.GetNode("PlatformIcon"))));
+            Check("its page: the same mod still selected", CategoryList.Selected == row.Mod && RowState.Selected(row));
+            if (chrome != null)
+            {
+                Rect2 Rect(string name) => screen.FindChild(name, true, false) is Control c ? c.GetGlobalRect() : new Rect2();
+                var (top, groups, search, list) = (Rect("BetterModMenuTopBar"), Rect("BetterModMenuGroupBar"), Rect("BetterModMenuSearchBar"), scroll.GetGlobalRect());
+                var title = border.GetNode<Control>("%InstalledModsTitle").GetGlobalRect();
+                Check("its page: its bars, row controls and panel buttons show", Shown(chrome) && RowControls().Any(Shown)
+                    && Shown(info.GetNodeOrNull("BetterModMenuSelectedModActions")));
+                // (Its own sizes on this game version: the group bar is taller than the room it keeps for it, and the
+                // search bar can end past the panel. Reported, not checked: the same without us.)
+                Check("its page: its top bar clear of the title, its group bar above the list, its search below, the list in its panel",
+                    !top.Intersects(title) && groups.Position.Y < list.Position.Y && search.Position.Y >= list.End.Y - 1
+                    && list.Position.Y >= border.GetGlobalRect().Position.Y,
+                    $"title {title}, top bar {top}, groups {groups}, list {list}, search {search}, panel {border.GetGlobalRect()}");
+                Results.Add($"INFO its groups: {content.GetChildren().Count(c => c.Name.ToString().StartsWith("ModGroupHeader_"))}; " +
+                    $"group bar over the list by {Math.Max(0, groups.End.Y - list.Position.Y)}, search past the panel by {Math.Max(0, search.End.Y - border.GetGlobalRect().End.Y)}");
+            }
+            return $"list {border.GetGlobalRect()}, scroll {scroll.GetGlobalRect()}, Make Mods {make.GetGlobalRect()}";
+        }
+        async Task ToOurs(string when)
+        {
+            Click(screen.GetNode<NButton>("SpireModManagerViewToggle"));
+            await Wait(menu, 1);
+            OursHold(when, 175);
+        }
+        var first = await ToVanilla();
+        await Capture(screen, outDir, "3-better-mod-menu-page");
+        await ToOurs("back on the main list");
+        var second = await ToVanilla();
+        Check("its page the same the second time (nothing drifts)", second == first, $"{first} -> {second}");
+        await ToOurs("back on the main list again");
+
+        // Profiles leave it on or off as it is (both use the game's one mod list).
+        bool? BmmOn() => SaveManager.Instance.SettingsSave.ModSettings?.ModList.FirstOrDefault(m => m.Id == Bmm.ModId)?.IsEnabled;
+        if (Profiles.Active is { } start && Store.Data.Profiles.FirstOrDefault(p => p != start) is { } other)
+        {
+            var was = BmmOn();
+            Profiles.SwitchTo(other, screen);
+            await Wait(menu, 0.5);
+            var then = BmmOn();
+            Profiles.SwitchTo(start, screen);
+            await Wait(menu, 0.5);
+            Check("a profile switch leaves Better Mod Menu as it was", then == was && BmmOn() == was, $"{was} -> {then} -> {BmmOn()}");
         }
     }
 
@@ -497,7 +610,8 @@ static class SelfTest
         name.Text = "Brother co-op";
         await RealClick(menu, Button("SaveNameButton"));
         Check("Save creates the blank profile and switches to it", Store.Data.Profiles.Count == count + 1 && Profiles.Active?.Name == "Brother co-op"
-            && !name.Visible && picker.Visible && ModListState().Count(s => s.EndsWith("=on")) == 1, string.Join(", ", ModListState()));
+            && !name.Visible && picker.Visible && ModListState().Count(s => s.EndsWith("=on") && !s.StartsWith(Bmm.ModId + "/")) == 1,
+            string.Join(", ", ModListState())); // only ours on (Better Mod Menu, with --bmm, stays as it is)
 
         // A taken name can't be saved; Cancel leaves everything as it was.
         await RealClick(menu, Button("RenameProfileButton"));
@@ -651,7 +765,7 @@ static class SelfTest
             && RowTitle(ModEntry.ModId).Contains("Spire Mod Manager") && ours.GetNodeOrNull<Control>("SpireModManagerEditedMark") is { Visible: true },
             RowTitle(ModEntry.ModId));
         Check("no alias pencil on rows", !ours.HasNode("SpireModManagerPencil"));
-        screen.OnRowSelected(ours);
+        CategoryList.Select(screen, ours);
         await Wait(menu, 0.5);
         var description = panel.GetNode<RichTextLabel>("ModDescription").GetParsedText();
         var yours = panel.GetNode<Control>("SpireModManagerYours");
@@ -697,7 +811,7 @@ static class SelfTest
         await Capture(screen, outDir, "8-details-with-notes");
 
         // Notes and tags typed in the panel save when focus leaves; notes are trimmed, tags tidied.
-        screen.OnRowSelected(other);
+        CategoryList.Select(screen, other);
         await Wait(menu, 0.5);
         notes.Text = "  Typed in the panel \n";
         notes.EmitSignal(Control.SignalName.FocusExited);
@@ -1023,7 +1137,7 @@ static class SelfTest
         // category opened, no lines or dimming left behind.
         if (Rows().FirstOrDefault(r => r.Mod?.manifest?.id == "LocalModFixes") is { Mod: { } kept } keptRow)
         {
-            screen.OnRowSelected(keptRow);
+            CategoryList.Select(screen, keptRow);
             Store.Data.UncategorizedCollapsed = true;
         }
         LoadOrder.ShowLinks(content, Rows()[0], strong: false);
@@ -1059,7 +1173,7 @@ static class SelfTest
         // The info panel: where it's from, and dependencies both ways.
         var panel = screen.GetNode<NModInfoContainer>("%ModInfoContainer");
         if (Row("SmmTestLib") is { } libSelected)
-            screen.OnRowSelected(libSelected);
+            CategoryList.Select(screen, libSelected);
         await Wait(menu, 0.3);
         var facts = panel.GetNode<RichTextLabel>("ModDescription").Text;
         Check("panel: required for, Open Folder", facts.Contains("Required for")
@@ -1239,7 +1353,7 @@ static class SelfTest
         if (Rows().FirstOrDefault(r => r.Mod?.manifest?.id == "SmmTestLib") is { } libRow
             && Rows().FirstOrDefault(r => r.Mod?.manifest?.id == "SmmTestUi") is { } uiRow)
         {
-            screen.OnRowSelected(libRow);
+            CategoryList.Select(screen, libRow);
             await Wait(menu, 0.3);
             var description = screen.GetNode<RichTextLabel>("%ModInfoContainer/ModDescription");
             var look = uiRow.GetNode<Panel>("SelectionHighlight");
@@ -1329,7 +1443,7 @@ static class SelfTest
         await Wait(menu, 0.3);
         if (content.GetChildren().OfType<NModMenuRow>().FirstOrDefault(r => r.Mod == mod) is { } row)
         {
-            screen.OnRowSelected(row);
+            CategoryList.Select(screen, row);
             CategoryList.Reveal(content, id, flash: false);
             await Wait(menu, 0.5);
             await Capture(screen, outDir, "16-long-details");
@@ -1571,7 +1685,7 @@ static class SelfTest
         HistoryBar.OpenFromList(screen, "SmmTestUi");
         await Wait(menu, 0.2);
         if (content.GetChildren().OfType<NModMenuRow>().FirstOrDefault(r => r.Mod?.manifest?.id is { } id && id != "SmmTestUi") is { } another)
-            screen.OnRowSelected(another);
+            CategoryList.Select(screen, another);
         await Wait(menu, 0.2);
         Check("picking another mod takes Back away", back is { Visible: false });
         ClickChanges(); // open again, for the close test below
