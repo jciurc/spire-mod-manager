@@ -326,6 +326,20 @@ static class SelfTest
         Check("rename keeps the mod in the category", Store.InfoFor(modId)?.Category == "Renamed");
         Check("renamed header shown", Header(content, "Renamed") != null);
 
+        // A taken name warns, Enter doesn't take it, clicking away keeps the old name.
+        if (Store.Data.Categories.FirstOrDefault(c => c != category) is { } otherCategory && CategoryList.BeginRename(content, category) is { } taken)
+        {
+            taken.Text = otherCategory.Name;
+            taken.EmitSignal(LineEdit.SignalName.TextChanged, taken.Text);
+            taken.EmitSignal(LineEdit.SignalName.TextSubmitted, taken.Text);
+            await Wait(menu, 0.2);
+            Check("renaming a category to a taken name warns and isn't accepted", GodotObject.IsInstanceValid(taken) && taken.IsInsideTree()
+                && taken.GetNode<Label>("NameWarning").Text.Length > 0);
+            taken.EmitSignal(Control.SignalName.FocusExited);
+            await Wait(menu, 0.3);
+            Check("clicking away keeps the old name", category.Name == "Renamed" && Header(content, "Renamed") != null);
+        }
+
         Categories.Move(category, -1);
         CategoryList.Apply(content);
         await Wait(menu, 0.5);
