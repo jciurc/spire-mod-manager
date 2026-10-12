@@ -206,19 +206,23 @@ static class ModInfoClearPatch
 }
 
 // Keyboard shortcuts on our Modding screen: Ctrl+Z undo, Ctrl+Y or Ctrl+Shift+Z redo, Ctrl+F search, Ctrl+S
-// saves the profile.
+// saves the profile, Ctrl+A picks every mod shown.
 // Unhandled keys only, so a focused text box keeps its own Ctrl+Z.
 [HarmonyPatch(typeof(NInputManager), "_UnhandledKeyInput")]
 static class ShortcutsPatch
 {
-    // Escape closes an open menu or dialog of ours, and nothing else happens (the game would leave the page).
+    // Escape closes an open menu or dialog of ours, or lets go of picked mods, and nothing else happens (the game
+    // would leave the page).
     static bool Prefix(InputEvent inputEvent)
     {
-        if (inputEvent is not InputEventKey { Keycode: Key.Escape, Pressed: true, Echo: false } || !(MenuPanel.Close() || RelaunchCheck.Close()))
+        if (inputEvent is not InputEventKey { Keycode: Key.Escape, Pressed: true, Echo: false } || !(MenuPanel.Close() || RelaunchCheck.Close() || LetGo()))
             return true;
         ((SceneTree)Engine.GetMainLoop()).Root.SetInputAsHandled();
         return false;
     }
+
+    static bool LetGo() => HistoryBar.Screen is { } screen && GodotObject.IsInstanceValid(screen) && screen.IsVisibleInTree()
+        && Selection.Clear(screen.GetNode<Control>("%ModsScrollContainer/Mask/Content"));
 
     static void Postfix(InputEvent inputEvent)
     {
@@ -243,6 +247,10 @@ static class ShortcutsPatch
                 case Key.S:
                     if (Profiles.Active is { Edited: not null })
                         Profiles.Save();
+                    break;
+                case Key.A:
+                    var content = screen.GetNode<Control>("%ModsScrollContainer/Mask/Content");
+                    Selection.Add(content, content.GetChildren().OfType<NModMenuRow>());
                     break;
                 default:
                     return;

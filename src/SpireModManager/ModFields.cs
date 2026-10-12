@@ -3,7 +3,8 @@ using Godot;
 namespace SpireModManager;
 
 // One of the player's own details for a mod (alias, notes, tags), built and behaving the same wherever it's
-// edited: the info panel and a mod's right-click menu.
+// edited: the info panel and a mod's right-click menu. Several mods at once (the bulk menu): tags edit the ones
+// they all share (the rest of each mod's tags stay), notes show when they're the same and typing replaces all.
 // - A gold term; Save and Cancel at the right of its line while editing.
 // - At rest: the value as plain text (tags as pills), or a subtle call to action ("Add alias").
 // - Editing: a padded box with a hint and an inline ✕ to clear. Enter saves (Ctrl+Enter in notes), Escape
@@ -19,7 +20,8 @@ sealed class ModField
 
     public Control Root { get; }
     readonly Kind _kind;
-    readonly Func<string?> _modId;
+    readonly Func<IReadOnlyList<string>> _modIds;
+    readonly bool _bulk; // several mods
     readonly Action<Kind> _saved;
     readonly Control _box; // a LineEdit, or a TextEdit for notes
     readonly HBoxContainer _buttons;
@@ -28,9 +30,14 @@ sealed class ModField
     bool _cancelling;
 
     // modId: the mod being shown (it can change: the info panel). saved: after a value is stored.
-    public ModField(Kind kind, Func<string?> modId, Action<Kind> saved)
+    public ModField(Kind kind, Func<string?> modId, Action<Kind> saved) : this(kind, () => modId() is { Length: > 0 } id ? [id] : [], saved, bulk: false)
     {
-        (_kind, _modId, _saved) = (kind, modId, saved);
+    }
+
+    // modIds: the mods it edits (one, or several: bulk).
+    public ModField(Kind kind, Func<IReadOnlyList<string>> modIds, Action<Kind> saved, bool bulk)
+    {
+        (_kind, _modIds, _saved, _bulk) = (kind, modIds, saved, bulk);
         var root = new VBoxContainer { Name = kind.ToString() };
         root.AddThemeConstantOverride("separation", 4);
         Root = root;
@@ -155,6 +162,24 @@ sealed class ModField
         return column;
     }
 
+    // Several mods' tags and notes in a column (the bulk menu): "Editing N selected mods" where one mod's alias
+    // would be.
+    public static Control BulkColumn(IReadOnlyList<string> modIds, Action<Kind> saved)
+    {
+        var column = new VBoxContainer { Name = "Fields", CustomMinimumSize = new Vector2(400, 0) };
+        column.AddThemeConstantOverride("separation", 12);
+        var heading = new Label
+        {
+            Name = "Editing", Text = Menus.Format("SPIRE_MOD_MANAGER.EDITING_SELECTED", ("count", modIds.Count.ToString())),
+            CustomMinimumSize = new Vector2(0, 34), VerticalAlignment = VerticalAlignment.Center,
+        };
+        Style(heading, "res://themes/kreon_bold_shared.tres", 20, Cream);
+        column.AddChild(heading);
+        foreach (var kind in new[] { Kind.Tags, Kind.Notes })
+            column.AddChild(new ModField(kind, () => modIds, saved, bulk: true).Root);
+        return column;
+    }
+
     public bool Editing => _box.HasFocus();
 
     // Shows the stored value for the mod (unless it's being edited).
@@ -168,7 +193,7 @@ sealed class ModField
         if (_system != null)
         {
             Clear(_system);
-            foreach (var chip in Tags.For(Dependencies.Find(_modId() ?? "")).Where(c => !c.Custom))
+            foreach (var chip in _bulk ? Enumerable.Empty<Tags.Chip>() : Tags.For(Dependencies.Find(_modIds().FirstOrDefault() ?? "")).Where(c => !c.Custom))
                 _system.AddChild(Tags.Make(chip, add => Search.ByTag(Root, chip.Text, add)));
             _system.Visible = _system.GetChildCount() > 0;
         }
@@ -196,7 +221,7 @@ sealed class ModField
         if (_pills == null || _pillsBox == null || Editing)
             return;
         Clear(_pills);
-        var tags = Store.InfoFor(_modId())?.Tags ?? [];
+        var tags = SharedTags();
         foreach (var tag in tags)
             _pills.AddChild(Tags.Make(new Tags.Chip(tag, Tags.CustomColor, Custom: true), add => Search.ByTag(Root, tag, add))); // the box around them edits
         _pillsBox.Visible = tags.Count > 0;
@@ -210,41 +235,63 @@ sealed class ModField
         _box.ReleaseFocus();
     }
 
+    // The value shown: the mod's; for several, what they have in common (tags all of them have; notes if all the same).
     string Stored()
     {
-        var info = Store.InfoFor(_modId());
+        var infos = _modIds().Select(Store.InfoFor).ToList();
         return _kind switch
         {
-            Kind.Alias => info?.Alias ?? "",
-            Kind.Notes => info?.Notes ?? "",
-            _ => string.Join(", ", info?.Tags ?? []),
+            Kind.Alias => infos.Count == 1 ? infos[0]?.Alias ?? "" : "",
+            Kind.Notes => infos.Select(i => i?.Notes ?? "").Distinct().Count() == 1 ? infos[0]?.Notes ?? "" : "",
+            _ => string.Join(", ", SharedTags()),
         };
     }
+
+    List<string> SharedTags()
+    {
+        var lists = _modIds().Select(id => Store.InfoFor(id)?.Tags ?? []).ToList();
+        return lists.Count == 0 ? [] : lists[0].Where(tag => lists.All(l => l.Contains(tag, StringComparer.OrdinalIgnoreCase))).ToList();
+    }
+
+    bool NotesDiffer => _kind == Kind.Notes && _modIds().Select(id => Store.InfoFor(id)?.Notes ?? "").Distinct().Count() > 1;
 
     // Stores the typed value if it changed: trimmed, empty meaning none; tags tidied (repeats and blanks dropped).
     void Save()
     {
-        if (_modId() is not { Length: > 0 } id)
+        var ids = _modIds();
+        if (ids.Count == 0)
             return;
         var text = GetText().Trim();
         SetText(_kind == Kind.Tags ? string.Join(", ", Tags.Parse(text) ?? []) : text);
         if (GetText() == Stored())
             return;
-        Store.EditMod(id, info =>
+        var typed = Tags.Parse(text) ?? [];
+        var dropped = SharedTags().Where(t => !typed.Contains(t, StringComparer.OrdinalIgnoreCase)).ToList();
+        Store.Batch(() =>
         {
-            var value = text.Length > 0 ? text : null;
-            switch (_kind)
-            {
-                case Kind.Alias:
-                    info.Alias = value;
-                    break;
-                case Kind.Notes:
-                    info.Notes = value;
-                    break;
-                default:
-                    info.Tags = Tags.Parse(text);
-                    break;
-            }
+            foreach (var id in ids)
+                Store.EditMod(id, info =>
+                {
+                    var value = text.Length > 0 ? text : null;
+                    switch (_kind)
+                    {
+                        case Kind.Alias:
+                            info.Alias = value;
+                            break;
+                        case Kind.Notes:
+                            info.Notes = value;
+                            break;
+                        case Kind.Tags when !_bulk:
+                            info.Tags = Tags.Parse(text);
+                            break;
+                        default:
+                            // Several: drop the shared tags that were taken out, add the new ones; the rest stay.
+                            var own = (info.Tags ?? []).Where(t => !dropped.Contains(t, StringComparer.OrdinalIgnoreCase)).ToList();
+                            own.AddRange(typed.Where(t => !own.Contains(t, StringComparer.OrdinalIgnoreCase)));
+                            info.Tags = own.Count > 0 ? own : null;
+                            break;
+                    }
+                });
         });
         var kind = _kind;
         Callable.From(() => _saved(kind)).CallDeferred(); // it redraws; not in the middle of a focus change or a removal
@@ -255,7 +302,7 @@ sealed class ModField
     // At rest the call to action ("Add notes"), while editing the hint.
     void Hint(bool editing)
     {
-        var text = Menus.Text(LocKey(editing ? "HINT" : "ADD"));
+        var text = Menus.Text(NotesDiffer ? "SPIRE_MOD_MANAGER.NOTES_BULK_MIXED" : LocKey((_bulk ? "BULK_" : "") + (editing ? "HINT" : "ADD")));
         if (_box is LineEdit line)
             line.PlaceholderText = text;
         else

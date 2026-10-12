@@ -122,6 +122,7 @@ static class SelfTest
             await TestRelaunchCheck(menu, screen, content, outDir);
             await TestLongDetails(menu, screen, content, outDir);
             await TestPatchNotes(menu, screen, outDir);
+            await TestBulkEdit(menu, screen, content, outDir);
             await TestHistory(menu, screen, content, outDir);
 
             // Leaving from Load Order: the page comes back on the main list.
@@ -439,8 +440,8 @@ static class SelfTest
         var headerMenu = CategoryList.ShowHeaderMenu(content, category, Members());
         await Wait(menu, 0.5);
         await Capture(screen, outDir, "6-header-menu");
-        Check("header menu: Enable all, Disable all, then the category's actions", headerMenu != null
-            && string.Join(",", MenuPanel.Labels(headerMenu)).StartsWith("Enable all,Disable all,Rename"), headerMenu == null ? "no menu" : string.Join(",", MenuPanel.Labels(headerMenu)));
+        Check("header menu: Enable all, Disable all, Select all, then the category's actions", headerMenu != null
+            && string.Join(",", MenuPanel.Labels(headerMenu)).StartsWith("Enable all,Disable all,Select all,Rename"), headerMenu == null ? "no menu" : string.Join(",", MenuPanel.Labels(headerMenu)));
         MenuPanel.Close();
         // Disable all turns the category's mods off (this mod stays on), as one undo step.
         History.Record(); // the category edits above went straight to the store
@@ -954,10 +955,10 @@ static class SelfTest
         // Multi-select: pick the first and third rows, drag the first's grip below the last row; both move,
         // in their order.
         var all = Rows();
-        LoadOrder.Pick(content, all[0], toggle: false, range: false);
-        LoadOrder.Pick(content, all[2], toggle: true, range: false);
+        Selection.Pick(content, all[0], toggle: false, range: false);
+        Selection.Pick(content, all[2], toggle: true, range: false);
         var pickedIds = new[] { all[0], all[2] }.Select(r => r.Mod?.manifest?.id ?? "").ToList();
-        Check("Ctrl-click picks a second row, both highlighted", LoadOrder.Selection.Count == 2
+        Check("Ctrl-click picks a second row, both highlighted", Selection.Mods.Count == 2
             && Rows().Count(r => r.GetNodeOrNull<Control>("SpireModManagerPicked")?.Visible == true) == 2);
         var grip = all[0].GetNode<Control>("SpireModManagerHandle");
         var gripAt = grip.GetGlobalRect().GetCenter();
@@ -969,7 +970,7 @@ static class SelfTest
         grip.GetParent().EmitSignal(Control.SignalName.GuiInput, new InputEventMouseButton { ButtonIndex = MouseButton.Left, Pressed = false, GlobalPosition = bottom });
         await Wait(menu, 0.5);
         Check("dragging a multi-selection moves the group, in order", Ids().TakeLast(2).SequenceEqual(pickedIds), string.Join(", ", Ids()));
-        LoadOrder.ClearSelection(content);
+        Selection.Clear(content);
 
         // Put the original order back: nothing pending again.
         for (var i = 0; i < start.Count; i++)
@@ -1345,6 +1346,83 @@ static class SelfTest
         await Wait(menu, 0.2);
         Check("Back returns to the details", view is { Visible: false } && info.GetNode<Control>("ModTitle").Visible);
         PatchNotes.TestFetch = null;
+    }
+
+    // Several mods at once on the main list: Select all in Uncategorized, Ctrl-click one away; the bar counts
+    // them; right-click one: the bulk menu ("Editing N selected mods"); a category for all (one undo step);
+    // tags added to all and taken off again, each mod's other tags kept; Shift-click a range; Esc lets go.
+    static async Task TestBulkEdit(Node menu, NModdingScreen screen, Control content, string outDir)
+    {
+        List<NModMenuRow> Rows() => content.GetChildren().OfType<NModMenuRow>().ToList();
+        NModMenuRow? Row(string id) => Rows().FirstOrDefault(r => r.Mod?.manifest?.id == id);
+        List<NModMenuRow> Uncategorized() => Rows().Where(r => Store.InfoFor(r.Mod?.manifest?.id)?.Category == null && r.Visible).ToList();
+        void Click(NModMenuRow row, bool ctrl = false, bool shift = false) =>
+            row.EmitSignal(Control.SignalName.GuiInput, new InputEventMouseButton { ButtonIndex = MouseButton.Left, Pressed = true, CtrlPressed = ctrl, ShiftPressed = shift });
+        if (Row("LocalModFixes") is not { } fixes || Uncategorized().Count < 3)
+        {
+            Results.Add("SKIP bulk edit: fixture mods missing");
+            return;
+        }
+        Selection.Clear(content);
+        if (CategoryList.ShowHeaderMenu(content, null, Uncategorized()) is { } headerMenu)
+            MenuPanel.Press(headerMenu, "Select all");
+        await Wait(menu, 0.2);
+        var all = Uncategorized().Count;
+        Check("a category's Select all picks its mods, tinted", Selection.Mods.Count == all
+            && Uncategorized().All(r => r.GetNodeOrNull<Control>("SpireModManagerPicked") is { Visible: true }), $"{Selection.Mods.Count} of {all}");
+        Click(fixes, ctrl: true);
+        await Wait(menu, 0.2);
+        var picked = Selection.Mods.Select(m => m.manifest?.id ?? "").ToList();
+        Check("Ctrl-click lets go of one; the bar counts the rest", picked.Count == all - 1 && !picked.Contains("LocalModFixes")
+            && (screen.FindChild(PageBar.Name, true, false)?.FindChild("Scope", true, false) as Label)?.Text == $"Selected ({all - 1})");
+
+        var bulk = CategoryList.ShowBulkMenu(content);
+        await Wait(menu, 0.3);
+        Check("the bulk menu: Editing N selected mods, tags and notes, no alias", bulk != null
+            && bulk.FindChild("Editing", true, false) is Label { Text: var editing } && editing == $"Editing {all - 1} selected mods"
+            && bulk.FindChild("Tags", true, false) != null && bulk.FindChild("Notes", true, false) != null && bulk.FindChild("Alias", true, false) == null);
+        await Capture(screen, outDir, "18-bulk-menu");
+        var tool = Store.Data.Categories.First().Name;
+        if (bulk != null)
+            MenuPanel.Press(bulk, tool);
+        await Wait(menu, 0.3);
+        Check("a category for all of them at once", picked.All(id => Store.InfoFor(id)?.Category == tool) && Store.InfoFor("LocalModFixes")?.Category == null,
+            string.Join(", ", picked.Select(id => $"{id}: {Store.InfoFor(id)?.Category}")));
+        History.Undo();
+        await Wait(menu, 0.3);
+        Check("one undo puts them all back", picked.All(id => Store.InfoFor(id)?.Category == null));
+        MenuPanel.Close();
+
+        // Tags: one mod has its own; a tag added to all keeps it; taking the shared one off leaves it.
+        Store.EditMod(picked[0], info => info.Tags = ["mine"]);
+        if (CategoryList.ShowBulkMenu(content) is { } tagsMenu && tagsMenu.FindChild("Tags", true, false)?.GetNodeOrNull<LineEdit>("Box") is { } tags)
+        {
+            tags.Text = "together";
+            tags.EmitSignal(Control.SignalName.FocusExited);
+            await Wait(menu, 0.3);
+            Check("a tag typed for several goes on every one, their own tags kept", picked.All(id => Store.InfoFor(id)?.Tags?.Contains("together") == true)
+                && Store.InfoFor(picked[0])?.Tags?.Contains("mine") == true, string.Join(" | ", picked.Select(id => string.Join(",", Store.InfoFor(id)?.Tags ?? []))));
+            tags.Text = "";
+            tags.EmitSignal(Control.SignalName.FocusExited);
+            await Wait(menu, 0.3);
+            Check("taking the shared tag off removes it from all, nothing else", picked.All(id => Store.InfoFor(id)?.Tags?.Contains("together") != true)
+                && Store.InfoFor(picked[0])?.Tags?.SequenceEqual(["mine"]) == true);
+        }
+        MenuPanel.Close();
+        Store.EditMod(picked[0], info => info.Tags = null);
+
+        // Shift-click: the rows between the last one picked and this one. Esc lets go.
+        var rows = Uncategorized();
+        Selection.Clear(content);
+        Click(rows[0], ctrl: true);
+        Click(rows[2], shift: true);
+        await Wait(menu, 0.2);
+        Check("Shift-click picks the range", Selection.Mods.Count >= 3 && rows.Take(3).All(r => Selection.Contains(r.Mod)), $"{Selection.Mods.Count}");
+        Input.ParseInputEvent(new InputEventKey { Keycode = Key.Escape, Pressed = true });
+        await Wait(menu, 0.2);
+        Input.ParseInputEvent(new InputEventKey { Keycode = Key.Escape, Pressed = false });
+        Check("Esc lets go of the picked mods, staying on the page", Selection.Mods.Count == 0 && screen.IsVisibleInTree()
+            && rows.All(r => r.GetNodeOrNull<Control>("SpireModManagerPicked") is not { Visible: true }));
     }
 
     // Untick a mod through its real tickbox, review, undo/redo; undo a rename; revert all, and undo that.
