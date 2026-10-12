@@ -441,7 +441,7 @@ Jordan's notes of 2026-10-12 (night), from the details page screenshot.
 - [x] tags use the styled card; Gameplay: "This mod affects gameplay. All players will need it installed for multiplayer."; then, after a gap, the search hint at the bottom in a subtle subheading font
 
 ## Patch notes
-- [ ] "Recently updated" link on the details page (after the status) opens the mod's patch notes (when there are any): id, author, update date, the notes
+- [x] "Recently updated" link on the details page (after the status) opens the mod's patch notes (when there are any): id, author, update date, the notes
 
 ## Tests
 - [x] a mod with very long details (title, description, tags, notes...) as an ongoing screenshot of the edge case; not solved yet
