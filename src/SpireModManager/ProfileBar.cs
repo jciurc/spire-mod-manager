@@ -4,11 +4,11 @@ using MegaCrit.Sts2.Core.Nodes.Screens.ModdingScreen;
 
 namespace SpireModManager;
 
-// Profile picker across the top of the mod list: "Profile: [name ▾]", opening a list of profiles (and
-// their unsaved edits), then the profile's buttons: Save (greyed), New, Rename, Delete on a saved
-// profile; "Unsaved •" Save, Save as new, Revert, Delete on an edited one. Rename and Delete are also on
-// right-click. Rename swaps the picker for a text box (Enter or clicking away renames). Layout starts
-// the list below the bar.
+// Profile picker across the top of the mod list: "Profile: [name ▾]", opening the list of profiles, and
+// "Unsaved •" beside it while the mod list differs from the saved profile. The profile's buttons sit on
+// the right: Save (greyed), New, Rename, Delete when saved; Save, Save as new, Revert, Delete when
+// edited. Rename and Delete are also on right-click. Rename swaps the picker for a text box (Enter or
+// clicking away renames). Layout starts the list below the bar.
 static class ProfileBar
 {
     const float Height = 40;
@@ -72,6 +72,7 @@ static class ProfileBar
         var unsaved = new Label { Name = "Unsaved", Text = Menus.Text("SPIRE_MOD_MANAGER.UNSAVED"), VerticalAlignment = VerticalAlignment.Center };
         Style(unsaved, "res://themes/kreon_regular_shared.tres", 16, new Color(1f, 0.82f, 0.45f));
         row.AddChild(unsaved);
+        row.AddChild(new Control { SizeFlagsHorizontal = Control.SizeFlags.ExpandFill, MouseFilter = Control.MouseFilterEnum.Ignore }); // buttons on the right
         HBoxContainer? inline = null;
 
         void DeleteActive()
@@ -87,7 +88,7 @@ static class ProfileBar
         void Refresh()
         {
             var edited = Profiles.Edited;
-            picker.Text = Profiles.Active is { } active ? edited ? EditedName(active) : active.Name : "";
+            picker.Text = Profiles.Active?.Name ?? "";
             name.Text = Profiles.Active?.Name ?? "";
             unsaved.Visible = edited;
             if (inline != null)
@@ -118,17 +119,12 @@ static class ProfileBar
             row.AddChild(inline);
         }
 
-        // The profile list: each profile, and under it its unsaved edit if it has one.
+        // The profile list, the active one ticked.
         picker.Pressed += () =>
         {
             var items = new List<MenuItem>();
             foreach (var p in Store.Data.Profiles)
-            {
-                var active = p == Profiles.Active;
-                items.Add(new MenuItem(p.Name, () => Profiles.SwitchTo(p, screen), Checked: active && !Profiles.Edited));
-                if (p.Edited != null)
-                    items.Add(new MenuItem(EditedName(p), () => Profiles.SwitchTo(p, screen, edited: true), Checked: active && Profiles.Edited));
-            }
+                items.Add(new MenuItem(p.Name, () => Profiles.SwitchTo(p, screen), Checked: p == Profiles.Active));
             Menus.Show(bar, items);
         };
         picker.GuiInput += e =>
@@ -177,14 +173,6 @@ static class ProfileBar
         Profiles.Switched += Refresh;
         bar.TreeExiting += () => Profiles.Switched -= Refresh;
         Refresh();
-    }
-
-    // "Modded (edited 14:32)", or with the date when it wasn't today.
-    static string EditedName(Profile profile)
-    {
-        var at = profile.EditedAt ?? DateTime.Now;
-        var when = at.Date == DateTime.Today ? at.ToString("HH:mm") : at.ToString("MMM d HH:mm");
-        return Menus.Format("SPIRE_MOD_MANAGER.EDITED_PROFILE", ("name", profile.Name), ("when", when));
     }
 
     // The game's small gold settings arrow, turned to point down, as a texture for the picker.
