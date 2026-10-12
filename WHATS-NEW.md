@@ -9,6 +9,9 @@ Main list
 - Category headers: **Enable all / Disable all** at the far right, over the tickboxes (Uncategorized too). Greyed out when there's nothing to do.
 - Each row's tag line ends with the author, dim: "by symphony".
 
+Relaunch
+- If mods that are on won't load (a needed mod is off or missing), **Relaunch Game** lists them first. **Enable needed mods** and **Disable mods that can't load** fix them right there (undoable). Then **Relaunch**, or **Relaunch anyway**, **Cancel**, or Esc. If nothing's wrong, it relaunches straight away as before.
+
 ## Installed 2026-10-12 (evening): version 0.0.40
 
 Version
@@ -174,3 +177,6 @@ Choices I made on my own; say if any should change.
 - **"Mods enabled N"** includes mods installed this session that are on, since N is what will load after a relaunch. The (+ -) counts only cover mods that were here at launch.
 - **Back from a mod opened via Changes** sits top right. When the mod has a picture, the picture moves down to make room.
 - **The changes list** says "Click a mod to open it." under its title.
+- **Relaunch check** only looks at dependencies. Load order problems don't stop a relaunch, since the game sorts those itself.
+- **The page bar** shows only on the main list, not in Load Order. Expand/Collapse all are greyed while searching (search opens every category anyway).
+- **Category Enable/Disable all** sit at the far right of each header, over the tickbox column. Delete stays with Rename/Up/Down.
