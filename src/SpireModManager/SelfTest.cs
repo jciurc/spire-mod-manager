@@ -735,7 +735,7 @@ static class SelfTest
         var hot = other.GetNode<Control>("SpireModManagerTitleHover");
         var mark = other.GetNode<Control>("SpireModManagerEditedMark");
         var oursHot = ours.GetNode<Control>("SpireModManagerTitleHover");
-        Check("the notepad sits right after the alias, before the original name", mark.Position.X < other.GetNode<Control>("Title").Position.X + hot.Size.X - 20,
+        Check("the notepad sits left of the name, in the room before the title", mark.Position.X + mark.Size.X <= other.GetNode<Control>("Title").Position.X && mark.Position.X >= 0,
             $"mark at {mark.Position.X}, title text {other.GetNode<Control>("Title").Position.X}..+{hot.Size.X}");
         await HoverOver(hot, Hover.Delay - 0.15);
         Check("the title's card waits for the delay", !CardShown());
@@ -1010,7 +1010,7 @@ static class SelfTest
         var selected = Rows().FirstOrDefault(r => r.Mod == CategoryList.Selected);
         Check("category view takes the handles off", !Rows().Any(r => r.HasNode("SpireModManagerHandle"))
             && content.GetChildren().Any(c => c.IsInGroup("SpireModManagerCategoryHeader")));
-        Check("back from Load Order: titles in place", Rows().All(r => r.GetNode<Control>("Title").OffsetLeft == 12),
+        Check("back from Load Order: titles in place", Rows().All(r => r.GetNode<Control>("Title").OffsetLeft == 18),
             string.Join(", ", Rows().Select(r => r.GetNode<Control>("Title").OffsetLeft)));
         Check("back from Load Order: no lines or dimming", !content.GetParent().GetChildren().Any(c => c.IsInGroup("SpireModManagerLinks"))
             && Rows().All(r => r.Modulate == Colors.White));
@@ -1360,6 +1360,23 @@ static class SelfTest
         view?.FindChild("PatchNotesBackButton", true, false)?.EmitSignal(BaseButton.SignalName.Pressed);
         await Wait(menu, 0.2);
         Check("Back returns to the details", view is { Visible: false } && info.GetNode<Control>("ModTitle").Visible);
+
+        // The panel's head for a Workshop mod: Author, Compatibility, then Updated ending in a Patch notes link.
+        mod.state = ModLoadState.AddedAtRuntime;
+        Installed.Detected(mod); // so the panel can find it by id
+        WorkshopInfo.TestSet(42, new WorkshopInfo.Details(DateTime.Now.AddDays(-30), DateTime.Now.AddDays(-4), [], [], 0, null));
+        screen.GetNode<NModInfoContainer>("%ModInfoContainer").Fill(mod);
+        await Wait(menu, 0.3);
+        var headLabel = info.GetNodeOrNull<RichTextLabel>("SpireModManagerHead");
+        var headNow = headLabel?.GetParsedText() ?? "";
+        Check("the head: Author, Compatibility, then Updated with a Patch notes link", headNow.IndexOf("Author") < headNow.IndexOf("Compatibility")
+            && headNow.IndexOf("Compatibility") < headNow.IndexOf("Updated") && headNow.TrimEnd().EndsWith("Patch notes"), headNow);
+        headLabel?.EmitSignal(RichTextLabel.SignalName.MetaClicked, "patchnotes");
+        await Wait(menu, 0.4);
+        Check("the Patch notes link opens them", PatchNotes.Open(info));
+        PatchNotes.Close(info);
+        WorkshopInfo.TestSet(42, null);
+        Installed.Forget(mod);
         PatchNotes.TestFetch = null;
     }
 
