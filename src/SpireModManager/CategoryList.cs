@@ -37,6 +37,17 @@ static class CategoryList
             Layout.Apply(screen);
             RestoreSelection(screen, content);
         }
+        // Load Order is a side trip: the page always opens on the main list (Vanilla View, a preference, stays).
+        if (Store.Data.LoadOrderView)
+        {
+            Store.Data.LoadOrderView = false;
+            Store.Save();
+        }
+        screen.VisibilityChanged += () =>
+        {
+            if (screen.IsVisibleInTree() && Store.Data.LoadOrderView)
+                Switch(false);
+        };
         vanilla = ModEntry.AddButton(screen, "SPIRE_MOD_MANAGER.VANILLA_VIEW", new Vector2(200, 70), () => Switch(true));
         vanilla.Name = "SpireModManagerViewToggle";
         loadOrder = ModEntry.AddButton(screen, "SPIRE_MOD_MANAGER.LOAD_ORDER", new Vector2(200, 70), () => Switch(false));
