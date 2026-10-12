@@ -20,6 +20,7 @@ static class Layout
     const string FocusMeta = "spire_mod_manager_focus_release";
     const string FontMeta = "spire_mod_manager_original_font";
     const string WatermarkMeta = "spire_mod_manager_watermark";
+    const string MinSizeMeta = "spire_mod_manager_min_size";
 
     // Screen-space boxes (left, top, right, bottom) in the game's 1920x1080 layout.
     // The panels sit midway between the page title and the bottom row of buttons.
@@ -75,7 +76,12 @@ static class Layout
         const float thumbWidth = 128, thumbHeight = 72; // 16:9, small: the title and text matter more
         var inset = ModDetails.Inset;
         Place(info.GetNode<Control>("ModTitle"), new Vector4(inset, 10, width - thumbWidth - 40, 52));
-        Place(info.GetNode<Control>("ModImage"), new Vector4(width - thumbWidth - 20, 16, width - 20, 16 + thumbHeight));
+        // The scene gives the image a 500x380 minimum size, which beats any smaller box: lifted in our views.
+        var image = info.GetNode<Control>("ModImage");
+        if (!image.HasMeta(MinSizeMeta))
+            image.SetMeta(MinSizeMeta, image.CustomMinimumSize);
+        image.CustomMinimumSize = Wide ? Vector2.Zero : (Vector2)image.GetMeta(MinSizeMeta);
+        Place(image, new Vector4(width - thumbWidth - 20, 16, width - 20, 16 + thumbHeight));
         Place(info.GetNode<Control>("ModDescription"), new Vector4(inset, 100, width - inset,
             info.Size.Y - ModDetails.ButtonsFromBottom - ModDetails.YoursHeight - 8));
         ViewFont(info.GetNode<MegaRichTextLabel>("ModTitle"), InfoTitleSize);

@@ -416,6 +416,7 @@ static class SelfTest
         Check("panel keeps the original name; notes in the notes field", description.Contains("Spire Mod Manager")
             && yours.GetNode<TextEdit>("Notes").Text == "Fixture note");
         Check("a local mod says so instead of a Workshop link", panel.FindChild("SpireModManagerLink", true, false) is LinkButton { Disabled: true, Text: "Local mod" });
+        Check("the thumbnail stays small (the scene's minimum size lifted)", panel.GetNode<Control>("ModImage").Size.X <= 130, $"{panel.GetNode<Control>("ModImage").Size}");
         await Capture(screen, outDir, "8-details-with-notes");
 
         // Tags and notes typed in the panel save when focus leaves.
