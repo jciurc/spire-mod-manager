@@ -349,7 +349,7 @@ Jordan's notes of 2026-10-12.
 
 Jordan's notes of 2026-10-12 (later).
 
-- [ ] panel fields: Alias, Category, Tags, Notes
-- [ ] "Changes N" without load-order moves (they're next to "Mods enabled")
-- [ ] the profile's mod count next to the picker (the list keeps its details)
-- [ ] (fix) mods subscribed while the page is open appear at the bottom in the game's plain row style; they should look like ours, in place, at once
+- [x] panel fields: Alias, Category, Tags, Notes
+- [x] "Changes N" without load-order moves (they're next to "Mods enabled")
+- [x] the profile's mod count next to the picker (the list keeps its details)
+- [x] (fix) mods subscribed while the page is open appear at the bottom in the game's plain row style; they should look like ours, in place, at once
