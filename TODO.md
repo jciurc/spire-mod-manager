@@ -510,29 +510,32 @@ Jordan's notes of 2026-10-12 (late night).
 Jordan's notes of 2026-10-12 (late night), with screenshots.
 
 ## Info panel
-- [ ] patch notes: "Couldn't load" in the real game: drop the patch notes page (no more requests); "Patch notes" opens the mod's change notes on the Workshop instead
-- [ ] head order back to Author, Updated, Compatibility
-- [ ] "(N days ago)": green under 48 hours; "1 day ago"; under 24 hours "N hour(s) ago"
-- [ ] status still ~1 px lower than the source link
-- [ ] source text: "<id> (SteamID <workshop id>)"
-- [ ] alias: "Add alias" at rest, "An alternative title for the mod" while typing
-- [ ] notes (value and editor) 2 pt smaller
+- [x] patch notes: "Couldn't load" in the real game: drop the patch notes page (no more requests); "Patch notes" opens the mod's change notes on the Workshop instead
+- [x] head order back to Author, Updated, Compatibility
+- [x] "(N days ago)": green under 48 hours; "1 day ago"; under 24 hours "N hour(s) ago"
+- [x] status still ~1 px lower than the source link
+- [x] source text: "<id> (SteamID <workshop id>)"
+- [x] alias: "Add alias" at rest, "An alternative title for the mod" while typing
+- [x] notes (value and editor) 2 pt smaller
 
 ## Rows
-- [ ] notepad even smaller, 1 px up and 1 px left
-- [ ] only the main title (alias) opens the card, not the original name beside it
-- [ ] the pencil to the right of the tickbox
-- [ ] the title is clipped by the tag line: taller rows with less space between them (same pitch)
-- [ ] highlights: hover dimmer, selected (the panel's mod) more visible / sunken; hover, focus, selected and picked the same size, 2 px wider each side, 4 px corners
+- [x] notepad even smaller, 1 px up and 1 px left
+- [x] only the main title (alias) opens the card, not the original name beside it
+- [x] the pencil to the right of the tickbox
+- [x] the title is clipped by the tag line: taller rows with less space between them (same pitch)
+- [x] highlights: hover dimmer, selected (the panel's mod) more visible / sunken; hover, focus, selected and picked the same size, 2 px wider each side, 4 px corners
 
 ## Tooltips and text
-- [ ] grace period also between kinds of card (title card -> tag card)
-- [ ] long titles, authors, tags (and similar): cut with "…" (by the room there when possible); the full text in a native tooltip after 1 s; inside our cards a "Hold Alt to see full text" hint, Alt shows it all in a bigger card
-- [ ] the mod card: half a line before and after the alias
+- [x] grace period also between kinds of card (title card -> tag card)
+- [x] long titles, authors, tags (and similar): cut with "…" (by the room there when possible); the full text in a native tooltip after 1 s; inside our cards a "Hold Alt to see full text" hint, Alt shows it all in a bigger card
+- [x] the mod card: half a line before and after the alias
 
 ## Other
-- [ ] bug: a search can say "Search matches (2)" while the list shows nothing
-- [ ] "All mods (n)" -> "Installed mods (n)"
-- [ ] Gameplay tag: "...will need it enabled for multiplayer."
-- [ ] Library tag: "This is a framework intended to be used by other mods; often has no effect when installed alone"
+- [x] bug: a search can say "Search matches (2)" while the list shows nothing
+- [x] "All mods (n)" -> "Installed mods (n)"
+- [x] Gameplay tag: "...will need it enabled for multiplayer."
+- [x] Library tag: "This is a framework intended to be used by other mods; often has no effect when installed alone"
 - [ ] (backlog, round 15) rework the "requires relaunch" messaging: our own warning instead of the vanilla one, on our page only; a quick relaunch from the main menu or the profile switcher; spike first
+
+## Backlog (round 15)
+- [ ] long text, still: the info panel's title (shrinks, version cut) and source line (runs off the panel); a row with many tags (the line clips at its edge, the author can be cut off)
