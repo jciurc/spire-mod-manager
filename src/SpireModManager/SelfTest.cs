@@ -252,7 +252,8 @@ static class SelfTest
 
         var rowMenu = CategoryList.ShowRowMenu(content, row);
         await Wait(menu, 0.5);
-        Check("row menu lists categories", rowMenu?.ItemCount == Store.Data.Categories.Count + 4, $"{rowMenu?.ItemCount} items");
+        var rowItems = rowMenu == null ? [] : MenuPanel.Labels(rowMenu);
+        Check("row menu lists categories", rowItems.Count == Store.Data.Categories.Count + 2, string.Join(", ", rowItems));
         await Capture(screen, outDir, "5-row-menu");
         rowMenu?.Hide();
 

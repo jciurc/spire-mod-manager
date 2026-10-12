@@ -319,15 +319,15 @@ static class CategoryList
     }
 
     // Categories to move the mod into (its current one ticked), or a new one, named in place.
-    public static PopupMenu? ShowRowMenu(Control content, NModMenuRow row)
+    public static PopupPanel? ShowRowMenu(Control content, NModMenuRow row)
     {
         if (Store.Data.VanillaView || row.Mod?.manifest?.id is not { } id)
             return null;
         var current = Store.InfoFor(id)?.Category is { } name && Categories.Find(name) != null ? name : null;
         var items = new List<MenuItem> { MenuItem.Heading(Menus.Text("SPIRE_MOD_MANAGER.CATEGORY")) };
         foreach (var category in Store.Data.Categories)
-            items.Add(new MenuItem(category.Name, () => Move(category.Name), Checked: category.Name == current));
-        items.Add(new MenuItem(Menus.Text("SPIRE_MOD_MANAGER.UNCATEGORIZED"), () => Move(null), Checked: current == null));
+            items.Add(new MenuItem(category.Name, () => Move(category.Name), Checked: category.Name == current, Radio: true));
+        items.Add(new MenuItem(Menus.Text("SPIRE_MOD_MANAGER.UNCATEGORIZED"), () => Move(null), Checked: current == null, Radio: true));
         items.Add(MenuItem.Heading(""));
         items.Add(new MenuItem(Menus.Text("SPIRE_MOD_MANAGER.NEW_CATEGORY"), () =>
         {
@@ -344,7 +344,7 @@ static class CategoryList
         }
     }
 
-    public static PopupMenu ShowHeaderMenu(Control content, Category category) =>
+    public static PopupPanel? ShowHeaderMenu(Control content, Category category) =>
         Menus.Show(content, HeaderActions(content, category));
 
     // Rename, up, down, delete: the header's right-click menu, and its inline buttons (compact labels).

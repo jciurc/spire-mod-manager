@@ -142,7 +142,7 @@ static class LoadOrder
         ];
     }
 
-    public static PopupMenu ShowRowMenu(Control content, NModMenuRow row, Action redraw) =>
+    public static PopupPanel? ShowRowMenu(Control content, NModMenuRow row, Action redraw) =>
         Menus.Show(content, Actions(content, row, redraw));
 
     // Above the list, outside its scrolling (so it stays put): Auto sort at the right end of the search
