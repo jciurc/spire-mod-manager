@@ -70,7 +70,7 @@ static class History
         Changed?.Invoke();
     }
 
-    // The Modding page opened: what Revert all goes back to.
+    // The Modding page opened: what Revert all goes back to, and where undo starts.
     // The active profile is brought in line with the tickboxes first (it can lag behind, e.g. after mods were
     // installed), as part of the current state rather than a step of its own.
     public static void Enter()
@@ -87,6 +87,13 @@ static class History
         Entered = Take();
         if (_current != null)
             _current = Entered;
+        // Undo and redo cover this visit too, like Revert all: so they never disagree about what's undoable.
+        foreach (var track in new[] { Track.List, Track.Order })
+        {
+            Past[track].Clear();
+            Future[track].Clear();
+        }
+        Changed?.Invoke();
     }
 
     // Nothing to revert: the mod list and our data are as they were when the page opened.
