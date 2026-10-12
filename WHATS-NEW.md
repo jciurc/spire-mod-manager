@@ -4,7 +4,38 @@ Short notes for Jordan: what to look for after each install. Newest first.
 
 ## Not installed yet
 
-- (nothing yet)
+Fixes
+- Main menu **Move button** works: the button moves by as much as the mouse does (no jump), a click puts it down, right-click or Esc cancels, and the hint goes away (also when you leave the menu).
+
+Rows
+- No pencil; a faint ✎ after the name marks mods with your alias, notes or tags.
+- Hover a row for a second: a card with your notes (and the full name if it was cut short).
+- "Required for N enabled mods". Tag tooltips; a purple **Cosmetic** tag when the Workshop tags say skins/visuals/UI/textures.
+- Category headers: the mod count right after the name.
+
+Right-click a mod (or its Category button)
+- Two columns: categories on the left, the mod's **Alias, Notes, Tags** on the right, edited right there.
+- Right-clicking elsewhere closes it and right-clicks what's under the mouse; clicking the same button again closes it; Esc closes it.
+- New category scrolls to its name box.
+
+Info panel
+- Name; "SpireModManager v0.1.0 (Workshop …)" as the link; **Enabled / Disabled / Pending restart**; problems; description; author, dates, size, subscribers, compatibility (each branch once), Workshop tags; dependencies.
+- Click the name to find the mod in the list; click a dependency to scroll to it with a short glow.
+- Fields: **Alias, Category** (a picker), **Notes, Tags** (automatic tags as pills above yours). "Add alias" / "Add notes" / "Add tags" at rest; padded boxes with an inline ✕; Save and Cancel while editing; notes trimmed.
+
+Changes
+- Two lines by Undo: "Mods enabled 23 (+1 -3) ↕2" and "Changes 5" (moves, edits, profile changes). Undo buttons now centred on the row.
+- Hover shows each kind, edits by field (alias, notes…). Click opens the full list (edits list the new alias); click again closes it.
+- Undo, Redo and Revert all no longer open the list or empty the panel; with the list open, ticking a mod keeps it open.
+
+Profiles
+- Unsaved profiles have a red * in the list; hover "Unsaved" to see that profile's own changes (+ / −).
+- Name boxes (profiles, category rename) have an inline ✕ instead of a Clear button.
+
+Search
+- Any case, and spaces ignored ("mod fixes" finds "ModFixes"); after each change the list starts at the top.
+
+"Main Menu" sits a little higher.
 
 ## Installed 2026-10-11, evening
 
@@ -73,3 +104,9 @@ Choices I made on my own; say if any should change.
 - **Load Order profiles**: I took your first option and removed the profile bar there; separate load-order profiles are in the backlog with load order presets.
 - **Main menu button art** is used only on the main menu; the corner button on our pages keeps the game's art.
 - **Notes inside the right-click menu** use a 4-line box in the menu, the same as tags and alias.
+- **Panel field order** is Alias, Category, Notes, Tags: your note said "tags below alias and notes", and the detailed order listed category after alias. If you meant Alias, Category, Tags, Notes, it's a one-line swap.
+- **The ✎ mark** on rows means "has your alias, notes or tags"; it isn't clickable (alias editing is in the menu and the panel now).
+- **Cosmetic** comes only from Workshop tags (skins, visuals, UI, textures, art, animation); local mods never get it.
+- **"Mods enabled"** counts mods that are on, not counting Spire Mod Manager itself.
+- **"Changes N"** adds up moves, edited mods, profiles added or removed, and a switched profile.
+- **Dependencies, clicked**, scroll the list and glow the row but don't change the panel; the panel's name, clicked, just scrolls.
