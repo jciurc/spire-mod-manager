@@ -111,6 +111,15 @@ static class SelfTest
             await TestSearch(menu, screen, content, outDir);
             await TestLoadOrder(menu, screen, content, outDir);
             await TestHistory(menu, screen, content, outDir);
+
+            // Leaving from Load Order: the page comes back on the main list.
+            Click(screen.GetNode<NButton>("SpireModManagerLoadOrderToggle"));
+            await Wait(menu, 0.3);
+            screen.Visible = false;
+            screen.Visible = true;
+            await Wait(menu, 0.3);
+            Check("reopening after Load Order shows the main list", Layout.Current == Layout.View.Categories
+                && screen.GetNode<Control>("%ModInfoContainer").Visible);
         }
         catch (Exception e)
         {
@@ -782,6 +791,12 @@ static class SelfTest
     // drawn over it or eating the click. Returns the control under the mouse, for the report.
     static async Task<string> RealClick(Node menu, Control target)
     {
+        if (DisplayServer.GetName() == "headless") // no mouse there: press it directly
+        {
+            target.EmitSignal(BaseButton.SignalName.Pressed);
+            await Wait(menu, 0.3);
+            return "headless: pressed directly";
+        }
         var at = target.GetGlobalRect().GetCenter();
         Input.ParseInputEvent(new InputEventMouseMotion { Position = at, GlobalPosition = at });
         await Wait(menu, 0.1);
