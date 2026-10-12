@@ -447,7 +447,7 @@ static class CategoryList
             is not { } header)
             return null;
         var title = header.GetNode<Label>("Title");
-        var edit = new LineEdit { Name = "RenameBox", Text = category.Name, Flat = true, SelectAllOnFocus = true, MaxLength = 40 };
+        var edit = new LineEdit { Name = "RenameBox", Text = category.Name, Flat = true, SelectAllOnFocus = true, MaxLength = 40, ClearButtonEnabled = true };
         edit.AddThemeFontOverride("font", title.GetThemeFont("font"));
         edit.AddThemeFontSizeOverride("font_size", title.GetThemeFontSize("font_size"));
         edit.AddThemeColorOverride("font_color", title.GetThemeColor("font_color"));
@@ -467,7 +467,7 @@ static class CategoryList
         warning.AddThemeColorOverride("font_color", new Color(1f, 0.5f, 0.44f));
         edit.AddChild(warning);
         warning.SetAnchorsPreset(Control.LayoutPreset.FullRect);
-        warning.OffsetRight = -8;
+        warning.OffsetRight = -34; // clear of the box's ✕
         string? Problem() => Categories.NameProblem(edit.Text, category);
         void Check() => warning.Text = Problem() ?? "";
         edit.TextChanged += _ => Check();
