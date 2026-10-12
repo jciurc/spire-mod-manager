@@ -207,7 +207,7 @@ static class LoadOrder
             bar.AddChild(line);
             var text = new Label
             {
-                Name = "OrderProblems", Text = Menus.Format("SPIRE_MOD_MANAGER.ORDER_PROBLEMS", ("count", problems.ToString())),
+                Name = "OrderProblems", Text = Menus.Format(problems == 1 ? "SPIRE_MOD_MANAGER.ORDER_PROBLEMS_ONE" : "SPIRE_MOD_MANAGER.ORDER_PROBLEMS", ("count", problems.ToString())),
                 SizeFlagsHorizontal = Control.SizeFlags.ExpandFill, VerticalAlignment = VerticalAlignment.Center,
                 AutowrapMode = TextServer.AutowrapMode.WordSmart,
             };
