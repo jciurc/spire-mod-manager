@@ -4,7 +4,30 @@ Short notes for Jordan: what to look for after each install. Newest first.
 
 ## Not installed yet
 
-- (nothing yet)
+Search (round 15)
+- **Fixed:** a search while scrolled down could show "Search matches (2)" over an empty list. The game's list stops scrolling once everything fits, which left the few matches above the view. The list now jumps to the top when it shrinks to fit (search, Collapse all, collapsing a category).
+
+Rows (round 15)
+- Taller rows with less space between them (same spacing overall), so the title no longer touches the tag line.
+- The **pencil** sits past the tickbox, at the row's far right (the tickbox moved a little left).
+- Highlights: one shape for hover, keyboard, selected and picked rows, 2 px wider each side, 4 px corners. Hover is fainter. The mod shown in the panel looks **sunken** (deeper blue, dark rim).
+- The notepad is smaller, a pixel up and left. Only the main title (the alias) opens the card, not the original name beside it.
+- Long authors and tags are cut with "…". Hover a cut author (or cut original name) for a second to see the whole name in a plain tooltip. A cut tag's card starts with the whole tag.
+
+Tooltips (round 15)
+- Moving from one card's trigger to another (a title to a tag) opens the next card at once.
+- When a card's text is cut short (long notes, alias, tags), it says **"Hold Alt to see the full text"**. Holding Alt shows everything in a wider card.
+- The mod card has a little air before and after the alias.
+
+Info panel (round 15)
+- **Patch notes** opens the mod's change notes on the Workshop in your browser (no more patch notes page, no more requests from the mod).
+- Head order: Author, Updated, Compatibility. "Updated" says "(3 hours ago)", "(1 day ago)" or "(5 days ago)", in green when under two days.
+- Source: "UndoAndRestartButton (SteamID 3794947020)". The status sits a pixel higher, level with it.
+- Alias: "Add alias" at rest, "An alternative title for the mod" while typing. Notes are 2 pt smaller.
+
+Text (round 15)
+- "Installed mods (n)" on the bar under the search.
+- Gameplay tag: "...All players will need it enabled for multiplayer." Library tag: "This is a framework intended to be used by other mods; often has no effect when installed alone".
 
 ## Installed 2026-10-12 (late night): version 0.0.44
 
@@ -270,3 +293,5 @@ Choices I made on my own; say if any should change.
 - **Your own tags** without an outline are a fainter fill of the same colour, to tell them from the automatic ones. Easy to tune.
 - **The update gem** is cleared by opening the mod in the panel (any way: clicking its row, its name somewhere, the changes list).
 - **"Across the board"** includes the thumbnail's full picture (0.2 s before, 0.4 s now), the Changes summary and the Unsaved card (both instant before).
+- **Cut text tooltips** are our own plain tooltip with a 1 s delay, not Godot's. The game sets Godot's tooltip delay once at startup for the whole window, so a per-element 1 s wasn't possible with it. Ours also follows the one-card-at-a-time rule.
+- **Sunken selected look**: a deeper blue fill with a dark rim, heavier along the top. Hover is a faint light-blue tint. Both easy to tune.
