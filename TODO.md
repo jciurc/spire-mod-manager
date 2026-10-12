@@ -359,13 +359,13 @@ Jordan's notes of 2026-10-12 (later).
 Jordan's notes of 2026-10-12 (evening).
 
 ## Rows
-- [ ] all rows a little shorter
-- [ ] pills in the order Local, Library, Gameplay, Cosmetic, then custom; a "Local" tag for local mods
-- [ ] "Required for N" before "Needs: X" (both pages)
-- [ ] a "notepad" icon instead of ✎ for rows with an alias or notes; none in Load Order
-- [ ] a styled pencil button (right side of the row) opening the edit menu; none in Load Order
-- [ ] hover card for every mod: original name (id), enabled state, error, author, updated, custom tags and notes
-- [ ] (fix) the hover card sometimes stays open while using other parts of the page
+- [x] all rows a little shorter
+- [x] pills in the order Local, Library, Gameplay, Cosmetic, then custom; a "Local" tag for local mods
+- [x] "Required for N" before "Needs: X" (both pages)
+- [x] a "notepad" icon instead of ✎ for rows with an alias or notes; none in Load Order
+- [x] a styled pencil button (right side of the row) opening the edit menu; none in Load Order
+- [x] hover card for every mod: original name (id), enabled state, error, author, updated, custom tags and notes
+- [x] (fix) the hover card sometimes stays open while using other parts of the page
 
 ## Load Order
 - [ ] no tickboxes; Enable/Disable in the right-click menu
@@ -394,6 +394,11 @@ Jordan's notes of 2026-10-12 (evening).
 ## Other
 - [ ] Ctrl+S saves the current profile
 - [x] new mod popup: "New Mod Added" / "New mods were detected, and will require a restart to be enabled."; at most one per 30 s
+
+## Added during round 8
+- [ ] (bug) a newly installed mod isn't tracked right in the changes (enabled/disabled); show "Installed X" as its own change, with its (pending) on/off state under it
+- [ ] the pencil button subtle: no background, no outline
+- [ ] (fix) the category and pencil buttons don't line up vertically with the tickbox
 
 ## Backlog (round 8)
 - [ ] tag suggestions: tags already used across mods in a dropdown under the tag box, filtered as you type, arrow keys to pick, comma accepts
