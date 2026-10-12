@@ -555,3 +555,9 @@ Blockers, in order (details and fixes in RELEASE-PLAN.md §2):
 - [ ] uninstall / disable checked and documented
 - [ ] Workshop listing: image, description, tags, change note, dependencies []
 - [ ] a private Workshop upload tested end to end
+
+# Round 17
+
+Jordan's note of 2026-10-12 (late night).
+
+- [ ] Better Mod Menu: no more stepping aside. Both can be on: our views as usual, and Better Mod Menu's page stands in for the vanilla page (it replaces the vanilla page anyway); a warning that running both may behave unexpectedly
