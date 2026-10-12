@@ -64,7 +64,10 @@ static class RowStrip
             strip.OffsetBottom = -4;
 
             foreach (var chip in chips)
-                strip.AddChild(Tags.Make(chip));
+            {
+                var tag = chip.Text;
+                strip.AddChild(Tags.Make(chip, add => Search.ByTag(row, tag, add)));
+            }
 
             var note = new RichTextLabel
             {

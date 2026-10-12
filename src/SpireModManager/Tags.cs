@@ -63,14 +63,28 @@ static class Tags
         return tags.Count > 0 ? tags : null;
     }
 
-    // A chip: tinted fill, border in the chip's colour, small text.
-    public static Control Make(Chip chip)
+    // A chip: tinted fill, border in the chip's colour, small text. clicked: what a click does (told whether
+    // Shift was held); the tooltip says so.
+    public static Control Make(Chip chip, Action<bool>? clicked = null)
     {
+        var tip = chip.Tip ?? Menus.Text(chip.Custom ? "SPIRE_MOD_MANAGER.TAG_CUSTOM_TIP" : "SPIRE_MOD_MANAGER.TAG_AUTO_TIP");
         var box = new PanelContainer
         {
             MouseFilter = Control.MouseFilterEnum.Pass, SizeFlagsVertical = Control.SizeFlags.ShrinkCenter,
-            TooltipText = chip.Tip ?? Menus.Text(chip.Custom ? "SPIRE_MOD_MANAGER.TAG_CUSTOM_TIP" : "SPIRE_MOD_MANAGER.TAG_AUTO_TIP"),
+            TooltipText = clicked == null ? tip : $"{tip}\n{Menus.Text("SPIRE_MOD_MANAGER.TAG_CLICK_TIP")}",
         };
+        if (clicked != null)
+        {
+            (box.MouseFilter, box.MouseDefaultCursorShape) = (Control.MouseFilterEnum.Stop, Control.CursorShape.PointingHand);
+            box.GuiInput += e =>
+            {
+                if (e is not InputEventMouseButton { ButtonIndex: MouseButton.Left } button)
+                    return;
+                box.AcceptEvent(); // not the row's click (or drag) too
+                if (!button.Pressed)
+                    clicked(button.ShiftPressed);
+            };
+        }
         var style = new StyleBoxFlat
         {
             // Automatic tags are filled; the player's own are outline only.

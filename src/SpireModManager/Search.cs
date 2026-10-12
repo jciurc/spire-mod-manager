@@ -5,7 +5,9 @@ using MegaCrit.Sts2.Core.Nodes.Screens.ModdingScreen;
 namespace SpireModManager;
 
 // A search box over the list. Every word typed must appear (any case) in the mod's name, id, author,
-// alias, notes, category or tags, or the whole query, spaces ignored, in one of them. Escape clears it.
+// alias, notes, category or tags, or the whole query, spaces ignored, in one of them. "#tag" (or
+// #"two words") must be one of the mod's tags, whole; clicking a tag on a row searches for it, Shift-click
+// adds it. Escape clears it.
 static class Search
 {
     const float Height = 32;
@@ -15,6 +17,16 @@ static class Search
     {
         if (mod?.manifest is not { } manifest)
             return false;
+        var wanted = TagToken.Matches(filter).Select(m => m.Groups[1].Success ? m.Groups[1].Value : m.Groups[2].Value).ToList();
+        if (wanted.Count > 0)
+        {
+            var tags = Tags.For(mod).Select(c => c.Text).ToList();
+            if (!wanted.All(t => tags.Contains(t, StringComparer.OrdinalIgnoreCase)))
+                return false;
+            filter = TagToken.Replace(filter, " ").Trim();
+            if (filter.Length == 0)
+                return true;
+        }
         var info = Store.InfoFor(manifest.id);
         string?[] fields = [manifest.name, manifest.id, manifest.author, info?.Alias, info?.Notes, info?.Category,
             .. Tags.For(mod).Select(c => c.Text), .. WorkshopInfo.For(mod)?.Tags ?? []];
@@ -24,6 +36,20 @@ static class Search
         var squeezed = Squeeze(filter);
         return filter.Split(' ', StringSplitOptions.RemoveEmptyEntries).All(word => haystack.Contains(word, StringComparison.OrdinalIgnoreCase))
             || fields.Any(f => f != null && Squeeze(f).Contains(squeezed, StringComparison.OrdinalIgnoreCase));
+    }
+
+    static readonly System.Text.RegularExpressions.Regex TagToken = new(@"#""([^""]+)""|#(\S+)");
+
+    // A tag clicked on a row: search for it; with Shift, add it to what's searched already.
+    public static void ByTag(Node near, string tag, bool add)
+    {
+        if (CategoryList.ScreenOf(near)?.GetNodeOrNull<LineEdit>("ModsBorder/SpireModManagerSearch") is not { } box)
+            return;
+        var token = tag.Contains(' ') ? $"#\"{tag}\"" : $"#{tag}";
+        var text = !add || box.Text.Trim().Length == 0 ? token : box.Text.Contains(token) ? box.Text : $"{box.Text.TrimEnd()} {token}";
+        box.Text = text;
+        box.CaretColumn = text.Length;
+        box.EmitSignal(LineEdit.SignalName.TextChanged, text);
     }
 
     static string Squeeze(string text) => string.Concat(text.Where(c => !char.IsWhiteSpace(c)));
