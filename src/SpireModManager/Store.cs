@@ -161,6 +161,18 @@ public static class Store
     }
 
     public static ModInfo? InfoFor(string? modId) => modId != null && Data.Mods.TryGetValue(modId, out var info) ? info : null;
+
+    // Changes one mod's details and saves. A mod left with nothing of ours (no category, alias, notes or tags)
+    // loses its entry, so clearing everything reads as "unchanged", not as an edit.
+    public static void EditMod(string modId, Action<ModInfo> change)
+    {
+        if (!Data.Mods.TryGetValue(modId, out var info))
+            Data.Mods[modId] = info = new ModInfo();
+        change(info);
+        if (info is { Category: null, Alias: null, Notes: null, Tags: null })
+            Data.Mods.Remove(modId);
+        Save();
+    }
 }
 
 // One-time import of Better Mod Menu's mod_profiles.json (read-only; its file is never changed).
