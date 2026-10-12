@@ -132,7 +132,9 @@ static class ModToggledPatch
 {
     static void Postfix(NModdingScreen __instance)
     {
-        if (ModEntry.BetterModMenuLoaded) // paused while it runs the screen (see ModdingScreenPatch)
+        // Not while the screen is still adding its rows (it calls this once per row as it opens; ours are set up
+        // after), and not while Better Mod Menu runs the screen (see ModdingScreenPatch).
+        if (ModEntry.BetterModMenuLoaded || HistoryBar.Screen != __instance)
             return;
         try
         {

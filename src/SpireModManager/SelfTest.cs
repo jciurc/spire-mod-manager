@@ -927,6 +927,14 @@ static class SelfTest
             && Rows().All(r => r.HasNode("SpireModManagerHandle"))
             && !content.GetChildren().Any(c => c.IsInGroup("SpireModManagerCategoryHeader")), string.Join(", ", start));
         Check("nothing pending before moving", !pending.Visible && !ModEntry.HasPendingChanges());
+        // Leaving and coming back: the rows' drag handlers aren't connected again (one press, one drag).
+        int Handlers() => Rows()[0].GetSignalConnectionList(Control.SignalName.GuiInput).Count + Rows()[0].GetSignalConnectionList(Control.SignalName.MouseEntered).Count;
+        var wired = Handlers();
+        Click(screen.GetNode<NButton>("SpireModManagerLoadOrderToggle"));
+        await Wait(menu, 0.3);
+        Click(screen.GetNode<NButton>("SpireModManagerLoadOrderToggle"));
+        await Wait(menu, 0.5);
+        Check("a second visit to Load Order adds no handlers to the rows", Handlers() == wired && Store.Data.LoadOrderView, $"{wired} -> {Handlers()}");
 
         // Moves use a mod with no dependencies either way, so no order rule can block them.
         const string free = "LocalModFixes";
