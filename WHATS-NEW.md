@@ -4,7 +4,12 @@ Short notes for Jordan: what to look for after each install. Newest first.
 
 ## Not installed yet
 
-- (nothing yet)
+Rows (round 14)
+- No more red "recently updated" mark.
+- The notepad (your alias or notes) sits **left of the mod's name**. Titles moved right a few pixels to make room on every row, so they stay lined up.
+
+Info panel (round 14)
+- Head order: Author, Compatibility, Updated. Updated ends with a blue **Patch notes** link for Workshop mods, e.g. "October 7, 2026 (4 days ago)  Patch notes". The link next to the status is gone.
 
 ## Installed 2026-10-12 (late night): version 0.0.43
 
