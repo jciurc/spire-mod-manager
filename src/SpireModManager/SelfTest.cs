@@ -332,7 +332,7 @@ static class SelfTest
         var headerMenu = CategoryList.ShowHeaderMenu(content, category);
         await Wait(menu, 0.5);
         await Capture(screen, outDir, "6-header-menu");
-        headerMenu.Hide();
+        headerMenu?.Hide();
 
         Categories.Delete(category);
         CategoryList.Apply(content);

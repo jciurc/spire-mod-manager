@@ -18,9 +18,6 @@ static class History
     public record ModEntry(string Id, ModSource Source, bool Enabled);
     public record Snapshot(string Store, IReadOnlyList<ModEntry> Mods);
 
-    // The last profile switch this session: who it was from, and the mod list right after it.
-    public record Switch(string From, string To, IReadOnlyList<ModEntry> After);
-
     const int Limit = 200;
     static readonly Dictionary<Track, List<Snapshot>> Past = new() { [Track.List] = [], [Track.Order] = [] };
     static readonly Dictionary<Track, List<Snapshot>> Future = new() { [Track.List] = [], [Track.Order] = [] };
@@ -35,7 +32,6 @@ static class History
 
     public static Snapshot? Loaded { get; private set; }
     public static Snapshot? Entered { get; private set; }
-    public static Switch? LastSwitch { get; private set; }
     public static string? LaunchProfile { get; private set; }
 
     public static Track CurrentTrack => Layout.Current == Layout.View.LoadOrder ? Track.Order : Track.List;
@@ -98,8 +94,6 @@ static class History
 
     // Nothing to revert: the mod list and our data are as they were when the page opened.
     public static bool AtEntered => Entered is { } e && Take() is var now && now.Store == e.Store && SameStates(now, e) && SameOrder(now, e);
-
-    public static void NoteSwitch(string from, string to) => LastSwitch = new Switch(from, to, CurrentMods());
 
     // For a view switch, which changes the history the buttons act on.
     public static void NotifyChanged() => Changed?.Invoke();

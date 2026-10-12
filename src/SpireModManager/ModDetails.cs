@@ -392,13 +392,6 @@ static class ModDetails
         RefreshRows(container);
     }
 
-    public static void Save(string modId, string alias, string notes, string tags = "") => Edit(modId, info =>
-    {
-        info.Alias = alias.Trim() is { Length: > 0 } a ? a : null;
-        info.Notes = notes.Trim() is { Length: > 0 } n ? n : null;
-        info.Tags = Tags.Parse(tags);
-    });
-
     public enum Detail { Alias, Notes, Tags }
 
     // "Add alias" / "Edit alias" (and notes, tags) for a mod's right-click menu: the menu turns into a small
