@@ -626,7 +626,7 @@ static class SelfTest
         var notes = yours.GetNode<TextEdit>("Notes/Box");
         var titleText = panel.GetNode<RichTextLabel>("ModTitle").GetParsedText();
         Check("panel titles with the mod's own name, the version beside it (no v); the alias is in its field",
-            titleText.StartsWith("Spire Mod Manager") && titleText.TrimEnd().EndsWith(" 0.1.0") && !titleText.Contains("v0.1.0")
+            titleText.StartsWith("Spire Mod Manager") && Dependencies.Find(ModEntry.ModId)?.manifest?.version is { } version && titleText.TrimEnd().EndsWith(" " + version) && !titleText.Contains("v" + version)
             && Line("Alias").Text == "The Manager" && notes.Text == "Fixture note");
         var linkText = (panel.FindChild("SpireModManagerLink", true, false) as LinkButton)?.Text ?? "";
         Check("the source line: id (Local), then Enabled", panel.FindChild("SpireModManagerLink", true, false) is LinkButton { Disabled: true }
