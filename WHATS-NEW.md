@@ -4,7 +4,13 @@ Short notes for Jordan: what to look for after each install. Newest first.
 
 ## Not installed yet
 
-- (nothing yet)
+Info panel
+- Click a mod's name (the title, or a dependency) to scroll to it in the list. It takes the blue "selected" look, but the panel stays on the mod you were reading.
+- Hover a dependency's name: its row lights up if it's in view (nothing scrolls), and its card shows after half a second. The changes list's names do the same.
+- Workshop mods: after the status, **Recently updated** (red, updated in the last week) or **Patch notes**. It opens the mod's change notes from the Workshop in the panel: name, id, author, last update, then each update's notes, newest first. **Back** returns.
+
+Faster
+- Redraws on your full list: about 21 ms, down from 37–49.
 
 ## Installed 2026-10-12 (night): version 0.0.41
 
@@ -207,3 +213,6 @@ Choices I made on my own; say if any should change.
 - **Relaunch check** only looks at dependencies. Load order problems don't stop a relaunch, since the game sorts those itself.
 - **The page bar** shows only on the main list, not in Load Order. Expand/Collapse all are greyed while searching (search opens every category anyway).
 - **Category Enable/Disable all** sit at the far right of each header, over the tickbox column. Delete stays with Rename/Up/Down.
+- **Patch notes** come from the Workshop's change notes page (one request per mod, only when you open them). Steam limits how often that page can be read, so it may say "Couldn't load" for a while after many requests.
+- **"Patch notes"** shows for every Workshop mod. "Recently updated" (red) is the same link, used when the update is under a week old.
+- **Clicking a name** in the panel no longer flashes the row gold. It gives the row the game's blue "selected" look instead (it really takes focus, like a keyboard selection).
