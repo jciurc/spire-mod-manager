@@ -149,7 +149,31 @@ static class ModToggledPatch
     }
 }
 
-// Info panel: alias, the player's notes and the Edit Notes / Workshop Page buttons, after the game fills it.
+// A mod subscribed while the page is open: the game adds its row at the bottom, in its own style. Once it's
+// in, a redraw puts it in its category, in our style.
+[HarmonyPatch(typeof(NModdingScreen), "OnNewModDetected")]
+static class NewModPatch
+{
+    static void Postfix(NModdingScreen __instance)
+    {
+        if (ModEntry.BetterModMenuLoaded || HistoryBar.Screen != __instance)
+            return; // the screen's own setup (our parts come after), or Better Mod Menu's screen
+        __instance.GetTree().CreateTimer(0.05).Timeout += () =>
+        {
+            try
+            {
+                if (GodotObject.IsInstanceValid(__instance))
+                    CategoryList.Redraw(__instance.GetNode<Control>("%ModsScrollContainer/Mask/Content"));
+            }
+            catch (Exception e)
+            {
+                Log.Error($"[{ModEntry.ModId}] Could not place a newly installed mod: {e}");
+            }
+        };
+    }
+}
+
+// Info panel: our details and the player's fields, after the game fills it.
 [HarmonyPatch(typeof(NModInfoContainer), nameof(NModInfoContainer.Fill))]
 static class ModInfoFillPatch
 {

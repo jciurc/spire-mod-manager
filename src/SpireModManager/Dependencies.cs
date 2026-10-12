@@ -32,7 +32,7 @@ static class Dependencies
     // Enabled mods placed before an enabled mod they need.
     public static List<(Mod Mod, Mod Needs)> OrderViolations(IReadOnlyList<Mod> order)
     {
-        var index = order.Select((m, i) => (m, i)).ToDictionary(p => p.m, p => p.i);
+        var index = order.Select((m, i) => (m, i)).DistinctBy(p => p.m).ToDictionary(p => p.m, p => p.i);
         return order.Where(IsOn)
             .SelectMany(m => Of(m).Select(Find).OfType<Mod>().Where(d => IsOn(d) && index.TryGetValue(d, out var i) && i > index[m])
                 .Select(d => (m, d)))
@@ -41,8 +41,9 @@ static class Dependencies
 
     // The order with every enabled dependency moved just ahead of what needs it, otherwise keeping the
     // current order (the same rule the game applies at launch: a stable topological sort).
-    public static List<Mod> Fixed(IReadOnlyList<Mod> order)
+    public static List<Mod> Fixed(IReadOnlyList<Mod> given)
     {
+        var order = given.Distinct().ToList(); // a mod listed twice counts once
         var position = order.Select((m, i) => (m, i)).ToDictionary(p => p.m, p => p.i);
         var waitingOn = order.ToDictionary(m => m, m => IsOn(m)
             ? Of(m).Select(Find).OfType<Mod>().Where(d => IsOn(d) && position.ContainsKey(d) && d != m).Distinct().Count()
