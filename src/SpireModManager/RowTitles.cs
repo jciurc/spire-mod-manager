@@ -5,22 +5,20 @@ using MegaCrit.Sts2.addons.mega_text;
 
 namespace SpireModManager;
 
-/// Row titles in our views: the alias with the original name small and dim beside it (or just the name),
+// Row titles in our views: the alias with the original name small and dim beside it (or just the name),
 // cut short with "…" when it doesn't fit; right after the alias (or name), a small notepad when the player has
-// an alias or notes for it (main list); a red gem before it when the Workshop updated it lately and the player
-// hasn't opened it since. Hovering the title shows the mod's card (Hover's delay), the notepad at once, the
-// gem says when it was updated. Titles of mods turned on or off since launch are gold. Vanilla View:
-// exactly as the game makes them.
+// an alias or notes for it (main list). Hovering the title shows the mod's card (Hover's delay), the notepad
+// at once. Titles of mods turned on or off since launch are gold. Vanilla View: exactly as the game makes them.
 static class RowTitles
 {
     const int OriginalNameSize = 16;
-    const float TitleShift = 12; // a little room before the title in our views (the gem sits there)
+    const float TitleShift = 12; // a little room before the title in our views
     const string ShiftMeta = "spire_mod_manager_title_shift";
     const string NotesCard = "SpireModManagerNotesCard";
     public const int RecentDays = 7; // "updated lately"
 
     public const float RowHeight = 48; // our views (the game's: 72)
-    const string MarkName = "SpireModManagerEditedMark", HotName = "SpireModManagerTitleHover", GemName = "SpireModManagerUpdatedGem";
+    const string MarkName = "SpireModManagerEditedMark", HotName = "SpireModManagerTitleHover";
 
     public static void Apply(IEnumerable<NModMenuRow> rows, bool vanilla)
     {
@@ -47,7 +45,7 @@ static class RowTitles
             title.Text = Escape(name);
             Layout.FontSize(title, vanilla ? Layout.RowTitleVanillaSize : Layout.RowTitleSize);
             // Shown again by Fit, in our views.
-            foreach (var part in new[] { MarkName, HotName, GemName })
+            foreach (var part in new[] { MarkName, HotName })
                 if (row.GetNodeOrNull<Control>(part) is { } old)
                     old.Visible = false;
             if (!vanilla)
@@ -62,7 +60,7 @@ static class RowTitles
         MarkChanged(rows, vanilla);
     }
 
-    // The title text cut to fit; then the notepad, the hover area over the text, and the gem, placed by it.
+    // The title text cut to fit; then the notepad and the hover area over the text, placed by it.
     static void Fit(NModMenuRow row, string name, string? alias, bool marked)
     {
         if (!GodotObject.IsInstanceValid(row) || row.Mod is not { } mod)
@@ -121,21 +119,6 @@ static class RowTitles
             mark.Position = new Vector2(title.Position.X + mainWidth + 6, top + (lineHeight - markSize.Y) / 2);
         }
 
-        // Updated on the Workshop lately, and not opened since: a red gem before the title.
-        if (Unseen(mod) is { } workshop)
-        {
-            var gem = row.GetNodeOrNull<TextureRect>(GemName);
-            if (gem == null)
-            {
-                gem = new TextureRect { Name = GemName, Texture = Icons.Gem, StretchMode = TextureRect.StretchModeEnum.Keep, MouseFilter = Control.MouseFilterEnum.Pass };
-                row.AddChild(gem);
-                Hover.Watch(gem, NotesCard, () => row.Mod is { } shown && WorkshopInfo.For(shown) is { } info
-                    ? Menus.Format("SPIRE_MOD_MANAGER.TAG_UPDATED_TIP", ("date", ModDetails.Date(info.Updated))) : null, width: 420);
-            }
-            gem.Visible = true;
-            gem.Position = new Vector2(title.Position.X - 12, top + (lineHeight - Icons.Gem.GetHeight()) / 2);
-        }
-
         string Cut(string full, int size, float width)
         {
             if (Width(full, size) <= width)
@@ -191,26 +174,6 @@ static class RowTitles
         rounded.SetCornerRadiusAll(CornerRadius);
         look.AddThemeStyleboxOverride("panel", rounded);
     }
-
-    // Its Workshop details when it was updated lately and the player hasn't opened it since.
-    public static WorkshopInfo.Details? Unseen(Mod mod) =>
-        WorkshopInfo.For(mod) is { } workshop && (DateTime.Now - workshop.Updated).TotalDays < RecentDays
-        && mod.manifest?.id is { } id && Store.Data.SeenUpdates.GetValueOrDefault(id) < Unix(workshop.Updated) ? workshop : null;
-
-    // The mod was opened in the panel: its gem goes (until its next update). Remembered across sessions.
-    public static void Seen(Mod mod, Node near)
-    {
-        if (Unseen(mod) is not { } workshop || mod.manifest?.id is not { } id)
-            return;
-        Store.Data.SeenUpdates[id] = Unix(workshop.Updated);
-        Store.Save();
-        if (CategoryList.ScreenOf(near)?.GetNodeOrNull<Control>("%ModsScrollContainer/Mask/Content") is { } content)
-            foreach (var row in content.GetChildren().OfType<NModMenuRow>().Where(r => r.Mod == mod))
-                if (row.GetNodeOrNull<Control>(GemName) is { } gem)
-                    gem.Visible = false;
-    }
-
-    static long Unix(DateTime local) => new DateTimeOffset(local).ToUnixTimeSeconds();
 
     static string Escape(string text) => text.Replace("[", "[lb]");
 }

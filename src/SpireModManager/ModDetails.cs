@@ -54,7 +54,6 @@ static class ModDetails
         if (Meta(container, ModIdMeta) != (id ?? ""))
             HistoryBar.HideBack(container); // another mod: no way back to the changes list (the same one refilled keeps it)
         PatchNotes.Close(container); // a mod picked (or refilled): its details again
-        RowTitles.Seen(mod, container); // opened: its "updated" gem goes
         container.SetMeta(ModIdMeta, id ?? "");
         container.SetMeta(FolderMeta, mod.path);
 
