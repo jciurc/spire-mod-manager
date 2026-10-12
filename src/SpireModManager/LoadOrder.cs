@@ -19,6 +19,7 @@ static class LoadOrder
     const float LinkGutter = 18; // left strip for the dependency lines
     const string LinkGroup = "SpireModManagerLinks";
     const string DraggingMeta = "spire_mod_manager_dragging";
+    const string ScrollHookMeta = "spire_mod_manager_scroll_hook";
     static readonly Color Gold = new(0.937f, 0.784f, 0.318f);
     static readonly Color Blocked = new(0.9f, 0.25f, 0.25f);
     static readonly Color LinkFine = new(0.62f, 0.86f, 0.62f);
@@ -40,6 +41,16 @@ static class LoadOrder
     // Rows in load order with handles and numbers; `matches` is the search filter.
     public static void Apply(Control content, List<NModMenuRow> rows, Func<NModMenuRow, bool> matches, Action redraw)
     {
+        // Scrolling (the wheel too) moves the rows under a still mouse: the hover lines follow.
+        if (!content.HasMeta(ScrollHookMeta))
+        {
+            content.SetMeta(ScrollHookMeta, true);
+            content.ItemRectChanged += () =>
+            {
+                if (Store.Data.LoadOrderView && !content.HasMeta(DraggingMeta))
+                    HoverLinks(content);
+            };
+        }
         var list = SaveManager.Instance.SettingsSave.ModSettings?.ModList ?? [];
         var ordered = rows.OrderBy(r => IndexOf(r.Mod, list)).ToList();
         for (var i = 0; i < ordered.Count; i++)
@@ -302,12 +313,12 @@ static class LoadOrder
         row.AddChild(picked);
         row.MoveChild(picked, 0);
 
-        // The whole row is the drag handle (the grip just shows it). A press picks the row (Ctrl toggles,
-        // Shift picks a range: those only change the selection); moving past a few pixels starts the drag,
-        // and the drop saves. A click without a drag on a row of a multi-selection picks just that row.
+        // The whole row is the drag handle (the grip just shows it). A press picks the row and starts the drag
+        // at once (lit links, the drop line); the drop saves. Ctrl and Shift only change the selection. A
+        // press and release without moving is a click: on a row of a multi-selection it picks just that row.
         // Rows outlive this view, so the handler does nothing outside Load Order.
-        var pressed = false;
         var dragging = false;
+        var moved = false; // past a few pixels: a drag, not a click
         var pressAt = Vector2.Zero;
         var mouseY = 0f; // where the last mouse event put the pointer
         ColorRect? marker = null;
@@ -323,39 +334,37 @@ static class LoadOrder
                     row.AcceptEvent();
                     break;
                 case InputEventMouseButton { ButtonIndex: MouseButton.Left, Pressed: true } press:
-                    pressed = true;
                     pressAt = press.GlobalPosition;
                     mouseY = press.GlobalPosition.Y;
                     if (row.Mod is not { } grabbed || !Picked.Contains(grabbed))
                         Pick(content, row, toggle: false, range: false);
                     CategoryList.Select(content, row); // grabbing a row selects it too
+                    dragging = true;
+                    moved = false;
+                    marker = new ColorRect { Color = Gold, Size = new Vector2(content.Size.X, 5), MouseFilter = Control.MouseFilterEnum.Ignore };
+                    content.GetParent().AddChild(marker); // the scroll mask: not a container, so it can sit anywhere
+                    content.GetTree().ProcessFrame += DragFrame;
+                    BeginDragLook(content, row);
                     row.AcceptEvent(); // not a scroll of the list
                     break;
-                case InputEventMouseMotion motion when pressed:
+                case InputEventMouseMotion motion when dragging:
                     mouseY = motion.GlobalPosition.Y;
-                    if (!dragging && motion.GlobalPosition.DistanceTo(pressAt) > DragStart)
-                    {
-                        dragging = true;
-                        marker = new ColorRect { Color = Gold, Size = new Vector2(content.Size.X, 5), MouseFilter = Control.MouseFilterEnum.Ignore };
-                        content.GetParent().AddChild(marker); // the scroll mask: not a container, so it can sit anywhere
-                        content.GetTree().ProcessFrame += DragFrame;
-                        BeginDragLook(content, row);
-                    }
+                    moved |= motion.GlobalPosition.DistanceTo(pressAt) > DragStart;
                     row.AcceptEvent(); // the marker, lines and edge scrolling update every frame (DragFrame)
                     break;
-                case InputEventMouseButton { ButtonIndex: MouseButton.Left, Pressed: false } release when pressed:
-                    pressed = false;
-                    row.AcceptEvent();
-                    if (!dragging)
-                    {
-                        Pick(content, row, toggle: false, range: false);
-                        break;
-                    }
+                case InputEventMouseButton { ButtonIndex: MouseButton.Left, Pressed: false } release when dragging:
                     dragging = false;
+                    row.AcceptEvent();
                     content.GetTree().ProcessFrame -= DragFrame;
                     marker?.QueueFree();
                     marker = null;
                     EndDragLook(content);
+                    if (!moved)
+                    {
+                        Pick(content, row, toggle: false, range: false);
+                        ShowLinks(content, row, strong: false); // still hovering it
+                        break;
+                    }
                     var rows = content.GetChildren().OfType<NModMenuRow>().ToList();
                     // Drops are allowed even where they break a dependency: the red line and the warning bar say so.
                     // A multi-selection moves as one block.
@@ -510,6 +519,17 @@ static class LoadOrder
             line.AddToGroup(LinkGroup);
             mask.AddChild(line);
         }
+    }
+
+    // Lines for whichever row is under the mouse now, or none.
+    static void HoverLinks(Control content)
+    {
+        var mouse = content.GetGlobalMousePosition();
+        var mask = content.GetParent<Control>().GetGlobalRect();
+        if (mask.HasPoint(mouse) && content.GetChildren().OfType<NModMenuRow>().FirstOrDefault(r => r.Visible && r.GetGlobalRect().HasPoint(mouse)) is { } row)
+            ShowLinks(content, row, strong: false);
+        else
+            HideLinks(content);
     }
 
     public static void HideLinks(Control content)
