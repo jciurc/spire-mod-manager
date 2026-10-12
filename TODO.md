@@ -491,3 +491,16 @@ Jordan's notes of 2026-10-12 (night).
 
 ## Backlog (round 13)
 - [ ] a "Spire Mod Manager" mark on vanilla-looking popups of ours (delete profile, other destructive confirmations)
+
+# Round 14
+
+Jordan's notes of 2026-10-12 (late night).
+
+- [x] install the latest (0.0.43)
+- [ ] no "recently updated" mark on rows
+- [ ] side panel: the patch notes link moves to the end of the Updated line, after "(N days ago)": "Patch notes" in blue
+- [ ] head order: Author, Compatibility, Updated
+- [ ] the notepad to the left of the mod's name (Jordan's note was cut off after "if the original": ask)
+
+## Backlog (round 14)
+- [ ] click-to-search toggles: clicking a term that's the whole search clears it; with another search, a click replaces it (a second click removes it); Shift-click adds the term, or removes it if it's there already (tidying spaces), keeping the rest
