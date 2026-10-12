@@ -8,8 +8,8 @@ namespace SpireModManager;
 
 // A profile is a snapshot of every mod's on/off state, by id + source like the game's mod list.
 // Changing the mod list doesn't change the saved profile: it becomes the profile's unsaved edit, shown as
-// "Unsaved" with Save, Save as new and Revert. Switching away without saving keeps the edit as a profile
-// of its own, "Name (edited 14:32)", so it is never lost.
+// "Unsaved" with Save, Save as new and Discard. Switching away keeps the edit with its profile ("Name *"
+// in the list); coming back restores it, so it is never lost.
 // Mods a profile has never seen are off in it. Spire Mod Manager itself is always on.
 static class Profiles
 {
@@ -73,19 +73,13 @@ static class Profiles
         Switched?.Invoke(); // the bar shows "Unsaved" or not
     }
 
-    // Writes a profile's saved state to the mod list and makes it active. Leaving a profile with unsaved
-    // changes keeps them as a profile of their own, "Name (edited 14:32)", next to it.
+    // Writes a profile to the mod list and makes it active: its unsaved edit if it has one (so leaving a
+    // profile and coming back finds it as it was), its saved state otherwise.
     public static void SwitchTo(Profile target, NModdingScreen screen)
     {
         var from = Active;
-        Track();
-        if (from != null && from != target && from.Edited is { } edit)
-        {
-            var list = Store.Data.Profiles;
-            list.Insert(list.IndexOf(from) + 1, new Profile { Name = UniqueName(EditedName(from)), Mods = edit });
-            (from.Edited, from.EditedAt) = (null, null);
-        }
-        Apply(target.Mods, screen);
+        Track(); // the profile being left keeps its edit
+        Apply(target.Edited ?? target.Mods, screen);
         Store.Data.ActiveProfile = target.Name;
         Store.Save();
         Track(); // mods the profile hasn't seen are off now; that's still its saved state
@@ -95,21 +89,13 @@ static class Profiles
         Switched?.Invoke();
     }
 
-    // "Modded (edited 14:32)", or with the date when it wasn't today.
-    static string EditedName(Profile profile)
-    {
-        var at = profile.EditedAt ?? DateTime.Now;
-        var when = at.Date == DateTime.Today ? at.ToString("HH:mm") : at.ToString("MMM d HH:mm");
-        return Menus.Format("SPIRE_MOD_MANAGER.EDITED_PROFILE", ("name", profile.Name), ("when", when));
-    }
-
     // The unsaved edit becomes the profile's saved state.
     public static void Save()
     {
         if (Active is not { } profile)
             return;
         profile.Mods = Merge(profile.Mods, Current());
-        (profile.Edited, profile.EditedAt) = (null, null);
+        (profile.Edited, profile.EditedAt, profile.SavedAt) = (null, null, DateTime.Now);
         Store.Save();
         Switched?.Invoke();
     }
@@ -126,21 +112,77 @@ static class Profiles
         Switched?.Invoke();
     }
 
-    // The current mod list as a new profile, which becomes active; the old profile goes back to its saved
-    // state (its edit now lives in the new one).
-    public static Profile SaveAsNew(NModdingScreen screen)
+    public enum NewKind { Blank, Duplicate, SaveAsNew }
+
+    // A new profile, made active:
+    // - Blank: nothing on but this mod;
+    // - Duplicate: a copy of the active profile's saved state (the active one keeps any unsaved edit);
+    // - SaveAsNew: the mod list as it is now (the active profile's edit moves into it).
+    public static Profile Create(NewKind kind, string name, NModdingScreen screen)
     {
         var from = Active;
-        var profile = Add();
-        if (from != null)
-            (from.Edited, from.EditedAt) = (null, null);
-        Store.Data.ActiveProfile = profile.Name;
-        Store.Save();
-        if (from != null)
-            History.NoteSwitch(from.Name, profile.Name);
-        screen.OnModEnabledOrDisabled();
-        Switched?.Invoke();
+        var mods = kind switch
+        {
+            NewKind.Blank => Installed().Select(m => new ProfileMod(m.Id, m.Source, m.Id == ModEntry.ModId)).ToList(),
+            NewKind.Duplicate when from != null => from.Mods.ToList(),
+            _ => Current(),
+        };
+        var profile = new Profile { Name = name, Mods = mods, SavedAt = DateTime.Now };
+        var list = Store.Data.Profiles;
+        list.Insert(from != null && kind != NewKind.Blank ? list.IndexOf(from) + 1 : list.Count, profile);
+        if (kind == NewKind.SaveAsNew)
+        {
+            if (from != null)
+                (from.Edited, from.EditedAt) = (null, null);
+            Store.Data.ActiveProfile = profile.Name;
+            Store.Save();
+            if (from != null)
+                History.NoteSwitch(from.Name, profile.Name);
+            screen.OnModEnabledOrDisabled();
+            Switched?.Invoke();
+        }
+        else
+            SwitchTo(profile, screen);
         return profile;
+    }
+
+    // Why a name can't be used, or null: empty, or another profile has it.
+    public static string? NameProblem(string name, Profile? renaming = null)
+    {
+        name = name.Trim();
+        if (name.Length == 0)
+            return Menus.Text("SPIRE_MOD_MANAGER.NAME_EMPTY");
+        return Store.Data.Profiles.Any(p => p != renaming && p.Name == name)
+            ? Menus.Format("SPIRE_MOD_MANAGER.NAME_TAKEN", ("name", name))
+            : null;
+    }
+
+    // "Modded" -> "Modded (1)", or the first free number; "Modded (1)" -> "Modded (2)".
+    public static string CopyName(string name)
+    {
+        var bare = System.Text.RegularExpressions.Regex.Replace(name, @" \(\d+\)$", "");
+        for (var n = 1; ; n++)
+            if (Store.Data.Profiles.All(p => p.Name != $"{bare} ({n})"))
+                return $"{bare} ({n})";
+    }
+
+    // "Profile 3": the first free number.
+    public static string NewName()
+    {
+        for (var n = Store.Data.Profiles.Count + 1; ; n++)
+        {
+            var name = Menus.Format("SPIRE_MOD_MANAGER.NEW_PROFILE_NAME", ("n", n.ToString()));
+            if (Store.Data.Profiles.All(p => p.Name != name))
+                return name;
+        }
+    }
+
+    // For the profile list: "12 mods · Oct 11" (mods on, when last saved).
+    public static string Details(Profile profile)
+    {
+        var on = (profile.Edited ?? profile.Mods).Count(m => m.Enabled && m.Id != ModEntry.ModId);
+        var text = Menus.Format(on == 1 ? "SPIRE_MOD_MANAGER.PROFILE_MODS_ONE" : "SPIRE_MOD_MANAGER.PROFILE_MODS", ("count", on.ToString()));
+        return profile.SavedAt is { } saved ? $"{text} · {saved:MMM d}" : text;
     }
 
     static void Apply(List<ProfileMod> mods, NModdingScreen screen)
@@ -190,10 +232,10 @@ static class Profiles
 
     public static void NotifySwitched() => Switched?.Invoke();
 
-    // A new profile starting from the current mod list.
+    // A new profile starting from the current mod list (the first one, on first use).
     public static Profile Add(string? name = null)
     {
-        var profile = new Profile { Name = name ?? UniqueName(), Mods = Current() };
+        var profile = new Profile { Name = name ?? NewName(), Mods = Current(), SavedAt = DateTime.Now };
         Store.Data.Profiles.Add(profile);
         Store.Save();
         return profile;
@@ -226,27 +268,6 @@ static class Profiles
         profile.Name = name;
         Store.Save();
         return true;
-    }
-
-    // The name itself, or "name 2", "name 3"... when it's taken.
-    static string UniqueName(string name)
-    {
-        var candidate = name;
-        for (var n = 2; Store.Data.Profiles.Any(p => p.Name == candidate); n++)
-            candidate = $"{name} {n}";
-        return candidate;
-    }
-
-    static string UniqueName()
-    {
-        for (var n = Store.Data.Profiles.Count + 1; ; n++)
-        {
-            var loc = new LocString("settings_ui", "SPIRE_MOD_MANAGER.NEW_PROFILE_NAME");
-            loc.Add("n", n);
-            var name = loc.GetFormattedText();
-            if (Store.Data.Profiles.All(p => p.Name != name))
-                return name;
-        }
     }
 
     static IEnumerable<(string Id, ModSource Source)> Installed() =>

@@ -46,6 +46,8 @@ public class Profile
     // The active profile's unsaved changes (the mod list as it is now); null when there are none.
     public List<ProfileMod>? Edited { get; set; }
     public DateTime? EditedAt { get; set; }
+    // When it was created or last saved (none for profiles from before this was kept).
+    public DateTime? SavedAt { get; set; }
     // Id-only list of disabled mods as imported from Better Mod Menu; Profiles.Prepare converts it to Mods.
     public List<ModRef>? Disabled { get; set; }
 }

@@ -4,16 +4,22 @@ using MegaCrit.Sts2.Core.Nodes.Screens.ModdingScreen;
 
 namespace SpireModManager;
 
-// Profile picker across the top of the mod list: "Profile: [name ▾]", opening the list of profiles, and
-// "Unsaved •" beside it while the mod list differs from the saved profile. The profile's buttons sit on
-// the right: Save (greyed), New, Rename, Delete when saved; Save, Save as new, Revert, Delete when
-// edited. Rename and Delete are also on right-click. Rename swaps the picker for a text box (Enter or
-// clicking away renames). Layout starts the list below the bar.
+// The profile bar across the top of the mod list.
+// - Left: "Profile: [name ▾]", opening the list of profiles ("Name *" for ones with unsaved changes, with
+//   their mod count and save date); while the mod list differs from the saved profile, "Unsaved •" and
+//   Save, Save as new, Discard beside it.
+// - Right: New, Duplicate, Rename, Delete (Rename and Delete also on right-click).
+// New, Duplicate, Save as new and Rename open a name box in the picker's place, with Save, Cancel and
+// Clear; a name that's empty or taken says so and can't be saved. Everything else hides meanwhile.
 static class ProfileBar
 {
     const float Height = 40;
     static readonly Color Gold = new(0.937f, 0.784f, 0.318f);
     static readonly Color Cream = new(1, 0.964706f, 0.886275f);
+    static readonly Color UnsavedColor = new(0.96f, 0.62f, 0.47f); // a soft coral: not gold, not an error
+    static readonly Color WarningColor = new(1f, 0.5f, 0.44f);
+
+    enum Naming { Rename, Blank, Duplicate, SaveAsNew }
 
     public static void Attach(NModdingScreen screen)
     {
@@ -58,30 +64,47 @@ static class ProfileBar
         picker.Icon = DownArrow();
         row.AddChild(picker);
 
-        // Rename: a text box in the picker's place while editing.
+        // The name box, in the picker's place while naming, with its buttons and a warning.
         var name = new LineEdit
         {
             Name = "ProfileName", Visible = false, MaxLength = 40, SelectAllOnFocus = true, ContextMenuEnabled = false,
-            CustomMinimumSize = new Vector2(320, 0), SizeFlagsVertical = Control.SizeFlags.ShrinkCenter,
+            CustomMinimumSize = new Vector2(300, 0), SizeFlagsVertical = Control.SizeFlags.ShrinkCenter,
         };
         Style(name, "res://themes/kreon_bold_shared.tres", 19, Gold);
+        var field = new StyleBoxFlat { BgColor = new Color(0.05f, 0.08f, 0.12f), BorderColor = new Color(Gold, 0.6f), ContentMarginLeft = 8, ContentMarginRight = 8 };
+        field.SetBorderWidthAll(1);
+        field.SetCornerRadiusAll(4);
+        name.AddThemeStyleboxOverride("normal", field);
+        name.AddThemeStyleboxOverride("focus", field);
         row.AddChild(name);
+        var naming = Naming.Rename;
+        var editing = false;
+        var nameButtons = ButtonBox("NameButtons");
+        nameButtons.Visible = false;
+        row.AddChild(nameButtons);
+        var warning = new Label { Name = "NameWarning", Visible = false, VerticalAlignment = VerticalAlignment.Center };
+        Style(warning, "res://themes/kreon_regular_shared.tres", 15, WarningColor);
+        row.AddChild(warning);
 
-        // Beside the picker: "Unsaved •" with Save and Discard while the mod list differs from the saved
-        // profile, and Save as new always.
+        // Unsaved changes: the label and what to do about them.
         var unsaved = new Label { Name = "Unsaved", Text = Menus.Text("SPIRE_MOD_MANAGER.UNSAVED"), VerticalAlignment = VerticalAlignment.Center };
-        Style(unsaved, "res://themes/kreon_regular_shared.tres", 16, new Color(1f, 0.82f, 0.45f));
+        Style(unsaved, "res://themes/kreon_regular_shared.tres", 16, UnsavedColor);
         row.AddChild(unsaved);
-        row.AddChild(new Control { SizeFlagsHorizontal = Control.SizeFlags.ExpandFill, MouseFilter = Control.MouseFilterEnum.Ignore }); // buttons on the right
-        HBoxContainer? inline = null;
+        var unsavedButtons = ButtonBox("UnsavedButtons");
+        row.AddChild(unsavedButtons);
+
+        row.AddChild(new Control { SizeFlagsHorizontal = Control.SizeFlags.ExpandFill, MouseFilter = Control.MouseFilterEnum.Ignore });
 
         void DeleteActive()
         {
             if (Profiles.Active is { } active)
                 _ = Delete(active);
         }
+        var manage = ButtonBox("Actions");
+        row.AddChild(manage);
+
         List<MenuItem> Actions() => [
-            new(Menus.Text("SPIRE_MOD_MANAGER.RENAME"), BeginRename),
+            new(Menus.Text("SPIRE_MOD_MANAGER.RENAME"), () => BeginNaming(Naming.Rename)),
             new(Menus.Text("SPIRE_MOD_MANAGER.DELETE"), DeleteActive, Disabled: Store.Data.Profiles.Count <= 1),
         ];
 
@@ -89,76 +112,101 @@ static class ProfileBar
         {
             var edited = Profiles.Edited;
             picker.Text = Profiles.Active?.Name ?? "";
-            name.Text = Profiles.Active?.Name ?? "";
-            unsaved.Visible = edited;
-            if (inline != null)
-            {
-                row.RemoveChild(inline); // now, so the new one can take the name "Actions"
-                inline.QueueFree();
-            }
-            // Saved: Save (nothing to save), New, Rename, Delete. Edited: Save, Save as new, Revert, Delete.
-            var delete = (Name: "DeleteProfileButton", Item: new MenuItem(Menus.Text("SPIRE_MOD_MANAGER.DELETE"), DeleteActive,
-                Disabled: Store.Data.Profiles.Count <= 1));
-            var buttons = edited
-                ? new[]
-                {
-                    ("SaveProfileButton", new MenuItem(Menus.Text("SPIRE_MOD_MANAGER.SAVE"), Profiles.Save)),
-                    ("SaveAsNewButton", new MenuItem(Menus.Text("SPIRE_MOD_MANAGER.SAVE_AS_NEW"), SaveAsNew)),
-                    ("DiscardButton", new MenuItem(Menus.Text("SPIRE_MOD_MANAGER.DISCARD"), () => Profiles.Discard(screen))),
-                    delete,
-                }
-                : [
-                    ("SaveProfileButton", new MenuItem(Menus.Text("SPIRE_MOD_MANAGER.SAVE"), Profiles.Save, Disabled: true)),
-                    ("NewProfileButton", new MenuItem(Menus.Text("SPIRE_MOD_MANAGER.NEW_PROFILE"), SaveAsNew)),
-                    ("RenameProfileButton", new MenuItem(Menus.Text("SPIRE_MOD_MANAGER.RENAME"), BeginRename)),
-                    delete,
-                ];
-            inline = Menus.InlineButtons(buttons.Select(b => b.Item2).ToList(), "Actions");
-            foreach (var (button, (id, _)) in inline.GetChildren().OfType<Button>().Zip(buttons))
-                button.Name = id;
-            row.AddChild(inline);
+            picker.Visible = !editing;
+            (name.Visible, nameButtons.Visible) = (editing, editing);
+            if (!editing)
+                warning.Visible = false;
+            unsaved.Visible = unsavedButtons.Visible = edited && !editing;
+            manage.Visible = !editing;
+            if (manage.GetNodeOrNull<Button>("DeleteProfileButton") is { } delete)
+                delete.Disabled = Store.Data.Profiles.Count <= 1;
         }
 
-        // The profile list, the active one ticked.
-        picker.Pressed += () =>
-        {
-            var items = new List<MenuItem>();
-            foreach (var p in Store.Data.Profiles)
-                items.Add(new MenuItem(p.Name, () => Profiles.SwitchTo(p, screen), Checked: p == Profiles.Active));
-            Menus.Show(bar, items);
-        };
+        // The profile list, the active one marked; a second press on the picker closes it.
+        picker.Pressed += () => Menus.Show(bar, Store.Data.Profiles.Select(p => new MenuItem(
+                p.Edited != null ? $"{p.Name} *" : p.Name, () => Profiles.SwitchTo(p, screen),
+                Checked: p == Profiles.Active, Radio: true, Detail: Profiles.Details(p))).ToList(),
+            at: picker.GlobalPosition + new Vector2(0, picker.Size.Y + 4), toggleKey: "profiles");
         picker.GuiInput += e =>
         {
             if (e is InputEventMouseButton { ButtonIndex: MouseButton.Right, Pressed: false })
                 Menus.Show(bar, Actions());
         };
 
-        // New and Save as new: a copy of the current mod list as a new profile. It gets a placeholder name ("Profile 3") with the name box open on it, to type a real one.
-        void SaveAsNew()
+        void BeginNaming(Naming kind)
         {
-            Profiles.SaveAsNew(screen);
-            Callable.From(BeginRename).CallDeferred();
-        }
-        void BeginRename()
-        {
-            picker.Visible = false;
-            name.Visible = true;
+            if (Profiles.Active is not { } active)
+                return;
+            naming = kind;
+            editing = true;
+            name.Text = kind switch
+            {
+                Naming.Rename => active.Name,
+                Naming.Blank => Profiles.NewName(),
+                _ => Profiles.CopyName(active.Name),
+            };
+            Refresh();
+            CheckName();
             name.GrabFocus();
             name.SelectAll();
         }
-        void CommitRename()
+        string? CheckName()
         {
-            if (Profiles.Active is { } active && !Profiles.Rename(active, name.Text))
-                name.Text = active.Name; // empty or taken: put the old name back
-            name.Visible = false;
-            picker.Visible = true;
+            var problem = Profiles.NameProblem(name.Text, naming == Naming.Rename ? Profiles.Active : null);
+            warning.Text = problem ?? "";
+            warning.Visible = problem != null;
+            if (nameButtons.GetNodeOrNull<Button>("SaveNameButton") is { } save)
+                save.Disabled = problem != null;
+            return problem;
+        }
+        void CommitName()
+        {
+            if (!editing || CheckName() != null || Profiles.Active is not { } active)
+                return;
+            var chosen = name.Text.Trim();
+            editing = false;
+            switch (naming)
+            {
+                case Naming.Rename:
+                    Profiles.Rename(active, chosen);
+                    break;
+                case Naming.Blank:
+                    Profiles.Create(Profiles.NewKind.Blank, chosen, screen);
+                    break;
+                case Naming.Duplicate:
+                    Profiles.Create(Profiles.NewKind.Duplicate, chosen, screen);
+                    break;
+                case Naming.SaveAsNew:
+                    Profiles.Create(Profiles.NewKind.SaveAsNew, chosen, screen);
+                    break;
+            }
             Refresh();
         }
-        name.TextSubmitted += _ => CommitRename();
+        void EndNaming()
+        {
+            editing = false;
+            Refresh();
+        }
+        name.TextChanged += _ => CheckName();
+        name.TextSubmitted += _ => CommitName();
+        name.GuiInput += e =>
+        {
+            if (e is InputEventKey { Keycode: Key.Escape, Pressed: true })
+            {
+                EndNaming();
+                name.AcceptEvent();
+            }
+        };
+        // Clicking away cancels: nothing is created or renamed without Save or Enter.
         name.FocusExited += () =>
         {
-            if (name.Visible)
-                CommitRename();
+            if (editing)
+                Callable.From(() =>
+                {
+                    // The name box's own buttons don't take focus; anything else that took it ends the naming.
+                    if (editing && !name.HasFocus())
+                        EndNaming();
+                }).CallDeferred();
         };
 
         async Task Delete(Profile profile)
@@ -169,10 +217,50 @@ static class ProfileBar
                 Profiles.Delete(profile, screen);
         }
 
+        // The buttons, now that everything they use exists.
+        AddButtons(nameButtons, [
+            ("SaveNameButton", Menus.Text("SPIRE_MOD_MANAGER.SAVE"), () => CommitName()),
+            ("CancelNameButton", Menus.Text("SPIRE_MOD_MANAGER.CANCEL"), EndNaming),
+            ("ClearNameButton", Menus.Text("SPIRE_MOD_MANAGER.CLEAR"), () =>
+            {
+                name.Clear();
+                name.GrabFocus();
+                CheckName();
+            }),
+        ]);
+        AddButtons(unsavedButtons, [
+            ("SaveProfileButton", Menus.Text("SPIRE_MOD_MANAGER.SAVE"), Profiles.Save),
+            ("SaveAsNewButton", Menus.Text("SPIRE_MOD_MANAGER.SAVE_AS_NEW"), () => BeginNaming(Naming.SaveAsNew)),
+            ("DiscardButton", Menus.Text("SPIRE_MOD_MANAGER.DISCARD"), () => Profiles.Discard(screen)),
+        ]);
+        AddButtons(manage, [
+            ("NewProfileButton", Menus.Text("SPIRE_MOD_MANAGER.NEW_PROFILE"), () => BeginNaming(Naming.Blank)),
+            ("DuplicateProfileButton", Menus.Text("SPIRE_MOD_MANAGER.DUPLICATE"), () => BeginNaming(Naming.Duplicate)),
+            ("RenameProfileButton", Menus.Text("SPIRE_MOD_MANAGER.RENAME"), () => BeginNaming(Naming.Rename)),
+            ("DeleteProfileButton", Menus.Text("SPIRE_MOD_MANAGER.DELETE"), DeleteActive),
+        ]);
+
         // The bar lives as long as the screen; the event is static, so unsubscribe when it goes.
         Profiles.Switched += Refresh;
         bar.TreeExiting += () => Profiles.Switched -= Refresh;
         Refresh();
+    }
+
+    static HBoxContainer ButtonBox(string name)
+    {
+        var box = new HBoxContainer { Name = name, MouseFilter = Control.MouseFilterEnum.Ignore, SizeFlagsVertical = Control.SizeFlags.ShrinkCenter };
+        box.AddThemeConstantOverride("separation", 4);
+        return box;
+    }
+
+    static void AddButtons(HBoxContainer box, (string Name, string Text, Action OnPressed)[] buttons)
+    {
+        foreach (var (name, text, onPressed) in buttons)
+        {
+            var button = Menus.SmallButton(text, onPressed, name: name);
+            button.SizeFlagsVertical = Control.SizeFlags.ShrinkCenter;
+            box.AddChild(button);
+        }
     }
 
     // The game's small gold settings arrow, turned to point down, as a texture for the picker.

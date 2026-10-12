@@ -188,10 +188,13 @@ static class SelfTest
             Check("a real tickbox click makes an unsaved edit", Profiles.Edited, tickUnder);
             var profiles = Store.Data.Profiles.Count;
             var bar = screen.GetNode("ModsBorder/SpireModManagerProfileBar");
+            var activeName = Profiles.Active?.Name ?? "";
             var under = await RealClick(menu, (Control)bar.FindChild("SaveAsNewButton", true, false));
-            Check("Save as new (a real click) adds a profile", Store.Data.Profiles.Count == profiles + 1, under);
-            Check("Save as new opens the name box", bar.FindChild("ProfileName", true, false) is LineEdit { Visible: true } box && box.HasFocus());
+            Check("Save as new (a real click) opens the name box with \"(1)\"", bar.FindChild("ProfileName", true, false) is LineEdit { Visible: true } box
+                && box.HasFocus() && box.Text == Profiles.CopyName(activeName), under);
             await Capture(screen, outDir, "real-5-save-as-new");
+            await RealClick(menu, (Control)bar.FindChild("SaveNameButton", true, false));
+            Check("its Save (a real click) adds the profile", Store.Data.Profiles.Count == profiles + 1 && !Profiles.Edited);
         }
         catch (Exception e)
         {
@@ -293,20 +296,39 @@ static class SelfTest
     {
         var bar = screen.GetNode("ModsBorder/SpireModManagerProfileBar");
         var name = (LineEdit)bar.FindChild("ProfileName", true, false);
+        var picker = (Button)bar.FindChild("ProfilePicker", true, false);
+        Control Button(string id) => (Control)bar.FindChild(id, true, false);
         var before = ModListState();
         var count = Store.Data.Profiles.Count;
         var start = Profiles.Active;
 
-        var under = await RealClick(menu, (Control)bar.FindChild(Profiles.Edited ? "SaveAsNewButton" : "NewProfileButton", true, false));
-        await Wait(menu, 0.3);
-        Check("New or Save as new (a real click) adds a profile and switches to it", Store.Data.Profiles.Count == count + 1 && Profiles.Active != start
-            && name.Text == Profiles.Active?.Name, $"{name.Text}; under the mouse: {under}");
-
-        name.GrabFocus();
+        // New: the name box opens first; Save creates a blank profile (only this mod on) and switches to it.
+        var under = await RealClick(menu, Button("NewProfileButton"));
+        Check("New opens the name box with a free name", name.Visible && name.HasFocus() && name.Text.StartsWith("Profile ")
+            && !picker.Visible && !Button("Actions").Visible, $"{name.Text}; under the mouse: {under}");
         name.Text = "Brother co-op";
+        await RealClick(menu, Button("SaveNameButton"));
+        Check("Save creates the blank profile and switches to it", Store.Data.Profiles.Count == count + 1 && Profiles.Active?.Name == "Brother co-op"
+            && !name.Visible && picker.Visible && ModListState().Count(s => s.EndsWith("=on")) == 1, string.Join(", ", ModListState()));
+
+        // A taken name can't be saved; Cancel leaves everything as it was.
+        await RealClick(menu, Button("RenameProfileButton"));
+        name.Text = start?.Name ?? "";
+        name.EmitSignal(LineEdit.SignalName.TextChanged, name.Text);
+        Check("renaming to a taken name warns and can't be saved", Button("NameWarning").Visible && Button("SaveNameButton") is BaseButton { Disabled: true },
+            ((Label)Button("NameWarning")).Text);
+        await Capture(screen, outDir, "7a-name-taken");
+        await RealClick(menu, Button("CancelNameButton"));
+        Check("Cancel keeps the old name", Profiles.Active?.Name == "Brother co-op" && !name.Visible);
+
+        // Duplicate: the name box offers "Name (1)".
+        await RealClick(menu, Button("DuplicateProfileButton"));
+        Check("Duplicate offers \"(1)\" after the name", name.Text == "Brother co-op (1)", name.Text);
         name.EmitSignal(LineEdit.SignalName.TextSubmitted, name.Text);
-        await Wait(menu, 0.5);
-        Check("rename from the bar", Profiles.Active?.Name == "Brother co-op" && name.Text == "Brother co-op");
+        await Wait(menu, 0.3);
+        Check("Enter saves the duplicate, which becomes active", Profiles.Active?.Name == "Brother co-op (1)" && Store.Data.Profiles.Count == count + 2);
+        if (Profiles.Active is { } copy)
+            Profiles.Delete(copy, screen);
 
         // The game's confirm popup, shown for the record; deletion itself goes through Profiles.Delete.
         var body = new LocString("settings_ui", "SPIRE_MOD_MANAGER.DELETE_PROFILE_BODY");
@@ -317,15 +339,28 @@ static class SelfTest
         NModalContainer.Instance?.Clear();
         await Wait(menu, 0.5);
 
-        if (Profiles.Active is { } created)
+        if (Store.Data.Profiles.FirstOrDefault(p => p.Name == "Brother co-op") is { } created)
+        {
+            if (Profiles.Active != created)
+                Profiles.SwitchTo(created, screen);
             Profiles.Delete(created, screen);
+        }
         await Wait(menu, 0.5);
         Check("delete the active profile switches to a neighbour", Store.Data.Profiles.Count == count && Profiles.Active != null
-            && Store.Data.Profiles.All(p => p.Name != "Brother co-op") && name.Text == Profiles.Active.Name);
+            && Store.Data.Profiles.All(p => p.Name != "Brother co-op") && picker.Text == Profiles.Active.Name);
         if (start != null && Profiles.Active != start)
             Profiles.SwitchTo(start, screen);
-        Check("mod list unchanged after new/rename/delete", before.SequenceEqual(ModListState()));
+        Check("mod list unchanged after new/duplicate/rename/delete", before.SequenceEqual(ModListState()));
         Check("last profile can't be deleted", Store.Data.Profiles.Count > 1 || !Profiles.Delete(Store.Data.Profiles[0], screen));
+
+        // The profile list: opens below the picker; a second press on the picker closes it.
+        await RealClick(menu, picker);
+        var list = screen.FindChildren("SpireModManagerMenu", "", true, false).OfType<PopupPanel>().FirstOrDefault(p => p.Visible);
+        Check("the picker opens the profile list, with details", list != null && MenuPanel.Labels(list).Count == Store.Data.Profiles.Count,
+            list == null ? "no list" : string.Join(", ", MenuPanel.Labels(list)));
+        await Capture(screen, outDir, "7b-profile-list");
+        await RealClick(menu, picker);
+        Check("a second press on the picker closes it", !screen.FindChildren("SpireModManagerMenu", "", true, false).OfType<PopupPanel>().Any(p => p.Visible));
     }
 
     // Turning a dependency off and on again: the rows' notes follow at once (no stale "(off)"), and the
@@ -375,39 +410,31 @@ static class SelfTest
         if (Profiles.Edited)
             Profiles.Save(); // start clean: the fixture launches on an unsaved edit (its list differs from the profile)
         var wasOn = On();
-        string ButtonNames() => string.Join(",", ((Node)bar.FindChild("Actions", true, false)).GetChildren().Select(c => c.Name.ToString()));
+        string Shown(string box) => bar.FindChild(box, true, false) is Control { Visible: true } c
+            ? string.Join(",", c.GetChildren().Select(b => b.Name.ToString())) : "";
         await Wait(menu, 0.2);
-        Check("saved profile: Save (greyed), New, Rename, Delete", ButtonNames() == "SaveProfileButton,NewProfileButton,RenameProfileButton,DeleteProfileButton"
-            && bar.FindChild("SaveProfileButton", true, false) is Button { Disabled: true }, ButtonNames());
+        Check("saved profile: New, Duplicate, Rename, Delete; no Save", Shown("Actions") == "NewProfileButton,DuplicateProfileButton,RenameProfileButton,DeleteProfileButton"
+            && Shown("UnsavedButtons") == "", Shown("Actions"));
 
         await Toggle(!wasOn);
         Check("a tickbox change is an unsaved edit; the saved profile stays", Profiles.Edited && SavedOn() == wasOn
             && bar.FindChild("Unsaved", true, false) is Control { Visible: true } && bar.FindChild("SaveProfileButton", true, false) != null,
             $"edited {Profiles.Edited}, saved on {SavedOn()}, was on {wasOn}, now on {On()}, unsaved {(bar.FindChild("Unsaved", true, false) as Control)?.Visible}, save {bar.FindChild("SaveProfileButton", true, false) != null}");
-        Check("edited profile: Save, Save as new, Revert, Delete", ButtonNames() == "SaveProfileButton,SaveAsNewButton,DiscardButton,DeleteProfileButton", ButtonNames());
+        Check("edited: Save, Save as new, Discard beside Unsaved", Shown("UnsavedButtons") == "SaveProfileButton,SaveAsNewButton,DiscardButton", Shown("UnsavedButtons"));
         await Capture(screen, outDir, "3b-unsaved-profile");
 
         Check("the picker keeps the plain name", bar.FindChild("ProfilePicker", true, false) is Button { Text: var shown } && shown == profile.Name);
+        var profiles = Store.Data.Profiles.Count;
         Profiles.SwitchTo(other, screen);
-        var kept = Store.Data.Profiles.FirstOrDefault(p => p.Name.StartsWith($"{profile.Name} (edited"));
-        Check("leaving without saving keeps the edit as its own profile", kept != null && profile.Edited == null
-            && kept.Mods.FirstOrDefault(m => m.Id == "SmmTestUi")?.Enabled != wasOn, kept?.Name ?? "none");
+        Check("leaving keeps the edit with its profile, marked *, no extra profile", profile.Edited != null && Store.Data.Profiles.Count == profiles
+            && !Profiles.Edited);
         Profiles.SwitchTo(profile, screen);
         await Wait(menu, 0.3);
-        Check("back on the profile: its saved state", !Profiles.Edited && On() == wasOn);
-        if (kept != null)
-        {
-            Profiles.SwitchTo(kept, screen);
-            await Wait(menu, 0.3);
-            Check("the kept edit loads like any profile", !Profiles.Edited && On() != wasOn);
-            Profiles.SwitchTo(profile, screen);
-            Profiles.Delete(kept, screen);
-        }
+        Check("coming back restores the edit", Profiles.Edited && On() != wasOn && SavedOn() == wasOn);
 
-        await Toggle(!wasOn);
         Press("DiscardButton");
         await Wait(menu, 0.3);
-        Check("Revert goes back to the saved state and drops the edit", !Profiles.Edited && On() == wasOn && profile.Edited == null
+        Check("Discard goes back to the saved state and drops the edit", !Profiles.Edited && On() == wasOn && profile.Edited == null
             && bar.FindChild("Unsaved", true, false) is Control { Visible: false });
 
         await Toggle(!wasOn);
