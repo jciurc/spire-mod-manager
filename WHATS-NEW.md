@@ -4,7 +4,25 @@ Short notes for Jordan: what to look for after each install. Newest first.
 
 ## Not installed yet
 
-- (nothing yet)
+Rows
+- A little shorter. Tags always in the order Local (new: hand-installed mods), Library, Gameplay, Cosmetic, then yours.
+- "Required for N" comes before "Needs:".
+- A small notepad after the name marks your alias or notes (main list only).
+- A quiet pencil (no box) and the Category button, on the right, in line with the tickbox. The pencil opens the edit menu.
+- Hover any row for a second: a card with name (id), on/off, problems, author, updated date, alias, tags and notes. Cards close as soon as the mouse leaves.
+
+Load Order
+- No tickboxes. Right-click a mod to **Enable / Disable** it (above the moves).
+- A moved mod shows where it was at launch, dimmed: "6 → 3". The numbers stay in even columns.
+- "Automatically sort for compatibility" sits beside Auto sort.
+- The warning reads "For compatibility, N mods will be automatically reordered by the base game on relaunch."
+- When the order has that problem, a red **!** on the Load Order button (main list) shows the warning on hover.
+
+Main list
+- A red banner when enabled mods need a mod that is off or not installed. **Show** steps through those mods. **Enable needed mods** turns on the ones that are installed, as one undo step.
+
+Other
+- New-mod popup: "New Mod Added" / "New mods were detected, and will require a restart to be enabled."; at most one every 30 seconds.
 
 ## Installed 2026-10-12
 
@@ -117,3 +135,6 @@ Choices I made on my own; say if any should change.
 - **The ✎ mark** on rows means "has your alias, notes or tags"; it isn't clickable (alias editing is in the menu and the panel now).
 - **"Mods enabled"** counts mods that are on, not counting Spire Mod Manager itself.
 - **Dependencies, clicked**, scroll the list and glow the row but don't change the panel; the panel's name, clicked, just scrolls.
+- **Load Order "was" column**: launch positions count only mods installed now, so a mod added since launch shows no "was".
+- **The main-list banner** covers dependency problems only (off or missing). Load errors stay in the panel; say if you want them in the banner too.
+- **The pencil** is the plain ✎ glyph, faint until hovered (then gold), with no box.

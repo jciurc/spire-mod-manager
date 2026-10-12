@@ -367,15 +367,14 @@ Jordan's notes of 2026-10-12 (evening).
 - [x] hover card for every mod: original name (id), enabled state, error, author, updated, custom tags and notes
 - [x] (fix) the hover card sometimes stays open while using other parts of the page
 
-## Load Order
-- [ ] no tickboxes; Enable/Disable in the right-click menu
-- [ ] moved rows show "old → new" position, columns kept even
-- [ ] "Automatically sort for compatibility" left of Auto sort
-- [ ] warning text: "For compatibility, N mod(s) will be automatically reordered by the base game on relaunch."
-- [ ] a "!" with a tooltip on the Load Order button when that page has a warning
+- [x] no tickboxes; Enable/Disable in the right-click menu
+- [x] moved rows show "old → new" position, columns kept even
+- [x] "Automatically sort for compatibility" left of Auto sort
+- [x] warning text: "For compatibility, N mod(s) will be automatically reordered by the base game on relaunch."
+- [x] a "!" with a tooltip on the Load Order button when that page has a warning
 
 ## Main list
-- [ ] an error banner when there's a problem (e.g. a required mod is off)
+- [x] an error banner when there's a problem (e.g. a required mod is off)
 
 ## Side panel
 - [ ] subtle darker background, no outline, a hover style on the clickable fields and the category picker
@@ -397,8 +396,8 @@ Jordan's notes of 2026-10-12 (evening).
 
 ## Added during round 8
 - [ ] (bug) a newly installed mod isn't tracked right in the changes (enabled/disabled); show "Installed X" as its own change, with its (pending) on/off state under it
-- [ ] the pencil button subtle: no background, no outline
-- [ ] (fix) the category and pencil buttons don't line up vertically with the tickbox
+- [x] the pencil button subtle: no background, no outline
+- [x] (fix) the category and pencil buttons don't line up vertically with the tickbox
 
 ## Backlog (round 8)
 - [ ] tag suggestions: tags already used across mods in a dropdown under the tag box, filtered as you type, arrow keys to pick, comma accepts
