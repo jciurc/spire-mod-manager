@@ -7,8 +7,8 @@ namespace SpireModManager;
 
 // Along the bottom right, before Relaunch Game:
 // - Two lines: "Mods enabled 23 (+1 -3) ↕2", how many mods are on now and how many were turned on and off
-//   and moved in the load order since launch; then "Changes 5", everything else that changed too (moves,
-//   edited mods, profiles). Hovering shows them apart; clicking opens (or closes) the full list in the right
+//   and moved in the load order since launch; then "Changes 5", everything else that changed (edited mods,
+//   profiles). Hovering shows them apart; clicking opens (or closes) the full list in the right
 //   panel: switched profile, each mod enabled or disabled, each move, each edit, profiles added or removed.
 // - Undo, Redo (their shortcuts underneath), Revert all.
 static class HistoryBar
@@ -134,13 +134,14 @@ static class HistoryBar
         return (changed.Count(c => c.Enabled), changed.Count(c => !c.Enabled), Moves().Count);
     }
 
-    // The second line's count: moves, edited mods, profiles added or removed, and a switched profile.
+    // The second line's count: edited mods, profiles added or removed, and a switched profile (moves are on
+    // the first line).
     static int OtherChanges()
     {
         if (History.Loaded is not { } loaded)
             return 0;
         var (edited, profiles) = DataChanges(loaded.Store, Store.EditsJson());
-        return Moves().Count + edited.Count + profiles.Count + (Switch() != null ? 1 : 0);
+        return edited.Count + profiles.Count + (Switch() != null ? 1 : 0);
     }
 
     // The summary's lines (BBCode): a switched profile, then each kind of change with its count.
