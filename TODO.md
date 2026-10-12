@@ -376,22 +376,20 @@ Jordan's notes of 2026-10-12 (evening).
 ## Main list
 - [x] an error banner when there's a problem (e.g. a required mod is off)
 
-## Side panel
-- [ ] subtle darker background, no outline, a hover style on the clickable fields and the category picker
-- [ ] version in grey right of the title (no "v")
-- [ ] source line "<id> (<Workshop id>)" or "<id> (Local)"; Enabled/Disabled at the same size, grouped with it
-- [ ] dates as "October 12, 2026"
-- [ ] automatic tag pills next to the Tags label
-- [ ] compatibility above dependencies, in that group
-- [ ] thumbnail twice as big, a little further left
+- [x] subtle darker background, no outline, a hover style on the clickable fields and the category picker
+- [x] version in grey right of the title (no "v")
+- [x] source line "<id> (<Workshop id>)" or "<id> (Local)"; Enabled/Disabled at the same size, grouped with it
+- [x] dates as "October 12, 2026"
+- [x] automatic tag pills next to the Tags label
+- [x] compatibility above dependencies, in that group
+- [x] thumbnail twice as big, a little further left
 
-## Changes
-- [ ] text left-justified, a little lower; the ↕ count to the right of "Changes"
-- [ ] tooltip titled "Changes since launch"; it names the enabled/disabled mods when there are fewer than 20
-- [ ] a mod's name in the changes list opens that mod; a Back button (where Close is) returns to the list; Back goes when another mod is picked or the page is left
+- [x] text left-justified, a little lower; the ↕ count to the right of "Changes"
+- [x] tooltip titled "Changes since launch"; it names the enabled/disabled mods when there are fewer than 20
+- [x] a mod's name in the changes list opens that mod; a Back button (where Close is) returns to the list; Back goes when another mod is picked or the page is left
 
 ## Other
-- [ ] Ctrl+S saves the current profile
+- [x] Ctrl+S saves the current profile
 - [x] new mod popup: "New Mod Added" / "New mods were detected, and will require a restart to be enabled."; at most one per 30 s
 
 ## Added during round 8
