@@ -169,7 +169,7 @@ sealed class ModField
         {
             Clear(_system);
             foreach (var chip in Tags.For(Dependencies.Find(_modId() ?? "")).Where(c => !c.Custom))
-                _system.AddChild(Tags.Make(chip));
+                _system.AddChild(Tags.Make(chip, add => Search.ByTag(Root, chip.Text, add)));
             _system.Visible = _system.GetChildCount() > 0;
         }
     }
@@ -198,7 +198,7 @@ sealed class ModField
         Clear(_pills);
         var tags = Store.InfoFor(_modId())?.Tags ?? [];
         foreach (var tag in tags)
-            _pills.AddChild(Tags.Make(new Tags.Chip(tag, Tags.CustomColor, Custom: true)));
+            _pills.AddChild(Tags.Make(new Tags.Chip(tag, Tags.CustomColor, Custom: true), add => Search.ByTag(Root, tag, add))); // the box around them edits
         _pillsBox.Visible = tags.Count > 0;
         _box.Visible = tags.Count == 0;
     }

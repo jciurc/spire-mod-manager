@@ -15,6 +15,7 @@ static class RowStrip
     const string StripMeta = "spire_mod_manager_strip";
     const string SaysMeta = "spire_mod_manager_says"; // on a strip: what it shows, to know when to remake it
     const float Height = 20;
+    const float TitleGap = 4; // more room between the title and the line under it
     const float RightMargin = 76; // from the row's right edge: clear of the (smaller) tickbox
     const float LoadOrderMargin = 20; // Load Order has no tickbox
     const float ActionsGap = 12;
@@ -28,7 +29,7 @@ static class RowStrip
             var title = row.GetNode<Control>("Title");
             if (!row.HasMeta(StripMeta))
             {
-                title.OffsetBottom -= Height;
+                title.OffsetBottom -= Height + TitleGap;
                 row.SetMeta(StripMeta, true);
             }
 
@@ -113,7 +114,7 @@ static class RowStrip
             RemoveStrip(row);
             if (!row.HasMeta(StripMeta))
                 continue;
-            row.GetNode<Control>("Title").OffsetBottom += Height;
+            row.GetNode<Control>("Title").OffsetBottom += Height + TitleGap;
             row.RemoveMeta(StripMeta);
         }
     }

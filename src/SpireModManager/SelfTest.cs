@@ -349,7 +349,7 @@ static class SelfTest
         var aliasBox = rowMenu?.FindChild("Fields", true, false)?.GetNodeOrNull<LineEdit>("Alias/Box");
         Check("row menu: categories on the left, the mod's fields on the right", rowItems.Count == Store.Data.Categories.Count + 2
             && aliasBox != null && rowMenu?.FindChild("Fields", true, false)?.GetNodeOrNull("Notes/Box") != null, string.Join(", ", rowItems));
-        Check("an empty field invites: \"Add alias\"", aliasBox?.PlaceholderText == "Add alias", aliasBox?.PlaceholderText ?? "");
+        Check("an empty field invites: \"Your nickname for the mod\"", aliasBox?.PlaceholderText == "Your nickname for the mod", aliasBox?.PlaceholderText ?? "");
         await Capture(screen, outDir, "5-row-menu");
         if (rowMenu != null && aliasBox != null)
         {
@@ -634,8 +634,8 @@ static class SelfTest
         Check("the source line: id (Local), then Enabled", panel.FindChild("SpireModManagerLink", true, false) is LinkButton { Disabled: true }
             && linkText == "SpireModManager (Local)" && panel.FindChild("SpireModManagerSource", true, false)?.GetNodeOrNull<Label>("Status")?.Text == "Enabled", linkText);
         var headText = panel.GetNodeOrNull<RichTextLabel>("SpireModManagerHead")?.GetParsedText() ?? "";
-        Check("the head: author and size; the details start with the description", headText.Contains("Author: symphony") && headText.Contains("Size:")
-            && !description.StartsWith("Enabled") && description.Contains("Compatibility"), $"{headText} / {description[..Math.Min(60, description.Length)]}");
+        Check("the head: author and compatibility; the details: description, then size", headText.Contains("Author: symphony") && headText.Contains("Compatibility:")
+            && !description.StartsWith("Enabled") && description.Contains("Size:") && !description.Contains("Compatibility"), $"{headText} / {description[..Math.Min(60, description.Length)]}");
         Check("fields in order: Alias, Category, Tags, Notes", string.Join(",", yours.GetChildren().Select(c => c.Name.ToString())) == "Alias,Category,Tags,Notes",
             string.Join(",", yours.GetChildren().Select(c => c.Name.ToString())));
         Check("the thumbnail is 256 x 144 (the scene's minimum size lifted)", panel.GetNode<Control>("ModImage").Size == new Vector2(256, 144), $"{panel.GetNode<Control>("ModImage").Size}");
@@ -645,6 +645,10 @@ static class SelfTest
         image.Texture = ImageTexture.CreateFromImage(Image.CreateEmpty(16, 9, false, Image.Format.Rgba8));
         Layout.PlaceInfo(panel);
         var withPicture = panel.GetNode<Control>("ModDescription").OffsetTop;
+        image.Texture = ImageTexture.CreateFromImage(Image.CreateEmpty(10, 10, false, Image.Format.Rgba8));
+        Layout.PlaceInfo(panel);
+        Check("a square picture: full height, against the right edge", image.Size == new Vector2(ModDetails.ThumbHeight, ModDetails.ThumbHeight)
+            && Math.Abs(image.Position.X + image.Size.X - (panel.Size.X - ModDetails.ThumbRight)) < 1, $"{image.Position} {image.Size} in {panel.Size}");
         image.Texture = null;
         Layout.PlaceInfo(panel);
         Check("no picture: the description starts under the head; with one, under the picture", description0 < 160 && withPicture >= 16 + ModDetails.ThumbHeight,
@@ -683,17 +687,43 @@ static class SelfTest
         await Wait(menu, 0.4);
         Check("the alias field saves, the row follows", Store.InfoFor("LocalModFixes")?.Alias == "Fixes" && RowTitle("LocalModFixes").StartsWith("Fixes"));
 
-        // Hovering a row for a second shows its notes.
-        Hover.TestMouse = () => other.GetGlobalRect().GetCenter();
-        other.EmitSignal(Control.SignalName.MouseEntered);
-        await Wait(menu, 1.3);
-        Check("a second over a row shows its card", screen.HasNode("SpireModManagerNotesCard"));
+        // Hovering the title for half a second shows the mod's card (id and state first); the notepad, a tenth;
+        // after a card goes, another shows at once for twice its delay.
+        bool CardShown() => screen.HasNode("SpireModManagerNotesCard");
+        string CardText() => screen.GetNodeOrNull("SpireModManagerNotesCard")?.FindChildren("*", "RichTextLabel", true, false).OfType<RichTextLabel>().FirstOrDefault()?.GetParsedText() ?? "";
+        async Task Hover(Control target, double seconds)
+        {
+            SpireModManager.Hover.TestMouse = () => target.GetGlobalRect().GetCenter();
+            target.EmitSignal(Control.SignalName.MouseEntered);
+            await Wait(menu, seconds);
+        }
+        async Task Leave(Control target, double seconds)
+        {
+            SpireModManager.Hover.TestMouse = () => new Vector2(5, 5);
+            target.EmitSignal(Control.SignalName.MouseExited);
+            await Wait(menu, seconds);
+        }
+        var hot = other.GetNode<Control>("SpireModManagerTitleHover");
+        var mark = other.GetNode<Control>("SpireModManagerEditedMark");
+        Check("the notepad sits right after the alias, before the original name", mark.Position.X < other.GetNode<Control>("Title").Position.X + hot.Size.X - 20,
+            $"mark at {mark.Position.X}, title text {other.GetNode<Control>("Title").Position.X}..+{hot.Size.X}");
+        await Hover(hot, 0.3);
+        Check("not yet at 0.3 s", !CardShown());
+        await Wait(menu, 0.35);
+        Check("half a second over the title shows the card: id and state first", CardShown() && CardText().StartsWith("LocalModFixes") && CardText().Contains("Enabled"), CardText());
         await Capture(screen, outDir, "9b-notes-hover");
-        Hover.TestMouse = () => new Vector2(5, 5);
-        await Wait(menu, 0.1);
-        Check("the card goes once the mouse is off the row", !screen.HasNode("SpireModManagerNotesCard"));
-        Hover.TestMouse = null;
-        other.EmitSignal(Control.SignalName.MouseExited);
+        await Leave(hot, 0.1);
+        Check("the card goes once the mouse is off the title", !CardShown());
+        await Hover(mark, 0.05);
+        Check("within the grace period, the notepad's card shows at once", CardShown());
+        await Leave(mark, 1.3);
+        await Hover(hot, 0.2);
+        Check("after the grace period, the title waits again", !CardShown());
+        await Leave(hot, 0.3);
+        await Hover(mark, 0.2);
+        Check("the notepad's card after a tenth of a second", CardShown());
+        await Leave(mark, 0.1);
+        SpireModManager.Hover.TestMouse = null;
         Check("Vanilla View shows plain names", await WithVanillaView(screen, menu, () => RowTitle(ModEntry.ModId) == "Spire Mod Manager"));
     }
 

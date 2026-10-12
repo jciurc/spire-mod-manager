@@ -4,10 +4,10 @@ using MegaCrit.Sts2.Core.Nodes.Screens.ModdingScreen;
 
 namespace SpireModManager;
 
-// A search box over the list. Every word typed must appear (any case) in the mod's name, id, author,
-// alias, notes, category or tags, or the whole query, spaces ignored, in one of them. "#tag" (or
-// #"two words") must be one of the mod's tags, whole; clicking a tag on a row searches for it, Shift-click
-// adds it. Escape clears it.
+/// A search box over the list. Every word typed must appear (any case) in the mod's name, id, author,
+// alias, notes, category or tags, or the whole query, spaces ignored, in one of them. "#tag" must be one of
+// the mod's tags, whole, and "@author" its author (#"two words" and @"two words" for spaces); clicking a tag
+// or an author searches for it, Shift-click adds it. Escape clears it.
 static class Search
 {
     const float Height = 32;
@@ -17,13 +17,16 @@ static class Search
     {
         if (mod?.manifest is not { } manifest)
             return false;
-        var wanted = TagToken.Matches(filter).Select(m => m.Groups[1].Success ? m.Groups[1].Value : m.Groups[2].Value).ToList();
-        if (wanted.Count > 0)
+        var tokens = Token.Matches(filter).Select(m => (Kind: m.Groups[1].Value, Value: m.Groups[2].Success ? m.Groups[2].Value : m.Groups[3].Value)).ToList();
+        if (tokens.Count > 0)
         {
             var tags = Tags.For(mod).Select(c => c.Text).ToList();
-            if (!wanted.All(t => tags.Contains(t, StringComparer.OrdinalIgnoreCase)))
+            bool Has((string Kind, string Value) token) => token.Kind == "#"
+                ? tags.Contains(token.Value, StringComparer.OrdinalIgnoreCase)
+                : string.Equals(manifest.author, token.Value, StringComparison.OrdinalIgnoreCase);
+            if (!tokens.All(Has))
                 return false;
-            filter = TagToken.Replace(filter, " ").Trim();
+            filter = Token.Replace(filter, " ").Trim();
             if (filter.Length == 0)
                 return true;
         }
@@ -38,14 +41,18 @@ static class Search
             || fields.Any(f => f != null && Squeeze(f).Contains(squeezed, StringComparison.OrdinalIgnoreCase));
     }
 
-    static readonly System.Text.RegularExpressions.Regex TagToken = new(@"#""([^""]+)""|#(\S+)");
+    static readonly System.Text.RegularExpressions.Regex Token = new(@"([#@])(?:""([^""]+)""|(\S+))");
 
-    // A tag clicked on a row: search for it; with Shift, add it to what's searched already.
-    public static void ByTag(Node near, string tag, bool add)
+    // A tag or author clicked: search for it; with Shift, add it to what's searched already (after a space).
+    public static void ByTag(Node near, string tag, bool add) => Put(near, "#", tag, add);
+
+    public static void ByAuthor(Node near, string author, bool add) => Put(near, "@", author, add);
+
+    static void Put(Node near, string kind, string value, bool add)
     {
         if (CategoryList.ScreenOf(near)?.GetNodeOrNull<LineEdit>("ModsBorder/SpireModManagerSearch") is not { } box)
             return;
-        var token = tag.Contains(' ') ? $"#\"{tag}\"" : $"#{tag}";
+        var token = value.Contains(' ') ? $"{kind}\"{value}\"" : $"{kind}{value}";
         var text = !add || box.Text.Trim().Length == 0 ? token : box.Text.Contains(token) ? box.Text : $"{box.Text.TrimEnd()} {token}";
         box.Text = text;
         box.CaretColumn = text.Length;

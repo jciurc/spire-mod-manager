@@ -13,11 +13,76 @@ static class Hover
     public static Func<Vector2>? TestMouse;
     public static Vector2 Mouse(CanvasItem item) => TestMouse?.Invoke() ?? item.GetGlobalMousePosition();
 
+    // Grace period: once a card opened by Watch has gone, for twice its delay any card shows at once (moving
+    // along names or tags doesn't wait each time).
+    static ulong _graceUntil;
+
+    // A card over `trigger` after `delay` seconds of hovering it (at once in a grace period); it goes when the
+    // mouse leaves. card: its text, or null for none (asked when it opens).
+    public static void Watch(Control trigger, string name, double delay, Func<string?> card, float width = 380)
+    {
+        bool Over() => GodotObject.IsInstanceValid(trigger) && trigger.IsVisibleInTree() && !MenuPanel.IsOpen
+            && trigger.GetGlobalRect().HasPoint(Mouse(trigger));
+        var token = 0;
+        trigger.MouseEntered += () =>
+        {
+            var mine = ++token;
+            void Open()
+            {
+                if (mine == token && Over() && card() is { } text && Owner(trigger) is { } owner)
+                    Show(owner, name, text, Mouse(trigger) + new Vector2(16, 20), width: width, keep: Over, grace: delay);
+            }
+            if (Time.GetTicksMsec() < _graceUntil)
+                Open();
+            else
+                trigger.GetTree().CreateTimer(delay).Timeout += Open;
+        };
+        trigger.MouseExited += () =>
+        {
+            if (!Over())
+                token++;
+        };
+    }
+
+    // The same for [url] links in a text: a card for the link under the mouse. card: its text for the link's
+    // meta, or null for none.
+    public static void WatchLinks(RichTextLabel label, string name, double delay, Func<string, string?> card, float width = 380)
+    {
+        string? current = null;
+        var token = 0;
+        bool Over(string meta) => current == meta && GodotObject.IsInstanceValid(label) && label.IsVisibleInTree() && !MenuPanel.IsOpen
+            && label.GetGlobalRect().HasPoint(Mouse(label));
+        label.MetaHoverStarted += meta =>
+        {
+            var link = meta.AsString();
+            current = link;
+            var mine = ++token;
+            void Open()
+            {
+                if (mine == token && Over(link) && card(link) is { } text && Owner(label) is { } owner)
+                    Show(owner, name, text, Mouse(label) + new Vector2(16, 20), width: width, keep: () => Over(link), grace: delay);
+            }
+            if (Time.GetTicksMsec() < _graceUntil)
+                Open();
+            else
+                label.GetTree().CreateTimer(delay).Timeout += Open;
+        };
+        label.MetaHoverEnded += _ =>
+        {
+            current = null;
+            token++;
+        };
+    }
+
+    // Cards belong to the page they're on (they go with it), else to the window.
+    static Node? Owner(Node node) => CategoryList.ScreenOf(node) ?? (Node?)node.GetTree()?.Root;
+
     // at: the card's corner: its top-left, or with right/above, the matching corner. Kept on screen. keep: checked
     // every frame; the card goes as soon as it's false (so it can't be left behind when the mouse moves on
-    // without an exit event, a click opens something else, or the page changes).
+    // without an exit event, a click opens something else, or the page changes). grace: the delay it waited
+    // (Watch), which starts a grace period when it goes.
     public static void Show(Node owner, string name, string bbcode, Vector2 at, bool right = false, bool above = false, float width = 380,
-        Func<bool>? keep = null)
+        Func<bool>? keep = null, double grace = 0)
     {
         Hide(owner, name);
         var layer = new CanvasLayer { Name = name, Layer = 80 };
@@ -27,8 +92,11 @@ static class Hover
             var tree = owner.GetTree();
             void Check()
             {
-                if (!GodotObject.IsInstanceValid(owner) || !owner.IsInsideTree() || !keep())
-                    Hide(owner, name);
+                if (GodotObject.IsInstanceValid(owner) && owner.IsInsideTree() && keep())
+                    return;
+                Hide(owner, name);
+                if (grace > 0)
+                    _graceUntil = Time.GetTicksMsec() + (ulong)(grace * 2000);
             }
             tree.ProcessFrame += Check;
             layer.TreeExiting += () => tree.ProcessFrame -= Check;
