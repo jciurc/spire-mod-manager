@@ -256,9 +256,27 @@ static class SelfTest
         var rowMenu = CategoryList.ShowRowMenu(content, row);
         await Wait(menu, 0.5);
         var rowItems = rowMenu == null ? [] : MenuPanel.Labels(rowMenu);
-        Check("row menu lists categories", rowItems.Count == Store.Data.Categories.Count + 2, string.Join(", ", rowItems));
+        Check("row menu: alias, notes, tags, then categories", rowItems.Count == Store.Data.Categories.Count + 5 && rowItems[0] == "Add alias",
+            string.Join(", ", rowItems));
         await Capture(screen, outDir, "5-row-menu");
-        rowMenu?.Hide();
+        if (rowMenu != null)
+        {
+            // "Add alias" turns the menu into an editor; Save stores it and brings the menu back, now "Edit alias".
+            MenuPanel.Press(rowMenu, "Add alias");
+            await Wait(menu, 0.3);
+            var editor = rowMenu.FindChild("AliasEditor", true, false);
+            Check("a menu item opens its editor in the menu", editor != null && MenuPanel.Labels(rowMenu).Count == 0);
+            await Capture(screen, outDir, "5b-menu-editor");
+            if (editor?.GetNode<LineEdit>("Field") is { } field)
+                field.Text = "Menu alias";
+            editor?.FindChild("Save", true, false)?.EmitSignal(BaseButton.SignalName.Pressed);
+            await Wait(menu, 0.3);
+            Check("its Save stores the alias and goes back to the menu", Store.InfoFor(modId)?.Alias == "Menu alias"
+                && MenuPanel.Labels(rowMenu).FirstOrDefault() == "Edit alias", string.Join(", ", MenuPanel.Labels(rowMenu)));
+            ModDetails.SetAlias(modId, "");
+            CategoryList.Apply(content);
+            rowMenu.Hide();
+        }
 
         var category = Categories.Add();
         Categories.Assign(modId, category.Name);

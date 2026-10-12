@@ -398,6 +398,110 @@ static class ModDetails
         info.Tags = Tags.Parse(tags);
     });
 
+    public enum Detail { Alias, Notes, Tags }
+
+    // "Add alias" / "Edit alias" (and notes, tags) for a mod's right-click menu: the menu turns into a small
+    // editor for it, whose Save or Cancel goes back to the menu. Enter saves (Ctrl+Enter for notes),
+    // Escape cancels.
+    public static MenuItem MenuEditor(Detail detail, string modId, Action saved)
+    {
+        var info = Store.InfoFor(modId);
+        var current = detail switch
+        {
+            Detail.Alias => info?.Alias ?? "",
+            Detail.Notes => info?.Notes ?? "",
+            _ => string.Join(", ", info?.Tags ?? []),
+        };
+        var key = $"SPIRE_MOD_MANAGER.{(current.Length > 0 ? "EDIT" : "ADD")}_{detail.ToString().ToUpperInvariant()}";
+        return new MenuItem(Menus.Text(key), null, Editor: (back, _) =>
+        {
+            var box = new VBoxContainer { Name = $"{detail}Editor", CustomMinimumSize = new Vector2(420, 0) };
+            box.AddThemeConstantOverride("separation", 6);
+            var title = new Label { Text = Menus.Text(key) };
+            Style(title, "res://themes/kreon_bold_shared.tres", 17, Gold);
+            box.AddChild(title);
+
+            Control field = detail == Detail.Notes
+                ? new TextEdit { Name = "Field", Text = current, WrapMode = TextEdit.LineWrappingMode.Boundary, CustomMinimumSize = new Vector2(0, 4 * 24 + 8) }
+                : new LineEdit { Name = "Field", Text = current, MaxLength = detail == Detail.Alias ? 80 : 200, CustomMinimumSize = new Vector2(0, 32) };
+            string Text() => field is LineEdit line ? line.Text : ((TextEdit)field).Text;
+            Style(field, "res://themes/kreon_regular_shared.tres", 18, Cream);
+            field.AddThemeColorOverride("font_placeholder_color", new Color(Cream, 0.32f));
+            var look = new StyleBoxFlat
+            {
+                BgColor = new Color(0.05f, 0.08f, 0.12f), BorderColor = new Color(Gold, 0.45f),
+                ContentMarginLeft = 6, ContentMarginRight = 6, ContentMarginTop = 2, ContentMarginBottom = 2,
+            };
+            look.SetBorderWidthAll(1);
+            look.SetCornerRadiusAll(4);
+            field.AddThemeStyleboxOverride("normal", look);
+            field.AddThemeStyleboxOverride("focus", look);
+            var hint = Menus.Text($"SPIRE_MOD_MANAGER.{detail.ToString().ToUpperInvariant()}_HINT");
+            if (field is LineEdit lineEdit)
+                lineEdit.PlaceholderText = hint;
+            else
+                ((TextEdit)field).PlaceholderText = hint;
+            box.AddChild(field);
+
+            void Save()
+            {
+                var text = Text().Trim();
+                Edit(modId, i =>
+                {
+                    switch (detail)
+                    {
+                        case Detail.Alias:
+                            i.Alias = text.Length > 0 ? text : null;
+                            break;
+                        case Detail.Notes:
+                            i.Notes = text.Length > 0 ? text : null;
+                            break;
+                        default:
+                            i.Tags = Tags.Parse(text);
+                            break;
+                    }
+                });
+                saved();
+                back();
+            }
+            var buttons = Menus.InlineButtons([
+                new(Menus.Text("SPIRE_MOD_MANAGER.SAVE"), Save),
+                new(Menus.Text("SPIRE_MOD_MANAGER.CANCEL"), back),
+                new(Menus.Text("SPIRE_MOD_MANAGER.CLEAR"), () =>
+                {
+                    if (field is LineEdit line)
+                        line.Clear();
+                    else
+                        ((TextEdit)field).Clear();
+                    field.GrabFocus();
+                }),
+            ], "Buttons");
+            foreach (var (button, id) in buttons.GetChildren().OfType<Button>().Zip(new[] { "Save", "Cancel", "Clear" }))
+                button.Name = id;
+            box.AddChild(buttons);
+            field.GuiInput += e =>
+            {
+                switch (e)
+                {
+                    case InputEventKey { Keycode: Key.Escape, Pressed: true }:
+                        field.AcceptEvent();
+                        back();
+                        break;
+                    case InputEventKey { Keycode: Key.Enter or Key.KpEnter, Pressed: true } enter when field is LineEdit || enter.CtrlPressed:
+                        field.AcceptEvent();
+                        Save();
+                        break;
+                }
+            };
+            Callable.From(() =>
+            {
+                if (GodotObject.IsInstanceValid(field))
+                    field.GrabFocus();
+            }).CallDeferred();
+            return box;
+        });
+    }
+
     public static void SetAlias(string modId, string alias) =>
         Edit(modId, info => info.Alias = alias.Trim() is { Length: > 0 } a ? a : null);
 
@@ -526,7 +630,7 @@ static class ModDetails
             pencil = new Button
             {
                 Name = PencilName, Text = "✎", Flat = true, FocusMode = Control.FocusModeEnum.None,
-                MouseDefaultCursorShape = Control.CursorShape.PointingHand, TooltipText = Menus.Text("SPIRE_MOD_MANAGER.EDIT_ALIAS"),
+                MouseDefaultCursorShape = Control.CursorShape.PointingHand, TooltipText = Menus.Text("SPIRE_MOD_MANAGER.ALIAS_PENCIL_TIP"),
             };
             pencil.AddThemeFontSizeOverride("font_size", 15);
             pencil.AddThemeColorOverride("font_color", new Color(NotesColor) with { A = 0.6f });

@@ -18,7 +18,8 @@ static class MenuPanel
     static readonly Dictionary<string, ulong> ClosedAt = [];
     static readonly Dictionary<string, PopupPanel> Open = [];
 
-    public static PopupPanel? Show(Node owner, IReadOnlyList<MenuItem> items, Vector2? at = null, string? toggleKey = null)
+    // items is called again whenever the list is shown (after an editor's Save or Cancel), so it can change.
+    public static PopupPanel? Show(Node owner, Func<IReadOnlyList<MenuItem>> items, Vector2? at = null, string? toggleKey = null)
     {
         if (toggleKey != null && Open.TryGetValue(toggleKey, out var open) && GodotObject.IsInstanceValid(open) && open.Visible)
         {
@@ -61,8 +62,9 @@ static class MenuPanel
         return panel;
     }
 
-    static void Fill(PopupPanel panel, VBoxContainer list, IReadOnlyList<MenuItem> items)
+    static void Fill(PopupPanel panel, VBoxContainer list, Func<IReadOnlyList<MenuItem>> build)
     {
+        var items = build();
         foreach (var child in list.GetChildren())
         {
             list.RemoveChild(child);
@@ -70,7 +72,7 @@ static class MenuPanel
         }
         var marks = items.Any(i => i.Checked || i.Radio);
         foreach (var item in items)
-            list.AddChild(item.OnSelect == null && item.Editor == null ? Heading(item.Label) : Row(panel, list, items, item, marks));
+            list.AddChild(item.OnSelect == null && item.Editor == null ? Heading(item.Label) : Row(panel, list, build, item, marks));
         panel.ResetSize();
     }
 
@@ -93,7 +95,7 @@ static class MenuPanel
     }
 
     // One item: hover lights it, a click runs it and closes the menu (or opens its editor in place).
-    static Control Row(PopupPanel panel, VBoxContainer list, IReadOnlyList<MenuItem> items, MenuItem item, bool marks)
+    static Control Row(PopupPanel panel, VBoxContainer list, Func<IReadOnlyList<MenuItem>> items, MenuItem item, bool marks)
     {
         var row = new PanelContainer
         {
@@ -154,7 +156,7 @@ static class MenuPanel
     }
 
     // What a click on an item does: runs it and closes, or swaps the list for its editor.
-    static void Choose(PopupPanel panel, VBoxContainer list, IReadOnlyList<MenuItem> items, MenuItem item)
+    static void Choose(PopupPanel panel, VBoxContainer list, Func<IReadOnlyList<MenuItem>> items, MenuItem item)
     {
         if (item.Editor is { } editor)
         {
