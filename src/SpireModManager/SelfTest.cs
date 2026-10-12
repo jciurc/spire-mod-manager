@@ -417,10 +417,28 @@ static class SelfTest
         var order = content.GetChildren().Select(c => c.Name.ToString()).ToList();
         Check("moved up: header order follows", order.IndexOf("Category Renamed") < order.IndexOf($"Category {Store.Data.Categories.Last().Name}"));
         Check("mod row sits under its header", content.GetChildren().IndexOf(row) == order.IndexOf("Category Renamed") + 1);
-        CategoryList.ShowHeaderMenu(content, category);
+        List<NModMenuRow> Members() => content.GetChildren().OfType<NModMenuRow>().Where(r => Store.InfoFor(r.Mod?.manifest?.id)?.Category == category.Name).ToList();
+        var headerMenu = CategoryList.ShowHeaderMenu(content, category, Members());
         await Wait(menu, 0.5);
         await Capture(screen, outDir, "6-header-menu");
+        Check("header menu: Enable all, Disable all, then the category's actions", headerMenu != null
+            && string.Join(",", MenuPanel.Labels(headerMenu)).StartsWith("Enable all,Disable all,Rename"), headerMenu == null ? "no menu" : string.Join(",", MenuPanel.Labels(headerMenu)));
         MenuPanel.Close();
+        // Disable all turns the category's mods off (this mod stays on), as one undo step.
+        History.Record(); // the category edits above went straight to the store
+        var inCategory = Members().Select(r => r.Mod).OfType<Mod>().ToList();
+        var wereOn = inCategory.Where(Dependencies.IsOn).ToList();
+        if (CategoryList.ShowHeaderMenu(content, category, Members()) is { } allMenu)
+        {
+            MenuPanel.Press(allMenu, "Disable all");
+            await Wait(menu, 0.3);
+            Check("Disable all turns the category's mods off", inCategory.All(m => !Dependencies.IsOn(m) || m.manifest?.id == ModEntry.ModId),
+                string.Join(", ", inCategory.Select(m => $"{m.manifest?.id} {Dependencies.IsOn(m)}")));
+            History.Undo();
+            await Wait(menu, 0.3);
+            Check("one undo turns them back on", wereOn.All(Dependencies.IsOn));
+        }
+        category = Store.Data.Categories.First(c => c.Name == "Renamed"); // undo restores the data as new objects
 
         Categories.Delete(category);
         CategoryList.Apply(content);

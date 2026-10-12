@@ -45,8 +45,9 @@ static class Dependencies
         return needed;
     }
 
-    // Turns mods on in the saved list and ticks their boxes; the caller's redraw records it as one change.
-    public static void TurnOn(IEnumerable<Mod> mods, NModdingScreen screen)
+    // Turns mods on (or off) in the saved list and ticks their boxes; the caller's redraw records it as one
+    // change. This mod stays on.
+    public static void Set(IEnumerable<Mod> mods, bool on, NModdingScreen screen)
     {
         var settings = SaveManager.Instance.SettingsSave.ModSettings ??= new ModSettings();
         foreach (var mod in mods)
@@ -54,7 +55,7 @@ static class Dependencies
             var entry = settings.ModList.FirstOrDefault(e => e.Id == mod.manifest?.id && e.Source == mod.modSource);
             if (entry == null)
                 settings.ModList.Add(entry = new SettingsSaveMod(mod));
-            entry.IsEnabled = true;
+            entry.IsEnabled = on || mod.manifest?.id == ModEntry.ModId;
         }
         SaveManager.Instance.SaveSettings();
         Profiles.RefreshTickboxes(screen);

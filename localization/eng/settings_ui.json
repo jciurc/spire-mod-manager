@@ -22,6 +22,8 @@
   "SPIRE_MOD_MANAGER.ORDER_PROBLEMS_ONE": "For compatibility, 1 mod will be automatically reordered by the base game on relaunch.",
   "SPIRE_MOD_MANAGER.AUTO_SORT_HINT": "Automatically sort for compatibility",
   "SPIRE_MOD_MANAGER.ENABLE_MOD": "Enable",
+  "SPIRE_MOD_MANAGER.ENABLE_ALL": "Enable all",
+  "SPIRE_MOD_MANAGER.DISABLE_ALL": "Disable all",
   "SPIRE_MOD_MANAGER.DISABLE_MOD": "Disable",
   "SPIRE_MOD_MANAGER.LIST_PROBLEMS_OFF": "{count} enabled mods need a mod that is turned off.",
   "SPIRE_MOD_MANAGER.LIST_PROBLEMS_OFF_ONE": "1 enabled mod needs a mod that is turned off.",
