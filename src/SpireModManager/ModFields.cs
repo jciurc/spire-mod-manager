@@ -8,7 +8,8 @@ namespace SpireModManager;
 // - At rest: the value as plain text (tags as pills), or a subtle call to action ("Add alias").
 // - Editing: a padded box with a hint and an inline ✕ to clear. Enter saves (Ctrl+Enter in notes), Escape
 //   or Cancel puts the value back, clicking away saves, so typed text is never lost.
-// - Tags also show the automatic ones (Gameplay, Library, Cosmetic) as filled pills above the player's own.
+// - Tags also show the automatic ones (Local, Library, Gameplay, Cosmetic) as filled pills beside the term.
+// - The value sits in a softly darker box, lighter under the mouse, darker while editing; no outlines.
 sealed class ModField
 {
     public enum Kind { Alias, Notes, Tags }
@@ -23,6 +24,7 @@ sealed class ModField
     readonly Control _box; // a LineEdit, or a TextEdit for notes
     readonly HBoxContainer _buttons;
     readonly HFlowContainer? _system, _pills; // tags only
+    readonly PanelContainer? _pillsBox; // the player's pills at rest, in the same box as the text
     bool _cancelling;
 
     // modId: the mod being shown (it can change: the info panel). saved: after a value is stored.
@@ -38,6 +40,13 @@ sealed class ModField
         var label = new Label { Text = Menus.Text(LocKey("TERM")), SizeFlagsHorizontal = Control.SizeFlags.ExpandFill, VerticalAlignment = VerticalAlignment.Center };
         Style(label, "res://themes/kreon_regular_shared.tres", 18, Gold);
         term.AddChild(label);
+        if (kind == Kind.Tags)
+        {
+            label.SizeFlagsHorizontal = Control.SizeFlags.ShrinkBegin;
+            _system = Flow("SystemTags");
+            (_system.SizeFlagsHorizontal, _system.SizeFlagsVertical) = (Control.SizeFlags.ExpandFill, Control.SizeFlags.ShrinkCenter);
+            term.AddChild(_system);
+        }
         _buttons = Menus.InlineButtons([
             new(Menus.Text("SPIRE_MOD_MANAGER.SAVE"), () => _box?.ReleaseFocus()), // leaving the box saves
             new(Menus.Text("SPIRE_MOD_MANAGER.CANCEL"), Cancel),
@@ -50,17 +59,16 @@ sealed class ModField
 
         if (kind == Kind.Tags)
         {
-            _system = Flow("SystemTags");
-            root.AddChild(_system);
-            _pills = Flow("CustomTags");
-            _pills.MouseFilter = Control.MouseFilterEnum.Stop;
-            _pills.MouseDefaultCursorShape = Control.CursorShape.Ibeam;
-            _pills.GuiInput += e =>
+            _pillsBox = new PanelContainer { Name = "CustomTags", MouseFilter = Control.MouseFilterEnum.Stop, MouseDefaultCursorShape = Control.CursorShape.Ibeam };
+            Hoverable(_pillsBox, "panel");
+            _pillsBox.GuiInput += e =>
             {
                 if (e is InputEventMouseButton { ButtonIndex: MouseButton.Left, Pressed: false })
                     BeginEdit();
             };
-            root.AddChild(_pills);
+            _pills = Flow("Pills");
+            _pillsBox.AddChild(_pills);
+            root.AddChild(_pillsBox);
         }
 
         _box = kind == Kind.Notes
@@ -68,9 +76,9 @@ sealed class ModField
             : new LineEdit { Name = "Box", MaxLength = kind == Kind.Alias ? 80 : 200, CustomMinimumSize = new Vector2(0, 34) };
         Style(_box, "res://themes/kreon_regular_shared.tres", 18, Cream);
         _box.AddThemeColorOverride("font_placeholder_color", new Color(Cream, 0.35f));
-        _box.AddThemeStyleboxOverride("normal", Look(false));
-        _box.AddThemeStyleboxOverride("focus", Look(true));
-        _box.AddThemeStyleboxOverride("read_only", Look(false));
+        Hoverable(_box, "normal");
+        _box.AddThemeStyleboxOverride("focus", Look(Shade.Active));
+        _box.AddThemeStyleboxOverride("read_only", Look(Shade.Rest));
         _box.MouseDefaultCursorShape = Control.CursorShape.Ibeam;
         root.AddChild(_box);
 
@@ -177,21 +185,21 @@ sealed class ModField
     public void BeginEdit()
     {
         _box.Visible = true;
-        if (_pills != null)
-            _pills.Visible = false;
+        if (_pillsBox != null)
+            _pillsBox.Visible = false;
         _box.GrabFocus();
     }
 
     // At rest: tags with a value show as pills; everything else shows its box (text or the call to action).
     void ShowRest()
     {
-        if (_pills == null || Editing)
+        if (_pills == null || _pillsBox == null || Editing)
             return;
         Clear(_pills);
         var tags = Store.InfoFor(_modId())?.Tags ?? [];
         foreach (var tag in tags)
             _pills.AddChild(Tags.Make(new Tags.Chip(tag, Tags.CustomColor, Custom: true)));
-        _pills.Visible = tags.Count > 0;
+        _pillsBox.Visible = tags.Count > 0;
         _box.Visible = tags.Count == 0;
     }
 
@@ -264,18 +272,32 @@ sealed class ModField
             ((TextEdit)_box).Text = text;
     }
 
-    // Same padding at rest and while editing, so the text doesn't jump; only the box appears.
-    static StyleBoxFlat Look(bool active)
+    public enum Shade { Rest, Hover, Active }
+
+    // The box behind a value: softly darker than the panel at rest, lighter under the mouse, darker while
+    // editing. Same padding throughout, so the text doesn't jump. (Also the panel's category picker.)
+    public static StyleBoxFlat Look(Shade shade)
     {
         var style = new StyleBoxFlat
         {
-            BgColor = active ? new Color(0.0756f, 0.12084f, 0.18f, 0.85f) : Colors.Transparent,
-            BorderColor = active ? new Color(Gold, 0.45f) : Colors.Transparent,
+            BgColor = shade switch
+            {
+                Shade.Hover => new Color(0.16f, 0.22f, 0.29f, 0.6f),
+                Shade.Active => new Color(0.01f, 0.025f, 0.04f, 0.8f),
+                _ => new Color(0.01f, 0.025f, 0.04f, 0.4f),
+            },
             ContentMarginLeft = 10, ContentMarginRight = 10, ContentMarginTop = 6, ContentMarginBottom = 6,
         };
-        style.SetBorderWidthAll(1);
         style.SetCornerRadiusAll(4);
         return style;
+    }
+
+    // The rest look, and the hover look while the mouse is over it (text boxes have no hover style of their own).
+    static void Hoverable(Control control, string styleName)
+    {
+        control.AddThemeStyleboxOverride(styleName, Look(Shade.Rest));
+        control.MouseEntered += () => control.AddThemeStyleboxOverride(styleName, Look(Shade.Hover));
+        control.MouseExited += () => control.AddThemeStyleboxOverride(styleName, Look(Shade.Rest));
     }
 
     static HFlowContainer Flow(string name)
