@@ -79,7 +79,6 @@ static class LoadOrder
                     node.QueueFree();
                 }
             row.GetNode<Control>("Title").OffsetLeft -= HandleWidth;
-            ModDetails.PlacePencil(row);
             OrderingOnly(row, false);
         }
     }
@@ -153,7 +152,7 @@ static class LoadOrder
         ];
     }
 
-    public static PopupPanel? ShowRowMenu(Control content, NModMenuRow row, Action redraw) =>
+    public static Node? ShowRowMenu(Control content, NModMenuRow row, Action redraw) =>
         Menus.Show(content, Actions(content, row, redraw));
 
     // Above the list, outside its scrolling (so it stays put): Auto sort at the right end of the search
@@ -264,7 +263,6 @@ static class LoadOrder
             return;
         }
         row.GetNode<Control>("Title").OffsetLeft += HandleWidth;
-        ModDetails.PlacePencil(row);
 
         // Left to right: the link gutter (dependency lines), the grip, the position number, then the title.
         number = new Label

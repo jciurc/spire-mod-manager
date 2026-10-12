@@ -11,7 +11,8 @@ namespace SpireModManager;
 // there is simply nothing, and everything that uses it shows less.
 static class WorkshopInfo
 {
-    public record Details(DateTime Created, DateTime Updated, IReadOnlyList<string> Tags, IReadOnlyList<(string Min, string Max)> Branches);
+    public record Details(DateTime Created, DateTime Updated, IReadOnlyList<string> Tags, IReadOnlyList<(string Min, string Max)> Branches,
+        long Size, ulong? Subscribers);
 
     static readonly Dictionary<ulong, Details> Cache = [];
     static bool _started;
@@ -60,7 +61,8 @@ static class WorkshopInfo
                         DateTimeOffset.FromUnixTimeSeconds(d.m_rtimeCreated).LocalDateTime,
                         DateTimeOffset.FromUnixTimeSeconds(d.m_rtimeUpdated).LocalDateTime,
                         d.m_rgchTags.Split(',', StringSplitOptions.RemoveEmptyEntries | StringSplitOptions.TrimEntries),
-                        SupportedBranches(result.m_handle, i));
+                        SupportedBranches(result.m_handle, i), d.m_nFileSize,
+                        SteamUGC.GetQueryUGCStatistic(result.m_handle, i, EItemStatistic.k_EItemStatistic_NumSubscriptions, out var subscribers) ? subscribers : null);
             Log.Info($"[{ModEntry.ModId}] Workshop details for {Cache.Count} of {ids.Length} mods");
             Loaded?.Invoke();
         }
