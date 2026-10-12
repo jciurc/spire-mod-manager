@@ -205,7 +205,8 @@ static class ModInfoClearPatch
     }
 }
 
-// Keyboard shortcuts on our Modding screen: Ctrl+Z undo, Ctrl+Y or Ctrl+Shift+Z redo, Ctrl+F search.
+// Keyboard shortcuts on our Modding screen: Ctrl+Z undo, Ctrl+Y or Ctrl+Shift+Z redo, Ctrl+F search, Ctrl+S
+// saves the profile.
 // Unhandled keys only, so a focused text box keeps its own Ctrl+Z.
 [HarmonyPatch(typeof(NInputManager), "_UnhandledKeyInput")]
 static class ShortcutsPatch
@@ -238,6 +239,10 @@ static class ShortcutsPatch
                     break;
                 case Key.F:
                     screen.GetNodeOrNull<Control>("ModsBorder/SpireModManagerSearch")?.GrabFocus();
+                    break;
+                case Key.S:
+                    if (Profiles.Active is { Edited: not null })
+                        Profiles.Save();
                     break;
                 default:
                     return;

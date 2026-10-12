@@ -569,9 +569,10 @@ static class SelfTest
         Press("SaveProfileButton");
         await Wait(menu, 0.3);
         Check("Save makes the edit the saved state", !Profiles.Edited && SavedOn() != wasOn && profile.Edited == null);
-        await Toggle(wasOn); // and back, saved, for the tests after
-        Press("SaveProfileButton");
+        await Toggle(wasOn); // and back, saved (with Ctrl+S), for the tests after
+        Input.ParseInputEvent(new InputEventKey { Keycode = Key.S, CtrlPressed = true, Pressed = true });
         await Wait(menu, 0.3);
+        Check("Ctrl+S saves the profile", !Profiles.Edited && SavedOn() == wasOn && profile.Edited == null);
     }
 
     // The fixture gives SpireModManager an alias and notes; LocalModFixes gets them through the editor.
