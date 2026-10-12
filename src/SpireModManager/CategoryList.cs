@@ -423,17 +423,33 @@ static class CategoryList
         title.Visible = false;
         edit.GrabFocus();
 
+        // An empty or taken name says so at the box's right end; Enter then does nothing, and clicking away
+        // keeps the old name.
+        var warning = new Label { Name = "NameWarning", HorizontalAlignment = HorizontalAlignment.Right, VerticalAlignment = VerticalAlignment.Center, MouseFilter = Control.MouseFilterEnum.Ignore };
+        warning.AddThemeFontSizeOverride("font_size", 15);
+        warning.AddThemeColorOverride("font_color", new Color(1f, 0.5f, 0.44f));
+        edit.AddChild(warning);
+        warning.SetAnchorsPreset(Control.LayoutPreset.FullRect);
+        warning.OffsetRight = -8;
+        string? Problem() => Categories.NameProblem(edit.Text, category);
+        void Check() => warning.Text = Problem() ?? "";
+        edit.TextChanged += _ => Check();
+
         var done = false;
         void Finish(bool commit)
         {
             if (done)
                 return;
             done = true;
-            if (commit)
-                Categories.Rename(category, edit.Text); // empty or taken: keeps the old name
+            if (commit && Problem() == null)
+                Categories.Rename(category, edit.Text);
             Callable.From(() => Apply(content)).CallDeferred(); // not while the box is handling its own signal
         }
-        edit.TextSubmitted += _ => Finish(true);
+        edit.TextSubmitted += _ =>
+        {
+            if (Problem() == null)
+                Finish(true);
+        };
         edit.FocusExited += () => Finish(true);
         edit.GuiInput += e =>
         {

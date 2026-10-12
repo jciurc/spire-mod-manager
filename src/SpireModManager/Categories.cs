@@ -30,6 +30,15 @@ static class Categories
         return true;
     }
 
+    // Why a name can't be used, or null: empty, or another category has it.
+    public static string? NameProblem(string name, Category? renaming = null)
+    {
+        name = name.Trim();
+        if (name.Length == 0)
+            return Menus.Text("SPIRE_MOD_MANAGER.NAME_EMPTY");
+        return Store.Data.Categories.Any(c => c != renaming && c.Name == name) ? Menus.Format("SPIRE_MOD_MANAGER.NAME_TAKEN", ("name", name)) : null;
+    }
+
     public static void Move(Category category, int step)
     {
         var list = Store.Data.Categories;
