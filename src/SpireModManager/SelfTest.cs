@@ -120,6 +120,7 @@ static class SelfTest
             await TestListBanner(menu, screen, content, outDir);
             await TestPageBar(menu, screen, content, outDir);
             await TestRelaunchCheck(menu, screen, content, outDir);
+            await TestLongDetails(menu, screen, content, outDir);
             await TestHistory(menu, screen, content, outDir);
 
             // Leaving from Load Order: the page comes back on the main list.
@@ -1241,6 +1242,56 @@ static class SelfTest
         await Wait(menu, 0.2);
         Input.ParseInputEvent(new InputEventKey { Keycode = Key.Escape, Pressed = false });
         Check("Esc closes it, and stays on the page", Dialog() == null && screen.IsVisibleInTree() && Dependencies.IsOn(branded));
+    }
+
+    // A snapshot of the edge case, not a fix (yet): a made-up mod with very long everything (name, author,
+    // version, description, alias, tags, notes), shown in the list and the panel. The screenshot
+    // 16-long-details shows how it looks today; it's removed again afterwards.
+    static async Task TestLongDetails(Node menu, NModdingScreen screen, Control content, string outDir)
+    {
+        const string id = "SmmVeryLongModIdentifierThatGoesOnAndOnForTheSakeOfTesting";
+        var words = "lorem ipsum dolor sit amet consectetur adipiscing elit sed do eiusmod tempor incididunt ut labore et dolore magna aliqua".Split(' ');
+        string Text(int count) => string.Join(' ', Enumerable.Range(0, count).Select(i => words[i % words.Length]));
+        var mod = new Mod
+        {
+            path = "", modSource = ModSource.ModsDirectory, state = ModLoadState.AddedAtRuntime,
+            manifest = new ModManifest
+            {
+                id = id, name = "The Extraordinarily Long-Named Compendium of Every Card, Relic, Potion and Event Ever Imagined (Deluxe Edition)",
+                author = "A Collective of Very Enthusiastic Modders With An Unusually Long Team Name", version = "12.345.6789-beta.12+build.98765",
+                description = Text(220), minGameVersion = "0.111.0",
+            },
+        };
+        typeof(ModManager).GetMethod("InvokeOnModDetected", System.Reflection.BindingFlags.NonPublic | System.Reflection.BindingFlags.Static)?.Invoke(null, [mod]);
+        await Wait(menu, 0.4);
+        NModalContainer.Instance?.Clear();
+        Store.EditMod(id, info =>
+        {
+            info.Alias = "My favourite enormous content pack that I keep meaning to rename to something shorter";
+            info.Notes = Text(120);
+            info.Tags = ["content", "big", "really-long-tag-name-for-testing", "favourites", "co-op", "needs-checking-after-every-update", "deluxe"];
+        });
+        CategoryList.Apply(content);
+        await Wait(menu, 0.3);
+        if (content.GetChildren().OfType<NModMenuRow>().FirstOrDefault(r => r.Mod == mod) is { } row)
+        {
+            screen.OnRowSelected(row);
+            CategoryList.Reveal(content, id, flash: false);
+            await Wait(menu, 0.5);
+            await Capture(screen, outDir, "16-long-details");
+            Check("long details: the panel shows the made-up mod (see 16-long-details)", screen.GetNode<RichTextLabel>("%ModInfoContainer/ModTitle").GetParsedText().StartsWith("The Extraordinarily"));
+            content.RemoveChild(row);
+            row.QueueFree();
+        }
+        else
+            Results.Add("FAIL long details: no row for the made-up mod");
+        Installed.Forget(mod);
+        Store.EditMod(id, info => (info.Alias, info.Notes, info.Tags, info.Category) = (null, null, null, null));
+        SaveManager.Instance.SettingsSave.ModSettings?.ModList.RemoveAll(e => e.Id == id);
+        History.Record();
+        CategoryList.Redraw(content);
+        screen.GetNode<NModInfoContainer>("%ModInfoContainer").Clear();
+        await Wait(menu, 0.3);
     }
 
     // Untick a mod through its real tickbox, review, undo/redo; undo a rename; revert all, and undo that.
