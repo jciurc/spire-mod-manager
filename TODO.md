@@ -294,52 +294,52 @@ Jordan's notes of 2026-10-11 (late).
 Jordan's notes of 2026-10-12.
 
 ## Rows
-- [ ] remove the inline alias pencil (alias via the right-click menu or the side panel)
-- [ ] subtle notes icon on rows with custom edits
-- [ ] hovering a mod title (1 s) shows its custom notes
-- [ ] "Required for N enabled mods"
-- [ ] pill tooltips: Gameplay "This mod affects gameplay"; Library "This mod is a framework used by other mods - often does nothing on its own"
-- [ ] Cosmetic tag when known: "This mod adds visuals, such as character skins, battle animations, UI, or textures"
+- [x] remove the inline alias pencil (alias via the right-click menu or the side panel)
+- [x] subtle notes icon on rows with custom edits
+- [x] hovering a mod title (1 s) shows its custom notes
+- [x] "Required for N enabled mods"
+- [x] pill tooltips: Gameplay "This mod affects gameplay"; Library "This mod is a framework used by other mods - often does nothing on its own"
+- [x] Cosmetic tag when known: "This mod adds visuals, such as character skins, battle animations, UI, or textures"
 
 ## Right-click menu
-- [ ] two columns: categories on the left, the fields with inline editors on the right (no nested page)
-- [ ] right-clicking elsewhere closes the menu and passes the right-click on to what's under the mouse
-- [ ] clicking the Category button again closes its menu (like the profile list)
-- [ ] New category scrolls to the new category's name box (bottom of the list)
+- [x] two columns: categories on the left, the fields with inline editors on the right (no nested page)
+- [x] right-clicking elsewhere closes the menu and passes the right-click on to what's under the mouse
+- [x] clicking the Category button again closes its menu (like the profile list)
+- [x] New category scrolls to the new category's name box (bottom of the list)
 
 ## Side panel
-- [ ] order: original name (heading); link "<id> v<version> (Workshop <UID>)" without a label; Enabled / Disabled / Pending restart (green / grey / orange); description; author, published, updated, size, subscribers, compatibility, Workshop tags; dependencies; Alias, Category (dropdown), Tags (system pills, then custom tag pills/editor), Notes
-- [ ] fields: Alias, Notes, then Tags; CTAs "Add alias", "Add notes", "Add tags"; same look, text and placeholders in the right-click menu; one shared component
-- [ ] compatibility: no repeated branches (old betas all read "beta")
-- [ ] notes trimmed when the editor closes
-- [ ] clicking the panel's title scrolls the mod into view in the list
-- [ ] clicking a dependency's name scrolls to it and highlights it (without opening it in the panel)
+- [x] order: original name (heading); link "<id> v<version> (Workshop <UID>)" without a label; Enabled / Disabled / Pending restart (green / grey / orange); description; author, published, updated, size, subscribers, compatibility, Workshop tags; dependencies; Alias, Category (dropdown), Tags (system pills, then custom tag pills/editor), Notes
+- [x] fields: Alias, Notes, then Tags; CTAs "Add alias", "Add notes", "Add tags"; same look, text and placeholders in the right-click menu; one shared component
+- [x] compatibility: no repeated branches (old betas all read "beta")
+- [x] notes trimmed when the editor closes
+- [x] clicking the panel's title scrolls the mod into view in the list
+- [x] clicking a dependency's name scrolls to it and highlights it (without opening it in the panel)
 
 ## Text inputs
-- [ ] a bit of padding in all text inputs
-- [ ] no Clear buttons: an inline X instead
+- [x] a bit of padding in all text inputs
+- [x] no Clear buttons: an inline X instead
 
 ## Changes
-- [ ] two lines: "Mods enabled N (+X -Y) ↕moved", then "Changes N" (moved + edited + profile changes; the tooltip lists them apart)
-- [ ] a bit of space above "Click for the full list"
-- [ ] Undo, Redo, Revert all don't open the changes list; only clicking the Changes text does
-- [ ] clicking the Changes text again closes the list
-- [ ] (fix) with the list open, a tickbox click switches the panel to that mod; it should stay until Close or a click on a row
-- [ ] alias edits in the changes tooltip and list
-- [ ] undo buttons centred vertically with the page buttons
+- [x] two lines: "Mods enabled N (+X -Y) ↕moved", then "Changes N" (moved + edited + profile changes; the tooltip lists them apart)
+- [x] a bit of space above "Click for the full list"
+- [x] Undo, Redo, Revert all don't open the changes list; only clicking the Changes text does
+- [x] clicking the Changes text again closes the list
+- [x] (fix) with the list open, a tickbox click switches the panel to that mod; it should stay until Close or a click on a row
+- [x] alias edits in the changes tooltip and list
+- [x] undo buttons centred vertically with the page buttons
 
 ## Profiles
-- [ ] the unsaved * in the profile list in red
-- [ ] hovering "Unsaved" shows that profile's own changes
+- [x] the unsaved * in the profile list in red
+- [x] hovering "Unsaved" shows that profile's own changes
 
 ## Search
-- [ ] case- and whitespace-insensitive
-- [ ] (fix) after filtering while scrolled down, the first match hides behind the search bar
+- [x] case- and whitespace-insensitive
+- [x] (fix) after filtering while scrolled down, the first match hides behind the search bar
 
 ## Other
-- [ ] category mod count right after the category name
-- [ ] "Main Menu" label a few pixels higher
-- [ ] (fix) Move button: the button jumps to the mouse and then doesn't follow; the hint stays on screen (even on other pages); Esc puts it back
+- [x] category mod count right after the category name
+- [x] "Main Menu" label a few pixels higher
+- [x] (fix) Move button: the button jumps to the mouse and then doesn't follow; the hint stays on screen (even on other pages); Esc puts it back
 
 ## Backlog (round 6)
 - [ ] click a tag to filter by it; Shift-click adds more tags
