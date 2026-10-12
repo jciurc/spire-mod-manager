@@ -4,6 +4,14 @@ Short notes for Jordan: what to look for after each install. Newest first.
 
 ## Not installed yet
 
+Picking several mods (main list)
+- **Ctrl-click** rows to pick them, **Shift-click** for a range, **Ctrl+A** for every mod shown. A category header's right-click menu has **Select all**. Picked rows are tinted blue. A plain click or **Esc** lets go.
+- **Right-click a picked mod**: on the left, the category for all of them (marked when they share one), New category, Enable all / Disable all. On the right, **"Editing N selected mods"** where the alias would be, then Tags and Notes:
+  - Tags shows the tags they all share. Tags you add go on every one, tags you remove come off every one, and each mod keeps its other tags.
+  - Notes shows their notes if they're all the same. If they differ, the box says so, and typing replaces them all.
+- Every bulk change is one undo step.
+- With mods picked, the bar under the search reads "Selected (N)": Enable all / Disable all act on them, plus **Clear selection**.
+
 Info panel
 - Click a mod's name (the title, or a dependency) to scroll to it in the list. It takes the blue "selected" look, but the panel stays on the mod you were reading.
 - Hover a dependency's name: its row lights up if it's in view (nothing scrolls), and its card shows after half a second. The changes list's names do the same.
@@ -216,3 +224,5 @@ Choices I made on my own; say if any should change.
 - **Patch notes** come from the Workshop's change notes page (one request per mod, only when you open them). Steam limits how often that page can be read, so it may say "Couldn't load" for a while after many requests.
 - **"Patch notes"** shows for every Workshop mod. "Recently updated" (red) is the same link, used when the update is under a week old.
 - **Clicking a name** in the panel no longer flashes the row gold. It gives the row the game's blue "selected" look instead (it really takes focus, like a keyboard selection).
+- **Bulk menu extras**: besides the category, it offers New category and Enable all / Disable all for the picked mods. Ctrl+A picks every mod shown (in Load Order too, for dragging).
+- **Bulk notes**: leaving the box empty when their notes differ changes nothing. Clearing everyone's notes at once isn't possible yet.
