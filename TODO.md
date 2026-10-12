@@ -106,8 +106,8 @@ Jordan's notes of 2026-10-07 (from `spire manager notes.txt` in the scratch fold
 - [x] save, discard button specific to profiles
 - [ ] mod manager accessible during gameplay
 - [ ] save run and relaunch option during gameplay
-- [ ] newly installed mods indicator
-- [ ] mod recently updated indicator
+- [x] newly installed mods indicator (a "New" tag)
+- [x] mod recently updated indicator (an "Updated" tag, Workshop updates in the last 7 days)
 - [ ] saveable load order presets
 - [ ] show installed/removed mods that differ from preset
 - [ ] larger previewable screenshots on hover in details panel
@@ -193,13 +193,13 @@ Jordan's notes of 2026-10-07, second batch (same file), plus play feedback.
 
 ## Backlog (round 2)
 
-- [ ] tag for mods that need multiplayer sync (everyone must have them)
+- [x] tag for mods that need multiplayer sync (everyone must have them): the Gameplay tag, its tooltip says so
 - [ ] minimap scroll bar (like VS Code) marking notable items
-- [ ] banner when disabling a mod that enabled mods depend on (e.g. BaseLib)
+- [x] banner when disabling a mod that enabled mods depend on (e.g. BaseLib): the main-list banner (round 8)
 - [ ] view enabled only / disabled only (sticky items when toggling)
 - [ ] view edited mods
 - [ ] enable all / disable all
-- [ ] filter by author
+- [x] filter by author (search covers authors)
 - [x] stylized Spire Mod Manager button (Jordan designs)
 - [ ] export/import/share mod collections and configuration
 - [ ] import BMM profiles from a settings page
@@ -232,7 +232,7 @@ Jordan's notes of 2026-10-11.
 - [ ] multi-select on the main page: move to a category, select/deselect
 - [ ] drag and drop: whole categories, single mods, multi-selections
 - [ ] author name on the row (right side, above the category button)
-- [ ] category button shows the category's name
+- [x] category button shows the category's name
 - [ ] colour codes for categories and/or tags
 - [x] "Needs: X": X green when enabled, red when not
 - [ ] (fix) the changed (gold) title colour overrides custom colours
