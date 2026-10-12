@@ -97,13 +97,13 @@ Jordan's notes of 2026-10-07 (from `spire manager notes.txt` in the scratch fold
 - [ ] load order position as column
 - [ ] mod patchnotes, seeded by workshop if available
 - [ ] selectable changes since X for mod patchnotes
-- [ ] moveable main menu button accessible with right click
+- [x] moveable main menu button accessible with right click
 - [ ] REMINDER: copy and design pass before publishing
 - [ ] REMINDER: performance and code quality pass
 - [ ] "Config" button next to mods with their own config page
 - [ ] A settings page for Spire Mod Manager, don't know exactly what goes here yet. maybe profile management, and
 - [ ] undo state specific to profiles
-- [ ] save, discard button specific to profiles
+- [x] save, discard button specific to profiles
 - [ ] mod manager accessible during gameplay
 - [ ] save run and relaunch option during gameplay
 - [ ] newly installed mods indicator
@@ -200,14 +200,14 @@ Jordan's notes of 2026-10-07, second batch (same file), plus play feedback.
 - [ ] view edited mods
 - [ ] enable all / disable all
 - [ ] filter by author
-- [ ] stylized Spire Mod Manager button (Jordan designs)
+- [x] stylized Spire Mod Manager button (Jordan designs)
 - [ ] export/import/share mod collections and configuration
 - [ ] import BMM profiles from a settings page
 - [ ] export as BMM csv (or save into BMM's folder)
 - [ ] toggle between BMM and Spire Manager
 - [ ] keyboard navigation: up/down, space to select
 - [ ] multi-select and bulk actions in Category view
-- [ ] profile and category dropdowns use a radio-style mark (single choice)
+- [x] profile and category dropdowns use a radio-style mark (single choice)
 - [ ] auto update and polling
 - [ ] link to the game's patch notes
 
@@ -217,14 +217,14 @@ Jordan's notes of 2026-10-11.
 
 ## Profiles
 
-- [ ] short date in the edited timestamp
-- [ ] dropdown: mod count and last updated next to each profile name
+- [x] short date in the edited timestamp (moot: unsaved profiles show "Name *" now, no timestamp)
+- [x] dropdown: mod count and last updated next to each profile name
 - [ ] Load Order page: drop the profile bar, OR give load order its own profile system; each main profile links to the last load-order profile (if it has no link yet); show the linked load profile in the main profile's details
 
 ## Changes
 
-- [ ] tooltip lists the added/removed mods
-- [ ] clicking Changes shows the full changes in the right-side panel
+- [x] tooltip lists the added/removed mods
+- [x] clicking Changes shows the full changes in the right-side panel
 
 ## Main list
 
@@ -234,14 +234,14 @@ Jordan's notes of 2026-10-11.
 - [ ] author name on the row (right side, above the category button)
 - [ ] category button shows the category's name
 - [ ] colour codes for categories and/or tags
-- [ ] "Needs: X": X green when enabled, red when not
+- [x] "Needs: X": X green when enabled, red when not
 - [ ] (fix) the changed (gold) title colour overrides custom colours
-- [ ] (fix) thumbnail in the right-side panel still wrong
+- [x] (fix) thumbnail in the right-side panel still wrong
 
 ## Relaunch
 
 - [ ] warning before relaunch when enabled mods miss dependencies or are out of order: list the problem mods; offer enable required mods (listed), disable the incompatible ones, relaunch anyway, close
-- [ ] main menu: tooltip or small "requires restart" text by the pending dot
+- [x] main menu: tooltip or small "requires restart" text by the pending dot
 
 ## Backlog (round 3)
 
@@ -251,34 +251,39 @@ Jordan's notes of 2026-10-11.
 
 Jordan's notes of 2026-10-11 (evening), in his order.
 
-- [ ] (fix) "(off)" stays on a dependency that was just turned on (pending relaunch)
-- [ ] "Required for N mods" on mods others depend on
-- [ ] dimmer colour for "turned off, pending" vs "turned on, pending"
-- [ ] confirm, cancel and clear buttons on text inputs (profile name/rename, tags, notes)
-- [ ] Duplicate as a profile option
-- [ ] Save as new and Duplicate open the name box with the original name plus " (1)" (or the next free number)
-- [ ] renaming to a taken name warns
-- [ ] (fix) rename box stays open when Delete is clicked mid-rename
-- [ ] (fix) clicking the picker while its list is open closes it and opens it again
-- [ ] no visible "Name (edited x)" profiles: an unsaved profile shows "Name *" and keeps its edit behind the scenes
-- [ ] Save, Save as new and Discard ("Discard", not "Revert") beside the "Unsaved" label, which gets its own colour
-- [ ] no pencils by Tags and Notes; at rest, subtle "Click to add tags" / "Click to add notes"
-- [ ] placeholders without the dots ("Custom notes")
-- [ ] Alias field (below Tags, above Notes) in the info panel
-- [ ] Tags field right below the mod's details, with some margin; a bigger gap between Alias and Notes
-- [ ] row right-click menu: Add/Edit alias, Add/Edit notes, Add/Edit tags, each turning the menu into an inline editor (Save / Cancel back to the menu)
-- [ ] main menu button: Jordan's art (Pictures\symphony\design\spire manager button.png), our label, a hover look
-- [ ] right-click the main menu button to move it (soon, no rush)
+- [x] (fix) "(off)" stays on a dependency that was just turned on (pending relaunch)
+- [x] "Required for N mods" on mods others depend on
+- [x] dimmer colour for "turned off, pending" vs "turned on, pending"
+- [x] confirm, cancel and clear buttons on text inputs (profile name/rename, tags, notes)
+- [x] Duplicate as a profile option
+- [x] Save as new and Duplicate open the name box with the original name plus " (1)" (or the next free number)
+- [x] renaming to a taken name warns
+- [x] (fix) rename box stays open when Delete is clicked mid-rename
+- [x] (fix) clicking the picker while its list is open closes it and opens it again
+- [x] no visible "Name (edited x)" profiles: an unsaved profile shows "Name *" and keeps its edit behind the scenes
+- [x] Save, Save as new and Discard ("Discard", not "Revert") beside the "Unsaved" label, which gets its own colour
+- [x] no pencils by Tags and Notes; at rest, subtle "Click to add tags" / "Click to add notes"
+- [x] placeholders without the dots ("Custom notes")
+- [x] Alias field (below Tags, above Notes) in the info panel
+- [x] Tags field right below the mod's details, with some margin; a bigger gap between Alias and Notes
+- [x] row right-click menu: Add/Edit alias, Add/Edit notes, Add/Edit tags, each turning the menu into an inline editor (Save / Cancel back to the menu)
+- [x] main menu button: Jordan's art (Pictures\symphony\design\spire manager button.png), our label, a hover look
+- [x] right-click the main menu button to move it (soon, no rush)
 
 # Round 5
 
 Jordan's notes of 2026-10-11 (late).
 
-- [ ] (fix) Undo and Revert all buttons get out of sync
-- [ ] (fix) Load Order: hover dependency lines don't clear or follow when scrolling with the wheel (not dragging)
-- [ ] Load Order: a row is in the dragging state as soon as it's pressed (no need to move first)
-- [ ] a third count for load order in Changes, in blue: "Changes +0 -3 +0"; the tooltip's "Load order:" line in the same blue
-- [ ] Changes back down, left of the undo buttons
-- [ ] clicking Changes, Undo, Redo or Revert all shows the full changes list in the right panel
-- [ ] (fix) Undo empties the right panel
-- [ ] when only the profile changed, the tooltip still lists Enabled / Disabled / Load order lines
+- [x] (fix) Undo and Revert all buttons get out of sync
+- [x] (fix) Load Order: hover dependency lines don't clear or follow when scrolling with the wheel (not dragging)
+- [x] Load Order: a row is in the dragging state as soon as it's pressed (no need to move first)
+- [x] a third count for load order in Changes, in blue: "Changes +0 -3 +0"; the tooltip's "Load order:" line in the same blue
+- [x] Changes back down, left of the undo buttons
+- [x] clicking Changes, Undo, Redo or Revert all shows the full changes list in the right panel
+- [x] (fix) Undo empties the right panel
+- [x] when only the profile changed, the tooltip still lists Enabled / Disabled / Load order lines
+- [x] (fix) alias pencil fades when hovered
+- [x] Load Order page: no Vanilla List button
+- [x] "Main Menu" label over the back arrow (our pages, not Vanilla View)
+- [x] a little bottom margin under the undo buttons and their hints
+- [x] inline alias box higher, not covering the tags
