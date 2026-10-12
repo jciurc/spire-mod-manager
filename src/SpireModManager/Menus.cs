@@ -22,7 +22,7 @@ static class Menus
 
     // A right-click menu at the mouse (see MenuPanel).
     public static PopupPanel? Show(Node owner, IEnumerable<MenuItem> items, Vector2? at = null, string? toggleKey = null) =>
-        MenuPanel.Show(owner, items.ToList(), at, toggleKey);
+        MenuPanel.Show(owner, () => items.ToList(), at, toggleKey);
 
     // The game's own yes/no popup. True if confirmed.
     public static async Task<bool> Confirm(LocString title, LocString body)

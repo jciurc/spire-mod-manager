@@ -318,24 +318,44 @@ static class CategoryList
         RowStrip.Apply(rows, StripActions(content));
     }
 
-    // Categories to move the mod into (its current one ticked), or a new one, named in place.
+    // Add or edit the alias, notes and tags (in the menu), then the categories to move the mod into (its
+    // current one marked), or a new one, named in place.
     public static PopupPanel? ShowRowMenu(Control content, NModMenuRow row)
     {
         if (Store.Data.VanillaView || row.Mod?.manifest?.id is not { } id)
             return null;
-        var current = Store.InfoFor(id)?.Category is { } name && Categories.Find(name) != null ? name : null;
-        var items = new List<MenuItem> { MenuItem.Heading(Menus.Text("SPIRE_MOD_MANAGER.CATEGORY")) };
-        foreach (var category in Store.Data.Categories)
-            items.Add(new MenuItem(category.Name, () => Move(category.Name), Checked: category.Name == current, Radio: true));
-        items.Add(new MenuItem(Menus.Text("SPIRE_MOD_MANAGER.UNCATEGORIZED"), () => Move(null), Checked: current == null, Radio: true));
-        items.Add(MenuItem.Heading(""));
-        items.Add(new MenuItem(Menus.Text("SPIRE_MOD_MANAGER.NEW_CATEGORY"), () =>
+        // The player's own details first, each edited right in the menu; then the category. Built again after
+        // an edit, so "Add alias" turns into "Edit alias".
+        void Saved()
         {
-            var category = Categories.Add();
-            Move(category.Name);
-            BeginRename(content, category);
-        }));
-        return Menus.Show(content, items);
+            Apply(content);
+            if (ScreenOf(content) is { } screen)
+                ModDetails.Refresh(screen);
+        }
+        return MenuPanel.Show(content, Items);
+
+        IReadOnlyList<MenuItem> Items()
+        {
+            var current = Store.InfoFor(id)?.Category is { } name && Categories.Find(name) != null ? name : null;
+            var items = new List<MenuItem>
+            {
+                ModDetails.MenuEditor(ModDetails.Detail.Alias, id, Saved),
+                ModDetails.MenuEditor(ModDetails.Detail.Notes, id, Saved),
+                ModDetails.MenuEditor(ModDetails.Detail.Tags, id, Saved),
+                MenuItem.Heading(Menus.Text("SPIRE_MOD_MANAGER.CATEGORY")),
+            };
+            foreach (var category in Store.Data.Categories)
+                items.Add(new MenuItem(category.Name, () => Move(category.Name), Checked: category.Name == current, Radio: true));
+            items.Add(new MenuItem(Menus.Text("SPIRE_MOD_MANAGER.UNCATEGORIZED"), () => Move(null), Checked: current == null, Radio: true));
+            items.Add(MenuItem.Heading(""));
+            items.Add(new MenuItem(Menus.Text("SPIRE_MOD_MANAGER.NEW_CATEGORY"), () =>
+            {
+                var category = Categories.Add();
+                Move(category.Name);
+                BeginRename(content, category);
+            }));
+            return items;
+        }
 
         void Move(string? category)
         {
