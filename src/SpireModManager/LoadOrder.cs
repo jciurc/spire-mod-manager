@@ -21,6 +21,7 @@ static class LoadOrder
     const string LinkGroup = "SpireModManagerLinks";
     const string DraggingMeta = "spire_mod_manager_dragging";
     const string ScrollHookMeta = "spire_mod_manager_scroll_hook";
+    const string WiredMeta = "spire_mod_manager_order_wired";
     static readonly Color Gold = new(0.937f, 0.784f, 0.318f);
     static readonly Color Blocked = new(0.9f, 0.25f, 0.25f);
     static readonly Color LinkFine = new(0.62f, 0.86f, 0.62f);
@@ -424,6 +425,12 @@ static class LoadOrder
                 MouseFilter = Control.MouseFilterEnum.Ignore,
             });
         row.AddChild(handle);
+
+        // The handlers below are connected once per row: rows outlive this view, and the grip and numbers above
+        // come back on every visit (connecting again would start one drag per visit).
+        if (row.HasMeta(WiredMeta))
+            return;
+        row.SetMeta(WiredMeta, true);
 
         // Hover: show how this mod is linked to others (Load Order only; rows outlive the view).
         row.MouseEntered += () =>
