@@ -344,3 +344,12 @@ Jordan's notes of 2026-10-12.
 ## Backlog (round 6)
 - [ ] click a tag to filter by it; Shift-click adds more tags
 - [ ] profile details panel (start of the options page): name, updated date, Save/Rename/Duplicate/Delete, a description, linked load-order profile, enabled mods, unsaved changes as a diff
+
+# Round 7
+
+Jordan's notes of 2026-10-12 (later).
+
+- [ ] panel fields: Alias, Category, Tags, Notes
+- [ ] "Changes N" without load-order moves (they're next to "Mods enabled")
+- [ ] the profile's mod count next to the picker (the list keeps its details)
+- [ ] (fix) mods subscribed while the page is open appear at the bottom in the game's plain row style; they should look like ours, in place, at once
