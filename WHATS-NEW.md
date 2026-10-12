@@ -4,6 +4,23 @@ Short notes for Jordan: what to look for after each install. Newest first.
 
 ## Not installed yet
 
+Rows (round 12)
+- Recently updated: a small **red gem** before the title instead of the dot. It goes once you open the mod (remembered between sessions, until its next update). The panel still says "Recently updated".
+- The update card ("Updated on the Workshop on …") is wider, so it doesn't wrap early.
+- The row's hover / selected highlight and the blue tint of picked mods have slightly rounded corners.
+- Tags: flat, small corners, no outline (your own tags fainter), a size smaller, 2 px lower. "Needs / Required for" and the author are a size smaller too.
+- The author is just the name ("symphony", no "by") and isn't clickable on the row. Search by author from the info panel.
+
+Info panel (round 12)
+- The author searches on click, and its hover card says how. Names over 200 characters are cut.
+- **Workshop tags** are clickable: they search as plain words, Shift adds them.
+- "Needed by" now reads **"Required for"**.
+- Every click-to-search shows the same hint: "Click: search this term; Shift-click: add to search".
+
+Network (round 12)
+- The update gem comes from the one Workshop details request the mod already makes per session (through the Steam client), so it costs nothing extra.
+- Patch notes are the only web request. They're fetched only when you open them, once per mod per session. After a failed request (offline, or Steam saying "slow down"), nothing is asked again for two minutes.
+
 Info panel
 - Hover the thumbnail for a fifth of a second: the whole picture, up to 800 px on its longer side.
 
@@ -229,3 +246,5 @@ Choices I made on my own; say if any should change.
 - **Clicking a name** in the panel no longer flashes the row gold. It gives the row the game's blue "selected" look instead (it really takes focus, like a keyboard selection).
 - **Bulk menu extras**: besides the category, it offers New category and Enable all / Disable all for the picked mods. Ctrl+A picks every mod shown (in Load Order too, for dragging).
 - **Bulk notes**: leaving the box empty when their notes differ changes nothing. Clearing everyone's notes at once isn't possible yet.
+- **Your own tags** without an outline are a fainter fill of the same colour, to tell them from the automatic ones. Easy to tune.
+- **The update gem** is cleared by opening the mod in the panel (any way: clicking its row, its name somewhere, the changes list).
