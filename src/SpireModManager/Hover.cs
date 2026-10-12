@@ -2,26 +2,37 @@ using Godot;
 
 namespace SpireModManager;
 
-// Small hover cards: a dark panel with a few lines of text, above everything else on the page. Used for the
-// Changes summary, a profile's unsaved changes, and a mod's notes. One card per name at a time.
+// Hover cards (our tooltips): a dark panel with a few lines of text, or a picture, above everything on the
+// page. The rules live here, for every card:
+// - a card shows after Delay of hovering what it's about; Instant ones (the row's notepad) at once;
+// - once a card has gone, for Grace any other card shows at once (moving along names or tags doesn't wait
+//   each time); Instant cards don't start one;
+// - leaving: the card goes after WindDown (Instant ones at once), so a quick wobble off the edge keeps it;
+// - one card at a time: a newer one closes the one before.
 static class Hover
 {
+    public const double Delay = 0.4, Grace = 0.25, WindDown = 0.02;
+
+    public enum Timing { Normal, Instant }
+
     static readonly Color Cream = new(1, 0.964706f, 0.886275f);
     static readonly Color Gold = new(0.937f, 0.784f, 0.318f);
+    const float PictureMax = 800;
 
     // Where the mouse is. The self-test sets it: during a test run the real cursor can be anywhere.
     public static Func<Vector2>? TestMouse;
     public static Vector2 Mouse(CanvasItem item) => TestMouse?.Invoke() ?? item.GetGlobalMousePosition();
 
-    // Grace period: once a card opened by Watch has gone, for twice its delay any card shows at once (moving
-    // along names or tags doesn't wait each time).
     static ulong _graceUntil;
-    const float PictureMax = 800;
+    static Node? _shown; // the card showing (its layer), if any
 
-    // A card over `trigger` after `delay` seconds of hovering it (at once in a grace period); it goes when the
-    // mouse leaves. card: its text, or null for none (asked when it opens). picture: a picture card instead (to
-    // the left of the mouse), or null for none.
-    public static void Watch(Control trigger, string name, double delay, Func<string?> card, float width = 380, Func<Texture2D?>? picture = null)
+    static bool InGrace => Time.GetTicksMsec() < _graceUntil;
+
+    // A card for `trigger` while the mouse is over it. card: its text, or null for none (asked when it opens).
+    // picture: a picture card instead (to the left of the mouse), or null for none. place: where it goes
+    // (default: below right of the mouse).
+    public static void Watch(Control trigger, string name, Func<string?> card, Timing timing = Timing.Normal, float width = 380,
+        Func<Texture2D?>? picture = null, Func<(Vector2 At, bool Right, bool Above)>? place = null)
     {
         bool Over() => GodotObject.IsInstanceValid(trigger) && trigger.IsVisibleInTree() && !MenuPanel.IsOpen
             && trigger.GetGlobalRect().HasPoint(Mouse(trigger));
@@ -34,14 +45,14 @@ static class Hover
                 if (mine != token || !Over() || Owner(trigger) is not { } owner)
                     return;
                 if (picture?.Invoke() is { } image)
-                    Show(owner, name, "", Mouse(trigger) + new Vector2(-16, 20), right: true, keep: Over, grace: delay, picture: image);
+                    Show(owner, name, "", Mouse(trigger) + new Vector2(-16, 20), right: true, keep: Over, timing: timing, picture: image);
                 else if (picture == null && card() is { } text)
-                    Show(owner, name, text, Mouse(trigger) + new Vector2(16, 20), width: width, keep: Over, grace: delay);
+                {
+                    var (at, right, above) = place?.Invoke() ?? (Mouse(trigger) + new Vector2(16, 20), false, false);
+                    Show(owner, name, text, at, right, above, width, Over, timing);
+                }
             }
-            if (Time.GetTicksMsec() < _graceUntil)
-                Open();
-            else
-                trigger.GetTree().CreateTimer(delay).Timeout += Open;
+            Later(trigger, timing, Open);
         };
         trigger.MouseExited += () =>
         {
@@ -52,7 +63,7 @@ static class Hover
 
     // The same for [url] links in a text: a card for the link under the mouse. card: its text for the link's
     // meta, or null for none.
-    public static void WatchLinks(RichTextLabel label, string name, double delay, Func<string, string?> card, float width = 380)
+    public static void WatchLinks(RichTextLabel label, string name, Func<string, string?> card, float width = 380)
     {
         string? current = null;
         var token = 0;
@@ -63,15 +74,11 @@ static class Hover
             var link = meta.AsString();
             current = link;
             var mine = ++token;
-            void Open()
+            Later(label, Timing.Normal, () =>
             {
                 if (mine == token && Over(link) && card(link) is { } text && Owner(label) is { } owner)
-                    Show(owner, name, text, Mouse(label) + new Vector2(16, 20), width: width, keep: () => Over(link), grace: delay);
-            }
-            if (Time.GetTicksMsec() < _graceUntil)
-                Open();
-            else
-                label.GetTree().CreateTimer(delay).Timeout += Open;
+                    Show(owner, name, text, Mouse(label) + new Vector2(16, 20), width: width, keep: () => Over(link));
+            });
         };
         label.MetaHoverEnded += _ =>
         {
@@ -80,29 +87,46 @@ static class Hover
         };
     }
 
+    // Now (an Instant card, or in a grace period) or after the delay.
+    static void Later(Node node, Timing timing, Action open)
+    {
+        if (timing == Timing.Instant || InGrace)
+            open();
+        else
+            node.GetTree().CreateTimer(Delay).Timeout += open;
+    }
+
     // Cards belong to the page they're on (they go with it), else to the window.
     static Node? Owner(Node node) => CategoryList.ScreenOf(node) ?? (Node?)node.GetTree()?.Root;
 
     // at: the card's corner: its top-left, or with right/above, the matching corner. Kept on screen. keep: checked
-    // every frame; the card goes as soon as it's false (so it can't be left behind when the mouse moves on
-    // without an exit event, a click opens something else, or the page changes). grace: the delay it waited
-    // (Watch), which starts a grace period when it goes.
+    // every frame; once it's false (for WindDown, unless Instant) the card goes, so it can't be left behind when
+    // the mouse moves on without an exit event, a click opens something else, or the page changes.
     public static void Show(Node owner, string name, string bbcode, Vector2 at, bool right = false, bool above = false, float width = 380,
-        Func<bool>? keep = null, double grace = 0, Texture2D? picture = null)
+        Func<bool>? keep = null, Timing timing = Timing.Normal, Texture2D? picture = null)
     {
-        Hide(owner, name);
+        Hide(); // one at a time
         var layer = new CanvasLayer { Name = name, Layer = 80 };
         owner.AddChild(layer);
+        _shown = layer;
         if (keep != null)
         {
             var tree = owner.GetTree();
+            ulong? lostAt = null;
             void Check()
             {
                 if (GodotObject.IsInstanceValid(owner) && owner.IsInsideTree() && keep())
+                {
+                    lostAt = null;
                     return;
-                Hide(owner, name);
-                if (grace > 0)
-                    _graceUntil = Time.GetTicksMsec() + (ulong)(grace * 2000);
+                }
+                var now = Time.GetTicksMsec();
+                lostAt ??= now;
+                if (timing == Timing.Normal && now - lostAt < WindDown * 1000)
+                    return; // winding down: the mouse may come back
+                Close(layer);
+                if (timing == Timing.Normal)
+                    _graceUntil = now + (ulong)(Grace * 1000);
             }
             tree.ProcessFrame += Check;
             layer.TreeExiting += () => tree.ProcessFrame -= Check;
@@ -151,15 +175,18 @@ static class Hover
         }).CallDeferred();
     }
 
-    public static void Hide(Node owner, string name)
-    {
-        if (owner.GetNodeOrNull(name) is not { } old)
-            return;
-        owner.RemoveChild(old);
-        old.QueueFree();
-    }
+    // Closes the card showing, if any.
+    public static void Hide() => Close(_shown);
 
-    public static bool Showing(Node owner, string name) => owner.HasNode(name);
+    static void Close(Node? layer)
+    {
+        if (layer == null || !GodotObject.IsInstanceValid(layer))
+            return;
+        if (_shown == layer)
+            _shown = null;
+        layer.GetParent()?.RemoveChild(layer);
+        layer.QueueFree();
+    }
 
     public static void Fonts(RichTextLabel text, int size)
     {

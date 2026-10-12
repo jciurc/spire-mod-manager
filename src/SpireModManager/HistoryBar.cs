@@ -61,8 +61,8 @@ static class HistoryBar
         Hover.Fonts(changes, 17);
         changes.AddThemeConstantOverride("line_separation", -2);
         screen.AddChild(changes);
-        changes.MouseEntered += () => ShowSummary(screen, changes);
-        changes.MouseExited += () => Hover.Hide(screen, SummaryName);
+        // Hovering: the summary, just above the lines, right edges together.
+        Hover.Watch(changes, SummaryName, Summary, place: () => (changes.GlobalPosition + new Vector2(changes.Size.X, -8), true, true));
         changes.GuiInput += e =>
         {
             if (e is not InputEventMouseButton { ButtonIndex: MouseButton.Left, Pressed: false })
@@ -131,14 +131,13 @@ static class HistoryBar
         Update();
     }
 
-    // The hover summary, just above the Changes lines, right edges together.
-    static void ShowSummary(NModdingScreen screen, Control anchor)
+    // The hover summary's text, with how to see the full list.
+    static string Summary()
     {
-        var lines = Summary();
+        var lines = SummaryLines();
         if (Layout.Current == Layout.View.Categories && Describe().Count > 0)
             lines.Add($"\n[color={Dim}]{Menus.Text("SPIRE_MOD_MANAGER.CHANGES_CLICK")}[/color]");
-        Hover.Show(screen, SummaryName, string.Join("\n", lines), anchor.GlobalPosition + new Vector2(anchor.Size.X, -8), right: true, above: true,
-            keep: () => anchor.IsVisibleInTree() && anchor.GetGlobalRect().HasPoint(Hover.Mouse(anchor)));
+        return string.Join("\n", lines);
     }
 
     // Mods turned on, off, and moved in the load order, compared with launch.
@@ -159,7 +158,7 @@ static class HistoryBar
     }
 
     // The summary's lines (BBCode): a switched profile, then each kind of change with its count.
-    static List<string> Summary()
+    static List<string> SummaryLines()
     {
         if (History.Loaded is not { } loaded)
             return [];

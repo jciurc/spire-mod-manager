@@ -155,7 +155,7 @@ static class CategoryList
             if (meta.AsString() is { } target && target.StartsWith("mod:") && content() is { } list)
                 Highlight(list, target[4..], false);
         };
-        Hover.WatchLinks(label, "SpireModManagerNotesCard", 0.5,
+        Hover.WatchLinks(label, "SpireModManagerNotesCard",
             meta => meta.StartsWith("mod:") && Dependencies.Find(meta[4..]) is { } mod ? ModDetails.Card(mod) : null);
     }
 
