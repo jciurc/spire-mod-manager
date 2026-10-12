@@ -85,22 +85,55 @@ static class CategoryList
             screen.GetNode<NModInfoContainer>("%ModInfoContainer").Clear();
             return;
         }
-        if (!Store.Data.VanillaView && !Store.Data.LoadOrderView && !row.Visible)
-        {
-            if (Store.InfoFor(row.Mod?.manifest?.id)?.Category is { } name && Categories.Find(name) is { } category)
-                category.Collapsed = false;
-            else
-                Store.Data.UncategorizedCollapsed = false;
-            Store.Save();
-            Apply(content);
-        }
+        Expand(content, row);
         screen.OnRowSelected(row);
-        // Positions settle after this frame's layout.
-        screen.GetTree().CreateTimer(0.05).Timeout += () =>
+        ScrollSoon(content, row, flash: false);
+    }
+
+    // A row hidden in a collapsed category (main list): the category opens.
+    static void Expand(Control content, NModMenuRow row)
+    {
+        if (Store.Data.VanillaView || Store.Data.LoadOrderView || row.Visible)
+            return;
+        if (Store.InfoFor(row.Mod?.manifest?.id)?.Category is { } name && Categories.Find(name) is { } category)
+            category.Collapsed = false;
+        else
+            Store.Data.UncategorizedCollapsed = false;
+        Store.Save();
+        Apply(content);
+    }
+
+    // Scrolls a mod's row into view (its category opens if collapsed); flash: a short gold glow to find it
+    // by. The info panel doesn't change.
+    public static void Reveal(Control content, string modId, bool flash)
+    {
+        if (content.GetChildren().OfType<NModMenuRow>().FirstOrDefault(r => r.Mod?.manifest?.id == modId) is not { } row)
+            return;
+        Expand(content, row);
+        ScrollSoon(content, row, flash);
+    }
+
+    // Once positions settle after this frame's layout.
+    static void ScrollSoon(Control content, Control row, bool flash)
+    {
+        content.GetTree().CreateTimer(0.05).Timeout += () =>
         {
-            if (GodotObject.IsInstanceValid(row))
-                ScrollTo(content, row);
+            if (!GodotObject.IsInstanceValid(row))
+                return;
+            ScrollTo(content, row);
+            if (flash)
+                Flash(row);
         };
+    }
+
+    static void Flash(Control row)
+    {
+        var glow = new ColorRect { Color = new Color(0.937f, 0.784f, 0.318f, 0.35f), MouseFilter = Control.MouseFilterEnum.Ignore };
+        row.AddChild(glow);
+        glow.SetAnchorsPreset(Control.LayoutPreset.FullRect);
+        var tween = glow.CreateTween();
+        tween.TweenProperty(glow, "color:a", 0f, 1.4).SetDelay(0.3);
+        tween.TweenCallback(Callable.From(glow.QueueFree));
     }
 
     // The game's scroll container eases its content towards a target position; these move that target.
@@ -113,6 +146,8 @@ static class CategoryList
         var bottom = Math.Min(0, content.GetParent<Control>().Size.Y - content.Size.Y);
         scroll.Set("_targetDragPosY", Math.Clamp((float)scroll.Get("_targetDragPosY") + pixels, bottom, 0));
     }
+
+    public static void ScrollToTop(Control content) => ScrollContainer(content).Set("_targetDragPosY", 0f);
 
     // The row a third of the way down the visible list.
     public static void ScrollTo(Control content, Control row)
@@ -152,7 +187,7 @@ static class CategoryList
         var rows = content.GetChildren().OfType<NModMenuRow>()
             .OrderBy(r => r.Mod is { } mod && order.TryGetValue(mod, out var i) ? i : int.MaxValue)
             .ToList();
-        ModDetails.ApplyRowTitles(rows, Store.Data.VanillaView);
+        RowTitles.Apply(rows, Store.Data.VanillaView);
 
         // Right-click a row to pick its category. Rows outlive Apply, so connect once.
         foreach (var row in rows.Where(r => !r.HasMeta(RowMenuMeta)))
@@ -242,16 +277,21 @@ static class CategoryList
                 titleLabel.AddThemeColorOverride("font_color", new Color(1, 0.964706f, 0.886275f, 0.7f));
                 header.GetNode<ColorRect>("Background").Color = new Color(0.0756f, 0.12084f, 0.18f, 0.3f);
             }
-            header.GetNode<Label>("Count").Text = (filtering ? members.Count(Matches) : members.Count).ToString();
+            // The count right after the name.
+            var count = header.GetNode<Label>("Count");
+            count.Text = (filtering ? members.Count(Matches) : members.Count).ToString();
+            count.HorizontalAlignment = HorizontalAlignment.Left;
+            count.AnchorLeft = 0;
+            count.OffsetLeft = titleLabel.OffsetLeft + titleLabel.GetThemeFont("font").GetStringSize(title, fontSize: 18).X + 10;
             if (category != null)
             {
-                // The header menu's actions inline, right-aligned before the count.
+                // The header menu's actions inline, right-aligned.
                 var actions = Menus.InlineButtons(HeaderActions(content, category, compact: true), "Actions");
                 actions.Alignment = BoxContainer.AlignmentMode.End;
                 header.AddChild(actions);
                 actions.AnchorLeft = actions.AnchorRight = 1;
                 actions.AnchorBottom = 1;
-                (actions.OffsetLeft, actions.OffsetRight, actions.OffsetTop, actions.OffsetBottom) = (-340, -52, 5, -5);
+                (actions.OffsetLeft, actions.OffsetRight, actions.OffsetTop, actions.OffsetBottom) = (-304, -16, 5, -5);
                 titleLabel.OffsetRight = -350;
             }
             foreach (var row in members)
@@ -318,53 +358,50 @@ static class CategoryList
         RowStrip.Apply(rows, StripActions(content));
     }
 
-    // Add or edit the alias, notes and tags (in the menu), then the categories to move the mod into (its
-    // current one marked), or a new one, named in place.
-    public static PopupPanel? ShowRowMenu(Control content, NModMenuRow row)
+    // A mod's right-click menu: its category on the left (pick one, or a new one, named in place), its alias,
+    // notes and tags on the right, edited right there.
+    public static Node? ShowRowMenu(Control content, NModMenuRow row)
     {
         if (Store.Data.VanillaView || row.Mod?.manifest?.id is not { } id)
             return null;
-        // The player's own details first, each edited right in the menu; then the category. Built again after
-        // an edit, so "Add alias" turns into "Edit alias".
-        void Saved()
-        {
-            Apply(content);
-            if (ScreenOf(content) is { } screen)
-                ModDetails.Refresh(screen);
-        }
-        return MenuPanel.Show(content, Items);
+        return MenuPanel.Show(content, () => CategoryItems(content, id), side: _ => ModField.Column(id, _ => Edited(content)));
+    }
 
-        IReadOnlyList<MenuItem> Items()
+    // After one of a mod's details changed: the rows and the info panel show it.
+    public static void Edited(Control content)
+    {
+        Apply(content);
+        if (ScreenOf(content) is { } screen)
+            ModDetails.Refresh(screen);
+    }
+
+    // The categories to put a mod in (its current one marked), Uncategorized, and a new one.
+    public static IReadOnlyList<MenuItem> CategoryItems(Control content, string id)
+    {
+        var current = Store.InfoFor(id)?.Category is { } name && Categories.Find(name) != null ? name : null;
+        var items = new List<MenuItem> { MenuItem.Heading(Menus.Text("SPIRE_MOD_MANAGER.CATEGORY")) };
+        foreach (var category in Store.Data.Categories)
+            items.Add(new MenuItem(category.Name, () => Move(category.Name), Checked: category.Name == current, Radio: true));
+        items.Add(new MenuItem(Menus.Text("SPIRE_MOD_MANAGER.UNCATEGORIZED"), () => Move(null), Checked: current == null, Radio: true));
+        items.Add(MenuItem.Heading(""));
+        items.Add(new MenuItem(Menus.Text("SPIRE_MOD_MANAGER.NEW_CATEGORY"), () =>
         {
-            var current = Store.InfoFor(id)?.Category is { } name && Categories.Find(name) != null ? name : null;
-            var items = new List<MenuItem>
-            {
-                ModDetails.MenuEditor(ModDetails.Detail.Alias, id, Saved),
-                ModDetails.MenuEditor(ModDetails.Detail.Notes, id, Saved),
-                ModDetails.MenuEditor(ModDetails.Detail.Tags, id, Saved),
-                MenuItem.Heading(Menus.Text("SPIRE_MOD_MANAGER.CATEGORY")),
-            };
-            foreach (var category in Store.Data.Categories)
-                items.Add(new MenuItem(category.Name, () => Move(category.Name), Checked: category.Name == current, Radio: true));
-            items.Add(new MenuItem(Menus.Text("SPIRE_MOD_MANAGER.UNCATEGORIZED"), () => Move(null), Checked: current == null, Radio: true));
-            items.Add(MenuItem.Heading(""));
-            items.Add(new MenuItem(Menus.Text("SPIRE_MOD_MANAGER.NEW_CATEGORY"), () =>
-            {
-                var category = Categories.Add();
-                Move(category.Name);
-                BeginRename(content, category);
-            }));
-            return items;
-        }
+            var category = Categories.Add();
+            Move(category.Name);
+            // Its name box, at the bottom of the categories: scrolled into view.
+            if (BeginRename(content, category)?.GetParent() is Control header)
+                ScrollSoon(content, header, flash: false);
+        }));
+        return items;
 
         void Move(string? category)
         {
             Categories.Assign(id, category);
-            Apply(content);
+            Edited(content);
         }
     }
 
-    public static PopupPanel? ShowHeaderMenu(Control content, Category category) =>
+    public static Node? ShowHeaderMenu(Control content, Category category) =>
         Menus.Show(content, HeaderActions(content, category));
 
     // Rename, up, down, delete: the header's right-click menu, and its inline buttons (compact labels).

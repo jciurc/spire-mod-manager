@@ -252,28 +252,65 @@ static class SelfTest
         if (menu.GetNodeOrNull<Control>("SpireModManagerMenuButton") is not { } button)
             return;
         var corner = button.Position;
-        button.EmitSignal(Control.SignalName.GuiInput, new InputEventMouseButton { ButtonIndex = MouseButton.Right, Pressed = false });
-        await Wait(menu, 0.3);
-        var popup = menu.FindChildren("SpireModManagerMenu", "", true, false).OfType<PopupPanel>().FirstOrDefault(p => p.Visible);
+        var from = button.GetGlobalRect().GetCenter();
+        var fake = from;
+        MenuButton.TestMouse = () => fake;
+        void Mouse(Vector2 at) => fake = at;
+        async Task Click(MouseButton which, Vector2 at)
+        {
+            Input.ParseInputEvent(new InputEventMouseButton { ButtonIndex = which, Pressed = true, Position = at, GlobalPosition = at });
+            await Wait(menu, 0.1);
+            Input.ParseInputEvent(new InputEventMouseButton { ButtonIndex = which, Pressed = false, Position = at, GlobalPosition = at });
+            await Wait(menu, 0.2);
+        }
+        async Task<Node?> OpenMenu()
+        {
+            Mouse(from);
+            button.EmitSignal(Control.SignalName.GuiInput, new InputEventMouseButton { ButtonIndex = MouseButton.Right, Pressed = false, Position = from, GlobalPosition = from });
+            await Wait(menu, 0.3);
+            return MenuPanel.Current;
+        }
+
+        var popup = await OpenMenu();
         Check("right-click offers Move button", popup != null && MenuPanel.Labels(popup).Contains("Move button"));
         if (popup == null)
             return;
         MenuPanel.Press(popup, "Move button");
         await Wait(menu, 0.2);
-        var layer = menu.GetNodeOrNull<Control>("SpireModManagerMoveLayer");
+        // Relative: the real cursor may be anywhere while the test runs.
+        var begin = button.Position;
+        var at = fake;
+        Check("Move button starts move mode", menu.HasNode(MenuButton.MoveLayerName));
+        var to = at + new Vector2(500, -500);
+        Mouse(to);
+        await Wait(menu, 0.2);
+        Check("the button follows the mouse, by as much as it moves", button.Position.DistanceTo(begin + new Vector2(500, -500)) < 2, $"{begin} -> {button.Position}");
         await Capture(menu, outDir, "1b-move-button");
-        var to = new Vector2(900, 300);
-        Input.WarpMouse(to);
-        layer?.EmitSignal(Control.SignalName.GuiInput, new InputEventMouseButton { ButtonIndex = MouseButton.Left, Pressed = false, Position = to, GlobalPosition = to });
-        await Wait(menu, 0.3);
-        Check("a click places it and it's remembered", layer != null && Store.Data.MenuButtonAt != null && button.Position != corner,
-            $"{button.Position}, saved {Store.Data.MenuButtonAt}");
-        button.EmitSignal(Control.SignalName.GuiInput, new InputEventMouseButton { ButtonIndex = MouseButton.Right, Pressed = false });
-        await Wait(menu, 0.3);
-        if (menu.FindChildren("SpireModManagerMenu", "", true, false).OfType<PopupPanel>().FirstOrDefault(p => p.Visible) is { } again)
-            MenuPanel.Press(again, "Reset position");
+        await Click(MouseButton.Left, to);
+        Check("a click puts it down, remembered; move mode ends", Store.Data.MenuButtonAt != null && !menu.HasNode(MenuButton.MoveLayerName)
+            && button.Position.DistanceTo(begin + new Vector2(500, -500)) < 2, $"{button.Position}, saved {Store.Data.MenuButtonAt}");
+        var placed = button.Position;
+
+        // Moving again and pressing Escape leaves it where it was put.
+        from = button.GetGlobalRect().GetCenter();
+        if (await OpenMenu() is { } second)
+        {
+            MenuPanel.Press(second, "Move button");
+            await Wait(menu, 0.2);
+            Mouse(fake + new Vector2(-200, 100));
+            await Wait(menu, 0.2);
+            Input.ParseInputEvent(new InputEventKey { Keycode = Key.Escape, Pressed = true });
+            await Wait(menu, 0.2);
+            Input.ParseInputEvent(new InputEventKey { Keycode = Key.Escape, Pressed = false });
+            Check("Escape cancels: back where it was put, move mode ends", button.Position == placed
+                && !menu.HasNode(MenuButton.MoveLayerName), $"{button.Position} vs {placed}");
+        }
+
+        if (await OpenMenu() is { } third)
+            MenuPanel.Press(third, "Reset position");
         await Wait(menu, 0.2);
         Check("Reset position puts it back in the corner", Store.Data.MenuButtonAt == null && button.Position == corner, $"{button.Position} vs {corner}");
+        MenuButton.TestMouse = null;
     }
 
     // Row menu, new category renamed in place, assign, move, header menu, delete.
@@ -290,27 +327,44 @@ static class SelfTest
         var rowMenu = CategoryList.ShowRowMenu(content, row);
         await Wait(menu, 0.5);
         var rowItems = rowMenu == null ? [] : MenuPanel.Labels(rowMenu);
-        Check("row menu: alias, notes, tags, then categories", rowItems.Count == Store.Data.Categories.Count + 5 && rowItems[0] == "Add alias",
-            string.Join(", ", rowItems));
+        var aliasBox = rowMenu?.FindChild("Fields", true, false)?.GetNodeOrNull<LineEdit>("Alias/Box");
+        Check("row menu: categories on the left, the mod's fields on the right", rowItems.Count == Store.Data.Categories.Count + 2
+            && aliasBox != null && rowMenu?.FindChild("Fields", true, false)?.GetNodeOrNull("Notes/Box") != null, string.Join(", ", rowItems));
+        Check("an empty field invites: \"Add alias\"", aliasBox?.PlaceholderText == "Add alias", aliasBox?.PlaceholderText ?? "");
         await Capture(screen, outDir, "5-row-menu");
-        if (rowMenu != null)
+        if (rowMenu != null && aliasBox != null)
         {
-            // "Add alias" turns the menu into an editor; Save stores it and brings the menu back, now "Edit alias".
-            MenuPanel.Press(rowMenu, "Add alias");
-            await Wait(menu, 0.3);
-            var editor = rowMenu.FindChild("AliasEditor", true, false);
-            Check("a menu item opens its editor in the menu", editor != null && MenuPanel.Labels(rowMenu).Count == 0);
+            // Typing in the menu and clicking away (here: closing it) saves.
+            aliasBox.GrabFocus();
+            await Wait(menu, 0.1);
+            Check("editing shows Save and Cancel, the hint, and the inline clear", aliasBox.ClearButtonEnabled
+                && rowMenu.FindChild("Fields", true, false)?.GetNodeOrNull<Control>("Alias/Term/Buttons") is { Visible: true }
+                && aliasBox.PlaceholderText != "Add alias");
+            aliasBox.Text = "Menu alias";
             await Capture(screen, outDir, "5b-menu-editor");
-            if (editor?.GetNode<LineEdit>("Field") is { } field)
-                field.Text = "Menu alias";
-            editor?.FindChild("Save", true, false)?.EmitSignal(BaseButton.SignalName.Pressed);
+            MenuPanel.Close();
             await Wait(menu, 0.3);
-            Check("its Save stores the alias and goes back to the menu", Store.InfoFor(modId)?.Alias == "Menu alias"
-                && MenuPanel.Labels(rowMenu).FirstOrDefault() == "Edit alias", string.Join(", ", MenuPanel.Labels(rowMenu)));
+            Check("closing the menu saves what was typed", Store.InfoFor(modId)?.Alias == "Menu alias");
             ModDetails.SetAlias(modId, "");
             CategoryList.Apply(content);
-            rowMenu.Hide();
         }
+        // A right-click outside closes it and reaches what's under the mouse; showing the same menu again
+        // (a second press on its button) closes it.
+        CategoryList.ShowRowMenu(content, row);
+        await Wait(menu, 0.2);
+        var outside = new Vector2(1500, 900);
+        MenuPanel.Current?.GetNode<Control>("Catcher").EmitSignal(Control.SignalName.GuiInput,
+            new InputEventMouseButton { ButtonIndex = MouseButton.Right, Pressed = true, Position = outside, GlobalPosition = outside });
+        await Wait(menu, 0.2);
+        // The forwarded press needs its release, as a real right-click has.
+        Input.ParseInputEvent(new InputEventMouseButton { ButtonIndex = MouseButton.Right, Pressed = false, Position = outside, GlobalPosition = outside });
+        await Wait(menu, 0.1);
+        Check("a press outside closes the menu", !MenuPanel.IsOpen);
+        var picked = MenuPanel.Show(content, () => [new MenuItem("One", () => { })], toggleKey: "test");
+        await Wait(menu, 0.1);
+        var again = MenuPanel.Show(content, () => [new MenuItem("One", () => { })], toggleKey: "test");
+        Check("showing the same menu again closes it", picked != null && again == null && !MenuPanel.IsOpen);
+
 
         var category = Categories.Add();
         Categories.Assign(modId, category.Name);
@@ -346,10 +400,10 @@ static class SelfTest
         var order = content.GetChildren().Select(c => c.Name.ToString()).ToList();
         Check("moved up: header order follows", order.IndexOf("Category Renamed") < order.IndexOf($"Category {Store.Data.Categories.Last().Name}"));
         Check("mod row sits under its header", content.GetChildren().IndexOf(row) == order.IndexOf("Category Renamed") + 1);
-        var headerMenu = CategoryList.ShowHeaderMenu(content, category);
+        CategoryList.ShowHeaderMenu(content, category);
         await Wait(menu, 0.5);
         await Capture(screen, outDir, "6-header-menu");
-        headerMenu?.Hide();
+        MenuPanel.Close();
 
         Categories.Delete(category);
         CategoryList.Apply(content);
@@ -421,12 +475,12 @@ static class SelfTest
 
         // The profile list: opens below the picker; a second press on the picker closes it.
         await RealClick(menu, picker);
-        var list = screen.FindChildren("SpireModManagerMenu", "", true, false).OfType<PopupPanel>().FirstOrDefault(p => p.Visible);
+        var list = MenuPanel.Current;
         Check("the picker opens the profile list, with details", list != null && MenuPanel.Labels(list).Count == Store.Data.Profiles.Count,
             list == null ? "no list" : string.Join(", ", MenuPanel.Labels(list)));
         await Capture(screen, outDir, "7b-profile-list");
         await RealClick(menu, picker);
-        Check("a second press on the picker closes it", !screen.FindChildren("SpireModManagerMenu", "", true, false).OfType<PopupPanel>().Any(p => p.Visible));
+        Check("a second press on the picker closes it", !MenuPanel.IsOpen);
     }
 
     // Turning a dependency off and on again: the rows' notes follow at once (no stale "(off)"), and the
@@ -441,7 +495,7 @@ static class SelfTest
             return;
         }
         var tickbox = lib.GetNode<NTickbox>("Tickbox");
-        Check("a library says how many mods need it", Note("SmmTestLib").Contains("Required for 2 mods"), Note("SmmTestLib"));
+        Check("a library says how many mods need it", Note("SmmTestLib").Contains("Required for 2 enabled mods"), Note("SmmTestLib"));
         tickbox.IsTicked = false;
         tickbox.EmitSignal(NTickbox.SignalName.Toggled, tickbox);
         await Wait(menu, 0.3);
@@ -524,61 +578,65 @@ static class SelfTest
             Results.Add("SKIP notes: fixture mods missing");
             return;
         }
-        Check("row shows alias beside the name", RowTitle(ModEntry.ModId).StartsWith("The Manager") && RowTitle(ModEntry.ModId).Contains("Spire Mod Manager"),
-            RowTitle(ModEntry.ModId));
+        Check("row shows alias beside the name, and the edited mark", RowTitle(ModEntry.ModId).StartsWith("The Manager")
+            && RowTitle(ModEntry.ModId).Contains("Spire Mod Manager") && RowTitle(ModEntry.ModId).Contains("✎"), RowTitle(ModEntry.ModId));
+        Check("no alias pencil on rows", !ours.HasNode("SpireModManagerPencil"));
         screen.OnRowSelected(ours);
         await Wait(menu, 0.5);
-        var description = panel.GetNode<RichTextLabel>("ModDescription").Text;
+        var description = panel.GetNode<RichTextLabel>("ModDescription").GetParsedText();
         var yours = panel.GetNode<Control>("SpireModManagerYours");
-        Check("panel titles with the alias", panel.GetNode<RichTextLabel>("ModTitle").Text == "The Manager");
-        Check("panel keeps the original name; notes in the notes field", description.Contains("Spire Mod Manager")
-            && yours.GetNode<TextEdit>("Notes").Text == "Fixture note");
-        Check("a local mod says so instead of a Workshop link", panel.FindChild("SpireModManagerLink", true, false) is LinkButton { Disabled: true, Text: "Local mod" });
+        LineEdit Line(string field) => yours.GetNode<LineEdit>($"{field}/Box");
+        var notes = yours.GetNode<TextEdit>("Notes/Box");
+        Check("panel titles with the mod's own name; the alias is in its field", panel.GetNode<RichTextLabel>("ModTitle").Text == "Spire Mod Manager"
+            && Line("Alias").Text == "The Manager" && notes.Text == "Fixture note");
+        Check("status first: Enabled", description.StartsWith("Enabled"), description[..Math.Min(40, description.Length)]);
+        Check("the link line: id, version, local", panel.FindChild("SpireModManagerLink", true, false) is LinkButton { Disabled: true } link
+            && link.Text.StartsWith("SpireModManager v") && link.Text.EndsWith("(Local mod)"), (panel.FindChild("SpireModManagerLink", true, false) as LinkButton)?.Text ?? "");
+        Check("fields in order: Alias, Category, Notes, Tags", string.Join(",", yours.GetChildren().Select(c => c.Name.ToString())) == "Alias,Category,Notes,Tags",
+            string.Join(",", yours.GetChildren().Select(c => c.Name.ToString())));
         Check("the thumbnail stays small (the scene's minimum size lifted)", panel.GetNode<Control>("ModImage").Size.X <= 130, $"{panel.GetNode<Control>("ModImage").Size}");
         await Capture(screen, outDir, "8-details-with-notes");
 
-        // Tags and notes typed in the panel save when focus leaves.
+        // Notes and tags typed in the panel save when focus leaves; notes are trimmed, tags tidied.
         screen.OnRowSelected(other);
         await Wait(menu, 0.5);
-        yours.GetNode<TextEdit>("Notes").Text = "Typed in the panel";
-        yours.GetNode<LineEdit>("Tags").Text = "co-op, Favorites, co-op";
-        await Capture(screen, outDir, "9-notes-editing");
-        yours.GetNode<TextEdit>("Notes").EmitSignal(Control.SignalName.FocusExited);
-        yours.GetNode<LineEdit>("Tags").EmitSignal(Control.SignalName.FocusExited);
+        notes.Text = "  Typed in the panel \n";
+        notes.EmitSignal(Control.SignalName.FocusExited);
+        var tags = Line("Tags");
+        tags.Text = "co-op, Favorites, co-op";
+        tags.EmitSignal(Control.SignalName.FocusExited);
         await Wait(menu, 0.3);
-        Check("panel saves notes", Store.InfoFor("LocalModFixes")?.Notes == "Typed in the panel");
-        Check("panel saves tags, repeats dropped", Store.InfoFor("LocalModFixes")?.Tags?.SequenceEqual(["co-op", "Favorites"]) == true,
+        Check("panel saves notes, trimmed", Store.InfoFor("LocalModFixes")?.Notes == "Typed in the panel" && notes.Text == "Typed in the panel", notes.Text);
+        Check("panel saves tags, repeats dropped; at rest they're pills", Store.InfoFor("LocalModFixes")?.Tags?.SequenceEqual(["co-op", "Favorites"]) == true
+            && yours.GetNode<Control>("Tags/CustomTags") is { Visible: true } pills && pills.GetChildCount() == 2,
             string.Join(", ", Store.InfoFor("LocalModFixes")?.Tags ?? []));
+        await Capture(screen, outDir, "9-notes-editing");
 
-        // Fields sit right under the details; Cancel puts the text back; the alias field retitles.
+        // Fields sit right under the details; Cancel puts the text back; the alias field shows on the row.
         var details = panel.GetNode<Control>("ModDescription");
-        Check("the fields sit right below the details", Math.Abs(yours.OffsetTop - details.OffsetBottom - ModDetails.FieldsGap) < 1
-            && yours.OffsetBottom <= panel.Size.Y - ModDetails.ButtonsFromBottom + 1, $"{details.OffsetBottom} -> {yours.OffsetTop}..{yours.OffsetBottom}");
-        var notes = yours.GetNode<TextEdit>("Notes");
+        Check("the fields sit right below the details", Math.Abs(yours.OffsetTop - details.OffsetBottom - ModDetails.FieldsGap) < 1,
+            $"{details.OffsetBottom} -> {yours.OffsetTop}..{yours.OffsetBottom}");
         notes.GrabFocus();
         await Wait(menu, 0.1);
-        Check("editing shows Save, Cancel and Clear", yours.FindChild("NotesButtons", true, false) is Control { Visible: true });
+        Check("editing shows Save and Cancel, and the ✕", yours.GetNode<Control>("Notes/Term/Buttons").Visible && yours.GetNode<Control>("Notes/Box/Clear").Visible);
         notes.Text = "Not wanted";
-        yours.FindChild("NotesCancel", true, false)?.EmitSignal(BaseButton.SignalName.Pressed);
+        yours.GetNode("Notes/Term/Buttons/Cancel").EmitSignal(BaseButton.SignalName.Pressed);
         await Wait(menu, 0.2);
         Check("Cancel puts the notes back", notes.Text == "Typed in the panel" && Store.InfoFor("LocalModFixes")?.Notes == "Typed in the panel", notes.Text);
-        var aliasField = yours.GetNode<LineEdit>("Alias");
-        aliasField.Text = "Panel alias";
-        aliasField.EmitSignal(Control.SignalName.FocusExited);
+        var alias = Line("Alias");
+        alias.Text = "Fixes";
+        alias.EmitSignal(Control.SignalName.FocusExited);
         await Wait(menu, 0.4);
-        Check("the alias field saves and retitles", Store.InfoFor("LocalModFixes")?.Alias == "Panel alias"
-            && panel.GetNode<RichTextLabel>("ModTitle").Text == "Panel alias" && RowTitle("LocalModFixes").StartsWith("Panel alias"));
+        Check("the alias field saves, the row follows", Store.InfoFor("LocalModFixes")?.Alias == "Fixes" && RowTitle("LocalModFixes").StartsWith("Fixes"));
 
-        // The row's pencil edits the alias in place.
-        Check("rows have the alias pencil", Row("LocalModFixes")?.HasNode("SpireModManagerPencil") == true);
-        if (Row("LocalModFixes") is { } fixesRow && ModDetails.BeginAliasEdit(fixesRow) is { } aliasBox)
-        {
-            aliasBox.Text = "Fixes";
-            aliasBox.EmitSignal(LineEdit.SignalName.TextSubmitted, aliasBox.Text);
-        }
-        await Wait(menu, 0.5);
-        Check("pencil saves the alias, row and panel follow", Store.InfoFor("LocalModFixes")?.Alias == "Fixes" && RowTitle("LocalModFixes").StartsWith("Fixes")
-            && panel.GetNode<RichTextLabel>("ModTitle").Text == "Fixes");
+        // Hovering a row for a second shows its notes.
+        var mouse = other.GetGlobalRect().GetCenter();
+        Input.ParseInputEvent(new InputEventMouseMotion { Position = mouse, GlobalPosition = mouse });
+        other.EmitSignal(Control.SignalName.MouseEntered);
+        await Wait(menu, 1.3);
+        Check("a second over a row shows its notes", screen.HasNode("SpireModManagerNotesCard"));
+        await Capture(screen, outDir, "9b-notes-hover");
+        other.EmitSignal(Control.SignalName.MouseExited);
         Check("Vanilla View shows plain names", await WithVanillaView(screen, menu, () => RowTitle(ModEntry.ModId) == "Spire Mod Manager"));
     }
 
@@ -710,7 +768,7 @@ static class SelfTest
         var selected = Rows().FirstOrDefault(r => r.Mod == CategoryList.Selected);
         Check("category view takes the handles off", !Rows().Any(r => r.HasNode("SpireModManagerHandle"))
             && content.GetChildren().Any(c => c.IsInGroup("SpireModManagerCategoryHeader")));
-        Check("back from Load Order: titles in place (after the alias pencil)", Rows().All(r => r.GetNode<Control>("Title").OffsetLeft == 28),
+        Check("back from Load Order: titles in place", Rows().All(r => r.GetNode<Control>("Title").OffsetLeft == 12),
             string.Join(", ", Rows().Select(r => r.GetNode<Control>("Title").OffsetLeft)));
         Check("back from Load Order: no lines or dimming", !content.GetParent().GetChildren().Any(c => c.IsInGroup("SpireModManagerLinks"))
             && Rows().All(r => r.Modulate == Colors.White));
@@ -840,7 +898,7 @@ static class SelfTest
         Check("tickbox change is listed under Changes", !On() && HistoryBar.Describe().Any(l => l.Contains("Test UI")),
             string.Join(" | ", HistoryBar.Describe()));
         Check("Changes counts it", HistoryBar.Counts().Off >= 1, $"{HistoryBar.Counts()}");
-        Check("a mod turned off since launch has a changed-colour title", row.GetNode<Control>("Title").Modulate == ModDetails.ChangedOffTitle);
+        Check("a mod turned off since launch has a changed-colour title", row.GetNode<Control>("Title").Modulate == RowTitles.ChangedOffTitle);
         var changes = screen.GetNode<Control>(HistoryBar.ChangesName);
         changes.EmitSignal(Control.SignalName.MouseEntered);
         await Wait(menu, 0.3);
@@ -851,7 +909,7 @@ static class SelfTest
 
         Press("UndoButton");
         await Wait(menu, 0.3);
-        Check("undo turns it back on, tickbox included", On() && tickbox.IsTicked && row.GetNode<Control>("Title").Modulate != ModDetails.ChangedOffTitle);
+        Check("undo turns it back on, tickbox included", On() && tickbox.IsTicked && row.GetNode<Control>("Title").Modulate != RowTitles.ChangedOffTitle);
         Press("RedoButton");
         await Wait(menu, 0.3);
         Check("redo turns it off again", !On() && !tickbox.IsTicked);
@@ -896,9 +954,26 @@ static class SelfTest
         await Wait(menu, 0.3);
         Check("Revert all can be undone", beforeRevert.Select(m => (m.Id, m.Source, m.Enabled)).ToHashSet()
             .SetEquals(History.CurrentMods().Select(m => (m.Id, m.Source, m.Enabled))), string.Join(", ", History.CurrentMods()));
-        Check("after an undo the right panel lists the changes", screen.GetNode("%ModInfoContainer").GetNodeOrNull<Control>(HistoryBar.ViewName) is { Visible: true }
-            && screen.GetNode<Control>("%ModInfoContainer/ModTitle").Visible == false);
+        // Undo leaves the panel as it was; the Changes text opens the full list, and closes it again. While it's
+        // open, a tickbox click doesn't take the panel away.
+        var info = screen.GetNode("%ModInfoContainer");
+        Check("Undo doesn't open the changes list", !HistoryBar.ListOpen(info));
+        void ClickChanges() => screen.GetNode<Control>(HistoryBar.ChangesName).EmitSignal(Control.SignalName.GuiInput,
+            new InputEventMouseButton { ButtonIndex = MouseButton.Left, Pressed = false });
+        ClickChanges();
+        await Wait(menu, 0.2);
+        Check("clicking Changes lists them in the right panel", HistoryBar.ListOpen(info) && !screen.GetNode<Control>("%ModInfoContainer/ModTitle").Visible);
         await Capture(screen, outDir, "14b-changes-list");
+        tickbox.IsTicked = !tickbox.IsTicked;
+        tickbox.EmitSignal(NTickbox.SignalName.Toggled, tickbox);
+        await Wait(menu, 0.3);
+        Check("a tickbox click keeps the list open", HistoryBar.ListOpen(info));
+        tickbox.IsTicked = !tickbox.IsTicked;
+        tickbox.EmitSignal(NTickbox.SignalName.Toggled, tickbox);
+        await Wait(menu, 0.3);
+        ClickChanges();
+        await Wait(menu, 0.2);
+        Check("clicking Changes again closes it", !HistoryBar.ListOpen(info));
         History.Enter(); // as when the page opens again
         await Wait(menu, 0.2);
         Check("on (re)entering the page, Undo and Revert all agree: nothing to undo", !History.CanUndo && History.AtEntered
