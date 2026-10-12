@@ -144,9 +144,17 @@ static class ModDetails
         if (current.Length > 0)
             text += $" [color=#fff6e299]({Menus.Format("SPIRE_MOD_MANAGER.THIS_GAME", ("version", current))})[/color]";
         if (WorkshopInfo.For(mod)?.Branches is { Count: > 0 } branches)
-            text += "; " + Menus.Format("SPIRE_MOD_MANAGER.BRANCHES", ("branches", string.Join(", ", branches.Select(b =>
-                b.Min == b.Max ? Branch(b.Min) : $"{Branch(b.Min)}–{Branch(b.Max)}"))));
+            text += "; " + Menus.Format("SPIRE_MOD_MANAGER.BRANCHES", ("branches", string.Join(", ", branches.Select(Range))));
         return text;
+
+        // A supported range; an empty end is open.
+        static string Range((string Min, string Max) b) => (Branch(b.Min), Branch(b.Max)) switch
+        {
+            var (min, max) when min == max => min,
+            ("", var max) => Menus.Format("SPIRE_MOD_MANAGER.BRANCH_UP_TO", ("branch", max)),
+            (var min, "") => Menus.Format("SPIRE_MOD_MANAGER.BRANCH_FROM", ("branch", min)),
+            var (min, max) => $"{min}–{max}",
+        };
     }
 
     // The game's branch names in player words: "public" is the stable game, "public-beta" the beta.

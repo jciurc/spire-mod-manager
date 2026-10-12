@@ -63,6 +63,8 @@
   "SPIRE_MOD_MANAGER.BRANCHES": "Workshop branches: {branches}",
   "SPIRE_MOD_MANAGER.BRANCH_STABLE": "stable",
   "SPIRE_MOD_MANAGER.BRANCH_BETA": "beta",
+  "SPIRE_MOD_MANAGER.BRANCH_UP_TO": "up to {branch}",
+  "SPIRE_MOD_MANAGER.BRANCH_FROM": "{branch} and later",
   "SPIRE_MOD_MANAGER.DEPENDENCIES": "Dependencies",
   "SPIRE_MOD_MANAGER.PROBLEM_DEP_MISSING": "Needs {mod}, which isn't installed",
   "SPIRE_MOD_MANAGER.PROBLEM_DEP_OFF": "Needs {mod}, which is off",
