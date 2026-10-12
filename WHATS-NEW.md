@@ -4,6 +4,10 @@ Short notes for Jordan: what to look for after each install. Newest first.
 
 ## Not installed yet
 
+- (nothing yet)
+
+## Installed 2026-10-12 (late night): version 0.0.44
+
 Rows (round 14)
 - No more red "recently updated" mark.
 - The notepad (your alias or notes) sits **left of the mod's name**. Titles moved right a few pixels to make room on every row, so they stay lined up.
