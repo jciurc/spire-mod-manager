@@ -111,7 +111,12 @@ static class MenuButton
         button.SetAnchorsPreset(Control.LayoutPreset.TopLeft);
         (button.Position, button.Size) = (start, size);
         Vector2 Mouse() => Hover.Mouse(menu);
-        var mouseAtStart = Mouse();
+        // The cursor jumps to the button's left end, halfway up: it holds the button by its edge. (The warped
+        // position isn't reported until the next mouse event, so start from where it was sent.)
+        var grip = button.GetGlobalRect().Position + new Vector2(24, size.Y / 2);
+        if (Hover.TestMouse == null)
+            menu.GetViewport().WarpMouse(grip);
+        var mouseAtStart = Hover.TestMouse?.Invoke() ?? grip;
         // Buttons already held when move mode starts (the click on "Move button") don't count until released.
         var leftWasDown = true;
         var rightWasDown = true;
