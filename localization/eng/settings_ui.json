@@ -118,6 +118,7 @@
   "SPIRE_MOD_MANAGER.TAG_AUTO_TIP": "Automatic tag",
   "SPIRE_MOD_MANAGER.TAG_CUSTOM_TIP": "Your tag",
   "SPIRE_MOD_MANAGER.TAG_CLICK_TIP": "Click: show mods with this tag. Shift-click: add it to the search.",
+  "SPIRE_MOD_MANAGER.AUTHOR_CLICK_TIP": "Click: show mods by this author. Shift-click: add them to the search.",
   "SPIRE_MOD_MANAGER.UNDO": "Undo",
   "SPIRE_MOD_MANAGER.REDO": "Redo",
   "SPIRE_MOD_MANAGER.CHANGES": "Changes",

@@ -86,10 +86,25 @@ static class RowStrip
             if (author.Length > 0)
             {
                 // Who made it, quietly, at the end of the line.
-                var by = new Label { Name = "Author", Text = author, VerticalAlignment = VerticalAlignment.Center, MouseFilter = Control.MouseFilterEnum.Ignore };
+                // Who made it, quietly; click to see their other mods (Shift: add to the search).
+                var maker = row.Mod?.manifest?.author ?? "";
+                var by = new Label
+                {
+                    Name = "Author", Text = author, VerticalAlignment = VerticalAlignment.Center, MouseFilter = Control.MouseFilterEnum.Stop,
+                    MouseDefaultCursorShape = Control.CursorShape.PointingHand,
+                };
                 by.AddThemeFontOverride("font", ResourceLoader.Load<Font>("res://themes/kreon_regular_shared.tres"));
                 by.AddThemeFontSizeOverride("font_size", 14);
                 by.AddThemeColorOverride("font_color", new Color(1, 0.964706f, 0.886275f, 0.45f));
+                by.GuiInput += e =>
+                {
+                    if (e is not InputEventMouseButton { ButtonIndex: MouseButton.Left } click)
+                        return;
+                    by.AcceptEvent(); // not the row's click too
+                    if (!click.Pressed)
+                        Search.ByAuthor(row, maker, click.ShiftPressed);
+                };
+                Hover.Watch(by, "SpireModManagerTagCard", Tags.CardDelay, () => Tags.Hint(Menus.Text("SPIRE_MOD_MANAGER.AUTHOR_CLICK_TIP")), width: 320);
                 strip.AddChild(by);
             }
         }
