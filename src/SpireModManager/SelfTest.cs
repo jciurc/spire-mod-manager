@@ -2,6 +2,7 @@ using System.Text;
 using Godot;
 using MegaCrit.Sts2.Core.Localization;
 using MegaCrit.Sts2.Core.Modding;
+using MegaCrit.Sts2.Core.Nodes;
 using MegaCrit.Sts2.Core.Nodes.CommonUi;
 using MegaCrit.Sts2.Core.Nodes.GodotExtensions;
 using MegaCrit.Sts2.Core.Nodes.Screens.MainMenu;
@@ -114,7 +115,7 @@ static class SelfTest
             await TestNotes(menu, screen, content, outDir);
             await TestPendingNotes(menu, screen, content);
             await TestSearch(menu, screen, content, outDir);
-            await TestNewMod(menu, screen, content);
+            await TestNewMod(menu, screen, content, outDir);
             await TestLoadOrder(menu, screen, content, outDir);
             await TestHistory(menu, screen, content, outDir);
 
@@ -647,7 +648,7 @@ static class SelfTest
 
     // A mod installed while the page is open (here: the game's own handler called again for a fixture mod):
     // its row comes out in our style, in its place. The extra row goes again afterwards.
-    static async Task TestNewMod(Node menu, NModdingScreen screen, Control content)
+    static async Task TestNewMod(Node menu, NModdingScreen screen, Control content, string outDir)
     {
         var before = content.GetChildren().OfType<NModMenuRow>().ToList();
         if (Dependencies.Find("SmmTestUi") is not { } mod)
@@ -658,6 +659,18 @@ static class SelfTest
         var added = content.GetChildren().OfType<NModMenuRow>().Except(before).FirstOrDefault();
         Check("a mod installed while the page is open gets our row style", added != null && added.HasNode("SpireModManagerStrip")
             && added.CustomMinimumSize.Y == RowTitles.RowHeight, added == null ? "no new row" : $"strip {added.HasNode("SpireModManagerStrip")}, height {added.CustomMinimumSize.Y}");
+        // The game's popup for it: our wording, and only one for two mods in quick succession.
+        var detected = typeof(NGame).GetMethod("OnNewModDetected", System.Reflection.BindingFlags.NonPublic | System.Reflection.BindingFlags.Instance);
+        detected?.Invoke(NGame.Instance, [mod]);
+        await Wait(menu, 0.3);
+        var texts = NModalContainer.Instance?.OpenModal is Node popup
+            ? popup.FindChildren("*", "", true, false).Select(n => n is Label l ? l.Text : n is RichTextLabel r ? r.Text : "").ToList() : [];
+        Check("new mod popup says \"New Mod Added\"", texts.Any(t => t.Contains("New Mod Added")), string.Join(" | ", texts.Where(t => t.Length > 0)));
+        await Capture(screen, outDir, "10b-new-mod-popup");
+        NModalContainer.Instance?.Clear();
+        detected?.Invoke(NGame.Instance, [mod]);
+        await Wait(menu, 0.3);
+        Check("new mod popup: our text, at most one per 30 s", NModalContainer.Instance?.OpenModal == null);
         Check("the profile bar shows how many mods are on", screen.FindChild("ProfileCount", true, false) is Label { Text: var count } && count.EndsWith("mods"));
         if (added != null)
         {
