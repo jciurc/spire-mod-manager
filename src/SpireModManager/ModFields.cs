@@ -81,7 +81,7 @@ sealed class ModField
         _box = kind == Kind.Notes
             ? new TextEdit { Name = "Box", WrapMode = TextEdit.LineWrappingMode.Boundary, CustomMinimumSize = new Vector2(0, 4 * 24 + 14), ScrollFitContentHeight = false }
             : new LineEdit { Name = "Box", MaxLength = kind == Kind.Alias ? 80 : 200, CustomMinimumSize = new Vector2(0, 34) };
-        Style(_box, "res://themes/kreon_regular_shared.tres", 18, Cream);
+        Style(_box, "res://themes/kreon_regular_shared.tres", kind == Kind.Notes ? 16 : 18, Cream); // notes a little smaller: they run longer
         _box.AddThemeColorOverride("font_placeholder_color", new Color(Cream, 0.35f));
         Hoverable(_box, "normal");
         _box.AddThemeStyleboxOverride("focus", Look(Shade.Active));

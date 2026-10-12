@@ -121,7 +121,7 @@ static class SelfTest
             await TestPageBar(menu, screen, content, outDir);
             await TestRelaunchCheck(menu, screen, content, outDir);
             await TestLongDetails(menu, screen, content, outDir);
-            await TestPatchNotes(menu, screen, outDir);
+            await TestWorkshopHead(menu, screen);
             await TestBulkEdit(menu, screen, content, outDir);
             await TestHistory(menu, screen, content, outDir);
 
@@ -186,19 +186,6 @@ static class SelfTest
             var orderMs = timer.Elapsed.TotalMilliseconds / 10;
             Check($"load order redraw {orderMs:0.0} ms", orderMs < 50);
 
-            // A real Workshop mod's patch notes, read from Steam (network): the page's layout is still the one we read.
-            // (In the dev copy mods load from a folder, without Workshop ids: RitsuLib's then.)
-            var workshopMod = ModManager.Mods.FirstOrDefault(m => m.workshopId != null);
-            var workshopId = workshopMod?.workshopId ?? 3747602295UL;
-            {
-                var fetch = PatchNotes.Get(workshopId);
-                await Task.WhenAny(fetch, Task.Delay(15000));
-                if (fetch.IsCompletedSuccessfully)
-                    Check($"patch notes from the Workshop ({workshopMod?.manifest?.name ?? workshopId.ToString()}: {fetch.Result.Count} updates)", fetch.Result.Count > 0
-                        && fetch.Result.All(e => e.Notes.Length > 0 && e.Date.Year > 2020), fetch.Result.FirstOrDefault()?.Notes ?? "");
-                else
-                    Results.Add($"INFO patch notes not fetched ({(fetch.IsFaulted ? fetch.Exception?.InnerException?.Message : "timed out")})");
-            }
             await Capture(screen, outDir, "real-2-load-order");
 
             var search = screen.GetNode<LineEdit>("ModsBorder/SpireModManagerSearch");
@@ -366,7 +353,7 @@ static class SelfTest
         var aliasBox = rowMenu?.FindChild("Fields", true, false)?.GetNodeOrNull<LineEdit>("Alias/Box");
         Check("row menu: categories on the left, the mod's fields on the right", rowItems.Count == Store.Data.Categories.Count + 2
             && aliasBox != null && rowMenu?.FindChild("Fields", true, false)?.GetNodeOrNull("Notes/Box") != null, string.Join(", ", rowItems));
-        Check("an empty field invites: \"Your nickname for the mod\"", aliasBox?.PlaceholderText == "Your nickname for the mod", aliasBox?.PlaceholderText ?? "");
+        Check("an empty field invites: \"Add alias\"", aliasBox?.PlaceholderText == "Add alias", aliasBox?.PlaceholderText ?? "");
         await Capture(screen, outDir, "5-row-menu");
         if (rowMenu != null && aliasBox != null)
         {
@@ -649,7 +636,7 @@ static class SelfTest
             && Line("Alias").Text == "The Manager" && notes.Text == "Fixture note");
         var linkText = (panel.FindChild("SpireModManagerLink", true, false) as LinkButton)?.Text ?? "";
         Check("the source line: id (Local), then Enabled", panel.FindChild("SpireModManagerLink", true, false) is LinkButton { Disabled: true }
-            && linkText == "SpireModManager (Local)" && panel.FindChild("SpireModManagerSource", true, false)?.GetNodeOrNull<Label>("Status")?.Text == "Enabled", linkText);
+            && linkText == "SpireModManager (Local)" && (panel.FindChild("SpireModManagerSource", true, false)?.FindChild("Status", true, false) as Label)?.Text == "Enabled", linkText);
         var headText = panel.GetNodeOrNull<RichTextLabel>("SpireModManagerHead")?.GetParsedText() ?? "";
         Check("the head: author and compatibility; the details: description, then size", headText.Contains("Author: symphony") && headText.Contains("Compatibility:")
             && !description.StartsWith("Enabled") && description.Contains("Size:") && !description.Contains("Compatibility"), $"{headText} / {description[..Math.Min(60, description.Length)]}");
@@ -1176,7 +1163,7 @@ static class SelfTest
         List<NModMenuRow> Rows() => content.GetChildren().OfType<NModMenuRow>().ToList();
         Control? Bar() => screen.FindChild(PageBar.Name, true, false) as Control;
         void Press(string name) => Bar()?.FindChild(name, true, false)?.EmitSignal(BaseButton.SignalName.Pressed);
-        Check("page bar on the main list", Bar() is { Visible: true } bar && bar.FindChild("Scope", true, false) is Label { Text: var all } && all.StartsWith("All mods"));
+        Check("page bar on the main list", Bar() is { Visible: true } bar && bar.FindChild("Scope", true, false) is Label { Text: var all } && all.StartsWith("Installed mods"));
         await Capture(screen, outDir, "2d-page-bar");
 
         var box = screen.GetNode<LineEdit>("ModsBorder/SpireModManagerSearch");
@@ -1325,59 +1312,33 @@ static class SelfTest
         await Wait(menu, 0.3);
     }
 
-    // Patch notes from a made-up change notes page (the Workshop's layout; no network): read, shown in the
-    // panel with the mod's id, author and update, and Back to the details.
-    static async Task TestPatchNotes(Node menu, NModdingScreen screen, string outDir)
+    // A Workshop mod's head (made-up details; the sandbox has no Steam): Author, Updated (how long ago, and a link
+    // to its change notes on the Workshop), Compatibility. "Ago" in hours under a day, singular for one.
+    static async Task TestWorkshopHead(Node menu, NModdingScreen screen)
     {
-        const string page = """
-            <div class="detailBox workshopAnnouncement noFooter changeLogCtn"><div class="changelog headline">Update: 7 Oct @ 7:53pm</div>
-            <p id="1791428000"><div class="bb_h2">English</div><br><div class="bb_h3">Fixed</div><br><ul class="bb_ul"><li>Cards no longer vanish when you &quot;retain&quot; them.</li><li>Fewer warnings in the log.</li></ul></p>
-            <div class="commentsLink changeLog">Discuss this update</div></div>
-            <div class="detailBox workshopAnnouncement noFooter changeLogCtn"><div class="changelog headline">Update: 1 Sep</div>
-            <p id="1788000000">First release. Includes [brackets] &amp; more.<br><b>Enjoy!</b></p>
-            </div>
-            """;
-        var entries = PatchNotes.Parse(page);
-        Check("patch notes: each update read, newest first, as text", entries.Count == 2 && entries[0].Date > entries[1].Date
-            && entries[0].Notes.Contains("[b]Fixed[/b]") && entries[0].Notes.Contains("  •  Cards no longer vanish when you \"retain\" them.")
-            && entries[1].Notes.Contains("[lb]brackets]") && entries[1].Notes.Contains("[b]Enjoy![/b]"), string.Join(" | ", entries.Select(e => e.Notes)));
-
-        PatchNotes.TestFetch = _ => Task.FromResult(page);
         var mod = new Mod
         {
-            path = "", modSource = ModSource.SteamWorkshop, workshopId = 42,
-            manifest = new ModManifest { id = "SmmPatchNotesTest", name = "Patch Notes Test", author = "Someone Careful" },
+            path = "", modSource = ModSource.SteamWorkshop, workshopId = 42, state = ModLoadState.AddedAtRuntime,
+            manifest = new ModManifest { id = "SmmWorkshopTest", name = "Workshop Test", author = "Someone Careful" },
         };
-        var info = screen.GetNode<Control>("%ModInfoContainer");
-        PatchNotes.Show(info, mod);
-        await Wait(menu, 0.4);
-        var view = info.GetNodeOrNull<Control>(PatchNotes.ViewName);
-        var head = view?.GetNodeOrNull<RichTextLabel>("Head")?.GetParsedText() ?? "";
-        var notes = view?.GetNodeOrNull<RichTextLabel>("Notes")?.GetParsedText() ?? "";
-        Check("the patch notes page: id, author, then each update by date", view is { Visible: true } && head.Contains("SmmPatchNotesTest") && head.Contains("Someone Careful")
-            && notes.Contains("Fewer warnings in the log.") && notes.Contains("2026"), $"{head} / {notes}");
-        await Capture(screen, outDir, "17-patch-notes");
-        view?.FindChild("PatchNotesBackButton", true, false)?.EmitSignal(BaseButton.SignalName.Pressed);
-        await Wait(menu, 0.2);
-        Check("Back returns to the details", view is { Visible: false } && info.GetNode<Control>("ModTitle").Visible);
-
-        // The panel's head for a Workshop mod: Author, Compatibility, then Updated ending in a Patch notes link.
-        mod.state = ModLoadState.AddedAtRuntime;
         Installed.Detected(mod); // so the panel can find it by id
         WorkshopInfo.TestSet(42, new WorkshopInfo.Details(DateTime.Now.AddDays(-30), DateTime.Now.AddDays(-4), [], [], 0, null));
-        screen.GetNode<NModInfoContainer>("%ModInfoContainer").Fill(mod);
+        var info = screen.GetNode<NModInfoContainer>("%ModInfoContainer");
+        info.Fill(mod);
         await Wait(menu, 0.3);
-        var headLabel = info.GetNodeOrNull<RichTextLabel>("SpireModManagerHead");
-        var headNow = headLabel?.GetParsedText() ?? "";
-        Check("the head: Author, Compatibility, then Updated with a Patch notes link", headNow.IndexOf("Author") < headNow.IndexOf("Compatibility")
-            && headNow.IndexOf("Compatibility") < headNow.IndexOf("Updated") && headNow.TrimEnd().EndsWith("Patch notes"), headNow);
-        headLabel?.EmitSignal(RichTextLabel.SignalName.MetaClicked, "patchnotes");
-        await Wait(menu, 0.4);
-        Check("the Patch notes link opens them", PatchNotes.Open(info));
-        PatchNotes.Close(info);
+        var head = info.GetNodeOrNull<RichTextLabel>("SpireModManagerHead");
+        var text = head?.GetParsedText() ?? "";
+        Check("a Workshop mod's head: Author, Updated (4 days ago, Patch notes), Compatibility", text.IndexOf("Author") < text.IndexOf("Updated")
+            && text.IndexOf("Updated") < text.IndexOf("Compatibility") && text.Contains("(4 days ago)  Patch notes") && head?.Text.Contains("[url=patchnotes]") == true, text);
+        var link = info.FindChild("SpireModManagerLink", true, false) as LinkButton;
+        Check("the source line: id (SteamID n)", link?.Text == "SmmWorkshopTest (SteamID 42)", link?.Text ?? "");
+        Check("how long ago: hours under a day, one day singular, green under two days",
+            ModDetails.Ago(DateTime.Now.AddHours(-3)).Contains("(3 hours ago)") && ModDetails.Ago(DateTime.Now.AddMinutes(-70)).Contains("(1 hour ago)")
+            && ModDetails.Ago(DateTime.Now.AddHours(-30)).Contains("(1 day ago)") && ModDetails.Ago(DateTime.Now.AddHours(-30)).Contains("#a6e3a1")
+            && !ModDetails.Ago(DateTime.Now.AddDays(-3)).Contains("#a6e3a1"));
         WorkshopInfo.TestSet(42, null);
         Installed.Forget(mod);
-        PatchNotes.TestFetch = null;
+        info.Clear();
     }
 
     // Several mods at once on the main list: Select all in Uncategorized, Ctrl-click one away; the bar counts
