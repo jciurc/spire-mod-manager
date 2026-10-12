@@ -138,6 +138,10 @@ static class ModDetails
                 CategoryList.Reveal(content, target[4..], flash: false, focus: true);
         };
         CategoryList.WatchNames(description, Content); // hovering a name: its row lit (if in view), then its card
+        // Hovering the thumbnail: the whole picture (our views).
+        var image = container.GetNode<TextureRect>("ModImage");
+        image.MouseFilter = Control.MouseFilterEnum.Pass;
+        Hover.Watch(image, "SpireModManagerPictureCard", 0.2, () => null, picture: () => Store.Data.VanillaView ? null : image.Texture);
     }
 
     // Anything wrong, the author's description, more facts, then compatibility and dependencies; blank lines
