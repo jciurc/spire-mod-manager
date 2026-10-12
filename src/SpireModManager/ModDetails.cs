@@ -156,6 +156,15 @@ static class ModDetails
         _ => name,
     };
 
+    // Fills the panel again for the mod it shows (after a tickbox change: its problems may have changed).
+    public static void Refresh(Node screen)
+    {
+        if (Store.Data.VanillaView || screen.GetNodeOrNull<NModInfoContainer>("%ModInfoContainer") is not { } container
+            || CategoryList.Selected is not { } mod || Meta(container, ModIdMeta) != mod.manifest?.id)
+            return;
+        container.Fill(mod);
+    }
+
     // Vanilla View or no mod shown: none of our additions.
     public static void HideButtons(Node container)
     {
@@ -392,9 +401,10 @@ static class ModDetails
         }
     }
 
-    // Our views: a mod turned on or off since launch has a soft gold title, so what a relaunch will change
-    // stands out. Otherwise the colour the game gave it (white, grey when off, red when it failed).
-    public static readonly Color ChangedTitle = new(1f, 0.82f, 0.45f);
+    // Our views: a mod turned on since launch has a bright gold title, one turned off a dim one, so what a
+    // relaunch will change stands out. Otherwise the colour the game gave it (white, grey when off, red when it failed).
+    public static readonly Color ChangedTitle = new(1f, 0.82f, 0.45f); // turned on: bright gold
+    public static readonly Color ChangedOffTitle = new(0.72f, 0.6f, 0.42f, 0.8f); // turned off: a dim, dusky gold
     const string TitleColorMeta = "spire_mod_manager_title_color";
 
     public static void MarkChanged(IEnumerable<NModMenuRow> rows, bool vanilla)
@@ -407,7 +417,8 @@ static class ModDetails
                 title.SetMeta(TitleColorMeta, title.Modulate);
             var changed = !vanilla && loaded != null && row.Mod is { manifest.id: { } id } mod
                 && loaded.GetValueOrDefault((id, mod.modSource), true) != Dependencies.IsOn(mod);
-            title.Modulate = changed ? ChangedTitle : (Color)title.GetMeta(TitleColorMeta);
+            title.Modulate = !changed ? (Color)title.GetMeta(TitleColorMeta)
+                : row.Mod is { } turned && Dependencies.IsOn(turned) ? ChangedTitle : ChangedOffTitle;
         }
     }
 

@@ -179,7 +179,7 @@ static class CategoryList
         {
             void RedrawAll() => Redraw(content);
             LoadOrder.Apply(content, rows, Matches, RedrawAll);
-            RowStrip.Apply(rows, row => LoadOrder.Actions(content, row, RedrawAll, compact: true));
+            RowStrip.Apply(rows, StripActions(content));
             return;
         }
         LoadOrder.Undecorate(rows);
@@ -189,7 +189,7 @@ static class CategoryList
         if (Store.Data.VanillaView)
             RowStrip.Remove(rows);
         else
-            RowStrip.Apply(rows, row => [new MenuItem(Menus.Text("SPIRE_MOD_MANAGER.CATEGORY_BUTTON"), () => ShowRowMenu(content, row))]);
+            RowStrip.Apply(rows, StripActions(content));
 
         if (Store.Data.VanillaView)
         {
@@ -301,6 +301,21 @@ static class CategoryList
             Add(Divider());
         AddSection(Menus.Text("SPIRE_MOD_MANAGER.UNCATEGORIZED"), uncategorized,
             Store.Data.UncategorizedCollapsed, c => Store.Data.UncategorizedCollapsed = c);
+    }
+
+    // The small buttons at the right of each row's strip: moves in Load Order, the category otherwise.
+    static Func<NModMenuRow, IEnumerable<MenuItem>> StripActions(Control content) => Store.Data.LoadOrderView
+        ? row => LoadOrder.Actions(content, row, () => Redraw(content), compact: true)
+        : row => [new MenuItem(Menus.Text("SPIRE_MOD_MANAGER.CATEGORY_BUTTON"), () => ShowRowMenu(content, row))];
+
+    // After a tickbox change: the rows' dependency notes ("(off)", "Required for") and their title colours
+    // follow at once, without a full redraw.
+    public static void RefreshStrips(Control content)
+    {
+        if (Store.Data.VanillaView)
+            return;
+        var rows = content.GetChildren().OfType<NModMenuRow>().ToList();
+        RowStrip.Apply(rows, StripActions(content));
     }
 
     // Categories to move the mod into (its current one ticked), or a new one, named in place.
