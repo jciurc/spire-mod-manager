@@ -146,7 +146,10 @@ static class ModToggledPatch
         {
             Profiles.Track();
             History.Record(); // a tickbox change (Track only saves when the active profile changed)
-            ModDetails.MarkChanged(__instance.GetNode("%ModsScrollContainer/Mask/Content").GetChildren().OfType<NModMenuRow>(), Store.Data.VanillaView);
+            var content = __instance.GetNode<Control>("%ModsScrollContainer/Mask/Content");
+            ModDetails.MarkChanged(content.GetChildren().OfType<NModMenuRow>(), Store.Data.VanillaView);
+            CategoryList.RefreshStrips(content);
+            ModDetails.Refresh(__instance); // its problems ("Needs X, which is off") follow too
             Layout.UpdateDot(__instance);
             if (LoadOrder.OrderChanged)
                 __instance.GetNode<Control>("%PendingChangesLabel").Visible = true;

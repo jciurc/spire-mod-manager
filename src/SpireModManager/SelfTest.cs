@@ -108,6 +108,7 @@ static class SelfTest
             await TestProfileEditing(menu, screen, outDir);
             await TestUnsavedProfile(menu, screen, content, outDir);
             await TestNotes(menu, screen, content, outDir);
+            await TestPendingNotes(menu, screen, content);
             await TestSearch(menu, screen, content, outDir);
             await TestLoadOrder(menu, screen, content, outDir);
             await TestHistory(menu, screen, content, outDir);
@@ -324,6 +325,29 @@ static class SelfTest
             Profiles.SwitchTo(start, screen);
         Check("mod list unchanged after new/rename/delete", before.SequenceEqual(ModListState()));
         Check("last profile can't be deleted", Store.Data.Profiles.Count > 1 || !Profiles.Delete(Store.Data.Profiles[0], screen));
+    }
+
+    // Turning a dependency off and on again: the rows' notes follow at once (no stale "(off)"), and the
+    // library says how many mods that are on need it.
+    static async Task TestPendingNotes(Node menu, NModdingScreen screen, Control content)
+    {
+        NModMenuRow? Row(string id) => content.GetChildren().OfType<NModMenuRow>().FirstOrDefault(r => r.Mod?.manifest?.id == id);
+        string Note(string id) => Row(id)?.GetNodeOrNull<RichTextLabel>("SpireModManagerStrip/Needs")?.GetParsedText() ?? "";
+        if (Row("SmmTestLib") is not { } lib)
+        {
+            Results.Add("SKIP pending notes: test mods not installed");
+            return;
+        }
+        var tickbox = lib.GetNode<NTickbox>("Tickbox");
+        Check("a library says how many mods need it", Note("SmmTestLib").Contains("Required for 2 mods"), Note("SmmTestLib"));
+        tickbox.IsTicked = false;
+        tickbox.EmitSignal(NTickbox.SignalName.Toggled, tickbox);
+        await Wait(menu, 0.3);
+        Check("turning the library off marks it at once", Note("SmmTestUi").Contains("(off)"), Note("SmmTestUi"));
+        tickbox.IsTicked = true;
+        tickbox.EmitSignal(NTickbox.SignalName.Toggled, tickbox);
+        await Wait(menu, 0.3);
+        Check("turning it back on clears \"(off)\" at once", !Note("SmmTestUi").Contains("(off)"), Note("SmmTestUi"));
     }
 
     // Unsaved edits: a tickbox change leaves the saved profile alone and shows Unsaved; the edit survives
@@ -690,7 +714,7 @@ static class SelfTest
         Check("tickbox change is listed under Changes", !On() && HistoryBar.Describe().Any(l => l.Contains("Test UI")),
             string.Join(" | ", HistoryBar.Describe()));
         Check("Changes counts it", HistoryBar.Counts().Off >= 1, $"{HistoryBar.Counts()}");
-        Check("a mod turned off since launch has a changed-colour title", row.GetNode<Control>("Title").Modulate == ModDetails.ChangedTitle);
+        Check("a mod turned off since launch has a changed-colour title", row.GetNode<Control>("Title").Modulate == ModDetails.ChangedOffTitle);
         var changes = screen.GetNode<Control>(HistoryBar.ChangesName);
         changes.EmitSignal(Control.SignalName.MouseEntered);
         await Wait(menu, 0.3);
@@ -701,7 +725,7 @@ static class SelfTest
 
         Press("UndoButton");
         await Wait(menu, 0.3);
-        Check("undo turns it back on, tickbox included", On() && tickbox.IsTicked && row.GetNode<Control>("Title").Modulate != ModDetails.ChangedTitle);
+        Check("undo turns it back on, tickbox included", On() && tickbox.IsTicked && row.GetNode<Control>("Title").Modulate != ModDetails.ChangedOffTitle);
         Press("RedoButton");
         await Wait(menu, 0.3);
         Check("redo turns it off again", !On() && !tickbox.IsTicked);
