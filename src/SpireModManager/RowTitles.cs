@@ -5,8 +5,8 @@ using MegaCrit.Sts2.addons.mega_text;
 namespace SpireModManager;
 
 // Row titles in our views: the alias with the original name small and dim beside it (or just the name),
-// cut short with "…" when it doesn't fit, a subtle ✎ when the player has added an alias, notes or tags,
-// and the player's notes in a card after hovering the row for a second. Titles of mods turned on or off
+// cut short with "…" when it doesn't fit, a small notepad when the player has an alias or notes for it
+// (main list), and the mod's card after hovering the row for a second. Titles of mods turned on or off
 // since launch are gold. Vanilla View: exactly as the game makes them.
 static class RowTitles
 {
@@ -17,6 +17,9 @@ static class RowTitles
     const string NotesCard = "SpireModManagerNotesCard";
     const double NotesDelay = 1.0;
 
+    public const float RowHeight = 48; // our views (the game's: 72)
+    const string MarkName = "SpireModManagerEditedMark";
+
     public static void Apply(IEnumerable<NModMenuRow> rows, bool vanilla)
     {
         foreach (var row in rows)
@@ -26,11 +29,11 @@ static class RowTitles
             var info = vanilla ? null : Store.InfoFor(row.Mod?.manifest?.id);
             // Our views: smaller text in a shorter row with a smaller tickbox and no Steam/folder icon; the
             // title stretches with the (wider) row.
-            row.CustomMinimumSize = new Vector2(0, vanilla ? 72 : 52);
+            row.CustomMinimumSize = new Vector2(0, vanilla ? 72 : RowHeight);
             row.GetNode<Control>("PlatformIcon").Visible = vanilla;
             var tickbox = row.GetNode<Control>("Tickbox");
             tickbox.PivotOffset = tickbox.Size / 2;
-            tickbox.Scale = vanilla ? Vector2.One : new Vector2(0.72f, 0.72f);
+            tickbox.Scale = vanilla ? Vector2.One : new Vector2(0.68f, 0.68f);
             title.AnchorRight = vanilla ? 0 : 1;
             title.OffsetRight = vanilla ? 562 : -90;
             // Relative moves only: Load Order shifts the title too, for its grip.
@@ -41,41 +44,58 @@ static class RowTitles
             title.Text = Escape(name);
             Layout.FontSize(title, vanilla ? Layout.RowTitleVanillaSize : Layout.RowTitleSize);
             WatchHover(row);
+            // The notepad: the player has an alias or notes for it (main list only).
+            var marked = !vanilla && !Store.Data.LoadOrderView && info is { Alias: not null } or { Notes: not null };
+            if (row.GetNodeOrNull<TextureRect>(MarkName) is { } oldMark)
+                oldMark.Visible = false;
             if (!vanilla)
             {
                 // Fitted once this redraw has placed the title (Load Order moves it right).
                 var shown = row;
-                var edited = info is { Alias: not null } or { Notes: not null } or { Tags: not null };
-                Callable.From(() => Fit(shown, name, info?.Alias, edited)).CallDeferred();
+                Callable.From(() => Fit(shown, name, info?.Alias, marked)).CallDeferred();
             }
         }
         MarkChanged(rows, vanilla);
     }
 
-    static void Fit(NModMenuRow row, string name, string? alias, bool edited)
+    static void Fit(NModMenuRow row, string name, string? alias, bool marked)
     {
         if (!GodotObject.IsInstanceValid(row))
             return;
         var title = row.GetNode<MegaRichTextLabel>("Title");
         var font = title.GetThemeFont("normal_font");
         float Width(string text, int size) => font.GetStringSize(text, fontSize: size).X;
-        const string mark = "  ✎";
-        var room = title.Size.X - 4 - (edited ? Width(mark, OriginalNameSize) : 0);
+        const float markRoom = 22;
+        var room = title.Size.X - 4 - (marked ? markRoom : 0);
         var main = Cut(alias ?? name, Layout.RowTitleSize, room);
         var text = Escape(main);
-        var cut = main != (alias ?? name);
+        var used = Width(main, Layout.RowTitleSize);
         if (alias != null)
         {
             var left = room - Width(main + "  ", Layout.RowTitleSize);
             var original = left > Width("……", OriginalNameSize) ? Cut(name, OriginalNameSize, left) : "";
-            cut |= original != name;
             if (original.Length > 0)
+            {
                 text += $"  [color=#fff6e280][font_size={OriginalNameSize}]{Escape(original)}[/font_size][/color]";
+                used += Width("  ", Layout.RowTitleSize) + Width(original, OriginalNameSize);
+            }
         }
-        if (edited)
-            text += $"[color=#e8cf7a80][font_size={OriginalNameSize}]{mark}[/font_size][/color]";
         title.SetTextAutoSize(text);
-        row.SetMeta("spire_mod_manager_full_title", cut ? (alias != null ? $"{alias}\n{name}" : name) : "");
+
+        if (!marked)
+            return;
+        var mark = row.GetNodeOrNull<TextureRect>(MarkName);
+        if (mark == null)
+        {
+            mark = new TextureRect
+            {
+                Name = MarkName, Texture = Icons.Notepad, StretchMode = TextureRect.StretchModeEnum.Keep,
+                MouseFilter = Control.MouseFilterEnum.Ignore, Modulate = new Color(0.91f, 0.81f, 0.48f, 0.75f),
+            };
+            row.AddChild(mark);
+        }
+        mark.Visible = true;
+        mark.Position = new Vector2(title.Position.X + used + 9, title.Position.Y + 6);
 
         string Cut(string full, int size, float width)
         {
@@ -88,7 +108,8 @@ static class RowTitles
         }
     }
 
-    // A second over a row shows a card with the full title (when it was cut short) and the player's notes.
+    // A second over a row shows the mod's card (ModDetails.Card): names, state, problems, author, update, the
+    // player's tags and notes. It goes as soon as the mouse is off the row (or the row is gone).
     static void WatchHover(NModMenuRow row)
     {
         if (row.HasMeta(HoverMeta))
@@ -101,29 +122,21 @@ static class RowTitles
             row.GetTree().CreateTimer(NotesDelay).Timeout += () =>
             {
                 if (!GodotObject.IsInstanceValid(row) || (int)row.GetMeta(HoverMeta) != token || Store.Data.VanillaView
-                    || CategoryList.ScreenOf(row) is not { } screen)
+                    || row.Mod is not { } mod || CategoryList.ScreenOf(row) is not { } screen || !Hovered(row))
                     return;
-                var full = row.HasMeta("spire_mod_manager_full_title") ? (string)row.GetMeta("spire_mod_manager_full_title") : "";
-                var notes = Store.InfoFor(row.Mod?.manifest?.id)?.Notes;
-                if (full.Length == 0 && notes == null)
-                    return;
-                var lines = new List<string>();
-                if (full.Length > 0)
-                    lines.Add($"[b]{Escape(full)}[/b]");
-                if (notes != null)
-                    lines.Add($"[color=#e8cf7a]{Menus.Text("SPIRE_MOD_MANAGER.NOTES_TERM")}[/color]\n{Escape(notes)}");
-                Hover.Show(screen, NotesCard, string.Join("\n\n", lines), row.GetGlobalMousePosition() + new Vector2(16, 20));
+                Hover.Show(screen, NotesCard, ModDetails.Card(mod), Hover.Mouse(row) + new Vector2(16, 20), keep: () => Hovered(row));
             };
         };
         row.MouseExited += () =>
         {
-            if (row.GetGlobalRect().HasPoint(row.GetGlobalMousePosition()))
+            if (Hovered(row))
                 return; // onto one of its own buttons
             row.SetMeta(HoverMeta, (int)row.GetMeta(HoverMeta) + 1);
-            if (CategoryList.ScreenOf(row) is { } screen)
-                Hover.Hide(screen, NotesCard);
         };
     }
+
+    static bool Hovered(NModMenuRow row) =>
+        GodotObject.IsInstanceValid(row) && row.IsVisibleInTree() && !MenuPanel.IsOpen && row.GetGlobalRect().HasPoint(Hover.Mouse(row));
 
     // Our views: a mod turned on since launch has a bright gold title, one turned off a dim one, so what a
     // relaunch will change stands out. Otherwise the colour the game gave it (white, grey when off, red when

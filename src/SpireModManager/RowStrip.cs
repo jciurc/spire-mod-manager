@@ -43,7 +43,7 @@ static class RowStrip
 
             var note = new RichTextLabel
             {
-                Name = "Needs", Text = string.Join("    ", new[] { Needs(row.Mod, order, Store.Data.LoadOrderView), RequiredFor(row.Mod) }.Where(s => s.Length > 0)), BbcodeEnabled = true, ScrollActive = false,
+                Name = "Needs", Text = string.Join("    ", new[] { RequiredFor(row.Mod), Needs(row.Mod, order, Store.Data.LoadOrderView) }.Where(s => s.Length > 0)), BbcodeEnabled = true, ScrollActive = false,
                 AutowrapMode = TextServer.AutowrapMode.Off, VerticalAlignment = VerticalAlignment.Center,
                 SizeFlagsHorizontal = Control.SizeFlags.ExpandFill, SizeFlagsVertical = Control.SizeFlags.Fill,
                 ClipContents = true, MouseFilter = Control.MouseFilterEnum.Ignore,

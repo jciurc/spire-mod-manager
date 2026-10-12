@@ -85,9 +85,6 @@ static class MenuButton
     // nothing else on the menu can take them first. Leaving the menu cancels it.
     public const string MoveLayerName = "SpireModManagerMoveLayer";
 
-    // The self-test sets where "the mouse" is: during a test run the real cursor can be anywhere.
-    public static Func<Vector2>? TestMouse;
-
     static void BeginMove(NMainMenu menu, Control button, Vector2 size)
     {
         if (menu.HasNode(MoveLayerName))
@@ -113,7 +110,7 @@ static class MenuButton
         var startAnchors = Store.Data.MenuButtonAt;
         button.SetAnchorsPreset(Control.LayoutPreset.TopLeft);
         (button.Position, button.Size) = (start, size);
-        Vector2 Mouse() => TestMouse?.Invoke() ?? menu.GetViewport().GetMousePosition();
+        Vector2 Mouse() => Hover.Mouse(menu);
         var mouseAtStart = Mouse();
         // Buttons already held when move mode starts (the click on "Move button") don't count until released.
         var leftWasDown = true;

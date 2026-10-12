@@ -3,9 +3,10 @@ using MegaCrit.Sts2.Core.Modding;
 
 namespace SpireModManager;
 
-// Small labels on each mod. Three are worked out automatically:
-// - Gameplay, from the manifest's affects_gameplay (what multiplayer compares; mods without it get no tag);
+// Small labels on each mod. Four are worked out automatically:
+// - Local, for a mod installed by hand rather than from the Workshop;
 // - Library, when another installed mod depends on it;
+// - Gameplay, from the manifest's affects_gameplay (what multiplayer compares; mods without it get no tag);
 // - Cosmetic, when the mod's Workshop tags say it's about looks (skins, visuals, UI, textures).
 // The player's own tags are typed in the info panel or a mod's right-click menu and drawn outline-only, so
 // they read differently from the automatic (filled) ones. Hovering a chip explains it. All are searchable.
@@ -16,6 +17,7 @@ static class Tags
     static readonly Color Gameplay = new(0.95f, 0.55f, 0.3f);
     static readonly Color Library = new(0.937f, 0.784f, 0.318f);
     static readonly Color Cosmetic = new(0.78f, 0.62f, 0.95f);
+    static readonly Color Local = new(0.7f, 0.74f, 0.8f);
     public static readonly Color CustomColor = new(0.75f, 0.9f, 0.8f);
 
     // Workshop tags that mean a mod is about looks (lower case, matched as whole words).
@@ -25,11 +27,14 @@ static class Tags
     {
         if (mod?.manifest is not { } manifest)
             return [];
+        // Always in this order: Local, Library, Gameplay, Cosmetic, then the player's own.
         var chips = new List<Chip>();
-        if (manifest.affectsGameplay)
-            chips.Add(new Chip(Menus.Text("SPIRE_MOD_MANAGER.TAG_GAMEPLAY"), Gameplay, Tip: Menus.Text("SPIRE_MOD_MANAGER.TAG_GAMEPLAY_TIP")));
+        if (mod.workshopId == null)
+            chips.Add(new Chip(Menus.Text("SPIRE_MOD_MANAGER.TAG_LOCAL"), Local, Tip: Menus.Text("SPIRE_MOD_MANAGER.TAG_LOCAL_TIP")));
         if (ModManager.Mods.Any(m => m != mod && Dependencies.Of(m).Contains(manifest.id)))
             chips.Add(new Chip(Menus.Text("SPIRE_MOD_MANAGER.TAG_LIBRARY"), Library, Tip: Menus.Text("SPIRE_MOD_MANAGER.TAG_LIBRARY_TIP")));
+        if (manifest.affectsGameplay)
+            chips.Add(new Chip(Menus.Text("SPIRE_MOD_MANAGER.TAG_GAMEPLAY"), Gameplay, Tip: Menus.Text("SPIRE_MOD_MANAGER.TAG_GAMEPLAY_TIP")));
         if (IsCosmetic(mod))
             chips.Add(new Chip(Menus.Text("SPIRE_MOD_MANAGER.TAG_COSMETIC"), Cosmetic, Tip: Menus.Text("SPIRE_MOD_MANAGER.TAG_COSMETIC_TIP")));
         foreach (var tag in Store.InfoFor(manifest.id)?.Tags ?? [])

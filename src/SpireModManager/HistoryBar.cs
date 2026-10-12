@@ -124,7 +124,8 @@ static class HistoryBar
         var lines = Summary();
         if (Layout.Current == Layout.View.Categories && Describe().Count > 0)
             lines.Add($"\n[color={Dim}]{Menus.Text("SPIRE_MOD_MANAGER.CHANGES_CLICK")}[/color]");
-        Hover.Show(screen, SummaryName, string.Join("\n", lines), anchor.GlobalPosition + new Vector2(anchor.Size.X, -8), right: true, above: true);
+        Hover.Show(screen, SummaryName, string.Join("\n", lines), anchor.GlobalPosition + new Vector2(anchor.Size.X, -8), right: true, above: true,
+            keep: () => anchor.IsVisibleInTree() && anchor.GetGlobalRect().HasPoint(Hover.Mouse(anchor)));
     }
 
     // Mods turned on, off, and moved in the load order, compared with launch.

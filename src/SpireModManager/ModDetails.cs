@@ -75,8 +75,7 @@ static class ModDetails
         foreach (var field in Fields.GetValueOrDefault(container.GetInstanceId(), []))
             field.Load();
         if (yours.GetNodeOrNull<Button>("Category/Picker") is { } picker)
-            picker.Text = (Store.InfoFor(id)?.Category is { } category && Categories.Find(category) != null
-                ? category : Menus.Text("SPIRE_MOD_MANAGER.UNCATEGORIZED")) + "  ▾";
+            picker.Text = CategoryList.CategoryName(id) + "  ▾";
         Callable.From(() => PlaceFields(container)).CallDeferred();
 
         var folder = container.GetNodeOrNull<NButton>("OpenFolderButton") ?? AddButton(container, "OpenFolderButton",
@@ -151,9 +150,33 @@ static class ModDetails
         return text.ToString().TrimEnd();
     }
 
+    // The card shown after hovering a row: its names, state, anything wrong, author, last update, and the
+    // player's alias, tags and notes.
+    public static string Card(Mod mod)
+    {
+        var id = mod.manifest?.id ?? "";
+        var info = Store.InfoFor(id);
+        var lines = new List<string> { $"[b]{Escape(mod.manifest?.name ?? id)}[/b]  [color=#fff6e280]({Escape(id)})[/color]", Status(mod) };
+        lines.AddRange(Problems(mod).Select(p => $"[color={Problem}]{Escape(p)}[/color]"));
+        string Fact(string key, string value) => $"[color=#e8cf7a]{Menus.Text(key)}[/color]: {value}";
+        lines.Add(Fact("SPIRE_MOD_MANAGER.AUTHOR", Escape(mod.manifest?.author ?? Menus.Text("SPIRE_MOD_MANAGER.UNKNOWN"))));
+        if (WorkshopInfo.For(mod) is { } workshop)
+            lines.Add(Fact("SPIRE_MOD_MANAGER.UPDATED", Date(workshop.Updated)));
+        if (info?.Alias is { } alias)
+            lines.Add(Fact("SPIRE_MOD_MANAGER.ALIAS_TERM", Escape(alias)));
+        if (info?.Tags is { Count: > 0 } tags)
+            lines.Add(Fact("SPIRE_MOD_MANAGER.TAGS_TERM", Escape(string.Join(", ", tags))));
+        if (info?.Notes is { } notes)
+            lines.Add($"[color=#e8cf7a]{Menus.Text("SPIRE_MOD_MANAGER.NOTES_TERM")}[/color]\n{Escape(notes)}");
+        return string.Join("\n", lines);
+    }
+
+    // "October 12, 2026".
+    public static string Date(DateTime date) => date.ToString("MMMM d, yyyy", System.Globalization.CultureInfo.InvariantCulture);
+
     // Enabled (green), Disabled (grey), or Pending restart (orange) when it's been turned on or off since it
     // loaded; Failed to load (red) when it's on but couldn't load.
-    static string Status(Mod mod)
+    public static string Status(Mod mod)
     {
         var on = Dependencies.IsOn(mod);
         var loaded = mod.state == ModLoadState.Loaded;

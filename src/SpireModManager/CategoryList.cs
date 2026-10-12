@@ -343,10 +343,18 @@ static class CategoryList
             Store.Data.UncategorizedCollapsed, c => Store.Data.UncategorizedCollapsed = c);
     }
 
-    // The small buttons at the right of each row's strip: moves in Load Order, the category otherwise.
+    // The small buttons at the right of each row's strip: moves in Load Order; otherwise a pencil (the mod's
+    // alias, tags and notes) and its category, both opening its menu.
     static Func<NModMenuRow, IEnumerable<MenuItem>> StripActions(Control content) => Store.Data.LoadOrderView
         ? row => LoadOrder.Actions(content, row, () => Redraw(content), compact: true)
-        : row => [new MenuItem(Menus.Text("SPIRE_MOD_MANAGER.CATEGORY_BUTTON"), () => ShowRowMenu(content, row))];
+        : row => [
+            new MenuItem("✎", () => ShowRowMenu(content, row), Tip: Menus.Text("SPIRE_MOD_MANAGER.EDIT_TIP")),
+            new MenuItem(CategoryName(row.Mod?.manifest?.id), () => ShowRowMenu(content, row), Tip: Menus.Text("SPIRE_MOD_MANAGER.CATEGORY_TIP")),
+        ];
+
+    // The mod's category, or "Uncategorized".
+    public static string CategoryName(string? modId) =>
+        Store.InfoFor(modId)?.Category is { } name && Categories.Find(name) != null ? name : Menus.Text("SPIRE_MOD_MANAGER.UNCATEGORIZED");
 
     // After a tickbox change: the rows' dependency notes ("(off)", "Required for") and their title colours
     // follow at once, without a full redraw.
