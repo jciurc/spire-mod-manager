@@ -454,3 +454,9 @@ Jordan's notes of 2026-10-12 (night), from the details page screenshot.
 ## Backlog (round 10)
 - [ ] long titles, descriptions, tags and other text: how they should fit
 - [ ] hover the thumbnail for 0.2 s: the full image (at most 800 wide or high)
+
+# Round 11 (after round 10)
+
+Jordan's note of 2026-10-12 (night).
+
+- [ ] bulk editing on the main list: select mods (e.g. all of Uncategorized, Ctrl-click to drop one), right-click, change their category; the edit menu has the same controls minus Alias, which becomes "Editing N selected mods"
