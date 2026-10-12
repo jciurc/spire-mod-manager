@@ -2,7 +2,9 @@
 //
 //   dotnet run tools/dev.cs test      build, reset the sandbox, run the in-game self-test headless
 //                                     (--window: with a window, for screenshots, kept behind others;
-//                                      --bmm: with Better Mod Menu loaded, to test stepping aside;
+//                                      --bmm: with Better Mod Menu loaded too (listed first; --bmm-after:
+//                                      after ours, as in Jordan's game; --bmm-local: its local-fix build
+//                                      from ../bettermodmenu instead of the installed one);
 //                                      --real: Jordan's own mods, switched off, and a copy of his data)
 //   dotnet run tools/dev.cs launch    build, open the game in the sandbox to poke at by hand
 //
@@ -36,9 +38,10 @@ var outDir = Path.Combine(root, "out", "selftest");
 var logPath = Path.Combine(root, "out", "dev.log");
 var mode = args.FirstOrDefault() ?? "test";
 var real = args.Contains("--real"); // Jordan's own mods (switched off) and a copy of his manager data
+var bmm = args.Any(a => a.StartsWith("--bmm")); // Better Mod Menu on (any --bmm option)
 
 if (mode is not ("test" or "launch"))
-    return Fail("usage: dotnet run tools/dev.cs [test [--window] [--bmm] [--real]|launch]");
+    return Fail("usage: dotnet run tools/dev.cs [test [--window] [--bmm[-after]] [--bmm-local] [--real]|launch]");
 if (Process.GetProcessesByName("SlayTheSpire2").Any(p => string.Equals(Path.GetDirectoryName(ExePath(p)), DevDir, StringComparison.OrdinalIgnoreCase)))
     return Fail($"A dev copy of the game is already running from {DevDir}.");
 
@@ -163,6 +166,14 @@ void SyncMods()
             File.Copy(file, target);
         }
     }
+    // --bmm-local: Better Mod Menu's local-fix build (built by its install-local.sh) in place of the installed one.
+    if (args.Contains("--bmm-local"))
+    {
+        var local = Path.Combine(root, "..", "bettermodmenu", ".godot", "mono", "temp", "bin", "Release", "BetterModMenu.dll");
+        var dll = Path.Combine(mods, "BetterModMenu", "BetterModMenu.dll");
+        File.Delete(dll); // the link only
+        File.Copy(local, dll);
+    }
     var ours = Path.Combine(mods, ModId);
     Directory.CreateDirectory(ours);
     foreach (var ext in new[] { ".pck", ".json", ".dll" })
@@ -179,15 +190,17 @@ void PrepareSandbox(bool resetData)
     var mods = settings["mod_settings"] as JsonObject ?? [];
     mods["mods_enabled"] = true;
     // A fresh mod list every run, so one run's toggles and order can't leak into the next: everything on
-    // (no entry = on) except Better Mod Menu (--bmm: on, to test how we step aside when it's loaded).
-    var list = new JsonArray
-    {
-        (JsonNode)new JsonObject { ["id"] = "BetterModMenu", ["is_enabled"] = args.Contains("--bmm"), ["source"] = "mods_directory" },
-    };
+    // (no entry = on) except Better Mod Menu (--bmm: on, to test running alongside it) and its fork's folder
+    // (never loads: its DLL name doesn't match its id). --bmm-after: listed after ours.
+    var list = new JsonArray();
+    if (args.Contains("--bmm-after"))
+        list.Add((JsonNode)new JsonObject { ["id"] = ModId, ["is_enabled"] = true, ["source"] = "mods_directory" });
+    list.Add((JsonNode)new JsonObject { ["id"] = "BetterModMenu", ["is_enabled"] = bmm, ["source"] = "mods_directory" });
+    list.Add((JsonNode)new JsonObject { ["id"] = "BetterModMenuFork", ["is_enabled"] = false, ["source"] = "mods_directory" });
     // --real: every other mod is listed but switched off, so none of their code runs (some write config
     // files to the shared user folder); only the manager loads.
     if (real)
-        foreach (var id in ManifestIds(Path.Combine(DevDir, "mods")).Where(id => id is not (ModId or "BetterModMenu")))
+        foreach (var id in ManifestIds(Path.Combine(DevDir, "mods")).Where(id => id is not (ModId or "BetterModMenu" or "BetterModMenuFork")))
             list.Add((JsonNode)new JsonObject { ["id"] = id, ["is_enabled"] = false, ["source"] = "mods_directory" });
     mods["mod_list"] = list;
     settings["mod_settings"] = mods;
