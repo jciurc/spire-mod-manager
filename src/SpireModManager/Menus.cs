@@ -5,12 +5,11 @@ using MegaCrit.Sts2.Core.Nodes.Multiplayer;
 
 namespace SpireModManager;
 
-// A menu entry: a label and action, or a heading (no action, no editor) that separates groups.
-// Detail: dim text on the right. Radio: one of several choices (a dot marks the checked one).
-// Editor: instead of an action, an editor shown in the menu's place; it gets "back" (to the list) and
-// "close" (the menu).
+// A menu entry: a label and action, or a heading (no action) that separates groups.
+// Detail: dim text on the right. Radio: one of several choices (a dot marks the checked one). Badge: a
+// short mark after the label in its own colour (an unsaved profile's "*").
 record MenuItem(string Label, Action? OnSelect, bool Checked = false, bool Disabled = false, string? Detail = null,
-    bool Radio = false, Func<Action, Action, Control>? Editor = null)
+    bool Radio = false, (string Text, Color Color)? Badge = null)
 {
     public static MenuItem Heading(string label) => new(label, null);
 }
@@ -21,7 +20,7 @@ static class Menus
     static readonly Color Gold = new(0.937f, 0.784f, 0.318f);
 
     // A right-click menu at the mouse (see MenuPanel).
-    public static PopupPanel? Show(Node owner, IEnumerable<MenuItem> items, Vector2? at = null, string? toggleKey = null) =>
+    public static Node? Show(Node owner, IEnumerable<MenuItem> items, Vector2? at = null, string? toggleKey = null) =>
         MenuPanel.Show(owner, () => items.ToList(), at, toggleKey);
 
     // The game's own yes/no popup. True if confirmed.

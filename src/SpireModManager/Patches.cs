@@ -135,7 +135,7 @@ static class ModToggledPatch
             Profiles.Track();
             History.Record(); // a tickbox change (Track only saves when the active profile changed)
             var content = __instance.GetNode<Control>("%ModsScrollContainer/Mask/Content");
-            ModDetails.MarkChanged(content.GetChildren().OfType<NModMenuRow>(), Store.Data.VanillaView);
+            RowTitles.MarkChanged(content.GetChildren().OfType<NModMenuRow>(), Store.Data.VanillaView);
             CategoryList.RefreshStrips(content);
             ModDetails.Refresh(__instance); // its problems ("Needs X, which is off") follow too
             Layout.UpdateDot(__instance);
@@ -183,6 +183,15 @@ static class ModInfoClearPatch
 [HarmonyPatch(typeof(NInputManager), "_UnhandledKeyInput")]
 static class ShortcutsPatch
 {
+    // Escape closes an open menu of ours, and nothing else happens (the game would leave the page).
+    static bool Prefix(InputEvent inputEvent)
+    {
+        if (inputEvent is not InputEventKey { Keycode: Key.Escape, Pressed: true, Echo: false } || !MenuPanel.Close())
+            return true;
+        ((SceneTree)Engine.GetMainLoop()).Root.SetInputAsHandled();
+        return false;
+    }
+
     static void Postfix(InputEvent inputEvent)
     {
         try

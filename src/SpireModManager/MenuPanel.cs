@@ -2,78 +2,127 @@ using Godot;
 
 namespace SpireModManager;
 
-// Our pop-up menus (right-click menus, the profile list), in place of the engine's PopupMenu, which can't
-// show these: each row has an optional mark (a dot for the one current choice, a tick otherwise), a
-// label, and a dim detail on the right; headings separate groups; and an item can turn the menu into a
-// small editor in place, whose Save or Cancel brings the list back. Freed when it closes.
+// Our pop-up menus (right-click menus, the profile list, the category picker). Not engine popups: an
+// overlay inside the page, so it behaves like the rest of the page.
+// - Rows: an optional mark (a dot for the one current choice, a tick otherwise), a label, an optional badge
+//   after it (the profile list's red "*"), and a dim detail on the right; headings separate groups.
+// - An optional side column next to the list (a mod's own fields in its right-click menu).
+// - A press outside closes it. A right-click there also carries on to whatever is under the mouse; a left
+//   click doesn't, so pressing the button that opened it closes it. Escape closes it too.
+// One menu at a time.
 static class MenuPanel
 {
     static readonly Color Cream = new(1, 0.964706f, 0.886275f);
     static readonly Color Gold = new(0.937f, 0.784f, 0.318f);
+    public const string RootName = "SpireModManagerMenu";
     public const string ItemGroup = "SpireModManagerMenuItem";
-    const ulong ReopenGuardMs = 350;
 
-    // When each toggle key's menu last closed: a press on the control that opened it, arriving just after
-    // the click that closed it, closes it instead of opening it again.
-    static readonly Dictionary<string, ulong> ClosedAt = [];
-    static readonly Dictionary<string, PopupPanel> Open = [];
+    static Node? _open;
+    static string? _openKey;
 
-    // items is called again whenever the list is shown (after an editor's Save or Cancel), so it can change.
-    public static PopupPanel? Show(Node owner, Func<IReadOnlyList<MenuItem>> items, Vector2? at = null, string? toggleKey = null)
+    public static bool IsOpen => _open != null && GodotObject.IsInstanceValid(_open) && _open.IsInsideTree();
+
+    // The open menu, for the self-test.
+    public static Node? Current => IsOpen ? _open : null;
+
+    // items is called again whenever the list is redrawn, so it can change. side builds the side column (it
+    // gets "close"). With a toggleKey, showing the same menu again just closes it.
+    public static Node? Show(Node owner, Func<IReadOnlyList<MenuItem>> items, Vector2? at = null, string? toggleKey = null,
+        Func<Action, Control>? side = null)
     {
-        if (toggleKey != null && Open.TryGetValue(toggleKey, out var open) && GodotObject.IsInstanceValid(open) && open.Visible)
+        var again = toggleKey != null && IsOpen && _openKey == toggleKey;
+        Close();
+        if (again)
+            return null;
+
+        // On the scene root, not inside the page: closing it mid-edit saves and redraws the list, which mustn't
+        // happen while the list is the one removing it. It closes when its owner goes.
+        var layer = new CanvasLayer { Name = RootName, Layer = 90 };
+        owner.GetTree().Root.AddChild(layer);
+        owner.TreeExiting += () =>
         {
-            open.Hide();
-            return null;
-        }
-        if (toggleKey != null && ClosedAt.TryGetValue(toggleKey, out var closed) && Time.GetTicksMsec() - closed < ReopenGuardMs)
-            return null;
-        var panel = new PopupPanel { Name = "SpireModManagerMenu", WrapControls = true };
+            if (_open == layer)
+                Close();
+        };
+        var viewport = owner.GetViewport();
+        var catcher = new Control { Name = "Catcher", MouseFilter = Control.MouseFilterEnum.Stop, Size = viewport.GetVisibleRect().Size };
+        layer.AddChild(catcher);
+
+        var panel = new PanelContainer { Name = "Panel" };
         var style = new StyleBoxFlat
         {
-            BgColor = new Color(0.0756f, 0.12084f, 0.18f, 0.97f), BorderColor = new Color(Gold, 0.6f),
+            BgColor = new Color(0.0756f, 0.12084f, 0.18f, 0.98f), BorderColor = new Color(Gold, 0.6f),
             ContentMarginLeft = 8, ContentMarginRight = 8, ContentMarginTop = 8, ContentMarginBottom = 8,
+            ShadowColor = new Color(0, 0, 0, 0.4f), ShadowSize = 8,
         };
         style.SetBorderWidthAll(2);
         style.SetCornerRadiusAll(6);
         panel.AddThemeStyleboxOverride("panel", style);
+        catcher.AddChild(panel);
 
+        var columns = new HBoxContainer { Name = "Columns" };
+        columns.AddThemeConstantOverride("separation", 12);
+        panel.AddChild(columns);
         var list = new VBoxContainer { Name = "Items" };
         list.AddThemeConstantOverride("separation", 2);
-        panel.AddChild(list);
-        Fill(panel, list, items);
-
-        panel.PopupHide += () =>
+        columns.AddChild(list);
+        Fill(list, items);
+        if (side != null)
         {
-            if (toggleKey != null)
-                ClosedAt[toggleKey] = Time.GetTicksMsec();
-            panel.QueueFree();
+            columns.AddChild(new ColorRect { Color = new Color(Gold, 0.25f), CustomMinimumSize = new Vector2(1, 0), MouseFilter = Control.MouseFilterEnum.Ignore });
+            columns.AddChild(side(() => Close()));
+        }
+
+        catcher.GuiInput += e =>
+        {
+            if (e is not InputEventMouseButton { Pressed: true } press || panel.GetGlobalRect().HasPoint(press.GlobalPosition))
+                return;
+            catcher.AcceptEvent();
+            Close();
+            // A right-click (or the wheel) carries on to what's underneath; a left click only closes.
+            if (press.ButtonIndex != MouseButton.Left)
+                Callable.From(() => Input.ParseInputEvent(press)).CallDeferred();
         };
-        if (toggleKey != null)
-            Open[toggleKey] = panel;
-        owner.AddChild(panel);
-        var viewport = owner.GetViewport();
+
+        (_open, _openKey) = (layer, toggleKey);
+
+        // At the point asked (the mouse by default), kept on screen; again whenever its size changes.
         var position = at ?? viewport.GetMousePosition();
-        panel.Popup(new Rect2I((Vector2I)position, Vector2I.Zero));
-        // Kept on screen.
-        var bounds = viewport.GetVisibleRect().Size;
-        panel.Position = new Vector2I(Math.Clamp(panel.Position.X, 0, Math.Max(0, (int)bounds.X - panel.Size.X)),
-            Math.Clamp(panel.Position.Y, 0, Math.Max(0, (int)bounds.Y - panel.Size.Y)));
-        return panel;
+        void Fit()
+        {
+            if (!GodotObject.IsInstanceValid(panel))
+                return;
+            var size = panel.GetCombinedMinimumSize();
+            panel.Size = size;
+            panel.Position = new Vector2(Math.Clamp(position.X, 0, Math.Max(0, catcher.Size.X - size.X)),
+                Math.Clamp(position.Y, 0, Math.Max(0, catcher.Size.Y - size.Y)));
+        }
+        panel.MinimumSizeChanged += Fit;
+        panel.Position = position;
+        Callable.From(Fit).CallDeferred();
+        return layer;
     }
 
-    static void Fill(PopupPanel panel, VBoxContainer list, Func<IReadOnlyList<MenuItem>> build)
+    // Closes the open menu, if any. True if one was open.
+    public static bool Close()
+    {
+        if (!IsOpen || _open is not { } open)
+        {
+            (_open, _openKey) = (null, null);
+            return false;
+        }
+        (_open, _openKey) = (null, null);
+        open.GetParent()?.RemoveChild(open); // now: a press right after must not land on it
+        open.QueueFree();
+        return true;
+    }
+
+    static void Fill(VBoxContainer list, Func<IReadOnlyList<MenuItem>> build)
     {
         var items = build();
-        foreach (var child in list.GetChildren())
-        {
-            list.RemoveChild(child);
-            child.QueueFree();
-        }
         var marks = items.Any(i => i.Checked || i.Radio);
         foreach (var item in items)
-            list.AddChild(item.OnSelect == null && item.Editor == null ? Heading(item.Label) : Row(panel, list, build, item, marks));
-        panel.ResetSize();
+            list.AddChild(item.OnSelect == null ? Heading(item.Label) : Row(item, marks));
     }
 
     static Control Heading(string text)
@@ -94,8 +143,8 @@ static class MenuPanel
         return box;
     }
 
-    // One item: hover lights it, a click runs it and closes the menu (or opens its editor in place).
-    static Control Row(PopupPanel panel, VBoxContainer list, Func<IReadOnlyList<MenuItem>> items, MenuItem item, bool marks)
+    // One item: hover lights it, a click closes the menu and runs it.
+    static Control Row(MenuItem item, bool marks)
     {
         var row = new PanelContainer
         {
@@ -130,9 +179,16 @@ static class MenuPanel
             Style(mark, "res://themes/kreon_regular_shared.tres", 15, item.Checked ? Gold : new Color(Cream, 0.35f));
             line.AddChild(mark);
         }
-        var label = new Label { Text = item.Label, MouseFilter = Control.MouseFilterEnum.Ignore, SizeFlagsHorizontal = Control.SizeFlags.ExpandFill };
+        var label = new Label { Text = item.Label, MouseFilter = Control.MouseFilterEnum.Ignore };
         Style(label, "res://themes/kreon_regular_shared.tres", 20, item.Checked ? Gold : color);
         line.AddChild(label);
+        if (item.Badge is { } badge)
+        {
+            var mark = new Label { Name = "Badge", Text = badge.Text, MouseFilter = Control.MouseFilterEnum.Ignore };
+            Style(mark, "res://themes/kreon_bold_shared.tres", 20, badge.Color);
+            line.AddChild(mark);
+        }
+        line.AddChild(new Control { SizeFlagsHorizontal = Control.SizeFlags.ExpandFill, MouseFilter = Control.MouseFilterEnum.Ignore });
         if (item.Detail is { Length: > 0 } detail)
         {
             var dim = new Label { Text = detail, MouseFilter = Control.MouseFilterEnum.Ignore, VerticalAlignment = VerticalAlignment.Center };
@@ -150,41 +206,19 @@ static class MenuPanel
             if (e is not InputEventMouseButton { ButtonIndex: MouseButton.Left, Pressed: false })
                 return;
             row.AcceptEvent();
-            Choose(panel, list, items, item);
+            Close();
+            item.OnSelect?.Invoke();
         };
         return row;
     }
 
-    // What a click on an item does: runs it and closes, or swaps the list for its editor.
-    static void Choose(PopupPanel panel, VBoxContainer list, Func<IReadOnlyList<MenuItem>> items, MenuItem item)
-    {
-        if (item.Editor is { } editor)
-        {
-            foreach (var child in list.GetChildren())
-            {
-                list.RemoveChild(child);
-                child.QueueFree();
-            }
-            void Back()
-            {
-                if (GodotObject.IsInstanceValid(panel))
-                    Fill(panel, list, items);
-            }
-            list.AddChild(editor(Back, panel.Hide));
-            panel.ResetSize();
-            return;
-        }
-        panel.Hide();
-        item.OnSelect?.Invoke();
-    }
+    // For the self-test: the labels of a menu's items, and choosing one as a click would.
+    public static List<string> Labels(Node menu) =>
+        menu.FindChildren("*", "", true, false).Where(n => n.IsInGroup(ItemGroup)).Select(n => (string)n.GetMeta("label")).ToList();
 
-    // For the self-test: the labels of the menu's items, and choosing one as a click would.
-    public static List<string> Labels(PopupPanel panel) =>
-        panel.FindChildren("*", "", true, false).Where(n => n.IsInGroup(ItemGroup)).Select(n => (string)n.GetMeta("label")).ToList();
-
-    public static void Press(PopupPanel panel, string label)
+    public static void Press(Node menu, string label)
     {
-        if (panel.FindChildren("*", "", true, false).FirstOrDefault(n => n.IsInGroup(ItemGroup) && (string)n.GetMeta("label") == label) is Control row)
+        if (menu.FindChildren("*", "", true, false).FirstOrDefault(n => n.IsInGroup(ItemGroup) && (string)n.GetMeta("label") == label) is Control row)
             row.EmitSignal(Control.SignalName.GuiInput, new InputEventMouseButton { ButtonIndex = MouseButton.Left, Pressed = false });
     }
 
