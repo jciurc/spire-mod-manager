@@ -247,7 +247,7 @@ static class LoadOrder
 
         var mods = Mods(rows);
         var misordered = Dependencies.OrderViolations(mods).Select(v => v.Mod).Distinct().Count();
-        var orderText = Menus.Format(misordered == 1 ? "SPIRE_MOD_MANAGER.ORDER_PROBLEMS_ONE" : "SPIRE_MOD_MANAGER.ORDER_PROBLEMS", ("count", misordered.ToString()));
+        var orderText = Menus.Format(misordered == 1 ? "SPIRE_MOD_MANAGER.ORDER_PROBLEMS_ONE" : "SPIRE_MOD_MANAGER.ORDER_PROBLEMS", ("count", Menus.Number(misordered)));
         Badge(content, misordered > 0 && !on ? orderText : null);
         foreach (var name in new[] { WarningName, ManagersName })
             if (border.GetNodeOrNull(name) is { } old)
@@ -276,7 +276,7 @@ static class LoadOrder
         var broken = needOff.Concat(needMissing).Distinct().ToList();
         if (broken.Count == 0)
             return;
-        string Part(string key, int count) => Menus.Format(count == 1 ? key + "_ONE" : key, ("count", count.ToString()));
+        string Part(string key, int count) => Menus.Format(count == 1 ? key + "_ONE" : key, ("count", Menus.Number(count)));
         var text = string.Join(" ", new[]
         {
             needOff.Count > 0 ? Part("SPIRE_MOD_MANAGER.LIST_PROBLEMS_OFF", needOff.Count) : null,

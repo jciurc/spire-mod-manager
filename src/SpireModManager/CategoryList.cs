@@ -414,7 +414,7 @@ static class CategoryList
             }
             // The count right after the name.
             var count = header.GetNode<Label>("Count");
-            count.Text = (filtering ? members.Count(Matches) : members.Count).ToString();
+            count.Text = Menus.Number(filtering ? members.Count(Matches) : members.Count);
             count.HorizontalAlignment = HorizontalAlignment.Left;
             count.AnchorLeft = 0;
             count.OffsetLeft = titleLabel.OffsetLeft + titleLabel.GetThemeFont("font").GetStringSize(title, fontSize: 18).X + 10;
@@ -670,7 +670,7 @@ static class CategoryList
             {
                 var body = new LocString("settings_ui", count == 1 ? "SPIRE_MOD_MANAGER.DELETE_CATEGORY_BODY_ONE" : "SPIRE_MOD_MANAGER.DELETE_CATEGORY_BODY");
                 body.Add("name", category.Name);
-                body.Add("count", count);
+                body.Add("count", Menus.Number(count));
                 if (!await Menus.Confirm(new LocString("settings_ui", "SPIRE_MOD_MANAGER.DELETE_CATEGORY_TITLE"), body))
                     return;
             }
