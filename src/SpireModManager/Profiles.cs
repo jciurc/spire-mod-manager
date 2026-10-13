@@ -1,4 +1,5 @@
 using MegaCrit.Sts2.Core.Localization;
+using MegaCrit.Sts2.Core.Logging;
 using MegaCrit.Sts2.Core.Modding;
 using MegaCrit.Sts2.Core.Nodes.CommonUi;
 using MegaCrit.Sts2.Core.Nodes.Screens.ModdingScreen;
@@ -63,12 +64,20 @@ static class Profiles
 
     // A mod installed while the game runs: the active profile takes it in at once (on, as the game has it), before
     // the player can untick it, so unticking it is an edit of that profile. Quietly (see History.Quietly).
+    // Fails soft: it runs inside the game's mod detection, beside Changes' own handler.
     static void TakeInInstalled()
     {
-        if (Active is not { } profile || !Unseen(profile).Any())
-            return;
-        History.Quietly(data => TakeIn(data.Profiles.FirstOrDefault(p => p.Name == data.ActiveProfile)));
-        Switched?.Invoke(); // the count beside the name
+        try
+        {
+            if (Active is not { } profile || !Unseen(profile).Any())
+                return;
+            History.Quietly(data => TakeIn(data.Profiles.FirstOrDefault(p => p.Name == data.ActiveProfile)));
+            Switched?.Invoke(); // the count beside the name
+        }
+        catch (Exception e)
+        {
+            Log.Error($"[{ModEntry.ModId}] Could not add a newly installed mod to the active profile: {e}");
+        }
     }
 
     // Takes the installed mods a profile has never seen into its saved state, and into its unsaved edit if it has
