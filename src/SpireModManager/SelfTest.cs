@@ -117,6 +117,7 @@ static class SelfTest
             await TestLongDetails(menu, screen, content, outDir);
             await TestWorkshopHead(menu, screen);
             await TestBulkEdit(menu, screen, content, outDir);
+            await TestTagSuggestions(menu, screen, content, outDir);
             await TestHistory(menu, screen, content, outDir);
 
             // Leaving from Load Order: the page comes back on the main list.
@@ -1569,6 +1570,117 @@ static class SelfTest
         Input.ParseInputEvent(new InputEventKey { Keycode = Key.Escape, Pressed = false });
         Check("Esc lets go of the picked mods, staying on the page", Selection.Mods.Count == 0 && screen.IsVisibleInTree()
             && rows.All(r => r.GetNodeOrNull<Control>("SpireModManagerPicked") is not { Visible: true }));
+    }
+
+    // Tag suggestions, with made-up tags on made-up mods so the counts are known (the data is put back after): the
+    // panel's tags box lists your tags, most used first, at most 6; typing narrows them (starting with the word,
+    // then containing it), leaving out the ones in the box; Down lights one, Enter, a comma or a click takes it;
+    // Escape closes the list but stays in the box; nothing matching or leaving the box closes it. The bulk menu's
+    // box too, the list drawn over the menu; Tab takes one there. Keys go through Godot's input, as a player's do.
+    static async Task TestTagSuggestions(Node menu, NModdingScreen screen, Control content, string outDir)
+    {
+        NModMenuRow? Row(string id) => content.GetChildren().OfType<NModMenuRow>().FirstOrDefault(r => r.Mod?.manifest?.id == id);
+        if (Row("SmmTestUi") is not { } ui || Row("SmmTestLib") is not { } lib || Row("SmmTestContent") is not { } other)
+        {
+            Results.Add("SKIP tag suggestions: test mods not installed");
+            return;
+        }
+        var before = Store.EditsJson();
+        Store.Batch(() =>
+        {
+            foreach (var info in Store.Data.Mods.Values)
+                info.Tags = null;
+            Store.EditMod("SmmSuggestA", info => info.Tags = ["Strategy", "Story-heavy", "Must-have", "Co-op"]);
+            Store.EditMod("SmmSuggestB", info => info.Tags = ["Strategy", "Story-heavy", "Co-op"]);
+            Store.EditMod("SmmSuggestC", info => info.Tags = ["Strategy", "Stable", "Fast", "Visuals", "Tools"]);
+        });
+        async Task Press(Key key, char unicode = '\0')
+        {
+            Input.ParseInputEvent(new InputEventKey { Keycode = key, Unicode = unicode, Pressed = true });
+            await Wait(menu, 0.1);
+            Input.ParseInputEvent(new InputEventKey { Keycode = key, Unicode = unicode, Pressed = false });
+            await Wait(menu, 0.1);
+        }
+        async Task TypeIn(LineEdit box, string text)
+        {
+            box.Text = text;
+            box.CaretColumn = text.Length;
+            box.EmitSignal(LineEdit.SignalName.TextChanged, text);
+            await Wait(menu, 0.2);
+        }
+        string Listed() => string.Join(", ", TagSuggestions.Labels());
+        // Under the box (or above it, short of room below), as wide, on screen, on a layer over `over`.
+        string Placement(LineEdit box, int over)
+        {
+            if (TagSuggestions.Current is not { } layer || layer.GetNodeOrNull<Control>("Panel") is not { } list)
+                return "no list";
+            var (shown, at) = (list.GetGlobalRect(), box.GetGlobalRect());
+            var ok = (shown.Position.Y >= at.End.Y || shown.End.Y <= at.Position.Y) && Math.Abs(shown.Position.X - at.Position.X) < 1
+                && Math.Abs(shown.Size.X - at.Size.X) < 1 && list.GetViewportRect().Encloses(shown) && layer.Layer > over;
+            return ok ? "ok" : $"list {shown} on layer {layer.Layer}, box {at}";
+        }
+
+        CategoryList.Select(screen, ui);
+        await Wait(menu, 0.5);
+        var box = screen.GetNode<LineEdit>("%ModInfoContainer/SpireModManagerYours/Tags/Box");
+        box.GrabFocus();
+        await Wait(menu, 0.3);
+        Check("tag suggestions: focusing the tags box lists your tags, most used first, at most 6", Listed() == "Strategy, Co-op, Story-heavy, Fast, Must-have, Stable", Listed());
+        var placed = Placement(box, 90); // MenuPanel's layer
+        Check("tag suggestions: under the box, as wide, on screen, over our menus", placed == "ok", placed);
+        await TypeIn(box, "st");
+        Check("tag suggestions: typing narrows them, tags starting with the word first, then ones containing it", Listed() == "Strategy, Story-heavy, Stable, Fast, Must-have", Listed());
+        await Capture(screen, outDir, "19-tag-suggestions");
+        await Press(Key.Down);
+        Check("tag suggestions: Down lights the first", TagSuggestions.Highlighted == "Strategy", TagSuggestions.Highlighted ?? "none lit");
+        await Press(Key.Enter);
+        Check("tag suggestions: Enter takes it in place of the word, then \", \"; the list stays, without it", box.Text == "Strategy, " && box.HasFocus()
+            && TagSuggestions.Current != null && !TagSuggestions.Labels().Contains("Strategy"), $"\"{box.Text}\": {Listed()}");
+        await TypeIn(box, "Strategy, sto");
+        await Press(Key.Down);
+        await Press(Key.Comma, ',');
+        Check("tag suggestions: a comma takes the lit one", box.Text == "Strategy, Story-heavy, ", box.Text);
+        await Press(Key.Escape);
+        Check("tag suggestions: Escape closes the list, staying in the box", TagSuggestions.Current == null && box.HasFocus() && box.Text == "Strategy, Story-heavy, ", box.Text);
+        await TypeIn(box, "Strategy, Story-heavy, zzz");
+        Check("tag suggestions: none when nothing matches", TagSuggestions.Current == null, Listed());
+        await TypeIn(box, "Strategy, Story-heavy, f");
+        Check("tag suggestions: typing brings the list back", Listed() == "Fast", Listed());
+        TagSuggestions.Press("Fast");
+        await Wait(menu, 0.2);
+        Check("tag suggestions: a click takes one, the box keeps focus", box.Text == "Strategy, Story-heavy, Fast, " && box.HasFocus(), box.Text);
+        box.ReleaseFocus();
+        await Wait(menu, 0.3);
+        Check("tag suggestions: leaving the box closes the list; the tags are saved, tidied", TagSuggestions.Current == null
+            && Store.InfoFor("SmmTestUi")?.Tags?.SequenceEqual(["Strategy", "Story-heavy", "Fast"]) == true, string.Join(", ", Store.InfoFor("SmmTestUi")?.Tags ?? []));
+
+        Selection.Clear(content);
+        Selection.Add(content, [lib, other]);
+        if (Selection.Mods.Count == 2 && CategoryList.ShowBulkMenu(content) is CanvasLayer bulk
+            && bulk.FindChild("Tags", true, false)?.GetNodeOrNull<LineEdit>("Box") is { } bulkBox)
+        {
+            await Wait(menu, 0.3);
+            bulkBox.GrabFocus();
+            await TypeIn(bulkBox, "to");
+            var overMenu = Placement(bulkBox, bulk.Layer);
+            Check("tag suggestions: the bulk menu's tags box too, the list over the menu", Listed() == "Tools, Story-heavy" && overMenu == "ok", $"{Listed()}; {overMenu}");
+            await Capture(screen, outDir, "19b-tag-suggestions-bulk");
+            await Press(Key.Down);
+            await Press(Key.Tab);
+            Check("tag suggestions: Tab takes the lit one", bulkBox.Text == "Tools, " && bulkBox.HasFocus(), bulkBox.Text);
+            MenuPanel.Close();
+            await Wait(menu, 0.3);
+            Check("tag suggestions: closing the menu takes the list away; the tag goes on both", TagSuggestions.Current == null
+                && new[] { "SmmTestLib", "SmmTestContent" }.All(id => Store.InfoFor(id)?.Tags?.SequenceEqual(["Tools"]) == true),
+                string.Join(" | ", new[] { "SmmTestLib", "SmmTestContent" }.Select(id => string.Join(",", Store.InfoFor(id)?.Tags ?? []))));
+        }
+        else
+            Results.Add("FAIL tag suggestions: no bulk menu with a tags box");
+        Selection.Clear(content);
+        Store.RestoreEdits(before);
+        CategoryList.Apply(content);
+        ModDetails.Refresh(screen);
+        await Wait(menu, 0.3);
     }
 
     // Untick a mod through its real tickbox, review, undo/redo; undo a rename; revert all, and undo that.
