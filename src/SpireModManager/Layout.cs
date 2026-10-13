@@ -260,8 +260,9 @@ static class Layout
     }
 
     // Across the top of the list in our views, stacked: the profile bar (main list only), the search box (with
-    // Auto sort in Load Order) and Load Order's warning when shown; the list starts below them. Vanilla View
-    // hides them and gives the list its full height back.
+    // Auto sort in Load Order), Load Order's warning when shown, and on the main list the page bar and its
+    // hint (only made when there are no categories); the list starts below them. Vanilla View hides them and
+    // gives the list its full height back.
     public static void PlaceList(Control list)
     {
         // The scene's box each time (Better Mod Menu moves and resizes it on its page); in our views, the top set below.
@@ -291,6 +292,7 @@ static class Layout
             (sort.OffsetTop, sort.OffsetBottom) = (search.OffsetTop, search.OffsetBottom);
         Stack(list.GetNodeOrNull<Control>(LoadOrder.WarningName), Wide, 6);
         Stack(list.GetNodeOrNull<Control>(PageBar.Name), Current == View.Categories, 4);
+        Stack(list.GetNodeOrNull<Control>(PageBar.HintName), Current == View.Categories, 4);
         scroll.OffsetTop = Wide ? y : box.Y;
     }
 
