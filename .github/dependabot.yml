@@ -1,0 +1,14 @@
+# Dependabot version updates: GitHub Actions only.
+#
+# The mod has no NuGet packages to update: it references the game's own sts2.dll, GodotSharp and
+# 0Harmony, which must match the installed game. The workflows (.github/workflows, from the CI PR)
+# are the only thing here with versions worth bumping. One grouped PR a month at most.
+version: 2
+updates:
+  - package-ecosystem: github-actions
+    directory: /
+    schedule:
+      interval: monthly
+    groups:
+      actions:
+        patterns: ["*"]

@@ -184,7 +184,8 @@ static class LoadOrder
     // Order button says that page has a warning. Above that one on both, while Better Mod Menu is ticked too: a
     // banner saying two mod managers are on, with a way to its row.
     public const string WarningName = "SpireModManagerOrderWarning", ManagersName = "SpireModManagerManagersWarning", AutoSortName = "AutoSortButton";
-    const string AutoSortHintName = "AutoSortHint", BadgeName = "WarningBadge";
+    public const string AutoSortHintName = "AutoSortHint";
+    const string BadgeName = "WarningBadge";
     static int _nextProblem; // the main banner's "Show" steps through the mods with problems
 
     public static void UpdateToolbar(Control content, List<NModMenuRow> rows, Action redraw)
@@ -218,12 +219,13 @@ static class LoadOrder
             hint.AnchorLeft = hint.AnchorRight = 1;
         }
         sort.Visible = hint.Visible = on && search != null;
+        // Across here; up and down they follow the search box, in Layout.PlaceList (at the end), once it's in its place
+        // for this view. (Read from it here, on the way into Load Order it was still where the main list has it, under
+        // the profile bar, and the hint sat over the first row until the next redraw.)
         if (search != null)
         {
             const float sortWidth = 110, gap = 8;
             var hintWidth = hint.GetThemeFont("font").GetStringSize(hint.Text, fontSize: 15).X;
-            (sort.OffsetTop, sort.OffsetBottom) = (search.OffsetTop, search.OffsetBottom);
-            (hint.OffsetTop, hint.OffsetBottom) = (search.OffsetTop, search.OffsetBottom);
             sort.OffsetRight = border.GetNode<Control>("ModsScrollContainer").OffsetRight;
             sort.OffsetLeft = sort.OffsetRight - sortWidth;
             hint.OffsetRight = sort.OffsetLeft - gap;
@@ -403,8 +405,9 @@ static class LoadOrder
         History.Record();
     }
 
-    // Position number and a grip on the left of the row. Dragging the grip moves the row: a gold line
-    // shows where it will land, and releasing saves. Made once per row; the number updates every redraw.
+    // Position number and a grip on the left of the row. Dragging the row (anywhere, not just the grip) moves
+    // it: a gold line shows where it will land, and releasing saves. Made on each visit to Load Order
+    // (Undecorate takes them off again); the number updates every redraw.
     // wasAt: where it was at launch (0: unknown); shown dimly as "5 →" when it moved.
     static void Decorate(Control content, NModMenuRow row, int position, int wasAt, Action redraw)
     {

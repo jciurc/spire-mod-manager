@@ -403,50 +403,27 @@ public static class Store
     }
 }
 
-// One-time import of Better Mod Menu's mod_profiles.json (read-only; its file is never changed).
+// One-time import of Better Mod Menu's saved data (read-only; its file is never changed). It can be saved in
+// several ways, so we take the file it would load itself and read it the way it does.
 static class BetterModMenuImport
 {
     const string BmmId = "BetterModMenu";
 
+    // Its file names, in its order of preference within a folder.
+    static readonly string[] FileNames = ["mod_profiles.json5", "mod_profiles.jsonc", "mod_profiles.json"];
+
+    // It allows comments and trailing commas in its file, whatever the name. That is all ".json5" means to it:
+    // other JSON5 syntax (unquoted names, single quotes) fails there as it does here.
+    static readonly JsonDocumentOptions Lenient = new() { CommentHandling = JsonCommentHandling.Skip, AllowTrailingCommas = true };
+
     public static StoreData? TryImport()
     {
-        var path = FindFile();
+        var path = FindFile(Folders());
         if (path == null)
             return null;
         try
         {
-            using var doc = JsonDocument.Parse(File.ReadAllText(path));
-            var root = doc.RootElement;
-            var data = new StoreData();
-
-            var collapsed = Strings(root, "CollapsedGroups").ToHashSet();
-            foreach (var name in Strings(root, "CustomGroups"))
-                data.Categories.Add(new Category { Name = name, Collapsed = collapsed.Contains(name) });
-
-            if (root.TryGetProperty("ModGroups", out var groups) && groups.ValueKind == JsonValueKind.Object)
-                foreach (var entry in groups.EnumerateObject())
-                    if (entry.Value.ValueKind == JsonValueKind.String)
-                        Info(data, entry.Name).Category = entry.Value.GetString();
-
-            if (root.TryGetProperty("ModAnnotations", out var notes) && notes.ValueKind == JsonValueKind.Object)
-                foreach (var entry in notes.EnumerateObject())
-                {
-                    var info = Info(data, entry.Name);
-                    info.Alias = NonEmpty(entry.Value, "Alias");
-                    info.Notes = NonEmpty(entry.Value, "Notes");
-                }
-
-            if (root.TryGetProperty("Profiles", out var profiles) && profiles.ValueKind == JsonValueKind.Array)
-                foreach (var p in profiles.EnumerateArray())
-                    data.Profiles.Add(new Profile
-                    {
-                        Name = NonEmpty(p, "Name") ?? $"Profile {data.Profiles.Count + 1}",
-                        Disabled = Strings(p, "DisabledMods").Select(id => new ModRef(id, null)).ToList(),
-                    });
-
-            if (root.TryGetProperty("CurrentProfileIndex", out var index) && index.TryGetInt32(out var i) && i >= 0 && i < data.Profiles.Count)
-                data.ActiveProfile = data.Profiles[i].Name;
-
+            var data = Parse(File.ReadAllText(path));
             data.ImportedFrom = path;
             Log.Info($"[{ModEntry.ModId}] Imported from {path}: {data.Categories.Count} categories, {data.Mods.Count} mods, {data.Profiles.Count} profiles");
             return data;
@@ -458,15 +435,68 @@ static class BetterModMenuImport
         }
     }
 
-    // Its account folder, or "portable mode" beside its own files.
-    static string? FindFile()
+    // Our data from the text of its file. Throws when the text is in neither of its formats.
+    public static StoreData Parse(string text)
     {
-        var account = ProjectSettings.GlobalizePath(UserDataPathProvider.GetAccountScopedBasePath($"mod_data/{BmmId}"));
-        var candidates = new List<string> { Path.Combine(account, "mod_profiles.json") };
-        foreach (var mod in ModManager.Mods.Where(m => m.manifest?.id == BmmId))
-            candidates.Add(Path.Combine(mod.path, "mod_profiles.json"));
-        return candidates.FirstOrDefault(File.Exists);
+        using var doc = JsonDocument.Parse(text, Lenient);
+        var root = doc.RootElement;
+        var data = new StoreData();
+
+        // Its old format: the file is just the list of profiles, with no groups or notes.
+        if (root.ValueKind == JsonValueKind.Array)
+        {
+            AddProfiles(data, root);
+            return data;
+        }
+
+        var collapsed = Strings(root, "CollapsedGroups").ToHashSet();
+        foreach (var name in Strings(root, "CustomGroups"))
+            data.Categories.Add(new Category { Name = name, Collapsed = collapsed.Contains(name) });
+
+        if (root.TryGetProperty("ModGroups", out var groups) && groups.ValueKind == JsonValueKind.Object)
+            foreach (var entry in groups.EnumerateObject())
+                if (entry.Value.ValueKind == JsonValueKind.String)
+                    Info(data, entry.Name).Category = entry.Value.GetString();
+
+        if (root.TryGetProperty("ModAnnotations", out var notes) && notes.ValueKind == JsonValueKind.Object)
+            foreach (var entry in notes.EnumerateObject())
+            {
+                var info = Info(data, entry.Name);
+                info.Alias = NonEmpty(entry.Value, "Alias");
+                info.Notes = NonEmpty(entry.Value, "Notes");
+            }
+
+        if (root.TryGetProperty("Profiles", out var profiles) && profiles.ValueKind == JsonValueKind.Array)
+            AddProfiles(data, profiles);
+
+        if (root.TryGetProperty("CurrentProfileIndex", out var index) && index.TryGetInt32(out var i) && i >= 0 && i < data.Profiles.Count)
+            data.ActiveProfile = data.Profiles[i].Name;
+
+        return data;
     }
+
+    static void AddProfiles(StoreData data, JsonElement profiles)
+    {
+        foreach (var p in profiles.EnumerateArray())
+            data.Profiles.Add(new Profile
+            {
+                Name = NonEmpty(p, "Name") ?? $"Profile {data.Profiles.Count + 1}",
+                Disabled = Strings(p, "DisabledMods").Select(id => new ModRef(id, null)).ToList(),
+            });
+    }
+
+    // Where it looks, in its order: beside its own files first ("portable mode"), then its folder in the Steam
+    // account's data. Like it, we only look beside its first copy in the mod list.
+    static IEnumerable<string> Folders()
+    {
+        if (ModManager.Mods.FirstOrDefault(m => m.manifest?.id == BmmId)?.path is { Length: > 0 } own)
+            yield return own;
+        yield return ProjectSettings.GlobalizePath(UserDataPathProvider.GetAccountScopedBasePath($"mod_data/{BmmId}"));
+    }
+
+    // The file it would load: the first folder holding any of its files wins, and there the first name in its order.
+    public static string? FindFile(IEnumerable<string> folders) =>
+        folders.SelectMany(folder => FileNames.Select(name => Path.Combine(folder, name))).FirstOrDefault(File.Exists);
 
     static ModInfo Info(StoreData data, string id) =>
         data.Mods.TryGetValue(id, out var info) ? info : data.Mods[id] = new ModInfo();

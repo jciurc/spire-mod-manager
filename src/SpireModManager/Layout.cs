@@ -287,8 +287,11 @@ static class Layout
         Stack(list.GetNodeOrNull<Control>("SpireModManagerProfileBar"), Current == View.Categories, 8);
         var search = list.GetNodeOrNull<Control>("SpireModManagerSearch");
         Stack(search, Wide, 6);
-        if (search != null && list.GetNodeOrNull<Control>(LoadOrder.AutoSortName) is { } sort)
-            (sort.OffsetTop, sort.OffsetBottom) = (search.OffsetTop, search.OffsetBottom);
+        // Auto sort and its hint, at the search box's right end: level with it.
+        if (search != null)
+            foreach (var name in new[] { LoadOrder.AutoSortName, LoadOrder.AutoSortHintName })
+                if (list.GetNodeOrNull<Control>(name) is { } beside)
+                    (beside.OffsetTop, beside.OffsetBottom) = (search.OffsetTop, search.OffsetBottom);
         Stack(list.GetNodeOrNull<Control>(LoadOrder.ManagersName), Wide, 6);
         Stack(list.GetNodeOrNull<Control>(LoadOrder.WarningName), Wide, 6);
         Stack(list.GetNodeOrNull<Control>(PageBar.Name), Current == View.Categories, 4);
@@ -304,10 +307,10 @@ static class Layout
     }
 
     // Inside the info panel, fitted to its size: the head (title, source and short facts, left) beside a
-    // large thumbnail of the mod image (right); the description below both; the player's fields and Open
-    // Folder along the bottom (ModDetails). With the changes list's Back button showing (top right), the
-    // thumbnail and everything under it move down to make room. A mod without a picture: the description
-    // starts right under the head.
+    // large thumbnail of the mod image (right); the description below both, then the player's fields
+    // (ModDetails.PlaceFields); Open Folder along the bottom. With the changes list's Back button showing (top
+    // right), the thumbnail and everything under it move down to make room. A mod without a picture: the
+    // description starts right under the head.
     public static void PlaceInfo(Control info)
     {
         const float top = 16;

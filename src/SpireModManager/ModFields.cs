@@ -9,7 +9,7 @@ namespace SpireModManager;
 // - At rest: the value as plain text (tags as pills), or a subtle call to action ("Add alias").
 // - Editing: a padded box with a hint and an inline ✕ to clear. Enter saves (Ctrl+Enter in notes), Escape
 //   or Cancel puts the value back, clicking away saves, so typed text is never lost.
-// - Tags also show the automatic ones (Local, Library, Gameplay, Cosmetic) as filled pills beside the term.
+// - Tags also show the automatic ones (New, Local, Library, Gameplay, Cosmetic) as filled pills beside the term.
 // - The value sits in a softly darker box, lighter under the mouse, darker while editing; no outlines.
 sealed class ModField
 {
