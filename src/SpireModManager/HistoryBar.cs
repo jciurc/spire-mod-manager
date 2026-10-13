@@ -468,7 +468,7 @@ static class HistoryBar
             var gone = Names(a).Except(Names(b)).ToList();
             // Profiles are known by name. Renaming changes nothing else, and every new profile gets its own save
             // time: a name gone and a name added with the same save time and mods are one profile, renamed.
-            // (Renamed and then saved, it reads as added and deleted.)
+            // (A renamed profile also saved since launch has a new save time, so it reads as added and deleted.)
             var renamed = new Dictionary<string, string>();
             foreach (var name in added.ToList())
             {
