@@ -10,7 +10,7 @@ using System.Text.Json;
 using System.Text.Json.Nodes;
 
 const string ModId = "SpireModManager";
-const string Steam = @"D:\SteamLibrary\steamapps";
+var Steam = Env("STS2_STEAMAPPS", @"D:\SteamLibrary\steamapps"); // the Steam library with the game
 var root = ScriptDir();
 var installDir = Path.Combine(Steam, "common", "Slay the Spire 2", "mods", ModId);
 var project = Path.Combine(root, "src", ModId, ModId + ".csproj");
@@ -125,6 +125,10 @@ static int Fail(string message)
 }
 
 static string ScriptDir([CallerFilePath] string path = "") => Path.GetDirectoryName(path) ?? ".";
+
+// An environment variable's value (README.md, "Building"), or the author's own path when it isn't set.
+static string Env(string name, string fallback) =>
+    Environment.GetEnvironmentVariable(name) is { Length: > 0 } value ? value : fallback;
 
 // Top-level keys of a flat JSON object; throws on malformed JSON.
 static HashSet<string> Keys(byte[] json) =>
