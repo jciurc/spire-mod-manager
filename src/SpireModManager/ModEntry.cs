@@ -160,11 +160,20 @@ public static class ModEntry
         tree.Root.AddChild(layer);
     }
 
+    // Set by the self-test: Relaunch calls it instead, so the way to a relaunch can be tested without ending the
+    // test run.
+    public static Action? TestRelaunch;
+
     // Starts a new copy of the game with the same arguments, then quits through the game's own path
     // so settings (mod toggles) and profile data are saved first. The new process inherits Steam's
     // environment (SteamAppId), so it attaches to the running Steam client without a Steam relaunch.
     public static void Relaunch()
     {
+        if (TestRelaunch is { } test)
+        {
+            test();
+            return;
+        }
         var args = RelaunchArgs();
         Log.Info($"[{ModId}] Relaunching with args: {string.Join(' ', args)}");
         OS.SetRestartOnExit(true, args);
