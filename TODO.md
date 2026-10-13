@@ -672,3 +672,9 @@ crash at least) or the user is just okay with running both together. if they dis
 unless either mod enabled states are touched and they become enabled at the same time again."
 
 - [x] Dismiss beside Show on the managers banner: hidden (no gap) until Better Mod Menu or ours is disabled, then back once both are enabled again; saved, never an undo step or a change
+
+## Backlog (round 20)
+- [ ] Jordan: "think about possible conflicts or issues with running both bmm and mod manager together (could be other managers too) and decide on how to handle it best for the user". A spike (docs/spikes/, like #18) with a recommendation. Points to cover:
+  - Better Mod Menu: both patch the Modding screen. Bmm.cs pauses it on our views by reflection, so an update of it that renames those members silently undoes the pause (logged once). Both keep profiles, and each switching mods on and off could fight over the game's saved list. Both could save the load order (the last save wins). Its import only runs on our first run.
+  - other managers: any mod patching NModdingScreen, NModInfoContainer or the saved mod list. Find them from Harmony's patch list, not only by Better Mod Menu's id.
+  - choices: warn only (today, now dismissable); detect the overlap and pause the other's parts on our views (today's approach for Better Mod Menu, generalised); a one-click "use only one" that unticks the other and says how to undo it; a supported pairing with a tested matrix (--bmm runs today)
