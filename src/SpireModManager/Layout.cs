@@ -295,8 +295,11 @@ static class Layout
         Stack(list.GetNodeOrNull<Control>("SpireModManagerProfileBar"), Current == View.Categories, 8);
         var search = list.GetNodeOrNull<Control>("SpireModManagerSearch");
         Stack(search, Wide, 6);
-        if (search != null && list.GetNodeOrNull<Control>(LoadOrder.AutoSortName) is { } sort)
-            (sort.OffsetTop, sort.OffsetBottom) = (search.OffsetTop, search.OffsetBottom);
+        // Auto sort and its hint, at the search box's right end: level with it.
+        if (search != null)
+            foreach (var name in new[] { LoadOrder.AutoSortName, LoadOrder.AutoSortHintName })
+                if (list.GetNodeOrNull<Control>(name) is { } beside)
+                    (beside.OffsetTop, beside.OffsetBottom) = (search.OffsetTop, search.OffsetBottom);
         Stack(list.GetNodeOrNull<Control>(LoadOrder.WarningName), Wide, 6);
         Stack(list.GetNodeOrNull<Control>(PageBar.Name), Current == View.Categories, 4);
         Stack(list.GetNodeOrNull<Control>(PageBar.HintName), Current == View.Categories, 4);
