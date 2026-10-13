@@ -100,7 +100,8 @@ static class ProfileBar
         var unsaved = new Label { Name = "Unsaved", Text = Menus.Text("SPIRE_MOD_MANAGER.UNSAVED"), VerticalAlignment = VerticalAlignment.Center };
         Style(unsaved, "res://themes/kreon_regular_shared.tres", 16, UnsavedColor);
         row.AddChild(unsaved);
-        // Hovering it lists this profile's own unsaved changes (not everything since launch).
+        // Hovering it lists this profile's own unsaved changes (not everything since launch), at once (Jordan,
+        // 2026-10-13).
         unsaved.MouseFilter = Control.MouseFilterEnum.Stop;
         unsaved.MouseDefaultCursorShape = Control.CursorShape.Help;
         Hover.Watch(unsaved, UnsavedCard, () =>
@@ -110,7 +111,7 @@ static class ProfileBar
             lines.AddRange(on.Select(n => $"[color=#a6e3a1]+ {n.Replace("[", "[lb]")}[/color]"));
             lines.AddRange(off.Select(n => $"[color=#f2a3a3]− {n.Replace("[", "[lb]")}[/color]"));
             return string.Join("\n", lines);
-        }, width: 320, place: () => (unsaved.GlobalPosition + new Vector2(0, unsaved.Size.Y + 6), false, false));
+        }, Hover.Timing.Instant, width: 320, place: () => (unsaved.GlobalPosition + new Vector2(0, unsaved.Size.Y + 6), false, false));
         var unsavedButtons = ButtonBox("UnsavedButtons");
         row.AddChild(unsavedButtons);
 
