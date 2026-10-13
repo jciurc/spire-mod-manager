@@ -201,7 +201,7 @@ static class RowStrip
             };
             if (word != null)
                 return $"[color={NameHex}]{name}[/color] [color={color}]{word}[/color]";
-            return color == null ? name : $"[color={color}]{name}[/color]";
+            return $"[color={color}]{name}[/color]";
         });
         return $"{Menus.Text("SPIRE_MOD_MANAGER.NEEDS_LABEL")}: {string.Join(", ", parts)}";
     }
