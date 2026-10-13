@@ -491,14 +491,27 @@ static class Layout
         label.AddThemeFontSizeOverride("normal_font_size", original.X);
         label.AddThemeFontSizeOverride("bold_font_size", original.X);
         label.MaxFontSize = original.Y;
-        label.SetTextAutoSize(label.Text);
+        Refit(label);
     }
 
+    // Our size, as the most the game's auto-size may pick, then fitted again (Refit). Already so (a redraw in the same
+    // view): left as it is, fitted.
     public static void FontSize(MegaRichTextLabel label, int size)
     {
+        if (label.MaxFontSize == size && label.GetThemeFontSize("normal_font_size") == size)
+            return;
         label.AddThemeFontSizeOverride("normal_font_size", size);
         label.AddThemeFontSizeOverride("bold_font_size", size);
         label.MaxFontSize = size;
-        label.SetTextAutoSize(label.Text);
+        Refit(label);
+    }
+
+    // The game's auto-size (a MegaRichTextLabel's text shrunk to fit its box) run again, once the text and box are final:
+    // after a size written straight in, setting the same text doesn't run it, and it skips writing a size equal to the
+    // one it wrote last, which may not be the one drawn any more. Told the size drawn now, it writes only another one.
+    public static void Refit(MegaRichTextLabel label)
+    {
+        label.Set(MegaRichTextLabel.PropertyName._lastSetSize, label.GetThemeFontSize("normal_font_size"));
+        label.CallDeferred(MegaRichTextLabel.MethodName.AdjustFontSize);
     }
 }

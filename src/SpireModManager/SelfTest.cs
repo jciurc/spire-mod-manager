@@ -2481,6 +2481,25 @@ static class SelfTest
             Check("long details: after Load Order and back, the panel's title is drawn at the size it was fitted at, on one line",
                 title.GetParsedText() == titleText && refitSize == titleSize && title.GetLineCount() == 1 && title.GetContentWidth() <= title.Size.X + 1,
                 $"{title.GetLineCount()} lines at {refitSize} (was {titleSize}), {title.GetContentWidth()} of {title.Size.X}: {title.GetParsedText()}");
+            // Vanilla View: the game's auto-size shrinks the long name in the panel's title and in the row's (from 60 and
+            // 32). A redraw and a re-layout there write those sizes straight in again, the text unchanged: the titles keep
+            // their fitted sizes. (With Better Mod Menu, its page styles them its own way.)
+            if (!Bmm.Present)
+            {
+                var rowTitle = row.GetNode<RichTextLabel>("Title");
+                (int Panel, int Row) Sizes() => (title.GetThemeFontSize("normal_font_size"), rowTitle.GetThemeFontSize("normal_font_size"));
+                Click(screen.GetNode<NButton>("SpireModManagerViewToggle"));
+                await Wait(menu, 0.5);
+                var fitted = Sizes();
+                CategoryList.Apply(content);
+                Layout.Apply(screen);
+                await Wait(menu, 0.3);
+                var again = Sizes();
+                Click(screen.GetNode<NButton>("SpireModManagerViewToggle"));
+                await Wait(menu, 0.5);
+                Check("long details: in Vanilla View the long name is fitted in the panel's title and the row's, and stays so after a redraw and a re-layout",
+                    fitted is (< 60, < 32) && again == fitted, $"panel {fitted.Panel}, row {fitted.Row}; after {again.Panel}, {again.Row}");
+            }
             content.RemoveChild(row);
             row.QueueFree();
         }
