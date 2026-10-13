@@ -117,6 +117,24 @@ static class ModdingScreenPatch
             Log.Error($"[{ModEntry.ModId}] Could not lay out the screen: {e}");
         }
 
+        try
+        {
+            // After a launch that couldn't read our saved file: the notice, once, as the page shows (the game
+            // makes this screen hidden and shows it when pushed; it reuses it for later visits).
+            var screen = __instance;
+            void Notice()
+            {
+                if (GodotObject.IsInstanceValid(screen) && screen.IsVisibleInTree())
+                    Store.ShowNotice();
+            }
+            screen.VisibilityChanged += Notice;
+            Callable.From(Notice).CallDeferred();
+        }
+        catch (Exception e)
+        {
+            Log.Error($"[{ModEntry.ModId}] Could not set up the notice about our saved file: {e}");
+        }
+
         // Better Mod Menu's _Ready postfix runs after this one and rebuilds the page its way (rows restyled, grouped,
         // the list pushed down). Once that's done (deferred calls run in order, and its own deferred step comes after
         // this): ours again, or its page in Vanilla View.
