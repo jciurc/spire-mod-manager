@@ -37,7 +37,7 @@ static class Layout
     public const float CornerX = 18; // the lower-left corner button (here and on the main menu)
     const float PageLeft = 175, TitleTop = 10, TitleBottom = 62;
     const float UndoDrop = 7; // the undo buttons themselves (not their hints) centred on the bottom row
-    const float ReleaseInfoLeft = 1740; // the game's version and date, top right
+    const float WarningWidth = 340; // Better Mod Menu's warning beside the view buttons: two lines
 
     // Text sizes in our views (the game's in brackets): rows 20 (32), info title 32 (60), info text 18 (24).
     public const int RowTitleSize = 20, RowTitleVanillaSize = 32;
@@ -147,6 +147,17 @@ static class Layout
                 x = leftEnd + 12;
             }
         }
+        // Better Mod Menu loaded too: a warning beside the view buttons, on our views (its own page stays its own).
+        if (Bmm.Present)
+        {
+            var warning = Bmm.Warning(screen);
+            warning.Visible = Wide;
+            if (Wide)
+            {
+                (warning.Position, warning.Size) = (new Vector2(leftEnd + 14, BottomRowY), new Vector2(WarningWidth, 70));
+                leftEnd = warning.Position.X + warning.Size.X;
+            }
+        }
 
         var right = view == View.LoadOrder ? list.OffsetRight : info.OffsetRight;
         if (screen.GetNodeOrNull<Control>("SpireModManagerRelaunchButton") is { } relaunch)
@@ -189,13 +200,9 @@ static class Layout
         BackLabel(screen);
         UpdateDot(screen);
 
-        // Better Mod Menu: hidden on our views, with a warning top right beside the page title (empty there in both),
-        // short of the game's version and date; its own page in Vanilla View.
+        // Better Mod Menu: hidden on our views; its own page in Vanilla View.
         if (Bmm.Present)
         {
-            var warning = Bmm.Warning(screen);
-            warning.Visible = Wide;
-            (warning.Position, warning.Size) = (new Vector2(InfoBox.X, TitleTop), new Vector2(ReleaseInfoLeft - 16 - InfoBox.X, TitleBottom - TitleTop));
             if (Wide)
                 Bmm.Show(screen, false);
             else
@@ -267,8 +274,9 @@ static class Layout
     }
 
     // Across the top of the list in our views, stacked: the profile bar (main list only), the search box (with
-    // Auto sort in Load Order) and Load Order's warning when shown; the list starts below them. Vanilla View
-    // hides them and gives the list its full height back.
+    // Auto sort in Load Order), Load Order's warning when shown, and on the main list the page bar and its
+    // hint (only made when there are no categories); the list starts below them. Vanilla View hides them and
+    // gives the list its full height back.
     public static void PlaceList(Control list)
     {
         // The scene's box each time (Better Mod Menu moves and resizes it on its page); in our views, the top set below.
@@ -294,10 +302,14 @@ static class Layout
         Stack(list.GetNodeOrNull<Control>("SpireModManagerProfileBar"), Current == View.Categories, 8);
         var search = list.GetNodeOrNull<Control>("SpireModManagerSearch");
         Stack(search, Wide, 6);
-        if (search != null && list.GetNodeOrNull<Control>(LoadOrder.AutoSortName) is { } sort)
-            (sort.OffsetTop, sort.OffsetBottom) = (search.OffsetTop, search.OffsetBottom);
+        // Auto sort and its hint, at the search box's right end: level with it.
+        if (search != null)
+            foreach (var name in new[] { LoadOrder.AutoSortName, LoadOrder.AutoSortHintName })
+                if (list.GetNodeOrNull<Control>(name) is { } beside)
+                    (beside.OffsetTop, beside.OffsetBottom) = (search.OffsetTop, search.OffsetBottom);
         Stack(list.GetNodeOrNull<Control>(LoadOrder.WarningName), Wide, 6);
         Stack(list.GetNodeOrNull<Control>(PageBar.Name), Current == View.Categories, 4);
+        Stack(list.GetNodeOrNull<Control>(PageBar.HintName), Current == View.Categories, 4);
         scroll.OffsetTop = Wide ? y : box.Y;
     }
 
@@ -309,11 +321,11 @@ static class Layout
     }
 
     // Inside the info panel, fitted to its size: the head (title, source and short facts, left) beside a
-    // large thumbnail of the mod image (right); the description below both; the player's fields and Open
-    // Folder along the bottom (ModDetails). With the changes list's Back button showing (top right), the
-    // thumbnail and everything under it move down to make room. A mod without a picture: the description
-    // starts right under the head. Other mods' parts go between the description and the fields (ModDetails), and
-    // in Vanilla View back where their mod put them.
+    // large thumbnail of the mod image (right); the description below both, then the player's fields
+    // (ModDetails.PlaceFields); Open Folder along the bottom. With the changes list's Back button showing (top
+    // right), the thumbnail and everything under it move down to make room. A mod without a picture: the
+    // description starts right under the head. Other mods' parts go between the description and the fields
+    // (ModDetails), and in Vanilla View back where their mod put them.
     public static void PlaceInfo(Control info)
     {
         const float top = 16;

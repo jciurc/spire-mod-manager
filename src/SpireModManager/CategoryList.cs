@@ -35,7 +35,7 @@ static class CategoryList
             (data.VanillaView, data.LoadOrderView) = toVanilla ? (!data.VanillaView, false) : (false, !data.LoadOrderView);
             Selection.Clear(content); // a picked set belongs to the view it was picked in
             Store.Save();
-            Label(vanilla, data.VanillaView ? "SPIRE_MOD_MANAGER.CATEGORY_VIEW" : VanillaKey);
+            Label(vanilla, data.VanillaView ? "SPIRE_MOD_MANAGER.CATEGORY_VIEW" : "SPIRE_MOD_MANAGER.VANILLA_VIEW");
             Label(loadOrder, data.LoadOrderView ? "SPIRE_MOD_MANAGER.BACK" : "SPIRE_MOD_MANAGER.LOAD_ORDER");
             Apply(content);
             Layout.Apply(screen);
@@ -52,19 +52,16 @@ static class CategoryList
             if (screen.IsVisibleInTree() && Store.Data.LoadOrderView)
                 Switch(false);
         };
-        vanilla = ModEntry.AddButton(screen, VanillaKey, new Vector2(200, 70), () => Switch(true));
+        vanilla = ModEntry.AddButton(screen, "SPIRE_MOD_MANAGER.VANILLA_VIEW", new Vector2(200, 70), () => Switch(true));
         vanilla.Name = "SpireModManagerViewToggle";
         loadOrder = ModEntry.AddButton(screen, "SPIRE_MOD_MANAGER.LOAD_ORDER", new Vector2(200, 70), () => Switch(false));
         loadOrder.Name = "SpireModManagerLoadOrderToggle";
         // Labels for the saved view.
-        Label(vanilla, Store.Data.VanillaView ? "SPIRE_MOD_MANAGER.CATEGORY_VIEW" : VanillaKey);
+        Label(vanilla, Store.Data.VanillaView ? "SPIRE_MOD_MANAGER.CATEGORY_VIEW" : "SPIRE_MOD_MANAGER.VANILLA_VIEW");
         Label(loadOrder, Store.Data.LoadOrderView ? "SPIRE_MOD_MANAGER.BACK" : "SPIRE_MOD_MANAGER.LOAD_ORDER");
 
         Apply(content);
     }
-
-    // The toggle to the game's page names Better Mod Menu when that's whose page it is.
-    static string VanillaKey => Bmm.Present ? "SPIRE_MOD_MANAGER.BMM_VIEW" : "SPIRE_MOD_MANAGER.VANILLA_VIEW";
 
     static void Label(NButton? button, string key) =>
         button?.GetNode<MegaLabel>("Visuals/Label").SetTextAutoSize(new LocString("settings_ui", key).GetFormattedText());
@@ -168,7 +165,7 @@ static class CategoryList
         RowTitles.Look(row, RowState.Selected(row), focused: true);
     }
 
-    // Mod names (links "mod:<id>") in a text: hovering one lights its row and, after half a second, shows the
+    // Mod names (links "mod:<id>") in a text: hovering one lights its row and, after Hover's delay, shows the
     // mod's card; clicking scrolls to it with the selected look.
     public static void WatchNames(RichTextLabel label, Func<Control?> content)
     {
@@ -303,7 +300,8 @@ static class CategoryList
             .ToList();
         RowTitles.Apply(rows, Store.Data.VanillaView);
 
-        // Right-click a row to pick its category. Rows outlive Apply, so connect once.
+        // Right-click a row for its menu (category, alias, tags, notes; the bulk menu for picked mods; on/off and
+        // moves in Load Order). Rows outlive Apply, so connect once.
         foreach (var row in rows.Where(r => !r.HasMeta(RowMenuMeta)))
         {
             row.SetMeta(RowMenuMeta, true);
@@ -489,8 +487,8 @@ static class CategoryList
             Store.Data.UncategorizedCollapsed, c => Store.Data.UncategorizedCollapsed = c);
     }
 
-    // The small buttons at the right of each row's strip: moves in Load Order; otherwise a pencil (the mod's
-    // alias, tags and notes) and its category, both opening its menu.
+    // The small buttons at the right of each row's strip: moves in Load Order; otherwise its category, opening
+    // its menu (the pencil past the tickbox is EdgeAction).
     static Func<NModMenuRow, IEnumerable<MenuItem>> StripActions(Control content) => Store.Data.LoadOrderView
         ? row => LoadOrder.Actions(content, row, () => Redraw(content), compact: true)
         : row => [new MenuItem(CategoryName(row.Mod?.manifest?.id), () => ShowRowMenu(content, row), Tip: Menus.Text("SPIRE_MOD_MANAGER.CATEGORY_TIP"))];
@@ -504,8 +502,8 @@ static class CategoryList
     public static string CategoryName(string? modId) =>
         Store.InfoFor(modId)?.Category is { } name && Categories.Find(name) != null ? name : Menus.Text("SPIRE_MOD_MANAGER.UNCATEGORIZED");
 
-    // After a tickbox change: the rows' dependency notes ("(off)", "Required for") and their title colours
-    // follow at once, without a full redraw.
+    // After a tickbox change: the rows' dependency notes ("(off)", "Required for") follow at once, without a
+    // full redraw. (Their title colours: RowTitles.MarkChanged.)
     public static void RefreshStrips(Control content)
     {
         var rows = content.GetChildren().OfType<NModMenuRow>().ToList();
@@ -516,7 +514,7 @@ static class CategoryList
     }
 
     // A mod's right-click menu: its category on the left (pick one, or a new one, named in place), its alias,
-    // notes and tags on the right, edited right there.
+    // tags and notes on the right, edited right there.
     public static Node? ShowRowMenu(Control content, NModMenuRow row)
     {
         if (Store.Data.VanillaView || row.Mod?.manifest?.id is not { } id)
@@ -660,7 +658,7 @@ static class CategoryList
             var count = Categories.CountMods(category);
             if (count > 0)
             {
-                var body = new LocString("settings_ui", "SPIRE_MOD_MANAGER.DELETE_CATEGORY_BODY");
+                var body = new LocString("settings_ui", count == 1 ? "SPIRE_MOD_MANAGER.DELETE_CATEGORY_BODY_ONE" : "SPIRE_MOD_MANAGER.DELETE_CATEGORY_BODY");
                 body.Add("name", category.Name);
                 body.Add("count", count);
                 if (!await Menus.Confirm(new LocString("settings_ui", "SPIRE_MOD_MANAGER.DELETE_CATEGORY_TITLE"), body))

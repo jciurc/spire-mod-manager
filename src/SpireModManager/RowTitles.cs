@@ -1,5 +1,4 @@
 using Godot;
-using MegaCrit.Sts2.Core.Modding;
 using MegaCrit.Sts2.Core.Nodes.Screens.ModdingScreen;
 using MegaCrit.Sts2.addons.mega_text;
 
@@ -79,7 +78,7 @@ static class RowTitles
         float Width(string text, int size) => font.GetStringSize(text, fontSize: size).X;
         var markSize = Icons.Notepad.GetSize();
         var room = title.Size.X - 4;
-        var main = Cut(alias ?? name, Layout.RowTitleSize, room);
+        var main = Cut(font, alias ?? name, Layout.RowTitleSize, room);
         var text = Escape(main);
         var mainWidth = Width(main, Layout.RowTitleSize);
         (float X, float Width, bool Cut)? originalAt = null; // where the original name went, if shown
@@ -88,7 +87,7 @@ static class RowTitles
             var space = Width(" ", Layout.RowTitleSize);
             const int gap = 2;
             var left = room - mainWidth - gap * space;
-            var original = left > Width("……", OriginalNameSize) ? Cut(name, OriginalNameSize, left) : "";
+            var original = left > Width("……", OriginalNameSize) ? Cut(font, name, OriginalNameSize, left) : "";
             if (original.Length > 0)
             {
                 text += new string(' ', gap) + $"[color=#fff6e280][font_size={OriginalNameSize}]{Escape(original)}[/font_size][/color]";
@@ -147,16 +146,19 @@ static class RowTitles
             mark.Visible = true;
             mark.Position = new Vector2(title.Position.X - markSize.X - 5, top + (lineHeight - markSize.Y) / 2 - 1); // in the room before the title
         }
+    }
 
-        string Cut(string full, int size, float width)
-        {
-            if (Width(full, size) <= width)
-                return full;
-            var length = full.Length;
-            while (length > 0 && Width(full[..length].TrimEnd() + "…", size) > width)
-                length--;
-            return length > 0 ? full[..length].TrimEnd() + "…" : "";
-        }
+    // The text as it fits in width at this size: whole, or cut short with "…" (empty when not even that fits).
+    // Row titles, and the info panel's title and source line.
+    public static string Cut(Font font, string full, int size, float width)
+    {
+        float Width(string text) => font.GetStringSize(text, fontSize: size).X;
+        if (Width(full) <= width)
+            return full;
+        var length = full.Length;
+        while (length > 0 && Width(full[..length].TrimEnd() + "…") > width)
+            length--;
+        return length > 0 ? full[..length].TrimEnd() + "…" : "";
     }
 
     // Our views: a mod turned on since launch has a bright gold title, one turned off a dim one, so what a
@@ -207,6 +209,8 @@ static class RowTitles
     // Called on every change of the row's state (focus, selection; patches on the game's row) and each redraw.
     public static void Look(NModMenuRow row, bool selected, bool focused)
     {
+        if (!RowState.Found)
+            return; // a game update renamed the row's own state: we can't tell its look, so it stays the game's
         if (row.GetNodeOrNull<Panel>("SelectionHighlight") is not { } look)
             return;
         if (!look.HasMeta(GameLookMeta))
