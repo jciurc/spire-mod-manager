@@ -67,27 +67,28 @@ From the installed 0.111 beta's `sts2.dll`, decompiled with ilspycmd:
   - "Relaunch to apply your mod changes" (`:166`);
   - the game's "...after a restart."
 
-### Found while reading: new mods are probably never tracked in real play
+### Found while reading: new mods are never tracked in real play
 
 `Installed.Detected` (`Installed.cs:21-30`) drops a mod when `ModManager.Mods` already has one with the same
 id and source. The check is meant to catch "an update of a mod that was here at launch". But the game adds a
 new mod to `ModManager.Mods` *before* announcing it, so the check finds the new mod itself and drops every
 one.
 
-- **Likely effects in real play:**
+- **Effects in real play** (from the decompiled code, not yet seen in game):
   - no New tag and no "Installed" section in Changes;
   - a new mod that is on doesn't count as pending (no dot, no note, no line).
 - **Why the tests pass:** the self-test announces a made-up mod that was never added to `ModManager.Mods`
   (`SelfTest.cs:923-930`).
-- **Likely fix:** skip the mod itself (`m != mod`). The test should add its mod to the game's list the way
-  the game does.
-- **Status:** unverified in game. The dev sandbox has no Steam, so this needs a real subscription while the
-  game runs. Worth its own bug PR whichever option is picked here.
+- **Proposed fix: PR #14** (open, not merged). Only another copy that was here at launch counts as an
+  update: not the mod itself, and not `AddedAtRuntime`. Skipping only the mod itself isn't enough: another
+  copy added this session, with the same id and source, would still drop it. Its self-test adds the mod to
+  the game's list first, the way the game does, and fails two checks with the old code.
+- **Status:** still to verify with a real subscription while the game runs. The dev sandbox has no Steam.
 
 ## What "pending" should mean
 
 "Pending" means a relaunch would change what you play with. One rule, used by the page line, the main menu
-note and every dot.
+note, every dot and the hover card (option 3 below).
 
 | Change since launch | Counts today | Proposal |
 |---|---|---|
@@ -128,7 +129,9 @@ Two separate choices: the message on our page, and where a quick relaunch lives.
 3. **Option 2, plus the Relaunch Game button carries the state.**
    - The button's own dot shows while pending (the button scene already has one, as on the main menu).
    - Hovering the line or the button shows a card, "After a relaunch:", with the mods turned on and off, new
-     mods, and "New load order". This reuses the Changes summary (`HistoryBar.cs:132-158`).
+     mods, and "New load order". It lists exactly what the pending rule counts. The Changes summary's
+     counts (`HistoryBar.Counts`, `HistoryBar.cs:141-145`) don't fit: their moves include disabled mods
+     (`HistoryBar.cs:426-441`), and their on/off list includes a failed mod turned off.
    - Pros: the line says *that* a relaunch is needed, the card says *what* it will change, and the button
      says *where* to go.
    - Cons: the card overlaps the Changes summary a little. It is scoped to "what a relaunch applies", not
@@ -168,8 +171,8 @@ Two separate choices: the message on our page, and where a quick relaunch lives.
 - **Main menu:** options 1 and 2 together. Both depend on the same relaunch-check change, and after that
   each is a few lines.
 - **Profile switcher:** option 3 later, if Jordan wants it for 0.1.0 (question 3). Not option 4.
-- **The bug:** fix `Installed.Detected` first, in its own PR, and verify it with a real subscription.
-  Without it, new mods never count as pending in real play.
+- **The bug:** merge the `Installed.Detected` fix (PR #14, open) first, and verify it with a real
+  subscription. Without it, new mods never count as pending in real play.
 
 ## Wording
 
@@ -212,8 +215,9 @@ Branch `relaunch-line`, the page message only (options 2 and 3 in two commits):
   `Profiles.Switched`.
 - **`ModEntry.HasPendingChanges`:** the stricter load-order rule. `LoadOrder.OrderChanged` stays as it is
   for the Load Order "was" column.
-- **Hover card:** "After a relaunch", built from `HistoryBar.Counts` and its lists. Mods that will load only
-  after a relaunch are marked, as in Changes.
+- **Hover card:** "After a relaunch", built from the pending changes themselves, not `HistoryBar.Counts`.
+  One function returns them (mods turned on and off, new mods that are on, whether the load order
+  changed), and `HasPendingChanges` is true when it returns any.
 - **Strings** (`settings_ui.json`): `PENDING_CARD_TITLE` and `PENDING_NEW_ORDER`; `RELAUNCH_NOTE` is reused.
   The copy-pass changes ("Pending relaunch", the popup) go in the copy-pass PR, not here.
 - **Self-test checks:**
@@ -221,7 +225,7 @@ Branch `relaunch-line`, the page message only (options 2 and 3 in two commits):
   - "turning it back clears our relaunch line";
   - "Vanilla View shows the game's line, not ours";
   - "a page opened with a change pending shows our line" (hide the game's line, then run Layout.Apply);
-  - "moving only a disabled mod is not pending";
+  - "moving only a disabled mod is not pending, and the card doesn't say New load order";
   - "the Relaunch button's dot follows pending".
 
 A second PR, `menu-relaunch`, makes `RelaunchCheck` work without the page and adds "Relaunch now" to the

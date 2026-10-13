@@ -77,20 +77,24 @@ A mod's manifest names what it needs by mod id ("BaseLib"). A Workshop page is f
    - Cons: always one more step (the player picks the item). It can't tell "on the Workshop" from "not", so
      the backlog's "plain text when not on the Workshop" isn't possible.
    - Effort: small (about 30 lines, 2 keys, 2 checks).
-2. **Required Items from the query we already make, with the search page as the fallback.**
+2. **Required Items, matched by title, with the search page as the fallback.**
    - Add `SetReturnChildren(handle, true)` to the existing startup query and keep each mod's Required Items.
      That is the same single request, slightly larger.
-   - A missing dependency of a Workshop mod resolves when that mod has exactly one missing dependency and
-     exactly one Required Item that isn't installed. Its name then links straight to that item's page.
+   - A Required Item is a Workshop id, and a dependency is a mod id. A count (one missing dependency, one
+     Required Item not installed) doesn't tie them: a stale or unrelated Required Item would send the player
+     to the wrong page. No installed copy can tie them either, since a missing dependency has none.
+   - The item's title can. On the first click, one request asks for the titles of that mod's Required Items
+     that aren't installed. An item whose title equals the dependency's id (ignoring case, spaces and
+     punctuation) opens its page. BaseLib's title does.
    - Otherwise it falls back to option 1, or to plain text (question 1).
-   - Pros: no extra request; exact whenever the author listed it (both samples did); known before the
-     click, so the link can say where it goes.
+   - Pros: a direct page only when the author's list and the item's title agree; nothing extra at startup.
    - Cons:
-     - It depends on authors listing Required Items.
+     - It depends on authors listing Required Items, and on titles that equal the id. "BaseLib (StS2)"
+       would get the search page.
      - A local mod has none.
-     - Several missing dependencies on one mod need titles to pair them up: one more query, on click, and only
-       for those items.
-   - Effort: small to medium (about 80 lines, 2 to 3 keys, 3 to 4 checks).
+     - A mod installed after the startup query has none until the next launch (see the first PR).
+     - One request on the first click for each mod, and the click waits for it.
+   - Effort: small to medium (about 100 lines, 2 to 3 keys, 4 to 5 checks).
 3. **A Steam text search on click.** Search the Workshop for the id, take an exact (normalized) title match,
    and fall back to option 1.
    - Pros: works for local mods too, and gives a direct page when the title is the id.
@@ -106,8 +110,8 @@ A mod's manifest names what it needs by mod id ("BaseLib"). A Workshop page is f
 
 ## Recommendation
 
-- **Option 2, with the search page (option 1) as the fallback.** It answers the common case exactly at no
-  extra cost, and it never guesses.
+- **Option 2, with the search page (option 1) as the fallback.** It gives a direct page when the author's
+  Required Items and the item's title agree, and the search page otherwise. It never links on a count alone.
 - Leave option 3 for later, and only if local mods with missing dependencies turn out to be common.
 - Drop option 4.
 
@@ -116,10 +120,11 @@ A mod's manifest names what it needs by mod id ("BaseLib"). A Workshop page is f
 - **Info panel, Dependencies line** (`ModDetails.cs:172-181`), first:
   - A missing dependency reads "BaseLib (not installed)": the name in our link blue (`#99ccff`, as Patch
     notes), "(not installed)" in the problem red.
-  - **Known Workshop item:** a click opens its page. Hover card: "Not installed. Click to open its Workshop
-    page."
-  - **Unknown:** the name and "(not installed)" as plain text, as the backlog says. A quiet "Search the
-    Workshop" link may follow (question 1).
+  - **Its mod has Required Items that aren't installed:** a click checks their titles (once per mod), then
+    opens the matching item's page, or the Workshop search when none matches. Hover card: "Not installed.
+    Click to find it on the Workshop."
+  - **No Required Items to check:** the name and "(not installed)" as plain text, as the backlog says. A quiet
+    "Search the Workshop" link may follow (question 1).
 - **Problems line:** stays plain text. It's the summary, and the link is one line below.
 - **Row line and relaunch check:** not in the first PR. The row line passes clicks to the row (selecting the
   mod), and its text is small. The banner's Show already brings you to the mod, and the panel has the link.
@@ -132,17 +137,18 @@ A mod's manifest names what it needs by mod id ("BaseLib"). A Workshop page is f
   - Steam installs it and the game announces it, and our "New Mod Added" popup shows.
   - The dependency is then found (`Dependencies.Find` looks at `ModManager.Mods`, where the game puts new
     mods), so the panel's problem goes and the mod shows as pending a relaunch.
-  - The relaunch spike notes a likely bug in tracking new mods (`Installed.Detected`). It affects Changes and
-    the pending dot, not this lookup.
-- **Offline, or no Steam:** no Required Items arrive, so every missing dependency counts as unknown. The
+  - The relaunch spike notes a bug in tracking new mods (`Installed.Detected`, fix proposed in PR #14). It
+    affects Changes and the pending dot, not this lookup.
+- **Offline, or no Steam:** no Required Items arrive, so no missing dependency has any to check. The
   search link still opens the browser, which may fail on its own if there's no connection. We don't try to
-  detect that. In the dev sandbox (`--force-steam off`) checks seed Required Items through
-  `WorkshopInfo.TestSet`, as the Workshop details tests already do.
+  detect that. In the dev sandbox (`--force-steam off`) checks seed Required Items and titles through test
+  setters, as the Workshop details tests already do (`WorkshopInfo.TestSet`).
 
 ## Privacy and limits
 
-- **The first PR adds no request.** It only asks the one existing startup query to include Required Items.
-- **Any later query** (titles to pair several missing dependencies, or option 3):
+- **The first PR adds no request at startup.** It only asks the one existing startup query to include
+  Required Items.
+- **The titles request** (and option 3, if it's ever built):
   - only on a click;
   - one request;
   - cached for the session;
@@ -169,20 +175,25 @@ Branch `dependency-workshop-link`:
 
 - **`WorkshopInfo.cs`:**
   - `SetReturnChildren(handle, true)` on the existing query (`WorkshopInfo.cs:57`).
+  - That query runs once per session, for the Workshop mods installed then (`WorkshopInfo.cs:34-39`,
+    `WorkshopInfo.cs:52-57`). A mod installed later has no Required Items until the next launch, so its
+    missing dependencies get the search link or plain text. No refresh in the first PR.
   - `Details` gains `Required` (Workshop ids), read with `GetQueryUGCChildren` for each result that has
     `m_unNumChildren > 0`.
-  - A pure `DependencyPage(Mod needer, string id)` returns the item's page URL, or null when it can't place
-    it.
+  - The titles request for one mod's Required Items, with the limits in "Privacy and limits".
+  - A pure `DependencyPage(string id, titles)` returns the page URL of the item whose title matches the id,
+    or null.
 - **`ModDetails.cs`:**
   - Missing dependencies in the Dependencies line become `dep:<id>` links (or plain text, per question 1).
   - The click goes in the existing `MetaClicked` handler (`ModDetails.cs:129-135`).
   - The hover card goes through `Hover.WatchLinks`, as Workshop tags do (`ModDetails.cs:136-137`).
 - **The search URL:** built with `Uri.EscapeDataString(id)`.
-- **Strings:** `DEP_WORKSHOP_TIP` ("Not installed. Click to open its Workshop page.") and, if wanted,
+- **Strings:** `DEP_WORKSHOP_TIP` ("Not installed. Click to find it on the Workshop.") and, if wanted,
   `DEP_SEARCH` ("Search the Workshop") with `DEP_SEARCH_TIP`.
-- **Self-test checks** (deterministic, with made-up Workshop ids through `WorkshopInfo.TestSet`):
-  - "a missing dependency listed as a Required Item links to that item's Workshop page";
-  - "two missing dependencies and two unknown Required Items aren't guessed";
+- **Self-test checks** (deterministic, with made-up Workshop ids and titles through test setters):
+  - "a missing dependency opens the Required Item whose title is its id";
+  - "a Required Item with another title isn't linked, even when it's the only one: the Workshop search
+    instead";
   - "a missing dependency with no Required Items offers the Workshop search for its id";
   - "the Workshop search link escapes the mod id";
   - "an installed dependency still scrolls to its row".
