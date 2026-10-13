@@ -168,7 +168,7 @@ sealed class TagSuggestions
         };
         row.SetMeta(TagMeta, tag);
         var label = new Label { Text = tag, ClipText = true, TextOverrunBehavior = TextServer.OverrunBehavior.TrimEllipsis, MouseFilter = Control.MouseFilterEnum.Ignore };
-        label.AddThemeFontOverride("font", ResourceLoader.Load<Font>("res://themes/kreon_regular_shared.tres"));
+        label.AddThemeFontOverride("font", ModEntry.Font("res://themes/kreon_regular_shared.tres"));
         label.AddThemeFontSizeOverride("font_size", 18);
         label.AddThemeColorOverride("font_color", Cream);
         row.AddChild(label);
