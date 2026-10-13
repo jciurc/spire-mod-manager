@@ -1590,7 +1590,9 @@ static class SelfTest
         {
             foreach (var info in Store.Data.Mods.Values)
                 info.Tags = null;
-            Store.EditMod("SmmSuggestA", info => info.Tags = ["Strategy", "Story-heavy", "Must-have", "Co-op"]);
+            // Must-have twice on one mod, in two cases (as a hand-edited file can have it): still one mod, behind the
+            // tags on two.
+            Store.EditMod("SmmSuggestA", info => info.Tags = ["Strategy", "Story-heavy", "Must-have", "must-have", "Co-op"]);
             Store.EditMod("SmmSuggestB", info => info.Tags = ["Strategy", "Story-heavy", "Co-op"]);
             Store.EditMod("SmmSuggestC", info => info.Tags = ["Strategy", "Stable", "Fast", "Visuals", "Tools"]);
         });
@@ -1625,7 +1627,7 @@ static class SelfTest
         var box = screen.GetNode<LineEdit>("%ModInfoContainer/SpireModManagerYours/Tags/Box");
         box.GrabFocus();
         await Wait(menu, 0.3);
-        Check("tag suggestions: focusing the tags box lists your tags, most used first, at most 6", Listed() == "Strategy, Co-op, Story-heavy, Fast, Must-have, Stable", Listed());
+        Check("tag suggestions: focusing the tags box lists your tags, on the most mods first (a mod counts once), at most 6", Listed() == "Strategy, Co-op, Story-heavy, Fast, Must-have, Stable", Listed());
         var placed = Placement(box, 90); // MenuPanel's layer
         Check("tag suggestions: under the box, as wide, on screen, over our menus", placed == "ok", placed);
         await TypeIn(box, "st");

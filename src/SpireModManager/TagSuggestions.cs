@@ -84,12 +84,13 @@ sealed class TagSuggestions
         return true;
     }
 
-    // The tags to offer for the box's text, in order (see the top).
+    // The tags to offer for the box's text, in order (see the top). Most used means on the most mods: a mod counts
+    // once for a tag, even when its saved list has it twice in different cases (a hand-edited file can).
     static List<string> For(string text)
     {
         var typed = text[(text.LastIndexOf(',') + 1)..].Trim();
         var have = Tags.Parse(text) ?? [];
-        return Store.Data.Mods.Values.SelectMany(info => info.Tags ?? [])
+        return Store.Data.Mods.Values.SelectMany(info => (info.Tags ?? []).Distinct(StringComparer.OrdinalIgnoreCase))
             .GroupBy(tag => tag, StringComparer.OrdinalIgnoreCase)
             .Where(used => used.Key.Contains(typed, StringComparison.OrdinalIgnoreCase) && !have.Contains(used.Key, StringComparer.OrdinalIgnoreCase))
             .OrderBy(used => used.Key.StartsWith(typed, StringComparison.OrdinalIgnoreCase) ? 0 : 1)
