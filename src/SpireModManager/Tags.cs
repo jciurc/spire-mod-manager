@@ -120,7 +120,7 @@ static class Tags
 
     // That chip's width for a count: its text and the margins either side.
     public static float MoreWidth(int count) =>
-        ResourceLoader.Load<Font>("res://themes/kreon_regular_shared.tres").GetStringSize(MoreText(count), fontSize: 12).X + 2 * Margin;
+        ModEntry.Font("res://themes/kreon_regular_shared.tres").GetStringSize(MoreText(count), fontSize: 12).X + 2 * Margin;
 
     static string MoreText(int count) => Menus.Format("SPIRE_MOD_MANAGER.TAGS_MORE", ("count", count.ToString()));
 }
