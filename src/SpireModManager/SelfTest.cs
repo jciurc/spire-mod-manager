@@ -1832,8 +1832,8 @@ static class SelfTest
         var popup = NModalContainer.Instance?.OpenModal as Node;
         var text = string.Join(" | ", popup?.FindChildren("*", "", true, false)
             .Select(n => n is Label l ? l.Text : n is RichTextLabel r ? r.GetParsedText() : "").Where(t => t.Length > 0) ?? []);
-        Check("after a recovery, the page shows the notice: the backup's date and where the unreadable file is", popup is NErrorPopup
-            && text.Contains("couldn't read your data") && text.Contains("October 11, 2026, 22:15") && text.Contains(setAside) && Store.Notice == null, text);
+        Check("after a recovery, the page shows the notice: the backup's date and the unreadable file's name", popup is NErrorPopup
+            && text.Contains("couldn't read your data") && text.Contains("October 11, 2026, 22:15") && text.Contains(Path.GetFileName(setAside)) && Store.Notice == null, text);
         await Capture(popup ?? screen, outDir, "19-data-notice");
         NModalContainer.Instance?.Clear();
         screen.Visible = false;

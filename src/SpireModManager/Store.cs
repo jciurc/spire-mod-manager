@@ -258,7 +258,7 @@ public static class Store
             return false;
         var body = new LocString("settings_ui", loaded.ReadOnly ? "SPIRE_MOD_MANAGER.DATA_READ_ONLY"
             : loaded.Backup != null ? "SPIRE_MOD_MANAGER.DATA_RECOVERED" : "SPIRE_MOD_MANAGER.DATA_FRESH");
-        body.Add("path", Escape(file));
+        body.Add("file", Escape(Path.GetFileName(file))); // the name only: a full path doesn't fit the popup
         if (loaded.Backup is { Saved: var saved })
             body.Add("date", $"{ModDetails.Date(saved)}, {saved.ToString("HH:mm", CultureInfo.InvariantCulture)}");
         if (NErrorPopup.Create(new LocString("settings_ui", "SPIRE_MOD_MANAGER.DATA_TITLE"), body, null, showReportBugButton: false) is not { } popup)
