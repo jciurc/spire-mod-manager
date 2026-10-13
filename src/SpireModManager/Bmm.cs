@@ -14,7 +14,6 @@ static class Bmm
 {
     public const string ModId = "BetterModMenu", HarmonyId = ModId;
     const string Chrome = "BetterModMenuChrome", Actions = "BetterModMenuSelectedModActions", RowControls = "RowCustomControls";
-    public const string WarningName = "SpireModManagerBmmWarning";
     const string GroupPrefix = "ModGroup", RoomMeta = "better_mod_menu_top_bar_room";
 
     static readonly Type? Context = AccessTools.TypeByName("BetterModMenu.Patches.ModdingScreenContext");
@@ -77,26 +76,6 @@ static class Bmm
             Try("regroup", () => refresh.Invoke(null, null));
         if (Need(ChromeLayout, "ModdingScreenActionFlow.UpdateChromeLayout") is { } layout)
             Try("lay out", () => layout.Invoke(null, [screen])); // (an older build stops before its own layout step)
-    }
-
-    // On our views while it's loaded, beside the view buttons (Layout places it).
-    public static Label Warning(Control screen)
-    {
-        if (screen.GetNodeOrNull<Label>(WarningName) is { } existing)
-            return existing;
-        var warning = new Label
-        {
-            Name = WarningName, Text = Menus.Text("SPIRE_MOD_MANAGER.BMM_WARNING"),
-            AutowrapMode = TextServer.AutowrapMode.WordSmart, VerticalAlignment = VerticalAlignment.Center,
-            MaxLinesVisible = 2, MouseFilter = Control.MouseFilterEnum.Stop,
-            MouseDefaultCursorShape = Control.CursorShape.Help,
-        };
-        warning.AddThemeFontOverride("font", ResourceLoader.Load<Font>("res://themes/kreon_regular_shared.tres"));
-        warning.AddThemeFontSizeOverride("font_size", 16);
-        warning.AddThemeColorOverride("font_color", new Color(0.937f, 0.784f, 0.318f));
-        screen.AddChild(warning);
-        Hover.Watch(warning, "SpireModManagerBmmCard", () => Menus.Text("SPIRE_MOD_MANAGER.BMM_WARNING_TIP"));
-        return warning;
     }
 
     // Its parts on the screen: the bars above the list, the info panel's buttons, each row's own controls.

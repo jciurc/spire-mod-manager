@@ -187,8 +187,6 @@
   "SPIRE_MOD_MANAGER.SAVE_KEYS": "Ctrl + S",
   "SPIRE_MOD_MANAGER.REVERT_ALL": "Revert all",
   "SPIRE_MOD_MANAGER.SEARCH": "Search",
-  "SPIRE_MOD_MANAGER.BMM_WARNING": "Better Mod Menu is running alongside Spire Mod Manager and may cause unexpected issues.",
-  "SPIRE_MOD_MANAGER.BMM_WARNING_TIP": "Its own page is behind the Vanilla List button, in place of the game's list.\nIts profiles, groups and notes are separate from ours. Changes here also change its current profile, and switching its profile shows up here as unsaved changes. Our profiles never turn it on or off.",
   "SPIRE_MOD_MANAGER.PROFILE": "Profile:",
   "SPIRE_MOD_MANAGER.UNSAVED": "Unsaved •",
   "SPIRE_MOD_MANAGER.UNSAVED_TITLE": "Unsaved changes to {name}:",
