@@ -2213,8 +2213,11 @@ static class SelfTest
             Results.Add($"FAIL {which}: no popup open");
             return;
         }
-        Menus.Mark(popup);
+        // Collected before marking it here, so a caller that forgot Menus.Mark fails
         var marks = popup.FindChildren(Menus.MarkName + "*", "", true, false).OfType<Label>().ToList();
+        Menus.Mark(popup);
+        var again = popup.FindChildren(Menus.MarkName + "*", "", true, false).Count;
+        Check($"{which}: marking again adds none", again == marks.Count, $"{marks.Count} before, {again} after");
         Check($"{which}: marked \"Spire Mod Manager\", once, shown", marks is [{ Text: "Spire Mod Manager" } shown]
             && shown.IsVisibleInTree() && shown.Size.X > 0 && shown.Size.Y > 0 && shown.GetThemeColor("font_color").A >= 0.3f,
             string.Join(", ", marks.Select(m => $"{m.Name} \"{m.Text}\" shown {m.IsVisibleInTree()}, size {m.Size}")));
