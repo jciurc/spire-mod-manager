@@ -104,6 +104,18 @@ static class MenuButton
     // nothing else on the menu can take them first. Leaving the menu cancels it.
     public const string MoveLayerName = "SpireModManagerMoveLayer";
 
+    // While moving: cancels it (Escape, through ShortcutsPatch, which then keeps the key from the game; the game's
+    // own Escape on the main menu opens its save profile screen). False when not moving.
+    static Action? _cancelMove;
+
+    public static bool CancelMove()
+    {
+        if (_cancelMove is not { } cancel)
+            return false;
+        cancel();
+        return true;
+    }
+
     static void BeginMove(NMainMenu menu, Control button, Vector2 size)
     {
         if (menu.HasNode(MoveLayerName))
@@ -164,6 +176,7 @@ static class MenuButton
             if (done)
                 return;
             done = true;
+            _cancelMove = null;
             tree.ProcessFrame -= Frame;
             if (keep)
             {
@@ -181,6 +194,7 @@ static class MenuButton
                 layer.QueueFree();
             }
         }
+        _cancelMove = () => End(keep: false);
         // The held buttons from the menu click: seen released on the first frames, then the next press counts.
         Callable.From(() =>
         {

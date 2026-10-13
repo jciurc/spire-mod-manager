@@ -742,6 +742,8 @@ static class SelfTest
             Input.ParseInputEvent(new InputEventKey { Keycode = Key.Escape, Pressed = false });
             Check("Escape cancels: back where it was put, move mode ends", button.Position == placed
                 && !menu.HasNode(MenuButton.MoveLayerName), $"{button.Position} vs {placed}");
+            await Wait(menu, 0.3);
+            Check("that Escape stays ours: the game doesn't act on it (no save profile screen)", !menu.SubmenuStack.SubmenusOpen);
         }
 
         if (await OpenMenu() is { } third)
