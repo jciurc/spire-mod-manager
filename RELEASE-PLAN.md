@@ -168,16 +168,17 @@
 - **Support:** without a public repo, bugs arrive as Workshop comments.
 - **Your own setup:** your local dev copy and the Workshop copy collide on version, and profiles saved with the local copy record the local source.
 
-## 7. Questions for Jordan
+## 7. Decisions (Jordan, 2026-10-13)
 
-1. 1.0.0 for the first public release? (Recommended: yes. The data format is settled, and the game's Early Access status doesn't bear on the mod's version.)
-2. Beta-only at launch, or also build and test for the public branch (0.107.1) as a second upload?
-3. Profiles and newly installed mods: should they join the active profile as enabled (recommended), stay off, or be asked about?
-4. Publish the source? If yes, which license, and should GitHub issues be the bug route? If not, Workshop discussions only?
-5. Preview art: reuse the skyline button art, or make a new identity?
-6. Launch visibility: straight to public, or unlisted first?
-7. Mouse and keyboard only for 1.0 (stated in the description), or is controller support a requirement?
-8. Round 14: what did the cut-off "notepad ... if the original" note mean?
+1. **Version:** the first release is **0.1.0** (not 1.0.0). Read "1.0.0" elsewhere in this plan as 0.1.0.
+2. **Branches:** beta-only at launch (`minBranch: public-beta`); see how it runs on stable later and widen the range then.
+3. **New mods and profiles:** a newly installed mod joins the active profile as enabled.
+4. **Source:** published, open source, not necessarily right away. License still to pick (MIT recommended: short, permissive, the same as Better Mod Menu). Bugs go to GitHub issues; Workshop comments get read now and then too.
+5. **Preview art:** real screenshots for the previews; no generated art. Jordan may make the thumbnail.
+6. **Visibility:** upload as private first (Steam's closest thing to a draft), test, then public. Unlisted is the fallback.
+7. **Input:** mouse and keyboard only for 0.1.0, said in the description. Controller support is in the backlog.
+8. **Round 14 note:** dropped; the notepad is where it should be.
+9. **Repository:** private `jciurc/spire-mod-manager` on GitHub; work goes through branches and pull requests into `dev`, with CI.
 
 ## 8. TODO housekeeping
 
