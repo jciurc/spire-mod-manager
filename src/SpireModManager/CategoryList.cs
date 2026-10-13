@@ -355,7 +355,7 @@ static class CategoryList
         LoadOrder.Reset(content); // no Load Order lines or dimming outside it
 
         if (Store.Data.VanillaView)
-            RowStrip.Remove(rows);
+            RowStrip.Hide(rows);
         else
             RowStrip.Apply(rows, StripActions(content), EdgeAction(content));
 
