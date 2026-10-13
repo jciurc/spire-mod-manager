@@ -164,7 +164,7 @@ static class ModDetails
         if (workshop != null)
             Fact("SPIRE_MOD_MANAGER.PUBLISHED", Date(workshop.Created));
         if (workshop?.Subscribers is { } subscribers)
-            Fact("SPIRE_MOD_MANAGER.SUBSCRIBERS", subscribers.ToString("N0"));
+            Fact("SPIRE_MOD_MANAGER.SUBSCRIBERS", subscribers.ToString("N0", Menus.Culture));
         if (workshop?.Tags.Count > 0)
             Fact("SPIRE_MOD_MANAGER.WORKSHOP_TAGS", string.Join(", ", workshop.Tags.Select(t => $"[url=wtag:{t}]{Escape(t)}[/url]"))); // click: search for it
         if (bytes > 0 || workshop != null)
@@ -343,13 +343,18 @@ static class ModDetails
         return FolderSizes[path] = size;
     }
 
-    static string Bytes(long bytes) => bytes switch
+    // "1.5 MB": the number in the game's language, the unit and its place from the loc table.
+    static string Bytes(long bytes)
     {
-        >= 1 << 30 => $"{bytes / (double)(1 << 30):0.0} GB",
-        >= 1 << 20 => $"{bytes / (double)(1 << 20):0.0} MB",
-        >= 1 << 10 => $"{bytes / (double)(1 << 10):0} KB",
-        _ => $"{bytes} B",
-    };
+        var (key, size) = bytes switch
+        {
+            >= 1 << 30 => ("SPIRE_MOD_MANAGER.SIZE_GB", (bytes / (double)(1 << 30)).ToString("0.0", Menus.Culture)),
+            >= 1 << 20 => ("SPIRE_MOD_MANAGER.SIZE_MB", (bytes / (double)(1 << 20)).ToString("0.0", Menus.Culture)),
+            >= 1 << 10 => ("SPIRE_MOD_MANAGER.SIZE_KB", (bytes / (double)(1 << 10)).ToString("0", Menus.Culture)),
+            _ => ("SPIRE_MOD_MANAGER.SIZE_BYTES", bytes.ToString(Menus.Culture)),
+        };
+        return Menus.Format(key, ("size", size));
+    }
 
     // Fills the panel again for the mod it shows (after a tickbox change: its status may have changed). Not
     // while the panel shows the changes list: that stays until Close or a click on a row.
