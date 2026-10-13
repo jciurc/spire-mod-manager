@@ -80,8 +80,8 @@ static class HistoryBar
             redo.Disabled = !History.CanRedo;
             revert.Disabled = History.AtEntered;
             var (on, off, moved) = Counts();
-            var enabled = ModManager.Mods.Count(m => m.manifest?.id is { } id && id != ModEntry.ModId && Dependencies.IsOn(m))
-                + Installed.Mods.Count(Installed.On); // on after a relaunch, new mods included
+            // On after a relaunch, new mods included (once each: the game lists them too).
+            var enabled = ModManager.Mods.Union(Installed.Mods).Count(m => m.manifest?.id is { } id && id != ModEntry.ModId && Dependencies.IsOn(m));
             changes.Text = $"{Menus.Text("SPIRE_MOD_MANAGER.MODS_ENABLED")} {enabled} ([color={Added}]+{on}[/color] [color={Removed}]-{off}[/color])\n"
                 + $"{Menus.Text("SPIRE_MOD_MANAGER.CHANGES")} [color={Edited}]{OtherChanges()}[/color]  [color={Moved}]↕{moved}[/color]";
             FitChanges(changes);
