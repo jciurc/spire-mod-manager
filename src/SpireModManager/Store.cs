@@ -254,17 +254,26 @@ public static class Store
     // The popup for one load (nothing when it had no problem). True if shown.
     public static bool ShowNotice(Loaded loaded)
     {
-        if (loaded.Unreadable is not { } file || NModalContainer.Instance is not { OpenModal: null } modals)
+        if (NoticeText(loaded) is not { } body || NModalContainer.Instance is not { OpenModal: null } modals)
             return false;
+        if (NErrorPopup.Create(new LocString("settings_ui", "SPIRE_MOD_MANAGER.DATA_TITLE"), body, null, showReportBugButton: false) is not { } popup)
+            return false;
+        modals.Add(popup);
+        return true;
+    }
+
+    // The notice's text for one load: what happened, the set-aside file's name, the backup's date. Null when the load
+    // had no problem.
+    public static LocString? NoticeText(Loaded loaded)
+    {
+        if (loaded.Unreadable is not { } file)
+            return null;
         var body = new LocString("settings_ui", loaded.ReadOnly ? "SPIRE_MOD_MANAGER.DATA_READ_ONLY"
             : loaded.Backup != null ? "SPIRE_MOD_MANAGER.DATA_RECOVERED" : "SPIRE_MOD_MANAGER.DATA_FRESH");
         body.Add("file", Escape(Path.GetFileName(file))); // the name only: a full path doesn't fit the popup
         if (loaded.Backup is { Saved: var saved })
             body.Add("date", $"{ModDetails.Date(saved)}, {saved.ToString("HH:mm", CultureInfo.InvariantCulture)}");
-        if (NErrorPopup.Create(new LocString("settings_ui", "SPIRE_MOD_MANAGER.DATA_TITLE"), body, null, showReportBugButton: false) is not { } popup)
-            return false;
-        modals.Add(popup);
-        return true;
+        return body;
     }
 
     static string Escape(string text) => text.Replace("[", "[lb]");
