@@ -393,13 +393,59 @@ static class RowLookPatch
     }
 }
 
-// A row's own state, which the game keeps to itself.
+// A row's own state, which the game keeps to itself. Looked up on first use rather than in static initializers:
+// if a game update renames one, it reads as false (logged once) instead of throwing on every redraw.
 static class RowState
 {
-    static readonly AccessTools.FieldRef<NModMenuRow, bool> SelectedField = AccessTools.FieldRefAccess<NModMenuRow, bool>("_isSelected");
-    static readonly Func<NClickableControl, bool> FocusedGetter =
-        AccessTools.MethodDelegate<Func<NClickableControl, bool>>(AccessTools.PropertyGetter(typeof(NClickableControl), "IsFocused"));
+    static AccessTools.FieldRef<NModMenuRow, bool>? _selected;
+    static Func<NClickableControl, bool>? _focused;
+    static bool _lookedUp;
 
-    public static bool Selected(NModMenuRow row) => SelectedField(row);
-    public static bool Focused(NModMenuRow row) => FocusedGetter(row);
+    public static bool Selected(NModMenuRow row)
+    {
+        LookUp();
+        return _selected is { } read && read(row);
+    }
+
+    public static bool Focused(NModMenuRow row)
+    {
+        LookUp();
+        return _focused is { } read && read(row);
+    }
+
+    // Self-test: both found on this game version.
+    public static bool Found
+    {
+        get
+        {
+            LookUp();
+            return _selected != null && _focused != null;
+        }
+    }
+
+    static void LookUp()
+    {
+        if (_lookedUp)
+            return;
+        _lookedUp = true;
+        _selected = Find("NModMenuRow._isSelected", () => AccessTools.FieldRefAccess<NModMenuRow, bool>("_isSelected"));
+        _focused = Find("NClickableControl.IsFocused", () => AccessTools.PropertyGetter(typeof(NClickableControl), "IsFocused") is { } getter
+            ? AccessTools.MethodDelegate<Func<NClickableControl, bool>>(getter) : null);
+    }
+
+    // Null if it's gone or no longer fits (a field of another type).
+    static T? Find<T>(string name, Func<T?> find) where T : class
+    {
+        try
+        {
+            if (find() is { } found)
+                return found;
+            Log.Warn($"[{ModEntry.ModId}] {name} not found; rows read as not selected or focused");
+        }
+        catch (Exception e)
+        {
+            Log.Warn($"[{ModEntry.ModId}] {name} not found; rows read as not selected or focused: {e.Message}");
+        }
+        return null;
+    }
 }
