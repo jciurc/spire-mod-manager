@@ -659,3 +659,11 @@ Jordan's notes of 2026-10-13 (with a Load Order screenshot, 0.0.46).
 
 ## Soon (round 19)
 - [ ] undo/redo/revert polish: today it's unclear what is remembered and what the base state is
+
+# Round 20
+
+Jordan's note of 2026-10-13: "a way to dismiss bmm conflict warning. maybe they can work seemlessly together (not
+crash at least) or the user is just okay with running both together. if they dismiss it let's not show the warning
+unless either mod enabled states are touched and they become enabled at the same time again."
+
+- [x] Dismiss beside Show on the managers banner: hidden (no gap) until Better Mod Menu or ours is disabled, then back once both are enabled again; saved, never an undo step or a change
