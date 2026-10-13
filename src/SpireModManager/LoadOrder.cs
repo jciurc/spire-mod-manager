@@ -39,8 +39,18 @@ static class LoadOrder
 
     static string Key(Mod? mod) => $"{mod?.manifest?.id}/{mod?.modSource}";
 
-    static int IndexOf(Mod? mod, List<SettingsSaveMod> list) =>
-        mod?.manifest?.id is { } id && list.FindIndex(m => m.Id == id && m.Source == mod.modSource) is >= 0 and var i ? i : int.MaxValue;
+    static int IndexOf(Mod? mod, Dictionary<(string, ModSource), int> places) =>
+        mod?.manifest?.id is { } id && places.TryGetValue((id, mod.modSource), out var i) ? i : int.MaxValue;
+
+    // Each saved entry's place in the list (the first, for one listed twice), so sorting looks each mod up once
+    // instead of searching the list for it.
+    static Dictionary<(string, ModSource), int> Places(List<SettingsSaveMod> list)
+    {
+        var places = new Dictionary<(string, ModSource), int>();
+        for (var i = 0; i < list.Count; i++)
+            places.TryAdd((list[i].Id, list[i].Source), i);
+        return places;
+    }
 
     // Rows in load order with handles and numbers; `matches` is the search filter.
     public static void Apply(Control content, List<NModMenuRow> rows, Func<NModMenuRow, bool> matches, Action redraw)
@@ -55,8 +65,8 @@ static class LoadOrder
                     HoverLinks(content);
             };
         }
-        var list = SaveManager.Instance.SettingsSave.ModSettings?.ModList ?? [];
-        var ordered = rows.OrderBy(r => IndexOf(r.Mod, list)).ToList();
+        var places = Places(SaveManager.Instance.SettingsSave.ModSettings?.ModList ?? []);
+        var ordered = rows.OrderBy(r => IndexOf(r.Mod, places)).ToList();
         // Where each one was at launch, among the mods installed now (1-based).
         var installed = ordered.Select(r => Key(r.Mod)).ToHashSet();
         var launch = (_loadedOrder ?? []).Where(installed.Contains).Distinct().Select((key, i) => (key, i)).ToDictionary(p => p.key, p => p.i + 1);
@@ -118,8 +128,8 @@ static class LoadOrder
     // The installed mods in saved order.
     public static List<Mod> Mods(IEnumerable<NModMenuRow> rows)
     {
-        var list = SaveManager.Instance.SettingsSave.ModSettings?.ModList ?? [];
-        return rows.Select(r => r.Mod).OfType<Mod>().OrderBy(m => IndexOf(m, list)).ToList();
+        var places = Places(SaveManager.Instance.SettingsSave.ModSettings?.ModList ?? []);
+        return rows.Select(r => r.Mod).OfType<Mod>().OrderBy(m => IndexOf(m, places)).ToList();
     }
 
     // Would putting `mod` at `to` load it before something it needs, or after something that needs it?
@@ -141,10 +151,11 @@ static class LoadOrder
     public static void FixOrder(IList<NModMenuRow> rows) => Save(Dependencies.Fixed(Mods(rows)));
 
     // Disable (or Enable), then top, up, down, bottom; a move that would break a dependency is disabled.
-    // compact: the short labels used for the inline buttons on each row, moves only.
-    public static List<MenuItem> Actions(Control content, NModMenuRow row, Action redraw, bool compact = false)
+    // compact: the short labels used for the inline buttons on each row, moves only. placed: the rows in their
+    // places, when the caller has them already (every row's buttons reading them again was slow with many mods).
+    public static List<MenuItem> Actions(Control content, NModMenuRow row, Action redraw, bool compact = false, List<NModMenuRow>? placed = null)
     {
-        var rows = content.GetChildren().OfType<NModMenuRow>().ToList();
+        var rows = placed ?? content.GetChildren().OfType<NModMenuRow>().ToList();
         var at = rows.IndexOf(row);
         MenuItem Item(string key, int to) => new(Menus.Text(key + (compact ? "_SHORT" : "")), () =>
         {

@@ -492,9 +492,15 @@ static class CategoryList
 
     // The small buttons at the right of each row's strip: moves in Load Order; otherwise a pencil (the mod's
     // alias, tags and notes) and its category, both opening its menu.
-    static Func<NModMenuRow, IEnumerable<MenuItem>> StripActions(Control content) => Store.Data.LoadOrderView
-        ? row => LoadOrder.Actions(content, row, () => Redraw(content), compact: true)
-        : row => [new MenuItem(CategoryName(row.Mod?.manifest?.id), () => ShowRowMenu(content, row), Tip: Menus.Text("SPIRE_MOD_MANAGER.CATEGORY_TIP"))];
+    static Func<NModMenuRow, IEnumerable<MenuItem>> StripActions(Control content)
+    {
+        // The rows in their places, read once for all the strips (by the first: Load Order has placed them by then),
+        // not by every row again.
+        List<NModMenuRow>? placed = null;
+        return Store.Data.LoadOrderView
+            ? row => LoadOrder.Actions(content, row, () => Redraw(content), compact: true, placed ??= content.GetChildren().OfType<NModMenuRow>().ToList())
+            : row => [new MenuItem(CategoryName(row.Mod?.manifest?.id), () => ShowRowMenu(content, row), Tip: Menus.Text("SPIRE_MOD_MANAGER.CATEGORY_TIP"))];
+    }
 
     // The main list's pencil, past the tickbox at the row's far right: the mod's menu. None in Load Order.
     static Func<NModMenuRow, MenuItem>? EdgeAction(Control content) => Store.Data.LoadOrderView
