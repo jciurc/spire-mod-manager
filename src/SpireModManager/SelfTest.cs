@@ -2091,6 +2091,21 @@ static class SelfTest
         else
             Results.Add("SKIP managers banner with our own mod unticked: no row for it");
 
+        // A change our page never saw (Better Mod Menu uninstalled, or unticked elsewhere, between sessions): the launch
+        // check forgets the dismiss as well. Switched off here without a redraw, then back on with one.
+        {
+            await Dismiss();
+            var dismissed = Store.Data.ManagersWarningDismissed && Banner() == null;
+            Dependencies.Set([bmm], false, screen);
+            Bmm.ForgetDismissedWarning();
+            Check("dismissed, then Better Mod Menu off where our page didn't see it: the launch check clears the dismiss",
+                dismissed && !Store.Data.ManagersWarningDismissed && Saved() == false, $"dismissed first {dismissed}; flag {Store.Data.ManagersWarningDismissed}, saved {Saved()}");
+            Dependencies.Set([bmm], true, screen);
+            CategoryList.Redraw(content);
+            await Wait(menu, 0.3);
+            Check("on again: the banner is back", Placed() && Buttons(), Where());
+        }
+
         await Tick(tickbox, false);
         Check("Better Mod Menu unticked: the banner goes at once", !Bmm.Ticked && Banner() == null, Where());
         if (!was)
