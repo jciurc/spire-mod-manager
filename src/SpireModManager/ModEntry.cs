@@ -69,12 +69,18 @@ public static class ModEntry
             Log.Error($"[{ModId}] Could not watch for mods installed while the game runs: {e}");
         }
         var harmony = new Harmony(ModId);
+        // Dev runs can leave some out, as if a game update broke them, to see what players would get
+        // (SPIRE_MOD_MANAGER_SKIP_PATCHES=ModInfoFillPatch,RowLookPatch).
+        var skip = IsDevRun ? (System.Environment.GetEnvironmentVariable("SPIRE_MOD_MANAGER_SKIP_PATCHES") ?? "").Split(',', StringSplitOptions.TrimEntries) : [];
         foreach (var type in AccessTools.GetTypesFromAssembly(typeof(ModEntry).Assembly))
         {
             try
             {
-                if (type.IsDefined(typeof(HarmonyPatch), false))
-                    harmony.CreateClassProcessor(type).Patch();
+                if (!type.IsDefined(typeof(HarmonyPatch), false))
+                    continue;
+                if (skip.Contains(type.Name))
+                    throw new InvalidOperationException("left out for this dev run (SPIRE_MOD_MANAGER_SKIP_PATCHES)");
+                harmony.CreateClassProcessor(type).Patch();
             }
             catch (Exception e)
             {

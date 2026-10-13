@@ -41,6 +41,11 @@ static class SelfTest
         {
             await Wait(menu, 3);
             TestFailSoft();
+            if (!ModEntry.OurPage)
+            {
+                await TestGamePage(menu, outDir); // nothing more of ours to test
+                return;
+            }
             Check("no popup open", NModalContainer.Instance?.OpenModal == null,
                 NModalContainer.Instance?.OpenModal?.GetType().Name ?? "");
             Check("main menu button", menu.GetNodeOrNull("SpireModManagerMenuButton") != null);
@@ -264,6 +269,38 @@ static class SelfTest
             line.Text == "Spire Mod Manager needs an update for this game version." && ModEntry.ShowNeedsUpdate(stand) == line
             && stand.GetChildCount() == 1 && line.Position.Y + line.Size.Y <= 83, $"{line.Text} at {line.Position}, {line.Size}");
         stand.Free();
+    }
+
+    // dev.cs test with SPIRE_MOD_MANAGER_SKIP_PATCHES naming a patch our page needs (not MainMenuPatch: this test
+    // starts from it): the Modding page is the game's, with the needs-update line and none of ours, the info panel
+    // included. Without the screen's own patch, the line is the main menu button's note instead.
+    static async Task TestGamePage(NMainMenu menu, string outDir)
+    {
+        Results.Add($"INFO left out: {string.Join(", ", ModEntry.FailedPatches)}");
+        const string text = "Spire Mod Manager needs an update for this game version.";
+        if (ModEntry.FailedPatches.Contains(nameof(ModdingScreenPatch)))
+        {
+            var note = menu.GetNodeOrNull<Label>("SpireModManagerMenuButton/PendingNote");
+            Check("no Modding screen patch: the main menu button's note says the mod needs an update", note is { Visible: true, Text: text }, note?.Text ?? "no note");
+            await Capture(menu, outDir, "1-main-menu-needs-update");
+            return;
+        }
+        var screen = menu.SubmenuStack.PushSubmenuType<NModdingScreen>();
+        await Wait(menu, 2);
+        Check("the game's page, with the needs-update line", screen.GetNodeOrNull<Label>(ModEntry.NeedsUpdateName) is { Visible: true, Text: text },
+            screen.GetNodeOrNull<Label>(ModEntry.NeedsUpdateName)?.Text ?? "no line");
+        var border = screen.GetNode<Control>("ModsBorder");
+        Check("none of ours on it: no buttons, bars or headers; the game's boxes", screen.GetNodeOrNull("SpireModManagerViewToggle") == null
+            && screen.GetNodeOrNull("SpireModManagerRelaunchButton") == null && border.GetNodeOrNull("SpireModManagerProfileBar") == null
+            && !screen.GetNode("%ModsScrollContainer/Mask/Content").GetChildren().Any(c => c.IsInGroup("SpireModManagerCategoryHeader"))
+            && border.OffsetLeft == 255 && border.OffsetRight == 994, $"{border.OffsetLeft}..{border.OffsetRight}");
+        if (screen.GetNode("%ModsScrollContainer/Mask/Content").GetChildren().OfType<NModMenuRow>().FirstOrDefault() is { } row)
+        {
+            CategoryList.Select(screen, row);
+            await Wait(menu, 0.5);
+            Check("a mod shown in the panel: the game's details only", screen.GetNode("%ModInfoContainer").GetNodeOrNull(ModDetails.HeadName) == null);
+        }
+        await Capture(screen, outDir, "2-game-page-needs-update");
     }
 
     // Regressions from Jordan's 2026-10-07 notes: clicks outside the list, list height after collapsing,
