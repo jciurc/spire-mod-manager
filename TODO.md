@@ -628,19 +628,27 @@ CI-focused session. Already fine: no secrets, tokens or large files anywhere in 
 game's is committed (its DLLs are only referenced); no copied Better Mod Menu code; the one image is Jordan's
 own art; the spikes describe the game's behaviour but quote no game code.
 
-- [ ] **the self-hosted runner:** on a public repo a fork's pull request can edit ci.yml itself and send a job
-  to a runner, so a same-repo condition isn't enough. #25 makes the in-game test a job only Jordan can start
-  (workflow_dispatch), never triggered by pull requests, and retires SELF_HOSTED_STS2. Also set "require
-  approval for all outside collaborators" for fork pull request workflows.
-- [ ] **LICENSE:** an MIT `LICENSE` file; Jordan picks the copyright name (legal name, "jciurc" or "symphony").
-  Say in the README whether the art is under MIT too or kept back.
-- [ ] **machine-specific paths:** build.cs, the .csproj and tools/dev.cs hard-code D:\SteamLibrary and
-  C:\repos\...; read them from an environment variable (or a gitignored local file) with today's paths as the
-  fallback, so others can build. Update README and the Workshop kit's paths.
+- [x] **the self-hosted runner:** on a public repo a fork's pull request can edit ci.yml itself and send a job
+  to a runner, so a same-repo condition isn't enough. #25 made the in-game test a job started only by hand
+  (selftest.yml, workflow_dispatch), never by pull requests, and retired SELF_HOSTED_STS2. Starting it by hand
+  needs write access to the repo, which only Jordan has; anyone given write access later could start it too.
+- [ ] **fork pull request workflows:** set "require approval for all outside collaborators" (Settings > Actions)
+  once the repo is public.
+- [x] **LICENSE:** MIT, "Copyright (c) 2026 jciurc"; the README says the art in `images/` is under it too (#25).
+- [x] **machine-specific paths:** build.cs, the .csproj and tools/dev.cs read STS2_STEAMAPPS, STS2_DEV_DIR and
+  STS2_BMM_REPO, with today's paths as the fallback (#25, #13).
 - [ ] **free security features on public repos:** turn on code scanning (CodeQL, C# build-free mode), secret
   scanning and push protection, Dependabot alerts; decide which to make required in the rulesets.
-- [ ] **docs:** decide whether "Jordan" in TODO, WHATS-NEW and the tests stays; TRANSLATING.md and the
-  Workshop description get the GitHub link for issues and pull requests.
+- [x] **docs:** "Jordan" stays in docs, comments and tests (his call, 2026-10-13); his surname never appears.
+  TRANSLATING.md and the Workshop description link to GitHub for issues and pull requests (#25).
+- [ ] **presentable and open to contributors:** review the repo as a whole as something that represents Jordan.
+  The front page and README are for visitors: what it is, a screenshot, how to install, how to report a bug.
+  Move internal notes (TODO, WHATS-NEW, RELEASE-PLAN, DESIGN, spikes) out of the root, or say what they are.
+  Check the commit and PR history reads well, and that no internal paths or Jordan-only wording remain in
+  public-facing files. For contributors: issue templates (a bug report asking for game version, mod list and
+  log), a CONTRIBUTING.md (the build needs the game and STS2_STEAMAPPS, run tools/check.cs, PRs into dev,
+  translations via TRANSLATING.md), a PR template that works for outsiders, repo topics and description, and
+  Wiki and Projects turned off if unused.
 
 # Round 19
 
