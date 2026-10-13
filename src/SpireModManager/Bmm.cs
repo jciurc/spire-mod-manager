@@ -39,6 +39,18 @@ static class Bmm
     // and Disable all keep ours on, but the player can untick its row.
     public static bool BothTicked => Ticked && Dependencies.Find(ModEntry.ModId) is { } ours && Dependencies.IsOn(ours);
 
+    // A dismissed banner is forgotten once the two aren't both ticked, so it shows again the next time they are (saved
+    // as view state, never an undo step). LoadOrder checks on every toolbar update (tickboxes, profiles, undo and redo,
+    // the fixes); the launch checks once, for a change our page never saw (one of them uninstalled, or unticked where
+    // our page wasn't showing).
+    public static void ForgetDismissedWarning()
+    {
+        if (!Store.Data.ManagersWarningDismissed || BothTicked)
+            return;
+        Store.Data.ManagersWarningDismissed = false;
+        Store.SaveViewState();
+    }
+
     // Our views: it stops re-laying out and regrouping the screen.
     public static void Detach()
     {
