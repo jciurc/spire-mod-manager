@@ -31,8 +31,7 @@ static class Tags
     {
         if (mod?.manifest is not { } manifest)
             return [];
-        // Always in this order: New, Local, Library, Gameplay, Cosmetic, then the player's own. (Updated lately is a
-        // pip by the title: RowTitles.)
+        // Always in this order: New, Local, Library, Gameplay, Cosmetic, then the player's own.
         var chips = new List<Chip>();
         if (Installed.Mods.Contains(mod))
             chips.Add(new Chip(Menus.Text("SPIRE_MOD_MANAGER.TAG_NEW"), New, Tip: Menus.Text("SPIRE_MOD_MANAGER.TAG_NEW_TIP")));
@@ -67,9 +66,9 @@ static class Tags
     }
 
 
-    // A chip: tinted fill, border in the chip's colour, small text. Hovering shows what it means on a card
-    // (with, when it's clickable, how to search for it underneath). clicked: what a click does (told whether
-    // Shift was held).
+    // A chip: a fill tinted with the chip's colour (no outline), small text in that colour. Hovering shows what
+    // it means on a card (with, when it's clickable, how to search for it underneath). clicked: what a click
+    // does (told whether Shift was held).
     public static Control Make(Chip chip, Action<bool>? clicked = null)
     {
         var tip = chip.Tip ?? Menus.Text(chip.Custom ? "SPIRE_MOD_MANAGER.TAG_CUSTOM_TIP" : "SPIRE_MOD_MANAGER.TAG_AUTO_TIP");
