@@ -199,10 +199,15 @@ public static class Store
     }
 }
 
-// One-time import of Better Mod Menu's mod_profiles.json (read-only; its file is never changed).
+// One-time import of Better Mod Menu's saved data (read-only; its file is never changed). It can be saved in
+// several ways, so we take the file it would load itself and read it the way it does.
 static class BetterModMenuImport
 {
     const string BmmId = "BetterModMenu";
+
+    // It allows comments and trailing commas in its file, whatever the name. That is all ".json5" means to it:
+    // other JSON5 syntax (unquoted names, single quotes) fails there as it does here.
+    static readonly JsonDocumentOptions Lenient = new() { CommentHandling = JsonCommentHandling.Skip, AllowTrailingCommas = true };
 
     public static StoreData? TryImport()
     {
@@ -223,12 +228,19 @@ static class BetterModMenuImport
         }
     }
 
-    // Our data from the text of its file. Throws when the text isn't in its format.
+    // Our data from the text of its file. Throws when the text is in neither of its formats.
     public static StoreData Parse(string text)
     {
-        using var doc = JsonDocument.Parse(text);
+        using var doc = JsonDocument.Parse(text, Lenient);
         var root = doc.RootElement;
         var data = new StoreData();
+
+        // Its old format: the file is just the list of profiles, with no groups or notes.
+        if (root.ValueKind == JsonValueKind.Array)
+        {
+            AddProfiles(data, root);
+            return data;
+        }
 
         var collapsed = Strings(root, "CollapsedGroups").ToHashSet();
         foreach (var name in Strings(root, "CustomGroups"))
