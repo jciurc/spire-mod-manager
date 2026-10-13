@@ -731,7 +731,7 @@ static class CategoryList
 
     // The header scene's parts made in code, for when the scene doesn't load (it uses the game's arrow and fonts):
     // the same names, places and colours, with a "▶" for the arrow.
-    static Control PlainHeader()
+    public static Control PlainHeader()
     {
         var header = new Control
         {

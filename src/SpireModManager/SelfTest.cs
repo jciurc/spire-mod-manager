@@ -1728,7 +1728,8 @@ static class SelfTest
 
     // Missing game resources: everything this run used loaded; a path that isn't there gives null without throwing
     // (noted, and logged, once); a missing font falls back to Godot's own; AddButton's plain stand-in is a working
-    // button with the label, at the asked size, with the hidden "Dot" callers show.
+    // button with the label, at the asked size, with the hidden "Dot" callers show; the category header made in
+    // code has the parts a redraw reads.
     static void TestFallbacks(NModdingScreen screen)
     {
         Check("every game resource used so far loaded", ModEntry.MissingResources.Count == 0, string.Join(", ", ModEntry.MissingResources));
@@ -1762,6 +1763,11 @@ static class SelfTest
         Check("the stand-in takes a new label", button is Button { Text: var relabelled } && relabelled == Menus.Text("SPIRE_MOD_MANAGER.LOAD_ORDER"));
         screen.RemoveChild(holder);
         holder.Free();
+
+        var header = CategoryList.PlainHeader();
+        Check("the category header stand-in has the scene's parts", header.GetNodeOrNull<ColorRect>("Background") != null
+            && header.GetNodeOrNull<Control>("Arrow") != null && header.GetNodeOrNull<Label>("Title") != null && header.GetNodeOrNull<Label>("Count") != null);
+        header.Free();
     }
 
     static async Task<bool> WithVanillaView(NModdingScreen screen, Node menu, Func<bool> check)
