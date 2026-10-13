@@ -4,6 +4,7 @@ using MegaCrit.Sts2.Core.Nodes.GodotExtensions;
 using MegaCrit.Sts2.Core.Platform;
 using MegaCrit.Sts2.Core.Nodes.Screens.ModdingScreen;
 using MegaCrit.Sts2.addons.mega_text;
+using MegaCrit.Sts2.Core.Localization;
 
 namespace SpireModManager;
 
@@ -237,8 +238,21 @@ static class ModDetails
     // Text cut after 200 characters (some authors write a paragraph where their name goes).
     public static string Short(string text) => text.Length <= 200 ? text : text[..200].TrimEnd() + "…";
 
-    // "October 12, 2026".
-    public static string Date(DateTime date) => date.ToString("MMMM d, yyyy", System.Globalization.CultureInfo.InvariantCulture);
+    // "October 12, 2026" in English, "12. Oktober 2026" in German: the game's own date pattern (the one its run
+    // history uses, translated with the rest of the game) in the game's language. The English pattern if a game
+    // update renames that text or it doesn't read as a date pattern.
+    public static string Date(DateTime date)
+    {
+        const string english = "MMMM d, yyyy";
+        try
+        {
+            return date.ToString(LocString.GetIfExists("run_history", "INFO.DATE_FORMAT")?.GetRawText() ?? english, Menus.Culture);
+        }
+        catch (Exception)
+        {
+            return date.ToString(english, Menus.Culture);
+        }
+    }
 
     // Enabled (green), Disabled (grey), or Pending restart (orange) when it's been turned on or off since it
     // loaded; Failed to load (red) when it's on but couldn't load.

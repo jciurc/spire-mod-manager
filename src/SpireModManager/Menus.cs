@@ -44,6 +44,10 @@ static class Menus
         return text.GetFormattedText();
     }
 
+    // The game's language as a culture, for the dates and numbers we write into text ourselves: its month names,
+    // decimal point and thousands separator ("1.5 MB" in English, "1,5 MB" in German).
+    public static System.Globalization.CultureInfo Culture => LocManager.Instance.CultureInfo;
+
     // Its looks, made once and shared (every row has a few of these, remade on each redraw).
     static readonly (string State, StyleBox Box)[] SmallBoxes =
     [
