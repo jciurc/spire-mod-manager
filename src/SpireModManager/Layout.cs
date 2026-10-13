@@ -37,7 +37,6 @@ static class Layout
     public const float CornerX = 18; // the lower-left corner button (here and on the main menu)
     const float PageLeft = 175, TitleTop = 10, TitleBottom = 62;
     const float UndoDrop = 7; // the undo buttons themselves (not their hints) centred on the bottom row
-    const float WarningWidth = 340; // Better Mod Menu's warning beside the view buttons: two lines
 
     // Text sizes in our views (the game's in brackets): rows 20 (32), info title 32 (60), info text 18 (24).
     public const int RowTitleSize = 20, RowTitleVanillaSize = 32;
@@ -147,17 +146,6 @@ static class Layout
                 x = leftEnd + 12;
             }
         }
-        // Better Mod Menu loaded too: a warning beside the view buttons, on our views (its own page stays its own).
-        if (Bmm.Present)
-        {
-            var warning = Bmm.Warning(screen);
-            warning.Visible = Wide;
-            if (Wide)
-            {
-                (warning.Position, warning.Size) = (new Vector2(leftEnd + 14, BottomRowY), new Vector2(WarningWidth, 70));
-                leftEnd = warning.Position.X + warning.Size.X;
-            }
-        }
 
         var right = view == View.LoadOrder ? list.OffsetRight : info.OffsetRight;
         if (screen.GetNodeOrNull<Control>("SpireModManagerRelaunchButton") is { } relaunch)
@@ -192,9 +180,12 @@ static class Layout
         History.NotifyChanged(); // the buttons act on this view's history
 
         // The game's "takes effect after a restart" line fits between the left and right buttons in
-        // Categories (its text shrinks to fit), and goes back to its own place in Vanilla View.
-        var pending = screen.GetNode<Control>("%PendingChangesLabel");
+        // Categories (its text shrinks to fit), and goes back to its own place in Vanilla View. Our wording on our
+        // views, the game's in Vanilla View: the game sets its text once, in _Ready (before our postfix places it),
+        // and after that only shows or hides it.
+        var pending = screen.GetNode<MegaRichTextLabel>("%PendingChangesLabel");
         Place(pending, new Vector4(leftEnd + 12, 1000, right, 1068));
+        pending.SetTextAutoSize(new LocString("settings_ui", Wide ? "SPIRE_MOD_MANAGER.PENDING_RESTART" : "MODDING_SCREEN.PENDING_CHANGES_WARNING").GetFormattedText());
         pending.Modulate = view == View.LoadOrder ? Colors.Transparent : Colors.White; // the game sets Visible itself
         Watermark(screen);
         BackLabel(screen);
@@ -274,9 +265,10 @@ static class Layout
     }
 
     // Across the top of the list in our views, stacked: the profile bar (main list only), the search box (with
-    // Auto sort in Load Order), Load Order's warning when shown, and on the main list the page bar and its
-    // hint (only made when there are no categories); the list starts below them. Vanilla View hides them and
-    // gives the list its full height back.
+    // Auto sort in Load Order), the red banners when shown (two mod managers on, then the page's own warning:
+    // the one that stays put above the one that comes and goes as the list changes), and on the main list the page
+    // bar and its hint (only made when there are no categories); the list starts below them. Vanilla View hides them
+    // and gives the list its full height back.
     public static void PlaceList(Control list)
     {
         // The scene's box each time (Better Mod Menu moves and resizes it on its page); in our views, the top set below.
@@ -307,6 +299,7 @@ static class Layout
             foreach (var name in new[] { LoadOrder.AutoSortName, LoadOrder.AutoSortHintName })
                 if (list.GetNodeOrNull<Control>(name) is { } beside)
                     (beside.OffsetTop, beside.OffsetBottom) = (search.OffsetTop, search.OffsetBottom);
+        Stack(list.GetNodeOrNull<Control>(LoadOrder.ManagersName), Wide, 6);
         Stack(list.GetNodeOrNull<Control>(LoadOrder.WarningName), Wide, 6);
         Stack(list.GetNodeOrNull<Control>(PageBar.Name), Current == View.Categories, 4);
         Stack(list.GetNodeOrNull<Control>(PageBar.HintName), Current == View.Categories, 4);

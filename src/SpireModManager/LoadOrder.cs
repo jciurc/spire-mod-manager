@@ -192,8 +192,10 @@ static class LoadOrder
     // enabled mods sitting above mods they need, with "Fix now" (the game reorders those at launch anyway;
     // fixing makes the saved order say what will happen). On the main list: enabled mods that need a mod
     // that is off or missing, with a way to each and a fix for the off ones. Elsewhere, a "!" on the Load
-    // Order button says that page has a warning.
-    public const string WarningName = "SpireModManagerOrderWarning", AutoSortName = "AutoSortButton", AutoSortHintName = "AutoSortHint";
+    // Order button says that page has a warning. Above that one on both, while Better Mod Menu is ticked too: a
+    // banner saying two mod managers are on, with a way to its row.
+    public const string WarningName = "SpireModManagerOrderWarning", ManagersName = "SpireModManagerManagersWarning", AutoSortName = "AutoSortButton";
+    public const string AutoSortHintName = "AutoSortHint";
     const string BadgeName = "WarningBadge";
     static int _nextProblem; // the main banner's "Show" steps through the mods with problems
 
@@ -247,11 +249,16 @@ static class LoadOrder
         var misordered = Dependencies.OrderViolations(mods).Select(v => v.Mod).Distinct().Count();
         var orderText = Menus.Format(misordered == 1 ? "SPIRE_MOD_MANAGER.ORDER_PROBLEMS_ONE" : "SPIRE_MOD_MANAGER.ORDER_PROBLEMS", ("count", misordered.ToString()));
         Badge(content, misordered > 0 && !on ? orderText : null);
-        if (border.GetNodeOrNull(WarningName) is { } old)
-        {
-            border.RemoveChild(old); // now, not at the end of the frame: a redraw in the same frame adds a new one
-            old.QueueFree();
-        }
+        foreach (var name in new[] { WarningName, ManagersName })
+            if (border.GetNodeOrNull(name) is { } old)
+            {
+                border.RemoveChild(old); // now, not at the end of the frame: a redraw in the same frame adds a new one
+                old.QueueFree();
+            }
+        // Better Mod Menu ticked too, on our views. A tickbox change comes through here (RefreshStrips), so the banner
+        // shows and goes at once, without a relaunch.
+        if (Layout.Wide && Bmm.Ticked)
+            ManagersBanner(content, border, search);
         if (on && misordered > 0)
             Banner(border, search, orderText, [Menus.SmallButton(Menus.Text("SPIRE_MOD_MANAGER.FIX_ORDER"), () => Do(FixOrder), name: "FixOrderButton")]);
         else if (Layout.Current == Layout.View.Categories)
@@ -276,14 +283,8 @@ static class LoadOrder
             needMissing.Count > 0 ? Part("SPIRE_MOD_MANAGER.LIST_PROBLEMS_MISSING", needMissing.Count) : null,
         }.OfType<string>());
 
-        var show = Menus.SmallButton(Menus.Text("SPIRE_MOD_MANAGER.SHOW_PROBLEM"), () =>
-        {
-            var mod = broken[_nextProblem++ % broken.Count];
-            if (content.GetChildren().OfType<NModMenuRow>().FirstOrDefault(r => r.Mod == mod) is not { } row)
-                return;
-            CategoryList.Reveal(content, mod.manifest?.id ?? "", flash: true);
-            CategoryList.Select(content, row);
-        }, name: "ShowProblemButton");
+        var show = Menus.SmallButton(Menus.Text("SPIRE_MOD_MANAGER.SHOW_PROBLEM"), () => GoTo(content, broken[_nextProblem++ % broken.Count]),
+            name: "ShowProblemButton");
         show.TooltipText = Menus.Text("SPIRE_MOD_MANAGER.SHOW_PROBLEM_TIP");
         List<Control> buttons = [show];
         var needed = Dependencies.NeededOff(mods);
@@ -303,10 +304,36 @@ static class LoadOrder
         Banner(border, search, text, buttons);
     }
 
-    // A red line under the search box: text, then buttons on the right.
-    static void Banner(Control border, Control? search, string message, List<Control> buttons)
+    // Better Mod Menu ticked as well as us: the same kind of banner and Show, which goes to its row.
+    static void ManagersBanner(Control content, Control border, Control? search)
     {
-        var bar = new PanelContainer { Name = WarningName };
+        var show = Menus.SmallButton(Menus.Text("SPIRE_MOD_MANAGER.SHOW_PROBLEM"), () =>
+        {
+            if (Dependencies.Find(Bmm.ModId) is { } mod)
+                GoTo(content, mod);
+        }, name: "ShowManagersButton");
+        show.TooltipText = Menus.Text("SPIRE_MOD_MANAGER.SHOW_MANAGERS_TIP");
+        Banner(border, search, Menus.Text("SPIRE_MOD_MANAGER.MANAGERS_WARNING"), [show], ManagersName, "ManagersWarning");
+    }
+
+    // A banner's Show: the mod's row scrolled into view (its category opened) with a short glow, and the mod in the
+    // info panel. A search that leaves the row out is cleared first: opening its category wouldn't show it.
+    static void GoTo(Control content, Mod mod)
+    {
+        if (content.GetChildren().OfType<NModMenuRow>().FirstOrDefault(r => r.Mod == mod) is not { } row)
+            return;
+        var filter = content.HasMeta(CategoryList.FilterMeta) ? (string)content.GetMeta(CategoryList.FilterMeta) : "";
+        if (filter.Length > 0 && !Search.Matches(mod, filter))
+            Search.Clear(content);
+        CategoryList.Reveal(content, mod.manifest?.id ?? "", flash: true);
+        CategoryList.Select(content, row);
+    }
+
+    // A red line under the search box: text, then buttons on the right. name and textName: the line's and its text's
+    // node names (the page's own warning by default).
+    static void Banner(Control border, Control? search, string message, List<Control> buttons, string name = WarningName, string textName = "OrderProblems")
+    {
+        var bar = new PanelContainer { Name = name };
         bar.AddThemeStyleboxOverride("panel", new StyleBoxFlat
         {
             BgColor = new Color(0.45f, 0.1f, 0.1f, 0.6f), ContentMarginLeft = 12, ContentMarginRight = 8, ContentMarginTop = 4, ContentMarginBottom = 4,
@@ -316,7 +343,7 @@ static class LoadOrder
         bar.AddChild(line);
         var text = new Label
         {
-            Name = "OrderProblems", Text = message, SizeFlagsHorizontal = Control.SizeFlags.ExpandFill,
+            Name = textName, Text = message, SizeFlagsHorizontal = Control.SizeFlags.ExpandFill,
             VerticalAlignment = VerticalAlignment.Center, AutowrapMode = TextServer.AutowrapMode.WordSmart,
         };
         text.AddThemeFontOverride("font", ModEntry.Font("res://themes/kreon_regular_shared.tres"));
