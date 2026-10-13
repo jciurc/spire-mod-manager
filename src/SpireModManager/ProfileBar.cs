@@ -29,30 +29,23 @@ static class ProfileBar
 
         var border = screen.GetNode<Control>("ModsBorder");
         var scroll = border.GetNode<Control>("ModsScrollContainer");
+        // Built off the page and added at the end, so a failure part way leaves no half-wired bar on screen.
         var bar = new Control { Name = "SpireModManagerProfileBar", MouseFilter = Control.MouseFilterEnum.Ignore };
-        border.AddChild(bar);
-        bar.SetAnchorsPreset(Control.LayoutPreset.TopWide);
-        bar.OffsetLeft = scroll.OffsetLeft;
-        bar.OffsetRight = scroll.OffsetRight;
-        bar.OffsetTop = scroll.OffsetTop;
-        bar.OffsetBottom = scroll.OffsetTop + Height;
 
         var background = new ColorRect { Color = new Color(0.0756f, 0.12084f, 0.18f, 0.6f), MouseFilter = Control.MouseFilterEnum.Ignore };
         bar.AddChild(background);
-        background.SetAnchorsPreset(Control.LayoutPreset.FullRect);
 
         var row = new HBoxContainer { MouseFilter = Control.MouseFilterEnum.Ignore };
         row.AddThemeConstantOverride("separation", 8);
         bar.AddChild(row);
-        row.SetAnchorsPreset(Control.LayoutPreset.FullRect);
-        row.OffsetLeft = 12;
-        row.OffsetRight = -8;
 
         var caption = new Label { Text = Menus.Text("SPIRE_MOD_MANAGER.PROFILE"), VerticalAlignment = VerticalAlignment.Center };
         Style(caption, "res://themes/kreon_regular_shared.tres", 17, new Color(Cream, 0.7f));
         row.AddChild(caption);
 
-        // The picker: the active profile's name and a small down arrow (the game's settings arrow, turned).
+        // The picker: the active profile's name and a small down arrow (the game's settings arrow, turned; a "▾"
+        // after the name if that's gone).
+        var arrow = DownArrow();
         var picker = new Button
         {
             Name = "ProfilePicker", Flat = true, Alignment = HorizontalAlignment.Left, FocusMode = Control.FocusModeEnum.None,
@@ -63,7 +56,7 @@ static class ProfileBar
         picker.AddThemeColorOverride("font_hover_color", Colors.White);
         picker.AddThemeConstantOverride("h_separation", 8);
         picker.AddThemeConstantOverride("icon_max_width", 14);
-        picker.Icon = DownArrow();
+        picker.Icon = arrow;
         row.AddChild(picker);
         // How many mods are on in it right now, beside the name.
         var count = new Label { Name = "ProfileCount", VerticalAlignment = VerticalAlignment.Center, MouseFilter = Control.MouseFilterEnum.Ignore };
@@ -132,7 +125,7 @@ static class ProfileBar
         void Refresh()
         {
             var edited = Profiles.Edited;
-            picker.Text = Profiles.Active?.Name ?? "";
+            picker.Text = (Profiles.Active?.Name ?? "") + (arrow == null ? "  ▾" : "");
             picker.Visible = !editing;
             count.Visible = !editing;
             count.Text = Profiles.CountText();
@@ -258,6 +251,18 @@ static class ProfileBar
             ("DeleteProfileButton", Menus.Text("SPIRE_MOD_MANAGER.DELETE"), DeleteActive),
         ]);
 
+        // On the page now that it's all built, then placed as before: over the top of the list.
+        border.AddChild(bar);
+        bar.SetAnchorsPreset(Control.LayoutPreset.TopWide);
+        bar.OffsetLeft = scroll.OffsetLeft;
+        bar.OffsetRight = scroll.OffsetRight;
+        bar.OffsetTop = scroll.OffsetTop;
+        bar.OffsetBottom = scroll.OffsetTop + Height;
+        background.SetAnchorsPreset(Control.LayoutPreset.FullRect);
+        row.SetAnchorsPreset(Control.LayoutPreset.FullRect);
+        row.OffsetLeft = 12;
+        row.OffsetRight = -8;
+
         // The bar lives as long as the screen; the event is static, so unsubscribe when it goes.
         void Recount() => count.Text = Profiles.CountText();
         History.Changed += Recount; // every tickbox change
@@ -287,10 +292,11 @@ static class ProfileBar
         }
     }
 
-    // The game's small gold settings arrow, turned to point down, as a texture for the picker.
-    static Texture2D DownArrow()
+    // The game's small gold settings arrow, turned to point down, as a texture for the picker; null if it's gone.
+    static Texture2D? DownArrow()
     {
-        var image = ResourceLoader.Load<Texture2D>("res://images/packed/common_ui/settings_tiny_right_arrow.png").GetImage();
+        if (ModEntry.Load<Texture2D>("res://images/packed/common_ui/settings_tiny_right_arrow.png")?.GetImage() is not { } image)
+            return null;
         image.Decompress();
         image.Rotate90(ClockDirection.Clockwise);
         image.Resize(14, 14, Image.Interpolation.Lanczos);
