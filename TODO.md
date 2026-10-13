@@ -629,8 +629,9 @@ game's is committed (its DLLs are only referenced); no copied Better Mod Menu co
 own art; the spikes describe the game's behaviour but quote no game code.
 
 - [x] **the self-hosted runner:** on a public repo a fork's pull request can edit ci.yml itself and send a job
-  to a runner, so a same-repo condition isn't enough. #25 made the in-game test a job only Jordan can start
-  (selftest.yml, workflow_dispatch), never triggered by pull requests, and retired SELF_HOSTED_STS2.
+  to a runner, so a same-repo condition isn't enough. #25 made the in-game test a job started only by hand
+  (selftest.yml, workflow_dispatch), never by pull requests, and retired SELF_HOSTED_STS2. Starting it by hand
+  needs write access to the repo, which only Jordan has; anyone given write access later could start it too.
 - [ ] **fork pull request workflows:** set "require approval for all outside collaborators" (Settings > Actions)
   once the repo is public.
 - [x] **LICENSE:** MIT, "Copyright (c) 2026 jciurc"; the README says the art in `images/` is under it too (#25).
