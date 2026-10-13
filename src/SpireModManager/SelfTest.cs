@@ -1,4 +1,5 @@
 using System.Text;
+using System.Text.Json.Nodes;
 using Godot;
 using MegaCrit.Sts2.Core.Localization;
 using MegaCrit.Sts2.Core.Modding;
@@ -48,6 +49,7 @@ static class SelfTest
                 && relaunchArgs.Contains("--force-steam"), string.Join(" ", relaunchArgs));
             Check("dev run marked", menu.GetTree().Root.Title.StartsWith("[DEV]") && menu.GetTree().Root.HasNode("SpireModManagerDevTag"),
                 menu.GetTree().Root.Title);
+            TestText();
             await Capture(menu, outDir, "1-main-menu");
             await TestMenuButtonMove(menu, outDir);
 
@@ -239,6 +241,32 @@ static class SelfTest
         {
             File.WriteAllLines(Path.Combine(outDir, "results.txt"), Results);
             menu.GetTree().Quit();
+        }
+    }
+
+    // Our text reaches the game: each eng text without placeholders, as packed, reads back unchanged through
+    // the game's own tables. tools/check.cs covers the other half without the game: every key the code uses
+    // is in eng.
+    static void TestText()
+    {
+        var json = Godot.FileAccess.GetFileAsString($"res://{ModEntry.ModId}/localization/eng/settings_ui.json");
+        var texts = (json.Length > 0 ? JsonNode.Parse(json) as JsonObject : null)?
+            .Select(p => (p.Key, Text: (string?)p.Value ?? ""))
+            .Where(p => !p.Text.Contains('{')).ToList() ?? [];
+        var wrong = texts.Where(p => Read(p.Key) != p.Text).Select(p => p.Key).ToList();
+        Check($"our texts read back from the game's tables ({texts.Count})", texts.Count > 0 && wrong.Count == 0,
+            $"{wrong.Count} differ: {string.Join(", ", wrong.Take(5))}");
+
+        static string Read(string key)
+        {
+            try
+            {
+                return Menus.Text(key);
+            }
+            catch (Exception e)
+            {
+                return e.Message; // a key the game can't find may throw rather than show
+            }
         }
     }
 
