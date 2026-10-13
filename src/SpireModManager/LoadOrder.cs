@@ -182,7 +182,7 @@ static class LoadOrder
     // fixing makes the saved order say what will happen). On the main list: enabled mods that need a mod
     // that is off or missing, with a way to each and a fix for the off ones. Elsewhere, a "!" on the Load
     // Order button says that page has a warning. Above that one on both, while Better Mod Menu is ticked too: a
-    // banner saying two mod managers are on, with a way to its row.
+    // banner saying two mod managers are on, with a way to its row and a way to dismiss it.
     public const string WarningName = "SpireModManagerOrderWarning", ManagersName = "SpireModManagerManagersWarning", AutoSortName = "AutoSortButton";
     public const string AutoSortHintName = "AutoSortHint";
     const string BadgeName = "WarningBadge";
@@ -243,10 +243,10 @@ static class LoadOrder
                 border.RemoveChild(old); // now, not at the end of the frame: a redraw in the same frame adds a new one
                 old.QueueFree();
             }
-        // Better Mod Menu and ours both ticked, on our views. A tickbox change comes through here (RefreshStrips), so the
-        // banner shows and goes at once, without a relaunch.
-        if (Layout.Wide && Bmm.BothTicked)
-            ManagersBanner(content, border, search);
+        // Better Mod Menu and ours both ticked, on our views, unless dismissed. A tickbox change comes through here
+        // (RefreshStrips), so the banner shows and goes at once, without a relaunch.
+        if (Layout.Wide && Bmm.BothTicked && !Store.Data.ManagersWarningDismissed)
+            ManagersBanner(content, border, search, redraw);
         if (on && misordered > 0)
             Banner(border, search, orderText, [Menus.SmallButton(Menus.Text("SPIRE_MOD_MANAGER.FIX_ORDER"), () => Do(FixOrder), name: "FixOrderButton")]);
         else if (Layout.Current == Layout.View.Categories)
@@ -292,8 +292,9 @@ static class LoadOrder
         Banner(border, search, text, buttons);
     }
 
-    // Better Mod Menu ticked as well as us: the same kind of banner and Show, which goes to its row.
-    static void ManagersBanner(Control content, Control border, Control? search)
+    // Better Mod Menu ticked as well as us: the same kind of banner and Show, which goes to its row, then Dismiss for
+    // a player happy to run both.
+    static void ManagersBanner(Control content, Control border, Control? search, Action redraw)
     {
         var show = Menus.SmallButton(Menus.Text("SPIRE_MOD_MANAGER.SHOW_PROBLEM"), () =>
         {
@@ -301,7 +302,14 @@ static class LoadOrder
                 GoTo(content, mod);
         }, name: "ShowManagersButton");
         show.TooltipText = Menus.Text("SPIRE_MOD_MANAGER.SHOW_MANAGERS_TIP");
-        Banner(border, search, Menus.Text("SPIRE_MOD_MANAGER.MANAGERS_WARNING"), [show], ManagersName, "ManagersWarning");
+        var dismiss = Menus.SmallButton(Menus.Text("SPIRE_MOD_MANAGER.DISMISS_MANAGERS"), () =>
+        {
+            Store.Data.ManagersWarningDismissed = true;
+            Store.Save(); // view state: no undo step, not a change (Store.EditsJson)
+            redraw();
+        }, name: "DismissManagersButton");
+        dismiss.TooltipText = Menus.Text("SPIRE_MOD_MANAGER.DISMISS_MANAGERS_TIP");
+        Banner(border, search, Menus.Text("SPIRE_MOD_MANAGER.MANAGERS_WARNING"), [show, dismiss], ManagersName, "ManagersWarning");
     }
 
     // A banner's Show: the mod's row scrolled into view (its category opened) with a short glow, and the mod in the
