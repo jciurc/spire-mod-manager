@@ -655,7 +655,7 @@ Jordan's notes of 2026-10-13 (with a Load Order screenshot, 0.0.46).
 - [ ] main menu button's right-click menu: "Relaunch game", with a divider under "Reset position"
 
 ## Backlog (round 19)
-- [ ] optimization pass: switching between the main list, Vanilla List and Load Order lags with 200+ mods
+- [ ] optimization pass: switching between the main list, Vanilla List and Load Order lags with 200+ mods. Also: with round 19 in, a full redraw on Jordan's ~250 mods measures 54 ms (49 before; the --real check wants under 50), a search keystroke 59 ms
 - [ ] a clickable menu button on the right side of the main menu button that opens the same menu (the settings link will live there later)
 
 ## Soon (round 19)
