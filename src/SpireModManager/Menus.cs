@@ -53,7 +53,7 @@ static class Menus
             Name = MarkName, Text = Text("SPIRE_MOD_MANAGER.POPUP_MARK"), HorizontalAlignment = HorizontalAlignment.Center,
             MouseFilter = Control.MouseFilterEnum.Ignore,
         };
-        mark.AddThemeFontOverride("font", ResourceLoader.Load<Font>("res://themes/kreon_regular_shared.tres"));
+        mark.AddThemeFontOverride("font", ModEntry.Font("res://themes/kreon_regular_shared.tres"));
         mark.AddThemeFontSizeOverride("font_size", 15);
         mark.AddThemeColorOverride("font_color", new Color(Cream, 0.5f));
         art.AddChild(mark);
