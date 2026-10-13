@@ -2,6 +2,10 @@
 
 Short notes for Jordan: what to look for after each install. Newest first.
 
+## Waiting in pull requests
+
+- **Dismiss the managers warning:** the red "Multiple mod managers" banner has Dismiss beside Show. It stays away until Better Mod Menu or Spire Mod Manager is disabled, and comes back once both are enabled again (also after a launch where one of them is gone or off). Nothing to undo: dismissing isn't a change to your mods.
+
 ## Installed 2026-10-13 (evening): version 0.0.48
 
 From staging: dev plus every open pull request. Round 19, then the fixes from tonight's Copilot reviews.
@@ -42,7 +46,6 @@ Each PR's description has its own "What to look for" and "For review"; the short
 - **#22 Undo And Restart:** its settings box sits under the description instead of over your fields.
 - **#12 Fallbacks:** if a game update breaks a resource we load, plain buttons and text arrows instead of a broken page.
 - **#16 Better Mod Menu import:** first runs also read its json5/jsonc files, comments, its old format and portable mode.
-- **Dismiss the managers warning:** the red "Multiple mod managers" banner has Dismiss beside Show. It stays away until Better Mod Menu or Spire Mod Manager is disabled, and comes back once both are enabled again.
 - Tools and docs: #3 `build.cs --dist` (0.1.0), #4 the Workshop kit (read `workshop/description.bbcode`; take the shots in `workshop/SHOTS.md`), #8 CI, #13 dev tools, #18 two design spikes with questions for you, #20 code cleanup.
 
 ## Installed 2026-10-12 (afternoon): version 0.0.45
@@ -355,7 +358,8 @@ Choices I made on my own; say if any should change.
 - **Sunken selected look**: a deeper blue fill with a dark rim, heavier along the top. Hover is a faint light-blue tint. Both easy to tune.
 - **Better Mod Menu's button** keeps the name "Vanilla List" while it's loaded (your call in #1), though it opens Better Mod Menu's page.
 - **Profiles leave Better Mod Menu alone** (on or off as it is), like our own mod. Before, converted Better Mod Menu profiles switched it off, which would now turn it off at the next relaunch for anyone using both.
-- **The two-managers banner** shows on our pages while Better Mod Menu is ticked (loaded or not), and not on its own page, so that page looks like its own. A Dismiss for it is in its own pull request (round 20).
+- **The two-managers banner** shows on our pages while Better Mod Menu and Spire Mod Manager are both ticked (loaded or not), and not on Better Mod Menu's own page, so that page looks like its own. With our own row unticked it goes, since only one manager will load.
+- **Its Dismiss** is kept like the view toggles: saved, but not a change to your mods (no undo step, no "Unsaved", not in Changes). Switching either one off forgets it, at once on our page or at the next launch otherwise.
 - **A banner's Show** clears the whole search when the search hides the row it goes to (rather than leaving a hidden row selected). A search that already shows the row is kept.
 - **Other mods' parts in the panel** (Undo And Restart's box) are handed back to their mod before each fill, so a mod's own hide wins. A mod that hides its part some other way, outside the panel's fill, could still see it shown again once room comes back.
 - **Language**: when the game's date pattern is missing or broken, dates fall back to English ("October 11, 2026"). Load-order positions ("3 → 5") stay plain digits like the row numbers. The profile list's "5 mods" isn't grouped yet (it never reaches 1,000).
