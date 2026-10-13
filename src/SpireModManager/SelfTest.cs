@@ -2064,11 +2064,12 @@ static class SelfTest
         if (Row("SmmTestLib") is { Mod: { } libMod })
         {
             await Dismiss();
+            var dismissed = Store.Data.ManagersWarningDismissed && Banner() == null; // or the redraw has nothing to re-arm
             Dependencies.Set([bmm, libMod], false, screen);
             CategoryList.Redraw(content);
             await Wait(menu, 0.3);
             Check("dismissed, then Better Mod Menu turned off with another mod: no banner, the dismiss cleared",
-                !Bmm.Ticked && Banner() == null && !Store.Data.ManagersWarningDismissed, Where());
+                dismissed && !Bmm.Ticked && Banner() == null && !Store.Data.ManagersWarningDismissed, $"dismissed first {dismissed}; {Where()}");
             History.Undo();
             await Wait(menu, 0.3);
             Check("one undo turns both back on, and the banner is back", Bmm.Ticked && Dependencies.IsOn(libMod) && Placed() && Buttons(), Where());
@@ -2078,8 +2079,10 @@ static class SelfTest
         if (Row(ModEntry.ModId)?.GetNode<NTickbox>("Tickbox") is { } ours)
         {
             await Dismiss();
+            var dismissed = Store.Data.ManagersWarningDismissed && Banner() == null;
             await Tick(ours, false);
-            Check("dismissed, then our own mod unticked: no banner, the dismiss cleared", Banner() == null && !Store.Data.ManagersWarningDismissed, Where());
+            Check("dismissed, then our own mod unticked: no banner, the dismiss cleared",
+                dismissed && Banner() == null && !Store.Data.ManagersWarningDismissed, $"dismissed first {dismissed}; {Where()}");
             await Tick(ours, true);
             Check("ours ticked again: the banner is back", Placed() && Buttons(), Where());
         }
