@@ -182,8 +182,8 @@ static class LoadOrder
     // fixing makes the saved order say what will happen). On the main list: enabled mods that need a mod
     // that is off or missing, with a way to each and a fix for the off ones. Elsewhere, a "!" on the Load
     // Order button says that page has a warning.
-    public const string WarningName = "SpireModManagerOrderWarning", AutoSortName = "AutoSortButton";
-    const string AutoSortHintName = "AutoSortHint", BadgeName = "WarningBadge";
+    public const string WarningName = "SpireModManagerOrderWarning", AutoSortName = "AutoSortButton", AutoSortHintName = "AutoSortHint";
+    const string BadgeName = "WarningBadge";
     static int _nextProblem; // the main banner's "Show" steps through the mods with problems
 
     public static void UpdateToolbar(Control content, List<NModMenuRow> rows, Action redraw)
@@ -217,12 +217,13 @@ static class LoadOrder
             hint.AnchorLeft = hint.AnchorRight = 1;
         }
         sort.Visible = hint.Visible = on && search != null;
+        // Across here; up and down they follow the search box, in Layout.PlaceList (at the end), once it's in its place
+        // for this view. (Read from it here, on the way into Load Order it was still where the main list has it, under
+        // the profile bar, and the hint sat over the first row until the next redraw.)
         if (search != null)
         {
             const float sortWidth = 110, gap = 8;
             var hintWidth = hint.GetThemeFont("font").GetStringSize(hint.Text, fontSize: 15).X;
-            (sort.OffsetTop, sort.OffsetBottom) = (search.OffsetTop, search.OffsetBottom);
-            (hint.OffsetTop, hint.OffsetBottom) = (search.OffsetTop, search.OffsetBottom);
             sort.OffsetRight = border.GetNode<Control>("ModsScrollContainer").OffsetRight;
             sort.OffsetLeft = sort.OffsetRight - sortWidth;
             hint.OffsetRight = sort.OffsetLeft - gap;
