@@ -506,7 +506,7 @@ static class SelfTest
             MenuPanel.Close();
             await Wait(menu, 0.3);
             Check("closing the menu saves what was typed", Store.InfoFor(modId)?.Alias == "Menu alias");
-            ModDetails.SetAlias(modId, "");
+            Store.EditMod(modId, info => info.Alias = null);
             CategoryList.Apply(content);
         }
         // A right-click outside closes it and reaches what's under the mouse; showing the same menu again

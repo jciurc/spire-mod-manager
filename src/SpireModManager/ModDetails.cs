@@ -511,9 +511,6 @@ static class ModDetails
         yours.OffsetBottom = yours.OffsetTop + height;
     }
 
-    public static void SetAlias(string modId, string alias) =>
-        Store.EditMod(modId, info => info.Alias = alias.Trim() is { Length: > 0 } a ? a : null);
-
     static string Escape(string text) => text.Replace("[", "[lb]");
 
     static void Style(Control control, string font, int size, Color color)
