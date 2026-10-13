@@ -42,8 +42,11 @@ static class RowTitles
             var tickWas = row.HasMeta(TickMeta) ? (float)row.GetMeta(TickMeta) : 0;
             (tickbox.OffsetLeft, tickbox.OffsetRight) = (tickbox.OffsetLeft + tickShift - tickWas, tickbox.OffsetRight + tickShift - tickWas);
             row.SetMeta(TickMeta, tickShift);
-            title.AnchorRight = vanilla ? 0 : 1;
-            title.OffsetRight = vanilla ? 562 : -90;
+            // The right end only on a switch between Vanilla View and ours: in ours RowStrip places it right after this,
+            // clear of the row's buttons. Set here every time, it went back and forth on each redraw, and each move had
+            // the game's label fit its text to the new width again (most of a redraw's time).
+            if (title.AnchorRight != (vanilla ? 0 : 1))
+                (title.AnchorRight, title.OffsetRight) = vanilla ? (0f, 562f) : (1f, -90f);
             // Relative moves only: Load Order shifts the title too, for its grip.
             var shift = vanilla ? 0 : TitleShift;
             title.OffsetLeft += shift - (row.HasMeta(ShiftMeta) ? (float)row.GetMeta(ShiftMeta) : 0);
