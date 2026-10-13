@@ -206,6 +206,7 @@ Jordan's notes of 2026-10-07, second batch (same file), plus play feedback.
 - [ ] export as BMM csv (or save into BMM's folder)
 - [ ] toggle between BMM and Spire Manager
 - [ ] keyboard navigation: up/down, space to select
+- [ ] controller support (Jordan, 2026-10-13: backlog; 0.1.0 is mouse and keyboard only)
 - [ ] multi-select and bulk actions in Category view
 - [x] profile and category dropdowns use a radio-style mark (single choice)
 - [ ] auto update and polling
@@ -543,8 +544,8 @@ Jordan's notes of 2026-10-12 (late night), with screenshots.
 # Round 16: release (from RELEASE-PLAN.md)
 
 Blockers, in order (details and fixes in RELEASE-PLAN.md §2):
-- [ ] branch targeting: beta-only (min_game_version 0.111.0; minBranch public-beta on every upload), "(Beta)" in the Workshop title (needs Jordan's answer)
-- [ ] version 1.0.0 + manifest description; release mode in build.cs (no bump); main branch + v1.0.0 tag
+- [ ] branch targeting: beta-only (min_game_version 0.111.0; minBranch public-beta on every upload), "(Beta)" in the Workshop title (Jordan: beta first)
+- [ ] version 0.1.0 (Jordan, 2026-10-13) + manifest description; release mode in build.cs (no bump); main branch + v0.1.0 tag
 - [ ] build.cs --dist: only the dll, json and pck
 - [ ] fail soft on game updates: patch each class on its own, log what failed, keep the vanilla page with a notice; RowState lazy and null-safe; wrap the four unguarded patch bodies
 - [x] screen open with many mods: ModToggledPatch waits for our screen (was a full refresh per row)
@@ -561,3 +562,15 @@ Blockers, in order (details and fixes in RELEASE-PLAN.md §2):
 Jordan's note of 2026-10-12 (late night).
 
 - [x] Better Mod Menu: no more stepping aside. Both can be on: our views as usual, and Better Mod Menu's page stands in for the vanilla page (it replaces the vanilla page anyway); a warning that running both may behave unexpectedly
+
+# Round 18
+
+Jordan's answers and note of 2026-10-13 (decisions in RELEASE-PLAN.md §7). Unattended night: work through the
+backlog by judgement, Jordan reviews in the morning.
+
+- [x] decisions recorded (0.1.0, beta first, new mods join the profile enabled, open source later, real screenshots, private upload first, controller in the backlog)
+- [ ] the working state on `dev` tagged as the MVP
+- [ ] a private GitHub repo; work on branches, pull requests into `dev`, CI on each
+- [ ] screenshots for the Workshop previews (real ones, no generated art)
+- [ ] new mods join the active profile as enabled
+- [ ] then the release blockers and backlog, picked by judgement
