@@ -48,4 +48,4 @@ copy of the game in `D:\sts2-dev` with its own mods folder, no Steam, separate s
 - `dotnet run tools/pck.cs list|extract`: look inside the game's pack (scenes, images).
 
 Notes: TODO.md (requests and their state), DESIGN.md (decisions and background), WHATS-NEW.md (what to
-look for after each install).
+look for after each install), workshop/README.md (publishing to the Steam Workshop).
