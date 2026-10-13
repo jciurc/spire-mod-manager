@@ -2,9 +2,29 @@
 
 Short notes for Jordan: what to look for after each install. Newest first.
 
-## Waiting in pull requests (night of 2026-10-13)
+## Installed 2026-10-13 (evening): version 0.0.48
 
-Not installed. Each PR's description has its own "What to look for" and "For review"; the short version:
+From staging: dev plus every open pull request. Round 19, then the fixes from tonight's Copilot reviews.
+
+Round 19
+- **"Unsaved •"**: its card opens at once on hover. Clicking it lists that profile's unsaved changes in the side panel (click a mod to open it); clicking again closes the list (#26).
+- **The restart line** on our pages reads "Mod changes will be applied after a restart." Vanilla List keeps the game's wording (#28).
+- **Two mod managers**: with Better Mod Menu ticked too, a red banner above the list says "Multiple mod managers are currently enabled, which may cause unexpected behavior.", with Show to go to its row. It appears and goes as you tick, without a relaunch. The old warning by the view buttons is gone (#28).
+- **Load Order**: the Auto sort hint is in place as soon as the page opens, not over the first row (#27).
+- **Main menu button**, right-click: Relaunch game, under a divider below Reset position. It runs the same check as the Modding page's button first (#29).
+
+Fixes from the reviews
+- **Long names in the panel** keep their fitted size after going to Load Order and back (they could jump to full size, on two lines) (#11).
+- **Show in a banner** clears a search that hides the row it goes to (#28).
+- **Escape** pressed the moment you pick Move button no longer leaves move mode listening in the background (#29).
+- **Numbers** in the Changes line, its card and its list take the game's thousands separator (1.234 in German); a date falls back to English, not half-translated (#21).
+- **Tag suggestions**: a tag counts once per mod in "most used", even if saved twice in different case (#17).
+- **Undo And Restart's box** (or any other mod's part in the panel): if its mod hides it, it stays hidden when room comes back (#22).
+- Nothing visible: the last direct font loads go through the fallback (#12).
+
+## Pull requests of the night of 2026-10-13 (installed since 0.0.46)
+
+Each PR's description has its own "What to look for" and "For review"; the short version:
 
 - **#1 Better Mod Menu:** the button keeps its Vanilla List name; the warning sits right of the view buttons: "Better Mod Menu is running alongside Spire Mod Manager and may cause unexpected issues."
 - **#5 Fail soft:** if a game update breaks a patch the page needs, the page stays the game's with "Spire Mod Manager needs an update for this game version." on top (beside the main menu button if the screen patch itself broke).
@@ -332,7 +352,11 @@ Choices I made on my own; say if any should change.
 - **"Across the board"** includes the thumbnail's full picture (0.2 s before, 0.4 s now), the Changes summary and the Unsaved card (both instant before).
 - **Cut text tooltips** are our own plain tooltip with a 1 s delay, not Godot's. The game sets Godot's tooltip delay once at startup for the whole window, so a per-element 1 s wasn't possible with it. Ours also follows the one-card-at-a-time rule.
 - **Sunken selected look**: a deeper blue fill with a dark rim, heavier along the top. Hover is a faint light-blue tint. Both easy to tune.
-- **Better Mod Menu's button**: "Vanilla List" is renamed "Better Mod Menu" while it's loaded, since that's whose page it opens.
+- **Better Mod Menu's button** keeps the name "Vanilla List" while it's loaded (your call in #1), though it opens Better Mod Menu's page.
 - **Profiles leave Better Mod Menu alone** (on or off as it is), like our own mod. Before, converted Better Mod Menu profiles switched it off, which would now turn it off at the next relaunch for anyone using both.
-- **The Better Mod Menu warning** is always shown on our pages while it's loaded (not dismissible), top right, and hidden on its own page so that page looks like its own.
+- **The two-managers banner** shows on our pages while Better Mod Menu is ticked (loaded or not), and not on its own page, so that page looks like its own. A Dismiss for it is in its own pull request (round 20).
+- **A banner's Show** clears the whole search when the search hides the row it goes to (rather than leaving a hidden row selected). A search that already shows the row is kept.
+- **Other mods' parts in the panel** (Undo And Restart's box) are handed back to their mod before each fill, so a mod's own hide wins. A mod that hides its part some other way, outside the panel's fill, could still see it shown again once room comes back.
+- **Language**: when the game's date pattern is missing or broken, dates fall back to English ("October 11, 2026"). Load-order positions ("3 → 5") stay plain digits like the row numbers. The profile list's "5 mods" isn't grouped yet (it never reaches 1,000).
+- **Missing dependency links** (spike #18): a Required Item is linked only when its title is the dependency's id; anything else opens a Workshop search. A mod installed during the session gets the search until the next launch.
 - **Enable all / Disable all** still include Better Mod Menu like any other mod.
