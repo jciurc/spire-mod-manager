@@ -302,10 +302,10 @@ static class Layout
     }
 
     // Inside the info panel, fitted to its size: the head (title, source and short facts, left) beside a
-    // large thumbnail of the mod image (right); the description below both; the player's fields and Open
-    // Folder along the bottom (ModDetails). With the changes list's Back button showing (top right), the
-    // thumbnail and everything under it move down to make room. A mod without a picture: the description
-    // starts right under the head.
+    // large thumbnail of the mod image (right); the description below both, then the player's fields
+    // (ModDetails.PlaceFields); Open Folder along the bottom. With the changes list's Back button showing (top
+    // right), the thumbnail and everything under it move down to make room. A mod without a picture: the
+    // description starts right under the head.
     public static void PlaceInfo(Control info)
     {
         const float top = 16;
