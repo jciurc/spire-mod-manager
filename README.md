@@ -12,7 +12,8 @@ its own (the vanilla page stays one click away) and folds in Quick Relaunch's in
   authors, categories and Workshop tags; automatic tags (Gameplay, Library), your own tags; "Needs:" and
   "Required for" notes on each row; mods turned on or off since launch stand out.
 - **Profiles:** saved on/off sets. Changes show as "Unsaved" with Save, Save as new and Discard; an unsaved
-  profile keeps its changes when you switch away ("Name *"). New, Duplicate, Rename, Delete.
+  profile keeps its changes when you switch away ("Name *"). New, Duplicate, Rename, Delete. A newly installed
+  mod joins the active profile, on; switching to a profile that hasn't seen it leaves it as it is.
 - **Load Order:** drag rows (or several, with Ctrl/Shift) or use Top/Up/Down/Bottom; dependency lines;
   a warning with "Fix now" when mods sit above what they need; Auto sort.
 - **Info panel:** problems first (load errors, missing or disabled dependencies), author, description,
@@ -25,13 +26,17 @@ its own (the vanilla page stays one click away) and folds in Quick Relaunch's in
   the game's list (the "Better Mod Menu" button), a warning says some things may behave unexpectedly, and
   profiles never turn it on or off.
 
-Your data is one JSON file per Steam account (`mod_data/SpireModManager/manager.json`, with backups);
+Your data is one JSON file per Steam account (`mod_data/SpireModManager/manager.json`, with backups; one
+that can't be read is kept aside as `manager.broken-<time>.json` and the newest backup loads, with a notice);
 the game's own mod list stays the source of truth for what's on and the load order.
 
 ## Building
 
 - `dotnet run build.cs` builds and installs into the game's `mods` folder (needs the .NET 10 SDK; close the
   game first). `--no-install` only builds.
+- `dotnet run build.cs --dist` makes the release for the Workshop and never installs. The manifest gets
+  `ReleaseVersion` (set by hand in build.cs) instead of the dev number, and `dist/SpireModManager/` holds
+  just the `.dll`, `.json` and `.pck` to upload (RELEASE-PLAN.md §5).
 - Player text lives in `localization/<lang>/*.json` and pictures in `images/`, packed into
   `SpireModManager.pck`. See TRANSLATING.md for adding a language.
 
@@ -44,11 +49,17 @@ copy of the game in `D:\sts2-dev` with its own mods folder, no Steam, separate s
 - `dotnet run tools/dev.cs test`: the in-game self-test against fixture mods and data, headless. Results and
   UI dumps go to `out/selftest`; add `--window` for screenshots (the window stays behind others), `--bmm` to
   test alongside Better Mod Menu (`--bmm-after`: loaded after ours; `--bmm-local`: its local-fix build), `--real` for a read-only tour with a copy of your own mods and data.
-- `dotnet run tools/dev.cs launch`: opens the sandboxed game to try things by hand.
+  `--first-run` runs a short suite for a first launch with no data; `--first-run-bmm` does the same with Better
+  Mod Menu's data to import (`tools/fixtures/bmm`), with it installed but off, or on with `--bmm` as well.
+- `dotnet run tools/dev.cs launch`: opens the sandboxed game to try things by hand (`--first-run` or
+  `--first-run-bmm`: starting from that state).
+- `SPIRE_MOD_MANAGER_SKIP_PATCHES=ModToggledPatch` (patch class names, comma-separated) before `test` or `launch`:
+  those patches count as failed, as after a game update that broke them, to see the game's page and its
+  "needs an update" line.
 - `dotnet run tools/pck.cs list|extract`: look inside the game's pack (scenes, images).
 
 Notes: TODO.md (requests and their state), DESIGN.md (decisions and background), WHATS-NEW.md (what to
-look for after each install).
+look for after each install), workshop/README.md (publishing to the Steam Workshop).
 
 ## CI
 
