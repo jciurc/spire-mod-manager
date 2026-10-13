@@ -36,7 +36,10 @@ foreach (var picture in pictures)
     var problem = !File.Exists(picture) ? "not found"
         : name.StartsWith("real-", StringComparison.OrdinalIgnoreCase) ? "a --real shot: it shows your own mods and data"
         : Path.GetExtension(name).ToLowerInvariant() is not (".png" or ".jpg" or ".jpeg") ? "not a PNG or JPG"
-        : pictures.Count(p => Path.GetFileName(p).Equals(name, StringComparison.OrdinalIgnoreCase)) > 1 ? "named twice"
+        : name.Equals("image.png", StringComparison.OrdinalIgnoreCase) ? "shrink.cs leaves image.png alone (the Workshop's main picture); rename it"
+        // Each becomes <stem>.jpg, so menu.png and menu.jpg would land on the same file.
+        : pictures.Count(p => Path.GetFileNameWithoutExtension(p).Equals(Path.GetFileNameWithoutExtension(name), StringComparison.OrdinalIgnoreCase)) > 1
+            ? "another picture has the same name"
         : null;
     if (problem != null)
     {
@@ -48,6 +51,12 @@ folder ??= Git(root, "branch", "--show-current").Trim();
 if (folder.Length == 0)
 {
     Console.Error.WriteLine("no current branch (detached HEAD): name the folder with --dir");
+    return 1;
+}
+// A relative path of plain names, like a branch name, so nothing lands outside the pr-screenshots checkout.
+if (Path.IsPathRooted(folder) || folder.IndexOfAny(['\\', ':']) >= 0 || folder.Split('/').Any(part => part is "" or "." or ".."))
+{
+    Console.Error.WriteLine($"--dir {folder}: use a relative folder like a branch name (no .., no drive or leading /)");
     return 1;
 }
 
@@ -65,7 +74,8 @@ try
     {
         var jpg = Path.ChangeExtension(copy, ".jpg");
         var shot = File.Exists(jpg) ? jpg : copy;
-        if (Path.GetExtension(shot).ToLowerInvariant() == ".png")
+        // shrink.cs leaves a picture as it was when it can't get it under 1 MB, and a JPG that it judged fine.
+        if (Path.GetExtension(shot).ToLowerInvariant() == ".png" || new FileInfo(shot).Length >= 1_000_000)
         {
             Console.Error.WriteLine($"{Path.GetFileName(copy)}: couldn't be shrunk under 1 MB; crop it");
             return 1;
@@ -75,7 +85,9 @@ try
 
     Git(root, "fetch", "--quiet", "origin", $"+refs/heads/{Branch}:refs/remotes/origin/{Branch}");
     Git(root, "worktree", "add", "--quiet", "--detach", tree, $"origin/{Branch}");
-    var destination = Path.Combine(tree, folder);
+    var destination = Path.GetFullPath(Path.Combine(tree, folder));
+    if (!destination.StartsWith(Path.GetFullPath(tree) + Path.DirectorySeparatorChar, StringComparison.OrdinalIgnoreCase))
+        throw new Exception($"{folder} resolves outside the pr-screenshots checkout");
     Directory.CreateDirectory(destination);
     foreach (var shot in shots)
         File.Copy(shot, Path.Combine(destination, Path.GetFileName(shot)), overwrite: true);
