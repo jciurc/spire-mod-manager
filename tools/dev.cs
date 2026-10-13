@@ -14,7 +14,8 @@
 //                                     (--first-run, --first-run-bmm: starting from that state, not the last one)
 //
 // Isolation:
-// - Dev copy: D:\sts2-dev holds hard links to the installed game's files (same drive, no extra space)
+// - Dev copy: sts2-dev at the root of the game's drive (D:\sts2-dev here; STS2_DEV_DIR picks another
+//   folder on that drive) holds hard links to the installed game's files (same drive, no extra space)
 //   and its own mods\ folder: our fresh build plus links to the other local mods. Builds never go into
 //   the real mods folder here; `dotnet run build.cs` does that, for play, when the game is closed.
 //   The copy is re-linked whenever the installed game's release_info.json changes (a Steam update).
@@ -33,9 +34,10 @@ using System.Runtime.CompilerServices;
 using System.Runtime.InteropServices;
 using System.Text.Json.Nodes;
 
-const string GameDir = @"D:\SteamLibrary\steamapps\common\Slay the Spire 2";
-const string DevDir = @"D:\sts2-dev";
-const string WorkshopDir = @"D:\SteamLibrary\steamapps\workshop\content\2868840";
+var steamapps = Env("STS2_STEAMAPPS", @"D:\SteamLibrary\steamapps"); // the Steam library with the game
+var GameDir = Path.Combine(steamapps, "common", "Slay the Spire 2");
+var DevDir = Env("STS2_DEV_DIR", Path.Combine(Path.GetPathRoot(GameDir) ?? "", "sts2-dev")); // same drive
+var WorkshopDir = Path.Combine(steamapps, "workshop", "content", "2868840");
 const string ModId = "SpireModManager";
 const int TimeoutSeconds = 150;
 var root = Path.GetDirectoryName(ScriptDir()) ?? ".";
@@ -287,6 +289,10 @@ static int Fail(string message)
 }
 
 static string ScriptDir([CallerFilePath] string path = "") => Path.GetDirectoryName(path) ?? ".";
+
+// An environment variable's value (README.md, "Building"), or the author's own path when it isn't set.
+static string Env(string name, string fallback) =>
+    Environment.GetEnvironmentVariable(name) is { Length: > 0 } value ? value : fallback;
 
 [DllImport("kernel32.dll", CharSet = CharSet.Unicode, SetLastError = true)]
 static extern bool CreateHardLink(string fileName, string existingFileName, IntPtr securityAttributes);

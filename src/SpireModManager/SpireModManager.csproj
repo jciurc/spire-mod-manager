@@ -9,6 +9,7 @@
     <ImplicitUsings>enable</ImplicitUsings>
     <CopyLocalLockFileAssemblies>false</CopyLocalLockFileAssemblies>
     <GenerateDocumentationFile>false</GenerateDocumentationFile>
+    <SteamLibrary Condition="'$(SteamLibrary)' == ''">$(STS2_STEAMAPPS)</SteamLibrary>
     <SteamLibrary Condition="'$(SteamLibrary)' == ''">D:\SteamLibrary\steamapps</SteamLibrary>
     <GameData>$(SteamLibrary)\common\Slay the Spire 2\data_sts2_windows_x86_64</GameData>
   </PropertyGroup>
