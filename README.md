@@ -12,7 +12,8 @@ its own (the vanilla page stays one click away) and folds in Quick Relaunch's in
   authors, categories and Workshop tags; automatic tags (Gameplay, Library), your own tags; "Needs:" and
   "Required for" notes on each row; mods turned on or off since launch stand out.
 - **Profiles:** saved on/off sets. Changes show as "Unsaved" with Save, Save as new and Discard; an unsaved
-  profile keeps its changes when you switch away ("Name *"). New, Duplicate, Rename, Delete.
+  profile keeps its changes when you switch away ("Name *"). New, Duplicate, Rename, Delete. A newly installed
+  mod joins the active profile, on; switching to a profile that hasn't seen it leaves it as it is.
 - **Load Order:** drag rows (or several, with Ctrl/Shift) or use Top/Up/Down/Bottom; dependency lines;
   a warning with "Fix now" when mods sit above what they need; Auto sort.
 - **Info panel:** problems first (load errors, missing or disabled dependencies), author, description,
