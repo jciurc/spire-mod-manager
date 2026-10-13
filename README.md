@@ -9,18 +9,20 @@ its own (the vanilla page stays one click away) and folds in Quick Relaunch's in
 - **Main menu:** a "Spire Mod Manager" button in the lower-left corner (right-click to move it), with the
   game's dot and a short note while a relaunch is pending.
 - **Main list:** mods grouped in your own collapsible categories; search over names, aliases, notes, tags,
-  authors, categories and Workshop tags; automatic tags (Gameplay, Library), your own tags; "Needs:" and
-  "Required for" notes on each row; mods turned on or off since launch stand out.
+  authors, categories and Workshop tags; automatic tags (New, Local, Library, Gameplay, Cosmetic), your own
+  tags; "Needs:" and "Required for" notes on each row; mods turned on or off since launch stand out.
 - **Profiles:** saved on/off sets. Changes show as "Unsaved" with Save, Save as new and Discard; an unsaved
   profile keeps its changes when you switch away ("Name *"). New, Duplicate, Rename, Delete. A newly installed
   mod joins the active profile, on; switching to a profile that hasn't seen it leaves it as it is.
 - **Load Order:** drag rows (or several, with Ctrl/Shift) or use Top/Up/Down/Bottom; dependency lines;
   a warning with "Fix now" when mods sit above what they need; Auto sort.
-- **Info panel:** problems first (load errors, missing or disabled dependencies), author, description,
-  version, compatibility, Workshop dates and tags, dependencies both ways; your tags, alias and notes,
-  edited in place (also from a mod's right-click menu).
-- **Changes, undo, redo, revert:** "Changes +on -off ↕moved" since launch, with the full list in the info
-  panel; Ctrl+Z / Ctrl+Y; Revert all goes back to how things were when you opened the page.
+- **Info panel:** name and version, source (a link to the Workshop page) and status; author, last update
+  (with a Patch notes link) and compatibility beside the picture; then problems (load errors, missing or
+  disabled dependencies), description, size, published date, subscribers, Workshop tags, dependencies both
+  ways; your alias, category, tags and notes, edited in place (also from a mod's right-click menu).
+- **Changes, undo, redo, revert:** "Mods enabled N (+on -off)" over "Changes N ↕moved" since launch, with
+  the full list in the info panel; Ctrl+Z / Ctrl+Y; Revert all goes back to how things were when you opened
+  the page.
 - **Relaunch Game:** restarts in place in the same window mode, so changes apply without going through Steam.
 - **Better Mod Menu:** its data is imported on first run. Both can run together: its page takes the place of
   the game's list (the "Better Mod Menu" button), a warning says some things may behave unexpectedly, and
@@ -61,6 +63,16 @@ drive; hard links can't cross drives) with its own mods folder, no Steam, separa
   those patches count as failed, as after a game update that broke them, to see the game's page and its
   "needs an update" line.
 - `dotnet run tools/pck.cs list|extract`: look inside the game's pack (scenes, images).
+
+## Branches
+
+- **Feature branches:** one per change. Each gets a pull request into `dev`.
+- **`staging`:** everything at once. Each feature branch is merged in as soon as it builds and passes the
+  self-test, whether or not its pull request is merged yet, and `dev` is merged in after pull requests land.
+  Builds for Jordan's game are installed from here, and the dev version bump (0.0.N) lives here. No rules;
+  it's never merged into anything.
+- **`dev`:** the record. Changes arrive only through pull requests (a quick read and Copilot's text review).
+- **`main`:** releases, from `dev` by pull request (created at 0.1.0).
 
 Notes: TODO.md (requests and their state), DESIGN.md (decisions and background), WHATS-NEW.md (what to
 look for after each install), workshop/README.md (publishing to the Steam Workshop).

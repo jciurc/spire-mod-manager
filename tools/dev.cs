@@ -4,7 +4,7 @@
 //                                     (--window: with a window, for screenshots, kept behind others;
 //                                      --bmm: with Better Mod Menu loaded too (listed first; --bmm-after:
 //                                      after ours, as in Jordan's game; --bmm-local: its local-fix build
-//                                      from ../bettermodmenu instead of the installed one);
+//                                      from the BmmRepo checkout below instead of the installed one);
 //                                      --real: Jordan's own mods, switched off, and a copy of his data;
 //                                      --first-run: a short suite for a first run, with no data of ours and
 //                                      none of Better Mod Menu's; --first-run-bmm: the same, but with Better
@@ -39,6 +39,7 @@ var steamapps = FullDir(Env("STS2_STEAMAPPS", @"D:\SteamLibrary\steamapps")); //
 var GameDir = Path.Combine(steamapps, "common", "Slay the Spire 2");
 var DevDir = FullDir(Env("STS2_DEV_DIR", Path.Combine(Path.GetPathRoot(GameDir) ?? "", "sts2-dev"))); // same drive
 var WorkshopDir = Path.Combine(steamapps, "workshop", "content", "2868840");
+var BmmRepo = Env("STS2_BMM_REPO", @"C:\repos\gaming\slay the spire\bettermodmenu"); // Better Mod Menu's local-fix checkout (--bmm-local)
 const string ModId = "SpireModManager";
 const int TimeoutSeconds = 150;
 var root = Path.GetDirectoryName(ScriptDir()) ?? ".";
@@ -187,7 +188,7 @@ void SyncMods()
     // --bmm-local: Better Mod Menu's local-fix build (built by its install-local.sh) in place of the installed one.
     if (args.Contains("--bmm-local"))
     {
-        var local = Path.Combine(root, "..", "bettermodmenu", ".godot", "mono", "temp", "bin", "Release", "BetterModMenu.dll");
+        var local = Path.Combine(BmmRepo, ".godot", "mono", "temp", "bin", "Release", "BetterModMenu.dll");
         var dll = Path.Combine(mods, "BetterModMenu", "BetterModMenu.dll");
         File.Delete(dll); // the link only
         File.Copy(local, dll);
@@ -302,9 +303,6 @@ static extern bool CreateHardLink(string fileName, string existingFileName, IntP
 
 [DllImport("user32.dll")]
 static extern IntPtr GetForegroundWindow();
-
-[DllImport("user32.dll")]
-static extern uint GetWindowThreadProcessId(IntPtr window, out int processId);
 
 [DllImport("user32.dll")]
 static extern bool SetWindowPos(IntPtr window, IntPtr insertAfter, int x, int y, int width, int height, uint flags);

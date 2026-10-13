@@ -52,7 +52,7 @@ Directory.CreateDirectory(outDir);
 var files = new SortedDictionary<string, byte[]>(StringComparer.Ordinal);
 var locRoot = Path.Combine(root, "localization");
 var eng = Directory.GetFiles(Path.Combine(locRoot, "eng"), "*.json")
-    .ToDictionary(Path.GetFileName, f => Keys(File.ReadAllBytes(f)));
+    .ToDictionary(f => Path.GetFileName(f), f => Keys(File.ReadAllBytes(f))); // a lambda: the method group's key would be string?
 foreach (var langDir in Directory.GetDirectories(locRoot))
     foreach (var file in Directory.GetFiles(langDir, "*.json"))
     {
