@@ -35,7 +35,7 @@ foreach (var file in Files("localization", "*.json"))
     tables[Path.GetRelativePath(Path.Combine(root, "localization"), file).Replace('\\', '/')] = keys;
     Check($"{Name(file)}: every key starts with {Prefix}", keys.All(k => k.StartsWith(Prefix)), List(keys.Where(k => !k.StartsWith(Prefix))));
 }
-var engLoaded = tables.TryGetValue("eng/settings_ui.json", out var eng);
+var eng = tables.GetValueOrDefault("eng/settings_ui.json");
 foreach (var (name, keys) in tables.Where(t => !t.Key.StartsWith("eng/")))
 {
     var engName = "eng/" + Path.GetFileName(name);
@@ -104,8 +104,8 @@ foreach (var (path, source) in sources)
 Check("every key built at runtime has a rule in tools/check.cs", unruled.Count == 0, List(unruled));
 
 var missing = used.Where(k => eng?.Contains(k) != true).Order().ToList();
-Check($"every key the code uses is in eng ({literals} literal, {used.Count - literals} more built at runtime)", engLoaded && missing.Count == 0,
-    engLoaded ? List(missing) : "localization/eng/settings_ui.json didn't load");
+Check($"every key the code uses is in eng ({literals} literal, {used.Count - literals} more built at runtime)", eng is not null && missing.Count == 0,
+    eng is null ? "localization/eng/settings_ui.json didn't load" : List(missing));
 foreach (var key in (eng ?? []).Where(k => !used.Contains(k)).Order())
     Warn($"{key} is in eng, but no code uses it");
 
@@ -117,9 +117,7 @@ foreach (var file in Files(Path.Combine("tools", "fixtures"), "*.json"))
     Check($"{Name(file)} parses", json is not null, error);
     if (json is not { } manifest || !Path.GetRelativePath(fixtures, file).StartsWith("mods"))
         continue;
-    var absent = new[] { "id", "name", "version" }
-        .Where(field => manifest.ValueKind != JsonValueKind.Object || !manifest.TryGetProperty(field, out var value) || value.ValueKind != JsonValueKind.String || value.GetString() is not { Length: > 0 })
-        .ToList();
+    var absent = new[] { "id", "name", "version" }.Where(field => !HasText(manifest, field)).ToList();
     Check($"{Name(file)}: manifest has id, name and version", absent.Count == 0, "missing " + List(absent));
 }
 
@@ -197,6 +195,11 @@ static (JsonElement? Json, string Error) ReadJson(string path)
         return (null, e.Message);
     }
 }
+
+// A field the game reads from a manifest: there, and a non-empty string.
+static bool HasText(JsonElement json, string field) =>
+    json.ValueKind == JsonValueKind.Object && json.TryGetProperty(field, out var value)
+    && value.ValueKind == JsonValueKind.String && value.GetString() is { Length: > 0 };
 
 // Literal keys passed to helper("SPIRE_MOD_MANAGER.X", ...), each with the suffix the helper adds.
 static IEnumerable<string> Calls(string source, string helper, string suffix) =>
