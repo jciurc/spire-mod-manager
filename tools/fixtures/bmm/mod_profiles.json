@@ -1,0 +1,61 @@
+{
+  "Profiles": [
+    {
+      "Name": "Framework only",
+      "DisabledMods": [
+        "SmmTestContent",
+        "SmmTestUi"
+      ]
+    },
+    {
+      "Name": "Everything",
+      "DisabledMods": []
+    }
+  ],
+  "CurrentProfileIndex": 1,
+  "CustomGroups": [
+    "Frameworks",
+    "Content",
+    "Menus"
+  ],
+  "ModGroups": {
+    "SmmTestLib": "Frameworks",
+    "SmmTestContent": "Content",
+    "BetterModMenu": "Menus"
+  },
+  "CollapsedGroups": [
+    "Content"
+  ],
+  "Tutorial": {
+    "LastSeenVersion": "1.1.1"
+  },
+  "CloudBackups": {
+    "Enabled": false,
+    "Directory": "",
+    "MirrorProfileBackups": true,
+    "MirrorModSettingsBackups": true,
+    "MirrorModListExports": true
+  },
+  "ModNameStyles": {
+    "Enabled": true,
+    "UseDefaultTagFormats": true,
+    "TagFormats": {},
+    "TagPriority": [],
+    "DisabledTags": [],
+    "ModFormats": {}
+  },
+  "ModAnnotations": {
+    "SmmTestLib": {
+      "Alias": "Framework",
+      "Notes": "Keep on: Test Content and Test UI need it."
+    },
+    "SmmTestContent": {
+      "Alias": "Content pack",
+      "Notes": ""
+    },
+    "SmmTestUi": {
+      "Alias": "",
+      "Notes": "Turn off for co-op."
+    }
+  }
+}
