@@ -165,9 +165,34 @@ public static class Store
         return new Loaded(data, setAside, backup);
     }
 
-    // One file's data; throws when it can't be read or holds none (an empty file, "null").
+    // One file's data, tidied; throws when it can't be read or holds none (an empty file, "null").
     static StoreData Read(string file) =>
-        JsonSerializer.Deserialize<StoreData>(File.ReadAllText(file), Json) ?? throw new JsonException("no data in the file");
+        Tidy(JsonSerializer.Deserialize<StoreData>(File.ReadAllText(file), Json) ?? throw new JsonException("no data in the file"));
+
+    // A hand-edited or old file can hold nulls where the rest of the code expects none ("profiles": null, a null
+    // entry in a list, a mod's details set to null). Lists become empty, names "" (as a missing key gives),
+    // and null entries are dropped. Fields where null means something stay null (a profile's unsaved edit;
+    // a mod's tags, null when it has none, as the editor leaves them).
+    static StoreData Tidy(StoreData data)
+    {
+        data.Categories = data.Categories?.OfType<Category>().ToList() ?? [];
+        foreach (var category in data.Categories)
+            category.Name ??= "";
+        data.Mods ??= [];
+        foreach (var id in data.Mods.Where(p => p.Value == null).Select(p => p.Key).ToList())
+            data.Mods.Remove(id);
+        foreach (var info in data.Mods.Values)
+            info.Tags = info.Tags?.OfType<string>().ToList() is { Count: > 0 } tags ? tags : null;
+        data.Profiles = data.Profiles?.OfType<Profile>().ToList() ?? [];
+        foreach (var profile in data.Profiles)
+        {
+            profile.Name ??= "";
+            profile.Mods = profile.Mods?.Where(m => m?.Id != null).ToList() ?? [];
+            profile.Edited = profile.Edited?.Where(m => m?.Id != null).ToList();
+            profile.Disabled = profile.Disabled?.Where(m => m?.Id != null).ToList();
+        }
+        return data;
+    }
 
     // The newest backup that reads (by name: manager.<time>.json), or a fresh start when none does.
     static (StoreData Data, (string Path, DateTime Saved)? From) NewestBackup(string dir)
