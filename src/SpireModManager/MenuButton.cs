@@ -171,13 +171,15 @@ static class MenuButton
             (leftWasDown, rightWasDown) = (left, right);
         }
         var done = false;
+        var following = false;
         void End(bool keep)
         {
             if (done)
                 return;
             done = true;
             _cancelMove = null;
-            tree.ProcessFrame -= Frame;
+            if (following)
+                tree.ProcessFrame -= Frame;
             if (keep)
             {
                 Store.Data.MenuButtonAt = new ScreenPoint(button.Position.X, button.Position.Y);
@@ -196,11 +198,15 @@ static class MenuButton
         }
         _cancelMove = () => End(keep: false);
         // The held buttons from the menu click: seen released on the first frames, then the next press counts.
+        // Not if it has already ended: an Escape in the same frame as the click.
         Callable.From(() =>
         {
+            if (done)
+                return;
             leftWasDown = Input.IsMouseButtonPressed(MouseButton.Left);
             rightWasDown = Input.IsMouseButtonPressed(MouseButton.Right);
             tree.ProcessFrame += Frame;
+            following = true;
         }).CallDeferred();
     }
 }

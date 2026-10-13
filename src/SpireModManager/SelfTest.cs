@@ -746,6 +746,22 @@ static class SelfTest
             Check("that Escape stays ours: the game doesn't act on it (no save profile screen)", !menu.SubmenuStack.SubmenusOpen);
         }
 
+        // Escape in the same frame as Move button, before move mode starts following the mouse (a frame later): it ends
+        // there, and no per-frame handler of move mode is left running.
+        int Following() => menu.GetTree().GetSignalConnectionList(SceneTree.SignalName.ProcessFrame)
+            .Count(c => c["callable"].AsCallable().Delegate?.Method.DeclaringType?.DeclaringType == typeof(MenuButton));
+        if (await OpenMenu() is { } quick)
+        {
+            MenuPanel.Press(quick, "Move button");
+            menu.GetViewport().PushInput(new InputEventKey { Keycode = Key.Escape, Pressed = true });
+            var ended = !menu.HasNode(MenuButton.MoveLayerName);
+            Mouse(fake + new Vector2(300, -200));
+            await Wait(menu, 0.3);
+            Check("Escape in the same frame as Move button: move mode ends, nothing left following the mouse", ended
+                && !menu.HasNode(MenuButton.MoveLayerName) && Following() == 0 && button.Position == placed && !menu.SubmenuStack.SubmenusOpen,
+                $"{Following()} frame handlers, {button.Position} vs {placed}");
+        }
+
         if (await OpenMenu() is { } third)
             MenuPanel.Press(third, "Reset position");
         await Wait(menu, 0.2);
