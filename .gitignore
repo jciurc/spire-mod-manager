@@ -2,4 +2,5 @@ out/
 bin/
 obj/
 *.pck
+dist/
 .claude/
