@@ -10,6 +10,7 @@ namespace SpireModManager;
 // - Editing: a padded box with a hint and an inline ✕ to clear. Enter saves (Ctrl+Enter in notes), Escape
 //   or Cancel puts the value back, clicking away saves, so typed text is never lost.
 // - Tags also show the automatic ones (Local, Library, Gameplay, Cosmetic) as filled pills beside the term.
+// - While typing tags, the player's tags from other mods drop down under the box (TagSuggestions).
 // - The value sits in a softly darker box, lighter under the mouse, darker while editing; no outlines.
 sealed class ModField
 {
@@ -27,6 +28,7 @@ sealed class ModField
     readonly HBoxContainer _buttons;
     readonly HFlowContainer? _system, _pills; // tags only
     readonly PanelContainer? _pillsBox; // the player's pills at rest, in the same box as the text
+    readonly TagSuggestions? _suggestions; // tags only
     bool _cancelling;
 
     // modId: the mod being shown (it can change: the info panel). saved: after a value is stored.
@@ -88,6 +90,8 @@ sealed class ModField
         _box.AddThemeStyleboxOverride("read_only", Look(Shade.Rest));
         _box.MouseDefaultCursorShape = Control.CursorShape.Ibeam;
         root.AddChild(_box);
+        if (kind == Kind.Tags && _box is LineEdit tagsBox)
+            _suggestions = new TagSuggestions(tagsBox);
 
         // Notes has no built-in clear button: a small ✕ in its top-right corner while editing.
         Button? clear = null;
@@ -137,6 +141,12 @@ sealed class ModField
         };
         _box.GuiInput += e =>
         {
+            // The suggestions' keys first: arrows, Escape closing the list, Enter taking a tag rather than saving.
+            if (_suggestions?.Use(e) == true)
+            {
+                _box.AcceptEvent();
+                return;
+            }
             switch (e)
             {
                 case InputEventKey { Keycode: Key.Escape, Pressed: true }:
