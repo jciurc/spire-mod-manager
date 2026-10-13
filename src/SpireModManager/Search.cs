@@ -7,7 +7,7 @@ namespace SpireModManager;
 /// A search box over the list. Every word typed must appear (any case) in the mod's name, id, author,
 // alias, notes, category or tags, or the whole query, spaces ignored, in one of them. "#tag" must be one of
 // the mod's tags, whole, and "@author" its author (#"two words" and @"two words" for spaces); clicking a tag
-// or an author searches for it, Shift-click adds it. Escape clears it.
+// or an author searches for it (again: clears it), Shift-click adds or removes it. Escape clears it.
 static class Search
 {
     const float Height = 32;
@@ -64,7 +64,8 @@ static class Search
 
     static readonly System.Text.RegularExpressions.Regex Token = new(@"([#@])(?:""([^""]+)""|(\S+))");
 
-    // A tag or author clicked: search for it; with Shift, add it to what's searched already (after a space).
+    // A tag or author clicked: search for it; with Shift, add it to what's searched already, or take it out
+    // (Toggled has the rules).
     public static void ByTag(Node near, string tag, bool add) => Put(near, "#", tag, add);
 
     public static void ByAuthor(Node near, string author, bool add) => Put(near, "@", author, add);
@@ -77,11 +78,47 @@ static class Search
         if (CategoryList.ScreenOf(near)?.GetNodeOrNull<LineEdit>("ModsBorder/SpireModManagerSearch") is not { } box)
             return;
         var token = kind.Length == 0 ? value : value.Contains(' ') ? $"{kind}\"{value}\"" : $"{kind}{value}";
-        var text = !add || box.Text.Trim().Length == 0 ? token : box.Text.Contains(token) ? box.Text : $"{box.Text.TrimEnd()} {token}";
+        var text = Toggled(box.Text, token, add);
         box.Text = text;
         box.CaretColumn = text.Length;
         box.EmitSignal(LineEdit.SignalName.TextChanged, text);
     }
+
+    // The search after a term is clicked, so that clicking again undoes it. A click searches for just the term, or
+    // clears the search if the term is all of it already. Shift-click adds the term, or takes it out (every time it
+    // appears) if it's there already, keeping the rest. Terms are compared as #tag, @author or plain words, any
+    // case, quotes ignored: #"two words" is the same term as #"Two Words". One space between terms either way.
+    static string Toggled(string search, string term, bool add)
+    {
+        var terms = Term.Matches(search).Select(m => m.Value).ToList();
+        var wanted = Term.Matches(term).Select(m => m.Value).ToList();
+        if (wanted.Count == 0)
+            return search;
+        // A plain term can be several words (a Workshop tag like "Tools & APIs"): they count when found side by side.
+        bool At(int i) => i + wanted.Count <= terms.Count && Enumerable.Range(0, wanted.Count).All(j => Same(terms[i + j], wanted[j]));
+        if (!add)
+            return terms.Count == wanted.Count && At(0) ? "" : string.Join(' ', wanted);
+        var before = terms.Count;
+        for (var i = 0; i < terms.Count;)
+        {
+            if (At(i))
+                terms.RemoveRange(i, wanted.Count);
+            else
+                i++;
+        }
+        return string.Join(' ', terms.Count < before ? terms : terms.Concat(wanted));
+    }
+
+    // A search's terms as typed: #tag and @author (quoted or not), or a plain word.
+    static readonly System.Text.RegularExpressions.Regex Term = new(@"[#@](?:""[^""]+""|\S+)|(?:(?![#@](?:""[^""]+""|\S))\S)+");
+
+    // Two terms are the same when they're the same kind with the same value, any case, quotes aside.
+    static bool Same(string a, string b) => string.Equals(Plain(a), Plain(b), StringComparison.OrdinalIgnoreCase);
+
+    // #"two words" reads as #two words, so quoted and bare terms compare alike; plain words stay as they are.
+    static string Plain(string term) => Token.Match(term) is { Success: true, Index: 0 } m && m.Length == term.Length
+        ? m.Groups[1].Value + (m.Groups[2].Success ? m.Groups[2].Value : m.Groups[3].Value)
+        : term;
 
     static string Squeeze(string text) => string.Concat(text.Where(c => !char.IsWhiteSpace(c)));
 

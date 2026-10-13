@@ -5,15 +5,15 @@ namespace SpireModManager;
 
 // Mods installed while the game runs (a Workshop subscription, a folder dropped in). The game shows them on
 // the Modding page, greyed, and loads them after a relaunch, but leaves them out of its mod list
-// (ModManager.Mods) and its saved settings. So they're remembered here, for Changes; and a tickbox change
-// gets the settings entry it needs to stick (see NewModTogglePatch).
+// (ModManager.Mods) and its saved settings. So they're remembered here, for Changes and for profiles (one joins
+// the active profile at once); and a tickbox change gets the settings entry it needs to stick (see NewModTogglePatch).
 static class Installed
 {
     static readonly List<Mod> _mods = [];
 
     public static IReadOnlyList<Mod> Mods => _mods;
 
-    // Raised when one is added (Changes counts it).
+    // Raised when one is added (Changes counts it, the active profile takes it in).
     public static event Action? Added;
 
     public static void Watch() => ModManager.OnModDetected += Detected;

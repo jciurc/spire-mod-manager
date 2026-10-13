@@ -35,7 +35,7 @@ static class CategoryList
             (data.VanillaView, data.LoadOrderView) = toVanilla ? (!data.VanillaView, false) : (false, !data.LoadOrderView);
             Selection.Clear(content); // a picked set belongs to the view it was picked in
             Store.Save();
-            Label(vanilla, data.VanillaView ? "SPIRE_MOD_MANAGER.CATEGORY_VIEW" : VanillaKey);
+            Label(vanilla, data.VanillaView ? "SPIRE_MOD_MANAGER.CATEGORY_VIEW" : "SPIRE_MOD_MANAGER.VANILLA_VIEW");
             Label(loadOrder, data.LoadOrderView ? "SPIRE_MOD_MANAGER.BACK" : "SPIRE_MOD_MANAGER.LOAD_ORDER");
             Apply(content);
             Layout.Apply(screen);
@@ -52,19 +52,16 @@ static class CategoryList
             if (screen.IsVisibleInTree() && Store.Data.LoadOrderView)
                 Switch(false);
         };
-        vanilla = ModEntry.AddButton(screen, VanillaKey, new Vector2(200, 70), () => Switch(true));
+        vanilla = ModEntry.AddButton(screen, "SPIRE_MOD_MANAGER.VANILLA_VIEW", new Vector2(200, 70), () => Switch(true));
         vanilla.Name = "SpireModManagerViewToggle";
         loadOrder = ModEntry.AddButton(screen, "SPIRE_MOD_MANAGER.LOAD_ORDER", new Vector2(200, 70), () => Switch(false));
         loadOrder.Name = "SpireModManagerLoadOrderToggle";
         // Labels for the saved view.
-        Label(vanilla, Store.Data.VanillaView ? "SPIRE_MOD_MANAGER.CATEGORY_VIEW" : VanillaKey);
+        Label(vanilla, Store.Data.VanillaView ? "SPIRE_MOD_MANAGER.CATEGORY_VIEW" : "SPIRE_MOD_MANAGER.VANILLA_VIEW");
         Label(loadOrder, Store.Data.LoadOrderView ? "SPIRE_MOD_MANAGER.BACK" : "SPIRE_MOD_MANAGER.LOAD_ORDER");
 
         Apply(content);
     }
-
-    // The toggle to the game's page names Better Mod Menu when that's whose page it is.
-    static string VanillaKey => Bmm.Present ? "SPIRE_MOD_MANAGER.BMM_VIEW" : "SPIRE_MOD_MANAGER.VANILLA_VIEW";
 
     static void Label(NButton? button, string key) =>
         button?.GetNode<MegaLabel>("Visuals/Label").SetTextAutoSize(new LocString("settings_ui", key).GetFormattedText());
