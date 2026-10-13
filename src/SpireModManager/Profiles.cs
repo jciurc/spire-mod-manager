@@ -351,7 +351,7 @@ static class Profiles
 
     // Every installed mod: the ones the game loaded at launch and the ones installed since (they load after a
     // relaunch), so a mod installed while the game runs belongs to profiles at once.
-    static IEnumerable<Mod> AllMods() => ModManager.Mods.Concat(SpireModManager.Installed.Mods).Where(m => m.manifest?.id != null);
+    static IEnumerable<Mod> AllMods() => ModManager.Mods.Union(SpireModManager.Installed.Mods).Where(m => m.manifest?.id != null);
 
     static IEnumerable<(string Id, ModSource Source)> Installed() =>
         AllMods().Select(m => (m.manifest?.id ?? "", m.modSource));
