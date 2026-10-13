@@ -6,18 +6,21 @@ namespace SpireModManager;
 // Under the search box on the main list, above the categories: controls for the whole page. Enable all /
 // Disable all act on the mods shown (all of them, or the search's matches; the label says which), as one
 // undo step; Expand all / Collapse all open or close every category. Made again on each redraw.
+// With no categories yet (a first run), a quiet line under it says how to make one; it goes with the first.
 static class PageBar
 {
-    public const string Name = "SpireModManagerPageBar";
+    public const string Name = "SpireModManagerPageBar", HintName = "SpireModManagerCategoryHint";
     public const float Height = 28;
+    const float HintHeight = 22;
 
     public static void Update(Control content, Control border, List<NModMenuRow> rows)
     {
-        if (border.GetNodeOrNull(Name) is { } old)
-        {
-            border.RemoveChild(old); // now: a second redraw in the same frame adds a new one
-            old.QueueFree();
-        }
+        foreach (var name in new[] { Name, HintName })
+            if (border.GetNodeOrNull(name) is { } old)
+            {
+                border.RemoveChild(old); // now: a second redraw in the same frame adds a new one
+                old.QueueFree();
+            }
         if (Layout.Current != Layout.View.Categories)
             return;
 
@@ -67,5 +70,22 @@ static class PageBar
         bar.SetAnchorsPreset(Control.LayoutPreset.TopWide);
         var scroll = border.GetNode<Control>("ModsScrollContainer");
         (bar.OffsetLeft, bar.OffsetRight, bar.OffsetTop, bar.OffsetBottom) = (scroll.OffsetLeft + 12, scroll.OffsetRight - 16, 0, Height);
+
+        if (categories.Count > 0)
+            return;
+        // In the bar's own quiet style, lined up with its "Installed mods" (Layout stacks it below the bar). It names
+        // the menu entry the way the menu does.
+        var hint = new Label
+        {
+            Name = HintName, VerticalAlignment = VerticalAlignment.Center, MouseFilter = Control.MouseFilterEnum.Ignore,
+            ClipText = true, TextOverrunBehavior = TextServer.OverrunBehavior.TrimEllipsis,
+            Text = Menus.Format("SPIRE_MOD_MANAGER.NO_CATEGORIES_HINT", ("item", Menus.Text("SPIRE_MOD_MANAGER.NEW_CATEGORY"))),
+        };
+        hint.AddThemeFontOverride("font", ResourceLoader.Load<Font>("res://themes/kreon_regular_shared.tres"));
+        hint.AddThemeFontSizeOverride("font_size", 15);
+        hint.AddThemeColorOverride("font_color", new Color(1, 0.964706f, 0.886275f, 0.55f));
+        border.AddChild(hint);
+        hint.SetAnchorsPreset(Control.LayoutPreset.TopWide);
+        (hint.OffsetLeft, hint.OffsetRight, hint.OffsetTop, hint.OffsetBottom) = (bar.OffsetLeft, bar.OffsetRight, 0, HintHeight);
     }
 }
