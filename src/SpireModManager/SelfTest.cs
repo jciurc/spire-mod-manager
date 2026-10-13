@@ -1504,6 +1504,10 @@ static class SelfTest
             var german = info.GetNode<RichTextLabel>("ModDescription").GetParsedText();
             Check("with the game in German: 11. Oktober 2026; 1,5 MB; 1.234", ModDetails.Date(new DateTime(2026, 10, 11)) == "11. Oktober 2026"
                 && german.Contains("1,5 MB") && german.Contains("1.234"), $"{ModDetails.Date(new DateTime(2026, 10, 11))} / {german}");
+            // A date pattern that doesn't read (an unclosed quote; SetLanguage below reloads the tables without it):
+            // all in English, not a German month in the English pattern.
+            LocManager.Instance.GetTable("run_history").MergeWith(new() { ["INFO.DATE_FORMAT"] = "d 'MMMM" });
+            Check("a broken date pattern in German: October 11, 2026", ModDetails.Date(new DateTime(2026, 10, 11)) == "October 11, 2026", ModDetails.Date(new DateTime(2026, 10, 11)));
         }
         finally
         {

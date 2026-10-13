@@ -164,7 +164,7 @@ static class ModDetails
         if (workshop != null)
             Fact("SPIRE_MOD_MANAGER.PUBLISHED", Date(workshop.Created));
         if (workshop?.Subscribers is { } subscribers)
-            Fact("SPIRE_MOD_MANAGER.SUBSCRIBERS", subscribers.ToString("N0", Menus.Culture));
+            Fact("SPIRE_MOD_MANAGER.SUBSCRIBERS", Menus.Number(subscribers));
         if (workshop?.Tags.Count > 0)
             Fact("SPIRE_MOD_MANAGER.WORKSHOP_TAGS", string.Join(", ", workshop.Tags.Select(t => $"[url=wtag:{t}]{Escape(t)}[/url]"))); // click: search for it
         if (bytes > 0 || workshop != null)
@@ -239,18 +239,18 @@ static class ModDetails
     public static string Short(string text) => text.Length <= 200 ? text : text[..200].TrimEnd() + "…";
 
     // "October 12, 2026" in English, "12. Oktober 2026" in German: the game's own date pattern (the one its run
-    // history uses, translated with the rest of the game) in the game's language. The English pattern if a game
-    // update renames that text or it doesn't read as a date pattern.
+    // history uses, translated with the rest of the game) in the game's language. All in English if a game update
+    // renames that text or it doesn't read as a date pattern ("October 12", not "Oktober 12" in an English pattern).
     public static string Date(DateTime date)
     {
-        const string english = "MMMM d, yyyy";
+        var english = date.ToString("MMMM d, yyyy", System.Globalization.CultureInfo.InvariantCulture);
         try
         {
-            return date.ToString(LocString.GetIfExists("run_history", "INFO.DATE_FORMAT")?.GetRawText() ?? english, Menus.Culture);
+            return LocString.GetIfExists("run_history", "INFO.DATE_FORMAT")?.GetRawText() is { } pattern ? date.ToString(pattern, Menus.Culture) : english;
         }
         catch (Exception)
         {
-            return date.ToString(english, Menus.Culture);
+            return english;
         }
     }
 
