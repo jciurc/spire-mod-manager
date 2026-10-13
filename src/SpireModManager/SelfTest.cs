@@ -1944,8 +1944,8 @@ static class SelfTest
         var orderBefore = Ids();
         pressed.EmitSignal(Control.SignalName.GuiInput, new InputEventMouseButton { ButtonIndex = MouseButton.Left, Pressed = true, GlobalPosition = at });
         await Wait(menu, 0.1);
-        Check("pressing a row starts the drag look at once", Rows().Any(r => r.Modulate.A < 0.5f && r != pressed)
-            && content.GetParent().GetChildren().OfType<ColorRect>().Any(c => c.Size.Y == 5));
+        Check("pressing a row starts the drag look at once (the drop line's ends slightly rounded)", Rows().Any(r => r.Modulate.A < 0.5f && r != pressed)
+            && content.GetParent().GetChildren().OfType<Panel>().Any(c => c.Size.Y == 5 && c.GetThemeStylebox("panel") is StyleBoxFlat { CornerRadiusTopLeft: > 0 }));
         pressed.EmitSignal(Control.SignalName.GuiInput, new InputEventMouseButton { ButtonIndex = MouseButton.Left, Pressed = false, GlobalPosition = at });
         await Wait(menu, 0.3);
         Check("a click without moving leaves the order alone", Ids().SequenceEqual(orderBefore));

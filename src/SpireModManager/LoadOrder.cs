@@ -505,7 +505,7 @@ static class LoadOrder
         var moved = false; // past a few pixels: a drag, not a click
         var pressAt = Vector2.Zero;
         var mouseY = 0f; // where the last mouse event put the pointer
-        ColorRect? marker = null;
+        Panel? marker = null;
         row.GuiInput += e =>
         {
             if (!Store.Data.LoadOrderView)
@@ -525,7 +525,10 @@ static class LoadOrder
                     CategoryList.Select(content, row); // grabbing a row selects it too
                     dragging = true;
                     moved = false;
-                    marker = new ColorRect { Color = Gold, Size = new Vector2(content.Size.X, 5), MouseFilter = Control.MouseFilterEnum.Ignore };
+                    marker = new Panel { SelfModulate = Gold, Size = new Vector2(content.Size.X, 5), MouseFilter = Control.MouseFilterEnum.Ignore };
+                    var bar = new StyleBoxFlat { BgColor = Colors.White }; // coloured by SelfModulate: gold, or red (DragFrame)
+                    bar.SetCornerRadiusAll(2); // slightly rounded ends, like the rows
+                    marker.AddThemeStyleboxOverride("panel", bar);
                     content.GetParent().AddChild(marker); // the scroll mask: not a container, so it can sit anywhere
                     content.GetTree().ProcessFrame += DragFrame;
                     BeginDragLook(content, row);
@@ -587,7 +590,7 @@ static class LoadOrder
             marker.GlobalPosition = new Vector2(content.GlobalPosition.X, Math.Clamp(y - 2, view.Position.Y, view.End.Y - 5));
             ShowLinks(content, row, strong: true, drop: (gap, marker.GlobalPosition.Y + 2));
             // Red where dropping would load it before something it needs (or after something needing it).
-            marker.Color = Destination(gap) is { } at && row.Mod is { } moving
+            marker.SelfModulate = Destination(gap) is { } at && row.Mod is { } moving
                 && MoveBreaks(moving, at, content.GetChildren().OfType<NModMenuRow>().ToList()) ? Blocked : Gold;
         }
 
