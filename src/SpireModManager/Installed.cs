@@ -3,10 +3,11 @@ using MegaCrit.Sts2.Core.Saves;
 
 namespace SpireModManager;
 
-// Mods installed while the game runs (a Workshop subscription, a folder dropped in). The game shows them on
-// the Modding page, greyed, and loads them after a relaunch, but leaves them out of its mod list
-// (ModManager.Mods) and its saved settings. So they're remembered here, for Changes; and a tickbox change
-// gets the settings entry it needs to stick (see NewModTogglePatch).
+// Mods installed while the game runs (a Workshop subscription). The game reads the new mod into its mod list
+// (ModManager.Mods, state AddedAtRuntime: not loaded), then announces it; it shows on the Modding page, greyed,
+// and loads after a relaunch, but gets no saved settings entry. So they're remembered here, for Changes (lists
+// that join ModManager.Mods with these use Union: the same mod is in both); and a tickbox change gets the
+// settings entry it needs to stick (see NewModTogglePatch).
 static class Installed
 {
     static readonly List<Mod> _mods = [];
@@ -22,8 +23,8 @@ static class Installed
     {
         if (mod.state != ModLoadState.AddedAtRuntime || mod.manifest?.id is not { } id)
             return;
-        if (ModManager.Mods.Any(m => m.manifest?.id == id && m.modSource == mod.modSource))
-            return; // an update of a mod that was here at launch, not a new one
+        if (ModManager.Mods.Any(m => m != mod && m.state != ModLoadState.AddedAtRuntime && m.manifest?.id == id && m.modSource == mod.modSource))
+            return; // an update of a mod that was here at launch, not a new one (the new mod itself is in the list too)
         _mods.RemoveAll(m => m.manifest?.id == id && m.modSource == mod.modSource);
         _mods.Add(mod);
         Added?.Invoke();

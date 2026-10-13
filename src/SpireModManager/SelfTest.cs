@@ -926,8 +926,7 @@ static class SelfTest
             manifest = new ModManifest { id = "SmmFreshMod", name = "Fresh Mod" },
         };
         var rowsBefore = content.GetChildren().OfType<NModMenuRow>().ToList();
-        typeof(ModManager).GetMethod("InvokeOnModDetected", System.Reflection.BindingFlags.NonPublic | System.Reflection.BindingFlags.Static)
-            ?.Invoke(null, [fresh]);
+        GameInstalls(fresh);
         await Wait(menu, 0.4);
         NModalContainer.Instance?.Clear();
         Check("a mod installed now is listed as installed, loading after relaunch",
@@ -952,7 +951,7 @@ static class SelfTest
         }
         else
             Results.Add("FAIL a mod installed now gets a row");
-        Installed.Forget(fresh);
+        GameForgets(fresh);
         SaveManager.Instance.SettingsSave.ModSettings?.ModList.RemoveAll(e => e.Id == "SmmFreshMod");
         History.Record();
         CategoryList.Redraw(content); // the pending note too
@@ -1430,7 +1429,7 @@ static class SelfTest
                 description = Text(220), minGameVersion = "0.111.0",
             },
         };
-        typeof(ModManager).GetMethod("InvokeOnModDetected", System.Reflection.BindingFlags.NonPublic | System.Reflection.BindingFlags.Static)?.Invoke(null, [mod]);
+        GameInstalls(mod);
         await Wait(menu, 0.4);
         NModalContainer.Instance?.Clear();
         Store.EditMod(id, info =>
@@ -1456,7 +1455,7 @@ static class SelfTest
         }
         else
             Results.Add("FAIL long details: no row for the made-up mod");
-        Installed.Forget(mod);
+        GameForgets(mod);
         Store.EditMod(id, info => (info.Alias, info.Notes, info.Tags, info.Category) = (null, null, null, null));
         SaveManager.Instance.SettingsSave.ModSettings?.ModList.RemoveAll(e => e.Id == id);
         History.Record();
@@ -1760,6 +1759,24 @@ static class SelfTest
         await Wait(menu, 0.3);
         return where;
     }
+
+    // A mod installed while the game runs, made up, the way the game does it: read into its mod list (not loaded),
+    // then announced. Gone again: off both lists.
+    static void GameInstalls(Mod mod)
+    {
+        GameMods().Add(mod);
+        typeof(ModManager).GetMethod("InvokeOnModDetected", System.Reflection.BindingFlags.NonPublic | System.Reflection.BindingFlags.Static)
+            ?.Invoke(null, [mod]);
+    }
+
+    static void GameForgets(Mod mod)
+    {
+        GameMods().Remove(mod);
+        Installed.Forget(mod);
+    }
+
+    static List<Mod> GameMods() =>
+        typeof(ModManager).GetField("_mods", System.Reflection.BindingFlags.NonPublic | System.Reflection.BindingFlags.Static)?.GetValue(null) as List<Mod> ?? [];
 
     static List<string> ModListState() =>
         SaveManager.Instance.SettingsSave.ModSettings?.ModList
