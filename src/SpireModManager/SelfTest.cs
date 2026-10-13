@@ -2570,9 +2570,9 @@ static class SelfTest
     }
 
     // Another mod's part in the info panel (Undo And Restart adds a settings panel at a fixed (0,318), over our
-    // fields; here a made-up one the same size): our views put it between the details and our fields, or hide it
-    // when there's no room; Vanilla View leaves it where its mod put it. Its mod's own hide wins over ours, its show
-    // too when there's room. Removed again afterwards.
+    // fields; here a made-up one the same size): our views put it between the details and our fields, or out of sight
+    // when there's no room (never hidden: its Visible is its mod's); Vanilla View leaves it where its mod put it. Its
+    // mod's own hide holds, in a fill or outside one; its show too when there's room. Removed again afterwards.
     static async Task TestOtherModPanel(Node menu, NModdingScreen screen, Control content, string outDir)
     {
         if (content.GetChildren().OfType<NModMenuRow>().FirstOrDefault(r => r.Mod?.manifest?.id == "SmmTestUi") is not { Mod: { } mod } row)
@@ -2587,7 +2587,7 @@ static class SelfTest
         var other = new PanelContainer { Name = "OtherModSettingsPanel", Position = home, CustomMinimumSize = new Vector2(560, 174) };
         info.AddChild(other);
         var (details, yours) = (info.GetNode<Control>("ModDescription"), info.GetNode<Control>("SpireModManagerYours"));
-        // shownByItsMod: what its mod sets in its own Fill postfix (after ours gave back what we hid).
+        // shownByItsMod: what its mod sets in its own Fill postfix.
         async Task<string> Refill(bool? shownByItsMod = null)
         {
             info.Fill(mod); // the panel filled again, as when a mod is picked
@@ -2596,6 +2596,8 @@ static class SelfTest
             await Wait(menu, 0.3);
             return $"panel {other.GetGlobalRect()} shown {other.Visible}, details {details.GetGlobalRect()}, fields {yours.GetGlobalRect()}";
         }
+        // No room: above the screen and out of keyboard reach, still shown as far as its mod can tell.
+        bool OutOfSight() => other.Visible && other.GetGlobalRect().End.Y < 0 && other.FocusBehaviorRecursive == Control.FocusBehaviorRecursiveEnum.Disabled;
 
         var where = await Refill();
         Check("another mod's panel: the only part counted as another mod's (not the game's, ours or Better Mod Menu's)",
@@ -2607,27 +2609,37 @@ static class SelfTest
 
         other.CustomMinimumSize = new Vector2(560, 600);
         where = await Refill();
-        Check("another mod's panel with no room for it: hidden, our fields right under the details", !other.Visible
+        Check("another mod's panel with no room for it: out of sight, our fields right under the details", OutOfSight()
             && Math.Abs(yours.OffsetTop - details.OffsetBottom - ModDetails.FieldsGap) < 1, where);
         var inVanilla = "";
-        Check("another mod's panel in Vanilla View: back where its mod put it, shown", await WithVanillaView(screen, menu, () =>
+        Check("another mod's panel in Vanilla View: back where its mod put it, shown, in keyboard reach", await WithVanillaView(screen, menu, () =>
         {
-            inVanilla = $"{other.Position}, shown {other.Visible}";
-            return other.Position == home && other.Visible;
+            inVanilla = $"{other.Position}, shown {other.Visible}, focus {other.FocusBehaviorRecursive}";
+            return other.Position == home && other.Visible && other.FocusBehaviorRecursive == Control.FocusBehaviorRecursiveEnum.Inherited;
         }), inVanilla);
-        Check("another mod's panel back on our views: hidden again", !other.Visible);
+        Check("another mod's panel back on our views: out of sight again", OutOfSight(), $"{other.GetGlobalRect()}, shown {other.Visible}");
 
-        // Hidden by us, then by its mod too (another mod picked); room again without a fill (as when the changes list
-        // closes): its mod's hide holds. Its mod showing it again, with room: shown, in its place.
-        await Refill(shownByItsMod: false);
-        other.CustomMinimumSize = new Vector2(560, 174);
-        other.ResetSize();
-        ModDetails.PlaceFields(info);
-        Check("another mod's panel we hid, then its mod hid: still hidden with room again", !other.Visible
-            && !Layout.OtherParts(info).Contains(other), $"shown {other.Visible}, size {other.Size}");
+        // Out of sight for lack of room, then hidden by its mod: outside a fill (a setting of its own, say), then in one
+        // (another mod picked). Each time room comes back without a fill (as when the changes list closes), its mod's
+        // hide holds. Its mod showing it again, with room: shown, in its place.
+        foreach (var inFill in new[] { false, true })
+        {
+            other.CustomMinimumSize = new Vector2(560, 600);
+            await Refill(shownByItsMod: true);
+            if (inFill)
+                await Refill(shownByItsMod: false);
+            else
+                other.Visible = false;
+            other.CustomMinimumSize = new Vector2(560, 174);
+            other.ResetSize();
+            ModDetails.PlaceFields(info);
+            Check($"another mod's panel out of sight, then hidden by its mod {(inFill ? "in" : "outside")} a fill: still hidden with room again",
+                !other.Visible && !Layout.OtherParts(info).Contains(other), $"shown {other.Visible}, size {other.Size}");
+        }
         where = await Refill(shownByItsMod: true);
-        Check("another mod's panel shown again by its mod, with room: shown between the details and our fields", other.Visible
-            && other.GetGlobalRect().Position.Y >= details.GetGlobalRect().End.Y && other.GetGlobalRect().End.Y <= yours.GetGlobalRect().Position.Y, where);
+        Check("another mod's panel shown again by its mod, with room: shown between the details and our fields, in keyboard reach", other.Visible
+            && other.GetGlobalRect().Position.Y >= details.GetGlobalRect().End.Y && other.GetGlobalRect().End.Y <= yours.GetGlobalRect().Position.Y
+            && other.FocusBehaviorRecursive == Control.FocusBehaviorRecursiveEnum.Inherited, where);
 
         info.RemoveChild(other);
         other.QueueFree();

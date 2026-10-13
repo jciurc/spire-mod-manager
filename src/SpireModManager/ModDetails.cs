@@ -561,8 +561,8 @@ static class ModDetails
 
     // The fields sit right under the mod's details: the description shrinks to its text (up to the room left
     // above the fields), and the fields follow it. Other mods' parts in the panel go between the two, as long as the
-    // description keeps a few lines (all of it if shorter); the rest are hidden (Layout.FitOthers). Once the text is
-    // laid out, so deferred. Our views only, and not behind the changes list (placed again when it closes).
+    // description keeps a few lines (all of it if shorter); the rest go out of sight (Layout.FitOthers). Once the
+    // text is laid out, so deferred. Our views only, and not behind the changes list (placed again when it closes).
     public static void PlaceFields(Control container)
     {
         if (!Layout.Wide || HistoryBar.ListOpen(container) || container.GetNodeOrNull<Control>(FieldsName) is not { } yours)

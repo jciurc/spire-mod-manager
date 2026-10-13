@@ -24,6 +24,8 @@ static class Layout
     const string MinSizeMeta = "spire_mod_manager_min_size";
     const string BoxMeta = "spire_mod_manager_original_box", BarMeta = "spire_mod_manager_original_bar", AnchorMeta = "spire_mod_manager_original_anchor";
     const string HomeMeta = "spire_mod_manager_home", SeenMeta = "spire_mod_manager_seen", NoRoomMeta = "spire_mod_manager_no_room";
+    const string ParkedMeta = "spire_mod_manager_parked";
+    const float ParkedY = -10000; // other mods' parts with no room, far above the panel (Park)
 
     // The info panel's own parts as the game's scene makes them (by name), noted the first time we see the panel.
     static HashSet<string>? _sceneParts;
@@ -355,15 +357,15 @@ static class Layout
     // Other mods' parts in the info panel: Undo And Restart, for one, adds a settings panel at a fixed (0,318), right
     // where our fields are. Not the game's own (noted on first sight), not ours (named "SpireModManager…", and Open
     // Folder) and not Better Mod Menu's (Bmm hides those on our views); nor one that stretches with the panel (an
-    // overlay or a background). Those shown, and those we hid for lack of room.
+    // overlay or a background). Those their mods show, out of sight for lack of room or not.
     public static List<Control> OtherParts(Control info) => _sceneParts is not { } scene ? []
         : info.GetChildren().OfType<Control>().Where(c => c.Name.ToString() is var name && !scene.Contains(name)
             && !name.StartsWith("SpireModManager") && name != "OpenFolderButton" && !name.StartsWith("BetterModMenu")
-            && c.AnchorLeft == c.AnchorRight && c.AnchorTop == c.AnchorBottom && (c.Visible || c.HasMeta(NoRoomMeta))).ToList();
+            && c.AnchorLeft == c.AnchorRight && c.AnchorTop == c.AnchorBottom && c.Visible).ToList();
 
     // Our views: the parts that fit in room (each with the gap after it), in the order their mods added them; the
-    // rest are hidden. A part first seen this frame may not be laid out inside yet (a wrapping label starts out tall),
-    // so it's only hidden once it has been: the panel is placed again next frame.
+    // rest go out of sight (Park). A part first seen this frame may not be laid out inside yet (a wrapping label starts
+    // out tall), so it only goes once it has been: the panel is placed again next frame.
     public static List<Control> FitOthers(Control info, float room)
     {
         var fitting = new List<Control>();
@@ -382,13 +384,10 @@ static class Layout
             {
                 room -= height;
                 fitting.Add(part);
-                ShowAgain(part);
+                Unpark(part);
             }
             else if (settled)
-            {
-                part.SetMeta(NoRoomMeta, true);
-                part.Visible = false;
-            }
+                Park(part);
         }
         if (settling)
             info.GetTree().CreateTimer(0).Timeout += () =>
@@ -407,7 +406,27 @@ static class Layout
             (part.OffsetLeft + dx, part.OffsetTop + dy, part.OffsetRight + dx, part.OffsetBottom + dy);
     }
 
-    // Vanilla View: other mods' parts where their mods put them, shown again if we hid them.
+    // Out of sight for lack of room: far above the panel, and out of keyboard reach (its own focus behaviour noted for
+    // when it has room again). Never hidden: its Visible stays its mod's, so whatever its mod sets meanwhile (in a fill
+    // or not) still holds when room comes back.
+    static void Park(Control part)
+    {
+        if (!part.HasMeta(ParkedMeta))
+            part.SetMeta(ParkedMeta, (long)part.FocusBehaviorRecursive);
+        part.FocusBehaviorRecursive = Control.FocusBehaviorRecursiveEnum.Disabled;
+        PlaceOther(part, ParkedY);
+    }
+
+    // Room again (or Vanilla View): in keyboard reach as before; placed by the caller.
+    static void Unpark(Control part)
+    {
+        if (!part.HasMeta(ParkedMeta))
+            return;
+        part.FocusBehaviorRecursive = (Control.FocusBehaviorRecursiveEnum)(long)part.GetMeta(ParkedMeta);
+        part.RemoveMeta(ParkedMeta);
+    }
+
+    // Vanilla View: other mods' parts where their mods put them, in reach again if we moved them out of sight.
     static void PutOthersBack(Control info)
     {
         foreach (var part in info.GetChildren().OfType<Control>().Where(c => c.HasMeta(HomeMeta)))
@@ -415,7 +434,7 @@ static class Layout
             var home = (Vector4)part.GetMeta(HomeMeta);
             (part.OffsetLeft, part.OffsetTop, part.OffsetRight, part.OffsetBottom) = (home.X, home.Y, home.Z, home.W);
             part.RemoveMeta(HomeMeta); // noted again on our views, in case its mod moves it meanwhile
-            ShowAgain(part);
+            Unpark(part);
         }
     }
 
