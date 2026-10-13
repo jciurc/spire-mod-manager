@@ -27,9 +27,13 @@ static class Tags
 
     const float ChipMax = 140; // px of text on a chip
 
-    public static List<Chip> For(Mod? mod)
+    // A redraw asks for every row's, and a search several times over: inside one, each mod's are worked out once
+    // (Lookups).
+    public static IReadOnlyList<Chip> For(Mod? mod) => mod == null ? [] : Lookups.Current?.Chips(mod, Make) ?? Make(mod);
+
+    static List<Chip> Make(Mod mod)
     {
-        if (mod?.manifest is not { } manifest)
+        if (mod.manifest is not { } manifest)
             return [];
         // Always in this order: New, Local, Library, Gameplay, Cosmetic, then the player's own. (Updated lately is a
         // pip by the title: RowTitles.)

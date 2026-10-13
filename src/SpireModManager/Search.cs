@@ -17,28 +17,49 @@ static class Search
     {
         if (mod?.manifest is not { } manifest)
             return false;
-        var tokens = Token.Matches(filter).Select(m => (Kind: m.Groups[1].Value, Value: m.Groups[2].Success ? m.Groups[2].Value : m.Groups[3].Value)).ToList();
-        if (tokens.Count > 0)
+        var query = Parse(filter);
+        if (query.Tokens.Count > 0)
         {
             var tags = Tags.For(mod).Select(c => c.Text).ToList();
             bool Has((string Kind, string Value) token) => token.Kind == "#"
                 ? tags.Contains(token.Value, StringComparer.OrdinalIgnoreCase)
                 : string.Equals(manifest.author, token.Value, StringComparison.OrdinalIgnoreCase);
-            if (!tokens.All(Has))
+            if (!query.Tokens.All(Has))
                 return false;
-            filter = Token.Replace(filter, " ").Trim();
-            if (filter.Length == 0)
+            if (query.Rest.Length == 0)
                 return true;
         }
-        var info = Store.InfoFor(manifest.id);
-        string?[] fields = [manifest.name, manifest.id, manifest.author, info?.Alias, info?.Notes, info?.Category,
-            .. Tags.For(mod).Select(c => c.Text), .. WorkshopInfo.For(mod)?.Tags ?? []];
-        var haystack = string.Join('\n', fields);
+        var haystack = Lookups.Current?.Haystack(mod, HaystackOf) ?? HaystackOf(mod);
         // Every word somewhere (any case), or the whole query with spaces ignored within one field: "mod fixes"
         // finds "ModFixes" too.
-        var squeezed = Squeeze(filter);
-        return filter.Split(' ', StringSplitOptions.RemoveEmptyEntries).All(word => haystack.Contains(word, StringComparison.OrdinalIgnoreCase))
-            || fields.Any(f => f != null && Squeeze(f).Contains(squeezed, StringComparison.OrdinalIgnoreCase));
+        return query.Words.All(word => haystack.All.Contains(word, StringComparison.OrdinalIgnoreCase))
+            || haystack.Squeezed.Any(f => f.Contains(query.Squeezed, StringComparison.OrdinalIgnoreCase));
+    }
+
+    // A search taken apart: its "#tag" and "@author" tokens, then the rest as words and with its spaces taken out.
+    // Every row is matched against the same text, so the last one is kept.
+    record Query(string Text, IReadOnlyList<(string Kind, string Value)> Tokens, string Rest, string[] Words, string Squeezed);
+    static Query? _lastQuery;
+
+    static Query Parse(string filter)
+    {
+        if (_lastQuery?.Text == filter)
+            return _lastQuery;
+        var tokens = Token.Matches(filter).Select(m => (Kind: m.Groups[1].Value, Value: m.Groups[2].Success ? m.Groups[2].Value : m.Groups[3].Value)).ToList();
+        var rest = tokens.Count > 0 ? Token.Replace(filter, " ").Trim() : filter;
+        return _lastQuery = new Query(filter, tokens, rest, rest.Split(' ', StringSplitOptions.RemoveEmptyEntries), Squeeze(rest));
+    }
+
+    // What plain words are looked for in: the mod's name, id, author, alias, notes, category, tags and Workshop
+    // tags, all in one text (each word somewhere) and each with its spaces taken out (the whole query in one).
+    public record Haystack(string All, string[] Squeezed);
+
+    static Haystack HaystackOf(Mod mod)
+    {
+        var info = Store.InfoFor(mod.manifest?.id);
+        string?[] fields = [mod.manifest?.name, mod.manifest?.id, mod.manifest?.author, info?.Alias, info?.Notes, info?.Category,
+            .. Tags.For(mod).Select(c => c.Text), .. WorkshopInfo.For(mod)?.Tags ?? []];
+        return new Haystack(string.Join('\n', fields), [.. fields.OfType<string>().Select(Squeeze)]);
     }
 
     static readonly System.Text.RegularExpressions.Regex Token = new(@"([#@])(?:""([^""]+)""|(\S+))");
