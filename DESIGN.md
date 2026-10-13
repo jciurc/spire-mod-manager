@@ -89,6 +89,64 @@ Ideas for us, roughly by value:
 5. **Bulk tagging** with multi-select. Built (the bulk menu).
 6. **Tag-driven actions:** "enable everything tagged co-op" as a profile shortcut; auto-category by tag.
 
+## Research: other StS2 mod managers (2026-10-13)
+
+A survey of the Steam Workshop at Jordan's request, from the mod managers comparison session. Subscriber counts
+are from that day. What we do about it is in TODO round 21 and RELEASE-PLAN.md: Jordan's own calls are marked;
+the rest are recommendations to confirm with him.
+
+- **Better Mod Menu** (3748029698): 101k subscribers, last updated 12 Jul. A companion, "Better Mod Menu Fix
+  (Public-Beta)" (3775001896, 1.5k), patches the same beta bugs as Jordan's upstream pull requests. For us: the
+  biggest one, and the one we already run beside (round 17) and import from.
+- **Load Order Manager** (3747605109, Jianbao233, github.com/Jianbao233/STS2-LoadOrderManager): 90k, updated
+  3 Oct. A button on the vanilla Modding page; up, down, top and bottom moves; Smart Sort; A-Z; presets (with
+  `knownMods` and `autoEnableNewMods`); import and export as JSON on the clipboard; 14 languages
+  (`i18n/*.lang`). One package for every branch: a tiny loader DLL picks
+  `bin/g<version>/LoadOrderManager.Impl.dll`, which reaches the game only through `AccessTools` reflection.
+  Presets go by id only (its README admits a local and a Workshop copy share one entry). No restart button.
+  For us: nearly as many players as Better Mod Menu, and it rewrites `mod_list`, so it can undo our Load Order
+  page. Its branch packaging, languages and presets file are worth learning from (the ideas, not the code).
+- **Mod Launch Manager** (3788556097, Snowline): 4.2k, updated 12 Oct. The only one with our scope. A
+  pre-launch screen (like ModTheSpire's) before other mods initialize, so newly detected mods load in the same
+  launch; a best-effort unload of a DLL whose init fails; Workshop update check, download and subscribe from the
+  game; aliases, groups and sub-groups, filters, profiles; dependencies enabled automatically; a choice of local
+  or Workshop copy; friend-list sync; controller support; AI translation. Keeps itself first in `mod_list`. For
+  us: the closest rival. Loading first is the groundwork for crash-safe launch and loading without a restart.
+- **MOD管理器 | Mod Manager** (3813204995, xiaozz): 136. Grid and list views, card-art mods kept apart, Workshop
+  subscribe, unsubscribe and update, dependencies filled in, and a one-time rollback to the last working setup
+  after a startup crash. For us: small, but the crash rollback and the Workshop actions are worth having.
+- **Smaller ones:**
+  - Better Mod List (3796724666, 85): Workshop tags, update in place; beta only.
+  - Mod Profile Manager (3749810410, 667): profiles and "MPM1:" share codes; needs RitsuLib.
+  - Mod Preset Sync (3774789540, 3.7k): presets as text; downloads missing mods.
+  - ModTheSpire2 (3747911678, 861): an external launcher (an .exe).
+  - STS2 Mod Manager 启动前模组管理 (3799576017, 239, github.com/Jolyne-kujo/STS2-ModManager): a native window
+    before other mods initialize; must be first in the order.
+  - Mod List Hot Reload (3794780403, 32): loads mods mid-session through a collectible `AssemblyLoadContext`,
+    and lists what can't reload.
+  - For us: share codes are common (these two and Load Order Manager's JSON), so players will expect them. Mod
+    Profile Manager and Mod Preset Sync rewrite `mod_list` too. Mod List Hot Reload shows what loading without a
+    restart can and can't do.
+
+**Multiplayer sync** is a niche of its own; leave it to them: AutoModSubscriber (97k), Multiplayer Mod Sync
+(26k), Host Mod Sync, LoadOrderSync (3757945718, re-sorts `mod_list` at launch) and ModListSorter (3749297037,
+re-sorts `mod_list` A-Z on every exit). The last two quietly undo our Load Order page.
+
+**Only we have:** undo/redo with Changes since launch and Revert all; unsaved profile edits; drag and drop with
+dependency lines; profiles by id and source; an in-place relaunch; the Better Mod Menu import and running beside
+it.
+
+What we take from it (details in TODO round 21):
+1. **Share and import a profile as text** (Jordan): a 0.1.0 blocker.
+2. **Crash-safe launch** (Jordan): a spike first; in 0.1.0 if it's small, else the first update.
+3. **Warn about the managers that rewrite `mod_list`** (recommended): the round 19 managers warning, widened.
+4. **Load mods without a restart** (Jordan): a spike, together with crash-safe launch.
+5. Recommended, after 0.1.0: Simplified Chinese; one package for every branch; importing other managers' data;
+   Workshop actions in the info panel.
+
+**Leave out** (recommended): multiplayer host sync (AutoModSubscriber and Multiplayer Mod Sync own it), AI
+translation, forced A-Z ordering, a grid view.
+
 ## Backlog: load order
 
 - **Auto sort** by impact tier, then a dependency sweep, always respecting the player's manual order
@@ -160,7 +218,8 @@ Phases are a proposal; v1 is what ships first on the Workshop.
 ## Open
 
 - Workshop publishing flow, preview image, tags: planned in RELEASE-PLAN.md (beta only at first, §7).
-- Ideas raised, not committed: "Play vanilla" via `--nomods`, profile share codes.
+- Ideas raised, not committed: "Play vanilla" via `--nomods`. (Profile share codes are a 0.1.0 blocker since
+  TODO round 21.)
 - Raised here and built since: enabling missing dependencies ("Enable needed mods", the relaunch
   check), `affects_gameplay` shown for multiplayer (the Gameplay tag), importing Better Mod Menu's
   profiles (first run).
