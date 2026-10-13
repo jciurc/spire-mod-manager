@@ -165,7 +165,7 @@ static class CategoryList
         RowTitles.Look(row, RowState.Selected(row), focused: true);
     }
 
-    // Mod names (links "mod:<id>") in a text: hovering one lights its row and, after half a second, shows the
+    // Mod names (links "mod:<id>") in a text: hovering one lights its row and, after Hover's delay, shows the
     // mod's card; clicking scrolls to it with the selected look.
     public static void WatchNames(RichTextLabel label, Func<Control?> content)
     {
@@ -300,7 +300,8 @@ static class CategoryList
             .ToList();
         RowTitles.Apply(rows, Store.Data.VanillaView);
 
-        // Right-click a row to pick its category. Rows outlive Apply, so connect once.
+        // Right-click a row for its menu (category, alias, tags, notes; the bulk menu for picked mods; on/off and
+        // moves in Load Order). Rows outlive Apply, so connect once.
         foreach (var row in rows.Where(r => !r.HasMeta(RowMenuMeta)))
         {
             row.SetMeta(RowMenuMeta, true);
@@ -486,8 +487,8 @@ static class CategoryList
             Store.Data.UncategorizedCollapsed, c => Store.Data.UncategorizedCollapsed = c);
     }
 
-    // The small buttons at the right of each row's strip: moves in Load Order; otherwise a pencil (the mod's
-    // alias, tags and notes) and its category, both opening its menu.
+    // The small buttons at the right of each row's strip: moves in Load Order; otherwise its category, opening
+    // its menu (the pencil past the tickbox is EdgeAction).
     static Func<NModMenuRow, IEnumerable<MenuItem>> StripActions(Control content) => Store.Data.LoadOrderView
         ? row => LoadOrder.Actions(content, row, () => Redraw(content), compact: true)
         : row => [new MenuItem(CategoryName(row.Mod?.manifest?.id), () => ShowRowMenu(content, row), Tip: Menus.Text("SPIRE_MOD_MANAGER.CATEGORY_TIP"))];
@@ -501,8 +502,8 @@ static class CategoryList
     public static string CategoryName(string? modId) =>
         Store.InfoFor(modId)?.Category is { } name && Categories.Find(name) != null ? name : Menus.Text("SPIRE_MOD_MANAGER.UNCATEGORIZED");
 
-    // After a tickbox change: the rows' dependency notes ("(off)", "Required for") and their title colours
-    // follow at once, without a full redraw.
+    // After a tickbox change: the rows' dependency notes ("(off)", "Required for") follow at once, without a
+    // full redraw. (Their title colours: RowTitles.MarkChanged.)
     public static void RefreshStrips(Control content)
     {
         var rows = content.GetChildren().OfType<NModMenuRow>().ToList();
@@ -513,7 +514,7 @@ static class CategoryList
     }
 
     // A mod's right-click menu: its category on the left (pick one, or a new one, named in place), its alias,
-    // notes and tags on the right, edited right there.
+    // tags and notes on the right, edited right there.
     public static Node? ShowRowMenu(Control content, NModMenuRow row)
     {
         if (Store.Data.VanillaView || row.Mod?.manifest?.id is not { } id)

@@ -13,7 +13,7 @@ namespace SpireModManager;
 //   Pending relaunch; author (click: search for their mods), last update (and a link to its Workshop change notes), compatibility;
 // - anything wrong (red), the author's description;
 // - size, published, subscribers, Workshop tags;
-// - dependencies both ways (click a name: scroll to it in the list and flash it);
+// - dependencies both ways (click a name: scroll to it in the list, its row taking the selected look);
 // - the player's own Alias, Category, Tags and Notes (ModField), then Open Folder.
 // Vanilla View: the panel exactly as the game makes it.
 static class ModDetails
@@ -142,8 +142,9 @@ static class ModDetails
         Hover.Watch(image, "SpireModManagerPictureCard", () => null, picture: () => Store.Data.VanillaView ? null : image.Texture);
     }
 
-    // Anything wrong, the author's description, more facts, then compatibility and dependencies; blank lines
-    // between the groups. (Name, version, source, status, author, update and size are in the head above.)
+    // Anything wrong, the author's description, more facts (size, published, subscribers, Workshop tags), then
+    // dependencies; blank lines between the groups. (Name, version, source, status, author, update and
+    // compatibility are in the head above.)
     static string Describe(Mod mod)
     {
         var text = new System.Text.StringBuilder();
@@ -447,7 +448,7 @@ static class ModDetails
         void Saved(ModField.Kind kind)
         {
             if (Content() is { } content)
-                CategoryList.Apply(content); // rows: alias, tags, the ✎ mark
+                CategoryList.Apply(content); // rows: alias, tags, the notepad
         }
         var fields = new List<ModField>();
         void Add(ModField.Kind kind)
@@ -509,9 +510,6 @@ static class ModDetails
         yours.OffsetTop = top + used + FieldsGap;
         yours.OffsetBottom = yours.OffsetTop + height;
     }
-
-    public static void SetAlias(string modId, string alias) =>
-        Store.EditMod(modId, info => info.Alias = alias.Trim() is { Length: > 0 } a ? a : null);
 
     static string Escape(string text) => text.Replace("[", "[lb]");
 

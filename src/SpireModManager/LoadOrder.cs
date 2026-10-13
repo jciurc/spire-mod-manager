@@ -378,8 +378,9 @@ static class LoadOrder
         History.Record();
     }
 
-    // Position number and a grip on the left of the row. Dragging the grip moves the row: a gold line
-    // shows where it will land, and releasing saves. Made once per row; the number updates every redraw.
+    // Position number and a grip on the left of the row. Dragging the row (anywhere, not just the grip) moves
+    // it: a gold line shows where it will land, and releasing saves. Made on each visit to Load Order
+    // (Undecorate takes them off again); the number updates every redraw.
     // wasAt: where it was at launch (0: unknown); shown dimly as "5 →" when it moved.
     static void Decorate(Control content, NModMenuRow row, int position, int wasAt, Action redraw)
     {
