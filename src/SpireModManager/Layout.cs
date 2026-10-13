@@ -23,8 +23,7 @@ static class Layout
     const string WatermarkMeta = "spire_mod_manager_watermark";
     const string MinSizeMeta = "spire_mod_manager_min_size";
     const string BoxMeta = "spire_mod_manager_original_box", BarMeta = "spire_mod_manager_original_bar", AnchorMeta = "spire_mod_manager_original_anchor";
-    const string HomeMeta = "spire_mod_manager_home", SeenMeta = "spire_mod_manager_seen", NoRoomMeta = "spire_mod_manager_no_room";
-    const string ParkedMeta = "spire_mod_manager_parked";
+    const string HomeMeta = "spire_mod_manager_home", SeenMeta = "spire_mod_manager_seen", ParkedMeta = "spire_mod_manager_parked";
     const float ParkedY = -10000; // other mods' parts with no room, far above the panel (Park)
 
     // The info panel's own parts as the game's scene makes them (by name), noted the first time we see the panel.
@@ -436,24 +435,6 @@ static class Layout
             part.RemoveMeta(HomeMeta); // noted again on our views, in case its mod moves it meanwhile
             Unpark(part);
         }
-    }
-
-    // Before the panel is filled (a mod picked): the parts we hid for lack of room shown again, so their mods' own
-    // updates after the game's fill decide what shows, and the layout that follows hides again what doesn't fit.
-    // Otherwise a part its mod hid while we had it hidden (no change to see) came back as soon as there was room.
-    public static void GiveBack(Control info)
-    {
-        foreach (var part in info.GetChildren().OfType<Control>())
-            ShowAgain(part);
-    }
-
-    // A part we hid for lack of room shown again (one its own mod hid stays hidden).
-    static void ShowAgain(Control part)
-    {
-        if (!part.HasMeta(NoRoomMeta))
-            return;
-        part.RemoveMeta(NoRoomMeta);
-        part.Visible = true;
     }
 
     // The list's scrollbar as the scene had it (box, minimum width, mouse filter; saved the first time), back if
