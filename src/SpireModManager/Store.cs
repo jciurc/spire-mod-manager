@@ -63,6 +63,7 @@ public record ModRef(string Id, ModSource? Source);
 public static class Store
 {
     const string FileName = "manager.json";
+    const string BackupsFolder = "backups", BackupPattern = "manager.*.json";
     const int BackupsKept = 10;
 
     static readonly JsonSerializerOptions Json = new()
@@ -157,31 +158,50 @@ public static class Store
         Save();
     }
 
-    // Writes to a temp file and swaps it in, so a crash mid-write can't leave a half-written file.
-    // The first save of each session first copies the previous file into backups/.
+    // The first save of each session first copies the previous file into backups/ (one try a session).
     static void Write(StoreData data)
     {
-        try
-        {
-            Directory.CreateDirectory(Dir);
-            if (!_backedUpThisSession && File.Exists(FilePath))
+        WriteTo(Dir, data, backUp: !_backedUpThisSession);
+        _backedUpThisSession = true;
+    }
+
+    // Saves manager.json into a folder (ours, or a self-test's), after copying the old one into backups/ when
+    // asked (the newest ten kept). The copy has its own try: when it fails (a file lock, antivirus), that's
+    // logged and the save itself still happens.
+    public static void WriteTo(string dir, StoreData data, bool backUp)
+    {
+        var file = Path.Combine(dir, FileName);
+        if (backUp && File.Exists(file))
+            try
             {
-                var backups = Path.Combine(Dir, "backups");
+                var backups = Path.Combine(dir, BackupsFolder);
                 Directory.CreateDirectory(backups);
-                File.Copy(FilePath, Path.Combine(backups, $"manager.{DateTime.Now:yyyyMMdd-HHmmss}.json"), overwrite: true);
-                foreach (var old in Directory.GetFiles(backups, "manager.*.json").OrderDescending().Skip(BackupsKept))
+                File.Copy(file, Path.Combine(backups, $"manager.{DateTime.Now:yyyyMMdd-HHmmss}.json"), overwrite: true);
+                foreach (var old in Directory.GetFiles(backups, BackupPattern).OrderDescending().Skip(BackupsKept))
                     File.Delete(old);
             }
-            _backedUpThisSession = true;
+            catch (Exception e)
+            {
+                Log.Error($"[{ModEntry.ModId}] Could not back up {file}, saving without a backup: {e}");
+            }
 
-            var temp = FilePath + ".tmp";
-            File.WriteAllText(temp, JsonSerializer.Serialize(data, Json));
-            File.Move(temp, FilePath, overwrite: true);
+        try
+        {
+            Directory.CreateDirectory(dir);
+            WriteAtomic(file, data);
         }
         catch (Exception e)
         {
-            Log.Error($"[{ModEntry.ModId}] Could not save {FilePath}: {e}");
+            Log.Error($"[{ModEntry.ModId}] Could not save {file}: {e}");
         }
+    }
+
+    // Writes to a temp file and swaps it in, so a crash mid-write can't leave a half-written file.
+    static void WriteAtomic(string file, StoreData data)
+    {
+        var temp = file + ".tmp";
+        File.WriteAllText(temp, JsonSerializer.Serialize(data, Json));
+        File.Move(temp, file, overwrite: true);
     }
 
     public static ModInfo? InfoFor(string? modId) => modId != null && Data.Mods.TryGetValue(modId, out var info) ? info : null;
