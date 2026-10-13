@@ -56,6 +56,7 @@
   "SPIRE_MOD_MANAGER.DELETE": "Delete",
   "SPIRE_MOD_MANAGER.DELETE_CATEGORY_TITLE": "Delete category?",
   "SPIRE_MOD_MANAGER.DELETE_CATEGORY_BODY": "[gold]{name}[/gold] holds {count} mods. They will move to Uncategorized.",
+  "SPIRE_MOD_MANAGER.DELETE_CATEGORY_BODY_ONE": "[gold]{name}[/gold] holds 1 mod. It will move to Uncategorized.",
   "SPIRE_MOD_MANAGER.SOURCE_LOCAL": "Local",
   "SPIRE_MOD_MANAGER.SOURCE_STEAM": "SteamID {id}",
   "SPIRE_MOD_MANAGER.ALIAS_TERM": "Alias",

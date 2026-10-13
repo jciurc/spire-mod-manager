@@ -660,7 +660,7 @@ static class CategoryList
             var count = Categories.CountMods(category);
             if (count > 0)
             {
-                var body = new LocString("settings_ui", "SPIRE_MOD_MANAGER.DELETE_CATEGORY_BODY");
+                var body = new LocString("settings_ui", count == 1 ? "SPIRE_MOD_MANAGER.DELETE_CATEGORY_BODY_ONE" : "SPIRE_MOD_MANAGER.DELETE_CATEGORY_BODY");
                 body.Add("name", category.Name);
                 body.Add("count", count);
                 if (!await Menus.Confirm(new LocString("settings_ui", "SPIRE_MOD_MANAGER.DELETE_CATEGORY_TITLE"), body))

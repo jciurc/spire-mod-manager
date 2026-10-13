@@ -586,6 +586,18 @@ static class SelfTest
         }
         category = Store.Data.Categories.First(c => c.Name == "Renamed"); // undo restores the data as new objects
 
+        // Delete from the header menu asks first; with one mod in the category, in the singular. (Cancelled by
+        // closing the popup; the deletion itself is below.)
+        if (CategoryList.ShowHeaderMenu(content, category, Members()) is { } deleteMenu)
+        {
+            MenuPanel.Press(deleteMenu, "Delete");
+            await Wait(menu, 0.5);
+            var asked = PopupTexts();
+            Check("deleting a category with one mod asks, in the singular", asked.Any(t => t.Contains("holds 1 mod.")), string.Join(" | ", asked.Where(t => t.Length > 0)));
+            NModalContainer.Instance?.Clear();
+            await Wait(menu, 0.3);
+        }
+
         Categories.Delete(category);
         CategoryList.Apply(content);
         await Wait(menu, 0.5);
@@ -907,8 +919,7 @@ static class SelfTest
         var detected = typeof(NGame).GetMethod("OnNewModDetected", System.Reflection.BindingFlags.NonPublic | System.Reflection.BindingFlags.Instance);
         detected?.Invoke(NGame.Instance, [mod]);
         await Wait(menu, 0.3);
-        var texts = NModalContainer.Instance?.OpenModal is Node popup
-            ? popup.FindChildren("*", "", true, false).Select(n => n is Label l ? l.Text : n is RichTextLabel r ? r.Text : "").ToList() : [];
+        var texts = PopupTexts();
         Check("new mod popup says \"New Mod Added\"", texts.Any(t => t.Contains("New Mod Added")), string.Join(" | ", texts.Where(t => t.Length > 0)));
         await Capture(screen, outDir, "10b-new-mod-popup");
         NModalContainer.Instance?.Clear();
@@ -1736,6 +1747,10 @@ static class SelfTest
     }
 
     static Node? Header(Control content, string category) => content.GetNodeOrNull($"Category {category}");
+
+    // Every text in the popup open now (the game's modal), for checking its wording.
+    static List<string> PopupTexts() => NModalContainer.Instance?.OpenModal is Node popup
+        ? popup.FindChildren("*", "", true, false).Select(n => n is Label l ? l.Text : n is RichTextLabel r ? r.Text : "").ToList() : [];
 
     static void Click(NButton button) => button.EmitSignal(NClickableControl.SignalName.Released, button);
 
