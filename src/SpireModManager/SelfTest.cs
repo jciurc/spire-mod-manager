@@ -2074,6 +2074,8 @@ static class SelfTest
             await Wait(menu, 0.3);
             Check("one undo turns both back on, and the banner is back", Bmm.Ticked && Dependencies.IsOn(libMod) && Placed() && Buttons(), Where());
         }
+        else
+            Results.Add("SKIP managers banner turned off with another mod: SmmTestLib not installed");
 
         // Our own row unticked re-arms it too (only both ticked is two managers on).
         if (Row(ModEntry.ModId)?.GetNode<NTickbox>("Tickbox") is { } ours)
@@ -2086,6 +2088,8 @@ static class SelfTest
             await Tick(ours, true);
             Check("ours ticked again: the banner is back", Placed() && Buttons(), Where());
         }
+        else
+            Results.Add("SKIP managers banner with our own mod unticked: no row for it");
 
         await Tick(tickbox, false);
         Check("Better Mod Menu unticked: the banner goes at once", !Bmm.Ticked && Banner() == null, Where());
