@@ -89,7 +89,7 @@ static class Search
     }
 
     // A search's terms as typed: #tag and @author (quoted or not), or a plain word.
-    static readonly System.Text.RegularExpressions.Regex Term = new(@"[#@](?:""[^""]+""|\S+)|\S+");
+    static readonly System.Text.RegularExpressions.Regex Term = new(@"[#@](?:""[^""]+""|\S+)|(?:(?![#@](?:""[^""]+""|\S))\S)+");
 
     // Two terms are the same when they're the same kind with the same value, any case, quotes aside.
     static bool Same(string a, string b) => string.Equals(Plain(a), Plain(b), StringComparison.OrdinalIgnoreCase);
