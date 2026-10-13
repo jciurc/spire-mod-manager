@@ -638,8 +638,8 @@ own art; the spikes describe the game's behaviour but quote no game code.
   STS2_BMM_REPO, with today's paths as the fallback (#25, #13).
 - [ ] **free security features on public repos:** turn on code scanning (CodeQL, C# build-free mode), secret
   scanning and push protection, Dependabot alerts; decide which to make required in the rulesets.
-- [ ] **docs:** decide whether "Jordan" in TODO, WHATS-NEW and the tests stays. (Done in #25: TRANSLATING.md and
-  the Workshop description link to GitHub for issues and pull requests.)
+- [x] **docs:** "Jordan" stays in docs, comments and tests (his call, 2026-10-13); his surname never appears.
+  TRANSLATING.md and the Workshop description link to GitHub for issues and pull requests (#25).
 - [ ] **presentable and open to contributors:** review the repo as a whole as something that represents Jordan.
   The front page and README are for visitors: what it is, a screenshot, how to install, how to report a bug.
   Move internal notes (TODO, WHATS-NEW, RELEASE-PLAN, DESIGN, spikes) out of the root, or say what they are.
