@@ -1,4 +1,5 @@
 using System.Text;
+using System.Text.Json.Nodes;
 using Godot;
 using MegaCrit.Sts2.Core.Localization;
 using MegaCrit.Sts2.Core.Modding;
@@ -70,6 +71,7 @@ static class SelfTest
             var content = screen.GetNode<Control>("%ModsScrollContainer/Mask/Content");
             var rows = content.GetChildren().OfType<NModMenuRow>().ToList();
             Check("relaunch button", screen.GetNodeOrNull("SpireModManagerRelaunchButton") != null);
+            TestNewModsAtLaunch(); // first: before anything switches profiles
             if (Bmm.Present) // dev.cs test --bmm
                 await TestBetterModMenu(menu, screen, content, outDir);
             Check("view toggle", screen.GetNodeOrNull("SpireModManagerViewToggle") != null);
@@ -85,11 +87,12 @@ static class SelfTest
             if (Profiles.Active is { } start && Store.Data.Profiles.FirstOrDefault(p => p != start) is { } other)
             {
                 if (Profiles.Edited)
-                    Profiles.Save(); // the fixture launches on an unsaved edit (its list differs from the profile)
+                    Profiles.Save(); // start clean
                 var before = ModListState();
                 Profiles.SwitchTo(other, screen);
                 await Wait(menu, 1);
                 Results.Add($"INFO switched to {other.Name}: {ModListState().Count(s => s.EndsWith("=on"))} on");
+                Check("switching to the other profile changes the mod list", !ModListState().SequenceEqual(before)); // or the round trip proves nothing
                 Check("our own mod stays on", !(SaveManager.Instance.SettingsSave.ModSettings?.ModList
                     .Any(m => m.Id == ModEntry.ModId && !m.IsEnabled) ?? false));
                 await Capture(screen, outDir, "3-other-profile");
@@ -101,6 +104,7 @@ static class SelfTest
             }
             else
                 Results.Add("SKIP profile round trip: only one profile");
+            await TestNewModsOnSwitch(menu, screen, content);
 
             Click(screen.GetNode<NButton>("SpireModManagerViewToggle"));
             await Wait(menu, 1);
@@ -955,7 +959,7 @@ static class SelfTest
         }
         void Press(string name) => bar.FindChild(name, true, false)?.EmitSignal(BaseButton.SignalName.Pressed);
         if (Profiles.Edited)
-            Profiles.Save(); // start clean: the fixture launches on an unsaved edit (its list differs from the profile)
+            Profiles.Save(); // start clean
         var wasOn = On();
         string Shown(string box) => bar.FindChild(box, true, false) is Control { Visible: true } c
             ? string.Join(",", c.GetChildren().Select(b => b.Name.ToString())) : "";
@@ -992,6 +996,61 @@ static class SelfTest
         Input.ParseInputEvent(new InputEventKey { Keycode = Key.S, CtrlPressed = true, Pressed = true });
         await Wait(menu, 0.3);
         Check("Ctrl+S saves the profile", !Profiles.Edited && SavedOn() == wasOn && profile.Edited == null);
+    }
+
+    // New mods and profiles (Jordan, 2026-10-13). The fixture's Default profile doesn't list the test mods, which
+    // are on (the game's default for a new mod): they joined it at launch, on, quietly (no unsaved edit, and so
+    // already in the state the session started from, which Changes and Revert all compare with).
+    static void TestNewModsAtLaunch()
+    {
+        string[] ids = ["SmmTestLib", "SmmTestUi", "SmmTestContent"];
+        if (Profiles.Active is not { } profile || ids.Any(id => Dependencies.Find(id) == null))
+        {
+            Results.Add("SKIP new mods at launch: needs the test mods");
+            return;
+        }
+        Check("mods the active profile had never seen joined it at launch, on", ids.All(id => profile.Mods.Any(m => m.Id == id && m.Enabled)),
+            string.Join(", ", profile.Mods.Select(m => $"{m.Id}={(m.Enabled ? "on" : "off")}")));
+        var (on, off) = Profiles.UnsavedChanges();
+        Check("quietly: no unsaved edit, and already so in the launch state", !Profiles.Edited && ids.All(id => OnInSnapshot(History.Loaded, id)),
+            $"edited {Profiles.Edited} (+{string.Join(", +", on)} -{string.Join(", -", off)}), in the launch state {ids.Count(id => OnInSnapshot(History.Loaded, id))} of {ids.Length}");
+    }
+
+    // Switching to a profile that has never seen a mod (here: two test mods taken out of the other profile, as if
+    // installed since it was last used) leaves the mod as it is, on or off, and that profile keeps it that way from
+    // then on. The profile left keeps its unsaved edit, which is then discarded.
+    static async Task TestNewModsOnSwitch(Node menu, NModdingScreen screen, Control content)
+    {
+        if (Profiles.Active is not { } start || Store.Data.Profiles.FirstOrDefault(p => p != start) is not { } other
+            || Dependencies.Find("SmmTestUi") == null
+            || content.GetChildren().OfType<NModMenuRow>().FirstOrDefault(r => r.Mod?.manifest?.id == "SmmTestContent")?.GetNode<NTickbox>("Tickbox") is not { } tickbox)
+        {
+            Results.Add("SKIP new mods on switch: needs two profiles and the test mods");
+            return;
+        }
+        bool On(string id) => !(SaveManager.Instance.SettingsSave.ModSettings?.IsModDisabled(id, ModSource.ModsDirectory) ?? false);
+        bool Saved(Profile profile, string id, bool on) => profile.Mods.Any(m => m.Id == id && m.Enabled == on);
+        string[] unseen = ["SmmTestUi", "SmmTestContent"];
+        if (Profiles.Edited)
+            Profiles.Save(); // start clean
+        tickbox.IsTicked = false; // Test Content off (an unsaved edit), Test UI on
+        tickbox.EmitSignal(NTickbox.SignalName.Toggled, tickbox);
+        await Wait(menu, 0.3);
+        other.Mods.RemoveAll(m => unseen.Contains(m.Id));
+        other.Edited?.RemoveAll(m => unseen.Contains(m.Id));
+
+        Profiles.SwitchTo(other, screen);
+        await Wait(menu, 0.3);
+        Check("switching to a profile that never saw a mod leaves it as it is, on or off", On("SmmTestUi") && !On("SmmTestContent"),
+            $"Test UI on {On("SmmTestUi")}, Test Content on {On("SmmTestContent")}");
+        Check("that profile keeps them that way from then on, with no unsaved edit",
+            Saved(other, "SmmTestUi", true) && Saved(other, "SmmTestContent", false) && !Profiles.Edited,
+            $"{string.Join(", ", other.Mods.Where(m => unseen.Contains(m.Id)).Select(m => $"{m.Id}={(m.Enabled ? "on" : "off")}"))}, edited {Profiles.Edited}");
+        Profiles.SwitchTo(start, screen);
+        await Wait(menu, 0.3);
+        Check("back: the profile left still has its unsaved edit", Profiles.Edited && !On("SmmTestContent") && Saved(start, "SmmTestContent", true));
+        Profiles.Discard(screen);
+        await Wait(menu, 0.3);
     }
 
     // The fixture gives SpireModManager an alias and notes; LocalModFixes gets them through the editor.
@@ -1172,12 +1231,17 @@ static class SelfTest
             manifest = new ModManifest { id = "SmmFreshMod", name = "Fresh Mod" },
         };
         var rowsBefore = content.GetChildren().OfType<NModMenuRow>().ToList();
+        var wasEdited = Profiles.Edited;
         typeof(ModManager).GetMethod("InvokeOnModDetected", System.Reflection.BindingFlags.NonPublic | System.Reflection.BindingFlags.Static)
             ?.Invoke(null, [fresh]);
         await Wait(menu, 0.4);
         NModalContainer.Instance?.Clear();
         Check("a mod installed now is listed as installed, loading after relaunch",
             HistoryBar.Describe().Any(l => l.Contains("Installed: Fresh Mod") && l.Contains("loads after relaunch")), string.Join(" | ", HistoryBar.Describe()));
+        // It joins the active profile at once, on, quietly: no unsaved edit, and Revert all's state has it too.
+        Check("a mod installed now joins the active profile, on, quietly",
+            Profiles.Active?.Mods.Any(m => m.Id == "SmmFreshMod" && m.Enabled) == true && Profiles.Edited == wasEdited && OnInSnapshot(History.Entered, "SmmFreshMod"),
+            $"in the profile {Profiles.Active?.Mods.Any(m => m.Id == "SmmFreshMod")}, edited {wasEdited} -> {Profiles.Edited}, in Revert all's state {OnInSnapshot(History.Entered, "SmmFreshMod")}");
         Check("a mod installed now gets a New tag, first", Tags.For(fresh).FirstOrDefault()?.Text == "New");
         var freshRow = content.GetChildren().OfType<NModMenuRow>().Except(rowsBefore).FirstOrDefault(r => r.Mod == fresh);
         if (freshRow != null)
@@ -1189,10 +1253,17 @@ static class SelfTest
             Check("unticking a new mod is saved, and Changes says it's disabled",
                 SaveManager.Instance.SettingsSave.ModSettings?.IsModDisabled(fresh) == true
                 && HistoryBar.Describe().Any(l => l.Contains("Fresh Mod") && l.Contains("Disabled")), string.Join(" | ", HistoryBar.Describe()));
+            Check("unticking it is an unsaved edit of the profile", Profiles.Edited && Profiles.UnsavedChanges().Off.Contains("Fresh Mod"),
+                $"edited {Profiles.Edited}, off: {string.Join(", ", Profiles.UnsavedChanges().Off)}");
             HistoryBar.ShowList(screen);
             await Wait(menu, 0.2);
             await Capture(screen, outDir, "10c-installed-change");
             HistoryBar.CloseList(screen.GetNode<Control>("%ModInfoContainer"));
+            // Undone: before the untick the game had no entry for it (on), and the profile had it on.
+            History.Undo();
+            await Wait(menu, 0.3);
+            Check("undoing the untick: the new mod on again, the profile as it was", SaveManager.Instance.SettingsSave.ModSettings?.IsModDisabled(fresh) == false
+                && Profiles.Edited == wasEdited, $"disabled {SaveManager.Instance.SettingsSave.ModSettings?.IsModDisabled(fresh)}, edited {wasEdited} -> {Profiles.Edited}");
             content.RemoveChild(freshRow);
             freshRow.QueueFree();
         }
@@ -1200,6 +1271,7 @@ static class SelfTest
             Results.Add("FAIL a mod installed now gets a row");
         Installed.Forget(fresh);
         SaveManager.Instance.SettingsSave.ModSettings?.ModList.RemoveAll(e => e.Id == "SmmFreshMod");
+        Profiles.Track(); // its unsaved edit goes with it
         History.Record();
         CategoryList.Redraw(content); // the pending note too
         if (added != null)
@@ -2130,6 +2202,16 @@ static class SelfTest
     static List<string> ModListState() =>
         SaveManager.Instance.SettingsSave.ModSettings?.ModList
             .Select(m => $"{m.Id}/{m.Source}={(m.IsEnabled ? "on" : "off")}").OrderBy(s => s).ToList() ?? [];
+
+    // Whether a history snapshot's active profile has the mod, on.
+    static bool OnInSnapshot(History.Snapshot? snapshot, string id)
+    {
+        if (snapshot == null || JsonNode.Parse(snapshot.Store) is not JsonObject store)
+            return false;
+        var active = (string?)store["active_profile"];
+        return (store["profiles"] as JsonArray ?? []).Any(p => (string?)p?["name"] == active
+            && (p?["mods"] as JsonArray ?? []).Any(m => (string?)m?["id"] == id && (bool?)m?["enabled"] == true));
+    }
 
     static void Check(string name, bool ok, string detail = "") =>
         Results.Add($"{(ok ? "PASS" : "FAIL")} {name}{(ok || detail.Length == 0 ? "" : $": {detail}")}");

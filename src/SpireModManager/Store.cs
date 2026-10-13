@@ -322,6 +322,14 @@ public static class Store
         return JsonSerializer.Serialize(copy, Json);
     }
 
+    // A snapshot of our data (EditsJson) with a change made to it as well.
+    public static string Patched(string json, Action<StoreData> change)
+    {
+        var data = JsonSerializer.Deserialize<StoreData>(json, Json) ?? new StoreData();
+        change(data);
+        return JsonSerializer.Serialize(data, Json);
+    }
+
     // Puts saved edits back, keeping the current view state.
     public static void RestoreEdits(string json)
     {
