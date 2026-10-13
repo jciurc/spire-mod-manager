@@ -53,7 +53,8 @@ static class RowTitles
             row.SetMeta(ShiftMeta, shift);
             title.BbcodeEnabled = true;
             title.Text = Escape(name);
-            title.RemoveThemeColorOverride("default_color"); // Better Mod Menu's name colour (its page restyles its own)
+            if (title.HasThemeColorOverride("default_color")) // (removing one restyles the text, even when there is none)
+                title.RemoveThemeColorOverride("default_color"); // Better Mod Menu's name colour (its page restyles its own)
             Layout.FontSize(title, vanilla ? Layout.RowTitleVanillaSize : Layout.RowTitleSize);
             // Shown again by Fit, in our views.
             foreach (var part in new[] { MarkName, HotName, RestName })
