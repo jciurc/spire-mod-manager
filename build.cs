@@ -1,5 +1,7 @@
 // Build SpireModManager (pack + DLL + manifest) and install it into the game's mods folder.
 // Usage: dotnet run build.cs [--no-install]     (needs the .NET 10 SDK; close the game first to install)
+//        dotnet run build.cs --dist             the release: ReleaseVersion, only the files players get, in
+//                                               dist/SpireModManager/ for the Workshop upload; never installs
 using System.Diagnostics;
 using System.Runtime.CompilerServices;
 using System.Security.Cryptography;
@@ -13,6 +15,11 @@ var root = ScriptDir();
 var installDir = Path.Combine(Steam, "common", "Slay the Spire 2", "mods", ModId);
 var project = Path.Combine(root, "src", ModId, ModId + ".csproj");
 var outDir = Path.Combine(root, "out");
+var dist = args.Contains("--dist");
+
+// The version a --dist build carries, the one on the Workshop. Raised by hand for each upload; it never
+// changes on its own, and dev builds keep their own number below.
+const string ReleaseVersion = "0.1.0";
 
 var manifest = new JsonObject
 {
@@ -28,6 +35,11 @@ var manifest = new JsonObject
     ["dependencies"] = new JsonArray(),
     ["min_game_version"] = "0.111.0",
 };
+if (dist)
+    manifest["version"] = ReleaseVersion;
+
+// What a player's mods folder gets: the pack, the manifest and the DLL.
+string[] shipped = [".pck", ".json", ".dll"];
 
 if (Directory.Exists(outDir))
     Directory.Delete(outDir, recursive: true);
@@ -69,12 +81,32 @@ if (build.ExitCode != 0)
 File.Copy(Path.Combine(outDir, "bin", ModId + ".dll"), Path.Combine(outDir, ModId + ".dll"));
 Console.WriteLine($"built {files.Count} pack file(s)");
 
+if (dist)
+{
+    // The upload is filled from dist/SpireModManager alone: out/ also holds bin/ (pdb, deps.json) and, between
+    // builds, the dev log and self-test output, some of it from Jordan's own mods and profiles. Only this
+    // folder is emptied, so anything else kept in dist/ (zips of earlier releases) stays.
+    var distDir = Path.Combine(root, "dist", ModId);
+    if (Directory.Exists(distDir))
+        Directory.Delete(distDir, recursive: true);
+    Directory.CreateDirectory(distDir);
+    foreach (var ext in shipped)
+        File.Copy(Path.Combine(outDir, ModId + ext), Path.Combine(distDir, ModId + ext));
+    // A last look before anything is uploaded: exactly the shipped files, nothing missing, nothing extra.
+    var expected = shipped.Select(ext => ModId + ext).Order().ToList();
+    var found = Directory.GetFileSystemEntries(distDir).Select(Path.GetFileName).Order().ToList();
+    if (!found.SequenceEqual(expected))
+        return Fail($"dist/{ModId} must hold exactly {string.Join(", ", expected)}, but holds: {string.Join(", ", found)}");
+    Console.WriteLine($"release {ReleaseVersion} in {distDir}: {string.Join(", ", found)}");
+    return 0;
+}
+
 if (!args.Contains("--no-install"))
 {
     Directory.CreateDirectory(installDir);
     try
     {
-        foreach (var ext in new[] { ".pck", ".json", ".dll" })
+        foreach (var ext in shipped)
             File.Copy(Path.Combine(outDir, ModId + ext), Path.Combine(installDir, ModId + ext), overwrite: true);
     }
     catch (IOException e)
