@@ -49,6 +49,7 @@
   "SPIRE_MOD_MANAGER.CATEGORY": "Category",
   "SPIRE_MOD_MANAGER.NEW_CATEGORY": "New category",
   "SPIRE_MOD_MANAGER.NEW_CATEGORY_NAME": "New Category",
+  "SPIRE_MOD_MANAGER.NO_CATEGORIES_HINT": "No categories yet. Right-click a mod and choose \"{item}\" to make one.",
   "SPIRE_MOD_MANAGER.RENAME": "Rename",
   "SPIRE_MOD_MANAGER.MOVE_UP": "Move up",
   "SPIRE_MOD_MANAGER.MOVE_DOWN": "Move down",
