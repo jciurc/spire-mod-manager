@@ -77,7 +77,7 @@ static class Search
             ClearButtonEnabled = true,
             MaxLength = 60,
         };
-        box.AddThemeFontOverride("font", ResourceLoader.Load<Font>("res://themes/kreon_regular_shared.tres"));
+        box.AddThemeFontOverride("font", ModEntry.Font("res://themes/kreon_regular_shared.tres"));
         box.AddThemeFontSizeOverride("font_size", 16);
         box.AddThemeColorOverride("font_color", Cream);
         box.AddThemeColorOverride("font_placeholder_color", new Color(Cream, 0.45f));

@@ -74,7 +74,7 @@ static class Menus
             button.Name = name;
         foreach (var (state, box) in SmallBoxes)
             button.AddThemeStyleboxOverride(state, box);
-        button.AddThemeFontOverride("font", ResourceLoader.Load<Font>("res://themes/kreon_regular_shared.tres"));
+        button.AddThemeFontOverride("font", ModEntry.Font("res://themes/kreon_regular_shared.tres"));
         button.AddThemeFontSizeOverride("font_size", 16);
         button.AddThemeColorOverride("font_color", Cream);
         button.AddThemeColorOverride("font_hover_color", Colors.White);

@@ -90,7 +90,7 @@ static class RowStrip
                 SizeFlagsHorizontal = Control.SizeFlags.ExpandFill, SizeFlagsVertical = Control.SizeFlags.Fill,
                 ClipContents = true, MouseFilter = Control.MouseFilterEnum.Ignore,
             };
-            note.AddThemeFontOverride("normal_font", ResourceLoader.Load<Font>("res://themes/kreon_regular_shared.tres"));
+            note.AddThemeFontOverride("normal_font", ModEntry.Font("res://themes/kreon_regular_shared.tres"));
             note.AddThemeFontSizeOverride("normal_font_size", 13);
             note.AddThemeColorOverride("default_color", Note);
             strip.AddChild(note);
@@ -98,7 +98,7 @@ static class RowStrip
             {
                 // Who made it, quietly. (Searching by author is in the info panel.)
                 var by = new Label { Name = "Author", Text = author, VerticalAlignment = VerticalAlignment.Center, MouseFilter = Control.MouseFilterEnum.Ignore };
-                by.AddThemeFontOverride("font", ResourceLoader.Load<Font>("res://themes/kreon_regular_shared.tres"));
+                by.AddThemeFontOverride("font", ModEntry.Font("res://themes/kreon_regular_shared.tres"));
                 by.AddThemeFontSizeOverride("font_size", 13);
                 by.AddThemeColorOverride("font_color", new Color(1, 0.964706f, 0.886275f, 0.45f));
                 // A long one is cut with "…"; the whole name after a second over it.

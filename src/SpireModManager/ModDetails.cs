@@ -384,7 +384,7 @@ static class ModDetails
         var line = new HBoxContainer { Name = SourceName, MouseFilter = Control.MouseFilterEnum.Ignore };
         line.AddThemeConstantOverride("separation", 8);
         var link = new LinkButton { Name = LinkName, FocusMode = Control.FocusModeEnum.None };
-        link.AddThemeFontOverride("font", ResourceLoader.Load<Font>("res://themes/kreon_regular_shared.tres"));
+        link.AddThemeFontOverride("font", ModEntry.Font("res://themes/kreon_regular_shared.tres"));
         link.AddThemeFontSizeOverride("font_size", 16);
         link.AddThemeColorOverride("font_color", new Color(0.6f, 0.8f, 1f));
         link.AddThemeColorOverride("font_hover_color", new Color(0.8f, 0.9f, 1f));
@@ -517,7 +517,7 @@ static class ModDetails
 
     static void Style(Control control, string font, int size, Color color)
     {
-        control.AddThemeFontOverride("font", ResourceLoader.Load<Font>(font));
+        control.AddThemeFontOverride("font", ModEntry.Font(font));
         control.AddThemeFontSizeOverride("font_size", size);
         control.AddThemeColorOverride("font_color", color);
     }

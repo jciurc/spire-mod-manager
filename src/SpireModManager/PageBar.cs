@@ -46,7 +46,7 @@ static class PageBar
             Text = Menus.Format(picked ? "SPIRE_MOD_MANAGER.PAGE_SELECTED" : filter.Length == 0 ? "SPIRE_MOD_MANAGER.PAGE_ALL" : "SPIRE_MOD_MANAGER.PAGE_MATCHES",
                 ("count", shown.Count.ToString())),
         };
-        scope.AddThemeFontOverride("font", ResourceLoader.Load<Font>("res://themes/kreon_regular_shared.tres"));
+        scope.AddThemeFontOverride("font", ModEntry.Font("res://themes/kreon_regular_shared.tres"));
         scope.AddThemeFontSizeOverride("font_size", 15);
         scope.AddThemeColorOverride("font_color", new Color(1, 0.964706f, 0.886275f, 0.55f));
         bar.AddChild(scope);
