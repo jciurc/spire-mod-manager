@@ -11,8 +11,10 @@ namespace SpireModManager;
 //   profiles), then the load-order moves. Hovering shows them apart (naming the mods when there are few);
 //   clicking opens (or closes) the full list in the right panel: switched profile, each mod enabled or
 //   disabled, each mod installed (and whether it loads after a relaunch), each move, each edit, profiles
-//   added or removed. A mod's name there opens it, with Back to the list.
+//   added, deleted or renamed. A mod's name there opens it, with Back to the list.
 // - Undo, Redo (their shortcuts underneath), Revert all.
+// The same place in the panel also lists the active profile's unsaved changes, opened from "Unsaved •" on the
+// profile bar; one list at a time, so opening one closes the other.
 static class HistoryBar
 {
     public const string BarName = "SpireModManagerHistory";
@@ -27,6 +29,12 @@ static class HistoryBar
 
     // The screen our keyboard shortcuts act on, while it exists.
     public static NModdingScreen? Screen { get; private set; }
+
+    // Which list the panel shows: everything changed since launch, or the active profile's unsaved changes.
+    public enum ListKind { Changes, Unsaved }
+
+    // The list the panel shows, or showed last (where Back returns to).
+    static ListKind _list;
 
     public static void Attach(NModdingScreen screen)
     {
@@ -65,13 +73,8 @@ static class HistoryBar
         Hover.Watch(changes, SummaryName, Summary, place: () => (changes.GlobalPosition + new Vector2(changes.Size.X, -8), true, true));
         changes.GuiInput += e =>
         {
-            if (e is not InputEventMouseButton { ButtonIndex: MouseButton.Left, Pressed: false })
-                return;
-            // A second click closes the list again; with Back showing (a mod opened from the list), it goes back.
-            if (ListOpen(info))
-                CloseList(info);
-            else
-                ShowList(screen);
+            if (e is InputEventMouseButton { ButtonIndex: MouseButton.Left, Pressed: false })
+                ToggleList(screen, ListKind.Changes);
         };
 
         void Update()
@@ -80,8 +83,8 @@ static class HistoryBar
             redo.Disabled = !History.CanRedo;
             revert.Disabled = History.AtEntered;
             var (on, off, moved) = Counts();
-            var enabled = ModManager.Mods.Count(m => m.manifest?.id is { } id && id != ModEntry.ModId && Dependencies.IsOn(m))
-                + Installed.Mods.Count(Installed.On); // on after a relaunch, new mods included
+            // On after a relaunch, new mods included (once each: the game lists them too).
+            var enabled = ModManager.Mods.Union(Installed.Mods).Count(m => m.manifest?.id is { } id && id != ModEntry.ModId && Dependencies.IsOn(m));
             // The words, and where the count goes among them, come from the loc table ("Mods enabled {count}"); the
             // +, - and ↕ counts after them stay where they are in every language. Each count with the game's thousands
             // separator (Menus.Number), as everywhere in the summary and the list.
@@ -147,14 +150,14 @@ static class HistoryBar
         return (changed.Count(c => c.Enabled), changed.Count(c => !c.Enabled), Moves().Count);
     }
 
-    // The second line's count: mods installed since launch, edited mods, profiles added or removed, and a
-    // switched profile (moves are on the first line).
+    // The second line's count: mods installed since launch, edited mods, profiles added, deleted or renamed, and
+    // a switched profile (moves are on the first line).
     static int OtherChanges()
     {
         if (History.Loaded is not { } loaded)
             return 0;
-        var (edited, profiles) = DataChanges(loaded.Store, Store.EditsJson());
-        return Installed.Mods.Count + edited.Count + profiles.Count + (Switch() != null ? 1 : 0);
+        var (edited, profiles, renamed) = DataChanges(loaded.Store, Store.EditsJson());
+        return Installed.Mods.Count + edited.Count + profiles.Count + (Switch(renamed) != null ? 1 : 0);
     }
 
     // The summary's lines (BBCode): a switched profile, then each kind of change with its count.
@@ -163,7 +166,8 @@ static class HistoryBar
         if (History.Loaded is not { } loaded)
             return [];
         var lines = new List<string> { $"[b]{Menus.Text("SPIRE_MOD_MANAGER.CHANGES_TITLE")}[/b]" };
-        if (Switch() is var (from, to))
+        var (edited, profiles, renamed) = DataChanges(loaded.Store, Store.EditsJson());
+        if (Switch(renamed) is var (from, to))
             lines.Add(Menus.Format("SPIRE_MOD_MANAGER.CHANGE_SWITCH", ("from", $"[b]{Escape(from)}[/b]"), ("to", $"[b]{Escape(to)}[/b]")));
         var (on, off, moved) = Counts();
         // Fewer than NameLimit mods turned on, off or installed: each by name under its count.
@@ -191,7 +195,6 @@ static class HistoryBar
         }
         if (moved > 0)
             lines.Add($"[color={Moved}]{Menus.Format("SPIRE_MOD_MANAGER.SUMMARY_ORDER", ("count", Menus.Number(moved)))}[/color]");
-        var (edited, profiles) = DataChanges(loaded.Store, Store.EditsJson());
         if (edited.Count > 0)
         {
             // Which details: "Edited: 2 mods (alias, notes)".
@@ -218,7 +221,8 @@ static class HistoryBar
         if (History.Loaded is not { } loaded)
             return [];
         var entries = new List<Entry>();
-        if (Switch() is var (from, to))
+        var (edited, profiles, renamed) = DataChanges(loaded.Store, Store.EditsJson());
+        if (Switch(renamed) is var (from, to))
             entries.Add(new Entry("", Menus.Format("SPIRE_MOD_MANAGER.CHANGE_SWITCH", ("from", from), ("to", to)),
                 Menus.Format("SPIRE_MOD_MANAGER.CHANGE_SWITCH", ("from", $"[b]{Escape(from)}[/b]"), ("to", $"[b]{Escape(to)}[/b]"))));
         foreach (var (mod, enabled) in ModChanges(loaded.Mods).OrderBy(c => !c.Enabled).ThenBy(c => Name(c.Mod)))
@@ -236,7 +240,6 @@ static class HistoryBar
         foreach (var (mod, before, after) in Moves())
             entries.Add(new Entry("order", Menus.Format("SPIRE_MOD_MANAGER.CHANGE_MOVED", ("mod", Name(mod)), ("from", before.ToString()), ("to", after.ToString())),
                 $"{Link(mod.manifest?.id, Name(mod))}  [color={Dim}]{before} → {after}[/color]"));
-        var (edited, profiles) = DataChanges(loaded.Store, Store.EditsJson());
         foreach (var (id, fields, alias) in edited)
         {
             var name = Dependencies.Find(id)?.manifest?.name ?? id;
@@ -256,16 +259,31 @@ static class HistoryBar
     // A mod's name that opens it (from the changes list).
     static string Link(string? id, string name) => id == null ? Escape(name) : $"[url=mod:{id}]{Escape(name)}[/url]";
 
-    public static bool ListOpen(Node info) => info.GetNodeOrNull<Control>(ViewName) is { Visible: true };
+    // Whether the panel shows a list (kind: that one).
+    public static bool ListOpen(Node info, ListKind? kind = null) =>
+        info.GetNodeOrNull<Control>(ViewName) is { Visible: true } && (kind == null || kind == _list);
 
-    // Shows the full list in the right panel (our main list only). False when there's no panel to use.
-    public static bool ShowList(NModdingScreen screen)
+    // A click on what opens a list (the Changes text, "Unsaved •"): shows it, or closes it on a second click. With
+    // Back showing (a mod opened from the list), it goes back; with the other list showing, this one replaces it.
+    public static void ToggleList(NModdingScreen screen, ListKind kind)
+    {
+        var info = screen.GetNode<Control>("%ModInfoContainer");
+        if (ListOpen(info, kind))
+            CloseList(info);
+        else
+            ShowList(screen, kind);
+    }
+
+    // Shows a list in the right panel (our main list only): the full list of changes, or the unsaved ones. False
+    // when there's no panel to use.
+    public static bool ShowList(NModdingScreen screen, ListKind kind = ListKind.Changes)
     {
         if (Layout.Current != Layout.View.Categories)
             return false;
         var info = screen.GetNode<Control>("%ModInfoContainer");
         var view = info.GetNodeOrNull<Control>(ViewName) ?? AddList(info);
         HideBack(info);
+        _list = kind;
         if (!view.Visible)
         {
             // Everything else in the panel steps aside (and comes back when a mod is picked).
@@ -301,11 +319,13 @@ static class HistoryBar
         view.SetAnchorsPreset(Control.LayoutPreset.FullRect);
         (view.OffsetLeft, view.OffsetTop, view.OffsetRight, view.OffsetBottom) = (ModDetails.Inset, 14, -ModDetails.Inset, -16);
 
-        var head = new HBoxContainer();
+        var head = new HBoxContainer { Name = "Head" };
         var title = new Label { Text = Menus.Text("SPIRE_MOD_MANAGER.CHANGES_TITLE"), SizeFlagsHorizontal = Control.SizeFlags.ExpandFill };
         title.AddThemeFontOverride("font", ResourceLoader.Load<Font>("res://themes/kreon_bold_shared.tres"));
         title.AddThemeFontSizeOverride("font_size", 30);
         title.AddThemeColorOverride("font_color", Cream);
+        // FillList titles it for the list it shows; a long profile name (in the unsaved list's title) wraps.
+        (title.Name, title.AutowrapMode) = ("Title", TextServer.AutowrapMode.WordSmart);
         head.AddChild(title);
         var close = Menus.SmallButton(Menus.Text("SPIRE_MOD_MANAGER.CLOSE"), () => CloseList(info), name: "CloseChangesButton");
         close.SizeFlagsVertical = Control.SizeFlags.ShrinkCenter;
@@ -344,7 +364,7 @@ static class HistoryBar
         var info = screen.GetNode<Control>("%ModInfoContainer");
         if (info.GetNodeOrNull<Control>(BackName) is not { } back)
         {
-            back = Menus.SmallButton(Menus.Text("SPIRE_MOD_MANAGER.BACK_TO_CHANGES"), () => ShowList(screen), name: BackName);
+            back = Menus.SmallButton(Menus.Text("SPIRE_MOD_MANAGER.BACK_TO_CHANGES"), () => ShowList(screen, _list), name: BackName);
             info.AddChild(back);
             back.AnchorLeft = back.AnchorRight = 1;
             back.GrowHorizontal = Control.GrowDirection.Begin;
@@ -379,9 +399,35 @@ static class HistoryBar
         changes.Position = new Vector2((float)changes.GetMeta(RightMeta) - width, changes.Position.Y);
     }
 
-    // Sections with counts, each change on its own line.
+    // The active profile's unsaved changes, one line each, by name: "+ Name" turned on, "− Name" turned off (in
+    // the colours Changes uses for them). links: each name opens the mod (the panel's list; the card has none).
+    public static List<string> UnsavedLines(bool links)
+    {
+        var (on, off) = Profiles.UnsavedChanges();
+        string Line(string sign, string color, (string Id, string Name) mod) =>
+            $"[color={color}]{sign} {(links ? Link(mod.Id, mod.Name) : Escape(mod.Name))}[/color]";
+        return on.OrderBy(m => m.Name).Select(m => Line("+", Added, m))
+            .Concat(off.OrderBy(m => m.Name).Select(m => Line("−", Removed, m))).ToList();
+    }
+
+    // The active profile's unsaved changes, titled with its name. It follows the tickboxes while open: after Save
+    // or Discard (or ticking back to the saved state) it says there are none, until it's closed.
+    static void FillUnsaved(Control view)
+    {
+        view.GetNode<Label>("Head/Title").Text = Menus.Format("SPIRE_MOD_MANAGER.UNSAVED_LIST_TITLE", ("name", Profiles.Active?.Name ?? ""));
+        var lines = UnsavedLines(links: true);
+        view.GetNode<RichTextLabel>("List").Text = lines.Count > 0 ? string.Join("\n", lines) : Menus.Text("SPIRE_MOD_MANAGER.NO_UNSAVED");
+    }
+
+    // Sections with counts, each change on its own line (or the unsaved list's lines).
     static void FillList(Control view)
     {
+        if (_list == ListKind.Unsaved)
+        {
+            FillUnsaved(view);
+            return;
+        }
+        view.GetNode<Label>("Head/Title").Text = Menus.Text("SPIRE_MOD_MANAGER.CHANGES_TITLE");
         var entries = Entries();
         var text = new System.Text.StringBuilder();
         void Section(string key, string color, string id)
@@ -406,9 +452,11 @@ static class HistoryBar
         view.GetNode<RichTextLabel>("List").Text = text.ToString().TrimStart('\n');
     }
 
-    // The profile at launch and now, if they differ.
-    static (string From, string To)? Switch() =>
-        History.LaunchProfile is { } launch && Store.Data.ActiveProfile is { } active && active != launch ? (launch, active) : null;
+    // The profile at launch and now, if they differ. The launch profile renamed since (old name -> new) is the
+    // same profile, not a switch.
+    static (string From, string To)? Switch(IReadOnlyDictionary<string, string> renamed) =>
+        History.LaunchProfile is { } launch && Store.Data.ActiveProfile is { } active && active != renamed.GetValueOrDefault(launch, launch)
+            ? (launch, active) : null;
 
     static string Name(Mod mod) => mod.manifest?.name ?? mod.manifest?.id ?? "";
 
@@ -443,9 +491,10 @@ static class HistoryBar
         return moves;
     }
 
-    // Mods whose details changed: which ones (category, alias, notes, tags) and the alias now; profiles added
-    // or removed (lines).
-    static (List<(string Id, List<string> Fields, string? Alias)> Edited, List<string> Profiles) DataChanges(string before, string after)
+    // Mods whose details changed: which ones (category, alias, notes, tags) and the alias now; profiles added,
+    // deleted or renamed (lines), and the renames (old name -> new).
+    static (List<(string Id, List<string> Fields, string? Alias)> Edited, List<string> Profiles, Dictionary<string, string> Renamed)
+        DataChanges(string before, string after)
     {
         try
         {
@@ -461,15 +510,37 @@ static class HistoryBar
                 if (fields.Count > 0)
                     edited.Add((id, fields, (string?)modsB[id]?["alias"]));
             }
-            HashSet<string> Names(JsonObject? o) => (o?["profiles"] as JsonArray ?? []).Select(p => (string?)p?["name"] ?? "").ToHashSet();
-            var profiles = Names(b).Except(Names(a)).Select(n => Menus.Format("SPIRE_MOD_MANAGER.PROFILE_ADDED", ("name", n)))
-                .Concat(Names(a).Except(Names(b)).Select(n => Menus.Format("SPIRE_MOD_MANAGER.PROFILE_REMOVED", ("name", n))))
+            JsonArray ProfilesIn(JsonObject? o) => o?["profiles"] as JsonArray ?? [];
+            HashSet<string> Names(JsonObject? o) => ProfilesIn(o).Select(p => (string?)p?["name"] ?? "").ToHashSet();
+            JsonNode? ProfileIn(JsonObject? o, string name) => ProfilesIn(o).FirstOrDefault(p => (string?)p?["name"] == name);
+            var added = Names(b).Except(Names(a)).ToList();
+            var gone = Names(a).Except(Names(b)).ToList();
+            // Profiles are known by name. Renaming changes nothing else, and every profile made here gets its own save
+            // time: a name gone and a name added with the same save time are one profile, renamed. Its mods can differ
+            // (a mod installed since launch joins it without a save). Profiles never saved (imported) share an empty
+            // save time; with several of those gone, the one with the same mods. (A renamed profile also saved since
+            // launch has a new save time, so it reads as added and deleted.)
+            var renamed = new Dictionary<string, string>();
+            foreach (var name in added.ToList())
+            {
+                bool Same(string old, string field) => JsonNode.DeepEquals(ProfileIn(a, old)?[field], ProfileIn(b, name)?[field]);
+                var candidates = gone.Where(old => Same(old, "saved_at")).ToList();
+                if ((candidates.Count == 1 ? candidates : candidates.Where(old => Same(old, "mods")).ToList()) is [var was])
+                {
+                    renamed[was] = name;
+                    added.Remove(name);
+                    gone.Remove(was);
+                }
+            }
+            var profiles = renamed.Select(r => Menus.Format("SPIRE_MOD_MANAGER.PROFILE_RENAMED", ("from", r.Key), ("to", r.Value)))
+                .Concat(added.Select(n => Menus.Format("SPIRE_MOD_MANAGER.PROFILE_ADDED", ("name", n))))
+                .Concat(gone.Select(n => Menus.Format("SPIRE_MOD_MANAGER.PROFILE_REMOVED", ("name", n))))
                 .ToList();
-            return (edited, profiles);
+            return (edited, profiles, renamed);
         }
         catch (Exception)
         {
-            return ([], []);
+            return ([], [], []);
         }
     }
 
