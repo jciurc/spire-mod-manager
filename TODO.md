@@ -611,7 +611,7 @@ file; perf with long-text and copy-pass with loc-format each needed a one-line f
 Found tonight, not done yet:
 - [ ] try #14 with a real Workshop subscription while the game runs (dev runs have no Steam)
 - [ ] try #22 with Undo And Restart (UI Modified) in your game
-- [ ] the in-game self-test on PRs: register a self-hosted runner and set SELF_HOSTED_STS2 (README "CI", #8)
+- [ ] the in-game self-test on GitHub: register a self-hosted runner on Jordan's PC (README.md, "CI" section). With #25 in, it runs only when started by hand (Actions, Run workflow); before #25, the SELF_HOSTED_STS2 variable turns it on
 - [ ] the profile bar's background is 0 px tall (its anchors are set without offsets); decide whether it should show (#12)
 - [ ] redraw with ~250 mods is about 49 ms after #15; the rest is Godot-side per row (titles, fitting)
 - [ ] backups are picked by name (local time); a clock change can put them out of order (#6)
@@ -628,11 +628,10 @@ CI-focused session. Already fine: no secrets, tokens or large files anywhere in 
 game's is committed (its DLLs are only referenced); no copied Better Mod Menu code; the one image is Jordan's
 own art; the spikes describe the game's behaviour but quote no game code.
 
-- [ ] **the self-hosted runner** (if one is registered by then): remove it and set SELF_HOSTED_STS2 to false.
-  On a public repo a fork's pull request can edit ci.yml itself and send a job to the runner, so the job's
-  same-repo condition isn't enough. If the in-game test is still wanted on GitHub, make it a job only Jordan
-  can start (workflow_dispatch), never triggered by pull requests. Also set "require approval for all outside
-  collaborators" for fork pull request workflows.
+- [ ] **the self-hosted runner:** on a public repo a fork's pull request can edit ci.yml itself and send a job
+  to a runner, so a same-repo condition isn't enough. #25 makes the in-game test a job only Jordan can start
+  (workflow_dispatch), never triggered by pull requests, and retires SELF_HOSTED_STS2. Also set "require
+  approval for all outside collaborators" for fork pull request workflows.
 - [ ] **LICENSE:** an MIT `LICENSE` file; Jordan picks the copyright name (legal name, "jciurc" or "symphony").
   Say in the README whether the art is under MIT too or kept back.
 - [ ] **machine-specific paths:** build.cs, the .csproj and tools/dev.cs hard-code D:\SteamLibrary and
