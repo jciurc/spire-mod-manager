@@ -135,8 +135,8 @@
 
 **Release checklist**
 1. All §2 blockers fixed on `dev`. The full self-test (all ~220 checks) passes on the release build, plus `--bmm` and `--real`.
-2. Version `1.0.0` and manifest description set in `build.cs`. Release mode has no auto-bump.
-3. Merge to `main`, tag `v1.0.0`, and run `build.cs --dist`. Check that `dist/SpireModManager/` holds exactly three files.
+2. Version `0.1.0` and manifest description set in `build.cs`. Release mode has no auto-bump.
+3. Merge to `main`, tag `v0.1.0`, and run `dotnet run build.cs --dist`. It stops with an error unless `dist/SpireModManager/` holds exactly the `.dll`, `.json` and `.pck`.
 4. Account: Steam Workshop legal agreement accepted (steamcommunity.com/sharedfiles/workshoplegalagreement); the account is not a limited user.
 5. Get ModUploader v0.2.0 (win-x64) and run `ModUploader.exe new -w <ws>`. Keep the workspace outside the repo or gitignored, and keep `mod_id.txt` safe.
 6. Copy `dist/SpireModManager/*` into `content/`.
@@ -144,7 +144,7 @@
    - title "Spire Mod Manager (Beta)";
    - description: pitch, features, "public-beta 0.111+", BMM coexistence, data location and backups, uninstall, mouse/keyboard only, where to report bugs;
    - `"tags": ["QoL","Utility"]`, `"dependencies": []`, `"minBranch": "public-beta"`, `"visibility": "private"`;
-   - `"changeNote": "1.0.0: first release ..."`.
+   - `"changeNote": "0.1.0: first release ..."`.
 8. `image.png`: square, under 1 MB, your own art. `previews/`: JPG shots of the main list, Load Order lines, the info panel, Changes/undo and profiles.
 9. Upload. On the item's Change Notes page, check that the branch range reads public-beta and up.
 10. Clean-install test: remove the local `mods/SpireModManager`, move `mod_data/SpireModManager` aside, subscribe, and launch. Run through first run, the BMM import, Workshop details, Patch notes, relaunch, and unsubscribe.
@@ -154,7 +154,7 @@
     - For a bad update, re-upload the previous tag's content with a change note.
     - For a game patch that breaks it, upload a fix, or narrow the branch range so the broken build is served to no one.
     - Set visibility to private as a last resort. Never `remove`: that loses the item id and its subscribers.
-13. **Updates:** bump the version, rebuild `--dist`, replace `content/`, set changeNote, set minBranch again, and upload.
+13. **Updates:** bump `ReleaseVersion` in `build.cs`, rebuild with `--dist`, replace `content/`, set changeNote, set minBranch again, and upload.
 
 ## 6. Risks
 
