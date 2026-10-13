@@ -32,6 +32,9 @@ the game's own mod list stays the source of truth for what's on and the load ord
 
 - `dotnet run build.cs` builds and installs into the game's `mods` folder (needs the .NET 10 SDK; close the
   game first). `--no-install` only builds.
+- `dotnet run build.cs --dist` makes the release for the Workshop and never installs. The manifest gets
+  `ReleaseVersion` (set by hand in build.cs) instead of the dev number, and `dist/SpireModManager/` holds
+  just the `.dll`, `.json` and `.pck` to upload (RELEASE-PLAN.md §5).
 - Player text lives in `localization/<lang>/*.json` and pictures in `images/`, packed into
   `SpireModManager.pck`. See TRANSLATING.md for adding a language.
 
