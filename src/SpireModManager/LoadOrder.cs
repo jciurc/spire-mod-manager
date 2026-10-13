@@ -243,9 +243,9 @@ static class LoadOrder
                 border.RemoveChild(old); // now, not at the end of the frame: a redraw in the same frame adds a new one
                 old.QueueFree();
             }
-        // Better Mod Menu ticked too, on our views. A tickbox change comes through here (RefreshStrips), so the banner
-        // shows and goes at once, without a relaunch.
-        if (Layout.Wide && Bmm.Ticked)
+        // Better Mod Menu and ours both ticked, on our views. A tickbox change comes through here (RefreshStrips), so the
+        // banner shows and goes at once, without a relaunch.
+        if (Layout.Wide && Bmm.BothTicked)
             ManagersBanner(content, border, search);
         if (on && misordered > 0)
             Banner(border, search, orderText, [Menus.SmallButton(Menus.Text("SPIRE_MOD_MANAGER.FIX_ORDER"), () => Do(FixOrder), name: "FixOrderButton")]);

@@ -33,8 +33,11 @@ static class Bmm
     public static bool Present { get; } = AccessTools.TypeByName("BetterModMenu.Patches.NModdingScreenPatch") != null;
 
     // Ticked in the mod list (on in the game's saved list), loaded now or not: either way it loads after a relaunch.
-    // Ours is always on, so then two mod managers are on (LoadOrder puts up a banner saying so).
     public static bool Ticked => Dependencies.Find(ModId) is { } mod && Dependencies.IsOn(mod);
+
+    // It and ours both ticked: two mod managers load after a relaunch (LoadOrder puts up a banner saying so). Profiles
+    // and Disable all keep ours on, but the player can untick its row.
+    public static bool BothTicked => Ticked && Dependencies.Find(ModEntry.ModId) is { } ours && Dependencies.IsOn(ours);
 
     // Our views: it stops re-laying out and regrouping the screen.
     public static void Detach()
