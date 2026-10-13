@@ -18,11 +18,38 @@ public static class ModEntry
     const string ButtonScenePath = $"res://{ModId}/scenes/menu_button.tscn";
     const float ButtonArtHeight = 110; // event_button.png is 284x110
 
+    // Patch classes that didn't apply, by name: a game update renamed or removed what they hook.
+    static readonly List<string> _failedPatches = [];
+    public static IReadOnlyList<string> FailedPatches => _failedPatches;
+
+    // Each patch class on its own, so one a game update breaks leaves the others working (PatchAll stops at the
+    // first failure). Watching for new mods goes first: it needs no patch.
     public static void Init()
     {
-        new Harmony(ModId).PatchAll(typeof(ModEntry).Assembly);
-        Installed.Watch();
-        Log.Info($"[{ModId}] Initialized{(IsDevRun ? " (dev run)" : "")}");
+        try
+        {
+            Installed.Watch();
+        }
+        catch (Exception e)
+        {
+            Log.Error($"[{ModId}] Could not watch for mods installed while the game runs: {e}");
+        }
+        var harmony = new Harmony(ModId);
+        foreach (var type in AccessTools.GetTypesFromAssembly(typeof(ModEntry).Assembly))
+        {
+            try
+            {
+                if (type.IsDefined(typeof(HarmonyPatch), false))
+                    harmony.CreateClassProcessor(type).Patch();
+            }
+            catch (Exception e)
+            {
+                _failedPatches.Add(type.Name);
+                Log.Error($"[{ModId}] Could not patch {type.Name}; this game version may need an update of the mod: {e}");
+            }
+        }
+        Log.Info($"[{ModId}] Initialized{(IsDevRun ? " (dev run)" : "")}"
+            + (_failedPatches.Count > 0 ? $", without {string.Join(", ", _failedPatches)}" : ""));
     }
 
     // A picture shipped in our pack (images/), loaded from its bytes: the pack holds plain PNGs, not
