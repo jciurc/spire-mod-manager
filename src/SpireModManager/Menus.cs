@@ -63,7 +63,10 @@ static class Menus
         mark.GrowHorizontal = mark.GrowVertical = Control.GrowDirection.Both;
     }
 
-    public static string Text(string key) => new LocString("settings_ui", key).GetFormattedText();
+    // A redraw asks for the same few words for every row (tag names, tooltips): inside one, each is looked up once.
+    public static string Text(string key) => Lookups.Current?.Text(key, Lookup) ?? Lookup(key);
+
+    static string Lookup(string key) => new LocString("settings_ui", key).GetFormattedText();
 
     public static string Format(string key, params (string Name, string Value)[] values)
     {

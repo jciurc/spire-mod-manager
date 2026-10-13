@@ -67,6 +67,7 @@ static class SelfTest
             await Capture(menu, outDir, "1-main-menu");
             await TestMenuButtonMove(menu, outDir);
             TestBetterModMenuImport(outDir);
+            await TestMenuButtonRelaunch(menu, outDir); // before the Modding page opens: the check's fixes without it
 
             var screen = menu.SubmenuStack.PushSubmenuType<NModdingScreen>();
             await Wait(menu, 2);
@@ -130,6 +131,8 @@ static class SelfTest
             await TestPendingNotes(menu, screen, content);
             await TestPendingLine(menu, screen, content);
             await TestSearch(menu, screen, content, outDir);
+            await TestRedrawCost(menu, screen, content);
+            TestManyMods();
             await TestNewMod(menu, screen, content, outDir);
             await TestLoadOrder(menu, screen, content, outDir);
             await TestListBanner(menu, screen, content, outDir);
@@ -196,6 +199,14 @@ static class SelfTest
             }
             Results.Add($"INFO of which: titles {Ms(() => RowTitles.Apply(rows, false)):0.0} ms, toolbar {Ms(() => LoadOrder.UpdateToolbar(content, rows, () => { })):0.0} ms, "
                 + $"strips and toolbar {Ms(() => CategoryList.RefreshStrips(content)):0.0} ms");
+            // A search keystroke: a redraw matching every row, then one with the whole list back.
+            var typed = screen.GetNode<LineEdit>("ModsBorder/SpireModManagerSearch");
+            void Type(string text)
+            {
+                typed.Text = text;
+                typed.EmitSignal(LineEdit.SignalName.TextChanged, text);
+            }
+            Results.Add($"INFO a search keystroke {Ms(() => { Type("lib"); Type(""); }) / 2:0.0} ms");
             await Wait(menu, 1);
             await Capture(screen, outDir, "real-1-categories");
 
@@ -749,6 +760,24 @@ static class SelfTest
             Input.ParseInputEvent(new InputEventKey { Keycode = Key.Escape, Pressed = false });
             Check("Escape cancels: back where it was put, move mode ends", button.Position == placed
                 && !menu.HasNode(MenuButton.MoveLayerName), $"{button.Position} vs {placed}");
+            await Wait(menu, 0.3);
+            Check("that Escape stays ours: the game doesn't act on it (no save profile screen)", !menu.SubmenuStack.SubmenusOpen);
+        }
+
+        // Escape in the same frame as Move button, before move mode starts following the mouse (a frame later): it ends
+        // there, and no per-frame handler of move mode is left running.
+        int Following() => menu.GetTree().GetSignalConnectionList(SceneTree.SignalName.ProcessFrame)
+            .Count(c => c["callable"].AsCallable().Delegate?.Method.DeclaringType?.DeclaringType == typeof(MenuButton));
+        if (await OpenMenu() is { } quick)
+        {
+            MenuPanel.Press(quick, "Move button");
+            menu.GetViewport().PushInput(new InputEventKey { Keycode = Key.Escape, Pressed = true });
+            var ended = !menu.HasNode(MenuButton.MoveLayerName);
+            Mouse(fake + new Vector2(300, -200));
+            await Wait(menu, 0.3);
+            Check("Escape in the same frame as Move button: move mode ends, nothing left following the mouse", ended
+                && !menu.HasNode(MenuButton.MoveLayerName) && Following() == 0 && button.Position == placed && !menu.SubmenuStack.SubmenusOpen,
+                $"{Following()} frame handlers, {button.Position} vs {placed}");
         }
 
         if (await OpenMenu() is { } third)
@@ -756,6 +785,88 @@ static class SelfTest
         await Wait(menu, 0.2);
         Check("Reset position puts it back in the corner", Store.Data.MenuButtonAt == null && button.Position == corner, $"{button.Position} vs {corner}");
         Hover.TestMouse = null;
+    }
+
+    // The main menu button's right-click menu: Move button, Reset position, a divider, Relaunch game. Relaunch game
+    // checks for mods that won't load first, as the Modding page's button does (fixture: BrandedMod needs BaseLib, not
+    // installed): its dialog shows over the main menu, and its fixes work there before the page has been opened.
+    // ModEntry.TestRelaunch counts each relaunch instead of quitting the test.
+    static async Task TestMenuButtonRelaunch(NMainMenu menu, string outDir)
+    {
+        if (menu.GetNodeOrNull<Control>("SpireModManagerMenuButton") is not { } button)
+            return;
+        var at = button.GetGlobalRect().GetCenter();
+        Hover.TestMouse = () => at;
+        button.EmitSignal(Control.SignalName.GuiInput, new InputEventMouseButton { ButtonIndex = MouseButton.Right, Pressed = false, Position = at, GlobalPosition = at });
+        await Wait(menu, 0.3);
+        Hover.TestMouse = null;
+        var popup = MenuPanel.Current;
+        var labels = popup == null ? [] : MenuPanel.Labels(popup);
+        Check("main menu button's menu: Move button, Reset position, Relaunch game", labels.SequenceEqual(["Move button", "Reset position", "Relaunch game"]),
+            string.Join(", ", labels));
+        if (popup == null)
+            return;
+        // The divider: the one entry between Reset position and Relaunch game, a line under the first and above the second.
+        string? Label(Node item) => item.IsInGroup(MenuPanel.ItemGroup) ? (string)item.GetMeta("label") : null;
+        var items = popup.FindChild("Items", true, false)?.GetChildren().OfType<Control>().ToList() ?? [];
+        var reset = items.FindIndex(i => Label(i) == "Reset position");
+        var divider = reset >= 0 && reset + 2 < items.Count && Label(items[reset + 2]) == "Relaunch game" ? items[reset + 1] : null;
+        Check("a divider right under Reset position, above Relaunch game", divider != null && Label(divider) == null
+            && divider.FindChildren("*", "ColorRect", true, false).Count == 1
+            && divider.GetGlobalRect().Position.Y >= items[reset].GetGlobalRect().End.Y
+            && divider.GetGlobalRect().End.Y <= items[reset + 2].GetGlobalRect().Position.Y,
+            string.Join(" | ", items.Select(i => $"{Label(i) ?? "(line)"} {i.GetGlobalRect()}")));
+        await Capture(menu, outDir, "1c-menu-button-menu");
+
+        var relaunches = 0;
+        ModEntry.TestRelaunch = () => relaunches++;
+        try
+        {
+            Node? Dialog() => menu.GetTree().Root.GetNodeOrNull(RelaunchCheck.Name);
+            string Body() => (Dialog()?.FindChild("Body", true, false) as RichTextLabel)?.GetParsedText() ?? "";
+            void Press(string name) => Dialog()?.FindChild(name, true, false)?.EmitSignal(BaseButton.SignalName.Pressed);
+            MenuPanel.Press(popup, "Relaunch game");
+            await Wait(menu, 0.3);
+            if (Dialog() == null)
+            {
+                Check("Relaunch game, nothing wrong: relaunches at once", relaunches == 1 && !MenuPanel.IsOpen, $"{relaunches} relaunches");
+                return;
+            }
+            Check("Relaunch game checks first: its dialog over the main menu, no relaunch yet", relaunches == 0 && !MenuPanel.IsOpen
+                && menu.IsVisibleInTree() && !menu.SubmenuStack.SubmenusOpen && Body().Length > 0, $"{relaunches} relaunches: {Body()}");
+            await Capture(menu, outDir, "1d-relaunch-check-main-menu");
+            if (Dependencies.Find("BrandedMod") is not { } branded || !Dependencies.IsOn(branded) || Dialog()?.FindChild("DisableBrokenButton", true, false) == null)
+            {
+                Press("RelaunchNowButton");
+                await Wait(menu, 0.2);
+                Check("its Relaunch anyway reaches the relaunch", relaunches == 1, $"{relaunches} relaunches");
+                return;
+            }
+
+            // A fix with no Modding page yet: the active profile and the pending dot follow, and it's one undo step of its
+            // own (undoing it leaves the button's Reset position in place).
+            var before = ModListState();
+            var dot = button.GetNode<Control>("Dot");
+            Press("DisableBrokenButton");
+            await Wait(menu, 0.3);
+            Check("from the main menu, Disable mods that can't load: off, the profile and the dot follow, then a plain Relaunch",
+                !Dependencies.IsOn(branded) && Profiles.Edited && dot.Visible == ModEntry.HasPendingChanges()
+                && Dialog()?.FindChild("RelaunchNowButton", true, false) is Button { Text: "Relaunch Game" }, Body());
+            Press("RelaunchNowButton");
+            await Wait(menu, 0.2);
+            Check("its Relaunch reaches the relaunch", relaunches == 1, $"{relaunches} relaunches");
+            RelaunchCheck.Close();
+            History.Undo();
+            await Wait(menu, 0.3);
+            Check("one undo takes back that fix, and only it", ModListState().SequenceEqual(before) && !Profiles.Edited
+                && Store.Data.MenuButtonAt == null && dot.Visible == ModEntry.HasPendingChanges(),
+                $"{string.Join(", ", before.Except(ModListState()))}; edited {Profiles.Edited}, button at {Store.Data.MenuButtonAt}");
+        }
+        finally
+        {
+            ModEntry.TestRelaunch = null;
+            RelaunchCheck.Close();
+        }
     }
 
     // The first-run import reads Better Mod Menu's file as it does: comments and trailing commas, its old format (just
@@ -1596,6 +1707,149 @@ static class SelfTest
             && !content.GetChildren().OfType<Control>().Any(c => c.IsInGroup("SpireModManagerCategoryHeader") && c.Visible));
         var cleared = await Shown("");
         Check("clearing restores the list", cleared.Count > 0);
+    }
+
+    // A redraw answers its questions once (Lookups) instead of once per row: the answers must be the same as asked
+    // one at a time outside a redraw, for every mod shown. Then how long a redraw and a search keystroke take here
+    // (about 50 mods): reported, with a generous bound. TestManyMods and the --real tour time longer lists.
+    static async Task TestRedrawCost(Node menu, NModdingScreen screen, Control content)
+    {
+        var rows = content.GetChildren().OfType<NModMenuRow>().ToList();
+        var mods = rows.Select(r => r.Mod).OfType<Mod>().ToList();
+        var order = LoadOrder.Mods(rows).Select((m, i) => (m, i)).DistinctBy(p => p.m).ToDictionary(p => p.m, p => p.i);
+        string[] queries = ["lib", "mod fixes", "the manager", "co-op", "#Library", "#local", "@symphony", "#Gameplay lib", "test framework", "zzz"];
+        static string Key(Mod? mod) => mod == null ? "none" : $"{mod.manifest?.id}/{mod.modSource}";
+        List<string> Answers() =>
+        [
+            .. mods.Select(mod => $"{Key(mod)}: on {Dependencies.IsOn(mod)}, copy {Key(Dependencies.Find(mod.manifest?.id ?? ""))}, "
+                + $"needed by {string.Join(",", Dependencies.NeededBy(mod.manifest?.id).Select(Key))}, "
+                + $"needs {string.Join(",", Dependencies.Of(mod).Select(id => Key(Dependencies.Find(id))))}, "
+                + $"tags {string.Join(",", Tags.For(mod).Select(c => $"{c.Text}/{c.Color}/{c.Custom}/{c.Tip}"))}, "
+                + $"notes {RowStrip.RequiredFor(mod)} | {RowStrip.Needs(mod, order, false)} | {RowStrip.Needs(mod, order, true)}, "
+                + $"matches {string.Concat(queries.Select(q => Search.Matches(mod, q) ? "y" : "n"))}"),
+            $"order problems {string.Join(",", Dependencies.OrderViolations(LoadOrder.Mods(rows)).Select(v => $"{Key(v.Mod)}>{Key(v.Needs)}"))}",
+            $"needed and off {string.Join(",", Dependencies.NeededOff(mods).Select(Key))}",
+            $"words {Menus.Text("SPIRE_MOD_MANAGER.TAG_LIBRARY")} {Menus.Text("SPIRE_MOD_MANAGER.NEEDS_LABEL")}",
+        ];
+        var fresh = Answers();
+        List<string> kept;
+        using (Lookups.Begin())
+            kept = Answers();
+        var differ = fresh.Zip(kept).Where(p => p.First != p.Second).Select(p => $"{p.First} -> {p.Second}").ToList();
+        Check("inside a redraw, the same answers as one at a time (on, copies, needs, tags, notes, search)",
+            differ.Count == 0 && fresh.Count == kept.Count && Lookups.Current == null, string.Join(" | ", differ.Take(3)));
+
+        var box = screen.GetNode<LineEdit>("ModsBorder/SpireModManagerSearch");
+        void Type(string text)
+        {
+            box.Text = text;
+            box.EmitSignal(LineEdit.SignalName.TextChanged, text);
+        }
+        static double Ms(Action action)
+        {
+            var watch = System.Diagnostics.Stopwatch.StartNew();
+            for (var i = 0; i < 10; i++)
+                action();
+            return watch.Elapsed.TotalMilliseconds / 10;
+        }
+        var listMs = Ms(() => CategoryList.Apply(content));
+        var keyMs = Ms(() =>
+        {
+            Type("lib"); // every row matched
+            Type(""); // and the whole list back
+        }) / 2;
+        await Wait(menu, 0.3);
+        Click(screen.GetNode<NButton>("SpireModManagerLoadOrderToggle"));
+        await Wait(menu, 0.5);
+        var orderMs = Ms(() => CategoryList.Apply(content));
+        Click(screen.GetNode<NButton>("SpireModManagerLoadOrderToggle"));
+        await Wait(menu, 0.5);
+        Results.Add($"INFO redraw with {rows.Count} mods: main list {listMs:0.0} ms, a search keystroke {keyMs:0.0} ms, Load Order {orderMs:0.0} ms");
+        Check("a redraw and a search keystroke stay quick (under 100 ms here)", Math.Max(listMs, Math.Max(keyMs, orderMs)) < 100,
+            $"{listMs:0.0} / {keyMs:0.0} / {orderMs:0.0} ms");
+    }
+
+    // Three hundred made-up mods (Jordan has about 250), no screen: what a redraw asks about every row (tags, "Needs",
+    // "Required for", searches) and the page's warnings, answered as a redraw does (Lookups) and timed, then each
+    // answer checked against the slow way (the saved list searched every time). Every seventh mod is off, every
+    // tenth is a library the next ones need, every 25th also needs one that isn't installed, and one library has
+    // a second copy that is on while the first is off.
+    static void TestManyMods()
+    {
+        var mods = new List<Mod>();
+        var saved = new List<SettingsSaveMod>();
+        for (var i = 0; i < 300; i++)
+        {
+            List<ModDependency> needs = [];
+            if (i % 10 != 0)
+                needs.Add(new ModDependency($"SmmMany{i / 10 * 10:000}"));
+            if (i % 3 == 0 && i >= 20)
+                needs.Add(new ModDependency($"SmmMany{i / 10 * 10 - 10:000}"));
+            if (i % 25 == 0)
+                needs.Add(new ModDependency("SmmManyMissing"));
+            var mod = new Mod
+            {
+                path = "", modSource = ModSource.ModsDirectory,
+                manifest = new ModManifest { id = $"SmmMany{i:000}", name = $"Many Mods {i}", author = $"Author {i % 12}", dependencies = needs, affectsGameplay = i % 2 == 0 },
+            };
+            mods.Add(mod);
+            saved.Add(new SettingsSaveMod(mod) { IsEnabled = i % 7 != 0 });
+        }
+        var copy = new Mod { path = "", modSource = ModSource.SteamWorkshop, manifest = new ModManifest { id = "SmmMany050", name = "Many Mods 50 (Workshop)" } };
+        mods.Add(copy);
+        saved.Add(new SettingsSaveMod(copy));
+        saved[50].IsEnabled = false;
+
+        // The slow way.
+        bool On(Mod m) => !saved.Any(e => e.Id == m.manifest?.id && e.Source == m.modSource && !e.IsEnabled);
+        Mod? Copy(string id) => mods.Where(m => m.manifest?.id == id).OrderByDescending(On).FirstOrDefault();
+        int Needing(Mod mod, bool onOnly) => mods.Count(m => m != mod && (!onOnly || On(m)) && Dependencies.Of(m).Contains(mod.manifest?.id));
+
+        var order = mods.Select((m, i) => (m, i)).ToDictionary(p => p.m, p => p.i);
+        string[] queries = ["many 12", "#Library", "@\"Author 3\"", "author 3 many", "zzz"];
+        var watch = System.Diagnostics.Stopwatch.StartNew();
+        double Lap()
+        {
+            var ms = watch.Elapsed.TotalMilliseconds;
+            watch.Restart();
+            return ms;
+        }
+        var wrong = new List<string>();
+        using (Lookups.Begin(mods, [], saved))
+        {
+            var built = Lap();
+            var notes = mods.ToDictionary(m => m, m => (Tags: Tags.For(m), Required: RowStrip.RequiredFor(m), Needs: RowStrip.Needs(m, order, loadOrder: false)));
+            var strips = Lap();
+            // A search redraw asks about each row about four times (its category's matches, count and rows, the page bar).
+            foreach (var query in queries)
+                for (var pass = 0; pass < 4; pass++)
+                    foreach (var mod in mods)
+                        Search.Matches(mod, query);
+            var searches = Lap();
+            var problems = Dependencies.OrderViolations(mods).Count + Dependencies.NeededOff(mods).Count;
+            var warnings = Lap();
+            Results.Add($"INFO 300 made-up mods (and a second copy of one): lookups {built:0.0} ms, tags and notes {strips:0.0} ms, "
+                + $"{queries.Length} searches {searches:0.0} ms, warnings {warnings:0.0} ms ({problems} problems)");
+            Check("300 made-up mods: every row's questions and five searches stay quick (under 100 ms)", built + strips + searches + warnings < 100,
+                $"{built + strips + searches + warnings:0.0} ms");
+
+            string Times(string text, string word) => (text.Split(word).Length - 1).ToString();
+            foreach (var mod in mods)
+            {
+                var id = mod.manifest?.id ?? "";
+                var (tags, required, needs) = notes[mod];
+                var deps = Dependencies.Of(mod);
+                var expected = $"on {On(mod)}, copy {Copy(id)?.modSource}, library {Needing(mod, false) > 0}, required for {Needing(mod, true)}, "
+                    + $"missing {(On(mod) ? deps.Count(d => Copy(d) == null) : 0)}, off {(On(mod) ? deps.Count(d => Copy(d) is { } dep && !On(dep)) : 0)}";
+                var answered = $"on {Dependencies.IsOn(mod)}, copy {Dependencies.Find(id)?.modSource}, library {tags.Any(c => c.Text == "Library")}, "
+                    + $"required for {(System.Text.RegularExpressions.Regex.Match(required, @"Required for (\d+)") is { Success: true } match ? match.Groups[1].Value : "0")}, "
+                    + $"missing {Times(needs, "(not installed)")}, off {Times(needs, "(off)")}";
+                if (answered != expected)
+                    wrong.Add($"{id}: {answered}; the slow way: {expected}");
+            }
+        }
+        Check("300 made-up mods: the same answers as the slow way (on, copies, libraries, required for, missing, off)",
+            wrong.Count == 0 && Lookups.Current == null, $"{wrong.Count} differ: {string.Join(" | ", wrong.Take(3))}");
     }
 
     // Load Order view: rows in the saved order with handles; move by menu action and by dragging a handle

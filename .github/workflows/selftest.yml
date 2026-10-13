@@ -1,0 +1,55 @@
+# The in-game self-test on Jordan's PC, a self-hosted runner with the game installed (see README.md, "CI").
+# Started by hand only (Actions > Self-test > Run workflow, by someone with write access), never by a push or
+# a pull request. It's a file of its own so a runner group can be limited to exactly this workflow on dev:
+# a fork's pull request can change any workflow in its own copy, and those runs must never reach the PC.
+# Never --real: that output holds Jordan's own mods and data.
+name: Self-test
+
+on:
+  workflow_dispatch:
+
+concurrency:
+  group: selftest
+  cancel-in-progress: false
+
+permissions:
+  contents: read
+
+env:
+  DOTNET_NOLOGO: true
+  DOTNET_CLI_TELEMETRY_OPTOUT: true
+
+jobs:
+  selftest:
+    runs-on: [self-hosted, windows, sts2]
+    steps:
+      - uses: actions/checkout@v7
+      - name: Build (no install)
+        id: build
+        run: dotnet run build.cs --no-install
+      # Each dev.cs run rebuilds and so clears out/, so each run's results are uploaded before the next.
+      - name: Self-test (fixture mods)
+        id: fixture
+        run: dotnet run tools/dev.cs test
+      - name: Upload fixture results
+        if: ${{ !cancelled() && steps.fixture.outcome != 'skipped' }}
+        uses: actions/upload-artifact@v7
+        with:
+          name: selftest-fixture
+          path: |
+            out/selftest/*.txt
+            out/dev.log
+          retention-days: 14
+      - name: Self-test alongside Better Mod Menu
+        id: bmm
+        if: ${{ !cancelled() && steps.build.outcome == 'success' }}
+        run: dotnet run tools/dev.cs test --bmm
+      - name: Upload Better Mod Menu results
+        if: ${{ !cancelled() && steps.bmm.outcome != 'skipped' }}
+        uses: actions/upload-artifact@v7
+        with:
+          name: selftest-bmm
+          path: |
+            out/selftest/*.txt
+            out/dev.log
+          retention-days: 14

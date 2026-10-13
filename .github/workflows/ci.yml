@@ -3,9 +3,7 @@
 # checks: on GitHub's hosted Linux runners, the offline checks (tools/check.cs) and a compile of the tool
 #   scripts without running them. The mod itself can't build there: it compiles against the game's own
 #   sts2.dll and Godot assemblies, which are proprietary and never committed.
-# selftest: the in-game self-test on Jordan's PC, a self-hosted runner with the game installed. It runs only
-#   when the repository variable SELF_HOSTED_STS2 is 'true' (see README.md, "CI"). Never --real: that
-#   output holds Jordan's own mods and data.
+# The in-game self-test is selftest.yml, started by hand only.
 name: CI
 
 on:
@@ -42,43 +40,3 @@ jobs:
           for script in build.cs tools/dev.cs tools/pck.cs tools/check.cs; do
             dotnet build "$script"
           done
-
-  selftest:
-    # Only code from this repository runs on the PC: pushes, and pull requests from its own branches (never a
-    # fork's, whose changes to build.cs, dev.cs or the mod would run as the runner's user).
-    if: >-
-      vars.SELF_HOSTED_STS2 == 'true'
-      && (github.event_name == 'push' || github.event.pull_request.head.repo.full_name == github.repository)
-    needs: checks
-    runs-on: [self-hosted, windows, sts2]
-    steps:
-      - uses: actions/checkout@v7
-      - name: Build (no install)
-        id: build
-        run: dotnet run build.cs --no-install
-      # Each dev.cs run rebuilds and so clears out/, so each run's results are uploaded before the next.
-      - name: Self-test (fixture mods)
-        id: fixture
-        run: dotnet run tools/dev.cs test
-      - name: Upload fixture results
-        if: ${{ !cancelled() && steps.fixture.outcome != 'skipped' }}
-        uses: actions/upload-artifact@v7
-        with:
-          name: selftest-fixture
-          path: |
-            out/selftest/*.txt
-            out/dev.log
-          retention-days: 14
-      - name: Self-test alongside Better Mod Menu
-        id: bmm
-        if: ${{ !cancelled() && steps.build.outcome == 'success' }}
-        run: dotnet run tools/dev.cs test --bmm
-      - name: Upload Better Mod Menu results
-        if: ${{ !cancelled() && steps.bmm.outcome != 'skipped' }}
-        uses: actions/upload-artifact@v7
-        with:
-          name: selftest-bmm
-          path: |
-            out/selftest/*.txt
-            out/dev.log
-          retention-days: 14

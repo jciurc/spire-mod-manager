@@ -646,12 +646,17 @@ own art; the spikes describe the game's behaviour but quote no game code.
 
 Jordan's notes of 2026-10-13 (with a Load Order screenshot, 0.0.46).
 
-- [ ] "Unsaved •": its hover card opens at once, like the Changes summary
-- [ ] clicking "Unsaved •" opens that profile's unsaved changes in the side panel; clicking again closes it
-- [ ] our page's restart line reads "Mod changes will be applied after a restart." (the game's own wording stays in Vanilla List)
-- [ ] the Better Mod Menu warning: "Multiple mod managers are currently enabled, which may cause unexpected behavior.", in the red banner area with the same go-to-problem button, shown while both managers are ticked (no relaunch needed); the footer warning goes
-- [ ] (bug) Load Order: the Auto sort hint ("Automatically sort for compatibility") sits in the wrong place when the page opens, over the first row's buttons; it moves into place once a mod is clicked
-- [ ] main menu button's right-click menu: "Relaunch game", with a divider under "Reset position"
+- [x] "Unsaved •": its hover card opens at once, like the Changes summary (#26, merged)
+- [x] clicking "Unsaved •" opens that profile's unsaved changes in the side panel; clicking again closes it (#26, merged)
+- [x] our page's restart line reads "Mod changes will be applied after a restart." (the game's own wording stays in Vanilla List) (#28)
+- [x] the Better Mod Menu warning: "Multiple mod managers are currently enabled, which may cause unexpected behavior.", in the red banner area with the same go-to-problem button, shown while both managers are ticked (no relaunch needed); the footer warning goes (#28)
+- [x] (bug) Load Order: the Auto sort hint ("Automatically sort for compatibility") sits in the wrong place when the page opens, over the first row's buttons; it moves into place once a mod is clicked (#27, merged)
+- [x] main menu button's right-click menu: "Relaunch game", with a divider under "Reset position" (#29; also fixes Escape while moving the button reaching the game)
+
+## Follow-ups from the Copilot reviews (2026-10-13)
+- [ ] Layout.FontSize's `SetTextAutoSize(label.Text)` does nothing when the text is unchanged (the auto-size skips a size equal to its last). #11 fixed it for the panel title (FitTitle); the Vanilla List title could hit the same if its fitted size matched the cached one
+- [ ] counts outside the Changes bar still print plain digits: the profile list's "5 mods" (Profiles.cs), Load Order, the page bar, row strips (#21 added Menus.Number for these)
+- [ ] other mods' parts in the panel: a mod that hides its part outside the panel's fill, while we have it hidden for room, can see it shown again when room comes back (#22 covers hides made in or after Fill)
 
 ## Backlog (round 19)
 - [ ] optimization pass: switching between the main list, Vanilla List and Load Order lags with 200+ mods. Also: with round 19 in, a full redraw on Jordan's ~250 mods measures 54 ms (49 before; the --real check wants under 50), a search keystroke 59 ms

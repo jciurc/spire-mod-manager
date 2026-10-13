@@ -6,7 +6,8 @@ namespace SpireModManager;
 
 // The "Spire Mod Manager" button on the main menu: Jordan's skyline art in the lower-left corner (or
 // wherever the player moved it: right-click > Move button, then click to place it), with the game's
-// notification dot and a short "Relaunch to apply" note beside it while a relaunch is pending.
+// notification dot and a short "Relaunch to apply" note beside it while a relaunch is pending. Its
+// right-click menu also has Relaunch game, the Modding page's Relaunch Game from here.
 static class MenuButton
 {
     const string Name = "SpireModManagerMenuButton";
@@ -47,6 +48,15 @@ static class MenuButton
         }
         Refresh();
         menu.SubmenuStack.Connect(NSubmenuStack.SignalName.StackModified, Callable.From(Refresh));
+        // A change made on the main menu itself (a fix in the relaunch check) can start or end a pending relaunch.
+        // Changes on a page over the menu are caught as it closes, above.
+        void Changed()
+        {
+            if (!menu.SubmenuStack.SubmenusOpen)
+                Refresh();
+        }
+        History.Changed += Changed;
+        button.TreeExiting += () => History.Changed -= Changed;
 
         button.GuiInput += e =>
         {
@@ -61,6 +71,10 @@ static class MenuButton
                     Store.Save();
                     Place(button, size);
                 }, Disabled: Store.Data.MenuButtonAt == null),
+                // A divider, then what the Modding page's Relaunch Game does: first the check for mods that won't
+                // load (its dialog over the main menu), then the relaunch.
+                MenuItem.Heading(""),
+                new(Menus.Text("SPIRE_MOD_MANAGER.RELAUNCH_GAME"), () => RelaunchCheck.Relaunch(menu)),
             ]);
         };
     }
@@ -89,6 +103,18 @@ static class MenuButton
     // shows the hint and keeps clicks off the menu underneath; the mouse and keys are read every frame, so
     // nothing else on the menu can take them first. Leaving the menu cancels it.
     public const string MoveLayerName = "SpireModManagerMoveLayer";
+
+    // While moving: cancels it (Escape, through ShortcutsPatch, which then keeps the key from the game; the game's
+    // own Escape on the main menu opens its save profile screen). False when not moving.
+    static Action? _cancelMove;
+
+    public static bool CancelMove()
+    {
+        if (_cancelMove is not { } cancel)
+            return false;
+        cancel();
+        return true;
+    }
 
     static void BeginMove(NMainMenu menu, Control button, Vector2 size)
     {
@@ -145,12 +171,15 @@ static class MenuButton
             (leftWasDown, rightWasDown) = (left, right);
         }
         var done = false;
+        var following = false;
         void End(bool keep)
         {
             if (done)
                 return;
             done = true;
-            tree.ProcessFrame -= Frame;
+            _cancelMove = null;
+            if (following)
+                tree.ProcessFrame -= Frame;
             if (keep)
             {
                 Store.Data.MenuButtonAt = new ScreenPoint(button.Position.X, button.Position.Y);
@@ -167,12 +196,17 @@ static class MenuButton
                 layer.QueueFree();
             }
         }
+        _cancelMove = () => End(keep: false);
         // The held buttons from the menu click: seen released on the first frames, then the next press counts.
+        // Not if it has already ended: an Escape in the same frame as the click.
         Callable.From(() =>
         {
+            if (done)
+                return;
             leftWasDown = Input.IsMouseButtonPressed(MouseButton.Left);
             rightWasDown = Input.IsMouseButtonPressed(MouseButton.Right);
             tree.ProcessFrame += Frame;
+            following = true;
         }).CallDeferred();
     }
 }

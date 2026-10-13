@@ -177,6 +177,7 @@
   "SPIRE_MOD_MANAGER.CATEGORY_TIP": "Move to another category",
   "SPIRE_MOD_MANAGER.MOVE_BUTTON": "Move button",
   "SPIRE_MOD_MANAGER.RESET_POSITION": "Reset position",
+  "SPIRE_MOD_MANAGER.RELAUNCH_GAME": "Relaunch game",
   "SPIRE_MOD_MANAGER.MOVE_HINT": "Click to place · right-click or Esc to cancel",
   "SPIRE_MOD_MANAGER.RELAUNCH_NOTE": "Relaunch to apply your mod changes",
   "SPIRE_MOD_MANAGER.NEEDS_UPDATE": "Spire Mod Manager needs an update for this game version.",
