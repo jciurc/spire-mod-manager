@@ -49,6 +49,7 @@ static class SelfTest
         try
         {
             await Wait(menu, 3);
+            TestText(); // our pack's text, whichever page shows
             TestFailSoft();
             if (!ModEntry.OurPage)
             {
@@ -63,7 +64,6 @@ static class SelfTest
                 && relaunchArgs.Contains("--force-steam"), string.Join(" ", relaunchArgs));
             Check("dev run marked", menu.GetTree().Root.Title.StartsWith("[DEV]") && menu.GetTree().Root.HasNode("SpireModManagerDevTag"),
                 menu.GetTree().Root.Title);
-            TestText();
             await Capture(menu, outDir, "1-main-menu");
             await TestMenuButtonMove(menu, outDir);
 
