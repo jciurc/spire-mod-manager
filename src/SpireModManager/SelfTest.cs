@@ -208,7 +208,13 @@ static class SelfTest
                 typed.EmitSignal(LineEdit.SignalName.TextChanged, text);
             }
             Results.Add($"INFO a search keystroke {Ms(() => { Type("lib"); Type(""); }) / 2:0.0} ms");
+            // The same to the end of the frame (FrameMs), with what they leave for it: titles fitted, layout.
+            await Wait(menu, 0.3);
+            var redrawFrame = await FrameMs(menu, () => CategoryList.Apply(content));
+            var keyFrame = (await FrameMs(menu, () => Type("lib")) + await FrameMs(menu, () => Type(""))) / 2;
+            Results.Add($"INFO to the end of the frame: a redraw {redrawFrame:0.0} ms, a search keystroke {keyFrame:0.0} ms");
             await Wait(menu, 1);
+            await TimeSwitches(menu, screen, content);
             await Capture(screen, outDir, "real-1-categories");
 
             Click(screen.GetNode<NButton>("SpireModManagerLoadOrderToggle"));
@@ -279,6 +285,48 @@ static class SelfTest
             File.WriteAllLines(Path.Combine(outDir, "results.txt"), Results);
             menu.GetTree().Quit();
         }
+    }
+
+    // Switching views with a mod picked, as a player does: main list to Load Order and back, to Vanilla List and
+    // back. Each switch is timed to the end of its frame (FrameMs), three times; the middle time is reported.
+    static async Task TimeSwitches(Node menu, NModdingScreen screen, Control content)
+    {
+        if (content.GetChildren().OfType<NModMenuRow>().FirstOrDefault() is { } row)
+            CategoryList.Select(screen, row);
+        await Wait(menu, 0.5);
+        var idle = new List<double>();
+        var times = new Dictionary<string, List<double>>();
+        async Task Switch(string name, string toggle)
+        {
+            if (!times.TryGetValue(name, out var list))
+                times[name] = list = [];
+            list.Add(await FrameMs(menu, () => Click(screen.GetNode<NButton>(toggle))));
+            await Wait(menu, 0.3);
+        }
+        for (var round = 0; round < 3; round++)
+        {
+            idle.Add(await FrameMs(menu, () => { }));
+            await Switch("to Load Order", "SpireModManagerLoadOrderToggle");
+            await Switch("back from Load Order", "SpireModManagerLoadOrderToggle");
+            await Switch("to Vanilla List", "SpireModManagerViewToggle");
+            await Switch("back from Vanilla List", "SpireModManagerViewToggle");
+        }
+        static double Middle(List<double> ms) => ms.Order().ElementAt(ms.Count / 2);
+        Results.Add($"INFO view switches (to the end of the frame; an idle frame {Middle(idle):0.0} ms): "
+            + string.Join(", ", times.Select(t => $"{t.Key} {Middle(t.Value):0.0} ms")));
+    }
+
+    // How long something takes through to the end of the frame it happens in: its own work, then what it leaves
+    // for the frame's end (layout, text, nodes freed). From the start of a frame, where a click lands, to a timer
+    // that fires once that frame's deferred work is done; the time between frames isn't counted.
+    static async Task<double> FrameMs(Node node, Action action)
+    {
+        var tree = node.GetTree();
+        await node.ToSignal(tree, SceneTree.SignalName.ProcessFrame);
+        var watch = System.Diagnostics.Stopwatch.StartNew();
+        action();
+        await node.ToSignal(tree.CreateTimer(0), SceneTreeTimer.SignalName.Timeout);
+        return watch.Elapsed.TotalMilliseconds;
     }
 
     // Our text reaches the game: each eng text without placeholders, as packed, reads back unchanged through
