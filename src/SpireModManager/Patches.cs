@@ -380,8 +380,8 @@ static class RowSelectedPatch
     }
 }
 
-// The game's "mod not loaded" popup when a mod is installed while it runs: our wording ("New Mod Added"), and
-// at most one every 30 seconds (subscribing to several mods at once used to stack them up).
+// The game's "mod not loaded" popup when a mod is installed while it runs: our wording ("New Mod Added") and
+// mark, and at most one every 30 seconds (subscribing to several mods at once used to stack them up).
 [HarmonyPatch(typeof(NGame), "OnNewModDetected")]
 static class NewModPopupPatch
 {
@@ -399,6 +399,7 @@ static class NewModPopupPatch
             if (NErrorPopup.Create(new LocString("settings_ui", "SPIRE_MOD_MANAGER.NEW_MOD_TITLE"),
                     new LocString("settings_ui", "SPIRE_MOD_MANAGER.NEW_MOD_BODY"), null, showReportBugButton: false) is { } popup)
             {
+                Menus.Mark(popup);
                 modals.Add(popup);
                 _lastShown = now;
             }

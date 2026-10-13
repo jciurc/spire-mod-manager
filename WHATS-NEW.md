@@ -2,6 +2,28 @@
 
 Short notes for Jordan: what to look for after each install. Newest first.
 
+## Waiting in pull requests (night of 2026-10-13)
+
+Not installed. Each PR's description has its own "What to look for" and "For review"; the short version:
+
+- **#1 Better Mod Menu:** the button keeps its Vanilla List name; the warning sits right of the view buttons: "Better Mod Menu is running alongside Spire Mod Manager and may cause unexpected issues."
+- **#5 Fail soft:** if a game update breaks a patch the page needs, the page stays the game's with "Spire Mod Manager needs an update for this game version." on top (beside the main menu button if the screen patch itself broke).
+- **#6 Data safety:** an unreadable manager.json is kept aside and the newest backup loads, with a one-time popup (at the main menu or on the Modding page).
+- **#7 New mods and profiles:** a new subscription joins your active profile, on; no more "Unsaved" from new mods, and Discard doesn't turn them off. Switching to a profile that never saw a mod leaves it as it is.
+- **#14 Bug fix:** mods subscribed while the game runs were never tracked in real play (no New tag, no "Installed" line in Changes). Worth one real try.
+- **#2 First run:** with no categories yet, a dim hint under the page bar says how to make one.
+- **#9 Search:** clicking a tag again clears the search; Shift-click adds or removes it.
+- **#10 Popups:** Delete profile, Delete category and New Mod Added say "Spire Mod Manager" in small faint letters under their buttons.
+- **#11 Long text:** long names and ids in the panel are cut with "…" (version and status still showing); rows with many tags fold the rest into "+N".
+- **#15 Speed:** redraws and search with long lists do much less work (your list: about 49 ms per redraw, from 66-70).
+- **#17 Tag suggestions:** your own tags drop down under the tags box, most used first; arrows and Enter, Tab, a comma or a click take one.
+- **#19 Copy:** "relaunch" everywhere ("Pending relaunch"), "disabled" in sentences, a renamed profile reads "Renamed profile Old → New" in Changes.
+- **#21 Language:** dates and numbers follow the game's language (English unchanged).
+- **#22 Undo And Restart:** its settings box sits under the description instead of over your fields.
+- **#12 Fallbacks:** if a game update breaks a resource we load, plain buttons and text arrows instead of a broken page.
+- **#16 Better Mod Menu import:** first runs also read its json5/jsonc files, comments, its old format and portable mode.
+- Tools and docs: #3 `build.cs --dist` (0.1.0), #4 the Workshop kit (read `workshop/description.bbcode`; take the shots in `workshop/SHOTS.md`), #8 CI, #13 dev tools, #18 two design spikes with questions for you, #20 code cleanup.
+
 ## Installed 2026-10-12 (afternoon): version 0.0.45
 
 Better Mod Menu (round 17)

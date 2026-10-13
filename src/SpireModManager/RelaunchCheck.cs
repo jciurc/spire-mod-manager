@@ -29,7 +29,7 @@ static class RelaunchCheck
 
     // Enabled mods (installed now or this session) with a dependency that is off or missing, and why.
     static List<(Mod Mod, string Why)> Problems() =>
-        ModManager.Mods.Concat(Installed.Mods).Where(m => m.manifest?.id != null && Dependencies.IsOn(m))
+        ModManager.Mods.Union(Installed.Mods).Where(m => m.manifest?.id != null && Dependencies.IsOn(m))
             .SelectMany(m => Dependencies.Of(m).Select(id => (Id: id, Mod: Dependencies.Find(id)))
                 .Where(d => d.Mod == null || !Dependencies.IsOn(d.Mod))
                 .Select(d => (m, Menus.Format(d.Mod == null ? "SPIRE_MOD_MANAGER.PROBLEM_DEP_MISSING" : "SPIRE_MOD_MANAGER.PROBLEM_DEP_OFF",
@@ -121,7 +121,7 @@ static class RelaunchCheck
             button.CustomMinimumSize = new Vector2(0, 34);
             buttons.AddChild(button);
         }
-        var needed = Dependencies.NeededOff(ModManager.Mods.Concat(Installed.Mods));
+        var needed = Dependencies.NeededOff(ModManager.Mods.Union(Installed.Mods));
         if (needed.Count > 0)
             Add("SPIRE_MOD_MANAGER.ENABLE_NEEDED", () => Fix(needed, true), "EnableNeededButton");
         if (problems.Count > 0)

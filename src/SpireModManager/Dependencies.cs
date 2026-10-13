@@ -17,7 +17,7 @@ static class Dependencies
     // The installed copy of a mod id, preferring one that is on. Mods installed this session count: they load
     // after a relaunch.
     public static Mod? Find(string id) =>
-        ModManager.Mods.Concat(Installed.Mods).Where(m => m.manifest?.id == id).OrderByDescending(IsOn).FirstOrDefault();
+        ModManager.Mods.Union(Installed.Mods).Where(m => m.manifest?.id == id).OrderByDescending(IsOn).FirstOrDefault();
 
     public enum Problem { None, Missing, Off, LoadsBefore }
 
