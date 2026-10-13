@@ -862,6 +862,18 @@ static class SelfTest
         }
         category = Store.Data.Categories.First(c => c.Name == "Renamed"); // undo restores the data as new objects
 
+        // Delete from the header menu asks first; with one mod in the category, in the singular. (Cancelled by
+        // closing the popup; the deletion itself is below.)
+        if (CategoryList.ShowHeaderMenu(content, category, Members()) is { } deleteMenu)
+        {
+            MenuPanel.Press(deleteMenu, "Delete");
+            await Wait(menu, 0.5);
+            var asked = PopupTexts();
+            Check("deleting a category with one mod asks, in the singular", asked.Any(t => t.Contains("holds 1 mod.")), string.Join(" | ", asked.Where(t => t.Length > 0)));
+            NModalContainer.Instance?.Clear();
+            await Wait(menu, 0.3);
+        }
+
         Categories.Delete(category);
         CategoryList.Apply(content);
         await Wait(menu, 0.5);
@@ -1240,9 +1252,10 @@ static class SelfTest
         var detected = typeof(NGame).GetMethod("OnNewModDetected", System.Reflection.BindingFlags.NonPublic | System.Reflection.BindingFlags.Instance);
         detected?.Invoke(NGame.Instance, [mod]);
         await Wait(menu, 0.3);
-        var texts = NModalContainer.Instance?.OpenModal is Node popup
-            ? popup.FindChildren("*", "", true, false).Select(n => n is Label l ? l.Text : n is RichTextLabel r ? r.Text : "").ToList() : [];
+        var texts = PopupTexts();
         Check("new mod popup says \"New Mod Added\"", texts.Any(t => t.Contains("New Mod Added")), string.Join(" | ", texts.Where(t => t.Length > 0)));
+        Check("new mod popup speaks of a relaunch, not a restart", texts.Any(t => t.Contains("relaunch")) && !texts.Any(t => t.Contains("restart")),
+            string.Join(" | ", texts.Where(t => t.Length > 0)));
         CheckMark("new mod popup", NModalContainer.Instance?.OpenModal as Control);
         await Capture(screen, outDir, "10b-new-mod-popup");
         NModalContainer.Instance?.Clear();
@@ -1655,13 +1668,13 @@ static class SelfTest
         tickbox.EmitSignal(NTickbox.SignalName.Toggled, tickbox);
         await Wait(menu, 0.3);
         var text = (screen.FindChild("OrderProblems", true, false) as Label)?.Text ?? "";
-        Check("main list: a needed mod that is off gets a banner", text.Contains("need a mod that is turned off"), text);
+        Check("main list: a needed mod that is off gets a banner", text.Contains("need a mod that is disabled"), text);
         await Capture(screen, outDir, "2b-list-banner");
         screen.FindChild("EnableNeededButton", true, false)?.EmitSignal(BaseButton.SignalName.Pressed);
         await Wait(menu, 0.3);
         Check("Enable needed mods turns it on, banner says no more", Dependencies.IsOn(lib) && tickbox.IsTicked
             && screen.FindChild("EnableNeededButton", true, false) == null
-            && (screen.FindChild("OrderProblems", true, false) as Label)?.Text.Contains("turned off") != true);
+            && (screen.FindChild("OrderProblems", true, false) as Label)?.Text.Contains("is disabled") != true);
         History.Undo();
         await Wait(menu, 0.3);
         Check("one undo turns it off again", !Dependencies.IsOn(lib));
@@ -1769,7 +1782,7 @@ static class SelfTest
 
         RelaunchCheck.Show(screen);
         await Wait(menu, 0.3);
-        Check("relaunch check lists the mods that won't load", Body().Contains("BaseLib, which isn't installed") && Body().Contains("Test Framework, which is off"), Body());
+        Check("relaunch check lists the mods that won't load", Body().Contains("BaseLib, which isn't installed") && Body().Contains("Test Framework, which is disabled"), Body());
         await Capture(screen, outDir, "15-relaunch-check");
         Press("EnableNeededButton");
         await Wait(menu, 0.3);
@@ -2102,6 +2115,18 @@ static class SelfTest
             Profiles.SwitchTo(start, screen);
             Check("back on the launch profile, no switched line", !HistoryBar.Describe().Any(l => l.StartsWith("Switched")));
         }
+
+        // A profile renamed since launch reads as one renamed line, not as added and deleted; renamed back, it's gone.
+        if (Store.Data.Profiles.FirstOrDefault(p => p.Name != Store.Data.ActiveProfile) is { } renamed)
+        {
+            var was = renamed.Name;
+            Profiles.Rename(renamed, "Renamed in test");
+            var lines = HistoryBar.Describe();
+            Check("a renamed profile shows as one renamed line", lines.Contains($"Renamed profile {was} → Renamed in test")
+                && !lines.Contains("Added profile Renamed in test") && !lines.Contains($"Deleted profile {was}"), string.Join(" | ", lines));
+            Profiles.Rename(renamed, was);
+            Check("renamed back, no renamed line", !HistoryBar.Describe().Any(l => l.Contains("Renamed in test")), string.Join(" | ", HistoryBar.Describe()));
+        }
     }
 
     // Store.cs on made-up folders under the output folder (the sandbox's own manager.json is never touched): an
@@ -2235,6 +2260,10 @@ static class SelfTest
     }
 
     static Node? Header(Control content, string category) => content.GetNodeOrNull($"Category {category}");
+
+    // Every text in the popup open now (the game's modal), for checking its wording.
+    static List<string> PopupTexts() => NModalContainer.Instance?.OpenModal is Node popup
+        ? popup.FindChildren("*", "", true, false).Select(n => n is Label l ? l.Text : n is RichTextLabel r ? r.Text : "").ToList() : [];
 
     // A popup of ours in the game's style: our mark, once (marking it again adds none), shown, inside the popup's
     // art (clear of its painted edge), and clear of its title, text and buttons (their art included).
