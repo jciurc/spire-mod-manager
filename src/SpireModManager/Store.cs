@@ -80,8 +80,11 @@ public static class Store
     // Loaded on first use rather than in Init: the account folder needs Steam's user id.
     public static StoreData Data => _data ??= Load();
 
+    // For the self-test's second launch: the next use loads again, from the file the first load wrote.
+    public static void Reload() => _data = null;
+
     static string Dir => ProjectSettings.GlobalizePath(UserDataPathProvider.GetAccountScopedBasePath($"mod_data/{ModEntry.ModId}"));
-    static string FilePath => Path.Combine(Dir, FileName);
+    public static string FilePath => Path.Combine(Dir, FileName);
 
     static StoreData Load()
     {
