@@ -53,6 +53,22 @@ static class ModdingScreenPatch
     [HarmonyPriority(Priority.First)]
     static void Postfix(NModdingScreen __instance)
     {
+        // A patch the page needs didn't apply (a game update renamed what it hooks): the game's page as it is, with
+        // one line saying so.
+        try
+        {
+            if (!ModEntry.OurPage)
+            {
+                ModEntry.ShowNeedsUpdate(__instance);
+                return;
+            }
+        }
+        catch (Exception e)
+        {
+            Log.Error($"[{ModEntry.ModId}] Could not show the needs-update line: {e}");
+            return;
+        }
+
         try
         {
             var size = new Vector2(220, 70);
@@ -206,7 +222,8 @@ static class ModInfoFillPatch
     {
         try
         {
-            ModDetails.Fill(__instance, mod);
+            if (ModEntry.OurPage) // the game's page otherwise (ModdingScreenPatch)
+                ModDetails.Fill(__instance, mod);
         }
         catch (Exception e)
         {
@@ -366,7 +383,8 @@ static class RowLookPatch
     {
         try
         {
-            RowTitles.Look(row, RowState.Selected(row), focused ?? RowState.Focused(row));
+            if (ModEntry.OurPage) // the game's page otherwise (ModdingScreenPatch)
+                RowTitles.Look(row, RowState.Selected(row), focused ?? RowState.Focused(row));
         }
         catch (Exception e)
         {
