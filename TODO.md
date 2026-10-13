@@ -695,7 +695,7 @@ itself: DESIGN.md, "Research: other StS2 mod managers"). JORDAN marks Jordan's o
 recommendations to confirm with Jordan.
 
 ## Before 0.1.0
-- [ ] JORDAN: share and import a profile as plain text. Raises round 2's "export/import/share mod collections" and the release plan's share codes (§4) to a 0.1.0 blocker. Suggestions:
+- [ ] JORDAN: share and import a profile as plain text. Raises round 2's "export/import/share mod collections" and the release plan's share codes (from §4 to a 0.1.0 blocker in §2). Suggestions:
   - a prefix and version, e.g. `SMM1:` + base64url(deflate(payload)); parsing tolerant of line breaks, spaces and text around it, since chat apps mangle it
   - the payload: profile name, game version, enabled mods by Workshop id where there is one, else mod id plus a local flag; the load order optional (it matters for multiplayer)
   - aim to fit one Discord message (2000 characters) for about 250 mods (Workshop ids packed as numbers, not text); copied to the clipboard with `DisplayServer.ClipboardSet`
