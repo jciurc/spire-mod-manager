@@ -22,6 +22,7 @@ Not installed. Each PR's description has its own "What to look for" and "For rev
 - **#22 Undo And Restart:** its settings box sits under the description instead of over your fields.
 - **#12 Fallbacks:** if a game update breaks a resource we load, plain buttons and text arrows instead of a broken page.
 - **#16 Better Mod Menu import:** first runs also read its json5/jsonc files, comments, its old format and portable mode.
+- **Dismiss the managers warning:** the red "Multiple mod managers" banner has Dismiss beside Show. It stays away until Better Mod Menu or Spire Mod Manager is disabled, and comes back once both are enabled again.
 - Tools and docs: #3 `build.cs --dist` (0.1.0), #4 the Workshop kit (read `workshop/description.bbcode`; take the shots in `workshop/SHOTS.md`), #8 CI, #13 dev tools, #18 two design spikes with questions for you, #20 code cleanup.
 
 ## Installed 2026-10-12 (afternoon): version 0.0.45
