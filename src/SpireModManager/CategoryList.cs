@@ -253,6 +253,7 @@ static class CategoryList
 
     public static void Apply(Control content)
     {
+        using var lookups = Lookups.Begin(); // every row asks the same questions (is it on, who needs it): answered once
         // The row container only grows by itself; shrink its height to fit once this redraw settles
         // (collapsing a category or filtering must shorten the scroll range too). Only the height: its width
         // comes from its anchors, and its minimum width is 0.
@@ -491,9 +492,15 @@ static class CategoryList
 
     // The small buttons at the right of each row's strip: moves in Load Order; otherwise its category, opening
     // its menu (the pencil past the tickbox is EdgeAction).
-    static Func<NModMenuRow, IEnumerable<MenuItem>> StripActions(Control content) => Store.Data.LoadOrderView
-        ? row => LoadOrder.Actions(content, row, () => Redraw(content), compact: true)
-        : row => [new MenuItem(CategoryName(row.Mod?.manifest?.id), () => ShowRowMenu(content, row), Tip: Menus.Text("SPIRE_MOD_MANAGER.CATEGORY_TIP"))];
+    static Func<NModMenuRow, IEnumerable<MenuItem>> StripActions(Control content)
+    {
+        // The rows in their places, read once for all the strips (by the first: Load Order has placed them by then),
+        // not by every row again.
+        List<NModMenuRow>? placed = null;
+        return Store.Data.LoadOrderView
+            ? row => LoadOrder.Actions(content, row, () => Redraw(content), compact: true, placed ??= content.GetChildren().OfType<NModMenuRow>().ToList())
+            : row => [new MenuItem(CategoryName(row.Mod?.manifest?.id), () => ShowRowMenu(content, row), Tip: Menus.Text("SPIRE_MOD_MANAGER.CATEGORY_TIP"))];
+    }
 
     // The main list's pencil, past the tickbox at the row's far right: the mod's menu. None in Load Order.
     static Func<NModMenuRow, MenuItem>? EdgeAction(Control content) => Store.Data.LoadOrderView
@@ -508,6 +515,7 @@ static class CategoryList
     // full redraw. (Their title colours: RowTitles.MarkChanged.)
     public static void RefreshStrips(Control content)
     {
+        using var lookups = Lookups.Begin();
         var rows = content.GetChildren().OfType<NModMenuRow>().ToList();
         LoadOrder.UpdateToolbar(content, rows, () => Redraw(content)); // the banner and the "!" follow on/off too
         if (Store.Data.VanillaView)

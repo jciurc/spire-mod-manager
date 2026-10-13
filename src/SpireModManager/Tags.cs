@@ -30,9 +30,13 @@ static class Tags
     const float ChipMax = 140; // px of text on a chip
     const float Margin = 6; // either side of a chip's text
 
-    public static List<Chip> For(Mod? mod)
+    // A redraw asks for every row's, and a search several times over: inside one, each mod's are worked out once
+    // (Lookups).
+    public static IReadOnlyList<Chip> For(Mod? mod) => mod == null ? [] : Lookups.Current?.Chips(mod, Make) ?? Make(mod);
+
+    static List<Chip> Make(Mod mod)
     {
-        if (mod?.manifest is not { } manifest)
+        if (mod.manifest is not { } manifest)
             return [];
         // Always in this order: New, Local, Library, Gameplay, Cosmetic, then the player's own.
         var chips = new List<Chip>();
@@ -40,7 +44,7 @@ static class Tags
             chips.Add(new Chip(Menus.Text("SPIRE_MOD_MANAGER.TAG_NEW"), New, Tip: Menus.Text("SPIRE_MOD_MANAGER.TAG_NEW_TIP")));
         if (mod.workshopId == null)
             chips.Add(new Chip(Menus.Text("SPIRE_MOD_MANAGER.TAG_LOCAL"), Local, Tip: Menus.Text("SPIRE_MOD_MANAGER.TAG_LOCAL_TIP")));
-        if (ModManager.Mods.Any(m => m != mod && Dependencies.Of(m).Contains(manifest.id)))
+        if (Dependencies.NeededBy(manifest.id).Any(m => m != mod))
             chips.Add(new Chip(Menus.Text("SPIRE_MOD_MANAGER.TAG_LIBRARY"), Library, Tip: Menus.Text("SPIRE_MOD_MANAGER.TAG_LIBRARY_TIP")));
         if (manifest.affectsGameplay)
             chips.Add(new Chip(Menus.Text("SPIRE_MOD_MANAGER.TAG_GAMEPLAY"), Gameplay, Tip: Menus.Text("SPIRE_MOD_MANAGER.TAG_GAMEPLAY_TIP")));

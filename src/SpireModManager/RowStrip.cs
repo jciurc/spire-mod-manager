@@ -225,7 +225,7 @@ static class RowStrip
     // missing, off, or loads after this mod. In Load Order every one says "before" or "after".
     // Disabled mods aren't checked for problems (their dependencies don't matter until they're on), but each
     // dependency is still green when it's on and red when it isn't.
-    static string Needs(Mod? mod, IReadOnlyDictionary<Mod, int> order, bool loadOrder)
+    public static string Needs(Mod? mod, IReadOnlyDictionary<Mod, int> order, bool loadOrder)
     {
         var deps = Dependencies.Of(mod);
         if (mod == null || deps.Count == 0)
@@ -254,11 +254,11 @@ static class RowStrip
     }
 
     // "Required for 3 mods": how many mods that are on need this one; red when this one is off.
-    static string RequiredFor(Mod? mod)
+    public static string RequiredFor(Mod? mod)
     {
         if (mod?.manifest?.id is not { } id)
             return "";
-        var count = ModManager.Mods.Count(m => m != mod && Dependencies.IsOn(m) && Dependencies.Of(m).Contains(id));
+        var count = Dependencies.NeededBy(id).Count(m => m != mod && Dependencies.IsOn(m));
         if (count == 0)
             return "";
         var text = Menus.Format(count == 1 ? "SPIRE_MOD_MANAGER.REQUIRED_FOR_ONE" : "SPIRE_MOD_MANAGER.REQUIRED_FOR", ("count", count.ToString()));
