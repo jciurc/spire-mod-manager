@@ -103,11 +103,12 @@
   - the false `Patches.cs:15` header;
   - the unused key `SPIRE_MOD_MANAGER.VERSION`;
   - the stale README and DESIGN status text.
-- **Localization formatting:**
+- **Localization formatting:** **Fixed (2026-10-13), with the self-test.**
   - Dates use the invariant culture, so month names are always English (`ModDetails.cs:241`).
   - Size units are hard-coded (`ModDetails.cs:332-338`).
   - `HistoryBar.cs:85-86` builds lines by concatenation.
   - Fix: use `LocManager.Instance.CultureInfo` and placeholders.
+  - Done: dates use the game's own date pattern (`run_history` `INFO.DATE_FORMAT`, as its run history does) in the game's culture (`Menus.Culture`); sizes and subscriber counts use its separators, with each unit a key (`"{size} MB"`); `MODS_ENABLED` and `CHANGES` hold their `{count}`. Still in the Windows culture: the profile list's "Oct 11" (`Profiles.Details`, left for after the new-mods-profile branch).
 - **Optional:** compile `SelfTest.cs` and the test hooks out of dist builds.
 
 ## 4. After 1.0

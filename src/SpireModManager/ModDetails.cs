@@ -4,6 +4,7 @@ using MegaCrit.Sts2.Core.Nodes.GodotExtensions;
 using MegaCrit.Sts2.Core.Platform;
 using MegaCrit.Sts2.Core.Nodes.Screens.ModdingScreen;
 using MegaCrit.Sts2.addons.mega_text;
+using MegaCrit.Sts2.Core.Localization;
 
 namespace SpireModManager;
 
@@ -212,7 +213,7 @@ static class ModDetails
         if (workshop != null)
             Fact("SPIRE_MOD_MANAGER.PUBLISHED", Date(workshop.Created));
         if (workshop?.Subscribers is { } subscribers)
-            Fact("SPIRE_MOD_MANAGER.SUBSCRIBERS", subscribers.ToString("N0"));
+            Fact("SPIRE_MOD_MANAGER.SUBSCRIBERS", Menus.Number(subscribers));
         if (workshop?.Tags.Count > 0)
             Fact("SPIRE_MOD_MANAGER.WORKSHOP_TAGS", string.Join(", ", workshop.Tags.Select(t => $"[url=wtag:{t}]{Escape(t)}[/url]"))); // click: search for it
         if (bytes > 0 || workshop != null)
@@ -286,8 +287,21 @@ static class ModDetails
     // Text cut after 200 characters (some authors write a paragraph where their name goes).
     public static string Short(string text) => text.Length <= 200 ? text : text[..200].TrimEnd() + "…";
 
-    // "October 12, 2026".
-    public static string Date(DateTime date) => date.ToString("MMMM d, yyyy", System.Globalization.CultureInfo.InvariantCulture);
+    // "October 12, 2026" in English, "12. Oktober 2026" in German: the game's own date pattern (the one its run
+    // history uses, translated with the rest of the game) in the game's language. All in English if a game update
+    // renames that text or it doesn't read as a date pattern ("October 12", not "Oktober 12" in an English pattern).
+    public static string Date(DateTime date)
+    {
+        var english = date.ToString("MMMM d, yyyy", System.Globalization.CultureInfo.InvariantCulture);
+        try
+        {
+            return LocString.GetIfExists("run_history", "INFO.DATE_FORMAT")?.GetRawText() is { } pattern ? date.ToString(pattern, Menus.Culture) : english;
+        }
+        catch (Exception)
+        {
+            return english;
+        }
+    }
 
     // Enabled (green), Disabled (grey), or Pending relaunch (orange) when it's been turned on or off since it
     // loaded; Failed to load (red) when it's on but couldn't load.
@@ -378,13 +392,18 @@ static class ModDetails
         return FolderSizes[path] = size;
     }
 
-    static string Bytes(long bytes) => bytes switch
+    // "1.5 MB": the number in the game's language, the unit and its place from the loc table.
+    static string Bytes(long bytes)
     {
-        >= 1 << 30 => $"{bytes / (double)(1 << 30):0.0} GB",
-        >= 1 << 20 => $"{bytes / (double)(1 << 20):0.0} MB",
-        >= 1 << 10 => $"{bytes / (double)(1 << 10):0} KB",
-        _ => $"{bytes} B",
-    };
+        var (key, size) = bytes switch
+        {
+            >= 1 << 30 => ("SPIRE_MOD_MANAGER.SIZE_GB", (bytes / (double)(1 << 30)).ToString("0.0", Menus.Culture)),
+            >= 1 << 20 => ("SPIRE_MOD_MANAGER.SIZE_MB", (bytes / (double)(1 << 20)).ToString("0.0", Menus.Culture)),
+            >= 1 << 10 => ("SPIRE_MOD_MANAGER.SIZE_KB", (bytes / (double)(1 << 10)).ToString("0", Menus.Culture)),
+            _ => ("SPIRE_MOD_MANAGER.SIZE_BYTES", bytes.ToString(Menus.Culture)),
+        };
+        return Menus.Format(key, ("size", size));
+    }
 
     // Fills the panel again for the mod it shows (after a tickbox change: its status may have changed). Not
     // while the panel shows the changes list: that stays until Close or a click on a row.

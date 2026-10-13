@@ -85,8 +85,11 @@ static class HistoryBar
             var (on, off, moved) = Counts();
             // On after a relaunch, new mods included (once each: the game lists them too).
             var enabled = ModManager.Mods.Union(Installed.Mods).Count(m => m.manifest?.id is { } id && id != ModEntry.ModId && Dependencies.IsOn(m));
-            changes.Text = $"{Menus.Text("SPIRE_MOD_MANAGER.MODS_ENABLED")} {enabled} ([color={Added}]+{on}[/color] [color={Removed}]-{off}[/color])\n"
-                + $"{Menus.Text("SPIRE_MOD_MANAGER.CHANGES")} [color={Edited}]{OtherChanges()}[/color]  [color={Moved}]↕{moved}[/color]";
+            // The words, and where the count goes among them, come from the loc table ("Mods enabled {count}"); the
+            // +, - and ↕ counts after them stay where they are in every language. Each count with the game's thousands
+            // separator (Menus.Number), as everywhere in the summary and the list.
+            changes.Text = $"{Menus.Format("SPIRE_MOD_MANAGER.MODS_ENABLED", ("count", Menus.Number(enabled)))} ([color={Added}]+{Menus.Number(on)}[/color] [color={Removed}]-{Menus.Number(off)}[/color])\n"
+                + $"{Menus.Format("SPIRE_MOD_MANAGER.CHANGES", ("count", $"[color={Edited}]{Menus.Number(OtherChanges())}[/color]"))}  [color={Moved}]↕{Menus.Number(moved)}[/color]";
             FitChanges(changes);
             if (info.GetNodeOrNull<Control>(ViewName) is { Visible: true } view)
                 FillList(view);
@@ -177,31 +180,31 @@ static class HistoryBar
         }
         if (on > 0)
         {
-            lines.Add($"[color={Added}]{Menus.Format("SPIRE_MOD_MANAGER.SUMMARY_ON", ("count", on.ToString()))}[/color]");
+            lines.Add($"[color={Added}]{Menus.Format("SPIRE_MOD_MANAGER.SUMMARY_ON", ("count", Menus.Number(on)))}[/color]");
             Names(changed.Where(c => c.Enabled).Select(c => Name(c.Mod)));
         }
         if (off > 0)
         {
-            lines.Add($"[color={Removed}]{Menus.Format("SPIRE_MOD_MANAGER.SUMMARY_OFF", ("count", off.ToString()))}[/color]");
+            lines.Add($"[color={Removed}]{Menus.Format("SPIRE_MOD_MANAGER.SUMMARY_OFF", ("count", Menus.Number(off)))}[/color]");
             Names(changed.Where(c => !c.Enabled).Select(c => Name(c.Mod)));
         }
         if (Installed.Mods.Count is var installed and > 0)
         {
-            lines.Add($"[color={New}]{Menus.Format(installed == 1 ? "SPIRE_MOD_MANAGER.SUMMARY_INSTALLED_ONE" : "SPIRE_MOD_MANAGER.SUMMARY_INSTALLED", ("count", installed.ToString()))}[/color]");
+            lines.Add($"[color={New}]{Menus.Format(installed == 1 ? "SPIRE_MOD_MANAGER.SUMMARY_INSTALLED_ONE" : "SPIRE_MOD_MANAGER.SUMMARY_INSTALLED", ("count", Menus.Number(installed)))}[/color]");
             Names(Installed.Mods.Select(m => $"{Name(m)} ({Menus.Text(Installed.On(m) ? "SPIRE_MOD_MANAGER.STATUS_ENABLED" : "SPIRE_MOD_MANAGER.STATUS_DISABLED")})"));
         }
         if (moved > 0)
-            lines.Add($"[color={Moved}]{Menus.Format("SPIRE_MOD_MANAGER.SUMMARY_ORDER", ("count", moved.ToString()))}[/color]");
+            lines.Add($"[color={Moved}]{Menus.Format("SPIRE_MOD_MANAGER.SUMMARY_ORDER", ("count", Menus.Number(moved)))}[/color]");
         if (edited.Count > 0)
         {
             // Which details: "Edited: 2 mods (alias, notes)".
             var fields = edited.SelectMany(e => e.Fields).Distinct().Select(f => Menus.Text($"SPIRE_MOD_MANAGER.FIELD_{f.ToUpperInvariant()}"));
             lines.Add($"[color={Edited}]{Escape(Menus.Format(edited.Count == 1 ? "SPIRE_MOD_MANAGER.SUMMARY_EDITED_ONE" : "SPIRE_MOD_MANAGER.SUMMARY_EDITED",
-                ("count", edited.Count.ToString()), ("fields", string.Join(", ", fields))))}[/color]");
+                ("count", Menus.Number(edited.Count)), ("fields", string.Join(", ", fields))))}[/color]");
         }
         if (profiles.Count > 0)
             lines.Add($"[color={Edited}]{Escape(Menus.Format(profiles.Count == 1 ? "SPIRE_MOD_MANAGER.CHANGE_PROFILES_SINGLE" : "SPIRE_MOD_MANAGER.CHANGE_PROFILES",
-                ("count", profiles.Count.ToString())))}[/color]");
+                ("count", Menus.Number(profiles.Count))))}[/color]");
         if (lines.Count == 1) // just the title
             lines.Add(Menus.Text("SPIRE_MOD_MANAGER.NO_CHANGES"));
         return lines;
@@ -432,7 +435,7 @@ static class HistoryBar
             var items = entries.Where(e => e.Section == id).ToList();
             if (items.Count == 0)
                 return;
-            text.Append($"\n[color={color}][b]{Escape(Menus.Format(key, ("count", items.Count.ToString())))}[/b][/color]\n");
+            text.Append($"\n[color={color}][b]{Escape(Menus.Format(key, ("count", Menus.Number(items.Count))))}[/b][/color]\n");
             foreach (var item in items)
                 text.Append($"    {item.Rich}\n");
         }
