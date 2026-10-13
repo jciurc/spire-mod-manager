@@ -1,5 +1,7 @@
 using Godot;
+using HarmonyLib;
 using MegaCrit.Sts2.Core.Localization;
+using MegaCrit.Sts2.Core.Logging;
 using MegaCrit.Sts2.Core.Nodes.GodotExtensions;
 using MegaCrit.Sts2.Core.Nodes.Screens.ModdingScreen;
 using MegaCrit.Sts2.addons.mega_text;
@@ -509,9 +511,23 @@ static class Layout
     // The game's auto-size (a MegaRichTextLabel's text shrunk to fit its box) run again, once the text and box are final:
     // after a size written straight in, setting the same text doesn't run it, and it skips writing a size equal to the
     // one it wrote last, which may not be the one drawn any more. Told the size drawn now, it writes only another one.
+    // Those are private, so reached by name: if a game update renames them, sizes stay as written (noted once).
     public static void Refit(MegaRichTextLabel label)
     {
-        label.Set(MegaRichTextLabel.PropertyName._lastSetSize, label.GetThemeFontSize("normal_font_size"));
-        label.CallDeferred(MegaRichTextLabel.MethodName.AdjustFontSize);
+        if (!(_refits ??= Refits()))
+            return;
+        label.Set(LastSetSize, label.GetThemeFontSize("normal_font_size"));
+        label.CallDeferred(AdjustFontSize);
+    }
+
+    static readonly StringName LastSetSize = "_lastSetSize", AdjustFontSize = "AdjustFontSize";
+    static bool? _refits;
+
+    static bool Refits()
+    {
+        if (AccessTools.Field(typeof(MegaRichTextLabel), "_lastSetSize") != null && AccessTools.Method(typeof(MegaRichTextLabel), "AdjustFontSize") != null)
+            return true;
+        Log.Warn($"[{ModEntry.ModId}] MegaRichTextLabel's auto-size not found; text keeps the sizes we write");
+        return false;
     }
 }
