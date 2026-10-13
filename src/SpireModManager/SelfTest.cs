@@ -259,7 +259,7 @@ static class SelfTest
         string[] spare = [nameof(RowLookPatch), nameof(ShortcutsPatch), nameof(NewModPatch), nameof(ModInfoClearPatch),
             nameof(NewModPopupPatch), nameof(NewModTogglePatch)];
         Check("our page with no patch failed, or only ones it can do without", ModEntry.PageWorks([]) && ModEntry.PageWorks(spare));
-        Check("the game's page if any one patch ours needs failed", ModEntry.PageNeeds.Contains(nameof(ModdingScreenPatch))
+        Check("the game's page if any one patch our page needs failed", ModEntry.PageNeeds.Contains(nameof(ModdingScreenPatch))
             && ModEntry.PageNeeds.All(needed => !ModEntry.PageWorks([needed]) && !ModEntry.PageWorks([.. spare, needed])),
             string.Join(", ", ModEntry.PageNeeds.Where(needed => ModEntry.PageWorks([needed]))));
         // The line itself, on a stand-in for the screen.
