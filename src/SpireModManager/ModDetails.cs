@@ -102,7 +102,7 @@ static class ModDetails
             picker.Text = CategoryList.CategoryName(id) + "  ▾";
         Callable.From(() => PlaceFields(container)).CallDeferred();
 
-        var folder = container.GetNodeOrNull<NButton>("OpenFolderButton") ?? AddButton(container, "OpenFolderButton",
+        var folder = container.GetNodeOrNull<Control>("OpenFolderButton") ?? AddButton(container, "OpenFolderButton",
             "SPIRE_MOD_MANAGER.OPEN_FOLDER", 20, () => OS.ShellOpen(Meta(container, FolderMeta)));
         folder.Visible = Directory.Exists(mod.path);
     }
@@ -368,7 +368,7 @@ static class ModDetails
 
     static string Meta(Node node, string key) => node.HasMeta(key) ? (string)node.GetMeta(key) : "";
 
-    static NButton AddButton(Control parent, string name, string locKey, float x, Action onPressed)
+    static Control AddButton(Control parent, string name, string locKey, float x, Action onPressed)
     {
         var button = ModEntry.AddButton(parent, locKey, new Vector2(180, 52), onPressed);
         button.Name = name;
