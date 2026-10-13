@@ -211,7 +211,7 @@ static class RowStrip
     {
         if (mod?.manifest?.id is not { } id)
             return "";
-        var count = ModManager.Mods.Count(m => m != mod && Dependencies.IsOn(m) && Dependencies.Of(m).Contains(id));
+        var count = Dependencies.NeededBy(id).Count(m => m != mod && Dependencies.IsOn(m));
         if (count == 0)
             return "";
         var text = Menus.Format(count == 1 ? "SPIRE_MOD_MANAGER.REQUIRED_FOR_ONE" : "SPIRE_MOD_MANAGER.REQUIRED_FOR", ("count", count.ToString()));

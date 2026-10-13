@@ -254,6 +254,7 @@ static class CategoryList
 
     public static void Apply(Control content)
     {
+        using var lookups = Lookups.Begin(); // every row asks the same questions (is it on, who needs it): answered once
         // The row container only grows by itself; shrink its height to fit once this redraw settles
         // (collapsing a category or filtering must shorten the scroll range too). Only the height: its width
         // comes from its anchors, and its minimum width is 0.
@@ -508,6 +509,7 @@ static class CategoryList
     // follow at once, without a full redraw.
     public static void RefreshStrips(Control content)
     {
+        using var lookups = Lookups.Begin();
         var rows = content.GetChildren().OfType<NModMenuRow>().ToList();
         LoadOrder.UpdateToolbar(content, rows, () => Redraw(content)); // the banner and the "!" follow on/off too
         if (Store.Data.VanillaView)

@@ -7,17 +7,22 @@ namespace SpireModManager;
 // Hard dependencies from each mod's manifest. The game loads a mod after everything it depends on,
 // whatever the saved order says, and fails it if a dependency isn't loaded. Order rules only bind mods
 // that are both switched on: disabled mods can sit anywhere.
+// While a redraw runs, IsOn, Find and NeededBy answer from its Lookups (the same answers, worked out once).
 static class Dependencies
 {
     public static IReadOnlyList<string> Of(Mod? mod) =>
         mod?.manifest?.dependencies?.Select(d => d.id).ToList() ?? [];
 
-    public static bool IsOn(Mod mod) => !(SaveManager.Instance.SettingsSave.ModSettings?.IsModDisabled(mod) ?? false);
+    public static bool IsOn(Mod mod) => Lookups.Current?.IsOn(mod) ?? !(SaveManager.Instance.SettingsSave.ModSettings?.IsModDisabled(mod) ?? false);
 
     // The installed copy of a mod id, preferring one that is on. Mods installed this session count: they load
     // after a relaunch.
-    public static Mod? Find(string id) =>
-        ModManager.Mods.Concat(Installed.Mods).Where(m => m.manifest?.id == id).OrderByDescending(IsOn).FirstOrDefault();
+    public static Mod? Find(string id) => id != null && Lookups.Current is { } now ? now.Find(id)
+        : ModManager.Mods.Concat(Installed.Mods).Where(m => m.manifest?.id == id).OrderByDescending(IsOn).FirstOrDefault();
+
+    // The mods in the game's list that name this id as a dependency (whether they're on or not).
+    public static IEnumerable<Mod> NeededBy(string? id) => id != null && Lookups.Current is { } now ? now.NeededBy(id)
+        : ModManager.Mods.Where(m => Of(m).Contains(id));
 
     public enum Problem { None, Missing, Off, LoadsBefore }
 

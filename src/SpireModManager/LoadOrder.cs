@@ -188,6 +188,7 @@ static class LoadOrder
 
     public static void UpdateToolbar(Control content, List<NModMenuRow> rows, Action redraw)
     {
+        using var lookups = Lookups.Begin(); // the warnings ask about every mod (also when called on its own)
         var border = content.GetParent().GetParent().GetParent<Control>();
         var search = border.GetNodeOrNull<Control>("SpireModManagerSearch");
         void Do(Action<IList<NModMenuRow>> change)
