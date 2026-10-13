@@ -140,17 +140,6 @@ static class Layout
                 x = leftEnd + 12;
             }
         }
-        // Better Mod Menu loaded too: a warning beside the view buttons, on our views (its own page stays its own).
-        if (Bmm.Present)
-        {
-            var warning = Bmm.Warning(screen);
-            warning.Visible = Wide;
-            if (Wide)
-            {
-                (warning.Position, warning.Size) = (new Vector2(leftEnd + 14, BottomRowY), new Vector2(WarningWidth, 70));
-                leftEnd = warning.Position.X + warning.Size.X;
-            }
-        }
 
         var right = view == View.LoadOrder ? list.OffsetRight : info.OffsetRight;
         if (screen.GetNodeOrNull<Control>("SpireModManagerRelaunchButton") is { } relaunch)

@@ -578,8 +578,9 @@ static class SelfTest
 
         void OursHold(string when, float left)
         {
-            Check($"{when}: the warning shows (no step-aside notice), with our search and toggles",
-                Shown(screen.GetNodeOrNull(Bmm.WarningName)) && screen.GetNodeOrNull("SpireModManagerBmmNotice") == null
+            Check($"{when}: the managers banner shows (no step-aside notice, no warning in the bottom row), with our search and toggles",
+                Shown(border.GetNodeOrNull(LoadOrder.ManagersName)) && screen.GetNodeOrNull("SpireModManagerBmmNotice") == null
+                && screen.FindChild("SpireModManagerBmmWarning", true, false) == null
                 && screen.GetNodeOrNull("SpireModManagerViewToggle") != null && screen.GetNodeOrNull("ModsBorder/SpireModManagerSearch") != null);
             Check($"{when}: Better Mod Menu's bars, row controls and panel buttons hidden",
                 !Shown(chrome) && !RowControls().Any(Shown) && !Shown(info.GetNodeOrNull("BetterModMenuSelectedModActions")),
@@ -598,12 +599,14 @@ static class SelfTest
         OursHold("main list", 175);
         var toggles = new[] { "SpireModManagerViewToggle", "SpireModManagerLoadOrderToggle" }.Select(name => screen.GetNode<Control>(name)).ToList();
         Check("the button to its page still says Vanilla List", toggles[0].GetNode<Label>("Visuals/Label").Text == Menus.Text("SPIRE_MOD_MANAGER.VANILLA_VIEW"));
-        var warningBox = screen.GetNode<Control>(Bmm.WarningName).GetGlobalRect();
+        var bannerBox = border.GetNode<Control>(LoadOrder.ManagersName).GetGlobalRect();
+        var searchBox = border.GetNode<Control>("SpireModManagerSearch").GetGlobalRect();
         var pendingBox = screen.GetNode<Control>("%PendingChangesLabel").GetGlobalRect();
-        Check("the warning sits beside the view buttons, clear of them and of the restart line",
-            Math.Abs(warningBox.GetCenter().Y - toggles[1].GetGlobalRect().GetCenter().Y) < 2 && warningBox.Position.X > toggles[1].GetGlobalRect().End.X
-            && !toggles.Any(t => t.GetGlobalRect().Intersects(warningBox)) && pendingBox.Position.X >= warningBox.End.X,
-            $"warning {warningBox}, buttons {string.Join(", ", toggles.Select(t => t.GetGlobalRect()))}, restart line {pendingBox}");
+        var buttonsEnd = toggles[1].GetGlobalRect().End.X;
+        Check("the managers banner under the search box, above the list; the restart line right after the view buttons (no warning between)",
+            bannerBox.Position.Y >= searchBox.End.Y && bannerBox.End.Y <= scroll.GetGlobalRect().Position.Y
+            && pendingBox.Position.X > buttonsEnd && pendingBox.Position.X <= buttonsEnd + 14,
+            $"banner {bannerBox}, search {searchBox}, list from {scroll.GetGlobalRect().Position.Y}, buttons to {buttonsEnd}, restart line {pendingBox}");
 
         // Resizes don't set off its re-layout on our views.
         var before = $"{Box(border)} | {Box(scroll)}";
@@ -634,10 +637,10 @@ static class SelfTest
         {
             Click(screen.GetNode<NButton>("SpireModManagerViewToggle"));
             await Wait(menu, 1);
-            Check("its page: none of ours (headers, strips, warning), the game's icons hidden, the list clipped",
+            Check("its page: none of ours (headers, strips, managers banner), the game's icons hidden, the list clipped",
                 !content.GetChildren().Any(c => c.IsInGroup("SpireModManagerCategoryHeader"))
                 && !content.GetChildren().OfType<NModMenuRow>().Any(r => Shown(r.GetNodeOrNull("SpireModManagerStrip")))
-                && !Shown(screen.GetNodeOrNull(Bmm.WarningName)) && mask.ClipContents
+                && !Shown(border.GetNodeOrNull(LoadOrder.ManagersName)) && mask.ClipContents
                 && content.GetChildren().OfType<NModMenuRow>().All(r => !Shown(r.GetNode("PlatformIcon"))));
             Check("its page: the same mod still selected", CategoryList.Selected == row.Mod && RowState.Selected(row));
             if (chrome != null)
@@ -1774,6 +1777,7 @@ static class SelfTest
 
         await Tick(tickbox, false);
         Check("Better Mod Menu unticked: the banner goes at once", !Bmm.Ticked && Banner() == null, Where());
+        Check("no Better Mod Menu warning in the bottom row anywhere (the banner says it now)", screen.FindChild("SpireModManagerBmmWarning", true, false) == null);
         if (!was)
             return;
         await Tick(tickbox, true);
