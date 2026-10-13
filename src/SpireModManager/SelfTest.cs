@@ -908,11 +908,12 @@ static class SelfTest
         if (Profiles.Active is { } copy)
             Profiles.Delete(copy, screen);
 
-        // The game's confirm popup, shown for the record; deletion itself goes through Profiles.Delete.
+        // The game's confirm popup, shown for the record (with our mark); deletion itself goes through Profiles.Delete.
         var body = new LocString("settings_ui", "SPIRE_MOD_MANAGER.DELETE_PROFILE_BODY");
         body.Add("name", "Brother co-op");
         _ = Menus.Confirm(new LocString("settings_ui", "SPIRE_MOD_MANAGER.DELETE_PROFILE_TITLE"), body);
         await Wait(menu, 1);
+        CheckMark("delete profile popup", NModalContainer.Instance?.OpenModal as Control);
         await Capture(screen, outDir, "7-delete-profile-confirm");
         NModalContainer.Instance?.Clear();
         await Wait(menu, 0.5);
@@ -1242,6 +1243,7 @@ static class SelfTest
         var texts = NModalContainer.Instance?.OpenModal is Node popup
             ? popup.FindChildren("*", "", true, false).Select(n => n is Label l ? l.Text : n is RichTextLabel r ? r.Text : "").ToList() : [];
         Check("new mod popup says \"New Mod Added\"", texts.Any(t => t.Contains("New Mod Added")), string.Join(" | ", texts.Where(t => t.Length > 0)));
+        CheckMark("new mod popup", NModalContainer.Instance?.OpenModal as Control);
         await Capture(screen, outDir, "10b-new-mod-popup");
         NModalContainer.Instance?.Clear();
         detected?.Invoke(NGame.Instance, [mod]);
@@ -2234,6 +2236,37 @@ static class SelfTest
     }
 
     static Node? Header(Control content, string category) => content.GetNodeOrNull($"Category {category}");
+
+    // A popup of ours in the game's style: our mark, once (marking it again adds none), shown, inside the popup's
+    // art (clear of its painted edge), and clear of its title, text and buttons (their art included).
+    static void CheckMark(string which, Control? popup)
+    {
+        if (popup == null)
+        {
+            Results.Add($"FAIL {which}: no popup open");
+            return;
+        }
+        // Collected before marking it here, so a caller that forgot Menus.Mark fails
+        var marks = popup.FindChildren(Menus.MarkName + "*", "", true, false).OfType<Label>().ToList();
+        Menus.Mark(popup);
+        var again = popup.FindChildren(Menus.MarkName + "*", "", true, false).Count;
+        Check($"{which}: marking again adds none", again == marks.Count, $"{marks.Count} before, {again} after");
+        Check($"{which}: marked \"Spire Mod Manager\", once, shown", marks is [{ Text: "Spire Mod Manager" } shown]
+            && shown.IsVisibleInTree() && shown.Size.X > 0 && shown.Size.Y > 0 && shown.GetThemeColor("font_color").A >= 0.3f,
+            string.Join(", ", marks.Select(m => $"{m.Name} \"{m.Text}\" shown {m.IsVisibleInTree()}, size {m.Size}")));
+        if (marks.FirstOrDefault() is not { } mark)
+            return;
+        var art = popup.GetNodeOrNull<Control>("VerticalPopup") ?? popup;
+        var rect = mark.GetGlobalRect();
+        var parts = new[] { "Header", "Description", "YesButton", "YesButton/Visuals", "NoButton", "NoButton/Visuals" }
+            .Select(path => art.GetNodeOrNull<Control>(path)).OfType<Control>().Where(c => c.IsVisibleInTree()).ToList();
+        var under = parts.Where(c => c.GetGlobalRect().Intersects(rect)).Select(c => c.GetPath().ToString()).ToList();
+        Check($"{which}: the mark inside the popup's art, clear of its title, text and buttons", parts.Count >= 4
+            && art.GetGlobalRect().Grow(-24).Encloses(rect) && under.Count == 0,
+            $"mark {rect}, art {art.GetGlobalRect()}, {parts.Count} parts found, overlapping: {string.Join(", ", under)}");
+        Results.Add($"INFO {which}: mark {rect}, art {art.GetGlobalRect()}, buttons " +
+            string.Join(", ", parts.Where(c => c.Name.ToString().EndsWith("Button")).Select(c => c.GetGlobalRect())));
+    }
 
     static void Click(NButton button) => button.EmitSignal(NClickableControl.SignalName.Released, button);
 
