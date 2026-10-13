@@ -50,6 +50,7 @@ static class SelfTest
                 menu.GetTree().Root.Title);
             await Capture(menu, outDir, "1-main-menu");
             await TestMenuButtonMove(menu, outDir);
+            TestBetterModMenuImport(outDir);
 
             var screen = menu.SubmenuStack.PushSubmenuType<NModdingScreen>();
             await Wait(menu, 2);
@@ -472,6 +473,94 @@ static class SelfTest
         await Wait(menu, 0.2);
         Check("Reset position puts it back in the corner", Store.Data.MenuButtonAt == null && button.Position == corner, $"{button.Position} vs {corner}");
         Hover.TestMouse = null;
+    }
+
+    // The first-run import reads Better Mod Menu's file as it does: comments and trailing commas, its old format (just
+    // a list of profiles), nothing from a broken file, and of several files the one it would load. Sample texts, and
+    // files in our output folder: the sandbox's data isn't touched.
+    static void TestBetterModMenuImport(string outDir)
+    {
+        static StoreData? Import(string text)
+        {
+            try
+            {
+                return BetterModMenuImport.Parse(text);
+            }
+            catch (Exception)
+            {
+                return null;
+            }
+        }
+        static string List(IEnumerable<string> items, string separator = ", ") => string.Join(separator, items) is { Length: > 0 } text ? text : "none";
+        static string Fields(ModInfo info) => List(new[] { ("category", info.Category), ("alias", info.Alias), ("notes", info.Notes) }
+            .Where(f => f.Item2 != null).Select(f => $"{f.Item1} {f.Item2}"));
+        // What came out, in words: each profile with the mods it turns off, the active one, categories, each mod's fields.
+        static string Summary(StoreData? data) => data == null ? "refused" : string.Join(" / ",
+            "profiles " + List(data.Profiles.Select(p => $"{p.Name} (off: {List(p.Disabled?.Select(r => r.Id) ?? [])})"), "; "),
+            "active " + (data.ActiveProfile ?? "none"),
+            "categories " + List(data.Categories.Select(c => c.Collapsed ? $"{c.Name} (collapsed)" : c.Name), "; "),
+            "mods " + List(data.Mods.OrderBy(m => m.Key, StringComparer.Ordinal).Select(m => $"{m.Key} ({Fields(m.Value)})"), "; "));
+
+        var json5 = Summary(Import("""
+            // Better Mod Menu's settings, edited by hand
+            {
+              "Profiles": [
+                { "Name": "Co-op", "DisabledMods": ["ModA", "ModB",], },
+                { "Name": "Solo", "DisabledMods": [], },
+              ],
+              "CurrentProfileIndex": 1,
+              "CustomGroups": ["Content", "Visual",], // a trailing comma here too
+              "ModGroups": { "ModA": "Content", },
+              "CollapsedGroups": ["Visual"],
+              "ModAnnotations": { "ModB": { "Alias": "Bee", "Notes": "", }, },
+            }
+            """));
+        Check("Better Mod Menu import: line comments and trailing commas (.json5)", json5 == "profiles Co-op (off: ModA, ModB); Solo (off: none) / active Solo"
+            + " / categories Content; Visual (collapsed) / mods ModA (category Content); ModB (alias Bee)", json5);
+        var jsonc = Summary(Import("""
+            /* Better Mod Menu's settings */
+            {
+              "Profiles": [ { "Name": "Main", "DisabledMods": [ "ModC" ] } ], /* one profile */
+              "CurrentProfileIndex": 0,
+              "CustomGroups": [ "Tools" ],
+              "ModGroups": { "ModC": "Tools" },
+              "ModAnnotations": { "ModC": { "Alias": "", "Notes": "Check after updates" } }
+            }
+            """));
+        Check("Better Mod Menu import: block comments (.jsonc)", jsonc == "profiles Main (off: ModC) / active Main / categories Tools"
+            + " / mods ModC (category Tools, notes Check after updates)", jsonc);
+        var legacy = Summary(Import("""
+            [
+              { "Name": "Old favourites", "DisabledMods": ["ModD"] },
+              { "DisabledMods": [] }
+            ]
+            """));
+        Check("Better Mod Menu import: its old format (a bare list of profiles) gives those profiles, no categories", legacy
+            == "profiles Old favourites (off: ModD); Profile 2 (off: none) / active none / categories none / mods none", legacy);
+        var broken = new[] { """{ "Profiles": [ { "Name": "Cut off" """, "\"Profiles\"", "{ Profiles: [] }" }.Select(text => Summary(Import(text))).ToList();
+        Check("Better Mod Menu import: a broken file is refused (cut off, not an object or list, unquoted names)", broken.All(s => s == "refused"),
+            string.Join(" | ", broken));
+
+        // Which file: beside its mod files before the account's folder, even for a less preferred name; then in a
+        // folder .json5, .jsonc, .json.
+        var root = Path.Combine(outDir, "bmm-import");
+        var (portable, account) = (Path.Combine(root, "portable"), Path.Combine(root, "account"));
+        static string In(string folder, string extension) => Path.Combine(folder, "mod_profiles" + extension);
+        if (Directory.Exists(root))
+            Directory.Delete(root, recursive: true);
+        Directory.CreateDirectory(portable);
+        Directory.CreateDirectory(account);
+        foreach (var file in new[] { In(portable, ".jsonc"), In(portable, ".json"), In(account, ".json"), In(account, ".json5") })
+            File.WriteAllText(file, "[]");
+        var found = new List<string?> { BetterModMenuImport.FindFile([portable, account]) };
+        File.Delete(In(portable, ".jsonc"));
+        found.Add(BetterModMenuImport.FindFile([portable, account]));
+        File.Delete(In(portable, ".json"));
+        found.Add(BetterModMenuImport.FindFile([portable, account]));
+        Directory.Delete(root, recursive: true);
+        found.Add(BetterModMenuImport.FindFile([portable, account]));
+        Check("Better Mod Menu import: the file it would load (its mod folder first, then .json5, .jsonc, .json)",
+            found.SequenceEqual([In(portable, ".jsonc"), In(portable, ".json"), In(account, ".json5"), null]), string.Join(" | ", found));
     }
 
     // Row menu, new category renamed in place, assign, move, header menu, delete.
