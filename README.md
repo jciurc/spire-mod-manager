@@ -58,7 +58,7 @@ Pull requests into `dev`, and pushes to `dev` and `main`, run `.github/workflows
   code uses is in `eng`, the test fixtures are valid, nothing over 1 MB and no tokens committed; text in
   `eng` that no code uses shows as a warning), then the tool scripts are compiled without running them.
   It takes seconds, so run `dotnet run tools/check.cs` yourself before opening a pull request.
-- **selftest**, on your PC: `build.cs --no-install`, then the in-game self-test (`tools/dev.cs test`, then
+- **selftest**, on your PC once the checks pass: `build.cs --no-install`, then the in-game self-test (`tools/dev.cs test`, then
   `--bmm`). Each run's `out/selftest/*.txt` and `out/dev.log` are attached to the run on GitHub. Never
   `--real`: that output holds your own mods and data.
 
