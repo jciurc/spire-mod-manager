@@ -569,8 +569,54 @@ Jordan's answers and note of 2026-10-13 (decisions in RELEASE-PLAN.md §7). Unat
 backlog by judgement, Jordan reviews in the morning.
 
 - [x] decisions recorded (0.1.0, beta first, new mods join the profile enabled, open source later, real screenshots, private upload first, controller in the backlog)
-- [ ] the working state on `dev` tagged as the MVP
-- [ ] a private GitHub repo; work on branches, pull requests into `dev`, CI on each
-- [ ] screenshots for the Workshop previews (real ones, no generated art)
-- [ ] new mods join the active profile as enabled
-- [ ] then the release blockers and backlog, picked by judgement
+- [x] the working state on `dev` tagged as the MVP (tag `mvp`)
+- [x] a private GitHub repo (jciurc/spire-mod-manager); work on branches, pull requests into `dev`; CI in #8
+- [ ] screenshots for the Workshop previews: a shot list for your real game in #4 (`workshop/SHOTS.md`); the dev sandbox can't take them (no Steam, other mods off, the DEV tag)
+- [ ] new mods join the active profile as enabled (#7)
+- [x] then the release blockers and backlog, picked by judgement: the pull requests below
+
+Pull requests from the night (each built and run through the in-game self-test; the fixture, `--bmm` and the
+relevant extra modes pass on each. All of them merged together pass too, on branch `night-integration`: fixture
+299, `--bmm` 336, `--bmm-after --bmm-local` 336, `--first-run` 11, `--first-run-bmm` 14 and 13 with `--bmm`, `--real` 8):
+
+| PR | branch | for |
+| --- | --- | --- |
+| #1 | bmm-warning-near-button | your note: Vanilla List name kept, the warning beside the view buttons |
+| #2 | first-run | release blocker 9: first run tested on both paths; the empty-state hint |
+| #3 | release-prep | blockers 2-3: `build.cs --dist` (0.1.0), manifest description |
+| #4 | workshop-listing | blockers 11-12: description, workshop.json, shot list, publishing steps |
+| #5 | fail-soft | blocker 4: per-class patching, the game's page with a needs-update line |
+| #6 | store-safety | blocker 7: recover an unreadable manager.json, one-time notice |
+| #7 | new-mods-profile | your decision: new mods join the active profile; backlog r8 (mid-session mods) |
+| #8 | ci | CI: offline checks on GitHub; the in-game self-test on a runner on your PC |
+| #9 | search-toggles | backlog r14: click-to-search toggles |
+| #10 | popup-mark | backlog r13: "Spire Mod Manager" on our game-style popups |
+| #11 | long-text | backlog r15: long titles, ids and tag lines |
+| #12 | resource-fallbacks | release plan §3: fallbacks for missing game resources |
+| #13 | dev-tools-bmm-local | dev.cs `--bmm-local` from worktrees |
+| #14 | installed-runtime | bug: mods installed while the game runs were never tracked in real play |
+| #15 | perf | release plan §3: redraw and search cost with long lists |
+| #16 | bmm-import | Better Mod Menu import: json5/jsonc, comments, its old format, portable mode |
+| #17 | tag-suggestions | backlog r8: tag suggestions |
+| #18 | spikes | backlog r12 and r15 spikes: relaunch messaging; a missing dependency's Workshop page |
+| #19 | copy-pass | blocker 8: copy pass; renamed profiles read as renamed |
+| #20 | code-quality | TODO reminder and release plan §3: code-quality pass |
+| #21 | loc-format | release plan §3: dates and numbers in the game's language |
+| #22 | undo-restart-compat | release plan §3: Undo And Restart's panel over our fields |
+
+Merge order close to the one `night-integration` used (conflicts were small, mostly SelfTest.cs and the eng text
+file; perf with long-text and copy-pass with loc-format each needed a one-line fix, now on those branches):
+#8, #3, #4, #13, #1, #5, #6, #7, #2, #14, #16, #9, #10, #11, #12, #15, #17, #19, #20, #21, #22, #18.
+
+Found tonight, not done yet:
+- [ ] try #14 with a real Workshop subscription while the game runs (dev runs have no Steam)
+- [ ] try #22 with Undo And Restart (UI Modified) in your game
+- [ ] the in-game self-test on PRs: register a self-hosted runner and set SELF_HOSTED_STS2 (README "CI", #8)
+- [ ] the profile bar's background is 0 px tall (its anchors are set without offsets); decide whether it should show (#12)
+- [ ] redraw with ~250 mods is about 49 ms after #15; the rest is Godot-side per row (titles, fitting)
+- [ ] backups are picked by name (local time); a clock change can put them out of order (#6)
+- [ ] a broken manager.json with no readable backup doesn't retry the Better Mod Menu import (#6)
+- [ ] the relaunch messaging and missing-dependency spikes (#18): your answers, then their first PRs
+- [ ] the profile list's "Oct 11" still follows Windows' language, not the game's (#21 notes the one-liner)
+- [ ] a profile renamed and saved in the same session still reads as added + deleted in Changes (needs a stable profile id)
+- [ ] the Workshop description quotes labels a copy pass changes; re-read it before uploading (#4, #19)
