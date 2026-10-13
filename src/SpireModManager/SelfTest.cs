@@ -267,10 +267,10 @@ static class SelfTest
             var content = screen.GetNode<Control>("%ModsScrollContainer/Mask/Content");
             var rows = content.GetChildren().OfType<NModMenuRow>().ToList();
             // Each part comes from its own guarded step (Patches): one missing means that step failed (see the log).
-            Check("first run: the page opens with all our parts", screen.GetNodeOrNull("SpireModManagerRelaunchButton") != null
-                && screen.GetNodeOrNull("SpireModManagerViewToggle") != null && screen.GetNodeOrNull("SpireModManagerLoadOrderToggle") != null
-                && screen.GetNodeOrNull("ModsBorder/SpireModManagerProfileBar") != null && screen.GetNodeOrNull("ModsBorder/SpireModManagerSearch") != null
-                && screen.FindChild(PageBar.Name, true, false) != null && screen.GetNodeOrNull(HistoryBar.BarName) != null);
+            string[] parts = ["SpireModManagerRelaunchButton", "SpireModManagerViewToggle", "SpireModManagerLoadOrderToggle", HistoryBar.BarName,
+                "ModsBorder/SpireModManagerProfileBar", "ModsBorder/SpireModManagerSearch", $"ModsBorder/{PageBar.Name}"];
+            var missing = parts.Where(p => screen.GetNodeOrNull(p) == null).ToList();
+            Check("first run: the page opens with all our parts", missing.Count == 0, "missing " + string.Join(", ", missing));
             Check($"first run: rows ({rows.Count}) match mods ({ModManager.Mods.Count})", rows.Count == ModManager.Mods.Count);
 
             if (imported)
