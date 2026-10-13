@@ -10,7 +10,7 @@ namespace SpireModManager;
 // The info panel in our views, top to bottom:
 // - the head, left of a large thumbnail: the mod's own name (click: scroll to it in the list) with its version
 //   in grey; "<id> (<Workshop id>)", linking to the Workshop page (or "(Local)"), and Enabled / Disabled /
-//   Pending restart; author (click: search for their mods), last update (and a link to its Workshop change notes), compatibility;
+//   Pending relaunch; author (click: search for their mods), last update (and a link to its Workshop change notes), compatibility;
 // - anything wrong (red), the author's description;
 // - size, published, subscribers, Workshop tags;
 // - dependencies both ways (click a name: scroll to it in the list and flash it);
@@ -240,7 +240,7 @@ static class ModDetails
     // "October 12, 2026".
     public static string Date(DateTime date) => date.ToString("MMMM d, yyyy", System.Globalization.CultureInfo.InvariantCulture);
 
-    // Enabled (green), Disabled (grey), or Pending restart (orange) when it's been turned on or off since it
+    // Enabled (green), Disabled (grey), or Pending relaunch (orange) when it's been turned on or off since it
     // loaded; Failed to load (red) when it's on but couldn't load.
     public static string Status(Mod mod)
     {
