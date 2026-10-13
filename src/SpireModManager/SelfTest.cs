@@ -152,7 +152,7 @@ static class SelfTest
         try
         {
             await Wait(menu, 3);
-            Check("every patch applied", ModEntry.FailedPatches.Count == 0, string.Join(", ", ModEntry.FailedPatches));
+            CheckPatches();
             var screen = menu.SubmenuStack.PushSubmenuType<NModdingScreen>();
             await Wait(menu, 2);
             var content = screen.GetNode<Control>("%ModsScrollContainer/Mask/Content");
@@ -254,7 +254,7 @@ static class SelfTest
     // instead of ours: any one patch our page needs; none of the others.
     static void TestFailSoft()
     {
-        Check("every patch applied", ModEntry.FailedPatches.Count == 0, string.Join(", ", ModEntry.FailedPatches));
+        CheckPatches();
         Check("row state: the game's selected and focused members found", RowState.Found);
         string[] spare = [nameof(RowLookPatch), nameof(ShortcutsPatch), nameof(NewModPatch), nameof(ModInfoClearPatch),
             nameof(NewModPopupPatch), nameof(NewModTogglePatch)];
@@ -299,8 +299,19 @@ static class SelfTest
             CategoryList.Select(screen, row);
             await Wait(menu, 0.5);
             Check("a mod shown in the panel: the game's details only", screen.GetNode("%ModInfoContainer").GetNodeOrNull(ModDetails.HeadName) == null);
+            // Our row look never ran (it saves the game's look the first time it does).
+            Check("the selected row keeps the game's highlight", row.GetNodeOrNull<Control>("SelectionHighlight") is { } look
+                && !look.HasMeta("spire_mod_manager_game_look"));
         }
         await Capture(screen, outDir, "2-game-page-needs-update");
+    }
+
+    // Every patch applied; in a dev run that leaves some out (SPIRE_MOD_MANAGER_SKIP_PATCHES), exactly those failed.
+    static void CheckPatches()
+    {
+        var skipped = ModEntry.SkippedPatches;
+        Check(skipped.Count == 0 ? "every patch applied" : $"every patch applied but the ones left out ({string.Join(", ", skipped)})",
+            ModEntry.FailedPatches.Order().SequenceEqual(skipped.Order()), string.Join(", ", ModEntry.FailedPatches));
     }
 
     // Regressions from Jordan's 2026-10-07 notes: clicks outside the list, list height after collapsing,
