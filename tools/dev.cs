@@ -34,9 +34,10 @@ using System.Runtime.CompilerServices;
 using System.Runtime.InteropServices;
 using System.Text.Json.Nodes;
 
-var steamapps = Env("STS2_STEAMAPPS", @"D:\SteamLibrary\steamapps"); // the Steam library with the game
+// Full paths without a trailing separator: the running-game check below compares DevDir with the exe's folder.
+var steamapps = FullDir(Env("STS2_STEAMAPPS", @"D:\SteamLibrary\steamapps")); // the Steam library with the game
 var GameDir = Path.Combine(steamapps, "common", "Slay the Spire 2");
-var DevDir = Env("STS2_DEV_DIR", Path.Combine(Path.GetPathRoot(GameDir) ?? "", "sts2-dev")); // same drive
+var DevDir = FullDir(Env("STS2_DEV_DIR", Path.Combine(Path.GetPathRoot(GameDir) ?? "", "sts2-dev"))); // same drive
 var WorkshopDir = Path.Combine(steamapps, "workshop", "content", "2868840");
 const string ModId = "SpireModManager";
 const int TimeoutSeconds = 150;
@@ -293,6 +294,8 @@ static string ScriptDir([CallerFilePath] string path = "") => Path.GetDirectoryN
 // An environment variable's value (README.md, "Building"), or the author's own path when it isn't set.
 static string Env(string name, string fallback) =>
     Environment.GetEnvironmentVariable(name) is { Length: > 0 } value ? value : fallback;
+
+static string FullDir(string path) => Path.TrimEndingDirectorySeparator(Path.GetFullPath(path));
 
 [DllImport("kernel32.dll", CharSet = CharSet.Unicode, SetLastError = true)]
 static extern bool CreateHardLink(string fileName, string existingFileName, IntPtr securityAttributes);
