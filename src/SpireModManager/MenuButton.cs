@@ -6,7 +6,8 @@ namespace SpireModManager;
 
 // The "Spire Mod Manager" button on the main menu: Jordan's skyline art in the lower-left corner (or
 // wherever the player moved it: right-click > Move button, then click to place it), with the game's
-// notification dot and a short "Relaunch to apply" note beside it while a relaunch is pending.
+// notification dot and a short "Relaunch to apply" note beside it while a relaunch is pending. Its
+// right-click menu also has Relaunch game, the Modding page's Relaunch Game from here.
 static class MenuButton
 {
     const string Name = "SpireModManagerMenuButton";
@@ -47,6 +48,15 @@ static class MenuButton
         }
         Refresh();
         menu.SubmenuStack.Connect(NSubmenuStack.SignalName.StackModified, Callable.From(Refresh));
+        // A change made on the main menu itself (a fix in the relaunch check) can start or end a pending relaunch.
+        // Changes on a page over the menu are caught as it closes, above.
+        void Changed()
+        {
+            if (!menu.SubmenuStack.SubmenusOpen)
+                Refresh();
+        }
+        History.Changed += Changed;
+        button.TreeExiting += () => History.Changed -= Changed;
 
         button.GuiInput += e =>
         {
@@ -61,6 +71,10 @@ static class MenuButton
                     Store.Save();
                     Place(button, size);
                 }, Disabled: Store.Data.MenuButtonAt == null),
+                // A divider, then what the Modding page's Relaunch Game does: first the check for mods that won't
+                // load (its dialog over the main menu), then the relaunch.
+                MenuItem.Heading(""),
+                new(Menus.Text("SPIRE_MOD_MANAGER.RELAUNCH_GAME"), () => RelaunchCheck.Relaunch(menu)),
             ]);
         };
     }
