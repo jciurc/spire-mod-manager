@@ -119,8 +119,9 @@ static class ModdingScreenPatch
 
         try
         {
-            // After a launch that couldn't read our saved file: the notice, once, as the page shows (the game
-            // makes this screen hidden and shows it when pushed; it reuses it for later visits).
+            // After a launch that couldn't read our saved file: the notice, once, when the page shows. The game adds
+            // this screen hidden, shows it as it's pushed and reuses it for later visits: checked at the end of this
+            // frame and each time it shows.
             var screen = __instance;
             void Notice()
             {
