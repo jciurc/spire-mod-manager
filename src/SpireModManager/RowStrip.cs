@@ -127,7 +127,7 @@ static class RowStrip
 
     // Shows as many tags as fit beside what must show: the author first, then what the mod needs (up to half the
     // line). The rest fold into a "+N" chip, whose card lists them. A line that fits shows every tag, as before.
-    static void Fold(NModMenuRow row, HBoxContainer strip, List<Tags.Chip> chips)
+    static void Fold(NModMenuRow row, HBoxContainer strip, IReadOnlyList<Tags.Chip> chips)
     {
         if (!GodotObject.IsInstanceValid(row) || !GodotObject.IsInstanceValid(strip) || !strip.IsInsideTree())
             return;
