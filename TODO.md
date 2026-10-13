@@ -681,7 +681,14 @@ unless either mod enabled states are touched and they become enabled at the same
 
 - [x] Dismiss beside Show on the managers banner: hidden (no gap) until Better Mod Menu or ours is disabled, then back once both are enabled again; saved, never an undo step or a change
 
+Jordan's second note of 2026-10-13: "add slight border radius on dependency lines. right now they feel a little too
+rigid. add small radius to items in load order page (similar to list view)"
+
+- [x] dependency lines: each corner of the bracket is a short 5 px curve; the ends stay where they were
+- [x] Load Order rows: they already had the main list's rounded highlight (4 px), now held by a self-test check; the drop line and the red warning banners were square and are rounded too
+
 ## Backlog (round 20)
+- [ ] Load Order's top row: the list's edge cuts off the top 3 px of its highlight (rounded corners and the selected look's top rim), so selected or hovered it looks square on top. The main list rarely shows it (a category header comes first)
 - [ ] Jordan: "think about possible conflicts or issues with running both bmm and mod manager together (could be other managers too) and decide on how to handle it best for the user". A spike (docs/spikes/, like #18) with a recommendation. Points to cover:
   - Better Mod Menu: both patch the Modding screen. Bmm.cs pauses it on our views by reflection, so an update of it that renames those members silently undoes the pause (logged once). Both keep profiles, and each switching mods on and off could fight over the game's saved list. Both could save the load order (the last save wins). Its import only runs on our first run.
   - other managers: any mod patching NModdingScreen, NModInfoContainer or the saved mod list. Find them from Harmony's patch list, not only by Better Mod Menu's id.
