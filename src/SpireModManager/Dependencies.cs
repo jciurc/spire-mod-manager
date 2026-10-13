@@ -18,7 +18,7 @@ static class Dependencies
     // The installed copy of a mod id, preferring one that is on. Mods installed this session count: they load
     // after a relaunch.
     public static Mod? Find(string id) => id != null && Lookups.Current is { } now ? now.Find(id)
-        : ModManager.Mods.Concat(Installed.Mods).Where(m => m.manifest?.id == id).OrderByDescending(IsOn).FirstOrDefault();
+        : ModManager.Mods.Union(Installed.Mods).Where(m => m.manifest?.id == id).OrderByDescending(IsOn).FirstOrDefault();
 
     // The mods in the game's list that name this id as a dependency (whether they're on or not).
     public static IEnumerable<Mod> NeededBy(string? id) => id != null && Lookups.Current is { } now ? now.NeededBy(id)

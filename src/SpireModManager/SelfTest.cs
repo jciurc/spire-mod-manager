@@ -66,6 +66,7 @@ static class SelfTest
                 menu.GetTree().Root.Title);
             await Capture(menu, outDir, "1-main-menu");
             await TestMenuButtonMove(menu, outDir);
+            TestBetterModMenuImport(outDir);
 
             var screen = menu.SubmenuStack.PushSubmenuType<NModdingScreen>();
             await Wait(menu, 2);
@@ -760,6 +761,94 @@ static class SelfTest
         Hover.TestMouse = null;
     }
 
+    // The first-run import reads Better Mod Menu's file as it does: comments and trailing commas, its old format (just
+    // a list of profiles), nothing from a broken file, and of several files the one it would load. Sample texts, and
+    // files in our output folder: the sandbox's data isn't touched.
+    static void TestBetterModMenuImport(string outDir)
+    {
+        static StoreData? Import(string text)
+        {
+            try
+            {
+                return BetterModMenuImport.Parse(text);
+            }
+            catch (Exception)
+            {
+                return null;
+            }
+        }
+        static string List(IEnumerable<string> items, string separator = ", ") => string.Join(separator, items) is { Length: > 0 } text ? text : "none";
+        static string Fields(ModInfo info) => List(new[] { ("category", info.Category), ("alias", info.Alias), ("notes", info.Notes) }
+            .Where(f => f.Item2 != null).Select(f => $"{f.Item1} {f.Item2}"));
+        // What came out, in words: each profile with the mods it turns off, the active one, categories, each mod's fields.
+        static string Summary(StoreData? data) => data == null ? "refused" : string.Join(" / ",
+            "profiles " + List(data.Profiles.Select(p => $"{p.Name} (off: {List(p.Disabled?.Select(r => r.Id) ?? [])})"), "; "),
+            "active " + (data.ActiveProfile ?? "none"),
+            "categories " + List(data.Categories.Select(c => c.Collapsed ? $"{c.Name} (collapsed)" : c.Name), "; "),
+            "mods " + List(data.Mods.OrderBy(m => m.Key, StringComparer.Ordinal).Select(m => $"{m.Key} ({Fields(m.Value)})"), "; "));
+
+        var json5 = Summary(Import("""
+            // Better Mod Menu's settings, edited by hand
+            {
+              "Profiles": [
+                { "Name": "Co-op", "DisabledMods": ["ModA", "ModB",], },
+                { "Name": "Solo", "DisabledMods": [], },
+              ],
+              "CurrentProfileIndex": 1,
+              "CustomGroups": ["Content", "Visual",], // a trailing comma here too
+              "ModGroups": { "ModA": "Content", },
+              "CollapsedGroups": ["Visual"],
+              "ModAnnotations": { "ModB": { "Alias": "Bee", "Notes": "", }, },
+            }
+            """));
+        Check("Better Mod Menu import: line comments and trailing commas (.json5)", json5 == "profiles Co-op (off: ModA, ModB); Solo (off: none) / active Solo"
+            + " / categories Content; Visual (collapsed) / mods ModA (category Content); ModB (alias Bee)", json5);
+        var jsonc = Summary(Import("""
+            /* Better Mod Menu's settings */
+            {
+              "Profiles": [ { "Name": "Main", "DisabledMods": [ "ModC" ] } ], /* one profile */
+              "CurrentProfileIndex": 0,
+              "CustomGroups": [ "Tools" ],
+              "ModGroups": { "ModC": "Tools" },
+              "ModAnnotations": { "ModC": { "Alias": "", "Notes": "Check after updates" } }
+            }
+            """));
+        Check("Better Mod Menu import: block comments (.jsonc)", jsonc == "profiles Main (off: ModC) / active Main / categories Tools"
+            + " / mods ModC (category Tools, notes Check after updates)", jsonc);
+        var legacy = Summary(Import("""
+            [
+              { "Name": "Old favourites", "DisabledMods": ["ModD"] },
+              { "DisabledMods": [] }
+            ]
+            """));
+        Check("Better Mod Menu import: its old format (a bare list of profiles) gives those profiles, no categories", legacy
+            == "profiles Old favourites (off: ModD); Profile 2 (off: none) / active none / categories none / mods none", legacy);
+        var broken = new[] { """{ "Profiles": [ { "Name": "Cut off" """, "\"Profiles\"", "{ Profiles: [] }" }.Select(text => Summary(Import(text))).ToList();
+        Check("Better Mod Menu import: a broken file is refused (cut off, not an object or list, unquoted names)", broken.All(s => s == "refused"),
+            string.Join(" | ", broken));
+
+        // Which file: beside its mod files before the account's folder, even for a less preferred name; then in a
+        // folder .json5, .jsonc, .json.
+        var root = Path.Combine(outDir, "bmm-import");
+        var (portable, account) = (Path.Combine(root, "portable"), Path.Combine(root, "account"));
+        static string In(string folder, string extension) => Path.Combine(folder, "mod_profiles" + extension);
+        if (Directory.Exists(root))
+            Directory.Delete(root, recursive: true);
+        Directory.CreateDirectory(portable);
+        Directory.CreateDirectory(account);
+        foreach (var file in new[] { In(portable, ".jsonc"), In(portable, ".json"), In(account, ".json"), In(account, ".json5") })
+            File.WriteAllText(file, "[]");
+        var found = new List<string?> { BetterModMenuImport.FindFile([portable, account]) };
+        File.Delete(In(portable, ".jsonc"));
+        found.Add(BetterModMenuImport.FindFile([portable, account]));
+        File.Delete(In(portable, ".json"));
+        found.Add(BetterModMenuImport.FindFile([portable, account]));
+        Directory.Delete(root, recursive: true);
+        found.Add(BetterModMenuImport.FindFile([portable, account]));
+        Check("Better Mod Menu import: the file it would load (its mod folder first, then .json5, .jsonc, .json)",
+            found.SequenceEqual([In(portable, ".jsonc"), In(portable, ".json"), In(account, ".json5"), null]), string.Join(" | ", found));
+    }
+
     // Row menu, new category renamed in place, assign, move, header menu, delete.
     static async Task TestCategories(Node menu, NModdingScreen screen, Control content, string outDir)
     {
@@ -792,7 +881,7 @@ static class SelfTest
             MenuPanel.Close();
             await Wait(menu, 0.3);
             Check("closing the menu saves what was typed", Store.InfoFor(modId)?.Alias == "Menu alias");
-            ModDetails.SetAlias(modId, "");
+            Store.EditMod(modId, info => info.Alias = null);
             CategoryList.Apply(content);
         }
         // A right-click outside closes it and reaches what's under the mouse; showing the same menu again
@@ -871,6 +960,18 @@ static class SelfTest
             Check("one undo turns them back on", wereOn.All(Dependencies.IsOn));
         }
         category = Store.Data.Categories.First(c => c.Name == "Renamed"); // undo restores the data as new objects
+
+        // Delete from the header menu asks first; with one mod in the category, in the singular. (Cancelled by
+        // closing the popup; the deletion itself is below.)
+        if (CategoryList.ShowHeaderMenu(content, category, Members()) is { } deleteMenu)
+        {
+            MenuPanel.Press(deleteMenu, "Delete");
+            await Wait(menu, 0.5);
+            var asked = PopupTexts();
+            Check("deleting a category with one mod asks, in the singular", asked.Any(t => t.Contains("holds 1 mod.")), string.Join(" | ", asked.Where(t => t.Length > 0)));
+            NModalContainer.Instance?.Clear();
+            await Wait(menu, 0.3);
+        }
 
         Categories.Delete(category);
         CategoryList.Apply(content);
@@ -1012,6 +1113,54 @@ static class SelfTest
         Check("edited: Save, Save as new, Discard beside Unsaved", Shown("UnsavedButtons") == "SaveProfileButton,SaveAsNewButton,DiscardButton", Shown("UnsavedButtons"));
         await Capture(screen, outDir, "3b-unsaved-profile");
 
+        // "Unsaved •": its card opens at once, with no delay (checked outside any grace period, which would open a
+        // card at once anyway). A click lists the changes in the info panel, names as links, and a second click
+        // closes it. One list at a time: the Changes list takes the panel from it, and it takes the panel back.
+        // While open it follows the tickboxes: back on the saved state, it says nothing is unsaved.
+        var unsaved = (Control)bar.FindChild("Unsaved", true, false);
+        var info = screen.GetNode<Control>("%ModInfoContainer");
+        var line = $"{(wasOn ? "−" : "+")} {mod.manifest?.name}";
+        Hover.Hide();
+        await Wait(menu, Hover.Grace + 0.1);
+        Hover.TestMouse = () => unsaved.GetGlobalRect().GetCenter();
+        unsaved.EmitSignal(Control.SignalName.MouseEntered);
+        var opened = screen.HasNode("SpireModManagerUnsavedCard");
+        await Wait(menu, 0.1);
+        var card = screen.GetNodeOrNull("SpireModManagerUnsavedCard")?.FindChildren("*", "RichTextLabel", true, false).OfType<RichTextLabel>().FirstOrDefault()?.GetParsedText() ?? "";
+        Check("the Unsaved card opens at once, naming the change and saying a click lists it", opened && card.Contains(line)
+            && card.Contains(Menus.Text("SPIRE_MOD_MANAGER.UNSAVED_CLICK")), $"opened at once {opened}: {card}");
+        unsaved.EmitSignal(Control.SignalName.MouseExited);
+        Hover.TestMouse = null;
+        await Wait(menu, 0.1);
+
+        void ClickOn(Control control) => control.EmitSignal(Control.SignalName.GuiInput, new InputEventMouseButton { ButtonIndex = MouseButton.Left, Pressed = false });
+        string Title() => info.GetNodeOrNull<Label>($"{HistoryBar.ViewName}/Head/Title")?.Text ?? "";
+        string Listed() => info.GetNodeOrNull<RichTextLabel>($"{HistoryBar.ViewName}/List")?.GetParsedText() ?? "";
+        var unsavedTitle = Menus.Format("SPIRE_MOD_MANAGER.UNSAVED_LIST_TITLE", ("name", profile.Name));
+        ClickOn(unsaved);
+        await Wait(menu, 0.2);
+        Check("clicking Unsaved lists the profile's unsaved changes in the info panel, names as links", HistoryBar.ListOpen(info, HistoryBar.ListKind.Unsaved)
+            && Title() == unsavedTitle && Listed().Contains(line)
+            && info.GetNodeOrNull<RichTextLabel>($"{HistoryBar.ViewName}/List")?.Text.Contains("[url=mod:SmmTestUi]") == true, $"{Title()}: {Listed()}");
+        await Capture(screen, outDir, "3c-unsaved-list");
+        ClickOn(unsaved);
+        await Wait(menu, 0.2);
+        Check("clicking Unsaved again closes the list", !HistoryBar.ListOpen(info));
+        ClickOn(unsaved);
+        ClickOn(screen.GetNode<Control>(HistoryBar.ChangesName));
+        await Wait(menu, 0.2);
+        Check("opening the Changes list closes the unsaved list", HistoryBar.ListOpen(info, HistoryBar.ListKind.Changes)
+            && Title() == Menus.Text("SPIRE_MOD_MANAGER.CHANGES_TITLE") && !Listed().Contains(line), $"{Title()}: {Listed()}");
+        ClickOn(unsaved);
+        await Wait(menu, 0.2);
+        Check("and opening the unsaved list closes the Changes list", HistoryBar.ListOpen(info, HistoryBar.ListKind.Unsaved)
+            && Title() == unsavedTitle && Listed().Contains(line), $"{Title()}: {Listed()}");
+        await Toggle(wasOn);
+        Check("the open unsaved list follows the tickboxes: back on the saved state, nothing unsaved", HistoryBar.ListOpen(info, HistoryBar.ListKind.Unsaved)
+            && Listed().Contains(Menus.Text("SPIRE_MOD_MANAGER.NO_UNSAVED")), Listed());
+        HistoryBar.CloseList(info);
+        await Toggle(!wasOn); // the edit again, for the checks below
+
         Check("the picker keeps the plain name", bar.FindChild("ProfilePicker", true, false) is Button { Text: var shown } && shown == profile.Name);
         var profiles = Store.Data.Profiles.Count;
         Profiles.SwitchTo(other, screen);
@@ -1051,7 +1200,7 @@ static class SelfTest
             string.Join(", ", profile.Mods.Select(m => $"{m.Id}={(m.Enabled ? "on" : "off")}")));
         var (on, off) = Profiles.UnsavedChanges();
         Check("quietly: no unsaved edit, and already so in the launch state", !Profiles.Edited && ids.All(id => OnInSnapshot(History.Loaded, id)),
-            $"edited {Profiles.Edited} (+{string.Join(", +", on)} -{string.Join(", -", off)}), in the launch state {ids.Count(id => OnInSnapshot(History.Loaded, id))} of {ids.Length}");
+            $"edited {Profiles.Edited} (+{string.Join(", +", on.Select(m => m.Name))} -{string.Join(", -", off.Select(m => m.Name))}), in the launch state {ids.Count(id => OnInSnapshot(History.Loaded, id))} of {ids.Length}");
     }
 
     // Switching to a profile that has never seen a mod (here: two test mods taken out of the other profile, as if
@@ -1250,9 +1399,10 @@ static class SelfTest
         var detected = typeof(NGame).GetMethod("OnNewModDetected", System.Reflection.BindingFlags.NonPublic | System.Reflection.BindingFlags.Instance);
         detected?.Invoke(NGame.Instance, [mod]);
         await Wait(menu, 0.3);
-        var texts = NModalContainer.Instance?.OpenModal is Node popup
-            ? popup.FindChildren("*", "", true, false).Select(n => n is Label l ? l.Text : n is RichTextLabel r ? r.Text : "").ToList() : [];
+        var texts = PopupTexts();
         Check("new mod popup says \"New Mod Added\"", texts.Any(t => t.Contains("New Mod Added")), string.Join(" | ", texts.Where(t => t.Length > 0)));
+        Check("new mod popup speaks of a relaunch, not a restart", texts.Any(t => t.Contains("relaunch")) && !texts.Any(t => t.Contains("restart")),
+            string.Join(" | ", texts.Where(t => t.Length > 0)));
         CheckMark("new mod popup", NModalContainer.Instance?.OpenModal as Control);
         await Capture(screen, outDir, "10b-new-mod-popup");
         NModalContainer.Instance?.Clear();
@@ -1271,8 +1421,7 @@ static class SelfTest
         };
         var rowsBefore = content.GetChildren().OfType<NModMenuRow>().ToList();
         var wasEdited = Profiles.Edited;
-        typeof(ModManager).GetMethod("InvokeOnModDetected", System.Reflection.BindingFlags.NonPublic | System.Reflection.BindingFlags.Static)
-            ?.Invoke(null, [fresh]);
+        GameInstalls(fresh);
         await Wait(menu, 0.4);
         NModalContainer.Instance?.Clear();
         Check("a mod installed now is listed as installed, loading after relaunch",
@@ -1292,8 +1441,8 @@ static class SelfTest
             Check("unticking a new mod is saved, and Changes says it's disabled",
                 SaveManager.Instance.SettingsSave.ModSettings?.IsModDisabled(fresh) == true
                 && HistoryBar.Describe().Any(l => l.Contains("Fresh Mod") && l.Contains("Disabled")), string.Join(" | ", HistoryBar.Describe()));
-            Check("unticking it is an unsaved edit of the profile", Profiles.Edited && Profiles.UnsavedChanges().Off.Contains("Fresh Mod"),
-                $"edited {Profiles.Edited}, off: {string.Join(", ", Profiles.UnsavedChanges().Off)}");
+            Check("unticking it is an unsaved edit of the profile", Profiles.Edited && Profiles.UnsavedChanges().Off.Any(m => m.Name == "Fresh Mod"),
+                $"edited {Profiles.Edited}, off: {string.Join(", ", Profiles.UnsavedChanges().Off.Select(m => m.Name))}");
             HistoryBar.ShowList(screen);
             await Wait(menu, 0.2);
             await Capture(screen, outDir, "10c-installed-change");
@@ -1308,7 +1457,7 @@ static class SelfTest
         }
         else
             Results.Add("FAIL a mod installed now gets a row");
-        Installed.Forget(fresh);
+        GameForgets(fresh);
         SaveManager.Instance.SettingsSave.ModSettings?.ModList.RemoveAll(e => e.Id == "SmmFreshMod");
         Profiles.Track(); // its unsaved edit goes with it
         History.Record();
@@ -1566,9 +1715,27 @@ static class SelfTest
         List<string> Saved() => SaveManager.Instance.SettingsSave.ModSettings?.ModList
             .Select(m => m.Id).Where(id => Ids().Contains(id)).ToList() ?? [];
         var pending = screen.GetNode<Control>("%PendingChangesLabel");
+        // Auto sort's hint: level with the search box, just left of Auto sort, above the list (so clear of every row).
+        void HintPlaced(string when)
+        {
+            var border = screen.GetNode<Control>("ModsBorder");
+            var hint = border.GetNode<Control>(LoadOrder.AutoSortHintName);
+            var (at, sort, search, list) = (hint.GetGlobalRect(), border.GetNode<Control>(LoadOrder.AutoSortName).GetGlobalRect(),
+                border.GetNode<Control>("SpireModManagerSearch").GetGlobalRect(), border.GetNode<Control>("ModsScrollContainer").GetGlobalRect());
+            Check($"{when}: Auto sort's hint level with the search box, left of Auto sort, above the rows", hint.Visible
+                && Math.Abs(at.GetCenter().Y - search.GetCenter().Y) < 1 && at.End.X <= sort.Position.X && at.End.Y <= list.Position.Y,
+                $"hint {at}, search {search}, Auto sort {sort}, rows from {list.Position.Y}");
+        }
 
+        // Straight from the main list, nothing picked (letting go of picked rows redraws on the way, which hid the bug):
+        // the hint is in place from the first frame, not where the search box sits on the main list.
+        Selection.Clear(content);
         Click(screen.GetNode<NButton>("SpireModManagerLoadOrderToggle"));
         await Wait(menu, 0.5);
+        HintPlaced("opening Load Order");
+        CategoryList.Redraw(content);
+        await Wait(menu, 0.3);
+        HintPlaced("Load Order redrawn");
         var start = Ids();
         Check("load order view: saved order, handles, no headers", start.SequenceEqual(Saved())
             && Rows().All(r => r.HasNode("SpireModManagerHandle"))
@@ -1809,13 +1976,13 @@ static class SelfTest
         tickbox.EmitSignal(NTickbox.SignalName.Toggled, tickbox);
         await Wait(menu, 0.3);
         var text = (screen.FindChild("OrderProblems", true, false) as Label)?.Text ?? "";
-        Check("main list: a needed mod that is off gets a banner", text.Contains("need a mod that is turned off"), text);
+        Check("main list: a needed mod that is off gets a banner", text.Contains("need a mod that is disabled"), text);
         await Capture(screen, outDir, "2b-list-banner");
         screen.FindChild("EnableNeededButton", true, false)?.EmitSignal(BaseButton.SignalName.Pressed);
         await Wait(menu, 0.3);
         Check("Enable needed mods turns it on, banner says no more", Dependencies.IsOn(lib) && tickbox.IsTicked
             && screen.FindChild("EnableNeededButton", true, false) == null
-            && (screen.FindChild("OrderProblems", true, false) as Label)?.Text.Contains("turned off") != true);
+            && (screen.FindChild("OrderProblems", true, false) as Label)?.Text.Contains("is disabled") != true);
         History.Undo();
         await Wait(menu, 0.3);
         Check("one undo turns it off again", !Dependencies.IsOn(lib));
@@ -1923,7 +2090,7 @@ static class SelfTest
 
         RelaunchCheck.Show(screen);
         await Wait(menu, 0.3);
-        Check("relaunch check lists the mods that won't load", Body().Contains("BaseLib, which isn't installed") && Body().Contains("Test Framework, which is off"), Body());
+        Check("relaunch check lists the mods that won't load", Body().Contains("BaseLib, which isn't installed") && Body().Contains("Test Framework, which is disabled"), Body());
         await Capture(screen, outDir, "15-relaunch-check");
         Press("EnableNeededButton");
         await Wait(menu, 0.3);
@@ -1945,12 +2112,14 @@ static class SelfTest
         Check("Esc closes it, and stays on the page", Dialog() == null && screen.IsVisibleInTree() && Dependencies.IsOn(branded));
     }
 
-    // A snapshot of the edge case, not a fix (yet): a made-up mod with very long everything (name, author,
-    // version, description, alias, tags, notes), shown in the list and the panel. The screenshot
-    // 16-long-details shows how it looks today; it's removed again afterwards.
+    // A made-up mod with very long everything (name, id, author, version, description, alias, many tags, notes),
+    // shown in the list and the panel (screenshot 16-long-details). The panel's title stays on one line with its
+    // version and the source line keeps its status, both cut with "…" (the whole text a second over them); the
+    // row keeps its author, the tags that don't fit folded into "+N". It's removed again afterwards.
     static async Task TestLongDetails(Node menu, NModdingScreen screen, Control content, string outDir)
     {
         const string id = "SmmVeryLongModIdentifierThatGoesOnAndOnForTheSakeOfTesting";
+        const string name = "The Extraordinarily Long-Named Compendium of Every Card, Relic, Potion and Event Ever Imagined (Deluxe Edition)";
         var words = "lorem ipsum dolor sit amet consectetur adipiscing elit sed do eiusmod tempor incididunt ut labore et dolore magna aliqua".Split(' ');
         string Text(int count) => string.Join(' ', Enumerable.Range(0, count).Select(i => words[i % words.Length]));
         var mod = new Mod
@@ -1958,19 +2127,20 @@ static class SelfTest
             path = "", modSource = ModSource.ModsDirectory, state = ModLoadState.AddedAtRuntime,
             manifest = new ModManifest
             {
-                id = id, name = "The Extraordinarily Long-Named Compendium of Every Card, Relic, Potion and Event Ever Imagined (Deluxe Edition)",
+                id = id, name = name,
                 author = "A Collective of Very Enthusiastic Modders With An Unusually Long Team Name", version = "12.345.6789-beta.12+build.98765",
                 description = Text(220), minGameVersion = "0.111.0",
             },
         };
-        typeof(ModManager).GetMethod("InvokeOnModDetected", System.Reflection.BindingFlags.NonPublic | System.Reflection.BindingFlags.Static)?.Invoke(null, [mod]);
+        GameInstalls(mod);
         await Wait(menu, 0.4);
         NModalContainer.Instance?.Clear();
         Store.EditMod(id, info =>
         {
             info.Alias = "My favourite enormous content pack that I keep meaning to rename to something shorter";
             info.Notes = Text(120);
-            info.Tags = ["content", "big", "really-long-tag-name-for-testing", "favourites", "co-op", "needs-checking-after-every-update", "deluxe"];
+            info.Tags = ["content", "big", "really-long-tag-name-for-testing", "favourites", "co-op", "needs-checking-after-every-update", "deluxe",
+                "cards", "relics", "events", "potions", "late-game"];
         });
         CategoryList.Apply(content);
         await Wait(menu, 0.3);
@@ -1980,16 +2150,74 @@ static class SelfTest
             CategoryList.Reveal(content, id, flash: false);
             await Wait(menu, 0.5);
             await Capture(screen, outDir, "16-long-details");
-            Check("long details: the panel shows the made-up mod (see 16-long-details)", screen.GetNode<RichTextLabel>("%ModInfoContainer/ModTitle").GetParsedText().StartsWith("The Extraordinarily"));
+            var panel = screen.GetNode<Control>("%ModInfoContainer");
+            var title = panel.GetNode<RichTextLabel>("ModTitle");
+            var titleText = title.GetParsedText();
+            var titleSize = title.GetThemeFontSize("normal_font_size");
+            Check("long details: the panel shows the made-up mod (see 16-long-details)", titleText.StartsWith("The Extraordinarily"));
+            Check("long details: the panel's title on one line at 24 or more, the name cut with \"…\", the version showing",
+                title.GetLineCount() == 1 && titleSize >= 24 && titleText.Contains('…') && titleText.Contains("12.345")
+                && title.GetContentWidth() <= title.Size.X + 1 && panel.GetGlobalRect().Encloses(title.GetGlobalRect()),
+                $"{title.GetLineCount()} lines at {titleSize}, {title.GetContentWidth()} of {title.Size.X}: {titleText}");
+            var source = panel.GetNode<Control>("SpireModManagerSource");
+            var link = source.GetNode<LinkButton>("SpireModManagerLink");
+            var status = (Label)source.FindChild("Status", true, false);
+            Check("long details: the source line stops short of the thumbnail, the id cut with \"…\", the dot and status showing",
+                link.Text.StartsWith("SmmVeryLong") && link.Text.Contains('…') && link.Text.EndsWith("(Local)") && status.Text.Length > 0
+                && status.GetGlobalRect().End.X <= title.GetGlobalRect().End.X + 2 && panel.GetGlobalRect().Encloses(status.GetGlobalRect()),
+                $"\"{link.Text}\" · {status.Text}: status {status.GetGlobalRect()}, title {title.GetGlobalRect()}");
+            // A second over the cut title or id: the whole of it, in a plain tooltip.
+            async Task<string> Tooltip(Control target, string card, double seconds)
+            {
+                Hover.TestMouse = () => target.GetGlobalRect().GetCenter();
+                target.EmitSignal(Control.SignalName.MouseEntered);
+                await Wait(menu, seconds);
+                var text = screen.GetNodeOrNull(card)?.FindChildren("*", "RichTextLabel", true, false).OfType<RichTextLabel>().FirstOrDefault()?.GetParsedText() ?? "";
+                Hover.TestMouse = () => new Vector2(5, 5);
+                target.EmitSignal(Control.SignalName.MouseExited);
+                await Wait(menu, 0.1);
+                return text;
+            }
+            var wholeTitle = await Tooltip(title, "SpireModManagerFullText", Hover.SlowDelay + 0.2);
+            var wholeId = await Tooltip(link, "SpireModManagerFullText", Hover.SlowDelay + 0.2);
+            Check("long details: a second over the cut title or id shows the whole of it", wholeTitle.StartsWith(name) && wholeTitle.EndsWith("12.345.6789-beta.12+build.98765")
+                && wholeId == id, $"{wholeTitle} / {wholeId}");
+
             var longAuthor = row.GetNodeOrNull<Label>("SpireModManagerStrip/Author");
             var longTag = row.GetNodeOrNull("SpireModManagerStrip")?.GetChildren().OfType<PanelContainer>().Select(c => c.GetChildOrNull<Label>(0)).FirstOrDefault(l => l?.Text.StartsWith("really-long") == true);
             Check("long details: the row's author and a long tag are cut with an ellipsis", longAuthor is { ClipText: true, TextOverrunBehavior: TextServer.OverrunBehavior.TrimEllipsis } && longTag is { ClipText: true });
+            // Many tags: the line ends short of the row's buttons, with the author in it; the tags that don't fit
+            // are folded into "+N", whose card lists them.
+            var strip = row.GetNode<Control>("SpireModManagerStrip");
+            var lineEnd = row.GetGlobalRect().End.X + strip.OffsetRight;
+            Check("long details: many tags: the author still shows, inside the line", longAuthor is { Visible: true } && longAuthor.GetGlobalRect().End.X <= lineEnd + 1
+                && strip.GetGlobalRect().End.X <= lineEnd + 1, $"author {longAuthor?.GetGlobalRect()}, line {strip.GetGlobalRect()}, ends at {lineEnd}");
+            var folded = strip.GetChildren().OfType<PanelContainer>().Where(c => !c.Visible).Select(c => c.GetChildOrNull<Label>(0)?.Text ?? "").ToList();
+            var more = strip.GetNodeOrNull<Control>(RowStrip.MoreName);
+            var moreCard = more == null ? "" : await Tooltip(more, "SpireModManagerTagCard", Hover.Delay + 0.15);
+            Check("long details: the tags that don't fit fold into \"+N\", its card listing them", more is { Visible: true } && folded.Count > 0
+                && more.GetChildOrNull<Label>(0)?.Text == $"+{folded.Count}" && folded.Last() == "late-game"
+                && moreCard.Split('\n').SequenceEqual(folded), $"{folded.Count} folded, card: {moreCard.ReplaceLineEndings(", ")}");
+            Hover.TestMouse = null;
+            Check("rows whose tags fit show them all, no \"+N\"", content.GetChildren().OfType<NModMenuRow>().Where(r => r != row && r.Visible)
+                .All(r => r.GetNodeOrNull<Control>("SpireModManagerStrip") is not { } line
+                    || (line.GetNodeOrNull(RowStrip.MoreName) == null && line.GetChildren().OfType<PanelContainer>().All(c => c.Visible))));
+            // Load Order and back: the view switch sets the title's size to 32 again, then fills the panel again. The
+            // title is drawn at the size it was fitted at before, not left at 32 (on two lines).
+            Click(screen.GetNode<NButton>("SpireModManagerLoadOrderToggle"));
+            await Wait(menu, 0.4);
+            Click(screen.GetNode<NButton>("SpireModManagerLoadOrderToggle"));
+            await Wait(menu, 0.5);
+            var refitSize = title.GetThemeFontSize("normal_font_size");
+            Check("long details: after Load Order and back, the panel's title is drawn at the size it was fitted at, on one line",
+                title.GetParsedText() == titleText && refitSize == titleSize && title.GetLineCount() == 1 && title.GetContentWidth() <= title.Size.X + 1,
+                $"{title.GetLineCount()} lines at {refitSize} (was {titleSize}), {title.GetContentWidth()} of {title.Size.X}: {title.GetParsedText()}");
             content.RemoveChild(row);
             row.QueueFree();
         }
         else
             Results.Add("FAIL long details: no row for the made-up mod");
-        Installed.Forget(mod);
+        GameForgets(mod);
         Store.EditMod(id, info => (info.Alias, info.Notes, info.Tags, info.Category) = (null, null, null, null));
         SaveManager.Instance.SettingsSave.ModSettings?.ModList.RemoveAll(e => e.Id == id);
         History.Record();
@@ -2256,6 +2484,18 @@ static class SelfTest
             Profiles.SwitchTo(start, screen);
             Check("back on the launch profile, no switched line", !HistoryBar.Describe().Any(l => l.StartsWith("Switched")));
         }
+
+        // A profile renamed since launch reads as one renamed line, not as added and deleted; renamed back, it's gone.
+        if (Store.Data.Profiles.FirstOrDefault(p => p.Name != Store.Data.ActiveProfile) is { } renamed)
+        {
+            var was = renamed.Name;
+            Profiles.Rename(renamed, "Renamed in test");
+            var lines = HistoryBar.Describe();
+            Check("a renamed profile shows as one renamed line", lines.Contains($"Renamed profile {was} → Renamed in test")
+                && !lines.Contains("Added profile Renamed in test") && !lines.Contains($"Deleted profile {was}"), string.Join(" | ", lines));
+            Profiles.Rename(renamed, was);
+            Check("renamed back, no renamed line", !HistoryBar.Describe().Any(l => l.Contains("Renamed in test")), string.Join(" | ", HistoryBar.Describe()));
+        }
     }
 
     // Store.cs on made-up folders under the output folder (the sandbox's own manager.json is never touched): an
@@ -2390,6 +2630,10 @@ static class SelfTest
 
     static Node? Header(Control content, string category) => content.GetNodeOrNull($"Category {category}");
 
+    // Every text in the popup open now (the game's modal), for checking its wording.
+    static List<string> PopupTexts() => NModalContainer.Instance?.OpenModal is Node popup
+        ? popup.FindChildren("*", "", true, false).Select(n => n is Label l ? l.Text : n is RichTextLabel r ? r.Text : "").ToList() : [];
+
     // A popup of ours in the game's style: our mark, once (marking it again adds none), shown, inside the popup's
     // art (clear of its painted edge), and clear of its title, text and buttons (their art included).
     static void CheckMark(string which, Control? popup)
@@ -2444,6 +2688,24 @@ static class SelfTest
         await Wait(menu, 0.3);
         return where;
     }
+
+    // A mod installed while the game runs, made up, the way the game does it: read into its mod list (not loaded),
+    // then announced. Gone again: off both lists.
+    static void GameInstalls(Mod mod)
+    {
+        GameMods().Add(mod);
+        typeof(ModManager).GetMethod("InvokeOnModDetected", System.Reflection.BindingFlags.NonPublic | System.Reflection.BindingFlags.Static)
+            ?.Invoke(null, [mod]);
+    }
+
+    static void GameForgets(Mod mod)
+    {
+        GameMods().Remove(mod);
+        Installed.Forget(mod);
+    }
+
+    static List<Mod> GameMods() =>
+        typeof(ModManager).GetField("_mods", System.Reflection.BindingFlags.NonPublic | System.Reflection.BindingFlags.Static)?.GetValue(null) as List<Mod> ?? [];
 
     static List<string> ModListState() =>
         SaveManager.Instance.SettingsSave.ModSettings?.ModList

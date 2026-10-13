@@ -137,13 +137,14 @@ static class Profiles
         Switched?.Invoke();
     }
 
-    // The active profile's unsaved changes: mods turned on and off compared with its saved state (names).
-    public static (List<string> On, List<string> Off) UnsavedChanges()
+    // The active profile's unsaved changes: mods turned on and off compared with its saved state (ids, for links to
+    // them, and names).
+    public static (List<(string Id, string Name)> On, List<(string Id, string Name)> Off) UnsavedChanges()
     {
         if (Active is not { Edited: not null } profile)
             return ([], []);
         var changed = Current().Where(c => Differs(c, profile.Mods)).ToList();
-        string Name(ProfileMod m) => Dependencies.Find(m.Id)?.manifest?.name ?? m.Id;
+        (string Id, string Name) Name(ProfileMod m) => (m.Id, Dependencies.Find(m.Id)?.manifest?.name ?? m.Id);
         return (changed.Where(c => c.Enabled).Select(Name).ToList(), changed.Where(c => !c.Enabled).Select(Name).ToList());
     }
 
