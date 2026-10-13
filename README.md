@@ -49,3 +49,37 @@ copy of the game in `D:\sts2-dev` with its own mods folder, no Steam, separate s
 
 Notes: TODO.md (requests and their state), DESIGN.md (decisions and background), WHATS-NEW.md (what to
 look for after each install).
+
+## CI
+
+Pull requests into `dev`, and pushes to `dev` and `main`, run `.github/workflows/ci.yml`:
+
+- **checks**, on GitHub's Linux machines: `dotnet run tools/check.cs` (text files parse, every text key the
+  code uses is in `eng`, the test fixtures are valid, nothing over 1 MB and no tokens committed; text in
+  `eng` that no code uses shows as a warning), then the tool scripts are compiled without running them.
+  It takes seconds, so run `dotnet run tools/check.cs` yourself before opening a pull request.
+- **selftest**, on your PC: `build.cs --no-install`, then the in-game self-test (`tools/dev.cs test`, then
+  `--bmm`). Each run's `out/selftest/*.txt` and `out/dev.log` are attached to the run on GitHub. Never
+  `--real`: that output holds your own mods and data.
+
+The mod itself can't build on GitHub's machines: it compiles against the game's own `sts2.dll` and Godot
+assemblies, which are proprietary, so they aren't in the repo and must never be committed. The build and
+the in-game test only run where the game is installed.
+
+To let your PC run the self-test:
+
+1. On GitHub: the repo's Settings > Actions > Runners > New self-hosted runner, Windows x64. Follow its
+   download and `config.cmd` steps; when it asks for labels, add `sts2`. (It gets `self-hosted`, `Windows`
+   and `X64` on its own, and labels ignore case, so `windows` matches.)
+2. When it asks whether to run as a service, say no. Start it with `run.cmd` from a terminal, as your
+   normal user, so the game can open its window and reach `D:\SteamLibrary` and your `%APPDATA%` (a
+   service runs as another account, without a desktop). It takes jobs while that terminal is open.
+3. Settings > Secrets and variables > Actions > Variables: add `SELF_HOSTED_STS2` with the value `true`.
+   Without it the self-test job is skipped and only the checks run. While it's `true`, a self-test waits
+   in the queue until your runner is on, so set it to `false` when you'll be away.
+
+- One runner only: the test uses one sandbox (`D:\sts2-dev` and the dev save data). A CI test and a dev
+  run of your own can't overlap either (`tools/dev.cs` won't start while the dev copy is running).
+- Security: only use a self-hosted runner on a private repo. On a public repo anyone can open a pull
+  request from a fork, and its code would run on your PC. Before the repo goes public, remove the runner
+  (Settings > Actions > Runners) and set the variable to `false`.
