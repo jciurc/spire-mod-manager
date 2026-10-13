@@ -1736,6 +1736,18 @@ static class SelfTest
             Profiles.SwitchTo(start, screen);
             Check("back on the launch profile, no switched line", !HistoryBar.Describe().Any(l => l.StartsWith("Switched")));
         }
+
+        // A profile renamed since launch reads as one renamed line, not as added and deleted; renamed back, it's gone.
+        if (Store.Data.Profiles.FirstOrDefault(p => p.Name != Store.Data.ActiveProfile) is { } renamed)
+        {
+            var was = renamed.Name;
+            Profiles.Rename(renamed, "Renamed in test");
+            var lines = HistoryBar.Describe();
+            Check("a renamed profile shows as one renamed line", lines.Contains($"Renamed profile {was} → Renamed in test")
+                && !lines.Contains("Added profile Renamed in test") && !lines.Contains($"Deleted profile {was}"), string.Join(" | ", lines));
+            Profiles.Rename(renamed, was);
+            Check("renamed back, no renamed line", !HistoryBar.Describe().Any(l => l.Contains("Renamed in test")), string.Join(" | ", HistoryBar.Describe()));
+        }
     }
 
     static async Task<bool> WithVanillaView(NModdingScreen screen, Node menu, Func<bool> check)
