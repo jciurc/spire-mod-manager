@@ -37,6 +37,6 @@ jobs:
       # dotnet build on a .cs file compiles the file-based app and stops there; nothing runs.
       - name: Compile the tool scripts
         run: |
-          for script in build.cs tools/dev.cs tools/pck.cs tools/check.cs; do
+          for script in build.cs tools/dev.cs tools/pck.cs tools/check.cs tools/shot.cs; do
             dotnet build "$script"
           done
