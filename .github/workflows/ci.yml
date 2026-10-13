@@ -1,4 +1,4 @@
-# CI for pull requests (into dev) and pushes to dev and main.
+# CI for pull requests into dev and main, and pushes to them.
 #
 # checks: on GitHub's hosted Linux runners, the offline checks (tools/check.cs) and a compile of the tool
 #   scripts without running them. The mod itself can't build there: it compiles against the game's own
@@ -10,6 +10,7 @@ name: CI
 
 on:
   pull_request:
+    branches: [dev, main]
   push:
     branches: [dev, main]
 
@@ -43,7 +44,11 @@ jobs:
           done
 
   selftest:
-    if: vars.SELF_HOSTED_STS2 == 'true'
+    # Only code from this repository runs on the PC: pushes, and pull requests from its own branches (never a
+    # fork's, whose changes to build.cs, dev.cs or the mod would run as the runner's user).
+    if: >-
+      vars.SELF_HOSTED_STS2 == 'true'
+      && (github.event_name == 'push' || github.event.pull_request.head.repo.full_name == github.repository)
     needs: checks
     runs-on: [self-hosted, windows, sts2]
     steps:

@@ -63,7 +63,7 @@ look for after each install), workshop/README.md (publishing to the Steam Worksh
 
 ## CI
 
-Pull requests into `dev`, and pushes to `dev` and `main`, run `.github/workflows/ci.yml`:
+Pull requests into `dev` or `main`, and pushes to them, run `.github/workflows/ci.yml`:
 
 - **checks**, on GitHub's Linux machines: `dotnet run tools/check.cs` (text files parse, every text key the
   code uses is in `eng`, the test fixtures are valid, nothing over 1 MB and no tokens committed; text in
