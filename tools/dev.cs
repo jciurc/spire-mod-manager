@@ -153,14 +153,16 @@ void LinkDevCopy()
     }
 }
 
-// The dev copy's mods: our fresh build, plus links to the other mods installed for play.
+// The dev copy's mods: our fresh build, plus links to the other mods installed for play. Not Better Mod Menu's
+// data if it keeps it beside its files ("portable mode", mod_profiles.*): our first-run import would find it
+// there, and a run's Better Mod Menu data should be only what PrepareSandbox gives it.
 void SyncMods()
 {
     var mods = Path.Combine(DevDir, "mods");
     if (Directory.Exists(mods))
         Directory.Delete(mods, recursive: true);
     foreach (var dir in Directory.GetDirectories(Path.Combine(GameDir, "mods")).Where(d => Path.GetFileName(d) != ModId))
-        foreach (var file in Directory.EnumerateFiles(dir, "*", SearchOption.AllDirectories))
+        foreach (var file in Directory.EnumerateFiles(dir, "*", SearchOption.AllDirectories).Where(f => !Path.GetFileName(f).StartsWith("mod_profiles.")))
             Link(file, Path.Combine(mods, Path.GetRelativePath(Path.Combine(GameDir, "mods"), file)));
     if (real)
     {
