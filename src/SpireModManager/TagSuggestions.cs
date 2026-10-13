@@ -15,7 +15,7 @@ namespace SpireModManager;
 // screen, on its own layer over our menus, since the box can be in one (a mod's right-click menu, the bulk menu).
 sealed class TagSuggestions
 {
-    public const int Max = 6;
+    const int Max = 6;
     const string LayerName = "SpireModManagerTagSuggestions";
     const string TagMeta = "tag";
     const float Gap = 2; // px between the box and the list
@@ -171,8 +171,8 @@ sealed class TagSuggestions
         label.AddThemeFontSizeOverride("font_size", 18);
         label.AddThemeColorOverride("font_color", Cream);
         row.AddChild(label);
-        // Pointing at a row lights it (what Enter would take); off the list, none is.
-        row.MouseEntered += () => Light(index);
+        // Pointing at a row lights it (what Enter would take); off it, none is. Only when the mouse moves: a row that
+        // turns up under a still mouse (the list redrawn after a click) mustn't get Enter's tag.
         row.MouseExited += () =>
         {
             if (_highlight == index)
@@ -180,6 +180,8 @@ sealed class TagSuggestions
         };
         row.GuiInput += e =>
         {
+            if (e is InputEventMouseMotion && _highlight != index)
+                Light(index);
             if (e is not InputEventMouseButton { ButtonIndex: MouseButton.Left } button)
                 return;
             row.AcceptEvent(); // nothing underneath gets it; the box keeps focus (rows don't take it)
