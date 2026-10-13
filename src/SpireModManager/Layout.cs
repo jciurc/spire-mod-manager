@@ -215,7 +215,7 @@ static class Layout
                 Name = "SpireModManagerBackLabel", Text = Menus.Text("SPIRE_MOD_MANAGER.MAIN_MENU"),
                 HorizontalAlignment = HorizontalAlignment.Center, MouseFilter = Control.MouseFilterEnum.Ignore,
             };
-            label.AddThemeFontOverride("font", ResourceLoader.Load<Font>("res://themes/kreon_bold_shared.tres"));
+            label.AddThemeFontOverride("font", ModEntry.Font("res://themes/kreon_bold_shared.tres"));
             label.AddThemeFontSizeOverride("font_size", 18);
             label.AddThemeColorOverride("font_color", new Color(1, 0.964706f, 0.886275f, 0.85f));
             label.AddThemeColorOverride("font_outline_color", new Color(0.0756f, 0.12084f, 0.18f));
@@ -259,7 +259,7 @@ static class Layout
             Name = "SpireModManagerViewTitle", Text = Menus.Text("SPIRE_MOD_MANAGER.LOAD_ORDER"), Size = new Vector2(500, 40),
             HorizontalAlignment = HorizontalAlignment.Center, MouseFilter = Control.MouseFilterEnum.Ignore,
         };
-        label.AddThemeFontOverride("font", ResourceLoader.Load<Font>("res://themes/kreon_bold_shared.tres"));
+        label.AddThemeFontOverride("font", ModEntry.Font("res://themes/kreon_bold_shared.tres"));
         label.AddThemeFontSizeOverride("font_size", 26);
         label.AddThemeColorOverride("font_color", new Color(0.937f, 0.784f, 0.318f));
         screen.AddChild(label);

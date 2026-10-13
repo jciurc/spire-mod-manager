@@ -321,7 +321,7 @@ static class HistoryBar
 
         var head = new HBoxContainer { Name = "Head" };
         var title = new Label { Text = Menus.Text("SPIRE_MOD_MANAGER.CHANGES_TITLE"), SizeFlagsHorizontal = Control.SizeFlags.ExpandFill };
-        title.AddThemeFontOverride("font", ResourceLoader.Load<Font>("res://themes/kreon_bold_shared.tres"));
+        title.AddThemeFontOverride("font", ModEntry.Font("res://themes/kreon_bold_shared.tres"));
         title.AddThemeFontSizeOverride("font_size", 30);
         title.AddThemeColorOverride("font_color", Cream);
         // FillList titles it for the list it shows; a long profile name (in the unsaved list's title) wraps.
@@ -548,7 +548,7 @@ static class HistoryBar
 
     static void Style(Label label, int size, Color color)
     {
-        label.AddThemeFontOverride("font", ResourceLoader.Load<Font>("res://themes/kreon_regular_shared.tres"));
+        label.AddThemeFontOverride("font", ModEntry.Font("res://themes/kreon_regular_shared.tres"));
         label.AddThemeFontSizeOverride("font_size", size);
         label.AddThemeColorOverride("font_color", color);
     }

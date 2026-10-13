@@ -87,7 +87,7 @@ static class Bmm
             MaxLinesVisible = 2, MouseFilter = Control.MouseFilterEnum.Stop,
             MouseDefaultCursorShape = Control.CursorShape.Help,
         };
-        warning.AddThemeFontOverride("font", ResourceLoader.Load<Font>("res://themes/kreon_regular_shared.tres"));
+        warning.AddThemeFontOverride("font", ModEntry.Font("res://themes/kreon_regular_shared.tres"));
         warning.AddThemeFontSizeOverride("font_size", 16);
         warning.AddThemeColorOverride("font_color", new Color(0.937f, 0.784f, 0.318f));
         screen.AddChild(warning);

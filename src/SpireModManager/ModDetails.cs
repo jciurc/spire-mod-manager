@@ -1,6 +1,5 @@
 using Godot;
 using MegaCrit.Sts2.Core.Modding;
-using MegaCrit.Sts2.Core.Nodes.GodotExtensions;
 using MegaCrit.Sts2.Core.Platform;
 using MegaCrit.Sts2.Core.Nodes.Screens.ModdingScreen;
 using MegaCrit.Sts2.addons.mega_text;
@@ -107,7 +106,7 @@ static class ModDetails
             picker.Text = CategoryList.CategoryName(id) + "  ▾";
         Callable.From(() => PlaceFields(container)).CallDeferred();
 
-        var folder = container.GetNodeOrNull<NButton>("OpenFolderButton") ?? AddButton(container, "OpenFolderButton",
+        var folder = container.GetNodeOrNull<Control>("OpenFolderButton") ?? AddButton(container, "OpenFolderButton",
             "SPIRE_MOD_MANAGER.OPEN_FOLDER", 20, () => OS.ShellOpen(Meta(container, FolderMeta)));
         folder.Visible = Directory.Exists(mod.path);
     }
@@ -436,7 +435,7 @@ static class ModDetails
 
     static string Meta(Node node, string key) => node.HasMeta(key) ? (string)node.GetMeta(key) : "";
 
-    static NButton AddButton(Control parent, string name, string locKey, float x, Action onPressed)
+    static Control AddButton(Control parent, string name, string locKey, float x, Action onPressed)
     {
         var button = ModEntry.AddButton(parent, locKey, new Vector2(180, 52), onPressed);
         button.Name = name;
@@ -452,7 +451,7 @@ static class ModDetails
         var line = new HBoxContainer { Name = SourceName, MouseFilter = Control.MouseFilterEnum.Ignore };
         line.AddThemeConstantOverride("separation", 8);
         var link = new LinkButton { Name = LinkName, FocusMode = Control.FocusModeEnum.None };
-        link.AddThemeFontOverride("font", ResourceLoader.Load<Font>("res://themes/kreon_regular_shared.tres"));
+        link.AddThemeFontOverride("font", ModEntry.Font("res://themes/kreon_regular_shared.tres"));
         link.AddThemeFontSizeOverride("font_size", 16);
         link.AddThemeColorOverride("font_color", new Color(0.6f, 0.8f, 1f));
         link.AddThemeColorOverride("font_hover_color", new Color(0.8f, 0.9f, 1f));
@@ -584,7 +583,7 @@ static class ModDetails
 
     static void Style(Control control, string font, int size, Color color)
     {
-        control.AddThemeFontOverride("font", ResourceLoader.Load<Font>(font));
+        control.AddThemeFontOverride("font", ModEntry.Font(font));
         control.AddThemeFontSizeOverride("font_size", size);
         control.AddThemeColorOverride("font_color", color);
     }

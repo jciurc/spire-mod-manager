@@ -53,7 +53,7 @@ static class Menus
             Name = MarkName, Text = Text("SPIRE_MOD_MANAGER.POPUP_MARK"), HorizontalAlignment = HorizontalAlignment.Center,
             MouseFilter = Control.MouseFilterEnum.Ignore,
         };
-        mark.AddThemeFontOverride("font", ResourceLoader.Load<Font>("res://themes/kreon_regular_shared.tres"));
+        mark.AddThemeFontOverride("font", ModEntry.Font("res://themes/kreon_regular_shared.tres"));
         mark.AddThemeFontSizeOverride("font_size", 15);
         mark.AddThemeColorOverride("font_color", new Color(Cream, 0.5f));
         art.AddChild(mark);
@@ -110,7 +110,7 @@ static class Menus
             button.Name = name;
         foreach (var (state, box) in SmallBoxes)
             button.AddThemeStyleboxOverride(state, box);
-        button.AddThemeFontOverride("font", ResourceLoader.Load<Font>("res://themes/kreon_regular_shared.tres"));
+        button.AddThemeFontOverride("font", ModEntry.Font("res://themes/kreon_regular_shared.tres"));
         button.AddThemeFontSizeOverride("font_size", 16);
         button.AddThemeColorOverride("font_color", Cream);
         button.AddThemeColorOverride("font_hover_color", Colors.White);

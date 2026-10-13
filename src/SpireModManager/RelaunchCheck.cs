@@ -77,7 +77,7 @@ static class RelaunchCheck
         }
         var problems = Problems();
         var title = new Label { Name = "Title", Text = Menus.Text(problems.Count > 0 ? "SPIRE_MOD_MANAGER.RELAUNCH_CHECK_TITLE" : "SPIRE_MOD_MANAGER.RELAUNCH_CHECK_OK_TITLE") };
-        title.AddThemeFontOverride("font", ResourceLoader.Load<Font>("res://themes/kreon_bold_shared.tres"));
+        title.AddThemeFontOverride("font", ModEntry.Font("res://themes/kreon_bold_shared.tres"));
         title.AddThemeFontSizeOverride("font_size", 26);
         title.AddThemeColorOverride("font_color", Cream);
         column.AddChild(title);

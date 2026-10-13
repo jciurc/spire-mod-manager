@@ -138,6 +138,7 @@ static class SelfTest
             await TestWorkshopHead(menu, screen);
             await TestBulkEdit(menu, screen, content, outDir);
             await TestHistory(menu, screen, content, outDir);
+            TestFallbacks(screen);
 
             // Leaving from Load Order: the page comes back on the main list.
             Click(screen.GetNode<NButton>("SpireModManagerLoadOrderToggle"));
@@ -2370,6 +2371,50 @@ static class SelfTest
             Profiles.Rename(renamed, was);
             Check("renamed back, no renamed line", !HistoryBar.Describe().Any(l => l.Contains("Renamed in test")), string.Join(" | ", HistoryBar.Describe()));
         }
+    }
+
+    // Missing game resources: everything this run used loaded; a path that isn't there gives null without throwing
+    // (noted, and logged, once); a missing font falls back to Godot's own; AddButton's plain stand-in is a working
+    // button with the label, at the asked size, with the hidden "Dot" callers show; the category header made in
+    // code has the parts a redraw reads.
+    static void TestFallbacks(NModdingScreen screen)
+    {
+        Check("every game resource used so far loaded", ModEntry.MissingResources.Count == 0, string.Join(", ", ModEntry.MissingResources));
+        const string madeUp = "res://SpireModManager/selftest/no_such_picture.png";
+        Texture2D? first = null, second = null;
+        var threw = "";
+        try
+        {
+            first = ModEntry.Load<Texture2D>(madeUp);
+            second = ModEntry.Load<Texture2D>(madeUp); // not tried, or logged, again
+        }
+        catch (Exception e)
+        {
+            threw = e.Message;
+        }
+        Check("a missing resource loads as null without throwing, noted once", threw.Length == 0 && first == null && second == null
+            && ModEntry.MissingResources.Count(p => p == madeUp) == 1, threw);
+        Check("a missing font falls back to Godot's own",
+            ModEntry.Font("res://SpireModManager/selftest/no_such_font.tres").GetInstanceId() == ThemeDB.FallbackFont.GetInstanceId());
+
+        var holder = new Control { Name = "SpireModManagerTestHolder" };
+        screen.AddChild(holder);
+        var presses = 0;
+        var button = ModEntry.AddButton(holder, "SPIRE_MOD_MANAGER.RELAUNCH_BUTTON", new Vector2(220, 70), () => presses++, plain: true);
+        button.EmitSignal(BaseButton.SignalName.Pressed);
+        Check("AddButton's plain stand-in: a clickable button with the label, at its size, with a hidden Dot",
+            button is Button { Text: var text, Disabled: false } && text == Menus.Text("SPIRE_MOD_MANAGER.RELAUNCH_BUTTON") && presses == 1
+            && button.Size == new Vector2(220, 70) && button.GetNodeOrNull<Control>("Dot") is { Visible: false },
+            $"{button.GetType().Name} \"{(button as Button)?.Text}\", {presses} press(es), size {button.Size}");
+        ModEntry.Relabel(button, "SPIRE_MOD_MANAGER.LOAD_ORDER");
+        Check("the stand-in takes a new label", button is Button { Text: var relabelled } && relabelled == Menus.Text("SPIRE_MOD_MANAGER.LOAD_ORDER"));
+        screen.RemoveChild(holder);
+        holder.Free();
+
+        var header = CategoryList.PlainHeader();
+        Check("the category header stand-in has the scene's parts", header.GetNodeOrNull<ColorRect>("Background") != null
+            && header.GetNodeOrNull<Control>("Arrow") != null && header.GetNodeOrNull<Label>("Title") != null && header.GetNodeOrNull<Label>("Count") != null);
+        header.Free();
     }
 
     // Store.cs on made-up folders under the output folder (the sandbox's own manager.json is never touched): an
