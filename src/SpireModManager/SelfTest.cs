@@ -1840,6 +1840,11 @@ static class SelfTest
         screen.Visible = true;
         await Wait(menu, 0.3);
         Check("the notice shows once", NModalContainer.Instance?.OpenModal == null);
+        // Each of its three texts reads whole (no placeholder left, no stray escape), naming the file.
+        var texts = new[] { recovered, recovered with { Backup = null }, recovered with { ReadOnly = true } }
+            .Select(loaded => Store.NoticeText(loaded)?.GetFormattedText() ?? "").ToList();
+        Check("the notice's texts (backup, fresh start, read-only) read whole and name the file", texts.All(t => t.Contains(Path.GetFileName(setAside))
+            && !t.Contains('{') && !t.Contains('\\')), string.Join(" | ", texts));
     }
 
     static async Task<bool> WithVanillaView(NModdingScreen screen, Node menu, Func<bool> check)
