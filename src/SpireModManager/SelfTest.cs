@@ -136,9 +136,11 @@ static class SelfTest
             await TestRelaunchCheck(menu, screen, content, outDir);
             await TestLongDetails(menu, screen, content, outDir);
             await TestWorkshopHead(menu, screen);
+            await TestOtherModPanel(menu, screen, content, outDir);
             await TestBulkEdit(menu, screen, content, outDir);
             await TestTagSuggestions(menu, screen, content, outDir);
             await TestHistory(menu, screen, content, outDir);
+            TestFallbacks(screen);
 
             // Leaving from Load Order: the page comes back on the main list.
             Click(screen.GetNode<NButton>("SpireModManagerLoadOrderToggle"));
@@ -2075,7 +2077,8 @@ static class SelfTest
     }
 
     // A Workshop mod's head (made-up details; the sandbox has no Steam): Author, Updated (how long ago, and a link
-    // to its change notes on the Workshop), Compatibility. "Ago" in hours under a day, singular for one.
+    // to its change notes on the Workshop), Compatibility. "Ago" in hours under a day, singular for one. Dates and
+    // numbers in the game's language.
     static async Task TestWorkshopHead(Node menu, NModdingScreen screen)
     {
         var mod = new Mod
@@ -2084,7 +2087,7 @@ static class SelfTest
             manifest = new ModManifest { id = "SmmWorkshopTest", name = "Workshop Test", author = "Someone Careful" },
         };
         Installed.Detected(mod); // so the panel can find it by id
-        WorkshopInfo.TestSet(42, new WorkshopInfo.Details(DateTime.Now.AddDays(-30), DateTime.Now.AddDays(-4), [], [], 0, null));
+        WorkshopInfo.TestSet(42, new WorkshopInfo.Details(DateTime.Now.AddDays(-30), DateTime.Now.AddDays(-4), [], [], 1_572_864, 1234)); // 1.5 MB
         var info = screen.GetNode<NModInfoContainer>("%ModInfoContainer");
         info.Fill(mod);
         await Wait(menu, 0.3);
@@ -2098,8 +2101,96 @@ static class SelfTest
             ModDetails.Ago(DateTime.Now.AddMinutes(-20)).Contains("(less than an hour ago)") && ModDetails.Ago(DateTime.Now.AddHours(-3)).Contains("(3 hours ago)") && ModDetails.Ago(DateTime.Now.AddMinutes(-70)).Contains("(1 hour ago)")
             && ModDetails.Ago(DateTime.Now.AddHours(-30)).Contains("(1 day ago)") && ModDetails.Ago(DateTime.Now.AddHours(-30)).Contains("#a6e3a1")
             && !ModDetails.Ago(DateTime.Now.AddDays(-3)).Contains("#a6e3a1"));
+
+        // Dates, sizes and counts follow the game's language: in English as they always read; in German, the game's
+        // German date pattern and separators (our words stay English there, as we have no German text).
+        var english = info.GetNode<RichTextLabel>("ModDescription").GetParsedText();
+        Check("in English: October 11, 2026; Size: 1.5 MB; Subscribers: 1,234", ModDetails.Date(new DateTime(2026, 10, 11)) == "October 11, 2026"
+            && english.Contains("Size: 1.5 MB") && english.Contains("Subscribers: 1,234"), english);
+        var language = LocManager.Instance.Language;
+        try
+        {
+            LocManager.Instance.SetLanguage("deu"); // the game's own switch, without the save or the menu rebuild
+            info.Fill(mod);
+            var german = info.GetNode<RichTextLabel>("ModDescription").GetParsedText();
+            Check("with the game in German: 11. Oktober 2026; 1,5 MB; 1.234", ModDetails.Date(new DateTime(2026, 10, 11)) == "11. Oktober 2026"
+                && german.Contains("1,5 MB") && german.Contains("1.234"), $"{ModDetails.Date(new DateTime(2026, 10, 11))} / {german}");
+            // A date pattern that doesn't read (an unclosed quote; SetLanguage below reloads the tables without it):
+            // all in English, not a German month in the English pattern.
+            LocManager.Instance.GetTable("run_history").MergeWith(new() { ["INFO.DATE_FORMAT"] = "d 'MMMM" });
+            Check("a broken date pattern in German: October 11, 2026", ModDetails.Date(new DateTime(2026, 10, 11)) == "October 11, 2026", ModDetails.Date(new DateTime(2026, 10, 11)));
+        }
+        finally
+        {
+            LocManager.Instance.SetLanguage(language);
+        }
         WorkshopInfo.TestSet(42, null);
         Installed.Forget(mod);
+        info.Clear();
+    }
+
+    // Another mod's part in the info panel (Undo And Restart adds a settings panel at a fixed (0,318), over our
+    // fields; here a made-up one the same size): our views put it between the details and our fields, or hide it
+    // when there's no room; Vanilla View leaves it where its mod put it. Its mod's own hide wins over ours, its show
+    // too when there's room. Removed again afterwards.
+    static async Task TestOtherModPanel(Node menu, NModdingScreen screen, Control content, string outDir)
+    {
+        if (content.GetChildren().OfType<NModMenuRow>().FirstOrDefault(r => r.Mod?.manifest?.id == "SmmTestUi") is not { Mod: { } mod } row)
+        {
+            Results.Add("SKIP another mod's panel: test mods not installed");
+            return;
+        }
+        var info = screen.GetNode<NModInfoContainer>("%ModInfoContainer");
+        CategoryList.Select(screen, row); // a short description and no picture, so it fits
+        await Wait(menu, 0.3);
+        var home = new Vector2(0, 318);
+        var other = new PanelContainer { Name = "OtherModSettingsPanel", Position = home, CustomMinimumSize = new Vector2(560, 174) };
+        info.AddChild(other);
+        var (details, yours) = (info.GetNode<Control>("ModDescription"), info.GetNode<Control>("SpireModManagerYours"));
+        // shownByItsMod: what its mod sets in its own Fill postfix (after ours gave back what we hid).
+        async Task<string> Refill(bool? shownByItsMod = null)
+        {
+            info.Fill(mod); // the panel filled again, as when a mod is picked
+            if (shownByItsMod is { } shown)
+                other.Visible = shown;
+            await Wait(menu, 0.3);
+            return $"panel {other.GetGlobalRect()} shown {other.Visible}, details {details.GetGlobalRect()}, fields {yours.GetGlobalRect()}";
+        }
+
+        var where = await Refill();
+        Check("another mod's panel: the only part counted as another mod's (not the game's, ours or Better Mod Menu's)",
+            Layout.OtherParts(info).SequenceEqual([other]), string.Join(", ", Layout.OtherParts(info).Select(c => c.Name)));
+        var (panel, text, fields) = (other.GetGlobalRect(), details.GetGlobalRect(), yours.GetGlobalRect());
+        Check("another mod's panel goes between the details and our fields, overlapping neither", other.Visible
+            && !panel.Intersects(text) && !panel.Intersects(fields) && panel.Position.Y >= text.End.Y && panel.End.Y <= fields.Position.Y, where);
+        await Capture(screen, outDir, "17-other-mod-panel");
+
+        other.CustomMinimumSize = new Vector2(560, 600);
+        where = await Refill();
+        Check("another mod's panel with no room for it: hidden, our fields right under the details", !other.Visible
+            && Math.Abs(yours.OffsetTop - details.OffsetBottom - ModDetails.FieldsGap) < 1, where);
+        var inVanilla = "";
+        Check("another mod's panel in Vanilla View: back where its mod put it, shown", await WithVanillaView(screen, menu, () =>
+        {
+            inVanilla = $"{other.Position}, shown {other.Visible}";
+            return other.Position == home && other.Visible;
+        }), inVanilla);
+        Check("another mod's panel back on our views: hidden again", !other.Visible);
+
+        // Hidden by us, then by its mod too (another mod picked); room again without a fill (as when the changes list
+        // closes): its mod's hide holds. Its mod showing it again, with room: shown, in its place.
+        await Refill(shownByItsMod: false);
+        other.CustomMinimumSize = new Vector2(560, 174);
+        other.ResetSize();
+        ModDetails.PlaceFields(info);
+        Check("another mod's panel we hid, then its mod hid: still hidden with room again", !other.Visible
+            && !Layout.OtherParts(info).Contains(other), $"shown {other.Visible}, size {other.Size}");
+        where = await Refill(shownByItsMod: true);
+        Check("another mod's panel shown again by its mod, with room: shown between the details and our fields", other.Visible
+            && other.GetGlobalRect().Position.Y >= details.GetGlobalRect().End.Y && other.GetGlobalRect().End.Y <= yours.GetGlobalRect().Position.Y, where);
+
+        info.RemoveChild(other);
+        other.QueueFree();
         info.Clear();
     }
 
@@ -2314,6 +2405,9 @@ static class SelfTest
         Check("Changes counts it", HistoryBar.Counts().Off >= 1, $"{HistoryBar.Counts()}");
         Check("a mod turned off since launch has a changed-colour title", row.GetNode<Control>("Title").Modulate == RowTitles.ChangedOffTitle);
         var changes = screen.GetNode<Control>(HistoryBar.ChangesName);
+        var twoLines = (changes as RichTextLabel)?.GetParsedText() ?? "";
+        Check("the two lines read \"Mods enabled N (+a -b)\" and \"Changes n  ↕m\"",
+            System.Text.RegularExpressions.Regex.IsMatch(twoLines, @"^Mods enabled \d+ \(\+\d+ -\d+\)\nChanges \d+  ↕\d+$"), twoLines);
         Hover.TestMouse = () => changes.GetGlobalRect().GetCenter();
         changes.EmitSignal(Control.SignalName.MouseEntered);
         await Wait(menu, Hover.Delay + 0.15);
@@ -2457,6 +2551,50 @@ static class SelfTest
             Profiles.Rename(renamed, was);
             Check("renamed back, no renamed line", !HistoryBar.Describe().Any(l => l.Contains("Renamed in test")), string.Join(" | ", HistoryBar.Describe()));
         }
+    }
+
+    // Missing game resources: everything this run used loaded; a path that isn't there gives null without throwing
+    // (noted, and logged, once); a missing font falls back to Godot's own; AddButton's plain stand-in is a working
+    // button with the label, at the asked size, with the hidden "Dot" callers show; the category header made in
+    // code has the parts a redraw reads.
+    static void TestFallbacks(NModdingScreen screen)
+    {
+        Check("every game resource used so far loaded", ModEntry.MissingResources.Count == 0, string.Join(", ", ModEntry.MissingResources));
+        const string madeUp = "res://SpireModManager/selftest/no_such_picture.png";
+        Texture2D? first = null, second = null;
+        var threw = "";
+        try
+        {
+            first = ModEntry.Load<Texture2D>(madeUp);
+            second = ModEntry.Load<Texture2D>(madeUp); // not tried, or logged, again
+        }
+        catch (Exception e)
+        {
+            threw = e.Message;
+        }
+        Check("a missing resource loads as null without throwing, noted once", threw.Length == 0 && first == null && second == null
+            && ModEntry.MissingResources.Count(p => p == madeUp) == 1, threw);
+        Check("a missing font falls back to Godot's own",
+            ModEntry.Font("res://SpireModManager/selftest/no_such_font.tres").GetInstanceId() == ThemeDB.FallbackFont.GetInstanceId());
+
+        var holder = new Control { Name = "SpireModManagerTestHolder" };
+        screen.AddChild(holder);
+        var presses = 0;
+        var button = ModEntry.AddButton(holder, "SPIRE_MOD_MANAGER.RELAUNCH_BUTTON", new Vector2(220, 70), () => presses++, plain: true);
+        button.EmitSignal(BaseButton.SignalName.Pressed);
+        Check("AddButton's plain stand-in: a clickable button with the label, at its size, with a hidden Dot",
+            button is Button { Text: var text, Disabled: false } && text == Menus.Text("SPIRE_MOD_MANAGER.RELAUNCH_BUTTON") && presses == 1
+            && button.Size == new Vector2(220, 70) && button.GetNodeOrNull<Control>("Dot") is { Visible: false },
+            $"{button.GetType().Name} \"{(button as Button)?.Text}\", {presses} press(es), size {button.Size}");
+        ModEntry.Relabel(button, "SPIRE_MOD_MANAGER.LOAD_ORDER");
+        Check("the stand-in takes a new label", button is Button { Text: var relabelled } && relabelled == Menus.Text("SPIRE_MOD_MANAGER.LOAD_ORDER"));
+        screen.RemoveChild(holder);
+        holder.Free();
+
+        var header = CategoryList.PlainHeader();
+        Check("the category header stand-in has the scene's parts", header.GetNodeOrNull<ColorRect>("Background") != null
+            && header.GetNodeOrNull<Control>("Arrow") != null && header.GetNodeOrNull<Label>("Title") != null && header.GetNodeOrNull<Label>("Count") != null);
+        header.Free();
     }
 
     // Store.cs on made-up folders under the output folder (the sandbox's own manager.json is never touched): an

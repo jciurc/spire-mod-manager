@@ -1,9 +1,9 @@
 using Godot;
 using MegaCrit.Sts2.Core.Modding;
-using MegaCrit.Sts2.Core.Nodes.GodotExtensions;
 using MegaCrit.Sts2.Core.Platform;
 using MegaCrit.Sts2.Core.Nodes.Screens.ModdingScreen;
 using MegaCrit.Sts2.addons.mega_text;
+using MegaCrit.Sts2.Core.Localization;
 
 namespace SpireModManager;
 
@@ -106,7 +106,7 @@ static class ModDetails
             picker.Text = CategoryList.CategoryName(id) + "  ▾";
         Callable.From(() => PlaceFields(container)).CallDeferred();
 
-        var folder = container.GetNodeOrNull<NButton>("OpenFolderButton") ?? AddButton(container, "OpenFolderButton",
+        var folder = container.GetNodeOrNull<Control>("OpenFolderButton") ?? AddButton(container, "OpenFolderButton",
             "SPIRE_MOD_MANAGER.OPEN_FOLDER", 20, () => OS.ShellOpen(Meta(container, FolderMeta)));
         folder.Visible = Directory.Exists(mod.path);
     }
@@ -212,7 +212,7 @@ static class ModDetails
         if (workshop != null)
             Fact("SPIRE_MOD_MANAGER.PUBLISHED", Date(workshop.Created));
         if (workshop?.Subscribers is { } subscribers)
-            Fact("SPIRE_MOD_MANAGER.SUBSCRIBERS", subscribers.ToString("N0"));
+            Fact("SPIRE_MOD_MANAGER.SUBSCRIBERS", Menus.Number(subscribers));
         if (workshop?.Tags.Count > 0)
             Fact("SPIRE_MOD_MANAGER.WORKSHOP_TAGS", string.Join(", ", workshop.Tags.Select(t => $"[url=wtag:{t}]{Escape(t)}[/url]"))); // click: search for it
         if (bytes > 0 || workshop != null)
@@ -286,8 +286,21 @@ static class ModDetails
     // Text cut after 200 characters (some authors write a paragraph where their name goes).
     public static string Short(string text) => text.Length <= 200 ? text : text[..200].TrimEnd() + "…";
 
-    // "October 12, 2026".
-    public static string Date(DateTime date) => date.ToString("MMMM d, yyyy", System.Globalization.CultureInfo.InvariantCulture);
+    // "October 12, 2026" in English, "12. Oktober 2026" in German: the game's own date pattern (the one its run
+    // history uses, translated with the rest of the game) in the game's language. All in English if a game update
+    // renames that text or it doesn't read as a date pattern ("October 12", not "Oktober 12" in an English pattern).
+    public static string Date(DateTime date)
+    {
+        var english = date.ToString("MMMM d, yyyy", System.Globalization.CultureInfo.InvariantCulture);
+        try
+        {
+            return LocString.GetIfExists("run_history", "INFO.DATE_FORMAT")?.GetRawText() is { } pattern ? date.ToString(pattern, Menus.Culture) : english;
+        }
+        catch (Exception)
+        {
+            return english;
+        }
+    }
 
     // Enabled (green), Disabled (grey), or Pending relaunch (orange) when it's been turned on or off since it
     // loaded; Failed to load (red) when it's on but couldn't load.
@@ -378,13 +391,18 @@ static class ModDetails
         return FolderSizes[path] = size;
     }
 
-    static string Bytes(long bytes) => bytes switch
+    // "1.5 MB": the number in the game's language, the unit and its place from the loc table.
+    static string Bytes(long bytes)
     {
-        >= 1 << 30 => $"{bytes / (double)(1 << 30):0.0} GB",
-        >= 1 << 20 => $"{bytes / (double)(1 << 20):0.0} MB",
-        >= 1 << 10 => $"{bytes / (double)(1 << 10):0} KB",
-        _ => $"{bytes} B",
-    };
+        var (key, size) = bytes switch
+        {
+            >= 1 << 30 => ("SPIRE_MOD_MANAGER.SIZE_GB", (bytes / (double)(1 << 30)).ToString("0.0", Menus.Culture)),
+            >= 1 << 20 => ("SPIRE_MOD_MANAGER.SIZE_MB", (bytes / (double)(1 << 20)).ToString("0.0", Menus.Culture)),
+            >= 1 << 10 => ("SPIRE_MOD_MANAGER.SIZE_KB", (bytes / (double)(1 << 10)).ToString("0", Menus.Culture)),
+            _ => ("SPIRE_MOD_MANAGER.SIZE_BYTES", bytes.ToString(Menus.Culture)),
+        };
+        return Menus.Format(key, ("size", size));
+    }
 
     // Fills the panel again for the mod it shows (after a tickbox change: its status may have changed). Not
     // while the panel shows the changes list: that stays until Close or a click on a row.
@@ -417,7 +435,7 @@ static class ModDetails
 
     static string Meta(Node node, string key) => node.HasMeta(key) ? (string)node.GetMeta(key) : "";
 
-    static NButton AddButton(Control parent, string name, string locKey, float x, Action onPressed)
+    static Control AddButton(Control parent, string name, string locKey, float x, Action onPressed)
     {
         var button = ModEntry.AddButton(parent, locKey, new Vector2(180, 52), onPressed);
         button.Name = name;
@@ -433,7 +451,7 @@ static class ModDetails
         var line = new HBoxContainer { Name = SourceName, MouseFilter = Control.MouseFilterEnum.Ignore };
         line.AddThemeConstantOverride("separation", 8);
         var link = new LinkButton { Name = LinkName, FocusMode = Control.FocusModeEnum.None };
-        link.AddThemeFontOverride("font", ResourceLoader.Load<Font>("res://themes/kreon_regular_shared.tres"));
+        link.AddThemeFontOverride("font", ModEntry.Font("res://themes/kreon_regular_shared.tres"));
         link.AddThemeFontSizeOverride("font_size", 16);
         link.AddThemeColorOverride("font_color", new Color(0.6f, 0.8f, 1f));
         link.AddThemeColorOverride("font_hover_color", new Color(0.8f, 0.9f, 1f));
@@ -546,18 +564,30 @@ static class ModDetails
     }
 
     // The fields sit right under the mod's details: the description shrinks to its text (up to the room left
-    // above the fields), and the fields follow it. Once the text is laid out, so deferred.
+    // above the fields), and the fields follow it. Other mods' parts in the panel go between the two, as long as the
+    // description keeps a few lines (all of it if shorter); the rest are hidden (Layout.FitOthers). Once the text is
+    // laid out, so deferred. Our views only, and not behind the changes list (placed again when it closes).
     public static void PlaceFields(Control container)
     {
-        if (container.GetNodeOrNull<Control>(FieldsName) is not { } yours)
+        if (!Layout.Wide || HistoryBar.ListOpen(container) || container.GetNodeOrNull<Control>(FieldsName) is not { } yours)
             return;
+        const float fewLines = 80;
         var description = container.GetNode<RichTextLabel>("ModDescription");
         var top = description.OffsetTop;
         var height = yours.GetCombinedMinimumSize().Y;
         var room = container.Size.Y - ButtonsFromBottom - height - FieldsGap - top;
-        var used = Math.Min(description.GetContentHeight() + 6, Math.Max(room, 80));
+        var text = description.GetContentHeight() + 6;
+        var others = Layout.FitOthers(container, room - Math.Min(text, fewLines));
+        room -= others.Sum(o => o.Size.Y + FieldsGap);
+        var used = Math.Min(text, Math.Max(room, fewLines));
         description.OffsetBottom = top + used;
-        yours.OffsetTop = top + used + FieldsGap;
+        var y = top + used + FieldsGap;
+        foreach (var other in others)
+        {
+            Layout.PlaceOther(other, y);
+            y += other.Size.Y + FieldsGap;
+        }
+        yours.OffsetTop = y;
         yours.OffsetBottom = yours.OffsetTop + height;
     }
 
@@ -565,7 +595,7 @@ static class ModDetails
 
     static void Style(Control control, string font, int size, Color color)
     {
-        control.AddThemeFontOverride("font", ResourceLoader.Load<Font>(font));
+        control.AddThemeFontOverride("font", ModEntry.Font(font));
         control.AddThemeFontSizeOverride("font_size", size);
         control.AddThemeColorOverride("font_color", color);
     }

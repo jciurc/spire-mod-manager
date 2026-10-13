@@ -376,7 +376,7 @@ sealed class ModField
 
     static void Style(Control control, string font, int size, Color color)
     {
-        control.AddThemeFontOverride("font", ResourceLoader.Load<Font>(font));
+        control.AddThemeFontOverride("font", ModEntry.Font(font));
         control.AddThemeFontSizeOverride("font_size", size);
         control.AddThemeColorOverride("font_color", color);
     }
