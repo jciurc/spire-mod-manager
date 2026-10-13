@@ -211,38 +211,7 @@ static class BetterModMenuImport
             return null;
         try
         {
-            using var doc = JsonDocument.Parse(File.ReadAllText(path));
-            var root = doc.RootElement;
-            var data = new StoreData();
-
-            var collapsed = Strings(root, "CollapsedGroups").ToHashSet();
-            foreach (var name in Strings(root, "CustomGroups"))
-                data.Categories.Add(new Category { Name = name, Collapsed = collapsed.Contains(name) });
-
-            if (root.TryGetProperty("ModGroups", out var groups) && groups.ValueKind == JsonValueKind.Object)
-                foreach (var entry in groups.EnumerateObject())
-                    if (entry.Value.ValueKind == JsonValueKind.String)
-                        Info(data, entry.Name).Category = entry.Value.GetString();
-
-            if (root.TryGetProperty("ModAnnotations", out var notes) && notes.ValueKind == JsonValueKind.Object)
-                foreach (var entry in notes.EnumerateObject())
-                {
-                    var info = Info(data, entry.Name);
-                    info.Alias = NonEmpty(entry.Value, "Alias");
-                    info.Notes = NonEmpty(entry.Value, "Notes");
-                }
-
-            if (root.TryGetProperty("Profiles", out var profiles) && profiles.ValueKind == JsonValueKind.Array)
-                foreach (var p in profiles.EnumerateArray())
-                    data.Profiles.Add(new Profile
-                    {
-                        Name = NonEmpty(p, "Name") ?? $"Profile {data.Profiles.Count + 1}",
-                        Disabled = Strings(p, "DisabledMods").Select(id => new ModRef(id, null)).ToList(),
-                    });
-
-            if (root.TryGetProperty("CurrentProfileIndex", out var index) && index.TryGetInt32(out var i) && i >= 0 && i < data.Profiles.Count)
-                data.ActiveProfile = data.Profiles[i].Name;
-
+            var data = Parse(File.ReadAllText(path));
             data.ImportedFrom = path;
             Log.Info($"[{ModEntry.ModId}] Imported from {path}: {data.Categories.Count} categories, {data.Mods.Count} mods, {data.Profiles.Count} profiles");
             return data;
@@ -252,6 +221,49 @@ static class BetterModMenuImport
             Log.Error($"[{ModEntry.ModId}] Could not import {path}: {e}");
             return null;
         }
+    }
+
+    // Our data from the text of its file. Throws when the text isn't in its format.
+    public static StoreData Parse(string text)
+    {
+        using var doc = JsonDocument.Parse(text);
+        var root = doc.RootElement;
+        var data = new StoreData();
+
+        var collapsed = Strings(root, "CollapsedGroups").ToHashSet();
+        foreach (var name in Strings(root, "CustomGroups"))
+            data.Categories.Add(new Category { Name = name, Collapsed = collapsed.Contains(name) });
+
+        if (root.TryGetProperty("ModGroups", out var groups) && groups.ValueKind == JsonValueKind.Object)
+            foreach (var entry in groups.EnumerateObject())
+                if (entry.Value.ValueKind == JsonValueKind.String)
+                    Info(data, entry.Name).Category = entry.Value.GetString();
+
+        if (root.TryGetProperty("ModAnnotations", out var notes) && notes.ValueKind == JsonValueKind.Object)
+            foreach (var entry in notes.EnumerateObject())
+            {
+                var info = Info(data, entry.Name);
+                info.Alias = NonEmpty(entry.Value, "Alias");
+                info.Notes = NonEmpty(entry.Value, "Notes");
+            }
+
+        if (root.TryGetProperty("Profiles", out var profiles) && profiles.ValueKind == JsonValueKind.Array)
+            AddProfiles(data, profiles);
+
+        if (root.TryGetProperty("CurrentProfileIndex", out var index) && index.TryGetInt32(out var i) && i >= 0 && i < data.Profiles.Count)
+            data.ActiveProfile = data.Profiles[i].Name;
+
+        return data;
+    }
+
+    static void AddProfiles(StoreData data, JsonElement profiles)
+    {
+        foreach (var p in profiles.EnumerateArray())
+            data.Profiles.Add(new Profile
+            {
+                Name = NonEmpty(p, "Name") ?? $"Profile {data.Profiles.Count + 1}",
+                Disabled = Strings(p, "DisabledMods").Select(id => new ModRef(id, null)).ToList(),
+            });
     }
 
     // Its account folder, or "portable mode" beside its own files.
