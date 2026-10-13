@@ -495,10 +495,11 @@ static class ModDetails
     }
 
     // The fields sit right under the mod's details: the description shrinks to its text (up to the room left
-    // above the fields), and the fields follow it. Once the text is laid out, so deferred.
+    // above the fields), and the fields follow it. Once the text is laid out, so deferred. Our views only, and not
+    // behind the changes list (placed again when it closes).
     public static void PlaceFields(Control container)
     {
-        if (container.GetNodeOrNull<Control>(FieldsName) is not { } yours)
+        if (!Layout.Wide || HistoryBar.ListOpen(container) || container.GetNodeOrNull<Control>(FieldsName) is not { } yours)
             return;
         var description = container.GetNode<RichTextLabel>("ModDescription");
         var top = description.OffsetTop;
