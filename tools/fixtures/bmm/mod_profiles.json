@@ -4,12 +4,15 @@
       "Name": "Framework only",
       "DisabledMods": [
         "SmmTestContent",
-        "SmmTestUi"
+        "SmmTestUi",
+        "BetterModMenuFork"
       ]
     },
     {
       "Name": "Everything",
-      "DisabledMods": []
+      "DisabledMods": [
+        "BetterModMenuFork"
+      ]
     }
   ],
   "CurrentProfileIndex": 1,

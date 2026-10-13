@@ -361,7 +361,8 @@ static class SelfTest
             string.Join("; ", data.Mods.Keys.Order().Select(Fields)));
 
         var names = string.Join(", ", data.Profiles.Select(p => p.Name));
-        Check("its profiles are ours, its current one active", names == "Framework only, Everything" && data.ActiveProfile == "Everything",
+        Check("its profiles are ours, its current one active, matching the mod list", names == "Framework only, Everything" && data.ActiveProfile == "Everything"
+            && !Profiles.Edited,
             $"{names}; active {data.ActiveProfile}");
         string[] testMods = ["SmmTestLib", "SmmTestContent", "SmmTestUi"];
         bool? On(string profile, string id) => data.Profiles.FirstOrDefault(p => p.Name == profile)?.Mods.FirstOrDefault(m => m.Id == id)?.Enabled;
