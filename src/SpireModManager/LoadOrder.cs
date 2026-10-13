@@ -244,8 +244,16 @@ static class LoadOrder
                 old.QueueFree();
             }
         // Better Mod Menu and ours both ticked, on our views, unless dismissed. A tickbox change comes through here
-        // (RefreshStrips), so the banner shows and goes at once, without a relaunch.
-        if (Layout.Wide && Bmm.BothTicked && !Store.Data.ManagersWarningDismissed)
+        // (RefreshStrips), so the banner shows and goes at once, without a relaunch. Dismissed, it comes back once the
+        // two aren't both ticked (in any view), ready for the next time they are: tickboxes, profiles, undo and redo, and
+        // the fixes all redraw through here.
+        var both = Bmm.BothTicked;
+        if (!both && Store.Data.ManagersWarningDismissed)
+        {
+            Store.Data.ManagersWarningDismissed = false;
+            Store.SaveViewState();
+        }
+        if (Layout.Wide && both && !Store.Data.ManagersWarningDismissed)
             ManagersBanner(content, border, search, redraw);
         if (on && misordered > 0)
             Banner(border, search, orderText, [Menus.SmallButton(Menus.Text("SPIRE_MOD_MANAGER.FIX_ORDER"), () => Do(FixOrder), name: "FixOrderButton")]);

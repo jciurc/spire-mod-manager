@@ -292,6 +292,15 @@ public static class Store
         History.Record();
     }
 
+    // View state changed in the middle of a redraw (a dismissed banner re-armed): written without History.Record. It
+    // isn't an edit (EditsJson leaves it out), and a record there can come between a change and the rest of it (a
+    // Disable all's profile update follows its redraw), splitting one undo step in two.
+    public static void SaveViewState()
+    {
+        if (!_batching && _data != null && !_readOnly)
+            Write(_data);
+    }
+
     static bool _batching;
 
     // Several edits as one: one save, one undo step (editing several mods at once).
