@@ -5,8 +5,13 @@
 //                                      --bmm: with Better Mod Menu loaded too (listed first; --bmm-after:
 //                                      after ours, as in Jordan's game; --bmm-local: its local-fix build
 //                                      from ../bettermodmenu instead of the installed one);
-//                                      --real: Jordan's own mods, switched off, and a copy of his data)
+//                                      --real: Jordan's own mods, switched off, and a copy of his data;
+//                                      --first-run: a short suite for a first run, with no data of ours and
+//                                      none of Better Mod Menu's; --first-run-bmm: the same, but with Better
+//                                      Mod Menu's data (tools/fixtures/bmm) there to import, and Better Mod
+//                                      Menu installed but off, or on with --bmm)
 //   dotnet run tools/dev.cs launch    build, open the game in the sandbox to poke at by hand
+//                                     (--first-run, --first-run-bmm: starting from that state, not the last one)
 //
 // Isolation:
 // - Dev copy: D:\sts2-dev holds hard links to the installed game's files (same drive, no extra space)
@@ -18,9 +23,11 @@
 //   touched. Only local mods load (Workshop mods come through Steam).
 // - --log-file: the dev log goes to out\dev.log, not the shared godot.log.
 //
-// test: resets the sandbox to tools/fixtures (mods accepted, Better Mod Menu off, our manager.json),
-// sets SPIRE_MOD_MANAGER_SELFTEST so SelfTest.cs runs and quits, then prints out/selftest/results.txt
-// and our log lines. Screenshots (*.png) and UI dumps (*.txt) land in out/selftest. Exit code 1 on any FAIL.
+// test: resets the sandbox to tools/fixtures (mods accepted, Better Mod Menu off, our manager.json, no
+// Better Mod Menu data; the first-run options change the last two), sets SPIRE_MOD_MANAGER_SELFTEST so
+// SelfTest.cs runs and quits (SPIRE_MOD_MANAGER_SELFTEST_MODE picks the --real or first-run suite), then
+// prints out/selftest/results.txt and our log lines. Screenshots (*.png) and UI dumps (*.txt) land in
+// out/selftest. Exit code 1 on any FAIL.
 using System.Diagnostics;
 using System.Runtime.CompilerServices;
 using System.Runtime.InteropServices;
@@ -39,9 +46,13 @@ var logPath = Path.Combine(root, "out", "dev.log");
 var mode = args.FirstOrDefault() ?? "test";
 var real = args.Contains("--real"); // Jordan's own mods (switched off) and a copy of his manager data
 var bmm = args.Any(a => a.StartsWith("--bmm")); // Better Mod Menu on (any --bmm option)
+var bmmData = args.Contains("--first-run-bmm"); // its fixture data in the sandbox, for our first-run import
+var firstRun = bmmData || args.Contains("--first-run"); // no manager.json of ours
 
 if (mode is not ("test" or "launch"))
-    return Fail("usage: dotnet run tools/dev.cs [test [--window] [--bmm[-after]] [--bmm-local] [--real]|launch]");
+    return Fail("usage: dotnet run tools/dev.cs [test [--window] [--bmm[-after]] [--bmm-local] [--real|--first-run|--first-run-bmm]|launch [--first-run|--first-run-bmm]]");
+if (real && firstRun)
+    return Fail("--real brings Jordan's own data, so it can't be a first run");
 if (Process.GetProcessesByName("SlayTheSpire2").Any(p => string.Equals(Path.GetDirectoryName(ExePath(p)), DevDir, StringComparison.OrdinalIgnoreCase)))
     return Fail($"A dev copy of the game is already running from {DevDir}.");
 
@@ -52,7 +63,7 @@ if (build.ExitCode != 0)
 
 LinkDevCopy();
 SyncMods();
-PrepareSandbox(mode == "test");
+PrepareSandbox(mode == "test" || firstRun);
 
 var start = new ProcessStartInfo(Path.Combine(DevDir, "SlayTheSpire2.exe"), ["--force-steam", "off", "--log-file", logPath])
     { WorkingDirectory = DevDir };
@@ -79,6 +90,8 @@ Directory.CreateDirectory(outDir);
 start.Environment["SPIRE_MOD_MANAGER_SELFTEST"] = outDir;
 if (real)
     start.Environment["SPIRE_MOD_MANAGER_SELFTEST_MODE"] = "real";
+else if (firstRun)
+    start.Environment["SPIRE_MOD_MANAGER_SELFTEST_MODE"] = bmmData ? "first-run-bmm" : "first-run";
 // The game echoes its whole log to stdout; we read the log file instead.
 start.RedirectStandardOutput = start.RedirectStandardError = true;
 var game = Process.Start(start) ?? throw new InvalidOperationException("could not start the game");
@@ -140,14 +153,16 @@ void LinkDevCopy()
     }
 }
 
-// The dev copy's mods: our fresh build, plus links to the other mods installed for play.
+// The dev copy's mods: our fresh build, plus links to the other mods installed for play. Not Better Mod Menu's
+// data if it keeps it beside its files ("portable mode", mod_profiles.*): our first-run import would find it
+// there, and a run's Better Mod Menu data should be only what PrepareSandbox gives it.
 void SyncMods()
 {
     var mods = Path.Combine(DevDir, "mods");
     if (Directory.Exists(mods))
         Directory.Delete(mods, recursive: true);
     foreach (var dir in Directory.GetDirectories(Path.Combine(GameDir, "mods")).Where(d => Path.GetFileName(d) != ModId))
-        foreach (var file in Directory.EnumerateFiles(dir, "*", SearchOption.AllDirectories))
+        foreach (var file in Directory.EnumerateFiles(dir, "*", SearchOption.AllDirectories).Where(f => !Path.GetFileName(f).StartsWith("mod_profiles.")))
             Link(file, Path.Combine(mods, Path.GetRelativePath(Path.Combine(GameDir, "mods"), file)));
     if (real)
     {
@@ -181,7 +196,8 @@ void SyncMods()
 }
 
 // Mods accepted with Better Mod Menu off (it patches the same screen), and for tests our data reset
-// to the fixture. The game creates settings.save on first launch; a minimal one is enough before that.
+// to the fixture (none for a first run) and Better Mod Menu's cleared (its fixture for --first-run-bmm).
+// The game creates settings.save on first launch; a minimal one is enough before that.
 void PrepareSandbox(bool resetData)
 {
     Directory.CreateDirectory(sandbox);
@@ -215,6 +231,20 @@ void PrepareSandbox(bool resetData)
     var data = Path.Combine(sandbox, "mod_data", ModId);
     if (Directory.Exists(data))
         Directory.Delete(data, recursive: true);
+    // Better Mod Menu's data sits beside ours (its account folder: where our first-run import looks, and where
+    // it saves while loaded). Cleared every time, so neither its own saves nor a --first-run-bmm fixture carry
+    // over into the next run.
+    var bmmDir = Path.Combine(sandbox, "mod_data", "BetterModMenu");
+    if (Directory.Exists(bmmDir))
+        Directory.Delete(bmmDir, recursive: true);
+    if (bmmData)
+    {
+        Directory.CreateDirectory(bmmDir);
+        foreach (var file in Directory.GetFiles(Path.Combine(root, "tools", "fixtures", "bmm")))
+            File.Copy(file, Path.Combine(bmmDir, Path.GetFileName(file)));
+    }
+    if (firstRun)
+        return; // no manager.json (nor its folder), as before the mod's first launch
     Directory.CreateDirectory(data);
     // --real: a copy of Jordan's own manager data (read only; the original is never written).
     var source = real
@@ -263,9 +293,6 @@ static extern bool CreateHardLink(string fileName, string existingFileName, IntP
 
 [DllImport("user32.dll")]
 static extern IntPtr GetForegroundWindow();
-
-[DllImport("user32.dll")]
-static extern uint GetWindowThreadProcessId(IntPtr window, out int processId);
 
 [DllImport("user32.dll")]
 static extern bool SetWindowPos(IntPtr window, IntPtr insertAfter, int x, int y, int width, int height, uint flags);

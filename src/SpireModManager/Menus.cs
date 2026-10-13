@@ -24,14 +24,43 @@ static class Menus
     public static Node? Show(Node owner, IEnumerable<MenuItem> items, Vector2? at = null, string? toggleKey = null) =>
         MenuPanel.Show(owner, () => items.ToList(), at, toggleKey);
 
-    // The game's own yes/no popup. True if confirmed.
+    // The game's own yes/no popup, with our mark. True if confirmed.
     public static async Task<bool> Confirm(LocString title, LocString body)
     {
         if (NGenericPopup.Create() is not { } popup || NModalContainer.Instance is not { } modals)
             return false;
+        Mark(popup);
         modals.Add(popup);
         return await popup.WaitForConfirmation(body, title,
             new LocString("main_menu_ui", "GENERIC_POPUP.cancel"), new LocString("main_menu_ui", "GENERIC_POPUP.confirm"));
+    }
+
+    public const string MarkName = "SpireModManagerMark";
+    const float MarkFromBottom = 48;
+
+    // A small, faint "Spire Mod Manager" on a popup of ours that looks like the game's (New Mod Added, the delete
+    // confirmations), so players can tell it comes from this mod, e.g. to know where to report a problem. Centred
+    // under the buttons, inside the popup's art (the game's popups draw it in their "VerticalPopup"), where the
+    // buttons' art ends 64 px above its bottom and the painted edge starts about 34 px up. Anchored there, it lands
+    // in place whenever the popup lays out, whatever the text's length. Once per popup.
+    public static void Mark(Control popup)
+    {
+        var art = popup.GetNodeOrNull<Control>("VerticalPopup") ?? popup;
+        if (art.HasNode(MarkName))
+            return;
+        var mark = new Label
+        {
+            Name = MarkName, Text = Text("SPIRE_MOD_MANAGER.POPUP_MARK"), HorizontalAlignment = HorizontalAlignment.Center,
+            MouseFilter = Control.MouseFilterEnum.Ignore,
+        };
+        mark.AddThemeFontOverride("font", ResourceLoader.Load<Font>("res://themes/kreon_regular_shared.tres"));
+        mark.AddThemeFontSizeOverride("font_size", 15);
+        mark.AddThemeColorOverride("font_color", new Color(Cream, 0.5f));
+        art.AddChild(mark);
+        // A point halfway across, MarkFromBottom up; growing both ways from it keeps the text centred on it.
+        (mark.AnchorLeft, mark.AnchorRight, mark.AnchorTop, mark.AnchorBottom) = (0.5f, 0.5f, 1, 1);
+        (mark.OffsetLeft, mark.OffsetRight, mark.OffsetTop, mark.OffsetBottom) = (0, 0, -MarkFromBottom, -MarkFromBottom);
+        mark.GrowHorizontal = mark.GrowVertical = Control.GrowDirection.Both;
     }
 
     public static string Text(string key) => new LocString("settings_ui", key).GetFormattedText();

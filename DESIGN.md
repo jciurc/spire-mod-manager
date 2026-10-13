@@ -33,24 +33,27 @@ Ease of use is the heart of the mod, not just its utility.
 - **Fast:** work on a local draft layer over the game's `mod_list`, and do heavy work (Workshop queries,
   scans, audits) in the background, once, cached. Efficient lookups. It has to *feel* good.
 
-## Status (2026-10-06)
+## Status (2026-10-13)
 
-Built and covered by the in-game self-test (`dotnet run tools/dev.cs test`, 68 checks; `--real` tours
-Jordan's own 44 mods read-only): main menu button with pending dot, Relaunch, Better Mod Menu import,
-categories (collapse, assign/new/rename/move/delete from inline buttons or right-click, divider before
-Uncategorized), profiles (switch, new, rename, delete; active profile follows the tickboxes), aliases,
-notes and own tags (rows, info panel, editor), automatic tags (Gameplay / Visual only / Library), info
-panel facts (source, load problems, needs / needed by, Open Folder, Workshop Page), search (names,
-notes, tags), Load Order view (drag and drop with dimming and dependency lines, inline/menu moves, Fix
-order, Auto sort by tier, order changes pending), dependency notes per row, undo/redo with Ctrl+Z/Y,
-Changes since launch with Revert all, Ctrl+F, wide layout with smaller text (Vanilla View restores the
-game's), running alongside Better Mod Menu (its page in place of Vanilla View, its parts hidden on ours).
+Built and covered by the in-game self-test (`dotnet run tools/dev.cs test`, about 220 checks; `--real`
+tours a copy of Jordan's own mods read-only): main menu button with pending dot, Relaunch (with a check
+for mods that won't load), Better Mod Menu import, categories (collapse, assign/new/rename/move/delete
+from inline buttons or right-click, divider before Uncategorized), profiles (switch, new, duplicate,
+rename, delete; tickbox changes become the profile's unsaved edit, with Save, Save as new and Discard),
+aliases, notes and own tags (rows, info panel, editor), automatic tags (New / Local / Library / Gameplay /
+Cosmetic), info panel facts (source with its Workshop link, load problems, needs / required for, Open
+Folder), search (names, aliases, notes, tags, authors, categories, Workshop tags; `#tag`, `@author`),
+multi-select with bulk editing, the page bar (Enable/Disable all, Expand/Collapse all), hover cards, Load
+Order view (drag and drop with dimming and dependency lines, inline/menu moves, Fix order, Auto sort by
+tier, order changes pending), dependency notes per row, undo/redo with Ctrl+Z/Y, Changes since launch
+with Revert all, Ctrl+F, wide layout with smaller text (Vanilla View restores the game's), running
+alongside Better Mod Menu (its page in place of Vanilla View, its parts hidden on ours).
 
-Built but only testable in real play (Steam): Workshop details (updated/published dates, Workshop
-tags), the Workshop Page button.
+Built but only testable in real play (Steam): Workshop details (dates, size, subscribers, Workshop tags,
+branches), the Workshop link on the source line, the Patch notes link.
 
 Not built yet: compatibility audit beyond dependencies, finer auto-sort tiers, linked pushing while
-dragging, profile/save-slot sync, design overhaul. Inline action placement is rough.
+dragging, profile/save-slot sync, design overhaul.
 
 ## Design guidelines (Jordan, 2026-10-06)
 
@@ -75,27 +78,29 @@ From general knowledge of the tools, not a fresh survey; worth checking against 
 - **Better Mod Menu:** name colours by Workshop tag, groups.
 
 Ideas for us, roughly by value:
-1. **Click a chip to filter** the list by that tag (and a tag list in search, e.g. `tag:co-op`).
+1. **Click a chip to filter** the list by that tag (and a tag list in search, e.g. `tag:co-op`). Built: a
+   click searches for `#tag`, Shift-click adds it.
 2. **Status tags** worked out automatically: New (installed since last session), Updated (Workshop update
    since last session), Failed, Duplicate, Missing dependency. Pairs with the "newly installed" and
    "recently updated" backlog items.
 3. **Workshop tags as suggestions:** offer a mod's Workshop tags (minus language tags) as one-click own tags,
    and use them for the finer Auto sort tiers (content vs QoL vs visual).
 4. **Tag manager:** rename or merge a tag across all mods; per-tag colour.
-5. **Bulk tagging** with multi-select.
+5. **Bulk tagging** with multi-select. Built (the bulk menu).
 6. **Tag-driven actions:** "enable everything tagged co-op" as a profile shortcut; auto-category by tag.
 
 ## Backlog: load order
 
 - **Auto sort** by impact tier, then a dependency sweep, always respecting the player's manual order
   over the computed one: frameworks/libraries first, then content additions, then gameplay/QoL, then
-  UI/visual-only. (Today "Fix order" only moves dependencies ahead of what needs them.) Tiers need
-  signals: dependency counts, `affects_gameplay`, Workshop tags, our categories/tags.
-- **Dependency tree lines:** a tree-style line down the left side connecting a mod to its
+  UI/visual-only. (Built so far: libraries, then gameplay mods, then the rest, then the dependency sweep;
+  "Fix now" only moves dependencies ahead of what needs them.) Finer tiers need signals: dependency
+  counts, `affects_gameplay`, Workshop tags, our categories/tags.
+- **Dependency tree lines** (built): a tree-style line down the left side connecting a mod to its
   dependencies/dependents, shown on hover and while dragging.
-- **Dragging feedback:** dim the list slightly while dragging; make the moving row and its landing spot
-  obvious. Dragging a mod lights up every mod linked to it (dependencies and dependents), with the
-  connecting line brighter, standing out from the dimmed list.
+- **Dragging feedback** (built): dim the list slightly while dragging; make the moving row and its
+  landing spot obvious. Dragging a mod lights up every mod linked to it (dependencies and dependents),
+  with the connecting line brighter, standing out from the dimmed list.
 - **Linked pushing:** a row moves freely while the order stays valid; when it reaches a mod it is linked
   to, it pushes that mod along as a group. Dragging back without dropping unlinks them: the pushed mod
   returns to the position it started from once the dragged row passes that point again.
@@ -117,7 +122,11 @@ Phases are a proposal; v1 is what ships first on the Workshop.
     identity: title/branding, accent colour, layout.
 - **Draft layer:** every edit (toggle, move, category, tag) goes to a draft; Save / Discard,
   undo/redo, and a diff view (enabled, disabled, moved) before applying to `mod_list`.
-- **Profiles** (presets), by id + source; "Defaults" as a built-in profile.
+  - Built differently: edits go to `mod_list` at once (they take effect on relaunch). The active profile
+    keeps a changed list as its unsaved edit (Save / Save as new / Discard); undo/redo, Revert all and the
+    Changes list (enabled, disabled, installed, moved, edited) cover everything since launch.
+- **Profiles** (presets), by id + source. No built-in "Defaults": with no profiles yet, an ordinary one
+  named "Default" is made from the mod list as it is.
 - **Load order panel**, separate from categories: drag and drop, disabled mods greyed but movable,
   global order by default.
 - **Categories** (custom, collapsible) and **tags** (custom + predefined) with clear markers,
@@ -142,7 +151,7 @@ Phases are a proposal; v1 is what ships first on the Workshop.
 - **Optional profile sync with the game's save slots** (`profile1..3`, `profile.save.last_profile_id`):
   a mod profile can be linked to a save slot, so switching slots offers to switch mods (and relaunch).
 
-### Later, maybe a standalone mod: content picker
+### Content picker: now its own mod project
 - Enable or disable individual cards, relics, events and so on from any mod, without disabling
   the mod. Choose which third-party content shows up in a run, e.g. per character. Likely hooks:
   the game's mod content pools (`ModHelper.ModPoolContent`). Gameplay-affecting, so it must not
@@ -150,7 +159,8 @@ Phases are a proposal; v1 is what ships first on the Workshop.
 
 ## Open
 
-- Workshop publishing flow, preview image, tags; building against beta vs stable.
-- Ideas raised, not committed: "Play vanilla" via `--nomods`,
-  auto-enable missing dependencies, `affects_gameplay` shown for multiplayer, profile share codes,
-  importing BMM profiles.
+- Workshop publishing flow, preview image, tags: planned in RELEASE-PLAN.md (beta only at first, §7).
+- Ideas raised, not committed: "Play vanilla" via `--nomods`, profile share codes.
+- Raised here and built since: enabling missing dependencies ("Enable needed mods", the relaunch
+  check), `affects_gameplay` shown for multiplayer (the Gameplay tag), importing Better Mod Menu's
+  profiles (first run).
