@@ -45,7 +45,7 @@ copy of the game in `D:\sts2-dev` with its own mods folder, no Steam, separate s
   UI dumps go to `out/selftest`; add `--window` for screenshots (the window stays behind others), `--bmm` to
   test alongside Better Mod Menu (`--bmm-after`: loaded after ours; `--bmm-local`: its local-fix build), `--real` for a read-only tour with a copy of your own mods and data.
 - `dotnet run tools/dev.cs launch`: opens the sandboxed game to try things by hand.
-- `SPIRE_MOD_MANAGER_SKIP_PATCHES=ModInfoFillPatch` (patch class names, comma-separated) before `test` or `launch`:
+- `SPIRE_MOD_MANAGER_SKIP_PATCHES=ModToggledPatch` (patch class names, comma-separated) before `test` or `launch`:
   those patches count as failed, as after a game update that broke them, to see the game's page and its
   "needs an update" line.
 - `dotnet run tools/pck.cs list|extract`: look inside the game's pack (scenes, images).

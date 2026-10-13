@@ -22,6 +22,9 @@ public static class ModEntry
     static readonly List<string> _failedPatches = [];
     public static IReadOnlyList<string> FailedPatches => _failedPatches;
 
+    // Dev runs: the patches SPIRE_MOD_MANAGER_SKIP_PATCHES leaves out (they count as failed).
+    public static IReadOnlyList<string> SkippedPatches { get; private set; } = [];
+
     // The patches our Modding page can't do without: the page itself; the main menu's startup (the baseline for
     // undo, Changes and the load order); the tickbox hook (profiles and undo follow it); the info panel's contents;
     // the selected mod (view switches and panel refreshes; our code calls the same game method). With one of them
@@ -71,7 +74,9 @@ public static class ModEntry
         var harmony = new Harmony(ModId);
         // Dev runs can leave some out, as if a game update broke them, to see what players would get
         // (SPIRE_MOD_MANAGER_SKIP_PATCHES=ModInfoFillPatch,RowLookPatch).
-        var skip = IsDevRun ? (System.Environment.GetEnvironmentVariable("SPIRE_MOD_MANAGER_SKIP_PATCHES") ?? "").Split(',', StringSplitOptions.TrimEntries) : [];
+        var skip = SkippedPatches = IsDevRun
+            ? (System.Environment.GetEnvironmentVariable("SPIRE_MOD_MANAGER_SKIP_PATCHES") ?? "").Split(',', StringSplitOptions.TrimEntries | StringSplitOptions.RemoveEmptyEntries)
+            : [];
         foreach (var type in AccessTools.GetTypesFromAssembly(typeof(ModEntry).Assembly))
         {
             try
