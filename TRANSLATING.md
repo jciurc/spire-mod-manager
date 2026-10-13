@@ -38,4 +38,4 @@ Rules:
 
 ## Sending a translation
 
-Open a pull request with your folder, or send the files to the author. Credit goes in the Workshop description.
+Open a pull request with your folder at https://github.com/jciurc/spire-mod-manager, or send the files to the author. Credit goes in the Workshop description.
