@@ -36,6 +36,8 @@
   "SPIRE_MOD_MANAGER.LIST_PROBLEMS_MISSING_ONE": "1 enabled mod needs a mod that isn't installed.",
   "SPIRE_MOD_MANAGER.SHOW_PROBLEM": "Show",
   "SPIRE_MOD_MANAGER.SHOW_PROBLEM_TIP": "Opens the next mod with a problem",
+  "SPIRE_MOD_MANAGER.MANAGERS_WARNING": "Multiple mod managers are currently enabled, which may cause unexpected behavior.",
+  "SPIRE_MOD_MANAGER.SHOW_MANAGERS_TIP": "Shows Better Mod Menu in the list",
   "SPIRE_MOD_MANAGER.ENABLE_NEEDED": "Enable needed mods",
   "SPIRE_MOD_MANAGER.ENABLE_NEEDED_TIP": "Turns on: {mods}",
   "SPIRE_MOD_MANAGER.RELAUNCH_CHECK_TITLE": "Before you relaunch",

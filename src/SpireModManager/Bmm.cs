@@ -33,6 +33,10 @@ static class Bmm
     // Loaded: its patch class exists (whatever its mod id).
     public static bool Present { get; } = AccessTools.TypeByName("BetterModMenu.Patches.NModdingScreenPatch") != null;
 
+    // Ticked in the mod list (on in the game's saved list), loaded now or not: either way it loads after a relaunch.
+    // Ours is always on, so then two mod managers are on (LoadOrder puts up a banner saying so).
+    public static bool Ticked => Dependencies.Find(ModId) is { } mod && Dependencies.IsOn(mod);
+
     // Our views: it stops re-laying out and regrouping the screen.
     public static void Detach()
     {

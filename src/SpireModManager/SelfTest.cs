@@ -132,6 +132,7 @@ static class SelfTest
             await TestNewMod(menu, screen, content, outDir);
             await TestLoadOrder(menu, screen, content, outDir);
             await TestListBanner(menu, screen, content, outDir);
+            await TestManagersBanner(menu, screen, content, outDir);
             await TestPageBar(menu, screen, content, outDir);
             await TestRelaunchCheck(menu, screen, content, outDir);
             await TestLongDetails(menu, screen, content, outDir);
@@ -1687,6 +1688,96 @@ static class SelfTest
         CategoryList.Redraw(content);
         await Wait(menu, 0.3);
         Check("fixed: the '!' goes", screen.GetNodeOrNull<Control>("SpireModManagerLoadOrderToggle/WarningBadge") is not { Visible: true });
+    }
+
+    // Better Mod Menu ticked as well as ours (ours is always on): a red banner on our views, in the problem banners'
+    // place, with a Show that goes to its row. It comes and goes with its tickbox at once (no relaunch). The fixture has
+    // it installed but off; with --bmm it's on and loaded, so the banner is there from the start. It ends as it started.
+    static async Task TestManagersBanner(Node menu, NModdingScreen screen, Control content, string outDir)
+    {
+        List<NModMenuRow> Rows() => content.GetChildren().OfType<NModMenuRow>().ToList();
+        NModMenuRow? Row(string id) => Rows().FirstOrDefault(r => r.Mod?.manifest?.id == id);
+        if (Layout.Current != Layout.View.Categories || Row(Bmm.ModId) is not { Mod: { } bmm } row)
+        {
+            Results.Add("SKIP managers banner: not on the main list, or Better Mod Menu not installed");
+            return;
+        }
+        var border = screen.GetNode<Control>("ModsBorder");
+        var search = border.GetNode<Control>("SpireModManagerSearch");
+        var list = border.GetNode<Control>("ModsScrollContainer");
+        Control? Banner() => border.GetNodeOrNull<Control>(LoadOrder.ManagersName);
+        var tickbox = row.GetNode<NTickbox>("Tickbox");
+        async Task Tick(NTickbox box, bool on)
+        {
+            box.IsTicked = on;
+            box.EmitSignal(NTickbox.SignalName.Toggled, box);
+            await Wait(menu, 0.3);
+        }
+        // Under the search box and above the list; with the page's own warning (below), above that.
+        bool Placed(Control? below = null) => Banner() is { Visible: true } banner && banner.GetGlobalRect() is var at
+            && at.Position.Y >= search.GetGlobalRect().End.Y && at.End.Y <= (below ?? list).GetGlobalRect().Position.Y
+            && (below == null || below.GetGlobalRect().End.Y <= list.GetGlobalRect().Position.Y);
+        string Where() => $"banner {Banner()?.GetGlobalRect()}, warning {border.GetNodeOrNull<Control>(LoadOrder.WarningName)?.GetGlobalRect()}, "
+            + $"search {search.GetGlobalRect()}, list from {list.GetGlobalRect().Position.Y}";
+
+        var was = Bmm.Ticked;
+        Check(was ? "Better Mod Menu ticked at the start (--bmm): the managers banner shows" : "Better Mod Menu off at the start: no managers banner",
+            tickbox.IsTicked == was && (Banner() != null) == was, Where());
+        if (!was)
+            await Tick(tickbox, true);
+        var text = (Banner()?.FindChild("ManagersWarning", true, false) as Label)?.Text ?? "";
+        Check("Better Mod Menu ticked: the managers banner at once, under the search box, above the list", Bmm.Ticked && Placed()
+            && text == "Multiple mod managers are currently enabled, which may cause unexpected behavior.", $"\"{text}\"; {Where()}");
+        await Capture(screen, outDir, "2e-managers-banner");
+
+        // With the page's own warning too (a needed mod turned off): this one first, that one under it.
+        if (Row("SmmTestLib")?.GetNode<NTickbox>("Tickbox") is { } lib)
+        {
+            await Tick(lib, false);
+            Check("with the page's own warning: the managers banner above it, both above the list",
+                border.GetNodeOrNull<Control>(LoadOrder.WarningName) is { Visible: true } warning && Placed(warning), Where());
+            await Capture(screen, outDir, "2f-both-banners");
+            await Tick(lib, true);
+        }
+
+        // Show: its row, even in a closed category: opened, scrolled to with a glow, and in the panel.
+        var collapsed = Store.Data.Categories.Select(c => c.Collapsed).ToList();
+        var uncategorized = Store.Data.UncategorizedCollapsed;
+        foreach (var category in Store.Data.Categories)
+            category.Collapsed = true;
+        Store.Data.UncategorizedCollapsed = true;
+        CategoryList.Apply(content);
+        if (Rows().FirstOrDefault(r => r != row) is { } other)
+            CategoryList.Select(screen, other);
+        await Wait(menu, 0.2);
+        int Glows() => row.GetChildren().OfType<ColorRect>().Count(c => c.Color.R > 0.9f && c.Color.B < 0.4f); // CategoryList's gold flash
+        var (hidden, glows) = (!row.Visible, Glows());
+        Banner()?.FindChild("ShowManagersButton", true, false)?.EmitSignal(BaseButton.SignalName.Pressed);
+        await Wait(menu, 0.5);
+        Check("its Show opens Better Mod Menu's category, scrolls to its row with a glow and shows it in the panel",
+            hidden && row.Visible && list.GetGlobalRect().Intersects(row.GetGlobalRect()) && Glows() > glows && CategoryList.Selected == bmm,
+            $"hidden before {hidden}, shown {row.Visible}, row {row.GetGlobalRect()}, list {list.GetGlobalRect()}, glows {glows} -> {Glows()}, panel {CategoryList.Selected?.manifest?.id}");
+        for (var i = 0; i < collapsed.Count && i < Store.Data.Categories.Count; i++)
+            Store.Data.Categories[i].Collapsed = collapsed[i];
+        Store.Data.UncategorizedCollapsed = uncategorized;
+        Store.Save(); // opening its category saved; so does this, as it was
+        CategoryList.Apply(content);
+        await Wait(menu, 0.2);
+
+        // Load Order too; not in Vanilla View (with --bmm, Better Mod Menu's own page).
+        Click(screen.GetNode<NButton>("SpireModManagerLoadOrderToggle"));
+        await Wait(menu, 0.5);
+        Check("Load Order: the managers banner too, under the search box", Placed(), Where());
+        Click(screen.GetNode<NButton>("SpireModManagerLoadOrderToggle"));
+        await Wait(menu, 0.5);
+        Check("Vanilla View: no managers banner", await WithVanillaView(screen, menu, () => Banner() is not { Visible: true }));
+
+        await Tick(tickbox, false);
+        Check("Better Mod Menu unticked: the banner goes at once", !Bmm.Ticked && Banner() == null, Where());
+        if (!was)
+            return;
+        await Tick(tickbox, true);
+        Check("ticked again, as it started: the banner is back", Banner() is { Visible: true }, Where());
     }
 
     // The bar under the search box: Enable all / Disable all for the page (or the search's matches),
