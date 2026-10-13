@@ -4,7 +4,6 @@ using MegaCrit.Sts2.Core.Logging;
 using MegaCrit.Sts2.Core.Modding;
 using MegaCrit.Sts2.Core.Nodes.GodotExtensions;
 using MegaCrit.Sts2.Core.Nodes.Screens.ModdingScreen;
-using MegaCrit.Sts2.addons.mega_text;
 
 namespace SpireModManager;
 
