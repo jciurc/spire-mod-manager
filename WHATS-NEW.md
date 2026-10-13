@@ -4,6 +4,7 @@ Short notes for Jordan: what to look for after each install. Newest first.
 
 ## Waiting in pull requests
 
+- **Softer corners in Load Order:** hover a mod and the dependency lines bend round their corners instead of turning square. The drop line while dragging has rounded ends, and the red warning banners (on both pages) rounded corners. The rows already had the main list's rounded highlight; the top row can still look square on top, as the list's edge cuts it off (noted in TODO).
 - **Dismiss the managers warning:** the red "Multiple mod managers" banner has Dismiss beside Show. It stays away until Better Mod Menu or Spire Mod Manager is disabled, and comes back once both are enabled again (also after a launch where one of them is gone or off). Nothing to undo: dismissing isn't a change to your mods.
 
 ## Installed 2026-10-13 (evening): version 0.0.48
