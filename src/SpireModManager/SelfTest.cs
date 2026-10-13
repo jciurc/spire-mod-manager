@@ -921,6 +921,8 @@ static class SelfTest
         await Wait(menu, 0.3);
         var texts = PopupTexts();
         Check("new mod popup says \"New Mod Added\"", texts.Any(t => t.Contains("New Mod Added")), string.Join(" | ", texts.Where(t => t.Length > 0)));
+        Check("new mod popup speaks of a relaunch, not a restart", texts.Any(t => t.Contains("relaunch")) && !texts.Any(t => t.Contains("restart")),
+            string.Join(" | ", texts.Where(t => t.Length > 0)));
         await Capture(screen, outDir, "10b-new-mod-popup");
         NModalContainer.Instance?.Clear();
         detected?.Invoke(NGame.Instance, [mod]);
