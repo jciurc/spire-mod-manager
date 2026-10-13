@@ -4,7 +4,7 @@
 //                                     (--window: with a window, for screenshots, kept behind others;
 //                                      --bmm: with Better Mod Menu loaded too (listed first; --bmm-after:
 //                                      after ours, as in Jordan's game; --bmm-local: its local-fix build
-//                                      from ../bettermodmenu instead of the installed one);
+//                                      from the BmmRepo checkout below instead of the installed one);
 //                                      --real: Jordan's own mods, switched off, and a copy of his data;
 //                                      --first-run: a short suite for a first run, with no data of ours and
 //                                      none of Better Mod Menu's; --first-run-bmm: the same, but with Better
@@ -36,6 +36,7 @@ using System.Text.Json.Nodes;
 const string GameDir = @"D:\SteamLibrary\steamapps\common\Slay the Spire 2";
 const string DevDir = @"D:\sts2-dev";
 const string WorkshopDir = @"D:\SteamLibrary\steamapps\workshop\content\2868840";
+const string BmmRepo = @"C:\repos\gaming\slay the spire\bettermodmenu"; // Better Mod Menu's local-fix checkout (--bmm-local)
 const string ModId = "SpireModManager";
 const int TimeoutSeconds = 150;
 var root = Path.GetDirectoryName(ScriptDir()) ?? ".";
@@ -184,7 +185,7 @@ void SyncMods()
     // --bmm-local: Better Mod Menu's local-fix build (built by its install-local.sh) in place of the installed one.
     if (args.Contains("--bmm-local"))
     {
-        var local = Path.Combine(root, "..", "bettermodmenu", ".godot", "mono", "temp", "bin", "Release", "BetterModMenu.dll");
+        var local = Path.Combine(BmmRepo, ".godot", "mono", "temp", "bin", "Release", "BetterModMenu.dll");
         var dll = Path.Combine(mods, "BetterModMenu", "BetterModMenu.dll");
         File.Delete(dll); // the link only
         File.Copy(local, dll);
