@@ -642,3 +642,21 @@ own art; the spikes describe the game's behaviour but quote no game code.
   scanning and push protection, Dependabot alerts; decide which to make required in the rulesets.
 - [ ] **docs:** decide whether "Jordan" in TODO, WHATS-NEW and the tests stays; TRANSLATING.md and the
   Workshop description get the GitHub link for issues and pull requests.
+
+# Round 19
+
+Jordan's notes of 2026-10-13 (with a Load Order screenshot, 0.0.46).
+
+- [ ] "Unsaved •": its hover card opens at once, like the Changes summary
+- [ ] clicking "Unsaved •" opens that profile's unsaved changes in the side panel; clicking again closes it
+- [ ] our page's restart line reads "Mod changes will be applied after a restart." (the game's own wording stays in Vanilla List)
+- [ ] the Better Mod Menu warning: "Multiple mod managers are currently enabled, which may cause unexpected behavior.", in the red banner area with the same go-to-problem button, shown while both managers are ticked (no relaunch needed); the footer warning goes
+- [ ] (bug) Load Order: the Auto sort hint ("Automatically sort for compatibility") sits in the wrong place when the page opens, over the first row's buttons; it moves into place once a mod is clicked
+- [ ] main menu button's right-click menu: "Relaunch game", with a divider under "Reset position"
+
+## Backlog (round 19)
+- [ ] optimization pass: switching between the main list, Vanilla List and Load Order lags with 200+ mods
+- [ ] a clickable menu button on the right side of the main menu button that opens the same menu (the settings link will live there later)
+
+## Soon (round 19)
+- [ ] undo/redo/revert polish: today it's unclear what is remembered and what the base state is
