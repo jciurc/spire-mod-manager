@@ -22,7 +22,10 @@
     {
       "name": "Minimal",
       "mods": [
-        { "id": "SpireModManager", "source": "ModsDirectory", "enabled": true }
+        { "id": "SpireModManager", "source": "ModsDirectory", "enabled": true },
+        { "id": "SmmTestLib", "source": "ModsDirectory", "enabled": false },
+        { "id": "SmmTestContent", "source": "ModsDirectory", "enabled": false },
+        { "id": "SmmTestUi", "source": "ModsDirectory", "enabled": false }
       ]
     }
   ],

@@ -18,11 +18,83 @@ public static class ModEntry
     const string ButtonScenePath = $"res://{ModId}/scenes/menu_button.tscn";
     const float ButtonArtHeight = 110; // event_button.png is 284x110
 
+    // Patch classes that didn't apply, by name: a game update renamed or removed what they hook.
+    static readonly List<string> _failedPatches = [];
+    public static IReadOnlyList<string> FailedPatches => _failedPatches;
+
+    // Dev runs: the patches SPIRE_MOD_MANAGER_SKIP_PATCHES leaves out (they count as failed).
+    public static IReadOnlyList<string> SkippedPatches { get; private set; } = [];
+
+    // The patches our Modding page can't do without: the page itself; the main menu's startup (the baseline for
+    // undo, Changes and the load order); the tickbox hook (profiles and undo follow it); the info panel's contents;
+    // the selected mod (view switches and panel refreshes; our code calls the same game method). With one of them
+    // missing, the page stays the game's, with a line saying the mod needs an update, rather than half of ours.
+    // The others only add to it (looks, shortcuts, new-mod handling); without one, the page still runs.
+    public static readonly IReadOnlyList<string> PageNeeds =
+        [nameof(MainMenuPatch), nameof(ModdingScreenPatch), nameof(ModToggledPatch), nameof(ModInfoFillPatch), nameof(RowSelectedPatch)];
+
+    public static bool PageWorks(IEnumerable<string> failed) => !failed.Any(name => PageNeeds.Contains(name));
+
+    // Our page on the Modding screen, or the game's with the needs-update line.
+    public static bool OurPage => PageWorks(_failedPatches);
+
+    // That line, across the top of the game's page, above its list and info panel (their boxes: 255..1727, from y 83).
+    public const string NeedsUpdateName = "SpireModManagerNeedsUpdate";
+
+    public static Label ShowNeedsUpdate(Control screen)
+    {
+        if (screen.GetNodeOrNull<Label>(NeedsUpdateName) is { } shown)
+            return shown;
+        var line = new Label
+        {
+            Name = NeedsUpdateName, Text = Menus.Text("SPIRE_MOD_MANAGER.NEEDS_UPDATE"), VerticalAlignment = VerticalAlignment.Center,
+            MouseFilter = Control.MouseFilterEnum.Ignore, Position = new Vector2(255, 24), Size = new Vector2(1727 - 255, 48),
+        };
+        line.AddThemeFontOverride("font", ResourceLoader.Load<Font>("res://themes/kreon_bold_shared.tres"));
+        line.AddThemeFontSizeOverride("font_size", 22);
+        line.AddThemeColorOverride("font_color", new Color(0.937f, 0.784f, 0.318f));
+        line.AddThemeColorOverride("font_outline_color", new Color(0.0756f, 0.12084f, 0.18f));
+        line.AddThemeConstantOverride("outline_size", 6);
+        screen.AddChild(line);
+        return line;
+    }
+
+    // Each patch class on its own, so one a game update breaks leaves the others working (PatchAll stops at the
+    // first failure). Watching for new mods goes first: it needs no patch.
     public static void Init()
     {
-        new Harmony(ModId).PatchAll(typeof(ModEntry).Assembly);
-        Installed.Watch();
-        Log.Info($"[{ModId}] Initialized{(IsDevRun ? " (dev run)" : "")}");
+        try
+        {
+            Installed.Watch();
+        }
+        catch (Exception e)
+        {
+            Log.Error($"[{ModId}] Could not watch for mods installed while the game runs: {e}");
+        }
+        var harmony = new Harmony(ModId);
+        // Dev runs can leave some out, as if a game update broke them, to see what players would get
+        // (SPIRE_MOD_MANAGER_SKIP_PATCHES=ModInfoFillPatch,RowLookPatch).
+        var skip = SkippedPatches = IsDevRun
+            ? (System.Environment.GetEnvironmentVariable("SPIRE_MOD_MANAGER_SKIP_PATCHES") ?? "").Split(',', StringSplitOptions.TrimEntries | StringSplitOptions.RemoveEmptyEntries)
+            : [];
+        foreach (var type in AccessTools.GetTypesFromAssembly(typeof(ModEntry).Assembly))
+        {
+            try
+            {
+                if (!type.IsDefined(typeof(HarmonyPatch), false))
+                    continue;
+                if (skip.Contains(type.Name))
+                    throw new InvalidOperationException("left out for this dev run (SPIRE_MOD_MANAGER_SKIP_PATCHES)");
+                harmony.CreateClassProcessor(type).Patch();
+            }
+            catch (Exception e)
+            {
+                _failedPatches.Add(type.Name);
+                Log.Error($"[{ModId}] Could not patch {type.Name}; this game version may need an update of the mod: {e}");
+            }
+        }
+        Log.Info($"[{ModId}] Initialized{(IsDevRun ? " (dev run)" : "")}"
+            + (_failedPatches.Count > 0 ? $", without {string.Join(", ", _failedPatches)}" : ""));
     }
 
     // A picture shipped in our pack (images/), loaded from its bytes: the pack holds plain PNGs, not

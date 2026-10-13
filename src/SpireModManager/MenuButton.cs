@@ -23,9 +23,13 @@ static class MenuButton
         Place(button, size);
 
         var dot = button.GetNode<Control>("Dot");
+        // Our Modding page couldn't hook in at all (ModdingScreenPatch didn't apply), so it can't say why it's the
+        // game's: the note does, always, in place of the relaunch note.
+        var outdated = ModEntry.FailedPatches.Contains(nameof(ModdingScreenPatch));
         var note = new Label
         {
-            Name = "PendingNote", Text = Menus.Text("SPIRE_MOD_MANAGER.RELAUNCH_NOTE"), MouseFilter = Control.MouseFilterEnum.Ignore,
+            Name = "PendingNote", Text = Menus.Text(outdated ? "SPIRE_MOD_MANAGER.NEEDS_UPDATE" : "SPIRE_MOD_MANAGER.RELAUNCH_NOTE"),
+            MouseFilter = Control.MouseFilterEnum.Ignore,
             VerticalAlignment = VerticalAlignment.Center, Position = new Vector2(size.X + 10, 0), Size = new Vector2(260, size.Y),
         };
         note.AddThemeFontOverride("font", ModEntry.Font("res://themes/kreon_regular_shared.tres"));
@@ -38,7 +42,8 @@ static class MenuButton
         void Refresh()
         {
             button.Visible = !menu.SubmenuStack.SubmenusOpen;
-            dot.Visible = note.Visible = ModEntry.HasPendingChanges();
+            dot.Visible = ModEntry.HasPendingChanges();
+            note.Visible = dot.Visible || outdated;
         }
         Refresh();
         menu.SubmenuStack.Connect(NSubmenuStack.SignalName.StackModified, Callable.From(Refresh));
