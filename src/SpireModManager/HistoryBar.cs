@@ -82,8 +82,10 @@ static class HistoryBar
             var (on, off, moved) = Counts();
             var enabled = ModManager.Mods.Count(m => m.manifest?.id is { } id && id != ModEntry.ModId && Dependencies.IsOn(m))
                 + Installed.Mods.Count(Installed.On); // on after a relaunch, new mods included
-            changes.Text = $"{Menus.Text("SPIRE_MOD_MANAGER.MODS_ENABLED")} {enabled} ([color={Added}]+{on}[/color] [color={Removed}]-{off}[/color])\n"
-                + $"{Menus.Text("SPIRE_MOD_MANAGER.CHANGES")} [color={Edited}]{OtherChanges()}[/color]  [color={Moved}]↕{moved}[/color]";
+            // The words, and where the count goes among them, come from the loc table ("Mods enabled {count}"); the
+            // +, - and ↕ counts after them read the same in every language.
+            changes.Text = $"{Menus.Format("SPIRE_MOD_MANAGER.MODS_ENABLED", ("count", enabled.ToString()))} ([color={Added}]+{on}[/color] [color={Removed}]-{off}[/color])\n"
+                + $"{Menus.Format("SPIRE_MOD_MANAGER.CHANGES", ("count", $"[color={Edited}]{OtherChanges()}[/color]"))}  [color={Moved}]↕{moved}[/color]";
             FitChanges(changes);
             if (info.GetNodeOrNull<Control>(ViewName) is { Visible: true } view)
                 FillList(view);
