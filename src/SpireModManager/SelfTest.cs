@@ -1276,13 +1276,13 @@ static class SelfTest
         tickbox.EmitSignal(NTickbox.SignalName.Toggled, tickbox);
         await Wait(menu, 0.3);
         var text = (screen.FindChild("OrderProblems", true, false) as Label)?.Text ?? "";
-        Check("main list: a needed mod that is off gets a banner", text.Contains("need a mod that is turned off"), text);
+        Check("main list: a needed mod that is off gets a banner", text.Contains("need a mod that is disabled"), text);
         await Capture(screen, outDir, "2b-list-banner");
         screen.FindChild("EnableNeededButton", true, false)?.EmitSignal(BaseButton.SignalName.Pressed);
         await Wait(menu, 0.3);
         Check("Enable needed mods turns it on, banner says no more", Dependencies.IsOn(lib) && tickbox.IsTicked
             && screen.FindChild("EnableNeededButton", true, false) == null
-            && (screen.FindChild("OrderProblems", true, false) as Label)?.Text.Contains("turned off") != true);
+            && (screen.FindChild("OrderProblems", true, false) as Label)?.Text.Contains("is disabled") != true);
         History.Undo();
         await Wait(menu, 0.3);
         Check("one undo turns it off again", !Dependencies.IsOn(lib));
@@ -1390,7 +1390,7 @@ static class SelfTest
 
         RelaunchCheck.Show(screen);
         await Wait(menu, 0.3);
-        Check("relaunch check lists the mods that won't load", Body().Contains("BaseLib, which isn't installed") && Body().Contains("Test Framework, which is off"), Body());
+        Check("relaunch check lists the mods that won't load", Body().Contains("BaseLib, which isn't installed") && Body().Contains("Test Framework, which is disabled"), Body());
         await Capture(screen, outDir, "15-relaunch-check");
         Press("EnableNeededButton");
         await Wait(menu, 0.3);
