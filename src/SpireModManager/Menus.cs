@@ -53,7 +53,7 @@ static class Menus
             Name = MarkName, Text = Text("SPIRE_MOD_MANAGER.POPUP_MARK"), HorizontalAlignment = HorizontalAlignment.Center,
             MouseFilter = Control.MouseFilterEnum.Ignore,
         };
-        mark.AddThemeFontOverride("font", ResourceLoader.Load<Font>("res://themes/kreon_regular_shared.tres"));
+        mark.AddThemeFontOverride("font", ModEntry.Font("res://themes/kreon_regular_shared.tres"));
         mark.AddThemeFontSizeOverride("font_size", 15);
         mark.AddThemeColorOverride("font_color", new Color(Cream, 0.5f));
         art.AddChild(mark);
@@ -72,6 +72,13 @@ static class Menus
             text.Add(name, value);
         return text.GetFormattedText();
     }
+
+    // The game's language as a culture, for the dates and numbers we write into text ourselves: its month names,
+    // decimal point and thousands separator ("1.5 MB" in English, "1,5 MB" in German).
+    public static System.Globalization.CultureInfo Culture => LocManager.Instance.CultureInfo;
+
+    // A count in the game's language: "1,234" in English, "1.234" in German (no separator under 1,000).
+    public static string Number<T>(T count) where T : IFormattable => count.ToString("N0", Culture);
 
     // Its looks, made once and shared (every row has a few of these, remade on each redraw).
     static readonly (string State, StyleBox Box)[] SmallBoxes =
@@ -103,7 +110,7 @@ static class Menus
             button.Name = name;
         foreach (var (state, box) in SmallBoxes)
             button.AddThemeStyleboxOverride(state, box);
-        button.AddThemeFontOverride("font", ResourceLoader.Load<Font>("res://themes/kreon_regular_shared.tres"));
+        button.AddThemeFontOverride("font", ModEntry.Font("res://themes/kreon_regular_shared.tres"));
         button.AddThemeFontSizeOverride("font_size", 16);
         button.AddThemeColorOverride("font_color", Cream);
         button.AddThemeColorOverride("font_hover_color", Colors.White);

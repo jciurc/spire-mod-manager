@@ -80,7 +80,7 @@ static class Tags
             MouseFilter = Control.MouseFilterEnum.Pass, SizeFlagsVertical = Control.SizeFlags.ShrinkCenter,
         };
         // A long tag is cut with "…" on the chip: its card starts with the whole of it.
-        var cut = ResourceLoader.Load<Font>("res://themes/kreon_regular_shared.tres").GetStringSize(chip.Text, fontSize: 12).X > ChipMax;
+        var cut = ModEntry.Font("res://themes/kreon_regular_shared.tres").GetStringSize(chip.Text, fontSize: 12).X > ChipMax;
         var about = (cut ? $"[b]{Escape(chip.Text)}[/b]\n" : "") + Escape(tip);
         var card = clicked == null ? about : $"{about}\n\n{Hint(Menus.Text("SPIRE_MOD_MANAGER.SEARCH_CLICK_TIP"))}";
         Hover.Watch(box, "SpireModManagerTagCard", () => card, width: 320);
@@ -105,7 +105,7 @@ static class Tags
         style.SetCornerRadiusAll(2);
         box.AddThemeStyleboxOverride("panel", style);
         var label = new Label { Text = chip.Text, MouseFilter = Control.MouseFilterEnum.Ignore };
-        label.AddThemeFontOverride("font", ResourceLoader.Load<Font>("res://themes/kreon_regular_shared.tres"));
+        label.AddThemeFontOverride("font", ModEntry.Font("res://themes/kreon_regular_shared.tres"));
         label.AddThemeFontSizeOverride("font_size", 12);
         label.AddThemeColorOverride("font_color", chip.Color);
         if (cut)
@@ -120,7 +120,7 @@ static class Tags
 
     // That chip's width for a count: its text and the margins either side.
     public static float MoreWidth(int count) =>
-        ResourceLoader.Load<Font>("res://themes/kreon_regular_shared.tres").GetStringSize(MoreText(count), fontSize: 12).X + 2 * Margin;
+        ModEntry.Font("res://themes/kreon_regular_shared.tres").GetStringSize(MoreText(count), fontSize: 12).X + 2 * Margin;
 
     static string MoreText(int count) => Menus.Format("SPIRE_MOD_MANAGER.TAGS_MORE", ("count", count.ToString()));
 }

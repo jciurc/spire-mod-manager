@@ -32,7 +32,7 @@ static class MenuButton
             MouseFilter = Control.MouseFilterEnum.Ignore,
             VerticalAlignment = VerticalAlignment.Center, Position = new Vector2(size.X + 10, 0), Size = new Vector2(260, size.Y),
         };
-        note.AddThemeFontOverride("font", ResourceLoader.Load<Font>("res://themes/kreon_regular_shared.tres"));
+        note.AddThemeFontOverride("font", ModEntry.Font("res://themes/kreon_regular_shared.tres"));
         note.AddThemeFontSizeOverride("font_size", 18);
         note.AddThemeColorOverride("font_color", Coral);
         note.AddThemeColorOverride("font_outline_color", new Color(0.0756f, 0.12084f, 0.18f));
@@ -104,7 +104,7 @@ static class MenuButton
             Text = Menus.Text("SPIRE_MOD_MANAGER.MOVE_HINT"), HorizontalAlignment = HorizontalAlignment.Center,
             MouseFilter = Control.MouseFilterEnum.Ignore, Position = new Vector2(screen.X / 2 - 450, 90), Size = new Vector2(900, 40),
         };
-        hint.AddThemeFontOverride("font", ResourceLoader.Load<Font>("res://themes/kreon_bold_shared.tres"));
+        hint.AddThemeFontOverride("font", ModEntry.Font("res://themes/kreon_bold_shared.tres"));
         hint.AddThemeFontSizeOverride("font_size", 22);
         hint.AddThemeColorOverride("font_color", new Color(1, 0.964706f, 0.886275f));
         hint.AddThemeColorOverride("font_outline_color", new Color(0.0756f, 0.12084f, 0.18f));

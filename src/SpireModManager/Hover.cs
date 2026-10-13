@@ -224,8 +224,8 @@ static class Hover
 
     public static void Fonts(RichTextLabel text, int size)
     {
-        text.AddThemeFontOverride("normal_font", ResourceLoader.Load<Font>("res://themes/kreon_regular_shared.tres"));
-        text.AddThemeFontOverride("bold_font", ResourceLoader.Load<Font>("res://themes/kreon_bold_shared.tres"));
+        text.AddThemeFontOverride("normal_font", ModEntry.Font("res://themes/kreon_regular_shared.tres"));
+        text.AddThemeFontOverride("bold_font", ModEntry.Font("res://themes/kreon_bold_shared.tres"));
         text.AddThemeFontSizeOverride("normal_font_size", size);
         text.AddThemeFontSizeOverride("bold_font_size", size);
         text.AddThemeColorOverride("default_color", Cream);
