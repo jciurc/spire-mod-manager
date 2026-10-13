@@ -27,9 +27,11 @@ static class ModDetails
     const string LinkName = "SpireModManagerLink", SourceName = "SpireModManagerSource";
     public const string HeadName = "SpireModManagerHead";
     const string WiredMeta = "spire_mod_manager_wired";
+    const string FullMeta = "spire_mod_manager_full_text"; // on the title and the link: their whole text when cut short, else ""
     const string Enabled = "#a6e3a1", Disabled = "#fff6e299", Pending = "#f5b56b", Problem = "#ff8070";
     const string GoldHex = "#efc851", LinkHex = "#99ccff";
     const int VersionSize = 20;
+    const int TitleMinSize = 24; // a long name shrinks this far (from Layout's 32), then is cut short
 
     // Along the inside of the panel's bottom edge, whatever its size.
     public const float ButtonsFromBottom = 72;
@@ -59,27 +61,26 @@ static class ModDetails
         container.SetMeta(WorkshopMeta, mod.workshopId?.ToString() ?? ""); // this copy's (a local one can share its id)
 
         // The game titles it with the name; ours too, with the version in grey beside it (the alias is in the
-        // fields below).
+        // fields below). Its text is fitted once the panel is placed (FitTitle).
         var title = container.GetNode<MegaRichTextLabel>("ModTitle");
         title.BbcodeEnabled = true;
-        var version = mod.manifest?.version is { Length: > 0 } v
-            ? $"  [color={Disabled}][font_size={VersionSize}]{Escape(v.TrimStart('v', 'V'))}[/font_size][/color]" : "";
-        title.Text = Escape(mod.manifest?.name ?? id ?? "") + version;
         container.GetNode<MegaRichTextLabel>("ModDescription").Text = Describe(mod);
 
-        // "<id> (<Workshop id>)", a link to its Workshop page, or "<id> (Local)"; then whether it's on.
+        // "<id> (<Workshop id>)", a link to its Workshop page, or "<id> (Local)"; then whether it's on. The link's
+        // text is fitted once the panel is placed (FitSource).
         var source = container.GetNodeOrNull<Control>(SourceName) ?? AddSource(container);
         source.Visible = true;
         var link = source.GetNode<LinkButton>(LinkName);
+        string where;
         if (mod.workshopId is { } workshopId)
         {
-            link.Text = $"{id} ({Menus.Format("SPIRE_MOD_MANAGER.SOURCE_STEAM", ("id", workshopId.ToString()))})";
+            where = Menus.Format("SPIRE_MOD_MANAGER.SOURCE_STEAM", ("id", workshopId.ToString()));
             link.Uri = $"https://steamcommunity.com/sharedfiles/filedetails/?id={workshopId}";
             (link.Disabled, link.Underline) = (false, LinkButton.UnderlineMode.OnHover);
         }
         else
         {
-            link.Text = $"{id} ({Menus.Text("SPIRE_MOD_MANAGER.SOURCE_LOCAL")})";
+            where = Menus.Text("SPIRE_MOD_MANAGER.SOURCE_LOCAL");
             link.Uri = "";
             (link.Disabled, link.Underline) = (true, LinkButton.UnderlineMode.Never);
         }
@@ -93,6 +94,9 @@ static class ModDetails
         head.Visible = true;
         head.Text = HeadFacts(mod);
         Layout.PlaceInfo(container); // the description goes under the head, or under the picture if there is one
+        // The title and source line keep to the title's box (left of the thumbnail), now it's placed.
+        FitTitle(title, mod.manifest?.name ?? id ?? "", mod.manifest?.version);
+        FitSource(source, id ?? "", where, title.Size.X);
 
         var yours = container.GetNodeOrNull<Control>(FieldsName) ?? AddFields(container);
         yours.Visible = id != null;
@@ -105,6 +109,41 @@ static class ModDetails
         var folder = container.GetNodeOrNull<NButton>("OpenFolderButton") ?? AddButton(container, "OpenFolderButton",
             "SPIRE_MOD_MANAGER.OPEN_FOLDER", 20, () => OS.ShellOpen(Meta(container, FolderMeta)));
         folder.Visible = Directory.Exists(mod.path);
+    }
+
+    // The title on one line: the name, then its version (smaller, grey). A long name shrinks with the game's auto-size
+    // down to TitleMinSize, then is cut with "…" so the version still shows (a very long version is cut too, to what
+    // the name leaves or a third of the line). Cut short: the whole of it a second over the title.
+    static void FitTitle(MegaRichTextLabel title, string name, string? version)
+    {
+        // The auto-size measures all of the text at one size, the version too (drawn smaller), and keeps it on one
+        // line: whatever fits that way at TitleMinSize keeps at least that size.
+        var font = title.GetThemeFont("normal_font");
+        float Width(string text) => font.GetStringSize(text, fontSize: TitleMinSize).X;
+        var room = title.Size.X - 4;
+        const string gap = "  ";
+        var number = version?.TrimStart('v', 'V') ?? "";
+        var shownNumber = number.Length > 0 && Width(name + gap + number) > room
+            ? RowTitles.Cut(font, number, TitleMinSize, Math.Max(room / 3, room - Width(name + gap))) : number;
+        var shownName = RowTitles.Cut(font, name, TitleMinSize, shownNumber.Length > 0 ? room - Width(gap + shownNumber) : room);
+        title.Text = Escape(shownName)
+            + (shownNumber.Length > 0 ? $"{gap}[color={Disabled}][font_size={VersionSize}]{Escape(shownNumber)}[/font_size][/color]" : "");
+        title.SetMeta(FullMeta, shownName != name || shownNumber != number ? name + (number.Length > 0 ? gap + number : "") : "");
+    }
+
+    // "<id> (<where>)", then the dot and status, within width: a long id is cut with "…" so the rest still shows.
+    // Cut short: the whole id a second over the link.
+    static void FitSource(Control source, string id, string where, float width)
+    {
+        var link = source.GetNode<LinkButton>(LinkName);
+        var font = link.GetThemeFont("font");
+        var size = link.GetThemeFontSize("font_size");
+        var after = $" ({where})";
+        var room = width - source.GetThemeConstant("separation") - source.GetNode<Control>("Raised").GetCombinedMinimumSize().X
+            - font.GetStringSize(after, fontSize: size).X;
+        var shown = RowTitles.Cut(font, id, size, room);
+        link.Text = shown + after;
+        link.SetMeta(FullMeta, shown != id ? id : "");
     }
 
     // Clicking the title scrolls to the mod in the list, a dependency's name to that one, each row taking the
@@ -124,6 +163,9 @@ static class ModDetails
             if (e is InputEventMouseButton { ButtonIndex: MouseButton.Left, Pressed: false } && Content() is { } content)
                 CategoryList.Reveal(content, Meta(container, ModIdMeta), flash: false, focus: true);
         };
+        // Cut short (FitTitle, our views): the whole name and version in a plain tooltip.
+        Hover.Watch(title, "SpireModManagerFullText", () => !Store.Data.VanillaView && title.GetMeta(FullMeta, "").AsString() is { Length: > 0 } whole
+            ? Escape(whole) : null, Hover.Timing.Slow);
         var description = container.GetNode<RichTextLabel>("ModDescription");
         description.MetaUnderlined = false;
         description.MetaClicked += meta =>
@@ -389,6 +431,8 @@ static class ModDetails
         link.AddThemeColorOverride("font_color", new Color(0.6f, 0.8f, 1f));
         link.AddThemeColorOverride("font_hover_color", new Color(0.8f, 0.9f, 1f));
         link.AddThemeColorOverride("font_disabled_color", new Color(Cream, 0.6f));
+        // A long id cut short (FitSource): the whole of it in a plain tooltip.
+        Hover.Watch(link, "SpireModManagerFullText", () => link.GetMeta(FullMeta, "").AsString() is { Length: > 0 } whole ? Escape(whole) : null, Hover.Timing.Slow);
         line.AddChild(link);
         // The dot and status a pixel higher: plain labels sit lower than the link's text.
         var raised = new MarginContainer { Name = "Raised", MouseFilter = Control.MouseFilterEnum.Ignore };
