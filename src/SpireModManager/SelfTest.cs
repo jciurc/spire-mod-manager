@@ -1040,7 +1040,7 @@ static class SelfTest
             string.Join(", ", profile.Mods.Select(m => $"{m.Id}={(m.Enabled ? "on" : "off")}")));
         var (on, off) = Profiles.UnsavedChanges();
         Check("quietly: no unsaved edit, and already so in the launch state", !Profiles.Edited && ids.All(id => OnInSnapshot(History.Loaded, id)),
-            $"edited {Profiles.Edited} (+{string.Join(", +", on)} -{string.Join(", -", off)}), in the launch state {ids.Count(id => OnInSnapshot(History.Loaded, id))} of {ids.Length}");
+            $"edited {Profiles.Edited} (+{string.Join(", +", on.Select(m => m.Name))} -{string.Join(", -", off.Select(m => m.Name))}), in the launch state {ids.Count(id => OnInSnapshot(History.Loaded, id))} of {ids.Length}");
     }
 
     // Switching to a profile that has never seen a mod (here: two test mods taken out of the other profile, as if
@@ -1280,8 +1280,8 @@ static class SelfTest
             Check("unticking a new mod is saved, and Changes says it's disabled",
                 SaveManager.Instance.SettingsSave.ModSettings?.IsModDisabled(fresh) == true
                 && HistoryBar.Describe().Any(l => l.Contains("Fresh Mod") && l.Contains("Disabled")), string.Join(" | ", HistoryBar.Describe()));
-            Check("unticking it is an unsaved edit of the profile", Profiles.Edited && Profiles.UnsavedChanges().Off.Contains("Fresh Mod"),
-                $"edited {Profiles.Edited}, off: {string.Join(", ", Profiles.UnsavedChanges().Off)}");
+            Check("unticking it is an unsaved edit of the profile", Profiles.Edited && Profiles.UnsavedChanges().Off.Any(m => m.Name == "Fresh Mod"),
+                $"edited {Profiles.Edited}, off: {string.Join(", ", Profiles.UnsavedChanges().Off.Select(m => m.Name))}");
             HistoryBar.ShowList(screen);
             await Wait(menu, 0.2);
             await Capture(screen, outDir, "10c-installed-change");

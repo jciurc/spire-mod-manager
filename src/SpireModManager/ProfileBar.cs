@@ -6,8 +6,8 @@ namespace SpireModManager;
 
 // The profile bar across the top of the mod list.
 // - Left: "Profile: [name ▾]", opening the list of profiles ("Name *" for ones with unsaved changes, with
-//   their mod count and save date); while the mod list differs from the saved profile, "Unsaved •" and
-//   Save, Save as new, Discard beside it.
+//   their mod count and save date); while the mod list differs from the saved profile, "Unsaved •" (hover: the
+//   changes; click: listed in the info panel) and Save, Save as new, Discard beside it.
 // - Right: New, Duplicate, Rename, Delete (Rename and Delete also on right-click).
 // New, Duplicate, Save as new and Rename open a name box in the picker's place (with an inline ✕), Save
 // and Cancel; a name that's empty or taken says so and can't be saved. Everything else hides meanwhile.
@@ -101,17 +101,21 @@ static class ProfileBar
         Style(unsaved, "res://themes/kreon_regular_shared.tres", 16, UnsavedColor);
         row.AddChild(unsaved);
         // Hovering it lists this profile's own unsaved changes (not everything since launch), at once (Jordan,
-        // 2026-10-13).
+        // 2026-10-13); clicking lists them in the info panel, and a second click closes that again.
         unsaved.MouseFilter = Control.MouseFilterEnum.Stop;
-        unsaved.MouseDefaultCursorShape = Control.CursorShape.Help;
+        unsaved.MouseDefaultCursorShape = Control.CursorShape.PointingHand;
         Hover.Watch(unsaved, UnsavedCard, () =>
         {
-            var (on, off) = Profiles.UnsavedChanges();
             var lines = new List<string> { Menus.Format("SPIRE_MOD_MANAGER.UNSAVED_TITLE", ("name", Profiles.Active?.Name ?? "")) };
-            lines.AddRange(on.Select(n => $"[color=#a6e3a1]+ {n.Replace("[", "[lb]")}[/color]"));
-            lines.AddRange(off.Select(n => $"[color=#f2a3a3]− {n.Replace("[", "[lb]")}[/color]"));
+            lines.AddRange(HistoryBar.UnsavedLines(links: false));
+            lines.Add($"\n[color=#fff6e280]{Menus.Text("SPIRE_MOD_MANAGER.UNSAVED_CLICK")}[/color]");
             return string.Join("\n", lines);
         }, Hover.Timing.Instant, width: 320, place: () => (unsaved.GlobalPosition + new Vector2(0, unsaved.Size.Y + 6), false, false));
+        unsaved.GuiInput += e =>
+        {
+            if (e is InputEventMouseButton { ButtonIndex: MouseButton.Left, Pressed: false })
+                HistoryBar.ToggleList(screen, HistoryBar.ListKind.Unsaved);
+        };
         var unsavedButtons = ButtonBox("UnsavedButtons");
         row.AddChild(unsavedButtons);
 
