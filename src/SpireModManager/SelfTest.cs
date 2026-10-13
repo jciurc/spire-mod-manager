@@ -1612,9 +1612,9 @@ static class SelfTest
         Check("Changes counts it", HistoryBar.Counts().Off >= 1, $"{HistoryBar.Counts()}");
         Check("a mod turned off since launch has a changed-colour title", row.GetNode<Control>("Title").Modulate == RowTitles.ChangedOffTitle);
         var changes = screen.GetNode<Control>(HistoryBar.ChangesName);
-        var lines = (changes as RichTextLabel)?.GetParsedText() ?? "";
+        var twoLines = (changes as RichTextLabel)?.GetParsedText() ?? "";
         Check("the two lines read \"Mods enabled N (+a -b)\" and \"Changes n  ↕m\"",
-            System.Text.RegularExpressions.Regex.IsMatch(lines, @"^Mods enabled \d+ \(\+\d+ -\d+\)\nChanges \d+  ↕\d+$"), lines);
+            System.Text.RegularExpressions.Regex.IsMatch(twoLines, @"^Mods enabled \d+ \(\+\d+ -\d+\)\nChanges \d+  ↕\d+$"), twoLines);
         Hover.TestMouse = () => changes.GetGlobalRect().GetCenter();
         changes.EmitSignal(Control.SignalName.MouseEntered);
         await Wait(menu, Hover.Delay + 0.15);
