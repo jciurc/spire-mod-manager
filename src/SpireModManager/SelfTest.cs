@@ -909,11 +909,12 @@ static class SelfTest
         if (Profiles.Active is { } copy)
             Profiles.Delete(copy, screen);
 
-        // The game's confirm popup, shown for the record; deletion itself goes through Profiles.Delete.
+        // The game's confirm popup, shown for the record (with our mark); deletion itself goes through Profiles.Delete.
         var body = new LocString("settings_ui", "SPIRE_MOD_MANAGER.DELETE_PROFILE_BODY");
         body.Add("name", "Brother co-op");
         _ = Menus.Confirm(new LocString("settings_ui", "SPIRE_MOD_MANAGER.DELETE_PROFILE_TITLE"), body);
         await Wait(menu, 1);
+        CheckMark("delete profile popup", NModalContainer.Instance?.OpenModal as Control);
         await Capture(screen, outDir, "7-delete-profile-confirm");
         NModalContainer.Instance?.Clear();
         await Wait(menu, 0.5);
@@ -1243,6 +1244,7 @@ static class SelfTest
         var texts = NModalContainer.Instance?.OpenModal is Node popup
             ? popup.FindChildren("*", "", true, false).Select(n => n is Label l ? l.Text : n is RichTextLabel r ? r.Text : "").ToList() : [];
         Check("new mod popup says \"New Mod Added\"", texts.Any(t => t.Contains("New Mod Added")), string.Join(" | ", texts.Where(t => t.Length > 0)));
+        CheckMark("new mod popup", NModalContainer.Instance?.OpenModal as Control);
         await Capture(screen, outDir, "10b-new-mod-popup");
         NModalContainer.Instance?.Clear();
         detected?.Invoke(NGame.Instance, [mod]);
@@ -1342,13 +1344,20 @@ static class SelfTest
                 .GetNodeOrNull("SpireModManagerStrip")?.GetChildren().OfType<PanelContainer>().FirstOrDefault(c => c.GetChildOrNull<Label>(0)?.Text == tag);
             chip?.EmitSignal(Control.SignalName.GuiInput, new InputEventMouseButton { ButtonIndex = MouseButton.Left, Pressed = false, ShiftPressed = shift });
         }
-        await Shown("");
+        var all = await Shown("");
         ClickChip("SmmTestLib", "Library", false);
         await Wait(menu, 0.3);
         Check("clicking a row's tag searches for it", box.Text == "#Library" && Visible().SequenceEqual(["SmmTestLib"]), $"{box.Text}: {string.Join(", ", Visible())}");
         ClickChip("SmmTestLib", "Gameplay", true);
         await Wait(menu, 0.3);
         Check("Shift-clicking another adds it", box.Text == "#Library #Gameplay" && Visible().SequenceEqual(["SmmTestLib"]), $"{box.Text}: {string.Join(", ", Visible())}");
+        // Clicking again undoes: Shift takes "#Gameplay" back out, then a plain click on the whole search clears it.
+        ClickChip("SmmTestLib", "Gameplay", true);
+        await Wait(menu, 0.3);
+        Check("Shift-clicking a searched tag again removes it", box.Text == "#Library", box.Text);
+        ClickChip("SmmTestLib", "Library", false);
+        await Wait(menu, 0.3);
+        Check("clicking the tag that is the whole search clears it", box.Text == "" && Visible().SequenceEqual(all), $"{box.Text}: {Visible().Count} shown");
         // Authors: from the info panel's author (the row's is plain text); Shift on a tag adds it after a space.
         await Shown("");
         var rowAuthor = content.GetChildren().OfType<NModMenuRow>().FirstOrDefault(r => r.Mod?.manifest?.id == "LocalModFixes")?.GetNodeOrNull<Label>("SpireModManagerStrip/Author");
@@ -1361,6 +1370,32 @@ static class SelfTest
         ClickChip("LocalModFixes", "Local", true);
         await Wait(menu, 0.3);
         Check("Shift-click on a tag adds it after a space", box.Text == "@symphony #Local", box.Text);
+        // The rules every click-to-search shares (row and panel tags, the author, Workshop tags), through the one
+        // helper they all use: the search before, the click, the search after.
+        string After(string before, Action click)
+        {
+            box.Text = before;
+            click();
+            return box.Text;
+        }
+        void Tag(string tag, bool shift) => SpireModManager.Search.ByTag(content, tag, shift);
+        void Words(string text, bool shift) => SpireModManager.Search.ByText(content, text, shift);
+        string[] clears = [After(" #library ", () => Tag("Library", false)), After("#\"Library\"", () => Tag("Library", false)),
+            After("tools  &  apis", () => Words("Tools & APIs", false))];
+        Check("click-to-search: a click on the whole search clears it (any case, quotes aside)", clears.All(s => s == ""), string.Join(" | ", clears));
+        string[] replaces = [After("mod fixes", () => Tag("Library", false)), After("#Library #Gameplay", () => Tag("Library", false))];
+        Check("click-to-search: a click replaces any other search", replaces.All(s => s == "#Library"), string.Join(" | ", replaces));
+        string[] adds = [After("@symphony", () => Tag("Local", true)), After("mod", () => Words("Tools & APIs", true))];
+        Check("click-to-search: Shift-click adds the term, keeping the rest", adds.SequenceEqual(["@symphony #Local", "mod Tools & APIs"]), string.Join(" | ", adds));
+        string[] removes = [After("@symphony #local mod", () => Tag("Local", true)), After("#Library Tools & APIs", () => Words("tools & apis", true))];
+        Check("click-to-search: Shift-click removes a term already searched, any case", removes.SequenceEqual(["@symphony mod", "#Library"]), string.Join(" | ", removes));
+        string[] quoted = [After("#\"two words\" @symphony", () => Tag("Two Words", true)),
+            After("mod @\"Some One\"", () => SpireModManager.Search.ByAuthor(content, "some one", true))];
+        Check("click-to-search: Shift-click removes quoted terms too", quoted.SequenceEqual(["@symphony", "mod"]), string.Join(" | ", quoted));
+        string[] tidy = [After("  #Library   mod  ", () => Tag("Library", true)), After("mod   ", () => Tag("Gameplay", true))];
+        Check("click-to-search: spaces tidied, one between terms", tidy.SequenceEqual(["mod", "mod #Gameplay"]), string.Join(" | ", tidy));
+        string[] glued = [After("foo#Library", () => Tag("Library", true)), After("C# #Library", () => Tag("Library", true))];
+        Check("click-to-search: a #tag glued to a word is a tag, a lone # stays plain", glued.SequenceEqual(["foo", "C#"]), string.Join(" | ", glued));
         var local = await Shown("#local");
         Check("#tag matches the tag only, any case", local.Count > 1 && local.All(id => Tags.For(Dependencies.Find(id)).Any(c => c.Text == "Local")), string.Join(", ", local));
         var none = await Shown("zzz no such mod");
@@ -2246,6 +2281,37 @@ static class SelfTest
     }
 
     static Node? Header(Control content, string category) => content.GetNodeOrNull($"Category {category}");
+
+    // A popup of ours in the game's style: our mark, once (marking it again adds none), shown, inside the popup's
+    // art (clear of its painted edge), and clear of its title, text and buttons (their art included).
+    static void CheckMark(string which, Control? popup)
+    {
+        if (popup == null)
+        {
+            Results.Add($"FAIL {which}: no popup open");
+            return;
+        }
+        // Collected before marking it here, so a caller that forgot Menus.Mark fails
+        var marks = popup.FindChildren(Menus.MarkName + "*", "", true, false).OfType<Label>().ToList();
+        Menus.Mark(popup);
+        var again = popup.FindChildren(Menus.MarkName + "*", "", true, false).Count;
+        Check($"{which}: marking again adds none", again == marks.Count, $"{marks.Count} before, {again} after");
+        Check($"{which}: marked \"Spire Mod Manager\", once, shown", marks is [{ Text: "Spire Mod Manager" } shown]
+            && shown.IsVisibleInTree() && shown.Size.X > 0 && shown.Size.Y > 0 && shown.GetThemeColor("font_color").A >= 0.3f,
+            string.Join(", ", marks.Select(m => $"{m.Name} \"{m.Text}\" shown {m.IsVisibleInTree()}, size {m.Size}")));
+        if (marks.FirstOrDefault() is not { } mark)
+            return;
+        var art = popup.GetNodeOrNull<Control>("VerticalPopup") ?? popup;
+        var rect = mark.GetGlobalRect();
+        var parts = new[] { "Header", "Description", "YesButton", "YesButton/Visuals", "NoButton", "NoButton/Visuals" }
+            .Select(path => art.GetNodeOrNull<Control>(path)).OfType<Control>().Where(c => c.IsVisibleInTree()).ToList();
+        var under = parts.Where(c => c.GetGlobalRect().Intersects(rect)).Select(c => c.GetPath().ToString()).ToList();
+        Check($"{which}: the mark inside the popup's art, clear of its title, text and buttons", parts.Count >= 4
+            && art.GetGlobalRect().Grow(-24).Encloses(rect) && under.Count == 0,
+            $"mark {rect}, art {art.GetGlobalRect()}, {parts.Count} parts found, overlapping: {string.Join(", ", under)}");
+        Results.Add($"INFO {which}: mark {rect}, art {art.GetGlobalRect()}, buttons " +
+            string.Join(", ", parts.Where(c => c.Name.ToString().EndsWith("Button")).Select(c => c.GetGlobalRect())));
+    }
 
     static void Click(NButton button) => button.EmitSignal(NClickableControl.SignalName.Released, button);
 
