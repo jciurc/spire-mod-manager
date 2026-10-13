@@ -39,6 +39,14 @@ static class MainMenuPatch
             ModEntry.MarkDevRun(__instance.GetTree());
 
             MenuButton.Add(__instance);
+            // After a launch that couldn't read our saved file: the notice here too, so it's seen even without a
+            // visit to the Modding page (after the game's own startup popups; with one still open, it waits).
+            var menu = __instance;
+            menu.GetTree().CreateTimer(1.5).Timeout += () =>
+            {
+                if (GodotObject.IsInstanceValid(menu) && menu.IsVisibleInTree())
+                    Store.ShowNotice();
+            };
 
             SelfTest.MaybeStart(__instance);
         }
@@ -134,6 +142,25 @@ static class ModdingScreenPatch
         catch (Exception e)
         {
             Log.Error($"[{ModEntry.ModId}] Could not lay out the screen: {e}");
+        }
+
+        try
+        {
+            // After a launch that couldn't read our saved file: the notice, once, when the page shows. The game adds
+            // this screen hidden, shows it as it's pushed and reuses it for later visits: checked at the end of this
+            // frame and each time it shows.
+            var screen = __instance;
+            void Notice()
+            {
+                if (GodotObject.IsInstanceValid(screen) && screen.IsVisibleInTree())
+                    Store.ShowNotice();
+            }
+            screen.VisibilityChanged += Notice;
+            Callable.From(Notice).CallDeferred();
+        }
+        catch (Exception e)
+        {
+            Log.Error($"[{ModEntry.ModId}] Could not set up the notice about our saved file: {e}");
         }
 
         // Better Mod Menu's _Ready postfix runs after this one and rebuilds the page its way (rows restyled, grouped,
