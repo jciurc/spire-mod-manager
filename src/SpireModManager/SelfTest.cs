@@ -2114,6 +2114,14 @@ static class SelfTest
             var paths = content.GetParent().GetChildren().OfType<Line2D>().Where(l => l.IsInGroup("SpireModManagerLinks")).Select(l => l.Points).ToList();
             Check("the hover lines have slightly rounded corners", paths.Count > 0 && paths.All(Rounded),
                 string.Join("; ", paths.Select(p => string.Join(" ", p.Select(q => $"{q.X:0.#},{q.Y:0.#}")))));
+            // The rows here wear the main list's rounded looks: faint under the mouse, sunken when selected.
+            var selectedRow = Rows().FirstOrDefault(r => r.Mod == CategoryList.Selected && r != libRow);
+            StyleBox? LookOf(NModMenuRow? r) => r?.GetNodeOrNull<Panel>("SelectionHighlight")?.GetThemeStylebox("panel");
+            Check("load order rows: rounded like the main list's, under the mouse and selected",
+                LookOf(libRow) is StyleBoxFlat { CornerRadiusTopLeft: RowTitles.CornerRadius, BorderWidthTop: 0 }
+                && LookOf(selectedRow) is StyleBoxFlat { CornerRadiusTopLeft: RowTitles.CornerRadius, BorderWidthTop: 2 }
+                && selectedRow?.GetNode<Panel>("SelectionHighlight") is { } selectedLook && selectedLook.Modulate == Colors.White
+                && selectedLook.OffsetLeft == RowTitles.LookInset.X, $"selected: {selectedRow?.Mod?.manifest?.id ?? "none"}");
             await Capture(screen, outDir, "13b-hover-links");
             libRow.EmitSignal(Control.SignalName.MouseExited);
             await Wait(menu, 0.2);
