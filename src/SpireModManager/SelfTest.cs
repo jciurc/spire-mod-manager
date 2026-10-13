@@ -2034,6 +2034,8 @@ static class SelfTest
             Note("SmmTestContent"));
         Check("order warning wording", (screen.FindChild("OrderProblems", true, false) as Label)?.Text.StartsWith("For compatibility, 1 mod will be automatically reordered") == true,
             (screen.FindChild("OrderProblems", true, false) as Label)?.Text ?? "");
+        Check("the order warning's corners are rounded like the rows", screen.FindChild(LoadOrder.WarningName, true, false) is PanelContainer warningBar
+            && warningBar.GetThemeStylebox("panel") is StyleBoxFlat { CornerRadiusTopLeft: RowTitles.CornerRadius });
         Check("Auto sort has its hint", screen.FindChild("AutoSortHint", true, false) is Label { Visible: true } hintLabel && hintLabel.Text.Contains("compatibility"));
         Check("order warning and Auto sort stay above the list, outside its scrolling",
             screen.FindChild("OrderProblems", true, false) is Node warning && !content.IsAncestorOf(warning)

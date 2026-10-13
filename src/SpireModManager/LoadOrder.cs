@@ -346,10 +346,12 @@ static class LoadOrder
     static void Banner(Control border, Control? search, string message, List<Control> buttons, string name = WarningName, string textName = "OrderProblems")
     {
         var bar = new PanelContainer { Name = name };
-        bar.AddThemeStyleboxOverride("panel", new StyleBoxFlat
+        var look = new StyleBoxFlat
         {
             BgColor = new Color(0.45f, 0.1f, 0.1f, 0.6f), ContentMarginLeft = 12, ContentMarginRight = 8, ContentMarginTop = 4, ContentMarginBottom = 4,
-        });
+        };
+        look.SetCornerRadiusAll(RowTitles.CornerRadius); // rounded like the rows and the search box
+        bar.AddThemeStyleboxOverride("panel", look);
         var line = new HBoxContainer();
         line.AddThemeConstantOverride("separation", 6);
         bar.AddChild(line);
