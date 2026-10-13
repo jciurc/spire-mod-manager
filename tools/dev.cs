@@ -265,9 +265,6 @@ static extern bool CreateHardLink(string fileName, string existingFileName, IntP
 static extern IntPtr GetForegroundWindow();
 
 [DllImport("user32.dll")]
-static extern uint GetWindowThreadProcessId(IntPtr window, out int processId);
-
-[DllImport("user32.dll")]
 static extern bool SetWindowPos(IntPtr window, IntPtr insertAfter, int x, int y, int width, int height, uint flags);
 
 [DllImport("user32.dll")]
