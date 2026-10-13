@@ -29,7 +29,7 @@ using System.Text.Json.Nodes;
 const string GameDir = @"D:\SteamLibrary\steamapps\common\Slay the Spire 2";
 const string DevDir = @"D:\sts2-dev";
 const string WorkshopDir = @"D:\SteamLibrary\steamapps\workshop\content\2868840";
-const string BmmRepo = @"C:eposgamingslay the spireettermodmenu"; // Better Mod Menu's local-fix checkout (--bmm-local)
+const string BmmRepo = @"C:\repos\gaming\slay the spire\bettermodmenu"; // Better Mod Menu's local-fix checkout (--bmm-local)
 const string ModId = "SpireModManager";
 const int TimeoutSeconds = 150;
 var root = Path.GetDirectoryName(ScriptDir()) ?? ".";
