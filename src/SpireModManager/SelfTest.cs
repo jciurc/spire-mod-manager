@@ -1,4 +1,5 @@
 using System.Text;
+using System.Text.Json.Nodes;
 using Godot;
 using MegaCrit.Sts2.Core.Localization;
 using MegaCrit.Sts2.Core.Modding;
@@ -15,6 +16,8 @@ namespace SpireModManager;
 // SPIRE_MOD_MANAGER_SELFTEST names an output folder. Then, from the main menu: screenshots, opens the
 // Modding screen, checks our nodes, switches profile and back (the mod list must round-trip), toggles
 // the view, writes results.txt, and quits. The runner uses the no-Steam dev sandbox, never real saves.
+// SPIRE_MOD_MANAGER_SELFTEST_MODE picks a shorter suite instead: "real" (RunReal), "first-run" or
+// "first-run-bmm" (RunFirstRun).
 static class SelfTest
 {
     const string EnvVar = "SPIRE_MOD_MANAGER_SELFTEST";
@@ -32,14 +35,27 @@ static class SelfTest
 
     static async Task Run(NMainMenu menu, string outDir)
     {
-        if (System.Environment.GetEnvironmentVariable("SPIRE_MOD_MANAGER_SELFTEST_MODE") == "real")
+        var mode = System.Environment.GetEnvironmentVariable("SPIRE_MOD_MANAGER_SELFTEST_MODE");
+        if (mode == "real")
         {
             await RunReal(menu, outDir);
+            return;
+        }
+        if (mode is "first-run" or "first-run-bmm")
+        {
+            await RunFirstRun(menu, outDir, imported: mode == "first-run-bmm");
             return;
         }
         try
         {
             await Wait(menu, 3);
+            TestText(); // our pack's text, whichever page shows
+            TestFailSoft();
+            if (!ModEntry.OurPage)
+            {
+                await TestGamePage(menu, outDir); // nothing more of ours to test
+                return;
+            }
             Check("no popup open", NModalContainer.Instance?.OpenModal == null,
                 NModalContainer.Instance?.OpenModal?.GetType().Name ?? "");
             Check("main menu button", menu.GetNodeOrNull("SpireModManagerMenuButton") != null);
@@ -56,6 +72,7 @@ static class SelfTest
             var content = screen.GetNode<Control>("%ModsScrollContainer/Mask/Content");
             var rows = content.GetChildren().OfType<NModMenuRow>().ToList();
             Check("relaunch button", screen.GetNodeOrNull("SpireModManagerRelaunchButton") != null);
+            TestNewModsAtLaunch(); // first: before anything switches profiles
             if (Bmm.Present) // dev.cs test --bmm
                 await TestBetterModMenu(menu, screen, content, outDir);
             Check("view toggle", screen.GetNodeOrNull("SpireModManagerViewToggle") != null);
@@ -71,11 +88,12 @@ static class SelfTest
             if (Profiles.Active is { } start && Store.Data.Profiles.FirstOrDefault(p => p != start) is { } other)
             {
                 if (Profiles.Edited)
-                    Profiles.Save(); // the fixture launches on an unsaved edit (its list differs from the profile)
+                    Profiles.Save(); // start clean
                 var before = ModListState();
                 Profiles.SwitchTo(other, screen);
                 await Wait(menu, 1);
                 Results.Add($"INFO switched to {other.Name}: {ModListState().Count(s => s.EndsWith("=on"))} on");
+                Check("switching to the other profile changes the mod list", !ModListState().SequenceEqual(before)); // or the round trip proves nothing
                 Check("our own mod stays on", !(SaveManager.Instance.SettingsSave.ModSettings?.ModList
                     .Any(m => m.Id == ModEntry.ModId && !m.IsEnabled) ?? false));
                 await Capture(screen, outDir, "3-other-profile");
@@ -87,6 +105,7 @@ static class SelfTest
             }
             else
                 Results.Add("SKIP profile round trip: only one profile");
+            await TestNewModsOnSwitch(menu, screen, content);
 
             Click(screen.GetNode<NButton>("SpireModManagerViewToggle"));
             await Wait(menu, 1);
@@ -127,6 +146,8 @@ static class SelfTest
             await Wait(menu, 0.3);
             Check("reopening after Load Order shows the main list", Layout.Current == Layout.View.Categories
                 && screen.GetNode<Control>("%ModInfoContainer").Visible);
+
+            await TestStoreSafety(menu, screen, outDir);
         }
         catch (Exception e)
         {
@@ -146,6 +167,7 @@ static class SelfTest
         try
         {
             await Wait(menu, 3);
+            CheckPatches();
             var screen = menu.SubmenuStack.PushSubmenuType<NModdingScreen>();
             await Wait(menu, 2);
             var content = screen.GetNode<Control>("%ModsScrollContainer/Mask/Content");
@@ -242,6 +264,254 @@ static class SelfTest
         }
     }
 
+    // Our text reaches the game: each eng text without placeholders, as packed, reads back unchanged through
+    // the game's own tables. tools/check.cs covers the other half without the game: every key the code uses
+    // is in eng.
+    static void TestText()
+    {
+        var json = Godot.FileAccess.GetFileAsString($"res://{ModEntry.ModId}/localization/eng/settings_ui.json");
+        var texts = (json.Length > 0 ? JsonNode.Parse(json) as JsonObject : null)?
+            .Select(p => (p.Key, Text: (string?)p.Value ?? ""))
+            .Where(p => !p.Text.Contains('{')).ToList() ?? [];
+        var wrong = texts.Where(p => Read(p.Key) != p.Text).Select(p => p.Key).ToList();
+        Check($"our texts read back from the game's tables ({texts.Count})", texts.Count > 0 && wrong.Count == 0,
+            $"{wrong.Count} differ: {string.Join(", ", wrong.Take(5))}");
+
+        static string Read(string key)
+        {
+            try
+            {
+                return Menus.Text(key);
+            }
+            catch (Exception e)
+            {
+                return e.Message; // a key the game can't find may throw rather than show
+            }
+        }
+    }
+
+    // A game update that renames what a patch hooks. On this game version: every patch applied, and the row state
+    // the game keeps to itself is found. Which failures keep the game's Modding page (with the needs-update line)
+    // instead of ours: any one patch our page needs; none of the others.
+    static void TestFailSoft()
+    {
+        CheckPatches();
+        Check("row state: the game's selected and focused members found", RowState.Found);
+        string[] spare = [nameof(RowLookPatch), nameof(ShortcutsPatch), nameof(NewModPatch), nameof(ModInfoClearPatch),
+            nameof(NewModPopupPatch), nameof(NewModTogglePatch)];
+        Check("our page with no patch failed, or only ones it can do without", ModEntry.PageWorks([]) && ModEntry.PageWorks(spare));
+        Check("the game's page if any one patch our page needs failed", ModEntry.PageNeeds.Contains(nameof(ModdingScreenPatch))
+            && ModEntry.PageNeeds.All(needed => !ModEntry.PageWorks([needed]) && !ModEntry.PageWorks([.. spare, needed])),
+            string.Join(", ", ModEntry.PageNeeds.Where(needed => ModEntry.PageWorks([needed]))));
+        // The line itself, on a stand-in for the screen.
+        var stand = new Control();
+        var line = ModEntry.ShowNeedsUpdate(stand);
+        Check("the needs-update line: its text, once, above the game's list and info panel",
+            line.Text == "Spire Mod Manager needs an update for this game version." && ModEntry.ShowNeedsUpdate(stand) == line
+            && stand.GetChildCount() == 1 && line.Position.Y + line.Size.Y <= 83, $"{line.Text} at {line.Position}, {line.Size}");
+        stand.Free();
+    }
+
+    // dev.cs test with SPIRE_MOD_MANAGER_SKIP_PATCHES naming a patch our page needs (not MainMenuPatch: this test
+    // starts from it): the Modding page is the game's, with the needs-update line and none of ours, the info panel
+    // included. Without the screen's own patch, the line is the main menu button's note instead.
+    static async Task TestGamePage(NMainMenu menu, string outDir)
+    {
+        Results.Add($"INFO left out: {string.Join(", ", ModEntry.FailedPatches)}");
+        const string text = "Spire Mod Manager needs an update for this game version.";
+        if (ModEntry.FailedPatches.Contains(nameof(ModdingScreenPatch)))
+        {
+            var note = menu.GetNodeOrNull<Label>("SpireModManagerMenuButton/PendingNote");
+            Check("no Modding screen patch: the main menu button's note says the mod needs an update", note is { Visible: true, Text: text }, note?.Text ?? "no note");
+            await Capture(menu, outDir, "1-main-menu-needs-update");
+            return;
+        }
+        var screen = menu.SubmenuStack.PushSubmenuType<NModdingScreen>();
+        await Wait(menu, 2);
+        Check("the game's page, with the needs-update line", screen.GetNodeOrNull<Label>(ModEntry.NeedsUpdateName) is { Visible: true, Text: text },
+            screen.GetNodeOrNull<Label>(ModEntry.NeedsUpdateName)?.Text ?? "no line");
+        var border = screen.GetNode<Control>("ModsBorder");
+        Check("none of ours on it: no buttons, bars or headers; the game's boxes", screen.GetNodeOrNull("SpireModManagerViewToggle") == null
+            && screen.GetNodeOrNull("SpireModManagerRelaunchButton") == null && border.GetNodeOrNull("SpireModManagerProfileBar") == null
+            && !screen.GetNode("%ModsScrollContainer/Mask/Content").GetChildren().Any(c => c.IsInGroup("SpireModManagerCategoryHeader"))
+            && border.OffsetLeft == 255 && border.OffsetRight == 994, $"{border.OffsetLeft}..{border.OffsetRight}");
+        if (screen.GetNode("%ModsScrollContainer/Mask/Content").GetChildren().OfType<NModMenuRow>().FirstOrDefault() is { } row)
+        {
+            CategoryList.Select(screen, row);
+            await Wait(menu, 0.5);
+            Check("a mod shown in the panel: the game's details only", screen.GetNode("%ModInfoContainer").GetNodeOrNull(ModDetails.HeadName) == null);
+            // Our row look never ran (it saves the game's look the first time it does).
+            Check("the selected row keeps the game's highlight", row.GetNodeOrNull<Control>("SelectionHighlight") is { } look
+                && !look.HasMeta("spire_mod_manager_game_look"));
+        }
+        await Capture(screen, outDir, "2-game-page-needs-update");
+    }
+
+    // Every patch applied; in a dev run that leaves some out (SPIRE_MOD_MANAGER_SKIP_PATCHES), exactly those failed.
+    static void CheckPatches()
+    {
+        var skipped = ModEntry.SkippedPatches;
+        Check(skipped.Count == 0 ? "every patch applied" : $"every patch applied but the ones left out ({string.Join(", ", skipped)})",
+            ModEntry.FailedPatches.Order().SequenceEqual(skipped.Order()), string.Join(", ", ModEntry.FailedPatches));
+    }
+
+    // --first-run / --first-run-bmm: the game started with no manager.json, and either nothing of Better Mod Menu's
+    // or its data to import (tools/fixtures/bmm), with it installed but off, or on (--bmm). The page opens on what a
+    // first run makes, and a second load reads our file back instead of starting over.
+    static async Task RunFirstRun(NMainMenu menu, string outDir, bool imported)
+    {
+        try
+        {
+            await Wait(menu, 3);
+            Results.Add($"INFO first run {(imported ? "with Better Mod Menu's data" : "with no data")}, Better Mod Menu {(Bmm.Present ? "on" : "off")}");
+            Check("first run: no popup open", NModalContainer.Instance?.OpenModal == null, NModalContainer.Instance?.OpenModal?.GetType().Name ?? "");
+            Check("first run: our file is written at once", File.Exists(Store.FilePath), Store.FilePath);
+
+            var screen = menu.SubmenuStack.PushSubmenuType<NModdingScreen>();
+            await Wait(menu, 2);
+            var content = screen.GetNode<Control>("%ModsScrollContainer/Mask/Content");
+            var rows = content.GetChildren().OfType<NModMenuRow>().ToList();
+            // Each part comes from its own guarded step (Patches): one missing means that step failed (see the log).
+            string[] parts = ["SpireModManagerRelaunchButton", "SpireModManagerViewToggle", "SpireModManagerLoadOrderToggle", HistoryBar.BarName,
+                "ModsBorder/SpireModManagerProfileBar", "ModsBorder/SpireModManagerSearch", $"ModsBorder/{PageBar.Name}"];
+            var missing = parts.Where(p => screen.GetNodeOrNull(p) == null).ToList();
+            Check("first run: the page opens with all our parts", missing.Count == 0, "missing " + string.Join(", ", missing));
+            Check($"first run: rows ({rows.Count}) match mods ({ModManager.Mods.Count})", rows.Count == ModManager.Mods.Count);
+
+            if (imported)
+                await TestImported(menu, screen, content, outDir);
+            else
+                await TestNoData(menu, screen, content, outDir);
+            TestSecondLoad();
+        }
+        catch (Exception e)
+        {
+            Results.Add($"FAIL exception: {e}");
+        }
+        finally
+        {
+            File.WriteAllLines(Path.Combine(outDir, "results.txt"), Results);
+            menu.GetTree().Quit();
+        }
+    }
+
+    // No data at all: one profile, the mod list as it is; no categories, and the hint under the page bar saying how
+    // to make one. Made that way (a mod's menu, New category), the hint goes; deleting the category brings it back.
+    static async Task TestNoData(Node menu, NModdingScreen screen, Control content, string outDir)
+    {
+        var data = Store.Data;
+        Check("no data: nothing imported, no categories, nothing kept per mod", data.ImportedFrom == null && data.Categories.Count == 0 && data.Mods.Count == 0,
+            $"imported from {data.ImportedFrom}, {data.Categories.Count} categories, {data.Mods.Count} mods");
+        Check("no data: one profile, Default, active and matching the mod list", data.Profiles.Count == 1
+            && Profiles.Active?.Name == Menus.Text("SPIRE_MOD_MANAGER.DEFAULT_PROFILE") && !Profiles.Edited, string.Join(", ", data.Profiles.Select(p => p.Name)));
+        var headers = content.GetChildren().Where(c => c.IsInGroup("SpireModManagerCategoryHeader")).Select(c => c.Name.ToString()).ToList();
+        Check("no data: the list is Uncategorized alone", headers.SequenceEqual(["Uncategorized"]), string.Join(", ", headers));
+
+        Label? Hint() => screen.FindChild(PageBar.HintName, true, false) as Label;
+        var bar = screen.FindChild(PageBar.Name, true, false) as Control;
+        var scroll = screen.GetNode<Control>("ModsBorder/ModsScrollContainer");
+        var text = Menus.Format("SPIRE_MOD_MANAGER.NO_CATEGORIES_HINT", ("item", Menus.Text("SPIRE_MOD_MANAGER.NEW_CATEGORY")));
+        Check("no data: the hint, under the page bar and above the list", Hint() is { Visible: true } hint && hint.Text == text
+            && bar != null && hint.OffsetTop >= bar.OffsetBottom && scroll.OffsetTop >= hint.OffsetBottom,
+            $"\"{Hint()?.Text}\" at {Hint()?.OffsetTop}..{Hint()?.OffsetBottom}, bar to {bar?.OffsetBottom}, list from {scroll.OffsetTop}");
+        await Capture(screen, outDir, "first-run-1-no-data");
+
+        // The way the hint says: a mod's right-click menu, New category (named in place; Enter keeps the name).
+        var listTop = scroll.OffsetTop;
+        var row = content.GetChildren().OfType<NModMenuRow>().FirstOrDefault(r => r.Visible && r.Mod?.manifest?.id != null);
+        var modId = row?.Mod?.manifest?.id;
+        if (row == null || modId == null || CategoryList.ShowRowMenu(content, row) is not { } rowMenu)
+        {
+            Results.Add("FAIL no data: no mod's menu to make a category from");
+            return;
+        }
+        await Wait(menu, 0.3);
+        MenuPanel.Press(rowMenu, Menus.Text("SPIRE_MOD_MANAGER.NEW_CATEGORY"));
+        await Wait(menu, 0.5);
+        var made = Store.Data.Categories.FirstOrDefault();
+        Check("a category made from a mod's menu: the mod in it, the hint gone, the list moved up",
+            made != null && Store.InfoFor(modId)?.Category == made.Name && Header(content, made.Name) != null && Hint() == null && scroll.OffsetTop < listTop,
+            $"{Store.Data.Categories.Count} categories, hint {Hint() != null}, list from {listTop} to {scroll.OffsetTop}");
+        await Capture(screen, outDir, "first-run-2-category-made");
+        if (made == null)
+            return;
+        if (Header(content, made.Name)?.GetNodeOrNull<LineEdit>("RenameBox") is { } box)
+            box.EmitSignal(LineEdit.SignalName.TextSubmitted, box.Text);
+        await Wait(menu, 0.3);
+        Categories.Delete(made);
+        CategoryList.Apply(content);
+        await Wait(menu, 0.3);
+        Check("deleting the last category brings the hint back", Store.Data.Categories.Count == 0 && Hint() is { Visible: true } && scroll.OffsetTop == listTop,
+            $"{Store.Data.Categories.Count} categories, list from {scroll.OffsetTop}");
+    }
+
+    // Better Mod Menu's data, as BetterModMenuImport maps it: its groups are our categories (in order, its collapsed
+    // one collapsed), a mod's group its category, its aliases and notes ours (empty ones left out), its profiles ours
+    // (every installed mod on but the ones it had off), its current one active.
+    static async Task TestImported(Node menu, NModdingScreen screen, Control content, string outDir)
+    {
+        var data = Store.Data;
+        Check("imported from Better Mod Menu's account folder", data.ImportedFrom?.Replace('\\', '/').EndsWith("mod_data/BetterModMenu/mod_profiles.json") == true,
+            data.ImportedFrom ?? "nothing imported");
+        if (data.ImportedFrom != null && !Bmm.Present) // its file is only read; with it on, it saves its own changes there
+            Check("its file is left as it was", File.GetLastWriteTime(data.ImportedFrom) < System.Diagnostics.Process.GetCurrentProcess().StartTime);
+        var categories = string.Join(", ", data.Categories.Select(c => c.Collapsed ? $"{c.Name} (collapsed)" : c.Name));
+        Check("its groups are our categories, in order, the collapsed one collapsed", categories == "Frameworks, Content (collapsed), Menus", categories);
+        string Fields(string id) => Store.InfoFor(id) is { } info ? $"{id}: {info.Category ?? "-"} / {info.Alias ?? "-"} / {info.Notes ?? "-"}" : $"{id}: none";
+        Check("a mod's group is its category; aliases and notes come along, empty ones left out", data.Mods.Count == 4
+            && Store.InfoFor("SmmTestLib") is { Category: "Frameworks", Alias: "Framework", Notes: "Keep on: Test Content and Test UI need it.", Tags: null }
+            && Store.InfoFor("SmmTestContent") is { Category: "Content", Alias: "Content pack", Notes: null }
+            && Store.InfoFor("SmmTestUi") is { Category: null, Alias: null, Notes: "Turn off for co-op." }
+            && Store.InfoFor(Bmm.ModId) is { Category: "Menus", Alias: null, Notes: null },
+            string.Join("; ", data.Mods.Keys.Order().Select(Fields)));
+
+        var names = string.Join(", ", data.Profiles.Select(p => p.Name));
+        Check("its profiles are ours, its current one active, matching the mod list", names == "Framework only, Everything" && data.ActiveProfile == "Everything"
+            && !Profiles.Edited,
+            $"{names}; active {data.ActiveProfile}");
+        string[] testMods = ["SmmTestLib", "SmmTestContent", "SmmTestUi"];
+        bool? On(string profile, string id) => data.Profiles.FirstOrDefault(p => p.Name == profile)?.Mods.FirstOrDefault(m => m.Id == id)?.Enabled;
+        Check("in each, every installed mod on but the ones it had off", data.Profiles.All(p => p.Disabled == null)
+            && On("Framework only", "SmmTestLib") == true && On("Framework only", "SmmTestContent") == false && On("Framework only", "SmmTestUi") == false
+            && On("Framework only", ModEntry.ModId) == true && testMods.All(id => On("Everything", id) == true),
+            string.Join("; ", data.Profiles.Select(p => $"{p.Name}: {string.Join(", ", testMods.Select(id => $"{id} {On(p.Name, id)}"))}")));
+
+        // On the page: its groups as headers, its alias on the row, the notepad on a mod with notes; no hint.
+        NModMenuRow? Row(string id) => content.GetChildren().OfType<NModMenuRow>().FirstOrDefault(r => r.Mod?.manifest?.id == id);
+        var headers = content.GetChildren().Select(c => c.Name.ToString()).Where(n => n.StartsWith("Category ") || n == "Uncategorized").ToList();
+        var libTitle = Row("SmmTestLib")?.GetNode<RichTextLabel>("Title").Text ?? "";
+        Check("on the page: its groups as headers (the collapsed one closed), its alias on the row, the notepad for notes, no hint",
+            headers.SequenceEqual(["Category Frameworks", "Category Content", "Category Menus", "Uncategorized"]) && Row("SmmTestContent") is { Visible: false }
+            && libTitle.StartsWith("Framework") && Row("SmmTestUi")?.GetNodeOrNull<Control>("SpireModManagerEditedMark") is { Visible: true }
+            && screen.FindChild(PageBar.HintName, true, false) == null,
+            $"{string.Join(", ", headers)}; Test Content shown {Row("SmmTestContent")?.Visible}; title {libTitle}");
+        var bar = screen.GetNode("ModsBorder/SpireModManagerProfileBar");
+        var picker = (Button)bar.FindChild("ProfilePicker", true, false);
+        Check("the profile bar shows its current profile", picker.Text == "Everything", picker.Text);
+        await Capture(screen, outDir, "first-run-bmm-1-imported");
+        await RealClick(menu, picker);
+        var list = MenuPanel.Current;
+        var labels = list == null ? [] : MenuPanel.Labels(list);
+        Check("the profile list has both of its profiles", labels.Contains("Framework only") && labels.Contains("Everything"), string.Join(", ", labels));
+        await Capture(screen, outDir, "first-run-bmm-2-profiles");
+        await RealClick(menu, picker);
+    }
+
+    // A second launch, as far as our data goes: the file the first run wrote is read back. Nothing is imported or
+    // made again: an edit since then is still there, and there's no second set of profiles.
+    static void TestSecondLoad()
+    {
+        Store.EditMod("SmmTestUi", info => info.Tags = ["since first run"]);
+        var before = Store.EditsJson();
+        string Summary() => $"profiles {string.Join(", ", Store.Data.Profiles.Select(p => p.Name))}; {Store.Data.Categories.Count} categories; " +
+            $"{Store.Data.Mods.Count} mods; imported from {Store.Data.ImportedFrom ?? "nothing"}";
+        var was = Summary();
+        Store.Reload();
+        Profiles.Prepare(); // as at launch
+        Check("a second load reads our file back: nothing imported or added again", Store.EditsJson() == before
+            && Store.InfoFor("SmmTestUi")?.Tags?.SequenceEqual(["since first run"]) == true, $"{was} -> {Summary()}");
+    }
+
     // Regressions from Jordan's 2026-10-07 notes: clicks outside the list, list height after collapsing,
     // focus on empty clicks, inline buttons centred in their strip.
     static async Task TestListFixes(Node menu, NModdingScreen screen, Control content)
@@ -324,8 +594,14 @@ static class SelfTest
 
         // Opening on our main list, after its deferred work.
         OursHold("main list", 175);
-        Check("Better Mod Menu's button in place of Vanilla List", screen.GetNode<NButton>("SpireModManagerViewToggle")
-            .GetNode<Label>("Visuals/Label").Text == Menus.Text("SPIRE_MOD_MANAGER.BMM_VIEW"));
+        var toggles = new[] { "SpireModManagerViewToggle", "SpireModManagerLoadOrderToggle" }.Select(name => screen.GetNode<Control>(name)).ToList();
+        Check("the button to its page still says Vanilla List", toggles[0].GetNode<Label>("Visuals/Label").Text == Menus.Text("SPIRE_MOD_MANAGER.VANILLA_VIEW"));
+        var warningBox = screen.GetNode<Control>(Bmm.WarningName).GetGlobalRect();
+        var pendingBox = screen.GetNode<Control>("%PendingChangesLabel").GetGlobalRect();
+        Check("the warning sits beside the view buttons, clear of them and of the restart line",
+            Math.Abs(warningBox.GetCenter().Y - toggles[1].GetGlobalRect().GetCenter().Y) < 2 && warningBox.Position.X > toggles[1].GetGlobalRect().End.X
+            && !toggles.Any(t => t.GetGlobalRect().Intersects(warningBox)) && pendingBox.Position.X >= warningBox.End.X,
+            $"warning {warningBox}, buttons {string.Join(", ", toggles.Select(t => t.GetGlobalRect()))}, restart line {pendingBox}");
 
         // Resizes don't set off its re-layout on our views.
         var before = $"{Box(border)} | {Box(scroll)}";
@@ -711,7 +987,7 @@ static class SelfTest
         }
         void Press(string name) => bar.FindChild(name, true, false)?.EmitSignal(BaseButton.SignalName.Pressed);
         if (Profiles.Edited)
-            Profiles.Save(); // start clean: the fixture launches on an unsaved edit (its list differs from the profile)
+            Profiles.Save(); // start clean
         var wasOn = On();
         string Shown(string box) => bar.FindChild(box, true, false) is Control { Visible: true } c
             ? string.Join(",", c.GetChildren().Select(b => b.Name.ToString())) : "";
@@ -750,6 +1026,61 @@ static class SelfTest
         Check("Ctrl+S saves the profile", !Profiles.Edited && SavedOn() == wasOn && profile.Edited == null);
     }
 
+    // New mods and profiles (Jordan, 2026-10-13). The fixture's Default profile doesn't list the test mods, which
+    // are on (the game's default for a new mod): they joined it at launch, on, quietly (no unsaved edit, and so
+    // already in the state the session started from, which Changes and Revert all compare with).
+    static void TestNewModsAtLaunch()
+    {
+        string[] ids = ["SmmTestLib", "SmmTestUi", "SmmTestContent"];
+        if (Profiles.Active is not { } profile || ids.Any(id => Dependencies.Find(id) == null))
+        {
+            Results.Add("SKIP new mods at launch: needs the test mods");
+            return;
+        }
+        Check("mods the active profile had never seen joined it at launch, on", ids.All(id => profile.Mods.Any(m => m.Id == id && m.Enabled)),
+            string.Join(", ", profile.Mods.Select(m => $"{m.Id}={(m.Enabled ? "on" : "off")}")));
+        var (on, off) = Profiles.UnsavedChanges();
+        Check("quietly: no unsaved edit, and already so in the launch state", !Profiles.Edited && ids.All(id => OnInSnapshot(History.Loaded, id)),
+            $"edited {Profiles.Edited} (+{string.Join(", +", on)} -{string.Join(", -", off)}), in the launch state {ids.Count(id => OnInSnapshot(History.Loaded, id))} of {ids.Length}");
+    }
+
+    // Switching to a profile that has never seen a mod (here: two test mods taken out of the other profile, as if
+    // installed since it was last used) leaves the mod as it is, on or off, and that profile keeps it that way from
+    // then on. The profile left keeps its unsaved edit, which is then discarded.
+    static async Task TestNewModsOnSwitch(Node menu, NModdingScreen screen, Control content)
+    {
+        if (Profiles.Active is not { } start || Store.Data.Profiles.FirstOrDefault(p => p != start) is not { } other
+            || Dependencies.Find("SmmTestUi") == null
+            || content.GetChildren().OfType<NModMenuRow>().FirstOrDefault(r => r.Mod?.manifest?.id == "SmmTestContent")?.GetNode<NTickbox>("Tickbox") is not { } tickbox)
+        {
+            Results.Add("SKIP new mods on switch: needs two profiles and the test mods");
+            return;
+        }
+        bool On(string id) => !(SaveManager.Instance.SettingsSave.ModSettings?.IsModDisabled(id, ModSource.ModsDirectory) ?? false);
+        bool Saved(Profile profile, string id, bool on) => profile.Mods.Any(m => m.Id == id && m.Enabled == on);
+        string[] unseen = ["SmmTestUi", "SmmTestContent"];
+        if (Profiles.Edited)
+            Profiles.Save(); // start clean
+        tickbox.IsTicked = false; // Test Content off (an unsaved edit), Test UI on
+        tickbox.EmitSignal(NTickbox.SignalName.Toggled, tickbox);
+        await Wait(menu, 0.3);
+        other.Mods.RemoveAll(m => unseen.Contains(m.Id));
+        other.Edited?.RemoveAll(m => unseen.Contains(m.Id));
+
+        Profiles.SwitchTo(other, screen);
+        await Wait(menu, 0.3);
+        Check("switching to a profile that never saw a mod leaves it as it is, on or off", On("SmmTestUi") && !On("SmmTestContent"),
+            $"Test UI on {On("SmmTestUi")}, Test Content on {On("SmmTestContent")}");
+        Check("that profile keeps them that way from then on, with no unsaved edit",
+            Saved(other, "SmmTestUi", true) && Saved(other, "SmmTestContent", false) && !Profiles.Edited,
+            $"{string.Join(", ", other.Mods.Where(m => unseen.Contains(m.Id)).Select(m => $"{m.Id}={(m.Enabled ? "on" : "off")}"))}, edited {Profiles.Edited}");
+        Profiles.SwitchTo(start, screen);
+        await Wait(menu, 0.3);
+        Check("back: the profile left still has its unsaved edit", Profiles.Edited && !On("SmmTestContent") && Saved(start, "SmmTestContent", true));
+        Profiles.Discard(screen);
+        await Wait(menu, 0.3);
+    }
+
     // The fixture gives SpireModManager an alias and notes; LocalModFixes gets them through the editor.
     static async Task TestNotes(Node menu, NModdingScreen screen, Control content, string outDir)
     {
@@ -768,6 +1099,7 @@ static class SelfTest
         Check("no alias pencil on rows", !ours.HasNode("SpireModManagerPencil"));
         CategoryList.Select(screen, ours);
         await Wait(menu, 0.5);
+        Check("row state reads the game's: the selected row is selected, another not", RowState.Selected(ours) && !RowState.Selected(other));
         var description = panel.GetNode<RichTextLabel>("ModDescription").GetParsedText();
         var yours = panel.GetNode<Control>("SpireModManagerYours");
         LineEdit Line(string field) => yours.GetNode<LineEdit>($"{field}/Box");
@@ -928,12 +1260,17 @@ static class SelfTest
             manifest = new ModManifest { id = "SmmFreshMod", name = "Fresh Mod" },
         };
         var rowsBefore = content.GetChildren().OfType<NModMenuRow>().ToList();
+        var wasEdited = Profiles.Edited;
         typeof(ModManager).GetMethod("InvokeOnModDetected", System.Reflection.BindingFlags.NonPublic | System.Reflection.BindingFlags.Static)
             ?.Invoke(null, [fresh]);
         await Wait(menu, 0.4);
         NModalContainer.Instance?.Clear();
         Check("a mod installed now is listed as installed, loading after relaunch",
             HistoryBar.Describe().Any(l => l.Contains("Installed: Fresh Mod") && l.Contains("loads after relaunch")), string.Join(" | ", HistoryBar.Describe()));
+        // It joins the active profile at once, on, quietly: no unsaved edit, and Revert all's state has it too.
+        Check("a mod installed now joins the active profile, on, quietly",
+            Profiles.Active?.Mods.Any(m => m.Id == "SmmFreshMod" && m.Enabled) == true && Profiles.Edited == wasEdited && OnInSnapshot(History.Entered, "SmmFreshMod"),
+            $"in the profile {Profiles.Active?.Mods.Any(m => m.Id == "SmmFreshMod")}, edited {wasEdited} -> {Profiles.Edited}, in Revert all's state {OnInSnapshot(History.Entered, "SmmFreshMod")}");
         Check("a mod installed now gets a New tag, first", Tags.For(fresh).FirstOrDefault()?.Text == "New");
         var freshRow = content.GetChildren().OfType<NModMenuRow>().Except(rowsBefore).FirstOrDefault(r => r.Mod == fresh);
         if (freshRow != null)
@@ -945,10 +1282,17 @@ static class SelfTest
             Check("unticking a new mod is saved, and Changes says it's disabled",
                 SaveManager.Instance.SettingsSave.ModSettings?.IsModDisabled(fresh) == true
                 && HistoryBar.Describe().Any(l => l.Contains("Fresh Mod") && l.Contains("Disabled")), string.Join(" | ", HistoryBar.Describe()));
+            Check("unticking it is an unsaved edit of the profile", Profiles.Edited && Profiles.UnsavedChanges().Off.Contains("Fresh Mod"),
+                $"edited {Profiles.Edited}, off: {string.Join(", ", Profiles.UnsavedChanges().Off)}");
             HistoryBar.ShowList(screen);
             await Wait(menu, 0.2);
             await Capture(screen, outDir, "10c-installed-change");
             HistoryBar.CloseList(screen.GetNode<Control>("%ModInfoContainer"));
+            // Undone: before the untick the game had no entry for it (on), and the profile had it on.
+            History.Undo();
+            await Wait(menu, 0.3);
+            Check("undoing the untick: the new mod on again, the profile as it was", SaveManager.Instance.SettingsSave.ModSettings?.IsModDisabled(fresh) == false
+                && Profiles.Edited == wasEdited, $"disabled {SaveManager.Instance.SettingsSave.ModSettings?.IsModDisabled(fresh)}, edited {wasEdited} -> {Profiles.Edited}");
             content.RemoveChild(freshRow);
             freshRow.QueueFree();
         }
@@ -956,6 +1300,7 @@ static class SelfTest
             Results.Add("FAIL a mod installed now gets a row");
         Installed.Forget(fresh);
         SaveManager.Instance.SettingsSave.ModSettings?.ModList.RemoveAll(e => e.Id == "SmmFreshMod");
+        Profiles.Track(); // its unsaved edit goes with it
         History.Record();
         CategoryList.Redraw(content); // the pending note too
         if (added != null)
@@ -1727,6 +2072,126 @@ static class SelfTest
         }
     }
 
+    // Store.cs on made-up folders under the output folder (the sandbox's own manager.json is never touched): an
+    // unreadable file is set aside (never over another) and the newest backup that reads takes its place, written
+    // back; with no backup, a fresh start; a locked file is left alone and nothing is saved; nulls in a
+    // hand-edited file become empty lists; a backup copy that fails doesn't stop the save. Then the notice: the
+    // game's popup as the page opens (here: shown again), once.
+    static async Task TestStoreSafety(Node menu, NModdingScreen screen, string outDir)
+    {
+        var root = Path.Combine(outDir, "store-safety");
+        if (Directory.Exists(root))
+            Directory.Delete(root, recursive: true);
+        string Folder(string name, string? manager, params (string Name, string Json)[] backups)
+        {
+            var dir = Path.Combine(root, name);
+            Directory.CreateDirectory(Path.Combine(dir, "backups"));
+            if (manager != null)
+                File.WriteAllText(Path.Combine(dir, "manager.json"), manager);
+            foreach (var (file, json) in backups)
+                File.WriteAllText(Path.Combine(dir, "backups", file), json);
+            return dir;
+        }
+        static string Manager(string dir) => Path.Combine(dir, "manager.json");
+        static string Good(string category) => $"{{\"categories\":[{{\"name\":\"{category}\"}}]}}";
+        static string? Category(Store.Loaded loaded) => loaded.Data?.Categories.FirstOrDefault()?.Name;
+        const string cut = "{\"categories\":[{\"name\":\"Hal"; // a write cut off
+        var now = new DateTime(2026, 10, 13, 9, 30, 0);
+
+        // Unreadable, with backups: the newest that reads ("Newest"; the one after it is cut off too). A file set
+        // aside earlier in the same second keeps its name.
+        var dir = Folder("recovered", cut, ("manager.20261010-100000.json", Good("Older")), ("manager.20261011-100000.json", Good("Newest")),
+            ("manager.20261012-100000.json", cut));
+        var newest = Path.Combine(dir, "backups", "manager.20261011-100000.json");
+        File.SetLastWriteTime(newest, new DateTime(2026, 10, 11, 22, 15, 0));
+        var earlier = Path.Combine(dir, "manager.broken-20261013-093000.json");
+        File.WriteAllText(earlier, "earlier");
+        var recovered = Store.LoadFrom(dir, now);
+        Check("an unreadable file: the newest backup that reads is loaded", Category(recovered) == "Newest" && recovered.Backup?.Path == newest
+            && !recovered.ReadOnly, $"{Category(recovered)} from {recovered.Backup?.Path}");
+        var setAside = Path.Combine(dir, "manager.broken-20261013-093000-2.json");
+        Check("the unreadable file is kept as manager.broken-<time>.json, never over another file", recovered.Unreadable == setAside
+            && File.Exists(setAside) && File.ReadAllText(setAside) == cut && File.ReadAllText(earlier) == "earlier", recovered.Unreadable ?? "not set aside");
+        var next = Store.LoadFrom(dir, now);
+        Check("the backup is written back: the next launch reads it as usual", Category(next) == "Newest" && next is { Unreadable: null, Backup: null },
+            $"{Category(next)}, unreadable {next.Unreadable}");
+        File.Delete(Manager(dir));
+        var missing = Store.LoadFrom(dir, now);
+        Check("no file, but one was set aside before: the backups again, not a first run (no import)", Category(missing) == "Newest"
+            && missing.Unreadable == null && File.Exists(Manager(dir)));
+
+        // Unreadable (empty: a write cut off by a power loss) and no backup: a fresh start, written.
+        var fresh = Folder("fresh", "");
+        var started = Store.LoadFrom(fresh, now);
+        Check("no backup: a fresh start, the unreadable file kept, a new file written", started is { Data: { Categories.Count: 0, Profiles.Count: 0 }, Backup: null, Unreadable: { } keptAs }
+            && File.Exists(keptAs) && Store.LoadFrom(fresh, now) is { Data: not null, Unreadable: null }, started.Unreadable ?? "not set aside");
+
+        // A file another program holds open (a Windows lock): left where it is, the backup loaded, nothing saved.
+        if (OperatingSystem.IsWindows())
+        {
+            var lockedDir = Folder("locked", Good("Mine"), ("manager.20261011-100000.json", Good("Backup")));
+            Store.Loaded locked;
+            using (File.Open(Manager(lockedDir), FileMode.Open, System.IO.FileAccess.Read, FileShare.None))
+                locked = Store.LoadFrom(lockedDir, now);
+            Check("a locked file: left in place, the backup loaded, read-only", locked.ReadOnly && locked.Unreadable == Manager(lockedDir)
+                && Category(locked) == "Backup" && File.ReadAllText(Manager(lockedDir)) == Good("Mine")
+                && Directory.GetFiles(lockedDir, "manager.broken-*").Length == 0, $"read-only {locked.ReadOnly}, {Category(locked)}");
+        }
+
+        // Nulls in a hand-edited (or old) file: empty lists, null entries dropped; the file itself untouched.
+        const string nulls = "{\"categories\":[null,{\"name\":null}],\"mods\":{\"A\":null,\"B\":{\"tags\":[\"x\",null]},\"C\":{\"tags\":[]}},"
+            + "\"profiles\":[null,{\"name\":\"P\",\"mods\":null,\"edited\":[null,{\"id\":\"X\",\"source\":\"ModsDirectory\",\"enabled\":true}],\"disabled\":[{\"id\":null}]}]}";
+        var nullsDir = Folder("nulls", nulls);
+        var tidied = Store.LoadFrom(nullsDir, now);
+        Check("nulls in a file: empty lists, null entries dropped, the file untouched", tidied is { Unreadable: null, Data: { } data }
+            && data is { Categories: [{ Name: "" }], Profiles: [{ Name: "P", Mods.Count: 0, Edited: [{ Id: "X" }], Disabled.Count: 0 }] }
+            && data.Mods.Keys.Order().SequenceEqual(["B", "C"]) && data.Mods["B"].Tags is ["x"] && data.Mods["C"].Tags == null
+            && File.ReadAllText(Manager(nullsDir)) == nulls, tidied.Unreadable ?? "");
+        var allNull = Store.LoadFrom(Folder("all-null", "{\"categories\":null,\"mods\":null,\"profiles\":null}"), now);
+        Check("a file whose lists are null: empty ones", allNull.Data is { Categories.Count: 0, Mods.Count: 0, Profiles.Count: 0 });
+        Check("no file and nothing set aside: a first run", Store.LoadFrom(Folder("first", null), now).Data == null
+            && Store.LoadFrom(Path.Combine(root, "no-folder"), now).Data == null);
+
+        // Saving: the old file goes to backups/ first, the newest ten kept; a backup that fails (here a file sits
+        // where the backups folder goes) doesn't stop the save.
+        var saving = Folder("saving", Good("Old"), Enumerable.Range(1, 11).Select(i => ($"manager.20200101-0000{i:00}.json", Good($"Old {i}"))).ToArray());
+        Store.WriteTo(saving, new StoreData { Categories = [new Category { Name = "New" }] }, backUp: true);
+        var copies = Directory.GetFiles(Path.Combine(saving, "backups")).Order().ToList();
+        Check("a save backs up the old file first, the newest ten kept", Category(Store.LoadFrom(saving, now)) == "New" && copies.Count == 10
+            && File.ReadAllText(copies[^1]) == Good("Old") && !copies.Any(f => f.EndsWith("-000001.json") || f.EndsWith("-000002.json")),
+            string.Join(", ", copies.Select(Path.GetFileName)));
+        var blocked = Path.Combine(root, "blocked");
+        Directory.CreateDirectory(blocked);
+        File.WriteAllText(Manager(blocked), Good("Old"));
+        File.WriteAllText(Path.Combine(blocked, "backups"), "a file where the backups folder goes");
+        Store.WriteTo(blocked, new StoreData { Categories = [new Category { Name = "New" }] }, backUp: true);
+        Check("a backup that fails doesn't stop the save", Category(Store.LoadFrom(blocked, now)) == "New");
+
+        // The notice: none for a file that read fine; after a recovery, the game's popup as the page shows, with
+        // the backup's date and where the unreadable file is; once.
+        Check("no notice when the file read fine", !Store.ShowNotice(next) && NModalContainer.Instance?.OpenModal == null);
+        Store.Notice = recovered;
+        screen.Visible = false;
+        screen.Visible = true;
+        await Wait(menu, 0.3);
+        var popup = NModalContainer.Instance?.OpenModal as Node;
+        var text = string.Join(" | ", popup?.FindChildren("*", "", true, false)
+            .Select(n => n is Label l ? l.Text : n is RichTextLabel r ? r.GetParsedText() : "").Where(t => t.Length > 0) ?? []);
+        Check("after a recovery, the page shows the notice: the backup's date and the unreadable file's name", popup is NErrorPopup
+            && text.Contains("couldn't read your data") && text.Contains("October 11, 2026, 22:15") && text.Contains(Path.GetFileName(setAside)) && Store.Notice == null, text);
+        await Capture(popup ?? screen, outDir, "19-data-notice");
+        NModalContainer.Instance?.Clear();
+        screen.Visible = false;
+        screen.Visible = true;
+        await Wait(menu, 0.3);
+        Check("the notice shows once", NModalContainer.Instance?.OpenModal == null);
+        // Each of its three texts reads whole (no placeholder left, no stray escape), naming the file.
+        var texts = new[] { recovered, recovered with { Backup = null }, recovered with { ReadOnly = true } }
+            .Select(loaded => Store.NoticeText(loaded)?.GetFormattedText() ?? "").ToList();
+        Check("the notice's texts (backup, fresh start, read-only) read whole and name the file", texts.All(t => t.Contains(Path.GetFileName(setAside))
+            && !t.Contains('{') && !t.Contains('\\')), string.Join(" | ", texts));
+    }
+
     static async Task<bool> WithVanillaView(NModdingScreen screen, Node menu, Func<bool> check)
     {
         Click(screen.GetNode<NButton>("SpireModManagerViewToggle"));
@@ -1794,6 +2259,16 @@ static class SelfTest
     static List<string> ModListState() =>
         SaveManager.Instance.SettingsSave.ModSettings?.ModList
             .Select(m => $"{m.Id}/{m.Source}={(m.IsEnabled ? "on" : "off")}").OrderBy(s => s).ToList() ?? [];
+
+    // Whether a history snapshot's active profile has the mod, on.
+    static bool OnInSnapshot(History.Snapshot? snapshot, string id)
+    {
+        if (snapshot == null || JsonNode.Parse(snapshot.Store) is not JsonObject store)
+            return false;
+        var active = (string?)store["active_profile"];
+        return (store["profiles"] as JsonArray ?? []).Any(p => (string?)p?["name"] == active
+            && (p?["mods"] as JsonArray ?? []).Any(m => (string?)m?["id"] == id && (bool?)m?["enabled"] == true));
+    }
 
     static void Check(string name, bool ok, string detail = "") =>
         Results.Add($"{(ok ? "PASS" : "FAIL")} {name}{(ok || detail.Length == 0 ? "" : $": {detail}")}");
