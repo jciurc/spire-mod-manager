@@ -207,6 +207,8 @@ static class RowTitles
     // Called on every change of the row's state (focus, selection; patches on the game's row) and each redraw.
     public static void Look(NModMenuRow row, bool selected, bool focused)
     {
+        if (!RowState.Found)
+            return; // a game update renamed the row's own state: we can't tell its look, so it stays the game's
         if (row.GetNodeOrNull<Panel>("SelectionHighlight") is not { } look)
             return;
         if (!look.HasMeta(GameLookMeta))

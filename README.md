@@ -51,6 +51,9 @@ copy of the game in `D:\sts2-dev` with its own mods folder, no Steam, separate s
   Mod Menu's data to import (`tools/fixtures/bmm`), with it installed but off, or on with `--bmm` as well.
 - `dotnet run tools/dev.cs launch`: opens the sandboxed game to try things by hand (`--first-run` or
   `--first-run-bmm`: starting from that state).
+- `SPIRE_MOD_MANAGER_SKIP_PATCHES=ModToggledPatch` (patch class names, comma-separated) before `test` or `launch`:
+  those patches count as failed, as after a game update that broke them, to see the game's page and its
+  "needs an update" line.
 - `dotnet run tools/pck.cs list|extract`: look inside the game's pack (scenes, images).
 
 Notes: TODO.md (requests and their state), DESIGN.md (decisions and background), WHATS-NEW.md (what to

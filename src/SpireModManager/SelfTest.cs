@@ -48,6 +48,12 @@ static class SelfTest
         try
         {
             await Wait(menu, 3);
+            TestFailSoft();
+            if (!ModEntry.OurPage)
+            {
+                await TestGamePage(menu, outDir); // nothing more of ours to test
+                return;
+            }
             Check("no popup open", NModalContainer.Instance?.OpenModal == null,
                 NModalContainer.Instance?.OpenModal?.GetType().Name ?? "");
             Check("main menu button", menu.GetNodeOrNull("SpireModManagerMenuButton") != null);
@@ -154,6 +160,7 @@ static class SelfTest
         try
         {
             await Wait(menu, 3);
+            CheckPatches();
             var screen = menu.SubmenuStack.PushSubmenuType<NModdingScreen>();
             await Wait(menu, 2);
             var content = screen.GetNode<Control>("%ModsScrollContainer/Mask/Content");
@@ -248,6 +255,71 @@ static class SelfTest
             File.WriteAllLines(Path.Combine(outDir, "results.txt"), Results);
             menu.GetTree().Quit();
         }
+    }
+
+    // A game update that renames what a patch hooks. On this game version: every patch applied, and the row state
+    // the game keeps to itself is found. Which failures keep the game's Modding page (with the needs-update line)
+    // instead of ours: any one patch our page needs; none of the others.
+    static void TestFailSoft()
+    {
+        CheckPatches();
+        Check("row state: the game's selected and focused members found", RowState.Found);
+        string[] spare = [nameof(RowLookPatch), nameof(ShortcutsPatch), nameof(NewModPatch), nameof(ModInfoClearPatch),
+            nameof(NewModPopupPatch), nameof(NewModTogglePatch)];
+        Check("our page with no patch failed, or only ones it can do without", ModEntry.PageWorks([]) && ModEntry.PageWorks(spare));
+        Check("the game's page if any one patch our page needs failed", ModEntry.PageNeeds.Contains(nameof(ModdingScreenPatch))
+            && ModEntry.PageNeeds.All(needed => !ModEntry.PageWorks([needed]) && !ModEntry.PageWorks([.. spare, needed])),
+            string.Join(", ", ModEntry.PageNeeds.Where(needed => ModEntry.PageWorks([needed]))));
+        // The line itself, on a stand-in for the screen.
+        var stand = new Control();
+        var line = ModEntry.ShowNeedsUpdate(stand);
+        Check("the needs-update line: its text, once, above the game's list and info panel",
+            line.Text == "Spire Mod Manager needs an update for this game version." && ModEntry.ShowNeedsUpdate(stand) == line
+            && stand.GetChildCount() == 1 && line.Position.Y + line.Size.Y <= 83, $"{line.Text} at {line.Position}, {line.Size}");
+        stand.Free();
+    }
+
+    // dev.cs test with SPIRE_MOD_MANAGER_SKIP_PATCHES naming a patch our page needs (not MainMenuPatch: this test
+    // starts from it): the Modding page is the game's, with the needs-update line and none of ours, the info panel
+    // included. Without the screen's own patch, the line is the main menu button's note instead.
+    static async Task TestGamePage(NMainMenu menu, string outDir)
+    {
+        Results.Add($"INFO left out: {string.Join(", ", ModEntry.FailedPatches)}");
+        const string text = "Spire Mod Manager needs an update for this game version.";
+        if (ModEntry.FailedPatches.Contains(nameof(ModdingScreenPatch)))
+        {
+            var note = menu.GetNodeOrNull<Label>("SpireModManagerMenuButton/PendingNote");
+            Check("no Modding screen patch: the main menu button's note says the mod needs an update", note is { Visible: true, Text: text }, note?.Text ?? "no note");
+            await Capture(menu, outDir, "1-main-menu-needs-update");
+            return;
+        }
+        var screen = menu.SubmenuStack.PushSubmenuType<NModdingScreen>();
+        await Wait(menu, 2);
+        Check("the game's page, with the needs-update line", screen.GetNodeOrNull<Label>(ModEntry.NeedsUpdateName) is { Visible: true, Text: text },
+            screen.GetNodeOrNull<Label>(ModEntry.NeedsUpdateName)?.Text ?? "no line");
+        var border = screen.GetNode<Control>("ModsBorder");
+        Check("none of ours on it: no buttons, bars or headers; the game's boxes", screen.GetNodeOrNull("SpireModManagerViewToggle") == null
+            && screen.GetNodeOrNull("SpireModManagerRelaunchButton") == null && border.GetNodeOrNull("SpireModManagerProfileBar") == null
+            && !screen.GetNode("%ModsScrollContainer/Mask/Content").GetChildren().Any(c => c.IsInGroup("SpireModManagerCategoryHeader"))
+            && border.OffsetLeft == 255 && border.OffsetRight == 994, $"{border.OffsetLeft}..{border.OffsetRight}");
+        if (screen.GetNode("%ModsScrollContainer/Mask/Content").GetChildren().OfType<NModMenuRow>().FirstOrDefault() is { } row)
+        {
+            CategoryList.Select(screen, row);
+            await Wait(menu, 0.5);
+            Check("a mod shown in the panel: the game's details only", screen.GetNode("%ModInfoContainer").GetNodeOrNull(ModDetails.HeadName) == null);
+            // Our row look never ran (it saves the game's look the first time it does).
+            Check("the selected row keeps the game's highlight", row.GetNodeOrNull<Control>("SelectionHighlight") is { } look
+                && !look.HasMeta("spire_mod_manager_game_look"));
+        }
+        await Capture(screen, outDir, "2-game-page-needs-update");
+    }
+
+    // Every patch applied; in a dev run that leaves some out (SPIRE_MOD_MANAGER_SKIP_PATCHES), exactly those failed.
+    static void CheckPatches()
+    {
+        var skipped = ModEntry.SkippedPatches;
+        Check(skipped.Count == 0 ? "every patch applied" : $"every patch applied but the ones left out ({string.Join(", ", skipped)})",
+            ModEntry.FailedPatches.Order().SequenceEqual(skipped.Order()), string.Join(", ", ModEntry.FailedPatches));
     }
 
     // --first-run / --first-run-bmm: the game started with no manager.json, and either nothing of Better Mod Menu's
@@ -938,6 +1010,7 @@ static class SelfTest
         Check("no alias pencil on rows", !ours.HasNode("SpireModManagerPencil"));
         CategoryList.Select(screen, ours);
         await Wait(menu, 0.5);
+        Check("row state reads the game's: the selected row is selected, another not", RowState.Selected(ours) && !RowState.Selected(other));
         var description = panel.GetNode<RichTextLabel>("ModDescription").GetParsedText();
         var yours = panel.GetNode<Control>("SpireModManagerYours");
         LineEdit Line(string field) => yours.GetNode<LineEdit>($"{field}/Box");

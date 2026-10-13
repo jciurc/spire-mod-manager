@@ -30,7 +30,8 @@
    - Create `main` from `dev`, and tag `v1.0.0`.
 3. **Clean upload folder.** `out/` holds `bin/` (pdb, deps.json), `dev.log` and `selftest/real-*.txt`, which contain your real categories, mod list and profile names.
    - Fix: a `build.cs --dist` that writes `dist/SpireModManager/` with only the `.dll`, `.json` and `.pck`. The uploader's `content/` is filled from that folder only.
-4. **Fail soft when a game patch renames something.** This is Early Access, and 0.112 could break half the page for every user.
+4. **Fail soft when a game patch renames something.** **Fixed (2026-10-13).** This is Early Access, and 0.112 could break half the page for every user.
+   - Done: each patch class is applied on its own (`ModEntry.FailedPatches`). `ModEntry.PageNeeds` lists the ones the page can't run without (main menu, Modding screen, tickbox, info panel fill, row selected); if one failed, the page stays the game's with one line, "Spire Mod Manager needs an update for this game version." (beside the main menu button instead if the screen patch itself failed). Dev runs can try it: `SPIRE_MOD_MANAGER_SKIP_PATCHES=ModInfoFillPatch`.
    - `ModEntry.cs:23-24`: `PatchAll` is all-or-nothing, and `Installed.Watch()` runs after it.
      - Fix: call `Watch()` first, then patch each `[HarmonyPatch]` class in its own try/catch (`harmony.CreateClassProcessor(type).Patch()`). Record which patches failed. If any UI patch failed, keep the vanilla layout and show one line on the screen: "Spire Mod Manager needs an update for this game version".
    - `Patches.cs:360-368` `RowState`: the static reflection initializers throw `TypeInitializationException` on every redraw if `_isSelected` or `IsFocused` is renamed. `RowTitles.cs:37` calls them outside any try.
