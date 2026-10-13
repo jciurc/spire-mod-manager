@@ -1959,12 +1959,14 @@ static class SelfTest
         Check("Esc closes it, and stays on the page", Dialog() == null && screen.IsVisibleInTree() && Dependencies.IsOn(branded));
     }
 
-    // A snapshot of the edge case, not a fix (yet): a made-up mod with very long everything (name, author,
-    // version, description, alias, tags, notes), shown in the list and the panel. The screenshot
-    // 16-long-details shows how it looks today; it's removed again afterwards.
+    // A made-up mod with very long everything (name, id, author, version, description, alias, many tags, notes),
+    // shown in the list and the panel (screenshot 16-long-details). The panel's title stays on one line with its
+    // version and the source line keeps its status, both cut with "…" (the whole text a second over them); the
+    // row keeps its author, the tags that don't fit folded into "+N". It's removed again afterwards.
     static async Task TestLongDetails(Node menu, NModdingScreen screen, Control content, string outDir)
     {
         const string id = "SmmVeryLongModIdentifierThatGoesOnAndOnForTheSakeOfTesting";
+        const string name = "The Extraordinarily Long-Named Compendium of Every Card, Relic, Potion and Event Ever Imagined (Deluxe Edition)";
         var words = "lorem ipsum dolor sit amet consectetur adipiscing elit sed do eiusmod tempor incididunt ut labore et dolore magna aliqua".Split(' ');
         string Text(int count) => string.Join(' ', Enumerable.Range(0, count).Select(i => words[i % words.Length]));
         var mod = new Mod
@@ -1972,7 +1974,7 @@ static class SelfTest
             path = "", modSource = ModSource.ModsDirectory, state = ModLoadState.AddedAtRuntime,
             manifest = new ModManifest
             {
-                id = id, name = "The Extraordinarily Long-Named Compendium of Every Card, Relic, Potion and Event Ever Imagined (Deluxe Edition)",
+                id = id, name = name,
                 author = "A Collective of Very Enthusiastic Modders With An Unusually Long Team Name", version = "12.345.6789-beta.12+build.98765",
                 description = Text(220), minGameVersion = "0.111.0",
             },
@@ -1984,7 +1986,8 @@ static class SelfTest
         {
             info.Alias = "My favourite enormous content pack that I keep meaning to rename to something shorter";
             info.Notes = Text(120);
-            info.Tags = ["content", "big", "really-long-tag-name-for-testing", "favourites", "co-op", "needs-checking-after-every-update", "deluxe"];
+            info.Tags = ["content", "big", "really-long-tag-name-for-testing", "favourites", "co-op", "needs-checking-after-every-update", "deluxe",
+                "cards", "relics", "events", "potions", "late-game"];
         });
         CategoryList.Apply(content);
         await Wait(menu, 0.3);
@@ -1994,10 +1997,68 @@ static class SelfTest
             CategoryList.Reveal(content, id, flash: false);
             await Wait(menu, 0.5);
             await Capture(screen, outDir, "16-long-details");
-            Check("long details: the panel shows the made-up mod (see 16-long-details)", screen.GetNode<RichTextLabel>("%ModInfoContainer/ModTitle").GetParsedText().StartsWith("The Extraordinarily"));
+            var panel = screen.GetNode<Control>("%ModInfoContainer");
+            var title = panel.GetNode<RichTextLabel>("ModTitle");
+            var titleText = title.GetParsedText();
+            var titleSize = title.GetThemeFontSize("normal_font_size");
+            Check("long details: the panel shows the made-up mod (see 16-long-details)", titleText.StartsWith("The Extraordinarily"));
+            Check("long details: the panel's title on one line at 24 or more, the name cut with \"…\", the version showing",
+                title.GetLineCount() == 1 && titleSize >= 24 && titleText.Contains('…') && titleText.Contains("12.345")
+                && title.GetContentWidth() <= title.Size.X + 1 && panel.GetGlobalRect().Encloses(title.GetGlobalRect()),
+                $"{title.GetLineCount()} lines at {titleSize}, {title.GetContentWidth()} of {title.Size.X}: {titleText}");
+            var source = panel.GetNode<Control>("SpireModManagerSource");
+            var link = source.GetNode<LinkButton>("SpireModManagerLink");
+            var status = (Label)source.FindChild("Status", true, false);
+            Check("long details: the source line stops short of the thumbnail, the id cut with \"…\", the dot and status showing",
+                link.Text.StartsWith("SmmVeryLong") && link.Text.Contains('…') && link.Text.EndsWith("(Local)") && status.Text.Length > 0
+                && status.GetGlobalRect().End.X <= title.GetGlobalRect().End.X + 2 && panel.GetGlobalRect().Encloses(status.GetGlobalRect()),
+                $"\"{link.Text}\" · {status.Text}: status {status.GetGlobalRect()}, title {title.GetGlobalRect()}");
+            // A second over the cut title or id: the whole of it, in a plain tooltip.
+            async Task<string> Tooltip(Control target, string card, double seconds)
+            {
+                Hover.TestMouse = () => target.GetGlobalRect().GetCenter();
+                target.EmitSignal(Control.SignalName.MouseEntered);
+                await Wait(menu, seconds);
+                var text = screen.GetNodeOrNull(card)?.FindChildren("*", "RichTextLabel", true, false).OfType<RichTextLabel>().FirstOrDefault()?.GetParsedText() ?? "";
+                Hover.TestMouse = () => new Vector2(5, 5);
+                target.EmitSignal(Control.SignalName.MouseExited);
+                await Wait(menu, 0.1);
+                return text;
+            }
+            var wholeTitle = await Tooltip(title, "SpireModManagerFullText", Hover.SlowDelay + 0.2);
+            var wholeId = await Tooltip(link, "SpireModManagerFullText", Hover.SlowDelay + 0.2);
+            Check("long details: a second over the cut title or id shows the whole of it", wholeTitle.StartsWith(name) && wholeTitle.EndsWith("12.345.6789-beta.12+build.98765")
+                && wholeId == id, $"{wholeTitle} / {wholeId}");
+
             var longAuthor = row.GetNodeOrNull<Label>("SpireModManagerStrip/Author");
             var longTag = row.GetNodeOrNull("SpireModManagerStrip")?.GetChildren().OfType<PanelContainer>().Select(c => c.GetChildOrNull<Label>(0)).FirstOrDefault(l => l?.Text.StartsWith("really-long") == true);
             Check("long details: the row's author and a long tag are cut with an ellipsis", longAuthor is { ClipText: true, TextOverrunBehavior: TextServer.OverrunBehavior.TrimEllipsis } && longTag is { ClipText: true });
+            // Many tags: the line ends short of the row's buttons, with the author in it; the tags that don't fit
+            // are folded into "+N", whose card lists them.
+            var strip = row.GetNode<Control>("SpireModManagerStrip");
+            var lineEnd = row.GetGlobalRect().End.X + strip.OffsetRight;
+            Check("long details: many tags: the author still shows, inside the line", longAuthor is { Visible: true } && longAuthor.GetGlobalRect().End.X <= lineEnd + 1
+                && strip.GetGlobalRect().End.X <= lineEnd + 1, $"author {longAuthor?.GetGlobalRect()}, line {strip.GetGlobalRect()}, ends at {lineEnd}");
+            var folded = strip.GetChildren().OfType<PanelContainer>().Where(c => !c.Visible).Select(c => c.GetChildOrNull<Label>(0)?.Text ?? "").ToList();
+            var more = strip.GetNodeOrNull<Control>(RowStrip.MoreName);
+            var moreCard = more == null ? "" : await Tooltip(more, "SpireModManagerTagCard", Hover.Delay + 0.15);
+            Check("long details: the tags that don't fit fold into \"+N\", its card listing them", more is { Visible: true } && folded.Count > 0
+                && more.GetChildOrNull<Label>(0)?.Text == $"+{folded.Count}" && folded.Last() == "late-game"
+                && moreCard.Split('\n').SequenceEqual(folded), $"{folded.Count} folded, card: {moreCard.ReplaceLineEndings(", ")}");
+            Hover.TestMouse = null;
+            Check("rows whose tags fit show them all, no \"+N\"", content.GetChildren().OfType<NModMenuRow>().Where(r => r != row && r.Visible)
+                .All(r => r.GetNodeOrNull<Control>("SpireModManagerStrip") is not { } line
+                    || (line.GetNodeOrNull(RowStrip.MoreName) == null && line.GetChildren().OfType<PanelContainer>().All(c => c.Visible))));
+            // Load Order and back: the view switch sets the title's size to 32 again, then fills the panel again. The
+            // title is drawn at the size it was fitted at before, not left at 32 (on two lines).
+            Click(screen.GetNode<NButton>("SpireModManagerLoadOrderToggle"));
+            await Wait(menu, 0.4);
+            Click(screen.GetNode<NButton>("SpireModManagerLoadOrderToggle"));
+            await Wait(menu, 0.5);
+            var refitSize = title.GetThemeFontSize("normal_font_size");
+            Check("long details: after Load Order and back, the panel's title is drawn at the size it was fitted at, on one line",
+                title.GetParsedText() == titleText && refitSize == titleSize && title.GetLineCount() == 1 && title.GetContentWidth() <= title.Size.X + 1,
+                $"{title.GetLineCount()} lines at {refitSize} (was {titleSize}), {title.GetContentWidth()} of {title.Size.X}: {title.GetParsedText()}");
             content.RemoveChild(row);
             row.QueueFree();
         }

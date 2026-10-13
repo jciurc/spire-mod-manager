@@ -10,7 +10,8 @@ namespace SpireModManager;
 // - Gameplay, from the manifest's affects_gameplay (what multiplayer compares; mods without it get no tag);
 // - Cosmetic, when the mod's Workshop tags say it's about looks (skins, visuals, UI, textures).
 // The player's own tags are typed in the info panel or a mod's right-click menu and drawn fainter, so they
-// read differently from the automatic ones. Hovering a chip explains it. All are searchable.
+// read differently from the automatic ones. Hovering a chip explains it. All are searchable. On a row, tags that
+// don't fit fold into a "+N" chip whose card lists them.
 static class Tags
 {
     public record Chip(string Text, Color Color, bool Custom = false, string? Tip = null);
@@ -21,11 +22,13 @@ static class Tags
     static readonly Color Local = new(0.7f, 0.74f, 0.8f);
     static readonly Color New = new(0.5f, 0.84f, 0.78f);
     public static readonly Color CustomColor = new(0.75f, 0.9f, 0.8f);
+    static readonly Color Folded = new(0.8f, 0.78f, 0.72f); // "+N", the tags that didn't fit on a row
 
     // Workshop tags that mean a mod is about looks (lower case, matched as whole words).
     static readonly string[] CosmeticWords = ["cosmetic", "cosmetics", "skin", "skins", "visual", "visuals", "ui", "texture", "textures", "art", "animation", "animations"];
 
     const float ChipMax = 140; // px of text on a chip
+    const float Margin = 6; // either side of a chip's text
 
     public static List<Chip> For(Mod? mod)
     {
@@ -97,7 +100,7 @@ static class Tags
         {
             // No outline, small corners; the player's own tags are fainter than the automatic ones.
             BgColor = new Color(chip.Color, chip.Custom ? 0.1f : 0.2f),
-            ContentMarginLeft = 6, ContentMarginRight = 6, ContentMarginTop = 0, ContentMarginBottom = 0,
+            ContentMarginLeft = Margin, ContentMarginRight = Margin, ContentMarginTop = 0, ContentMarginBottom = 0,
         };
         style.SetCornerRadiusAll(2);
         box.AddThemeStyleboxOverride("panel", style);
@@ -110,4 +113,14 @@ static class Tags
         box.AddChild(label);
         return box;
     }
+
+    // "+3" in place of the tags that don't fit on a row's line; its card lists them, one per line.
+    public static Control More(IReadOnlyList<Chip> rest) =>
+        Make(new Chip(MoreText(rest.Count), Folded, Tip: string.Join("\n", rest.Select(c => c.Text))));
+
+    // That chip's width for a count: its text and the margins either side.
+    public static float MoreWidth(int count) =>
+        ResourceLoader.Load<Font>("res://themes/kreon_regular_shared.tres").GetStringSize(MoreText(count), fontSize: 12).X + 2 * Margin;
+
+    static string MoreText(int count) => Menus.Format("SPIRE_MOD_MANAGER.TAGS_MORE", ("count", count.ToString()));
 }

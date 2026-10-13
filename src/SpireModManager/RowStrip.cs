@@ -5,15 +5,17 @@ using MegaCrit.Sts2.Core.Nodes.Screens.ModdingScreen;
 namespace SpireModManager;
 
 // A thin line along the bottom of each mod row (not in Vanilla View): its tags, then what the mod needs,
-// red when a dependency is missing, off, or loads after it, then (dim, at the end) who made it. The row title
-// moves up to make room. The row's actions are small buttons on the right, centred on the row like the
-// tickbox; title and line stop short of them.
+// red when a dependency is missing, off, or loads after it, then (dim, at the end) who made it. Tags that don't
+// fit fold into a "+N" chip. The row title moves up to make room. The row's actions are small buttons on the
+// right, centred on the row like the tickbox; title and line stop short of them.
 static class RowStrip
 {
     const string StripName = "SpireModManagerStrip";
     public const string ActionsName = "SpireModManagerActions";
+    public const string MoreName = "SpireModManagerMoreTags"; // the "+N" chip
     const string StripMeta = "spire_mod_manager_strip";
     const string SaysMeta = "spire_mod_manager_says"; // on a strip: what it shows, to know when to remake it
+    const string ShownMeta = "spire_mod_manager_tags_shown"; // on a strip: how many tags show (the rest fold into "+N")
     const float Height = 20;
     const float TitleGap = 4; // more room between the title and the line under it
     const float RightMargin = 84; // from the row's right edge: clear of the (smaller, moved) tickbox and the pencil
@@ -111,7 +113,52 @@ static class RowStrip
                 }
                 strip.AddChild(by);
             }
+
+            // Too many tags for the line: the last ones fold into "+N" (Fold). Worked out once the chips are laid
+            // out, and again whenever the line changes width.
+            if (chips.Count > 0)
+            {
+                void Refold() => Fold(row, strip, chips);
+                strip.Resized += Refold;
+                Callable.From(Refold).CallDeferred();
+            }
         }
+    }
+
+    // Shows as many tags as fit beside what must show: the author first, then what the mod needs (up to half the
+    // line). The rest fold into a "+N" chip, whose card lists them. A line that fits shows every tag, as before.
+    static void Fold(NModMenuRow row, HBoxContainer strip, IReadOnlyList<Tags.Chip> chips)
+    {
+        if (!GodotObject.IsInstanceValid(row) || !GodotObject.IsInstanceValid(strip) || !strip.IsInsideTree())
+            return;
+        var gap = strip.GetThemeConstant("separation");
+        var room = row.Size.X - strip.OffsetLeft + strip.OffsetRight; // the line's own width (a line too full grows past it)
+        var note = strip.GetNode<RichTextLabel>("Needs");
+        var needs = note.GetParsedText() is { Length: > 0 } said
+            ? note.GetThemeFont("normal_font").GetStringSize(said, fontSize: note.GetThemeFontSize("normal_font_size")).X : 0;
+        var kept = Math.Min(needs, room / 2) + (strip.GetNodeOrNull<Control>("Author") is { } author ? gap + author.GetCombinedMinimumSize().X : 0);
+        // Each tag with the gap after it (the chips come first on the line, in order).
+        var tags = strip.GetChildren().OfType<Control>().Take(chips.Count).ToList();
+        var widths = tags.Select(t => t.GetCombinedMinimumSize().X + gap).ToList();
+        var count = widths.Count;
+        if (kept + widths.Sum() > room)
+        {
+            count--;
+            while (count > 0 && kept + widths.Take(count).Sum() + Tags.MoreWidth(widths.Count - count) + gap > room)
+                count--;
+        }
+        if (strip.HasMeta(ShownMeta) && (int)strip.GetMeta(ShownMeta) == count)
+            return;
+        strip.SetMeta(ShownMeta, count);
+        for (var i = 0; i < tags.Count; i++)
+            tags[i].Visible = i < count;
+        Drop(strip, MoreName);
+        if (count == tags.Count)
+            return;
+        var more = Tags.More(chips.Skip(count).ToList());
+        more.Name = MoreName;
+        strip.AddChild(more);
+        strip.MoveChild(more, tags.Count); // after the tags, before the note
     }
 
     const string EdgeName = "SpireModManagerEdit";
