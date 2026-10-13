@@ -25,7 +25,8 @@ its own (the vanilla page stays one click away) and folds in Quick Relaunch's in
   the game's list (the "Better Mod Menu" button), a warning says some things may behave unexpectedly, and
   profiles never turn it on or off.
 
-Your data is one JSON file per Steam account (`mod_data/SpireModManager/manager.json`, with backups);
+Your data is one JSON file per Steam account (`mod_data/SpireModManager/manager.json`, with backups; one
+that can't be read is kept aside as `manager.broken-<time>.json` and the newest backup loads, with a notice);
 the game's own mod list stays the source of truth for what's on and the load order.
 
 ## Building

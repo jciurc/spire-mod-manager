@@ -46,7 +46,7 @@
 6. **Load Order drag handlers pile up.** **Fixed (2026-10-12), with the self-test.** `LoadOrder.Decorate` (`LoadOrder.cs:429, 449`) reconnects `MouseEntered`, `MouseExited` and `GuiInput` on every visit to Load Order, and `Undecorate` only removes the labels. After K visits, one press starts K drags and edge-scrolling runs K times faster.
    - Fix: connect once per row behind a meta flag (as `RowMenuMeta` does).
    - Add a self-test: visit Load Order twice, then check that one drag gives one History step.
-7. **Data safety in `Store.cs`.**
+7. **Data safety in `Store.cs`.** **Fixed (2026-10-13), with the self-test.**
    - The backup copy (`Store.cs:167-175`) shares a try with the real write. If the copy fails (a file lock or antivirus), every save that session is skipped silently.
      - Fix: give the backup step its own try/catch.
    - If `manager.json` can't be read, the session runs read-only on every launch, edits are silently lost, and only the log says so.
