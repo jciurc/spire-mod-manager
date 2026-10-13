@@ -30,7 +30,8 @@
    - Create `main` from `dev`, and tag `v1.0.0`.
 3. **Clean upload folder.** `out/` holds `bin/` (pdb, deps.json), `dev.log` and `selftest/real-*.txt`, which contain your real categories, mod list and profile names.
    - Fix: a `build.cs --dist` that writes `dist/SpireModManager/` with only the `.dll`, `.json` and `.pck`. The uploader's `content/` is filled from that folder only.
-4. **Fail soft when a game patch renames something.** This is Early Access, and 0.112 could break half the page for every user.
+4. **Fail soft when a game patch renames something.** **Fixed (2026-10-13).** This is Early Access, and 0.112 could break half the page for every user.
+   - Done: each patch class is applied on its own (`ModEntry.FailedPatches`). `ModEntry.PageNeeds` lists the ones the page can't run without (main menu, Modding screen, tickbox, info panel fill, row selected); if one failed, the page stays the game's with one line, "Spire Mod Manager needs an update for this game version." (beside the main menu button instead if the screen patch itself failed). Dev runs can try it: `SPIRE_MOD_MANAGER_SKIP_PATCHES=ModInfoFillPatch`.
    - `ModEntry.cs:23-24`: `PatchAll` is all-or-nothing, and `Installed.Watch()` runs after it.
      - Fix: call `Watch()` first, then patch each `[HarmonyPatch]` class in its own try/catch (`harmony.CreateClassProcessor(type).Patch()`). Record which patches failed. If any UI patch failed, keep the vanilla layout and show one line on the screen: "Spire Mod Manager needs an update for this game version".
    - `Patches.cs:360-368` `RowState`: the static reflection initializers throw `TypeInitializationException` on every redraw if `_isSelected` or `IsFocused` is renamed. `RowTitles.cs:37` calls them outside any try.
@@ -46,7 +47,7 @@
 6. **Load Order drag handlers pile up.** **Fixed (2026-10-12), with the self-test.** `LoadOrder.Decorate` (`LoadOrder.cs:429, 449`) reconnects `MouseEntered`, `MouseExited` and `GuiInput` on every visit to Load Order, and `Undecorate` only removes the labels. After K visits, one press starts K drags and edge-scrolling runs K times faster.
    - Fix: connect once per row behind a meta flag (as `RowMenuMeta` does).
    - Add a self-test: visit Load Order twice, then check that one drag gives one History step.
-7. **Data safety in `Store.cs`.**
+7. **Data safety in `Store.cs`.** **Fixed (2026-10-13), with the self-test.**
    - The backup copy (`Store.cs:167-175`) shares a try with the real write. If the copy fails (a file lock or antivirus), every save that session is skipped silently.
      - Fix: give the backup step its own try/catch.
    - If `manager.json` can't be read, the session runs read-only on every launch, edits are silently lost, and only the log says so.
@@ -135,8 +136,8 @@
 
 **Release checklist**
 1. All §2 blockers fixed on `dev`. The full self-test (all ~220 checks) passes on the release build, plus `--bmm` and `--real`.
-2. Version `1.0.0` and manifest description set in `build.cs`. Release mode has no auto-bump.
-3. Merge to `main`, tag `v1.0.0`, and run `build.cs --dist`. Check that `dist/SpireModManager/` holds exactly three files.
+2. Version `0.1.0` and manifest description set in `build.cs`. Release mode has no auto-bump.
+3. Merge to `main`, tag `v0.1.0`, and run `dotnet run build.cs --dist`. It stops with an error unless `dist/SpireModManager/` holds exactly the `.dll`, `.json` and `.pck`.
 4. Account: Steam Workshop legal agreement accepted (steamcommunity.com/sharedfiles/workshoplegalagreement); the account is not a limited user.
 5. Get ModUploader v0.2.0 (win-x64) and run `ModUploader.exe new -w <ws>`. Keep the workspace outside the repo or gitignored, and keep `mod_id.txt` safe.
 6. Copy `dist/SpireModManager/*` into `content/`.
@@ -144,7 +145,7 @@
    - title "Spire Mod Manager (Beta)";
    - description: pitch, features, "public-beta 0.111+", BMM coexistence, data location and backups, uninstall, mouse/keyboard only, where to report bugs;
    - `"tags": ["QoL","Utility"]`, `"dependencies": []`, `"minBranch": "public-beta"`, `"visibility": "private"`;
-   - `"changeNote": "1.0.0: first release ..."`.
+   - `"changeNote": "0.1.0: first release ..."`.
 8. `image.png`: square, under 1 MB, your own art. `previews/`: JPG shots of the main list, Load Order lines, the info panel, Changes/undo and profiles.
 9. Upload. On the item's Change Notes page, check that the branch range reads public-beta and up.
 10. Clean-install test: remove the local `mods/SpireModManager`, move `mod_data/SpireModManager` aside, subscribe, and launch. Run through first run, the BMM import, Workshop details, Patch notes, relaunch, and unsubscribe.
@@ -154,7 +155,7 @@
     - For a bad update, re-upload the previous tag's content with a change note.
     - For a game patch that breaks it, upload a fix, or narrow the branch range so the broken build is served to no one.
     - Set visibility to private as a last resort. Never `remove`: that loses the item id and its subscribers.
-13. **Updates:** bump the version, rebuild `--dist`, replace `content/`, set changeNote, set minBranch again, and upload.
+13. **Updates:** bump `ReleaseVersion` in `build.cs`, rebuild with `--dist`, replace `content/`, set changeNote, set minBranch again, and upload.
 
 ## 6. Risks
 
