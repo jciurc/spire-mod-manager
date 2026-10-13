@@ -81,7 +81,7 @@ static class PageBar
             ClipText = true, TextOverrunBehavior = TextServer.OverrunBehavior.TrimEllipsis,
             Text = Menus.Format("SPIRE_MOD_MANAGER.NO_CATEGORIES_HINT", ("item", Menus.Text("SPIRE_MOD_MANAGER.NEW_CATEGORY"))),
         };
-        hint.AddThemeFontOverride("font", ResourceLoader.Load<Font>("res://themes/kreon_regular_shared.tres"));
+        hint.AddThemeFontOverride("font", ModEntry.Font("res://themes/kreon_regular_shared.tres"));
         hint.AddThemeFontSizeOverride("font_size", 15);
         hint.AddThemeColorOverride("font_color", new Color(1, 0.964706f, 0.886275f, 0.55f));
         border.AddChild(hint);

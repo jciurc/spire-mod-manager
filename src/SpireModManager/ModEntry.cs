@@ -50,7 +50,7 @@ public static class ModEntry
             Name = NeedsUpdateName, Text = Menus.Text("SPIRE_MOD_MANAGER.NEEDS_UPDATE"), VerticalAlignment = VerticalAlignment.Center,
             MouseFilter = Control.MouseFilterEnum.Ignore, Position = new Vector2(255, 24), Size = new Vector2(1727 - 255, 48),
         };
-        line.AddThemeFontOverride("font", ResourceLoader.Load<Font>("res://themes/kreon_bold_shared.tres"));
+        line.AddThemeFontOverride("font", Font("res://themes/kreon_bold_shared.tres"));
         line.AddThemeFontSizeOverride("font_size", 22);
         line.AddThemeColorOverride("font_color", new Color(0.937f, 0.784f, 0.318f));
         line.AddThemeColorOverride("font_outline_color", new Color(0.0756f, 0.12084f, 0.18f));
