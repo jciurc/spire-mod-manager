@@ -66,6 +66,7 @@ static class SelfTest
                 menu.GetTree().Root.Title);
             await Capture(menu, outDir, "1-main-menu");
             await TestMenuButtonMove(menu, outDir);
+            await TestMenuButtonRelaunch(menu, outDir); // before the Modding page opens: the check's fixes without it
 
             var screen = menu.SubmenuStack.PushSubmenuType<NModdingScreen>();
             await Wait(menu, 2);
@@ -748,6 +749,88 @@ static class SelfTest
         await Wait(menu, 0.2);
         Check("Reset position puts it back in the corner", Store.Data.MenuButtonAt == null && button.Position == corner, $"{button.Position} vs {corner}");
         Hover.TestMouse = null;
+    }
+
+    // The main menu button's right-click menu: Move button, Reset position, a divider, Relaunch game. Relaunch game
+    // checks for mods that won't load first, as the Modding page's button does (fixture: BrandedMod needs BaseLib, not
+    // installed): its dialog shows over the main menu, and its fixes work there before the page has been opened.
+    // ModEntry.TestRelaunch counts each relaunch instead of quitting the test.
+    static async Task TestMenuButtonRelaunch(NMainMenu menu, string outDir)
+    {
+        if (menu.GetNodeOrNull<Control>("SpireModManagerMenuButton") is not { } button)
+            return;
+        var at = button.GetGlobalRect().GetCenter();
+        Hover.TestMouse = () => at;
+        button.EmitSignal(Control.SignalName.GuiInput, new InputEventMouseButton { ButtonIndex = MouseButton.Right, Pressed = false, Position = at, GlobalPosition = at });
+        await Wait(menu, 0.3);
+        Hover.TestMouse = null;
+        var popup = MenuPanel.Current;
+        var labels = popup == null ? [] : MenuPanel.Labels(popup);
+        Check("main menu button's menu: Move button, Reset position, Relaunch game", labels.SequenceEqual(["Move button", "Reset position", "Relaunch game"]),
+            string.Join(", ", labels));
+        if (popup == null)
+            return;
+        // The divider: the one entry between Reset position and Relaunch game, a line under the first and above the second.
+        string? Label(Node item) => item.IsInGroup(MenuPanel.ItemGroup) ? (string)item.GetMeta("label") : null;
+        var items = popup.FindChild("Items", true, false)?.GetChildren().OfType<Control>().ToList() ?? [];
+        var reset = items.FindIndex(i => Label(i) == "Reset position");
+        var divider = reset >= 0 && reset + 2 < items.Count && Label(items[reset + 2]) == "Relaunch game" ? items[reset + 1] : null;
+        Check("a divider right under Reset position, above Relaunch game", divider != null && Label(divider) == null
+            && divider.FindChildren("*", "ColorRect", true, false).Count == 1
+            && divider.GetGlobalRect().Position.Y >= items[reset].GetGlobalRect().End.Y
+            && divider.GetGlobalRect().End.Y <= items[reset + 2].GetGlobalRect().Position.Y,
+            string.Join(" | ", items.Select(i => $"{Label(i) ?? "(line)"} {i.GetGlobalRect()}")));
+        await Capture(menu, outDir, "1c-menu-button-menu");
+
+        var relaunches = 0;
+        ModEntry.TestRelaunch = () => relaunches++;
+        try
+        {
+            Node? Dialog() => menu.GetTree().Root.GetNodeOrNull(RelaunchCheck.Name);
+            string Body() => (Dialog()?.FindChild("Body", true, false) as RichTextLabel)?.GetParsedText() ?? "";
+            void Press(string name) => Dialog()?.FindChild(name, true, false)?.EmitSignal(BaseButton.SignalName.Pressed);
+            MenuPanel.Press(popup, "Relaunch game");
+            await Wait(menu, 0.3);
+            if (Dialog() == null)
+            {
+                Check("Relaunch game, nothing wrong: relaunches at once", relaunches == 1 && !MenuPanel.IsOpen, $"{relaunches} relaunches");
+                return;
+            }
+            Check("Relaunch game checks first: its dialog over the main menu, no relaunch yet", relaunches == 0 && !MenuPanel.IsOpen
+                && menu.IsVisibleInTree() && !menu.SubmenuStack.SubmenusOpen && Body().Length > 0, $"{relaunches} relaunches: {Body()}");
+            await Capture(menu, outDir, "1d-relaunch-check-main-menu");
+            if (Dependencies.Find("BrandedMod") is not { } branded || !Dependencies.IsOn(branded) || Dialog()?.FindChild("DisableBrokenButton", true, false) == null)
+            {
+                Press("RelaunchNowButton");
+                await Wait(menu, 0.2);
+                Check("its Relaunch anyway reaches the relaunch", relaunches == 1, $"{relaunches} relaunches");
+                return;
+            }
+
+            // A fix with no Modding page yet: the active profile and the pending dot follow, and it's one undo step of its
+            // own (undoing it leaves the button's Reset position in place).
+            var before = ModListState();
+            var dot = button.GetNode<Control>("Dot");
+            Press("DisableBrokenButton");
+            await Wait(menu, 0.3);
+            Check("from the main menu, Disable mods that can't load: off, the profile and the dot follow, then a plain Relaunch",
+                !Dependencies.IsOn(branded) && Profiles.Edited && dot.Visible == ModEntry.HasPendingChanges()
+                && Dialog()?.FindChild("RelaunchNowButton", true, false) is Button { Text: "Relaunch Game" }, Body());
+            Press("RelaunchNowButton");
+            await Wait(menu, 0.2);
+            Check("its Relaunch reaches the relaunch", relaunches == 1, $"{relaunches} relaunches");
+            RelaunchCheck.Close();
+            History.Undo();
+            await Wait(menu, 0.3);
+            Check("one undo takes back that fix, and only it", ModListState().SequenceEqual(before) && !Profiles.Edited
+                && Store.Data.MenuButtonAt == null && dot.Visible == ModEntry.HasPendingChanges(),
+                $"{string.Join(", ", before.Except(ModListState()))}; edited {Profiles.Edited}, button at {Store.Data.MenuButtonAt}");
+        }
+        finally
+        {
+            ModEntry.TestRelaunch = null;
+            RelaunchCheck.Close();
+        }
     }
 
     // Row menu, new category renamed in place, assign, move, header menu, delete.
