@@ -1466,7 +1466,8 @@ static class SelfTest
     }
 
     // A Workshop mod's head (made-up details; the sandbox has no Steam): Author, Updated (how long ago, and a link
-    // to its change notes on the Workshop), Compatibility. "Ago" in hours under a day, singular for one.
+    // to its change notes on the Workshop), Compatibility. "Ago" in hours under a day, singular for one. Dates and
+    // numbers in the game's language.
     static async Task TestWorkshopHead(Node menu, NModdingScreen screen)
     {
         var mod = new Mod
@@ -1475,7 +1476,7 @@ static class SelfTest
             manifest = new ModManifest { id = "SmmWorkshopTest", name = "Workshop Test", author = "Someone Careful" },
         };
         Installed.Detected(mod); // so the panel can find it by id
-        WorkshopInfo.TestSet(42, new WorkshopInfo.Details(DateTime.Now.AddDays(-30), DateTime.Now.AddDays(-4), [], [], 0, null));
+        WorkshopInfo.TestSet(42, new WorkshopInfo.Details(DateTime.Now.AddDays(-30), DateTime.Now.AddDays(-4), [], [], 1_572_864, 1234)); // 1.5 MB
         var info = screen.GetNode<NModInfoContainer>("%ModInfoContainer");
         info.Fill(mod);
         await Wait(menu, 0.3);
@@ -1489,6 +1490,25 @@ static class SelfTest
             ModDetails.Ago(DateTime.Now.AddMinutes(-20)).Contains("(less than an hour ago)") && ModDetails.Ago(DateTime.Now.AddHours(-3)).Contains("(3 hours ago)") && ModDetails.Ago(DateTime.Now.AddMinutes(-70)).Contains("(1 hour ago)")
             && ModDetails.Ago(DateTime.Now.AddHours(-30)).Contains("(1 day ago)") && ModDetails.Ago(DateTime.Now.AddHours(-30)).Contains("#a6e3a1")
             && !ModDetails.Ago(DateTime.Now.AddDays(-3)).Contains("#a6e3a1"));
+
+        // Dates, sizes and counts follow the game's language: in English as they always read; in German, the game's
+        // German date pattern and separators (our words stay English there, as we have no German text).
+        var english = info.GetNode<RichTextLabel>("ModDescription").GetParsedText();
+        Check("in English: October 11, 2026; Size: 1.5 MB; Subscribers: 1,234", ModDetails.Date(new DateTime(2026, 10, 11)) == "October 11, 2026"
+            && english.Contains("Size: 1.5 MB") && english.Contains("Subscribers: 1,234"), english);
+        var language = LocManager.Instance.Language;
+        try
+        {
+            LocManager.Instance.SetLanguage("deu"); // the game's own switch, without the save or the menu rebuild
+            info.Fill(mod);
+            var german = info.GetNode<RichTextLabel>("ModDescription").GetParsedText();
+            Check("with the game in German: 11. Oktober 2026; 1,5 MB; 1.234", ModDetails.Date(new DateTime(2026, 10, 11)) == "11. Oktober 2026"
+                && german.Contains("1,5 MB") && german.Contains("1.234"), $"{ModDetails.Date(new DateTime(2026, 10, 11))} / {german}");
+        }
+        finally
+        {
+            LocManager.Instance.SetLanguage(language);
+        }
         WorkshopInfo.TestSet(42, null);
         Installed.Forget(mod);
         info.Clear();
@@ -1592,6 +1612,9 @@ static class SelfTest
         Check("Changes counts it", HistoryBar.Counts().Off >= 1, $"{HistoryBar.Counts()}");
         Check("a mod turned off since launch has a changed-colour title", row.GetNode<Control>("Title").Modulate == RowTitles.ChangedOffTitle);
         var changes = screen.GetNode<Control>(HistoryBar.ChangesName);
+        var lines = (changes as RichTextLabel)?.GetParsedText() ?? "";
+        Check("the two lines read \"Mods enabled N (+a -b)\" and \"Changes n  ↕m\"",
+            System.Text.RegularExpressions.Regex.IsMatch(lines, @"^Mods enabled \d+ \(\+\d+ -\d+\)\nChanges \d+  ↕\d+$"), lines);
         Hover.TestMouse = () => changes.GetGlobalRect().GetCenter();
         changes.EmitSignal(Control.SignalName.MouseEntered);
         await Wait(menu, Hover.Delay + 0.15);
