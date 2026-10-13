@@ -324,8 +324,14 @@ static class SelfTest
 
         // Opening on our main list, after its deferred work.
         OursHold("main list", 175);
-        Check("Better Mod Menu's button in place of Vanilla List", screen.GetNode<NButton>("SpireModManagerViewToggle")
-            .GetNode<Label>("Visuals/Label").Text == Menus.Text("SPIRE_MOD_MANAGER.BMM_VIEW"));
+        var toggles = new[] { "SpireModManagerViewToggle", "SpireModManagerLoadOrderToggle" }.Select(name => screen.GetNode<Control>(name)).ToList();
+        Check("the button to its page still says Vanilla List", toggles[0].GetNode<Label>("Visuals/Label").Text == Menus.Text("SPIRE_MOD_MANAGER.VANILLA_VIEW"));
+        var warningBox = screen.GetNode<Control>(Bmm.WarningName).GetGlobalRect();
+        var pendingBox = screen.GetNode<Control>("%PendingChangesLabel").GetGlobalRect();
+        Check("the warning sits beside the view buttons, clear of them and of the restart line",
+            Math.Abs(warningBox.GetCenter().Y - toggles[1].GetGlobalRect().GetCenter().Y) < 2 && warningBox.Position.X > toggles[1].GetGlobalRect().End.X
+            && !toggles.Any(t => t.GetGlobalRect().Intersects(warningBox)) && pendingBox.Position.X >= warningBox.End.X,
+            $"warning {warningBox}, buttons {string.Join(", ", toggles.Select(t => t.GetGlobalRect()))}, restart line {pendingBox}");
 
         // Resizes don't set off its re-layout on our views.
         var before = $"{Box(border)} | {Box(scroll)}";

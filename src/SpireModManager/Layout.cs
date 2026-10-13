@@ -34,6 +34,7 @@ static class Layout
     const float PageLeft = 175, TitleTop = 10, TitleBottom = 62;
     const float UndoDrop = 7; // the undo buttons themselves (not their hints) centred on the bottom row
     const float ReleaseInfoLeft = 1740; // the game's version and date, top right
+    const float WarningWidth = 340; // Better Mod Menu's warning beside the view buttons: two lines
 
     // Text sizes in our views (the game's in brackets): rows 20 (32), info title 32 (60), info text 18 (24).
     public const int RowTitleSize = 20, RowTitleVanillaSize = 32;
@@ -140,6 +141,17 @@ static class Layout
                 x = leftEnd + 12;
             }
         }
+        // Better Mod Menu loaded too: a warning beside the view buttons, on our views (its own page stays its own).
+        if (Bmm.Present)
+        {
+            var warning = Bmm.Warning(screen);
+            warning.Visible = Wide;
+            if (Wide)
+            {
+                (warning.Position, warning.Size) = (new Vector2(leftEnd + 14, BottomRowY), new Vector2(WarningWidth, 70));
+                leftEnd = warning.Position.X + warning.Size.X;
+            }
+        }
 
         var right = view == View.LoadOrder ? list.OffsetRight : info.OffsetRight;
         if (screen.GetNodeOrNull<Control>("SpireModManagerRelaunchButton") is { } relaunch)
@@ -182,13 +194,9 @@ static class Layout
         BackLabel(screen);
         UpdateDot(screen);
 
-        // Better Mod Menu: hidden on our views, with a warning top right beside the page title (empty there in both),
-        // short of the game's version and date; its own page in Vanilla View.
+        // Better Mod Menu: hidden on our views; its own page in Vanilla View.
         if (Bmm.Present)
         {
-            var warning = Bmm.Warning(screen);
-            warning.Visible = Wide;
-            (warning.Position, warning.Size) = (new Vector2(InfoBox.X, TitleTop), new Vector2(ReleaseInfoLeft - 16 - InfoBox.X, TitleBottom - TitleTop));
             if (Wide)
                 Bmm.Show(screen, false);
             else
