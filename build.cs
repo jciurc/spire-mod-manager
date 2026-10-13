@@ -27,7 +27,8 @@ var manifest = new JsonObject
     ["pck_name"] = ModId,
     ["name"] = "Spire Mod Manager",
     ["author"] = "symphony",
-    ["description"] = "Mod profiles, sorting and an in-place Restart for the Modding screen.",
+    ["description"] = "Organize mods into categories, save profiles, set the load order and add notes and tags. " +
+        "Relaunch the game in place to apply changes.",
     ["version"] = "0.0.45", // pre-release: the last number goes up by one with each install to Jordan's game
     ["has_pck"] = true,
     ["has_dll"] = true,
