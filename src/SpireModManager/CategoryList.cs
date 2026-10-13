@@ -4,7 +4,6 @@ using MegaCrit.Sts2.Core.Logging;
 using MegaCrit.Sts2.Core.Modding;
 using MegaCrit.Sts2.Core.Nodes.GodotExtensions;
 using MegaCrit.Sts2.Core.Nodes.Screens.ModdingScreen;
-using MegaCrit.Sts2.addons.mega_text;
 
 namespace SpireModManager;
 
@@ -28,7 +27,7 @@ static class CategoryList
 
         // Two view switches along the bottom (Layout places them): Vanilla and Load Order. Each turns the
         // other off; pressing the lit one again goes back to categories, and its label says so.
-        NButton? vanilla = null, loadOrder = null;
+        Control? vanilla = null, loadOrder = null;
         void Switch(bool toVanilla)
         {
             var data = Store.Data;
@@ -63,8 +62,11 @@ static class CategoryList
         Apply(content);
     }
 
-    static void Label(NButton? button, string key) =>
-        button?.GetNode<MegaLabel>("Visuals/Label").SetTextAutoSize(new LocString("settings_ui", key).GetFormattedText());
+    static void Label(Control? button, string key)
+    {
+        if (button != null)
+            ModEntry.Relabel(button, key);
+    }
 
     // The mod selected on the Modding screen (kept by a patch on OnRowSelected), so a view switch can keep it.
     public static Mod? Selected { get; set; }
@@ -393,7 +395,7 @@ static class CategoryList
                 return;
             }
             var muted = category == null;
-            var header = ResourceLoader.Load<PackedScene>(HeaderScenePath).Instantiate<Control>();
+            var header = ModEntry.Load<PackedScene>(HeaderScenePath)?.Instantiate<Control>() ?? PlainHeader();
             Add(header);
             header.Name = category == null ? "Uncategorized" : $"Category {category.Name}";
             header.SetMeta(CategoryMeta, category?.Name ?? "");
@@ -723,6 +725,47 @@ static class CategoryList
                 Finish(false);
         };
         return edit;
+    }
+
+    // The header scene's parts made in code, for when the scene doesn't load (it uses the game's arrow and fonts):
+    // the same names, places and colours, with a "▶" for the arrow.
+    public static Control PlainHeader()
+    {
+        var header = new Control
+        {
+            CustomMinimumSize = new Vector2(0, 56), MouseFilter = Control.MouseFilterEnum.Pass, MouseDefaultCursorShape = Control.CursorShape.PointingHand,
+        };
+        var background = new ColorRect
+        {
+            Name = "Background", Color = new Color(0.0756f, 0.12084f, 0.18f, 0.6f), MouseFilter = Control.MouseFilterEnum.Ignore,
+            AnchorRight = 1, AnchorBottom = 1,
+        };
+        header.AddChild(background);
+        var arrow = new Label
+        {
+            Name = "Arrow", Text = "▶", HorizontalAlignment = HorizontalAlignment.Center, VerticalAlignment = VerticalAlignment.Center,
+            MouseFilter = Control.MouseFilterEnum.Ignore, AnchorTop = 0.5f, AnchorBottom = 0.5f,
+            OffsetLeft = 12, OffsetTop = -13, OffsetRight = 38, OffsetBottom = 13, PivotOffset = new Vector2(13, 13),
+        };
+        arrow.AddThemeColorOverride("font_color", new Color(0.937f, 0.784f, 0.318f));
+        header.AddChild(arrow);
+        var title = new Label
+        {
+            Name = "Title", VerticalAlignment = VerticalAlignment.Center, TextOverrunBehavior = TextServer.OverrunBehavior.TrimEllipsis,
+            MouseFilter = Control.MouseFilterEnum.Ignore, AnchorRight = 1, AnchorBottom = 1, OffsetLeft = 52, OffsetRight = -90,
+        };
+        title.AddThemeFontOverride("font", ModEntry.Font("res://themes/kreon_bold_shared.tres"));
+        title.AddThemeColorOverride("font_color", new Color(0.937f, 0.784f, 0.318f));
+        header.AddChild(title);
+        var count = new Label
+        {
+            Name = "Count", HorizontalAlignment = HorizontalAlignment.Right, VerticalAlignment = VerticalAlignment.Center,
+            MouseFilter = Control.MouseFilterEnum.Ignore, AnchorRight = 1, AnchorBottom = 1, OffsetRight = -16,
+        };
+        count.AddThemeFontOverride("font", ModEntry.Font("res://themes/kreon_regular_shared.tres"));
+        count.AddThemeColorOverride("font_color", new Color(1, 0.964706f, 0.886275f, 0.6f));
+        header.AddChild(count);
+        return header;
     }
 
     // A thin gold line marking where the player's categories end and "Uncategorized" begins.

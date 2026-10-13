@@ -212,7 +212,7 @@ static class LoadOrder
                 Name = AutoSortHintName, Text = Menus.Text("SPIRE_MOD_MANAGER.AUTO_SORT_HINT"), HorizontalAlignment = HorizontalAlignment.Right,
                 VerticalAlignment = VerticalAlignment.Center, MouseFilter = Control.MouseFilterEnum.Ignore,
             };
-            hint.AddThemeFontOverride("font", ResourceLoader.Load<Font>("res://themes/kreon_regular_shared.tres"));
+            hint.AddThemeFontOverride("font", ModEntry.Font("res://themes/kreon_regular_shared.tres"));
             hint.AddThemeFontSizeOverride("font_size", 15);
             hint.AddThemeColorOverride("font_color", new Color(1, 0.964706f, 0.886275f, 0.55f));
             border.AddChild(hint);
@@ -345,7 +345,7 @@ static class LoadOrder
             Name = textName, Text = message, SizeFlagsHorizontal = Control.SizeFlags.ExpandFill,
             VerticalAlignment = VerticalAlignment.Center, AutowrapMode = TextServer.AutowrapMode.WordSmart,
         };
-        text.AddThemeFontOverride("font", ResourceLoader.Load<Font>("res://themes/kreon_regular_shared.tres"));
+        text.AddThemeFontOverride("font", ModEntry.Font("res://themes/kreon_regular_shared.tres"));
         text.AddThemeFontSizeOverride("font_size", 16);
         line.AddChild(text);
         foreach (var button in buttons)
@@ -379,7 +379,7 @@ static class LoadOrder
                 Text = "!", HorizontalAlignment = HorizontalAlignment.Center, VerticalAlignment = VerticalAlignment.Center,
                 MouseFilter = Control.MouseFilterEnum.Ignore,
             };
-            mark.AddThemeFontOverride("font", ResourceLoader.Load<Font>("res://themes/kreon_bold_shared.tres"));
+            mark.AddThemeFontOverride("font", ModEntry.Font("res://themes/kreon_bold_shared.tres"));
             mark.AddThemeFontSizeOverride("font_size", 16);
             mark.AddThemeColorOverride("font_color", Colors.White);
             badge.AddChild(mark);

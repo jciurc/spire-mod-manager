@@ -8,6 +8,7 @@
 // - Text keys: every SPIRE_MOD_MANAGER.* key the code uses is in localization/eng/settings_ui.json, the ones
 //   it puts together at runtime too (see the rules below). A key in eng that no code uses is only a warning:
 //   dead text, or a use this script can't see.
+// - Game resources: no code loads one with ResourceLoader.Load or GD.Load; ModEntry.Load and Font do.
 // - Fixtures: the JSON under tools/fixtures parses, and each test mod's manifest has id, name and version.
 // - Tracked files: none over 1 MB, none holding what looks like a GitHub token.
 // Prints PASS, FAIL and WARN lines (as annotations on GitHub); exit code 1 on any FAIL.
@@ -108,6 +109,21 @@ Check($"every key the code uses is in eng ({literals} literal, {used.Count - lit
     eng is null ? "localization/eng/settings_ui.json didn't load" : List(missing));
 foreach (var key in (eng ?? []).Where(k => !used.Contains(k)).Order())
     Warn($"{key} is in eng, but no code uses it");
+
+// Game resources: only ModEntry.Load (and Font, through it) loads them, so one a game update moves gives a
+// stand-in and the self-test's list of missing ones, not a crash. A direct load works until then, so no in-game
+// check can see it. Comment lines don't count.
+var directLoad = new Regex(@"\b(ResourceLoader\.Load\w*|GD\.Load)\b");
+var direct = new List<string>();
+foreach (var (path, source) in sources)
+{
+    var lines = source.Split('\n');
+    for (var i = 0; i < lines.Length; i++)
+        if (directLoad.IsMatch(lines[i]) && !lines[i].TrimStart().StartsWith("//")
+            && !(Path.GetFileName(path) == "ModEntry.cs" && lines[i].Contains("ResourceLoader.Load(path) is T resource"))) // the helper itself
+            direct.Add($"{Name(path)}:{i + 1}");
+}
+Check("game resources load through ModEntry.Load or ModEntry.Font", direct.Count == 0, List(direct));
 
 // Fixtures: the test mods and data tools/dev.cs puts in the sandbox.
 var fixtures = Path.Combine(root, "tools", "fixtures");
