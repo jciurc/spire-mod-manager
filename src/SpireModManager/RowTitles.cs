@@ -79,7 +79,7 @@ static class RowTitles
             return;
         var title = row.GetNode<MegaRichTextLabel>("Title");
         var font = title.GetThemeFont("normal_font");
-        float Width(string text, int size) => font.GetStringSize(text, fontSize: size).X;
+        float Width(string text, int size) => Measure(font, text, size);
         var markSize = Icons.Notepad.GetSize();
         var room = title.Size.X - 4;
         var main = Cut(font, alias ?? name, Layout.RowTitleSize, room);
@@ -156,13 +156,27 @@ static class RowTitles
     // Row titles, and the info panel's title and source line.
     public static string Cut(Font font, string full, int size, float width)
     {
-        float Width(string text) => font.GetStringSize(text, fontSize: size).X;
+        float Width(string text) => Measure(font, text, size);
         if (Width(full) <= width)
             return full;
         var length = full.Length;
         while (length > 0 && Width(full[..length].TrimEnd() + "…") > width)
             length--;
         return length > 0 ? full[..length].TrimEnd() + "…" : "";
+    }
+
+    // A text's width in a font at a size, measured once: measuring shapes the text, and the font's own cache holds
+    // too few for a long list, so every row title was shaped again on every redraw. Cut texts add many shorter
+    // versions, so the lot is forgotten now and then.
+    static readonly Dictionary<(Font Font, int Size, string Text), float> Widths = [];
+
+    static float Measure(Font font, string text, int size)
+    {
+        if (Widths.TryGetValue((font, size, text), out var width))
+            return width;
+        if (Widths.Count >= 10000)
+            Widths.Clear();
+        return Widths[(font, size, text)] = font.GetStringSize(text, fontSize: size).X;
     }
 
     // Our views: a mod turned on since launch has a bright gold title, one turned off a dim one, so what a
