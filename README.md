@@ -47,5 +47,15 @@ copy of the game in `D:\sts2-dev` with its own mods folder, no Steam, separate s
 - `dotnet run tools/dev.cs launch`: opens the sandboxed game to try things by hand.
 - `dotnet run tools/pck.cs list|extract`: look inside the game's pack (scenes, images).
 
+## Branches
+
+- **Feature branches:** one per change. Each gets a pull request into `dev`.
+- **`staging`:** everything at once. Each feature branch is merged in as soon as it builds and passes the
+  self-test, whether or not its pull request is merged yet, and `dev` is merged in after pull requests land.
+  Builds for Jordan's game are installed from here, and the dev version bump (0.0.N) lives here. No rules;
+  it's never merged into anything.
+- **`dev`:** the record. Changes arrive only through pull requests (a quick read and Copilot's text review).
+- **`main`:** releases, from `dev` by pull request (created at 0.1.0).
+
 Notes: TODO.md (requests and their state), DESIGN.md (decisions and background), WHATS-NEW.md (what to
 look for after each install).
