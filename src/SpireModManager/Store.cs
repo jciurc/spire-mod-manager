@@ -205,13 +205,16 @@ static class BetterModMenuImport
 {
     const string BmmId = "BetterModMenu";
 
+    // Its file names, in its order of preference within a folder.
+    static readonly string[] FileNames = ["mod_profiles.json5", "mod_profiles.jsonc", "mod_profiles.json"];
+
     // It allows comments and trailing commas in its file, whatever the name. That is all ".json5" means to it:
     // other JSON5 syntax (unquoted names, single quotes) fails there as it does here.
     static readonly JsonDocumentOptions Lenient = new() { CommentHandling = JsonCommentHandling.Skip, AllowTrailingCommas = true };
 
     public static StoreData? TryImport()
     {
-        var path = FindFile();
+        var path = FindFile(Folders());
         if (path == null)
             return null;
         try
@@ -278,15 +281,18 @@ static class BetterModMenuImport
             });
     }
 
-    // Its account folder, or "portable mode" beside its own files.
-    static string? FindFile()
+    // Where it looks, in its order: beside its own files first ("portable mode"), then its folder in the Steam
+    // account's data. Like it, we only look beside its first copy in the mod list.
+    static IEnumerable<string> Folders()
     {
-        var account = ProjectSettings.GlobalizePath(UserDataPathProvider.GetAccountScopedBasePath($"mod_data/{BmmId}"));
-        var candidates = new List<string> { Path.Combine(account, "mod_profiles.json") };
-        foreach (var mod in ModManager.Mods.Where(m => m.manifest?.id == BmmId))
-            candidates.Add(Path.Combine(mod.path, "mod_profiles.json"));
-        return candidates.FirstOrDefault(File.Exists);
+        if (ModManager.Mods.FirstOrDefault(m => m.manifest?.id == BmmId)?.path is { Length: > 0 } own)
+            yield return own;
+        yield return ProjectSettings.GlobalizePath(UserDataPathProvider.GetAccountScopedBasePath($"mod_data/{BmmId}"));
     }
+
+    // The file it would load: the first folder holding any of its files wins, and there the first name in its order.
+    public static string? FindFile(IEnumerable<string> folders) =>
+        folders.SelectMany(folder => FileNames.Select(name => Path.Combine(folder, name))).FirstOrDefault(File.Exists);
 
     static ModInfo Info(StoreData data, string id) =>
         data.Mods.TryGetValue(id, out var info) ? info : data.Mods[id] = new ModInfo();
