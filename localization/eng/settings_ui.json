@@ -158,6 +158,7 @@
   "SPIRE_MOD_MANAGER.MAIN_MENU": "Main Menu",
   "SPIRE_MOD_MANAGER.NEW_MOD_TITLE": "New Mod Added",
   "SPIRE_MOD_MANAGER.NEW_MOD_BODY": "New mods were detected, and will require a restart to be enabled.",
+  "SPIRE_MOD_MANAGER.POPUP_MARK": "Spire Mod Manager",
   "SPIRE_MOD_MANAGER.EDIT_TIP": "Edit alias, tags and notes",
   "SPIRE_MOD_MANAGER.CATEGORY_TIP": "Move to another category",
   "SPIRE_MOD_MANAGER.MOVE_BUTTON": "Move button",
