@@ -127,6 +127,8 @@ static class SelfTest
             await Wait(menu, 0.3);
             Check("reopening after Load Order shows the main list", Layout.Current == Layout.View.Categories
                 && screen.GetNode<Control>("%ModInfoContainer").Visible);
+
+            await TestStoreSafety(menu, screen, outDir);
         }
         catch (Exception e)
         {
@@ -1723,6 +1725,121 @@ static class SelfTest
             Profiles.SwitchTo(start, screen);
             Check("back on the launch profile, no switched line", !HistoryBar.Describe().Any(l => l.StartsWith("Switched")));
         }
+    }
+
+    // Store.cs on made-up folders under the output folder (the sandbox's own manager.json is never touched): an
+    // unreadable file is set aside (never over another) and the newest backup that reads takes its place, written
+    // back; with no backup, a fresh start; a locked file is left alone and nothing is saved; nulls in a
+    // hand-edited file become empty lists; a backup copy that fails doesn't stop the save. Then the notice: the
+    // game's popup as the page opens (here: shown again), once.
+    static async Task TestStoreSafety(Node menu, NModdingScreen screen, string outDir)
+    {
+        var root = Path.Combine(outDir, "store-safety");
+        if (Directory.Exists(root))
+            Directory.Delete(root, recursive: true);
+        string Folder(string name, string? manager, params (string Name, string Json)[] backups)
+        {
+            var dir = Path.Combine(root, name);
+            Directory.CreateDirectory(Path.Combine(dir, "backups"));
+            if (manager != null)
+                File.WriteAllText(Path.Combine(dir, "manager.json"), manager);
+            foreach (var (file, json) in backups)
+                File.WriteAllText(Path.Combine(dir, "backups", file), json);
+            return dir;
+        }
+        static string Manager(string dir) => Path.Combine(dir, "manager.json");
+        static string Good(string category) => $"{{\"categories\":[{{\"name\":\"{category}\"}}]}}";
+        static string? Category(Store.Loaded loaded) => loaded.Data?.Categories.FirstOrDefault()?.Name;
+        const string cut = "{\"categories\":[{\"name\":\"Hal"; // a write cut off
+        var now = new DateTime(2026, 10, 13, 9, 30, 0);
+
+        // Unreadable, with backups: the newest that reads ("Newest"; the one after it is cut off too). A file set
+        // aside earlier in the same second keeps its name.
+        var dir = Folder("recovered", cut, ("manager.20261010-100000.json", Good("Older")), ("manager.20261011-100000.json", Good("Newest")),
+            ("manager.20261012-100000.json", cut));
+        var newest = Path.Combine(dir, "backups", "manager.20261011-100000.json");
+        File.SetLastWriteTime(newest, new DateTime(2026, 10, 11, 22, 15, 0));
+        var earlier = Path.Combine(dir, "manager.broken-20261013-093000.json");
+        File.WriteAllText(earlier, "earlier");
+        var recovered = Store.LoadFrom(dir, now);
+        Check("an unreadable file: the newest backup that reads is loaded", Category(recovered) == "Newest" && recovered.Backup?.Path == newest
+            && !recovered.ReadOnly, $"{Category(recovered)} from {recovered.Backup?.Path}");
+        var setAside = Path.Combine(dir, "manager.broken-20261013-093000-2.json");
+        Check("the unreadable file is kept as manager.broken-<time>.json, never over another file", recovered.Unreadable == setAside
+            && File.Exists(setAside) && File.ReadAllText(setAside) == cut && File.ReadAllText(earlier) == "earlier", recovered.Unreadable ?? "not set aside");
+        var next = Store.LoadFrom(dir, now);
+        Check("the backup is written back: the next launch reads it as usual", Category(next) == "Newest" && next is { Unreadable: null, Backup: null },
+            $"{Category(next)}, unreadable {next.Unreadable}");
+        File.Delete(Manager(dir));
+        var missing = Store.LoadFrom(dir, now);
+        Check("no file, but one was set aside before: the backups again, not a first run (no import)", Category(missing) == "Newest"
+            && missing.Unreadable == null && File.Exists(Manager(dir)));
+
+        // Unreadable (empty: a write cut off by a power loss) and no backup: a fresh start, written.
+        var fresh = Folder("fresh", "");
+        var started = Store.LoadFrom(fresh, now);
+        Check("no backup: a fresh start, the unreadable file kept, a new file written", started is { Data: { Categories.Count: 0, Profiles.Count: 0 }, Backup: null, Unreadable: { } keptAs }
+            && File.Exists(keptAs) && Store.LoadFrom(fresh, now) is { Data: not null, Unreadable: null }, started.Unreadable ?? "not set aside");
+
+        // A file another program holds open (a Windows lock): left where it is, the backup loaded, nothing saved.
+        if (OperatingSystem.IsWindows())
+        {
+            var lockedDir = Folder("locked", Good("Mine"), ("manager.20261011-100000.json", Good("Backup")));
+            Store.Loaded locked;
+            using (File.Open(Manager(lockedDir), FileMode.Open, System.IO.FileAccess.Read, FileShare.None))
+                locked = Store.LoadFrom(lockedDir, now);
+            Check("a locked file: left in place, the backup loaded, read-only", locked.ReadOnly && locked.Unreadable == Manager(lockedDir)
+                && Category(locked) == "Backup" && File.ReadAllText(Manager(lockedDir)) == Good("Mine")
+                && Directory.GetFiles(lockedDir, "manager.broken-*").Length == 0, $"read-only {locked.ReadOnly}, {Category(locked)}");
+        }
+
+        // Nulls in a hand-edited (or old) file: empty lists, null entries dropped; the file itself untouched.
+        const string nulls = "{\"categories\":[null,{\"name\":null}],\"mods\":{\"A\":null,\"B\":{\"tags\":[\"x\",null]},\"C\":{\"tags\":[]}},"
+            + "\"profiles\":[null,{\"name\":\"P\",\"mods\":null,\"edited\":[null,{\"id\":\"X\",\"source\":\"ModsDirectory\",\"enabled\":true}],\"disabled\":[{\"id\":null}]}]}";
+        var nullsDir = Folder("nulls", nulls);
+        var tidied = Store.LoadFrom(nullsDir, now);
+        Check("nulls in a file: empty lists, null entries dropped, the file untouched", tidied is { Unreadable: null, Data: { } data }
+            && data is { Categories: [{ Name: "" }], Profiles: [{ Name: "P", Mods.Count: 0, Edited: [{ Id: "X" }], Disabled.Count: 0 }] }
+            && data.Mods.Keys.Order().SequenceEqual(["B", "C"]) && data.Mods["B"].Tags is ["x"] && data.Mods["C"].Tags == null
+            && File.ReadAllText(Manager(nullsDir)) == nulls, tidied.Unreadable ?? "");
+        var allNull = Store.LoadFrom(Folder("all-null", "{\"categories\":null,\"mods\":null,\"profiles\":null}"), now);
+        Check("a file whose lists are null: empty ones", allNull.Data is { Categories.Count: 0, Mods.Count: 0, Profiles.Count: 0 });
+        Check("no file and nothing set aside: a first run", Store.LoadFrom(Folder("first", null), now).Data == null
+            && Store.LoadFrom(Path.Combine(root, "no-folder"), now).Data == null);
+
+        // Saving: the old file goes to backups/ first, the newest ten kept; a backup that fails (here a file sits
+        // where the backups folder goes) doesn't stop the save.
+        var saving = Folder("saving", Good("Old"), Enumerable.Range(1, 11).Select(i => ($"manager.20200101-0000{i:00}.json", Good($"Old {i}"))).ToArray());
+        Store.WriteTo(saving, new StoreData { Categories = [new Category { Name = "New" }] }, backUp: true);
+        var copies = Directory.GetFiles(Path.Combine(saving, "backups")).Order().ToList();
+        Check("a save backs up the old file first, the newest ten kept", Category(Store.LoadFrom(saving, now)) == "New" && copies.Count == 10
+            && File.ReadAllText(copies[^1]) == Good("Old") && !copies.Any(f => f.EndsWith("-000001.json") || f.EndsWith("-000002.json")),
+            string.Join(", ", copies.Select(Path.GetFileName)));
+        var blocked = Path.Combine(root, "blocked");
+        Directory.CreateDirectory(blocked);
+        File.WriteAllText(Manager(blocked), Good("Old"));
+        File.WriteAllText(Path.Combine(blocked, "backups"), "a file where the backups folder goes");
+        Store.WriteTo(blocked, new StoreData { Categories = [new Category { Name = "New" }] }, backUp: true);
+        Check("a backup that fails doesn't stop the save", Category(Store.LoadFrom(blocked, now)) == "New");
+
+        // The notice: none for a file that read fine; after a recovery, the game's popup as the page shows, with
+        // the backup's date and where the unreadable file is; once.
+        Check("no notice when the file read fine", !Store.ShowNotice(next) && NModalContainer.Instance?.OpenModal == null);
+        Store.Notice = recovered;
+        screen.Visible = false;
+        screen.Visible = true;
+        await Wait(menu, 0.3);
+        var popup = NModalContainer.Instance?.OpenModal as Node;
+        var text = string.Join(" | ", popup?.FindChildren("*", "", true, false)
+            .Select(n => n is Label l ? l.Text : n is RichTextLabel r ? r.GetParsedText() : "").Where(t => t.Length > 0) ?? []);
+        Check("after a recovery, the page shows the notice: the backup's date and where the unreadable file is", popup is NErrorPopup
+            && text.Contains("couldn't read your data") && text.Contains("October 11, 2026, 22:15") && text.Contains(setAside) && Store.Notice == null, text);
+        await Capture(popup ?? screen, outDir, "19-data-notice");
+        NModalContainer.Instance?.Clear();
+        screen.Visible = false;
+        screen.Visible = true;
+        await Wait(menu, 0.3);
+        Check("the notice shows once", NModalContainer.Instance?.OpenModal == null);
     }
 
     static async Task<bool> WithVanillaView(NModdingScreen screen, Node menu, Func<bool> check)
