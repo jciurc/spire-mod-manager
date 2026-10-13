@@ -128,6 +128,12 @@ static class ModDetails
         var shownName = RowTitles.Cut(font, name, TitleMinSize, shownNumber.Length > 0 ? room - Width(gap + shownNumber) : room);
         title.Text = Escape(shownName)
             + (shownNumber.Length > 0 ? $"{gap}[color={Disabled}][font_size={VersionSize}]{Escape(shownNumber)}[/font_size][/color]" : "");
+        // Drawn at the size the auto-size picks for this text (TitleMinSize or more). Setting the text runs it only when
+        // the text changed, and it skips writing a size equal to the one it wrote last; a view switch sets 32 straight in
+        // between (Layout.FontSize), so a long title would stay at 32, on two lines. Its last size forgotten, it writes
+        // the size again.
+        title.Set(MegaRichTextLabel.PropertyName._lastSetSize, 0);
+        title.CallDeferred(MegaRichTextLabel.MethodName.AdjustFontSize);
         title.SetMeta(FullMeta, shownName != name || shownNumber != number ? name + (number.Length > 0 ? gap + number : "") : "");
     }
 

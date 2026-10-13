@@ -1502,6 +1502,16 @@ static class SelfTest
             Check("rows whose tags fit show them all, no \"+N\"", content.GetChildren().OfType<NModMenuRow>().Where(r => r != row && r.Visible)
                 .All(r => r.GetNodeOrNull<Control>("SpireModManagerStrip") is not { } line
                     || (line.GetNodeOrNull(RowStrip.MoreName) == null && line.GetChildren().OfType<PanelContainer>().All(c => c.Visible))));
+            // Load Order and back: the view switch sets the title's size to 32 again, then fills the panel again. The
+            // title is drawn at the size it was fitted at before, not left at 32 (on two lines).
+            Click(screen.GetNode<NButton>("SpireModManagerLoadOrderToggle"));
+            await Wait(menu, 0.4);
+            Click(screen.GetNode<NButton>("SpireModManagerLoadOrderToggle"));
+            await Wait(menu, 0.5);
+            var refitSize = title.GetThemeFontSize("normal_font_size");
+            Check("long details: after Load Order and back, the panel's title is drawn at the size it was fitted at, on one line",
+                title.GetParsedText() == titleText && refitSize == titleSize && title.GetLineCount() == 1 && title.GetContentWidth() <= title.Size.X + 1,
+                $"{title.GetLineCount()} lines at {refitSize} (was {titleSize}), {title.GetContentWidth()} of {title.Size.X}: {title.GetParsedText()}");
             content.RemoveChild(row);
             row.QueueFree();
         }
