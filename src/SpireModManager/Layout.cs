@@ -414,6 +414,15 @@ static class Layout
         }
     }
 
+    // Before the panel is filled (a mod picked): the parts we hid for lack of room shown again, so their mods' own
+    // updates after the game's fill decide what shows, and the layout that follows hides again what doesn't fit.
+    // Otherwise a part its mod hid while we had it hidden (no change to see) came back as soon as there was room.
+    public static void GiveBack(Control info)
+    {
+        foreach (var part in info.GetChildren().OfType<Control>())
+            ShowAgain(part);
+    }
+
     // A part we hid for lack of room shown again (one its own mod hid stays hidden).
     static void ShowAgain(Control part)
     {

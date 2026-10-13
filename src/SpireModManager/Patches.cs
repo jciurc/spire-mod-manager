@@ -197,10 +197,24 @@ static class NewModPatch
 }
 
 // Info panel: our details and the player's fields, after the game fills it (and after Better Mod Menu: on our
-// views our title replaces its styled one, and our layout its description anchor).
+// views our title replaces its styled one, and our layout its description anchor). Before it, other mods' parts we
+// hid for lack of room are given back for their mods to update (Layout.GiveBack).
 [HarmonyPatch(typeof(NModInfoContainer), nameof(NModInfoContainer.Fill))]
 static class ModInfoFillPatch
 {
+    [HarmonyPriority(Priority.First)] // before other mods' prefixes too
+    static void Prefix(NModInfoContainer __instance)
+    {
+        try
+        {
+            Layout.GiveBack(__instance);
+        }
+        catch (Exception e)
+        {
+            Log.Error($"[{ModEntry.ModId}] Could not give back other mods' parts in the info panel: {e}");
+        }
+    }
+
     [HarmonyAfter(Bmm.HarmonyId)]
     static void Postfix(NModInfoContainer __instance, Mod mod)
     {
