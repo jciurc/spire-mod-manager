@@ -136,6 +136,7 @@ static class SelfTest
             await TestRelaunchCheck(menu, screen, content, outDir);
             await TestLongDetails(menu, screen, content, outDir);
             await TestWorkshopHead(menu, screen);
+            await TestOtherModPanel(menu, screen, content, outDir);
             await TestBulkEdit(menu, screen, content, outDir);
             await TestHistory(menu, screen, content, outDir);
             TestFallbacks(screen);
@@ -2124,6 +2125,71 @@ static class SelfTest
         }
         WorkshopInfo.TestSet(42, null);
         Installed.Forget(mod);
+        info.Clear();
+    }
+
+    // Another mod's part in the info panel (Undo And Restart adds a settings panel at a fixed (0,318), over our
+    // fields; here a made-up one the same size): our views put it between the details and our fields, or hide it
+    // when there's no room; Vanilla View leaves it where its mod put it. Its mod's own hide wins over ours, its show
+    // too when there's room. Removed again afterwards.
+    static async Task TestOtherModPanel(Node menu, NModdingScreen screen, Control content, string outDir)
+    {
+        if (content.GetChildren().OfType<NModMenuRow>().FirstOrDefault(r => r.Mod?.manifest?.id == "SmmTestUi") is not { Mod: { } mod } row)
+        {
+            Results.Add("SKIP another mod's panel: test mods not installed");
+            return;
+        }
+        var info = screen.GetNode<NModInfoContainer>("%ModInfoContainer");
+        CategoryList.Select(screen, row); // a short description and no picture, so it fits
+        await Wait(menu, 0.3);
+        var home = new Vector2(0, 318);
+        var other = new PanelContainer { Name = "OtherModSettingsPanel", Position = home, CustomMinimumSize = new Vector2(560, 174) };
+        info.AddChild(other);
+        var (details, yours) = (info.GetNode<Control>("ModDescription"), info.GetNode<Control>("SpireModManagerYours"));
+        // shownByItsMod: what its mod sets in its own Fill postfix (after ours gave back what we hid).
+        async Task<string> Refill(bool? shownByItsMod = null)
+        {
+            info.Fill(mod); // the panel filled again, as when a mod is picked
+            if (shownByItsMod is { } shown)
+                other.Visible = shown;
+            await Wait(menu, 0.3);
+            return $"panel {other.GetGlobalRect()} shown {other.Visible}, details {details.GetGlobalRect()}, fields {yours.GetGlobalRect()}";
+        }
+
+        var where = await Refill();
+        Check("another mod's panel: the only part counted as another mod's (not the game's, ours or Better Mod Menu's)",
+            Layout.OtherParts(info).SequenceEqual([other]), string.Join(", ", Layout.OtherParts(info).Select(c => c.Name)));
+        var (panel, text, fields) = (other.GetGlobalRect(), details.GetGlobalRect(), yours.GetGlobalRect());
+        Check("another mod's panel goes between the details and our fields, overlapping neither", other.Visible
+            && !panel.Intersects(text) && !panel.Intersects(fields) && panel.Position.Y >= text.End.Y && panel.End.Y <= fields.Position.Y, where);
+        await Capture(screen, outDir, "17-other-mod-panel");
+
+        other.CustomMinimumSize = new Vector2(560, 600);
+        where = await Refill();
+        Check("another mod's panel with no room for it: hidden, our fields right under the details", !other.Visible
+            && Math.Abs(yours.OffsetTop - details.OffsetBottom - ModDetails.FieldsGap) < 1, where);
+        var inVanilla = "";
+        Check("another mod's panel in Vanilla View: back where its mod put it, shown", await WithVanillaView(screen, menu, () =>
+        {
+            inVanilla = $"{other.Position}, shown {other.Visible}";
+            return other.Position == home && other.Visible;
+        }), inVanilla);
+        Check("another mod's panel back on our views: hidden again", !other.Visible);
+
+        // Hidden by us, then by its mod too (another mod picked); room again without a fill (as when the changes list
+        // closes): its mod's hide holds. Its mod showing it again, with room: shown, in its place.
+        await Refill(shownByItsMod: false);
+        other.CustomMinimumSize = new Vector2(560, 174);
+        other.ResetSize();
+        ModDetails.PlaceFields(info);
+        Check("another mod's panel we hid, then its mod hid: still hidden with room again", !other.Visible
+            && !Layout.OtherParts(info).Contains(other), $"shown {other.Visible}, size {other.Size}");
+        where = await Refill(shownByItsMod: true);
+        Check("another mod's panel shown again by its mod, with room: shown between the details and our fields", other.Visible
+            && other.GetGlobalRect().Position.Y >= details.GetGlobalRect().End.Y && other.GetGlobalRect().End.Y <= yours.GetGlobalRect().Position.Y, where);
+
+        info.RemoveChild(other);
+        other.QueueFree();
         info.Clear();
     }
 

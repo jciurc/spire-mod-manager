@@ -23,6 +23,10 @@ static class Layout
     const string WatermarkMeta = "spire_mod_manager_watermark";
     const string MinSizeMeta = "spire_mod_manager_min_size";
     const string BoxMeta = "spire_mod_manager_original_box", BarMeta = "spire_mod_manager_original_bar", AnchorMeta = "spire_mod_manager_original_anchor";
+    const string HomeMeta = "spire_mod_manager_home", SeenMeta = "spire_mod_manager_seen", NoRoomMeta = "spire_mod_manager_no_room";
+
+    // The info panel's own parts as the game's scene makes them (by name), noted the first time we see the panel.
+    static HashSet<string>? _sceneParts;
 
     // Screen-space boxes (left, top, right, bottom) in the game's 1920x1080 layout.
     // The panels sit midway between the page title and the bottom row of buttons.
@@ -47,6 +51,9 @@ static class Layout
         var view = Current;
         var list = screen.GetNode<Control>("ModsBorder");
         var info = screen.GetNode<Control>("%ModInfoContainer");
+        // The first call runs in our _Ready postfix (Priority.First, before other mods' postfixes and before any mod
+        // fills the panel), so its parts are still the scene's own.
+        _sceneParts ??= info.GetChildren().Select(c => c.Name.ToString()).ToHashSet();
         // Better Mod Menu loaded too: paused while we place things (its re-layout follows every resize), and its push
         // down of the list taken back. Vanilla View gives it the page again at the end.
         if (Bmm.Present)
@@ -317,7 +324,8 @@ static class Layout
     // large thumbnail of the mod image (right); the description below both, then the player's fields
     // (ModDetails.PlaceFields); Open Folder along the bottom. With the changes list's Back button showing (top
     // right), the thumbnail and everything under it move down to make room. A mod without a picture: the
-    // description starts right under the head.
+    // description starts right under the head. Other mods' parts go between the description and the fields
+    // (ModDetails), and in Vanilla View back where their mod put them.
     public static void PlaceInfo(Control info)
     {
         const float top = 16;
@@ -347,6 +355,93 @@ static class Layout
         description.AnchorBottom = (float)description.GetMeta(AnchorMeta);
         Place(description, new Vector4(inset, below, width - inset,
             info.Size.Y - ModDetails.ButtonsFromBottom - ModDetails.FieldsGap));
+        if (!Wide)
+            PutOthersBack(info);
+    }
+
+    // Other mods' parts in the info panel: Undo And Restart, for one, adds a settings panel at a fixed (0,318), right
+    // where our fields are. Not the game's own (noted on first sight), not ours (named "SpireModManager…", and Open
+    // Folder) and not Better Mod Menu's (Bmm hides those on our views); nor one that stretches with the panel (an
+    // overlay or a background). Those shown, and those we hid for lack of room.
+    public static List<Control> OtherParts(Control info) => _sceneParts is not { } scene ? []
+        : info.GetChildren().OfType<Control>().Where(c => c.Name.ToString() is var name && !scene.Contains(name)
+            && !name.StartsWith("SpireModManager") && name != "OpenFolderButton" && !name.StartsWith("BetterModMenu")
+            && c.AnchorLeft == c.AnchorRight && c.AnchorTop == c.AnchorBottom && (c.Visible || c.HasMeta(NoRoomMeta))).ToList();
+
+    // Our views: the parts that fit in room (each with the gap after it), in the order their mods added them; the
+    // rest are hidden. A part first seen this frame may not be laid out inside yet (a wrapping label starts out tall),
+    // so it's only hidden once it has been: the panel is placed again next frame.
+    public static List<Control> FitOthers(Control info, float room)
+    {
+        var fitting = new List<Control>();
+        var frame = (long)Engine.GetProcessFrames();
+        var settling = false;
+        foreach (var part in OtherParts(info))
+        {
+            if (!part.HasMeta(HomeMeta)) // where its mod put it, for Vanilla View
+                part.SetMeta(HomeMeta, new Vector4(part.OffsetLeft, part.OffsetTop, part.OffsetRight, part.OffsetBottom));
+            if (!part.HasMeta(SeenMeta))
+                part.SetMeta(SeenMeta, frame);
+            var settled = (long)part.GetMeta(SeenMeta) < frame;
+            settling |= !settled;
+            var height = part.Size.Y + ModDetails.FieldsGap;
+            if (height <= room)
+            {
+                room -= height;
+                fitting.Add(part);
+                ShowAgain(part);
+            }
+            else if (settled)
+            {
+                part.SetMeta(NoRoomMeta, true);
+                part.Visible = false;
+            }
+        }
+        if (settling)
+            info.GetTree().CreateTimer(0).Timeout += () =>
+            {
+                if (GodotObject.IsInstanceValid(info))
+                    ModDetails.PlaceFields(info);
+            };
+        return fitting;
+    }
+
+    // At our left edge, y down the panel, its size as its mod made it (moved by its offsets, whatever its anchors).
+    public static void PlaceOther(Control part, float y)
+    {
+        var (dx, dy) = (ModDetails.Inset - part.Position.X, y - part.Position.Y);
+        (part.OffsetLeft, part.OffsetTop, part.OffsetRight, part.OffsetBottom) =
+            (part.OffsetLeft + dx, part.OffsetTop + dy, part.OffsetRight + dx, part.OffsetBottom + dy);
+    }
+
+    // Vanilla View: other mods' parts where their mods put them, shown again if we hid them.
+    static void PutOthersBack(Control info)
+    {
+        foreach (var part in info.GetChildren().OfType<Control>().Where(c => c.HasMeta(HomeMeta)))
+        {
+            var home = (Vector4)part.GetMeta(HomeMeta);
+            (part.OffsetLeft, part.OffsetTop, part.OffsetRight, part.OffsetBottom) = (home.X, home.Y, home.Z, home.W);
+            part.RemoveMeta(HomeMeta); // noted again on our views, in case its mod moves it meanwhile
+            ShowAgain(part);
+        }
+    }
+
+    // Before the panel is filled (a mod picked): the parts we hid for lack of room shown again, so their mods' own
+    // updates after the game's fill decide what shows, and the layout that follows hides again what doesn't fit.
+    // Otherwise a part its mod hid while we had it hidden (no change to see) came back as soon as there was room.
+    public static void GiveBack(Control info)
+    {
+        foreach (var part in info.GetChildren().OfType<Control>())
+            ShowAgain(part);
+    }
+
+    // A part we hid for lack of room shown again (one its own mod hid stays hidden).
+    static void ShowAgain(Control part)
+    {
+        if (!part.HasMeta(NoRoomMeta))
+            return;
+        part.RemoveMeta(NoRoomMeta);
+        part.Visible = true;
     }
 
     // The list's scrollbar as the scene had it (box, minimum width, mouse filter; saved the first time), back if

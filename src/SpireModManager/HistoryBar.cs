@@ -309,6 +309,9 @@ static class HistoryBar
             child.RemoveMeta(HiddenMeta);
             child.Visible = true;
         }
+        // The fields aren't placed while the list covers the panel (ModDetails.PlaceFields): placed again now.
+        if (info is Control panel)
+            Callable.From(() => ModDetails.PlaceFields(panel)).CallDeferred();
     }
 
     static Control AddList(Control info)

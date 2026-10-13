@@ -564,18 +564,30 @@ static class ModDetails
     }
 
     // The fields sit right under the mod's details: the description shrinks to its text (up to the room left
-    // above the fields), and the fields follow it. Once the text is laid out, so deferred.
+    // above the fields), and the fields follow it. Other mods' parts in the panel go between the two, as long as the
+    // description keeps a few lines (all of it if shorter); the rest are hidden (Layout.FitOthers). Once the text is
+    // laid out, so deferred. Our views only, and not behind the changes list (placed again when it closes).
     public static void PlaceFields(Control container)
     {
-        if (container.GetNodeOrNull<Control>(FieldsName) is not { } yours)
+        if (!Layout.Wide || HistoryBar.ListOpen(container) || container.GetNodeOrNull<Control>(FieldsName) is not { } yours)
             return;
+        const float fewLines = 80;
         var description = container.GetNode<RichTextLabel>("ModDescription");
         var top = description.OffsetTop;
         var height = yours.GetCombinedMinimumSize().Y;
         var room = container.Size.Y - ButtonsFromBottom - height - FieldsGap - top;
-        var used = Math.Min(description.GetContentHeight() + 6, Math.Max(room, 80));
+        var text = description.GetContentHeight() + 6;
+        var others = Layout.FitOthers(container, room - Math.Min(text, fewLines));
+        room -= others.Sum(o => o.Size.Y + FieldsGap);
+        var used = Math.Min(text, Math.Max(room, fewLines));
         description.OffsetBottom = top + used;
-        yours.OffsetTop = top + used + FieldsGap;
+        var y = top + used + FieldsGap;
+        foreach (var other in others)
+        {
+            Layout.PlaceOther(other, y);
+            y += other.Size.Y + FieldsGap;
+        }
+        yours.OffsetTop = y;
         yours.OffsetBottom = yours.OffsetTop + height;
     }
 
