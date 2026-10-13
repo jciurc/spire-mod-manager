@@ -78,6 +78,7 @@ static class SelfTest
                 Profiles.SwitchTo(other, screen);
                 await Wait(menu, 1);
                 Results.Add($"INFO switched to {other.Name}: {ModListState().Count(s => s.EndsWith("=on"))} on");
+                Check("switching to the other profile changes the mod list", !ModListState().SequenceEqual(before)); // or the round trip proves nothing
                 Check("our own mod stays on", !(SaveManager.Instance.SettingsSave.ModSettings?.ModList
                     .Any(m => m.Id == ModEntry.ModId && !m.IsEnabled) ?? false));
                 await Capture(screen, outDir, "3-other-profile");
@@ -1012,6 +1013,11 @@ static class SelfTest
             await Wait(menu, 0.2);
             await Capture(screen, outDir, "10c-installed-change");
             HistoryBar.CloseList(screen.GetNode<Control>("%ModInfoContainer"));
+            // Undone: before the untick the game had no entry for it (on), and the profile had it on.
+            History.Undo();
+            await Wait(menu, 0.3);
+            Check("undoing the untick: the new mod on again, the profile as it was", SaveManager.Instance.SettingsSave.ModSettings?.IsModDisabled(fresh) == false
+                && Profiles.Edited == wasEdited, $"disabled {SaveManager.Instance.SettingsSave.ModSettings?.IsModDisabled(fresh)}, edited {wasEdited} -> {Profiles.Edited}");
             content.RemoveChild(freshRow);
             freshRow.QueueFree();
         }

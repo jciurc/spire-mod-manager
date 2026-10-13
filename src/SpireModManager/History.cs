@@ -202,7 +202,9 @@ static class History
     {
         var states = mods.DistinctBy(m => (m.Id, m.Source)).ToDictionary(m => (m.Id, m.Source), m => m.Enabled);
         var now = CurrentMods();
-        Apply(now.Select(m => m with { Enabled = states.TryGetValue((m.Id, m.Source), out var on) ? on : m.Enabled })
+        // An entry the snapshot didn't have was made since (a mod installed mid-session, ticked for the first time):
+        // back then the game had no entry for it, which means on.
+        Apply(now.Select(m => m with { Enabled = !states.TryGetValue((m.Id, m.Source), out var on) || on })
             .Concat(mods.Where(m => !now.Any(n => n.Id == m.Id && n.Source == m.Source))).ToList());
     }
 
