@@ -2099,6 +2099,19 @@ static class SelfTest
             libRow.EmitSignal(Control.SignalName.MouseEntered);
             await Wait(menu, 0.2);
             var shown = content.GetParent().GetChildren().Count(c => c.IsInGroup("SpireModManagerLinks"));
+            // Rounded corners: more points than the square path (out, along the lane, in), none on its two corners,
+            // the ends where they were.
+            static bool Rounded(Vector2[] p)
+            {
+                if (p.Length <= 4)
+                    return false;
+                var lane = p.Min(q => q.X);
+                Vector2[] corners = [new(lane, p[0].Y), new(lane, p[^1].Y)];
+                return p[0].X == p[^1].X && p[0].X > lane && !p.Any(q => corners.Any(c => q.DistanceTo(c) < 0.5f));
+            }
+            var paths = content.GetParent().GetChildren().OfType<Line2D>().Where(l => l.IsInGroup("SpireModManagerLinks")).Select(l => l.Points).ToList();
+            Check("the hover lines have slightly rounded corners", paths.Count > 0 && paths.All(Rounded),
+                string.Join("; ", paths.Select(p => string.Join(" ", p.Select(q => $"{q.X:0.#},{q.Y:0.#}")))));
             await Capture(screen, outDir, "13b-hover-links");
             libRow.EmitSignal(Control.SignalName.MouseExited);
             await Wait(menu, 0.2);
