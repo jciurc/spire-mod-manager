@@ -1341,13 +1341,20 @@ static class SelfTest
                 .GetNodeOrNull("SpireModManagerStrip")?.GetChildren().OfType<PanelContainer>().FirstOrDefault(c => c.GetChildOrNull<Label>(0)?.Text == tag);
             chip?.EmitSignal(Control.SignalName.GuiInput, new InputEventMouseButton { ButtonIndex = MouseButton.Left, Pressed = false, ShiftPressed = shift });
         }
-        await Shown("");
+        var all = await Shown("");
         ClickChip("SmmTestLib", "Library", false);
         await Wait(menu, 0.3);
         Check("clicking a row's tag searches for it", box.Text == "#Library" && Visible().SequenceEqual(["SmmTestLib"]), $"{box.Text}: {string.Join(", ", Visible())}");
         ClickChip("SmmTestLib", "Gameplay", true);
         await Wait(menu, 0.3);
         Check("Shift-clicking another adds it", box.Text == "#Library #Gameplay" && Visible().SequenceEqual(["SmmTestLib"]), $"{box.Text}: {string.Join(", ", Visible())}");
+        // Clicking again undoes: Shift takes "#Gameplay" back out, then a plain click on the whole search clears it.
+        ClickChip("SmmTestLib", "Gameplay", true);
+        await Wait(menu, 0.3);
+        Check("Shift-clicking a searched tag again removes it", box.Text == "#Library", box.Text);
+        ClickChip("SmmTestLib", "Library", false);
+        await Wait(menu, 0.3);
+        Check("clicking the tag that is the whole search clears it", box.Text == "" && Visible().SequenceEqual(all), $"{box.Text}: {Visible().Count} shown");
         // Authors: from the info panel's author (the row's is plain text); Shift on a tag adds it after a space.
         await Shown("");
         var rowAuthor = content.GetChildren().OfType<NModMenuRow>().FirstOrDefault(r => r.Mod?.manifest?.id == "LocalModFixes")?.GetNodeOrNull<Label>("SpireModManagerStrip/Author");
@@ -1360,6 +1367,32 @@ static class SelfTest
         ClickChip("LocalModFixes", "Local", true);
         await Wait(menu, 0.3);
         Check("Shift-click on a tag adds it after a space", box.Text == "@symphony #Local", box.Text);
+        // The rules every click-to-search shares (row and panel tags, the author, Workshop tags), through the one
+        // helper they all use: the search before, the click, the search after.
+        string After(string before, Action click)
+        {
+            box.Text = before;
+            click();
+            return box.Text;
+        }
+        void Tag(string tag, bool shift) => SpireModManager.Search.ByTag(content, tag, shift);
+        void Words(string text, bool shift) => SpireModManager.Search.ByText(content, text, shift);
+        string[] clears = [After(" #library ", () => Tag("Library", false)), After("#\"Library\"", () => Tag("Library", false)),
+            After("tools  &  apis", () => Words("Tools & APIs", false))];
+        Check("click-to-search: a click on the whole search clears it (any case, quotes aside)", clears.All(s => s == ""), string.Join(" | ", clears));
+        string[] replaces = [After("mod fixes", () => Tag("Library", false)), After("#Library #Gameplay", () => Tag("Library", false))];
+        Check("click-to-search: a click replaces any other search", replaces.All(s => s == "#Library"), string.Join(" | ", replaces));
+        string[] adds = [After("@symphony", () => Tag("Local", true)), After("mod", () => Words("Tools & APIs", true))];
+        Check("click-to-search: Shift-click adds the term, keeping the rest", adds.SequenceEqual(["@symphony #Local", "mod Tools & APIs"]), string.Join(" | ", adds));
+        string[] removes = [After("@symphony #local mod", () => Tag("Local", true)), After("#Library Tools & APIs", () => Words("tools & apis", true))];
+        Check("click-to-search: Shift-click removes a term already searched, any case", removes.SequenceEqual(["@symphony mod", "#Library"]), string.Join(" | ", removes));
+        string[] quoted = [After("#\"two words\" @symphony", () => Tag("Two Words", true)),
+            After("mod @\"Some One\"", () => SpireModManager.Search.ByAuthor(content, "some one", true))];
+        Check("click-to-search: Shift-click removes quoted terms too", quoted.SequenceEqual(["@symphony", "mod"]), string.Join(" | ", quoted));
+        string[] tidy = [After("  #Library   mod  ", () => Tag("Library", true)), After("mod   ", () => Tag("Gameplay", true))];
+        Check("click-to-search: spaces tidied, one between terms", tidy.SequenceEqual(["mod", "mod #Gameplay"]), string.Join(" | ", tidy));
+        string[] glued = [After("foo#Library", () => Tag("Library", true)), After("C# #Library", () => Tag("Library", true))];
+        Check("click-to-search: a #tag glued to a word is a tag, a lone # stays plain", glued.SequenceEqual(["foo", "C#"]), string.Join(" | ", glued));
         var local = await Shown("#local");
         Check("#tag matches the tag only, any case", local.Count > 1 && local.All(id => Tags.For(Dependencies.Find(id)).Any(c => c.Text == "Local")), string.Join(", ", local));
         var none = await Shown("zzz no such mod");
