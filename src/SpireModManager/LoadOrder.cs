@@ -80,21 +80,18 @@ static class LoadOrder
         }
     }
 
-    // Takes the handles and numbers off again (other views).
+    // Hides the handles and numbers again (other views). They're kept for the next visit: making them for every row
+    // was most of a switch to Load Order. Hidden, they also tell a second redraw in the same frame not to shift the
+    // title back again.
     public static void Undecorate(IEnumerable<NModMenuRow> rows)
     {
         foreach (var row in rows)
         {
-            if (row.GetNodeOrNull(HandleName) is not { } handle)
+            if (row.GetNodeOrNull<Control>(HandleName) is not { Visible: true } handle)
                 continue;
-            // Out of the tree now, not at the end of the frame: a second redraw in the same frame must not
-            // find them and shift the title back again.
-            foreach (var node in new[] { handle, row.GetNodeOrNull(NumberName), row.GetNodeOrNull(WasName) })
+            foreach (var node in new[] { handle, row.GetNodeOrNull<Control>(NumberName), row.GetNodeOrNull<Control>(WasName) })
                 if (node != null)
-                {
-                    row.RemoveChild(node);
-                    node.QueueFree();
-                }
+                    node.Visible = false;
             row.GetNode<Control>("Title").OffsetLeft -= HandleWidth;
             OrderingOnly(row, false);
         }
@@ -418,8 +415,8 @@ static class LoadOrder
     }
 
     // Position number and a grip on the left of the row. Dragging the row (anywhere, not just the grip) moves
-    // it: a gold line shows where it will land, and releasing saves. Made on each visit to Load Order
-    // (Undecorate takes them off again); the number updates every redraw.
+    // it: a gold line shows where it will land, and releasing saves. Made on the first visit to Load Order
+    // (Undecorate hides them again, and later visits show them); the number updates every redraw.
     // wasAt: where it was at launch (0: unknown); shown dimly as "5 →" when it moved.
     static void Decorate(Control content, NModMenuRow row, int position, int wasAt, Action redraw)
     {
@@ -428,6 +425,11 @@ static class LoadOrder
         {
             number.Text = position.ToString();
             row.GetNode<Label>(WasName).Text = was;
+            if (number.Visible)
+                return;
+            foreach (var name in new[] { HandleName, NumberName, WasName })
+                row.GetNode<Control>(name).Visible = true;
+            row.GetNode<Control>("Title").OffsetLeft += HandleWidth;
             return;
         }
         row.GetNode<Control>("Title").OffsetLeft += HandleWidth;
@@ -467,8 +469,8 @@ static class LoadOrder
             });
         row.AddChild(handle);
 
-        // The handlers below are connected once per row: rows outlive this view, and the grip and numbers above
-        // come back on every visit (connecting again would start one drag per visit).
+        // The handlers below are connected once per row: rows outlive this view (connecting again would start one
+        // drag per visit).
         if (row.HasMeta(WiredMeta))
             return;
         row.SetMeta(WiredMeta, true);

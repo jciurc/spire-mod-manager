@@ -1933,7 +1933,7 @@ static class SelfTest
         HintPlaced("Load Order redrawn");
         var start = Ids();
         Check("load order view: saved order, handles, no headers", start.SequenceEqual(Saved())
-            && Rows().All(r => r.HasNode("SpireModManagerHandle"))
+            && Rows().All(r => r.GetNodeOrNull<Control>("SpireModManagerHandle") is { Visible: true })
             && !content.GetChildren().Any(c => c.IsInGroup("SpireModManagerCategoryHeader")), string.Join(", ", start));
         Check("nothing pending before moving", !pending.Visible && !ModEntry.HasPendingChanges());
         // Leaving and coming back: the rows' drag handlers aren't connected again (one press, one drag).
@@ -2039,7 +2039,7 @@ static class SelfTest
         Click(screen.GetNode<NButton>("SpireModManagerLoadOrderToggle"));
         await Wait(menu, 0.5);
         var selected = Rows().FirstOrDefault(r => r.Mod == CategoryList.Selected);
-        Check("category view takes the handles off", !Rows().Any(r => r.HasNode("SpireModManagerHandle"))
+        Check("category view hides the handles", !Rows().Any(r => r.GetNodeOrNull<Control>("SpireModManagerHandle") is { Visible: true })
             && content.GetChildren().Any(c => c.IsInGroup("SpireModManagerCategoryHeader")));
         Check("back from Load Order: titles in place", Rows().All(r => r.GetNode<Control>("Title").OffsetLeft == 18),
             string.Join(", ", Rows().Select(r => r.GetNode<Control>("Title").OffsetLeft)));
