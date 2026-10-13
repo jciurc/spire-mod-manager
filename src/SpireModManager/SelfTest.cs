@@ -1760,6 +1760,36 @@ static class SelfTest
         Check("its Show opens Better Mod Menu's category, scrolls to its row with a glow and shows it in the panel",
             hidden && row.Visible && list.GetGlobalRect().Intersects(row.GetGlobalRect()) && Glows() > glows && CategoryList.Selected == bmm,
             $"hidden before {hidden}, shown {row.Visible}, row {row.GetGlobalRect()}, list {list.GetGlobalRect()}, glows {glows} -> {Glows()}, panel {CategoryList.Selected?.manifest?.id}");
+
+        // Show while a search leaves its row out (main list and Load Order): the search clears, box and list, and the
+        // row shows as above. On the main list its category is closed again too.
+        var searchBox = border.GetNode<LineEdit>("SpireModManagerSearch");
+        async Task ShowThroughSearch(string view)
+        {
+            const string query = "SmmTest"; // the test mods, not Better Mod Menu
+            searchBox.Text = query;
+            searchBox.EmitSignal(LineEdit.SignalName.TextChanged, query);
+            await Wait(menu, 0.3);
+            if (Rows().FirstOrDefault(r => r != row && r.Visible) is { } match)
+                CategoryList.Select(screen, match);
+            await Wait(menu, 0.2);
+            var left = !row.Visible && !SpireModManager.Search.Matches(bmm, query);
+            var old = row.GetChildren().OfType<ColorRect>().ToList(); // an earlier glow may still be fading
+            Banner()?.FindChild("ShowManagersButton", true, false)?.EmitSignal(BaseButton.SignalName.Pressed);
+            await Wait(menu, 0.5);
+            var filter = content.HasMeta(CategoryList.FilterMeta) ? (string)content.GetMeta(CategoryList.FilterMeta) : "";
+            var glowed = row.GetChildren().OfType<ColorRect>().Except(old).Any(c => c.Color.R > 0.9f && c.Color.B < 0.4f);
+            Check($"{view}: with a search that hides Better Mod Menu's row, its Show clears the search and shows the row, scrolled to with a glow and in the panel",
+                left && searchBox.Text == "" && filter == "" && row.Visible && list.GetGlobalRect().Intersects(row.GetGlobalRect()) && glowed
+                && CategoryList.Selected == bmm,
+                $"hidden by the search {left}, box \"{searchBox.Text}\", filter \"{filter}\", shown {row.Visible}, row {row.GetGlobalRect()}, "
+                + $"list {list.GetGlobalRect()}, glow {glowed}, panel {CategoryList.Selected?.manifest?.id}");
+        }
+        foreach (var category in Store.Data.Categories)
+            category.Collapsed = true;
+        Store.Data.UncategorizedCollapsed = true;
+        await ShowThroughSearch("main list");
+
         for (var i = 0; i < collapsed.Count && i < Store.Data.Categories.Count; i++)
             Store.Data.Categories[i].Collapsed = collapsed[i];
         Store.Data.UncategorizedCollapsed = uncategorized;
@@ -1771,6 +1801,7 @@ static class SelfTest
         Click(screen.GetNode<NButton>("SpireModManagerLoadOrderToggle"));
         await Wait(menu, 0.5);
         Check("Load Order: the managers banner too, under the search box", Placed(), Where());
+        await ShowThroughSearch("Load Order");
         Click(screen.GetNode<NButton>("SpireModManagerLoadOrderToggle"));
         await Wait(menu, 0.5);
         Check("Vanilla View: no managers banner", await WithVanillaView(screen, menu, () => Banner() is not { Visible: true }));

@@ -303,11 +303,14 @@ static class LoadOrder
     }
 
     // A banner's Show: the mod's row scrolled into view (its category opened) with a short glow, and the mod in the
-    // info panel.
+    // info panel. A search that leaves the row out is cleared first: opening its category wouldn't show it.
     static void GoTo(Control content, Mod mod)
     {
         if (content.GetChildren().OfType<NModMenuRow>().FirstOrDefault(r => r.Mod == mod) is not { } row)
             return;
+        var filter = content.HasMeta(CategoryList.FilterMeta) ? (string)content.GetMeta(CategoryList.FilterMeta) : "";
+        if (filter.Length > 0 && !Search.Matches(mod, filter))
+            Search.Clear(content);
         CategoryList.Reveal(content, mod.manifest?.id ?? "", flash: true);
         CategoryList.Select(content, row);
     }
