@@ -127,6 +127,7 @@ static class SelfTest
             await TestUnsavedProfile(menu, screen, content, outDir);
             await TestNotes(menu, screen, content, outDir);
             await TestPendingNotes(menu, screen, content);
+            await TestPendingLine(menu, screen, content);
             await TestSearch(menu, screen, content, outDir);
             await TestNewMod(menu, screen, content, outDir);
             await TestLoadOrder(menu, screen, content, outDir);
@@ -962,6 +963,44 @@ static class SelfTest
         tickbox.EmitSignal(NTickbox.SignalName.Toggled, tickbox);
         await Wait(menu, 0.3);
         Check("turning it back on clears \"(off)\" at once", !Note("SmmTestUi").Contains("(off)"), Note("SmmTestUi"));
+    }
+
+    // The game's restart line: our wording on our views (the main list, Load Order), the game's in Vanilla View; still
+    // ours once a tickbox change makes the game show it.
+    static async Task TestPendingLine(Node menu, NModdingScreen screen, Control content)
+    {
+        var line = screen.GetNode<RichTextLabel>("%PendingChangesLabel");
+        var ours = Menus.Text("SPIRE_MOD_MANAGER.PENDING_RESTART");
+        var game = new LocString("settings_ui", "MODDING_SCREEN.PENDING_CHANGES_WARNING").GetFormattedText();
+        var onList = line.Text;
+        string? shown = null; // the line's text once the game shows it (a test mod turned off, then on again)
+        if (content.GetChildren().OfType<NModMenuRow>().FirstOrDefault(r => r.Mod?.manifest?.id == "SmmTestUi")?.GetNode<NTickbox>("Tickbox") is { } tickbox)
+        {
+            tickbox.IsTicked = !tickbox.IsTicked;
+            tickbox.EmitSignal(NTickbox.SignalName.Toggled, tickbox);
+            await Wait(menu, 0.3);
+            shown = line.Visible ? line.Text : "not shown";
+            tickbox.IsTicked = !tickbox.IsTicked;
+            tickbox.EmitSignal(NTickbox.SignalName.Toggled, tickbox);
+            await Wait(menu, 0.3);
+        }
+        else
+            Results.Add("SKIP the restart line once shown: test mod not installed");
+        Click(screen.GetNode<NButton>("SpireModManagerLoadOrderToggle"));
+        await Wait(menu, 0.3);
+        var inLoadOrder = line.Text;
+        Click(screen.GetNode<NButton>("SpireModManagerLoadOrderToggle"));
+        await Wait(menu, 0.3);
+        var inVanilla = "";
+        await WithVanillaView(screen, menu, () =>
+        {
+            inVanilla = line.Text;
+            return true;
+        });
+        Check("the restart line: ours on the main list (also once shown) and in Load Order, the game's in Vanilla View, ours again after",
+            ours == "Mod changes will be applied after a restart." && game != ours && onList == ours && (shown == null || shown == ours)
+            && inLoadOrder == ours && inVanilla == game && line.Text == ours,
+            $"\"{onList}\" / shown \"{shown}\" / \"{inLoadOrder}\" / \"{inVanilla}\" / \"{line.Text}\"");
     }
 
     // Unsaved edits: a tickbox change leaves the saved profile alone and shows Unsaved; the edit survives

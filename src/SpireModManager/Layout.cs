@@ -185,9 +185,12 @@ static class Layout
         History.NotifyChanged(); // the buttons act on this view's history
 
         // The game's "takes effect after a restart" line fits between the left and right buttons in
-        // Categories (its text shrinks to fit), and goes back to its own place in Vanilla View.
-        var pending = screen.GetNode<Control>("%PendingChangesLabel");
+        // Categories (its text shrinks to fit), and goes back to its own place in Vanilla View. Our wording on our
+        // views, the game's in Vanilla View: the game sets its text once, in _Ready (before our postfix places it),
+        // and after that only shows or hides it.
+        var pending = screen.GetNode<MegaRichTextLabel>("%PendingChangesLabel");
         Place(pending, new Vector4(leftEnd + 12, 1000, right, 1068));
+        pending.SetTextAutoSize(new LocString("settings_ui", Wide ? "SPIRE_MOD_MANAGER.PENDING_RESTART" : "MODDING_SCREEN.PENDING_CHANGES_WARNING").GetFormattedText());
         pending.Modulate = view == View.LoadOrder ? Colors.Transparent : Colors.White; // the game sets Visible itself
         Watermark(screen);
         BackLabel(screen);
