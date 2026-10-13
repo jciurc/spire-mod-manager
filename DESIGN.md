@@ -93,7 +93,7 @@ Ideas for us, roughly by value:
 
 A survey of the Steam Workshop at Jordan's request, from the mod managers comparison session. Subscriber counts
 are from that day. What we do about it is in TODO round 21 and RELEASE-PLAN.md: Jordan's own calls are marked;
-the rest are recommendations to confirm with him.
+the rest are recommendations to confirm with Jordan.
 
 - **Better Mod Menu** (3748029698): 101k subscribers, last updated 12 Jul. A companion, "Better Mod Menu Fix
   (Public-Beta)" (3775001896, 1.5k), patches the same beta bugs as Jordan's upstream pull requests. For us: the

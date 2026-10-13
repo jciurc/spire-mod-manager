@@ -252,7 +252,7 @@ Jordan's notes of 2026-10-11.
 
 # Round 4
 
-Jordan's notes of 2026-10-11 (evening), in his order.
+Jordan's notes of 2026-10-11 (evening), in Jordan's order.
 
 - [x] (fix) "(off)" stays on a dependency that was just turned on (pending relaunch)
 - [x] "Required for N mods" on mods others depend on
@@ -639,7 +639,7 @@ own art; the spikes describe the game's behaviour but quote no game code.
   STS2_BMM_REPO, with today's paths as the fallback (#25, #13).
 - [ ] **free security features on public repos:** turn on code scanning (CodeQL, C# build-free mode), secret
   scanning and push protection, Dependabot alerts; decide which to make required in the rulesets.
-- [x] **docs:** "Jordan" stays in docs, comments and tests (his call, 2026-10-13); his surname never appears.
+- [x] **docs:** "Jordan" stays in docs, comments and tests (Jordan's call, 2026-10-13); the surname never appears.
   TRANSLATING.md and the Workshop description link to GitHub for issues and pull requests (#25).
 - [ ] **presentable and open to contributors:** review the repo as a whole as something that represents Jordan.
   The front page and README are for visitors: what it is, a screenshot, how to install, how to report a bug.
@@ -692,7 +692,7 @@ unless either mod enabled states are touched and they become enabled at the same
 
 Survey of the other mod managers on the Workshop, 2026-10-13, from the mod managers comparison session (the survey
 itself: DESIGN.md, "Research: other StS2 mod managers"). JORDAN marks Jordan's own calls; the rest are
-recommendations to confirm with him.
+recommendations to confirm with Jordan.
 
 ## Before 0.1.0
 - [ ] JORDAN: share and import a profile as plain text. Raises round 2's "export/import/share mod collections" and the release plan's share codes (§4) to a 0.1.0 blocker. Suggestions:
@@ -715,7 +715,7 @@ recommendations to confirm with him.
   - overlaps the round 20 backlog spike on running two managers together (`docs/spikes/two-managers.md`, being written on branch `spike-managers`): do this with that spike's recommendation
 
 ## Backlog (round 21)
-- [ ] JORDAN: spike "load mods without a restart" (Jordan: one of his biggest pain points as a player). Write it up as `docs/spikes/load-without-restart.md`, per kind of mod (pck only, Harmony only, adds content or models):
+- [ ] JORDAN: spike "load mods without a restart" (Jordan: one of the biggest pain points as a player). Write it up as `docs/spikes/load-without-restart.md`, per kind of mod (pck only, Harmony only, adds content or models):
   - a pre-launch choice: we load first and apply a choice before the rest initialize, so a change made at launch needs no second launch (Mod Launch Manager, the 启动前模组管理 selector)
   - enabling mid-session: assembly load, `ProjectSettings.LoadResourcePack`, the initializer, Harmony; content mods need the ModelDb / LocManager / pool registration that runs at startup
   - disabling mid-session: `Harmony.UnpatchAll(owner id)` is possible; assemblies unload only from a collectible `AssemblyLoadContext` (check how ModManager loads them); PCKs can't unmount; models stay registered
@@ -730,4 +730,4 @@ recommendations to confirm with him.
 - multiplayer host sync (AutoModSubscriber and Multiplayer Mod Sync own it), AI translation, forced A-Z ordering, a grid view
 
 ## Jordan's setup
-- [ ] his game loads stock Better Mod Menu 1.1.1 (`mods\BetterModMenu`, dated 12 Jul) and, separately, the local-fix build as id `BetterModMenuFork`. Today's godot.log has 21 "BetterModMenuConfigButton not found" errors, the bug his upstream PR #2 fixes. Suggested: keep only one of the two copies on; the fork carries the fix until upstream releases it
+- [ ] Jordan's game loads stock Better Mod Menu 1.1.1 (`mods\BetterModMenu`, dated 12 Jul) and, separately, the local-fix build as id `BetterModMenuFork`. Today's godot.log has 21 "BetterModMenuConfigButton not found" errors, the bug Jordan's upstream PR #2 fixes. Suggested: keep only one of the two copies on; the fork carries the fix until upstream releases it
