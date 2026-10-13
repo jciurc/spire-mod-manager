@@ -4,7 +4,7 @@
 //                                     (--window: with a window, for screenshots, kept behind others;
 //                                      --bmm: with Better Mod Menu loaded too (listed first; --bmm-after:
 //                                      after ours, as in Jordan's game; --bmm-local: its local-fix build
-//                                      from ../bettermodmenu instead of the installed one);
+//                                      from the BmmRepo checkout below instead of the installed one);
 //                                      --real: Jordan's own mods, switched off, and a copy of his data)
 //   dotnet run tools/dev.cs launch    build, open the game in the sandbox to poke at by hand
 //
