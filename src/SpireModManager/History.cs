@@ -92,6 +92,33 @@ static class History
         Changed?.Invoke();
     }
 
+    // A change to our data that isn't the player's edit (a mod installed while the game runs joining the active
+    // profile): made as if it had always been so, in every snapshot too, so it isn't an undo step, isn't a change
+    // since launch, and neither undo nor Revert all takes it away.
+    public static void Quietly(Action<StoreData> change)
+    {
+        _restoring = true;
+        try
+        {
+            change(Store.Data);
+            Store.Save();
+        }
+        finally
+        {
+            _restoring = false;
+        }
+        Snapshot Patched(Snapshot snapshot) => snapshot with { Store = Store.Patched(snapshot.Store, change) };
+        if (Loaded is { } loaded)
+            Loaded = Patched(loaded);
+        if (Entered is { } entered)
+            Entered = Patched(entered);
+        if (_current is { } current)
+            _current = Patched(current);
+        foreach (var steps in Past.Values.Concat(Future.Values))
+            for (var i = 0; i < steps.Count; i++)
+                steps[i] = Patched(steps[i]);
+    }
+
     // Nothing to revert: the mod list and our data are as they were when the page opened.
     public static bool AtEntered => Entered is { } e && Take() is var now && now.Store == e.Store && SameStates(now, e) && SameOrder(now, e);
 

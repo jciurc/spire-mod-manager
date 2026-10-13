@@ -12,14 +12,15 @@ namespace SpireModManager;
 // in the list); coming back restores it, so it is never lost.
 // A mod a profile has never seen (installed since it was last used) joins it as it is in the mod list, which for a
 // new mod is on, the game's default (Jordan, 2026-10-13):
-// - the active profile takes it in at launch, quietly: it isn't an unsaved edit, and neither undo nor Revert all
-//   takes it away;
+// - the active profile takes it in at launch, or as soon as it's installed while the game runs, quietly: it isn't
+//   an unsaved edit, and neither undo nor Revert all takes it away;
 // - switching to a profile that has never seen a mod leaves the mod as it is, and the profile keeps it that way
 //   from then on (so a switch never turns a new mod off, or on).
 // Spire Mod Manager itself is always on.
 static class Profiles
 {
     static bool _applying;
+    static bool _watching;
 
     // Raised after a switch, save or discard, or when the list becomes (or stops being) an unsaved edit, so
     // the profile bar shows the right name and buttons whoever made the change.
@@ -51,7 +52,23 @@ static class Profiles
             changed = true;
         if (changed)
             Store.Save();
+        if (!_watching)
+        {
+            // From now on, a mod installed while the game runs joins the active profile as it arrives.
+            SpireModManager.Installed.Added += TakeInInstalled;
+            _watching = true;
+        }
         Track();
+    }
+
+    // A mod installed while the game runs: the active profile takes it in at once (on, as the game has it), before
+    // the player can untick it, so unticking it is an edit of that profile. Quietly (see History.Quietly).
+    static void TakeInInstalled()
+    {
+        if (Active is not { } profile || !Unseen(profile).Any())
+            return;
+        History.Quietly(data => TakeIn(data.Profiles.FirstOrDefault(p => p.Name == data.ActiveProfile)));
+        Switched?.Invoke(); // the count beside the name
     }
 
     // Takes the installed mods a profile has never seen into its saved state, and into its unsaved edit if it has
@@ -230,7 +247,7 @@ static class Profiles
         _applying = true;
         try
         {
-            foreach (var mod in ModManager.Mods)
+            foreach (var mod in AllMods())
             {
                 if (mod.manifest?.id is not { } id || id == Bmm.ModId) // Better Mod Menu stays as it is
                     continue;
@@ -239,6 +256,8 @@ static class Profiles
                 if (wanted is not { } enabled)
                     continue;
                 var entry = settings.ModList.FirstOrDefault(e => e.Id == id && e.Source == mod.modSource);
+                if (entry == null && enabled)
+                    continue; // no entry is on already (a mod installed while the game runs has none yet)
                 if (entry == null)
                     settings.ModList.Add(entry = new SettingsSaveMod(mod));
                 entry.IsEnabled = enabled;
@@ -321,13 +340,17 @@ static class Profiles
         return true;
     }
 
+    // Every installed mod: the ones the game loaded at launch and the ones installed since (they load after a
+    // relaunch), so a mod installed while the game runs belongs to profiles at once.
+    static IEnumerable<Mod> AllMods() => ModManager.Mods.Concat(SpireModManager.Installed.Mods).Where(m => m.manifest?.id != null);
+
     static IEnumerable<(string Id, ModSource Source)> Installed() =>
-        ModManager.Mods.Where(m => m.manifest?.id != null).Select(m => (m.manifest?.id ?? "", m.modSource));
+        AllMods().Select(m => (m.manifest?.id ?? "", m.modSource));
 
     static List<ProfileMod> Current()
     {
         var settings = SaveManager.Instance.SettingsSave.ModSettings;
-        return ModManager.Mods.Where(m => m.manifest?.id != null)
+        return AllMods()
             .Select(m => new ProfileMod(m.manifest?.id ?? "", m.modSource, !(settings?.IsModDisabled(m) ?? false)))
             .ToList();
     }
