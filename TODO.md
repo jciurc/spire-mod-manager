@@ -620,3 +620,25 @@ Found tonight, not done yet:
 - [ ] the profile list's "Oct 11" still follows Windows' language, not the game's (#21 notes the one-liner)
 - [ ] a profile renamed and saved in the same session still reads as added + deleted in Changes (needs a stable profile id)
 - [ ] the Workshop description quotes labels a copy pass changes; re-read it before uploading (#4, #19)
+
+## Before going public (open source, MIT)
+
+Jordan, 2026-10-13: the repo goes public under MIT eventually; these are requirements before the switch, for a
+CI-focused session. Already fine: no secrets, tokens or large files anywhere in the history; nothing of the
+game's is committed (its DLLs are only referenced); no copied Better Mod Menu code; the one image is Jordan's
+own art; the spikes describe the game's behaviour but quote no game code.
+
+- [ ] **the self-hosted runner** (if one is registered by then): remove it and set SELF_HOSTED_STS2 to false.
+  On a public repo a fork's pull request can edit ci.yml itself and send a job to the runner, so the job's
+  same-repo condition isn't enough. If the in-game test is still wanted on GitHub, make it a job only Jordan
+  can start (workflow_dispatch), never triggered by pull requests. Also set "require approval for all outside
+  collaborators" for fork pull request workflows.
+- [ ] **LICENSE:** an MIT `LICENSE` file; Jordan picks the copyright name (legal name, "jciurc" or "symphony").
+  Say in the README whether the art is under MIT too or kept back.
+- [ ] **machine-specific paths:** build.cs, the .csproj and tools/dev.cs hard-code D:\SteamLibrary and
+  C:\repos\...; read them from an environment variable (or a gitignored local file) with today's paths as the
+  fallback, so others can build. Update README and the Workshop kit's paths.
+- [ ] **free security features on public repos:** turn on code scanning (CodeQL, C# build-free mode), secret
+  scanning and push protection, Dependabot alerts; decide which to make required in the rulesets.
+- [ ] **docs:** decide whether "Jordan" in TODO, WHATS-NEW and the tests stays; TRANSLATING.md and the
+  Workshop description get the GitHub link for issues and pull requests.
