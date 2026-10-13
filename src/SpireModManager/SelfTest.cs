@@ -1014,6 +1014,54 @@ static class SelfTest
         Check("edited: Save, Save as new, Discard beside Unsaved", Shown("UnsavedButtons") == "SaveProfileButton,SaveAsNewButton,DiscardButton", Shown("UnsavedButtons"));
         await Capture(screen, outDir, "3b-unsaved-profile");
 
+        // "Unsaved •": its card opens at once, with no delay (checked outside any grace period, which would open a
+        // card at once anyway). A click lists the changes in the info panel, names as links, and a second click
+        // closes it. One list at a time: the Changes list takes the panel from it, and it takes the panel back.
+        // While open it follows the tickboxes: back on the saved state, it says nothing is unsaved.
+        var unsaved = (Control)bar.FindChild("Unsaved", true, false);
+        var info = screen.GetNode<Control>("%ModInfoContainer");
+        var line = $"{(wasOn ? "−" : "+")} {mod.manifest?.name}";
+        Hover.Hide();
+        await Wait(menu, Hover.Grace + 0.1);
+        Hover.TestMouse = () => unsaved.GetGlobalRect().GetCenter();
+        unsaved.EmitSignal(Control.SignalName.MouseEntered);
+        var opened = screen.HasNode("SpireModManagerUnsavedCard");
+        await Wait(menu, 0.1);
+        var card = screen.GetNodeOrNull("SpireModManagerUnsavedCard")?.FindChildren("*", "RichTextLabel", true, false).OfType<RichTextLabel>().FirstOrDefault()?.GetParsedText() ?? "";
+        Check("the Unsaved card opens at once, naming the change and saying a click lists it", opened && card.Contains(line)
+            && card.Contains(Menus.Text("SPIRE_MOD_MANAGER.UNSAVED_CLICK")), $"opened at once {opened}: {card}");
+        unsaved.EmitSignal(Control.SignalName.MouseExited);
+        Hover.TestMouse = null;
+        await Wait(menu, 0.1);
+
+        void ClickOn(Control control) => control.EmitSignal(Control.SignalName.GuiInput, new InputEventMouseButton { ButtonIndex = MouseButton.Left, Pressed = false });
+        string Title() => info.GetNodeOrNull<Label>($"{HistoryBar.ViewName}/Head/Title")?.Text ?? "";
+        string Listed() => info.GetNodeOrNull<RichTextLabel>($"{HistoryBar.ViewName}/List")?.GetParsedText() ?? "";
+        var unsavedTitle = Menus.Format("SPIRE_MOD_MANAGER.UNSAVED_LIST_TITLE", ("name", profile.Name));
+        ClickOn(unsaved);
+        await Wait(menu, 0.2);
+        Check("clicking Unsaved lists the profile's unsaved changes in the info panel, names as links", HistoryBar.ListOpen(info, HistoryBar.ListKind.Unsaved)
+            && Title() == unsavedTitle && Listed().Contains(line)
+            && info.GetNodeOrNull<RichTextLabel>($"{HistoryBar.ViewName}/List")?.Text.Contains("[url=mod:SmmTestUi]") == true, $"{Title()}: {Listed()}");
+        await Capture(screen, outDir, "3c-unsaved-list");
+        ClickOn(unsaved);
+        await Wait(menu, 0.2);
+        Check("clicking Unsaved again closes the list", !HistoryBar.ListOpen(info));
+        ClickOn(unsaved);
+        ClickOn(screen.GetNode<Control>(HistoryBar.ChangesName));
+        await Wait(menu, 0.2);
+        Check("opening the Changes list closes the unsaved list", HistoryBar.ListOpen(info, HistoryBar.ListKind.Changes)
+            && Title() == Menus.Text("SPIRE_MOD_MANAGER.CHANGES_TITLE") && !Listed().Contains(line), $"{Title()}: {Listed()}");
+        ClickOn(unsaved);
+        await Wait(menu, 0.2);
+        Check("and opening the unsaved list closes the Changes list", HistoryBar.ListOpen(info, HistoryBar.ListKind.Unsaved)
+            && Title() == unsavedTitle && Listed().Contains(line), $"{Title()}: {Listed()}");
+        await Toggle(wasOn);
+        Check("the open unsaved list follows the tickboxes: back on the saved state, nothing unsaved", HistoryBar.ListOpen(info, HistoryBar.ListKind.Unsaved)
+            && Listed().Contains(Menus.Text("SPIRE_MOD_MANAGER.NO_UNSAVED")), Listed());
+        HistoryBar.CloseList(info);
+        await Toggle(!wasOn); // the edit again, for the checks below
+
         Check("the picker keeps the plain name", bar.FindChild("ProfilePicker", true, false) is Button { Text: var shown } && shown == profile.Name);
         var profiles = Store.Data.Profiles.Count;
         Profiles.SwitchTo(other, screen);
@@ -1053,7 +1101,7 @@ static class SelfTest
             string.Join(", ", profile.Mods.Select(m => $"{m.Id}={(m.Enabled ? "on" : "off")}")));
         var (on, off) = Profiles.UnsavedChanges();
         Check("quietly: no unsaved edit, and already so in the launch state", !Profiles.Edited && ids.All(id => OnInSnapshot(History.Loaded, id)),
-            $"edited {Profiles.Edited} (+{string.Join(", +", on)} -{string.Join(", -", off)}), in the launch state {ids.Count(id => OnInSnapshot(History.Loaded, id))} of {ids.Length}");
+            $"edited {Profiles.Edited} (+{string.Join(", +", on.Select(m => m.Name))} -{string.Join(", -", off.Select(m => m.Name))}), in the launch state {ids.Count(id => OnInSnapshot(History.Loaded, id))} of {ids.Length}");
     }
 
     // Switching to a profile that has never seen a mod (here: two test mods taken out of the other profile, as if
@@ -1294,8 +1342,8 @@ static class SelfTest
             Check("unticking a new mod is saved, and Changes says it's disabled",
                 SaveManager.Instance.SettingsSave.ModSettings?.IsModDisabled(fresh) == true
                 && HistoryBar.Describe().Any(l => l.Contains("Fresh Mod") && l.Contains("Disabled")), string.Join(" | ", HistoryBar.Describe()));
-            Check("unticking it is an unsaved edit of the profile", Profiles.Edited && Profiles.UnsavedChanges().Off.Contains("Fresh Mod"),
-                $"edited {Profiles.Edited}, off: {string.Join(", ", Profiles.UnsavedChanges().Off)}");
+            Check("unticking it is an unsaved edit of the profile", Profiles.Edited && Profiles.UnsavedChanges().Off.Any(m => m.Name == "Fresh Mod"),
+                $"edited {Profiles.Edited}, off: {string.Join(", ", Profiles.UnsavedChanges().Off.Select(m => m.Name))}");
             HistoryBar.ShowList(screen);
             await Wait(menu, 0.2);
             await Capture(screen, outDir, "10c-installed-change");

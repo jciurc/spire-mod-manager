@@ -13,6 +13,8 @@ namespace SpireModManager;
 //   disabled, each mod installed (and whether it loads after a relaunch), each move, each edit, profiles
 //   added, deleted or renamed. A mod's name there opens it, with Back to the list.
 // - Undo, Redo (their shortcuts underneath), Revert all.
+// The same place in the panel also lists the active profile's unsaved changes, opened from "Unsaved •" on the
+// profile bar; one list at a time, so opening one closes the other.
 static class HistoryBar
 {
     public const string BarName = "SpireModManagerHistory";
@@ -27,6 +29,12 @@ static class HistoryBar
 
     // The screen our keyboard shortcuts act on, while it exists.
     public static NModdingScreen? Screen { get; private set; }
+
+    // Which list the panel shows: everything changed since launch, or the active profile's unsaved changes.
+    public enum ListKind { Changes, Unsaved }
+
+    // The list the panel shows, or showed last (where Back returns to).
+    static ListKind _list;
 
     public static void Attach(NModdingScreen screen)
     {
@@ -65,13 +73,8 @@ static class HistoryBar
         Hover.Watch(changes, SummaryName, Summary, place: () => (changes.GlobalPosition + new Vector2(changes.Size.X, -8), true, true));
         changes.GuiInput += e =>
         {
-            if (e is not InputEventMouseButton { ButtonIndex: MouseButton.Left, Pressed: false })
-                return;
-            // A second click closes the list again; with Back showing (a mod opened from the list), it goes back.
-            if (ListOpen(info))
-                CloseList(info);
-            else
-                ShowList(screen);
+            if (e is InputEventMouseButton { ButtonIndex: MouseButton.Left, Pressed: false })
+                ToggleList(screen, ListKind.Changes);
         };
 
         void Update()
@@ -253,16 +256,31 @@ static class HistoryBar
     // A mod's name that opens it (from the changes list).
     static string Link(string? id, string name) => id == null ? Escape(name) : $"[url=mod:{id}]{Escape(name)}[/url]";
 
-    public static bool ListOpen(Node info) => info.GetNodeOrNull<Control>(ViewName) is { Visible: true };
+    // Whether the panel shows a list (kind: that one).
+    public static bool ListOpen(Node info, ListKind? kind = null) =>
+        info.GetNodeOrNull<Control>(ViewName) is { Visible: true } && (kind == null || kind == _list);
 
-    // Shows the full list in the right panel (our main list only). False when there's no panel to use.
-    public static bool ShowList(NModdingScreen screen)
+    // A click on what opens a list (the Changes text, "Unsaved •"): shows it, or closes it on a second click. With
+    // Back showing (a mod opened from the list), it goes back; with the other list showing, this one replaces it.
+    public static void ToggleList(NModdingScreen screen, ListKind kind)
+    {
+        var info = screen.GetNode<Control>("%ModInfoContainer");
+        if (ListOpen(info, kind))
+            CloseList(info);
+        else
+            ShowList(screen, kind);
+    }
+
+    // Shows a list in the right panel (our main list only): the full list of changes, or the unsaved ones. False
+    // when there's no panel to use.
+    public static bool ShowList(NModdingScreen screen, ListKind kind = ListKind.Changes)
     {
         if (Layout.Current != Layout.View.Categories)
             return false;
         var info = screen.GetNode<Control>("%ModInfoContainer");
         var view = info.GetNodeOrNull<Control>(ViewName) ?? AddList(info);
         HideBack(info);
+        _list = kind;
         if (!view.Visible)
         {
             // Everything else in the panel steps aside (and comes back when a mod is picked).
@@ -298,11 +316,13 @@ static class HistoryBar
         view.SetAnchorsPreset(Control.LayoutPreset.FullRect);
         (view.OffsetLeft, view.OffsetTop, view.OffsetRight, view.OffsetBottom) = (ModDetails.Inset, 14, -ModDetails.Inset, -16);
 
-        var head = new HBoxContainer();
+        var head = new HBoxContainer { Name = "Head" };
         var title = new Label { Text = Menus.Text("SPIRE_MOD_MANAGER.CHANGES_TITLE"), SizeFlagsHorizontal = Control.SizeFlags.ExpandFill };
         title.AddThemeFontOverride("font", ResourceLoader.Load<Font>("res://themes/kreon_bold_shared.tres"));
         title.AddThemeFontSizeOverride("font_size", 30);
         title.AddThemeColorOverride("font_color", Cream);
+        // FillList titles it for the list it shows; a long profile name (in the unsaved list's title) wraps.
+        (title.Name, title.AutowrapMode) = ("Title", TextServer.AutowrapMode.WordSmart);
         head.AddChild(title);
         var close = Menus.SmallButton(Menus.Text("SPIRE_MOD_MANAGER.CLOSE"), () => CloseList(info), name: "CloseChangesButton");
         close.SizeFlagsVertical = Control.SizeFlags.ShrinkCenter;
@@ -341,7 +361,7 @@ static class HistoryBar
         var info = screen.GetNode<Control>("%ModInfoContainer");
         if (info.GetNodeOrNull<Control>(BackName) is not { } back)
         {
-            back = Menus.SmallButton(Menus.Text("SPIRE_MOD_MANAGER.BACK_TO_CHANGES"), () => ShowList(screen), name: BackName);
+            back = Menus.SmallButton(Menus.Text("SPIRE_MOD_MANAGER.BACK_TO_CHANGES"), () => ShowList(screen, _list), name: BackName);
             info.AddChild(back);
             back.AnchorLeft = back.AnchorRight = 1;
             back.GrowHorizontal = Control.GrowDirection.Begin;
@@ -376,9 +396,35 @@ static class HistoryBar
         changes.Position = new Vector2((float)changes.GetMeta(RightMeta) - width, changes.Position.Y);
     }
 
-    // Sections with counts, each change on its own line.
+    // The active profile's unsaved changes, one line each, by name: "+ Name" turned on, "− Name" turned off (in
+    // the colours Changes uses for them). links: each name opens the mod (the panel's list; the card has none).
+    public static List<string> UnsavedLines(bool links)
+    {
+        var (on, off) = Profiles.UnsavedChanges();
+        string Line(string sign, string color, (string Id, string Name) mod) =>
+            $"[color={color}]{sign} {(links ? Link(mod.Id, mod.Name) : Escape(mod.Name))}[/color]";
+        return on.OrderBy(m => m.Name).Select(m => Line("+", Added, m))
+            .Concat(off.OrderBy(m => m.Name).Select(m => Line("−", Removed, m))).ToList();
+    }
+
+    // The active profile's unsaved changes, titled with its name. It follows the tickboxes while open: after Save
+    // or Discard (or ticking back to the saved state) it says there are none, until it's closed.
+    static void FillUnsaved(Control view)
+    {
+        view.GetNode<Label>("Head/Title").Text = Menus.Format("SPIRE_MOD_MANAGER.UNSAVED_LIST_TITLE", ("name", Profiles.Active?.Name ?? ""));
+        var lines = UnsavedLines(links: true);
+        view.GetNode<RichTextLabel>("List").Text = lines.Count > 0 ? string.Join("\n", lines) : Menus.Text("SPIRE_MOD_MANAGER.NO_UNSAVED");
+    }
+
+    // Sections with counts, each change on its own line (or the unsaved list's lines).
     static void FillList(Control view)
     {
+        if (_list == ListKind.Unsaved)
+        {
+            FillUnsaved(view);
+            return;
+        }
+        view.GetNode<Label>("Head/Title").Text = Menus.Text("SPIRE_MOD_MANAGER.CHANGES_TITLE");
         var entries = Entries();
         var text = new System.Text.StringBuilder();
         void Section(string key, string color, string id)
