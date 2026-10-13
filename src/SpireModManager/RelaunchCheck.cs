@@ -4,10 +4,11 @@ using MegaCrit.Sts2.Core.Nodes.Screens.ModdingScreen;
 
 namespace SpireModManager;
 
-// Before Relaunch Game: enabled mods that won't load as things stand (a mod they need is off or not
-// installed). Nothing wrong: relaunch at once. Otherwise a dialog lists them and offers to enable the needed
-// mods, disable the ones that can't load, relaunch anyway, or cancel (Esc too). A fix updates the list in
-// place (and is undoable like any change); once nothing is wrong it offers a plain Relaunch.
+// Before Relaunch Game (the Modding page's button, or Relaunch game in the main menu button's right-click
+// menu): enabled mods that won't load as things stand (a mod they need is off or not installed). Nothing
+// wrong: relaunch at once. Otherwise a dialog over the page it came from lists them and offers to enable the
+// needed mods, disable the ones that can't load, relaunch anyway, or cancel (Esc too). A fix updates the list
+// in place (and is undoable like any change); once nothing is wrong it offers a plain Relaunch.
 static class RelaunchCheck
 {
     public const string Name = "SpireModManagerRelaunchCheck";
@@ -17,12 +18,13 @@ static class RelaunchCheck
 
     public static bool IsOpen => Root()?.GetNodeOrNull(Name) != null;
 
-    public static void Relaunch(NModdingScreen screen)
+    // owner: the page asking (the Modding screen or the main menu); the dialog closes when it goes.
+    public static void Relaunch(Node owner)
     {
         if (Problems().Count == 0)
             ModEntry.Relaunch();
         else
-            Show(screen);
+            Show(owner);
     }
 
     // Enabled mods (installed now or this session) with a dependency that is off or missing, and why.
@@ -34,17 +36,17 @@ static class RelaunchCheck
                     ("mod", d.Mod?.manifest?.name ?? d.Id)))))
             .ToList();
 
-    public static void Show(NModdingScreen screen)
+    public static void Show(Node owner)
     {
         Close();
         if (Root() is not { } root)
             return;
         var layer = new CanvasLayer { Name = Name, Layer = 85 };
         root.AddChild(layer);
-        screen.TreeExiting += () => Close();
+        owner.TreeExiting += () => Close();
 
         // Dim everything behind, and take its clicks.
-        var size = screen.GetViewport().GetVisibleRect().Size; // anchors don't size controls right under a CanvasLayer here
+        var size = owner.GetViewport().GetVisibleRect().Size; // anchors don't size controls right under a CanvasLayer here
         var dim = new ColorRect { Color = new Color(0, 0, 0, 0.6f), MouseFilter = Control.MouseFilterEnum.Stop, Size = size };
         layer.AddChild(dim);
         var center = new CenterContainer { MouseFilter = Control.MouseFilterEnum.Ignore, Size = size };
@@ -64,11 +66,11 @@ static class RelaunchCheck
         var column = new VBoxContainer { Name = "Column" };
         column.AddThemeConstantOverride("separation", 14);
         panel.AddChild(column);
-        Fill(screen, column);
+        Fill(owner, column);
     }
 
     // The dialog's contents for the current state (again after each fix).
-    static void Fill(NModdingScreen screen, VBoxContainer column)
+    static void Fill(Node owner, VBoxContainer column)
     {
         foreach (var child in column.GetChildren())
         {
@@ -91,12 +93,24 @@ static class RelaunchCheck
                 $"  •  [b]{Escape(g.Key.manifest?.name ?? g.Key.manifest?.id ?? "")}[/b]  [color={ProblemHex}]{Escape(string.Join("; ", g.Select(p => p.Why)))}[/color]"));
         column.AddChild(body);
 
-        var content = screen.GetNode<Control>("%ModsScrollContainer/Mask/Content");
+        // The Modding page, open or hidden behind the main menu (the game keeps it for the next visit): a fix ticks
+        // its boxes, and its redraw records the fix. Before the page has been opened this session there is none: the
+        // active profile and the history take the change directly.
+        var screen = owner as NModdingScreen ?? HistoryBar.Screen;
         void Fix(IEnumerable<Mod> mods, bool on)
         {
-            Dependencies.Set(mods, on, screen);
-            CategoryList.Redraw(content); // one undoable change
-            Fill(screen, column);
+            if (screen != null && GodotObject.IsInstanceValid(screen))
+            {
+                Dependencies.Set(mods, on, screen);
+                CategoryList.Redraw(screen.GetNode<Control>("%ModsScrollContainer/Mask/Content")); // one undoable change
+            }
+            else
+            {
+                Dependencies.Set(mods, on, null);
+                Profiles.Track();
+                History.Record(); // one undoable change (Track only records when the active profile changed)
+            }
+            Fill(owner, column);
         }
         var buttons = new HBoxContainer { Name = "Buttons", Alignment = BoxContainer.AlignmentMode.End };
         buttons.AddThemeConstantOverride("separation", 8);

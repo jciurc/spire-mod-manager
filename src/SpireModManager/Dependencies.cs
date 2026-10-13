@@ -46,9 +46,9 @@ static class Dependencies
         return needed;
     }
 
-    // Turns mods on (or off) in the saved list and ticks their boxes; the caller's redraw records it as one
-    // change. This mod stays on.
-    public static void Set(IEnumerable<Mod> mods, bool on, NModdingScreen screen)
+    // Turns mods on (or off) in the saved list and ticks their boxes on the Modding page, if there is one; the
+    // caller's redraw records it as one change. This mod stays on.
+    public static void Set(IEnumerable<Mod> mods, bool on, NModdingScreen? screen)
     {
         var settings = SaveManager.Instance.SettingsSave.ModSettings ??= new ModSettings();
         foreach (var mod in mods)
@@ -59,7 +59,8 @@ static class Dependencies
             entry.IsEnabled = on || mod.manifest?.id == ModEntry.ModId;
         }
         SaveManager.Instance.SaveSettings();
-        Profiles.RefreshTickboxes(screen);
+        if (screen != null)
+            Profiles.RefreshTickboxes(screen);
     }
 
     // Enabled mods placed before an enabled mod they need.
