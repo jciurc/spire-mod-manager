@@ -1378,9 +1378,27 @@ static class SelfTest
         List<string> Saved() => SaveManager.Instance.SettingsSave.ModSettings?.ModList
             .Select(m => m.Id).Where(id => Ids().Contains(id)).ToList() ?? [];
         var pending = screen.GetNode<Control>("%PendingChangesLabel");
+        // Auto sort's hint: level with the search box, just left of Auto sort, above the list (so clear of every row).
+        void HintPlaced(string when)
+        {
+            var border = screen.GetNode<Control>("ModsBorder");
+            var hint = border.GetNode<Control>(LoadOrder.AutoSortHintName);
+            var (at, sort, search, list) = (hint.GetGlobalRect(), border.GetNode<Control>(LoadOrder.AutoSortName).GetGlobalRect(),
+                border.GetNode<Control>("SpireModManagerSearch").GetGlobalRect(), border.GetNode<Control>("ModsScrollContainer").GetGlobalRect());
+            Check($"{when}: Auto sort's hint level with the search box, left of Auto sort, above the rows", hint.Visible
+                && Math.Abs(at.GetCenter().Y - search.GetCenter().Y) < 1 && at.End.X <= sort.Position.X && at.End.Y <= list.Position.Y,
+                $"hint {at}, search {search}, Auto sort {sort}, rows from {list.Position.Y}");
+        }
 
+        // Straight from the main list, nothing picked (letting go of picked rows redraws on the way, which hid the bug):
+        // the hint is in place from the first frame, not where the search box sits on the main list.
+        Selection.Clear(content);
         Click(screen.GetNode<NButton>("SpireModManagerLoadOrderToggle"));
         await Wait(menu, 0.5);
+        HintPlaced("opening Load Order");
+        CategoryList.Redraw(content);
+        await Wait(menu, 0.3);
+        HintPlaced("Load Order redrawn");
         var start = Ids();
         Check("load order view: saved order, handles, no headers", start.SequenceEqual(Saved())
             && Rows().All(r => r.HasNode("SpireModManagerHandle"))
