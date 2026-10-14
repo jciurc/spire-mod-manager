@@ -2106,6 +2106,34 @@ static class SelfTest
             && screen.FindChild("AutoSortButton", true, false) is Control { Visible: true } sort && !content.IsAncestorOf(sort));
         await Capture(screen, outDir, "12-order-problem");
 
+        // Hovering the warning's text: a card naming each mod placed before a mod it needs, in load order, and nothing
+        // else. Test UI moved there too joins it; ticked off (its menu's Disable) it leaves again. Enabled again, and the
+        // move undone (this view's undo steps through the order only), it's back as it was.
+        var orderCard = await BannerCard(menu, screen, screen.FindChild(LoadOrder.WarningName, true, false));
+        Check("the order warning's card: \"Test Content loads before Test Framework\", nothing else",
+            string.Join(" | ", orderCard) == "Affected mods | Test Content loads before Test Framework", string.Join(" | ", orderCard));
+        if (Row("SmmTestUi") is { Mod: { } ui } uiRow)
+        {
+            var idsWere = Ids();
+            LoadOrder.Move(ui, Ids().IndexOf("SmmTestLib"), Rows());
+            CategoryList.Redraw(content);
+            await Wait(menu, 0.3);
+            var both = string.Join(" | ", await BannerCard(menu, screen, screen.FindChild(LoadOrder.WarningName, true, false)));
+            LoadOrder.Actions(content, uiRow, () => CategoryList.Redraw(content))[0].OnSelect?.Invoke(); // Disable
+            await Wait(menu, 0.3);
+            var off = string.Join(" | ", await BannerCard(menu, screen, screen.FindChild(LoadOrder.WarningName, true, false)));
+            Check("the order warning's card follows: Test UI moved before the framework too, both in load order; ticked off, Test Content alone",
+                both == "Affected mods | Test Content loads before Test Framework | Test UI loads before Test Framework"
+                && off == "Affected mods | Test Content loads before Test Framework", $"{both}; then {off}");
+            LoadOrder.Actions(content, uiRow, () => CategoryList.Redraw(content))[0].OnSelect?.Invoke(); // Enable
+            await Wait(menu, 0.3);
+            History.Undo();
+            await Wait(menu, 0.3);
+            Check("enabled again and the move undone: Test UI on, in its place", Dependencies.IsOn(ui) && Ids().SequenceEqual(idsWere), string.Join(", ", Ids()));
+        }
+        else
+            Results.Add("FAIL the order warning's card: no row for Test UI");
+
         var before = Ids();
         screen.FindChild("FixOrderButton", true, false)?.EmitSignal(BaseButton.SignalName.Pressed);
         await Wait(menu, 0.5);
@@ -2220,6 +2248,52 @@ static class SelfTest
         Check("main list banner: Show and Enable needed mods right after its text", after.Ok
             && warning?.FindChild("EnableNeededButton", true, false) is Control { Visible: true }, after.Detail);
         await Capture(screen, outDir, "2b-list-banner");
+
+        // Hovering its text: a card with each mod that won't load and what it needs, by the names the list shows (the
+        // framework by an alias here): Test Content and Test UI, and every other enabled mod whose own row says a mod it
+        // needs is off or not installed (the fixture's BrandedMod: BaseLib), nothing else.
+        var aliasWas = Store.InfoFor("SmmTestLib")?.Alias;
+        Store.EditMod("SmmTestLib", info => info.Alias = "Framework");
+        CategoryList.Redraw(content);
+        await Wait(menu, 0.3);
+        string Shown(Mod mod) => Store.InfoFor(mod.manifest?.id)?.Alias ?? mod.manifest?.name ?? "";
+        var flagged = Rows().Where(r => r.GetNodeOrNull<RichTextLabel>("SpireModManagerStrip/Needs")?.GetParsedText() is { } note
+                && (note.Contains("(off)") || note.Contains("(not installed)")))
+            .Select(r => r.Mod).OfType<Mod>().Where(Dependencies.IsOn).Select(Shown).Order().ToList();
+        var card = await BannerCard(menu, screen, screen.FindChild(LoadOrder.WarningName, true, false));
+        var named = card.Skip(1).Select(l => l.Split(": needs ")[0]).Order().ToList();
+        Check("main list banner: hovering its text, a card with each mod that won't load and what it needs, by the names the list shows, nothing else",
+            card.FirstOrDefault() == "Affected mods" && card.Contains("Test Content: needs Framework (disabled)") && card.Contains("Test UI: needs Framework (disabled)")
+            && named.SequenceEqual(flagged) && !card.Any(l => l.Contains("Test Framework")),
+            $"{string.Join(" | ", card)}; rows saying so: {string.Join(", ", flagged)}");
+
+        // A tick while the card shows: the banner is made again, and no card lists the mod ticked off (that one went with
+        // its banner); the next, worked out when it opens, leaves it out.
+        if (BannerText(screen.FindChild(LoadOrder.WarningName, true, false)) is { } bannerText && Row("SmmTestUi")?.GetNode<NTickbox>("Tickbox") is { } uiBox)
+        {
+            var at = bannerText.GetGlobalRect().GetCenter();
+            Hover.TestMouse = () => at;
+            bannerText.EmitSignal(Control.SignalName.MouseEntered);
+            await Wait(menu, 0.1);
+            var open = BannerCardLines(screen).Contains("Test UI: needs Framework (disabled)");
+            uiBox.IsTicked = false;
+            uiBox.EmitSignal(NTickbox.SignalName.Toggled, uiBox);
+            await Wait(menu, 0.3);
+            var stale = BannerCardLines(screen).Any(l => l.StartsWith("Test UI"));
+            Hover.TestMouse = null;
+            var next = await BannerCard(menu, screen, screen.FindChild(LoadOrder.WarningName, true, false));
+            Check("a tick while the banner's card shows: no stale card, and the next leaves out the mod ticked off",
+                open && !stale && next.Contains("Test Content: needs Framework (disabled)") && !next.Any(l => l.StartsWith("Test UI")),
+                $"listed before {open}, stale after {stale}; then {string.Join(" | ", next)}");
+            uiBox.IsTicked = true;
+            uiBox.EmitSignal(NTickbox.SignalName.Toggled, uiBox);
+            await Wait(menu, 0.3);
+        }
+        else
+            Results.Add("FAIL main list banner's card after a tick: no banner text or no Test UI row");
+        Store.EditMod("SmmTestLib", info => info.Alias = aliasWas);
+        CategoryList.Redraw(content);
+        await Wait(menu, 0.3);
         screen.FindChild("EnableNeededButton", true, false)?.EmitSignal(BaseButton.SignalName.Pressed);
         await Wait(menu, 0.3);
         Check("Enable needed mods turns it on, banner says no more", Dependencies.IsOn(lib) && tickbox.IsTicked
@@ -2291,6 +2365,12 @@ static class SelfTest
         Check("the managers banner's Show tip is the other banner's: \"Opens the next affected mod\"", showTip == "Opens the next affected mod", showTip ?? "no Show");
         Check("the managers banner names no manager: no \"Better Mod Menu\" in its text or tips",
             BannerWords(Banner()) is { Count: > 0 } words && !words.Any(w => w.Contains("Better Mod Menu")), string.Join(" | ", BannerWords(Banner())));
+        // Hovering its text: a card naming the mod managers that are on, by the names the list gives them (ours by the
+        // fixture's alias), and nothing else.
+        var managers = string.Join(" | ", await BannerCard(menu, screen, Banner()));
+        var bmmShown = Store.InfoFor(Bmm.ModId)?.Alias ?? bmm.manifest?.name;
+        Check("the managers banner's card: the managers that are on, ours by its alias (\"The Manager\"), then Better Mod Menu, nothing else",
+            Store.InfoFor(ModEntry.ModId)?.Alias == "The Manager" && managers == $"Enabled mod managers | The Manager | {bmmShown}", managers);
         var after = ButtonsAfterText(Banner());
         Check("main list: the managers banner's Show and Dismiss right after its text", after.Ok, after.Detail);
         await Capture(screen, outDir, "2e-managers-banner");
@@ -3710,6 +3790,32 @@ static class SelfTest
     // Everything a banner says: its text, its buttons' words and their tips.
     static List<string> BannerWords(Node? banner) => banner?.FindChildren("*", "", true, false)
         .SelectMany(n => n switch { Label label => [label.Text], Button button => new[] { button.Text, button.TooltipText }, _ => [] }).ToList() ?? [];
+
+    // A banner's text: hovering it opens the banner's card.
+    static Label? BannerText(Node? banner) => banner?.FindChildren("*", "", true, false).OfType<Label>().FirstOrDefault();
+
+    // The banner card open on the page, a line each, its title first (none open: empty).
+    static List<string> BannerCardLines(Node screen) => (screen.GetNodeOrNull(LoadOrder.BannerCardName)?.FindChildren("*", "", true, false)
+        .OfType<RichTextLabel>().FirstOrDefault()?.GetParsedText() ?? "").Split('\n', StringSplitOptions.RemoveEmptyEntries).ToList();
+
+    // A banner's card as a player gets it: the mouse onto its text (where Hover sees it), the card's lines read, then the
+    // mouse off again.
+    static async Task<List<string>> BannerCard(Node menu, Node screen, Node? banner)
+    {
+        if (BannerText(banner) is not { } text)
+            return [];
+        var at = text.GetGlobalRect().GetCenter(); // not read from the label later: a redraw frees it
+        Hover.TestMouse = () => at;
+        text.EmitSignal(Control.SignalName.MouseEntered);
+        await Wait(menu, 0.1);
+        var lines = BannerCardLines(screen);
+        Hover.TestMouse = () => new Vector2(5, 5);
+        if (GodotObject.IsInstanceValid(text))
+            text.EmitSignal(Control.SignalName.MouseExited);
+        await Wait(menu, 0.1);
+        Hover.TestMouse = null;
+        return lines;
+    }
 
     static void Check(string name, bool ok, string detail = "") =>
         Results.Add($"{(ok ? "PASS" : "FAIL")} {name}{(ok || detail.Length == 0 ? "" : $": {detail}")}");
