@@ -178,7 +178,9 @@ nothing scanned here is clearly one.
   1. the owner id is a mod's manifest id (Better Mod Menu's is);
   2. the patch method's DLL sits in a mod's folder (`Mod.path`; this needs the game to load mod DLLs from
      their path, to check in the first PR);
-  3. otherwise the Harmony id as text, with no row to go to.
+  3. otherwise the Harmony id as text, with no row to go to. A manager-kind patch like this is still loaded
+     and still runs on the page, so it still raises the banner: named by its Harmony id, with no Show or
+     Disable (there's no row for either), only Dismiss.
 - **When.** Once, at the first main menu (every mod has initialised by then, and patches don't change).
 - **Limits.**
   - Only loaded mods. A manager ticked this session loads after a relaunch. Until then only a known id
@@ -187,6 +189,11 @@ nothing scanned here is clearly one.
     Our side copes with plain writes already: the list is the truth, and our profile shows the difference
     as unsaved.
   - It says what a mod hooks, not what it does. The kinds are a heuristic.
+  - It misses managers that only rewrite the saved list at launch or exit, without patching the page or
+    `ModSettings`: round 21's survey names LoadOrderSync (re-sorts at launch) and ModListSorter (A-Z on every
+    exit), and others there write `mod_list` from their own screens. These need a **known-id list**, built
+    from the survey once their manifest ids are looked up, checked as Better Mod Menu's id is today (ticked
+    counts, loaded or not).
 
 ## Options
 
@@ -234,8 +241,11 @@ For the player: one manager is the setup we recommend. Two still work: the banne
 click to keep only ours, and can be dismissed by anyone happy with both. In practice that's options 1, 3 and 4
 together, and the safe part of 2.
 
-- **Detect managers generically** (Harmony, above). The banner names the manager it found. A known id
-  (Better Mod Menu's) still counts while it's ticked but not loaded.
+- **Detect managers two ways**: generically from Harmony (above) for anything that hooks the page or
+  `ModSettings`, and from a known-id list for the managers round 21's survey found that only rewrite the
+  saved list at launch or exit (the scan can't see those). A known id counts while ticked, loaded or not,
+  as Better Mod Menu's does today. The banner names the manager it found; one it can't tie to a mod is named
+  by its Harmony id, with Dismiss only.
 - **Add "Disable <name>"** to the banner (option 3), beside Show and Dismiss. Its tooltip says what it does
   and how to undo it.
 - **Keep the Better Mod Menu bridge**, and add the health check (option 4). No bridges for other managers
@@ -253,7 +263,8 @@ together, and the safe part of 2.
 | Where | Today | Proposed |
 |---|---|---|
 | Banner | Multiple mod managers are currently enabled, which may cause unexpected behavior. | unchanged |
-| Banner text's hover card | (none) | Both use the game's one mod list. A change here also changes {name}'s selected profile. |
+| Banner text's hover card, Better Mod Menu | (none) | Both use the game's one mod list. A change here also changes Better Mod Menu's selected profile. |
+| Banner text's hover card, any other manager | (none) | Both change the game's one mod list. {name} may change it again (at launch, on exit, or from its own screen), so check the list after using it. |
 | Show tooltip | Shows Better Mod Menu in the list | Shows {name} in the list |
 | Dismiss tooltip (#32) | Hides this warning. It comes back if Better Mod Menu or Spire Mod Manager is disabled and then both are enabled again. | the same with {name} |
 | New button | (none) | Disable {name} |
@@ -281,20 +292,28 @@ Branch `managers-detect`, on top of #32:
 - **`Managers.cs` (new):**
   - `Found`: the other mods patching the Modding page, each with its kind, its patched methods and its mod (or
     null). Worked out once on first use, after the first main menu. `Rescan()` for the self-test.
-  - Known ids (`Bmm.ModId`) count as managers by id, loaded or not.
-  - `OtherTicked`: the first manager whose mod is on in the saved list. It replaces `Bmm.BothTicked` (#32) in
-    `LoadOrder.UpdateToolbar` and `Bmm.ForgetDismissedWarning`, which moves here. Ours must be on too, as now.
+  - Known ids count as managers by id, loaded or not: `Bmm.ModId`, plus round 21's list rewriters once their
+    manifest ids are looked up (from their Workshop folders' manifests). Without that list the first PR warns
+    only for page patchers, and the PR description says so.
+  - `Active`: the first manager that is on in the saved list, or a loaded manager-kind patch with no mod (named
+    by its Harmony id). It replaces `Bmm.BothTicked` (#32) in `LoadOrder.UpdateToolbar` and
+    `Bmm.ForgetDismissedWarning`, which moves here. Ours must be on too, as now.
   - Logs the list once: "Other mods patching the Modding page: BetterModMenu (manager: _Ready,
     OnModEnabledOrDisabled, ...), JmcModLib (page: _Ready)".
 - **`LoadOrder.ManagersBanner`:** Show and its tooltip name the found manager; a "Disable" button runs
   `Dependencies.Set([mod], false, screen)` and the redraw, one undo step (as Enable needed mods does).
 - **`Store`:** `ManagersWarningDismissed` stays one flag. It's forgotten when no other manager is ticked.
 - **Strings** (`settings_ui.json`): `DISABLE_MANAGER` and `DISABLE_MANAGER_TIP`; `SHOW_MANAGERS_TIP` and
-  `DISMISS_MANAGERS_TIP` take `{name}`; `MANAGERS_CARD` for the banner text's card.
+  `DISMISS_MANAGERS_TIP` take `{name}`; `MANAGERS_CARD_BMM` and `MANAGERS_CARD` (any other manager, with
+  `{name}`) for the banner text's card.
 - **Self-test checks** (plain run, with test Harmony patches applied and removed by the test):
   - "a test patch on `OnModEnabledOrDisabled` under the id `SmmTestUi` counts as a manager, tied to that
     fixture mod; ours never counts";
   - "a test patch only on `NModInfoContainer.Fill` counts as a page add-on: no banner";
+  - "a ticked fixture mod whose id is on the known-id list counts as a manager with no patches at all";
+  - "a manager-kind test patch under a Harmony id that matches no mod still raises the banner, named by that
+    id, with Dismiss but no Show or Disable";
+  - "the banner's card for Better Mod Menu mentions its selected profile; for any other manager it doesn't";
   - "with the test manager ticked, the banner names it in Show's tooltip and its Disable button";
   - "Disable unticks it as one undo step: the banner goes and the relaunch line shows; Undo ticks it again
     and the banner comes back";
