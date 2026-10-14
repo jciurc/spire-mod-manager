@@ -38,7 +38,7 @@ the game's own mod list stays the source of truth for what's on and the load ord
   game first). `--no-install` only builds.
 - `dotnet run build.cs --dist` makes the release for the Workshop and never installs. The manifest gets
   `ReleaseVersion` (set by hand in build.cs) instead of the dev number, and `dist/SpireModManager/` holds
-  just the `.dll`, `.json` and `.pck` to upload (RELEASE-PLAN.md §5).
+  just the `.dll`, `.json` and `.pck` to upload (docs/dev/RELEASE-PLAN.md §5).
 - Player text lives in `localization/<lang>/*.json` and pictures in `images/`, packed into
   `SpireModManager.pck`. See TRANSLATING.md for adding a language.
 - The game is looked for in the Steam library `D:\SteamLibrary\steamapps`. If yours is elsewhere, set the
@@ -88,8 +88,8 @@ drive; hard links can't cross drives) with its own mods folder, no Steam, separa
 - **`pr-screenshots`:** pictures for pull requests only (`tools/shot.cs`), one folder per branch. It shares no
   history with the others, has no rules and is never merged.
 
-Notes: TODO.md (requests and their state), DESIGN.md (decisions and background), WHATS-NEW.md (what to
-look for after each install), workshop/README.md (publishing to the Steam Workshop).
+Notes: docs/dev/ holds the working notes (see its README.md); workshop/README.md covers publishing to the
+Steam Workshop.
 
 ## CI
 

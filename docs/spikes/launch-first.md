@@ -124,7 +124,7 @@ index in `mod_list` goes first. That index is looked up by id only, and a mod li
   mod list, through its own collectible `AssemblyLoadContext`. Its description lists what still needs a restart:
   Godot scripts, model registration, cached PCK content, native libraries, framework chains.
 - **MOD管理器** (xiaozz, 136 subscribers): a one-time rollback to the last working setup after a startup crash
-  (DESIGN.md's survey). No source.
+  (docs/dev/DESIGN.md's survey). No source.
 
 ## Findings
 
