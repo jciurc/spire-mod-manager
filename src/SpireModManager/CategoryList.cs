@@ -707,6 +707,7 @@ static class CategoryList
         // An empty or taken name says so at the box's right end; Enter then does nothing, and clicking away
         // keeps the old name.
         var warning = new Label { Name = "NameWarning", HorizontalAlignment = HorizontalAlignment.Right, VerticalAlignment = VerticalAlignment.Center, MouseFilter = Control.MouseFilterEnum.Ignore };
+        warning.AddThemeFontOverride("font", ModEntry.Font("res://themes/kreon_regular_shared.tres"));
         warning.AddThemeFontSizeOverride("font_size", 15);
         warning.AddThemeColorOverride("font_color", new Color(1f, 0.5f, 0.44f));
         edit.AddChild(warning);
