@@ -350,6 +350,14 @@ void PrepareSandbox(bool resetData)
     var bmmDir = Path.Combine(sandbox, "mod_data", "BetterModMenu");
     if (Directory.Exists(bmmDir))
         Directory.Delete(bmmDir, recursive: true);
+    // The --workshop mods' data there too (mods keep it in a folder named for their id), so one run's saves and
+    // presets can't change the next.
+    foreach (var id in workshopMods)
+    {
+        var dir = Path.GetFullPath(Path.Combine(sandbox, "mod_data", id));
+        if (Path.GetFileName(dir) == id && Directory.Exists(dir)) // mod_data\<id> only: the id is the mod author's, not ours
+            Directory.Delete(dir, recursive: true);
+    }
     if (bmmData)
     {
         Directory.CreateDirectory(bmmDir);
