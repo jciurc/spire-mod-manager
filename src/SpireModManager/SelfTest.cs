@@ -862,8 +862,8 @@ static class SelfTest
         return MenuPanel.Current;
     }
 
-    // The main menu button's right-click menu: Move button, Reset position, a divider, Relaunch game, Open translations
-    // folder. Relaunch game checks for mods that won't load first, as the Modding page's button does (fixture: Test Addon
+    // The main menu button's right-click menu: Move button, Reset position, Open translations folder, a divider, Relaunch
+    // game (last and on its own). Relaunch game checks for mods that won't load first, as the Modding page's button does (fixture: Test Addon
     // needs SmmTestMissing, never installed): its dialog shows over the main menu, and its fixes work there before the
     // page has been opened. ModEntry.TestRelaunch counts each relaunch instead of quitting the test.
     static async Task TestMenuButtonRelaunch(NMainMenu menu, string outDir)
@@ -872,19 +872,20 @@ static class SelfTest
             return;
         var popup = await ButtonMenu(menu, button);
         var labels = popup == null ? [] : MenuPanel.Labels(popup);
-        Check("main menu button's menu: Move button, Reset position, Relaunch game, Open translations folder",
-            labels.SequenceEqual(["Move button", "Reset position", "Relaunch game", "Open translations folder"]), string.Join(", ", labels));
+        Check("main menu button's menu: Move button, Reset position, Open translations folder, Relaunch game",
+            labels.SequenceEqual(["Move button", "Reset position", "Open translations folder", "Relaunch game"]), string.Join(", ", labels));
         if (popup == null)
             return;
-        // The divider: the one entry between Reset position and Relaunch game, a line under the first and above the second.
+        // The divider: the one entry between Open translations folder and Relaunch game, a line under the first and above
+        // the second.
         string? Label(Node item) => item.IsInGroup(MenuPanel.ItemGroup) ? (string)item.GetMeta("label") : null;
         var items = popup.FindChild("Items", true, false)?.GetChildren().OfType<Control>().ToList() ?? [];
-        var reset = items.FindIndex(i => Label(i) == "Reset position");
-        var divider = reset >= 0 && reset + 2 < items.Count && Label(items[reset + 2]) == "Relaunch game" ? items[reset + 1] : null;
-        Check("a divider right under Reset position, above Relaunch game", divider != null && Label(divider) == null
+        var above = items.FindIndex(i => Label(i) == "Open translations folder");
+        var divider = above >= 0 && above + 2 < items.Count && Label(items[above + 2]) == "Relaunch game" ? items[above + 1] : null;
+        Check("a divider right under Open translations folder, above Relaunch game", divider != null && Label(divider) == null
             && divider.FindChildren("*", "ColorRect", true, false).Count == 1
-            && divider.GetGlobalRect().Position.Y >= items[reset].GetGlobalRect().End.Y
-            && divider.GetGlobalRect().End.Y <= items[reset + 2].GetGlobalRect().Position.Y,
+            && divider.GetGlobalRect().Position.Y >= items[above].GetGlobalRect().End.Y
+            && divider.GetGlobalRect().End.Y <= items[above + 2].GetGlobalRect().Position.Y,
             string.Join(" | ", items.Select(i => $"{Label(i) ?? "(line)"} {i.GetGlobalRect()}")));
         await Capture(menu, outDir, "1c-menu-button-menu");
 

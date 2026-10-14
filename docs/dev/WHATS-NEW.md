@@ -4,7 +4,7 @@ Short notes for Jordan: what to look for after each install. Newest first.
 
 ## Waiting in pull requests
 
-- **Drop-in translations** (branch `drop-in-translations`): right-click the main menu button: a last item, "Open translations folder", opens `mod_data\SpireModManager\translations` (made if it isn't there). Drop `<code>.json` in it (say `deu.json`, a copy of `localization/eng/settings_ui.json` with some values changed), switch the game to that language in Settings, and those texts show; the rest stay English. A broken file changes nothing; `godot.log` says why.
+- **Drop-in translations** (branch `drop-in-translations`): right-click the main menu button: a new item above the divider, "Open translations folder", opens `mod_data\SpireModManager\translations` (made if it isn't there). Drop `<code>.json` in it (say `deu.json`, a copy of `localization/eng/settings_ui.json` with some values changed), switch the game to that language in Settings, and those texts show; the rest stay English. A broken file changes nothing; `godot.log` says why.
 
 ## Installed 2026-10-14 (morning): version 0.0.54
 
