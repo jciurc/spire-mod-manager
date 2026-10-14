@@ -2283,16 +2283,16 @@ static class SelfTest
         Check("main list: the managers banner's Show and Dismiss right after its text", after.Ok, after.Detail);
         await Capture(screen, outDir, "2e-managers-banner");
 
-        // A narrow list: the text wraps in what the buttons leave, they follow it at full size, and the banner grows to
-        // fit with the list still below it. Then back to its width: one line, the usual height.
+        // A narrow list: the text wraps in what the buttons leave, they follow it, the banner no wider than the list (a
+        // line too full widens it past the list's edge instead), and it grows to fit with the list still below it. Then
+        // back to its width: one line, the usual height.
         const float narrower = 450;
         var wording = Banner()?.FindChild("ManagersWarning", true, false) as Label;
-        bool FullSize() => Banner()?.FindChildren("*", "", true, false).OfType<Button>().All(b => b.Size.X >= b.GetCombinedMinimumSize().X) == true;
         border.OffsetRight -= narrower;
         await Wait(menu, 0.3);
         after = ButtonsAfterText(Banner());
-        Check("a narrow list: the managers text wraps, Show and Dismiss right after it at full size, the banner taller, the list below it",
-            wording?.GetLineCount() > 1 && after.Ok && FullSize() && Banner()?.Size.Y > 40 && Placed(), $"{wording?.GetLineCount()} lines; {after.Detail}; {Where()}");
+        Check("a narrow list: the managers text wraps, Show and Dismiss right after it inside the list's width, the banner taller, the list below it",
+            wording?.GetLineCount() > 1 && after.Ok && Banner()?.Size.Y > 40 && Placed(), $"{wording?.GetLineCount()} lines; {after.Detail}; {Where()}");
         await Capture(screen, outDir, "2e-managers-banner-narrow");
         border.OffsetRight += narrower;
         await Wait(menu, 0.3);
@@ -3453,19 +3453,24 @@ static class SelfTest
     static bool Red(Color? fill) => fill == LoadOrder.ProblemColor && fill?.H is < 0.03f or > 0.97f;
 
     // A banner's buttons: the first right after the words of its text (a small gap), the rest each after the one before,
-    // so none out at the line's right end. The words end one line's width in, or at the text's box if it wraps.
+    // so none out at the line's right end. The words end one line's width in, or at the text's box if it wraps. And the
+    // banner no wider than the list: a line too full for it doesn't squeeze its buttons (Godot never sizes a box below
+    // what its insides ask for) but widens the banner past the list's right edge, buttons and all.
     static (bool Ok, string Detail) ButtonsAfterText(Node? banner)
     {
-        if (banner?.FindChildren("*", "", true, false).OfType<Label>().FirstOrDefault() is not { } text)
+        if (banner is not Control bar || bar.FindChildren("*", "", true, false).OfType<Label>().FirstOrDefault() is not { } text)
             return (false, "no banner");
-        var buttons = banner.FindChildren("*", "", true, false).OfType<Button>().Where(b => b.Visible).Select(b => b.GetGlobalRect()).ToList();
-        var box = text.GetGlobalRect();
+        if (bar.GetParent()?.GetNodeOrNull<Control>("ModsScrollContainer") is not { } list)
+            return (false, "no list beside the banner");
+        var buttons = bar.FindChildren("*", "", true, false).OfType<Button>().Where(b => b.Visible).Select(b => b.GetGlobalRect()).ToList();
+        var (box, at, listEnd) = (text.GetGlobalRect(), bar.GetGlobalRect(), list.GetGlobalRect().End.X);
         var wordsEnd = Math.Min(box.End.X, box.Position.X + text.GetThemeStylebox("normal").GetMargin(Side.Left)
             + text.GetThemeFont("font").GetStringSize(text.Text, fontSize: text.GetThemeFontSize("font_size")).X);
         var ok = buttons.Count > 0 && buttons[0].Position.X >= box.End.X && buttons[0].Position.X - wordsEnd is >= 0 and <= 12
-            && buttons.Zip(buttons.Skip(1)).All(p => p.Second.Position.X >= p.First.End.X);
+            && buttons.Zip(buttons.Skip(1)).All(p => p.Second.Position.X >= p.First.End.X)
+            && at.End.X <= listEnd + 0.5f;
         return (ok, $"words end at {wordsEnd:0} (text box to {box.End.X:0}), buttons {string.Join(", ", buttons.Select(b => $"{b.Position.X:0}-{b.End.X:0}"))}, "
-            + $"banner to {(banner as Control)?.GetGlobalRect().End.X:0}");
+            + $"banner to {at.End.X:0}, list to {listEnd:0}");
     }
 
     // Everything a banner says: its text, its buttons' words and their tips.
