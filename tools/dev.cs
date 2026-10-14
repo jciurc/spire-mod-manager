@@ -108,9 +108,10 @@ if (!real)
 foreach (var (item, manifest) in workshopManifests)
     foreach (var needed in DependencyIds(manifest).Where(id => !willLoad.Contains(id)))
     {
+        var installed = ManifestIds(Path.Combine(GameDir, "mods")).Contains(needed);
         var subscribed = Directory.GetDirectories(WorkshopDir).FirstOrDefault(d => ManifestIds(d).Contains(needed));
-        return Fail($"Workshop item {item} ({Id(manifest)}) needs {needed}, which won't be on in this run: " + (needed == "BetterModMenu" ? "add --bmm."
-            : real && ManifestIds(Path.Combine(GameDir, "mods")).Contains(needed) ? "--real switches the installed mods off, so run it without --real."
+        return Fail($"Workshop item {item} ({Id(manifest)}) needs {needed}, which won't be on in this run: " + (installed && needed == "BetterModMenu" ? "add --bmm."
+            : installed && real ? "--real switches the installed mods off, so run it without --real."
             : subscribed != null ? $"add its Workshop item, as in --workshop {string.Join(',', workshopItems.Append(Path.GetFileName(subscribed)))}"
             : "subscribe to it in Steam, then add its Workshop item to --workshop."));
     }
