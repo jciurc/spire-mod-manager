@@ -1044,12 +1044,21 @@ static class SelfTest
             Press("RelaunchNowButton");
             await Wait(menu, 0.2);
             Check("its Relaunch reaches the relaunch", relaunches == 1, $"{relaunches} relaunches");
-            RelaunchCheck.Close();
+            // Cancel (the relaunch here only counted, so the dialog is still up) takes the fix back with no Modding page
+            // to redraw. It was one step: Redo brings it back, one Undo takes it away again (the button's Reset position
+            // stays either way).
+            bool AsBefore() => ModListState().SequenceEqual(before) && !Profiles.Edited && Store.Data.MenuButtonAt == null
+                && dot.Visible == ModEntry.HasPendingChanges();
+            string NotAsBefore() => $"{string.Join(", ", before.Except(ModListState()))}; edited {Profiles.Edited}, button at {Store.Data.MenuButtonAt}";
+            Press("CancelRelaunchButton");
+            await Wait(menu, 0.3);
+            Check("from the main menu, Cancel takes back that fix, and only it", Dialog() == null && AsBefore(), NotAsBefore());
+            History.Redo();
+            await Wait(menu, 0.3);
+            var redone = !Dependencies.IsOn(addon);
             History.Undo();
             await Wait(menu, 0.3);
-            Check("one undo takes back that fix, and only it", ModListState().SequenceEqual(before) && !Profiles.Edited
-                && Store.Data.MenuButtonAt == null && dot.Visible == ModEntry.HasPendingChanges(),
-                $"{string.Join(", ", before.Except(ModListState()))}; edited {Profiles.Edited}, button at {Store.Data.MenuButtonAt}");
+            Check("it was one step: Redo brings the fix back, one Undo takes it away again", redone && AsBefore(), NotAsBefore());
         }
         finally
         {

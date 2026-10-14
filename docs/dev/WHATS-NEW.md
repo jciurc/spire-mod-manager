@@ -2,6 +2,11 @@
 
 Short notes for Jordan: what to look for after each install. Newest first.
 
+## Waiting in pull requests
+
+- **The selected row (row-selected-flush, #71, merged):** the mod open in the info panel has an even 2 px gold rim on its brighter fill, and its edges line up with the picked rows' tint. Ctrl+click a few mods around it to compare.
+- **Before you relaunch: Cancel takes your fixes back (relaunch-cancel):** untick a library an enabled mod needs and press Relaunch Game. Cancel is now first, at the left; Enable needed mods, Disable mods that can't load and Relaunch anyway are at the right. Press a fix, then Cancel (or Esc): the fix is taken back and the mods are as they were before the dialog (Ctrl+Y brings it back). The same from the main menu button's Relaunch game. Relaunch keeps the fixes, as before.
+
 ## Installed 2026-10-14 (afternoon): version 0.0.56
 
 Everything below, plus the crash-safe launch draft (#65, not merged; it's in this build so you can try it before
