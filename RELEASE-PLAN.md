@@ -87,6 +87,12 @@
     - It needs us first in `mod_list`. The spike decides whether a mod loaded first can stop the rest loading in the same launch, or must restore `mod_list` and relaunch.
     - Found since (2026-10-13): it can. STS2-ModManager (MIT) patches `ModManager.TryLoadMod` while the first mod initializes, holds back the later mods, then loads the chosen ones. So a crashing mod can be skipped without a second launch.
     - Details in TODO round 21.
+15. **List filters** (Jordan, 2026-10-14: "for 0.1.0"). "Show: All · Enabled · Disabled · Changed" in the main list's page bar.
+    - Enabled and Disabled go by the tickboxes (what loads after a relaunch); Changed shows the mods the Changes list names.
+    - It works with the search (both must match) and the categories (each counts its rows shown). Load Order and Vanilla List show every row.
+    - Built on branch `list-filters`. Details in TODO round 22.
+16. **Affected mods on the warning banners' hover** (Jordan, 2026-10-14). Hovering a warning banner lists the mods it means, not just how many.
+    - Being built on branch `banner-hover`. Details in TODO round 22.
 
 ## 3. Should do before 1.0
 

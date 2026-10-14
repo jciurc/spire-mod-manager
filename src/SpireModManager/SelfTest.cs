@@ -140,6 +140,7 @@ static class SelfTest
             await TestListBanner(menu, screen, content, outDir);
             await TestManagersBanner(menu, screen, content, outDir);
             await TestPageBar(menu, screen, content, outDir);
+            await TestListFilters(menu, screen, content, outDir);
             await TestRelaunchCheck(menu, screen, content, outDir);
             await TestLongDetails(menu, screen, content, outDir);
             await TestWorkshopHead(menu, screen);
@@ -157,6 +158,7 @@ static class SelfTest
             await Wait(menu, 0.3);
             Check("reopening after Load Order shows the main list", Layout.Current == Layout.View.Categories
                 && screen.GetNode<Control>("%ModInfoContainer").Visible);
+            await TestListFilterReopen(menu, screen, content);
 
             await TestStoreSafety(menu, screen, outDir);
             await TestLanguageFonts(screen, outDir); // last: the main menu, the page with it, is made again
@@ -203,6 +205,14 @@ static class SelfTest
             }
             Results.Add($"INFO of which: titles {Ms(() => RowTitles.Apply(rows, false)):0.0} ms, toolbar {Ms(() => LoadOrder.UpdateToolbar(content, rows, () => { })):0.0} ms, "
                 + $"strips and toolbar {Ms(() => CategoryList.RefreshStrips(content)):0.0} ms");
+            // The page bar's Show: choices (Changed compares our data and the mod list with launch, once a redraw).
+            var shows = new[] { ListFilter.Choice.Enabled, ListFilter.Choice.Disabled, ListFilter.Choice.Changed }.Select(choice =>
+            {
+                ListFilter.Choose(content, choice);
+                return (choice, ms: Ms(() => CategoryList.Apply(content)));
+            }).ToList();
+            ListFilter.Choose(content, ListFilter.Choice.All);
+            Check($"a redraw showing {string.Join(", ", shows.Select(s => $"{s.choice} {s.ms:0.0} ms"))}", shows.All(s => s.ms < 50));
             // A search keystroke: a redraw matching every row, then one with the whole list back.
             var typed = screen.GetNode<LineEdit>("ModsBorder/SpireModManagerSearch");
             void Type(string text)
@@ -366,7 +376,7 @@ static class SelfTest
         CheckPatches();
         Check("row state: the game's selected and focused members found", RowState.Found);
         string[] spare = [nameof(RowLookPatch), nameof(ShortcutsPatch), nameof(NewModPatch), nameof(ModInfoClearPatch),
-            nameof(NewModPopupPatch), nameof(NewModTogglePatch)];
+            nameof(NewModPopupPatch), nameof(NewModTogglePatch), nameof(TickKeepPatch)];
         Check("our page with no patch failed, or only ones it can do without", ModEntry.PageWorks([]) && ModEntry.PageWorks(spare));
         Check("the game's page if any one patch our page needs failed", ModEntry.PageNeeds.Contains(nameof(ModdingScreenPatch))
             && ModEntry.PageNeeds.All(needed => !ModEntry.PageWorks([needed]) && !ModEntry.PageWorks([.. spare, needed])),
@@ -2666,6 +2676,386 @@ static class SelfTest
             await Wait(menu, 0.3);
             Check("clicking it gives the row the selected look; the panel stays", uiRow.HasFocus() && CategoryList.Selected?.manifest?.id == "SmmTestLib");
         }
+    }
+
+    // The page bar's Show: All, Enabled, Disabled, Changed (ListFilter). Each shows exactly its rows (by the tickboxes;
+    // the mods Changes names), with a search too (both must match), and the bar counts them; each category counts its
+    // rows shown and has no header when it shows none. Choosing is no undo step and not pending. A row ticked under a
+    // choice stays, counted, until a choice is pressed again or many mods change at once (undo, a profile, Disable all);
+    // Enable all acts on the rows shown, which then go, as do the mods a profile switched to turns off; picked mods
+    // edited in their menu stay; going to a mod shows its row, clearing a search that leaves it out.
+    // Load Order and Vanilla List show every row; All shows every row again. (The page opening again:
+    // TestListFilterReopen, near the end, as it starts a new visit for undo.)
+    static async Task TestListFilters(Node menu, NModdingScreen screen, Control content, string outDir)
+    {
+        if (Layout.Current != Layout.View.Categories)
+        {
+            Results.Add("SKIP list filters: not on the main list");
+            return;
+        }
+        List<NModMenuRow> Rows() => content.GetChildren().OfType<NModMenuRow>().ToList();
+        Control? Bar() => screen.FindChild(PageBar.Name, true, false) as Control;
+        async Task Press(string name)
+        {
+            Bar()?.FindChild(name, true, false)?.EmitSignal(BaseButton.SignalName.Pressed);
+            await Wait(menu, 0.3);
+        }
+        static List<string> Ids(IEnumerable<NModMenuRow> rows) => [.. rows.Select(r => r.Mod?.manifest?.id ?? "").Order()];
+        List<string> Shown() => Ids(Rows().Where(r => r.Visible));
+        List<string> Where(Func<Mod, bool> rule) => Ids(Rows().Where(r => r.Mod is { } mod && rule(mod)));
+        string Scope() => (Bar()?.FindChild("Scope", true, false) as Label)?.Text ?? "";
+        // The choices as the bar shows them, the lit one (white text) with a *.
+        string Choices() => string.Join(" ", Bar()?.FindChild("Show", true, false)?.GetChildren().OfType<Button>()
+            .Select(b => b.Text + (b.GetThemeColor("font_color") == Colors.White ? "*" : "")) ?? []);
+        string Say() => $"shown {string.Join(", ", Shown())} | {Scope()} | {Choices()}";
+        // Each category's header: the count of its rows the rule shows, or no header when that's none. "" when all agree.
+        string Headers(Func<Mod, bool> rule)
+        {
+            var wrong = new List<string>();
+            foreach (var name in Store.Data.Categories.Select(c => (string?)c.Name).Append(null))
+            {
+                var count = Rows().Count(r => r.Mod is { } mod && rule(mod)
+                    && (Store.InfoFor(mod.manifest?.id)?.Category is { } c && Categories.Find(c) != null ? c : null) == name);
+                var header = content.GetNodeOrNull<Control>(name == null ? "Uncategorized" : $"Category {name}");
+                var said = header?.GetNodeOrNull<Label>("Count")?.Text;
+                if (count == 0 ? header != null : said != Menus.Number(count))
+                    wrong.Add($"{name ?? "Uncategorized"}: {count} shown, header {said ?? "none"}");
+            }
+            return string.Join("; ", wrong);
+        }
+        var box = screen.GetNode<LineEdit>("ModsBorder/SpireModManagerSearch");
+        async Task Find(string text)
+        {
+            box.Text = text;
+            box.EmitSignal(LineEdit.SignalName.TextChanged, text);
+            await Wait(menu, 0.3);
+        }
+        static bool On(Mod mod) => Dependencies.IsOn(mod);
+        static bool Off(Mod mod) => !Dependencies.IsOn(mod);
+
+        await Find("");
+        if (Bar()?.FindChild("ExpandAllButton", true, false) is Button { Disabled: false })
+            await Press("ExpandAllButton"); // every category open: a row shown is a row on screen
+        var all = Ids(Rows());
+        Check("the page bar: \"Show:\" All, Enabled, Disabled, Changed, All lit", Choices() == "All* Enabled Disabled Changed"
+            && (Bar()?.FindChild("ShowLabel", true, false) as Label)?.Text == "Show:" && Shown().SequenceEqual(all), Say());
+        // Its buttons all within the list's width, also with a selection's "Clear selection" (the widest the bar gets).
+        var list = screen.GetNode<Control>("%ModsScrollContainer").GetGlobalRect();
+        string Overflow() => string.Join(", ", Bar()?.FindChildren("*", "Button", true, false).OfType<Button>()
+            .Where(b => b.GetGlobalRect().End.X > list.End.X + 0.5f).Select(b => $"{b.Text} to {b.GetGlobalRect().End.X:0}") ?? []);
+        var alone = Overflow();
+        Selection.Add(content, Rows());
+        await Wait(menu, 0.3);
+        var (picked, withPicked) = (Scope(), Overflow());
+        Selection.Clear(content);
+        await Wait(menu, 0.3);
+        Check("the page bar fits the list's width, with a selection too", alone == "" && withPicked == "" && picked.StartsWith("Selected"),
+            $"alone: {alone}; {picked}: {withPicked}; the list ends at {list.End.X:0}");
+
+        // Choosing: view state, never an edit.
+        (string, string, bool, bool, bool) State() =>
+            (Store.EditsJson(), string.Join(" | ", HistoryBar.Describe()), ModEntry.HasPendingChanges(), Profiles.Edited, History.CanUndo);
+        var before = State();
+        var moves = 0;
+        void Moved() => moves++; // the history moves when a step is added
+        History.Changed += Moved;
+        try
+        {
+            await Press("ShowEnabledButton");
+            var on = Where(On);
+            Check("Show: Enabled: just the enabled mods, the bar counting them, Enabled lit", Shown().SequenceEqual(on)
+                && Scope() == $"Enabled mods ({on.Count})" && Choices() == "All Enabled* Disabled Changed", Say());
+            Check("Show: Enabled: each category counts its enabled mods; none: no header", Headers(On) == "", Headers(On));
+
+            await Press("ShowDisabledButton");
+            var off = Where(Off);
+            Results.Add($"INFO {on.Count} enabled, {off.Count} disabled of {all.Count}");
+            Check("Show: Disabled: just the disabled mods, counted, Disabled lit", Shown().SequenceEqual(off)
+                && Scope() == $"Disabled mods ({off.Count})" && Choices() == "All Enabled Disabled* Changed", Say());
+            Check("Show: Disabled: each category counts its disabled mods; none: no header", Headers(Off) == "", Headers(Off));
+            Results.Add($"INFO headers under Disabled: {content.GetChildren().Count(c => c.IsInGroup("SpireModManagerCategoryHeader") && c.Name != "Uncategorized")} "
+                + $"of {Store.Data.Categories.Count} categories");
+
+            // With a search: rows matching both, counted as the search's matches. "symphony" finds mods on (this one, Local
+            // Mod Fixes) and off (Better Mod Menu's fork, never loaded: "Crunch, modified by symphony"), so some rows show
+            // and some of its matches don't.
+            await Find("symphony");
+            var found = Where(m => SpireModManager.Search.Matches(m, "symphony"));
+            var both = Where(m => Off(m) && SpireModManager.Search.Matches(m, "symphony"));
+            Check("Show: Disabled with a search: the rows matching both, counted as search matches", both.Count > 0 && both.Count < found.Count
+                && Shown().SequenceEqual(both) && Scope() == $"Search matches ({both.Count})" && Choices() == "All Enabled Disabled* Changed",
+                $"{Say()}; expected {string.Join(", ", both)} of the search's {string.Join(", ", found)}");
+            await Find("");
+
+            CategoryList.Redraw(content);
+            await Wait(menu, 0.3);
+            Check("Show: Disabled outlasts a redraw", Shown().SequenceEqual(off) && Choices() == "All Enabled Disabled* Changed", Say());
+
+            await Press("ShowChangedButton");
+            await Press("ShowAllButton");
+        }
+        finally
+        {
+            History.Changed -= Moved;
+        }
+        Check("choosing is no undo step, not in Changes, not pending, no unsaved profile edit", moves == 0 && State() == before,
+            $"history moved {moves}, same state {State() == before}");
+
+        // A mod unticked under Enabled: its row stays where it was, counted, through a redraw that changes no mod too (a
+        // search, a fold), until Enabled is pressed again. (Undone after: the untick is a step.)
+        await Press("ShowEnabledButton");
+        if (Rows().FirstOrDefault(r => r.Visible && r.Mod is { } m && On(m) && m.manifest?.id is { } id && id != ModEntry.ModId && id != Bmm.ModId)
+            is { Mod: { } ticked } row)
+        {
+            var count = Scope();
+            var tickbox = row.GetNode<NTickbox>("Tickbox");
+            tickbox.IsTicked = false;
+            tickbox.EmitSignal(NTickbox.SignalName.Toggled, tickbox);
+            await Wait(menu, 0.3);
+            Check("Show: Enabled, a mod unticked: its row stays, still counted", Off(ticked) && row.Visible && Scope() == count,
+                $"{ticked.manifest?.id} on {On(ticked)}, shown {row.Visible}; {count} -> {Scope()}");
+            await Capture(screen, outDir, "2h-show-enabled-kept");
+            CategoryList.Apply(content);
+            await Wait(menu, 0.3);
+            Check("... and after a redraw that changes no mod, its category counting it", row.Visible && Scope() == count && Headers(m => On(m) || m == ticked) == "",
+                $"shown {row.Visible}, {count} -> {Scope()}; {Headers(m => On(m) || m == ticked)}");
+            await Press("ShowEnabledButton");
+            Check("Enabled pressed again: the unticked mod goes", !row.Visible && Shown().SequenceEqual(Where(On)), Say());
+            History.Undo();
+            await Wait(menu, 0.3);
+            Check("undone: enabled and shown again", On(ticked) && row.Visible && Shown().SequenceEqual(Where(On)), Say());
+        }
+        else
+            Results.Add("SKIP list filters: no enabled mod to untick");
+
+        // A row kept for one mod's change goes at once with a change to many mods, which shows the choice's rows whole:
+        // under Enabled, a mod unticked, then undo (of a second one unticked after it), a profile switched to and back (to
+        // the untick, its unsaved edit), or Disable all. (Each undone, or ticked again, after.)
+        await Press("ShowEnabledButton");
+        var onRows = Rows().Where(r => r.Visible && r.Mod is { } m && On(m) && m.manifest?.id is { } id && id != ModEntry.ModId && id != Bmm.ModId).ToList();
+        if (onRows is [{ Mod: { } kept } keptRow, { Mod: { } later } laterRow, ..])
+        {
+            async Task Tick(NModMenuRow which, bool on)
+            {
+                var tickbox = which.GetNode<NTickbox>("Tickbox");
+                tickbox.IsTicked = on;
+                tickbox.EmitSignal(NTickbox.SignalName.Toggled, tickbox);
+                await Wait(menu, 0.3);
+            }
+            await Tick(keptRow, false);
+            await Tick(laterRow, false);
+            var stayed = keptRow.Visible && laterRow.Visible;
+            History.Undo(); // the second
+            await Wait(menu, 0.3);
+            Check("Show: Enabled, two mods unticked (both kept), the second undone: the first goes at once", stayed && Off(kept) && On(later)
+                && !keptRow.Visible && Shown().SequenceEqual(Where(On)), $"kept {stayed}; {Say()}");
+            History.Undo(); // the first
+            await Wait(menu, 0.3);
+
+            if (Profiles.Active is { } home && Store.Data.Profiles.FirstOrDefault(p => p != home) is { } other)
+            {
+                await Tick(keptRow, false);
+                stayed = keptRow.Visible;
+                Profiles.SwitchTo(other, screen);
+                await Wait(menu, 0.3);
+                Profiles.SwitchTo(home, screen); // back to the untick, the profile's unsaved edit
+                await Wait(menu, 0.3);
+                Check($"Show: Enabled, a mod unticked (kept), {other.Name} switched to and back: it goes at once", stayed && Off(kept)
+                    && !keptRow.Visible && Shown().SequenceEqual(Where(On)), $"kept {stayed}; {Say()}");
+                await Tick(keptRow, true);
+            }
+            else
+                Results.Add("SKIP list filters, a kept row and a profile: one profile only");
+
+            await Press("ShowEnabledButton");
+            await Tick(keptRow, false);
+            stayed = keptRow.Visible;
+            await Press("DisableAllButton");
+            Check("Show: Enabled, a mod unticked (kept), Disable all: it goes at once with the rest", stayed && Off(kept)
+                && !keptRow.Visible && Shown().SequenceEqual(Where(On)), $"kept {stayed}; {Say()}");
+            History.Undo(); // Disable all
+            History.Undo(); // the untick
+            await Wait(menu, 0.3);
+            Check("undone: the mods on again", On(kept) && Shown().SequenceEqual(Where(On)), Say());
+        }
+        else
+            Results.Add("SKIP list filters, kept rows: fewer than two enabled mods to untick");
+
+        // Enable all under Disabled: just the mods shown, as one step; they're enabled, so they go (a change to many at once).
+        await Press("ShowDisabledButton");
+        var wereOff = Rows().Where(r => r.Visible).Select(r => r.Mod).OfType<Mod>().ToList();
+        if (wereOff.Count > 0)
+        {
+            var others = Rows().Select(r => r.Mod).OfType<Mod>().Except(wereOff).ToDictionary(m => m, On);
+            await Press("EnableAllButton");
+            Check("Show: Disabled, Enable all: just the mods shown, which then go", wereOff.All(On) && others.All(p => On(p.Key) == p.Value)
+                && Shown().Count == 0 && Scope() == "Disabled mods (0)", Say());
+            History.Undo();
+            await Wait(menu, 0.3);
+            Check("undone: disabled and shown again", wereOff.All(Off) && Shown().SequenceEqual(Ids(Rows().Where(r => r.Mod is { } m && wereOff.Contains(m)))), Say());
+        }
+        else
+            Results.Add("SKIP list filters, Enable all: no disabled mod");
+
+        // A profile switched to under Enabled: the mods it turns off go at once, as for Enable all (its tickboxes fire no
+        // toggle, so the switch redraws the list itself); switched back, they show again.
+        await Press("ShowEnabledButton");
+        if (Profiles.Active is { } start && Store.Data.Profiles.FirstOrDefault(p => p != start) is { } away)
+        {
+            var wereOn = Where(On);
+            Profiles.SwitchTo(away, screen);
+            await Wait(menu, 0.3);
+            var nowOn = Where(On);
+            Check($"Show: Enabled, switched to {away.Name}: the mods it turns off go at once, the bar and each category counting the rest",
+                nowOn.Count < wereOn.Count && Shown().SequenceEqual(nowOn) && Scope() == $"Enabled mods ({nowOn.Count})" && Headers(On) == "",
+                $"{wereOn.Count} on, then {nowOn.Count}; {Say()}; {Headers(On)}");
+            Profiles.SwitchTo(start, screen);
+            await Wait(menu, 0.3);
+            Check("... and switched back: they show again", Where(On).SequenceEqual(wereOn) && Shown().SequenceEqual(wereOn), Say());
+        }
+        else
+            Results.Add("SKIP list filters, profile: one profile only");
+
+        // Changed: the mods the Changes list names (an edit made here to be sure of one; undone after).
+        await Press("ShowAllButton");
+        Store.EditMod("SmmTestUi", info => info.Notes = "List filter test");
+        CategoryList.Edited(content);
+        await Press("ShowChangedButton");
+        var lines = HistoryBar.Describe();
+        // Each line's mod: the one whose name it holds, the longest if several ("Better Mod Menu (local fix)" holds
+        // "Better Mod Menu" too). Lines naming no mod (a switched profile, profiles) name none.
+        var mods = Rows().Select(r => r.Mod).OfType<Mod>().ToList();
+        var named = lines.Select(l => mods.Where(m => m.manifest?.name is { Length: > 0 } name && l.Contains(name)).MaxBy(m => m.manifest?.name?.Length))
+            .OfType<Mod>().ToHashSet();
+        var changed = Where(named.Contains);
+        Check("Show: Changed: the mods Changes names, counted, Changed lit", Shown().SequenceEqual(changed) && changed.Contains("SmmTestUi")
+            && Scope() == $"Changed mods ({changed.Count})" && Choices() == "All Enabled Disabled Changed*", $"{Say()}; Changes: {string.Join(" | ", lines)}");
+        Check("Show: Changed: each category counts its changed mods; none: no header", Headers(named.Contains) == "", Headers(named.Contains));
+        Results.Add($"INFO Changed shows {changed.Count} of {all.Count} mods");
+        await Capture(screen, outDir, "2i-show-changed");
+        History.Undo(); // the note
+        await Wait(menu, 0.3);
+
+        // Picked mods edited together in their menu keep their rows, as one mod's menu does: under Changed, a tag given to
+        // two and taken off again in their bulk menu (as at launch) leaves their rows while it's open; they go when
+        // Changed is pressed again.
+        string[] pair = ["SmmTestUi", "SmmTestContent"];
+        bool InPair(Mod? mod) => pair.Contains(mod?.manifest?.id ?? "");
+        if (Rows().Count(r => InPair(r.Mod)) != 2 || HistoryBar.ChangedMods().Any(InPair))
+            Results.Add("SKIP list filters, bulk menu: the test mods missing, or changed already");
+        else
+        {
+            Store.Batch(() =>
+            {
+                foreach (var id in pair)
+                    Store.EditMod(id, info => info.Tags = ["filtered"]);
+            });
+            CategoryList.Edited(content);
+            await Wait(menu, 0.3);
+            var pairRows = Rows().Where(r => InPair(r.Mod)).ToList();
+            Selection.Add(content, pairRows);
+            if (pairRows.All(r => r.Visible) && CategoryList.ShowBulkMenu(content) is { } bulk
+                && bulk.FindChild("Tags", true, false)?.GetNodeOrNull<LineEdit>("Box") is { } tags)
+            {
+                tags.Text = "";
+                tags.EmitSignal(Control.SignalName.FocusExited);
+                await Wait(menu, 0.3);
+                Check("Show: Changed, a tag taken off two picked mods in their menu (as at launch): their rows stay while it's open",
+                    pair.All(id => Store.InfoFor(id)?.Tags == null) && !HistoryBar.ChangedMods().Any(InPair) && pairRows.All(r => r.Visible)
+                    && MenuPanel.IsOpen, Say());
+            }
+            else
+                Check("Show: Changed, two mods given a tag: shown, and their bulk menu opens", false, Say());
+            MenuPanel.Close();
+            Selection.Clear(content);
+            await Press("ShowChangedButton");
+            Check("Changed pressed again: they go", pairRows.All(r => !r.Visible), Say());
+        }
+
+        // Going to a mod the choice leaves out (a name in the panel, a banner's Show) shows its row; the choice stays.
+        await Press("ShowDisabledButton");
+        if (Rows().FirstOrDefault(r => r.Mod?.manifest?.id == ModEntry.ModId) is { } ours)
+        {
+            var hidden = !ours.Visible;
+            CategoryList.Reveal(content, ModEntry.ModId, flash: false);
+            await Wait(menu, 0.5);
+            Check("Show: Disabled, going to an enabled mod: its row shows too, Disabled stays", hidden && ours.Visible
+                && Choices() == "All Enabled Disabled* Changed" && Shown().SequenceEqual(Where(m => Off(m) || m == ours.Mod)), Say());
+            await Press("ShowDisabledButton");
+            Check("Disabled pressed again: it goes", !ours.Visible && Shown().SequenceEqual(Where(Off)), Say());
+        }
+
+        // Load Order and Vanilla List: every row, no page bar; the main list's choice is still there after.
+        Click(screen.GetNode<NButton>("SpireModManagerLoadOrderToggle"));
+        await Wait(menu, 0.5);
+        Check("Load Order: every row, no page bar, whatever the main list shows", Layout.Current == Layout.View.LoadOrder
+            && Shown().SequenceEqual(all) && Bar() == null, $"{Layout.Current}, shown {Shown().Count} of {all.Count}, bar {Bar() != null}");
+        Click(screen.GetNode<NButton>("SpireModManagerLoadOrderToggle"));
+        await Wait(menu, 0.5);
+        Check("back on the main list: still Disabled", Layout.Current == Layout.View.Categories && Choices() == "All Enabled Disabled* Changed"
+            && Shown().SequenceEqual(Where(Off)), Say());
+        if (!Bmm.Present) // its page shows its own groups
+            Check("Vanilla List: every row, whatever the main list shows", await WithVanillaView(screen, menu, () => Shown().SequenceEqual(all)));
+
+        await Press("ShowAllButton");
+        Check("All: every row again, counted as installed mods", Shown().SequenceEqual(all) && Scope() == $"Installed mods ({all.Count})"
+            && Choices() == "All* Enabled Disabled Changed", Say());
+
+        // Going to a mod a search leaves out (a name in the panel, a line in Changes), as for a banner's Show: the search
+        // clears, box and list, and its row shows; a search that finds it stays.
+        if (Rows().FirstOrDefault(r => r.Mod?.manifest?.id == "SmmTestLib") is { } panelRow
+            && Rows().FirstOrDefault(r => r.Mod?.manifest?.id == "SmmTestUi") is { Mod: { } linked } linkedRow)
+        {
+            CategoryList.Select(screen, panelRow);
+            await Wait(menu, 0.3);
+            var description = screen.GetNode<RichTextLabel>("%ModInfoContainer/ModDescription");
+            string Filter() => content.HasMeta(CategoryList.FilterMeta) ? (string)content.GetMeta(CategoryList.FilterMeta) : "";
+            string Said() => $"box \"{box.Text}\", filter \"{Filter()}\", shown {linkedRow.Visible}";
+            const string misses = "SmmTestLib", finds = "SmmTest";
+            await Find(misses);
+            var hidden = !linkedRow.Visible && !SpireModManager.Search.Matches(linked, misses);
+            description.EmitSignal(RichTextLabel.SignalName.MetaClicked, "mod:SmmTestUi");
+            await Wait(menu, 0.3);
+            Check("Show: All, a search that leaves a mod out: its name in the panel clears the search, box and list, and shows its row",
+                hidden && box.Text == "" && Filter() == "" && linkedRow.Visible, $"hidden by the search {hidden}; {Said()}");
+            await Find(finds);
+            description.EmitSignal(RichTextLabel.SignalName.MetaClicked, "mod:SmmTestUi");
+            await Wait(menu, 0.3);
+            Check("... a search that finds it stays", box.Text == finds && Filter() == finds && linkedRow.Visible, Said());
+            await Find(misses);
+            hidden = !linkedRow.Visible;
+            HistoryBar.OpenFromList(screen, "SmmTestUi");
+            await Wait(menu, 0.3);
+            Check("... and its line in Changes clears it too, the mod in the panel", hidden && box.Text == "" && Filter() == ""
+                && linkedRow.Visible && CategoryList.Selected == linked, $"hidden by the search {hidden}; {Said()}; panel {CategoryList.Selected?.manifest?.id}");
+            HistoryBar.HideBack(screen.GetNode<Control>("%ModInfoContainer"));
+            await Find("");
+        }
+        else
+            Results.Add("SKIP list filters, going to a mod through a search: the test mods missing");
+    }
+
+    // The page opening again: the choice stays, and the rows it kept for a change go by it again.
+    static async Task TestListFilterReopen(Node menu, NModdingScreen screen, Control content)
+    {
+        if (Layout.Current != Layout.View.Categories
+            || content.GetChildren().OfType<NModMenuRow>().FirstOrDefault(r => r.Mod?.manifest?.id == ModEntry.ModId) is not { } ours)
+        {
+            Results.Add("SKIP list filter reopen: not on the main list");
+            return;
+        }
+        string Lit() => string.Join(" ", screen.FindChild(PageBar.Name, true, false)?.FindChild("Show", true, false)?.GetChildren().OfType<Button>()
+            .Where(b => b.GetThemeColor("font_color") == Colors.White).Select(b => b.Text) ?? []);
+        ListFilter.Choose(content, ListFilter.Choice.Disabled);
+        CategoryList.Reveal(content, ModEntry.ModId, flash: false); // kept beside the disabled ones
+        await Wait(menu, 0.5);
+        var kept = ours.Visible;
+        screen.Visible = false;
+        screen.Visible = true;
+        await Wait(menu, 0.5);
+        Check("the page opening again: Disabled still chosen and lit, a row kept for a change gone", kept && Lit() == "Disabled"
+            && ListFilter.Current == ListFilter.Choice.Disabled && !ours.Visible, $"kept {kept}, lit {Lit()}, shown {ours.Visible}");
+        ListFilter.Choose(content, ListFilter.Choice.All);
     }
 
     // Relaunch with mods that won't load (fixture: BrandedMod needs BaseLib, not installed; here the framework

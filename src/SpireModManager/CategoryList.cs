@@ -46,10 +46,17 @@ static class CategoryList
             Store.Data.LoadOrderView = false;
             Store.Save();
         }
+        // The page bar's Show: choice stays; rows it kept for a change made last time go by it again (ListFilter).
+        ListFilter.Release();
         screen.VisibilityChanged += () =>
         {
-            if (screen.IsVisibleInTree() && Store.Data.LoadOrderView)
+            if (!screen.IsVisibleInTree())
+                return;
+            var released = ListFilter.Release();
+            if (Store.Data.LoadOrderView)
                 Switch(false);
+            else if (released)
+                Apply(content);
         };
         vanilla = ModEntry.AddButton(screen, "SPIRE_MOD_MANAGER.VANILLA_VIEW", new Vector2(200, 70), () => Switch(true));
         vanilla.Name = "SpireModManagerViewToggle";
@@ -118,7 +125,8 @@ static class CategoryList
         ScrollSoon(content, row, flash: false);
     }
 
-    // A row hidden in a collapsed category (main list): the category opens.
+    // A row hidden in a collapsed category (main list): the category opens. (Or one Reveal brought in past the Show:
+    // choice: the redraw shows it.)
     static void Expand(Control content, NModMenuRow row)
     {
         if (Store.Data.VanillaView || Store.Data.LoadOrderView || row.Visible)
@@ -131,13 +139,18 @@ static class CategoryList
         Apply(content);
     }
 
-    // Scrolls a mod's row into view (its category opens if collapsed); flash: a short gold glow to find it
-    // by; focus: the row takes the "selected" look (as under the mouse or the keyboard) without becoming the
-    // info panel's mod. The info panel doesn't change.
+    // Scrolls a mod's row into view (its category opens if collapsed, the page bar's Show: choice shows it if it left it
+    // out, and a search that leaves it out is cleared: one that finds it stays); flash: a short gold glow to find it by;
+    // focus: the row takes the "selected" look (as under the mouse or the keyboard) without becoming the info panel's
+    // mod. The info panel doesn't change.
     public static void Reveal(Control content, string modId, bool flash, bool focus = false)
     {
         if (content.GetChildren().OfType<NModMenuRow>().FirstOrDefault(r => r.Mod?.manifest?.id == modId) is not { } row)
             return;
+        ListFilter.Bring(row.Mod); // hidden until the next redraw (the search's clearing, or Expand's)
+        var filter = content.HasMeta(FilterMeta) ? (string)content.GetMeta(FilterMeta) : "";
+        if (filter.Length > 0 && !Search.Matches(row.Mod, filter))
+            Search.Clear(content);
         Expand(content, row);
         ScrollSoon(content, row, flash, focus);
     }
@@ -243,9 +256,14 @@ static class CategoryList
         scroll.Set("_targetDragPosY", Math.Max(top, bottom));
     }
 
-    // After a change that may need a relaunch: redraw, and let the screen recheck its pending warning.
-    public static void Redraw(Control content)
+    // After a change that may need a relaunch: redraw, and let the screen recheck its pending warning. On the main list
+    // these are changes to many mods at once (Enable all / Disable all, undo, redo, Revert all, a profile, a banner's
+    // fix; one mod's own change calls Apply), so rows kept for one mod's change go by the page bar's Show: choice again
+    // (ListFilter.Release). keep: not the player's change (a mod installed meanwhile), and they stay.
+    public static void Redraw(Control content, bool keep = false)
     {
+        if (!keep)
+            ListFilter.Release();
         Apply(content);
         for (var node = content.GetParent(); node != null; node = node.GetParent())
             if (node is NModdingScreen screen)
@@ -347,10 +365,13 @@ static class CategoryList
             };
         }
 
-        // Search: rows that don't match hide; while searching, categories open to show their matches.
+        // Search: rows that don't match hide; while searching, categories open to show their matches. On the main list
+        // the page bar's Show: choice too (ListFilter, every row elsewhere): a row shows when it matches both, and
+        // categories keep their folding.
         var filter = content.HasMeta(FilterMeta) ? (string)content.GetMeta(FilterMeta) : "";
-        var filtering = filter.Length > 0;
-        bool Matches(NModMenuRow row) => !filtering || Search.Matches(row.Mod, filter);
+        var searching = filter.Length > 0;
+        var filtering = searching || ListFilter.Current != ListFilter.Choice.All;
+        bool Matches(NModMenuRow row) => (!searching || Search.Matches(row.Mod, filter)) && ListFilter.Shows(row.Mod);
 
         LoadOrder.UpdateToolbar(content, rows, () => Redraw(content));
         if (Store.Data.LoadOrderView)
@@ -385,8 +406,11 @@ static class CategoryList
         var known = categories.Select(c => c.Name).ToHashSet();
         string? CategoryOf(NModMenuRow row) =>
             Store.InfoFor(row.Mod?.manifest?.id)?.Category is { } name && known.Contains(name) ? name : null;
+        if (ListFilter.Current != ListFilter.Choice.All)
+            ListFilter.Showed(rows.Where(Matches).Select(r => r.Mod)); // the rows a change to one mod keeps
 
         var index = 0;
+        var headed = false; // a category's header is shown (the divider before Uncategorized follows them)
         void Add(Control node)
         {
             node.AddToGroup(HeaderGroup);
@@ -405,6 +429,7 @@ static class CategoryList
                 }
                 return;
             }
+            headed |= category != null;
             var muted = category == null;
             var header = ModEntry.Load<PackedScene>(HeaderScenePath)?.Instantiate<Control>() ?? PlainHeader();
             Add(header);
@@ -461,7 +486,7 @@ static class CategoryList
 
             void Show(bool isCollapsed)
             {
-                var open = filtering || !isCollapsed;
+                var open = searching || !isCollapsed;
                 header.GetNode<Control>("Arrow").RotationDegrees = open ? 90 : 0;
                 foreach (var row in members)
                     row.Visible = open && Matches(row);
@@ -499,7 +524,8 @@ static class CategoryList
         var uncategorized = rows.Where(r => CategoryOf(r) == null).ToList();
         if (uncategorized.Count == 0)
             return;
-        if (categories.Count > 0 && !filtering)
+        // Not while searching; under a Show: choice, between categories it shows and Uncategorized if that shows.
+        if (headed && !searching && (!filtering || uncategorized.Any(Matches)))
             Add(Divider());
         AddSection(Menus.Text("SPIRE_MOD_MANAGER.UNCATEGORIZED"), uncategorized,
             Store.Data.UncategorizedCollapsed, c => Store.Data.UncategorizedCollapsed = c);
@@ -539,22 +565,32 @@ static class CategoryList
     }
 
     // A mod's right-click menu: its category on the left (pick one, or a new one, named in place), its alias,
-    // tags and notes on the right, edited right there.
+    // tags and notes on the right, edited right there. Its row stays under a Show: choice (ListFilter.Keep).
     public static Node? ShowRowMenu(Control content, NModMenuRow row)
     {
         if (Store.Data.VanillaView || row.Mod?.manifest?.id is not { } id)
             return null;
-        return MenuPanel.Show(content, () => CategoryItems(content, id), side: _ => ModField.Column(id, _ => Edited(content)));
+        return MenuPanel.Show(content, () => CategoryItems(content, id), side: _ => ModField.Column(id, _ =>
+        {
+            ListFilter.Keep(id);
+            Edited(content);
+        }));
     }
 
     // Two or more picked mods edited together: their category (marked when they share one), on or off; and on
-    // the right their tags and notes, under "Editing N selected mods" (where one mod's alias would be).
+    // the right their tags and notes, under "Editing N selected mods" (where one mod's alias would be). A category or
+    // a field edited keeps their rows under a Show: choice, as one mod's menu does (ListFilter.Keep); its Enable all /
+    // Disable all go by the choice at once, as the page bar's do.
     public static Node? ShowBulkMenu(Control content)
     {
         var ids = Selection.Mods.Select(m => m.manifest?.id).OfType<string>().ToList();
         if (Store.Data.VanillaView || ids.Count == 0)
             return null;
-        return MenuPanel.Show(content, () => BulkItems(content, ids), side: _ => ModField.BulkColumn(ids, _ => Edited(content)));
+        return MenuPanel.Show(content, () => BulkItems(content, ids), side: _ => ModField.BulkColumn(ids, _ =>
+        {
+            ListFilter.Keep(ids);
+            Edited(content);
+        }));
     }
 
     static IReadOnlyList<MenuItem> BulkItems(Control content, List<string> ids)
@@ -575,6 +611,7 @@ static class CategoryList
                 foreach (var id in ids)
                     Categories.Assign(id, made.Name);
             });
+            ListFilter.Keep(ids);
             Edited(content);
             if (made != null && BeginRename(content, made)?.GetParent() is Control header)
                 ScrollSoon(content, header, flash: false);
@@ -590,6 +627,7 @@ static class CategoryList
                 foreach (var id in ids)
                     Categories.Assign(id, category);
             });
+            ListFilter.Keep(ids);
             Edited(content);
         }
     }
@@ -602,7 +640,8 @@ static class CategoryList
             ModDetails.Refresh(screen);
     }
 
-    // The categories to put a mod in (its current one marked), Uncategorized, and a new one.
+    // The categories to put a mod in (its current one marked), Uncategorized, and a new one. A move keeps its row
+    // under a Show: choice (ListFilter.Keep).
     public static IReadOnlyList<MenuItem> CategoryItems(Control content, string id)
     {
         var current = Store.InfoFor(id)?.Category is { } name && Categories.Find(name) != null ? name : null;
@@ -624,6 +663,7 @@ static class CategoryList
         void Move(string? category)
         {
             Categories.Assign(id, category);
+            ListFilter.Keep(id);
             Edited(content);
         }
     }

@@ -122,7 +122,8 @@ static class Search
 
     static string Squeeze(string text) => string.Concat(text.Where(c => !char.IsWhiteSpace(c)));
 
-    // Empties the box and shows every row again: Escape, or a banner's Show going to a row the search leaves out.
+    // Empties the box and shows every row again: Escape, or going to a row the search leaves out (CategoryList.Reveal:
+    // a banner's Show, a name in the panel or in Changes).
     public static void Clear(Control content)
     {
         CategoryList.ScreenOf(content)?.GetNodeOrNull<LineEdit>("ModsBorder/SpireModManagerSearch")?.Clear();

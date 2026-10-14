@@ -345,7 +345,7 @@ static class LoadOrder
         {
             Store.Data.ManagersWarningDismissed = true;
             Store.Save(); // view state: no undo step, not a change (Store.EditsJson)
-            redraw();
+            CategoryList.Apply(content); // no mod changed, so rows kept under a filter stay (a Redraw lets them go)
         }, name: "DismissManagersButton");
         dismiss.TooltipText = Menus.Text("SPIRE_MOD_MANAGER.DISMISS_MANAGERS_TIP");
         Banner(border, search, Menus.Text("SPIRE_MOD_MANAGER.MANAGERS_WARNING"), ManagersCard, [show, dismiss], ManagersName, "ManagersWarning", WarningColor);
@@ -402,12 +402,14 @@ static class LoadOrder
 
     static string Escape(string text) => text.Replace("[", "[lb]");
 
-    // A banner's Show: the mod's row scrolled into view (its category opened) with a short glow, and the mod in the
-    // info panel. A search that leaves the row out is cleared first: opening its category wouldn't show it.
+    // A banner's Show: the mod's row scrolled into view (its category opened, a search that leaves it out cleared) with
+    // a short glow, and the mod in the info panel.
     static void GoTo(Control content, Mod mod)
     {
         if (content.GetChildren().OfType<NModMenuRow>().FirstOrDefault(r => r.Mod == mod) is not { } row)
             return;
+        // This very copy against the search: Reveal looks at the first row with the id, and a local and a Workshop copy
+        // share one (their search text can differ).
         var filter = content.HasMeta(CategoryList.FilterMeta) ? (string)content.GetMeta(CategoryList.FilterMeta) : "";
         if (filter.Length > 0 && !Search.Matches(mod, filter))
             Search.Clear(content);

@@ -5,9 +5,10 @@ namespace SpireModManager;
 
 // Answers that every row of a redraw asks for, worked out once for the whole redraw: whether a mod is on (the
 // game's IsModDisabled walks its whole saved list each time), which installed copy an id means, which mods need
-// a mod, each mod's tags and search text, and the page's fixed words. Asked afresh, every row's "Required for"
-// asked whether each other mod was on, so a redraw with about 250 mods walked the saved list some 60,000 times
-// (around 70 ms); and a search keystroke worked out each row's tags, a walk over every mod, about ten times.
+// a mod, each mod's tags and search text, the page's fixed words, and which mods changed since launch. Asked
+// afresh, every row's "Required for" asked whether each other mod was on, so a redraw with about 250 mods walked
+// the saved list some 60,000 times (around 70 ms); and a search keystroke worked out each row's tags, a walk over
+// every mod, about ten times.
 // Nothing changes these answers while a redraw runs, so they are kept for just that long:
 // `using var lookups = Lookups.Begin();` at the top of a redraw. Outside one, Dependencies, Tags, Search and
 // Menus work everything out fresh, so a click or a menu always sees the current state.
@@ -21,6 +22,7 @@ sealed class Lookups : IDisposable
     readonly Dictionary<Mod, IReadOnlyList<Tags.Chip>> _chips = [];
     readonly Dictionary<Mod, Search.Haystack> _haystacks = [];
     readonly Dictionary<string, string> _texts = [];
+    HashSet<Mod>? _changed;
     int _depth = 1; // redraws started inside this one (one redraw can start another): the outermost ends it
 
     // From the game's lists as they are now.
@@ -76,6 +78,9 @@ sealed class Lookups : IDisposable
     public Search.Haystack Haystack(Mod mod, Func<Mod, Search.Haystack> make) => Kept(_haystacks, mod, make);
 
     public string Text(string key, Func<string, string> make) => Kept(_texts, key, make);
+
+    // The mods changed since launch (the main list's "Changed": ListFilter), asked for every row.
+    public HashSet<Mod> Changed(Func<HashSet<Mod>> make) => _changed ??= make();
 
     static TValue Kept<TKey, TValue>(Dictionary<TKey, TValue> kept, TKey key, Func<TKey, TValue> make) where TKey : notnull
     {

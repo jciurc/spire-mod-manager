@@ -92,6 +92,13 @@ static class Menus
         ("disabled", Box(new Color(0.0756f, 0.12084f, 0.18f, 0.35f), new Color(Gold, 0.1f))),
     ];
     static readonly StyleBoxEmpty FlatBox = new() { ContentMarginLeft = 4, ContentMarginRight = 4 };
+    // ChoiceButton's chosen one: gold, a shade brighter under the mouse (the same size as the others).
+    static readonly (string State, StyleBox Box)[] ChosenBoxes =
+    [
+        ("normal", Box(new Color(Gold, 0.3f), Gold)),
+        ("hover", Box(new Color(Gold, 0.42f), Gold)),
+        ("pressed", Box(new Color(Gold, 0.3f), Gold)),
+    ];
 
     static StyleBoxFlat Box(Color background, Color border)
     {
@@ -119,6 +126,19 @@ static class Menus
         button.AddThemeColorOverride("font_hover_color", Colors.White);
         button.AddThemeColorOverride("font_disabled_color", new Color(Cream, 0.3f));
         button.Pressed += onPressed;
+        return button;
+    }
+
+    // One of a few choices side by side (the page bar's Show:): a SmallButton, the chosen one lit gold with white
+    // text. The chosen one still presses.
+    public static Button ChoiceButton(string text, bool chosen, Action onPressed, string? name = null)
+    {
+        var button = SmallButton(text, onPressed, name: name);
+        if (!chosen)
+            return button;
+        foreach (var (state, box) in ChosenBoxes)
+            button.AddThemeStyleboxOverride(state, box);
+        button.AddThemeColorOverride("font_color", Colors.White);
         return button;
     }
 

@@ -227,7 +227,7 @@ static class ModToggledPatch
 }
 
 // A mod subscribed while the page is open: the game adds its row at the bottom, in its own style. Once it's
-// in, a redraw puts it in its category, in our style.
+// in, a redraw puts it in its category, in our style (rows kept under the Show: choice stay: not the player's change).
 [HarmonyPatch(typeof(NModdingScreen), "OnNewModDetected")]
 static class NewModPatch
 {
@@ -242,7 +242,7 @@ static class NewModPatch
                 try
                 {
                     if (GodotObject.IsInstanceValid(__instance))
-                        CategoryList.Redraw(__instance.GetNode<Control>("%ModsScrollContainer/Mask/Content"));
+                        CategoryList.Redraw(__instance.GetNode<Control>("%ModsScrollContainer/Mask/Content"), keep: true);
                 }
                 catch (Exception e)
                 {
@@ -433,6 +433,24 @@ static class NewModTogglePatch
         catch (Exception e)
         {
             Log.Error($"[{ModEntry.ModId}] Could not add a saved entry for a new mod: {e}");
+        }
+    }
+}
+
+// A row ticked or unticked on the main list stays while the page bar's Show: choice is on (ListFilter.Keep): a mod
+// disabled under "Enabled" doesn't go from under the mouse. Before the toggle, so the page bar it redraws counts it.
+[HarmonyPatch(typeof(NModMenuRow), "OnTickboxToggled")]
+static class TickKeepPatch
+{
+    static void Prefix(NModMenuRow __instance)
+    {
+        try
+        {
+            ListFilter.Keep(__instance.Mod?.manifest?.id);
+        }
+        catch (Exception e)
+        {
+            Log.Error($"[{ModEntry.ModId}] Could not keep a ticked row in the list: {e}");
         }
     }
 }

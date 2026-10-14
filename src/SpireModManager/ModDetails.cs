@@ -511,6 +511,7 @@ static class ModDetails
         string? ModId() => Meta(container, ModIdMeta) is { Length: > 0 } id ? id : null;
         void Saved(ModField.Kind kind)
         {
+            ListFilter.Keep(ModId()); // its row stays under the list's Show: choice
             if (Content() is { } content)
                 CategoryList.Apply(content); // rows: alias, tags, the notepad
         }
