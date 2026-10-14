@@ -62,6 +62,7 @@
    - "New category" casing.
    - Make a profile rename show as a rename in Changes, not "Added X" plus "Removed Y".
    - Then freeze the English text for 0.1.0, so a translator never works on text that still moves (the translation plan in §4).
+   - A second pass on 2026-10-14 (TODO round 22) read the text added in rounds 19-22: the list filters, the banners and their cards, the unsaved list, Relaunch game and the data notices. The English freeze for 0.1.0 now includes it: 237 keys. Still Jordan's call: the "Spire Manager" button on the Vanilla List page.
 9. **First run, untested on both paths.**
    - (a) No `manager.json` and no Better Mod Menu.
    - (b) Better Mod Menu data present, with BMM on and with BMM off.
