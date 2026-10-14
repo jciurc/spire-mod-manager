@@ -510,6 +510,7 @@ static class Layout
         label.AddThemeFontSizeOverride("normal_font_size", size);
         label.AddThemeFontSizeOverride("bold_font_size", size);
         label.MaxFontSize = size;
+        TestFitting?.Invoke(label);
         Refit(label);
     }
 
@@ -534,6 +535,7 @@ static class Layout
         if (now && !newText && (int)label.Get(LastSetSize) == drawn && label.Size == (Vector2)label.Get(LastAdjustedSize))
             return;
         label.Set(LastSetSize, drawn);
+        TestFitting?.Invoke(label);
         if (now)
             label.Call(AdjustFontSize);
         else
@@ -542,6 +544,9 @@ static class Layout
 
     static readonly StringName LastSetSize = "_lastSetSize", LastAdjustedSize = "_lastAdjustedSize", AdjustFontSize = "AdjustFontSize";
     static bool? _refits;
+
+    // Set by the self-test: told of each label FontSize writes a size to or Refit fits again.
+    public static Action<MegaRichTextLabel>? TestFitting;
 
     // Found as Refit calls and reads them: AdjustFontSize without parameters (by name alone, an overload could be
     // found in its place, or two throw), the fields of the types they're read as. A lookup that throws counts as
