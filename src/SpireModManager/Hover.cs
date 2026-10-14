@@ -99,7 +99,8 @@ static class Hover
             Later(label, Timing.Normal, () =>
             {
                 if (mine == token && Over(link) && card(link) is { } text && Owner(label) is { } owner)
-                    Show(owner, name, text, Mouse(label) + new Vector2(16, 20), width: width, keep: () => Over(link), full: full?.Invoke(link));
+                    Show(owner, name, text, Mouse(label) + new Vector2(16, 20), width: width, keep: () => Over(link), full: full?.Invoke(link),
+                        depth: LayerFor(label)); // in the open menu: above it, like Watch's cards
             });
         };
         label.MetaHoverEnded += _ =>
