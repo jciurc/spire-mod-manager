@@ -2084,8 +2084,11 @@ static class SelfTest
             return;
         }
         Check("dependency note names what it needs", Note("SmmTestContent").Contains("Test Framework"), Note("SmmTestContent"));
-        Check("missing dependency is called out", Note("BrandedMod").Contains("BaseLib") && Note("BrandedMod").Contains("not installed"),
-            Note("BrandedMod"));
+        if (WontLoad() != null)
+            Check("missing dependency is called out", Note("BrandedMod").Contains("BaseLib") && Note("BrandedMod").Contains("not installed"),
+                Note("BrandedMod"));
+        else
+            Results.Add("SKIP missing dependency is called out: BrandedMod not on, or BaseLib installed");
 
         // The info panel: where it's from, and dependencies both ways.
         var panel = screen.GetNode<NModInfoContainer>("%ModInfoContainer");
@@ -2298,11 +2301,11 @@ static class SelfTest
             || NoteOf(m).Contains("(not installed)") != line.Contains("(not installed)")).Select(Shown).ToList();
         Check("main list banner's card: each line's reasons are its row's (\"(off)\" as \"(disabled)\", \"(not installed)\")", wrong.Count == 0,
             $"wrong for {string.Join(", ", wrong)}: {string.Join(" | ", card)}");
-        if (Dependencies.Find("BrandedMod") is { } branded && Dependencies.IsOn(branded))
+        if (WontLoad() is { } branded)
             Check("main list banner's card: BrandedMod needs BaseLib (not installed)", LineOf(branded)?.Contains("BaseLib (not installed)") == true,
                 LineOf(branded) ?? "no line");
         else
-            Results.Add("SKIP main list banner's card, a mod that isn't installed: BrandedMod not on");
+            Results.Add("SKIP main list banner's card, a mod that isn't installed: BrandedMod not on, or BaseLib installed");
 
         // A tick while the card shows: the banner is made again, and no card lists the mod ticked off (that one went with
         // its banner); the next, worked out when it opens, leaves it out.
@@ -3064,9 +3067,9 @@ static class SelfTest
     static async Task TestRelaunchCheck(Node menu, NModdingScreen screen, Control content, string outDir)
     {
         if (content.GetChildren().OfType<NModMenuRow>().FirstOrDefault(r => r.Mod?.manifest?.id == "SmmTestLib") is not { Mod: { } lib } libRow
-            || Dependencies.Find("BrandedMod") is not { } branded || !Dependencies.IsOn(branded))
+            || WontLoad() is not { } branded)
         {
-            Results.Add("SKIP relaunch check: fixture mods missing");
+            Results.Add("SKIP relaunch check: fixture mods missing, or BaseLib installed");
             return;
         }
         var tickbox = libRow.GetNode<NTickbox>("Tickbox");
@@ -4241,6 +4244,11 @@ static class SelfTest
 
     static void Check(string name, bool ok, string detail = "") =>
         Results.Add($"{(ok ? "PASS" : "FAIL")} {name}{(ok || detail.Length == 0 ? "" : $": {detail}")}");
+
+    // The fixture's mod that won't load: BrandedMod (on) needs BaseLib, which isn't installed. Null when BaseLib is
+    // (`dev.cs --workshop` can bring it in): BrandedMod loads then, so the checks that need a mod that won't load skip.
+    static Mod? WontLoad() => Dependencies.Find("BrandedMod") is { } branded && Dependencies.IsOn(branded)
+        && Dependencies.Find("BaseLib") == null ? branded : null;
 
     static async Task Wait(Node node, double seconds) =>
         await node.ToSignal(node.GetTree().CreateTimer(seconds), SceneTreeTimer.SignalName.Timeout);
