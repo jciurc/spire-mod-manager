@@ -15,7 +15,7 @@ count as pending. And to relaunch, you have to open the Modding page first.
 
 ### The game
 
-From the installed 0.111 beta's `sts2.dll`, decompiled with ilspycmd:
+From the installed 0.111 beta's `sts2.dll`:
 
 - **The line:** `%PendingChangesLabel` on `NModdingScreen`, text key `MODDING_SCREEN.PENDING_CHANGES_WARNING`.
 - **The rule** (`NModdingScreen.OnModEnabledOrDisabled`): the line shows when a mod in `ModManager.Mods` loaded
@@ -74,7 +74,7 @@ id and source. The check is meant to catch "an update of a mod that was here at 
 new mod to `ModManager.Mods` *before* announcing it, so the check finds the new mod itself and drops every
 one.
 
-- **Effects in real play** (from the decompiled code, not yet seen in game):
+- **Effects in real play** (from the game's code, not yet seen in game):
   - no New tag and no "Installed" section in Changes;
   - a new mod that is on doesn't count as pending (no dot, no note, no line).
 - **Why the tests pass:** the self-test announces a made-up mod that was never added to `ModManager.Mods`

@@ -1,7 +1,7 @@
 # Spike: loading first (crash-safe launch, and loading without a restart)
 
 Status: proposal, 2026-10-13. No code changed. Game facts are from the installed v0.111.0 beta's `sts2.dll` (commit
-41cef1ea), decompiled with ilspycmd; their line numbers are the decompile's. Ours are `dev`'s (34d91cb). Nothing here
+41cef1ea); their line numbers refer to that build. Ours are `dev`'s (34d91cb). Nothing here
 was run in game: it all comes from reading code, and the first PR's checks are where it gets tested.
 
 ## The problem
@@ -405,7 +405,7 @@ row.
       (the exception, and the mods it names). Both handlers **fail open**: everything inside a try, nothing thrown
       back into the game's loop; a write that fails switches the record off for this launch (logged once), never a
       mod's loading;
-    - logs our assembly's load context (`Name`, `IsCollectible`): the decompile only implies the default one.
+    - logs our assembly's load context (`Name`, `IsCollectible`): the game's code only implies the default one.
   - **Writes are atomic** where a crash mid-write would lose the chain: `launch.json` and `last-working.json` are
     written to a temporary file and moved into place (`File.Replace`), so a reader sees the old or the new, never half.
     `launch.progress` is append-only, one flushed line per mod; a torn last line is ignored.

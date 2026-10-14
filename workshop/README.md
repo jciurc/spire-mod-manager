@@ -50,8 +50,8 @@ every upload, so keep them right here and check the page afterwards.
 5. `dotnet run workshop/prepare.cs`. It fills `content/`, copies the description in, checks the folder and
    lists what the upload will set. Fix anything it calls a problem.
 6. With Steam running, in the uploader's folder (it needs its `steam_appid.txt` there, and writes
-   `mod-uploader.log` there), run the line `prepare.cs` printed:
-   `.\ModUploader.exe upload -w "C:\repos\gaming\slay the spire\spire-mod-manager\workshop"`
+   `mod-uploader.log` there), run the line `prepare.cs` printed. It has the full path of your checkout's
+   `workshop` folder: `.\ModUploader.exe upload -w "<your checkout>\workshop"`
 7. First upload only: commit the new `mod_id.txt`.
 8. On the item's Change Notes page, check that the branch range reads public-beta and up. If it doesn't, fix
    it on the page and here.

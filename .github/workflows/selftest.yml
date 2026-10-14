@@ -1,8 +1,8 @@
-# The in-game self-test on Jordan's PC, a self-hosted runner with the game installed (see README.md, "CI").
-# Started by hand only (Actions > Self-test > Run workflow, by someone with write access), never by a push or
-# a pull request. It's a file of its own so a runner group can be limited to exactly this workflow on dev:
-# a fork's pull request can change any workflow in its own copy, and those runs must never reach the PC.
-# Never --real: that output holds Jordan's own mods and data.
+# The in-game self-test on the maintainer's PC, a self-hosted runner with the game installed (see
+# docs/dev/SELFTEST-RUNNER.md). Started by hand only (Actions > Self-test > Run workflow, by someone with write
+# access), never by a push or a pull request: a fork's pull request can change any workflow in its own copy,
+# and those runs must never reach the PC. While the repo is public, keep no runner registered.
+# Never --real: that output holds the maintainer's own mods and data.
 name: Self-test
 
 on:
