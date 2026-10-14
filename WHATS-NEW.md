@@ -4,6 +4,10 @@ Short notes for Jordan: what to look for after each install. Newest first.
 
 ## Waiting in pull requests
 
+- **Faster with a long list:** switching between the main list, Load Order and Vanilla List takes about 0.1 s with your ~250 mods (about 0.5 s before). A redraw is about 21 ms (63 before) and a search keystroke 22 ms (69). Everything should look exactly as before.
+
+## Installed 2026-10-13 (night): version 0.0.49
+
 - **Dismiss the managers warning:** the red "Multiple mod managers" banner has Dismiss beside Show. It stays away until Better Mod Menu or Spire Mod Manager is disabled, and comes back once both are enabled again (also after a launch where one of them is gone or off). Nothing to undo: dismissing isn't a change to your mods.
 
 ## Installed 2026-10-13 (evening): version 0.0.48

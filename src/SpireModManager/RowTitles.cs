@@ -28,6 +28,10 @@ static class RowTitles
         {
             var name = row.Mod?.manifest?.name ?? row.Mod?.manifest?.id ?? "";
             var title = row.GetNode<MegaRichTextLabel>("Title");
+            // The game's label fits its text to its box (smaller, down to a minimum) each time the box or the text
+            // changes, and on a view switch a redraw changes the box several times: off while it's set, then the text is
+            // fitted once (AutoSize: by Fit in our views, by FitVanilla in Vanilla View).
+            title.AutoSizeEnabled = false;
             var info = vanilla ? null : Store.InfoFor(row.Mod?.manifest?.id);
             // Our views: smaller text in a shorter row with a smaller tickbox and no Steam/folder icon; the
             // title stretches with the (wider) row.
@@ -42,15 +46,19 @@ static class RowTitles
             var tickWas = row.HasMeta(TickMeta) ? (float)row.GetMeta(TickMeta) : 0;
             (tickbox.OffsetLeft, tickbox.OffsetRight) = (tickbox.OffsetLeft + tickShift - tickWas, tickbox.OffsetRight + tickShift - tickWas);
             row.SetMeta(TickMeta, tickShift);
-            title.AnchorRight = vanilla ? 0 : 1;
-            title.OffsetRight = vanilla ? 562 : -90;
+            // The right end only on a switch between Vanilla View and ours: in ours RowStrip places it right after this,
+            // clear of the row's buttons. Set here every time, it went back and forth on each redraw, and each move had
+            // the game's label fit its text to the new width again (most of a redraw's time).
+            if (title.AnchorRight != (vanilla ? 0 : 1))
+                (title.AnchorRight, title.OffsetRight) = vanilla ? (0f, 562f) : (1f, -90f);
             // Relative moves only: Load Order shifts the title too, for its grip.
             var shift = vanilla ? 0 : TitleShift;
             title.OffsetLeft += shift - (row.HasMeta(ShiftMeta) ? (float)row.GetMeta(ShiftMeta) : 0);
             row.SetMeta(ShiftMeta, shift);
             title.BbcodeEnabled = true;
             title.Text = Escape(name);
-            title.RemoveThemeColorOverride("default_color"); // Better Mod Menu's name colour (its page restyles its own)
+            if (title.HasThemeColorOverride("default_color")) // (removing one restyles the text, even when there is none)
+                title.RemoveThemeColorOverride("default_color"); // Better Mod Menu's name colour (its page restyles its own)
             Layout.FontSize(title, vanilla ? Layout.RowTitleVanillaSize : Layout.RowTitleSize);
             // Shown again by Fit, in our views.
             foreach (var part in new[] { MarkName, HotName, RestName })
@@ -75,7 +83,7 @@ static class RowTitles
             return;
         var title = row.GetNode<MegaRichTextLabel>("Title");
         var font = title.GetThemeFont("normal_font");
-        float Width(string text, int size) => font.GetStringSize(text, fontSize: size).X;
+        float Width(string text, int size) => Measure(font, text, size);
         var markSize = Icons.Notepad.GetSize();
         var room = title.Size.X - 4;
         var main = Cut(font, alias ?? name, Layout.RowTitleSize, room);
@@ -94,7 +102,7 @@ static class RowTitles
                 originalAt = (mainWidth + gap * space, Width(original, OriginalNameSize), original != name);
             }
         }
-        title.SetTextAutoSize(text);
+        AutoSize(title, text); // in our views, smaller only for text taller than the row has room for (some languages' letters)
         var lineHeight = font.GetHeight(Layout.RowTitleSize);
         var top = title.Position.Y + Math.Max(0, (title.Size.Y - lineHeight) / 2); // the text sits in the middle of the title's box
 
@@ -148,17 +156,52 @@ static class RowTitles
         }
     }
 
+    // Vanilla View, once the redraw has done with the rows (their titles' boxes change until then): the game's
+    // fitting, before Better Mod Menu restyles the names on its page.
+    public static void FitVanilla(IEnumerable<NModMenuRow> rows)
+    {
+        foreach (var row in rows)
+        {
+            var title = row.GetNode<MegaRichTextLabel>("Title");
+            AutoSize(title, title.Text);
+        }
+    }
+
+    // The game's fitting on again once the title has its place and text. Setting the text fits it when the text
+    // changed (and later changes of box fit by themselves); here it fits when only the box changed while it was off.
+    static void AutoSize(MegaRichTextLabel title, string text)
+    {
+        title.AutoSizeEnabled = true;
+        if (title.Text == text && title.Size != (Vector2)title.Get(MegaRichTextLabel.PropertyName._lastAdjustedSize))
+            title.Call(MegaRichTextLabel.MethodName.AdjustFontSize);
+        title.SetTextAutoSize(text);
+    }
+
     // The text as it fits in width at this size: whole, or cut short with "…" (empty when not even that fits).
     // Row titles, and the info panel's title and source line.
     public static string Cut(Font font, string full, int size, float width)
     {
-        float Width(string text) => font.GetStringSize(text, fontSize: size).X;
+        float Width(string text) => Measure(font, text, size);
         if (Width(full) <= width)
             return full;
         var length = full.Length;
         while (length > 0 && Width(full[..length].TrimEnd() + "…") > width)
             length--;
         return length > 0 ? full[..length].TrimEnd() + "…" : "";
+    }
+
+    // A text's width in a font at a size, measured once: measuring shapes the text, and the font's own cache holds
+    // too few for a long list, so every row title was shaped again on every redraw. Cut texts add many shorter
+    // versions, so the lot is forgotten now and then.
+    static readonly Dictionary<(Font Font, int Size, string Text), float> Widths = [];
+
+    static float Measure(Font font, string text, int size)
+    {
+        if (Widths.TryGetValue((font, size, text), out var width))
+            return width;
+        if (Widths.Count >= 10000)
+            Widths.Clear();
+        return Widths[(font, size, text)] = font.GetStringSize(text, fontSize: size).X;
     }
 
     // Our views: a mod turned on since launch has a bright gold title, one turned off a dim one, so what a
