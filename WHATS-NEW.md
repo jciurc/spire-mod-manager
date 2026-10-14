@@ -2,9 +2,11 @@
 
 Short notes for Jordan: what to look for after each install. Newest first.
 
-## Waiting in pull requests
+## Installed 2026-10-13 (late night): version 0.0.51
 
 - **Banners:** the "Multiple mod managers" banner is yellow now (a warning); the page's own warning stays red. In both, the buttons sit right after the text instead of at the far right. Hover Show on either banner: both tooltips say "Opens the next affected mod" (the buttons still say Show). And the managers banner no longer names Better Mod Menu: Dismiss's tip says the warning comes back if one of the mod managers is disabled and then enabled again.
+- **Chinese, Russian and other scripts:** with the game in Chinese, Japanese, Korean, Thai, Russian or Polish, our text uses the game's font for that language, as its own labels do, instead of Kreon. Names, tags, notes and profile names in those letters show properly, not as boxes. Our own words stay English until the mod is translated. After changing the language, open the Modding page again.
+- **Titles and numbers:** in Vanilla List, long names the game shrinks to fit stay that size after a redraw (they used to jump back to full size). Numbers of 1,000 or more (profile mod counts, category counts, the page bar, "Required for N") follow the game's language, e.g. 1.234 in German. Another mod's box in the info panel (Undo And Restart's) is moved out of sight when there's no room, so its own mod always decides whether it shows.
 
 ## Installed 2026-10-13 (late night): version 0.0.50
 
@@ -14,7 +16,6 @@ Short notes for Jordan: what to look for after each install. Newest first.
 ## Installed 2026-10-13 (night): version 0.0.49
 
 - **Dismiss the managers warning:** the red "Multiple mod managers" banner has Dismiss beside Show. It stays away until Better Mod Menu or Spire Mod Manager is disabled, and comes back once both are enabled again (also after a launch where one of them is gone or off). Nothing to undo: dismissing isn't a change to your mods.
-- **Chinese, Russian and other scripts:** with the game in Chinese, Japanese, Korean, Thai, Russian or Polish, our text uses the game's font for that language, as its own labels do, instead of Kreon. Names, tags, notes and profile names in those letters show properly, not as boxes. Our own words stay English until the mod is translated. After changing the language, open the Modding page again.
 
 ## Installed 2026-10-13 (evening): version 0.0.48
 
