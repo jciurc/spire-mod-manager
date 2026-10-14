@@ -8,13 +8,16 @@ namespace SpireModManager;
 // menu): enabled mods that won't load as things stand (a mod they need is off or not installed). Nothing
 // wrong: relaunch at once. Otherwise a dialog over the page it came from lists them and offers to enable the
 // needed mods, disable the ones that can't load, relaunch anyway, or cancel (Esc too). A fix updates the list
-// in place (and is undoable like any change); once nothing is wrong it offers a plain Relaunch.
+// in place (and is undoable like any change); once nothing is wrong it offers a plain Relaunch. Cancel (first, at the
+// left: Jordan, 2026-10-14) takes back the fixes made in the dialog, so cancelling leaves everything as it was.
 static class RelaunchCheck
 {
     public const string Name = "SpireModManagerRelaunchCheck";
     const string ProblemHex = "#ff8070";
 
     public static bool IsOpen => Modal.IsOpen(Name);
+
+    static History.Point? _mark; // the history as the dialog opened (History.Mark): Cancel undoes back to it
 
     // owner: the page asking (the Modding screen or the main menu); the dialog closes when it goes.
     public static void Relaunch(Node owner)
@@ -36,6 +39,8 @@ static class RelaunchCheck
 
     public static void Show(Node owner)
     {
+        if (!IsOpen)
+            _mark = History.Mark();
         if (Modal.Open(owner, Name, 640, 14) is { } column)
             Fill(owner, column);
     }
@@ -79,7 +84,7 @@ static class RelaunchCheck
             }
             Fill(owner, column);
         }
-        var buttons = new HBoxContainer { Name = "Buttons", Alignment = BoxContainer.AlignmentMode.End };
+        var buttons = new HBoxContainer { Name = "Buttons" };
         buttons.AddThemeConstantOverride("separation", 8);
         void Add(string key, Action action, string name)
         {
@@ -88,17 +93,35 @@ static class RelaunchCheck
             button.CustomMinimumSize = new Vector2(0, 34);
             buttons.AddChild(button);
         }
+        // Cancel at the left, then the fixes and Relaunch at the right.
+        Add("SPIRE_MOD_MANAGER.CANCEL", () => Cancel(), "CancelRelaunchButton");
+        buttons.AddChild(new Control { SizeFlagsHorizontal = Control.SizeFlags.ExpandFill, MouseFilter = Control.MouseFilterEnum.Ignore });
         var needed = Dependencies.NeededOff(ModManager.Mods.Union(Installed.Mods));
         if (needed.Count > 0)
             Add("SPIRE_MOD_MANAGER.ENABLE_NEEDED", () => Fix(needed, true), "EnableNeededButton");
         if (problems.Count > 0)
             Add("SPIRE_MOD_MANAGER.DISABLE_BROKEN", () => Fix(problems.Select(p => p.Mod).Distinct(), false), "DisableBrokenButton");
-        buttons.AddChild(new Control { CustomMinimumSize = new Vector2(24, 0), MouseFilter = Control.MouseFilterEnum.Ignore });
-        Add("SPIRE_MOD_MANAGER.CANCEL", () => Close(), "CancelRelaunchButton");
+        if (needed.Count > 0 || problems.Count > 0) // a gap between the fixes and Relaunch
+            buttons.AddChild(new Control { CustomMinimumSize = new Vector2(24, 0), MouseFilter = Control.MouseFilterEnum.Ignore });
         Add(problems.Count > 0 ? "SPIRE_MOD_MANAGER.RELAUNCH_ANYWAY" : "SPIRE_MOD_MANAGER.RELAUNCH_BUTTON", ModEntry.Relaunch, "RelaunchNowButton");
         column.AddChild(buttons);
     }
 
-    // True when there was one to close.
-    public static bool Close() => Modal.Close(Name);
+    // Cancel or Esc: the fixes made in the dialog undone, then closed. True when there was one to close.
+    public static bool Cancel()
+    {
+        if (!IsOpen)
+            return false;
+        if (_mark is { } mark)
+            History.UndoTo(mark);
+        _mark = null;
+        return Close();
+    }
+
+    // Closed as it is, fixes kept (the page it came from going; the self-test). True when there was one to close.
+    public static bool Close()
+    {
+        _mark = null;
+        return Modal.Close(Name);
+    }
 }

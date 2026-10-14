@@ -1031,6 +1031,7 @@ static class SelfTest
             // A fix with no Modding page yet: the active profile and the pending dot follow, and it's one undo step of its
             // own (undoing it leaves the button's Reset position in place).
             var before = ModListState();
+            var steps = (History.Steps(History.Track.List), History.Steps(History.Track.Order));
             var dot = (Control)button.FindChild("Dot", true, false);
             var text = MenuButtonText(menu);
             Press("DisableBrokenButton");
@@ -1044,12 +1045,17 @@ static class SelfTest
             Press("RelaunchNowButton");
             await Wait(menu, 0.2);
             Check("its Relaunch reaches the relaunch", relaunches == 1, $"{relaunches} relaunches");
-            RelaunchCheck.Close();
-            History.Undo();
+            // Cancel (the relaunch here only counted, so the dialog is still up) takes the fix back with no Modding page
+            // to redraw, and forgets it: both histories as they were when the dialog opened, nothing to redo.
+            bool AsBefore() => ModListState().SequenceEqual(before) && !Profiles.Edited && Store.Data.MenuButtonAt == null
+                && dot.Visible == ModEntry.HasPendingChanges();
+            string NotAsBefore() => $"{string.Join(", ", before.Except(ModListState()))}; edited {Profiles.Edited}, button at {Store.Data.MenuButtonAt}";
+            Press("CancelRelaunchButton");
             await Wait(menu, 0.3);
-            Check("one undo takes back that fix, and only it", ModListState().SequenceEqual(before) && !Profiles.Edited
-                && Store.Data.MenuButtonAt == null && dot.Visible == ModEntry.HasPendingChanges(),
-                $"{string.Join(", ", before.Except(ModListState()))}; edited {Profiles.Edited}, button at {Store.Data.MenuButtonAt}");
+            Check("from the main menu, Cancel takes back that fix, and only it", Dialog() == null && AsBefore(), NotAsBefore());
+            Check("and forgets it: the undo histories as the dialog found them, nothing to redo",
+                (History.Steps(History.Track.List), History.Steps(History.Track.Order)) == steps && !History.CanRedo,
+                $"{steps} -> ({History.Steps(History.Track.List)}, {History.Steps(History.Track.Order)}), redo {History.CanRedo}");
         }
         finally
         {
@@ -3751,6 +3757,14 @@ static class SelfTest
         RelaunchCheck.Show(screen);
         await Wait(menu, 0.3);
         Check("relaunch check lists the mods that won't load", Body().Contains(Missing + ", which isn't installed") && Body().Contains("Test Framework, which is disabled"), Body());
+        // Cancel first, at the row's left; the fixes and Relaunch anyway at its right (Jordan, 2026-10-14).
+        var row = Dialog()?.FindChild("Buttons", true, false) as Control;
+        var rowButtons = row?.GetChildren().OfType<Button>().ToList() ?? [];
+        Check("its Cancel comes first, at the left, the fixes and Relaunch anyway at the right",
+            rowButtons.Select(b => b.Name.ToString()).SequenceEqual(["CancelRelaunchButton", "EnableNeededButton", "DisableBrokenButton", "RelaunchNowButton"])
+            && rowButtons[0].GetGlobalRect().Position.X - row!.GetGlobalRect().Position.X < 1
+            && row.GetGlobalRect().End.X - rowButtons[^1].GetGlobalRect().End.X < 1,
+            string.Join(", ", rowButtons.Select(b => $"{b.Name} {b.GetGlobalRect().Position.X:0}-{b.GetGlobalRect().End.X:0}")) + $" in {row?.GetGlobalRect()}");
         await Capture(screen, outDir, "15-relaunch-check");
         Press("EnableNeededButton");
         await Wait(menu, 0.3);
@@ -3759,17 +3773,33 @@ static class SelfTest
         await Wait(menu, 0.3);
         Check("Disable mods that can't load: nothing left, plain Relaunch", !Dependencies.IsOn(addon)
             && Dialog()?.FindChild("RelaunchNowButton", true, false) is Button { Text: "Relaunch Game" }, Body());
+        // Cancel takes both fixes back: Test Framework off again (as this test set it), Test Addon on (the fixture's).
+        // It forgets them too: nothing to redo.
         Press("CancelRelaunchButton");
-        await Wait(menu, 0.2);
-        Check("Cancel closes it", Dialog() == null);
-        History.Undo(); // Test Addon back on, as the fixture has it
         await Wait(menu, 0.3);
+        Check("Cancel closes it and takes back the fixes made in it", Dialog() == null && !Dependencies.IsOn(lib) && Dependencies.IsOn(addon)
+            && !tickbox.IsTicked && !History.CanRedo, $"framework on {Dependencies.IsOn(lib)}, addon on {Dependencies.IsOn(addon)}");
+        // Esc the same, after one fix; the page stays.
         RelaunchCheck.Show(screen);
         await Wait(menu, 0.2);
+        Press("EnableNeededButton");
+        await Wait(menu, 0.3);
+        var fixedIt = Dependencies.IsOn(lib);
         Input.ParseInputEvent(new InputEventKey { Keycode = Key.Escape, Pressed = true });
         await Wait(menu, 0.2);
         Input.ParseInputEvent(new InputEventKey { Keycode = Key.Escape, Pressed = false });
-        Check("Esc closes it, and stays on the page", Dialog() == null && screen.IsVisibleInTree() && Dependencies.IsOn(addon));
+        await Wait(menu, 0.2);
+        Check("Esc closes it the same way, the fix taken back, and stays on the page", fixedIt && Dialog() == null && screen.IsVisibleInTree()
+            && !Dependencies.IsOn(lib) && Dependencies.IsOn(addon), $"fixed {fixedIt}, framework on {Dependencies.IsOn(lib)}");
+        // Cancel with nothing done takes nothing back: the undo step before the dialog (this test's untick) stays.
+        RelaunchCheck.Show(screen);
+        await Wait(menu, 0.2);
+        Press("CancelRelaunchButton");
+        await Wait(menu, 0.3);
+        Check("Cancel with no fix made changes nothing", Dialog() == null && !Dependencies.IsOn(lib) && Dependencies.IsOn(addon));
+        History.Undo(); // this test's untick: Test Framework on again, as the fixture has it
+        await Wait(menu, 0.3);
+        Check("then one undo puts the framework back on, as the fixture has it", Dependencies.IsOn(lib) && tickbox.IsTicked);
     }
 
     // A made-up mod with very long everything (name, id, author, version, description, alias, many tags, notes),

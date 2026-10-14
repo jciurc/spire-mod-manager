@@ -329,7 +329,7 @@ static class ShortcutsPatch
     {
         try
         {
-            if (inputEvent is not InputEventKey { Keycode: Key.Escape, Pressed: true, Echo: false } || !(MenuPanel.Close() || RelaunchCheck.Close() || ProfileShare.Close() || MenuButton.CancelMove() || LetGo()))
+            if (inputEvent is not InputEventKey { Keycode: Key.Escape, Pressed: true, Echo: false } || !(MenuPanel.Close() || RelaunchCheck.Cancel() || ProfileShare.Close() || MenuButton.CancelMove() || LetGo()))
                 return true;
             ((SceneTree)Engine.GetMainLoop()).Root.SetInputAsHandled();
             return false;
