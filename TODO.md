@@ -201,7 +201,7 @@ Jordan's notes of 2026-10-07, second batch (same file), plus play feedback.
 - [x] enable all / disable all (per category, header right-click; whole page: see round 3)
 - [x] filter by author (search covers authors)
 - [x] stylized Spire Mod Manager button (Jordan designs)
-- [ ] export/import/share mod collections and configuration
+- [ ] export/import/share mod collections and configuration (raised to 0.1.0 in round 21: share and import as text)
 - [ ] import BMM profiles from a settings page
 - [ ] export as BMM csv (or save into BMM's folder)
 - [ ] toggle between BMM and Spire Manager
@@ -209,7 +209,7 @@ Jordan's notes of 2026-10-07, second batch (same file), plus play feedback.
 - [ ] controller support (Jordan, 2026-10-13: backlog; 0.1.0 is mouse and keyboard only)
 - [ ] multi-select and bulk actions in Category view
 - [x] profile and category dropdowns use a radio-style mark (single choice)
-- [ ] auto update and polling
+- [ ] auto update and polling (redefined in round 21: Workshop actions in the info panel)
 - [ ] link to the game's patch notes
 
 # Round 3
@@ -252,7 +252,7 @@ Jordan's notes of 2026-10-11.
 
 # Round 4
 
-Jordan's notes of 2026-10-11 (evening), in his order.
+Jordan's notes of 2026-10-11 (evening), in Jordan's order.
 
 - [x] (fix) "(off)" stays on a dependency that was just turned on (pending relaunch)
 - [x] "Required for N mods" on mods others depend on
@@ -628,19 +628,27 @@ CI-focused session. Already fine: no secrets, tokens or large files anywhere in 
 game's is committed (its DLLs are only referenced); no copied Better Mod Menu code; the one image is Jordan's
 own art; the spikes describe the game's behaviour but quote no game code.
 
-- [ ] **the self-hosted runner:** on a public repo a fork's pull request can edit ci.yml itself and send a job
-  to a runner, so a same-repo condition isn't enough. #25 makes the in-game test a job only Jordan can start
-  (workflow_dispatch), never triggered by pull requests, and retires SELF_HOSTED_STS2. Also set "require
-  approval for all outside collaborators" for fork pull request workflows.
-- [ ] **LICENSE:** an MIT `LICENSE` file; Jordan picks the copyright name (legal name, "jciurc" or "symphony").
-  Say in the README whether the art is under MIT too or kept back.
-- [ ] **machine-specific paths:** build.cs, the .csproj and tools/dev.cs hard-code D:\SteamLibrary and
-  C:\repos\...; read them from an environment variable (or a gitignored local file) with today's paths as the
-  fallback, so others can build. Update README and the Workshop kit's paths.
+- [x] **the self-hosted runner:** on a public repo a fork's pull request can edit ci.yml itself and send a job
+  to a runner, so a same-repo condition isn't enough. #25 made the in-game test a job started only by hand
+  (selftest.yml, workflow_dispatch), never by pull requests, and retired SELF_HOSTED_STS2. Starting it by hand
+  needs write access to the repo, which only Jordan has; anyone given write access later could start it too.
+- [ ] **fork pull request workflows:** set "require approval for all outside collaborators" (Settings > Actions)
+  once the repo is public.
+- [x] **LICENSE:** MIT, "Copyright (c) 2026 jciurc"; the README says the art in `images/` is under it too (#25).
+- [x] **machine-specific paths:** build.cs, the .csproj and tools/dev.cs read STS2_STEAMAPPS, STS2_DEV_DIR and
+  STS2_BMM_REPO, with today's paths as the fallback (#25, #13).
 - [ ] **free security features on public repos:** turn on code scanning (CodeQL, C# build-free mode), secret
   scanning and push protection, Dependabot alerts; decide which to make required in the rulesets.
-- [ ] **docs:** decide whether "Jordan" in TODO, WHATS-NEW and the tests stays; TRANSLATING.md and the
-  Workshop description get the GitHub link for issues and pull requests.
+- [x] **docs:** "Jordan" stays in docs, comments and tests (Jordan's call, 2026-10-13); the surname never appears.
+  TRANSLATING.md and the Workshop description link to GitHub for issues and pull requests (#25).
+- [ ] **presentable and open to contributors:** review the repo as a whole as something that represents Jordan.
+  The front page and README are for visitors: what it is, a screenshot, how to install, how to report a bug.
+  Move internal notes (TODO, WHATS-NEW, RELEASE-PLAN, DESIGN, spikes) out of the root, or say what they are.
+  Check the commit and PR history reads well, and that no internal paths or Jordan-only wording remain in
+  public-facing files. For contributors: issue templates (a bug report asking for game version, mod list and
+  log), a CONTRIBUTING.md (the build needs the game and STS2_STEAMAPPS, run tools/check.cs, PRs into dev,
+  translations via TRANSLATING.md), a PR template that works for outsiders, repo topics and description, and
+  Wiki and Projects turned off if unused.
 
 # Round 19
 
@@ -664,3 +672,62 @@ Jordan's notes of 2026-10-13 (with a Load Order screenshot, 0.0.46).
 
 ## Soon (round 19)
 - [ ] undo/redo/revert polish: today it's unclear what is remembered and what the base state is
+
+# Round 20
+
+Jordan's note of 2026-10-13: "a way to dismiss bmm conflict warning. maybe they can work seemlessly together (not
+crash at least) or the user is just okay with running both together. if they dismiss it let's not show the warning
+unless either mod enabled states are touched and they become enabled at the same time again."
+
+- [x] Dismiss beside Show on the managers banner: hidden (no gap) until Better Mod Menu or ours is disabled, then back once both are enabled again; saved, never an undo step or a change
+
+## Backlog (round 20)
+- [ ] Jordan: "think about possible conflicts or issues with running both bmm and mod manager together (could be other managers too) and decide on how to handle it best for the user". A spike (docs/spikes/, like #18) with a recommendation. Points to cover:
+  - Better Mod Menu: both patch the Modding screen. Bmm.cs pauses it on our views by reflection, so an update of it that renames those members silently undoes the pause (logged once). Both keep profiles, and each switching mods on and off could fight over the game's saved list. Both could save the load order (the last save wins). Its import only runs on our first run.
+  - other managers: any mod patching NModdingScreen, NModInfoContainer or the saved mod list. Find them from Harmony's patch list, not only by Better Mod Menu's id.
+  - choices: warn only (today, now dismissable); detect the overlap and pause the other's parts on our views (today's approach for Better Mod Menu, generalised); a one-click "use only one" that unticks the other and says how to undo it; a supported pairing with a tested matrix (--bmm runs today)
+  - being written as `docs/spikes/two-managers.md` (branch `spike-managers`). It overlaps round 21's widened managers warning (the managers that rewrite `mod_list`): decide the two together
+
+# Round 21
+
+Survey of the other mod managers on the Workshop, 2026-10-13, from the mod managers comparison session (the survey
+itself: DESIGN.md, "Research: other StS2 mod managers"). JORDAN marks Jordan's own calls; the rest are
+recommendations to confirm with Jordan.
+
+## Before 0.1.0
+- [ ] JORDAN: share and import a profile as plain text. Raises round 2's "export/import/share mod collections" and the release plan's share codes (from §4 to a 0.1.0 blocker in §2). Suggestions:
+  - a prefix and version, e.g. `SMM1:` + base64url(deflate(payload)); parsing tolerant of line breaks, spaces and text around it, since chat apps mangle it
+  - the payload: profile name, game version, enabled mods by Workshop id where there is one, else mod id plus a local flag; the load order optional (it matters for multiplayer)
+  - aim to fit one Discord message (2000 characters) for about 250 mods (Workshop ids packed as numbers, not text); copied to the clipboard with `DisplayServer.ClipboardSet`
+  - import shows a preview before anything changes: will enable N, disable M, missing K (with Workshop links), local-only mods it can't fetch, a game version mismatch; then "Match exactly" or "Only add"
+  - applying makes a new profile (or the active profile's unsaved edit), so it can be undone and nothing is lost
+  - later, not 0.1.0: Subscribe to the missing ones (SteamUGC); read other managers' formats (Load Order Manager's clipboard JSON, MPM1 codes; see the backlog below)
+- [ ] JORDAN (important): crash-safe launch. A spike first, then build it: in 0.1.0 if the spike shows it's small, else the first update. Sketch:
+  - our initializer writes a "launch pending" marker; reaching the main menu clears it and saves the `mod_list` as the last one that worked
+  - a marker still there at the next start means the last launch never reached the menu. At the main menu, a notice lists what changed since the last good launch, with "Restore last working setup" (and relaunch) and "Keep"
+  - a crash that comes back before the menu needs action with no UI: after two failed launches in a row (one could be the player closing the game while it loads), roll back automatically once and say so at the menu. Never loop
+  - this only works if we load before the crashing mod: keep ourselves first in `mod_list` (we have no dependencies, so the game allows it; pinned on the Load Order page). The spike answers whether a mod loaded first can stop later mods loading in the same launch (as Mod Launch Manager does), or must restore `mod_list` and relaunch
+  - shares the "load first" groundwork with the load-without-restart spike (backlog below): spike them together
+- [ ] recommended, cheap: widen the "Multiple mod managers are currently enabled" warning (round 19, Better Mod Menu only) to the managers that rewrite `mod_list` and would quietly undo our Load Order page:
+  - ModListSorter (on every exit), LoadOrderSync (at launch), Mod Launch Manager (pins itself first), Load Order Manager, Mod Preset Sync, Mod Profile Manager
+  - their manifest ids need looking up (Load Order Manager's repo has `mod_manifest.json`)
+  - moves the release plan's "detect other mod managers by id and warn" (§4) up to §3
+  - overlaps the round 20 backlog spike on running two managers together (`docs/spikes/two-managers.md`, being written on branch `spike-managers`): do this with that spike's recommendation
+
+## Backlog (round 21)
+- [ ] JORDAN: spike "load mods without a restart" (Jordan: one of the biggest pain points as a player). Write it up as `docs/spikes/load-without-restart.md`, per kind of mod (pck only, Harmony only, adds content or models):
+  - a pre-launch choice: we load first and apply a choice before the rest initialize, so a change made at launch needs no second launch (Mod Launch Manager, the 启动前模组管理 selector)
+  - enabling mid-session: assembly load, `ProjectSettings.LoadResourcePack`, the initializer, Harmony; content mods need the ModelDb / LocManager / pool registration that runs at startup
+  - disabling mid-session: `Harmony.UnpatchAll(owner id)` is possible; assemblies unload only from a collectible `AssemblyLoadContext` (check how ModManager loads them); PCKs can't unmount; models stay registered
+  - whatever stays restart-only, the UI says exactly which changes still need a relaunch
+  - for behaviour only, copy no code: Mod List Hot Reload, Mod Launch Manager. Shares the "load first" groundwork with crash-safe launch: spike them together
+- [ ] Simplified Chinese right after 0.1.0 ("English only for v1" stands). Most of this Workshop, and of Jordan's own mods, is Chinese; Load Order Manager has 14 languages
+- [ ] one package for every game branch, once the range widens past beta (Load Order Manager's loader + `bin/g<version>/` pattern). Beta only for 0.1.0 stands
+- [ ] import other managers' data, like the Better Mod Menu import: Load Order Manager's presets.json (90k users), MPM1 codes, BMM CSV. After share codes
+- [ ] Workshop actions in the info panel: Update now, Subscribe / Unsubscribe (Mod Launch Manager, xiaozz's Mod Manager and Better Mod List all have them). Round 2's "auto update and polling", redefined
+
+## Leave out
+- multiplayer host sync (AutoModSubscriber and Multiplayer Mod Sync own it), AI translation, forced A-Z ordering, a grid view
+
+## Jordan's setup
+- [ ] Jordan's game loads stock Better Mod Menu 1.1.1 (`mods\BetterModMenu`, dated 12 Jul) and, separately, the local-fix build as id `BetterModMenuFork`. Today's godot.log has 21 "BetterModMenuConfigButton not found" errors, the bug Jordan's upstream PR #2 fixes. Suggested: keep only one of the two copies on; the fork carries the fix until upstream releases it
