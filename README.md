@@ -88,4 +88,4 @@ dry run by default, but with "dry-run" unticked it locks and reports for real.
 ## License
 
 MIT (see [LICENSE](LICENSE)). Slay the Spire 2 and its files belong to Mega
-Crit; none of them are in this repository.
+Crit; none of them are included.
