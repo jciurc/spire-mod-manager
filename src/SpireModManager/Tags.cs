@@ -126,5 +126,5 @@ static class Tags
     public static float MoreWidth(int count) =>
         ModEntry.Font("res://themes/kreon_regular_shared.tres").GetStringSize(MoreText(count), fontSize: 12).X + 2 * Margin;
 
-    static string MoreText(int count) => Menus.Format("SPIRE_MOD_MANAGER.TAGS_MORE", ("count", count.ToString()));
+    static string MoreText(int count) => Menus.Format("SPIRE_MOD_MANAGER.TAGS_MORE", ("count", Menus.Number(count)));
 }

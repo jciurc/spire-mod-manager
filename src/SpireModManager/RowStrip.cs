@@ -289,7 +289,7 @@ static class RowStrip
         var count = Dependencies.NeededBy(id).Count(m => m != mod && Dependencies.IsOn(m));
         if (count == 0)
             return "";
-        var text = Menus.Format(count == 1 ? "SPIRE_MOD_MANAGER.REQUIRED_FOR_ONE" : "SPIRE_MOD_MANAGER.REQUIRED_FOR", ("count", count.ToString()));
+        var text = Menus.Format(count == 1 ? "SPIRE_MOD_MANAGER.REQUIRED_FOR_ONE" : "SPIRE_MOD_MANAGER.REQUIRED_FOR", ("count", Menus.Number(count)));
         return $"[color={(Dependencies.IsOn(mod) ? RequiredHex : ProblemHex)}]{text}[/color]";
     }
 

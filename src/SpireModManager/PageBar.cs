@@ -47,7 +47,7 @@ static class PageBar
         {
             Name = "Scope", VerticalAlignment = VerticalAlignment.Center, MouseFilter = Control.MouseFilterEnum.Ignore,
             Text = Menus.Format(picked ? "SPIRE_MOD_MANAGER.PAGE_SELECTED" : filter.Length == 0 ? "SPIRE_MOD_MANAGER.PAGE_ALL" : "SPIRE_MOD_MANAGER.PAGE_MATCHES",
-                ("count", shown.Count.ToString())),
+                ("count", Menus.Number(shown.Count))),
         };
         scope.AddThemeFontOverride("font", ModEntry.Font("res://themes/kreon_regular_shared.tres"));
         scope.AddThemeFontSizeOverride("font_size", 15);

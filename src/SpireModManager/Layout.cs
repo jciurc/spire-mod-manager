@@ -1,5 +1,7 @@
 using Godot;
+using HarmonyLib;
 using MegaCrit.Sts2.Core.Localization;
+using MegaCrit.Sts2.Core.Logging;
 using MegaCrit.Sts2.Core.Nodes.GodotExtensions;
 using MegaCrit.Sts2.Core.Nodes.Screens.ModdingScreen;
 using MegaCrit.Sts2.addons.mega_text;
@@ -23,7 +25,8 @@ static class Layout
     const string WatermarkMeta = "spire_mod_manager_watermark";
     const string MinSizeMeta = "spire_mod_manager_min_size";
     const string BoxMeta = "spire_mod_manager_original_box", BarMeta = "spire_mod_manager_original_bar", AnchorMeta = "spire_mod_manager_original_anchor";
-    const string HomeMeta = "spire_mod_manager_home", SeenMeta = "spire_mod_manager_seen", NoRoomMeta = "spire_mod_manager_no_room";
+    const string HomeMeta = "spire_mod_manager_home", SeenMeta = "spire_mod_manager_seen", ParkedMeta = "spire_mod_manager_parked";
+    const float ParkedY = -10000; // other mods' parts with no room, far above the panel (Park)
 
     // The info panel's own parts as the game's scene makes them (by name), noted the first time we see the panel.
     static HashSet<string>? _sceneParts;
@@ -355,15 +358,15 @@ static class Layout
     // Other mods' parts in the info panel: Undo And Restart, for one, adds a settings panel at a fixed (0,318), right
     // where our fields are. Not the game's own (noted on first sight), not ours (named "SpireModManager…", and Open
     // Folder) and not Better Mod Menu's (Bmm hides those on our views); nor one that stretches with the panel (an
-    // overlay or a background). Those shown, and those we hid for lack of room.
+    // overlay or a background). Those their mods show, out of sight for lack of room or not.
     public static List<Control> OtherParts(Control info) => _sceneParts is not { } scene ? []
         : info.GetChildren().OfType<Control>().Where(c => c.Name.ToString() is var name && !scene.Contains(name)
             && !name.StartsWith("SpireModManager") && name != "OpenFolderButton" && !name.StartsWith("BetterModMenu")
-            && c.AnchorLeft == c.AnchorRight && c.AnchorTop == c.AnchorBottom && (c.Visible || c.HasMeta(NoRoomMeta))).ToList();
+            && c.AnchorLeft == c.AnchorRight && c.AnchorTop == c.AnchorBottom && c.Visible).ToList();
 
     // Our views: the parts that fit in room (each with the gap after it), in the order their mods added them; the
-    // rest are hidden. A part first seen this frame may not be laid out inside yet (a wrapping label starts out tall),
-    // so it's only hidden once it has been: the panel is placed again next frame.
+    // rest go out of sight (Park). A part first seen this frame may not be laid out inside yet (a wrapping label starts
+    // out tall), so it only goes once it has been: the panel is placed again next frame.
     public static List<Control> FitOthers(Control info, float room)
     {
         var fitting = new List<Control>();
@@ -382,13 +385,10 @@ static class Layout
             {
                 room -= height;
                 fitting.Add(part);
-                ShowAgain(part);
+                Unpark(part);
             }
             else if (settled)
-            {
-                part.SetMeta(NoRoomMeta, true);
-                part.Visible = false;
-            }
+                Park(part);
         }
         if (settling)
             info.GetTree().CreateTimer(0).Timeout += () =>
@@ -407,7 +407,27 @@ static class Layout
             (part.OffsetLeft + dx, part.OffsetTop + dy, part.OffsetRight + dx, part.OffsetBottom + dy);
     }
 
-    // Vanilla View: other mods' parts where their mods put them, shown again if we hid them.
+    // Out of sight for lack of room: far above the panel, and out of keyboard reach (its own focus behaviour noted for
+    // when it has room again). Never hidden: its Visible stays its mod's, so whatever its mod sets meanwhile (in a fill
+    // or not) still holds when room comes back.
+    static void Park(Control part)
+    {
+        if (!part.HasMeta(ParkedMeta))
+            part.SetMeta(ParkedMeta, (long)part.FocusBehaviorRecursive);
+        part.FocusBehaviorRecursive = Control.FocusBehaviorRecursiveEnum.Disabled;
+        PlaceOther(part, ParkedY);
+    }
+
+    // Room again (or Vanilla View): in keyboard reach as before; placed by the caller.
+    static void Unpark(Control part)
+    {
+        if (!part.HasMeta(ParkedMeta))
+            return;
+        part.FocusBehaviorRecursive = (Control.FocusBehaviorRecursiveEnum)(long)part.GetMeta(ParkedMeta);
+        part.RemoveMeta(ParkedMeta);
+    }
+
+    // Vanilla View: other mods' parts where their mods put them, in reach again if we moved them out of sight.
     static void PutOthersBack(Control info)
     {
         foreach (var part in info.GetChildren().OfType<Control>().Where(c => c.HasMeta(HomeMeta)))
@@ -415,26 +435,8 @@ static class Layout
             var home = (Vector4)part.GetMeta(HomeMeta);
             (part.OffsetLeft, part.OffsetTop, part.OffsetRight, part.OffsetBottom) = (home.X, home.Y, home.Z, home.W);
             part.RemoveMeta(HomeMeta); // noted again on our views, in case its mod moves it meanwhile
-            ShowAgain(part);
+            Unpark(part);
         }
-    }
-
-    // Before the panel is filled (a mod picked): the parts we hid for lack of room shown again, so their mods' own
-    // updates after the game's fill decide what shows, and the layout that follows hides again what doesn't fit.
-    // Otherwise a part its mod hid while we had it hidden (no change to see) came back as soon as there was room.
-    public static void GiveBack(Control info)
-    {
-        foreach (var part in info.GetChildren().OfType<Control>())
-            ShowAgain(part);
-    }
-
-    // A part we hid for lack of room shown again (one its own mod hid stays hidden).
-    static void ShowAgain(Control part)
-    {
-        if (!part.HasMeta(NoRoomMeta))
-            return;
-        part.RemoveMeta(NoRoomMeta);
-        part.Visible = true;
     }
 
     // The list's scrollbar as the scene had it (box, minimum width, mouse filter; saved the first time), back if
@@ -491,21 +493,79 @@ static class Layout
         label.AddThemeFontSizeOverride("normal_font_size", original.X);
         label.AddThemeFontSizeOverride("bold_font_size", original.X);
         label.MaxFontSize = original.Y;
-        label.SetTextAutoSize(label.Text);
+        Refit(label);
     }
 
+    // Our size, as the most the game's auto-size may pick, then fitted again (Refit). Already so (a redraw in the same
+    // view): left alone, as fitted (each override restyles the text, and every row title comes by here on every redraw).
+    // So is a smaller size that is the auto-size's own last pick: written back, a long title would be fitted again, from
+    // scratch, on every redraw. A pick for an older text or box is fitted again by the label itself, or for a row title
+    // by RowTitles.AutoSize.
     public static void FontSize(MegaRichTextLabel label, int size)
     {
-        // Already at that size: left alone (each override restyles the text, and every row title comes by here on
-        // every redraw).
-        if (label.MaxFontSize == size && label.GetThemeFontSize("normal_font_size") == size && label.GetThemeFontSize("bold_font_size") == size)
+        var drawn = label.GetThemeFontSize("normal_font_size");
+        if (label.MaxFontSize == size && label.GetThemeFontSize("bold_font_size") == drawn
+            && (drawn == size || ((_refits ??= Refits()) && drawn == (int)label.Get(LastSetSize))))
             return;
         label.AddThemeFontSizeOverride("normal_font_size", size);
         label.AddThemeFontSizeOverride("bold_font_size", size);
         label.MaxFontSize = size;
-        // Its auto-size skips writing a size equal to the one it wrote last: with ours written in between, the next
-        // fitting writes its size again.
-        label.Set(MegaRichTextLabel.PropertyName._lastSetSize, 0);
-        label.SetTextAutoSize(label.Text);
+        TestFitting?.Invoke(label);
+        Refit(label);
+    }
+
+    // The game's auto-size (a MegaRichTextLabel's text shrunk to fit its box) run again after a size written straight in:
+    // setting the same text doesn't run it, and it skips writing a size equal to the one it wrote last, which may not be
+    // the one drawn any more. Told the size drawn now, it writes only another one; deferred, once the text and box are
+    // final. With the auto-size off (a row title while a redraw sets it up) its last size is forgotten instead, so the one
+    // fitting RowTitles.AutoSize runs as it turns it back on writes: `now`, its text and box final, and only if the box
+    // changed, a size was written since it last ran, or its text isn't the one it last fitted (newText). (A deferred run
+    // would find it still off, or fit it twice.)
+    // Those are private, so reached by name: if a game update renames them, sizes stay as written (noted once).
+    public static void Refit(MegaRichTextLabel label, bool now = false, bool newText = false)
+    {
+        if (!(_refits ??= Refits()))
+            return;
+        if (!label.AutoSizeEnabled)
+        {
+            label.Set(LastSetSize, 0);
+            return;
+        }
+        var drawn = label.GetThemeFontSize("normal_font_size");
+        if (now && !newText && (int)label.Get(LastSetSize) == drawn && label.Size == (Vector2)label.Get(LastAdjustedSize))
+            return;
+        label.Set(LastSetSize, drawn);
+        TestFitting?.Invoke(label);
+        if (now)
+            label.Call(AdjustFontSize);
+        else
+            label.CallDeferred(AdjustFontSize);
+    }
+
+    static readonly StringName LastSetSize = "_lastSetSize", LastAdjustedSize = "_lastAdjustedSize", AdjustFontSize = "AdjustFontSize";
+    static bool? _refits;
+
+    // Set by the self-test: told of each label FontSize writes a size to or Refit fits again.
+    public static Action<MegaRichTextLabel>? TestFitting;
+
+    // Found as Refit calls and reads them: AdjustFontSize without parameters (by name alone, an overload could be
+    // found in its place, or two throw), the fields of the types they're read as. A lookup that throws counts as
+    // not found, so this runs once.
+    static bool Refits()
+    {
+        const string missing = "MegaRichTextLabel's auto-size not found; text keeps the sizes we write";
+        try
+        {
+            var type = typeof(MegaRichTextLabel);
+            if (AccessTools.Field(type, "_lastSetSize")?.FieldType == typeof(int) && AccessTools.Field(type, "_lastAdjustedSize")?.FieldType == typeof(Vector2)
+                && AccessTools.Method(type, "AdjustFontSize", []) != null)
+                return true;
+            Log.Warn($"[{ModEntry.ModId}] {missing}");
+        }
+        catch (Exception e)
+        {
+            Log.Warn($"[{ModEntry.ModId}] {missing}: {e.Message}");
+        }
+        return false;
     }
 }

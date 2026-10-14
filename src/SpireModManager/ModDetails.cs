@@ -128,12 +128,8 @@ static class ModDetails
         var shownName = RowTitles.Cut(font, name, TitleMinSize, shownNumber.Length > 0 ? room - Width(gap + shownNumber) : room);
         title.Text = Escape(shownName)
             + (shownNumber.Length > 0 ? $"{gap}[color={Disabled}][font_size={VersionSize}]{Escape(shownNumber)}[/font_size][/color]" : "");
-        // Drawn at the size the auto-size picks for this text (TitleMinSize or more). Setting the text runs it only when
-        // the text changed, and it skips writing a size equal to the one it wrote last; a view switch sets 32 straight in
-        // between (Layout.FontSize), so a long title would stay at 32, on two lines. Its last size forgotten, it writes
-        // the size again.
-        title.Set(MegaRichTextLabel.PropertyName._lastSetSize, 0);
-        title.CallDeferred(MegaRichTextLabel.MethodName.AdjustFontSize);
+        // Drawn at the size the auto-size picks for this text (TitleMinSize or more), the same text as before too.
+        Layout.Refit(title);
         title.SetMeta(FullMeta, shownName != name || shownNumber != number ? name + (number.Length > 0 ? gap + number : "") : "");
     }
 
@@ -252,8 +248,8 @@ static class ModDetails
         var age = DateTime.Now - when;
         var text = age.TotalHours < 1 ? Menus.Text("SPIRE_MOD_MANAGER.UNDER_AN_HOUR_AGO")
             : age.TotalHours < 24
-            ? (int)age.TotalHours is var hours && hours == 1 ? Menus.Text("SPIRE_MOD_MANAGER.HOUR_AGO") : Menus.Format("SPIRE_MOD_MANAGER.HOURS_AGO", ("hours", hours.ToString()))
-            : (int)age.TotalDays is var days && days == 1 ? Menus.Text("SPIRE_MOD_MANAGER.DAY_AGO") : Menus.Format("SPIRE_MOD_MANAGER.DAYS_AGO", ("days", days.ToString()));
+            ? (int)age.TotalHours is var hours && hours == 1 ? Menus.Text("SPIRE_MOD_MANAGER.HOUR_AGO") : Menus.Format("SPIRE_MOD_MANAGER.HOURS_AGO", ("hours", Menus.Number(hours)))
+            : (int)age.TotalDays is var days && days == 1 ? Menus.Text("SPIRE_MOD_MANAGER.DAY_AGO") : Menus.Format("SPIRE_MOD_MANAGER.DAYS_AGO", ("days", Menus.Number(days)));
         return $"[color={(age.TotalHours < 48 ? Enabled : Disabled)}]({text})[/color]";
     }
 
@@ -565,8 +561,8 @@ static class ModDetails
 
     // The fields sit right under the mod's details: the description shrinks to its text (up to the room left
     // above the fields), and the fields follow it. Other mods' parts in the panel go between the two, as long as the
-    // description keeps a few lines (all of it if shorter); the rest are hidden (Layout.FitOthers). Once the text is
-    // laid out, so deferred. Our views only, and not behind the changes list (placed again when it closes).
+    // description keeps a few lines (all of it if shorter); the rest go out of sight (Layout.FitOthers). Once the
+    // text is laid out, so deferred. Our views only, and not behind the changes list (placed again when it closes).
     public static void PlaceFields(Control container)
     {
         if (!Layout.Wide || HistoryBar.ListOpen(container) || container.GetNodeOrNull<Control>(FieldsName) is not { } yours)

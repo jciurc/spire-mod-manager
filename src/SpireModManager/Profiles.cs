@@ -238,7 +238,7 @@ static class Profiles
     public static string CountText()
     {
         var on = Current().Count(m => m.Enabled && !Manager(m.Id));
-        return Menus.Format(on == 1 ? "SPIRE_MOD_MANAGER.PROFILE_MODS_ONE" : "SPIRE_MOD_MANAGER.PROFILE_MODS", ("count", on.ToString()));
+        return Menus.Format(on == 1 ? "SPIRE_MOD_MANAGER.PROFILE_MODS_ONE" : "SPIRE_MOD_MANAGER.PROFILE_MODS", ("count", Menus.Number(on)));
     }
 
     // For the profile list: "12 mods · Oct 11" (mods on, when last saved). Like the count beside the name, it
@@ -247,7 +247,7 @@ static class Profiles
     {
         var mods = profile.Edited ?? profile.Mods;
         var on = Current().Count(c => !Manager(c.Id) && (Entry(mods, c.Id, c.Source)?.Enabled ?? c.Enabled));
-        var text = Menus.Format(on == 1 ? "SPIRE_MOD_MANAGER.PROFILE_MODS_ONE" : "SPIRE_MOD_MANAGER.PROFILE_MODS", ("count", on.ToString()));
+        var text = Menus.Format(on == 1 ? "SPIRE_MOD_MANAGER.PROFILE_MODS_ONE" : "SPIRE_MOD_MANAGER.PROFILE_MODS", ("count", Menus.Number(on)));
         return profile.SavedAt is { } saved ? $"{text} · {saved:MMM d}" : text;
     }
 

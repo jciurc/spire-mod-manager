@@ -180,7 +180,7 @@ sealed class ModField
         column.AddThemeConstantOverride("separation", 12);
         var heading = new Label
         {
-            Name = "Editing", Text = Menus.Format("SPIRE_MOD_MANAGER.EDITING_SELECTED", ("count", modIds.Count.ToString())),
+            Name = "Editing", Text = Menus.Format("SPIRE_MOD_MANAGER.EDITING_SELECTED", ("count", Menus.Number(modIds.Count))),
             CustomMinimumSize = new Vector2(0, 34), VerticalAlignment = VerticalAlignment.Center,
         };
         Style(heading, "res://themes/kreon_bold_shared.tres", 20, Cream);
