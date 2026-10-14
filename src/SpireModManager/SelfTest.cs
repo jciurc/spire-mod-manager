@@ -3338,7 +3338,8 @@ static class SelfTest
     // Another mod's part in the info panel (Undo And Restart adds a settings panel at a fixed (0,318), over our
     // fields; here a made-up one the same size): our views put it between the details and our fields, or out of sight
     // when there's no room (never hidden: its Visible is its mod's); Vanilla View leaves it where its mod put it. Its
-    // mod's own hide holds, in a fill or outside one; its show too when there's room. Removed again afterwards.
+    // mod's own hide holds, in a fill or outside one; its show too when there's room; and behind the changes list too.
+    // Removed again afterwards.
     static async Task TestOtherModPanel(Node menu, NModdingScreen screen, Control content, string outDir)
     {
         if (content.GetChildren().OfType<NModMenuRow>().FirstOrDefault(r => r.Mod?.manifest?.id == "SmmTestUi") is not { Mod: { } mod } row)
@@ -3406,6 +3407,38 @@ static class SelfTest
         Check("another mod's panel shown again by its mod, with room: shown between the details and our fields, in keyboard reach", other.Visible
             && other.GetGlobalRect().Position.Y >= details.GetGlobalRect().End.Y && other.GetGlobalRect().End.Y <= yours.GetGlobalRect().Position.Y
             && other.FocusBehaviorRecursive == Control.FocusBehaviorRecursiveEnum.Inherited, where);
+
+        // Behind the changes list: out of sight too (never hidden), so what its mod sets while the list is open holds
+        // when it closes. Its mod hides it: still hidden after. Its mod shows it again: shown in its place after. An
+        // overlay of another mod's (stretching over the panel) the same way, back over the panel when the list closes.
+        var place = other.GetGlobalRect();
+        var overlay = new Control { Name = "OtherModOverlay", MouseFilter = Control.MouseFilterEnum.Ignore };
+        info.AddChild(overlay);
+        overlay.SetAnchorsAndOffsetsPreset(Control.LayoutPreset.FullRect);
+        var covers = overlay.GetGlobalRect();
+        bool Behind(Control part) => part.GetGlobalRect().End.Y < 0 && part.FocusBehaviorRecursive == Control.FocusBehaviorRecursiveEnum.Disabled;
+        bool InPlace(Control part, Rect2 rect) => part.GetGlobalRect().Position.DistanceTo(rect.Position) < 1 && part.GetGlobalRect().Size.DistanceTo(rect.Size) < 1
+            && part.FocusBehaviorRecursive == Control.FocusBehaviorRecursiveEnum.Inherited;
+        string Seen() => $"panel {other.GetGlobalRect()} shown {other.Visible} focus {other.FocusBehaviorRecursive} (was {place}), overlay {overlay.GetGlobalRect()} (was {covers})";
+        HistoryBar.ShowList(screen);
+        await Wait(menu, 0.2);
+        Check("another mod's panel behind the changes list: out of sight and keyboard reach, shown as far as its mod can tell; its overlay too",
+            HistoryBar.ListOpen(info) && other.Visible && Behind(other) && overlay.Visible && Behind(overlay), Seen());
+        other.Visible = false; // its mod hides it
+        HistoryBar.CloseList(info);
+        await Wait(menu, 0.2);
+        Check("another mod's panel hidden by its mod while the changes list was open: still hidden when it closes; its overlay back over the panel",
+            !HistoryBar.ListOpen(info) && !other.Visible && InPlace(other, place) && overlay.Visible && InPlace(overlay, covers), Seen());
+        HistoryBar.ShowList(screen);
+        await Wait(menu, 0.2);
+        other.Visible = true; // its mod shows it again
+        await Wait(menu, 0.2);
+        Check("another mod's panel shown by its mod while the changes list is open: still out of sight", HistoryBar.ListOpen(info) && other.Visible && Behind(other), Seen());
+        HistoryBar.CloseList(info);
+        await Wait(menu, 0.2);
+        Check("and when the list closes: shown in its place, in keyboard reach", !HistoryBar.ListOpen(info) && other.Visible && InPlace(other, place), Seen());
+        info.RemoveChild(overlay);
+        overlay.QueueFree();
 
         info.RemoveChild(other);
         other.QueueFree();

@@ -305,8 +305,10 @@ static class HistoryBar
         _list = kind;
         if (!view.Visible)
         {
-            // Everything else in the panel steps aside (and comes back when a mod is picked).
-            foreach (var child in info.GetChildren().OfType<Control>().Where(c => c != view && c.Visible))
+            // Everything else in the panel steps aside (and comes back when a mod is picked): ours and the game's hidden,
+            // other mods' parts out of sight with their Visible left to their mods (Layout.ParkOthers).
+            var others = Layout.ParkOthers(info);
+            foreach (var child in info.GetChildren().OfType<Control>().Where(c => c != view && c.Visible && !others.Contains(c)))
             {
                 child.SetMeta(HiddenMeta, true);
                 child.Visible = false;
@@ -328,6 +330,7 @@ static class HistoryBar
             child.RemoveMeta(HiddenMeta);
             child.Visible = true;
         }
+        Layout.UnparkOthers(info);
         // The fields aren't placed while the list covers the panel (ModDetails.PlaceFields): placed again now.
         if (info is Control panel)
             Callable.From(() => ModDetails.PlaceFields(panel)).CallDeferred();
