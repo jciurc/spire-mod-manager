@@ -69,10 +69,10 @@ Rule[] rules =
     // Changes panel: which details of a mod were edited ("alias, notes").
     new("HistoryBar.cs", ["$\"SPIRE_MOD_MANAGER.FIELD_{f.ToUpperInvariant()}\"", "new[] { \"category\", \"alias\", \"notes\", \"tags\" }"],
         _ => ["FIELD_CATEGORY", "FIELD_ALIAS", "FIELD_NOTES", "FIELD_TAGS"]),
-    // Alias, notes and tags fields: <KIND>_TERM, _HINT and _ADD, and for tags and notes (the bulk menu)
-    // also _BULK_HINT and _BULK_ADD.
+    // Alias, notes and tags fields: <KIND>_TERM, _HINT (the term's tooltip) and _ADD (the box's placeholder), and for
+    // tags and notes (the bulk menu) also _BULK_HINT and _BULK_ADD.
     new("ModFields.cs", ["$\"SPIRE_MOD_MANAGER.{_kind.ToString().ToUpperInvariant()}_{part}\"", "enum Kind { Alias, Notes, Tags }",
-            "LocKey(\"TERM\")", "LocKey((_bulk ? \"BULK_\" : \"\") + (editing ? \"HINT\" : \"ADD\"))",
+            "LocKey(\"TERM\")", "LocKey((bulk ? \"BULK_\" : \"\") + \"HINT\")", "LocKey((_bulk ? \"BULK_\" : \"\") + \"ADD\")",
             "foreach (var kind in new[] { Kind.Tags, Kind.Notes })"],
         _ => ["ALIAS_TERM", "ALIAS_HINT", "ALIAS_ADD", "NOTES_TERM", "NOTES_HINT", "NOTES_ADD", "TAGS_TERM", "TAGS_HINT", "TAGS_ADD",
             "NOTES_BULK_HINT", "NOTES_BULK_ADD", "TAGS_BULK_HINT", "TAGS_BULK_ADD"]),
