@@ -38,7 +38,7 @@ Both mods can be on at the same time, and they're tested together.
 [h2]Your data[/h2]
 Categories, aliases, notes, tags and profiles are saved in one file per Steam account. On Windows:
 [code]%APPDATA%\SlayTheSpire2\steam\(your Steam ID)\mod_data\SpireModManager\manager.json[/code]
-The first save of each session makes a backup in the backups folder next to it. The last 10 are kept. If the file can't be read, it's kept aside under a new name, the newest backup loads instead, and a notice says so.
+The first save of each session makes a backup in the backups folder next to it. The last 10 are kept. If the file can't be read, it's kept aside under a new name and the newest backup that reads loads instead (with none, it starts fresh); a notice says which. If the file can't be moved aside, it stays as it is and that session's changes aren't saved.
 This file is not in Steam Cloud, so it doesn't follow you to another PC or a Steam Deck.
 Which mods are on, and their load order, stay where the game keeps them. Spire Mod Manager changes the same list as the game's own Modding page.
 
