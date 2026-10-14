@@ -179,6 +179,9 @@ Phases are a proposal; v1 is what ships first on the Workshop.
     no picture; its right-click menu is headed "Spire Mod Manager v<version>".
 - **Relaunch:** button reads "Relaunch Game" for now; better messaging later. Pending-changes state
   is shared by the menu indicator and the manager.
+- **Settings entry** (2026-10-14, Jordan): "Spire Mod Manager" button in the Settings screen's top-right corner,
+  level with the tabs, outside the settings list; opens the Modding page on the Settings stack. Main menu only
+  (a run's Settings can't open the page). Mouse only for now: controllers reach the page by the game's Mod Settings line.
 - **Own manager scene** + one-click switch to the vanilla Modding page.
   - MVP (built): category headers inside the vanilla screen's own row list, "Vanilla View" toggle.
   - **Design overhaul:** the manager must look clearly like a third-party mod (ours), distinct from
