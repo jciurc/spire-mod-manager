@@ -11,6 +11,9 @@ they have no Steam, so the info panel shows no Workshop details, and they keep o
 - Play in 16:9 (1920x1080 or 2560x1440).
 - Check that nothing private shows: notes, profile names and category names will be public. Names that read
   well to strangers help: "Characters", "Quality of life", "Libraries", "Visuals"; a profile called "Co-op".
+- With Better Mod Menu on too, the yellow "Multiple mod managers" warning sits above the list in every shot.
+  Dismiss it first. It isn't a change to your mods, so there's nothing to undo; it comes back once one of the
+  two is disabled and enabled again.
 - F12 is Steam's screenshot key (Steam Settings > In Game). Find the shots in Steam's screenshot manager
   (View > Screenshots, Slay the Spire 2, Show on disk). Steam saves JPGs. "Save an uncompressed copy" in the
   same settings also keeps a PNG, which `shrink.cs` turns into a sharper JPG.
