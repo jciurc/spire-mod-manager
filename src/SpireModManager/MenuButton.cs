@@ -7,7 +7,7 @@ namespace SpireModManager;
 // The "Spire Mod Manager" button on the main menu: Jordan's skyline art in the lower-left corner (or
 // wherever the player moved it: right-click > Move button, then click to place it), with the game's
 // notification dot and a short "Relaunch to apply" note beside it while a relaunch is pending. Its
-// right-click menu also has Relaunch game, the Modding page's Relaunch Game from here.
+// right-click menu also has Relaunch game, the Modding page's Relaunch Game from here, and Open translations folder.
 static class MenuButton
 {
     const string Name = "SpireModManagerMenuButton";
@@ -75,6 +75,8 @@ static class MenuButton
                 // load (its dialog over the main menu), then the relaunch.
                 MenuItem.Heading(""),
                 new(Menus.Text("SPIRE_MOD_MANAGER.RELAUNCH_GAME"), () => RelaunchCheck.Relaunch(menu)),
+                // Last: where drop-in translations go (Translations), made if needed and opened.
+                new(Menus.Text("SPIRE_MOD_MANAGER.OPEN_TRANSLATIONS"), Translations.Open),
             ]);
         };
     }
