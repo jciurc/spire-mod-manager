@@ -52,7 +52,9 @@ static class MainMenuPatch
                 LaunchGuard.ShowNotice();
             };
 
+#if DEVTOOLS
             SelfTest.MaybeStart(__instance);
+#endif
         }
         catch (Exception e)
         {

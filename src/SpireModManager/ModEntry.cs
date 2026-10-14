@@ -164,8 +164,13 @@ public static class ModEntry
             Log.Warn($"[{ModId}] Missing or broken game resource, a plain stand-in is used (logged once): {what}");
     }
 
-    // Set by tools/dev.cs for its sandboxed runs, so they can't be mistaken for the real game.
+    // Set by tools/dev.cs for its sandboxed runs, so they can't be mistaken for the real game. Never in the
+    // Workshop build (no DEVTOOLS): there the dev switches, SPIRE_MOD_MANAGER_SKIP_PATCHES included, do nothing.
+#if DEVTOOLS
     public static bool IsDevRun { get; } = System.Environment.GetEnvironmentVariable("SPIRE_MOD_MANAGER_DEV") == "1";
+#else
+    public static bool IsDevRun => false;
+#endif
 
     // "[DEV]" in the window title (taskbar, Alt+Tab) and a small tag at the top of the screen.
     public static void MarkDevRun(SceneTree tree)
