@@ -758,7 +758,7 @@ Manifest ids known from GitHub: `LoadOrderManager`, `AutoModSubscriber`, `ModLis
 `BetterModMenu`. The rest need subscribing: the id is in the manifest in the Workshop folder.
 
 - [ ] `tools/dev.cs`: an option that copies given Workshop ids from `steamapps\workshop\content\2868840` into the sandbox (like `--bmm`). The sandbox has no Steam, so this covers every manager below
-- [ ] the round 20 two-managers spike (#36, branch `spike-managers`): check its detection and recommendation against this list
+- [ ] the round 20 two-managers spike (#36, `docs/spikes/two-managers.md`): check its detection and recommendation against this list. Its known-id list (for managers that only rewrite `mod_list` at launch or exit) can take the ids above; LoadOrderSync's and ModListSorter's still need subscribing
 - what to check for each:
   - buttons and panels that overlap ours, on our page and on the main menu
   - the Harmony chain on `NModdingScreen._Ready`, `NModInfoContainer.Fill` and the rows: their exceptions shouldn't break ours
