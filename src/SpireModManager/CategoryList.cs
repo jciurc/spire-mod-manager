@@ -252,9 +252,14 @@ static class CategoryList
         scroll.Set("_targetDragPosY", Math.Max(top, bottom));
     }
 
-    // After a change that may need a relaunch: redraw, and let the screen recheck its pending warning.
-    public static void Redraw(Control content)
+    // After a change that may need a relaunch: redraw, and let the screen recheck its pending warning. On the main list
+    // these are changes to many mods at once (Enable all / Disable all, undo, redo, Revert all, a profile, a banner's
+    // fix; one mod's own change calls Apply), so rows kept for one mod's change go by the page bar's Show: choice again
+    // (ListFilter.Release). keep: not the player's change (a mod installed meanwhile), and they stay.
+    public static void Redraw(Control content, bool keep = false)
     {
+        if (!keep)
+            ListFilter.Release();
         Apply(content);
         for (var node = content.GetParent(); node != null; node = node.GetParent())
             if (node is NModdingScreen screen)

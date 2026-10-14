@@ -312,8 +312,9 @@ static class Profiles
     }
 
     // After a profile wrote the mod list: the list redrawn whole, as after undo (the rows the page bar's Show: choice
-    // shows, each category's count and Enable all / Disable all), and the pending-changes warning. The tickboxes set
-    // above fire no toggle, so the list would otherwise keep showing the old on/off.
+    // shows, none kept now for one mod's change, each category's count and Enable all / Disable all), and the
+    // pending-changes warning. The tickboxes set above fire no toggle, so the list would otherwise keep showing the old
+    // on/off.
     static void Redraw(NModdingScreen screen) => CategoryList.Redraw(screen.GetNode<Control>("%ModsScrollContainer/Mask/Content"));
 
     public static void NotifySwitched() => Switched?.Invoke();

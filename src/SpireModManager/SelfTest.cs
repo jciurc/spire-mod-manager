@@ -2571,8 +2571,9 @@ static class SelfTest
     // The page bar's Show: All, Enabled, Disabled, Changed (ListFilter). Each shows exactly its rows (by the tickboxes;
     // the mods Changes names), with a search too (both must match), and the bar counts them; each category counts its
     // rows shown and has no header when it shows none. Choosing is no undo step and not pending. A row ticked under a
-    // choice stays, counted, until a choice is pressed again; Enable all acts on the rows shown, which then go, as do
-    // the mods a profile switched to turns off; picked mods edited in their menu stay; going to a mod shows its row.
+    // choice stays, counted, until a choice is pressed again or many mods change at once (undo, a profile, Disable all);
+    // Enable all acts on the rows shown, which then go, as do the mods a profile switched to turns off; picked mods
+    // edited in their menu stay; going to a mod shows its row.
     // Load Order and Vanilla List show every row; All shows every row again. (The page opening again:
     // TestListFilterReopen, near the end, as it starts a new visit for undo.)
     static async Task TestListFilters(Node menu, NModdingScreen screen, Control content, string outDir)
@@ -2690,8 +2691,8 @@ static class SelfTest
         Check("choosing is no undo step, not in Changes, not pending, no unsaved profile edit", moves == 0 && State() == before,
             $"history moved {moves}, same state {State() == before}");
 
-        // A mod unticked under Enabled: its row stays where it was, counted, through a redraw too, until Enabled is pressed
-        // again. (Undone after: the untick is a step.)
+        // A mod unticked under Enabled: its row stays where it was, counted, through a redraw that changes no mod too (a
+        // search, a fold), until Enabled is pressed again. (Undone after: the untick is a step.)
         await Press("ShowEnabledButton");
         if (Rows().FirstOrDefault(r => r.Visible && r.Mod is { } m && On(m) && m.manifest?.id is { } id && id != ModEntry.ModId && id != Bmm.ModId)
             is { Mod: { } ticked } row)
@@ -2704,9 +2705,9 @@ static class SelfTest
             Check("Show: Enabled, a mod unticked: its row stays, still counted", Off(ticked) && row.Visible && Scope() == count,
                 $"{ticked.manifest?.id} on {On(ticked)}, shown {row.Visible}; {count} -> {Scope()}");
             await Capture(screen, outDir, "2h-show-enabled-kept");
-            CategoryList.Redraw(content);
+            CategoryList.Apply(content);
             await Wait(menu, 0.3);
-            Check("... and after a redraw, its category counting it", row.Visible && Scope() == count && Headers(m => On(m) || m == ticked) == "",
+            Check("... and after a redraw that changes no mod, its category counting it", row.Visible && Scope() == count && Headers(m => On(m) || m == ticked) == "",
                 $"shown {row.Visible}, {count} -> {Scope()}; {Headers(m => On(m) || m == ticked)}");
             await Press("ShowEnabledButton");
             Check("Enabled pressed again: the unticked mod goes", !row.Visible && Shown().SequenceEqual(Where(On)), Say());
@@ -2716,6 +2717,59 @@ static class SelfTest
         }
         else
             Results.Add("SKIP list filters: no enabled mod to untick");
+
+        // A row kept for one mod's change goes at once with a change to many mods, which shows the choice's rows whole:
+        // under Enabled, a mod unticked, then undo (of a second one unticked after it), a profile switched to and back (to
+        // the untick, its unsaved edit), or Disable all. (Each undone, or ticked again, after.)
+        await Press("ShowEnabledButton");
+        var onRows = Rows().Where(r => r.Visible && r.Mod is { } m && On(m) && m.manifest?.id is { } id && id != ModEntry.ModId && id != Bmm.ModId).ToList();
+        if (onRows is [{ Mod: { } kept } keptRow, { Mod: { } later } laterRow, ..])
+        {
+            async Task Tick(NModMenuRow which, bool on)
+            {
+                var tickbox = which.GetNode<NTickbox>("Tickbox");
+                tickbox.IsTicked = on;
+                tickbox.EmitSignal(NTickbox.SignalName.Toggled, tickbox);
+                await Wait(menu, 0.3);
+            }
+            await Tick(keptRow, false);
+            await Tick(laterRow, false);
+            var stayed = keptRow.Visible && laterRow.Visible;
+            History.Undo(); // the second
+            await Wait(menu, 0.3);
+            Check("Show: Enabled, two mods unticked (both kept), the second undone: the first goes at once", stayed && Off(kept) && On(later)
+                && !keptRow.Visible && Shown().SequenceEqual(Where(On)), $"kept {stayed}; {Say()}");
+            History.Undo(); // the first
+            await Wait(menu, 0.3);
+
+            if (Profiles.Active is { } home && Store.Data.Profiles.FirstOrDefault(p => p != home) is { } other)
+            {
+                await Tick(keptRow, false);
+                stayed = keptRow.Visible;
+                Profiles.SwitchTo(other, screen);
+                await Wait(menu, 0.3);
+                Profiles.SwitchTo(home, screen); // back to the untick, the profile's unsaved edit
+                await Wait(menu, 0.3);
+                Check($"Show: Enabled, a mod unticked (kept), {other.Name} switched to and back: it goes at once", stayed && Off(kept)
+                    && !keptRow.Visible && Shown().SequenceEqual(Where(On)), $"kept {stayed}; {Say()}");
+                await Tick(keptRow, true);
+            }
+            else
+                Results.Add("SKIP list filters, a kept row and a profile: one profile only");
+
+            await Press("ShowEnabledButton");
+            await Tick(keptRow, false);
+            stayed = keptRow.Visible;
+            await Press("DisableAllButton");
+            Check("Show: Enabled, a mod unticked (kept), Disable all: it goes at once with the rest", stayed && Off(kept)
+                && !keptRow.Visible && Shown().SequenceEqual(Where(On)), $"kept {stayed}; {Say()}");
+            History.Undo(); // Disable all
+            History.Undo(); // the untick
+            await Wait(menu, 0.3);
+            Check("undone: the mods on again", On(kept) && Shown().SequenceEqual(Where(On)), Say());
+        }
+        else
+            Results.Add("SKIP list filters, kept rows: fewer than two enabled mods to untick");
 
         // Enable all under Disabled: just the mods shown, as one step; they're enabled, so they go (a change to many at once).
         await Press("ShowDisabledButton");

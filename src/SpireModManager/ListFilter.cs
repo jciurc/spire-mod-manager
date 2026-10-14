@@ -8,11 +8,12 @@ namespace SpireModManager;
 // leaves out hide like a search's misses, and a row shows when it matches both. Load Order and Vanilla List show
 // every row.
 // A mod ticked, unticked or edited by hand (its tickbox, its menu or the picked mods' menu, the info panel's fields)
-// keeps its row (and its place in the counts) until a choice is pressed again or the page opens again, so a row never
-// goes from under the mouse or an open menu; Enable all / Disable all, undo and a profile, changes to many mods at
-// once, show the choice's rows at once. Going to a mod (a banner's Show, a name in the panel or in Changes) shows its
-// row too. Kept for the session and never an edit (no undo step, not pending): each launch starts on All, as Changed
-// counts from launch and a list left on Disabled would look like mods had gone.
+// keeps its row (and its place in the counts) until a choice is pressed again, the page opens again or many mods
+// change at once, so a row never goes from under the mouse or an open menu; Enable all / Disable all, undo, redo,
+// Revert all, a profile and a banner's fix, changes to many mods at once, show the choice's rows at once, the kept
+// ones gone too. Going to a mod (a banner's Show, a name in the panel or in Changes) shows its row too. Kept for the
+// session and never an edit (no undo step, not pending): each launch starts on All, as Changed counts from launch and
+// a list left on Disabled would look like mods had gone.
 static class ListFilter
 {
     public enum Choice { All, Enabled, Disabled, Changed }
@@ -74,7 +75,8 @@ static class ListFilter
     // A mod gone to (CategoryList.Reveal): shown too if the choice leaves it out. True if it was.
     public static bool Bring(Mod? mod) => mod != null && !Shows(mod) && Kept.Add(mod);
 
-    // The page opened again: kept rows go by the choice again. True if there were any (a redraw shows it).
+    // The page opened again, or a change to many mods at once (CategoryList.Redraw): kept rows go by the choice again.
+    // True if there were any (a redraw shows it).
     public static bool Release()
     {
         if (Kept.Count == 0)
