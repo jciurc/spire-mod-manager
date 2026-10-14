@@ -9,6 +9,7 @@
 //   it puts together at runtime too (see the rules below). A key in eng that no code uses is only a warning:
 //   dead text, or a use this script can't see.
 // - Game resources: no code loads one with ResourceLoader.Load or GD.Load; ModEntry.Load and Font do.
+// - Descriptions: no code sets the engine's TooltipText; Hover.Tip shows our card.
 // - Fixtures: the JSON under tools/fixtures parses, and each test mod's manifest has id, name and version.
 // - Tracked files: none over 1 MB, none holding what looks like a GitHub token.
 // Prints PASS, FAIL and WARN lines (as annotations on GitHub); exit code 1 on any FAIL.
@@ -124,6 +125,18 @@ foreach (var (path, source) in sources)
             direct.Add($"{Name(path)}:{i + 1}");
 }
 Check("game resources load through ModEntry.Load or ModEntry.Font", direct.Count == 0, List(direct));
+
+// Descriptions: our hover card (Hover.Tip), never the engine's tooltip, which looks like none of ours (Jordan,
+// 2026-10-14). The self-test only reads it, so it doesn't count; nor do comment lines.
+var native = new List<string>();
+foreach (var (path, source) in sources.Where(s => Path.GetFileName(s.Key) != "SelfTest.cs"))
+{
+    var lines = source.Split('\n');
+    for (var i = 0; i < lines.Length; i++)
+        if (lines[i].Contains("TooltipText") && !lines[i].TrimStart().StartsWith("//"))
+            native.Add($"{Name(path)}:{i + 1}");
+}
+Check("descriptions use Hover.Tip, not the engine's TooltipText", native.Count == 0, List(native));
 
 // Fixtures: the test mods and data tools/dev.cs puts in the sandbox.
 var fixtures = Path.Combine(root, "tools", "fixtures");

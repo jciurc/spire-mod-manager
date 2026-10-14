@@ -3275,16 +3275,24 @@ static class SelfTest
         Check("page bar on the main list", Bar() is { Visible: true } bar && bar.FindChild("Scope", true, false) is Label { Text: var all } && all.StartsWith("Installed mods"));
         await Capture(screen, outDir, "2d-page-bar");
         // What each filter shows: our hover card (not the engine's tooltip), only as wide as its words. And no engine
-        // tooltip anywhere on the page: every description we write is the same card (Jordan, 2026-10-14).
+        // tooltip on anything of ours: every description we write is the same card (Jordan, 2026-10-14). Other mods'
+        // controls on the page (Better Mod Menu's row buttons) keep theirs. tools/check.cs guards the source too.
         if (Bar()?.FindChild("ShowAllButton", true, false) is Button allButton)
         {
             var (tip, width) = await SizedHoverCard(menu, allButton, Hover.TipName, () => Capture(screen, outDir, "2d2-filter-tip"));
             Check("a filter's description is our hover card, as wide as its words", tip == Menus.Text("SPIRE_MOD_MANAGER.SHOW_ALL_TIP")
                 && width is > 0 and < 300 && allButton.TooltipText == "", $"\"{tip}\", {width:0} px");
         }
-        var natives = screen.FindChildren("*", "Control", true, false).OfType<Control>().Where(c => c.TooltipText.Length > 0)
+        bool Ours(Node node)
+        {
+            for (var at = node; at != null && at != screen; at = at.GetParent())
+                if (at.Name.ToString().StartsWith("SpireModManager") || at.HasMeta("spire_mod_manager_tip"))
+                    return true;
+            return false;
+        }
+        var natives = screen.FindChildren("*", "Control", true, false).OfType<Control>().Where(c => c.TooltipText.Length > 0 && Ours(c))
             .Select(c => $"{c.Name}: {c.TooltipText}").ToList();
-        Check("no engine tooltips on the page: every description is our card", natives.Count == 0, string.Join(" | ", natives));
+        Check("no engine tooltips on our controls: every description is our card", natives.Count == 0, string.Join(" | ", natives));
 
         var box = screen.GetNode<LineEdit>("ModsBorder/SpireModManagerSearch");
         void Find(string text)
