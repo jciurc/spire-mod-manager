@@ -2084,6 +2084,8 @@ static class SelfTest
             (screen.FindChild("OrderProblems", true, false) as Label)?.Text ?? "");
         Check("the order warning's corners are rounded like the rows", screen.FindChild(LoadOrder.WarningName, true, false) is PanelContainer warningBar
             && warningBar.GetThemeStylebox("panel") is StyleBoxFlat { CornerRadiusTopLeft: RowTitles.CornerRadius });
+        Check("the order warning is red", Red(BannerFill(screen.FindChild(LoadOrder.WarningName, true, false))),
+            $"fill {BannerFill(screen.FindChild(LoadOrder.WarningName, true, false))}");
         Check("Auto sort has its hint", screen.FindChild("AutoSortHint", true, false) is Label { Visible: true } hintLabel && hintLabel.Text.Contains("compatibility"));
         Check("order warning and Auto sort stay above the list, outside its scrolling",
             screen.FindChild("OrderProblems", true, false) is Node warning && !content.IsAncestorOf(warning)
@@ -2223,7 +2225,7 @@ static class SelfTest
         Check("fixed: the '!' goes", screen.GetNodeOrNull<Control>("SpireModManagerLoadOrderToggle/WarningBadge") is not { Visible: true });
     }
 
-    // Better Mod Menu ticked as well as ours: a red banner on our views, in the problem banners' place, with a Show that
+    // Better Mod Menu ticked as well as ours: a yellow banner on our views, above the problem banners, with a Show that
     // goes to its row and a Dismiss that hides it until the two aren't both ticked. It comes and goes with its tickbox at
     // once (no relaunch). The fixture has it installed but off; with --bmm it's on and loaded, so the banner is there from
     // the start. It ends as it started.
@@ -2262,6 +2264,7 @@ static class SelfTest
         var text = (Banner()?.FindChild("ManagersWarning", true, false) as Label)?.Text ?? "";
         Check("Better Mod Menu ticked: the managers banner at once, under the search box, above the list", Bmm.Ticked && Placed()
             && text == "Multiple mod managers are currently enabled, which may cause unexpected behavior.", $"\"{text}\"; {Where()}");
+        Check("the managers banner is yellow: a warning, not an error", Yellow(BannerFill(Banner())), $"fill {BannerFill(Banner())}");
         await Capture(screen, outDir, "2e-managers-banner");
 
         // With the page's own warning too (a needed mod turned off): this one first, that one under it.
@@ -2270,6 +2273,9 @@ static class SelfTest
             await Tick(lib, false);
             Check("with the page's own warning: the managers banner above it, both above the list",
                 border.GetNodeOrNull<Control>(LoadOrder.WarningName) is { Visible: true } warning && Placed(warning), Where());
+            Check("beside it, the page's own warning stays red, the managers banner yellow",
+                Red(BannerFill(border.GetNodeOrNull(LoadOrder.WarningName))) && Yellow(BannerFill(Banner())),
+                $"warning {BannerFill(border.GetNodeOrNull(LoadOrder.WarningName))}, managers {BannerFill(Banner())}");
             await Capture(screen, outDir, "2f-both-banners");
             await Tick(lib, true);
         }
@@ -3406,6 +3412,11 @@ static class SelfTest
         return (store["profiles"] as JsonArray ?? []).Any(p => (string?)p?["name"] == active
             && (p?["mods"] as JsonArray ?? []).Any(m => (string?)m?["id"] == id && (bool?)m?["enabled"] == true));
     }
+
+    // A banner's fill (LoadOrder.Banner's rounded box): yellow for a warning, red for a problem with the mods, by hue too.
+    static Color? BannerFill(Node? banner) => (banner as Control)?.GetThemeStylebox("panel") is StyleBoxFlat look ? look.BgColor : null;
+    static bool Yellow(Color? fill) => fill == LoadOrder.WarningColor && fill?.H is > 0.1f and < 0.18f;
+    static bool Red(Color? fill) => fill == LoadOrder.ProblemColor && fill?.H is < 0.03f or > 0.97f;
 
     static void Check(string name, bool ok, string detail = "") =>
         Results.Add($"{(ok ? "PASS" : "FAIL")} {name}{(ok || detail.Length == 0 ? "" : $": {detail}")}");

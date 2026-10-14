@@ -26,6 +26,9 @@ static class LoadOrder
     static readonly Color Gold = new(0.937f, 0.784f, 0.318f);
     static readonly Color Blocked = new(0.9f, 0.25f, 0.25f);
     static readonly Color LinkFine = new(0.62f, 0.86f, 0.62f);
+    // The banners' fills: a deep red for a problem with the mods, a deep amber (the game's gold, darkened) for a warning.
+    // Dark enough for the cream text to read on both (about 4.8:1 for the amber over the page).
+    public static readonly Color ProblemColor = new(0.45f, 0.1f, 0.1f, 0.6f), WarningColor = new(0.6f, 0.44f, 0.06f, 0.9f);
     const float DragStart = 6; // px the mouse moves with the button down before a press becomes a drag
     const float EdgeScroll = 60, EdgeScrollSpeed = 700; // drag near an edge: px from it, px per second at the edge
     static List<string>? _loadedOrder;
@@ -191,7 +194,7 @@ static class LoadOrder
     // fixing makes the saved order say what will happen). On the main list: enabled mods that need a mod
     // that is off or missing, with a way to each and a fix for the off ones. Elsewhere, a "!" on the Load
     // Order button says that page has a warning. Above that one on both, while Better Mod Menu is ticked too: a
-    // banner saying two mod managers are on, with a way to its row and a way to dismiss it.
+    // yellow banner saying two mod managers are on, with a way to its row and a way to dismiss it.
     public const string WarningName = "SpireModManagerOrderWarning", ManagersName = "SpireModManagerManagersWarning", AutoSortName = "AutoSortButton";
     public const string AutoSortHintName = "AutoSortHint";
     const string BadgeName = "WarningBadge";
@@ -305,8 +308,8 @@ static class LoadOrder
         Banner(border, search, text, buttons);
     }
 
-    // Better Mod Menu ticked as well as us: the same kind of banner and Show, which goes to its row, then Dismiss for
-    // a player happy to run both.
+    // Better Mod Menu ticked as well as us: the same kind of banner in yellow (a warning: both can run), and Show, which
+    // goes to its row, then Dismiss for a player happy to run both.
     static void ManagersBanner(Control content, Control border, Control? search, Action redraw)
     {
         var show = Menus.SmallButton(Menus.Text("SPIRE_MOD_MANAGER.SHOW_PROBLEM"), () =>
@@ -322,7 +325,7 @@ static class LoadOrder
             redraw();
         }, name: "DismissManagersButton");
         dismiss.TooltipText = Menus.Text("SPIRE_MOD_MANAGER.DISMISS_MANAGERS_TIP");
-        Banner(border, search, Menus.Text("SPIRE_MOD_MANAGER.MANAGERS_WARNING"), [show, dismiss], ManagersName, "ManagersWarning");
+        Banner(border, search, Menus.Text("SPIRE_MOD_MANAGER.MANAGERS_WARNING"), [show, dismiss], ManagersName, "ManagersWarning", WarningColor);
     }
 
     // A banner's Show: the mod's row scrolled into view (its category opened) with a short glow, and the mod in the
@@ -338,14 +341,15 @@ static class LoadOrder
         CategoryList.Select(content, row);
     }
 
-    // A red line under the search box: text, then buttons on the right. name and textName: the line's and its text's
-    // node names (the page's own warning by default).
-    static void Banner(Control border, Control? search, string message, List<Control> buttons, string name = WarningName, string textName = "OrderProblems")
+    // A line under the search box: text, then buttons on the right. Red (the page's own warning) unless color says
+    // otherwise. name and textName: the line's and its text's node names (the page's own warning by default).
+    static void Banner(Control border, Control? search, string message, List<Control> buttons, string name = WarningName, string textName = "OrderProblems",
+        Color? color = null)
     {
         var bar = new PanelContainer { Name = name };
         var look = new StyleBoxFlat
         {
-            BgColor = new Color(0.45f, 0.1f, 0.1f, 0.6f), ContentMarginLeft = 12, ContentMarginRight = 8, ContentMarginTop = 4, ContentMarginBottom = 4,
+            BgColor = color ?? ProblemColor, ContentMarginLeft = 12, ContentMarginRight = 8, ContentMarginTop = 4, ContentMarginBottom = 4,
         };
         look.SetCornerRadiusAll(RowTitles.CornerRadius); // rounded like the rows and the search box
         bar.AddThemeStyleboxOverride("panel", look);
