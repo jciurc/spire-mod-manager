@@ -355,7 +355,7 @@ static class CategoryList
         LoadOrder.Reset(content); // no Load Order lines or dimming outside it
 
         if (Store.Data.VanillaView)
-            RowStrip.Remove(rows);
+            RowStrip.Hide(rows);
         else
             RowStrip.Apply(rows, StripActions(content), EdgeAction(content));
 
@@ -366,6 +366,7 @@ static class CategoryList
                 content.MoveChild(rows[i], i);
                 rows[i].Visible = Bmm.Present || Matches(rows[i]); // Better Mod Menu's page: its search and groups decide
             }
+            RowTitles.FitVanilla(rows);
             if (screen != null)
                 Bmm.Refresh(screen);
             return;

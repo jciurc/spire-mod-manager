@@ -211,7 +211,13 @@ static class SelfTest
                 typed.EmitSignal(LineEdit.SignalName.TextChanged, text);
             }
             Results.Add($"INFO a search keystroke {Ms(() => { Type("lib"); Type(""); }) / 2:0.0} ms");
+            // The same to the end of the frame (FrameMs), with what they leave for it: titles fitted, layout.
+            await Wait(menu, 0.3);
+            var redrawFrame = await FrameMs(menu, () => CategoryList.Apply(content));
+            var keyFrame = (await FrameMs(menu, () => Type("lib")) + await FrameMs(menu, () => Type(""))) / 2;
+            Results.Add($"INFO to the end of the frame: a redraw {redrawFrame:0.0} ms, a search keystroke {keyFrame:0.0} ms");
             await Wait(menu, 1);
+            await TimeSwitches(menu, screen, content);
             await Capture(screen, outDir, "real-1-categories");
 
             Click(screen.GetNode<NButton>("SpireModManagerLoadOrderToggle"));
@@ -282,6 +288,48 @@ static class SelfTest
             File.WriteAllLines(Path.Combine(outDir, "results.txt"), Results);
             menu.GetTree().Quit();
         }
+    }
+
+    // Switching views with a mod picked, as a player does: main list to Load Order and back, to Vanilla List and
+    // back. Each switch is timed to the end of its frame (FrameMs), three times; the middle time is reported.
+    static async Task TimeSwitches(Node menu, NModdingScreen screen, Control content)
+    {
+        if (content.GetChildren().OfType<NModMenuRow>().FirstOrDefault() is { } row)
+            CategoryList.Select(screen, row);
+        await Wait(menu, 0.5);
+        var idle = new List<double>();
+        var times = new Dictionary<string, List<double>>();
+        async Task Switch(string name, string toggle)
+        {
+            if (!times.TryGetValue(name, out var list))
+                times[name] = list = [];
+            list.Add(await FrameMs(menu, () => Click(screen.GetNode<NButton>(toggle))));
+            await Wait(menu, 0.3);
+        }
+        for (var round = 0; round < 3; round++)
+        {
+            idle.Add(await FrameMs(menu, () => { }));
+            await Switch("to Load Order", "SpireModManagerLoadOrderToggle");
+            await Switch("back from Load Order", "SpireModManagerLoadOrderToggle");
+            await Switch("to Vanilla List", "SpireModManagerViewToggle");
+            await Switch("back from Vanilla List", "SpireModManagerViewToggle");
+        }
+        static double Middle(List<double> ms) => ms.Order().ElementAt(ms.Count / 2);
+        Results.Add($"INFO view switches (to the end of the frame; an idle frame {Middle(idle):0.0} ms): "
+            + string.Join(", ", times.Select(t => $"{t.Key} {Middle(t.Value):0.0} ms")));
+    }
+
+    // How long something takes through to the end of the frame it happens in: its own work, then what it leaves
+    // for the frame's end (layout, text, nodes freed). From the start of a frame, where a click lands, to a timer
+    // that fires once that frame's deferred work is done; the time between frames isn't counted.
+    static async Task<double> FrameMs(Node node, Action action)
+    {
+        var tree = node.GetTree();
+        await node.ToSignal(tree, SceneTree.SignalName.ProcessFrame);
+        var watch = System.Diagnostics.Stopwatch.StartNew();
+        action();
+        await node.ToSignal(tree.CreateTimer(0), SceneTreeTimer.SignalName.Timeout);
+        return watch.Elapsed.TotalMilliseconds;
     }
 
     // Our text reaches the game: each eng text without placeholders, as packed, reads back unchanged through
@@ -1888,7 +1936,7 @@ static class SelfTest
         HintPlaced("Load Order redrawn");
         var start = Ids();
         Check("load order view: saved order, handles, no headers", start.SequenceEqual(Saved())
-            && Rows().All(r => r.HasNode("SpireModManagerHandle"))
+            && Rows().All(r => r.GetNodeOrNull<Control>("SpireModManagerHandle") is { Visible: true })
             && !content.GetChildren().Any(c => c.IsInGroup("SpireModManagerCategoryHeader")), string.Join(", ", start));
         Check("nothing pending before moving", !pending.Visible && !ModEntry.HasPendingChanges());
         // Leaving and coming back: the rows' drag handlers aren't connected again (one press, one drag).
@@ -1947,8 +1995,8 @@ static class SelfTest
         var orderBefore = Ids();
         pressed.EmitSignal(Control.SignalName.GuiInput, new InputEventMouseButton { ButtonIndex = MouseButton.Left, Pressed = true, GlobalPosition = at });
         await Wait(menu, 0.1);
-        Check("pressing a row starts the drag look at once", Rows().Any(r => r.Modulate.A < 0.5f && r != pressed)
-            && content.GetParent().GetChildren().OfType<ColorRect>().Any(c => c.Size.Y == 5));
+        Check("pressing a row starts the drag look at once (the drop line's ends slightly rounded)", Rows().Any(r => r.Modulate.A < 0.5f && r != pressed)
+            && content.GetParent().GetChildren().OfType<Panel>().Any(c => c.Size.Y == 5 && c.GetThemeStylebox("panel") is StyleBoxFlat { CornerRadiusTopLeft: > 0 }));
         pressed.EmitSignal(Control.SignalName.GuiInput, new InputEventMouseButton { ButtonIndex = MouseButton.Left, Pressed = false, GlobalPosition = at });
         await Wait(menu, 0.3);
         Check("a click without moving leaves the order alone", Ids().SequenceEqual(orderBefore));
@@ -1994,7 +2042,7 @@ static class SelfTest
         Click(screen.GetNode<NButton>("SpireModManagerLoadOrderToggle"));
         await Wait(menu, 0.5);
         var selected = Rows().FirstOrDefault(r => r.Mod == CategoryList.Selected);
-        Check("category view takes the handles off", !Rows().Any(r => r.HasNode("SpireModManagerHandle"))
+        Check("category view hides the handles", !Rows().Any(r => r.GetNodeOrNull<Control>("SpireModManagerHandle") is { Visible: true })
             && content.GetChildren().Any(c => c.IsInGroup("SpireModManagerCategoryHeader")));
         Check("back from Load Order: titles in place", Rows().All(r => r.GetNode<Control>("Title").OffsetLeft == 18),
             string.Join(", ", Rows().Select(r => r.GetNode<Control>("Title").OffsetLeft)));
@@ -2037,6 +2085,8 @@ static class SelfTest
             Note("SmmTestContent"));
         Check("order warning wording", (screen.FindChild("OrderProblems", true, false) as Label)?.Text.StartsWith("For compatibility, 1 mod will be automatically reordered") == true,
             (screen.FindChild("OrderProblems", true, false) as Label)?.Text ?? "");
+        Check("the order warning's corners are rounded like the rows", screen.FindChild(LoadOrder.WarningName, true, false) is PanelContainer warningBar
+            && warningBar.GetThemeStylebox("panel") is StyleBoxFlat { CornerRadiusTopLeft: RowTitles.CornerRadius });
         Check("Auto sort has its hint", screen.FindChild("AutoSortHint", true, false) is Label { Visible: true } hintLabel && hintLabel.Text.Contains("compatibility"));
         Check("order warning and Auto sort stay above the list, outside its scrolling",
             screen.FindChild("OrderProblems", true, false) is Node warning && !content.IsAncestorOf(warning)
@@ -2102,6 +2152,27 @@ static class SelfTest
             libRow.EmitSignal(Control.SignalName.MouseEntered);
             await Wait(menu, 0.2);
             var shown = content.GetParent().GetChildren().Count(c => c.IsInGroup("SpireModManagerLinks"));
+            // Rounded corners: more points than the square path (out, along the lane, in), none on its two corners,
+            // the ends where they were.
+            static bool Rounded(Vector2[] p)
+            {
+                if (p.Length <= 4)
+                    return false;
+                var lane = p.Min(q => q.X);
+                Vector2[] corners = [new(lane, p[0].Y), new(lane, p[^1].Y)];
+                return p[0].X == p[^1].X && p[0].X > lane && !p.Any(q => corners.Any(c => q.DistanceTo(c) < 0.5f));
+            }
+            var paths = content.GetParent().GetChildren().OfType<Line2D>().Where(l => l.IsInGroup("SpireModManagerLinks")).Select(l => l.Points).ToList();
+            Check("the hover lines have slightly rounded corners", paths.Count > 0 && paths.All(Rounded),
+                string.Join("; ", paths.Select(p => string.Join(" ", p.Select(q => $"{q.X:0.#},{q.Y:0.#}")))));
+            // The rows here wear the main list's rounded looks: faint under the mouse, sunken when selected.
+            var selectedRow = Rows().FirstOrDefault(r => r.Mod == CategoryList.Selected && r != libRow);
+            StyleBox? LookOf(NModMenuRow? r) => r?.GetNodeOrNull<Panel>("SelectionHighlight")?.GetThemeStylebox("panel");
+            Check("load order rows: rounded like the main list's, under the mouse and selected",
+                LookOf(libRow) is StyleBoxFlat { CornerRadiusTopLeft: RowTitles.CornerRadius, BorderWidthTop: 0 }
+                && LookOf(selectedRow) is StyleBoxFlat { CornerRadiusTopLeft: RowTitles.CornerRadius, BorderWidthTop: 2 }
+                && selectedRow?.GetNode<Panel>("SelectionHighlight") is { } selectedLook && selectedLook.Modulate == Colors.White
+                && selectedLook.OffsetLeft == RowTitles.LookInset.X, $"selected: {selectedRow?.Mod?.manifest?.id ?? "none"}");
             await Capture(screen, outDir, "13b-hover-links");
             libRow.EmitSignal(Control.SignalName.MouseExited);
             await Wait(menu, 0.2);

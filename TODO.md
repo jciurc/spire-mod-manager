@@ -613,7 +613,7 @@ Found tonight, not done yet:
 - [ ] try #22 with Undo And Restart (UI Modified) in your game
 - [ ] the in-game self-test on GitHub: register a self-hosted runner on Jordan's PC (README.md, "CI" section). With #25 in, it runs only when started by hand (Actions, Run workflow); before #25, the SELF_HOSTED_STS2 variable turns it on
 - [ ] the profile bar's background is 0 px tall (its anchors are set without offsets); decide whether it should show (#12)
-- [ ] redraw with ~250 mods is about 49 ms after #15; the rest is Godot-side per row (titles, fitting)
+- [x] redraw with ~250 mods is about 49 ms after #15; the rest is Godot-side per row (titles, fitting) (about 21 ms after perf-views: round 19 backlog)
 - [ ] backups are picked by name (local time); a clock change can put them out of order (#6)
 - [ ] a broken manager.json with no readable backup doesn't retry the Better Mod Menu import (#6)
 - [ ] the relaunch messaging and missing-dependency spikes (#18): your answers, then their first PRs
@@ -662,12 +662,13 @@ Jordan's notes of 2026-10-13 (with a Load Order screenshot, 0.0.46).
 - [x] main menu button's right-click menu: "Relaunch game", with a divider under "Reset position" (#29; also fixes Escape while moving the button reaching the game)
 
 ## Follow-ups from the Copilot reviews (2026-10-13)
-- [ ] Layout.FontSize's `SetTextAutoSize(label.Text)` does nothing when the text is unchanged (the auto-size skips a size equal to its last). #11 fixed it for the panel title (FitTitle); the Vanilla List title could hit the same if its fitted size matched the cached one
+- [ ] Layout.FontSize's `SetTextAutoSize(label.Text)` does nothing when the text is unchanged (the auto-size skips a size equal to its last). #11 fixed it for the panel title (FitTitle); the Vanilla List title could hit the same if its fitted size matched the cached one. perf-views: the next fitting now writes its size again, but nothing fits after a plain redraw, so a redraw in Vanilla List leaves the row titles the game fitted smaller at 32 (3 of them with --real)
 - [ ] counts outside the Changes bar still print plain digits: the profile list's "5 mods" (Profiles.cs), Load Order, the page bar, row strips (#21 added Menus.Number for these)
 - [ ] other mods' parts in the panel: a mod that hides its part outside the panel's fill, while we have it hidden for room, can see it shown again when room comes back (#22 covers hides made in or after Fill)
 
 ## Backlog (round 19)
-- [ ] optimization pass: switching between the main list, Vanilla List and Load Order lags with 200+ mods. Also: with round 19 in, a full redraw on Jordan's ~250 mods measures 54 ms (49 before; the --real check wants under 50), a search keystroke 59 ms
+- [x] optimization pass: switching between the main list, Vanilla List and Load Order lags with 200+ mods. Also: with round 19 in, a full redraw on Jordan's ~250 mods measures 54 ms (49 before; the --real check wants under 50), a search keystroke 59 ms
+  - perf-views, --real, before and after back to back on a busy machine: redraw 63 -> 21 ms, keystroke 69 -> 22 ms; to the end of the frame, redraw 103 -> 29 ms, keystroke 104 -> 34 ms, to Load Order 509 -> 93 ms, back 486 -> 87 ms, to Vanilla List 214 -> 100 ms, back 497 -> 139 ms. Left: Godot laying out ~250 rows, one font fitting per title on a switch
 - [ ] a clickable menu button on the right side of the main menu button that opens the same menu (the settings link will live there later)
 
 ## Soon (round 19)
@@ -681,12 +682,19 @@ unless either mod enabled states are touched and they become enabled at the same
 
 - [x] Dismiss beside Show on the managers banner: hidden (no gap) until Better Mod Menu or ours is disabled, then back once both are enabled again; saved, never an undo step or a change
 
+Jordan's second note of 2026-10-13: "add slight border radius on dependency lines. right now they feel a little too
+rigid. add small radius to items in load order page (similar to list view)"
+
+- [x] dependency lines: each corner of the bracket is a short 5 px curve; the ends stay where they were
+- [x] Load Order rows: they already had the main list's rounded highlight (4 px), now held by a self-test check; the drop line and the red warning banners were square and are rounded too
+
 ## Backlog (round 20)
-- [ ] Jordan: "think about possible conflicts or issues with running both bmm and mod manager together (could be other managers too) and decide on how to handle it best for the user". A spike (docs/spikes/, like #18) with a recommendation. Points to cover:
-  - Better Mod Menu: both patch the Modding screen. Bmm.cs pauses it on our views by reflection, so an update of it that renames those members silently undoes the pause (logged once). Both keep profiles, and each switching mods on and off could fight over the game's saved list. Both could save the load order (the last save wins). Its import only runs on our first run.
+- [ ] Load Order's top row: the list's edge cuts off the top 3 px of its highlight (rounded corners and the selected look's top rim), so selected or hovered it looks square on top. The main list rarely shows it (a category header comes first)
+- [ ] Jordan: "think about possible conflicts or issues with running both bmm and mod manager together (could be other managers too) and decide on how to handle it best for the user". Spike: `docs/spikes/two-managers.md` (recommendation: find managers from Harmony's patch owners; a Disable button on the banner; a health check for the Better Mod Menu bridge; six questions for Jordan). Written before round 21's survey: check its detection against the managers that rewrite `mod_list` there (some may only touch the saved list on exit or at launch, not the page). Points it covers:
+  - Better Mod Menu: both patch the Modding screen. Bmm.cs pauses it on our views by reflection, so an update of it that renames those members silently undoes the pause (members logged once; node names fail silently). Profiles are the real conflict: its on/off postfix copies every change made on our page into its selected profile. Both write the one live saved list, so no write is lost; its arrow moves become one Load Order undo step. Its import only runs on our first run.
   - other managers: any mod patching NModdingScreen, NModInfoContainer or the saved mod list. Find them from Harmony's patch list, not only by Better Mod Menu's id.
   - choices: warn only (today, now dismissable); detect the overlap and pause the other's parts on our views (today's approach for Better Mod Menu, generalised); a one-click "use only one" that unticks the other and says how to undo it; a supported pairing with a tested matrix (--bmm runs today)
-  - being written as `docs/spikes/two-managers.md` (branch `spike-managers`). It overlaps round 21's widened managers warning (the managers that rewrite `mod_list`): decide the two together
+  - the spike is in (#36). It overlaps round 21's widened managers warning (the managers that rewrite `mod_list`): decide the two together
 
 # Round 21
 

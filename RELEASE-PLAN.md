@@ -81,7 +81,7 @@
     - Copy a profile to the clipboard as one line of text: a prefix and version (`SMM1:`) plus the compressed list. It should fit one Discord message for about 250 mods.
     - Import shows what would change before anything does (enable, disable, missing, local only, game version), then makes a new profile, so it can be undone.
     - Details in TODO round 21.
-14. **Crash-safe launch** (Jordan, 2026-10-13: spike first). A blocker if the spike shows it's small; otherwise the first update.
+14. **Crash-safe launch** (Jordan, 2026-10-13: spike first). The spike is the blocker. Building it is one too if the spike shows it's small; otherwise it ships in the first update.
     - A launch that never reaches the main menu leaves a marker. At the next menu, offer to restore the last setup that worked. After two failed launches in a row, roll back once on our own and say so. Never loop.
     - It needs us first in `mod_list`. The spike decides whether a mod loaded first can stop the rest loading in the same launch, or must restore `mod_list` and relaunch.
     - Details in TODO round 21.
@@ -214,8 +214,10 @@
 - The recently-updated mark items (Updated tag, red pip, gem, the link, patch notes fetched per mod), all removed.
 - Round 10: long-details test and long-titles backlog (superseded by Round 15; keep only the Round 15 long-text item).
 - Round 1: "show Switched from X to Y" (superseded by Round 5).
-- Round 2: "auto update and polling" (drop unless you can say what it meant). Now redefined as Workshop actions (§4, TODO round 21), so keep it.
 - Backlog r1: "show installed/removed mods that differ from preset" (merge into the Round 8 profiles item).
+
+**Keep, redefined:**
+- Round 2: "auto update and polling" (once on the drop list as unclear) is now Workshop actions in the info panel: Update now, Subscribe/Unsubscribe (§4, TODO round 21).
 
 **Rewrite:**
 - `DESIGN.md`: "Status (2026-10-06)" says 68 checks (now about 220), lists the "Visual only" tag and a Workshop Page button, and says inline actions are rough. The "Draft layer" and "Defaults profile" sections describe what wasn't built. The content picker is now its own project.
