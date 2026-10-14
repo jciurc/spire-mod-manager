@@ -175,6 +175,8 @@ Phases are a proposal; v1 is what ships first on the Workshop.
 - **Main menu entry:** "Spire Mod Manager" button in the lower-left corner, kept separate from the
   main menu links, with the game's notification dot when a relaunch is pending. (The lower right
   holds the vanilla "MODDED (n)" label and its hover list of loaded mods; too crowded.)
+  - Since 2026-10-14 (Jordan): the game's own main-menu text button, reading "Mod Profile: Default (12 mods)", with
+    no picture; its right-click menu is headed "Spire Mod Manager v<version>".
 - **Relaunch:** button reads "Relaunch Game" for now; better messaging later. Pending-changes state
   is shared by the menu indicator and the manager.
 - **Own manager scene** + one-click switch to the vanilla Modding page.

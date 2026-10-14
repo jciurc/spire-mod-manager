@@ -626,8 +626,8 @@ Found tonight, not done yet:
 Jordan, 2026-10-13: the repo goes public under MIT eventually; these are requirements before the switch, for a
 CI-focused session. Already fine: no secrets, tokens or large files anywhere in the history; none of the game's
 code is committed (its DLLs are only referenced); no copied Better Mod Menu code; the spikes describe the game's
-behaviour but quote no game code. Not fine: the one image, `images/main_menu_button.png`, is an edited still of the
-game's main-menu background, Mega Crit's art, not Jordan's own (Jordan, 2026-10-14; item below).
+behaviour but quote no game code. Not fine until menu-text-button: the one image, `images/main_menu_button.png`, an
+edited still of the game's main-menu background, Mega Crit's art, not Jordan's own (Jordan, 2026-10-14; item below).
 
 - [x] **the self-hosted runner:** on a public repo a fork's pull request can edit ci.yml itself and send a job
   to a runner, so a same-repo condition isn't enough. #25 made the in-game test a job started only by hand
@@ -635,15 +635,14 @@ game's main-menu background, Mega Crit's art, not Jordan's own (Jordan, 2026-10-
   needs write access to the repo, which only Jordan has; anyone given write access later could start it too.
 - [ ] **fork pull request workflows:** set "require approval for all outside collaborators" (Settings > Actions)
   once the repo is public.
-- [x] **LICENSE:** MIT, "Copyright (c) 2026 jciurc" (#25). The README's line that the art in `images/` is under it
-  too doesn't hold while the button picture is Mega Crit's (next item).
-- [ ] **the main menu button's picture:** `images/main_menu_button.png` is an edited still of the game's main-menu
-  background (Mega Crit's art). It is in the repo and in the mod's pack, so the Workshop upload gives it to every
-  subscriber too. Leaving it out of the README's MIT line only stops us offering it under MIT; it doesn't give us
-  the right to share it. JORDAN, before the switch (and before the upload, for the pack): redraw it from scratch,
-  keeping the file name and size; or find terms from Mega Crit that allow sharing edited game art in mods and
-  repos, and name them in the README for that file instead of MIT. Not for the Workshop thumbnail either:
-  `image.png` must be his own art (workshop/SHOTS.md).
+- [x] **LICENSE:** MIT, "Copyright (c) 2026 jciurc" (#25). The README no longer says the art in `images/` is under
+  it too (menu-text-button: there is none).
+- [ ] **the main menu button's picture:** `images/main_menu_button.png` was an edited still of the game's main-menu
+  background (Mega Crit's art). Branch menu-text-button (Jordan, 2026-10-14) removes it from the repo and from the
+  mod's pack: the button is the game's own main-menu text button now, so the Workshop upload no longer carries it.
+  It stays in the git history, though, which a public repo shows to anyone. JORDAN, before the switch: rewrite the
+  history to drop it (every commit hash changes, and open branches and clones must be rebased), or accept it there.
+  Not for the Workshop thumbnail either: `image.png` must be his own art (workshop/SHOTS.md).
 - [x] **machine-specific paths:** build.cs, the .csproj and tools/dev.cs read STS2_STEAMAPPS, STS2_DEV_DIR and
   STS2_BMM_REPO, with today's paths as the fallback (#25, #13).
 - [ ] **free security features on public repos:** turn on code scanning (CodeQL, C# build-free mode), secret
