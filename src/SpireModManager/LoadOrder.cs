@@ -18,6 +18,7 @@ static class LoadOrder
     const float WasWidth = 44; // "12 →", kept for every row so the numbers line up
     const float HandleWidth = 84 + WasWidth; // the row title shifts right by this much in this view
     const float LinkGutter = 18; // left strip for the dependency lines
+    const float LinkRadius = 5; // their rounded corners (the rows' are RowTitles.CornerRadius)
     const string LinkGroup = "SpireModManagerLinks";
     const string DraggingMeta = "spire_mod_manager_dragging";
     const string ScrollHookMeta = "spire_mod_manager_scroll_hook";
@@ -342,10 +343,12 @@ static class LoadOrder
     static void Banner(Control border, Control? search, string message, List<Control> buttons, string name = WarningName, string textName = "OrderProblems")
     {
         var bar = new PanelContainer { Name = name };
-        bar.AddThemeStyleboxOverride("panel", new StyleBoxFlat
+        var look = new StyleBoxFlat
         {
             BgColor = new Color(0.45f, 0.1f, 0.1f, 0.6f), ContentMarginLeft = 12, ContentMarginRight = 8, ContentMarginTop = 4, ContentMarginBottom = 4,
-        });
+        };
+        look.SetCornerRadiusAll(RowTitles.CornerRadius); // rounded like the rows and the search box
+        bar.AddThemeStyleboxOverride("panel", look);
         var line = new HBoxContainer();
         line.AddThemeConstantOverride("separation", 6);
         bar.AddChild(line);
@@ -506,7 +509,7 @@ static class LoadOrder
         var moved = false; // past a few pixels: a drag, not a click
         var pressAt = Vector2.Zero;
         var mouseY = 0f; // where the last mouse event put the pointer
-        ColorRect? marker = null;
+        Panel? marker = null;
         row.GuiInput += e =>
         {
             if (!Store.Data.LoadOrderView)
@@ -526,7 +529,10 @@ static class LoadOrder
                     CategoryList.Select(content, row); // grabbing a row selects it too
                     dragging = true;
                     moved = false;
-                    marker = new ColorRect { Color = Gold, Size = new Vector2(content.Size.X, 5), MouseFilter = Control.MouseFilterEnum.Ignore };
+                    marker = new Panel { SelfModulate = Gold, Size = new Vector2(content.Size.X, 5), MouseFilter = Control.MouseFilterEnum.Ignore };
+                    var bar = new StyleBoxFlat { BgColor = Colors.White }; // coloured by SelfModulate: gold, or red (DragFrame)
+                    bar.SetCornerRadiusAll(2); // slightly rounded ends, like the rows
+                    marker.AddThemeStyleboxOverride("panel", bar);
                     content.GetParent().AddChild(marker); // the scroll mask: not a container, so it can sit anywhere
                     content.GetTree().ProcessFrame += DragFrame;
                     BeginDragLook(content, row);
@@ -588,7 +594,7 @@ static class LoadOrder
             marker.GlobalPosition = new Vector2(content.GlobalPosition.X, Math.Clamp(y - 2, view.Position.Y, view.End.Y - 5));
             ShowLinks(content, row, strong: true, drop: (gap, marker.GlobalPosition.Y + 2));
             // Red where dropping would load it before something it needs (or after something needing it).
-            marker.Color = Destination(gap) is { } at && row.Mod is { } moving
+            marker.SelfModulate = Destination(gap) is { } at && row.Mod is { } moving
                 && MoveBreaks(moving, at, content.GetChildren().OfType<NModMenuRow>().ToList()) ? Blocked : Gold;
         }
 
@@ -627,7 +633,7 @@ static class LoadOrder
     }
 
     // Tree-style lines in the left gutter from this row to each linked row: out from the row, along
-    // the gutter, into the other row. Each link gets its own lane so they don't overlap.
+    // the gutter, into the other row, with slightly rounded corners. Each link gets its own lane so they don't overlap.
     // While dragging, `drop` is where the row would land (gap index, screen y): its end of each line follows
     // the drop marker, stretching and shrinking, and the colour says whether that drop works.
     public static void ShowLinks(Control content, NModMenuRow row, bool strong, (int Gap, float Y)? drop = null)
@@ -649,11 +655,37 @@ static class LoadOrder
             var line = new Line2D
             {
                 Width = strong ? 3 : 2, DefaultColor = new Color(fine ? LinkFine : Blocked, strong ? 1f : 0.6f),
-                Points = [new(LinkGutter, CenterY(row)), new(lane, CenterY(row)), new(lane, CenterY(linked[i])), new(LinkGutter, CenterY(linked[i]))],
+                Points = Rounded([new(LinkGutter, CenterY(row)), new(lane, CenterY(row)), new(lane, CenterY(linked[i])), new(LinkGutter, CenterY(linked[i]))], LinkRadius),
             };
             line.AddToGroup(LinkGroup);
             mask.AddChild(line);
         }
+    }
+
+    // A path with each corner cut by a short curve (radius at most half of each side, so curves never overlap);
+    // the ends stay put. A few points per corner: the lines are made again on every hover and dragged frame.
+    static Vector2[] Rounded(Vector2[] path, float radius)
+    {
+        const int steps = 4;
+        var points = new List<Vector2> { path[0] };
+        for (var i = 1; i < path.Length - 1; i++)
+        {
+            var (before, corner, after) = (path[i - 1], path[i], path[i + 1]);
+            var r = Math.Min(radius, Math.Min(corner.DistanceTo(before), corner.DistanceTo(after)) / 2);
+            if (r < 0.5f)
+            {
+                points.Add(corner); // no room (a drag can put both ends level): square
+                continue;
+            }
+            var (from, to) = (corner + (before - corner).Normalized() * r, corner + (after - corner).Normalized() * r);
+            for (var s = 0; s <= steps; s++)
+            {
+                var t = (float)s / steps;
+                points.Add(from.Lerp(corner, t).Lerp(corner.Lerp(to, t), t)); // a curve from side to side, pulled toward the corner
+            }
+        }
+        points.Add(path[^1]);
+        return [.. points];
     }
 
     // Lines for whichever row is under the mouse now, or none.

@@ -2,6 +2,7 @@ using System.Text;
 using System.Text.Json.Nodes;
 using Godot;
 using MegaCrit.Sts2.Core.Localization;
+using MegaCrit.Sts2.Core.Localization.Fonts;
 using MegaCrit.Sts2.Core.Modding;
 using MegaCrit.Sts2.Core.Nodes;
 using MegaCrit.Sts2.Core.Nodes.CommonUi;
@@ -46,6 +47,7 @@ static class SelfTest
             await RunFirstRun(menu, outDir, imported: mode == "first-run-bmm");
             return;
         }
+        var tree = menu.GetTree(); // to quit by: TestLanguageFonts rebuilds the main menu, this one with it
         try
         {
             await Wait(menu, 3);
@@ -157,6 +159,7 @@ static class SelfTest
                 && screen.GetNode<Control>("%ModInfoContainer").Visible);
 
             await TestStoreSafety(menu, screen, outDir);
+            await TestLanguageFonts(screen, outDir); // last: the main menu, the page with it, is made again
         }
         catch (Exception e)
         {
@@ -165,7 +168,7 @@ static class SelfTest
         finally
         {
             File.WriteAllLines(Path.Combine(outDir, "results.txt"), Results);
-            menu.GetTree().Quit();
+            tree.Quit();
         }
     }
 
@@ -1992,8 +1995,8 @@ static class SelfTest
         var orderBefore = Ids();
         pressed.EmitSignal(Control.SignalName.GuiInput, new InputEventMouseButton { ButtonIndex = MouseButton.Left, Pressed = true, GlobalPosition = at });
         await Wait(menu, 0.1);
-        Check("pressing a row starts the drag look at once", Rows().Any(r => r.Modulate.A < 0.5f && r != pressed)
-            && content.GetParent().GetChildren().OfType<ColorRect>().Any(c => c.Size.Y == 5));
+        Check("pressing a row starts the drag look at once (the drop line's ends slightly rounded)", Rows().Any(r => r.Modulate.A < 0.5f && r != pressed)
+            && content.GetParent().GetChildren().OfType<Panel>().Any(c => c.Size.Y == 5 && c.GetThemeStylebox("panel") is StyleBoxFlat { CornerRadiusTopLeft: > 0 }));
         pressed.EmitSignal(Control.SignalName.GuiInput, new InputEventMouseButton { ButtonIndex = MouseButton.Left, Pressed = false, GlobalPosition = at });
         await Wait(menu, 0.3);
         Check("a click without moving leaves the order alone", Ids().SequenceEqual(orderBefore));
@@ -2082,6 +2085,8 @@ static class SelfTest
             Note("SmmTestContent"));
         Check("order warning wording", (screen.FindChild("OrderProblems", true, false) as Label)?.Text.StartsWith("For compatibility, 1 mod will be automatically reordered") == true,
             (screen.FindChild("OrderProblems", true, false) as Label)?.Text ?? "");
+        Check("the order warning's corners are rounded like the rows", screen.FindChild(LoadOrder.WarningName, true, false) is PanelContainer warningBar
+            && warningBar.GetThemeStylebox("panel") is StyleBoxFlat { CornerRadiusTopLeft: RowTitles.CornerRadius });
         Check("Auto sort has its hint", screen.FindChild("AutoSortHint", true, false) is Label { Visible: true } hintLabel && hintLabel.Text.Contains("compatibility"));
         Check("order warning and Auto sort stay above the list, outside its scrolling",
             screen.FindChild("OrderProblems", true, false) is Node warning && !content.IsAncestorOf(warning)
@@ -2147,6 +2152,27 @@ static class SelfTest
             libRow.EmitSignal(Control.SignalName.MouseEntered);
             await Wait(menu, 0.2);
             var shown = content.GetParent().GetChildren().Count(c => c.IsInGroup("SpireModManagerLinks"));
+            // Rounded corners: more points than the square path (out, along the lane, in), none on its two corners,
+            // the ends where they were.
+            static bool Rounded(Vector2[] p)
+            {
+                if (p.Length <= 4)
+                    return false;
+                var lane = p.Min(q => q.X);
+                Vector2[] corners = [new(lane, p[0].Y), new(lane, p[^1].Y)];
+                return p[0].X == p[^1].X && p[0].X > lane && !p.Any(q => corners.Any(c => q.DistanceTo(c) < 0.5f));
+            }
+            var paths = content.GetParent().GetChildren().OfType<Line2D>().Where(l => l.IsInGroup("SpireModManagerLinks")).Select(l => l.Points).ToList();
+            Check("the hover lines have slightly rounded corners", paths.Count > 0 && paths.All(Rounded),
+                string.Join("; ", paths.Select(p => string.Join(" ", p.Select(q => $"{q.X:0.#},{q.Y:0.#}")))));
+            // The rows here wear the main list's rounded looks: faint under the mouse, sunken when selected.
+            var selectedRow = Rows().FirstOrDefault(r => r.Mod == CategoryList.Selected && r != libRow);
+            StyleBox? LookOf(NModMenuRow? r) => r?.GetNodeOrNull<Panel>("SelectionHighlight")?.GetThemeStylebox("panel");
+            Check("load order rows: rounded like the main list's, under the mouse and selected",
+                LookOf(libRow) is StyleBoxFlat { CornerRadiusTopLeft: RowTitles.CornerRadius, BorderWidthTop: 0 }
+                && LookOf(selectedRow) is StyleBoxFlat { CornerRadiusTopLeft: RowTitles.CornerRadius, BorderWidthTop: 2 }
+                && selectedRow?.GetNode<Panel>("SelectionHighlight") is { } selectedLook && selectedLook.Modulate == Colors.White
+                && selectedLook.OffsetLeft == RowTitles.LookInset.X, $"selected: {selectedRow?.Mod?.manifest?.id ?? "none"}");
             await Capture(screen, outDir, "13b-hover-links");
             libRow.EmitSignal(Control.SignalName.MouseExited);
             await Wait(menu, 0.2);
@@ -3312,6 +3338,125 @@ static class SelfTest
             .Select(loaded => Store.NoticeText(loaded)?.GetFormattedText() ?? "").ToList();
         Check("the notice's texts (backup, fresh start, read-only) read whole and name the file", texts.All(t => t.Contains(Path.GetFileName(setAside))
             && !t.Contains('{') && !t.Contains('\\')), string.Join(" | ", texts));
+    }
+
+    // The game draws some languages in its own fonts, as Kreon has none of their letters (FontManager: Chinese,
+    // Japanese, Korean, Thai, Russian, Polish). Switched to Chinese, then Russian, the way the game's language setting
+    // does it (the main menu made again, and the Modding page with it), the page opened again has our text in that
+    // language's font: a row title (the game's label, which ours mustn't cover), a category header, a tag chip, a row's
+    // button, the profile bar, the history bar, the red banner if one shows, a menu item. The buttons' widths are cached
+    // per font: they still start as far past the title as before. Back in the starting language, its fonts again
+    // (Kreon in English). Skipped for a language the game has no font of its own for. Screenshots 20-fonts-<language>.
+    static async Task TestLanguageFonts(NModdingScreen screen, string outDir)
+    {
+        if (NGame.Instance is not { } game)
+        {
+            Results.Add("FAIL fonts by language: no game node");
+            return;
+        }
+        var start = LocManager.Instance.Language;
+        var startGaps = ButtonGaps(screen);
+        // A scene-made button (menu_button.tscn): its label is the game's MegaLabel, which swaps the font itself; with
+        // no font of the language's own, it keeps the scene's (a copy of Kreon bold).
+        static string? ViewButtonFont(Control page) => page.GetNodeOrNull<Control>("SpireModManagerLoadOrderToggle/Visuals/Label")?.GetThemeFont("font")?.ResourcePath;
+        var startViewFont = ViewButtonFont(screen);
+        var switched = false;
+        try
+        {
+            foreach (var language in new[] { "zhs", "rus" })
+            {
+                if (FontManager.GetSubstituteFont(language, FontType.Regular) == null || FontManager.GetSubstituteFont(language, FontType.Bold) == null)
+                {
+                    Results.Add($"SKIP fonts in {language}: the game has none of its own for it");
+                    continue;
+                }
+                switched = true;
+                await CheckLanguage(language);
+            }
+            if (switched)
+                await CheckLanguage(start);
+        }
+        finally
+        {
+            LocManager.Instance.SetLanguage(start);
+        }
+
+        async Task CheckLanguage(string language)
+        {
+            if (await Reopen(game, language) is not { } page)
+            {
+                Results.Add($"FAIL fonts in {language}: the Modding page didn't open again");
+                return;
+            }
+            var content = page.GetNode<Control>("%ModsScrollContainer/Mask/Content");
+            var row = content.GetChildren().OfType<NModMenuRow>()
+                .FirstOrDefault(r => r.GetNodeOrNull("SpireModManagerStrip")?.GetChildren().OfType<PanelContainer>().Any() == true);
+            var header = content.GetChildren().OfType<Control>().FirstOrDefault(c => c.IsInGroup("SpireModManagerCategoryHeader") && c.HasNode("Title"));
+            Menus.Show(page, [new MenuItem("Font test", () => { })]);
+            var item = MenuPanel.Current?.FindChildren("*", "Label", true, false).OfType<Label>().FirstOrDefault(l => l.Text == "Font test");
+            // Whole-label fonts take the language's regular font even where ours is Kreon bold, as the game's own labels
+            // do; only rich text's bold_font takes its bold one.
+            List<(string What, Control? Text, string Font, FontType Type, bool KreonBold)> samples =
+            [
+                ("row title", row?.GetNodeOrNull<Control>("Title"), "normal_font", FontType.Regular, false),
+                ("category header", header?.GetNodeOrNull<Control>("Title"), "font", FontType.Regular, true),
+                ("tag chip", row?.GetNodeOrNull("SpireModManagerStrip")?.GetChildren().OfType<PanelContainer>().FirstOrDefault()?.GetChildOrNull<Control>(0), "font", FontType.Regular, false),
+                ("row button", row?.GetNodeOrNull(RowStrip.ActionsName)?.GetChildOrNull<Control>(0), "font", FontType.Regular, false),
+                ("profile bar", page.FindChild("ProfilePicker", true, false) as Control, "font", FontType.Regular, true),
+                ("history bar", page.FindChild(HistoryBar.BarName, true, false)?.FindChild("UndoButton", true, false) as Control, "font", FontType.Regular, false),
+                ("changes line", page.FindChild(HistoryBar.ChangesName, true, false) as Control, "bold_font", FontType.Bold, true),
+                ("menu item", item, "font", FontType.Regular, false),
+            ];
+            MenuPanel.Close();
+            var border = page.GetNode<Control>("ModsBorder");
+            if ((border.FindChild("OrderProblems", true, false) ?? border.FindChild("ManagersWarning", true, false)) is Control banner)
+                samples.Add(("banner", banner, "font", FontType.Regular, false));
+            static string FontOf(Control? text, string name) => text?.GetThemeFont(name)?.ResourcePath ?? "none";
+            var wrong = samples.Where(s => FontOf(s.Text, s.Font) != GameFont(language, s.Type, s.KreonBold)).Select(s => $"{s.What}: {FontOf(s.Text, s.Font)}").ToList();
+            Results.Add($"INFO fonts in {language}: {GameFont(language, FontType.Regular, false)}, {GameFont(language, FontType.Bold, true)}");
+            Check($"in {language}: our text in its font ({string.Join(", ", samples.Select(s => s.What))})", wrong.Count == 0, string.Join("; ", wrong));
+            var (viewFont, viewWanted) = (ViewButtonFont(page), FontManager.GetSubstituteFont(language, FontType.Regular)?.ResourcePath ?? startViewFont);
+            Check($"in {language}: a scene-made button (Load Order) in the language's font too", viewFont != null && viewFont == viewWanted,
+                $"{viewFont}, wanted {viewWanted}");
+            var gaps = ButtonGaps(page);
+            static bool Same(float? a, float? b) => a == null ? b == null : b != null && Math.Abs(a.Value - b.Value) < 1;
+            Check($"in {language}: a row's and a header's buttons start as far past the title as in {start} (widths cached per font)",
+                Same(gaps.Row, startGaps.Row) && Same(gaps.Header, startGaps.Header),
+                $"row {gaps.Row} (was {startGaps.Row}), header {gaps.Header} (was {startGaps.Header})");
+            await Capture(page, outDir, $"20-fonts-{language}");
+        }
+    }
+
+    // The font the game gives a language for that type, or our Kreon (bold or not) where it has none of its own.
+    static string GameFont(string language, FontType type, bool kreonBold) => FontManager.GetSubstituteFont(language, type)?.ResourcePath
+        ?? (kreonBold ? "res://themes/kreon_bold_shared.tres" : "res://themes/kreon_regular_shared.tres");
+
+    // The game's language setting: the language set and the main menu made again (NGame.Relocalize: the settings
+    // stay open over it in the game; here the Modding page), then the page opened on the new menu. Null if it didn't.
+    static async Task<NModdingScreen?> Reopen(NGame game, string language)
+    {
+        var old = game.MainMenu;
+        LocManager.Instance.SetLanguage(language);
+        game.ReloadMainMenu();
+        await Wait(game, 1);
+        if (game.MainMenu is not { } menu || menu == old)
+            return null;
+        var page = menu.SubmenuStack.PushSubmenuType<NModdingScreen>();
+        await Wait(game, 2);
+        return page;
+    }
+
+    // How far a row's buttons and a category header's start past the end of its title: the room the title was left
+    // (by the cached width) against the buttons' width now. Null where none shows.
+    static (float? Row, float? Header) ButtonGaps(NModdingScreen screen)
+    {
+        var content = screen.GetNode<Control>("%ModsScrollContainer/Mask/Content");
+        static float? Gap(Control? holder, string buttons) =>
+            holder?.GetNodeOrNull<Control>(buttons) is { } box && holder.GetNodeOrNull<Control>("Title") is { } title
+                ? box.GetGlobalRect().Position.X - title.GetGlobalRect().End.X : null;
+        var row = content.GetChildren().OfType<NModMenuRow>().FirstOrDefault(r => r.Visible && r.HasNode(RowStrip.ActionsName));
+        var header = content.GetChildren().OfType<Control>().FirstOrDefault(c => c.Visible && c.IsInGroup("SpireModManagerCategoryHeader") && c.HasNode("Actions"));
+        return (Gap(row, RowStrip.ActionsName), Gap(header, "Actions"));
     }
 
     static async Task<bool> WithVanillaView(NModdingScreen screen, Node menu, Func<bool> check)

@@ -683,12 +683,19 @@ unless either mod enabled states are touched and they become enabled at the same
 
 - [x] Dismiss beside Show on the managers banner: hidden (no gap) until Better Mod Menu or ours is disabled, then back once both are enabled again; saved, never an undo step or a change
 
+Jordan's second note of 2026-10-13: "add slight border radius on dependency lines. right now they feel a little too
+rigid. add small radius to items in load order page (similar to list view)"
+
+- [x] dependency lines: each corner of the bracket is a short 5 px curve; the ends stay where they were
+- [x] Load Order rows: they already had the main list's rounded highlight (4 px), now held by a self-test check; the drop line and the red warning banners were square and are rounded too
+
 ## Backlog (round 20)
+- [ ] Load Order's top row: the list's edge cuts off the top 3 px of its highlight (rounded corners and the selected look's top rim), so selected or hovered it looks square on top. The main list rarely shows it (a category header comes first)
 - [ ] Jordan: "think about possible conflicts or issues with running both bmm and mod manager together (could be other managers too) and decide on how to handle it best for the user". Spike: `docs/spikes/two-managers.md` (recommendation: find managers from Harmony's patch owners; a Disable button on the banner; a health check for the Better Mod Menu bridge; six questions for Jordan). Written before round 21's survey: check its detection against the managers that rewrite `mod_list` there (some may only touch the saved list on exit or at launch, not the page). Points it covers:
   - Better Mod Menu: both patch the Modding screen. Bmm.cs pauses it on our views by reflection, so an update of it that renames those members silently undoes the pause (members logged once; node names fail silently). Profiles are the real conflict: its on/off postfix copies every change made on our page into its selected profile. Both write the one live saved list, so no write is lost; its arrow moves become one Load Order undo step. Its import only runs on our first run.
   - other managers: any mod patching NModdingScreen, NModInfoContainer or the saved mod list. Find them from Harmony's patch list, not only by Better Mod Menu's id.
   - choices: warn only (today, now dismissable); detect the overlap and pause the other's parts on our views (today's approach for Better Mod Menu, generalised); a one-click "use only one" that unticks the other and says how to undo it; a supported pairing with a tested matrix (--bmm runs today)
-  - being written as `docs/spikes/two-managers.md` (branch `spike-managers`). It overlaps round 21's widened managers warning (the managers that rewrite `mod_list`): decide the two together
+  - the spike is in (#36). It overlaps round 21's widened managers warning (the managers that rewrite `mod_list`): decide the two together
 
 # Round 21
 
@@ -715,6 +722,8 @@ recommendations to confirm with Jordan.
   - their manifest ids need looking up (Load Order Manager's repo has `mod_manifest.json`)
   - moves the release plan's "detect other mod managers by id and warn" (§4) up to §3
   - overlaps the round 20 backlog spike on running two managers together (`docs/spikes/two-managers.md`, being written on branch `spike-managers`): do this with that spike's recommendation
+- [x] (bug, found by the survey) in the languages the game draws in its own fonts (Chinese, Japanese, Korean, Thai, Russian, Polish: FontManager), our text stayed Kreon, which has none of their letters. ModEntry.Font now gives the game's font for the language, the category headers too, and the button width caches are per font (branch `locale-fonts`)
+- [ ] with a wider language font (Chinese, Japanese), the "Ctrl + Z" and "Ctrl + Y" hints under Undo and Redo run into each other (#40's zhs screenshot); give each hint its button's width, or shrink it to fit
 
 ## Backlog (round 21)
 - [ ] JORDAN: spike "load mods without a restart" (Jordan: one of the biggest pain points as a player). Write it up as `docs/spikes/load-without-restart.md`, per kind of mod (pck only, Harmony only, adds content or models):

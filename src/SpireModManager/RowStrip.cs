@@ -212,12 +212,13 @@ static class RowStrip
     }
 
     // The buttons' width, measured once per set of labels (measuring shapes their text: slow for every row of
-    // every redraw, and most rows share their labels).
+    // every redraw, and most rows share their labels) in the buttons' font, which changes with the game's language.
     static readonly Dictionary<string, float> Widths = [];
 
     static float Width(Control buttons, List<MenuItem> items)
     {
-        var key = string.Join("\n", items.Select(i => $"{i.Label}{(i.Flat ? "~" : "")}"));
+        var key = $"{ModEntry.Font("res://themes/kreon_regular_shared.tres").GetInstanceId()}\n"
+            + string.Join("\n", items.Select(i => $"{i.Label}{(i.Flat ? "~" : "")}"));
         if (!Widths.TryGetValue(key, out var width))
             Widths[key] = width = buttons.GetCombinedMinimumSize().X;
         return width;
