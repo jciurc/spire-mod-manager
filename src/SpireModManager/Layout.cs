@@ -587,7 +587,7 @@ static class Layout
     public static bool CanRefit => _refits ??= Refits();
 
     // Set by the self-test: told of each label FontSize writes a size to or Refit fits again.
-    public static Action<MegaRichTextLabel>? TestFitting;
+    public static Action<MegaRichTextLabel>? TestFitting { get; set; }
 
     // Found as Refit calls and reads them: AdjustFontSize without parameters (by name alone, an overload could be
     // found in its place, or two throw), the fields of the types they're read as. A lookup that throws counts as

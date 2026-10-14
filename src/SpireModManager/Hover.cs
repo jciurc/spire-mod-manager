@@ -21,7 +21,7 @@ static class Hover
     const float PictureMax = 800, PlainMax = 520, FullWidth = 640;
 
     // Where the mouse is. The self-test sets it: during a test run the real cursor can be anywhere.
-    public static Func<Vector2>? TestMouse;
+    public static Func<Vector2>? TestMouse { get; set; }
     public static Vector2 Mouse(CanvasItem item) => TestMouse?.Invoke() ?? item.GetGlobalMousePosition();
 
     static ulong _graceUntil;
