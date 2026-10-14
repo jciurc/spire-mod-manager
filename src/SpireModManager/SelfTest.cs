@@ -9,7 +9,9 @@ using MegaCrit.Sts2.Core.Nodes.CommonUi;
 using MegaCrit.Sts2.Core.Nodes.GodotExtensions;
 using MegaCrit.Sts2.Core.Nodes.Screens.MainMenu;
 using MegaCrit.Sts2.Core.Nodes.Screens.ModdingScreen;
+using MegaCrit.Sts2.Core.Nodes.Screens.Settings;
 using MegaCrit.Sts2.Core.Saves;
+using MegaCrit.Sts2.addons.mega_text;
 
 namespace SpireModManager;
 
@@ -162,6 +164,7 @@ static class SelfTest
             Check("reopening after Load Order shows the main list", Layout.Current == Layout.View.Categories
                 && screen.GetNode<Control>("%ModInfoContainer").Visible);
             await TestListFilterReopen(menu, screen, content);
+            await TestSettingsButton(menu, screen, outDir);
 
             await TestStoreSafety(menu, screen, outDir);
             await TestLanguageFonts(screen, outDir); // last: the main menu, the page with it, is made again
@@ -379,7 +382,7 @@ static class SelfTest
         CheckPatches();
         Check("row state: the game's selected and focused members found", RowState.Found);
         string[] spare = [nameof(RowLookPatch), nameof(ShortcutsPatch), nameof(NewModPatch), nameof(ModInfoClearPatch),
-            nameof(NewModPopupPatch), nameof(NewModTogglePatch), nameof(TickKeepPatch), nameof(TranslationsPatch)];
+            nameof(NewModPopupPatch), nameof(NewModTogglePatch), nameof(TickKeepPatch), nameof(TranslationsPatch), nameof(SettingsScreenPatch)];
         Check("our page with no patch failed, or only ones it can do without", ModEntry.PageWorks([]) && ModEntry.PageWorks(spare));
         Check("the game's page if any one patch our page needs failed", ModEntry.PageNeeds.Contains(nameof(ModdingScreenPatch))
             && ModEntry.PageNeeds.All(needed => !ModEntry.PageWorks([needed]) && !ModEntry.PageWorks([.. spare, needed])),
@@ -968,6 +971,105 @@ static class SelfTest
             Translations.TestOpen = null;
             MenuPanel.Close();
         }
+    }
+
+    // The Settings screen's "Spire Mod Manager" button (SettingsButton), with Settings opened from the main menu: shown, in
+    // the game's button look, inside the screen and clear of the game's controls; level with the tabs and clear of them at
+    // every width the game draws at (worked out from both anchors: 4:3 is 1680 wide, 16:10 and 16:9 1920, 21:9 2580; Auto
+    // keeps 1920 and grows the height), above the list and its scrollbar. Hovering it shows its tip; pressing it opens the
+    // Modding page over Settings, and Back returns to Settings. A Settings screen anywhere else (a run's) has none. Starts
+    // and ends with the page open.
+    static async Task TestSettingsButton(NMainMenu menu, NModdingScreen page, string outDir)
+    {
+        var stack = menu.SubmenuStack;
+        if (stack.Peek() != page)
+        {
+            Results.Add("FAIL Settings button: the Modding page isn't the open screen");
+            return;
+        }
+        stack.Pop();
+        await Wait(menu, 0.3);
+        var settings = stack.PushSubmenuType<NSettingsScreen>();
+        await Wait(menu, 1);
+        var button = settings.GetNodeOrNull<Control>(SettingsButton.Name);
+        var text = button?.GetNodeOrNull<MegaLabel>("Label")?.Text;
+        Check("Settings from the main menu: our button, shown, in the game's button look, reading Spire Mod Manager",
+            button is NButton { Visible: true } && button.IsVisibleInTree() && text == "Spire Mod Manager", $"{button?.GetType().Name ?? "no button"}: {text}");
+        if (button != null)
+        {
+            if (button.GetNodeOrNull<MegaLabel>("Label") is { } label)
+            {
+                var width = label.GetThemeFont("font").GetStringSize(label.Text, fontSize: label.GetThemeFontSize("font_size")).X;
+                Check("its text fits on the button, clear of the art's ends", width <= label.Size.X && label.GetGlobalRect().Position.X > button.GetGlobalRect().Position.X,
+                    $"{width:0} px in {label.Size.X:0}, at {label.GetThemeFontSize("font_size")} px");
+            }
+            var rect = button.GetGlobalRect();
+            var tabs = settings.GetNode<Control>("%SettingsTabManager");
+            var clipper = settings.GetNode<Control>("ScrollContainer/Mask/Clipper");
+            List<Control> game = [tabs, settings.GetNode<Control>("BackButton"), settings.GetNode<Control>("ScrollContainer/Scrollbar"),
+                settings.GetNode<Control>("%Toast"), .. clipper.GetChildren().OfType<Control>()];
+            var under = game.Where(c => c.IsVisibleInTree() && c.GetGlobalRect().Intersects(rect)).Select(c => $"{c.Name} {c.GetGlobalRect()}").ToList();
+            Check("inside the screen, clear of the game's tabs, list, scrollbar, Back and toast", settings.GetGlobalRect().Encloses(rect) && under.Count == 0,
+                $"{rect} in {settings.GetGlobalRect()}; over {string.Join(", ", under)}");
+            static float At(float anchor, float offset, float length) => anchor * length + offset;
+            var tight = new[] { 1680f, 1920f, 2580f }.Where(width => At(button.AnchorLeft, button.OffsetLeft, width) < At(tabs.AnchorRight, tabs.OffsetRight, width) + 4
+                || At(button.AnchorRight, button.OffsetRight, width) > width).ToList();
+            var listTop = At(clipper.AnchorTop, clipper.OffsetTop, 1080);
+            Check("level with the tabs, right of them at 4:3, 16:10, 16:9 and 21:9, above the list", tight.Count == 0
+                && button.OffsetTop >= tabs.OffsetTop && button.OffsetBottom <= tabs.OffsetBottom && button.OffsetBottom < listTop,
+                $"too close at {string.Join(", ", tight)}; {button.OffsetLeft}..{button.OffsetRight} from the right, y {button.OffsetTop}..{button.OffsetBottom}; "
+                + $"tabs to {tabs.OffsetRight} from the middle, y {tabs.OffsetTop}..{tabs.OffsetBottom}; list from y {listTop}");
+
+            Hover.TestMouse = () => rect.GetCenter();
+            button.EmitSignal(Control.SignalName.MouseEntered);
+            await Wait(menu, Hover.Delay + 0.15);
+            var tip = menu.GetTree().Root.GetNodeOrNull(SettingsButton.TipName)?.FindChildren("*", "RichTextLabel", true, false)
+                .OfType<RichTextLabel>().FirstOrDefault()?.GetParsedText() ?? "";
+            Check("hovering it says what it does", tip == "Opens Spire Mod Manager's page", tip);
+            await Capture(menu, outDir, "1f-settings-button");
+            Hover.TestMouse = () => new Vector2(5, 5);
+            button.EmitSignal(Control.SignalName.MouseExited);
+            await Wait(menu, 0.1);
+            Hover.TestMouse = null;
+            Hover.Hide();
+
+            if (button is NButton pressed)
+                Click(pressed);
+            else
+                button.EmitSignal(BaseButton.SignalName.Pressed);
+            await Wait(menu, 1);
+            Check("pressing it opens the Modding page over Settings", stack.Peek() == page && page.IsVisibleInTree() && !settings.Visible,
+                $"on top: {stack.Peek()?.GetType().Name}");
+            if (page.GetNodeOrNull<NButton>("BackButton") is { } back)
+                Click(back);
+            else
+                stack.Pop();
+            await Wait(menu, 0.5);
+            Check("Back from there returns to Settings, our button with it", stack.Peek() == settings && settings.IsVisibleInTree() && button.IsVisibleInTree(),
+                $"on top: {stack.Peek()?.GetType().Name}");
+        }
+        if (stack.Peek() == settings)
+            stack.Pop();
+        await Wait(menu, 0.3);
+
+        // The scene the game makes a run's Settings from, under a plain node in place of the run's stack.
+        if (ModEntry.Load<PackedScene>("res://scenes/screens/settings_screen.tscn")?.Instantiate() is NSettingsScreen elsewhere)
+        {
+            elsewhere.SetIsInRun(true);
+            elsewhere.Visible = false;
+            var holder = new Control { Name = "SpireModManagerTestHolder", Visible = false };
+            menu.AddChild(holder);
+            holder.AddChild(elsewhere);
+            Check("a Settings screen not on the main menu's stack (as in a run) has no button", elsewhere.HasNode("%SettingsTabManager")
+                && elsewhere.GetNodeOrNull(SettingsButton.Name) == null);
+            holder.QueueFree();
+        }
+        else
+            Results.Add("SKIP Settings button outside the main menu: the game's Settings scene didn't load");
+
+        stack.PushSubmenuType<NModdingScreen>();
+        await Wait(menu, 1);
+        Check("the Modding page open again after the Settings button's test", stack.Peek() == page && page.IsVisibleInTree());
     }
 
     // Drop-in translations (Translations) in German, which has no packed translation, so our text is all English there
