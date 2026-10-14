@@ -874,3 +874,7 @@ for launch." His numbering kept. None of this is in 0.1.0.
 - [ ] 7. (stretch) a hotkey that keeps a card open until dismissed, to read it at leisure or keep it in view while the
   mouse works elsewhere, with what's in it usable: mod names in it go to that mod
 - [ ] 8. (stretch) resizable parts: drag the divider between the list and the info panel to give one more room
+- [ ] 9. (Jordan, later the same day) a hotkey that opens and closes our page: F8 by default, changeable. The Settings
+  screen's Spire Mod Manager button shows it ("Spire Mod Manager (F8)"); the main menu's corner button doesn't. To
+  settle: where it's changed (we have no settings page yet), what it does during a run (the Modding page opens only
+  from the main menu), and that F8 isn't already one of the game's keys
