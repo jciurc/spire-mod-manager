@@ -1,5 +1,6 @@
 using System.Runtime.CompilerServices;
 using System.Text.Json;
+using System.Text.RegularExpressions;
 using Godot;
 using MegaCrit.Sts2.Core.Localization;
 using MegaCrit.Sts2.Core.Logging;
@@ -80,17 +81,21 @@ static class Translations
             List<string> unknown = [], unusable = [];
             foreach (var entry in json.RootElement.EnumerateObject())
             {
-                if (!english.Contains(entry.Name))
+                if (!english.TryGetValue(entry.Name, out var names))
                     unknown.Add(entry.Name);
-                else if (entry.Value.ValueKind != JsonValueKind.String || entry.Value.GetString() is not { } text || text.Trim().Length == 0 || !Formats(text))
-                    unusable.Add(entry.Name); // not text, empty, or a placeholder the game can't read: English shows
+                // Not text, empty, a placeholder the game can't read, or one English doesn't fill in for that key (a
+                // translated {count}, or one added): English shows. The game would show the text raw and log an error
+                // on every draw.
+                else if (entry.Value.ValueKind != JsonValueKind.String || entry.Value.GetString() is not { } text || text.Trim().Length == 0
+                    || !Formats(text) || !Placeholders(text).IsSubsetOf(names))
+                    unusable.Add(entry.Name);
                 else
                     texts[entry.Name] = text;
             }
             if (unknown.Count > 0)
                 Log.Warn($"[{ModEntry.ModId}] Translation {file}: {unknown.Count} keys English doesn't have, left out: {Some(unknown)}");
             if (unusable.Count > 0)
-                Log.Warn($"[{ModEntry.ModId}] Translation {file}: {unusable.Count} texts empty or unreadable (a broken {{placeholder}}?), shown in English: {Some(unusable)}");
+                Log.Warn($"[{ModEntry.ModId}] Translation {file}: {unusable.Count} texts empty or unreadable (a broken or renamed {{placeholder}}?), shown in English: {Some(unusable)}");
             return texts;
         }
         catch (Exception e)
@@ -98,21 +103,26 @@ static class Translations
             Log.Warn($"[{ModEntry.ModId}] Translation {file} couldn't be read, so it's left out: {e.Message}");
             return null;
         }
-
-        static string Some(List<string> keys) => string.Join(", ", keys.Take(10)) + (keys.Count > 10 ? ", ..." : "");
     }
 
-    static HashSet<string>? _english;
+    static string Some(List<string> names) => string.Join(", ", names.Take(10)) + (names.Count > 10 ? ", ..." : "");
 
-    // Our English keys, as packed: a drop-in file may only translate those.
-    static HashSet<string> English()
+    static Dictionary<string, HashSet<string>>? _english;
+
+    // Our English keys, as packed, each with its placeholders' names: a drop-in file may only translate those keys, and
+    // use only those placeholders in each.
+    static Dictionary<string, HashSet<string>> English()
     {
         if (_english != null)
             return _english;
         var text = Godot.FileAccess.GetFileAsString($"res://{ModEntry.ModId}/localization/eng/{Table}.json");
         using var json = JsonDocument.Parse(text.Length > 0 ? text : "{}");
-        return _english = json.RootElement.EnumerateObject().Select(p => p.Name).ToHashSet();
+        return _english = json.RootElement.EnumerateObject().ToDictionary(p => p.Name, p => Placeholders(p.Value.GetString() ?? ""));
     }
+
+    // The names a text's placeholders use: "count" in "{count}" and in "{count:plural:mod|mods}".
+    static HashSet<string> Placeholders(string text) =>
+        Regex.Matches(text, @"\{([A-Za-z_]\w*)").Select(m => m.Groups[1].Value).ToHashSet();
 
     // Whether the game can format the text (its placeholders read), checked the way it checks its own override files.
     // If a game update took that check away, every text passes: the game still shows an unreadable one as it is.
