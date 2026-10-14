@@ -496,9 +496,16 @@ static class Layout
 
     public static void FontSize(MegaRichTextLabel label, int size)
     {
+        // Already at that size: left alone (each override restyles the text, and every row title comes by here on
+        // every redraw).
+        if (label.MaxFontSize == size && label.GetThemeFontSize("normal_font_size") == size && label.GetThemeFontSize("bold_font_size") == size)
+            return;
         label.AddThemeFontSizeOverride("normal_font_size", size);
         label.AddThemeFontSizeOverride("bold_font_size", size);
         label.MaxFontSize = size;
+        // Its auto-size skips writing a size equal to the one it wrote last: with ours written in between, the next
+        // fitting writes its size again.
+        label.Set(MegaRichTextLabel.PropertyName._lastSetSize, 0);
         label.SetTextAutoSize(label.Text);
     }
 }

@@ -129,8 +129,11 @@ the rest are recommendations to confirm with Jordan.
     restart can and can't do.
 
 **Multiplayer sync** is a niche of its own; leave it to them: AutoModSubscriber (97k), Multiplayer Mod Sync
-(26k), Host Mod Sync, LoadOrderSync (3757945718, re-sorts `mod_list` at launch) and ModListSorter (3749297037,
-re-sorts `mod_list` A-Z on every exit). The last two quietly undo our Load Order page.
+(26k), Host Mod Sync.
+
+**Order rewriters** sit next to it but are a different matter: LoadOrderSync (3757945718, re-sorts `mod_list`
+at launch) and ModListSorter (3749297037, re-sorts `mod_list` A-Z on every exit) quietly undo our Load Order page.
+They belong with the managers warning (TODO round 21), not with what we leave out.
 
 **Only we have:** undo/redo with Changes since launch and Revert all; unsaved profile edits; drag and drop with
 dependency lines; profiles by id and source; an in-place relaunch; the Better Mod Menu import and running beside
