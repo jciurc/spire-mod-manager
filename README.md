@@ -38,12 +38,14 @@ the game's own mod list stays the source of truth for what's on and the load ord
   game first). `--no-install` only builds.
 - `dotnet run build.cs --dist` makes the release for the Workshop and never installs. The manifest gets
   `ReleaseVersion` (set by hand in build.cs) instead of the dev number, and `dist/SpireModManager/` holds
-  just the `.dll`, `.json` and `.pck` to upload (docs/dev/RELEASE-PLAN.md §5).
+  just the `.dll`, `.json` and `.pck` to upload (docs/dev/RELEASE-PLAN.md §5). That DLL leaves out the
+  in-game self-test, the dev-run switches and debug information; every other build keeps them.
 - Player text lives in `localization/<lang>/*.json` and pictures in `images/`, packed into
   `SpireModManager.pck`. See TRANSLATING.md for adding a language.
-- The game is looked for in the Steam library `D:\SteamLibrary\steamapps`. If yours is elsewhere, set the
-  environment variable `STS2_STEAMAPPS` to its `steamapps` folder (for example
-  `C:\Program Files (x86)\Steam\steamapps`); build.cs, the project and tools/dev.cs all read it.
+- The game is found on its own: build.cs and tools/dev.cs look through Steam's list of libraries for the one
+  holding Slay the Spire 2. To pick one yourself, or to build another way (an IDE, a plain `dotnet build`, which
+  uses `C:\Program Files (x86)\Steam\steamapps`), set the environment variable `STS2_STEAMAPPS` to that
+  library's `steamapps` folder, for example `D:\SteamLibrary\steamapps`.
 
 ## Developing
 

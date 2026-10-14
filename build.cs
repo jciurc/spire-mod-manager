@@ -8,9 +8,11 @@ using System.Security.Cryptography;
 using System.Text;
 using System.Text.Json;
 using System.Text.Json.Nodes;
+using System.Text.RegularExpressions;
+using Microsoft.Win32;
 
 const string ModId = "SpireModManager";
-var Steam = Env("STS2_STEAMAPPS", @"D:\SteamLibrary\steamapps"); // the Steam library with the game
+var Steam = SteamApps(); // the Steam library with the game
 var root = ScriptDir();
 var installDir = Path.Combine(Steam, "common", "Slay the Spire 2", "mods", ModId);
 var project = Path.Combine(root, "src", ModId, ModId + ".csproj");
@@ -74,8 +76,10 @@ foreach (var file in Directory.GetFiles(Path.Combine(root, "images"), "*.png"))
 WritePack(Path.Combine(outDir, ModId + ".pck"), files);
 File.WriteAllText(Path.Combine(outDir, ModId + ".json"), manifest.ToJsonString(new JsonSerializerOptions { WriteIndented = true }));
 
+// Dist leaves the dev-only code out of the Workshop build: the in-game self-test and the dev-run switches
+// (SpireModManager.csproj).
 var build = Process.Start("dotnet", ["build", project, "-c", "Release", "-nologo", "-v", "q",
-    $"-p:SteamLibrary={Steam}", $"-o:{Path.Combine(outDir, "bin")}"]);
+    $"-p:SteamLibrary={Steam}", $"-p:Dist={(dist ? "true" : "false")}", $"-o:{Path.Combine(outDir, "bin")}"]);
 build.WaitForExit();
 if (build.ExitCode != 0)
     return Fail("dotnet build failed");
@@ -126,9 +130,23 @@ static int Fail(string message)
 
 static string ScriptDir([CallerFilePath] string path = "") => Path.GetDirectoryName(path) ?? ".";
 
-// An environment variable's value (README.md, "Building"), or the author's own path when it isn't set.
-static string Env(string name, string fallback) =>
-    Environment.GetEnvironmentVariable(name) is { Length: > 0 } value ? value : fallback;
+// The Steam library (its steamapps folder) that has the game: STS2_STEAMAPPS when set (README.md, "Building"),
+// else whichever library in Steam's own list (libraryfolders.vdf, in Steam's folder from the registry) holds
+// the game, else Steam's default folder. The same in tools/dev.cs.
+static string SteamApps()
+{
+    if (Environment.GetEnvironmentVariable("STS2_STEAMAPPS") is { Length: > 0 } set)
+        return set;
+    var steam = (OperatingSystem.IsWindows() ? Registry.GetValue(@"HKEY_CURRENT_USER\Software\Valve\Steam", "SteamPath", null) as string : null)
+        ?? @"C:\Program Files (x86)\Steam";
+    var list = Path.Combine(steam, "steamapps", "libraryfolders.vdf");
+    var libraries = File.Exists(list)
+        ? Regex.Matches(File.ReadAllText(list), "\"path\"\\s+\"([^\"]+)\"").Select(m => Path.Combine(m.Groups[1].Value.Replace(@"\\", @"\"), "steamapps"))
+        : [];
+    var found = libraries.Prepend(Path.Combine(steam, "steamapps"))
+        .FirstOrDefault(library => Directory.Exists(Path.Combine(library, "common", "Slay the Spire 2")));
+    return Path.GetFullPath(found ?? Path.Combine(steam, "steamapps"));
+}
 
 // Top-level keys of a flat JSON object; throws on malformed JSON.
 static HashSet<string> Keys(byte[] json) =>
