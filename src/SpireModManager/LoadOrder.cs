@@ -341,11 +341,13 @@ static class LoadOrder
         CategoryList.Select(content, row);
     }
 
-    // A line under the search box: text, then buttons on the right. Red (the page's own warning) unless color says
-    // otherwise. name and textName: the line's and its text's node names (the page's own warning by default).
+    // A line under the search box: text, then its buttons right after it (a small gap), the rest of the line empty. Red
+    // (the page's own warning) unless color says otherwise. name and textName: the line's and its text's node names
+    // (the page's own warning by default).
     static void Banner(Control border, Control? search, string message, List<Control> buttons, string name = WarningName, string textName = "OrderProblems",
         Color? color = null)
     {
+        const float height = 34, gap = 6;
         var bar = new PanelContainer { Name = name };
         var look = new StyleBoxFlat
         {
@@ -353,13 +355,12 @@ static class LoadOrder
         };
         look.SetCornerRadiusAll(RowTitles.CornerRadius); // rounded like the rows and the search box
         bar.AddThemeStyleboxOverride("panel", look);
-        var line = new HBoxContainer();
-        line.AddThemeConstantOverride("separation", 6);
+        var line = new HBoxContainer(); // nothing in it expands: all of it sits at the left
+        line.AddThemeConstantOverride("separation", (int)gap);
         bar.AddChild(line);
         var text = new Label
         {
-            Name = textName, Text = message, SizeFlagsHorizontal = Control.SizeFlags.ExpandFill,
-            VerticalAlignment = VerticalAlignment.Center, AutowrapMode = TextServer.AutowrapMode.WordSmart,
+            Name = textName, Text = message, VerticalAlignment = VerticalAlignment.Center, AutowrapMode = TextServer.AutowrapMode.WordSmart,
         };
         text.AddThemeFontOverride("font", ModEntry.Font("res://themes/kreon_regular_shared.tres"));
         text.AddThemeFontSizeOverride("font_size", 16);
@@ -374,7 +375,30 @@ static class LoadOrder
         var scroll = border.GetNode<Control>("ModsScrollContainer");
         (bar.OffsetLeft, bar.OffsetRight) = (scroll.OffsetLeft, scroll.OffsetRight);
         var top = (search ?? scroll).OffsetBottom + 6;
-        (bar.OffsetTop, bar.OffsetBottom) = (top, top + 34);
+        (bar.OffsetTop, bar.OffsetBottom) = (top, top + height);
+
+        // The text is as wide as it is on one line, or as what the buttons leave of the line, wrapping there: the
+        // buttons follow it at full size. (A wrapping label asks for no width of its own, so it gets one.) The room is
+        // the bar's width from its anchors, not its size: a bar the text has widened would never give that back.
+        var oneLine = Mathf.Ceil(text.GetThemeFont("font").GetStringSize(message, fontSize: 16).X + text.GetThemeStylebox("normal").GetMinimumSize().X) + 1;
+        void Fit()
+        {
+            var room = border.Size.X + bar.OffsetRight - bar.OffsetLeft - look.GetMinimumSize().X - buttons.Sum(b => b.GetCombinedMinimumSize().X + gap);
+            text.CustomMinimumSize = new Vector2(Math.Min(oneLine, Math.Max(room, 0)), 0);
+        }
+        Fit();
+        border.Resized += Fit;
+        bar.TreeExiting += () => border.Resized -= Fit; // a redraw makes a new bar
+        // Wrapped, the bar grows to fit the lines and what's under it moves down (Layout stacks by each one's height).
+        // Hidden (Vanilla View), it leaves the list alone: Better Mod Menu may have laid it out there.
+        bar.MinimumSizeChanged += () =>
+        {
+            var fits = Math.Max(height, bar.GetCombinedMinimumSize().Y);
+            if (!bar.IsVisibleInTree() || bar.OffsetBottom - bar.OffsetTop == fits)
+                return;
+            bar.OffsetBottom = bar.OffsetTop + fits;
+            Layout.PlaceList(border);
+        };
     }
 
     // The "!" on the Load Order button, with the page's warning as its tooltip; null takes it off.

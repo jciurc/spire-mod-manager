@@ -2086,6 +2086,8 @@ static class SelfTest
             && warningBar.GetThemeStylebox("panel") is StyleBoxFlat { CornerRadiusTopLeft: RowTitles.CornerRadius });
         Check("the order warning is red", Red(BannerFill(screen.FindChild(LoadOrder.WarningName, true, false))),
             $"fill {BannerFill(screen.FindChild(LoadOrder.WarningName, true, false))}");
+        var fixAfter = ButtonsAfterText(screen.FindChild(LoadOrder.WarningName, true, false));
+        Check("Load Order: the order warning's Fix now right after its text", fixAfter.Ok, fixAfter.Detail);
         Check("Auto sort has its hint", screen.FindChild("AutoSortHint", true, false) is Label { Visible: true } hintLabel && hintLabel.Text.Contains("compatibility"));
         Check("order warning and Auto sort stay above the list, outside its scrolling",
             screen.FindChild("OrderProblems", true, false) is Node warning && !content.IsAncestorOf(warning)
@@ -2202,6 +2204,9 @@ static class SelfTest
         Check("main list banner: red, its Show tip \"Opens the next affected mod\", no \"Better Mod Menu\" in it",
             Red(BannerFill(warning)) && showTip == "Opens the next affected mod" && !BannerWords(warning).Any(w => w.Contains("Better Mod Menu")),
             $"fill {BannerFill(warning)}; {string.Join(" | ", BannerWords(warning))}");
+        var after = ButtonsAfterText(warning);
+        Check("main list banner: Show and Enable needed mods right after its text", after.Ok
+            && warning?.FindChild("EnableNeededButton", true, false) is Control { Visible: true }, after.Detail);
         await Capture(screen, outDir, "2b-list-banner");
         screen.FindChild("EnableNeededButton", true, false)?.EmitSignal(BaseButton.SignalName.Pressed);
         await Wait(menu, 0.3);
@@ -2274,7 +2279,25 @@ static class SelfTest
         Check("the managers banner's Show tip is the other banner's: \"Opens the next affected mod\"", showTip == "Opens the next affected mod", showTip ?? "no Show");
         Check("the managers banner names no manager: no \"Better Mod Menu\" in its text or tips",
             BannerWords(Banner()) is { Count: > 0 } words && !words.Any(w => w.Contains("Better Mod Menu")), string.Join(" | ", BannerWords(Banner())));
+        var after = ButtonsAfterText(Banner());
+        Check("main list: the managers banner's Show and Dismiss right after its text", after.Ok, after.Detail);
         await Capture(screen, outDir, "2e-managers-banner");
+
+        // A narrow list: the text wraps in what the buttons leave, they follow it at full size, and the banner grows to
+        // fit with the list still below it. Then back to its width: one line, the usual height.
+        const float narrower = 450;
+        var wording = Banner()?.FindChild("ManagersWarning", true, false) as Label;
+        bool FullSize() => Banner()?.FindChildren("*", "", true, false).OfType<Button>().All(b => b.Size.X >= b.GetCombinedMinimumSize().X) == true;
+        border.OffsetRight -= narrower;
+        await Wait(menu, 0.3);
+        after = ButtonsAfterText(Banner());
+        Check("a narrow list: the managers text wraps, Show and Dismiss right after it at full size, the banner taller, the list below it",
+            wording?.GetLineCount() > 1 && after.Ok && FullSize() && Banner()?.Size.Y > 40 && Placed(), $"{wording?.GetLineCount()} lines; {after.Detail}; {Where()}");
+        await Capture(screen, outDir, "2e-managers-banner-narrow");
+        border.OffsetRight += narrower;
+        await Wait(menu, 0.3);
+        Check("back to its width: the managers text on one line, the banner its usual height", wording?.GetLineCount() == 1 && Banner()?.Size.Y < 35 && Placed(),
+            $"{wording?.GetLineCount()} lines; {Where()}");
 
         // With the page's own warning too (a needed mod turned off): this one first, that one under it.
         if (Row("SmmTestLib")?.GetNode<NTickbox>("Tickbox") is { } lib)
@@ -2347,6 +2370,8 @@ static class SelfTest
         Click(screen.GetNode<NButton>("SpireModManagerLoadOrderToggle"));
         await Wait(menu, 0.5);
         Check("Load Order: the managers banner too, under the search box", Placed(), Where());
+        after = ButtonsAfterText(Banner());
+        Check("Load Order: the managers banner's Show and Dismiss right after its text", after.Ok, after.Detail);
         await ShowThroughSearch("Load Order");
         Click(screen.GetNode<NButton>("SpireModManagerLoadOrderToggle"));
         await Wait(menu, 0.5);
@@ -3426,6 +3451,22 @@ static class SelfTest
     static Color? BannerFill(Node? banner) => (banner as Control)?.GetThemeStylebox("panel") is StyleBoxFlat look ? look.BgColor : null;
     static bool Yellow(Color? fill) => fill == LoadOrder.WarningColor && fill?.H is > 0.1f and < 0.18f;
     static bool Red(Color? fill) => fill == LoadOrder.ProblemColor && fill?.H is < 0.03f or > 0.97f;
+
+    // A banner's buttons: the first right after the words of its text (a small gap), the rest each after the one before,
+    // so none out at the line's right end. The words end one line's width in, or at the text's box if it wraps.
+    static (bool Ok, string Detail) ButtonsAfterText(Node? banner)
+    {
+        if (banner?.FindChildren("*", "", true, false).OfType<Label>().FirstOrDefault() is not { } text)
+            return (false, "no banner");
+        var buttons = banner.FindChildren("*", "", true, false).OfType<Button>().Where(b => b.Visible).Select(b => b.GetGlobalRect()).ToList();
+        var box = text.GetGlobalRect();
+        var wordsEnd = Math.Min(box.End.X, box.Position.X + text.GetThemeStylebox("normal").GetMargin(Side.Left)
+            + text.GetThemeFont("font").GetStringSize(text.Text, fontSize: text.GetThemeFontSize("font_size")).X);
+        var ok = buttons.Count > 0 && buttons[0].Position.X >= box.End.X && buttons[0].Position.X - wordsEnd is >= 0 and <= 12
+            && buttons.Zip(buttons.Skip(1)).All(p => p.Second.Position.X >= p.First.End.X);
+        return (ok, $"words end at {wordsEnd:0} (text box to {box.End.X:0}), buttons {string.Join(", ", buttons.Select(b => $"{b.Position.X:0}-{b.End.X:0}"))}, "
+            + $"banner to {(banner as Control)?.GetGlobalRect().End.X:0}");
+    }
 
     // Everything a banner says: its text, its buttons' words and their tips.
     static List<string> BannerWords(Node? banner) => banner?.FindChildren("*", "", true, false)
