@@ -2627,6 +2627,18 @@ static class SelfTest
         var all = Ids(Rows());
         Check("the page bar: \"Show:\" All, Enabled, Disabled, Changed, All lit", Choices() == "All* Enabled Disabled Changed"
             && (Bar()?.FindChild("ShowLabel", true, false) as Label)?.Text == "Show:" && Shown().SequenceEqual(all), Say());
+        // Its buttons all within the list's width, also with a selection's "Clear selection" (the widest the bar gets).
+        var list = screen.GetNode<Control>("%ModsScrollContainer").GetGlobalRect();
+        string Overflow() => string.Join(", ", Bar()?.FindChildren("*", "Button", true, false).OfType<Button>()
+            .Where(b => b.GetGlobalRect().End.X > list.End.X + 0.5f).Select(b => $"{b.Text} to {b.GetGlobalRect().End.X:0}") ?? []);
+        var alone = Overflow();
+        Selection.Add(content, Rows());
+        await Wait(menu, 0.3);
+        var (picked, withPicked) = (Scope(), Overflow());
+        Selection.Clear(content);
+        await Wait(menu, 0.3);
+        Check("the page bar fits the list's width, with a selection too", alone == "" && withPicked == "" && picked.StartsWith("Selected"),
+            $"alone: {alone}; {picked}: {withPicked}; the list ends at {list.End.X:0}");
 
         // Choosing: view state, never an edit.
         (string, string, bool, bool, bool) State() =>
