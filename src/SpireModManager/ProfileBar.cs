@@ -6,8 +6,9 @@ namespace SpireModManager;
 
 // The profile bar across the top of the mod list.
 // - Left: "Profile: [name ▾]", opening the list of profiles ("Name *" for ones with unsaved changes, with
-//   their mod count and save date), then Share profile and Import profile (ProfileShare); while the mod list differs from the saved profile, "Unsaved •" (hover: the
-//   changes; click: listed in the info panel) and Save, Save as new, Discard beside it.
+//   their mod count and save date), then Share profile and Import profile (ProfileShare); while the mod list
+//   differs from the saved profile, "Unsaved •" (hover: the changes; click: listed in the info panel) and Save,
+//   Save as new, Discard beside it.
 // - Right: New, Duplicate, Rename, Delete (Rename and Delete also on right-click, with Share and Import).
 // New, Duplicate, Save as new and Rename open a name box in the picker's place (with an inline ✕), Save
 // and Cancel; a name that's empty or taken says so and can't be saved. Everything else hides meanwhile.

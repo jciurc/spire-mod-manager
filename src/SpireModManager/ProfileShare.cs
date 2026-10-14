@@ -71,7 +71,7 @@ static class ProfileCsv
     // The records in CSV text, each a list of its values (blank lines skipped).
     public static List<List<string>> Records(string text)
     {
-        var start = text.StartsWith('﻿') ? 1 : 0;
+        var start = text.StartsWith('\uFEFF') ? 1 : 0;
         var separator = Separator(text, start);
         var records = new List<List<string>>();
         var record = new List<string>();
@@ -132,7 +132,7 @@ static class ProfileCsv
     public static Result Read(string text)
     {
         static Result Problem(string error) => new([], error);
-        if (text.Trim('﻿', ' ', '\t', '\r', '\n').Length == 0)
+        if (text.Trim('\uFEFF', ' ', '\t', '\r', '\n').Length == 0)
             return Problem(Menus.Text("SPIRE_MOD_MANAGER.IMPORT_EMPTY"));
         var records = Records(text);
         if (records.Count == 0) // only empty values
@@ -182,7 +182,7 @@ static class ProfileShare
     static readonly Color ErrorColor = new(1f, 0.5f, 0.44f);
     const string GoldHex = "#efc851", DimHex = "#fff6e299";
 
-    public static bool IsOpen => Root()?.GetNodeOrNull(Name) != null;
+    public static bool IsOpen => Modal.IsOpen(Name);
 
     public static void ShowShare(NModdingScreen screen)
     {
@@ -364,42 +364,13 @@ static class ProfileShare
         dialog.PopupCentered(new Vector2I(900, 600));
     }
 
-    // The dialog's frame over the page, its title in; returns the column to fill. Null if there's nowhere to show it.
+    // The dialog's frame over the page (any other dialog closes), its title in; returns the column to fill. Null if
+    // there's nowhere to show it.
     static VBoxContainer? Dialog(Node owner, string titleKey)
     {
-        Close();
-        RelaunchCheck.Close();
-        if (Root() is not { } root)
+        if (Modal.Open(owner, Name, 820, 12) is not { } column)
             return null;
-        var layer = new CanvasLayer { Name = Name, Layer = 85 };
-        root.AddChild(layer);
-        owner.TreeExiting += () => Close();
-
-        // Dim everything behind, and take its clicks.
-        var size = owner.GetViewport().GetVisibleRect().Size; // anchors don't size controls right under a CanvasLayer here
-        layer.AddChild(new ColorRect { Color = new Color(0, 0, 0, 0.6f), MouseFilter = Control.MouseFilterEnum.Stop, Size = size });
-        var center = new CenterContainer { MouseFilter = Control.MouseFilterEnum.Ignore, Size = size };
-        layer.AddChild(center);
-        var panel = new PanelContainer { CustomMinimumSize = new Vector2(820, 0) };
-        var style = new StyleBoxFlat
-        {
-            BgColor = new Color(0.05f, 0.08f, 0.12f, 0.98f), BorderColor = new Color(Gold, 0.5f),
-            ContentMarginLeft = 26, ContentMarginRight = 26, ContentMarginTop = 20, ContentMarginBottom = 20,
-            ShadowColor = new Color(0, 0, 0, 0.4f), ShadowSize = 10,
-        };
-        style.SetBorderWidthAll(1);
-        style.SetCornerRadiusAll(8);
-        panel.AddThemeStyleboxOverride("panel", style);
-        center.AddChild(panel);
-        var column = new VBoxContainer { Name = "Column" };
-        column.AddThemeConstantOverride("separation", 12);
-        panel.AddChild(column);
-
-        var title = new Label { Name = "Title", Text = Menus.Text(titleKey) };
-        title.AddThemeFontOverride("font", ModEntry.Font("res://themes/kreon_bold_shared.tres"));
-        title.AddThemeFontSizeOverride("font_size", 26);
-        title.AddThemeColorOverride("font_color", Cream);
-        column.AddChild(title);
+        column.AddChild(Modal.Title(titleKey));
         return column;
     }
 
@@ -478,14 +449,5 @@ static class ProfileShare
     static string Escape(string text) => text.Replace("[", "[lb]");
 
     // True when there was one to close.
-    public static bool Close()
-    {
-        if (Root()?.GetNodeOrNull(Name) is not { } layer)
-            return false;
-        layer.GetParent().RemoveChild(layer);
-        layer.QueueFree();
-        return true;
-    }
-
-    static Node? Root() => (Engine.GetMainLoop() as SceneTree)?.Root;
+    public static bool Close() => Modal.Close(Name);
 }
