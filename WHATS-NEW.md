@@ -2,9 +2,10 @@
 
 Short notes for Jordan: what to look for after each install. Newest first.
 
-## Waiting in pull requests
+## Installed 2026-10-13 (late night): version 0.0.50
 
 - **Faster with a long list:** switching between the main list, Load Order and Vanilla List takes about 0.1 s with your ~250 mods (about 0.5 s before). A redraw is about 21 ms (63 before) and a search keystroke 22 ms (69). Everything should look exactly as before.
+- **Softer corners in Load Order:** hover a mod and the dependency lines bend round their corners instead of turning square. The drop line while dragging has rounded ends, and the red warning banners (on both pages) rounded corners. The rows already had the main list's rounded highlight; the top row can still look square on top, as the list's edge cuts it off (noted in TODO).
 
 ## Installed 2026-10-13 (night): version 0.0.49
 

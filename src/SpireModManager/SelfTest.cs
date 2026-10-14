@@ -1992,8 +1992,8 @@ static class SelfTest
         var orderBefore = Ids();
         pressed.EmitSignal(Control.SignalName.GuiInput, new InputEventMouseButton { ButtonIndex = MouseButton.Left, Pressed = true, GlobalPosition = at });
         await Wait(menu, 0.1);
-        Check("pressing a row starts the drag look at once", Rows().Any(r => r.Modulate.A < 0.5f && r != pressed)
-            && content.GetParent().GetChildren().OfType<ColorRect>().Any(c => c.Size.Y == 5));
+        Check("pressing a row starts the drag look at once (the drop line's ends slightly rounded)", Rows().Any(r => r.Modulate.A < 0.5f && r != pressed)
+            && content.GetParent().GetChildren().OfType<Panel>().Any(c => c.Size.Y == 5 && c.GetThemeStylebox("panel") is StyleBoxFlat { CornerRadiusTopLeft: > 0 }));
         pressed.EmitSignal(Control.SignalName.GuiInput, new InputEventMouseButton { ButtonIndex = MouseButton.Left, Pressed = false, GlobalPosition = at });
         await Wait(menu, 0.3);
         Check("a click without moving leaves the order alone", Ids().SequenceEqual(orderBefore));
@@ -2082,6 +2082,8 @@ static class SelfTest
             Note("SmmTestContent"));
         Check("order warning wording", (screen.FindChild("OrderProblems", true, false) as Label)?.Text.StartsWith("For compatibility, 1 mod will be automatically reordered") == true,
             (screen.FindChild("OrderProblems", true, false) as Label)?.Text ?? "");
+        Check("the order warning's corners are rounded like the rows", screen.FindChild(LoadOrder.WarningName, true, false) is PanelContainer warningBar
+            && warningBar.GetThemeStylebox("panel") is StyleBoxFlat { CornerRadiusTopLeft: RowTitles.CornerRadius });
         Check("Auto sort has its hint", screen.FindChild("AutoSortHint", true, false) is Label { Visible: true } hintLabel && hintLabel.Text.Contains("compatibility"));
         Check("order warning and Auto sort stay above the list, outside its scrolling",
             screen.FindChild("OrderProblems", true, false) is Node warning && !content.IsAncestorOf(warning)
@@ -2147,6 +2149,27 @@ static class SelfTest
             libRow.EmitSignal(Control.SignalName.MouseEntered);
             await Wait(menu, 0.2);
             var shown = content.GetParent().GetChildren().Count(c => c.IsInGroup("SpireModManagerLinks"));
+            // Rounded corners: more points than the square path (out, along the lane, in), none on its two corners,
+            // the ends where they were.
+            static bool Rounded(Vector2[] p)
+            {
+                if (p.Length <= 4)
+                    return false;
+                var lane = p.Min(q => q.X);
+                Vector2[] corners = [new(lane, p[0].Y), new(lane, p[^1].Y)];
+                return p[0].X == p[^1].X && p[0].X > lane && !p.Any(q => corners.Any(c => q.DistanceTo(c) < 0.5f));
+            }
+            var paths = content.GetParent().GetChildren().OfType<Line2D>().Where(l => l.IsInGroup("SpireModManagerLinks")).Select(l => l.Points).ToList();
+            Check("the hover lines have slightly rounded corners", paths.Count > 0 && paths.All(Rounded),
+                string.Join("; ", paths.Select(p => string.Join(" ", p.Select(q => $"{q.X:0.#},{q.Y:0.#}")))));
+            // The rows here wear the main list's rounded looks: faint under the mouse, sunken when selected.
+            var selectedRow = Rows().FirstOrDefault(r => r.Mod == CategoryList.Selected && r != libRow);
+            StyleBox? LookOf(NModMenuRow? r) => r?.GetNodeOrNull<Panel>("SelectionHighlight")?.GetThemeStylebox("panel");
+            Check("load order rows: rounded like the main list's, under the mouse and selected",
+                LookOf(libRow) is StyleBoxFlat { CornerRadiusTopLeft: RowTitles.CornerRadius, BorderWidthTop: 0 }
+                && LookOf(selectedRow) is StyleBoxFlat { CornerRadiusTopLeft: RowTitles.CornerRadius, BorderWidthTop: 2 }
+                && selectedRow?.GetNode<Panel>("SelectionHighlight") is { } selectedLook && selectedLook.Modulate == Colors.White
+                && selectedLook.OffsetLeft == RowTitles.LookInset.X, $"selected: {selectedRow?.Mod?.manifest?.id ?? "none"}");
             await Capture(screen, outDir, "13b-hover-links");
             libRow.EmitSignal(Control.SignalName.MouseExited);
             await Wait(menu, 0.2);
