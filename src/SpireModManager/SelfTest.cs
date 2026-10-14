@@ -1439,15 +1439,22 @@ static class SelfTest
         Check("row menu: categories on the left, the mod's fields on the right", rowItems.Count == Store.Data.Categories.Count + 2
             && aliasBox != null && rowMenu?.FindChild("Fields", true, false)?.GetNodeOrNull("Notes/Box") != null, string.Join(", ", rowItems));
         Check("an empty field invites: \"Add alias\"", aliasBox?.PlaceholderText == "Add alias", aliasBox?.PlaceholderText ?? "");
+        // What each field is for: a plain (native) tooltip on its term, which is only as wide as its word.
+        var terms = new[] { "Alias", "Tags", "Notes" }.Select(f => rowMenu?.FindChild("Fields", true, false)?.GetNodeOrNull<Label>($"{f}/Term/Label")).ToList();
+        string[] termTips = [Menus.Text("SPIRE_MOD_MANAGER.ALIAS_HINT"), Menus.Text("SPIRE_MOD_MANAGER.TAGS_HINT"), Menus.Text("SPIRE_MOD_MANAGER.NOTES_HINT")];
+        Check("each field's term explains it in a plain tooltip, the term no wider than its word",
+            terms.All(t => t != null) && terms.Select(t => t!.TooltipText).SequenceEqual(termTips)
+            && terms.All(t => t!.MouseFilter != Control.MouseFilterEnum.Ignore && t.Size.X <= t.GetMinimumSize().X + 1),
+            string.Join(" | ", terms.Select(t => t == null ? "none" : $"{t.Text}: {t.TooltipText} ({t.Size.X:0}/{t.GetMinimumSize().X:0})")));
         await Capture(screen, outDir, "5-row-menu");
         if (rowMenu != null && aliasBox != null)
         {
             // Typing in the menu and clicking away (here: closing it) saves.
             aliasBox.GrabFocus();
             await Wait(menu, 0.1);
-            Check("editing shows Save and Cancel, the hint, and the inline clear", aliasBox.ClearButtonEnabled
+            Check("editing shows Save and Cancel and the inline clear, with the same \"Add alias\" while it's empty", aliasBox.ClearButtonEnabled
                 && rowMenu.FindChild("Fields", true, false)?.GetNodeOrNull<Control>("Alias/Term/Buttons") is { Visible: true }
-                && aliasBox.PlaceholderText != "Add alias");
+                && aliasBox.PlaceholderText == "Add alias", aliasBox.PlaceholderText);
             aliasBox.Text = "Menu alias";
             await Capture(screen, outDir, "5b-menu-editor");
             MenuPanel.Close();
@@ -4116,6 +4123,12 @@ static class SelfTest
         Check("the bulk menu: Editing N selected mods, tags and notes, no alias", bulk != null
             && bulk.FindChild("Editing", true, false) is Label { Text: var editing } && editing == $"Editing {all - 1} selected mods"
             && bulk.FindChild("Tags", true, false) != null && bulk.FindChild("Notes", true, false) != null && bulk.FindChild("Alias", true, false) == null);
+        var info = bulk?.FindChild("Info", true, false) as TextureRect;
+        var bulkTerms = new[] { "Tags", "Notes" }.Select(f => (bulk?.FindChild("Fields", true, false) ?? bulk)?.GetNodeOrNull<Label>($"{f}/Term/Label")?.TooltipText).ToList();
+        Check("the bulk menu: an \"i\" beside its heading explains editing several, and each term says what it does for all of them",
+            info is { Visible: true, Texture: not null } && info.MouseFilter != Control.MouseFilterEnum.Ignore && info.TooltipText == Menus.Text("SPIRE_MOD_MANAGER.BULK_INFO")
+            && bulkTerms.SequenceEqual([Menus.Text("SPIRE_MOD_MANAGER.TAGS_BULK_HINT"), Menus.Text("SPIRE_MOD_MANAGER.NOTES_BULK_HINT")]),
+            $"info {(info == null ? "none" : info.TooltipText)}; terms {string.Join(" | ", bulkTerms)}");
         await Capture(screen, outDir, "18-bulk-menu");
         var tool = Store.Data.Categories.First().Name;
         if (bulk != null)
