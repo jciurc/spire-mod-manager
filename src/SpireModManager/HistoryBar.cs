@@ -219,9 +219,22 @@ static class HistoryBar
     // The full list as plain lines, one per change (also what the self-test reads).
     public static List<string> Describe() => Entries().Select(e => e.Plain).ToList();
 
+    // The mods the full list names (Entries' sections, from the same rules): each one turned on or off, installed or
+    // moved, and every installed copy of a mod whose details were edited (they belong to its id). What the main list
+    // shows under "Changed" (ListFilter).
+    public static HashSet<Mod> ChangedMods()
+    {
+        if (History.Loaded is not { } loaded)
+            return [];
+        var edited = DataChanges(loaded.Store, Store.EditsJson()).Edited.Select(e => e.Id).ToHashSet();
+        return [.. ModChanges(loaded.Mods).Select(c => c.Mod), .. Installed.Mods, .. Moves().Select(m => m.Mod),
+            .. ModManager.Mods.Union(Installed.Mods).Where(m => m.manifest?.id is { } id && edited.Contains(id))];
+    }
+
     record Entry(string Section, string Plain, string Rich);
 
-    // Every change since launch, by section.
+    // Every change since launch, by section. (ChangedMods names the same mods: a new section naming mods goes there
+    // too.)
     static List<Entry> Entries()
     {
         if (History.Loaded is not { } loaded)
