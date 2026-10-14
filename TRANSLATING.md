@@ -42,6 +42,11 @@ Dates and numbers follow the language the game is set to, with nothing to transl
 date format for that language (the one its run history shows), and numbers its decimal and thousands separators
 ("1,5 MB" in German). Units are ordinary text, e.g. `"{size} MB"` can become `"{size} Mo"` in French.
 
+## Fonts
+
+Nothing to do here either. Our text uses the font the game uses for its language: Kreon in most, and the game's
+own fonts in Chinese, Japanese, Korean, Thai, Russian and Polish.
+
 ## Test it in the game
 
 1. Build the mod with your folder in it (README.md, "Building"), or ask the author for a test build.

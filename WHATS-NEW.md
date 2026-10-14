@@ -2,9 +2,15 @@
 
 Short notes for Jordan: what to look for after each install. Newest first.
 
-## Waiting in pull requests
+## Installed 2026-10-13 (late night): version 0.0.50
+
+- **Faster with a long list:** switching between the main list, Load Order and Vanilla List takes about 0.1 s with your ~250 mods (about 0.5 s before). A redraw is about 21 ms (63 before) and a search keystroke 22 ms (69). Everything should look exactly as before.
+- **Softer corners in Load Order:** hover a mod and the dependency lines bend round their corners instead of turning square. The drop line while dragging has rounded ends, and the red warning banners (on both pages) rounded corners. The rows already had the main list's rounded highlight; the top row can still look square on top, as the list's edge cuts it off (noted in TODO).
+
+## Installed 2026-10-13 (night): version 0.0.49
 
 - **Dismiss the managers warning:** the red "Multiple mod managers" banner has Dismiss beside Show. It stays away until Better Mod Menu or Spire Mod Manager is disabled, and comes back once both are enabled again (also after a launch where one of them is gone or off). Nothing to undo: dismissing isn't a change to your mods.
+- **Chinese, Russian and other scripts:** with the game in Chinese, Japanese, Korean, Thai, Russian or Polish, our text uses the game's font for that language, as its own labels do, instead of Kreon. Names, tags, notes and profile names in those letters show properly, not as boxes. Our own words stay English until the mod is translated. After changing the language, open the Modding page again.
 
 ## Installed 2026-10-13 (evening): version 0.0.48
 

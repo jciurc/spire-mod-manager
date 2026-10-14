@@ -11,10 +11,11 @@ namespace SpireModManager;
 static class RowStrip
 {
     const string StripName = "SpireModManagerStrip";
-    public const string ActionsName = "SpireModManagerActions";
+    public const string ActionsName = "SpireModManagerActions", OrderActionsName = "SpireModManagerOrderActions"; // main list, Load Order
     public const string MoreName = "SpireModManagerMoreTags"; // the "+N" chip
     const string StripMeta = "spire_mod_manager_strip";
-    const string SaysMeta = "spire_mod_manager_says"; // on a strip: what it shows, to know when to remake it
+    const string SaysMeta = "spire_mod_manager_says"; // on a strip or buttons: what they show and where, to know when to change them
+    const string ShowsMeta = "spire_mod_manager_shows"; // on a strip: its tags and author, to know when to remake it
     const string ShownMeta = "spire_mod_manager_tags_shown"; // on a strip: how many tags show (the rest fold into "+N")
     const float Height = 20;
     const float TitleGap = 4; // more room between the title and the line under it
@@ -28,6 +29,9 @@ static class RowStrip
     public static void Apply(IList<NModMenuRow> rows, Func<NModMenuRow, IEnumerable<MenuItem>> actions, Func<NModMenuRow, MenuItem>? edge = null)
     {
         var order = LoadOrder.Mods(rows).Select((m, i) => (m, i)).DistinctBy(p => p.m).ToDictionary(p => p.m, p => p.i);
+        // Each view keeps its own buttons and hides the other's, so a switch between the main list and Load Order
+        // doesn't make every row's again.
+        var (name, other) = Store.Data.LoadOrderView ? (OrderActionsName, ActionsName) : (ActionsName, OrderActionsName);
         foreach (var row in rows)
         {
             var title = row.GetNode<Control>("Title");
@@ -44,10 +48,10 @@ static class RowStrip
             var items = actions(row).ToList();
             var place = Store.Data.LoadOrderView ? $"{row.GetIndex()}/{row.GetParent()?.GetChildCount()}" : "";
             var does = $"{place}|{string.Join("|", items.Select(i => $"{i.Label}/{i.Disabled}/{i.Flat}/{i.Tip}"))}";
-            if (row.GetNodeOrNull<Control>(ActionsName) is not { } buttons || !buttons.HasMeta(SaysMeta) || (string)buttons.GetMeta(SaysMeta) != does)
+            if (row.GetNodeOrNull<Control>(name) is not { } buttons || !buttons.HasMeta(SaysMeta) || (string)buttons.GetMeta(SaysMeta) != does)
             {
-                Drop(row, ActionsName);
-                buttons = Menus.InlineButtons(items, ActionsName);
+                Drop(row, name);
+                buttons = Menus.InlineButtons(items, name);
                 buttons.SetMeta(SaysMeta, does);
                 row.AddChild(buttons);
                 buttons.AnchorLeft = buttons.AnchorRight = 1;
@@ -58,18 +62,39 @@ static class RowStrip
             var clear = buttons.OffsetRight - Width(buttons, items) - ActionsGap;
             title.OffsetRight = clear;
 
-            // The line itself only when what it says changed: making its nodes for every row on every redraw
-            // (each keystroke in search) was most of a redraw's time.
+            // The line itself only when what it shows changed (its tags or author): making its nodes for every row on
+            // every redraw (each keystroke in search) was most of a redraw's time. Otherwise, when the view, its place or
+            // its note changed (worded for the view: Load Order says "before"), it's kept and changed in place, and this
+            // view's buttons shown.
             var chips = Tags.For(row.Mod);
             var text = string.Join("    ", new[] { RequiredFor(row.Mod), Needs(row.Mod, order, Store.Data.LoadOrderView) }.Where(s => s.Length > 0));
             var author = ModDetails.Short(row.Mod?.manifest?.author ?? "");
-            var says = $"{title.OffsetLeft}|{clear}|{string.Join("|", chips.Select(c => $"{c.Text}/{c.Color}/{c.Custom}"))}|{text}|{author}";
-            if (row.GetNodeOrNull<Control>(StripName) is { } kept && kept.HasMeta(SaysMeta) && (string)kept.GetMeta(SaysMeta) == says)
+            var shows = $"{string.Join("|", chips.Select(c => $"{c.Text}/{c.Color}/{c.Custom}"))}|{author}";
+            var says = $"{shows}|{Store.Data.LoadOrderView}|{title.OffsetLeft}|{clear}|{text}";
+            var kept = row.GetNodeOrNull<HBoxContainer>(StripName);
+            if (kept?.GetMeta(SaysMeta, "").AsString() == says)
                 continue;
+            if (row.GetNodeOrNull<Control>(other) is { } hidden)
+                hidden.Visible = false;
+            buttons.Visible = true;
+            if (kept?.GetMeta(ShowsMeta, "").AsString() == shows)
+            {
+                kept.SetMeta(SaysMeta, says);
+                (kept.OffsetLeft, kept.OffsetRight, kept.Visible) = (title.OffsetLeft, clear, true);
+                var needs = kept.GetNode<RichTextLabel>("Needs");
+                if (needs.Text != text)
+                {
+                    needs.Text = text;
+                    if (chips.Count > 0) // the tags fold again for the note's new width (a new width of the line refolds by itself)
+                        Callable.From(() => Fold(row, kept, chips)).CallDeferred();
+                }
+                continue;
+            }
             Drop(row, StripName);
 
             var strip = new HBoxContainer { Name = StripName, MouseFilter = Control.MouseFilterEnum.Ignore, ClipContents = true }; // too much for the line: cut at its edge, not under the buttons
             strip.SetMeta(SaysMeta, says);
+            strip.SetMeta(ShowsMeta, shows);
             strip.AddThemeConstantOverride("separation", 6);
             row.AddChild(strip);
             strip.AnchorTop = strip.AnchorBottom = 1;
@@ -168,11 +193,15 @@ static class RowStrip
         var old = row.GetNodeOrNull<Button>(EdgeName);
         if (item?.OnSelect is not { } action)
         {
-            Drop(row, EdgeName);
+            if (old != null)
+                old.Visible = false; // kept for the way back to the main list
             return;
         }
         if (old != null)
+        {
+            old.Visible = true;
             return; // (what it does doesn't change: it opens this row's menu)
+        }
         var button = Menus.SmallButton(item.Label, action, name: EdgeName);
         Menus.Flatten(button);
         button.TooltipText = item.Tip ?? "";
@@ -183,34 +212,33 @@ static class RowStrip
     }
 
     // The buttons' width, measured once per set of labels (measuring shapes their text: slow for every row of
-    // every redraw, and most rows share their labels).
+    // every redraw, and most rows share their labels) in the buttons' font, which changes with the game's language.
     static readonly Dictionary<string, float> Widths = [];
 
     static float Width(Control buttons, List<MenuItem> items)
     {
-        var key = string.Join("\n", items.Select(i => $"{i.Label}{(i.Flat ? "~" : "")}"));
+        var key = $"{ModEntry.Font("res://themes/kreon_regular_shared.tres").GetInstanceId()}\n"
+            + string.Join("\n", items.Select(i => $"{i.Label}{(i.Flat ? "~" : "")}"));
         if (!Widths.TryGetValue(key, out var width))
             Widths[key] = width = buttons.GetCombinedMinimumSize().X;
         return width;
     }
 
-    public static void Remove(IEnumerable<NModMenuRow> rows)
+    // Vanilla View: the line and the buttons hidden, not taken off (making them again for every row was most of the
+    // way back), and the title its full height again.
+    public static void Hide(IEnumerable<NModMenuRow> rows)
     {
         foreach (var row in rows)
         {
-            RemoveStrip(row);
+            foreach (var name in new[] { StripName, ActionsName, OrderActionsName, EdgeName })
+                if (row.GetNodeOrNull<Control>(name) is { } part)
+                    part.Visible = false;
+            row.GetNodeOrNull(StripName)?.SetMeta(SaysMeta, ""); // so the next Apply shows it again
             if (!row.HasMeta(StripMeta))
                 continue;
             row.GetNode<Control>("Title").OffsetBottom += Height + TitleGap;
             row.RemoveMeta(StripMeta);
         }
-    }
-
-    static void RemoveStrip(NModMenuRow row)
-    {
-        Drop(row, StripName);
-        Drop(row, ActionsName);
-        Drop(row, EdgeName);
     }
 
     static void Drop(Node row, string name)
