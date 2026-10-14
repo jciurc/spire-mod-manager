@@ -1031,6 +1031,7 @@ static class SelfTest
             // A fix with no Modding page yet: the active profile and the pending dot follow, and it's one undo step of its
             // own (undoing it leaves the button's Reset position in place).
             var before = ModListState();
+            var steps = (History.Steps(History.Track.List), History.Steps(History.Track.Order));
             var dot = (Control)button.FindChild("Dot", true, false);
             var text = MenuButtonText(menu);
             Press("DisableBrokenButton");
@@ -1045,20 +1046,16 @@ static class SelfTest
             await Wait(menu, 0.2);
             Check("its Relaunch reaches the relaunch", relaunches == 1, $"{relaunches} relaunches");
             // Cancel (the relaunch here only counted, so the dialog is still up) takes the fix back with no Modding page
-            // to redraw. It was one step: Redo brings it back, one Undo takes it away again (the button's Reset position
-            // stays either way).
+            // to redraw, and forgets it: both histories as they were when the dialog opened, nothing to redo.
             bool AsBefore() => ModListState().SequenceEqual(before) && !Profiles.Edited && Store.Data.MenuButtonAt == null
                 && dot.Visible == ModEntry.HasPendingChanges();
             string NotAsBefore() => $"{string.Join(", ", before.Except(ModListState()))}; edited {Profiles.Edited}, button at {Store.Data.MenuButtonAt}";
             Press("CancelRelaunchButton");
             await Wait(menu, 0.3);
             Check("from the main menu, Cancel takes back that fix, and only it", Dialog() == null && AsBefore(), NotAsBefore());
-            History.Redo();
-            await Wait(menu, 0.3);
-            var redone = !Dependencies.IsOn(addon);
-            History.Undo();
-            await Wait(menu, 0.3);
-            Check("it was one step: Redo brings the fix back, one Undo takes it away again", redone && AsBefore(), NotAsBefore());
+            Check("and forgets it: the undo histories as the dialog found them, nothing to redo",
+                (History.Steps(History.Track.List), History.Steps(History.Track.Order)) == steps && !History.CanRedo,
+                $"{steps} -> ({History.Steps(History.Track.List)}, {History.Steps(History.Track.Order)}), redo {History.CanRedo}");
         }
         finally
         {
@@ -3777,11 +3774,11 @@ static class SelfTest
         Check("Disable mods that can't load: nothing left, plain Relaunch", !Dependencies.IsOn(addon)
             && Dialog()?.FindChild("RelaunchNowButton", true, false) is Button { Text: "Relaunch Game" }, Body());
         // Cancel takes both fixes back: Test Framework off again (as this test set it), Test Addon on (the fixture's).
-        // Redo still has them.
+        // It forgets them too: nothing to redo.
         Press("CancelRelaunchButton");
         await Wait(menu, 0.3);
         Check("Cancel closes it and takes back the fixes made in it", Dialog() == null && !Dependencies.IsOn(lib) && Dependencies.IsOn(addon)
-            && !tickbox.IsTicked && History.CanRedo, $"framework on {Dependencies.IsOn(lib)}, addon on {Dependencies.IsOn(addon)}");
+            && !tickbox.IsTicked && !History.CanRedo, $"framework on {Dependencies.IsOn(lib)}, addon on {Dependencies.IsOn(addon)}");
         // Esc the same, after one fix; the page stays.
         RelaunchCheck.Show(screen);
         await Wait(menu, 0.2);

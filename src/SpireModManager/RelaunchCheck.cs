@@ -17,7 +17,7 @@ static class RelaunchCheck
 
     public static bool IsOpen => Modal.IsOpen(Name);
 
-    static long? _mark; // the history as the dialog opened (History.Mark): Cancel undoes back to it
+    static History.Point? _mark; // the history as the dialog opened (History.Mark): Cancel undoes back to it
 
     // owner: the page asking (the Modding screen or the main menu); the dialog closes when it goes.
     public static void Relaunch(Node owner)

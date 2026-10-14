@@ -23,7 +23,7 @@ static class History
     static readonly Dictionary<Track, List<Snapshot>> Future = new() { [Track.List] = [], [Track.Order] = [] };
     static Snapshot? _current;
     static bool _restoring;
-    static long _listSteps; // list steps recorded so far (never counts down): Mark and UndoTo
+    static readonly Dictionary<Track, long> Recorded = new() { [Track.List] = 0, [Track.Order] = 0 }; // steps so far, never down
 
     // Raised after an undo, redo or revert, so open screens can redraw from the restored state.
     public static event Action? Restored;
@@ -130,15 +130,27 @@ static class History
     public static void Redo() => Step(CurrentTrack, Future, Past);
 
     // A dialog that makes changes and can be cancelled (RelaunchCheck): Mark as it opens, UndoTo on Cancel takes back
-    // the list steps recorded since, whichever view is showing (Load Order's undo would step the order). Nothing else
-    // can change the list while the dialog covers the page, so those steps are all the dialog's. Redo brings them back.
-    public static long Mark() => _listSteps;
+    // every step recorded since, in both histories, whichever view is showing (a fix that adds a mod's first entry
+    // moves the order too), and forgets them: no Redo brings them back, as if the dialog had never been opened. Nothing
+    // else can change anything while the dialog covers the page, so those steps are all the dialog's.
+    public readonly record struct Point(long List, long Order);
 
-    public static void UndoTo(long mark)
+    public static Point Mark() => new(Recorded[Track.List], Recorded[Track.Order]);
+
+    public static void UndoTo(Point mark)
     {
-        for (var steps = _listSteps - mark; steps > 0 && Past[Track.List].Count > 0; steps--)
-            Step(Track.List, Past, Future);
+        foreach (var (track, since) in new[] { (Track.List, mark.List), (Track.Order, mark.Order) })
+        {
+            var steps = (int)Math.Clamp(Recorded[track] - since, 0, Past[track].Count);
+            for (var i = 0; i < steps; i++)
+                Step(track, Past, Future);
+            Future[track].RemoveRange(Future[track].Count - steps, steps);
+        }
+        Changed?.Invoke();
     }
+
+    // How many undo steps a history has (the self-test).
+    public static int Steps(Track track) => Past[track].Count;
 
     // Takes the last snapshot of the track from one side, puts now on the other, and restores the track's part of it.
     static void Step(Track track, Dictionary<Track, List<Snapshot>> fromSide, Dictionary<Track, List<Snapshot>> toSide)
@@ -198,8 +210,7 @@ static class History
 
     static void Push(Track track, Snapshot snapshot)
     {
-        if (track == Track.List)
-            _listSteps++;
+        Recorded[track]++;
         Past[track].Add(snapshot);
         if (Past[track].Count > Limit)
             Past[track].RemoveAt(0);
