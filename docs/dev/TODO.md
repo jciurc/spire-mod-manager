@@ -842,3 +842,36 @@ affected mods in the warning messages on hover?"
 - [x] list filters: "Show: All · Enabled · Disabled · Changed" in the main list's page bar (Enabled and Disabled by the tickboxes, Changed the mods the Changes list names), with the search and the categories; a mod ticked or edited under one keeps its row until a choice is pressed again, and each launch starts on All (branch `list-filters`)
 - [x] affected mods listed on the warning banners' hover: a card on each banner's text (the main list's needs banner, Load Order's order banner, the yellow managers banner), one mod a line by its shown name, worked out when it opens, stopping after 12 with "and N more"; the "!" on the Load Order button lists the same lines (#47)
 - [x] copy pass on round 19-22 text: the list filters, the banners and their cards, the unsaved list, Relaunch game, and the night's texts #19 never saw (the data notices, the needs-update line, the empty-state hint). One fix: the data notices said the unreadable file is "kept beside it", with no clear "it"; now "kept in the mod's data folder". The rest already kept #19's rules. Left for Jordan: the Vanilla List page's "Spire Manager" button (Jordan's own name, from his notes of 2026-10-07; the release plan's rule says "Spire Mod Manager") (branch `copy-pass-2`)
+
+# Round 23
+
+Jordan's notes of 2026-10-14 (with a screenshot of his game on 0.0.54, 247 mods): "a few backlog items, doesn't need to be
+for launch." His numbering kept. None of this is in 0.1.0.
+
+## Backlog (round 23)
+- [ ] -1. branch tags: "Stable" and "Beta" (a mod can have both), and "Legacy" for a mod no current version of the game
+  supports, each with a tooltip saying what it means. Workshop mods carry a branch range (the info panel already shows
+  their supported branches); local mods have only min_game_version, so theirs come from that against the current stable
+  and beta versions, or not at all: decide in the spike
+- [ ] 0. a tag for mods that act on mods themselves: managers like ours or Better Mod Menu. The two-managers spike
+  (`docs/spikes/two-managers.md`) has the detection: Harmony patch owners on the Modding screen, plus the known-id list
+- [ ] 1. the list's count reads "Mods installed (N)" (today "Installed mods (N)"), matching the bar's "Mods enabled 26".
+  The filters' counts should follow the same pattern ("Mods enabled (N)", "Mods disabled (N)"); the hosted
+  translations then need those keys again
+- [ ] 2. a bigger hover area for the notepad mark: a little to its left, above and below (not to the right, where the
+  title starts) still shows its card
+- [ ] 3. the author's name under the category button, in the row's right column: where it is now, at the end of the
+  strip line, it has white space above it and looks out of place
+- [ ] 4. marks on the list's scrollbar for notable mods: red for mods that won't load (named in a warning), yellow for
+  warnings (such as Better Mod Menu), orange for changes this session not yet applied. Round 2's backlog has the same
+  idea ("minimap scroll bar"). Needs a spike: a mark's place as a fraction of the list's whole height, rows in folded
+  categories (mark the header?), and keeping the marks in step with redraws, filters, folding and resizing
+- [ ] 5. mod names in the info panel's problem line ("Needs BaseLib, which is disabled") behave like the Dependencies
+  field: hover shows the mod's card, click goes to it. On the rows (both pages), the "Needs:" text gets a card too, with
+  a long delay (about 1 s) and no click, since the rows are already busy with controls. Jordan's north star: every
+  reference to a mod or a tag behaves the same everywhere, so hovering a name always shows its details
+- [ ] 6. (with 5) an author's card: how many of their mods are installed, one a line: the mod, its category, enabled
+  or disabled
+- [ ] 7. (stretch) a hotkey that keeps a card open until dismissed, to read it at leisure or keep it in view while the
+  mouse works elsewhere, with what's in it usable: mod names in it go to that mod
+- [ ] 8. (stretch) resizable parts: drag the divider between the list and the info panel to give one more room
