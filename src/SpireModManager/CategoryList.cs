@@ -347,10 +347,13 @@ static class CategoryList
             };
         }
 
-        // Search: rows that don't match hide; while searching, categories open to show their matches.
+        // Search: rows that don't match hide; while searching, categories open to show their matches. On the main list
+        // the page bar's Show: choice too (ListFilter, every row elsewhere): a row shows when it matches both, and
+        // categories keep their folding.
         var filter = content.HasMeta(FilterMeta) ? (string)content.GetMeta(FilterMeta) : "";
-        var filtering = filter.Length > 0;
-        bool Matches(NModMenuRow row) => !filtering || Search.Matches(row.Mod, filter);
+        var searching = filter.Length > 0;
+        var filtering = searching || ListFilter.Current != ListFilter.Choice.All;
+        bool Matches(NModMenuRow row) => (!searching || Search.Matches(row.Mod, filter)) && ListFilter.Shows(row.Mod);
 
         LoadOrder.UpdateToolbar(content, rows, () => Redraw(content));
         if (Store.Data.LoadOrderView)
@@ -387,6 +390,7 @@ static class CategoryList
             Store.InfoFor(row.Mod?.manifest?.id)?.Category is { } name && known.Contains(name) ? name : null;
 
         var index = 0;
+        var headed = false; // a category's header is shown (the divider before Uncategorized follows them)
         void Add(Control node)
         {
             node.AddToGroup(HeaderGroup);
@@ -405,6 +409,7 @@ static class CategoryList
                 }
                 return;
             }
+            headed |= category != null;
             var muted = category == null;
             var header = ModEntry.Load<PackedScene>(HeaderScenePath)?.Instantiate<Control>() ?? PlainHeader();
             Add(header);
@@ -461,7 +466,7 @@ static class CategoryList
 
             void Show(bool isCollapsed)
             {
-                var open = filtering || !isCollapsed;
+                var open = searching || !isCollapsed;
                 header.GetNode<Control>("Arrow").RotationDegrees = open ? 90 : 0;
                 foreach (var row in members)
                     row.Visible = open && Matches(row);
@@ -499,7 +504,8 @@ static class CategoryList
         var uncategorized = rows.Where(r => CategoryOf(r) == null).ToList();
         if (uncategorized.Count == 0)
             return;
-        if (categories.Count > 0 && !filtering)
+        // Not while searching; under a Show: choice, between categories it shows and Uncategorized if that shows.
+        if (headed && !searching && (!filtering || uncategorized.Any(Matches)))
             Add(Divider());
         AddSection(Menus.Text("SPIRE_MOD_MANAGER.UNCATEGORIZED"), uncategorized,
             Store.Data.UncategorizedCollapsed, c => Store.Data.UncategorizedCollapsed = c);
