@@ -2,6 +2,7 @@ using System.Reflection;
 using Godot;
 using HarmonyLib;
 using MegaCrit.Sts2.Core.Logging;
+using MegaCrit.Sts2.Core.Modding;
 using MegaCrit.Sts2.Core.Nodes.Screens.ModdingScreen;
 
 namespace SpireModManager;
@@ -38,6 +39,10 @@ static class Bmm
     // It and ours both ticked: two mod managers load after a relaunch (LoadOrder puts up a banner saying so). Profiles
     // and Disable all keep ours on, but the player can untick its row.
     public static bool BothTicked => Ticked && Dependencies.Find(ModEntry.ModId) is { } ours && Dependencies.IsOn(ours);
+
+    // The mod managers we know of that are ticked, ours first: what the banner's card names.
+    public static IEnumerable<Mod> TickedManagers() =>
+        new[] { ModEntry.ModId, ModId }.Select(Dependencies.Find).OfType<Mod>().Where(Dependencies.IsOn);
 
     // A dismissed banner is forgotten once the two aren't both ticked, so it shows again the next time they are (saved
     // as view state, never an undo step). LoadOrder checks on every toolbar update (tickboxes, profiles, undo and redo,
