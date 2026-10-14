@@ -41,10 +41,14 @@ using System.Runtime.CompilerServices;
 using System.Runtime.InteropServices;
 using System.Text.Json.Nodes;
 using System.Text.RegularExpressions;
+using Microsoft.Win32;
 
 // Full paths without a trailing separator: the running-game check below compares DevDir with the exe's folder.
-var steamapps = FullDir(Env("STS2_STEAMAPPS", @"D:\SteamLibrary\steamapps")); // the Steam library with the game
+var steamapps = FullDir(SteamApps()); // the Steam library with the game
 var GameDir = Path.Combine(steamapps, "common", "Slay the Spire 2");
+if (!Directory.Exists(GameDir))
+    return Fail($"Slay the Spire 2 isn't in {steamapps}. Set the environment variable "
+        + @"STS2_STEAMAPPS to the steamapps folder of the library that has it, for example D:\SteamLibrary\steamapps (CONTRIBUTING.md, ""What you need"").");
 var DevDir = FullDir(Env("STS2_DEV_DIR", Path.Combine(Path.GetPathRoot(GameDir) ?? "", "sts2-dev"))); // same drive
 var WorkshopDir = Path.Combine(steamapps, "workshop", "content", "2868840");
 var BmmRepo = Env("STS2_BMM_REPO", @"C:\repos\gaming\slay the spire\bettermodmenu"); // Better Mod Menu's local-fix checkout (--bmm-local)
@@ -457,6 +461,24 @@ static string ScriptDir([CallerFilePath] string path = "") => Path.GetDirectoryN
 // An environment variable's value (CONTRIBUTING.md, "What you need"), or the author's own path when it isn't set.
 static string Env(string name, string fallback) =>
     Environment.GetEnvironmentVariable(name) is { Length: > 0 } value ? value : fallback;
+
+// The Steam library (its steamapps folder) that has the game: STS2_STEAMAPPS when set (CONTRIBUTING.md, "What you need"),
+// else whichever library in Steam's own list (libraryfolders.vdf, in Steam's folder from the registry) holds
+// the game, else Steam's default folder. The same in build.cs.
+static string SteamApps()
+{
+    if (Environment.GetEnvironmentVariable("STS2_STEAMAPPS") is { Length: > 0 } set)
+        return set;
+    var steam = (OperatingSystem.IsWindows() ? Registry.GetValue(@"HKEY_CURRENT_USER\Software\Valve\Steam", "SteamPath", null) : null) is string { Length: > 0 } path
+        ? path : @"C:\Program Files (x86)\Steam";
+    var list = Path.Combine(steam, "steamapps", "libraryfolders.vdf");
+    var libraries = File.Exists(list)
+        ? Regex.Matches(File.ReadAllText(list), "\"path\"\\s+\"([^\"]+)\"").Select(m => Path.Combine(m.Groups[1].Value.Replace(@"\\", @"\"), "steamapps"))
+        : [];
+    var found = libraries.Prepend(Path.Combine(steam, "steamapps"))
+        .FirstOrDefault(library => Directory.Exists(Path.Combine(library, "common", "Slay the Spire 2")));
+    return Path.GetFullPath(found ?? Path.Combine(steam, "steamapps"));
+}
 
 static string FullDir(string path) => Path.TrimEndingDirectorySeparator(Path.GetFullPath(path));
 

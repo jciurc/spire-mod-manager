@@ -17,9 +17,11 @@ maintainer, so replies can take a few days.
   committed; the build reads them from your installed game.
 - **The [.NET 10 SDK](https://dotnet.microsoft.com/download).** The build scripts are .NET 10 file-based apps
   (`dotnet run build.cs`). The mod itself targets .NET 9, like the game.
-- **Where your game is:** the build looks in the Steam library `D:\SteamLibrary\steamapps`. If yours is
-  elsewhere, set the environment variable `STS2_STEAMAPPS` to its `steamapps` folder, for example
-  `C:\Program Files (x86)\Steam\steamapps`. build.cs, the project and tools/dev.cs all read it.
+- **Where your game is:** found on its own. build.cs and tools/dev.cs look through Steam's list of libraries
+  for the one holding Slay the Spire 2, and stop with a message if none does. Building another way (an IDE, a
+  plain `dotnet build`) tries Steam's default folder, then `SteamLibrary` at the root of drives D: to F:. To
+  pick a library yourself, set the environment variable `STS2_STEAMAPPS` to its `steamapps` folder, for
+  example `D:\SteamLibrary\steamapps`.
 
 ## Building
 
@@ -27,6 +29,8 @@ maintainer, so replies can take a few days.
   `--no-install` only builds, into `out/`.
 - `dotnet run build.cs --dist` makes the release for the Workshop and never installs: `dist/SpireModManager/`
   holds just the `.dll`, `.json` and `.pck`, and the manifest gets `ReleaseVersion` (set by hand in build.cs).
+  That DLL leaves out the in-game self-test, the dev-run switches and debug information; every other build
+  keeps them.
 - Player text lives in `localization/<lang>/*.json` and pictures in `images/`, packed into
   `SpireModManager.pck`.
 
