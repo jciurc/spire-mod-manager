@@ -2880,12 +2880,14 @@ static class SelfTest
             var paths = content.GetParent().GetChildren().OfType<Line2D>().Where(l => l.IsInGroup("SpireModManagerLinks")).Select(l => l.Points).ToList();
             Check("the hover lines have slightly rounded corners", paths.Count > 0 && paths.All(Rounded),
                 string.Join("; ", paths.Select(p => string.Join(" ", p.Select(q => $"{q.X:0.#},{q.Y:0.#}")))));
-            // The rows here wear the main list's rounded looks: faint under the mouse, sunken when selected.
+            // The rows here wear the main list's rounded looks: faint under the mouse, brighter when selected, with an even
+            // gold rim (the same width on every side, so its edges line up with the other rows' boxes).
             var selectedRow = Rows().FirstOrDefault(r => r.Mod == CategoryList.Selected && r != libRow);
             StyleBox? LookOf(NModMenuRow? r) => r?.GetNodeOrNull<Panel>("SelectionHighlight")?.GetThemeStylebox("panel");
-            Check("load order rows: rounded like the main list's, under the mouse and selected",
-                LookOf(libRow) is StyleBoxFlat { CornerRadiusTopLeft: RowTitles.CornerRadius, BorderWidthTop: 0 }
-                && LookOf(selectedRow) is StyleBoxFlat { CornerRadiusTopLeft: RowTitles.CornerRadius, BorderWidthTop: 2 }
+            Check("load order rows: rounded like the main list's, under the mouse and selected; the selected one brighter, with an even gold rim",
+                LookOf(libRow) is StyleBoxFlat { CornerRadiusTopLeft: RowTitles.CornerRadius, BorderWidthTop: 0, BorderWidthLeft: 0 } hoverLook
+                && LookOf(selectedRow) is StyleBoxFlat { CornerRadiusTopLeft: RowTitles.CornerRadius } selectedBox && EvenGoldRim(selectedBox)
+                && selectedBox.BgColor.A > hoverLook.BgColor.A
                 && selectedRow?.GetNode<Panel>("SelectionHighlight") is { } selectedLook && selectedLook.Modulate == Colors.White
                 && selectedLook.OffsetLeft == RowTitles.LookInset.X, $"selected: {selectedRow?.Mod?.manifest?.id ?? "none"}");
             await Capture(screen, outDir, "13b-hover-links");
@@ -4403,7 +4405,8 @@ static class SelfTest
         var back = info.GetNodeOrNull<Control>(HistoryBar.BackName);
         Check("a name opens that mod, with Back", !HistoryBar.ListOpen(info) && CategoryList.Selected?.manifest?.id == "SmmTestUi" && back is { Visible: true });
         if (content.GetChildren().OfType<NModMenuRow>().FirstOrDefault(r => r.Mod?.manifest?.id == "SmmTestUi")?.GetNodeOrNull<Panel>("SelectionHighlight") is { } shownLook)
-            Check("the selected row: the sunken look, rounded, a little wider than the row", shownLook.GetThemeStylebox("panel") is StyleBoxFlat { CornerRadiusTopLeft: RowTitles.CornerRadius, BorderWidthTop: 2 }
+            Check("the selected row: an even gold rim, rounded, a little wider than the row",
+                shownLook.GetThemeStylebox("panel") is StyleBoxFlat { CornerRadiusTopLeft: RowTitles.CornerRadius } shownBox && EvenGoldRim(shownBox)
                 && shownLook.Modulate == Colors.White && shownLook.OffsetLeft == RowTitles.LookInset.X);
         await Capture(screen, outDir, "14c-opened-from-changes");
         back?.EmitSignal(BaseButton.SignalName.Pressed);
@@ -4956,6 +4959,10 @@ static class SelfTest
         Hover.TestMouse = null; // the real mouse again (menus open where it says)
         return text;
     }
+
+    // The selected row's look: a gold rim the same width on every side.
+    static bool EvenGoldRim(StyleBoxFlat box) => box.BorderColor == RowTitles.Gold
+        && new[] { box.BorderWidthTop, box.BorderWidthBottom, box.BorderWidthLeft, box.BorderWidthRight }.All(w => w == RowTitles.SelectedRim);
 
     static async Task Wait(Node node, double seconds) =>
         await node.ToSignal(node.GetTree().CreateTimer(seconds), SceneTreeTimer.SignalName.Timeout);

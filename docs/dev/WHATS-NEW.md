@@ -2,7 +2,12 @@
 
 Short notes for Jordan: what to look for after each install. Newest first.
 
-## Waiting in pull requests
+## Installed 2026-10-14 (afternoon): version 0.0.56
+
+Everything below, plus the crash-safe launch draft (#65, not merged; it's in this build so you can try it before
+deciding): after a launch that stopped before the main menu, if the mod list changed since, the next main menu shows
+what changed with Restore (puts back the last working setup and relaunches) and Keep. Hard to see on purpose: it needs a
+launch that never reached the menu.
 
 - **Main menu button as text (menu-text-button):** the picture is gone. The button is the game's own main-menu text, like Singleplayer or Settings (same font, size and hover, with the little carets either side), and reads "Mod Profile: Default (12 mods)": the active profile and the count the profile bar shows (a long name ends in "…"; one mod reads "1 mod"). Switch profile or tick a mod and come back: it follows. Its width follows the text, at once, even for a much longer or shorter profile name; move it near the right edge and it still stays on screen, hover carets included. The dot and "Relaunch to apply your mod changes" still show beside it (on its left when it's at the right edge). Right-click: the menu now starts with "Spire Mod Manager v0.x.y" in gold over a line, which does nothing when clicked; the items below are as before.
 - **A Spire Mod Manager button in Settings (settings-button):** open Settings from the main menu: "Spire Mod Manager" sits in the top-right corner, level with the General / Graphics / Sound / Input tabs, outside the settings list. It's a copy of the screen's own Mod Settings button, so it looks and grows on hover like it, and hovering it says "Opens Spire Mod Manager's page". Pressing it opens the Modding page; Back returns to Settings. Settings opened from the pause menu in a run has no such button (the game's Modding page can't open there). Try the 4:3 and 16:10 aspect ratios (Graphics tab): it should stay clear of the tabs.
