@@ -128,21 +128,22 @@ public static class ModEntry
 
     // One of the game's fonts, or Godot's own if it's gone, so text still shows and can be measured. In a language the
     // game draws in its own font (Chinese, Japanese, Korean, Thai, Russian, Polish), Kreon gives way to that font, as
-    // on the game's labels: Kreon has none of their letters.
-    public static Font Font(string path) => LanguageFont(path) ?? Load<Font>(path) ?? ThemeDB.FallbackFont;
+    // on the game's labels: Kreon has none of their letters. Like the game's labels, a whole label takes the
+    // language's regular font even for Kreon bold; only rich text's bold_font (richBold) takes its bold one.
+    public static Font Font(string path, bool richBold = false) => LanguageFont(path, richBold) ?? Load<Font>(path) ?? ThemeDB.FallbackFont;
 
     static bool _noLanguageFonts;
 
-    // The game's font for its language in place of Kreon (regular or bold), or null: Kreon is right for the language,
-    // the path isn't Kreon, or a game update took the game's font swap away (logged once; Kreon from then on).
-    static Font? LanguageFont(string path)
+    // The game's font for its language in place of Kreon, or null: Kreon is right for the language, the path isn't
+    // Kreon, or a game update took the game's font swap away (logged once; Kreon from then on).
+    static Font? LanguageFont(string path, bool richBold)
     {
-        var bold = path == "res://themes/kreon_bold_shared.tres";
-        if ((!bold && path != "res://themes/kreon_regular_shared.tres") || _noLanguageFonts || LocManager.Instance is not { Language: { } language })
+        if ((path != "res://themes/kreon_bold_shared.tres" && path != "res://themes/kreon_regular_shared.tres") || _noLanguageFonts
+            || LocManager.Instance is not { Language: { } language })
             return null;
         try
         {
-            return GameLanguageFont(language, bold);
+            return GameLanguageFont(language, richBold && path == "res://themes/kreon_bold_shared.tres");
         }
         catch (Exception e)
         {

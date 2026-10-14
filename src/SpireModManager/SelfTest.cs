@@ -3286,24 +3286,26 @@ static class SelfTest
             var header = content.GetChildren().OfType<Control>().FirstOrDefault(c => c.IsInGroup("SpireModManagerCategoryHeader") && c.HasNode("Title"));
             Menus.Show(page, [new MenuItem("Font test", () => { })]);
             var item = MenuPanel.Current?.FindChildren("*", "Label", true, false).OfType<Label>().FirstOrDefault(l => l.Text == "Font test");
-            List<(string What, Control? Text, string Font, FontType Type)> samples =
+            // Whole-label fonts take the language's regular font even where ours is Kreon bold, as the game's own labels
+            // do; only rich text's bold_font takes its bold one.
+            List<(string What, Control? Text, string Font, FontType Type, bool KreonBold)> samples =
             [
-                ("row title", row?.GetNodeOrNull<Control>("Title"), "normal_font", FontType.Regular),
-                ("category header", header?.GetNodeOrNull<Control>("Title"), "font", FontType.Bold),
-                ("tag chip", row?.GetNodeOrNull("SpireModManagerStrip")?.GetChildren().OfType<PanelContainer>().FirstOrDefault()?.GetChildOrNull<Control>(0), "font", FontType.Regular),
-                ("row button", row?.GetNodeOrNull(RowStrip.ActionsName)?.GetChildOrNull<Control>(0), "font", FontType.Regular),
-                ("profile bar", page.FindChild("ProfilePicker", true, false) as Control, "font", FontType.Bold),
-                ("history bar", page.FindChild(HistoryBar.BarName, true, false)?.FindChild("UndoButton", true, false) as Control, "font", FontType.Regular),
-                ("changes line", page.FindChild(HistoryBar.ChangesName, true, false) as Control, "bold_font", FontType.Bold),
-                ("menu item", item, "font", FontType.Regular),
+                ("row title", row?.GetNodeOrNull<Control>("Title"), "normal_font", FontType.Regular, false),
+                ("category header", header?.GetNodeOrNull<Control>("Title"), "font", FontType.Regular, true),
+                ("tag chip", row?.GetNodeOrNull("SpireModManagerStrip")?.GetChildren().OfType<PanelContainer>().FirstOrDefault()?.GetChildOrNull<Control>(0), "font", FontType.Regular, false),
+                ("row button", row?.GetNodeOrNull(RowStrip.ActionsName)?.GetChildOrNull<Control>(0), "font", FontType.Regular, false),
+                ("profile bar", page.FindChild("ProfilePicker", true, false) as Control, "font", FontType.Regular, true),
+                ("history bar", page.FindChild(HistoryBar.BarName, true, false)?.FindChild("UndoButton", true, false) as Control, "font", FontType.Regular, false),
+                ("changes line", page.FindChild(HistoryBar.ChangesName, true, false) as Control, "bold_font", FontType.Bold, true),
+                ("menu item", item, "font", FontType.Regular, false),
             ];
             MenuPanel.Close();
             var border = page.GetNode<Control>("ModsBorder");
             if ((border.FindChild("OrderProblems", true, false) ?? border.FindChild("ManagersWarning", true, false)) is Control banner)
-                samples.Add(("banner", banner, "font", FontType.Regular));
+                samples.Add(("banner", banner, "font", FontType.Regular, false));
             static string FontOf(Control? text, string name) => text?.GetThemeFont(name)?.ResourcePath ?? "none";
-            var wrong = samples.Where(s => FontOf(s.Text, s.Font) != GameFont(language, s.Type)).Select(s => $"{s.What}: {FontOf(s.Text, s.Font)}").ToList();
-            Results.Add($"INFO fonts in {language}: {GameFont(language, FontType.Regular)}, {GameFont(language, FontType.Bold)}");
+            var wrong = samples.Where(s => FontOf(s.Text, s.Font) != GameFont(language, s.Type, s.KreonBold)).Select(s => $"{s.What}: {FontOf(s.Text, s.Font)}").ToList();
+            Results.Add($"INFO fonts in {language}: {GameFont(language, FontType.Regular, false)}, {GameFont(language, FontType.Bold, true)}");
             Check($"in {language}: our text in its font ({string.Join(", ", samples.Select(s => s.What))})", wrong.Count == 0, string.Join("; ", wrong));
             var gaps = ButtonGaps(page);
             static bool Same(float? a, float? b) => a == null ? b == null : b != null && Math.Abs(a.Value - b.Value) < 1;
@@ -3314,9 +3316,9 @@ static class SelfTest
         }
     }
 
-    // The font the game gives a language for that type, or Kreon where it has none of its own.
-    static string GameFont(string language, FontType type) => FontManager.GetSubstituteFont(language, type)?.ResourcePath
-        ?? (type == FontType.Bold ? "res://themes/kreon_bold_shared.tres" : "res://themes/kreon_regular_shared.tres");
+    // The font the game gives a language for that type, or our Kreon (bold or not) where it has none of its own.
+    static string GameFont(string language, FontType type, bool kreonBold) => FontManager.GetSubstituteFont(language, type)?.ResourcePath
+        ?? (kreonBold ? "res://themes/kreon_bold_shared.tres" : "res://themes/kreon_regular_shared.tres");
 
     // The game's language setting: the language set and the main menu made again (NGame.Relocalize: the settings
     // stay open over it in the game; here the Modding page), then the page opened on the new menu. Null if it didn't.
