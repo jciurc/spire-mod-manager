@@ -816,6 +816,9 @@ static class SelfTest
             $"{MenuButtonText(menu)} vs {MenuButtonExpected()}");
         var screen = button.GetViewportRect();
         Check("main menu button: as wide as its words, whole on screen", MenuButtonMisfit(menu) == null, MenuButtonMisfit(menu) ?? "");
+        // The game's hover carets reach 54 from the text either side (NMainMenu.MainMenuButtonFocused): inside the button.
+        Check("main menu button: room for the hover carets inside it", label != null
+            && button.GetGlobalRect().Encloses(label.GetGlobalRect().GrowIndividual(54, 0, 54, 0)), $"{label?.GetGlobalRect()} in {button.GetGlobalRect()}");
         Check("main menu button: the game's notification dot on its label, shown only with a relaunch pending",
             button.FindChild("Dot", true, false) is Control dot && dot.GetParent() == label && dot.Visible == ModEntry.HasPendingChanges()
             && dot.FindChildren("*", "TextureRect", true, false).Count == 1);
@@ -832,10 +835,18 @@ static class SelfTest
         Store.Data.MenuButtonAt = new ScreenPoint(5000, 5000);
         MenuButton.Place(button);
         var corner = button.GetGlobalRect();
+        var note = button.GetNodeOrNull<Control>("PendingNote");
+        var noteThere = note?.GetGlobalRect() ?? default;
         Store.Data.MenuButtonAt = saved;
         MenuButton.Place(button);
-        Check("main menu button: a saved place past the screen's corner keeps it whole on screen", screen.Encloses(corner)
-            && corner.End.DistanceTo(screen.End) < 1, $"{corner} in {screen}");
+        var noteHere = note?.GetGlobalRect() ?? default;
+        // The "Relaunch to apply" note (shown or not): on the button's left at the right edge, else on its right.
+        Check("main menu button: a saved place past the screen's corner keeps it whole on screen, its note on its left",
+            screen.Encloses(corner) && corner.End.DistanceTo(screen.End) < 1 && note != null && screen.Encloses(noteThere)
+            && noteThere.End.X <= corner.Position.X, $"{corner} in {screen}, note {noteThere}");
+        Check("main menu button: back in its place, its note beside it, on screen", note != null && screen.Encloses(noteHere)
+            && (noteHere.Position.X >= button.GetGlobalRect().End.X || noteHere.End.X <= button.GetGlobalRect().Position.X),
+            $"note {noteHere}, button {button.GetGlobalRect()}");
     }
 
     // Right-click the main menu button, Move button, click somewhere: it stays there; Reset puts it back.

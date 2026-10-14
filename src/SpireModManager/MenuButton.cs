@@ -21,8 +21,11 @@ static class MenuButton
     // A long profile name is cut to this width with "…" (at the button's font size).
     const float NameWidth = 360;
     // Room either side of the text, inside the button (the game's are wider than their words too); the hover carets
-    // sit in it, so in the corner they stay on screen. Public for the self-test.
-    public const float Margin = 40;
+    // sit in it (the game puts them out to 54 from the text, NMainMenu.MainMenuButtonFocused), so wherever the button
+    // is kept on screen, they are too. Public for the self-test.
+    public const float Margin = 56;
+    // The pending note: this wide at least, this far from the button.
+    const float NoteWidth = 260, NoteGap = 10;
     // If the game's button is gone: one of ours (AddTextButton), this size.
     static readonly Vector2 FallbackSize = new(460, 70);
 
@@ -75,8 +78,6 @@ static class MenuButton
                 label.PivotOffset = new Vector2(words.X, Math.Max(label.Size.Y, words.Y)) / 2; // hover grows it from the middle
                 button.CustomMinimumSize = new Vector2(words.X + 2 * Margin, height);
             }
-            var size = button.CustomMinimumSize;
-            (note.Position, note.Size) = (new Vector2(size.X + 10, 0), new Vector2(260, size.Y));
             Place(button);
         }
         Retext();
@@ -197,19 +198,29 @@ static class MenuButton
     public static void Place(Control button)
     {
         var size = button.CustomMinimumSize;
+        var screen = button.GetViewportRect().Size;
         if (Store.Data.MenuButtonAt is { } at)
         {
             button.SetAnchorsPreset(Control.LayoutPreset.TopLeft);
-            var screen = button.GetViewportRect().Size;
             button.Position = new Vector2(Math.Clamp(at.X, 0, Math.Max(0, screen.X - size.X)), Math.Clamp(at.Y, 0, Math.Max(0, screen.Y - size.Y)));
             button.Size = size;
-            return;
         }
-        button.SetAnchorsPreset(Control.LayoutPreset.BottomLeft);
-        button.OffsetLeft = Layout.CornerX;
-        button.OffsetBottom = Layout.BottomRowY + 35 + size.Y / 2 - 1080;
-        button.OffsetRight = button.OffsetLeft + size.X;
-        button.OffsetTop = button.OffsetBottom - size.Y;
+        else
+        {
+            button.SetAnchorsPreset(Control.LayoutPreset.BottomLeft);
+            button.OffsetLeft = Layout.CornerX;
+            button.OffsetBottom = Layout.BottomRowY + 35 + size.Y / 2 - 1080;
+            button.OffsetRight = button.OffsetLeft + size.X;
+            button.OffsetTop = button.OffsetBottom - size.Y;
+        }
+        // The note beside it: on its right, or on its left if only there the screen has room for it.
+        if (button.GetNodeOrNull<Label>("PendingNote") is { } note)
+        {
+            var width = Math.Max(NoteWidth, note.GetCombinedMinimumSize().X);
+            var right = button.Position.X + size.X + NoteGap + width <= screen.X || button.Position.X < NoteGap + width;
+            note.HorizontalAlignment = right ? HorizontalAlignment.Left : HorizontalAlignment.Right;
+            (note.Position, note.Size) = (new Vector2(right ? size.X + NoteGap : -NoteGap - width, 0), new Vector2(width, size.Y));
+        }
     }
 
     // Move mode: the button follows the mouse (by how far it moves, so it doesn't jump); a left click puts it
@@ -299,6 +310,7 @@ static class MenuButton
             {
                 Store.Data.MenuButtonAt = new ScreenPoint(button.Position.X, button.Position.Y);
                 Store.Save();
+                Place(button); // where it is: the note takes its side
             }
             else
             {
