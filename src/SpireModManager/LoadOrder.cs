@@ -317,7 +317,7 @@ static class LoadOrder
             if (Dependencies.Find(Bmm.ModId) is { } mod)
                 GoTo(content, mod);
         }, name: "ShowManagersButton");
-        show.TooltipText = Menus.Text("SPIRE_MOD_MANAGER.SHOW_MANAGERS_TIP");
+        show.TooltipText = Menus.Text("SPIRE_MOD_MANAGER.SHOW_PROBLEM_TIP"); // the same words as the other banner's: no manager named
         var dismiss = Menus.SmallButton(Menus.Text("SPIRE_MOD_MANAGER.DISMISS_MANAGERS"), () =>
         {
             Store.Data.ManagersWarningDismissed = true;

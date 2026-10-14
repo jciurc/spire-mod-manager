@@ -2197,6 +2197,11 @@ static class SelfTest
         await Wait(menu, 0.3);
         var text = (screen.FindChild("OrderProblems", true, false) as Label)?.Text ?? "";
         Check("main list: a needed mod that is off gets a banner", text.Contains("need a mod that is disabled"), text);
+        var warning = screen.FindChild(LoadOrder.WarningName, true, false);
+        var showTip = (warning?.FindChild("ShowProblemButton", true, false) as Control)?.TooltipText;
+        Check("main list banner: red, its Show tip \"Opens the next affected mod\", no \"Better Mod Menu\" in it",
+            Red(BannerFill(warning)) && showTip == "Opens the next affected mod" && !BannerWords(warning).Any(w => w.Contains("Better Mod Menu")),
+            $"fill {BannerFill(warning)}; {string.Join(" | ", BannerWords(warning))}");
         await Capture(screen, outDir, "2b-list-banner");
         screen.FindChild("EnableNeededButton", true, false)?.EmitSignal(BaseButton.SignalName.Pressed);
         await Wait(menu, 0.3);
@@ -2265,6 +2270,10 @@ static class SelfTest
         Check("Better Mod Menu ticked: the managers banner at once, under the search box, above the list", Bmm.Ticked && Placed()
             && text == "Multiple mod managers are currently enabled, which may cause unexpected behavior.", $"\"{text}\"; {Where()}");
         Check("the managers banner is yellow: a warning, not an error", Yellow(BannerFill(Banner())), $"fill {BannerFill(Banner())}");
+        var showTip = (Banner()?.FindChild("ShowManagersButton", true, false) as Control)?.TooltipText;
+        Check("the managers banner's Show tip is the other banner's: \"Opens the next affected mod\"", showTip == "Opens the next affected mod", showTip ?? "no Show");
+        Check("the managers banner names no manager: no \"Better Mod Menu\" in its text or tips",
+            BannerWords(Banner()) is { Count: > 0 } words && !words.Any(w => w.Contains("Better Mod Menu")), string.Join(" | ", BannerWords(Banner())));
         await Capture(screen, outDir, "2e-managers-banner");
 
         // With the page's own warning too (a needed mod turned off): this one first, that one under it.
@@ -3417,6 +3426,10 @@ static class SelfTest
     static Color? BannerFill(Node? banner) => (banner as Control)?.GetThemeStylebox("panel") is StyleBoxFlat look ? look.BgColor : null;
     static bool Yellow(Color? fill) => fill == LoadOrder.WarningColor && fill?.H is > 0.1f and < 0.18f;
     static bool Red(Color? fill) => fill == LoadOrder.ProblemColor && fill?.H is < 0.03f or > 0.97f;
+
+    // Everything a banner says: its text, its buttons' words and their tips.
+    static List<string> BannerWords(Node? banner) => banner?.FindChildren("*", "", true, false)
+        .SelectMany(n => n switch { Label label => [label.Text], Button button => new[] { button.Text, button.TooltipText }, _ => [] }).ToList() ?? [];
 
     static void Check(string name, bool ok, string detail = "") =>
         Results.Add($"{(ok ? "PASS" : "FAIL")} {name}{(ok || detail.Length == 0 ? "" : $": {detail}")}");
