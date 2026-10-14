@@ -543,12 +543,24 @@ static class Layout
     static readonly StringName LastSetSize = "_lastSetSize", LastAdjustedSize = "_lastAdjustedSize", AdjustFontSize = "AdjustFontSize";
     static bool? _refits;
 
+    // Found as Refit calls and reads them: AdjustFontSize without parameters (by name alone, an overload could be
+    // found in its place, or two throw), the fields of the types they're read as. A lookup that throws counts as
+    // not found, so this runs once.
     static bool Refits()
     {
-        if (AccessTools.Field(typeof(MegaRichTextLabel), "_lastSetSize") != null && AccessTools.Field(typeof(MegaRichTextLabel), "_lastAdjustedSize") != null
-            && AccessTools.Method(typeof(MegaRichTextLabel), "AdjustFontSize") != null)
-            return true;
-        Log.Warn($"[{ModEntry.ModId}] MegaRichTextLabel's auto-size not found; text keeps the sizes we write");
+        const string missing = "MegaRichTextLabel's auto-size not found; text keeps the sizes we write";
+        try
+        {
+            var type = typeof(MegaRichTextLabel);
+            if (AccessTools.Field(type, "_lastSetSize")?.FieldType == typeof(int) && AccessTools.Field(type, "_lastAdjustedSize")?.FieldType == typeof(Vector2)
+                && AccessTools.Method(type, "AdjustFontSize", []) != null)
+                return true;
+            Log.Warn($"[{ModEntry.ModId}] {missing}");
+        }
+        catch (Exception e)
+        {
+            Log.Warn($"[{ModEntry.ModId}] {missing}: {e.Message}");
+        }
         return false;
     }
 }
