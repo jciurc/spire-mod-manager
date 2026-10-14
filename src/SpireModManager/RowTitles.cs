@@ -20,7 +20,7 @@ static class RowTitles
     public const float RowHeight = 56; // our views (the game's: 72), with RowGap between rows
     public const int RowGap = 8;
     const string MarkName = "SpireModManagerEditedMark", HotName = "SpireModManagerTitleHover", RestName = "SpireModManagerOriginalName";
-    const string FullMeta = "spire_mod_manager_full_title";
+    const string FullMeta = "spire_mod_manager_full_title", FittedMeta = "spire_mod_manager_fitted_title";
 
     public static void Apply(IEnumerable<NModMenuRow> rows, bool vanilla)
     {
@@ -169,13 +169,22 @@ static class RowTitles
 
     // The game's fitting on again once the title has its place and text. Setting the text fits it when the text
     // changed (and later changes of box fit by themselves); Layout.Refit fits it when only the box or its size (Apply's,
-    // Layout.FontSize) changed while it was off.
+    // Layout.FontSize) changed while it was off, or its text did (Apply's plain name in place of an alias, kept as the
+    // alias is gone, at the size fitted for the alias). FittedMeta holds the text Refit last fitted; a text set here
+    // isn't kept: it fits later (deferred), and a redraw that turns the auto-size off first stops that.
     static void AutoSize(MegaRichTextLabel title, string text)
     {
         title.AutoSizeEnabled = true;
-        if (title.Text == text)
-            Layout.Refit(title, now: true);
-        title.SetTextAutoSize(text);
+        if (title.Text != text)
+        {
+            title.SetTextAutoSize(text);
+            title.RemoveMeta(FittedMeta);
+            return;
+        }
+        var fitted = title.GetMeta(FittedMeta, "").AsString() == text;
+        Layout.Refit(title, now: true, newText: !fitted);
+        if (!fitted)
+            title.SetMeta(FittedMeta, text);
     }
 
     // The text as it fits in width at this size: whole, or cut short with "…" (empty when not even that fits).

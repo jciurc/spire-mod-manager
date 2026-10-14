@@ -498,9 +498,14 @@ static class Layout
 
     // Our size, as the most the game's auto-size may pick, then fitted again (Refit). Already so (a redraw in the same
     // view): left alone, as fitted (each override restyles the text, and every row title comes by here on every redraw).
+    // So is a smaller size that is the auto-size's own last pick: written back, a long title would be fitted again, from
+    // scratch, on every redraw. A pick for an older text or box is fitted again by the label itself, or for a row title
+    // by RowTitles.AutoSize.
     public static void FontSize(MegaRichTextLabel label, int size)
     {
-        if (label.MaxFontSize == size && label.GetThemeFontSize("normal_font_size") == size && label.GetThemeFontSize("bold_font_size") == size)
+        var drawn = label.GetThemeFontSize("normal_font_size");
+        if (label.MaxFontSize == size && label.GetThemeFontSize("bold_font_size") == drawn
+            && (drawn == size || ((_refits ??= Refits()) && drawn == (int)label.Get(LastSetSize))))
             return;
         label.AddThemeFontSizeOverride("normal_font_size", size);
         label.AddThemeFontSizeOverride("bold_font_size", size);
@@ -513,9 +518,10 @@ static class Layout
     // the one drawn any more. Told the size drawn now, it writes only another one; deferred, once the text and box are
     // final. With the auto-size off (a row title while a redraw sets it up) its last size is forgotten instead, so the one
     // fitting RowTitles.AutoSize runs as it turns it back on writes: `now`, its text and box final, and only if the box
-    // changed or a size was written since it last ran. (A deferred run would find it still off, or fit it twice.)
+    // changed, a size was written since it last ran, or its text isn't the one it last fitted (newText). (A deferred run
+    // would find it still off, or fit it twice.)
     // Those are private, so reached by name: if a game update renames them, sizes stay as written (noted once).
-    public static void Refit(MegaRichTextLabel label, bool now = false)
+    public static void Refit(MegaRichTextLabel label, bool now = false, bool newText = false)
     {
         if (!(_refits ??= Refits()))
             return;
@@ -525,7 +531,7 @@ static class Layout
             return;
         }
         var drawn = label.GetThemeFontSize("normal_font_size");
-        if (now && (int)label.Get(LastSetSize) == drawn && label.Size == (Vector2)label.Get(LastAdjustedSize))
+        if (now && !newText && (int)label.Get(LastSetSize) == drawn && label.Size == (Vector2)label.Get(LastAdjustedSize))
             return;
         label.Set(LastSetSize, drawn);
         if (now)
