@@ -457,7 +457,10 @@ static class Layout
             part.RemoveMeta(ListMeta);
             if (!part.HasMeta(ParkedMeta))
                 continue;
-            (part.OffsetLeft, part.OffsetTop, part.OffsetRight, part.OffsetBottom) = (box.X, box.Y, box.Z, box.W);
+            // Moved back by as much as it went, its box kept: a resize its mod made meanwhile stays.
+            var (dx, dy) = (box.X - part.OffsetLeft, box.Y - part.OffsetTop);
+            (part.OffsetLeft, part.OffsetTop, part.OffsetRight, part.OffsetBottom) =
+                (part.OffsetLeft + dx, part.OffsetTop + dy, part.OffsetRight + dx, part.OffsetBottom + dy);
             Unpark(part);
         }
     }
