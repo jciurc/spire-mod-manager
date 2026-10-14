@@ -2723,11 +2723,14 @@ static class SelfTest
         CategoryList.Edited(content);
         await Press("ShowChangedButton");
         var lines = HistoryBar.Describe();
-        bool Named(Mod mod) => mod.manifest?.name is { } name && lines.Any(l => l.Contains(name));
-        var changed = Where(Named);
+        // Each line's mod: the one whose name it holds, the longest if several ("Better Mod Menu (local fix)" holds
+        // "Better Mod Menu" too). Lines naming no mod (a switched profile, profiles) name none.
+        var mods = Rows().Select(r => r.Mod).OfType<Mod>().ToList();
+        var named = lines.Select(l => mods.Where(m => m.manifest?.name is { Length: > 0 } name && l.Contains(name)).MaxBy(m => m.manifest?.name?.Length))
+            .OfType<Mod>().ToHashSet();
+        var changed = Where(named.Contains);
         Check("Show: Changed: the mods Changes names, counted, Changed lit", Shown().SequenceEqual(changed) && changed.Contains("SmmTestUi")
             && Scope() == $"Changed mods ({changed.Count})" && Choices() == "All Enabled Disabled Changed*", $"{Say()}; Changes: {string.Join(" | ", lines)}");
-        var named = HistoryBar.ChangedMods();
         Check("Show: Changed: each category counts its changed mods; none: no header", Headers(named.Contains) == "", Headers(named.Contains));
         Results.Add($"INFO Changed shows {changed.Count} of {all.Count} mods");
         await Capture(screen, outDir, "2i-show-changed");
