@@ -4,7 +4,8 @@ Short notes for Jordan: what to look for after each install. Newest first.
 
 ## Waiting in pull requests
 
-- **Alias, tags and notes (field-placeholders):** an empty box always says its call to action ("Add alias", in the bulk menu "Add tags to all of them"), focused or not. What a field is for moved to its gold term: hover "Alias", "Tags" or "Notes" for a card (in a mod's right-click menu too, over the menu). Select several mods and right-click one: an "i" beside "Editing N selected mods" explains how tags and notes work for all of them (draft words, yours to write on the review page). Tag chips inside a menu show their cards now too.
+- **Every description in our card (hover-tips):** the small grey engine tooltips are gone from our buttons. Hover the Show filters (All, Enabled…), a banner's Show / Enable needed mods / Dismiss, the red "!" Load Order button, a row's category and ✎ buttons, Save while the profile is unsaved (Ctrl + S), or the ✕ in notes while editing: each says what it does in our gold-edged card, only as wide as its words. Better Mod Menu's own buttons keep theirs.
+- **Alias, tags and notes (field-placeholders, #72, merged):** an empty box always says its call to action ("Add alias", in the bulk menu "Add tags to all of them"), focused or not. What a field is for moved to its gold term: hover "Alias", "Tags" or "Notes" for a card (in a mod's right-click menu too, over the menu). Select several mods and right-click one: an "i" beside "Editing N selected mods" explains how tags and notes work for all of them (draft words, yours to write on the review page). Tag chips inside a menu show their cards now too.
 
 ## Installed 2026-10-14 (afternoon): version 0.0.56
 

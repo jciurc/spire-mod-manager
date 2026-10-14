@@ -204,7 +204,7 @@ static class RowStrip
         }
         var button = Menus.SmallButton(item.Label, action, name: EdgeName);
         Menus.Flatten(button);
-        button.TooltipText = item.Tip ?? "";
+        Hover.Tip(button, item.Tip);
         row.AddChild(button);
         (button.AnchorLeft, button.AnchorRight, button.AnchorTop, button.AnchorBottom) = (1, 1, 0.5f, 0.5f);
         button.GrowHorizontal = Control.GrowDirection.Begin;

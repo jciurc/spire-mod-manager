@@ -256,7 +256,7 @@ static class ProfileBar
             ("SaveAsNewButton", Menus.Text("SPIRE_MOD_MANAGER.SAVE_AS_NEW"), () => BeginNaming(Naming.SaveAsNew)),
             ("DiscardButton", Menus.Text("SPIRE_MOD_MANAGER.DISCARD"), () => Profiles.Discard(screen)),
         ]);
-        unsavedButtons.GetNode<Button>("SaveProfileButton").TooltipText = Menus.Text("SPIRE_MOD_MANAGER.SAVE_KEYS");
+        Hover.Tip(unsavedButtons.GetNode<Button>("SaveProfileButton"), Menus.Text("SPIRE_MOD_MANAGER.SAVE_KEYS"));
         AddButtons(manage, [
             ("NewProfileButton", Menus.Text("SPIRE_MOD_MANAGER.NEW_PROFILE"), () => BeginNaming(Naming.Blank)),
             ("DuplicateProfileButton", Menus.Text("SPIRE_MOD_MANAGER.DUPLICATE"), () => BeginNaming(Naming.Duplicate)),
