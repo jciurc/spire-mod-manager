@@ -687,7 +687,7 @@ static class LoadOrder
             var fine = drop is { } at
                 ? needed ? other < at.Gap : other >= at.Gap
                 : needed ? other < rows.IndexOf(row) : other > rows.IndexOf(row);
-            var lane = 4 + Math.Min(i, 3) * 3;
+            var lane = 4 + Math.Min(i, 3) * 4; // 4 px apart: the soft-edged lines are up to 4 px wide
             var line = new Line2D
             {
                 Width = strong ? 4 : 3, DefaultColor = new Color(fine ? LinkFine : Blocked, strong ? 1f : 0.6f),
