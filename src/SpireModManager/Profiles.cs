@@ -326,9 +326,12 @@ static class Profiles
     // Beside the picker: "12 mods", how many are on in the mod list right now (this mod not counted).
     public static string CountText()
     {
-        var on = Current().Count(m => m.Enabled && !Manager(m.Id));
+        var on = OnCount();
         return Menus.Format(on == 1 ? "SPIRE_MOD_MANAGER.PROFILE_MODS_ONE" : "SPIRE_MOD_MANAGER.PROFILE_MODS", ("count", Menus.Number(on)));
     }
+
+    // That count as a number (the main menu button shows it too).
+    public static int OnCount() => Current().Count(m => m.Enabled && !Manager(m.Id));
 
     // For the profile list: "12 mods · Oct 11" (mods on, when last saved). Like the count beside the name, it
     // counts installed mods, as they'd be after switching to it (one it has never seen stays as it is now).

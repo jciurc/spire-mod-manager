@@ -20,8 +20,8 @@ namespace SpireModManager;
 // Each class is applied on its own (ModEntry.Init), so a game update that renames what one hooks leaves the others
 // working; if it's one our page needs (ModEntry.PageNeeds), the Modding page stays the game's, saying so.
 
-// "Spire Mod Manager" button in the main menu's lower-left corner (the lower right holds the vanilla
-// "MODDED (n)" label and its hover list), with a dot when a relaunch is pending.
+// "Mod Profile: Default (12 mods)" button in the main menu's lower-left corner (the lower right holds the vanilla
+// "MODDED (n)" label and its hover list), with a dot when a relaunch is pending (MenuButton).
 [HarmonyPatch(typeof(NMainMenu), nameof(NMainMenu._Ready))]
 static class MainMenuPatch
 {
