@@ -638,9 +638,12 @@ game's main-menu background, Mega Crit's art, not Jordan's own (Jordan, 2026-10-
 - [x] **LICENSE:** MIT, "Copyright (c) 2026 jciurc" (#25). The README's line that the art in `images/` is under it
   too doesn't hold while the button picture is Mega Crit's (next item).
 - [ ] **the main menu button's picture:** `images/main_menu_button.png` is an edited still of the game's main-menu
-  background (Mega Crit's art). Either Jordan redraws it from scratch, keeping the file name and size, or the
-  README's License line leaves that file out of MIT (the going-public session changes it if the redraw isn't done
-  by the switch). Not for the Workshop thumbnail either: `image.png` must be his own art (workshop/SHOTS.md).
+  background (Mega Crit's art). It is in the repo and in the mod's pack, so the Workshop upload gives it to every
+  subscriber too. Leaving it out of the README's MIT line only stops us offering it under MIT; it doesn't give us
+  the right to share it. JORDAN, before the switch (and before the upload, for the pack): redraw it from scratch,
+  keeping the file name and size; or find terms from Mega Crit that allow sharing edited game art in mods and
+  repos, and name them in the README for that file instead of MIT. Not for the Workshop thumbnail either:
+  `image.png` must be his own art (workshop/SHOTS.md).
 - [x] **machine-specific paths:** build.cs, the .csproj and tools/dev.cs read STS2_STEAMAPPS, STS2_DEV_DIR and
   STS2_BMM_REPO, with today's paths as the fallback (#25, #13).
 - [ ] **free security features on public repos:** turn on code scanning (CodeQL, C# build-free mode), secret
