@@ -2604,7 +2604,8 @@ static class SelfTest
     // A made-up mod with very long everything (name, id, author, version, description, alias, many tags, notes),
     // shown in the list and the panel (screenshot 16-long-details). The panel's title stays on one line with its
     // version and the source line keeps its status, both cut with "…" (the whole text a second over them); the
-    // row keeps its author, the tags that don't fit folded into "+N". It's removed again afterwards.
+    // row keeps its author, the tags that don't fit folded into "+N". A redraw fits no row title again, its cut one
+    // and an aliased one included, in Vanilla View and in our main list. It's removed again afterwards.
     static async Task TestLongDetails(Node menu, NModdingScreen screen, Control content, string outDir)
     {
         const string id = "SmmVeryLongModIdentifierThatGoesOnAndOnForTheSakeOfTesting";
@@ -2731,6 +2732,40 @@ static class SelfTest
                 Check("long details: a redraw in Vanilla View fits no row title again, the long one included (each stays at its own fitted size)",
                     refitted.Count == 0, $"{refitted.Count} fitted again: {string.Join(", ", refitted.Distinct().Take(8))}");
             }
+            // Our main list: the same for a title with an alias (the alias, the name beside it) or cut with "…" (the long
+            // one). Apply put the plain name back while the auto-size was off and Fit set the whole text again, so the
+            // label fitted itself once more on every redraw: its own fitting, which TestFitting doesn't see, so a title
+            // whose text or size changes during the redraw counts too (read before the titles are fitted, deferred, and
+            // after).
+            const string aliased = "SmmTestUi";
+            var aliasWas = Store.InfoFor(aliased)?.Alias;
+            Store.EditMod(aliased, info => info.Alias = "UI bits");
+            CategoryList.Reveal(content, aliased, flash: false);
+            CategoryList.Apply(content);
+            await Wait(menu, 0.3);
+            var titles = content.GetChildren().OfType<NModMenuRow>().Select(r => (Id: r.Mod?.manifest?.id ?? "?", Label: r.GetNode<RichTextLabel>("Title"))).ToList();
+            List<string> Titles() => titles.Select(t => $"{t.Id}: {t.Label.Text} at {t.Label.GetThemeFontSize("normal_font_size")}").ToList();
+            var settled = Titles();
+            var fittedAgain = new List<string>();
+            Layout.TestFitting = label =>
+            {
+                if (label.GetParent() is NModMenuRow fittedRow)
+                    fittedAgain.Add(fittedRow.Mod?.manifest?.id ?? "?");
+            };
+            CategoryList.Apply(content);
+            var during = Titles();
+            await Wait(menu, 0.3);
+            Layout.TestFitting = null;
+            var changed = during.Concat(Titles()).Except(settled).ToList();
+            Check("long details: a second redraw in our main list fits no row title again, aliased and cut ones included",
+                fittedAgain.Count == 0 && changed.Count == 0,
+                $"{fittedAgain.Count} fitted again: {string.Join(", ", fittedAgain.Distinct().Take(8))}; changed: {string.Join(" | ", changed.Take(4))}");
+            var aliasedTitle = titles.Where(t => t.Id == aliased).Select(t => t.Label).FirstOrDefault();
+            Check("long details: after it, the aliased title still shows the alias with the name beside it, at the rows' size",
+                aliasedTitle != null && aliasedTitle.GetParsedText().StartsWith("UI bits") && aliasedTitle.GetParsedText().Contains("Test UI")
+                && aliasedTitle.GetThemeFontSize("normal_font_size") == Layout.RowTitleSize,
+                $"{aliasedTitle?.GetParsedText()} at {aliasedTitle?.GetThemeFontSize("normal_font_size")}");
+            Store.EditMod(aliased, info => info.Alias = aliasWas);
             content.RemoveChild(row);
             row.QueueFree();
         }

@@ -545,6 +545,9 @@ static class Layout
     static readonly StringName LastSetSize = "_lastSetSize", LastAdjustedSize = "_lastAdjustedSize", AdjustFontSize = "AdjustFontSize";
     static bool? _refits;
 
+    // Whether Refit can fit a label (its members found, looked up once).
+    public static bool CanRefit => _refits ??= Refits();
+
     // Set by the self-test: told of each label FontSize writes a size to or Refit fits again.
     public static Action<MegaRichTextLabel>? TestFitting;
 
