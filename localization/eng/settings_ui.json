@@ -6,6 +6,8 @@
   "SPIRE_MOD_MANAGER.CATEGORY_VIEW": "Spire Manager",
   "SPIRE_MOD_MANAGER.BACK": "Return",
   "SPIRE_MOD_MANAGER.PAGE_TITLE": "Spire Mod Manager",
+  "SPIRE_MOD_MANAGER.SETTINGS_BUTTON": "Spire Mod Manager",
+  "SPIRE_MOD_MANAGER.SETTINGS_BUTTON_TIP": "Opens Spire Mod Manager's page",
   "SPIRE_MOD_MANAGER.LOAD_ORDER": "Load Order",
   "SPIRE_MOD_MANAGER.MOVE_TO_TOP": "Move to top",
   "SPIRE_MOD_MANAGER.MOVE_TO_BOTTOM": "Move to bottom",
