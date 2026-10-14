@@ -246,12 +246,13 @@ static class ProfileShare
         };
         column.AddChild(preview);
 
-        string? file = null; // the file loaded, for the profile's name
+        // The file loaded and its text: the profile is named after the file while the text is still that.
+        (string? file, string? loaded) = (null, null);
         ProfileCsv.Result? read = null;
         void Update()
         {
             read = box.Text.Trim().Length == 0 ? null : ProfileCsv.Read(box.Text);
-            if (box.Text.Trim().Length == 0)
+            if (box.Text != loaded)
                 file = null;
             Say(status, read?.Error ?? "", error: true);
             preview.Text = read is { Error: null } ? Preview(Profiles.PlanImport(read.Mods), Profiles.ImportName(file)) : "";
@@ -264,7 +265,7 @@ static class ProfileShare
             try
             {
                 box.Text = File.ReadAllText(path); // a UTF-8 BOM is taken off here
-                file = path;
+                (file, loaded) = (path, box.Text); // as the box has it (its line ends)
                 Update();
             }
             catch (Exception e)
