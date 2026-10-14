@@ -2914,7 +2914,7 @@ static class SelfTest
         var text = (screen.FindChild("OrderProblems", true, false) as Label)?.Text ?? "";
         Check("main list: a needed mod that is off gets a banner", text.Contains("need a mod that is disabled"), text);
         var warning = screen.FindChild(LoadOrder.WarningName, true, false);
-        var showTip = (warning?.FindChild("ShowProblemButton", true, false) as Control)?.TooltipText;
+        var showTip = TipOf(warning?.FindChild("ShowProblemButton", true, false));
         Check("main list banner: red, its Show tip \"Opens the next affected mod\", no \"Better Mod Menu\" in it",
             Red(BannerFill(warning)) && showTip == "Opens the next affected mod" && !BannerWords(warning).Any(w => w.Contains("Better Mod Menu")),
             $"fill {BannerFill(warning)}; {string.Join(" | ", BannerWords(warning))}");
@@ -3001,7 +3001,7 @@ static class SelfTest
         CategoryList.Redraw(content);
         await Wait(menu, 0.3);
         badge = screen.GetNodeOrNull<Control>("SpireModManagerLoadOrderToggle/WarningBadge");
-        var badgeTip = screen.GetNode<Control>("SpireModManagerLoadOrderToggle").TooltipText;
+        var badgeTip = Hover.TipOf(screen.GetNode<Control>("SpireModManagerLoadOrderToggle"));
         Check("a bad order puts a '!' with the warning on the Load Order button, then the mod it's about, as Load Order's card says it",
             badge is { Visible: true } && badgeTip.StartsWith("For compatibility, 1 mod ")
             && string.Join(" | ", badgeTip.Split('\n').Skip(1).Where(l => l.Length > 0)) == "Test Content loads before Test Framework", badgeTip);
@@ -3052,7 +3052,7 @@ static class SelfTest
         Check("Better Mod Menu ticked: the managers banner at once, under the search box, above the list", Bmm.Ticked && Placed()
             && text == "Multiple mod managers are currently enabled, which may cause unexpected behavior.", $"\"{text}\"; {Where()}");
         Check("the managers banner is yellow: a warning, not an error", Yellow(BannerFill(Banner())), $"fill {BannerFill(Banner())}");
-        var showTip = (Banner()?.FindChild("ShowManagersButton", true, false) as Control)?.TooltipText;
+        var showTip = TipOf(Banner()?.FindChild("ShowManagersButton", true, false));
         Check("the managers banner's Show tip is the other banner's: \"Opens the next affected mod\"", showTip == "Opens the next affected mod", showTip ?? "no Show");
         Check("the managers banner names no manager: no \"Better Mod Menu\" in its text or tips",
             BannerWords(Banner()) is { Count: > 0 } words && !words.Any(w => w.Contains("Better Mod Menu")), string.Join(" | ", BannerWords(Banner())));
@@ -3164,7 +3164,7 @@ static class SelfTest
         // warning, the page bar or the list, right under it). View state: no undo step, not a change or pending, saved.
         bool Buttons() => Banner()?.FindChild("ShowManagersButton", true, false) is Button { Visible: true } show
             && Banner()?.FindChild("DismissManagersButton", true, false) is Button { Visible: true } dismiss
-            && dismiss.GetGlobalRect().Position.X > show.GetGlobalRect().End.X && dismiss.TooltipText.StartsWith("Hides this warning");
+            && dismiss.GetGlobalRect().Position.X > show.GetGlobalRect().End.X && Hover.TipOf(dismiss).StartsWith("Hides this warning");
         bool Closed() => Banner() == null && (new[] { LoadOrder.WarningName, PageBar.Name, PageBar.HintName }
             .Select(name => border.GetNodeOrNull<Control>(name)).FirstOrDefault(c => c is { Visible: true }) ?? list)
             .GetGlobalRect().Position.Y - search.GetGlobalRect().End.Y is >= 0 and < 12;
@@ -3274,6 +3274,17 @@ static class SelfTest
         void Press(string name) => Bar()?.FindChild(name, true, false)?.EmitSignal(BaseButton.SignalName.Pressed);
         Check("page bar on the main list", Bar() is { Visible: true } bar && bar.FindChild("Scope", true, false) is Label { Text: var all } && all.StartsWith("Installed mods"));
         await Capture(screen, outDir, "2d-page-bar");
+        // What each filter shows: our hover card (not the engine's tooltip), only as wide as its words. And no engine
+        // tooltip anywhere on the page: every description we write is the same card (Jordan, 2026-10-14).
+        if (Bar()?.FindChild("ShowAllButton", true, false) is Button allButton)
+        {
+            var (tip, width) = await SizedHoverCard(menu, allButton, Hover.TipName, () => Capture(screen, outDir, "2d2-filter-tip"));
+            Check("a filter's description is our hover card, as wide as its words", tip == Menus.Text("SPIRE_MOD_MANAGER.SHOW_ALL_TIP")
+                && width is > 0 and < 300 && allButton.TooltipText == "", $"\"{tip}\", {width:0} px");
+        }
+        var natives = screen.FindChildren("*", "Control", true, false).OfType<Control>().Where(c => c.TooltipText.Length > 0)
+            .Select(c => $"{c.Name}: {c.TooltipText}").ToList();
+        Check("no engine tooltips on the page: every description is our card", natives.Count == 0, string.Join(" | ", natives));
 
         var box = screen.GetNode<LineEdit>("ModsBorder/SpireModManagerSearch");
         void Find(string text)
@@ -4900,9 +4911,12 @@ static class SelfTest
             + $"banner to {at.End.X:0}, list to {listEnd:0}");
     }
 
+    // What a control's hover tip says (Hover.Tip; none: empty), or null for no control.
+    static string? TipOf(Node? node) => node is Control control ? Hover.TipOf(control) : null;
+
     // Everything a banner says: its text, its buttons' words and their tips.
     static List<string> BannerWords(Node? banner) => banner?.FindChildren("*", "", true, false)
-        .SelectMany(n => n switch { Label label => [label.Text], Button button => new[] { button.Text, button.TooltipText }, _ => [] }).ToList() ?? [];
+        .SelectMany(n => n switch { Label label => [label.Text], Button button => new[] { button.Text, Hover.TipOf(button) }, _ => [] }).ToList() ?? [];
 
     // A banner's text: hovering it opens the banner's card.
     static Label? BannerText(Node? banner) => banner?.FindChildren("*", "", true, false).OfType<Label>().FirstOrDefault();
@@ -4943,18 +4957,26 @@ static class SelfTest
     const string Missing = "SmmTestMissing";
 
     // The text of the hover card `name` that hovering `target` brings up (empty if none), the mouse put back after.
-    static async Task<string> HoverCard(Node menu, Control target, string name, double seconds = Hover.Delay + 0.2)
+    static async Task<string> HoverCard(Node menu, Control target, string name, double seconds = Hover.Delay + 0.2) =>
+        (await SizedHoverCard(menu, target, name, seconds: seconds)).Text;
+
+    // The same, with the card's width (0 if none). shown: run while the card is up (a screenshot).
+    static async Task<(string Text, float Width)> SizedHoverCard(Node menu, Control target, string name, Func<Task>? shown = null,
+        double seconds = Hover.Delay + 0.2)
     {
         Hover.TestMouse = () => target.GetGlobalRect().GetCenter();
         target.EmitSignal(Control.SignalName.MouseEntered);
         await Wait(menu, seconds);
-        var text = target.GetTree().Root.FindChild(name, true, false)?.FindChildren("*", "RichTextLabel", true, false).OfType<RichTextLabel>()
-            .FirstOrDefault()?.GetParsedText() ?? "";
+        if (shown != null)
+            await shown();
+        var card = target.GetTree().Root.FindChild(name, true, false);
+        var seen = (card?.FindChildren("*", "RichTextLabel", true, false).OfType<RichTextLabel>().FirstOrDefault()?.GetParsedText() ?? "",
+            card?.FindChildren("*", "PanelContainer", true, false).OfType<Control>().FirstOrDefault()?.Size.X ?? 0);
         Hover.TestMouse = () => new Vector2(5, 5);
         target.EmitSignal(Control.SignalName.MouseExited);
         await Wait(menu, 0.1);
         Hover.TestMouse = null; // the real mouse again (menus open where it says)
-        return text;
+        return seen;
     }
 
     static async Task Wait(Node node, double seconds) =>

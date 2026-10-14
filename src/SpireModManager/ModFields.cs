@@ -110,8 +110,9 @@ sealed class ModField
             clear = new Button
             {
                 Name = "Clear", Text = "✕", Flat = true, Visible = false, FocusMode = Control.FocusModeEnum.None,
-                MouseDefaultCursorShape = Control.CursorShape.PointingHand, TooltipText = Menus.Text("SPIRE_MOD_MANAGER.CLEAR"),
+                MouseDefaultCursorShape = Control.CursorShape.PointingHand,
             };
+            Hover.Tip(clear, Menus.Text("SPIRE_MOD_MANAGER.CLEAR"));
             clear.AddThemeFontSizeOverride("font_size", 14);
             clear.AddThemeColorOverride("font_color", new Color(Cream, 0.55f));
             clear.AddThemeColorOverride("font_hover_color", Cream);

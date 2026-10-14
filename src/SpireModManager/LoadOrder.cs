@@ -301,7 +301,7 @@ static class LoadOrder
 
         var show = Menus.SmallButton(Menus.Text("SPIRE_MOD_MANAGER.SHOW_PROBLEM"), () => GoTo(content, broken[_nextProblem++ % broken.Count].Mod),
             name: "ShowProblemButton");
-        show.TooltipText = Menus.Text("SPIRE_MOD_MANAGER.SHOW_PROBLEM_TIP");
+        Hover.Tip(show, Menus.Text("SPIRE_MOD_MANAGER.SHOW_PROBLEM_TIP"));
         List<Control> buttons = [show];
         var needed = Dependencies.NeededOff(mods);
         if (needed.Count > 0)
@@ -313,8 +313,8 @@ static class LoadOrder
                 Dependencies.Set(needed, true, screen);
                 redraw();
             }, name: "EnableNeededButton");
-            enable.TooltipText = Menus.Format("SPIRE_MOD_MANAGER.ENABLE_NEEDED_TIP",
-                ("mods", string.Join(", ", needed.Select(m => m.manifest?.name ?? m.manifest?.id))));
+            Hover.Tip(enable, Menus.Format("SPIRE_MOD_MANAGER.ENABLE_NEEDED_TIP",
+                ("mods", string.Join(", ", needed.Select(m => m.manifest?.name ?? m.manifest?.id)))));
             buttons.Add(enable);
         }
         Banner(border, search, text, () => NeedsCard(content), buttons);
@@ -340,14 +340,14 @@ static class LoadOrder
             if (Dependencies.Find(Bmm.ModId) is { } mod)
                 GoTo(content, mod);
         }, name: "ShowManagersButton");
-        show.TooltipText = Menus.Text("SPIRE_MOD_MANAGER.SHOW_PROBLEM_TIP"); // the same words as the other banner's: no manager named
+        Hover.Tip(show, Menus.Text("SPIRE_MOD_MANAGER.SHOW_PROBLEM_TIP")); // the same words as the other banner's: no manager named
         var dismiss = Menus.SmallButton(Menus.Text("SPIRE_MOD_MANAGER.DISMISS_MANAGERS"), () =>
         {
             Store.Data.ManagersWarningDismissed = true;
             Store.Save(); // view state: no undo step, not a change (Store.EditsJson)
             CategoryList.Apply(content); // no mod changed, so rows kept under a filter stay (a Redraw lets them go)
         }, name: "DismissManagersButton");
-        dismiss.TooltipText = Menus.Text("SPIRE_MOD_MANAGER.DISMISS_MANAGERS_TIP");
+        Hover.Tip(dismiss, Menus.Text("SPIRE_MOD_MANAGER.DISMISS_MANAGERS_TIP"));
         Banner(border, search, Menus.Text("SPIRE_MOD_MANAGER.MANAGERS_WARNING"), ManagersCard, [show, dismiss], ManagersName, "ManagersWarning", WarningColor);
     }
 
@@ -482,12 +482,12 @@ static class LoadOrder
         };
     }
 
-    // The "!" on the Load Order button, with the page's warning as its tooltip; null takes it off.
+    // The "!" on the Load Order button, with the page's warning in its hover card; null takes it off.
     static void Badge(Control content, string? warning)
     {
         if (CategoryList.ScreenOf(content)?.GetNodeOrNull<Control>("SpireModManagerLoadOrderToggle") is not { } toggle)
             return;
-        toggle.TooltipText = warning ?? "";
+        Hover.Tip(toggle, warning);
         if (toggle.GetNodeOrNull<Control>(BadgeName) is not { } badge)
         {
             badge = new PanelContainer { Name = BadgeName, MouseFilter = Control.MouseFilterEnum.Ignore, Size = new Vector2(22, 22) };
