@@ -1,0 +1,41 @@
+name: Bug report
+description: Something doesn't work as it should.
+labels: [bug]
+body:
+  - type: markdown
+    attributes:
+      value: Thanks for reporting. The more of this you can fill in, the quicker it's found.
+  - type: input
+    id: game
+    attributes:
+      label: Game version and branch
+      description: Shown in the top-right corner of the Modding page. The mod needs the public-beta branch, v0.111.0 or newer.
+      placeholder: v0.111.0, public-beta
+    validations:
+      required: true
+  - type: input
+    id: mod
+    attributes:
+      label: Spire Mod Manager version
+      description: Select Spire Mod Manager on the Modding page; its version is next to the name in the info panel.
+      placeholder: 0.1.0
+  - type: textarea
+    id: what
+    attributes:
+      label: What happened
+      description: What you did, what you expected, and what happened instead. Screenshots help.
+    validations:
+      required: true
+  - type: textarea
+    id: mods
+    attributes:
+      label: Other mods
+      description: Other mods you had on, if they might matter (especially other mod managers).
+  - type: textarea
+    id: log
+    attributes:
+      label: Log
+      description: |
+        Attach or paste `%APPDATA%\SlayTheSpire2\logs\godot.log` from the session where it happened.
+        It can show your Windows user name in file paths; edit that out if you like.
+      render: text

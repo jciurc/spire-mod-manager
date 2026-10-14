@@ -448,7 +448,7 @@ static int Fail(string message)
 
 static string ScriptDir([CallerFilePath] string path = "") => Path.GetDirectoryName(path) ?? ".";
 
-// An environment variable's value (README.md, "Building"), or the author's own path when it isn't set.
+// An environment variable's value (CONTRIBUTING.md, "What you need"), or the author's own path when it isn't set.
 static string Env(string name, string fallback) =>
     Environment.GetEnvironmentVariable(name) is { Length: > 0 } value ? value : fallback;
 

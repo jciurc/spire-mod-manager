@@ -1,7 +1,6 @@
 # Spire Mod Manager: design
 
-Living document. Game facts live in the game-mod skill's `games/slay-the-spire-2.md`; background in
-`C:\repos\gaming\slay the spire\STS2-MOD-MANAGER-HANDOFF.md`.
+Living document: decisions and their background.
 
 ## Decided (2026-10-04)
 
@@ -91,7 +90,7 @@ Ideas for us, roughly by value:
 
 ## Research: other StS2 mod managers (2026-10-13)
 
-A survey of the Steam Workshop at Jordan's request, from the mod managers comparison session. Subscriber counts
+A survey of the Steam Workshop at Jordan's request, from a comparison of the mod managers there. Subscriber counts
 are from that day. What we do about it is in TODO round 21 and RELEASE-PLAN.md: Jordan's own calls are marked;
 the rest are recommendations to confirm with Jordan.
 

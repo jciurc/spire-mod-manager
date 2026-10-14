@@ -1,6 +1,6 @@
 # TODO
 
-Jordan's notes of 2026-10-07 (from `spire manager notes.txt` in the scratch folder), ticked off as they land.
+Jordan's notes of 2026-10-07, ticked off as they land.
 
 ## Vanilla View
 
@@ -611,7 +611,7 @@ file; perf with long-text and copy-pass with loc-format each needed a one-line f
 Found tonight, not done yet:
 - [ ] try #14 with a real Workshop subscription while the game runs (dev runs have no Steam)
 - [ ] try #22 with Undo And Restart (UI Modified) in your game
-- [ ] the in-game self-test on GitHub: register a self-hosted runner on Jordan's PC (README.md, "CI" section). With #25 in, it runs only when started by hand (Actions, Run workflow); before #25, the SELF_HOSTED_STS2 variable turns it on
+- [ ] the in-game self-test on GitHub: register a self-hosted runner on Jordan's PC (docs/dev/SELFTEST-RUNNER.md). With #25 in, it runs only when started by hand (Actions, Run workflow); before #25, the SELF_HOSTED_STS2 variable turns it on
 - [ ] the profile bar's background is 0 px tall (its anchors are set without offsets); decide whether it should show (#12)
 - [x] redraw with ~250 mods is about 49 ms after #15; the rest is Godot-side per row (titles, fitting) (about 21 ms after perf-views: round 19 backlog)
 - [ ] backups are picked by name (local time); a clock change can put them out of order (#6)

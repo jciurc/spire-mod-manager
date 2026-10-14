@@ -49,7 +49,7 @@ own fonts in Chinese, Japanese, Korean, Thai, Russian and Polish.
 
 ## Test it in the game
 
-1. Build the mod with your folder in it (README.md, "Building"), or ask the author for a test build.
+1. Build the mod with your folder in it (CONTRIBUTING.md, "Building"), or ask for a test build in a translation issue.
 2. Switch the game to your language in its settings. If some of our text stays in the old language, relaunch the
    game.
 3. Open the Modding screen and go through every part: the main list, Vanilla List, Load Order, the info panel,

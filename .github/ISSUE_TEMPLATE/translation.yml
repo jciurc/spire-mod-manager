@@ -1,0 +1,20 @@
+name: Translation
+description: Offer or discuss a translation into your language.
+labels: [translation]
+body:
+  - type: markdown
+    attributes:
+      value: The steps are in [TRANSLATING.md](https://github.com/jciurc/spire-mod-manager/blob/dev/TRANSLATING.md). An issue first avoids two people translating the same language.
+  - type: input
+    id: language
+    attributes:
+      label: Language
+      description: The language, and its three-letter code from TRANSLATING.md if you know it.
+      placeholder: German (deu)
+    validations:
+      required: true
+  - type: textarea
+    id: notes
+    attributes:
+      label: Notes
+      description: Whether you're starting a translation, have one ready, or have a question about a text.
