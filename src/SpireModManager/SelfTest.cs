@@ -997,9 +997,14 @@ static class SelfTest
             settings = stack.PushSubmenuType<NSettingsScreen>();
             await Wait(menu, 1);
             var button = settings.GetNodeOrNull<Control>(SettingsButton.Name);
-            var text = button?.GetNodeOrNull<MegaLabel>("Label")?.Text;
-            Check("Settings from the main menu: our button, shown, in the game's button look, reading Spire Mod Manager",
-                button is NButton { Visible: true } && button.IsVisibleInTree() && text == "Spire Mod Manager", $"{button?.GetType().Name ?? "no button"}: {text}");
+            // The game's button look (a copy of its Mod Settings button, text on a MegaLabel), or our small button when a
+            // game update has taken that one away (text on the Button itself): both are supported, so both pass.
+            var gameLook = button?.GetNodeOrNull<MegaLabel>("Label") is not null;
+            var text = gameLook ? button?.GetNodeOrNull<MegaLabel>("Label")?.Text : (button as Button)?.Text;
+            Check("Settings from the main menu: our button, shown, reading Spire Mod Manager",
+                button is { Visible: true } && button.IsVisibleInTree() && text == "Spire Mod Manager", $"{button?.GetType().Name ?? "no button"}: {text}");
+            if (button != null)
+                Results.Add(gameLook ? "INFO Settings button: the game's button look" : "INFO Settings button: our small button (the game's Mod Settings button wasn't found)");
             if (button != null)
             {
                 var children = settings.GetChildCount();
