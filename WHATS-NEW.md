@@ -4,7 +4,7 @@ Short notes for Jordan: what to look for after each install. Newest first.
 
 ## Waiting in pull requests
 
-- **Show filters** (branch `list-filters`): the bar above the list has "Show: All · Enabled · Disabled · Changed". Enabled and Disabled go by the tickboxes; Changed shows the mods the Changes list names. They work with the search (a row must match both, counted as "Search matches") and the categories (each counts its rows shown; one with none hides), and Enable all / Disable all act on what's shown. Untick a mod under Enabled: it stays put until you press a choice again (or reopen the page, or change many mods at once: Enable all / Disable all, undo, a profile). A banner's Show, or a mod's name in the panel or in Changes, still brings up a mod the filter hides. Load Order and Vanilla List always show every mod; each launch starts on All.
+- **Show filters** (branch `list-filters`): the bar above the list has "Show: All · Enabled · Disabled · Changed". Enabled and Disabled go by the tickboxes; Changed shows the mods the Changes list names. They work with the search (a row must match both, counted as "Search matches") and the categories (each counts its rows shown; one with none hides), and Enable all / Disable all act on what's shown. Untick a mod under Enabled: it stays put until you press a choice again (or reopen the page, or change many mods at once: Enable all / Disable all, undo, a profile). A banner's Show, or a mod's name in the panel or in Changes, still brings up a mod the filter hides, and clears a search that hides it. Load Order and Vanilla List always show every mod; each launch starts on All.
 
 ## Installed 2026-10-14 (early morning): version 0.0.52
 

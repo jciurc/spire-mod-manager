@@ -139,14 +139,18 @@ static class CategoryList
         Apply(content);
     }
 
-    // Scrolls a mod's row into view (its category opens if collapsed, and the page bar's Show: choice shows it if it
-    // left it out); flash: a short gold glow to find it by; focus: the row takes the "selected" look (as under the mouse
-    // or the keyboard) without becoming the info panel's mod. The info panel doesn't change.
+    // Scrolls a mod's row into view (its category opens if collapsed, the page bar's Show: choice shows it if it left it
+    // out, and a search that leaves it out is cleared: one that finds it stays); flash: a short gold glow to find it by;
+    // focus: the row takes the "selected" look (as under the mouse or the keyboard) without becoming the info panel's
+    // mod. The info panel doesn't change.
     public static void Reveal(Control content, string modId, bool flash, bool focus = false)
     {
         if (content.GetChildren().OfType<NModMenuRow>().FirstOrDefault(r => r.Mod?.manifest?.id == modId) is not { } row)
             return;
-        ListFilter.Bring(row.Mod); // hidden until the redraw Expand makes
+        ListFilter.Bring(row.Mod); // hidden until the next redraw (the search's clearing, or Expand's)
+        var filter = content.HasMeta(FilterMeta) ? (string)content.GetMeta(FilterMeta) : "";
+        if (filter.Length > 0 && !Search.Matches(row.Mod, filter))
+            Search.Clear(content);
         Expand(content, row);
         ScrollSoon(content, row, flash, focus);
     }

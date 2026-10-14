@@ -2573,7 +2573,7 @@ static class SelfTest
     // rows shown and has no header when it shows none. Choosing is no undo step and not pending. A row ticked under a
     // choice stays, counted, until a choice is pressed again or many mods change at once (undo, a profile, Disable all);
     // Enable all acts on the rows shown, which then go, as do the mods a profile switched to turns off; picked mods
-    // edited in their menu stay; going to a mod shows its row.
+    // edited in their menu stay; going to a mod shows its row, clearing a search that leaves it out.
     // Load Order and Vanilla List show every row; All shows every row again. (The page opening again:
     // TestListFilterReopen, near the end, as it starts a new visit for undo.)
     static async Task TestListFilters(Node menu, NModdingScreen screen, Control content, string outDir)
@@ -2890,6 +2890,39 @@ static class SelfTest
         await Press("ShowAllButton");
         Check("All: every row again, counted as installed mods", Shown().SequenceEqual(all) && Scope() == $"Installed mods ({all.Count})"
             && Choices() == "All* Enabled Disabled Changed", Say());
+
+        // Going to a mod a search leaves out (a name in the panel, a line in Changes), as for a banner's Show: the search
+        // clears, box and list, and its row shows; a search that finds it stays.
+        if (Rows().FirstOrDefault(r => r.Mod?.manifest?.id == "SmmTestLib") is { } panelRow
+            && Rows().FirstOrDefault(r => r.Mod?.manifest?.id == "SmmTestUi") is { Mod: { } linked } linkedRow)
+        {
+            CategoryList.Select(screen, panelRow);
+            await Wait(menu, 0.3);
+            var description = screen.GetNode<RichTextLabel>("%ModInfoContainer/ModDescription");
+            string Filter() => content.HasMeta(CategoryList.FilterMeta) ? (string)content.GetMeta(CategoryList.FilterMeta) : "";
+            string Said() => $"box \"{box.Text}\", filter \"{Filter()}\", shown {linkedRow.Visible}";
+            const string misses = "SmmTestLib", finds = "SmmTest";
+            await Find(misses);
+            var hidden = !linkedRow.Visible && !SpireModManager.Search.Matches(linked, misses);
+            description.EmitSignal(RichTextLabel.SignalName.MetaClicked, "mod:SmmTestUi");
+            await Wait(menu, 0.3);
+            Check("Show: All, a search that leaves a mod out: its name in the panel clears the search, box and list, and shows its row",
+                hidden && box.Text == "" && Filter() == "" && linkedRow.Visible, $"hidden by the search {hidden}; {Said()}");
+            await Find(finds);
+            description.EmitSignal(RichTextLabel.SignalName.MetaClicked, "mod:SmmTestUi");
+            await Wait(menu, 0.3);
+            Check("... a search that finds it stays", box.Text == finds && Filter() == finds && linkedRow.Visible, Said());
+            await Find(misses);
+            hidden = !linkedRow.Visible;
+            HistoryBar.OpenFromList(screen, "SmmTestUi");
+            await Wait(menu, 0.3);
+            Check("... and its line in Changes clears it too, the mod in the panel", hidden && box.Text == "" && Filter() == ""
+                && linkedRow.Visible && CategoryList.Selected == linked, $"hidden by the search {hidden}; {Said()}; panel {CategoryList.Selected?.manifest?.id}");
+            HistoryBar.HideBack(screen.GetNode<Control>("%ModInfoContainer"));
+            await Find("");
+        }
+        else
+            Results.Add("SKIP list filters, going to a mod through a search: the test mods missing");
     }
 
     // The page opening again: the choice stays, and the rows it kept for a change go by it again.
