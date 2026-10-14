@@ -78,8 +78,8 @@ Only one dev copy can run at a time; `tools/dev.cs` won't start while one is run
 
 CI (`.github/workflows/ci.yml`) runs the checks and compiles the tool scripts on GitHub's Linux machines. The
 mod itself can't build there, since the game's files aren't in the repository, so the build and the in-game
-test only run on a PC with the game installed. On a first pull request from a fork, CI waits until the
-maintainer approves the run. Copilot reviews each pull request; resolve or answer its comments before merging.
+test only run on a PC with the game installed. On pull requests from forks, CI may wait until the maintainer
+approves the run. Copilot reviews each pull request; resolve or answer its comments before merging.
 
 ## Branches
 

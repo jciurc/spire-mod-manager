@@ -53,7 +53,7 @@ than one mod manager is enabled, since both change the same page.
 
 Categories, aliases, notes, tags and profiles are saved in one file per Steam account. On Windows:
 `%APPDATA%\SlayTheSpire2\steam\<your Steam ID>\mod_data\SpireModManager\manager.json`, with the last 10
-backups beside it. It isn't in Steam Cloud, so it doesn't follow you to another PC or a Steam Deck. Which
+backups in the `backups` folder next to it. It isn't in Steam Cloud, so it doesn't follow you to another PC or a Steam Deck. Which
 mods are on, and their load order, stay where the game keeps them.
 
 To uninstall, unsubscribe on the Workshop. The game's own Modding page keeps working, with your mods as you
