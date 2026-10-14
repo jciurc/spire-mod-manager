@@ -65,7 +65,12 @@ if (mode is not ("test" or "launch"))
     return Fail("usage: dotnet run tools/dev.cs [test [--window] [--bmm[-after]] [--bmm-local] [--real|--first-run|--first-run-bmm]|launch [--first-run|--first-run-bmm]] [--workshop <id>[,<id>...]]");
 if (real && firstRun)
     return Fail("--real brings Jordan's own data, so it can't be a first run");
-// --workshop: every item has to be there, or the run would test without it and look like a pass.
+// --workshop: every item has to be there, or the run would test without it and look like a pass. So it takes
+// one list: a second --workshop, --workshop=..., or ids after a space would be dropped without a word.
+if (args.Count(a => a.StartsWith("--workshop")) != (workshopAt < 0 ? 0 : 1))
+    return Fail("--workshop comes once, with its ids after a space, as in: --workshop 3747605109,3750485606");
+if (args.Where((a, i) => i > 0 && i != workshopAt + 1 && !a.StartsWith("--")).FirstOrDefault() is { } stray)
+    return Fail($"\"{stray}\" isn't an option. Workshop ids go after --workshop, comma-separated with no spaces, as in: --workshop 3747605109,3750485606");
 if (workshopAt >= 0 && workshopItems.Length == 0)
     return Fail("--workshop needs Workshop item ids, comma-separated, as in: --workshop 3747605109,3750485606");
 foreach (var item in workshopItems)
