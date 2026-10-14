@@ -2112,6 +2112,19 @@ static class SelfTest
         var orderCard = await BannerCard(menu, screen, screen.FindChild(LoadOrder.WarningName, true, false));
         Check("the order warning's card: \"Test Content loads before Test Framework\", nothing else",
             string.Join(" | ", orderCard) == "Affected mods | Test Content loads before Test Framework", string.Join(" | ", orderCard));
+        // Both by the names the list shows: each with an alias, then as they were.
+        var aliasesWere = (Content: Store.InfoFor("SmmTestContent")?.Alias, Lib: Store.InfoFor("SmmTestLib")?.Alias);
+        Store.EditMod("SmmTestContent", info => info.Alias = "Content");
+        Store.EditMod("SmmTestLib", info => info.Alias = "Framework");
+        CategoryList.Redraw(content);
+        await Wait(menu, 0.3);
+        var aliased = string.Join(" | ", await BannerCard(menu, screen, screen.FindChild(LoadOrder.WarningName, true, false)));
+        Store.EditMod("SmmTestContent", info => info.Alias = aliasesWere.Content);
+        Store.EditMod("SmmTestLib", info => info.Alias = aliasesWere.Lib);
+        CategoryList.Redraw(content);
+        await Wait(menu, 0.3);
+        Check("the order warning's card by the names the list shows: \"Content loads before Framework\" with both aliased",
+            aliased == "Affected mods | Content loads before Framework", aliased);
         if (Row("SmmTestUi") is { Mod: { } ui } uiRow)
         {
             var idsWere = Ids();
@@ -2249,10 +2262,11 @@ static class SelfTest
             && warning?.FindChild("EnableNeededButton", true, false) is Control { Visible: true }, after.Detail);
         await Capture(screen, outDir, "2b-list-banner");
 
-        // Hovering its text: a card with each mod that won't load and what it needs, by the names the list shows (the
-        // framework by an alias here): Test Content and Test UI, and every other enabled mod whose own row says a mod it
-        // needs is off or not installed (the fixture's BrandedMod: BaseLib), nothing else.
-        var aliasWas = Store.InfoFor("SmmTestLib")?.Alias;
+        // Hovering its text: a card with each mod that won't load and what it needs, by the names the list shows (Test
+        // Content and the framework by an alias here): Test Content and Test UI, and every other enabled mod whose own row
+        // says a mod it needs is off or not installed (the fixture's BrandedMod: BaseLib), nothing else.
+        var aliasesWere = (Content: Store.InfoFor("SmmTestContent")?.Alias, Lib: Store.InfoFor("SmmTestLib")?.Alias);
+        Store.EditMod("SmmTestContent", info => info.Alias = "Content");
         Store.EditMod("SmmTestLib", info => info.Alias = "Framework");
         CategoryList.Redraw(content);
         await Wait(menu, 0.3);
@@ -2264,8 +2278,8 @@ static class SelfTest
         var card = await BannerCard(menu, screen, screen.FindChild(LoadOrder.WarningName, true, false));
         var named = card.Skip(1).Select(l => l.Split(": needs ")[0]).Order().ToList();
         Check("main list banner: hovering its text, a card with each mod that won't load and what it needs, by the names the list shows, nothing else",
-            card.FirstOrDefault() == "Affected mods" && card.Contains("Test Content: needs Framework (disabled)") && card.Contains("Test UI: needs Framework (disabled)")
-            && named.SequenceEqual(flagged) && !card.Any(l => l.Contains("Test Framework")),
+            card.FirstOrDefault() == "Affected mods" && card.Contains("Content: needs Framework (disabled)") && card.Contains("Test UI: needs Framework (disabled)")
+            && named.SequenceEqual(flagged) && !card.Any(l => l.Contains("Test Framework") || l.StartsWith("Test Content")),
             $"{string.Join(" | ", card)}; rows saying so: {string.Join(", ", flagged)}");
         // Each line gives its row's reasons: "(off)" there is "(disabled)" here, "(not installed)" the same. The fixture's
         // BrandedMod (on) needs BaseLib, which isn't installed.
@@ -2296,7 +2310,7 @@ static class SelfTest
             Hover.TestMouse = null;
             var next = await BannerCard(menu, screen, screen.FindChild(LoadOrder.WarningName, true, false));
             Check("a tick while the banner's card shows: no stale card, and the next leaves out the mod ticked off",
-                open && !stale && next.Contains("Test Content: needs Framework (disabled)") && !next.Any(l => l.StartsWith("Test UI")),
+                open && !stale && next.Contains("Content: needs Framework (disabled)") && !next.Any(l => l.StartsWith("Test UI")),
                 $"listed before {open}, stale after {stale}; then {string.Join(" | ", next)}");
             uiBox.IsTicked = true;
             uiBox.EmitSignal(NTickbox.SignalName.Toggled, uiBox);
@@ -2304,7 +2318,8 @@ static class SelfTest
         }
         else
             Results.Add("FAIL main list banner's card after a tick: no banner text or no Test UI row");
-        Store.EditMod("SmmTestLib", info => info.Alias = aliasWas);
+        Store.EditMod("SmmTestContent", info => info.Alias = aliasesWere.Content);
+        Store.EditMod("SmmTestLib", info => info.Alias = aliasesWere.Lib);
         CategoryList.Redraw(content);
         await Wait(menu, 0.3);
         screen.FindChild("EnableNeededButton", true, false)?.EmitSignal(BaseButton.SignalName.Pressed);
