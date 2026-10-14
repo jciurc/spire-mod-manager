@@ -2665,12 +2665,15 @@ static class SelfTest
             Results.Add($"INFO headers under Disabled: {content.GetChildren().Count(c => c.IsInGroup("SpireModManagerCategoryHeader") && c.Name != "Uncategorized")} "
                 + $"of {Store.Data.Categories.Count} categories");
 
-            // With a search: rows matching both, counted as the search's matches.
-            await Find("test");
-            var both = Where(m => Off(m) && SpireModManager.Search.Matches(m, "test"));
-            Check("Show: Disabled with a search: the rows matching both, counted as search matches", Shown().SequenceEqual(both)
-                && Scope() == $"Search matches ({both.Count})" && Choices() == "All Enabled Disabled* Changed",
-                $"{Say()}; expected {string.Join(", ", both)}");
+            // With a search: rows matching both, counted as the search's matches. "symphony" finds mods on (this one, Local
+            // Mod Fixes) and off (Better Mod Menu's fork, never loaded: "Crunch, modified by symphony"), so some rows show
+            // and some of its matches don't.
+            await Find("symphony");
+            var found = Where(m => SpireModManager.Search.Matches(m, "symphony"));
+            var both = Where(m => Off(m) && SpireModManager.Search.Matches(m, "symphony"));
+            Check("Show: Disabled with a search: the rows matching both, counted as search matches", both.Count > 0 && both.Count < found.Count
+                && Shown().SequenceEqual(both) && Scope() == $"Search matches ({both.Count})" && Choices() == "All Enabled Disabled* Changed",
+                $"{Say()}; expected {string.Join(", ", both)} of the search's {string.Join(", ", found)}");
             await Find("");
 
             CategoryList.Redraw(content);
