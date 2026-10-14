@@ -1,6 +1,8 @@
+using System.Runtime.CompilerServices;
 using Godot;
 using HarmonyLib;
 using MegaCrit.Sts2.Core.Localization;
+using MegaCrit.Sts2.Core.Localization.Fonts;
 using MegaCrit.Sts2.Core.Logging;
 using MegaCrit.Sts2.Core.Modding;
 using MegaCrit.Sts2.Core.Nodes;
@@ -124,8 +126,35 @@ public static class ModEntry
         return null;
     }
 
-    // One of the game's fonts, or Godot's own if it's gone, so text still shows and can be measured.
-    public static Font Font(string path) => Load<Font>(path) ?? ThemeDB.FallbackFont;
+    // One of the game's fonts, or Godot's own if it's gone, so text still shows and can be measured. In a language the
+    // game draws in its own font (Chinese, Japanese, Korean, Thai, Russian, Polish), Kreon gives way to that font, as
+    // on the game's labels: Kreon has none of their letters.
+    public static Font Font(string path) => LanguageFont(path) ?? Load<Font>(path) ?? ThemeDB.FallbackFont;
+
+    static bool _noLanguageFonts;
+
+    // The game's font for its language in place of Kreon (regular or bold), or null: Kreon is right for the language,
+    // the path isn't Kreon, or a game update took the game's font swap away (logged once; Kreon from then on).
+    static Font? LanguageFont(string path)
+    {
+        var bold = path == "res://themes/kreon_bold_shared.tres";
+        if ((!bold && path != "res://themes/kreon_regular_shared.tres") || _noLanguageFonts || LocManager.Instance is not { Language: { } language })
+            return null;
+        try
+        {
+            return GameLanguageFont(language, bold);
+        }
+        catch (Exception e)
+        {
+            _noLanguageFonts = true;
+            Log.Warn($"[{ModId}] The game's fonts for other languages weren't found, so our text is in Kreon in every language (logged once): {e.Message}");
+            return null;
+        }
+    }
+
+    // On its own, so a game update without FontManager fails in LanguageFont's try, not where that is compiled.
+    [MethodImpl(MethodImplOptions.NoInlining)]
+    static Font? GameLanguageFont(string language, bool bold) => FontManager.GetSubstituteFont(language, bold ? FontType.Bold : FontType.Regular);
 
     static void NoteMissing(string what)
     {
