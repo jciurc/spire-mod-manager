@@ -319,13 +319,21 @@ static class ProfileShare
         return string.Join("\n", lines);
     }
 
-    // A profile's name as a file name: characters a file name can't have become "_".
+    // A profile's name as a file name: characters a file name can't have become "_", and a name Windows keeps for a
+    // device (CON, NUL, COM1..., also before a dot, as in "CON.backup") gets a "_" in front.
     public static string FileName(string profile)
     {
         var bad = Path.GetInvalidFileNameChars().Concat(['<', '>', ':', '"', '/', '\\', '|', '?', '*']).ToHashSet();
         var name = new string(profile.Select(c => bad.Contains(c) ? '_' : c).ToArray()).Trim().TrimEnd('.');
-        return (name.Length > 0 ? name : Menus.Text("SPIRE_MOD_MANAGER.IMPORTED_PROFILE")) + ".csv";
+        if (name.Length == 0)
+            name = Menus.Text("SPIRE_MOD_MANAGER.IMPORTED_PROFILE");
+        if (Reserved.IsMatch(name.Split('.')[0].TrimEnd()))
+            name = "_" + name;
+        return name + ".csv";
     }
+
+    static readonly System.Text.RegularExpressions.Regex Reserved =
+        new(@"^(CON|PRN|AUX|NUL|COM[0-9¹²³]|LPT[0-9¹²³])$", System.Text.RegularExpressions.RegexOptions.IgnoreCase);
 
     // Writes the text as UTF-8 with a BOM (so spreadsheets read accented names right), as Better Mod Menu does. The
     // error's message when it fails, or null.

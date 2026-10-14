@@ -1646,6 +1646,9 @@ static class SelfTest
         var bytes = File.Exists(file) ? File.ReadAllBytes(file) : [];
         Check("Save CSV: a name made safe for a file, the text as UTF-8 with a BOM", Path.GetFileName(file) == "Co-op_ _night__.csv" && saveError == null
             && bytes is [0xEF, 0xBB, 0xBF, ..] && File.ReadAllText(file) == csv, $"{Path.GetFileName(file)}: {saveError}");
+        string[] reserved = [ProfileShare.FileName("CON"), ProfileShare.FileName("com1.backup"), ProfileShare.FileName("Console")];
+        Check("Save CSV: a name Windows keeps for a device gets a _ in front, before a dot too; others don't",
+            reserved.SequenceEqual(["_CON.csv", "_com1.backup.csv", "Console.csv"]), string.Join(", ", reserved));
         Input.ParseInputEvent(new InputEventKey { Keycode = Key.Escape, Pressed = true });
         await Wait(menu, 0.2);
         Input.ParseInputEvent(new InputEventKey { Keycode = Key.Escape, Pressed = false });
