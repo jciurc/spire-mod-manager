@@ -89,7 +89,7 @@ public static class Store
     // For the self-test's second launch: the next use loads again, from the file the first load wrote.
     public static void Reload() => _data = null;
 
-    static string Dir => ProjectSettings.GlobalizePath(UserDataPathProvider.GetAccountScopedBasePath($"mod_data/{ModEntry.ModId}"));
+    public static string Dir => ProjectSettings.GlobalizePath(UserDataPathProvider.GetAccountScopedBasePath($"mod_data/{ModEntry.ModId}"));
     public static string FilePath => Path.Combine(Dir, FileName);
 
     // A launch that found the file unreadable, for the notice on the Modding screen (shown once, then null). The
