@@ -85,6 +85,7 @@
 14. **Crash-safe launch** (Jordan, 2026-10-13: spike first). A blocker if the spike shows it's small; otherwise the first update.
     - A launch that never reaches the main menu leaves a marker. At the next menu, offer to restore the last setup that worked. After two failed launches in a row, roll back once on our own and say so. Never loop.
     - It needs us first in `mod_list`. The spike decides whether a mod loaded first can stop the rest loading in the same launch, or must restore `mod_list` and relaunch.
+    - Found since (2026-10-13): it can. STS2-ModManager (MIT) patches `ModManager.TryLoadMod` while the first mod initializes, holds back the later mods, then loads the chosen ones. So a crashing mod can be skipped without a second launch.
     - Details in TODO round 21.
 
 ## 3. Should do before 1.0
@@ -149,7 +150,7 @@
     - The Workshop description in English and Simplified Chinese, in one description (the norm here; Better Mod Menu does it).
     - Later: the spreadsheet by email or Discord until the repo is public, then GitHub pull requests. At 2-3 languages, Weblate or Crowdin (both free for open-source projects).
     - Details in TODO round 21.
-- **Bigger features:** load mods without a restart (Jordan, 2026-10-13: a spike first, with crash-safe launch); the manager during a run plus "save run and relaunch"; delete or uninstall a mod; an in-game error log; keyboard navigation and controller support; "Play vanilla" via `--nomods`; a link to the game's patch notes.
+- **Bigger features:** load mods without a restart (Jordan, 2026-10-13: a spike first, with crash-safe launch; §2, 14 has a finding for both); the manager during a run plus "save run and relaunch"; delete or uninstall a mod; an in-game error log; keyboard navigation and controller support; "Play vanilla" via `--nomods`; a link to the game's patch notes.
 
 ## 5. Publishing: how it works and the checklist
 
