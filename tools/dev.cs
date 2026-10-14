@@ -159,7 +159,7 @@ var start = new ProcessStartInfo(Path.Combine(DevDir, "SlayTheSpire2.exe"), ["--
     { WorkingDirectory = DevDir };
 // Tests run headless (no window, UI dumps only) unless --window asks for screenshots; then the window
 // is sent behind everything and focus handed back (see below), so Jordan's work isn't interrupted.
-var windowed = mode == "launch" || args.Contains("--window");
+var windowed = mode == "launch" || (!smoke && args.Contains("--window"));
 if (!windowed)
     start.ArgumentList.Add("--headless");
 start.Environment["SPIRE_MOD_MANAGER_DEV"] = "1"; // the mod marks the window "[DEV]"
@@ -195,41 +195,67 @@ if (smoke)
     while (!released.WaitForExit(500) && DateTime.Now < giveUp && (menuAt == null || DateTime.Now < menuAt.Value.AddSeconds(5)))
         if (menuAt == null && LogLines().Any(line => line.Contains(menuLoaded)))
             menuAt = DateTime.Now;
+    var exitedEarly = released.HasExited ? $"the game exited on its own, code {released.ExitCode}" : ""; // a crash, if before the menu
     if (!released.HasExited)
     {
         released.Kill();
         released.WaitForExit();
     }
     var lines = LogLines();
-    // Ours: a "[SpireModManager]" or "[ERROR] ... Spire" line, and a Godot "ERROR:" whose stack lines below it
-    // name our code.
+    // Ours: a warning or error tagged [SpireModManager], an [ERROR] naming our id or name (not the fixture mods',
+    // whose author is "Spire Mod Manager tests"), and a Godot "ERROR:" naming our code, on its own line or in the
+    // stack lines below it (a release build has no debug information, so the stack may be missing).
     var errors = new List<string>();
     for (var i = 0; i < lines.Count; i++)
     {
         var line = lines[i];
-        if (line.StartsWith("ERROR:") && lines.Skip(i + 1).TakeWhile(l => l.StartsWith(' ')).Any(l => l.Contains($"{ModId}.")))
+        if (line.StartsWith("ERROR:") && lines.Skip(i).TakeWhile((l, n) => n == 0 || l.StartsWith(' ')).Any(l => l.Contains(ModId)))
             errors.Add(line);
-        else if ((line.Contains("[ERROR]") && line.Contains("Spire")) || (line.Contains($"[{ModId}]") && line.Contains("[WARN]")))
+        else if ((line.Contains("[ERROR]") && (line.Contains(ModId) || (line.Contains("Spire Mod Manager") && !line.Contains("Spire Mod Manager tests"))))
+            || (line.Contains($"[{ModId}]") && line.Contains("[WARN]")))
             errors.Add(line);
     }
+    var dll = Path.Combine(distDir, ModId + ".dll");
     var version = (string?)JsonNode.Parse(File.ReadAllText(Path.Combine(distDir, ModId + ".json")))?["version"] ?? "?";
+    var committed = CommitTime();
     string[] checks =
     [
+        Result($"dist/ was built after the checked-out commit (built {File.GetLastWriteTime(dll):yyyy-MM-dd HH:mm})",
+            committed == null || File.GetLastWriteTimeUtc(dll) >= committed, "rebuild it with `dotnet run build.cs --dist`"),
         Result($"the release build ({version}) loaded and finished initializing", lines.Any(l => l.Contains("Finished mod initialization for") && l.EndsWith($"({ModId})."))),
         Result("its initializer logged that it started", lines.Any(l => l.Contains($"[{ModId}] Initialized"))),
-        Result("the game reached its main menu", menuAt != null),
+        // The run sets SPIRE_MOD_MANAGER_DEV=1 as every dev run does; a build without DEVTOOLS ignores it.
+        Result("the dev switches are compiled out (it ignored SPIRE_MOD_MANAGER_DEV)", !lines.Any(l => l.Contains($"[{ModId}] Initialized (dev run)"))),
+        Result("the game reached its main menu", menuAt != null, exitedEarly),
         Result("nothing in the log from our mod is an error or a warning", errors.Count == 0, string.Join(" | ", errors.Take(3))),
     ];
     File.WriteAllLines(Path.Combine(outDir, "results.txt"), checks);
     foreach (var check in checks)
         Console.WriteLine(check);
     Console.WriteLine("--- log ---");
-    foreach (var line in lines.Where(l => l.Contains($"[{ModId}]") || errors.Contains(l)))
+    // Before the menu, the last lines say where it stopped.
+    foreach (var line in lines.Where(l => l.Contains($"[{ModId}]") || errors.Contains(l)).Concat(menuAt == null ? lines.TakeLast(15) : []))
         Console.WriteLine(line.Length > 400 ? line[..400] : line);
     Console.WriteLine("Not covered here: opening the Modding page. Do that once by hand in the real game (RELEASE-PLAN.md §5).");
     return checks.Any(c => c.StartsWith("FAIL")) ? 1 : 0;
 
     static string Result(string name, bool ok, string detail = "") => $"{(ok ? "PASS" : "FAIL")} {name}{(ok || detail.Length == 0 ? "" : $": {detail}")}";
+}
+
+// When the checked-out commit was made (UTC), or null without git.
+DateTime? CommitTime()
+{
+    try
+    {
+        var git = Process.Start(new ProcessStartInfo("git", ["-C", root, "log", "-1", "--format=%ct"]) { RedirectStandardOutput = true });
+        var seconds = git?.StandardOutput.ReadToEnd().Trim();
+        git?.WaitForExit();
+        return long.TryParse(seconds, out var s) ? DateTimeOffset.FromUnixTimeSeconds(s).UtcDateTime : null;
+    }
+    catch (System.ComponentModel.Win32Exception)
+    {
+        return null;
+    }
 }
 
 // The dev log so far, read while the game may still be writing it.
