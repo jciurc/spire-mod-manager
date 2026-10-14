@@ -86,7 +86,7 @@ static class PageBar
         })
         {
             var button = Menus.ChoiceButton(Menus.Text(key), option == choice, () => ListFilter.Choose(content, option), name);
-            button.TooltipText = Menus.Text(tip);
+            Hover.Tip(button, Menus.Text(tip));
             button.SizeFlagsVertical = Control.SizeFlags.ShrinkCenter;
             show.AddChild(button);
         }
