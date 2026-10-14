@@ -77,6 +77,14 @@
     - first change note starting with "1.0.0";
     - `"dependencies": []` (explicit, because v0.2.0 of the uploader wipes Required Items when the field is absent).
 12. **Real Workshop test.** Upload privately, subscribe on your account, and check `workshopId`, the details, the Patch notes link and the source line. Dev runs use `--force-steam off`, so this path has never run.
+13. **Share and import as text** (Jordan, 2026-10-13, after the survey of other managers in DESIGN.md). Mod Profile Manager and Mod Preset Sync have share codes, and Load Order Manager has clipboard JSON, so players will expect it.
+    - Copy a profile to the clipboard as one line of text: a prefix and version (`SMM1:`) plus the compressed list. It should fit one Discord message for about 250 mods.
+    - Import shows what would change before anything does (enable, disable, missing, local only, game version), then makes a new profile, so it can be undone.
+    - Details in TODO round 21.
+14. **Crash-safe launch** (Jordan, 2026-10-13: spike first). The spike is the blocker. Building it is one too if the spike shows it's small; otherwise it ships in the first update.
+    - A launch that never reaches the main menu leaves a marker. At the next menu, offer to restore the last setup that worked. After two failed launches in a row, roll back once on our own and say so. Never loop.
+    - It needs us first in `mod_list`. The spike decides whether a mod loaded first can stop the rest loading in the same launch, or must restore `mod_list` and relaunch.
+    - Details in TODO round 21.
 
 ## 3. Should do before 1.0
 
@@ -92,6 +100,10 @@
   - Time the screen open and one search keystroke.
 - **Long text that still overflows** (TODO Round 15): the panel title and version, the source line, and rows with many tags hiding the author.
 - **Undo And Restart compatibility:** it adds a panel at a fixed (0,318) in the info panel, over our fields. Re-place foreign children of the info panel below the description, then check in game.
+- **Warn about managers that rewrite `mod_list`** (recommended by the survey; to confirm with Jordan). Moved up from §4's "detect other mod managers by id and warn".
+  - Widen the round 19 "Multiple mod managers are currently enabled" warning past Better Mod Menu: ModListSorter, LoadOrderSync, Mod Launch Manager, Load Order Manager, Mod Preset Sync and Mod Profile Manager (see §6).
+  - Their manifest ids need looking up.
+  - Decide it with the two-managers spike (TODO round 20, `docs/spikes/two-managers.md`).
 - **Mark our popups as ours:** add "Spire Mod Manager" to New Mod Added, Delete profile and Delete category. The New Mod popup replaces the game's popup on BMM's page too.
 - **Relaunch wording:** our own pending line instead of the game's "restart" line (the wording part only).
 - **Review queue:** go through `WHATS-NEW.md` "For your review" (about 37 items) and prune its stale entries (see §8).
@@ -115,11 +127,13 @@
 
 - **Views:** table view with sortable columns (including a load-order position column); filters for enabled, disabled and edited mods; minimap scroll bar; back/forward history.
 - **Organizing:** drag and drop on the main list; colours for categories and tags; a tag manager (rename or merge); tag suggestions; Workshop tags as one-click own tags; tag-driven actions; click-to-search toggles; bulk-clear notes.
-- **Profiles and load order:** a settings page with a profile details panel; undo per profile; load-order presets or overrides per profile; optional sync with the game's save slots; export, import and share codes; Steam Cloud sync.
+- **Profiles and load order:** a settings page with a profile details panel; undo per profile; load-order presets or overrides per profile; optional sync with the game's save slots; Steam Cloud sync. (Share codes moved to §2.)
 - **Load order smarts:** finer Auto sort tiers; linked pushing while dragging.
-- **Compatibility:** an audit beyond dependencies; status tags (Failed, Duplicate, Missing); click a missing dependency to open its Workshop page (spike first); detect other mod managers by id and warn.
-- **Interop:** BMM re-import, csv export and toggle; a "Config" button for mods that have one; detect Quick Relaunch (only if it is ever published).
-- **Bigger features:** the manager during a run plus "save run and relaunch"; delete or uninstall a mod; an in-game error log; keyboard navigation and controller support; "Play vanilla" via `--nomods`; a link to the game's patch notes.
+- **Compatibility:** an audit beyond dependencies; status tags (Failed, Duplicate, Missing); click a missing dependency to open its Workshop page (spike first). (The managers warning moved to §3.)
+- **Interop:** BMM re-import, csv export and toggle; a "Config" button for mods that have one; detect Quick Relaunch (only if it is ever published); import other managers' data after share codes (Load Order Manager's `presets.json`, MPM1 codes, BMM CSV).
+- **Workshop:** Update now and Subscribe/Unsubscribe in the info panel (TODO round 2's "auto update and polling", redefined); one package for every branch once the range widens past beta (Load Order Manager's loader picks a build per game version).
+- **Languages:** Simplified Chinese right after 0.1.0. Most mods on this Workshop are Chinese; English only for 0.1.0 stands.
+- **Bigger features:** load mods without a restart (Jordan, 2026-10-13: a spike first, with crash-safe launch); the manager during a run plus "save run and relaunch"; delete or uninstall a mod; an in-game error log; keyboard navigation and controller support; "Play vanilla" via `--nomods`; a link to the game's patch notes.
 
 ## 5. Publishing: how it works and the checklist
 
@@ -163,7 +177,8 @@
 - **Early Access churn:** every beta patch can rename the private members and node paths we depend on. Expect quick-turnaround updates; blocker 4 limits the damage.
 - **Beta-only audience:** public-branch players will be confused. Widen the range the day 0.111+ reaches `public`.
 - **Branch fields:** one upload without `minBranch` serves a broken build to public players.
-- **Other mod managers** (five on the Workshop) patch the same screen, untested together. Likely the main source of bug reports.
+- **Other mod managers** (Better Mod Menu, Load Order Manager, Mod Launch Manager, Mod Profile Manager, Mod Preset Sync, Better Mod List and more; the survey is in DESIGN.md) may patch the same screen, untested together. Likely the main source of bug reports.
+- **Managers that rewrite `mod_list`** quietly undo our Load Order page: ModListSorter (A-Z on every exit), LoadOrderSync (at launch), Mod Launch Manager (pins itself first), Load Order Manager, Mod Preset Sync and Mod Profile Manager. The player sees their order change back with no word why. §3's warning covers it.
 - **BMM users:** both run together now (round 17), but two managers on one page, with separate profiles, may confuse. The description should say what the warning means, and that BMM 1.1.1 has its own errors on the beta. The bridge reaches BMM internals by reflection; an update there can make our list jump again (the `--bmm` self-test catches it).
 - **Data is local only** (not in Steam Cloud). It doesn't follow players between PCs or a Steam Deck.
 - **Platforms:** relaunch is tested only on Windows; macOS, Linux and Deck are untested.
@@ -199,8 +214,10 @@
 - The recently-updated mark items (Updated tag, red pip, gem, the link, patch notes fetched per mod), all removed.
 - Round 10: long-details test and long-titles backlog (superseded by Round 15; keep only the Round 15 long-text item).
 - Round 1: "show Switched from X to Y" (superseded by Round 5).
-- Round 2: "auto update and polling" (drop unless you can say what it meant).
 - Backlog r1: "show installed/removed mods that differ from preset" (merge into the Round 8 profiles item).
+
+**Keep, redefined:**
+- Round 2: "auto update and polling" (once on the drop list as unclear) is now Workshop actions in the info panel: Update now, Subscribe/Unsubscribe (§4, TODO round 21).
 
 **Rewrite:**
 - `DESIGN.md`: "Status (2026-10-06)" says 68 checks (now about 220), lists the "Visual only" tag and a Workshop Page button, and says inline actions are rough. The "Draft layer" and "Defaults profile" sections describe what wasn't built. The content picker is now its own project.

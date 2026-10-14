@@ -63,6 +63,9 @@ drive; hard links can't cross drives) with its own mods folder, no Steam, separa
   those patches count as failed, as after a game update that broke them, to see the game's page and its
   "needs an update" line.
 - `dotnet run tools/pck.cs list|extract`: look inside the game's pack (scenes, images).
+- `dotnet run tools/shot.cs out/selftest/<name>.png`: put a screenshot on a pull request. It's shrunk to a JPG,
+  committed to the `pr-screenshots` branch and printed as Markdown to paste. Fixture shots only: `real-*`
+  shots show your own mods and data, so they're refused.
 
 ## Branches
 
@@ -73,6 +76,8 @@ drive; hard links can't cross drives) with its own mods folder, no Steam, separa
   it's never merged into anything.
 - **`dev`:** the record. Changes arrive only through pull requests (a quick read and Copilot's text review).
 - **`main`:** releases, from `dev` by pull request (created at 0.1.0).
+- **`pr-screenshots`:** pictures for pull requests only (`tools/shot.cs`), one folder per branch. It shares no
+  history with the others, has no rules and is never merged.
 
 Notes: TODO.md (requests and their state), DESIGN.md (decisions and background), WHATS-NEW.md (what to
 look for after each install), workshop/README.md (publishing to the Steam Workshop).

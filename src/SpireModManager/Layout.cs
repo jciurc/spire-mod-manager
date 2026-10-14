@@ -497,10 +497,10 @@ static class Layout
     }
 
     // Our size, as the most the game's auto-size may pick, then fitted again (Refit). Already so (a redraw in the same
-    // view): left as it is, fitted.
+    // view): left alone, as fitted (each override restyles the text, and every row title comes by here on every redraw).
     public static void FontSize(MegaRichTextLabel label, int size)
     {
-        if (label.MaxFontSize == size && label.GetThemeFontSize("normal_font_size") == size)
+        if (label.MaxFontSize == size && label.GetThemeFontSize("normal_font_size") == size && label.GetThemeFontSize("bold_font_size") == size)
             return;
         label.AddThemeFontSizeOverride("normal_font_size", size);
         label.AddThemeFontSizeOverride("bold_font_size", size);
@@ -508,24 +508,39 @@ static class Layout
         Refit(label);
     }
 
-    // The game's auto-size (a MegaRichTextLabel's text shrunk to fit its box) run again, once the text and box are final:
-    // after a size written straight in, setting the same text doesn't run it, and it skips writing a size equal to the
-    // one it wrote last, which may not be the one drawn any more. Told the size drawn now, it writes only another one.
+    // The game's auto-size (a MegaRichTextLabel's text shrunk to fit its box) run again after a size written straight in:
+    // setting the same text doesn't run it, and it skips writing a size equal to the one it wrote last, which may not be
+    // the one drawn any more. Told the size drawn now, it writes only another one; deferred, once the text and box are
+    // final. With the auto-size off (a row title while a redraw sets it up) its last size is forgotten instead, so the one
+    // fitting RowTitles.AutoSize runs as it turns it back on writes: `now`, its text and box final, and only if the box
+    // changed or a size was written since it last ran. (A deferred run would find it still off, or fit it twice.)
     // Those are private, so reached by name: if a game update renames them, sizes stay as written (noted once).
-    public static void Refit(MegaRichTextLabel label)
+    public static void Refit(MegaRichTextLabel label, bool now = false)
     {
         if (!(_refits ??= Refits()))
             return;
-        label.Set(LastSetSize, label.GetThemeFontSize("normal_font_size"));
-        label.CallDeferred(AdjustFontSize);
+        if (!label.AutoSizeEnabled)
+        {
+            label.Set(LastSetSize, 0);
+            return;
+        }
+        var drawn = label.GetThemeFontSize("normal_font_size");
+        if (now && (int)label.Get(LastSetSize) == drawn && label.Size == (Vector2)label.Get(LastAdjustedSize))
+            return;
+        label.Set(LastSetSize, drawn);
+        if (now)
+            label.Call(AdjustFontSize);
+        else
+            label.CallDeferred(AdjustFontSize);
     }
 
-    static readonly StringName LastSetSize = "_lastSetSize", AdjustFontSize = "AdjustFontSize";
+    static readonly StringName LastSetSize = "_lastSetSize", LastAdjustedSize = "_lastAdjustedSize", AdjustFontSize = "AdjustFontSize";
     static bool? _refits;
 
     static bool Refits()
     {
-        if (AccessTools.Field(typeof(MegaRichTextLabel), "_lastSetSize") != null && AccessTools.Method(typeof(MegaRichTextLabel), "AdjustFontSize") != null)
+        if (AccessTools.Field(typeof(MegaRichTextLabel), "_lastSetSize") != null && AccessTools.Field(typeof(MegaRichTextLabel), "_lastAdjustedSize") != null
+            && AccessTools.Method(typeof(MegaRichTextLabel), "AdjustFontSize") != null)
             return true;
         Log.Warn($"[{ModEntry.ModId}] MegaRichTextLabel's auto-size not found; text keeps the sizes we write");
         return false;

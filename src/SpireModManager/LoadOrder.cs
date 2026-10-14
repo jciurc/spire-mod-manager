@@ -80,21 +80,18 @@ static class LoadOrder
         }
     }
 
-    // Takes the handles and numbers off again (other views).
+    // Hides the handles and numbers again (other views). They're kept for the next visit: making them for every row
+    // was most of a switch to Load Order. Hidden, they also tell a second redraw in the same frame not to shift the
+    // title back again.
     public static void Undecorate(IEnumerable<NModMenuRow> rows)
     {
         foreach (var row in rows)
         {
-            if (row.GetNodeOrNull(HandleName) is not { } handle)
+            if (row.GetNodeOrNull<Control>(HandleName) is not { Visible: true } handle)
                 continue;
-            // Out of the tree now, not at the end of the frame: a second redraw in the same frame must not
-            // find them and shift the title back again.
-            foreach (var node in new[] { handle, row.GetNodeOrNull(NumberName), row.GetNodeOrNull(WasName) })
+            foreach (var node in new[] { handle, row.GetNodeOrNull<Control>(NumberName), row.GetNodeOrNull<Control>(WasName) })
                 if (node != null)
-                {
-                    row.RemoveChild(node);
-                    node.QueueFree();
-                }
+                    node.Visible = false;
             row.GetNode<Control>("Title").OffsetLeft -= HandleWidth;
             OrderingOnly(row, false);
         }
@@ -193,7 +190,7 @@ static class LoadOrder
     // fixing makes the saved order say what will happen). On the main list: enabled mods that need a mod
     // that is off or missing, with a way to each and a fix for the off ones. Elsewhere, a "!" on the Load
     // Order button says that page has a warning. Above that one on both, while Better Mod Menu is ticked too: a
-    // banner saying two mod managers are on, with a way to its row.
+    // banner saying two mod managers are on, with a way to its row and a way to dismiss it.
     public const string WarningName = "SpireModManagerOrderWarning", ManagersName = "SpireModManagerManagersWarning", AutoSortName = "AutoSortButton";
     public const string AutoSortHintName = "AutoSortHint";
     const string BadgeName = "WarningBadge";
@@ -255,10 +252,13 @@ static class LoadOrder
                 border.RemoveChild(old); // now, not at the end of the frame: a redraw in the same frame adds a new one
                 old.QueueFree();
             }
-        // Better Mod Menu ticked too, on our views. A tickbox change comes through here (RefreshStrips), so the banner
-        // shows and goes at once, without a relaunch.
-        if (Layout.Wide && Bmm.Ticked)
-            ManagersBanner(content, border, search);
+        // Better Mod Menu and ours both ticked, on our views, unless dismissed. A tickbox change comes through here
+        // (RefreshStrips), so the banner shows and goes at once, without a relaunch. Dismissed, it comes back once the
+        // two aren't both ticked (in any view), ready for the next time they are: tickboxes, profiles, undo and redo, and
+        // the fixes all redraw through here.
+        Bmm.ForgetDismissedWarning();
+        if (Layout.Wide && Bmm.BothTicked && !Store.Data.ManagersWarningDismissed)
+            ManagersBanner(content, border, search, redraw);
         if (on && misordered > 0)
             Banner(border, search, orderText, [Menus.SmallButton(Menus.Text("SPIRE_MOD_MANAGER.FIX_ORDER"), () => Do(FixOrder), name: "FixOrderButton")]);
         else if (Layout.Current == Layout.View.Categories)
@@ -304,8 +304,9 @@ static class LoadOrder
         Banner(border, search, text, buttons);
     }
 
-    // Better Mod Menu ticked as well as us: the same kind of banner and Show, which goes to its row.
-    static void ManagersBanner(Control content, Control border, Control? search)
+    // Better Mod Menu ticked as well as us: the same kind of banner and Show, which goes to its row, then Dismiss for
+    // a player happy to run both.
+    static void ManagersBanner(Control content, Control border, Control? search, Action redraw)
     {
         var show = Menus.SmallButton(Menus.Text("SPIRE_MOD_MANAGER.SHOW_PROBLEM"), () =>
         {
@@ -313,7 +314,14 @@ static class LoadOrder
                 GoTo(content, mod);
         }, name: "ShowManagersButton");
         show.TooltipText = Menus.Text("SPIRE_MOD_MANAGER.SHOW_MANAGERS_TIP");
-        Banner(border, search, Menus.Text("SPIRE_MOD_MANAGER.MANAGERS_WARNING"), [show], ManagersName, "ManagersWarning");
+        var dismiss = Menus.SmallButton(Menus.Text("SPIRE_MOD_MANAGER.DISMISS_MANAGERS"), () =>
+        {
+            Store.Data.ManagersWarningDismissed = true;
+            Store.Save(); // view state: no undo step, not a change (Store.EditsJson)
+            redraw();
+        }, name: "DismissManagersButton");
+        dismiss.TooltipText = Menus.Text("SPIRE_MOD_MANAGER.DISMISS_MANAGERS_TIP");
+        Banner(border, search, Menus.Text("SPIRE_MOD_MANAGER.MANAGERS_WARNING"), [show, dismiss], ManagersName, "ManagersWarning");
     }
 
     // A banner's Show: the mod's row scrolled into view (its category opened) with a short glow, and the mod in the
@@ -418,8 +426,8 @@ static class LoadOrder
     }
 
     // Position number and a grip on the left of the row. Dragging the row (anywhere, not just the grip) moves
-    // it: a gold line shows where it will land, and releasing saves. Made on each visit to Load Order
-    // (Undecorate takes them off again); the number updates every redraw.
+    // it: a gold line shows where it will land, and releasing saves. Made on the first visit to Load Order
+    // (Undecorate hides them again, and later visits show them); the number updates every redraw.
     // wasAt: where it was at launch (0: unknown); shown dimly as "5 →" when it moved.
     static void Decorate(Control content, NModMenuRow row, int position, int wasAt, Action redraw)
     {
@@ -428,6 +436,11 @@ static class LoadOrder
         {
             number.Text = position.ToString();
             row.GetNode<Label>(WasName).Text = was;
+            if (number.Visible)
+                return;
+            foreach (var name in new[] { HandleName, NumberName, WasName })
+                row.GetNode<Control>(name).Visible = true;
+            row.GetNode<Control>("Title").OffsetLeft += HandleWidth;
             return;
         }
         row.GetNode<Control>("Title").OffsetLeft += HandleWidth;
@@ -467,8 +480,8 @@ static class LoadOrder
             });
         row.AddChild(handle);
 
-        // The handlers below are connected once per row: rows outlive this view, and the grip and numbers above
-        // come back on every visit (connecting again would start one drag per visit).
+        // The handlers below are connected once per row: rows outlive this view (connecting again would start one
+        // drag per visit).
         if (row.HasMeta(WiredMeta))
             return;
         row.SetMeta(WiredMeta, true);
