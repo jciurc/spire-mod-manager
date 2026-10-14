@@ -78,6 +78,13 @@ log file, `%APPDATA%\SlayTheSpire2\logs\godot.log` (it can show your Windows use
 
 Translations: [TRANSLATING.md](TRANSLATING.md). Code, building and testing: [CONTRIBUTING.md](CONTRIBUTING.md).
 
+The watchdog (`.github/workflows/watchdog.yml`, `tools/watchdog.cs`) guards the public repo against floods.
+Every 30 minutes it counts the pull requests, issues and comments that outside accounts made in the last hour.
+Over 5 opened or 30 comments, it locks those conversations to collaborators and opens a `watchdog` issue
+listing the stronger switches, such as limiting the whole repo to collaborators for a day. It runs only while
+the repository variable `WATCHDOG` is `on`. Actions > Watchdog > Run workflow runs it by hand at any time: a
+dry run by default, but with "dry-run" unticked it locks and reports for real.
+
 ## License
 
 MIT (see [LICENSE](LICENSE)), the art in `images/` included. Slay the Spire 2 and its files belong to Mega

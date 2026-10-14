@@ -12,7 +12,7 @@
 
 ## For review
 
-<!-- Choices made along the way that someone should agree with, and anything uncertain. -->
+<!-- Choices made along the way that someone should agree with, and anything uncertain. Also what Claude's review (`/code-review`, run before opening this) found and what you did about each finding. -->
 
 ## Testing
 
