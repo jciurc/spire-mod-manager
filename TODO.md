@@ -706,7 +706,7 @@ recommendations to confirm with Jordan.
   - our initializer writes a "launch pending" marker; reaching the main menu clears it and saves the `mod_list` as the last one that worked
   - a marker still there at the next start means the last launch never reached the menu. At the main menu, a notice lists what changed since the last good launch, with "Restore last working setup" (and relaunch) and "Keep"
   - a crash that comes back before the menu needs action with no UI: after two failed launches in a row (one could be the player closing the game while it loads), roll back automatically once and say so at the menu. Never loop
-  - this only works if we load before the crashing mod: keep ourselves first in `mod_list` (we have no dependencies, so the game allows it; pinned on the Load Order page). The spike answers whether a mod loaded first can stop later mods loading in the same launch (as Mod Launch Manager does), or must restore `mod_list` and relaunch
+  - this only works if we load before the crashing mod: keep ourselves first in `mod_list` (we have no dependencies, so the game allows it; pinned on the Load Order page). The spike answers whether a mod loaded first can stop later mods loading in the same launch (as Mod Launch Manager does), or must restore `mod_list` and relaunch. It can: "A finding for the launch spikes" below
   - shares the "load first" groundwork with the load-without-restart spike (backlog below): spike them together
 - [ ] recommended, cheap: widen the "Multiple mod managers are currently enabled" warning (round 19, Better Mod Menu only) to the managers that rewrite `mod_list` and would quietly undo our Load Order page:
   - ModListSorter (on every exit), LoadOrderSync (at launch), Mod Launch Manager (pins itself first), Load Order Manager, Mod Preset Sync, Mod Profile Manager
@@ -716,7 +716,7 @@ recommendations to confirm with Jordan.
 
 ## Backlog (round 21)
 - [ ] JORDAN: spike "load mods without a restart" (Jordan: one of the biggest pain points as a player). Write it up as `docs/spikes/load-without-restart.md`, per kind of mod (pck only, Harmony only, adds content or models):
-  - a pre-launch choice: we load first and apply a choice before the rest initialize, so a change made at launch needs no second launch (Mod Launch Manager, the 启动前模组管理 selector)
+  - a pre-launch choice: we load first and apply a choice before the rest initialize, so a change made at launch needs no second launch (Mod Launch Manager, the 启动前模组管理 selector). How the selector does it: "A finding for the launch spikes" below
   - enabling mid-session: assembly load, `ProjectSettings.LoadResourcePack`, the initializer, Harmony; content mods need the ModelDb / LocManager / pool registration that runs at startup
   - disabling mid-session: `Harmony.UnpatchAll(owner id)` is possible; assemblies unload only from a collectible `AssemblyLoadContext` (check how ModManager loads them); PCKs can't unmount; models stay registered
   - whatever stays restart-only, the UI says exactly which changes still need a relaunch
@@ -786,3 +786,12 @@ P3:
 - [ ] MOD管理器 | Mod Manager (3813204995, xiaozz): a "模组" button on the left of the main menu (near our lower-left button?); rewrites `mod_list` on its crash rollback
 - [ ] Host Mod Sync (3800055829): on a lobby mismatch it subscribes, enables and disables, then restarts
 - [ ] Mod List Hot Reload (3794780403): hot-loads when leaving the mod list, so `ModManager.Mods` can change mid-session (`Installed.Watch`, the New Mod popup, Changes)
+
+## A finding for the launch spikes
+
+For the crash-safe launch and load-without-restart spikes above:
+
+- github.com/Jolyne-kujo/STS2-ModManager (MIT) shows that a mod loaded first can control the rest of the same launch. `src/ModTheSpire2.Bootstrap/StartupLoadGate.cs` puts a Harmony prefix on `ModManager.TryLoadMod` (found with `AccessTools.TypeByName("MegaCrit.Sts2.Core.Modding.ModManager")`). The game calls `TryLoadMod` for each mod in a loop, so a patch made during the first mod's init catches every later call: the gate holds back the later mods, shows its picker, then replays the chosen ones
+- that answers the spikes' main question: we can skip a crashing mod, or apply a choice made at launch, without a second launch
+- MIT, so its code may be reused with its license notice
+- grassdog0/MTS2 also ships hot-load test mods (`TestMods/ModTheSpire2HotConfigTest`, `HotDependsChain`, `HotDependsRestart`), but it has no license file: read it, copy nothing
