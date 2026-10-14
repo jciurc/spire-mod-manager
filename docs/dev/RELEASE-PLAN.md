@@ -21,14 +21,14 @@
 
 ## 2. Blockers for 1.0
 
-1. **Branch targeting (otherwise most players get a load error).** `min_game_version` is `0.111.0` (public-beta). The stable `public` branch appears to still be 0.107.1, where the game marks the mod Failed (`GAME_VERSION_UNSUPPORTED`).
+1. **Branch targeting (otherwise most players get a load error).** **Done**, but for the check before uploading (below): `workshop.json` has `"minBranch": "public-beta"` and `"maxBranch": null`, the title "Spire Mod Manager (Beta)", and the description says public-beta v0.111.0 or newer. `min_game_version` is `0.111.0` (public-beta). The stable `public` branch appears to still be 0.107.1, where the game marks the mod Failed (`GAME_VERSION_UNSUPPORTED`).
    - Fix: ship beta-only on purpose. Set `"minBranch": "public-beta", "maxBranch": null` in `workshop.json` on every content upload, put "(Beta)" in the Workshop title (not in the manifest name), and say "public-beta v0.111.0+ only" in the description.
    - Before uploading, confirm stable's version on SteamDB or in Steam news.
-2. **Release version and branch.**
+2. **Release version and branch.** **Done**, but for `main` and the tag, which come at the release (§5 step 3): `ReleaseVersion` is 0.1.0, `--dist` builds with it and never bumps, and the manifest description is new.
    - Set `version` to `1.0.0` and refresh the manifest `description` (`build.cs:23-24`). The current text says "an in-place Restart" and only mentions profiles and sorting.
    - Add a release mode to `build.cs` that never auto-bumps.
    - Create `main` from `dev`, and tag `v1.0.0`.
-3. **Clean upload folder.** `out/` holds `bin/` (pdb, deps.json), `dev.log` and `selftest/real-*.txt`, which contain your real categories, mod list and profile names.
+3. **Clean upload folder.** **Done:** `build.cs --dist` writes only the `.dll`, `.json` and `.pck` to `dist/SpireModManager/`, and stops with an error if anything else is there. `out/` holds `bin/` (pdb, deps.json), `dev.log` and `selftest/real-*.txt`, which contain your real categories, mod list and profile names.
    - Fix: a `build.cs --dist` that writes `dist/SpireModManager/` with only the `.dll`, `.json` and `.pck`. The uploader's `content/` is filled from that folder only.
 4. **Fail soft when a game patch renames something.** **Fixed (2026-10-13).** This is Early Access, and 0.112 could break half the page for every user.
    - Done: each patch class is applied on its own (`ModEntry.FailedPatches`). `ModEntry.PageNeeds` lists the ones the page can't run without (main menu, Modding screen, tickbox, info panel fill, row selected); if one failed, the page stays the game's with one line, "Spire Mod Manager needs an update for this game version." (beside the main menu button instead if the screen patch itself failed). Dev runs can try it: `SPIRE_MOD_MANAGER_SKIP_PATCHES=ModInfoFillPatch`.
@@ -53,7 +53,7 @@
    - If `manager.json` can't be read, the session runs read-only on every launch, edits are silently lost, and only the log says so.
      - Fix: move the bad file aside as `manager.broken-<time>.json`, load the newest readable backup, and show a one-time notice on the Modding screen.
    - After loading, replace null collections with empty ones.
-8. **Copy pass** (your own reminder, `TODO.md:101`).
+8. **Copy pass** (your own reminder, `TODO.md:101`). **Done** (#19, #49), but for Jordan's call on the "Spire Manager" button and the profile rename in Changes, still "Added" plus "Removed" (it needs a stable profile id; TODO.md).
    - Use one verb: "Relaunch" everywhere ("Pending restart" becomes "Pending relaunch"; also `NEW_MOD_BODY` and the manifest).
    - Use one name: "Spire Mod Manager", not "Spire Manager".
    - "Vanilla List" or "Vanilla View": pick one.
@@ -63,27 +63,27 @@
    - Make a profile rename show as a rename in Changes, not "Added X" plus "Removed Y".
    - Then freeze the English text for 0.1.0, so a translator never works on text that still moves (the translation plan in §4).
    - A second pass on 2026-10-14 (TODO round 22) read the text added in rounds 19-22: the list filters, the banners and their cards, the unsaved list, Relaunch game and the data notices. The English freeze for 0.1.0 now includes it: 237 keys. Still Jordan's call: the "Spire Manager" button on the Vanilla List page.
-9. **First run, untested on both paths.**
+9. **First run, untested on both paths.** **Done:** `dev.cs test --first-run` and `--first-run-bmm` (with `--bmm` or without) run their own suites, and the empty-state hint is in.
    - (a) No `manager.json` and no Better Mod Menu.
    - (b) Better Mod Menu data present, with BMM on and with BMM off.
    - Add fixtures for both (today's fixtures always ship a `manager.json`).
    - Add an empty-state hint for making a category.
-10. **Uninstall and disable behaviour, checked and documented.**
+10. **Uninstall and disable behaviour, checked and documented.** The description's "Uninstalling" says what stays. Left: Jordan checks it in the clean-install test (§5 step 10).
     - Unsubscribe and untick, then confirm the vanilla page is intact and `mod_list` keeps the last on/off state and order.
     - Confirm that `mod_data/SpireModManager/` stays behind.
     - Put this in the description.
-11. **Workshop listing:**
+11. **Workshop listing:** In `workshop/`: the description (under 8,000 bytes), the tags, the change note ("0.1.0: first release ...") and `"dependencies": []`. Left, Jordan's: `image.png` and the previews (SHOTS.md).
     - preview `image.png`: square, 512–1024 px, under 1 MB;
     - BBCode description (8000 characters max);
     - tags `["QoL", "Utility"]`;
     - first change note starting with "1.0.0";
     - `"dependencies": []` (explicit, because v0.2.0 of the uploader wipes Required Items when the field is absent).
-12. **Real Workshop test.** Upload privately, subscribe on your account, and check `workshopId`, the details, the Patch notes link and the source line. Dev runs use `--force-steam off`, so this path has never run.
-13. **Share and import as text** (Jordan, 2026-10-13, after the survey of other managers in DESIGN.md). Mod Profile Manager and Mod Preset Sync have share codes, and Load Order Manager has clipboard JSON, so players will expect it.
+12. **Real Workshop test.** Left, Jordan's, at the upload. Upload privately, subscribe on your account, and check `workshopId`, the details, the Patch notes link and the source line. Dev runs use `--force-steam off`, so this path has never run.
+13. **Share and import as text** (Jordan, 2026-10-13, after the survey of other managers in DESIGN.md). **Not started:** Jordan decides whether it holds 0.1.0 or moves to the first update. Mod Profile Manager and Mod Preset Sync have share codes, and Load Order Manager has clipboard JSON, so players will expect it.
     - Copy a profile to the clipboard as one line of text: a prefix and version (`SMM1:`) plus the compressed list. It should fit one Discord message for about 250 mods.
     - Import shows what would change before anything does (enable, disable, missing, local only, game version), then makes a new profile, so it can be undone.
     - Details in TODO round 21.
-14. **Crash-safe launch** (Jordan, 2026-10-13: spike first). The spike is the blocker. Building it is one too if the spike shows it's small; otherwise it ships in the first update.
+14. **Crash-safe launch** (Jordan, 2026-10-13: spike first). **Spike done** (`docs/spikes/launch-first.md`, #44): it proposes only its first PR (staying first and a launch record, log lines only) for 0.1.0, the rollback and the notices for the first update. Jordan decides, with the spike's eight questions. The spike is the blocker. Building it is one too if the spike shows it's small; otherwise it ships in the first update.
     - A launch that never reaches the main menu leaves a marker. At the next menu, offer to restore the last setup that worked. After two failed launches in a row, roll back once on our own and say so. Never loop.
     - It needs us first in `mod_list`. The spike decides whether a mod loaded first can stop the rest loading in the same launch, or must restore `mod_list` and relaunch.
     - Found since (2026-10-13): it can. STS2-ModManager (MIT) patches `ModManager.TryLoadMod` while the first mod initializes, holds back the later mods, then loads the chosen ones. So a crashing mod can be skipped without a second launch.

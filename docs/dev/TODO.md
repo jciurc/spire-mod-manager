@@ -544,17 +544,17 @@ Jordan's notes of 2026-10-12 (late night), with screenshots.
 # Round 16: release (from RELEASE-PLAN.md)
 
 Blockers, in order (details and fixes in RELEASE-PLAN.md §2):
-- [ ] branch targeting: beta-only (min_game_version 0.111.0; minBranch public-beta on every upload), "(Beta)" in the Workshop title (Jordan: beta first)
-- [ ] version 0.1.0 (Jordan, 2026-10-13) + manifest description; release mode in build.cs (no bump); main branch + v0.1.0 tag
-- [ ] build.cs --dist: only the dll, json and pck
-- [ ] fail soft on game updates: patch each class on its own, log what failed, keep the vanilla page with a notice; RowState lazy and null-safe; wrap the four unguarded patch bodies
+- [x] branch targeting: beta-only (min_game_version 0.111.0; minBranch public-beta on every upload), "(Beta)" in the Workshop title (Jordan: beta first) (workshop/workshop.json; left for the upload: check stable's version)
+- [ ] version 0.1.0 (Jordan, 2026-10-13) + manifest description; release mode in build.cs (no bump); main branch + v0.1.0 tag (all but main and the tag, which come at the release)
+- [x] build.cs --dist: only the dll, json and pck
+- [x] fail soft on game updates: patch each class on its own, log what failed, keep the vanilla page with a notice; RowState lazy and null-safe; wrap the four unguarded patch bodies
 - [x] screen open with many mods: ModToggledPatch waits for our screen (was a full refresh per row)
 - [x] Load Order handlers connected once per row (+ self-test)
-- [ ] Store: backup step on its own; an unreadable manager.json moved aside, the newest backup loaded, a notice; null collections
-- [ ] copy pass (relaunch wording, one name, Vanilla List/View, enabled/disabled, tooltips, casing, profile rename in Changes)
-- [ ] first run: fixtures with no manager.json, and with BMM data (BMM on / off); an empty-state hint
-- [ ] uninstall / disable checked and documented
-- [ ] Workshop listing: image, description, tags, change note, dependencies []
+- [x] Store: backup step on its own; an unreadable manager.json moved aside, the newest backup loaded, a notice; null collections
+- [x] copy pass (relaunch wording, one name, Vanilla List/View, enabled/disabled, tooltips, casing, profile rename in Changes) (#19, #49; left: Jordan's "Spire Manager" button, and the profile rename, which needs a stable profile id, round 18)
+- [x] first run: fixtures with no manager.json, and with BMM data (BMM on / off); an empty-state hint (dev.cs --first-run, --first-run-bmm)
+- [ ] uninstall / disable checked and documented (documented in the description; Jordan checks it in the clean-install test)
+- [ ] Workshop listing: image, description, tags, change note, dependencies [] (all in workshop/ but Jordan's image.png and previews)
 - [ ] a private Workshop upload tested end to end
 
 # Round 17
