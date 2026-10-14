@@ -1,0 +1,8 @@
+blank_issues_enabled: true
+contact_links:
+  - name: Translation guide
+    url: https://github.com/jciurc/spire-mod-manager/blob/dev/TRANSLATING.md
+    about: How to add a language, before opening a translation issue or pull request.
+  - name: Contributing guide
+    url: https://github.com/jciurc/spire-mod-manager/blob/dev/CONTRIBUTING.md
+    about: Building, testing and pull requests.
