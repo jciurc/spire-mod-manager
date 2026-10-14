@@ -710,7 +710,7 @@ recommendations to confirm with Jordan.
   - shares the "load first" groundwork with the load-without-restart spike (backlog below): spike them together
 - [ ] recommended, cheap: widen the "Multiple mod managers are currently enabled" warning (round 19, Better Mod Menu only) to the managers that rewrite `mod_list` and would quietly undo our Load Order page:
   - ModListSorter (on every exit), LoadOrderSync (at launch), Mod Launch Manager (pins itself first), Load Order Manager, Mod Preset Sync, Mod Profile Manager
-  - their manifest ids need looking up (Load Order Manager's repo has `mod_manifest.json`)
+  - their manifest ids: Load Order Manager's is `LoadOrderManager`; the others need subscribing (see "Other mod managers to test beside ours" below)
   - moves the release plan's "detect other mod managers by id and warn" (§4) up to §3
   - overlaps the round 20 backlog spike on running two managers together (`docs/spikes/two-managers.md`, being written on branch `spike-managers`): do this with that spike's recommendation
 
@@ -751,3 +751,38 @@ JORDAN marks Jordan's own calls, as above.
   - later: the spreadsheet by email or Discord until the repo is public, then GitHub pull requests; at 2-3 languages, Weblate or Crowdin (both free for open-source projects)
 - [ ] TRANSLATING.md: no machine translation, the game's own words, and how to test (switch the game's language)
 - [ ] TRANSLATING.md: the spreadsheet route, once the kit exists
+
+## Other mod managers to test beside ours
+
+Manifest ids known from GitHub: `LoadOrderManager`, `AutoModSubscriber`, `ModListHider`, `ModTheSpire2`,
+`BetterModMenu`. The rest need subscribing: the id is in the manifest in the Workshop folder.
+
+- [ ] `tools/dev.cs`: an option that copies given Workshop ids from `steamapps\workshop\content\2868840` into the sandbox (like `--bmm`). The sandbox has no Steam, so this covers every manager below
+- [ ] the round 20 two-managers spike (#36, branch `spike-managers`): check its detection and recommendation against this list
+- what to check for each:
+  - buttons and panels that overlap ours, on our page and on the main menu
+  - the Harmony chain on `NModdingScreen._Ready`, `NModInfoContainer.Fill` and the rows: their exceptions shouldn't break ours
+  - `mod_list` writes: who wins at quit and at Relaunch; our profile and Changes when the file changes underneath us
+  - the first load slot: Mod Launch Manager, both ModTheSpire2s and our planned crash-safe launch all want it
+  - hot loading
+
+P1, most players or most overlap:
+- [ ] Load Order Manager (3747605109, id `LoadOrderManager`, 90k, MIT): a postfix on `NModdingScreen._Ready` adds a "Load Order" button and a panel as children of the screen; Apply writes `mod_list`; presets by id. Check its button and panel on our page, and our Changes, undo and "Unsaved" when it writes `mod_list` underneath us
+- [ ] AutoModSubscriber (3750485606, id `AutoModSubscriber`, 97k): replaces the lobby's mod-mismatch dialog, subscribes, and disables mods by writing `settings.save` mid-session. Check that our data and Changes notice it, and who wins at quit
+- [ ] Better Mod Menu (3748029698) with Better Mod Menu Fix (Public-Beta) (3775001896, 1.5k): `--bmm` covers Better Mod Menu but not the Fix, which patches it at runtime (moves its profile row, adds source icons to rows, shows aliases as names). Our bridge reaches into Better Mod Menu by reflection, so run `--bmm` with the Fix on
+- [ ] Mod Launch Manager (3788556097, 4.2k): runs before other mods and keeps itself first in `mod_list`; hot-loads; unloads DLLs that fail init; a choice of local or Workshop copy. It competes with our planned load-first for crash-safe launch
+
+P2, silent `mod_list` rewrites or row UI:
+- [ ] ModListSorter (3749297037, needs BaseLib): re-sorts `mod_list` A-Z, libraries first, on every exit. Our Relaunch goes through the quit path, so it would apply its order, not ours
+- [ ] LoadOrderSync (3757945718, `affects_gameplay` true): re-sorts at launch and prompts a restart. Check for a fight with our order edits
+- [ ] Multiplayer Mod Sync (3762348066, 26k, needs AutoModSubscriber and Load Order Manager): matches the host's enabled set and order, then restarts
+- [ ] Mod Preset Sync (3774789540, 3.7k): a "Mod Presets" button bottom right on the game's mod screen; an import writes the enabled state and order
+- [ ] ModListHider (3747498760, id `ModListHider`): an eye icon on each row (`RowIconAttachPatch`) and a toggle on the screen (`VanillaModeAttachPatch`). Check them on our restyled rows
+
+P3:
+- [ ] ModTheSpire2 (3747911678) and "STS2 Mod Manager | 启动前模组管理" (3799576017): both use the mod id `ModTheSpire2` (grassdog0/MTS2 v0.4.0; Jolyne-kujo/STS2-ModManager v0.3.2), so the game treats one as a duplicate. MTS2 adds a "Launcher" button beside Installed Mods, and its exe rewrites `settings.save` ("Vanilla" disables everything)
+- [ ] Mod Profile Manager (3749810410, needs RitsuLib): a button on the mod screen; applying writes the settings at once
+- [ ] Better Mod List (3796724666): a main-menu icon below the patch notes; restarts through Steam
+- [ ] MOD管理器 | Mod Manager (3813204995, xiaozz): a "模组" button on the left of the main menu (near our lower-left button?); rewrites `mod_list` on its crash rollback
+- [ ] Host Mod Sync (3800055829): on a lobby mismatch it subscribes, enables and disables, then restarts
+- [ ] Mod List Hot Reload (3794780403): hot-loads when leaving the mod list, so `ModManager.Mods` can change mid-session (`Installed.Watch`, the New Mod popup, Changes)
