@@ -396,14 +396,27 @@ row.
   - `Begin()`, first in `ModEntry.Init`, in its own try (an error is logged and changes nothing):
     - reads the last launch's record. If there is one, it logs how that launch ended and what changed since the last
       launch that worked;
-    - writes `launch.json` in our data folder: the start time, the game version, our place, and the planned mods
-      (id, source, on/off, manifest version, DLL and PCK size and date);
+    - writes `launch.json` in our data folder: the start time, the game version, our place, the planned mods
+      (id, source, on/off, manifest version, DLL and PCK size and date), and **the failures in a row so far**: if the
+      last record is still there and doesn't end in "closed", its count plus one, and where each of those launches
+      stopped (a short chain, kept to the last few). The count goes back to zero only when a launch reaches the menu
+      (the record is deleted then), so two launches that both die still read as two on the third;
     - subscribes to `OnModDetected` (a line per mod in `launch.progress`, flushed) and to `TaskHelper.UnobservedFault`
-      (the exception, and the mods it names);
+      (the exception, and the mods it names). Both handlers **fail open**: everything inside a try, nothing thrown
+      back into the game's loop; a write that fails switches the record off for this launch (logged once), never a
+      mod's loading;
     - logs our assembly's load context (`Name`, `IsCollectible`): the decompile only implies the default one.
+  - **Writes are atomic** where a crash mid-write would lose the chain: `launch.json` and `last-working.json` are
+    written to a temporary file and moved into place (`File.Replace`), so a reader sees the old or the new, never half.
+    `launch.progress` is append-only, one flushed line per mod; a torn last line is ignored.
   - `MenuReachedPatch`, a new patch class: a prefix on `NMainMenu._Ready` (`Priority.First`, once per session). It
     writes `last-working.json` and deletes the record, ahead of `MainMenuPatch`.
-  - A prefix on `NGame.Quit` that writes "closed" into the record, before the menu only.
+  - **The last working setup is the game's own list as it now stands:** the game rewrites `ModList` in load order
+    once its loop ends (`ModManager.Initialize`, step 8), and `KeepFirst` (below) may then move us. The snapshot is
+    taken after both, so restoring it later never counts our pin or the game's own rewrite as a change. Suspects are
+    worked out by (id, source), not by position: a mod that only moved isn't a suspect.
+  - A prefix on `NGame.Quit` that appends a "closed" line to `launch.progress` (no rewrite of the record), before the
+    menu only.
   - Pure functions: `Read(dir)` (an unreadable record gives null) and `Decide(record, lastWorking)`, which returns how
     the last launch ended, the failures in a row, and the suspects. This PR only logs the result; PR 2 acts on it.
 - **Staying first** (`LaunchGuard.KeepFirst`):
@@ -429,17 +442,21 @@ row.
   - `test --launches`: several launches of one sandbox, its data kept between them:
     1. a normal launch, which saves the last working setup;
     2. `SmmTestCrash` turned on, with `kill`: the process dies;
-    3. with `throw`: it reaches the menu, and the self-test checks what it read of launch 2;
+    3. `kill` again: it dies too, and its record carries two failures in a row;
+    4. with `throw`: it reaches the menu, and the self-test checks what it read of launches 2 and 3;
   - a plain `test` reset already deletes our data folder (`tools/dev.cs:235-237`), records included.
 - **Self-test checks** (plain run):
   - "our initializer wrote the launch record: the planned order, ours first, every fixture mod listed";
-  - "the main menu deleted the record and saved the last working setup, matching the saved mod list";
+  - "the main menu deleted the record and saved the last working setup, matching the saved mod list after the
+    game's rewrite and our pin (ours first)";
   - "the record is in the folder Store uses" (the account folder is known in `Init`);
   - "the menu hook is a prefix, first in line" (from Harmony's patch info);
   - `Decide`, with made-up records:
-    - "a record still there is a failed launch; two in a row count two; a launch that reached the menu starts from
-      zero";
-    - "a record that ends in 'closed' is a close, not a failure";
+    - "a record still there is a failed launch; two in a row count two, read from the count carried into the newest
+      record (the first one was overwritten); a launch that reached the menu starts from zero";
+    - "a progress file that ends in 'closed' is a close, not a failure, and doesn't add to the count";
+    - "a torn last progress line is ignored; a half-written record can't happen (written by replace)";
+    - "a handler that throws (a made-up fault) changes nothing in the game's loop and switches the record off";
     - "the mod named is the first planned one after the last finished line";
     - "suspects are mods new, turned on, or updated (version, or DLL date) since; not mods turned off, never ours";
     - "an unreadable or empty record counts as none";
@@ -450,7 +467,8 @@ row.
 - **`--launches` checks:**
   - "a launch killed while loading `SmmTestCrash` leaves its record, and the next launch names `SmmTestCrash` as
     where it stopped";
-  - "a mod whose initializer throws is no failed launch" (launch 3 clears its own record at its menu);
+  - "killed twice in a row, the third launch reads two failures in a row" (the chain survives the overwrite);
+  - "a mod whose initializer throws is no failed launch" (launch 4 clears its own record at its menu);
   - "after that, the record is gone and the last working setup has `SmmTestCrash` on".
 - **`--real`:** an INFO line with the time from our `Init` to the main menu, with the record's writes, over Jordan's
   mods.
