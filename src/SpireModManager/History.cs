@@ -23,6 +23,7 @@ static class History
     static readonly Dictionary<Track, List<Snapshot>> Future = new() { [Track.List] = [], [Track.Order] = [] };
     static Snapshot? _current;
     static bool _restoring;
+    static long _listSteps; // list steps recorded so far (never counts down): Mark and UndoTo
 
     // Raised after an undo, redo or revert, so open screens can redraw from the restored state.
     public static event Action? Restored;
@@ -125,12 +126,24 @@ static class History
     // For a view switch, which changes the history the buttons act on.
     public static void NotifyChanged() => Changed?.Invoke();
 
-    public static void Undo() => Step(Past[CurrentTrack], Future[CurrentTrack]);
-    public static void Redo() => Step(Future[CurrentTrack], Past[CurrentTrack]);
+    public static void Undo() => Step(CurrentTrack, Past, Future);
+    public static void Redo() => Step(CurrentTrack, Future, Past);
 
-    // Takes the last snapshot from one side, puts now on the other, and restores this track's part of it.
-    static void Step(List<Snapshot> from, List<Snapshot> to)
+    // A dialog that makes changes and can be cancelled (RelaunchCheck): Mark as it opens, UndoTo on Cancel takes back
+    // the list steps recorded since, whichever view is showing (Load Order's undo would step the order). Nothing else
+    // can change the list while the dialog covers the page, so those steps are all the dialog's. Redo brings them back.
+    public static long Mark() => _listSteps;
+
+    public static void UndoTo(long mark)
     {
+        for (var steps = _listSteps - mark; steps > 0 && Past[Track.List].Count > 0; steps--)
+            Step(Track.List, Past, Future);
+    }
+
+    // Takes the last snapshot of the track from one side, puts now on the other, and restores the track's part of it.
+    static void Step(Track track, Dictionary<Track, List<Snapshot>> fromSide, Dictionary<Track, List<Snapshot>> toSide)
+    {
+        var (from, to) = (fromSide[track], toSide[track]);
         if (from.Count == 0 || _current == null)
             return;
         var target = from[^1];
@@ -139,7 +152,7 @@ static class History
         _restoring = true;
         try
         {
-            if (CurrentTrack == Track.Order)
+            if (track == Track.Order)
                 ApplyOrder(target.Mods);
             else
             {
@@ -185,6 +198,8 @@ static class History
 
     static void Push(Track track, Snapshot snapshot)
     {
+        if (track == Track.List)
+            _listSteps++;
         Past[track].Add(snapshot);
         if (Past[track].Count > Limit)
             Past[track].RemoveAt(0);

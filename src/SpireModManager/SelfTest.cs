@@ -3720,6 +3720,14 @@ static class SelfTest
         RelaunchCheck.Show(screen);
         await Wait(menu, 0.3);
         Check("relaunch check lists the mods that won't load", Body().Contains(Missing + ", which isn't installed") && Body().Contains("Test Framework, which is disabled"), Body());
+        // Cancel first, at the row's left; the fixes and Relaunch anyway at its right (Jordan, 2026-10-14).
+        var row = Dialog()?.FindChild("Buttons", true, false) as Control;
+        var rowButtons = row?.GetChildren().OfType<Button>().ToList() ?? [];
+        Check("its Cancel comes first, at the left, the fixes and Relaunch anyway at the right",
+            rowButtons.Select(b => b.Name.ToString()).SequenceEqual(["CancelRelaunchButton", "EnableNeededButton", "DisableBrokenButton", "RelaunchNowButton"])
+            && rowButtons[0].GetGlobalRect().Position.X - row!.GetGlobalRect().Position.X < 1
+            && row.GetGlobalRect().End.X - rowButtons[^1].GetGlobalRect().End.X < 1,
+            string.Join(", ", rowButtons.Select(b => $"{b.Name} {b.GetGlobalRect().Position.X:0}-{b.GetGlobalRect().End.X:0}")) + $" in {row?.GetGlobalRect()}");
         await Capture(screen, outDir, "15-relaunch-check");
         Press("EnableNeededButton");
         await Wait(menu, 0.3);
@@ -3728,17 +3736,33 @@ static class SelfTest
         await Wait(menu, 0.3);
         Check("Disable mods that can't load: nothing left, plain Relaunch", !Dependencies.IsOn(addon)
             && Dialog()?.FindChild("RelaunchNowButton", true, false) is Button { Text: "Relaunch Game" }, Body());
+        // Cancel takes both fixes back: Test Framework off again (as this test set it), Test Addon on (the fixture's).
+        // Redo still has them.
         Press("CancelRelaunchButton");
-        await Wait(menu, 0.2);
-        Check("Cancel closes it", Dialog() == null);
-        History.Undo(); // Test Addon back on, as the fixture has it
         await Wait(menu, 0.3);
+        Check("Cancel closes it and takes back the fixes made in it", Dialog() == null && !Dependencies.IsOn(lib) && Dependencies.IsOn(addon)
+            && !tickbox.IsTicked && History.CanRedo, $"framework on {Dependencies.IsOn(lib)}, addon on {Dependencies.IsOn(addon)}");
+        // Esc the same, after one fix; the page stays.
         RelaunchCheck.Show(screen);
         await Wait(menu, 0.2);
+        Press("EnableNeededButton");
+        await Wait(menu, 0.3);
+        var fixedIt = Dependencies.IsOn(lib);
         Input.ParseInputEvent(new InputEventKey { Keycode = Key.Escape, Pressed = true });
         await Wait(menu, 0.2);
         Input.ParseInputEvent(new InputEventKey { Keycode = Key.Escape, Pressed = false });
-        Check("Esc closes it, and stays on the page", Dialog() == null && screen.IsVisibleInTree() && Dependencies.IsOn(addon));
+        await Wait(menu, 0.2);
+        Check("Esc closes it the same way, the fix taken back, and stays on the page", fixedIt && Dialog() == null && screen.IsVisibleInTree()
+            && !Dependencies.IsOn(lib) && Dependencies.IsOn(addon), $"fixed {fixedIt}, framework on {Dependencies.IsOn(lib)}");
+        // Cancel with nothing done takes nothing back: the undo step before the dialog (this test's untick) stays.
+        RelaunchCheck.Show(screen);
+        await Wait(menu, 0.2);
+        Press("CancelRelaunchButton");
+        await Wait(menu, 0.3);
+        Check("Cancel with no fix made changes nothing", Dialog() == null && !Dependencies.IsOn(lib) && Dependencies.IsOn(addon));
+        History.Undo(); // this test's untick: Test Framework on again, as the fixture has it
+        await Wait(menu, 0.3);
+        Check("then one undo puts the framework back on, as the fixture has it", Dependencies.IsOn(lib) && tickbox.IsTicked);
     }
 
     // A made-up mod with very long everything (name, id, author, version, description, alias, many tags, notes),
