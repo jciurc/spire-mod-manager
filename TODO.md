@@ -688,6 +688,16 @@ rigid. add small radius to items in load order page (similar to list view)"
 - [x] dependency lines: each corner of the bracket is a short 5 px curve; the ends stay where they were
 - [x] Load Order rows: they already had the main list's rounded highlight (4 px), now held by a self-test check; the drop line and the red warning banners were square and are rounded too
 
+Jordan's third note of 2026-10-13: "make warning banner yellow, and show button tooltip should say can be the same
+"Opens next mod.." tooltip as other banner. can you change the text to "Opens the next affected mod", can you move both
+buttons to the right of the text, in both banners? let's not specify "Better mod menu" since it can be any manager
+(theoretically) we'll be agnostic"
+
+- [x] the managers banner is yellow (a deep amber, the game's gold darkened, cream text); the page's own warning stays red
+- [x] one Show tip for both banners: "Opens the next affected mod"
+- [x] in both banners the buttons follow the text after a small gap, not out at the right edge; a text too long for the line wraps before the buttons and the banner grows to fit
+- [x] the managers banner names no manager: Dismiss's tip reads "Hides this warning. It comes back if one of the mod managers is disabled and then enabled again." Show still goes to Better Mod Menu's row (the only manager found today)
+
 ## Backlog (round 20)
 - [ ] Load Order's top row: the list's edge cuts off the top 3 px of its highlight (rounded corners and the selected look's top rim), so selected or hovered it looks square on top. The main list rarely shows it (a category header comes first)
 - [ ] Jordan: "think about possible conflicts or issues with running both bmm and mod manager together (could be other managers too) and decide on how to handle it best for the user". Spike: `docs/spikes/two-managers.md` (recommendation: find managers from Harmony's patch owners; a Disable button on the banner; a health check for the Better Mod Menu bridge; six questions for Jordan). Written before round 21's survey: check its detection against the managers that rewrite `mod_list` there (some may only touch the saved list on exit or at launch, not the page). Points it covers:

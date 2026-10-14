@@ -2,6 +2,10 @@
 
 Short notes for Jordan: what to look for after each install. Newest first.
 
+## Waiting in pull requests
+
+- **Banners:** the "Multiple mod managers" banner is yellow now (a warning); the page's own warning stays red. In both, the buttons sit right after the text instead of at the far right. Both Show buttons say "Opens the next affected mod", and the managers banner no longer names Better Mod Menu: Dismiss's tip says the warning comes back if one of the mod managers is disabled and then enabled again.
+
 ## Installed 2026-10-13 (late night): version 0.0.50
 
 - **Faster with a long list:** switching between the main list, Load Order and Vanilla List takes about 0.1 s with your ~250 mods (about 0.5 s before). A redraw is about 21 ms (63 before) and a search keystroke 22 ms (69). Everything should look exactly as before.
