@@ -3520,21 +3520,27 @@ static class SelfTest
                 Same(gaps.Row, startGaps.Row) && Same(gaps.Header, startGaps.Header),
                 $"row {gaps.Row} (was {startGaps.Row}), header {gaps.Header} (was {startGaps.Header})");
             // The shortcuts under Undo and Redo: each centred under its button, its text no wider than the button, so the
-            // two never run into each other ("Ctrl + Z" and "Ctrl + Y" did in Chinese).
-            List<(Rect2 Button, float Left, float Middle, float Right, string Text, int Size)> keys = [];
+            // two never run into each other ("Ctrl + Z" and "Ctrl + Y" did in Chinese). A hint wider than its button used
+            // to stretch it, text and button then the same width and still centred, so it's checked that no hint widens
+            // its button, and that each is fitted to it less a little each side (FitHint) unless at the smallest size.
+            List<(Rect2 Button, float Own, float Left, float Middle, float Right, bool Fitted, string Text, int Size)> keys = [];
             foreach (var column in page.GetNodeOrNull<Control>(HistoryBar.BarName)?.GetChildren().OfType<Control>() ?? [])
                 if (column.GetChildOrNull<Control>(0) is { } button && column.GetNodeOrNull<Label>("Keys") is { } hint && hint.Text.Trim().Length > 0)
                 {
                     var size = hint.GetThemeFontSize("font_size");
                     var width = hint.GetThemeFont("font").GetStringSize(hint.Text, fontSize: size).X; // the text as drawn, not its box
                     var middle = hint.GetGlobalRect().GetCenter().X;
-                    keys.Add((button.GetGlobalRect(), middle - width / 2, middle, middle + width / 2, hint.Text, size));
+                    var own = button.GetCombinedMinimumSize().X; // the button's width by its own text
+                    var fitted = width <= own - 2 * HistoryBar.HintInset + 0.5f || size <= HistoryBar.HintSmallest;
+                    keys.Add((button.GetGlobalRect(), own, middle - width / 2, middle, middle + width / 2, fitted, hint.Text, size));
                 }
             Results.Add($"INFO shortcuts in {language}: {string.Join(", ", keys.Select(k => $"{k.Text} at {k.Size}, {k.Right - k.Left:0} of {k.Button.Size.X:0} px"))}");
-            Check($"in {language}: the shortcuts under Undo and Redo, each centred under its button and no wider, apart",
-                keys.Count == 2 && keys.All(k => Math.Abs(k.Middle - k.Button.GetCenter().X) < 1 && k.Left >= k.Button.Position.X - 0.5f && k.Right <= k.Button.End.X + 0.5f)
+            Check($"in {language}: the shortcuts under Undo and Redo, each fitted under its button without widening it, centred, apart",
+                keys.Count == 2 && keys.All(k => k.Button.Size.X <= k.Own + 0.5f && k.Fitted && Math.Abs(k.Middle - k.Button.GetCenter().X) < 1
+                    && k.Left >= k.Button.Position.X - 0.5f && k.Right <= k.Button.End.X + 0.5f)
                 && keys.Zip(keys.Skip(1)).All(p => p.First.Right < p.Second.Left),
-                string.Join("; ", keys.Select(k => $"{k.Text} at {k.Size}: {k.Left:0.#}..{k.Right:0.#} under {k.Button.Position.X:0.#}..{k.Button.End.X:0.#}")));
+                string.Join("; ", keys.Select(k => $"{k.Text} at {k.Size}: {k.Left:0.#}..{k.Right:0.#} under {k.Button.Position.X:0.#}..{k.Button.End.X:0.#}"
+                    + $" (its own width {k.Own:0.#}{(k.Fitted ? "" : ", not fitted")})")));
             await Capture(page, outDir, $"20-fonts-{language}");
         }
     }

@@ -558,14 +558,14 @@ static class HistoryBar
     // A shortcut under its button: centred, no wider than the button less a little each side, so two side by side
     // never run together (in a wider language font, Chinese say, "Ctrl + Z" and "Ctrl + Y" made one run of text).
     // Smaller to fit, down to a smallest size; its line keeps its height, so the button stays where it was.
+    public const int HintInset = 4, HintSmallest = 9;
     static void FitHint(Label hint, Control button)
     {
-        const int inset = 4, smallest = 9;
-        var room = button.GetCombinedMinimumSize().X - 2 * inset;
+        var room = button.GetCombinedMinimumSize().X - 2 * HintInset;
         var font = hint.GetThemeFont("font");
         var size = hint.GetThemeFontSize("font_size");
         hint.CustomMinimumSize = new Vector2(0, hint.GetMinimumSize().Y);
-        while (size > smallest && font.GetStringSize(hint.Text, fontSize: size).X > room)
+        while (size > HintSmallest && font.GetStringSize(hint.Text, fontSize: size).X > room)
             size--;
         hint.AddThemeFontSizeOverride("font_size", size);
     }
