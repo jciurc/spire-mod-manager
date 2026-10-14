@@ -1485,7 +1485,12 @@ static class SelfTest
         if (DisplayServer.GetName() == "headless")
             Results.Add("SKIP Copy puts the text on the clipboard: there's no clipboard headless");
         else
-            Check("Copy puts the text on the clipboard", DisplayServer.ClipboardGet() == csv);
+        {
+            // Line ends aside: Godot's Windows clipboard hands CRLF text back with LF (a paste still gets CRLF).
+            var copied = DisplayServer.ClipboardGet();
+            Check("Copy puts the text on the clipboard", copied.Replace("\r\n", "\n") == csv.Replace("\r\n", "\n"),
+                $"{copied.Length} characters copied, {csv.Length} in the box: {copied[..Math.Min(80, copied.Length)].Replace("\r", "\\r").Replace("\n", "\\n")}");
+        }
         DisplayServer.ClipboardSet(clipboard);
         var file = Path.Combine(outDir, ProfileShare.FileName("Co-op: \"night\"?"));
         var saveError = ProfileShare.SaveTo(file, csv);
