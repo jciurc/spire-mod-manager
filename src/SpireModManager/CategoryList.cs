@@ -366,6 +366,7 @@ static class CategoryList
                 content.MoveChild(rows[i], i);
                 rows[i].Visible = Bmm.Present || Matches(rows[i]); // Better Mod Menu's page: its search and groups decide
             }
+            RowTitles.FitVanilla(rows);
             if (screen != null)
                 Bmm.Refresh(screen);
             return;

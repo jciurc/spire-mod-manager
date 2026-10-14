@@ -29,8 +29,8 @@ static class RowTitles
             var name = row.Mod?.manifest?.name ?? row.Mod?.manifest?.id ?? "";
             var title = row.GetNode<MegaRichTextLabel>("Title");
             // The game's label fits its text to its box (smaller, down to a minimum) each time the box or the text
-            // changes, and on a view switch this redraw changes the box several times: off while it's set, then the text
-            // is fitted once (by Fit in our views, below in Vanilla View).
+            // changes, and on a view switch a redraw changes the box several times: off while it's set, then the text is
+            // fitted once (AutoSize: by Fit in our views, by FitVanilla in Vanilla View).
             title.AutoSizeEnabled = false;
             var info = vanilla ? null : Store.InfoFor(row.Mod?.manifest?.id);
             // Our views: smaller text in a shorter row with a smaller tickbox and no Steam/folder icon; the
@@ -60,8 +60,6 @@ static class RowTitles
             if (title.HasThemeColorOverride("default_color")) // (removing one restyles the text, even when there is none)
                 title.RemoveThemeColorOverride("default_color"); // Better Mod Menu's name colour (its page restyles its own)
             Layout.FontSize(title, vanilla ? Layout.RowTitleVanillaSize : Layout.RowTitleSize);
-            if (vanilla)
-                title.AutoSizeEnabled = true; // fitted as the row takes its Vanilla View size
             // Shown again by Fit, in our views.
             foreach (var part in new[] { MarkName, HotName, RestName })
                 if (row.GetNodeOrNull<Control>(part) is { } old)
@@ -104,13 +102,7 @@ static class RowTitles
                 originalAt = (mainWidth + gap * space, Width(original, OriginalNameSize), original != name);
             }
         }
-        // The game's fitting, once the title has its place and text (Apply turned it off meanwhile): a smaller size only
-        // for text taller than the row has room for (some languages' letters). It fits when the text changes (below),
-        // or here when only the box has changed since it last fitted.
-        title.AutoSizeEnabled = true;
-        if (title.Text == text && title.Size != (Vector2)title.Get(MegaRichTextLabel.PropertyName._lastAdjustedSize))
-            title.Call(MegaRichTextLabel.MethodName.AdjustFontSize);
-        title.SetTextAutoSize(text);
+        AutoSize(title, text); // in our views, smaller only for text taller than the row has room for (some languages' letters)
         var lineHeight = font.GetHeight(Layout.RowTitleSize);
         var top = title.Position.Y + Math.Max(0, (title.Size.Y - lineHeight) / 2); // the text sits in the middle of the title's box
 
@@ -162,6 +154,27 @@ static class RowTitles
             mark.Visible = true;
             mark.Position = new Vector2(title.Position.X - markSize.X - 5, top + (lineHeight - markSize.Y) / 2 - 1); // in the room before the title
         }
+    }
+
+    // Vanilla View, once the redraw has done with the rows (their titles' boxes change until then): the game's
+    // fitting, before Better Mod Menu restyles the names on its page.
+    public static void FitVanilla(IEnumerable<NModMenuRow> rows)
+    {
+        foreach (var row in rows)
+        {
+            var title = row.GetNode<MegaRichTextLabel>("Title");
+            AutoSize(title, title.Text);
+        }
+    }
+
+    // The game's fitting on again once the title has its place and text. Setting the text fits it when the text
+    // changed (and later changes of box fit by themselves); here it fits when only the box changed while it was off.
+    static void AutoSize(MegaRichTextLabel title, string text)
+    {
+        title.AutoSizeEnabled = true;
+        if (title.Text == text && title.Size != (Vector2)title.Get(MegaRichTextLabel.PropertyName._lastAdjustedSize))
+            title.Call(MegaRichTextLabel.MethodName.AdjustFontSize);
+        title.SetTextAutoSize(text);
     }
 
     // The text as it fits in width at this size: whole, or cut short with "…" (empty when not even that fits).
