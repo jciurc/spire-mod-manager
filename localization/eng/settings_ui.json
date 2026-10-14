@@ -97,6 +97,7 @@
   "SPIRE_MOD_MANAGER.NOTES_BULK_HINT": "The same notes for every one of them",
   "SPIRE_MOD_MANAGER.NOTES_BULK_MIXED": "Their notes differ: what you type here replaces them all",
   "SPIRE_MOD_MANAGER.EDITING_SELECTED": "Editing {count} selected mods",
+  "SPIRE_MOD_MANAGER.BULK_INFO": "Tags: these are the tags all of them share. A tag you add goes on every one of them, and one you remove comes off every one. Each mod keeps its other tags.\nNotes: shown when they're the same for all of them. What you type replaces the notes on every one.",
   "SPIRE_MOD_MANAGER.SELECT_ALL": "Select all",
   "SPIRE_MOD_MANAGER.PAGE_SELECTED": "Selected ({count})",
   "SPIRE_MOD_MANAGER.CLEAR_SELECTION": "Clear selection",
