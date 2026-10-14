@@ -2257,15 +2257,28 @@ static class SelfTest
         CategoryList.Redraw(content);
         await Wait(menu, 0.3);
         string Shown(Mod mod) => Store.InfoFor(mod.manifest?.id)?.Alias ?? mod.manifest?.name ?? "";
-        var flagged = Rows().Where(r => r.GetNodeOrNull<RichTextLabel>("SpireModManagerStrip/Needs")?.GetParsedText() is { } note
-                && (note.Contains("(off)") || note.Contains("(not installed)")))
-            .Select(r => r.Mod).OfType<Mod>().Where(Dependencies.IsOn).Select(Shown).Order().ToList();
+        string NoteOf(Mod mod) => Rows().FirstOrDefault(r => r.Mod == mod)?.GetNodeOrNull<RichTextLabel>("SpireModManagerStrip/Needs")?.GetParsedText() ?? "";
+        var flaggedMods = Rows().Select(r => r.Mod).OfType<Mod>()
+            .Where(m => Dependencies.IsOn(m) && (NoteOf(m).Contains("(off)") || NoteOf(m).Contains("(not installed)"))).ToList();
+        var flagged = flaggedMods.Select(Shown).Order().ToList();
         var card = await BannerCard(menu, screen, screen.FindChild(LoadOrder.WarningName, true, false));
         var named = card.Skip(1).Select(l => l.Split(": needs ")[0]).Order().ToList();
         Check("main list banner: hovering its text, a card with each mod that won't load and what it needs, by the names the list shows, nothing else",
             card.FirstOrDefault() == "Affected mods" && card.Contains("Test Content: needs Framework (disabled)") && card.Contains("Test UI: needs Framework (disabled)")
             && named.SequenceEqual(flagged) && !card.Any(l => l.Contains("Test Framework")),
             $"{string.Join(" | ", card)}; rows saying so: {string.Join(", ", flagged)}");
+        // Each line gives its row's reasons: "(off)" there is "(disabled)" here, "(not installed)" the same. The fixture's
+        // BrandedMod (on) needs BaseLib, which isn't installed.
+        string? LineOf(Mod mod) => card.Skip(1).FirstOrDefault(l => l.StartsWith(Shown(mod) + ": needs "));
+        var wrong = flaggedMods.Where(m => LineOf(m) is not { } line || NoteOf(m).Contains("(off)") != line.Contains("(disabled)")
+            || NoteOf(m).Contains("(not installed)") != line.Contains("(not installed)")).Select(Shown).ToList();
+        Check("main list banner's card: each line's reasons are its row's (\"(off)\" as \"(disabled)\", \"(not installed)\")", wrong.Count == 0,
+            $"wrong for {string.Join(", ", wrong)}: {string.Join(" | ", card)}");
+        if (Dependencies.Find("BrandedMod") is { } branded && Dependencies.IsOn(branded))
+            Check("main list banner's card: BrandedMod needs BaseLib (not installed)", LineOf(branded)?.Contains("BaseLib (not installed)") == true,
+                LineOf(branded) ?? "no line");
+        else
+            Results.Add("SKIP main list banner's card, a mod that isn't installed: BrandedMod not on");
 
         // A tick while the card shows: the banner is made again, and no card lists the mod ticked off (that one went with
         // its banner); the next, worked out when it opens, leaves it out.
