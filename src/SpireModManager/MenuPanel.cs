@@ -5,7 +5,8 @@ namespace SpireModManager;
 // Our pop-up menus (right-click menus, the profile list, the category picker). Not engine popups: an
 // overlay inside the page, so it behaves like the rest of the page.
 // - Rows: an optional mark (a dot for the one current choice, a tick otherwise), a label, an optional badge
-//   after it (the profile list's red "*"), and a dim detail on the right; headings separate groups.
+//   after it (the profile list's red "*"), and a dim detail on the right; headings separate groups (or head the
+//   menu: the main menu button's "Spire Mod Manager v0.1.0").
 // - An optional side column next to the list (a mod's own fields in its right-click menu).
 // - A press outside closes it. A right-click there also carries on to whatever is under the mouse; a left
 //   click doesn't, so pressing the button that opened it closes it. Escape closes it too.
@@ -16,6 +17,7 @@ static class MenuPanel
     static readonly Color Gold = new(0.937f, 0.784f, 0.318f);
     public const string RootName = "SpireModManagerMenu";
     public const string ItemGroup = "SpireModManagerMenuItem";
+    public const string HeadingGroup = "SpireModManagerMenuHeading";
 
     static Node? _open;
     static string? _openKey;
@@ -125,12 +127,15 @@ static class MenuPanel
             list.AddChild(item.OnSelect == null ? Heading(item.Label) : Row(item, marks));
     }
 
+    // A heading: its text in gold over a line, or just the line (a divider). Not an item: no hover, no click, no focus.
     static Control Heading(string text)
     {
         var box = new VBoxContainer { MouseFilter = Control.MouseFilterEnum.Ignore };
         box.AddThemeConstantOverride("separation", 2);
         if (text.Length > 0)
         {
+            box.AddToGroup(HeadingGroup);
+            box.SetMeta("label", text);
             var label = new Label { Text = text, MouseFilter = Control.MouseFilterEnum.Ignore };
             Style(label, "res://themes/kreon_bold_shared.tres", 16, Gold);
             var margin = new MarginContainer { MouseFilter = Control.MouseFilterEnum.Ignore };
@@ -212,9 +217,12 @@ static class MenuPanel
         return row;
     }
 
-    // For the self-test: the labels of a menu's items, and choosing one as a click would.
+    // For the self-test: the labels of a menu's items (its headings' texts too: Headings), and choosing one as a click would.
     public static List<string> Labels(Node menu) =>
         menu.FindChildren("*", "", true, false).Where(n => n.IsInGroup(ItemGroup)).Select(n => (string)n.GetMeta("label")).ToList();
+
+    public static List<string> Headings(Node menu) =>
+        menu.FindChildren("*", "", true, false).Where(n => n.IsInGroup(HeadingGroup)).Select(n => (string)n.GetMeta("label")).ToList();
 
     public static void Press(Node menu, string label)
     {

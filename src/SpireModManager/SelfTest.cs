@@ -64,6 +64,7 @@ static class SelfTest
             Check("no popup open", NModalContainer.Instance?.OpenModal == null,
                 NModalContainer.Instance?.OpenModal?.GetType().Name ?? "");
             Check("main menu button", menu.GetNodeOrNull("SpireModManagerMenuButton") != null);
+            TestMenuButtonLook(menu);
             var relaunchArgs = ModEntry.RelaunchArgs();
             Check("relaunch passes the window mode once", relaunchArgs.Count(a => a is "--fullscreen" or "--maximized" or "--windowed") == 1
                 && relaunchArgs.Contains("--force-steam"), string.Join(" ", relaunchArgs));
@@ -103,6 +104,10 @@ static class SelfTest
                 await Wait(menu, 1);
                 Results.Add($"INFO switched to {other.Name}: {ModListState().Count(s => s.EndsWith("=on"))} on");
                 Check("switching to the other profile changes the mod list", !ModListState().SequenceEqual(before)); // or the round trip proves nothing
+                // The main menu button, under the page, has followed already: it's what shows once the page closes.
+                Check("the main menu button follows a profile switch: the other profile and its count, as wide as its words",
+                    MenuButtonText(menu) == MenuButtonExpected() && MenuButtonText(menu)?.Contains(other.Name) == true && MenuButtonMisfit(menu) == null,
+                    $"{MenuButtonText(menu)} vs {MenuButtonExpected()}; {MenuButtonMisfit(menu)}");
                 Check("our own mod stays on", !(SaveManager.Instance.SettingsSave.ModSettings?.ModList
                     .Any(m => m.Id == ModEntry.ModId && !m.IsEnabled) ?? false));
                 await Capture(screen, outDir, "3-other-profile");
@@ -111,6 +116,9 @@ static class SelfTest
                 var after = ModListState();
                 Check("profile round trip restores the mod list", before.SequenceEqual(after),
                     string.Join(", ", before.Except(after)));
+                Check("the main menu button follows the switch back, as wide as its words", MenuButtonText(menu) == MenuButtonExpected()
+                    && MenuButtonText(menu)?.Contains(start.Name) == true && MenuButtonMisfit(menu) == null,
+                    $"{MenuButtonText(menu)} vs {MenuButtonExpected()}; {MenuButtonMisfit(menu)}");
             }
             else
                 Results.Add("SKIP profile round trip: only one profile");
@@ -771,6 +779,80 @@ static class SelfTest
         }
     }
 
+    // The main menu button's text, and what it should read: "Mod Profile: <active profile> (<the profile bar's count>)".
+    static string? MenuButtonText(NMainMenu menu) => menu.GetNodeOrNull<Label>("SpireModManagerMenuButton/Label")?.Text;
+
+    static string MenuButtonExpected() => $"Mod Profile: {Profiles.Active?.Name} ({Profiles.CountText()})";
+
+    // Null if the main menu button fits its words as they are now (measured afresh): its label's box that wide and
+    // centred in it, grown on hover from its middle, the button that and its margins, whole on screen. Shown or hidden
+    // (under a page): it follows at once either way. Otherwise what's wrong.
+    static string? MenuButtonMisfit(NMainMenu menu)
+    {
+        if (menu.GetNodeOrNull<Control>("SpireModManagerMenuButton") is not { } button || button.GetNodeOrNull<Label>("Label") is not { } label)
+            return "no button";
+        var words = label.GetCombinedMinimumSize().X;
+        var (box, inner) = (button.GetGlobalRect(), label.GetGlobalRect());
+        return Math.Abs(label.Size.X - words) < 1 && Math.Abs(label.PivotOffset.X - words / 2) < 1
+            && Math.Abs(box.Size.X - (words + 2 * MenuButton.Margin)) < 1 && Math.Abs(inner.GetCenter().X - box.GetCenter().X) < 1
+            && box.Encloses(inner) && button.GetViewportRect().Encloses(box)
+            ? null : $"words {words}, label {inner} (pivot {label.PivotOffset}), button {box}";
+    }
+
+    // The main menu button is the game's own text button, a copy of its Settings button: the same class, font, size and
+    // outline (no picture), with the game's notification dot on its label. It reads the active profile and the profile
+    // bar's count, as wide as its words, whole on screen. A long name is cut with "…", one mod reads "1 mod", and a
+    // saved position off the screen still puts it all on screen.
+    static void TestMenuButtonLook(NMainMenu menu)
+    {
+        if (menu.GetNodeOrNull<Control>("SpireModManagerMenuButton") is not { } button)
+            return;
+        var label = button.GetNodeOrNull<Label>("Label");
+        var settings = menu.GetNodeOrNull<Label>("MainMenuTextButtons/SettingsButton/Label");
+        Check("main menu button: the game's text button in its Settings button's font, size and outline, no picture",
+            button is NMainMenuTextButton && label != null && settings != null && label.GetThemeFont("font") == settings.GetThemeFont("font")
+            && label.GetThemeFontSize("font_size") == settings.GetThemeFontSize("font_size")
+            && label.GetThemeConstant("outline_size") == settings.GetThemeConstant("outline_size")
+            && label.GetThemeColor("font_outline_color") == settings.GetThemeColor("font_outline_color")
+            && !button.FindChildren("*", "TextureRect", true, false).Any(t => t.GetParent()?.Name != "Dot"),
+            $"{button.GetType().Name}, size {label?.GetThemeFontSize("font_size")} vs {settings?.GetThemeFontSize("font_size")}");
+        Check("main menu button reads the active profile and the profile bar's count", MenuButtonText(menu) == MenuButtonExpected(),
+            $"{MenuButtonText(menu)} vs {MenuButtonExpected()}");
+        var screen = button.GetViewportRect();
+        Check("main menu button: as wide as its words, whole on screen", MenuButtonMisfit(menu) == null, MenuButtonMisfit(menu) ?? "");
+        // The game's hover carets reach 54 from the text either side (NMainMenu.MainMenuButtonFocused): inside the button.
+        Check("main menu button: room for the hover carets inside it", label != null
+            && button.GetGlobalRect().Encloses(label.GetGlobalRect().GrowIndividual(54, 0, 54, 0)), $"{label?.GetGlobalRect()} in {button.GetGlobalRect()}");
+        Check("main menu button: the game's notification dot on its label, shown only with a relaunch pending",
+            button.FindChild("Dot", true, false) is Control dot && dot.GetParent() == label && dot.Visible == ModEntry.HasPendingChanges()
+            && dot.FindChildren("*", "TextureRect", true, false).Count == 1);
+
+        if (label == null)
+            return;
+        var (font, size) = (label.GetThemeFont("font"), label.GetThemeFontSize("font_size"));
+        var cut = MenuButton.Text("A profile with a really quite long name", 3, font, size);
+        Check("main menu button: a long profile name cut with \"…\", one mod, thousands", cut.StartsWith("Mod Profile: A profile") && cut.EndsWith("… (3 mods)")
+            && MenuButton.Text("Default", 1, font, size) == "Mod Profile: Default (1 mod)"
+            && MenuButton.Text("Default", 1234, font, size) == "Mod Profile: Default (1,234 mods)",
+            $"{cut} | {MenuButton.Text("Default", 1, font, size)}");
+        var saved = Store.Data.MenuButtonAt; // in memory only: nothing is saved
+        Store.Data.MenuButtonAt = new ScreenPoint(5000, 5000);
+        MenuButton.Place(button);
+        var corner = button.GetGlobalRect();
+        var note = button.GetNodeOrNull<Control>("PendingNote");
+        var noteThere = note?.GetGlobalRect() ?? default;
+        Store.Data.MenuButtonAt = saved;
+        MenuButton.Place(button);
+        var noteHere = note?.GetGlobalRect() ?? default;
+        // The "Relaunch to apply" note (shown or not): on the button's left at the right edge, else on its right.
+        Check("main menu button: a saved place past the screen's corner keeps it whole on screen, its note on its left",
+            screen.Encloses(corner) && corner.End.DistanceTo(screen.End) < 1 && note != null && screen.Encloses(noteThere)
+            && noteThere.End.X <= corner.Position.X, $"{corner} in {screen}, note {noteThere}");
+        Check("main menu button: back in its place, its note beside it, on screen", note != null && screen.Encloses(noteHere)
+            && (noteHere.Position.X >= button.GetGlobalRect().End.X || noteHere.End.X <= button.GetGlobalRect().Position.X),
+            $"note {noteHere}, button {button.GetGlobalRect()}");
+    }
+
     // Right-click the main menu button, Move button, click somewhere: it stays there; Reset puts it back.
     static async Task TestMenuButtonMove(NMainMenu menu, string outDir)
     {
@@ -867,8 +949,8 @@ static class SelfTest
         return MenuPanel.Current;
     }
 
-    // The main menu button's right-click menu: Move button, Reset position, Open translations folder, a divider, Relaunch
-    // game (last and on its own). Relaunch game checks for mods that won't load first, as the Modding page's button does (fixture: Test Addon
+    // The main menu button's right-click menu: under a heading with our name and version, Move button, Reset position, Open
+    // translations folder, a divider, Relaunch game (last and on its own). Relaunch game checks for mods that won't load first, as the Modding page's button does (fixture: Test Addon
     // needs SmmTestMissing, never installed): its dialog shows over the main menu, and its fixes work there before the
     // page has been opened. ModEntry.TestRelaunch counts each relaunch instead of quitting the test.
     static async Task TestMenuButtonRelaunch(NMainMenu menu, string outDir)
@@ -881,10 +963,37 @@ static class SelfTest
             labels.SequenceEqual(["Move button", "Reset position", "Open translations folder", "Relaunch game"]), string.Join(", ", labels));
         if (popup == null)
             return;
-        // The divider: the one entry between Open translations folder and Relaunch game, a line under the first and above
-        // the second.
         string? Label(Node item) => item.IsInGroup(MenuPanel.ItemGroup) ? (string)item.GetMeta("label") : null;
         var items = popup.FindChild("Items", true, false)?.GetChildren().OfType<Control>().ToList() ?? [];
+
+        // At the top, our name and version (from the manifest the game loaded), a heading with a line under it: not an
+        // item, so nothing in it takes the mouse or the focus, and a click on it leaves the menu open.
+        var version = ModEntry.Version;
+        var header = $"Spire Mod Manager v{version}";
+        var top = items.FirstOrDefault();
+        var parts = top?.FindChildren("*", "Control", true, false).OfType<Control>().Prepend(top).ToList() ?? [];
+        Check("main menu button's menu: \"Spire Mod Manager v<version>\" first, a heading, not an item", version != null && top != null
+            && top.IsInGroup(MenuPanel.HeadingGroup) && (string)top.GetMeta("label") == header && MenuPanel.Headings(popup).FirstOrDefault() == header
+            && !labels.Contains(header) && top.FindChildren("*", "Label", true, false).OfType<Label>().Any(l => l.Text == header)
+            && top.FindChildren("*", "ColorRect", true, false).Count == 1 && items.Count > 1 && Label(items[1]) == "Move button"
+            && parts.All(c => c.MouseFilter == Control.MouseFilterEnum.Ignore && c.FocusMode == Control.FocusModeEnum.None),
+            $"{string.Join(" | ", MenuPanel.Headings(popup))}; version {version}");
+        // A real click on it, through the viewport (and the menu's Catcher): the menu stays open, nothing runs.
+        var placed = Store.Data.MenuButtonAt;
+        if (top != null)
+        {
+            var at = top.GetGlobalRect().GetCenter();
+            Input.ParseInputEvent(new InputEventMouseButton { ButtonIndex = MouseButton.Left, Pressed = true, Position = at, GlobalPosition = at });
+            await Wait(menu, 0.1);
+            Input.ParseInputEvent(new InputEventMouseButton { ButtonIndex = MouseButton.Left, Pressed = false, Position = at, GlobalPosition = at });
+            await Wait(menu, 0.2);
+        }
+        Check("a click on the header does nothing: the menu stays open", top != null && MenuPanel.Current == popup
+            && !menu.SubmenuStack.SubmenusOpen && !menu.HasNode(MenuButton.MoveLayerName) && Store.Data.MenuButtonAt == placed
+            && menu.GetTree().Root.GetNodeOrNull(RelaunchCheck.Name) == null);
+
+        // The divider: the one entry between Open translations folder and Relaunch game, a line under the first and above
+        // the second.
         var above = items.FindIndex(i => Label(i) == "Open translations folder");
         var divider = above >= 0 && above + 2 < items.Count && Label(items[above + 2]) == "Relaunch game" ? items[above + 1] : null;
         Check("a divider right under Open translations folder, above Relaunch game", divider != null && Label(divider) == null
@@ -922,12 +1031,16 @@ static class SelfTest
             // A fix with no Modding page yet: the active profile and the pending dot follow, and it's one undo step of its
             // own (undoing it leaves the button's Reset position in place).
             var before = ModListState();
-            var dot = button.GetNode<Control>("Dot");
+            var dot = (Control)button.FindChild("Dot", true, false);
+            var text = MenuButtonText(menu);
             Press("DisableBrokenButton");
             await Wait(menu, 0.3);
             Check("from the main menu, Disable mods that can't load: off, the profile and the dot follow, then a plain Relaunch",
                 !Dependencies.IsOn(addon) && Profiles.Edited && dot.Visible == ModEntry.HasPendingChanges()
                 && Dialog()?.FindChild("RelaunchNowButton", true, false) is Button { Text: "Relaunch Game" }, Body());
+            Check("the main menu button's count follows a change made on the main menu, as wide as its words", MenuButtonText(menu) == MenuButtonExpected()
+                && MenuButtonText(menu) != text && MenuButtonMisfit(menu) == null,
+                $"{text} -> {MenuButtonText(menu)} vs {MenuButtonExpected()}; {MenuButtonMisfit(menu)}");
             Press("RelaunchNowButton");
             await Wait(menu, 0.2);
             Check("its Relaunch reaches the relaunch", relaunches == 1, $"{relaunches} relaunches");
@@ -1120,6 +1233,7 @@ static class SelfTest
         const string NotOurs = Translated + "X"; // a key mistyped
         const string Renamed = "SPIRE_MOD_MANAGER.PAGE_DISABLED", Added = "SPIRE_MOD_MANAGER.OPEN_TRANSLATIONS";
         const string Counted = "SPIRE_MOD_MANAGER.PAGE_ALL", NotText = "SPIRE_MOD_MANAGER.RELAUNCH_NOTE";
+        const string OnButton = "SPIRE_MOD_MANAGER.MAIN_MENU_PROFILE", OnButtonOne = "SPIRE_MOD_MANAGER.MAIN_MENU_PROFILE_ONE";
         const string German = "Spiel neu starten (Änderungen, 模组)"; // not ASCII: read as UTF-8, with a byte order mark
         string[] keys = [Translated, LeftOut, Broken, Empty];
         static string Read(string key)
@@ -1159,6 +1273,8 @@ static class SelfTest
                   // a comment and a trailing comma, as a hand-edited file may have
                   "{{Translated}}": "{{German}}",
                   "{{Counted}}": "Installierte Mods ({count})",
+                  "{{OnButton}}": "Mod-Profil: {name} ({count} Mods)",
+                  "{{OnButtonOne}}": "Mod-Profil: {name} (1 Mod)",
                   "{{Broken}}": "Knopf {verschieben",
                   "{{Empty}}": " ",
                   "{{Renamed}}": "Deaktivierte Mods ({anzahl})",
@@ -1182,8 +1298,15 @@ static class SelfTest
             MenuPanel.Close();
             Check("a drop-in translation on screen: the main menu button's menu has it", labels.Contains(German),
                 string.Join(", ", labels));
+            // The button itself follows the language as it changes, its count in German numbers.
+            var on = Profiles.OnCount();
+            var german = on == 1 ? $"Mod-Profil: {Profiles.Active?.Name} (1 Mod)" : $"Mod-Profil: {Profiles.Active?.Name} ({Menus.Number(on)} Mods)";
+            Check("a drop-in translation on screen: the main menu button reads it, as wide as its words", MenuButtonText(menu) == german
+                && MenuButtonMisfit(menu) == null, $"{MenuButtonText(menu)} vs {german}; {MenuButtonMisfit(menu)}");
             LocManager.Instance.SetLanguage(start);
-            Check("a drop-in translation: back in English, English", AllEnglish(), Shown());
+            await Wait(menu, 0.1);
+            Check("a drop-in translation: back in English, English", AllEnglish() && MenuButtonText(menu) == MenuButtonExpected()
+                && MenuButtonMisfit(menu) == null, $"{Shown()} | {MenuButtonText(menu)}; {MenuButtonMisfit(menu)}");
 
             foreach (var (what, text) in new[]
             {

@@ -1,38 +1,57 @@
+using System.Reflection;
 using Godot;
+using HarmonyLib;
+using MegaCrit.Sts2.Core.Localization;
 using MegaCrit.Sts2.Core.Nodes.Screens.MainMenu;
 using MegaCrit.Sts2.Core.Nodes.Screens.ModdingScreen;
+using MegaCrit.Sts2.addons.mega_text;
 
 namespace SpireModManager;
 
-// The "Spire Mod Manager" button on the main menu: a skyline picture (an edited still of the game's main-menu
-// background) in the lower-left corner (or wherever the player moved it: right-click > Move button, then click
-// to place it), with the game's notification dot and a short "Relaunch to apply" note beside it while a relaunch
-// is pending. Its right-click menu also has Open translations folder, and Relaunch game, the Modding page's Relaunch
-// Game from here.
+// The main menu's "Mod Profile: Default (12 mods)" button: the game's own main-menu text button (a copy of its
+// Settings button, so the same font, size, colours, outline, shadow and hover, with the carets either side), naming
+// the active profile and how many mods are on. In the lower-left corner, or wherever the player moved it (right-click
+// > Move button, then click to place it), with the game's notification dot and a short "Relaunch to apply" note
+// beside it while a relaunch is pending. Its right-click menu, under our name and version, also has Open translations
+// folder, and Relaunch game, the Modding page's Relaunch Game from here.
 static class MenuButton
 {
     const string Name = "SpireModManagerMenuButton";
     static readonly Color Coral = new(0.96f, 0.62f, 0.47f);
+    // A long profile name is cut to this width with "…" (at the button's font size).
+    const float NameWidth = 360;
+    // Room either side of the text, inside the button (the game's are wider than their words too); the hover carets
+    // sit in it (the game puts them out to 54 from the text, NMainMenu.MainMenuButtonFocused), so wherever the button
+    // is kept on screen, they are too. Public for the self-test.
+    public const float Margin = 56;
+    // The pending note: this wide at least, this far from the button.
+    const float NoteWidth = 260, NoteGap = 10;
+    // If the game's button is gone: one of ours (AddTextButton), this size.
+    static readonly Vector2 FallbackSize = new(460, 70);
+
+    // The game's main menu draws carets either side of its text button under the mouse; ours gets them too.
+    static readonly MethodInfo? CaretsOn = AccessTools.Method(typeof(NMainMenu), "MainMenuButtonFocused");
+    static readonly MethodInfo? CaretsOff = AccessTools.Method(typeof(NMainMenu), "MainMenuButtonUnfocused");
 
     public static void Add(NMainMenu menu)
     {
-        // The game's button art if ours is missing.
-        var art = ModEntry.Art("main_menu_button.png");
-        var size = art?.GetSize() ?? new Vector2(260, 70);
-        var button = ModEntry.AddButton(menu, "SPIRE_MOD_MANAGER.MAIN_MENU_BUTTON", size,
-            () => menu.SubmenuStack.PushSubmenuType<NModdingScreen>(), art);
+        void Open() => menu.SubmenuStack.PushSubmenuType<NModdingScreen>();
+        var button = Native(menu, Open) ?? ModEntry.AddTextButton(menu, "", FallbackSize, Open);
         button.Name = Name;
-        Place(button, size);
+        // The game's label, or none for the fallback (its text then goes through ModEntry.SetText, its size fixed).
+        var label = button is NMainMenuTextButton ? button.GetChild<MegaLabel>(0) : null;
+        var height = label != null ? Math.Max(button.CustomMinimumSize.Y, 50) : FallbackSize.Y;
+        button.CustomMinimumSize = label != null ? new Vector2(0, height) : FallbackSize;
 
-        var dot = button.GetNode<Control>("Dot");
+        // The notification dot (none if the game's is gone: the note still shows).
+        if (button.FindChild("Dot", true, false) is not Control dot)
+            button.AddChild(dot = new Control { Name = "Dot", MouseFilter = Control.MouseFilterEnum.Ignore });
         // Our Modding page couldn't hook in at all (ModdingScreenPatch didn't apply), so it can't say why it's the
         // game's: the note does, always, in place of the relaunch note.
         var outdated = ModEntry.FailedPatches.Contains(nameof(ModdingScreenPatch));
         var note = new Label
         {
-            Name = "PendingNote", Text = Menus.Text(outdated ? "SPIRE_MOD_MANAGER.NEEDS_UPDATE" : "SPIRE_MOD_MANAGER.RELAUNCH_NOTE"),
-            MouseFilter = Control.MouseFilterEnum.Ignore,
-            VerticalAlignment = VerticalAlignment.Center, Position = new Vector2(size.X + 10, 0), Size = new Vector2(260, size.Y),
+            Name = "PendingNote", MouseFilter = Control.MouseFilterEnum.Ignore, VerticalAlignment = VerticalAlignment.Center,
         };
         note.AddThemeFontOverride("font", ModEntry.Font("res://themes/kreon_regular_shared.tres"));
         note.AddThemeFontSizeOverride("font_size", 18);
@@ -41,6 +60,28 @@ static class MenuButton
         note.AddThemeConstantOverride("outline_size", 6);
         button.AddChild(note);
 
+        // The text, and with it the button's width: its words and the margins. Kept in place (Place), and on screen.
+        void Retext()
+        {
+            note.Text = Menus.Text(outdated ? "SPIRE_MOD_MANAGER.NEEDS_UPDATE" : "SPIRE_MOD_MANAGER.RELAUNCH_NOTE");
+            if (label == null)
+                ModEntry.SetText(button, Text(ModEntry.Font("res://themes/kreon_bold_shared.tres"), 24));
+            else
+            {
+                label.RefreshFont(); // the language's own font, as the game's buttons take theirs
+                label.Text = Text(label.GetThemeFont("font"), label.GetThemeFontSize("font_size"));
+                // Measured now, not from label.Size: Godot resizes a label for new text a frame later, and not at all
+                // while it's hidden (on a page over the menu). Its box is set to that width, centred, so its size
+                // follows at once.
+                var words = label.GetCombinedMinimumSize();
+                (label.OffsetLeft, label.OffsetRight) = (-words.X / 2, words.X / 2);
+                label.PivotOffset = new Vector2(words.X, Math.Max(label.Size.Y, words.Y)) / 2; // hover grows it from the middle
+                button.CustomMinimumSize = new Vector2(words.X + 2 * Margin, height);
+            }
+            Place(button);
+        }
+        Retext();
+
         void Refresh()
         {
             button.Visible = !menu.SubmenuStack.SubmenusOpen;
@@ -48,16 +89,36 @@ static class MenuButton
             note.Visible = dot.Visible || outdated;
         }
         Refresh();
-        menu.SubmenuStack.Connect(NSubmenuStack.SignalName.StackModified, Callable.From(Refresh));
-        // A change made on the main menu itself (a fix in the relaunch check) can start or end a pending relaunch.
-        // Changes on a page over the menu are caught as it closes, above.
+        // Back from a page over the menu: the profile or its mods may have changed there.
+        menu.SubmenuStack.Connect(NSubmenuStack.SignalName.StackModified, Callable.From(() =>
+        {
+            Retext();
+            Refresh();
+        }));
+        // A change made on the main menu itself (a fix in the relaunch check) can start or end a pending relaunch. Changes
+        // on a page over the menu are caught as it closes, above, but the text follows at once (it's hidden meanwhile).
         void Changed()
         {
+            Retext();
             if (!menu.SubmenuStack.SubmenusOpen)
                 Refresh();
         }
         History.Changed += Changed;
-        button.TreeExiting += () => History.Changed -= Changed;
+        Profiles.Switched += Retext;
+        // The language: its text and font. The game goes through its list of these as it calls them, so ours leaves it a
+        // frame later, never during that.
+        LocManager.LocaleChangeCallback language = () =>
+        {
+            if (GodotObject.IsInstanceValid(button))
+                Retext();
+        };
+        LocManager.Instance.SubscribeToLocaleChange(language);
+        button.TreeExiting += () =>
+        {
+            History.Changed -= Changed;
+            Profiles.Switched -= Retext;
+            Callable.From(() => LocManager.Instance.UnsubscribeToLocaleChange(language)).CallDeferred();
+        };
 
         button.GuiInput += e =>
         {
@@ -65,12 +126,16 @@ static class MenuButton
                 return;
             button.AcceptEvent();
             Menus.Show(menu, [
-                new(Menus.Text("SPIRE_MOD_MANAGER.MOVE_BUTTON"), () => BeginMove(menu, button, size)),
+                // Whose menu it is: our name and version, a heading (not an item), over a line.
+                MenuItem.Heading(ModEntry.Version is { } version
+                    ? Menus.Format("SPIRE_MOD_MANAGER.MENU_HEADER", ("version", version))
+                    : Menus.Text("SPIRE_MOD_MANAGER.POPUP_MARK")),
+                new(Menus.Text("SPIRE_MOD_MANAGER.MOVE_BUTTON"), () => BeginMove(menu, button)),
                 new(Menus.Text("SPIRE_MOD_MANAGER.RESET_POSITION"), () =>
                 {
                     Store.Data.MenuButtonAt = null;
                     Store.Save();
-                    Place(button, size);
+                    Place(button);
                 }, Disabled: Store.Data.MenuButtonAt == null),
                 // Where drop-in translations go (Translations), made if needed and opened.
                 new(Menus.Text("SPIRE_MOD_MANAGER.OPEN_TRANSLATIONS"), Translations.Open),
@@ -83,23 +148,79 @@ static class MenuButton
         };
     }
 
-    // Where the player put it (kept on screen), or the lower-left corner, its bottom level with the Modding
-    // screen's bottom row of buttons.
-    static void Place(Control button, Vector2 size)
+    // "Mod Profile: Default (12 mods)": the active profile, its name cut short if long (in this font, at this size), and
+    // how many mods are on, the count the profile bar shows beside the name.
+    public static string Text(Font font, int size) => Text(Profiles.Active?.Name ?? "", Profiles.OnCount(), font, size);
+
+    // The same for any name and count (the self-test).
+    public static string Text(string name, int on, Font font, int size) =>
+        Menus.Format(on == 1 ? "SPIRE_MOD_MANAGER.MAIN_MENU_PROFILE_ONE" : "SPIRE_MOD_MANAGER.MAIN_MENU_PROFILE",
+            ("name", RowTitles.Cut(font, name, size, NameWidth)), ("count", Menus.Number(on)));
+
+    // A copy of the game's Settings button on the main menu, with our action (and none of the game's), its label for our
+    // text, and a copy of the game's Timeline notification dot on that label, hidden; null if a game update moved them.
+    static Control? Native(NMainMenu menu, Action onPressed)
     {
+        if (menu.GetNodeOrNull<NMainMenuTextButton>("MainMenuTextButtons/SettingsButton") is not { } settings
+            || settings.Duplicate((int)(Node.DuplicateFlags.Scripts | Node.DuplicateFlags.UseInstantiation)) is not NMainMenuTextButton button)
+            return null;
+        if (button.GetChildCount() == 0 || button.GetChild(0) is not MegaLabel label)
+        {
+            button.Free();
+            return null;
+        }
+        if (menu.GetNodeOrNull<Control>("%TimelineNotificationDot")?.Duplicate() is Control dot)
+        {
+            dot.UniqueNameInOwner = false;
+            dot.Name = "Dot";
+            dot.Visible = false;
+            label.AddChild(dot);
+        }
+        menu.AddChild(button);
+        button.Released += _ => onPressed();
+        // As the game does for its own: the carets go to it once it has taken the focus, and fade as it loses it.
+        bool Here() => GodotObject.IsInstanceValid(menu) && menu.IsInsideTree() && GodotObject.IsInstanceValid(button);
+        button.Focused += _ => Callable.From(() =>
+        {
+            if (Here())
+                CaretsOn?.Invoke(menu, [button]);
+        }).CallDeferred();
+        button.Unfocused += _ =>
+        {
+            if (Here())
+                CaretsOff?.Invoke(menu, [button]);
+        };
+        return button;
+    }
+
+    // Where the player put it (kept on screen), or the lower-left corner, level with the Modding screen's bottom row
+    // of buttons (70 tall from BottomRowY). Again whenever its text changes its width. Public for the self-test.
+    public static void Place(Control button)
+    {
+        var size = button.CustomMinimumSize;
+        var screen = button.GetViewportRect().Size;
         if (Store.Data.MenuButtonAt is { } at)
         {
             button.SetAnchorsPreset(Control.LayoutPreset.TopLeft);
-            var screen = button.GetViewportRect().Size;
-            button.Position = new Vector2(Math.Clamp(at.X, 0, screen.X - size.X), Math.Clamp(at.Y, 0, screen.Y - size.Y));
+            button.Position = new Vector2(Math.Clamp(at.X, 0, Math.Max(0, screen.X - size.X)), Math.Clamp(at.Y, 0, Math.Max(0, screen.Y - size.Y)));
             button.Size = size;
-            return;
         }
-        button.SetAnchorsPreset(Control.LayoutPreset.BottomLeft);
-        button.OffsetLeft = Layout.CornerX;
-        button.OffsetBottom = Layout.BottomRowY + 70 - 1080;
-        button.OffsetRight = button.OffsetLeft + size.X;
-        button.OffsetTop = button.OffsetBottom - size.Y;
+        else
+        {
+            button.SetAnchorsPreset(Control.LayoutPreset.BottomLeft);
+            button.OffsetLeft = Layout.CornerX;
+            button.OffsetBottom = Layout.BottomRowY + 35 + size.Y / 2 - 1080;
+            button.OffsetRight = button.OffsetLeft + size.X;
+            button.OffsetTop = button.OffsetBottom - size.Y;
+        }
+        // The note beside it: on its right, or on its left if only there the screen has room for it.
+        if (button.GetNodeOrNull<Label>("PendingNote") is { } note)
+        {
+            var width = Math.Max(NoteWidth, note.GetCombinedMinimumSize().X);
+            var right = button.Position.X + size.X + NoteGap + width <= screen.X || button.Position.X < NoteGap + width;
+            note.HorizontalAlignment = right ? HorizontalAlignment.Left : HorizontalAlignment.Right;
+            (note.Position, note.Size) = (new Vector2(right ? size.X + NoteGap : -NoteGap - width, 0), new Vector2(width, size.Y));
+        }
     }
 
     // Move mode: the button follows the mouse (by how far it moves, so it doesn't jump); a left click puts it
@@ -120,10 +241,11 @@ static class MenuButton
         return true;
     }
 
-    static void BeginMove(NMainMenu menu, Control button, Vector2 size)
+    static void BeginMove(NMainMenu menu, Control button)
     {
         if (menu.HasNode(MoveLayerName))
             return;
+        var size = button.CustomMinimumSize;
         var layer = new CanvasLayer { Name = MoveLayerName, Layer = 100 };
         menu.AddChild(layer);
         var screen = menu.GetViewportRect().Size;
@@ -188,11 +310,12 @@ static class MenuButton
             {
                 Store.Data.MenuButtonAt = new ScreenPoint(button.Position.X, button.Position.Y);
                 Store.Save();
+                Place(button); // where it is: the note takes its side
             }
             else
             {
                 Store.Data.MenuButtonAt = startAnchors;
-                Place(button, size);
+                Place(button);
             }
             if (GodotObject.IsInstanceValid(layer))
             {

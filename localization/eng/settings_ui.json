@@ -1,5 +1,6 @@
 {
-  "SPIRE_MOD_MANAGER.MAIN_MENU_BUTTON": "Spire Mod Manager",
+  "SPIRE_MOD_MANAGER.MAIN_MENU_PROFILE": "Mod Profile: {name} ({count} mods)",
+  "SPIRE_MOD_MANAGER.MAIN_MENU_PROFILE_ONE": "Mod Profile: {name} (1 mod)",
   "SPIRE_MOD_MANAGER.RELAUNCH_BUTTON": "Relaunch Game",
   "SPIRE_MOD_MANAGER.PENDING_RESTART": "Mod changes will be applied after a restart.",
   "SPIRE_MOD_MANAGER.VANILLA_VIEW": "Vanilla List",
@@ -195,6 +196,7 @@
   "SPIRE_MOD_MANAGER.DATA_READ_ONLY": "The file with your categories, profiles and notes couldn't be read or moved aside, so changes this session won't be saved. If another program has it open, close that program and relaunch. It's {file}, in the mod's data folder.",
   "SPIRE_MOD_MANAGER.EDIT_TIP": "Edit alias, tags and notes",
   "SPIRE_MOD_MANAGER.CATEGORY_TIP": "Move to another category",
+  "SPIRE_MOD_MANAGER.MENU_HEADER": "Spire Mod Manager v{version}",
   "SPIRE_MOD_MANAGER.MOVE_BUTTON": "Move button",
   "SPIRE_MOD_MANAGER.RESET_POSITION": "Reset position",
   "SPIRE_MOD_MANAGER.RELAUNCH_GAME": "Relaunch game",

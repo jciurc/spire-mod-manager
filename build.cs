@@ -71,9 +71,11 @@ foreach (var langDir in Directory.GetDirectories(locRoot))
 // Scenes: scenes/*.tscn -> res://SpireModManager/scenes/...
 foreach (var file in Directory.GetFiles(Path.Combine(root, "scenes")))
     files[$"{ModId}/scenes/{Path.GetFileName(file)}"] = File.ReadAllBytes(file);
-// Images: images/*.png -> res://SpireModManager/images/... as plain files (not imported); the mod loads
-// them with Image.LoadPngFromBuffer.
-foreach (var file in Directory.GetFiles(Path.Combine(root, "images"), "*.png"))
+// Images: images/*.png -> res://SpireModManager/images/... as plain files (not imported), for the mod to load
+// with Image.LoadPngFromBuffer. None today (the folder may be missing or empty): the main menu button is the
+// game's own text button now.
+var images = Path.Combine(root, "images");
+foreach (var file in Directory.Exists(images) ? Directory.GetFiles(images, "*.png") : [])
     files[$"{ModId}/images/{Path.GetFileName(file)}"] = File.ReadAllBytes(file);
 
 WritePack(Path.Combine(outDir, ModId + ".pck"), files);
