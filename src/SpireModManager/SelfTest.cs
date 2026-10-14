@@ -3528,10 +3528,11 @@ static class SelfTest
                 if (column.GetChildOrNull<Control>(0) is { } button && column.GetNodeOrNull<Label>("Keys") is { } hint && hint.Text.Trim().Length > 0)
                 {
                     var size = hint.GetThemeFontSize("font_size");
-                    var width = hint.GetThemeFont("font").GetStringSize(hint.Text, fontSize: size).X; // the text as drawn, not its box
+                    var whole = hint.GetThemeFont("font").GetStringSize(hint.Text, fontSize: size).X;
+                    var width = Math.Min(whole, hint.Size.X); // the text as drawn, not its box: cut with "…" to the box if it must be
                     var middle = hint.GetGlobalRect().GetCenter().X;
                     var own = button.GetCombinedMinimumSize().X; // the button's width by its own text
-                    var fitted = width <= own - 2 * HistoryBar.HintInset + 0.5f || size <= HistoryBar.HintSmallest;
+                    var fitted = whole <= own - 2 * HistoryBar.HintInset + 0.5f || size <= HistoryBar.HintSmallest;
                     keys.Add((button.GetGlobalRect(), own, middle - width / 2, middle, middle + width / 2, fitted, hint.Text, size));
                 }
             Results.Add($"INFO shortcuts in {language}: {string.Join(", ", keys.Select(k => $"{k.Text} at {k.Size}, {k.Right - k.Left:0} of {k.Button.Size.X:0} px"))}");
