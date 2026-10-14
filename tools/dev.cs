@@ -112,6 +112,9 @@ foreach (var (item, manifest) in workshopManifests)
     if (MissingDependency([Id(manifest)], []) is { } chain)
     {
         var needed = chain[^1];
+        if (chain.IndexOf(needed) < chain.Count - 1) // back to a mod already in the chain: the game refuses every mod in a loop, and every mod needing one
+            return Fail($"Workshop item {item} won't load: {string.Join(", ", chain.Zip(chain.Skip(1), (mod, dependency) => $"{mod} needs {dependency}"))}: "
+                + "a dependency loop, which the game refuses.");
         var installed = installedManifests.Any(m => Id(m) == needed);
         var subscribed = Directory.GetDirectories(WorkshopDir).FirstOrDefault(d => ManifestIds(d).Contains(needed));
         var needs = string.Join(", ", chain.Zip(chain.Skip(1), (mod, dependency) => $"{mod} needs {dependency}"));
@@ -272,8 +275,9 @@ void SyncMods()
     if (real)
     {
         // --real: Jordan's Workshop mods too, as local folders (switched off in PrepareSandbox), but not
-        // the --workshop items: they're copied below.
-        foreach (var dir in Directory.GetDirectories(WorkshopDir).Where(d => !workshopItems.Contains(Path.GetFileName(d))))
+        // the --workshop items (copied below), nor another item with one of their mod ids (two versions of one mod:
+        // the game would load only one, and the run could report on the wrong copy).
+        foreach (var dir in Directory.GetDirectories(WorkshopDir).Where(d => !workshopItems.Contains(Path.GetFileName(d)) && !ManifestIds(d).Any(workshopMods.Contains)))
             foreach (var file in Directory.EnumerateFiles(dir, "*", SearchOption.AllDirectories))
                 Link(file, Path.Combine(mods, "workshop-" + Path.GetFileName(dir), Path.GetRelativePath(dir, file)));
     }
@@ -388,12 +392,13 @@ void PrepareSandbox(bool resetData)
 }
 
 // The chain from the last mod in chain to the first mod it needs, directly or through others, that won't be on in this
-// run (as in [A, B, C]: A needs B, B needs C, and C won't be on), or null when everything it needs will be.
+// run (as in [A, B, C]: A needs B, B needs C, and C won't be on), or null when everything it needs will be. A chain
+// that comes back to a mod already in it is returned too (a loop: the game's sort refuses every mod in one).
 List<string>? MissingDependency(List<string> chain, HashSet<string> seen)
 {
     seen.Add(chain[^1]);
     foreach (var id in DependencyIds(on[chain[^1]]))
-        if (!on.ContainsKey(id))
+        if (!on.ContainsKey(id) || chain.Contains(id))
             return [.. chain, id];
         else if (!seen.Contains(id) && MissingDependency([.. chain, id], seen) is { } missing)
             return missing;
