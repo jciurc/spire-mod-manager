@@ -15,6 +15,7 @@ static class RelaunchCheck
     static readonly Color Cream = new(1, 0.964706f, 0.886275f);
     static readonly Color Gold = new(0.937f, 0.784f, 0.318f);
     const string ProblemHex = "#ff8070";
+    const string ClosesMeta = "spire_mod_manager_relaunch_check_closes"; // the owner already closes the dialog as it goes
 
     public static bool IsOpen => Root()?.GetNodeOrNull(Name) != null;
 
@@ -43,7 +44,13 @@ static class RelaunchCheck
             return;
         var layer = new CanvasLayer { Name = Name, Layer = 85 };
         root.AddChild(layer);
-        owner.TreeExiting += () => Close();
+        // Once per owner: the handler captures nothing, so it's the same delegate each time, and Godot logs an error
+        // ("already connected") when the dialog is shown again from the same page.
+        if (!owner.HasMeta(ClosesMeta))
+        {
+            owner.SetMeta(ClosesMeta, true);
+            owner.TreeExiting += () => Close();
+        }
 
         // Dim everything behind, and take its clicks.
         var size = owner.GetViewport().GetVisibleRect().Size; // anchors don't size controls right under a CanvasLayer here
