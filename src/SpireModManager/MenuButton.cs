@@ -4,10 +4,11 @@ using MegaCrit.Sts2.Core.Nodes.Screens.ModdingScreen;
 
 namespace SpireModManager;
 
-// The "Spire Mod Manager" button on the main menu: Jordan's skyline art in the lower-left corner (or
-// wherever the player moved it: right-click > Move button, then click to place it), with the game's
-// notification dot and a short "Relaunch to apply" note beside it while a relaunch is pending. Its
-// right-click menu also has Open translations folder, and Relaunch game, the Modding page's Relaunch Game from here.
+// The "Spire Mod Manager" button on the main menu: a skyline picture (an edited still of the game's main-menu
+// background) in the lower-left corner (or wherever the player moved it: right-click > Move button, then click
+// to place it), with the game's notification dot and a short "Relaunch to apply" note beside it while a relaunch
+// is pending. Its right-click menu also has Open translations folder, and Relaunch game, the Modding page's Relaunch
+// Game from here.
 static class MenuButton
 {
     const string Name = "SpireModManagerMenuButton";
