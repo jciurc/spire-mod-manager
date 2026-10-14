@@ -65,7 +65,14 @@ public static class ModEntry
     // first failure). The launch record goes first, then watching for new mods: neither needs a patch.
     public static void Init()
     {
-        LaunchGuard.Begin();
+        try
+        {
+            LaunchGuard.Begin();
+        }
+        catch (Exception e)
+        {
+            Log.Error($"[{ModId}] Could not record this launch, so a launch that stops before the main menu won't be noticed: {e}");
+        }
         try
         {
             Installed.Watch();
