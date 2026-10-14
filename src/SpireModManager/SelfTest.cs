@@ -2868,12 +2868,14 @@ static class SelfTest
             var paths = content.GetParent().GetChildren().OfType<Line2D>().Where(l => l.IsInGroup("SpireModManagerLinks")).Select(l => l.Points).ToList();
             Check("the hover lines have slightly rounded corners", paths.Count > 0 && paths.All(Rounded),
                 string.Join("; ", paths.Select(p => string.Join(" ", p.Select(q => $"{q.X:0.#},{q.Y:0.#}")))));
-            // The rows here wear the main list's rounded looks: faint under the mouse, sunken when selected.
+            // The rows here wear the main list's rounded looks: faint under the mouse, brighter when selected, both edge
+            // to edge (no rim on the selected one, so its edges line up with the other rows' boxes).
             var selectedRow = Rows().FirstOrDefault(r => r.Mod == CategoryList.Selected && r != libRow);
             StyleBox? LookOf(NModMenuRow? r) => r?.GetNodeOrNull<Panel>("SelectionHighlight")?.GetThemeStylebox("panel");
-            Check("load order rows: rounded like the main list's, under the mouse and selected",
-                LookOf(libRow) is StyleBoxFlat { CornerRadiusTopLeft: RowTitles.CornerRadius, BorderWidthTop: 0 }
-                && LookOf(selectedRow) is StyleBoxFlat { CornerRadiusTopLeft: RowTitles.CornerRadius, BorderWidthTop: 2 }
+            Check("load order rows: rounded like the main list's, under the mouse and selected, no rim, the selected one brighter",
+                LookOf(libRow) is StyleBoxFlat { CornerRadiusTopLeft: RowTitles.CornerRadius, BorderWidthTop: 0, BorderWidthLeft: 0 } hoverLook
+                && LookOf(selectedRow) is StyleBoxFlat { CornerRadiusTopLeft: RowTitles.CornerRadius, BorderWidthTop: 0, BorderWidthLeft: 0 } selectedBox
+                && selectedBox.BgColor.A > hoverLook.BgColor.A
                 && selectedRow?.GetNode<Panel>("SelectionHighlight") is { } selectedLook && selectedLook.Modulate == Colors.White
                 && selectedLook.OffsetLeft == RowTitles.LookInset.X, $"selected: {selectedRow?.Mod?.manifest?.id ?? "none"}");
             await Capture(screen, outDir, "13b-hover-links");

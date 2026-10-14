@@ -238,24 +238,18 @@ static class RowTitles
 
     // The row's highlight (the game's SelectionHighlight panel) in our views: one shape for every state, a little
     // wider than the game's, with rounded corners; under the mouse (or keyboard) a faint tint, the mod in the info
-    // panel a deeper, sunken one. Vanilla View: the game's own look. (Picked mods' tint uses the same shape.)
+    // panel a brighter one, edge to edge like the rest (no rim, so it lines up with picked rows; Jordan, 2026-10-14).
+    // Vanilla View: the game's own look. (Picked mods' tint uses the same shape.)
     public const int CornerRadius = 4;
     public static readonly Vector4 LookInset = new(-6, -3, 6, 3); // left, top, right, bottom offsets from the row
     const string GameLookMeta = "spire_mod_manager_game_look", GameBoxMeta = "spire_mod_manager_game_box";
     static readonly Color Gamelike = MegaCrit.Sts2.Core.Helpers.StsColors.darkBlue, GameSelected = MegaCrit.Sts2.Core.Helpers.StsColors.blue;
     static StyleBoxFlat? _hover, _selected;
 
-    static StyleBoxFlat Box(Color fill, Color? rim = null)
+    static StyleBoxFlat Box(Color fill)
     {
         var box = new StyleBoxFlat { BgColor = fill };
         box.SetCornerRadiusAll(CornerRadius);
-        if (rim is { } edge)
-        {
-            // Sunken: a dark rim, heavier along the top.
-            box.BorderColor = edge;
-            box.SetBorderWidthAll(1);
-            box.BorderWidthTop = 2;
-        }
         return box;
     }
 
@@ -281,7 +275,7 @@ static class RowTitles
             return;
         }
         _hover ??= Box(new Color(0.45f, 0.62f, 0.85f, 0.1f));
-        _selected ??= Box(new Color(0.16f, 0.3f, 0.48f, 0.55f), new Color(0.02f, 0.04f, 0.08f, 0.85f));
+        _selected ??= Box(new Color(0.16f, 0.3f, 0.48f, 0.55f));
         (look.OffsetLeft, look.OffsetTop, look.OffsetRight, look.OffsetBottom) = (LookInset.X, LookInset.Y, LookInset.Z, LookInset.W);
         look.AddThemeStyleboxOverride("panel", selected ? _selected : _hover);
         look.Modulate = selected || focused ? Colors.White : Colors.Transparent;
