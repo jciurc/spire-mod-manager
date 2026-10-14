@@ -308,7 +308,7 @@ static class ShortcutsPatch
     {
         try
         {
-            if (inputEvent is not InputEventKey { Keycode: Key.Escape, Pressed: true, Echo: false } || !(MenuPanel.Close() || RelaunchCheck.Close() || MenuButton.CancelMove() || LetGo()))
+            if (inputEvent is not InputEventKey { Keycode: Key.Escape, Pressed: true, Echo: false } || !(MenuPanel.Close() || RelaunchCheck.Close() || ProfileShare.Close() || MenuButton.CancelMove() || LetGo()))
                 return true;
             ((SceneTree)Engine.GetMainLoop()).Root.SetInputAsHandled();
             return false;
@@ -329,7 +329,7 @@ static class ShortcutsPatch
         {
             if (inputEvent is not InputEventKey { Pressed: true, Echo: false, CtrlPressed: true } key
                 || HistoryBar.Screen is not { } screen || !GodotObject.IsInstanceValid(screen) || !screen.IsVisibleInTree()
-                || Store.Data.VanillaView || RelaunchCheck.IsOpen)
+                || Store.Data.VanillaView || RelaunchCheck.IsOpen || ProfileShare.IsOpen)
                 return;
             switch (key.Keycode)
             {

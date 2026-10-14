@@ -6,9 +6,9 @@ namespace SpireModManager;
 
 // The profile bar across the top of the mod list.
 // - Left: "Profile: [name ▾]", opening the list of profiles ("Name *" for ones with unsaved changes, with
-//   their mod count and save date); while the mod list differs from the saved profile, "Unsaved •" (hover: the
+//   their mod count and save date), then Share profile and Import profile (ProfileShare); while the mod list differs from the saved profile, "Unsaved •" (hover: the
 //   changes; click: listed in the info panel) and Save, Save as new, Discard beside it.
-// - Right: New, Duplicate, Rename, Delete (Rename and Delete also on right-click).
+// - Right: New, Duplicate, Rename, Delete (Rename and Delete also on right-click, with Share and Import).
 // New, Duplicate, Save as new and Rename open a name box in the picker's place (with an inline ✕), Save
 // and Cancel; a name that's empty or taken says so and can't be saved. Everything else hides meanwhile.
 static class ProfileBar
@@ -122,9 +122,16 @@ static class ProfileBar
         var manage = ButtonBox("Actions");
         row.AddChild(manage);
 
+        // Share and Import, under a divider at the end of both menus (the bar has no room for more buttons).
+        List<MenuItem> Sharing() => [
+            MenuItem.Heading(""),
+            new(Menus.Text("SPIRE_MOD_MANAGER.SHARE_PROFILE"), () => ProfileShare.ShowShare(screen)),
+            new(Menus.Text("SPIRE_MOD_MANAGER.IMPORT_PROFILE"), () => ProfileShare.ShowImport(screen)),
+        ];
         List<MenuItem> Actions() => [
             new(Menus.Text("SPIRE_MOD_MANAGER.RENAME"), () => BeginNaming(Naming.Rename)),
             new(Menus.Text("SPIRE_MOD_MANAGER.DELETE"), DeleteActive, Disabled: Store.Data.Profiles.Count <= 1),
+            .. Sharing(),
         ];
 
         void Refresh()
@@ -143,10 +150,10 @@ static class ProfileBar
                 delete.Disabled = Store.Data.Profiles.Count <= 1;
         }
 
-        // The profile list, the active one marked; a second press on the picker closes it.
+        // The profile list, the active one marked, then Share and Import; a second press on the picker closes it.
         picker.Pressed += () => Menus.Show(bar, Store.Data.Profiles.Select(p => new MenuItem(
                 p.Name, () => Profiles.SwitchTo(p, screen), Checked: p == Profiles.Active, Radio: true, Detail: Profiles.Details(p),
-                Badge: p.Edited != null ? (" *", UnsavedMark) : null)).ToList(),
+                Badge: p.Edited != null ? (" *", UnsavedMark) : null)).Concat(Sharing()).ToList(),
             at: picker.GlobalPosition + new Vector2(0, picker.Size.Y + 4), toggleKey: "profiles");
         picker.GuiInput += e =>
         {
