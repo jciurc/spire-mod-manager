@@ -56,7 +56,10 @@ static class RowTitles
             title.OffsetLeft += shift - (row.HasMeta(ShiftMeta) ? (float)row.GetMeta(ShiftMeta) : 0);
             row.SetMeta(ShiftMeta, shift);
             title.BbcodeEnabled = true;
-            title.Text = Escape(name);
+            // The plain name in Vanilla View (Better Mod Menu's page restyles it there). In ours Fit sets the whole text
+            // anyway: set here too, an alias or a cut name went back and forth on every redraw, fitted again each time.
+            if (vanilla)
+                title.Text = Escape(name);
             if (title.HasThemeColorOverride("default_color")) // (removing one restyles the text, even when there is none)
                 title.RemoveThemeColorOverride("default_color"); // Better Mod Menu's name colour (its page restyles its own)
             Layout.FontSize(title, vanilla ? Layout.RowTitleVanillaSize : Layout.RowTitleSize);
@@ -167,21 +170,18 @@ static class RowTitles
         }
     }
 
-    // The game's fitting on again once the title has its place and text. Setting the text fits it when the text
-    // changed (and later changes of box fit by themselves); Layout.Refit fits it when only the box or its size (Apply's,
-    // Layout.FontSize) changed while it was off, or its text did (Apply's plain name in place of an alias, kept as the
-    // alias is gone, at the size fitted for the alias). FittedMeta holds the text Refit last fitted; a text set here
-    // isn't kept: it fits later (deferred), and a redraw that turns the auto-size off first stops that.
+    // The game's fitting on again once the title has its place and text (later changes of box fit by themselves).
+    // Layout.Refit fits it, now and once, when its box or its size (Apply's, Layout.FontSize) changed while it was off,
+    // or its text isn't the one it last fitted (FittedMeta): a new text (an alias set or gone, Vanilla View's plain name
+    // in place of ours) is written with the auto-size still off, so the label doesn't queue a fitting of its own as well
+    // (deferred, and one a redraw that turns the auto-size off first would stop). Without Refit, the label fits it
+    // itself, as the game's would.
     static void AutoSize(MegaRichTextLabel title, string text)
     {
+        var fitted = title.Text == text && title.GetMeta(FittedMeta, "").AsString() == text;
+        title.AutoSizeEnabled = !Layout.CanRefit;
+        title.Text = text;
         title.AutoSizeEnabled = true;
-        if (title.Text != text)
-        {
-            title.SetTextAutoSize(text);
-            title.RemoveMeta(FittedMeta);
-            return;
-        }
-        var fitted = title.GetMeta(FittedMeta, "").AsString() == text;
         Layout.Refit(title, now: true, newText: !fitted);
         if (!fitted)
             title.SetMeta(FittedMeta, text);

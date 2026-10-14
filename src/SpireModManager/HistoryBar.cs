@@ -54,10 +54,16 @@ static class HistoryBar
             var column = new VBoxContainer { SizeFlagsVertical = Control.SizeFlags.ShrinkCenter, MouseFilter = Control.MouseFilterEnum.Ignore };
             column.AddThemeConstantOverride("separation", 0);
             column.AddChild(button);
-            var hint = new Label { Text = keys == null ? " " : Menus.Text(keys), HorizontalAlignment = HorizontalAlignment.Center, MouseFilter = Control.MouseFilterEnum.Ignore };
+            // Clipped (with "…" if it must be), so its column is as wide as the button, not as the hint (FitHint).
+            var hint = new Label
+            {
+                Name = "Keys", Text = keys == null ? " " : Menus.Text(keys), HorizontalAlignment = HorizontalAlignment.Center,
+                MouseFilter = Control.MouseFilterEnum.Ignore, ClipText = true, TextOverrunBehavior = TextServer.OverrunBehavior.TrimEllipsis,
+            };
             Style(hint, 13, new Color(Cream, 0.5f));
             column.AddChild(hint);
             bar.AddChild(column);
+            FitHint(hint, button);
         }
 
         var changes = new RichTextLabel
@@ -548,6 +554,21 @@ static class HistoryBar
     }
 
     static string Escape(string text) => text.Replace("[", "[lb]");
+
+    // A shortcut under its button: centred, no wider than the button less a little each side, so two side by side
+    // never run together (in a wider language font, Chinese say, "Ctrl + Z" and "Ctrl + Y" made one run of text).
+    // Smaller to fit, down to a smallest size; its line keeps its height, so the button stays where it was.
+    public const int HintInset = 4, HintSmallest = 9;
+    static void FitHint(Label hint, Control button)
+    {
+        var room = button.GetCombinedMinimumSize().X - 2 * HintInset;
+        var font = hint.GetThemeFont("font");
+        var size = hint.GetThemeFontSize("font_size");
+        hint.CustomMinimumSize = new Vector2(0, hint.GetMinimumSize().Y);
+        while (size > HintSmallest && font.GetStringSize(hint.Text, fontSize: size).X > room)
+            size--;
+        hint.AddThemeFontSizeOverride("font_size", size);
+    }
 
     static void Style(Label label, int size, Color color)
     {

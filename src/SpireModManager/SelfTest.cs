@@ -1957,6 +1957,15 @@ static class SelfTest
         Check("move to top saves the order", Ids()[0] == free && Saved()[0] == free, string.Join(", ", Ids()));
         Check("an order change is pending", pending.Visible && ModEntry.HasPendingChanges());
         Check("load order: no tickboxes", Rows().All(r => !r.GetNode<Control>("Tickbox").Visible));
+        // The first row's highlight (the same box under the mouse) reaches a little above the row; with the list at its
+        // top it shows whole, under the list's top edge, its rounded top not cut off.
+        CategoryList.ScrollToTop(content);
+        CategoryList.Select(screen, Rows()[0]);
+        await Wait(menu, 0.2);
+        var topLook = Rows()[0].GetNode<Control>("SelectionHighlight").GetGlobalRect();
+        var listTop = content.GetParent<Control>().GetGlobalRect().Position.Y;
+        Check("load order: the first row's highlight shows whole, under the list's top edge", topLook.Position.Y >= listTop - 0.01f
+            && topLook.Position.Y < Rows()[0].GetGlobalRect().Position.Y, $"highlight from {topLook.Position.Y}, row from {Rows()[0].GetGlobalRect().Position.Y}, list from {listTop}");
         var wasText = Rows()[0].GetNodeOrNull<Label>("SpireModManagerWas")?.Text;
         Check("a moved row shows where it was at launch", wasText == $"{start.IndexOf(free) + 1} →",
             wasText ?? "none");
@@ -2595,7 +2604,8 @@ static class SelfTest
     // A made-up mod with very long everything (name, id, author, version, description, alias, many tags, notes),
     // shown in the list and the panel (screenshot 16-long-details). The panel's title stays on one line with its
     // version and the source line keeps its status, both cut with "…" (the whole text a second over them); the
-    // row keeps its author, the tags that don't fit folded into "+N". It's removed again afterwards.
+    // row keeps its author, the tags that don't fit folded into "+N". A redraw fits no row title again, its cut one
+    // and an aliased one included, in Vanilla View and in our main list. It's removed again afterwards.
     static async Task TestLongDetails(Node menu, NModdingScreen screen, Control content, string outDir)
     {
         const string id = "SmmVeryLongModIdentifierThatGoesOnAndOnForTheSakeOfTesting";
@@ -2722,6 +2732,40 @@ static class SelfTest
                 Check("long details: a redraw in Vanilla View fits no row title again, the long one included (each stays at its own fitted size)",
                     refitted.Count == 0, $"{refitted.Count} fitted again: {string.Join(", ", refitted.Distinct().Take(8))}");
             }
+            // Our main list: the same for a title with an alias (the alias, the name beside it) or cut with "…" (the long
+            // one). Apply put the plain name back while the auto-size was off and Fit set the whole text again, so the
+            // label fitted itself once more on every redraw: its own fitting, which TestFitting doesn't see, so a title
+            // whose text or size changes during the redraw counts too (read before the titles are fitted, deferred, and
+            // after).
+            const string aliased = "SmmTestUi";
+            var aliasWas = Store.InfoFor(aliased)?.Alias;
+            Store.EditMod(aliased, info => info.Alias = "UI bits");
+            CategoryList.Reveal(content, aliased, flash: false);
+            CategoryList.Apply(content);
+            await Wait(menu, 0.3);
+            var titles = content.GetChildren().OfType<NModMenuRow>().Select(r => (Id: r.Mod?.manifest?.id ?? "?", Label: r.GetNode<RichTextLabel>("Title"))).ToList();
+            List<string> Titles() => titles.Select(t => $"{t.Id}: {t.Label.Text} at {t.Label.GetThemeFontSize("normal_font_size")}").ToList();
+            var settled = Titles();
+            var fittedAgain = new List<string>();
+            Layout.TestFitting = label =>
+            {
+                if (label.GetParent() is NModMenuRow fittedRow)
+                    fittedAgain.Add(fittedRow.Mod?.manifest?.id ?? "?");
+            };
+            CategoryList.Apply(content);
+            var during = Titles();
+            await Wait(menu, 0.3);
+            Layout.TestFitting = null;
+            var changed = during.Concat(Titles()).Except(settled).ToList();
+            Check("long details: a second redraw in our main list fits no row title again, aliased and cut ones included",
+                fittedAgain.Count == 0 && changed.Count == 0,
+                $"{fittedAgain.Count} fitted again: {string.Join(", ", fittedAgain.Distinct().Take(8))}; changed: {string.Join(" | ", changed.Take(4))}");
+            var aliasedTitle = titles.Where(t => t.Id == aliased).Select(t => t.Label).FirstOrDefault();
+            Check("long details: after it, the aliased title still shows the alias with the name beside it, at the rows' size",
+                aliasedTitle != null && aliasedTitle.GetParsedText().StartsWith("UI bits") && aliasedTitle.GetParsedText().Contains("Test UI")
+                && aliasedTitle.GetThemeFontSize("normal_font_size") == Layout.RowTitleSize,
+                $"{aliasedTitle?.GetParsedText()} at {aliasedTitle?.GetThemeFontSize("normal_font_size")}");
+            Store.EditMod(aliased, info => info.Alias = aliasWas);
             content.RemoveChild(row);
             row.QueueFree();
         }
@@ -3396,7 +3440,8 @@ static class SelfTest
     // does it (the main menu made again, and the Modding page with it), the page opened again has our text in that
     // language's font: a row title (the game's label, which ours mustn't cover), a category header, a tag chip, a row's
     // button, the profile bar, the history bar, the red banner if one shows, a menu item. The buttons' widths are cached
-    // per font: they still start as far past the title as before. Back in the starting language, its fonts again
+    // per font: they still start as far past the title as before. The shortcuts under Undo and Redo fit under their
+    // buttons, however wide the font. Back in the starting language, its fonts again
     // (Kreon in English). Skipped for a language the game has no font of its own for. Screenshots 20-fonts-<language>.
     static async Task TestLanguageFonts(NModdingScreen screen, string outDir)
     {
@@ -3474,6 +3519,29 @@ static class SelfTest
             Check($"in {language}: a row's and a header's buttons start as far past the title as in {start} (widths cached per font)",
                 Same(gaps.Row, startGaps.Row) && Same(gaps.Header, startGaps.Header),
                 $"row {gaps.Row} (was {startGaps.Row}), header {gaps.Header} (was {startGaps.Header})");
+            // The shortcuts under Undo and Redo: each centred under its button, its text no wider than the button, so the
+            // two never run into each other ("Ctrl + Z" and "Ctrl + Y" did in Chinese). A hint wider than its button used
+            // to stretch it, text and button then the same width and still centred, so it's checked that no hint widens
+            // its button, and that each is fitted to it less a little each side (FitHint) unless at the smallest size.
+            List<(Rect2 Button, float Own, float Left, float Middle, float Right, bool Fitted, string Text, int Size)> keys = [];
+            foreach (var column in page.GetNodeOrNull<Control>(HistoryBar.BarName)?.GetChildren().OfType<Control>() ?? [])
+                if (column.GetChildOrNull<Control>(0) is { } button && column.GetNodeOrNull<Label>("Keys") is { } hint && hint.Text.Trim().Length > 0)
+                {
+                    var size = hint.GetThemeFontSize("font_size");
+                    var whole = hint.GetThemeFont("font").GetStringSize(hint.Text, fontSize: size).X;
+                    var width = Math.Min(whole, hint.Size.X); // the text as drawn, not its box: cut with "…" to the box if it must be
+                    var middle = hint.GetGlobalRect().GetCenter().X;
+                    var own = button.GetCombinedMinimumSize().X; // the button's width by its own text
+                    var fitted = whole <= own - 2 * HistoryBar.HintInset + 0.5f || size <= HistoryBar.HintSmallest;
+                    keys.Add((button.GetGlobalRect(), own, middle - width / 2, middle, middle + width / 2, fitted, hint.Text, size));
+                }
+            Results.Add($"INFO shortcuts in {language}: {string.Join(", ", keys.Select(k => $"{k.Text} at {k.Size}, {k.Right - k.Left:0} of {k.Button.Size.X:0} px"))}");
+            Check($"in {language}: the shortcuts under Undo and Redo, each fitted under its button without widening it, centred, apart",
+                keys.Count == 2 && keys.All(k => k.Button.Size.X <= k.Own + 0.5f && k.Fitted && Math.Abs(k.Middle - k.Button.GetCenter().X) < 1
+                    && k.Left >= k.Button.Position.X - 0.5f && k.Right <= k.Button.End.X + 0.5f)
+                && keys.Zip(keys.Skip(1)).All(p => p.First.Right < p.Second.Left),
+                string.Join("; ", keys.Select(k => $"{k.Text} at {k.Size}: {k.Left:0.#}..{k.Right:0.#} under {k.Button.Position.X:0.#}..{k.Button.End.X:0.#}"
+                    + $" (its own width {k.Own:0.#}{(k.Fitted ? "" : ", not fitted")})")));
             await Capture(page, outDir, $"20-fonts-{language}");
         }
     }
