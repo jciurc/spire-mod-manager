@@ -503,7 +503,7 @@ static class SelfTest
         Label? Hint() => screen.FindChild(PageBar.HintName, true, false) as Label;
         var bar = screen.FindChild(PageBar.Name, true, false) as Control;
         var scroll = screen.GetNode<Control>("ModsBorder/ModsScrollContainer");
-        var text = Menus.Format("SPIRE_MOD_MANAGER.NO_CATEGORIES_HINT", ("item", Menus.Text("SPIRE_MOD_MANAGER.NEW_CATEGORY")));
+        var text = Menus.Text("SPIRE_MOD_MANAGER.NO_CATEGORIES_HINT");
         Check("no data: the hint, under the page bar and above the list", Hint() is { Visible: true } hint && hint.Text == text
             && bar != null && hint.OffsetTop >= bar.OffsetBottom && scroll.OffsetTop >= hint.OffsetBottom,
             $"\"{Hint()?.Text}\" at {Hint()?.OffsetTop}..{Hint()?.OffsetBottom}, bar to {bar?.OffsetBottom}, list from {scroll.OffsetTop}");
@@ -1610,8 +1610,11 @@ static class SelfTest
             Profiles.Delete(copy, screen);
 
         // The game's confirm popup, shown for the record (with our mark); deletion itself goes through Profiles.Delete.
-        var body = new LocString("settings_ui", "SPIRE_MOD_MANAGER.DELETE_PROFILE_BODY");
-        body.Add("name", "Brother co-op");
+        var toDelete = Store.Data.Profiles.FirstOrDefault(p => p.Name == "Brother co-op") ?? Store.Data.Profiles[0];
+        var body = ProfileBar.DeleteBody(toDelete);
+        var asked = body.GetFormattedText();
+        Check("Delete's question names the profile and its mods, whole", asked.StartsWith("Delete profile") && asked.Contains($"{toDelete.Name} ({Profiles.ModCount(toDelete)})")
+            && asked.Contains("All mods remain installed") && !asked.Contains('{'), asked);
         _ = Menus.Confirm(new LocString("settings_ui", "SPIRE_MOD_MANAGER.DELETE_PROFILE_TITLE"), body);
         await Wait(menu, 1);
         CheckMark("delete profile popup", NModalContainer.Instance?.OpenModal as Control);
@@ -3756,7 +3759,8 @@ static class SelfTest
 
         RelaunchCheck.Show(screen);
         await Wait(menu, 0.3);
-        Check("relaunch check lists the mods that won't load", Body().Contains(Missing + ", which isn't installed") && Body().Contains("Test Framework, which is disabled"), Body());
+        Check("relaunch check lists the mods that won't load", Body().Contains("Requires mod to be installed: " + Missing)
+            && Body().Contains("Requires mod to be enabled: Test Framework"), Body());
         // Cancel first, at the row's left; the fixes and Relaunch anyway at its right (Jordan, 2026-10-14).
         var row = Dialog()?.FindChild("Buttons", true, false) as Control;
         var rowButtons = row?.GetChildren().OfType<Button>().ToList() ?? [];
@@ -3998,8 +4002,8 @@ static class SelfTest
         await Wait(menu, 0.3);
         var head = info.GetNodeOrNull<RichTextLabel>("SpireModManagerHead");
         var text = head?.GetParsedText() ?? "";
-        Check("a Workshop mod's head: Author, Updated (4 days ago, Patch notes), Compatibility", text.IndexOf("Author") < text.IndexOf("Updated")
-            && text.IndexOf("Updated") < text.IndexOf("Compatibility") && text.Contains("(4 days ago)  Patch notes") && head?.Text.Contains("[url=patchnotes]") == true, text);
+        Check("a Workshop mod's head: Author, Updated (4 days ago, Change Notes), Compatibility", text.IndexOf("Author") < text.IndexOf("Updated")
+            && text.IndexOf("Updated") < text.IndexOf("Compatibility") && text.Contains("(4 days ago)  Change Notes") && head?.Text.Contains("[url=patchnotes]") == true, text);
         var link = info.FindChild("SpireModManagerLink", true, false) as LinkButton;
         Check("the source line: id (SteamID n)", link?.Text == "SmmWorkshopTest (SteamID 42)", link?.Text ?? "");
         Check("how long ago: hours under a day, one day singular, green under two days",
@@ -4186,7 +4190,8 @@ static class SelfTest
             if ((bulk?.FindChild("Fields", true, false) ?? bulk)?.GetNodeOrNull<Label>($"{f}/Term/Label") is { } term)
                 bulkTerms.Add(await HoverCard(menu, term, ModField.TipName));
         Check("the bulk menu: an \"i\" beside its heading explains editing several, and each term says what it does for all of them",
-            info is { Visible: true, Texture: not null } && infoCard == Menus.Text("SPIRE_MOD_MANAGER.BULK_INFO")
+            info is { Visible: true, Texture: not null } && infoCard == $"{Menus.Text("SPIRE_MOD_MANAGER.TAGS_TERM")}\n{Menus.Text("SPIRE_MOD_MANAGER.TAGS_BULK_HINT")}\n\n"
+                + $"{Menus.Text("SPIRE_MOD_MANAGER.NOTES_TERM")}\n{Menus.Text("SPIRE_MOD_MANAGER.NOTES_BULK_HINT")}"
             && bulkTerms.SequenceEqual([Menus.Text("SPIRE_MOD_MANAGER.TAGS_BULK_HINT"), Menus.Text("SPIRE_MOD_MANAGER.NOTES_BULK_HINT")]),
             $"info: {infoCard}; terms: {string.Join(" | ", bulkTerms)}");
         await Capture(screen, outDir, "18-bulk-menu");
@@ -4218,6 +4223,25 @@ static class SelfTest
         }
         MenuPanel.Close();
         Store.EditMod(picked[0], info => info.Tags = null);
+
+        // Notes that differ: a warning beside Notes counts the mods with notes, the ones typing would overwrite (Jordan,
+        // 2026-10-14); the same notes all round, no warning.
+        var notesBefore = Store.InfoFor(picked[0])?.Notes;
+        Label? Mixed(Node? bulkMenu) => bulkMenu?.FindChild("Mixed", true, false) as Label;
+        var sameNotes = CategoryList.ShowBulkMenu(content);
+        await Wait(menu, 0.2);
+        var quiet = Mixed(sameNotes) is { Visible: false };
+        MenuPanel.Close();
+        Store.EditMod(picked[0], info => info.Notes = "Only mine");
+        var differing = CategoryList.ShowBulkMenu(content);
+        await Wait(menu, 0.2);
+        Check("bulk notes: no warning while they're the same; when they differ, one beside Notes counting the mods with notes",
+            quiet && Mixed(differing) is { Visible: true, Text: "1 mod has differing notes and will be overwritten!" }
+            && (differing?.FindChild("Notes", true, false)?.GetNodeOrNull<TextEdit>("Box")?.PlaceholderText == Menus.Text("SPIRE_MOD_MANAGER.NOTES_BULK_ADD")),
+            $"same: {(quiet ? "none" : "shown")}; differ: {Mixed(differing)?.Text ?? "none"}");
+        await Capture(screen, outDir, "18b-bulk-notes-differ");
+        MenuPanel.Close();
+        Store.EditMod(picked[0], info => info.Notes = notesBefore);
 
         // Shift-click: the rows between the last one picked and this one. Esc lets go.
         var rows = Uncategorized();
@@ -4667,6 +4691,13 @@ static class SelfTest
             .Select(n => n is Label l ? l.Text : n is RichTextLabel r ? r.GetParsedText() : "").Where(t => t.Length > 0) ?? []);
         Check("after a recovery, the page shows the notice: the backup's date and the unreadable file's name", popup is NErrorPopup
             && text.Contains("Error reading your saved data") && text.Contains("October 11, 2026, 22:15") && text.Contains(Path.GetFileName(setAside)) && Store.Notice == null, text);
+        // Its "mod's data folder" opens the data folder.
+        var openedFolder = "";
+        Store.TestOpenFolder = folder => openedFolder = folder;
+        (popup?.FindChild("Description", true, false) as RichTextLabel)?.EmitSignal(RichTextLabel.SignalName.MetaClicked, "folder");
+        Store.TestOpenFolder = null;
+        Check("the notice's \"mod's data folder\" opens the mod's data folder", openedFolder == Store.Dir
+            && popup?.FindChild("Description", true, false) is RichTextLabel { MouseFilter: Control.MouseFilterEnum.Stop }, openedFolder);
         await Capture(popup ?? screen, outDir, "19-data-notice");
         NModalContainer.Instance?.Clear();
         screen.Visible = false;

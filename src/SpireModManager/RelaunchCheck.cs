@@ -28,13 +28,11 @@ static class RelaunchCheck
             Show(owner);
     }
 
-    // Enabled mods (installed now or this session) with a dependency that is off or missing, and why.
+    // Enabled mods (installed now or this session) with a dependency that is off or missing, and why (the info panel's
+    // lines: one for the missing ones, one for the ones that are off).
     static List<(Mod Mod, string Why)> Problems() =>
-        ModManager.Mods.Union(Installed.Mods).Where(m => m.manifest?.id != null && Dependencies.IsOn(m))
-            .SelectMany(m => Dependencies.Of(m).Select(id => (Id: id, Mod: Dependencies.Find(id)))
-                .Where(d => d.Mod == null || !Dependencies.IsOn(d.Mod))
-                .Select(d => (m, Menus.Format(d.Mod == null ? "SPIRE_MOD_MANAGER.PROBLEM_DEP_MISSING" : "SPIRE_MOD_MANAGER.PROBLEM_DEP_OFF",
-                    ("mod", d.Mod?.manifest?.name ?? d.Id)))))
+        ModManager.Mods.Union(Installed.Mods).Where(m => m.manifest?.id != null)
+            .SelectMany(m => ModDetails.DependencyProblems(m).Select(why => (m, why)))
             .ToList();
 
     public static void Show(Node owner)
@@ -54,7 +52,7 @@ static class RelaunchCheck
             child.QueueFree();
         }
         var problems = Problems();
-        column.AddChild(Modal.Title(problems.Count > 0 ? "SPIRE_MOD_MANAGER.RELAUNCH_CHECK_TITLE" : "SPIRE_MOD_MANAGER.RELAUNCH_CHECK_OK_TITLE"));
+        column.AddChild(Modal.Title("SPIRE_MOD_MANAGER.RELAUNCH_CHECK_TITLE")); // the same once all is well (Jordan, 2026-10-14)
 
         var body = new RichTextLabel { Name = "Body", BbcodeEnabled = true, FitContent = true, ScrollActive = false, MouseFilter = Control.MouseFilterEnum.Ignore };
         Hover.Fonts(body, 18);

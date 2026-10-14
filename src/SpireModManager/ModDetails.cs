@@ -30,6 +30,7 @@ static class ModDetails
     const string FullMeta = "spire_mod_manager_full_text"; // on the title and the link: their whole text when cut short, else ""
     const string Enabled = "#a6e3a1", Disabled = "#fff6e299", Pending = "#f5b56b", Problem = "#ff8070";
     const string GoldHex = "#efc851", LinkHex = "#99ccff";
+    const string Quiet = "#fff6e299"; // no value to show (an unknown author, no description): subtle, so it doesn't read as one
     const int VersionSize = 20;
     const int TitleMinSize = 24; // a long name shrinks this far (from Layout's 32), then is cut short
 
@@ -199,7 +200,7 @@ static class ModDetails
             text.Append($"[color={Problem}]{Escape(problem)}[/color]\n");
         if (problems.Count > 0)
             text.Append('\n');
-        text.Append(mod.manifest?.description ?? Menus.Text("SPIRE_MOD_MANAGER.NO_DESCRIPTION")).Append("\n\n");
+        text.Append(mod.manifest?.description is { Length: > 0 } description ? description : Faint("SPIRE_MOD_MANAGER.NO_DESCRIPTION")).Append("\n\n");
 
         var workshop = WorkshopInfo.For(mod);
         var bytes = workshop?.Size is > 0 and var size ? size : FolderSize(mod.path);
@@ -232,12 +233,12 @@ static class ModDetails
     static string HeadFacts(Mod mod)
     {
         string Fact(string key, string value) => $"[color={GoldHex}]{Menus.Text(key)}[/color]: {value}";
-        var author = mod.manifest?.author is { Length: > 0 } who ? $"[url=author:{who}]{Escape(Short(who))}[/url]" : Menus.Text("SPIRE_MOD_MANAGER.UNKNOWN");
+        var author = mod.manifest?.author is { Length: > 0 } who ? $"[url=author:{who}]{Escape(Short(who))}[/url]" : Faint("SPIRE_MOD_MANAGER.UNKNOWN");
         var lines = new List<string> { Fact("SPIRE_MOD_MANAGER.AUTHOR", author) };
         // The last update, how long ago, and a link to its change notes on the Workshop.
         if (WorkshopInfo.For(mod) is { } workshop)
             lines.Add(Fact("SPIRE_MOD_MANAGER.UPDATED", $"{Date(workshop.Updated)} {Ago(workshop.Updated)}  "
-                + $"[url=patchnotes][color={LinkHex}]{Menus.Text("SPIRE_MOD_MANAGER.PATCH_NOTES")}[/color][/url]"));
+                + $"[url=patchnotes][color={LinkHex}]{Menus.Text("SPIRE_MOD_MANAGER.CHANGE_NOTES")}[/color][/url]"));
         lines.Add(Fact("SPIRE_MOD_MANAGER.COMPATIBILITY", Compatibility(mod)));
         return string.Join("\n", lines);
     }
@@ -264,7 +265,7 @@ static class ModDetails
         var lines = new List<string> { $"[b]{Escape(id)}[/b]  [color=#fff6e280]•[/color]  {Status(mod)}" };
         lines.AddRange(Problems(mod).Select(p => $"[color={Problem}]{Escape(p)}[/color]"));
         string Fact(string key, string value) => $"[color=#e8cf7a]{Menus.Text(key)}[/color]: {value}";
-        lines.Add(Fact("SPIRE_MOD_MANAGER.AUTHOR", Escape(Cut(mod.manifest?.author ?? Menus.Text("SPIRE_MOD_MANAGER.UNKNOWN"), 80))));
+        lines.Add(Fact("SPIRE_MOD_MANAGER.AUTHOR", mod.manifest?.author is { Length: > 0 } author ? Escape(Cut(author, 80)) : Faint("SPIRE_MOD_MANAGER.UNKNOWN")));
         if (WorkshopInfo.For(mod) is { } workshop)
             lines.Add(Fact("SPIRE_MOD_MANAGER.UPDATED", Date(workshop.Updated)));
         if (info?.Alias is { } alias)
@@ -324,16 +325,31 @@ static class ModDetails
         var problems = (mod.errors ?? []).Select(e => e.GetFormattedText()).ToList();
         if (mod.state == ModLoadState.DisabledDuplicate)
             problems.Add(Menus.Text("SPIRE_MOD_MANAGER.STATE_DUPLICATE"));
-        if (Dependencies.IsOn(mod))
-            foreach (var id in Dependencies.Of(mod))
-            {
-                var dependency = Dependencies.Find(id);
-                if (dependency == null || !Dependencies.IsOn(dependency))
-                    problems.Add(Menus.Format(dependency == null ? "SPIRE_MOD_MANAGER.PROBLEM_DEP_MISSING" : "SPIRE_MOD_MANAGER.PROBLEM_DEP_OFF",
-                        ("mod", dependency?.manifest?.name ?? id)));
-            }
+        problems.AddRange(DependencyProblems(mod));
         return problems;
     }
+
+    // An enabled mod's dependencies that stop it loading, a line for each kind (Jordan, 2026-10-14): "Requires mods to
+    // be installed: A, B", "Requires mod to be enabled: C". None for a mod that's off. (The relaunch check lists them too.)
+    public static List<string> DependencyProblems(Mod mod)
+    {
+        if (!Dependencies.IsOn(mod))
+            return [];
+        var needs = Dependencies.Of(mod).Distinct().Select(id => (Id: id, Mod: Dependencies.Find(id))).ToList();
+        var missing = needs.Where(d => d.Mod == null).Select(d => d.Id).ToList();
+        var off = needs.Where(d => d.Mod is { } found && !Dependencies.IsOn(found)).Select(d => d.Mod!.manifest?.name ?? d.Id).ToList();
+        var lines = new List<string>();
+        if (missing.Count > 0)
+            lines.Add(Menus.Format(missing.Count == 1 ? "SPIRE_MOD_MANAGER.PROBLEM_DEP_MISSING_ONE" : "SPIRE_MOD_MANAGER.PROBLEM_DEP_MISSING",
+                ("mods", string.Join(", ", missing))));
+        if (off.Count > 0)
+            lines.Add(Menus.Format(off.Count == 1 ? "SPIRE_MOD_MANAGER.PROBLEM_DEP_OFF_ONE" : "SPIRE_MOD_MANAGER.PROBLEM_DEP_OFF",
+                ("mods", string.Join(", ", off))));
+        return lines;
+    }
+
+    // A text standing in for a value that isn't there ("unknown", "No description"), subtle.
+    static string Faint(string key) => $"[color={Quiet}]{Escape(Menus.Text(key))}[/color]";
 
     // "0.110.1 or newer (this game: 0.111.0, beta)", plus the Workshop's supported branches, each once.
     static string Compatibility(Mod mod)

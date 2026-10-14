@@ -240,9 +240,7 @@ static class ProfileBar
 
         async Task Delete(Profile profile)
         {
-            var body = new LocString("settings_ui", "SPIRE_MOD_MANAGER.DELETE_PROFILE_BODY");
-            body.Add("name", profile.Name);
-            if (await Menus.Confirm(new LocString("settings_ui", "SPIRE_MOD_MANAGER.DELETE_PROFILE_TITLE"), body))
+            if (await Menus.Confirm(new LocString("settings_ui", "SPIRE_MOD_MANAGER.DELETE_PROFILE_TITLE"), DeleteBody(profile)))
                 Profiles.Delete(profile, screen);
         }
 
@@ -286,6 +284,15 @@ static class ProfileBar
             History.Changed -= Recount;
         };
         Refresh();
+    }
+
+    // Delete's question: "Delete profile Brother co-op (12 mods)?", then that the mods stay installed.
+    public static LocString DeleteBody(Profile profile)
+    {
+        var body = new LocString("settings_ui", "SPIRE_MOD_MANAGER.DELETE_PROFILE_BODY");
+        body.Add("name", profile.Name);
+        body.Add("mods", Profiles.ModCount(profile));
+        return body;
     }
 
     static HBoxContainer ButtonBox(string name)
