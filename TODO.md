@@ -721,7 +721,7 @@ recommendations to confirm with Jordan.
   - disabling mid-session: `Harmony.UnpatchAll(owner id)` is possible; assemblies unload only from a collectible `AssemblyLoadContext` (check how ModManager loads them); PCKs can't unmount; models stay registered
   - whatever stays restart-only, the UI says exactly which changes still need a relaunch
   - for behaviour only, copy no code: Mod List Hot Reload, Mod Launch Manager. Shares the "load first" groundwork with crash-safe launch: spike them together
-- [ ] Simplified Chinese right after 0.1.0 ("English only for v1" stands). Most of this Workshop, and of Jordan's own mods, is Chinese; Load Order Manager has 14 languages
+- [ ] Simplified Chinese right after 0.1.0 ("English only for v1" stands). Most of this Workshop, and of Jordan's own mods, is Chinese; Load Order Manager has 14 languages. The plan: "Translation plan" below
 - [ ] one package for every game branch, once the range widens past beta (Load Order Manager's loader + `bin/g<version>/` pattern). Beta only for 0.1.0 stands
 - [ ] import other managers' data, like the Better Mod Menu import: Load Order Manager's presets.json (90k users), MPM1 codes, BMM CSV. After share codes
 - [ ] Workshop actions in the info panel: Update now, Subscribe / Unsubscribe (Mod Launch Manager, xiaozz's Mod Manager and Better Mod List all have them). Round 2's "auto update and polling", redefined
@@ -731,3 +731,23 @@ recommendations to confirm with Jordan.
 
 ## Jordan's setup
 - [ ] Jordan's game loads stock Better Mod Menu 1.1.1 (`mods\BetterModMenu`, dated 12 Jul) and, separately, the local-fix build as id `BetterModMenuFork`. Today's godot.log has 21 "BetterModMenuConfigButton not found" errors, the bug Jordan's upstream PR #2 fixes. Suggested: keep only one of the two copies on; the fork carries the fix until upstream releases it
+
+## Translation plan
+
+Three more items from the same session, sent later that day with Jordan's yes: this section and the next two.
+JORDAN marks Jordan's own calls, as above.
+
+- [ ] JORDAN: no AI translation; Simplified Chinese (`zhs`) first, by a native speaker; community contributions later. The plan for the backlog's "Simplified Chinese right after 0.1.0":
+  - freeze the English text for 0.1.0 after the copy pass: translating text that still moves wastes the translator's work. On `dev` today: 219 keys, about 860 words; the Workshop description adds about 1,000-1,500 words
+  - a kit for the translator: a spreadsheet, not JSON, with one row per key (key, English, where it appears, notes on placeholders and length limits, translation)
+  - `tools/loc.cs export|import` between the spreadsheet and `localization/<lang>/settings_ui.json`. Ideally it also flags translations whose English changed since: keep a hash of the English text with each translated key
+  - screenshots of every screen, ideally from a dev mode that shows each key in place of its text
+  - a glossary from the game's own `zhs` tables (the game ships Simplified Chinese; `tools/pck.cs` extracts them), so our words match what Chinese players already see: Mods is 模组 there. Workshop (创意工坊) is Steam's word; the game's menu tables don't use it
+  - who: JORDAN asks the Chinese modding community first (Bilibili, QQ). Load Order Manager's author Jianbao233 got 14 languages from contributors and runs QQ group 1029172361; authors of standalone translation mods such as "Into The Spireverse 简体中文汉化" are others to ask
+  - paid fallback: a native zh-CN freelancer or agency with game UI experience, "human translation only" in the brief; roughly low hundreds of USD for this size (an estimate). Either way, a second native player checks it in game
+  - a translation that lags a release is fine: a key it lacks shows in English (that fallback exists today)
+  - the Workshop description in English and Simplified Chinese, in one description (the norm on this Workshop; Better Mod Menu does it)
+  - the font bug with other languages is fixed in its own PR (branch `locale-fonts`)
+  - later: the spreadsheet by email or Discord until the repo is public, then GitHub pull requests; at 2-3 languages, Weblate or Crowdin (both free for open-source projects)
+- [ ] TRANSLATING.md: no machine translation, the game's own words, and how to test (switch the game's language)
+- [ ] TRANSLATING.md: the spreadsheet route, once the kit exists
