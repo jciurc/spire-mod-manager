@@ -726,11 +726,11 @@ recommendations to confirm with Jordan.
   - our initializer writes a "launch pending" marker; reaching the main menu clears it and saves the `mod_list` as the last one that worked
   - a marker still there at the next start means the last launch never reached the menu. At the main menu, a notice lists what changed since the last good launch, with "Restore last working setup" (and relaunch) and "Keep"
   - a crash that comes back before the menu needs action with no UI: after two failed launches in a row (one could be the player closing the game while it loads), roll back automatically once and say so at the menu. Never loop
-  - this only works if we load before the crashing mod: keep ourselves first in `mod_list` (we have no dependencies, so the game allows it; pinned on the Load Order page). The spike answers whether a mod loaded first can stop later mods loading in the same launch (as Mod Launch Manager does), or must restore `mod_list` and relaunch
+  - this only works if we load before the crashing mod: keep ourselves first in `mod_list` (we have no dependencies, so the game allows it; pinned on the Load Order page). The spike answers whether a mod loaded first can stop later mods loading in the same launch (as Mod Launch Manager does), or must restore `mod_list` and relaunch. It can: "A finding for the launch spikes" below
   - shares the "load first" groundwork with the load-without-restart spike (backlog below): spike them together
 - [ ] recommended, cheap: widen the "Multiple mod managers are currently enabled" warning (round 19, Better Mod Menu only) to the managers that rewrite `mod_list` and would quietly undo our Load Order page:
   - ModListSorter (on every exit), LoadOrderSync (at launch), Mod Launch Manager (pins itself first), Load Order Manager, Mod Preset Sync, Mod Profile Manager
-  - their manifest ids need looking up (Load Order Manager's repo has `mod_manifest.json`)
+  - their manifest ids: Load Order Manager's is `LoadOrderManager`; the others need subscribing (see "Other mod managers to test beside ours" below)
   - moves the release plan's "detect other mod managers by id and warn" (§4) up to §3
   - overlaps the round 20 backlog spike on running two managers together (`docs/spikes/two-managers.md`, being written on branch `spike-managers`): do this with that spike's recommendation
 - [x] (bug, found by the survey) in the languages the game draws in its own fonts (Chinese, Japanese, Korean, Thai, Russian, Polish: FontManager), our text stayed Kreon, which has none of their letters. ModEntry.Font now gives the game's font for the language, the category headers too, and the button width caches are per font (branch `locale-fonts`)
@@ -738,12 +738,12 @@ recommendations to confirm with Jordan.
 
 ## Backlog (round 21)
 - [ ] JORDAN: spike "load mods without a restart" (Jordan: one of the biggest pain points as a player). Write it up as `docs/spikes/load-without-restart.md`, per kind of mod (pck only, Harmony only, adds content or models):
-  - a pre-launch choice: we load first and apply a choice before the rest initialize, so a change made at launch needs no second launch (Mod Launch Manager, the 启动前模组管理 selector)
+  - a pre-launch choice: we load first and apply a choice before the rest initialize, so a change made at launch needs no second launch (Mod Launch Manager, the 启动前模组管理 selector). How the selector does it: "A finding for the launch spikes" below
   - enabling mid-session: assembly load, `ProjectSettings.LoadResourcePack`, the initializer, Harmony; content mods need the ModelDb / LocManager / pool registration that runs at startup
   - disabling mid-session: `Harmony.UnpatchAll(owner id)` is possible; assemblies unload only from a collectible `AssemblyLoadContext` (check how ModManager loads them); PCKs can't unmount; models stay registered
   - whatever stays restart-only, the UI says exactly which changes still need a relaunch
   - for behaviour only, copy no code: Mod List Hot Reload, Mod Launch Manager. Shares the "load first" groundwork with crash-safe launch: spike them together
-- [ ] Simplified Chinese right after 0.1.0 ("English only for v1" stands). Most of this Workshop, and of Jordan's own mods, is Chinese; Load Order Manager has 14 languages
+- [ ] Simplified Chinese right after 0.1.0 ("English only for v1" stands). Most of this Workshop, and of Jordan's own mods, is Chinese; Load Order Manager has 14 languages. The plan: "Translation plan" below
 - [ ] one package for every game branch, once the range widens past beta (Load Order Manager's loader + `bin/g<version>/` pattern). Beta only for 0.1.0 stands
 - [ ] import other managers' data, like the Better Mod Menu import: Load Order Manager's presets.json (90k users), MPM1 codes, BMM CSV. After share codes
 - [ ] Workshop actions in the info panel: Update now, Subscribe / Unsubscribe (Mod Launch Manager, xiaozz's Mod Manager and Better Mod List all have them). Round 2's "auto update and polling", redefined
@@ -753,3 +753,67 @@ recommendations to confirm with Jordan.
 
 ## Jordan's setup
 - [ ] Jordan's game loads stock Better Mod Menu 1.1.1 (`mods\BetterModMenu`, dated 12 Jul) and, separately, the local-fix build as id `BetterModMenuFork`. Today's godot.log has 21 "BetterModMenuConfigButton not found" errors, the bug Jordan's upstream PR #2 fixes. Suggested: keep only one of the two copies on; the fork carries the fix until upstream releases it
+
+## Translation plan
+
+Three more items from the same session, sent later that day with Jordan's yes: this section and the next two.
+JORDAN marks Jordan's own calls, as above.
+
+- [ ] JORDAN: no AI translation; Simplified Chinese (`zhs`) first, by a native speaker; community contributions later. The plan for the backlog's "Simplified Chinese right after 0.1.0":
+  - freeze the English text for 0.1.0 after the copy pass: translating text that still moves wastes the translator's work. On `dev` today: 219 keys, about 860 words; the Workshop description adds about 1,000-1,500 words
+  - a kit for the translator: a spreadsheet, not JSON, with one row per key (key, English, where it appears, notes on placeholders and length limits, translation)
+  - `tools/loc.cs export|import` between the spreadsheet and `localization/<lang>/settings_ui.json`. Ideally it also flags translations whose English changed since: keep a hash of the English text with each translated key
+  - screenshots of every screen, ideally from a dev mode that shows each key in place of its text
+  - a glossary from the game's own `zhs` tables (the game ships Simplified Chinese; `tools/pck.cs` extracts them), so our words match what Chinese players already see: Mods is 模组 there. Workshop (创意工坊) is Steam's word; the game's menu tables don't use it
+  - who: JORDAN asks the Chinese modding community first (Bilibili, QQ). Load Order Manager's author Jianbao233 got 14 languages from contributors and runs QQ group 1029172361; authors of standalone translation mods such as "Into The Spireverse 简体中文汉化" are others to ask
+  - paid fallback: a native zh-CN freelancer or agency with game UI experience, "human translation only" in the brief; roughly low hundreds of USD for this size (an estimate). Either way, a second native player checks it in game
+  - a translation that lags a release is fine: a key it lacks shows in English (that fallback exists today)
+  - the Workshop description in English and Simplified Chinese, in one description (the norm on this Workshop; Better Mod Menu does it)
+  - the font bug with other languages is fixed in its own PR (branch `locale-fonts`)
+  - later: the spreadsheet by email or Discord until the repo is public, then GitHub pull requests; at 2-3 languages, Weblate or Crowdin (both free for open-source projects)
+- [x] TRANSLATING.md: no machine translation, the game's own words, and how to test (switch the game's language)
+- [ ] TRANSLATING.md: the spreadsheet route, once the kit exists
+
+## Other mod managers to test beside ours
+
+Manifest ids known from GitHub: `LoadOrderManager`, `AutoModSubscriber`, `ModListHider`, `ModTheSpire2`,
+`BetterModMenu`. The rest need subscribing: the id is in the manifest in the Workshop folder.
+
+- [ ] `tools/dev.cs`: an option that copies given Workshop ids from `steamapps\workshop\content\2868840` into the sandbox (like `--bmm`). The sandbox has no Steam, so this covers every manager below
+- [ ] the round 20 two-managers spike (#36, `docs/spikes/two-managers.md`): check its detection and recommendation against this list. Its known-id list (for managers that only rewrite `mod_list` at launch or exit) can take the ids above; LoadOrderSync's and ModListSorter's still need subscribing
+- what to check for each:
+  - buttons and panels that overlap ours, on our page and on the main menu
+  - the Harmony chain on `NModdingScreen._Ready`, `NModInfoContainer.Fill` and the rows: their exceptions shouldn't break ours
+  - `mod_list` writes: who wins at quit and at Relaunch; our profile and Changes when the file changes underneath us
+  - the first load slot: Mod Launch Manager, both ModTheSpire2s and our planned crash-safe launch all want it
+  - hot loading
+
+P1, most players or most overlap:
+- [ ] Load Order Manager (3747605109, id `LoadOrderManager`, 90k, MIT): a postfix on `NModdingScreen._Ready` adds a "Load Order" button and a panel as children of the screen; Apply writes `mod_list`; presets by id. Check its button and panel on our page, and our Changes, undo and "Unsaved" when it writes `mod_list` underneath us
+- [ ] AutoModSubscriber (3750485606, id `AutoModSubscriber`, 97k): replaces the lobby's mod-mismatch dialog, subscribes, and disables mods by writing `settings.save` mid-session. Check that our data and Changes notice it, and who wins at quit
+- [ ] Better Mod Menu (3748029698) with Better Mod Menu Fix (Public-Beta) (3775001896, 1.5k): `--bmm` covers Better Mod Menu but not the Fix, which patches it at runtime (moves its profile row, adds source icons to rows, shows aliases as names). Our bridge reaches into Better Mod Menu by reflection, so run `--bmm` with the Fix on
+- [ ] Mod Launch Manager (3788556097, 4.2k): runs before other mods and keeps itself first in `mod_list`; hot-loads; unloads DLLs that fail init; a choice of local or Workshop copy. It competes with our planned load-first for crash-safe launch
+
+P2, silent `mod_list` rewrites or row UI:
+- [ ] ModListSorter (3749297037, needs BaseLib): re-sorts `mod_list` A-Z, libraries first, on every exit. Our Relaunch goes through the quit path, so it would apply its order, not ours
+- [ ] LoadOrderSync (3757945718, `affects_gameplay` true): re-sorts at launch and prompts a restart. Check for a fight with our order edits
+- [ ] Multiplayer Mod Sync (3762348066, 26k, needs AutoModSubscriber and Load Order Manager): matches the host's enabled set and order, then restarts
+- [ ] Mod Preset Sync (3774789540, 3.7k): a "Mod Presets" button bottom right on the game's mod screen; an import writes the enabled state and order
+- [ ] ModListHider (3747498760, id `ModListHider`): an eye icon on each row (`RowIconAttachPatch`) and a toggle on the screen (`VanillaModeAttachPatch`). Check them on our restyled rows
+
+P3:
+- [ ] ModTheSpire2 (3747911678) and "STS2 Mod Manager | 启动前模组管理" (3799576017): both use the mod id `ModTheSpire2` (grassdog0/MTS2 v0.4.0; Jolyne-kujo/STS2-ModManager v0.3.2), so the game treats one as a duplicate. MTS2 adds a "Launcher" button beside Installed Mods, and its exe rewrites `settings.save` ("Vanilla" disables everything)
+- [ ] Mod Profile Manager (3749810410, needs RitsuLib): a button on the mod screen; applying writes the settings at once
+- [ ] Better Mod List (3796724666): a main-menu icon below the patch notes; restarts through Steam
+- [ ] MOD管理器 | Mod Manager (3813204995, xiaozz): a "模组" button on the left of the main menu (near our lower-left button?); rewrites `mod_list` on its crash rollback
+- [ ] Host Mod Sync (3800055829): on a lobby mismatch it subscribes, enables and disables, then restarts
+- [ ] Mod List Hot Reload (3794780403): hot-loads when leaving the mod list, so `ModManager.Mods` can change mid-session (`Installed.Watch`, the New Mod popup, Changes)
+
+## A finding for the launch spikes
+
+For the crash-safe launch and load-without-restart spikes above:
+
+- github.com/Jolyne-kujo/STS2-ModManager (MIT) shows that a mod loaded first can control the rest of the same launch. `src/ModTheSpire2.Bootstrap/StartupLoadGate.cs` puts a Harmony prefix on `ModManager.TryLoadMod` (found with `AccessTools.TypeByName("MegaCrit.Sts2.Core.Modding.ModManager")`). The game calls `TryLoadMod` for each mod in a loop, so a patch made during the first mod's init catches every later call: the gate holds back the later mods, shows its picker, then replays the chosen ones
+- that answers the spikes' main question: we can skip a crashing mod, or apply a choice made at launch, without a second launch
+- MIT, so its code may be reused with its license notice
+- grassdog0/MTS2 also ships hot-load test mods (`TestMods/ModTheSpire2HotConfigTest`, `HotDependsChain`, `HotDependsRestart`), but it has no license file: read it, copy nothing

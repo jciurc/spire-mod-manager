@@ -61,6 +61,7 @@
    - Make tooltip punctuation consistent.
    - "New category" casing.
    - Make a profile rename show as a rename in Changes, not "Added X" plus "Removed Y".
+   - Then freeze the English text for 0.1.0, so a translator never works on text that still moves (the translation plan in §4).
 9. **First run, untested on both paths.**
    - (a) No `manager.json` and no Better Mod Menu.
    - (b) Better Mod Menu data present, with BMM on and with BMM off.
@@ -84,6 +85,7 @@
 14. **Crash-safe launch** (Jordan, 2026-10-13: spike first). The spike is the blocker. Building it is one too if the spike shows it's small; otherwise it ships in the first update.
     - A launch that never reaches the main menu leaves a marker. At the next menu, offer to restore the last setup that worked. After two failed launches in a row, roll back once on our own and say so. Never loop.
     - It needs us first in `mod_list`. The spike decides whether a mod loaded first can stop the rest loading in the same launch, or must restore `mod_list` and relaunch.
+    - Found since (2026-10-13): it can. STS2-ModManager (MIT) patches `ModManager.TryLoadMod` while the first mod initializes, holds back the later mods, then loads the chosen ones. So a crashing mod can be skipped without a second launch.
     - Details in TODO round 21.
 
 ## 3. Should do before 1.0
@@ -102,8 +104,13 @@
 - **Undo And Restart compatibility:** it adds a panel at a fixed (0,318) in the info panel, over our fields. Re-place foreign children of the info panel below the description, then check in game.
 - **Warn about managers that rewrite `mod_list`** (recommended by the survey; to confirm with Jordan). Moved up from §4's "detect other mod managers by id and warn".
   - Widen the round 19 "Multiple mod managers are currently enabled" warning past Better Mod Menu: ModListSorter, LoadOrderSync, Mod Launch Manager, Load Order Manager, Mod Preset Sync and Mod Profile Manager (see §6).
-  - Their manifest ids need looking up.
+  - Manifest ids: Load Order Manager's is `LoadOrderManager`; the others need subscribing to read them (TODO round 21).
   - Decide it with the two-managers spike (TODO round 20, `docs/spikes/two-managers.md`).
+- **Test beside the other mod managers** (recommended by the comparison session). Most of them patch the same screen or rewrite `mod_list`, and only Better Mod Menu has been tested with ours.
+  - Suggested: at least the first four before 0.1.0 (the most players or the most overlap): Load Order Manager, AutoModSubscriber, Better Mod Menu with Better Mod Menu Fix (Public-Beta), and Mod Launch Manager.
+  - For each: buttons and panels over ours; their Harmony patches on the same screen and rows (their exceptions shouldn't break ours); who wins when both write `mod_list`, at quit and at Relaunch; the first load slot; hot loading.
+  - The dev sandbox has no Steam: a `tools/dev.cs` option that copies Workshop items into it (like `--bmm`) covers them all.
+  - Check the two-managers spike (#36) against the list. The list, by priority: TODO round 21.
 - **Mark our popups as ours:** add "Spire Mod Manager" to New Mod Added, Delete profile and Delete category. The New Mod popup replaces the game's popup on BMM's page too.
 - **Relaunch wording:** our own pending line instead of the game's "restart" line (the wording part only).
 - **Review queue:** go through `WHATS-NEW.md` "For your review" (about 37 items) and prune its stale entries (see §8).
@@ -133,7 +140,17 @@
 - **Interop:** BMM re-import, csv export and toggle; a "Config" button for mods that have one; detect Quick Relaunch (only if it is ever published); import other managers' data after share codes (Load Order Manager's `presets.json`, MPM1 codes, BMM CSV).
 - **Workshop:** Update now and Subscribe/Unsubscribe in the info panel (TODO round 2's "auto update and polling", redefined); one package for every branch once the range widens past beta (Load Order Manager's loader picks a build per game version).
 - **Languages:** Simplified Chinese right after 0.1.0. Most mods on this Workshop are Chinese; English only for 0.1.0 stands.
-- **Bigger features:** load mods without a restart (Jordan, 2026-10-13: a spike first, with crash-safe launch); the manager during a run plus "save run and relaunch"; delete or uninstall a mod; an in-game error log; keyboard navigation and controller support; "Play vanilla" via `--nomods`; a link to the game's patch notes.
+  - **Translation plan** (Jordan, 2026-10-13: no AI translation; Simplified Chinese first, by a native speaker; community contributions later). The rest is recommended by the comparison session.
+    - Freeze the English text for 0.1.0 after the copy pass (§2, 8). On `dev` today: 219 keys, about 860 words. The Workshop description adds about 1,000-1,500.
+    - A kit for the translator: a spreadsheet, not JSON (key, English, where it appears, notes on placeholders and length limits, translation). A `tools/loc.cs export|import` moves it to and from `localization/<lang>/settings_ui.json`. Ideally it also flags translations whose English changed since (a hash of the English per translated key).
+    - Screenshots of every screen, ideally from a dev mode that shows each key in place of its text.
+    - A glossary from the game's own Simplified Chinese tables (`tools/pck.cs` extracts them), so our words match what players already see.
+    - Who: Jordan asks the Chinese modding community first (Bilibili, QQ). The paid fallback is a native zh-CN freelancer or agency with game UI experience, "human translation only" in the brief; roughly low hundreds of USD (an estimate). Either way, a second native player checks it in game.
+    - A translation can lag a release: a key it lacks shows in English. The font bug with other languages is fixed in its own PR (branch `locale-fonts`).
+    - The Workshop description in English and Simplified Chinese, in one description (the norm here; Better Mod Menu does it).
+    - Later: the spreadsheet by email or Discord until the repo is public, then GitHub pull requests. At 2-3 languages, Weblate or Crowdin (both free for open-source projects).
+    - Details in TODO round 21.
+- **Bigger features:** load mods without a restart (Jordan, 2026-10-13: a spike first, with crash-safe launch; §2, 14 has a finding for both); the manager during a run plus "save run and relaunch"; delete or uninstall a mod; an in-game error log; keyboard navigation and controller support; "Play vanilla" via `--nomods`; a link to the game's patch notes.
 
 ## 5. Publishing: how it works and the checklist
 
@@ -177,7 +194,7 @@
 - **Early Access churn:** every beta patch can rename the private members and node paths we depend on. Expect quick-turnaround updates; blocker 4 limits the damage.
 - **Beta-only audience:** public-branch players will be confused. Widen the range the day 0.111+ reaches `public`.
 - **Branch fields:** one upload without `minBranch` serves a broken build to public players.
-- **Other mod managers** (Better Mod Menu, Load Order Manager, Mod Launch Manager, Mod Profile Manager, Mod Preset Sync, Better Mod List and more; the survey is in DESIGN.md) may patch the same screen, untested together. Likely the main source of bug reports.
+- **Other mod managers** (Better Mod Menu, Load Order Manager, Mod Launch Manager, Mod Profile Manager, Mod Preset Sync, Better Mod List and more; the survey is in DESIGN.md) may patch the same screen, untested together. Likely the main source of bug reports. The test list is in §3.
 - **Managers that rewrite `mod_list`** quietly undo our Load Order page: ModListSorter (A-Z on every exit), LoadOrderSync (at launch), Mod Launch Manager (pins itself first), Load Order Manager, Mod Preset Sync and Mod Profile Manager. The player sees their order change back with no word why. §3's warning covers it.
 - **BMM users:** both run together now (round 17), but two managers on one page, with separate profiles, may confuse. The description should say what the warning means, and that BMM 1.1.1 has its own errors on the beta. The bridge reaches BMM internals by reflection; an update there can make our list jump again (the `--bmm` self-test catches it).
 - **Data is local only** (not in Steam Cloud). It doesn't follow players between PCs or a Steam Deck.
