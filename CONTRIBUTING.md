@@ -69,7 +69,8 @@ Commands:
   `--first-run-bmm` and `--workshop` as for `test`).
 - `dotnet run tools/dev.cs smoke`: the release build from `dotnet run build.cs --dist`, which has no self-test
   inside, in the sandbox until the main menu has loaded. It fails if the build is older than the checked-out
-  commit, the mod didn't start or kept its dev switches, or it logged an error or a warning.
+  commit, the mod didn't start or kept its dev switches, the main menu never loaded, the game exited on its own,
+  or the mod logged an error or a warning.
 - `SPIRE_MOD_MANAGER_SKIP_PATCHES=ModToggledPatch` (patch class names, comma-separated) before `test` or
   `launch`: those patches count as failed, as after a game update that broke them, to see the game's page and
   its "needs an update" line.

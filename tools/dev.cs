@@ -227,6 +227,8 @@ if (smoke)
         // The run sets SPIRE_MOD_MANAGER_DEV=1 as every dev run does; a build without DEVTOOLS ignores it.
         Result("the dev switches are compiled out (it ignored SPIRE_MOD_MANAGER_DEV)", !lines.Any(l => l.Contains($"[{ModId}] Initialized (dev run)"))),
         Result("the game reached its main menu", menuAt != null, exitedEarly),
+        // The run closes it itself, so a game that exited on its own crashed, after the menu too.
+        Result("the game kept running until the run closed it", exitedEarly.Length == 0, exitedEarly),
         Result("nothing in the log from our mod is an error or a warning", errors.Count == 0, string.Join(" | ", errors.Take(3))),
     ];
     File.WriteAllLines(Path.Combine(outDir, "results.txt"), checks);
