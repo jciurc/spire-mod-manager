@@ -49,7 +49,9 @@ static class MainMenuPatch
                     Store.ShowNotice();
             };
 
+#if DEVTOOLS
             SelfTest.MaybeStart(__instance);
+#endif
         }
         catch (Exception e)
         {
