@@ -238,18 +238,26 @@ static class RowTitles
 
     // The row's highlight (the game's SelectionHighlight panel) in our views: one shape for every state, a little
     // wider than the game's, with rounded corners; under the mouse (or keyboard) a faint tint, the mod in the info
-    // panel a brighter one, edge to edge like the rest (no rim, so it lines up with picked rows; Jordan, 2026-10-14).
-    // Vanilla View: the game's own look. (Picked mods' tint uses the same shape.)
+    // panel a brighter one with an even gold rim (Jordan picked it, 2026-10-14: the old dark rim, heavier on top, made
+    // its edges look out of line with picked rows; gold, the same width all round, reads as meant). Vanilla View: the
+    // game's own look. (Picked mods' tint uses the same shape.)
     public const int CornerRadius = 4;
+    public const int SelectedRim = 2;
     public static readonly Vector4 LookInset = new(-6, -3, 6, 3); // left, top, right, bottom offsets from the row
     const string GameLookMeta = "spire_mod_manager_game_look", GameBoxMeta = "spire_mod_manager_game_box";
     static readonly Color Gamelike = MegaCrit.Sts2.Core.Helpers.StsColors.darkBlue, GameSelected = MegaCrit.Sts2.Core.Helpers.StsColors.blue;
+    public static readonly Color Gold = new(0.937f, 0.784f, 0.318f, 0.9f);
     static StyleBoxFlat? _hover, _selected;
 
-    static StyleBoxFlat Box(Color fill)
+    static StyleBoxFlat Box(Color fill, Color? rim = null)
     {
         var box = new StyleBoxFlat { BgColor = fill };
         box.SetCornerRadiusAll(CornerRadius);
+        if (rim is { } edge)
+        {
+            box.BorderColor = edge;
+            box.SetBorderWidthAll(SelectedRim);
+        }
         return box;
     }
 
@@ -275,7 +283,7 @@ static class RowTitles
             return;
         }
         _hover ??= Box(new Color(0.45f, 0.62f, 0.85f, 0.1f));
-        _selected ??= Box(new Color(0.16f, 0.3f, 0.48f, 0.55f));
+        _selected ??= Box(new Color(0.16f, 0.3f, 0.48f, 0.55f), Gold);
         (look.OffsetLeft, look.OffsetTop, look.OffsetRight, look.OffsetBottom) = (LookInset.X, LookInset.Y, LookInset.Z, LookInset.W);
         look.AddThemeStyleboxOverride("panel", selected ? _selected : _hover);
         look.Modulate = selected || focused ? Colors.White : Colors.Transparent;
