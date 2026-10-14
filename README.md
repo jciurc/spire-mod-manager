@@ -123,6 +123,12 @@ Self-test > Run workflow), never from a push or a pull request. To let your PC r
   this repository and to `selftest.yml` on `dev`. Fork pull requests also wait for approval before any
   workflow runs (Settings > Actions > General > "Require approval for all outside collaborators").
 
+The watchdog (`.github/workflows/watchdog.yml`, `tools/watchdog.cs`) guards the public repo against floods.
+Every 30 minutes it counts the pull requests, issues and comments that outside accounts made in the last hour.
+Over 5 opened or 30 comments, it locks those conversations to collaborators and opens a `watchdog` issue
+listing the stronger switches, such as limiting the whole repo to collaborators for a day. It runs only while
+the repository variable `WATCHDOG` is `on`; Actions > Watchdog > Run workflow does a dry run any time.
+
 ## License
 
 MIT (see LICENSE), the art in `images/` included. Slay the Spire 2 and its files belong to Mega Crit; none
