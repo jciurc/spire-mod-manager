@@ -3,8 +3,9 @@ using Godot;
 namespace SpireModManager;
 
 // The frame of our dialogs over the page (RelaunchCheck, ProfileShare): a layer over everything, dimming the page
-// and taking its clicks, with a panel in the middle. One at a time: opening one closes any other. It closes when the
-// page that opened it goes.
+// and taking its clicks, with a panel in the middle. One at a time: opening one closes any other. It takes keyboard
+// focus from the page too, so Esc and typing reach the dialog, not a box behind it (the search box would take Esc to
+// clear itself, and the dialog would stay open). It closes when the page that opened it goes.
 static class Modal
 {
     public static readonly Color Cream = new(1, 0.964706f, 0.886275f);
@@ -25,6 +26,7 @@ static class Modal
         var gone = Callable.From(() => Close(name));
         owner.Connect(Node.SignalName.TreeExiting, gone, (uint)GodotObject.ConnectFlags.OneShot);
         _owners[name] = (owner, gone);
+        owner.GetViewport().GuiReleaseFocus();
 
         // Dim everything behind, and take its clicks.
         var size = owner.GetViewport().GetVisibleRect().Size; // anchors don't size controls right under a CanvasLayer here

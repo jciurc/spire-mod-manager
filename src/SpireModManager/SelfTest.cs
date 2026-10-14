@@ -1572,6 +1572,38 @@ static class SelfTest
         if (Named(startName) is { } back2)
             Profiles.SwitchTo(back2, screen);
         await Wait(menu, 0.3);
+
+        // A dialog takes the keys from the page: with an unsaved edit and the search box focused, holding text, Ctrl+S
+        // and Ctrl+Z do nothing behind Share, and Esc closes it and leaves the search alone. Then the edit is discarded.
+        var content = screen.GetNode<Control>("%ModsScrollContainer/Mask/Content");
+        Dependencies.Set([Dependencies.Find("SmmTestUi")!], !IsOn("SmmTestUi"), screen);
+        CategoryList.Redraw(content);
+        await Wait(menu, 0.3);
+        var edited = (Profiles.Edited, string.Join(", ", ModListState()));
+        var search = screen.GetNodeOrNull<LineEdit>("ModsBorder/SpireModManagerSearch");
+        if (search != null)
+        {
+            search.Text = "zzz"; // no TextChanged: the list isn't filtered
+            search.GrabFocus();
+        }
+        await Choose("Share profile");
+        foreach (var key in new[] { Key.S, Key.Z })
+        {
+            Input.ParseInputEvent(new InputEventKey { Keycode = key, CtrlPressed = true, Pressed = true });
+            await Wait(menu, 0.2);
+            Input.ParseInputEvent(new InputEventKey { Keycode = key, CtrlPressed = true, Pressed = false });
+        }
+        Check("Ctrl+S and Ctrl+Z do nothing while Share profile is open", Dialog() != null && edited.Edited
+            && (Profiles.Edited, string.Join(", ", ModListState())) == edited, $"edited {Profiles.Edited}, was {edited.Edited}");
+        Input.ParseInputEvent(new InputEventKey { Keycode = Key.Escape, Pressed = true });
+        await Wait(menu, 0.2);
+        Input.ParseInputEvent(new InputEventKey { Keycode = Key.Escape, Pressed = false });
+        Check("Esc closes Share profile even with the search box focused before, and the search keeps its text",
+            Dialog() == null && search?.Text == "zzz" && search.GetViewport().GuiGetFocusOwner() != search, search?.Text ?? "no search box");
+        Search.Clear(content);
+        Profiles.Discard(screen);
+        await Wait(menu, 0.3);
+
         Check("profile sharing leaves the profiles and the mod list as they were", Profiles.Active?.Name == startName && !Profiles.Edited
             && Store.Data.Profiles.Count == profiles && ModListState().SequenceEqual(startStates));
     }
