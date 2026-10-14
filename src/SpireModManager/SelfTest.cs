@@ -2275,7 +2275,7 @@ static class SelfTest
         var flaggedMods = Rows().Select(r => r.Mod).OfType<Mod>()
             .Where(m => Dependencies.IsOn(m) && (NoteOf(m).Contains("(off)") || NoteOf(m).Contains("(not installed)"))).ToList();
         var flagged = flaggedMods.Select(Shown).Order().ToList();
-        var card = await BannerCard(menu, screen, screen.FindChild(LoadOrder.WarningName, true, false));
+        var card = await BannerCard(menu, screen, screen.FindChild(LoadOrder.WarningName, true, false), "2j-banner-card", outDir);
         var named = card.Skip(1).Select(l => l.Split(": needs ")[0]).Order().ToList();
         Check("main list banner: hovering its text, a card with each mod that won't load and what it needs, by the names the list shows, nothing else",
             card.FirstOrDefault() == "Affected mods" && card.Contains("Content: needs Framework (disabled)") && card.Contains("Test UI: needs Framework (disabled)")
@@ -3830,7 +3830,7 @@ static class SelfTest
 
     // A banner's card as a player gets it: the mouse onto its text (where Hover sees it), the card's lines read, then the
     // mouse off again.
-    static async Task<List<string>> BannerCard(Node menu, Node screen, Node? banner)
+    static async Task<List<string>> BannerCard(Node menu, Node screen, Node? banner, string? shot = null, string outDir = "")
     {
         if (BannerText(banner) is not { } text)
             return [];
@@ -3839,6 +3839,8 @@ static class SelfTest
         text.EmitSignal(Control.SignalName.MouseEntered);
         await Wait(menu, 0.1);
         var lines = BannerCardLines(screen);
+        if (shot != null)
+            await Capture(screen, outDir, shot);
         Hover.TestMouse = () => new Vector2(5, 5);
         if (GodotObject.IsInstanceValid(text))
             text.EmitSignal(Control.SignalName.MouseExited);
