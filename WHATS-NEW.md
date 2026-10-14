@@ -2,9 +2,11 @@
 
 Short notes for Jordan: what to look for after each install. Newest first.
 
-## Waiting in pull requests
+## Installed 2026-10-14 (morning): version 0.0.54
 
 - **Another mod's box and the Changes list:** with the Changes (or Unsaved) list open over the info panel, another mod's part there (Undo And Restart's box) moves out of sight instead of being hidden, so if its own mod hides or shows it meanwhile, that holds when the list closes.
+- **The data notices say where the file is:** if your data file can't be read, the notice now says the unreadable copy is kept "in the mod's data folder" (it said "beside it", where "it" pointed at nothing or at the backup).
+- Nothing else to see: the Workshop description is refreshed for the upload, and `dev.cs --workshop <ids>` can copy subscribed Workshop mods into the test sandbox.
 
 ## Installed 2026-10-14 (early morning): version 0.0.53
 
