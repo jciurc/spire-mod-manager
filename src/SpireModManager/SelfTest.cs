@@ -937,7 +937,7 @@ static class SelfTest
 
         // At the top, our name and version (from the manifest the game loaded), a heading with a line under it: not an
         // item, so nothing in it takes the mouse or the focus, and a click on it leaves the menu open.
-        var version = Dependencies.Find(ModEntry.ModId)?.manifest?.version;
+        var version = ModEntry.Version;
         var header = $"Spire Mod Manager v{version}";
         var top = items.FirstOrDefault();
         var parts = top?.FindChildren("*", "Control", true, false).OfType<Control>().Prepend(top).ToList() ?? [];
@@ -947,11 +947,19 @@ static class SelfTest
             && top.FindChildren("*", "ColorRect", true, false).Count == 1 && items.Count > 1 && Label(items[1]) == "Move button"
             && parts.All(c => c.MouseFilter == Control.MouseFilterEnum.Ignore && c.FocusMode == Control.FocusModeEnum.None),
             $"{string.Join(" | ", MenuPanel.Headings(popup))}; version {version}");
-        top?.EmitSignal(Control.SignalName.GuiInput, new InputEventMouseButton { ButtonIndex = MouseButton.Left, Pressed = false });
-        MenuPanel.Press(popup, header);
-        await Wait(menu, 0.1);
-        Check("a click on the header does nothing: the menu stays open", MenuPanel.Current == popup && !menu.SubmenuStack.SubmenusOpen
-            && !menu.HasNode(MenuButton.MoveLayerName));
+        // A real click on it, through the viewport (and the menu's Catcher): the menu stays open, nothing runs.
+        var placed = Store.Data.MenuButtonAt;
+        if (top != null)
+        {
+            var at = top.GetGlobalRect().GetCenter();
+            Input.ParseInputEvent(new InputEventMouseButton { ButtonIndex = MouseButton.Left, Pressed = true, Position = at, GlobalPosition = at });
+            await Wait(menu, 0.1);
+            Input.ParseInputEvent(new InputEventMouseButton { ButtonIndex = MouseButton.Left, Pressed = false, Position = at, GlobalPosition = at });
+            await Wait(menu, 0.2);
+        }
+        Check("a click on the header does nothing: the menu stays open", top != null && MenuPanel.Current == popup
+            && !menu.SubmenuStack.SubmenusOpen && !menu.HasNode(MenuButton.MoveLayerName) && Store.Data.MenuButtonAt == placed
+            && menu.GetTree().Root.GetNodeOrNull(RelaunchCheck.Name) == null);
 
         // The divider: the one entry between Open translations folder and Relaunch game, a line under the first and above
         // the second.
