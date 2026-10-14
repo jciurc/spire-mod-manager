@@ -8,10 +8,10 @@ using MegaCrit.Sts2.addons.mega_text;
 namespace SpireModManager;
 
 // "Spire Mod Manager" on the game's Settings screen: a way to our page that carries the mod's name. Off to the side of
-// the settings list, in the top-right corner, level with the tabs. A copy of the screen's own buttons (Mod Settings,
-// Credits), so it looks and moves like them, or our small button if a game update took theirs away. It opens the
-// Modding page as the game's Mod Settings line does, on the Settings screen's stack, so Back returns to Settings.
-// Only on the main menu's Settings: the one a run opens (pause menu) sits on the run's stack, which has no Modding page.
+// the settings list, in the top-right corner, level with the tabs. A copy of the screen's own Mod Settings button, so
+// it looks and moves like it, or our small button if a game update took theirs away. It opens the Modding page as that
+// button does, on the Settings screen's stack, so Back returns to Settings. Only on the main menu's Settings: the one a
+// run opens (pause menu) sits on the run's stack, which has no Modding page.
 static class SettingsButton
 {
     public const string Name = "SpireModManagerSettingsButton";
@@ -25,7 +25,7 @@ static class SettingsButton
 
     public static void Add(NSettingsScreen screen)
     {
-        if (screen.GetParent() is not NMainMenuSubmenuStack stack)
+        if (screen.GetParent() is not NMainMenuSubmenuStack stack || screen.HasNode(Name)) // readied again: one is enough
             return;
         var text = Menus.Text("SPIRE_MOD_MANAGER.SETTINGS_BUTTON");
         void Open() => stack.PushSubmenuType<NModdingScreen>();
