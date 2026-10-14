@@ -67,6 +67,8 @@ Commands:
     in place of the test mods. Its output holds your own mod list, so it never goes into a pull request.
 - `dotnet run tools/dev.cs launch`: opens the sandboxed game to try things by hand (`--first-run`,
   `--first-run-bmm` and `--workshop` as for `test`).
+- `dotnet run tools/dev.cs smoke`: the release build from `dotnet run build.cs --dist`, which has no self-test
+  inside, in the sandbox until the main menu has loaded. It fails if the mod didn't start or logged errors.
 - `SPIRE_MOD_MANAGER_SKIP_PATCHES=ModToggledPatch` (patch class names, comma-separated) before `test` or
   `launch`: those patches count as failed, as after a game update that broke them, to see the game's page and
   its "needs an update" line.
