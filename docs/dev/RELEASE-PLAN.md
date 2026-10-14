@@ -12,23 +12,23 @@
 - **Relaunch:** an in-place restart through the game's quit path. It keeps the window and attaches to Steam.
 - **Data:** one `manager.json` per Steam account with an atomic write and 10 backups. The game's `mod_list` stays the source of truth for on/off and order. Strings live in `localization/eng/settings_ui.json`.
 
-**State**
-- Version: 0.0.44 installed; Round 15 (0.0.45) built but not installed (`WHATS-NEW.md` "Not installed yet"). `build.cs:24` still says `0.0.44` with the pre-release comment.
-- Git: only the `dev` branch; no `main`, no remote, no tags, no LICENSE. The working tree is clean.
-- Tests: `SelfTest.cs` has about 220 checks. **Correction to the auditors:** `out/selftest/results.txt` holds the 7-check `--real` tour from 14:04, not the full fixture suite. No saved result of the full suite exists for the current build, so re-run it on the release build.
-- Timing: redraw measured at 14.9 ms for 56 mods. That run had half the mods off (`tools/dev.cs:188-190`), so the dependency-heavy paths were never timed.
-- Publishing: no uploader, workspace, preview image, in-game `mod_image.png`, listing copy or staging step yet.
+**State (2026-10-14; this plan was first written on 2026-10-13 at 0.0.44)**
+- Version: 0.0.54 installed in Jordan's game (`dev` through #51). `build.cs --dist` builds the release as `ReleaseVersion` (0.1.0) and never auto-bumps.
+- Git: `jciurc/spire-mod-manager` on GitHub, MIT-licensed (`LICENSE`), private until it goes public. Work goes through pull requests into `dev`, each with CI and a Copilot review. `main` and the `v0.1.0` tag come at the release (§5 step 3).
+- Tests: the self-test has about 430 checks (about 460 with `--bmm`), plus the first-run suites and the `--real` tour on Jordan's own mods. On 0.0.54 every mode passed: plain, `--bmm`, `--bmm-after`, `--first-run`, `--first-run-bmm --bmm` and `--real`.
+- Timing (`--real`, about 250 mods): a redraw 17 ms, a search keystroke 18 ms, a view switch 66-99 ms.
+- Publishing: the uploader workspace is `workshop/` (README with the steps, `description.bbcode`, `workshop.json`, `prepare.cs`, SHOTS.md). Still to do, by Jordan: the uploader itself, `image.png` and the previews.
 
 ## 2. Blockers for 1.0
 
-1. **Branch targeting (otherwise most players get a load error).** `min_game_version` is `0.111.0` (public-beta). The stable `public` branch appears to still be 0.107.1, where the game marks the mod Failed (`GAME_VERSION_UNSUPPORTED`).
+1. **Branch targeting (otherwise most players get a load error).** **Done**, but for the check before uploading (below): `workshop.json` has `"minBranch": "public-beta"` and `"maxBranch": null`, the title "Spire Mod Manager (Beta)", and the description says public-beta v0.111.0 or newer. `min_game_version` is `0.111.0` (public-beta). The stable `public` branch appears to still be 0.107.1, where the game marks the mod Failed (`GAME_VERSION_UNSUPPORTED`).
    - Fix: ship beta-only on purpose. Set `"minBranch": "public-beta", "maxBranch": null` in `workshop.json` on every content upload, put "(Beta)" in the Workshop title (not in the manifest name), and say "public-beta v0.111.0+ only" in the description.
    - Before uploading, confirm stable's version on SteamDB or in Steam news.
-2. **Release version and branch.**
+2. **Release version and branch.** **Done**, but for `main` and the tag, which come at the release (§5 step 3): `ReleaseVersion` is 0.1.0, `--dist` builds with it and never bumps, and the manifest description is new.
    - Set `version` to `1.0.0` and refresh the manifest `description` (`build.cs:23-24`). The current text says "an in-place Restart" and only mentions profiles and sorting.
    - Add a release mode to `build.cs` that never auto-bumps.
    - Create `main` from `dev`, and tag `v1.0.0`.
-3. **Clean upload folder.** `out/` holds `bin/` (pdb, deps.json), `dev.log` and `selftest/real-*.txt`, which contain your real categories, mod list and profile names.
+3. **Clean upload folder.** **Done:** `build.cs --dist` writes only the `.dll`, `.json` and `.pck` to `dist/SpireModManager/`, and stops with an error if anything else is there. `out/` holds `bin/` (pdb, deps.json), `dev.log` and `selftest/real-*.txt`, which contain your real categories, mod list and profile names.
    - Fix: a `build.cs --dist` that writes `dist/SpireModManager/` with only the `.dll`, `.json` and `.pck`. The uploader's `content/` is filled from that folder only.
 4. **Fail soft when a game patch renames something.** **Fixed (2026-10-13).** This is Early Access, and 0.112 could break half the page for every user.
    - Done: each patch class is applied on its own (`ModEntry.FailedPatches`). `ModEntry.PageNeeds` lists the ones the page can't run without (main menu, Modding screen, tickbox, info panel fill, row selected); if one failed, the page stays the game's with one line, "Spire Mod Manager needs an update for this game version." (beside the main menu button instead if the screen patch itself failed). Dev runs can try it: `SPIRE_MOD_MANAGER_SKIP_PATCHES=ModInfoFillPatch`.
@@ -53,7 +53,7 @@
    - If `manager.json` can't be read, the session runs read-only on every launch, edits are silently lost, and only the log says so.
      - Fix: move the bad file aside as `manager.broken-<time>.json`, load the newest readable backup, and show a one-time notice on the Modding screen.
    - After loading, replace null collections with empty ones.
-8. **Copy pass** (your own reminder, `TODO.md:101`).
+8. **Copy pass** (your own reminder, `TODO.md:101`). **Done** (#19, #49), but for Jordan's call on the "Spire Manager" button and the profile rename in Changes, still "Added" plus "Removed" (it needs a stable profile id; TODO.md).
    - Use one verb: "Relaunch" everywhere ("Pending restart" becomes "Pending relaunch"; also `NEW_MOD_BODY` and the manifest).
    - Use one name: "Spire Mod Manager", not "Spire Manager".
    - "Vanilla List" or "Vanilla View": pick one.
@@ -63,27 +63,27 @@
    - Make a profile rename show as a rename in Changes, not "Added X" plus "Removed Y".
    - Then freeze the English text for 0.1.0, so a translator never works on text that still moves (the translation plan in §4).
    - A second pass on 2026-10-14 (TODO round 22) read the text added in rounds 19-22: the list filters, the banners and their cards, the unsaved list, Relaunch game and the data notices. The English freeze for 0.1.0 now includes it: 237 keys. Still Jordan's call: the "Spire Manager" button on the Vanilla List page.
-9. **First run, untested on both paths.**
+9. **First run, untested on both paths.** **Done:** `dev.cs test --first-run` and `--first-run-bmm` (with `--bmm` or without) run their own suites, and the empty-state hint is in.
    - (a) No `manager.json` and no Better Mod Menu.
    - (b) Better Mod Menu data present, with BMM on and with BMM off.
    - Add fixtures for both (today's fixtures always ship a `manager.json`).
    - Add an empty-state hint for making a category.
-10. **Uninstall and disable behaviour, checked and documented.**
+10. **Uninstall and disable behaviour, checked and documented.** The description's "Uninstalling" says what stays. Left: Jordan checks it in the clean-install test (§5 step 10).
     - Unsubscribe and untick, then confirm the vanilla page is intact and `mod_list` keeps the last on/off state and order.
     - Confirm that `mod_data/SpireModManager/` stays behind.
     - Put this in the description.
-11. **Workshop listing:**
+11. **Workshop listing:** In `workshop/`: the description (under 8,000 bytes), the tags, the change note ("0.1.0: first release ...") and `"dependencies": []`. Left, Jordan's: `image.png` and the previews (SHOTS.md).
     - preview `image.png`: square, 512–1024 px, under 1 MB;
     - BBCode description (8000 characters max);
     - tags `["QoL", "Utility"]`;
     - first change note starting with "1.0.0";
     - `"dependencies": []` (explicit, because v0.2.0 of the uploader wipes Required Items when the field is absent).
-12. **Real Workshop test.** Upload privately, subscribe on your account, and check `workshopId`, the details, the Patch notes link and the source line. Dev runs use `--force-steam off`, so this path has never run.
-13. **Share and import as text** (Jordan, 2026-10-13, after the survey of other managers in DESIGN.md). Mod Profile Manager and Mod Preset Sync have share codes, and Load Order Manager has clipboard JSON, so players will expect it.
+12. **Real Workshop test.** Left, Jordan's, at the upload. Upload privately, subscribe on your account, and check `workshopId`, the details, the Patch notes link and the source line. Dev runs use `--force-steam off`, so this path has never run.
+13. **Share and import as text** (Jordan, 2026-10-13, after the survey of other managers in DESIGN.md). **Not started:** Jordan decides whether it holds 0.1.0 or moves to the first update. Mod Profile Manager and Mod Preset Sync have share codes, and Load Order Manager has clipboard JSON, so players will expect it.
     - Copy a profile to the clipboard as one line of text: a prefix and version (`SMM1:`) plus the compressed list. It should fit one Discord message for about 250 mods.
     - Import shows what would change before anything does (enable, disable, missing, local only, game version), then makes a new profile, so it can be undone.
     - Details in TODO round 21.
-14. **Crash-safe launch** (Jordan, 2026-10-13: spike first). The spike is the blocker. Building it is one too if the spike shows it's small; otherwise it ships in the first update.
+14. **Crash-safe launch** (Jordan, 2026-10-13: spike first). **Spike done** (`docs/spikes/launch-first.md`, #44): it proposes only its first PR (staying first and a launch record, log lines only) for 0.1.0, the rollback and the notices for the first update. Jordan decides, with the spike's eight questions. The spike is the blocker. Building it is one too if the spike shows it's small; otherwise it ships in the first update.
     - A launch that never reaches the main menu leaves a marker. At the next menu, offer to restore the last setup that worked. After two failed launches in a row, roll back once on our own and say so. Never loop.
     - It needs us first in `mod_list`. The spike decides whether a mod loaded first can stop the rest loading in the same launch, or must restore `mod_list` and relaunch.
     - Found since (2026-10-13): it can. STS2-ModManager (MIT) patches `ModManager.TryLoadMod` while the first mod initializes, holds back the later mods, then loads the chosen ones. So a crashing mod can be skipped without a second launch.
@@ -113,7 +113,7 @@
   - Widen the round 19 "Multiple mod managers are currently enabled" warning past Better Mod Menu: ModListSorter, LoadOrderSync, Mod Launch Manager, Load Order Manager, Mod Preset Sync and Mod Profile Manager (see §6).
   - Manifest ids: Load Order Manager's is `LoadOrderManager`; the others need subscribing to read them (TODO round 21).
   - Decide it with the two-managers spike (TODO round 20, `docs/spikes/two-managers.md`).
-- **Test beside the other mod managers** (recommended by the comparison session). Most of them patch the same screen or rewrite `mod_list`, and only Better Mod Menu has been tested with ours.
+- **Test beside the other mod managers** (from the mod-manager comparison). Most of them patch the same screen or rewrite `mod_list`, and only Better Mod Menu has been tested with ours.
   - Suggested: at least the first four before 0.1.0 (the most players or the most overlap): Load Order Manager, AutoModSubscriber, Better Mod Menu with Better Mod Menu Fix (Public-Beta), and Mod Launch Manager.
   - For each: buttons and panels over ours; their Harmony patches on the same screen and rows (their exceptions shouldn't break ours); who wins when both write `mod_list`, at quit and at Relaunch; the first load slot; hot loading.
   - The dev sandbox has no Steam: a `tools/dev.cs` option that copies Workshop items into it (like `--bmm`) covers them all.
@@ -147,7 +147,7 @@
 - **Interop:** BMM re-import, csv export and toggle; a "Config" button for mods that have one; detect Quick Relaunch (only if it is ever published); import other managers' data after share codes (Load Order Manager's `presets.json`, MPM1 codes, BMM CSV).
 - **Workshop:** Update now and Subscribe/Unsubscribe in the info panel (TODO round 2's "auto update and polling", redefined); one package for every branch once the range widens past beta (Load Order Manager's loader picks a build per game version).
 - **Languages:** Simplified Chinese right after 0.1.0. Most mods on this Workshop are Chinese; English only for 0.1.0 stands.
-  - **Translation plan** (Jordan, 2026-10-13: no AI translation; Simplified Chinese first, by a native speaker; community contributions later). The rest is recommended by the comparison session.
+  - **Translation plan** (Jordan, 2026-10-13: no AI translation; Simplified Chinese first, by a native speaker; community contributions later). The rest comes from the mod-manager comparison.
     - Freeze the English text for 0.1.0 after the copy pass (§2, 8). On `dev` today: 219 keys, about 860 words. The Workshop description adds about 1,000-1,500.
     - A kit for the translator: a spreadsheet, not JSON (key, English, where it appears, notes on placeholders and length limits, translation). A `tools/loc.cs export|import` moves it to and from `localization/<lang>/settings_ui.json`. Ideally it also flags translations whose English changed since (a hash of the English per translated key).
     - Screenshots of every screen, ideally from a dev mode that shows each key in place of its text.
@@ -174,7 +174,7 @@
 - Once 1.0.0 is on the Workshop, your local 0.0.x copy loses the duplicate check. Use versions like `1.0.1-dev.N` for local builds.
 
 **Release checklist**
-1. All §2 blockers fixed on `dev`. The full self-test (all ~220 checks) passes on the release build, plus `--bmm` and `--real`.
+1. All §2 blockers fixed on `dev`. The full self-test passes on the release build, plus `--bmm` and `--real`.
 2. Version `0.1.0` and manifest description set in `build.cs`. Release mode has no auto-bump.
 3. Merge to `main`, tag `v0.1.0`, and run `dotnet run build.cs --dist`. It stops with an error unless `dist/SpireModManager/` holds exactly the `.dll`, `.json` and `.pck`.
 4. Account: Steam Workshop legal agreement accepted (steamcommunity.com/sharedfiles/workshoplegalagreement); the account is not a limited user.
@@ -206,7 +206,7 @@
 - **BMM users:** both run together now (round 17), but two managers on one page, with separate profiles, may confuse. The description should say what the warning means, and that BMM 1.1.1 has its own errors on the beta. The bridge reaches BMM internals by reflection; an update there can make our list jump again (the `--bmm` self-test catches it).
 - **Data is local only** (not in Steam Cloud). It doesn't follow players between PCs or a Steam Deck.
 - **Platforms:** relaunch is tested only on Windows; macOS, Linux and Deck are untested.
-- **Support:** without a public repo, bugs arrive as Workshop comments.
+- **Support:** bugs arrive as GitHub issues and Workshop comments. Until the repo is public, only as comments, and the description's GitHub line leads nowhere (workshop/README.md, "Going public").
 - **Your own setup:** your local dev copy and the Workshop copy collide on version, and profiles saved with the local copy record the local source.
 
 ## 7. Decisions (Jordan, 2026-10-13)
@@ -214,12 +214,12 @@
 1. **Version:** the first release is **0.1.0** (not 1.0.0). Read "1.0.0" elsewhere in this plan as 0.1.0.
 2. **Branches:** beta-only at launch (`minBranch: public-beta`); see how it runs on stable later and widen the range then.
 3. **New mods and profiles:** a newly installed mod joins the active profile as enabled.
-4. **Source:** published, open source, not necessarily right away. License still to pick (MIT recommended: short, permissive, the same as Better Mod Menu). Bugs go to GitHub issues; Workshop comments get read now and then too.
+4. **Source:** published, open source, not necessarily right away. License: MIT (`LICENSE`, "Copyright (c) 2026 jciurc"; the same as Better Mod Menu). Bugs go to GitHub issues; Workshop comments get read now and then too.
 5. **Preview art:** real screenshots for the previews; no generated art. Jordan may make the thumbnail.
 6. **Visibility:** upload as private first (Steam's closest thing to a draft), test, then public. Unlisted is the fallback.
 7. **Input:** mouse and keyboard only for 0.1.0, said in the description. Controller support is in the backlog.
 8. **Round 14 note:** dropped; the notepad is where it should be.
-9. **Repository:** private `jciurc/spire-mod-manager` on GitHub; work goes through branches and pull requests into `dev`, with CI.
+9. **Repository:** `jciurc/spire-mod-manager` on GitHub, private until it goes public; work goes through branches and pull requests into `dev`, with CI.
 
 ## 8. TODO housekeeping
 
