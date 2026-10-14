@@ -440,9 +440,11 @@ static class CategoryList
             actions.AnchorBottom = 1;
             actions.GrowHorizontal = Control.GrowDirection.Begin;
             (actions.OffsetLeft, actions.OffsetRight, actions.OffsetTop, actions.OffsetBottom) = (-16, -16, 5, -5);
-            var widthKey = string.Join("\n", actions.GetChildren().Select(c => c is Button b ? b.Text : "|"));
+            // Measured once per set of labels in the buttons' font (it changes with the game's language): shaping text is slow.
+            var widthKey = $"{ModEntry.Font("res://themes/kreon_regular_shared.tres").GetInstanceId()}\n"
+                + string.Join("\n", actions.GetChildren().Select(c => c is Button b ? b.Text : "|"));
             if (!HeaderWidths.TryGetValue(widthKey, out var actionsWidth))
-                HeaderWidths[widthKey] = actionsWidth = actions.GetCombinedMinimumSize().X; // measured once per set of labels: shaping text is slow
+                HeaderWidths[widthKey] = actionsWidth = actions.GetCombinedMinimumSize().X;
             titleLabel.OffsetRight = -16 - actionsWidth - 30;
             foreach (var row in members)
                 content.MoveChild(row, index++);
