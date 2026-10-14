@@ -3323,6 +3323,10 @@ static class SelfTest
         }
         var start = LocManager.Instance.Language;
         var startGaps = ButtonGaps(screen);
+        // A scene-made button (menu_button.tscn): its label is the game's MegaLabel, which swaps the font itself; with
+        // no font of the language's own, it keeps the scene's (a copy of Kreon bold).
+        static string? ViewButtonFont(Control page) => page.GetNodeOrNull<Control>("SpireModManagerLoadOrderToggle/Visuals/Label")?.GetThemeFont("font")?.ResourcePath;
+        var startViewFont = ViewButtonFont(screen);
         var switched = false;
         try
         {
@@ -3378,6 +3382,9 @@ static class SelfTest
             var wrong = samples.Where(s => FontOf(s.Text, s.Font) != GameFont(language, s.Type, s.KreonBold)).Select(s => $"{s.What}: {FontOf(s.Text, s.Font)}").ToList();
             Results.Add($"INFO fonts in {language}: {GameFont(language, FontType.Regular, false)}, {GameFont(language, FontType.Bold, true)}");
             Check($"in {language}: our text in its font ({string.Join(", ", samples.Select(s => s.What))})", wrong.Count == 0, string.Join("; ", wrong));
+            var (viewFont, viewWanted) = (ViewButtonFont(page), FontManager.GetSubstituteFont(language, FontType.Regular)?.ResourcePath ?? startViewFont);
+            Check($"in {language}: a scene-made button (Load Order) in the language's font too", viewFont != null && viewFont == viewWanted,
+                $"{viewFont}, wanted {viewWanted}");
             var gaps = ButtonGaps(page);
             static bool Same(float? a, float? b) => a == null ? b == null : b != null && Math.Abs(a.Value - b.Value) < 1;
             Check($"in {language}: a row's and a header's buttons start as far past the title as in {start} (widths cached per font)",
