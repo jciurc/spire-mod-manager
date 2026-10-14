@@ -2572,9 +2572,9 @@ static class SelfTest
     // the mods Changes names), with a search too (both must match), and the bar counts them; each category counts its
     // rows shown and has no header when it shows none. Choosing is no undo step and not pending. A row ticked under a
     // choice stays, counted, until a choice is pressed again; Enable all acts on the rows shown, which then go, as do
-    // the mods a profile switched to turns off; going to a mod shows its row. Load Order and Vanilla List show every
-    // row; All shows every row again. (The page opening again: TestListFilterReopen, near the end, as it starts a new
-    // visit for undo.)
+    // the mods a profile switched to turns off; picked mods edited in their menu stay; going to a mod shows its row.
+    // Load Order and Vanilla List show every row; All shows every row again. (The page opening again:
+    // TestListFilterReopen, near the end, as it starts a new visit for undo.)
     static async Task TestListFilters(Node menu, NModdingScreen screen, Control content, string outDir)
     {
         if (Layout.Current != Layout.View.Categories)
@@ -2768,6 +2768,42 @@ static class SelfTest
         await Capture(screen, outDir, "2i-show-changed");
         History.Undo(); // the note
         await Wait(menu, 0.3);
+
+        // Picked mods edited together in their menu keep their rows, as one mod's menu does: under Changed, a tag given to
+        // two and taken off again in their bulk menu (as at launch) leaves their rows while it's open; they go when
+        // Changed is pressed again.
+        string[] pair = ["SmmTestUi", "SmmTestContent"];
+        bool InPair(Mod? mod) => pair.Contains(mod?.manifest?.id ?? "");
+        if (Rows().Count(r => InPair(r.Mod)) != 2 || HistoryBar.ChangedMods().Any(InPair))
+            Results.Add("SKIP list filters, bulk menu: the test mods missing, or changed already");
+        else
+        {
+            Store.Batch(() =>
+            {
+                foreach (var id in pair)
+                    Store.EditMod(id, info => info.Tags = ["filtered"]);
+            });
+            CategoryList.Edited(content);
+            await Wait(menu, 0.3);
+            var pairRows = Rows().Where(r => InPair(r.Mod)).ToList();
+            Selection.Add(content, pairRows);
+            if (pairRows.All(r => r.Visible) && CategoryList.ShowBulkMenu(content) is { } bulk
+                && bulk.FindChild("Tags", true, false)?.GetNodeOrNull<LineEdit>("Box") is { } tags)
+            {
+                tags.Text = "";
+                tags.EmitSignal(Control.SignalName.FocusExited);
+                await Wait(menu, 0.3);
+                Check("Show: Changed, a tag taken off two picked mods in their menu (as at launch): their rows stay while it's open",
+                    pair.All(id => Store.InfoFor(id)?.Tags == null) && !HistoryBar.ChangedMods().Any(InPair) && pairRows.All(r => r.Visible)
+                    && MenuPanel.IsOpen, Say());
+            }
+            else
+                Check("Show: Changed, two mods given a tag: shown, and their bulk menu opens", false, Say());
+            MenuPanel.Close();
+            Selection.Clear(content);
+            await Press("ShowChangedButton");
+            Check("Changed pressed again: they go", pairRows.All(r => !r.Visible), Say());
+        }
 
         // Going to a mod the choice leaves out (a name in the panel, a banner's Show) shows its row; the choice stays.
         await Press("ShowDisabledButton");

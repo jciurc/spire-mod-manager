@@ -7,11 +7,12 @@ namespace SpireModManager;
 // now: what loads after a relaunch), or the ones changed since launch (the mods the Changes list names). Rows it
 // leaves out hide like a search's misses, and a row shows when it matches both. Load Order and Vanilla List show
 // every row.
-// A mod ticked, unticked or edited on its own keeps its row (and its place in the counts) until a choice is pressed
-// again or the page opens again, so a row never goes from under the mouse; a change to many mods at once (Enable
-// all, undo, a profile) shows the choice's rows at once. Going to a mod (a banner's Show, a name in the panel or in
-// Changes) shows its row too. Kept for the session and never an edit (no undo step, not pending): each launch starts
-// on All, as Changed counts from launch and a list left on Disabled would look like mods had gone.
+// A mod ticked, unticked or edited by hand (its tickbox, its menu or the picked mods' menu, the info panel's fields)
+// keeps its row (and its place in the counts) until a choice is pressed again or the page opens again, so a row never
+// goes from under the mouse or an open menu; Enable all / Disable all, undo and a profile, changes to many mods at
+// once, show the choice's rows at once. Going to a mod (a banner's Show, a name in the panel or in Changes) shows its
+// row too. Kept for the session and never an edit (no undo step, not pending): each launch starts on All, as Changed
+// counts from launch and a list left on Disabled would look like mods had gone.
 static class ListFilter
 {
     public enum Choice { All, Enabled, Disabled, Changed }
@@ -60,6 +61,14 @@ static class ListFilter
     {
         if (Current != Choice.All && id != null)
             Kept.UnionWith(_shown.Where(m => m.manifest?.id == id));
+    }
+
+    // Picked mods edited together in their menu (the bulk menu's category and fields): each keeps its row, as one
+    // mod's menu does.
+    public static void Keep(IEnumerable<string> ids)
+    {
+        foreach (var id in ids)
+            Keep(id);
     }
 
     // A mod gone to (CategoryList.Reveal): shown too if the choice leaves it out. True if it was.

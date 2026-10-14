@@ -569,13 +569,19 @@ static class CategoryList
     }
 
     // Two or more picked mods edited together: their category (marked when they share one), on or off; and on
-    // the right their tags and notes, under "Editing N selected mods" (where one mod's alias would be).
+    // the right their tags and notes, under "Editing N selected mods" (where one mod's alias would be). A category or
+    // a field edited keeps their rows under a Show: choice, as one mod's menu does (ListFilter.Keep); its Enable all /
+    // Disable all go by the choice at once, as the page bar's do.
     public static Node? ShowBulkMenu(Control content)
     {
         var ids = Selection.Mods.Select(m => m.manifest?.id).OfType<string>().ToList();
         if (Store.Data.VanillaView || ids.Count == 0)
             return null;
-        return MenuPanel.Show(content, () => BulkItems(content, ids), side: _ => ModField.BulkColumn(ids, _ => Edited(content)));
+        return MenuPanel.Show(content, () => BulkItems(content, ids), side: _ => ModField.BulkColumn(ids, _ =>
+        {
+            ListFilter.Keep(ids);
+            Edited(content);
+        }));
     }
 
     static IReadOnlyList<MenuItem> BulkItems(Control content, List<string> ids)
@@ -596,6 +602,7 @@ static class CategoryList
                 foreach (var id in ids)
                     Categories.Assign(id, made.Name);
             });
+            ListFilter.Keep(ids);
             Edited(content);
             if (made != null && BeginRename(content, made)?.GetParent() is Control header)
                 ScrollSoon(content, header, flash: false);
@@ -611,6 +618,7 @@ static class CategoryList
                 foreach (var id in ids)
                     Categories.Assign(id, category);
             });
+            ListFilter.Keep(ids);
             Edited(content);
         }
     }
