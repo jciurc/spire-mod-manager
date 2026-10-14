@@ -13,6 +13,9 @@ using Microsoft.Win32;
 
 const string ModId = "SpireModManager";
 var Steam = SteamApps(); // the Steam library with the game
+if (!Directory.Exists(Path.Combine(Steam, "common", "Slay the Spire 2")))
+    return Fail($"Slay the Spire 2 isn't in {Steam}. Set the environment variable "
+        + @"STS2_STEAMAPPS to the steamapps folder of the library that has it, for example D:\SteamLibrary\steamapps (README.md, ""Building"").");
 var root = ScriptDir();
 var installDir = Path.Combine(Steam, "common", "Slay the Spire 2", "mods", ModId);
 var project = Path.Combine(root, "src", ModId, ModId + ".csproj");
@@ -76,10 +79,10 @@ foreach (var file in Directory.GetFiles(Path.Combine(root, "images"), "*.png"))
 WritePack(Path.Combine(outDir, ModId + ".pck"), files);
 File.WriteAllText(Path.Combine(outDir, ModId + ".json"), manifest.ToJsonString(new JsonSerializerOptions { WriteIndented = true }));
 
-// Dist leaves the dev-only code out of the Workshop build: the in-game self-test and the dev-run switches
-// (SpireModManager.csproj).
+// SpireModManagerWorkshop leaves the dev-only code out of the Workshop build: the in-game self-test, the
+// dev-run switches and the debug information (SpireModManager.csproj).
 var build = Process.Start("dotnet", ["build", project, "-c", "Release", "-nologo", "-v", "q",
-    $"-p:SteamLibrary={Steam}", $"-p:Dist={(dist ? "true" : "false")}", $"-o:{Path.Combine(outDir, "bin")}"]);
+    $"-p:SteamLibrary={Steam}", $"-p:SpireModManagerWorkshop={(dist ? "true" : "false")}", $"-o:{Path.Combine(outDir, "bin")}"]);
 build.WaitForExit();
 if (build.ExitCode != 0)
     return Fail("dotnet build failed");
@@ -137,8 +140,8 @@ static string SteamApps()
 {
     if (Environment.GetEnvironmentVariable("STS2_STEAMAPPS") is { Length: > 0 } set)
         return set;
-    var steam = (OperatingSystem.IsWindows() ? Registry.GetValue(@"HKEY_CURRENT_USER\Software\Valve\Steam", "SteamPath", null) as string : null)
-        ?? @"C:\Program Files (x86)\Steam";
+    var steam = (OperatingSystem.IsWindows() ? Registry.GetValue(@"HKEY_CURRENT_USER\Software\Valve\Steam", "SteamPath", null) : null) is string { Length: > 0 } path
+        ? path : @"C:\Program Files (x86)\Steam";
     var list = Path.Combine(steam, "steamapps", "libraryfolders.vdf");
     var libraries = File.Exists(list)
         ? Regex.Matches(File.ReadAllText(list), "\"path\"\\s+\"([^\"]+)\"").Select(m => Path.Combine(m.Groups[1].Value.Replace(@"\\", @"\"), "steamapps"))

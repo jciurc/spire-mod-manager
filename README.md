@@ -43,9 +43,10 @@ the game's own mod list stays the source of truth for what's on and the load ord
 - Player text lives in `localization/<lang>/*.json` and pictures in `images/`, packed into
   `SpireModManager.pck`. See TRANSLATING.md for adding a language.
 - The game is found on its own: build.cs and tools/dev.cs look through Steam's list of libraries for the one
-  holding Slay the Spire 2. To pick one yourself, or to build another way (an IDE, a plain `dotnet build`, which
-  uses `C:\Program Files (x86)\Steam\steamapps`), set the environment variable `STS2_STEAMAPPS` to that
-  library's `steamapps` folder, for example `D:\SteamLibrary\steamapps`.
+  holding Slay the Spire 2, and stop with a message if none does. Building another way (an IDE, a plain
+  `dotnet build`) tries Steam's default folder, then `SteamLibrary` at the root of drives D: to F:. To pick a
+  library yourself, set the environment variable `STS2_STEAMAPPS` to its `steamapps` folder, for example
+  `D:\SteamLibrary\steamapps`.
 
 ## Developing
 

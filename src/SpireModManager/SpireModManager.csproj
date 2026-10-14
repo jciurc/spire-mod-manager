@@ -10,23 +10,28 @@
     <CopyLocalLockFileAssemblies>false</CopyLocalLockFileAssemblies>
     <GenerateDocumentationFile>false</GenerateDocumentationFile>
     <!-- build.cs and tools/dev.cs find the Steam library that has the game and pass it in. Building any
-         other way (an IDE, a plain dotnet build) uses STS2_STEAMAPPS, else Steam's default folder: if the
-         game is in another library, set STS2_STEAMAPPS to that library's steamapps folder (README.md). -->
+         other way (an IDE, a plain dotnet build) uses STS2_STEAMAPPS, else the first of Steam's default
+         folder and the SteamLibrary folder Steam suggests at a drive's root that has the game: if yours is
+         somewhere else, set STS2_STEAMAPPS to that library's steamapps folder (README.md). -->
     <SteamLibrary Condition="'$(SteamLibrary)' == ''">$(STS2_STEAMAPPS)</SteamLibrary>
+    <SteamLibrary Condition="'$(SteamLibrary)' == '' And Exists('C:\Program Files (x86)\Steam\steamapps\common\Slay the Spire 2')">C:\Program Files (x86)\Steam\steamapps</SteamLibrary>
+    <SteamLibrary Condition="'$(SteamLibrary)' == '' And Exists('D:\SteamLibrary\steamapps\common\Slay the Spire 2')">D:\SteamLibrary\steamapps</SteamLibrary>
+    <SteamLibrary Condition="'$(SteamLibrary)' == '' And Exists('E:\SteamLibrary\steamapps\common\Slay the Spire 2')">E:\SteamLibrary\steamapps</SteamLibrary>
+    <SteamLibrary Condition="'$(SteamLibrary)' == '' And Exists('F:\SteamLibrary\steamapps\common\Slay the Spire 2')">F:\SteamLibrary\steamapps</SteamLibrary>
     <SteamLibrary Condition="'$(SteamLibrary)' == ''">C:\Program Files (x86)\Steam\steamapps</SteamLibrary>
     <GameData>$(SteamLibrary)\common\Slay the Spire 2\data_sts2_windows_x86_64</GameData>
   </PropertyGroup>
 
-  <!-- The Workshop build (build.cs sets Dist for its dist option) holds only what players run: no in-game self-test, no
-       dev-run switches, and no debug information (which would carry this machine's paths). Every other
-       build has the DEVTOOLS code. -->
-  <PropertyGroup Condition="'$(Dist)' != 'true'">
+  <!-- The Workshop build (build.cs sets SpireModManagerWorkshop for its dist option) holds only what players
+       run: no in-game self-test, no dev-run switches, and no debug information (which would carry this
+       machine's paths). Every other build has the DEVTOOLS code. -->
+  <PropertyGroup Condition="'$(SpireModManagerWorkshop)' != 'true'">
     <DefineConstants>$(DefineConstants);DEVTOOLS</DefineConstants>
   </PropertyGroup>
-  <PropertyGroup Condition="'$(Dist)' == 'true'">
+  <PropertyGroup Condition="'$(SpireModManagerWorkshop)' == 'true'">
     <DebugType>none</DebugType>
   </PropertyGroup>
-  <ItemGroup Condition="'$(Dist)' == 'true'">
+  <ItemGroup Condition="'$(SpireModManagerWorkshop)' == 'true'">
     <Compile Remove="SelfTest.cs" />
   </ItemGroup>
 

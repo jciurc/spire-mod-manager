@@ -135,7 +135,7 @@
   - `HistoryBar.cs:85-86` builds lines by concatenation.
   - Fix: use `LocManager.Instance.CultureInfo` and placeholders.
   - Done: dates use the game's own date pattern (`run_history` `INFO.DATE_FORMAT`, as its run history does) in the game's culture (`Menus.Culture`); sizes and subscriber counts use its separators, with each unit a key (`"{size} MB"`); `MODS_ENABLED` and `CHANGES` hold their `{count}`. Still in the Windows culture: the profile list's "Oct 11" (`Profiles.Details`, left for after the new-mods-profile branch).
-- **Optional:** compile `SelfTest.cs` and the test hooks out of dist builds.
+- **Optional:** compile `SelfTest.cs` and the test hooks out of dist builds. **Done (2026-10-14)** for `SelfTest.cs`, the dev-run switches and the debug information: the dist DLL went from 717 KB to 341 KB. The two hooks (`Hover.TestMouse`, `Layout.TestFitting`) stay in as properties that are never set there.
 
 ## 4. After 1.0
 
@@ -174,7 +174,7 @@
 - Once 1.0.0 is on the Workshop, your local 0.0.x copy loses the duplicate check. Use versions like `1.0.1-dev.N` for local builds.
 
 **Release checklist**
-1. All §2 blockers fixed on `dev`. The full self-test (all ~220 checks) passes on the release build, plus `--bmm` and `--real`.
+1. All §2 blockers fixed on `dev`. The full self-test (all ~220 checks) passes on the release commit, plus `--bmm` and `--real`. The dist DLL carries no self-test, so these run on that commit's dev build (`tools/dev.cs test`). After step 3, install the dist files by hand and open the Modding page once in the real game.
 2. Version `0.1.0` and manifest description set in `build.cs`. Release mode has no auto-bump.
 3. Merge to `main`, tag `v0.1.0`, and run `dotnet run build.cs --dist`. It stops with an error unless `dist/SpireModManager/` holds exactly the `.dll`, `.json` and `.pck`.
 4. Account: Steam Workshop legal agreement accepted (steamcommunity.com/sharedfiles/workshoplegalagreement); the account is not a limited user.
