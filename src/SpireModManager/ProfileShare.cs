@@ -154,7 +154,7 @@ static class ProfileCsv
             if (Cell(id) is not { Length: > 0 } modId)
                 continue;
             if (Bool(Cell(enabled)) is not { } on)
-                return Problem(Menus.Format("SPIRE_MOD_MANAGER.IMPORT_BAD_ENABLED", ("row", Menus.Number(r + 1)), ("value", Cell(enabled))));
+                return Problem(Menus.Format("SPIRE_MOD_MANAGER.IMPORT_BAD_ENABLED", ("mod", modId), ("value", Cell(enabled))));
             mods.Add(new Entry(modId, on, Cell(name), CleanLink(Cell(link))));
         }
         return mods.Count == 0 ? Problem(Menus.Text("SPIRE_MOD_MANAGER.IMPORT_NO_MODS")) : new Result(mods, null);

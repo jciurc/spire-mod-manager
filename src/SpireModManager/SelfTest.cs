@@ -1563,7 +1563,7 @@ static class SelfTest
         await Wait(menu, 0.2);
         Check("a list without Mod Id says so in red, with no preview", noId.Item1.StartsWith("This list has no Mod Id column") && noId.Item2 && noId.Item3 == "",
             $"\"{noId.Item1}\" red {noId.Item2}, preview \"{noId.Item3}\"");
-        Check("a bad Enabled value names its row", badValue == "Row 2: Enabled should be TRUE or FALSE, not \"maybe\".", badValue);
+        Check("a bad Enabled value names its mod", badValue == "Enabled for SmmTestUi should be TRUE or FALSE, not \"maybe\".", badValue);
         Check("Create profile with no text says what to do, in red, and makes nothing", Dialog() != null && Status() == "Paste a mod list or load a CSV file first."
             && StatusRed() && Store.Data.Profiles.Count == profiles, Status());
         Check("the imported name: the file's, numbered when taken; not Better Mod Menu's time-stamped one",

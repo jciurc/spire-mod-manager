@@ -254,7 +254,7 @@
   "SPIRE_MOD_MANAGER.IMPORT_EMPTY": "Paste a mod list or load a CSV file first.",
   "SPIRE_MOD_MANAGER.IMPORT_NO_ID": "This list has no Mod Id column. Its first line must name the columns, including Mod Id and Enabled.",
   "SPIRE_MOD_MANAGER.IMPORT_NO_ENABLED": "This list has no Enabled column. Its first line must name the columns, including Mod Id and Enabled.",
-  "SPIRE_MOD_MANAGER.IMPORT_BAD_ENABLED": "Row {row}: Enabled should be TRUE or FALSE, not \"{value}\".",
+  "SPIRE_MOD_MANAGER.IMPORT_BAD_ENABLED": "Enabled for {mod} should be TRUE or FALSE, not \"{value}\".",
   "SPIRE_MOD_MANAGER.IMPORT_NO_MODS": "This list has no mods in it.",
   "SPIRE_MOD_MANAGER.IMPORT_NEW_NAME": "Creates the profile {name}:",
   "SPIRE_MOD_MANAGER.IMPORT_ON": "Enables {count} mods",
