@@ -36,7 +36,7 @@ static class Hover
     public static void Watch(Control trigger, string name, Func<string?> card, Timing timing = Timing.Normal, float width = 380,
         Func<Texture2D?>? picture = null, Func<(Vector2 At, bool Right, bool Above)>? place = null, Func<string?>? full = null)
     {
-        bool Over() => GodotObject.IsInstanceValid(trigger) && trigger.IsVisibleInTree() && !MenuPanel.IsOpen
+        bool Over() => GodotObject.IsInstanceValid(trigger) && trigger.IsVisibleInTree() && (!MenuPanel.IsOpen || InOpenMenu(trigger))
             && trigger.GetGlobalRect().HasPoint(Mouse(trigger));
         var token = 0;
         trigger.MouseEntered += () =>
@@ -47,11 +47,11 @@ static class Hover
                 if (mine != token || !Over() || Owner(trigger) is not { } owner)
                     return;
                 if (picture?.Invoke() is { } image)
-                    Show(owner, name, "", Mouse(trigger) + new Vector2(-16, 20), right: true, keep: Over, timing: timing, picture: image);
+                    Show(owner, name, "", Mouse(trigger) + new Vector2(-16, 20), right: true, keep: Over, timing: timing, picture: image, depth: LayerFor(trigger));
                 else if (picture == null && card() is { } text)
                 {
                     var (at, right, above) = place?.Invoke() ?? (Mouse(trigger) + new Vector2(16, 20), false, false);
-                    Show(owner, name, text, at, right, above, width, Over, timing, full: full?.Invoke());
+                    Show(owner, name, text, at, right, above, width, Over, timing, full: full?.Invoke(), depth: LayerFor(trigger));
                 }
             }
             Later(trigger, timing, Open);
@@ -101,15 +101,20 @@ static class Hover
     // Cards belong to the page they're on (they go with it), else to the window.
     static Node? Owner(Node node) => CategoryList.ScreenOf(node) ?? (Node?)node.GetTree()?.Root;
 
+    // Cards are off while a menu is open (it covers what they'd be about), except for what's in the menu itself (a
+    // field's term, the bulk menu's i): those show, on a layer above the menu's (MenuPanel: 90).
+    static bool InOpenMenu(Node node) => MenuPanel.Current is { } open && open.IsAncestorOf(node);
+    static int LayerFor(Node trigger) => InOpenMenu(trigger) ? 95 : 80;
+
     // at: the card's corner: its top-left, or with right/above, the matching corner. Kept on screen. keep: checked
     // every frame; once it's false (for WindDown, unless Instant) the card goes, so it can't be left behind when
     // the mouse moves on without an exit event, a click opens something else, or the page changes. full: the
     // whole text when the card's is cut short: a hint says to hold Alt, and Alt shows it in a wider card.
     public static void Show(Node owner, string name, string bbcode, Vector2 at, bool right = false, bool above = false, float width = 380,
-        Func<bool>? keep = null, Timing timing = Timing.Normal, Texture2D? picture = null, string? full = null)
+        Func<bool>? keep = null, Timing timing = Timing.Normal, Texture2D? picture = null, string? full = null, int depth = 80)
     {
         Hide(); // one at a time
-        var layer = new CanvasLayer { Name = name, Layer = 80 };
+        var layer = new CanvasLayer { Name = name, Layer = depth };
         owner.AddChild(layer);
         _shown = layer;
         var plain = timing == Timing.Slow;
