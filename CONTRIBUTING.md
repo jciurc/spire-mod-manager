@@ -28,7 +28,8 @@ maintainer, so replies can take a few days.
 - `dotnet run build.cs --dist` makes the release for the Workshop and never installs: `dist/SpireModManager/`
   holds just the `.dll`, `.json` and `.pck`, and the manifest gets `ReleaseVersion` (set by hand in build.cs).
 - Player text lives in `localization/<lang>/*.json` and pictures in `images/`, packed into
-  `SpireModManager.pck`.
+  `SpireModManager.pck`. A player can also drop a translation file into the mod's data folder, which comes before the
+  packed one (TRANSLATING.md, "Drop-in translation files"; `Translations.cs`).
 
 ## Trying it and testing
 
