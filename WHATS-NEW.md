@@ -14,6 +14,7 @@ Short notes for Jordan: what to look for after each install. Newest first.
 ## Installed 2026-10-13 (night): version 0.0.49
 
 - **Dismiss the managers warning:** the red "Multiple mod managers" banner has Dismiss beside Show. It stays away until Better Mod Menu or Spire Mod Manager is disabled, and comes back once both are enabled again (also after a launch where one of them is gone or off). Nothing to undo: dismissing isn't a change to your mods.
+- **Chinese, Russian and other scripts:** with the game in Chinese, Japanese, Korean, Thai, Russian or Polish, our text uses the game's font for that language, as its own labels do, instead of Kreon. Names, tags, notes and profile names in those letters show properly, not as boxes. Our own words stay English until the mod is translated. After changing the language, open the Modding page again.
 
 ## Installed 2026-10-13 (evening): version 0.0.48
 

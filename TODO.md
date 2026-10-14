@@ -731,6 +731,8 @@ recommendations to confirm with Jordan.
   - their manifest ids need looking up (Load Order Manager's repo has `mod_manifest.json`)
   - moves the release plan's "detect other mod managers by id and warn" (§4) up to §3
   - overlaps the round 20 backlog spike on running two managers together (`docs/spikes/two-managers.md`, being written on branch `spike-managers`): do this with that spike's recommendation
+- [x] (bug, found by the survey) in the languages the game draws in its own fonts (Chinese, Japanese, Korean, Thai, Russian, Polish: FontManager), our text stayed Kreon, which has none of their letters. ModEntry.Font now gives the game's font for the language, the category headers too, and the button width caches are per font (branch `locale-fonts`)
+- [ ] with a wider language font (Chinese, Japanese), the "Ctrl + Z" and "Ctrl + Y" hints under Undo and Redo run into each other (#40's zhs screenshot); give each hint its button's width, or shrink it to fit
 
 ## Backlog (round 21)
 - [ ] JORDAN: spike "load mods without a restart" (Jordan: one of the biggest pain points as a player). Write it up as `docs/spikes/load-without-restart.md`, per kind of mod (pck only, Harmony only, adds content or models):
