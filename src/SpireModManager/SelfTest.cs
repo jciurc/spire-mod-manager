@@ -1526,6 +1526,12 @@ static class SelfTest
             + "SmmTestLib,Test Framework,1.0.0,TRUE,Frameworks,,,\r\n"
             + "SmmTestUi,Test UI,1.0.0,FALSE,Ungrouped,,,\r\n";
         var plan = Profiles.PlanImport(ProfileCsv.Read(bmm).Mods);
+        // A mod listed twice, a Workshop copy first: the local test mod takes the row without a link.
+        var libOn = IsOn("SmmTestLib");
+        var twice = Profiles.PlanImport([new("SmmTestLib", !libOn, "Test Framework", link), new("SmmTestLib", libOn, "Test Framework", "")]);
+        Check("a mod listed twice: each copy takes the row for its source", Dependencies.Find("SmmTestLib")?.modSource == ModSource.ModsDirectory
+            && twice.Mods.SingleOrDefault(m => m.Id == "SmmTestLib")?.Enabled == libOn && twice is { Same: 1, On: 0, Off: 0, Missing.Count: 0 },
+            string.Join(", ", twice.Mods.Where(m => m.Id == "SmmTestLib").Select(m => $"{m.Source}={m.Enabled}")));
         var (wantOn, wantOff) = ((IsOn("SmmTestLib") ? 0 : 1), (IsOn("SmmTestUi") ? 1 : 0));
         var others = installed.Count(m => m.manifest?.id is { } id && id != ModEntry.ModId && id != Bmm.ModId && id != "SmmTestLib" && id != "SmmTestUi");
         await Choose("Import profile");
