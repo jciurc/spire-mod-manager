@@ -48,10 +48,19 @@ static class Translations
     // settings_ui table, if there is a file.
     public static void Apply(string language, Dictionary<string, LocTable> tables)
     {
-        if (language == "eng" || !tables.TryGetValue(Table, out var table))
+        if (language == "eng" || !tables.TryGetValue(Table, out var table) || !Directory.Exists(Folder))
             return;
-        var file = Path.Combine(Folder, language + ".json");
-        if (!File.Exists(file) || Read(file) is not { } texts)
+        // <language>.json, or <language>.json.txt: what a browser's "Save as" can make of it, with Windows hiding the .txt.
+        var file = new[] { ".json", ".json.txt" }.Select(end => Path.Combine(Folder, language + end)).FirstOrDefault(File.Exists);
+        if (file == null)
+        {
+            // None for this language: what is there, so a misnamed file (deu.txt, a DEU folder, eng.json) shows in the log.
+            List<string> there = [.. Directory.EnumerateFileSystemEntries(Folder).Select(Path.GetFileName).OfType<string>()];
+            if (there.Count > 0)
+                Log.Info($"[{ModEntry.ModId}] No translation {language}.json in {Folder}, which has: {Some(there)}");
+            return;
+        }
+        if (Read(file) is not { } texts)
             return;
         table.MergeWith(texts);
         Log.Info($"[{ModEntry.ModId}] Translation {file}: {texts.Count} texts");

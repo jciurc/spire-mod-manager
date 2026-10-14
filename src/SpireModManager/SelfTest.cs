@@ -972,7 +972,8 @@ static class SelfTest
     // it leaves out, an empty text, a broken placeholder and one English doesn't fill in (renamed or added) show in
     // English, and a key English doesn't have is left out.
     // Back in English, English. A file that isn't JSON, isn't an object or is over 1 MB changes nothing and throws
-    // nothing. The file is removed and the language set back afterwards.
+    // nothing. One saved as deu.json.txt (a browser's "Save as", the .txt hidden) is read. The file is removed and the
+    // language set back afterwards.
     static async Task TestTranslations(NMainMenu menu)
     {
         var start = LocManager.Instance.Language;
@@ -1055,10 +1056,16 @@ static class SelfTest
                 Check($"a drop-in file {what}: changes nothing, throws nothing", threw == null && LocManager.Instance.Language == "deu" && AllEnglish(),
                     threw ?? Shown());
             }
+
+            File.Delete(file);
+            File.WriteAllText(file + ".txt", $"{{ \"{Translated}\": \"Spiel neu starten\" }}");
+            LocManager.Instance.SetLanguage("deu");
+            Check("a drop-in file saved as deu.json.txt: read all the same", Read(Translated) == "Spiel neu starten", Shown());
         }
         finally
         {
             File.Delete(file);
+            File.Delete(file + ".txt");
             LocManager.Instance.SetLanguage(start);
         }
     }
