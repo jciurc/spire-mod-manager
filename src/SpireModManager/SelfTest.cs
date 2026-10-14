@@ -1558,7 +1558,7 @@ static class SelfTest
             MenuPanel.Press(deleteMenu, "Delete");
             await Wait(menu, 0.5);
             var asked = PopupTexts();
-            Check("deleting a category with one mod asks, in the singular", asked.Any(t => t.Contains("holds 1 mod.")), string.Join(" | ", asked.Where(t => t.Length > 0)));
+            Check("deleting a category with one mod asks, in the singular", asked.Any(t => t.Contains("contains 1 mod.")), string.Join(" | ", asked.Where(t => t.Length > 0)));
             NModalContainer.Instance?.Clear();
             await Wait(menu, 0.3);
         }
@@ -3761,6 +3761,14 @@ static class SelfTest
         await Wait(menu, 0.3);
         Check("relaunch check lists the mods that won't load", Body().Contains("Requires mod to be installed: " + Missing)
             && Body().Contains("Requires mod to be enabled: Test Framework"), Body());
+        // Several of a kind: one line naming them all, in the plural (a made-up mod, never installed).
+        var several = ModDetails.DependencyProblems(new Mod
+        {
+            path = "", modSource = ModSource.ModsDirectory,
+            manifest = new ModManifest { id = "SmmPluralTest", name = "Plural Test", dependencies = [new("SmmGoneA"), new("SmmGoneB"), new("SmmTestLib")] },
+        });
+        Check("a mod needing several of a kind: one line naming them all, in the plural",
+            several.SequenceEqual(["Requires mods to be installed: SmmGoneA, SmmGoneB", "Requires mod to be enabled: Test Framework"]), string.Join(" | ", several));
         // Cancel first, at the row's left; the fixes and Relaunch anyway at its right (Jordan, 2026-10-14).
         var row = Dialog()?.FindChild("Buttons", true, false) as Control;
         var rowButtons = row?.GetChildren().OfType<Button>().ToList() ?? [];
@@ -4704,6 +4712,14 @@ static class SelfTest
         screen.Visible = true;
         await Wait(menu, 0.3);
         Check("the notice shows once", NModalContainer.Instance?.OpenModal == null);
+        // The longest of the three, the read-only one, as the game's popup shows it (for a look: does it fit?).
+        if (Store.ShowNotice(recovered with { ReadOnly = true }))
+        {
+            await Wait(menu, 0.4);
+            await Capture(NModalContainer.Instance?.OpenModal as Node ?? screen, outDir, "19b-data-notice-read-only");
+            NModalContainer.Instance?.Clear();
+            await Wait(menu, 0.3);
+        }
         // Each of its three texts reads whole (no placeholder left, no stray escape), naming the file.
         var texts = new[] { recovered, recovered with { Backup = null }, recovered with { ReadOnly = true } }
             .Select(loaded => Store.NoticeText(loaded)?.GetFormattedText() ?? "").ToList();

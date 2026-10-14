@@ -290,7 +290,7 @@ static class ProfileBar
     public static LocString DeleteBody(Profile profile)
     {
         var body = new LocString("settings_ui", "SPIRE_MOD_MANAGER.DELETE_PROFILE_BODY");
-        body.Add("name", profile.Name);
+        body.Add("name", Hover.Escape(profile.Name)); // a "[" in the name stays text, not markup
         body.Add("mods", Profiles.ModCount(profile));
         return body;
     }

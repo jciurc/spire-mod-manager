@@ -64,14 +64,17 @@ sealed class ModField
         if (bulk && kind == Kind.Notes)
         {
             // Beside the term while their notes differ: how many will be overwritten (Jordan, 2026-10-14).
-            _mixed = new Label
+            var mixed = _mixed = new Label
             {
-                Name = "Mixed", VerticalAlignment = VerticalAlignment.Center, MouseFilter = Control.MouseFilterEnum.Ignore, Visible = false,
+                Name = "Mixed", VerticalAlignment = VerticalAlignment.Center, MouseFilter = Control.MouseFilterEnum.Pass, Visible = false,
                 SizeFlagsHorizontal = Control.SizeFlags.ExpandFill, SizeFlagsStretchRatio = 100, ClipText = true,
                 TextOverrunBehavior = TextServer.OverrunBehavior.TrimEllipsis,
             };
-            Style(_mixed, "res://themes/kreon_regular_shared.tres", 15, Warning);
-            term.AddChild(_mixed);
+            Style(mixed, "res://themes/kreon_regular_shared.tres", 15, Warning);
+            term.AddChild(mixed);
+            // Cut short (Save and Cancel take the line's end while editing): the whole of it in the plain tooltip.
+            Hover.Watch(mixed, "SpireModManagerFullText", () => mixed.GetThemeFont("font").GetStringSize(mixed.Text, fontSize: 15).X > mixed.Size.X
+                ? Hover.Escape(mixed.Text) : null, Hover.Timing.Slow);
         }
         if (kind == Kind.Tags)
         {
