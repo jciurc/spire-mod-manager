@@ -18,6 +18,10 @@
 //   dotnet run tools/dev.cs launch    build, open the game in the sandbox to poke at by hand
 //                                     (--first-run, --first-run-bmm: starting from that state, not the last one;
 //                                      --workshop: as for test)
+//   dotnet run tools/dev.cs smoke     the release build as players get it (dist/SpireModManager, from
+//                                     `dotnet run build.cs --dist`; nothing is built), headless, until the main
+//                                     menu has loaded: fails if our mod didn't start or the log has errors from
+//                                     it. It has no self-test inside, so opening the page stays a step by hand.
 //
 // Isolation:
 // - Dev copy: sts2-dev at the root of the game's drive (D:\sts2-dev here; STS2_DEV_DIR picks another
@@ -60,6 +64,8 @@ var sandbox = Path.Combine(userData, "default", "1");
 var outDir = Path.Combine(root, "out", "selftest");
 var logPath = Path.Combine(root, "out", "dev.log");
 var mode = args.FirstOrDefault() ?? "test";
+var smoke = mode == "smoke"; // the release build from dist/, not a fresh one
+var distDir = Path.Combine(root, "dist", ModId);
 var real = args.Contains("--real"); // Jordan's own mods (switched off) and a copy of his manager data
 var bmm = args.Any(a => a.StartsWith("--bmm")); // Better Mod Menu on (any --bmm option)
 var bmmData = args.Contains("--first-run-bmm"); // its fixture data in the sandbox, for our first-run import
@@ -69,8 +75,8 @@ var workshopItems = workshopAt < 0 ? [] : (args.ElementAtOrDefault(workshopAt + 
     .Split(',', StringSplitOptions.RemoveEmptyEntries | StringSplitOptions.TrimEntries).Distinct().ToArray();
 var workshopMods = new List<string>(); // the mod ids in those items' manifests, in the order given
 
-if (mode is not ("test" or "launch"))
-    return Fail("usage: dotnet run tools/dev.cs [test [--window] [--bmm[-after]] [--bmm-local] [--real|--first-run|--first-run-bmm]|launch [--first-run|--first-run-bmm]] [--workshop <id>[,<id>...]]");
+if (mode is not ("test" or "launch" or "smoke"))
+    return Fail("usage: dotnet run tools/dev.cs [test [--window] [--bmm[-after]] [--bmm-local] [--real|--first-run|--first-run-bmm]|launch [--first-run|--first-run-bmm]|smoke [--bmm]] [--workshop <id>[,<id>...]]");
 if (real && firstRun)
     return Fail("--real brings Jordan's own data, so it can't be a first run");
 // --workshop: every item has to be there, or the run would test without it and look like a pass. So it takes
@@ -132,14 +138,22 @@ foreach (var (item, manifest) in workshopManifests)
 if (Process.GetProcessesByName("SlayTheSpire2").Any(p => string.Equals(Path.GetDirectoryName(ExePath(p)), DevDir, StringComparison.OrdinalIgnoreCase)))
     return Fail($"A dev copy of the game is already running from {DevDir}.");
 
-var build = Process.Start("dotnet", ["run", Path.Combine(root, "build.cs"), "--no-install"]);
-build.WaitForExit();
-if (build.ExitCode != 0)
-    return Fail("build failed");
+if (smoke)
+{
+    if (new[] { ".dll", ".json", ".pck" }.FirstOrDefault(ext => !File.Exists(Path.Combine(distDir, ModId + ext))) is { } missing)
+        return Fail($"no {ModId}{missing} in {distDir}: run `dotnet run build.cs --dist` first");
+}
+else
+{
+    var build = Process.Start("dotnet", ["run", Path.Combine(root, "build.cs"), "--no-install"]);
+    build.WaitForExit();
+    if (build.ExitCode != 0)
+        return Fail("build failed");
+}
 
 LinkDevCopy();
 SyncMods();
-PrepareSandbox(mode == "test" || firstRun);
+PrepareSandbox(mode is "test" or "smoke" || firstRun);
 
 var start = new ProcessStartInfo(Path.Combine(DevDir, "SlayTheSpire2.exe"), ["--force-steam", "off", "--log-file", logPath])
     { WorkingDirectory = DevDir };
@@ -158,6 +172,77 @@ if (mode == "launch")
     Process.Start(start);
     Console.WriteLine($"launched the dev copy in the sandbox (log: {logPath})");
     return 0;
+}
+
+if (smoke)
+{
+    // Until the main menu has finished loading (our button goes on it then), plus a few seconds, then the game is
+    // closed. Results go where test's do, so session scripts count them the same way.
+    if (Directory.Exists(outDir))
+        Directory.Delete(outDir, recursive: true);
+    Directory.CreateDirectory(outDir);
+    if (File.Exists(logPath))
+        File.Delete(logPath);
+    start.RedirectStandardOutput = start.RedirectStandardError = true;
+    var released = Process.Start(start) ?? throw new InvalidOperationException("could not start the game");
+    released.OutputDataReceived += (_, _) => { };
+    released.ErrorDataReceived += (_, _) => { };
+    released.BeginOutputReadLine();
+    released.BeginErrorReadLine();
+    const string menuLoaded = "main menu loaded (complete)";
+    DateTime? menuAt = null;
+    var giveUp = DateTime.Now.AddSeconds(120);
+    while (!released.WaitForExit(500) && DateTime.Now < giveUp && (menuAt == null || DateTime.Now < menuAt.Value.AddSeconds(5)))
+        if (menuAt == null && LogLines().Any(line => line.Contains(menuLoaded)))
+            menuAt = DateTime.Now;
+    if (!released.HasExited)
+    {
+        released.Kill();
+        released.WaitForExit();
+    }
+    var lines = LogLines();
+    // Ours: a "[SpireModManager]" or "[ERROR] ... Spire" line, and a Godot "ERROR:" whose stack lines below it
+    // name our code.
+    var errors = new List<string>();
+    for (var i = 0; i < lines.Count; i++)
+    {
+        var line = lines[i];
+        if (line.StartsWith("ERROR:") && lines.Skip(i + 1).TakeWhile(l => l.StartsWith(' ')).Any(l => l.Contains($"{ModId}.")))
+            errors.Add(line);
+        else if ((line.Contains("[ERROR]") && line.Contains("Spire")) || (line.Contains($"[{ModId}]") && line.Contains("[WARN]")))
+            errors.Add(line);
+    }
+    var version = (string?)JsonNode.Parse(File.ReadAllText(Path.Combine(distDir, ModId + ".json")))?["version"] ?? "?";
+    string[] checks =
+    [
+        Result($"the release build ({version}) loaded and finished initializing", lines.Any(l => l.Contains("Finished mod initialization for") && l.EndsWith($"({ModId})."))),
+        Result("its initializer logged that it started", lines.Any(l => l.Contains($"[{ModId}] Initialized"))),
+        Result("the game reached its main menu", menuAt != null),
+        Result("nothing in the log from our mod is an error or a warning", errors.Count == 0, string.Join(" | ", errors.Take(3))),
+    ];
+    File.WriteAllLines(Path.Combine(outDir, "results.txt"), checks);
+    foreach (var check in checks)
+        Console.WriteLine(check);
+    Console.WriteLine("--- log ---");
+    foreach (var line in lines.Where(l => l.Contains($"[{ModId}]") || errors.Contains(l)))
+        Console.WriteLine(line.Length > 400 ? line[..400] : line);
+    Console.WriteLine("Not covered here: opening the Modding page. Do that once by hand in the real game (RELEASE-PLAN.md §5).");
+    return checks.Any(c => c.StartsWith("FAIL")) ? 1 : 0;
+
+    static string Result(string name, bool ok, string detail = "") => $"{(ok ? "PASS" : "FAIL")} {name}{(ok || detail.Length == 0 ? "" : $": {detail}")}";
+}
+
+// The dev log so far, read while the game may still be writing it.
+List<string> LogLines()
+{
+    if (!File.Exists(logPath))
+        return [];
+    using var log = new FileStream(logPath, FileMode.Open, FileAccess.Read, FileShare.ReadWrite | FileShare.Delete);
+    using var reader = new StreamReader(log);
+    var lines = new List<string>();
+    while (reader.ReadLine() is { } line)
+        lines.Add(line);
+    return lines;
 }
 
 if (Directory.Exists(outDir))
@@ -320,7 +405,7 @@ void SyncMods()
     var ours = Path.Combine(mods, ModId);
     Directory.CreateDirectory(ours);
     foreach (var ext in new[] { ".pck", ".json", ".dll" })
-        File.Copy(Path.Combine(root, "out", ModId + ext), Path.Combine(ours, ModId + ext));
+        File.Copy(Path.Combine(smoke ? distDir : Path.Combine(root, "out"), ModId + ext), Path.Combine(ours, ModId + ext));
 }
 
 // Mods accepted with Better Mod Menu off (it patches the same screen), and for tests our data reset
