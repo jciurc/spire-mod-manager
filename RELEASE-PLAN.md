@@ -103,8 +103,13 @@
 - **Undo And Restart compatibility:** it adds a panel at a fixed (0,318) in the info panel, over our fields. Re-place foreign children of the info panel below the description, then check in game.
 - **Warn about managers that rewrite `mod_list`** (recommended by the survey; to confirm with Jordan). Moved up from §4's "detect other mod managers by id and warn".
   - Widen the round 19 "Multiple mod managers are currently enabled" warning past Better Mod Menu: ModListSorter, LoadOrderSync, Mod Launch Manager, Load Order Manager, Mod Preset Sync and Mod Profile Manager (see §6).
-  - Their manifest ids need looking up.
+  - Manifest ids: Load Order Manager's is `LoadOrderManager`; the others need subscribing to read them (TODO round 21).
   - Decide it with the two-managers spike (TODO round 20, `docs/spikes/two-managers.md`).
+- **Test beside the other mod managers** (recommended by the comparison session). Most of them patch the same screen or rewrite `mod_list`, and only Better Mod Menu has been tested with ours.
+  - Suggested: at least the first four before 0.1.0 (the most players or the most overlap): Load Order Manager, AutoModSubscriber, Better Mod Menu with Better Mod Menu Fix (Public-Beta), and Mod Launch Manager.
+  - For each: buttons and panels over ours; their Harmony patches on the same screen and rows (their exceptions shouldn't break ours); who wins when both write `mod_list`, at quit and at Relaunch; the first load slot; hot loading.
+  - The dev sandbox has no Steam: a `tools/dev.cs` option that copies Workshop items into it (like `--bmm`) covers them all.
+  - Check the two-managers spike (#36) against the list. The list, by priority: TODO round 21.
 - **Mark our popups as ours:** add "Spire Mod Manager" to New Mod Added, Delete profile and Delete category. The New Mod popup replaces the game's popup on BMM's page too.
 - **Relaunch wording:** our own pending line instead of the game's "restart" line (the wording part only).
 - **Review queue:** go through `WHATS-NEW.md` "For your review" (about 37 items) and prune its stale entries (see §8).
@@ -188,7 +193,7 @@
 - **Early Access churn:** every beta patch can rename the private members and node paths we depend on. Expect quick-turnaround updates; blocker 4 limits the damage.
 - **Beta-only audience:** public-branch players will be confused. Widen the range the day 0.111+ reaches `public`.
 - **Branch fields:** one upload without `minBranch` serves a broken build to public players.
-- **Other mod managers** (Better Mod Menu, Load Order Manager, Mod Launch Manager, Mod Profile Manager, Mod Preset Sync, Better Mod List and more; the survey is in DESIGN.md) may patch the same screen, untested together. Likely the main source of bug reports.
+- **Other mod managers** (Better Mod Menu, Load Order Manager, Mod Launch Manager, Mod Profile Manager, Mod Preset Sync, Better Mod List and more; the survey is in DESIGN.md) may patch the same screen, untested together. Likely the main source of bug reports. The test list is in §3.
 - **Managers that rewrite `mod_list`** quietly undo our Load Order page: ModListSorter (A-Z on every exit), LoadOrderSync (at launch), Mod Launch Manager (pins itself first), Load Order Manager, Mod Preset Sync and Mod Profile Manager. The player sees their order change back with no word why. §3's warning covers it.
 - **BMM users:** both run together now (round 17), but two managers on one page, with separate profiles, may confuse. The description should say what the warning means, and that BMM 1.1.1 has its own errors on the beta. The bridge reaches BMM internals by reflection; an update there can make our list jump again (the `--bmm` self-test catches it).
 - **Data is local only** (not in Steam Cloud). It doesn't follow players between PCs or a Steam Deck.
