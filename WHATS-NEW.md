@@ -2,9 +2,9 @@
 
 Short notes for Jordan: what to look for after each install. Newest first.
 
-## Waiting in pull requests
+## Installed 2026-10-14 (early morning): version 0.0.52
 
-- **Load Order polish** (branch `polish-load-order`): hover or select the top row in Load Order: its highlight has its rounded top and the selected look's top edge again (the list keeps a few pixels above the first row and below the last, so the bottom row at the end of a long list is whole too). With the game in Chinese or Japanese, "Ctrl + Z" and "Ctrl + Y" under Undo and Redo stay apart, each under its own button (a little smaller where they must). Nothing to see in the last one: names with an alias, or cut with "…", are no longer fitted again on every redraw.
+- **Load Order polish:** hover or select the top row in Load Order: its highlight has its rounded top and the selected look's top edge again (the list keeps a few pixels above the first row and below the last, so the bottom row at the end of a long list is whole too). With the game in Chinese or Japanese, "Ctrl + Z" and "Ctrl + Y" under Undo and Redo stay apart, each under its own button (a little smaller where they must). Nothing to see in the last one: names with an alias, or cut with "…", are no longer fitted again on every redraw.
 
 ## Installed 2026-10-13 (late night): version 0.0.51
 
