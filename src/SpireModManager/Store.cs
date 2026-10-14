@@ -83,7 +83,8 @@ public static class Store
     static bool _readOnly;
     static bool _backedUpThisSession;
 
-    // Loaded on first use rather than in Init: the account folder needs Steam's user id.
+    // Loaded on first use (or while the main menu is idle) rather than in Init, so the work doesn't slow the launch. The
+    // account folder is known in Init already: the game sets up Steam before it loads mods (LaunchGuard uses it there).
     public static StoreData Data => _data ??= Load();
 
     // For the self-test's second launch: the next use loads again, from the file the first load wrote.
@@ -232,7 +233,7 @@ public static class Store
     {
         try
         {
-            WriteAtomic(file, data);
+            WriteAtomic(file, JsonSerializer.Serialize(data, Json));
         }
         catch (Exception e)
         {
@@ -384,7 +385,7 @@ public static class Store
         try
         {
             Directory.CreateDirectory(dir);
-            WriteAtomic(file, data);
+            WriteAtomic(file, JsonSerializer.Serialize(data, Json));
         }
         catch (Exception e)
         {
@@ -392,11 +393,11 @@ public static class Store
         }
     }
 
-    // Writes to a temp file and swaps it in, so a crash mid-write can't leave a half-written file.
-    static void WriteAtomic(string file, StoreData data)
+    // Writes to a temp file and swaps it in, so a crash mid-write can't leave a half-written file. LaunchGuard's files too.
+    public static void WriteAtomic(string file, string json)
     {
         var temp = file + ".tmp";
-        File.WriteAllText(temp, JsonSerializer.Serialize(data, Json));
+        File.WriteAllText(temp, json);
         File.Move(temp, file, overwrite: true);
     }
 

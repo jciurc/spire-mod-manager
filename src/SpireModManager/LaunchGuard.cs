@@ -1,6 +1,7 @@
 using System.Globalization;
 using System.Text.Json;
 using System.Text.Json.Serialization;
+using Godot;
 using MegaCrit.Sts2.Core.Localization;
 using MegaCrit.Sts2.Core.Logging;
 using MegaCrit.Sts2.Core.Modding;
@@ -13,8 +14,9 @@ namespace SpireModManager;
 // our data folder: the mods this launch is about to load. Reaching the main menu deletes it and saves the mod list as
 // last-working.json. So a launch that finds launch-pending.json still there follows one that never reached the menu:
 // a crash or hang in a mod loading after ours, a content or text error once every mod has loaded, or a close while
-// it loaded. At the menu, a notice lists what changed since the last launch that worked, with "Restore last working
-// setup" (that mod list back, then a relaunch) and "Keep". Nothing happens on its own: no rollback, no relaunch.
+// it loaded. At the menu, a notice lists what changed since the last launch that worked, with "Restore" (that mod list
+// back, then a relaunch) and "Keep". Nothing happens on its own: no rollback, no relaunch. No notice when this launch
+// loaded the same mods as the one that stopped (a close while loading, a one-off crash): they've just loaded fine.
 // We don't keep ourselves first in the load order, so a mod loading before ours that kills the launch leaves no
 // record (and no notice either). Every step fails open: an error is logged and the launch goes on as usual.
 static class LaunchGuard
@@ -38,24 +40,26 @@ static class LaunchGuard
     // Taken in Init, and kept for the menu: the account folder is known by then (the game has read settings.save from
     // it), and the same folder clears the record whatever Store resolves later.
     public static string? Dir { get; private set; }
-    static Setup? _failed, _working;
+    static Setup? _failed, _working, _planned;
     static bool _reached;
 
     // After a launch that never reached the menu, with changes since the last one that worked: shown once at the main
-    // menu (kept while another popup is up). The self-test sets it too.
+    // menu (waiting while another popup is up). The self-test sets it too.
     public static (Setup Working, List<Change> Changes)? Notice { get; set; }
 
-    // First thing in ModEntry.Init.
+    // First thing in ModEntry.Init (in a try there too: a game update that renames a member used here throws at the
+    // call, before this try). The mods in load order (the game has sorted them by then), each on or off by its own
+    // entry in the mod list (the game's rebuilt list, saved later, gives every copy of an id the first copy's state).
     public static void Begin()
     {
         try
         {
             var settings = SaveManager.Instance.SettingsSave.ModSettings;
-            var planned = ModManager.Mods.Where(m => m.manifest?.id != null)
-                .Select(m => new Entry(m.manifest!.id!, m.modSource, !(settings?.IsModDisabled(m) ?? false), m.manifest.version)).ToList();
+            var planned = new Setup(DateTime.Now, ModManager.Mods.Where(m => m.manifest?.id != null)
+                .Select(m => new Entry(m.manifest!.id!, m.modSource, !(settings?.IsModDisabled(m) ?? false), m.manifest.version)).ToList());
             var dir = Store.Dir;
-            (_failed, _working) = Begin(dir, new Setup(DateTime.Now, planned));
-            Dir = dir;
+            (_failed, _working) = Begin(dir, planned);
+            (Dir, _planned) = (dir, planned);
         }
         catch (Exception e)
         {
@@ -78,17 +82,14 @@ static class LaunchGuard
     // First main menu of the session (MenuReachedPatch, a prefix: it runs even when the menu's own _Ready throws).
     public static void MenuReached()
     {
-        if (_reached || Dir == null)
+        if (_reached || Dir == null || _planned == null)
             return;
         _reached = true;
         try
         {
-            var versions = ModManager.Mods.Where(m => m.manifest?.id != null)
-                .ToLookup(m => (m.manifest!.id!, m.modSource), m => m.manifest!.version);
-            var saved = History.CurrentMods().Select(m => new Entry(m.Id, m.Source, m.Enabled, versions[(m.Id, m.Source)].FirstOrDefault())).ToList();
-            var changes = Reached(Dir, new Setup(DateTime.Now, saved), _failed, _working);
-            if (changes.Count > 0 && _working != null)
-                Notice = (_working, changes);
+            var changes = Reached(Dir, _planned with { At = DateTime.Now }, _failed, _working);
+            if (changes.Count > 0)
+                Notice = (_working!, changes);
         }
         catch (Exception e)
         {
@@ -96,18 +97,32 @@ static class LaunchGuard
         }
     }
 
-    // This launch worked: its mod list (the game's own, rewritten in load order) is the last working setup, and its
-    // record goes. Returns what the failed launch before it, if any, had changed since the last working setup.
+    // This launch worked: its record goes (first: that's what matters), and its mods are the last working setup.
+    // Returns what the failed launch before it, if any, had changed since the last working setup, for the notice. None
+    // when this launch loaded the same mods as that one, nor when the changes are only updates: Restore can't undo an
+    // update (Steam keeps only the new version), so it would offer nothing.
     public static List<Change> Reached(string dir, Setup saved, Setup? failed, Setup? working)
     {
-        Write(Path.Combine(dir, WorkingFile), saved);
         File.Delete(Path.Combine(dir, PendingFile));
+        try
+        {
+            Write(Path.Combine(dir, WorkingFile), saved);
+        }
+        catch (Exception e)
+        {
+            Log.Error($"[{ModEntry.ModId}] Could not save this launch's mods as the last working setup: {e}");
+        }
         if (failed == null || working == null)
             return [];
+        if (failed.Mods.SequenceEqual(saved.Mods))
+        {
+            Log.Info($"[{ModEntry.ModId}] This launch loaded the same mods as the one that stopped, and reached the main menu: no notice");
+            return [];
+        }
         var changes = Changes(failed.Mods, working.Mods);
         Log.Warn($"[{ModEntry.ModId}] Changed since the last launch that worked ({working.At:yyyy-MM-dd HH:mm}): "
             + (changes.Count == 0 ? "nothing" : string.Join(", ", changes.Select(c => $"{c.Id} {c.Kind} {c.From} {c.To}".TrimEnd()))));
-        return changes;
+        return changes.Any(c => c.Kind != Kind.Updated) ? changes : [];
     }
 
     // What a launch's mods changed since a working setup: mods new, enabled, disabled or updated, and whether the
@@ -133,29 +148,42 @@ static class LaunchGuard
         return changes;
     }
 
-    // From MainMenuPatch's timer, after the game's popups and our data notice; kept for the next main menu while
-    // another popup is up.
-    public static void ShowNotice()
+    // From MainMenuPatch's timer, after the game's popups and our data notice. While another popup is up, it tries
+    // again each second; once the main menu is gone (a run started), the notice is dropped.
+    public static void ShowNotice(Node menu)
     {
-        if (Notice is not { } notice || NModalContainer.Instance is not { OpenModal: null })
+        if (Notice is not { } notice)
             return;
+        if (!GodotObject.IsInstanceValid(menu) || !menu.IsInsideTree())
+        {
+            Notice = null;
+            Log.Info($"[{ModEntry.ModId}] The main menu went before the notice about the last launch could show, so it's dropped");
+            return;
+        }
+        if (NModalContainer.Instance is not { OpenModal: null })
+        {
+            menu.GetTree().CreateTimer(1).Timeout += () => ShowNotice(menu);
+            return;
+        }
         Notice = null;
-        _ = Ask(notice.Working, notice.Changes);
+        _ = Ask(menu, notice.Working, notice.Changes);
     }
 
-    const int LinesShown = 8; // the popup's text box holds about ten lines
+    const int LinesShown = 5; // with the title line and the Restore sentence, about all the popup's text box holds
 
-    static async Task Ask(Setup working, List<Change> changes)
+    static async Task Ask(Node menu, Setup working, List<Change> changes)
     {
         try
         {
-            string Name(string id) => (ModManager.Mods.FirstOrDefault(m => m.manifest?.id == id)?.manifest?.name ?? id).Replace("[", "[lb]");
+            static string Escaped(string text) => text.Replace("[", "[lb]");
+            string Name(string id) => Escaped(ModManager.Mods.FirstOrDefault(m => m.manifest?.id == id)?.manifest?.name ?? id);
             var lines = changes.Take(changes.Count > LinesShown ? LinesShown - 1 : LinesShown).Select(c => "  •  " + c.Kind switch
             {
                 Kind.New => Menus.Format("SPIRE_MOD_MANAGER.LAUNCH_NEW", ("mod", Name(c.Id))),
                 Kind.Enabled => Menus.Format("SPIRE_MOD_MANAGER.LAUNCH_ENABLED", ("mod", Name(c.Id))),
                 Kind.Disabled => Menus.Format("SPIRE_MOD_MANAGER.LAUNCH_DISABLED", ("mod", Name(c.Id))),
-                Kind.Updated => Menus.Format("SPIRE_MOD_MANAGER.LAUNCH_UPDATED", ("mod", Name(c.Id)), ("from", c.From ?? ""), ("to", c.To ?? "")),
+                Kind.Updated => Menus.Format("SPIRE_MOD_MANAGER.LAUNCH_UPDATED", ("mod", Name(c.Id)),
+                    ("from", Escaped(c.From ?? "")), ("to", Escaped(c.To ?? ""))),
                 _ => Menus.Text("SPIRE_MOD_MANAGER.LAUNCH_ORDER"),
             }).ToList();
             if (changes.Count > LinesShown)
@@ -165,7 +193,7 @@ static class LaunchGuard
             body.Add("changes", string.Join("\n", lines));
             if (await Menus.Confirm(new LocString("settings_ui", "SPIRE_MOD_MANAGER.LAUNCH_FAILED_TITLE"), body,
                     new LocString("settings_ui", "SPIRE_MOD_MANAGER.LAUNCH_KEEP"), new LocString("settings_ui", "SPIRE_MOD_MANAGER.LAUNCH_RESTORE")))
-                Restore(working.Mods);
+                Restore(working.Mods, menu);
         }
         catch (Exception e)
         {
@@ -174,8 +202,9 @@ static class LaunchGuard
     }
 
     // The working setup's mod list back (order and on/off), mods installed since then off (a mod the list doesn't name
-    // loads), ours always on; then a relaunch.
-    public static void Restore(IReadOnlyList<Entry> working)
+    // loads), ours always on; then a relaunch through the relaunch check (owner: the main menu), which catches a mod
+    // left on that now needs one installed since (its dialog offers the fix).
+    public static void Restore(IReadOnlyList<Entry> working, Node owner)
     {
         var settings = SaveManager.Instance.SettingsSave.ModSettings ??= new ModSettings();
         var entries = working.Select(m => new SettingsSaveMod { Id = m.Id, Source = m.Source, IsEnabled = m.Enabled || m.Id == ModEntry.ModId }).ToList();
@@ -185,15 +214,23 @@ static class LaunchGuard
         settings.ModList.AddRange(entries);
         SaveManager.Instance.SaveSettings();
         Log.Info($"[{ModEntry.ModId}] Restored the mod list of the last launch that worked");
-        ModEntry.Relaunch();
+        RelaunchCheck.Relaunch(owner);
     }
 
-    // A record or a working setup from its file; null when there is none or it can't be read.
+    // A record or a working setup from its file; null when there is none or it can't be read. A mod with no id or an
+    // unknown source makes the whole file unreadable: Restore would save it into the game's mod list, which the game
+    // then fails to load at every launch.
     public static Setup? Read(string file)
     {
         try
         {
-            return File.Exists(file) ? JsonSerializer.Deserialize<Setup>(File.ReadAllText(file), Json) is { Mods: not null } setup ? setup : null : null;
+            if (!File.Exists(file))
+                return null;
+            if (JsonSerializer.Deserialize<Setup>(File.ReadAllText(file), Json) is { Mods: not null } setup
+                && setup.Mods.All(m => m != null && !string.IsNullOrEmpty(m.Id) && Enum.IsDefined(m.Source)))
+                return setup;
+            Log.Warn($"[{ModEntry.ModId}] {file} lists a mod with no id or an unknown source, so it counts as none");
+            return null;
         }
         catch (Exception e)
         {
@@ -202,11 +239,5 @@ static class LaunchGuard
         }
     }
 
-    // To a temp file, then swapped in: a crash mid-write leaves the old file or the new one, never half of one.
-    static void Write(string file, Setup setup)
-    {
-        var temp = file + ".tmp";
-        File.WriteAllText(temp, JsonSerializer.Serialize(setup, Json));
-        File.Move(temp, file, overwrite: true);
-    }
+    static void Write(string file, Setup setup) => Store.WriteAtomic(file, JsonSerializer.Serialize(setup, Json));
 }
