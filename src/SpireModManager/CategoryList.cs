@@ -407,6 +407,9 @@ static class CategoryList
             header.CustomMinimumSize = new Vector2(0, 36);
             titleLabel.AddThemeFontSizeOverride("font_size", 18);
             header.GetNode<Label>("Count").AddThemeFontSizeOverride("font_size", 15);
+            // The scene's Kreon, or the game's font for its language (ModEntry.Font).
+            titleLabel.AddThemeFontOverride("font", ModEntry.Font("res://themes/kreon_bold_shared.tres"));
+            header.GetNode<Label>("Count").AddThemeFontOverride("font", ModEntry.Font("res://themes/kreon_regular_shared.tres"));
             if (muted)
             {
                 // Not a category the player made: cream instead of gold, fainter background.
@@ -438,9 +441,11 @@ static class CategoryList
             actions.AnchorBottom = 1;
             actions.GrowHorizontal = Control.GrowDirection.Begin;
             (actions.OffsetLeft, actions.OffsetRight, actions.OffsetTop, actions.OffsetBottom) = (-16, -16, 5, -5);
-            var widthKey = string.Join("\n", actions.GetChildren().Select(c => c is Button b ? b.Text : "|"));
+            // Measured once per set of labels in the buttons' font (it changes with the game's language): shaping text is slow.
+            var widthKey = $"{ModEntry.Font("res://themes/kreon_regular_shared.tres").GetInstanceId()}\n"
+                + string.Join("\n", actions.GetChildren().Select(c => c is Button b ? b.Text : "|"));
             if (!HeaderWidths.TryGetValue(widthKey, out var actionsWidth))
-                HeaderWidths[widthKey] = actionsWidth = actions.GetCombinedMinimumSize().X; // measured once per set of labels: shaping text is slow
+                HeaderWidths[widthKey] = actionsWidth = actions.GetCombinedMinimumSize().X;
             titleLabel.OffsetRight = -16 - actionsWidth - 30;
             foreach (var row in members)
                 content.MoveChild(row, index++);
@@ -703,6 +708,7 @@ static class CategoryList
         // An empty or taken name says so at the box's right end; Enter then does nothing, and clicking away
         // keeps the old name.
         var warning = new Label { Name = "NameWarning", HorizontalAlignment = HorizontalAlignment.Right, VerticalAlignment = VerticalAlignment.Center, MouseFilter = Control.MouseFilterEnum.Ignore };
+        warning.AddThemeFontOverride("font", ModEntry.Font("res://themes/kreon_regular_shared.tres"));
         warning.AddThemeFontSizeOverride("font_size", 15);
         warning.AddThemeColorOverride("font_color", new Color(1f, 0.5f, 0.44f));
         edit.AddChild(warning);
