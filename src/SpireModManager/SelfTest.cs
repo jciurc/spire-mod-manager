@@ -1478,6 +1478,7 @@ static class SelfTest
         Check("Group is the category; no alias or notes", records.FirstOrDefault(r => r[0] == ModEntry.ModId)?[4] == "Tools"
             && !csv.Contains("The Manager") && !csv.Contains("Fixture note") && records.Skip(1).All(r => r.Count == 8 && r[6] == "" && r[7] == ""), csv);
         await Capture(screen, outDir, "7c-share-profile");
+        var clipboard = DisplayServer.ClipboardGet(); // put back after: a windowed run is on Jordan's desktop
         Press("CopyButton");
         await Wait(menu, 0.1);
         Check("Copy says Copied", Part<Button>("CopyButton")?.Text == "Copied", Part<Button>("CopyButton")?.Text ?? "no button");
@@ -1485,6 +1486,7 @@ static class SelfTest
             Results.Add("SKIP Copy puts the text on the clipboard: there's no clipboard headless");
         else
             Check("Copy puts the text on the clipboard", DisplayServer.ClipboardGet() == csv);
+        DisplayServer.ClipboardSet(clipboard);
         var file = Path.Combine(outDir, ProfileShare.FileName("Co-op: \"night\"?"));
         var saveError = ProfileShare.SaveTo(file, csv);
         var bytes = File.Exists(file) ? File.ReadAllBytes(file) : [];
