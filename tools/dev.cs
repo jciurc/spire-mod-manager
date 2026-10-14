@@ -5,13 +5,17 @@
 //                                      --bmm: with Better Mod Menu loaded too (listed first; --bmm-after:
 //                                      after ours, as in Jordan's game; --bmm-local: its local-fix build
 //                                      from the BmmRepo checkout below instead of the installed one);
+//                                      --workshop <id>[,<id>...]: those Steam Workshop items too (subscribed
+//                                      ones only: Steam downloads no others), copied into the dev copy's
+//                                      mods for this run and switched on after ours, in the order given;
 //                                      --real: Jordan's own mods, switched off, and a copy of his data;
 //                                      --first-run: a short suite for a first run, with no data of ours and
 //                                      none of Better Mod Menu's; --first-run-bmm: the same, but with Better
 //                                      Mod Menu's data (tools/fixtures/bmm) there to import, and Better Mod
 //                                      Menu installed but off, or on with --bmm)
 //   dotnet run tools/dev.cs launch    build, open the game in the sandbox to poke at by hand
-//                                     (--first-run, --first-run-bmm: starting from that state, not the last one)
+//                                     (--first-run, --first-run-bmm: starting from that state, not the last one;
+//                                      --workshop: as for test)
 //
 // Isolation:
 // - Dev copy: sts2-dev at the root of the game's drive (D:\sts2-dev here; STS2_DEV_DIR picks another
@@ -21,7 +25,7 @@
 //   The copy is re-linked whenever the installed game's release_info.json changes (a Steam update).
 // - --force-steam off: no Steam presence, no cloud, and the game keeps its data in
 //   %APPDATA%\SlayTheSpire2\default\1\ instead of steam\<id>\, so real saves and mod lists are never
-//   touched. Only local mods load (Workshop mods come through Steam).
+//   touched. Only local mods load (Workshop mods come through Steam; --workshop copies some in as local ones).
 // - --log-file: the dev log goes to out\dev.log, not the shared godot.log.
 //
 // test: resets the sandbox to tools/fixtures (mods accepted, Better Mod Menu off, our manager.json, no
@@ -52,11 +56,30 @@ var real = args.Contains("--real"); // Jordan's own mods (switched off) and a co
 var bmm = args.Any(a => a.StartsWith("--bmm")); // Better Mod Menu on (any --bmm option)
 var bmmData = args.Contains("--first-run-bmm"); // its fixture data in the sandbox, for our first-run import
 var firstRun = bmmData || args.Contains("--first-run"); // no manager.json of ours
+var workshopAt = Array.IndexOf(args, "--workshop"); // the Workshop item ids follow it, comma-separated
+var workshopItems = workshopAt < 0 ? [] : (args.ElementAtOrDefault(workshopAt + 1) ?? "")
+    .Split(',', StringSplitOptions.RemoveEmptyEntries | StringSplitOptions.TrimEntries).Distinct().ToArray();
+var workshopMods = new List<string>(); // the mod ids in those items' manifests, in the order given
 
 if (mode is not ("test" or "launch"))
-    return Fail("usage: dotnet run tools/dev.cs [test [--window] [--bmm[-after]] [--bmm-local] [--real|--first-run|--first-run-bmm]|launch [--first-run|--first-run-bmm]]");
+    return Fail("usage: dotnet run tools/dev.cs [test [--window] [--bmm[-after]] [--bmm-local] [--real|--first-run|--first-run-bmm]|launch [--first-run|--first-run-bmm]] [--workshop <id>[,<id>...]]");
 if (real && firstRun)
     return Fail("--real brings Jordan's own data, so it can't be a first run");
+// --workshop: every item has to be there, or the run would test without it and look like a pass.
+if (workshopAt >= 0 && workshopItems.Length == 0)
+    return Fail("--workshop needs Workshop item ids, comma-separated, as in: --workshop 3747605109,3750485606");
+foreach (var item in workshopItems)
+{
+    if (!item.All(char.IsAsciiDigit))
+        return Fail($"--workshop takes Workshop item ids (numbers), not \"{item}\"");
+    var dir = Path.Combine(WorkshopDir, item);
+    if (!Directory.Exists(dir))
+        return Fail($"Workshop item {item} isn't in {WorkshopDir}. Subscribe to it in Steam first: Steam downloads only subscribed items.");
+    var ids = ManifestIds(dir).ToList();
+    if (ids.Count == 0)
+        return Fail($"Workshop item {item} has no mod manifest in {dir}");
+    workshopMods = workshopMods.Union(ids).ToList();
+}
 if (Process.GetProcessesByName("SlayTheSpire2").Any(p => string.Equals(Path.GetDirectoryName(ExePath(p)), DevDir, StringComparison.OrdinalIgnoreCase)))
     return Fail($"A dev copy of the game is already running from {DevDir}.");
 
@@ -159,19 +182,21 @@ void LinkDevCopy()
 
 // The dev copy's mods: our fresh build, plus links to the other mods installed for play. Not Better Mod Menu's
 // data if it keeps it beside its files ("portable mode", mod_profiles.*): our first-run import would find it
-// there, and a run's Better Mod Menu data should be only what PrepareSandbox gives it.
+// there, and a run's Better Mod Menu data should be only what PrepareSandbox gives it. Nor an installed mod
+// with the same id as a --workshop item's: the game would load only one of the two.
 void SyncMods()
 {
     var mods = Path.Combine(DevDir, "mods");
     if (Directory.Exists(mods))
         Directory.Delete(mods, recursive: true);
-    foreach (var dir in Directory.GetDirectories(Path.Combine(GameDir, "mods")).Where(d => Path.GetFileName(d) != ModId))
+    foreach (var dir in Directory.GetDirectories(Path.Combine(GameDir, "mods")).Where(d => Path.GetFileName(d) != ModId && !ManifestIds(d).Any(workshopMods.Contains)))
         foreach (var file in Directory.EnumerateFiles(dir, "*", SearchOption.AllDirectories).Where(f => !Path.GetFileName(f).StartsWith("mod_profiles.")))
             Link(file, Path.Combine(mods, Path.GetRelativePath(Path.Combine(GameDir, "mods"), file)));
     if (real)
     {
-        // --real: Jordan's Workshop mods too, as local folders (switched off in PrepareSandbox).
-        foreach (var dir in Directory.GetDirectories(WorkshopDir))
+        // --real: Jordan's Workshop mods too, as local folders (switched off in PrepareSandbox), but not
+        // the --workshop items: they're copied below.
+        foreach (var dir in Directory.GetDirectories(WorkshopDir).Where(d => !workshopItems.Contains(Path.GetFileName(d))))
             foreach (var file in Directory.EnumerateFiles(dir, "*", SearchOption.AllDirectories))
                 Link(file, Path.Combine(mods, "workshop-" + Path.GetFileName(dir), Path.GetRelativePath(dir, file)));
     }
@@ -185,6 +210,15 @@ void SyncMods()
             File.Copy(file, target);
         }
     }
+    // --workshop: the given items, copied rather than linked, so nothing a mod writes over its own files
+    // reaches Steam's copy. The folder above is emptied every run, so they're gone from a run without them.
+    foreach (var item in workshopItems)
+        foreach (var file in Directory.EnumerateFiles(Path.Combine(WorkshopDir, item), "*", SearchOption.AllDirectories))
+        {
+            var target = Path.Combine(mods, "workshop-" + item, Path.GetRelativePath(Path.Combine(WorkshopDir, item), file));
+            Directory.CreateDirectory(Path.GetDirectoryName(target) ?? mods);
+            File.Copy(file, target);
+        }
     // --bmm-local: Better Mod Menu's local-fix build (built by its install-local.sh) in place of the installed one.
     if (args.Contains("--bmm-local"))
     {
@@ -217,10 +251,20 @@ void PrepareSandbox(bool resetData)
         list.Add((JsonNode)new JsonObject { ["id"] = ModId, ["is_enabled"] = true, ["source"] = "mods_directory" });
     list.Add((JsonNode)new JsonObject { ["id"] = "BetterModMenu", ["is_enabled"] = bmm, ["source"] = "mods_directory" });
     list.Add((JsonNode)new JsonObject { ["id"] = "BetterModMenuFork", ["is_enabled"] = false, ["source"] = "mods_directory" });
+    // --workshop: the items' mods on, after ours, in the order given. An entry above for the same id (Better
+    // Mod Menu's, when its Workshop item is given) gives way.
+    if (workshopMods.Count > 0 && !args.Contains("--bmm-after"))
+        list.Add((JsonNode)new JsonObject { ["id"] = ModId, ["is_enabled"] = true, ["source"] = "mods_directory" });
+    foreach (var id in workshopMods)
+    {
+        if (list.FirstOrDefault(entry => (string?)entry?["id"] == id) is { } earlier)
+            list.Remove(earlier);
+        list.Add((JsonNode)new JsonObject { ["id"] = id, ["is_enabled"] = true, ["source"] = "mods_directory" });
+    }
     // --real: every other mod is listed but switched off, so none of their code runs (some write config
-    // files to the shared user folder); only the manager loads.
+    // files to the shared user folder); only the manager and any --workshop mods load.
     if (real)
-        foreach (var id in ManifestIds(Path.Combine(DevDir, "mods")).Where(id => id is not (ModId or "BetterModMenu" or "BetterModMenuFork")))
+        foreach (var id in ManifestIds(Path.Combine(DevDir, "mods")).Where(id => id is not (ModId or "BetterModMenu" or "BetterModMenuFork") && !workshopMods.Contains(id)))
             list.Add((JsonNode)new JsonObject { ["id"] = id, ["is_enabled"] = false, ["source"] = "mods_directory" });
     mods["mod_list"] = list;
     settings["mod_settings"] = mods;
