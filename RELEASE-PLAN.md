@@ -61,6 +61,7 @@
    - Make tooltip punctuation consistent.
    - "New category" casing.
    - Make a profile rename show as a rename in Changes, not "Added X" plus "Removed Y".
+   - Then freeze the English text for 0.1.0, so a translator never works on text that still moves (the translation plan in §4).
 9. **First run, untested on both paths.**
    - (a) No `manager.json` and no Better Mod Menu.
    - (b) Better Mod Menu data present, with BMM on and with BMM off.
@@ -133,6 +134,16 @@
 - **Interop:** BMM re-import, csv export and toggle; a "Config" button for mods that have one; detect Quick Relaunch (only if it is ever published); import other managers' data after share codes (Load Order Manager's `presets.json`, MPM1 codes, BMM CSV).
 - **Workshop:** Update now and Subscribe/Unsubscribe in the info panel (TODO round 2's "auto update and polling", redefined); one package for every branch once the range widens past beta (Load Order Manager's loader picks a build per game version).
 - **Languages:** Simplified Chinese right after 0.1.0. Most mods on this Workshop are Chinese; English only for 0.1.0 stands.
+  - **Translation plan** (Jordan, 2026-10-13: no AI translation; Simplified Chinese first, by a native speaker; community contributions later). The rest is recommended by the comparison session.
+    - Freeze the English text for 0.1.0 after the copy pass (§2, 8). On `dev` today: 219 keys, about 860 words. The Workshop description adds about 1,000-1,500.
+    - A kit for the translator: a spreadsheet, not JSON (key, English, where it appears, notes on placeholders and length limits, translation). A `tools/loc.cs export|import` moves it to and from `localization/<lang>/settings_ui.json`. Ideally it also flags translations whose English changed since (a hash of the English per translated key).
+    - Screenshots of every screen, ideally from a dev mode that shows each key in place of its text.
+    - A glossary from the game's own Simplified Chinese tables (`tools/pck.cs` extracts them), so our words match what players already see.
+    - Who: Jordan asks the Chinese modding community first (Bilibili, QQ). The paid fallback is a native zh-CN freelancer or agency with game UI experience, "human translation only" in the brief; roughly low hundreds of USD (an estimate). Either way, a second native player checks it in game.
+    - A translation can lag a release: a key it lacks shows in English. The font bug with other languages is fixed in its own PR (branch `locale-fonts`).
+    - The Workshop description in English and Simplified Chinese, in one description (the norm here; Better Mod Menu does it).
+    - Later: the spreadsheet by email or Discord until the repo is public, then GitHub pull requests. At 2-3 languages, Weblate or Crowdin (both free for open-source projects).
+    - Details in TODO round 21.
 - **Bigger features:** load mods without a restart (Jordan, 2026-10-13: a spike first, with crash-safe launch); the manager during a run plus "save run and relaunch"; delete or uninstall a mod; an in-game error log; keyboard navigation and controller support; "Play vanilla" via `--nomods`; a link to the game's patch notes.
 
 ## 5. Publishing: how it works and the checklist
