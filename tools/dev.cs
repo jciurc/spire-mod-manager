@@ -7,7 +7,8 @@
 //                                      from the BmmRepo checkout below instead of the installed one);
 //                                      --workshop <id>[,<id>...]: those Steam Workshop items too (subscribed
 //                                      ones only: Steam downloads no others), copied into the dev copy's
-//                                      mods for this run and switched on after ours, in the order given;
+//                                      mods for this run and switched on after ours, in the order given; one
+//                                      that's missing, or needs a mod that won't be on, stops the run;
 //                                      --real: Jordan's own mods, switched off, and a copy of his data;
 //                                      --first-run: a short suite for a first run, with no data of ours and
 //                                      none of Better Mod Menu's; --first-run-bmm: the same, but with Better
@@ -73,6 +74,7 @@ if (args.Where((a, i) => i > 0 && i != workshopAt + 1 && !a.StartsWith("--")).Fi
     return Fail($"\"{stray}\" isn't an option. Workshop ids go after --workshop, comma-separated with no spaces, as in: --workshop 3747605109,3750485606");
 if (workshopAt >= 0 && workshopItems.Length == 0)
     return Fail("--workshop needs Workshop item ids, comma-separated, as in: --workshop 3747605109,3750485606");
+var workshopManifests = new List<(string Item, JsonObject Manifest)>(); // the mods in those items, in the order given
 foreach (var item in workshopItems)
 {
     if (!item.All(char.IsAsciiDigit))
@@ -80,11 +82,36 @@ foreach (var item in workshopItems)
     var dir = Path.Combine(WorkshopDir, item);
     if (!Directory.Exists(dir))
         return Fail($"Workshop item {item} isn't in {WorkshopDir}. Subscribe to it in Steam first: Steam downloads only subscribed items.");
-    var ids = ManifestIds(dir).ToList();
-    if (ids.Count == 0)
+    var manifests = Manifests(dir).ToList();
+    if (manifests.Count == 0)
         return Fail($"Workshop item {item} has no mod manifest in {dir}");
-    workshopMods = workshopMods.Union(ids).ToList();
+    // Two mods with one id (both ModTheSpire2s have ModTheSpire2): the game would load only one of them.
+    foreach (var manifest in manifests)
+    {
+        if (workshopManifests.FirstOrDefault(m => Id(m.Manifest) == Id(manifest)) is { Item: { } other })
+            return Fail($"Workshop items {other} and {item} both have the mod id {Id(manifest)}, and the game loads only one of them. Test them one at a time.");
+        workshopManifests.Add((item, manifest));
+    }
 }
+workshopMods = workshopManifests.Select(m => Id(m.Manifest)).ToList();
+// And what each one needs has to be on too, or the game won't load it: ours, the other --workshop mods, Better Mod
+// Menu with --bmm, and (not --real, which switches every other mod off) the installed and fixture mods but Better
+// Mod Menu's fork.
+var willLoad = new HashSet<string>(workshopMods) { ModId };
+if (bmm)
+    willLoad.Add("BetterModMenu");
+if (!real)
+    willLoad.UnionWith(ManifestIds(Path.Combine(GameDir, "mods")).Concat(ManifestIds(Path.Combine(root, "tools", "fixtures", "mods")))
+        .Where(id => id is not ("BetterModMenu" or "BetterModMenuFork")));
+foreach (var (item, manifest) in workshopManifests)
+    foreach (var needed in DependencyIds(manifest).Where(id => !willLoad.Contains(id)))
+    {
+        var subscribed = Directory.GetDirectories(WorkshopDir).FirstOrDefault(d => ManifestIds(d).Contains(needed));
+        return Fail($"Workshop item {item} ({Id(manifest)}) needs {needed}, which won't be on in this run: " + (needed == "BetterModMenu" ? "add --bmm."
+            : real && ManifestIds(Path.Combine(GameDir, "mods")).Contains(needed) ? "--real switches the installed mods off, so run it without --real."
+            : subscribed != null ? $"add its Workshop item, as in --workshop {string.Join(',', workshopItems.Append(Path.GetFileName(subscribed)))}"
+            : "subscribe to it in Steam, then add its Workshop item to --workshop."));
+    }
 if (Process.GetProcessesByName("SlayTheSpire2").Any(p => string.Equals(Path.GetDirectoryName(ExePath(p)), DevDir, StringComparison.OrdinalIgnoreCase)))
     return Fail($"A dev copy of the game is already running from {DevDir}.");
 
@@ -307,18 +334,27 @@ void PrepareSandbox(bool resetData)
     File.Copy(source ?? Path.Combine(root, "tools", "fixtures", "manager.json"), Path.Combine(data, "manager.json"));
 }
 
-// Mod ids from the manifests under a mods folder (a manifest is a JSON file with "id" and "has_dll").
-static IEnumerable<string> ManifestIds(string mods)
+// The manifests under a mods folder (a manifest is a JSON file with "id" and "has_dll"), and their mod ids.
+static IEnumerable<JsonObject> Manifests(string mods)
 {
     foreach (var file in Directory.EnumerateFiles(mods, "*.json", SearchOption.AllDirectories))
     {
         JsonObject? json;
         try { json = JsonNode.Parse(File.ReadAllText(file)) as JsonObject; }
         catch (Exception) { continue; } // not JSON (or not ours to judge)
-        if (json?["id"] is JsonValue id && json.ContainsKey("has_dll"))
-            yield return (string?)id ?? "";
+        if (json?["id"] is JsonValue && json.ContainsKey("has_dll"))
+            yield return json;
     }
 }
+
+static IEnumerable<string> ManifestIds(string mods) => Manifests(mods).Select(Id);
+
+static string Id(JsonObject manifest) => (string?)manifest["id"] ?? "";
+
+// The mod ids a manifest depends on: {"id": ...} entries, or plain strings as a few manifests have.
+static IEnumerable<string> DependencyIds(JsonObject manifest) =>
+    (manifest["dependencies"] as JsonArray ?? []).Select(d => (d as JsonObject)?["id"] ?? d).OfType<JsonValue>()
+        .Select(id => id.TryGetValue<string>(out var text) ? text : null).OfType<string>();
 
 static void Link(string target, string link)
 {
