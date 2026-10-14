@@ -818,3 +818,11 @@ For the crash-safe launch and load-without-restart spikes above:
 - that answers the spikes' main question: we can skip a crashing mod, or apply a choice made at launch, without a second launch
 - MIT, so its code may be reused with its license notice
 - grassdog0/MTS2 also ships hot-load test mods (`TestMods/ModTheSpire2HotConfigTest`, `HotDependsChain`, `HotDependsRestart`), but it has no license file: read it, copy nothing
+
+# Round 22
+
+Jordan's note of 2026-10-14: "for 0.1.0 let's get "show enabled" "show disabled" or show "changed". can you put the
+affected mods in the warning messages on hover?"
+
+- [x] list filters: "Show: All · Enabled · Disabled · Changed" in the main list's page bar (Enabled and Disabled by the tickboxes, Changed the mods the Changes list names), with the search and the categories; a mod ticked or edited under one keeps its row until a choice is pressed again, and each launch starts on All (branch `list-filters`)
+- [ ] affected mods listed on the warning banners' hover (branch `banner-hover`)

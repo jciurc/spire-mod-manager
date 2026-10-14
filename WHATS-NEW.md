@@ -2,6 +2,10 @@
 
 Short notes for Jordan: what to look for after each install. Newest first.
 
+## Waiting in pull requests
+
+- **Show filters** (branch `list-filters`): the bar above the list has "Show: All · Enabled · Disabled · Changed". Enabled and Disabled go by the tickboxes; Changed shows the mods the Changes list names. They work with the search (a row must match both, counted as "Search matches") and the categories (each counts its rows shown; one with none hides), and Enable all / Disable all act on what's shown. Untick a mod under Enabled: it stays put until you press a choice again (or reopen the page). A banner's Show, or a mod's name in the panel or in Changes, still brings up a mod the filter hides. Load Order and Vanilla List always show every mod; each launch starts on All.
+
 ## Installed 2026-10-14 (early morning): version 0.0.52
 
 - **Load Order polish:** hover or select the top row in Load Order: its highlight has its rounded top and the selected look's top edge again (the list keeps a few pixels above the first row and below the last, so the bottom row at the end of a long list is whole too). With the game in Chinese or Japanese, "Ctrl + Z" and "Ctrl + Y" under Undo and Redo stay apart, each under its own button (a little smaller where they must). Nothing to see in the last one: names with an alias, or cut with "…", are no longer fitted again on every redraw.
