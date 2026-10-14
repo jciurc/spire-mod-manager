@@ -1,3 +1,4 @@
+using Godot;
 using MegaCrit.Sts2.Core.Localization;
 using MegaCrit.Sts2.Core.Logging;
 using MegaCrit.Sts2.Core.Modding;
@@ -133,7 +134,7 @@ static class Profiles
         Store.Data.ActiveProfile = target.Name;
         Store.Save();
         Track(); // the list as it is now, against the profile (normally the same)
-        screen.OnModEnabledOrDisabled(); // pending-changes warning
+        Redraw(screen);
         Switched?.Invoke();
     }
 
@@ -167,7 +168,7 @@ static class Profiles
         Apply(profile.Mods, screen);
         (profile.Edited, profile.EditedAt) = (null, null);
         Store.Save();
-        screen.OnModEnabledOrDisabled();
+        Redraw(screen);
         Switched?.Invoke();
     }
 
@@ -309,6 +310,11 @@ static class Profiles
             if (row.Mod is { } mod)
                 row.GetNode<NTickbox>("Tickbox").IsTicked = !(settings?.IsModDisabled(mod) ?? false);
     }
+
+    // After a profile wrote the mod list: the list redrawn whole, as after undo (the rows the page bar's Show: choice
+    // shows, each category's count and Enable all / Disable all), and the pending-changes warning. The tickboxes set
+    // above fire no toggle, so the list would otherwise keep showing the old on/off.
+    static void Redraw(NModdingScreen screen) => CategoryList.Redraw(screen.GetNode<Control>("%ModsScrollContainer/Mask/Content"));
 
     public static void NotifySwitched() => Switched?.Invoke();
 

@@ -2571,9 +2571,10 @@ static class SelfTest
     // The page bar's Show: All, Enabled, Disabled, Changed (ListFilter). Each shows exactly its rows (by the tickboxes;
     // the mods Changes names), with a search too (both must match), and the bar counts them; each category counts its
     // rows shown and has no header when it shows none. Choosing is no undo step and not pending. A row ticked under a
-    // choice stays, counted, until a choice is pressed again; Enable all acts on the rows shown, which then go; going to
-    // a mod shows its row. Load Order and Vanilla List show every row; All shows every row again. (The page opening
-    // again: TestListFilterReopen, near the end, as it starts a new visit for undo.)
+    // choice stays, counted, until a choice is pressed again; Enable all acts on the rows shown, which then go, as do
+    // the mods a profile switched to turns off; going to a mod shows its row. Load Order and Vanilla List show every
+    // row; All shows every row again. (The page opening again: TestListFilterReopen, near the end, as it starts a new
+    // visit for undo.)
     static async Task TestListFilters(Node menu, NModdingScreen screen, Control content, string outDir)
     {
         if (Layout.Current != Layout.View.Categories)
@@ -2728,6 +2729,25 @@ static class SelfTest
         }
         else
             Results.Add("SKIP list filters, Enable all: no disabled mod");
+
+        // A profile switched to under Enabled: the mods it turns off go at once, as for Enable all (its tickboxes fire no
+        // toggle, so the switch redraws the list itself); switched back, they show again.
+        await Press("ShowEnabledButton");
+        if (Profiles.Active is { } start && Store.Data.Profiles.FirstOrDefault(p => p != start) is { } away)
+        {
+            var wereOn = Where(On);
+            Profiles.SwitchTo(away, screen);
+            await Wait(menu, 0.3);
+            var nowOn = Where(On);
+            Check($"Show: Enabled, switched to {away.Name}: the mods it turns off go at once, the bar and each category counting the rest",
+                nowOn.Count < wereOn.Count && Shown().SequenceEqual(nowOn) && Scope() == $"Enabled mods ({nowOn.Count})" && Headers(On) == "",
+                $"{wereOn.Count} on, then {nowOn.Count}; {Say()}; {Headers(On)}");
+            Profiles.SwitchTo(start, screen);
+            await Wait(menu, 0.3);
+            Check("... and switched back: they show again", Where(On).SequenceEqual(wereOn) && Shown().SequenceEqual(wereOn), Say());
+        }
+        else
+            Results.Add("SKIP list filters, profile: one profile only");
 
         // Changed: the mods the Changes list names (an edit made here to be sure of one; undone after).
         await Press("ShowAllButton");
