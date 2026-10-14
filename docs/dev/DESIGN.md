@@ -18,7 +18,9 @@ Living document: decisions and their background.
 - **Languages:** English only for v1, set up for drop-in community translations (`TRANSLATING.md`).
   Mod text must merge into the game's existing tables (`LocManager` only loads table names the game
   has; mods can't add new ones); keys are prefixed `SPIRE_MOD_MANAGER.`. Missing keys fall back to
-  `eng` per key, and `build.cs` rejects keys that aren't in `eng`.
+  `eng` per key, and `build.cs` rejects keys that aren't in `eng`. A player's drop-in file
+  (`mod_data/SpireModManager/translations/<lang>.json`) is merged over the packed table each time the game loads
+  a language (Jordan, 2026-10-14: AI translations hosted outside the repo, downloaded by the player).
 - Principles: flat, few files; fail soft (try/catch in every UI patch, `Priority.First` on shared
   `_Ready` postfixes); player text in loc tables; `affects_gameplay: false`.
 

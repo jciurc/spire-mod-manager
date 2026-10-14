@@ -5,6 +5,7 @@ Short notes for Jordan: what to look for after each install. Newest first.
 ## Waiting in pull requests
 
 - **Share and import a profile as CSV (share-csv):** open the profile list (or right-click the picker): Share profile and Import profile are at the end, under a divider. Share shows the active profile as CSV text in Better Mod Menu's columns (a row per mod in load order, its category as the group, no aliases or notes), with Copy (says "Copied"), Save CSV… (the system's save dialog) and Close. Import takes pasted text or Load CSV…, previews what it enables and disables compared with now and lists the mods you don't have (with their Workshop pages), then Create profile makes a new profile and switches to it. Ctrl+Z takes it away again. Better Mod Menu's own export imports too.
+- **Drop-in translations** (branch `drop-in-translations`): right-click the main menu button: a new item above the divider, "Open translations folder", opens `mod_data\SpireModManager\translations` (made if it isn't there). Drop `<code>.json` in it (say `deu.json`, a copy of `localization/eng/settings_ui.json` with some values changed), switch the game to that language in Settings, and those texts show; the rest stay English. A broken file changes nothing; `godot.log` says why.
 
 ## Installed 2026-10-14 (morning): version 0.0.54
 

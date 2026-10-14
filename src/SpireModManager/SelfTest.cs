@@ -70,6 +70,8 @@ static class SelfTest
             await TestMenuButtonMove(menu, outDir);
             TestBetterModMenuImport(outDir);
             await TestMenuButtonRelaunch(menu, outDir); // before the Modding page opens: the check's fixes without it
+            await TestTranslationsFolder(menu);
+            await TestTranslations(menu);
 
             var screen = menu.SubmenuStack.PushSubmenuType<NModdingScreen>();
             await Wait(menu, 2);
@@ -377,7 +379,7 @@ static class SelfTest
         CheckPatches();
         Check("row state: the game's selected and focused members found", RowState.Found);
         string[] spare = [nameof(RowLookPatch), nameof(ShortcutsPatch), nameof(NewModPatch), nameof(ModInfoClearPatch),
-            nameof(NewModPopupPatch), nameof(NewModTogglePatch), nameof(TickKeepPatch)];
+            nameof(NewModPopupPatch), nameof(NewModTogglePatch), nameof(TickKeepPatch), nameof(TranslationsPatch)];
         Check("our page with no patch failed, or only ones it can do without", ModEntry.PageWorks([]) && ModEntry.PageWorks(spare));
         Check("the game's page if any one patch our page needs failed", ModEntry.PageNeeds.Contains(nameof(ModdingScreenPatch))
             && ModEntry.PageNeeds.All(needed => !ModEntry.PageWorks([needed]) && !ModEntry.PageWorks([.. spare, needed])),
@@ -850,34 +852,41 @@ static class SelfTest
         Hover.TestMouse = null;
     }
 
-    // The main menu button's right-click menu: Move button, Reset position, a divider, Relaunch game. Relaunch game
-    // checks for mods that won't load first, as the Modding page's button does (fixture: Test Addon needs SmmTestMissing,
-    // never installed): its dialog shows over the main menu, and its fixes work there before the page has been opened.
-    // ModEntry.TestRelaunch counts each relaunch instead of quitting the test.
-    static async Task TestMenuButtonRelaunch(NMainMenu menu, string outDir)
+    // The main menu button's right-click menu, open (null if it didn't open).
+    static async Task<Node?> ButtonMenu(NMainMenu menu, Control button)
     {
-        if (menu.GetNodeOrNull<Control>("SpireModManagerMenuButton") is not { } button)
-            return;
         var at = button.GetGlobalRect().GetCenter();
         Hover.TestMouse = () => at;
         button.EmitSignal(Control.SignalName.GuiInput, new InputEventMouseButton { ButtonIndex = MouseButton.Right, Pressed = false, Position = at, GlobalPosition = at });
         await Wait(menu, 0.3);
         Hover.TestMouse = null;
-        var popup = MenuPanel.Current;
+        return MenuPanel.Current;
+    }
+
+    // The main menu button's right-click menu: Move button, Reset position, Open translations folder, a divider, Relaunch
+    // game (last and on its own). Relaunch game checks for mods that won't load first, as the Modding page's button does (fixture: Test Addon
+    // needs SmmTestMissing, never installed): its dialog shows over the main menu, and its fixes work there before the
+    // page has been opened. ModEntry.TestRelaunch counts each relaunch instead of quitting the test.
+    static async Task TestMenuButtonRelaunch(NMainMenu menu, string outDir)
+    {
+        if (menu.GetNodeOrNull<Control>("SpireModManagerMenuButton") is not { } button)
+            return;
+        var popup = await ButtonMenu(menu, button);
         var labels = popup == null ? [] : MenuPanel.Labels(popup);
-        Check("main menu button's menu: Move button, Reset position, Relaunch game", labels.SequenceEqual(["Move button", "Reset position", "Relaunch game"]),
-            string.Join(", ", labels));
+        Check("main menu button's menu: Move button, Reset position, Open translations folder, Relaunch game",
+            labels.SequenceEqual(["Move button", "Reset position", "Open translations folder", "Relaunch game"]), string.Join(", ", labels));
         if (popup == null)
             return;
-        // The divider: the one entry between Reset position and Relaunch game, a line under the first and above the second.
+        // The divider: the one entry between Open translations folder and Relaunch game, a line under the first and above
+        // the second.
         string? Label(Node item) => item.IsInGroup(MenuPanel.ItemGroup) ? (string)item.GetMeta("label") : null;
         var items = popup.FindChild("Items", true, false)?.GetChildren().OfType<Control>().ToList() ?? [];
-        var reset = items.FindIndex(i => Label(i) == "Reset position");
-        var divider = reset >= 0 && reset + 2 < items.Count && Label(items[reset + 2]) == "Relaunch game" ? items[reset + 1] : null;
-        Check("a divider right under Reset position, above Relaunch game", divider != null && Label(divider) == null
+        var above = items.FindIndex(i => Label(i) == "Open translations folder");
+        var divider = above >= 0 && above + 2 < items.Count && Label(items[above + 2]) == "Relaunch game" ? items[above + 1] : null;
+        Check("a divider right under Open translations folder, above Relaunch game", divider != null && Label(divider) == null
             && divider.FindChildren("*", "ColorRect", true, false).Count == 1
-            && divider.GetGlobalRect().Position.Y >= items[reset].GetGlobalRect().End.Y
-            && divider.GetGlobalRect().End.Y <= items[reset + 2].GetGlobalRect().Position.Y,
+            && divider.GetGlobalRect().Position.Y >= items[above].GetGlobalRect().End.Y
+            && divider.GetGlobalRect().End.Y <= items[above + 2].GetGlobalRect().Position.Y,
             string.Join(" | ", items.Select(i => $"{Label(i) ?? "(line)"} {i.GetGlobalRect()}")));
         await Capture(menu, outDir, "1c-menu-button-menu");
 
@@ -929,6 +938,146 @@ static class SelfTest
         {
             ModEntry.TestRelaunch = null;
             RelaunchCheck.Close();
+        }
+    }
+
+    // The main menu button's Open translations folder: the folder, in our data folder beside manager.json, is made if it
+    // isn't there (a fresh sandbox has none; an empty one is removed first) and handed to the system's file browser (to Translations.TestOpen here, so
+    // no window opens).
+    static async Task TestTranslationsFolder(NMainMenu menu)
+    {
+        if (menu.GetNodeOrNull<Control>("SpireModManagerMenuButton") is not { } button)
+            return;
+        var folder = Translations.Folder;
+        if (Directory.Exists(folder) && !Directory.EnumerateFileSystemEntries(folder).Any())
+            Directory.Delete(folder); // an empty one left over: gone, so the press has to make it
+        var before = Directory.Exists(folder);
+        string? opened = null;
+        Translations.TestOpen = path => opened = path;
+        try
+        {
+            if (await ButtonMenu(menu, button) is { } popup)
+                MenuPanel.Press(popup, "Open translations folder");
+            await Wait(menu, 0.2);
+            Check("Open translations folder: made in the data folder and opened, the menu closed", !before && opened == folder && Directory.Exists(folder)
+                && folder.Replace('\\', '/').EndsWith($"/mod_data/{ModEntry.ModId}/translations") && !MenuPanel.IsOpen,
+                $"opened {opened ?? "nothing"}; {folder} there before: {before}");
+        }
+        finally
+        {
+            Translations.TestOpen = null;
+            MenuPanel.Close();
+        }
+    }
+
+    // Drop-in translations (Translations) in German, which has no packed translation, so our text is all English there
+    // until now: a file in the translations folder, read as the game switches language (its own switch, as in its
+    // settings, without the menu rebuild). Its text shows, in the game's table and on the main menu button's menu, and its
+    // {count} takes German numbers; a key it leaves out, an empty text, a number, a broken placeholder and one English
+    // doesn't fill in (renamed or added) show in English, and a key English doesn't have is left out.
+    // Back in English, English. A file that isn't JSON, isn't an object or is over 1 MB changes nothing and throws
+    // nothing. One saved as deu.json.txt (a browser's "Save as", the .txt hidden) is read. The file is removed and the
+    // language set back afterwards.
+    static async Task TestTranslations(NMainMenu menu)
+    {
+        var start = LocManager.Instance.Language;
+        if (start != "eng" || Godot.FileAccess.FileExists($"res://{ModEntry.ModId}/localization/deu/settings_ui.json"))
+        {
+            Results.Add($"SKIP drop-in translations: the game is in {start}, or German is packed");
+            return;
+        }
+        const string Translated = "SPIRE_MOD_MANAGER.RELAUNCH_GAME", LeftOut = "SPIRE_MOD_MANAGER.RESET_POSITION",
+            Broken = "SPIRE_MOD_MANAGER.MOVE_BUTTON", Empty = "SPIRE_MOD_MANAGER.MOVE_HINT";
+        const string NotOurs = Translated + "X"; // a key mistyped
+        const string Renamed = "SPIRE_MOD_MANAGER.PAGE_DISABLED", Added = "SPIRE_MOD_MANAGER.OPEN_TRANSLATIONS";
+        const string Counted = "SPIRE_MOD_MANAGER.PAGE_ALL", NotText = "SPIRE_MOD_MANAGER.RELAUNCH_NOTE";
+        const string German = "Spiel neu starten (Änderungen, 模组)"; // not ASCII: read as UTF-8, with a byte order mark
+        string[] keys = [Translated, LeftOut, Broken, Empty];
+        static string Read(string key)
+        {
+            try
+            {
+                return Menus.Text(key);
+            }
+            catch (Exception e)
+            {
+                return e.Message;
+            }
+        }
+        var english = keys.ToDictionary(k => k, Read);
+        string Shown() => string.Join(" | ", keys.Select(Read));
+        bool AllEnglish() => keys.All(k => Read(k) == english[k]);
+        var file = Path.Combine(Translations.Folder, "deu.json");
+        // The file written, then the game switched to German. The exception's message if the switch threw.
+        string? Switch(string text)
+        {
+            File.WriteAllText(file, text, new UTF8Encoding(true));
+            try
+            {
+                LocManager.Instance.SetLanguage("deu");
+                return null;
+            }
+            catch (Exception e)
+            {
+                return e.Message;
+            }
+        }
+        try
+        {
+            Directory.CreateDirectory(Translations.Folder);
+            var threw = Switch($$"""
+                {
+                  // a comment and a trailing comma, as a hand-edited file may have
+                  "{{Translated}}": "{{German}}",
+                  "{{Counted}}": "Installierte Mods ({count})",
+                  "{{Broken}}": "Knopf {verschieben",
+                  "{{Empty}}": " ",
+                  "{{Renamed}}": "Deaktivierte Mods ({anzahl})",
+                  "{{Added}}": "Ordner {ordner}",
+                  "{{NotText}}": 5,
+                  "{{NotOurs}}": "Nicht unser Text",
+                }
+                """);
+            Check("a drop-in translation: its text shows in its language", threw == null && Read(Translated) == German, threw ?? Shown());
+            var counted = Menus.Format(Counted, ("count", Menus.Number(1234)));
+            Check("a drop-in translation: its {count} filled in, in German numbers", counted == "Installierte Mods (1.234)", counted);
+            Check("a drop-in translation: a key it leaves out, an empty text and a broken placeholder show in English",
+                Read(LeftOut) == english[LeftOut] && Read(Empty) == english[Empty] && Read(Broken) == english[Broken], Shown());
+            var table = LocManager.Instance.GetTable("settings_ui");
+            Check("a drop-in translation: a renamed placeholder, an added one and a number show in English",
+                !table.IsLocalKey(Renamed) && !table.IsLocalKey(Added) && !table.IsLocalKey(NotText),
+                $"{table.GetRawText(Renamed)} | {table.GetRawText(Added)} | {table.GetRawText(NotText)}");
+            Check("a drop-in translation: a key English doesn't have is left out", !table.HasEntry(NotOurs));
+            var popup = menu.GetNodeOrNull<Control>("SpireModManagerMenuButton") is { } button ? await ButtonMenu(menu, button) : null;
+            var labels = popup == null ? [] : MenuPanel.Labels(popup);
+            MenuPanel.Close();
+            Check("a drop-in translation on screen: the main menu button's menu has it", labels.Contains(German),
+                string.Join(", ", labels));
+            LocManager.Instance.SetLanguage(start);
+            Check("a drop-in translation: back in English, English", AllEnglish(), Shown());
+
+            foreach (var (what, text) in new[]
+            {
+                ("not JSON", $"{{ \"{Translated}\": \"Spiel neu starten\""),
+                ("not an object", "[\"Spiel neu starten\"]"),
+                ("over 1 MB", $"{{ \"{Translated}\": \"Spiel neu starten\", \"{NotOurs}\": \"{new string('x', 1_100_000)}\" }}"),
+            })
+            {
+                threw = Switch(text);
+                Check($"a drop-in file {what}: changes nothing, throws nothing", threw == null && LocManager.Instance.Language == "deu" && AllEnglish(),
+                    threw ?? Shown());
+            }
+
+            File.Delete(file);
+            File.WriteAllText(file + ".txt", $"{{ \"{Translated}\": \"Spiel neu starten\" }}");
+            LocManager.Instance.SetLanguage("deu");
+            Check("a drop-in file saved as deu.json.txt: read all the same", Read(Translated) == "Spiel neu starten", Shown());
+        }
+        finally
+        {
+            File.Delete(file);
+            File.Delete(file + ".txt");
+            LocManager.Instance.SetLanguage(start);
         }
     }
 
