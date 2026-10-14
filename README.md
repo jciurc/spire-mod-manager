@@ -127,7 +127,8 @@ The watchdog (`.github/workflows/watchdog.yml`, `tools/watchdog.cs`) guards the 
 Every 30 minutes it counts the pull requests, issues and comments that outside accounts made in the last hour.
 Over 5 opened or 30 comments, it locks those conversations to collaborators and opens a `watchdog` issue
 listing the stronger switches, such as limiting the whole repo to collaborators for a day. It runs only while
-the repository variable `WATCHDOG` is `on`; Actions > Watchdog > Run workflow does a dry run any time.
+the repository variable `WATCHDOG` is `on`. Actions > Watchdog > Run workflow runs it by hand at any time: a
+dry run by default, but with "dry-run" unticked it locks and reports for real.
 
 ## License
 

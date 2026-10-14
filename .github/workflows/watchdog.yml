@@ -1,8 +1,8 @@
 # Watchdog: every 30 minutes, tools/watchdog.cs counts what outside accounts opened and commented in the last
 # hour. On a flood it locks the conversations they touched and opens a "watchdog" issue (see the script).
 # Off until the repository variable WATCHDOG is "on": set it when the repository goes public (while private,
-# outsiders can't reach it and each run would cost Actions minutes). Run it by hand from the Actions tab for
-# a dry run at any time.
+# outsiders can't reach it and each run would cost Actions minutes). Run it by hand from the Actions tab at
+# any time: a dry run by default; unticking dry-run lets that run lock and report for real.
 name: Watchdog
 
 on:
