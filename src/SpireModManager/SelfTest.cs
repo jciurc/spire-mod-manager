@@ -102,8 +102,9 @@ static class SelfTest
                 Results.Add($"INFO switched to {other.Name}: {ModListState().Count(s => s.EndsWith("=on"))} on");
                 Check("switching to the other profile changes the mod list", !ModListState().SequenceEqual(before)); // or the round trip proves nothing
                 // The main menu button, under the page, has followed already: it's what shows once the page closes.
-                Check("the main menu button follows a profile switch: the other profile and its count", MenuButtonText(menu) == MenuButtonExpected()
-                    && MenuButtonText(menu)?.Contains(other.Name) == true, $"{MenuButtonText(menu)} vs {MenuButtonExpected()}");
+                Check("the main menu button follows a profile switch: the other profile and its count, as wide as its words",
+                    MenuButtonText(menu) == MenuButtonExpected() && MenuButtonText(menu)?.Contains(other.Name) == true && MenuButtonMisfit(menu) == null,
+                    $"{MenuButtonText(menu)} vs {MenuButtonExpected()}; {MenuButtonMisfit(menu)}");
                 Check("our own mod stays on", !(SaveManager.Instance.SettingsSave.ModSettings?.ModList
                     .Any(m => m.Id == ModEntry.ModId && !m.IsEnabled) ?? false));
                 await Capture(screen, outDir, "3-other-profile");
@@ -112,8 +113,9 @@ static class SelfTest
                 var after = ModListState();
                 Check("profile round trip restores the mod list", before.SequenceEqual(after),
                     string.Join(", ", before.Except(after)));
-                Check("the main menu button follows the switch back", MenuButtonText(menu) == MenuButtonExpected()
-                    && MenuButtonText(menu)?.Contains(start.Name) == true, $"{MenuButtonText(menu)} vs {MenuButtonExpected()}");
+                Check("the main menu button follows the switch back, as wide as its words", MenuButtonText(menu) == MenuButtonExpected()
+                    && MenuButtonText(menu)?.Contains(start.Name) == true && MenuButtonMisfit(menu) == null,
+                    $"{MenuButtonText(menu)} vs {MenuButtonExpected()}; {MenuButtonMisfit(menu)}");
             }
             else
                 Results.Add("SKIP profile round trip: only one profile");
@@ -778,6 +780,21 @@ static class SelfTest
 
     static string MenuButtonExpected() => $"Mod Profile: {Profiles.Active?.Name} ({Profiles.CountText()})";
 
+    // Null if the main menu button fits its words as they are now (measured afresh): its label's box that wide and
+    // centred in it, grown on hover from its middle, the button that and its margins, whole on screen. Shown or hidden
+    // (under a page): it follows at once either way. Otherwise what's wrong.
+    static string? MenuButtonMisfit(NMainMenu menu)
+    {
+        if (menu.GetNodeOrNull<Control>("SpireModManagerMenuButton") is not { } button || button.GetNodeOrNull<Label>("Label") is not { } label)
+            return "no button";
+        var words = label.GetCombinedMinimumSize().X;
+        var (box, inner) = (button.GetGlobalRect(), label.GetGlobalRect());
+        return Math.Abs(label.Size.X - words) < 1 && Math.Abs(label.PivotOffset.X - words / 2) < 1
+            && Math.Abs(box.Size.X - (words + 2 * MenuButton.Margin)) < 1 && Math.Abs(inner.GetCenter().X - box.GetCenter().X) < 1
+            && box.Encloses(inner) && button.GetViewportRect().Encloses(box)
+            ? null : $"words {words}, label {inner} (pivot {label.PivotOffset}), button {box}";
+    }
+
     // The main menu button is the game's own text button, a copy of its Settings button: the same class, font, size and
     // outline (no picture), with the game's notification dot on its label. It reads the active profile and the profile
     // bar's count, as wide as its words, whole on screen. A long name is cut with "…", one mod reads "1 mod", and a
@@ -798,8 +815,7 @@ static class SelfTest
         Check("main menu button reads the active profile and the profile bar's count", MenuButtonText(menu) == MenuButtonExpected(),
             $"{MenuButtonText(menu)} vs {MenuButtonExpected()}");
         var screen = button.GetViewportRect();
-        Check("main menu button: as wide as its words, whole on screen", label != null && button.GetGlobalRect().Encloses(label.GetGlobalRect())
-            && screen.Encloses(button.GetGlobalRect()), $"{label?.GetGlobalRect()} in {button.GetGlobalRect()}");
+        Check("main menu button: as wide as its words, whole on screen", MenuButtonMisfit(menu) == null, MenuButtonMisfit(menu) ?? "");
         Check("main menu button: the game's notification dot on its label, shown only with a relaunch pending",
             button.FindChild("Dot", true, false) is Control dot && dot.GetParent() == label && dot.Visible == ModEntry.HasPendingChanges()
             && dot.FindChildren("*", "TextureRect", true, false).Count == 1);
@@ -1007,8 +1023,9 @@ static class SelfTest
             Check("from the main menu, Disable mods that can't load: off, the profile and the dot follow, then a plain Relaunch",
                 !Dependencies.IsOn(addon) && Profiles.Edited && dot.Visible == ModEntry.HasPendingChanges()
                 && Dialog()?.FindChild("RelaunchNowButton", true, false) is Button { Text: "Relaunch Game" }, Body());
-            Check("the main menu button's count follows a change made on the main menu", MenuButtonText(menu) == MenuButtonExpected()
-                && MenuButtonText(menu) != text, $"{text} -> {MenuButtonText(menu)} vs {MenuButtonExpected()}");
+            Check("the main menu button's count follows a change made on the main menu, as wide as its words", MenuButtonText(menu) == MenuButtonExpected()
+                && MenuButtonText(menu) != text && MenuButtonMisfit(menu) == null,
+                $"{text} -> {MenuButtonText(menu)} vs {MenuButtonExpected()}; {MenuButtonMisfit(menu)}");
             Press("RelaunchNowButton");
             await Wait(menu, 0.2);
             Check("its Relaunch reaches the relaunch", relaunches == 1, $"{relaunches} relaunches");
@@ -1144,11 +1161,12 @@ static class SelfTest
             // The button itself follows the language as it changes, its count in German numbers.
             var on = Profiles.OnCount();
             var german = on == 1 ? $"Mod-Profil: {Profiles.Active?.Name} (1 Mod)" : $"Mod-Profil: {Profiles.Active?.Name} ({Menus.Number(on)} Mods)";
-            Check("a drop-in translation on screen: the main menu button reads it", MenuButtonText(menu) == german, $"{MenuButtonText(menu)} vs {german}");
+            Check("a drop-in translation on screen: the main menu button reads it, as wide as its words", MenuButtonText(menu) == german
+                && MenuButtonMisfit(menu) == null, $"{MenuButtonText(menu)} vs {german}; {MenuButtonMisfit(menu)}");
             LocManager.Instance.SetLanguage(start);
             await Wait(menu, 0.1);
-            Check("a drop-in translation: back in English, English", AllEnglish() && MenuButtonText(menu) == MenuButtonExpected(),
-                $"{Shown()} | {MenuButtonText(menu)}");
+            Check("a drop-in translation: back in English, English", AllEnglish() && MenuButtonText(menu) == MenuButtonExpected()
+                && MenuButtonMisfit(menu) == null, $"{Shown()} | {MenuButtonText(menu)}; {MenuButtonMisfit(menu)}");
 
             foreach (var (what, text) in new[]
             {

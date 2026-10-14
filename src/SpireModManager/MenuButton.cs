@@ -21,8 +21,8 @@ static class MenuButton
     // A long profile name is cut to this width with "…" (at the button's font size).
     const float NameWidth = 360;
     // Room either side of the text, inside the button (the game's are wider than their words too); the hover carets
-    // sit in it, so in the corner they stay on screen.
-    const float Margin = 40;
+    // sit in it, so in the corner they stay on screen. Public for the self-test.
+    public const float Margin = 40;
     // If the game's button is gone: one of ours (AddTextButton), this size.
     static readonly Vector2 FallbackSize = new(460, 70);
 
@@ -67,9 +67,13 @@ static class MenuButton
             {
                 label.RefreshFont(); // the language's own font, as the game's buttons take theirs
                 label.Text = Text(label.GetThemeFont("font"), label.GetThemeFontSize("font_size"));
-                (label.OffsetLeft, label.OffsetRight) = (0, 0); // it grows both ways from the middle to fit
-                label.PivotOffset = label.Size / 2; // hover grows it from the middle
-                button.CustomMinimumSize = new Vector2(label.Size.X + 2 * Margin, height);
+                // Measured now, not from label.Size: Godot resizes a label for new text a frame later, and not at all
+                // while it's hidden (on a page over the menu). Its box is set to that width, centred, so its size
+                // follows at once.
+                var words = label.GetCombinedMinimumSize();
+                (label.OffsetLeft, label.OffsetRight) = (-words.X / 2, words.X / 2);
+                label.PivotOffset = new Vector2(words.X, Math.Max(label.Size.Y, words.Y)) / 2; // hover grows it from the middle
+                button.CustomMinimumSize = new Vector2(words.X + 2 * Margin, height);
             }
             var size = button.CustomMinimumSize;
             (note.Position, note.Size) = (new Vector2(size.X + 10, 0), new Vector2(260, size.Y));
