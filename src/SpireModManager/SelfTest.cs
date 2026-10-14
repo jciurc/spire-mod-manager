@@ -2087,6 +2087,10 @@ static class SelfTest
             (screen.FindChild("OrderProblems", true, false) as Label)?.Text ?? "");
         Check("the order warning's corners are rounded like the rows", screen.FindChild(LoadOrder.WarningName, true, false) is PanelContainer warningBar
             && warningBar.GetThemeStylebox("panel") is StyleBoxFlat { CornerRadiusTopLeft: RowTitles.CornerRadius });
+        Check("the order warning is red", Red(BannerFill(screen.FindChild(LoadOrder.WarningName, true, false))),
+            $"fill {BannerFill(screen.FindChild(LoadOrder.WarningName, true, false))}");
+        var fixAfter = ButtonsAfterText(screen.FindChild(LoadOrder.WarningName, true, false));
+        Check("Load Order: the order warning's Fix now right after its text", fixAfter.Ok, fixAfter.Detail);
         Check("Auto sort has its hint", screen.FindChild("AutoSortHint", true, false) is Label { Visible: true } hintLabel && hintLabel.Text.Contains("compatibility"));
         Check("order warning and Auto sort stay above the list, outside its scrolling",
             screen.FindChild("OrderProblems", true, false) is Node warning && !content.IsAncestorOf(warning)
@@ -2198,6 +2202,14 @@ static class SelfTest
         await Wait(menu, 0.3);
         var text = (screen.FindChild("OrderProblems", true, false) as Label)?.Text ?? "";
         Check("main list: a needed mod that is off gets a banner", text.Contains("need a mod that is disabled"), text);
+        var warning = screen.FindChild(LoadOrder.WarningName, true, false);
+        var showTip = (warning?.FindChild("ShowProblemButton", true, false) as Control)?.TooltipText;
+        Check("main list banner: red, its Show tip \"Opens the next affected mod\", no \"Better Mod Menu\" in it",
+            Red(BannerFill(warning)) && showTip == "Opens the next affected mod" && !BannerWords(warning).Any(w => w.Contains("Better Mod Menu")),
+            $"fill {BannerFill(warning)}; {string.Join(" | ", BannerWords(warning))}");
+        var after = ButtonsAfterText(warning);
+        Check("main list banner: Show and Enable needed mods right after its text", after.Ok
+            && warning?.FindChild("EnableNeededButton", true, false) is Control { Visible: true }, after.Detail);
         await Capture(screen, outDir, "2b-list-banner");
         screen.FindChild("EnableNeededButton", true, false)?.EmitSignal(BaseButton.SignalName.Pressed);
         await Wait(menu, 0.3);
@@ -2226,7 +2238,7 @@ static class SelfTest
         Check("fixed: the '!' goes", screen.GetNodeOrNull<Control>("SpireModManagerLoadOrderToggle/WarningBadge") is not { Visible: true });
     }
 
-    // Better Mod Menu ticked as well as ours: a red banner on our views, in the problem banners' place, with a Show that
+    // Better Mod Menu ticked as well as ours: a yellow banner on our views, above the problem banners, with a Show that
     // goes to its row and a Dismiss that hides it until the two aren't both ticked. It comes and goes with its tickbox at
     // once (no relaunch). The fixture has it installed but off; with --bmm it's on and loaded, so the banner is there from
     // the start. It ends as it started.
@@ -2265,7 +2277,30 @@ static class SelfTest
         var text = (Banner()?.FindChild("ManagersWarning", true, false) as Label)?.Text ?? "";
         Check("Better Mod Menu ticked: the managers banner at once, under the search box, above the list", Bmm.Ticked && Placed()
             && text == "Multiple mod managers are currently enabled, which may cause unexpected behavior.", $"\"{text}\"; {Where()}");
+        Check("the managers banner is yellow: a warning, not an error", Yellow(BannerFill(Banner())), $"fill {BannerFill(Banner())}");
+        var showTip = (Banner()?.FindChild("ShowManagersButton", true, false) as Control)?.TooltipText;
+        Check("the managers banner's Show tip is the other banner's: \"Opens the next affected mod\"", showTip == "Opens the next affected mod", showTip ?? "no Show");
+        Check("the managers banner names no manager: no \"Better Mod Menu\" in its text or tips",
+            BannerWords(Banner()) is { Count: > 0 } words && !words.Any(w => w.Contains("Better Mod Menu")), string.Join(" | ", BannerWords(Banner())));
+        var after = ButtonsAfterText(Banner());
+        Check("main list: the managers banner's Show and Dismiss right after its text", after.Ok, after.Detail);
         await Capture(screen, outDir, "2e-managers-banner");
+
+        // A narrow list: the text wraps in what the buttons leave, they follow it, the banner no wider than the list (a
+        // line too full widens it past the list's edge instead), and it grows to fit with the list still below it. Then
+        // back to its width: one line, the usual height.
+        const float narrower = 450;
+        var wording = Banner()?.FindChild("ManagersWarning", true, false) as Label;
+        border.OffsetRight -= narrower;
+        await Wait(menu, 0.3);
+        after = ButtonsAfterText(Banner());
+        Check("a narrow list: the managers text wraps, Show and Dismiss right after it inside the list's width, the banner taller, the list below it",
+            wording?.GetLineCount() > 1 && after.Ok && Banner()?.Size.Y > 40 && Placed(), $"{wording?.GetLineCount()} lines; {after.Detail}; {Where()}");
+        await Capture(screen, outDir, "2e-managers-banner-narrow");
+        border.OffsetRight += narrower;
+        await Wait(menu, 0.3);
+        Check("back to its width: the managers text on one line, the banner its usual height", wording?.GetLineCount() == 1 && Banner()?.Size.Y < 35 && Placed(),
+            $"{wording?.GetLineCount()} lines; {Where()}");
 
         // With the page's own warning too (a needed mod turned off): this one first, that one under it.
         if (Row("SmmTestLib")?.GetNode<NTickbox>("Tickbox") is { } lib)
@@ -2273,6 +2308,9 @@ static class SelfTest
             await Tick(lib, false);
             Check("with the page's own warning: the managers banner above it, both above the list",
                 border.GetNodeOrNull<Control>(LoadOrder.WarningName) is { Visible: true } warning && Placed(warning), Where());
+            Check("beside it, the page's own warning stays red, the managers banner yellow",
+                Red(BannerFill(border.GetNodeOrNull(LoadOrder.WarningName))) && Yellow(BannerFill(Banner())),
+                $"warning {BannerFill(border.GetNodeOrNull(LoadOrder.WarningName))}, managers {BannerFill(Banner())}");
             await Capture(screen, outDir, "2f-both-banners");
             await Tick(lib, true);
         }
@@ -2335,6 +2373,8 @@ static class SelfTest
         Click(screen.GetNode<NButton>("SpireModManagerLoadOrderToggle"));
         await Wait(menu, 0.5);
         Check("Load Order: the managers banner too, under the search box", Placed(), Where());
+        after = ButtonsAfterText(Banner());
+        Check("Load Order: the managers banner's Show and Dismiss right after its text", after.Ok, after.Detail);
         await ShowThroughSearch("Load Order");
         Click(screen.GetNode<NButton>("SpireModManagerLoadOrderToggle"));
         await Wait(menu, 0.5);
@@ -3572,6 +3612,36 @@ static class SelfTest
         return (store["profiles"] as JsonArray ?? []).Any(p => (string?)p?["name"] == active
             && (p?["mods"] as JsonArray ?? []).Any(m => (string?)m?["id"] == id && (bool?)m?["enabled"] == true));
     }
+
+    // A banner's fill (LoadOrder.Banner's rounded box): yellow for a warning, red for a problem with the mods, by hue too.
+    static Color? BannerFill(Node? banner) => (banner as Control)?.GetThemeStylebox("panel") is StyleBoxFlat look ? look.BgColor : null;
+    static bool Yellow(Color? fill) => fill == LoadOrder.WarningColor && fill?.H is > 0.1f and < 0.18f;
+    static bool Red(Color? fill) => fill == LoadOrder.ProblemColor && fill?.H is < 0.03f or > 0.97f;
+
+    // A banner's buttons: the first right after the words of its text (a small gap), the rest each after the one before,
+    // so none out at the line's right end. The words end one line's width in, or at the text's box if it wraps. And the
+    // banner no wider than the list: a line too full for it doesn't squeeze its buttons (Godot never sizes a box below
+    // what its insides ask for) but widens the banner past the list's right edge, buttons and all.
+    static (bool Ok, string Detail) ButtonsAfterText(Node? banner)
+    {
+        if (banner is not Control bar || bar.FindChildren("*", "", true, false).OfType<Label>().FirstOrDefault() is not { } text)
+            return (false, "no banner");
+        if (bar.GetParent()?.GetNodeOrNull<Control>("ModsScrollContainer") is not { } list)
+            return (false, "no list beside the banner");
+        var buttons = bar.FindChildren("*", "", true, false).OfType<Button>().Where(b => b.Visible).Select(b => b.GetGlobalRect()).ToList();
+        var (box, at, listEnd) = (text.GetGlobalRect(), bar.GetGlobalRect(), list.GetGlobalRect().End.X);
+        var wordsEnd = Math.Min(box.End.X, box.Position.X + text.GetThemeStylebox("normal").GetMargin(Side.Left)
+            + text.GetThemeFont("font").GetStringSize(text.Text, fontSize: text.GetThemeFontSize("font_size")).X);
+        var ok = buttons.Count > 0 && buttons[0].Position.X >= box.End.X && buttons[0].Position.X - wordsEnd is >= 0 and <= 12
+            && buttons.Zip(buttons.Skip(1)).All(p => p.Second.Position.X >= p.First.End.X)
+            && at.End.X <= listEnd + 0.5f;
+        return (ok, $"words end at {wordsEnd:0} (text box to {box.End.X:0}), buttons {string.Join(", ", buttons.Select(b => $"{b.Position.X:0}-{b.End.X:0}"))}, "
+            + $"banner to {at.End.X:0}, list to {listEnd:0}");
+    }
+
+    // Everything a banner says: its text, its buttons' words and their tips.
+    static List<string> BannerWords(Node? banner) => banner?.FindChildren("*", "", true, false)
+        .SelectMany(n => n switch { Label label => [label.Text], Button button => new[] { button.Text, button.TooltipText }, _ => [] }).ToList() ?? [];
 
     static void Check(string name, bool ok, string detail = "") =>
         Results.Add($"{(ok ? "PASS" : "FAIL")} {name}{(ok || detail.Length == 0 ? "" : $": {detail}")}");

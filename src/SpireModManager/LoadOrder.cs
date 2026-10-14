@@ -26,6 +26,9 @@ static class LoadOrder
     static readonly Color Gold = new(0.937f, 0.784f, 0.318f);
     static readonly Color Blocked = new(0.9f, 0.25f, 0.25f);
     static readonly Color LinkFine = new(0.62f, 0.86f, 0.62f);
+    // The banners' fills: a deep red for a problem with the mods, a deep amber (the game's gold, darkened) for a warning.
+    // Dark enough for the cream text to read on both (about 4.8:1 for the amber over the page).
+    public static readonly Color ProblemColor = new(0.45f, 0.1f, 0.1f, 0.6f), WarningColor = new(0.6f, 0.44f, 0.06f, 0.9f);
     const float DragStart = 6; // px the mouse moves with the button down before a press becomes a drag
     const float EdgeScroll = 60, EdgeScrollSpeed = 700; // drag near an edge: px from it, px per second at the edge
     static List<string>? _loadedOrder;
@@ -191,7 +194,7 @@ static class LoadOrder
     // fixing makes the saved order say what will happen). On the main list: enabled mods that need a mod
     // that is off or missing, with a way to each and a fix for the off ones. Elsewhere, a "!" on the Load
     // Order button says that page has a warning. Above that one on both, while Better Mod Menu is ticked too: a
-    // banner saying two mod managers are on, with a way to its row and a way to dismiss it.
+    // yellow banner saying two mod managers are on, with a way to its row and a way to dismiss it.
     public const string WarningName = "SpireModManagerOrderWarning", ManagersName = "SpireModManagerManagersWarning", AutoSortName = "AutoSortButton";
     public const string AutoSortHintName = "AutoSortHint";
     const string BadgeName = "WarningBadge";
@@ -305,8 +308,8 @@ static class LoadOrder
         Banner(border, search, text, buttons);
     }
 
-    // Better Mod Menu ticked as well as us: the same kind of banner and Show, which goes to its row, then Dismiss for
-    // a player happy to run both.
+    // Better Mod Menu ticked as well as us: the same kind of banner in yellow (a warning: both can run), and Show, which
+    // goes to its row, then Dismiss for a player happy to run both.
     static void ManagersBanner(Control content, Control border, Control? search, Action redraw)
     {
         var show = Menus.SmallButton(Menus.Text("SPIRE_MOD_MANAGER.SHOW_PROBLEM"), () =>
@@ -314,7 +317,7 @@ static class LoadOrder
             if (Dependencies.Find(Bmm.ModId) is { } mod)
                 GoTo(content, mod);
         }, name: "ShowManagersButton");
-        show.TooltipText = Menus.Text("SPIRE_MOD_MANAGER.SHOW_MANAGERS_TIP");
+        show.TooltipText = Menus.Text("SPIRE_MOD_MANAGER.SHOW_PROBLEM_TIP"); // the same words as the other banner's: no manager named
         var dismiss = Menus.SmallButton(Menus.Text("SPIRE_MOD_MANAGER.DISMISS_MANAGERS"), () =>
         {
             Store.Data.ManagersWarningDismissed = true;
@@ -322,7 +325,7 @@ static class LoadOrder
             redraw();
         }, name: "DismissManagersButton");
         dismiss.TooltipText = Menus.Text("SPIRE_MOD_MANAGER.DISMISS_MANAGERS_TIP");
-        Banner(border, search, Menus.Text("SPIRE_MOD_MANAGER.MANAGERS_WARNING"), [show, dismiss], ManagersName, "ManagersWarning");
+        Banner(border, search, Menus.Text("SPIRE_MOD_MANAGER.MANAGERS_WARNING"), [show, dismiss], ManagersName, "ManagersWarning", WarningColor);
     }
 
     // A banner's Show: the mod's row scrolled into view (its category opened) with a short glow, and the mod in the
@@ -338,24 +341,26 @@ static class LoadOrder
         CategoryList.Select(content, row);
     }
 
-    // A red line under the search box: text, then buttons on the right. name and textName: the line's and its text's
-    // node names (the page's own warning by default).
-    static void Banner(Control border, Control? search, string message, List<Control> buttons, string name = WarningName, string textName = "OrderProblems")
+    // A line under the search box: text, then its buttons right after it (a small gap), the rest of the line empty. Red
+    // (the page's own warning) unless color says otherwise. name and textName: the line's and its text's node names
+    // (the page's own warning by default).
+    static void Banner(Control border, Control? search, string message, List<Control> buttons, string name = WarningName, string textName = "OrderProblems",
+        Color? color = null)
     {
+        const float height = 34, gap = 6;
         var bar = new PanelContainer { Name = name };
         var look = new StyleBoxFlat
         {
-            BgColor = new Color(0.45f, 0.1f, 0.1f, 0.6f), ContentMarginLeft = 12, ContentMarginRight = 8, ContentMarginTop = 4, ContentMarginBottom = 4,
+            BgColor = color ?? ProblemColor, ContentMarginLeft = 12, ContentMarginRight = 8, ContentMarginTop = 4, ContentMarginBottom = 4,
         };
         look.SetCornerRadiusAll(RowTitles.CornerRadius); // rounded like the rows and the search box
         bar.AddThemeStyleboxOverride("panel", look);
-        var line = new HBoxContainer();
-        line.AddThemeConstantOverride("separation", 6);
+        var line = new HBoxContainer(); // nothing in it expands: all of it sits at the left
+        line.AddThemeConstantOverride("separation", (int)gap);
         bar.AddChild(line);
         var text = new Label
         {
-            Name = textName, Text = message, SizeFlagsHorizontal = Control.SizeFlags.ExpandFill,
-            VerticalAlignment = VerticalAlignment.Center, AutowrapMode = TextServer.AutowrapMode.WordSmart,
+            Name = textName, Text = message, VerticalAlignment = VerticalAlignment.Center, AutowrapMode = TextServer.AutowrapMode.WordSmart,
         };
         text.AddThemeFontOverride("font", ModEntry.Font("res://themes/kreon_regular_shared.tres"));
         text.AddThemeFontSizeOverride("font_size", 16);
@@ -370,7 +375,30 @@ static class LoadOrder
         var scroll = border.GetNode<Control>("ModsScrollContainer");
         (bar.OffsetLeft, bar.OffsetRight) = (scroll.OffsetLeft, scroll.OffsetRight);
         var top = (search ?? scroll).OffsetBottom + 6;
-        (bar.OffsetTop, bar.OffsetBottom) = (top, top + 34);
+        (bar.OffsetTop, bar.OffsetBottom) = (top, top + height);
+
+        // The text is as wide as it is on one line, or as what the buttons leave of the line, wrapping there: the
+        // buttons follow it at full size. (A wrapping label asks for no width of its own, so it gets one.) The room is
+        // the bar's width from its anchors, not its size: a bar the text has widened would never give that back.
+        var oneLine = Mathf.Ceil(text.GetThemeFont("font").GetStringSize(message, fontSize: 16).X + text.GetThemeStylebox("normal").GetMinimumSize().X) + 1;
+        void Fit()
+        {
+            var room = border.Size.X + bar.OffsetRight - bar.OffsetLeft - look.GetMinimumSize().X - buttons.Sum(b => b.GetCombinedMinimumSize().X + gap);
+            text.CustomMinimumSize = new Vector2(Math.Min(oneLine, Math.Max(room, 0)), 0);
+        }
+        Fit();
+        border.Resized += Fit;
+        bar.TreeExiting += () => border.Resized -= Fit; // a redraw makes a new bar
+        // Wrapped, the bar grows to fit the lines and what's under it moves down (Layout stacks by each one's height).
+        // Hidden (Vanilla View), it leaves the list alone: Better Mod Menu may have laid it out there.
+        bar.MinimumSizeChanged += () =>
+        {
+            var fits = Math.Max(height, bar.GetCombinedMinimumSize().Y);
+            if (!bar.IsVisibleInTree() || bar.OffsetBottom - bar.OffsetTop == fits)
+                return;
+            bar.OffsetBottom = bar.OffsetTop + fits;
+            Layout.PlaceList(border);
+        };
     }
 
     // The "!" on the Load Order button, with the page's warning as its tooltip; null takes it off.
