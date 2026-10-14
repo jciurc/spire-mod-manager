@@ -4276,7 +4276,7 @@ static class SelfTest
     static void Check(string name, bool ok, string detail = "") =>
         Results.Add($"{(ok ? "PASS" : "FAIL")} {name}{(ok || detail.Length == 0 ? "" : $": {detail}")}");
 
-    // The fixture's mod that won't load: Test Addon (on) needs Missing, a mod id nothing has. Null when it isn't
+    // The fixture's mod that won't load: Test Addon (on) needs SmmTestMissing, a mod id nothing has. Null when it isn't
     // installed (--real) or is off, so the checks that need a mod that won't load skip.
     static Mod? WontLoad() => Dependencies.Find("SmmTestAddon") is { } addon && Dependencies.IsOn(addon) ? addon : null;
 

@@ -272,8 +272,8 @@ void SyncMods()
     var mods = Path.Combine(DevDir, "mods");
     if (Directory.Exists(mods))
         Directory.Delete(mods, recursive: true);
-    foreach (var dir in Directory.GetDirectories(Path.Combine(GameDir, "mods")).Where(d => Path.GetFileName(d) != ModId && !ManifestIds(d).Any(workshopMods.Contains)
-        && (real || ManifestIds(d).Contains("BetterModMenu"))))
+    foreach (var (dir, _) in Directory.GetDirectories(Path.Combine(GameDir, "mods")).Select(d => (Dir: d, Ids: ManifestIds(d).ToList()))
+        .Where(m => Path.GetFileName(m.Dir) != ModId && !m.Ids.Any(workshopMods.Contains) && (real || m.Ids.Contains("BetterModMenu"))))
         foreach (var file in Directory.EnumerateFiles(dir, "*", SearchOption.AllDirectories).Where(f => !Path.GetFileName(f).StartsWith("mod_profiles.")))
             Link(file, Path.Combine(mods, Path.GetRelativePath(Path.Combine(GameDir, "mods"), file)));
     if (real)
@@ -337,8 +337,7 @@ void PrepareSandbox(bool resetData)
     if (args.Contains("--bmm-after"))
         list.Add((JsonNode)new JsonObject { ["id"] = ModId, ["is_enabled"] = true, ["source"] = "mods_directory" });
     list.Add((JsonNode)new JsonObject { ["id"] = "BetterModMenu", ["is_enabled"] = bmm, ["source"] = "mods_directory" });
-    list.Add((JsonNode)new JsonObject { ["id"] = "BetterModMenuFork", ["is_enabled"] = false, ["source"] = "mods_directory" });
-    list.Add((JsonNode)new JsonObject { ["id"] = "SmmTestRetired", ["is_enabled"] = false, ["source"] = "mods_directory" });
+    list.Add((JsonNode)new JsonObject { ["id"] = real ? "BetterModMenuFork" : "SmmTestRetired", ["is_enabled"] = false, ["source"] = "mods_directory" });
     // --workshop: the items' mods on, after ours, in the order given. An entry above for the same id (Better
     // Mod Menu's, when its Workshop item is given) gives way.
     if (workshopMods.Count > 0 && !args.Contains("--bmm-after"))

@@ -38,9 +38,9 @@ needs to know what it touches on your PC:
 - **A dev copy of the game:** `sts2-dev` at the root of the game's drive (`D:\sts2-dev` for the default
   library), made of hard links to the installed game's files, so it takes no extra space. `STS2_DEV_DIR` picks
   another folder on the same drive (hard links can't cross drives). It has its own `mods` folder: the fresh
-  build, the empty test mods from `tools/fixtures/mods` and, if you have it installed, Better Mod Menu (for
-  `--bmm`). None of your other mods, so a run is the same on every PC. Builds never go into your real `mods`
-  folder this way.
+  build, the empty test mods from `tools/fixtures/mods` and, for `--bmm`, Better Mod Menu if it's in your game's
+  own `mods` folder (a Workshop subscription lives elsewhere and isn't picked up). None of your other mods, so a
+  run is the same on every PC. Builds never go into your real `mods` folder this way.
 - **Separate save data and log:** the dev copy runs without Steam, so the game keeps its data in
   `%APPDATA%\SlayTheSpire2\default\1\` instead of your Steam account's folder, and its log goes to
   `out\dev.log`. Your real saves and mod lists are never touched. It's muted, 1920x1080 windowed, with
