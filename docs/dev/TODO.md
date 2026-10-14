@@ -879,3 +879,8 @@ for launch." His numbering kept. None of this is in 0.1.0.
   screen's Spire Mod Manager button shows it ("Spire Mod Manager (F8)"); the main menu's corner button doesn't. To
   settle: where it's changed (we have no settings page yet), what it does during a run (the Modding page opens only
   from the main menu), and that F8 isn't already one of the game's keys
+- [ ] 10. (Jordan, during his copy review) a more visible mark for newly installed mods than the New tag: maybe a green
+  "!" left of the mod's name, though that's where the notepad mark sits, so the two need thinking about together.
+  Keep them searchable: the New tag could stay, but hidden on the row. They should be in the Changed filter too:
+  they probably are already (the Changes list names each mod installed since launch, and Changed shows what it
+  names), to check
