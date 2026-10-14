@@ -70,8 +70,10 @@ every upload, so keep them right here and check the page afterwards.
 
 ## Going public
 
-Make the GitHub repo public first: the description sends bug reports to its issues and says the source is
-there, so while the repo is private that line leads to a 404. (Fine on the private upload, which only you see.)
+The description sends bug reports to the GitHub repo's issues and says the source is there, so while the repo
+is private that line leads to a 404. Before the item goes public, either make the repo public (TODO.md, "Before
+going public") or take the GitHub sentence out of `description.bbcode` and upload again. The private first upload
+is fine either way: only you see it.
 
 Switch the item to Public on its page, and set `"visibility": "public"` here too: the next upload would make it
 private again otherwise. Unlisted is the fallback for a soft launch.
