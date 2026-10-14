@@ -38,7 +38,7 @@ A mod's manifest names what it needs by mod id ("BaseLib"). A Workshop page is f
   - The source line opens `filedetails/?id=<id>` in the browser (`ModDetails.cs:74-79`).
   - Patch notes uses `OS.ShellOpen` (`ModDetails.cs:425-426`).
   - The game's Get Mods button uses `PlatformUtil.OpenUrl`: the Steam overlay when it's enabled, the browser
-    otherwise (decompiled `SteamPlatformUtilStrategy.OpenUrl`).
+    otherwise (the game's `SteamPlatformUtilStrategy.OpenUrl`).
 
 ## What can map a mod id to a Workshop item
 

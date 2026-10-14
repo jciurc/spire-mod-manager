@@ -1,0 +1,16 @@
+name: Idea
+description: A feature or a change you'd like.
+labels: [enhancement]
+body:
+  - type: textarea
+    id: idea
+    attributes:
+      label: The idea
+      description: What you'd like, and the problem it solves when you're managing your mods.
+    validations:
+      required: true
+  - type: textarea
+    id: more
+    attributes:
+      label: Anything else
+      description: How you do it today, other mods that do something similar, sketches or screenshots.

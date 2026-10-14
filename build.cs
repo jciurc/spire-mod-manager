@@ -15,7 +15,7 @@ const string ModId = "SpireModManager";
 var Steam = SteamApps(); // the Steam library with the game
 if (!Directory.Exists(Path.Combine(Steam, "common", "Slay the Spire 2")))
     return Fail($"Slay the Spire 2 isn't in {Steam}. Set the environment variable "
-        + @"STS2_STEAMAPPS to the steamapps folder of the library that has it, for example D:\SteamLibrary\steamapps (README.md, ""Building"").");
+        + @"STS2_STEAMAPPS to the steamapps folder of the library that has it, for example D:\SteamLibrary\steamapps (CONTRIBUTING.md, ""What you need"").");
 var root = ScriptDir();
 var installDir = Path.Combine(Steam, "common", "Slay the Spire 2", "mods", ModId);
 var project = Path.Combine(root, "src", ModId, ModId + ".csproj");
@@ -133,7 +133,7 @@ static int Fail(string message)
 
 static string ScriptDir([CallerFilePath] string path = "") => Path.GetDirectoryName(path) ?? ".";
 
-// The Steam library (its steamapps folder) that has the game: STS2_STEAMAPPS when set (README.md, "Building"),
+// The Steam library (its steamapps folder) that has the game: STS2_STEAMAPPS when set (CONTRIBUTING.md, "What you need"),
 // else whichever library in Steam's own list (libraryfolders.vdf, in Steam's folder from the registry) holds
 // the game, else Steam's default folder. The same in tools/dev.cs.
 static string SteamApps()

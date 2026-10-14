@@ -47,7 +47,7 @@ var steamapps = FullDir(SteamApps()); // the Steam library with the game
 var GameDir = Path.Combine(steamapps, "common", "Slay the Spire 2");
 if (!Directory.Exists(GameDir))
     return Fail($"Slay the Spire 2 isn't in {steamapps}. Set the environment variable "
-        + @"STS2_STEAMAPPS to the steamapps folder of the library that has it, for example D:\SteamLibrary\steamapps (README.md, ""Building"").");
+        + @"STS2_STEAMAPPS to the steamapps folder of the library that has it, for example D:\SteamLibrary\steamapps (CONTRIBUTING.md, ""What you need"").");
 var DevDir = FullDir(Env("STS2_DEV_DIR", Path.Combine(Path.GetPathRoot(GameDir) ?? "", "sts2-dev"))); // same drive
 var WorkshopDir = Path.Combine(steamapps, "workshop", "content", "2868840");
 var BmmRepo = Env("STS2_BMM_REPO", @"C:\repos\gaming\slay the spire\bettermodmenu"); // Better Mod Menu's local-fix checkout (--bmm-local)
@@ -452,11 +452,11 @@ static int Fail(string message)
 
 static string ScriptDir([CallerFilePath] string path = "") => Path.GetDirectoryName(path) ?? ".";
 
-// An environment variable's value (README.md, "Developing"), or the author's own path when it isn't set.
+// An environment variable's value (CONTRIBUTING.md, "What you need"), or the author's own path when it isn't set.
 static string Env(string name, string fallback) =>
     Environment.GetEnvironmentVariable(name) is { Length: > 0 } value ? value : fallback;
 
-// The Steam library (its steamapps folder) that has the game: STS2_STEAMAPPS when set (README.md, "Building"),
+// The Steam library (its steamapps folder) that has the game: STS2_STEAMAPPS when set (CONTRIBUTING.md, "What you need"),
 // else whichever library in Steam's own list (libraryfolders.vdf, in Steam's folder from the registry) holds
 // the game, else Steam's default folder. The same in build.cs.
 static string SteamApps()
