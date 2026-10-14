@@ -5,7 +5,7 @@ namespace SpireModManager;
 // One of the player's own details for a mod (alias, notes, tags), built and behaving the same wherever it's
 // edited: the info panel and a mod's right-click menu. Several mods at once (the bulk menu): tags edit the ones
 // they all share (the rest of each mod's tags stay), notes show when they're the same and typing replaces all.
-// - A gold term, which says what the field is for in a plain tooltip; Save and Cancel at the right of its line while
+// - A gold term, which says what the field is for in a hover card; Save and Cancel at the right of its line while
 //   editing. (The bulk menu's heading has an "i" saying how editing several mods works.)
 // - At rest: the value as plain text (tags as pills), or a subtle call to action ("Add alias").
 // - Editing: a padded box (the same call to action while it's empty) and an inline ✕ to clear. Enter saves (Ctrl+Enter in notes), Escape
@@ -19,6 +19,7 @@ sealed class ModField
 
     static readonly Color Cream = new(1, 0.964706f, 0.886275f);
     static readonly Color Gold = new(0.937f, 0.784f, 0.318f);
+    public const string TipName = "SpireModManagerFieldTip"; // the hover card of a term, or the bulk menu's i
 
     public Control Root { get; }
     readonly Kind _kind;
@@ -47,12 +48,14 @@ sealed class ModField
 
         var term = new HBoxContainer { Name = "Term", MouseFilter = Control.MouseFilterEnum.Ignore, CustomMinimumSize = new Vector2(0, 26) };
         term.AddThemeConstantOverride("separation", 6);
-        // The term explains the field in a plain (native) tooltip; the box itself only ever invites ("Add notes").
+        // The term explains the field in our hover card; the box itself only ever invites ("Add notes").
         var label = new Label
         {
             Name = "Label", Text = Menus.Text(LocKey("TERM")), SizeFlagsHorizontal = Control.SizeFlags.ShrinkBegin, VerticalAlignment = VerticalAlignment.Center,
-            MouseFilter = Control.MouseFilterEnum.Pass, TooltipText = Menus.Text(LocKey((bulk ? "BULK_" : "") + "HINT")),
+            MouseFilter = Control.MouseFilterEnum.Pass,
         };
+        var tip = Menus.Text(LocKey((bulk ? "BULK_" : "") + "HINT"));
+        Hover.Watch(label, TipName, () => tip.Replace("[", "[lb]"), width: 320);
         Style(label, "res://themes/kreon_regular_shared.tres", 18, Gold);
         term.AddChild(label);
         if (kind == Kind.Tags)
@@ -191,16 +194,17 @@ sealed class ModField
             CustomMinimumSize = new Vector2(0, 34), VerticalAlignment = VerticalAlignment.Center,
         };
         Style(heading, "res://themes/kreon_bold_shared.tres", 20, Cream);
-        // An "i" beside it, its plain tooltip saying how editing tags and notes for several mods works.
+        // An "i" beside it, its hover card saying how editing tags and notes for several mods works.
         var headingLine = new HBoxContainer { Name = "Heading", MouseFilter = Control.MouseFilterEnum.Ignore };
         headingLine.AddThemeConstantOverride("separation", 8);
         headingLine.AddChild(heading);
-        headingLine.AddChild(new TextureRect
+        var info = new TextureRect
         {
             Name = "Info", Texture = Icons.Info, StretchMode = TextureRect.StretchModeEnum.KeepCentered, SelfModulate = new Color(Cream, 0.7f),
             SizeFlagsVertical = Control.SizeFlags.ShrinkCenter, MouseFilter = Control.MouseFilterEnum.Pass, MouseDefaultCursorShape = Control.CursorShape.Help,
-            TooltipText = Menus.Text("SPIRE_MOD_MANAGER.BULK_INFO"),
-        });
+        };
+        Hover.Watch(info, TipName, () => Menus.Text("SPIRE_MOD_MANAGER.BULK_INFO").Replace("[", "[lb]"), width: 380);
+        headingLine.AddChild(info);
         column.AddChild(headingLine);
         foreach (var kind in new[] { Kind.Tags, Kind.Notes })
             column.AddChild(new ModField(kind, () => modIds, saved, bulk: true).Root);

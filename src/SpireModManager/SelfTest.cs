@@ -1439,13 +1439,18 @@ static class SelfTest
         Check("row menu: categories on the left, the mod's fields on the right", rowItems.Count == Store.Data.Categories.Count + 2
             && aliasBox != null && rowMenu?.FindChild("Fields", true, false)?.GetNodeOrNull("Notes/Box") != null, string.Join(", ", rowItems));
         Check("an empty field invites: \"Add alias\"", aliasBox?.PlaceholderText == "Add alias", aliasBox?.PlaceholderText ?? "");
-        // What each field is for: a plain (native) tooltip on its term, which is only as wide as its word.
+        // What each field is for: our hover card on its term (shown inside the open menu, above it), the term only as
+        // wide as its word, and no native tooltip.
         var terms = new[] { "Alias", "Tags", "Notes" }.Select(f => rowMenu?.FindChild("Fields", true, false)?.GetNodeOrNull<Label>($"{f}/Term/Label")).ToList();
         string[] termTips = [Menus.Text("SPIRE_MOD_MANAGER.ALIAS_HINT"), Menus.Text("SPIRE_MOD_MANAGER.TAGS_HINT"), Menus.Text("SPIRE_MOD_MANAGER.NOTES_HINT")];
-        Check("each field's term explains it in a plain tooltip, the term no wider than its word",
-            terms.All(t => t != null) && terms.Select(t => t!.TooltipText).SequenceEqual(termTips)
-            && terms.All(t => t!.MouseFilter != Control.MouseFilterEnum.Ignore && t.Size.X <= t.GetMinimumSize().X + 1),
-            string.Join(" | ", terms.Select(t => t == null ? "none" : $"{t.Text}: {t.TooltipText} ({t.Size.X:0}/{t.GetMinimumSize().X:0})")));
+        var termCards = new List<string>();
+        foreach (var term in terms.OfType<Label>())
+            termCards.Add(await HoverCard(menu, term, ModField.TipName));
+        var termLayer = menu.GetTree().Root.FindChild(ModField.TipName, true, false); // gone again after each hover
+        Check("each field's term explains it in our hover card, over the menu, the term no wider than its word",
+            terms.All(t => t != null) && termCards.SequenceEqual(termTips) && termLayer == null
+            && terms.All(t => t!.TooltipText == "" && t.Size.X <= t.GetMinimumSize().X + 1),
+            string.Join(" | ", termCards) + string.Join(" ", terms.Select(t => t == null ? " none" : $" ({t.Size.X:0}/{t.GetMinimumSize().X:0})")));
         await Capture(screen, outDir, "5-row-menu");
         if (rowMenu != null && aliasBox != null)
         {
@@ -4124,11 +4129,15 @@ static class SelfTest
             && bulk.FindChild("Editing", true, false) is Label { Text: var editing } && editing == $"Editing {all - 1} selected mods"
             && bulk.FindChild("Tags", true, false) != null && bulk.FindChild("Notes", true, false) != null && bulk.FindChild("Alias", true, false) == null);
         var info = bulk?.FindChild("Info", true, false) as TextureRect;
-        var bulkTerms = new[] { "Tags", "Notes" }.Select(f => (bulk?.FindChild("Fields", true, false) ?? bulk)?.GetNodeOrNull<Label>($"{f}/Term/Label")?.TooltipText).ToList();
+        var infoCard = info == null ? "" : await HoverCard(menu, info, ModField.TipName);
+        var bulkTerms = new List<string>();
+        foreach (var f in new[] { "Tags", "Notes" })
+            if ((bulk?.FindChild("Fields", true, false) ?? bulk)?.GetNodeOrNull<Label>($"{f}/Term/Label") is { } term)
+                bulkTerms.Add(await HoverCard(menu, term, ModField.TipName));
         Check("the bulk menu: an \"i\" beside its heading explains editing several, and each term says what it does for all of them",
-            info is { Visible: true, Texture: not null } && info.MouseFilter != Control.MouseFilterEnum.Ignore && info.TooltipText == Menus.Text("SPIRE_MOD_MANAGER.BULK_INFO")
+            info is { Visible: true, Texture: not null } && infoCard == Menus.Text("SPIRE_MOD_MANAGER.BULK_INFO")
             && bulkTerms.SequenceEqual([Menus.Text("SPIRE_MOD_MANAGER.TAGS_BULK_HINT"), Menus.Text("SPIRE_MOD_MANAGER.NOTES_BULK_HINT")]),
-            $"info {(info == null ? "none" : info.TooltipText)}; terms {string.Join(" | ", bulkTerms)}");
+            $"info: {infoCard}; terms: {string.Join(" | ", bulkTerms)}");
         await Capture(screen, outDir, "18-bulk-menu");
         var tool = Store.Data.Categories.First().Name;
         if (bulk != null)
@@ -4932,6 +4941,20 @@ static class SelfTest
 
     // Test Addon's dependency: never installed, so it's shown by its id.
     const string Missing = "SmmTestMissing";
+
+    // The text of the hover card `name` that hovering `target` brings up (empty if none), the mouse put back after.
+    static async Task<string> HoverCard(Node menu, Control target, string name, double seconds = Hover.Delay + 0.2)
+    {
+        Hover.TestMouse = () => target.GetGlobalRect().GetCenter();
+        target.EmitSignal(Control.SignalName.MouseEntered);
+        await Wait(menu, seconds);
+        var text = target.GetTree().Root.FindChild(name, true, false)?.FindChildren("*", "RichTextLabel", true, false).OfType<RichTextLabel>()
+            .FirstOrDefault()?.GetParsedText() ?? "";
+        Hover.TestMouse = () => new Vector2(5, 5);
+        target.EmitSignal(Control.SignalName.MouseExited);
+        await Wait(menu, 0.1);
+        return text;
+    }
 
     static async Task Wait(Node node, double seconds) =>
         await node.ToSignal(node.GetTree().CreateTimer(seconds), SceneTreeTimer.SignalName.Timeout);
