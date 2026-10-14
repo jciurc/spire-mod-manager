@@ -993,9 +993,9 @@ static class SelfTest
         LaunchGuard.ShowNotice();
         await Wait(menu, 1);
         var texts = string.Join(" | ", PopupTexts());
-        Check("the notice: its title, the changes by name, Restore last working setup and Keep; shown once", LaunchGuard.Notice == null
+        Check("the notice: its title, the changes by name, Restore and Keep; shown once", LaunchGuard.Notice == null
             && texts.Contains("The last launch stopped before the main menu") && texts.Contains("Test Framework") && texts.Contains("(updated: 1.0 → 1.1)")
-            && texts.Contains("SmmTestNew") && texts.Contains("Restore last working setup") && texts.Contains("Keep"), texts);
+            && texts.Contains("SmmTestNew") && texts.Split(" | ").Contains("Restore") && texts.Contains("Keep"), texts);
         CheckMark("launch notice", NModalContainer.Instance?.OpenModal as Control);
         await Capture(menu, outDir, "1e-launch-notice");
         NModalContainer.Instance?.Clear();

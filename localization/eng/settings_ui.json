@@ -199,7 +199,7 @@
   "SPIRE_MOD_MANAGER.LAUNCH_UPDATED": "[gold]{mod}[/gold] (updated: {from} → {to})",
   "SPIRE_MOD_MANAGER.LAUNCH_ORDER": "The load order",
   "SPIRE_MOD_MANAGER.LAUNCH_MORE": "and {count} more",
-  "SPIRE_MOD_MANAGER.LAUNCH_RESTORE": "Restore last working setup",
+  "SPIRE_MOD_MANAGER.LAUNCH_RESTORE": "Restore",
   "SPIRE_MOD_MANAGER.LAUNCH_KEEP": "Keep",
   "SPIRE_MOD_MANAGER.EDIT_TIP": "Edit alias, tags and notes",
   "SPIRE_MOD_MANAGER.CATEGORY_TIP": "Move to another category",
