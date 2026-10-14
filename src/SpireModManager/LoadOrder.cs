@@ -274,20 +274,19 @@ static class LoadOrder
     // Main list: enabled mods that won't load as things stand.
     static void ListBanner(Control content, Control border, Control? search, List<Mod> mods, Action redraw)
     {
-        bool Needs(Mod mod, Func<Mod?, bool> problem) => Dependencies.IsOn(mod) && Dependencies.Of(mod).Any(id => problem(Dependencies.Find(id)));
-        var needOff = mods.Where(m => Needs(m, d => d != null && !Dependencies.IsOn(d))).ToList();
-        var needMissing = mods.Where(m => Needs(m, d => d == null)).ToList();
-        var broken = needOff.Concat(needMissing).Distinct().ToList();
+        var broken = Unloadable(mods);
         if (broken.Count == 0)
             return;
+        var needOff = broken.Count(b => b.Needs.Any(d => d.Dep != null));
+        var needMissing = broken.Count(b => b.Needs.Any(d => d.Dep == null));
         string Part(string key, int count) => Menus.Format(count == 1 ? key + "_ONE" : key, ("count", Menus.Number(count)));
         var text = string.Join(" ", new[]
         {
-            needOff.Count > 0 ? Part("SPIRE_MOD_MANAGER.LIST_PROBLEMS_OFF", needOff.Count) : null,
-            needMissing.Count > 0 ? Part("SPIRE_MOD_MANAGER.LIST_PROBLEMS_MISSING", needMissing.Count) : null,
+            needOff > 0 ? Part("SPIRE_MOD_MANAGER.LIST_PROBLEMS_OFF", needOff) : null,
+            needMissing > 0 ? Part("SPIRE_MOD_MANAGER.LIST_PROBLEMS_MISSING", needMissing) : null,
         }.OfType<string>());
 
-        var show = Menus.SmallButton(Menus.Text("SPIRE_MOD_MANAGER.SHOW_PROBLEM"), () => GoTo(content, broken[_nextProblem++ % broken.Count]),
+        var show = Menus.SmallButton(Menus.Text("SPIRE_MOD_MANAGER.SHOW_PROBLEM"), () => GoTo(content, broken[_nextProblem++ % broken.Count].Mod),
             name: "ShowProblemButton");
         show.TooltipText = Menus.Text("SPIRE_MOD_MANAGER.SHOW_PROBLEM_TIP");
         List<Control> buttons = [show];
@@ -307,6 +306,17 @@ static class LoadOrder
         }
         Banner(border, search, text, buttons);
     }
+
+    // Enabled mods that won't load as things stand, each with what it needs that is disabled (Dep: that mod) or isn't
+    // installed (Dep null). Those needing a disabled mod first, as the banner says them, then the rest; each group in
+    // the order given.
+    static List<(Mod Mod, List<(string Id, Mod? Dep)> Needs)> Unloadable(IEnumerable<Mod> mods) =>
+        mods.Where(Dependencies.IsOn)
+            .Select(m => (Mod: m, Needs: Dependencies.Of(m).Distinct().Select(id => (Id: id, Dep: Dependencies.Find(id)))
+                .Where(d => d.Dep == null || !Dependencies.IsOn(d.Dep)).ToList()))
+            .Where(b => b.Needs.Count > 0)
+            .OrderBy(b => b.Needs.All(d => d.Dep == null)) // stable: each group keeps its order
+            .ToList();
 
     // Better Mod Menu ticked as well as us: the same kind of banner in yellow (a warning: both can run), and Show, which
     // goes to its row, then Dismiss for a player happy to run both.
