@@ -4,7 +4,7 @@ Short notes for Jordan: what to look for after each install. Newest first.
 
 ## Waiting in pull requests
 
-- **Banners:** the "Multiple mod managers" banner is yellow now (a warning); the page's own warning stays red. In both, the buttons sit right after the text instead of at the far right. Both Show buttons say "Opens the next affected mod", and the managers banner no longer names Better Mod Menu: Dismiss's tip says the warning comes back if one of the mod managers is disabled and then enabled again.
+- **Banners:** the "Multiple mod managers" banner is yellow now (a warning); the page's own warning stays red. In both, the buttons sit right after the text instead of at the far right. Hover Show on either banner: both tooltips say "Opens the next affected mod" (the buttons still say Show). And the managers banner no longer names Better Mod Menu: Dismiss's tip says the warning comes back if one of the mod managers is disabled and then enabled again.
 
 ## Installed 2026-10-13 (late night): version 0.0.50
 
