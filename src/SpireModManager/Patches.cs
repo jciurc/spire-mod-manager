@@ -437,6 +437,24 @@ static class NewModTogglePatch
     }
 }
 
+// A row ticked or unticked on the main list stays while the page bar's Show: choice is on (ListFilter.Keep): a mod
+// disabled under "Enabled" doesn't go from under the mouse. Before the toggle, so the page bar it redraws counts it.
+[HarmonyPatch(typeof(NModMenuRow), "OnTickboxToggled")]
+static class TickKeepPatch
+{
+    static void Prefix(NModMenuRow __instance)
+    {
+        try
+        {
+            ListFilter.Keep(__instance.Mod?.manifest?.id);
+        }
+        catch (Exception e)
+        {
+            Log.Error($"[{ModEntry.ModId}] Could not keep a ticked row in the list: {e}");
+        }
+    }
+}
+
 // The row's highlight follows our look (RowTitles.Look) whenever the game changes its state: under the mouse or
 // keyboard (focus), or the mod shown in the info panel (selected).
 [HarmonyPatch(typeof(NModMenuRow))]

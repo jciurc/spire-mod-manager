@@ -46,10 +46,17 @@ static class CategoryList
             Store.Data.LoadOrderView = false;
             Store.Save();
         }
+        // The page bar's Show: choice stays; rows it kept for a change made last time go by it again (ListFilter).
+        ListFilter.Release();
         screen.VisibilityChanged += () =>
         {
-            if (screen.IsVisibleInTree() && Store.Data.LoadOrderView)
+            if (!screen.IsVisibleInTree())
+                return;
+            var released = ListFilter.Release();
+            if (Store.Data.LoadOrderView)
                 Switch(false);
+            else if (released)
+                Apply(content);
         };
         vanilla = ModEntry.AddButton(screen, "SPIRE_MOD_MANAGER.VANILLA_VIEW", new Vector2(200, 70), () => Switch(true));
         vanilla.Name = "SpireModManagerViewToggle";
@@ -118,7 +125,8 @@ static class CategoryList
         ScrollSoon(content, row, flash: false);
     }
 
-    // A row hidden in a collapsed category (main list): the category opens.
+    // A row hidden in a collapsed category (main list): the category opens. (Or one Reveal brought in past the Show:
+    // choice: the redraw shows it.)
     static void Expand(Control content, NModMenuRow row)
     {
         if (Store.Data.VanillaView || Store.Data.LoadOrderView || row.Visible)
@@ -131,13 +139,14 @@ static class CategoryList
         Apply(content);
     }
 
-    // Scrolls a mod's row into view (its category opens if collapsed); flash: a short gold glow to find it
-    // by; focus: the row takes the "selected" look (as under the mouse or the keyboard) without becoming the
-    // info panel's mod. The info panel doesn't change.
+    // Scrolls a mod's row into view (its category opens if collapsed, and the page bar's Show: choice shows it if it
+    // left it out); flash: a short gold glow to find it by; focus: the row takes the "selected" look (as under the mouse
+    // or the keyboard) without becoming the info panel's mod. The info panel doesn't change.
     public static void Reveal(Control content, string modId, bool flash, bool focus = false)
     {
         if (content.GetChildren().OfType<NModMenuRow>().FirstOrDefault(r => r.Mod?.manifest?.id == modId) is not { } row)
             return;
+        ListFilter.Bring(row.Mod); // hidden until the redraw Expand makes
         Expand(content, row);
         ScrollSoon(content, row, flash, focus);
     }
@@ -388,6 +397,8 @@ static class CategoryList
         var known = categories.Select(c => c.Name).ToHashSet();
         string? CategoryOf(NModMenuRow row) =>
             Store.InfoFor(row.Mod?.manifest?.id)?.Category is { } name && known.Contains(name) ? name : null;
+        if (ListFilter.Current != ListFilter.Choice.All)
+            ListFilter.Showed(rows.Where(Matches).Select(r => r.Mod)); // the rows a change to one mod keeps
 
         var index = 0;
         var headed = false; // a category's header is shown (the divider before Uncategorized follows them)
@@ -545,12 +556,16 @@ static class CategoryList
     }
 
     // A mod's right-click menu: its category on the left (pick one, or a new one, named in place), its alias,
-    // tags and notes on the right, edited right there.
+    // tags and notes on the right, edited right there. Its row stays under a Show: choice (ListFilter.Keep).
     public static Node? ShowRowMenu(Control content, NModMenuRow row)
     {
         if (Store.Data.VanillaView || row.Mod?.manifest?.id is not { } id)
             return null;
-        return MenuPanel.Show(content, () => CategoryItems(content, id), side: _ => ModField.Column(id, _ => Edited(content)));
+        return MenuPanel.Show(content, () => CategoryItems(content, id), side: _ => ModField.Column(id, _ =>
+        {
+            ListFilter.Keep(id);
+            Edited(content);
+        }));
     }
 
     // Two or more picked mods edited together: their category (marked when they share one), on or off; and on
@@ -608,7 +623,8 @@ static class CategoryList
             ModDetails.Refresh(screen);
     }
 
-    // The categories to put a mod in (its current one marked), Uncategorized, and a new one.
+    // The categories to put a mod in (its current one marked), Uncategorized, and a new one. A move keeps its row
+    // under a Show: choice (ListFilter.Keep).
     public static IReadOnlyList<MenuItem> CategoryItems(Control content, string id)
     {
         var current = Store.InfoFor(id)?.Category is { } name && Categories.Find(name) != null ? name : null;
@@ -630,6 +646,7 @@ static class CategoryList
         void Move(string? category)
         {
             Categories.Assign(id, category);
+            ListFilter.Keep(id);
             Edited(content);
         }
     }
