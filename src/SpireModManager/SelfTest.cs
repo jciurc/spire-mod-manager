@@ -4192,15 +4192,18 @@ static class SelfTest
             && bulk.FindChild("Editing", true, false) is Label { Text: var editing } && editing == $"Editing {all - 1} selected mods"
             && bulk.FindChild("Tags", true, false) != null && bulk.FindChild("Notes", true, false) != null && bulk.FindChild("Alias", true, false) == null);
         var info = bulk?.FindChild("Info", true, false) as TextureRect;
-        var infoCard = info == null ? "" : (await SizedHoverCard(menu, info, ModField.TipName, () => Capture(screen, outDir, "18c-bulk-info"))).Text;
+        // The i and both terms open one card, at once (read 0.05 s after the mouse arrives): how tags and notes work for all
+        // of them (Jordan, 2026-10-14).
+        const double atOnce = 0.05;
+        var infoCard = info == null ? "" : (await SizedHoverCard(menu, info, ModField.TipName, () => Capture(screen, outDir, "18c-bulk-info"), atOnce)).Text;
         var bulkTerms = new List<string>();
         foreach (var f in new[] { "Tags", "Notes" })
             if ((bulk?.FindChild("Fields", true, false) ?? bulk)?.GetNodeOrNull<Label>($"{f}/Term/Label") is { } term)
-                bulkTerms.Add(await HoverCard(menu, term, ModField.TipName));
-        Check("the bulk menu: an \"i\" beside its heading explains editing several, and each term says what it does for all of them",
-            info is { Visible: true, Texture: not null } && infoCard == $"{Menus.Text("SPIRE_MOD_MANAGER.TAGS_TERM")}\n{Menus.Text("SPIRE_MOD_MANAGER.TAGS_BULK_HINT")}\n\n"
-                + $"{Menus.Text("SPIRE_MOD_MANAGER.NOTES_TERM")}\n{Menus.Text("SPIRE_MOD_MANAGER.NOTES_BULK_HINT")}"
-            && bulkTerms.SequenceEqual([Menus.Text("SPIRE_MOD_MANAGER.TAGS_BULK_HINT"), Menus.Text("SPIRE_MOD_MANAGER.NOTES_BULK_HINT")]),
+                bulkTerms.Add(await HoverCard(menu, term, ModField.TipName, atOnce));
+        var howItWorks = $"{Menus.Text("SPIRE_MOD_MANAGER.TAGS_TERM")}\n{Menus.Text("SPIRE_MOD_MANAGER.TAGS_BULK_HINT")}\n\n"
+            + $"{Menus.Text("SPIRE_MOD_MANAGER.NOTES_TERM")}\n{Menus.Text("SPIRE_MOD_MANAGER.NOTES_BULK_HINT")}";
+        Check("the bulk menu: its \"i\" and both terms open the same card at once, how tags and notes work for all of them",
+            info is { Visible: true, Texture: not null } && infoCard == howItWorks && bulkTerms.Count == 2 && bulkTerms.All(t => t == howItWorks),
             $"info: {infoCard}; terms: {string.Join(" | ", bulkTerms)}");
         await Capture(screen, outDir, "18-bulk-menu");
         var tool = Store.Data.Categories.First().Name;
