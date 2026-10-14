@@ -749,7 +749,7 @@ JORDAN marks Jordan's own calls, as above.
   - the Workshop description in English and Simplified Chinese, in one description (the norm on this Workshop; Better Mod Menu does it)
   - the font bug with other languages is fixed in its own PR (branch `locale-fonts`)
   - later: the spreadsheet by email or Discord until the repo is public, then GitHub pull requests; at 2-3 languages, Weblate or Crowdin (both free for open-source projects)
-- [ ] TRANSLATING.md: no machine translation, the game's own words, and how to test (switch the game's language)
+- [x] TRANSLATING.md: no machine translation, the game's own words, and how to test (switch the game's language)
 - [ ] TRANSLATING.md: the spreadsheet route, once the kit exists
 
 ## Other mod managers to test beside ours
