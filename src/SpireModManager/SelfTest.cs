@@ -2340,8 +2340,10 @@ static class SelfTest
         CategoryList.Redraw(content);
         await Wait(menu, 0.3);
         badge = screen.GetNodeOrNull<Control>("SpireModManagerLoadOrderToggle/WarningBadge");
-        Check("a bad order puts a '!' with the warning on the Load Order button", badge is { Visible: true }
-            && screen.GetNode<Control>("SpireModManagerLoadOrderToggle").TooltipText.StartsWith("For compatibility"));
+        var badgeTip = screen.GetNode<Control>("SpireModManagerLoadOrderToggle").TooltipText;
+        Check("a bad order puts a '!' with the warning on the Load Order button, then the mod it's about, as Load Order's card says it",
+            badge is { Visible: true } && badgeTip.StartsWith("For compatibility, 1 mod ")
+            && string.Join(" | ", badgeTip.Split('\n').Skip(1).Where(l => l.Length > 0)) == "Test Content loads before Test Framework", badgeTip);
         await Capture(screen, outDir, "2c-load-order-badge");
         LoadOrder.FixOrder(Rows());
         CategoryList.Redraw(content);

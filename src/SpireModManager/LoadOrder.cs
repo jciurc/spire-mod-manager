@@ -193,9 +193,9 @@ static class LoadOrder
     // enabled mods sitting above mods they need, with "Fix now" (the game reorders those at launch anyway;
     // fixing makes the saved order say what will happen). On the main list: enabled mods that need a mod
     // that is off or missing, with a way to each and a fix for the off ones. Elsewhere, a "!" on the Load
-    // Order button says that page has a warning. Above that one on both, while Better Mod Menu is ticked too: a
-    // yellow banner saying two mod managers are on, with a way to its row and a way to dismiss it. Hovering a banner's
-    // text lists the mods it is about (BannerCard).
+    // Order button says that page has a warning, its tooltip naming the mods. Above that one on both, while Better Mod
+    // Menu is ticked too: a yellow banner saying two mod managers are on, with a way to its row and a way to dismiss it.
+    // Hovering a banner's text lists the mods it is about (BannerCard).
     public const string WarningName = "SpireModManagerOrderWarning", ManagersName = "SpireModManagerManagersWarning", AutoSortName = "AutoSortButton";
     public const string AutoSortHintName = "AutoSortHint", BannerCardName = "SpireModManagerBannerCard";
     const string BadgeName = "WarningBadge";
@@ -249,9 +249,11 @@ static class LoadOrder
         }
 
         var mods = Mods(rows);
-        var misordered = Dependencies.OrderViolations(mods).Select(v => v.Mod).Distinct().Count();
+        var violations = Dependencies.OrderViolations(mods);
+        var misordered = violations.Select(v => v.Mod).Distinct().Count();
         var orderText = Menus.Format(misordered == 1 ? "SPIRE_MOD_MANAGER.ORDER_PROBLEMS_ONE" : "SPIRE_MOD_MANAGER.ORDER_PROBLEMS", ("count", Menus.Number(misordered)));
-        Badge(content, misordered > 0 && !on ? orderText : null);
+        // The "!"'s tooltip: the warning, then the mods it's about, as the warning's card in Load Order lists them.
+        Badge(content, misordered > 0 && !on ? $"{orderText}\n\n{string.Join("\n", Capped(OrderLines(violations)))}" : null);
         foreach (var name in new[] { WarningName, ManagersName })
             if (border.GetNodeOrNull(name) is { } old)
             {
@@ -357,11 +359,13 @@ static class LoadOrder
     static string? OrderCard(Control content)
     {
         using var lookups = Lookups.Begin();
-        return BannerCard("SPIRE_MOD_MANAGER.BANNER_CARD_TITLE", Dependencies.OrderViolations(Mods(content.GetChildren().OfType<NModMenuRow>()))
-            .GroupBy(v => v.Mod)
-            .Select(g => Menus.Format("SPIRE_MOD_MANAGER.BANNER_LOADS_BEFORE", ("mod", Shown(g.Key)), ("needs", string.Join(", ", g.Select(v => Shown(v.Needs)).Distinct()))))
-            .ToList());
+        return BannerCard("SPIRE_MOD_MANAGER.BANNER_CARD_TITLE", OrderLines(Dependencies.OrderViolations(Mods(content.GetChildren().OfType<NModMenuRow>()))));
     }
+
+    // A line for each mod placed before a mod it needs, in load order: the order card's lines, and the "!"'s elsewhere.
+    static List<string> OrderLines(List<(Mod Mod, Mod Needs)> violations) => violations.GroupBy(v => v.Mod)
+        .Select(g => Menus.Format("SPIRE_MOD_MANAGER.BANNER_LOADS_BEFORE", ("mod", Shown(g.Key)), ("needs", string.Join(", ", g.Select(v => Shown(v.Needs)).Distinct()))))
+        .ToList();
 
     // Two managers: the mod managers that are on, by the names the list gives them.
     static string? ManagersCard()
@@ -370,16 +374,20 @@ static class LoadOrder
         return BannerCard("SPIRE_MOD_MANAGER.BANNER_MANAGERS_TITLE", Bmm.TickedManagers().Select(Shown).ToList());
     }
 
-    // A title, then one mod a line (the first CardLines, then how many more); none for no lines.
+    // A title, then one mod a line (Capped, "and N more" dimmed); none for no lines.
     static string? BannerCard(string title, List<string> lines)
     {
         if (lines.Count == 0)
             return null;
-        var shown = lines.Take(CardLines).Select(Escape).ToList();
+        var shown = Capped(lines).Select(Escape).ToList();
         if (lines.Count > CardLines)
-            shown.Add($"[color=#fff6e280]{Escape(Menus.Format("SPIRE_MOD_MANAGER.BANNER_CARD_MORE", ("count", Menus.Number(lines.Count - CardLines))))}[/color]");
+            shown[^1] = $"[color=#fff6e280]{shown[^1]}[/color]";
         return $"[b]{Escape(Menus.Text(title))}[/b]\n{string.Join("\n", shown)}";
     }
+
+    // The first CardLines lines, then how many more, if any.
+    static IEnumerable<string> Capped(List<string> lines) => lines.Count <= CardLines ? lines
+        : lines.Take(CardLines).Append(Menus.Format("SPIRE_MOD_MANAGER.BANNER_CARD_MORE", ("count", Menus.Number(lines.Count - CardLines))));
 
     // A mod as its row names it: the player's alias, else its name.
     static string Shown(Mod mod) => Store.InfoFor(mod.manifest?.id)?.Alias ?? mod.manifest?.name ?? mod.manifest?.id ?? "";
