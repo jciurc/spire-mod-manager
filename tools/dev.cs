@@ -193,12 +193,16 @@ var text = File.Exists(results) ? File.ReadAllText(results) : "NO RESULTS (test 
 Console.Write(text);
 Console.WriteLine("--- log ---");
 // Our lines, and the ones naming a --workshop mod. Such a mod loaded if its "Finished mod initialization" line is
-// there, but failed to start if the game logged one of the loadFailure errors (ModManager.TryLoadMod) after the
-// previous mod's: the game loads mods one at a time, and those errors don't always name the mod.
+// there, but failed to start if the game logged one of the loadFailure errors (ModManager.TryLoadMod) while loading
+// it. Those errors don't always name the mod, but the game loads mods one at a time, and the files it loads or finds
+// missing are named for the mod (<id>.dll, <id>.pck): an error is the mod's whose file the loader named last. So a
+// mod that stopped without a finish line (refused, or thrown while loading) keeps its errors, not the next mod.
 var named = workshopMods.Select(id => new Regex($@"(?<![\w-]){Regex.Escape(id)}(?![\w-])")).ToList();
 var loadFailure = new Regex(@"^\[ERROR\] .*(mod initializer|PatchAll on assembly|but no (assembly|PCK) at path)");
+var modFile = new Regex(@"^\[\w+\] (Loading assembly DLL|Loading Godot PCK|.* at path) .*?(?<mod>[^\\/]+)\.(dll|pck)\b");
 var loaded = new Dictionary<string, string?>(); // a --workshop mod that loaded: the error it failed to start with, if any
-string? failure = null;
+string? loading = null; // the mod the loader named a file of last, until its finish line
+string? failure = null; // the first loadFailure error while loading it
 var shown = (string line) => line.Contains($"[{ModId}]") || (line.Contains("[ERROR]") && line.Contains("Spire"))
     || (line.StartsWith('[') && named.Any(name => name.IsMatch(line)));
 var print = (string line) => Console.WriteLine(line.Length > 400 ? line[..400] : line);
@@ -207,17 +211,19 @@ if (File.Exists(logPath))
     using (var reader = new StreamReader(log))
         while (reader.ReadLine() is { } line)
         {
+            if (modFile.Match(line) is { Success: true } file && file.Groups["mod"].Value != loading)
+                (loading, failure) = (file.Groups["mod"].Value, null);
             if (loadFailure.IsMatch(line))
                 failure ??= line;
             if (line.Contains("Finished mod initialization for"))
             {
                 if (workshopMods.FirstOrDefault(mod => line.EndsWith($"({mod}).")) is { } id)
                 {
-                    loaded[id] = failure;
-                    if (failure != null && !shown(failure))
-                        print(failure);
+                    loaded[id] = id == loading ? failure : null; // with no DLL or PCK it named no file, and has no code to fail
+                    if (loaded[id] is { } error && !shown(error))
+                        print(error);
                 }
-                failure = null;
+                (loading, failure) = (null, null);
             }
             if (shown(line))
                 print(line);
