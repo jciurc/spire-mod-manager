@@ -486,6 +486,27 @@ static class RowLookPatch
     }
 }
 
+// Drop-in translations (Translations) into the tables the game has just loaded for a language, at startup and on every
+// language change, before it puts them to use. Apply skips English, which covers both the English fallback tables loaded
+// under every language and the English tables for the game's metrics (allowOverride false). The allowOverride check is
+// only a second guard, in case a game update loads some other language that way.
+[HarmonyPatch(typeof(LocManager), "LoadTablesFromPath")]
+static class TranslationsPatch
+{
+    static void Postfix(string language, bool allowOverride, (Dictionary<string, LocTable>, bool, List<LocValidationError>) __result)
+    {
+        try
+        {
+            if (allowOverride)
+                Translations.Apply(language, __result.Item1);
+        }
+        catch (Exception e)
+        {
+            Log.Error($"[{ModEntry.ModId}] Could not add the drop-in translation for {language}: {e}");
+        }
+    }
+}
+
 // A row's own state, which the game keeps to itself. Looked up on first use rather than in static initializers:
 // if a game update renames one, it reads as false (logged once) instead of throwing on every redraw.
 static class RowState
