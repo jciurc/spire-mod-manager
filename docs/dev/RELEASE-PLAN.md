@@ -5,7 +5,7 @@
 **What it does**
 - **Entry and views:** a movable main-menu button with a pending-relaunch dot. The Modding screen has three views: the main list, Vanilla View (remembered) and Load Order (a side trip). The selected mod carries across view switches.
 - **Organizing:** collapsible categories with inline actions; aliases, notes and tags (automatic: New, Local, Library, Gameplay, Cosmetic; plus your own); search with `#tag` and `@author`; multi-select and bulk editing; a page bar with Enable all/Disable all.
-- **Info panel:** Workshop details (dates, size, subscribers, tags, branches), a Patch notes link, problems in red, dependencies and "Required for", your editable fields, and Open Folder.
+- **Info panel:** Workshop details (dates, size, subscribers, tags, branches), a Change Notes link, problems in red, dependencies and "Required for", your editable fields, and Open Folder.
 - **Profiles:** save, switch, unsaved diff, discard, new, duplicate, rename, delete; imported once from Better Mod Menu.
 - **Load Order:** drag (including blocks), dependency lines, a warning when the game will reorder mods plus Fix now, and Auto sort.
 - **Safety net:** Changes list, undo/redo (200 steps, two histories), Revert all, and a relaunch check that offers to enable needed mods or disable mods that can't load.
@@ -31,7 +31,7 @@
 3. **Clean upload folder.** **Done:** `build.cs --dist` writes only the `.dll`, `.json` and `.pck` to `dist/SpireModManager/`, and stops with an error if anything else is there. `out/` holds `bin/` (pdb, deps.json), `dev.log` and `selftest/real-*.txt`, which contain your real categories, mod list and profile names.
    - Fix: a `build.cs --dist` that writes `dist/SpireModManager/` with only the `.dll`, `.json` and `.pck`. The uploader's `content/` is filled from that folder only.
 4. **Fail soft when a game patch renames something.** **Fixed (2026-10-13).** This is Early Access, and 0.112 could break half the page for every user.
-   - Done: each patch class is applied on its own (`ModEntry.FailedPatches`). `ModEntry.PageNeeds` lists the ones the page can't run without (main menu, Modding screen, tickbox, info panel fill, row selected); if one failed, the page stays the game's with one line, "Spire Mod Manager needs an update for this game version." (beside the main menu button instead if the screen patch itself failed). Dev runs can try it: `SPIRE_MOD_MANAGER_SKIP_PATCHES=ModInfoFillPatch`.
+   - Done: each patch class is applied on its own (`ModEntry.FailedPatches`). `ModEntry.PageNeeds` lists the ones the page can't run without (main menu, Modding screen, tickbox, info panel fill, row selected); if one failed, the page stays the game's with one line, "Spire Mod Manager is incompatible with this game version, or may require an update." (beside the main menu button instead if the screen patch itself failed). Dev runs can try it: `SPIRE_MOD_MANAGER_SKIP_PATCHES=ModInfoFillPatch`.
    - `ModEntry.cs:23-24`: `PatchAll` is all-or-nothing, and `Installed.Watch()` runs after it.
      - Fix: call `Watch()` first, then patch each `[HarmonyPatch]` class in its own try/catch (`harmony.CreateClassProcessor(type).Patch()`). Record which patches failed. If any UI patch failed, keep the vanilla layout and show one line on the screen: "Spire Mod Manager needs an update for this game version".
    - `Patches.cs:360-368` `RowState`: the static reflection initializers throw `TypeInitializationException` on every redraw if `_isSelected` or `IsFocused` is renamed. `RowTitles.cs:37` calls them outside any try.
@@ -78,7 +78,7 @@
     - tags `["QoL", "Utility"]`;
     - first change note starting with "1.0.0";
     - `"dependencies": []` (explicit, because v0.2.0 of the uploader wipes Required Items when the field is absent).
-12. **Real Workshop test.** Left, Jordan's, at the upload. Upload privately, subscribe on your account, and check `workshopId`, the details, the Patch notes link and the source line. Dev runs use `--force-steam off`, so this path has never run.
+12. **Real Workshop test.** Left, Jordan's, at the upload. Upload privately, subscribe on your account, and check `workshopId`, the details, the Change Notes link and the source line. Dev runs use `--force-steam off`, so this path has never run.
 13. **Share and import as text** (Jordan, 2026-10-13, after the survey of other managers in DESIGN.md). **Not started:** Jordan decides whether it holds 0.1.0 or moves to the first update. Mod Profile Manager and Mod Preset Sync have share codes, and Load Order Manager has clipboard JSON, so players will expect it.
     - Copy a profile to the clipboard as one line of text: a prefix and version (`SMM1:`) plus the compressed list. It should fit one Discord message for about 250 mods.
     - Import shows what would change before anything does (enable, disable, missing, local only, game version), then makes a new profile, so it can be undone.
@@ -187,7 +187,7 @@
    - `"changeNote": "0.1.0: first release ..."`.
 8. `image.png`: square, under 1 MB, your own art. `previews/`: JPG shots of the main list, Load Order lines, the info panel, Changes/undo and profiles.
 9. Upload. On the item's Change Notes page, check that the branch range reads public-beta and up.
-10. Clean-install test: remove the local `mods/SpireModManager`, move `mod_data/SpireModManager` aside, subscribe, and launch. Run through first run, the BMM import, Workshop details, Patch notes, relaunch, and unsubscribe.
+10. Clean-install test: remove the local `mods/SpireModManager`, move `mod_data/SpireModManager` aside, subscribe, and launch. Run through first run, the BMM import, Workshop details, Change Notes, relaunch, and unsubscribe.
 11. Switch to `public` (or `unlisted` for a soft launch).
 12. **Rollback:**
     - Keep the last good `dist/` zipped per tag.

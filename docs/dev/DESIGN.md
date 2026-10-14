@@ -51,7 +51,7 @@ with Revert all, Ctrl+F, wide layout with smaller text (Vanilla View restores th
 alongside Better Mod Menu (its page in place of Vanilla View, its parts hidden on ours).
 
 Built but only testable in real play (Steam): Workshop details (dates, size, subscribers, Workshop tags,
-branches), the Workshop link on the source line, the Patch notes link.
+branches), the Workshop link on the source line, the Change Notes link.
 
 Not built yet: compatibility audit beyond dependencies, finer auto-sort tiers, linked pushing while
 dragging, profile/save-slot sync, design overhaul.

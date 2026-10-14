@@ -337,10 +337,16 @@ static class Profiles
     // counts installed mods, as they'd be after switching to it (one it has never seen stays as it is now).
     public static string Details(Profile profile)
     {
+        var text = ModCount(profile);
+        return profile.SavedAt is { } saved ? $"{text} · {saved:MMM d}" : text;
+    }
+
+    // "12 mods": a profile's mods on (the list's count; Delete's question names it too).
+    public static string ModCount(Profile profile)
+    {
         var mods = profile.Edited ?? profile.Mods;
         var on = Current().Count(c => !Manager(c.Id) && (Entry(mods, c.Id, c.Source)?.Enabled ?? c.Enabled));
-        var text = Menus.Format(on == 1 ? "SPIRE_MOD_MANAGER.PROFILE_MODS_ONE" : "SPIRE_MOD_MANAGER.PROFILE_MODS", ("count", Menus.Number(on)));
-        return profile.SavedAt is { } saved ? $"{text} · {saved:MMM d}" : text;
+        return Menus.Format(on == 1 ? "SPIRE_MOD_MANAGER.PROFILE_MODS_ONE" : "SPIRE_MOD_MANAGER.PROFILE_MODS", ("count", Menus.Number(on)));
     }
 
     static void Apply(List<ProfileMod> mods, NModdingScreen screen)
