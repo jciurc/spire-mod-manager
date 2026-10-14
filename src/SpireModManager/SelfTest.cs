@@ -2200,9 +2200,10 @@ static class SelfTest
         Check("fixed: the '!' goes", screen.GetNodeOrNull<Control>("SpireModManagerLoadOrderToggle/WarningBadge") is not { Visible: true });
     }
 
-    // Better Mod Menu ticked as well as ours (ours is always on): a red banner on our views, in the problem banners'
-    // place, with a Show that goes to its row. It comes and goes with its tickbox at once (no relaunch). The fixture has
-    // it installed but off; with --bmm it's on and loaded, so the banner is there from the start. It ends as it started.
+    // Better Mod Menu ticked as well as ours: a red banner on our views, in the problem banners' place, with a Show that
+    // goes to its row and a Dismiss that hides it until the two aren't both ticked. It comes and goes with its tickbox at
+    // once (no relaunch). The fixture has it installed but off; with --bmm it's on and loaded, so the banner is there from
+    // the start. It ends as it started.
     static async Task TestManagersBanner(Node menu, NModdingScreen screen, Control content, string outDir)
     {
         List<NModMenuRow> Rows() => content.GetChildren().OfType<NModMenuRow>().ToList();
@@ -2313,9 +2314,105 @@ static class SelfTest
         await Wait(menu, 0.5);
         Check("Vanilla View: no managers banner", await WithVanillaView(screen, menu, () => Banner() is not { Visible: true }));
 
+        // Dismiss, beside Show: the banner goes and leaves no gap (the next thing under the search box, the page's own
+        // warning, the page bar or the list, right under it). View state: no undo step, not a change or pending, saved.
+        bool Buttons() => Banner()?.FindChild("ShowManagersButton", true, false) is Button { Visible: true } show
+            && Banner()?.FindChild("DismissManagersButton", true, false) is Button { Visible: true } dismiss
+            && dismiss.GetGlobalRect().Position.X > show.GetGlobalRect().End.X && dismiss.TooltipText.StartsWith("Hides this warning");
+        bool Closed() => Banner() == null && (new[] { LoadOrder.WarningName, PageBar.Name, PageBar.HintName }
+            .Select(name => border.GetNodeOrNull<Control>(name)).FirstOrDefault(c => c is { Visible: true }) ?? list)
+            .GetGlobalRect().Position.Y - search.GetGlobalRect().End.Y is >= 0 and < 12;
+        bool? Saved() => JsonNode.Parse(File.ReadAllText(Store.FilePath))?["managers_warning_dismissed"]?.GetValue<bool>();
+        (string, string, bool, bool, bool) State() =>
+            (Store.EditsJson(), string.Join(" | ", HistoryBar.Describe()), ModEntry.HasPendingChanges(), Profiles.Edited, History.CanUndo);
+        async Task Dismiss()
+        {
+            Banner()?.FindChild("DismissManagersButton", true, false)?.EmitSignal(BaseButton.SignalName.Pressed);
+            await Wait(menu, 0.3);
+        }
+        Check("the managers banner has Show, then Dismiss with its tip", Buttons(), Where());
+        var before = State();
+        var moves = 0;
+        void Moved() => moves++; // the history moves when a step is added
+        History.Changed += Moved;
+        await Dismiss();
+        History.Changed -= Moved;
+        Check("Dismiss: the banner goes, no gap above the list", Store.Data.ManagersWarningDismissed && Closed(), Where());
+        Check("Dismiss is no undo step, not in Changes, not pending, no unsaved profile edit; saved", moves == 0 && State() == before && Saved() == true,
+            $"history moved {moves}, same state {State() == before}, saved {Saved()}");
+        await Capture(screen, outDir, "2g-managers-dismissed");
+        CategoryList.Redraw(content);
+        await Wait(menu, 0.3);
+        Check("dismissed: still gone after a redraw", Closed(), Where());
+        Click(screen.GetNode<NButton>("SpireModManagerLoadOrderToggle"));
+        await Wait(menu, 0.5);
+        Check("dismissed: not in Load Order either, no gap above the rows", Layout.Current == Layout.View.LoadOrder && Closed(), Where());
+        Click(screen.GetNode<NButton>("SpireModManagerLoadOrderToggle"));
+        await Wait(menu, 0.5);
+        Check("dismissed: still gone back on the main list", Layout.Current == Layout.View.Categories && Closed() && Store.Data.ManagersWarningDismissed, Where());
+
+        // Unticked, the dismiss is re-armed (cleared and saved; the untick is the only undo step); ticked again, the
+        // banner is back.
+        moves = 0;
+        History.Changed += Moved;
+        await Tick(tickbox, false);
+        History.Changed -= Moved;
+        Check("dismissed, then Better Mod Menu unticked: no banner, the dismiss cleared and saved, one undo step", !Bmm.Ticked && Banner() == null
+            && !Store.Data.ManagersWarningDismissed && Saved() == false && moves == 1,
+            $"flag {Store.Data.ManagersWarningDismissed}, saved {Saved()}, history moved {moves}; {Where()}");
+        Check("no Better Mod Menu warning in the bottom row anywhere (the banner says it now)", screen.FindChild("SpireModManagerBmmWarning", true, false) == null);
+        await Tick(tickbox, true);
+        Check("ticked again: the banner is back, with its Show and Dismiss", Placed() && Buttons(), Where());
+
+        // Turned off with another mod, the way Disable all and the relaunch check's fixes do it (their redraw re-arms it,
+        // before the profile follows): still one undo step, which turns both back on, and the banner is back.
+        if (Row("SmmTestLib") is { Mod: { } libMod })
+        {
+            await Dismiss();
+            var dismissed = Store.Data.ManagersWarningDismissed && Banner() == null; // or the redraw has nothing to re-arm
+            Dependencies.Set([bmm, libMod], false, screen);
+            CategoryList.Redraw(content);
+            await Wait(menu, 0.3);
+            Check("dismissed, then Better Mod Menu turned off with another mod: no banner, the dismiss cleared",
+                dismissed && !Bmm.Ticked && Banner() == null && !Store.Data.ManagersWarningDismissed, $"dismissed first {dismissed}; {Where()}");
+            History.Undo();
+            await Wait(menu, 0.3);
+            Check("one undo turns both back on, and the banner is back", Bmm.Ticked && Dependencies.IsOn(libMod) && Placed() && Buttons(), Where());
+        }
+        else
+            Results.Add("SKIP managers banner turned off with another mod: SmmTestLib not installed");
+
+        // Our own row unticked re-arms it too (only both ticked is two managers on).
+        if (Row(ModEntry.ModId)?.GetNode<NTickbox>("Tickbox") is { } ours)
+        {
+            await Dismiss();
+            var dismissed = Store.Data.ManagersWarningDismissed && Banner() == null;
+            await Tick(ours, false);
+            Check("dismissed, then our own mod unticked: no banner, the dismiss cleared",
+                dismissed && Banner() == null && !Store.Data.ManagersWarningDismissed, $"dismissed first {dismissed}; {Where()}");
+            await Tick(ours, true);
+            Check("ours ticked again: the banner is back", Placed() && Buttons(), Where());
+        }
+        else
+            Results.Add("SKIP managers banner with our own mod unticked: no row for it");
+
+        // A change our page never saw (Better Mod Menu uninstalled, or unticked elsewhere, between sessions): the launch
+        // check forgets the dismiss as well. Switched off here without a redraw, then back on with one.
+        {
+            await Dismiss();
+            var dismissed = Store.Data.ManagersWarningDismissed && Banner() == null;
+            Dependencies.Set([bmm], false, screen);
+            Bmm.ForgetDismissedWarning();
+            Check("dismissed, then Better Mod Menu off where our page didn't see it: the launch check clears the dismiss",
+                dismissed && !Store.Data.ManagersWarningDismissed && Saved() == false, $"dismissed first {dismissed}; flag {Store.Data.ManagersWarningDismissed}, saved {Saved()}");
+            Dependencies.Set([bmm], true, screen);
+            CategoryList.Redraw(content);
+            await Wait(menu, 0.3);
+            Check("on again: the banner is back", Placed() && Buttons(), Where());
+        }
+
         await Tick(tickbox, false);
         Check("Better Mod Menu unticked: the banner goes at once", !Bmm.Ticked && Banner() == null, Where());
-        Check("no Better Mod Menu warning in the bottom row anywhere (the banner says it now)", screen.FindChild("SpireModManagerBmmWarning", true, false) == null);
         if (!was)
             return;
         await Tick(tickbox, true);

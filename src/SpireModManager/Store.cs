@@ -25,6 +25,8 @@ public class StoreData
     public bool VanillaView { get; set; }
     public bool LoadOrderView { get; set; }
     public bool UncategorizedCollapsed { get; set; }
+    // The two-mod-managers banner dismissed (LoadOrder): it stays away until the two aren't both ticked.
+    public bool ManagersWarningDismissed { get; set; }
     // Where the player moved the main menu button (top-left, in the game's 1920x1080 frame); null: the corner.
     public ScreenPoint? MenuButtonAt { get; set; }
     public string? ImportedFrom { get; set; }
@@ -290,6 +292,15 @@ public static class Store
         History.Record();
     }
 
+    // View state changed in the middle of a redraw (a dismissed banner re-armed): written without History.Record. It
+    // isn't an edit (EditsJson leaves it out), and a record there can come between a change and the rest of it (a
+    // Disable all's profile update follows its redraw), splitting one undo step in two.
+    public static void SaveViewState()
+    {
+        if (!_batching && _data != null && !_readOnly)
+            Write(_data);
+    }
+
     static bool _batching;
 
     // Several edits as one: one save, one undo step (editing several mods at once).
@@ -312,11 +323,11 @@ public static class Store
         Save();
     }
 
-    // Our data minus view state (views, collapsed categories): what undo compares and restores.
+    // Our data minus view state (views, collapsed categories, a dismissed banner): what undo compares and restores.
     public static string EditsJson()
     {
         var copy = JsonSerializer.Deserialize<StoreData>(JsonSerializer.Serialize(Data, Json), Json) ?? new StoreData();
-        copy.VanillaView = copy.LoadOrderView = copy.UncategorizedCollapsed = false;
+        copy.VanillaView = copy.LoadOrderView = copy.UncategorizedCollapsed = copy.ManagersWarningDismissed = false;
         foreach (var category in copy.Categories)
             category.Collapsed = false;
         return JsonSerializer.Serialize(copy, Json);
@@ -335,7 +346,8 @@ public static class Store
     {
         var restored = JsonSerializer.Deserialize<StoreData>(json, Json) ?? new StoreData();
         var now = Data;
-        (restored.VanillaView, restored.LoadOrderView, restored.UncategorizedCollapsed) = (now.VanillaView, now.LoadOrderView, now.UncategorizedCollapsed);
+        (restored.VanillaView, restored.LoadOrderView, restored.UncategorizedCollapsed, restored.ManagersWarningDismissed) =
+            (now.VanillaView, now.LoadOrderView, now.UncategorizedCollapsed, now.ManagersWarningDismissed);
         foreach (var category in restored.Categories)
             category.Collapsed = now.Categories.FirstOrDefault(c => c.Name == category.Name)?.Collapsed ?? false;
         _data = restored;
