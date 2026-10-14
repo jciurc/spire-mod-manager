@@ -57,8 +57,17 @@ drive; hard links can't cross drives) with its own mods folder, no Steam, separa
   test alongside Better Mod Menu (`--bmm-after`: loaded after ours; `--bmm-local`: its local-fix build), `--real` for a read-only tour with a copy of your own mods and data.
   `--first-run` runs a short suite for a first launch with no data; `--first-run-bmm` does the same with Better
   Mod Menu's data to import (`tools/fixtures/bmm`), with it installed but off, or on with `--bmm` as well.
+  `--workshop <id>[,<id>...]` adds those Steam Workshop items, to test beside other mod managers. They're
+  copied into the dev copy's mods for that run only and switched on after ours, in the order given. Only
+  subscribed items are there to copy. A missing one stops the run, and so does one that needs a mod that won't
+  be on, or needs one that does (it names the chain and the item to add, such as BaseLib's). `test` clears
+  their data in the sandbox first, and fails if one of them didn't load or failed to start. Their code runs:
+  dev.cs writes only in the dev copy and the sandbox, but what a mod writes is up to it. Files at the top of `%APPDATA%\SlayTheSpire2`, such as the
+  `.cfg` files in `mod_configs`, are shared with your real game, and dev.cs can't reset them. Subscribing
+  also installs the item in your real game, where a new mod starts on. Untick it on the game's Modding page,
+  or unsubscribe when you're done; the sandbox writes its own mod list each run, so it's still on there.
 - `dotnet run tools/dev.cs launch`: opens the sandboxed game to try things by hand (`--first-run` or
-  `--first-run-bmm`: starting from that state).
+  `--first-run-bmm`: starting from that state; `--workshop` as for `test`).
 - `SPIRE_MOD_MANAGER_SKIP_PATCHES=ModToggledPatch` (patch class names, comma-separated) before `test` or `launch`:
   those patches count as failed, as after a game update that broke them, to see the game's page and its
   "needs an update" line.
