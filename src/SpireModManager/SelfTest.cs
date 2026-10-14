@@ -940,13 +940,15 @@ static class SelfTest
     }
 
     // The main menu button's Open translations folder: the folder, in our data folder beside manager.json, is made if it
-    // isn't there (a fresh sandbox has none) and handed to the system's file browser (to Translations.TestOpen here, so
+    // isn't there (a fresh sandbox has none; an empty one is removed first) and handed to the system's file browser (to Translations.TestOpen here, so
     // no window opens).
     static async Task TestTranslationsFolder(NMainMenu menu)
     {
         if (menu.GetNodeOrNull<Control>("SpireModManagerMenuButton") is not { } button)
             return;
         var folder = Translations.Folder;
+        if (Directory.Exists(folder) && !Directory.EnumerateFileSystemEntries(folder).Any())
+            Directory.Delete(folder); // an empty one left over: gone, so the press has to make it
         var before = Directory.Exists(folder);
         string? opened = null;
         Translations.TestOpen = path => opened = path;
@@ -955,8 +957,8 @@ static class SelfTest
             if (await ButtonMenu(menu, button) is { } popup)
                 MenuPanel.Press(popup, "Open translations folder");
             await Wait(menu, 0.2);
-            Check("Open translations folder: made in the data folder and opened, the menu closed", opened == folder && Directory.Exists(folder)
-                && Path.GetDirectoryName(folder) == Path.GetDirectoryName(Store.FilePath) && !MenuPanel.IsOpen,
+            Check("Open translations folder: made in the data folder and opened, the menu closed", !before && opened == folder && Directory.Exists(folder)
+                && folder.Replace('\\', '/').EndsWith($"/mod_data/{ModEntry.ModId}/translations") && !MenuPanel.IsOpen,
                 $"opened {opened ?? "nothing"}; {folder} there before: {before}");
         }
         finally
@@ -968,9 +970,9 @@ static class SelfTest
 
     // Drop-in translations (Translations) in German, which has no packed translation, so our text is all English there
     // until now: a file in the translations folder, read as the game switches language (its own switch, as in its
-    // settings, without the menu rebuild). Its text shows, in the game's table and on the main menu button's menu; a key
-    // it leaves out, an empty text, a broken placeholder and one English doesn't fill in (renamed or added) show in
-    // English, and a key English doesn't have is left out.
+    // settings, without the menu rebuild). Its text shows, in the game's table and on the main menu button's menu, and its
+    // {count} takes German numbers; a key it leaves out, an empty text, a number, a broken placeholder and one English
+    // doesn't fill in (renamed or added) show in English, and a key English doesn't have is left out.
     // Back in English, English. A file that isn't JSON, isn't an object or is over 1 MB changes nothing and throws
     // nothing. One saved as deu.json.txt (a browser's "Save as", the .txt hidden) is read. The file is removed and the
     // language set back afterwards.
@@ -986,6 +988,8 @@ static class SelfTest
             Broken = "SPIRE_MOD_MANAGER.MOVE_BUTTON", Empty = "SPIRE_MOD_MANAGER.MOVE_HINT";
         const string NotOurs = Translated + "X"; // a key mistyped
         const string Renamed = "SPIRE_MOD_MANAGER.PAGE_DISABLED", Added = "SPIRE_MOD_MANAGER.OPEN_TRANSLATIONS";
+        const string Counted = "SPIRE_MOD_MANAGER.PAGE_ALL", NotText = "SPIRE_MOD_MANAGER.RELAUNCH_NOTE";
+        const string German = "Spiel neu starten (Änderungen, 模组)"; // not ASCII: read as UTF-8, with a byte order mark
         string[] keys = [Translated, LeftOut, Broken, Empty];
         static string Read(string key)
         {
@@ -1005,7 +1009,7 @@ static class SelfTest
         // The file written, then the game switched to German. The exception's message if the switch threw.
         string? Switch(string text)
         {
-            File.WriteAllText(file, text);
+            File.WriteAllText(file, text, new UTF8Encoding(true));
             try
             {
                 LocManager.Instance.SetLanguage("deu");
@@ -1022,25 +1026,30 @@ static class SelfTest
             var threw = Switch($$"""
                 {
                   // a comment and a trailing comma, as a hand-edited file may have
-                  "{{Translated}}": "Spiel neu starten",
+                  "{{Translated}}": "{{German}}",
+                  "{{Counted}}": "Installierte Mods ({count})",
                   "{{Broken}}": "Knopf {verschieben",
                   "{{Empty}}": " ",
                   "{{Renamed}}": "Deaktivierte Mods ({anzahl})",
                   "{{Added}}": "Ordner {ordner}",
+                  "{{NotText}}": 5,
                   "{{NotOurs}}": "Nicht unser Text",
                 }
                 """);
-            Check("a drop-in translation: its text shows in its language", threw == null && Read(Translated) == "Spiel neu starten", threw ?? Shown());
+            Check("a drop-in translation: its text shows in its language", threw == null && Read(Translated) == German, threw ?? Shown());
+            var counted = Menus.Format(Counted, ("count", Menus.Number(1234)));
+            Check("a drop-in translation: its {count} filled in, in German numbers", counted == "Installierte Mods (1.234)", counted);
             Check("a drop-in translation: a key it leaves out, an empty text and a broken placeholder show in English",
                 Read(LeftOut) == english[LeftOut] && Read(Empty) == english[Empty] && Read(Broken) == english[Broken], Shown());
             var table = LocManager.Instance.GetTable("settings_ui");
-            Check("a drop-in translation: a renamed placeholder and an added one show in English", !table.IsLocalKey(Renamed) && !table.IsLocalKey(Added),
-                $"{table.GetRawText(Renamed)} | {table.GetRawText(Added)}");
+            Check("a drop-in translation: a renamed placeholder, an added one and a number show in English",
+                !table.IsLocalKey(Renamed) && !table.IsLocalKey(Added) && !table.IsLocalKey(NotText),
+                $"{table.GetRawText(Renamed)} | {table.GetRawText(Added)} | {table.GetRawText(NotText)}");
             Check("a drop-in translation: a key English doesn't have is left out", !table.HasEntry(NotOurs));
             var popup = menu.GetNodeOrNull<Control>("SpireModManagerMenuButton") is { } button ? await ButtonMenu(menu, button) : null;
             var labels = popup == null ? [] : MenuPanel.Labels(popup);
             MenuPanel.Close();
-            Check("a drop-in translation on screen: the main menu button's menu has Spiel neu starten", labels.Contains("Spiel neu starten"),
+            Check("a drop-in translation on screen: the main menu button's menu has it", labels.Contains(German),
                 string.Join(", ", labels));
             LocManager.Instance.SetLanguage(start);
             Check("a drop-in translation: back in English, English", AllEnglish(), Shown());
