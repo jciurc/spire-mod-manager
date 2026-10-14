@@ -30,7 +30,7 @@ Subscribe to it on the Steam Workshop; the game installs it for you.
 - **Load Order view:** drag mods into order, one or several at a time. Lines show what each mod needs and what
   needs it, green where the order works and red where it doesn't. Fix now and Auto sort put things right.
 - **Warnings that name the mods:** a banner says when enabled mods need a mod that's disabled or not
-  installed, and Enable needed mods turns on the ones you have.
+  installed, and Enable required mods turns on the ones you have.
 - **Your notes on each mod:** an alias, notes and your own tags, plus automatic ones (New, Local, Library,
   Gameplay, Cosmetic).
 - **Search:** names, aliases, notes, tags, authors, categories and Workshop tags; `#tag` and `@author` narrow
