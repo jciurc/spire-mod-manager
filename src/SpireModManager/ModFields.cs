@@ -218,6 +218,7 @@ sealed class ModField
         {
             Name = "Editing", Text = Menus.Format("SPIRE_MOD_MANAGER.EDITING_SELECTED", ("count", Menus.Number(modIds.Count))),
             CustomMinimumSize = new Vector2(0, 34), VerticalAlignment = VerticalAlignment.Center,
+            MouseFilter = Control.MouseFilterEnum.Ignore, // a Label's default, said outright: the Heading box below takes the mouse
         };
         Style(heading, "res://themes/kreon_bold_shared.tres", 20, Cream);
         // An "i" beside it, drawing the eye to the card saying how editing several mods works. The heading and the i are one
