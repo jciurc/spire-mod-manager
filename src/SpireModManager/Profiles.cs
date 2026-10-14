@@ -232,6 +232,9 @@ static class Profiles
     // Unlisted: installed mods it doesn't name, which stay as they are (a profile that has never seen a mod leaves it
     // alone). Missing: the ones it names that aren't installed. The profile keeps those too, by id and the source the
     // list suggests (a Workshop link: the Workshop), so installing one later and switching to the profile sets it.
+    // Installed while this profile is active, one arrives on (the game's default) and stays so: the profile has seen
+    // it, so it isn't taken in, and one listed off shows as an unsaved change (Discard turns it off). Left that way
+    // for now, for Jordan to decide; most lists name mods that are on.
     // The mod managers are never turned on or off by a profile, so they're in none of the counts.
     public record ImportPlan(List<ProfileMod> Mods, int On, int Off, int Same, int Unlisted, List<ProfileCsv.Entry> Missing);
 
