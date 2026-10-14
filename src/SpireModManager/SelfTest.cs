@@ -129,6 +129,7 @@ static class SelfTest
             await TestListFixes(menu, screen, content);
             await TestProfileEditing(menu, screen, outDir);
             await TestUnsavedProfile(menu, screen, content, outDir);
+            await TestProfileShare(menu, screen, outDir);
             await TestNotes(menu, screen, content, outDir);
             await TestPendingNotes(menu, screen, content);
             await TestPendingLine(menu, screen, content);
@@ -1216,7 +1217,8 @@ static class SelfTest
         // The profile list: opens below the picker; a second press on the picker closes it.
         await RealClick(menu, picker);
         var list = MenuPanel.Current;
-        Check("the picker opens the profile list, with details", list != null && MenuPanel.Labels(list).Count == Store.Data.Profiles.Count,
+        Check("the picker opens the profile list, with details, then Share profile and Import profile", list != null
+            && MenuPanel.Labels(list).SequenceEqual(Store.Data.Profiles.Select(p => p.Name).Concat(["Share profile", "Import profile"])),
             list == null ? "no list" : string.Join(", ", MenuPanel.Labels(list)));
         await Capture(screen, outDir, "7b-profile-list");
         await RealClick(menu, picker);
@@ -1391,6 +1393,187 @@ static class SelfTest
         Input.ParseInputEvent(new InputEventKey { Keycode = Key.S, CtrlPressed = true, Pressed = true });
         await Wait(menu, 0.3);
         Check("Ctrl+S saves the profile", !Profiles.Edited && SavedOn() == wasOn && profile.Edited == null);
+    }
+
+    // Sharing a profile as CSV text and importing one (ProfileShare): the format on its own, the Share dialog (from the
+    // profile list), Copy and saving, then the Import dialog with our own list and a Better Mod Menu one, its preview,
+    // its errors, and an import as one undo step. Starts and ends on the active profile with nothing changed.
+    static async Task TestProfileShare(Node menu, NModdingScreen screen, string outDir)
+    {
+        var bar = screen.GetNode("ModsBorder/SpireModManagerProfileBar");
+        if (Profiles.Active is not { } start || Dependencies.Find("SmmTestUi") == null || Dependencies.Find("SmmTestLib") == null
+            || Store.Data.Profiles.FirstOrDefault(p => p != start) is not { } other)
+        {
+            Results.Add("SKIP profile sharing: needs two profiles and the test mods");
+            return;
+        }
+        if (Profiles.Edited)
+            Profiles.Save(); // start clean
+        // Undo puts our data back as new objects: profiles are found by name after one.
+        var (startName, otherName, profiles) = (start.Name, other.Name, Store.Data.Profiles.Count);
+        Profile? Named(string name) => Store.Data.Profiles.FirstOrDefault(p => p.Name == name);
+        Node? Dialog() => menu.GetTree().Root.GetNodeOrNull(ProfileShare.Name);
+        T? Part<T>(string name) where T : class => Dialog()?.FindChild(name, true, false) as T;
+        void Press(string name) => Part<BaseButton>(name)?.EmitSignal(BaseButton.SignalName.Pressed);
+        string Status() => Part<Label>("Status") is { Visible: true } status ? status.Text : "";
+        bool StatusRed() => Part<Label>("Status")?.GetThemeColor("font_color") is { R: > 0.9f, G: < 0.6f };
+        string Preview() => Part<RichTextLabel>("Preview")?.GetParsedText() ?? "";
+        async Task Paste(string text)
+        {
+            if (Part<TextEdit>("CsvText") is { } box)
+            {
+                box.Text = text;
+                box.EmitSignal(TextEdit.SignalName.TextChanged);
+            }
+            await Wait(menu, 0.2);
+        }
+        async Task Choose(string label)
+        {
+            await RealClick(menu, (Button)bar.FindChild("ProfilePicker", true, false));
+            if (MenuPanel.Current is { } list)
+                MenuPanel.Press(list, label);
+            await Wait(menu, 0.3);
+        }
+        bool IsOn(string id) => Dependencies.Find(id) is { } mod && Dependencies.IsOn(mod);
+
+        // The format on its own: quoting, the formula guard, and a forgiving read.
+        var tricky = ProfileCsv.Write([
+            new ProfileCsv.Row("SmmQuote", "Comma, \"quoted\"\nname", "1.0", true, "A, B", ""),
+            new ProfileCsv.Row("SmmFormula", "=HYPERLINK(\"x\")", "-1", false, "@group", ""),
+        ]);
+        var back = ProfileCsv.Read(tricky).Mods;
+        var trickyRecords = ProfileCsv.Records(tricky);
+        Check("CSV: a name with a comma, quotes and a line break round-trips, quoted", tricky.Contains("\"Comma, \"\"quoted\"\"\nname\"")
+            && back is [{ Id: "SmmQuote", Enabled: true, Name: "Comma, \"quoted\"\nname" }, ..] && trickyRecords.Count == 3 && trickyRecords[1][4] == "A, B",
+            tricky);
+        Check("CSV: a value starting with = + - @ gets a ' in front, taken off again when read", tricky.Contains("\"'=HYPERLINK(\"\"x\"\")\",'-1,FALSE,'@group,")
+            && back is [_, { Id: "SmmFormula", Enabled: false, Name: "=HYPERLINK(\"x\")" }], tricky);
+        var loose = ProfileCsv.Read("enabled;NAME;id\nyes;a;SmmA\r\nNo;b;SmmB\n\n1;c;SmmC\n0;\"d;e\";SmmD").Mods;
+        Check("CSV: columns by name in any order and case, Id for Mod Id, a ; between values, yes/no and 1/0",
+            string.Join(",", loose.Select(m => $"{m.Id}={m.Enabled}")) == "SmmA=True,SmmB=False,SmmC=True,SmmD=False" && loose[3].Name == "d;e",
+            string.Join(",", loose.Select(m => $"{m.Id}={m.Enabled}/{m.Name}")));
+        Check("CSV: a Workshop link is rebuilt from its id; anything else is dropped",
+            ProfileCsv.CleanLink("https://steamcommunity.com/sharedfiles/filedetails/?id=3123456789&searchtext=") == "https://steamcommunity.com/sharedfiles/filedetails/?id=3123456789"
+            && ProfileCsv.CleanLink("https://example.com/?x=1") == "" && ProfileCsv.IsWorkshopLink(ProfileCsv.WorkshopLink(42)) && !ProfileCsv.IsWorkshopLink("https://example.com"));
+
+        // Share profile, from the profile list: the active profile's list, a row per installed mod in load order, on and
+        // off as it has them, the category as Group, no alias or notes (the fixture gives this mod both).
+        await Choose("Share profile");
+        var csv = Part<TextEdit>("CsvText")?.Text ?? "";
+        var records = ProfileCsv.Records(csv);
+        var installed = ModManager.Mods.Union(Installed.Mods).Where(m => m.manifest?.id != null).ToList();
+        var order = (SaveManager.Instance.SettingsSave.ModSettings?.ModList ?? []).Select(e => e.Id)
+            .Where(id => installed.Any(m => m.manifest?.id == id)).Distinct().ToList();
+        var ids = records.Skip(1).Select(r => r[0]).ToList();
+        Check("Share profile opens with the active profile's list: the header, a row per installed mod in load order",
+            Dialog() != null && records.FirstOrDefault()?.SequenceEqual(ProfileCsv.Header) == true && ids.Count == installed.Count
+            && ids.Take(order.Count).SequenceEqual(order) && Part<RichTextLabel>("Body")?.GetParsedText().Contains(startName) == true,
+            $"{string.Join(" | ", ids)} vs order {string.Join(" | ", order)}");
+        Check("each row's Enabled as the profile has it, TRUE and FALSE both there", records.Skip(1).All(r => r[3] == (IsOn(r[0]) ? "TRUE" : "FALSE"))
+            && ids.Contains("SmmTestRetired") && records.Any(r => r[3] == "TRUE") && records.Any(r => r[3] == "FALSE"),
+            string.Join(", ", records.Skip(1).Select(r => $"{r[0]}={r[3]}")));
+        Check("Group is the category; no alias or notes", records.FirstOrDefault(r => r[0] == ModEntry.ModId)?[4] == "Tools"
+            && !csv.Contains("The Manager") && !csv.Contains("Fixture note") && records.Skip(1).All(r => r.Count == 8 && r[6] == "" && r[7] == ""), csv);
+        await Capture(screen, outDir, "7c-share-profile");
+        Press("CopyButton");
+        await Wait(menu, 0.1);
+        Check("Copy says Copied", Part<Button>("CopyButton")?.Text == "Copied", Part<Button>("CopyButton")?.Text ?? "no button");
+        if (DisplayServer.GetName() == "headless")
+            Results.Add("SKIP Copy puts the text on the clipboard: there's no clipboard headless");
+        else
+            Check("Copy puts the text on the clipboard", DisplayServer.ClipboardGet() == csv);
+        var file = Path.Combine(outDir, ProfileShare.FileName("Co-op: \"night\"?"));
+        var saveError = ProfileShare.SaveTo(file, csv);
+        var bytes = File.Exists(file) ? File.ReadAllBytes(file) : [];
+        Check("Save CSV: a name made safe for a file, the text as UTF-8 with a BOM", Path.GetFileName(file) == "Co-op_ _night__.csv" && saveError == null
+            && bytes is [0xEF, 0xBB, 0xBF, ..] && File.ReadAllText(file) == csv, $"{Path.GetFileName(file)}: {saveError}");
+        Input.ParseInputEvent(new InputEventKey { Keycode = Key.Escape, Pressed = true });
+        await Wait(menu, 0.2);
+        Input.ParseInputEvent(new InputEventKey { Keycode = Key.Escape, Pressed = false });
+        Check("Esc closes Share profile, and stays on the page", Dialog() == null && screen.IsVisibleInTree());
+
+        // Import our own list while on the other profile: the preview, then Create profile brings the states back, in a
+        // new profile named "Imported profile", made active. One undo step takes it away again.
+        var startStates = ModListState();
+        Profiles.SwitchTo(other, screen);
+        await Wait(menu, 0.3);
+        var otherStates = ModListState();
+        await Choose("Import profile");
+        await Paste(csv);
+        Check("Import profile: our own list previews the new profile and what it enables", Dialog() != null && Status() == ""
+            && Preview().Contains("Creates the profile Imported profile:") && Preview().Contains("Enables ") && !Preview().Contains("Not installed"), Preview());
+        Press("CreateProfileButton");
+        await Wait(menu, 0.3);
+        Check("Create profile: a new profile with the list's states, active, and the dialog closed", Dialog() == null && Profiles.Active?.Name == "Imported profile"
+            && Store.Data.Profiles.Count == profiles + 1 && !Profiles.Edited && ModListState().SequenceEqual(startStates),
+            $"{Profiles.Active?.Name}: {string.Join(", ", startStates.Except(ModListState()))}");
+        History.Undo();
+        await Wait(menu, 0.3);
+        Check("undo takes the imported profile away, back on the profile before", Named("Imported profile") == null && Store.Data.Profiles.Count == profiles
+            && Profiles.Active?.Name == otherName && ModListState().SequenceEqual(otherStates), $"{Profiles.Active?.Name}: {string.Join(", ", Store.Data.Profiles.Select(p => p.Name))}");
+
+        // Better Mod Menu's own export: its columns and order, a BOM, CRLF, TRUE/FALSE, a group with a comma, a guarded
+        // alias, notes over two lines, and two mods that aren't installed (one with its Workshop link, one off).
+        const string link = "https://steamcommunity.com/sharedfiles/filedetails/?id=3123456789";
+        var bmm = "\uFEFFMod Id,Name,Version,Enabled,Group,Workshop Link,Alias,Notes\r\n"
+            + "SmmTestGoneOff,Gone Off,1.0,FALSE,\"Content, mostly\",,,\r\n"
+            + $"SmmTestNotHere,Not Here Mod,2.0,TRUE,\"Content, mostly\",{link},'=cool,\"Line one\r\nline two\"\r\n"
+            + "SmmTestLib,Test Framework,1.0.0,TRUE,Frameworks,,,\r\n"
+            + "SmmTestUi,Test UI,1.0.0,FALSE,Ungrouped,,,\r\n";
+        var plan = Profiles.PlanImport(ProfileCsv.Read(bmm).Mods);
+        var (wantOn, wantOff) = ((IsOn("SmmTestLib") ? 0 : 1), (IsOn("SmmTestUi") ? 1 : 0));
+        var others = installed.Count(m => m.manifest?.id is { } id && id != ModEntry.ModId && id != Bmm.ModId && id != "SmmTestLib" && id != "SmmTestUi");
+        await Choose("Import profile");
+        await Paste(bmm);
+        var bbcode = Part<RichTextLabel>("Preview")?.Text ?? "";
+        Check("a Better Mod Menu list: what it changes compared with now, and the installed mods it doesn't name",
+            Status() == "" && plan.On == wantOn && plan.Off == wantOff && plan.Same == 2 - wantOn - wantOff && plan.Unlisted == others
+            && Preview().Contains(others == 1 ? "1 installed mod isn't in the list" : $"{others} installed mods aren't in the list"),
+            $"on {plan.On}/{wantOn}, off {plan.Off}/{wantOff}, same {plan.Same}, unlisted {plan.Unlisted}/{others}: {Preview()}");
+        Check("the mods it names that aren't installed are listed, by name, with the Workshop link", plan.Missing.Count == 2
+            && Preview().Contains("Not installed (2)") && Preview().Contains("Not Here Mod  Workshop page") && Preview().Contains("Gone Off (disabled)")
+            && bbcode.Contains($"[url={link}]"), Preview());
+        await Capture(screen, outDir, "7d-import-preview");
+        Press("CreateProfileButton");
+        await Wait(menu, 0.3);
+        var made = Profiles.Active;
+        Check("its states applied; the new profile keeps the mods that aren't installed, for later", made?.Name == "Imported profile"
+            && IsOn("SmmTestLib") && !IsOn("SmmTestUi")
+            && made.Mods.Any(m => m is { Id: "SmmTestNotHere", Source: ModSource.SteamWorkshop, Enabled: true })
+            && made.Mods.Any(m => m is { Id: "SmmTestGoneOff", Source: ModSource.ModsDirectory, Enabled: false }),
+            string.Join(", ", made?.Mods.Select(m => $"{m.Id}/{m.Source}={m.Enabled}") ?? []));
+        History.Undo();
+        await Wait(menu, 0.3);
+        Check("and undo takes that one away too", Named("Imported profile") == null && Profiles.Active?.Name == otherName && ModListState().SequenceEqual(otherStates));
+
+        // Errors show in red in the dialog, and nothing is made: no Mod Id column, Enabled that isn't a yes or no, no text.
+        await Choose("Import profile");
+        await Paste("Name,Enabled\r\nTest UI,TRUE\r\n");
+        var noId = (Status(), StatusRed(), Preview());
+        await Capture(screen, outDir, "7e-import-error");
+        await Paste("Mod Id,Enabled\nSmmTestUi,maybe\n");
+        var badValue = Status();
+        await Paste("");
+        Press("CreateProfileButton");
+        await Wait(menu, 0.2);
+        Check("a list without Mod Id says so in red, with no preview", noId.Item1.StartsWith("This list has no Mod Id column") && noId.Item2 && noId.Item3 == "",
+            $"\"{noId.Item1}\" red {noId.Item2}, preview \"{noId.Item3}\"");
+        Check("a bad Enabled value names its row", badValue == "Row 2: Enabled should be TRUE or FALSE, not \"maybe\".", badValue);
+        Check("Create profile with no text says what to do, in red, and makes nothing", Dialog() != null && Status() == "Paste a mod list or load a CSV file first."
+            && StatusRed() && Store.Data.Profiles.Count == profiles, Status());
+        Check("the imported name: the file's, numbered when taken", Profiles.ImportName("C:/lists/Brother co-op.csv") == "Brother co-op"
+            && Profiles.ImportName($"{startName}.csv") == Profiles.CopyName(startName), Profiles.ImportName($"{startName}.csv"));
+        Part<TextEdit>("CsvText")?.GrabFocus();
+        Input.ParseInputEvent(new InputEventKey { Keycode = Key.Escape, Pressed = true });
+        await Wait(menu, 0.2);
+        Input.ParseInputEvent(new InputEventKey { Keycode = Key.Escape, Pressed = false });
+        Check("Esc in the text box closes Import profile", Dialog() == null && screen.IsVisibleInTree());
+
+        if (Named(startName) is { } back2)
+            Profiles.SwitchTo(back2, screen);
+        await Wait(menu, 0.3);
+        Check("profile sharing leaves the profiles and the mod list as they were", Profiles.Active?.Name == startName && !Profiles.Edited
+            && Store.Data.Profiles.Count == profiles && ModListState().SequenceEqual(startStates));
     }
 
     // New mods and profiles (Jordan, 2026-10-13). The fixture's Default profile doesn't list the test mods, which
