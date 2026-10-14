@@ -60,9 +60,9 @@ drive; hard links can't cross drives) with its own mods folder, no Steam, separa
   `--workshop <id>[,<id>...]` adds those Steam Workshop items, to test beside other mod managers. They're
   copied into the dev copy's mods for that run only and switched on after ours, in the order given. Only
   subscribed items are there to copy. A missing one stops the run, and so does one that needs a mod that won't
-  be on (it names the item to add, such as BaseLib's). `test` clears their data in the sandbox first, and fails
-  if one of them didn't load or failed to start. Their code runs: dev.cs writes only in the dev copy and the
-  sandbox, but what a mod writes is up to it. Files at the top of `%APPDATA%\SlayTheSpire2`, such as the
+  be on, or needs one that does (it names the chain and the item to add, such as BaseLib's). `test` clears
+  their data in the sandbox first, and fails if one of them didn't load or failed to start. Their code runs:
+  dev.cs writes only in the dev copy and the sandbox, but what a mod writes is up to it. Files at the top of `%APPDATA%\SlayTheSpire2`, such as the
   `.cfg` files in `mod_configs`, are shared with your real game, and dev.cs can't reset them. Subscribing
   also installs the item in your real game, where a new mod starts on. Untick it on the game's Modding page,
   or unsubscribe when you're done; the sandbox writes its own mod list each run, so it's still on there.

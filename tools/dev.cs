@@ -8,8 +8,8 @@
 //                                      --workshop <id>[,<id>...]: those Steam Workshop items too (subscribed
 //                                      ones only: Steam downloads no others), copied into the dev copy's
 //                                      mods for this run and switched on after ours, in the order given; one
-//                                      that's missing, or needs a mod that won't be on, stops the run, and
-//                                      one that didn't load or failed to start fails it;
+//                                      that's missing, or needs a mod that won't be on, even through another,
+//                                      stops the run, and one that didn't load or failed to start fails it;
 //                                      --real: Jordan's own mods, switched off, and a copy of his data;
 //                                      --first-run: a short suite for a first run, with no data of ours and
 //                                      none of Better Mod Menu's; --first-run-bmm: the same, but with Better
@@ -96,21 +96,26 @@ foreach (var item in workshopItems)
     }
 }
 workshopMods = workshopManifests.Select(m => Id(m.Manifest)).ToList();
-// And what each one needs has to be on too, or the game won't load it: ours, the other --workshop mods, Better Mod
-// Menu with --bmm, and (not --real, which switches every other mod off) the installed and fixture mods but Better
-// Mod Menu's fork.
-var willLoad = new HashSet<string>(workshopMods) { ModId };
-if (bmm)
-    willLoad.Add("BetterModMenu");
-if (!real)
-    willLoad.UnionWith(ManifestIds(Path.Combine(GameDir, "mods")).Concat(ManifestIds(Path.Combine(root, "tools", "fixtures", "mods")))
-        .Where(id => id is not ("BetterModMenu" or "BetterModMenuFork")));
+// And what each one needs has to be on too, and what that needs in turn: the game won't load a mod whose dependency
+// didn't load (as the fixture's BrandedMod shows, without BaseLib), nor then the mods that need that one. On in this
+// run, with their manifests: ours (build.cs gives it no dependencies), the --workshop mods, Better Mod Menu with --bmm,
+// and (not --real, which switches every other mod off) the other installed and fixture mods but Better Mod Menu's fork.
+var installedManifests = Manifests(Path.Combine(GameDir, "mods")).ToList();
+var on = workshopManifests.ToDictionary(m => Id(m.Manifest), m => m.Manifest);
+on.TryAdd(ModId, []);
+var others = real ? [] : installedManifests.Concat(Manifests(Path.Combine(root, "tools", "fixtures", "mods")));
+foreach (var manifest in others.Where(m => Id(m) is not (ModId or "BetterModMenu" or "BetterModMenuFork"))
+    .Concat(installedManifests.Where(m => bmm && Id(m) == "BetterModMenu")))
+    on.TryAdd(Id(manifest), manifest);
+// Walked from the --workshop mods only: some self-test checks need a mod that won't load (BrandedMod, as above).
 foreach (var (item, manifest) in workshopManifests)
-    foreach (var needed in DependencyIds(manifest).Where(id => !willLoad.Contains(id)))
+    if (MissingDependency([Id(manifest)], []) is { } chain)
     {
-        var installed = ManifestIds(Path.Combine(GameDir, "mods")).Contains(needed);
+        var needed = chain[^1];
+        var installed = installedManifests.Any(m => Id(m) == needed);
         var subscribed = Directory.GetDirectories(WorkshopDir).FirstOrDefault(d => ManifestIds(d).Contains(needed));
-        return Fail($"Workshop item {item} ({Id(manifest)}) needs {needed}, which won't be on in this run: " + (installed && needed == "BetterModMenu" ? "add --bmm."
+        var needs = string.Join(", ", chain.Zip(chain.Skip(1), (mod, dependency) => $"{mod} needs {dependency}"));
+        return Fail($"Workshop item {item} won't load: {needs}, and {needed} won't be on in this run: " + (installed && needed == "BetterModMenu" ? "add --bmm."
             : installed && real ? "--real switches the installed mods off, so run it without --real."
             : subscribed != null ? $"add its Workshop item, as in --workshop {string.Join(',', workshopItems.Append(Path.GetFileName(subscribed)))}"
             : "subscribe to it in Steam, then add its Workshop item to --workshop."));
@@ -374,6 +379,19 @@ void PrepareSandbox(bool resetData)
             .FirstOrDefault(f => f.Contains(Path.Combine("mod_data", ModId)))
         : null;
     File.Copy(source ?? Path.Combine(root, "tools", "fixtures", "manager.json"), Path.Combine(data, "manager.json"));
+}
+
+// The chain from the last mod in chain to the first mod it needs, directly or through others, that won't be on in this
+// run (as in [A, B, C]: A needs B, B needs C, and C won't be on), or null when everything it needs will be.
+List<string>? MissingDependency(List<string> chain, HashSet<string> seen)
+{
+    seen.Add(chain[^1]);
+    foreach (var id in DependencyIds(on[chain[^1]]))
+        if (!on.ContainsKey(id))
+            return [.. chain, id];
+        else if (!seen.Contains(id) && MissingDependency([.. chain, id], seen) is { } missing)
+            return missing;
+    return null;
 }
 
 // The manifests under a mods folder (a manifest is a JSON file with "id" and "has_dll"), and their mod ids.
