@@ -503,6 +503,9 @@ static class Layout
         label.AddThemeFontSizeOverride("normal_font_size", size);
         label.AddThemeFontSizeOverride("bold_font_size", size);
         label.MaxFontSize = size;
+        // Its auto-size skips writing a size equal to the one it wrote last: with ours written in between, the next
+        // fitting writes its size again.
+        label.Set(MegaRichTextLabel.PropertyName._lastSetSize, 0);
         label.SetTextAutoSize(label.Text);
     }
 }
