@@ -204,6 +204,94 @@ static class Profiles
         return profile;
     }
 
+    // A profile to share (ProfileShare): every installed mod in load order, on or off as the profile has it (one it
+    // has never seen as it is now, as switching to it would leave it). Group is the mod's category, empty in
+    // Uncategorized. Alias and notes are left out on purpose: they're the player's own words, which a list passed to
+    // friends shouldn't carry (an open question for Jordan). Mods the profile keeps but that aren't installed aren't
+    // listed either: there's no name, version or Workshop id to give for them.
+    public static List<ProfileCsv.Row> ShareRows(Profile profile)
+    {
+        var mods = profile.Edited ?? profile.Mods;
+        var places = new Dictionary<(string, ModSource), int>();
+        var list = SaveManager.Instance.SettingsSave.ModSettings?.ModList ?? [];
+        for (var i = 0; i < list.Count; i++)
+            places.TryAdd((list[i].Id, list[i].Source), i);
+        var settings = SaveManager.Instance.SettingsSave.ModSettings;
+        return AllMods().OrderBy(m => places.TryGetValue((m.manifest?.id ?? "", m.modSource), out var i) ? i : int.MaxValue)
+            .Select(m =>
+            {
+                var id = m.manifest?.id ?? "";
+                var on = Entry(mods, id, m.modSource)?.Enabled ?? !(settings?.IsModDisabled(m) ?? false);
+                return new ProfileCsv.Row(id, m.manifest?.name ?? "", m.manifest?.version ?? "", on, Store.InfoFor(id)?.Category ?? "",
+                    m.workshopId is { } workshop ? ProfileCsv.WorkshopLink(workshop) : "");
+            }).ToList();
+    }
+
+    // What a shared list would do, compared with the mod list now (ProfileShare shows it before anything changes).
+    // Mods: the new profile's entries. On, Off: installed mods it turns on and off; Same: ones already that way;
+    // Unlisted: installed mods it doesn't name, which stay as they are (a profile that has never seen a mod leaves it
+    // alone). Missing: the ones it names that aren't installed. The profile keeps those too, by id and the source the
+    // list suggests (a Workshop link: the Workshop), so installing one later and switching to the profile sets it.
+    // Installed while this profile is active, one arrives on (the game's default) and stays so: the profile has seen
+    // it, so it isn't taken in, and one listed off shows as an unsaved change (Discard turns it off). Left that way
+    // for now, for Jordan to decide; most lists name mods that are on.
+    // The mod managers are never turned on or off by a profile, so they're in none of the counts.
+    public record ImportPlan(List<ProfileMod> Mods, int On, int Off, int Same, int Unlisted, List<ProfileCsv.Entry> Missing);
+
+    public static ImportPlan PlanImport(IReadOnlyList<ProfileCsv.Entry> entries)
+    {
+        var current = Current();
+        var mods = new List<ProfileMod>();
+        var (on, off, same, unlisted) = (0, 0, 0, 0);
+        foreach (var mod in current.Where(c => !Manager(c.Id)))
+        {
+            var listed = entries.Where(e => e.Id == mod.Id).ToList();
+            if (listed.Count == 0)
+            {
+                unlisted++;
+                continue;
+            }
+            // A mod listed twice (a local and a Workshop copy): the row for this copy's source, by its link.
+            var row = listed.FirstOrDefault(e => (e.WorkshopLink.Length > 0) == (mod.Source == ModSource.SteamWorkshop)) ?? listed[0];
+            mods.Add(mod with { Enabled = row.Enabled });
+            if (row.Enabled == mod.Enabled)
+                same++;
+            else if (row.Enabled)
+                on++;
+            else
+                off++;
+        }
+        var missing = entries.Where(e => !Manager(e.Id) && current.All(c => c.Id != e.Id)).DistinctBy(e => e.Id).ToList();
+        mods.AddRange(missing.Select(e => new ProfileMod(e.Id, e.WorkshopLink.Length > 0 ? ModSource.SteamWorkshop : ModSource.ModsDirectory, e.Enabled)));
+        return new ImportPlan(mods, on, off, same, unlisted, missing);
+    }
+
+    // A new profile from a shared list, placed after the active one and switched to, as New does: one undo step.
+    public static Profile Import(string name, ImportPlan plan, NModdingScreen screen)
+    {
+        var from = Active;
+        var profile = new Profile { Name = name, Mods = plan.Mods.ToList(), SavedAt = DateTime.Now };
+        var list = Store.Data.Profiles;
+        list.Insert(from != null ? list.IndexOf(from) + 1 : list.Count, profile);
+        SwitchTo(profile, screen);
+        return profile;
+    }
+
+    // An imported profile's name: the file's, or "Imported profile"; "(1)" and on after it when that's taken. Better
+    // Mod Menu names its exports by the time ("mod_list.20261014-120000.csv", "-2" and on when taken), which says
+    // nothing as a profile's name: those are "Imported profile" too.
+    public static string ImportName(string? file)
+    {
+        var name = Path.GetFileNameWithoutExtension(file ?? "").Trim();
+        if (System.Text.RegularExpressions.Regex.IsMatch(name, @"^mod_list\.\d{8}-\d{6}(-\d+)?$"))
+            name = "";
+        if (name.Length > 40) // the name box's limit
+            name = name[..40].Trim();
+        if (name.Length == 0)
+            name = Menus.Text("SPIRE_MOD_MANAGER.IMPORTED_PROFILE");
+        return Store.Data.Profiles.Any(p => p.Name == name) ? CopyName(name) : name;
+    }
+
     // Why a name can't be used, or null: empty, or another profile has it.
     public static string? NameProblem(string name, Profile? renaming = null)
     {

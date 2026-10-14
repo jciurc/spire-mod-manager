@@ -77,6 +77,8 @@ static class SelfTest
             TestBetterModMenuImport(outDir);
             await TestMenuButtonRelaunch(menu, outDir); // before the Modding page opens: the check's fixes without it
             await TestLaunchGuard(menu, outDir);
+            await TestTranslationsFolder(menu);
+            await TestTranslations(menu);
 
             var screen = menu.SubmenuStack.PushSubmenuType<NModdingScreen>();
             await Wait(menu, 2);
@@ -136,6 +138,7 @@ static class SelfTest
             await TestListFixes(menu, screen, content);
             await TestProfileEditing(menu, screen, outDir);
             await TestUnsavedProfile(menu, screen, content, outDir);
+            await TestProfileShare(menu, screen, outDir);
             await TestNotes(menu, screen, content, outDir);
             await TestPendingNotes(menu, screen, content);
             await TestPendingLine(menu, screen, content);
@@ -383,7 +386,7 @@ static class SelfTest
         CheckPatches();
         Check("row state: the game's selected and focused members found", RowState.Found);
         string[] spare = [nameof(RowLookPatch), nameof(ShortcutsPatch), nameof(NewModPatch), nameof(ModInfoClearPatch),
-            nameof(NewModPopupPatch), nameof(NewModTogglePatch), nameof(TickKeepPatch)];
+            nameof(NewModPopupPatch), nameof(NewModTogglePatch), nameof(TickKeepPatch), nameof(TranslationsPatch)];
         Check("our page with no patch failed, or only ones it can do without", ModEntry.PageWorks([]) && ModEntry.PageWorks(spare));
         Check("the game's page if any one patch our page needs failed", ModEntry.PageNeeds.Contains(nameof(ModdingScreenPatch))
             && ModEntry.PageNeeds.All(needed => !ModEntry.PageWorks([needed]) && !ModEntry.PageWorks([.. spare, needed])),
@@ -856,34 +859,41 @@ static class SelfTest
         Hover.TestMouse = null;
     }
 
-    // The main menu button's right-click menu: Move button, Reset position, a divider, Relaunch game. Relaunch game
-    // checks for mods that won't load first, as the Modding page's button does (fixture: Test Addon needs SmmTestMissing,
-    // never installed): its dialog shows over the main menu, and its fixes work there before the page has been opened.
-    // ModEntry.TestRelaunch counts each relaunch instead of quitting the test.
-    static async Task TestMenuButtonRelaunch(NMainMenu menu, string outDir)
+    // The main menu button's right-click menu, open (null if it didn't open).
+    static async Task<Node?> ButtonMenu(NMainMenu menu, Control button)
     {
-        if (menu.GetNodeOrNull<Control>("SpireModManagerMenuButton") is not { } button)
-            return;
         var at = button.GetGlobalRect().GetCenter();
         Hover.TestMouse = () => at;
         button.EmitSignal(Control.SignalName.GuiInput, new InputEventMouseButton { ButtonIndex = MouseButton.Right, Pressed = false, Position = at, GlobalPosition = at });
         await Wait(menu, 0.3);
         Hover.TestMouse = null;
-        var popup = MenuPanel.Current;
+        return MenuPanel.Current;
+    }
+
+    // The main menu button's right-click menu: Move button, Reset position, Open translations folder, a divider, Relaunch
+    // game (last and on its own). Relaunch game checks for mods that won't load first, as the Modding page's button does (fixture: Test Addon
+    // needs SmmTestMissing, never installed): its dialog shows over the main menu, and its fixes work there before the
+    // page has been opened. ModEntry.TestRelaunch counts each relaunch instead of quitting the test.
+    static async Task TestMenuButtonRelaunch(NMainMenu menu, string outDir)
+    {
+        if (menu.GetNodeOrNull<Control>("SpireModManagerMenuButton") is not { } button)
+            return;
+        var popup = await ButtonMenu(menu, button);
         var labels = popup == null ? [] : MenuPanel.Labels(popup);
-        Check("main menu button's menu: Move button, Reset position, Relaunch game", labels.SequenceEqual(["Move button", "Reset position", "Relaunch game"]),
-            string.Join(", ", labels));
+        Check("main menu button's menu: Move button, Reset position, Open translations folder, Relaunch game",
+            labels.SequenceEqual(["Move button", "Reset position", "Open translations folder", "Relaunch game"]), string.Join(", ", labels));
         if (popup == null)
             return;
-        // The divider: the one entry between Reset position and Relaunch game, a line under the first and above the second.
+        // The divider: the one entry between Open translations folder and Relaunch game, a line under the first and above
+        // the second.
         string? Label(Node item) => item.IsInGroup(MenuPanel.ItemGroup) ? (string)item.GetMeta("label") : null;
         var items = popup.FindChild("Items", true, false)?.GetChildren().OfType<Control>().ToList() ?? [];
-        var reset = items.FindIndex(i => Label(i) == "Reset position");
-        var divider = reset >= 0 && reset + 2 < items.Count && Label(items[reset + 2]) == "Relaunch game" ? items[reset + 1] : null;
-        Check("a divider right under Reset position, above Relaunch game", divider != null && Label(divider) == null
+        var above = items.FindIndex(i => Label(i) == "Open translations folder");
+        var divider = above >= 0 && above + 2 < items.Count && Label(items[above + 2]) == "Relaunch game" ? items[above + 1] : null;
+        Check("a divider right under Open translations folder, above Relaunch game", divider != null && Label(divider) == null
             && divider.FindChildren("*", "ColorRect", true, false).Count == 1
-            && divider.GetGlobalRect().Position.Y >= items[reset].GetGlobalRect().End.Y
-            && divider.GetGlobalRect().End.Y <= items[reset + 2].GetGlobalRect().Position.Y,
+            && divider.GetGlobalRect().Position.Y >= items[above].GetGlobalRect().End.Y
+            && divider.GetGlobalRect().End.Y <= items[above + 2].GetGlobalRect().Position.Y,
             string.Join(" | ", items.Select(i => $"{Label(i) ?? "(line)"} {i.GetGlobalRect()}")));
         await Capture(menu, outDir, "1c-menu-button-menu");
 
@@ -1093,6 +1103,146 @@ static class SelfTest
                 settings.ModList.AddRange(listWas);
                 SaveManager.Instance.SaveSettings();
             }
+        }
+    }
+
+    // The main menu button's Open translations folder: the folder, in our data folder beside manager.json, is made if it
+    // isn't there (a fresh sandbox has none; an empty one is removed first) and handed to the system's file browser (to Translations.TestOpen here, so
+    // no window opens).
+    static async Task TestTranslationsFolder(NMainMenu menu)
+    {
+        if (menu.GetNodeOrNull<Control>("SpireModManagerMenuButton") is not { } button)
+            return;
+        var folder = Translations.Folder;
+        if (Directory.Exists(folder) && !Directory.EnumerateFileSystemEntries(folder).Any())
+            Directory.Delete(folder); // an empty one left over: gone, so the press has to make it
+        var before = Directory.Exists(folder);
+        string? opened = null;
+        Translations.TestOpen = path => opened = path;
+        try
+        {
+            if (await ButtonMenu(menu, button) is { } popup)
+                MenuPanel.Press(popup, "Open translations folder");
+            await Wait(menu, 0.2);
+            Check("Open translations folder: made in the data folder and opened, the menu closed", !before && opened == folder && Directory.Exists(folder)
+                && folder.Replace('\\', '/').EndsWith($"/mod_data/{ModEntry.ModId}/translations") && !MenuPanel.IsOpen,
+                $"opened {opened ?? "nothing"}; {folder} there before: {before}");
+        }
+        finally
+        {
+            Translations.TestOpen = null;
+            MenuPanel.Close();
+        }
+    }
+
+    // Drop-in translations (Translations) in German, which has no packed translation, so our text is all English there
+    // until now: a file in the translations folder, read as the game switches language (its own switch, as in its
+    // settings, without the menu rebuild). Its text shows, in the game's table and on the main menu button's menu, and its
+    // {count} takes German numbers; a key it leaves out, an empty text, a number, a broken placeholder and one English
+    // doesn't fill in (renamed or added) show in English, and a key English doesn't have is left out.
+    // Back in English, English. A file that isn't JSON, isn't an object or is over 1 MB changes nothing and throws
+    // nothing. One saved as deu.json.txt (a browser's "Save as", the .txt hidden) is read. The file is removed and the
+    // language set back afterwards.
+    static async Task TestTranslations(NMainMenu menu)
+    {
+        var start = LocManager.Instance.Language;
+        if (start != "eng" || Godot.FileAccess.FileExists($"res://{ModEntry.ModId}/localization/deu/settings_ui.json"))
+        {
+            Results.Add($"SKIP drop-in translations: the game is in {start}, or German is packed");
+            return;
+        }
+        const string Translated = "SPIRE_MOD_MANAGER.RELAUNCH_GAME", LeftOut = "SPIRE_MOD_MANAGER.RESET_POSITION",
+            Broken = "SPIRE_MOD_MANAGER.MOVE_BUTTON", Empty = "SPIRE_MOD_MANAGER.MOVE_HINT";
+        const string NotOurs = Translated + "X"; // a key mistyped
+        const string Renamed = "SPIRE_MOD_MANAGER.PAGE_DISABLED", Added = "SPIRE_MOD_MANAGER.OPEN_TRANSLATIONS";
+        const string Counted = "SPIRE_MOD_MANAGER.PAGE_ALL", NotText = "SPIRE_MOD_MANAGER.RELAUNCH_NOTE";
+        const string German = "Spiel neu starten (Änderungen, 模组)"; // not ASCII: read as UTF-8, with a byte order mark
+        string[] keys = [Translated, LeftOut, Broken, Empty];
+        static string Read(string key)
+        {
+            try
+            {
+                return Menus.Text(key);
+            }
+            catch (Exception e)
+            {
+                return e.Message;
+            }
+        }
+        var english = keys.ToDictionary(k => k, Read);
+        string Shown() => string.Join(" | ", keys.Select(Read));
+        bool AllEnglish() => keys.All(k => Read(k) == english[k]);
+        var file = Path.Combine(Translations.Folder, "deu.json");
+        // The file written, then the game switched to German. The exception's message if the switch threw.
+        string? Switch(string text)
+        {
+            File.WriteAllText(file, text, new UTF8Encoding(true));
+            try
+            {
+                LocManager.Instance.SetLanguage("deu");
+                return null;
+            }
+            catch (Exception e)
+            {
+                return e.Message;
+            }
+        }
+        try
+        {
+            Directory.CreateDirectory(Translations.Folder);
+            var threw = Switch($$"""
+                {
+                  // a comment and a trailing comma, as a hand-edited file may have
+                  "{{Translated}}": "{{German}}",
+                  "{{Counted}}": "Installierte Mods ({count})",
+                  "{{Broken}}": "Knopf {verschieben",
+                  "{{Empty}}": " ",
+                  "{{Renamed}}": "Deaktivierte Mods ({anzahl})",
+                  "{{Added}}": "Ordner {ordner}",
+                  "{{NotText}}": 5,
+                  "{{NotOurs}}": "Nicht unser Text",
+                }
+                """);
+            Check("a drop-in translation: its text shows in its language", threw == null && Read(Translated) == German, threw ?? Shown());
+            var counted = Menus.Format(Counted, ("count", Menus.Number(1234)));
+            Check("a drop-in translation: its {count} filled in, in German numbers", counted == "Installierte Mods (1.234)", counted);
+            Check("a drop-in translation: a key it leaves out, an empty text and a broken placeholder show in English",
+                Read(LeftOut) == english[LeftOut] && Read(Empty) == english[Empty] && Read(Broken) == english[Broken], Shown());
+            var table = LocManager.Instance.GetTable("settings_ui");
+            Check("a drop-in translation: a renamed placeholder, an added one and a number show in English",
+                !table.IsLocalKey(Renamed) && !table.IsLocalKey(Added) && !table.IsLocalKey(NotText),
+                $"{table.GetRawText(Renamed)} | {table.GetRawText(Added)} | {table.GetRawText(NotText)}");
+            Check("a drop-in translation: a key English doesn't have is left out", !table.HasEntry(NotOurs));
+            var popup = menu.GetNodeOrNull<Control>("SpireModManagerMenuButton") is { } button ? await ButtonMenu(menu, button) : null;
+            var labels = popup == null ? [] : MenuPanel.Labels(popup);
+            MenuPanel.Close();
+            Check("a drop-in translation on screen: the main menu button's menu has it", labels.Contains(German),
+                string.Join(", ", labels));
+            LocManager.Instance.SetLanguage(start);
+            Check("a drop-in translation: back in English, English", AllEnglish(), Shown());
+
+            foreach (var (what, text) in new[]
+            {
+                ("not JSON", $"{{ \"{Translated}\": \"Spiel neu starten\""),
+                ("not an object", "[\"Spiel neu starten\"]"),
+                ("over 1 MB", $"{{ \"{Translated}\": \"Spiel neu starten\", \"{NotOurs}\": \"{new string('x', 1_100_000)}\" }}"),
+            })
+            {
+                threw = Switch(text);
+                Check($"a drop-in file {what}: changes nothing, throws nothing", threw == null && LocManager.Instance.Language == "deu" && AllEnglish(),
+                    threw ?? Shown());
+            }
+
+            File.Delete(file);
+            File.WriteAllText(file + ".txt", $"{{ \"{Translated}\": \"Spiel neu starten\" }}");
+            LocManager.Instance.SetLanguage("deu");
+            Check("a drop-in file saved as deu.json.txt: read all the same", Read(Translated) == "Spiel neu starten", Shown());
+        }
+        finally
+        {
+            File.Delete(file);
+            File.Delete(file + ".txt");
+            LocManager.Instance.SetLanguage(start);
         }
     }
 
@@ -1381,7 +1531,8 @@ static class SelfTest
         // The profile list: opens below the picker; a second press on the picker closes it.
         await RealClick(menu, picker);
         var list = MenuPanel.Current;
-        Check("the picker opens the profile list, with details", list != null && MenuPanel.Labels(list).Count == Store.Data.Profiles.Count,
+        Check("the picker opens the profile list, with details, then Share profile and Import profile", list != null
+            && MenuPanel.Labels(list).SequenceEqual(Store.Data.Profiles.Select(p => p.Name).Concat(["Share profile", "Import profile"])),
             list == null ? "no list" : string.Join(", ", MenuPanel.Labels(list)));
         await Capture(screen, outDir, "7b-profile-list");
         await RealClick(menu, picker);
@@ -1556,6 +1707,240 @@ static class SelfTest
         Input.ParseInputEvent(new InputEventKey { Keycode = Key.S, CtrlPressed = true, Pressed = true });
         await Wait(menu, 0.3);
         Check("Ctrl+S saves the profile", !Profiles.Edited && SavedOn() == wasOn && profile.Edited == null);
+    }
+
+    // Sharing a profile as CSV text and importing one (ProfileShare): the format on its own, the Share dialog (from the
+    // profile list), Copy and saving, then the Import dialog with our own list and a Better Mod Menu one, its preview,
+    // its errors, and an import as one undo step. Starts and ends on the active profile with nothing changed.
+    static async Task TestProfileShare(Node menu, NModdingScreen screen, string outDir)
+    {
+        var bar = screen.GetNode("ModsBorder/SpireModManagerProfileBar");
+        if (Profiles.Active is not { } start || Dependencies.Find("SmmTestUi") == null || Dependencies.Find("SmmTestLib") == null
+            || Store.Data.Profiles.FirstOrDefault(p => p != start) is not { } other)
+        {
+            Results.Add("SKIP profile sharing: needs two profiles and the test mods");
+            return;
+        }
+        if (Profiles.Edited)
+            Profiles.Save(); // start clean
+        // Undo puts our data back as new objects: profiles are found by name after one.
+        var (startName, otherName, profiles) = (start.Name, other.Name, Store.Data.Profiles.Count);
+        Profile? Named(string name) => Store.Data.Profiles.FirstOrDefault(p => p.Name == name);
+        Node? Dialog() => menu.GetTree().Root.GetNodeOrNull(ProfileShare.Name);
+        T? Part<T>(string name) where T : class => Dialog()?.FindChild(name, true, false) as T;
+        void Press(string name) => Part<BaseButton>(name)?.EmitSignal(BaseButton.SignalName.Pressed);
+        string Status() => Part<Label>("Status") is { Visible: true } status ? status.Text : "";
+        bool StatusRed() => Part<Label>("Status")?.GetThemeColor("font_color") is { R: > 0.9f, G: < 0.6f };
+        string Preview() => Part<RichTextLabel>("Preview")?.GetParsedText() ?? "";
+        async Task Paste(string text)
+        {
+            if (Part<TextEdit>("CsvText") is { } box)
+            {
+                box.Text = text;
+                box.EmitSignal(TextEdit.SignalName.TextChanged);
+            }
+            await Wait(menu, 0.2);
+        }
+        async Task Choose(string label)
+        {
+            await RealClick(menu, (Button)bar.FindChild("ProfilePicker", true, false));
+            if (MenuPanel.Current is { } list)
+                MenuPanel.Press(list, label);
+            await Wait(menu, 0.3);
+        }
+        bool IsOn(string id) => Dependencies.Find(id) is { } mod && Dependencies.IsOn(mod);
+
+        // The format on its own: quoting, the formula guard, and a forgiving read.
+        var tricky = ProfileCsv.Write([
+            new ProfileCsv.Row("SmmQuote", "Comma, \"quoted\"\nname", "1.0", true, "A, B", ""),
+            new ProfileCsv.Row("SmmFormula", "=HYPERLINK(\"x\")", "-1", false, "@group", ""),
+        ]);
+        var back = ProfileCsv.Read(tricky).Mods;
+        var trickyRecords = ProfileCsv.Records(tricky);
+        Check("CSV: a name with a comma, quotes and a line break round-trips, quoted", tricky.Contains("\"Comma, \"\"quoted\"\"\nname\"")
+            && back is [{ Id: "SmmQuote", Enabled: true, Name: "Comma, \"quoted\"\nname" }, ..] && trickyRecords.Count == 3 && trickyRecords[1][4] == "A, B",
+            tricky);
+        Check("CSV: a value starting with = + - @ gets a ' in front, taken off again when read", tricky.Contains("\"'=HYPERLINK(\"\"x\"\")\",'-1,FALSE,'@group,")
+            && back is [_, { Id: "SmmFormula", Enabled: false, Name: "=HYPERLINK(\"x\")" }], tricky);
+        var loose = ProfileCsv.Read("enabled;NAME;id\nyes;a;SmmA\r\nNo;b;SmmB\n\n1;c;SmmC\n0;\"d;e\";SmmD").Mods;
+        Check("CSV: columns by name in any order and case, Id for Mod Id, a ; between values, yes/no and 1/0",
+            string.Join(",", loose.Select(m => $"{m.Id}={m.Enabled}")) == "SmmA=True,SmmB=False,SmmC=True,SmmD=False" && loose[3].Name == "d;e",
+            string.Join(",", loose.Select(m => $"{m.Id}={m.Enabled}/{m.Name}")));
+        var (tabs, semicolons) = (ProfileCsv.Read("Mod Id\tEnabled\nSmmA\tTRUE\n"), ProfileCsv.Read("\r\n\r\nMod Id;Enabled\r\nSmmB;no\r\n"));
+        Check("CSV: just Mod Id and Enabled, with a tab or a ; between (after blank lines too)",
+            tabs.Mods is [{ Id: "SmmA", Enabled: true }] && semicolons.Mods is [{ Id: "SmmB", Enabled: false }], $"{tabs.Error} / {semicolons.Error}");
+        Check("CSV: a Workshop link is rebuilt from its id; anything else is dropped",
+            ProfileCsv.CleanLink("https://steamcommunity.com/sharedfiles/filedetails/?id=3123456789&searchtext=") == "https://steamcommunity.com/sharedfiles/filedetails/?id=3123456789"
+            && ProfileCsv.CleanLink("https://example.com/?x=1") == "" && ProfileCsv.IsWorkshopLink(ProfileCsv.WorkshopLink(42)) && !ProfileCsv.IsWorkshopLink("https://example.com"));
+
+        // Share profile, from the profile list: the active profile's list, a row per installed mod in load order, on and
+        // off as it has them, the category as Group, no alias or notes (the fixture gives this mod both).
+        await Choose("Share profile");
+        var csv = Part<TextEdit>("CsvText")?.Text ?? "";
+        var records = ProfileCsv.Records(csv);
+        var installed = ModManager.Mods.Union(Installed.Mods).Where(m => m.manifest?.id != null).ToList();
+        var order = (SaveManager.Instance.SettingsSave.ModSettings?.ModList ?? []).Select(e => e.Id)
+            .Where(id => installed.Any(m => m.manifest?.id == id)).Distinct().ToList();
+        var ids = records.Skip(1).Select(r => r[0]).ToList();
+        Check("Share profile opens with the active profile's list: the header, a row per installed mod in load order",
+            Dialog() != null && records.FirstOrDefault()?.SequenceEqual(ProfileCsv.Header) == true && ids.Count == installed.Count
+            && ids.Take(order.Count).SequenceEqual(order) && Part<RichTextLabel>("Body")?.GetParsedText().Contains(startName) == true,
+            $"{string.Join(" | ", ids)} vs order {string.Join(" | ", order)}");
+        Check("each row's Enabled as the profile has it, TRUE and FALSE both there", records.Skip(1).All(r => r[3] == (IsOn(r[0]) ? "TRUE" : "FALSE"))
+            && ids.Contains("SmmTestRetired") && records.Any(r => r[3] == "TRUE") && records.Any(r => r[3] == "FALSE"),
+            string.Join(", ", records.Skip(1).Select(r => $"{r[0]}={r[3]}")));
+        Check("Group is the category; no alias or notes", records.FirstOrDefault(r => r[0] == ModEntry.ModId)?[4] == "Tools"
+            && !csv.Contains("The Manager") && !csv.Contains("Fixture note") && records.Skip(1).All(r => r.Count == 8 && r[6] == "" && r[7] == ""), csv);
+        await Capture(screen, outDir, "7c-share-profile");
+        var clipboard = DisplayServer.ClipboardGet(); // put back after: a windowed run is on Jordan's desktop
+        Press("CopyButton");
+        await Wait(menu, 0.1);
+        Check("Copy says Copied", Part<Button>("CopyButton")?.Text == "Copied", Part<Button>("CopyButton")?.Text ?? "no button");
+        if (DisplayServer.GetName() == "headless")
+            Results.Add("SKIP Copy puts the text on the clipboard: there's no clipboard headless");
+        else
+        {
+            // Line ends aside: Godot's Windows clipboard hands CRLF text back with LF (a paste still gets CRLF).
+            var copied = DisplayServer.ClipboardGet();
+            Check("Copy puts the text on the clipboard", copied.Replace("\r\n", "\n") == csv.Replace("\r\n", "\n"),
+                $"{copied.Length} characters copied, {csv.Length} in the box: {copied[..Math.Min(80, copied.Length)].Replace("\r", "\\r").Replace("\n", "\\n")}");
+        }
+        DisplayServer.ClipboardSet(clipboard);
+        var file = Path.Combine(outDir, ProfileShare.FileName("Co-op: \"night\"?"));
+        var saveError = ProfileShare.SaveTo(file, csv);
+        var bytes = File.Exists(file) ? File.ReadAllBytes(file) : [];
+        Check("Save CSV: a name made safe for a file, the text as UTF-8 with a BOM", Path.GetFileName(file) == "Co-op_ _night__.csv" && saveError == null
+            && bytes is [0xEF, 0xBB, 0xBF, ..] && File.ReadAllText(file) == csv, $"{Path.GetFileName(file)}: {saveError}");
+        string[] reserved = [ProfileShare.FileName("CON"), ProfileShare.FileName("com1.backup"), ProfileShare.FileName("Console")];
+        Check("Save CSV: a name Windows keeps for a device gets a _ in front, before a dot too; others don't",
+            reserved.SequenceEqual(["_CON.csv", "_com1.backup.csv", "Console.csv"]), string.Join(", ", reserved));
+        Input.ParseInputEvent(new InputEventKey { Keycode = Key.Escape, Pressed = true });
+        await Wait(menu, 0.2);
+        Input.ParseInputEvent(new InputEventKey { Keycode = Key.Escape, Pressed = false });
+        Check("Esc closes Share profile, and stays on the page", Dialog() == null && screen.IsVisibleInTree());
+
+        // Import our own list while on the other profile: the preview, then Create profile brings the states back, in a
+        // new profile named "Imported profile", made active. One undo step takes it away again.
+        var startStates = ModListState();
+        Profiles.SwitchTo(other, screen);
+        await Wait(menu, 0.3);
+        var otherStates = ModListState();
+        await Choose("Import profile");
+        await Paste(csv);
+        Check("Import profile: our own list previews the new profile and what it enables", Dialog() != null && Status() == ""
+            && Preview().Contains("Creates the profile Imported profile:") && Preview().Contains("Enables ") && !Preview().Contains("Not installed"), Preview());
+        Press("CreateProfileButton");
+        await Wait(menu, 0.3);
+        Check("Create profile: a new profile with the list's states, active, and the dialog closed", Dialog() == null && Profiles.Active?.Name == "Imported profile"
+            && Store.Data.Profiles.Count == profiles + 1 && !Profiles.Edited && ModListState().SequenceEqual(startStates),
+            $"{Profiles.Active?.Name}: {string.Join(", ", startStates.Except(ModListState()))}");
+        History.Undo();
+        await Wait(menu, 0.3);
+        Check("undo takes the imported profile away, back on the profile before", Named("Imported profile") == null && Store.Data.Profiles.Count == profiles
+            && Profiles.Active?.Name == otherName && ModListState().SequenceEqual(otherStates), $"{Profiles.Active?.Name}: {string.Join(", ", Store.Data.Profiles.Select(p => p.Name))}");
+
+        // Better Mod Menu's own export: its columns and order, a BOM, CRLF, TRUE/FALSE, a group with a comma, a guarded
+        // alias, notes over two lines, and two mods that aren't installed (one with its Workshop link, one off).
+        const string link = "https://steamcommunity.com/sharedfiles/filedetails/?id=3123456789";
+        var bmm = "\uFEFFMod Id,Name,Version,Enabled,Group,Workshop Link,Alias,Notes\r\n"
+            + "SmmTestGoneOff,Gone Off,1.0,FALSE,\"Content, mostly\",,,\r\n"
+            + $"SmmTestNotHere,Not Here Mod,2.0,TRUE,\"Content, mostly\",{link},'=cool,\"Line one\r\nline two\"\r\n"
+            + "SmmTestLib,Test Framework,1.0.0,TRUE,Frameworks,,,\r\n"
+            + "SmmTestUi,Test UI,1.0.0,FALSE,Ungrouped,,,\r\n";
+        var plan = Profiles.PlanImport(ProfileCsv.Read(bmm).Mods);
+        // A mod listed twice, a Workshop copy first: the local test mod takes the row without a link.
+        var libOn = IsOn("SmmTestLib");
+        var twice = Profiles.PlanImport([new("SmmTestLib", !libOn, "Test Framework", link), new("SmmTestLib", libOn, "Test Framework", "")]);
+        Check("a mod listed twice: each copy takes the row for its source", Dependencies.Find("SmmTestLib")?.modSource == ModSource.ModsDirectory
+            && twice.Mods.SingleOrDefault(m => m.Id == "SmmTestLib")?.Enabled == libOn && twice is { Same: 1, On: 0, Off: 0, Missing.Count: 0 },
+            string.Join(", ", twice.Mods.Where(m => m.Id == "SmmTestLib").Select(m => $"{m.Source}={m.Enabled}")));
+        var (wantOn, wantOff) = ((IsOn("SmmTestLib") ? 0 : 1), (IsOn("SmmTestUi") ? 1 : 0));
+        var others = installed.Count(m => m.manifest?.id is { } id && id != ModEntry.ModId && id != Bmm.ModId && id != "SmmTestLib" && id != "SmmTestUi");
+        await Choose("Import profile");
+        await Paste(bmm);
+        var bbcode = Part<RichTextLabel>("Preview")?.Text ?? "";
+        Check("a Better Mod Menu list: what it changes compared with now, and the installed mods it doesn't name",
+            Status() == "" && plan.On == wantOn && plan.Off == wantOff && plan.Same == 2 - wantOn - wantOff && plan.Unlisted == others
+            && Preview().Contains(others == 1 ? "1 installed mod isn't in the list" : $"{others} installed mods aren't in the list"),
+            $"on {plan.On}/{wantOn}, off {plan.Off}/{wantOff}, same {plan.Same}, unlisted {plan.Unlisted}/{others}: {Preview()}");
+        Check("the mods it names that aren't installed are listed, by name, with the Workshop link", plan.Missing.Count == 2
+            && Preview().Contains("Not installed (2)") && Preview().Contains("Not Here Mod  Workshop page") && Preview().Contains("Gone Off (disabled)")
+            && bbcode.Contains($"[url={link}]"), Preview());
+        await Capture(screen, outDir, "7d-import-preview");
+        Press("CreateProfileButton");
+        await Wait(menu, 0.3);
+        var made = Profiles.Active;
+        Check("its states applied; the new profile keeps the mods that aren't installed, for later", made?.Name == "Imported profile"
+            && IsOn("SmmTestLib") && !IsOn("SmmTestUi")
+            && made.Mods.Any(m => m is { Id: "SmmTestNotHere", Source: ModSource.SteamWorkshop, Enabled: true })
+            && made.Mods.Any(m => m is { Id: "SmmTestGoneOff", Source: ModSource.ModsDirectory, Enabled: false }),
+            string.Join(", ", made?.Mods.Select(m => $"{m.Id}/{m.Source}={m.Enabled}") ?? []));
+        History.Undo();
+        await Wait(menu, 0.3);
+        Check("and undo takes that one away too", Named("Imported profile") == null && Profiles.Active?.Name == otherName && ModListState().SequenceEqual(otherStates));
+
+        // Errors show in red in the dialog, and nothing is made: no Mod Id column, Enabled that isn't a yes or no, no text.
+        await Choose("Import profile");
+        await Paste("Name,Enabled\r\nTest UI,TRUE\r\n");
+        var noId = (Status(), StatusRed(), Preview());
+        await Capture(screen, outDir, "7e-import-error");
+        await Paste("Mod Id,Enabled\nSmmTestUi,maybe\n");
+        var badValue = Status();
+        await Paste("");
+        Press("CreateProfileButton");
+        await Wait(menu, 0.2);
+        Check("a list without Mod Id says so in red, with no preview", noId.Item1.StartsWith("This list has no Mod Id column") && noId.Item2 && noId.Item3 == "",
+            $"\"{noId.Item1}\" red {noId.Item2}, preview \"{noId.Item3}\"");
+        Check("a bad Enabled value names its mod", badValue == "Enabled for SmmTestUi should be TRUE or FALSE, not \"maybe\".", badValue);
+        Check("Create profile with no text says what to do, in red, and makes nothing", Dialog() != null && Status() == "Paste a mod list or load a CSV file first."
+            && StatusRed() && Store.Data.Profiles.Count == profiles, Status());
+        Check("the imported name: the file's, numbered when taken; not Better Mod Menu's time-stamped one",
+            Profiles.ImportName("C:/lists/Brother co-op.csv") == "Brother co-op" && Profiles.ImportName($"{startName}.csv") == Profiles.CopyName(startName)
+            && Profiles.ImportName("C:/x/mod_list.20261014-120000.csv") == "Imported profile" && Profiles.ImportName("mod_list.20261014-120000-2.csv") == "Imported profile",
+            Profiles.ImportName($"{startName}.csv"));
+        Part<TextEdit>("CsvText")?.GrabFocus();
+        Input.ParseInputEvent(new InputEventKey { Keycode = Key.Escape, Pressed = true });
+        await Wait(menu, 0.2);
+        Input.ParseInputEvent(new InputEventKey { Keycode = Key.Escape, Pressed = false });
+        Check("Esc in the text box closes Import profile", Dialog() == null && screen.IsVisibleInTree());
+
+        if (Named(startName) is { } back2)
+            Profiles.SwitchTo(back2, screen);
+        await Wait(menu, 0.3);
+
+        // A dialog takes the keys from the page: with an unsaved edit and the search box focused, holding text, Ctrl+S
+        // and Ctrl+Z do nothing behind Share, and Esc closes it and leaves the search alone. Then the edit is discarded.
+        var content = screen.GetNode<Control>("%ModsScrollContainer/Mask/Content");
+        Dependencies.Set([Dependencies.Find("SmmTestUi")!], !IsOn("SmmTestUi"), screen);
+        CategoryList.Redraw(content);
+        await Wait(menu, 0.3);
+        var edited = (Profiles.Edited, string.Join(", ", ModListState()));
+        var search = screen.GetNodeOrNull<LineEdit>("ModsBorder/SpireModManagerSearch");
+        if (search != null)
+        {
+            search.Text = "zzz"; // no TextChanged: the list isn't filtered
+            search.GrabFocus();
+        }
+        await Choose("Share profile");
+        foreach (var key in new[] { Key.S, Key.Z })
+        {
+            Input.ParseInputEvent(new InputEventKey { Keycode = key, CtrlPressed = true, Pressed = true });
+            await Wait(menu, 0.2);
+            Input.ParseInputEvent(new InputEventKey { Keycode = key, CtrlPressed = true, Pressed = false });
+        }
+        Check("Ctrl+S and Ctrl+Z do nothing while Share profile is open", Dialog() != null && edited.Edited
+            && (Profiles.Edited, string.Join(", ", ModListState())) == edited, $"edited {Profiles.Edited}, was {edited.Edited}");
+        Input.ParseInputEvent(new InputEventKey { Keycode = Key.Escape, Pressed = true });
+        await Wait(menu, 0.2);
+        Input.ParseInputEvent(new InputEventKey { Keycode = Key.Escape, Pressed = false });
+        Check("Esc closes Share profile even with the search box focused before, and the search keeps its text",
+            Dialog() == null && search?.Text == "zzz" && search.GetViewport().GuiGetFocusOwner() != search, search?.Text ?? "no search box");
+        Search.Clear(content);
+        Profiles.Discard(screen);
+        await Wait(menu, 0.3);
+
+        Check("profile sharing leaves the profiles and the mod list as they were", Profiles.Active?.Name == startName && !Profiles.Edited
+            && Store.Data.Profiles.Count == profiles && ModListState().SequenceEqual(startStates));
     }
 
     // New mods and profiles (Jordan, 2026-10-13). The fixture's Default profile doesn't list the test mods, which

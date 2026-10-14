@@ -12,12 +12,9 @@ namespace SpireModManager;
 static class RelaunchCheck
 {
     public const string Name = "SpireModManagerRelaunchCheck";
-    static readonly Color Cream = new(1, 0.964706f, 0.886275f);
-    static readonly Color Gold = new(0.937f, 0.784f, 0.318f);
     const string ProblemHex = "#ff8070";
-    const string ClosesMeta = "spire_mod_manager_relaunch_check_closes"; // the owner already closes the dialog as it goes
 
-    public static bool IsOpen => Root()?.GetNodeOrNull(Name) != null;
+    public static bool IsOpen => Modal.IsOpen(Name);
 
     // owner: the page asking (the Modding screen or the main menu); the dialog closes when it goes.
     public static void Relaunch(Node owner)
@@ -39,41 +36,8 @@ static class RelaunchCheck
 
     public static void Show(Node owner)
     {
-        Close();
-        if (Root() is not { } root)
-            return;
-        var layer = new CanvasLayer { Name = Name, Layer = 85 };
-        root.AddChild(layer);
-        // Once per owner: the handler captures nothing, so it's the same delegate each time, and Godot logs an error
-        // ("already connected") when the dialog is shown again from the same page.
-        if (!owner.HasMeta(ClosesMeta))
-        {
-            owner.SetMeta(ClosesMeta, true);
-            owner.TreeExiting += () => Close();
-        }
-
-        // Dim everything behind, and take its clicks.
-        var size = owner.GetViewport().GetVisibleRect().Size; // anchors don't size controls right under a CanvasLayer here
-        var dim = new ColorRect { Color = new Color(0, 0, 0, 0.6f), MouseFilter = Control.MouseFilterEnum.Stop, Size = size };
-        layer.AddChild(dim);
-        var center = new CenterContainer { MouseFilter = Control.MouseFilterEnum.Ignore, Size = size };
-        layer.AddChild(center);
-
-        var panel = new PanelContainer { CustomMinimumSize = new Vector2(640, 0) };
-        var style = new StyleBoxFlat
-        {
-            BgColor = new Color(0.05f, 0.08f, 0.12f, 0.98f), BorderColor = new Color(Gold, 0.5f),
-            ContentMarginLeft = 26, ContentMarginRight = 26, ContentMarginTop = 20, ContentMarginBottom = 20,
-            ShadowColor = new Color(0, 0, 0, 0.4f), ShadowSize = 10,
-        };
-        style.SetBorderWidthAll(1);
-        style.SetCornerRadiusAll(8);
-        panel.AddThemeStyleboxOverride("panel", style);
-        center.AddChild(panel);
-        var column = new VBoxContainer { Name = "Column" };
-        column.AddThemeConstantOverride("separation", 14);
-        panel.AddChild(column);
-        Fill(owner, column);
+        if (Modal.Open(owner, Name, 640, 14) is { } column)
+            Fill(owner, column);
     }
 
     // The dialog's contents for the current state (again after each fix).
@@ -85,11 +49,7 @@ static class RelaunchCheck
             child.QueueFree();
         }
         var problems = Problems();
-        var title = new Label { Name = "Title", Text = Menus.Text(problems.Count > 0 ? "SPIRE_MOD_MANAGER.RELAUNCH_CHECK_TITLE" : "SPIRE_MOD_MANAGER.RELAUNCH_CHECK_OK_TITLE") };
-        title.AddThemeFontOverride("font", ModEntry.Font("res://themes/kreon_bold_shared.tres"));
-        title.AddThemeFontSizeOverride("font_size", 26);
-        title.AddThemeColorOverride("font_color", Cream);
-        column.AddChild(title);
+        column.AddChild(Modal.Title(problems.Count > 0 ? "SPIRE_MOD_MANAGER.RELAUNCH_CHECK_TITLE" : "SPIRE_MOD_MANAGER.RELAUNCH_CHECK_OK_TITLE"));
 
         var body = new RichTextLabel { Name = "Body", BbcodeEnabled = true, FitContent = true, ScrollActive = false, MouseFilter = Control.MouseFilterEnum.Ignore };
         Hover.Fonts(body, 18);
@@ -140,14 +100,5 @@ static class RelaunchCheck
     }
 
     // True when there was one to close.
-    public static bool Close()
-    {
-        if (Root()?.GetNodeOrNull(Name) is not { } layer)
-            return false;
-        layer.GetParent().RemoveChild(layer);
-        layer.QueueFree();
-        return true;
-    }
-
-    static Node? Root() => (Engine.GetMainLoop() as SceneTree)?.Root;
+    public static bool Close() => Modal.Close(Name);
 }

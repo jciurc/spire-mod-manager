@@ -333,7 +333,7 @@ static class ShortcutsPatch
     {
         try
         {
-            if (inputEvent is not InputEventKey { Keycode: Key.Escape, Pressed: true, Echo: false } || !(MenuPanel.Close() || RelaunchCheck.Close() || MenuButton.CancelMove() || LetGo()))
+            if (inputEvent is not InputEventKey { Keycode: Key.Escape, Pressed: true, Echo: false } || !(MenuPanel.Close() || RelaunchCheck.Close() || ProfileShare.Close() || MenuButton.CancelMove() || LetGo()))
                 return true;
             ((SceneTree)Engine.GetMainLoop()).Root.SetInputAsHandled();
             return false;
@@ -354,7 +354,7 @@ static class ShortcutsPatch
         {
             if (inputEvent is not InputEventKey { Pressed: true, Echo: false, CtrlPressed: true } key
                 || HistoryBar.Screen is not { } screen || !GodotObject.IsInstanceValid(screen) || !screen.IsVisibleInTree()
-                || Store.Data.VanillaView || RelaunchCheck.IsOpen)
+                || Store.Data.VanillaView || RelaunchCheck.IsOpen || ProfileShare.IsOpen)
                 return;
             switch (key.Keycode)
             {
@@ -505,6 +505,27 @@ static class RowLookPatch
         catch (Exception e)
         {
             Log.Error($"[{ModEntry.ModId}] Could not update a row's highlight: {e}");
+        }
+    }
+}
+
+// Drop-in translations (Translations) into the tables the game has just loaded for a language, at startup and on every
+// language change, before it puts them to use. Apply skips English, which covers both the English fallback tables loaded
+// under every language and the English tables for the game's metrics (allowOverride false). The allowOverride check is
+// only a second guard, in case a game update loads some other language that way.
+[HarmonyPatch(typeof(LocManager), "LoadTablesFromPath")]
+static class TranslationsPatch
+{
+    static void Postfix(string language, bool allowOverride, (Dictionary<string, LocTable>, bool, List<LocValidationError>) __result)
+    {
+        try
+        {
+            if (allowOverride)
+                Translations.Apply(language, __result.Item1);
+        }
+        catch (Exception e)
+        {
+            Log.Error($"[{ModEntry.ModId}] Could not add the drop-in translation for {language}: {e}");
         }
     }
 }

@@ -90,6 +90,8 @@ public static class Store
     // For the self-test's second launch: the next use loads again, from the file the first load wrote.
     public static void Reload() => _data = null;
 
+    // The mod's data folder: manager.json, its backups, the drop-in translations (Translations) and the launch record
+    // (LaunchGuard).
     public static string Dir => ProjectSettings.GlobalizePath(UserDataPathProvider.GetAccountScopedBasePath($"mod_data/{ModEntry.ModId}"));
     public static string FilePath => Path.Combine(Dir, FileName);
 
