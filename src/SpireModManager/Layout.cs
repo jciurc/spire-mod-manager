@@ -265,7 +265,7 @@ static class Layout
     }
 
     // Across the top of the list in our views, stacked: the profile bar (main list only), the search box (with
-    // Auto sort in Load Order), the red banners when shown (two mod managers on, then the page's own warning:
+    // Auto sort in Load Order), the banners when shown (two mod managers on, yellow, then the page's own warning, red:
     // the one that stays put above the one that comes and goes as the list changes), and on the main list the page
     // bar and its hint (only made when there are no categories); the list starts below them. Vanilla View hides them
     // and gives the list its full height back.
