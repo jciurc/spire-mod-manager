@@ -1452,6 +1452,9 @@ static class SelfTest
         Check("CSV: columns by name in any order and case, Id for Mod Id, a ; between values, yes/no and 1/0",
             string.Join(",", loose.Select(m => $"{m.Id}={m.Enabled}")) == "SmmA=True,SmmB=False,SmmC=True,SmmD=False" && loose[3].Name == "d;e",
             string.Join(",", loose.Select(m => $"{m.Id}={m.Enabled}/{m.Name}")));
+        var (tabs, semicolons) = (ProfileCsv.Read("Mod Id\tEnabled\nSmmA\tTRUE\n"), ProfileCsv.Read("\r\n\r\nMod Id;Enabled\r\nSmmB;no\r\n"));
+        Check("CSV: just Mod Id and Enabled, with a tab or a ; between (after blank lines too)",
+            tabs.Mods is [{ Id: "SmmA", Enabled: true }] && semicolons.Mods is [{ Id: "SmmB", Enabled: false }], $"{tabs.Error} / {semicolons.Error}");
         Check("CSV: a Workshop link is rebuilt from its id; anything else is dropped",
             ProfileCsv.CleanLink("https://steamcommunity.com/sharedfiles/filedetails/?id=3123456789&searchtext=") == "https://steamcommunity.com/sharedfiles/filedetails/?id=3123456789"
             && ProfileCsv.CleanLink("https://example.com/?x=1") == "" && ProfileCsv.IsWorkshopLink(ProfileCsv.WorkshopLink(42)) && !ProfileCsv.IsWorkshopLink("https://example.com"));

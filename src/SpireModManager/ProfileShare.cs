@@ -121,12 +121,14 @@ static class ProfileCsv
         return records;
     }
 
-    // The character between values: a comma, unless the first line has more semicolons or tabs than commas.
+    // The character between values: a comma, unless the first line with text has more semicolons or tabs than commas
+    // (a two-column list has just one).
     static char Separator(string text, int start)
     {
-        var end = text.IndexOfAny(['\r', '\n'], start);
-        var first = end < 0 ? text[start..] : text[start..end];
-        return new[] { ',', ';', '\t' }.MaxBy(c => first.Count(x => x == c) + (c == ',' ? 1 : 0)); // a tie: the comma
+        var first = text[start..].Split('\r', '\n').FirstOrDefault(line => line.Trim().Length > 0) ?? "";
+        int Count(char c) => first.Count(x => x == c);
+        var other = Count(';') >= Count('\t') ? ';' : '\t';
+        return Count(other) > Count(',') ? other : ',';
     }
 
     public static Result Read(string text)
