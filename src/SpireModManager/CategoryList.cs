@@ -406,6 +406,9 @@ static class CategoryList
             header.CustomMinimumSize = new Vector2(0, 36);
             titleLabel.AddThemeFontSizeOverride("font_size", 18);
             header.GetNode<Label>("Count").AddThemeFontSizeOverride("font_size", 15);
+            // The scene's Kreon, or the game's font for its language (ModEntry.Font).
+            titleLabel.AddThemeFontOverride("font", ModEntry.Font("res://themes/kreon_bold_shared.tres"));
+            header.GetNode<Label>("Count").AddThemeFontOverride("font", ModEntry.Font("res://themes/kreon_regular_shared.tres"));
             if (muted)
             {
                 // Not a category the player made: cream instead of gold, fainter background.
