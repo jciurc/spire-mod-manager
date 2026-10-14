@@ -214,11 +214,15 @@ static class CategoryList
     // The game's scroll container eases its content towards a target position; these move that target.
     static Control ScrollContainer(Control content) => content.GetParent().GetParent<Control>();
 
-    // Kept within the list's ends: past them the container springs back, which looks like a bounce.
+    // The room the container keeps before the first row and after the last (Apply): in our views, as far as the rows'
+    // highlight reaches past them.
+    static (float Top, float Bottom) Ends => Store.Data.VanillaView ? (0, 0) : (-RowTitles.LookInset.Y, RowTitles.LookInset.W);
+
+    // Kept within the list's ends (that room included): past them the container springs back, which looks like a bounce.
     public static void ScrollBy(Control content, float pixels)
     {
         var scroll = ScrollContainer(content);
-        var bottom = Math.Min(0, content.GetParent<Control>().Size.Y - content.Size.Y);
+        var bottom = Math.Min(0, content.GetParent<Control>().Size.Y - content.Size.Y - Ends.Top - Ends.Bottom);
         scroll.Set("_targetDragPosY", Math.Clamp((float)scroll.Get("_targetDragPosY") + pixels, bottom, 0));
     }
 
@@ -235,7 +239,7 @@ static class CategoryList
     {
         var scroll = ScrollContainer(content);
         var top = Math.Min(0, -row.Position.Y + scroll.Size.Y / 3);
-        var bottom = Math.Min(0, scroll.Size.Y - content.Size.Y);
+        var bottom = Math.Min(0, scroll.Size.Y - content.Size.Y - Ends.Top - Ends.Bottom);
         scroll.Set("_targetDragPosY", Math.Max(top, bottom));
     }
 
@@ -265,7 +269,7 @@ static class CategoryList
             // Collapse all, a collapsed category). Moving it keeps its size, so shrink it again after.
             Callable.From(() =>
             {
-                if (!GodotObject.IsInstanceValid(content) || content.Size.Y > ScrollContainer(content).Size.Y)
+                if (!GodotObject.IsInstanceValid(content) || content.Size.Y + Ends.Top + Ends.Bottom > ScrollContainer(content).Size.Y)
                     return;
                 ScrollToTop(content);
                 content.OffsetBottom = content.OffsetTop;
@@ -282,6 +286,11 @@ static class CategoryList
         var sides = (Vector2)content.GetMeta(GameSidesMeta);
         content.AddThemeConstantOverride("separation", Store.Data.VanillaView ? (int)content.GetMeta(GameGapMeta) : RowTitles.RowGap);
         (content.OffsetLeft, content.OffsetRight) = Store.Data.VanillaView ? (sides.X, sides.Y) : (sides.X - RowTitles.LookInset.X, sides.Y - RowTitles.LookInset.Z);
+        // The same at its top and bottom, kept by the game's scroll container (its padding, scrolled or not): the first
+        // row's highlight shows whole under the list's top edge (Load Order starts with a row), the last one's over its
+        // bottom edge.
+        if (ScrollContainer(content) is NScrollableContainer scroller)
+            scroller.UpdatePadding(Ends.Top, Ends.Bottom);
         foreach (var header in content.GetChildren().Where(c => c.IsInGroup(HeaderGroup)))
         {
             content.RemoveChild(header);

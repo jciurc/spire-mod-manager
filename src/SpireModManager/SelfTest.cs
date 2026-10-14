@@ -1957,6 +1957,15 @@ static class SelfTest
         Check("move to top saves the order", Ids()[0] == free && Saved()[0] == free, string.Join(", ", Ids()));
         Check("an order change is pending", pending.Visible && ModEntry.HasPendingChanges());
         Check("load order: no tickboxes", Rows().All(r => !r.GetNode<Control>("Tickbox").Visible));
+        // The first row's highlight (the same box under the mouse) reaches a little above the row; with the list at its
+        // top it shows whole, under the list's top edge, its rounded top not cut off.
+        CategoryList.ScrollToTop(content);
+        CategoryList.Select(screen, Rows()[0]);
+        await Wait(menu, 0.2);
+        var topLook = Rows()[0].GetNode<Control>("SelectionHighlight").GetGlobalRect();
+        var listTop = content.GetParent<Control>().GetGlobalRect().Position.Y;
+        Check("load order: the first row's highlight shows whole, under the list's top edge", topLook.Position.Y >= listTop - 0.01f
+            && topLook.Position.Y < Rows()[0].GetGlobalRect().Position.Y, $"highlight from {topLook.Position.Y}, row from {Rows()[0].GetGlobalRect().Position.Y}, list from {listTop}");
         var wasText = Rows()[0].GetNodeOrNull<Label>("SpireModManagerWas")?.Text;
         Check("a moved row shows where it was at launch", wasText == $"{start.IndexOf(free) + 1} →",
             wasText ?? "none");
