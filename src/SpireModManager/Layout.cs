@@ -26,6 +26,7 @@ static class Layout
     const string MinSizeMeta = "spire_mod_manager_min_size";
     const string BoxMeta = "spire_mod_manager_original_box", BarMeta = "spire_mod_manager_original_bar", AnchorMeta = "spire_mod_manager_original_anchor";
     const string HomeMeta = "spire_mod_manager_home", SeenMeta = "spire_mod_manager_seen", ParkedMeta = "spire_mod_manager_parked";
+    const string ListMeta = "spire_mod_manager_parked_by_list"; // where a part was before the changes list moved it (ParkOthers)
     const float ParkedY = -10000; // other mods' parts with no room, far above the panel (Park)
 
     // The info panel's own parts as the game's scene makes them (by name), noted the first time we see the panel.
@@ -359,10 +360,13 @@ static class Layout
     // where our fields are. Not the game's own (noted on first sight), not ours (named "SpireModManager…", and Open
     // Folder) and not Better Mod Menu's (Bmm hides those on our views); nor one that stretches with the panel (an
     // overlay or a background). Those their mods show, out of sight for lack of room or not.
-    public static List<Control> OtherParts(Control info) => _sceneParts is not { } scene ? []
+    public static List<Control> OtherParts(Control info) =>
+        AllOthers(info).Where(c => c.AnchorLeft == c.AnchorRight && c.AnchorTop == c.AnchorBottom && c.Visible).ToList();
+
+    // All of them: shown or not, stretching or not (the changes list moves them all out of sight: ParkOthers).
+    static IEnumerable<Control> AllOthers(Control info) => _sceneParts is not { } scene ? []
         : info.GetChildren().OfType<Control>().Where(c => c.Name.ToString() is var name && !scene.Contains(name)
-            && !name.StartsWith("SpireModManager") && name != "OpenFolderButton" && !name.StartsWith("BetterModMenu")
-            && c.AnchorLeft == c.AnchorRight && c.AnchorTop == c.AnchorBottom && c.Visible).ToList();
+            && !name.StartsWith("SpireModManager") && name != "OpenFolderButton" && !name.StartsWith("BetterModMenu"));
 
     // Our views: the parts that fit in room (each with the gap after it), in the order their mods added them; the
     // rest go out of sight (Park). A part first seen this frame may not be laid out inside yet (a wrapping label starts
@@ -425,6 +429,37 @@ static class Layout
             return;
         part.FocusBehaviorRecursive = (Control.FocusBehaviorRecursiveEnum)(long)part.GetMeta(ParkedMeta);
         part.RemoveMeta(ParkedMeta);
+    }
+
+    // The changes list covers the panel: every other mod's part goes out of sight too (Park), shown or not, stretching
+    // or not, and where it was is noted. Never hidden: its Visible stays its mod's, so a hide or a show its mod makes
+    // while the list is open still holds when it closes. One already out of sight for lack of room stays as it is (the
+    // panel is placed again when the list closes). Returns them all, for the list to leave their Visible alone.
+    public static List<Control> ParkOthers(Control info)
+    {
+        var others = AllOthers(info).ToList();
+        foreach (var part in others.Where(p => !p.HasMeta(ParkedMeta)))
+        {
+            part.SetMeta(ListMeta, new Vector4(part.OffsetLeft, part.OffsetTop, part.OffsetRight, part.OffsetBottom));
+            Park(part);
+        }
+        return others;
+    }
+
+    // The list closed: each part it moved goes back where it was, in keyboard reach as before. The panel is placed
+    // after (ModDetails.PlaceFields), which fits the shown ones as usual. One that Vanilla View put back meanwhile
+    // (PutOthersBack) stays where it is.
+    public static void UnparkOthers(Node info)
+    {
+        foreach (var part in info.GetChildren().OfType<Control>().Where(c => c.HasMeta(ListMeta)))
+        {
+            var box = (Vector4)part.GetMeta(ListMeta);
+            part.RemoveMeta(ListMeta);
+            if (!part.HasMeta(ParkedMeta))
+                continue;
+            (part.OffsetLeft, part.OffsetTop, part.OffsetRight, part.OffsetBottom) = (box.X, box.Y, box.Z, box.W);
+            Unpark(part);
+        }
     }
 
     // Vanilla View: other mods' parts where their mods put them, in reach again if we moved them out of sight.
