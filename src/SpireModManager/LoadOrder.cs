@@ -194,10 +194,12 @@ static class LoadOrder
     // fixing makes the saved order say what will happen). On the main list: enabled mods that need a mod
     // that is off or missing, with a way to each and a fix for the off ones. Elsewhere, a "!" on the Load
     // Order button says that page has a warning. Above that one on both, while Better Mod Menu is ticked too: a
-    // yellow banner saying two mod managers are on, with a way to its row and a way to dismiss it.
+    // yellow banner saying two mod managers are on, with a way to its row and a way to dismiss it. Hovering a banner's
+    // text lists the mods it is about (BannerCard).
     public const string WarningName = "SpireModManagerOrderWarning", ManagersName = "SpireModManagerManagersWarning", AutoSortName = "AutoSortButton";
-    public const string AutoSortHintName = "AutoSortHint";
+    public const string AutoSortHintName = "AutoSortHint", BannerCardName = "SpireModManagerBannerCard";
     const string BadgeName = "WarningBadge";
+    const int CardLines = 12; // a banner's card names at most this many mods, then says how many more
     static int _nextProblem; // the main banner's "Show" steps through the mods with problems
 
     public static void UpdateToolbar(Control content, List<NModMenuRow> rows, Action redraw)
@@ -264,7 +266,8 @@ static class LoadOrder
         if (Layout.Wide && Bmm.BothTicked && !Store.Data.ManagersWarningDismissed)
             ManagersBanner(content, border, search, redraw);
         if (on && misordered > 0)
-            Banner(border, search, orderText, [Menus.SmallButton(Menus.Text("SPIRE_MOD_MANAGER.FIX_ORDER"), () => Do(FixOrder), name: "FixOrderButton")]);
+            Banner(border, search, orderText, () => OrderCard(content),
+                [Menus.SmallButton(Menus.Text("SPIRE_MOD_MANAGER.FIX_ORDER"), () => Do(FixOrder), name: "FixOrderButton")]);
         else if (Layout.Current == Layout.View.Categories)
             ListBanner(content, border, search, mods, redraw);
         PageBar.Update(content, border, rows);
@@ -304,7 +307,7 @@ static class LoadOrder
                 ("mods", string.Join(", ", needed.Select(m => m.manifest?.name ?? m.manifest?.id))));
             buttons.Add(enable);
         }
-        Banner(border, search, text, buttons);
+        Banner(border, search, text, () => NeedsCard(content), buttons);
     }
 
     // Enabled mods that won't load as things stand, each with what it needs that is disabled (Dep: that mod) or isn't
@@ -335,8 +338,53 @@ static class LoadOrder
             redraw();
         }, name: "DismissManagersButton");
         dismiss.TooltipText = Menus.Text("SPIRE_MOD_MANAGER.DISMISS_MANAGERS_TIP");
-        Banner(border, search, Menus.Text("SPIRE_MOD_MANAGER.MANAGERS_WARNING"), [show, dismiss], ManagersName, "ManagersWarning", WarningColor);
+        Banner(border, search, Menus.Text("SPIRE_MOD_MANAGER.MANAGERS_WARNING"), ManagersCard, [show, dismiss], ManagersName, "ManagersWarning", WarningColor);
     }
+
+    // The banners' cards, worked out when one opens (never a list from before the last tick). Main list: each enabled
+    // mod that won't load, with the mods it needs that are disabled or not installed.
+    static string? NeedsCard(Control content)
+    {
+        using var lookups = Lookups.Begin();
+        string Need((string Id, Mod? Dep) need) => need.Dep is { } dep
+            ? Menus.Format("SPIRE_MOD_MANAGER.BANNER_NEEDS_OFF", ("mod", Shown(dep)))
+            : Menus.Format("SPIRE_MOD_MANAGER.BANNER_NEEDS_MISSING", ("mod", need.Id));
+        return BannerCard("SPIRE_MOD_MANAGER.BANNER_CARD_TITLE", Unloadable(Mods(content.GetChildren().OfType<NModMenuRow>()))
+            .Select(b => Menus.Format("SPIRE_MOD_MANAGER.BANNER_NEEDS", ("mod", Shown(b.Mod)), ("needs", string.Join(", ", b.Needs.Select(Need))))).ToList());
+    }
+
+    // Load Order: each enabled mod placed before a mod it needs, in load order.
+    static string? OrderCard(Control content)
+    {
+        using var lookups = Lookups.Begin();
+        return BannerCard("SPIRE_MOD_MANAGER.BANNER_CARD_TITLE", Dependencies.OrderViolations(Mods(content.GetChildren().OfType<NModMenuRow>()))
+            .GroupBy(v => v.Mod)
+            .Select(g => Menus.Format("SPIRE_MOD_MANAGER.BANNER_LOADS_BEFORE", ("mod", Shown(g.Key)), ("needs", string.Join(", ", g.Select(v => Shown(v.Needs)).Distinct()))))
+            .ToList());
+    }
+
+    // Two managers: the mod managers that are on, by the names the list gives them.
+    static string? ManagersCard()
+    {
+        using var lookups = Lookups.Begin();
+        return BannerCard("SPIRE_MOD_MANAGER.BANNER_MANAGERS_TITLE", Bmm.TickedManagers().Select(Shown).ToList());
+    }
+
+    // A title, then one mod a line (the first CardLines, then how many more); none for no lines.
+    static string? BannerCard(string title, List<string> lines)
+    {
+        if (lines.Count == 0)
+            return null;
+        var shown = lines.Take(CardLines).Select(Escape).ToList();
+        if (lines.Count > CardLines)
+            shown.Add($"[color=#fff6e280]{Escape(Menus.Format("SPIRE_MOD_MANAGER.BANNER_CARD_MORE", ("count", Menus.Number(lines.Count - CardLines))))}[/color]");
+        return $"[b]{Escape(Menus.Text(title))}[/b]\n{string.Join("\n", shown)}";
+    }
+
+    // A mod as its row names it: the player's alias, else its name.
+    static string Shown(Mod mod) => Store.InfoFor(mod.manifest?.id)?.Alias ?? mod.manifest?.name ?? mod.manifest?.id ?? "";
+
+    static string Escape(string text) => text.Replace("[", "[lb]");
 
     // A banner's Show: the mod's row scrolled into view (its category opened) with a short glow, and the mod in the
     // info panel. A search that leaves the row out is cleared first: opening its category wouldn't show it.
@@ -352,10 +400,10 @@ static class LoadOrder
     }
 
     // A line under the search box: text, then its buttons right after it (a small gap), the rest of the line empty. Red
-    // (the page's own warning) unless color says otherwise. name and textName: the line's and its text's node names
-    // (the page's own warning by default).
-    static void Banner(Control border, Control? search, string message, List<Control> buttons, string name = WarningName, string textName = "OrderProblems",
-        Color? color = null)
+    // (the page's own warning) unless color says otherwise. card: what hovering the text shows (the mods it's about).
+    // name and textName: the line's and its text's node names (the page's own warning by default).
+    static void Banner(Control border, Control? search, string message, Func<string?> card, List<Control> buttons, string name = WarningName,
+        string textName = "OrderProblems", Color? color = null)
     {
         const float height = 34, gap = 6;
         var bar = new PanelContainer { Name = name };
@@ -371,10 +419,15 @@ static class LoadOrder
         var text = new Label
         {
             Name = textName, Text = message, VerticalAlignment = VerticalAlignment.Center, AutowrapMode = TextServer.AutowrapMode.WordSmart,
+            MouseFilter = Control.MouseFilterEnum.Pass,
         };
         text.AddThemeFontOverride("font", ModEntry.Font("res://themes/kreon_regular_shared.tres"));
         text.AddThemeFontSizeOverride("font_size", 16);
         line.AddChild(text);
+        // Hovering the text: its card at once, under the banner from the text's left edge. (A redraw makes a new banner,
+        // so a card open over the old one goes with it.)
+        Hover.Watch(text, BannerCardName, card, Hover.Timing.Instant, width: 440,
+            place: () => (new Vector2(text.GlobalPosition.X, bar.GlobalPosition.Y + bar.Size.Y + 6), false, false));
         foreach (var button in buttons)
         {
             button.SizeFlagsVertical = Control.SizeFlags.ShrinkCenter;
