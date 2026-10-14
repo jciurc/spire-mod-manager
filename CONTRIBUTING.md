@@ -38,7 +38,9 @@ needs to know what it touches on your PC:
 - **A dev copy of the game:** `sts2-dev` at the root of the game's drive (`D:\sts2-dev` for the default
   library), made of hard links to the installed game's files, so it takes no extra space. `STS2_DEV_DIR` picks
   another folder on the same drive (hard links can't cross drives). It has its own `mods` folder: the fresh
-  build plus links to your other local mods. Builds never go into your real `mods` folder this way.
+  build, the empty test mods from `tools/fixtures/mods` and, for `--bmm`, Better Mod Menu if it's in your game's
+  own `mods` folder (a Workshop subscription lives elsewhere and isn't picked up). None of your other mods, so a
+  run is the same on every PC. Builds never go into your real `mods` folder this way.
 - **Separate save data and log:** the dev copy runs without Steam, so the game keeps its data in
   `%APPDATA%\SlayTheSpire2\default\1\` instead of your Steam account's folder, and its log goes to
   `out\dev.log`. Your real saves and mod lists are never touched. It's muted, 1920x1080 windowed, with
@@ -57,8 +59,8 @@ Commands:
     copy and the sandbox, but what a mod writes is up to it, and files at the top of
     `%APPDATA%\SlayTheSpire2` (such as `mod_configs`) are shared with your real game. Subscribing also installs
     the item in your real game, where a new mod starts enabled.
-  - `--real` (maintainer only): a read-only tour with a copy of your own mods and data. Its output holds your
-    own mod list, so it never goes into a pull request.
+  - `--real` (maintainer only): a read-only tour with your own mods (all switched off) and a copy of your data,
+    in place of the test mods. Its output holds your own mod list, so it never goes into a pull request.
 - `dotnet run tools/dev.cs launch`: opens the sandboxed game to try things by hand (`--first-run`,
   `--first-run-bmm` and `--workshop` as for `test`).
 - `SPIRE_MOD_MANAGER_SKIP_PATCHES=ModToggledPatch` (patch class names, comma-separated) before `test` or

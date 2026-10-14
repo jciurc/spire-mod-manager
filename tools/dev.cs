@@ -22,7 +22,8 @@
 // Isolation:
 // - Dev copy: sts2-dev at the root of the game's drive (D:\sts2-dev here; STS2_DEV_DIR picks another
 //   folder on that drive) holds hard links to the installed game's files (same drive, no extra space)
-//   and its own mods\ folder: our fresh build plus links to the other local mods. Builds never go into
+//   and its own mods\ folder: our fresh build, the fixture mods (tools/fixtures/mods) and Better Mod Menu's
+//   installed copy; with --real, links to every mod installed for play instead of the fixtures. Builds never go into
 //   the real mods folder here; `dotnet run build.cs` does that, for play, when the game is closed.
 //   The copy is re-linked whenever the installed game's release_info.json changes (a Steam update).
 // - --force-steam off: no Steam presence, no cloud, and the game keeps its data in
@@ -97,17 +98,17 @@ foreach (var item in workshopItems)
 }
 workshopMods = workshopManifests.Select(m => Id(m.Manifest)).ToList();
 // And what each one needs has to be on too, and what that needs in turn: the game won't load a mod whose dependency
-// didn't load (as the fixture's BrandedMod shows, without BaseLib), nor then the mods that need that one. On in this
-// run, with their manifests: ours (build.cs gives it no dependencies), the --workshop mods, Better Mod Menu with --bmm,
-// and (not --real, which switches every other mod off) the other installed and fixture mods but Better Mod Menu's fork.
+// didn't load (as the fixture's Test Addon shows: it needs SmmTestMissing), nor then the mods that need that one. On in
+// this run, with their manifests: ours (build.cs gives it no dependencies), the --workshop mods, Better Mod Menu with
+// --bmm, and (not --real, which switches every other mod off) the fixture mods. The other mods installed for play
+// aren't in the dev copy (SyncMods).
 var installedManifests = Manifests(Path.Combine(GameDir, "mods")).ToList();
 var on = workshopManifests.ToDictionary(m => Id(m.Manifest), m => m.Manifest);
 on.TryAdd(ModId, []);
-var others = real ? [] : installedManifests.Concat(Manifests(Path.Combine(root, "tools", "fixtures", "mods")));
-foreach (var manifest in others.Where(m => Id(m) is not (ModId or "BetterModMenu" or "BetterModMenuFork"))
-    .Concat(installedManifests.Where(m => bmm && Id(m) == "BetterModMenu")))
+var others = real ? [] : Manifests(Path.Combine(root, "tools", "fixtures", "mods"));
+foreach (var manifest in others.Concat(installedManifests.Where(m => bmm && Id(m) == "BetterModMenu")))
     on.TryAdd(Id(manifest), manifest);
-// Walked from the --workshop mods only: some self-test checks need a mod that won't load (BrandedMod, as above).
+// Walked from the --workshop mods only: some self-test checks need a mod that won't load (Test Addon, as above).
 foreach (var (item, manifest) in workshopManifests)
     if (MissingDependency([Id(manifest)], []) is { } chain)
     {
@@ -118,10 +119,11 @@ foreach (var (item, manifest) in workshopManifests)
         var installed = installedManifests.Any(m => Id(m) == needed);
         var subscribed = Directory.GetDirectories(WorkshopDir).FirstOrDefault(d => ManifestIds(d).Contains(needed));
         var needs = string.Join(", ", chain.Zip(chain.Skip(1), (mod, dependency) => $"{mod} needs {dependency}"));
+        var add = subscribed != null ? $"add its Workshop item, as in --workshop {string.Join(',', workshopItems.Append(Path.GetFileName(subscribed)))}"
+            : "subscribe to it in Steam, then add its Workshop item to --workshop.";
         return Fail($"Workshop item {item} won't load: {needs}, and {needed} won't be on in this run: " + (installed && needed == "BetterModMenu" ? "add --bmm."
-            : installed && real ? "--real switches the installed mods off, so run it without --real."
-            : subscribed != null ? $"add its Workshop item, as in --workshop {string.Join(',', workshopItems.Append(Path.GetFileName(subscribed)))}"
-            : "subscribe to it in Steam, then add its Workshop item to --workshop."));
+            : installed ? "dev runs don't switch on the mods installed for play (Better Mod Menu aside), so " + add
+            : add));
     }
 if (Process.GetProcessesByName("SlayTheSpire2").Any(p => string.Equals(Path.GetDirectoryName(ExePath(p)), DevDir, StringComparison.OrdinalIgnoreCase)))
     return Fail($"A dev copy of the game is already running from {DevDir}.");
@@ -260,16 +262,18 @@ void LinkDevCopy()
     }
 }
 
-// The dev copy's mods: our fresh build, plus links to the other mods installed for play. Not Better Mod Menu's
-// data if it keeps it beside its files ("portable mode", mod_profiles.*): our first-run import would find it
-// there, and a run's Better Mod Menu data should be only what PrepareSandbox gives it. Nor an installed mod
-// with the same id as a --workshop item's: the game would load only one of the two.
+// The dev copy's mods: our fresh build, plus links to mods installed for play: with --real all of them, otherwise
+// Better Mod Menu's only, so a run has the same mods on every machine (the fixture mods below stand in for the rest).
+// Not Better Mod Menu's data if it keeps it beside its files ("portable mode", mod_profiles.*): our first-run import
+// would find it there, and a run's Better Mod Menu data should be only what PrepareSandbox gives it. Nor an installed
+// mod with the same id as a --workshop item's: the game would load only one of the two.
 void SyncMods()
 {
     var mods = Path.Combine(DevDir, "mods");
     if (Directory.Exists(mods))
         Directory.Delete(mods, recursive: true);
-    foreach (var dir in Directory.GetDirectories(Path.Combine(GameDir, "mods")).Where(d => Path.GetFileName(d) != ModId && !ManifestIds(d).Any(workshopMods.Contains)))
+    foreach (var (dir, _) in Directory.GetDirectories(Path.Combine(GameDir, "mods")).Select(d => (Dir: d, Ids: ManifestIds(d).ToList()))
+        .Where(m => Path.GetFileName(m.Dir) != ModId && !m.Ids.Any(workshopMods.Contains) && (real || m.Ids.Contains("BetterModMenu"))))
         foreach (var file in Directory.EnumerateFiles(dir, "*", SearchOption.AllDirectories).Where(f => !Path.GetFileName(f).StartsWith("mod_profiles.")))
             Link(file, Path.Combine(mods, Path.GetRelativePath(Path.Combine(GameDir, "mods"), file)));
     if (real)
@@ -283,7 +287,8 @@ void SyncMods()
     }
     else
     {
-        // Empty test mods with dependencies between them (tools/fixtures/mods), for the load order checks.
+        // Empty test mods with dependencies between them (tools/fixtures/mods): for the load order checks, a mod that
+        // won't load, and one by our author to edit, tag and search for.
         foreach (var file in Directory.EnumerateFiles(Path.Combine(root, "tools", "fixtures", "mods"), "*", SearchOption.AllDirectories))
         {
             var target = Path.Combine(mods, Path.GetRelativePath(Path.Combine(root, "tools", "fixtures", "mods"), file));
@@ -325,13 +330,14 @@ void PrepareSandbox(bool resetData)
     var mods = settings["mod_settings"] as JsonObject ?? [];
     mods["mods_enabled"] = true;
     // A fresh mod list every run, so one run's toggles and order can't leak into the next: everything on
-    // (no entry = on) except Better Mod Menu (--bmm: on, to test running alongside it) and its fork's folder
-    // (never loads: its DLL name doesn't match its id). --bmm-after: listed after ours.
+    // (no entry = on) except Better Mod Menu (--bmm: on, to test running alongside it), its fork's folder (--real; never
+    // loads: its DLL name doesn't match its id) and the fixture's Test Retired (a mod that's off in every mode, which the
+    // self-test's searches need). --bmm-after: listed after ours.
     var list = new JsonArray();
     if (args.Contains("--bmm-after"))
         list.Add((JsonNode)new JsonObject { ["id"] = ModId, ["is_enabled"] = true, ["source"] = "mods_directory" });
     list.Add((JsonNode)new JsonObject { ["id"] = "BetterModMenu", ["is_enabled"] = bmm, ["source"] = "mods_directory" });
-    list.Add((JsonNode)new JsonObject { ["id"] = "BetterModMenuFork", ["is_enabled"] = false, ["source"] = "mods_directory" });
+    list.Add((JsonNode)new JsonObject { ["id"] = real ? "BetterModMenuFork" : "SmmTestRetired", ["is_enabled"] = false, ["source"] = "mods_directory" });
     // --workshop: the items' mods on, after ours, in the order given. An entry above for the same id (Better
     // Mod Menu's, when its Workshop item is given) gives way.
     if (workshopMods.Count > 0 && !args.Contains("--bmm-after"))

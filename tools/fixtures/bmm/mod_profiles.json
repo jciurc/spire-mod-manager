@@ -5,13 +5,13 @@
       "DisabledMods": [
         "SmmTestContent",
         "SmmTestUi",
-        "BetterModMenuFork"
+        "SmmTestRetired"
       ]
     },
     {
       "Name": "Everything",
       "DisabledMods": [
-        "BetterModMenuFork"
+        "SmmTestRetired"
       ]
     }
   ],

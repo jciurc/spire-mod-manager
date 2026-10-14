@@ -1,0 +1,11 @@
+{
+  "id": "SmmTestRetired",
+  "name": "Test Retired",
+  "author": "symphony",
+  "description": "Empty mod for dev-sandbox tests: off in every run (tools/dev.cs), so a search can find mods both on and off.",
+  "version": "0.1.0",
+  "has_pck": false,
+  "has_dll": false,
+  "affects_gameplay": false,
+  "dependencies": []
+}
