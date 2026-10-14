@@ -7,7 +7,7 @@ namespace SpireModManager;
 // they all share (the rest of each mod's tags stay), notes show when they're the same and typing replaces all (a
 // warning beside the term counts the mods whose notes it would overwrite).
 // - A gold term, which says what the field is for in a hover card; Save and Cancel at the right of its line while
-//   editing. (The bulk menu: its heading's "i" and both terms open one card at once, how editing several works.)
+//   editing. (The bulk menu: its heading with the "i", one hover target, and both terms open one card at once.)
 // - At rest: the value as plain text (tags as pills), or a subtle call to action ("Add alias").
 // - Editing: a padded box (the same call to action while it's empty) and an inline ✕ to clear. Enter saves (Ctrl+Enter in notes), Escape
 //   or Cancel puts the value back, clicking away saves, so typed text is never lost.
@@ -220,17 +220,22 @@ sealed class ModField
             CustomMinimumSize = new Vector2(0, 34), VerticalAlignment = VerticalAlignment.Center,
         };
         Style(heading, "res://themes/kreon_bold_shared.tres", 20, Cream);
-        // An "i" beside it, drawing the eye to the card (the terms open it too) saying how editing several mods works.
-        var headingLine = new HBoxContainer { Name = "Heading", MouseFilter = Control.MouseFilterEnum.Ignore };
+        // An "i" beside it, drawing the eye to the card saying how editing several mods works. The heading and the i are one
+        // hover target, only as wide as the two (Jordan, 2026-10-14); the terms below open the same card.
+        var headingLine = new HBoxContainer
+        {
+            Name = "Heading", MouseFilter = Control.MouseFilterEnum.Pass, MouseDefaultCursorShape = Control.CursorShape.Help,
+            SizeFlagsHorizontal = Control.SizeFlags.ShrinkBegin,
+        };
         headingLine.AddThemeConstantOverride("separation", 8);
         headingLine.AddChild(heading);
         var info = new TextureRect
         {
             Name = "Info", Texture = Icons.Info, StretchMode = TextureRect.StretchModeEnum.KeepCentered, SelfModulate = new Color(Cream, 0.7f),
-            SizeFlagsVertical = Control.SizeFlags.ShrinkCenter, MouseFilter = Control.MouseFilterEnum.Pass, MouseDefaultCursorShape = Control.CursorShape.Help,
+            SizeFlagsVertical = Control.SizeFlags.ShrinkCenter, MouseFilter = Control.MouseFilterEnum.Ignore,
         };
-        Hover.Watch(info, TipName, BulkInfo, Hover.Timing.Instant, width: 380); // the terms below open it too
         headingLine.AddChild(info);
+        Hover.Watch(headingLine, TipName, BulkInfo, Hover.Timing.Instant, width: 380);
         column.AddChild(headingLine);
         foreach (var kind in new[] { Kind.Tags, Kind.Notes })
             column.AddChild(new ModField(kind, () => modIds, saved, bulk: true).Root);
