@@ -8,7 +8,8 @@
 //                                      --workshop <id>[,<id>...]: those Steam Workshop items too (subscribed
 //                                      ones only: Steam downloads no others), copied into the dev copy's
 //                                      mods for this run and switched on after ours, in the order given; one
-//                                      that's missing, or needs a mod that won't be on, stops the run;
+//                                      that's missing, or needs a mod that won't be on, stops the run, and
+//                                      one that didn't load or failed to start fails it;
 //                                      --real: Jordan's own mods, switched off, and a copy of his data;
 //                                      --first-run: a short suite for a first run, with no data of ours and
 //                                      none of Better Mod Menu's; --first-run-bmm: the same, but with Better
@@ -32,12 +33,13 @@
 // test: resets the sandbox to tools/fixtures (mods accepted, Better Mod Menu off, our manager.json, no
 // Better Mod Menu data; the first-run options change the last two), sets SPIRE_MOD_MANAGER_SELFTEST so
 // SelfTest.cs runs and quits (SPIRE_MOD_MANAGER_SELFTEST_MODE picks the --real or first-run suite), then
-// prints out/selftest/results.txt and our log lines. Screenshots (*.png) and UI dumps (*.txt) land in
-// out/selftest. Exit code 1 on any FAIL.
+// prints out/selftest/results.txt and our log lines (and the --workshop mods'). Screenshots (*.png) and UI
+// dumps (*.txt) land in out/selftest. Exit code 1 on any FAIL.
 using System.Diagnostics;
 using System.Runtime.CompilerServices;
 using System.Runtime.InteropServices;
 using System.Text.Json.Nodes;
+using System.Text.RegularExpressions;
 
 // Full paths without a trailing separator: the running-game check below compares DevDir with the exe's folder.
 var steamapps = FullDir(Env("STS2_STEAMAPPS", @"D:\SteamLibrary\steamapps")); // the Steam library with the game
@@ -184,14 +186,45 @@ var results = Path.Combine(outDir, "results.txt");
 var text = File.Exists(results) ? File.ReadAllText(results) : "NO RESULTS (test did not finish)\n";
 Console.Write(text);
 Console.WriteLine("--- log ---");
+// Our lines, and the ones naming a --workshop mod. Such a mod loaded if its "Finished mod initialization" line is
+// there, but failed to start if the game logged one of the loadFailure errors (ModManager.TryLoadMod) after the
+// previous mod's: the game loads mods one at a time, and those errors don't always name the mod.
+var named = workshopMods.Select(id => new Regex($@"(?<![\w-]){Regex.Escape(id)}(?![\w-])")).ToList();
+var loadFailure = new Regex(@"^\[ERROR\] .*(mod initializer|PatchAll on assembly|but no (assembly|PCK) at path)");
+var loaded = new Dictionary<string, string?>(); // a --workshop mod that loaded: the error it failed to start with, if any
+string? failure = null;
+var shown = (string line) => line.Contains($"[{ModId}]") || (line.Contains("[ERROR]") && line.Contains("Spire"))
+    || (line.StartsWith('[') && named.Any(name => name.IsMatch(line)));
+var print = (string line) => Console.WriteLine(line.Length > 400 ? line[..400] : line);
 if (File.Exists(logPath))
     using (var log = new FileStream(logPath, FileMode.Open, FileAccess.Read, FileShare.ReadWrite))
     using (var reader = new StreamReader(log))
         while (reader.ReadLine() is { } line)
-            if (line.Contains($"[{ModId}]") || (line.Contains("[ERROR]") && line.Contains("Spire")))
-                Console.WriteLine(line.Length > 400 ? line[..400] : line);
+        {
+            if (loadFailure.IsMatch(line))
+                failure ??= line;
+            if (line.Contains("Finished mod initialization for"))
+            {
+                if (workshopMods.FirstOrDefault(mod => line.EndsWith($"({mod}).")) is { } id)
+                {
+                    loaded[id] = failure;
+                    if (failure != null && !shown(failure))
+                        print(failure);
+                }
+                failure = null;
+            }
+            if (shown(line))
+                print(line);
+        }
 Console.WriteLine("screenshots: " + string.Join(", ", Directory.GetFiles(outDir, "*.png").Select(Path.GetFileName).Order()));
-return !File.Exists(results) || text.Contains("FAIL") ? 1 : 0;
+// A --workshop mod that didn't load, or failed to start, fails the run: the self-test passing says nothing about
+// running beside it then (and the cause is that mod, not ours).
+var notReady = workshopMods.Where(id => !loaded.TryGetValue(id, out var error) || error != null).ToList();
+foreach (var id in notReady)
+    Console.WriteLine(loaded.ContainsKey(id)
+        ? $"FAIL --workshop: {id} loaded but failed to start (its error is in the log above), so this run didn't test beside all of it"
+        : $"FAIL --workshop: {id} didn't load (the log above says why), so this run didn't test beside it");
+return !File.Exists(results) || text.Contains("FAIL") || notReady.Count > 0 ? 1 : 0;
 
 // Hard links to every installed file except mods\, rebuilt when the game's release info changes.
 void LinkDevCopy()
