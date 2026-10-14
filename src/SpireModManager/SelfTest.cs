@@ -4140,7 +4140,7 @@ static class SelfTest
             && bulk.FindChild("Editing", true, false) is Label { Text: var editing } && editing == $"Editing {all - 1} selected mods"
             && bulk.FindChild("Tags", true, false) != null && bulk.FindChild("Notes", true, false) != null && bulk.FindChild("Alias", true, false) == null);
         var info = bulk?.FindChild("Info", true, false) as TextureRect;
-        var infoCard = info == null ? "" : await HoverCard(menu, info, ModField.TipName);
+        var infoCard = info == null ? "" : (await SizedHoverCard(menu, info, ModField.TipName, () => Capture(screen, outDir, "18c-bulk-info"))).Text;
         var bulkTerms = new List<string>();
         foreach (var f in new[] { "Tags", "Notes" })
             if ((bulk?.FindChild("Fields", true, false) ?? bulk)?.GetNodeOrNull<Label>($"{f}/Term/Label") is { } term)
