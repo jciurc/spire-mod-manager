@@ -850,8 +850,8 @@ static class SelfTest
     }
 
     // The main menu button's right-click menu: Move button, Reset position, a divider, Relaunch game. Relaunch game
-    // checks for mods that won't load first, as the Modding page's button does (fixture: BrandedMod needs BaseLib, not
-    // installed): its dialog shows over the main menu, and its fixes work there before the page has been opened.
+    // checks for mods that won't load first, as the Modding page's button does (fixture: Test Addon needs SmmTestMissing,
+    // never installed): its dialog shows over the main menu, and its fixes work there before the page has been opened.
     // ModEntry.TestRelaunch counts each relaunch instead of quitting the test.
     static async Task TestMenuButtonRelaunch(NMainMenu menu, string outDir)
     {
@@ -897,7 +897,7 @@ static class SelfTest
             Check("Relaunch game checks first: its dialog over the main menu, no relaunch yet", relaunches == 0 && !MenuPanel.IsOpen
                 && menu.IsVisibleInTree() && !menu.SubmenuStack.SubmenusOpen && Body().Length > 0, $"{relaunches} relaunches: {Body()}");
             await Capture(menu, outDir, "1d-relaunch-check-main-menu");
-            if (Dependencies.Find("BrandedMod") is not { } branded || !Dependencies.IsOn(branded) || Dialog()?.FindChild("DisableBrokenButton", true, false) == null)
+            if (WontLoad() is not { } addon || Dialog()?.FindChild("DisableBrokenButton", true, false) == null)
             {
                 Press("RelaunchNowButton");
                 await Wait(menu, 0.2);
@@ -912,7 +912,7 @@ static class SelfTest
             Press("DisableBrokenButton");
             await Wait(menu, 0.3);
             Check("from the main menu, Disable mods that can't load: off, the profile and the dot follow, then a plain Relaunch",
-                !Dependencies.IsOn(branded) && Profiles.Edited && dot.Visible == ModEntry.HasPendingChanges()
+                !Dependencies.IsOn(addon) && Profiles.Edited && dot.Visible == ModEntry.HasPendingChanges()
                 && Dialog()?.FindChild("RelaunchNowButton", true, false) is Button { Text: "Relaunch Game" }, Body());
             Press("RelaunchNowButton");
             await Wait(menu, 0.2);
@@ -1022,7 +1022,7 @@ static class SelfTest
     // Row menu, new category renamed in place, assign, move, header menu, delete.
     static async Task TestCategories(Node menu, NModdingScreen screen, Control content, string outDir)
     {
-        const string modId = "LocalModFixes";
+        const string modId = "SmmTestFixes";
         var row = content.GetChildren().OfType<NModMenuRow>().FirstOrDefault(r => r.Mod?.manifest?.id == modId);
         if (row == null)
         {
@@ -1448,14 +1448,14 @@ static class SelfTest
         await Wait(menu, 0.3);
     }
 
-    // The fixture gives SpireModManager an alias and notes; LocalModFixes gets them through the editor.
+    // The fixture gives SpireModManager an alias and notes; SmmTestFixes gets them through the editor.
     static async Task TestNotes(Node menu, NModdingScreen screen, Control content, string outDir)
     {
         var panel = screen.GetNode<NModInfoContainer>("%ModInfoContainer");
         NModMenuRow? Row(string id) => content.GetChildren().OfType<NModMenuRow>().FirstOrDefault(r => r.Mod?.manifest?.id == id);
         string RowTitle(string id) => Row(id)?.GetNode<RichTextLabel>("Title").Text ?? "";
 
-        if (Row(ModEntry.ModId) is not { } ours || Row("LocalModFixes") is not { } other)
+        if (Row(ModEntry.ModId) is not { } ours || Row("SmmTestFixes") is not { } other)
         {
             Results.Add("SKIP notes: fixture mods missing");
             return;
@@ -1519,10 +1519,10 @@ static class SelfTest
         tags.Text = "co-op, Favorites, co-op";
         tags.EmitSignal(Control.SignalName.FocusExited);
         await Wait(menu, 0.3);
-        Check("panel saves notes, trimmed", Store.InfoFor("LocalModFixes")?.Notes == "Typed in the panel" && notes.Text == "Typed in the panel", notes.Text);
-        Check("panel saves tags, repeats dropped; at rest they're pills", Store.InfoFor("LocalModFixes")?.Tags?.SequenceEqual(["co-op", "Favorites"]) == true
+        Check("panel saves notes, trimmed", Store.InfoFor("SmmTestFixes")?.Notes == "Typed in the panel" && notes.Text == "Typed in the panel", notes.Text);
+        Check("panel saves tags, repeats dropped; at rest they're pills", Store.InfoFor("SmmTestFixes")?.Tags?.SequenceEqual(["co-op", "Favorites"]) == true
             && yours.GetNode<Control>("Tags/CustomTags") is { Visible: true } && yours.GetNode("Tags/CustomTags/Pills").GetChildCount() == 2,
-            string.Join(", ", Store.InfoFor("LocalModFixes")?.Tags ?? []));
+            string.Join(", ", Store.InfoFor("SmmTestFixes")?.Tags ?? []));
         await Capture(screen, outDir, "9-notes-editing");
 
         // Fields sit right under the details; Cancel puts the text back; the alias field shows on the row.
@@ -1535,12 +1535,12 @@ static class SelfTest
         notes.Text = "Not wanted";
         yours.GetNode("Notes/Term/Buttons/Cancel").EmitSignal(BaseButton.SignalName.Pressed);
         await Wait(menu, 0.2);
-        Check("Cancel puts the notes back", notes.Text == "Typed in the panel" && Store.InfoFor("LocalModFixes")?.Notes == "Typed in the panel", notes.Text);
+        Check("Cancel puts the notes back", notes.Text == "Typed in the panel" && Store.InfoFor("SmmTestFixes")?.Notes == "Typed in the panel", notes.Text);
         var alias = Line("Alias");
         alias.Text = "Fixes";
         alias.EmitSignal(Control.SignalName.FocusExited);
         await Wait(menu, 0.4);
-        Check("the alias field saves, the row follows", Store.InfoFor("LocalModFixes")?.Alias == "Fixes" && RowTitle("LocalModFixes").StartsWith("Fixes"));
+        Check("the alias field saves, the row follows", Store.InfoFor("SmmTestFixes")?.Alias == "Fixes" && RowTitle("SmmTestFixes").StartsWith("Fixes"));
 
         // Hover cards (Hover's rules): the title's after the delay (id and state first); a quick wobble off it
         // keeps the card (wind-down); after a card goes, the next shows at once for the grace period; the
@@ -1568,7 +1568,7 @@ static class SelfTest
         await HoverOver(hot, Hover.Delay - 0.15);
         Check("the title's card waits for the delay", !CardShown());
         await Wait(menu, 0.3);
-        Check("after the delay, the title's card: id and state first", CardShown() && CardText().StartsWith("LocalModFixes") && CardText().Contains("Enabled"), CardText());
+        Check("after the delay, the title's card: id and state first", CardShown() && CardText().StartsWith("SmmTestFixes") && CardText().Contains("Enabled"), CardText());
         await Capture(screen, outDir, "9b-notes-hover");
         Hover.TestMouse = () => new Vector2(5, 5);
         await menu.ToSignal(menu.GetTree(), SceneTree.SignalName.ProcessFrame);
@@ -1580,7 +1580,7 @@ static class SelfTest
         await HoverOver(oursHot, 0.05);
         Check("within the grace period, the next title's card shows at once", CardShown() && CardText().StartsWith(ModEntry.ModId), CardText());
         await HoverOver(mark, 0.05);
-        Check("the notepad's card at once, and only one card at a time", CardShown() && CardText().StartsWith("LocalModFixes") && Cards() == 1, $"{Cards()} cards");
+        Check("the notepad's card at once, and only one card at a time", CardShown() && CardText().StartsWith("SmmTestFixes") && Cards() == 1, $"{Cards()} cards");
         await Leave(mark, 0.05);
         Check("the notepad's card goes with the mouse", !CardShown());
         await HoverOver(hot, 0.2);
@@ -1690,13 +1690,13 @@ static class SelfTest
             return content.GetChildren().OfType<NModMenuRow>().Where(r => r.Visible).Select(r => r.Mod?.manifest?.id ?? "").ToList();
         }
 
-        var byName = await Shown("mod fixes");
-        Check("search by name", byName.SequenceEqual(["LocalModFixes"]), string.Join(", ", byName));
+        var byName = await Shown("test fixes");
+        Check("search by name", byName.SequenceEqual(["SmmTestFixes"]), string.Join(", ", byName));
         await Capture(screen, outDir, "10-search");
         var byAlias = await Shown("the manager");
         Check("search by alias", byAlias.SequenceEqual([ModEntry.ModId]), string.Join(", ", byAlias));
         var byTag = await Shown("favorites");
-        Check("search by own tag", byTag.SequenceEqual(["LocalModFixes"]), string.Join(", ", byTag));
+        Check("search by own tag", byTag.SequenceEqual(["SmmTestFixes"]), string.Join(", ", byTag));
         var libraries = await Shown("library");
         Check("search by automatic tag", libraries.SequenceEqual(["SmmTestLib"]), string.Join(", ", libraries));
         Check("automatic tags, in order", Tags.For(Dependencies.Find("SmmTestLib")).Select(c => c.Text).SequenceEqual(["Local", "Library", "Gameplay"])
@@ -1726,14 +1726,14 @@ static class SelfTest
         Check("clicking the tag that is the whole search clears it", box.Text == "" && Visible().SequenceEqual(all), $"{box.Text}: {Visible().Count} shown");
         // Authors: from the info panel's author (the row's is plain text); Shift on a tag adds it after a space.
         await Shown("");
-        var rowAuthor = content.GetChildren().OfType<NModMenuRow>().FirstOrDefault(r => r.Mod?.manifest?.id == "LocalModFixes")?.GetNodeOrNull<Label>("SpireModManagerStrip/Author");
+        var rowAuthor = content.GetChildren().OfType<NModMenuRow>().FirstOrDefault(r => r.Mod?.manifest?.id == "SmmTestFixes")?.GetNodeOrNull<Label>("SpireModManagerStrip/Author");
         Check("the row's author is plain: just the name, not clickable", rowAuthor is { Text: "symphony", MouseFilter: Control.MouseFilterEnum.Ignore });
         var panelHead = screen.GetNode<Control>("%ModInfoContainer").GetNodeOrNull<RichTextLabel>("SpireModManagerHead");
         panelHead?.EmitSignal(RichTextLabel.SignalName.MetaClicked, "author:symphony");
         await Wait(menu, 0.3);
         Check("the panel's author searches for their mods", box.Text == "@symphony"
             && Visible().Count > 0 && Visible().All(id => Dependencies.Find(id)?.manifest?.author == "symphony"), $"{box.Text}: {string.Join(", ", Visible())}");
-        ClickChip("LocalModFixes", "Local", true);
+        ClickChip("SmmTestFixes", "Local", true);
         await Wait(menu, 0.3);
         Check("Shift-click on a tag adds it after a space", box.Text == "@symphony #Local", box.Text);
         // The rules every click-to-search shares (row and panel tags, the author, Workshop tags), through the one
@@ -1779,7 +1779,7 @@ static class SelfTest
         var rows = content.GetChildren().OfType<NModMenuRow>().ToList();
         var mods = rows.Select(r => r.Mod).OfType<Mod>().ToList();
         var order = LoadOrder.Mods(rows).Select((m, i) => (m, i)).DistinctBy(p => p.m).ToDictionary(p => p.m, p => p.i);
-        string[] queries = ["lib", "mod fixes", "the manager", "co-op", "#Library", "#local", "@symphony", "#Gameplay lib", "test framework", "zzz"];
+        string[] queries = ["lib", "test fixes", "the manager", "co-op", "#Library", "#local", "@symphony", "#Gameplay lib", "test framework", "zzz"];
         static string Key(Mod? mod) => mod == null ? "none" : $"{mod.manifest?.id}/{mod.modSource}";
         List<string> Answers() =>
         [
@@ -1959,7 +1959,7 @@ static class SelfTest
         Check("a second visit to Load Order adds no handlers to the rows", Handlers() == wired && Store.Data.LoadOrderView, $"{wired} -> {Handlers()}");
 
         // Moves use a mod with no dependencies either way, so no order rule can block them.
-        const string free = "LocalModFixes";
+        const string free = "SmmTestFixes";
         if (Rows().FirstOrDefault(r => r.Mod?.manifest?.id == free)?.Mod is { } freeMod)
             LoadOrder.Move(freeMod, 0, Rows());
         CategoryList.Redraw(content);
@@ -2052,7 +2052,7 @@ static class SelfTest
 
         // Leaving Load Order: a plain category list again, the selected mod still selected, its collapsed
         // category opened, no lines or dimming left behind.
-        if (Rows().FirstOrDefault(r => r.Mod?.manifest?.id == "LocalModFixes") is { Mod: { } kept } keptRow)
+        if (Rows().FirstOrDefault(r => r.Mod?.manifest?.id == "SmmTestFixes") is { Mod: { } kept } keptRow)
         {
             CategoryList.Select(screen, keptRow);
             Store.Data.UncategorizedCollapsed = true;
@@ -2067,11 +2067,11 @@ static class SelfTest
             string.Join(", ", Rows().Select(r => r.GetNode<Control>("Title").OffsetLeft)));
         Check("back from Load Order: no lines or dimming", !content.GetParent().GetChildren().Any(c => c.IsInGroup("SpireModManagerLinks"))
             && Rows().All(r => r.Modulate == Colors.White));
-        Check("the selection survives the switch, its category opened", selected?.Mod?.manifest?.id == "LocalModFixes"
+        Check("the selection survives the switch, its category opened", selected?.Mod?.manifest?.id == "SmmTestFixes"
             && selected.Visible && !Store.Data.UncategorizedCollapsed);
     }
 
-    // Fixture mods: SmmTestContent and SmmTestUi need SmmTestLib; BrandedMod needs BaseLib, which isn't there.
+    // Fixture mods: SmmTestContent and SmmTestUi need SmmTestLib; SmmTestAddon needs SmmTestMissing, which never is there.
     static async Task TestDependencies(Node menu, NModdingScreen screen, Control content, string outDir)
     {
         List<NModMenuRow> Rows() => content.GetChildren().OfType<NModMenuRow>().ToList();
@@ -2085,10 +2085,9 @@ static class SelfTest
         }
         Check("dependency note names what it needs", Note("SmmTestContent").Contains("Test Framework"), Note("SmmTestContent"));
         if (WontLoad() != null)
-            Check("missing dependency is called out", Note("BrandedMod").Contains("BaseLib") && Note("BrandedMod").Contains(BaseLibIs("not installed", "(off)")),
-                Note("BrandedMod"));
+            Check("missing dependency is called out", Note("SmmTestAddon").Contains(Missing + " (not installed)"), Note("SmmTestAddon"));
         else
-            Results.Add("SKIP missing dependency is called out: BrandedMod not on, or BaseLib on");
+            Results.Add("SKIP missing dependency is called out: Test Addon not installed, or off");
 
         // The info panel: where it's from, and dependencies both ways.
         var panel = screen.GetNode<NModInfoContainer>("%ModInfoContainer");
@@ -2185,7 +2184,7 @@ static class SelfTest
             await Capture(screen, outDir, "13-blocked-drag");
             var links = content.GetParent().GetChildren().Count(c => c.IsInGroup("SpireModManagerLinks"));
             Check("dragging dims unrelated rows, lights linked ones, draws links",
-                Row("LocalModFixes")?.Modulate.A < 1 && Row("SmmTestLib")?.Modulate.A == 1 && links == 1, $"{links} links");
+                Row("SmmTestFixes")?.Modulate.A < 1 && Row("SmmTestLib")?.Modulate.A == 1 && links == 1, $"{links} links");
             Check("grabbing a row selects it", CategoryList.Selected == dependent);
             handle.GetParent().EmitSignal(Control.SignalName.GuiInput, new InputEventMouseButton { ButtonIndex = MouseButton.Left, Pressed = false, GlobalPosition = to });
             await Wait(menu, 0.5);
@@ -2277,7 +2276,7 @@ static class SelfTest
 
         // Hovering its text: a card with each mod that won't load and what it needs, by the names the list shows (Test
         // Content and the framework by an alias here): Test Content and Test UI, and every other enabled mod whose own row
-        // says a mod it needs is off or not installed (the fixture's BrandedMod: BaseLib), nothing else.
+        // says a mod it needs is off or not installed (the fixture's Test Addon: SmmTestMissing), nothing else.
         var aliasesWere = (Content: Store.InfoFor("SmmTestContent")?.Alias, Lib: Store.InfoFor("SmmTestLib")?.Alias);
         Store.EditMod("SmmTestContent", info => info.Alias = "Content");
         Store.EditMod("SmmTestLib", info => info.Alias = "Framework");
@@ -2295,19 +2294,17 @@ static class SelfTest
             && named.SequenceEqual(flagged) && !card.Any(l => l.Contains("Test Framework") || l.StartsWith("Test Content")),
             $"{string.Join(" | ", card)}; rows saying so: {string.Join(", ", flagged)}");
         // Each line gives its row's reasons: "(off)" there is "(disabled)" here, "(not installed)" the same. The fixture's
-        // BrandedMod (on) needs BaseLib, which isn't installed (or is off).
+        // Test Addon (on) needs SmmTestMissing, which isn't installed.
         string? LineOf(Mod mod) => card.Skip(1).FirstOrDefault(l => l.StartsWith(Shown(mod) + ": needs "));
         var wrong = flaggedMods.Where(m => LineOf(m) is not { } line || NoteOf(m).Contains("(off)") != line.Contains("(disabled)")
             || NoteOf(m).Contains("(not installed)") != line.Contains("(not installed)")).Select(Shown).ToList();
         Check("main list banner's card: each line's reasons are its row's (\"(off)\" as \"(disabled)\", \"(not installed)\")", wrong.Count == 0,
             $"wrong for {string.Join(", ", wrong)}: {string.Join(" | ", card)}");
-        if (WontLoad() is { } branded)
-        {
-            var needs = "BaseLib " + BaseLibIs("(not installed)", "(disabled)");
-            Check($"main list banner's card: BrandedMod needs {needs}", LineOf(branded)?.Contains(needs) == true, LineOf(branded) ?? "no line");
-        }
+        if (WontLoad() is { } addon)
+            Check($"main list banner's card: Test Addon needs {Missing} (not installed)", LineOf(addon)?.Contains(Missing + " (not installed)") == true,
+                LineOf(addon) ?? "no line");
         else
-            Results.Add("SKIP main list banner's card, BrandedMod's line: BrandedMod not on, or BaseLib on");
+            Results.Add("SKIP main list banner's card, Test Addon's line: Test Addon not installed, or off");
 
         // A tick while the card shows: the banner is made again, and no card lists the mod ticked off (that one went with
         // its banner); the next, worked out when it opens, leaves it out.
@@ -2660,7 +2657,7 @@ static class SelfTest
         Check("category headers: Enable all, Disable all inline, last", headerButtons.TakeLast(2).SequenceEqual(["Enable all", "Disable all"]), string.Join(",", headerButtons));
         var uncategorized = (content.GetNodeOrNull("Uncategorized")?.GetNodeOrNull("Actions")?.GetChildren().OfType<Button>().Select(b => b.Text).ToList()) ?? [];
         Check("Uncategorized: just Enable all, Disable all", uncategorized.SequenceEqual(["Enable all", "Disable all"]), string.Join(",", uncategorized));
-        var author = Rows().FirstOrDefault(r => r.Mod?.manifest?.id == "LocalModFixes")?.GetNodeOrNull<Label>("SpireModManagerStrip/Author")?.Text;
+        var author = Rows().FirstOrDefault(r => r.Mod?.manifest?.id == "SmmTestFixes")?.GetNodeOrNull<Label>("SpireModManagerStrip/Author")?.Text;
         Check("the author at the end of the row's line", author == "symphony", author ?? "none");
 
         // Mod names in the panel: hovering lights the row (it's in view); clicking scrolls to it, selected look.
@@ -2781,9 +2778,8 @@ static class SelfTest
             Results.Add($"INFO headers under Disabled: {content.GetChildren().Count(c => c.IsInGroup("SpireModManagerCategoryHeader") && c.Name != "Uncategorized")} "
                 + $"of {Store.Data.Categories.Count} categories");
 
-            // With a search: rows matching both, counted as the search's matches. "symphony" finds mods on (this one, Local
-            // Mod Fixes) and off (Better Mod Menu's fork, never loaded: "Crunch, modified by symphony"), so some rows show
-            // and some of its matches don't.
+            // With a search: rows matching both, counted as the search's matches. "symphony" finds mods on (this one, Test
+            // Fixes) and off (Test Retired, off in every run), so some rows show and some of its matches don't.
             await Find("symphony");
             var found = Where(m => SpireModManager.Search.Matches(m, "symphony"));
             var both = Where(m => Off(m) && SpireModManager.Search.Matches(m, "symphony"));
@@ -3063,16 +3059,15 @@ static class SelfTest
         ListFilter.Choose(content, ListFilter.Choice.All);
     }
 
-    // Relaunch with mods that won't load (fixture: BrandedMod needs BaseLib, not installed; here the framework
+    // Relaunch with mods that won't load (fixture: Test Addon needs SmmTestMissing, never installed; here the framework
     // is turned off too): the dialog lists them; Enable needed mods, then Disable mods that can't load, fix
     // them in place; Cancel and Esc close it. Never presses Relaunch (that would quit the test).
-    // BaseLib installed but off won't do: Enable needed mods would turn it on, and leave Disable mods that can't load nothing.
     static async Task TestRelaunchCheck(Node menu, NModdingScreen screen, Control content, string outDir)
     {
         if (content.GetChildren().OfType<NModMenuRow>().FirstOrDefault(r => r.Mod?.manifest?.id == "SmmTestLib") is not { Mod: { } lib } libRow
-            || WontLoad() is not { } branded || Dependencies.Find("BaseLib") != null)
+            || WontLoad() is not { } addon)
         {
-            Results.Add("SKIP relaunch check: fixture mods missing, or BaseLib installed");
+            Results.Add("SKIP relaunch check: fixture mods missing");
             return;
         }
         var tickbox = libRow.GetNode<NTickbox>("Tickbox");
@@ -3085,26 +3080,26 @@ static class SelfTest
 
         RelaunchCheck.Show(screen);
         await Wait(menu, 0.3);
-        Check("relaunch check lists the mods that won't load", Body().Contains("BaseLib, which isn't installed") && Body().Contains("Test Framework, which is disabled"), Body());
+        Check("relaunch check lists the mods that won't load", Body().Contains(Missing + ", which isn't installed") && Body().Contains("Test Framework, which is disabled"), Body());
         await Capture(screen, outDir, "15-relaunch-check");
         Press("EnableNeededButton");
         await Wait(menu, 0.3);
-        Check("Enable needed mods fixes the off ones, the list updates", Dependencies.IsOn(lib) && !Body().Contains("Test Framework") && Body().Contains("BaseLib"), Body());
+        Check("Enable needed mods fixes the off ones, the list updates", Dependencies.IsOn(lib) && !Body().Contains("Test Framework") && Body().Contains(Missing), Body());
         Press("DisableBrokenButton");
         await Wait(menu, 0.3);
-        Check("Disable mods that can't load: nothing left, plain Relaunch", !Dependencies.IsOn(branded)
+        Check("Disable mods that can't load: nothing left, plain Relaunch", !Dependencies.IsOn(addon)
             && Dialog()?.FindChild("RelaunchNowButton", true, false) is Button { Text: "Relaunch Game" }, Body());
         Press("CancelRelaunchButton");
         await Wait(menu, 0.2);
         Check("Cancel closes it", Dialog() == null);
-        History.Undo(); // BrandedMod back on, as the fixture has it
+        History.Undo(); // Test Addon back on, as the fixture has it
         await Wait(menu, 0.3);
         RelaunchCheck.Show(screen);
         await Wait(menu, 0.2);
         Input.ParseInputEvent(new InputEventKey { Keycode = Key.Escape, Pressed = true });
         await Wait(menu, 0.2);
         Input.ParseInputEvent(new InputEventKey { Keycode = Key.Escape, Pressed = false });
-        Check("Esc closes it, and stays on the page", Dialog() == null && screen.IsVisibleInTree() && Dependencies.IsOn(branded));
+        Check("Esc closes it, and stays on the page", Dialog() == null && screen.IsVisibleInTree() && Dependencies.IsOn(addon));
     }
 
     // A made-up mod with very long everything (name, id, author, version, description, alias, many tags, notes),
@@ -3461,7 +3456,7 @@ static class SelfTest
         List<NModMenuRow> Uncategorized() => Rows().Where(r => Store.InfoFor(r.Mod?.manifest?.id)?.Category == null && r.Visible).ToList();
         void Click(NModMenuRow row, bool ctrl = false, bool shift = false) =>
             row.EmitSignal(Control.SignalName.GuiInput, new InputEventMouseButton { ButtonIndex = MouseButton.Left, Pressed = true, CtrlPressed = ctrl, ShiftPressed = shift });
-        if (Row("LocalModFixes") is not { } fixes || Uncategorized().Count < 3)
+        if (Row("SmmTestFixes") is not { } fixes || Uncategorized().Count < 3)
         {
             Results.Add("SKIP bulk edit: fixture mods missing");
             return;
@@ -3476,7 +3471,7 @@ static class SelfTest
         Click(fixes, ctrl: true);
         await Wait(menu, 0.2);
         var picked = Selection.Mods.Select(m => m.manifest?.id ?? "").ToList();
-        Check("Ctrl-click lets go of one; the bar counts the rest", picked.Count == all - 1 && !picked.Contains("LocalModFixes")
+        Check("Ctrl-click lets go of one; the bar counts the rest", picked.Count == all - 1 && !picked.Contains("SmmTestFixes")
             && (screen.FindChild(PageBar.Name, true, false)?.FindChild("Scope", true, false) as Label)?.Text == $"Selected ({all - 1})");
 
         var bulk = CategoryList.ShowBulkMenu(content);
@@ -3489,7 +3484,7 @@ static class SelfTest
         if (bulk != null)
             MenuPanel.Press(bulk, tool);
         await Wait(menu, 0.3);
-        Check("a category for all of them at once", picked.All(id => Store.InfoFor(id)?.Category == tool) && Store.InfoFor("LocalModFixes")?.Category == null,
+        Check("a category for all of them at once", picked.All(id => Store.InfoFor(id)?.Category == tool) && Store.InfoFor("SmmTestFixes")?.Category == null,
             string.Join(", ", picked.Select(id => $"{id}: {Store.InfoFor(id)?.Category}")));
         History.Undo();
         await Wait(menu, 0.3);
@@ -3775,7 +3770,7 @@ static class SelfTest
         Click(screen.GetNode<NButton>("SpireModManagerLoadOrderToggle"));
         await Wait(menu, 0.3);
         var rows = content.GetChildren().OfType<NModMenuRow>().ToList();
-        if (rows.FirstOrDefault(r => r.Mod?.manifest?.id == "LocalModFixes")?.Mod is { } fixes)
+        if (rows.FirstOrDefault(r => r.Mod?.manifest?.id == "SmmTestFixes")?.Mod is { } fixes)
             LoadOrder.Move(fixes, 0, rows);
         CategoryList.Redraw(content);
         var orderAfterMove = History.CurrentMods().Select(m => m.Id).ToList();
@@ -4281,14 +4276,12 @@ static class SelfTest
     static void Check(string name, bool ok, string detail = "") =>
         Results.Add($"{(ok ? "PASS" : "FAIL")} {name}{(ok || detail.Length == 0 ? "" : $": {detail}")}");
 
-    // The fixture's mod that won't load: BrandedMod (on) needs BaseLib, which isn't installed (or is, but off). Null when
-    // BaseLib is on (`dev.cs --workshop` can bring it in): BrandedMod loads then, so the checks that need a mod that
-    // won't load skip.
-    static Mod? WontLoad() => Dependencies.Find("BrandedMod") is { } branded && Dependencies.IsOn(branded)
-        && !(Dependencies.Find("BaseLib") is { } baseLib && Dependencies.IsOn(baseLib)) ? branded : null;
+    // The fixture's mod that won't load: Test Addon (on) needs Missing, a mod id nothing has. Null when it isn't
+    // installed (--real) or is off, so the checks that need a mod that won't load skip.
+    static Mod? WontLoad() => Dependencies.Find("SmmTestAddon") is { } addon && Dependencies.IsOn(addon) ? addon : null;
 
-    // What's said of BaseLib, BrandedMod's dependency, while it won't load: missing when BaseLib isn't installed, else off.
-    static string BaseLibIs(string missing, string off) => Dependencies.Find("BaseLib") == null ? missing : off;
+    // Test Addon's dependency: never installed, so it's shown by its id.
+    const string Missing = "SmmTestMissing";
 
     static async Task Wait(Node node, double seconds) =>
         await node.ToSignal(node.GetTree().CreateTimer(seconds), SceneTreeTimer.SignalName.Timeout);

@@ -7,7 +7,7 @@
   "mods": {
     "SpireModManager": { "category": "Tools", "alias": "The Manager", "notes": "Fixture note" },
     "BetterModMenu": { "category": "Tools" },
-    "BrandedMod": { "category": "Content" }
+    "SmmTestAddon": { "category": "Content" }
   },
   "profiles": [
     {
@@ -15,8 +15,8 @@
       "mods": [
         { "id": "SpireModManager", "source": "ModsDirectory", "enabled": true },
         { "id": "BetterModMenu", "source": "ModsDirectory", "enabled": false },
-        { "id": "BrandedMod", "source": "ModsDirectory", "enabled": true },
-        { "id": "LocalModFixes", "source": "ModsDirectory", "enabled": true }
+        { "id": "SmmTestAddon", "source": "ModsDirectory", "enabled": true },
+        { "id": "SmmTestFixes", "source": "ModsDirectory", "enabled": true }
       ]
     },
     {
