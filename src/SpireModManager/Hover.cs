@@ -78,7 +78,7 @@ static class Hover
             return; // nothing to say, and never had: no card to watch for
         control.SetMeta(TipMeta, text ?? "");
         if (!watched)
-            Watch(control, TipName, () => TipOf(control) is { Length: > 0 } tip ? tip.Replace("[", "[lb]") : null, fit: true);
+            Watch(control, TipName, () => TipOf(control) is { Length: > 0 } tip ? Escape(tip) : null, fit: true);
     }
 
     public static string TipOf(Control control) => control.GetMeta(TipMeta, "").AsString();
@@ -123,10 +123,22 @@ static class Hover
     static Node? Owner(Node node) => CategoryList.ScreenOf(node) ?? (Node?)node.GetTree()?.Root;
 
     // Cards are off while a menu is open (it covers what they'd be about), except for what's in the menu itself (a
-    // field's term, a tag chip, the bulk menu's i): those show just above the menu, under its tag suggestions.
+    // field's term, a tag chip, the bulk menu's i).
     static bool Allowed(Node trigger) => !MenuPanel.IsOpen || InOpenMenu(trigger);
     static bool InOpenMenu(Node node) => MenuPanel.Current is { } open && open.IsAncestorOf(node);
-    static int LayerFor(Node trigger) => InOpenMenu(trigger) ? MenuPanel.Depth + 2 : Depth;
+
+    // A card goes just above the layer its trigger is on, and never under the page's cards: over the open menu (under
+    // its tag suggestions, MenuPanel.Depth + 5) or a dialog (Modal), as a tooltip would be.
+    static int LayerFor(Node trigger)
+    {
+        for (var at = trigger.GetParent(); at != null; at = at.GetParent())
+            if (at is CanvasLayer layer)
+                return Math.Max(Depth, layer.Layer + 2);
+        return Depth;
+    }
+
+    // Text shown as it is in a card (its "[" not read as BBCode).
+    public static string Escape(string text) => text.Replace("[", "[lb]");
 
     // at: the card's corner: its top-left, or with right/above, the matching corner. Kept on screen. keep: checked
     // every frame; once it's false (for WindDown, unless Instant) the card goes, so it can't be left behind when
