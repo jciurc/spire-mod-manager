@@ -62,8 +62,8 @@ they have no Steam, so the info panel shows no Workshop details, and they keep o
 ## The thumbnail: `image.png`
 
 Square, 512 to 1024 px, a PNG under 1 MB, in `workshop/`. Jordan's own art (docs/dev/RELEASE-PLAN.md §7.5). The
-Workshop shows it small in its lists (about 200 px), so big shapes and few words read best. The main menu
-button's skyline (`images/main_menu_button.png`) could set the style.
+Workshop shows it small in its lists (about 200 px), so big shapes and few words read best. Not the main menu
+button's picture (`images/main_menu_button.png`): that is an edited still of the game's own main-menu background.
 
 ## Sizes and converting
 
