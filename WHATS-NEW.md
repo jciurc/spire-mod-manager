@@ -4,7 +4,7 @@ Short notes for Jordan: what to look for after each install. Newest first.
 
 ## Waiting in pull requests
 
-- **Banners name their mods** (branch `banner-hover`): hover a banner's text and a card lists, at once, the mods it's about, one a line, by the names the list shows (aliases included). On the main list: each enabled mod that won't load and what it needs ("Test Content: needs Test Framework (disabled)", or "(not installed)"; several on one line). In Load Order: each mod placed before a mod it needs ("Test Content loads before Test Framework"). On the yellow managers banner: the mod managers that are on, as named by their mods. A long list stops after 12 with "and N more". The card is worked out when it opens, so after a tick it lists what's true now.
+- **Banners name their mods** (branch `banner-hover`): hover a banner's text and a card lists, at once, the mods it's about, one a line, by the names the list shows (aliases included). On the main list: each enabled mod that won't load and what it needs ("Test Content: needs Test Framework (disabled)", or "(not installed)"; several on one line). In Load Order: each mod placed before a mod it needs ("Test Content loads before Test Framework"). On the yellow managers banner: the mod managers that are on, as named by their mods. A long list stops after 12 with "and N more". The card is worked out when it opens, so after a tick it lists what's true now. The red "!" on the main list's Load Order button names them too: its tooltip has the same "loads before" lines under the warning.
 
 ## Installed 2026-10-14 (early morning): version 0.0.52
 
