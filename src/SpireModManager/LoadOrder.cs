@@ -19,6 +19,14 @@ static class LoadOrder
     const float HandleWidth = 84 + WasWidth; // the row title shifts right by this much in this view
     const float LinkGutter = 18; // left strip for the dependency lines
     const float LinkRadius = 5; // their rounded corners (the rows' are RowTitles.CornerRadius)
+    // Soft edges for the lines, drawn across their width: Line2D's own Antialiased does nothing in the game's renderer,
+    // so the line is a pixel wider and fades out at both edges.
+    static GradientTexture2D? _linkEdges;
+    static GradientTexture2D LinkEdges => _linkEdges ??= new GradientTexture2D
+    {
+        Width = 4, Height = 32, FillFrom = new Vector2(0, 0), FillTo = new Vector2(0, 1),
+        Gradient = new Gradient { Offsets = [0f, 0.3f, 0.7f, 1f], Colors = [new Color(1, 1, 1, 0), Colors.White, Colors.White, new Color(1, 1, 1, 0)] },
+    };
     const string LinkGroup = "SpireModManagerLinks";
     const string DraggingMeta = "spire_mod_manager_dragging";
     const string ScrollHookMeta = "spire_mod_manager_scroll_hook";
@@ -682,7 +690,9 @@ static class LoadOrder
             var lane = 4 + Math.Min(i, 3) * 3;
             var line = new Line2D
             {
-                Width = strong ? 3 : 2, DefaultColor = new Color(fine ? LinkFine : Blocked, strong ? 1f : 0.6f),
+                Width = strong ? 4 : 3, DefaultColor = new Color(fine ? LinkFine : Blocked, strong ? 1f : 0.6f),
+                Texture = LinkEdges, TextureMode = Line2D.LineTextureMode.Stretch, // soft edges (LinkEdges)
+                JointMode = Line2D.LineJointMode.Round, // the corners' short segments meet as a curve
                 Points = Rounded([new(LinkGutter, CenterY(row)), new(lane, CenterY(row)), new(lane, CenterY(linked[i])), new(LinkGutter, CenterY(linked[i]))], LinkRadius),
             };
             line.AddToGroup(LinkGroup);
