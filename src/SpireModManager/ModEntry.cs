@@ -107,14 +107,10 @@ public static class ModEntry
             + (_failedPatches.Count > 0 ? $", without {string.Join(", ", _failedPatches)}" : ""));
     }
 
-    // A picture shipped in our pack (images/), loaded from its bytes: the pack holds plain PNGs, not
-    // imported textures. Null if it's missing.
-    public static Texture2D? Art(string file)
-    {
-        var bytes = Godot.FileAccess.GetFileAsBytes($"res://{ModId}/images/{file}");
-        var image = new Image();
-        return bytes.Length > 0 && image.LoadPngFromBuffer(bytes) == Error.Ok ? ImageTexture.CreateFromImage(image) : null;
-    }
+    // Our own version, from the manifest the game loaded ("0.1.0"; the loaded copy's, if a second one is installed);
+    // null if it isn't found.
+    public static string? Version => ModManager.Mods.Where(m => m.manifest?.id == ModId)
+        .OrderByDescending(m => m.state == ModLoadState.Loaded).FirstOrDefault()?.manifest?.version;
 
     static readonly HashSet<string> Missing = [];
 
@@ -275,11 +271,13 @@ public static class ModEntry
     }
 
     // Adds a button in the style of the vanilla Get Mods button, sized freely (the art is a 9-slice).
-    // art: our own picture instead of the game's button art, drawn whole (no 9-slice); hover and press
-    // still brighten and squash it like the game's buttons.
     // If the scene doesn't load, or isn't the game's button any more, a plain button with the same label, size
     // and action stands in (see AddPlainButton), so the page keeps working. plain: that one on purpose (the self-test).
-    public static Control AddButton(Node parent, string locKey, Vector2 size, Action onPressed, Texture2D? art = null, bool plain = false)
+    public static Control AddButton(Node parent, string locKey, Vector2 size, Action onPressed, bool plain = false) =>
+        AddTextButton(parent, new LocString("settings_ui", locKey).GetFormattedText(), size, onPressed, plain);
+
+    // The same with its label as given (a text made in code, not one key's).
+    public static Control AddTextButton(Node parent, string text, Vector2 size, Action onPressed, bool plain = false)
     {
         var node = plain ? null : Load<PackedScene>(ButtonScenePath)?.Instantiate();
         if (node is not NButton button || button.GetNodeOrNull<NinePatchRect>("Visuals/Image/Frame") is not { } frame
@@ -290,32 +288,27 @@ public static class ModEntry
                 NoteMissing($"{ButtonScenePath} (not the game's button)");
                 node.Free();
             }
-            return AddPlainButton(parent, locKey, size, onPressed);
+            return AddPlainButton(parent, text, size, onPressed);
         }
         parent.AddChild(button);
         button.Size = size;
         button.PivotOffset = size / 2;
 
         // Draw the art at its native height and scale it down, so the slanted corners keep their shape.
-        if (art != null)
-        {
-            frame.Texture = art;
-            (frame.PatchMarginLeft, frame.PatchMarginRight) = (0, 0);
-        }
-        var scale = size.Y / (art?.GetHeight() ?? ButtonArtHeight);
+        var scale = size.Y / ButtonArtHeight;
         frame.Scale = new Vector2(scale, scale);
         frame.Size = size / scale;
 
-        label.SetTextAutoSize(new LocString("settings_ui", locKey).GetFormattedText());
+        label.SetTextAutoSize(text);
         button.Connect(NClickableControl.SignalName.Released, Callable.From<NButton>(_ => onPressed()));
         return button;
     }
 
     // AddButton's stand-in: one of our small text buttons at the asked size, with a hidden red "Dot" in its top
     // right corner where the scene has the game's notification dot (callers show it while a relaunch is pending).
-    static Button AddPlainButton(Node parent, string locKey, Vector2 size, Action onPressed)
+    static Button AddPlainButton(Node parent, string text, Vector2 size, Action onPressed)
     {
-        var button = Menus.SmallButton(new LocString("settings_ui", locKey).GetFormattedText(), onPressed);
+        var button = Menus.SmallButton(text, onPressed);
         button.ClipText = true; // a long label doesn't make it wider than asked
         button.AddThemeFontSizeOverride("font_size", 20);
         parent.AddChild(button);
@@ -329,9 +322,10 @@ public static class ModEntry
     }
 
     // A new label for a button AddButton made, either kind.
-    public static void Relabel(Control button, string locKey)
+    public static void Relabel(Control button, string locKey) => SetText(button, new LocString("settings_ui", locKey).GetFormattedText());
+
+    public static void SetText(Control button, string text)
     {
-        var text = new LocString("settings_ui", locKey).GetFormattedText();
         if (button is Button plain)
             plain.Text = text;
         else

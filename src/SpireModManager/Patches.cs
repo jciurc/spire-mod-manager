@@ -8,6 +8,7 @@ using MegaCrit.Sts2.Core.Nodes.CommonUi;
 using MegaCrit.Sts2.Core.Nodes.GodotExtensions;
 using MegaCrit.Sts2.Core.Nodes.Screens.MainMenu;
 using MegaCrit.Sts2.Core.Nodes.Screens.ModdingScreen;
+using MegaCrit.Sts2.Core.Nodes.Screens.Settings;
 using MegaCrit.Sts2.Core.Saves;
 
 namespace SpireModManager;
@@ -20,8 +21,8 @@ namespace SpireModManager;
 // Each class is applied on its own (ModEntry.Init), so a game update that renames what one hooks leaves the others
 // working; if it's one our page needs (ModEntry.PageNeeds), the Modding page stays the game's, saying so.
 
-// "Spire Mod Manager" button in the main menu's lower-left corner (the lower right holds the vanilla
-// "MODDED (n)" label and its hover list), with a dot when a relaunch is pending.
+// "Mod Profile: Default (12 mods)" button in the main menu's lower-left corner (the lower right holds the vanilla
+// "MODDED (n)" label and its hover list), with a dot when a relaunch is pending (MenuButton).
 [HarmonyPatch(typeof(NMainMenu), nameof(NMainMenu._Ready))]
 static class MainMenuPatch
 {
@@ -220,6 +221,24 @@ static class ModdingScreenPatch
     }
 }
 
+// Settings screen: a "Spire Mod Manager" button to our page (SettingsButton). The page doesn't need it.
+[HarmonyPatch(typeof(NSettingsScreen), nameof(NSettingsScreen._Ready))]
+static class SettingsScreenPatch
+{
+    [HarmonyPriority(Priority.First)]
+    static void Postfix(NSettingsScreen __instance)
+    {
+        try
+        {
+            SettingsButton.Add(__instance);
+        }
+        catch (Exception e)
+        {
+            Log.Error($"[{ModEntry.ModId}] Could not add the Settings screen's button: {e}");
+        }
+    }
+}
+
 // Every tickbox change (and the game's own pending check) passes through here: the active profile follows
 // it, and a changed load order also counts as pending (the game only checks on/off).
 [HarmonyPatch(typeof(NModdingScreen), nameof(NModdingScreen.OnModEnabledOrDisabled))]
@@ -333,7 +352,7 @@ static class ShortcutsPatch
     {
         try
         {
-            if (inputEvent is not InputEventKey { Keycode: Key.Escape, Pressed: true, Echo: false } || !(MenuPanel.Close() || RelaunchCheck.Close() || ProfileShare.Close() || MenuButton.CancelMove() || LetGo()))
+            if (inputEvent is not InputEventKey { Keycode: Key.Escape, Pressed: true, Echo: false } || !(MenuPanel.Close() || RelaunchCheck.Cancel() || ProfileShare.Close() || MenuButton.CancelMove() || LetGo()))
                 return true;
             ((SceneTree)Engine.GetMainLoop()).Root.SetInputAsHandled();
             return false;

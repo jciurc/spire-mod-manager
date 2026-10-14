@@ -7,9 +7,12 @@ using MegaCrit.Sts2.Core.Modding;
 using MegaCrit.Sts2.Core.Nodes;
 using MegaCrit.Sts2.Core.Nodes.CommonUi;
 using MegaCrit.Sts2.Core.Nodes.GodotExtensions;
+using MegaCrit.Sts2.Core.Nodes.Screens;
 using MegaCrit.Sts2.Core.Nodes.Screens.MainMenu;
 using MegaCrit.Sts2.Core.Nodes.Screens.ModdingScreen;
+using MegaCrit.Sts2.Core.Nodes.Screens.Settings;
 using MegaCrit.Sts2.Core.Saves;
+using MegaCrit.Sts2.addons.mega_text;
 
 namespace SpireModManager;
 
@@ -67,6 +70,7 @@ static class SelfTest
             Check("no popup open", NModalContainer.Instance?.OpenModal == null,
                 NModalContainer.Instance?.OpenModal?.GetType().Name ?? "");
             Check("main menu button", menu.GetNodeOrNull("SpireModManagerMenuButton") != null);
+            TestMenuButtonLook(menu);
             var relaunchArgs = ModEntry.RelaunchArgs();
             Check("relaunch passes the window mode once", relaunchArgs.Count(a => a is "--fullscreen" or "--maximized" or "--windowed") == 1
                 && relaunchArgs.Contains("--force-steam"), string.Join(" ", relaunchArgs));
@@ -107,6 +111,10 @@ static class SelfTest
                 await Wait(menu, 1);
                 Results.Add($"INFO switched to {other.Name}: {ModListState().Count(s => s.EndsWith("=on"))} on");
                 Check("switching to the other profile changes the mod list", !ModListState().SequenceEqual(before)); // or the round trip proves nothing
+                // The main menu button, under the page, has followed already: it's what shows once the page closes.
+                Check("the main menu button follows a profile switch: the other profile and its count, as wide as its words",
+                    MenuButtonText(menu) == MenuButtonExpected() && MenuButtonText(menu)?.Contains(other.Name) == true && MenuButtonMisfit(menu) == null,
+                    $"{MenuButtonText(menu)} vs {MenuButtonExpected()}; {MenuButtonMisfit(menu)}");
                 Check("our own mod stays on", !(SaveManager.Instance.SettingsSave.ModSettings?.ModList
                     .Any(m => m.Id == ModEntry.ModId && !m.IsEnabled) ?? false));
                 await Capture(screen, outDir, "3-other-profile");
@@ -115,6 +123,9 @@ static class SelfTest
                 var after = ModListState();
                 Check("profile round trip restores the mod list", before.SequenceEqual(after),
                     string.Join(", ", before.Except(after)));
+                Check("the main menu button follows the switch back, as wide as its words", MenuButtonText(menu) == MenuButtonExpected()
+                    && MenuButtonText(menu)?.Contains(start.Name) == true && MenuButtonMisfit(menu) == null,
+                    $"{MenuButtonText(menu)} vs {MenuButtonExpected()}; {MenuButtonMisfit(menu)}");
             }
             else
                 Results.Add("SKIP profile round trip: only one profile");
@@ -169,6 +180,7 @@ static class SelfTest
             Check("reopening after Load Order shows the main list", Layout.Current == Layout.View.Categories
                 && screen.GetNode<Control>("%ModInfoContainer").Visible);
             await TestListFilterReopen(menu, screen, content);
+            await TestSettingsButton(menu, screen, outDir);
 
             await TestStoreSafety(menu, screen, outDir);
             await TestLanguageFonts(screen, outDir); // last: the main menu, the page with it, is made again
@@ -386,7 +398,7 @@ static class SelfTest
         CheckPatches();
         Check("row state: the game's selected and focused members found", RowState.Found);
         string[] spare = [nameof(RowLookPatch), nameof(ShortcutsPatch), nameof(NewModPatch), nameof(ModInfoClearPatch),
-            nameof(NewModPopupPatch), nameof(NewModTogglePatch), nameof(TickKeepPatch), nameof(TranslationsPatch)];
+            nameof(NewModPopupPatch), nameof(NewModTogglePatch), nameof(TickKeepPatch), nameof(TranslationsPatch), nameof(SettingsScreenPatch)];
         Check("our page with no patch failed, or only ones it can do without", ModEntry.PageWorks([]) && ModEntry.PageWorks(spare));
         Check("the game's page if any one patch our page needs failed", ModEntry.PageNeeds.Contains(nameof(ModdingScreenPatch))
             && ModEntry.PageNeeds.All(needed => !ModEntry.PageWorks([needed]) && !ModEntry.PageWorks([.. spare, needed])),
@@ -395,7 +407,7 @@ static class SelfTest
         var stand = new Control();
         var line = ModEntry.ShowNeedsUpdate(stand);
         Check("the needs-update line: its text, once, above the game's list and info panel",
-            line.Text == "Spire Mod Manager needs an update for this game version." && ModEntry.ShowNeedsUpdate(stand) == line
+            line.Text == "Spire Mod Manager is incompatible with this game version, or may require an update." && ModEntry.ShowNeedsUpdate(stand) == line
             && stand.GetChildCount() == 1 && line.Position.Y + line.Size.Y <= 83, $"{line.Text} at {line.Position}, {line.Size}");
         stand.Free();
     }
@@ -406,7 +418,7 @@ static class SelfTest
     static async Task TestGamePage(NMainMenu menu, string outDir)
     {
         Results.Add($"INFO left out: {string.Join(", ", ModEntry.FailedPatches)}");
-        const string text = "Spire Mod Manager needs an update for this game version.";
+        const string text = "Spire Mod Manager is incompatible with this game version, or may require an update.";
         if (ModEntry.FailedPatches.Contains(nameof(ModdingScreenPatch)))
         {
             var note = menu.GetNodeOrNull<Label>("SpireModManagerMenuButton/PendingNote");
@@ -498,7 +510,7 @@ static class SelfTest
         Label? Hint() => screen.FindChild(PageBar.HintName, true, false) as Label;
         var bar = screen.FindChild(PageBar.Name, true, false) as Control;
         var scroll = screen.GetNode<Control>("ModsBorder/ModsScrollContainer");
-        var text = Menus.Format("SPIRE_MOD_MANAGER.NO_CATEGORIES_HINT", ("item", Menus.Text("SPIRE_MOD_MANAGER.NEW_CATEGORY")));
+        var text = Menus.Text("SPIRE_MOD_MANAGER.NO_CATEGORIES_HINT");
         Check("no data: the hint, under the page bar and above the list", Hint() is { Visible: true } hint && hint.Text == text
             && bar != null && hint.OffsetTop >= bar.OffsetBottom && scroll.OffsetTop >= hint.OffsetBottom,
             $"\"{Hint()?.Text}\" at {Hint()?.OffsetTop}..{Hint()?.OffsetBottom}, bar to {bar?.OffsetBottom}, list from {scroll.OffsetTop}");
@@ -774,6 +786,80 @@ static class SelfTest
         }
     }
 
+    // The main menu button's text, and what it should read: "Mod Profile: <active profile> (<the profile bar's count>)".
+    static string? MenuButtonText(NMainMenu menu) => menu.GetNodeOrNull<Label>("SpireModManagerMenuButton/Label")?.Text;
+
+    static string MenuButtonExpected() => $"Mod Profile: {Profiles.Active?.Name} ({Profiles.CountText()})";
+
+    // Null if the main menu button fits its words as they are now (measured afresh): its label's box that wide and
+    // centred in it, grown on hover from its middle, the button that and its margins, whole on screen. Shown or hidden
+    // (under a page): it follows at once either way. Otherwise what's wrong.
+    static string? MenuButtonMisfit(NMainMenu menu)
+    {
+        if (menu.GetNodeOrNull<Control>("SpireModManagerMenuButton") is not { } button || button.GetNodeOrNull<Label>("Label") is not { } label)
+            return "no button";
+        var words = label.GetCombinedMinimumSize().X;
+        var (box, inner) = (button.GetGlobalRect(), label.GetGlobalRect());
+        return Math.Abs(label.Size.X - words) < 1 && Math.Abs(label.PivotOffset.X - words / 2) < 1
+            && Math.Abs(box.Size.X - (words + 2 * MenuButton.Margin)) < 1 && Math.Abs(inner.GetCenter().X - box.GetCenter().X) < 1
+            && box.Encloses(inner) && button.GetViewportRect().Encloses(box)
+            ? null : $"words {words}, label {inner} (pivot {label.PivotOffset}), button {box}";
+    }
+
+    // The main menu button is the game's own text button, a copy of its Settings button: the same class, font, size and
+    // outline (no picture), with the game's notification dot on its label. It reads the active profile and the profile
+    // bar's count, as wide as its words, whole on screen. A long name is cut with "…", one mod reads "1 mod", and a
+    // saved position off the screen still puts it all on screen.
+    static void TestMenuButtonLook(NMainMenu menu)
+    {
+        if (menu.GetNodeOrNull<Control>("SpireModManagerMenuButton") is not { } button)
+            return;
+        var label = button.GetNodeOrNull<Label>("Label");
+        var settings = menu.GetNodeOrNull<Label>("MainMenuTextButtons/SettingsButton/Label");
+        Check("main menu button: the game's text button in its Settings button's font, size and outline, no picture",
+            button is NMainMenuTextButton && label != null && settings != null && label.GetThemeFont("font") == settings.GetThemeFont("font")
+            && label.GetThemeFontSize("font_size") == settings.GetThemeFontSize("font_size")
+            && label.GetThemeConstant("outline_size") == settings.GetThemeConstant("outline_size")
+            && label.GetThemeColor("font_outline_color") == settings.GetThemeColor("font_outline_color")
+            && !button.FindChildren("*", "TextureRect", true, false).Any(t => t.GetParent()?.Name != "Dot"),
+            $"{button.GetType().Name}, size {label?.GetThemeFontSize("font_size")} vs {settings?.GetThemeFontSize("font_size")}");
+        Check("main menu button reads the active profile and the profile bar's count", MenuButtonText(menu) == MenuButtonExpected(),
+            $"{MenuButtonText(menu)} vs {MenuButtonExpected()}");
+        var screen = button.GetViewportRect();
+        Check("main menu button: as wide as its words, whole on screen", MenuButtonMisfit(menu) == null, MenuButtonMisfit(menu) ?? "");
+        // The game's hover carets reach 54 from the text either side (NMainMenu.MainMenuButtonFocused): inside the button.
+        Check("main menu button: room for the hover carets inside it", label != null
+            && button.GetGlobalRect().Encloses(label.GetGlobalRect().GrowIndividual(54, 0, 54, 0)), $"{label?.GetGlobalRect()} in {button.GetGlobalRect()}");
+        Check("main menu button: the game's notification dot on its label, shown only with a relaunch pending",
+            button.FindChild("Dot", true, false) is Control dot && dot.GetParent() == label && dot.Visible == ModEntry.HasPendingChanges()
+            && dot.FindChildren("*", "TextureRect", true, false).Count == 1);
+
+        if (label == null)
+            return;
+        var (font, size) = (label.GetThemeFont("font"), label.GetThemeFontSize("font_size"));
+        var cut = MenuButton.Text("A profile with a really quite long name", 3, font, size);
+        Check("main menu button: a long profile name cut with \"…\", one mod, thousands", cut.StartsWith("Mod Profile: A profile") && cut.EndsWith("… (3 mods)")
+            && MenuButton.Text("Default", 1, font, size) == "Mod Profile: Default (1 mod)"
+            && MenuButton.Text("Default", 1234, font, size) == "Mod Profile: Default (1,234 mods)",
+            $"{cut} | {MenuButton.Text("Default", 1, font, size)}");
+        var saved = Store.Data.MenuButtonAt; // in memory only: nothing is saved
+        Store.Data.MenuButtonAt = new ScreenPoint(5000, 5000);
+        MenuButton.Place(button);
+        var corner = button.GetGlobalRect();
+        var note = button.GetNodeOrNull<Control>("PendingNote");
+        var noteThere = note?.GetGlobalRect() ?? default;
+        Store.Data.MenuButtonAt = saved;
+        MenuButton.Place(button);
+        var noteHere = note?.GetGlobalRect() ?? default;
+        // The "Relaunch to apply" note (shown or not): on the button's left at the right edge, else on its right.
+        Check("main menu button: a saved place past the screen's corner keeps it whole on screen, its note on its left",
+            screen.Encloses(corner) && corner.End.DistanceTo(screen.End) < 1 && note != null && screen.Encloses(noteThere)
+            && noteThere.End.X <= corner.Position.X, $"{corner} in {screen}, note {noteThere}");
+        Check("main menu button: back in its place, its note beside it, on screen", note != null && screen.Encloses(noteHere)
+            && (noteHere.Position.X >= button.GetGlobalRect().End.X || noteHere.End.X <= button.GetGlobalRect().Position.X),
+            $"note {noteHere}, button {button.GetGlobalRect()}");
+    }
+
     // Right-click the main menu button, Move button, click somewhere: it stays there; Reset puts it back.
     static async Task TestMenuButtonMove(NMainMenu menu, string outDir)
     {
@@ -870,8 +956,8 @@ static class SelfTest
         return MenuPanel.Current;
     }
 
-    // The main menu button's right-click menu: Move button, Reset position, Open translations folder, a divider, Relaunch
-    // game (last and on its own). Relaunch game checks for mods that won't load first, as the Modding page's button does (fixture: Test Addon
+    // The main menu button's right-click menu: under a heading with our name and version, Move button, Reset position, Open
+    // translations folder, a divider, Relaunch game (last and on its own). Relaunch game checks for mods that won't load first, as the Modding page's button does (fixture: Test Addon
     // needs SmmTestMissing, never installed): its dialog shows over the main menu, and its fixes work there before the
     // page has been opened. ModEntry.TestRelaunch counts each relaunch instead of quitting the test.
     static async Task TestMenuButtonRelaunch(NMainMenu menu, string outDir)
@@ -884,10 +970,37 @@ static class SelfTest
             labels.SequenceEqual(["Move button", "Reset position", "Open translations folder", "Relaunch game"]), string.Join(", ", labels));
         if (popup == null)
             return;
-        // The divider: the one entry between Open translations folder and Relaunch game, a line under the first and above
-        // the second.
         string? Label(Node item) => item.IsInGroup(MenuPanel.ItemGroup) ? (string)item.GetMeta("label") : null;
         var items = popup.FindChild("Items", true, false)?.GetChildren().OfType<Control>().ToList() ?? [];
+
+        // At the top, our name and version (from the manifest the game loaded), a heading with a line under it: not an
+        // item, so nothing in it takes the mouse or the focus, and a click on it leaves the menu open.
+        var version = ModEntry.Version;
+        var header = $"Spire Mod Manager v{version}";
+        var top = items.FirstOrDefault();
+        var parts = top?.FindChildren("*", "Control", true, false).OfType<Control>().Prepend(top).ToList() ?? [];
+        Check("main menu button's menu: \"Spire Mod Manager v<version>\" first, a heading, not an item", version != null && top != null
+            && top.IsInGroup(MenuPanel.HeadingGroup) && (string)top.GetMeta("label") == header && MenuPanel.Headings(popup).FirstOrDefault() == header
+            && !labels.Contains(header) && top.FindChildren("*", "Label", true, false).OfType<Label>().Any(l => l.Text == header)
+            && top.FindChildren("*", "ColorRect", true, false).Count == 1 && items.Count > 1 && Label(items[1]) == "Move button"
+            && parts.All(c => c.MouseFilter == Control.MouseFilterEnum.Ignore && c.FocusMode == Control.FocusModeEnum.None),
+            $"{string.Join(" | ", MenuPanel.Headings(popup))}; version {version}");
+        // A real click on it, through the viewport (and the menu's Catcher): the menu stays open, nothing runs.
+        var placed = Store.Data.MenuButtonAt;
+        if (top != null)
+        {
+            var at = top.GetGlobalRect().GetCenter();
+            Input.ParseInputEvent(new InputEventMouseButton { ButtonIndex = MouseButton.Left, Pressed = true, Position = at, GlobalPosition = at });
+            await Wait(menu, 0.1);
+            Input.ParseInputEvent(new InputEventMouseButton { ButtonIndex = MouseButton.Left, Pressed = false, Position = at, GlobalPosition = at });
+            await Wait(menu, 0.2);
+        }
+        Check("a click on the header does nothing: the menu stays open", top != null && MenuPanel.Current == popup
+            && !menu.SubmenuStack.SubmenusOpen && !menu.HasNode(MenuButton.MoveLayerName) && Store.Data.MenuButtonAt == placed
+            && menu.GetTree().Root.GetNodeOrNull(RelaunchCheck.Name) == null);
+
+        // The divider: the one entry between Open translations folder and Relaunch game, a line under the first and above
+        // the second.
         var above = items.FindIndex(i => Label(i) == "Open translations folder");
         var divider = above >= 0 && above + 2 < items.Count && Label(items[above + 2]) == "Relaunch game" ? items[above + 1] : null;
         Check("a divider right under Open translations folder, above Relaunch game", divider != null && Label(divider) == null
@@ -925,21 +1038,31 @@ static class SelfTest
             // A fix with no Modding page yet: the active profile and the pending dot follow, and it's one undo step of its
             // own (undoing it leaves the button's Reset position in place).
             var before = ModListState();
-            var dot = button.GetNode<Control>("Dot");
+            var steps = (History.Steps(History.Track.List), History.Steps(History.Track.Order));
+            var dot = (Control)button.FindChild("Dot", true, false);
+            var text = MenuButtonText(menu);
             Press("DisableBrokenButton");
             await Wait(menu, 0.3);
             Check("from the main menu, Disable mods that can't load: off, the profile and the dot follow, then a plain Relaunch",
                 !Dependencies.IsOn(addon) && Profiles.Edited && dot.Visible == ModEntry.HasPendingChanges()
                 && Dialog()?.FindChild("RelaunchNowButton", true, false) is Button { Text: "Relaunch Game" }, Body());
+            Check("the main menu button's count follows a change made on the main menu, as wide as its words", MenuButtonText(menu) == MenuButtonExpected()
+                && MenuButtonText(menu) != text && MenuButtonMisfit(menu) == null,
+                $"{text} -> {MenuButtonText(menu)} vs {MenuButtonExpected()}; {MenuButtonMisfit(menu)}");
             Press("RelaunchNowButton");
             await Wait(menu, 0.2);
             Check("its Relaunch reaches the relaunch", relaunches == 1, $"{relaunches} relaunches");
-            RelaunchCheck.Close();
-            History.Undo();
+            // Cancel (the relaunch here only counted, so the dialog is still up) takes the fix back with no Modding page
+            // to redraw, and forgets it: both histories as they were when the dialog opened, nothing to redo.
+            bool AsBefore() => ModListState().SequenceEqual(before) && !Profiles.Edited && Store.Data.MenuButtonAt == null
+                && dot.Visible == ModEntry.HasPendingChanges();
+            string NotAsBefore() => $"{string.Join(", ", before.Except(ModListState()))}; edited {Profiles.Edited}, button at {Store.Data.MenuButtonAt}";
+            Press("CancelRelaunchButton");
             await Wait(menu, 0.3);
-            Check("one undo takes back that fix, and only it", ModListState().SequenceEqual(before) && !Profiles.Edited
-                && Store.Data.MenuButtonAt == null && dot.Visible == ModEntry.HasPendingChanges(),
-                $"{string.Join(", ", before.Except(ModListState()))}; edited {Profiles.Edited}, button at {Store.Data.MenuButtonAt}");
+            Check("from the main menu, Cancel takes back that fix, and only it", Dialog() == null && AsBefore(), NotAsBefore());
+            Check("and forgets it: the undo histories as the dialog found them, nothing to redo",
+                (History.Steps(History.Track.List), History.Steps(History.Track.Order)) == steps && !History.CanRedo,
+                $"{steps} -> ({History.Steps(History.Track.List)}, {History.Steps(History.Track.Order)}), redo {History.CanRedo}");
         }
         finally
         {
@@ -1135,6 +1258,131 @@ static class SelfTest
         }
     }
 
+    // The Settings screen's "Spire Mod Manager" button (SettingsButton), with Settings opened from the main menu: shown, in
+    // the game's button look, inside the screen and clear of the game's controls; level with the tabs and clear of them at
+    // every width the game draws at (worked out from both anchors: 4:3 is 1680 wide, 16:10 and 16:9 1920, 21:9 2580; Auto
+    // is never narrower than 1680 or wider than 2580, and the gap only grows with width), above the list and its scrollbar.
+    // Only one, if Settings is readied again. Hovering it shows its tip; a real click opens the Modding page over Settings,
+    // and Back returns to Settings. A run's Settings (on the run's stack) has none. Starts and ends with the page open,
+    // whatever fails on the way.
+    static async Task TestSettingsButton(NMainMenu menu, NModdingScreen page, string outDir)
+    {
+        var stack = menu.SubmenuStack;
+        if (stack.Peek() != page)
+        {
+            Results.Add("FAIL Settings button: the Modding page isn't the open screen");
+            return;
+        }
+        stack.Pop();
+        await Wait(menu, 0.3);
+        NSettingsScreen? settings = null;
+        try
+        {
+            settings = stack.PushSubmenuType<NSettingsScreen>();
+            await Wait(menu, 1);
+            var button = settings.GetNodeOrNull<Control>(SettingsButton.Name);
+            // The game's button look (a copy of its Mod Settings button, text on a MegaLabel), or our small button when a
+            // game update has taken that one away (text on the Button itself): both are supported, so both pass.
+            var gameLook = button?.GetNodeOrNull<MegaLabel>("Label") is not null;
+            var text = gameLook ? button?.GetNodeOrNull<MegaLabel>("Label")?.Text : (button as Button)?.Text;
+            Check("Settings from the main menu: our button, shown, reading Spire Mod Manager",
+                button is { Visible: true } && button.IsVisibleInTree() && text == "Spire Mod Manager", $"{button?.GetType().Name ?? "no button"}: {text}");
+            if (button != null)
+                Results.Add(gameLook ? "INFO Settings button: the game's button look" : "INFO Settings button: our small button (the game's Mod Settings button wasn't found)");
+            if (button != null)
+            {
+                var children = settings.GetChildCount();
+                SettingsButton.Add(settings);
+                Check("Settings readied again: still one button", settings.GetChildCount() == children, $"{children} children, then {settings.GetChildCount()}");
+                if (button.GetNodeOrNull<MegaLabel>("Label") is { } label)
+                {
+                    var width = label.GetThemeFont("font").GetStringSize(label.Text, fontSize: label.GetThemeFontSize("font_size")).X;
+                    Check("its text fits on the button, clear of the art's ends", width <= label.Size.X && label.GetGlobalRect().Position.X > button.GetGlobalRect().Position.X,
+                        $"{width:0} px in {label.Size.X:0}, at {label.GetThemeFontSize("font_size")} px");
+                }
+                var rect = button.GetGlobalRect();
+                var tabs = settings.GetNodeOrNull<Control>("%SettingsTabManager");
+                var clipper = settings.GetNodeOrNull<Control>("ScrollContainer/Mask/Clipper");
+                string[] paths = ["BackButton", "ScrollContainer/Scrollbar", "%Toast"];
+                var others = paths.Select(path => settings.GetNodeOrNull<Control>(path)).OfType<Control>().ToList();
+                if (tabs == null || clipper == null || others.Count < paths.Length)
+                    Results.Add("FAIL Settings button's layout not checked: the game's Settings screen has changed (tabs, list, Back, scrollbar or toast not found)");
+                else
+                {
+                    List<Control> game = [tabs, .. others, .. clipper.GetChildren().OfType<Control>()];
+                    var under = game.Where(c => c.IsVisibleInTree() && c.GetGlobalRect().Intersects(rect)).Select(c => $"{c.Name} {c.GetGlobalRect()}").ToList();
+                    Check("inside the screen, clear of the game's tabs, list, scrollbar, Back and toast", settings.GetGlobalRect().Encloses(rect) && under.Count == 0,
+                        $"{rect} in {settings.GetGlobalRect()}; over {string.Join(", ", under)}");
+                    static float At(float anchor, float offset, float length) => anchor * length + offset;
+                    var tight = new[] { 1680f, 1920f, 2580f }.Where(width => At(button.AnchorLeft, button.OffsetLeft, width) < At(tabs.AnchorRight, tabs.OffsetRight, width) + 4
+                        || At(button.AnchorRight, button.OffsetRight, width) > width).ToList();
+                    var listTop = At(clipper.AnchorTop, clipper.OffsetTop, 1080);
+                    Check("level with the tabs, right of them at 4:3, 16:10, 16:9 and 21:9, above the list", tight.Count == 0
+                        && button.OffsetTop >= tabs.OffsetTop && button.OffsetBottom <= tabs.OffsetBottom && button.OffsetBottom < listTop,
+                        $"too close at {string.Join(", ", tight)}; {button.OffsetLeft}..{button.OffsetRight} from the right, y {button.OffsetTop}..{button.OffsetBottom}; "
+                        + $"tabs to {tabs.OffsetRight} from the middle, y {tabs.OffsetTop}..{tabs.OffsetBottom}; list from y {listTop}");
+                }
+
+                Hover.TestMouse = () => rect.GetCenter();
+                button.EmitSignal(Control.SignalName.MouseEntered);
+                await Wait(menu, Hover.Delay + 0.15);
+                var tip = menu.GetTree().Root.GetNodeOrNull(SettingsButton.TipName)?.FindChildren("*", "RichTextLabel", true, false)
+                    .OfType<RichTextLabel>().FirstOrDefault()?.GetParsedText() ?? "";
+                Check("hovering it says what it does", tip == "Go to page for managing installed mods", tip);
+                await Capture(menu, outDir, "1f-settings-button");
+                Hover.TestMouse = () => new Vector2(5, 5);
+                button.EmitSignal(Control.SignalName.MouseExited);
+                await Wait(menu, 0.1);
+                Hover.TestMouse = null;
+                Hover.Hide();
+
+                // A real click, through whatever the screen draws over that corner. Headless there's no mouse, and
+                // RealClick's direct press is a plain Button's, so the game's button gets ours.
+                string pressedAt;
+                if (button is NButton ours && DisplayServer.GetName() == "headless")
+                {
+                    Click(ours);
+                    pressedAt = "headless: pressed directly";
+                }
+                else
+                    pressedAt = await RealClick(menu, button);
+                await Wait(menu, 1);
+                Check("pressing it opens the Modding page over Settings", stack.Peek() == page && page.IsVisibleInTree() && !settings.Visible,
+                    $"on top: {stack.Peek()?.GetType().Name}; under the mouse: {pressedAt}");
+                if (page.GetNodeOrNull<NButton>("BackButton") is { } back)
+                    Click(back);
+                else
+                    stack.Pop();
+                await Wait(menu, 0.5);
+                Check("Back from there returns to Settings, our button with it", stack.Peek() == settings && settings.IsVisibleInTree() && button.IsVisibleInTree(),
+                    $"on top: {stack.Peek()?.GetType().Name}");
+            }
+        }
+        catch (Exception e)
+        {
+            Results.Add($"FAIL Settings button: exception: {e}");
+        }
+        finally
+        {
+            // Off with whatever of ours is still open (Settings, or the page over it if Back didn't take it away), so
+            // the page isn't pushed a second time and the tests after this one start clean.
+            Hover.TestMouse = null;
+            Hover.Hide();
+            while (stack.Peek() is { } top && (top == settings || top == page))
+                stack.Pop();
+            await Wait(menu, 0.3);
+            stack.PushSubmenuType<NModdingScreen>();
+            await Wait(menu, 1);
+        }
+        Check("the Modding page open again after the Settings button's test", stack.Peek() == page && page.IsVisibleInTree());
+
+        // A run's Settings (pause menu) is on the run's stack, which isn't the main menu's: the button's guard leaves it out.
+        // Opening it for real needs a run.
+        Check("a run's Settings stack isn't the main menu's, so its Settings gets no button",
+            !typeof(NMainMenuSubmenuStack).IsAssignableFrom(typeof(NRunSubmenuStack)));
+        Results.Add("SKIP Settings button in a run's Settings: needs a run");
+    }
+
     // Drop-in translations (Translations) in German, which has no packed translation, so our text is all English there
     // until now: a file in the translations folder, read as the game switches language (its own switch, as in its
     // settings, without the menu rebuild). Its text shows, in the game's table and on the main menu button's menu, and its
@@ -1156,6 +1404,7 @@ static class SelfTest
         const string NotOurs = Translated + "X"; // a key mistyped
         const string Renamed = "SPIRE_MOD_MANAGER.PAGE_DISABLED", Added = "SPIRE_MOD_MANAGER.OPEN_TRANSLATIONS";
         const string Counted = "SPIRE_MOD_MANAGER.PAGE_ALL", NotText = "SPIRE_MOD_MANAGER.RELAUNCH_NOTE";
+        const string OnButton = "SPIRE_MOD_MANAGER.MAIN_MENU_PROFILE", OnButtonOne = "SPIRE_MOD_MANAGER.MAIN_MENU_PROFILE_ONE";
         const string German = "Spiel neu starten (Änderungen, 模组)"; // not ASCII: read as UTF-8, with a byte order mark
         string[] keys = [Translated, LeftOut, Broken, Empty];
         static string Read(string key)
@@ -1195,6 +1444,8 @@ static class SelfTest
                   // a comment and a trailing comma, as a hand-edited file may have
                   "{{Translated}}": "{{German}}",
                   "{{Counted}}": "Installierte Mods ({count})",
+                  "{{OnButton}}": "Mod-Profil: {name} ({count} Mods)",
+                  "{{OnButtonOne}}": "Mod-Profil: {name} (1 Mod)",
                   "{{Broken}}": "Knopf {verschieben",
                   "{{Empty}}": " ",
                   "{{Renamed}}": "Deaktivierte Mods ({anzahl})",
@@ -1218,8 +1469,15 @@ static class SelfTest
             MenuPanel.Close();
             Check("a drop-in translation on screen: the main menu button's menu has it", labels.Contains(German),
                 string.Join(", ", labels));
+            // The button itself follows the language as it changes, its count in German numbers.
+            var on = Profiles.OnCount();
+            var german = on == 1 ? $"Mod-Profil: {Profiles.Active?.Name} (1 Mod)" : $"Mod-Profil: {Profiles.Active?.Name} ({Menus.Number(on)} Mods)";
+            Check("a drop-in translation on screen: the main menu button reads it, as wide as its words", MenuButtonText(menu) == german
+                && MenuButtonMisfit(menu) == null, $"{MenuButtonText(menu)} vs {german}; {MenuButtonMisfit(menu)}");
             LocManager.Instance.SetLanguage(start);
-            Check("a drop-in translation: back in English, English", AllEnglish(), Shown());
+            await Wait(menu, 0.1);
+            Check("a drop-in translation: back in English, English", AllEnglish() && MenuButtonText(menu) == MenuButtonExpected()
+                && MenuButtonMisfit(menu) == null, $"{Shown()} | {MenuButtonText(menu)}; {MenuButtonMisfit(menu)}");
 
             foreach (var (what, text) in new[]
             {
@@ -1352,15 +1610,27 @@ static class SelfTest
         Check("row menu: categories on the left, the mod's fields on the right", rowItems.Count == Store.Data.Categories.Count + 2
             && aliasBox != null && rowMenu?.FindChild("Fields", true, false)?.GetNodeOrNull("Notes/Box") != null, string.Join(", ", rowItems));
         Check("an empty field invites: \"Add alias\"", aliasBox?.PlaceholderText == "Add alias", aliasBox?.PlaceholderText ?? "");
+        // What each field is for: our hover card on its term (shown inside the open menu, above it), the term only as
+        // wide as its word, and no native tooltip.
+        var terms = new[] { "Alias", "Tags", "Notes" }.Select(f => rowMenu?.FindChild("Fields", true, false)?.GetNodeOrNull<Label>($"{f}/Term/Label")).ToList();
+        string[] termTips = [Menus.Text("SPIRE_MOD_MANAGER.ALIAS_HINT"), Menus.Text("SPIRE_MOD_MANAGER.TAGS_HINT"), Menus.Text("SPIRE_MOD_MANAGER.NOTES_HINT")];
+        var termCards = new List<string>();
+        foreach (var term in terms.OfType<Label>())
+            termCards.Add(await HoverCard(menu, term, ModField.TipName));
+        var termLayer = menu.GetTree().Root.FindChild(ModField.TipName, true, false); // gone again after each hover
+        Check("each field's term explains it in our hover card, over the menu, the term no wider than its word",
+            terms.All(t => t != null) && termCards.SequenceEqual(termTips) && termLayer == null
+            && terms.All(t => t!.TooltipText == "" && t.Size.X <= t.GetMinimumSize().X + 1),
+            string.Join(" | ", termCards) + string.Join(" ", terms.Select(t => t == null ? " none" : $" ({t.Size.X:0}/{t.GetMinimumSize().X:0})")));
         await Capture(screen, outDir, "5-row-menu");
         if (rowMenu != null && aliasBox != null)
         {
             // Typing in the menu and clicking away (here: closing it) saves.
             aliasBox.GrabFocus();
             await Wait(menu, 0.1);
-            Check("editing shows Save and Cancel, the hint, and the inline clear", aliasBox.ClearButtonEnabled
+            Check("editing shows Save and Cancel and the inline clear, with the same \"Add alias\" while it's empty", aliasBox.ClearButtonEnabled
                 && rowMenu.FindChild("Fields", true, false)?.GetNodeOrNull<Control>("Alias/Term/Buttons") is { Visible: true }
-                && aliasBox.PlaceholderText != "Add alias");
+                && aliasBox.PlaceholderText == "Add alias", aliasBox.PlaceholderText);
             aliasBox.Text = "Menu alias";
             await Capture(screen, outDir, "5b-menu-editor");
             MenuPanel.Close();
@@ -1453,7 +1723,7 @@ static class SelfTest
             MenuPanel.Press(deleteMenu, "Delete");
             await Wait(menu, 0.5);
             var asked = PopupTexts();
-            Check("deleting a category with one mod asks, in the singular", asked.Any(t => t.Contains("holds 1 mod.")), string.Join(" | ", asked.Where(t => t.Length > 0)));
+            Check("deleting a category with one mod asks, in the singular", asked.Any(t => t.Contains("contains 1 mod.")), string.Join(" | ", asked.Where(t => t.Length > 0)));
             NModalContainer.Instance?.Clear();
             await Wait(menu, 0.3);
         }
@@ -1505,8 +1775,11 @@ static class SelfTest
             Profiles.Delete(copy, screen);
 
         // The game's confirm popup, shown for the record (with our mark); deletion itself goes through Profiles.Delete.
-        var body = new LocString("settings_ui", "SPIRE_MOD_MANAGER.DELETE_PROFILE_BODY");
-        body.Add("name", "Brother co-op");
+        var toDelete = Store.Data.Profiles.FirstOrDefault(p => p.Name == "Brother co-op") ?? Store.Data.Profiles[0];
+        var body = ProfileBar.DeleteBody(toDelete);
+        var asked = body.GetFormattedText();
+        Check("Delete's question names the profile and its mods, whole", asked.StartsWith("Delete profile") && asked.Contains($"{toDelete.Name} ({Profiles.ModCount(toDelete)})")
+            && asked.Contains("All mods remain installed") && !asked.Contains('{'), asked);
         _ = Menus.Confirm(new LocString("settings_ui", "SPIRE_MOD_MANAGER.DELETE_PROFILE_TITLE"), body);
         await Wait(menu, 1);
         CheckMark("delete profile popup", NModalContainer.Instance?.OpenModal as Control);
@@ -1555,11 +1828,11 @@ static class SelfTest
         tickbox.IsTicked = false;
         tickbox.EmitSignal(NTickbox.SignalName.Toggled, tickbox);
         await Wait(menu, 0.3);
-        Check("turning the library off marks it at once", Note("SmmTestUi").Contains("(off)"), Note("SmmTestUi"));
+        Check("turning the library off marks it at once", Note("SmmTestUi").Contains("(disabled)"), Note("SmmTestUi"));
         tickbox.IsTicked = true;
         tickbox.EmitSignal(NTickbox.SignalName.Toggled, tickbox);
         await Wait(menu, 0.3);
-        Check("turning it back on clears \"(off)\" at once", !Note("SmmTestUi").Contains("(off)"), Note("SmmTestUi"));
+        Check("turning it back on clears \"(disabled)\" at once", !Note("SmmTestUi").Contains("(disabled)"), Note("SmmTestUi"));
     }
 
     // The game's restart line: our wording on our views (the main list, Load Order), the game's in Vanilla View; still
@@ -2183,7 +2456,7 @@ static class SelfTest
         await Wait(menu, 0.4);
         NModalContainer.Instance?.Clear();
         Check("a mod installed now is listed as installed, loading after relaunch",
-            HistoryBar.Describe().Any(l => l.Contains("Installed: Fresh Mod") && l.Contains("loads after relaunch")), string.Join(" | ", HistoryBar.Describe()));
+            HistoryBar.Describe().Any(l => l.Contains("Installed: Fresh Mod") && l.Contains("pending relaunch")), string.Join(" | ", HistoryBar.Describe()));
         // It joins the active profile at once, on, quietly: no unsaved edit, and Revert all's state has it too.
         Check("a mod installed now joins the active profile, on, quietly",
             Profiles.Active?.Mods.Any(m => m.Id == "SmmFreshMod" && m.Enabled) == true && Profiles.Edited == wasEdited && OnInSnapshot(History.Entered, "SmmFreshMod"),
@@ -2455,7 +2728,7 @@ static class SelfTest
                     + $"missing {(On(mod) ? deps.Count(d => Copy(d) == null) : 0)}, off {(On(mod) ? deps.Count(d => Copy(d) is { } dep && !On(dep)) : 0)}";
                 var answered = $"on {Dependencies.IsOn(mod)}, copy {Dependencies.Find(id)?.modSource}, library {tags.Any(c => c.Text == "Library")}, "
                     + $"required for {(System.Text.RegularExpressions.Regex.Match(required, @"Required for (\d+)") is { Success: true } match ? match.Groups[1].Value : "0")}, "
-                    + $"missing {Times(needs, "(not installed)")}, off {Times(needs, "(off)")}";
+                    + $"missing {Times(needs, "(not installed)")}, off {Times(needs, "(disabled)")}";
                 if (answered != expected)
                     wrong.Add($"{id}: {answered}; the slow way: {expected}");
             }
@@ -2781,12 +3054,14 @@ static class SelfTest
             var paths = content.GetParent().GetChildren().OfType<Line2D>().Where(l => l.IsInGroup("SpireModManagerLinks")).Select(l => l.Points).ToList();
             Check("the hover lines have slightly rounded corners", paths.Count > 0 && paths.All(Rounded),
                 string.Join("; ", paths.Select(p => string.Join(" ", p.Select(q => $"{q.X:0.#},{q.Y:0.#}")))));
-            // The rows here wear the main list's rounded looks: faint under the mouse, sunken when selected.
+            // The rows here wear the main list's rounded looks: faint under the mouse, brighter when selected, with an even
+            // gold rim (the same width on every side, so its edges line up with the other rows' boxes).
             var selectedRow = Rows().FirstOrDefault(r => r.Mod == CategoryList.Selected && r != libRow);
             StyleBox? LookOf(NModMenuRow? r) => r?.GetNodeOrNull<Panel>("SelectionHighlight")?.GetThemeStylebox("panel");
-            Check("load order rows: rounded like the main list's, under the mouse and selected",
-                LookOf(libRow) is StyleBoxFlat { CornerRadiusTopLeft: RowTitles.CornerRadius, BorderWidthTop: 0 }
-                && LookOf(selectedRow) is StyleBoxFlat { CornerRadiusTopLeft: RowTitles.CornerRadius, BorderWidthTop: 2 }
+            Check("load order rows: rounded like the main list's, under the mouse and selected; the selected one brighter, with an even gold rim",
+                LookOf(libRow) is StyleBoxFlat { CornerRadiusTopLeft: RowTitles.CornerRadius, BorderWidthTop: 0, BorderWidthLeft: 0 } hoverLook
+                && LookOf(selectedRow) is StyleBoxFlat { CornerRadiusTopLeft: RowTitles.CornerRadius } selectedBox && EvenGoldRim(selectedBox)
+                && selectedBox.BgColor.A > hoverLook.BgColor.A
                 && selectedRow?.GetNode<Panel>("SelectionHighlight") is { } selectedLook && selectedLook.Modulate == Colors.White
                 && selectedLook.OffsetLeft == RowTitles.LookInset.X, $"selected: {selectedRow?.Mod?.manifest?.id ?? "none"}");
             await Capture(screen, outDir, "13b-hover-links");
@@ -2813,14 +3088,14 @@ static class SelfTest
         tickbox.EmitSignal(NTickbox.SignalName.Toggled, tickbox);
         await Wait(menu, 0.3);
         var text = (screen.FindChild("OrderProblems", true, false) as Label)?.Text ?? "";
-        Check("main list: a needed mod that is off gets a banner", text.Contains("need a mod that is disabled"), text);
+        Check("main list: a needed mod that is off gets a banner", text.Contains("require a mod that is disabled"), text);
         var warning = screen.FindChild(LoadOrder.WarningName, true, false);
-        var showTip = (warning?.FindChild("ShowProblemButton", true, false) as Control)?.TooltipText;
+        var showTip = TipOf(warning?.FindChild("ShowProblemButton", true, false));
         Check("main list banner: red, its Show tip \"Opens the next affected mod\", no \"Better Mod Menu\" in it",
             Red(BannerFill(warning)) && showTip == "Opens the next affected mod" && !BannerWords(warning).Any(w => w.Contains("Better Mod Menu")),
             $"fill {BannerFill(warning)}; {string.Join(" | ", BannerWords(warning))}");
         var after = ButtonsAfterText(warning);
-        Check("main list banner: Show and Enable needed mods right after its text", after.Ok
+        Check("main list banner: Show and Enable required mods right after its text", after.Ok
             && warning?.FindChild("EnableNeededButton", true, false) is Control { Visible: true }, after.Detail);
         await Capture(screen, outDir, "2b-list-banner");
 
@@ -2835,20 +3110,20 @@ static class SelfTest
         string Shown(Mod mod) => Store.InfoFor(mod.manifest?.id)?.Alias ?? mod.manifest?.name ?? "";
         string NoteOf(Mod mod) => Rows().FirstOrDefault(r => r.Mod == mod)?.GetNodeOrNull<RichTextLabel>("SpireModManagerStrip/Needs")?.GetParsedText() ?? "";
         var flaggedMods = Rows().Select(r => r.Mod).OfType<Mod>()
-            .Where(m => Dependencies.IsOn(m) && (NoteOf(m).Contains("(off)") || NoteOf(m).Contains("(not installed)"))).ToList();
+            .Where(m => Dependencies.IsOn(m) && (NoteOf(m).Contains("(disabled)") || NoteOf(m).Contains("(not installed)"))).ToList();
         var flagged = flaggedMods.Select(Shown).Order().ToList();
         var card = await BannerCard(menu, screen, screen.FindChild(LoadOrder.WarningName, true, false), "2j-banner-card", outDir);
-        var named = card.Skip(1).Select(l => l.Split(": needs ")[0]).Order().ToList();
+        var named = card.Skip(1).Select(l => l.Split(": requires ")[0]).Order().ToList();
         Check("main list banner: hovering its text, a card with each mod that won't load and what it needs, by the names the list shows, nothing else",
-            card.FirstOrDefault() == "Affected mods" && card.Contains("Content: needs Framework (disabled)") && card.Contains("Test UI: needs Framework (disabled)")
+            card.FirstOrDefault() == "Affected mods" && card.Contains("Content: requires Framework (disabled)") && card.Contains("Test UI: requires Framework (disabled)")
             && named.SequenceEqual(flagged) && !card.Any(l => l.Contains("Test Framework") || l.StartsWith("Test Content")),
             $"{string.Join(" | ", card)}; rows saying so: {string.Join(", ", flagged)}");
         // Each line gives its row's reasons: "(off)" there is "(disabled)" here, "(not installed)" the same. The fixture's
         // Test Addon (on) needs SmmTestMissing, which isn't installed.
-        string? LineOf(Mod mod) => card.Skip(1).FirstOrDefault(l => l.StartsWith(Shown(mod) + ": needs "));
-        var wrong = flaggedMods.Where(m => LineOf(m) is not { } line || NoteOf(m).Contains("(off)") != line.Contains("(disabled)")
+        string? LineOf(Mod mod) => card.Skip(1).FirstOrDefault(l => l.StartsWith(Shown(mod) + ": requires "));
+        var wrong = flaggedMods.Where(m => LineOf(m) is not { } line || NoteOf(m).Contains("(disabled)") != line.Contains("(disabled)")
             || NoteOf(m).Contains("(not installed)") != line.Contains("(not installed)")).Select(Shown).ToList();
-        Check("main list banner's card: each line's reasons are its row's (\"(off)\" as \"(disabled)\", \"(not installed)\")", wrong.Count == 0,
+        Check("main list banner's card: each line's reasons are its row's (\"(disabled)\", \"(not installed)\")", wrong.Count == 0,
             $"wrong for {string.Join(", ", wrong)}: {string.Join(" | ", card)}");
         if (WontLoad() is { } addon)
             Check($"main list banner's card: Test Addon needs {Missing} (not installed)", LineOf(addon)?.Contains(Missing + " (not installed)") == true,
@@ -2864,7 +3139,7 @@ static class SelfTest
             Hover.TestMouse = () => at;
             bannerText.EmitSignal(Control.SignalName.MouseEntered);
             await Wait(menu, 0.1);
-            var open = BannerCardLines(screen).Contains("Test UI: needs Framework (disabled)");
+            var open = BannerCardLines(screen).Contains("Test UI: requires Framework (disabled)");
             uiBox.IsTicked = false;
             uiBox.EmitSignal(NTickbox.SignalName.Toggled, uiBox);
             await Wait(menu, 0.3);
@@ -2872,7 +3147,7 @@ static class SelfTest
             Hover.TestMouse = null;
             var next = await BannerCard(menu, screen, screen.FindChild(LoadOrder.WarningName, true, false));
             Check("a tick while the banner's card shows: no stale card, and the next leaves out the mod ticked off",
-                open && !stale && next.Contains("Content: needs Framework (disabled)") && !next.Any(l => l.StartsWith("Test UI")),
+                open && !stale && next.Contains("Content: requires Framework (disabled)") && !next.Any(l => l.StartsWith("Test UI")),
                 $"listed before {open}, stale after {stale}; then {string.Join(" | ", next)}");
             uiBox.IsTicked = true;
             uiBox.EmitSignal(NTickbox.SignalName.Toggled, uiBox);
@@ -2886,7 +3161,7 @@ static class SelfTest
         await Wait(menu, 0.3);
         screen.FindChild("EnableNeededButton", true, false)?.EmitSignal(BaseButton.SignalName.Pressed);
         await Wait(menu, 0.3);
-        Check("Enable needed mods turns it on, banner says no more", Dependencies.IsOn(lib) && tickbox.IsTicked
+        Check("Enable required mods turns it on, banner says no more", Dependencies.IsOn(lib) && tickbox.IsTicked
             && screen.FindChild("EnableNeededButton", true, false) == null
             && (screen.FindChild("OrderProblems", true, false) as Label)?.Text.Contains("is disabled") != true);
         History.Undo();
@@ -2902,7 +3177,7 @@ static class SelfTest
         CategoryList.Redraw(content);
         await Wait(menu, 0.3);
         badge = screen.GetNodeOrNull<Control>("SpireModManagerLoadOrderToggle/WarningBadge");
-        var badgeTip = screen.GetNode<Control>("SpireModManagerLoadOrderToggle").TooltipText;
+        var badgeTip = Hover.TipOf(screen.GetNode<Control>("SpireModManagerLoadOrderToggle"));
         Check("a bad order puts a '!' with the warning on the Load Order button, then the mod it's about, as Load Order's card says it",
             badge is { Visible: true } && badgeTip.StartsWith("For compatibility, 1 mod ")
             && string.Join(" | ", badgeTip.Split('\n').Skip(1).Where(l => l.Length > 0)) == "Test Content loads before Test Framework", badgeTip);
@@ -2951,9 +3226,9 @@ static class SelfTest
             await Tick(tickbox, true);
         var text = (Banner()?.FindChild("ManagersWarning", true, false) as Label)?.Text ?? "";
         Check("Better Mod Menu ticked: the managers banner at once, under the search box, above the list", Bmm.Ticked && Placed()
-            && text == "Multiple mod managers are currently enabled, which may cause unexpected behavior.", $"\"{text}\"; {Where()}");
+            && text == "Multiple mod managers are currently enabled, and may cause unexpected behavior.", $"\"{text}\"; {Where()}");
         Check("the managers banner is yellow: a warning, not an error", Yellow(BannerFill(Banner())), $"fill {BannerFill(Banner())}");
-        var showTip = (Banner()?.FindChild("ShowManagersButton", true, false) as Control)?.TooltipText;
+        var showTip = TipOf(Banner()?.FindChild("ShowManagersButton", true, false));
         Check("the managers banner's Show tip is the other banner's: \"Opens the next affected mod\"", showTip == "Opens the next affected mod", showTip ?? "no Show");
         Check("the managers banner names no manager: no \"Better Mod Menu\" in its text or tips",
             BannerWords(Banner()) is { Count: > 0 } words && !words.Any(w => w.Contains("Better Mod Menu")), string.Join(" | ", BannerWords(Banner())));
@@ -3065,7 +3340,7 @@ static class SelfTest
         // warning, the page bar or the list, right under it). View state: no undo step, not a change or pending, saved.
         bool Buttons() => Banner()?.FindChild("ShowManagersButton", true, false) is Button { Visible: true } show
             && Banner()?.FindChild("DismissManagersButton", true, false) is Button { Visible: true } dismiss
-            && dismiss.GetGlobalRect().Position.X > show.GetGlobalRect().End.X && dismiss.TooltipText.StartsWith("Hides this warning");
+            && dismiss.GetGlobalRect().Position.X > show.GetGlobalRect().End.X && Hover.TipOf(dismiss).StartsWith("Dismiss the warning");
         bool Closed() => Banner() == null && (new[] { LoadOrder.WarningName, PageBar.Name, PageBar.HintName }
             .Select(name => border.GetNodeOrNull<Control>(name)).FirstOrDefault(c => c is { Visible: true }) ?? list)
             .GetGlobalRect().Position.Y - search.GetGlobalRect().End.Y is >= 0 and < 12;
@@ -3173,8 +3448,27 @@ static class SelfTest
         List<NModMenuRow> Rows() => content.GetChildren().OfType<NModMenuRow>().ToList();
         Control? Bar() => screen.FindChild(PageBar.Name, true, false) as Control;
         void Press(string name) => Bar()?.FindChild(name, true, false)?.EmitSignal(BaseButton.SignalName.Pressed);
-        Check("page bar on the main list", Bar() is { Visible: true } bar && bar.FindChild("Scope", true, false) is Label { Text: var all } && all.StartsWith("Installed mods"));
+        Check("page bar on the main list", Bar() is { Visible: true } bar && bar.FindChild("Scope", true, false) is Label { Text: var all } && all.StartsWith("Mods installed"));
         await Capture(screen, outDir, "2d-page-bar");
+        // What each filter shows: our hover card (not the engine's tooltip), only as wide as its words. And no engine
+        // tooltip on anything of ours: every description we write is the same card (Jordan, 2026-10-14). Other mods'
+        // controls on the page (Better Mod Menu's row buttons) keep theirs. tools/check.cs guards the source too.
+        if (Bar()?.FindChild("ShowAllButton", true, false) is Button allButton)
+        {
+            var (tip, width) = await SizedHoverCard(menu, allButton, Hover.TipName, () => Capture(screen, outDir, "2d2-filter-tip"));
+            Check("a filter's description is our hover card, as wide as its words", tip == Menus.Text("SPIRE_MOD_MANAGER.SHOW_ALL_TIP")
+                && width is > 0 and < 300 && allButton.TooltipText == "", $"\"{tip}\", {width:0} px");
+        }
+        bool Ours(Node node)
+        {
+            for (var at = node; at != null && at != screen; at = at.GetParent())
+                if (at.Name.ToString().StartsWith("SpireModManager") || at.HasMeta("spire_mod_manager_tip"))
+                    return true;
+            return false;
+        }
+        var natives = screen.FindChildren("*", "Control", true, false).OfType<Control>().Where(c => c.TooltipText.Length > 0 && Ours(c))
+            .Select(c => $"{c.Name}: {c.TooltipText}").ToList();
+        Check("no engine tooltips on our controls: every description is our card", natives.Count == 0, string.Join(" | ", natives));
 
         var box = screen.GetNode<LineEdit>("ModsBorder/SpireModManagerSearch");
         void Find(string text)
@@ -3316,14 +3610,14 @@ static class SelfTest
             await Press("ShowEnabledButton");
             var on = Where(On);
             Check("Show: Enabled: just the enabled mods, the bar counting them, Enabled lit", Shown().SequenceEqual(on)
-                && Scope() == $"Enabled mods ({on.Count})" && Choices() == "All Enabled* Disabled Changed", Say());
+                && Scope() == $"All enabled ({on.Count})" && Choices() == "All Enabled* Disabled Changed", Say());
             Check("Show: Enabled: each category counts its enabled mods; none: no header", Headers(On) == "", Headers(On));
 
             await Press("ShowDisabledButton");
             var off = Where(Off);
             Results.Add($"INFO {on.Count} enabled, {off.Count} disabled of {all.Count}");
             Check("Show: Disabled: just the disabled mods, counted, Disabled lit", Shown().SequenceEqual(off)
-                && Scope() == $"Disabled mods ({off.Count})" && Choices() == "All Enabled Disabled* Changed", Say());
+                && Scope() == $"All disabled ({off.Count})" && Choices() == "All Enabled Disabled* Changed", Say());
             Check("Show: Disabled: each category counts its disabled mods; none: no header", Headers(Off) == "", Headers(Off));
             Results.Add($"INFO headers under Disabled: {content.GetChildren().Count(c => c.IsInGroup("SpireModManagerCategoryHeader") && c.Name != "Uncategorized")} "
                 + $"of {Store.Data.Categories.Count} categories");
@@ -3440,7 +3734,7 @@ static class SelfTest
             var others = Rows().Select(r => r.Mod).OfType<Mod>().Except(wereOff).ToDictionary(m => m, On);
             await Press("EnableAllButton");
             Check("Show: Disabled, Enable all: just the mods shown, which then go", wereOff.All(On) && others.All(p => On(p.Key) == p.Value)
-                && Shown().Count == 0 && Scope() == "Disabled mods (0)", Say());
+                && Shown().Count == 0 && Scope() == "All disabled (0)", Say());
             History.Undo();
             await Wait(menu, 0.3);
             Check("undone: disabled and shown again", wereOff.All(Off) && Shown().SequenceEqual(Ids(Rows().Where(r => r.Mod is { } m && wereOff.Contains(m)))), Say());
@@ -3458,7 +3752,7 @@ static class SelfTest
             await Wait(menu, 0.3);
             var nowOn = Where(On);
             Check($"Show: Enabled, switched to {away.Name}: the mods it turns off go at once, the bar and each category counting the rest",
-                nowOn.Count < wereOn.Count && Shown().SequenceEqual(nowOn) && Scope() == $"Enabled mods ({nowOn.Count})" && Headers(On) == "",
+                nowOn.Count < wereOn.Count && Shown().SequenceEqual(nowOn) && Scope() == $"All enabled ({nowOn.Count})" && Headers(On) == "",
                 $"{wereOn.Count} on, then {nowOn.Count}; {Say()}; {Headers(On)}");
             Profiles.SwitchTo(start, screen);
             await Wait(menu, 0.3);
@@ -3480,7 +3774,7 @@ static class SelfTest
             .OfType<Mod>().ToHashSet();
         var changed = Where(named.Contains);
         Check("Show: Changed: the mods Changes names, counted, Changed lit", Shown().SequenceEqual(changed) && changed.Contains("SmmTestUi")
-            && Scope() == $"Changed mods ({changed.Count})" && Choices() == "All Enabled Disabled Changed*", $"{Say()}; Changes: {string.Join(" | ", lines)}");
+            && Scope() == $"Changed since launch ({changed.Count})" && Choices() == "All Enabled Disabled Changed*", $"{Say()}; Changes: {string.Join(" | ", lines)}");
         Check("Show: Changed: each category counts its changed mods; none: no header", Headers(named.Contains) == "", Headers(named.Contains));
         Results.Add($"INFO Changed shows {changed.Count} of {all.Count} mods");
         await Capture(screen, outDir, "2i-show-changed");
@@ -3549,7 +3843,7 @@ static class SelfTest
             Check("Vanilla List: every row, whatever the main list shows", await WithVanillaView(screen, menu, () => Shown().SequenceEqual(all)));
 
         await Press("ShowAllButton");
-        Check("All: every row again, counted as installed mods", Shown().SequenceEqual(all) && Scope() == $"Installed mods ({all.Count})"
+        Check("All: every row again, counted as installed mods", Shown().SequenceEqual(all) && Scope() == $"Mods installed ({all.Count})"
             && Choices() == "All* Enabled Disabled Changed", Say());
 
         // Going to a mod a search leaves out (a name in the panel, a line in Changes), as for a banner's Show: the search
@@ -3630,26 +3924,59 @@ static class SelfTest
 
         RelaunchCheck.Show(screen);
         await Wait(menu, 0.3);
-        Check("relaunch check lists the mods that won't load", Body().Contains(Missing + ", which isn't installed") && Body().Contains("Test Framework, which is disabled"), Body());
+        Check("relaunch check lists the mods that won't load", Body().Contains("Requires mod to be installed: " + Missing)
+            && Body().Contains("Requires mod to be enabled: Test Framework"), Body());
+        // Several of a kind: one line naming them all, in the plural (a made-up mod, never installed).
+        var several = ModDetails.DependencyProblems(new Mod
+        {
+            path = "", modSource = ModSource.ModsDirectory,
+            manifest = new ModManifest { id = "SmmPluralTest", name = "Plural Test", dependencies = [new("SmmGoneA"), new("SmmGoneB"), new("SmmTestLib")] },
+        });
+        Check("a mod needing several of a kind: one line naming them all, in the plural",
+            several.SequenceEqual(["Requires mods to be installed: SmmGoneA, SmmGoneB", "Requires mod to be enabled: Test Framework"]), string.Join(" | ", several));
+        // Cancel first, at the row's left; the fixes and Relaunch anyway at its right (Jordan, 2026-10-14).
+        var row = Dialog()?.FindChild("Buttons", true, false) as Control;
+        var rowButtons = row?.GetChildren().OfType<Button>().ToList() ?? [];
+        Check("its Cancel comes first, at the left, the fixes and Relaunch anyway at the right",
+            rowButtons.Select(b => b.Name.ToString()).SequenceEqual(["CancelRelaunchButton", "EnableNeededButton", "DisableBrokenButton", "RelaunchNowButton"])
+            && rowButtons[0].GetGlobalRect().Position.X - row!.GetGlobalRect().Position.X < 1
+            && row.GetGlobalRect().End.X - rowButtons[^1].GetGlobalRect().End.X < 1,
+            string.Join(", ", rowButtons.Select(b => $"{b.Name} {b.GetGlobalRect().Position.X:0}-{b.GetGlobalRect().End.X:0}")) + $" in {row?.GetGlobalRect()}");
         await Capture(screen, outDir, "15-relaunch-check");
         Press("EnableNeededButton");
         await Wait(menu, 0.3);
-        Check("Enable needed mods fixes the off ones, the list updates", Dependencies.IsOn(lib) && !Body().Contains("Test Framework") && Body().Contains(Missing), Body());
+        Check("Enable required mods fixes the off ones, the list updates", Dependencies.IsOn(lib) && !Body().Contains("Test Framework") && Body().Contains(Missing), Body());
         Press("DisableBrokenButton");
         await Wait(menu, 0.3);
         Check("Disable mods that can't load: nothing left, plain Relaunch", !Dependencies.IsOn(addon)
             && Dialog()?.FindChild("RelaunchNowButton", true, false) is Button { Text: "Relaunch Game" }, Body());
+        // Cancel takes both fixes back: Test Framework off again (as this test set it), Test Addon on (the fixture's).
+        // It forgets them too: nothing to redo.
         Press("CancelRelaunchButton");
-        await Wait(menu, 0.2);
-        Check("Cancel closes it", Dialog() == null);
-        History.Undo(); // Test Addon back on, as the fixture has it
         await Wait(menu, 0.3);
+        Check("Cancel closes it and takes back the fixes made in it", Dialog() == null && !Dependencies.IsOn(lib) && Dependencies.IsOn(addon)
+            && !tickbox.IsTicked && !History.CanRedo, $"framework on {Dependencies.IsOn(lib)}, addon on {Dependencies.IsOn(addon)}");
+        // Esc the same, after one fix; the page stays.
         RelaunchCheck.Show(screen);
         await Wait(menu, 0.2);
+        Press("EnableNeededButton");
+        await Wait(menu, 0.3);
+        var fixedIt = Dependencies.IsOn(lib);
         Input.ParseInputEvent(new InputEventKey { Keycode = Key.Escape, Pressed = true });
         await Wait(menu, 0.2);
         Input.ParseInputEvent(new InputEventKey { Keycode = Key.Escape, Pressed = false });
-        Check("Esc closes it, and stays on the page", Dialog() == null && screen.IsVisibleInTree() && Dependencies.IsOn(addon));
+        await Wait(menu, 0.2);
+        Check("Esc closes it the same way, the fix taken back, and stays on the page", fixedIt && Dialog() == null && screen.IsVisibleInTree()
+            && !Dependencies.IsOn(lib) && Dependencies.IsOn(addon), $"fixed {fixedIt}, framework on {Dependencies.IsOn(lib)}");
+        // Cancel with nothing done takes nothing back: the undo step before the dialog (this test's untick) stays.
+        RelaunchCheck.Show(screen);
+        await Wait(menu, 0.2);
+        Press("CancelRelaunchButton");
+        await Wait(menu, 0.3);
+        Check("Cancel with no fix made changes nothing", Dialog() == null && !Dependencies.IsOn(lib) && Dependencies.IsOn(addon));
+        History.Undo(); // this test's untick: Test Framework on again, as the fixture has it
+        await Wait(menu, 0.3);
+        Check("then one undo puts the framework back on, as the fixture has it", Dependencies.IsOn(lib) && tickbox.IsTicked);
     }
 
     // A made-up mod with very long everything (name, id, author, version, description, alias, many tags, notes),
@@ -3848,8 +4175,8 @@ static class SelfTest
         await Wait(menu, 0.3);
         var head = info.GetNodeOrNull<RichTextLabel>("SpireModManagerHead");
         var text = head?.GetParsedText() ?? "";
-        Check("a Workshop mod's head: Author, Updated (4 days ago, Patch notes), Compatibility", text.IndexOf("Author") < text.IndexOf("Updated")
-            && text.IndexOf("Updated") < text.IndexOf("Compatibility") && text.Contains("(4 days ago)  Patch notes") && head?.Text.Contains("[url=patchnotes]") == true, text);
+        Check("a Workshop mod's head: Author, Updated (4 days ago, Change Notes), Compatibility", text.IndexOf("Author") < text.IndexOf("Updated")
+            && text.IndexOf("Updated") < text.IndexOf("Compatibility") && text.Contains("(4 days ago)  Change Notes") && head?.Text.Contains("[url=patchnotes]") == true, text);
         var link = info.FindChild("SpireModManagerLink", true, false) as LinkButton;
         Check("the source line: id (SteamID n)", link?.Text == "SmmWorkshopTest (SteamID 42)", link?.Text ?? "");
         Check("how long ago: hours under a day, one day singular, green under two days",
@@ -4029,6 +4356,17 @@ static class SelfTest
         Check("the bulk menu: Editing N selected mods, tags and notes, no alias", bulk != null
             && bulk.FindChild("Editing", true, false) is Label { Text: var editing } && editing == $"Editing {all - 1} selected mods"
             && bulk.FindChild("Tags", true, false) != null && bulk.FindChild("Notes", true, false) != null && bulk.FindChild("Alias", true, false) == null);
+        var info = bulk?.FindChild("Info", true, false) as TextureRect;
+        var infoCard = info == null ? "" : (await SizedHoverCard(menu, info, ModField.TipName, () => Capture(screen, outDir, "18c-bulk-info"))).Text;
+        var bulkTerms = new List<string>();
+        foreach (var f in new[] { "Tags", "Notes" })
+            if ((bulk?.FindChild("Fields", true, false) ?? bulk)?.GetNodeOrNull<Label>($"{f}/Term/Label") is { } term)
+                bulkTerms.Add(await HoverCard(menu, term, ModField.TipName));
+        Check("the bulk menu: an \"i\" beside its heading explains editing several, and each term says what it does for all of them",
+            info is { Visible: true, Texture: not null } && infoCard == $"{Menus.Text("SPIRE_MOD_MANAGER.TAGS_TERM")}\n{Menus.Text("SPIRE_MOD_MANAGER.TAGS_BULK_HINT")}\n\n"
+                + $"{Menus.Text("SPIRE_MOD_MANAGER.NOTES_TERM")}\n{Menus.Text("SPIRE_MOD_MANAGER.NOTES_BULK_HINT")}"
+            && bulkTerms.SequenceEqual([Menus.Text("SPIRE_MOD_MANAGER.TAGS_BULK_HINT"), Menus.Text("SPIRE_MOD_MANAGER.NOTES_BULK_HINT")]),
+            $"info: {infoCard}; terms: {string.Join(" | ", bulkTerms)}");
         await Capture(screen, outDir, "18-bulk-menu");
         var tool = Store.Data.Categories.First().Name;
         if (bulk != null)
@@ -4058,6 +4396,25 @@ static class SelfTest
         }
         MenuPanel.Close();
         Store.EditMod(picked[0], info => info.Tags = null);
+
+        // Notes that differ: a warning beside Notes counts the mods with notes, the ones typing would overwrite (Jordan,
+        // 2026-10-14); the same notes all round, no warning.
+        var notesBefore = Store.InfoFor(picked[0])?.Notes;
+        Label? Mixed(Node? bulkMenu) => bulkMenu?.FindChild("Mixed", true, false) as Label;
+        var sameNotes = CategoryList.ShowBulkMenu(content);
+        await Wait(menu, 0.2);
+        var quiet = Mixed(sameNotes) is { Visible: false };
+        MenuPanel.Close();
+        Store.EditMod(picked[0], info => info.Notes = "Only mine");
+        var differing = CategoryList.ShowBulkMenu(content);
+        await Wait(menu, 0.2);
+        Check("bulk notes: no warning while they're the same; when they differ, one beside Notes counting the mods with notes",
+            quiet && Mixed(differing) is { Visible: true, Text: "1 mod has differing notes and will be overwritten!" }
+            && (differing?.FindChild("Notes", true, false)?.GetNodeOrNull<TextEdit>("Box")?.PlaceholderText == Menus.Text("SPIRE_MOD_MANAGER.NOTES_BULK_ADD")),
+            $"same: {(quiet ? "none" : "shown")}; differ: {Mixed(differing)?.Text ?? "none"}");
+        await Capture(screen, outDir, "18b-bulk-notes-differ");
+        MenuPanel.Close();
+        Store.EditMod(picked[0], info => info.Notes = notesBefore);
 
         // Shift-click: the rows between the last one picked and this one. Esc lets go.
         var rows = Uncategorized();
@@ -4294,7 +4651,8 @@ static class SelfTest
         var back = info.GetNodeOrNull<Control>(HistoryBar.BackName);
         Check("a name opens that mod, with Back", !HistoryBar.ListOpen(info) && CategoryList.Selected?.manifest?.id == "SmmTestUi" && back is { Visible: true });
         if (content.GetChildren().OfType<NModMenuRow>().FirstOrDefault(r => r.Mod?.manifest?.id == "SmmTestUi")?.GetNodeOrNull<Panel>("SelectionHighlight") is { } shownLook)
-            Check("the selected row: the sunken look, rounded, a little wider than the row", shownLook.GetThemeStylebox("panel") is StyleBoxFlat { CornerRadiusTopLeft: RowTitles.CornerRadius, BorderWidthTop: 2 }
+            Check("the selected row: an even gold rim, rounded, a little wider than the row",
+                shownLook.GetThemeStylebox("panel") is StyleBoxFlat { CornerRadiusTopLeft: RowTitles.CornerRadius } shownBox && EvenGoldRim(shownBox)
                 && shownLook.Modulate == Colors.White && shownLook.OffsetLeft == RowTitles.LookInset.X);
         await Capture(screen, outDir, "14c-opened-from-changes");
         back?.EmitSignal(BaseButton.SignalName.Pressed);
@@ -4505,13 +4863,28 @@ static class SelfTest
         var text = string.Join(" | ", popup?.FindChildren("*", "", true, false)
             .Select(n => n is Label l ? l.Text : n is RichTextLabel r ? r.GetParsedText() : "").Where(t => t.Length > 0) ?? []);
         Check("after a recovery, the page shows the notice: the backup's date and the unreadable file's name", popup is NErrorPopup
-            && text.Contains("couldn't read your data") && text.Contains("October 11, 2026, 22:15") && text.Contains(Path.GetFileName(setAside)) && Store.Notice == null, text);
+            && text.Contains("Error reading your saved data") && text.Contains("October 11, 2026, 22:15") && text.Contains(Path.GetFileName(setAside)) && Store.Notice == null, text);
+        // Its "mod's data folder" opens the data folder.
+        var openedFolder = "";
+        Store.TestOpenFolder = folder => openedFolder = folder;
+        (popup?.FindChild("Description", true, false) as RichTextLabel)?.EmitSignal(RichTextLabel.SignalName.MetaClicked, "folder");
+        Store.TestOpenFolder = null;
+        Check("the notice's \"mod's data folder\" opens the mod's data folder", openedFolder == Store.Dir
+            && popup?.FindChild("Description", true, false) is RichTextLabel { MouseFilter: Control.MouseFilterEnum.Stop }, openedFolder);
         await Capture(popup ?? screen, outDir, "19-data-notice");
         NModalContainer.Instance?.Clear();
         screen.Visible = false;
         screen.Visible = true;
         await Wait(menu, 0.3);
         Check("the notice shows once", NModalContainer.Instance?.OpenModal == null);
+        // The longest of the three, the read-only one, as the game's popup shows it (for a look: does it fit?).
+        if (Store.ShowNotice(recovered with { ReadOnly = true }))
+        {
+            await Wait(menu, 0.4);
+            await Capture(NModalContainer.Instance?.OpenModal as Node ?? screen, outDir, "19b-data-notice-read-only");
+            NModalContainer.Instance?.Clear();
+            await Wait(menu, 0.3);
+        }
         // Each of its three texts reads whole (no placeholder left, no stray escape), naming the file.
         var texts = new[] { recovered, recovered with { Backup = null }, recovered with { ReadOnly = true } }
             .Select(loaded => Store.NoticeText(loaded)?.GetFormattedText() ?? "").ToList();
@@ -4791,9 +5164,12 @@ static class SelfTest
             + $"banner to {at.End.X:0}, list to {listEnd:0}");
     }
 
+    // What a control's hover tip says (Hover.Tip; none: empty), or null for no control.
+    static string? TipOf(Node? node) => node is Control control ? Hover.TipOf(control) : null;
+
     // Everything a banner says: its text, its buttons' words and their tips.
     static List<string> BannerWords(Node? banner) => banner?.FindChildren("*", "", true, false)
-        .SelectMany(n => n switch { Label label => [label.Text], Button button => new[] { button.Text, button.TooltipText }, _ => [] }).ToList() ?? [];
+        .SelectMany(n => n switch { Label label => [label.Text], Button button => new[] { button.Text, Hover.TipOf(button) }, _ => [] }).ToList() ?? [];
 
     // A banner's text: hovering it opens the banner's card.
     static Label? BannerText(Node? banner) => banner?.FindChildren("*", "", true, false).OfType<Label>().FirstOrDefault();
@@ -4832,6 +5208,33 @@ static class SelfTest
 
     // Test Addon's dependency: never installed, so it's shown by its id.
     const string Missing = "SmmTestMissing";
+
+    // The text of the hover card `name` that hovering `target` brings up (empty if none), the mouse put back after.
+    static async Task<string> HoverCard(Node menu, Control target, string name, double seconds = Hover.Delay + 0.2) =>
+        (await SizedHoverCard(menu, target, name, seconds: seconds)).Text;
+
+    // The same, with the card's width (0 if none). shown: run while the card is up (a screenshot).
+    static async Task<(string Text, float Width)> SizedHoverCard(Node menu, Control target, string name, Func<Task>? shown = null,
+        double seconds = Hover.Delay + 0.2)
+    {
+        Hover.TestMouse = () => target.GetGlobalRect().GetCenter();
+        target.EmitSignal(Control.SignalName.MouseEntered);
+        await Wait(menu, seconds);
+        if (shown != null)
+            await shown();
+        var card = target.GetTree().Root.FindChild(name, true, false);
+        var seen = (card?.FindChildren("*", "RichTextLabel", true, false).OfType<RichTextLabel>().FirstOrDefault()?.GetParsedText() ?? "",
+            card?.FindChildren("*", "PanelContainer", true, false).OfType<Control>().FirstOrDefault()?.Size.X ?? 0);
+        Hover.TestMouse = () => new Vector2(5, 5);
+        target.EmitSignal(Control.SignalName.MouseExited);
+        await Wait(menu, 0.1);
+        Hover.TestMouse = null; // the real mouse again (menus open where it says)
+        return seen;
+    }
+
+    // The selected row's look: a gold rim the same width on every side.
+    static bool EvenGoldRim(StyleBoxFlat box) => box.BorderColor == RowTitles.Gold
+        && new[] { box.BorderWidthTop, box.BorderWidthBottom, box.BorderWidthLeft, box.BorderWidthRight }.All(w => w == RowTitles.SelectedRim);
 
     static async Task Wait(Node node, double seconds) =>
         await node.ToSignal(node.GetTree().CreateTimer(seconds), SceneTreeTimer.SignalName.Timeout);

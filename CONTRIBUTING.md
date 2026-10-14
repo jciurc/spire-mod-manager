@@ -31,8 +31,8 @@ maintainer, so replies can take a few days.
   holds just the `.dll`, `.json` and `.pck`, and the manifest gets `ReleaseVersion` (set by hand in build.cs).
   That DLL leaves out the in-game self-test, the dev-run switches and debug information; every other build
   keeps them.
-- Player text lives in `localization/<lang>/*.json` and pictures in `images/`, packed into
-  `SpireModManager.pck`. A player can also drop a translation file into the mod's data folder, which comes before the
+- Player text lives in `localization/<lang>/*.json`, packed into `SpireModManager.pck` (pictures would go in
+  `images/`, packed the same way; there are none now). A player can also drop a translation file into the mod's data folder, which comes before the
   packed one (TRANSLATING.md, "Drop-in translation files"; `Translations.cs`).
 
 ## Trying it and testing
@@ -106,7 +106,7 @@ approves the run. Copilot reviews each pull request; resolve or answer its comme
   `LoadOrder.cs`, `ModDetails.cs` (the info panel), `Profiles.cs` and `ProfileBar.cs`, `Search.cs`,
   `History.cs` (undo and redo) and so on. `Store.cs` saves `manager.json`. `SelfTest.cs` is the in-game
   self-test, which does nothing unless `tools/dev.cs` asks for it.
-- `localization/`: player text, one folder per language. `images/` and `scenes/`: packed into the `.pck`.
+- `localization/`: player text, one folder per language. `scenes/` (and `images/`, if any): packed into the `.pck`.
 - `tools/`: the dev scripts (`dev.cs`, `check.cs`, `pck.cs`, `shot.cs`) and the self-test fixtures.
 - `workshop/`: the Steam Workshop listing and upload steps.
 - `docs/spikes/`: write-ups of how the game behaves, done before building on it. `docs/dev/`: the

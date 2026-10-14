@@ -267,7 +267,28 @@ public static class Store
         if (NErrorPopup.Create(new LocString("settings_ui", "SPIRE_MOD_MANAGER.DATA_TITLE"), body, null, showReportBugButton: false) is not { } popup)
             return false;
         modals.Add(popup);
+        LinkFolder(popup);
         return true;
+    }
+
+    // Set by the self-test: the notice's folder link calls it with the folder instead of opening a window.
+    public static Action<string>? TestOpenFolder;
+
+    // The notice's "mod's data folder" ([url=folder]) opens the folder in the system's file browser.
+    static void LinkFolder(Node popup)
+    {
+        if (popup.FindChild("Description", true, false) is not RichTextLabel text)
+            return;
+        text.MouseFilter = Control.MouseFilterEnum.Stop; // the game's label lets clicks through
+        text.MetaClicked += meta =>
+        {
+            if (meta.AsString() != "folder")
+                return;
+            if (TestOpenFolder is { } test)
+                test(Dir);
+            else
+                OS.ShellOpen(Dir);
+        };
     }
 
     // The notice's text for one load: what happened, the set-aside file's name, the backup's date. Null when the load

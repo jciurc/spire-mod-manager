@@ -4,10 +4,12 @@ namespace SpireModManager;
 
 // One of the player's own details for a mod (alias, notes, tags), built and behaving the same wherever it's
 // edited: the info panel and a mod's right-click menu. Several mods at once (the bulk menu): tags edit the ones
-// they all share (the rest of each mod's tags stay), notes show when they're the same and typing replaces all.
-// - A gold term; Save and Cancel at the right of its line while editing.
+// they all share (the rest of each mod's tags stay), notes show when they're the same and typing replaces all (a
+// warning beside the term counts the mods whose notes it would overwrite).
+// - A gold term, which says what the field is for in a hover card; Save and Cancel at the right of its line while
+//   editing. (The bulk menu's heading has an "i" saying how editing several mods works.)
 // - At rest: the value as plain text (tags as pills), or a subtle call to action ("Add alias").
-// - Editing: a padded box with a hint and an inline ✕ to clear. Enter saves (Ctrl+Enter in notes), Escape
+// - Editing: a padded box (the same call to action while it's empty) and an inline ✕ to clear. Enter saves (Ctrl+Enter in notes), Escape
 //   or Cancel puts the value back, clicking away saves, so typed text is never lost.
 // - Tags also show the automatic ones (New, Local, Library, Gameplay, Cosmetic) as filled pills beside the term.
 // - While typing tags, the player's tags from other mods drop down under the box (TagSuggestions).
@@ -18,6 +20,8 @@ sealed class ModField
 
     static readonly Color Cream = new(1, 0.964706f, 0.886275f);
     static readonly Color Gold = new(0.937f, 0.784f, 0.318f);
+    static readonly Color Warning = new(0.961f, 0.71f, 0.42f); // amber: the bulk notes that typing will overwrite
+    public const string TipName = "SpireModManagerFieldTip"; // the hover card of a term, or the bulk menu's i
 
     public Control Root { get; }
     readonly Kind _kind;
@@ -26,6 +30,7 @@ sealed class ModField
     readonly Action<Kind> _saved;
     readonly Control _box; // a LineEdit, or a TextEdit for notes
     readonly HBoxContainer _buttons;
+    readonly Label? _mixed; // bulk notes: "3 mods have differing notes and will be overwritten!" beside the term
     readonly HFlowContainer? _system, _pills; // tags only
     readonly PanelContainer? _pillsBox; // the player's pills at rest, in the same box as the text
     readonly TagSuggestions? _suggestions; // tags only
@@ -46,16 +51,39 @@ sealed class ModField
 
         var term = new HBoxContainer { Name = "Term", MouseFilter = Control.MouseFilterEnum.Ignore, CustomMinimumSize = new Vector2(0, 26) };
         term.AddThemeConstantOverride("separation", 6);
-        var label = new Label { Text = Menus.Text(LocKey("TERM")), SizeFlagsHorizontal = Control.SizeFlags.ExpandFill, VerticalAlignment = VerticalAlignment.Center };
+        // The term explains the field in our hover card; the box itself only ever invites ("Add notes").
+        var label = new Label
+        {
+            Name = "Label", Text = Menus.Text(LocKey("TERM")), SizeFlagsHorizontal = Control.SizeFlags.ShrinkBegin, VerticalAlignment = VerticalAlignment.Center,
+            MouseFilter = Control.MouseFilterEnum.Pass,
+        };
+        var tip = Menus.Text(LocKey((bulk ? "BULK_" : "") + "HINT"));
+        Hover.Watch(label, TipName, () => Hover.Escape(tip), width: 320);
         Style(label, "res://themes/kreon_regular_shared.tres", 18, Gold);
         term.AddChild(label);
+        if (bulk && kind == Kind.Notes)
+        {
+            // Beside the term while their notes differ: how many will be overwritten (Jordan, 2026-10-14).
+            var mixed = _mixed = new Label
+            {
+                Name = "Mixed", VerticalAlignment = VerticalAlignment.Center, MouseFilter = Control.MouseFilterEnum.Pass, Visible = false,
+                SizeFlagsHorizontal = Control.SizeFlags.ExpandFill, SizeFlagsStretchRatio = 100, ClipText = true,
+                TextOverrunBehavior = TextServer.OverrunBehavior.TrimEllipsis,
+            };
+            Style(mixed, "res://themes/kreon_regular_shared.tres", 15, Warning);
+            term.AddChild(mixed);
+            // Cut short (Save and Cancel take the line's end while editing): the whole of it in the plain tooltip.
+            Hover.Watch(mixed, "SpireModManagerFullText", () => mixed.GetThemeFont("font").GetStringSize(mixed.Text, fontSize: 15).X > mixed.Size.X
+                ? Hover.Escape(mixed.Text) : null, Hover.Timing.Slow);
+        }
         if (kind == Kind.Tags)
         {
-            label.SizeFlagsHorizontal = Control.SizeFlags.ShrinkBegin;
             _system = Flow("SystemTags");
             (_system.SizeFlagsHorizontal, _system.SizeFlagsVertical) = (Control.SizeFlags.ExpandFill, Control.SizeFlags.ShrinkCenter);
             term.AddChild(_system);
         }
+        else // the term is only as wide as its word (its tooltip with it); the rest of the line pushes Save and Cancel right
+            term.AddChild(new Control { Name = "Space", SizeFlagsHorizontal = Control.SizeFlags.ExpandFill, MouseFilter = Control.MouseFilterEnum.Ignore });
         _buttons = Menus.InlineButtons([
             new(Menus.Text("SPIRE_MOD_MANAGER.SAVE"), () => _box?.ReleaseFocus()), // leaving the box saves
             new(Menus.Text("SPIRE_MOD_MANAGER.CANCEL"), Cancel),
@@ -100,8 +128,9 @@ sealed class ModField
             clear = new Button
             {
                 Name = "Clear", Text = "✕", Flat = true, Visible = false, FocusMode = Control.FocusModeEnum.None,
-                MouseDefaultCursorShape = Control.CursorShape.PointingHand, TooltipText = Menus.Text("SPIRE_MOD_MANAGER.CLEAR"),
+                MouseDefaultCursorShape = Control.CursorShape.PointingHand,
             };
+            Hover.Tip(clear, Menus.Text("SPIRE_MOD_MANAGER.CLEAR"));
             clear.AddThemeFontSizeOverride("font_size", 14);
             clear.AddThemeColorOverride("font_color", new Color(Cream, 0.55f));
             clear.AddThemeColorOverride("font_hover_color", Cream);
@@ -116,10 +145,10 @@ sealed class ModField
             notes.TextChanged += () => clear.Visible = notes.HasFocus() && notes.Text.Length > 0;
         }
 
-        Hint(false);
+        Hint();
         _box.FocusEntered += () =>
         {
-            Hint(true);
+            Hint();
             _buttons.Visible = true;
             if (_box is LineEdit line)
                 line.ClearButtonEnabled = true;
@@ -128,7 +157,6 @@ sealed class ModField
         };
         _box.FocusExited += () =>
         {
-            Hint(false);
             _buttons.Visible = false;
             if (_box is LineEdit line)
                 line.ClearButtonEnabled = false;
@@ -137,6 +165,7 @@ sealed class ModField
             if (!_cancelling)
                 Save();
             _cancelling = false;
+            Hint(); // after saving: several mods' notes may be the same now
             ShowRest();
         };
         _box.GuiInput += e =>
@@ -184,7 +213,18 @@ sealed class ModField
             CustomMinimumSize = new Vector2(0, 34), VerticalAlignment = VerticalAlignment.Center,
         };
         Style(heading, "res://themes/kreon_bold_shared.tres", 20, Cream);
-        column.AddChild(heading);
+        // An "i" beside it, its hover card saying how editing tags and notes for several mods works.
+        var headingLine = new HBoxContainer { Name = "Heading", MouseFilter = Control.MouseFilterEnum.Ignore };
+        headingLine.AddThemeConstantOverride("separation", 8);
+        headingLine.AddChild(heading);
+        var info = new TextureRect
+        {
+            Name = "Info", Texture = Icons.Info, StretchMode = TextureRect.StretchModeEnum.KeepCentered, SelfModulate = new Color(Cream, 0.7f),
+            SizeFlagsVertical = Control.SizeFlags.ShrinkCenter, MouseFilter = Control.MouseFilterEnum.Pass, MouseDefaultCursorShape = Control.CursorShape.Help,
+        };
+        Hover.Watch(info, TipName, BulkInfo, width: 380);
+        headingLine.AddChild(info);
+        column.AddChild(headingLine);
         foreach (var kind in new[] { Kind.Tags, Kind.Notes })
             column.AddChild(new ModField(kind, () => modIds, saved, bulk: true).Root);
         return column;
@@ -309,15 +349,28 @@ sealed class ModField
 
     string LocKey(string part) => $"SPIRE_MOD_MANAGER.{_kind.ToString().ToUpperInvariant()}_{part}";
 
-    // At rest the call to action ("Add notes"), while editing the hint.
-    void Hint(bool editing)
+    // The call to action ("Add notes"), at rest and while editing alike (Jordan, 2026-10-14: one placeholder; what the
+    // field is for is the term's tooltip). Several mods whose notes differ: the warning beside the term, counting the
+    // mods that have notes (the ones typing overwrites).
+    void Hint()
     {
-        var text = Menus.Text(NotesDiffer ? "SPIRE_MOD_MANAGER.NOTES_BULK_MIXED" : LocKey((_bulk ? "BULK_" : "") + (editing ? "HINT" : "ADD")));
+        var text = Menus.Text(LocKey((_bulk ? "BULK_" : "") + "ADD"));
         if (_box is LineEdit line)
             line.PlaceholderText = text;
         else
             ((TextEdit)_box).PlaceholderText = text;
+        if (_mixed == null)
+            return;
+        var withNotes = NotesDiffer ? _modIds().Count(id => Store.InfoFor(id)?.Notes is { Length: > 0 }) : 0;
+        _mixed.Visible = withNotes > 0;
+        _mixed.Text = withNotes == 1 ? Menus.Text("SPIRE_MOD_MANAGER.NOTES_BULK_MIXED_ONE")
+            : Menus.Format("SPIRE_MOD_MANAGER.NOTES_BULK_MIXED", ("count", Menus.Number(withNotes)));
     }
+
+    // The bulk menu's i: how tags and notes work for several mods, in their terms' own words.
+    public static string BulkInfo() =>
+        $"[b]{Hover.Escape(Menus.Text("SPIRE_MOD_MANAGER.TAGS_TERM"))}[/b]\n{Hover.Escape(Menus.Text("SPIRE_MOD_MANAGER.TAGS_BULK_HINT"))}\n\n"
+        + $"[b]{Hover.Escape(Menus.Text("SPIRE_MOD_MANAGER.NOTES_TERM"))}[/b]\n{Hover.Escape(Menus.Text("SPIRE_MOD_MANAGER.NOTES_BULK_HINT"))}";
 
     string GetText() => _box is LineEdit line ? line.Text : ((TextEdit)_box).Text;
 

@@ -13,6 +13,7 @@ namespace SpireModManager;
 static class Hover
 {
     public const double Delay = 0.4, Grace = 0.25, WindDown = 0.02, SlowDelay = 1.0;
+    public const int Depth = 80; // the cards' layer: over the page, under our menus (MenuPanel.Depth)
 
     public enum Timing { Normal, Instant, Slow }
 
@@ -32,11 +33,12 @@ static class Hover
 
     // A card for `trigger` while the mouse is over it. card: its text, or null for none (asked when it opens).
     // picture: a picture card instead (to the left of the mouse), or null for none. place: where it goes
-    // (default: below right of the mouse). full: the whole text, when the card's is cut short (Alt shows it).
+    // (default: below right of the mouse). full: the whole text, when the card's is cut short (Alt shows it). fit: the
+    // card only as wide as its text (up to width), for a few words.
     public static void Watch(Control trigger, string name, Func<string?> card, Timing timing = Timing.Normal, float width = 380,
-        Func<Texture2D?>? picture = null, Func<(Vector2 At, bool Right, bool Above)>? place = null, Func<string?>? full = null)
+        Func<Texture2D?>? picture = null, Func<(Vector2 At, bool Right, bool Above)>? place = null, Func<string?>? full = null, bool fit = false)
     {
-        bool Over() => GodotObject.IsInstanceValid(trigger) && trigger.IsVisibleInTree() && !MenuPanel.IsOpen
+        bool Over() => GodotObject.IsInstanceValid(trigger) && trigger.IsVisibleInTree() && Allowed(trigger)
             && trigger.GetGlobalRect().HasPoint(Mouse(trigger));
         var token = 0;
         trigger.MouseEntered += () =>
@@ -47,11 +49,11 @@ static class Hover
                 if (mine != token || !Over() || Owner(trigger) is not { } owner)
                     return;
                 if (picture?.Invoke() is { } image)
-                    Show(owner, name, "", Mouse(trigger) + new Vector2(-16, 20), right: true, keep: Over, timing: timing, picture: image);
+                    Show(owner, name, "", Mouse(trigger) + new Vector2(-16, 20), right: true, keep: Over, timing: timing, picture: image, depth: LayerFor(trigger));
                 else if (picture == null && card() is { } text)
                 {
                     var (at, right, above) = place?.Invoke() ?? (Mouse(trigger) + new Vector2(16, 20), false, false);
-                    Show(owner, name, text, at, right, above, width, Over, timing, full: full?.Invoke());
+                    Show(owner, name, text, at, right, above, width, Over, timing, full: full?.Invoke(), depth: LayerFor(trigger), fit: fit);
                 }
             }
             Later(trigger, timing, Open);
@@ -63,13 +65,31 @@ static class Hover
         };
     }
 
+    // What a control does (a button, an icon), in our card: in place of the engine's TooltipText, which looks like none
+    // of ours (Jordan, 2026-10-14: a text cut short gets the plain tooltip; every description we write, this card). Set it
+    // again to change the words; null or "" takes the card off. TipOf reads it (the self-test).
+    public const string TipName = "SpireModManagerTip";
+    const string TipMeta = "spire_mod_manager_tip";
+
+    public static void Tip(Control control, string? text)
+    {
+        var watched = control.HasMeta(TipMeta);
+        if (!watched && string.IsNullOrEmpty(text))
+            return; // nothing to say, and never had: no card to watch for
+        control.SetMeta(TipMeta, text ?? "");
+        if (!watched)
+            Watch(control, TipName, () => TipOf(control) is { Length: > 0 } tip ? Escape(tip) : null, fit: true);
+    }
+
+    public static string TipOf(Control control) => control.GetMeta(TipMeta, "").AsString();
+
     // The same for [url] links in a text: a card for the link under the mouse. card: its text for the link's
     // meta, or null for none.
     public static void WatchLinks(RichTextLabel label, string name, Func<string, string?> card, float width = 380, Func<string, string?>? full = null)
     {
         string? current = null;
         var token = 0;
-        bool Over(string meta) => current == meta && GodotObject.IsInstanceValid(label) && label.IsVisibleInTree() && !MenuPanel.IsOpen
+        bool Over(string meta) => current == meta && GodotObject.IsInstanceValid(label) && label.IsVisibleInTree() && Allowed(label)
             && label.GetGlobalRect().HasPoint(Mouse(label));
         label.MetaHoverStarted += meta =>
         {
@@ -79,7 +99,8 @@ static class Hover
             Later(label, Timing.Normal, () =>
             {
                 if (mine == token && Over(link) && card(link) is { } text && Owner(label) is { } owner)
-                    Show(owner, name, text, Mouse(label) + new Vector2(16, 20), width: width, keep: () => Over(link), full: full?.Invoke(link));
+                    Show(owner, name, text, Mouse(label) + new Vector2(16, 20), width: width, keep: () => Over(link), full: full?.Invoke(link),
+                        depth: LayerFor(label)); // in the open menu: above it, like Watch's cards
             });
         };
         label.MetaHoverEnded += _ =>
@@ -101,15 +122,33 @@ static class Hover
     // Cards belong to the page they're on (they go with it), else to the window.
     static Node? Owner(Node node) => CategoryList.ScreenOf(node) ?? (Node?)node.GetTree()?.Root;
 
+    // Cards are off while a menu is open (it covers what they'd be about), except for what's in the menu itself (a
+    // field's term, a tag chip, the bulk menu's i).
+    static bool Allowed(Node trigger) => !MenuPanel.IsOpen || InOpenMenu(trigger);
+    static bool InOpenMenu(Node node) => MenuPanel.Current is { } open && open.IsAncestorOf(node);
+
+    // A card goes just above the layer its trigger is on, and never under the page's cards: over the open menu (under
+    // its tag suggestions, MenuPanel.Depth + 5) or a dialog (Modal), as a tooltip would be.
+    static int LayerFor(Node trigger)
+    {
+        for (var at = trigger.GetParent(); at != null; at = at.GetParent())
+            if (at is CanvasLayer layer)
+                return Math.Max(Depth, layer.Layer + 2);
+        return Depth;
+    }
+
+    // Text shown as it is in a card (its "[" not read as BBCode).
+    public static string Escape(string text) => text.Replace("[", "[lb]");
+
     // at: the card's corner: its top-left, or with right/above, the matching corner. Kept on screen. keep: checked
     // every frame; once it's false (for WindDown, unless Instant) the card goes, so it can't be left behind when
     // the mouse moves on without an exit event, a click opens something else, or the page changes. full: the
     // whole text when the card's is cut short: a hint says to hold Alt, and Alt shows it in a wider card.
     public static void Show(Node owner, string name, string bbcode, Vector2 at, bool right = false, bool above = false, float width = 380,
-        Func<bool>? keep = null, Timing timing = Timing.Normal, Texture2D? picture = null, string? full = null)
+        Func<bool>? keep = null, Timing timing = Timing.Normal, Texture2D? picture = null, string? full = null, int depth = Depth, bool fit = false)
     {
         Hide(); // one at a time
-        var layer = new CanvasLayer { Name = name, Layer = 80 };
+        var layer = new CanvasLayer { Name = name, Layer = depth };
         owner.AddChild(layer);
         _shown = layer;
         var plain = timing == Timing.Slow;
@@ -149,12 +188,14 @@ static class Hover
             {
                 BbcodeEnabled = true, FitContent = true, ScrollActive = false, MouseFilter = Control.MouseFilterEnum.Ignore, Text = shortText,
             };
-            Fonts(text, plain ? 15 : 17);
-            if (plain)
+            var size = plain ? 15 : 17;
+            Fonts(text, size);
+            if (plain || fit)
             {
-                // As wide as the text, up to PlainMax; longer text wraps.
-                var wide = text.GetThemeFont("normal_font").GetStringSize(bbcode, fontSize: 15).X + 4;
-                (text.AutowrapMode, text.CustomMinimumSize) = wide <= PlainMax ? (TextServer.AutowrapMode.Off, new Vector2(wide, 0)) : (TextServer.AutowrapMode.WordSmart, new Vector2(PlainMax, 0));
+                // As wide as the text (its longest line), up to PlainMax or the card's width; longer text wraps.
+                var most = plain ? PlainMax : width;
+                var wide = text.GetThemeFont("normal_font").GetMultilineStringSize(bbcode, fontSize: size).X + 4;
+                (text.AutowrapMode, text.CustomMinimumSize) = wide <= most ? (TextServer.AutowrapMode.Off, new Vector2(wide, 0)) : (TextServer.AutowrapMode.WordSmart, new Vector2(most, 0));
             }
             else
                 text.CustomMinimumSize = new Vector2(width, 0);

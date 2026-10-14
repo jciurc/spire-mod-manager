@@ -127,8 +127,8 @@ sealed class TagSuggestions
         {
             if (_open != this)
                 _open?.Close();
-            // On the window, not inside the page or a menu: over our menus (layer 90) and hover cards (80).
-            var layer = _layer = new CanvasLayer { Name = LayerName, Layer = 95 };
+            // On the window, not inside the page or a menu: over our menus and every hover card, a menu's own too.
+            var layer = _layer = new CanvasLayer { Name = LayerName, Layer = MenuPanel.Depth + 5 };
             var panel = new PanelContainer { Name = "Panel" };
             panel.AddThemeStyleboxOverride("panel", PanelBox);
             _list = new VBoxContainer { Name = "Tags" };

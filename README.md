@@ -17,8 +17,8 @@ Subscribe to it on the Steam Workshop; the game installs it for you.
 
 ## Features
 
-- **Main menu button:** "Spire Mod Manager" in the lower-left corner opens the page. Right-click it to move it
-  or to relaunch the game. A dot shows when a relaunch is pending.
+- **Main menu button:** "Mod Profile: Default (12 mods)" in the lower-left corner names your active profile and
+  opens the page. Right-click it to move it or to relaunch the game. A dot shows when a relaunch is pending.
 - **Quick with long lists:** timed with about 250 mods, searching and switching views take a fraction of a
   second.
 - **Categories:** sort mods into your own collapsible categories, from a button on each row or the mod's
@@ -30,7 +30,7 @@ Subscribe to it on the Steam Workshop; the game installs it for you.
 - **Load Order view:** drag mods into order, one or several at a time. Lines show what each mod needs and what
   needs it, green where the order works and red where it doesn't. Fix now and Auto sort put things right.
 - **Warnings that name the mods:** a banner says when enabled mods need a mod that's disabled or not
-  installed, and Enable needed mods turns on the ones you have.
+  installed, and Enable required mods turns on the ones you have.
 - **Your notes on each mod:** an alias, notes and your own tags, plus automatic ones (New, Local, Library,
   Gameplay, Cosmetic).
 - **Search:** names, aliases, notes, tags, authors, categories and Workshop tags; `#tag` and `@author` narrow
@@ -87,5 +87,5 @@ dry run by default, but with "dry-run" unticked it locks and reports for real.
 
 ## License
 
-MIT (see [LICENSE](LICENSE)), the art in `images/` included. Slay the Spire 2 and its files belong to Mega
-Crit; none of them are in this repository.
+MIT (see [LICENSE](LICENSE)). Slay the Spire 2 and its files belong to Mega
+Crit; none of them are included.

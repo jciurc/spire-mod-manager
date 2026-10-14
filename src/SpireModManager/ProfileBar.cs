@@ -240,9 +240,7 @@ static class ProfileBar
 
         async Task Delete(Profile profile)
         {
-            var body = new LocString("settings_ui", "SPIRE_MOD_MANAGER.DELETE_PROFILE_BODY");
-            body.Add("name", profile.Name);
-            if (await Menus.Confirm(new LocString("settings_ui", "SPIRE_MOD_MANAGER.DELETE_PROFILE_TITLE"), body))
+            if (await Menus.Confirm(new LocString("settings_ui", "SPIRE_MOD_MANAGER.DELETE_PROFILE_TITLE"), DeleteBody(profile)))
                 Profiles.Delete(profile, screen);
         }
 
@@ -256,7 +254,7 @@ static class ProfileBar
             ("SaveAsNewButton", Menus.Text("SPIRE_MOD_MANAGER.SAVE_AS_NEW"), () => BeginNaming(Naming.SaveAsNew)),
             ("DiscardButton", Menus.Text("SPIRE_MOD_MANAGER.DISCARD"), () => Profiles.Discard(screen)),
         ]);
-        unsavedButtons.GetNode<Button>("SaveProfileButton").TooltipText = Menus.Text("SPIRE_MOD_MANAGER.SAVE_KEYS");
+        Hover.Tip(unsavedButtons.GetNode<Button>("SaveProfileButton"), Menus.Text("SPIRE_MOD_MANAGER.SAVE_KEYS"));
         AddButtons(manage, [
             ("NewProfileButton", Menus.Text("SPIRE_MOD_MANAGER.NEW_PROFILE"), () => BeginNaming(Naming.Blank)),
             ("DuplicateProfileButton", Menus.Text("SPIRE_MOD_MANAGER.DUPLICATE"), () => BeginNaming(Naming.Duplicate)),
@@ -286,6 +284,15 @@ static class ProfileBar
             History.Changed -= Recount;
         };
         Refresh();
+    }
+
+    // Delete's question: "Delete profile Brother co-op (12 mods)?", then that the mods stay installed.
+    public static LocString DeleteBody(Profile profile)
+    {
+        var body = new LocString("settings_ui", "SPIRE_MOD_MANAGER.DELETE_PROFILE_BODY");
+        body.Add("name", Hover.Escape(profile.Name)); // a "[" in the name stays text, not markup
+        body.Add("mods", Profiles.ModCount(profile));
+        return body;
     }
 
     static HBoxContainer ButtonBox(string name)

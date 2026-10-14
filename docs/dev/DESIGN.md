@@ -51,7 +51,7 @@ with Revert all, Ctrl+F, wide layout with smaller text (Vanilla View restores th
 alongside Better Mod Menu (its page in place of Vanilla View, its parts hidden on ours).
 
 Built but only testable in real play (Steam): Workshop details (dates, size, subscribers, Workshop tags,
-branches), the Workshop link on the source line, the Patch notes link.
+branches), the Workshop link on the source line, the Change Notes link.
 
 Not built yet: compatibility audit beyond dependencies, finer auto-sort tiers, linked pushing while
 dragging, profile/save-slot sync, design overhaul.
@@ -175,8 +175,13 @@ Phases are a proposal; v1 is what ships first on the Workshop.
 - **Main menu entry:** "Spire Mod Manager" button in the lower-left corner, kept separate from the
   main menu links, with the game's notification dot when a relaunch is pending. (The lower right
   holds the vanilla "MODDED (n)" label and its hover list of loaded mods; too crowded.)
+  - Since 2026-10-14 (Jordan): the game's own main-menu text button, reading "Mod Profile: Default (12 mods)", with
+    no picture; its right-click menu is headed "Spire Mod Manager v<version>".
 - **Relaunch:** button reads "Relaunch Game" for now; better messaging later. Pending-changes state
   is shared by the menu indicator and the manager.
+- **Settings entry** (2026-10-14, Jordan): "Spire Mod Manager" button in the Settings screen's top-right corner,
+  level with the tabs, outside the settings list; opens the Modding page on the Settings stack. Main menu only
+  (a run's Settings can't open the page). Mouse only for now: controllers reach the page by the game's Mod Settings line.
 - **Own manager scene** + one-click switch to the vanilla Modding page.
   - MVP (built): category headers inside the vanilla screen's own row list, "Vanilla View" toggle.
   - **Design overhaul:** the manager must look clearly like a third-party mod (ours), distinct from

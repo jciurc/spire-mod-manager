@@ -7,7 +7,7 @@ namespace SpireModManager;
 
 // A menu entry: a label and action, or a heading (no action) that separates groups.
 // Detail: dim text on the right. Radio: one of several choices (a dot marks the checked one). Badge: a
-// short mark after the label in its own colour (an unsaved profile's "*"). Tip: a tooltip (inline buttons).
+// short mark after the label in its own colour (an unsaved profile's "*"). Tip: what it does, in a hover card (inline buttons).
 // Flat: an inline button drawn as just its text, no box (the row's pencil).
 record MenuItem(string Label, Action? OnSelect, bool Checked = false, bool Disabled = false, string? Detail = null,
     bool Radio = false, (string Text, Color Color)? Badge = null, string? Tip = null, bool Flat = false)
@@ -163,7 +163,7 @@ static class Menus
             if (item.OnSelect is { } action)
             {
                 var button = SmallButton(item.Label, action, item.Disabled);
-                button.TooltipText = item.Tip ?? "";
+                Hover.Tip(button, item.Tip);
                 if (item.Flat)
                     Flatten(button);
                 button.SizeFlagsVertical = Control.SizeFlags.ShrinkCenter;

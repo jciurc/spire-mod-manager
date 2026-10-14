@@ -86,7 +86,7 @@ static class PageBar
         })
         {
             var button = Menus.ChoiceButton(Menus.Text(key), option == choice, () => ListFilter.Choose(content, option), name);
-            button.TooltipText = Menus.Text(tip);
+            Hover.Tip(button, Menus.Text(tip));
             button.SizeFlagsVertical = Control.SizeFlags.ShrinkCenter;
             show.AddChild(button);
         }
@@ -113,7 +113,7 @@ static class PageBar
         {
             Name = HintName, VerticalAlignment = VerticalAlignment.Center, MouseFilter = Control.MouseFilterEnum.Ignore,
             ClipText = true, TextOverrunBehavior = TextServer.OverrunBehavior.TrimEllipsis,
-            Text = Menus.Format("SPIRE_MOD_MANAGER.NO_CATEGORIES_HINT", ("item", Menus.Text("SPIRE_MOD_MANAGER.NEW_CATEGORY"))),
+            Text = Menus.Text("SPIRE_MOD_MANAGER.NO_CATEGORIES_HINT"),
         };
         Quiet(hint);
         border.AddChild(hint);
