@@ -485,8 +485,9 @@ static class RowLookPatch
 }
 
 // Drop-in translations (Translations) into the tables the game has just loaded for a language, at startup and on every
-// language change, before it puts them to use. Not into the English tables it loads for its own metrics
-// (allowOverride false), which leave out the player's override files too.
+// language change, before it puts them to use. Apply skips English, which covers both the English fallback tables loaded
+// under every language and the English tables for the game's metrics (allowOverride false). The allowOverride check is
+// only a second guard, in case a game update loads some other language that way.
 [HarmonyPatch(typeof(LocManager), "LoadTablesFromPath")]
 static class TranslationsPatch
 {

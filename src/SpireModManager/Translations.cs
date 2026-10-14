@@ -15,6 +15,10 @@ namespace SpireModManager;
 // which wins over English, key by key: a key the file leaves out falls back as usual.
 // Fail soft: a file that's too big, can't be read or isn't JSON is logged and left out, and so are the keys English
 // doesn't have and the texts the game couldn't format. English is the source, so there's no eng.json.
+// Not the game's own user://localization_override/<language>/settings_ui.json, which needs no patch: a packed
+// translation would win over it (the game merges mods' tables after it), a bad entry brings up the game's
+// "Localization Override Errors" popup, the folder is outside our data folder with no menu item to find it, and a file
+// there can change the game's own settings_ui texts too, not just ours.
 static class Translations
 {
     const string Table = "settings_ui";
