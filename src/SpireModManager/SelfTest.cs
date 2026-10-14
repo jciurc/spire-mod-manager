@@ -3405,7 +3405,8 @@ static class SelfTest
     // does it (the main menu made again, and the Modding page with it), the page opened again has our text in that
     // language's font: a row title (the game's label, which ours mustn't cover), a category header, a tag chip, a row's
     // button, the profile bar, the history bar, the red banner if one shows, a menu item. The buttons' widths are cached
-    // per font: they still start as far past the title as before. Back in the starting language, its fonts again
+    // per font: they still start as far past the title as before. The shortcuts under Undo and Redo fit under their
+    // buttons, however wide the font. Back in the starting language, its fonts again
     // (Kreon in English). Skipped for a language the game has no font of its own for. Screenshots 20-fonts-<language>.
     static async Task TestLanguageFonts(NModdingScreen screen, string outDir)
     {
@@ -3483,6 +3484,22 @@ static class SelfTest
             Check($"in {language}: a row's and a header's buttons start as far past the title as in {start} (widths cached per font)",
                 Same(gaps.Row, startGaps.Row) && Same(gaps.Header, startGaps.Header),
                 $"row {gaps.Row} (was {startGaps.Row}), header {gaps.Header} (was {startGaps.Header})");
+            // The shortcuts under Undo and Redo: each centred under its button, its text no wider than the button, so the
+            // two never run into each other ("Ctrl + Z" and "Ctrl + Y" did in Chinese).
+            List<(Rect2 Button, float Left, float Middle, float Right, string Text, int Size)> keys = [];
+            foreach (var column in page.GetNodeOrNull<Control>(HistoryBar.BarName)?.GetChildren().OfType<Control>() ?? [])
+                if (column.GetChildOrNull<Control>(0) is { } button && column.GetNodeOrNull<Label>("Keys") is { } hint && hint.Text.Trim().Length > 0)
+                {
+                    var size = hint.GetThemeFontSize("font_size");
+                    var width = hint.GetThemeFont("font").GetStringSize(hint.Text, fontSize: size).X; // the text as drawn, not its box
+                    var middle = hint.GetGlobalRect().GetCenter().X;
+                    keys.Add((button.GetGlobalRect(), middle - width / 2, middle, middle + width / 2, hint.Text, size));
+                }
+            Results.Add($"INFO shortcuts in {language}: {string.Join(", ", keys.Select(k => $"{k.Text} at {k.Size}, {k.Right - k.Left:0} of {k.Button.Size.X:0} px"))}");
+            Check($"in {language}: the shortcuts under Undo and Redo, each centred under its button and no wider, apart",
+                keys.Count == 2 && keys.All(k => Math.Abs(k.Middle - k.Button.GetCenter().X) < 1 && k.Left >= k.Button.Position.X - 0.5f && k.Right <= k.Button.End.X + 0.5f)
+                && keys.Zip(keys.Skip(1)).All(p => p.First.Right < p.Second.Left),
+                string.Join("; ", keys.Select(k => $"{k.Text} at {k.Size}: {k.Left:0.#}..{k.Right:0.#} under {k.Button.Position.X:0.#}..{k.Button.End.X:0.#}")));
             await Capture(page, outDir, $"20-fonts-{language}");
         }
     }
