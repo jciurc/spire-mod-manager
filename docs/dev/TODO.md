@@ -270,7 +270,7 @@ Jordan's notes of 2026-10-11 (evening), in Jordan's order.
 - [x] Alias field (below Tags, above Notes) in the info panel
 - [x] Tags field right below the mod's details, with some margin; a bigger gap between Alias and Notes
 - [x] row right-click menu: Add/Edit alias, Add/Edit notes, Add/Edit tags, each turning the menu into an inline editor (Save / Cancel back to the menu)
-- [x] main menu button: Jordan's art (Pictures\symphony\design\spire manager button.png), our label, a hover look
+- [x] main menu button: Jordan's picture (Pictures\symphony\design\spire manager button.png; an edited still of the game's main-menu background, so Mega Crit's art: see "Before going public"), our label, a hover look
 - [x] right-click the main menu button to move it (soon, no rush)
 
 # Round 5
@@ -624,9 +624,10 @@ Found tonight, not done yet:
 ## Before going public (open source, MIT)
 
 Jordan, 2026-10-13: the repo goes public under MIT eventually; these are requirements before the switch, for a
-CI-focused session. Already fine: no secrets, tokens or large files anywhere in the history; nothing of the
-game's is committed (its DLLs are only referenced); no copied Better Mod Menu code; the one image is Jordan's
-own art; the spikes describe the game's behaviour but quote no game code.
+CI-focused session. Already fine: no secrets, tokens or large files anywhere in the history; none of the game's
+code is committed (its DLLs are only referenced); no copied Better Mod Menu code; the spikes describe the game's
+behaviour but quote no game code. Not fine: the one image, `images/main_menu_button.png`, is an edited still of the
+game's main-menu background, Mega Crit's art, not Jordan's own (Jordan, 2026-10-14; item below).
 
 - [x] **the self-hosted runner:** on a public repo a fork's pull request can edit ci.yml itself and send a job
   to a runner, so a same-repo condition isn't enough. #25 made the in-game test a job started only by hand
@@ -634,7 +635,12 @@ own art; the spikes describe the game's behaviour but quote no game code.
   needs write access to the repo, which only Jordan has; anyone given write access later could start it too.
 - [ ] **fork pull request workflows:** set "require approval for all outside collaborators" (Settings > Actions)
   once the repo is public.
-- [x] **LICENSE:** MIT, "Copyright (c) 2026 jciurc"; the README says the art in `images/` is under it too (#25).
+- [x] **LICENSE:** MIT, "Copyright (c) 2026 jciurc" (#25). The README's line that the art in `images/` is under it
+  too doesn't hold while the button picture is Mega Crit's (next item).
+- [ ] **the main menu button's picture:** `images/main_menu_button.png` is an edited still of the game's main-menu
+  background (Mega Crit's art). Either Jordan redraws it from scratch, keeping the file name and size, or the
+  README's License line leaves that file out of MIT (the going-public session changes it if the redraw isn't done
+  by the switch). Not for the Workshop thumbnail either: `image.png` must be his own art (workshop/SHOTS.md).
 - [x] **machine-specific paths:** build.cs, the .csproj and tools/dev.cs read STS2_STEAMAPPS, STS2_DEV_DIR and
   STS2_BMM_REPO, with today's paths as the fallback (#25, #13).
 - [ ] **free security features on public repos:** turn on code scanning (CodeQL, C# build-free mode), secret
