@@ -18,6 +18,7 @@ static class MenuPanel
     public const string RootName = "SpireModManagerMenu";
     public const string ItemGroup = "SpireModManagerMenuItem";
     public const string HeadingGroup = "SpireModManagerMenuHeading";
+    public const int Depth = 90; // its layer: over the page and its hover cards (Hover.Depth)
 
     static Node? _open;
     static string? _openKey;
@@ -39,7 +40,7 @@ static class MenuPanel
 
         // On the scene root, not inside the page: closing it mid-edit saves and redraws the list, which mustn't
         // happen while the list is the one removing it. It closes when its owner goes.
-        var layer = new CanvasLayer { Name = RootName, Layer = 90 };
+        var layer = new CanvasLayer { Name = RootName, Layer = Depth };
         owner.GetTree().Root.AddChild(layer);
         owner.TreeExiting += () =>
         {

@@ -13,6 +13,7 @@ namespace SpireModManager;
 static class Hover
 {
     public const double Delay = 0.4, Grace = 0.25, WindDown = 0.02, SlowDelay = 1.0;
+    public const int Depth = 80; // the cards' layer: over the page, under our menus (MenuPanel.Depth)
 
     public enum Timing { Normal, Instant, Slow }
 
@@ -36,7 +37,7 @@ static class Hover
     public static void Watch(Control trigger, string name, Func<string?> card, Timing timing = Timing.Normal, float width = 380,
         Func<Texture2D?>? picture = null, Func<(Vector2 At, bool Right, bool Above)>? place = null, Func<string?>? full = null)
     {
-        bool Over() => GodotObject.IsInstanceValid(trigger) && trigger.IsVisibleInTree() && (!MenuPanel.IsOpen || InOpenMenu(trigger))
+        bool Over() => GodotObject.IsInstanceValid(trigger) && trigger.IsVisibleInTree() && Allowed(trigger)
             && trigger.GetGlobalRect().HasPoint(Mouse(trigger));
         var token = 0;
         trigger.MouseEntered += () =>
@@ -69,7 +70,7 @@ static class Hover
     {
         string? current = null;
         var token = 0;
-        bool Over(string meta) => current == meta && GodotObject.IsInstanceValid(label) && label.IsVisibleInTree() && !MenuPanel.IsOpen
+        bool Over(string meta) => current == meta && GodotObject.IsInstanceValid(label) && label.IsVisibleInTree() && Allowed(label)
             && label.GetGlobalRect().HasPoint(Mouse(label));
         label.MetaHoverStarted += meta =>
         {
@@ -102,16 +103,17 @@ static class Hover
     static Node? Owner(Node node) => CategoryList.ScreenOf(node) ?? (Node?)node.GetTree()?.Root;
 
     // Cards are off while a menu is open (it covers what they'd be about), except for what's in the menu itself (a
-    // field's term, the bulk menu's i): those show, on a layer above the menu's (MenuPanel: 90).
+    // field's term, a tag chip, the bulk menu's i): those show just above the menu, under its tag suggestions.
+    static bool Allowed(Node trigger) => !MenuPanel.IsOpen || InOpenMenu(trigger);
     static bool InOpenMenu(Node node) => MenuPanel.Current is { } open && open.IsAncestorOf(node);
-    static int LayerFor(Node trigger) => InOpenMenu(trigger) ? 95 : 80;
+    static int LayerFor(Node trigger) => InOpenMenu(trigger) ? MenuPanel.Depth + 2 : Depth;
 
     // at: the card's corner: its top-left, or with right/above, the matching corner. Kept on screen. keep: checked
     // every frame; once it's false (for WindDown, unless Instant) the card goes, so it can't be left behind when
     // the mouse moves on without an exit event, a click opens something else, or the page changes. full: the
     // whole text when the card's is cut short: a hint says to hold Alt, and Alt shows it in a wider card.
     public static void Show(Node owner, string name, string bbcode, Vector2 at, bool right = false, bool above = false, float width = 380,
-        Func<bool>? keep = null, Timing timing = Timing.Normal, Texture2D? picture = null, string? full = null, int depth = 80)
+        Func<bool>? keep = null, Timing timing = Timing.Normal, Texture2D? picture = null, string? full = null, int depth = Depth)
     {
         Hide(); // one at a time
         var layer = new CanvasLayer { Name = name, Layer = depth };

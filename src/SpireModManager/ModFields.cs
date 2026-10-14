@@ -55,7 +55,7 @@ sealed class ModField
             MouseFilter = Control.MouseFilterEnum.Pass,
         };
         var tip = Menus.Text(LocKey((bulk ? "BULK_" : "") + "HINT"));
-        Hover.Watch(label, TipName, () => tip.Replace("[", "[lb]"), width: 320);
+        Hover.Watch(label, TipName, () => Escape(tip), width: 320);
         Style(label, "res://themes/kreon_regular_shared.tres", 18, Gold);
         term.AddChild(label);
         if (kind == Kind.Tags)
@@ -138,7 +138,6 @@ sealed class ModField
         };
         _box.FocusExited += () =>
         {
-            Hint();
             _buttons.Visible = false;
             if (_box is LineEdit line)
                 line.ClearButtonEnabled = false;
@@ -147,6 +146,7 @@ sealed class ModField
             if (!_cancelling)
                 Save();
             _cancelling = false;
+            Hint(); // after saving: several mods' notes may be the same now
             ShowRest();
         };
         _box.GuiInput += e =>
@@ -203,7 +203,7 @@ sealed class ModField
             Name = "Info", Texture = Icons.Info, StretchMode = TextureRect.StretchModeEnum.KeepCentered, SelfModulate = new Color(Cream, 0.7f),
             SizeFlagsVertical = Control.SizeFlags.ShrinkCenter, MouseFilter = Control.MouseFilterEnum.Pass, MouseDefaultCursorShape = Control.CursorShape.Help,
         };
-        Hover.Watch(info, TipName, () => Menus.Text("SPIRE_MOD_MANAGER.BULK_INFO").Replace("[", "[lb]"), width: 380);
+        Hover.Watch(info, TipName, () => Escape(Menus.Text("SPIRE_MOD_MANAGER.BULK_INFO")), width: 380);
         headingLine.AddChild(info);
         column.AddChild(headingLine);
         foreach (var kind in new[] { Kind.Tags, Kind.Notes })
@@ -342,6 +342,9 @@ sealed class ModField
     }
 
     string GetText() => _box is LineEdit line ? line.Text : ((TextEdit)_box).Text;
+
+    // Text shown as-is in a hover card (its BBCode left alone).
+    static string Escape(string text) => text.Replace("[", "[lb]");
 
     void SetText(string text)
     {

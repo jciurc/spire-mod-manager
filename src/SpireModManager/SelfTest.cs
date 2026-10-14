@@ -4953,6 +4953,7 @@ static class SelfTest
         Hover.TestMouse = () => new Vector2(5, 5);
         target.EmitSignal(Control.SignalName.MouseExited);
         await Wait(menu, 0.1);
+        Hover.TestMouse = null; // the real mouse again (menus open where it says)
         return text;
     }
 
