@@ -8,6 +8,7 @@ using MegaCrit.Sts2.Core.Nodes.CommonUi;
 using MegaCrit.Sts2.Core.Nodes.GodotExtensions;
 using MegaCrit.Sts2.Core.Nodes.Screens.MainMenu;
 using MegaCrit.Sts2.Core.Nodes.Screens.ModdingScreen;
+using MegaCrit.Sts2.Core.Nodes.Screens.Settings;
 using MegaCrit.Sts2.Core.Saves;
 
 namespace SpireModManager;
@@ -193,6 +194,24 @@ static class ModdingScreenPatch
         catch (Exception e)
         {
             Log.Error($"[{ModEntry.ModId}] Could not wait for Better Mod Menu's layout: {e}");
+        }
+    }
+}
+
+// Settings screen: a "Spire Mod Manager" button to our page (SettingsButton). The page doesn't need it.
+[HarmonyPatch(typeof(NSettingsScreen), nameof(NSettingsScreen._Ready))]
+static class SettingsScreenPatch
+{
+    [HarmonyPriority(Priority.First)]
+    static void Postfix(NSettingsScreen __instance)
+    {
+        try
+        {
+            SettingsButton.Add(__instance);
+        }
+        catch (Exception e)
+        {
+            Log.Error($"[{ModEntry.ModId}] Could not add the Settings screen's button: {e}");
         }
     }
 }
