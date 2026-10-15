@@ -1,11 +1,11 @@
 # Changelog
 
-What changed in each Workshop release, for players. Each version's first line, after the version number, is its
-Workshop change note.
+What changed in each Workshop release, for players. Each version's first line is its Workshop change note
+(`changeNote` in `workshop/workshop.json`), word for word.
 
 ## 0.1.0 (2026-10-15)
 
-First release. Beta branch only for now (public-beta, game v0.111.0 or newer).
+0.1.0: first release. Beta branch only for now (public-beta, game v0.111.0 or newer).
 
 Spire Mod Manager replaces the game's Modding page with one made for long mod lists:
 

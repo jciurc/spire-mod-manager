@@ -44,7 +44,7 @@ every upload, so keep them right here and check the page afterwards.
    `build.cs`, `main` merged and tagged, the changelog written.
 2. `dotnet run build.cs --dist` (added on the release-prep branch): `dist/SpireModManager/` with the `.dll`,
    `.json` and `.pck`.
-3. In `workshop.json`, set `changeNote`. It starts with the version: `"0.1.0: ..."`.
+3. In `workshop.json`, set `changeNote` to the version's first line in CHANGELOG.md, word for word (`"0.1.0: ..."`).
 4. Check `minBranch`, every time. It is `"public-beta"` until v0.111.0 or newer reaches the stable branch
    (docs/dev/DESIGN.md, "Releases"). An upload without it serves the build to stable players, where it can't load.
 5. `dotnet run workshop/prepare.cs`. It fills `content/`, copies the description in, checks the folder and
