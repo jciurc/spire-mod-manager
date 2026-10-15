@@ -742,6 +742,10 @@ recommendations to confirm with Jordan.
   - a crash that comes back before the menu needs action with no UI: after two failed launches in a row (one could be the player closing the game while it loads), roll back automatically once and say so at the menu. Never loop
   - this only works if we load before the crashing mod: keep ourselves first in `mod_list` (we have no dependencies, so the game allows it; pinned on the Load Order page). The spike answers whether a mod loaded first can stop later mods loading in the same launch (as Mod Launch Manager does), or must restore `mod_list` and relaunch. It can: "A finding for the launch spikes" below
   - shares the "load first" groundwork with the load-without-restart spike (backlog below): spike them together
+  - 0.1.0 ships the smallest form (#65, Jordan 2026-10-15): the record, the last working setup and the notice (Restore,
+    Keep), without staying first or the rollback. Checked with real kills of the dev game while it loaded: a notice when
+    the next launch's mods differ, none for the same mods or a close while loading. Still to do: staying first, then
+    the rollback after two failed launches
   - spike: `docs/spikes/launch-first.md`, together with load without a restart (recommendation: stay first and hold later mods back through their load state, with no patch on `TryLoadMod`; a mod that throws in its initializer never stops a launch, so the record names the mod a crash or hang stopped in, or the one the game's startup error names; three PRs, medium as a whole, so only the first in 0.1.0: staying first and a launch record, log lines only; the rollback and the notices in the first update; eight questions for Jordan, the first on that split)
 - [ ] recommended, cheap: widen the "Multiple mod managers are currently enabled" warning (round 19, Better Mod Menu only) to the managers that rewrite `mod_list` and would quietly undo our Load Order page:
   - ModListSorter (on every exit), LoadOrderSync (at launch), Mod Launch Manager (pins itself first), Load Order Manager, Mod Preset Sync, Mod Profile Manager
