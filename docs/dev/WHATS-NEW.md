@@ -2,6 +2,10 @@
 
 Short notes for Jordan: what to look for after each install. Newest first.
 
+## Waiting in pull requests
+
+- **Share profile options (share-options):** open Share profile. Under the words, four tick boxes: Include category (on), Include disabled, Include alias, Include notes (off). Each tick rewrites the list at once; without disabled, the mods that are off aren't listed. The Workshop column is now "Workshop Id", just the number. Save… writes a .txt (the same text), and Import's Load file… opens .txt or .csv. The tick boxes stay as you leave them until the game closes.
+
 ## Installed 2026-10-15: version 0.0.57
 
 Everything below, merged as #71 to #79, plus the crash-safe launch draft (#65, still not merged; in this build again so you
