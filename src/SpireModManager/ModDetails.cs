@@ -238,7 +238,7 @@ static class ModDetails
         var lines = new List<string> { Fact("SPIRE_MOD_MANAGER.AUTHOR", author) };
         // The last update, how long ago, a dim bullet, and Changelog: its change notes on the Workshop.
         if (WorkshopInfo.For(mod) is { } workshop)
-            lines.Add(Fact("SPIRE_MOD_MANAGER.UPDATED", $"{Date(workshop.Updated)} {Ago(workshop.Updated)}  {Bullet}  " // no break after the bullet: it stays with the link
+            lines.Add(Fact("SPIRE_MOD_MANAGER.UPDATED", $"{Date(workshop.Updated)} {Ago(workshop.Updated)}  {Bullet}\u00a0\u00a0" // no break after the bullet: it stays with the link
                 + $"[url=patchnotes][color={LinkHex}]{Menus.Text("SPIRE_MOD_MANAGER.CHANGELOG")}[/color][/url]"));
         lines.Add(Fact("SPIRE_MOD_MANAGER.COMPATIBILITY", Compatibility(mod)));
         return string.Join("\n", lines);
