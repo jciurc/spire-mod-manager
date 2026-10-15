@@ -872,15 +872,15 @@ static class SelfTest
         if (menu.GetNodeOrNull<Control>("SpireModManagerMenuButton") is not { } button)
             return;
         var early = await HoverCard(menu, button, Hover.TipName);
-        RichTextLabel? card = null;
+        var card = ""; // its BBCode, read while it shows (it's freed as it closes)
         var late = await SizedHoverCard(menu, button, Hover.TipName, () =>
         {
-            card = menu.GetTree().Root.FindChild(Hover.TipName, true, false)?.FindChildren("*", "RichTextLabel", true, false).OfType<RichTextLabel>().FirstOrDefault();
+            card = menu.GetTree().Root.FindChild(Hover.TipName, true, false)?.FindChildren("*", "RichTextLabel", true, false).OfType<RichTextLabel>().FirstOrDefault()?.Text ?? "";
             return Task.CompletedTask;
         }, seconds: Hover.SlowDelay + 0.2);
         Check("main menu button: its card waits a second, then names the profile in gold", early == "" && Hover.SlowDelay == 1.0
             && late.Text == $"View and manage installed mods. Currently using mod profile {Profiles.Active?.Name}."
-            && card?.Text.Contains("[gold]") == false && card?.Text.Contains($"[color=#") == true && card.Text.Contains($"]{Profiles.Active?.Name}[/color]"), $"early \"{early}\", then \"{late.Text}\"");
+            && !card.Contains("[gold]") && card.Contains("[color=#") && card.Contains($"]{Profiles.Active?.Name}[/color]"), $"early \"{early}\", then \"{late.Text}\"");
     }
 
     // Our main menu button opens the page on our view even when Vanilla View was the last one shown; the game's way in
