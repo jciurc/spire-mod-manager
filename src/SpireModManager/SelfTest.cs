@@ -1636,7 +1636,7 @@ static class SelfTest
         // While open it follows the tickboxes: back on the saved state, it says nothing is unsaved.
         var unsaved = (Control)bar.FindChild("Unsaved", true, false);
         var info = screen.GetNode<Control>("%ModInfoContainer");
-        var line = $"{(wasOn ? "−" : "+")} {mod.manifest?.name}";
+        var line = $"{(wasOn ? "-" : "+")} {mod.manifest?.name}";
         Hover.Hide();
         await Wait(menu, Hover.Grace + 0.1);
         Hover.TestMouse = () => unsaved.GetGlobalRect().GetCenter();
@@ -2907,8 +2907,8 @@ static class SelfTest
         Check("main list: a needed mod that is off gets a banner", text.Contains("require a mod that is disabled"), text);
         var warning = screen.FindChild(LoadOrder.WarningName, true, false);
         var showTip = TipOf(warning?.FindChild("ShowProblemButton", true, false));
-        Check("main list banner: red, its Show tip \"Opens the next affected mod\", no \"Better Mod Menu\" in it",
-            Red(BannerFill(warning)) && showTip == "Opens the next affected mod" && !BannerWords(warning).Any(w => w.Contains("Better Mod Menu")),
+        Check("main list banner: red, its Show tip \"Open the next affected mod\", no \"Better Mod Menu\" in it",
+            Red(BannerFill(warning)) && showTip == "Open the next affected mod" && !BannerWords(warning).Any(w => w.Contains("Better Mod Menu")),
             $"fill {BannerFill(warning)}; {string.Join(" | ", BannerWords(warning))}");
         var after = ButtonsAfterText(warning);
         Check("main list banner: Show and Enable required mods right after its text", after.Ok
@@ -3044,7 +3044,7 @@ static class SelfTest
             && text == "Multiple mod managers are currently enabled, and may cause unexpected behavior.", $"\"{text}\"; {Where()}");
         Check("the managers banner is yellow: a warning, not an error", Yellow(BannerFill(Banner())), $"fill {BannerFill(Banner())}");
         var showTip = TipOf(Banner()?.FindChild("ShowManagersButton", true, false));
-        Check("the managers banner's Show tip is the other banner's: \"Opens the next affected mod\"", showTip == "Opens the next affected mod", showTip ?? "no Show");
+        Check("the managers banner's Show tip is the other banner's: \"Open the next affected mod\"", showTip == "Open the next affected mod", showTip ?? "no Show");
         Check("the managers banner names no manager: no \"Better Mod Menu\" in its text or tips",
             BannerWords(Banner()) is { Count: > 0 } words && !words.Any(w => w.Contains("Better Mod Menu")), string.Join(" | ", BannerWords(Banner())));
         // Hovering its text: a card naming the mod managers that are on, by the names the list gives them (ours by the
@@ -4003,8 +4003,8 @@ static class SelfTest
         await Wait(menu, 0.3);
         var head = info.GetNodeOrNull<RichTextLabel>("SpireModManagerHead");
         var text = head?.GetParsedText() ?? "";
-        Check("a Workshop mod's head: Author, Updated (4 days ago, Change Notes), Compatibility", text.IndexOf("Author") < text.IndexOf("Updated")
-            && text.IndexOf("Updated") < text.IndexOf("Compatibility") && text.Contains("(4 days ago)  Change Notes") && head?.Text.Contains("[url=patchnotes]") == true, text);
+        Check("a Workshop mod's head: Author, Updated (4 days ago • Changelog), Compatibility", text.IndexOf("Author") < text.IndexOf("Updated")
+            && text.IndexOf("Updated") < text.IndexOf("Compatibility") && text.Contains("(4 days ago)  •  Changelog") && head?.Text.Contains("[url=patchnotes]") == true, text);
         var link = info.FindChild("SpireModManagerLink", true, false) as LinkButton;
         Check("the source line: id (SteamID n)", link?.Text == "SmmWorkshopTest (SteamID 42)", link?.Text ?? "");
         Check("how long ago: hours under a day, one day singular, green under two days",

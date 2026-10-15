@@ -235,10 +235,10 @@ static class ModDetails
         string Fact(string key, string value) => $"[color={GoldHex}]{Menus.Text(key)}[/color]: {value}";
         var author = mod.manifest?.author is { Length: > 0 } who ? $"[url=author:{who}]{Escape(Short(who))}[/url]" : Faint("SPIRE_MOD_MANAGER.UNKNOWN");
         var lines = new List<string> { Fact("SPIRE_MOD_MANAGER.AUTHOR", author) };
-        // The last update, how long ago, and a link to its change notes on the Workshop.
+        // The last update, how long ago, a dim bullet, and Changelog: its change notes on the Workshop.
         if (WorkshopInfo.For(mod) is { } workshop)
-            lines.Add(Fact("SPIRE_MOD_MANAGER.UPDATED", $"{Date(workshop.Updated)} {Ago(workshop.Updated)}  "
-                + $"[url=patchnotes][color={LinkHex}]{Menus.Text("SPIRE_MOD_MANAGER.CHANGE_NOTES")}[/color][/url]"));
+            lines.Add(Fact("SPIRE_MOD_MANAGER.UPDATED", $"{Date(workshop.Updated)} {Ago(workshop.Updated)}  [color=#fff6e280]•[/color]  "
+                + $"[url=patchnotes][color={LinkHex}]{Menus.Text("SPIRE_MOD_MANAGER.CHANGELOG")}[/color][/url]"));
         lines.Add(Fact("SPIRE_MOD_MANAGER.COMPATIBILITY", Compatibility(mod)));
         return string.Join("\n", lines);
     }
