@@ -2524,12 +2524,14 @@ static class SelfTest
         // The rows it doesn't match fade below even a match that's off; a match keeps its usual look (Jordan, 2026-10-15).
         float Expected(NModMenuRow r, bool finding) => (!finding || found.Contains(r), Dependencies.IsOn(r.Mod!)) switch
         {
-            (true, true) => 1, (true, false) => LoadOrder.OffAlpha, (false, true) => LoadOrder.UnmatchedAlpha, _ => LoadOrder.UnmatchedAlpha / 2,
+            (true, true) => 1, (true, false) => LoadOrder.OffAlpha, (false, true) => LoadOrder.UnmatchedAlpha, _ => LoadOrder.UnmatchedOffAlpha,
         };
         string Looks() => string.Join(", ", Rows().Select(r => $"{r.Mod?.manifest?.id} {r.Modulate.A:0.##}"));
         Check("finding: the rest fade (on 0.2, off 0.1) below a match that's off (0.4); matches look as usual",
             Rows().All(r => Math.Abs(r.Modulate.A - Expected(r, finding: true)) < 0.01f) && Rows().Any(r => !found.Contains(r))
             && Rows().Any(r => found.Contains(r) && !Dependencies.IsOn(r.Mod!)), Looks());
+        LoadOrder.Reset(content); // as a drag ends
+        Check("finding: the same looks after a drag ends", Rows().All(r => Math.Abs(r.Modulate.A - Expected(r, finding: true)) < 0.01f), Looks());
         await Capture(screen, outDir, "11c-load-order-find");
         Press("NextMatch");
         await Wait(menu, 0.2);

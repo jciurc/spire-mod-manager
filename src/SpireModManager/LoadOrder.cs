@@ -124,7 +124,7 @@ static class LoadOrder
     // A row's look when nothing is being dragged: a mod that's off is dimmed. While finding (a search here), the rows it
     // doesn't match fade further, below even a match that's off, so fading never reads as off (Jordan, 2026-10-15): a
     // match keeps its usual look, on or off, and among the rest, off is fainter still. Public for the self-test.
-    public const float OffAlpha = 0.4f, UnmatchedAlpha = 0.2f;
+    public const float OffAlpha = 0.4f, UnmatchedAlpha = 0.2f, UnmatchedOffAlpha = 0.1f;
 
     static Color Rest(NModMenuRow row)
     {
@@ -132,7 +132,7 @@ static class LoadOrder
             return Colors.White;
         var on = Dependencies.IsOn(mod);
         if (row.GetParent() is Control content && CategoryList.Filter(content) is { Length: > 0 } filter && !Search.Matches(mod, filter))
-            return new Color(1, 1, 1, on ? UnmatchedAlpha : UnmatchedAlpha / 2);
+            return new Color(1, 1, 1, on ? UnmatchedAlpha : UnmatchedOffAlpha);
         return on ? Colors.White : new Color(1, 1, 1, OffAlpha);
     }
 
