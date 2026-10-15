@@ -233,17 +233,18 @@ static class LaunchGuard
 
     // A record or a working setup from its file; null when there is none or it can't be read. A mod with no id or an
     // unknown source makes the whole file unreadable: Restore would save it into the game's mod list, which the game
-    // then fails to load at every launch.
+    // then fails to load at every launch. So does a missing time (read as the year 1): Begin compares the two files'
+    // times, and the notice shows the working setup's.
     public static Setup? Read(string file)
     {
         try
         {
             if (!File.Exists(file))
                 return null;
-            if (JsonSerializer.Deserialize<Setup>(File.ReadAllText(file), Json) is { Mods: not null } setup
+            if (JsonSerializer.Deserialize<Setup>(File.ReadAllText(file), Json) is { Mods: not null } setup && setup.At != default
                 && setup.Mods.All(m => m != null && !string.IsNullOrEmpty(m.Id) && Enum.IsDefined(m.Source)))
                 return setup;
-            Log.Warn($"[{ModEntry.ModId}] {file} lists a mod with no id or an unknown source, so it counts as none");
+            Log.Warn($"[{ModEntry.ModId}] {file} has no time, or lists a mod with no id or an unknown source, so it counts as none");
             return null;
         }
         catch (Exception e)
