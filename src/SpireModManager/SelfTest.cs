@@ -3429,7 +3429,8 @@ static class SelfTest
         Check("this mod unticked: a red banner, first under the search box, says it and this page go at the relaunch, with Show and Enable now",
             !Dependencies.IsOn(self) && first && text == "Spire Mod Manager (this mod) will be disabled on relaunch, and this menu will no longer be accessible until enabled again."
             && Banner()?.FindChild("ShowSelfButton", true, false) is Button && Banner()?.FindChild("EnableSelfButton", true, false) is Button enableButton
-            && Hover.TipOf(enableButton) == "Keep Spire Mod Manager (this mod) enabled" && Profiles.OnCount() == on - 1,
+            && Hover.TipOf(enableButton) == "Keep Spire Mod Manager (this mod) enabled" && Profiles.OnCount() == on - 1
+            && Banner()?.FindChild("ShowSelfButton", true, false) is Button showButton && Hover.TipOf(showButton) == "Open Spire Mod Manager (this mod)",
             $"on {Dependencies.IsOn(self)}, first {first}, text \"{text}\", count {Profiles.OnCount()}");
         await Capture(screen, outDir, "2k-self-banner");
         if (content.GetChildren().OfType<NModMenuRow>().FirstOrDefault(r => r != row) is { } elsewhere)

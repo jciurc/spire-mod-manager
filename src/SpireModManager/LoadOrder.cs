@@ -363,7 +363,7 @@ static class LoadOrder
     static void SelfBanner(Control content, Control border, Control? search, Mod self, Action redraw)
     {
         var show = Menus.SmallButton(Menus.Text("SPIRE_MOD_MANAGER.SHOW_PROBLEM"), () => GoTo(content, self), name: "ShowSelfButton");
-        Hover.Tip(show, Menus.Text("SPIRE_MOD_MANAGER.SHOW_PROBLEM_TIP"));
+        Hover.Tip(show, Menus.Text("SPIRE_MOD_MANAGER.SHOW_SELF_TIP"));
         var enable = Menus.SmallButton(Menus.Text("SPIRE_MOD_MANAGER.ENABLE_SELF"), () =>
         {
             if (CategoryList.ScreenOf(content) is not { } screen)
