@@ -1,3 +1,4 @@
+using System.Text.RegularExpressions;
 using Godot;
 
 namespace SpireModManager;
@@ -147,6 +148,14 @@ static class Hover
     // Text shown as it is in a card (its "[" not read as BBCode).
     public static string Escape(string text) => text.Replace("[", "[lb]");
 
+    // The game's own [gold] tag (its text labels know it; a plain RichTextLabel, as in our cards, doesn't) as our gold,
+    // so our texts can use it in a card too.
+    static string Gamelike(string bbcode) => bbcode.Replace("[gold]", $"[color=#{Gold.ToHtml(false)}]").Replace("[/gold]", "[/color]");
+
+    // The text a card shows, without its tags: what its width is measured on.
+    static string Unmarked(string bbcode) =>
+        Regex.Replace(bbcode, @"\[(/?[a-z_]+(=[^\]]*)?)\]", m => m.Value == "[lb]" ? "[" : m.Value == "[rb]" ? "]" : "");
+
     // at: the card's corner: its top-left, or with right/above, the matching corner. Kept on screen. keep: checked
     // every frame; once it's false (for WindDown, unless Instant) the card goes, so it can't be left behind when
     // the mouse moves on without an exit event, a click opens something else, or the page changes. full: the
@@ -155,6 +164,7 @@ static class Hover
         Func<bool>? keep = null, Timing timing = Timing.Normal, Texture2D? picture = null, string? full = null, int depth = Depth, bool fit = false)
     {
         Hide(); // one at a time
+        (bbcode, full) = (Gamelike(bbcode), full == null ? null : Gamelike(full));
         var layer = new CanvasLayer { Name = name, Layer = depth };
         owner.AddChild(layer);
         _shown = layer;
@@ -201,7 +211,7 @@ static class Hover
             {
                 // As wide as the text (its longest line), up to PlainMax or the card's width; longer text wraps.
                 var most = plain ? PlainMax : width;
-                var wide = text.GetThemeFont("normal_font").GetMultilineStringSize(bbcode, fontSize: size).X + 4;
+                var wide = text.GetThemeFont("normal_font").GetMultilineStringSize(Unmarked(bbcode), fontSize: size).X + 4;
                 (text.AutowrapMode, text.CustomMinimumSize) = wide <= most ? (TextServer.AutowrapMode.Off, new Vector2(wide, 0)) : (TextServer.AutowrapMode.WordSmart, new Vector2(most, 0));
             }
             else

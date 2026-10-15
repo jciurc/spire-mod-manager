@@ -880,7 +880,7 @@ static class SelfTest
         }, seconds: Hover.SlowDelay + 0.2);
         Check("main menu button: its card waits a second, then names the profile in gold", early == "" && Hover.SlowDelay == 1.0
             && late.Text == $"View and manage installed mods. Currently using mod profile {Profiles.Active?.Name}."
-            && card?.Text.Contains($"[gold]{Profiles.Active?.Name}[/gold]") == true, $"early \"{early}\", then \"{late.Text}\"");
+            && card?.Text.Contains($"[color=#efc851]{Profiles.Active?.Name}[/color]") == true, $"early \"{early}\", then \"{late.Text}\"");
     }
 
     // Our main menu button opens the page on our view even when Vanilla View was the last one shown; the game's way in
