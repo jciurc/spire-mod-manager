@@ -921,3 +921,13 @@ Jordan's notes of 2026-10-15, after 0.0.57.
   only Import's preview lists them, each name a link to its Workshop page). Ideally one click on Import, "Install
   missing mods", subscribes to them all (SteamUGC); installing takes a while (Steam downloads, then the game loads them
   only after a relaunch), so the placeholder row shows each one's state: waiting, downloading, ready after a relaunch
+
+## Backlog (after 0.1.0)
+- [ ] (0.1.1, Copilot on #92) Import: a row that ends before its Enabled cell is refused with "Enabled value for X
+  must be "TRUE", "FALSE" or blank. Current value "" can not be parsed", offering blank and then refusing what reads
+  as one. Likely fix: a missing trailing cell reads as blank (enabled), as most CSV readers do; Import's preview shows
+  the result before anything changes. The test "a row cut short is an error" turns around
+- [ ] (0.1.1) our own mod installed twice (a local copy and the Workshop one, both with our id): a profile switch, a
+  new blank profile and Restore turn every copy of our id on (`Profiles.cs`: `id == ModEntry.ModId ? true`), and the
+  counts include each. Matters now that the Workshop copy exists beside the dev one: decide which copy a profile keeps
+  on (the one that's running?), and count ours once

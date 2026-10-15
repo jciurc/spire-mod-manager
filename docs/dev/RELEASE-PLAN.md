@@ -15,7 +15,7 @@
 **State (2026-10-14; this plan was first written on 2026-10-13 at 0.0.44)**
 - Version: 0.0.54 installed in Jordan's game (`dev` through #51). `build.cs --dist` builds the release as `ReleaseVersion` (0.1.0) and never auto-bumps.
 - Git: `jciurc/spire-mod-manager` on GitHub, MIT-licensed (`LICENSE`), private until it goes public. Work goes through pull requests into `dev`, each with CI and a Copilot review. `main` and the `v0.1.0` tag come at the release (§5 step 3).
-- Tests: the self-test has about 430 checks (about 460 with `--bmm`), plus the first-run suites and the `--real` tour on Jordan's own mods. On 0.0.54 every mode passed: plain, `--bmm`, `--bmm-after`, `--first-run`, `--first-run-bmm --bmm` and `--real`.
+- Tests: the self-test has about 430 checks (about 460 with `--bmm`), plus the first-run suites and the `--real` tour on Jordan's own mods. On 0.0.54 every mode passed: plain, `--bmm`, `--bmm-after`, `--first-run`, `--first-run-bmm --bmm` and `--real`. On 0.1.0 (b4ff3d3) too: 554, 589, 589, 11, 13 and 9 checks, none failed; the dist smoke run passed.
 - Timing (`--real`, about 250 mods): a redraw 17 ms, a search keystroke 18 ms, a view switch 66-99 ms.
 - Publishing: the uploader workspace is `workshop/` (README with the steps, `description.bbcode`, `workshop.json`, `prepare.cs`, SHOTS.md). Still to do, by Jordan: the uploader itself, `image.png` and the previews.
 
