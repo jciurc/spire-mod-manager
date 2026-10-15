@@ -57,6 +57,8 @@ such as those the author hosts outside this repository; they are not reviewed.
 1. On the main menu, right-click the Spire Mod Manager button and choose **Open translations folder**.
 2. Put the file there, named with the game's language code (table below): `zhs.json` for Simplified Chinese. It holds
    the same as `localization/eng/settings_ui.json`, with the values translated. All our text is in that one file.
+   The folder already has `example-eng.json`: every English text, ready to copy, rename and translate. The example
+   itself is never loaded, and it's updated with the mod until you edit it.
    Only the languages in the game's own language setting work.
 3. Switch the game to that language. If it's in that language already, relaunch it.
 
