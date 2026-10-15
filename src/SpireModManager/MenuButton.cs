@@ -8,12 +8,12 @@ using MegaCrit.Sts2.addons.mega_text;
 
 namespace SpireModManager;
 
-// The main menu's "Mod Profile: Default (12 mods)" button: the game's own main-menu text button (a copy of its
-// Settings button, so the same font, size, colours, outline, shadow and hover, with the carets either side), naming
-// the active profile and how many mods are on. In the lower-left corner, or wherever the player moved it (right-click
-// > Move button, then click to place it), with the game's notification dot and a short "Relaunch to apply" note
-// beside it while a relaunch is pending. Its right-click menu, under our name and version, also has Open translations
-// folder, and Relaunch game, the Modding page's Relaunch Game from here.
+// The main menu's "Default (12 mods)" button: the game's own main-menu text button (a copy of its Settings button, so
+// the same font, colours, outline, shadow and hover, with the carets either side, at a smaller size), naming the active
+// profile and how many mods are on; hovering it says what it opens. In the lower-left corner, or wherever the player
+// moved it (right-click > Move button, then click to place it), with the game's notification dot and a short "Relaunch
+// to apply" note centred above it while a relaunch is pending. Its right-click menu, under our name and version, also
+// has Open translations folder, and Relaunch game, the Modding page's Relaunch Game from here.
 static class MenuButton
 {
     const string Name = "SpireModManagerMenuButton";
@@ -24,8 +24,10 @@ static class MenuButton
     // sit in it (the game puts them out to 54 from the text, NMainMenu.MainMenuButtonFocused), so wherever the button
     // is kept on screen, they are too. Public for the self-test.
     public const float Margin = 56;
-    // The pending note: this wide at least, this far from the button.
-    const float NoteWidth = 260, NoteGap = 10;
+    // The text's size: smaller than the game's buttons (Jordan, 2026-10-14). Public for the self-test.
+    public const int TextSize = 30;
+    // The pending note: this far above the button.
+    const float NoteGap = 0;
     // If the game's button is gone: one of ours (AddTextButton), this size.
     static readonly Vector2 FallbackSize = new(460, 70);
 
@@ -64,8 +66,9 @@ static class MenuButton
         void Retext()
         {
             note.Text = Menus.Text(outdated ? "SPIRE_MOD_MANAGER.NEEDS_UPDATE" : "SPIRE_MOD_MANAGER.RELAUNCH_NOTE");
+            Hover.Tip(button, Menus.Text("SPIRE_MOD_MANAGER.MAIN_MENU_TIP")); // what it opens (the Settings screen's button had it)
             if (label == null)
-                ModEntry.SetText(button, Text(ModEntry.Font("res://themes/kreon_bold_shared.tres"), 24));
+                ModEntry.SetText(button, Text(ModEntry.Font("res://themes/kreon_bold_shared.tres"), TextSize)); // the name cut as for ours; the fallback draws at its own size
             else
             {
                 label.RefreshFont(); // the language's own font, as the game's buttons take theirs
@@ -148,7 +151,7 @@ static class MenuButton
         };
     }
 
-    // "Mod Profile: Default (12 mods)": the active profile, its name cut short if long (in this font, at this size), and
+    // "Default (12 mods)": the active profile, its name cut short if long (in this font, at this size), and
     // how many mods are on, the count the profile bar shows beside the name.
     public static string Text(Font font, int size) => Text(Profiles.Active?.Name ?? "", Profiles.OnCount(), font, size);
 
@@ -169,6 +172,8 @@ static class MenuButton
             button.Free();
             return null;
         }
+        label.AutoSizeEnabled = false; // our size, not one fitted to the game's box
+        label.AddThemeFontSizeOverride("font_size", TextSize);
         if (menu.GetNodeOrNull<Control>("%TimelineNotificationDot")?.Duplicate() is Control dot)
         {
             dot.UniqueNameInOwner = false;
@@ -213,13 +218,14 @@ static class MenuButton
             button.OffsetRight = button.OffsetLeft + size.X;
             button.OffsetTop = button.OffsetBottom - size.Y;
         }
-        // The note beside it: on its right, or on its left if only there the screen has room for it.
+        // The note centred above it (Jordan, 2026-10-14), kept on screen: below it if there's no room above.
         if (button.GetNodeOrNull<Label>("PendingNote") is { } note)
         {
-            var width = Math.Max(NoteWidth, note.GetCombinedMinimumSize().X);
-            var right = button.Position.X + size.X + NoteGap + width <= screen.X || button.Position.X < NoteGap + width;
-            note.HorizontalAlignment = right ? HorizontalAlignment.Left : HorizontalAlignment.Right;
-            (note.Position, note.Size) = (new Vector2(right ? size.X + NoteGap : -NoteGap - width, 0), new Vector2(width, size.Y));
+            var words = note.GetCombinedMinimumSize();
+            var x = Math.Clamp(button.Position.X + (size.X - words.X) / 2, 0, Math.Max(0, screen.X - words.X)) - button.Position.X;
+            var above = button.Position.Y >= words.Y + NoteGap;
+            note.HorizontalAlignment = HorizontalAlignment.Center;
+            (note.Position, note.Size) = (new Vector2(x, above ? -words.Y - NoteGap : size.Y + NoteGap), words);
         }
     }
 

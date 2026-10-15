@@ -25,7 +25,7 @@ static class PageBar
         if (Layout.Current != Layout.View.Categories)
             return;
 
-        var filter = content.HasMeta(CategoryList.FilterMeta) ? (string)content.GetMeta(CategoryList.FilterMeta) : "";
+        var filter = CategoryList.Filter(content);
         // Picked mods (two or more) first: then the bar acts on them.
         var picked = Selection.Several;
         var shown = picked ? rows.Where(r => Selection.Contains(r.Mod)).ToList()

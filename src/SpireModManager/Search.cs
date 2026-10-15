@@ -169,13 +169,22 @@ static class Search
         {
             content.SetMeta(CategoryList.FilterMeta, text.Trim());
             CategoryList.Apply(content);
-            CategoryList.ScrollToTop(content); // the matches start at the top, not hidden above the view
+            if (Store.Data.LoadOrderView)
+                FindBar.Typed(content); // every row stays: to the first match
+            else
+                CategoryList.ScrollToTop(content); // the matches start at the top, not hidden above the view
         };
         box.GuiInput += e =>
         {
             if (e is InputEventKey { Keycode: Key.Escape, Pressed: true } && box.Text.Length > 0)
             {
                 Clear(content);
+                box.AcceptEvent();
+            }
+            // Load Order: Enter goes to the next match, Shift+Enter the one before.
+            else if (e is InputEventKey { Keycode: Key.Enter or Key.KpEnter, Pressed: true } enter && Store.Data.LoadOrderView && box.Text.Length > 0)
+            {
+                FindBar.Step(content, enter.ShiftPressed ? -1 : 1);
                 box.AcceptEvent();
             }
         };

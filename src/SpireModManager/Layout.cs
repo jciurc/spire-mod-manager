@@ -300,7 +300,7 @@ static class Layout
         Stack(search, Wide, 6);
         // Auto sort and its hint, at the search box's right end: level with it.
         if (search != null)
-            foreach (var name in new[] { LoadOrder.AutoSortName, LoadOrder.AutoSortHintName })
+            foreach (var name in new[] { LoadOrder.AutoSortName, LoadOrder.AutoSortHintName, FindBar.Name })
                 if (list.GetNodeOrNull<Control>(name) is { } beside)
                     (beside.OffsetTop, beside.OffsetBottom) = (search.OffsetTop, search.OffsetBottom);
         Stack(list.GetNodeOrNull<Control>(LoadOrder.ManagersName), Wide, 6);

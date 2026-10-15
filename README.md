@@ -17,7 +17,7 @@ Subscribe to it on the Steam Workshop; the game installs it for you.
 
 ## Features
 
-- **Main menu button:** "Mod Profile: Default (12 mods)" in the lower-left corner names your active profile and
+- **Main menu button:** "Default (12 mods)" in the lower-left corner names your active profile and
   opens the page. Right-click it to move it or to relaunch the game. A dot shows when a relaunch is pending.
 - **Quick with long lists:** timed with about 250 mods, searching and switching views take a fraction of a
   second.
