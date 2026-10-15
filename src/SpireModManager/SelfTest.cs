@@ -1157,6 +1157,24 @@ static class SelfTest
             Check("a working setup that can't be saved: the record still goes, the old setup stays", false, e.Message);
         }
         Directory.Delete(workingFile + ".tmp");
+        // A record that can't be deleted at the menu (Copilot, #65): the working setup is still saved, and the next launch
+        // takes the record, now older than that setup, as none.
+        LaunchGuard.Begin(dir, new(now.AddMinutes(18), tried));
+        List<LaunchGuard.Change>? locked = null;
+        string? lockedError = null;
+        using (new FileStream(pending, FileMode.Open, System.IO.FileAccess.Read, FileShare.None))
+            try
+            {
+                locked = LaunchGuard.Reached(dir, new(now.AddMinutes(19), tried), null, null);
+            }
+            catch (Exception e)
+            {
+                lockedError = e.Message;
+            }
+        var afterLock = LaunchGuard.Begin(dir, new(now.AddMinutes(19.5), unsubscribed));
+        Check("a record that can't be deleted at the menu: the working setup still saved, the next launch takes the record as none",
+            lockedError == null && locked?.Count == 0 && LaunchGuard.Read(workingFile)?.At == now.AddMinutes(19) && afterLock.Failed == null
+            && afterLock.Working?.At == now.AddMinutes(19), lockedError ?? $"failed {afterLock.Failed?.At}, working {afterLock.Working?.At}");
         File.WriteAllText(pending, "{\"at\":\"2026-10-14T09:"); // a write cut off
         var torn = LaunchGuard.Begin(dir, new(now.AddMinutes(20), tried));
         Check("an unreadable record counts as none", torn.Failed == null && torn.Working != null);

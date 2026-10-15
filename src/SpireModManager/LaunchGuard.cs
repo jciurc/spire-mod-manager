@@ -68,10 +68,16 @@ static class LaunchGuard
     }
 
     // Reads the last launch's record and the last working setup from a folder (ours, or a self-test's), then writes
-    // this launch's record. A file that can't be read counts as none.
+    // this launch's record. A file that can't be read counts as none, and so does a record no newer than the last
+    // working setup: that launch reached the menu (it saved the setup) but its record couldn't be deleted there.
     public static (Setup? Failed, Setup? Working) Begin(string dir, Setup planned)
     {
         var (failed, working) = (Read(Path.Combine(dir, PendingFile)), Read(Path.Combine(dir, WorkingFile)));
+        if (failed != null && working != null && failed.At <= working.At)
+        {
+            Log.Info($"[{ModEntry.ModId}] The last launch's record is older than the last working setup (it reached the main menu), so it counts as none");
+            failed = null;
+        }
         if (failed != null)
             Log.Warn($"[{ModEntry.ModId}] The last launch (started {failed.At:yyyy-MM-dd HH:mm:ss}) didn't reach the main menu");
         Directory.CreateDirectory(dir);
@@ -97,13 +103,21 @@ static class LaunchGuard
         }
     }
 
-    // This launch worked: its record goes (first: that's what matters), and its mods are the last working setup.
-    // Returns what the failed launch before it, if any, had changed since the last working setup, for the notice. None
-    // when this launch loaded the same mods as that one, nor when the changes are only updates: Restore can't undo an
-    // update (Steam keeps only the new version), so it would offer nothing.
+    // This launch worked: its record goes (first: that's what matters), and its mods are the last working setup. If
+    // the record can't be deleted (a lock), saving the setup still marks it as reached: the next launch ignores a
+    // record older than the setup (Begin). Returns what the failed launch before it, if any, had changed since the last
+    // working setup, for the notice. None when this launch loaded the same mods as that one, nor when the changes are
+    // only updates: Restore can't undo an update (Steam keeps only the new version), so it would offer nothing.
     public static List<Change> Reached(string dir, Setup saved, Setup? failed, Setup? working)
     {
-        File.Delete(Path.Combine(dir, PendingFile));
+        try
+        {
+            File.Delete(Path.Combine(dir, PendingFile));
+        }
+        catch (Exception e)
+        {
+            Log.Error($"[{ModEntry.ModId}] Could not delete this launch's record (the next launch ignores it once the working setup is saved): {e.Message}");
+        }
         try
         {
             Write(Path.Combine(dir, WorkingFile), saved);
