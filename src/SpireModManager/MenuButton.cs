@@ -10,7 +10,9 @@ namespace SpireModManager;
 
 // The main menu's "Default (12 mods)" button: the game's own main-menu text button (a copy of its Settings button, so
 // the same font, colours, outline, shadow and hover, with the carets either side, at a smaller size), naming the active
-// profile and how many mods are on; hovering it says what it opens. In the lower-left corner, or wherever the player
+// profile and how many mods are on; hovering it for a second says what it opens and names the profile. It always
+// opens our view of the page, even when Vanilla View was the last one shown (the game's way in, from its Settings,
+// keeps the last one). In the lower-left corner, or wherever the player
 // moved it (right-click > Move button, then click to place it), with the game's notification dot and a short "Relaunch
 // to apply" note centred above it while a relaunch is pending. Its right-click menu, under our name and version, also
 // has Open translations folder, and Relaunch game, the Modding page's Relaunch Game from here.
@@ -24,8 +26,8 @@ static class MenuButton
     // sit in it (the game puts them out to 54 from the text, NMainMenu.MainMenuButtonFocused), so wherever the button
     // is kept on screen, they are too. Public for the self-test.
     public const float Margin = 56;
-    // The text's size: smaller than the game's buttons (Jordan, 2026-10-14). Public for the self-test.
-    public const int TextSize = 30;
+    // The text's size: smaller than the game's buttons (Jordan, 2026-10-14; 26 since 2026-10-15). Public for the self-test.
+    public const int TextSize = 26;
     // The pending note: this far above the button.
     const float NoteGap = 0;
     // If the game's button is gone: one of ours (AddTextButton), this size.
@@ -37,7 +39,11 @@ static class MenuButton
 
     public static void Add(NMainMenu menu)
     {
-        void Open() => menu.SubmenuStack.PushSubmenuType<NModdingScreen>();
+        void Open()
+        {
+            CategoryList.PreferOurs(); // our view, whatever was last shown
+            menu.SubmenuStack.PushSubmenuType<NModdingScreen>();
+        }
         var button = Native(menu, Open) ?? ModEntry.AddTextButton(menu, "", FallbackSize, Open);
         button.Name = Name;
         // The game's label, or none for the fallback (its text then goes through ModEntry.SetText, its size fixed).
@@ -66,7 +72,8 @@ static class MenuButton
         void Retext()
         {
             note.Text = Menus.Text(outdated ? "SPIRE_MOD_MANAGER.NEEDS_UPDATE" : "SPIRE_MOD_MANAGER.RELAUNCH_NOTE");
-            Hover.Tip(button, Menus.Text("SPIRE_MOD_MANAGER.MAIN_MENU_TIP")); // what it opens (the Settings screen's button had it)
+            // What it opens, and the profile in gold; a second's wait, as the mouse crosses it for the game's buttons.
+            Hover.Tip(button, Tip(Profiles.Active?.Name ?? ""), Hover.Timing.Late, markup: true);
             if (label == null)
                 ModEntry.SetText(button, Text(ModEntry.Font("res://themes/kreon_bold_shared.tres"), TextSize)); // the name cut as for ours; the fallback draws at its own size
             else
@@ -159,6 +166,9 @@ static class MenuButton
     public static string Text(string name, int on, Font font, int size) =>
         Menus.Format(on == 1 ? "SPIRE_MOD_MANAGER.MAIN_MENU_PROFILE_ONE" : "SPIRE_MOD_MANAGER.MAIN_MENU_PROFILE",
             ("name", RowTitles.Cut(font, name, size, NameWidth)), ("count", Menus.Number(on)));
+
+    // Its card's text (BBCode) for a profile: "View and manage installed mods. Currently using mod profile Default."
+    public static string Tip(string profile) => Menus.Format("SPIRE_MOD_MANAGER.MAIN_MENU_TIP", ("profile", Hover.Escape(profile)));
 
     // A copy of the game's Settings button on the main menu, with our action (and none of the game's), its label for our
     // text, and a copy of the game's Timeline notification dot on that label, hidden; null if a game update moved them.
