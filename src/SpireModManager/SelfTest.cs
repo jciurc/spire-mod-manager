@@ -2209,6 +2209,8 @@ static class SelfTest
         var onlyOn = ProfileShare.PreviewFor(ProfileCsv.Read("Mod Id,Enabled\nSmmTestLib,\nSmmTestUi,TRUE\n").Mods, "Only on");
         Check("a list with nothing disabled says just its enabled mods; a blank Enabled reads as enabled", onlyOn.Contains("Contains 2 enabled mods")
             && !onlyOn.Contains("disabled mods"), onlyOn);
+        var cutShort = ProfileCsv.Read("Mod Id,Name,Enabled\nSmmTestUi,Test UI\n").Error ?? "";
+        Check("a row cut short, with no Enabled at all, is still an error", cutShort.StartsWith("Enabled value for SmmTestUi"), cutShort);
         // The name itself is the link to its Workshop page (Jordan, 2026-10-15); one with no page is plain.
         var linkAt = bbcode.IndexOf($"[url={link}]", StringComparison.Ordinal);
         var nameAt = linkAt < 0 ? -1 : bbcode.IndexOf("Not Here Mod", linkAt, StringComparison.Ordinal);
