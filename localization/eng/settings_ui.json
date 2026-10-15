@@ -89,7 +89,7 @@
   "SPIRE_MOD_MANAGER.ALIAS_ADD": "Add alias",
   "SPIRE_MOD_MANAGER.NOTES_ADD": "Add notes",
   "SPIRE_MOD_MANAGER.TAGS_ADD": "Add tags",
-  "SPIRE_MOD_MANAGER.TAGS_BULK_ADD": "Add tags, comma-separated, to selected mods; existing tags will remain",
+  "SPIRE_MOD_MANAGER.TAGS_BULK_ADD": "Add tags to selected mods, comma-separated",
   "SPIRE_MOD_MANAGER.TAGS_BULK_HINT": "Some mods may already have existing tags that aren't displayed here. Anything entered here will be added to each mod without affecting the existing tags. If you remove a tag from this field, it will remove the tag on all the selected mods.",
   "SPIRE_MOD_MANAGER.NOTES_BULK_ADD": "Edit notes for selected mods",
   "SPIRE_MOD_MANAGER.NOTES_BULK_HINT": "Enter notes here to apply them to all selected mods. Note: mods with already existing notes will have them overwritten.",
