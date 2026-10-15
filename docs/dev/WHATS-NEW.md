@@ -2,7 +2,10 @@
 
 Short notes for Jordan: what to look for after each install. Newest first.
 
-## Waiting in pull requests
+## Installed 2026-10-15: version 0.0.57
+
+Everything below, merged as #71 to #79, plus the crash-safe launch draft (#65, still not merged; in this build again so you
+can try it, as in 0.0.56).
 
 - **Load Order search finds (load-order-find):** typing in Load Order's search no longer hides rows. Every mod stays, the first match is selected and scrolled to, and "6 matches · ‹ ›" beside the box steps through them (wrapping at the ends; Enter and Shift+Enter too). Drag and drop works with a search on.
 - **The notepad and the "!" (note-icon-badge):** the small notepad before a mod's name now means notes only (an alias alone shows none; it's beside the original name already). Hovering it says "Contains note" in a plain tooltip after the usual delay; the title's card still has the notes. The "!" on the Load Order button now says just its warning ("For compatibility, …"), without the list of mods.
