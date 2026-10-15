@@ -2021,14 +2021,21 @@ static class SelfTest
                 $"{copied.Length} characters copied, {csv.Length} in the box: {copied[..Math.Min(80, copied.Length)].Replace("\r", "\\r").Replace("\n", "\\n")}");
         }
         DisplayServer.ClipboardSet(clipboard);
-        var file = Path.Combine(outDir, ProfileShare.FileName("Co-op: \"night\"?"));
+        // Save, then Copy (Jordan, 2026-10-15), no "…" on Save.
+        var buttonOrder = Part<Control>("Buttons")?.GetChildren().OfType<Button>().Select(b => b.Name.ToString()).ToList() ?? [];
+        Check("Save comes before Copy, and reads just \"Save\"", buttonOrder.IndexOf("SaveCsvButton") is >= 0 and var save && save < buttonOrder.IndexOf("CopyButton")
+            && Part<Button>("SaveCsvButton")?.Text == "Save", string.Join(", ", buttonOrder));
+        var at = new DateTime(2026, 10, 15, 9, 5, 7);
+        var file = Path.Combine(outDir, ProfileShare.FileName("Co-op: \"night\"?", at));
         var saveError = ProfileShare.SaveTo(file, csv);
         var bytes = File.Exists(file) ? File.ReadAllBytes(file) : [];
-        Check("Save: a .txt, named safe for a file, the text as UTF-8 with a BOM", Path.GetFileName(file) == "Co-op_ _night__.txt" && saveError == null
+        Check("Save: spire-mods-<profile>-<time>.txt, the name safe for a file, the text as UTF-8 with a BOM",
+            Path.GetFileName(file) == "spire-mods-Co-op_ _night__-20261015090507.txt" && saveError == null
             && bytes is [0xEF, 0xBB, 0xBF, ..] && File.ReadAllText(file) == csv, $"{Path.GetFileName(file)}: {saveError}");
-        string[] reserved = [ProfileShare.FileName("CON"), ProfileShare.FileName("com1.backup"), ProfileShare.FileName("Console")];
-        Check("Save: a name Windows keeps for a device gets a _ in front, before a dot too; others don't",
-            reserved.SequenceEqual(["_CON.txt", "_com1.backup.txt", "Console.txt"]), string.Join(", ", reserved));
+        Check("Save: a device name (CON) is safe behind the prefix; importing the file takes the profile's name back",
+            ProfileShare.FileName("CON", at) == "spire-mods-CON-20261015090507.txt"
+            && Profiles.ImportName($"C:/lists/{ProfileShare.FileName("Brother co-op", at)}") == "Brother co-op",
+            $"{ProfileShare.FileName("CON", at)} | {Profiles.ImportName($"C:/lists/{ProfileShare.FileName("Brother co-op", at)}")}");
         await Tick("IncludeDisabled", false); // the tick boxes stay for the session: back as they started
         Input.ParseInputEvent(new InputEventKey { Keycode = Key.Escape, Pressed = true });
         await Wait(menu, 0.2);

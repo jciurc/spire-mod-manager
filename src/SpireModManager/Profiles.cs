@@ -278,14 +278,18 @@ static class Profiles
         return profile;
     }
 
-    // An imported profile's name: the file's, or "Imported profile"; "(1)" and on after it when that's taken. Better
-    // Mod Menu names its exports by the time ("mod_list.20261014-120000.csv", "-2" and on when taken), which says
-    // nothing as a profile's name: those are "Imported profile" too.
+    // An imported profile's name: the file's (from one of ours, spire-mods-<profile>-<time>, the profile's), or "Imported
+    // profile"; "(1)" and on after it when that's taken. Better Mod Menu names its exports by the time
+    // ("mod_list.20261014-120000.csv", "-2" and on when taken), which says nothing as a profile's name: those are
+    // "Imported profile" too.
     public static string ImportName(string? file)
     {
         var name = Path.GetFileNameWithoutExtension(file ?? "").Trim();
         if (System.Text.RegularExpressions.Regex.IsMatch(name, @"^mod_list\.\d{8}-\d{6}(-\d+)?$"))
             name = "";
+        // Ours, "spire-mods-<profile>-<yyyyMMddHHmmss>" (ProfileShare.FileName): the profile's name.
+        else if (System.Text.RegularExpressions.Regex.Match(name, $@"^{ProfileShare.FilePrefix}(.*?)-?\d{{14}}$") is { Success: true } ours)
+            name = ours.Groups[1].Value.Trim();
         if (name.Length > 40) // the name box's limit
             name = name[..40].Trim();
         if (name.Length == 0)

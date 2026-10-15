@@ -188,11 +188,11 @@ static class ProfileCsv
 // Sharing a profile as text, and making one from shared text (ProfileCsv), from the profile list or the picker's
 // right-click menu. Two dialogs over the page, like the relaunch check's; Close (or Cancel) and Esc close them.
 // - Share profile: a row of tick boxes for what the list holds (ProfileCsv.Options: Include category, disabled, alias,
-//   notes; kept for the session), the active profile's list in a read-only box (select any of it), Copy (the button
-//   says "Copied" for a moment), Save… (the system's save dialog: a .txt named after the profile, as some players are
-//   wary of .csv; the text is the same) and Close.
-// - Import profile: a box to paste into and Load file… (the system's open dialog, .txt or .csv). As the text changes, it says what
-//   the list would do compared with now and names the listed mods that aren't installed, each with its Workshop page
+//   notes; kept for the session), the active profile's list in a read-only box (select any of it), Save (the system's
+//   save dialog: spire-mods-<profile>-<time>.txt, a .txt as some players are wary of .csv; the text is the same), Copy
+//   (the button says "Copied" for a moment) and Close.
+// - Import profile: a box to paste into and Load file (the system's open dialog, .txt or .csv). As the text changes,
+//   it says what the list would do compared with now and names the listed mods that aren't installed, each with its Workshop page
 //   (opened in the browser). A problem with the text shows in red. Create profile makes a new profile from it (named
 //   after the file, or "Imported profile") and switches to it: one undo step.
 static class ProfileShare
@@ -239,6 +239,13 @@ static class ProfileShare
         column.AddChild(status);
 
         var buttons = Buttons();
+        // Save, then Copy (Jordan, 2026-10-15).
+        AddButton(buttons, "SPIRE_MOD_MANAGER.SAVE_LIST", () => Browse(column, save: true, FileName(profile.Name, DateTime.Now), path =>
+        {
+            var error = SaveTo(path, csv);
+            Say(status, error == null ? Menus.Format("SPIRE_MOD_MANAGER.SAVED_AS", ("file", Path.GetFileName(path)))
+                : Menus.Format("SPIRE_MOD_MANAGER.SAVE_FAILED", ("error", error)), error != null);
+        }), "SaveCsvButton");
         Button? copy = null;
         copy = AddButton(buttons, "SPIRE_MOD_MANAGER.COPY", () =>
         {
@@ -250,12 +257,6 @@ static class ProfileShare
                     copy.Text = Menus.Text("SPIRE_MOD_MANAGER.COPY");
             };
         }, "CopyButton");
-        AddButton(buttons, "SPIRE_MOD_MANAGER.SAVE_LIST", () => Browse(column, save: true, FileName(profile.Name), path =>
-        {
-            var error = SaveTo(path, csv);
-            Say(status, error == null ? Menus.Format("SPIRE_MOD_MANAGER.SAVED_AS", ("file", Path.GetFileName(path)))
-                : Menus.Format("SPIRE_MOD_MANAGER.SAVE_FAILED", ("error", error)), error != null);
-        }), "SaveCsvButton");
         Spacer(buttons);
         AddButton(buttons, "SPIRE_MOD_MANAGER.CLOSE", () => Close(), "CloseShareButton");
         column.AddChild(buttons);
@@ -356,21 +357,17 @@ static class ProfileShare
         return string.Join("\n", lines);
     }
 
-    // A profile's name as a file name: characters a file name can't have become "_", and a name Windows keeps for a
-    // device (CON, NUL, COM1..., also before a dot, as in "CON.backup") gets a "_" in front.
-    public static string FileName(string profile)
+    // A saved list's file name (Jordan, 2026-10-15): spire-mods-<profile>-<yyyyMMddHHmmss>.txt, the profile's name with
+    // the characters a file name can't have as "_". (The prefix also keeps it clear of the names Windows keeps for
+    // devices, such as CON.) Profiles.ImportName reads the profile's name back out of it.
+    public const string FilePrefix = "spire-mods-";
+
+    public static string FileName(string profile, DateTime at)
     {
         var bad = Path.GetInvalidFileNameChars().Concat(['<', '>', ':', '"', '/', '\\', '|', '?', '*']).ToHashSet();
         var name = new string(profile.Select(c => bad.Contains(c) ? '_' : c).ToArray()).Trim().TrimEnd('.');
-        if (name.Length == 0)
-            name = Menus.Text("SPIRE_MOD_MANAGER.IMPORTED_PROFILE");
-        if (Reserved.IsMatch(name.Split('.')[0].TrimEnd()))
-            name = "_" + name;
-        return name + ".txt";
+        return $"{FilePrefix}{(name.Length > 0 ? name + "-" : "")}{at.ToString("yyyyMMddHHmmss", System.Globalization.CultureInfo.InvariantCulture)}.txt";
     }
-
-    static readonly System.Text.RegularExpressions.Regex Reserved =
-        new(@"^(CON|PRN|AUX|NUL|COM[0-9¹²³]|LPT[0-9¹²³])$", System.Text.RegularExpressions.RegexOptions.IgnoreCase);
 
     // Writes the text as UTF-8 with a BOM (so spreadsheets read accented names right), as Better Mod Menu does. The
     // error's message when it fails, or null.
