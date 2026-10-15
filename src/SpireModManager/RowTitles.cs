@@ -5,9 +5,10 @@ using MegaCrit.Sts2.addons.mega_text;
 namespace SpireModManager;
 
 // Row titles in our views: the alias with the original name small and dim beside it (or just the name),
-// cut short with "…" when it doesn't fit; before it, a small notepad when the player has an alias or notes for it
-// (main list). Hovering the title shows the mod's card (Hover's delay), the notepad at once. Titles of mods
-// turned on or off since launch are gold. Vanilla View: exactly as the game makes them.
+// cut short with "…" when it doesn't fit; before it, a small notepad when the player has notes for it (main list; an
+// alias already shows beside the original name). Hovering the title shows the mod's card (Hover's delay), the notepad a
+// plain "Contains note". Titles of mods turned on or off since launch are gold. Vanilla View: exactly as the game makes
+// them.
 static class RowTitles
 {
     const int OriginalNameSize = 16;
@@ -16,6 +17,7 @@ static class RowTitles
     const string TickMeta = "spire_mod_manager_tick_shift";
     const float TickShift = 8;
     const string NotesCard = "SpireModManagerNotesCard";
+    public const string NoteTipName = "SpireModManagerNoteTip"; // the notepad's "Contains note"
 
     public const float RowHeight = 56; // our views (the game's: 72), with RowGap between rows
     public const int RowGap = 8;
@@ -69,8 +71,9 @@ static class RowTitles
                     old.Visible = false;
             if (!vanilla)
             {
-                // The notepad: the player has an alias or notes for it (main list only).
-                var marked = !Store.Data.LoadOrderView && info is { Alias: not null } or { Notes: not null };
+                // The notepad: the player has notes for it (main list only). An alias alone puts none: it shows beside
+                // the original name already (Jordan, 2026-10-14).
+                var marked = !Store.Data.LoadOrderView && info?.Notes is { Length: > 0 };
                 // Fitted once this redraw has placed the title (Load Order moves it right).
                 var shown = row;
                 Callable.From(() => Fit(shown, name, info?.Alias, marked)).CallDeferred();
@@ -151,8 +154,8 @@ static class RowTitles
                     MouseFilter = Control.MouseFilterEnum.Pass, Modulate = new Color(0.91f, 0.81f, 0.48f, 0.75f),
                 };
                 row.AddChild(mark);
-                Hover.Watch(mark, NotesCard, () => row.Mod is { } shown ? ModDetails.Card(shown) : null, Hover.Timing.Instant,
-                    full: () => row.Mod is { } shown ? ModDetails.Card(shown, full: true) : null);
+                // A plain tooltip, not the mod's card (Jordan, 2026-10-14: the title's hover has the card).
+                Hover.Watch(mark, NoteTipName, () => Escape(Menus.Text("SPIRE_MOD_MANAGER.CONTAINS_NOTE")), Hover.Timing.Plain);
             }
             mark.Visible = true;
             mark.Position = new Vector2(title.Position.X - markSize.X - 5, top + (lineHeight - markSize.Y) / 2 - 1); // in the room before the title
