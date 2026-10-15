@@ -198,7 +198,7 @@
   "SPIRE_MOD_MANAGER.NEW_MOD_BODY": "New mods were detected and will be loaded after a relaunch.",
   "SPIRE_MOD_MANAGER.POPUP_MARK": "Spire Mod Manager",
   "SPIRE_MOD_MANAGER.LAUNCH_FAILED_TITLE": "The last launch stopped before the main menu",
-  "SPIRE_MOD_MANAGER.LAUNCH_FAILED_BODY": "Changed since the last working launch ({date}):\n{changes}\n\nThe mod configuration can be restored to the last known working setup. Newly added mods will remain installed, but disabled, and working mods will be reenabled.",
+  "SPIRE_MOD_MANAGER.LAUNCH_FAILED_BODY": "Changed since the last working launch ({date}):\n{changes}\n\nThe mod configuration can be restored to the last known working setup. Newly added mods will remain installed, but disabled, and other mods will be set back to how they were.",
   "SPIRE_MOD_MANAGER.LAUNCH_NEW": "[gold]{mod}[/gold] (new)",
   "SPIRE_MOD_MANAGER.LAUNCH_ENABLED": "[gold]{mod}[/gold] (enabled)",
   "SPIRE_MOD_MANAGER.LAUNCH_DISABLED": "[gold]{mod}[/gold] (disabled)",
