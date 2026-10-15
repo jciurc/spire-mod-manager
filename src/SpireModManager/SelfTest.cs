@@ -1238,6 +1238,10 @@ static class SelfTest
         var noId = LaunchGuard.Read(odd);
         File.WriteAllText(odd, "{\"at\":\"2026-10-14T09:30:00\",\"mods\":[{\"id\":\"SmmTestLib\",\"source\":99,\"enabled\":true}]}");
         Check("a record with a mod that has no id, or an unknown source, counts as none", noId == null && LaunchGuard.Read(odd) == null);
+        File.WriteAllText(odd, "{\"mods\":[{\"id\":\"SmmTestLib\",\"source\":\"ModsDirectory\",\"enabled\":true}]}");
+        var noTime = LaunchGuard.Read(odd);
+        File.WriteAllText(odd, "{\"at\":\"2026-10-14T09:30:00\",\"mods\":[{\"id\":\"SmmTestLib\",\"source\":\"ModsDirectory\",\"enabled\":true}]}");
+        Check("a record with no time counts as none (Copilot, #65); the same with its time reads", noTime == null && LaunchGuard.Read(odd) is { Mods.Count: 1 });
 
         // The notice; while another popup is up, it waits (the first notice stands in for one), then shows; shown once.
         LaunchGuard.Notice = (new LaunchGuard.Setup(now, working), found);
