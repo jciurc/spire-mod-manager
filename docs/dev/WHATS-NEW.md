@@ -4,7 +4,7 @@ Short notes for Jordan: what to look for after each install. Newest first.
 
 ## Released 2026-10-15: version 0.1.0 (not installed in your game yet)
 
-Tag `v0.1.0` on `main` (6fd802d, the same files as `dev` at b4ff3d3): 0.0.59 plus the change below, merged as #91. The release files are in `dist/` of the main checkout (`dist/SpireModManager/` and `dist/SpireModManager-0.1.0.zip`), ready for the Workshop upload. Release test on b4ff3d3: plain 554/0, `--bmm` 589/0, `--bmm-after` 589/0, `--first-run` 11/0, `--first-run-bmm --bmm` 13/0, `--real` 9/0; the smoke run on the dist files passed.
+Tag `v0.1.0` on `main` (6fd802d: release PR #92, the same files as `dev` at b4ff3d3): 0.0.59 plus the change below (#91). The release files are in `dist/` of the main checkout (`dist/SpireModManager/` and `dist/SpireModManager-0.1.0.zip`), ready for the Workshop upload. Release test on b4ff3d3: plain 554/0, `--bmm` 589/0, `--bmm-after` 589/0, `--first-run` 11/0, `--first-run-bmm --bmm` 13/0, `--real` 9/0; the smoke run on the dist files passed.
 
 - **Import's summary and your last copy marks (import-copy, #91):** Import profile's preview reads "Contains N enabled mods and M disabled mods", then "Changes compared to the current profile" with only what changes. The profile menu says Export profile; its window, Copied!, Save file, Import's words and errors, the crash notice and the main menu card are in your text. A blank Enabled in a list counts as enabled. One change to your text: the crash notice's last sentence ends "and other mods will be set back to how they were" (it said working mods would be reenabled, but Restore puts each mod back as it was, on or off).
 
