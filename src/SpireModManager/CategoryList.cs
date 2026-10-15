@@ -488,6 +488,7 @@ static class CategoryList
             {
                 var button = Menus.SmallButton(item.Label, item.OnSelect ?? (() => { }), item.Disabled);
                 button.SizeFlagsVertical = Control.SizeFlags.ShrinkCenter;
+                Hover.Tip(button, item.Tip); // Disable all where this mod is among them: it stays on
                 actions.AddChild(button);
             }
             actions.Alignment = BoxContainer.AlignmentMode.End;
@@ -715,7 +716,9 @@ static class CategoryList
         return
         [
             new(Menus.Text("SPIRE_MOD_MANAGER.ENABLE_ALL"), () => Set(true), Disabled: mods.All(Dependencies.IsOn)),
-            new(Menus.Text("SPIRE_MOD_MANAGER.DISABLE_ALL"), () => Set(false), Disabled: mods.All(m => !Dependencies.IsOn(m) || m.manifest?.id == ModEntry.ModId)),
+            new(Menus.Text("SPIRE_MOD_MANAGER.DISABLE_ALL"), () => Set(false), Disabled: mods.All(m => !Dependencies.IsOn(m) || m.manifest?.id == ModEntry.ModId),
+                // Where this mod is among them: it says so (Jordan, 2026-10-15).
+                Tip: mods.Any(m => m.manifest?.id == ModEntry.ModId) ? Menus.Text("SPIRE_MOD_MANAGER.DISABLE_ALL_KEEPS_SELF") : null),
         ];
     }
 

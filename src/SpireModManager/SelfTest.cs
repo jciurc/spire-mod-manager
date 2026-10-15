@@ -170,6 +170,7 @@ static class SelfTest
             await TestLoadOrderFind(menu, screen, content, outDir);
             await TestListBanner(menu, screen, content, outDir);
             await TestManagersBanner(menu, screen, content, outDir);
+            await TestSelfIncluded(menu, screen, content, outDir);
             await TestPageBar(menu, screen, content, outDir);
             await TestListFilters(menu, screen, content, outDir);
             await TestRelaunchCheck(menu, screen, content, outDir);
@@ -3274,6 +3275,19 @@ static class SelfTest
         Check("main list banner: Show and Enable required mods right after its text", after.Ok
             && warning?.FindChild("EnableNeededButton", true, false) is Control { Visible: true }, after.Detail);
         await Capture(screen, outDir, "2b-list-banner");
+        // Its Show steps through both sides (Jordan, 2026-10-15): the mods that won't load and the disabled one they need.
+        if (Row(ModEntry.ModId) is { } notAbout)
+            CategoryList.Select(screen, notAbout);
+        var stepped = new List<string>();
+        for (var i = 0; i < 4; i++)
+        {
+            warning?.FindChild("ShowProblemButton", true, false)?.EmitSignal(BaseButton.SignalName.Pressed);
+            await Wait(menu, 0.3);
+            stepped.Add(CategoryList.Selected?.manifest?.id ?? "");
+        }
+        Check("main list banner: Show steps through the mods that won't load and the disabled mod they need, each once",
+            stepped.Distinct().Count() == 4 && stepped.Contains("SmmTestLib") && stepped.Contains("SmmTestContent") && stepped.Contains("SmmTestUi")
+            && stepped[1] == "SmmTestLib", string.Join(", ", stepped)); // a mod that needs it, then it
 
         // Hovering its text: a card with each mod that won't load and what it needs, by the names the list shows (Test
         // Content and the framework by an alias here): Test Content and Test UI, and every other enabled mod whose own row
@@ -3367,6 +3381,75 @@ static class SelfTest
     // goes to its row and a Dismiss that hides it until the two aren't both ticked. It comes and goes with its tickbox at
     // once (no relaunch). The fixture has it installed but off; with --bmm it's on and loaded, so the banner is there from
     // the start. It ends as it started.
+    // This mod among the others (Jordan, 2026-10-15): the counts count it; a Disable all that covers it says it stays on;
+    // and unticked on its own row, a red banner above everything says it (and this page) goes at the relaunch, with Show
+    // (its row) and Enable now. Enable now, and undo, take the banner away.
+    static async Task TestSelfIncluded(Node menu, NModdingScreen screen, Control content, string outDir)
+    {
+        if (Layout.Current != Layout.View.Categories || content.GetChildren().OfType<NModMenuRow>().FirstOrDefault(r => r.Mod?.manifest?.id == ModEntry.ModId)
+            is not { Mod: { } self } row)
+        {
+            Results.Add("SKIP this mod among the others: not on the main list, or its row not found");
+            return;
+        }
+        var border = screen.GetNode<Control>("ModsBorder");
+        var search = border.GetNode<Control>("SpireModManagerSearch");
+        Control? Banner() => border.GetNodeOrNull<Control>(LoadOrder.SelfName);
+        int OnNow() => ModManager.Mods.Union(Installed.Mods).Where(m => m.manifest?.id != null).Count(Dependencies.IsOn);
+        string Summary() => (screen.GetNodeOrNull<Control>(HistoryBar.ChangesName) as RichTextLabel)?.GetParsedText() ?? "";
+        var on = OnNow();
+        Check("the counts count this mod: the profile bar's, the main menu button's and Mods enabled's", Dependencies.IsOn(self)
+            && Profiles.OnCount() == on && Profiles.ModCount(Profiles.Active!) == Profiles.CountText() && Summary().StartsWith($"Mods enabled {Menus.Number(on)} "),
+            $"{on} on: profile {Profiles.OnCount()}, summary \"{Summary().Split('\n')[0]}\"");
+
+        // Disable all, where this mod is among the rows it covers: the page bar's and its category's say it stays on.
+        var pageDisable = border.FindChild(PageBar.Name, true, false)?.FindChildren("*", "Button", true, false).OfType<Button>()
+            .FirstOrDefault(b => b.Text == "Disable all");
+        var header = content.GetChildren().OfType<Control>().FirstOrDefault(c => c.IsInGroup("SpireModManagerCategoryHeader")
+            && c.GetIndex() < row.GetIndex() && content.GetChildren().OfType<Control>().Skip(c.GetIndex() + 1).TakeWhile(n => !n.IsInGroup("SpireModManagerCategoryHeader")).Contains(row));
+        var headerDisable = header?.FindChildren("*", "Button", true, false).OfType<Button>().FirstOrDefault(b => b.Text == "Disable all");
+        var otherHeader = content.GetChildren().OfType<Control>().Where(c => c.IsInGroup("SpireModManagerCategoryHeader") && c != header)
+            .Select(c => c.FindChildren("*", "Button", true, false).OfType<Button>().FirstOrDefault(b => b.Text == "Disable all")).OfType<Button>().FirstOrDefault();
+        const string keeps = "Spire Mod Manager (this mod) will remain enabled";
+        Check("Disable all, where this mod is among them, says it stays on (the page bar's, its category's); another category's says nothing",
+            pageDisable != null && Hover.TipOf(pageDisable) == keeps && headerDisable != null && Hover.TipOf(headerDisable) == keeps
+            && (otherHeader == null || Hover.TipOf(otherHeader) == ""),
+            $"page \"{(pageDisable == null ? "none" : Hover.TipOf(pageDisable))}\", its header \"{(headerDisable == null ? "none" : Hover.TipOf(headerDisable))}\", "
+            + $"another \"{(otherHeader == null ? "none" : Hover.TipOf(otherHeader))}\"");
+
+        // Unticked on its own row (the game's tickbox, as a player would): the red banner, first under the search box.
+        var tickbox = row.GetNode<NTickbox>("Tickbox");
+        tickbox.IsTicked = false;
+        tickbox.EmitSignal(NTickbox.SignalName.Toggled, tickbox);
+        await Wait(menu, 0.3);
+        var text = Banner()?.FindChild("SelfOff", true, false) is Label label ? label.Text : "";
+        var first = Banner() is { Visible: true } banner && banner.GetGlobalRect().Position.Y >= search.GetGlobalRect().End.Y
+            && new[] { LoadOrder.ManagersName, LoadOrder.WarningName }.Select(n => border.GetNodeOrNull<Control>(n)).OfType<Control>()
+                .All(other => !other.Visible || other.GetGlobalRect().Position.Y >= banner.GetGlobalRect().End.Y);
+        Check("this mod unticked: a red banner, first under the search box, says it and this page go at the relaunch, with Show and Enable now",
+            !Dependencies.IsOn(self) && first && text == "Spire Mod Manager (this mod) will be disabled on relaunch, and this menu will no longer be accessible until enabled again."
+            && Banner()?.FindChild("ShowSelfButton", true, false) is Button && Banner()?.FindChild("EnableSelfButton", true, false) is Button enableButton
+            && Hover.TipOf(enableButton) == "Keep Spire Mod Manager (this mod) enabled" && Profiles.OnCount() == on - 1,
+            $"on {Dependencies.IsOn(self)}, first {first}, text \"{text}\", count {Profiles.OnCount()}");
+        await Capture(screen, outDir, "2k-self-banner");
+        if (content.GetChildren().OfType<NModMenuRow>().FirstOrDefault(r => r != row) is { } elsewhere)
+            CategoryList.Select(screen, elsewhere);
+        Banner()?.FindChild("ShowSelfButton", true, false)?.EmitSignal(BaseButton.SignalName.Pressed);
+        await Wait(menu, 0.5);
+        Check("its Show goes to this mod's row", CategoryList.Selected == self, CategoryList.Selected?.manifest?.id ?? "none");
+        Banner()?.FindChild("EnableSelfButton", true, false)?.EmitSignal(BaseButton.SignalName.Pressed);
+        await Wait(menu, 0.3);
+        Check("Enable now turns it on and takes the banner away", Dependencies.IsOn(self) && tickbox.IsTicked && Banner() == null && Profiles.OnCount() == on,
+            $"on {Dependencies.IsOn(self)}, ticked {tickbox.IsTicked}, banner {Banner() != null}");
+        tickbox.IsTicked = false;
+        tickbox.EmitSignal(NTickbox.SignalName.Toggled, tickbox);
+        await Wait(menu, 0.3);
+        var shown = Banner() != null;
+        History.Undo();
+        await Wait(menu, 0.3);
+        Check("unticked again, then undone: on, and no banner", shown && Dependencies.IsOn(self) && Banner() == null, $"shown {shown}, on {Dependencies.IsOn(self)}");
+    }
+
     static async Task TestManagersBanner(Node menu, NModdingScreen screen, Control content, string outDir)
     {
         List<NModMenuRow> Rows() => content.GetChildren().OfType<NModMenuRow>().ToList();
@@ -3463,6 +3546,14 @@ static class SelfTest
         Check("its Show opens Better Mod Menu's category, scrolls to its row with a glow and shows it in the panel",
             hidden && row.Visible && list.GetGlobalRect().Intersects(row.GetGlobalRect()) && Glows() > glows && CategoryList.Selected == bmm,
             $"hidden before {hidden}, shown {row.Visible}, row {row.GetGlobalRect()}, list {list.GetGlobalRect()}, glows {glows} -> {Glows()}, panel {CategoryList.Selected?.manifest?.id}");
+        // Pressed again: this mod's row, the other manager (Jordan, 2026-10-15), then back to Better Mod Menu.
+        Banner()?.FindChild("ShowManagersButton", true, false)?.EmitSignal(BaseButton.SignalName.Pressed);
+        await Wait(menu, 0.5);
+        var secondStop = CategoryList.Selected?.manifest?.id;
+        Banner()?.FindChild("ShowManagersButton", true, false)?.EmitSignal(BaseButton.SignalName.Pressed);
+        await Wait(menu, 0.5);
+        Check("its Show, pressed again, goes to this mod's row, then back to Better Mod Menu's", secondStop == ModEntry.ModId && CategoryList.Selected == bmm,
+            $"{secondStop}, then {CategoryList.Selected?.manifest?.id}");
 
         // Show while a search leaves its row out (main list and Load Order): the search clears, box and list, and the
         // row shows as above. On the main list its category is closed again too.

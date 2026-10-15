@@ -303,6 +303,7 @@ static class Layout
             foreach (var name in new[] { LoadOrder.AutoSortName, LoadOrder.AutoSortHintName, FindBar.Name })
                 if (list.GetNodeOrNull<Control>(name) is { } beside)
                     (beside.OffsetTop, beside.OffsetBottom) = (search.OffsetTop, search.OffsetBottom);
+        Stack(list.GetNodeOrNull<Control>(LoadOrder.SelfName), Wide, 6);
         Stack(list.GetNodeOrNull<Control>(LoadOrder.ManagersName), Wide, 6);
         Stack(list.GetNodeOrNull<Control>(LoadOrder.WarningName), Wide, 6);
         Stack(list.GetNodeOrNull<Control>(PageBar.Name), Current == View.Categories, 4);
