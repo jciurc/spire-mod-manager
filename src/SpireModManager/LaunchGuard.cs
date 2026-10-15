@@ -241,10 +241,14 @@ static class LaunchGuard
         {
             if (!File.Exists(file))
                 return null;
-            if (JsonSerializer.Deserialize<Setup>(File.ReadAllText(file), Json) is { Mods: not null } setup && setup.At != default
-                && setup.Mods.All(m => m != null && !string.IsNullOrEmpty(m.Id) && Enum.IsDefined(m.Source)))
+            if (JsonSerializer.Deserialize<Setup>(File.ReadAllText(file), Json) is not { Mods: not null } setup)
+                Log.Warn($"[{ModEntry.ModId}] {file} has no list of mods, so it counts as none");
+            else if (setup.At == default)
+                Log.Warn($"[{ModEntry.ModId}] {file} has no time, so it counts as none");
+            else if (!setup.Mods.All(m => m != null && !string.IsNullOrEmpty(m.Id) && Enum.IsDefined(m.Source)))
+                Log.Warn($"[{ModEntry.ModId}] {file} lists a mod with no id or an unknown source, so it counts as none");
+            else
                 return setup;
-            Log.Warn($"[{ModEntry.ModId}] {file} has no time, or lists a mod with no id or an unknown source, so it counts as none");
             return null;
         }
         catch (Exception e)
