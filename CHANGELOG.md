@@ -1,11 +1,13 @@
 # Changelog
 
-What changed in each Workshop release, for players. The first line of each version is its Workshop change
-note.
+What changed in each Workshop release, for players. Each version's first line, after the version number, is its
+Workshop change note.
 
 ## 0.1.0 (2026-10-15)
 
-First release. Spire Mod Manager replaces the game's Modding page with one made for long mod lists:
+First release. Beta branch only for now (public-beta, game v0.111.0 or newer).
+
+Spire Mod Manager replaces the game's Modding page with one made for long mod lists:
 
 - Your own collapsible categories, search over names, notes, tags and authors, and filters for enabled,
   disabled and changed mods.
@@ -17,5 +19,4 @@ First release. Spire Mod Manager replaces the game's Modding page with one made 
 - Changes since launch, undo and redo, and Revert all.
 - Relaunch Game restarts in place, and a notice after a launch that didn't reach the main menu offers to go
   back to the last setup that worked.
-- Runs alongside Better Mod Menu, and imports its groups, notes and profiles on first run.
-- Needs the public-beta branch, v0.111.0 or newer.
+- Runs alongside Better Mod Menu, and imports its groups, aliases, notes and profiles on first run.
