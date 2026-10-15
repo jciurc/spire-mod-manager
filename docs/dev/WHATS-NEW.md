@@ -2,6 +2,10 @@
 
 Short notes for Jordan: what to look for after each install. Newest first.
 
+## Waiting in pull requests
+
+- **Main menu button, take two (menu-button-tip):** the text is a little smaller (26). Hover it for a second: "View and manage installed mods. Currently using mod profile Default." with the name in gold (nothing shows if the mouse just passes over). It always opens our view now: switch to Vanilla View, go back to the main menu and press the button, and our list shows. The game's own way in, from its Settings, still opens whichever view you left.
+
 ## Installed 2026-10-15: version 0.0.57
 
 Everything below, merged as #71 to #79, plus the crash-safe launch draft (#65, still not merged; in this build again so you
