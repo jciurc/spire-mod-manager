@@ -205,35 +205,58 @@ static class ProfileShare
 
     public static bool IsOpen => Modal.IsOpen(Name);
 
-    // The share dialog's tick boxes, as last left this session.
-    static ProfileCsv.Options _options = new();
+    // The share dialog's tick boxes: as last left this session, or else as kept from an earlier one (Remember selection,
+    // Store.Data.ShareChoices), or else the defaults.
+    static ProfileCsv.Options? _options;
+
+    static ProfileCsv.Options Choices => _options ??= Store.Data.ShareChoices is { } kept
+        ? new ProfileCsv.Options(kept.Category, kept.Disabled, kept.Alias, kept.Notes) : new ProfileCsv.Options();
+
+    // The self-test: the tick boxes as a new launch finds them.
+    public static void ForgetSessionChoices() => _options = null;
+
+    // Remember selection on: these tick boxes kept in our data (saved now), for the next launches too. Off: forgotten.
+    static void Keep(bool on)
+    {
+        Store.Data.ShareChoices = on ? new ShareChoice(Choices.Category, Choices.Disabled, Choices.Alias, Choices.Notes) : null;
+        Store.Save();
+    }
 
     public static void ShowShare(NModdingScreen screen)
     {
         if (Profiles.Active is not { } profile || Dialog(screen, "SPIRE_MOD_MANAGER.SHARE_PROFILE") is not { } column)
             return;
         var rows = Profiles.ShareRows(profile);
-        var csv = ProfileCsv.Write(rows, _options);
+        var csv = ProfileCsv.Write(rows, Choices);
 
         var body = Body("Body");
         body.Text = Menus.Format("SPIRE_MOD_MANAGER.SHARE_BODY", ("name", $"[color={GoldHex}]{Escape(profile.Name)}[/color]"));
         column.AddChild(body);
         var box = TextBox("CsvText", editable: false);
         box.Text = csv;
-        // What the list holds, in a row under the words; each tick rewrites it.
-        var options = new HFlowContainer { Name = "Options" }; // wraps where a language's words run long
+        // What the list holds, in a row under the words (each tick rewrites it), and at the row's right end Remember
+        // selection (Jordan, 2026-10-15).
+        var row = new HBoxContainer { Name = "OptionsRow" };
+        row.AddThemeConstantOverride("separation", 28);
+        var options = new HFlowContainer { Name = "Options", SizeFlagsHorizontal = Control.SizeFlags.ExpandFill }; // wraps where a language's words run long
         options.AddThemeConstantOverride("h_separation", 28);
         options.AddThemeConstantOverride("v_separation", 4);
         void Set(Func<ProfileCsv.Options, ProfileCsv.Options> change)
         {
-            _options = change(_options);
-            box.Text = csv = ProfileCsv.Write(rows, _options);
+            _options = change(Choices);
+            box.Text = csv = ProfileCsv.Write(rows, Choices);
+            if (Store.Data.ShareChoices != null)
+                Keep(true);
         }
-        options.AddChild(Option("SPIRE_MOD_MANAGER.SHARE_CATEGORY", _options.Category, on => Set(o => o with { Category = on }), "IncludeCategory"));
-        options.AddChild(Option("SPIRE_MOD_MANAGER.SHARE_DISABLED", _options.Disabled, on => Set(o => o with { Disabled = on }), "IncludeDisabled"));
-        options.AddChild(Option("SPIRE_MOD_MANAGER.SHARE_ALIAS", _options.Alias, on => Set(o => o with { Alias = on }), "IncludeAlias"));
-        options.AddChild(Option("SPIRE_MOD_MANAGER.SHARE_NOTES", _options.Notes, on => Set(o => o with { Notes = on }), "IncludeNotes"));
-        column.AddChild(options);
+        options.AddChild(Option("SPIRE_MOD_MANAGER.SHARE_CATEGORY", Choices.Category, on => Set(o => o with { Category = on }), "IncludeCategory"));
+        options.AddChild(Option("SPIRE_MOD_MANAGER.SHARE_DISABLED", Choices.Disabled, on => Set(o => o with { Disabled = on }), "IncludeDisabled"));
+        options.AddChild(Option("SPIRE_MOD_MANAGER.SHARE_ALIAS", Choices.Alias, on => Set(o => o with { Alias = on }), "IncludeAlias"));
+        options.AddChild(Option("SPIRE_MOD_MANAGER.SHARE_NOTES", Choices.Notes, on => Set(o => o with { Notes = on }), "IncludeNotes"));
+        row.AddChild(options);
+        var remember = Option("SPIRE_MOD_MANAGER.SHARE_REMEMBER", Store.Data.ShareChoices != null, Keep, "RememberChoices");
+        remember.SizeFlagsVertical = Control.SizeFlags.ShrinkBegin;
+        row.AddChild(remember);
+        column.AddChild(row);
         column.AddChild(box);
         var status = Status();
         column.AddChild(status);

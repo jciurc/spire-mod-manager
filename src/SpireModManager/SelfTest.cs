@@ -2037,6 +2037,28 @@ static class SelfTest
             && Profiles.ImportName($"C:/lists/{ProfileShare.FileName("Brother co-op", at)}") == "Brother co-op",
             $"{ProfileShare.FileName("CON", at)} | {Profiles.ImportName($"C:/lists/{ProfileShare.FileName("Brother co-op", at)}")}");
         await Tick("IncludeDisabled", false); // the tick boxes stay for the session: back as they started
+        // Remember selection (Jordan, 2026-10-15): off at first, nothing kept; on, the boxes are kept in our data and a new
+        // launch starts on them; a tick while on is kept too; off, they're forgotten and a launch starts on the defaults.
+        var keptBefore = Store.Data.ShareChoices;
+        var remember = Part<Button>("RememberChoices");
+        var rightmost = remember?.GetGlobalRect().End.X >= Part<Button>("IncludeNotes")?.GetGlobalRect().End.X;
+        await Tick("RememberChoices", true);
+        await Tick("IncludeNotes", true);
+        var kept = Store.Data.ShareChoices;
+        ProfileShare.ForgetSessionChoices(); // as at the next launch
+        ProfileShare.Close();
+        await Wait(menu, 0.2);
+        await Choose("Share profile");
+        var restored = Ticked("IncludeNotes") && Ticked("IncludeCategory") && Ticked("RememberChoices") && ProfileCsv.Records(Csv()).FirstOrDefault()?.Contains("Notes") == true;
+        await Tick("RememberChoices", false);
+        var forgotten = Store.Data.ShareChoices == null;
+        ProfileShare.ForgetSessionChoices();
+        ProfileShare.Close();
+        await Wait(menu, 0.2);
+        await Choose("Share profile");
+        Check("Remember selection: off at first and at the row's right; on, the boxes are kept and a new launch starts on them; off, forgotten",
+            keptBefore == null && remember != null && rightmost && kept == new ShareChoice(true, false, false, true) && restored && forgotten
+            && !Ticked("IncludeNotes") && !Ticked("RememberChoices"), $"before {keptBefore}, kept {kept}, restored {restored}, forgotten {forgotten}");
         Input.ParseInputEvent(new InputEventKey { Keycode = Key.Escape, Pressed = true });
         await Wait(menu, 0.2);
         Input.ParseInputEvent(new InputEventKey { Keycode = Key.Escape, Pressed = false });
