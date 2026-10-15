@@ -2007,6 +2007,19 @@ static class SelfTest
             && RowTitle(ModEntry.ModId).Contains("Spire Mod Manager") && ours.GetNodeOrNull<Control>("SpireModManagerEditedMark") is { Visible: true },
             RowTitle(ModEntry.ModId));
         Check("no alias pencil on rows", !ours.HasNode("SpireModManagerPencil"));
+        // The notepad marks notes: an alias alone (it shows beside the original name already) puts none (Jordan, 2026-10-14).
+        if (Row("SmmTestContent") is { } aliasOnly && Store.InfoFor("SmmTestContent")?.Notes == null)
+        {
+            var aliasBefore = Store.InfoFor("SmmTestContent")?.Alias;
+            Store.EditMod("SmmTestContent", info => info.Alias = "Alias only");
+            CategoryList.Redraw(content);
+            await Wait(menu, 0.3);
+            Check("an alias alone puts no notepad on the row", RowTitle("SmmTestContent").StartsWith("Alias only")
+                && aliasOnly.GetNodeOrNull<Control>("SpireModManagerEditedMark") is not { Visible: true }, RowTitle("SmmTestContent"));
+            Store.EditMod("SmmTestContent", info => info.Alias = aliasBefore);
+            CategoryList.Redraw(content);
+            await Wait(menu, 0.2);
+        }
         CategoryList.Select(screen, ours);
         await Wait(menu, 0.5);
         Check("row state reads the game's: the selected row is selected, another not", RowState.Selected(ours) && !RowState.Selected(other));
@@ -2122,10 +2135,19 @@ static class SelfTest
         Check("the card goes once the mouse is off the title", !CardShown());
         await HoverOver(oursHot, 0.05);
         Check("within the grace period, the next title's card shows at once", CardShown() && CardText().StartsWith(ModEntry.ModId), CardText());
-        await HoverOver(mark, 0.05);
-        Check("the notepad's card at once, and only one card at a time", CardShown() && CardText().StartsWith("SmmTestFixes") && Cards() == 1, $"{Cards()} cards");
-        await Leave(mark, 0.05);
-        Check("the notepad's card goes with the mouse", !CardShown());
+        await Leave(oursHot, 0.3);
+        // The notepad: a plain "Contains note" after the usual delay, not the mod's card (that's the title's), and no
+        // grace either way (Jordan, 2026-10-14).
+        bool TipShown() => screen.HasNode(RowTitles.NoteTipName);
+        string TipText() => screen.GetNodeOrNull(RowTitles.NoteTipName)?.FindChildren("*", "RichTextLabel", true, false).OfType<RichTextLabel>()
+            .FirstOrDefault()?.GetParsedText() ?? "";
+        await HoverOver(mark, 0.1);
+        var early = TipShown() || CardShown();
+        await Wait(menu, Hover.Delay);
+        Check("the notepad: a plain \"Contains note\" after the usual delay, not the mod's card", !early && TipShown() && TipText() == "Contains note"
+            && Cards() == 0, $"early {early}, tip \"{TipText()}\", cards {Cards()}");
+        await Leave(mark, 0.1);
+        Check("the notepad's tip goes with the mouse", !TipShown());
         await HoverOver(hot, 0.2);
         Check("no grace period after the notepad: the title waits again", !CardShown());
         await Leave(hot, 0.3);
@@ -2972,9 +2994,8 @@ static class SelfTest
         await Wait(menu, 0.3);
         badge = screen.GetNodeOrNull<Control>("SpireModManagerLoadOrderToggle/WarningBadge");
         var badgeTip = Hover.TipOf(screen.GetNode<Control>("SpireModManagerLoadOrderToggle"));
-        Check("a bad order puts a '!' with the warning on the Load Order button, then the mod it's about, as Load Order's card says it",
-            badge is { Visible: true } && badgeTip.StartsWith("For compatibility, 1 mod ")
-            && string.Join(" | ", badgeTip.Split('\n').Skip(1).Where(l => l.Length > 0)) == "Test Content loads before Test Framework", badgeTip);
+        Check("a bad order puts a '!' with the warning on the Load Order button, the warning alone (Load Order's card names the mods)",
+            badge is { Visible: true } && badgeTip.StartsWith("For compatibility, 1 mod ") && !badgeTip.Contains('\n'), badgeTip);
         await Capture(screen, outDir, "2c-load-order-badge");
         LoadOrder.FixOrder(Rows());
         CategoryList.Redraw(content);
