@@ -294,6 +294,5 @@
   "SPIRE_MOD_MANAGER.IMPORT_UNLISTED": "{count} installed mods aren't in the list and stay as they are",
   "SPIRE_MOD_MANAGER.IMPORT_UNLISTED_ONE": "1 installed mod isn't in the list and stays as it is",
   "SPIRE_MOD_MANAGER.IMPORT_MISSING": "Not installed ({count}). The profile remembers them: once they're installed, switching to it enables or disables them as listed:",
-  "SPIRE_MOD_MANAGER.IMPORT_MISSING_OFF": "(disabled)",
-  "SPIRE_MOD_MANAGER.WORKSHOP_PAGE": "Workshop page"
+  "SPIRE_MOD_MANAGER.IMPORT_MISSING_OFF": "(disabled)"
 }

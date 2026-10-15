@@ -201,7 +201,7 @@ static class ProfileShare
     static readonly Color Cream = new(1, 0.964706f, 0.886275f);
     static readonly Color Gold = new(0.937f, 0.784f, 0.318f);
     static readonly Color ErrorColor = new(1f, 0.5f, 0.44f);
-    const string GoldHex = "#efc851", DimHex = "#fff6e299";
+    const string GoldHex = "#efc851", DimHex = "#fff6e299", LinkHex = "#99ccff";
 
     public static bool IsOpen => Modal.IsOpen(Name);
 
@@ -224,7 +224,7 @@ static class ProfileShare
 
     public static void ShowShare(NModdingScreen screen)
     {
-        if (Profiles.Active is not { } profile || Dialog(screen, "SPIRE_MOD_MANAGER.SHARE_PROFILE") is not { } column)
+        if (Profiles.Active is not { } profile || Dialog(screen, "SPIRE_MOD_MANAGER.SHARE_PROFILE", 920) is not { } column)
             return;
         var rows = Profiles.ShareRows(profile);
         var csv = ProfileCsv.Write(rows, Choices);
@@ -237,9 +237,9 @@ static class ProfileShare
         // What the list holds, in a row under the words (each tick rewrites it), and at the row's right end Remember
         // selection (Jordan, 2026-10-15).
         var row = new HBoxContainer { Name = "OptionsRow" };
-        row.AddThemeConstantOverride("separation", 28);
+        row.AddThemeConstantOverride("separation", 22);
         var options = new HFlowContainer { Name = "Options", SizeFlagsHorizontal = Control.SizeFlags.ExpandFill }; // wraps where a language's words run long
-        options.AddThemeConstantOverride("h_separation", 28);
+        options.AddThemeConstantOverride("h_separation", 22);
         options.AddThemeConstantOverride("v_separation", 4);
         void Set(Func<ProfileCsv.Options, ProfileCsv.Options> change)
         {
@@ -293,12 +293,13 @@ static class ProfileShare
         body.Text = Menus.Text("SPIRE_MOD_MANAGER.IMPORT_BODY");
         column.AddChild(body);
         var box = TextBox("CsvText", editable: true);
+        box.CustomMinimumSize = new Vector2(0, 200); // shorter than Share's: the preview below gets the room
         box.PlaceholderText = Menus.Text("SPIRE_MOD_MANAGER.IMPORT_HINT");
         column.AddChild(box);
         var status = Status();
         column.AddChild(status);
         var preview = Body("Preview");
-        (preview.FitContent, preview.ScrollActive, preview.CustomMinimumSize) = (false, true, new Vector2(0, 170));
+        (preview.FitContent, preview.ScrollActive, preview.CustomMinimumSize) = (false, true, new Vector2(0, 250));
         preview.MouseFilter = Control.MouseFilterEnum.Stop; // its links, and the wheel
         preview.MetaClicked += meta =>
         {
@@ -371,11 +372,11 @@ static class ProfileShare
         {
             lines.Add("");
             lines.Add(Menus.Format("SPIRE_MOD_MANAGER.IMPORT_MISSING", ("count", Menus.Number(plan.Missing.Count))));
-            var page = Escape(Menus.Text("SPIRE_MOD_MANAGER.WORKSHOP_PAGE"));
             var off = Escape(Menus.Text("SPIRE_MOD_MANAGER.IMPORT_MISSING_OFF"));
-            lines.AddRange(plan.Missing.Select(m => $"  •  [b]{Escape(m.Name.Length > 0 ? m.Name : m.Id)}[/b]"
-                + (m.Enabled ? "" : $" [color={DimHex}]{off}[/color]")
-                + (m.WorkshopLink.Length > 0 ? $"  [url={m.WorkshopLink}]{page}[/url]" : "")));
+            // The name itself opens its Workshop page, when the list gives one (Jordan, 2026-10-15): a few steps to find it.
+            string Named(ProfileCsv.Entry m) => $"[b]{Escape(m.Name.Length > 0 ? m.Name : m.Id)}[/b]";
+            lines.AddRange(plan.Missing.Select(m => "  •  " + (m.WorkshopLink.Length > 0 ? $"[url={m.WorkshopLink}][color={LinkHex}]{Named(m)}[/color][/url]" : Named(m))
+                + (m.Enabled ? "" : $" [color={DimHex}]{off}[/color]")));
         }
         return string.Join("\n", lines);
     }
@@ -436,10 +437,10 @@ static class ProfileShare
     }
 
     // The dialog's frame over the page (any other dialog closes), its title in; returns the column to fill. Null if
-    // there's nowhere to show it.
-    static VBoxContainer? Dialog(Node owner, string titleKey)
+    // there's nowhere to show it. width: Share profile's is wider, for its row of tick boxes on one line.
+    static VBoxContainer? Dialog(Node owner, string titleKey, float width = 820)
     {
-        if (Modal.Open(owner, Name, 820, 12) is not { } column)
+        if (Modal.Open(owner, Name, width, 12) is not { } column)
             return null;
         column.AddChild(Modal.Title(titleKey));
         return column;
@@ -516,7 +517,7 @@ static class ProfileShare
 
     // One tick box: a small square (a gold ✓ in it when on) before its words, the whole of it one toggle. toggled: the
     // new state.
-    const float BoxSize = 18;
+    const float BoxSize = 18, BoxRaise = 4;
 
     static Button Option(string key, bool on, Action<bool> toggled, string name)
     {
@@ -551,6 +552,7 @@ static class ProfileShare
         tick.SetAnchorsAndOffsetsPreset(Control.LayoutPreset.FullRect);
         button.AddChild(box);
         box.SetAnchorsAndOffsetsPreset(Control.LayoutPreset.CenterLeft, Control.LayoutPresetMode.Minsize);
+        (box.OffsetTop, box.OffsetBottom) = (box.OffsetTop - BoxRaise, box.OffsetBottom - BoxRaise); // level with the words: Kreon's letters sit high in their line
         button.Toggled += pressed =>
         {
             tick.Visible = pressed;

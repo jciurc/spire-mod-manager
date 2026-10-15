@@ -1983,6 +1983,10 @@ static class SelfTest
             Dialog() != null && records.FirstOrDefault()?.SequenceEqual(ProfileCsv.Header(new())) == true && ids.Count == installed.Count(m => IsOn(m.manifest!.id!))
             && ids.Take(enabledOrder.Count).SequenceEqual(enabledOrder) && records.Skip(1).All(r => r[3] == "TRUE") && !ids.Contains("SmmTestRetired")
             && Part<RichTextLabel>("Body")?.GetParsedText().Contains(startName) == true, $"{string.Join(" | ", ids)} vs order {string.Join(" | ", enabledOrder)}");
+        var tops = new[] { "IncludeCategory", "IncludeDisabled", "IncludeAlias", "IncludeNotes", "RememberChoices" }
+            .Select(n => Part<Button>(n)?.GetGlobalRect().Position.Y ?? -1).ToList();
+        Check("the five tick boxes on one line, Remember selection last", tops.All(y => y >= 0 && Math.Abs(y - tops[0]) < 1)
+            && Part<Button>("RememberChoices")?.GetGlobalRect().Position.X > Part<Button>("IncludeNotes")?.GetGlobalRect().End.X, string.Join(", ", tops));
         Check("its tick boxes: Include category on; disabled, alias and notes off",
             Ticked("IncludeCategory") && !Ticked("IncludeDisabled") && !Ticked("IncludeAlias") && !Ticked("IncludeNotes"));
         var (alias, notes) = (Store.InfoFor(ModEntry.ModId)?.Alias ?? "", Store.InfoFor(ModEntry.ModId)?.Notes ?? "");
@@ -2108,9 +2112,13 @@ static class SelfTest
             Status() == "" && plan.On == wantOn && plan.Off == wantOff && plan.Same == 2 - wantOn - wantOff && plan.Unlisted == others
             && Preview().Contains(others == 1 ? "1 installed mod isn't in the list" : $"{others} installed mods aren't in the list"),
             $"on {plan.On}/{wantOn}, off {plan.Off}/{wantOff}, same {plan.Same}, unlisted {plan.Unlisted}/{others}: {Preview()}");
-        Check("the mods it names that aren't installed are listed, by name, with the Workshop link", plan.Missing.Count == 2
-            && Preview().Contains("Not installed (2)") && Preview().Contains("Not Here Mod  Workshop page") && Preview().Contains("Gone Off (disabled)")
-            && bbcode.Contains($"[url={link}]"), Preview());
+        // The name itself is the link to its Workshop page (Jordan, 2026-10-15); one with no page is plain.
+        var linkAt = bbcode.IndexOf($"[url={link}]", StringComparison.Ordinal);
+        var nameAt = linkAt < 0 ? -1 : bbcode.IndexOf("Not Here Mod", linkAt, StringComparison.Ordinal);
+        Check("the mods it names that aren't installed are listed by name, a name with a Workshop page its link to it", plan.Missing.Count == 2
+            && Preview().Contains("Not installed (2)") && Preview().Contains("Not Here Mod") && Preview().Contains("Gone Off (disabled)")
+            && nameAt > linkAt && nameAt < bbcode.IndexOf("[/url]", linkAt, StringComparison.Ordinal)
+            && bbcode.Split("[url=").Length == 2, Preview());
         await Capture(screen, outDir, "7d-import-preview");
         Press("CreateProfileButton");
         await Wait(menu, 0.3);
