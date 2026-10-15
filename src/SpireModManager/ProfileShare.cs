@@ -188,9 +188,9 @@ static class ProfileCsv
 // Sharing a profile as text, and making one from shared text (ProfileCsv), from the profile list or the picker's
 // right-click menu. Two dialogs over the page, like the relaunch check's; Close (or Cancel) and Esc close them.
 // - Share profile: a row of tick boxes for what the list holds (ProfileCsv.Options: Include category, disabled, alias,
-//   notes; kept for the session), the active profile's list in a read-only box (select any of it), Save (the system's
-//   save dialog: spire-mods-<profile>-<time>.txt, a .txt as some players are wary of .csv; the text is the same), Copy
-//   (the button says "Copied" for a moment) and Close.
+//   notes; kept for the session, or across launches with Remember selection at the row's end), the active profile's
+//   list in a read-only box (select any of it), Save (the system's save dialog: spire-mods-<profile>-<time>.txt, a .txt
+//   as some players are wary of .csv; the text is the same), Copy (the button says "Copied" for a moment) and Close.
 // - Import profile: a box to paste into and Load file (the system's open dialog, .txt or .csv). As the text changes,
 //   it says what the list would do compared with now and names the listed mods that aren't installed, each with its Workshop page
 //   (opened in the browser). A problem with the text shows in red. Create profile makes a new profile from it (named

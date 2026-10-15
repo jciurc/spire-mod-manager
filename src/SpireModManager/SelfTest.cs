@@ -2134,6 +2134,8 @@ static class SelfTest
         await Tick("RememberChoices", true);
         await Tick("IncludeNotes", true);
         var kept = Store.Data.ShareChoices;
+        Store.RestoreEdits(Store.EditsJson()); // what an undo does to our data: the kept boxes are view state, left as they are
+        var undoKeeps = Store.Data.ShareChoices == kept;
         ProfileShare.ForgetSessionChoices(); // as at the next launch
         ProfileShare.Close();
         await Wait(menu, 0.2);
@@ -2145,8 +2147,8 @@ static class SelfTest
         ProfileShare.Close();
         await Wait(menu, 0.2);
         await Choose("Share profile");
-        Check("Remember selection: off at first and at the row's right; on, the boxes are kept and a new launch starts on them; off, forgotten",
-            keptBefore == null && remember != null && rightmost && kept == new ShareChoice(true, false, false, true) && restored && forgotten
+        Check("Remember selection: off at first and at the row's right; on, the boxes are kept (undo leaves them) and a new launch starts on them; off, forgotten",
+            keptBefore == null && remember != null && rightmost && kept == new ShareChoice(true, false, false, true) && undoKeeps && restored && forgotten
             && !Ticked("IncludeNotes") && !Ticked("RememberChoices"), $"before {keptBefore}, kept {kept}, restored {restored}, forgotten {forgotten}");
         Input.ParseInputEvent(new InputEventKey { Keycode = Key.Escape, Pressed = true });
         await Wait(menu, 0.2);
