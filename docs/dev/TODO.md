@@ -908,3 +908,11 @@ Jordan's notes of 2026-10-15, after 0.0.57.
   banner's height as it appears, so the rows on screen stay put (at the top of the list they still move). The scroll
   nudge changes the least on screen, but it has to hold through every redraw that shows or hides a banner (filters,
   Load Order, Reveal, a mod switched on or off): a small spike first, as Jordan suspects it could be too complex
+- [ ] (Jordan, later the same day) Import profile: "Save as" in place of the fixed name. It shows the file's name, or
+  "Imported profile" by default, in a picker like the profile bar's (the name with an arrow, the profile list under
+  it). Choosing a profile there replaces it with the imported list; another choice in the list renames the new
+  profile from the imported name. So an import either makes a new profile, named as the player likes, or replaces one.
+- [ ] (same) the profile bar gets the same "Save as": replace a profile, or create a new one, from the list as it is
+  now, always available (it doesn't need unsaved changes). It may replace Duplicate, which is "Save as" a new
+  profile already. To settle: what replacing the active profile, or one with unsaved changes, asks first; and one
+  undo step for either

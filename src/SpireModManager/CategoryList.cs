@@ -24,6 +24,17 @@ static class CategoryList
     const string GameGapMeta = "spire_mod_manager_game_gap", GameSidesMeta = "spire_mod_manager_game_sides";
     static readonly Dictionary<string, float> HeaderWidths = [];
 
+    // Our main menu button opens the page on our view, not Vanilla View (Jordan, 2026-10-15): it saves that choice just
+    // before, and the page, made or shown again, lays out the saved view (Attach). The game's own way in (its Settings)
+    // leaves the saved view as it is.
+    public static void PreferOurs()
+    {
+        if (!Store.Data.VanillaView)
+            return;
+        Store.Data.VanillaView = false;
+        Store.Save();
+    }
+
     public static void Attach(NModdingScreen screen)
     {
         var content = screen.GetNode<Control>("%ModsScrollContainer/Mask/Content");
@@ -31,10 +42,14 @@ static class CategoryList
         // Two view switches along the bottom (Layout places them): Vanilla and Load Order. Each turns the
         // other off; pressing the lit one again goes back to categories, and its label says so.
         Control? vanilla = null, loadOrder = null;
-        void Switch(bool toVanilla)
+        // Whether the view laid out last is Vanilla View: when the page shows again with another one saved (PreferOurs
+        // while it was closed), the saved one is laid out.
+        var shownVanilla = false;
+        void Switch(bool toVanilla) => Show(toVanilla && !Store.Data.VanillaView, !toVanilla && !Store.Data.LoadOrderView);
+        void Show(bool toVanilla, bool toLoadOrder)
         {
             var data = Store.Data;
-            (data.VanillaView, data.LoadOrderView) = toVanilla ? (!data.VanillaView, false) : (false, !data.LoadOrderView);
+            (data.VanillaView, data.LoadOrderView, shownVanilla) = (toVanilla, toLoadOrder, toVanilla);
             Selection.Clear(content); // a picked set belongs to the view it was picked in
             Store.Save();
             Label(vanilla, data.VanillaView ? "SPIRE_MOD_MANAGER.CATEGORY_VIEW" : "SPIRE_MOD_MANAGER.VANILLA_VIEW");
@@ -49,6 +64,7 @@ static class CategoryList
             Store.Data.LoadOrderView = false;
             Store.Save();
         }
+        shownVanilla = Store.Data.VanillaView; // laid out below
         // The page bar's Show: choice stays; rows it kept for a change made last time go by it again (ListFilter).
         ListFilter.Release();
         screen.VisibilityChanged += () =>
@@ -58,6 +74,8 @@ static class CategoryList
             var released = ListFilter.Release();
             if (Store.Data.LoadOrderView)
                 Switch(false);
+            else if (Store.Data.VanillaView != shownVanilla)
+                Show(Store.Data.VanillaView, false); // changed while the page was closed: our main menu button
             else if (released)
                 Apply(content);
         };

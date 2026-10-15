@@ -1,3 +1,4 @@
+using System.Text.RegularExpressions;
 using Godot;
 
 namespace SpireModManager;
@@ -7,6 +8,8 @@ namespace SpireModManager;
 // - a card shows after Delay of hovering what it's about; Instant ones (a banner's list of mods, the unsaved mark) at once; Slow ones
 //   (the whole of a text cut short, in a plain tooltip) after SlowDelay; Plain ones (a word on a small icon, the
 //   notepad's "Contains note") look like Slow ones but come after Delay; Slow and Plain have no grace either way;
+//   Late ones (the main menu button's: the mouse crosses it on the way to the game's) are Normal ones after SlowDelay,
+//   grace or not;
 // - once a card has gone, for Grace any other card shows at once (moving along names or tags doesn't wait
 //   each time); Instant cards don't start one;
 // - leaving: the card goes after WindDown (Instant ones at once), so a quick wobble off the edge keeps it;
@@ -16,7 +19,7 @@ static class Hover
     public const double Delay = 0.4, Grace = 0.25, WindDown = 0.02, SlowDelay = 1.0;
     public const int Depth = 80; // the cards' layer: over the page, under our menus (MenuPanel.Depth)
 
-    public enum Timing { Normal, Instant, Slow, Plain }
+    public enum Timing { Normal, Instant, Slow, Plain, Late }
 
     static readonly Color Cream = new(1, 0.964706f, 0.886275f);
     static readonly Color Gold = new(0.937f, 0.784f, 0.318f);
@@ -69,17 +72,21 @@ static class Hover
     // What a control does (a button, an icon), in our card: in place of the engine's TooltipText, which looks like none
     // of ours (Jordan, 2026-10-14: a text cut short gets the plain tooltip; every description we write, this card). Set it
     // again to change the words; null or "" takes the card off. TipOf reads it (the self-test).
+    // timing: when the card shows (the first call's stays). markup: the text is BBCode (as for a [gold] name), anything
+    // of the player's in it escaped by the caller; otherwise it's shown as written.
     public const string TipName = "SpireModManagerTip";
-    const string TipMeta = "spire_mod_manager_tip";
+    const string TipMeta = "spire_mod_manager_tip", MarkupMeta = "spire_mod_manager_tip_markup";
 
-    public static void Tip(Control control, string? text)
+    public static void Tip(Control control, string? text, Timing timing = Timing.Normal, bool markup = false)
     {
         var watched = control.HasMeta(TipMeta);
         if (!watched && string.IsNullOrEmpty(text))
             return; // nothing to say, and never had: no card to watch for
         control.SetMeta(TipMeta, text ?? "");
+        control.SetMeta(MarkupMeta, markup);
         if (!watched)
-            Watch(control, TipName, () => TipOf(control) is { Length: > 0 } tip ? Escape(tip) : null, fit: true);
+            Watch(control, TipName, () => TipOf(control) is { Length: > 0 } tip
+                ? control.GetMeta(MarkupMeta, false).AsBool() ? tip : Escape(tip) : null, timing, fit: true);
     }
 
     public static string TipOf(Control control) => control.GetMeta(TipMeta, "").AsString();
@@ -117,7 +124,7 @@ static class Hover
         if (timing == Timing.Instant || (timing == Timing.Normal && InGrace))
             open();
         else
-            node.GetTree().CreateTimer(timing == Timing.Slow ? SlowDelay : Delay).Timeout += open;
+            node.GetTree().CreateTimer(timing is Timing.Slow or Timing.Late ? SlowDelay : Delay).Timeout += open;
     }
 
     // Cards belong to the page they're on (they go with it), else to the window.
@@ -141,6 +148,14 @@ static class Hover
     // Text shown as it is in a card (its "[" not read as BBCode).
     public static string Escape(string text) => text.Replace("[", "[lb]");
 
+    // The game's own [gold] tag (its text labels know it; a plain RichTextLabel, as in our cards, doesn't) as our gold,
+    // so our texts can use it in a card too.
+    static string Gamelike(string bbcode) => bbcode.Replace("[gold]", $"[color=#{Gold.ToHtml(false)}]").Replace("[/gold]", "[/color]");
+
+    // The text a card shows, without its tags: what its width is measured on.
+    static string Unmarked(string bbcode) =>
+        Regex.Replace(bbcode, @"\[(/?[a-z_]+(=[^\]]*)?)\]", m => m.Value == "[lb]" ? "[" : m.Value == "[rb]" ? "]" : "");
+
     // at: the card's corner: its top-left, or with right/above, the matching corner. Kept on screen. keep: checked
     // every frame; once it's false (for WindDown, unless Instant) the card goes, so it can't be left behind when
     // the mouse moves on without an exit event, a click opens something else, or the page changes. full: the
@@ -149,6 +164,7 @@ static class Hover
         Func<bool>? keep = null, Timing timing = Timing.Normal, Texture2D? picture = null, string? full = null, int depth = Depth, bool fit = false)
     {
         Hide(); // one at a time
+        (bbcode, full) = (Gamelike(bbcode), full == null ? null : Gamelike(full));
         var layer = new CanvasLayer { Name = name, Layer = depth };
         owner.AddChild(layer);
         _shown = layer;
@@ -195,7 +211,7 @@ static class Hover
             {
                 // As wide as the text (its longest line), up to PlainMax or the card's width; longer text wraps.
                 var most = plain ? PlainMax : width;
-                var wide = text.GetThemeFont("normal_font").GetMultilineStringSize(bbcode, fontSize: size).X + 4;
+                var wide = text.GetThemeFont("normal_font").GetMultilineStringSize(Unmarked(bbcode), fontSize: size).X + 4;
                 (text.AutowrapMode, text.CustomMinimumSize) = wide <= most ? (TextServer.AutowrapMode.Off, new Vector2(wide, 0)) : (TextServer.AutowrapMode.WordSmart, new Vector2(most, 0));
             }
             else
@@ -240,10 +256,10 @@ static class Hover
                 }
                 var now = Time.GetTicksMsec();
                 lostAt ??= now;
-                if (timing == Timing.Normal && now - lostAt < WindDown * 1000)
+                if ((timing is Timing.Normal or Timing.Late) && now - lostAt < WindDown * 1000)
                     return; // winding down: the mouse may come back
                 Close(layer);
-                if (timing == Timing.Normal)
+                if (timing is Timing.Normal or Timing.Late)
                     _graceUntil = now + (ulong)(Grace * 1000);
             }
             tree.ProcessFrame += Check;
