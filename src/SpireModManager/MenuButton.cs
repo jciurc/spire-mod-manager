@@ -41,9 +41,8 @@ static class MenuButton
     {
         void Open()
         {
-            CategoryList.OpenOnOurs = true; // read as the page opens (at once, inside the push)
+            CategoryList.PreferOurs(); // our view, whatever was last shown
             menu.SubmenuStack.PushSubmenuType<NModdingScreen>();
-            CategoryList.OpenOnOurs = false;
         }
         var button = Native(menu, Open) ?? ModEntry.AddTextButton(menu, "", FallbackSize, Open);
         button.Name = Name;

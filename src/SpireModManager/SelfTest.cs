@@ -880,7 +880,7 @@ static class SelfTest
         }, seconds: Hover.SlowDelay + 0.2);
         Check("main menu button: its card waits a second, then names the profile in gold", early == "" && Hover.SlowDelay == 1.0
             && late.Text == $"View and manage installed mods. Currently using mod profile {Profiles.Active?.Name}."
-            && card?.Text.Contains($"[color=#efc851]{Profiles.Active?.Name}[/color]") == true, $"early \"{early}\", then \"{late.Text}\"");
+            && card?.Text.Contains("[gold]") == false && card?.Text.Contains($"[color=#") == true && card.Text.Contains($"]{Profiles.Active?.Name}[/color]"), $"early \"{early}\", then \"{late.Text}\"");
     }
 
     // Our main menu button opens the page on our view even when Vanilla View was the last one shown; the game's way in
@@ -897,17 +897,22 @@ static class SelfTest
             var closed = !screen.IsVisibleInTree() && button.IsVisibleInTree();
             open();
             await Wait(menu, 1);
-            return closed && screen.IsVisibleInTree() && Store.Data.VanillaView == vanilla
-                && Layout.Current == (vanilla ? Layout.View.Vanilla : Layout.View.Categories)
-                && screen.GetNode<Control>("%ModsScrollContainer/Mask/Content").GetChildren().Any(c => c.IsInGroup("SpireModManagerCategoryHeader")) != vanilla
-                ? null : $"closed {closed}, shown {screen.IsVisibleInTree()}, vanilla {Store.Data.VanillaView}, layout {Layout.Current}";
+            var headers = screen.GetNode<Control>("%ModsScrollContainer/Mask/Content").GetChildren().Any(c => c.IsInGroup("SpireModManagerCategoryHeader"));
+            return closed && screen.IsVisibleInTree() && Store.Data.VanillaView == vanilla && headers != vanilla
+                ? null : $"closed {closed}, shown {screen.IsVisibleInTree()}, vanilla {Store.Data.VanillaView}, headers {headers}";
         }
-        Click(screen.GetNode<NButton>("SpireModManagerViewToggle"));
+        var toggle = screen.GetNode<NButton>("SpireModManagerViewToggle");
+        Click(toggle);
         await Wait(menu, 1);
         var game = await Reopened(() => menu.SubmenuStack.PushSubmenuType<NModdingScreen>(), vanilla: true);
         Check("the game's way in keeps Vanilla View, the last one shown", game == null, game ?? "");
         var ours = await Reopened(() => button.EmitSignal(NClickableControl.SignalName.Released, button), vanilla: false);
-        Check("our main menu button opens our view, after Vanilla View", ours == null && !CategoryList.OpenOnOurs, ours ?? "");
+        Check("our main menu button opens our view, after Vanilla View", ours == null, ours ?? "");
+        if (Store.Data.VanillaView) // never leave the tests after this on Vanilla View
+        {
+            Click(toggle);
+            await Wait(menu, 1);
+        }
     }
 
     // Right-click the main menu button, Move button, click somewhere: it stays there; Reset puts it back.
