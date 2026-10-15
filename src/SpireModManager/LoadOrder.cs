@@ -64,8 +64,8 @@ static class LoadOrder
         return places;
     }
 
-    // Rows in load order with handles and numbers; `matches` is the search filter.
-    public static void Apply(Control content, List<NModMenuRow> rows, Func<NModMenuRow, bool> matches, Action redraw)
+    // Rows in load order with handles and numbers, every one shown: a search here finds rather than filters (FindBar).
+    public static void Apply(Control content, List<NModMenuRow> rows, Action redraw)
     {
         // Scrolling (the wheel too) moves the rows under a still mouse: the hover lines follow.
         if (!content.HasMeta(ScrollHookMeta))
@@ -86,7 +86,7 @@ static class LoadOrder
         {
             var row = ordered[i];
             content.MoveChild(row, i);
-            row.Visible = matches(row);
+            row.Visible = true;
             Decorate(content, row, i + 1, launch.GetValueOrDefault(Key(row.Mod)), redraw);
             OrderingOnly(row, true);
         }
@@ -242,6 +242,7 @@ static class LoadOrder
             hint.AnchorLeft = hint.AnchorRight = 1;
         }
         sort.Visible = hint.Visible = on && search != null;
+        var finding = FindBar.Update(border, content, on && search != null);
         // Across here; up and down they follow the search box, in Layout.PlaceList (at the end), once it's in its place
         // for this view. (Read from it here, on the way into Load Order it was still where the main list has it, under
         // the profile bar, and the hint sat over the first row until the next redraw.)
@@ -254,6 +255,14 @@ static class LoadOrder
             hint.OffsetRight = sort.OffsetLeft - gap;
             hint.OffsetLeft = hint.OffsetRight - hintWidth;
             search.OffsetRight = on ? hint.OffsetLeft - gap * 2 : sort.OffsetRight;
+            // While searching: "6 matches · ‹ ›" between the search box and the hint.
+            if (border.GetNodeOrNull<Control>(FindBar.Name) is { } find)
+            {
+                find.OffsetRight = hint.OffsetLeft - gap * 2;
+                find.OffsetLeft = find.OffsetRight - FindBar.Width;
+                if (finding)
+                    search.OffsetRight = find.OffsetLeft - gap;
+            }
         }
 
         var mods = Mods(rows);
@@ -411,7 +420,7 @@ static class LoadOrder
         // This very copy against the search: Reveal looks at the first row with the id, and a local and a Workshop copy
         // share one (their search text can differ).
         var filter = content.HasMeta(CategoryList.FilterMeta) ? (string)content.GetMeta(CategoryList.FilterMeta) : "";
-        if (filter.Length > 0 && !Search.Matches(mod, filter))
+        if (filter.Length > 0 && !Store.Data.LoadOrderView && !Search.Matches(mod, filter)) // Load Order hides no row
             Search.Clear(content);
         CategoryList.Reveal(content, mod.manifest?.id ?? "", flash: true);
         CategoryList.Select(content, row);

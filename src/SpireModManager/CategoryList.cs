@@ -149,7 +149,7 @@ static class CategoryList
             return;
         ListFilter.Bring(row.Mod); // hidden until the next redraw (the search's clearing, or Expand's)
         var filter = content.HasMeta(FilterMeta) ? (string)content.GetMeta(FilterMeta) : "";
-        if (filter.Length > 0 && !Search.Matches(row.Mod, filter))
+        if (filter.Length > 0 && !Store.Data.LoadOrderView && !Search.Matches(row.Mod, filter)) // Load Order hides no row
             Search.Clear(content);
         Expand(content, row);
         ScrollSoon(content, row, flash, focus);
@@ -377,7 +377,7 @@ static class CategoryList
         if (Store.Data.LoadOrderView)
         {
             void RedrawAll() => Redraw(content);
-            LoadOrder.Apply(content, rows, Matches, RedrawAll);
+            LoadOrder.Apply(content, rows, RedrawAll);
             RowStrip.Apply(rows, StripActions(content), EdgeAction(content));
             return;
         }
