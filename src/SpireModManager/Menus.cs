@@ -24,15 +24,16 @@ static class Menus
     public static Node? Show(Node owner, IEnumerable<MenuItem> items, Vector2? at = null, string? toggleKey = null) =>
         MenuPanel.Show(owner, () => items.ToList(), at, toggleKey);
 
-    // The game's own yes/no popup, with our mark. True if confirmed.
-    public static async Task<bool> Confirm(LocString title, LocString body)
+    // The game's own yes/no popup, with our mark. True if confirmed. no, yes: the buttons' labels, when not the game's
+    // Cancel and Confirm.
+    public static async Task<bool> Confirm(LocString title, LocString body, LocString? no = null, LocString? yes = null)
     {
         if (NGenericPopup.Create() is not { } popup || NModalContainer.Instance is not { } modals)
             return false;
         Mark(popup);
         modals.Add(popup);
         return await popup.WaitForConfirmation(body, title,
-            new LocString("main_menu_ui", "GENERIC_POPUP.cancel"), new LocString("main_menu_ui", "GENERIC_POPUP.confirm"));
+            no ?? new LocString("main_menu_ui", "GENERIC_POPUP.cancel"), yes ?? new LocString("main_menu_ui", "GENERIC_POPUP.confirm"));
     }
 
     public const string MarkName = "SpireModManagerMark";
