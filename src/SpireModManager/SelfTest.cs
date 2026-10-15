@@ -65,6 +65,7 @@ static class SelfTest
                 NModalContainer.Instance?.OpenModal?.GetType().Name ?? "");
             Check("main menu button", menu.GetNodeOrNull("SpireModManagerMenuButton") != null);
             TestMenuButtonLook(menu);
+            await TestMenuButtonCard(menu);
             var relaunchArgs = ModEntry.RelaunchArgs();
             Check("relaunch passes the window mode once", relaunchArgs.Count(a => a is "--fullscreen" or "--maximized" or "--windowed") == 1
                 && relaunchArgs.Contains("--force-steam"), string.Join(" ", relaunchArgs));
@@ -181,6 +182,7 @@ static class SelfTest
             Check("reopening after Load Order shows the main list", Layout.Current == Layout.View.Categories
                 && screen.GetNode<Control>("%ModInfoContainer").Visible);
             await TestListFilterReopen(menu, screen, content);
+            await TestMenuButtonOpensOurs(menu, screen);
 
             await TestStoreSafety(menu, screen, outDir);
             await TestLanguageFonts(screen, outDir); // last: the main menu, the page with it, is made again
@@ -825,7 +827,9 @@ static class SelfTest
             $"{button.GetType().Name}, size {label?.GetThemeFontSize("font_size")} vs {settings?.GetThemeFontSize("font_size")}");
         Check("main menu button reads the active profile and the profile bar's count", MenuButtonText(menu) == MenuButtonExpected(),
             $"{MenuButtonText(menu)} vs {MenuButtonExpected()}");
-        Check("main menu button: hovering it says what it opens", Hover.TipOf(button) == "Go to page for managing installed mods", Hover.TipOf(button));
+        Check("main menu button: hovering it says what it opens, and names the profile in gold",
+            Hover.TipOf(button) == $"View and manage installed mods. Currently using mod profile [gold]{Profiles.Active?.Name}[/gold]."
+            && MenuButton.Tip("[b]Odd") == "View and manage installed mods. Currently using mod profile [gold][lb]b]Odd[/gold].", Hover.TipOf(button));
         var screen = button.GetViewportRect();
         Check("main menu button: as wide as its words, whole on screen", MenuButtonMisfit(menu) == null, MenuButtonMisfit(menu) ?? "");
         // The game's hover carets reach 54 from the text either side (NMainMenu.MainMenuButtonFocused): inside the button.
@@ -859,6 +863,51 @@ static class SelfTest
             $"{corner} in {screen}, note {noteThere}");
         Check("main menu button: back in its place, its note centred above it, on screen", note != null && screen.Encloses(noteHere)
             && Above(noteHere, button.GetGlobalRect()), $"note {noteHere}, button {button.GetGlobalRect()}");
+    }
+
+    // The main menu button's card: nothing at the usual delay (the mouse crosses the button on its way to the game's), then
+    // after a second, the normal card, its profile name in gold.
+    static async Task TestMenuButtonCard(NMainMenu menu)
+    {
+        if (menu.GetNodeOrNull<Control>("SpireModManagerMenuButton") is not { } button)
+            return;
+        var early = await HoverCard(menu, button, Hover.TipName);
+        RichTextLabel? card = null;
+        var late = await SizedHoverCard(menu, button, Hover.TipName, () =>
+        {
+            card = menu.GetTree().Root.FindChild(Hover.TipName, true, false)?.FindChildren("*", "RichTextLabel", true, false).OfType<RichTextLabel>().FirstOrDefault();
+            return Task.CompletedTask;
+        }, seconds: Hover.SlowDelay + 0.2);
+        Check("main menu button: its card waits a second, then names the profile in gold", early == "" && Hover.SlowDelay == 1.0
+            && late.Text == $"View and manage installed mods. Currently using mod profile {Profiles.Active?.Name}."
+            && card?.Text.Contains($"[gold]{Profiles.Active?.Name}[/gold]") == true, $"early \"{early}\", then \"{late.Text}\"");
+    }
+
+    // Our main menu button opens the page on our view even when Vanilla View was the last one shown; the game's way in
+    // (from its Settings) keeps the last view (Jordan, 2026-10-15). The page closed for real, then opened each way: the
+    // game reuses the page, so this is the page shown again (on its first opening, ours was read as it was made).
+    static async Task TestMenuButtonOpensOurs(NMainMenu menu, NModdingScreen screen)
+    {
+        if (menu.GetNodeOrNull<Control>("SpireModManagerMenuButton") is not { } button)
+            return;
+        async Task<string?> Reopened(Action open, bool vanilla)
+        {
+            menu.SubmenuStack.Pop();
+            await Wait(menu, 0.5);
+            var closed = !screen.IsVisibleInTree() && button.IsVisibleInTree();
+            open();
+            await Wait(menu, 1);
+            return closed && screen.IsVisibleInTree() && Store.Data.VanillaView == vanilla
+                && Layout.Current == (vanilla ? Layout.View.Vanilla : Layout.View.Categories)
+                && screen.GetNode<Control>("%ModsScrollContainer/Mask/Content").GetChildren().Any(c => c.IsInGroup("SpireModManagerCategoryHeader")) != vanilla
+                ? null : $"closed {closed}, shown {screen.IsVisibleInTree()}, vanilla {Store.Data.VanillaView}, layout {Layout.Current}";
+        }
+        Click(screen.GetNode<NButton>("SpireModManagerViewToggle"));
+        await Wait(menu, 1);
+        var game = await Reopened(() => menu.SubmenuStack.PushSubmenuType<NModdingScreen>(), vanilla: true);
+        Check("the game's way in keeps Vanilla View, the last one shown", game == null, game ?? "");
+        var ours = await Reopened(() => button.EmitSignal(NClickableControl.SignalName.Released, button), vanilla: false);
+        Check("our main menu button opens our view, after Vanilla View", ours == null && !CategoryList.OpenOnOurs, ours ?? "");
     }
 
     // Right-click the main menu button, Move button, click somewhere: it stays there; Reset puts it back.

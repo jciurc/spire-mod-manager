@@ -24,6 +24,10 @@ static class CategoryList
     const string GameGapMeta = "spire_mod_manager_game_gap", GameSidesMeta = "spire_mod_manager_game_sides";
     static readonly Dictionary<string, float> HeaderWidths = [];
 
+    // Set by our main menu button while it opens the page: the page opens on our view, not Vanilla View (Jordan,
+    // 2026-10-15). The game's own way in (its Settings) leaves the last view. Read once, as the page is made or shown.
+    public static bool OpenOnOurs { get; set; }
+
     public static void Attach(NModdingScreen screen)
     {
         var content = screen.GetNode<Control>("%ModsScrollContainer/Mask/Content");
@@ -43,12 +47,14 @@ static class CategoryList
             Layout.Apply(screen);
             RestoreSelection(screen, content);
         }
-        // Load Order is a side trip: the page always opens on the main list (Vanilla View, a preference, stays).
-        if (Store.Data.LoadOrderView)
+        // Load Order is a side trip: the page always opens on the main list (Vanilla View, a preference, stays, except
+        // when our main menu button opens the page: OpenOnOurs).
+        if (Store.Data.LoadOrderView || (OpenOnOurs && Store.Data.VanillaView))
         {
-            Store.Data.LoadOrderView = false;
+            (Store.Data.LoadOrderView, Store.Data.VanillaView) = (false, Store.Data.VanillaView && !OpenOnOurs);
             Store.Save();
         }
+        OpenOnOurs = false;
         // The page bar's Show: choice stays; rows it kept for a change made last time go by it again (ListFilter).
         ListFilter.Release();
         screen.VisibilityChanged += () =>
@@ -56,7 +62,11 @@ static class CategoryList
             if (!screen.IsVisibleInTree())
                 return;
             var released = ListFilter.Release();
-            if (Store.Data.LoadOrderView)
+            var toOurs = OpenOnOurs && Store.Data.VanillaView;
+            OpenOnOurs = false;
+            if (toOurs)
+                Switch(true); // the lit Vanilla View pressed again: back to ours
+            else if (Store.Data.LoadOrderView)
                 Switch(false);
             else if (released)
                 Apply(content);
