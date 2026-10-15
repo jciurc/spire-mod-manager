@@ -269,12 +269,21 @@ sealed class ModField
             Save();
     }
 
-    // Opens the box for typing (tags: from their pills).
+    // Opens the box for typing (tags: from their pills). A click on the pills means adding one: ", " goes after them and
+    // the caret after that (it stayed at the start, where the text was last set). So what's typed is a new tag, and the
+    // suggestions offer the other tags as in an empty box rather than ones like the last tag (taking one replaced it).
+    // Saving tidies the ", " away again.
     public void BeginEdit()
     {
         _box.Visible = true;
         if (_pillsBox != null)
             _pillsBox.Visible = false;
+        if (_box is LineEdit line)
+        {
+            if (_kind == Kind.Tags && line.Text.Trim().Length > 0 && !line.Text.TrimEnd().EndsWith(','))
+                line.Text = line.Text.TrimEnd() + ", ";
+            line.CaretColumn = line.Text.Length;
+        }
         _box.GrabFocus();
     }
 

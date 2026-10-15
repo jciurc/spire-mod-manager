@@ -2438,6 +2438,20 @@ static class SelfTest
         Check("panel saves tags, repeats dropped; at rest they're pills", Store.InfoFor("SmmTestFixes")?.Tags?.SequenceEqual(["co-op", "Favorites"]) == true
             && yours.GetNode<Control>("Tags/CustomTags") is { Visible: true } && yours.GetNode("Tags/CustomTags/Pills").GetChildCount() == 2,
             string.Join(", ", Store.InfoFor("SmmTestFixes")?.Tags ?? []));
+        // A click on the pills opens the box ready for another tag: ", " after them and the caret after that (Jordan,
+        // 2026-10-15: it was at the start), so the suggestions don't take the last tag for the word being typed.
+        // Clicking away leaves the tags as they were.
+        yours.GetNode<Control>("Tags/CustomTags").EmitSignal(Control.SignalName.GuiInput, new InputEventMouseButton { ButtonIndex = MouseButton.Left, Pressed = false });
+        await Wait(menu, 0.1);
+        Check("a click on the tag pills opens the box ready for another tag", tags.Visible && tags.HasFocus() && tags.Text == "co-op, Favorites, " && tags.CaretColumn == tags.Text.Length
+            && !TagSuggestions.Labels().Any(t => t.Contains("Favorites", StringComparison.OrdinalIgnoreCase)),
+            $"\"{tags.Text}\" caret {tags.CaretColumn}, focus {tags.HasFocus()}, offered {string.Join(", ", TagSuggestions.Labels())}");
+        await Capture(screen, outDir, "9a-tags-editing");
+        tags.ReleaseFocus();
+        await Wait(menu, 0.3);
+        Check("clicking away after that keeps the tags as pills", Store.InfoFor("SmmTestFixes")?.Tags?.SequenceEqual(["co-op", "Favorites"]) == true
+            && tags.Text == "co-op, Favorites" && yours.GetNode<Control>("Tags/CustomTags").Visible && !tags.Visible,
+            $"\"{tags.Text}\" / {string.Join(", ", Store.InfoFor("SmmTestFixes")?.Tags ?? [])}");
         await Capture(screen, outDir, "9-notes-editing");
 
         // Fields sit right under the details; Cancel puts the text back; the alias field shows on the row.
