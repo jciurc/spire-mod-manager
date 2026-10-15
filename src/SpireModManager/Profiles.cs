@@ -205,10 +205,10 @@ static class Profiles
     }
 
     // A profile to share (ProfileShare): every installed mod in load order, on or off as the profile has it (one it
-    // has never seen as it is now, as switching to it would leave it). Group is the mod's category, empty in
-    // Uncategorized. Alias and notes are left out on purpose: they're the player's own words, which a list passed to
-    // friends shouldn't carry (an open question for Jordan). Mods the profile keeps but that aren't installed aren't
-    // listed either: there's no name, version or Workshop id to give for them.
+    // has never seen as it is now, as switching to it would leave it). Category: empty in Uncategorized. Alias and notes
+    // are the player's own words: written only when the share dialog's tick boxes ask for them (off at first), as are
+    // the mods that are off (ProfileCsv.Options). Mods the profile keeps but that aren't installed aren't listed: there's
+    // no name, version or Workshop id to give for them.
     public static List<ProfileCsv.Row> ShareRows(Profile profile)
     {
         var mods = profile.Edited ?? profile.Mods;
@@ -222,8 +222,9 @@ static class Profiles
             {
                 var id = m.manifest?.id ?? "";
                 var on = Entry(mods, id, m.modSource)?.Enabled ?? !(settings?.IsModDisabled(m) ?? false);
-                return new ProfileCsv.Row(id, m.manifest?.name ?? "", m.manifest?.version ?? "", on, Store.InfoFor(id)?.Category ?? "",
-                    m.workshopId is { } workshop ? ProfileCsv.WorkshopLink(workshop) : "");
+                var info = Store.InfoFor(id);
+                return new ProfileCsv.Row(id, m.manifest?.name ?? "", m.manifest?.version ?? "", on, info?.Category ?? "",
+                    m.workshopId is { } workshop ? workshop.ToString() : "", info?.Alias ?? "", info?.Notes ?? "");
             }).ToList();
     }
 

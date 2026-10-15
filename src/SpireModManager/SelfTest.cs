@@ -1747,7 +1747,7 @@ static class SelfTest
         var tricky = ProfileCsv.Write([
             new ProfileCsv.Row("SmmQuote", "Comma, \"quoted\"\nname", "1.0", true, "A, B", ""),
             new ProfileCsv.Row("SmmFormula", "=HYPERLINK(\"x\")", "-1", false, "@group", ""),
-        ]);
+        ], new(Disabled: true));
         var back = ProfileCsv.Read(tricky).Mods;
         var trickyRecords = ProfileCsv.Records(tricky);
         Check("CSV: a name with a comma, quotes and a line break round-trips, quoted", tricky.Contains("\"Comma, \"\"quoted\"\"\nname\"")
@@ -1765,26 +1765,62 @@ static class SelfTest
         Check("CSV: a Workshop link is rebuilt from its id; anything else is dropped",
             ProfileCsv.CleanLink("https://steamcommunity.com/sharedfiles/filedetails/?id=3123456789&searchtext=") == "https://steamcommunity.com/sharedfiles/filedetails/?id=3123456789"
             && ProfileCsv.CleanLink("https://example.com/?x=1") == "" && ProfileCsv.IsWorkshopLink(ProfileCsv.WorkshopLink(42)) && !ProfileCsv.IsWorkshopLink("https://example.com"));
+        // The Workshop column is just the id (Jordan, 2026-10-15), read back as the item's link; the optional columns.
+        var withId = ProfileCsv.Write([new ProfileCsv.Row("SmmWorkshop", "From the Workshop", "1.0", true, "", "3123456789")], new());
+        Check("CSV: the Workshop Id column holds just the id, read back as the item's page",
+            ProfileCsv.Records(withId) is [_, [.., "3123456789"]] && ProfileCsv.Read(withId).Mods is [{ WorkshopLink: var idLink }]
+            && idLink == ProfileCsv.WorkshopLink(3123456789), withId);
+        Check("CSV: the columns follow the tick boxes", ProfileCsv.Header(new()).SequenceEqual(["Mod Id", "Name", "Version", "Enabled", "Category", "Workshop Id"])
+            && ProfileCsv.Header(new(Category: false, Alias: true, Notes: true)).SequenceEqual(["Mod Id", "Name", "Version", "Enabled", "Workshop Id", "Alias", "Notes"]),
+            string.Join(",", ProfileCsv.Header(new(Category: false, Alias: true, Notes: true))));
 
-        // Share profile, from the profile list: the active profile's list, a row per installed mod in load order, on and
-        // off as it has them, the category as Group, no alias or notes (the fixture gives this mod both).
+        // Share profile, from the profile list (Jordan, 2026-10-15): at first the active profile's enabled mods in load
+        // order with their category, no alias or notes; the tick boxes add the mods that are off, aliases and notes, or
+        // take the category out.
         await Choose("Share profile");
-        var csv = Part<TextEdit>("CsvText")?.Text ?? "";
+        string Csv() => Part<TextEdit>("CsvText")?.Text ?? "";
+        async Task Tick(string name, bool on)
+        {
+            if (Part<Button>(name) is { } box)
+                box.ButtonPressed = on;
+            await Wait(menu, 0.1);
+        }
+        bool Ticked(string name) => Part<Button>(name) is { ButtonPressed: true } box && box.GetNodeOrNull<Control>("Box/Tick")?.Visible == true;
+        var csv = Csv();
         var records = ProfileCsv.Records(csv);
         var installed = ModManager.Mods.Union(Installed.Mods).Where(m => m.manifest?.id != null).ToList();
         var order = (SaveManager.Instance.SettingsSave.ModSettings?.ModList ?? []).Select(e => e.Id)
             .Where(id => installed.Any(m => m.manifest?.id == id)).Distinct().ToList();
         var ids = records.Skip(1).Select(r => r[0]).ToList();
-        Check("Share profile opens with the active profile's list: the header, a row per installed mod in load order",
-            Dialog() != null && records.FirstOrDefault()?.SequenceEqual(ProfileCsv.Header) == true && ids.Count == installed.Count
-            && ids.Take(order.Count).SequenceEqual(order) && Part<RichTextLabel>("Body")?.GetParsedText().Contains(startName) == true,
-            $"{string.Join(" | ", ids)} vs order {string.Join(" | ", order)}");
-        Check("each row's Enabled as the profile has it, TRUE and FALSE both there", records.Skip(1).All(r => r[3] == (IsOn(r[0]) ? "TRUE" : "FALSE"))
-            && ids.Contains("SmmTestRetired") && records.Any(r => r[3] == "TRUE") && records.Any(r => r[3] == "FALSE"),
-            string.Join(", ", records.Skip(1).Select(r => $"{r[0]}={r[3]}")));
-        Check("Group is the category; no alias or notes", records.FirstOrDefault(r => r[0] == ModEntry.ModId)?[4] == "Tools"
-            && !csv.Contains("The Manager") && !csv.Contains("Fixture note") && records.Skip(1).All(r => r.Count == 8 && r[6] == "" && r[7] == ""), csv);
+        var enabledOrder = order.Where(IsOn).ToList();
+        Check("Share profile opens with the active profile's enabled mods in load order, under the default columns",
+            Dialog() != null && records.FirstOrDefault()?.SequenceEqual(ProfileCsv.Header(new())) == true && ids.Count == installed.Count(m => IsOn(m.manifest!.id!))
+            && ids.Take(enabledOrder.Count).SequenceEqual(enabledOrder) && records.Skip(1).All(r => r[3] == "TRUE") && !ids.Contains("SmmTestRetired")
+            && Part<RichTextLabel>("Body")?.GetParsedText().Contains(startName) == true, $"{string.Join(" | ", ids)} vs order {string.Join(" | ", enabledOrder)}");
+        Check("its tick boxes: Include category on; disabled, alias and notes off",
+            Ticked("IncludeCategory") && !Ticked("IncludeDisabled") && !Ticked("IncludeAlias") && !Ticked("IncludeNotes"));
+        var (alias, notes) = (Store.InfoFor(ModEntry.ModId)?.Alias ?? "", Store.InfoFor(ModEntry.ModId)?.Notes ?? "");
+        Check("Category is the category; no alias or notes", records.FirstOrDefault(r => r[0] == ModEntry.ModId)?[4] == "Tools" && alias.Length > 0 && notes.Length > 0
+            && !csv.Contains(alias) && !csv.Contains(notes) && records.All(r => r.Count == 6), csv);
         await Capture(screen, outDir, "7c-share-profile");
+        await Tick("IncludeAlias", true);
+        await Tick("IncludeNotes", true);
+        await Tick("IncludeCategory", false);
+        var more = ProfileCsv.Records(Csv());
+        Check("Include alias and notes add their columns with the player's words; without the category, no Category column",
+            more.FirstOrDefault()?.SequenceEqual(ProfileCsv.Header(new(Category: false, Alias: true, Notes: true))) == true
+            && more.FirstOrDefault(r => r[0] == ModEntry.ModId) is [.., var hasAlias, var hasNotes] && hasAlias == alias && hasNotes == notes, Csv());
+        await Tick("IncludeAlias", false);
+        await Tick("IncludeNotes", false);
+        await Tick("IncludeCategory", true);
+        await Tick("IncludeDisabled", true);
+        csv = Csv();
+        records = ProfileCsv.Records(csv);
+        ids = records.Skip(1).Select(r => r[0]).ToList();
+        Check("Include disabled: a row per installed mod in load order, TRUE and FALSE as the profile has them", ids.Count == installed.Count
+            && ids.Take(order.Count).SequenceEqual(order) && records.Skip(1).All(r => r[3] == (IsOn(r[0]) ? "TRUE" : "FALSE")) && ids.Contains("SmmTestRetired")
+            && records.Any(r => r[3] == "FALSE") && records.FirstOrDefault()?.SequenceEqual(ProfileCsv.Header(new())) == true,
+            string.Join(", ", records.Skip(1).Select(r => $"{r[0]}={r[3]}")));
         var clipboard = DisplayServer.ClipboardGet(); // put back after: a windowed run is on Jordan's desktop
         Press("CopyButton");
         await Wait(menu, 0.1);
@@ -1802,11 +1838,12 @@ static class SelfTest
         var file = Path.Combine(outDir, ProfileShare.FileName("Co-op: \"night\"?"));
         var saveError = ProfileShare.SaveTo(file, csv);
         var bytes = File.Exists(file) ? File.ReadAllBytes(file) : [];
-        Check("Save CSV: a name made safe for a file, the text as UTF-8 with a BOM", Path.GetFileName(file) == "Co-op_ _night__.csv" && saveError == null
+        Check("Save: a .txt, named safe for a file, the text as UTF-8 with a BOM", Path.GetFileName(file) == "Co-op_ _night__.txt" && saveError == null
             && bytes is [0xEF, 0xBB, 0xBF, ..] && File.ReadAllText(file) == csv, $"{Path.GetFileName(file)}: {saveError}");
         string[] reserved = [ProfileShare.FileName("CON"), ProfileShare.FileName("com1.backup"), ProfileShare.FileName("Console")];
-        Check("Save CSV: a name Windows keeps for a device gets a _ in front, before a dot too; others don't",
-            reserved.SequenceEqual(["_CON.csv", "_com1.backup.csv", "Console.csv"]), string.Join(", ", reserved));
+        Check("Save: a name Windows keeps for a device gets a _ in front, before a dot too; others don't",
+            reserved.SequenceEqual(["_CON.txt", "_com1.backup.txt", "Console.txt"]), string.Join(", ", reserved));
+        await Tick("IncludeDisabled", false); // the tick boxes stay for the session: back as they started
         Input.ParseInputEvent(new InputEventKey { Keycode = Key.Escape, Pressed = true });
         await Wait(menu, 0.2);
         Input.ParseInputEvent(new InputEventKey { Keycode = Key.Escape, Pressed = false });
@@ -1888,7 +1925,7 @@ static class SelfTest
         Check("Create profile with no text says what to do, in red, and makes nothing", Dialog() != null && Status() == "Paste a mod list or load a CSV file first."
             && StatusRed() && Store.Data.Profiles.Count == profiles, Status());
         Check("the imported name: the file's, numbered when taken; not Better Mod Menu's time-stamped one",
-            Profiles.ImportName("C:/lists/Brother co-op.csv") == "Brother co-op" && Profiles.ImportName($"{startName}.csv") == Profiles.CopyName(startName)
+            Profiles.ImportName("C:/lists/Brother co-op.csv") == "Brother co-op" && Profiles.ImportName("C:/lists/Brother co-op.txt") == "Brother co-op" && Profiles.ImportName($"{startName}.csv") == Profiles.CopyName(startName)
             && Profiles.ImportName("C:/x/mod_list.20261014-120000.csv") == "Imported profile" && Profiles.ImportName("mod_list.20261014-120000-2.csv") == "Imported profile",
             Profiles.ImportName($"{startName}.csv"));
         Part<TextEdit>("CsvText")?.GrabFocus();
