@@ -6,8 +6,10 @@ using MegaCrit.Sts2.Core.Nodes.Screens.ModdingScreen;
 
 namespace SpireModManager;
 
-// A mod list as CSV text, in Better Mod Menu's columns (its mod list export), so a list moves between the two
-// managers: Mod Id, Name, Version, Enabled (TRUE/FALSE), Group, Workshop Link, Alias, Notes.
+// A mod list as CSV text, in the order of Better Mod Menu's columns (its mod list export): Mod Id, Name, Version,
+// Enabled (TRUE/FALSE), then the ones the player picks (Options): Category, Workshop Id, Alias, Notes. The Workshop
+// column holds just the id (Jordan, 2026-10-15: Steam may serve an item's page at another address); reading takes
+// Better Mod Menu's Workshop Link too.
 // - Writing: RFC 4180 (a value with a comma, quote or line break in quotes, quotes doubled), CRLF line ends. A value
 //   a spreadsheet would run as a formula (starting with = + - @, a tab or a CR) gets a ' in front, as Better Mod
 //   Menu writes it: spreadsheets show it as text, and reading takes it off again.
@@ -16,10 +18,18 @@ namespace SpireModManager;
 //   only Mod Id (or Id) and Enabled are needed. Enabled: TRUE/FALSE, 1/0 or yes/no, in any case.
 static class ProfileCsv
 {
-    public static readonly string[] Header = ["Mod Id", "Name", "Version", "Enabled", "Group", "Workshop Link", "Alias", "Notes"];
+    // What a shared list holds besides each mod's id, name, version and Enabled (Jordan, 2026-10-15: the category on, the
+    // rest off at first). Disabled: rows for the mods that are off too; without it they're left out.
+    public record Options(bool Category = true, bool Disabled = false, bool Alias = false, bool Notes = false);
 
-    // One mod to write. Alias and notes are always written empty (see Profiles.ShareRows).
-    public record Row(string Id, string Name, string Version, bool Enabled, string Group, string WorkshopLink);
+    public static string[] Header(Options options) =>
+    [
+        "Mod Id", "Name", "Version", "Enabled", .. options.Category ? ["Category"] : Array.Empty<string>(), "Workshop Id",
+        .. options.Alias ? ["Alias"] : Array.Empty<string>(), .. options.Notes ? ["Notes"] : Array.Empty<string>(),
+    ];
+
+    // One mod to write. WorkshopId: "" for a mod that isn't from the Workshop.
+    public record Row(string Id, string Name, string Version, bool Enabled, string Category, string WorkshopId, string Alias = "", string Notes = "");
 
     // One mod read: the parts an import uses.
     public record Entry(string Id, bool Enabled, string Name, string WorkshopLink);
@@ -38,12 +48,19 @@ static class ProfileCsv
 
     public static bool IsWorkshopLink(string link) => link.StartsWith(WorkshopPage) && link.Length > WorkshopPage.Length && link[WorkshopPage.Length..].All(char.IsAsciiDigit);
 
-    public static string Write(IEnumerable<Row> rows)
+    // A Workshop column's value as a link we make: an id alone (ours), or any link with "id=<number>" (Better Mod Menu's).
+    static string WorkshopFrom(string value) =>
+        value.Length is > 0 and <= 20 && value.All(char.IsAsciiDigit) && ulong.TryParse(value, out var id) ? WorkshopLink(id) : CleanLink(value);
+
+    public static string Write(IEnumerable<Row> rows, Options options)
     {
         var text = new StringBuilder();
-        Line(text, Header);
-        foreach (var row in rows)
-            Line(text, [row.Id, row.Name, row.Version, row.Enabled ? "TRUE" : "FALSE", row.Group, row.WorkshopLink, "", ""]);
+        Line(text, Header(options));
+        foreach (var row in rows.Where(r => options.Disabled || r.Enabled))
+            Line(text, [
+                row.Id, row.Name, row.Version, row.Enabled ? "TRUE" : "FALSE", .. options.Category ? [row.Category] : Array.Empty<string>(),
+                row.WorkshopId, .. options.Alias ? [row.Alias] : Array.Empty<string>(), .. options.Notes ? [row.Notes] : Array.Empty<string>(),
+            ]);
         return text.ToString();
     }
 
@@ -141,7 +158,7 @@ static class ProfileCsv
             return Problem(Menus.Text("SPIRE_MOD_MANAGER.IMPORT_EMPTY"));
         var header = records[0].Select(h => h.Trim()).ToList();
         int Column(params string[] names) => header.FindIndex(h => names.Any(n => string.Equals(h, n, StringComparison.OrdinalIgnoreCase)));
-        var (id, enabled, name, link) = (Column("Mod Id", "Id", "ModId"), Column("Enabled"), Column("Name"), Column("Workshop Link"));
+        var (id, enabled, name, link) = (Column("Mod Id", "Id", "ModId"), Column("Enabled"), Column("Name"), Column("Workshop Id", "Workshop Link", "WorkshopId"));
         if (id < 0)
             return Problem(Menus.Text("SPIRE_MOD_MANAGER.IMPORT_NO_ID"));
         if (enabled < 0)
@@ -155,7 +172,7 @@ static class ProfileCsv
                 continue;
             if (Bool(Cell(enabled)) is not { } on)
                 return Problem(Menus.Format("SPIRE_MOD_MANAGER.IMPORT_BAD_ENABLED", ("mod", modId), ("value", Cell(enabled))));
-            mods.Add(new Entry(modId, on, Cell(name), CleanLink(Cell(link))));
+            mods.Add(new Entry(modId, on, Cell(name), WorkshopFrom(Cell(link))));
         }
         return mods.Count == 0 ? Problem(Menus.Text("SPIRE_MOD_MANAGER.IMPORT_NO_MODS")) : new Result(mods, null);
     }
@@ -170,10 +187,12 @@ static class ProfileCsv
 
 // Sharing a profile as text, and making one from shared text (ProfileCsv), from the profile list or the picker's
 // right-click menu. Two dialogs over the page, like the relaunch check's; Close (or Cancel) and Esc close them.
-// - Share profile: the active profile's list in a read-only box (select any of it), Copy (the button says "Copied" for
-//   a moment), Save CSV… (the system's save dialog, named after the profile) and Close.
-// - Import profile: a box to paste into and Load CSV… (the system's open dialog). As the text changes, it says what
-//   the list would do compared with now and names the listed mods that aren't installed, each with its Workshop page
+// - Share profile: a row of tick boxes for what the list holds (ProfileCsv.Options: Include category, disabled, alias,
+//   notes; kept for the session, or across launches with Remember selection at the row's end), the active profile's
+//   list in a read-only box (select any of it), Save (the system's save dialog: spire-mods-<profile>-<time>.txt, a .txt
+//   as some players are wary of .csv; the text is the same), Copy (the button says "Copied" for a moment) and Close.
+// - Import profile: a box to paste into and Load file (the system's open dialog, .txt or .csv). As the text changes,
+//   it says what the list would do compared with now and names the listed mods that aren't installed, each with its Workshop page
 //   (opened in the browser). A problem with the text shows in red. Create profile makes a new profile from it (named
 //   after the file, or "Imported profile") and switches to it: one undo step.
 static class ProfileShare
@@ -182,26 +201,74 @@ static class ProfileShare
     static readonly Color Cream = new(1, 0.964706f, 0.886275f);
     static readonly Color Gold = new(0.937f, 0.784f, 0.318f);
     static readonly Color ErrorColor = new(1f, 0.5f, 0.44f);
-    const string GoldHex = "#efc851", DimHex = "#fff6e299";
+    const string GoldHex = "#efc851", DimHex = "#fff6e299", LinkHex = "#99ccff";
 
     public static bool IsOpen => Modal.IsOpen(Name);
 
+    // The share dialog's tick boxes: as last left this session, or else as kept from an earlier one (Remember selection,
+    // Store.Data.ShareChoices), or else the defaults.
+    static ProfileCsv.Options? _options;
+
+    static ProfileCsv.Options Choices => _options ??= Store.Data.ShareChoices is { } kept
+        ? new ProfileCsv.Options(kept.Category, kept.Disabled, kept.Alias, kept.Notes) : new ProfileCsv.Options();
+
+    // The self-test: the tick boxes as a new launch finds them.
+    public static void ForgetSessionChoices() => _options = null;
+
+    // Remember selection on: these tick boxes kept in our data (saved now), for the next launches too. Off: forgotten.
+    static void Keep(bool on)
+    {
+        Store.Data.ShareChoices = on ? new ShareChoice(Choices.Category, Choices.Disabled, Choices.Alias, Choices.Notes) : null;
+        Store.Save();
+    }
+
     public static void ShowShare(NModdingScreen screen)
     {
-        if (Profiles.Active is not { } profile || Dialog(screen, "SPIRE_MOD_MANAGER.SHARE_PROFILE") is not { } column)
+        if (Profiles.Active is not { } profile || Dialog(screen, "SPIRE_MOD_MANAGER.SHARE_PROFILE", 920) is not { } column)
             return;
-        var csv = ProfileCsv.Write(Profiles.ShareRows(profile));
+        var rows = Profiles.ShareRows(profile);
+        var csv = ProfileCsv.Write(rows, Choices);
 
         var body = Body("Body");
         body.Text = Menus.Format("SPIRE_MOD_MANAGER.SHARE_BODY", ("name", $"[color={GoldHex}]{Escape(profile.Name)}[/color]"));
         column.AddChild(body);
         var box = TextBox("CsvText", editable: false);
         box.Text = csv;
+        // What the list holds, in a row under the words (each tick rewrites it), and at the row's right end Remember
+        // selection (Jordan, 2026-10-15).
+        var row = new HBoxContainer { Name = "OptionsRow" };
+        row.AddThemeConstantOverride("separation", 22);
+        var options = new HFlowContainer { Name = "Options", SizeFlagsHorizontal = Control.SizeFlags.ExpandFill }; // wraps where a language's words run long
+        options.AddThemeConstantOverride("h_separation", 22);
+        options.AddThemeConstantOverride("v_separation", 4);
+        void Set(Func<ProfileCsv.Options, ProfileCsv.Options> change)
+        {
+            _options = change(Choices);
+            box.Text = csv = ProfileCsv.Write(rows, Choices);
+            if (Store.Data.ShareChoices != null)
+                Keep(true);
+        }
+        options.AddChild(Option("SPIRE_MOD_MANAGER.SHARE_CATEGORY", Choices.Category, on => Set(o => o with { Category = on }), "IncludeCategory"));
+        options.AddChild(Option("SPIRE_MOD_MANAGER.SHARE_DISABLED", Choices.Disabled, on => Set(o => o with { Disabled = on }), "IncludeDisabled"));
+        options.AddChild(Option("SPIRE_MOD_MANAGER.SHARE_ALIAS", Choices.Alias, on => Set(o => o with { Alias = on }), "IncludeAlias"));
+        options.AddChild(Option("SPIRE_MOD_MANAGER.SHARE_NOTES", Choices.Notes, on => Set(o => o with { Notes = on }), "IncludeNotes"));
+        row.AddChild(options);
+        var remember = Option("SPIRE_MOD_MANAGER.SHARE_REMEMBER", Store.Data.ShareChoices != null, Keep, "RememberChoices");
+        remember.SizeFlagsVertical = Control.SizeFlags.ShrinkBegin;
+        row.AddChild(remember);
+        column.AddChild(row);
         column.AddChild(box);
         var status = Status();
         column.AddChild(status);
 
         var buttons = Buttons();
+        // Save, then Copy (Jordan, 2026-10-15).
+        AddButton(buttons, "SPIRE_MOD_MANAGER.SAVE_LIST", () => Browse(column, save: true, FileName(profile.Name, DateTime.Now), path =>
+        {
+            var error = SaveTo(path, csv);
+            Say(status, error == null ? Menus.Format("SPIRE_MOD_MANAGER.SAVED_AS", ("file", Path.GetFileName(path)))
+                : Menus.Format("SPIRE_MOD_MANAGER.SAVE_FAILED", ("error", error)), error != null);
+        }), "SaveCsvButton");
         Button? copy = null;
         copy = AddButton(buttons, "SPIRE_MOD_MANAGER.COPY", () =>
         {
@@ -213,12 +280,6 @@ static class ProfileShare
                     copy.Text = Menus.Text("SPIRE_MOD_MANAGER.COPY");
             };
         }, "CopyButton");
-        AddButton(buttons, "SPIRE_MOD_MANAGER.SAVE_CSV", () => Browse(column, save: true, FileName(profile.Name), path =>
-        {
-            var error = SaveTo(path, csv);
-            Say(status, error == null ? Menus.Format("SPIRE_MOD_MANAGER.SAVED_AS", ("file", Path.GetFileName(path)))
-                : Menus.Format("SPIRE_MOD_MANAGER.SAVE_FAILED", ("error", error)), error != null);
-        }), "SaveCsvButton");
         Spacer(buttons);
         AddButton(buttons, "SPIRE_MOD_MANAGER.CLOSE", () => Close(), "CloseShareButton");
         column.AddChild(buttons);
@@ -232,12 +293,13 @@ static class ProfileShare
         body.Text = Menus.Text("SPIRE_MOD_MANAGER.IMPORT_BODY");
         column.AddChild(body);
         var box = TextBox("CsvText", editable: true);
+        box.CustomMinimumSize = new Vector2(0, 200); // shorter than Share's: the preview below gets the room
         box.PlaceholderText = Menus.Text("SPIRE_MOD_MANAGER.IMPORT_HINT");
         column.AddChild(box);
         var status = Status();
         column.AddChild(status);
         var preview = Body("Preview");
-        (preview.FitContent, preview.ScrollActive, preview.CustomMinimumSize) = (false, true, new Vector2(0, 170));
+        (preview.FitContent, preview.ScrollActive, preview.CustomMinimumSize) = (false, true, new Vector2(0, 250));
         preview.MouseFilter = Control.MouseFilterEnum.Stop; // its links, and the wheel
         preview.MetaClicked += meta =>
         {
@@ -260,7 +322,7 @@ static class ProfileShare
         box.TextChanged += Update;
 
         var buttons = Buttons();
-        AddButton(buttons, "SPIRE_MOD_MANAGER.LOAD_CSV", () => Browse(column, save: false, "", path =>
+        AddButton(buttons, "SPIRE_MOD_MANAGER.LOAD_LIST", () => Browse(column, save: false, "", path =>
         {
             try
             {
@@ -310,30 +372,26 @@ static class ProfileShare
         {
             lines.Add("");
             lines.Add(Menus.Format("SPIRE_MOD_MANAGER.IMPORT_MISSING", ("count", Menus.Number(plan.Missing.Count))));
-            var page = Escape(Menus.Text("SPIRE_MOD_MANAGER.WORKSHOP_PAGE"));
             var off = Escape(Menus.Text("SPIRE_MOD_MANAGER.IMPORT_MISSING_OFF"));
-            lines.AddRange(plan.Missing.Select(m => $"  •  [b]{Escape(m.Name.Length > 0 ? m.Name : m.Id)}[/b]"
-                + (m.Enabled ? "" : $" [color={DimHex}]{off}[/color]")
-                + (m.WorkshopLink.Length > 0 ? $"  [url={m.WorkshopLink}]{page}[/url]" : "")));
+            // The name itself opens its Workshop page, when the list gives one (Jordan, 2026-10-15): a few steps to find it.
+            string Named(ProfileCsv.Entry m) => $"[b]{Escape(m.Name.Length > 0 ? m.Name : m.Id)}[/b]";
+            lines.AddRange(plan.Missing.Select(m => "  •  " + (m.WorkshopLink.Length > 0 ? $"[url={m.WorkshopLink}][color={LinkHex}]{Named(m)}[/color][/url]" : Named(m))
+                + (m.Enabled ? "" : $" [color={DimHex}]{off}[/color]")));
         }
         return string.Join("\n", lines);
     }
 
-    // A profile's name as a file name: characters a file name can't have become "_", and a name Windows keeps for a
-    // device (CON, NUL, COM1..., also before a dot, as in "CON.backup") gets a "_" in front.
-    public static string FileName(string profile)
+    // A saved list's file name (Jordan, 2026-10-15): spire-mods-<profile>-<yyyyMMddHHmmss>.txt, the profile's name with
+    // the characters a file name can't have as "_". (The prefix also keeps it clear of the names Windows keeps for
+    // devices, such as CON.) Profiles.ImportName reads the profile's name back out of it.
+    public const string FilePrefix = "spire-mods-";
+
+    public static string FileName(string profile, DateTime at)
     {
         var bad = Path.GetInvalidFileNameChars().Concat(['<', '>', ':', '"', '/', '\\', '|', '?', '*']).ToHashSet();
         var name = new string(profile.Select(c => bad.Contains(c) ? '_' : c).ToArray()).Trim().TrimEnd('.');
-        if (name.Length == 0)
-            name = Menus.Text("SPIRE_MOD_MANAGER.IMPORTED_PROFILE");
-        if (Reserved.IsMatch(name.Split('.')[0].TrimEnd()))
-            name = "_" + name;
-        return name + ".csv";
+        return $"{FilePrefix}{(name.Length > 0 ? name + "-" : "")}{at.ToString("yyyyMMddHHmmss", System.Globalization.CultureInfo.InvariantCulture)}.txt";
     }
-
-    static readonly System.Text.RegularExpressions.Regex Reserved =
-        new(@"^(CON|PRN|AUX|NUL|COM[0-9¹²³]|LPT[0-9¹²³])$", System.Text.RegularExpressions.RegexOptions.IgnoreCase);
 
     // Writes the text as UTF-8 with a BOM (so spreadsheets read accented names right), as Better Mod Menu does. The
     // error's message when it fails, or null.
@@ -351,15 +409,18 @@ static class ProfileShare
         }
     }
 
-    // The system's file dialog (Godot's own where there's none): save or open a .csv, starting in Documents.
+    // The system's file dialog (Godot's own where there's none), starting in Documents: save a .txt, or open a .txt or
+    // a .csv (Better Mod Menu's exports).
     static void Browse(Node parent, bool save, string fileName, Action<string> chosen)
     {
         var dialog = new FileDialog
         {
             Name = "FileDialog", UseNativeDialog = true, Access = FileDialog.AccessEnum.Filesystem,
             FileMode = save ? FileDialog.FileModeEnum.SaveFile : FileDialog.FileModeEnum.OpenFile,
-            Title = Menus.Text(save ? "SPIRE_MOD_MANAGER.SAVE_CSV" : "SPIRE_MOD_MANAGER.LOAD_CSV"),
-            Filters = [$"*.csv ; {Menus.Text("SPIRE_MOD_MANAGER.CSV_FILES")}"],
+            Title = Menus.Text(save ? "SPIRE_MOD_MANAGER.SAVE_LIST" : "SPIRE_MOD_MANAGER.LOAD_LIST"),
+            Filters = save
+                ? [$"*.txt ; {Menus.Text("SPIRE_MOD_MANAGER.TEXT_FILES")}"]
+                : [$"*.txt, *.csv ; {Menus.Text("SPIRE_MOD_MANAGER.LIST_FILES")}"],
             CurrentDir = OS.GetSystemDir(OS.SystemDir.Documents),
         };
         if (save)
@@ -376,10 +437,10 @@ static class ProfileShare
     }
 
     // The dialog's frame over the page (any other dialog closes), its title in; returns the column to fill. Null if
-    // there's nowhere to show it.
-    static VBoxContainer? Dialog(Node owner, string titleKey)
+    // there's nowhere to show it. width: Share profile's is wider, for its row of tick boxes on one line.
+    static VBoxContainer? Dialog(Node owner, string titleKey, float width = 820)
     {
-        if (Modal.Open(owner, Name, 820, 12) is not { } column)
+        if (Modal.Open(owner, Name, width, 12) is not { } column)
             return null;
         column.AddChild(Modal.Title(titleKey));
         return column;
@@ -451,6 +512,52 @@ static class ProfileShare
         button.AddThemeFontSizeOverride("font_size", 18);
         button.CustomMinimumSize = new Vector2(0, 34);
         buttons.AddChild(button);
+        return button;
+    }
+
+    // One tick box: a small square (a gold ✓ in it when on) before its words, the whole of it one toggle. toggled: the
+    // new state.
+    const float BoxSize = 18, BoxRaise = 4;
+
+    static Button Option(string key, bool on, Action<bool> toggled, string name)
+    {
+        var button = new Button
+        {
+            Name = name, Text = Menus.Text(key), ToggleMode = true, ButtonPressed = on,
+            FocusMode = Control.FocusModeEnum.None, MouseDefaultCursorShape = Control.CursorShape.PointingHand,
+        };
+        var room = new StyleBoxEmpty { ContentMarginLeft = BoxSize + 8 }; // the words after the square
+        foreach (var state in new[] { "normal", "hover", "pressed", "hover_pressed", "focus", "disabled" })
+            button.AddThemeStyleboxOverride(state, room);
+        button.AddThemeFontOverride("font", ModEntry.Font("res://themes/kreon_regular_shared.tres"));
+        button.AddThemeFontSizeOverride("font_size", 17);
+        foreach (var color in new[] { "font_color", "font_pressed_color", "font_focus_color" })
+            button.AddThemeColorOverride(color, new Color(Cream, 0.85f));
+        foreach (var color in new[] { "font_hover_color", "font_hover_pressed_color" })
+            button.AddThemeColorOverride(color, Colors.White);
+        var box = new Panel { Name = "Box", MouseFilter = Control.MouseFilterEnum.Ignore, CustomMinimumSize = new Vector2(BoxSize, BoxSize) };
+        var look = new StyleBoxFlat { BgColor = new Color(0.03f, 0.05f, 0.08f), BorderColor = new Color(Gold, 0.6f) };
+        look.SetBorderWidthAll(1);
+        look.SetCornerRadiusAll(3);
+        box.AddThemeStyleboxOverride("panel", look);
+        var tick = new Label
+        {
+            Name = "Tick", Text = "✓", Visible = on, HorizontalAlignment = HorizontalAlignment.Center, VerticalAlignment = VerticalAlignment.Center,
+            MouseFilter = Control.MouseFilterEnum.Ignore,
+        };
+        tick.AddThemeFontOverride("font", ModEntry.Font("res://themes/kreon_regular_shared.tres")); // the face the menus draw their ✓ in
+        tick.AddThemeFontSizeOverride("font_size", 15);
+        tick.AddThemeColorOverride("font_color", Gold);
+        box.AddChild(tick);
+        tick.SetAnchorsAndOffsetsPreset(Control.LayoutPreset.FullRect);
+        button.AddChild(box);
+        box.SetAnchorsAndOffsetsPreset(Control.LayoutPreset.CenterLeft, Control.LayoutPresetMode.Minsize);
+        (box.OffsetTop, box.OffsetBottom) = (box.OffsetTop - BoxRaise, box.OffsetBottom - BoxRaise); // level with the words: Kreon's letters sit high in their line
+        button.Toggled += pressed =>
+        {
+            tick.Visible = pressed;
+            toggled(pressed);
+        };
         return button;
     }
 

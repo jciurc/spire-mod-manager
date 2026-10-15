@@ -30,7 +30,12 @@ public class StoreData
     // Where the player moved the main menu button (top-left, in the game's 1920x1080 frame); null: the corner.
     public ScreenPoint? MenuButtonAt { get; set; }
     public string? ImportedFrom { get; set; }
+    // The share dialog's tick boxes, kept across launches while its Remember selection is ticked (Jordan, 2026-10-15);
+    // null: not kept, so each launch starts on the defaults. View state: undo leaves it as it is.
+    public ShareChoice? ShareChoices { get; set; }
 }
+
+public record ShareChoice(bool Category, bool Disabled, bool Alias, bool Notes);
 
 public class Category
 {
@@ -347,11 +352,13 @@ public static class Store
         Save();
     }
 
-    // Our data minus view state (views, collapsed categories, a dismissed banner): what undo compares and restores.
+    // Our data minus view state (views, collapsed categories, a dismissed banner, the share dialog's kept tick boxes):
+    // what undo compares and restores.
     public static string EditsJson()
     {
         var copy = JsonSerializer.Deserialize<StoreData>(JsonSerializer.Serialize(Data, Json), Json) ?? new StoreData();
         copy.VanillaView = copy.LoadOrderView = copy.UncategorizedCollapsed = copy.ManagersWarningDismissed = false;
+        copy.ShareChoices = null;
         foreach (var category in copy.Categories)
             category.Collapsed = false;
         return JsonSerializer.Serialize(copy, Json);
@@ -370,8 +377,8 @@ public static class Store
     {
         var restored = JsonSerializer.Deserialize<StoreData>(json, Json) ?? new StoreData();
         var now = Data;
-        (restored.VanillaView, restored.LoadOrderView, restored.UncategorizedCollapsed, restored.ManagersWarningDismissed) =
-            (now.VanillaView, now.LoadOrderView, now.UncategorizedCollapsed, now.ManagersWarningDismissed);
+        (restored.VanillaView, restored.LoadOrderView, restored.UncategorizedCollapsed, restored.ManagersWarningDismissed, restored.ShareChoices) =
+            (now.VanillaView, now.LoadOrderView, now.UncategorizedCollapsed, now.ManagersWarningDismissed, now.ShareChoices);
         foreach (var category in restored.Categories)
             category.Collapsed = now.Categories.FirstOrDefault(c => c.Name == category.Name)?.Collapsed ?? false;
         _data = restored;
