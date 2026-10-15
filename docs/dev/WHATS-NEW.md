@@ -2,7 +2,9 @@
 
 Short notes for Jordan: what to look for after each install. Newest first.
 
-## Waiting in pull requests
+## Installed 2026-10-15: version 0.0.59
+
+Everything below, merged as #87 (its part after 0.0.58) and #89.
 
 - **Import's summary and your last copy marks (import-copy):** Import profile's preview reads "Contains N enabled mods and M disabled mods", then "Changes compared to the current profile" with only what changes. The profile menu says Export profile; its window, Copied!, Save file, Import's words and errors, the crash notice and the main menu card are in your text. A blank Enabled in a list counts as enabled.
 - **This mod among the others (self-included):** the counts include Spire Mod Manager itself (the profile bar, the main menu button, Mods enabled). Hover Disable all (the page bar's, or its category's): "Spire Mod Manager (this mod) will remain enabled". Untick its own row: a red banner at the top says it (and this page) goes at the relaunch, with Show and Enable now. The red "requires a disabled mod" banner's Show now steps through both sides (Flagellant, then DD2ModConfig), and the two-managers banner's Show goes to ours too.
