@@ -1,4 +1,5 @@
 using System.Text;
+using System.Text.Json;
 using System.Text.Json.Nodes;
 using Godot;
 using MegaCrit.Sts2.Core.Localization;
@@ -1093,6 +1094,32 @@ static class SelfTest
             Check("Open translations folder: made in the data folder and opened, the menu closed", !before && opened == folder && Directory.Exists(folder)
                 && folder.Replace('\\', '/').EndsWith($"/mod_data/{ModEntry.ModId}/translations") && !MenuPanel.IsOpen,
                 $"opened {opened ?? "nothing"}; {folder} there before: {before}");
+            // The example (Jordan, 2026-10-15): how-to lines, then every English text of ours, under a name no language has.
+            var example = Path.Combine(folder, Translations.ExampleFile);
+            var text = File.Exists(example) ? File.ReadAllText(example) : "";
+            Dictionary<string, string>? pairs = null;
+            try
+            {
+                pairs = JsonSerializer.Deserialize<Dictionary<string, string>>(text, new JsonSerializerOptions { ReadCommentHandling = JsonCommentHandling.Skip });
+            }
+            catch (JsonException)
+            {
+            }
+            var english = JsonSerializer.Deserialize<Dictionary<string, string>>(Godot.FileAccess.GetFileAsString($"res://{ModEntry.ModId}/localization/eng/settings_ui.json"))!;
+            Check("the translations folder has the example: how-to lines, then every English text, never read (no language's name)",
+                text.StartsWith("// An example") && pairs != null && pairs.Count == english.Count && english.All(e => pairs.GetValueOrDefault(e.Key) == e.Value)
+                && !Path.GetFileNameWithoutExtension(Translations.ExampleFile).All(char.IsLetter), $"{text.Length} chars, {pairs?.Count} texts of {english.Count}");
+            // Written again while it's as we left it (an older version's, say); once edited, it's the player's.
+            File.WriteAllText(example, "// an older example\n{}");
+            File.SetLastWriteTimeUtc(example, Translations.ExampleTime);
+            Translations.Open();
+            var refreshed = File.ReadAllText(example) == Translations.ExampleText();
+            File.WriteAllText(example, "// my translation, started here\n{}");
+            Translations.Open();
+            Check("the example: written again while it's as we left it, kept once it's edited", refreshed
+                && File.ReadAllText(example) == "// my translation, started here\n{}", $"refreshed {refreshed}");
+            File.Delete(example);
+            Translations.Open();
         }
         finally
         {
