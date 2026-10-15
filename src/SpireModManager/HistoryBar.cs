@@ -424,15 +424,15 @@ static class HistoryBar
         changes.Position = new Vector2((float)changes.GetMeta(RightMeta) - width, changes.Position.Y);
     }
 
-    // The active profile's unsaved changes, one line each, by name: "+ Name" turned on, "− Name" turned off (in
-    // the colours Changes uses for them). links: each name opens the mod (the panel's list; the card has none).
+    // The active profile's unsaved changes, one line each, by name: "+ Name" turned on, "- Name" turned off (a plain
+    // hyphen: the minus sign read as a dash, Jordan 2026-10-15; in the colours Changes uses for them). links: each name opens the mod (the panel's list; the card has none).
     public static List<string> UnsavedLines(bool links)
     {
         var (on, off) = Profiles.UnsavedChanges();
         string Line(string sign, string color, (string Id, string Name) mod) =>
             $"[color={color}]{sign} {(links ? Link(mod.Id, mod.Name) : Escape(mod.Name))}[/color]";
         return on.OrderBy(m => m.Name).Select(m => Line("+", Added, m))
-            .Concat(off.OrderBy(m => m.Name).Select(m => Line("−", Removed, m))).ToList();
+            .Concat(off.OrderBy(m => m.Name).Select(m => Line("-", Removed, m))).ToList();
     }
 
     // The active profile's unsaved changes, titled with its name. It follows the tickboxes while open: after Save
