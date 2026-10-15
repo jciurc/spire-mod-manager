@@ -10,7 +10,7 @@ using MegaCrit.Sts2.Core.Saves;
 
 namespace SpireModManager;
 
-// Crash-safe launch (docs/spikes/launch-first.md), its smallest form. Our initializer writes launch-pending.json in
+// Crash-safe launch, its smallest form (what comes next: #142). Our initializer writes launch-pending.json in
 // our data folder: the mods this launch is about to load. Reaching the main menu deletes it and saves the mod list as
 // last-working.json. So a launch that finds launch-pending.json still there follows one that never reached the menu:
 // a crash or hang in a mod loading after ours, a content or text error once every mod has loaded, or a close while

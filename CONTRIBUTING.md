@@ -8,6 +8,9 @@ maintainer, so replies can take a few days.
 - **Translations:** see [TRANSLATING.md](TRANSLATING.md). No code needed.
 - **Code:** read on. For anything bigger than a fix, open an issue first so we can agree on the approach.
 
+The [issues](https://github.com/jciurc/spire-mod-manager/issues) are the to-do list: bugs, ideas and planned
+work. The ones labelled `good first issue` are a good start; say on the issue that you're taking it.
+
 ## What you need
 
 - **Windows.** The project builds against the game's Windows data folder, and the dev tools use hard links
@@ -86,6 +89,7 @@ Only one dev copy can run at a time; `tools/dev.cs` won't start while one is run
    fixtures are valid, and nothing over 1 MB or token-like is committed. CI runs the same checks.
 3. For code changes, run `dotnet run tools/dev.cs test` and put its pass and fail counts in the pull request.
 4. Say what a player will notice, in plain words. Screenshots are welcome: drag them into the description.
+5. Name the issue it closes ("Fixes #123"), so merging closes it.
 
 CI (`.github/workflows/ci.yml`) runs the checks and compiles the tool scripts on GitHub's Linux machines. The
 mod itself can't build there, since the game's files aren't in the repository, so the build and the in-game
@@ -109,5 +113,5 @@ approves the run. Copilot reviews each pull request; resolve or answer its comme
 - `localization/`: player text, one folder per language. `scenes/` (and `images/`, if any): packed into the `.pck`.
 - `tools/`: the dev scripts (`dev.cs`, `check.cs`, `pck.cs`, `shot.cs`) and the self-test fixtures.
 - `workshop/`: the Steam Workshop listing and upload steps.
-- `docs/spikes/`: write-ups of how the game behaves, done before building on it. `docs/dev/`: the
-  maintainer's working notes.
+- `docs/dev/`: the maintainer's notes: the design decisions in force, how to release, and the self-test runner.
+- `CHANGELOG.md`: what changed in each Workshop release.

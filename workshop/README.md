@@ -1,8 +1,8 @@
 # Publishing to the Steam Workshop
 
 This folder is the workspace for Mega Crit's ModUploader (`github.com/megacrit/sts2-mod-uploader`, v0.2.0).
-The game has no uploader of its own. Condensed from docs/dev/RELEASE-PLAN.md §5, with the uploader's behaviour checked
-against its v0.2.0 source.
+The game has no uploader of its own. The uploader's behaviour below is checked against its v0.2.0 source. The
+steps before an upload (test, merge, tag, build) are in [docs/dev/RELEASING.md](../docs/dev/RELEASING.md).
 
 - `workshop.json`: what each upload sets on the item.
 - `description.bbcode`: the description. Edit it here: the uploader reads the description only from
@@ -40,13 +40,13 @@ every upload, so keep them right here and check the page afterwards.
 
 ## Each upload
 
-1. The release checks in docs/dev/RELEASE-PLAN.md §5 (checklist 1 to 3): blockers fixed, the full self-test on the
-   release build, the version set in `build.cs`, `main` merged and tagged.
+1. [docs/dev/RELEASING.md](../docs/dev/RELEASING.md), steps 1 to 7: the full self-test, the version set in
+   `build.cs`, `main` merged and tagged, the changelog written.
 2. `dotnet run build.cs --dist` (added on the release-prep branch): `dist/SpireModManager/` with the `.dll`,
    `.json` and `.pck`.
-3. In `workshop.json`, set `changeNote`. It starts with the version: `"0.1.0: ..."`.
+3. In `workshop.json`, set `changeNote` to the version's first line in CHANGELOG.md, word for word (`"0.1.0: ..."`).
 4. Check `minBranch`, every time. It is `"public-beta"` until v0.111.0 or newer reaches the stable branch
-   (docs/dev/RELEASE-PLAN.md §7.2). An upload without it serves the build to stable players, where it can't load.
+   (docs/dev/DESIGN.md, "Releases"). An upload without it serves the build to stable players, where it can't load.
 5. `dotnet run workshop/prepare.cs`. It fills `content/`, copies the description in, checks the folder and
    lists what the upload will set. Fix anything it calls a problem.
 6. With Steam running, in the uploader's folder (it needs its `steam_appid.txt` there, and writes
@@ -58,7 +58,7 @@ every upload, so keep them right here and check the page afterwards.
 
 ## The first upload: private, then test
 
-`prepare.cs` holds the first upload to `"visibility": "private"` (docs/dev/RELEASE-PLAN.md §7.6).
+`prepare.cs` holds the first upload to `"visibility": "private"` (docs/dev/DESIGN.md, "Releases").
 
 1. Make it a clean install: remove your local `mods\SpireModManager`, and move
    `%APPDATA%\SlayTheSpire2\steam\<your id>\mod_data\SpireModManager` aside.
@@ -71,8 +71,8 @@ every upload, so keep them right here and check the page afterwards.
 ## Going public
 
 The description sends bug reports to the GitHub repo's issues and says the source is there, so while the repo
-is private that line leads to a 404. Before the item goes public, either make the repo public (docs/dev/TODO.md, "Before
-going public") or take the GitHub sentence out of `description.bbcode` and upload again. The private first upload
+is private that line leads to a 404. Before the item goes public, either make the repo public or take the GitHub
+sentence out of `description.bbcode` and upload again. The private first upload
 is fine either way: only you see it.
 
 Switch the item to Public on its page, and set `"visibility": "public"` here too: the next upload would make it

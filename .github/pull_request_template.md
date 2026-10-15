@@ -1,6 +1,6 @@
 ## Summary
 
-<!-- What changed and why, in a few short bullets. -->
+<!-- What changed and why, in a few short bullets. Name the issue it closes: "Fixes #123". -->
 
 ## What to look for
 
