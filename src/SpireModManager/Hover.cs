@@ -4,8 +4,9 @@ namespace SpireModManager;
 
 // Hover cards (our tooltips): a dark panel with a few lines of text, or a picture, above everything on the
 // page. The rules live here, for every card:
-// - a card shows after Delay of hovering what it's about; Instant ones (the row's notepad) at once; Slow ones
-//   (the whole of a text cut short, in a plain tooltip) after SlowDelay, with no grace either way;
+// - a card shows after Delay of hovering what it's about; Instant ones (a banner's list of mods, the unsaved mark) at once; Slow ones
+//   (the whole of a text cut short, in a plain tooltip) after SlowDelay; Plain ones (a word on a small icon, the
+//   notepad's "Contains note") look like Slow ones but come after Delay; Slow and Plain have no grace either way;
 // - once a card has gone, for Grace any other card shows at once (moving along names or tags doesn't wait
 //   each time); Instant cards don't start one;
 // - leaving: the card goes after WindDown (Instant ones at once), so a quick wobble off the edge keeps it;
@@ -15,7 +16,7 @@ static class Hover
     public const double Delay = 0.4, Grace = 0.25, WindDown = 0.02, SlowDelay = 1.0;
     public const int Depth = 80; // the cards' layer: over the page, under our menus (MenuPanel.Depth)
 
-    public enum Timing { Normal, Instant, Slow }
+    public enum Timing { Normal, Instant, Slow, Plain }
 
     static readonly Color Cream = new(1, 0.964706f, 0.886275f);
     static readonly Color Gold = new(0.937f, 0.784f, 0.318f);
@@ -151,7 +152,7 @@ static class Hover
         var layer = new CanvasLayer { Name = name, Layer = depth };
         owner.AddChild(layer);
         _shown = layer;
-        var plain = timing == Timing.Slow;
+        var plain = timing is Timing.Slow or Timing.Plain;
         var panel = new PanelContainer { MouseFilter = Control.MouseFilterEnum.Ignore };
         var style = plain
             ? new StyleBoxFlat

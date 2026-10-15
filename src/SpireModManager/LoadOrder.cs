@@ -260,8 +260,8 @@ static class LoadOrder
         var violations = Dependencies.OrderViolations(mods);
         var misordered = violations.Select(v => v.Mod).Distinct().Count();
         var orderText = Menus.Format(misordered == 1 ? "SPIRE_MOD_MANAGER.ORDER_PROBLEMS_ONE" : "SPIRE_MOD_MANAGER.ORDER_PROBLEMS", ("count", Menus.Number(misordered)));
-        // The "!"'s tooltip: the warning, then the mods it's about, as the warning's card in Load Order lists them.
-        Badge(content, misordered > 0 && !on ? $"{orderText}\n\n{string.Join("\n", Capped(OrderLines(violations)))}" : null);
+        // The "!"'s card: the warning alone (Jordan, 2026-10-14: the mods it's about are Load Order's own card).
+        Badge(content, misordered > 0 && !on ? orderText : null);
         foreach (var name in new[] { WarningName, ManagersName })
             if (border.GetNodeOrNull(name) is { } old)
             {
