@@ -68,7 +68,7 @@ static class MenuButton
             note.Text = Menus.Text(outdated ? "SPIRE_MOD_MANAGER.NEEDS_UPDATE" : "SPIRE_MOD_MANAGER.RELAUNCH_NOTE");
             Hover.Tip(button, Menus.Text("SPIRE_MOD_MANAGER.MAIN_MENU_TIP")); // what it opens (the Settings screen's button had it)
             if (label == null)
-                ModEntry.SetText(button, Text(ModEntry.Font("res://themes/kreon_bold_shared.tres"), 24));
+                ModEntry.SetText(button, Text(ModEntry.Font("res://themes/kreon_bold_shared.tres"), TextSize)); // the name cut as for ours; the fallback draws at its own size
             else
             {
                 label.RefreshFont(); // the language's own font, as the game's buttons take theirs
