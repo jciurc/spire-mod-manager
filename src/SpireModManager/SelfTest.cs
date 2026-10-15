@@ -641,6 +641,20 @@ static class SelfTest
             $"{content.Size.X} of {content.GetParent<Control>().Size.X}");
         Check("collapsing everything shrinks the list", content.Size.Y < open && Math.Abs(content.Size.Y - content.GetCombinedMinimumSize().Y) < 1,
             $"{open} -> {content.Size.Y} (min {content.GetCombinedMinimumSize().Y})");
+        // Rows folded at launch were never laid out: no width yet. A redraw then, and a category opened by its header,
+        // must still show its mods' names (#151: they were cut to fit no width, and the header only shows the rows).
+        foreach (var row in content.GetChildren().OfType<NModMenuRow>())
+            row.Size = new Vector2(0, row.Size.Y);
+        CategoryList.Apply(content);
+        await Wait(menu, 0.3);
+        var folded = content.GetChildren().OfType<Control>().First(c => c.IsInGroup("SpireModManagerCategoryHeader") && c.Name.ToString().StartsWith("Category "));
+        folded.EmitSignal(Control.SignalName.GuiInput, new InputEventMouseButton { ButtonIndex = MouseButton.Left, Pressed = true });
+        folded.EmitSignal(Control.SignalName.GuiInput, new InputEventMouseButton { ButtonIndex = MouseButton.Left, Pressed = false });
+        await Wait(menu, 0.3);
+        var opened = content.GetChildren().OfType<NModMenuRow>().Where(r => r.Visible).ToList();
+        string Shown(NModMenuRow row) => row.GetNode<RichTextLabel>("Title").GetParsedText().Trim();
+        Check("a category folded since launch shows its mods' names when opened", opened.Count > 0 && opened.All(r => Shown(r).Length > 0),
+            $"{folded.Name}: {string.Join(" | ", opened.Select(r => $"{r.Mod?.manifest?.id}=\"{Shown(r)}\""))}");
         for (var i = 0; i < collapsed.Count; i++)
             Store.Data.Categories[i].Collapsed = collapsed[i];
         Store.Data.UncategorizedCollapsed = uncategorized;
