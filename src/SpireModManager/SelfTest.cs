@@ -2521,6 +2521,15 @@ static class SelfTest
             $"{found.Count} found, count \"{Count()}\", at {At(found)}, rows shown {Rows().Count(r => r.Visible)}/{Rows().Count}");
         Check("the arrows say where they go", Hover.TipOf(Bar()!.GetNode<Button>("PreviousMatch")) == "Go to previous found match"
             && Hover.TipOf(Bar()!.GetNode<Button>("NextMatch")) == "Go to next found match");
+        // The rows it doesn't match fade below even a match that's off; a match keeps its usual look (Jordan, 2026-10-15).
+        float Expected(NModMenuRow r, bool finding) => (!finding || found.Contains(r), Dependencies.IsOn(r.Mod!)) switch
+        {
+            (true, true) => 1, (true, false) => LoadOrder.OffAlpha, (false, true) => LoadOrder.UnmatchedAlpha, _ => LoadOrder.UnmatchedAlpha / 2,
+        };
+        string Looks() => string.Join(", ", Rows().Select(r => $"{r.Mod?.manifest?.id} {r.Modulate.A:0.##}"));
+        Check("finding: the rest fade (on 0.2, off 0.1) below a match that's off (0.4); matches look as usual",
+            Rows().All(r => Math.Abs(r.Modulate.A - Expected(r, finding: true)) < 0.01f) && Rows().Any(r => !found.Contains(r))
+            && Rows().Any(r => found.Contains(r) && !Dependencies.IsOn(r.Mod!)), Looks());
         await Capture(screen, outDir, "11c-load-order-find");
         Press("NextMatch");
         await Wait(menu, 0.2);
@@ -2543,9 +2552,11 @@ static class SelfTest
         await Type("zzzz no such mod");
         Check("no match: \"No matches\", the arrows off, every row still shown", Count() == "No matches" && Rows().All(r => r.Visible)
             && Bar()!.GetChildren().OfType<Button>().All(b => b.Disabled), Count());
+        Check("no match: every row faded", Rows().All(r => r.Modulate.A <= LoadOrder.UnmatchedAlpha + 0.01f), Looks());
         await Type("");
         Check("search cleared: no find bar, the box its full width again", Bar() is not { Visible: true }
             && box.GetGlobalRect().End.X > border.GetNode<Control>(FindBar.Name).GetGlobalRect().Position.X);
+        Check("search cleared: every row its usual look again", Rows().All(r => Math.Abs(r.Modulate.A - Expected(r, finding: false)) < 0.01f), Looks());
         if (!wasLoadOrder)
         {
             Click(screen.GetNode<NButton>("SpireModManagerLoadOrderToggle"));
