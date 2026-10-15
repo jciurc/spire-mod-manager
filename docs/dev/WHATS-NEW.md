@@ -2,6 +2,10 @@
 
 Short notes for Jordan: what to look for after each install. Newest first.
 
+## Waiting in pull requests
+
+- **Small copy fixes (copy-tweaks):** a banner's Show says "Open the next affected mod"; hovering Unsaved ends "Click to see expanded view"; mods turned off in that card and in the info panel's list start with a short "-" (not the long minus); a Workshop mod's Updated line reads "(4 days ago) • Changelog".
+
 ## Installed 2026-10-15: version 0.0.57
 
 Everything below, merged as #71 to #79, plus the crash-safe launch draft (#65, still not merged; in this build again so you
