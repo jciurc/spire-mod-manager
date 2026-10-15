@@ -2,6 +2,10 @@
 
 Short notes for Jordan: what to look for after each install. Newest first.
 
+## Waiting in pull requests
+
+- **Crash-safe launch ships (launch-safety, #65):** it's been in your builds since 0.0.55 and now goes into dev for 0.1.0. On a launch with no crash it only writes two small files in our data folder. To see the notice by hand: launch to the main menu once and close the game; on our page enable a local mod that's off and press Relaunch Game; while it loads, end it in Task Manager; move that mod's folder out of `mods`; launch again. At the main menu: "The last launch stopped before the main menu", naming the mod (enabled), with Keep and Restore. Put the folder back after. Relaunching with the same mods, or closing while it loads, shows nothing (by design).
+
 ## Installed 2026-10-15: version 0.0.57
 
 Everything below, merged as #71 to #79, plus the crash-safe launch draft (#65, still not merged; in this build again so you

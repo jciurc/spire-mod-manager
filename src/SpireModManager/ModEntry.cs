@@ -62,9 +62,17 @@ public static class ModEntry
     }
 
     // Each patch class on its own, so one a game update breaks leaves the others working (PatchAll stops at the
-    // first failure). Watching for new mods goes first: it needs no patch.
+    // first failure). The launch record goes first, then watching for new mods: neither needs a patch.
     public static void Init()
     {
+        try
+        {
+            LaunchGuard.Begin();
+        }
+        catch (Exception e)
+        {
+            Log.Error($"[{ModId}] Could not record this launch, so a launch that stops before the main menu won't be noticed: {e}");
+        }
         try
         {
             Installed.Watch();
