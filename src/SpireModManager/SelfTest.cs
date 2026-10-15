@@ -71,6 +71,13 @@ static class SelfTest
             Check("dev run marked", menu.GetTree().Root.Title.StartsWith("[DEV]") && menu.GetTree().Root.HasNode("SpireModManagerDevTag"),
                 menu.GetTree().Root.Title);
             await Capture(menu, outDir, "1-main-menu");
+            // The relaunch note as it shows while one is pending: centred above the button (shown here for the shot).
+            if (menu.GetNodeOrNull<Control>("SpireModManagerMenuButton/PendingNote") is { Visible: false } pendingNote)
+            {
+                pendingNote.Visible = true;
+                await Capture(menu, outDir, "1e-menu-button-note");
+                pendingNote.Visible = false;
+            }
             await TestMenuButtonMove(menu, outDir);
             TestBetterModMenuImport(outDir);
             await TestMenuButtonRelaunch(menu, outDir); // before the Modding page opens: the check's fixes without it
@@ -1182,8 +1189,10 @@ static class SelfTest
             // The button itself follows the language as it changes, its count in German numbers.
             var on = Profiles.OnCount();
             var german = on == 1 ? $"Mod-Profil: {Profiles.Active?.Name} (1 Mod)" : $"Mod-Profil: {Profiles.Active?.Name} ({Menus.Number(on)} Mods)";
-            Check("a drop-in translation on screen: the main menu button reads it, as wide as its words", MenuButtonText(menu) == german
-                && MenuButtonMisfit(menu) == null, $"{MenuButtonText(menu)} vs {german}; {MenuButtonMisfit(menu)}");
+            var germanSize = menu.GetNodeOrNull<Label>("SpireModManagerMenuButton/Label")?.GetThemeFontSize("font_size");
+            Check("a drop-in translation on screen: the main menu button reads it, as wide as its words, still at its smaller size",
+                MenuButtonText(menu) == german && MenuButtonMisfit(menu) == null && germanSize == MenuButton.TextSize,
+                $"{MenuButtonText(menu)} vs {german}; {MenuButtonMisfit(menu)}; size {germanSize}");
             LocManager.Instance.SetLanguage(start);
             await Wait(menu, 0.1);
             Check("a drop-in translation: back in English, English", AllEnglish() && MenuButtonText(menu) == MenuButtonExpected()
