@@ -221,8 +221,9 @@ static class ProfileShare
         var box = TextBox("CsvText", editable: false);
         box.Text = csv;
         // What the list holds, in a row under the words; each tick rewrites it.
-        var options = new HBoxContainer { Name = "Options" };
-        options.AddThemeConstantOverride("separation", 28);
+        var options = new HFlowContainer { Name = "Options" }; // wraps where a language's words run long
+        options.AddThemeConstantOverride("h_separation", 28);
+        options.AddThemeConstantOverride("v_separation", 4);
         void Set(Func<ProfileCsv.Options, ProfileCsv.Options> change)
         {
             _options = change(_options);
@@ -387,8 +388,8 @@ static class ProfileShare
         }
     }
 
-    // The system's file dialog (Godot's own where there's none), starting in Documents: save a .txt (or a .csv, the
-    // second choice), or open either.
+    // The system's file dialog (Godot's own where there's none), starting in Documents: save a .txt, or open a .txt or
+    // a .csv (Better Mod Menu's exports).
     static void Browse(Node parent, bool save, string fileName, Action<string> chosen)
     {
         var dialog = new FileDialog
@@ -397,7 +398,7 @@ static class ProfileShare
             FileMode = save ? FileDialog.FileModeEnum.SaveFile : FileDialog.FileModeEnum.OpenFile,
             Title = Menus.Text(save ? "SPIRE_MOD_MANAGER.SAVE_LIST" : "SPIRE_MOD_MANAGER.LOAD_LIST"),
             Filters = save
-                ? [$"*.txt ; {Menus.Text("SPIRE_MOD_MANAGER.TEXT_FILES")}", $"*.csv ; {Menus.Text("SPIRE_MOD_MANAGER.CSV_FILES")}"]
+                ? [$"*.txt ; {Menus.Text("SPIRE_MOD_MANAGER.TEXT_FILES")}"]
                 : [$"*.txt, *.csv ; {Menus.Text("SPIRE_MOD_MANAGER.LIST_FILES")}"],
             CurrentDir = OS.GetSystemDir(OS.SystemDir.Documents),
         };
@@ -523,7 +524,7 @@ static class ProfileShare
             Name = "Tick", Text = "✓", Visible = on, HorizontalAlignment = HorizontalAlignment.Center, VerticalAlignment = VerticalAlignment.Center,
             MouseFilter = Control.MouseFilterEnum.Ignore,
         };
-        tick.AddThemeFontOverride("font", ModEntry.Font("res://themes/kreon_bold_shared.tres"));
+        tick.AddThemeFontOverride("font", ModEntry.Font("res://themes/kreon_regular_shared.tres")); // the face the menus draw their ✓ in
         tick.AddThemeFontSizeOverride("font_size", 15);
         tick.AddThemeColorOverride("font_color", Gold);
         box.AddChild(tick);

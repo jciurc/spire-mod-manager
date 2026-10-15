@@ -1767,6 +1767,9 @@ static class SelfTest
             && ProfileCsv.CleanLink("https://example.com/?x=1") == "" && ProfileCsv.IsWorkshopLink(ProfileCsv.WorkshopLink(42)) && !ProfileCsv.IsWorkshopLink("https://example.com"));
         // The Workshop column is just the id (Jordan, 2026-10-15), read back as the item's link; the optional columns.
         var withId = ProfileCsv.Write([new ProfileCsv.Row("SmmWorkshop", "From the Workshop", "1.0", true, "", "3123456789")], new());
+        var odd = ProfileCsv.Read("Mod Id,Enabled,Workshop Id\nSmmA,TRUE,not a link\nSmmB,TRUE,https://steamcommunity.com/sharedfiles/filedetails/?id=42&x=1\n").Mods;
+        Check("CSV: a Workshop Id that's neither an id nor a link is dropped; a link there is rebuilt from its id",
+            odd is [{ WorkshopLink: "" }, { WorkshopLink: var fromLink }] && fromLink == ProfileCsv.WorkshopLink(42), string.Join(" | ", odd.Select(m => m.WorkshopLink)));
         Check("CSV: the Workshop Id column holds just the id, read back as the item's page",
             ProfileCsv.Records(withId) is [_, [.., "3123456789"]] && ProfileCsv.Read(withId).Mods is [{ WorkshopLink: var idLink }]
             && idLink == ProfileCsv.WorkshopLink(3123456789), withId);
