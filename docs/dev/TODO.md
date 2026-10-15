@@ -916,3 +916,8 @@ Jordan's notes of 2026-10-15, after 0.0.57.
   now, always available (it doesn't need unsaved changes). It may replace Duplicate, which is "Save as" a new
   profile already. To settle: what replacing the active profile, or one with unsaved changes, asks first; and one
   undo step for either
+- [ ] (same) mods an imported profile names but that aren't installed: placeholder rows in the list while that profile
+  is active, greyed and marked not installed, with the Workshop link, so they stay in view after Import closes (today
+  only Import's preview lists them, each name a link to its Workshop page). Ideally one click on Import, "Install
+  missing mods", subscribes to them all (SteamUGC); installing takes a while (Steam downloads, then the game loads them
+  only after a relaunch), so the placeholder row shows each one's state: waiting, downloading, ready after a relaunch
