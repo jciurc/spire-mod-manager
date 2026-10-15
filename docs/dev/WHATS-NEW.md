@@ -5,6 +5,7 @@ Short notes for Jordan: what to look for after each install. Newest first.
 ## Waiting in pull requests
 
 - **An example in the translations folder (translations-example):** right-click the main menu button, Open translations folder: `example-eng.json` is there, every English text under a few lines on how to make a translation from it. It never loads (no language has that name). Edit it and it's yours; left as it is, it's updated with the mod. Its date shows as 2000 in Explorer: that's how the mod tells it's untouched.
+- **Load Order find dims the rest (find-dim):** type in Load Order's search. Matches look as usual (a match that's off is still at its usual dim), and every row the search doesn't match fades further, below even a disabled match, so faded never means off. Clear the search and every row is back.
 - **Crash-safe launch ships (launch-safety, #65):** it's been in your builds since 0.0.55 and now goes into dev for 0.1.0. On a launch with no crash it only writes two small files in our data folder. To see the notice by hand: launch to the main menu once and close the game; on our page enable a local mod that's off and press Relaunch Game; while it loads, end it in Task Manager; move that mod's folder out of `mods`; launch again. At the main menu: "The last launch stopped before the main menu", naming the mod (enabled), with Keep and Restore. Put the folder back after. Relaunching with the same mods, or closing while it loads, shows nothing (by design).
 
 ## Installed 2026-10-15: version 0.0.57
