@@ -269,12 +269,15 @@ sealed class ModField
             Save();
     }
 
-    // Opens the box for typing (tags: from their pills).
+    // Opens the box for typing (tags: from their pills), the caret after the text: a click on the pills means adding
+    // one, and the box would keep its caret at the start, where the text was last set.
     public void BeginEdit()
     {
         _box.Visible = true;
         if (_pillsBox != null)
             _pillsBox.Visible = false;
+        if (_box is LineEdit line)
+            line.CaretColumn = line.Text.Length;
         _box.GrabFocus();
     }
 
