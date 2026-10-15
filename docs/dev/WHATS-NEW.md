@@ -2,6 +2,10 @@
 
 Short notes for Jordan: what to look for after each install. Newest first.
 
+## Waiting in pull requests
+
+- **An example in the translations folder (translations-example):** right-click the main menu button, Open translations folder: `example-eng.json` is there, every English text under a few lines on how to make a translation from it. It never loads (no language has that name). Edit it and it's yours; left as it is, it's updated with the mod. Its date shows as 2000 in Explorer: that's how the mod tells it's untouched.
+
 ## Installed 2026-10-15: version 0.0.57
 
 Everything below, merged as #71 to #79, plus the crash-safe launch draft (#65, still not merged; in this build again so you
