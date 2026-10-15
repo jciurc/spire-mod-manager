@@ -28,6 +28,7 @@ static class RowTitles
     {
         foreach (var row in rows)
         {
+            Unfitted.Remove(row.GetInstanceId()); // this redraw's fit replaces one still waiting (none in Vanilla View)
             var name = row.Mod?.manifest?.name ?? row.Mod?.manifest?.id ?? "";
             var title = row.GetNode<MegaRichTextLabel>("Title");
             // The game's label fits its text to its box (smaller, down to a minimum) each time the box or the text
@@ -82,12 +83,18 @@ static class RowTitles
         MarkChanged(rows, vanilla);
     }
 
-    // The title text cut to fit; then the notepad and the hover area over the text, placed by it.
+    // The title text cut to fit; then the notepad and the hover area over the text, placed by it. A row out of sight
+    // (a folded category's, or one a filter hides) is fitted once it's shown (FitLater).
     static void Fit(NModMenuRow row, string name, string? alias, bool marked)
     {
-        if (!GodotObject.IsInstanceValid(row) || row.Mod is not { } mod)
+        if (!GodotObject.IsInstanceValid(row) || row.Mod is not { } mod || Store.Data.VanillaView) // (switched since it was asked for)
             return;
         var title = row.GetNode<MegaRichTextLabel>("Title");
+        if (!row.IsVisibleInTree() || title.Size.X <= 4)
+        {
+            FitLater(row, title, () => Fit(row, name, alias, marked));
+            return;
+        }
         var font = title.GetThemeFont("normal_font");
         float Width(string text, int size) => Measure(font, text, size);
         var markSize = Icons.Notepad.GetSize();
@@ -160,6 +167,35 @@ static class RowTitles
             mark.Visible = true;
             mark.Position = new Vector2(title.Position.X - markSize.X - 5, top + (lineHeight - markSize.Y) / 2 - 1); // in the room before the title
         }
+    }
+
+    // A row out of sight may never have been laid out: one in a category folded since launch has no width, and its title
+    // cut to that showed no name once the category was opened (#151; opening one only shows its rows). So its fit
+    // waits until the row is shown and the list has given it its width (the check runs deferred, after the list's own
+    // layout, and again when the title is resized).
+    static readonly Dictionary<ulong, Action> Unfitted = [];
+    const string WatchedMeta = "spire_mod_manager_fit_watched";
+
+    static void FitLater(NModMenuRow row, MegaRichTextLabel title, Action fit)
+    {
+        var id = row.GetInstanceId();
+        Unfitted[id] = fit;
+        if (row.HasMeta(WatchedMeta))
+            return;
+        row.SetMeta(WatchedMeta, true);
+        void Check()
+        {
+            if (!Unfitted.ContainsKey(id))
+                return;
+            Callable.From(() =>
+            {
+                if (GodotObject.IsInstanceValid(row) && row.IsVisibleInTree() && Unfitted.Remove(id, out var waiting))
+                    waiting();
+            }).CallDeferred();
+        }
+        row.VisibilityChanged += Check;
+        title.Resized += Check;
+        row.TreeExiting += () => Unfitted.Remove(id);
     }
 
     // Vanilla View, once the redraw has done with the rows (their titles' boxes change until then): the game's
