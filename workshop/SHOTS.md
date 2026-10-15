@@ -56,7 +56,7 @@ they have no Steam, so the info panel shows no Workshop details, and they keep o
    - "Before you relaunch" lists the mods that won't load, with Enable needed mods and Disable mods that
      can't load. Take the shot, press Esc, and undo.
 7. **`07-main-menu` (optional): the main menu button.** Shows where to find it.
-   - After any change, go back to the main menu: the button has the dot and "Relaunch to apply your mod
+   - After any change, go back to the main menu: the button has the dot and "Relaunch to apply mod
      changes" beside it. Worth it only if the menu looks good behind it.
 
 ## The thumbnail: `image.png`
