@@ -83,6 +83,6 @@ static class FindBar
     static void Go(Control content, NModMenuRow row)
     {
         CategoryList.Select(content, row);
-        CategoryList.ScrollTo(content, row);
+        CategoryList.ScrollSoon(content, row, flash: false); // a moment on: the list may have just been laid out anew
     }
 }
