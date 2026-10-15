@@ -4,7 +4,7 @@ Short notes for Jordan: what to look for after each install. Newest first.
 
 ## Waiting in pull requests
 
-- **Share profile, merged after 0.0.58 (share-options, #87):** in Import's preview, each mod that isn't installed is a link to its Workshop page (when the list has one), and the preview shows that list without scrolling. Share profile's five tick boxes sit on one line, level with their words.
+- **Share profile, merged after 0.0.58 (share-options, #87):** in Import's preview, each mod that isn't installed is a link to its Workshop page (when the list has one), and the preview shows that list without scrolling. Share profile's five tick boxes sit on one line in English (a longer language can wrap the four Include boxes), level with their words.
 
 ## Installed 2026-10-15: version 0.0.58
 
