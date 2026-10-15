@@ -2,6 +2,10 @@
 
 Short notes for Jordan: what to look for after each install. Newest first.
 
+## Waiting in pull requests
+
+- **Load Order find dims the rest (find-dim):** type in Load Order's search. Matches look as usual (a match that's off is still at its usual dim), and every row the search doesn't match fades further, below even a disabled match, so faded never means off. Clear the search and every row is back.
+
 ## Installed 2026-10-15: version 0.0.57
 
 Everything below, merged as #71 to #79, plus the crash-safe launch draft (#65, still not merged; in this build again so you
