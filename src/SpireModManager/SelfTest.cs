@@ -34,6 +34,12 @@ static class SelfTest
             return;
         _started = true;
         Directory.CreateDirectory(outDir);
+        // A dev run killed while loading leaves its launch record, and its notice would pop up over the checks.
+        if (LaunchGuard.Notice != null)
+        {
+            LaunchGuard.Notice = null;
+            Results.Add("INFO dropped a real notice about the last launch (a dev run stopped while loading)");
+        }
         _ = Run(menu, outDir);
     }
 
@@ -81,6 +87,7 @@ static class SelfTest
             await TestMenuButtonMove(menu, outDir);
             TestBetterModMenuImport(outDir);
             await TestMenuButtonRelaunch(menu, outDir); // before the Modding page opens: the check's fixes without it
+            await TestLaunchGuard(menu, outDir);
             await TestTranslationsFolder(menu);
             await TestTranslations(menu);
 
@@ -1069,6 +1076,182 @@ static class SelfTest
         {
             ModEntry.TestRelaunch = null;
             RelaunchCheck.Close();
+        }
+    }
+
+    // Crash-safe launch (LaunchGuard). This launch: the record our initializer wrote is in Store's folder and gone at the
+    // main menu, which saved this launch's mods as the last working setup; the menu hook is a prefix, first. A real crash
+    // can't happen here, so the rest runs on a made-up folder with made-up mod lists: a launch that never reached the
+    // menu leaves its record, the next one reads it and, at its menu, what changed since the last working setup. No
+    // notice when the next launch loaded the same mods, nor for updates alone; a failed save of the working setup still
+    // clears the record; an unreadable record, or one with a mod that has no id or an unknown source, counts as none.
+    // Then the notice (the game's popup, our mark) with those changes, waiting while another popup is up, and shown
+    // once. Restore: the working list back, a mod added since off, ours on, and a relaunch (counted, not done); with a
+    // mod left on that needs one added since, the relaunch check's dialog instead. The list is put back.
+    static async Task TestLaunchGuard(NMainMenu menu, string outDir)
+    {
+        var ownDir = LaunchGuard.Dir ?? "(none)";
+        Check("launch record: in the folder Store uses", ownDir == Store.Dir, $"{ownDir} vs {Store.Dir}");
+        static string Listed(IEnumerable<LaunchGuard.Entry>? mods) => mods == null ? "(none)" : string.Join(", ", mods.Select(m => $"{m.Id}/{m.Source}={m.Enabled}"));
+        var savedNow = Listed(History.CurrentMods().Where(m => m.Id != null).Select(m => new LaunchGuard.Entry(m.Id, m.Source, m.Enabled, null)));
+        var savedThen = Listed(LaunchGuard.Read(Path.Combine(ownDir, LaunchGuard.WorkingFile))?.Mods);
+        Check("launch record: gone at the main menu, and this launch's mods saved as the last working setup",
+            !File.Exists(Path.Combine(ownDir, LaunchGuard.PendingFile)) && savedThen == savedNow, $"saved {savedThen}; now {savedNow}");
+        var hook = HarmonyLib.Harmony.GetPatchInfo(HarmonyLib.AccessTools.Method(typeof(NMainMenu), nameof(NMainMenu._Ready)))?.Prefixes
+            .FirstOrDefault(p => p.owner == ModEntry.ModId);
+        Check("launch record: cleared by a prefix on the main menu, first in line", hook?.priority == HarmonyLib.Priority.First, $"{hook?.priority}");
+
+        static LaunchGuard.Entry Mod(string id, bool on = true, string? version = "1.0") => new(id, ModSource.ModsDirectory, on, version);
+        List<LaunchGuard.Entry> working = [Mod(ModEntry.ModId), Mod("SmmTestLib"), Mod("SmmTestContent"), Mod("SmmTestUi"), Mod("SmmTestFixes", on: false)];
+        // Ours updated and moved (never a change); the framework updated (a version with a bracket, which the notice
+        // shows as text), and after Test Content now; Test UI off, Test Fixes on; a new mod on, and a new one off (no change).
+        List<LaunchGuard.Entry> tried = [Mod("SmmTestContent"), Mod("SmmTestLib", version: "1.1 [b]"), Mod(ModEntry.ModId, version: "2.0"),
+            Mod("SmmTestUi", on: false), Mod("SmmTestFixes"), Mod("SmmTestNew"), Mod("SmmTestNewOff", on: false)];
+        static string Kinds(List<LaunchGuard.Change> changes) => string.Join(", ", changes.Select(c => $"{c.Kind} {c.Id} {c.From} {c.To}".Trim()));
+        Check("launch changes: updated, disabled, enabled, new, and the load order; never ours, nor a new mod that's off",
+            Kinds(LaunchGuard.Changes(tried, working)) == "Updated SmmTestLib 1.0 1.1 [b], Disabled SmmTestUi, Enabled SmmTestFixes, New SmmTestNew, Order",
+            Kinds(LaunchGuard.Changes(tried, working)));
+        List<LaunchGuard.Entry> offMoved = [working[0], working[4], working[1], working[2], working[3]];
+        Check("launch changes: none for the same setup, nor for a disabled mod that moved",
+            LaunchGuard.Changes(working, working).Count == 0 && LaunchGuard.Changes(offMoved, working).Count == 0,
+            Kinds(LaunchGuard.Changes(offMoved, working)));
+
+        var dir = Path.Combine(outDir, "launch-guard");
+        if (Directory.Exists(dir))
+            Directory.Delete(dir, recursive: true);
+        var (pending, workingFile) = (Path.Combine(dir, LaunchGuard.PendingFile), Path.Combine(dir, LaunchGuard.WorkingFile));
+        var now = new DateTime(2026, 10, 14, 9, 30, 0);
+        var first = LaunchGuard.Begin(dir, new(now, working));
+        Check("a first launch finds no record and writes its own", first.Failed == null && first.Working == null && File.Exists(pending));
+        var none = LaunchGuard.Reached(dir, new(now.AddMinutes(1), working), first.Failed, first.Working);
+        Check("its menu deletes the record and saves the last working setup", none.Count == 0 && !File.Exists(pending)
+            && LaunchGuard.Read(workingFile)?.At == now.AddMinutes(1));
+        LaunchGuard.Begin(dir, new(now.AddMinutes(5), tried)); // never reaches the menu
+        List<LaunchGuard.Entry> unsubscribed = [.. tried.Where(m => m.Id != "SmmTestNew")]; // gone before the next launch
+        var next = LaunchGuard.Begin(dir, new(now.AddMinutes(10), unsubscribed));
+        Check("the next launch reads the record of the one that stopped, and the last working setup",
+            next.Failed?.At == now.AddMinutes(5) && Listed(next.Failed?.Mods) == Listed(tried) && next.Working?.At == now.AddMinutes(1),
+            $"failed {next.Failed?.At}, working {next.Working?.At}");
+        var found = LaunchGuard.Reached(dir, new(now.AddMinutes(11), unsubscribed), next.Failed, next.Working);
+        Check("at its menu, with other mods than the one that stopped: what that one changed, and this setup is the last working one now",
+            Kinds(found) == Kinds(LaunchGuard.Changes(tried, working)) && LaunchGuard.Read(workingFile)?.At == now.AddMinutes(11), Kinds(found));
+        LaunchGuard.Begin(dir, new(now.AddMinutes(12), tried)); // never reaches the menu (closed while loading)
+        var again = LaunchGuard.Begin(dir, new(now.AddMinutes(13), tried));
+        var same = LaunchGuard.Reached(dir, new(now.AddMinutes(14), tried), again.Failed, again.Working);
+        Check("the same mods as the launch that stopped reach the menu: no notice", again.Failed != null && same.Count == 0 && !File.Exists(pending),
+            Kinds(same));
+        List<LaunchGuard.Entry> updated = [.. working.Select(m => m.Id == "SmmTestLib" ? m with { Version = "1.1" } : m)];
+        var updates = LaunchGuard.Reached(dir, new(now.AddMinutes(15), [.. updated.Select(m => m.Id == "SmmTestLib" ? m with { Version = "1.2" } : m)]),
+            new(now.AddMinutes(14), updated), new(now, working));
+        Check("updates alone (Restore can't undo one): no notice", updates.Count == 0, Kinds(updates));
+        LaunchGuard.Begin(dir, new(now.AddMinutes(16), tried));
+        Directory.CreateDirectory(workingFile + ".tmp"); // the working setup can't be written
+        try
+        {
+            var unsaved = LaunchGuard.Reached(dir, new(now.AddMinutes(17), working), null, null);
+            Check("a working setup that can't be saved: the record still goes, the old setup stays", unsaved.Count == 0 && !File.Exists(pending)
+                && LaunchGuard.Read(workingFile)?.At == now.AddMinutes(15));
+        }
+        catch (Exception e)
+        {
+            Check("a working setup that can't be saved: the record still goes, the old setup stays", false, e.Message);
+        }
+        Directory.Delete(workingFile + ".tmp");
+        // A record that can't be deleted at the menu (Copilot, #65): the working setup is still saved, and the next launch
+        // takes the record, now older than that setup, as none.
+        LaunchGuard.Begin(dir, new(now.AddMinutes(18), tried));
+        List<LaunchGuard.Change>? locked = null;
+        string? lockedError = null;
+        using (new FileStream(pending, FileMode.Open, System.IO.FileAccess.Read, FileShare.None))
+            try
+            {
+                locked = LaunchGuard.Reached(dir, new(now.AddMinutes(19), tried), null, null);
+            }
+            catch (Exception e)
+            {
+                lockedError = e.Message;
+            }
+        var afterLock = LaunchGuard.Begin(dir, new(now.AddMinutes(19.5), unsubscribed));
+        Check("a record that can't be deleted at the menu: the working setup still saved, the next launch takes the record as none",
+            lockedError == null && locked?.Count == 0 && LaunchGuard.Read(workingFile)?.At == now.AddMinutes(19) && afterLock.Failed == null
+            && afterLock.Working?.At == now.AddMinutes(19), lockedError ?? $"failed {afterLock.Failed?.At}, working {afterLock.Working?.At}");
+        File.WriteAllText(pending, "{\"at\":\"2026-10-14T09:"); // a write cut off
+        var torn = LaunchGuard.Begin(dir, new(now.AddMinutes(20), tried));
+        Check("an unreadable record counts as none", torn.Failed == null && torn.Working != null);
+        var odd = Path.Combine(dir, "odd.json");
+        File.WriteAllText(odd, "{\"at\":\"2026-10-14T09:30:00\",\"mods\":[{\"id\":null,\"source\":\"ModsDirectory\",\"enabled\":true}]}");
+        var noId = LaunchGuard.Read(odd);
+        File.WriteAllText(odd, "{\"at\":\"2026-10-14T09:30:00\",\"mods\":[{\"id\":\"SmmTestLib\",\"source\":99,\"enabled\":true}]}");
+        Check("a record with a mod that has no id, or an unknown source, counts as none", noId == null && LaunchGuard.Read(odd) == null);
+
+        // The notice; while another popup is up, it waits (the first notice stands in for one), then shows; shown once.
+        LaunchGuard.Notice = (new LaunchGuard.Setup(now, working), found);
+        LaunchGuard.ShowNotice(menu);
+        await Wait(menu, 1);
+        var texts = string.Join(" | ", PopupTexts());
+        var parsed = string.Join(" | ", NModalContainer.Instance?.OpenModal is Node shown
+            ? shown.FindChildren("*", "RichTextLabel", true, false).OfType<RichTextLabel>().Select(r => r.GetParsedText()) : []);
+        Check("the notice: its title, the changes by name, a version's bracket as text, Restore and Keep", LaunchGuard.Notice == null
+            && texts.Contains("The last launch stopped before the main menu") && texts.Contains("Test Framework") && parsed.Contains("(updated: 1.0 → 1.1 [b])")
+            && texts.Contains("SmmTestNew") && texts.Split(" | ").Contains("Restore") && texts.Contains("Keep"), $"{texts} || {parsed}");
+        CheckMark("launch notice", NModalContainer.Instance?.OpenModal as Control);
+        await Capture(menu, outDir, "1e-launch-notice");
+        var firstPopup = NModalContainer.Instance?.OpenModal;
+        LaunchGuard.Notice = (new LaunchGuard.Setup(now, working), found);
+        LaunchGuard.ShowNotice(menu);
+        await Wait(menu, 0.3);
+        var waited = LaunchGuard.Notice != null && NModalContainer.Instance?.OpenModal == firstPopup;
+        NModalContainer.Instance?.Clear();
+        await Wait(menu, 1.5);
+        Check("the notice waits while another popup is up, then shows", waited && LaunchGuard.Notice == null
+            && NModalContainer.Instance?.OpenModal is { } later && later != firstPopup, $"waited {waited}");
+        NModalContainer.Instance?.Clear();
+        await Wait(menu, 0.5);
+        LaunchGuard.ShowNotice(menu);
+        await Wait(menu, 0.3);
+        Check("the notice is shown once", NModalContainer.Instance?.OpenModal == null, NModalContainer.Instance?.OpenModal?.GetType().Name ?? "");
+
+        // Restore, to the list as it is but reversed, Test Fixes, Test Addon (it can't load) and ours off, and Test UI
+        // missing (installed since). Then again with Test Framework missing too, which Test Content (on) needs.
+        var settings = SaveManager.Instance.SettingsSave.ModSettings;
+        var listWas = settings?.ModList.Select(e => new SettingsSaveMod { Id = e.Id, Source = e.Source, IsEnabled = e.IsEnabled }).ToList() ?? [];
+        var relaunches = 0;
+        ModEntry.TestRelaunch = () => relaunches++;
+        try
+        {
+            var target = History.CurrentMods().Where(m => m.Id != "SmmTestUi").Reverse()
+                .Select(m => new LaunchGuard.Entry(m.Id, m.Source, m.Enabled && m.Id is not ("SmmTestFixes" or "SmmTestAddon" or ModEntry.ModId), null)).ToList();
+            LaunchGuard.Restore(target, menu);
+            await Wait(menu, 0.3);
+            var after = string.Join(", ", History.CurrentMods().Select(m => $"{m.Id}={m.Enabled}"));
+            var expected = string.Join(", ", target.Select(m => $"{m.Id}={m.Enabled || m.Id == ModEntry.ModId}")
+                .Concat(Enumerable.Repeat("SmmTestUi=False", Dependencies.Find("SmmTestUi") != null ? 1 : 0)));
+            Check("Restore: the working list back in its order, a mod added since off, ours on, then a relaunch",
+                relaunches == 1 && !RelaunchCheck.IsOpen && after == expected, $"{relaunches} relaunches; {after}; expected {expected}");
+            RelaunchCheck.Close();
+
+            if (Dependencies.Find("SmmTestLib") == null || !target.Any(m => m.Id == "SmmTestContent" && m.Enabled))
+                Results.Add("SKIP Restore with a mod that needs one added since: no Test Framework, or Test Content off");
+            else
+            {
+                relaunches = 0;
+                LaunchGuard.Restore([.. target.Where(m => m.Id != "SmmTestLib")], menu);
+                await Wait(menu, 0.3);
+                var body = (menu.GetTree().Root.GetNodeOrNull(RelaunchCheck.Name)?.FindChild("Body", true, false) as RichTextLabel)?.GetParsedText() ?? "";
+                Check("Restore with a mod left on that needs one added since: the relaunch check's dialog, no relaunch yet",
+                    relaunches == 0 && RelaunchCheck.IsOpen && body.Contains("Test Framework"), $"{relaunches} relaunches: {body}");
+            }
+        }
+        finally
+        {
+            ModEntry.TestRelaunch = null;
+            RelaunchCheck.Close();
+            if (settings != null)
+            {
+                settings.ModList.Clear();
+                settings.ModList.AddRange(listWas);
+                SaveManager.Instance.SaveSettings();
+            }
         }
     }
 

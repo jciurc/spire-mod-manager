@@ -42,12 +42,16 @@ static class MainMenuPatch
 
             MenuButton.Add(__instance);
             // After a launch that couldn't read our saved file: the notice here too, so it's seen even without a
-            // visit to the Modding page (after the game's own startup popups; with one still open, it waits).
+            // visit to the Modding page (after the game's own startup popups; with one still open, it waits). Then
+            // the one about a last launch that stopped before the main menu (with a popup open, it tries again each
+            // second while this menu is up).
             var menu = __instance;
             menu.GetTree().CreateTimer(1.5).Timeout += () =>
             {
-                if (GodotObject.IsInstanceValid(menu) && menu.IsVisibleInTree())
-                    Store.ShowNotice();
+                if (!GodotObject.IsInstanceValid(menu) || !menu.IsVisibleInTree())
+                    return;
+                Store.ShowNotice();
+                LaunchGuard.ShowNotice(menu);
             };
 
 #if DEVTOOLS
@@ -57,6 +61,25 @@ static class MainMenuPatch
         catch (Exception e)
         {
             Log.Error($"[{ModEntry.ModId}] Could not add the main menu button: {e}");
+        }
+    }
+}
+
+// The launch reached the main menu: its record goes (LaunchGuard). A prefix, so a throw in the menu's own _Ready
+// (which skips the postfixes) can't leave a launch that worked marked as one that didn't.
+[HarmonyPatch(typeof(NMainMenu), nameof(NMainMenu._Ready))]
+static class MenuReachedPatch
+{
+    [HarmonyPriority(Priority.First)]
+    static void Prefix()
+    {
+        try
+        {
+            LaunchGuard.MenuReached();
+        }
+        catch (Exception e)
+        {
+            Log.Error($"[{ModEntry.ModId}] Could not clear the launch record: {e}");
         }
     }
 }
