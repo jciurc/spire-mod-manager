@@ -4004,7 +4004,7 @@ static class SelfTest
         var head = info.GetNodeOrNull<RichTextLabel>("SpireModManagerHead");
         var text = head?.GetParsedText() ?? "";
         Check("a Workshop mod's head: Author, Updated (4 days ago • Changelog), Compatibility", text.IndexOf("Author") < text.IndexOf("Updated")
-            && text.IndexOf("Updated") < text.IndexOf("Compatibility") && text.Contains("(4 days ago)  •00a000a0Changelog") && head?.Text.Contains("[url=patchnotes]") == true, text);
+            && text.IndexOf("Updated") < text.IndexOf("Compatibility") && text.Contains("(4 days ago)  •  Changelog") && head?.Text.Contains("[url=patchnotes]") == true, text);
         var link = info.FindChild("SpireModManagerLink", true, false) as LinkButton;
         Check("the source line: id (SteamID n)", link?.Text == "SmmWorkshopTest (SteamID 42)", link?.Text ?? "");
         Check("how long ago: hours under a day, one day singular, green under two days",
