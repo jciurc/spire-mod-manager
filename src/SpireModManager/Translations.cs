@@ -29,14 +29,50 @@ static class Translations
     // Set by the self-test: Open calls it with the folder instead of opening a window.
     public static Action<string>? TestOpen;
 
-    // The main menu button's "Open translations folder": made if it isn't there yet, then shown in the system's file
-    // browser.
+    // An example in the folder (Jordan, 2026-10-15): every text of ours in English, under a few lines on how to make a
+    // translation from it. Its name is no language's, so it's never read. Written when the folder is opened, and
+    // written again (this version's texts) while it's still as we left it: we date it ExampleTime, and an edit dates
+    // it anew, so a player's edits are kept.
+    public const string ExampleFile = "example-eng.json";
+    public static readonly DateTime ExampleTime = new(2000, 1, 1, 0, 0, 0, DateTimeKind.Utc);
+
+    // Its lines end in CRLF, as Notepad writes them, the English table's included.
+    public static string ExampleText() => string.Join("\r\n",
+        "// An example: every text of Spire Mod Manager, in English. This file is never loaded.",
+        "// To translate: copy it, name the copy with your language's code from the list below (zhs.json for Simplified",
+        "// Chinese), and translate the texts on the right. Keep the keys on the left, {placeholders} and [tags] as they are.",
+        "// A text left out shows in English. Then switch the game to that language (or relaunch it, if it's in it already).",
+        "// This example is updated with the mod until you edit it.",
+        "// Codes: deu German, esp Spanish (Latin America), fra French, ind Indonesian, ita Italian, jpn Japanese,",
+        "// kor Korean, pol Polish, ptb Portuguese (Brazil), rus Russian, spa Spanish (Spain), tha Thai, tur Turkish,",
+        "// zhs Chinese (Simplified), zht Chinese (Traditional).",
+        Godot.FileAccess.GetFileAsString($"res://{ModEntry.ModId}/localization/eng/{Table}.json").Trim().ReplaceLineEndings("\r\n")) + "\r\n";
+
+    // The example written, unless the player has edited it. Fails soft: a folder with no example is no worse than before.
+    public static void WriteExample(string folder)
+    {
+        try
+        {
+            var file = Path.Combine(folder, ExampleFile);
+            if (File.Exists(file) && File.GetLastWriteTimeUtc(file) != ExampleTime)
+                return; // edited: theirs now
+            Store.WriteAtomic(file, ExampleText(), ExampleTime); // whole and dated as ours, or not at all (Copilot, #83)
+        }
+        catch (Exception e)
+        {
+            Log.Warn($"[{ModEntry.ModId}] Could not write the example translation: {e.Message}");
+        }
+    }
+
+    // The main menu button's "Open translations folder": made if it isn't there yet, with the example in it, then
+    // shown in the system's file browser.
     public static void Open()
     {
         try
         {
             var folder = Folder;
             Directory.CreateDirectory(folder);
+            WriteExample(folder);
             if (TestOpen is { } test)
                 test(folder);
             else
@@ -59,7 +95,7 @@ static class Translations
         if (file == null)
         {
             // None for this language: what is there, so a misnamed file (deu.txt, a DEU folder, eng.json) shows in the log.
-            List<string> there = [.. Directory.EnumerateFileSystemEntries(Folder).Select(Path.GetFileName).OfType<string>()];
+            List<string> there = [.. Directory.EnumerateFileSystemEntries(Folder).Select(Path.GetFileName).OfType<string>().Where(n => n != ExampleFile)];
             if (there.Count > 0)
                 Log.Info($"[{ModEntry.ModId}] No translation {language}.json in {Folder}, which has: {Some(there)}");
             return;
