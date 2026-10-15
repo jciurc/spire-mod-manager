@@ -36,13 +36,17 @@ static class Translations
     public const string ExampleFile = "example-eng.json";
     public static readonly DateTime ExampleTime = new(2000, 1, 1, 0, 0, 0, DateTimeKind.Utc);
 
-    public static string ExampleText() => string.Join("\n",
+    // Its lines end in CRLF, as Notepad writes them, the English table's included.
+    public static string ExampleText() => string.Join("\r\n",
         "// An example: every text of Spire Mod Manager, in English. This file is never loaded.",
-        "// To translate: copy it, name the copy with your language's three-letter code (zhs.json for Simplified Chinese,",
-        "// rus.json for Russian, deu.json for German, fra.json for French...), and translate the texts on the right.",
-        "// Keep the keys on the left, {placeholders} and [tags] as they are. A text left out shows in English.",
-        "// Then switch the game to that language. This example is updated with the mod until you edit it.",
-        Godot.FileAccess.GetFileAsString($"res://{ModEntry.ModId}/localization/eng/{Table}.json").Trim()) + "\n";
+        "// To translate: copy it, name the copy with your language's code from the list below (zhs.json for Simplified",
+        "// Chinese), and translate the texts on the right. Keep the keys on the left, {placeholders} and [tags] as they are.",
+        "// A text left out shows in English. Then switch the game to that language (or relaunch it, if it's in it already).",
+        "// This example is updated with the mod until you edit it.",
+        "// Codes: deu German, esp Spanish (Latin America), fra French, ind Indonesian, ita Italian, jpn Japanese,",
+        "// kor Korean, pol Polish, ptb Portuguese (Brazil), rus Russian, spa Spanish (Spain), tha Thai, tur Turkish,",
+        "// zhs Chinese (Simplified), zht Chinese (Traditional).",
+        Godot.FileAccess.GetFileAsString($"res://{ModEntry.ModId}/localization/eng/{Table}.json").Trim().ReplaceLineEndings("\r\n")) + "\r\n";
 
     // The example written, unless the player has edited it. Fails soft: a folder with no example is no worse than before.
     public static void WriteExample(string folder)
