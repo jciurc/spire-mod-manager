@@ -259,7 +259,7 @@ static class LoadOrder
             if (border.GetNodeOrNull<Control>(FindBar.Name) is { } find)
             {
                 find.OffsetRight = hint.OffsetLeft - gap * 2;
-                find.OffsetLeft = find.OffsetRight - FindBar.Width;
+                find.OffsetLeft = find.OffsetRight - Math.Max(FindBar.Width, find.GetCombinedMinimumSize().X); // a longer count gets room
                 if (finding)
                     search.OffsetRight = find.OffsetLeft - gap;
             }
@@ -419,7 +419,7 @@ static class LoadOrder
             return;
         // This very copy against the search: Reveal looks at the first row with the id, and a local and a Workshop copy
         // share one (their search text can differ).
-        var filter = content.HasMeta(CategoryList.FilterMeta) ? (string)content.GetMeta(CategoryList.FilterMeta) : "";
+        var filter = CategoryList.Filter(content);
         if (filter.Length > 0 && !Store.Data.LoadOrderView && !Search.Matches(mod, filter)) // Load Order hides no row
             Search.Clear(content);
         CategoryList.Reveal(content, mod.manifest?.id ?? "", flash: true);

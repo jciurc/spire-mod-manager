@@ -13,10 +13,8 @@ static class FindBar
     public const float Width = 168;
     static readonly Color Cream = new(1, 0.964706f, 0.886275f);
 
-    static string Filter(Control content) => content.HasMeta(CategoryList.FilterMeta) ? (string)content.GetMeta(CategoryList.FilterMeta) : "";
-
     // The rows the search matches, in list order (none without a search).
-    public static List<NModMenuRow> Found(Control content) => Filter(content) is { Length: > 0 } filter
+    public static List<NModMenuRow> Found(Control content) => CategoryList.Filter(content) is { Length: > 0 } filter
         ? [.. content.GetChildren().OfType<NModMenuRow>().Where(r => Search.Matches(r.Mod, filter))]
         : [];
 
@@ -47,7 +45,7 @@ static class FindBar
             border.AddChild(bar);
             bar.AnchorLeft = bar.AnchorRight = 1; // offsets from the right edge, like Auto sort and its hint
         }
-        bar.Visible = loadOrder && Filter(content).Length > 0;
+        bar.Visible = loadOrder && CategoryList.Filter(content).Length > 0;
         if (!bar.Visible)
             return false;
         var found = Found(content).Count;
