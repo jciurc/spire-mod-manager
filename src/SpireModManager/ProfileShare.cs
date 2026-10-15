@@ -15,7 +15,8 @@ namespace SpireModManager;
 //   Menu writes it: spreadsheets show it as text, and reading takes it off again.
 // - Reading: the same, forgiving: a UTF-8 BOM, CRLF or LF, blank lines, a ; or tab between values (a spreadsheet
 //   saved in a language that uses the comma for decimals). Columns go by their header, in any order and any case;
-//   only Mod Id (or Id) and Enabled are needed. Enabled: TRUE/FALSE, 1/0 or yes/no, in any case.
+//   only Mod Id (or Id) and Enabled are needed. Enabled: TRUE/FALSE, 1/0 or yes/no, in any case; blank is enabled (the
+//   import error says "TRUE", "FALSE" or blank: a list naming a mod with no state wants it).
 static class ProfileCsv
 {
     // What a shared list holds besides each mod's id, name, version and Enabled (Jordan, 2026-10-15: the category on, the
@@ -179,7 +180,7 @@ static class ProfileCsv
 
     static bool? Bool(string value) => value.ToLowerInvariant() switch
     {
-        "true" or "1" or "yes" => true,
+        "true" or "1" or "yes" or "" => true,
         "false" or "0" or "no" => false,
         _ => null,
     };
@@ -317,7 +318,7 @@ static class ProfileShare
             if (box.Text != loaded)
                 file = null;
             Say(status, read?.Error ?? "", error: true);
-            preview.Text = read is { Error: null } ? Preview(Profiles.PlanImport(read.Mods), Profiles.ImportName(file)) : "";
+            preview.Text = read is { Error: null } ? Preview(read.Mods, Profiles.PlanImport(read.Mods), Profiles.ImportName(file)) : "";
         }
         box.TextChanged += Update;
 
@@ -354,20 +355,31 @@ static class ProfileShare
         box.GrabFocus();
     }
 
-    // The preview: the new profile's name, what it changes (a line for each count that isn't 0), and the mods it names
-    // that aren't installed.
-    static string Preview(Profiles.ImportPlan plan, string name)
+    // The preview's BBCode for a list read (the self-test).
+    public static string PreviewFor(IReadOnlyList<ProfileCsv.Entry> listed, string name) => Preview(listed, Profiles.PlanImport(listed), name);
+
+    // The preview (Jordan, 2026-10-15): the new profile's name and what the list holds ("Contains 12 enabled mods and 3
+    // disabled mods", the disabled part only when there are some), then what it changes compared with the mod list now
+    // ("Mods enabled 2", "Mods disabled 1": only the counts that aren't 0, or "None"), and the mods it names that
+    // aren't installed.
+    static string Preview(IReadOnlyList<ProfileCsv.Entry> listed, Profiles.ImportPlan plan, string name)
     {
         var lines = new List<string> { Menus.Format("SPIRE_MOD_MANAGER.IMPORT_NEW_NAME", ("name", $"[color={GoldHex}]{Escape(name)}[/color]")) };
-        void Count(int count, string one, string many)
-        {
-            if (count > 0)
-                lines.Add("  •  " + Menus.Format(count == 1 ? one : many, ("count", Menus.Number(count))));
-        }
-        Count(plan.On, "SPIRE_MOD_MANAGER.IMPORT_ON_ONE", "SPIRE_MOD_MANAGER.IMPORT_ON");
-        Count(plan.Off, "SPIRE_MOD_MANAGER.IMPORT_OFF_ONE", "SPIRE_MOD_MANAGER.IMPORT_OFF");
-        Count(plan.Same, "SPIRE_MOD_MANAGER.IMPORT_SAME_ONE", "SPIRE_MOD_MANAGER.IMPORT_SAME");
-        Count(plan.Unlisted, "SPIRE_MOD_MANAGER.IMPORT_UNLISTED_ONE", "SPIRE_MOD_MANAGER.IMPORT_UNLISTED");
+        string Enabled(int count) => Menus.Format(count == 1 ? "SPIRE_MOD_MANAGER.IMPORT_ENABLED_COUNT_ONE" : "SPIRE_MOD_MANAGER.IMPORT_ENABLED_COUNT", ("count", Menus.Number(count)));
+        string Disabled(int count) => Menus.Format(count == 1 ? "SPIRE_MOD_MANAGER.IMPORT_DISABLED_COUNT_ONE" : "SPIRE_MOD_MANAGER.IMPORT_DISABLED_COUNT", ("count", Menus.Number(count)));
+        var mods = listed.DistinctBy(m => m.Id).ToList(); // a mod listed twice (a local and a Workshop copy) counts once
+        var (enabled, disabled) = (mods.Count(m => m.Enabled), mods.Count(m => !m.Enabled));
+        lines.Add("  •  " + (disabled > 0
+            ? Menus.Format("SPIRE_MOD_MANAGER.IMPORT_CONTAINS_BOTH", ("enabled", Enabled(enabled)), ("disabled", Disabled(disabled)))
+            : Menus.Format("SPIRE_MOD_MANAGER.IMPORT_CONTAINS", ("enabled", Enabled(enabled)))));
+        lines.Add("");
+        lines.Add(Menus.Text("SPIRE_MOD_MANAGER.IMPORT_CHANGES"));
+        if (plan.On > 0)
+            lines.Add("  •  " + Menus.Format("SPIRE_MOD_MANAGER.IMPORT_ON", ("count", Menus.Number(plan.On))));
+        if (plan.Off > 0)
+            lines.Add("  •  " + Menus.Format("SPIRE_MOD_MANAGER.IMPORT_OFF", ("count", Menus.Number(plan.Off))));
+        if (plan.On == 0 && plan.Off == 0)
+            lines.Add("  •  " + Menus.Text("SPIRE_MOD_MANAGER.IMPORT_NO_CHANGE"));
         if (plan.Missing.Count > 0)
         {
             lines.Add("");
