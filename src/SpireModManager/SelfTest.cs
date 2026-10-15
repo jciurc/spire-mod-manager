@@ -2137,7 +2137,7 @@ static class SelfTest
         Check("a list without Mod Id says so in red, with no preview", noId.Item1.StartsWith("This list has no Mod Id column") && noId.Item2 && noId.Item3 == "",
             $"\"{noId.Item1}\" red {noId.Item2}, preview \"{noId.Item3}\"");
         Check("a bad Enabled value names its mod", badValue == "Enabled for SmmTestUi should be TRUE or FALSE, not \"maybe\".", badValue);
-        Check("Create profile with no text says what to do, in red, and makes nothing", Dialog() != null && Status() == "Paste a mod list or load a CSV file first."
+        Check("Create profile with no text says what to do, in red, and makes nothing", Dialog() != null && Status() == "Paste a mod list or load a file first."
             && StatusRed() && Store.Data.Profiles.Count == profiles, Status());
         Check("the imported name: the file's, numbered when taken; not Better Mod Menu's time-stamped one",
             Profiles.ImportName("C:/lists/Brother co-op.csv") == "Brother co-op" && Profiles.ImportName("C:/lists/Brother co-op.txt") == "Brother co-op" && Profiles.ImportName($"{startName}.csv") == Profiles.CopyName(startName)
