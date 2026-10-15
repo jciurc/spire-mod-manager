@@ -213,13 +213,14 @@ static class LoadOrder
     // fixing makes the saved order say what will happen). On the main list: enabled mods that need a mod
     // that is off or missing, with a way to each and a fix for the off ones. Elsewhere, a "!" on the Load
     // Order button says that page has a warning, its tooltip naming the mods. Above that one on both, while Better Mod
-    // Menu is ticked too: a yellow banner saying two mod managers are on, with a way to its row and a way to dismiss it.
+    // Menu is ticked too: a yellow banner saying two mod managers are on, with a way to their rows and a way to dismiss
+    // it. Above everything, while this mod is unticked: a red banner saying it (and this page) goes at the relaunch.
     // Hovering a banner's text lists the mods it is about (BannerCard).
     public const string WarningName = "SpireModManagerOrderWarning", ManagersName = "SpireModManagerManagersWarning", AutoSortName = "AutoSortButton";
+    public const string SelfName = "SpireModManagerSelfWarning";
     public const string AutoSortHintName = "AutoSortHint", BannerCardName = "SpireModManagerBannerCard";
     const string BadgeName = "WarningBadge";
     const int CardLines = 12; // a banner's card names at most this many mods, then says how many more
-    static int _nextProblem; // the main banner's "Show" steps through the mods with problems
 
     public static void UpdateToolbar(Control content, List<NModMenuRow> rows, Action redraw)
     {
@@ -282,7 +283,7 @@ static class LoadOrder
         var orderText = Menus.Format(misordered == 1 ? "SPIRE_MOD_MANAGER.ORDER_PROBLEMS_ONE" : "SPIRE_MOD_MANAGER.ORDER_PROBLEMS", ("count", Menus.Number(misordered)));
         // The "!"'s card: the warning alone (Jordan, 2026-10-14: the mods it's about are Load Order's own card).
         Badge(content, misordered > 0 && !on ? orderText : null);
-        foreach (var name in new[] { WarningName, ManagersName })
+        foreach (var name in new[] { WarningName, ManagersName, SelfName })
             if (border.GetNodeOrNull(name) is { } old)
             {
                 border.RemoveChild(old); // now, not at the end of the frame: a redraw in the same frame adds a new one
@@ -293,6 +294,8 @@ static class LoadOrder
         // two aren't both ticked (in any view), ready for the next time they are: tickboxes, profiles, undo and redo, and
         // the fixes all redraw through here.
         Bmm.ForgetDismissedWarning();
+        if (Layout.Wide && Dependencies.Find(ModEntry.ModId) is { } self && !Dependencies.IsOn(self))
+            SelfBanner(content, border, search, self, redraw);
         if (Layout.Wide && Bmm.BothTicked && !Store.Data.ManagersWarningDismissed)
             ManagersBanner(content, border, search, redraw);
         if (on && misordered > 0)
@@ -319,8 +322,11 @@ static class LoadOrder
             needMissing > 0 ? Part("SPIRE_MOD_MANAGER.LIST_PROBLEMS_MISSING", needMissing) : null,
         }.OfType<string>());
 
-        var show = Menus.SmallButton(Menus.Text("SPIRE_MOD_MANAGER.SHOW_PROBLEM"), () => GoTo(content, broken[_nextProblem++ % broken.Count].Mod),
-            name: "ShowProblemButton");
+        // Show steps through both sides (Jordan, 2026-10-15): each mod that won't load, then the disabled mods it needs (one
+        // not installed has no row), from the one after the mod in the info panel.
+        var stops = broken.SelectMany(b => b.Needs.Select(d => d.Dep).OfType<Mod>().Prepend(b.Mod)).Distinct().ToList();
+        var show = Menus.SmallButton(Menus.Text("SPIRE_MOD_MANAGER.SHOW_PROBLEM"),
+            () => GoTo(content, stops[(stops.IndexOf(CategoryList.Selected!) + 1) % stops.Count]), name: "ShowProblemButton");
         Hover.Tip(show, Menus.Text("SPIRE_MOD_MANAGER.SHOW_PROBLEM_TIP"));
         List<Control> buttons = [show];
         var needed = Dependencies.NeededOff(mods);
@@ -351,14 +357,34 @@ static class LoadOrder
             .OrderBy(b => b.Needs.All(d => d.Dep == null)) // stable: each group keeps its order
             .ToList();
 
+    // This mod unticked (only its own row can: Disable all, profiles and the fixes keep it on): the page goes with it at
+    // the relaunch, so a red banner says so (Jordan, 2026-10-15), with Show (its row) and Enable now. Ticked again, by
+    // either or by undo, the redraw takes the banner away.
+    static void SelfBanner(Control content, Control border, Control? search, Mod self, Action redraw)
+    {
+        var show = Menus.SmallButton(Menus.Text("SPIRE_MOD_MANAGER.SHOW_PROBLEM"), () => GoTo(content, self), name: "ShowSelfButton");
+        Hover.Tip(show, Menus.Text("SPIRE_MOD_MANAGER.SHOW_SELF_TIP"));
+        var enable = Menus.SmallButton(Menus.Text("SPIRE_MOD_MANAGER.ENABLE_SELF"), () =>
+        {
+            if (CategoryList.ScreenOf(content) is not { } screen)
+                return;
+            Dependencies.Set([self], true, screen);
+            redraw();
+        }, name: "EnableSelfButton");
+        Hover.Tip(enable, Menus.Text("SPIRE_MOD_MANAGER.ENABLE_SELF_TIP"));
+        Banner(border, search, Menus.Text("SPIRE_MOD_MANAGER.SELF_OFF"), () => null, [show, enable], SelfName, "SelfOff");
+    }
+
     // Better Mod Menu ticked as well as us: the same kind of banner in yellow (a warning: both can run), and Show, which
-    // goes to its row, then Dismiss for a player happy to run both.
+    // goes to the managers' rows in turn (ours is one of them, Jordan 2026-10-15): Better Mod Menu first, then the one
+    // after the mod in the info panel. Then Dismiss for a player happy to run both.
     static void ManagersBanner(Control content, Control border, Control? search, Action redraw)
     {
         var show = Menus.SmallButton(Menus.Text("SPIRE_MOD_MANAGER.SHOW_PROBLEM"), () =>
         {
-            if (Dependencies.Find(Bmm.ModId) is { } mod)
-                GoTo(content, mod);
+            var managers = Bmm.TickedManagers().OrderBy(m => m.manifest?.id == ModEntry.ModId).ToList();
+            if (managers.Count > 0)
+                GoTo(content, managers[(managers.IndexOf(CategoryList.Selected!) + 1) % managers.Count]);
         }, name: "ShowManagersButton");
         Hover.Tip(show, Menus.Text("SPIRE_MOD_MANAGER.SHOW_PROBLEM_TIP")); // the same words as the other banner's: no manager named
         var dismiss = Menus.SmallButton(Menus.Text("SPIRE_MOD_MANAGER.DISMISS_MANAGERS"), () =>

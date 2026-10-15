@@ -4,6 +4,7 @@ Short notes for Jordan: what to look for after each install. Newest first.
 
 ## Waiting in pull requests
 
+- **This mod among the others (self-included):** the counts include Spire Mod Manager itself (the profile bar, the main menu button, Mods enabled). Hover Disable all (the page bar's, or its category's): "Spire Mod Manager (this mod) will remain enabled". Untick its own row: a red banner at the top says it (and this page) goes at the relaunch, with Show and Enable now. The red "requires a disabled mod" banner's Show now steps through both sides (Flagellant, then DD2ModConfig), and the two-managers banner's Show goes to ours too.
 - **Share profile, merged after 0.0.58 (share-options, #87):** in Import's preview, each mod that isn't installed is a link to its Workshop page (when the list has one), and the preview shows that list without scrolling. Share profile's five tick boxes sit on one line in English (a longer language can wrap the four Include boxes), level with their words.
 
 ## Installed 2026-10-15: version 0.0.58
