@@ -198,23 +198,6 @@ static class ModdingScreenPatch
     }
 }
 
-// Settings screen: a "Spire Mod Manager" button to our page (SettingsButton). The page doesn't need it.
-[HarmonyPatch(typeof(NSettingsScreen), nameof(NSettingsScreen._Ready))]
-static class SettingsScreenPatch
-{
-    [HarmonyPriority(Priority.First)]
-    static void Postfix(NSettingsScreen __instance)
-    {
-        try
-        {
-            SettingsButton.Add(__instance);
-        }
-        catch (Exception e)
-        {
-            Log.Error($"[{ModEntry.ModId}] Could not add the Settings screen's button: {e}");
-        }
-    }
-}
 
 // Every tickbox change (and the game's own pending check) passes through here: the active profile follows
 // it, and a changed load order also counts as pending (the game only checks on/off).
