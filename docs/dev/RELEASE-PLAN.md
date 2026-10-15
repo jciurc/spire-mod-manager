@@ -5,7 +5,7 @@
 **What it does**
 - **Entry and views:** a movable main-menu button with a pending-relaunch dot. The Modding screen has three views: the main list, Vanilla View (remembered) and Load Order (a side trip). The selected mod carries across view switches.
 - **Organizing:** collapsible categories with inline actions; aliases, notes and tags (automatic: New, Local, Library, Gameplay, Cosmetic; plus your own); search with `#tag` and `@author`; multi-select and bulk editing; a page bar with Enable all/Disable all.
-- **Info panel:** Workshop details (dates, size, subscribers, tags, branches), a Change Notes link, problems in red, dependencies and "Required for", your editable fields, and Open Folder.
+- **Info panel:** Workshop details (dates, size, subscribers, tags, branches), a Changelog link, problems in red, dependencies and "Required for", your editable fields, and Open Folder.
 - **Profiles:** save, switch, unsaved diff, discard, new, duplicate, rename, delete; imported once from Better Mod Menu.
 - **Load Order:** drag (including blocks), dependency lines, a warning when the game will reorder mods plus Fix now, and Auto sort.
 - **Safety net:** Changes list, undo/redo (200 steps, two histories), Revert all, and a relaunch check that offers to enable needed mods or disable mods that can't load.
@@ -78,7 +78,7 @@
     - tags `["QoL", "Utility"]`;
     - first change note starting with "1.0.0";
     - `"dependencies": []` (explicit, because v0.2.0 of the uploader wipes Required Items when the field is absent).
-12. **Real Workshop test.** Left, Jordan's, at the upload. Upload privately, subscribe on your account, and check `workshopId`, the details, the Change Notes link and the source line. Dev runs use `--force-steam off`, so this path has never run.
+12. **Real Workshop test.** Left, Jordan's, at the upload. Upload privately, subscribe on your account, and check `workshopId`, the details, the Changelog link and the source line. Dev runs use `--force-steam off`, so this path has never run.
 13. **Share and import as text** (Jordan, 2026-10-13, after the survey of other managers in DESIGN.md). **Not started:** Jordan decides whether it holds 0.1.0 or moves to the first update. Mod Profile Manager and Mod Preset Sync have share codes, and Load Order Manager has clipboard JSON, so players will expect it.
     - Copy a profile to the clipboard as one line of text: a prefix and version (`SMM1:`) plus the compressed list. It should fit one Discord message for about 250 mods.
     - Import shows what would change before anything does (enable, disable, missing, local only, game version), then makes a new profile, so it can be undone.

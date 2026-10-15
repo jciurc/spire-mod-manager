@@ -71,6 +71,7 @@ static class SelfTest
                 NModalContainer.Instance?.OpenModal?.GetType().Name ?? "");
             Check("main menu button", menu.GetNodeOrNull("SpireModManagerMenuButton") != null);
             TestMenuButtonLook(menu);
+            await TestMenuButtonCard(menu);
             var relaunchArgs = ModEntry.RelaunchArgs();
             Check("relaunch passes the window mode once", relaunchArgs.Count(a => a is "--fullscreen" or "--maximized" or "--windowed") == 1
                 && relaunchArgs.Contains("--force-steam"), string.Join(" ", relaunchArgs));
@@ -188,6 +189,7 @@ static class SelfTest
             Check("reopening after Load Order shows the main list", Layout.Current == Layout.View.Categories
                 && screen.GetNode<Control>("%ModInfoContainer").Visible);
             await TestListFilterReopen(menu, screen, content);
+            await TestMenuButtonOpensOurs(menu, screen);
 
             await TestStoreSafety(menu, screen, outDir);
             await TestLanguageFonts(screen, outDir); // last: the main menu, the page with it, is made again
@@ -832,7 +834,9 @@ static class SelfTest
             $"{button.GetType().Name}, size {label?.GetThemeFontSize("font_size")} vs {settings?.GetThemeFontSize("font_size")}");
         Check("main menu button reads the active profile and the profile bar's count", MenuButtonText(menu) == MenuButtonExpected(),
             $"{MenuButtonText(menu)} vs {MenuButtonExpected()}");
-        Check("main menu button: hovering it says what it opens", Hover.TipOf(button) == "Go to page for managing installed mods", Hover.TipOf(button));
+        Check("main menu button: hovering it says what it opens, and names the profile in gold",
+            Hover.TipOf(button) == $"View and manage installed mods. Currently using mod profile [gold]{Profiles.Active?.Name}[/gold]."
+            && MenuButton.Tip("[b]Odd") == "View and manage installed mods. Currently using mod profile [gold][lb]b]Odd[/gold].", Hover.TipOf(button));
         var screen = button.GetViewportRect();
         Check("main menu button: as wide as its words, whole on screen", MenuButtonMisfit(menu) == null, MenuButtonMisfit(menu) ?? "");
         // The game's hover carets reach 54 from the text either side (NMainMenu.MainMenuButtonFocused): inside the button.
@@ -866,6 +870,56 @@ static class SelfTest
             $"{corner} in {screen}, note {noteThere}");
         Check("main menu button: back in its place, its note centred above it, on screen", note != null && screen.Encloses(noteHere)
             && Above(noteHere, button.GetGlobalRect()), $"note {noteHere}, button {button.GetGlobalRect()}");
+    }
+
+    // The main menu button's card: nothing at the usual delay (the mouse crosses the button on its way to the game's), then
+    // after a second, the normal card, its profile name in gold.
+    static async Task TestMenuButtonCard(NMainMenu menu)
+    {
+        if (menu.GetNodeOrNull<Control>("SpireModManagerMenuButton") is not { } button)
+            return;
+        var early = await HoverCard(menu, button, Hover.TipName);
+        var card = ""; // its BBCode, read while it shows (it's freed as it closes)
+        var late = await SizedHoverCard(menu, button, Hover.TipName, () =>
+        {
+            card = menu.GetTree().Root.FindChild(Hover.TipName, true, false)?.FindChildren("*", "RichTextLabel", true, false).OfType<RichTextLabel>().FirstOrDefault()?.Text ?? "";
+            return Task.CompletedTask;
+        }, seconds: Hover.SlowDelay + 0.2);
+        Check("main menu button: its card waits a second, then names the profile in gold", early == "" && Hover.SlowDelay == 1.0
+            && late.Text == $"View and manage installed mods. Currently using mod profile {Profiles.Active?.Name}."
+            && !card.Contains("[gold]") && card.Contains("[color=#") && card.Contains($"]{Profiles.Active?.Name}[/color]"), $"early \"{early}\", then \"{late.Text}\"");
+    }
+
+    // Our main menu button opens the page on our view even when Vanilla View was the last one shown; the game's way in
+    // (from its Settings) keeps the last view (Jordan, 2026-10-15). The page closed for real, then opened each way: the
+    // game reuses the page, so this is the page shown again (on its first opening, ours was read as it was made).
+    static async Task TestMenuButtonOpensOurs(NMainMenu menu, NModdingScreen screen)
+    {
+        if (menu.GetNodeOrNull<Control>("SpireModManagerMenuButton") is not { } button)
+            return;
+        async Task<string?> Reopened(Action open, bool vanilla)
+        {
+            menu.SubmenuStack.Pop();
+            await Wait(menu, 0.5);
+            var closed = !screen.IsVisibleInTree() && button.IsVisibleInTree();
+            open();
+            await Wait(menu, 1);
+            var headers = screen.GetNode<Control>("%ModsScrollContainer/Mask/Content").GetChildren().Any(c => c.IsInGroup("SpireModManagerCategoryHeader"));
+            return closed && screen.IsVisibleInTree() && Store.Data.VanillaView == vanilla && headers != vanilla
+                ? null : $"closed {closed}, shown {screen.IsVisibleInTree()}, vanilla {Store.Data.VanillaView}, headers {headers}";
+        }
+        var toggle = screen.GetNode<NButton>("SpireModManagerViewToggle");
+        Click(toggle);
+        await Wait(menu, 1);
+        var game = await Reopened(() => menu.SubmenuStack.PushSubmenuType<NModdingScreen>(), vanilla: true);
+        Check("the game's way in keeps Vanilla View, the last one shown", game == null, game ?? "");
+        var ours = await Reopened(() => button.EmitSignal(NClickableControl.SignalName.Released, button), vanilla: false);
+        Check("our main menu button opens our view, after Vanilla View", ours == null, ours ?? "");
+        if (Store.Data.VanillaView) // never leave the tests after this on Vanilla View
+        {
+            Click(toggle);
+            await Wait(menu, 1);
+        }
     }
 
     // Right-click the main menu button, Move button, click somewhere: it stays there; Reset puts it back.
@@ -1819,7 +1873,7 @@ static class SelfTest
         // While open it follows the tickboxes: back on the saved state, it says nothing is unsaved.
         var unsaved = (Control)bar.FindChild("Unsaved", true, false);
         var info = screen.GetNode<Control>("%ModInfoContainer");
-        var line = $"{(wasOn ? "−" : "+")} {mod.manifest?.name}";
+        var line = $"{(wasOn ? "-" : "+")} {mod.manifest?.name}";
         Hover.Hide();
         await Wait(menu, Hover.Grace + 0.1);
         Hover.TestMouse = () => unsaved.GetGlobalRect().GetCenter();
@@ -3180,8 +3234,8 @@ static class SelfTest
         Check("main list: a needed mod that is off gets a banner", text.Contains("require a mod that is disabled"), text);
         var warning = screen.FindChild(LoadOrder.WarningName, true, false);
         var showTip = TipOf(warning?.FindChild("ShowProblemButton", true, false));
-        Check("main list banner: red, its Show tip \"Opens the next affected mod\", no \"Better Mod Menu\" in it",
-            Red(BannerFill(warning)) && showTip == "Opens the next affected mod" && !BannerWords(warning).Any(w => w.Contains("Better Mod Menu")),
+        Check("main list banner: red, its Show tip \"Open the next affected mod\", no \"Better Mod Menu\" in it",
+            Red(BannerFill(warning)) && showTip == "Open the next affected mod" && !BannerWords(warning).Any(w => w.Contains("Better Mod Menu")),
             $"fill {BannerFill(warning)}; {string.Join(" | ", BannerWords(warning))}");
         var after = ButtonsAfterText(warning);
         Check("main list banner: Show and Enable required mods right after its text", after.Ok
@@ -3317,7 +3371,7 @@ static class SelfTest
             && text == "Multiple mod managers are currently enabled, and may cause unexpected behavior.", $"\"{text}\"; {Where()}");
         Check("the managers banner is yellow: a warning, not an error", Yellow(BannerFill(Banner())), $"fill {BannerFill(Banner())}");
         var showTip = TipOf(Banner()?.FindChild("ShowManagersButton", true, false));
-        Check("the managers banner's Show tip is the other banner's: \"Opens the next affected mod\"", showTip == "Opens the next affected mod", showTip ?? "no Show");
+        Check("the managers banner's Show tip is the other banner's: \"Open the next affected mod\"", showTip == "Open the next affected mod", showTip ?? "no Show");
         Check("the managers banner names no manager: no \"Better Mod Menu\" in its text or tips",
             BannerWords(Banner()) is { Count: > 0 } words && !words.Any(w => w.Contains("Better Mod Menu")), string.Join(" | ", BannerWords(Banner())));
         // Hovering its text: a card naming the mod managers that are on, by the names the list gives them (ours by the
@@ -4276,8 +4330,8 @@ static class SelfTest
         await Wait(menu, 0.3);
         var head = info.GetNodeOrNull<RichTextLabel>("SpireModManagerHead");
         var text = head?.GetParsedText() ?? "";
-        Check("a Workshop mod's head: Author, Updated (4 days ago, Change Notes), Compatibility", text.IndexOf("Author") < text.IndexOf("Updated")
-            && text.IndexOf("Updated") < text.IndexOf("Compatibility") && text.Contains("(4 days ago)  Change Notes") && head?.Text.Contains("[url=patchnotes]") == true, text);
+        Check("a Workshop mod's head: Author, Updated (4 days ago • Changelog), Compatibility", text.IndexOf("Author") < text.IndexOf("Updated")
+            && text.IndexOf("Updated") < text.IndexOf("Compatibility") && text.Contains("(4 days ago)  •\u00a0\u00a0Changelog") && head?.Text.Contains("[url=patchnotes]") == true, text);
         var link = info.FindChild("SpireModManagerLink", true, false) as LinkButton;
         Check("the source line: id (SteamID n)", link?.Text == "SmmWorkshopTest (SteamID 42)", link?.Text ?? "");
         Check("how long ago: hours under a day, one day singular, green under two days",

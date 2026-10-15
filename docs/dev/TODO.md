@@ -887,3 +887,32 @@ for launch." His numbering kept. None of this is in 0.1.0.
   Keep them searchable: the New tag could stay, but hidden on the row. They should be in the Changed filter too:
   they probably are already (the Changes list names each mod installed since launch, and Changed shows what it
   names), to check
+
+# Round 24
+
+Jordan's notes of 2026-10-15, after 0.0.57.
+
+- [x] ship the crash-safe launch draft: harmless without a crash, tested more as we go (#65, `launch-safety`)
+- [x] Load Order find: dim the rows the search doesn't match, without mixing that up with the off look (`find-dim`)
+- [x] main menu button: text size 26; its card after 1 s, "View and manage installed mods. Currently using mod profile
+  [gold]x[/gold]."; it always opens our view, while the game's own way in keeps the last one (`menu-button-tip`)
+- [x] copy: "Open the next affected mod"; "Click to see expanded view"; a plain "-" for mods turned off in the unsaved
+  card and list; "Changelog" with a bullet after the time ago (`copy-tweaks`)
+- [x] an English example in the translations folder, with real entries, named so it never loads (`translations-example`)
+
+## Backlog (round 24)
+- [ ] an external-link icon on every link that leaves the game: the Steam Workshop link, Changelog, and maybe Open
+  folder and Open translations folder (they open the system's file browser)
+- [ ] the warning and error banners push the list down as they appear, so rows jump. Ways out: keep the banner's room
+  always (empty when there's none); lay the banner over the list's top (it covers rows); or scroll the list by the
+  banner's height as it appears, so the rows on screen stay put (at the top of the list they still move). The scroll
+  nudge changes the least on screen, but it has to hold through every redraw that shows or hides a banner (filters,
+  Load Order, Reveal, a mod switched on or off): a small spike first, as Jordan suspects it could be too complex
+- [ ] (Jordan, later the same day) Import profile: "Save as" in place of the fixed name. It shows the file's name, or
+  "Imported profile" by default, in a picker like the profile bar's (the name with an arrow, the profile list under
+  it). Choosing a profile there replaces it with the imported list; another choice in the list renames the new
+  profile from the imported name. So an import either makes a new profile, named as the player likes, or replaces one.
+- [ ] (same) the profile bar gets the same "Save as": replace a profile, or create a new one, from the list as it is
+  now, always available (it doesn't need unsaved changes). It may replace Duplicate, which is "Save as" a new
+  profile already. To settle: what replacing the active profile, or one with unsaved changes, asks first; and one
+  undo step for either
