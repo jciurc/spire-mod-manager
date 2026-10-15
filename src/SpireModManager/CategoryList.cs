@@ -18,6 +18,9 @@ static class CategoryList
     const string RowMenuMeta = "spire_mod_manager_menu";
     const string CategoryMeta = "spire_mod_manager_category"; // on headers: the category name, "" for Uncategorized
     public const string FilterMeta = "spire_mod_manager_filter"; // on the row container: the search text
+
+    // The search text (trimmed), or "" with none.
+    public static string Filter(Control content) => content.HasMeta(FilterMeta) ? (string)content.GetMeta(FilterMeta) : "";
     const string GameGapMeta = "spire_mod_manager_game_gap", GameSidesMeta = "spire_mod_manager_game_sides";
     static readonly Dictionary<string, float> HeaderWidths = [];
 
@@ -148,8 +151,8 @@ static class CategoryList
         if (content.GetChildren().OfType<NModMenuRow>().FirstOrDefault(r => r.Mod?.manifest?.id == modId) is not { } row)
             return;
         ListFilter.Bring(row.Mod); // hidden until the next redraw (the search's clearing, or Expand's)
-        var filter = content.HasMeta(FilterMeta) ? (string)content.GetMeta(FilterMeta) : "";
-        if (filter.Length > 0 && !Search.Matches(row.Mod, filter))
+        var filter = Filter(content);
+        if (filter.Length > 0 && !Store.Data.LoadOrderView && !Search.Matches(row.Mod, filter)) // Load Order hides no row
             Search.Clear(content);
         Expand(content, row);
         ScrollSoon(content, row, flash, focus);
@@ -200,7 +203,7 @@ static class CategoryList
     }
 
     // Once positions settle after this frame's layout.
-    static void ScrollSoon(Control content, Control row, bool flash, bool focus = false)
+    public static void ScrollSoon(Control content, Control row, bool flash, bool focus = false)
     {
         content.GetTree().CreateTimer(0.05).Timeout += () =>
         {
@@ -368,7 +371,7 @@ static class CategoryList
         // Search: rows that don't match hide; while searching, categories open to show their matches. On the main list
         // the page bar's Show: choice too (ListFilter, every row elsewhere): a row shows when it matches both, and
         // categories keep their folding.
-        var filter = content.HasMeta(FilterMeta) ? (string)content.GetMeta(FilterMeta) : "";
+        var filter = Filter(content);
         var searching = filter.Length > 0;
         var filtering = searching || ListFilter.Current != ListFilter.Choice.All;
         bool Matches(NModMenuRow row) => (!searching || Search.Matches(row.Mod, filter)) && ListFilter.Shows(row.Mod);
@@ -377,7 +380,7 @@ static class CategoryList
         if (Store.Data.LoadOrderView)
         {
             void RedrawAll() => Redraw(content);
-            LoadOrder.Apply(content, rows, Matches, RedrawAll);
+            LoadOrder.Apply(content, rows, RedrawAll);
             RowStrip.Apply(rows, StripActions(content), EdgeAction(content));
             return;
         }

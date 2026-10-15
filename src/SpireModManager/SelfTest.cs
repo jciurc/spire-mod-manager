@@ -158,6 +158,7 @@ static class SelfTest
             TestManyMods();
             await TestNewMod(menu, screen, content, outDir);
             await TestLoadOrder(menu, screen, content, outDir);
+            await TestLoadOrderFind(menu, screen, content, outDir);
             await TestListBanner(menu, screen, content, outDir);
             await TestManagersBanner(menu, screen, content, outDir);
             await TestPageBar(menu, screen, content, outDir);
@@ -2478,6 +2479,80 @@ static class SelfTest
             wrong.Count == 0 && Lookups.Current == null, $"{wrong.Count} differ: {string.Join(" | ", wrong.Take(3))}");
     }
 
+    // Load Order's search finds rather than filters (Jordan, 2026-10-14): every row stays; beside the box, "N matches · ‹ ›"
+    // steps through the matching rows (each selected and scrolled to), wrapping at the ends; typing goes to the first;
+    // Enter and Shift+Enter step too; no search, no bar.
+    static async Task TestLoadOrderFind(Node menu, NModdingScreen screen, Control content, string outDir)
+    {
+        var border = screen.GetNode<Control>("ModsBorder");
+        var box = border.GetNode<LineEdit>("SpireModManagerSearch");
+        var wasLoadOrder = Store.Data.LoadOrderView;
+        if (!wasLoadOrder)
+        {
+            Click(screen.GetNode<NButton>("SpireModManagerLoadOrderToggle"));
+            await Wait(menu, 0.5);
+        }
+        List<NModMenuRow> Rows() => content.GetChildren().OfType<NModMenuRow>().ToList();
+        Control? Bar() => border.GetNodeOrNull<Control>(FindBar.Name);
+        string Count() => Bar()?.GetNodeOrNull<Label>("Count")?.Text ?? "";
+        void Press(string name) => Bar()?.GetNodeOrNull<Button>(name)?.EmitSignal(BaseButton.SignalName.Pressed);
+        async Task Type(string text)
+        {
+            box.Text = text;
+            box.EmitSignal(LineEdit.SignalName.TextChanged, text);
+            await Wait(menu, 0.3);
+        }
+        async Task Key(bool shift)
+        {
+            box.EmitSignal(Control.SignalName.GuiInput, new InputEventKey { Keycode = Godot.Key.Enter, Pressed = true, ShiftPressed = shift });
+            await Wait(menu, 0.2);
+        }
+        int At(List<NModMenuRow> found) => found.FindIndex(r => r.Mod == CategoryList.Selected);
+
+        Check("Load Order, no search: no find bar", Bar() is not { Visible: true });
+        if (Rows().FirstOrDefault(r => !SpireModManager.Search.Matches(r.Mod, "SmmTest")) is { } other)
+            CategoryList.Select(screen, other); // a row the search won't match: typing goes to the first match
+        await Type("SmmTest");
+        var found = FindBar.Found(content);
+        var view = border.GetNode<Control>("ModsScrollContainer").GetGlobalRect();
+        Check("Load Order, a search: every row stays, \"N matches\" and ‹ › beside the box, the first match selected and in view",
+            found.Count >= 3 && Rows().All(r => r.Visible) && Bar() is { Visible: true } && Count() == $"{found.Count} matches" && At(found) == 0
+            && view.Intersects(found[0].GetGlobalRect()) && Bar()!.GetGlobalRect().Position.X >= box.GetGlobalRect().End.X,
+            $"{found.Count} found, count \"{Count()}\", at {At(found)}, rows shown {Rows().Count(r => r.Visible)}/{Rows().Count}");
+        Check("the arrows say where they go", Hover.TipOf(Bar()!.GetNode<Button>("PreviousMatch")) == "Go to previous found match"
+            && Hover.TipOf(Bar()!.GetNode<Button>("NextMatch")) == "Go to next found match");
+        await Capture(screen, outDir, "11c-load-order-find");
+        Press("NextMatch");
+        await Wait(menu, 0.2);
+        var second = At(found);
+        Press("PreviousMatch");
+        await Wait(menu, 0.2);
+        var backToFirst = At(found);
+        Press("PreviousMatch");
+        await Wait(menu, 0.2);
+        var wrappedToLast = At(found);
+        Press("NextMatch");
+        await Wait(menu, 0.2);
+        Check("› and ‹ step through the matches, wrapping at the ends, each scrolled to", second == 1 && backToFirst == 0
+            && wrappedToLast == found.Count - 1 && At(found) == 0 && view.Intersects(found[0].GetGlobalRect()),
+            $"next {second}, back {backToFirst}, before the first {wrappedToLast}, after the last {At(found)}");
+        await Key(shift: false);
+        var byEnter = At(found);
+        await Key(shift: true);
+        Check("Enter goes to the next match, Shift+Enter the one before", byEnter == 1 && At(found) == 0, $"Enter {byEnter}, Shift+Enter {At(found)}");
+        await Type("zzzz no such mod");
+        Check("no match: \"No matches\", the arrows off, every row still shown", Count() == "No matches" && Rows().All(r => r.Visible)
+            && Bar()!.GetChildren().OfType<Button>().All(b => b.Disabled), Count());
+        await Type("");
+        Check("search cleared: no find bar, the box its full width again", Bar() is not { Visible: true }
+            && box.GetGlobalRect().End.X > border.GetNode<Control>(FindBar.Name).GetGlobalRect().Position.X);
+        if (!wasLoadOrder)
+        {
+            Click(screen.GetNode<NButton>("SpireModManagerLoadOrderToggle"));
+            await Wait(menu, 0.5);
+        }
+    }
+
     // Load Order view: rows in the saved order with handles; move by menu action and by dragging a handle
     // (real mouse events into its input handler); restore; back to categories.
     static async Task TestLoadOrder(Node menu, NModdingScreen screen, Control content, string outDir)
@@ -3071,7 +3146,20 @@ static class SelfTest
         Check("Load Order: the managers banner too, under the search box", Placed(), Where());
         after = ButtonsAfterText(Banner());
         Check("Load Order: the managers banner's Show and Dismiss right after its text", after.Ok, after.Detail);
-        await ShowThroughSearch("Load Order");
+        // Load Order finds rather than filters (FindBar): the same search leaves Better Mod Menu's row in place, and Show
+        // goes to it with the search kept.
+        const string notBmm = "SmmTest";
+        searchBox.Text = notBmm;
+        searchBox.EmitSignal(LineEdit.SignalName.TextChanged, notBmm);
+        await Wait(menu, 0.3);
+        var stays = row.Visible && !SpireModManager.Search.Matches(bmm, notBmm);
+        Banner()?.FindChild("ShowManagersButton", true, false)?.EmitSignal(BaseButton.SignalName.Pressed);
+        await Wait(menu, 0.5);
+        Check("Load Order: a search leaves Better Mod Menu's row in place; the banner's Show goes to it, the search kept",
+            stays && row.Visible && searchBox.Text == notBmm && list.GetGlobalRect().Intersects(row.GetGlobalRect()) && CategoryList.Selected == bmm,
+            $"in place {stays}, box \"{searchBox.Text}\", row {row.GetGlobalRect()}, list {list.GetGlobalRect()}, panel {CategoryList.Selected?.manifest?.id}");
+        SpireModManager.Search.Clear(content);
+        await Wait(menu, 0.2);
         Click(screen.GetNode<NButton>("SpireModManagerLoadOrderToggle"));
         await Wait(menu, 0.5);
         Check("Vanilla View: no managers banner", await WithVanillaView(screen, menu, () => Banner() is not { Visible: true }));
