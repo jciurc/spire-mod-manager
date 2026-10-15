@@ -238,7 +238,7 @@ if (smoke)
     // Before the menu, the last lines say where it stopped.
     foreach (var line in lines.Where(l => l.Contains($"[{ModId}]") || errors.Contains(l)).Concat(menuAt == null ? lines.TakeLast(15) : []))
         Console.WriteLine(line.Length > 400 ? line[..400] : line);
-    Console.WriteLine("Not covered here: opening the Modding page. Do that once by hand in the real game (RELEASE-PLAN.md §5).");
+    Console.WriteLine("Not covered here: opening the Modding page. Do that once by hand in the real game (docs/dev/RELEASING.md).");
     return checks.Any(c => c.StartsWith("FAIL")) ? 1 : 0;
 
     static string Result(string name, bool ok, string detail = "") => $"{(ok ? "PASS" : "FAIL")} {name}{(ok || detail.Length == 0 ? "" : $": {detail}")}";

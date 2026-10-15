@@ -82,7 +82,7 @@ else if (version != null && !changeNote.StartsWith($"{version}:"))
     problems.Add($"workshop.json: changeNote should start with \"{version}:\", the version in content/");
 
 // mod_id.txt: written by the uploader after the first upload; without it a new item is made, and that one
-// goes up private (docs/dev/RELEASE-PLAN.md §7: test it privately first, then make it public).
+// goes up private (docs/dev/DESIGN.md, "Releases": test it privately first, then make it public).
 var modIdPath = Path.Combine(workshop, "mod_id.txt");
 ulong? itemId = File.Exists(modIdPath) && ulong.TryParse(File.ReadAllText(modIdPath).Trim(), out var id) ? id : null;
 if (File.Exists(modIdPath) && itemId == null)
