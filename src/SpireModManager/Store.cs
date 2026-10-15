@@ -417,10 +417,13 @@ public static class Store
     }
 
     // Writes to a temp file and swaps it in, so a crash mid-write can't leave a half-written file. LaunchGuard's files too.
-    public static void WriteAtomic(string file, string json)
+    // at: the file's last-write time, set on the temp file before the swap (the translations example's mark).
+    public static void WriteAtomic(string file, string json, DateTime? at = null)
     {
         var temp = file + ".tmp";
         File.WriteAllText(temp, json);
+        if (at is { } time)
+            File.SetLastWriteTimeUtc(temp, time);
         File.Move(temp, file, overwrite: true);
     }
 

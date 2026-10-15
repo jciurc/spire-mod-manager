@@ -56,8 +56,7 @@ static class Translations
             var file = Path.Combine(folder, ExampleFile);
             if (File.Exists(file) && File.GetLastWriteTimeUtc(file) != ExampleTime)
                 return; // edited: theirs now
-            File.WriteAllText(file, ExampleText());
-            File.SetLastWriteTimeUtc(file, ExampleTime);
+            Store.WriteAtomic(file, ExampleText(), ExampleTime); // whole and dated as ours, or not at all (Copilot, #83)
         }
         catch (Exception e)
         {
