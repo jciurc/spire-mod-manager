@@ -837,8 +837,8 @@ static class SelfTest
         Check("main menu button reads the active profile and the profile bar's count", MenuButtonText(menu) == MenuButtonExpected(),
             $"{MenuButtonText(menu)} vs {MenuButtonExpected()}");
         Check("main menu button: hovering it says what it opens, and names the profile in gold",
-            Hover.TipOf(button) == $"View and manage installed mods. Currently using mod profile [gold]{Profiles.Active?.Name}[/gold]."
-            && MenuButton.Tip("[b]Odd") == "View and manage installed mods. Currently using mod profile [gold][lb]b]Odd[/gold].", Hover.TipOf(button));
+            Hover.TipOf(button) == $"View and manage installed mods. Currently using profile [gold]{Profiles.Active?.Name}[/gold]"
+            && MenuButton.Tip("[b]Odd") == "View and manage installed mods. Currently using profile [gold][lb]b]Odd[/gold]", Hover.TipOf(button));
         var screen = button.GetViewportRect();
         Check("main menu button: as wide as its words, whole on screen", MenuButtonMisfit(menu) == null, MenuButtonMisfit(menu) ?? "");
         // The game's hover carets reach 54 from the text either side (NMainMenu.MainMenuButtonFocused): inside the button.
@@ -888,7 +888,7 @@ static class SelfTest
             return Task.CompletedTask;
         }, seconds: Hover.SlowDelay + 0.2);
         Check("main menu button: its card waits a second, then names the profile in gold", early == "" && Hover.SlowDelay == 1.0
-            && late.Text == $"View and manage installed mods. Currently using mod profile {Profiles.Active?.Name}."
+            && late.Text == $"View and manage installed mods. Currently using profile {Profiles.Active?.Name}"
             && !card.Contains("[gold]") && card.Contains("[color=#") && card.Contains($"]{Profiles.Active?.Name}[/color]"), $"early \"{early}\", then \"{late.Text}\"");
     }
 
@@ -1794,7 +1794,7 @@ static class SelfTest
         await RealClick(menu, picker);
         var list = MenuPanel.Current;
         Check("the picker opens the profile list, with details, then Share profile and Import profile", list != null
-            && MenuPanel.Labels(list).SequenceEqual(Store.Data.Profiles.Select(p => p.Name).Concat(["Share profile", "Import profile"])),
+            && MenuPanel.Labels(list).SequenceEqual(Store.Data.Profiles.Select(p => p.Name).Concat(["Export profile", "Import profile"])),
             list == null ? "no list" : string.Join(", ", MenuPanel.Labels(list)));
         await Capture(screen, outDir, "7b-profile-list");
         await RealClick(menu, picker);
@@ -2049,7 +2049,7 @@ static class SelfTest
         // Share profile, from the profile list (Jordan, 2026-10-15): at first the active profile's enabled mods in load
         // order with their category, no alias or notes; the tick boxes add the mods that are off, aliases and notes, or
         // take the category out.
-        await Choose("Share profile");
+        await Choose("Export profile");
         string Csv() => Part<TextEdit>("CsvText")?.Text ?? "";
         async Task Tick(string name, bool on)
         {
@@ -2100,7 +2100,7 @@ static class SelfTest
         var clipboard = DisplayServer.ClipboardGet(); // put back after: a windowed run is on Jordan's desktop
         Press("CopyButton");
         await Wait(menu, 0.1);
-        Check("Copy says Copied", Part<Button>("CopyButton")?.Text == "Copied", Part<Button>("CopyButton")?.Text ?? "no button");
+        Check("Copy says Copied!", Part<Button>("CopyButton")?.Text == "Copied!", Part<Button>("CopyButton")?.Text ?? "no button");
         if (DisplayServer.GetName() == "headless")
             Results.Add("SKIP Copy puts the text on the clipboard: there's no clipboard headless");
         else
@@ -2113,8 +2113,8 @@ static class SelfTest
         DisplayServer.ClipboardSet(clipboard);
         // Save, then Copy (Jordan, 2026-10-15), no "…" on Save.
         var buttonOrder = Part<Control>("Buttons")?.GetChildren().OfType<Button>().Select(b => b.Name.ToString()).ToList() ?? [];
-        Check("Save comes before Copy, and reads just \"Save\"", buttonOrder.IndexOf("SaveCsvButton") is >= 0 and var save && save < buttonOrder.IndexOf("CopyButton")
-            && Part<Button>("SaveCsvButton")?.Text == "Save", string.Join(", ", buttonOrder));
+        Check("Save comes before Copy, and reads \"Save file\"", buttonOrder.IndexOf("SaveCsvButton") is >= 0 and var save && save < buttonOrder.IndexOf("CopyButton")
+            && Part<Button>("SaveCsvButton")?.Text == "Save file", string.Join(", ", buttonOrder));
         var at = new DateTime(2026, 10, 15, 9, 5, 7);
         var file = Path.Combine(outDir, ProfileShare.FileName("Co-op: \"night\"?", at));
         var saveError = ProfileShare.SaveTo(file, csv);
@@ -2140,14 +2140,14 @@ static class SelfTest
         ProfileShare.ForgetSessionChoices(); // as at the next launch
         ProfileShare.Close();
         await Wait(menu, 0.2);
-        await Choose("Share profile");
+        await Choose("Export profile");
         var restored = Ticked("IncludeNotes") && Ticked("IncludeCategory") && Ticked("RememberChoices") && ProfileCsv.Records(Csv()).FirstOrDefault()?.Contains("Notes") == true;
         await Tick("RememberChoices", false);
         var forgotten = Store.Data.ShareChoices == null;
         ProfileShare.ForgetSessionChoices();
         ProfileShare.Close();
         await Wait(menu, 0.2);
-        await Choose("Share profile");
+        await Choose("Export profile");
         Check("Remember selection: off at first and at the row's right; on, the boxes are kept (undo leaves them) and a new launch starts on them; off, forgotten",
             keptBefore == null && remember != null && rightmost && kept == new ShareChoice(true, false, false, true) && undoKeeps && restored && forgotten
             && !Ticked("IncludeNotes") && !Ticked("RememberChoices"), $"before {keptBefore}, kept {kept}, restored {restored}, forgotten {forgotten}");
@@ -2165,7 +2165,7 @@ static class SelfTest
         await Choose("Import profile");
         await Paste(csv);
         Check("Import profile: our own list previews the new profile and what it enables", Dialog() != null && Status() == ""
-            && Preview().Contains("Creates the profile Imported profile:") && Preview().Contains("Enables ") && !Preview().Contains("Not installed"), Preview());
+            && Preview().Contains("Creates the profile Imported profile:") && Preview().Contains("Mods enabled ") && !Preview().Contains("Not installed"), Preview());
         Press("CreateProfileButton");
         await Wait(menu, 0.3);
         Check("Create profile: a new profile with the list's states, active, and the dialog closed", Dialog() == null && Profiles.Active?.Name == "Imported profile"
@@ -2196,10 +2196,21 @@ static class SelfTest
         await Choose("Import profile");
         await Paste(bmm);
         var bbcode = Part<RichTextLabel>("Preview")?.Text ?? "";
-        Check("a Better Mod Menu list: what it changes compared with now, and the installed mods it doesn't name",
+        // The summary (Jordan, 2026-10-15): what the list holds, then only what changes compared with now (no line for the mods
+        // already as listed, nor for the ones it doesn't name).
+        string Changes(int on, int off) => on == 0 && off == 0 ? "None"
+            : string.Join("\n", new[] { on > 0 ? $"Mods enabled {on}" : null, off > 0 ? $"Mods disabled {off}" : null }.OfType<string>().Select(l => "  •  " + l));
+        Check("a Better Mod Menu list: what it holds (2 enabled, 2 disabled), then what it changes compared with now, and nothing about the rest",
             Status() == "" && plan.On == wantOn && plan.Off == wantOff && plan.Same == 2 - wantOn - wantOff && plan.Unlisted == others
-            && Preview().Contains(others == 1 ? "1 installed mod isn't in the list" : $"{others} installed mods aren't in the list"),
+            && Preview().Contains("Contains 2 enabled mods and 2 disabled mods") && Preview().Contains("Changes compared to the current profile:\n"
+                + (wantOn == 0 && wantOff == 0 ? "  •  None" : Changes(wantOn, wantOff)))
+            && !Preview().Contains("already set") && !Preview().Contains("aren't in the list") && !Preview().Contains("isn't in the list"),
             $"on {plan.On}/{wantOn}, off {plan.Off}/{wantOff}, same {plan.Same}, unlisted {plan.Unlisted}/{others}: {Preview()}");
+        var onlyOn = ProfileShare.PreviewFor(ProfileCsv.Read("Mod Id,Enabled\nSmmTestLib,\nSmmTestUi,TRUE\n").Mods, "Only on");
+        Check("a list with nothing disabled says just its enabled mods; a blank Enabled reads as enabled", onlyOn.Contains("Contains 2 enabled mods")
+            && !onlyOn.Contains("disabled mods"), onlyOn);
+        var cutShort = ProfileCsv.Read("Mod Id,Name,Enabled\nSmmTestUi,Test UI\n").Error ?? "";
+        Check("a row cut short, with no Enabled at all, is still an error", cutShort.StartsWith("Enabled value for SmmTestUi"), cutShort);
         // The name itself is the link to its Workshop page (Jordan, 2026-10-15); one with no page is plain.
         var linkAt = bbcode.IndexOf($"[url={link}]", StringComparison.Ordinal);
         var nameAt = linkAt < 0 ? -1 : bbcode.IndexOf("Not Here Mod", linkAt, StringComparison.Ordinal);
@@ -2230,10 +2241,10 @@ static class SelfTest
         await Paste("");
         Press("CreateProfileButton");
         await Wait(menu, 0.2);
-        Check("a list without Mod Id says so in red, with no preview", noId.Item1.StartsWith("This list has no Mod Id column") && noId.Item2 && noId.Item3 == "",
+        Check("a list without Mod Id says so in red, with no preview", noId.Item1.StartsWith("This list is missing the Mod Id column") && noId.Item2 && noId.Item3 == "",
             $"\"{noId.Item1}\" red {noId.Item2}, preview \"{noId.Item3}\"");
-        Check("a bad Enabled value names its mod", badValue == "Enabled for SmmTestUi should be TRUE or FALSE, not \"maybe\".", badValue);
-        Check("Create profile with no text says what to do, in red, and makes nothing", Dialog() != null && Status() == "Paste a mod list or load a file first."
+        Check("a bad Enabled value names its mod", badValue == "Enabled value for SmmTestUi must be \"TRUE\", \"FALSE\" or blank. Current value \"maybe\" can not be parsed.", badValue);
+        Check("Create profile with no text says what to do, in red, and makes nothing", Dialog() != null && Status() == "Load or paste a mod list first"
             && StatusRed() && Store.Data.Profiles.Count == profiles, Status());
         Check("the imported name: the file's, numbered when taken; not Better Mod Menu's time-stamped one",
             Profiles.ImportName("C:/lists/Brother co-op.csv") == "Brother co-op" && Profiles.ImportName("C:/lists/Brother co-op.txt") == "Brother co-op" && Profiles.ImportName($"{startName}.csv") == Profiles.CopyName(startName)
@@ -2262,7 +2273,7 @@ static class SelfTest
             search.Text = "zzz"; // no TextChanged: the list isn't filtered
             search.GrabFocus();
         }
-        await Choose("Share profile");
+        await Choose("Export profile");
         foreach (var key in new[] { Key.S, Key.Z })
         {
             Input.ParseInputEvent(new InputEventKey { Keycode = key, CtrlPressed = true, Pressed = true });
