@@ -17,6 +17,11 @@ public static class ModEntry
 {
     public const string ModId = "SpireModManager";
 
+    // One key per mod for counting: its id. A mod installed twice (a local build beside the Workshop copy, this one
+    // included) is one mod, and the game loads only one copy (the newer; the other is marked a duplicate), so counts
+    // name it once (#96). Profiles keep every copy of this mod on, so whichever is left after an uninstall still runs.
+    public static string CountKey(string? id) => id ?? "";
+
     const string ButtonScenePath = $"res://{ModId}/scenes/menu_button.tscn";
     const float ButtonArtHeight = 110; // event_button.png is 284x110
 
