@@ -1410,7 +1410,7 @@ static class SelfTest
             Broken = "SPIRE_MOD_MANAGER.MOVE_BUTTON", Empty = "SPIRE_MOD_MANAGER.MOVE_HINT";
         const string NotOurs = Translated + "X"; // a key mistyped
         const string Renamed = "SPIRE_MOD_MANAGER.PAGE_DISABLED", Added = "SPIRE_MOD_MANAGER.OPEN_TRANSLATIONS";
-        const string Counted = "SPIRE_MOD_MANAGER.PAGE_ALL", NotText = "SPIRE_MOD_MANAGER.RELAUNCH_NOTE";
+        const string Counted = "SPIRE_MOD_MANAGER.PAGE_ALL", NotText = "SPIRE_MOD_MANAGER.NEEDS_UPDATE";
         const string OnButton = "SPIRE_MOD_MANAGER.MAIN_MENU_PROFILE", OnButtonOne = "SPIRE_MOD_MANAGER.MAIN_MENU_PROFILE_ONE";
         const string German = "Spiel neu starten (Änderungen, 模组)"; // not ASCII: read as UTF-8, with a byte order mark
         string[] keys = [Translated, LeftOut, Broken, Empty];
@@ -1877,7 +1877,7 @@ static class SelfTest
             return true;
         });
         Check("the restart line: ours on the main list (also once shown) and in Load Order, the game's in Vanilla View, ours again after",
-            ours == "Mod changes will be applied after a restart." && game != ours && onList == ours && (shown == null || shown == ours)
+            ours == "Mod changes will be applied after a restart" && game != ours && onList == ours && (shown == null || shown == ours)
             && inLoadOrder == ours && inVanilla == game && line.Text == ours,
             $"\"{onList}\" / shown \"{shown}\" / \"{inLoadOrder}\" / \"{inVanilla}\" / \"{line.Text}\"");
     }
