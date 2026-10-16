@@ -4,19 +4,36 @@ using MegaCrit.Sts2.Core.Saves;
 
 namespace SpireModManager;
 
-// Hard dependencies from each mod's manifest. The game loads a mod after everything it depends on,
-// whatever the saved order says, and fails it if a dependency isn't loaded. Order rules only bind mods
-// that are both switched on: disabled mods can sit anywhere.
-// While a redraw runs, IsOn, Find and NeededBy answer from its Lookups (the same answers, worked out once).
+// Hard dependencies from mod manifests. The game loads a mod after everything it needs, whatever the saved order,
+// and fails it if one isn't loaded; order rules only bind mods that are both on. Inside a redraw, Lookups answers.
 static class Dependencies
 {
-    public static IReadOnlyList<string> Of(Mod? mod) =>
-        mod?.manifest?.dependencies?.Select(d => d.id).ToList() ?? [];
+    // A mod's dependency ids, read once per redraw (Lookups).
+    public static IReadOnlyList<string> Of(Mod? mod) => mod == null ? [] : Lookups.Current?.DependenciesOf(mod, Read) ?? Read(mod);
+
+    // Read from the manifest, every time.
+    public static IReadOnlyList<string> Read(Mod mod) => mod.manifest?.dependencies?.Select(d => d.id).ToList() ?? [];
 
     public static bool IsOn(Mod mod) => Lookups.Current?.IsOn(mod) ?? !(SaveManager.Instance.SettingsSave.ModSettings?.IsModDisabled(mod) ?? false);
 
-    // The installed copy of a mod id, preferring one that is on. Mods installed this session count: they load
-    // after a relaunch.
+    // The (id, source) pairs the saved list has off, for checking many mods at once (IsModDisabled walks the list per
+    // mod): any entry for one off, as the game reads it.
+    public static HashSet<(string?, ModSource)> SavedOff() => SavedOff(SaveManager.Instance.SettingsSave.ModSettings?.ModList ?? []);
+
+    public static HashSet<(string?, ModSource)> SavedOff(IEnumerable<SettingsSaveMod> saved) =>
+        saved.Where(e => !e.IsEnabled).Select(e => ((string?)e.Id, e.Source)).ToHashSet();
+
+    // Each mod's saved entry by (id, source), the first if listed twice (as the game's own lookups find it), for looking
+    // up many mods at once.
+    public static Dictionary<(string?, ModSource), SettingsSaveMod> SavedEntries(IEnumerable<SettingsSaveMod> saved)
+    {
+        var entries = new Dictionary<(string?, ModSource), SettingsSaveMod>();
+        foreach (var entry in saved)
+            entries.TryAdd((entry.Id, entry.Source), entry);
+        return entries;
+    }
+
+    // The installed copy of an id, preferring one that's on; mods installed this session count.
     public static Mod? Find(string id) => id != null && Lookups.Current is { } now ? now.Find(id)
         : ModManager.Mods.Union(Installed.Mods).Where(m => m.manifest?.id == id).OrderByDescending(IsOn).FirstOrDefault();
 
@@ -40,10 +57,11 @@ static class Dependencies
     public static List<Mod> NeededOff(IEnumerable<Mod> mods)
     {
         var needed = new List<Mod>();
+        var seen = new HashSet<Mod>();
         var waiting = new Queue<Mod>(mods.Where(IsOn));
         while (waiting.TryDequeue(out var mod))
             foreach (var dependency in Of(mod).Select(Find).OfType<Mod>())
-                if (!IsOn(dependency) && !needed.Contains(dependency))
+                if (!IsOn(dependency) && seen.Add(dependency))
                 {
                     needed.Add(dependency);
                     waiting.Enqueue(dependency);
@@ -51,16 +69,19 @@ static class Dependencies
         return needed;
     }
 
-    // Turns mods on (or off) in the saved list and ticks their boxes on the Modding page, if there is one; the
-    // caller's redraw records it as one change. This mod stays on.
+    // Turns mods on or off in the saved list and ticks the page's boxes; the caller's redraw records one change. This
+    // mod stays on.
     public static void Set(IEnumerable<Mod> mods, bool on, NModdingScreen? screen)
     {
         var settings = SaveManager.Instance.SettingsSave.ModSettings ??= new ModSettings();
+        var entries = SavedEntries(settings.ModList);
         foreach (var mod in mods)
         {
-            var entry = settings.ModList.FirstOrDefault(e => e.Id == mod.manifest?.id && e.Source == mod.modSource);
-            if (entry == null)
+            if (!entries.TryGetValue((mod.manifest?.id, mod.modSource), out var entry))
+            {
                 settings.ModList.Add(entry = new SettingsSaveMod(mod));
+                entries[(mod.manifest?.id, mod.modSource)] = entry;
+            }
             entry.IsEnabled = on || mod.manifest?.id == ModEntry.ModId;
         }
         SaveManager.Instance.SaveSettings();
@@ -78,18 +99,20 @@ static class Dependencies
             .ToList();
     }
 
-    // The order with every enabled dependency moved just ahead of what needs it, otherwise keeping the
-    // current order (the same rule the game applies at launch: a stable topological sort).
+    // The order with each enabled dependency moved just ahead of what needs it, otherwise unchanged (the game's own
+    // stable topological sort).
     public static List<Mod> Fixed(IReadOnlyList<Mod> given)
     {
         var order = given.Distinct().ToList(); // a mod listed twice counts once
         var position = order.Select((m, i) => (m, i)).ToDictionary(p => p.m, p => p.i);
-        var waitingOn = order.ToDictionary(m => m, m => IsOn(m)
-            ? Of(m).Select(Find).OfType<Mod>().Where(d => IsOn(d) && position.ContainsKey(d) && d != m).Distinct().Count()
-            : 0);
+        // Each enabled mod's enabled dependencies in the list, worked out once.
+        var needs = order.ToDictionary(m => m, m => IsOn(m)
+            ? Of(m).Select(Find).OfType<Mod>().Where(d => IsOn(d) && position.ContainsKey(d) && d != m).Distinct().ToList()
+            : []);
+        var waitingOn = order.ToDictionary(m => m, m => needs[m].Count);
         var dependents = order.ToDictionary(m => m, _ => new List<Mod>());
-        foreach (var m in order.Where(IsOn))
-            foreach (var d in Of(m).Select(Find).OfType<Mod>().Where(d => IsOn(d) && position.ContainsKey(d) && d != m).Distinct())
+        foreach (var m in order)
+            foreach (var d in needs[m])
                 dependents[d].Add(m);
 
         var ready = new PriorityQueue<Mod, int>();
@@ -104,7 +127,8 @@ static class Dependencies
                     ready.Enqueue(next, position[next]);
         }
         // A dependency cycle leaves mods behind: keep them in their old order at the end.
-        result.AddRange(order.Where(m => !result.Contains(m)));
+        var placed = result.ToHashSet();
+        result.AddRange(order.Where(m => !placed.Contains(m)));
         return result;
     }
 }

@@ -7,9 +7,8 @@ using MegaCrit.Sts2.Core.Nodes.Screens.ModdingScreen;
 
 namespace SpireModManager;
 
-// Groups the vanilla Modding screen's rows under collapsible category headers. The headers go into the
-// screen's own row container (a VBoxContainer inside its scroll area), so scrolling, selection, the info
-// panel and the tickboxes stay the game's. Vanilla view removes the headers and restores the order.
+// Groups the Modding screen's rows under collapsible category headers, inside the game's own row container, so
+// scrolling, selection, the info panel and tickboxes stay the game's. Vanilla View removes them and restores the order.
 static class CategoryList
 {
     const string HeaderScenePath = $"res://{ModEntry.ModId}/scenes/category_header.tscn";
@@ -24,9 +23,8 @@ static class CategoryList
     const string GameGapMeta = "spire_mod_manager_game_gap", GameSidesMeta = "spire_mod_manager_game_sides";
     static readonly Dictionary<string, float> HeaderWidths = [];
 
-    // Our main menu button opens the page on our view, not Vanilla View (Jordan, 2026-10-15): it saves that choice just
-    // before, and the page, made or shown again, lays out the saved view (Attach). The game's own way in (its Settings)
-    // leaves the saved view as it is.
+    // Our main menu button opens the page on our view, not Vanilla View: it saves that choice just before. The game's
+    // own way in leaves the saved view as it is.
     public static void PreferOurs()
     {
         if (!Store.Data.VanillaView)
@@ -42,8 +40,7 @@ static class CategoryList
         // Two view switches along the bottom (Layout places them): Vanilla and Load Order. Each turns the
         // other off; pressing the lit one again goes back to categories, and its label says so.
         Control? vanilla = null, loadOrder = null;
-        // Whether the view laid out last is Vanilla View: when the page shows again with another one saved (PreferOurs
-        // while it was closed), the saved one is laid out.
+        // Whether Vanilla View was laid out last, so the saved view is laid out if it changed while the page was closed.
         var shownVanilla = false;
         void Switch(bool toVanilla) => Show(toVanilla && !Store.Data.VanillaView, !toVanilla && !Store.Data.LoadOrderView);
         void Show(bool toVanilla, bool toLoadOrder)
@@ -138,7 +135,7 @@ static class CategoryList
     {
         if (content.GetChildren().OfType<NModMenuRow>().FirstOrDefault(r => r.Mod == Selected && Selected != null) is not { } row)
         {
-            screen.GetNode<NModInfoContainer>("%ModInfoContainer").Clear();
+            Compat.Clear(screen.GetNode<NModInfoContainer>("%ModInfoContainer"));
             return;
         }
         Expand(content, row);
@@ -146,8 +143,7 @@ static class CategoryList
         ScrollSoon(content, row, flash: false);
     }
 
-    // A row hidden in a collapsed category (main list): the category opens. (Or one Reveal brought in past the Show:
-    // choice: the redraw shows it.)
+    // Opens the collapsed category of a hidden row on the main list.
     static void Expand(Control content, NModMenuRow row)
     {
         if (Store.Data.VanillaView || Store.Data.LoadOrderView || row.Visible)
@@ -160,10 +156,8 @@ static class CategoryList
         Apply(content);
     }
 
-    // Scrolls a mod's row into view (its category opens if collapsed, the page bar's Show: choice shows it if it left it
-    // out, and a search that leaves it out is cleared: one that finds it stays); flash: a short gold glow to find it by;
-    // focus: the row takes the "selected" look (as under the mouse or the keyboard) without becoming the info panel's
-    // mod. The info panel doesn't change.
+    // Scrolls a mod's row into view, opening its category and clearing a choice or search that hides it. flash: a short
+    // gold glow; focus: the "selected" look without changing the info panel.
     public static void Reveal(Control content, string modId, bool flash, bool focus = false)
     {
         if (content.GetChildren().OfType<NModMenuRow>().FirstOrDefault(r => r.Mod?.manifest?.id == modId) is not { } row)
@@ -248,8 +242,7 @@ static class CategoryList
     // The game's scroll container eases its content towards a target position; these move that target.
     static Control ScrollContainer(Control content) => content.GetParent().GetParent<Control>();
 
-    // The room the container keeps before the first row and after the last (Apply): in our views, as far as the rows'
-    // highlight reaches past them.
+    // The room kept before the first row and after the last: in our views, as far as the rows' highlight reaches.
     static (float Top, float Bottom) Ends => Store.Data.VanillaView ? (0, 0) : (-RowTitles.LookInset.Y, RowTitles.LookInset.W);
 
     // Kept within the list's ends (that room included): past them the container springs back, which looks like a bounce.
@@ -277,10 +270,8 @@ static class CategoryList
         scroll.Set("_targetDragPosY", Math.Max(top, bottom));
     }
 
-    // After a change that may need a relaunch: redraw, and let the screen recheck its pending warning. On the main list
-    // these are changes to many mods at once (Enable all / Disable all, undo, redo, Revert all, a profile, a banner's
-    // fix; one mod's own change calls Apply), so rows kept for one mod's change go by the page bar's Show: choice again
-    // (ListFilter.Release). keep: not the player's change (a mod installed meanwhile), and they stay.
+    // Redraws after a change that may need a relaunch, and lets the screen recheck its warning. Rows kept for one mod's
+    // change go by the Show: choice again (ListFilter.Release), unless keep (not the player's change).
     public static void Redraw(Control content, bool keep = false)
     {
         if (!keep)
@@ -297,15 +288,12 @@ static class CategoryList
     public static void Apply(Control content)
     {
         using var lookups = Lookups.Begin(); // every row asks the same questions (is it on, who needs it): answered once
-        // The row container only grows by itself; shrink its height to fit once this redraw settles
-        // (collapsing a category or filtering must shorten the scroll range too). Only the height: its width
-        // comes from its anchors, and its minimum width is 0.
+        // The row container only grows by itself: shrink its height to fit once this redraw settles.
         Callable.From(() =>
         {
             content.OffsetBottom = content.OffsetTop;
-            // Once it has its new size (one more step): short enough to fit, the game's container has stopped
-            // scrolling wherever it was, maybe with every row above the view, so back to the top (a search,
-            // Collapse all, a collapsed category). Moving it keeps its size, so shrink it again after.
+            // Once resized: a list short enough to fit stops the game's scrolling wherever it was, so back to the top,
+            // then shrink it again (moving it keeps its size).
             Callable.From(() =>
             {
                 if (!GodotObject.IsInstanceValid(content) || content.Size.Y + Ends.Top + Ends.Bottom > ScrollContainer(content).Size.Y)
@@ -314,9 +302,8 @@ static class CategoryList
                 content.OffsetBottom = content.OffsetTop;
             }).CallDeferred();
         }).CallDeferred();
-        // Our views: taller rows, less space between them (the same pitch, more room inside a row), and the rows a
-        // little in from the list's sides, so their wider highlight isn't cut off by its edges. Vanilla View: the
-        // game's own values back.
+        // Our views: taller rows with less space between them, inset from the list's sides so their wider highlight
+        // isn't cut. Vanilla View: the game's values.
         if (!content.HasMeta(GameGapMeta))
         {
             content.SetMeta(GameGapMeta, content.GetThemeConstant("separation"));
@@ -325,9 +312,8 @@ static class CategoryList
         var sides = (Vector2)content.GetMeta(GameSidesMeta);
         content.AddThemeConstantOverride("separation", Store.Data.VanillaView ? (int)content.GetMeta(GameGapMeta) : RowTitles.RowGap);
         (content.OffsetLeft, content.OffsetRight) = Store.Data.VanillaView ? (sides.X, sides.Y) : (sides.X - RowTitles.LookInset.X, sides.Y - RowTitles.LookInset.Z);
-        // The same at its top and bottom, kept by the game's scroll container (its padding, scrolled or not): the first
-        // row's highlight shows whole under the list's top edge (Load Order starts with a row), the last one's over its
-        // bottom edge.
+        // The same room at the top and bottom (the scroll container's padding), so the first and last rows' highlights
+        // show whole.
         if (ScrollContainer(content) is NScrollableContainer scroller)
             scroller.UpdatePadding(Ends.Top, Ends.Bottom);
         foreach (var header in content.GetChildren().Where(c => c.IsInGroup(HeaderGroup)))
@@ -335,8 +321,7 @@ static class CategoryList
             content.RemoveChild(header);
             header.QueueFree();
         }
-        // Better Mod Menu's group headers too, on our views (it makes them again on its page, Vanilla View), and its
-        // row controls hidden (rows added since the page opened have them showing).
+        // Better Mod Menu's group headers removed and its row controls hidden, on our views.
         var screen = ScreenOf(content);
         if (!Store.Data.VanillaView && screen != null)
         {
@@ -386,13 +371,15 @@ static class CategoryList
             };
         }
 
-        // Search: rows that don't match hide; while searching, categories open to show their matches. On the main list
-        // the page bar's Show: choice too (ListFilter, every row elsewhere): a row shows when it matches both, and
-        // categories keep their folding.
+        // Search hides the rows that don't match and opens categories with matches; on the main list the Show: choice
+        // too (a row shows when it matches both).
         var filter = Filter(content);
         var searching = filter.Length > 0;
         var filtering = searching || ListFilter.Current != ListFilter.Choice.All;
-        bool Matches(NModMenuRow row) => (!searching || Search.Matches(row.Mod, filter)) && ListFilter.Shows(row.Mod);
+        // Worked out for every row on first use, then looked up: a redraw asks about each row up to four times.
+        HashSet<NModMenuRow>? matching = null;
+        bool Matches(NModMenuRow row) =>
+            (matching ??= rows.Where(r => (!searching || Search.Matches(r.Mod, filter)) && ListFilter.Shows(r.Mod)).ToHashSet()).Contains(row);
 
         LoadOrder.UpdateToolbar(content, rows, () => Redraw(content));
         if (Store.Data.LoadOrderView)
@@ -539,11 +526,12 @@ static class CategoryList
             };
         }
 
+        var byCategory = rows.ToLookup(CategoryOf); // each row's category read once, in list order
         foreach (var category in categories)
-            AddSection(category.Name, rows.Where(r => CategoryOf(r) == category.Name).ToList(),
+            AddSection(category.Name, byCategory[category.Name].ToList(),
                 category.Collapsed, c => category.Collapsed = c, category);
 
-        var uncategorized = rows.Where(r => CategoryOf(r) == null).ToList();
+        var uncategorized = byCategory[null].ToList();
         if (uncategorized.Count == 0)
             return;
         // Not while searching; under a Show: choice, between categories it shows and Uncategorized if that shows.
@@ -557,8 +545,7 @@ static class CategoryList
     // its menu (the pencil past the tickbox is EdgeAction).
     static Func<NModMenuRow, IEnumerable<MenuItem>> StripActions(Control content)
     {
-        // The rows in their places, read once for all the strips (by the first: Load Order has placed them by then),
-        // not by every row again.
+        // The rows in place, read once for all the strips (Load Order has placed them by then).
         List<NModMenuRow>? placed = null;
         return Store.Data.LoadOrderView
             ? row => LoadOrder.Actions(content, row, () => Redraw(content), compact: true, placed ??= content.GetChildren().OfType<NModMenuRow>().ToList())
@@ -586,8 +573,8 @@ static class CategoryList
         RowStrip.Apply(rows, StripActions(content), EdgeAction(content));
     }
 
-    // A mod's right-click menu: its category on the left (pick one, or a new one, named in place), its alias,
-    // tags and notes on the right, edited right there. Its row stays under a Show: choice (ListFilter.Keep).
+    // A mod's right-click menu: its category on the left, its alias, tags and notes on the right; its row stays under
+    // a Show: choice (ListFilter.Keep).
     public static Node? ShowRowMenu(Control content, NModMenuRow row)
     {
         if (Store.Data.VanillaView || row.Mod?.manifest?.id is not { } id)
@@ -599,10 +586,8 @@ static class CategoryList
         }));
     }
 
-    // Two or more picked mods edited together: their category (marked when they share one), on or off; and on
-    // the right their tags and notes, under "Editing N selected mods" (where one mod's alias would be). A category or
-    // a field edited keeps their rows under a Show: choice, as one mod's menu does (ListFilter.Keep); its Enable all /
-    // Disable all go by the choice at once, as the page bar's do.
+    // The bulk menu for two or more picked mods: their category (marked if shared), on/off, and their tags and notes.
+    // Edits keep their rows under a Show: choice (ListFilter.Keep); Enable all and Disable all apply it at once.
     public static Node? ShowBulkMenu(Control content)
     {
         var ids = Selection.Mods.Select(m => m.manifest?.id).OfType<string>().ToList();
@@ -717,7 +702,7 @@ static class CategoryList
         [
             new(Menus.Text("SPIRE_MOD_MANAGER.ENABLE_ALL"), () => Set(true), Disabled: mods.All(Dependencies.IsOn)),
             new(Menus.Text("SPIRE_MOD_MANAGER.DISABLE_ALL"), () => Set(false), Disabled: mods.All(m => !Dependencies.IsOn(m) || m.manifest?.id == ModEntry.ModId),
-                // Where this mod is among them: it says so (Jordan, 2026-10-15).
+                // Where this mod is among them, it says it stays on.
                 Tip: mods.Any(m => m.manifest?.id == ModEntry.ModId) ? Menus.Text("SPIRE_MOD_MANAGER.DISABLE_ALL_KEEPS_SELF") : null),
         ];
     }

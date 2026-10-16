@@ -1,45 +1,23 @@
-// Dev runs of the game, kept apart from real play, so Jordan can play through Steam at the same time.
+// Dev runs of the game, apart from real play (CONTRIBUTING.md, "Trying it and testing", has the details).
 //
 //   dotnet run tools/dev.cs test      build, reset the sandbox, run the in-game self-test headless
-//                                     (--window: with a window, for screenshots, kept behind others;
-//                                      --bmm: with Better Mod Menu loaded too (listed first; --bmm-after:
-//                                      after ours, as in Jordan's game; --bmm-local: its local-fix build
-//                                      from the BmmRepo checkout below instead of the installed one);
-//                                      --workshop <id>[,<id>...]: those Steam Workshop items too (subscribed
-//                                      ones only: Steam downloads no others), copied into the dev copy's
-//                                      mods for this run and switched on after ours, in the order given; one
-//                                      that's missing, or needs a mod that won't be on, even through another,
-//                                      stops the run, and one that didn't load or failed to start fails it;
-//                                      --real: Jordan's own mods, switched off, and a copy of his data;
-//                                      --first-run: a short suite for a first run, with no data of ours and
-//                                      none of Better Mod Menu's; --first-run-bmm: the same, but with Better
-//                                      Mod Menu's data (tools/fixtures/bmm) there to import, and Better Mod
-//                                      Menu installed but off, or on with --bmm)
-//   dotnet run tools/dev.cs launch    build, open the game in the sandbox to poke at by hand
-//                                     (--first-run, --first-run-bmm: starting from that state, not the last one;
-//                                      --workshop: as for test)
-//   dotnet run tools/dev.cs smoke     the release build as players get it (dist/SpireModManager, from
-//                                     `dotnet run build.cs --dist`; nothing is built), headless, until the main
-//                                     menu has loaded: fails if our mod didn't start or the log has errors from
-//                                     it. It has no self-test inside, so opening the page stays a step by hand.
+//                                     --window: with a window, for screenshots, kept behind others
+//                                     --bmm / --bmm-after: with Better Mod Menu loaded before / after ours
+//                                     --bmm-local: its local-fix build (BmmRepo) instead of the installed one
+//                                     --workshop <id>[,<id>...]: those subscribed Workshop items too, after ours
+//                                     --real: your own mods (switched off) and a copy of your data
+//                                     --first-run, --first-run-bmm: a first launch, without or with Better Mod
+//                                      Menu's data to import
+//                                     --stable, with any of them: the stable branch's game, in its own dev copy
+//   dotnet run tools/dev.cs launch    build, open the sandboxed game to try by hand (--first-run,
+//                                     --first-run-bmm and --workshop as for test)
+//   dotnet run tools/dev.cs smoke     the release build (dist/SpireModManager) headless until the main menu
+//                                     loads; fails if our mod didn't start or logged errors
 //
-// Isolation:
-// - Dev copy: sts2-dev at the root of the game's drive (D:\sts2-dev here; STS2_DEV_DIR picks another
-//   folder on that drive) holds hard links to the installed game's files (same drive, no extra space)
-//   and its own mods\ folder: our fresh build, the fixture mods (tools/fixtures/mods) and Better Mod Menu's
-//   installed copy; with --real, links to every mod installed for play instead of the fixtures. Builds never go into
-//   the real mods folder here; `dotnet run build.cs` does that, for play, when the game is closed.
-//   The copy is re-linked whenever the installed game's release_info.json changes (a Steam update).
-// - --force-steam off: no Steam presence, no cloud, and the game keeps its data in
-//   %APPDATA%\SlayTheSpire2\default\1\ instead of steam\<id>\, so real saves and mod lists are never
-//   touched. Only local mods load (Workshop mods come through Steam; --workshop copies some in as local ones).
-// - --log-file: the dev log goes to out\dev.log, not the shared godot.log.
-//
-// test: resets the sandbox to tools/fixtures (mods accepted, Better Mod Menu off, our manager.json, no
-// Better Mod Menu data; the first-run options change the last two), sets SPIRE_MOD_MANAGER_SELFTEST so
-// SelfTest.cs runs and quits (SPIRE_MOD_MANAGER_SELFTEST_MODE picks the --real or first-run suite), then
-// prints out/selftest/results.txt and our log lines (and the --workshop mods'). Screenshots (*.png) and UI
-// dumps (*.txt) land in out/selftest. Exit code 1 on any FAIL.
+// The dev copy (sts2-dev on the game's drive, STS2_DEV_DIR; sts2-dev-stable for --stable) is hard links to the
+// installed game plus its own mods\ folder, re-linked after a Steam update of its branch. --force-steam off keeps the
+// game's data in %APPDATA%\SlayTheSpire2\default\1\, apart from real saves, and --log-file writes out\dev.log. test
+// resets the sandbox to tools/fixtures and prints out/selftest/results.txt; exit code 1 on any FAIL.
 using System.Diagnostics;
 using System.Runtime.CompilerServices;
 using System.Runtime.InteropServices;
@@ -53,7 +31,10 @@ var GameDir = Path.Combine(steamapps, "common", "Slay the Spire 2");
 if (!Directory.Exists(GameDir))
     return Fail($"Slay the Spire 2 isn't in {steamapps}. Set the environment variable "
         + @"STS2_STEAMAPPS to the steamapps folder of the library that has it, for example D:\SteamLibrary\steamapps (CONTRIBUTING.md, ""What you need"").");
-var DevDir = FullDir(Env("STS2_DEV_DIR", Path.Combine(Path.GetPathRoot(GameDir) ?? "", "sts2-dev"))); // same drive
+var stable = args.Contains("--stable"); // the stable branch's game, in its own dev copy
+var BetaDir = FullDir(Env("STS2_DEV_DIR", Path.Combine(Path.GetPathRoot(GameDir) ?? "", "sts2-dev"))); // same drive
+var StableDir = FullDir(Env("STS2_STABLE_DIR", Path.Combine(Path.GetPathRoot(GameDir) ?? "", "sts2-dev-stable")));
+var DevDir = stable ? StableDir : BetaDir;
 var WorkshopDir = Path.Combine(steamapps, "workshop", "content", "2868840");
 var BmmRepo = Env("STS2_BMM_REPO", @"C:\repos\gaming\slay the spire\bettermodmenu"); // Better Mod Menu's local-fix checkout (--bmm-local)
 const string ModId = "SpireModManager";
@@ -66,7 +47,7 @@ var logPath = Path.Combine(root, "out", "dev.log");
 var mode = args.FirstOrDefault() ?? "test";
 var smoke = mode == "smoke"; // the release build from dist/, not a fresh one
 var distDir = Path.Combine(root, "dist", ModId);
-var real = args.Contains("--real"); // Jordan's own mods (switched off) and a copy of his manager data
+var real = args.Contains("--real"); // your own mods (switched off) and a copy of your manager data
 var bmm = args.Any(a => a.StartsWith("--bmm")); // Better Mod Menu on (any --bmm option)
 var bmmData = args.Contains("--first-run-bmm"); // its fixture data in the sandbox, for our first-run import
 var firstRun = bmmData || args.Contains("--first-run"); // no manager.json of ours
@@ -76,9 +57,9 @@ var workshopItems = workshopAt < 0 ? [] : (args.ElementAtOrDefault(workshopAt + 
 var workshopMods = new List<string>(); // the mod ids in those items' manifests, in the order given
 
 if (mode is not ("test" or "launch" or "smoke"))
-    return Fail("usage: dotnet run tools/dev.cs [test [--window] [--bmm[-after]] [--bmm-local] [--real|--first-run|--first-run-bmm]|launch [--first-run|--first-run-bmm]|smoke [--bmm]] [--workshop <id>[,<id>...]]");
+    return Fail("usage: dotnet run tools/dev.cs [test [--window] [--bmm[-after]] [--bmm-local] [--real|--first-run|--first-run-bmm]|launch [--first-run|--first-run-bmm]|smoke [--bmm]] [--workshop <id>[,<id>...]] [--stable]");
 if (real && firstRun)
-    return Fail("--real brings Jordan's own data, so it can't be a first run");
+    return Fail("--real brings your own data, so it can't be a first run");
 // --workshop: every item has to be there, or the run would test without it and look like a pass. So it takes
 // one list: a second --workshop, --workshop=..., or ids after a space would be dropped without a word.
 if (args.Count(a => a.StartsWith("--workshop")) != (workshopAt < 0 ? 0 : 1))
@@ -107,11 +88,8 @@ foreach (var item in workshopItems)
     }
 }
 workshopMods = workshopManifests.Select(m => Id(m.Manifest)).ToList();
-// And what each one needs has to be on too, and what that needs in turn: the game won't load a mod whose dependency
-// didn't load (as the fixture's Test Addon shows: it needs SmmTestMissing), nor then the mods that need that one. On in
-// this run, with their manifests: ours (build.cs gives it no dependencies), the --workshop mods, Better Mod Menu with
-// --bmm, and (not --real, which switches every other mod off) the fixture mods. The other mods installed for play
-// aren't in the dev copy (SyncMods).
+// What each --workshop mod needs has to be on too, all the way down: the game won't load a mod whose dependency
+// didn't load. On in this run: ours, the --workshop mods, Better Mod Menu with --bmm, and the fixture mods (not --real).
 var installedManifests = Manifests(Path.Combine(GameDir, "mods")).ToList();
 var on = workshopManifests.ToDictionary(m => Id(m.Manifest), m => m.Manifest);
 on.TryAdd(ModId, []);
@@ -135,8 +113,10 @@ foreach (var (item, manifest) in workshopManifests)
             : installed ? "dev runs don't switch on the mods installed for play (Better Mod Menu aside), so " + add
             : add));
     }
-if (Process.GetProcessesByName("SlayTheSpire2").Any(p => string.Equals(Path.GetDirectoryName(ExePath(p)), DevDir, StringComparison.OrdinalIgnoreCase)))
-    return Fail($"A dev copy of the game is already running from {DevDir}.");
+// Either copy: both play in the one sandbox data folder.
+if (Process.GetProcessesByName("SlayTheSpire2").Select(p => Path.GetDirectoryName(ExePath(p)))
+        .FirstOrDefault(dir => dir != null && new[] { BetaDir, StableDir }.Contains(dir, StringComparer.OrdinalIgnoreCase)) is { } running)
+    return Fail($"A dev copy of the game is already running from {running}.");
 
 if (smoke)
 {
@@ -151,14 +131,15 @@ else
         return Fail("build failed");
 }
 
-LinkDevCopy();
+if (LinkDevCopy() is { } noCopy)
+    return Fail(noCopy);
 SyncMods();
 PrepareSandbox(mode is "test" or "smoke" || firstRun);
 
 var start = new ProcessStartInfo(Path.Combine(DevDir, "SlayTheSpire2.exe"), ["--force-steam", "off", "--log-file", logPath])
     { WorkingDirectory = DevDir };
 // Tests run headless (no window, UI dumps only) unless --window asks for screenshots; then the window
-// is sent behind everything and focus handed back (see below), so Jordan's work isn't interrupted.
+// is sent behind everything and focus handed back (see below), so your work isn't interrupted.
 var windowed = mode == "launch" || (!smoke && args.Contains("--window"));
 if (!windowed)
     start.ArgumentList.Add("--headless");
@@ -238,7 +219,7 @@ if (smoke)
     // Before the menu, the last lines say where it stopped.
     foreach (var line in lines.Where(l => l.Contains($"[{ModId}]") || errors.Contains(l)).Concat(menuAt == null ? lines.TakeLast(15) : []))
         Console.WriteLine(line.Length > 400 ? line[..400] : line);
-    Console.WriteLine("Not covered here: opening the Modding page. Do that once by hand in the real game (RELEASE-PLAN.md §5).");
+    Console.WriteLine("Not covered here: opening the Modding page. Do that once by hand in the real game (docs/dev/RELEASING.md).");
     return checks.Any(c => c.StartsWith("FAIL")) ? 1 : 0;
 
     static string Result(string name, bool ok, string detail = "") => $"{(ok ? "PASS" : "FAIL")} {name}{(ok || detail.Length == 0 ? "" : $": {detail}")}";
@@ -314,11 +295,8 @@ var results = Path.Combine(outDir, "results.txt");
 var text = File.Exists(results) ? File.ReadAllText(results) : "NO RESULTS (test did not finish)\n";
 Console.Write(text);
 Console.WriteLine("--- log ---");
-// Our lines, and the ones naming a --workshop mod. Such a mod loaded if its "Finished mod initialization" line is
-// there, but failed to start if the game logged one of the loadFailure errors (ModManager.TryLoadMod) while loading
-// it. Those errors don't always name the mod, but the game loads mods one at a time, and the files it loads or finds
-// missing are named for the mod (<id>.dll, <id>.pck): an error is the mod's whose file the loader named last. So a
-// mod that stopped without a finish line (refused, or thrown while loading) keeps its errors, not the next mod.
+// Our lines and the --workshop mods'. A mod loaded if it logged "Finished mod initialization", and failed to start if a
+// loadFailure error came while the loader was on its files (errors don't always name the mod; it loads one at a time).
 var named = workshopMods.Select(id => new Regex($@"(?<![\w-]){Regex.Escape(id)}(?![\w-])")).ToList();
 var loadFailure = new Regex(@"^\[ERROR\] .*(mod initializer|PatchAll on assembly|but no (assembly|PCK) at path)");
 var modFile = new Regex(@"^\[\w+\] (Loading assembly DLL|Loading Godot PCK|.* at path) .*?(?<mod>[^\\/]+)\.(dll|pck)\b");
@@ -360,13 +338,22 @@ foreach (var id in notReady)
         : $"FAIL --workshop: {id} didn't load (the log above says why), so this run didn't test beside it");
 return !File.Exists(results) || text.Contains("FAIL") || notReady.Count > 0 ? 1 : 0;
 
-// Hard links to every installed file except mods\, rebuilt when the game's release info changes.
-void LinkDevCopy()
+// The dev copy (hard links to the installed game, except mods\), linked again when the install changed and is on the
+// copy's branch. Returns why there's no copy to run (none yet, and the install is on the other branch), or null.
+string? LinkDevCopy()
 {
     var info = Path.Combine(GameDir, "release_info.json");
     var devInfo = Path.Combine(DevDir, "release_info.json");
     if (File.Exists(devInfo) && File.ReadAllText(devInfo) == File.ReadAllText(info))
-        return;
+        return null;
+    var wanted = stable ? "public" : "public-beta";
+    if (InstalledBranch() is { } installed && installed != wanted)
+    {
+        if (!File.Exists(devInfo))
+            return $"{DevDir} doesn't exist yet, and Steam has the {installed} branch installed: switch it to {wanted} and run again.";
+        Console.WriteLine($"Steam has the {installed} branch installed: the {wanted} dev copy in {DevDir} is kept as it is");
+        return null;
+    }
     Console.WriteLine($"linking the dev copy in {DevDir}");
     if (Directory.Exists(DevDir))
         Directory.Delete(DevDir, recursive: true); // deleting links leaves the installed files alone
@@ -377,13 +364,23 @@ void LinkDevCopy()
             continue;
         Link(file, Path.Combine(DevDir, relative));
     }
+    return null;
 }
 
-// The dev copy's mods: our fresh build, plus links to mods installed for play: with --real all of them, otherwise
-// Better Mod Menu's only, so a run has the same mods on every machine (the fixture mods below stand in for the rest).
-// Not Better Mod Menu's data if it keeps it beside its files ("portable mode", mod_profiles.*): our first-run import
-// would find it there, and a run's Better Mod Menu data should be only what PrepareSandbox gives it. Nor an installed
-// mod with the same id as a --workshop item's: the game would load only one of the two.
+// The branch Steam has installed ("public" is stable, "public-beta" the beta), from the game's app manifest; null
+// when it can't be read (the copy is then linked whenever the install changes, as before).
+string? InstalledBranch()
+{
+    var manifest = Path.Combine(steamapps, "appmanifest_2868840.acf");
+    if (!File.Exists(manifest))
+        return null;
+    var keys = Regex.Matches(File.ReadAllText(manifest), @"""BetaKey""\s+""([^""]*)""");
+    return keys.Count == 0 ? "public" : keys[^1].Groups[1].Value;
+}
+
+// The dev copy's mods: our fresh build plus links to mods installed for play: all with --real, else Better Mod Menu
+// only, so runs match on every machine. Not Better Mod Menu's portable data, nor an installed mod sharing an id with a
+// --workshop item.
 void SyncMods()
 {
     var mods = Path.Combine(DevDir, "mods");
@@ -395,9 +392,8 @@ void SyncMods()
             Link(file, Path.Combine(mods, Path.GetRelativePath(Path.Combine(GameDir, "mods"), file)));
     if (real)
     {
-        // --real: Jordan's Workshop mods too, as local folders (switched off in PrepareSandbox), but not
-        // the --workshop items (copied below), nor another item with one of their mod ids (two versions of one mod:
-        // the game would load only one, and the run could report on the wrong copy).
+        // --real: your Workshop mods too, as local folders (switched off later), except the --workshop items and other
+        // items with their mod ids.
         foreach (var dir in Directory.GetDirectories(WorkshopDir).Where(d => !workshopItems.Contains(Path.GetFileName(d)) && !ManifestIds(d).Any(workshopMods.Contains)))
             foreach (var file in Directory.EnumerateFiles(dir, "*", SearchOption.AllDirectories))
                 Link(file, Path.Combine(mods, "workshop-" + Path.GetFileName(dir), Path.GetRelativePath(dir, file)));
@@ -446,10 +442,8 @@ void PrepareSandbox(bool resetData)
     var settings = File.Exists(settingsPath) ? JsonNode.Parse(File.ReadAllText(settingsPath))?.AsObject() ?? [] : [];
     var mods = settings["mod_settings"] as JsonObject ?? [];
     mods["mods_enabled"] = true;
-    // A fresh mod list every run, so one run's toggles and order can't leak into the next: everything on
-    // (no entry = on) except Better Mod Menu (--bmm: on, to test running alongside it), its fork's folder (--real; never
-    // loads: its DLL name doesn't match its id) and the fixture's Test Retired (a mod that's off in every mode, which the
-    // self-test's searches need). --bmm-after: listed after ours.
+    // A fresh mod list every run: everything on except Better Mod Menu (on with --bmm, after ours with --bmm-after), its
+    // fork's folder (--real) and the fixture's Test Retired (off in every mode, for the self-test's searches).
     var list = new JsonArray();
     if (args.Contains("--bmm-after"))
         list.Add((JsonNode)new JsonObject { ["id"] = ModId, ["is_enabled"] = true, ["source"] = "mods_directory" });
@@ -473,7 +467,7 @@ void PrepareSandbox(bool resetData)
     mods["mod_list"] = list;
     settings["mod_settings"] = mods;
     settings["seen_ea_disclaimer"] = true; // the one-time Early Access popup would cover every screenshot
-    settings["volume_master"] = 0.0;      // silent, so dev runs don't play over Jordan's game
+    settings["volume_master"] = 0.0;      // silent, so dev runs don't play over your own game
     settings["fullscreen"] = false;       // a 1920x1080 window, easy to tell apart and to move aside
     settings["window_size"] = new JsonObject { ["X"] = 1920, ["Y"] = 1080 };
     File.WriteAllText(settingsPath, settings.ToJsonString(new() { WriteIndented = true }));
@@ -483,9 +477,7 @@ void PrepareSandbox(bool resetData)
     var data = Path.Combine(sandbox, "mod_data", ModId);
     if (Directory.Exists(data))
         Directory.Delete(data, recursive: true);
-    // Better Mod Menu's data sits beside ours (its account folder: where our first-run import looks, and where
-    // it saves while loaded). Cleared every time, so neither its own saves nor a --first-run-bmm fixture carry
-    // over into the next run.
+    // Better Mod Menu's data beside ours, cleared every run so no saves or fixture carry over.
     var bmmDir = Path.Combine(sandbox, "mod_data", "BetterModMenu");
     if (Directory.Exists(bmmDir))
         Directory.Delete(bmmDir, recursive: true);
@@ -506,7 +498,7 @@ void PrepareSandbox(bool resetData)
     if (firstRun)
         return; // no manager.json (nor its folder), as before the mod's first launch
     Directory.CreateDirectory(data);
-    // --real: a copy of Jordan's own manager data (read only; the original is never written).
+    // --real: a copy of your own manager data (read only; the original is never written).
     var source = real
         ? Directory.GetFiles(Path.Combine(userData, "steam"), "manager.json", SearchOption.AllDirectories)
             .FirstOrDefault(f => f.Contains(Path.Combine("mod_data", ModId)))
@@ -514,9 +506,8 @@ void PrepareSandbox(bool resetData)
     File.Copy(source ?? Path.Combine(root, "tools", "fixtures", "manager.json"), Path.Combine(data, "manager.json"));
 }
 
-// The chain from the last mod in chain to the first mod it needs, directly or through others, that won't be on in this
-// run (as in [A, B, C]: A needs B, B needs C, and C won't be on), or null when everything it needs will be. A chain
-// that comes back to a mod already in it is returned too (a loop: the game's sort refuses every mod in one).
+// The chain from the last mod in chain to the first mod it needs (directly or not) that won't be on in this run, or
+// null; a chain that loops back is returned too (the game refuses every mod in a loop).
 List<string>? MissingDependency(List<string> chain, HashSet<string> seen)
 {
     seen.Add(chain[^1]);
@@ -575,9 +566,8 @@ static string ScriptDir([CallerFilePath] string path = "") => Path.GetDirectoryN
 static string Env(string name, string fallback) =>
     Environment.GetEnvironmentVariable(name) is { Length: > 0 } value ? value : fallback;
 
-// The Steam library (its steamapps folder) that has the game: STS2_STEAMAPPS when set (CONTRIBUTING.md, "What you need"),
-// else whichever library in Steam's own list (libraryfolders.vdf, in Steam's folder from the registry) holds
-// the game, else Steam's default folder. The same in build.cs.
+// The Steam library with the game: STS2_STEAMAPPS, else the library in Steam's libraryfolders.vdf that has it, else
+// Steam's default folder (the same in build.cs).
 static string SteamApps()
 {
     if (Environment.GetEnvironmentVariable("STS2_STEAMAPPS") is { Length: > 0 } set)

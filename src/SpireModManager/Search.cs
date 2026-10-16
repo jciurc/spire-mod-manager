@@ -4,10 +4,9 @@ using MegaCrit.Sts2.Core.Nodes.Screens.ModdingScreen;
 
 namespace SpireModManager;
 
-/// A search box over the list. Every word typed must appear (any case) in the mod's name, id, author,
-// alias, notes, category or tags, or the whole query, spaces ignored, in one of them. "#tag" must be one of
-// the mod's tags, whole, and "@author" its author (#"two words" and @"two words" for spaces); clicking a tag
-// or an author searches for it (again: clears it), Shift-click adds or removes it. Escape clears it.
+// The search box over the list. Every word must appear (any case) in a mod's name, id, author, alias, notes,
+// category or tags, or the whole query without spaces in one of them. "#tag" matches a whole tag and "@author" the
+// author; clicking a tag or author searches for it, Shift-click adds or removes it.
 static class Search
 {
     const float Height = 32;
@@ -30,14 +29,12 @@ static class Search
                 return true;
         }
         var haystack = Lookups.Current?.Haystack(mod, HaystackOf) ?? HaystackOf(mod);
-        // Every word somewhere (any case), or the whole query with spaces ignored within one field: "mod fixes"
-        // finds "ModFixes" too.
+        // Every word somewhere, or the whole query without spaces in one field ("mod fixes" finds "ModFixes").
         return query.Words.All(word => haystack.All.Contains(word, StringComparison.OrdinalIgnoreCase))
             || haystack.Squeezed.Any(f => f.Contains(query.Squeezed, StringComparison.OrdinalIgnoreCase));
     }
 
-    // A search taken apart: its "#tag" and "@author" tokens, then the rest as words and with its spaces taken out.
-    // Every row is matched against the same text, so the last one is kept.
+    // A parsed search: its #tag and @author tokens, its plain words, and those words without spaces. The last is kept.
     record Query(string Text, IReadOnlyList<(string Kind, string Value)> Tokens, string Rest, string[] Words, string Squeezed);
     static Query? _lastQuery;
 
@@ -50,8 +47,7 @@ static class Search
         return _lastQuery = new Query(filter, tokens, rest, rest.Split(' ', StringSplitOptions.RemoveEmptyEntries), Squeeze(rest));
     }
 
-    // What plain words are looked for in: the mod's name, id, author, alias, notes, category, tags and Workshop
-    // tags, all in one text (each word somewhere) and each with its spaces taken out (the whole query in one).
+    // The text plain words are matched against: every field in one, and each field without spaces.
     public record Haystack(string All, string[] Squeezed);
 
     static Haystack HaystackOf(Mod mod)
@@ -64,8 +60,7 @@ static class Search
 
     static readonly System.Text.RegularExpressions.Regex Token = new(@"([#@])(?:""([^""]+)""|(\S+))");
 
-    // A tag or author clicked: search for it; with Shift, add it to what's searched already, or take it out
-    // (Toggled has the rules).
+    // A clicked tag or author: searches for it; with Shift, adds it or takes it out.
     public static void ByTag(Node near, string tag, bool add) => Put(near, "#", tag, add);
 
     public static void ByAuthor(Node near, string author, bool add) => Put(near, "@", author, add);
@@ -84,10 +79,8 @@ static class Search
         box.EmitSignal(LineEdit.SignalName.TextChanged, text);
     }
 
-    // The search after a term is clicked, so that clicking again undoes it. A click searches for just the term, or
-    // clears the search if the term is all of it already. Shift-click adds the term, or takes it out (every time it
-    // appears) if it's there already, keeping the rest. Terms are compared as #tag, @author or plain words, any
-    // case, quotes ignored: #"two words" is the same term as #"Two Words". One space between terms either way.
+    // The search after clicking a term, so a second click undoes it: a click searches for just the term (or clears it),
+    // Shift-click adds or removes it. Terms compare by kind and value, any case, quotes ignored.
     static string Toggled(string search, string term, bool add)
     {
         var terms = Term.Matches(search).Select(m => m.Value).ToList();
@@ -122,8 +115,7 @@ static class Search
 
     static string Squeeze(string text) => string.Concat(text.Where(c => !char.IsWhiteSpace(c)));
 
-    // Empties the box and shows every row again: Escape, or going to a row the search leaves out (CategoryList.Reveal:
-    // a banner's Show, a name in the panel or in Changes).
+    // Empties the box and shows every row again (Escape, or going to a row the search hides).
     public static void Clear(Control content)
     {
         CategoryList.ScreenOf(content)?.GetNodeOrNull<LineEdit>("ModsBorder/SpireModManagerSearch")?.Clear();

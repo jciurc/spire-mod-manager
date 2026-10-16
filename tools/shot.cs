@@ -1,9 +1,6 @@
-// Screenshots for a pull request: each picture is shrunk to a JPG by workshop/shrink.cs (at most 1920 px wide,
-// under 1 MB), committed to the pr-screenshots branch in a folder named after the current branch, and printed
-// as Markdown to paste into the pull request. pr-screenshots holds only pictures: no history shared with the
-// other branches, no rules, never merged.
-// Fixture runs only (dotnet run tools/dev.cs test --window): a --real shot (real-*.png) shows your own mods and
-// data, and the repository is public, so those are refused.
+// Screenshots for a pull request: each picture is shrunk to a JPG (workshop/shrink.cs), committed to the
+// pr-screenshots branch in a folder named after the current branch, and printed as Markdown to paste. Fixture runs
+// only: a --real shot (real-*.png) shows your own mods and data, so it's refused.
 //
 // Usage: dotnet run tools/shot.cs <picture> [picture ...] [--dir <folder>]
 //   e.g. dotnet run tools/shot.cs out/selftest/16-long-details.png

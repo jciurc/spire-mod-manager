@@ -7,18 +7,11 @@ using MegaCrit.Sts2.Core.Logging;
 
 namespace SpireModManager;
 
-// Drop-in translations: a player puts <language>.json (the game's three-letter code, e.g. zhs.json) in the
-// "translations" folder of our data folder, and our text shows from it, with no new build of the mod. The file holds
-// the same flat "key": "text" pairs as localization/eng/settings_ui.json. Its texts go into the game's settings_ui
-// table each time the game loads its tables for a language (TranslationsPatch: at startup and on every language
-// change), after the game has merged in our packed translation for it. So the file wins over a packed translation,
-// which wins over English, key by key: a key the file leaves out falls back as usual.
-// Fail soft: a file that's too big, can't be read or isn't JSON is logged and left out, and so are the keys English
-// doesn't have and the texts the game couldn't format. English is the source, so there's no eng.json.
-// Not the game's own user://localization_override/<language>/settings_ui.json, which needs no patch: a packed
-// translation would win over it (the game merges mods' tables after it), a bad entry brings up the game's
-// "Localization Override Errors" popup, the folder is outside our data folder with no menu item to find it, and a file
-// there can change the game's own settings_ui texts too, not just ours.
+// Drop-in translations: <language>.json (the game's code, e.g. zhs.json) in our data folder's "translations" folder,
+// with the same "key": "text" pairs as localization/eng/settings_ui.json. Merged into the game's settings_ui table
+// whenever it loads a language, after our packed translation, so the file wins key by key; bad files and keys are
+// logged and skipped. Not the game's localization_override folder: packed translations win over it, and a bad entry
+// there brings up the game's error popup.
 static class Translations
 {
     const string Table = "settings_ui";
@@ -26,13 +19,13 @@ static class Translations
 
     public static string Folder => Path.Combine(Store.Dir, "translations");
 
-    // Set by the self-test: Open calls it with the folder instead of opening a window.
+#if DEVTOOLS
+    // Self-test: Open calls it with the folder instead of opening a window.
     public static Action<string>? TestOpen;
+#endif
 
-    // An example in the folder (Jordan, 2026-10-15): every text of ours in English, under a few lines on how to make a
-    // translation from it. Its name is no language's, so it's never read. Written when the folder is opened, and
-    // written again (this version's texts) while it's still as we left it: we date it ExampleTime, and an edit dates
-    // it anew, so a player's edits are kept.
+    // An example file in the folder: our English texts under a few lines on how to translate them. Its name is no
+    // language's, so it's never read. Rewritten for each version unless the player has edited it (dated ExampleTime).
     public const string ExampleFile = "example-eng.json";
     public static readonly DateTime ExampleTime = new(2000, 1, 1, 0, 0, 0, DateTimeKind.Utc);
 
@@ -56,7 +49,7 @@ static class Translations
             var file = Path.Combine(folder, ExampleFile);
             if (File.Exists(file) && File.GetLastWriteTimeUtc(file) != ExampleTime)
                 return; // edited: theirs now
-            Store.WriteAtomic(file, ExampleText(), ExampleTime); // whole and dated as ours, or not at all (Copilot, #83)
+            Store.WriteAtomic(file, ExampleText(), ExampleTime); // whole and dated as ours, or not at all
         }
         catch (Exception e)
         {
@@ -64,8 +57,7 @@ static class Translations
         }
     }
 
-    // The main menu button's "Open translations folder": made if it isn't there yet, with the example in it, then
-    // shown in the system's file browser.
+    // The main menu button's "Open translations folder": creates it with the example if needed, then opens it.
     public static void Open()
     {
         try
@@ -73,10 +65,14 @@ static class Translations
             var folder = Folder;
             Directory.CreateDirectory(folder);
             WriteExample(folder);
+#if DEVTOOLS
             if (TestOpen is { } test)
+            {
                 test(folder);
-            else
-                OS.ShellOpen(folder);
+                return;
+            }
+#endif
+            OS.ShellOpen(folder);
         }
         catch (Exception e)
         {
@@ -84,8 +80,7 @@ static class Translations
         }
     }
 
-    // The game has just loaded its tables for a language: the drop-in file's texts for that language go into its
-    // settings_ui table, if there is a file.
+    // Merges the drop-in file's texts for a language the game has just loaded, if there's a file.
     public static void Apply(string language, Dictionary<string, LocTable> tables)
     {
         if (language == "eng" || !tables.TryGetValue(Table, out var table) || !Directory.Exists(Folder))
@@ -132,9 +127,8 @@ static class Translations
             {
                 if (!english.TryGetValue(entry.Name, out var names))
                     unknown.Add(entry.Name);
-                // Not text, empty, a placeholder the game can't read, or one English doesn't fill in for that key (a
-                // translated {count}, or one added): English shows. The game would show the text raw and log an error
-                // on every draw.
+                // Not text, empty, or placeholders the game can't read or English doesn't have: English shows instead
+                // (the game would show it raw and log an error on every draw).
                 else if (entry.Value.ValueKind != JsonValueKind.String || entry.Value.GetString() is not { } text || text.Trim().Length == 0
                     || !Formats(text) || !Placeholders(text).IsSubsetOf(names))
                     unusable.Add(entry.Name);
@@ -158,8 +152,7 @@ static class Translations
 
     static Dictionary<string, HashSet<string>>? _english;
 
-    // Our English keys, as packed, each with its placeholders' names: a drop-in file may only translate those keys, and
-    // use only those placeholders in each.
+    // Our English keys with their placeholder names: what a drop-in file may translate and use.
     static Dictionary<string, HashSet<string>> English()
     {
         if (_english != null)
@@ -173,8 +166,7 @@ static class Translations
     static HashSet<string> Placeholders(string text) =>
         Regex.Matches(text, @"\{([A-Za-z_]\w*)").Select(m => m.Groups[1].Value).ToHashSet();
 
-    // Whether the game can format the text (its placeholders read), checked the way it checks its own override files.
-    // If a game update took that check away, every text passes: the game still shows an unreadable one as it is.
+    // Whether the game can format the text, checked as for its own override files (all pass if that check is gone).
     static bool Formats(string text)
     {
         try

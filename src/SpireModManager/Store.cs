@@ -10,11 +10,10 @@ using MegaCrit.Sts2.Core.Saves;
 
 namespace SpireModManager;
 
-// Everything the manager remembers, saved as one JSON file per Steam account:
+// Everything the manager remembers, as one JSON file per Steam account:
 // user://steam/<id>/mod_data/SpireModManager/manager.json
-//
-// Categories, aliases and notes belong to a mod id, so a Workshop copy and a local copy of the same
-// mod share them. Profiles name a source too, like the game's own mod list (see Profiles).
+// Categories, aliases and notes belong to a mod id, so a Workshop and a local copy share them. Profiles name each
+// mod's source too, like the game's own list.
 public class StoreData
 {
     public int Version { get; set; } = 1;
@@ -30,8 +29,7 @@ public class StoreData
     // Where the player moved the main menu button (top-left, in the game's 1920x1080 frame); null: the corner.
     public ScreenPoint? MenuButtonAt { get; set; }
     public string? ImportedFrom { get; set; }
-    // The share dialog's tick boxes, kept across launches while its Remember selection is ticked (Jordan, 2026-10-15);
-    // null: not kept, so each launch starts on the defaults. View state: undo leaves it as it is.
+    // The share dialog's tick boxes, kept across launches while its Remember selection is ticked; null: the defaults.
     public ShareChoice? ShareChoices { get; set; }
 }
 
@@ -53,6 +51,10 @@ public class ModInfo
 
 public class Profile
 {
+    // Kept through renames and saves, new for a duplicate or import, so a profile renamed since launch isn't read as
+    // one deleted and another added. Files from before it get one on load.
+    public string? Id { get; set; } = NewId();
+    public static string NewId() => Guid.NewGuid().ToString("N");
     public string Name { get; set; } = "";
     public List<ProfileMod> Mods { get; set; } = [];
     // The active profile's unsaved changes (the mod list as it is now); null when there are none.
@@ -88,30 +90,32 @@ public static class Store
     static bool _readOnly;
     static bool _backedUpThisSession;
 
-    // Loaded on first use (or while the main menu is idle) rather than in Init, so the work doesn't slow the launch. The
-    // account folder is known in Init already: the game sets up Steam before it loads mods (LaunchGuard uses it there).
+    // Loaded on first use (or while the main menu is idle), not in Init, so it doesn't slow the launch.
     public static StoreData Data => _data ??= Load();
 
-    // For the self-test's second launch: the next use loads again, from the file the first load wrote.
+#if DEVTOOLS
+    // Self-test: the next use loads again, from the file the first load wrote (a second launch).
     public static void Reload() => _data = null;
+#endif
 
-    // The mod's data folder: manager.json, its backups, the drop-in translations (Translations) and the launch record
-    // (LaunchGuard).
+    // The mod's data folder (known from Init on): manager.json, backups, drop-in translations and the launch record.
     public static string Dir => ProjectSettings.GlobalizePath(UserDataPathProvider.GetAccountScopedBasePath($"mod_data/{ModEntry.ModId}"));
     public static string FilePath => Path.Combine(Dir, FileName);
 
-    // A launch that found the file unreadable, for the notice on the Modding screen (shown once, then null). The
-    // self-test sets it too.
+    // A launch that found the file unreadable, for the Modding screen's notice (shown once, then null).
     public static Loaded? Notice { get; set; }
 
     static StoreData Load()
     {
         try
         {
-            var loaded = LoadFrom(Dir, DateTime.Now);
+            var loaded = WithImport(LoadFrom(Dir, DateTime.Now), BetterModMenuImport.TryImport);
             _readOnly = loaded.ReadOnly;
             if (loaded.Unreadable != null)
                 Notice = loaded;
+            // Saves the import over the fresh start LoadFrom wrote back, without backing up that empty file.
+            if (loaded.Imported && loaded.Data != null)
+                WriteTo(Dir, loaded.Data, backUp: false);
             if (loaded.Data is { } data)
                 return data;
 
@@ -130,16 +134,19 @@ public static class Store
         }
     }
 
-    // What LoadFrom found. Data is null only on a first run. Unreadable: where the file that couldn't be read is
-    // now (set aside; or still in place when even that failed, and then ReadOnly: nothing is saved this
-    // session). Backup: the one loaded in its place and when it was saved; none with Unreadable is a fresh start.
-    public record Loaded(StoreData? Data, string? Unreadable = null, (string Path, DateTime Saved)? Backup = null, bool ReadOnly = false);
+    // What LoadFrom found. Data: null only on a first run. Unreadable: where the bad file is now (set aside, or in
+    // place if that failed too, then ReadOnly). Backup: the one loaded instead. Imported: Better Mod Menu's data.
+    public record Loaded(StoreData? Data, string? Unreadable = null, (string Path, DateTime Saved)? Backup = null, bool ReadOnly = false,
+        bool Imported = false);
 
-    // Reads manager.json in a folder (ours, or a self-test's). One that can't be read or parsed is moved aside as
-    // manager.broken-<time>.json, never over another file, and the newest backup that reads takes its place (with
-    // none, a fresh start). That is written back at once, so the next launch reads it as usual and never takes
-    // it for a first run. A first run is no file and none set aside before: if an earlier write-back failed, the
-    // backups load again rather than Better Mod Menu's data being imported over them.
+    // A recovery with no readable backup starts from Better Mod Menu's data, if it has some, as on a first run.
+    public static Loaded WithImport(Loaded loaded, Func<StoreData?> import) =>
+        loaded is { Unreadable: not null, Backup: null, ReadOnly: false } && import() is { } imported
+            ? loaded with { Data = imported, Imported = true } : loaded;
+
+    // Reads manager.json in a folder. One that can't be read is set aside (manager.broken-<time>.json) and the newest
+    // backup that reads, or a fresh start, is written in its place, so the next launch never takes it for a first run.
+    // A first run is no file and none set aside before, so the backups load again if that write-back failed.
     public static Loaded LoadFrom(string dir, DateTime now)
     {
         var file = Path.Combine(dir, FileName);
@@ -182,10 +189,8 @@ public static class Store
     static StoreData Read(string file) =>
         Tidy(JsonSerializer.Deserialize<StoreData>(File.ReadAllText(file), Json) ?? throw new JsonException("no data in the file"));
 
-    // A hand-edited or old file can hold nulls where the rest of the code expects none ("profiles": null, a null
-    // entry in a list, a mod's details set to null). Lists become empty, names "" (as a missing key gives),
-    // and null entries are dropped. Fields where null means something stay null (a profile's unsaved edit;
-    // a mod's tags, null when it has none, as the editor leaves them).
+    // Nulls from a hand-edited or old file: lists become empty, names "", null entries dropped. Nulls that mean
+    // something stay (a profile's unsaved edit, a mod's tags when it has none).
     static StoreData Tidy(StoreData data)
     {
         data.Categories = data.Categories?.OfType<Category>().ToList() ?? [];
@@ -197,8 +202,11 @@ public static class Store
         foreach (var info in data.Mods.Values)
             info.Tags = info.Tags?.OfType<string>().ToList() is { Count: > 0 } tags ? tags : null;
         data.Profiles = data.Profiles?.OfType<Profile>().ToList() ?? [];
+        var ids = new HashSet<string>();
         foreach (var profile in data.Profiles)
         {
+            if (string.IsNullOrEmpty(profile.Id) || !ids.Add(profile.Id)) // none (a hand-edited file), or another's
+                ids.Add(profile.Id = Profile.NewId());
             profile.Name ??= "";
             profile.Mods = profile.Mods?.Where(m => m?.Id != null).ToList() ?? [];
             profile.Edited = profile.Edited?.Where(m => m?.Id != null).ToList();
@@ -207,12 +215,12 @@ public static class Store
         return data;
     }
 
-    // The newest backup that reads (by name: manager.<time>.json), or a fresh start when none does.
+    // The newest backup that reads, or a fresh start when none does.
     static (StoreData Data, (string Path, DateTime Saved)? From) NewestBackup(string dir)
     {
         var backups = Path.Combine(dir, BackupsFolder);
         if (Directory.Exists(backups))
-            foreach (var path in Directory.GetFiles(backups, BackupPattern).OrderDescending())
+            foreach (var path in NewestFirst(Directory.GetFiles(backups, BackupPattern)))
                 try
                 {
                     return (Read(path), (path, File.GetLastWriteTime(path)));
@@ -222,6 +230,20 @@ public static class Store
                     Log.Warn($"[{ModEntry.ModId}] Could not read the backup {path} either: {e.Message}");
                 }
         return (new StoreData(), null);
+    }
+
+    // Backups newest first, by the time in their names: manager.<time>Z.json (UTC) or, older, manager.<time>.json
+    // (local time); a name without a time last.
+    public static IEnumerable<string> NewestFirst(IEnumerable<string> paths) =>
+        paths.OrderByDescending(BackupTime).ThenByDescending(path => path, StringComparer.Ordinal);
+
+    static DateTime BackupTime(string path)
+    {
+        var stamp = Path.GetFileNameWithoutExtension(path)["manager.".Length..];
+        var utc = stamp.EndsWith('Z');
+        return DateTime.TryParseExact(utc ? stamp[..^1] : stamp, "yyyyMMdd-HHmmss", CultureInfo.InvariantCulture,
+            utc ? DateTimeStyles.AssumeUniversal | DateTimeStyles.AdjustToUniversal : DateTimeStyles.AssumeLocal | DateTimeStyles.AdjustToUniversal,
+            out var time) ? time : DateTime.MinValue;
     }
 
     // Beside it as manager.broken-<time>.json (-2, -3 and on when that name is taken): never over another file.
@@ -248,8 +270,7 @@ public static class Store
         }
     }
 
-    // Once, as the Modding screen opens after a launch that couldn't read the file: the game's popup saying what
-    // happened and where the unreadable file is. Kept for the next opening while another popup is up.
+    // The popup about an unreadable file, once; while another popup is up, it waits for the next call.
     public static void ShowNotice()
     {
         try
@@ -276,8 +297,10 @@ public static class Store
         return true;
     }
 
-    // Set by the self-test: the notice's folder link calls it with the folder instead of opening a window.
+#if DEVTOOLS
+    // Self-test: the notice's folder link calls it with the folder instead of opening a window.
     public static Action<string>? TestOpenFolder;
+#endif
 
     // The notice's "mod's data folder" ([url=folder]) opens the folder in the system's file browser.
     static void LinkFolder(Node popup)
@@ -289,21 +312,25 @@ public static class Store
         {
             if (meta.AsString() != "folder")
                 return;
+#if DEVTOOLS
             if (TestOpenFolder is { } test)
+            {
                 test(Dir);
-            else
-                OS.ShellOpen(Dir);
+                return;
+            }
+#endif
+            OS.ShellOpen(Dir);
         };
     }
 
-    // The notice's text for one load: what happened, the set-aside file's name, the backup's date. Null when the load
-    // had no problem.
+    // The notice's text: what happened, the set-aside file's name, the backup's date; null when the load was fine.
     public static LocString? NoticeText(Loaded loaded)
     {
         if (loaded.Unreadable is not { } file)
             return null;
         var body = new LocString("settings_ui", loaded.ReadOnly ? "SPIRE_MOD_MANAGER.DATA_READ_ONLY"
-            : loaded.Backup != null ? "SPIRE_MOD_MANAGER.DATA_RECOVERED" : "SPIRE_MOD_MANAGER.DATA_FRESH");
+            : loaded.Backup != null ? "SPIRE_MOD_MANAGER.DATA_RECOVERED"
+            : loaded.Imported ? "SPIRE_MOD_MANAGER.DATA_FROM_BMM" : "SPIRE_MOD_MANAGER.DATA_FRESH");
         body.Add("file", Escape(Path.GetFileName(file))); // the name only: a full path doesn't fit the popup
         if (loaded.Backup is { Saved: var saved })
             body.Add("date", $"{ModDetails.Date(saved)}, {saved.ToString("HH:mm", CultureInfo.InvariantCulture)}");
@@ -321,9 +348,8 @@ public static class Store
         History.Record();
     }
 
-    // View state changed in the middle of a redraw (a dismissed banner re-armed): written without History.Record. It
-    // isn't an edit (EditsJson leaves it out), and a record there can come between a change and the rest of it (a
-    // Disable all's profile update follows its redraw), splitting one undo step in two.
+    // Saves view state changed mid-redraw (a re-armed banner) without History.Record: a record there could split one
+    // undo step in two.
     public static void SaveViewState()
     {
         if (!_batching && _data != null && !_readOnly)
@@ -356,13 +382,22 @@ public static class Store
     // what undo compares and restores.
     public static string EditsJson()
     {
-        var copy = JsonSerializer.Deserialize<StoreData>(JsonSerializer.Serialize(Data, Json), Json) ?? new StoreData();
+        var json = JsonSerializer.Serialize(Data, Json);
+        if (_edits is { } last && last.Data == json)
+            return last.Edits;
+        var copy = JsonSerializer.Deserialize<StoreData>(json, Json) ?? new StoreData();
         copy.VanillaView = copy.LoadOrderView = copy.UncategorizedCollapsed = copy.ManagersWarningDismissed = false;
         copy.ShareChoices = null;
         foreach (var category in copy.Categories)
             category.Collapsed = false;
-        return JsonSerializer.Serialize(copy, Json);
+        var edits = JsonSerializer.Serialize(copy, Json);
+        _edits = (json, edits);
+        return edits;
     }
+
+    // The last EditsJson and the data it was made from: asked several times per change (undo history, the changes bar,
+    // its list), it's only made again when the data has changed.
+    static (string Data, string Edits)? _edits;
 
     // A snapshot of our data (EditsJson) with a change made to it as well.
     public static string Patched(string json, Action<StoreData> change)
@@ -392,9 +427,8 @@ public static class Store
         _backedUpThisSession = true;
     }
 
-    // Saves manager.json into a folder (ours, or a self-test's), after copying the old one into backups/ when
-    // asked (the newest ten kept). The copy has its own try: when it fails (a file lock, antivirus), that's
-    // logged and the save itself still happens.
+    // Saves manager.json into a folder, first copying the old one into backups/ if asked (the newest ten kept). A
+    // failed backup (a file lock, antivirus) is logged and the save still happens.
     public static void WriteTo(string dir, StoreData data, bool backUp)
     {
         var file = Path.Combine(dir, FileName);
@@ -403,8 +437,10 @@ public static class Store
             {
                 var backups = Path.Combine(dir, BackupsFolder);
                 Directory.CreateDirectory(backups);
-                File.Copy(file, Path.Combine(backups, $"manager.{DateTime.Now:yyyyMMdd-HHmmss}.json"), overwrite: true);
-                foreach (var old in Directory.GetFiles(backups, BackupPattern).OrderDescending().Skip(BackupsKept))
+                // Named in UTC ("Z"), so daylight saving can't put two out of order or one over another. Older ones
+                // are in local time; NewestFirst reads both.
+                File.Copy(file, Path.Combine(backups, $"manager.{DateTime.UtcNow:yyyyMMdd-HHmmss}Z.json"), overwrite: true);
+                foreach (var old in NewestFirst(Directory.GetFiles(backups, BackupPattern)).Skip(BackupsKept))
                     File.Delete(old);
             }
             catch (Exception e)
@@ -423,8 +459,7 @@ public static class Store
         }
     }
 
-    // Writes to a temp file and swaps it in, so a crash mid-write can't leave a half-written file. LaunchGuard's files too.
-    // at: the file's last-write time, set on the temp file before the swap (the translations example's mark).
+    // Writes to a temp file and swaps it in, so a crash can't leave half a file. at: the last-write time to set.
     public static void WriteAtomic(string file, string json, DateTime? at = null)
     {
         var temp = file + ".tmp";
@@ -436,8 +471,7 @@ public static class Store
 
     public static ModInfo? InfoFor(string? modId) => modId != null && Data.Mods.TryGetValue(modId, out var info) ? info : null;
 
-    // Changes one mod's details and saves. A mod left with nothing of ours (no category, alias, notes or tags)
-    // loses its entry, so clearing everything reads as "unchanged", not as an edit.
+    // Changes one mod's details and saves; a mod left with none of ours loses its entry, so it reads as unchanged.
     public static void EditMod(string modId, Action<ModInfo> change)
     {
         if (!Data.Mods.TryGetValue(modId, out var info))
@@ -449,8 +483,7 @@ public static class Store
     }
 }
 
-// One-time import of Better Mod Menu's saved data (read-only; its file is never changed). It can be saved in
-// several ways, so we take the file it would load itself and read it the way it does.
+// One-time import of Better Mod Menu's saved data, read-only: the file it would load itself, read the way it does.
 static class BetterModMenuImport
 {
     const string BmmId = "BetterModMenu";
@@ -458,8 +491,7 @@ static class BetterModMenuImport
     // Its file names, in its order of preference within a folder.
     static readonly string[] FileNames = ["mod_profiles.json5", "mod_profiles.jsonc", "mod_profiles.json"];
 
-    // It allows comments and trailing commas in its file, whatever the name. That is all ".json5" means to it:
-    // other JSON5 syntax (unquoted names, single quotes) fails there as it does here.
+    // It allows comments and trailing commas whatever the file's name; that's all ".json5" means to it.
     static readonly JsonDocumentOptions Lenient = new() { CommentHandling = JsonCommentHandling.Skip, AllowTrailingCommas = true };
 
     public static StoreData? TryImport()
@@ -496,7 +528,7 @@ static class BetterModMenuImport
         }
 
         var collapsed = Strings(root, "CollapsedGroups").ToHashSet();
-        foreach (var name in Strings(root, "CustomGroups"))
+        foreach (var name in Strings(root, "CustomGroups").Distinct()) // a group named twice: one category
             data.Categories.Add(new Category { Name = name, Collapsed = collapsed.Contains(name) });
 
         if (root.TryGetProperty("ModGroups", out var groups) && groups.ValueKind == JsonValueKind.Object)
@@ -524,15 +556,23 @@ static class BetterModMenuImport
     static void AddProfiles(StoreData data, JsonElement profiles)
     {
         foreach (var p in profiles.EnumerateArray())
+        {
+            // Better Mod Menu lets two profiles share a name (a new one is named by the count, a rename isn't checked).
+            // Ours are told apart by name, so a repeated one gets the first free " (n)", as a copy does; it stays at its
+            // place, so CurrentProfileIndex still finds it.
+            var name = NonEmpty(p, "Name") ?? $"Profile {data.Profiles.Count + 1}";
+            if (data.Profiles.Any(o => o.Name == name))
+                name = Profiles.Numbered(name, n => data.Profiles.Any(o => o.Name == n));
             data.Profiles.Add(new Profile
             {
-                Name = NonEmpty(p, "Name") ?? $"Profile {data.Profiles.Count + 1}",
+                Name = name,
                 Disabled = Strings(p, "DisabledMods").Select(id => new ModRef(id, null)).ToList(),
             });
+        }
     }
 
-    // Where it looks, in its order: beside its own files first ("portable mode"), then its folder in the Steam
-    // account's data. Like it, we only look beside its first copy in the mod list.
+    // Where it looks, in its order: beside its first copy in the mod list ("portable mode"), then its folder in the
+    // Steam account's data.
     static IEnumerable<string> Folders()
     {
         if (ModManager.Mods.FirstOrDefault(m => m.manifest?.id == BmmId)?.path is { Length: > 0 } own)

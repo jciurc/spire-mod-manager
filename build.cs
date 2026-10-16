@@ -34,12 +34,12 @@ var manifest = new JsonObject
     ["author"] = "symphony",
     ["description"] = "Organize mods into categories, save profiles, set the load order and add notes and tags. " +
         "Relaunch the game in place to apply changes.",
-    ["version"] = "0.0.45", // pre-release: the last number goes up by one with each install to Jordan's game
+    ["version"] = "0.0.45", // pre-release: the last number goes up by one with each install to the game
     ["has_pck"] = true,
     ["has_dll"] = true,
     ["affects_gameplay"] = false,
     ["dependencies"] = new JsonArray(),
-    ["min_game_version"] = "0.111.0",
+    ["min_game_version"] = "0.107.1",
 };
 if (dist)
     manifest["version"] = ReleaseVersion;
@@ -71,9 +71,7 @@ foreach (var langDir in Directory.GetDirectories(locRoot))
 // Scenes: scenes/*.tscn -> res://SpireModManager/scenes/...
 foreach (var file in Directory.GetFiles(Path.Combine(root, "scenes")))
     files[$"{ModId}/scenes/{Path.GetFileName(file)}"] = File.ReadAllBytes(file);
-// Images: images/*.png -> res://SpireModManager/images/... as plain files (not imported), for the mod to load
-// with Image.LoadPngFromBuffer. None today (the folder may be missing or empty): the main menu button is the
-// game's own text button now.
+// Images: images/*.png -> res://SpireModManager/images/... as plain files, for Image.LoadPngFromBuffer. None today.
 var images = Path.Combine(root, "images");
 foreach (var file in Directory.Exists(images) ? Directory.GetFiles(images, "*.png") : [])
     files[$"{ModId}/images/{Path.GetFileName(file)}"] = File.ReadAllBytes(file);
@@ -93,9 +91,8 @@ Console.WriteLine($"built {files.Count} pack file(s)");
 
 if (dist)
 {
-    // The upload is filled from dist/SpireModManager alone: out/ also holds bin/ (pdb, deps.json) and, between
-    // builds, the dev log and self-test output, some of it from Jordan's own mods and profiles. Only this
-    // folder is emptied, so anything else kept in dist/ (zips of earlier releases) stays.
+    // The upload comes from dist/SpireModManager alone (out/ also holds bin/ and dev output, some from your own mods).
+    // Only this folder is emptied; anything else in dist/ (zips of earlier releases) stays.
     var distDir = Path.Combine(root, "dist", ModId);
     if (Directory.Exists(distDir))
         Directory.Delete(distDir, recursive: true);
@@ -135,9 +132,8 @@ static int Fail(string message)
 
 static string ScriptDir([CallerFilePath] string path = "") => Path.GetDirectoryName(path) ?? ".";
 
-// The Steam library (its steamapps folder) that has the game: STS2_STEAMAPPS when set (CONTRIBUTING.md, "What you need"),
-// else whichever library in Steam's own list (libraryfolders.vdf, in Steam's folder from the registry) holds
-// the game, else Steam's default folder. The same in tools/dev.cs.
+// The Steam library with the game: STS2_STEAMAPPS, else the library in Steam's libraryfolders.vdf that has it, else
+// Steam's default folder (the same in tools/dev.cs).
 static string SteamApps()
 {
     if (Environment.GetEnvironmentVariable("STS2_STEAMAPPS") is { Length: > 0 } set)

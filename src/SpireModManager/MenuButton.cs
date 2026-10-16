@@ -8,25 +8,21 @@ using MegaCrit.Sts2.addons.mega_text;
 
 namespace SpireModManager;
 
-// The main menu's "Default (12 mods)" button: the game's own main-menu text button (a copy of its Settings button, so
-// the same font, colours, outline, shadow and hover, with the carets either side, at a smaller size), naming the active
-// profile and how many mods are on; hovering it for a second says what it opens and names the profile. It always
-// opens our view of the page, even when Vanilla View was the last one shown (the game's way in, from its Settings,
-// keeps the last one). In the lower-left corner, or wherever the player
-// moved it (right-click > Move button, then click to place it), with the game's notification dot and a short "Relaunch
-// to apply" note centred above it while a relaunch is pending. Its right-click menu, under our name and version, also
-// has Open translations folder, and Relaunch game, the Modding page's Relaunch Game from here.
+// The main menu's "Default (12 mods)" button: a smaller copy of the game's Settings text button (its font, colours,
+// hover and carets) naming the active profile and how many mods are on. It always opens our view of the Modding page.
+// Lower-left, or wherever the player moved it (right-click > Move button), with the game's notification dot and a
+// "Relaunch to apply" note while a relaunch is pending. Its right-click menu also opens the translations folder and
+// relaunches the game.
 static class MenuButton
 {
     const string Name = "SpireModManagerMenuButton";
     static readonly Color Coral = new(0.96f, 0.62f, 0.47f);
     // A long profile name is cut to this width with "…" (at the button's font size).
     const float NameWidth = 360;
-    // Room either side of the text, inside the button (the game's are wider than their words too); the hover carets
-    // sit in it (the game puts them out to 54 from the text, NMainMenu.MainMenuButtonFocused), so wherever the button
-    // is kept on screen, they are too. Public for the self-test.
+    // Room either side of the text inside the button; the hover carets sit in it (the game puts them out to 54 from the
+    // text), so wherever the button is kept on screen, they are too.
     public const float Margin = 56;
-    // The text's size: smaller than the game's buttons (Jordan, 2026-10-14; 26 since 2026-10-15). Public for the self-test.
+    // The text's size: smaller than the game's buttons.
     public const int TextSize = 26;
     // The pending note: this far above the button.
     const float NoteGap = 0;
@@ -71,7 +67,8 @@ static class MenuButton
         // The text, and with it the button's width: its words and the margins. Kept in place (Place), and on screen.
         void Retext()
         {
-            note.Text = Menus.Text(outdated ? "SPIRE_MOD_MANAGER.NEEDS_UPDATE" : "SPIRE_MOD_MANAGER.RELAUNCH_NOTE");
+            // The page's own line while a relaunch is pending, word for word: one text, one less to translate.
+            note.Text = Menus.Text(outdated ? "SPIRE_MOD_MANAGER.NEEDS_UPDATE" : "SPIRE_MOD_MANAGER.PENDING_RESTART");
             // What it opens, and the profile in gold; a second's wait, as the mouse crosses it for the game's buttons.
             Hover.Tip(button, Tip(Profiles.Active?.Name ?? ""), Hover.Timing.Late, markup: true);
             if (label == null)
@@ -162,7 +159,7 @@ static class MenuButton
     // how many mods are on, the count the profile bar shows beside the name.
     public static string Text(Font font, int size) => Text(Profiles.Active?.Name ?? "", Profiles.OnCount(), font, size);
 
-    // The same for any name and count (the self-test).
+    // The same for any name and count.
     public static string Text(string name, int on, Font font, int size) =>
         Menus.Format(on == 1 ? "SPIRE_MOD_MANAGER.MAIN_MENU_PROFILE_ONE" : "SPIRE_MOD_MANAGER.MAIN_MENU_PROFILE",
             ("name", RowTitles.Cut(font, name, size, NameWidth)), ("count", Menus.Number(on)));
@@ -209,7 +206,7 @@ static class MenuButton
     }
 
     // Where the player put it (kept on screen), or the lower-left corner, level with the Modding screen's bottom row
-    // of buttons (70 tall from BottomRowY). Again whenever its text changes its width. Public for the self-test.
+    // of buttons (70 tall from BottomRowY). Again whenever its text changes its width.
     public static void Place(Control button)
     {
         var size = button.CustomMinimumSize;
@@ -228,7 +225,7 @@ static class MenuButton
             button.OffsetRight = button.OffsetLeft + size.X;
             button.OffsetTop = button.OffsetBottom - size.Y;
         }
-        // The note centred above it (Jordan, 2026-10-14), kept on screen: below it if there's no room above.
+        // The note centred above it, kept on screen: below it if there's no room above.
         if (button.GetNodeOrNull<Label>("PendingNote") is { } note)
         {
             var words = note.GetCombinedMinimumSize();
@@ -239,10 +236,9 @@ static class MenuButton
         }
     }
 
-    // Move mode: the button follows the mouse (by how far it moves, so it doesn't jump); a left click puts it
-    // down there (remembered), a right-click or Escape puts it back. Its own layer above the whole menu
-    // shows the hint and keeps clicks off the menu underneath; the mouse and keys are read every frame, so
-    // nothing else on the menu can take them first. Leaving the menu cancels it.
+    // Move mode: the button follows the mouse; a left click puts it down (remembered), a right-click or Escape puts it
+    // back, and leaving the menu cancels it. Its own layer over the menu shows the hint and keeps clicks off the menu;
+    // the mouse and keys are read every frame, so nothing on the menu takes them first.
     public const string MoveLayerName = "SpireModManagerMoveLayer";
 
     // While moving: cancels it (Escape, through ShortcutsPatch, which then keeps the key from the game; the game's
@@ -287,9 +283,14 @@ static class MenuButton
         // The cursor jumps to the button's left end, halfway up: it holds the button by its edge. (The warped
         // position isn't reported until the next mouse event, so start from where it was sent.)
         var grip = button.GetGlobalRect().Position + new Vector2(24, size.Y / 2);
+#if DEVTOOLS
         if (Hover.TestMouse == null)
             menu.GetViewport().WarpMouse(grip);
         var mouseAtStart = Hover.TestMouse?.Invoke() ?? grip;
+#else
+        menu.GetViewport().WarpMouse(grip);
+        var mouseAtStart = grip;
+#endif
         // Buttons already held when move mode starts (the click on "Move button") don't count until released.
         var leftWasDown = true;
         var rightWasDown = true;

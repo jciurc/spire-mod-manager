@@ -17,6 +17,10 @@ public static class ModEntry
 {
     public const string ModId = "SpireModManager";
 
+    // One key per mod for counting: its id. A mod installed twice (a local build beside the Workshop copy, this one too)
+    // counts once, as the game loads only one copy. Profiles keep every copy of this mod on, so whichever stays runs.
+    public static string CountKey(string? id) => id ?? "";
+
     const string ButtonScenePath = $"res://{ModId}/scenes/menu_button.tscn";
     const float ButtonArtHeight = 110; // event_button.png is 284x110
 
@@ -24,14 +28,14 @@ public static class ModEntry
     static readonly List<string> _failedPatches = [];
     public static IReadOnlyList<string> FailedPatches => _failedPatches;
 
+#if DEVTOOLS
     // Dev runs: the patches SPIRE_MOD_MANAGER_SKIP_PATCHES leaves out (they count as failed).
     public static IReadOnlyList<string> SkippedPatches { get; private set; } = [];
+#endif
 
-    // The patches our Modding page can't do without: the page itself; the main menu's startup (the baseline for
-    // undo, Changes and the load order); the tickbox hook (profiles and undo follow it); the info panel's contents;
-    // the selected mod (view switches and panel refreshes; our code calls the same game method). With one of them
-    // missing, the page stays the game's, with a line saying the mod needs an update, rather than half of ours.
-    // The others only add to it (looks, shortcuts, new-mod handling); without one, the page still runs.
+    // The patches our Modding page can't do without: the page, the main menu's startup, the tickbox hook, the info
+    // panel and the selected mod. Without one, the page stays the game's, with a line saying the mod needs an update;
+    // the others only add to it.
     public static readonly IReadOnlyList<string> PageNeeds =
         [nameof(MainMenuPatch), nameof(ModdingScreenPatch), nameof(ModToggledPatch), nameof(ModInfoFillPatch), nameof(RowSelectedPatch)];
 
@@ -82,19 +86,23 @@ public static class ModEntry
             Log.Error($"[{ModId}] Could not watch for mods installed while the game runs: {e}");
         }
         var harmony = new Harmony(ModId);
+#if DEVTOOLS
         // Dev runs can leave some out, as if a game update broke them, to see what players would get
         // (SPIRE_MOD_MANAGER_SKIP_PATCHES=ModInfoFillPatch,RowLookPatch).
         var skip = SkippedPatches = IsDevRun
             ? (System.Environment.GetEnvironmentVariable("SPIRE_MOD_MANAGER_SKIP_PATCHES") ?? "").Split(',', StringSplitOptions.TrimEntries | StringSplitOptions.RemoveEmptyEntries)
             : [];
+#endif
         foreach (var type in AccessTools.GetTypesFromAssembly(typeof(ModEntry).Assembly))
         {
             try
             {
                 if (!type.IsDefined(typeof(HarmonyPatch), false))
                     continue;
+#if DEVTOOLS
                 if (skip.Contains(type.Name))
                     throw new InvalidOperationException("left out for this dev run (SPIRE_MOD_MANAGER_SKIP_PATCHES)");
+#endif
                 harmony.CreateClassProcessor(type).Patch();
             }
             catch (Exception e)
@@ -114,12 +122,13 @@ public static class ModEntry
 
     static readonly HashSet<string> Missing = [];
 
-    // The resources that didn't load this session, for the self-test.
+#if DEVTOOLS
+    // Self-test: the resources that didn't load this session.
     public static IReadOnlyCollection<string> MissingResources => Missing;
+#endif
 
-    // One of the game's resources we use (a scene, texture or font; our scenes too, since they use the game's), or
-    // null if it's gone or broken: a game update can move one, and a scene fails to load when something it uses
-    // moved. Never throws. Each missing one is logged once and not tried again.
+    // A game resource we use (a scene, texture or font; ours too, as they use the game's), or null if a game update
+    // moved or broke it. Never throws; each missing one is logged once and not tried again.
     public static T? Load<T>(string path) where T : Resource
     {
         if (Missing.Contains(path))
@@ -130,10 +139,9 @@ public static class ModEntry
         return null;
     }
 
-    // One of the game's fonts, or Godot's own if it's gone, so text still shows and can be measured. In a language the
-    // game draws in its own font (Chinese, Japanese, Korean, Thai, Russian, Polish), Kreon gives way to that font, as
-    // on the game's labels: Kreon has none of their letters. Like the game's labels, a whole label takes the
-    // language's regular font even for Kreon bold; only rich text's bold_font (richBold) takes its bold one.
+    // One of the game's fonts, or Godot's own if it's gone. In languages the game draws in its own font (Chinese,
+    // Japanese, Korean, Thai, Russian, Polish), Kreon gives way to that font as on the game's labels; only rich text's
+    // bold (richBold) takes its bold one.
     public static Font Font(string path, bool richBold = false) => LanguageFont(path, richBold) ?? Load<Font>(path) ?? ThemeDB.FallbackFont;
 
     static bool _noLanguageFonts;
@@ -167,14 +175,14 @@ public static class ModEntry
             Log.Warn($"[{ModId}] Missing or broken game resource, a plain stand-in is used (logged once): {what}");
     }
 
-    // Set by tools/dev.cs for its sandboxed runs, so they can't be mistaken for the real game. Never in the
-    // Workshop build (no DEVTOOLS): there the dev switches, SPIRE_MOD_MANAGER_SKIP_PATCHES included, do nothing.
+    // Set by tools/dev.cs for its sandboxed runs. The Workshop build (no DEVTOOLS) has no dev switches.
 #if DEVTOOLS
     public static bool IsDevRun { get; } = System.Environment.GetEnvironmentVariable("SPIRE_MOD_MANAGER_DEV") == "1";
 #else
     public static bool IsDevRun => false;
 #endif
 
+#if DEVTOOLS
     // "[DEV]" in the window title (taskbar, Alt+Tab) and a small tag at the top of the screen.
     public static void MarkDevRun(SceneTree tree)
     {
@@ -198,21 +206,25 @@ public static class ModEntry
         tag.OffsetTop = 4;
         tree.Root.AddChild(layer);
     }
+#endif
 
-    // Set by the self-test: Relaunch calls it instead, so the way to a relaunch can be tested without ending the
-    // test run.
+#if DEVTOOLS
+    // Self-test: Relaunch calls it instead, so the test run doesn't end.
     public static Action? TestRelaunch;
+#endif
 
     // Starts a new copy of the game with the same arguments, then quits through the game's own path
     // so settings (mod toggles) and profile data are saved first. The new process inherits Steam's
     // environment (SteamAppId), so it attaches to the running Steam client without a Steam relaunch.
     public static void Relaunch()
     {
+#if DEVTOOLS
         if (TestRelaunch is { } test)
         {
             test();
             return;
         }
+#endif
         var args = RelaunchArgs();
         Log.Info($"[{ModId}] Relaunching with args: {string.Join(' ', args)}");
         OS.SetRestartOnExit(true, args);
@@ -262,10 +274,12 @@ public static class ModEntry
     // since launch that are on.
     public static bool HasPendingChanges()
     {
-        var settings = SaveManager.Instance.SettingsSave.ModSettings;
-        return LoadOrder.OrderChanged || Installed.Mods.Any(Installed.On) || ModManager.Mods.Any(mod =>
+        if (LoadOrder.OrderChanged || Installed.Mods.Any(Installed.On))
+            return true;
+        var off = Dependencies.SavedOff();
+        return ModManager.Mods.Any(mod =>
         {
-            var disabled = settings?.IsModDisabled(mod) ?? false;
+            var disabled = off.Contains((mod.manifest?.id, mod.modSource));
             return (mod.state == ModLoadState.Disabled && !disabled) || (mod.state == ModLoadState.Loaded && disabled);
         });
     }

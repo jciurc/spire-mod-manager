@@ -2,19 +2,17 @@ using Godot;
 
 namespace SpireModManager;
 
-// The frame of our dialogs over the page (RelaunchCheck, ProfileShare): a layer over everything, dimming the page
-// and taking its clicks, with a panel in the middle. One at a time: opening one closes any other. It takes keyboard
-// focus from the page too, so Esc and typing reach the dialog, not a box behind it (the search box would take Esc to
-// clear itself, and the dialog would stay open). It closes when the page that opened it goes.
+// Our dialogs' frame (RelaunchCheck, ProfileShare): a dimming layer that takes the page's clicks, with a centred
+// panel. One open at a time; it takes keyboard focus so Esc reaches it, and it closes when its owner leaves.
 static class Modal
 {
     public static readonly Color Cream = new(1, 0.964706f, 0.886275f);
     public static readonly Color Gold = new(0.937f, 0.784f, 0.318f);
 
-    // The open dialogs' owners, so closing one stops listening for its owner leaving.
+    // Each open dialog's owner and its leave handler.
     static readonly Dictionary<string, (Node Owner, Callable Gone)> _owners = [];
 
-    // A dialog named name, width wide; returns the column to fill. Null if there's nowhere to show it.
+    // Opens a dialog and returns the column to fill, or null if there's nowhere to show it.
     public static VBoxContainer? Open(Node owner, string name, float width, int separation)
     {
         foreach (var open in _owners.Keys.ToList())

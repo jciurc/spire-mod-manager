@@ -94,9 +94,16 @@ static class SelfTest
             await TestTranslations(menu);
 
             var screen = menu.SubmenuStack.PushSubmenuType<NModdingScreen>();
+            // The page as first drawn, in the frame it opened. The stable game's scene holds a placeholder row (no mod),
+            // freed only at the frame's end; counting it made the list one mod longer until the next redraw.
+            var firstCount = screen.FindChild(PageBar.Name, true, false)?.GetNodeOrNull<Label>("Scope")?.Text;
+            var firstUncategorized = UncategorizedCount(screen.GetNode<Control>("%ModsScrollContainer/Mask/Content"));
             await Wait(menu, 2);
             var content = screen.GetNode<Control>("%ModsScrollContainer/Mask/Content");
             var rows = content.GetChildren().OfType<NModMenuRow>().ToList();
+            Check("the page's first draw counts only the installed mods (no placeholder row)",
+                firstCount == Menus.Format("SPIRE_MOD_MANAGER.PAGE_ALL", ("count", Menus.Number(ModManager.Mods.Count)))
+                && firstUncategorized == UncategorizedCount(content), $"{firstCount}; uncategorized {firstUncategorized} then {UncategorizedCount(content)}");
             Check("relaunch button", screen.GetNodeOrNull("SpireModManagerRelaunchButton") != null);
             TestNewModsAtLaunch(); // first: before anything switches profiles
             if (Bmm.Present) // dev.cs test --bmm
@@ -150,6 +157,9 @@ static class SelfTest
                 Check("vanilla view restores the game's layout", border.OffsetLeft == 255 && border.OffsetRight == 994
                     && border.GetNode<Control>("ModsScrollContainer").OffsetTop == 8
                     && !border.GetNode<Control>("SpireModManagerProfileBar").Visible, $"{border.OffsetLeft}..{border.OffsetRight}");
+            var (makeMods, getMods) = (border.GetNode<Control>("%MakeModsButton"), border.GetNode<Control>("%GetModsButton"));
+            Check("vanilla view: Make Mods and Get Mods as the game's own page has them (shown on the beta, hidden on stable)",
+                makeMods.Visible == (Compat.InfoClear != null) && getMods.Visible == makeMods.Visible, $"Make Mods {makeMods.Visible}, Get Mods {getMods.Visible}");
             await Capture(screen, outDir, "4-vanilla-view");
             Click(screen.GetNode<NButton>("SpireModManagerViewToggle"));
             await Wait(menu, 1);
@@ -207,7 +217,7 @@ static class SelfTest
         }
     }
 
-    // --real: Jordan's own mods (all off) and data. No edits; a tour of the views for screenshots and
+    // --real: your own mods (all off) and data. No edits; a tour of the views for screenshots and
     // timings, since this is the list size and naming the screen has to cope with.
     static async Task RunReal(NMainMenu menu, string outDir)
     {
@@ -224,6 +234,7 @@ static class SelfTest
                 $"mods with notes: {Store.Data.Mods.Values.Count(m => m.Notes != null)}");
 
             // A full redraw happens on every search keystroke and every edit: it has to stay quick.
+            CleanHeap();
             var timer = System.Diagnostics.Stopwatch.StartNew();
             for (var i = 0; i < 10; i++)
                 CategoryList.Apply(content);
@@ -231,6 +242,7 @@ static class SelfTest
             Check($"category view redraw {categoriesMs:0.0} ms", categoriesMs < 50);
             double Ms(Action action)
             {
+                CleanHeap();
                 var watch = System.Diagnostics.Stopwatch.StartNew();
                 for (var i = 0; i < 10; i++)
                     action();
@@ -265,6 +277,7 @@ static class SelfTest
 
             Click(screen.GetNode<NButton>("SpireModManagerLoadOrderToggle"));
             await Wait(menu, 1);
+            CleanHeap();
             timer.Restart();
             for (var i = 0; i < 10; i++)
                 CategoryList.Apply(content);
@@ -365,8 +378,22 @@ static class SelfTest
     // How long something takes through to the end of the frame it happens in: its own work, then what it leaves
     // for the frame's end (layout, text, nodes freed). From the start of a frame, where a click lands, to a timer
     // that fires once that frame's deferred work is done; the time between frames isn't counted.
+    // Before each timing: a full GC that comes due otherwise lands inside some runs' timing and not others' (one
+    // added 50-90 ms to a loop of ten redraws), so numbers from two builds wouldn't compare.
+    static void CleanHeap()
+    {
+        GC.Collect();
+        GC.WaitForPendingFinalizers();
+        GC.Collect();
+    }
+
+    // The Uncategorized header's count as drawn (the newest header: an older one may wait to be freed this frame).
+    static string? UncategorizedCount(Control content) => content.GetChildren().OfType<Control>()
+        .LastOrDefault(c => c.Name.ToString().Contains("Uncategorized") && !c.IsQueuedForDeletion())?.GetNodeOrNull<Label>("Count")?.Text;
+
     static async Task<double> FrameMs(Node node, Action action)
     {
+        CleanHeap();
         var tree = node.GetTree();
         await node.ToSignal(tree, SceneTree.SignalName.ProcessFrame);
         var watch = System.Diagnostics.Stopwatch.StartNew();
@@ -623,7 +650,7 @@ static class SelfTest
             && Store.InfoFor("SmmTestUi")?.Tags?.SequenceEqual(["since first run"]) == true, $"{was} -> {Summary()}");
     }
 
-    // Regressions from Jordan's 2026-10-07 notes: clicks outside the list, list height after collapsing,
+    // Regressions: clicks outside the list, list height after collapsing,
     // focus on empty clicks, inline buttons centred in their strip.
     static async Task TestListFixes(Node menu, NModdingScreen screen, Control content)
     {
@@ -641,6 +668,20 @@ static class SelfTest
             $"{content.Size.X} of {content.GetParent<Control>().Size.X}");
         Check("collapsing everything shrinks the list", content.Size.Y < open && Math.Abs(content.Size.Y - content.GetCombinedMinimumSize().Y) < 1,
             $"{open} -> {content.Size.Y} (min {content.GetCombinedMinimumSize().Y})");
+        // Rows folded at launch were never laid out: no width yet. A redraw then, and a category opened by its header,
+        // must still show its mods' names (#151: they were cut to fit no width, and the header only shows the rows).
+        foreach (var row in content.GetChildren().OfType<NModMenuRow>())
+            row.Size = new Vector2(0, row.Size.Y);
+        CategoryList.Apply(content);
+        await Wait(menu, 0.3);
+        var folded = content.GetChildren().OfType<Control>().First(c => c.IsInGroup("SpireModManagerCategoryHeader") && c.Name.ToString().StartsWith("Category "));
+        folded.EmitSignal(Control.SignalName.GuiInput, new InputEventMouseButton { ButtonIndex = MouseButton.Left, Pressed = true });
+        folded.EmitSignal(Control.SignalName.GuiInput, new InputEventMouseButton { ButtonIndex = MouseButton.Left, Pressed = false });
+        await Wait(menu, 0.3);
+        var opened = content.GetChildren().OfType<NModMenuRow>().Where(r => r.Visible).ToList();
+        string Shown(NModMenuRow row) => row.GetNode<RichTextLabel>("Title").GetParsedText().Trim();
+        Check("a category folded since launch shows its mods' names when opened", opened.Count > 0 && opened.All(r => Shown(r).Length > 0),
+            $"{folded.Name}: {string.Join(" | ", opened.Select(r => $"{r.Mod?.manifest?.id}=\"{Shown(r)}\""))}");
         for (var i = 0; i < collapsed.Count; i++)
             Store.Data.Categories[i].Collapsed = collapsed[i];
         Store.Data.UncategorizedCollapsed = uncategorized;
@@ -752,13 +793,22 @@ static class SelfTest
                 && !Shown(border.GetNodeOrNull(LoadOrder.ManagersName)) && mask.ClipContents
                 && content.GetChildren().OfType<NModMenuRow>().All(r => !Shown(r.GetNode("PlatformIcon"))));
             Check("its page: the same mod still selected", CategoryList.Selected == row.Mod && RowState.Selected(row));
+            var get = border.GetNode<Control>("%GetModsButton");
+            Check("its page: Make Mods and Get Mods as the game's own page has them (shown on the beta, hidden on stable)",
+                make.Visible == (Compat.InfoClear != null) && get.Visible == make.Visible, $"Make Mods {make.Visible}, Get Mods {get.Visible}");
             if (chrome != null)
             {
                 Rect2 Rect(string name) => screen.FindChild(name, true, false) is Control c ? c.GetGlobalRect() : new Rect2();
                 var (top, groups, search, list) = (Rect("BetterModMenuTopBar"), Rect("BetterModMenuGroupBar"), Rect("BetterModMenuSearchBar"), scroll.GetGlobalRect());
                 var title = border.GetNode<Control>("%InstalledModsTitle").GetGlobalRect();
-                Check("its page: its bars, row controls and panel buttons show", Shown(chrome) && RowControls().Any(Shown)
-                    && Shown(info.GetNodeOrNull("BetterModMenuSelectedModActions")));
+                // On the stable branch Better Mod Menu 1.1.1 makes no row controls at all, with or without us: its row
+                // postfix was built against the beta, where ModManifest is a record with ==, and stable's has none
+                // (MissingMethodException as it compiles). So none there is its own, not a row of ours hiding them.
+                var stableWithoutRowControls = Compat.InfoClear == null && RowControls().Count == 0;
+                Check("its page: its bars, row controls and panel buttons show", Shown(chrome) && (RowControls().Any(Shown) || stableWithoutRowControls)
+                    && Shown(info.GetNodeOrNull("BetterModMenuSelectedModActions")),
+                    $"bars {Shown(chrome)}, row controls {RowControls().Count(Shown)} of {RowControls().Count}, panel buttons "
+                    + (info.GetNodeOrNull("BetterModMenuSelectedModActions") is { } actions ? $"shown {Shown(actions)}" : "none"));
                 // (Its own sizes on this game version: the group bar is taller than the room it keeps for it, and the
                 // search bar can end past the panel. Reported, not checked: the same without us.)
                 Check("its page: its top bar clear of the title, its group bar above the list, its search below, the list in its panel",
@@ -865,7 +915,7 @@ static class SelfTest
         Store.Data.MenuButtonAt = saved;
         MenuButton.Place(button);
         var noteHere = note?.GetGlobalRect() ?? default;
-        // The "Relaunch to apply" note (shown or not): centred above the button, on screen (Jordan, 2026-10-14).
+        // The "Relaunch to apply" note (shown or not): centred above the button, on screen.
         bool Above(Rect2 noteAt, Rect2 buttonAt) => noteAt.End.Y <= buttonAt.Position.Y + 1 && Math.Abs(noteAt.GetCenter().X - buttonAt.GetCenter().X) < 1;
         Check("main menu button: a saved place past the screen's corner keeps it whole on screen, its note centred above it",
             screen.Encloses(corner) && corner.End.DistanceTo(screen.End) < 1 && note != null && screen.Encloses(noteThere) && Above(noteThere, corner),
@@ -893,7 +943,7 @@ static class SelfTest
     }
 
     // Our main menu button opens the page on our view even when Vanilla View was the last one shown; the game's way in
-    // (from its Settings) keeps the last view (Jordan, 2026-10-15). The page closed for real, then opened each way: the
+    // (from its Settings) keeps the last view. The page closed for real, then opened each way: the
     // game reuses the page, so this is the page shown again (on its first opening, ours was read as it was made).
     static async Task TestMenuButtonOpensOurs(NMainMenu menu, NModdingScreen screen)
     {
@@ -1213,7 +1263,7 @@ static class SelfTest
             Check("a working setup that can't be saved: the record still goes, the old setup stays", false, e.Message);
         }
         Directory.Delete(workingFile + ".tmp");
-        // A record that can't be deleted at the menu (Copilot, #65): the working setup is still saved, and the next launch
+        // A record that can't be deleted at the menu (#65): the working setup is still saved, and the next launch
         // takes the record, now older than that setup, as none.
         LaunchGuard.Begin(dir, new(now.AddMinutes(18), tried));
         List<LaunchGuard.Change>? locked = null;
@@ -1336,7 +1386,7 @@ static class SelfTest
             Check("Open translations folder: made in the data folder and opened, the menu closed", !before && opened == folder && Directory.Exists(folder)
                 && folder.Replace('\\', '/').EndsWith($"/mod_data/{ModEntry.ModId}/translations") && !MenuPanel.IsOpen,
                 $"opened {opened ?? "nothing"}; {folder} there before: {before}");
-            // The example (Jordan, 2026-10-15): how-to lines, then every English text of ours, under a name no language has.
+            // The example: how-to lines, then every English text of ours, under a name no language has.
             var example = Path.Combine(folder, Translations.ExampleFile);
             var text = File.Exists(example) ? File.ReadAllText(example) : "";
             Dictionary<string, string>? pairs = null;
@@ -1390,7 +1440,7 @@ static class SelfTest
             Broken = "SPIRE_MOD_MANAGER.MOVE_BUTTON", Empty = "SPIRE_MOD_MANAGER.MOVE_HINT";
         const string NotOurs = Translated + "X"; // a key mistyped
         const string Renamed = "SPIRE_MOD_MANAGER.PAGE_DISABLED", Added = "SPIRE_MOD_MANAGER.OPEN_TRANSLATIONS";
-        const string Counted = "SPIRE_MOD_MANAGER.PAGE_ALL", NotText = "SPIRE_MOD_MANAGER.RELAUNCH_NOTE";
+        const string Counted = "SPIRE_MOD_MANAGER.PAGE_ALL", NotText = "SPIRE_MOD_MANAGER.NEEDS_UPDATE";
         const string OnButton = "SPIRE_MOD_MANAGER.MAIN_MENU_PROFILE", OnButtonOne = "SPIRE_MOD_MANAGER.MAIN_MENU_PROFILE_ONE";
         const string German = "Spiel neu starten (Änderungen, 模组)"; // not ASCII: read as UTF-8, with a byte order mark
         string[] keys = [Translated, LeftOut, Broken, Empty];
@@ -1555,6 +1605,23 @@ static class SelfTest
             """));
         Check("Better Mod Menu import: its old format (a bare list of profiles) gives those profiles, no categories", legacy
             == "profiles Old favourites (off: ModD); Profile 2 (off: none) / active none / categories none / mods none", legacy);
+        // Better Mod Menu lets two profiles share a name; ours go by name, so the later one is numbered as a copy is, and
+        // the current index still finds it.
+        var twins = Summary(Import("""
+            {
+              "Profiles": [
+                { "Name": "Profile 3", "DisabledMods": ["ModA"] },
+                { "Name": "Profile 3", "DisabledMods": ["ModB"] },
+                { "Name": "Modded (1)", "DisabledMods": [] },
+                { "Name": "Modded (1)", "DisabledMods": [] }
+              ],
+              "CurrentProfileIndex": 1,
+              "CustomGroups": ["Tools", "Tools"]
+            }
+            """));
+        Check("Better Mod Menu import: two profiles of one name stay two (the later numbered as a copy is), the current one still current; a group named twice once",
+            twins == "profiles Profile 3 (off: ModA); Profile 3 (1) (off: ModB); Modded (1) (off: none); Modded (2) (off: none) / active Profile 3 (1)"
+            + " / categories Tools / mods none", twins);
         var broken = new[] { """{ "Profiles": [ { "Name": "Cut off" """, "\"Profiles\"", "{ Profiles: [] }" }.Select(text => Summary(Import(text))).ToList();
         Check("Better Mod Menu import: a broken file is refused (cut off, not an object or list, unquoted names)", broken.All(s => s == "refused"),
             string.Join(" | ", broken));
@@ -1857,7 +1924,7 @@ static class SelfTest
             return true;
         });
         Check("the restart line: ours on the main list (also once shown) and in Load Order, the game's in Vanilla View, ours again after",
-            ours == "Mod changes will be applied after a restart." && game != ours && onList == ours && (shown == null || shown == ours)
+            ours == "Mod changes will be applied after a restart" && game != ours && onList == ours && (shown == null || shown == ours)
             && inLoadOrder == ours && inVanilla == game && line.Text == ours,
             $"\"{onList}\" / shown \"{shown}\" / \"{inLoadOrder}\" / \"{inVanilla}\" / \"{line.Text}\"");
     }
@@ -2034,7 +2101,7 @@ static class SelfTest
         Check("CSV: a Workshop link is rebuilt from its id; anything else is dropped",
             ProfileCsv.CleanLink("https://steamcommunity.com/sharedfiles/filedetails/?id=3123456789&searchtext=") == "https://steamcommunity.com/sharedfiles/filedetails/?id=3123456789"
             && ProfileCsv.CleanLink("https://example.com/?x=1") == "" && ProfileCsv.IsWorkshopLink(ProfileCsv.WorkshopLink(42)) && !ProfileCsv.IsWorkshopLink("https://example.com"));
-        // The Workshop column is just the id (Jordan, 2026-10-15), read back as the item's link; the optional columns.
+        // The Workshop column is just the id, read back as the item's link; the optional columns.
         var withId = ProfileCsv.Write([new ProfileCsv.Row("SmmWorkshop", "From the Workshop", "1.0", true, "", "3123456789")], new());
         var odd = ProfileCsv.Read("Mod Id,Enabled,Workshop Id\nSmmA,TRUE,not a link\nSmmB,TRUE,https://steamcommunity.com/sharedfiles/filedetails/?id=42&x=1\n").Mods;
         Check("CSV: a Workshop Id that's neither an id nor a link is dropped; a link there is rebuilt from its id",
@@ -2046,7 +2113,7 @@ static class SelfTest
             && ProfileCsv.Header(new(Category: false, Alias: true, Notes: true)).SequenceEqual(["Mod Id", "Name", "Version", "Enabled", "Workshop Id", "Alias", "Notes"]),
             string.Join(",", ProfileCsv.Header(new(Category: false, Alias: true, Notes: true))));
 
-        // Share profile, from the profile list (Jordan, 2026-10-15): at first the active profile's enabled mods in load
+        // Share profile, from the profile list: at first the active profile's enabled mods in load
         // order with their category, no alias or notes; the tick boxes add the mods that are off, aliases and notes, or
         // take the category out.
         await Choose("Export profile");
@@ -2075,6 +2142,13 @@ static class SelfTest
             && Part<Button>("RememberChoices")?.GetGlobalRect().Position.X > Part<Button>("IncludeNotes")?.GetGlobalRect().End.X, string.Join(", ", tops));
         Check("its tick boxes: Include category on; disabled, alias and notes off",
             Ticked("IncludeCategory") && !Ticked("IncludeDisabled") && !Ticked("IncludeAlias") && !Ticked("IncludeNotes"));
+        Check("its tick boxes as heavy as their words: a thicker rim, the ✓ outlined in its own gold and raised off the bottom rim",
+            Part<Button>("IncludeCategory")?.GetNodeOrNull<Panel>("Box") is { } tickBox
+            && tickBox.GetThemeStylebox("panel") is StyleBoxFlat rim
+            && new[] { rim.BorderWidthTop, rim.BorderWidthBottom, rim.BorderWidthLeft, rim.BorderWidthRight }.All(w => w == ProfileShare.BoxRim)
+            && tickBox.GetNodeOrNull<Label>("Tick") is { } tickMark && tickMark.GetThemeConstant("outline_size") == ProfileShare.TickOutline
+            && tickMark.GetThemeColor("font_outline_color") == tickMark.GetThemeColor("font_color")
+            && tickMark.OffsetTop == -ProfileShare.TickRaise && tickMark.OffsetBottom == -ProfileShare.TickRaise);
         var (alias, notes) = (Store.InfoFor(ModEntry.ModId)?.Alias ?? "", Store.InfoFor(ModEntry.ModId)?.Notes ?? "");
         Check("Category is the category; no alias or notes", records.FirstOrDefault(r => r[0] == ModEntry.ModId)?[4] == "Tools" && alias.Length > 0 && notes.Length > 0
             && !csv.Contains(alias) && !csv.Contains(notes) && records.All(r => r.Count == 6), csv);
@@ -2097,7 +2171,7 @@ static class SelfTest
             && ids.Take(order.Count).SequenceEqual(order) && records.Skip(1).All(r => r[3] == (IsOn(r[0]) ? "TRUE" : "FALSE")) && ids.Contains("SmmTestRetired")
             && records.Any(r => r[3] == "FALSE") && records.FirstOrDefault()?.SequenceEqual(ProfileCsv.Header(new())) == true,
             string.Join(", ", records.Skip(1).Select(r => $"{r[0]}={r[3]}")));
-        var clipboard = DisplayServer.ClipboardGet(); // put back after: a windowed run is on Jordan's desktop
+        var clipboard = DisplayServer.ClipboardGet(); // put back after: a windowed run is on your desktop
         Press("CopyButton");
         await Wait(menu, 0.1);
         Check("Copy says Copied!", Part<Button>("CopyButton")?.Text == "Copied!", Part<Button>("CopyButton")?.Text ?? "no button");
@@ -2111,7 +2185,7 @@ static class SelfTest
                 $"{copied.Length} characters copied, {csv.Length} in the box: {copied[..Math.Min(80, copied.Length)].Replace("\r", "\\r").Replace("\n", "\\n")}");
         }
         DisplayServer.ClipboardSet(clipboard);
-        // Save, then Copy (Jordan, 2026-10-15), no "…" on Save.
+        // Save, then Copy, no "…" on Save.
         var buttonOrder = Part<Control>("Buttons")?.GetChildren().OfType<Button>().Select(b => b.Name.ToString()).ToList() ?? [];
         Check("Save comes before Copy, and reads \"Save file\"", buttonOrder.IndexOf("SaveCsvButton") is >= 0 and var save && save < buttonOrder.IndexOf("CopyButton")
             && Part<Button>("SaveCsvButton")?.Text == "Save file", string.Join(", ", buttonOrder));
@@ -2127,7 +2201,7 @@ static class SelfTest
             && Profiles.ImportName($"C:/lists/{ProfileShare.FileName("Brother co-op", at)}") == "Brother co-op",
             $"{ProfileShare.FileName("CON", at)} | {Profiles.ImportName($"C:/lists/{ProfileShare.FileName("Brother co-op", at)}")}");
         await Tick("IncludeDisabled", false); // the tick boxes stay for the session: back as they started
-        // Remember selection (Jordan, 2026-10-15): off at first, nothing kept; on, the boxes are kept in our data and a new
+        // Remember selection: off at first, nothing kept; on, the boxes are kept in our data and a new
         // launch starts on them; a tick while on is kept too; off, they're forgotten and a launch starts on the defaults.
         var keptBefore = Store.Data.ShareChoices;
         var remember = Part<Button>("RememberChoices");
@@ -2196,7 +2270,7 @@ static class SelfTest
         await Choose("Import profile");
         await Paste(bmm);
         var bbcode = Part<RichTextLabel>("Preview")?.Text ?? "";
-        // The summary (Jordan, 2026-10-15): what the list holds, then only what changes compared with now (no line for the mods
+        // The summary: what the list holds, then only what changes compared with now (no line for the mods
         // already as listed, nor for the ones it doesn't name).
         string Changes(int on, int off) => on == 0 && off == 0 ? "None"
             : string.Join("\n", new[] { on > 0 ? $"Mods enabled {on}" : null, off > 0 ? $"Mods disabled {off}" : null }.OfType<string>().Select(l => "  •  " + l));
@@ -2209,9 +2283,13 @@ static class SelfTest
         var onlyOn = ProfileShare.PreviewFor(ProfileCsv.Read("Mod Id,Enabled\nSmmTestLib,\nSmmTestUi,TRUE\n").Mods, "Only on");
         Check("a list with nothing disabled says just its enabled mods; a blank Enabled reads as enabled", onlyOn.Contains("Contains 2 enabled mods")
             && !onlyOn.Contains("disabled mods"), onlyOn);
-        var cutShort = ProfileCsv.Read("Mod Id,Name,Enabled\nSmmTestUi,Test UI\n").Error ?? "";
-        Check("a row cut short, with no Enabled at all, is still an error", cutShort.StartsWith("Enabled value for SmmTestUi"), cutShort);
-        // The name itself is the link to its Workshop page (Jordan, 2026-10-15); one with no page is plain.
+        // A row that ends before its Enabled cell reads as a blank one: enabled (#95: it was refused, with an error
+        // that said blank was fine).
+        var cutShort = ProfileCsv.Read("Mod Id,Name,Enabled\nSmmTestUi,Test UI\nSmmTestLib,Test Framework,FALSE\n");
+        Check("a row cut short before its Enabled cell reads as enabled, like a blank one",
+            cutShort.Error == null && cutShort.Mods.SequenceEqual([new ProfileCsv.Entry("SmmTestUi", true, "Test UI", ""), new ProfileCsv.Entry("SmmTestLib", false, "Test Framework", "")]),
+            cutShort.Error ?? string.Join(", ", cutShort.Mods));
+        // The name itself is the link to its Workshop page; one with no page is plain.
         var linkAt = bbcode.IndexOf($"[url={link}]", StringComparison.Ordinal);
         var nameAt = linkAt < 0 ? -1 : bbcode.IndexOf("Not Here Mod", linkAt, StringComparison.Ordinal);
         Check("the mods it names that aren't installed are listed by name, a name with a Workshop page its link to it", plan.Missing.Count == 2
@@ -2295,7 +2373,7 @@ static class SelfTest
             && Store.Data.Profiles.Count == profiles && ModListState().SequenceEqual(startStates));
     }
 
-    // New mods and profiles (Jordan, 2026-10-13). The fixture's Default profile doesn't list the test mods, which
+    // New mods and profiles. The fixture's Default profile doesn't list the test mods, which
     // are on (the game's default for a new mod): they joined it at launch, on, quietly (no unsaved edit, and so
     // already in the state the session started from, which Changes and Revert all compare with).
     static void TestNewModsAtLaunch()
@@ -2366,7 +2444,7 @@ static class SelfTest
             && RowTitle(ModEntry.ModId).Contains("Spire Mod Manager") && ours.GetNodeOrNull<Control>("SpireModManagerEditedMark") is { Visible: true },
             RowTitle(ModEntry.ModId));
         Check("no alias pencil on rows", !ours.HasNode("SpireModManagerPencil"));
-        // The notepad marks notes: an alias alone (it shows beside the original name already) puts none (Jordan, 2026-10-14).
+        // The notepad marks notes: an alias alone (it shows beside the original name already) puts none.
         if (Row("SmmTestContent") is { } aliasOnly && Store.InfoFor("SmmTestContent")?.Notes == null)
         {
             var aliasBefore = Store.InfoFor("SmmTestContent")?.Alias;
@@ -2438,6 +2516,20 @@ static class SelfTest
         Check("panel saves tags, repeats dropped; at rest they're pills", Store.InfoFor("SmmTestFixes")?.Tags?.SequenceEqual(["co-op", "Favorites"]) == true
             && yours.GetNode<Control>("Tags/CustomTags") is { Visible: true } && yours.GetNode("Tags/CustomTags/Pills").GetChildCount() == 2,
             string.Join(", ", Store.InfoFor("SmmTestFixes")?.Tags ?? []));
+        // A click on the pills opens the box ready for another tag: ", " after them and the caret after that (it was at
+        // the start), so the suggestions don't take the last tag for the word being typed.
+        // Clicking away leaves the tags as they were.
+        yours.GetNode<Control>("Tags/CustomTags").EmitSignal(Control.SignalName.GuiInput, new InputEventMouseButton { ButtonIndex = MouseButton.Left, Pressed = false });
+        await Wait(menu, 0.1);
+        Check("a click on the tag pills opens the box ready for another tag", tags.Visible && tags.HasFocus() && tags.Text == "co-op, Favorites, " && tags.CaretColumn == tags.Text.Length
+            && !TagSuggestions.Labels().Any(t => t.Contains("Favorites", StringComparison.OrdinalIgnoreCase)),
+            $"\"{tags.Text}\" caret {tags.CaretColumn}, focus {tags.HasFocus()}, offered {string.Join(", ", TagSuggestions.Labels())}");
+        await Capture(screen, outDir, "9a-tags-editing");
+        tags.ReleaseFocus();
+        await Wait(menu, 0.3);
+        Check("clicking away after that keeps the tags as pills", Store.InfoFor("SmmTestFixes")?.Tags?.SequenceEqual(["co-op", "Favorites"]) == true
+            && tags.Text == "co-op, Favorites" && yours.GetNode<Control>("Tags/CustomTags").Visible && !tags.Visible,
+            $"\"{tags.Text}\" / {string.Join(", ", Store.InfoFor("SmmTestFixes")?.Tags ?? [])}");
         await Capture(screen, outDir, "9-notes-editing");
 
         // Fields sit right under the details; Cancel puts the text back; the alias field shows on the row.
@@ -2496,7 +2588,7 @@ static class SelfTest
         Check("within the grace period, the next title's card shows at once", CardShown() && CardText().StartsWith(ModEntry.ModId), CardText());
         await Leave(oursHot, 0.3);
         // The notepad: a plain "Contains note" after the usual delay, not the mod's card (that's the title's), and no
-        // grace either way (Jordan, 2026-10-14).
+        // grace either way.
         bool TipShown() => screen.HasNode(RowTitles.NoteTipName);
         string TipText() => screen.GetNodeOrNull(RowTitles.NoteTipName)?.FindChildren("*", "RichTextLabel", true, false).OfType<RichTextLabel>()
             .FirstOrDefault()?.GetParsedText() ?? "";
@@ -2733,6 +2825,7 @@ static class SelfTest
         }
         static double Ms(Action action)
         {
+            CleanHeap();
             var watch = System.Diagnostics.Stopwatch.StartNew();
             for (var i = 0; i < 10; i++)
                 action();
@@ -2755,7 +2848,7 @@ static class SelfTest
             $"{listMs:0.0} / {keyMs:0.0} / {orderMs:0.0} ms");
     }
 
-    // Three hundred made-up mods (Jordan has about 250), no screen: what a redraw asks about every row (tags, "Needs",
+    // Three hundred made-up mods (a big list is about 250), no screen: what a redraw asks about every row (tags, "Needs",
     // "Required for", searches) and the page's warnings, answered as a redraw does (Lookups) and timed, then each
     // answer checked against the slow way (the saved list searched every time). Every seventh mod is off, every
     // tenth is a library the next ones need, every 25th also needs one that isn't installed, and one library has
@@ -2838,7 +2931,7 @@ static class SelfTest
             wrong.Count == 0 && Lookups.Current == null, $"{wrong.Count} differ: {string.Join(" | ", wrong.Take(3))}");
     }
 
-    // Load Order's search finds rather than filters (Jordan, 2026-10-14): every row stays; beside the box, "N matches · ‹ ›"
+    // Load Order's search finds rather than filters: every row stays; beside the box, "N matches · ‹ ›"
     // steps through the matching rows (each selected and scrolled to), wrapping at the ends; typing goes to the first;
     // Enter and Shift+Enter step too; no search, no bar.
     static async Task TestLoadOrderFind(Node menu, NModdingScreen screen, Control content, string outDir)
@@ -2880,7 +2973,7 @@ static class SelfTest
             $"{found.Count} found, count \"{Count()}\", at {At(found)}, rows shown {Rows().Count(r => r.Visible)}/{Rows().Count}");
         Check("the arrows say where they go", Hover.TipOf(Bar()!.GetNode<Button>("PreviousMatch")) == "Go to previous found match"
             && Hover.TipOf(Bar()!.GetNode<Button>("NextMatch")) == "Go to next found match");
-        // The rows it doesn't match fade below even a match that's off; a match keeps its usual look (Jordan, 2026-10-15).
+        // The rows it doesn't match fade below even a match that's off; a match keeps its usual look.
         float Expected(NModMenuRow r, bool finding) => (!finding || found.Contains(r), Dependencies.IsOn(r.Mod!)) switch
         {
             (true, true) => 1, (true, false) => LoadOrder.OffAlpha, (false, true) => LoadOrder.UnmatchedAlpha, _ => LoadOrder.UnmatchedOffAlpha,
@@ -3286,7 +3379,7 @@ static class SelfTest
         Check("main list banner: Show and Enable required mods right after its text", after.Ok
             && warning?.FindChild("EnableNeededButton", true, false) is Control { Visible: true }, after.Detail);
         await Capture(screen, outDir, "2b-list-banner");
-        // Its Show steps through both sides (Jordan, 2026-10-15): the mods that won't load and the disabled one they need.
+        // Its Show steps through both sides: the mods that won't load and the disabled one they need.
         if (Row(ModEntry.ModId) is { } notAbout)
             CategoryList.Select(screen, notAbout);
         var stepped = new List<string>();
@@ -3392,7 +3485,7 @@ static class SelfTest
     // goes to its row and a Dismiss that hides it until the two aren't both ticked. It comes and goes with its tickbox at
     // once (no relaunch). The fixture has it installed but off; with --bmm it's on and loaded, so the banner is there from
     // the start. It ends as it started.
-    // This mod among the others (Jordan, 2026-10-15): the counts count it; a Disable all that covers it says it stays on;
+    // This mod among the others: the counts count it; a Disable all that covers it says it stays on;
     // and unticked on its own row, a red banner above everything says it (and this page) goes at the relaunch, with Show
     // (its row) and Enable now. Enable now, and undo, take the banner away.
     static async Task TestSelfIncluded(Node menu, NModdingScreen screen, Control content, string outDir)
@@ -3412,6 +3505,32 @@ static class SelfTest
         Check("the counts count this mod: the profile bar's, the main menu button's and Mods enabled's", Dependencies.IsOn(self)
             && Profiles.OnCount() == on && Profiles.ModCount(Profiles.Active!) == Profiles.CountText() && Summary().StartsWith($"Mods enabled {Menus.Number(on)} "),
             $"{on} on: profile {Profiles.OnCount()}, summary \"{Summary().Split('\n')[0]}\"");
+        // Installed twice (a Workshop copy beside this local one): both on, as the game loads one, the newer, and the
+        // counts name it once (#96: they counted each copy).
+        var copy = new Mod
+        {
+            path = "", modSource = ModSource.SteamWorkshop, state = ModLoadState.AddedAtRuntime,
+            manifest = new ModManifest { id = ModEntry.ModId, name = "Spire Mod Manager", version = "0.1.0" },
+        };
+        GameInstalls(copy);
+        await Wait(menu, 0.4);
+        NModalContainer.Instance?.Clear();
+        CategoryList.Redraw(content);
+        await Wait(menu, 0.2);
+        Check("installed twice: both copies on, every count names it once", Dependencies.IsOn(copy) && Profiles.OnCount() == on
+            && Profiles.ModCount(Profiles.Active!) == Profiles.CountText() && Summary().StartsWith($"Mods enabled {Menus.Number(on)} "),
+            $"copy on {Dependencies.IsOn(copy)}; {on} on before: profile {Profiles.OnCount()}, summary \"{Summary().Split('\n')[0]}\"");
+        // Gone again, its row too (the game made one as it announced it; a later search would find it).
+        if (content.GetChildren().OfType<NModMenuRow>().FirstOrDefault(r => r.Mod == copy) is { } copyRow)
+        {
+            content.RemoveChild(copyRow);
+            copyRow.QueueFree();
+        }
+        GameForgets(copy);
+        SaveManager.Instance.SettingsSave.ModSettings?.ModList.RemoveAll(e => e.Id == ModEntry.ModId && e.Source == ModSource.SteamWorkshop);
+        Profiles.Track();
+        CategoryList.Redraw(content);
+        await Wait(menu, 0.2);
 
         // Disable all, where this mod is among the rows it covers: the page bar's and its category's say it stays on.
         var pageDisable = border.FindChild(PageBar.Name, true, false)?.FindChildren("*", "Button", true, false).OfType<Button>()
@@ -3558,7 +3677,7 @@ static class SelfTest
         Check("its Show opens Better Mod Menu's category, scrolls to its row with a glow and shows it in the panel",
             hidden && row.Visible && list.GetGlobalRect().Intersects(row.GetGlobalRect()) && Glows() > glows && CategoryList.Selected == bmm,
             $"hidden before {hidden}, shown {row.Visible}, row {row.GetGlobalRect()}, list {list.GetGlobalRect()}, glows {glows} -> {Glows()}, panel {CategoryList.Selected?.manifest?.id}");
-        // Pressed again: this mod's row, the other manager (Jordan, 2026-10-15), then back to Better Mod Menu.
+        // Pressed again: this mod's row, the other manager, then back to Better Mod Menu.
         Banner()?.FindChild("ShowManagersButton", true, false)?.EmitSignal(BaseButton.SignalName.Pressed);
         await Wait(menu, 0.5);
         var secondStop = CategoryList.Selected?.manifest?.id;
@@ -3742,7 +3861,7 @@ static class SelfTest
         Check("page bar on the main list", Bar() is { Visible: true } bar && bar.FindChild("Scope", true, false) is Label { Text: var all } && all.StartsWith("Mods installed"));
         await Capture(screen, outDir, "2d-page-bar");
         // What each filter shows: our hover card (not the engine's tooltip), only as wide as its words. And no engine
-        // tooltip on anything of ours: every description we write is the same card (Jordan, 2026-10-14). Other mods'
+        // tooltip on anything of ours: every description we write is the same card. Other mods'
         // controls on the page (Better Mod Menu's row buttons) keep theirs. tools/check.cs guards the source too.
         if (Bar()?.FindChild("ShowAllButton", true, false) is Button allButton)
         {
@@ -3811,7 +3930,8 @@ static class SelfTest
             Check("hovering a mod's name in the panel lights its row (visibly), and lets go", lit.A * litFill > 0.05f && look.Modulate == before, $"{before} -> {lit} x {litFill} -> {look.Modulate}");
             description.EmitSignal(RichTextLabel.SignalName.MetaClicked, "mod:SmmTestUi");
             await Wait(menu, 0.3);
-            Check("clicking it gives the row the selected look; the panel stays", uiRow.HasFocus() && CategoryList.Selected?.manifest?.id == "SmmTestLib");
+            Check("clicking it gives the row the selected look; the panel stays", uiRow.HasFocus() && CategoryList.Selected?.manifest?.id == "SmmTestLib",
+                $"focus {uiRow.HasFocus()} (focused: {screen.GetViewport().GuiGetFocusOwner()?.Name}), selected {CategoryList.Selected?.manifest?.id}");
         }
     }
 
@@ -4225,7 +4345,7 @@ static class SelfTest
         });
         Check("a mod needing several of a kind: one line naming them all, in the plural",
             several.SequenceEqual(["Requires mods to be installed: SmmGoneA, SmmGoneB", "Requires mod to be enabled: Test Framework"]), string.Join(" | ", several));
-        // Cancel first, at the row's left; the fixes and Relaunch anyway at its right (Jordan, 2026-10-14).
+        // Cancel first, at the row's left; the fixes and Relaunch anyway at its right.
         var row = Dialog()?.FindChild("Buttons", true, false) as Control;
         var rowButtons = row?.GetChildren().OfType<Button>().ToList() ?? [];
         Check("its Cancel comes first, at the left, the fixes and Relaunch anyway at the right",
@@ -4445,7 +4565,7 @@ static class SelfTest
         SaveManager.Instance.SettingsSave.ModSettings?.ModList.RemoveAll(e => e.Id == id);
         History.Record();
         CategoryList.Redraw(content);
-        screen.GetNode<NModInfoContainer>("%ModInfoContainer").Clear();
+        Compat.Clear(screen.GetNode<NModInfoContainer>("%ModInfoContainer"));
         await Wait(menu, 0.3);
     }
 
@@ -4456,9 +4576,10 @@ static class SelfTest
     {
         var mod = new Mod
         {
-            path = "", modSource = ModSource.SteamWorkshop, workshopId = 42, state = ModLoadState.AddedAtRuntime,
+            path = "", modSource = ModSource.SteamWorkshop, state = ModLoadState.AddedAtRuntime,
             manifest = new ModManifest { id = "SmmWorkshopTest", name = "Workshop Test", author = "Someone Careful" },
         };
+        Compat.SetWorkshopId(mod, 42);
         Installed.Detected(mod); // so the panel can find it by id
         WorkshopInfo.TestSet(42, new WorkshopInfo.Details(DateTime.Now.AddDays(-30), DateTime.Now.AddDays(-4), [], [], 1_572_864, 1234)); // 1.5 MB
         var info = screen.GetNode<NModInfoContainer>("%ModInfoContainer");
@@ -4478,8 +4599,8 @@ static class SelfTest
         // Dates, sizes and counts follow the game's language: in English as they always read; in German, the game's
         // German date pattern and separators (our words stay English there, as we have no German text).
         var english = info.GetNode<RichTextLabel>("ModDescription").GetParsedText();
-        Check("in English: October 11, 2026; Size: 1.5 MB; Subscribers: 1,234", ModDetails.Date(new DateTime(2026, 10, 11)) == "October 11, 2026"
-            && english.Contains("Size: 1.5 MB") && english.Contains("Subscribers: 1,234"), english);
+        Check("in English: October 11, 2026; Size: 1.5 MB; Subscribers: 1,234; the profile list's Oct 11", ModDetails.Date(new DateTime(2026, 10, 11)) == "October 11, 2026"
+            && english.Contains("Size: 1.5 MB") && english.Contains("Subscribers: 1,234") && Profiles.ShortDate(new DateTime(2026, 10, 11)) == "Oct 11", english);
         var language = LocManager.Instance.Language;
         try
         {
@@ -4490,6 +4611,9 @@ static class SelfTest
                 && german.Contains("1,5 MB") && german.Contains("1.234"), $"{ModDetails.Date(new DateTime(2026, 10, 11))} / {german}");
             var longAgo = ModDetails.Ago(DateTime.Now.AddDays(-1234));
             Check("with the game in German, other counts too: (1.234 days ago)", longAgo.Contains("(1.234 days ago)"), longAgo);
+            // The profile list's date too, in the game's order and month (#98: it followed Windows' language).
+            Check("with the game in German, the profile list's date: 11. Okt.", Profiles.ShortDate(new DateTime(2026, 10, 11)) == "11. Okt.",
+                Profiles.ShortDate(new DateTime(2026, 10, 11)));
             // A date pattern that doesn't read (an unclosed quote; SetLanguage below reloads the tables without it):
             // all in English, not a German month in the English pattern.
             LocManager.Instance.GetTable("run_history").MergeWith(new() { ["INFO.DATE_FORMAT"] = "d 'MMMM" });
@@ -4501,7 +4625,7 @@ static class SelfTest
         }
         WorkshopInfo.TestSet(42, null);
         Installed.Forget(mod);
-        info.Clear();
+        Compat.Clear(info);
     }
 
     // Another mod's part in the info panel (Undo And Restart adds a settings panel at a fixed (0,318), over our
@@ -4611,7 +4735,7 @@ static class SelfTest
 
         info.RemoveChild(other);
         other.QueueFree();
-        info.Clear();
+        Compat.Clear(info);
     }
 
     // Several mods at once on the main list: Select all in Uncategorized, Ctrl-click one away; the bar counts
@@ -4649,7 +4773,7 @@ static class SelfTest
             && bulk.FindChild("Tags", true, false) != null && bulk.FindChild("Notes", true, false) != null && bulk.FindChild("Alias", true, false) == null);
         var info = bulk?.FindChild("Info", true, false) as TextureRect;
         // The heading and its i are one hover target, only as wide as the two; it and both terms open one card, at once
-        // (read 0.05 s after the mouse arrives): how tags and notes work for all of them (Jordan, 2026-10-14).
+        // (read 0.05 s after the mouse arrives): how tags and notes work for all of them.
         const double atOnce = 0.05;
         var group = bulk?.FindChild("Heading", true, false) as Control;
         var editingLabel = group?.GetNodeOrNull<Label>("Editing");
@@ -4697,8 +4821,8 @@ static class SelfTest
         MenuPanel.Close();
         Store.EditMod(picked[0], info => info.Tags = null);
 
-        // Notes that differ: a warning beside Notes counts the mods with notes, the ones typing would overwrite (Jordan,
-        // 2026-10-14); the same notes all round, no warning.
+        // Notes that differ: a warning beside Notes counts the mods with notes, the ones typing would overwrite; the
+        // same notes all round, no warning.
         var notesBefore = Store.InfoFor(picked[0])?.Notes;
         Label? Mixed(Node? bulkMenu) => bulkMenu?.FindChild("Mixed", true, false) as Label;
         var sameNotes = CategoryList.ShowBulkMenu(content);
@@ -4869,8 +4993,8 @@ static class SelfTest
             System.Text.RegularExpressions.Regex.IsMatch(twoLines, @"^Mods enabled \d+ \(\+\d+ -\d+\)\nChanges \d+  ↕\d+$"), twoLines);
         Hover.TestMouse = () => changes.GetGlobalRect().GetCenter();
         changes.EmitSignal(Control.SignalName.MouseEntered);
-        await Wait(menu, Hover.Delay + 0.15);
-        Check("hovering Changes shows the details", screen.HasNode("SpireModManagerChangesPanel"));
+        await Wait(menu, 0.1); // well under Hover.Delay: at once
+        Check("hovering Changes shows the details at once", screen.HasNode("SpireModManagerChangesPanel"));
         var summary = screen.GetNodeOrNull("SpireModManagerChangesPanel")?.FindChildren("*", "RichTextLabel", true, false).OfType<RichTextLabel>().FirstOrDefault()?.GetParsedText() ?? "";
         Check("the summary is titled and names the mod turned off", summary.StartsWith("Changes since launch") && summary.Contains("Test UI"), summary);
         await Capture(screen, outDir, "14-changes");
@@ -5008,6 +5132,13 @@ static class SelfTest
             var lines = HistoryBar.Describe();
             Check("a renamed profile shows as one renamed line", lines.Contains($"Renamed profile {was} → Renamed in test")
                 && !lines.Contains("Added profile Renamed in test") && !lines.Contains($"Deleted profile {was}"), string.Join(" | ", lines));
+            // Saved since, too: a new save time, the same profile (its id; #97: it read as added and deleted).
+            var savedAt = renamed.SavedAt;
+            renamed.SavedAt = DateTime.Now.AddMinutes(1);
+            lines = HistoryBar.Describe();
+            Check("renamed and saved since launch: still one renamed line", lines.Contains($"Renamed profile {was} → Renamed in test")
+                && !lines.Contains("Added profile Renamed in test") && !lines.Contains($"Deleted profile {was}"), string.Join(" | ", lines));
+            renamed.SavedAt = savedAt;
             Profiles.Rename(renamed, was);
             Check("renamed back, no renamed line", !HistoryBar.Describe().Any(l => l.Contains("Renamed in test")), string.Join(" | ", HistoryBar.Describe()));
         }
@@ -5110,6 +5241,14 @@ static class SelfTest
         var started = Store.LoadFrom(fresh, now);
         Check("no backup: a fresh start, the unreadable file kept, a new file written", started is { Data: { Categories.Count: 0, Profiles.Count: 0 }, Backup: null, Unreadable: { } keptAs }
             && File.Exists(keptAs) && Store.LoadFrom(fresh, now) is { Data: not null, Unreadable: null }, started.Unreadable ?? "not set aside");
+        // That fresh start takes Better Mod Menu's data instead when it has some, as a first run does (#100); not
+        // after a backup was loaded, nor read-only, nor when it has none. The notice says where the data came from.
+        var fromBmm = new StoreData { Categories = [new Category { Name = "From BMM" }] };
+        var imported = Store.WithImport(started, () => fromBmm);
+        Check("no backup, but Better Mod Menu's data: imported again, and the notice says so", imported is { Imported: true } && imported.Data == fromBmm
+            && Store.NoticeText(imported)?.GetFormattedText().Contains("imported again from Better Mod Menu") == true
+            && Store.WithImport(recovered, () => fromBmm).Data != fromBmm && Store.WithImport(started with { ReadOnly = true }, () => fromBmm).Data != fromBmm
+            && Store.WithImport(started, () => null) == started, Store.NoticeText(imported)?.GetFormattedText() ?? "no notice");
 
         // A file another program holds open (a Windows lock): left where it is, the backup loaded, nothing saved.
         if (OperatingSystem.IsWindows())
@@ -5142,8 +5281,8 @@ static class SelfTest
         var saving = Folder("saving", Good("Old"), Enumerable.Range(1, 11).Select(i => ($"manager.20200101-0000{i:00}.json", Good($"Old {i}"))).ToArray());
         Store.WriteTo(saving, new StoreData { Categories = [new Category { Name = "New" }] }, backUp: true);
         var copies = Directory.GetFiles(Path.Combine(saving, "backups")).Order().ToList();
-        Check("a save backs up the old file first, the newest ten kept", Category(Store.LoadFrom(saving, now)) == "New" && copies.Count == 10
-            && File.ReadAllText(copies[^1]) == Good("Old") && !copies.Any(f => f.EndsWith("-000001.json") || f.EndsWith("-000002.json")),
+        Check("a save backs up the old file first, named in UTC (#99), the newest ten kept", Category(Store.LoadFrom(saving, now)) == "New" && copies.Count == 10
+            && File.ReadAllText(copies[^1]) == Good("Old") && copies[^1].EndsWith("Z.json") && !copies.Any(f => f.EndsWith("-000001.json") || f.EndsWith("-000002.json")),
             string.Join(", ", copies.Select(Path.GetFileName)));
         var blocked = Path.Combine(root, "blocked");
         Directory.CreateDirectory(blocked);
@@ -5151,6 +5290,14 @@ static class SelfTest
         File.WriteAllText(Path.Combine(blocked, "backups"), "a file where the backups folder goes");
         Store.WriteTo(blocked, new StoreData { Categories = [new Category { Name = "New" }] }, backUp: true);
         Check("a backup that fails doesn't stop the save", Category(Store.LoadFrom(blocked, now)) == "New");
+        // Backups by when they were made, the old local-time names and the new UTC ones together (#99): in a timezone
+        // ahead of UTC a local name reads later than a UTC one made after it.
+        var made = DateTime.UtcNow;
+        string Local(DateTime utc) => $"manager.{utc.ToLocalTime():yyyyMMdd-HHmmss}.json";
+        string Utc(DateTime utc) => $"manager.{utc:yyyyMMdd-HHmmss}Z.json";
+        var order = Store.NewestFirst([Local(made.AddHours(-2)), Utc(made.AddHours(-1)), Local(made.AddHours(-3)), Utc(made)]).ToList();
+        Check("backups newest first, local-time and UTC names together", order.SequenceEqual([Utc(made), Utc(made.AddHours(-1)), Local(made.AddHours(-2)), Local(made.AddHours(-3))]),
+            string.Join(", ", order));
 
         // The notice: none for a file that read fine; after a recovery, the game's popup as the page shows, with
         // the backup's date and where the unreadable file is; once.
@@ -5408,11 +5555,16 @@ static class SelfTest
 
     // A mod installed while the game runs, made up, the way the game does it: read into its mod list (not loaded),
     // then announced. Gone again: off both lists.
+    // The game announcing a mod installed while it runs: its OnModDetected event, raised as the game raises it (the
+    // beta through InvokeOnModDetected, the stable branch inline).
     static void GameInstalls(Mod mod)
     {
         GameMods().Add(mod);
-        typeof(ModManager).GetMethod("InvokeOnModDetected", System.Reflection.BindingFlags.NonPublic | System.Reflection.BindingFlags.Static)
-            ?.Invoke(null, [mod]);
+        var flags = System.Reflection.BindingFlags.NonPublic | System.Reflection.BindingFlags.Static;
+        if (typeof(ModManager).GetMethod("InvokeOnModDetected", flags) is { } invoke)
+            invoke.Invoke(null, [mod]);
+        else
+            (typeof(ModManager).GetField(nameof(ModManager.OnModDetected), flags)?.GetValue(null) as Action<Mod>)?.Invoke(mod);
     }
 
     static void GameForgets(Mod mod)

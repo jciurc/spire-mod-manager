@@ -1,20 +1,18 @@
 using System.Text.Json.Nodes;
 using Godot;
+using MegaCrit.Sts2.Core.Logging;
 using MegaCrit.Sts2.Core.Modding;
 using MegaCrit.Sts2.Core.Nodes.Screens.ModdingScreen;
 
 namespace SpireModManager;
 
 // Along the bottom right, before Relaunch Game:
-// - Two lines: "Mods enabled 23 (+1 -3)", how many mods are on and how many were turned on and off since
-//   launch; then "Changes 5  ↕2": everything else that changed (mods installed since launch, edited mods,
-//   profiles), then the load-order moves. Hovering shows them apart (naming the mods when there are few);
-//   clicking opens (or closes) the full list in the right panel: switched profile, each mod enabled or
-//   disabled, each mod installed (and whether it loads after a relaunch), each move, each edit, profiles
-//   added, deleted or renamed. A mod's name there opens it, with Back to the list.
+// - "Mods enabled 23 (+1 -3)" and "Changes 5  ↕2": mods on, and turned on or off since launch; then everything else
+//   changed (installs, edits, profiles) and the load-order moves. Hovering shows a summary; clicking, the full list in
+//   the right panel, where a mod's name opens it (with Back to the list).
 // - Undo, Redo (their shortcuts underneath), Revert all.
-// The same place in the panel also lists the active profile's unsaved changes, opened from "Unsaved •" on the
-// profile bar; one list at a time, so opening one closes the other.
+// The same place in the panel lists the active profile's unsaved changes ("Unsaved •" on the profile bar); one list
+// at a time.
 static class HistoryBar
 {
     public const string BarName = "SpireModManagerHistory";
@@ -75,8 +73,8 @@ static class HistoryBar
         Hover.Fonts(changes, 17);
         changes.AddThemeConstantOverride("line_separation", -2);
         screen.AddChild(changes);
-        // Hovering: the summary, just above the lines, right edges together.
-        Hover.Watch(changes, SummaryName, Summary, place: () => (changes.GlobalPosition + new Vector2(changes.Size.X, -8), true, true));
+        // Hovering: the summary, at once, just above the lines, right edges together.
+        Hover.Watch(changes, SummaryName, Summary, Hover.Timing.Instant, place: () => (changes.GlobalPosition + new Vector2(changes.Size.X, -8), true, true));
         changes.GuiInput += e =>
         {
             if (e is InputEventMouseButton { ButtonIndex: MouseButton.Left, Pressed: false })
@@ -89,11 +87,10 @@ static class HistoryBar
             redo.Disabled = !History.CanRedo;
             revert.Disabled = History.AtEntered;
             var (on, off, moved) = Counts();
-            // On after a relaunch, new mods included (once each: the game lists them too).
-            var enabled = ModManager.Mods.Union(Installed.Mods).Count(m => m.manifest?.id != null && Dependencies.IsOn(m)); // this mod too
-            // The words, and where the count goes among them, come from the loc table ("Mods enabled {count}"); the
-            // +, - and ↕ counts after them stay where they are in every language. Each count with the game's thousands
-            // separator (Menus.Number), as everywhere in the summary and the list.
+            // On after a relaunch, new mods and this one included, a mod installed twice once: the profile bar's count.
+            var enabled = Profiles.OnCount();
+            // The words and the count's place in them come from the loc table ("Mods enabled {count}"); the +, -
+            // and ↕ counts stay after them in every language.
             changes.Text = $"{Menus.Format("SPIRE_MOD_MANAGER.MODS_ENABLED", ("count", Menus.Number(enabled)))} ([color={Added}]+{Menus.Number(on)}[/color] [color={Removed}]-{Menus.Number(off)}[/color])\n"
                 + $"{Menus.Format("SPIRE_MOD_MANAGER.CHANGES", ("count", $"[color={Edited}]{Menus.Number(OtherChanges())}[/color]"))}  [color={Moved}]↕{Menus.Number(moved)}[/color]";
             FitChanges(changes);
@@ -150,11 +147,10 @@ static class HistoryBar
     }
 
     // Mods turned on, off, and moved in the load order, compared with launch.
-    public static (int On, int Off, int Moved) Counts()
-    {
-        var changed = ModChanges(History.Loaded?.Mods ?? []);
-        return (changed.Count(c => c.Enabled), changed.Count(c => !c.Enabled), Moves().Count);
-    }
+    public static (int On, int Off, int Moved) Counts() => Counts(ModChanges(History.Loaded?.Mods ?? []));
+
+    static (int On, int Off, int Moved) Counts(List<(Mod Mod, bool Enabled)> changed) =>
+        (changed.Count(c => c.Enabled), changed.Count(c => !c.Enabled), Moves().Count);
 
     // The second line's count: mods installed since launch, edited mods, profiles added, deleted or renamed, and
     // a switched profile (moves are on the first line).
@@ -175,9 +171,9 @@ static class HistoryBar
         var (edited, profiles, renamed) = DataChanges(loaded.Store, Store.EditsJson());
         if (Switch(renamed) is var (from, to))
             lines.Add(Menus.Format("SPIRE_MOD_MANAGER.CHANGE_SWITCH", ("from", $"[b]{Escape(from)}[/b]"), ("to", $"[b]{Escape(to)}[/b]")));
-        var (on, off, moved) = Counts();
-        // Fewer than NameLimit mods turned on, off or installed: each by name under its count.
         var changed = ModChanges(loaded.Mods);
+        var (on, off, moved) = Counts(changed);
+        // Fewer than NameLimit mods turned on, off or installed: each by name under its count.
         var named = changed.Count + Installed.Mods.Count < NameLimit;
         void Names(IEnumerable<string> names)
         {
@@ -216,7 +212,7 @@ static class HistoryBar
         return lines;
     }
 
-    // The full list as plain lines, one per change (also what the self-test reads).
+    // The full list as plain lines, one per change.
     public static List<string> Describe() => Entries().Select(e => e.Plain).ToList();
 
     // The mods the full list names (Entries' sections, from the same rules): each one turned on or off, installed or
@@ -425,7 +421,7 @@ static class HistoryBar
     }
 
     // The active profile's unsaved changes, one line each, by name: "+ Name" turned on, "- Name" turned off (a plain
-    // hyphen: the minus sign read as a dash, Jordan 2026-10-15; in the colours Changes uses for them). links: each name opens the mod (the panel's list; the card has none).
+    // hyphen, in Changes' colours). links: each name opens the mod (the panel's list; the card has none).
     public static List<string> UnsavedLines(bool links)
     {
         var (on, off) = Profiles.UnsavedChanges();
@@ -503,23 +499,44 @@ static class HistoryBar
     {
         if (History.Loaded is not { } loaded)
             return [];
-        bool Installed(History.ModEntry m) => ModManager.Mods.Any(x => x.manifest?.id == m.Id && x.modSource == m.Source);
-        var before = loaded.Mods.Where(Installed).Select(m => (m.Id, m.Source)).Distinct().ToList();
-        var after = History.CurrentMods().Where(Installed).Select(m => (m.Id, m.Source)).Distinct().ToList();
+        // The game's mods by id and source (the first, if listed twice), and each one's place at launch, looked up once.
+        var installed = new Dictionary<(string?, ModSource), Mod>();
+        foreach (var mod in ModManager.Mods)
+            installed.TryAdd((mod.manifest?.id, mod.modSource), mod);
+        var before = loaded.Mods.Where(m => installed.ContainsKey((m.Id, m.Source))).Select(m => (m.Id, m.Source)).Distinct().ToList();
+        var after = History.CurrentMods().Where(m => installed.ContainsKey((m.Id, m.Source))).Select(m => (m.Id, m.Source)).Distinct().ToList();
+        var place = before.Select((key, i) => (key, i)).ToDictionary(p => p.key, p => p.i + 1);
         var moves = new List<(Mod, int, int)>();
         for (var i = 0; i < after.Count; i++)
-        {
-            var was = before.IndexOf(after[i]) + 1;
-            if (was > 0 && was != i + 1 && ModManager.Mods.FirstOrDefault(m => m.manifest?.id == after[i].Id && m.modSource == after[i].Source) is { } mod)
-                moves.Add((mod, was, i + 1));
-        }
+            if (place.TryGetValue(after[i], out var was) && was != i + 1)
+                moves.Add((installed[after[i]], was, i + 1));
         return moves;
     }
 
     // Mods whose details changed: which ones (category, alias, notes, tags) and the alias now; profiles added,
     // deleted or renamed (lines), and the renames (old name -> new).
-    static (List<(string Id, List<string> Fields, string? Alias)> Edited, List<string> Profiles, Dictionary<string, string> Renamed)
-        DataChanges(string before, string after)
+    static (IReadOnlyList<(string Id, IReadOnlyList<string> Fields, string? Alias)> Edited, List<string> Profiles,
+        IReadOnlyDictionary<string, string> Renamed) DataChanges(string before, string after)
+    {
+        if (_compared is not { } last || last.Before != before || last.After != after)
+            _compared = last = Compare(before, after);
+        // Worded in the game's language as it is now (the comparison is kept, not its words).
+        var profiles = last.Renamed.Select(r => Menus.Format("SPIRE_MOD_MANAGER.PROFILE_RENAMED", ("from", r.Key), ("to", r.Value)))
+            .Concat(last.Added.Select(n => Menus.Format("SPIRE_MOD_MANAGER.PROFILE_ADDED", ("name", n))))
+            .Concat(last.Gone.Select(n => Menus.Format("SPIRE_MOD_MANAGER.PROFILE_REMOVED", ("name", n))))
+            .ToList();
+        return (last.Edited, profiles, last.Renamed);
+    }
+
+    record Compared(string Before, string After, IReadOnlyList<(string Id, IReadOnlyList<string> Fields, string? Alias)> Edited,
+        IReadOnlyDictionary<string, string> Renamed, IReadOnlyList<string> Added, IReadOnlyList<string> Gone);
+
+    // The last comparison: the bar, its list, its summary and the Changed filter compare the same data in turn. Read
+    // only, as every caller shares it.
+    static Compared? _compared;
+    static bool _compareFailed;
+
+    static Compared Compare(string before, string after)
     {
         try
         {
@@ -527,7 +544,7 @@ static class HistoryBar
             var b = JsonNode.Parse(after)?.AsObject();
             var modsA = a?["mods"] as JsonObject ?? [];
             var modsB = b?["mods"] as JsonObject ?? [];
-            var edited = new List<(string, List<string>, string?)>();
+            var edited = new List<(string Id, IReadOnlyList<string> Fields, string? Alias)>();
             foreach (var id in modsA.Select(p => p.Key).Union(modsB.Select(p => p.Key)))
             {
                 var fields = new[] { "category", "alias", "notes", "tags" }
@@ -540,16 +557,15 @@ static class HistoryBar
             JsonNode? ProfileIn(JsonObject? o, string name) => ProfilesIn(o).FirstOrDefault(p => (string?)p?["name"] == name);
             var added = Names(b).Except(Names(a)).ToList();
             var gone = Names(a).Except(Names(b)).ToList();
-            // Profiles are known by name. Renaming changes nothing else, and every profile made here gets its own save
-            // time: a name gone and a name added with the same save time are one profile, renamed. Its mods can differ
-            // (a mod installed since launch joins it without a save). Profiles never saved (imported) share an empty
-            // save time; with several of those gone, the one with the same mods. (A renamed profile also saved since
-            // launch has a new save time, so it reads as added and deleted.)
+            // A name gone and a name added with the same id are one profile, renamed, saved since or not. Without ids
+            // (a file from before them, at launch): the same save time, or for several never saved (imported, no save
+            // time), the same mods.
             var renamed = new Dictionary<string, string>();
             foreach (var name in added.ToList())
             {
                 bool Same(string old, string field) => JsonNode.DeepEquals(ProfileIn(a, old)?[field], ProfileIn(b, name)?[field]);
-                var candidates = gone.Where(old => Same(old, "saved_at")).ToList();
+                var byId = (string?)ProfileIn(b, name)?["id"] is { Length: > 0 } id ? gone.Where(old => (string?)ProfileIn(a, old)?["id"] == id).ToList() : [];
+                var candidates = byId.Count > 0 ? byId : gone.Where(old => Same(old, "saved_at")).ToList();
                 if ((candidates.Count == 1 ? candidates : candidates.Where(old => Same(old, "mods")).ToList()) is [var was])
                 {
                     renamed[was] = name;
@@ -557,23 +573,23 @@ static class HistoryBar
                     gone.Remove(was);
                 }
             }
-            var profiles = renamed.Select(r => Menus.Format("SPIRE_MOD_MANAGER.PROFILE_RENAMED", ("from", r.Key), ("to", r.Value)))
-                .Concat(added.Select(n => Menus.Format("SPIRE_MOD_MANAGER.PROFILE_ADDED", ("name", n))))
-                .Concat(gone.Select(n => Menus.Format("SPIRE_MOD_MANAGER.PROFILE_REMOVED", ("name", n))))
-                .ToList();
-            return (edited, profiles, renamed);
+            return new Compared(before, after, edited, renamed, added, gone);
         }
-        catch (Exception)
+        catch (Exception e)
         {
-            return ([], [], []);
+            if (!_compareFailed)
+            {
+                _compareFailed = true; // once a session: it's asked on every change
+                Log.Warn($"[{ModEntry.ModId}] Could not compare our data with launch, so Changes leaves out edits and profiles: {e}");
+            }
+            return new Compared(before, after, [], new Dictionary<string, string>(), [], []);
         }
     }
 
     static string Escape(string text) => text.Replace("[", "[lb]");
 
-    // A shortcut under its button: centred, no wider than the button less a little each side, so two side by side
-    // never run together (in a wider language font, Chinese say, "Ctrl + Z" and "Ctrl + Y" made one run of text).
-    // Smaller to fit, down to a smallest size; its line keeps its height, so the button stays where it was.
+    // A shortcut under its button: centred, no wider than the button less a little each side (in a wider font, two side
+    // by side ran together), and smaller to fit down to HintSmallest; its line keeps its height.
     public const int HintInset = 4, HintSmallest = 9;
     static void FitHint(Label hint, Control button)
     {

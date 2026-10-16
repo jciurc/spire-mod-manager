@@ -2,15 +2,10 @@ using Godot;
 
 namespace SpireModManager;
 
-// Our pop-up menus (right-click menus, the profile list, the category picker). Not engine popups: an
-// overlay inside the page, so it behaves like the rest of the page.
-// - Rows: an optional mark (a dot for the one current choice, a tick otherwise), a label, an optional badge
-//   after it (the profile list's red "*"), and a dim detail on the right; headings separate groups (or head the
-//   menu: the main menu button's "Spire Mod Manager v0.1.0").
-// - An optional side column next to the list (a mod's own fields in its right-click menu).
-// - A press outside closes it. A right-click there also carries on to whatever is under the mouse; a left
-//   click doesn't, so pressing the button that opened it closes it. Escape closes it too.
-// One menu at a time.
+// Our pop-up menus (right-click menus, the profile list, the category picker): an overlay inside the page, not an
+// engine popup. Rows have an optional mark, a label, a badge and a dim detail; headings separate groups; an optional
+// side column holds a mod's own fields. A press outside or Escape closes it (a right-click outside also reaches
+// what's underneath). One at a time.
 static class MenuPanel
 {
     static readonly Color Cream = new(1, 0.964706f, 0.886275f);
@@ -25,11 +20,11 @@ static class MenuPanel
 
     public static bool IsOpen => _open != null && GodotObject.IsInstanceValid(_open) && _open.IsInsideTree();
 
-    // The open menu, for the self-test.
+    // The open menu, if any.
     public static Node? Current => IsOpen ? _open : null;
 
-    // items is called again whenever the list is redrawn, so it can change. side builds the side column (it
-    // gets "close"). With a toggleKey, showing the same menu again just closes it.
+    // items is called again on every redraw, so it can change; side builds the side column. With a toggleKey, showing
+    // the same menu again closes it.
     public static Node? Show(Node owner, Func<IReadOnlyList<MenuItem>> items, Vector2? at = null, string? toggleKey = null,
         Func<Action, Control>? side = null)
     {
@@ -38,8 +33,8 @@ static class MenuPanel
         if (again)
             return null;
 
-        // On the scene root, not inside the page: closing it mid-edit saves and redraws the list, which mustn't
-        // happen while the list is the one removing it. It closes when its owner goes.
+        // On the scene root, not in the page: closing it mid-edit redraws the list, which mustn't be removing it then.
+        // It closes when its owner goes.
         var layer = new CanvasLayer { Name = RootName, Layer = Depth };
         owner.GetTree().Root.AddChild(layer);
         owner.TreeExiting += () =>
@@ -89,8 +84,12 @@ static class MenuPanel
 
         (_open, _openKey) = (layer, toggleKey);
 
-        // At the point asked (the mouse by default), kept on screen; again whenever its size changes.
+        // At the point asked (the mouse by default), kept on screen as its size changes.
+#if DEVTOOLS
         var position = at ?? Hover.TestMouse?.Invoke() ?? viewport.GetMousePosition(); // (the self-test says where the mouse is)
+#else
+        var position = at ?? viewport.GetMousePosition();
+#endif
         void Fit()
         {
             if (!GodotObject.IsInstanceValid(panel))
@@ -218,7 +217,8 @@ static class MenuPanel
         return row;
     }
 
-    // For the self-test: the labels of a menu's items (its headings' texts too: Headings), and choosing one as a click would.
+#if DEVTOOLS
+    // Self-test: a menu's labels (Headings: its headings'), and a click on one.
     public static List<string> Labels(Node menu) =>
         menu.FindChildren("*", "", true, false).Where(n => n.IsInGroup(ItemGroup)).Select(n => (string)n.GetMeta("label")).ToList();
 
@@ -230,6 +230,7 @@ static class MenuPanel
         if (menu.FindChildren("*", "", true, false).FirstOrDefault(n => n.IsInGroup(ItemGroup) && (string)n.GetMeta("label") == label) is Control row)
             row.EmitSignal(Control.SignalName.GuiInput, new InputEventMouseButton { ButtonIndex = MouseButton.Left, Pressed = false });
     }
+#endif
 
     static void Style(Control control, string font, int size, Color color)
     {

@@ -7,10 +7,8 @@ using MegaCrit.Sts2.Core.Nodes.Screens.ModdingScreen;
 
 namespace SpireModManager;
 
-// Better Mod Menu alongside us. It rebuilds the same Modding screen, so: in our views (main list, Load Order) it
-// is paused and its parts hidden; in Vanilla View its page stands in for the game's (it replaces that page
-// anyway). Nothing of it is patched: this reaches a few of its members by reflection (looked up once). If one is
-// missing (an update renamed it), it's logged once and that step does nothing.
+// Better Mod Menu alongside us: paused with its parts hidden in our views; its page stands in for the game's in
+// Vanilla View. Reached by reflection, looked up once; a missing member is logged once and that step skipped.
 static class Bmm
 {
     public const string ModId = "BetterModMenu", HarmonyId = ModId;
@@ -36,18 +34,15 @@ static class Bmm
     // Ticked in the mod list (on in the game's saved list), loaded now or not: either way it loads after a relaunch.
     public static bool Ticked => Dependencies.Find(ModId) is { } mod && Dependencies.IsOn(mod);
 
-    // It and ours both ticked: two mod managers load after a relaunch (LoadOrder puts up a banner saying so). Profiles
-    // and Disable all keep ours on, but the player can untick its row.
+    // Both managers ticked (LoadOrder's banner says so); profiles keep ours on, but the player can untick its row.
     public static bool BothTicked => Ticked && Dependencies.Find(ModEntry.ModId) is { } ours && Dependencies.IsOn(ours);
 
     // The mod managers we know of that are ticked, ours first: what the banner's card names.
     public static IEnumerable<Mod> TickedManagers() =>
         new[] { ModEntry.ModId, ModId }.Select(Dependencies.Find).OfType<Mod>().Where(Dependencies.IsOn);
 
-    // A dismissed banner is forgotten once the two aren't both ticked, so it shows again the next time they are (saved
-    // as view state, never an undo step). LoadOrder checks on every toolbar update (tickboxes, profiles, undo and redo,
-    // the fixes); the launch checks once, for a change our page never saw (one of them uninstalled, or unticked where
-    // our page wasn't showing).
+    // Forgets a dismissed banner once the two aren't both ticked, so it shows again next time (view state, no undo).
+    // Checked on every toolbar update and once at launch.
     public static void ForgetDismissedWarning()
     {
         if (!Store.Data.ManagersWarningDismissed || BothTicked)
@@ -63,8 +58,7 @@ static class Bmm
             Try("detach", () => field.SetValue(null, null));
     }
 
-    // Vanilla View: its page again, built from the game's layout (its saved list size forgotten; Layout has put
-    // the game's boxes back and taken its push down of the list away), its parts shown, then regrouped and laid out.
+    // Vanilla View: its page again, built from the game's layout, with its parts shown, regrouped and laid out.
     public static void Attach(NModdingScreen screen)
     {
         if (!Present)
@@ -84,8 +78,7 @@ static class Bmm
         Refresh(screen);
     }
 
-    // Its page after one of our redraws (rows reordered, titles and icons reset): its names, groups and layout
-    // again. Does nothing while it's paused.
+    // Its names, groups and layout again after one of our redraws; does nothing while it's paused.
     public static void Refresh(NModdingScreen screen)
     {
         if (!Present || Need(IsCurrentScreen, "ModdingScreenContext.IsCurrentScreen") is not { } current
@@ -125,17 +118,14 @@ static class Bmm
         }
     }
 
-    // Its push down of the list panel taken back: once per page, to make room for its bar above the list, it
-    // moved the panel down (shorter) and its other parts up by as much. Layout then puts the boxes it knows; the
-    // rest (Make/Get Mods, anything else in there) need this. It pushes again on its page.
+    // Takes back its push-down of the list panel (made to fit its bar) for the parts Layout doesn't place itself.
     public static void Unpush(Control list)
     {
         if (!list.HasMeta(RoomMeta))
             return;
         var height = (float)list.GetMeta(RoomMeta);
         var scroll = list.GetNode<Control>("ModsScrollContainer");
-        // By offsets, not Position: that rebuilds them from the cached size, which for a part just made can still be its
-        // minimum before layout (a wrapping label: a letter a line, over a thousand pixels tall).
+        // By offsets, not Position: a part just made can still have its pre-layout minimum size.
         foreach (var child in list.GetChildren().OfType<Control>().Where(c => c != scroll))
             (child.OffsetTop, child.OffsetBottom) = (child.OffsetTop + height, child.OffsetBottom + height);
         list.RemoveMeta(RoomMeta);
@@ -166,8 +156,8 @@ static class Bmm
         }
         catch (Exception e)
         {
-            if (Missing.Add(what))
-                Log.Warn($"[{ModEntry.ModId}] Better Mod Menu: could not {what}: {(e as TargetInvocationException)?.InnerException?.Message ?? e.Message}");
+            if (Missing.Add(what)) // the whole exception, once: it happens inside Better Mod Menu, and its stack says where
+                Log.Warn($"[{ModEntry.ModId}] Better Mod Menu: could not {what}: {(e as TargetInvocationException)?.InnerException ?? e}");
         }
     }
 }

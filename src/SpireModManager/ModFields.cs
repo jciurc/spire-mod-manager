@@ -2,18 +2,10 @@ using Godot;
 
 namespace SpireModManager;
 
-// One of the player's own details for a mod (alias, notes, tags), built and behaving the same wherever it's
-// edited: the info panel and a mod's right-click menu. Several mods at once (the bulk menu): tags edit the ones
-// they all share (the rest of each mod's tags stay), notes show when they're the same and typing replaces all (a
-// warning beside the term counts the mods whose notes it would overwrite).
-// - A gold term, which says what the field is for in a hover card; Save and Cancel at the right of its line while
-//   editing. (The bulk menu: its heading with the "i", one hover target, and both terms open one card at once.)
-// - At rest: the value as plain text (tags as pills), or a subtle call to action ("Add alias").
-// - Editing: a padded box (the same call to action while it's empty) and an inline ✕ to clear. Enter saves (Ctrl+Enter in notes), Escape
-//   or Cancel puts the value back, clicking away saves, so typed text is never lost.
-// - Tags also show the automatic ones (New, Local, Library, Gameplay, Cosmetic) as filled pills beside the term.
-// - While typing tags, the player's tags from other mods drop down under the box (TagSuggestions).
-// - The value sits in a softly darker box, lighter under the mouse, darker while editing; no outlines.
+// One of the player's own fields for a mod (alias, notes, tags), the same in the info panel and a right-click menu.
+// For several mods (the bulk menu), tags edit the ones all share and notes replace all (a warning counts the notes
+// overwritten). At rest: the value (tags as pills) or a call to action. Editing: a box with ✕; Enter saves (Ctrl+Enter
+// in notes), Escape or Cancel restores, clicking away saves. Tags also show the automatic ones, and suggestions.
 sealed class ModField
 {
     public enum Kind { Alias, Notes, Tags }
@@ -57,8 +49,7 @@ sealed class ModField
             Name = "Label", Text = Menus.Text(LocKey("TERM")), SizeFlagsHorizontal = Control.SizeFlags.ShrinkBegin, VerticalAlignment = VerticalAlignment.Center,
             MouseFilter = Control.MouseFilterEnum.Pass,
         };
-        // Several mods (the bulk menu): the terms and the heading's i open one card, at once, saying how tags and notes
-        // work for all of them (Jordan, 2026-10-14: the i draws the eye; hovering any of the three says it all).
+        // Several mods: the terms and the heading's i open one card at once, saying how tags and notes work for all.
         if (bulk)
             Hover.Watch(label, TipName, BulkInfo, Hover.Timing.Instant, width: 380);
         else
@@ -70,7 +61,7 @@ sealed class ModField
         term.AddChild(label);
         if (bulk && kind == Kind.Notes)
         {
-            // Beside the term while their notes differ: how many will be overwritten (Jordan, 2026-10-14).
+            // Beside the term while their notes differ: how many will be overwritten.
             var mixed = _mixed = new Label
             {
                 Name = "Mixed", VerticalAlignment = VerticalAlignment.Center, MouseFilter = Control.MouseFilterEnum.Pass, Visible = false,
@@ -208,8 +199,7 @@ sealed class ModField
         return column;
     }
 
-    // Several mods' tags and notes in a column (the bulk menu): "Editing N selected mods" where one mod's alias
-    // would be.
+    // Several mods' tags and notes in a column (the bulk menu), headed "Editing N selected mods".
     public static Control BulkColumn(IReadOnlyList<string> modIds, Action<Kind> saved)
     {
         var column = new VBoxContainer { Name = "Fields", CustomMinimumSize = new Vector2(400, 0) };
@@ -221,8 +211,8 @@ sealed class ModField
             MouseFilter = Control.MouseFilterEnum.Ignore, // a Label's default, said outright: the Heading box below takes the mouse
         };
         Style(heading, "res://themes/kreon_bold_shared.tres", 20, Cream);
-        // An "i" beside it, drawing the eye to the card saying how editing several mods works. The heading and the i are one
-        // hover target, only as wide as the two (Jordan, 2026-10-14); the terms below open the same card.
+        // An "i" beside the heading, drawing the eye to the card on editing several mods. The heading and the i are one
+        // hover target, as wide as the two; the terms below open the same card.
         var headingLine = new HBoxContainer
         {
             Name = "Heading", MouseFilter = Control.MouseFilterEnum.Pass, MouseDefaultCursorShape = Control.CursorShape.Help,
@@ -269,12 +259,19 @@ sealed class ModField
             Save();
     }
 
-    // Opens the box for typing (tags: from their pills).
+    // Opens the box for typing. A click on the tag pills adds a tag: ", " goes after them with the caret after it, so
+    // the suggestions offer other tags; saving tidies the ", " away.
     public void BeginEdit()
     {
         _box.Visible = true;
         if (_pillsBox != null)
             _pillsBox.Visible = false;
+        if (_box is LineEdit line)
+        {
+            if (_kind == Kind.Tags && line.Text.Trim().Length > 0 && !line.Text.TrimEnd().EndsWith(','))
+                line.Text = line.Text.TrimEnd() + ", ";
+            line.CaretColumn = line.Text.Length;
+        }
         _box.GrabFocus();
     }
 
@@ -362,9 +359,8 @@ sealed class ModField
 
     string LocKey(string part) => $"SPIRE_MOD_MANAGER.{_kind.ToString().ToUpperInvariant()}_{part}";
 
-    // The call to action ("Add notes"), at rest and while editing alike (Jordan, 2026-10-14: one placeholder; what the
-    // field is for is the term's tooltip). Several mods whose notes differ: the warning beside the term, counting the
-    // mods that have notes (the ones typing overwrites).
+    // The call to action ("Add notes"), at rest and while editing alike (what the field is for is the term's tooltip).
+    // Several mods with differing notes: the warning beside the term, counting the mods whose notes typing overwrites.
     void Hint()
     {
         var text = Menus.Text(LocKey((_bulk ? "BULK_" : "") + "ADD"));
@@ -380,7 +376,7 @@ sealed class ModField
             : Menus.Format("SPIRE_MOD_MANAGER.NOTES_BULK_MIXED", ("count", Menus.Number(withNotes)));
     }
 
-    // The bulk menu's card (its i and both terms): how tags and notes work for several mods, in Jordan's words.
+    // The bulk menu's card (its i and both terms): how tags and notes work for several mods.
     public static string BulkInfo() =>
         $"[b]{Hover.Escape(Menus.Text("SPIRE_MOD_MANAGER.TAGS_TERM"))}[/b]\n{Hover.Escape(Menus.Text("SPIRE_MOD_MANAGER.TAGS_BULK_HINT"))}\n\n"
         + $"[b]{Hover.Escape(Menus.Text("SPIRE_MOD_MANAGER.NOTES_TERM"))}[/b]\n{Hover.Escape(Menus.Text("SPIRE_MOD_MANAGER.NOTES_BULK_HINT"))}";
@@ -397,8 +393,8 @@ sealed class ModField
 
     public enum Shade { Rest, Hover, Active }
 
-    // The box behind a value: softly darker than the panel at rest, lighter under the mouse, darker while
-    // editing. Same padding throughout, so the text doesn't jump. (Also the panel's category picker.)
+    // The box behind a value: darker than the panel at rest, lighter under the mouse, darker while editing, with the
+    // same padding throughout (also the panel's category picker).
     public static StyleBoxFlat Look(Shade shade)
     {
         var style = new StyleBoxFlat

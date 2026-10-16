@@ -1,9 +1,7 @@
 #:property TargetFramework=net10.0-windows
 #:package System.Drawing.Common@10.0.0
-// Shrink screenshots for the Workshop previews: each picture becomes a JPG at most 1920 px wide, at the best
-// quality that stays under Steam's 1 MB. It replaces the original (a PNG by a .jpg of the same name); Steam
-// keeps its own copy of every F12 screenshot. image.png is left alone: it has to stay a PNG (see SHOTS.md).
-// Windows only (System.Drawing), like the uploader build we use.
+// Shrinks Workshop screenshots: each becomes a JPG at most 1920 px wide, at the best quality under Steam's 1 MB,
+// replacing the original. image.png stays a PNG (README.md). Windows only (System.Drawing).
 // Usage: dotnet run workshop/shrink.cs [picture ...]     (no pictures given: everything in workshop/previews/)
 using System.Drawing;
 using System.Drawing.Drawing2D;
@@ -44,10 +42,8 @@ foreach (var path in pictures)
 }
 return 0;
 
-// The picture as a JPG: narrowed to MaxWidth if wider, at the highest quality under MaxBytes (Steam shows
-// previews large, so it's worth staying near the limit). Null for a JPG that already fits (keepIfFine), so
-// running this again doesn't wear it down. The file is read into memory first, so it isn't locked when
-// it's replaced.
+// The picture as a JPG, narrowed to MaxWidth, at the highest quality under MaxBytes; null for a JPG that already fits
+// (keepIfFine), so running again doesn't wear it down. Read into memory first, so the file isn't locked.
 static (byte[]? Jpg, int Width, int Height) Shrink(string path, bool keepIfFine)
 {
     using var original = Image.FromStream(new MemoryStream(File.ReadAllBytes(path)));

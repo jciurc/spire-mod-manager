@@ -3,15 +3,9 @@ using MegaCrit.Sts2.Core.Saves;
 
 namespace SpireModManager;
 
-// Answers that every row of a redraw asks for, worked out once for the whole redraw: whether a mod is on (the
-// game's IsModDisabled walks its whole saved list each time), which installed copy an id means, which mods need
-// a mod, each mod's tags and search text, the page's fixed words, and which mods changed since launch. Asked
-// afresh, every row's "Required for" asked whether each other mod was on, so a redraw with about 250 mods walked
-// the saved list some 60,000 times (around 70 ms); and a search keystroke worked out each row's tags, a walk over
-// every mod, about ten times.
-// Nothing changes these answers while a redraw runs, so they are kept for just that long:
-// `using var lookups = Lookups.Begin();` at the top of a redraw. Outside one, Dependencies, Tags, Search and
-// Menus work everything out fresh, so a click or a menu always sees the current state.
+// Answers every row of a redraw asks for (on/off, which copy an id means, who needs whom, tags, search text,
+// changes since launch), worked out once per redraw: asked row by row, a 250-mod redraw took about 70 ms.
+// Use `using var lookups = Lookups.Begin();` at the top of a redraw; outside one, everything is worked out fresh.
 sealed class Lookups : IDisposable
 {
     public static Lookups? Current { get; private set; }
@@ -20,6 +14,7 @@ sealed class Lookups : IDisposable
     readonly Dictionary<string, Mod> _byId = [];
     readonly Dictionary<string, List<Mod>> _neededBy = [];
     readonly Dictionary<Mod, IReadOnlyList<Tags.Chip>> _chips = [];
+    readonly Dictionary<Mod, IReadOnlyList<string>> _dependencies = [];
     readonly Dictionary<Mod, Search.Haystack> _haystacks = [];
     readonly Dictionary<string, string> _texts = [];
     HashSet<Mod>? _changed;
@@ -29,8 +24,7 @@ sealed class Lookups : IDisposable
     public static Lookups Begin() =>
         Begin(ModManager.Mods, Installed.Mods, SaveManager.Instance.SettingsSave.ModSettings?.ModList ?? []);
 
-    // From any lists (the self-test's made-up mods): mods stands for the game's list, installed for the mods added
-    // since launch, saved for the saved on/off list. Inside another redraw, that one's answers serve.
+    // From given lists (the self-test's made-up mods); inside another redraw, that one's answers serve.
     public static Lookups Begin(IReadOnlyList<Mod> mods, IReadOnlyList<Mod> installed, IEnumerable<SettingsSaveMod> saved)
     {
         if (Current is { } outer)
@@ -49,14 +43,14 @@ sealed class Lookups : IDisposable
 
     Lookups(IReadOnlyList<Mod> mods, IReadOnlyList<Mod> installed, IEnumerable<SettingsSaveMod> saved)
     {
-        _off = saved.Where(e => !e.IsEnabled).Select(e => ((string?)e.Id, e.Source)).ToHashSet();
+        _off = Dependencies.SavedOff(saved);
         // The copy Dependencies.Find picks for an id: the first one that is on, else the first.
         foreach (var mod in mods.Concat(installed))
             if (mod.manifest?.id is { } id && (!_byId.TryGetValue(id, out var kept) || !IsOn(kept) && IsOn(mod)))
                 _byId[id] = mod;
-        // Who needs whom, from the game's list only (as Dependencies.NeededBy); a mod naming one twice counts once.
+        // Who needs whom, from the game's list only; a mod naming one twice counts once.
         foreach (var mod in mods)
-            foreach (var id in Dependencies.Of(mod).Distinct())
+            foreach (var id in DependenciesOf(mod, Dependencies.Read).Distinct()) // kept for the redraw's own asks
             {
                 if (id == null)
                     continue; // a manifest entry without an id: Dependencies works those out the slow way
@@ -75,11 +69,13 @@ sealed class Lookups : IDisposable
     // Per mod or per key: worked out on first use in this redraw, then kept.
     public IReadOnlyList<Tags.Chip> Chips(Mod mod, Func<Mod, IReadOnlyList<Tags.Chip>> make) => Kept(_chips, mod, make);
 
+    public IReadOnlyList<string> DependenciesOf(Mod mod, Func<Mod, IReadOnlyList<string>> make) => Kept(_dependencies, mod, make);
+
     public Search.Haystack Haystack(Mod mod, Func<Mod, Search.Haystack> make) => Kept(_haystacks, mod, make);
 
     public string Text(string key, Func<string, string> make) => Kept(_texts, key, make);
 
-    // The mods changed since launch (the main list's "Changed": ListFilter), asked for every row.
+    // The mods changed since launch, asked for every row.
     public HashSet<Mod> Changed(Func<HashSet<Mod>> make) => _changed ??= make();
 
     static TValue Kept<TKey, TValue>(Dictionary<TKey, TValue> kept, TKey key, Func<TKey, TValue> make) where TKey : notnull

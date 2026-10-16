@@ -4,14 +4,9 @@ using MegaCrit.Sts2.Core.Nodes.Screens.ModdingScreen;
 
 namespace SpireModManager;
 
-// The profile bar across the top of the mod list.
-// - Left: "Profile: [name ▾]", opening the list of profiles ("Name *" for ones with unsaved changes, with
-//   their mod count and save date), then Share profile and Import profile (ProfileShare); while the mod list
-//   differs from the saved profile, "Unsaved •" (hover: the changes; click: listed in the info panel) and Save,
-//   Save as new, Discard beside it.
-// - Right: New, Duplicate, Rename, Delete (Rename and Delete also on right-click, with Share and Import).
-// New, Duplicate, Save as new and Rename open a name box in the picker's place (with an inline ✕), Save
-// and Cancel; a name that's empty or taken says so and can't be saved. Everything else hides meanwhile.
+// The profile bar above the mod list: on the left the profile picker, Share, Import, and "Unsaved •" with Save, Save
+// as new and Discard; on the right New, Duplicate, Rename and Delete. Naming opens a name box in the picker's place,
+// which refuses empty or taken names.
 static class ProfileBar
 {
     const float Height = 40;
@@ -94,8 +89,8 @@ static class ProfileBar
         var unsaved = new Label { Name = "Unsaved", Text = Menus.Text("SPIRE_MOD_MANAGER.UNSAVED"), VerticalAlignment = VerticalAlignment.Center };
         Style(unsaved, "res://themes/kreon_regular_shared.tres", 16, UnsavedColor);
         row.AddChild(unsaved);
-        // Hovering it lists this profile's own unsaved changes (not everything since launch), at once (Jordan,
-        // 2026-10-13); clicking lists them in the info panel, and a second click closes that again.
+        // Hovering lists this profile's own unsaved changes, without delay; a click lists them in the info panel, and a
+        // second click closes that.
         unsaved.MouseFilter = Control.MouseFilterEnum.Stop;
         unsaved.MouseDefaultCursorShape = Control.CursorShape.PointingHand;
         Hover.Watch(unsaved, UnsavedCard, () =>

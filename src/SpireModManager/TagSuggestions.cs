@@ -2,17 +2,10 @@ using Godot;
 
 namespace SpireModManager;
 
-// A short list under a tags box while it has focus: the player's own tags already on mods, most used first, for
-// the word being typed (the text after the last comma, any case): tags that start with it, then tags that only
-// contain it. Tags already in the box aren't offered (a tag typed out in full counts), and the automatic tags
-// never are (they aren't stored). At most Max; hidden when nothing matches, gone when the box loses focus.
-// - Up/Down move the highlight; pointing at a row lights it too. Enter, Tab, a comma or a click take the lit tag:
-//   it replaces the word being typed, followed by ", " for the next one. Nothing is lit until then, so Enter
-//   still saves, Tab still moves on and a comma is just a comma.
-// - Escape closes the list but stays in the box (another Escape cancels the edit, as before). Typing, or an
-//   arrow, brings it back.
-// It looks like our menus (MenuPanel): under the box and as wide (above it when there's no room below), kept on
-// screen, on its own layer over our menus, since the box can be in one (a mod's right-click menu, the bulk menu).
+// Suggestions under a tags box while it has focus: the player's own tags, most used first, matching the word being
+// typed (starts-with, then contains). Up/Down or the mouse light one, and Enter, Tab, a comma or a click take it;
+// nothing is lit until then, so Enter still saves. Escape closes the list. Styled like MenuPanel, on its own layer
+// above our menus (the box can be in one).
 sealed class TagSuggestions
 {
     const int Max = 6;
@@ -43,7 +36,8 @@ sealed class TagSuggestions
         box.TreeExiting += Close;
     }
 
-    // For the self-test: the list showing (its layer), its tags top to bottom, the lit one, and a click on one.
+#if DEVTOOLS
+    // Self-test: the list showing, its tags top to bottom, the lit one, and a click on one.
     public static CanvasLayer? Current => _open?._layer;
 
     public static List<string> Labels() => _open?._list?.GetChildren().Select(row => (string)row.GetMeta(TagMeta)).ToList() ?? [];
@@ -55,6 +49,7 @@ sealed class TagSuggestions
         if (_open?._list?.GetChildren().FirstOrDefault(row => (string)row.GetMeta(TagMeta) == tag) is Control row)
             row.EmitSignal(Control.SignalName.GuiInput, new InputEventMouseButton { ButtonIndex = MouseButton.Left, Pressed = false });
     }
+#endif
 
     // A key pressed in the box: true when the list took it (the box then leaves it alone).
     public bool Use(InputEvent e)
@@ -84,8 +79,7 @@ sealed class TagSuggestions
         return true;
     }
 
-    // The tags to offer for the box's text, in order (see the top). Most used means on the most mods: a mod counts
-    // once for a tag, even when its saved list has it twice in different cases (a hand-edited file can).
+    // The tags to offer for the box's text, in order; a tag counts once per mod, whatever its case.
     static List<string> For(string text)
     {
         var typed = text[(text.LastIndexOf(',') + 1)..].Trim();
@@ -172,8 +166,7 @@ sealed class TagSuggestions
         label.AddThemeFontSizeOverride("font_size", 18);
         label.AddThemeColorOverride("font_color", Cream);
         row.AddChild(label);
-        // Pointing at a row lights it (what Enter would take); off it, none is. Only when the mouse moves: a row that
-        // turns up under a still mouse (the list redrawn after a click) mustn't get Enter's tag.
+        // Pointing at a row lights it, only when the mouse moves: a row appearing under a still mouse mustn't take Enter.
         row.MouseExited += () =>
         {
             if (_highlight == index)

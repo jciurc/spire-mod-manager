@@ -10,15 +10,10 @@ using MegaCrit.Sts2.Core.Saves;
 
 namespace SpireModManager;
 
-// Crash-safe launch (docs/spikes/launch-first.md), its smallest form. Our initializer writes launch-pending.json in
-// our data folder: the mods this launch is about to load. Reaching the main menu deletes it and saves the mod list as
-// last-working.json. So a launch that finds launch-pending.json still there follows one that never reached the menu:
-// a crash or hang in a mod loading after ours, a content or text error once every mod has loaded, or a close while
-// it loaded. At the menu, a notice lists what changed since the last launch that worked, with "Restore" (that mod list
-// back, then a relaunch) and "Keep". Nothing happens on its own: no rollback, no relaunch. No notice when this launch
-// loaded the same mods as the one that stopped (a close while loading, a one-off crash): they've just loaded fine.
-// We don't keep ourselves first in the load order, so a mod loading before ours that kills the launch leaves no
-// record (and no notice either). Every step fails open: an error is logged and the launch goes on as usual.
+// Crash-safe launch. Our initializer records the mods this launch loads; reaching the main menu deletes the record and
+// saves them as the last working setup. A record still there at the next launch means that launch never reached the
+// menu, and a notice offers Restore (that setup, then a relaunch) or Keep. Nothing happens on its own, and every step
+// fails open.
 static class LaunchGuard
 {
     public record Entry(string Id, ModSource Source, bool Enabled, string? Version);
@@ -43,20 +38,18 @@ static class LaunchGuard
     static Setup? _failed, _working, _planned;
     static bool _reached;
 
-    // After a launch that never reached the menu, with changes since the last one that worked: shown once at the main
-    // menu (waiting while another popup is up). The self-test sets it too.
+    // The notice after a launch that never reached the menu: shown once at the main menu, after any other popup.
     public static (Setup Working, List<Change> Changes)? Notice { get; set; }
 
-    // First thing in ModEntry.Init (in a try there too: a game update that renames a member used here throws at the
-    // call, before this try). The mods in load order (the game has sorted them by then), each on or off by its own
-    // entry in the mod list (the game's rebuilt list, saved later, gives every copy of an id the first copy's state).
+    // First thing in ModEntry.Init, inside a try there too (a renamed game member throws at the call, before this try).
+    // The mods in load order, each on or off by its own entry (the game's rebuilt list copies the first copy's state).
     public static void Begin()
     {
         try
         {
-            var settings = SaveManager.Instance.SettingsSave.ModSettings;
+            var off = Dependencies.SavedOff();
             var planned = new Setup(DateTime.Now, ModManager.Mods.Where(m => m.manifest?.id != null)
-                .Select(m => new Entry(m.manifest!.id!, m.modSource, !(settings?.IsModDisabled(m) ?? false), m.manifest.version)).ToList());
+                .Select(m => new Entry(m.manifest!.id!, m.modSource, !off.Contains((m.manifest.id, m.modSource)), m.manifest.version)).ToList());
             var dir = Store.Dir;
             (_failed, _working) = Begin(dir, planned);
             (Dir, _planned) = (dir, planned);
@@ -67,9 +60,8 @@ static class LaunchGuard
         }
     }
 
-    // Reads the last launch's record and the last working setup from a folder (ours, or a self-test's), then writes
-    // this launch's record. A file that can't be read counts as none, and so does a record no newer than the last
-    // working setup: that launch reached the menu (it saved the setup) but its record couldn't be deleted there.
+    // Reads the last launch's record and working setup from a folder (ours, or a self-test's), then writes this
+    // launch's record. An unreadable file counts as none, and so does a record no newer than the working setup.
     public static (Setup? Failed, Setup? Working) Begin(string dir, Setup planned)
     {
         var (failed, working) = (Read(Path.Combine(dir, PendingFile)), Read(Path.Combine(dir, WorkingFile)));
@@ -103,11 +95,9 @@ static class LaunchGuard
         }
     }
 
-    // This launch worked: its record goes (first: that's what matters), and its mods are the last working setup. If
-    // the record can't be deleted (a lock), saving the setup still marks it as reached: the next launch ignores a
-    // record older than the setup (Begin). Returns what the failed launch before it, if any, had changed since the last
-    // working setup, for the notice. None when this launch loaded the same mods as that one, nor when the changes are
-    // only updates: Restore can't undo an update (Steam keeps only the new version), so it would offer nothing.
+    // This launch worked: deletes its record and saves its mods as the last working setup. Returns what the failed
+    // launch before it changed, for the notice: none when it loaded the same mods or only updated some (Restore can't
+    // undo an update).
     public static List<Change> Reached(string dir, Setup saved, Setup? failed, Setup? working)
     {
         try
@@ -162,8 +152,7 @@ static class LaunchGuard
         return changes;
     }
 
-    // From MainMenuPatch's timer, after the game's popups and our data notice. While another popup is up, it tries
-    // again each second; once the main menu is gone (a run started), the notice is dropped.
+    // Shows the notice from MainMenuPatch's timer, trying again each second while another popup is up.
     public static void ShowNotice(Node menu)
     {
         if (Notice is not { } notice)
@@ -231,10 +220,8 @@ static class LaunchGuard
         RelaunchCheck.Relaunch(owner);
     }
 
-    // A record or a working setup from its file; null when there is none or it can't be read. A mod with no id or an
-    // unknown source makes the whole file unreadable: Restore would save it into the game's mod list, which the game
-    // then fails to load at every launch. So does a missing time (read as the year 1): Begin compares the two files'
-    // times, and the notice shows the working setup's.
+    // A record or working setup from its file, or null. A mod without an id or a known source, or a missing time, makes
+    // the whole file unreadable: Restore would save a mod list the game can't load, and Begin compares the times.
     public static Setup? Read(string file)
     {
         try
