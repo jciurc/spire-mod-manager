@@ -29,7 +29,8 @@ static class MenuButton
 
     // The game's main menu draws carets either side of its text button under the mouse; ours gets its own pair (Carets).
     public const string CaretLeftName = "CaretLeft", CaretRightName = "CaretRight";
-    static readonly Color CaretGold = new(0.9372549f, 0.78431374f, 0.31764707f), CaretClear = new(1, 1, 1, 0); // the game's gold, its clear white
+    // The game's gold and its clear white (StsColors.gold, StsColors.transparentWhite), as its pair fades between them.
+    static readonly Color CaretGold = new(0.9372549f, 0.78431374f, 0.31764707f), CaretClear = new(1, 1, 1, 0);
 
     public static void Add(NMainMenu menu)
     {
@@ -210,29 +211,39 @@ static class MenuButton
             caret.UniqueNameInOwner = false;
             caret.Name = name;
             caret.MouseFilter = Control.MouseFilterEnum.Ignore;
+            caret.Visible = true; // the copy is of the pair as it is now, which RitsuLib's scroller may have hidden
             caret.Modulate = CaretClear;
             button.AddChild(caret);
         }
         Tween? tween = null;
+        var focused = false;
         bool Here() => GodotObject.IsInstanceValid(button) && button.IsInsideTree();
-        // After the focus has settled, as the game does for its own (its button's size and place are final by then).
-        button.Focused += _ => Callable.From(() =>
+        // After the focus has settled, as the game does for its own (its button's size and place are final by then),
+        // unless the mouse has already gone again (a pass across it on the way to the game's buttons).
+        button.Focused += _ =>
         {
-            if (!Here())
-                return;
-            tween?.Kill();
-            tween = button.CreateTween().SetParallel();
-            var y = button.GlobalPosition.Y + 5;
-            var (fromLeft, fromRight) = (label.GlobalPosition.X - 26, label.GlobalPosition.X + label.Size.X - 14);
-            left.GlobalPosition = new Vector2(fromLeft, y);
-            right.GlobalPosition = new Vector2(fromRight, y);
-            tween.TweenProperty(left, "global_position:x", fromLeft - 28, 0.25).SetEase(Tween.EaseType.Out).SetTrans(Tween.TransitionType.Back).From(fromLeft);
-            tween.TweenProperty(right, "global_position:x", fromRight + 28, 0.25).SetEase(Tween.EaseType.Out).SetTrans(Tween.TransitionType.Back).From(fromRight);
-            foreach (var caret in new[] { left, right })
-                tween.TweenProperty(caret, "modulate", CaretGold, 0.05).From(CaretClear);
-        }).CallDeferred();
+            focused = true;
+            Callable.From(() =>
+            {
+                if (!focused || !Here())
+                    return;
+                tween?.Kill();
+                tween = button.CreateTween().SetParallel();
+                var y = button.GlobalPosition.Y + 5;
+                var (fromLeft, fromRight) = (label.GlobalPosition.X - 26, label.GlobalPosition.X + label.Size.X - 14);
+                left.GlobalPosition = new Vector2(fromLeft, y);
+                right.GlobalPosition = new Vector2(fromRight, y);
+                tween.TweenProperty(left, "global_position:x", fromLeft - 28, 0.25)
+                    .SetEase(Tween.EaseType.Out).SetTrans(Tween.TransitionType.Back).From(fromLeft);
+                tween.TweenProperty(right, "global_position:x", fromRight + 28, 0.25)
+                    .SetEase(Tween.EaseType.Out).SetTrans(Tween.TransitionType.Back).From(fromRight);
+                foreach (var caret in new[] { left, right })
+                    tween.TweenProperty(caret, "modulate", CaretGold, 0.05).From(CaretClear);
+            }).CallDeferred();
+        };
         button.Unfocused += _ =>
         {
+            focused = false;
             if (!Here())
                 return;
             tween?.Kill();
