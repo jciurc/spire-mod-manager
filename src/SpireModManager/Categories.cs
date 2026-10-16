@@ -2,7 +2,7 @@ using MegaCrit.Sts2.Core.Localization;
 
 namespace SpireModManager;
 
-// Edits to the player's categories. Each saves at once; the list is redrawn by the caller.
+// Edits to the player's categories; each saves at once, and the caller redraws.
 static class Categories
 {
     public static Category? Find(string name) => Store.Data.Categories.FirstOrDefault(c => c.Name == name);

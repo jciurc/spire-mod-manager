@@ -5,10 +5,8 @@ using MegaCrit.Sts2.Core.Nodes.Multiplayer;
 
 namespace SpireModManager;
 
-// A menu entry: a label and action, or a heading (no action) that separates groups.
-// Detail: dim text on the right. Radio: one of several choices (a dot marks the checked one). Badge: a
-// short mark after the label in its own colour (an unsaved profile's "*"). Tip: what it does, in a hover card (inline buttons).
-// Flat: an inline button drawn as just its text, no box (the row's pencil).
+// A menu entry, or a heading when it has no action. Detail: dim text on the right; Radio: one of several choices;
+// Badge: a mark after the label; Tip: a hover card (inline buttons); Flat: drawn as plain text.
 record MenuItem(string Label, Action? OnSelect, bool Checked = false, bool Disabled = false, string? Detail = null,
     bool Radio = false, (string Text, Color Color)? Badge = null, string? Tip = null, bool Flat = false)
 {
@@ -24,8 +22,7 @@ static class Menus
     public static Node? Show(Node owner, IEnumerable<MenuItem> items, Vector2? at = null, string? toggleKey = null) =>
         MenuPanel.Show(owner, () => items.ToList(), at, toggleKey);
 
-    // The game's own yes/no popup, with our mark. True if confirmed. no, yes: the buttons' labels, when not the game's
-    // Cancel and Confirm.
+    // The game's yes/no popup with our mark; true if confirmed. no and yes relabel its buttons.
     public static async Task<bool> Confirm(LocString title, LocString body, LocString? no = null, LocString? yes = null)
     {
         if (NGenericPopup.Create() is not { } popup || NModalContainer.Instance is not { } modals)
@@ -39,11 +36,8 @@ static class Menus
     public const string MarkName = "SpireModManagerMark";
     const float MarkFromBottom = 48;
 
-    // A small, faint "Spire Mod Manager" on a popup of ours that looks like the game's (New Mod Added, the delete
-    // confirmations), so players can tell it comes from this mod, e.g. to know where to report a problem. Centred
-    // under the buttons, inside the popup's art (the game's popups draw it in their "VerticalPopup"), where the
-    // buttons' art ends 64 px above its bottom and the painted edge starts about 34 px up. Anchored there, it lands
-    // in place whenever the popup lays out, whatever the text's length. Once per popup.
+    // A small, faint "Spire Mod Manager" under the buttons of our game-style popups, so players can tell where they
+    // come from. Anchored inside the popup's art, once per popup.
     public static void Mark(Control popup)
     {
         var art = popup.GetNodeOrNull<Control>("VerticalPopup") ?? popup;
@@ -64,7 +58,7 @@ static class Menus
         mark.GrowHorizontal = mark.GrowVertical = Control.GrowDirection.Both;
     }
 
-    // A redraw asks for the same few words for every row (tag names, tooltips): inside one, each is looked up once.
+    // A loc text, looked up once per redraw.
     public static string Text(string key) => Lookups.Current?.Text(key, Lookup) ?? Lookup(key);
 
     static string Lookup(string key) => new LocString("settings_ui", key).GetFormattedText();
@@ -77,14 +71,13 @@ static class Menus
         return text.GetFormattedText();
     }
 
-    // The game's language as a culture, for the dates and numbers we write into text ourselves: its month names,
-    // decimal point and thousands separator ("1.5 MB" in English, "1,5 MB" in German).
+    // The game's language as a culture, for the dates and numbers we format ourselves.
     public static System.Globalization.CultureInfo Culture => LocManager.Instance.CultureInfo;
 
     // A count in the game's language: "1,234" in English, "1.234" in German (no separator under 1,000).
     public static string Number<T>(T count) where T : IFormattable => count.ToString("N0", Culture);
 
-    // Its looks, made once and shared (every row has a few of these, remade on each redraw).
+    // Shared looks, made once (every row has a few of these buttons).
     static readonly (string State, StyleBox Box)[] SmallBoxes =
     [
         ("normal", Box(new Color(0.0756f, 0.12084f, 0.18f, 0.7f), new Color(Gold, 0.35f))),
@@ -130,8 +123,7 @@ static class Menus
         return button;
     }
 
-    // One of a few choices side by side (the page bar's Show:): a SmallButton, the chosen one lit gold with white
-    // text. The chosen one still presses.
+    // One of a few side-by-side choices (the page bar's Show:): the chosen one lit gold, and it still presses.
     public static Button ChoiceButton(string text, bool chosen, Action onPressed, string? name = null)
     {
         var button = SmallButton(text, onPressed, name: name);

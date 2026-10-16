@@ -4,11 +4,8 @@ using MegaCrit.Sts2.Core.Nodes.Screens.ModdingScreen;
 
 namespace SpireModManager;
 
-// Several mods picked at once, on the main list and in Load Order: Ctrl-click toggles a row, Shift-click picks
-// the rows between the last one picked and this one (as shown), Ctrl+A every row shown, a category's
-// "Select all" its rows; a plain click or Esc lets go. Picked rows get a blue tint (two or more: one is just
-// the selection the game already shows). The main list edits them together from a right-click (bulk menu);
-// Load Order drags them together. Switching views lets go.
+// Several mods picked at once (Ctrl-click, Shift-click, Ctrl+A, a category's "Select all"); a plain click or Esc
+// lets go. Two or more picked rows get a blue tint; the main list edits them together, Load Order drags them.
 static class Selection
 {
     const string TintName = "SpireModManagerPicked";
@@ -75,7 +72,7 @@ static class Selection
         return true;
     }
 
-    // The tints, then the bar above the list (it counts and acts on the selection).
+    // Draws the tints and the bar above the list.
     public static void Show(Control content)
     {
         foreach (var row in content.GetChildren().OfType<NModMenuRow>())

@@ -4,10 +4,8 @@ using MegaCrit.Sts2.Core.Saves;
 
 namespace SpireModManager;
 
-// Hard dependencies from each mod's manifest. The game loads a mod after everything it depends on,
-// whatever the saved order says, and fails it if a dependency isn't loaded. Order rules only bind mods
-// that are both switched on: disabled mods can sit anywhere.
-// While a redraw runs, IsOn, Find and NeededBy answer from its Lookups (the same answers, worked out once).
+// Hard dependencies from mod manifests. The game loads a mod after everything it needs, whatever the saved order,
+// and fails it if one isn't loaded; order rules only bind mods that are both on. Inside a redraw, Lookups answers.
 static class Dependencies
 {
     public static IReadOnlyList<string> Of(Mod? mod) =>
@@ -15,8 +13,7 @@ static class Dependencies
 
     public static bool IsOn(Mod mod) => Lookups.Current?.IsOn(mod) ?? !(SaveManager.Instance.SettingsSave.ModSettings?.IsModDisabled(mod) ?? false);
 
-    // The installed copy of a mod id, preferring one that is on. Mods installed this session count: they load
-    // after a relaunch.
+    // The installed copy of an id, preferring one that's on; mods installed this session count.
     public static Mod? Find(string id) => id != null && Lookups.Current is { } now ? now.Find(id)
         : ModManager.Mods.Union(Installed.Mods).Where(m => m.manifest?.id == id).OrderByDescending(IsOn).FirstOrDefault();
 
@@ -51,8 +48,8 @@ static class Dependencies
         return needed;
     }
 
-    // Turns mods on (or off) in the saved list and ticks their boxes on the Modding page, if there is one; the
-    // caller's redraw records it as one change. This mod stays on.
+    // Turns mods on or off in the saved list and ticks the page's boxes; the caller's redraw records one change. This
+    // mod stays on.
     public static void Set(IEnumerable<Mod> mods, bool on, NModdingScreen? screen)
     {
         var settings = SaveManager.Instance.SettingsSave.ModSettings ??= new ModSettings();
@@ -78,8 +75,8 @@ static class Dependencies
             .ToList();
     }
 
-    // The order with every enabled dependency moved just ahead of what needs it, otherwise keeping the
-    // current order (the same rule the game applies at launch: a stable topological sort).
+    // The order with each enabled dependency moved just ahead of what needs it, otherwise unchanged (the game's own
+    // stable topological sort).
     public static List<Mod> Fixed(IReadOnlyList<Mod> given)
     {
         var order = given.Distinct().ToList(); // a mod listed twice counts once

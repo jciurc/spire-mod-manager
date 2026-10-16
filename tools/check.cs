@@ -127,8 +127,8 @@ foreach (var (path, source) in sources)
 }
 Check("game resources load through ModEntry.Load or ModEntry.Font", direct.Count == 0, List(direct));
 
-// Descriptions: our hover card (Hover.Tip), never the engine's tooltip, which looks like none of ours (Jordan,
-// 2026-10-14). The self-test only reads it, so it doesn't count; nor do comment lines.
+// Descriptions: our hover card (Hover.Tip), never the engine's tooltip, which looks unlike ours. The self-test only
+// reads it, so it doesn't count; nor do comment lines.
 var native = new List<string>();
 foreach (var (path, source) in sources.Where(s => Path.GetFileName(s.Key) != "SelfTest.cs"))
 {

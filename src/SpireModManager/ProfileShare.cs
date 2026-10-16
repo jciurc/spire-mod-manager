@@ -6,23 +6,15 @@ using MegaCrit.Sts2.Core.Nodes.Screens.ModdingScreen;
 
 namespace SpireModManager;
 
-// A mod list as CSV text, in the order of Better Mod Menu's columns (its mod list export): Mod Id, Name, Version,
-// Enabled (TRUE/FALSE), then the ones the player picks (Options): Category, Workshop Id, Alias, Notes. The Workshop
-// column holds just the id (Jordan, 2026-10-15: Steam may serve an item's page at another address); reading takes
-// Better Mod Menu's Workshop Link too.
-// - Writing: RFC 4180 (a value with a comma, quote or line break in quotes, quotes doubled), CRLF line ends. A value
-//   a spreadsheet would run as a formula (starting with = + - @, a tab or a CR) gets a ' in front, as Better Mod
-//   Menu writes it: spreadsheets show it as text, and reading takes it off again.
-// - Reading: the same, forgiving: a UTF-8 BOM, CRLF or LF, blank lines, a ; or tab between values (a spreadsheet
-//   saved in a language that uses the comma for decimals). Columns go by their header, in any order and any case;
-//   only Mod Id (or Id) and Enabled are needed. Enabled: TRUE/FALSE, 1/0 or yes/no, in any case; blank is enabled (the
-//   import error says "TRUE", "FALSE" or blank: a list naming a mod with no state wants it), and so is a row that
-//   ends before its Enabled cell, as most CSV readers take missing trailing cells (#95: refusing it said blank was
-//   fine, then showed a blank as the bad value). Import's preview shows the result before anything changes.
+// A mod list as CSV, in Better Mod Menu's column order: Mod Id, Name, Version, Enabled (TRUE/FALSE), then the optional
+// Category, Workshop Id (the id only, as Steam may move an item's page), Alias and Notes. Writing follows RFC 4180,
+// with a ' before values a spreadsheet would run as a formula. Reading is forgiving: a BOM, CRLF or LF, a ; or tab
+// separator, columns by header in any order. Only Mod Id and Enabled are needed, and a blank or missing Enabled means
+// enabled.
 static class ProfileCsv
 {
-    // What a shared list holds besides each mod's id, name, version and Enabled (Jordan, 2026-10-15: the category on, the
-    // rest off at first). Disabled: rows for the mods that are off too; without it they're left out.
+    // What a shared list holds besides id, name, version and Enabled: the category by default, the rest off. Disabled:
+    // rows for the mods that are off too.
     public record Options(bool Category = true, bool Disabled = false, bool Alias = false, bool Notes = false);
 
     public static string[] Header(Options options) =>
@@ -188,16 +180,11 @@ static class ProfileCsv
     };
 }
 
-// Sharing a profile as text, and making one from shared text (ProfileCsv), from the profile list or the picker's
-// right-click menu. Two dialogs over the page, like the relaunch check's; Close (or Cancel) and Esc close them.
-// - Share profile: a row of tick boxes for what the list holds (ProfileCsv.Options: Include category, disabled, alias,
-//   notes; kept for the session, or across launches with Remember selection at the row's end), the active profile's
-//   list in a read-only box (select any of it), Save (the system's save dialog: spire-mods-<profile>-<time>.txt, a .txt
-//   as some players are wary of .csv; the text is the same), Copy (the button says "Copied" for a moment) and Close.
-// - Import profile: a box to paste into and Load file (the system's open dialog, .txt or .csv). As the text changes,
-//   it says what the list would do compared with now and names the listed mods that aren't installed, each with its Workshop page
-//   (opened in the browser). A problem with the text shows in red. Create profile makes a new profile from it (named
-//   after the file, or "Imported profile") and switches to it: one undo step.
+// Sharing a profile as text and making one from shared text (ProfileCsv), from the profile list or the picker's
+// right-click menu: two dialogs over the page. Share shows the active profile's list with options (kept for the
+// session, or across launches with Remember selection), Save (a .txt) and Copy. Import takes pasted text or a file,
+// previews what the list would change and names the missing mods; Create profile makes it and switches to it (one
+// undo step).
 static class ProfileShare
 {
     public const string Name = "SpireModManagerShare";
@@ -215,7 +202,7 @@ static class ProfileShare
     static ProfileCsv.Options Choices => _options ??= Store.Data.ShareChoices is { } kept
         ? new ProfileCsv.Options(kept.Category, kept.Disabled, kept.Alias, kept.Notes) : new ProfileCsv.Options();
 
-    // The self-test: the tick boxes as a new launch finds them.
+    // Self-test only: the tick boxes as a new launch finds them.
     public static void ForgetSessionChoices() => _options = null;
 
     // Remember selection on: these tick boxes kept in our data (saved now), for the next launches too. Off: forgotten.
@@ -237,8 +224,7 @@ static class ProfileShare
         column.AddChild(body);
         var box = TextBox("CsvText", editable: false);
         box.Text = csv;
-        // What the list holds, in a row under the words (each tick rewrites it), and at the row's right end Remember
-        // selection (Jordan, 2026-10-15).
+        // The options row under the words (each tick rewrites the list), with Remember selection at its right end.
         var row = new HBoxContainer { Name = "OptionsRow" };
         row.AddThemeConstantOverride("separation", 22);
         var options = new HFlowContainer { Name = "Options", SizeFlagsHorizontal = Control.SizeFlags.ExpandFill }; // wraps where a language's words run long
@@ -265,7 +251,7 @@ static class ProfileShare
         column.AddChild(status);
 
         var buttons = Buttons();
-        // Save, then Copy (Jordan, 2026-10-15).
+        // Save, then Copy.
         AddButton(buttons, "SPIRE_MOD_MANAGER.SAVE_LIST", () => Browse(column, save: true, FileName(profile.Name, DateTime.Now), path =>
         {
             var error = SaveTo(path, csv);
@@ -357,13 +343,11 @@ static class ProfileShare
         box.GrabFocus();
     }
 
-    // The preview's BBCode for a list read (the self-test).
+    // Self-test only: the preview's BBCode for a list read.
     public static string PreviewFor(IReadOnlyList<ProfileCsv.Entry> listed, string name) => Preview(listed, Profiles.PlanImport(listed), name);
 
-    // The preview (Jordan, 2026-10-15): the new profile's name and what the list holds ("Contains 12 enabled mods and 3
-    // disabled mods", the disabled part only when there are some), then what it changes compared with the mod list now
-    // ("Mods enabled 2", "Mods disabled 1": only the counts that aren't 0, or "None"), and the mods it names that
-    // aren't installed.
+    // The preview: the new profile's name, what the list holds, what it changes compared with now (only the counts that
+    // aren't 0, or "None"), and the listed mods that aren't installed.
     static string Preview(IReadOnlyList<ProfileCsv.Entry> listed, Profiles.ImportPlan plan, string name)
     {
         var lines = new List<string> { Menus.Format("SPIRE_MOD_MANAGER.IMPORT_NEW_NAME", ("name", $"[color={GoldHex}]{Escape(name)}[/color]")) };
@@ -387,7 +371,7 @@ static class ProfileShare
             lines.Add("");
             lines.Add(Menus.Format("SPIRE_MOD_MANAGER.IMPORT_MISSING", ("count", Menus.Number(plan.Missing.Count))));
             var off = Escape(Menus.Text("SPIRE_MOD_MANAGER.IMPORT_MISSING_OFF"));
-            // The name itself opens its Workshop page, when the list gives one (Jordan, 2026-10-15): a few steps to find it.
+            // The name itself opens its Workshop page, when the list gives one.
             string Named(ProfileCsv.Entry m) => $"[b]{Escape(m.Name.Length > 0 ? m.Name : m.Id)}[/b]";
             lines.AddRange(plan.Missing.Select(m => "  •  " + (m.WorkshopLink.Length > 0 ? $"[url={m.WorkshopLink}][color={LinkHex}]{Named(m)}[/color][/url]" : Named(m))
                 + (m.Enabled ? "" : $" [color={DimHex}]{off}[/color]")));
@@ -395,9 +379,8 @@ static class ProfileShare
         return string.Join("\n", lines);
     }
 
-    // A saved list's file name (Jordan, 2026-10-15): spire-mods-<profile>-<yyyyMMddHHmmss>.txt, the profile's name with
-    // the characters a file name can't have as "_". (The prefix also keeps it clear of the names Windows keeps for
-    // devices, such as CON.) Profiles.ImportName reads the profile's name back out of it.
+    // A saved list's file name: spire-mods-<profile>-<yyyyMMddHHmmss>.txt, with characters a file name can't have as
+    // "_" (the prefix also avoids Windows' device names, such as CON). Profiles.ImportName reads the name back out.
     public const string FilePrefix = "spire-mods-";
 
     public static string FileName(string profile, DateTime at)
@@ -450,8 +433,8 @@ static class ProfileShare
         dialog.PopupCentered(new Vector2I(900, 600));
     }
 
-    // The dialog's frame over the page (any other dialog closes), its title in; returns the column to fill. Null if
-    // there's nowhere to show it. width: Share profile's is wider, for its row of tick boxes on one line.
+    // The dialog's frame over the page, titled; returns the column to fill, or null if there's nowhere to show it.
+    // Share profile's is wider, for its row of tick boxes.
     static VBoxContainer? Dialog(Node owner, string titleKey, float width = 820)
     {
         if (Modal.Open(owner, Name, width, 12) is not { } column)
@@ -529,8 +512,7 @@ static class ProfileShare
         return button;
     }
 
-    // One tick box: a small square (a gold ✓ in it when on) before its words, the whole of it one toggle. toggled: the
-    // new state.
+    // One tick box: a small square (a gold ✓ when on) before its words, all one toggle.
     const float BoxSize = 18, BoxRaise = 4;
 
     static Button Option(string key, bool on, Action<bool> toggled, string name)

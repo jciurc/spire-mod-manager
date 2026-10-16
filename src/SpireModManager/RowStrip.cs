@@ -4,10 +4,8 @@ using MegaCrit.Sts2.Core.Nodes.Screens.ModdingScreen;
 
 namespace SpireModManager;
 
-// A thin line along the bottom of each mod row (not in Vanilla View): its tags, then what the mod needs,
-// red when a dependency is missing, off, or loads after it, then (dim, at the end) who made it. Tags that don't
-// fit fold into a "+N" chip. The row title moves up to make room. The row's actions are small buttons on the
-// right, centred on the row like the tickbox; title and line stop short of them.
+// The line along the bottom of each mod row in our views: its tags (extra ones fold into "+N"), what it needs (red
+// when a dependency is missing, off or loads after it) and its author; the row's action buttons sit on the right.
 static class RowStrip
 {
     const string StripName = "SpireModManagerStrip";
@@ -62,10 +60,8 @@ static class RowStrip
             var clear = buttons.OffsetRight - Width(buttons, items) - ActionsGap;
             title.OffsetRight = clear;
 
-            // The line itself only when what it shows changed (its tags or author): making its nodes for every row on
-            // every redraw (each keystroke in search) was most of a redraw's time. Otherwise, when the view, its place or
-            // its note changed (worded for the view: Load Order says "before"), it's kept and changed in place, and this
-            // view's buttons shown.
+            // The line is remade only when its tags or author change (remaking every row's on each keystroke was most of
+            // a redraw's time); otherwise it's updated in place.
             var chips = Tags.For(row.Mod);
             var text = string.Join("    ", new[] { RequiredFor(row.Mod), Needs(row.Mod, order, Store.Data.LoadOrderView) }.Where(s => s.Length > 0));
             var author = ModDetails.Short(row.Mod?.manifest?.author ?? "");
@@ -150,8 +146,7 @@ static class RowStrip
         }
     }
 
-    // Shows as many tags as fit beside what must show: the author first, then what the mod needs (up to half the
-    // line). The rest fold into a "+N" chip, whose card lists them. A line that fits shows every tag, as before.
+    // Shows as many tags as fit beside the author and the needs (up to half the line); the rest fold into "+N".
     static void Fold(NModMenuRow row, HBoxContainer strip, IReadOnlyList<Tags.Chip> chips)
     {
         if (!GodotObject.IsInstanceValid(row) || !GodotObject.IsInstanceValid(strip) || !strip.IsInsideTree())
@@ -211,8 +206,7 @@ static class RowStrip
         (button.OffsetLeft, button.OffsetRight, button.OffsetTop, button.OffsetBottom) = (-2, -2, -13, 13);
     }
 
-    // The buttons' width, measured once per set of labels (measuring shapes their text: slow for every row of
-    // every redraw, and most rows share their labels) in the buttons' font, which changes with the game's language.
+    // Button widths per set of labels, measured once (shaping text is slow, and most rows share their labels).
     static readonly Dictionary<string, float> Widths = [];
 
     static float Width(Control buttons, List<MenuItem> items)
@@ -224,8 +218,7 @@ static class RowStrip
         return width;
     }
 
-    // Vanilla View: the line and the buttons hidden, not taken off (making them again for every row was most of the
-    // way back), and the title its full height again.
+    // Vanilla View: the line and buttons hidden, not removed (remaking them was slow), and the title full height again.
     public static void Hide(IEnumerable<NModMenuRow> rows)
     {
         foreach (var row in rows)
@@ -249,10 +242,8 @@ static class RowStrip
         old.QueueFree();
     }
 
-    // "Needs: BaseLib, RitsuLib" with each dependency coloured: green when fine, red (and why) when it is
-    // missing, off, or loads after this mod. In Load Order every one says "before" or "after".
-    // Disabled mods aren't checked for problems (their dependencies don't matter until they're on), but each
-    // dependency is still green when it's on and red when it isn't.
+    // "Needs: BaseLib, RitsuLib", each dependency green when fine, red with why when missing, off or loading after this
+    // mod ("before"/"after" in Load Order). A disabled mod's line only shows whether each dependency is on.
     public static string Needs(Mod? mod, IReadOnlyDictionary<Mod, int> order, bool loadOrder)
     {
         var deps = Dependencies.Of(mod);
