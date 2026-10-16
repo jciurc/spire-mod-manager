@@ -29,9 +29,10 @@ static class MenuButton
 
     // The game's main menu draws carets either side of its text button under the mouse; ours gets its own pair (Carets).
     public const string CaretLeftName = "CaretLeft", CaretRightName = "CaretRight";
-    // Fuchsia, not the gold the game gives its own carets (and the text turns on hover): a flourish of its own (Jordan).
+    // Pink (#ff69b4, softer than fuchsia), not the gold the game gives its own carets and the text turns on hover: a
+    // flourish of their own (Jordan).
     // They fade to and from the same colour, clear.
-    public static readonly Color CaretColor = new("#ff1493");
+    public static readonly Color CaretColor = new("#ff69b4");
     static readonly Color CaretClear = new(CaretColor, 0);
 
     public static void Add(NMainMenu menu)
