@@ -267,10 +267,12 @@ public static class ModEntry
     // since launch that are on.
     public static bool HasPendingChanges()
     {
-        var settings = SaveManager.Instance.SettingsSave.ModSettings;
-        return LoadOrder.OrderChanged || Installed.Mods.Any(Installed.On) || ModManager.Mods.Any(mod =>
+        if (LoadOrder.OrderChanged || Installed.Mods.Any(Installed.On))
+            return true;
+        var off = Dependencies.SavedOff();
+        return ModManager.Mods.Any(mod =>
         {
-            var disabled = settings?.IsModDisabled(mod) ?? false;
+            var disabled = off.Contains((mod.manifest?.id, mod.modSource));
             return (mod.state == ModLoadState.Disabled && !disabled) || (mod.state == ModLoadState.Loaded && disabled);
         });
     }

@@ -1,5 +1,6 @@
 using System.Text.Json.Nodes;
 using Godot;
+using MegaCrit.Sts2.Core.Logging;
 using MegaCrit.Sts2.Core.Modding;
 using MegaCrit.Sts2.Core.Nodes.Screens.ModdingScreen;
 
@@ -89,10 +90,8 @@ static class HistoryBar
             redo.Disabled = !History.CanRedo;
             revert.Disabled = History.AtEntered;
             var (on, off, moved) = Counts();
-            // On after a relaunch, new mods included (once each: the game lists them too).
-            // This mod too; a mod installed twice once (ModEntry.CountKey).
-            var enabled = ModManager.Mods.Union(Installed.Mods).Where(m => m.manifest?.id != null && Dependencies.IsOn(m))
-                .Select(m => ModEntry.CountKey(m.manifest?.id)).Distinct().Count();
+            // On after a relaunch, new mods and this one included, a mod installed twice once: the profile bar's count.
+            var enabled = Profiles.OnCount();
             // The words, and where the count goes among them, come from the loc table ("Mods enabled {count}"); the
             // +, - and ↕ counts after them stay where they are in every language. Each count with the game's thousands
             // separator (Menus.Number), as everywhere in the summary and the list.
@@ -152,11 +151,10 @@ static class HistoryBar
     }
 
     // Mods turned on, off, and moved in the load order, compared with launch.
-    public static (int On, int Off, int Moved) Counts()
-    {
-        var changed = ModChanges(History.Loaded?.Mods ?? []);
-        return (changed.Count(c => c.Enabled), changed.Count(c => !c.Enabled), Moves().Count);
-    }
+    public static (int On, int Off, int Moved) Counts() => Counts(ModChanges(History.Loaded?.Mods ?? []));
+
+    static (int On, int Off, int Moved) Counts(List<(Mod Mod, bool Enabled)> changed) =>
+        (changed.Count(c => c.Enabled), changed.Count(c => !c.Enabled), Moves().Count);
 
     // The second line's count: mods installed since launch, edited mods, profiles added, deleted or renamed, and
     // a switched profile (moves are on the first line).
@@ -177,9 +175,9 @@ static class HistoryBar
         var (edited, profiles, renamed) = DataChanges(loaded.Store, Store.EditsJson());
         if (Switch(renamed) is var (from, to))
             lines.Add(Menus.Format("SPIRE_MOD_MANAGER.CHANGE_SWITCH", ("from", $"[b]{Escape(from)}[/b]"), ("to", $"[b]{Escape(to)}[/b]")));
-        var (on, off, moved) = Counts();
-        // Fewer than NameLimit mods turned on, off or installed: each by name under its count.
         var changed = ModChanges(loaded.Mods);
+        var (on, off, moved) = Counts(changed);
+        // Fewer than NameLimit mods turned on, off or installed: each by name under its count.
         var named = changed.Count + Installed.Mods.Count < NameLimit;
         void Names(IEnumerable<string> names)
         {
@@ -505,23 +503,44 @@ static class HistoryBar
     {
         if (History.Loaded is not { } loaded)
             return [];
-        bool Installed(History.ModEntry m) => ModManager.Mods.Any(x => x.manifest?.id == m.Id && x.modSource == m.Source);
-        var before = loaded.Mods.Where(Installed).Select(m => (m.Id, m.Source)).Distinct().ToList();
-        var after = History.CurrentMods().Where(Installed).Select(m => (m.Id, m.Source)).Distinct().ToList();
+        // The game's mods by id and source (the first, if listed twice), and each one's place at launch, looked up once.
+        var installed = new Dictionary<(string?, ModSource), Mod>();
+        foreach (var mod in ModManager.Mods)
+            installed.TryAdd((mod.manifest?.id, mod.modSource), mod);
+        var before = loaded.Mods.Where(m => installed.ContainsKey((m.Id, m.Source))).Select(m => (m.Id, m.Source)).Distinct().ToList();
+        var after = History.CurrentMods().Where(m => installed.ContainsKey((m.Id, m.Source))).Select(m => (m.Id, m.Source)).Distinct().ToList();
+        var place = before.Select((key, i) => (key, i)).ToDictionary(p => p.key, p => p.i + 1);
         var moves = new List<(Mod, int, int)>();
         for (var i = 0; i < after.Count; i++)
-        {
-            var was = before.IndexOf(after[i]) + 1;
-            if (was > 0 && was != i + 1 && ModManager.Mods.FirstOrDefault(m => m.manifest?.id == after[i].Id && m.modSource == after[i].Source) is { } mod)
-                moves.Add((mod, was, i + 1));
-        }
+            if (place.TryGetValue(after[i], out var was) && was != i + 1)
+                moves.Add((installed[after[i]], was, i + 1));
         return moves;
     }
 
     // Mods whose details changed: which ones (category, alias, notes, tags) and the alias now; profiles added,
     // deleted or renamed (lines), and the renames (old name -> new).
-    static (List<(string Id, List<string> Fields, string? Alias)> Edited, List<string> Profiles, Dictionary<string, string> Renamed)
-        DataChanges(string before, string after)
+    static (IReadOnlyList<(string Id, IReadOnlyList<string> Fields, string? Alias)> Edited, List<string> Profiles,
+        IReadOnlyDictionary<string, string> Renamed) DataChanges(string before, string after)
+    {
+        if (_compared is not { } last || last.Before != before || last.After != after)
+            _compared = last = Compare(before, after);
+        // Worded in the game's language as it is now (the comparison is kept, not its words).
+        var profiles = last.Renamed.Select(r => Menus.Format("SPIRE_MOD_MANAGER.PROFILE_RENAMED", ("from", r.Key), ("to", r.Value)))
+            .Concat(last.Added.Select(n => Menus.Format("SPIRE_MOD_MANAGER.PROFILE_ADDED", ("name", n))))
+            .Concat(last.Gone.Select(n => Menus.Format("SPIRE_MOD_MANAGER.PROFILE_REMOVED", ("name", n))))
+            .ToList();
+        return (last.Edited, profiles, last.Renamed);
+    }
+
+    record Compared(string Before, string After, IReadOnlyList<(string Id, IReadOnlyList<string> Fields, string? Alias)> Edited,
+        IReadOnlyDictionary<string, string> Renamed, IReadOnlyList<string> Added, IReadOnlyList<string> Gone);
+
+    // The last comparison: the bar, its list, its summary and the Changed filter compare the same data in turn. Read
+    // only, as every caller shares it.
+    static Compared? _compared;
+    static bool _compareFailed;
+
+    static Compared Compare(string before, string after)
     {
         try
         {
@@ -529,7 +548,7 @@ static class HistoryBar
             var b = JsonNode.Parse(after)?.AsObject();
             var modsA = a?["mods"] as JsonObject ?? [];
             var modsB = b?["mods"] as JsonObject ?? [];
-            var edited = new List<(string, List<string>, string?)>();
+            var edited = new List<(string Id, IReadOnlyList<string> Fields, string? Alias)>();
             foreach (var id in modsA.Select(p => p.Key).Union(modsB.Select(p => p.Key)))
             {
                 var fields = new[] { "category", "alias", "notes", "tags" }
@@ -542,12 +561,9 @@ static class HistoryBar
             JsonNode? ProfileIn(JsonObject? o, string name) => ProfilesIn(o).FirstOrDefault(p => (string?)p?["name"] == name);
             var added = Names(b).Except(Names(a)).ToList();
             var gone = Names(a).Except(Names(b)).ToList();
-            // A name gone and a name added with the same id are one profile, renamed, saved since or not (#97: with
-            // only the name to go by, a renamed profile also saved since launch read as added and deleted). Without
-            // ids (a file from before them, at launch), the old way: renaming changes nothing else, and every profile
-            // made here gets its own save time, so a name gone and one added with the same save time are one profile.
-            // Its mods can differ (a mod installed since launch joins it without a save). Profiles never saved
-            // (imported) share an empty save time; with several of those gone, the one with the same mods.
+            // A name gone and a name added with the same id are one profile, renamed, saved since or not. Without ids
+            // (a file from before them, at launch): the same save time, or for several never saved (imported, no save
+            // time), the same mods.
             var renamed = new Dictionary<string, string>();
             foreach (var name in added.ToList())
             {
@@ -561,15 +577,16 @@ static class HistoryBar
                     gone.Remove(was);
                 }
             }
-            var profiles = renamed.Select(r => Menus.Format("SPIRE_MOD_MANAGER.PROFILE_RENAMED", ("from", r.Key), ("to", r.Value)))
-                .Concat(added.Select(n => Menus.Format("SPIRE_MOD_MANAGER.PROFILE_ADDED", ("name", n))))
-                .Concat(gone.Select(n => Menus.Format("SPIRE_MOD_MANAGER.PROFILE_REMOVED", ("name", n))))
-                .ToList();
-            return (edited, profiles, renamed);
+            return new Compared(before, after, edited, renamed, added, gone);
         }
-        catch (Exception)
+        catch (Exception e)
         {
-            return ([], [], []);
+            if (!_compareFailed)
+            {
+                _compareFailed = true; // once a session: it's asked on every change
+                Log.Warn($"[{ModEntry.ModId}] Could not compare our data with launch, so Changes leaves out edits and profiles: {e}");
+            }
+            return new Compared(before, after, [], new Dictionary<string, string>(), [], []);
         }
     }
 

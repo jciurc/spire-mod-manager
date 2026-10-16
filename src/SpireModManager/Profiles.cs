@@ -89,12 +89,21 @@ static class Profiles
             return false;
         profile.Mods.AddRange(unseen);
         if (profile.Edited is { } edit)
-            edit.AddRange(unseen.Where(m => Entry(edit, m.Id, m.Source) == null));
+        {
+            var known = Index(edit);
+            foreach (var mod in unseen)
+                if (known.TryAdd((mod.Id, mod.Source), mod))
+                    edit.Add(mod);
+        }
         return true;
     }
 
     // Installed mods the profile has no entry for, as they are in the mod list now.
-    static IEnumerable<ProfileMod> Unseen(Profile profile) => Current().Where(m => Entry(profile.Mods, m.Id, m.Source) == null);
+    static IEnumerable<ProfileMod> Unseen(Profile profile)
+    {
+        var known = Index(profile.Mods);
+        return Current().Where(m => !known.ContainsKey((m.Id, m.Source)));
+    }
 
     // Whether the mod list is the active profile's unsaved edit.
     public static bool Edited => Active?.Edited != null;
@@ -144,7 +153,8 @@ static class Profiles
     {
         if (Active is not { Edited: not null } profile)
             return ([], []);
-        var changed = Current().Where(c => Differs(c, profile.Mods)).ToList();
+        var saved = Index(profile.Mods);
+        var changed = Current().Where(c => Differs(c, saved)).ToList();
         (string Id, string Name) Name(ProfileMod m) => (m.Id, Dependencies.Find(m.Id)?.manifest?.name ?? m.Id);
         return (changed.Where(c => c.Enabled).Select(Name).ToList(), changed.Where(c => !c.Enabled).Select(Name).ToList());
     }
@@ -211,17 +221,17 @@ static class Profiles
     // no name, version or Workshop id to give for them.
     public static List<ProfileCsv.Row> ShareRows(Profile profile)
     {
-        var mods = profile.Edited ?? profile.Mods;
+        var mods = Index(profile.Edited ?? profile.Mods);
         var places = new Dictionary<(string, ModSource), int>();
         var list = SaveManager.Instance.SettingsSave.ModSettings?.ModList ?? [];
         for (var i = 0; i < list.Count; i++)
             places.TryAdd((list[i].Id, list[i].Source), i);
-        var settings = SaveManager.Instance.SettingsSave.ModSettings;
+        var off = Dependencies.SavedOff();
         return AllMods().OrderBy(m => places.TryGetValue((m.manifest?.id ?? "", m.modSource), out var i) ? i : int.MaxValue)
             .Select(m =>
             {
                 var id = m.manifest?.id ?? "";
-                var on = Entry(mods, id, m.modSource)?.Enabled ?? !(settings?.IsModDisabled(m) ?? false);
+                var on = mods.GetValueOrDefault((id, m.modSource))?.Enabled ?? !off.Contains((id, m.modSource));
                 var info = Store.InfoFor(id);
                 return new ProfileCsv.Row(id, m.manifest?.name ?? "", m.manifest?.version ?? "", on, info?.Category ?? "",
                     Compat.WorkshopId(m) is { } workshop ? workshop.ToString() : "", info?.Alias ?? "", info?.Notes ?? "");
@@ -242,11 +252,12 @@ static class Profiles
     public static ImportPlan PlanImport(IReadOnlyList<ProfileCsv.Entry> entries)
     {
         var current = Current();
+        var byId = entries.ToLookup(e => e.Id); // in list order
         var mods = new List<ProfileMod>();
         var (on, off, same, unlisted) = (0, 0, 0, 0);
         foreach (var mod in current.Where(c => !Manager(c.Id)))
         {
-            var listed = entries.Where(e => e.Id == mod.Id).ToList();
+            var listed = byId[mod.Id].ToList();
             if (listed.Count == 0)
             {
                 unlisted++;
@@ -262,7 +273,8 @@ static class Profiles
             else
                 off++;
         }
-        var missing = entries.Where(e => !Manager(e.Id) && current.All(c => c.Id != e.Id)).DistinctBy(e => e.Id).ToList();
+        var installed = current.Select(c => c.Id).ToHashSet();
+        var missing = entries.Where(e => !Manager(e.Id) && !installed.Contains(e.Id)).DistinctBy(e => e.Id).ToList();
         mods.AddRange(missing.Select(e => new ProfileMod(e.Id, e.WorkshopLink.Length > 0 ? ModSource.SteamWorkshop : ModSource.ModsDirectory, e.Enabled)));
         return new ImportPlan(mods, on, off, same, unlisted, missing);
     }
@@ -354,11 +366,11 @@ static class Profiles
     // "12 mods": a profile's mods on (the list's count; Delete's question names it too).
     public static string ModCount(Profile profile)
     {
-        var mods = profile.Edited ?? profile.Mods;
+        var mods = Index(profile.Edited ?? profile.Mods);
         // As it would be after switching to it: this mod on (a switch keeps it on; the active profile's as it is now), Better
         // Mod Menu as it is now (a profile leaves it alone), every other mod as the profile has it.
         var on = profile == Active ? OnCount()
-            : Current().Where(c => c.Id == ModEntry.ModId || (c.Id == Bmm.ModId ? c.Enabled : Entry(mods, c.Id, c.Source)?.Enabled ?? c.Enabled))
+            : Current().Where(c => c.Id == ModEntry.ModId || (c.Id == Bmm.ModId ? c.Enabled : mods.GetValueOrDefault((c.Id, c.Source))?.Enabled ?? c.Enabled))
                 .Select(c => ModEntry.CountKey(c.Id)).Distinct().Count();
         return Menus.Format(on == 1 ? "SPIRE_MOD_MANAGER.PROFILE_MODS_ONE" : "SPIRE_MOD_MANAGER.PROFILE_MODS", ("count", Menus.Number(on)));
     }
@@ -366,6 +378,8 @@ static class Profiles
     static void Apply(List<ProfileMod> mods, NModdingScreen screen)
     {
         var settings = SaveManager.Instance.SettingsSave.ModSettings ??= new ModSettings();
+        var wants = Index(mods);
+        var entries = Dependencies.SavedEntries(settings.ModList);
         _applying = true;
         try
         {
@@ -374,14 +388,16 @@ static class Profiles
                 if (mod.manifest?.id is not { } id || id == Bmm.ModId) // Better Mod Menu stays as it is
                     continue;
                 // This mod is always on; a mod the profile has never seen stays as it is.
-                bool? wanted = id == ModEntry.ModId ? true : Entry(mods, id, mod.modSource)?.Enabled;
+                bool? wanted = id == ModEntry.ModId ? true : wants.GetValueOrDefault((id, mod.modSource))?.Enabled;
                 if (wanted is not { } enabled)
                     continue;
-                var entry = settings.ModList.FirstOrDefault(e => e.Id == id && e.Source == mod.modSource);
-                if (entry == null && enabled)
+                if (!entries.TryGetValue((id, mod.modSource), out var entry) && enabled)
                     continue; // no entry is on already (a mod installed while the game runs has none yet)
                 if (entry == null)
+                {
                     settings.ModList.Add(entry = new SettingsSaveMod(mod));
+                    entries[(id, mod.modSource)] = entry;
+                }
                 entry.IsEnabled = enabled;
             }
             SaveManager.Instance.SaveSettings();
@@ -397,29 +413,41 @@ static class Profiles
     // and they aren't counted or listed as its changes.
     static bool Manager(string id) => id is ModEntry.ModId or Bmm.ModId;
 
-    // A profile's entry for a mod, or null if it has never seen it.
-    static ProfileMod? Entry(List<ProfileMod> mods, string id, ModSource source) =>
-        mods.FirstOrDefault(pm => pm.Id == id && pm.Source == source);
+    // A profile's entries by mod (the first, if listed twice); a mod it has never seen has none.
+    static Dictionary<(string, ModSource), ProfileMod> Index(List<ProfileMod> mods)
+    {
+        var index = new Dictionary<(string, ModSource), ProfileMod>();
+        foreach (var pm in mods)
+            index.TryAdd((pm.Id, pm.Source), pm);
+        return index;
+    }
 
     // Whether a mod's on/off in the current list differs from the profile's. A mod the profile has never seen never
     // differs (switching to the profile leaves it as it is); the managers don't count.
-    static bool Differs(ProfileMod current, List<ProfileMod> profile) =>
-        !Manager(current.Id) && Entry(profile, current.Id, current.Source) is { } saved && saved.Enabled != current.Enabled;
+    static bool Differs(ProfileMod current, Dictionary<(string, ModSource), ProfileMod> profile) =>
+        !Manager(current.Id) && profile.GetValueOrDefault((current.Id, current.Source)) is { } saved && saved.Enabled != current.Enabled;
 
     // Same on/off for every installed mod.
-    static bool Same(List<ProfileMod> current, List<ProfileMod> profile) => !current.Any(c => Differs(c, profile));
+    static bool Same(List<ProfileMod> current, List<ProfileMod> profile)
+    {
+        var saved = Index(profile);
+        return !current.Any(c => Differs(c, saved));
+    }
 
     // The current list, plus the old list's entries for mods that aren't installed right now.
-    static List<ProfileMod> Merge(List<ProfileMod> old, List<ProfileMod> current) =>
-        old.Where(pm => !current.Any(c => c.Id == pm.Id && c.Source == pm.Source)).Concat(current).ToList();
+    static List<ProfileMod> Merge(List<ProfileMod> old, List<ProfileMod> current)
+    {
+        var installed = current.Select(c => (c.Id, c.Source)).ToHashSet();
+        return old.Where(pm => !installed.Contains((pm.Id, pm.Source))).Concat(current).ToList();
+    }
 
     // Ticks the screen's tickboxes to match the saved mod list (setting them doesn't fire their toggle).
     public static void RefreshTickboxes(NModdingScreen screen)
     {
-        var settings = SaveManager.Instance.SettingsSave.ModSettings;
+        var off = Dependencies.SavedOff();
         foreach (var row in screen.GetNode("%ModsScrollContainer/Mask/Content").GetChildren().OfType<NModMenuRow>())
             if (row.Mod is { } mod)
-                row.GetNode<NTickbox>("Tickbox").IsTicked = !(settings?.IsModDisabled(mod) ?? false);
+                row.GetNode<NTickbox>("Tickbox").IsTicked = !off.Contains((mod.manifest?.id, mod.modSource));
     }
 
     // After a profile wrote the mod list: the list redrawn whole, as after undo (the rows the page bar's Show: choice
@@ -477,9 +505,9 @@ static class Profiles
 
     static List<ProfileMod> Current()
     {
-        var settings = SaveManager.Instance.SettingsSave.ModSettings;
+        var off = Dependencies.SavedOff();
         return AllMods()
-            .Select(m => new ProfileMod(m.manifest?.id ?? "", m.modSource, !(settings?.IsModDisabled(m) ?? false)))
+            .Select(m => new ProfileMod(m.manifest?.id ?? "", m.modSource, !off.Contains((m.manifest?.id, m.modSource))))
             .ToList();
     }
 }

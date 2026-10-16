@@ -14,6 +14,7 @@ sealed class Lookups : IDisposable
     readonly Dictionary<string, Mod> _byId = [];
     readonly Dictionary<string, List<Mod>> _neededBy = [];
     readonly Dictionary<Mod, IReadOnlyList<Tags.Chip>> _chips = [];
+    readonly Dictionary<Mod, IReadOnlyList<string>> _dependencies = [];
     readonly Dictionary<Mod, Search.Haystack> _haystacks = [];
     readonly Dictionary<string, string> _texts = [];
     HashSet<Mod>? _changed;
@@ -42,14 +43,14 @@ sealed class Lookups : IDisposable
 
     Lookups(IReadOnlyList<Mod> mods, IReadOnlyList<Mod> installed, IEnumerable<SettingsSaveMod> saved)
     {
-        _off = saved.Where(e => !e.IsEnabled).Select(e => ((string?)e.Id, e.Source)).ToHashSet();
+        _off = Dependencies.SavedOff(saved);
         // The copy Dependencies.Find picks for an id: the first one that is on, else the first.
         foreach (var mod in mods.Concat(installed))
             if (mod.manifest?.id is { } id && (!_byId.TryGetValue(id, out var kept) || !IsOn(kept) && IsOn(mod)))
                 _byId[id] = mod;
         // Who needs whom, from the game's list only; a mod naming one twice counts once.
         foreach (var mod in mods)
-            foreach (var id in Dependencies.Of(mod).Distinct())
+            foreach (var id in DependenciesOf(mod, Dependencies.Read).Distinct()) // kept for the redraw's own asks
             {
                 if (id == null)
                     continue; // a manifest entry without an id: Dependencies works those out the slow way
@@ -67,6 +68,8 @@ sealed class Lookups : IDisposable
 
     // Per mod or per key: worked out on first use in this redraw, then kept.
     public IReadOnlyList<Tags.Chip> Chips(Mod mod, Func<Mod, IReadOnlyList<Tags.Chip>> make) => Kept(_chips, mod, make);
+
+    public IReadOnlyList<string> DependenciesOf(Mod mod, Func<Mod, IReadOnlyList<string>> make) => Kept(_dependencies, mod, make);
 
     public Search.Haystack Haystack(Mod mod, Func<Mod, Search.Haystack> make) => Kept(_haystacks, mod, make);
 

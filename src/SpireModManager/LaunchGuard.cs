@@ -47,9 +47,9 @@ static class LaunchGuard
     {
         try
         {
-            var settings = SaveManager.Instance.SettingsSave.ModSettings;
+            var off = Dependencies.SavedOff();
             var planned = new Setup(DateTime.Now, ModManager.Mods.Where(m => m.manifest?.id != null)
-                .Select(m => new Entry(m.manifest!.id!, m.modSource, !(settings?.IsModDisabled(m) ?? false), m.manifest.version)).ToList());
+                .Select(m => new Entry(m.manifest!.id!, m.modSource, !off.Contains((m.manifest.id, m.modSource)), m.manifest.version)).ToList());
             var dir = Store.Dir;
             (_failed, _working) = Begin(dir, planned);
             (Dir, _planned) = (dir, planned);

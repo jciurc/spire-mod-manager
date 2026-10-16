@@ -376,7 +376,10 @@ static class CategoryList
         var filter = Filter(content);
         var searching = filter.Length > 0;
         var filtering = searching || ListFilter.Current != ListFilter.Choice.All;
-        bool Matches(NModMenuRow row) => (!searching || Search.Matches(row.Mod, filter)) && ListFilter.Shows(row.Mod);
+        // Worked out for every row on first use, then looked up: a redraw asks about each row up to four times.
+        HashSet<NModMenuRow>? matching = null;
+        bool Matches(NModMenuRow row) =>
+            (matching ??= rows.Where(r => (!searching || Search.Matches(r.Mod, filter)) && ListFilter.Shows(r.Mod)).ToHashSet()).Contains(row);
 
         LoadOrder.UpdateToolbar(content, rows, () => Redraw(content));
         if (Store.Data.LoadOrderView)
@@ -523,11 +526,12 @@ static class CategoryList
             };
         }
 
+        var byCategory = rows.ToLookup(CategoryOf); // each row's category read once, in list order
         foreach (var category in categories)
-            AddSection(category.Name, rows.Where(r => CategoryOf(r) == category.Name).ToList(),
+            AddSection(category.Name, byCategory[category.Name].ToList(),
                 category.Collapsed, c => category.Collapsed = c, category);
 
-        var uncategorized = rows.Where(r => CategoryOf(r) == null).ToList();
+        var uncategorized = byCategory[null].ToList();
         if (uncategorized.Count == 0)
             return;
         // Not while searching; under a Show: choice, between categories it shows and Uncategorized if that shows.
