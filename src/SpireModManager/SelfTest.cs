@@ -2223,8 +2223,12 @@ static class SelfTest
         var onlyOn = ProfileShare.PreviewFor(ProfileCsv.Read("Mod Id,Enabled\nSmmTestLib,\nSmmTestUi,TRUE\n").Mods, "Only on");
         Check("a list with nothing disabled says just its enabled mods; a blank Enabled reads as enabled", onlyOn.Contains("Contains 2 enabled mods")
             && !onlyOn.Contains("disabled mods"), onlyOn);
-        var cutShort = ProfileCsv.Read("Mod Id,Name,Enabled\nSmmTestUi,Test UI\n").Error ?? "";
-        Check("a row cut short, with no Enabled at all, is still an error", cutShort.StartsWith("Enabled value for SmmTestUi"), cutShort);
+        // A row that ends before its Enabled cell reads as a blank one: enabled (#95: it was refused, with an error
+        // that said blank was fine).
+        var cutShort = ProfileCsv.Read("Mod Id,Name,Enabled\nSmmTestUi,Test UI\nSmmTestLib,Test Framework,FALSE\n");
+        Check("a row cut short before its Enabled cell reads as enabled, like a blank one",
+            cutShort.Error == null && cutShort.Mods.SequenceEqual([new ProfileCsv.Entry("SmmTestUi", true, "Test UI", ""), new ProfileCsv.Entry("SmmTestLib", false, "Test Framework", "")]),
+            cutShort.Error ?? string.Join(", ", cutShort.Mods));
         // The name itself is the link to its Workshop page (Jordan, 2026-10-15); one with no page is plain.
         var linkAt = bbcode.IndexOf($"[url={link}]", StringComparison.Ordinal);
         var nameAt = linkAt < 0 ? -1 : bbcode.IndexOf("Not Here Mod", linkAt, StringComparison.Ordinal);
