@@ -314,11 +314,14 @@ static class Profiles
     }
 
     // "Modded" -> "Modded (1)", or the first free number; "Modded (1)" -> "Modded (2)".
-    public static string CopyName(string name)
+    public static string CopyName(string name) => Numbered(name, n => Store.Data.Profiles.Any(p => p.Name == n));
+
+    // The name with the first " (n)" not taken, in place of any it ends in (Better Mod Menu's import uses it too).
+    public static string Numbered(string name, Func<string, bool> taken)
     {
         var bare = System.Text.RegularExpressions.Regex.Replace(name, @" \(\d+\)$", "");
         for (var n = 1; ; n++)
-            if (Store.Data.Profiles.All(p => p.Name != $"{bare} ({n})"))
+            if (!taken($"{bare} ({n})"))
                 return $"{bare} ({n})";
     }
 

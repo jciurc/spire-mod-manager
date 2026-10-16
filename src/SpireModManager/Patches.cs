@@ -101,16 +101,14 @@ static class ModdingScreenPatch
             return;
         }
 
-        // The stable branch's scene holds a placeholder row (no mod) that the game's _Ready frees only at the end of the
-        // frame, after our first redraw has counted it. Out of the list now (the beta's scene has none).
+        // The stable branch's scene holds a placeholder row (no mod) that the game's _Ready queues to free at the end of
+        // the frame, after our first redraw would have counted it. Out of the list now; still freed then. (The beta's
+        // scene has none. A row without a mod that isn't on its way out stays: not ours to remove.)
         try
         {
             var content = __instance.GetNode<Control>("%ModsScrollContainer/Mask/Content");
-            foreach (var placeholder in content.GetChildren().OfType<NModMenuRow>().Where(r => r.Mod == null).ToList())
-            {
+            foreach (var placeholder in content.GetChildren().OfType<NModMenuRow>().Where(r => r.Mod == null && r.IsQueuedForDeletion()).ToList())
                 content.RemoveChild(placeholder);
-                placeholder.QueueFree();
-            }
         }
         catch (Exception e)
         {

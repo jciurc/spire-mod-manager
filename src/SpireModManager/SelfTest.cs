@@ -1611,14 +1611,17 @@ static class SelfTest
             {
               "Profiles": [
                 { "Name": "Profile 3", "DisabledMods": ["ModA"] },
-                { "Name": "Profile 3", "DisabledMods": ["ModB"] }
+                { "Name": "Profile 3", "DisabledMods": ["ModB"] },
+                { "Name": "Modded (1)", "DisabledMods": [] },
+                { "Name": "Modded (1)", "DisabledMods": [] }
               ],
               "CurrentProfileIndex": 1,
               "CustomGroups": ["Tools", "Tools"]
             }
             """));
-        Check("Better Mod Menu import: two profiles of one name stay two (the later numbered), the current one still current; a group named twice once",
-            twins == "profiles Profile 3 (off: ModA); Profile 3 (1) (off: ModB) / active Profile 3 (1) / categories Tools / mods none", twins);
+        Check("Better Mod Menu import: two profiles of one name stay two (the later numbered as a copy is), the current one still current; a group named twice once",
+            twins == "profiles Profile 3 (off: ModA); Profile 3 (1) (off: ModB); Modded (1) (off: none); Modded (2) (off: none) / active Profile 3 (1)"
+            + " / categories Tools / mods none", twins);
         var broken = new[] { """{ "Profiles": [ { "Name": "Cut off" """, "\"Profiles\"", "{ Profiles: [] }" }.Select(text => Summary(Import(text))).ToList();
         Check("Better Mod Menu import: a broken file is refused (cut off, not an object or list, unquoted names)", broken.All(s => s == "refused"),
             string.Join(" | ", broken));

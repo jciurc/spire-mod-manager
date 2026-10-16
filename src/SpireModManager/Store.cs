@@ -560,10 +560,9 @@ static class BetterModMenuImport
             // Better Mod Menu lets two profiles share a name (a new one is named by the count, a rename isn't checked).
             // Ours are told apart by name, so a repeated one gets the first free " (n)", as a copy does; it stays at its
             // place, so CurrentProfileIndex still finds it.
-            var wanted = NonEmpty(p, "Name") ?? $"Profile {data.Profiles.Count + 1}";
-            var name = wanted;
-            for (var n = 1; data.Profiles.Any(o => o.Name == name); n++)
-                name = $"{wanted} ({n})";
+            var name = NonEmpty(p, "Name") ?? $"Profile {data.Profiles.Count + 1}";
+            if (data.Profiles.Any(o => o.Name == name))
+                name = Profiles.Numbered(name, n => data.Profiles.Any(o => o.Name == n));
             data.Profiles.Add(new Profile
             {
                 Name = name,
