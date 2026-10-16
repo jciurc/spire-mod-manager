@@ -267,6 +267,7 @@ static class SelfTest
 
             Click(screen.GetNode<NButton>("SpireModManagerLoadOrderToggle"));
             await Wait(menu, 1);
+            CleanHeap();
             timer.Restart();
             for (var i = 0; i < 10; i++)
                 CategoryList.Apply(content);
