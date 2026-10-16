@@ -3,11 +3,11 @@
 What changed in each Workshop release, for players. Each version's first line is its Workshop change note
 (`changeNote` in `workshop/workshop.json`), word for word.
 
-## 0.1.0 (2026-10-15)
+## 0.1.0 (2026-10-16)
 
 0.1.0: first release. Compatible with stable or beta-branch (game v0.107.1 or newer).
 
-Spire Mod Manager replaces the game's Modding page with one made for long mod lists:
+Spire Mod Manager expands the game's Modding page for long mod lists (the game's own page stays one click away):
 
 - Your own collapsible categories, search over names, notes, tags and authors, and filters for enabled,
   disabled and changed mods.

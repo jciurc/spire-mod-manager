@@ -2,7 +2,7 @@ Spire Mod Manager is an expansion of the mod settings page that allows you to or
 
 This mod doesn't affect gameplay and has no dependencies, so it should be safe to add to any save file, and to play multiplayer without others needing to install it too.
 
-View the source code here, written mainly with Claude Code using Claude Opus 5.5: [url=https://github.com/jciurc/spire-mod-manager]github.com/jciurc/spire-mod-manager[/url]
+View the source code here, written using Claude Code Opus 5.5: [url=https://github.com/jciurc/spire-mod-manager]github.com/jciurc/spire-mod-manager[/url]
 
 Access the manager with one click from the main menu. Works on both stable and beta versions of the game.
 
@@ -22,3 +22,25 @@ Access the manager with one click from the main menu. Works on both stable and b
 Spire Mod Manager requires no other mods to run, and creates its own settings page so the vanilla page is always accessible. Both pages control and show the same installed mods, so enabling a mod in one menu is reflected in the other.
 
 It can be loaded alongside other mod managers, such as Better Mod Menu. However, since other managers may also control how mods are loaded when you start the game, running several can bring conflicts and broken or unpredictable behavior. It's recommended to have only one mod manager at a time. If you're switching from Better Mod Menu, your groups, notes and profiles carry over the first time Spire Mod Manager runs, and lists exported from it can be imported as profiles, so you don't have to start from scratch.
+
+[h2]Other notes[/h2]
+[list]
+[*]Your categories, notes, tags and profiles are saved on this PC only, not in the Steam Cloud, so they won't carry over to other devices automatically.
+[*]The quick relaunch button has only been tested on Windows, and may behave differently on other operating systems.
+[*]To uninstall, just unsubscribe on the Steam Workshop. Your mods will run as normal, as you last set them, through the vanilla game's mod page. Your saved data stays in the mod's data folder until you remove it.
+[/list]
+
+[h2]Localization[/h2]
+As of now, the mod ships only in English, but it's set up for easy drop-in translations. Translations into other languages are very welcome and encouraged.
+
+To provide some initial support, I've made translations using Claude Code for [b]Simplified Chinese (简体中文)[/b] and [b]Russian (Русский)[/b]. These translations are not included in the Workshop mod and need to be downloaded and installed manually.
+
+They can be found here: [url=https://gist.github.com/jciurc/81883ed226f6358f33e6cb76ed31dc5b]gist.github.com/jciurc/81883ed226f6358f33e6cb76ed31dc5b[/url]
+
+To add a translation, drop its .json file into the mod's translations folder. To open it, right-click the mod's button on the game's main menu and choose [i]Open translations folder[/i]. On Windows you can also press Win+R, enter [i]%appdata%\SlayTheSpire2\steam[/i], then open the folder named with your Steam ID and go to [i]mod_data\SpireModManager\translations[/i].
+
+Please see example-eng.json in that folder, or the gist link above, for the file format and the text to be translated. The language is picked with the game's own language setting in its Settings menu.
+
+Hope you find the mod useful! If you have ideas or find a bug, feel free to comment here or open an issue on GitHub.
+
+Thank you!
