@@ -540,16 +540,18 @@ static class HistoryBar
             JsonNode? ProfileIn(JsonObject? o, string name) => ProfilesIn(o).FirstOrDefault(p => (string?)p?["name"] == name);
             var added = Names(b).Except(Names(a)).ToList();
             var gone = Names(a).Except(Names(b)).ToList();
-            // Profiles are known by name. Renaming changes nothing else, and every profile made here gets its own save
-            // time: a name gone and a name added with the same save time are one profile, renamed. Its mods can differ
-            // (a mod installed since launch joins it without a save). Profiles never saved (imported) share an empty
-            // save time; with several of those gone, the one with the same mods. (A renamed profile also saved since
-            // launch has a new save time, so it reads as added and deleted.)
+            // A name gone and a name added with the same id are one profile, renamed, saved since or not (#97: with
+            // only the name to go by, a renamed profile also saved since launch read as added and deleted). Without
+            // ids (a file from before them, at launch), the old way: renaming changes nothing else, and every profile
+            // made here gets its own save time, so a name gone and one added with the same save time are one profile.
+            // Its mods can differ (a mod installed since launch joins it without a save). Profiles never saved
+            // (imported) share an empty save time; with several of those gone, the one with the same mods.
             var renamed = new Dictionary<string, string>();
             foreach (var name in added.ToList())
             {
                 bool Same(string old, string field) => JsonNode.DeepEquals(ProfileIn(a, old)?[field], ProfileIn(b, name)?[field]);
-                var candidates = gone.Where(old => Same(old, "saved_at")).ToList();
+                var byId = (string?)ProfileIn(b, name)?["id"] is { Length: > 0 } id ? gone.Where(old => (string?)ProfileIn(a, old)?["id"] == id).ToList() : [];
+                var candidates = byId.Count > 0 ? byId : gone.Where(old => Same(old, "saved_at")).ToList();
                 if ((candidates.Count == 1 ? candidates : candidates.Where(old => Same(old, "mods")).ToList()) is [var was])
                 {
                     renamed[was] = name;

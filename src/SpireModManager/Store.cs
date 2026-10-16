@@ -53,6 +53,10 @@ public class ModInfo
 
 public class Profile
 {
+    // Its own for good: kept through renames and saves, new for a duplicate or an import, so Changes can tell a
+    // profile renamed since launch from one deleted and another added (#97). Files from before it get one on load.
+    public string? Id { get; set; } = NewId();
+    public static string NewId() => Guid.NewGuid().ToString("N");
     public string Name { get; set; } = "";
     public List<ProfileMod> Mods { get; set; } = [];
     // The active profile's unsaved changes (the mod list as it is now); null when there are none.
@@ -209,8 +213,11 @@ public static class Store
         foreach (var info in data.Mods.Values)
             info.Tags = info.Tags?.OfType<string>().ToList() is { Count: > 0 } tags ? tags : null;
         data.Profiles = data.Profiles?.OfType<Profile>().ToList() ?? [];
+        var ids = new HashSet<string>();
         foreach (var profile in data.Profiles)
         {
+            if (string.IsNullOrEmpty(profile.Id) || !ids.Add(profile.Id)) // none (a hand-edited file), or another's
+                ids.Add(profile.Id = Profile.NewId());
             profile.Name ??= "";
             profile.Mods = profile.Mods?.Where(m => m?.Id != null).ToList() ?? [];
             profile.Edited = profile.Edited?.Where(m => m?.Id != null).ToList();
