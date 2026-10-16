@@ -157,6 +157,9 @@ static class SelfTest
                 Check("vanilla view restores the game's layout", border.OffsetLeft == 255 && border.OffsetRight == 994
                     && border.GetNode<Control>("ModsScrollContainer").OffsetTop == 8
                     && !border.GetNode<Control>("SpireModManagerProfileBar").Visible, $"{border.OffsetLeft}..{border.OffsetRight}");
+            var (makeMods, getMods) = (border.GetNode<Control>("%MakeModsButton"), border.GetNode<Control>("%GetModsButton"));
+            Check("vanilla view: Make Mods and Get Mods as the game's own page has them (shown on the beta, hidden on stable)",
+                makeMods.Visible == (Compat.InfoClear != null) && getMods.Visible == makeMods.Visible, $"Make Mods {makeMods.Visible}, Get Mods {getMods.Visible}");
             await Capture(screen, outDir, "4-vanilla-view");
             Click(screen.GetNode<NButton>("SpireModManagerViewToggle"));
             await Wait(menu, 1);
@@ -790,6 +793,9 @@ static class SelfTest
                 && !Shown(border.GetNodeOrNull(LoadOrder.ManagersName)) && mask.ClipContents
                 && content.GetChildren().OfType<NModMenuRow>().All(r => !Shown(r.GetNode("PlatformIcon"))));
             Check("its page: the same mod still selected", CategoryList.Selected == row.Mod && RowState.Selected(row));
+            var get = border.GetNode<Control>("%GetModsButton");
+            Check("its page: Make Mods and Get Mods as the game's own page has them (shown on the beta, hidden on stable)",
+                make.Visible == (Compat.InfoClear != null) && get.Visible == make.Visible, $"Make Mods {make.Visible}, Get Mods {get.Visible}");
             if (chrome != null)
             {
                 Rect2 Rect(string name) => screen.FindChild(name, true, false) is Control c ? c.GetGlobalRect() : new Rect2();
@@ -1599,6 +1605,20 @@ static class SelfTest
             """));
         Check("Better Mod Menu import: its old format (a bare list of profiles) gives those profiles, no categories", legacy
             == "profiles Old favourites (off: ModD); Profile 2 (off: none) / active none / categories none / mods none", legacy);
+        // Better Mod Menu lets two profiles share a name; ours go by name, so the later one is numbered as a copy is, and
+        // the current index still finds it.
+        var twins = Summary(Import("""
+            {
+              "Profiles": [
+                { "Name": "Profile 3", "DisabledMods": ["ModA"] },
+                { "Name": "Profile 3", "DisabledMods": ["ModB"] }
+              ],
+              "CurrentProfileIndex": 1,
+              "CustomGroups": ["Tools", "Tools"]
+            }
+            """));
+        Check("Better Mod Menu import: two profiles of one name stay two (the later numbered), the current one still current; a group named twice once",
+            twins == "profiles Profile 3 (off: ModA); Profile 3 (1) (off: ModB) / active Profile 3 (1) / categories Tools / mods none", twins);
         var broken = new[] { """{ "Profiles": [ { "Name": "Cut off" """, "\"Profiles\"", "{ Profiles: [] }" }.Select(text => Summary(Import(text))).ToList();
         Check("Better Mod Menu import: a broken file is refused (cut off, not an object or list, unquoted names)", broken.All(s => s == "refused"),
             string.Join(" | ", broken));

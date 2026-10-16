@@ -23,6 +23,7 @@ static class Layout
     const string BoxMeta = "spire_mod_manager_original_box", BarMeta = "spire_mod_manager_original_bar", AnchorMeta = "spire_mod_manager_original_anchor";
     const string HomeMeta = "spire_mod_manager_home", SeenMeta = "spire_mod_manager_seen", ParkedMeta = "spire_mod_manager_parked";
     const string ListMeta = "spire_mod_manager_parked_by_list"; // where a part was before the changes list moved it (ParkOthers)
+    const string ShownMeta = "spire_mod_manager_game_shown"; // whether the game's own page shows a part of its own
     const float ParkedY = -10000; // other mods' parts with no room, far above the panel (Park)
 
     // The info panel's own parts as the game's scene makes them (by name), noted the first time we see the panel.
@@ -77,8 +78,15 @@ static class Layout
         var viewTitle = screen.GetNodeOrNull<Label>("SpireModManagerViewTitle") ?? AddViewTitle(screen);
         viewTitle.Visible = view == View.LoadOrder;
         viewTitle.Position = new Vector2((listBox.X + listBox.Z) / 2 - viewTitle.Size.X / 2, TitleTop + 8);
+        // The game's Make Mods and Get Mods: hidden in our views, and in Vanilla View as its own page has them (the
+        // stable branch's page hides both, the beta's shows them).
         foreach (var name in new[] { "%MakeModsButton", "%GetModsButton" })
-            list.GetNode<Control>(name).Visible = !Wide;
+        {
+            var button = list.GetNode<Control>(name);
+            if (!button.HasMeta(ShownMeta))
+                button.SetMeta(ShownMeta, button.Visible);
+            button.Visible = !Wide && button.GetMeta(ShownMeta).AsBool();
+        }
 
         // Plain dark panels without the blue border in our views.
         PanelStyle(list);
