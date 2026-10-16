@@ -518,6 +518,11 @@ static class ProfileShare
 
     // One tick box: a small square (a gold ✓ when on) before its words, all one toggle.
     const float BoxSize = 18, BoxRaise = 4;
+    // As heavy as the words beside it: a 2 px rim, and the ✓ thickened by an outline in its own colour (Kreon Bold
+    // draws the ✓ no thicker).
+    public const int BoxRim = 2, TickOutline = 1;
+    // The ✓ a little above the middle: its point clear of the bottom rim, its tail free to rise past the top.
+    public const float TickRaise = 2;
 
     static Button Option(string key, bool on, Action<bool> toggled, string name)
     {
@@ -537,7 +542,7 @@ static class ProfileShare
             button.AddThemeColorOverride(color, Colors.White);
         var box = new Panel { Name = "Box", MouseFilter = Control.MouseFilterEnum.Ignore, CustomMinimumSize = new Vector2(BoxSize, BoxSize) };
         var look = new StyleBoxFlat { BgColor = new Color(0.03f, 0.05f, 0.08f), BorderColor = new Color(Gold, 0.6f) };
-        look.SetBorderWidthAll(1);
+        look.SetBorderWidthAll(BoxRim);
         look.SetCornerRadiusAll(3);
         box.AddThemeStyleboxOverride("panel", look);
         var tick = new Label
@@ -548,8 +553,11 @@ static class ProfileShare
         tick.AddThemeFontOverride("font", ModEntry.Font("res://themes/kreon_regular_shared.tres")); // the face the menus draw their ✓ in
         tick.AddThemeFontSizeOverride("font_size", 15);
         tick.AddThemeColorOverride("font_color", Gold);
+        tick.AddThemeConstantOverride("outline_size", TickOutline);
+        tick.AddThemeColorOverride("font_outline_color", Gold);
         box.AddChild(tick);
         tick.SetAnchorsAndOffsetsPreset(Control.LayoutPreset.FullRect);
+        (tick.OffsetTop, tick.OffsetBottom) = (-TickRaise, -TickRaise);
         button.AddChild(box);
         box.SetAnchorsAndOffsetsPreset(Control.LayoutPreset.CenterLeft, Control.LayoutPresetMode.Minsize);
         (box.OffsetTop, box.OffsetBottom) = (box.OffsetTop - BoxRaise, box.OffsetBottom - BoxRaise); // level with the words: Kreon's letters sit high in their line
