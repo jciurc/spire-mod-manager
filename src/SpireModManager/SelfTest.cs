@@ -2108,6 +2108,13 @@ static class SelfTest
             && Part<Button>("RememberChoices")?.GetGlobalRect().Position.X > Part<Button>("IncludeNotes")?.GetGlobalRect().End.X, string.Join(", ", tops));
         Check("its tick boxes: Include category on; disabled, alias and notes off",
             Ticked("IncludeCategory") && !Ticked("IncludeDisabled") && !Ticked("IncludeAlias") && !Ticked("IncludeNotes"));
+        Check("its tick boxes as heavy as their words: a thicker rim, the ✓ outlined in its own gold and raised off the bottom rim",
+            Part<Button>("IncludeCategory")?.GetNodeOrNull<Panel>("Box") is { } tickBox
+            && tickBox.GetThemeStylebox("panel") is StyleBoxFlat rim
+            && new[] { rim.BorderWidthTop, rim.BorderWidthBottom, rim.BorderWidthLeft, rim.BorderWidthRight }.All(w => w == ProfileShare.BoxRim)
+            && tickBox.GetNodeOrNull<Label>("Tick") is { } tickMark && tickMark.GetThemeConstant("outline_size") == ProfileShare.TickOutline
+            && tickMark.GetThemeColor("font_outline_color") == tickMark.GetThemeColor("font_color")
+            && tickMark.OffsetTop == -ProfileShare.TickRaise && tickMark.OffsetBottom == -ProfileShare.TickRaise);
         var (alias, notes) = (Store.InfoFor(ModEntry.ModId)?.Alias ?? "", Store.InfoFor(ModEntry.ModId)?.Notes ?? "");
         Check("Category is the category; no alias or notes", records.FirstOrDefault(r => r[0] == ModEntry.ModId)?[4] == "Tools" && alias.Length > 0 && notes.Length > 0
             && !csv.Contains(alias) && !csv.Contains(notes) && records.All(r => r.Count == 6), csv);
