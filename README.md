@@ -3,7 +3,7 @@
 
 # Spire Mod Manager
 
-A mod manager for Slay the Spire 2. It expands the game's Modding page.
+A mod manager for Slay the Spire 2 that expands the game's Modding page.
 Organize your mods into categories, tag them, add notes, and easily swap or share mod configurations.
 
 By symphony ([@jciurc](https://github.com/jciurc) on GitHub) with Claude Code Opus 5.5
