@@ -29,8 +29,11 @@ static class MenuButton
 
     // The game's main menu draws carets either side of its text button under the mouse; ours gets its own pair (Carets).
     public const string CaretLeftName = "CaretLeft", CaretRightName = "CaretRight";
-    // The game's gold and its clear white (StsColors.gold, StsColors.transparentWhite), as its pair fades between them.
-    static readonly Color CaretGold = new(0.9372549f, 0.78431374f, 0.31764707f), CaretClear = new(1, 1, 1, 0);
+    // Pink (#ff69b4, softer than fuchsia), not the gold the game gives its own carets and the text turns on hover: a
+    // flourish of their own (Jordan).
+    // They fade to and from the same colour, clear.
+    public static readonly Color CaretColor = new("#ff69b4");
+    static readonly Color CaretClear = new(CaretColor, 0);
 
     public static void Add(NMainMenu menu)
     {
@@ -194,7 +197,7 @@ static class MenuButton
     }
 
     // The button's own copies of the main menu's two carets, moved as the game moves its pair for its own buttons
-    // (NMainMenu.MainMenuButtonFocused): out from the text with a little overshoot and gold at once when it takes the
+    // (NMainMenu.MainMenuButtonFocused): out from the text with a little overshoot and lit at once when it takes the
     // focus, fading as it loses it. Not the menu's own pair: a mod that runs the menu's buttons (RitsuLib's scroller)
     // shows that pair only for the buttons it holds, so it hid them over ours. None if a game update renamed them.
     static void Carets(NMainMenu menu, NMainMenuTextButton button, MegaLabel label)
@@ -238,7 +241,7 @@ static class MenuButton
                 tween.TweenProperty(right, "global_position:x", fromRight + 28, 0.25)
                     .SetEase(Tween.EaseType.Out).SetTrans(Tween.TransitionType.Back).From(fromRight);
                 foreach (var caret in new[] { left, right })
-                    tween.TweenProperty(caret, "modulate", CaretGold, 0.05).From(CaretClear);
+                    tween.TweenProperty(caret, "modulate", CaretColor, 0.05).From(CaretClear);
             }).CallDeferred();
         };
         button.Unfocused += _ =>
