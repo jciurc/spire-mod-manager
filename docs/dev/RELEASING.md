@@ -24,8 +24,9 @@ are in [workshop/README.md](../../workshop/README.md).
    branch's copy.
 8. **Upload:** [workshop/README.md](../../workshop/README.md), "Each upload".
 9. **After the upload:** local builds must be versioned above it, as the next version plus `-dev.N` (after
-   0.1.0: `0.1.1-dev.1`), or the game loads the Workshop copy instead. Whether the game's version check
-   accepts a `-dev` suffix isn't verified yet: check it before the first such install.
+   0.1.0: `0.1.1-dev.1`), or the game loads the Workshop copy instead. With both installed the game loads the
+   newer by its `SemanticVersion` (major, minor and patch first, then the `-dev.N` part), and marks the other a
+   duplicate.
 
 ## Before each upload
 
