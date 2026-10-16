@@ -101,6 +101,22 @@ static class ModdingScreenPatch
             return;
         }
 
+        // The stable branch's scene holds a placeholder row (no mod) that the game's _Ready frees only at the end of the
+        // frame, after our first redraw has counted it. Out of the list now (the beta's scene has none).
+        try
+        {
+            var content = __instance.GetNode<Control>("%ModsScrollContainer/Mask/Content");
+            foreach (var placeholder in content.GetChildren().OfType<NModMenuRow>().Where(r => r.Mod == null).ToList())
+            {
+                content.RemoveChild(placeholder);
+                placeholder.QueueFree();
+            }
+        }
+        catch (Exception e)
+        {
+            Log.Error($"[{ModEntry.ModId}] Could not take out the game's placeholder row: {e}");
+        }
+
         try
         {
             var size = new Vector2(220, 70);
