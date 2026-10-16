@@ -4905,8 +4905,8 @@ static class SelfTest
             System.Text.RegularExpressions.Regex.IsMatch(twoLines, @"^Mods enabled \d+ \(\+\d+ -\d+\)\nChanges \d+  ↕\d+$"), twoLines);
         Hover.TestMouse = () => changes.GetGlobalRect().GetCenter();
         changes.EmitSignal(Control.SignalName.MouseEntered);
-        await Wait(menu, Hover.Delay + 0.15);
-        Check("hovering Changes shows the details", screen.HasNode("SpireModManagerChangesPanel"));
+        await Wait(menu, 0.1); // well under Hover.Delay: at once
+        Check("hovering Changes shows the details at once", screen.HasNode("SpireModManagerChangesPanel"));
         var summary = screen.GetNodeOrNull("SpireModManagerChangesPanel")?.FindChildren("*", "RichTextLabel", true, false).OfType<RichTextLabel>().FirstOrDefault()?.GetParsedText() ?? "";
         Check("the summary is titled and names the mod turned off", summary.StartsWith("Changes since launch") && summary.Contains("Test UI"), summary);
         await Capture(screen, outDir, "14-changes");
