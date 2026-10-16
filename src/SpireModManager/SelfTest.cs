@@ -94,9 +94,16 @@ static class SelfTest
             await TestTranslations(menu);
 
             var screen = menu.SubmenuStack.PushSubmenuType<NModdingScreen>();
+            // The page as first drawn, in the frame it opened. The stable game's scene holds a placeholder row (no mod),
+            // freed only at the frame's end; counting it made the list one mod longer until the next redraw.
+            var firstCount = screen.FindChild(PageBar.Name, true, false)?.GetNodeOrNull<Label>("Scope")?.Text;
+            var firstUncategorized = UncategorizedCount(screen.GetNode<Control>("%ModsScrollContainer/Mask/Content"));
             await Wait(menu, 2);
             var content = screen.GetNode<Control>("%ModsScrollContainer/Mask/Content");
             var rows = content.GetChildren().OfType<NModMenuRow>().ToList();
+            Check("the page's first draw counts only the installed mods (no placeholder row)",
+                firstCount == Menus.Format("SPIRE_MOD_MANAGER.PAGE_ALL", ("count", Menus.Number(ModManager.Mods.Count)))
+                && firstUncategorized == UncategorizedCount(content), $"{firstCount}; uncategorized {firstUncategorized} then {UncategorizedCount(content)}");
             Check("relaunch button", screen.GetNodeOrNull("SpireModManagerRelaunchButton") != null);
             TestNewModsAtLaunch(); // first: before anything switches profiles
             if (Bmm.Present) // dev.cs test --bmm
@@ -376,6 +383,10 @@ static class SelfTest
         GC.WaitForPendingFinalizers();
         GC.Collect();
     }
+
+    // The Uncategorized header's count as drawn (the newest header: an older one may wait to be freed this frame).
+    static string? UncategorizedCount(Control content) => content.GetChildren().OfType<Control>()
+        .LastOrDefault(c => c.Name.ToString().Contains("Uncategorized") && !c.IsQueuedForDeletion())?.GetNodeOrNull<Label>("Count")?.Text;
 
     static async Task<double> FrameMs(Node node, Action action)
     {
