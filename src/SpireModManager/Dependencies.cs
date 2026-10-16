@@ -15,6 +15,11 @@ static class Dependencies
 
     public static bool IsOn(Mod mod) => Lookups.Current?.IsOn(mod) ?? !(SaveManager.Instance.SettingsSave.ModSettings?.IsModDisabled(mod) ?? false);
 
+    // The (id, source) pairs the saved list has off, for checking many mods at once (IsModDisabled walks the list per
+    // mod): any entry for one off, as the game reads it.
+    public static HashSet<(string?, ModSource)> SavedOff() =>
+        SaveManager.Instance.SettingsSave.ModSettings?.ModList.Where(e => !e.IsEnabled).Select(e => ((string?)e.Id, e.Source)).ToHashSet() ?? [];
+
     // The installed copy of an id, preferring one that's on; mods installed this session count.
     public static Mod? Find(string id) => id != null && Lookups.Current is { } now ? now.Find(id)
         : ModManager.Mods.Union(Installed.Mods).Where(m => m.manifest?.id == id).OrderByDescending(IsOn).FirstOrDefault();

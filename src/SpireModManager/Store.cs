@@ -390,13 +390,22 @@ public static class Store
     // what undo compares and restores.
     public static string EditsJson()
     {
-        var copy = JsonSerializer.Deserialize<StoreData>(JsonSerializer.Serialize(Data, Json), Json) ?? new StoreData();
+        var json = JsonSerializer.Serialize(Data, Json);
+        if (_edits is { } last && last.Data == json)
+            return last.Edits;
+        var copy = JsonSerializer.Deserialize<StoreData>(json, Json) ?? new StoreData();
         copy.VanillaView = copy.LoadOrderView = copy.UncategorizedCollapsed = copy.ManagersWarningDismissed = false;
         copy.ShareChoices = null;
         foreach (var category in copy.Categories)
             category.Collapsed = false;
-        return JsonSerializer.Serialize(copy, Json);
+        var edits = JsonSerializer.Serialize(copy, Json);
+        _edits = (json, edits);
+        return edits;
     }
+
+    // The last EditsJson and the data it was made from: asked several times per change (undo history, the changes bar,
+    // its list), it's only made again when the data has changed.
+    static (string Data, string Edits)? _edits;
 
     // A snapshot of our data (EditsJson) with a change made to it as well.
     public static string Patched(string json, Action<StoreData> change)
