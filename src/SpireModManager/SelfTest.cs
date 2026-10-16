@@ -3440,6 +3440,26 @@ static class SelfTest
         Check("the counts count this mod: the profile bar's, the main menu button's and Mods enabled's", Dependencies.IsOn(self)
             && Profiles.OnCount() == on && Profiles.ModCount(Profiles.Active!) == Profiles.CountText() && Summary().StartsWith($"Mods enabled {Menus.Number(on)} "),
             $"{on} on: profile {Profiles.OnCount()}, summary \"{Summary().Split('\n')[0]}\"");
+        // Installed twice (a Workshop copy beside this local one): both on, as the game loads one, the newer, and the
+        // counts name it once (#96: they counted each copy).
+        var copy = new Mod
+        {
+            path = "", modSource = ModSource.SteamWorkshop, state = ModLoadState.AddedAtRuntime,
+            manifest = new ModManifest { id = ModEntry.ModId, name = "Spire Mod Manager", version = "0.1.0" },
+        };
+        GameInstalls(copy);
+        await Wait(menu, 0.4);
+        NModalContainer.Instance?.Clear();
+        CategoryList.Redraw(content);
+        await Wait(menu, 0.2);
+        Check("installed twice: both copies on, every count names it once", Dependencies.IsOn(copy) && Profiles.OnCount() == on
+            && Profiles.ModCount(Profiles.Active!) == Profiles.CountText() && Summary().StartsWith($"Mods enabled {Menus.Number(on)} "),
+            $"copy on {Dependencies.IsOn(copy)}; {on} on before: profile {Profiles.OnCount()}, summary \"{Summary().Split('\n')[0]}\"");
+        GameForgets(copy);
+        SaveManager.Instance.SettingsSave.ModSettings?.ModList.RemoveAll(e => e.Id == ModEntry.ModId && e.Source == ModSource.SteamWorkshop);
+        Profiles.Track();
+        CategoryList.Redraw(content);
+        await Wait(menu, 0.2);
 
         // Disable all, where this mod is among the rows it covers: the page bar's and its category's say it stays on.
         var pageDisable = border.FindChild(PageBar.Name, true, false)?.FindChildren("*", "Button", true, false).OfType<Button>()

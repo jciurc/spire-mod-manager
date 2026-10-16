@@ -17,6 +17,11 @@ public static class ModEntry
 {
     public const string ModId = "SpireModManager";
 
+    // One key per mod for counting, this mod's copies as one: a local build beside the Workshop copy is the same mod,
+    // and the game loads only one of them (the newer; the other is marked a duplicate). Profiles keep every copy on, so
+    // whichever is left after an uninstall still runs; counts name it once (#96).
+    public static string CountKey(string? id, ModSource source) => id == ModId ? ModId : $"{id}\n{source}";
+
     const string ButtonScenePath = $"res://{ModId}/scenes/menu_button.tscn";
     const float ButtonArtHeight = 110; // event_button.png is 284x110
 

@@ -90,7 +90,9 @@ static class HistoryBar
             revert.Disabled = History.AtEntered;
             var (on, off, moved) = Counts();
             // On after a relaunch, new mods included (once each: the game lists them too).
-            var enabled = ModManager.Mods.Union(Installed.Mods).Count(m => m.manifest?.id != null && Dependencies.IsOn(m)); // this mod too
+            // This mod too, once whatever copies of it are installed (ModEntry.CountKey).
+            var enabled = ModManager.Mods.Union(Installed.Mods).Where(m => m.manifest?.id != null && Dependencies.IsOn(m))
+                .Select(m => ModEntry.CountKey(m.manifest?.id, m.modSource)).Distinct().Count();
             // The words, and where the count goes among them, come from the loc table ("Mods enabled {count}"); the
             // +, - and ↕ counts after them stay where they are in every language. Each count with the game's thousands
             // separator (Menus.Number), as everywhere in the summary and the list.
