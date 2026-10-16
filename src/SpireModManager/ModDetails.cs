@@ -25,6 +25,7 @@ static class ModDetails
     const string FullMeta = "spire_mod_manager_full_text"; // on the title and the link: their whole text when cut short, else ""
     const string Enabled = "#a6e3a1", Disabled = "#fff6e299", Pending = "#f5b56b", Problem = "#ff8070";
     const string GoldHex = "#efc851", LinkHex = "#99ccff";
+    public const string ModLinkHex = "#cfe3ff"; // a mod's name, or its author, that a click acts on: light blue
     const string Quiet = "#fff6e299"; // no value to show (an unknown author, no description): subtle, so it doesn't read as one
     const string Bullet = "[color=#fff6e280]•[/color]"; // between facts on one line: dim
     const int VersionSize = 20;
@@ -205,7 +206,7 @@ static class ModDetails
 
         // What it needs, and what needs it.
         string Links(IEnumerable<string> ids) => string.Join(", ", ids.Select(d =>
-            $"[url=mod:{d}][color=#cfe3ff]{Escape(Dependencies.Find(d)?.manifest?.name ?? d)}[/color][/url]"));
+            $"[url=mod:{d}][color={ModLinkHex}]{Escape(Dependencies.Find(d)?.manifest?.name ?? d)}[/color][/url]"));
         var needs = Dependencies.Of(mod);
         var neededBy = ModManager.Mods.Where(m => m != mod && Dependencies.Of(m).Contains(mod.manifest?.id ?? ""))
             .Select(m => m.manifest?.id ?? "").Distinct().ToList();
@@ -220,7 +221,7 @@ static class ModDetails
     static string HeadFacts(Mod mod)
     {
         string Fact(string key, string value) => $"[color={GoldHex}]{Menus.Text(key)}[/color]: {value}";
-        var author = mod.manifest?.author is { Length: > 0 } who ? $"[url=author:{who}]{Escape(Short(who))}[/url]" : Faint("SPIRE_MOD_MANAGER.UNKNOWN");
+        var author = mod.manifest?.author is { Length: > 0 } who ? $"[url=author:{who}][color={ModLinkHex}]{Escape(Short(who))}[/color][/url]" : Faint("SPIRE_MOD_MANAGER.UNKNOWN");
         var lines = new List<string> { Fact("SPIRE_MOD_MANAGER.AUTHOR", author) };
         // The last update, how long ago, a dim bullet, and Changelog: its change notes on the Workshop.
         if (WorkshopInfo.For(mod) is { } workshop)

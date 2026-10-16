@@ -79,6 +79,7 @@ static class SelfTest
             Check("dev run marked", menu.GetTree().Root.Title.StartsWith("[DEV]") && menu.GetTree().Root.HasNode("SpireModManagerDevTag"),
                 menu.GetTree().Root.Title);
             await Capture(menu, outDir, "1-main-menu");
+            await TestMenuButtonCarets(menu, outDir);
             // The relaunch note as it shows while one is pending: centred above the button (shown here for the shot).
             if (menu.GetNodeOrNull<Control>("SpireModManagerMenuButton/PendingNote") is { Visible: false } pendingNote)
             {
@@ -877,12 +878,12 @@ static class SelfTest
             return;
         var label = button.GetNodeOrNull<Label>("Label");
         var settings = menu.GetNodeOrNull<Label>("MainMenuTextButtons/SettingsButton/Label");
-        Check("main menu button: the game's text button in its Settings button's font and outline, at a smaller size, no picture",
+        Check("main menu button: the game's text button in its Settings button's font and outline, at a smaller size, no picture (but its hover carets)",
             button is NMainMenuTextButton && label != null && settings != null && label.GetThemeFont("font") == settings.GetThemeFont("font")
             && label.GetThemeFontSize("font_size") == MenuButton.TextSize && MenuButton.TextSize < settings.GetThemeFontSize("font_size")
             && label.GetThemeConstant("outline_size") == settings.GetThemeConstant("outline_size")
             && label.GetThemeColor("font_outline_color") == settings.GetThemeColor("font_outline_color")
-            && !button.FindChildren("*", "TextureRect", true, false).Any(t => t.GetParent()?.Name != "Dot"),
+            && !button.FindChildren("*", "TextureRect", true, false).Any(t => t.GetParent()?.Name != "Dot" && t.Name.ToString() is not (MenuButton.CaretLeftName or MenuButton.CaretRightName)),
             $"{button.GetType().Name}, size {label?.GetThemeFontSize("font_size")} vs {settings?.GetThemeFontSize("font_size")}");
         Check("main menu button reads the active profile and the profile bar's count", MenuButtonText(menu) == MenuButtonExpected(),
             $"{MenuButtonText(menu)} vs {MenuButtonExpected()}");
@@ -922,6 +923,59 @@ static class SelfTest
             $"{corner} in {screen}, note {noteThere}");
         Check("main menu button: back in its place, its note centred above it, on screen", note != null && screen.Encloses(noteHere)
             && Above(noteHere, button.GetGlobalRect()), $"note {noteHere}, button {button.GetGlobalRect()}");
+    }
+
+    // A real hover on the main menu button (a mouse motion through the viewport): its own carets come out either side of
+    // its text, in their colour, and fade once the mouse leaves. (RitsuLib's main menu scroller hid the menu's shared
+    // pair over it.)
+    static async Task TestMenuButtonCarets(NMainMenu menu, string outDir)
+    {
+        if (menu.GetNodeOrNull<Control>("SpireModManagerMenuButton") is not { } button || button.GetChild(0) is not Control label
+            || button.GetNodeOrNull<Control>(MenuButton.CaretLeftName) is not { } left || button.GetNodeOrNull<Control>(MenuButton.CaretRightName) is not { } right)
+        {
+            Check("main menu button: its own hover carets", false, "missing");
+            return;
+        }
+        // A mouse motion onto it, or away, through the viewport. With no window (headless) there is no mouse: its own
+        // mouse_entered and mouse_exited instead, which the game's hover handler takes the same way.
+        var headless = DisplayServer.GetName() == "headless";
+        var away = new Vector2(1800, 100);
+        void MoveTo(Vector2 at) => menu.GetViewport().PushInput(new InputEventMouseMotion { Position = at, GlobalPosition = at });
+        void Enter()
+        {
+            if (headless)
+                button.EmitSignal(Control.SignalName.MouseEntered);
+            else
+                MoveTo(button.GetGlobalRect().GetCenter());
+        }
+        void Leave()
+        {
+            if (headless)
+                button.EmitSignal(Control.SignalName.MouseExited);
+            else
+                MoveTo(away);
+        }
+        Leave();
+        await Wait(menu, 0.4);
+        Enter();
+        await Wait(menu, 0.5);
+        var text = label.GetGlobalRect();
+        Check("main menu button: a hover brings its own carets out either side of its text, in their own colour",
+            left.IsVisibleInTree() && right.IsVisibleInTree() && left.Modulate.IsEqualApprox(MenuButton.CaretColor) && right.Modulate.IsEqualApprox(MenuButton.CaretColor)
+            && left.GetGlobalRect().End.X <= text.Position.X && right.GlobalPosition.X >= text.End.X
+            && Math.Abs(left.GlobalPosition.Y - (button.GlobalPosition.Y + 5)) < 1,
+            $"left {left.GetGlobalRect()} a {left.Modulate.A:0.##}, right {right.GetGlobalRect()} a {right.Modulate.A:0.##}, text {text}");
+        await Capture(menu, outDir, "1f-menu-button-carets");
+        Leave();
+        await Wait(menu, 0.5);
+        Check("main menu button: its carets fade once the mouse leaves", left.Modulate.A < 0.05f && right.Modulate.A < 0.05f,
+            $"{left.Modulate.A:0.##}, {right.Modulate.A:0.##}");
+        // A pass across it in one frame (on the way to the game's buttons): the carets, put up a frame late, stay down.
+        Enter();
+        Leave();
+        await Wait(menu, 0.4);
+        Check("main menu button: a pass across it in one frame leaves its carets down", left.Modulate.A < 0.05f && right.Modulate.A < 0.05f,
+            $"{left.Modulate.A:0.##}, {right.Modulate.A:0.##}");
     }
 
     // The main menu button's card: nothing at the usual delay (the mouse crosses the button on its way to the game's), then
@@ -2745,6 +2799,8 @@ static class SelfTest
         var rowAuthor = content.GetChildren().OfType<NModMenuRow>().FirstOrDefault(r => r.Mod?.manifest?.id == "SmmTestFixes")?.GetNodeOrNull<Label>("SpireModManagerStrip/Author");
         Check("the row's author is plain: just the name, not clickable", rowAuthor is { Text: "symphony", MouseFilter: Control.MouseFilterEnum.Ignore });
         var panelHead = screen.GetNode<Control>("%ModInfoContainer").GetNodeOrNull<RichTextLabel>("SpireModManagerHead");
+        Check("the panel's author is a link in the mod names' light blue", panelHead?.Text
+            .Contains($"[url=author:symphony][color={ModDetails.ModLinkHex}]symphony[/color][/url]") == true, panelHead?.Text ?? "no head");
         panelHead?.EmitSignal(RichTextLabel.SignalName.MetaClicked, "author:symphony");
         await Wait(menu, 0.3);
         Check("the panel's author searches for their mods", box.Text == "@symphony"
