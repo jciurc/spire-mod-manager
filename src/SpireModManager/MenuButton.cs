@@ -71,8 +71,7 @@ static class MenuButton
         // The text, and with it the button's width: its words and the margins. Kept in place (Place), and on screen.
         void Retext()
         {
-            // The page's own line while a relaunch is pending, word for word (Jordan, 2026-10-16: one text, one less
-            // to translate).
+            // The page's own line while a relaunch is pending, word for word: one text, one less to translate.
             note.Text = Menus.Text(outdated ? "SPIRE_MOD_MANAGER.NEEDS_UPDATE" : "SPIRE_MOD_MANAGER.PENDING_RESTART");
             // What it opens, and the profile in gold; a second's wait, as the mouse crosses it for the game's buttons.
             Hover.Tip(button, Tip(Profiles.Active?.Name ?? ""), Hover.Timing.Late, markup: true);

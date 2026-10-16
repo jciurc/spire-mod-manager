@@ -75,7 +75,7 @@ static class HistoryBar
         Hover.Fonts(changes, 17);
         changes.AddThemeConstantOverride("line_separation", -2);
         screen.AddChild(changes);
-        // Hovering: the summary, at once (Jordan, 2026-10-16), just above the lines, right edges together.
+        // Hovering: the summary, at once, just above the lines, right edges together.
         Hover.Watch(changes, SummaryName, Summary, Hover.Timing.Instant, place: () => (changes.GlobalPosition + new Vector2(changes.Size.X, -8), true, true));
         changes.GuiInput += e =>
         {
