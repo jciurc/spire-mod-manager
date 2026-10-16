@@ -112,8 +112,10 @@ public static class Store
             _readOnly = loaded.ReadOnly;
             if (loaded.Unreadable != null)
                 Notice = loaded;
+            // Over the fresh start LoadFrom wrote back, without backing that empty file up (the session's first save
+            // still backs up the imported data).
             if (loaded.Imported && loaded.Data != null)
-                Write(loaded.Data); // over the fresh start LoadFrom wrote back
+                WriteTo(Dir, loaded.Data, backUp: false);
             if (loaded.Data is { } data)
                 return data;
 
@@ -217,13 +219,12 @@ public static class Store
         return data;
     }
 
-    // The newest backup that reads (by name: manager.<time>Z.json, in UTC; older ones in local time without the Z),
-    // or a fresh start when none does.
+    // The newest backup that reads, or a fresh start when none does.
     static (StoreData Data, (string Path, DateTime Saved)? From) NewestBackup(string dir)
     {
         var backups = Path.Combine(dir, BackupsFolder);
         if (Directory.Exists(backups))
-            foreach (var path in Directory.GetFiles(backups, BackupPattern).OrderDescending())
+            foreach (var path in NewestFirst(Directory.GetFiles(backups, BackupPattern)))
                 try
                 {
                     return (Read(path), (path, File.GetLastWriteTime(path)));
@@ -233,6 +234,20 @@ public static class Store
                     Log.Warn($"[{ModEntry.ModId}] Could not read the backup {path} either: {e.Message}");
                 }
         return (new StoreData(), null);
+    }
+
+    // Backups by when they were made, newest first: the time in the name, manager.<time>Z.json in UTC or (older ones)
+    // manager.<time>.json in local time, so names of both kinds sort together (#99); a name without a time last, by name.
+    public static IEnumerable<string> NewestFirst(IEnumerable<string> paths) =>
+        paths.OrderByDescending(BackupTime).ThenByDescending(path => path, StringComparer.Ordinal);
+
+    static DateTime BackupTime(string path)
+    {
+        var stamp = Path.GetFileNameWithoutExtension(path)["manager.".Length..];
+        var utc = stamp.EndsWith('Z');
+        return DateTime.TryParseExact(utc ? stamp[..^1] : stamp, "yyyyMMdd-HHmmss", CultureInfo.InvariantCulture,
+            utc ? DateTimeStyles.AssumeUniversal | DateTimeStyles.AdjustToUniversal : DateTimeStyles.AssumeLocal | DateTimeStyles.AdjustToUniversal,
+            out var time) ? time : DateTime.MinValue;
     }
 
     // Beside it as manager.broken-<time>.json (-2, -3 and on when that name is taken): never over another file.
@@ -416,9 +431,9 @@ public static class Store
                 var backups = Path.Combine(dir, BackupsFolder);
                 Directory.CreateDirectory(backups);
                 // Named in UTC ("Z"), so a daylight-saving change can't put two in the wrong order or one over another
-                // (#99). Older ones are named in local time; the newest still sort last.
+                // (#99). Older ones are named in local time; NewestFirst reads both kinds.
                 File.Copy(file, Path.Combine(backups, $"manager.{DateTime.UtcNow:yyyyMMdd-HHmmss}Z.json"), overwrite: true);
-                foreach (var old in Directory.GetFiles(backups, BackupPattern).OrderDescending().Skip(BackupsKept))
+                foreach (var old in NewestFirst(Directory.GetFiles(backups, BackupPattern)).Skip(BackupsKept))
                     File.Delete(old);
             }
             catch (Exception e)

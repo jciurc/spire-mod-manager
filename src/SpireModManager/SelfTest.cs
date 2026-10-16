@@ -5195,6 +5195,14 @@ static class SelfTest
         File.WriteAllText(Path.Combine(blocked, "backups"), "a file where the backups folder goes");
         Store.WriteTo(blocked, new StoreData { Categories = [new Category { Name = "New" }] }, backUp: true);
         Check("a backup that fails doesn't stop the save", Category(Store.LoadFrom(blocked, now)) == "New");
+        // Backups by when they were made, the old local-time names and the new UTC ones together (#99): in a timezone
+        // ahead of UTC a local name reads later than a UTC one made after it.
+        var made = DateTime.UtcNow;
+        string Local(DateTime utc) => $"manager.{utc.ToLocalTime():yyyyMMdd-HHmmss}.json";
+        string Utc(DateTime utc) => $"manager.{utc:yyyyMMdd-HHmmss}Z.json";
+        var order = Store.NewestFirst([Local(made.AddHours(-2)), Utc(made.AddHours(-1)), Local(made.AddHours(-3)), Utc(made)]).ToList();
+        Check("backups newest first, local-time and UTC names together", order.SequenceEqual([Utc(made), Utc(made.AddHours(-1)), Local(made.AddHours(-2)), Local(made.AddHours(-3))]),
+            string.Join(", ", order));
 
         // The notice: none for a file that read fine; after a recovery, the game's popup as the page shows, with
         // the backup's date and where the unreadable file is; once.
