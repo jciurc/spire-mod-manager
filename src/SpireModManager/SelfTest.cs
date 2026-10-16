@@ -224,6 +224,10 @@ static class SelfTest
                 $"mods with notes: {Store.Data.Mods.Values.Count(m => m.Notes != null)}");
 
             // A full redraw happens on every search keystroke and every edit: it has to stay quick.
+            // From a clean heap: a full GC that comes due otherwise lands in some runs' loop and not others' (+5 ms).
+            GC.Collect();
+            GC.WaitForPendingFinalizers();
+            GC.Collect();
             var timer = System.Diagnostics.Stopwatch.StartNew();
             for (var i = 0; i < 10; i++)
                 CategoryList.Apply(content);
