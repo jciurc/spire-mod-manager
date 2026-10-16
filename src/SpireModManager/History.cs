@@ -139,8 +139,10 @@ static class History
         Changed?.Invoke();
     }
 
-    // How many undo steps a history has (the self-test).
+#if DEVTOOLS
+    // Self-test: how many undo steps a history has.
     public static int Steps(Track track) => Past[track].Count;
+#endif
 
     // Takes the last snapshot of the track from one side, puts now on the other, and restores the track's part of it.
     static void Step(Track track, Dictionary<Track, List<Snapshot>> fromSide, Dictionary<Track, List<Snapshot>> toSide)

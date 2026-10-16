@@ -13,16 +13,11 @@ using MegaCrit.Sts2.Core.Saves;
 
 namespace SpireModManager;
 
-// Every patch body runs inside try/catch: postfixes on one method share a call chain, so an exception here would
-// also skip other mods' postfixes, and one in a prefix would skip the game's own code (ours return true then, so
-// it still runs). Priority.First and HarmonyBefore keep ours from being skipped by theirs (Better Mod Menu 1.1.1
-// throws in its NModdingScreen._Ready and OnRowSelected postfixes on the 0.111 beta). Better Mod Menu can run
-// alongside: see Bmm.
-// Each class is applied on its own (ModEntry.Init), so a game update that renames what one hooks leaves the others
-// working; if it's one our page needs (ModEntry.PageNeeds), the Modding page stays the game's, saying so.
+// Each patch body runs in try/catch: a throw would also skip other mods' postfixes on the same method, or the game's
+// own code after a prefix. Priority.First and HarmonyBefore run ours ahead of Better Mod Menu's, which can throw.
+// Each class is applied on its own (ModEntry.Init): one a game update breaks leaves the rest working.
 
-// "Mod Profile: Default (12 mods)" button in the main menu's lower-left corner (the lower right holds the vanilla
-// "MODDED (n)" label and its hover list), with a dot when a relaunch is pending (MenuButton).
+// Main menu: loads our data, adds the "Mod Profile" button (MenuButton), then shows any startup notices.
 [HarmonyPatch(typeof(NMainMenu), nameof(NMainMenu._Ready))]
 static class MainMenuPatch
 {
@@ -31,20 +26,18 @@ static class MainMenuPatch
     {
         try
         {
-            // Load (and on first run import) saved data while the menu is idle, not on first screen open.
+            // Loads (on first run, imports) our data now, while the menu is idle.
             _ = Store.Data;
             LoadOrder.RememberLoadedOrder(); // first main menu: the game's startup sorting is done
             Profiles.Prepare(); // one-time conversions belong to the baseline, not the undo history
             History.Start();
-            Bmm.ForgetDismissedWarning(); // a dismissed managers banner, after a change our page never saw
+            Bmm.ForgetDismissedWarning(); // the dismissed Better Mod Menu banner, if the two changed outside our page
             WorkshopInfo.Start(); // background Steam query; does nothing without Steam
             ModEntry.MarkDevRun(__instance.GetTree());
 
             MenuButton.Add(__instance);
-            // After a launch that couldn't read our saved file: the notice here too, so it's seen even without a
-            // visit to the Modding page (after the game's own startup popups; with one still open, it waits). Then
-            // the one about a last launch that stopped before the main menu (with a popup open, it tries again each
-            // second while this menu is up).
+            // After the game's own popups: the notice about an unreadable saved file, then the one about a last
+            // launch that stopped before the main menu.
             var menu = __instance;
             menu.GetTree().CreateTimer(1.5).Timeout += () =>
             {
@@ -65,8 +58,8 @@ static class MainMenuPatch
     }
 }
 
-// The launch reached the main menu: its record goes (LaunchGuard). A prefix, so a throw in the menu's own _Ready
-// (which skips the postfixes) can't leave a launch that worked marked as one that didn't.
+// Clears the launch record (LaunchGuard) once the main menu is reached. A prefix, so a throw in the menu's own _Ready
+// can't skip it.
 [HarmonyPatch(typeof(NMainMenu), nameof(NMainMenu._Ready))]
 static class MenuReachedPatch
 {
@@ -84,15 +77,14 @@ static class MenuReachedPatch
     }
 }
 
-// Modding screen: "Relaunch Game" at the right end of the pending-changes row, profiles and categories.
+// Modding page: our relaunch button, profiles, search, categories and undo bar.
 [HarmonyPatch(typeof(NModdingScreen), nameof(NModdingScreen._Ready))]
 static class ModdingScreenPatch
 {
     [HarmonyPriority(Priority.First)]
     static void Postfix(NModdingScreen __instance)
     {
-        // A patch the page needs didn't apply (a game update renamed what it hooks): the game's page as it is, with
-        // one line saying so.
+        // A patch the page needs didn't apply: the game's page, with one line saying so.
         try
         {
             if (!ModEntry.OurPage)
@@ -113,7 +105,7 @@ static class ModdingScreenPatch
             var button = ModEntry.AddButton(__instance, "SPIRE_MOD_MANAGER.RELAUNCH_BUTTON", size, () => RelaunchCheck.Relaunch(__instance));
             button.Name = "SpireModManagerRelaunchButton";
 
-            // Screen-space slot: right edge matches the mod info panel (x 1727), centred on the pending-changes row (y 1012-1056).
+            // Right edge on the info panel's (x 1727), centred on the pending-changes row (y 1012-1056).
             button.Position = new Vector2(1727 - size.X, 1034 - size.Y / 2);
         }
         catch (Exception e)
@@ -160,7 +152,7 @@ static class ModdingScreenPatch
         try
         {
             Layout.Apply(__instance); // last: it places everything above
-            // Workshop details arriving after the page opened: the info panel shows them (dates, tags).
+            // Refills the info panel when Workshop details arrive.
             var screen = __instance;
             void Refill() => Callable.From(() => ModDetails.Refresh(screen)).CallDeferred();
             WorkshopInfo.Loaded += Refill;
@@ -173,9 +165,7 @@ static class ModdingScreenPatch
 
         try
         {
-            // After a launch that couldn't read our saved file: the notice, once, when the page shows. The game adds
-            // this screen hidden, shows it as it's pushed and reuses it for later visits: checked at the end of this
-            // frame and each time it shows.
+            // The notice about an unreadable saved file, once, when the page shows (it's added hidden and reused).
             var screen = __instance;
             void Notice()
             {
@@ -190,9 +180,8 @@ static class ModdingScreenPatch
             Log.Error($"[{ModEntry.ModId}] Could not set up the notice about our saved file: {e}");
         }
 
-        // Better Mod Menu's _Ready postfix runs after this one and rebuilds the page its way (rows restyled, grouped,
-        // the list pushed down). Once that's done (deferred calls run in order, and its own deferred step comes after
-        // this): ours again, or its page in Vanilla View.
+        // Better Mod Menu's _Ready postfix runs after ours and rebuilds the page: a deferred call puts ours back
+        // (or keeps its page in Vanilla View).
         try
         {
             if (Bmm.Present)
@@ -221,9 +210,8 @@ static class ModdingScreenPatch
     }
 }
 
-
-// Every tickbox change (and the game's own pending check) passes through here: the active profile follows
-// it, and a changed load order also counts as pending (the game only checks on/off).
+// After each tickbox change: the active profile, undo history, rows and info panel follow, and a changed load order
+// (or a mod installed this session) shows the pending-changes line too; the game only checks its loaded mods.
 [HarmonyPatch(typeof(NModdingScreen), nameof(NModdingScreen.OnModEnabledOrDisabled))]
 static class ModToggledPatch
 {
@@ -232,8 +220,7 @@ static class ModToggledPatch
     {
         try
         {
-            // Not while the screen is still adding its rows (it calls this once per row as it opens; ours are set
-            // up after).
+            // Not during the screen's setup: it calls this once per row as it opens.
             if (HistoryBar.Screen != __instance)
                 return;
             Profiles.Track();
@@ -253,8 +240,8 @@ static class ModToggledPatch
     }
 }
 
-// A mod subscribed while the page is open: the game adds its row at the bottom, in its own style. Once it's
-// in, a redraw puts it in its category, in our style (rows kept under the Show: choice stay: not the player's change).
+// A mod subscribed while the page is open: once the game adds its row, a redraw puts it in its category (keep: not
+// the player's change, so rows kept under the Show: choice stay).
 [HarmonyPatch(typeof(NModdingScreen), "OnNewModDetected")]
 static class NewModPatch
 {
@@ -284,8 +271,7 @@ static class NewModPatch
     }
 }
 
-// Info panel: our details and the player's fields, after the game fills it (and after Better Mod Menu: on our
-// views our title replaces its styled one, and our layout its description anchor).
+// Info panel: our details and fields, after the game (and Better Mod Menu) fill it.
 [HarmonyPatch(typeof(NModInfoContainer), nameof(NModInfoContainer.Fill))]
 static class ModInfoFillPatch
 {
@@ -304,8 +290,8 @@ static class ModInfoFillPatch
     }
 }
 
-// No mod shown: hide our panel buttons too. By name, and only where the game has it: the stable branch has no
-// Clear (Compat.Clear empties the panel and hides them there).
+// Hides our info panel buttons when no mod is shown. Only where the game has Clear; on the stable branch, Compat.Clear
+// does it.
 [HarmonyPatch(typeof(NModInfoContainer), "Clear")]
 static class ModInfoClearPatch
 {
@@ -313,8 +299,7 @@ static class ModInfoClearPatch
 
     static void Postfix(NModInfoContainer __instance)
     {
-        // It also runs as the page closes (inside NSubmenuStack.Pop): an exception there could leave the main menu
-        // half restored, our button hidden.
+        // Also runs as the page closes: a throw there could leave the main menu half restored.
         try
         {
             ModDetails.HideButtons(__instance);
@@ -326,14 +311,12 @@ static class ModInfoClearPatch
     }
 }
 
-// Keyboard shortcuts on our Modding screen: Ctrl+Z undo, Ctrl+Y or Ctrl+Shift+Z redo, Ctrl+F search, Ctrl+S
-// saves the profile, Ctrl+A picks every mod shown.
-// Unhandled keys only, so a focused text box keeps its own Ctrl+Z.
+// Ctrl shortcuts on our Modding page: Z undo, Y or Shift+Z redo, F search, S save profile, A pick all shown. Unhandled
+// keys only, so a focused text box keeps its own.
 [HarmonyPatch(typeof(NInputManager), "_UnhandledKeyInput")]
 static class ShortcutsPatch
 {
-    // Escape closes an open menu or dialog of ours, or lets go of picked mods, and nothing else happens (the game
-    // would leave the page). This runs on every Escape anywhere in the game: on an exception, the game's runs.
+    // Escape closes our open menu or dialog, or lets go of picked mods, instead of leaving the page.
     static bool Prefix(InputEvent inputEvent)
     {
         try
@@ -411,8 +394,8 @@ static class RowSelectedPatch
     }
 }
 
-// The game's "mod not loaded" popup when a mod is installed while it runs: our wording ("New Mod Added") and
-// mark, and at most one every 30 seconds (subscribing to several mods at once used to stack them up).
+// The game's "mod not loaded" popup for a mod installed while it runs: ours ("New Mod Added") instead, at most one
+// every 30 seconds.
 [HarmonyPatch(typeof(NGame), "OnNewModDetected")]
 static class NewModPopupPatch
 {
@@ -444,9 +427,8 @@ static class NewModPopupPatch
     }
 }
 
-// The game's tickbox only updates a mod's existing entry in the saved list, and a mod installed while the
-// game runs has none: unticking it changed nothing, and it would still load after a relaunch. Add the entry
-// first (on, the game's default), so the tickbox has something to change.
+// Adds a saved entry for a mod installed this session before its tickbox toggles: the game only updates existing
+// entries, so unticking one did nothing.
 [HarmonyPatch(typeof(NModMenuRow), "OnTickboxToggled")]
 static class NewModTogglePatch
 {
@@ -467,8 +449,8 @@ static class NewModTogglePatch
     }
 }
 
-// A row ticked or unticked on the main list stays while the page bar's Show: choice is on (ListFilter.Keep): a mod
-// disabled under "Enabled" doesn't go from under the mouse. Before the toggle, so the page bar it redraws counts it.
+// Keeps a ticked or unticked row in the list under the Show: choice (ListFilter.Keep), so it doesn't vanish under the
+// mouse. A prefix, so the page bar's redraw counts it.
 [HarmonyPatch(typeof(NModMenuRow), "OnTickboxToggled")]
 static class TickKeepPatch
 {
@@ -485,8 +467,7 @@ static class TickKeepPatch
     }
 }
 
-// The row's highlight follows our look (RowTitles.Look) whenever the game changes its state: under the mouse or
-// keyboard (focus), or the mod shown in the info panel (selected).
+// Our row highlight (RowTitles.Look) whenever the game changes a row's focus or selection.
 [HarmonyPatch(typeof(NModMenuRow))]
 static class RowLookPatch
 {
@@ -499,7 +480,7 @@ static class RowLookPatch
     [HarmonyPostfix, HarmonyPatch(nameof(NModMenuRow.SetSelected))]
     static void Selected(NModMenuRow __instance) => Apply(__instance, focused: null);
 
-    // focused: null for "as it is" (read from the row, inside the try: it's the game's private state).
+    // focused null: read from the row, inside the try (it's the game's private state).
     static void Apply(NModMenuRow row, bool? focused)
     {
         try
@@ -514,10 +495,8 @@ static class RowLookPatch
     }
 }
 
-// Drop-in translations (Translations) into the tables the game has just loaded for a language, at startup and on every
-// language change, before it puts them to use. Apply skips English, which covers both the English fallback tables loaded
-// under every language and the English tables for the game's metrics (allowOverride false). The allowOverride check is
-// only a second guard, in case a game update loads some other language that way.
+// Adds the drop-in translations (Translations) to a language's tables as the game loads them. Not the English fallback
+// or metrics tables (allowOverride false); Apply also skips English.
 [HarmonyPatch(typeof(LocManager), "LoadTablesFromPath")]
 static class TranslationsPatch
 {
@@ -535,8 +514,8 @@ static class TranslationsPatch
     }
 }
 
-// A row's own state, which the game keeps to itself. Looked up on first use rather than in static initializers:
-// if a game update renames one, it reads as false (logged once) instead of throwing on every redraw.
+// A row's private selected and focused state, looked up on first use: if a game update renames one, it reads as false
+// (logged once) and rows keep the game's look.
 static class RowState
 {
     static AccessTools.FieldRef<NModMenuRow, bool>? _selected;
@@ -555,7 +534,7 @@ static class RowState
         return _focused is { } read && read(row);
     }
 
-    // Self-test: both found on this game version.
+    // Both found on this game version.
     public static bool Found
     {
         get

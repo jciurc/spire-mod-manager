@@ -36,7 +36,8 @@ sealed class TagSuggestions
         box.TreeExiting += Close;
     }
 
-    // Self-test only: the list showing, its tags top to bottom, the lit one, and a click on one.
+#if DEVTOOLS
+    // Self-test: the list showing, its tags top to bottom, the lit one, and a click on one.
     public static CanvasLayer? Current => _open?._layer;
 
     public static List<string> Labels() => _open?._list?.GetChildren().Select(row => (string)row.GetMeta(TagMeta)).ToList() ?? [];
@@ -48,6 +49,7 @@ sealed class TagSuggestions
         if (_open?._list?.GetChildren().FirstOrDefault(row => (string)row.GetMeta(TagMeta) == tag) is Control row)
             row.EmitSignal(Control.SignalName.GuiInput, new InputEventMouseButton { ButtonIndex = MouseButton.Left, Pressed = false });
     }
+#endif
 
     // A key pressed in the box: true when the list took it (the box then leaves it alone).
     public bool Use(InputEvent e)

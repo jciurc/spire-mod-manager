@@ -96,8 +96,10 @@ public static class Store
     // account folder is known in Init already: the game sets up Steam before it loads mods (LaunchGuard uses it there).
     public static StoreData Data => _data ??= Load();
 
-    // For the self-test's second launch: the next use loads again, from the file the first load wrote.
+#if DEVTOOLS
+    // Self-test: the next use loads again, from the file the first load wrote (a second launch).
     public static void Reload() => _data = null;
+#endif
 
     // The mod's data folder: manager.json, its backups, the drop-in translations (Translations) and the launch record
     // (LaunchGuard).
@@ -309,8 +311,10 @@ public static class Store
         return true;
     }
 
-    // Set by the self-test: the notice's folder link calls it with the folder instead of opening a window.
+#if DEVTOOLS
+    // Self-test: the notice's folder link calls it with the folder instead of opening a window.
     public static Action<string>? TestOpenFolder;
+#endif
 
     // The notice's "mod's data folder" ([url=folder]) opens the folder in the system's file browser.
     static void LinkFolder(Node popup)
@@ -322,9 +326,11 @@ public static class Store
         {
             if (meta.AsString() != "folder")
                 return;
+#if DEVTOOLS
             if (TestOpenFolder is { } test)
                 test(Dir);
             else
+#endif
                 OS.ShellOpen(Dir);
         };
     }

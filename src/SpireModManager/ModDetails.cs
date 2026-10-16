@@ -7,14 +7,9 @@ using MegaCrit.Sts2.Core.Localization;
 
 namespace SpireModManager;
 
-// The info panel in our views, top to bottom:
-// - the head, left of a large thumbnail: the mod's own name (click: scroll to it in the list) with its version
-//   in grey; "<id> (<Workshop id>)", linking to the Workshop page (or "(Local)"), and Enabled / Disabled /
-//   Pending relaunch; author (click: search for their mods), last update (and a link to its Workshop change notes), compatibility;
-// - anything wrong (red), the author's description;
-// - size, published, subscribers, Workshop tags;
-// - dependencies both ways (click a name: scroll to it in the list, its row taking the selected look);
-// - the player's own Alias, Category, Tags and Notes (ModField), then Open Folder.
+// The info panel in our views, top to bottom: the head beside the thumbnail (name and version, id and Workshop link,
+// status, author, last update, compatibility); anything wrong; the description; size, published, subscribers and
+// Workshop tags; dependencies both ways; the player's Alias, Category, Tags and Notes; Open Folder.
 // Vanilla View: the panel exactly as the game makes it.
 static class ModDetails
 {
@@ -62,14 +57,12 @@ static class ModDetails
         container.SetMeta(FolderMeta, mod.path);
         container.SetMeta(WorkshopMeta, Compat.WorkshopId(mod)?.ToString() ?? ""); // this copy's (a local one can share its id)
 
-        // The game titles it with the name; ours too, with the version in grey beside it (the alias is in the
-        // fields below). Its text is fitted once the panel is placed (FitTitle).
+        // The name, with the version in grey beside it (fitted in FitTitle once the panel is placed).
         var title = container.GetNode<MegaRichTextLabel>("ModTitle");
         title.BbcodeEnabled = true;
         container.GetNode<MegaRichTextLabel>("ModDescription").Text = Describe(mod);
 
-        // "<id> (<Workshop id>)", a link to its Workshop page, or "<id> (Local)"; then whether it's on. The link's
-        // text is fitted once the panel is placed (FitSource).
+        // "<id> (<Workshop id>)" linking to its Workshop page, or "<id> (Local)", then its status (fitted: FitSource).
         var source = container.GetNodeOrNull<Control>(SourceName) ?? AddSource(container);
         source.Visible = true;
         var link = source.GetNode<LinkButton>(LinkName);
@@ -113,13 +106,11 @@ static class ModDetails
         folder.Visible = Directory.Exists(mod.path);
     }
 
-    // The title on one line: the name, then its version (smaller, grey). A long name shrinks with the game's auto-size
-    // down to TitleMinSize, then is cut with "…" so the version still shows (a very long version is cut too, to what
-    // the name leaves or a third of the line). Cut short: the whole of it a second over the title.
+    // The name and its version (smaller, grey) on one line: a long name shrinks to TitleMinSize, then is cut with "…"
+    // so the version shows. Cut short: the whole text as a tooltip.
     static void FitTitle(MegaRichTextLabel title, string name, string? version)
     {
-        // The auto-size measures all of the text at one size, the version too (drawn smaller), and keeps it on one
-        // line: whatever fits that way at TitleMinSize keeps at least that size.
+        // The auto-size measures it all at one size, so cut to what fits at TitleMinSize.
         var font = title.GetThemeFont("normal_font");
         float Width(string text) => font.GetStringSize(text, fontSize: TitleMinSize).X;
         var room = title.Size.X - 4;
@@ -130,13 +121,12 @@ static class ModDetails
         var shownName = RowTitles.Cut(font, name, TitleMinSize, shownNumber.Length > 0 ? room - Width(gap + shownNumber) : room);
         title.Text = Escape(shownName)
             + (shownNumber.Length > 0 ? $"{gap}[color={Disabled}][font_size={VersionSize}]{Escape(shownNumber)}[/font_size][/color]" : "");
-        // Drawn at the size the auto-size picks for this text (TitleMinSize or more), the same text as before too.
+        // Lets the auto-size pick the size (TitleMinSize or more).
         Layout.Refit(title);
         title.SetMeta(FullMeta, shownName != name || shownNumber != number ? name + (number.Length > 0 ? gap + number : "") : "");
     }
 
-    // "<id> (<where>)", then the dot and status, within width: a long id is cut with "…" so the rest still shows.
-    // Cut short: the whole id a second over the link.
+    // "<id> (<where>)" then the status, within width: a long id is cut with "…" (the whole id as a tooltip).
     static void FitSource(Control source, string id, string where, float width)
     {
         var link = source.GetNode<LinkButton>(LinkName);
@@ -150,9 +140,8 @@ static class ModDetails
         link.SetMeta(FullMeta, shown != id ? id : "");
     }
 
-    // Clicking the title scrolls to the mod in the list, a dependency's name to that one, each row taking the
-    // selected look (the panel stays on this mod). Hovering a name lights its row if it's in view, then shows
-    // its card. Connected once per panel.
+    // Clicks and hovers, connected once per panel: the title or a dependency's name scrolls to its row, a Workshop tag
+    // searches, and hovering a name shows its card.
     static void Wire(NModInfoContainer container)
     {
         if (container.HasMeta(WiredMeta))
@@ -188,9 +177,7 @@ static class ModDetails
         Hover.Watch(image, "SpireModManagerPictureCard", () => null, picture: () => Store.Data.VanillaView ? null : image.Texture);
     }
 
-    // Anything wrong, the author's description, more facts (size, published, subscribers, Workshop tags), then
-    // dependencies; blank lines between the groups. (Name, version, source, status, author, update and
-    // compatibility are in the head above.)
+    // Anything wrong, the description, more facts (size, published, subscribers, Workshop tags), then dependencies.
     static string Describe(Mod mod)
     {
         var text = new System.Text.StringBuilder();
@@ -229,8 +216,7 @@ static class ModDetails
         return text.ToString().TrimEnd();
     }
 
-    // The head's short facts: author (click: search for their mods), the last update (how long ago; its change
-    // notes on the Workshop), and which game versions it's made for.
+    // The head's facts: author (click: search for their mods), last update (and its change notes), game versions.
     static string HeadFacts(Mod mod)
     {
         string Fact(string key, string value) => $"[color={GoldHex}]{Menus.Text(key)}[/color]: {value}";
@@ -255,9 +241,8 @@ static class ModDetails
         return $"[color={(age.TotalHours < 48 ? Enabled : Disabled)}]({text})[/color]";
     }
 
-    // The card shown after hovering a row's title: its id and state, anything wrong, author, last update, and
-    // the player's alias, tags and notes.
-    // full: nothing cut short (the card held with Alt); otherwise long alias, tags, notes and author are cut.
+    // A row's hover card: id and state, anything wrong, author, last update, and the player's alias, tags and notes.
+    // full: nothing cut short (held with Alt).
     public static string Card(Mod mod, bool full = false)
     {
         string Cut(string text, int max) => full || text.Length <= max ? text : text[..max].TrimEnd() + "…";
@@ -284,9 +269,8 @@ static class ModDetails
     // Text cut after 200 characters (some authors write a paragraph where their name goes).
     public static string Short(string text) => text.Length <= 200 ? text : text[..200].TrimEnd() + "…";
 
-    // "October 12, 2026" in English, "12. Oktober 2026" in German: the game's own date pattern (the one its run
-    // history uses, translated with the rest of the game) in the game's language. All in English if a game update
-    // renames that text or it doesn't read as a date pattern ("October 12", not "Oktober 12" in an English pattern).
+    // The date in the game's language, in its run history's pattern ("12. Oktober 2026"); English if that's missing
+    // or unusable.
     public static string Date(DateTime date)
     {
         var english = date.ToString("MMMM d, yyyy", System.Globalization.CultureInfo.InvariantCulture);
@@ -300,8 +284,7 @@ static class ModDetails
         }
     }
 
-    // Enabled (green), Disabled (grey), or Pending relaunch (orange) when it's been turned on or off since it
-    // loaded; Failed to load (red) when it's on but couldn't load.
+    // Enabled (green), Disabled (grey), Pending relaunch (orange) if changed since it loaded, or Failed to load (red).
     public static string Status(Mod mod)
     {
         var (text, color) = StatusParts(mod);
@@ -319,8 +302,7 @@ static class ModDetails
         return (Menus.Text(key), color);
     }
 
-    // What stops the mod from working, in plain words: the game's own load errors (wrong game version or
-    // branch, bad files...), a duplicate copy, and, for a mod that's on, dependencies missing or off.
+    // What stops the mod working: the game's load errors, a duplicate copy, and (if on) dependencies missing or off.
     public static List<string> Problems(Mod mod)
     {
         var problems = (mod.errors ?? []).Select(e => e.GetFormattedText()).ToList();
@@ -330,8 +312,7 @@ static class ModDetails
         return problems;
     }
 
-    // An enabled mod's dependencies that stop it loading, a line for each kind (Jordan, 2026-10-14): "Requires mods to
-    // be installed: A, B", "Requires mod to be enabled: C". None for a mod that's off. (The relaunch check lists them too.)
+    // An enabled mod's missing or disabled dependencies, a line for each kind ("Requires mods to be installed: A, B").
     public static List<string> DependencyProblems(Mod mod)
     {
         if (!Dependencies.IsOn(mod))
@@ -417,8 +398,7 @@ static class ModDetails
         return Menus.Format(key, ("size", size));
     }
 
-    // Fills the panel again for the mod it shows (after a tickbox change: its status may have changed). Not
-    // while the panel shows the changes list: that stays until Close or a click on a row.
+    // Fills the panel again for its mod (after a tickbox change), unless it's showing the changes list.
     public static void Refresh(Node screen)
     {
         if (Store.Data.VanillaView || screen.GetNodeOrNull<NModInfoContainer>("%ModInfoContainer") is not { } container
@@ -577,10 +557,8 @@ static class ModDetails
         return line;
     }
 
-    // The fields sit right under the mod's details: the description shrinks to its text (up to the room left
-    // above the fields), and the fields follow it. Other mods' parts in the panel go between the two, as long as the
-    // description keeps a few lines (all of it if shorter); the rest go out of sight (Layout.FitOthers). Once the
-    // text is laid out, so deferred. Our views only, and not behind the changes list (placed again when it closes).
+    // Places the player's fields right under the description, which shrinks to its text; other mods' panel parts go
+    // between while the description keeps a few lines, the rest out of sight (Layout.FitOthers). Our views only.
     public static void PlaceFields(Control container)
     {
         if (!Layout.Wide || HistoryBar.ListOpen(container) || container.GetNodeOrNull<Control>(FieldsName) is not { } yours)

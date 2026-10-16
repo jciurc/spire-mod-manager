@@ -202,8 +202,10 @@ static class ProfileShare
     static ProfileCsv.Options Choices => _options ??= Store.Data.ShareChoices is { } kept
         ? new ProfileCsv.Options(kept.Category, kept.Disabled, kept.Alias, kept.Notes) : new ProfileCsv.Options();
 
-    // Self-test only: the tick boxes as a new launch finds them.
+#if DEVTOOLS
+    // Self-test: the tick boxes as a new launch finds them.
     public static void ForgetSessionChoices() => _options = null;
+#endif
 
     // Remember selection on: these tick boxes kept in our data (saved now), for the next launches too. Off: forgotten.
     static void Keep(bool on)
@@ -343,8 +345,10 @@ static class ProfileShare
         box.GrabFocus();
     }
 
-    // Self-test only: the preview's BBCode for a list read.
+#if DEVTOOLS
+    // Self-test: the preview's BBCode for a list read.
     public static string PreviewFor(IReadOnlyList<ProfileCsv.Entry> listed, string name) => Preview(listed, Profiles.PlanImport(listed), name);
+#endif
 
     // The preview: the new profile's name, what the list holds, what it changes compared with now (only the counts that
     // aren't 0, or "None"), and the listed mods that aren't installed.

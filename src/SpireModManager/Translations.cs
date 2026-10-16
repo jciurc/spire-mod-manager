@@ -19,8 +19,10 @@ static class Translations
 
     public static string Folder => Path.Combine(Store.Dir, "translations");
 
-    // Set by the self-test: Open calls it with the folder instead of opening a window.
+#if DEVTOOLS
+    // Self-test: Open calls it with the folder instead of opening a window.
     public static Action<string>? TestOpen;
+#endif
 
     // An example file in the folder: our English texts under a few lines on how to translate them. Its name is no
     // language's, so it's never read. Rewritten for each version unless the player has edited it (dated ExampleTime).
@@ -63,9 +65,11 @@ static class Translations
             var folder = Folder;
             Directory.CreateDirectory(folder);
             WriteExample(folder);
+#if DEVTOOLS
             if (TestOpen is { } test)
                 test(folder);
             else
+#endif
                 OS.ShellOpen(folder);
         }
         catch (Exception e)

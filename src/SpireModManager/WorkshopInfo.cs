@@ -20,7 +20,8 @@ static class WorkshopInfo
 
     public static Details? For(Mod? mod) => Compat.WorkshopId(mod) is { } id && Cache.TryGetValue(id, out var details) ? details : null;
 
-    // Self-test only: sets or clears a made-up mod's details.
+#if DEVTOOLS
+    // Self-test: sets or clears a made-up mod's details.
     public static void TestSet(ulong id, Details? details)
     {
         if (details == null)
@@ -28,6 +29,7 @@ static class WorkshopInfo
         else
             Cache[id] = details;
     }
+#endif
 
     public static void Start()
     {

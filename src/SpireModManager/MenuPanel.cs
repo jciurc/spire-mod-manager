@@ -20,7 +20,7 @@ static class MenuPanel
 
     public static bool IsOpen => _open != null && GodotObject.IsInstanceValid(_open) && _open.IsInsideTree();
 
-    // The open menu, for the self-test.
+    // The open menu, if any.
     public static Node? Current => IsOpen ? _open : null;
 
     // items is called again on every redraw, so it can change; side builds the side column. With a toggleKey, showing
@@ -213,7 +213,8 @@ static class MenuPanel
         return row;
     }
 
-    // Self-test only: a menu's labels (Headings: its headings'), and a click on one.
+#if DEVTOOLS
+    // Self-test: a menu's labels (Headings: its headings'), and a click on one.
     public static List<string> Labels(Node menu) =>
         menu.FindChildren("*", "", true, false).Where(n => n.IsInGroup(ItemGroup)).Select(n => (string)n.GetMeta("label")).ToList();
 
@@ -225,6 +226,7 @@ static class MenuPanel
         if (menu.FindChildren("*", "", true, false).FirstOrDefault(n => n.IsInGroup(ItemGroup) && (string)n.GetMeta("label") == label) is Control row)
             row.EmitSignal(Control.SignalName.GuiInput, new InputEventMouseButton { ButtonIndex = MouseButton.Left, Pressed = false });
     }
+#endif
 
     static void Style(Control control, string font, int size, Color color)
     {
