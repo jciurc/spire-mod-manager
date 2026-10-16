@@ -1,18 +1,22 @@
+
+<img width="455" height="455" alt="spire-mod-manager-cover" src="https://github.com/user-attachments/assets/7caf5965-19b8-4a25-94be-d7a168b3ec46" />
+
 # Spire Mod Manager
 
-A mod manager for Slay the Spire 2. It replaces the game's Modding page with one made for long mod lists:
-categories, filters, profiles, a load order view, your own notes and tags, and a quick relaunch. The game's
-own list stays one click away.
+A mod manager for Slay the Spire 2. It expands the game's Modding page.
+Organize your mods into categories, tag them, add notes, and easily swap or share mod configurations.
 
-By symphony ([@jciurc](https://github.com/jciurc) on GitHub).
+By symphony ([@jciurc](https://github.com/jciurc) on GitHub) with Claude Code Opus 5.5
+
+<img width="1280" height="720" alt="spire-mod-manager-main-list-view" src="https://github.com/user-attachments/assets/662f27f6-f81e-42c6-b530-1a4e6b64d9a3" />
 
 ## Install
 
 Subscribe to it on the Steam Workshop; the game installs it for you.
 
-- **Game version v0.107.1 or newer, on the stable branch or the public-beta.**
-- No other mods needed.
-- It doesn't change gameplay, so the people you play multiplayer with don't need it.
+- **Game version v0.107.1 or newer, on the stable branch or the public-beta**
+- No other mods needed
+- It doesn't change gameplay, so you can play multiplayer without others needing to install it
 
 ## Features
 
