@@ -59,7 +59,7 @@ var workshopMods = new List<string>(); // the mod ids in those items' manifests,
 if (mode is not ("test" or "launch" or "smoke"))
     return Fail("usage: dotnet run tools/dev.cs [test [--window] [--bmm[-after]] [--bmm-local] [--real|--first-run|--first-run-bmm]|launch [--first-run|--first-run-bmm]|smoke [--bmm]] [--workshop <id>[,<id>...]] [--stable]");
 if (real && firstRun)
-    return Fail("--real brings Jordan's own data, so it can't be a first run");
+    return Fail("--real brings your own data, so it can't be a first run");
 // --workshop: every item has to be there, or the run would test without it and look like a pass. So it takes
 // one list: a second --workshop, --workshop=..., or ids after a space would be dropped without a word.
 if (args.Count(a => a.StartsWith("--workshop")) != (workshopAt < 0 ? 0 : 1))
