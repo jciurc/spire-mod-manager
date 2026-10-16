@@ -5138,6 +5138,14 @@ static class SelfTest
         var started = Store.LoadFrom(fresh, now);
         Check("no backup: a fresh start, the unreadable file kept, a new file written", started is { Data: { Categories.Count: 0, Profiles.Count: 0 }, Backup: null, Unreadable: { } keptAs }
             && File.Exists(keptAs) && Store.LoadFrom(fresh, now) is { Data: not null, Unreadable: null }, started.Unreadable ?? "not set aside");
+        // That fresh start takes Better Mod Menu's data instead when it has some, as a first run does (#100); not
+        // after a backup was loaded, nor read-only, nor when it has none. The notice says where the data came from.
+        var fromBmm = new StoreData { Categories = [new Category { Name = "From BMM" }] };
+        var imported = Store.WithImport(started, () => fromBmm);
+        Check("no backup, but Better Mod Menu's data: imported again, and the notice says so", imported is { Imported: true } && imported.Data == fromBmm
+            && Store.NoticeText(imported)?.GetFormattedText().Contains("imported again from Better Mod Menu") == true
+            && Store.WithImport(recovered, () => fromBmm).Data != fromBmm && Store.WithImport(started with { ReadOnly = true }, () => fromBmm).Data != fromBmm
+            && Store.WithImport(started, () => null) == started, Store.NoticeText(imported)?.GetFormattedText() ?? "no notice");
 
         // A file another program holds open (a Windows lock): left where it is, the backup loaded, nothing saved.
         if (OperatingSystem.IsWindows())
@@ -5170,8 +5178,8 @@ static class SelfTest
         var saving = Folder("saving", Good("Old"), Enumerable.Range(1, 11).Select(i => ($"manager.20200101-0000{i:00}.json", Good($"Old {i}"))).ToArray());
         Store.WriteTo(saving, new StoreData { Categories = [new Category { Name = "New" }] }, backUp: true);
         var copies = Directory.GetFiles(Path.Combine(saving, "backups")).Order().ToList();
-        Check("a save backs up the old file first, the newest ten kept", Category(Store.LoadFrom(saving, now)) == "New" && copies.Count == 10
-            && File.ReadAllText(copies[^1]) == Good("Old") && !copies.Any(f => f.EndsWith("-000001.json") || f.EndsWith("-000002.json")),
+        Check("a save backs up the old file first, named in UTC (#99), the newest ten kept", Category(Store.LoadFrom(saving, now)) == "New" && copies.Count == 10
+            && File.ReadAllText(copies[^1]) == Good("Old") && copies[^1].EndsWith("Z.json") && !copies.Any(f => f.EndsWith("-000001.json") || f.EndsWith("-000002.json")),
             string.Join(", ", copies.Select(Path.GetFileName)));
         var blocked = Path.Combine(root, "blocked");
         Directory.CreateDirectory(blocked);

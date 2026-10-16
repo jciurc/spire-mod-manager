@@ -108,10 +108,12 @@ public static class Store
     {
         try
         {
-            var loaded = LoadFrom(Dir, DateTime.Now);
+            var loaded = WithImport(LoadFrom(Dir, DateTime.Now), BetterModMenuImport.TryImport);
             _readOnly = loaded.ReadOnly;
             if (loaded.Unreadable != null)
                 Notice = loaded;
+            if (loaded.Imported && loaded.Data != null)
+                Write(loaded.Data); // over the fresh start LoadFrom wrote back
             if (loaded.Data is { } data)
                 return data;
 
@@ -133,7 +135,15 @@ public static class Store
     // What LoadFrom found. Data is null only on a first run. Unreadable: where the file that couldn't be read is
     // now (set aside; or still in place when even that failed, and then ReadOnly: nothing is saved this
     // session). Backup: the one loaded in its place and when it was saved; none with Unreadable is a fresh start.
-    public record Loaded(StoreData? Data, string? Unreadable = null, (string Path, DateTime Saved)? Backup = null, bool ReadOnly = false);
+    // Imported: that fresh start is Better Mod Menu's data instead (WithImport).
+    public record Loaded(StoreData? Data, string? Unreadable = null, (string Path, DateTime Saved)? Backup = null, bool ReadOnly = false,
+        bool Imported = false);
+
+    // A recovery with no backup that reads starts fresh: Better Mod Menu's data then, if it has some, as on a first run
+    // (#100: the empty start stayed, though the import would have brought the categories, notes and profiles back).
+    public static Loaded WithImport(Loaded loaded, Func<StoreData?> import) =>
+        loaded is { Unreadable: not null, Backup: null, ReadOnly: false } && import() is { } imported
+            ? loaded with { Data = imported, Imported = true } : loaded;
 
     // Reads manager.json in a folder (ours, or a self-test's). One that can't be read or parsed is moved aside as
     // manager.broken-<time>.json, never over another file, and the newest backup that reads takes its place (with
@@ -207,7 +217,8 @@ public static class Store
         return data;
     }
 
-    // The newest backup that reads (by name: manager.<time>.json), or a fresh start when none does.
+    // The newest backup that reads (by name: manager.<time>Z.json, in UTC; older ones in local time without the Z),
+    // or a fresh start when none does.
     static (StoreData Data, (string Path, DateTime Saved)? From) NewestBackup(string dir)
     {
         var backups = Path.Combine(dir, BackupsFolder);
@@ -303,7 +314,8 @@ public static class Store
         if (loaded.Unreadable is not { } file)
             return null;
         var body = new LocString("settings_ui", loaded.ReadOnly ? "SPIRE_MOD_MANAGER.DATA_READ_ONLY"
-            : loaded.Backup != null ? "SPIRE_MOD_MANAGER.DATA_RECOVERED" : "SPIRE_MOD_MANAGER.DATA_FRESH");
+            : loaded.Backup != null ? "SPIRE_MOD_MANAGER.DATA_RECOVERED"
+            : loaded.Imported ? "SPIRE_MOD_MANAGER.DATA_FROM_BMM" : "SPIRE_MOD_MANAGER.DATA_FRESH");
         body.Add("file", Escape(Path.GetFileName(file))); // the name only: a full path doesn't fit the popup
         if (loaded.Backup is { Saved: var saved })
             body.Add("date", $"{ModDetails.Date(saved)}, {saved.ToString("HH:mm", CultureInfo.InvariantCulture)}");
@@ -403,7 +415,9 @@ public static class Store
             {
                 var backups = Path.Combine(dir, BackupsFolder);
                 Directory.CreateDirectory(backups);
-                File.Copy(file, Path.Combine(backups, $"manager.{DateTime.Now:yyyyMMdd-HHmmss}.json"), overwrite: true);
+                // Named in UTC ("Z"), so a daylight-saving change can't put two in the wrong order or one over another
+                // (#99). Older ones are named in local time; the newest still sort last.
+                File.Copy(file, Path.Combine(backups, $"manager.{DateTime.UtcNow:yyyyMMdd-HHmmss}Z.json"), overwrite: true);
                 foreach (var old in Directory.GetFiles(backups, BackupPattern).OrderDescending().Skip(BackupsKept))
                     File.Delete(old);
             }
