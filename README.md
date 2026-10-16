@@ -12,7 +12,7 @@ By symphony ([@jciurc](https://github.com/jciurc) on GitHub) with Claude Code Op
 
 ## Install
 
-Subscribe to it on the Steam Workshop; the game installs it for you.
+Subscribe to it on the [Steam Workshop](https://steamcommunity.com/sharedfiles/filedetails/?id=3821046517); the game installs it for you.
 
 - **Game version v0.107.1 or newer, on the stable branch or the public-beta**
 - No other mods needed
