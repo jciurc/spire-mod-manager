@@ -33,7 +33,9 @@ static class MainMenuPatch
             History.Start();
             Bmm.ForgetDismissedWarning(); // the dismissed Better Mod Menu banner, if the two changed outside our page
             WorkshopInfo.Start(); // background Steam query; does nothing without Steam
+#if DEVTOOLS
             ModEntry.MarkDevRun(__instance.GetTree());
+#endif
 
             MenuButton.Add(__instance);
             // After the game's own popups: the notice about an unreadable saved file, then the one about a last
