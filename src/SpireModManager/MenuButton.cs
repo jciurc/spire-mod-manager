@@ -1,6 +1,4 @@
-using System.Reflection;
 using Godot;
-using HarmonyLib;
 using MegaCrit.Sts2.Core.Localization;
 using MegaCrit.Sts2.Core.Nodes.Screens.MainMenu;
 using MegaCrit.Sts2.Core.Nodes.Screens.ModdingScreen;
@@ -29,9 +27,9 @@ static class MenuButton
     // If the game's button is gone: one of ours (AddTextButton), this size.
     static readonly Vector2 FallbackSize = new(460, 70);
 
-    // The game's main menu draws carets either side of its text button under the mouse; ours gets them too.
-    static readonly MethodInfo? CaretsOn = AccessTools.Method(typeof(NMainMenu), "MainMenuButtonFocused");
-    static readonly MethodInfo? CaretsOff = AccessTools.Method(typeof(NMainMenu), "MainMenuButtonUnfocused");
+    // The game's main menu draws carets either side of its text button under the mouse; ours gets its own pair (Carets).
+    public const string CaretLeftName = "CaretLeft", CaretRightName = "CaretRight";
+    static readonly Color CaretGold = new(0.9372549f, 0.78431374f, 0.31764707f), CaretClear = new(1, 1, 1, 0); // the game's gold, its clear white
 
     public static void Add(NMainMenu menu)
     {
@@ -190,19 +188,58 @@ static class MenuButton
         }
         menu.AddChild(button);
         button.Released += _ => onPressed();
-        // As the game does for its own: the carets go to it once it has taken the focus, and fade as it loses it.
-        bool Here() => GodotObject.IsInstanceValid(menu) && menu.IsInsideTree() && GodotObject.IsInstanceValid(button);
+        Carets(menu, button, label);
+        return button;
+    }
+
+    // The button's own copies of the main menu's two carets, moved as the game moves its pair for its own buttons
+    // (NMainMenu.MainMenuButtonFocused): out from the text with a little overshoot and gold at once when it takes the
+    // focus, fading as it loses it. Not the menu's own pair: a mod that runs the menu's buttons (RitsuLib's scroller)
+    // shows that pair only for the buttons it holds, so it hid them over ours. None if a game update renamed them.
+    static void Carets(NMainMenu menu, NMainMenuTextButton button, MegaLabel label)
+    {
+        if (menu.GetNodeOrNull<Control>("%ButtonReticleLeft")?.Duplicate() is not Control left)
+            return;
+        if (menu.GetNodeOrNull<Control>("%ButtonReticleRight")?.Duplicate() is not Control right)
+        {
+            left.Free();
+            return;
+        }
+        foreach (var (caret, name) in new[] { (left, CaretLeftName), (right, CaretRightName) })
+        {
+            caret.UniqueNameInOwner = false;
+            caret.Name = name;
+            caret.MouseFilter = Control.MouseFilterEnum.Ignore;
+            caret.Modulate = CaretClear;
+            button.AddChild(caret);
+        }
+        Tween? tween = null;
+        bool Here() => GodotObject.IsInstanceValid(button) && button.IsInsideTree();
+        // After the focus has settled, as the game does for its own (its button's size and place are final by then).
         button.Focused += _ => Callable.From(() =>
         {
-            if (Here())
-                CaretsOn?.Invoke(menu, [button]);
+            if (!Here())
+                return;
+            tween?.Kill();
+            tween = button.CreateTween().SetParallel();
+            var y = button.GlobalPosition.Y + 5;
+            var (fromLeft, fromRight) = (label.GlobalPosition.X - 26, label.GlobalPosition.X + label.Size.X - 14);
+            left.GlobalPosition = new Vector2(fromLeft, y);
+            right.GlobalPosition = new Vector2(fromRight, y);
+            tween.TweenProperty(left, "global_position:x", fromLeft - 28, 0.25).SetEase(Tween.EaseType.Out).SetTrans(Tween.TransitionType.Back).From(fromLeft);
+            tween.TweenProperty(right, "global_position:x", fromRight + 28, 0.25).SetEase(Tween.EaseType.Out).SetTrans(Tween.TransitionType.Back).From(fromRight);
+            foreach (var caret in new[] { left, right })
+                tween.TweenProperty(caret, "modulate", CaretGold, 0.05).From(CaretClear);
         }).CallDeferred();
         button.Unfocused += _ =>
         {
-            if (Here())
-                CaretsOff?.Invoke(menu, [button]);
+            if (!Here())
+                return;
+            tween?.Kill();
+            tween = button.CreateTween().SetParallel();
+            foreach (var caret in new[] { left, right })
+                tween.TweenProperty(caret, "modulate", CaretClear, 0.25);
         };
-        return button;
     }
 
     // Where the player put it (kept on screen), or the lower-left corner, level with the Modding screen's bottom row

@@ -79,6 +79,7 @@ static class SelfTest
             Check("dev run marked", menu.GetTree().Root.Title.StartsWith("[DEV]") && menu.GetTree().Root.HasNode("SpireModManagerDevTag"),
                 menu.GetTree().Root.Title);
             await Capture(menu, outDir, "1-main-menu");
+            await TestMenuButtonCarets(menu);
             // The relaunch note as it shows while one is pending: centred above the button (shown here for the shot).
             if (menu.GetNodeOrNull<Control>("SpireModManagerMenuButton/PendingNote") is { Visible: false } pendingNote)
             {
@@ -922,6 +923,34 @@ static class SelfTest
             $"{corner} in {screen}, note {noteThere}");
         Check("main menu button: back in its place, its note centred above it, on screen", note != null && screen.Encloses(noteHere)
             && Above(noteHere, button.GetGlobalRect()), $"note {noteHere}, button {button.GetGlobalRect()}");
+    }
+
+    // A real hover on the main menu button (a mouse motion through the viewport): its own carets come out either side of
+    // its text, gold, and fade once the mouse leaves. (RitsuLib's main menu scroller hid the menu's shared pair over it.)
+    static async Task TestMenuButtonCarets(NMainMenu menu)
+    {
+        if (menu.GetNodeOrNull<Control>("SpireModManagerMenuButton") is not { } button || button.GetChild(0) is not Control label
+            || button.GetNodeOrNull<Control>(MenuButton.CaretLeftName) is not { } left || button.GetNodeOrNull<Control>(MenuButton.CaretRightName) is not { } right)
+        {
+            Check("main menu button: its own hover carets", false, "missing");
+            return;
+        }
+        void MoveTo(Vector2 at) => menu.GetViewport().PushInput(new InputEventMouseMotion { Position = at, GlobalPosition = at });
+        var away = new Vector2(1800, 100);
+        MoveTo(away);
+        await Wait(menu, 0.4);
+        MoveTo(button.GetGlobalRect().GetCenter());
+        await Wait(menu, 0.5);
+        var text = label.GetGlobalRect();
+        Check("main menu button: a real hover brings its own carets out either side of its text, gold",
+            left.IsVisibleInTree() && right.IsVisibleInTree() && left.Modulate.A > 0.95f && right.Modulate.A > 0.95f
+            && left.GetGlobalRect().End.X <= text.Position.X && right.GlobalPosition.X >= text.End.X
+            && Math.Abs(left.GlobalPosition.Y - (button.GlobalPosition.Y + 5)) < 1,
+            $"left {left.GetGlobalRect()} a {left.Modulate.A:0.##}, right {right.GetGlobalRect()} a {right.Modulate.A:0.##}, text {text}");
+        MoveTo(away);
+        await Wait(menu, 0.5);
+        Check("main menu button: its carets fade once the mouse leaves", left.Modulate.A < 0.05f && right.Modulate.A < 0.05f,
+            $"{left.Modulate.A:0.##}, {right.Modulate.A:0.##}");
     }
 
     // The main menu button's card: nothing at the usual delay (the mouse crosses the button on its way to the game's), then
