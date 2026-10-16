@@ -1,7 +1,7 @@
 #:property TargetFramework=net10.0-windows
 #:package System.Drawing.Common@10.0.0
 // Shrinks Workshop screenshots: each becomes a JPG at most 1920 px wide, at the best quality under Steam's 1 MB,
-// replacing the original. image.png stays a PNG (SHOTS.md). Windows only (System.Drawing).
+// replacing the original. image.png stays a PNG (README.md). Windows only (System.Drawing).
 // Usage: dotnet run workshop/shrink.cs [picture ...]     (no pictures given: everything in workshop/previews/)
 using System.Drawing;
 using System.Drawing.Drawing2D;
