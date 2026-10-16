@@ -7,7 +7,7 @@ steps before an upload (test, merge, tag, build) are in [docs/dev/RELEASING.md](
 - `workshop.json`: what each upload sets on the item.
 - `description.bbcode`: the description. Edit it here: the uploader reads the description only from
   `workshop.json`, as one string, so `prepare.cs` copies it in.
-- `image.png` (required) and `previews/` (optional): Jordan's pictures, see SHOTS.md. Not in git so far.
+- `image.png` (required, in git: 910×910) and `previews/` (optional, none yet): Jordan's pictures, see SHOTS.md.
 - `content/`: the files players install, filled from `dist/` by `prepare.cs`. Gitignored.
 - `mod_id.txt`: the item id, written by the uploader after the first upload. Commit it: without it, the next
   upload makes a second item.
