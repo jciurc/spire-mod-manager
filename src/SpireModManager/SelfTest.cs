@@ -3461,6 +3461,12 @@ static class SelfTest
         Check("installed twice: both copies on, every count names it once", Dependencies.IsOn(copy) && Profiles.OnCount() == on
             && Profiles.ModCount(Profiles.Active!) == Profiles.CountText() && Summary().StartsWith($"Mods enabled {Menus.Number(on)} "),
             $"copy on {Dependencies.IsOn(copy)}; {on} on before: profile {Profiles.OnCount()}, summary \"{Summary().Split('\n')[0]}\"");
+        // Gone again, its row too (the game made one as it announced it; a later search would find it).
+        if (content.GetChildren().OfType<NModMenuRow>().FirstOrDefault(r => r.Mod == copy) is { } copyRow)
+        {
+            content.RemoveChild(copyRow);
+            copyRow.QueueFree();
+        }
         GameForgets(copy);
         SaveManager.Instance.SettingsSave.ModSettings?.ModList.RemoveAll(e => e.Id == ModEntry.ModId && e.Source == ModSource.SteamWorkshop);
         Profiles.Track();
