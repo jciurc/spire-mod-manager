@@ -16,7 +16,9 @@ namespace SpireModManager;
 // - Reading: the same, forgiving: a UTF-8 BOM, CRLF or LF, blank lines, a ; or tab between values (a spreadsheet
 //   saved in a language that uses the comma for decimals). Columns go by their header, in any order and any case;
 //   only Mod Id (or Id) and Enabled are needed. Enabled: TRUE/FALSE, 1/0 or yes/no, in any case; blank is enabled (the
-//   import error says "TRUE", "FALSE" or blank: a list naming a mod with no state wants it).
+//   import error says "TRUE", "FALSE" or blank: a list naming a mod with no state wants it), and so is a row that
+//   ends before its Enabled cell, as most CSV readers take missing trailing cells (#95: refusing it said blank was
+//   fine, then showed a blank as the bad value). Import's preview shows the result before anything changes.
 static class ProfileCsv
 {
     // What a shared list holds besides each mod's id, name, version and Enabled (Jordan, 2026-10-15: the category on, the
@@ -171,7 +173,7 @@ static class ProfileCsv
             string Cell(int i) => i >= 0 && i < record.Count ? Unguard(record[i].Trim()) : "";
             if (Cell(id) is not { Length: > 0 } modId)
                 continue;
-            if (enabled >= record.Count || Bool(Cell(enabled)) is not { } on) // a row cut short has no Enabled at all: not a blank one
+            if (Bool(Cell(enabled)) is not { } on) // (a row cut short: blank)
                 return Problem(Menus.Format("SPIRE_MOD_MANAGER.IMPORT_BAD_ENABLED", ("mod", modId), ("value", Cell(enabled))));
             mods.Add(new Entry(modId, on, Cell(name), WorkshopFrom(Cell(link))));
         }
