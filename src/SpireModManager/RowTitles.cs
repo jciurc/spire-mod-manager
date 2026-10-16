@@ -40,6 +40,9 @@ static class RowTitles
             // title stretches with the (wider) row.
             row.CustomMinimumSize = new Vector2(0, vanilla ? 72 : RowHeight);
             row.GetNode<Control>("PlatformIcon").Visible = vanilla;
+            // Focusable, as the beta's row scene makes it (its controller support); the stable branch's isn't, and
+            // going to a mod (a name clicked in the panel, a banner's Show) lights its row through focus.
+            row.FocusMode = Control.FocusModeEnum.All;
             Look(row, RowState.Selected(row), RowState.Focused(row));
             var tickbox = row.GetNode<Control>("Tickbox");
             tickbox.PivotOffset = tickbox.Size / 2;
