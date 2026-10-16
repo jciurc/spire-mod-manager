@@ -7,7 +7,8 @@ namespace SpireModManager;
 // page. The rules live here, for every card:
 // - a card shows after Delay of hovering what it's about; Instant ones (a banner's list of mods, the unsaved mark,
 //   the change tracker) at once; Slow ones (the whole of a text cut short, in a plain tooltip) after SlowDelay;
-//   Plain ones (a word on a small icon, the notepad's "Contains note") look like Slow ones but come after Delay; Slow and Plain have no grace either way;
+//   Plain ones (a word on a small icon, the notepad's "Contains note") look like Slow ones but come after Delay;
+//   Slow and Plain have no grace either way;
 //   Late ones (the main menu button's: the mouse crosses it on the way to the game's) are Normal ones after SlowDelay,
 //   grace or not;
 // - once a card has gone, for Grace any other card shows at once (moving along names or tags doesn't wait
