@@ -20,7 +20,7 @@ static class WorkshopInfo
     // Raised once the details arrive, so an open info panel can refill.
     public static event Action? Loaded;
 
-    public static Details? For(Mod? mod) => mod?.workshopId is { } id && Cache.TryGetValue(id, out var details) ? details : null;
+    public static Details? For(Mod? mod) => Compat.WorkshopId(mod) is { } id && Cache.TryGetValue(id, out var details) ? details : null;
 
     // Self-test only: details for a made-up Workshop id (the dev sandbox has no Steam), or none again.
     public static void TestSet(ulong id, Details? details)
@@ -51,7 +51,7 @@ static class WorkshopInfo
 
     static async Task Query()
     {
-        var ids = ModManager.Mods.Where(m => m.workshopId.HasValue).Select(m => new PublishedFileId_t(m.workshopId ?? 0)).Distinct().ToArray();
+        var ids = ModManager.Mods.Select(Compat.WorkshopId).OfType<ulong>().Select(id => new PublishedFileId_t(id)).Distinct().ToArray();
         if (ids.Length == 0)
             return;
         var handle = SteamUGC.CreateQueryUGCDetailsRequest(ids, (uint)ids.Length);

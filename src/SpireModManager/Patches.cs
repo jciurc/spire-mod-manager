@@ -304,10 +304,13 @@ static class ModInfoFillPatch
     }
 }
 
-// No mod shown: hide our panel buttons too.
-[HarmonyPatch(typeof(NModInfoContainer), nameof(NModInfoContainer.Clear))]
+// No mod shown: hide our panel buttons too. By name, and only where the game has it: the stable branch has no
+// Clear (Compat.Clear empties the panel and hides them there).
+[HarmonyPatch(typeof(NModInfoContainer), "Clear")]
 static class ModInfoClearPatch
 {
+    static bool Prepare() => Compat.InfoClear != null;
+
     static void Postfix(NModInfoContainer __instance)
     {
         // It also runs as the page closes (inside NSubmenuStack.Pop): an exception there could leave the main menu
