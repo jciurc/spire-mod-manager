@@ -64,8 +64,6 @@ last set them. Delete the data folder above if you want everything gone.
 
 ## Known limits
 
-- Better Mod Menu 1.1.1 has errors of its own on both branches, with or without this mod. On the stable branch
-  its rows lose their own buttons (move up and down, group), because it was built against the beta.
 - Slay the Spire 2 is in Early Access, and a game update can break parts of the mod until a fix is out. If it
   breaks the page itself, you get the game's own Modding page, with a line saying the mod needs an update.
 - Only Better Mod Menu has been tested alongside it. Use one mod manager at a time otherwise.
