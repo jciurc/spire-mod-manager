@@ -5036,6 +5036,13 @@ static class SelfTest
             var lines = HistoryBar.Describe();
             Check("a renamed profile shows as one renamed line", lines.Contains($"Renamed profile {was} → Renamed in test")
                 && !lines.Contains("Added profile Renamed in test") && !lines.Contains($"Deleted profile {was}"), string.Join(" | ", lines));
+            // Saved since, too: a new save time, the same profile (its id; #97: it read as added and deleted).
+            var savedAt = renamed.SavedAt;
+            renamed.SavedAt = DateTime.Now.AddMinutes(1);
+            lines = HistoryBar.Describe();
+            Check("renamed and saved since launch: still one renamed line", lines.Contains($"Renamed profile {was} → Renamed in test")
+                && !lines.Contains("Added profile Renamed in test") && !lines.Contains($"Deleted profile {was}"), string.Join(" | ", lines));
+            renamed.SavedAt = savedAt;
             Profiles.Rename(renamed, was);
             Check("renamed back, no renamed line", !HistoryBar.Describe().Any(l => l.Contains("Renamed in test")), string.Join(" | ", HistoryBar.Describe()));
         }
