@@ -13,7 +13,7 @@ namespace SpireModManager;
 // "Unsaved" with Save, Save as new and Discard. Switching away keeps the edit with its profile ("Name *"
 // in the list); coming back restores it, so it is never lost.
 // A mod a profile has never seen (installed since it was last used) joins it as it is in the mod list, which for a
-// new mod is on, the game's default (Jordan, 2026-10-13):
+// new mod is on, the game's default:
 // - the active profile takes it in at launch, or as soon as it's installed while the game runs, quietly: it isn't
 //   an unsaved edit, and neither undo nor Revert all takes it away;
 // - switching to a profile that has never seen a mod leaves the mod as it is, and the profile keeps it that way
@@ -214,11 +214,9 @@ static class Profiles
         return profile;
     }
 
-    // A profile to share (ProfileShare): every installed mod in load order, on or off as the profile has it (one it
-    // has never seen as it is now, as switching to it would leave it). Category: empty in Uncategorized. Alias and notes
-    // are the player's own words: written only when the share dialog's tick boxes ask for them (off at first), as are
-    // the mods that are off (ProfileCsv.Options). Mods the profile keeps but that aren't installed aren't listed: there's
-    // no name, version or Workshop id to give for them.
+    // A profile to share (ProfileShare): every installed mod in load order, on or off as the profile has it (one it has
+    // never seen, as it is now). Alias, notes and the mods that are off go in only when the share dialog's tick boxes
+    // say so (ProfileCsv.Options). Mods the profile keeps that aren't installed aren't listed: nothing to name them by.
     public static List<ProfileCsv.Row> ShareRows(Profile profile)
     {
         var mods = Index(profile.Edited ?? profile.Mods);
@@ -238,15 +236,12 @@ static class Profiles
             }).ToList();
     }
 
-    // What a shared list would do, compared with the mod list now (ProfileShare shows it before anything changes).
-    // Mods: the new profile's entries. On, Off: installed mods it turns on and off; Same: ones already that way;
-    // Unlisted: installed mods it doesn't name, which stay as they are (a profile that has never seen a mod leaves it
-    // alone). Missing: the ones it names that aren't installed. The profile keeps those too, by id and the source the
-    // list suggests (a Workshop link: the Workshop), so installing one later and switching to the profile sets it.
-    // Installed while this profile is active, one arrives on (the game's default) and stays so: the profile has seen
-    // it, so it isn't taken in, and one listed off shows as an unsaved change (Discard turns it off). Left that way
-    // for now, for Jordan to decide; most lists name mods that are on.
-    // The mod managers are never turned on or off by a profile, so they're in none of the counts.
+    // What a shared list would do, compared with the mod list now (ProfileShare shows it first). Mods: the new
+    // profile's entries. On, Off: installed mods it turns on and off; Same: ones already that way; Unlisted: installed
+    // mods it doesn't name, left as they are. Missing: ones it names that aren't installed; the profile keeps those too
+    // (by id, and the Workshop if the list links there), so installing one later and switching to it sets it. A mod
+    // installed while this profile is active arrives on; if the list had it off, that shows as an unsaved change. The
+    // mod managers are in none of the counts: a profile never turns them on or off.
     public record ImportPlan(List<ProfileMod> Mods, int On, int Off, int Same, int Unlisted, List<ProfileCsv.Entry> Missing);
 
     public static ImportPlan PlanImport(IReadOnlyList<ProfileCsv.Entry> entries)
@@ -290,10 +285,8 @@ static class Profiles
         return profile;
     }
 
-    // An imported profile's name: the file's (from one of ours, spire-mods-<profile>-<time>, the profile's), or "Imported
-    // profile"; "(1)" and on after it when that's taken. Better Mod Menu names its exports by the time
-    // ("mod_list.20261014-120000.csv", "-2" and on when taken), which says nothing as a profile's name: those are
-    // "Imported profile" too.
+    // An imported profile's name: the file's (ours, spire-mods-<profile>-<time>, gives the profile's), or "Imported
+    // profile" (also for Better Mod Menu's time-named exports); "(1)" and on after it when that's taken.
     public static string ImportName(string? file)
     {
         var name = Path.GetFileNameWithoutExtension(file ?? "").Trim();
@@ -340,8 +333,7 @@ static class Profiles
         }
     }
 
-    // Beside the picker: "12 mods", how many are on in the mod list right now, this mod and Better Mod Menu too (Jordan,
-    // 2026-10-15: our mod counts itself wherever mods are counted).
+    // Beside the picker: "12 mods", how many are on in the mod list right now, this mod and Better Mod Menu included.
     public static string CountText()
     {
         var on = OnCount();
@@ -351,9 +343,8 @@ static class Profiles
     // That count as a number (the main menu button shows it too).
     public static int OnCount() => Current().Where(m => m.Enabled).Select(m => ModEntry.CountKey(m.Id)).Distinct().Count();
 
-    // For the profile list: "12 mods · Oct 11" (mods on, when last saved). Like the count beside the name, it
-    // counts installed mods, as they'd be after switching to it (one it has never seen stays as it is now). The date
-    // in the game's language, its own order with the short month ("11. Okt.", "10月11日"), not Windows' (#98).
+    // For the profile list: "12 mods · Oct 11": mods on as they'd be after switching to it (one it has never seen as
+    // it is now), and when it was last saved, in the game's language and date order.
     public static string Details(Profile profile)
     {
         var text = ModCount(profile);
@@ -450,10 +441,8 @@ static class Profiles
                 row.GetNode<NTickbox>("Tickbox").IsTicked = !off.Contains((mod.manifest?.id, mod.modSource));
     }
 
-    // After a profile wrote the mod list: the list redrawn whole, as after undo (the rows the page bar's Show: choice
-    // shows, none kept now for one mod's change, each category's count and Enable all / Disable all), and the
-    // pending-changes warning. The tickboxes set above fire no toggle, so the list would otherwise keep showing the old
-    // on/off.
+    // After a profile wrote the mod list: the whole list redrawn, as after undo, and the pending-changes warning. The
+    // tickboxes set above fire no toggle, so the list would otherwise show the old on/off.
     static void Redraw(NModdingScreen screen) => CategoryList.Redraw(screen.GetNode<Control>("%ModsScrollContainer/Mask/Content"));
 
     public static void NotifySwitched() => Switched?.Invoke();
