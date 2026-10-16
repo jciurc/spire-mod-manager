@@ -10,10 +10,10 @@ using MegaCrit.Sts2.Core.Saves;
 
 namespace SpireModManager;
 
-// Crash-safe launch, its smallest form (next: #142). Our initializer records the mods this launch loads; reaching the
-// main menu deletes the record and saves them as the last working setup. A record still there at the next launch
-// means that launch never reached the menu, and a notice offers Restore (that setup, then a relaunch) or Keep.
-// Nothing happens on its own, and every step fails open.
+// Crash-safe launch. Our initializer records the mods this launch loads; reaching the main menu deletes the record and
+// saves them as the last working setup. A record still there at the next launch means that launch never reached the
+// menu, and a notice offers Restore (that setup, then a relaunch) or Keep. Nothing happens on its own, and every step
+// fails open.
 static class LaunchGuard
 {
     public record Entry(string Id, ModSource Source, bool Enabled, string? Version);

@@ -47,7 +47,7 @@ var logPath = Path.Combine(root, "out", "dev.log");
 var mode = args.FirstOrDefault() ?? "test";
 var smoke = mode == "smoke"; // the release build from dist/, not a fresh one
 var distDir = Path.Combine(root, "dist", ModId);
-var real = args.Contains("--real"); // Jordan's own mods (switched off) and a copy of his manager data
+var real = args.Contains("--real"); // your own mods (switched off) and a copy of your manager data
 var bmm = args.Any(a => a.StartsWith("--bmm")); // Better Mod Menu on (any --bmm option)
 var bmmData = args.Contains("--first-run-bmm"); // its fixture data in the sandbox, for our first-run import
 var firstRun = bmmData || args.Contains("--first-run"); // no manager.json of ours
@@ -139,7 +139,7 @@ PrepareSandbox(mode is "test" or "smoke" || firstRun);
 var start = new ProcessStartInfo(Path.Combine(DevDir, "SlayTheSpire2.exe"), ["--force-steam", "off", "--log-file", logPath])
     { WorkingDirectory = DevDir };
 // Tests run headless (no window, UI dumps only) unless --window asks for screenshots; then the window
-// is sent behind everything and focus handed back (see below), so Jordan's work isn't interrupted.
+// is sent behind everything and focus handed back (see below), so your work isn't interrupted.
 var windowed = mode == "launch" || (!smoke && args.Contains("--window"));
 if (!windowed)
     start.ArgumentList.Add("--headless");
@@ -467,7 +467,7 @@ void PrepareSandbox(bool resetData)
     mods["mod_list"] = list;
     settings["mod_settings"] = mods;
     settings["seen_ea_disclaimer"] = true; // the one-time Early Access popup would cover every screenshot
-    settings["volume_master"] = 0.0;      // silent, so dev runs don't play over Jordan's game
+    settings["volume_master"] = 0.0;      // silent, so dev runs don't play over your own game
     settings["fullscreen"] = false;       // a 1920x1080 window, easy to tell apart and to move aside
     settings["window_size"] = new JsonObject { ["X"] = 1920, ["Y"] = 1080 };
     File.WriteAllText(settingsPath, settings.ToJsonString(new() { WriteIndented = true }));
@@ -498,7 +498,7 @@ void PrepareSandbox(bool resetData)
     if (firstRun)
         return; // no manager.json (nor its folder), as before the mod's first launch
     Directory.CreateDirectory(data);
-    // --real: a copy of Jordan's own manager data (read only; the original is never written).
+    // --real: a copy of your own manager data (read only; the original is never written).
     var source = real
         ? Directory.GetFiles(Path.Combine(userData, "steam"), "manager.json", SearchOption.AllDirectories)
             .FirstOrDefault(f => f.Contains(Path.Combine("mod_data", ModId)))
