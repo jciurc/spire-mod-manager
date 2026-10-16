@@ -67,10 +67,12 @@ static class Translations
             WriteExample(folder);
 #if DEVTOOLS
             if (TestOpen is { } test)
+            {
                 test(folder);
-            else
+                return;
+            }
 #endif
-                OS.ShellOpen(folder);
+            OS.ShellOpen(folder);
         }
         catch (Exception e)
         {

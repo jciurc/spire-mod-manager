@@ -314,10 +314,12 @@ public static class Store
                 return;
 #if DEVTOOLS
             if (TestOpenFolder is { } test)
+            {
                 test(Dir);
-            else
+                return;
+            }
 #endif
-                OS.ShellOpen(Dir);
+            OS.ShellOpen(Dir);
         };
     }
 

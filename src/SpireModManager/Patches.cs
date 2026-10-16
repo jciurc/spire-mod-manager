@@ -17,7 +17,7 @@ namespace SpireModManager;
 // own code after a prefix. Priority.First and HarmonyBefore run ours ahead of Better Mod Menu's, which can throw.
 // Each class is applied on its own (ModEntry.Init): one a game update breaks leaves the rest working.
 
-// Main menu: loads our data, adds the "Mod Profile" button (MenuButton), then shows any startup notices.
+// Main menu: loads our data, adds our button (MenuButton), then shows any startup notices.
 [HarmonyPatch(typeof(NMainMenu), nameof(NMainMenu._Ready))]
 static class MainMenuPatch
 {
@@ -318,7 +318,8 @@ static class ModInfoClearPatch
 [HarmonyPatch(typeof(NInputManager), "_UnhandledKeyInput")]
 static class ShortcutsPatch
 {
-    // Escape closes our open menu or dialog, or lets go of picked mods, instead of leaving the page.
+    // Escape closes our open menu or dialog, ends the main menu button's move mode, or lets go of picked mods, in
+    // place of the game's Escape (which would leave the page).
     static bool Prefix(InputEvent inputEvent)
     {
         try
@@ -497,8 +498,8 @@ static class RowLookPatch
     }
 }
 
-// Adds the drop-in translations (Translations) to a language's tables as the game loads them. Not the English fallback
-// or metrics tables (allowOverride false); Apply also skips English.
+// Adds the drop-in translations (Translations) to a language's tables as the game loads them. Apply skips English (the
+// fallback tables loaded under every language, and the metrics tables); allowOverride is a second guard.
 [HarmonyPatch(typeof(LocManager), "LoadTablesFromPath")]
 static class TranslationsPatch
 {

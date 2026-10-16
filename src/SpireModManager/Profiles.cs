@@ -239,9 +239,9 @@ static class Profiles
     // What a shared list would do, compared with the mod list now (ProfileShare shows it first). Mods: the new
     // profile's entries. On, Off: installed mods it turns on and off; Same: ones already that way; Unlisted: installed
     // mods it doesn't name, left as they are. Missing: ones it names that aren't installed; the profile keeps those too
-    // (by id, and the Workshop if the list links there), so installing one later and switching to it sets it. A mod
-    // installed while this profile is active arrives on; if the list had it off, that shows as an unsaved change. The
-    // mod managers are in none of the counts: a profile never turns them on or off.
+    // (by id, as Workshop mods if the list links them, else local), so installing one later and switching to it sets
+    // it. A mod installed while this profile is active arrives on; if the list had it off, that shows as an unsaved
+    // change. The mod managers are in none of the counts: a profile never turns them on or off.
     public record ImportPlan(List<ProfileMod> Mods, int On, int Off, int Same, int Unlisted, List<ProfileCsv.Entry> Missing);
 
     public static ImportPlan PlanImport(IReadOnlyList<ProfileCsv.Entry> entries)
