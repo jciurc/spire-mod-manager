@@ -75,8 +75,8 @@ static class HistoryBar
         Hover.Fonts(changes, 17);
         changes.AddThemeConstantOverride("line_separation", -2);
         screen.AddChild(changes);
-        // Hovering: the summary, just above the lines, right edges together.
-        Hover.Watch(changes, SummaryName, Summary, place: () => (changes.GlobalPosition + new Vector2(changes.Size.X, -8), true, true));
+        // Hovering: the summary, at once, just above the lines, right edges together.
+        Hover.Watch(changes, SummaryName, Summary, Hover.Timing.Instant, place: () => (changes.GlobalPosition + new Vector2(changes.Size.X, -8), true, true));
         changes.GuiInput += e =>
         {
             if (e is InputEventMouseButton { ButtonIndex: MouseButton.Left, Pressed: false })

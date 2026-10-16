@@ -1410,7 +1410,7 @@ static class SelfTest
             Broken = "SPIRE_MOD_MANAGER.MOVE_BUTTON", Empty = "SPIRE_MOD_MANAGER.MOVE_HINT";
         const string NotOurs = Translated + "X"; // a key mistyped
         const string Renamed = "SPIRE_MOD_MANAGER.PAGE_DISABLED", Added = "SPIRE_MOD_MANAGER.OPEN_TRANSLATIONS";
-        const string Counted = "SPIRE_MOD_MANAGER.PAGE_ALL", NotText = "SPIRE_MOD_MANAGER.RELAUNCH_NOTE";
+        const string Counted = "SPIRE_MOD_MANAGER.PAGE_ALL", NotText = "SPIRE_MOD_MANAGER.NEEDS_UPDATE";
         const string OnButton = "SPIRE_MOD_MANAGER.MAIN_MENU_PROFILE", OnButtonOne = "SPIRE_MOD_MANAGER.MAIN_MENU_PROFILE_ONE";
         const string German = "Spiel neu starten (Änderungen, 模组)"; // not ASCII: read as UTF-8, with a byte order mark
         string[] keys = [Translated, LeftOut, Broken, Empty];
@@ -1877,7 +1877,7 @@ static class SelfTest
             return true;
         });
         Check("the restart line: ours on the main list (also once shown) and in Load Order, the game's in Vanilla View, ours again after",
-            ours == "Mod changes will be applied after a restart." && game != ours && onList == ours && (shown == null || shown == ours)
+            ours == "Mod changes will be applied after a restart" && game != ours && onList == ours && (shown == null || shown == ours)
             && inLoadOrder == ours && inVanilla == game && line.Text == ours,
             $"\"{onList}\" / shown \"{shown}\" / \"{inLoadOrder}\" / \"{inVanilla}\" / \"{line.Text}\"");
     }
@@ -4938,8 +4938,8 @@ static class SelfTest
             System.Text.RegularExpressions.Regex.IsMatch(twoLines, @"^Mods enabled \d+ \(\+\d+ -\d+\)\nChanges \d+  ↕\d+$"), twoLines);
         Hover.TestMouse = () => changes.GetGlobalRect().GetCenter();
         changes.EmitSignal(Control.SignalName.MouseEntered);
-        await Wait(menu, Hover.Delay + 0.15);
-        Check("hovering Changes shows the details", screen.HasNode("SpireModManagerChangesPanel"));
+        await Wait(menu, 0.1); // well under Hover.Delay: at once
+        Check("hovering Changes shows the details at once", screen.HasNode("SpireModManagerChangesPanel"));
         var summary = screen.GetNodeOrNull("SpireModManagerChangesPanel")?.FindChildren("*", "RichTextLabel", true, false).OfType<RichTextLabel>().FirstOrDefault()?.GetParsedText() ?? "";
         Check("the summary is titled and names the mod turned off", summary.StartsWith("Changes since launch") && summary.Contains("Test UI"), summary);
         await Capture(screen, outDir, "14-changes");
