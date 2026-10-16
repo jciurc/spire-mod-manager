@@ -2745,6 +2745,8 @@ static class SelfTest
         var rowAuthor = content.GetChildren().OfType<NModMenuRow>().FirstOrDefault(r => r.Mod?.manifest?.id == "SmmTestFixes")?.GetNodeOrNull<Label>("SpireModManagerStrip/Author");
         Check("the row's author is plain: just the name, not clickable", rowAuthor is { Text: "symphony", MouseFilter: Control.MouseFilterEnum.Ignore });
         var panelHead = screen.GetNode<Control>("%ModInfoContainer").GetNodeOrNull<RichTextLabel>("SpireModManagerHead");
+        Check("the panel's author is a link in the mod names' light blue", panelHead?.Text
+            .Contains($"[url=author:symphony][color={ModDetails.ModLinkHex}]symphony[/color][/url]") == true, panelHead?.Text ?? "no head");
         panelHead?.EmitSignal(RichTextLabel.SignalName.MetaClicked, "author:symphony");
         await Wait(menu, 0.3);
         Check("the panel's author searches for their mods", box.Text == "@symphony"
