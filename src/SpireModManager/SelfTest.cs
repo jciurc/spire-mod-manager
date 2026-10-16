@@ -926,7 +926,8 @@ static class SelfTest
     }
 
     // A real hover on the main menu button (a mouse motion through the viewport): its own carets come out either side of
-    // its text, gold, and fade once the mouse leaves. (RitsuLib's main menu scroller hid the menu's shared pair over it.)
+    // its text, in their colour, and fade once the mouse leaves. (RitsuLib's main menu scroller hid the menu's shared
+    // pair over it.)
     static async Task TestMenuButtonCarets(NMainMenu menu, string outDir)
     {
         if (menu.GetNodeOrNull<Control>("SpireModManagerMenuButton") is not { } button || button.GetChild(0) is not Control label
@@ -959,8 +960,8 @@ static class SelfTest
         Enter();
         await Wait(menu, 0.5);
         var text = label.GetGlobalRect();
-        Check("main menu button: a hover brings its own carets out either side of its text, gold",
-            left.IsVisibleInTree() && right.IsVisibleInTree() && left.Modulate.A > 0.95f && right.Modulate.A > 0.95f
+        Check("main menu button: a hover brings its own carets out either side of its text, in their own colour",
+            left.IsVisibleInTree() && right.IsVisibleInTree() && left.Modulate.IsEqualApprox(MenuButton.CaretColor) && right.Modulate.IsEqualApprox(MenuButton.CaretColor)
             && left.GetGlobalRect().End.X <= text.Position.X && right.GlobalPosition.X >= text.End.X
             && Math.Abs(left.GlobalPosition.Y - (button.GlobalPosition.Y + 5)) < 1,
             $"left {left.GetGlobalRect()} a {left.Modulate.A:0.##}, right {right.GetGlobalRect()} a {right.Modulate.A:0.##}, text {text}");
