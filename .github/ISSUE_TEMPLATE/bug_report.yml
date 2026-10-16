@@ -9,8 +9,8 @@ body:
     id: game
     attributes:
       label: Game version and branch
-      description: Shown in the top-right corner of the Modding page. The mod needs the public-beta branch, v0.111.0 or newer.
-      placeholder: v0.111.0, public-beta
+      description: Shown in the top-right corner of the Modding page, and the branch (stable or public-beta). The mod needs v0.107.1 or newer.
+      placeholder: v0.107.1, stable
     validations:
       required: true
   - type: input

@@ -224,7 +224,7 @@ static class Profiles
                 var on = Entry(mods, id, m.modSource)?.Enabled ?? !(settings?.IsModDisabled(m) ?? false);
                 var info = Store.InfoFor(id);
                 return new ProfileCsv.Row(id, m.manifest?.name ?? "", m.manifest?.version ?? "", on, info?.Category ?? "",
-                    m.workshopId is { } workshop ? workshop.ToString() : "", info?.Alias ?? "", info?.Notes ?? "");
+                    Compat.WorkshopId(m) is { } workshop ? workshop.ToString() : "", info?.Alias ?? "", info?.Notes ?? "");
             }).ToList();
     }
 

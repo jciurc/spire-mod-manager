@@ -45,16 +45,17 @@ every upload, so keep them right here and check the page afterwards.
 2. `dotnet run build.cs --dist` (added on the release-prep branch): `dist/SpireModManager/` with the `.dll`,
    `.json` and `.pck`.
 3. In `workshop.json`, set `changeNote` to the version's first line in CHANGELOG.md, word for word (`"0.1.0: ..."`).
-4. Check `minBranch`, every time. It is `"public-beta"` until v0.111.0 or newer reaches the stable branch
-   (docs/dev/DESIGN.md, "Releases"). An upload without it serves the build to stable players, where it can't load.
+4. Check `minBranch`, every time. Empty (`null`) serves the upload to every branch, which is right while the
+   build runs on stable and the public-beta (docs/dev/DESIGN.md, "Releases"). A build that needs the beta sets
+   `"public-beta"`; without it, stable players would get a build that can't load.
 5. `dotnet run workshop/prepare.cs`. It fills `content/`, copies the description in, checks the folder and
    lists what the upload will set. Fix anything it calls a problem.
 6. With Steam running, in the uploader's folder (it needs its `steam_appid.txt` there, and writes
    `mod-uploader.log` there), run the line `prepare.cs` printed. It has the full path of your checkout's
    `workshop` folder: `.\ModUploader.exe upload -w "<your checkout>\workshop"`
 7. First upload only: commit the new `mod_id.txt`.
-8. On the item's Change Notes page, check that the branch range reads public-beta and up. If it doesn't, fix
-   it on the page and here.
+8. On the item's Change Notes page, check that the branch range reads what `minBranch` says (every branch, or
+   public-beta and up). If it doesn't, fix it on the page and here.
 
 ## The first upload: private, then test
 
