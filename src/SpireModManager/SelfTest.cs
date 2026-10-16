@@ -5153,6 +5153,14 @@ static class SelfTest
         var started = Store.LoadFrom(fresh, now);
         Check("no backup: a fresh start, the unreadable file kept, a new file written", started is { Data: { Categories.Count: 0, Profiles.Count: 0 }, Backup: null, Unreadable: { } keptAs }
             && File.Exists(keptAs) && Store.LoadFrom(fresh, now) is { Data: not null, Unreadable: null }, started.Unreadable ?? "not set aside");
+        // That fresh start takes Better Mod Menu's data instead when it has some, as a first run does (#100); not
+        // after a backup was loaded, nor read-only, nor when it has none. The notice says where the data came from.
+        var fromBmm = new StoreData { Categories = [new Category { Name = "From BMM" }] };
+        var imported = Store.WithImport(started, () => fromBmm);
+        Check("no backup, but Better Mod Menu's data: imported again, and the notice says so", imported is { Imported: true } && imported.Data == fromBmm
+            && Store.NoticeText(imported)?.GetFormattedText().Contains("imported again from Better Mod Menu") == true
+            && Store.WithImport(recovered, () => fromBmm).Data != fromBmm && Store.WithImport(started with { ReadOnly = true }, () => fromBmm).Data != fromBmm
+            && Store.WithImport(started, () => null) == started, Store.NoticeText(imported)?.GetFormattedText() ?? "no notice");
 
         // A file another program holds open (a Windows lock): left where it is, the backup loaded, nothing saved.
         if (OperatingSystem.IsWindows())
@@ -5185,8 +5193,8 @@ static class SelfTest
         var saving = Folder("saving", Good("Old"), Enumerable.Range(1, 11).Select(i => ($"manager.20200101-0000{i:00}.json", Good($"Old {i}"))).ToArray());
         Store.WriteTo(saving, new StoreData { Categories = [new Category { Name = "New" }] }, backUp: true);
         var copies = Directory.GetFiles(Path.Combine(saving, "backups")).Order().ToList();
-        Check("a save backs up the old file first, the newest ten kept", Category(Store.LoadFrom(saving, now)) == "New" && copies.Count == 10
-            && File.ReadAllText(copies[^1]) == Good("Old") && !copies.Any(f => f.EndsWith("-000001.json") || f.EndsWith("-000002.json")),
+        Check("a save backs up the old file first, named in UTC (#99), the newest ten kept", Category(Store.LoadFrom(saving, now)) == "New" && copies.Count == 10
+            && File.ReadAllText(copies[^1]) == Good("Old") && copies[^1].EndsWith("Z.json") && !copies.Any(f => f.EndsWith("-000001.json") || f.EndsWith("-000002.json")),
             string.Join(", ", copies.Select(Path.GetFileName)));
         var blocked = Path.Combine(root, "blocked");
         Directory.CreateDirectory(blocked);
@@ -5194,6 +5202,14 @@ static class SelfTest
         File.WriteAllText(Path.Combine(blocked, "backups"), "a file where the backups folder goes");
         Store.WriteTo(blocked, new StoreData { Categories = [new Category { Name = "New" }] }, backUp: true);
         Check("a backup that fails doesn't stop the save", Category(Store.LoadFrom(blocked, now)) == "New");
+        // Backups by when they were made, the old local-time names and the new UTC ones together (#99): in a timezone
+        // ahead of UTC a local name reads later than a UTC one made after it.
+        var made = DateTime.UtcNow;
+        string Local(DateTime utc) => $"manager.{utc.ToLocalTime():yyyyMMdd-HHmmss}.json";
+        string Utc(DateTime utc) => $"manager.{utc:yyyyMMdd-HHmmss}Z.json";
+        var order = Store.NewestFirst([Local(made.AddHours(-2)), Utc(made.AddHours(-1)), Local(made.AddHours(-3)), Utc(made)]).ToList();
+        Check("backups newest first, local-time and UTC names together", order.SequenceEqual([Utc(made), Utc(made.AddHours(-1)), Local(made.AddHours(-2)), Local(made.AddHours(-3))]),
+            string.Join(", ", order));
 
         // The notice: none for a file that read fine; after a recovery, the game's popup as the page shows, with
         // the backup's date and where the unreadable file is; once.
