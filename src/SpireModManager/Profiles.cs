@@ -91,7 +91,9 @@ static class Profiles
         if (profile.Edited is { } edit)
         {
             var known = Index(edit);
-            edit.AddRange(unseen.Where(m => known.TryAdd((m.Id, m.Source), m)));
+            foreach (var mod in unseen)
+                if (known.TryAdd((mod.Id, mod.Source), mod))
+                    edit.Add(mod);
         }
         return true;
     }
@@ -377,10 +379,7 @@ static class Profiles
     {
         var settings = SaveManager.Instance.SettingsSave.ModSettings ??= new ModSettings();
         var wants = Index(mods);
-        // Each mod's saved entry (the first, if listed twice), looked up once rather than searched for per mod.
-        var entries = new Dictionary<(string?, ModSource), SettingsSaveMod>();
-        foreach (var saved in settings.ModList)
-            entries.TryAdd((saved.Id, saved.Source), saved);
+        var entries = Dependencies.SavedEntries(settings.ModList);
         _applying = true;
         try
         {

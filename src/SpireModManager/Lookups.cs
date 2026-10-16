@@ -43,14 +43,14 @@ sealed class Lookups : IDisposable
 
     Lookups(IReadOnlyList<Mod> mods, IReadOnlyList<Mod> installed, IEnumerable<SettingsSaveMod> saved)
     {
-        _off = saved.Where(e => !e.IsEnabled).Select(e => ((string?)e.Id, e.Source)).ToHashSet();
+        _off = Dependencies.SavedOff(saved);
         // The copy Dependencies.Find picks for an id: the first one that is on, else the first.
         foreach (var mod in mods.Concat(installed))
             if (mod.manifest?.id is { } id && (!_byId.TryGetValue(id, out var kept) || !IsOn(kept) && IsOn(mod)))
                 _byId[id] = mod;
         // Who needs whom, from the game's list only; a mod naming one twice counts once.
         foreach (var mod in mods)
-            foreach (var id in Dependencies.Of(mod).Distinct())
+            foreach (var id in DependenciesOf(mod, Dependencies.Read).Distinct()) // kept for the redraw's own asks
             {
                 if (id == null)
                     continue; // a manifest entry without an id: Dependencies works those out the slow way

@@ -555,10 +555,7 @@ static class LoadOrder
         if (SaveManager.Instance.SettingsSave.ModSettings is not { } settings)
             return;
         var list = settings.ModList;
-        // Each mod's saved entry (the first, if listed twice), looked up once rather than searched for per mod.
-        var first = new Dictionary<(string?, ModSource), SettingsSaveMod>();
-        foreach (var saved in list)
-            first.TryAdd((saved.Id, saved.Source), saved);
+        var first = Dependencies.SavedEntries(list);
         var entries = mods.Select(m => first.GetValueOrDefault((m.manifest?.id, m.modSource)) ?? new SettingsSaveMod(m)).ToList();
         var kept = entries.ToHashSet();
         entries.AddRange(list.Where(e => !kept.Contains(e)));

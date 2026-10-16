@@ -11,14 +11,27 @@ static class Dependencies
     // A mod's dependency ids, read once per redraw (Lookups).
     public static IReadOnlyList<string> Of(Mod? mod) => mod == null ? [] : Lookups.Current?.DependenciesOf(mod, Read) ?? Read(mod);
 
-    static IReadOnlyList<string> Read(Mod mod) => mod.manifest?.dependencies?.Select(d => d.id).ToList() ?? [];
+    // Read from the manifest, every time.
+    public static IReadOnlyList<string> Read(Mod mod) => mod.manifest?.dependencies?.Select(d => d.id).ToList() ?? [];
 
     public static bool IsOn(Mod mod) => Lookups.Current?.IsOn(mod) ?? !(SaveManager.Instance.SettingsSave.ModSettings?.IsModDisabled(mod) ?? false);
 
     // The (id, source) pairs the saved list has off, for checking many mods at once (IsModDisabled walks the list per
     // mod): any entry for one off, as the game reads it.
-    public static HashSet<(string?, ModSource)> SavedOff() =>
-        SaveManager.Instance.SettingsSave.ModSettings?.ModList.Where(e => !e.IsEnabled).Select(e => ((string?)e.Id, e.Source)).ToHashSet() ?? [];
+    public static HashSet<(string?, ModSource)> SavedOff() => SavedOff(SaveManager.Instance.SettingsSave.ModSettings?.ModList ?? []);
+
+    public static HashSet<(string?, ModSource)> SavedOff(IEnumerable<SettingsSaveMod> saved) =>
+        saved.Where(e => !e.IsEnabled).Select(e => ((string?)e.Id, e.Source)).ToHashSet();
+
+    // Each mod's saved entry by (id, source), the first if listed twice (as the game's own lookups find it), for looking
+    // up many mods at once.
+    public static Dictionary<(string?, ModSource), SettingsSaveMod> SavedEntries(IEnumerable<SettingsSaveMod> saved)
+    {
+        var entries = new Dictionary<(string?, ModSource), SettingsSaveMod>();
+        foreach (var entry in saved)
+            entries.TryAdd((entry.Id, entry.Source), entry);
+        return entries;
+    }
 
     // The installed copy of an id, preferring one that's on; mods installed this session count.
     public static Mod? Find(string id) => id != null && Lookups.Current is { } now ? now.Find(id)
@@ -61,10 +74,7 @@ static class Dependencies
     public static void Set(IEnumerable<Mod> mods, bool on, NModdingScreen? screen)
     {
         var settings = SaveManager.Instance.SettingsSave.ModSettings ??= new ModSettings();
-        // Each mod's saved entry (the first, if listed twice), looked up once rather than searched for per mod.
-        var entries = new Dictionary<(string?, ModSource), SettingsSaveMod>();
-        foreach (var saved in settings.ModList)
-            entries.TryAdd((saved.Id, saved.Source), saved);
+        var entries = SavedEntries(settings.ModList);
         foreach (var mod in mods)
         {
             if (!entries.TryGetValue((mod.manifest?.id, mod.modSource), out var entry))

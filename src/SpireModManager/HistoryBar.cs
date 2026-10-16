@@ -151,11 +151,10 @@ static class HistoryBar
     }
 
     // Mods turned on, off, and moved in the load order, compared with launch.
-    public static (int On, int Off, int Moved) Counts()
-    {
-        var changed = ModChanges(History.Loaded?.Mods ?? []);
-        return (changed.Count(c => c.Enabled), changed.Count(c => !c.Enabled), Moves().Count);
-    }
+    public static (int On, int Off, int Moved) Counts() => Counts(ModChanges(History.Loaded?.Mods ?? []));
+
+    static (int On, int Off, int Moved) Counts(List<(Mod Mod, bool Enabled)> changed) =>
+        (changed.Count(c => c.Enabled), changed.Count(c => !c.Enabled), Moves().Count);
 
     // The second line's count: mods installed since launch, edited mods, profiles added, deleted or renamed, and
     // a switched profile (moves are on the first line).
@@ -177,7 +176,7 @@ static class HistoryBar
         if (Switch(renamed) is var (from, to))
             lines.Add(Menus.Format("SPIRE_MOD_MANAGER.CHANGE_SWITCH", ("from", $"[b]{Escape(from)}[/b]"), ("to", $"[b]{Escape(to)}[/b]")));
         var changed = ModChanges(loaded.Mods);
-        var (on, off, moved) = (changed.Count(c => c.Enabled), changed.Count(c => !c.Enabled), Moves().Count); // as Counts
+        var (on, off, moved) = Counts(changed);
         // Fewer than NameLimit mods turned on, off or installed: each by name under its count.
         var named = changed.Count + Installed.Mods.Count < NameLimit;
         void Names(IEnumerable<string> names)
@@ -520,8 +519,8 @@ static class HistoryBar
 
     // Mods whose details changed: which ones (category, alias, notes, tags) and the alias now; profiles added,
     // deleted or renamed (lines), and the renames (old name -> new).
-    static (List<(string Id, List<string> Fields, string? Alias)> Edited, List<string> Profiles, Dictionary<string, string> Renamed)
-        DataChanges(string before, string after)
+    static (IReadOnlyList<(string Id, IReadOnlyList<string> Fields, string? Alias)> Edited, List<string> Profiles,
+        IReadOnlyDictionary<string, string> Renamed) DataChanges(string before, string after)
     {
         if (_compared is not { } last || last.Before != before || last.After != after)
             _compared = last = Compare(before, after);
@@ -533,10 +532,11 @@ static class HistoryBar
         return (last.Edited, profiles, last.Renamed);
     }
 
-    record Compared(string Before, string After, List<(string Id, List<string> Fields, string? Alias)> Edited,
-        Dictionary<string, string> Renamed, List<string> Added, List<string> Gone);
+    record Compared(string Before, string After, IReadOnlyList<(string Id, IReadOnlyList<string> Fields, string? Alias)> Edited,
+        IReadOnlyDictionary<string, string> Renamed, IReadOnlyList<string> Added, IReadOnlyList<string> Gone);
 
-    // The last comparison: the bar, its list, its summary and the Changed filter compare the same data in turn.
+    // The last comparison: the bar, its list, its summary and the Changed filter compare the same data in turn. Read
+    // only, as every caller shares it.
     static Compared? _compared;
     static bool _compareFailed;
 
@@ -548,7 +548,7 @@ static class HistoryBar
             var b = JsonNode.Parse(after)?.AsObject();
             var modsA = a?["mods"] as JsonObject ?? [];
             var modsB = b?["mods"] as JsonObject ?? [];
-            var edited = new List<(string, List<string>, string?)>();
+            var edited = new List<(string Id, IReadOnlyList<string> Fields, string? Alias)>();
             foreach (var id in modsA.Select(p => p.Key).Union(modsB.Select(p => p.Key)))
             {
                 var fields = new[] { "category", "alias", "notes", "tags" }
@@ -586,7 +586,7 @@ static class HistoryBar
                 _compareFailed = true; // once a session: it's asked on every change
                 Log.Warn($"[{ModEntry.ModId}] Could not compare our data with launch, so Changes leaves out edits and profiles: {e}");
             }
-            return new Compared(before, after, [], [], [], []);
+            return new Compared(before, after, [], new Dictionary<string, string>(), [], []);
         }
     }
 

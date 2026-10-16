@@ -224,10 +224,7 @@ static class SelfTest
                 $"mods with notes: {Store.Data.Mods.Values.Count(m => m.Notes != null)}");
 
             // A full redraw happens on every search keystroke and every edit: it has to stay quick.
-            // From a clean heap: a full GC that comes due otherwise lands in some runs' loop and not others' (+5 ms).
-            GC.Collect();
-            GC.WaitForPendingFinalizers();
-            GC.Collect();
+            CleanHeap();
             var timer = System.Diagnostics.Stopwatch.StartNew();
             for (var i = 0; i < 10; i++)
                 CategoryList.Apply(content);
@@ -235,6 +232,7 @@ static class SelfTest
             Check($"category view redraw {categoriesMs:0.0} ms", categoriesMs < 50);
             double Ms(Action action)
             {
+                CleanHeap();
                 var watch = System.Diagnostics.Stopwatch.StartNew();
                 for (var i = 0; i < 10; i++)
                     action();
@@ -369,8 +367,18 @@ static class SelfTest
     // How long something takes through to the end of the frame it happens in: its own work, then what it leaves
     // for the frame's end (layout, text, nodes freed). From the start of a frame, where a click lands, to a timer
     // that fires once that frame's deferred work is done; the time between frames isn't counted.
+    // Before each timing: a full GC that comes due otherwise lands inside some runs' timing and not others' (one
+    // added 50-90 ms to a loop of ten redraws), so numbers from two builds wouldn't compare.
+    static void CleanHeap()
+    {
+        GC.Collect();
+        GC.WaitForPendingFinalizers();
+        GC.Collect();
+    }
+
     static async Task<double> FrameMs(Node node, Action action)
     {
+        CleanHeap();
         var tree = node.GetTree();
         await node.ToSignal(tree, SceneTree.SignalName.ProcessFrame);
         var watch = System.Diagnostics.Stopwatch.StartNew();
@@ -2775,6 +2783,7 @@ static class SelfTest
         }
         static double Ms(Action action)
         {
+            CleanHeap();
             var watch = System.Diagnostics.Stopwatch.StartNew();
             for (var i = 0; i < 10; i++)
                 action();
