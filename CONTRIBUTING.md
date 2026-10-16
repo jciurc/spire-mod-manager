@@ -15,9 +15,11 @@ work. The ones labelled `good first issue` are a good start; say on the issue th
 
 - **Windows.** The project builds against the game's Windows data folder, and the dev tools use hard links
   and `%APPDATA%`.
-- **Slay the Spire 2 on the public-beta branch, v0.111.0 or newer.** The mod compiles against the game's own
+- **Slay the Spire 2, v0.107.1 or newer, on either branch.** The mod compiles against the game's own
   `sts2.dll` and Godot assemblies. They're proprietary, so they aren't in this repository and must never be
-  committed; the build reads them from your installed game.
+  committed; the build reads them from your installed game. The mod runs on both branches: what only the
+  public-beta has goes through `Compat.cs`, by name (`tools/check.cs` checks). The dev tools run the beta's game,
+  or the stable branch's with `--stable` (`tools/dev.cs` says how each gets its copy).
 - **The [.NET 10 SDK](https://dotnet.microsoft.com/download).** The build scripts are .NET 10 file-based apps
   (`dotnet run build.cs`). The mod itself targets .NET 9, like the game.
 - **Where your game is:** found on its own. build.cs and tools/dev.cs look through Steam's list of libraries

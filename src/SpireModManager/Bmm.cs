@@ -166,8 +166,8 @@ static class Bmm
         }
         catch (Exception e)
         {
-            if (Missing.Add(what))
-                Log.Warn($"[{ModEntry.ModId}] Better Mod Menu: could not {what}: {(e as TargetInvocationException)?.InnerException?.Message ?? e.Message}");
+            if (Missing.Add(what)) // the whole exception, once: it happens inside Better Mod Menu, and its stack says where
+                Log.Warn($"[{ModEntry.ModId}] Better Mod Menu: could not {what}: {(e as TargetInvocationException)?.InnerException ?? e}");
         }
     }
 }
