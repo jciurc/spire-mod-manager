@@ -340,12 +340,16 @@ static class Profiles
     public static int OnCount() => Current().Count(m => m.Enabled);
 
     // For the profile list: "12 mods · Oct 11" (mods on, when last saved). Like the count beside the name, it
-    // counts installed mods, as they'd be after switching to it (one it has never seen stays as it is now).
+    // counts installed mods, as they'd be after switching to it (one it has never seen stays as it is now). The date
+    // in the game's language, its own order with the short month ("11. Okt.", "10月11日"), not Windows' (#98).
     public static string Details(Profile profile)
     {
         var text = ModCount(profile);
-        return profile.SavedAt is { } saved ? $"{text} · {saved:MMM d}" : text;
+        return profile.SavedAt is { } saved ? $"{text} · {ShortDate(saved)}" : text;
     }
+
+    public static string ShortDate(DateTime date) =>
+        date.ToString(Menus.Culture.DateTimeFormat.MonthDayPattern.Replace("MMMM", "MMM"), Menus.Culture);
 
     // "12 mods": a profile's mods on (the list's count; Delete's question names it too).
     public static string ModCount(Profile profile)

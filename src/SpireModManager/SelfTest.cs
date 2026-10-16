@@ -4506,8 +4506,8 @@ static class SelfTest
         // Dates, sizes and counts follow the game's language: in English as they always read; in German, the game's
         // German date pattern and separators (our words stay English there, as we have no German text).
         var english = info.GetNode<RichTextLabel>("ModDescription").GetParsedText();
-        Check("in English: October 11, 2026; Size: 1.5 MB; Subscribers: 1,234", ModDetails.Date(new DateTime(2026, 10, 11)) == "October 11, 2026"
-            && english.Contains("Size: 1.5 MB") && english.Contains("Subscribers: 1,234"), english);
+        Check("in English: October 11, 2026; Size: 1.5 MB; Subscribers: 1,234; the profile list's Oct 11", ModDetails.Date(new DateTime(2026, 10, 11)) == "October 11, 2026"
+            && english.Contains("Size: 1.5 MB") && english.Contains("Subscribers: 1,234") && Profiles.ShortDate(new DateTime(2026, 10, 11)) == "Oct 11", english);
         var language = LocManager.Instance.Language;
         try
         {
@@ -4518,6 +4518,9 @@ static class SelfTest
                 && german.Contains("1,5 MB") && german.Contains("1.234"), $"{ModDetails.Date(new DateTime(2026, 10, 11))} / {german}");
             var longAgo = ModDetails.Ago(DateTime.Now.AddDays(-1234));
             Check("with the game in German, other counts too: (1.234 days ago)", longAgo.Contains("(1.234 days ago)"), longAgo);
+            // The profile list's date too, in the game's order and month (#98: it followed Windows' language).
+            Check("with the game in German, the profile list's date: 11. Okt.", Profiles.ShortDate(new DateTime(2026, 10, 11)) == "11. Okt.",
+                Profiles.ShortDate(new DateTime(2026, 10, 11)));
             // A date pattern that doesn't read (an unclosed quote; SetLanguage below reloads the tables without it):
             // all in English, not a German month in the English pattern.
             LocManager.Instance.GetTable("run_history").MergeWith(new() { ["INFO.DATE_FORMAT"] = "d 'MMMM" });
