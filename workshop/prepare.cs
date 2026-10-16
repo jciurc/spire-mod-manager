@@ -4,7 +4,7 @@
 // - content/ is replaced with dist/SpireModManager/, the three files players install.
 // - description.bbcode goes into workshop.json: the uploader reads the description only from there, as one
 //   JSON string, which is no place to edit a long text.
-// - Then everything the upload will set on the item is checked and listed, so a missing minBranch or a
+// - Then everything the upload will set on the item is checked and listed, so a wrong branch range or a
 //   picture that's too big shows up here instead of on the live item.
 using System.Buffers.Binary;
 using System.Runtime.CompilerServices;
@@ -70,8 +70,8 @@ if (string.IsNullOrWhiteSpace(title))
     problems.Add("workshop.json: title is empty");
 if (visibility is not ("private" or "public" or "unlisted" or "friends_only"))
     problems.Add("workshop.json: visibility should be private, public, unlisted or friends_only");
-if (string.IsNullOrWhiteSpace(minBranch))
-    problems.Add("workshop.json: minBranch is empty, which means every branch: stable players would get a build that can't load");
+// minBranch: empty is every branch, right while the build runs on stable and the beta; one that needs the beta
+// sets "public-beta" (workshop/README.md). Either way the range is listed below, to read before the upload.
 if (config["dependencies"] is not JsonArray)
     problems.Add("workshop.json: dependencies should be written out, as [] when there are none");
 if (config["tags"] is not JsonArray)
