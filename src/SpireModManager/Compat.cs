@@ -1,4 +1,5 @@
 using System.Reflection;
+using System.Runtime.CompilerServices;
 using Godot;
 using HarmonyLib;
 using MegaCrit.Sts2.Core.Modding;
@@ -12,6 +13,10 @@ static class Compat
 {
     static readonly FieldInfo? WorkshopIdField = AccessTools.Field(typeof(Mod), "workshopId");
     public static readonly MethodInfo? InfoClear = AccessTools.Method(typeof(NModInfoContainer), "Clear");
+    static readonly FieldInfo?[] InfoParts = new[] { "_title", "_description", "_image" }.Select(name => AccessTools.Field(typeof(NModInfoContainer), name)).ToArray();
+
+    // Stable: each mod's id, read from its folder once (rows ask on every redraw).
+    static readonly ConditionalWeakTable<Mod, StrongBox<ulong?>> FromFolder = new();
 
     // A Workshop mod's item id: the game's own (beta), or its folder's name under the Workshop's content folder
     // (stable): ...\steamapps\workshop\content\<app id>\<item id>.
@@ -21,6 +26,11 @@ static class Compat
             return null;
         if (WorkshopIdField != null)
             return WorkshopIdField.GetValue(mod) as ulong?;
+        return FromFolder.GetValue(mod, m => new StrongBox<ulong?>(IdFromFolder(m))).Value;
+    }
+
+    static ulong? IdFromFolder(Mod mod)
+    {
         if (mod.modSource != ModSource.SteamWorkshop || string.IsNullOrEmpty(mod.path))
             return null;
         var parts = mod.path.Split('\\', '/');
@@ -49,8 +59,8 @@ static class Compat
             InfoClear.Invoke(info, null);
             return;
         }
-        foreach (var name in new[] { "_title", "_description", "_image" })
-            switch (AccessTools.Field(typeof(NModInfoContainer), name)?.GetValue(info))
+        foreach (var part in InfoParts)
+            switch (part?.GetValue(info))
             {
                 case RichTextLabel text:
                     text.Text = "";

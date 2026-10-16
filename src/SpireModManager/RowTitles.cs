@@ -14,6 +14,7 @@ static class RowTitles
     const int OriginalNameSize = 16;
     const float TitleShift = 18; // room before the title in our views (the notepad sits there)
     const string ShiftMeta = "spire_mod_manager_title_shift";
+    const string FocusMeta = "spire_mod_manager_game_focus"; // the row's focus mode as the game's scene made it
     const string TickMeta = "spire_mod_manager_tick_shift";
     const float TickShift = 8;
     const string NotesCard = "SpireModManagerNotesCard";
@@ -40,9 +41,12 @@ static class RowTitles
             // title stretches with the (wider) row.
             row.CustomMinimumSize = new Vector2(0, vanilla ? 72 : RowHeight);
             row.GetNode<Control>("PlatformIcon").Visible = vanilla;
-            // Focusable, as the beta's row scene makes it (its controller support); the stable branch's isn't, and
-            // going to a mod (a name clicked in the panel, a banner's Show) lights its row through focus.
-            row.FocusMode = Control.FocusModeEnum.All;
+            // Focusable in our views, as the beta's row scene makes it (its controller support); the stable branch's
+            // isn't, and going to a mod (a name clicked in the panel, a banner's Show) lights its row through focus.
+            // Vanilla View: as the game's scene has it.
+            if (!row.HasMeta(FocusMeta))
+                row.SetMeta(FocusMeta, (int)row.FocusMode);
+            row.FocusMode = vanilla ? (Control.FocusModeEnum)(int)row.GetMeta(FocusMeta) : Control.FocusModeEnum.All;
             Look(row, RowState.Selected(row), RowState.Focused(row));
             var tickbox = row.GetNode<Control>("Tickbox");
             tickbox.PivotOffset = tickbox.Size / 2;
