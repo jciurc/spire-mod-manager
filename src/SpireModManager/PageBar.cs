@@ -3,11 +3,8 @@ using MegaCrit.Sts2.Core.Nodes.Screens.ModdingScreen;
 
 namespace SpireModManager;
 
-// Under the search box on the main list, above the categories: controls for the whole page. Enable all /
-// Disable all act on the mods shown (all of them, the search's matches, or the Show: choice's; the label says
-// which), as one undo step; Show: All, Enabled, Disabled or Changed picks the rows shown (ListFilter); Expand all /
-// Collapse all open or close every category. Made again on each redraw.
-// With no categories yet (a first run), a quiet line under it says how to make one; it goes with the first.
+// The main list's page bar under the search box: Enable all / Disable all (on the mods shown, one undo step), the
+// Show: choice (ListFilter), and Expand all / Collapse all. With no categories yet, a hint below says how to add one.
 static class PageBar
 {
     public const string Name = "SpireModManagerPageBar", HintName = "SpireModManagerCategoryHint";
@@ -107,8 +104,7 @@ static class PageBar
 
         if (categories.Count > 0)
             return;
-        // In the bar's own quiet style, lined up with its "Installed mods" (Layout stacks it below the bar). It names
-        // the menu entry the way the menu does.
+        // The hint, in the bar's quiet style, lined up with "Installed mods" (Layout stacks it below the bar).
         var hint = new Label
         {
             Name = HintName, VerticalAlignment = VerticalAlignment.Center, MouseFilter = Control.MouseFilterEnum.Ignore,

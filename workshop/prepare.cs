@@ -1,11 +1,7 @@
 // Get the Workshop folder ready for an upload with Mega Crit's ModUploader, and check it. Nothing is uploaded.
 // Usage: dotnet run workshop/prepare.cs     (after dotnet run build.cs --dist; see workshop/README.md)
-//
-// - content/ is replaced with dist/SpireModManager/, the three files players install.
-// - description.bbcode goes into workshop.json: the uploader reads the description only from there, as one
-//   JSON string, which is no place to edit a long text.
-// - Then everything the upload will set on the item is checked and listed, so a wrong branch range or a
-//   picture that's too big shows up here instead of on the live item.
+// Fills content/ from dist/SpireModManager/, copies description.bbcode into workshop.json (the uploader reads the
+// description only from there), then checks and lists everything the upload will set.
 using System.Buffers.Binary;
 using System.Runtime.CompilerServices;
 using System.Text;

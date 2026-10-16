@@ -2,8 +2,7 @@ using Godot;
 
 namespace SpireModManager;
 
-// Tiny icons drawn in code (no image files): a notepad page for rows with the player's alias or notes, and an
-// "i" in a ring for a note on how something works.
+// Small icons drawn in code: a notepad page and an "i" in a ring.
 static class Icons
 {
     static Texture2D? _notepad, _info;
@@ -13,7 +12,7 @@ static class Icons
     {
         var (dx, dy) = (x + 0.5f - w / 2f, y + 0.5f - h / 2f);
         var r = MathF.Sqrt(dx * dx + dy * dy);
-        var ring = MathF.Max(0, 1 - MathF.Abs(r - 5.5f)); // a 1 px ring on the pixel centres (crisp, not two half-faint pixels)
+        var ring = MathF.Max(0, 1 - MathF.Abs(r - 5.5f)); // 1 px ring on the pixel centres, so it stays crisp
         var letter = x is 6 or 7 && (y is 3 or 4 || (y >= 6 && y <= 10));
         return letter ? 1f : ring;
     });

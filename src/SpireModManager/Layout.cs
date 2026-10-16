@@ -8,12 +8,8 @@ using MegaCrit.Sts2.addons.mega_text;
 
 namespace SpireModManager;
 
-// Where everything sits in each view.
-// - Categories: a wide mod list and info panel, smaller text, our own title, plain panels without the
-//   blue border, no Make/Get Mods. Visibly not the vanilla page.
-// - Load Order: the list alone, centred; no info panel.
-// - Vanilla: the game's own positions, sizes, title and panels (saved the first time we change them),
-//   with just a "Spire Manager" button in the lower-left corner to come back.
+// Where everything sits in each view: Categories (wide list and info panel, smaller text, plain panels), Load Order
+// (the list alone, centred) and Vanilla (the game's own layout, saved the first time we change it).
 static class Layout
 {
     public enum View { Categories, LoadOrder, Vanilla }
@@ -69,8 +65,7 @@ static class Layout
         Place(info, InfoBox);
         info.Visible = view != View.LoadOrder;
 
-        // Page title: ours, smaller, top-left at the same spot in both our views (it belongs to the list, so
-        // it's placed relative to it); the game's in Vanilla View.
+        // Page title: ours, smaller, at the list's top-left in our views; the game's in Vanilla View.
         var title = list.GetNode<MegaRichTextLabel>("%InstalledModsTitle");
         var dx = PageLeft - listBox.X;
         Place(title, new Vector4(dx, TitleTop - listBox.Y, dx + 700, TitleBottom - listBox.Y));
@@ -95,9 +90,8 @@ static class Layout
 
         var scroll = list.GetNode<Control>("ModsScrollContainer");
 
-        // The scene's mask clips drawing only (clip_children): rows scrolled out of view still took clicks
-        // above and below the list. Invisible blockers just outside the mask catch those clicks first.
-        // (ClipContents on the mask breaks its drawing.) The profile bar and search sit above them.
+        // The mask only clips drawing, so rows scrolled out of view still took clicks above and below the list:
+        // invisible blockers just outside it catch those first (ClipContents on the mask breaks its drawing).
         var mask = scroll.GetNode<Control>("Mask");
         if (mask.GetNodeOrNull("SpireModManagerBlockTop") == null)
             foreach (var (name, top) in new[] { ("SpireModManagerBlockTop", true), ("SpireModManagerBlockBottom", false) })
@@ -108,8 +102,7 @@ static class Layout
                 (blocker.OffsetTop, blocker.OffsetBottom) = top ? (-2000, 0) : (0, 2000);
             }
 
-        // Better Mod Menu clips the mask for its page; ours draw without it (the blockers above do its job). Its
-        // scrollbar lane (wider, midway to the info panel) is its page's too.
+        // Better Mod Menu clips the mask and widens the scrollbar lane for its page; ours do without.
         if (Bmm.Present)
             mask.ClipContents = !Wide;
         if ((scroll as NScrollableContainer)?.Scrollbar is { } bar)
@@ -130,10 +123,8 @@ static class Layout
 
         PlaceList(list);
 
-        // Bottom row, left, from the lower-left corner (where the main menu button sits): "Vanilla List" then
-        // "Load Order" on the main list; "Spire Manager" alone in Vanilla View; "Return" alone in Load Order.
-        // Right: Changes, Undo/Redo/Revert, then Relaunch (main list only; Load Order has no Relaunch and no
-        // restart line).
+        // Bottom row: Vanilla List and Load Order from the lower-left corner on the main list (Spire Manager alone in
+        // Vanilla View, Return alone in Load Order); Changes, Undo/Redo/Revert and Relaunch on the right (main list).
         var vanillaToggle = screen.GetNodeOrNull<Control>("SpireModManagerViewToggle");
         var orderToggle = screen.GetNodeOrNull<Control>("SpireModManagerLoadOrderToggle");
         var leftEnd = PageLeft;
@@ -183,10 +174,8 @@ static class Layout
         }
         History.NotifyChanged(); // the buttons act on this view's history
 
-        // The game's "takes effect after a restart" line fits between the left and right buttons in
-        // Categories (its text shrinks to fit), and goes back to its own place in Vanilla View. Our wording on our
-        // views, the game's in Vanilla View: the game sets its text once, in _Ready (before our postfix places it),
-        // and after that only shows or hides it.
+        // The game's "takes effect after a restart" line: between the button groups with our wording in our views, in
+        // its own place with its own text in Vanilla View (the game sets its text once, in _Ready).
         var pending = screen.GetNode<MegaRichTextLabel>("%PendingChangesLabel");
         Place(pending, new Vector4(leftEnd + 12, 1000, right, 1068));
         pending.SetTextAutoSize(new LocString("settings_ui", Wide ? "SPIRE_MOD_MANAGER.PENDING_RESTART" : "MODDING_SCREEN.PENDING_CHANGES_WARNING").GetFormattedText());
@@ -225,8 +214,7 @@ static class Layout
             screen.AddChild(label);
         }
         label.Visible = Wide;
-        // Centred over the arrow where it rests (-40,726, 200x110; it slides in from off-screen, so not read
-        // from its position).
+        // Centred over the arrow's resting place (-40,726, 200x110), not its position: it slides in from off-screen.
         label.Size = new Vector2(150, 24);
         label.Position = new Vector2(0, 726 - 27);
     }
@@ -268,11 +256,9 @@ static class Layout
         return label;
     }
 
-    // Across the top of the list in our views, stacked: the profile bar (main list only), the search box (with
-    // Auto sort in Load Order), the banners when shown (two mod managers on, yellow, then the page's own warning, red:
-    // the one that stays put above the one that comes and goes as the list changes), and on the main list the page
-    // bar and its hint (only made when there are no categories); the list starts below them. Vanilla View hides them
-    // and gives the list its full height back.
+    // Stacks the top of the list in our views: the profile bar (main list), the search box (with Auto sort in Load
+    // Order), the banners, and the page bar with its hint; the list starts below. Vanilla View gives the list its full
+    // height back.
     public static void PlaceList(Control list)
     {
         // The scene's box each time (Better Mod Menu moves and resizes it on its page); in our views, the top set below.
@@ -318,12 +304,8 @@ static class Layout
             dot.Visible = Current == View.Vanilla && ModEntry.HasPendingChanges();
     }
 
-    // Inside the info panel, fitted to its size: the head (title, source and short facts, left) beside a
-    // large thumbnail of the mod image (right); the description below both, then the player's fields
-    // (ModDetails.PlaceFields); Open Folder along the bottom. With the changes list's Back button showing (top
-    // right), the thumbnail and everything under it move down to make room. A mod without a picture: the
-    // description starts right under the head. Other mods' parts go between the description and the fields
-    // (ModDetails), and in Vanilla View back where their mod put them.
+    // Places the info panel's parts: the head (title, source, facts) beside a large thumbnail, the description below,
+    // other mods' parts, then the player's fields and Open Folder. The changes list's Back button pushes them down.
     public static void PlaceInfo(Control info)
     {
         const float top = 16;
@@ -357,10 +339,8 @@ static class Layout
             PutOthersBack(info);
     }
 
-    // Other mods' parts in the info panel: Undo And Restart, for one, adds a settings panel at a fixed (0,318), right
-    // where our fields are. Not the game's own (noted on first sight), not ours (named "SpireModManager…", and Open
-    // Folder) and not Better Mod Menu's (Bmm hides those on our views); nor one that stretches with the panel (an
-    // overlay or a background). Those their mods show, out of sight for lack of room or not.
+    // Other mods' parts in the info panel (Undo And Restart adds one right where our fields are): not the game's own,
+    // ours or Better Mod Menu's, and not ones that stretch with the panel.
     public static List<Control> OtherParts(Control info) =>
         AllOthers(info).Where(c => c.AnchorLeft == c.AnchorRight && c.AnchorTop == c.AnchorBottom && c.Visible).ToList();
 
@@ -369,9 +349,8 @@ static class Layout
         : info.GetChildren().OfType<Control>().Where(c => c.Name.ToString() is var name && !scene.Contains(name)
             && !name.StartsWith("SpireModManager") && name != "OpenFolderButton" && !name.StartsWith("BetterModMenu"));
 
-    // Our views: the parts that fit in room (each with the gap after it), in the order their mods added them; the
-    // rest go out of sight (Park). A part first seen this frame may not be laid out inside yet (a wrapping label starts
-    // out tall), so it only goes once it has been: the panel is placed again next frame.
+    // Our views: the parts that fit in the room, in their mods' order; the rest go out of sight (Park). A part new this
+    // frame may not be laid out yet, so it waits a frame.
     public static List<Control> FitOthers(Control info, float room)
     {
         var fitting = new List<Control>();
@@ -412,9 +391,8 @@ static class Layout
             (part.OffsetLeft + dx, part.OffsetTop + dy, part.OffsetRight + dx, part.OffsetBottom + dy);
     }
 
-    // Out of sight for lack of room: far above the panel, and out of keyboard reach (its own focus behaviour noted for
-    // when it has room again). Never hidden: its Visible stays its mod's, so whatever its mod sets meanwhile (in a fill
-    // or not) still holds when room comes back.
+    // Out of sight for lack of room: far above the panel and out of keyboard reach. Never hidden, so its mod's own
+    // Visible still holds when room comes back.
     static void Park(Control part)
     {
         if (!part.HasMeta(ParkedMeta))
@@ -432,10 +410,8 @@ static class Layout
         part.RemoveMeta(ParkedMeta);
     }
 
-    // The changes list covers the panel: every other mod's part goes out of sight too (Park), shown or not, stretching
-    // or not, and where it was is noted. Never hidden: its Visible stays its mod's, so a hide or a show its mod makes
-    // while the list is open still holds when it closes. One already out of sight for lack of room stays as it is (the
-    // panel is placed again when the list closes). Returns them all, for the list to leave their Visible alone.
+    // The changes list covers the panel: every other mod's part goes out of sight too (never hidden), and where it was
+    // is noted. Returns them all, so the list leaves their Visible alone.
     public static List<Control> ParkOthers(Control info)
     {
         var others = AllOthers(info).ToList();
@@ -447,9 +423,8 @@ static class Layout
         return others;
     }
 
-    // The list closed: each part it moved goes back where it was, in keyboard reach as before. The panel is placed
-    // after (ModDetails.PlaceFields), which fits the shown ones as usual. One that Vanilla View put back meanwhile
-    // (PutOthersBack) stays where it is.
+    // The list closed: each part it moved goes back where it was and into keyboard reach (unless Vanilla View already
+    // put it back); the panel is placed again after.
     public static void UnparkOthers(Node info)
     {
         foreach (var part in info.GetChildren().OfType<Control>().Where(c => c.HasMeta(ListMeta)))
@@ -478,8 +453,8 @@ static class Layout
         }
     }
 
-    // The list's scrollbar as the scene had it (box, minimum width, mouse filter; saved the first time), back if
-    // restore. Better Mod Menu widens it and moves it midway to the info panel on its page.
+    // The list's scrollbar as the scene had it (saved the first time), restored if asked; Better Mod Menu changes it
+    // for its page.
     static void SceneBar(Control bar, bool restore)
     {
         if (!bar.HasMeta(BarMeta))
@@ -517,8 +492,7 @@ static class Layout
         panel.AddThemeStyleboxOverride("panel", plain);
     }
 
-    // Our size in our views; in Vanilla View whatever the scene had (its font size and auto-size maximum,
-    // saved the first time).
+    // Our size in our views; the scene's (saved the first time) in Vanilla View.
     static void ViewFont(MegaRichTextLabel label, int size)
     {
         if (!label.HasMeta(FontMeta))
@@ -535,11 +509,8 @@ static class Layout
         Refit(label);
     }
 
-    // Our size, as the most the game's auto-size may pick, then fitted again (Refit). Already so (a redraw in the same
-    // view): left alone, as fitted (each override restyles the text, and every row title comes by here on every redraw).
-    // So is a smaller size that is the auto-size's own last pick: written back, a long title would be fitted again, from
-    // scratch, on every redraw. A pick for an older text or box is fitted again by the label itself, or for a row title
-    // by RowTitles.AutoSize.
+    // Our size as the most the game's auto-size may pick, then fitted again (Refit). Left alone when already set (each
+    // override restyles the text, and every row title passes here each redraw) or when it's the auto-size's own pick.
     public static void FontSize(MegaRichTextLabel label, int size)
     {
         var drawn = label.GetThemeFontSize("normal_font_size");
@@ -553,14 +524,9 @@ static class Layout
         Refit(label);
     }
 
-    // The game's auto-size (a MegaRichTextLabel's text shrunk to fit its box) run again after a size written straight in:
-    // setting the same text doesn't run it, and it skips writing a size equal to the one it wrote last, which may not be
-    // the one drawn any more. Told the size drawn now, it writes only another one; deferred, once the text and box are
-    // final. With the auto-size off (a row title while a redraw sets it up) its last size is forgotten instead, so the one
-    // fitting RowTitles.AutoSize runs as it turns it back on writes: `now`, its text and box final, and only if the box
-    // changed, a size was written since it last ran, or its text isn't the one it last fitted (newText). (A deferred run
-    // would find it still off, or fit it twice.)
-    // Those are private, so reached by name: if a game update renames them, sizes stay as written (noted once).
+    // Runs the game's auto-size again after a size written directly: setting the same text doesn't, and it skips a size
+    // equal to its last. Deferred, once text and box are final; with auto-size off, RowTitles.AutoSize runs it instead
+    // (`now`, `newText`). Its members are private, reached by name: if a game update renames them, sizes stay as written.
     public static void Refit(MegaRichTextLabel label, bool now = false, bool newText = false)
     {
         if (!(_refits ??= Refits()))
@@ -590,9 +556,7 @@ static class Layout
     // Set by the self-test: told of each label FontSize writes a size to or Refit fits again.
     public static Action<MegaRichTextLabel>? TestFitting { get; set; }
 
-    // Found as Refit calls and reads them: AdjustFontSize without parameters (by name alone, an overload could be
-    // found in its place, or two throw), the fields of the types they're read as. A lookup that throws counts as
-    // not found, so this runs once.
+    // Finds Refit's members (AdjustFontSize by its signature); a lookup that throws counts as not found.
     static bool Refits()
     {
         const string missing = "MegaRichTextLabel's auto-size not found; text keeps the sizes we write";

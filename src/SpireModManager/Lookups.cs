@@ -3,15 +3,9 @@ using MegaCrit.Sts2.Core.Saves;
 
 namespace SpireModManager;
 
-// Answers that every row of a redraw asks for, worked out once for the whole redraw: whether a mod is on (the
-// game's IsModDisabled walks its whole saved list each time), which installed copy an id means, which mods need
-// a mod, each mod's tags and search text, the page's fixed words, and which mods changed since launch. Asked
-// afresh, every row's "Required for" asked whether each other mod was on, so a redraw with about 250 mods walked
-// the saved list some 60,000 times (around 70 ms); and a search keystroke worked out each row's tags, a walk over
-// every mod, about ten times.
-// Nothing changes these answers while a redraw runs, so they are kept for just that long:
-// `using var lookups = Lookups.Begin();` at the top of a redraw. Outside one, Dependencies, Tags, Search and
-// Menus work everything out fresh, so a click or a menu always sees the current state.
+// Answers every row of a redraw asks for (on/off, which copy an id means, who needs whom, tags, search text,
+// changes since launch), worked out once per redraw: asked row by row, a 250-mod redraw took about 70 ms.
+// Use `using var lookups = Lookups.Begin();` at the top of a redraw; outside one, everything is worked out fresh.
 sealed class Lookups : IDisposable
 {
     public static Lookups? Current { get; private set; }
@@ -29,8 +23,7 @@ sealed class Lookups : IDisposable
     public static Lookups Begin() =>
         Begin(ModManager.Mods, Installed.Mods, SaveManager.Instance.SettingsSave.ModSettings?.ModList ?? []);
 
-    // From any lists (the self-test's made-up mods): mods stands for the game's list, installed for the mods added
-    // since launch, saved for the saved on/off list. Inside another redraw, that one's answers serve.
+    // From given lists (the self-test's made-up mods); inside another redraw, that one's answers serve.
     public static Lookups Begin(IReadOnlyList<Mod> mods, IReadOnlyList<Mod> installed, IEnumerable<SettingsSaveMod> saved)
     {
         if (Current is { } outer)
@@ -54,7 +47,7 @@ sealed class Lookups : IDisposable
         foreach (var mod in mods.Concat(installed))
             if (mod.manifest?.id is { } id && (!_byId.TryGetValue(id, out var kept) || !IsOn(kept) && IsOn(mod)))
                 _byId[id] = mod;
-        // Who needs whom, from the game's list only (as Dependencies.NeededBy); a mod naming one twice counts once.
+        // Who needs whom, from the game's list only; a mod naming one twice counts once.
         foreach (var mod in mods)
             foreach (var id in Dependencies.Of(mod).Distinct())
             {
@@ -79,7 +72,7 @@ sealed class Lookups : IDisposable
 
     public string Text(string key, Func<string, string> make) => Kept(_texts, key, make);
 
-    // The mods changed since launch (the main list's "Changed": ListFilter), asked for every row.
+    // The mods changed since launch, asked for every row.
     public HashSet<Mod> Changed(Func<HashSet<Mod>> make) => _changed ??= make();
 
     static TValue Kept<TKey, TValue>(Dictionary<TKey, TValue> kept, TKey key, Func<TKey, TValue> make) where TKey : notnull

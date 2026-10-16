@@ -3,14 +3,9 @@ using MegaCrit.Sts2.Core.Saves;
 
 namespace SpireModManager;
 
-// Undo and redo, kept separately for the two kinds of edit:
-// - List: which mods are on, and our data (categories, aliases, notes, tags, profiles);
-// - Order: the load order.
-// Each view steps through its own (Load Order view: Order; the others: List). A snapshot of everything
-// is taken after each change; undoing restores only that history's part and leaves the other as it is
-// now, so undoing an order change never flips a tickbox back. View choices and collapsed categories
-// aren't edits. The first snapshot is the state this session loaded with ("Changes"); Revert all goes
-// back to the state when the Modding page was opened.
+// Undo and redo, kept separately for the mod list and our data (List) and for the load order (Order): Load Order
+// steps through Order, the other views through List, so undoing an order change never flips a tickbox. The first
+// snapshot is the session's start (Changes); Revert all goes back to when the Modding page opened.
 static class History
 {
     public enum Track { List, Order }
@@ -48,8 +43,7 @@ static class History
         LaunchProfile = Store.Data.ActiveProfile;
     }
 
-    // After any change. Repeats of the current state (several saves for one action) are ignored; a change
-    // to both parts (e.g. Revert all) goes into both histories.
+    // After any change; repeats of the current state are ignored, and a change to both parts goes into both.
     public static void Record()
     {
         if (_restoring || _current == null)
@@ -67,9 +61,8 @@ static class History
         Changed?.Invoke();
     }
 
-    // The Modding page opened: what Revert all goes back to, and where undo starts.
-    // The active profile is brought in line with the tickboxes first (it can lag behind, e.g. after mods were
-    // installed), as part of the current state rather than a step of its own.
+    // The Modding page opened: what Revert all goes back to and where undo starts. The active profile is first brought
+    // in line with the tickboxes, as part of the current state.
     public static void Enter()
     {
         _restoring = true;
@@ -93,9 +86,8 @@ static class History
         Changed?.Invoke();
     }
 
-    // A change to our data that isn't the player's edit (a mod installed while the game runs joining the active
-    // profile): made as if it had always been so, in every snapshot too, so it isn't an undo step, isn't a change
-    // since launch, and neither undo nor Revert all takes it away.
+    // A change that isn't the player's edit (an installed mod joining the active profile): written into every
+    // snapshot, so it's no undo step and no change since launch, and Revert all keeps it.
     public static void Quietly(Action<StoreData> change)
     {
         _restoring = true;
@@ -129,10 +121,8 @@ static class History
     public static void Undo() => Step(CurrentTrack, Past, Future);
     public static void Redo() => Step(CurrentTrack, Future, Past);
 
-    // A dialog that makes changes and can be cancelled (RelaunchCheck): Mark as it opens, UndoTo on Cancel takes back
-    // every step recorded since, in both histories, whichever view is showing (a fix that adds a mod's first entry
-    // moves the order too), and forgets them: no Redo brings them back, as if the dialog had never been opened. Nothing
-    // else can change anything while the dialog covers the page, so those steps are all the dialog's.
+    // A cancellable dialog (RelaunchCheck): Mark as it opens; UndoTo on Cancel takes back every step since, in both
+    // histories, and forgets them (no Redo).
     public readonly record struct Point(long List, long Order);
 
     public static Point Mark() => new(Recorded[Track.List], Recorded[Track.Order]);
@@ -181,8 +171,7 @@ static class History
         Changed?.Invoke();
     }
 
-    // Everything as it was when the Modding page was opened: the mod list (on/off and order) and our data,
-    // active profile included (so the same profile, edited or not). Undoable, in both histories.
+    // Everything back to when the Modding page opened: the mod list and our data, active profile included. Undoable.
     public static void RevertMods()
     {
         if (Entered == null)

@@ -4,11 +4,8 @@ using MegaCrit.Sts2.addons.mega_text;
 
 namespace SpireModManager;
 
-// Row titles in our views: the alias with the original name small and dim beside it (or just the name),
-// cut short with "…" when it doesn't fit; before it, a small notepad when the player has notes for it (main list; an
-// alias already shows beside the original name). Hovering the title shows the mod's card (Hover's delay), the notepad a
-// plain "Contains note". Titles of mods turned on or off since launch are gold. Vanilla View: exactly as the game makes
-// them.
+// Row titles in our views: the alias with the original name small and dim beside it, cut with "…" to fit, a notepad
+// before it when the mod has notes, and gold for mods turned on or off since launch. Vanilla View: the game's.
 static class RowTitles
 {
     const int OriginalNameSize = 16;
@@ -32,17 +29,15 @@ static class RowTitles
             Unfitted.Remove(row.GetInstanceId()); // this redraw's fit replaces one still waiting (none in Vanilla View)
             var name = row.Mod?.manifest?.name ?? row.Mod?.manifest?.id ?? "";
             var title = row.GetNode<MegaRichTextLabel>("Title");
-            // The game's label fits its text to its box (smaller, down to a minimum) each time the box or the text
-            // changes, and on a view switch a redraw changes the box several times: off while it's set, then the text is
-            // fitted once (AutoSize: by Fit in our views, by FitVanilla in Vanilla View).
+            // The game's label refits its text on every box or text change, and a view switch changes the box several
+            // times: off while it's set, then fitted once (Fit in our views, FitVanilla in Vanilla View).
             title.AutoSizeEnabled = false;
             var info = vanilla ? null : Store.InfoFor(row.Mod?.manifest?.id);
             // Our views: smaller text in a shorter row with a smaller tickbox and no Steam/folder icon; the
             // title stretches with the (wider) row.
             row.CustomMinimumSize = new Vector2(0, vanilla ? 72 : RowHeight);
             row.GetNode<Control>("PlatformIcon").Visible = vanilla;
-            // Focusable in our views, as the beta's row scene makes it (its controller support); the stable branch's
-            // isn't, and going to a mod (a name clicked in the panel, a banner's Show) lights its row through focus.
+            // Focusable in our views, as on the beta, so going to a mod lights its row through focus (stable's row isn't).
             // Vanilla View: as the game's scene has it.
             if (!row.HasMeta(FocusMeta))
                 row.SetMeta(FocusMeta, (int)row.FocusMode);
@@ -56,9 +51,8 @@ static class RowTitles
             var tickWas = row.HasMeta(TickMeta) ? (float)row.GetMeta(TickMeta) : 0;
             (tickbox.OffsetLeft, tickbox.OffsetRight) = (tickbox.OffsetLeft + tickShift - tickWas, tickbox.OffsetRight + tickShift - tickWas);
             row.SetMeta(TickMeta, tickShift);
-            // The right end only on a switch between Vanilla View and ours: in ours RowStrip places it right after this,
-            // clear of the row's buttons. Set here every time, it went back and forth on each redraw, and each move had
-            // the game's label fit its text to the new width again (most of a redraw's time).
+            // The right anchor only on a view switch: set on every redraw it flipped back and forth, refitting the text
+            // each time (most of a redraw's time).
             if (title.AnchorRight != (vanilla ? 0 : 1))
                 (title.AnchorRight, title.OffsetRight) = vanilla ? (0f, 562f) : (1f, -90f);
             // Relative moves only: Load Order shifts the title too, for its grip.
@@ -66,8 +60,7 @@ static class RowTitles
             title.OffsetLeft += shift - (row.HasMeta(ShiftMeta) ? (float)row.GetMeta(ShiftMeta) : 0);
             row.SetMeta(ShiftMeta, shift);
             title.BbcodeEnabled = true;
-            // The plain name in Vanilla View (Better Mod Menu's page restyles it there). In ours Fit sets the whole text
-            // anyway: set here too, an alias or a cut name went back and forth on every redraw, fitted again each time.
+            // The plain name in Vanilla View; in ours Fit sets the text (setting it here too refitted it every redraw).
             if (vanilla)
                 title.Text = Escape(name);
             if (title.HasThemeColorOverride("default_color")) // (removing one restyles the text, even when there is none)
@@ -79,8 +72,7 @@ static class RowTitles
                     old.Visible = false;
             if (!vanilla)
             {
-                // The notepad: the player has notes for it (main list only). An alias alone puts none: it shows beside
-                // the original name already (Jordan, 2026-10-14).
+                // The notepad: notes on the main list only. An alias alone puts none: it already shows beside the name.
                 var marked = !Store.Data.LoadOrderView && info?.Notes is { Length: > 0 };
                 // Fitted once this redraw has placed the title (Load Order moves it right).
                 var shown = row;
@@ -90,8 +82,7 @@ static class RowTitles
         MarkChanged(rows, vanilla);
     }
 
-    // The title text cut to fit; then the notepad and the hover area over the text, placed by it. A row out of sight
-    // (a folded category's, or one a filter hides) is fitted once it's shown (FitLater).
+    // Cuts the title to fit, then places the notepad and the hover area; a row out of sight is fitted once it shows.
     static void Fit(NModMenuRow row, string name, string? alias, bool marked)
     {
         if (!GodotObject.IsInstanceValid(row) || row.Mod is not { } mod || Store.Data.VanillaView) // (switched since it was asked for)
@@ -168,7 +159,7 @@ static class RowTitles
                     MouseFilter = Control.MouseFilterEnum.Pass, Modulate = new Color(0.91f, 0.81f, 0.48f, 0.75f),
                 };
                 row.AddChild(mark);
-                // A plain tooltip, not the mod's card (Jordan, 2026-10-14: the title's hover has the card).
+                // A plain tooltip, not the mod's card (the title's hover has that).
                 Hover.Watch(mark, NoteTipName, () => Escape(Menus.Text("SPIRE_MOD_MANAGER.CONTAINS_NOTE")), Hover.Timing.Plain);
             }
             mark.Visible = true;
@@ -176,10 +167,8 @@ static class RowTitles
         }
     }
 
-    // A row out of sight may never have been laid out: one in a category folded since launch has no width, and its title
-    // cut to that showed no name once the category was opened (#151; opening one only shows its rows). So its fit
-    // waits until the row is shown and the list has given it its width (the check runs deferred, after the list's own
-    // layout, and again when the title is resized).
+    // A row out of sight may not be laid out yet (a folded category's has no width), and its title cut to that showed
+    // no name (#151): its fit waits until the row shows and has its width.
     static readonly Dictionary<ulong, Action> Unfitted = [];
     const string WatchedMeta = "spire_mod_manager_fit_watched";
 
@@ -216,12 +205,8 @@ static class RowTitles
         }
     }
 
-    // The game's fitting on again once the title has its place and text (later changes of box fit by themselves).
-    // Layout.Refit fits it, now and once, when its box or its size (Apply's, Layout.FontSize) changed while it was off,
-    // or its text isn't the one it last fitted (FittedMeta): a new text (an alias set or gone, Vanilla View's plain name
-    // in place of ours) is written with the auto-size still off, so the label doesn't queue a fitting of its own as well
-    // (deferred, and one a redraw that turns the auto-size off first would stop). Without Refit, the label fits it
-    // itself, as the game's would.
+    // Turns the game's fitting back on once the title has its place and text. Layout.Refit fits it once if its box, size
+    // or text changed meanwhile (FittedMeta), so the label doesn't queue a fitting of its own as well.
     static void AutoSize(MegaRichTextLabel title, string text)
     {
         var fitted = title.Text == text && title.GetMeta(FittedMeta, "").AsString() == text;
@@ -246,9 +231,8 @@ static class RowTitles
         return length > 0 ? full[..length].TrimEnd() + "…" : "";
     }
 
-    // A text's width in a font at a size, measured once: measuring shapes the text, and the font's own cache holds
-    // too few for a long list, so every row title was shaped again on every redraw. Cut texts add many shorter
-    // versions, so the lot is forgotten now and then.
+    // Text widths per font and size, measured once (shaping is slow, and the font's own cache is too small for a long
+    // list); cleared now and then, as cut texts add many.
     static readonly Dictionary<(Font Font, int Size, string Text), float> Widths = [];
 
     static float Measure(Font font, string text, int size)
@@ -260,9 +244,8 @@ static class RowTitles
         return Widths[(font, size, text)] = font.GetStringSize(text, fontSize: size).X;
     }
 
-    // Our views: a mod turned on since launch has a bright gold title, one turned off a dim one, so what a
-    // relaunch will change stands out. Otherwise the colour the game gave it (white, grey when off, red when
-    // it failed).
+    // Our views: a mod turned on since launch gets a bright gold title, one turned off a dim one; otherwise the game's
+    // colour.
     public static readonly Color ChangedTitle = new(1f, 0.82f, 0.45f); // turned on: bright gold
     public static readonly Color ChangedOffTitle = new(0.72f, 0.6f, 0.42f, 0.8f); // turned off: a dim, dusky gold
     const string TitleColorMeta = "spire_mod_manager_title_color";
@@ -282,11 +265,8 @@ static class RowTitles
         }
     }
 
-    // The row's highlight (the game's SelectionHighlight panel) in our views: one shape for every state, a little
-    // wider than the game's, with rounded corners; under the mouse (or keyboard) a faint tint, the mod in the info
-    // panel a brighter one with an even gold rim (Jordan picked it, 2026-10-14: the old dark rim, heavier on top, made
-    // its edges look out of line with picked rows; gold, the same width all round, reads as meant). Vanilla View: the
-    // game's own look. (Picked mods' tint uses the same shape.)
+    // The row's highlight in our views: one rounded shape for every state, a little wider than the game's; a faint tint
+    // under the mouse, a brighter one with an even gold rim for the mod in the info panel. Vanilla View: the game's.
     public const int CornerRadius = 4;
     public const int SelectedRim = 2;
     public static readonly Vector4 LookInset = new(-6, -3, 6, 3); // left, top, right, bottom offsets from the row

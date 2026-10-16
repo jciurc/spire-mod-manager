@@ -1,10 +1,6 @@
-// Watchdog for the public repository: counts what outsiders (accounts that aren't the owner, members,
-// collaborators or bots) opened and commented in the last hour. When that looks like a flood, it cuts off
-// what they can still drive: it locks the conversation on each open pull request and issue they touched, so
-// only collaborators can comment there (no more wake-ups for the sessions watching those pull requests), and
-// opens one "watchdog" issue for Jordan with the counts and the switches that go further. It never closes
-// anything, and reads only who did what and when, never what they wrote.
-// .github/workflows/watchdog.yml runs it every 30 minutes once the repository variable WATCHDOG is "on".
+// Watchdog for the public repository: counts what outside accounts opened and commented in the last hour. On a flood
+// it locks the conversations they touched to collaborators and opens a "watchdog" issue for Jordan; it never closes
+// anything or reads what they wrote. watchdog.yml runs it every 30 minutes once the variable WATCHDOG is "on".
 //
 // Usage: dotnet run tools/watchdog.cs [--dry-run] [--hours 1] [--repo owner/name]
 //   --dry-run: report only, change nothing. --count-everyone (dry runs only): count collaborators too, to see

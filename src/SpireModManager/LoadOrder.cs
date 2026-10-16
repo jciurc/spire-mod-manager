@@ -6,10 +6,8 @@ using MegaCrit.Sts2.Core.Saves;
 
 namespace SpireModManager;
 
-// The game's load order is the order of its saved mod list (settings.save mod_list); dependencies still
-// load before the mods that need them. This view lists the rows in that order with a position number and a
-// drag handle, disabled mods included (greyed by the game, still movable). Moves save the list at once;
-// they take effect on relaunch, so they count as pending changes.
+// The Load Order view: rows in the saved mod_list order (the game's load order; dependencies still load first), with
+// a number and a drag handle, disabled mods included. Moves save at once and apply on relaunch.
 static class LoadOrder
 {
     const string HandleName = "SpireModManagerHandle";
@@ -54,8 +52,7 @@ static class LoadOrder
     static int IndexOf(Mod? mod, Dictionary<(string, ModSource), int> places) =>
         mod?.manifest?.id is { } id && places.TryGetValue((id, mod.modSource), out var i) ? i : int.MaxValue;
 
-    // Each saved entry's place in the list (the first, for one listed twice), so sorting looks each mod up once
-    // instead of searching the list for it.
+    // Each saved entry's place in the list (the first, if listed twice), looked up once per sort.
     static Dictionary<(string, ModSource), int> Places(List<SettingsSaveMod> list)
     {
         var places = new Dictionary<(string, ModSource), int>();
@@ -92,9 +89,7 @@ static class LoadOrder
         }
     }
 
-    // Hides the handles and numbers again (other views). They're kept for the next visit: making them for every row
-    // was most of a switch to Load Order. Hidden, they also tell a second redraw in the same frame not to shift the
-    // title back again.
+    // Hides the handles and numbers in other views, kept for the next visit (making them was most of a switch here).
     public static void Undecorate(IEnumerable<NModMenuRow> rows)
     {
         foreach (var row in rows)
@@ -109,8 +104,8 @@ static class LoadOrder
         }
     }
 
-    // Load Order is about order: the whole row is a drag handle (move cursor), no tickbox (Enable/Disable is
-    // in the right-click menu), and mods that are off are dimmed further. Off again in other views.
+    // Ordering only: the whole row drags (move cursor), no tickbox (on/off is in the right-click menu), and off mods are
+    // dimmed further. Undone in other views.
     static void OrderingOnly(NModMenuRow row, bool on)
     {
         row.MouseDefaultCursorShape = on ? Control.CursorShape.Move : Control.CursorShape.Arrow;
@@ -121,9 +116,8 @@ static class LoadOrder
         row.Modulate = Rest(row);
     }
 
-    // A row's look when nothing is being dragged: a mod that's off is dimmed. While finding (a search here), the rows it
-    // doesn't match fade further, below even a match that's off, so fading never reads as off (Jordan, 2026-10-15): a
-    // match keeps its usual look, on or off, and among the rest, off is fainter still. Public for the self-test.
+    // A row's look when nothing is dragged: an off mod is dimmed. While finding, non-matches fade below even an off
+    // match, so fading never reads as off. Public for the self-test.
     public const float OffAlpha = 0.4f, UnmatchedAlpha = 0.2f, UnmatchedOffAlpha = 0.1f;
 
     static Color Rest(NModMenuRow row)
@@ -152,9 +146,8 @@ static class LoadOrder
         return rows.Select(r => r.Mod).OfType<Mod>().OrderBy(m => IndexOf(m, places)).ToList();
     }
 
-    // Would putting `mod` at `to` load it before something it needs, or after something that needs it?
-    // Only pairs that are both on count, and only pairs involving the moved mod (old problems elsewhere
-    // don't block unrelated moves).
+    // Whether putting mod at to breaks an order between two enabled mods involving it (old problems elsewhere don't
+    // block unrelated moves).
     public static bool MoveBreaks(Mod mod, int to, IList<NModMenuRow> rows)
     {
         if (!Dependencies.IsOn(mod))
@@ -170,9 +163,8 @@ static class LoadOrder
     // Moves each needed mod just ahead of what needs it, keeping everything else in place.
     public static void FixOrder(IList<NModMenuRow> rows) => Save(Dependencies.Fixed(Mods(rows)));
 
-    // Disable (or Enable), then top, up, down, bottom; a move that would break a dependency is disabled.
-    // compact: the short labels used for the inline buttons on each row, moves only. placed: the rows in their
-    // places, when the caller has them already (every row's buttons reading them again was slow with many mods).
+    // Disable (or Enable), then top, up, down, bottom, each disabled if it breaks a dependency. compact: the inline moves
+    // only; placed: the rows in place, when the caller already has them.
     public static List<MenuItem> Actions(Control content, NModMenuRow row, Action redraw, bool compact = false, List<NModMenuRow>? placed = null)
     {
         var rows = placed ?? content.GetChildren().OfType<NModMenuRow>().ToList();
@@ -207,15 +199,10 @@ static class LoadOrder
     public static Node? ShowRowMenu(Control content, NModMenuRow row, Action redraw) =>
         Menus.Show(content, Actions(content, row, redraw));
 
-    // Above the list, outside its scrolling (so it stays put): Auto sort at the right end of the search
-    // box with a word on what it does, and a red banner when something needs attention. In Load Order:
-    // enabled mods sitting above mods they need, with "Fix now" (the game reorders those at launch anyway;
-    // fixing makes the saved order say what will happen). On the main list: enabled mods that need a mod
-    // that is off or missing, with a way to each and a fix for the off ones. Elsewhere, a "!" on the Load
-    // Order button says that page has a warning, its tooltip naming the mods. Above that one on both, while Better Mod
-    // Menu is ticked too: a yellow banner saying two mod managers are on, with a way to their rows and a way to dismiss
-    // it. Above everything, while this mod is unticked: a red banner saying it (and this page) goes at the relaunch.
-    // Hovering a banner's text lists the mods it is about (BannerCard).
+    // The bar above the list (it doesn't scroll): Auto sort at the search box's right end, and banners: this mod
+    // unticked (red), Better Mod Menu ticked too (yellow), and the page's warning (red: misordered mods with Fix now in
+    // Load Order, mods that won't load on the main list). Elsewhere a "!" on the Load Order button. Hovering a banner
+    // lists its mods (BannerCard).
     public const string WarningName = "SpireModManagerOrderWarning", ManagersName = "SpireModManagerManagersWarning", AutoSortName = "AutoSortButton";
     public const string SelfName = "SpireModManagerSelfWarning";
     public const string AutoSortHintName = "AutoSortHint", BannerCardName = "SpireModManagerBannerCard";
@@ -255,9 +242,8 @@ static class LoadOrder
         }
         sort.Visible = hint.Visible = on && search != null;
         var finding = FindBar.Update(border, content, on && search != null);
-        // Across here; up and down they follow the search box, in Layout.PlaceList (at the end), once it's in its place
-        // for this view. (Read from it here, on the way into Load Order it was still where the main list has it, under
-        // the profile bar, and the hint sat over the first row until the next redraw.)
+        // Across here; up and down they follow the search box, placed in Layout.PlaceList once it's in place for this
+        // view (read here, it was still where the main list has it).
         if (search != null)
         {
             const float sortWidth = 110, gap = 8;
@@ -281,7 +267,7 @@ static class LoadOrder
         var violations = Dependencies.OrderViolations(mods);
         var misordered = violations.Select(v => v.Mod).Distinct().Count();
         var orderText = Menus.Format(misordered == 1 ? "SPIRE_MOD_MANAGER.ORDER_PROBLEMS_ONE" : "SPIRE_MOD_MANAGER.ORDER_PROBLEMS", ("count", Menus.Number(misordered)));
-        // The "!"'s card: the warning alone (Jordan, 2026-10-14: the mods it's about are Load Order's own card).
+        // The "!"'s card: the warning alone (the mods it's about are Load Order's own card).
         Badge(content, misordered > 0 && !on ? orderText : null);
         foreach (var name in new[] { WarningName, ManagersName, SelfName })
             if (border.GetNodeOrNull(name) is { } old)
@@ -289,10 +275,8 @@ static class LoadOrder
                 border.RemoveChild(old); // now, not at the end of the frame: a redraw in the same frame adds a new one
                 old.QueueFree();
             }
-        // Better Mod Menu and ours both ticked, on our views, unless dismissed. A tickbox change comes through here
-        // (RefreshStrips), so the banner shows and goes at once, without a relaunch. Dismissed, it comes back once the
-        // two aren't both ticked (in any view), ready for the next time they are: tickboxes, profiles, undo and redo, and
-        // the fixes all redraw through here.
+        // Better Mod Menu and ours both ticked, on our views, unless dismissed; it shows and goes at once on a tickbox
+        // change. A dismissal is forgotten once the two aren't both ticked.
         Bmm.ForgetDismissedWarning();
         if (Layout.Wide && Dependencies.Find(ModEntry.ModId) is { } self && !Dependencies.IsOn(self))
             SelfBanner(content, border, search, self, redraw);
@@ -322,8 +306,8 @@ static class LoadOrder
             needMissing > 0 ? Part("SPIRE_MOD_MANAGER.LIST_PROBLEMS_MISSING", needMissing) : null,
         }.OfType<string>());
 
-        // Show steps through both sides (Jordan, 2026-10-15): each mod that won't load, then the disabled mods it needs (one
-        // not installed has no row), from the one after the mod in the info panel.
+        // Show steps through each mod that won't load, then the disabled mods it needs, from the one after the mod in
+        // the info panel.
         var stops = broken.SelectMany(b => b.Needs.Select(d => d.Dep).OfType<Mod>().Prepend(b.Mod)).Distinct().ToList();
         var show = Menus.SmallButton(Menus.Text("SPIRE_MOD_MANAGER.SHOW_PROBLEM"),
             () => GoTo(content, stops[(stops.IndexOf(CategoryList.Selected!) + 1) % stops.Count]), name: "ShowProblemButton");
@@ -346,9 +330,8 @@ static class LoadOrder
         Banner(border, search, text, () => NeedsCard(content), buttons);
     }
 
-    // Enabled mods that won't load as things stand, each with what it needs that is disabled (Dep: that mod) or isn't
-    // installed (Dep null). Those needing a disabled mod first, as the banner says them, then the rest; each group in
-    // the order given.
+    // Enabled mods that won't load, each with what it needs that's disabled (Dep) or not installed (Dep null); the ones
+    // needing a disabled mod first.
     static List<(Mod Mod, List<(string Id, Mod? Dep)> Needs)> Unloadable(IEnumerable<Mod> mods) =>
         mods.Where(Dependencies.IsOn)
             .Select(m => (Mod: m, Needs: Dependencies.Of(m).Distinct().Select(id => (Id: id, Dep: Dependencies.Find(id)))
@@ -357,9 +340,8 @@ static class LoadOrder
             .OrderBy(b => b.Needs.All(d => d.Dep == null)) // stable: each group keeps its order
             .ToList();
 
-    // This mod unticked (only its own row can: Disable all, profiles and the fixes keep it on): the page goes with it at
-    // the relaunch, so a red banner says so (Jordan, 2026-10-15), with Show (its row) and Enable now. Ticked again, by
-    // either or by undo, the redraw takes the banner away.
+    // This mod unticked: the page goes with it at the relaunch, so a red banner says so, with Show and Enable now.
+    // Ticking it again (or undo) takes the banner away.
     static void SelfBanner(Control content, Control border, Control? search, Mod self, Action redraw)
     {
         var show = Menus.SmallButton(Menus.Text("SPIRE_MOD_MANAGER.SHOW_PROBLEM"), () => GoTo(content, self), name: "ShowSelfButton");
@@ -375,9 +357,8 @@ static class LoadOrder
         Banner(border, search, Menus.Text("SPIRE_MOD_MANAGER.SELF_OFF"), () => null, [show, enable], SelfName, "SelfOff");
     }
 
-    // Better Mod Menu ticked as well as us: the same kind of banner in yellow (a warning: both can run), and Show, which
-    // goes to the managers' rows in turn (ours is one of them, Jordan 2026-10-15): Better Mod Menu first, then the one
-    // after the mod in the info panel. Then Dismiss for a player happy to run both.
+    // Better Mod Menu ticked as well as us: a yellow warning, with Show stepping through the managers' rows (Better Mod
+    // Menu first) and Dismiss for a player happy to run both.
     static void ManagersBanner(Control content, Control border, Control? search, Action redraw)
     {
         var show = Menus.SmallButton(Menus.Text("SPIRE_MOD_MANAGER.SHOW_PROBLEM"), () =>
@@ -397,8 +378,7 @@ static class LoadOrder
         Banner(border, search, Menus.Text("SPIRE_MOD_MANAGER.MANAGERS_WARNING"), ManagersCard, [show, dismiss], ManagersName, "ManagersWarning", WarningColor);
     }
 
-    // The banners' cards, worked out when one opens (never a list from before the last tick). Main list: each enabled
-    // mod that won't load, with the mods it needs that are disabled or not installed.
+    // The banners' cards, worked out when one opens. Main list: each enabled mod that won't load, with what it needs.
     static string? NeedsCard(Control content)
     {
         using var lookups = Lookups.Begin();
@@ -463,9 +443,8 @@ static class LoadOrder
         CategoryList.Select(content, row);
     }
 
-    // A line under the search box: text, then its buttons right after it (a small gap), the rest of the line empty. Red
-    // (the page's own warning) unless color says otherwise. card: what hovering the text shows (the mods it's about).
-    // name and textName: the line's and its text's node names (the page's own warning by default).
+    // A banner under the search box: its text, then its buttons; red unless color says otherwise. card: what hovering
+    // the text shows. name, textName: the node names (the page's warning by default).
     static void Banner(Control border, Control? search, string message, Func<string?> card, List<Control> buttons, string name = WarningName,
         string textName = "OrderProblems", Color? color = null)
     {
@@ -504,9 +483,8 @@ static class LoadOrder
         var top = (search ?? scroll).OffsetBottom + 6;
         (bar.OffsetTop, bar.OffsetBottom) = (top, top + height);
 
-        // The text is as wide as it is on one line, or as what the buttons leave of the line, wrapping there: the
-        // buttons follow it at full size. (A wrapping label asks for no width of its own, so it gets one.) The room is
-        // the bar's width from its anchors, not its size: a bar the text has widened would never give that back.
+        // The text takes its one-line width, or what the buttons leave, wrapping there (a wrapping label asks for no
+        // width of its own). The room comes from the bar's anchors, not its size, which the text may have widened.
         var oneLine = Mathf.Ceil(text.GetThemeFont("font").GetStringSize(message, fontSize: 16).X + text.GetThemeStylebox("normal").GetMinimumSize().X) + 1;
         void Fit()
         {
@@ -556,9 +534,8 @@ static class LoadOrder
         badge.Visible = warning != null;
     }
 
-    // First pass at sorting by impact: libraries (mods others depend on), then gameplay mods, then
-    // visual-only mods, keeping the player's order within each tier; then dependencies move ahead of what
-    // needs them. One undoable step. (Later: finer tiers, e.g. content vs QoL, from Workshop tags.)
+    // Auto sort by impact: libraries, then gameplay mods, then visual-only mods, keeping the player's order within each
+    // tier; then dependencies move ahead of what needs them. One undo step.
     public static void AutoSort(IList<NModMenuRow> rows)
     {
         var mods = Mods(rows);
@@ -583,10 +560,8 @@ static class LoadOrder
         History.Record();
     }
 
-    // Position number and a grip on the left of the row. Dragging the row (anywhere, not just the grip) moves
-    // it: a gold line shows where it will land, and releasing saves. Made on the first visit to Load Order
-    // (Undecorate hides them again, and later visits show them); the number updates every redraw.
-    // wasAt: where it was at launch (0: unknown); shown dimly as "5 →" when it moved.
+    // The position number and grip on the row's left; dragging the row anywhere moves it, with a gold line where it
+    // lands. Made on the first visit, hidden in other views. wasAt: its place at launch (0: unknown), shown as "5 →".
     static void Decorate(Control content, NModMenuRow row, int position, int wasAt, Action redraw)
     {
         var was = wasAt > 0 && wasAt != position ? $"{wasAt} →" : "";
@@ -656,10 +631,8 @@ static class LoadOrder
                 HideLinks(content);
         };
 
-        // The whole row is the drag handle (the grip just shows it). A press picks the row and starts the drag
-        // at once (lit links, the drop line); the drop saves. Ctrl and Shift only change the selection. A
-        // press and release without moving is a click: on a row of a multi-selection it picks just that row.
-        // Rows outlive this view, so the handler does nothing outside Load Order.
+        // The whole row drags (the grip just shows it): a press picks it and starts the drag, the drop saves, and a press
+        // without moving is a click. Rows outlive this view, so it does nothing outside Load Order.
         var dragging = false;
         var moved = false; // past a few pixels: a drag, not a click
         var pressAt = Vector2.Zero;
@@ -729,9 +702,7 @@ static class LoadOrder
             }
         };
 
-        // Every frame while dragging: near the top or bottom edge the list scrolls, faster the closer the
-        // mouse is to the edge (smooth, and also while the mouse is still); the marker follows the gap under
-        // the mouse.
+        // Every frame while dragging: the list scrolls near an edge (faster nearer it), and the marker follows the gap.
         void DragFrame()
         {
             if (!GodotObject.IsInstanceValid(content) || !content.IsInsideTree() || marker == null)
@@ -787,10 +758,8 @@ static class LoadOrder
             .ToList();
     }
 
-    // Tree-style lines in the left gutter from this row to each linked row: out from the row, along
-    // the gutter, into the other row, with slightly rounded corners. Each link gets its own lane so they don't overlap.
-    // While dragging, `drop` is where the row would land (gap index, screen y): its end of each line follows
-    // the drop marker, stretching and shrinking, and the colour says whether that drop works.
+    // Tree-style lines in the left gutter from this row to each linked row, each in its own lane. While dragging, drop
+    // is where the row would land: the lines' ends follow the marker, and their colour says whether that drop works.
     public static void ShowLinks(Control content, NModMenuRow row, bool strong, (int Gap, float Y)? drop = null)
     {
         HideLinks(content);

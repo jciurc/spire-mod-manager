@@ -3,10 +3,8 @@ using MegaCrit.Sts2.Core.Nodes.Screens.ModdingScreen;
 
 namespace SpireModManager;
 
-// Load Order's search finds instead of filtering (Jordan, 2026-10-14: hidden rows made drag and drop inconsistent).
-// Every row stays, and beside the search box "6 matches · ‹ ›" steps through the matching rows. It wraps at the
-// ends, and each one it reaches is scrolled to and selected. Typing goes to the first match, or stays on the one
-// selected while it still matches; Enter goes to the next, Shift+Enter to the one before.
+// Load Order's search: every row stays (hiding rows made drag and drop inconsistent), and "6 matches · ‹ ›" beside
+// the search box steps through the matches, wrapping; Enter goes to the next, Shift+Enter to the one before.
 static class FindBar
 {
     public const string Name = "SpireModManagerFind";
@@ -18,7 +16,7 @@ static class FindBar
         ? [.. content.GetChildren().OfType<NModMenuRow>().Where(r => Search.Matches(r.Mod, filter))]
         : [];
 
-    // Made once, beside the search box (the toolbar places it); shown in Load Order while there's a search. True if shown.
+    // Shows the bar (made once) in Load Order while there's a search; true if shown.
     public static bool Update(Control border, Control content, bool loadOrder)
     {
         if (border.GetNodeOrNull<HBoxContainer>(Name) is not { } bar)

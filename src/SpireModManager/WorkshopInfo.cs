@@ -6,9 +6,7 @@ using Steamworks;
 
 namespace SpireModManager;
 
-// Workshop details for subscribed mods: one batched Steam query per session (the same call the game
-// makes at startup to check branch support), cached in memory. Without Steam (dev sandbox, offline)
-// there is simply nothing, and everything that uses it shows less.
+// Workshop details for subscribed mods: one batched Steam query per session, cached. Without Steam, there are none.
 static class WorkshopInfo
 {
     public record Details(DateTime Created, DateTime Updated, IReadOnlyList<string> Tags, IReadOnlyList<(string Min, string Max)> Branches,
@@ -22,7 +20,7 @@ static class WorkshopInfo
 
     public static Details? For(Mod? mod) => Compat.WorkshopId(mod) is { } id && Cache.TryGetValue(id, out var details) ? details : null;
 
-    // Self-test only: details for a made-up Workshop id (the dev sandbox has no Steam), or none again.
+    // Self-test only: sets or clears a made-up mod's details.
     public static void TestSet(ulong id, Details? details)
     {
         if (details == null)

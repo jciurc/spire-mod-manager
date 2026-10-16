@@ -4,12 +4,9 @@ using MegaCrit.Sts2.Core.Nodes.Screens.ModdingScreen;
 
 namespace SpireModManager;
 
-// Before Relaunch Game (the Modding page's button, or Relaunch game in the main menu button's right-click
-// menu): enabled mods that won't load as things stand (a mod they need is off or not installed). Nothing
-// wrong: relaunch at once. Otherwise a dialog over the page it came from lists them and offers to enable the
-// needed mods, disable the ones that can't load, relaunch anyway, or cancel (Esc too). A fix updates the list
-// in place (and is undoable like any change); once nothing is wrong it offers a plain Relaunch. Cancel (first, at the
-// left: Jordan, 2026-10-14) takes back the fixes made in the dialog, so cancelling leaves everything as it was.
+// The check before Relaunch Game: enabled mods that won't load (a mod they need is off or missing). With none it
+// relaunches at once; otherwise a dialog lists them, with fixes, Relaunch anyway and Cancel. Cancel (first, at the
+// left) undoes the fixes made in the dialog.
 static class RelaunchCheck
 {
     public const string Name = "SpireModManagerRelaunchCheck";
@@ -28,8 +25,7 @@ static class RelaunchCheck
             Show(owner);
     }
 
-    // Enabled mods (installed now or this session) with a dependency that is off or missing, and why (the info panel's
-    // lines: one for the missing ones, one for the ones that are off).
+    // Enabled mods with a dependency that's off or missing, each with the info panel's reason.
     static List<(Mod Mod, string Why)> Problems() =>
         ModManager.Mods.Union(Installed.Mods).Where(m => m.manifest?.id != null)
             .SelectMany(m => ModDetails.DependencyProblems(m).Select(why => (m, why)))
@@ -52,7 +48,7 @@ static class RelaunchCheck
             child.QueueFree();
         }
         var problems = Problems();
-        column.AddChild(Modal.Title("SPIRE_MOD_MANAGER.RELAUNCH_CHECK_TITLE")); // the same once all is well (Jordan, 2026-10-14)
+        column.AddChild(Modal.Title("SPIRE_MOD_MANAGER.RELAUNCH_CHECK_TITLE")); // the same once all is well
 
         var body = new RichTextLabel { Name = "Body", BbcodeEnabled = true, FitContent = true, ScrollActive = false, MouseFilter = Control.MouseFilterEnum.Ignore };
         Hover.Fonts(body, 18);
@@ -63,9 +59,8 @@ static class RelaunchCheck
                 $"  •  [b]{Escape(g.Key.manifest?.name ?? g.Key.manifest?.id ?? "")}[/b]  [color={ProblemHex}]{Escape(string.Join("; ", g.Select(p => p.Why)))}[/color]"));
         column.AddChild(body);
 
-        // The Modding page, open or hidden behind the main menu (the game keeps it for the next visit): a fix ticks
-        // its boxes, and its redraw records the fix. Before the page has been opened this session there is none: the
-        // active profile and the history take the change directly.
+        // The Modding page, open or hidden behind the main menu: a fix ticks its boxes and its redraw records it. Before
+        // the page is opened this session there's none, and the profile and history take the change directly.
         var screen = owner as NModdingScreen ?? HistoryBar.Screen;
         void Fix(IEnumerable<Mod> mods, bool on)
         {
