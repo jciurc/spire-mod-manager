@@ -85,7 +85,11 @@ static class MenuPanel
         (_open, _openKey) = (layer, toggleKey);
 
         // At the point asked (the mouse by default), kept on screen as its size changes.
+#if DEVTOOLS
         var position = at ?? Hover.TestMouse?.Invoke() ?? viewport.GetMousePosition(); // (the self-test says where the mouse is)
+#else
+        var position = at ?? viewport.GetMousePosition();
+#endif
         void Fit()
         {
             if (!GodotObject.IsInstanceValid(panel))
