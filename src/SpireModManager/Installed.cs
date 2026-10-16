@@ -27,8 +27,10 @@ static class Installed
         Added?.Invoke();
     }
 
-    // Self-test only: removes a made-up mod.
+#if DEVTOOLS
+    // Self-test: removes a made-up mod.
     public static void Forget(Mod mod) => _mods.Remove(mod);
+#endif
 
     // Whether it loads after a relaunch: on unless the saved list says off.
     public static bool On(Mod mod) => !(SaveManager.Instance.SettingsSave.ModSettings?.IsModDisabled(mod) ?? false);

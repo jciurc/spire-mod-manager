@@ -167,8 +167,7 @@ static class RowTitles
         }
     }
 
-    // A row out of sight may not be laid out yet (a folded category's has no width), and its title cut to that showed
-    // no name (#151): its fit waits until the row shows and has its width.
+    // A row out of sight may have no width yet (in a folded category): its title is fitted once it shows.
     static readonly Dictionary<ulong, Action> Unfitted = [];
     const string WatchedMeta = "spire_mod_manager_fit_watched";
 

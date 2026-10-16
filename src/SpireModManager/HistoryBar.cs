@@ -7,15 +7,12 @@ using MegaCrit.Sts2.Core.Nodes.Screens.ModdingScreen;
 namespace SpireModManager;
 
 // Along the bottom right, before Relaunch Game:
-// - Two lines: "Mods enabled 23 (+1 -3)", how many mods are on and how many were turned on and off since
-//   launch; then "Changes 5  ↕2": everything else that changed (mods installed since launch, edited mods,
-//   profiles), then the load-order moves. Hovering shows them apart (naming the mods when there are few);
-//   clicking opens (or closes) the full list in the right panel: switched profile, each mod enabled or
-//   disabled, each mod installed (and whether it loads after a relaunch), each move, each edit, profiles
-//   added, deleted or renamed. A mod's name there opens it, with Back to the list.
+// - "Mods enabled 23 (+1 -3)" and "Changes 5  ↕2": mods on, and turned on or off since launch; then everything else
+//   changed (installs, edits, profiles) and the load-order moves. Hovering shows a summary; clicking, the full list in
+//   the right panel, where a mod's name opens it (with Back to the list).
 // - Undo, Redo (their shortcuts underneath), Revert all.
-// The same place in the panel also lists the active profile's unsaved changes, opened from "Unsaved •" on the
-// profile bar; one list at a time, so opening one closes the other.
+// The same place in the panel lists the active profile's unsaved changes ("Unsaved •" on the profile bar); one list
+// at a time.
 static class HistoryBar
 {
     public const string BarName = "SpireModManagerHistory";
@@ -92,9 +89,8 @@ static class HistoryBar
             var (on, off, moved) = Counts();
             // On after a relaunch, new mods and this one included, a mod installed twice once: the profile bar's count.
             var enabled = Profiles.OnCount();
-            // The words, and where the count goes among them, come from the loc table ("Mods enabled {count}"); the
-            // +, - and ↕ counts after them stay where they are in every language. Each count with the game's thousands
-            // separator (Menus.Number), as everywhere in the summary and the list.
+            // The words and the count's place in them come from the loc table ("Mods enabled {count}"); the +, -
+            // and ↕ counts stay after them in every language.
             changes.Text = $"{Menus.Format("SPIRE_MOD_MANAGER.MODS_ENABLED", ("count", Menus.Number(enabled)))} ([color={Added}]+{Menus.Number(on)}[/color] [color={Removed}]-{Menus.Number(off)}[/color])\n"
                 + $"{Menus.Format("SPIRE_MOD_MANAGER.CHANGES", ("count", $"[color={Edited}]{Menus.Number(OtherChanges())}[/color]"))}  [color={Moved}]↕{Menus.Number(moved)}[/color]";
             FitChanges(changes);
@@ -216,7 +212,7 @@ static class HistoryBar
         return lines;
     }
 
-    // The full list as plain lines, one per change (also what the self-test reads).
+    // The full list as plain lines, one per change.
     public static List<string> Describe() => Entries().Select(e => e.Plain).ToList();
 
     // The mods the full list names (Entries' sections, from the same rules): each one turned on or off, installed or
@@ -425,7 +421,7 @@ static class HistoryBar
     }
 
     // The active profile's unsaved changes, one line each, by name: "+ Name" turned on, "- Name" turned off (a plain
-    // hyphen: the minus sign read as a dash, Jordan 2026-10-15; in the colours Changes uses for them). links: each name opens the mod (the panel's list; the card has none).
+    // hyphen, in Changes' colours). links: each name opens the mod (the panel's list; the card has none).
     public static List<string> UnsavedLines(bool links)
     {
         var (on, off) = Profiles.UnsavedChanges();
@@ -592,9 +588,8 @@ static class HistoryBar
 
     static string Escape(string text) => text.Replace("[", "[lb]");
 
-    // A shortcut under its button: centred, no wider than the button less a little each side, so two side by side
-    // never run together (in a wider language font, Chinese say, "Ctrl + Z" and "Ctrl + Y" made one run of text).
-    // Smaller to fit, down to a smallest size; its line keeps its height, so the button stays where it was.
+    // A shortcut under its button: centred, no wider than the button less a little each side (in a wider font, two side
+    // by side ran together), and smaller to fit down to HintSmallest; its line keeps its height.
     public const int HintInset = 4, HintSmallest = 9;
     static void FitHint(Label hint, Control button)
     {

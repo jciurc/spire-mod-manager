@@ -3,17 +3,12 @@ using Godot;
 
 namespace SpireModManager;
 
-// Hover cards (our tooltips): a dark panel with a few lines of text, or a picture, above everything on the
-// page. The rules live here, for every card:
-// - a card shows after Delay of hovering what it's about; Instant ones (a banner's list of mods, the unsaved mark,
-//   the change tracker) at once; Slow ones (the whole of a text cut short, in a plain tooltip) after SlowDelay;
-//   Plain ones (a word on a small icon, the notepad's "Contains note") look like Slow ones but come after Delay;
-//   Slow and Plain have no grace either way;
-//   Late ones (the main menu button's: the mouse crosses it on the way to the game's) are Normal ones after SlowDelay,
-//   grace or not;
-// - once a card has gone, for Grace any other card shows at once (moving along names or tags doesn't wait
-//   each time); Instant cards don't start one;
-// - leaving: the card goes after WindDown (Instant ones at once), so a quick wobble off the edge keeps it;
+// Hover cards (our tooltips): a dark panel with a few lines of text, or a picture, above the page. For every card:
+// - it shows after Delay; Instant ones at once (a banner's mod list, the unsaved mark, the change tracker); Slow ones
+//   (the whole of a text cut short, as a plain tooltip) after SlowDelay; Plain ones look like Slow ones but come after
+//   Delay; Late ones (the main menu button's) are Normal ones after SlowDelay. Slow, Plain and Late skip the grace;
+// - once a card has gone, any other shows at once for Grace (Instant cards don't start one);
+// - leaving, it goes after WindDown (Instant ones at once), so a quick wobble off the edge keeps it;
 // - one card at a time: a newer one closes the one before.
 static class Hover
 {
@@ -26,9 +21,13 @@ static class Hover
     static readonly Color Gold = new(0.937f, 0.784f, 0.318f);
     const float PictureMax = 800, PlainMax = 520, FullWidth = 640;
 
-    // Where the mouse is. The self-test sets it: during a test run the real cursor can be anywhere.
+#if DEVTOOLS
+    // Self-test: where the mouse is during a test run (the real cursor can be anywhere).
     public static Func<Vector2>? TestMouse { get; set; }
     public static Vector2 Mouse(CanvasItem item) => TestMouse?.Invoke() ?? item.GetGlobalMousePosition();
+#else
+    public static Vector2 Mouse(CanvasItem item) => item.GetGlobalMousePosition();
+#endif
 
     static ulong _graceUntil;
     static Node? _shown; // the card showing (its layer), if any
@@ -70,11 +69,9 @@ static class Hover
         };
     }
 
-    // What a control does (a button, an icon), in our card: in place of the engine's TooltipText, which looks like none
-    // of ours (Jordan, 2026-10-14: a text cut short gets the plain tooltip; every description we write, this card). Set it
-    // again to change the words; null or "" takes the card off. TipOf reads it (the self-test).
-    // timing: when the card shows (the first call's stays). markup: the text is BBCode (as for a [gold] name), anything
-    // of the player's in it escaped by the caller; otherwise it's shown as written.
+    // What a control does (a button, an icon), in our card instead of the engine's TooltipText, which looks like none
+    // of ours. Set it again to change the words; null or "" takes the card off. timing: when the card shows (the first
+    // call's stays). markup: the text is BBCode, anything of the player's in it escaped by the caller.
     public const string TipName = "SpireModManagerTip";
     const string TipMeta = "spire_mod_manager_tip", MarkupMeta = "spire_mod_manager_tip_markup";
 
@@ -157,10 +154,8 @@ static class Hover
     static string Unmarked(string bbcode) =>
         Regex.Replace(bbcode, @"\[(/?[a-z_]+(=[^\]]*)?)\]", m => m.Value == "[lb]" ? "[" : m.Value == "[rb]" ? "]" : "");
 
-    // at: the card's corner: its top-left, or with right/above, the matching corner. Kept on screen. keep: checked
-    // every frame; once it's false (for WindDown, unless Instant) the card goes, so it can't be left behind when
-    // the mouse moves on without an exit event, a click opens something else, or the page changes. full: the
-    // whole text when the card's is cut short: a hint says to hold Alt, and Alt shows it in a wider card.
+    // at: the card's top-left corner (or, with right/above, that corner), kept on screen. keep: checked every frame;
+    // once false (for WindDown, unless Instant) the card goes. full: the whole text when it's cut short (hold Alt).
     public static void Show(Node owner, string name, string bbcode, Vector2 at, bool right = false, bool above = false, float width = 380,
         Func<bool>? keep = null, Timing timing = Timing.Normal, Texture2D? picture = null, string? full = null, int depth = Depth, bool fit = false)
     {

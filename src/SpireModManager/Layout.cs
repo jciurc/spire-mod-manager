@@ -520,7 +520,9 @@ static class Layout
         label.AddThemeFontSizeOverride("normal_font_size", size);
         label.AddThemeFontSizeOverride("bold_font_size", size);
         label.MaxFontSize = size;
+#if DEVTOOLS
         TestFitting?.Invoke(label);
+#endif
         Refit(label);
     }
 
@@ -540,7 +542,9 @@ static class Layout
         if (now && !newText && (int)label.Get(LastSetSize) == drawn && label.Size == (Vector2)label.Get(LastAdjustedSize))
             return;
         label.Set(LastSetSize, drawn);
+#if DEVTOOLS
         TestFitting?.Invoke(label);
+#endif
         if (now)
             label.Call(AdjustFontSize);
         else
@@ -553,8 +557,10 @@ static class Layout
     // Whether Refit can fit a label (its members found, looked up once).
     public static bool CanRefit => _refits ??= Refits();
 
-    // Set by the self-test: told of each label FontSize writes a size to or Refit fits again.
+#if DEVTOOLS
+    // Self-test: told of each label FontSize writes a size to or Refit fits again.
     public static Action<MegaRichTextLabel>? TestFitting { get; set; }
+#endif
 
     // Finds Refit's members (AdjustFontSize by its signature); a lookup that throws counts as not found.
     static bool Refits()

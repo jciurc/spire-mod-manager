@@ -1,6 +1,6 @@
 // Watchdog for the public repository: counts what outside accounts opened and commented in the last hour. On a flood
-// it locks the conversations they touched to collaborators and opens a "watchdog" issue for Jordan; it never closes
-// anything or reads what they wrote. watchdog.yml runs it every 30 minutes once the variable WATCHDOG is "on".
+// it locks the conversations they touched to collaborators and opens a "watchdog" issue for the maintainer; it never
+// closes anything or reads what they wrote. watchdog.yml runs it every 30 minutes once the variable WATCHDOG is "on".
 //
 // Usage: dotnet run tools/watchdog.cs [--dry-run] [--hours 1] [--repo owner/name]
 //   --dry-run: report only, change nothing. --count-everyone (dry runs only): count collaborators too, to see

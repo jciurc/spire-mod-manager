@@ -40,7 +40,8 @@ static class Compat
         return null;
     }
 
-    // Self-test only: gives a made-up mod a Workshop id.
+#if DEVTOOLS
+    // Self-test: gives a made-up mod a Workshop id.
     public static void SetWorkshopId(Mod mod, ulong id)
     {
         if (WorkshopIdField != null)
@@ -48,6 +49,7 @@ static class Compat
         else
             mod.path = $@"C:\steamapps\workshop\content\2868840\{id}";
     }
+#endif
 
     // Empties the info panel: the game's Clear (beta), or its title, text and picture cleared (stable).
     public static void Clear(NModInfoContainer info)
