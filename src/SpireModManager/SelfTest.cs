@@ -935,26 +935,43 @@ static class SelfTest
             Check("main menu button: its own hover carets", false, "missing");
             return;
         }
-        void MoveTo(Vector2 at) => menu.GetViewport().PushInput(new InputEventMouseMotion { Position = at, GlobalPosition = at });
+        // A mouse motion onto it, or away, through the viewport. With no window (headless) there is no mouse: its own
+        // mouse_entered and mouse_exited instead, which the game's hover handler takes the same way.
+        var headless = DisplayServer.GetName() == "headless";
         var away = new Vector2(1800, 100);
-        MoveTo(away);
+        void MoveTo(Vector2 at) => menu.GetViewport().PushInput(new InputEventMouseMotion { Position = at, GlobalPosition = at });
+        void Enter()
+        {
+            if (headless)
+                button.EmitSignal(Control.SignalName.MouseEntered);
+            else
+                MoveTo(button.GetGlobalRect().GetCenter());
+        }
+        void Leave()
+        {
+            if (headless)
+                button.EmitSignal(Control.SignalName.MouseExited);
+            else
+                MoveTo(away);
+        }
+        Leave();
         await Wait(menu, 0.4);
-        MoveTo(button.GetGlobalRect().GetCenter());
+        Enter();
         await Wait(menu, 0.5);
         var text = label.GetGlobalRect();
-        Check("main menu button: a real hover brings its own carets out either side of its text, gold",
+        Check("main menu button: a hover brings its own carets out either side of its text, gold",
             left.IsVisibleInTree() && right.IsVisibleInTree() && left.Modulate.A > 0.95f && right.Modulate.A > 0.95f
             && left.GetGlobalRect().End.X <= text.Position.X && right.GlobalPosition.X >= text.End.X
             && Math.Abs(left.GlobalPosition.Y - (button.GlobalPosition.Y + 5)) < 1,
             $"left {left.GetGlobalRect()} a {left.Modulate.A:0.##}, right {right.GetGlobalRect()} a {right.Modulate.A:0.##}, text {text}");
         await Capture(menu, outDir, "1f-menu-button-carets");
-        MoveTo(away);
+        Leave();
         await Wait(menu, 0.5);
         Check("main menu button: its carets fade once the mouse leaves", left.Modulate.A < 0.05f && right.Modulate.A < 0.05f,
             $"{left.Modulate.A:0.##}, {right.Modulate.A:0.##}");
         // A pass across it in one frame (on the way to the game's buttons): the carets, put up a frame late, stay down.
-        MoveTo(button.GetGlobalRect().GetCenter());
-        MoveTo(away);
+        Enter();
+        Leave();
         await Wait(menu, 0.4);
         Check("main menu button: a pass across it in one frame leaves its carets down", left.Modulate.A < 0.05f && right.Modulate.A < 0.05f,
             $"{left.Modulate.A:0.##}, {right.Modulate.A:0.##}");
