@@ -94,9 +94,16 @@ static class SelfTest
             await TestTranslations(menu);
 
             var screen = menu.SubmenuStack.PushSubmenuType<NModdingScreen>();
+            // The page as first drawn, in the frame it opened. The stable game's scene holds a placeholder row (no mod),
+            // freed only at the frame's end; counting it made the list one mod longer until the next redraw.
+            var firstCount = screen.FindChild(PageBar.Name, true, false)?.GetNodeOrNull<Label>("Scope")?.Text;
+            var firstUncategorized = UncategorizedCount(screen.GetNode<Control>("%ModsScrollContainer/Mask/Content"));
             await Wait(menu, 2);
             var content = screen.GetNode<Control>("%ModsScrollContainer/Mask/Content");
             var rows = content.GetChildren().OfType<NModMenuRow>().ToList();
+            Check("the page's first draw counts only the installed mods (no placeholder row)",
+                firstCount == Menus.Format("SPIRE_MOD_MANAGER.PAGE_ALL", ("count", Menus.Number(ModManager.Mods.Count)))
+                && firstUncategorized == UncategorizedCount(content), $"{firstCount}; uncategorized {firstUncategorized} then {UncategorizedCount(content)}");
             Check("relaunch button", screen.GetNodeOrNull("SpireModManagerRelaunchButton") != null);
             TestNewModsAtLaunch(); // first: before anything switches profiles
             if (Bmm.Present) // dev.cs test --bmm
@@ -150,6 +157,9 @@ static class SelfTest
                 Check("vanilla view restores the game's layout", border.OffsetLeft == 255 && border.OffsetRight == 994
                     && border.GetNode<Control>("ModsScrollContainer").OffsetTop == 8
                     && !border.GetNode<Control>("SpireModManagerProfileBar").Visible, $"{border.OffsetLeft}..{border.OffsetRight}");
+            var (makeMods, getMods) = (border.GetNode<Control>("%MakeModsButton"), border.GetNode<Control>("%GetModsButton"));
+            Check("vanilla view: Make Mods and Get Mods as the game's own page has them (shown on the beta, hidden on stable)",
+                makeMods.Visible == (Compat.InfoClear != null) && getMods.Visible == makeMods.Visible, $"Make Mods {makeMods.Visible}, Get Mods {getMods.Visible}");
             await Capture(screen, outDir, "4-vanilla-view");
             Click(screen.GetNode<NButton>("SpireModManagerViewToggle"));
             await Wait(menu, 1);
@@ -376,6 +386,10 @@ static class SelfTest
         GC.WaitForPendingFinalizers();
         GC.Collect();
     }
+
+    // The Uncategorized header's count as drawn (the newest header: an older one may wait to be freed this frame).
+    static string? UncategorizedCount(Control content) => content.GetChildren().OfType<Control>()
+        .LastOrDefault(c => c.Name.ToString().Contains("Uncategorized") && !c.IsQueuedForDeletion())?.GetNodeOrNull<Label>("Count")?.Text;
 
     static async Task<double> FrameMs(Node node, Action action)
     {
@@ -779,6 +793,9 @@ static class SelfTest
                 && !Shown(border.GetNodeOrNull(LoadOrder.ManagersName)) && mask.ClipContents
                 && content.GetChildren().OfType<NModMenuRow>().All(r => !Shown(r.GetNode("PlatformIcon"))));
             Check("its page: the same mod still selected", CategoryList.Selected == row.Mod && RowState.Selected(row));
+            var get = border.GetNode<Control>("%GetModsButton");
+            Check("its page: Make Mods and Get Mods as the game's own page has them (shown on the beta, hidden on stable)",
+                make.Visible == (Compat.InfoClear != null) && get.Visible == make.Visible, $"Make Mods {make.Visible}, Get Mods {get.Visible}");
             if (chrome != null)
             {
                 Rect2 Rect(string name) => screen.FindChild(name, true, false) is Control c ? c.GetGlobalRect() : new Rect2();
@@ -1588,6 +1605,23 @@ static class SelfTest
             """));
         Check("Better Mod Menu import: its old format (a bare list of profiles) gives those profiles, no categories", legacy
             == "profiles Old favourites (off: ModD); Profile 2 (off: none) / active none / categories none / mods none", legacy);
+        // Better Mod Menu lets two profiles share a name; ours go by name, so the later one is numbered as a copy is, and
+        // the current index still finds it.
+        var twins = Summary(Import("""
+            {
+              "Profiles": [
+                { "Name": "Profile 3", "DisabledMods": ["ModA"] },
+                { "Name": "Profile 3", "DisabledMods": ["ModB"] },
+                { "Name": "Modded (1)", "DisabledMods": [] },
+                { "Name": "Modded (1)", "DisabledMods": [] }
+              ],
+              "CurrentProfileIndex": 1,
+              "CustomGroups": ["Tools", "Tools"]
+            }
+            """));
+        Check("Better Mod Menu import: two profiles of one name stay two (the later numbered as a copy is), the current one still current; a group named twice once",
+            twins == "profiles Profile 3 (off: ModA); Profile 3 (1) (off: ModB); Modded (1) (off: none); Modded (2) (off: none) / active Profile 3 (1)"
+            + " / categories Tools / mods none", twins);
         var broken = new[] { """{ "Profiles": [ { "Name": "Cut off" """, "\"Profiles\"", "{ Profiles: [] }" }.Select(text => Summary(Import(text))).ToList();
         Check("Better Mod Menu import: a broken file is refused (cut off, not an object or list, unquoted names)", broken.All(s => s == "refused"),
             string.Join(" | ", broken));

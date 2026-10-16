@@ -528,7 +528,7 @@ static class BetterModMenuImport
         }
 
         var collapsed = Strings(root, "CollapsedGroups").ToHashSet();
-        foreach (var name in Strings(root, "CustomGroups"))
+        foreach (var name in Strings(root, "CustomGroups").Distinct()) // a group named twice: one category
             data.Categories.Add(new Category { Name = name, Collapsed = collapsed.Contains(name) });
 
         if (root.TryGetProperty("ModGroups", out var groups) && groups.ValueKind == JsonValueKind.Object)
@@ -556,11 +556,19 @@ static class BetterModMenuImport
     static void AddProfiles(StoreData data, JsonElement profiles)
     {
         foreach (var p in profiles.EnumerateArray())
+        {
+            // Better Mod Menu lets two profiles share a name (a new one is named by the count, a rename isn't checked).
+            // Ours are told apart by name, so a repeated one gets the first free " (n)", as a copy does; it stays at its
+            // place, so CurrentProfileIndex still finds it.
+            var name = NonEmpty(p, "Name") ?? $"Profile {data.Profiles.Count + 1}";
+            if (data.Profiles.Any(o => o.Name == name))
+                name = Profiles.Numbered(name, n => data.Profiles.Any(o => o.Name == n));
             data.Profiles.Add(new Profile
             {
-                Name = NonEmpty(p, "Name") ?? $"Profile {data.Profiles.Count + 1}",
+                Name = name,
                 Disabled = Strings(p, "DisabledMods").Select(id => new ModRef(id, null)).ToList(),
             });
+        }
     }
 
     // Where it looks, in its order: beside its first copy in the mod list ("portable mode"), then its folder in the
