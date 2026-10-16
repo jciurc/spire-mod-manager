@@ -60,7 +60,7 @@ static class ModDetails
             HistoryBar.HideBack(container); // another mod: no way back to the changes list (the same one refilled keeps it)
         container.SetMeta(ModIdMeta, id ?? "");
         container.SetMeta(FolderMeta, mod.path);
-        container.SetMeta(WorkshopMeta, mod.workshopId?.ToString() ?? ""); // this copy's (a local one can share its id)
+        container.SetMeta(WorkshopMeta, Compat.WorkshopId(mod)?.ToString() ?? ""); // this copy's (a local one can share its id)
 
         // The game titles it with the name; ours too, with the version in grey beside it (the alias is in the
         // fields below). Its text is fitted once the panel is placed (FitTitle).
@@ -74,7 +74,7 @@ static class ModDetails
         source.Visible = true;
         var link = source.GetNode<LinkButton>(LinkName);
         string where;
-        if (mod.workshopId is { } workshopId)
+        if (Compat.WorkshopId(mod) is { } workshopId)
         {
             where = Menus.Format("SPIRE_MOD_MANAGER.SOURCE_STEAM", ("id", workshopId.ToString()));
             link.Uri = $"https://steamcommunity.com/sharedfiles/filedetails/?id={workshopId}";

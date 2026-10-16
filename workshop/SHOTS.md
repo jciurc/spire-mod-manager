@@ -5,7 +5,7 @@ they have no Steam, so the info panel shows no Workshop details, and they keep o
 
 ## Before any shot
 
-- Launch through Steam on public-beta, with your usual mods on. A long list is the point: it shows why
+- Launch through Steam (either branch), with your usual mods on. A long list is the point: it shows why
   categories and search matter.
 - Install the build you're about to upload.
 - Play in 16:9 (1920x1080 or 2560x1440).

@@ -138,7 +138,7 @@ static class CategoryList
     {
         if (content.GetChildren().OfType<NModMenuRow>().FirstOrDefault(r => r.Mod == Selected && Selected != null) is not { } row)
         {
-            screen.GetNode<NModInfoContainer>("%ModInfoContainer").Clear();
+            Compat.Clear(screen.GetNode<NModInfoContainer>("%ModInfoContainer"));
             return;
         }
         Expand(content, row);
