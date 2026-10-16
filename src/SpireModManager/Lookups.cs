@@ -14,6 +14,7 @@ sealed class Lookups : IDisposable
     readonly Dictionary<string, Mod> _byId = [];
     readonly Dictionary<string, List<Mod>> _neededBy = [];
     readonly Dictionary<Mod, IReadOnlyList<Tags.Chip>> _chips = [];
+    readonly Dictionary<Mod, IReadOnlyList<string>> _dependencies = [];
     readonly Dictionary<Mod, Search.Haystack> _haystacks = [];
     readonly Dictionary<string, string> _texts = [];
     HashSet<Mod>? _changed;
@@ -67,6 +68,8 @@ sealed class Lookups : IDisposable
 
     // Per mod or per key: worked out on first use in this redraw, then kept.
     public IReadOnlyList<Tags.Chip> Chips(Mod mod, Func<Mod, IReadOnlyList<Tags.Chip>> make) => Kept(_chips, mod, make);
+
+    public IReadOnlyList<string> DependenciesOf(Mod mod, Func<Mod, IReadOnlyList<string>> make) => Kept(_dependencies, mod, make);
 
     public Search.Haystack Haystack(Mod mod, Func<Mod, Search.Haystack> make) => Kept(_haystacks, mod, make);
 

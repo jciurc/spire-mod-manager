@@ -163,8 +163,8 @@ static class LoadOrder
     // Moves each needed mod just ahead of what needs it, keeping everything else in place.
     public static void FixOrder(IList<NModMenuRow> rows) => Save(Dependencies.Fixed(Mods(rows)));
 
-    // Disable (or Enable), then top, up, down, bottom, each disabled if it breaks a dependency. compact: the inline moves
-    // only; placed: the rows in place, when the caller already has them.
+    // Disable (or Enable), then top, up, down, bottom (greyed where they can't move it). compact: the inline moves only;
+    // placed: the rows in place, when the caller already has them.
     public static List<MenuItem> Actions(Control content, NModMenuRow row, Action redraw, bool compact = false, List<NModMenuRow>? placed = null)
     {
         var rows = placed ?? content.GetChildren().OfType<NModMenuRow>().ToList();
@@ -539,8 +539,11 @@ static class LoadOrder
     public static void AutoSort(IList<NModMenuRow> rows)
     {
         var mods = Mods(rows);
+        // Who needs each id, worked out once rather than searched for per mod.
+        var neededBy = ModManager.Mods.SelectMany(m => Dependencies.Of(m).Where(id => id != null).Select(id => (Id: id, Mod: m)))
+            .ToLookup(p => p.Id, p => p.Mod);
         int Tier(Mod mod) =>
-            ModManager.Mods.Any(m => m != mod && Dependencies.Of(m).Contains(mod.manifest?.id ?? "")) ? 0
+            neededBy[mod.manifest?.id ?? ""].Any(m => m != mod) ? 0
             : mod.manifest?.affectsGameplay ?? true ? 1
             : 2;
         Save(Dependencies.Fixed(mods.OrderBy(Tier).ToList())); // OrderBy is stable: same-tier mods keep their order
@@ -552,8 +555,13 @@ static class LoadOrder
         if (SaveManager.Instance.SettingsSave.ModSettings is not { } settings)
             return;
         var list = settings.ModList;
-        var entries = mods.Select(m => list.FirstOrDefault(e => e.Id == m.manifest?.id && e.Source == m.modSource) ?? new SettingsSaveMod(m)).ToList();
-        entries.AddRange(list.Where(e => !entries.Contains(e)));
+        // Each mod's saved entry (the first, if listed twice), looked up once rather than searched for per mod.
+        var first = new Dictionary<(string?, ModSource), SettingsSaveMod>();
+        foreach (var saved in list)
+            first.TryAdd((saved.Id, saved.Source), saved);
+        var entries = mods.Select(m => first.GetValueOrDefault((m.manifest?.id, m.modSource)) ?? new SettingsSaveMod(m)).ToList();
+        var kept = entries.ToHashSet();
+        entries.AddRange(list.Where(e => !kept.Contains(e)));
         list.Clear();
         list.AddRange(entries);
         SaveManager.Instance.SaveSettings();
@@ -687,13 +695,13 @@ static class LoadOrder
                     var rows = content.GetChildren().OfType<NModMenuRow>().ToList();
                     // Drops are allowed even where they break a dependency: the red line and the warning bar say so.
                     // A multi-selection moves as one block.
-                    var gapAt = Target(content, release.GlobalPosition.Y).Index;
+                    var gapAt = Target(content, rows, release.GlobalPosition.Y).Index;
                     if (Selection.Several && Selection.Contains(row.Mod))
                     {
                         MoveGroup(Selection.Mods, gapAt, rows);
                         redraw();
                     }
-                    else if (Destination(gapAt) is { } to && row.Mod is { } mod)
+                    else if (Destination(gapAt, rows) is { } to && row.Mod is { } mod)
                     {
                         Move(mod, to, rows);
                         redraw();
@@ -715,19 +723,22 @@ static class LoadOrder
             if (depth != 0)
                 CategoryList.ScrollBy(content, Math.Clamp(depth / EdgeScroll, -1.5f, 1.5f) * EdgeScrollSpeed * (float)content.GetProcessDeltaTime());
 
-            var (gap, y) = Target(content, mouseY);
+            // The rows, and whether each mod is on, read once for the frame (outside a redraw each check walked the saved list).
+            using var lookups = Lookups.Begin();
+            var rows = content.GetChildren().OfType<NModMenuRow>().ToList();
+            var (gap, y) = Target(content, rows, mouseY);
             // Kept inside the list's visible area (it clips), so the gap above the first row still shows.
             marker.GlobalPosition = new Vector2(content.GlobalPosition.X, Math.Clamp(y - 2, view.Position.Y, view.End.Y - 5));
-            ShowLinks(content, row, strong: true, drop: (gap, marker.GlobalPosition.Y + 2));
+            ShowLinks(content, row, strong: true, drop: (gap, marker.GlobalPosition.Y + 2), rows);
             // Red where dropping would load it before something it needs (or after something needing it).
-            marker.SelfModulate = Destination(gap) is { } at && row.Mod is { } moving
-                && MoveBreaks(moving, at, content.GetChildren().OfType<NModMenuRow>().ToList()) ? Blocked : Gold;
+            marker.SelfModulate = Destination(gap, rows) is { } at && row.Mod is { } moving
+                && MoveBreaks(moving, at, rows) ? Blocked : Gold;
         }
 
         // The index the row would take after leaving its slot, or null for its own gap.
-        int? Destination(int gap)
+        int? Destination(int gap, List<NModMenuRow> rows)
         {
-            var from = content.GetChildren().OfType<NModMenuRow>().ToList().IndexOf(row);
+            var from = rows.IndexOf(row);
             return gap == from || gap == from + 1 ? null : gap > from ? gap - 1 : gap;
         }
     }
@@ -737,22 +748,23 @@ static class LoadOrder
     public static void MoveGroup(IReadOnlyCollection<Mod> group, int gap, IList<NModMenuRow> rows)
     {
         var order = Mods(rows);
-        var moving = order.Where(group.Contains).ToList();
-        var rest = order.Where(m => !group.Contains(m)).ToList();
+        var picked = group.ToHashSet();
+        var moving = order.Where(picked.Contains).ToList();
+        var rest = order.Where(m => !picked.Contains(m)).ToList();
         var shown = rows.Select(r => r.Mod).OfType<Mod>().ToList();
         // Rest-of-list position: the unpicked rows above the gap.
-        var insertAt = shown.Take(gap).Count(m => !group.Contains(m));
+        var insertAt = shown.Take(gap).Count(m => !picked.Contains(m));
         rest.InsertRange(Math.Clamp(insertAt, 0, rest.Count), moving);
         Save(rest);
     }
 
     // Mods linked to this one by a dependency, either way, among the shown rows.
-    static List<NModMenuRow> Linked(Control content, NModMenuRow row)
+    static List<NModMenuRow> Linked(NModMenuRow row, IReadOnlyList<NModMenuRow> rows)
     {
         if (row.Mod?.manifest?.id is not { } id)
             return [];
         var needs = Dependencies.Of(row.Mod).ToHashSet();
-        return content.GetChildren().OfType<NModMenuRow>()
+        return rows
             .Where(r => r != row && r.Visible && r.Mod?.manifest?.id is { } other
                 && (needs.Contains(other) || Dependencies.Of(r.Mod).Contains(id)))
             .ToList();
@@ -760,21 +772,24 @@ static class LoadOrder
 
     // Tree-style lines in the left gutter from this row to each linked row, each in its own lane. While dragging, drop
     // is where the row would land: the lines' ends follow the marker, and their colour says whether that drop works.
-    public static void ShowLinks(Control content, NModMenuRow row, bool strong, (int Gap, float Y)? drop = null)
+    // rows: the list's rows, when the caller has them already.
+    public static void ShowLinks(Control content, NModMenuRow row, bool strong, (int Gap, float Y)? drop = null, List<NModMenuRow>? rows = null)
     {
         HideLinks(content);
         var mask = content.GetParent<Control>();
         float CenterY(Control r) => r == row && drop is { } d ? d.Y - mask.GlobalPosition.Y : r.GetGlobalRect().GetCenter().Y - mask.GlobalPosition.Y;
-        var linked = Linked(content, row);
-        var rows = content.GetChildren().OfType<NModMenuRow>().ToList();
+        rows ??= content.GetChildren().OfType<NModMenuRow>().ToList();
+        var linked = Linked(row, rows);
+        var needs = Dependencies.Of(row.Mod);
+        var self = rows.IndexOf(row);
         for (var i = 0; i < linked.Count; i++)
         {
             // Green when the pair is in a working order (what's needed loads first), red when it isn't.
-            var needed = Dependencies.Of(row.Mod).Contains(linked[i].Mod?.manifest?.id ?? "");
+            var needed = needs.Contains(linked[i].Mod?.manifest?.id ?? "");
             var other = rows.IndexOf(linked[i]);
             var fine = drop is { } at
                 ? needed ? other < at.Gap : other >= at.Gap
-                : needed ? other < rows.IndexOf(row) : other > rows.IndexOf(row);
+                : needed ? other < self : other > self;
             var lane = 4 + Math.Min(i, 3) * 4; // 4 px apart: the soft-edged lines are up to 4 px wide
             var line = new Line2D
             {
@@ -839,15 +854,16 @@ static class LoadOrder
     static void BeginDragLook(Control content, NModMenuRow row)
     {
         content.SetMeta(DraggingMeta, true);
+        using var lookups = Lookups.Begin(); // each picked row's links ask about every row
         var rows = content.GetChildren().OfType<NModMenuRow>().ToList();
         // Everything being moved (the row, or the whole multi-selection) plus whatever they're linked to.
         var moving = rows.Where(r => r == row || (Selection.Several && Selection.Contains(r.Mod))).ToList();
-        var lit = moving.SelectMany(r => Linked(content, r)).Concat(moving).ToHashSet();
+        var lit = moving.SelectMany(r => Linked(r, rows)).Concat(moving).ToHashSet();
         foreach (var r in rows)
             r.Modulate = lit.Contains(r) ? Colors.White : new Color(1, 1, 1, 0.35f);
         foreach (var r in moving)
             r.Modulate = new Color(1.25f, 1.2f, 1.05f); // the ones being moved, a touch brighter
-        ShowLinks(content, row, strong: true);
+        ShowLinks(content, row, strong: true, rows: rows);
     }
 
     static void EndDragLook(Control content) => Reset(content);
@@ -863,16 +879,16 @@ static class LoadOrder
     }
 
     // The gap the mouse is nearest: the index a dropped row would take, and that gap's screen y.
-    static (int Index, float Y) Target(Control content, float mouseY)
+    static (int Index, float Y) Target(Control content, List<NModMenuRow> all, float mouseY)
     {
-        var rows = content.GetChildren().OfType<NModMenuRow>().Where(r => r.Visible).ToList();
+        var rows = all.Where(r => r.Visible).ToList();
         for (var i = 0; i < rows.Count; i++)
         {
             var rect = rows[i].GetGlobalRect();
             if (mouseY < rect.GetCenter().Y)
-                return (content.GetChildren().OfType<NModMenuRow>().ToList().IndexOf(rows[i]), rect.Position.Y - 4);
+                return (all.IndexOf(rows[i]), rect.Position.Y - 4);
         }
         var last = rows.LastOrDefault()?.GetGlobalRect();
-        return (content.GetChildren().OfType<NModMenuRow>().Count(), last is { } r ? r.End.Y + 4 : content.GlobalPosition.Y);
+        return (all.Count, last is { } r ? r.End.Y + 4 : content.GlobalPosition.Y);
     }
 }

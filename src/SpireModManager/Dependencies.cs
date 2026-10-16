@@ -8,8 +8,10 @@ namespace SpireModManager;
 // and fails it if one isn't loaded; order rules only bind mods that are both on. Inside a redraw, Lookups answers.
 static class Dependencies
 {
-    public static IReadOnlyList<string> Of(Mod? mod) =>
-        mod?.manifest?.dependencies?.Select(d => d.id).ToList() ?? [];
+    // A mod's dependency ids, read once per redraw (Lookups).
+    public static IReadOnlyList<string> Of(Mod? mod) => mod == null ? [] : Lookups.Current?.DependenciesOf(mod, Read) ?? Read(mod);
+
+    static IReadOnlyList<string> Read(Mod mod) => mod.manifest?.dependencies?.Select(d => d.id).ToList() ?? [];
 
     public static bool IsOn(Mod mod) => Lookups.Current?.IsOn(mod) ?? !(SaveManager.Instance.SettingsSave.ModSettings?.IsModDisabled(mod) ?? false);
 
@@ -37,10 +39,11 @@ static class Dependencies
     public static List<Mod> NeededOff(IEnumerable<Mod> mods)
     {
         var needed = new List<Mod>();
+        var seen = new HashSet<Mod>();
         var waiting = new Queue<Mod>(mods.Where(IsOn));
         while (waiting.TryDequeue(out var mod))
             foreach (var dependency in Of(mod).Select(Find).OfType<Mod>())
-                if (!IsOn(dependency) && !needed.Contains(dependency))
+                if (!IsOn(dependency) && seen.Add(dependency))
                 {
                     needed.Add(dependency);
                     waiting.Enqueue(dependency);
@@ -53,11 +56,17 @@ static class Dependencies
     public static void Set(IEnumerable<Mod> mods, bool on, NModdingScreen? screen)
     {
         var settings = SaveManager.Instance.SettingsSave.ModSettings ??= new ModSettings();
+        // Each mod's saved entry (the first, if listed twice), looked up once rather than searched for per mod.
+        var entries = new Dictionary<(string?, ModSource), SettingsSaveMod>();
+        foreach (var saved in settings.ModList)
+            entries.TryAdd((saved.Id, saved.Source), saved);
         foreach (var mod in mods)
         {
-            var entry = settings.ModList.FirstOrDefault(e => e.Id == mod.manifest?.id && e.Source == mod.modSource);
-            if (entry == null)
+            if (!entries.TryGetValue((mod.manifest?.id, mod.modSource), out var entry))
+            {
                 settings.ModList.Add(entry = new SettingsSaveMod(mod));
+                entries[(mod.manifest?.id, mod.modSource)] = entry;
+            }
             entry.IsEnabled = on || mod.manifest?.id == ModEntry.ModId;
         }
         SaveManager.Instance.SaveSettings();
@@ -81,12 +90,14 @@ static class Dependencies
     {
         var order = given.Distinct().ToList(); // a mod listed twice counts once
         var position = order.Select((m, i) => (m, i)).ToDictionary(p => p.m, p => p.i);
-        var waitingOn = order.ToDictionary(m => m, m => IsOn(m)
-            ? Of(m).Select(Find).OfType<Mod>().Where(d => IsOn(d) && position.ContainsKey(d) && d != m).Distinct().Count()
-            : 0);
+        // Each enabled mod's enabled dependencies in the list, worked out once.
+        var needs = order.ToDictionary(m => m, m => IsOn(m)
+            ? Of(m).Select(Find).OfType<Mod>().Where(d => IsOn(d) && position.ContainsKey(d) && d != m).Distinct().ToList()
+            : []);
+        var waitingOn = order.ToDictionary(m => m, m => needs[m].Count);
         var dependents = order.ToDictionary(m => m, _ => new List<Mod>());
-        foreach (var m in order.Where(IsOn))
-            foreach (var d in Of(m).Select(Find).OfType<Mod>().Where(d => IsOn(d) && position.ContainsKey(d) && d != m).Distinct())
+        foreach (var m in order)
+            foreach (var d in needs[m])
                 dependents[d].Add(m);
 
         var ready = new PriorityQueue<Mod, int>();
@@ -101,7 +112,8 @@ static class Dependencies
                     ready.Enqueue(next, position[next]);
         }
         // A dependency cycle leaves mods behind: keep them in their old order at the end.
-        result.AddRange(order.Where(m => !result.Contains(m)));
+        var placed = result.ToHashSet();
+        result.AddRange(order.Where(m => !placed.Contains(m)));
         return result;
     }
 }
