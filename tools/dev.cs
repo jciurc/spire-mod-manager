@@ -15,6 +15,8 @@
 //                                      none of Better Mod Menu's; --first-run-bmm: the same, but with Better
 //                                      Mod Menu's data (tools/fixtures/bmm) there to import, and Better Mod
 //                                      Menu installed but off, or on with --bmm)
+//                                     --stable, with any of them: on the stable branch's game (its own dev copy,
+//                                      below), not the public-beta's
 //   dotnet run tools/dev.cs launch    build, open the game in the sandbox to poke at by hand
 //                                     (--first-run, --first-run-bmm: starting from that state, not the last one;
 //                                      --workshop: as for test)
@@ -29,7 +31,10 @@
 //   and its own mods\ folder: our fresh build, the fixture mods (tools/fixtures/mods) and Better Mod Menu's
 //   installed copy; with --real, links to every mod installed for play instead of the fixtures. Builds never go into
 //   the real mods folder here; `dotnet run build.cs` does that, for play, when the game is closed.
-//   The copy is re-linked whenever the installed game's release_info.json changes (a Steam update).
+//   The copy is re-linked whenever the installed game's release_info.json changes (a Steam update), but only from
+//   an install of its own branch: the public-beta's here, the stable branch's in sts2-dev-stable (STS2_STABLE_DIR),
+//   for --stable. Steam installs one branch at a time and replaces the files when switching, so each copy keeps its
+//   own branch's game while the install is on the other; a copy that doesn't exist yet needs its branch installed.
 // - --force-steam off: no Steam presence, no cloud, and the game keeps its data in
 //   %APPDATA%\SlayTheSpire2\default\1\ instead of steam\<id>\, so real saves and mod lists are never
 //   touched. Only local mods load (Workshop mods come through Steam; --workshop copies some in as local ones).
@@ -53,7 +58,10 @@ var GameDir = Path.Combine(steamapps, "common", "Slay the Spire 2");
 if (!Directory.Exists(GameDir))
     return Fail($"Slay the Spire 2 isn't in {steamapps}. Set the environment variable "
         + @"STS2_STEAMAPPS to the steamapps folder of the library that has it, for example D:\SteamLibrary\steamapps (CONTRIBUTING.md, ""What you need"").");
-var DevDir = FullDir(Env("STS2_DEV_DIR", Path.Combine(Path.GetPathRoot(GameDir) ?? "", "sts2-dev"))); // same drive
+var stable = args.Contains("--stable"); // the stable branch's game, in its own dev copy
+var BetaDir = FullDir(Env("STS2_DEV_DIR", Path.Combine(Path.GetPathRoot(GameDir) ?? "", "sts2-dev"))); // same drive
+var StableDir = FullDir(Env("STS2_STABLE_DIR", Path.Combine(Path.GetPathRoot(GameDir) ?? "", "sts2-dev-stable")));
+var DevDir = stable ? StableDir : BetaDir;
 var WorkshopDir = Path.Combine(steamapps, "workshop", "content", "2868840");
 var BmmRepo = Env("STS2_BMM_REPO", @"C:\repos\gaming\slay the spire\bettermodmenu"); // Better Mod Menu's local-fix checkout (--bmm-local)
 const string ModId = "SpireModManager";
@@ -76,7 +84,7 @@ var workshopItems = workshopAt < 0 ? [] : (args.ElementAtOrDefault(workshopAt + 
 var workshopMods = new List<string>(); // the mod ids in those items' manifests, in the order given
 
 if (mode is not ("test" or "launch" or "smoke"))
-    return Fail("usage: dotnet run tools/dev.cs [test [--window] [--bmm[-after]] [--bmm-local] [--real|--first-run|--first-run-bmm]|launch [--first-run|--first-run-bmm]|smoke [--bmm]] [--workshop <id>[,<id>...]]");
+    return Fail("usage: dotnet run tools/dev.cs [test [--window] [--bmm[-after]] [--bmm-local] [--real|--first-run|--first-run-bmm]|launch [--first-run|--first-run-bmm]|smoke [--bmm]] [--workshop <id>[,<id>...]] [--stable]");
 if (real && firstRun)
     return Fail("--real brings Jordan's own data, so it can't be a first run");
 // --workshop: every item has to be there, or the run would test without it and look like a pass. So it takes
@@ -135,8 +143,10 @@ foreach (var (item, manifest) in workshopManifests)
             : installed ? "dev runs don't switch on the mods installed for play (Better Mod Menu aside), so " + add
             : add));
     }
-if (Process.GetProcessesByName("SlayTheSpire2").Any(p => string.Equals(Path.GetDirectoryName(ExePath(p)), DevDir, StringComparison.OrdinalIgnoreCase)))
-    return Fail($"A dev copy of the game is already running from {DevDir}.");
+// Either copy: both play in the one sandbox data folder.
+if (Process.GetProcessesByName("SlayTheSpire2").Select(p => Path.GetDirectoryName(ExePath(p)))
+        .FirstOrDefault(dir => dir != null && new[] { BetaDir, StableDir }.Contains(dir, StringComparer.OrdinalIgnoreCase)) is { } running)
+    return Fail($"A dev copy of the game is already running from {running}.");
 
 if (smoke)
 {
@@ -151,7 +161,8 @@ else
         return Fail("build failed");
 }
 
-LinkDevCopy();
+if (LinkDevCopy() is { } noCopy)
+    return Fail(noCopy);
 SyncMods();
 PrepareSandbox(mode is "test" or "smoke" || firstRun);
 
@@ -361,12 +372,22 @@ foreach (var id in notReady)
 return !File.Exists(results) || text.Contains("FAIL") || notReady.Count > 0 ? 1 : 0;
 
 // Hard links to every installed file except mods\, rebuilt when the game's release info changes.
-void LinkDevCopy()
+// The dev copy, linked again when the installed game changed and is on the copy's branch (Isolation, above). The
+// reason when there's no copy to run: it doesn't exist yet, and the install is on the other branch.
+string? LinkDevCopy()
 {
     var info = Path.Combine(GameDir, "release_info.json");
     var devInfo = Path.Combine(DevDir, "release_info.json");
     if (File.Exists(devInfo) && File.ReadAllText(devInfo) == File.ReadAllText(info))
-        return;
+        return null;
+    var wanted = stable ? "public" : "public-beta";
+    if (InstalledBranch() is { } installed && installed != wanted)
+    {
+        if (!File.Exists(devInfo))
+            return $"{DevDir} doesn't exist yet, and Steam has the {installed} branch installed: switch it to {wanted} and run again.";
+        Console.WriteLine($"Steam has the {installed} branch installed: the {wanted} dev copy in {DevDir} is kept as it is");
+        return null;
+    }
     Console.WriteLine($"linking the dev copy in {DevDir}");
     if (Directory.Exists(DevDir))
         Directory.Delete(DevDir, recursive: true); // deleting links leaves the installed files alone
@@ -377,6 +398,18 @@ void LinkDevCopy()
             continue;
         Link(file, Path.Combine(DevDir, relative));
     }
+    return null;
+}
+
+// The branch Steam has installed ("public" is stable, "public-beta" the beta), from the game's app manifest; null
+// when it can't be read (the copy is then linked whenever the install changes, as before).
+string? InstalledBranch()
+{
+    var manifest = Path.Combine(steamapps, "appmanifest_2868840.acf");
+    if (!File.Exists(manifest))
+        return null;
+    var keys = Regex.Matches(File.ReadAllText(manifest), @"""BetaKey""\s+""([^""]*)""");
+    return keys.Count == 0 ? "public" : keys[^1].Groups[1].Value;
 }
 
 // The dev copy's mods: our fresh build, plus links to mods installed for play: with --real all of them, otherwise
