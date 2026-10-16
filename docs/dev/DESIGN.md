@@ -43,7 +43,8 @@ Ease of use is the heart of the mod, not just its utility.
 
 ## Releases
 
-- Public-beta branch only while the game's stable branch is older than v0.111.0; widen the range then.
+- Both branches, stable and public-beta, game v0.107.1 or newer: one build, with what only one branch has
+  reached by name (`Compat.cs`), and the release test run on each (RELEASING.md).
 - Each first upload goes up private, gets tested, then goes public (unlisted as a soft launch).
 - Workshop pictures are real screenshots, never generated art.
 - Mouse and keyboard only for now; controller support is #118.

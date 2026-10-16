@@ -39,7 +39,7 @@ var manifest = new JsonObject
     ["has_dll"] = true,
     ["affects_gameplay"] = false,
     ["dependencies"] = new JsonArray(),
-    ["min_game_version"] = "0.111.0",
+    ["min_game_version"] = "0.107.1",
 };
 if (dist)
     manifest["version"] = ReleaseVersion;

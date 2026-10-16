@@ -771,8 +771,14 @@ static class SelfTest
                 Rect2 Rect(string name) => screen.FindChild(name, true, false) is Control c ? c.GetGlobalRect() : new Rect2();
                 var (top, groups, search, list) = (Rect("BetterModMenuTopBar"), Rect("BetterModMenuGroupBar"), Rect("BetterModMenuSearchBar"), scroll.GetGlobalRect());
                 var title = border.GetNode<Control>("%InstalledModsTitle").GetGlobalRect();
-                Check("its page: its bars, row controls and panel buttons show", Shown(chrome) && RowControls().Any(Shown)
-                    && Shown(info.GetNodeOrNull("BetterModMenuSelectedModActions")));
+                // On the stable branch Better Mod Menu 1.1.1 makes no row controls at all, with or without us: its row
+                // postfix was built against the beta, where ModManifest is a record with ==, and stable's has none
+                // (MissingMethodException as it compiles). So none there is its own, not a row of ours hiding them.
+                var stableWithoutRowControls = Compat.InfoClear == null && RowControls().Count == 0;
+                Check("its page: its bars, row controls and panel buttons show", Shown(chrome) && (RowControls().Any(Shown) || stableWithoutRowControls)
+                    && Shown(info.GetNodeOrNull("BetterModMenuSelectedModActions")),
+                    $"bars {Shown(chrome)}, row controls {RowControls().Count(Shown)} of {RowControls().Count}, panel buttons "
+                    + (info.GetNodeOrNull("BetterModMenuSelectedModActions") is { } actions ? $"shown {Shown(actions)}" : "none"));
                 // (Its own sizes on this game version: the group bar is taller than the room it keeps for it, and the
                 // search bar can end past the panel. Reported, not checked: the same without us.)
                 Check("its page: its top bar clear of the title, its group bar above the list, its search below, the list in its panel",
@@ -3839,7 +3845,8 @@ static class SelfTest
             Check("hovering a mod's name in the panel lights its row (visibly), and lets go", lit.A * litFill > 0.05f && look.Modulate == before, $"{before} -> {lit} x {litFill} -> {look.Modulate}");
             description.EmitSignal(RichTextLabel.SignalName.MetaClicked, "mod:SmmTestUi");
             await Wait(menu, 0.3);
-            Check("clicking it gives the row the selected look; the panel stays", uiRow.HasFocus() && CategoryList.Selected?.manifest?.id == "SmmTestLib");
+            Check("clicking it gives the row the selected look; the panel stays", uiRow.HasFocus() && CategoryList.Selected?.manifest?.id == "SmmTestLib",
+                $"focus {uiRow.HasFocus()} (focused: {screen.GetViewport().GuiGetFocusOwner()?.Name}), selected {CategoryList.Selected?.manifest?.id}");
         }
     }
 
@@ -4473,7 +4480,7 @@ static class SelfTest
         SaveManager.Instance.SettingsSave.ModSettings?.ModList.RemoveAll(e => e.Id == id);
         History.Record();
         CategoryList.Redraw(content);
-        screen.GetNode<NModInfoContainer>("%ModInfoContainer").Clear();
+        Compat.Clear(screen.GetNode<NModInfoContainer>("%ModInfoContainer"));
         await Wait(menu, 0.3);
     }
 
@@ -4484,9 +4491,10 @@ static class SelfTest
     {
         var mod = new Mod
         {
-            path = "", modSource = ModSource.SteamWorkshop, workshopId = 42, state = ModLoadState.AddedAtRuntime,
+            path = "", modSource = ModSource.SteamWorkshop, state = ModLoadState.AddedAtRuntime,
             manifest = new ModManifest { id = "SmmWorkshopTest", name = "Workshop Test", author = "Someone Careful" },
         };
+        Compat.SetWorkshopId(mod, 42);
         Installed.Detected(mod); // so the panel can find it by id
         WorkshopInfo.TestSet(42, new WorkshopInfo.Details(DateTime.Now.AddDays(-30), DateTime.Now.AddDays(-4), [], [], 1_572_864, 1234)); // 1.5 MB
         var info = screen.GetNode<NModInfoContainer>("%ModInfoContainer");
@@ -4529,7 +4537,7 @@ static class SelfTest
         }
         WorkshopInfo.TestSet(42, null);
         Installed.Forget(mod);
-        info.Clear();
+        Compat.Clear(info);
     }
 
     // Another mod's part in the info panel (Undo And Restart adds a settings panel at a fixed (0,318), over our
@@ -4639,7 +4647,7 @@ static class SelfTest
 
         info.RemoveChild(other);
         other.QueueFree();
-        info.Clear();
+        Compat.Clear(info);
     }
 
     // Several mods at once on the main list: Select all in Uncategorized, Ctrl-click one away; the bar counts
@@ -5444,11 +5452,16 @@ static class SelfTest
 
     // A mod installed while the game runs, made up, the way the game does it: read into its mod list (not loaded),
     // then announced. Gone again: off both lists.
+    // The game announcing a mod installed while it runs: its OnModDetected event, raised as the game raises it (the
+    // beta through InvokeOnModDetected, the stable branch inline).
     static void GameInstalls(Mod mod)
     {
         GameMods().Add(mod);
-        typeof(ModManager).GetMethod("InvokeOnModDetected", System.Reflection.BindingFlags.NonPublic | System.Reflection.BindingFlags.Static)
-            ?.Invoke(null, [mod]);
+        var flags = System.Reflection.BindingFlags.NonPublic | System.Reflection.BindingFlags.Static;
+        if (typeof(ModManager).GetMethod("InvokeOnModDetected", flags) is { } invoke)
+            invoke.Invoke(null, [mod]);
+        else
+            (typeof(ModManager).GetField(nameof(ModManager.OnModDetected), flags)?.GetValue(null) as Action<Mod>)?.Invoke(mod);
     }
 
     static void GameForgets(Mod mod)

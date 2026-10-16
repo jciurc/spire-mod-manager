@@ -42,7 +42,7 @@ static class Tags
         var chips = new List<Chip>();
         if (Installed.Mods.Contains(mod))
             chips.Add(new Chip(Menus.Text("SPIRE_MOD_MANAGER.TAG_NEW"), New, Tip: Menus.Text("SPIRE_MOD_MANAGER.TAG_NEW_TIP")));
-        if (mod.workshopId == null)
+        if (Compat.WorkshopId(mod) == null)
             chips.Add(new Chip(Menus.Text("SPIRE_MOD_MANAGER.TAG_LOCAL"), Local, Tip: Menus.Text("SPIRE_MOD_MANAGER.TAG_LOCAL_TIP")));
         if (Dependencies.NeededBy(manifest.id).Any(m => m != mod))
             chips.Add(new Chip(Menus.Text("SPIRE_MOD_MANAGER.TAG_LIBRARY"), Library, Tip: Menus.Text("SPIRE_MOD_MANAGER.TAG_LIBRARY_TIP")));
