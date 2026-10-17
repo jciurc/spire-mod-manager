@@ -3,6 +3,17 @@
 What changed in each Workshop release, for players. Each version's first line is its Workshop change note
 (`changeNote` in `workshop/workshop.json`), word for word.
 
+## 0.1.2 (2026-10-16)
+
+0.1.2: the main menu button no longer asks for a restart when nothing changed (with two Workshop copies of one mod), and the Modding page opens faster with long mod lists, especially with Chinese, Japanese or Korean mod names.
+
+- With two Workshop copies of one mod installed (the same mod id), the main menu button could ask for a restart
+  while the Modding page showed no changes. Each copy keeps its own place in the saved load order now, and the
+  page's "after a restart" line follows the same rule as the button.
+- The Modding page opens faster with long mod lists. Mod names in Chinese, Japanese or Korean need a font lookup
+  the first time they're drawn; that now happens on the main menu, a little at a time. Two slow checks at the
+  page's start are gone too.
+
 ## 0.1.1 (2026-10-16)
 
 0.1.1: the main menu button's hover wings show again alongside RitsuLib, now in pink; the author in the info panel reads as a link; and the Changed filter's tip says what it shows.
