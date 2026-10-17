@@ -9,12 +9,19 @@
 //   dotnet run tools/loc.cs status <file> [--base <ref>] [--eng <ref or file>]
 //                                                          a translation against the English (now, or --eng): texts new
 //                                                          since it was made, texts whose English changed since, keys the
-//                                                          English no longer has. Exit code 1 if any.
+//                                                          English no longer has, each with its line in the file. Exit code
+//                                                          1 if any.
+//   dotnet run tools/loc.cs compare <file> --base <ref> [--to <ref>] [--old <file>] [--html <page.html>]
+//                                                          both sides of each English change since --base: the English
+//                                                          then and now, and the translation then (--old: the copy made for
+//                                                          that version) and now, with its line. --html: the same as a page
+//                                                          to open in a browser, side by side.
 //
-// The English a translation was made from, per text: a `// en: "..."` line above its key if it has one, else the
-// version --base names, else the oldest release whose texts the file has (said so in the report; it can flag a text
-// that was already translated from newer English, never miss one).
+// A translation file holds only its own language, as the game reads it: the English it was made from is a version
+// (--base), else the oldest release whose texts the file has (said so in the report; it can flag a text that was
+// already updated, never miss one).
 using System.Diagnostics;
+using System.Net;
 using System.Runtime.CompilerServices;
 using System.Text;
 using System.Text.Json;
@@ -32,6 +39,7 @@ try
         "versions" => Versions(),
         "changes" when args.Length >= 2 => Changes(args[1], args.Skip(2).FirstOrDefault(a => !a.StartsWith("--")), args.Contains("--md")),
         "status" when args.Length >= 2 => Status(args[1], Option("--base"), Option("--eng")),
+        "compare" when args.Length >= 2 && Option("--base") is { } from => Compare(args[1], from, Option("--to"), Option("--old"), Option("--html")),
         _ => Usage(),
     };
 }
@@ -43,7 +51,8 @@ catch (Problem e)
 
 int Usage()
 {
-    Console.Error.WriteLine("usage: dotnet run tools/loc.cs versions | changes <from> [<to>] [--md] | status <file> [--base <ref>] [--eng <ref or file>]");
+    Console.Error.WriteLine("usage: dotnet run tools/loc.cs versions | changes <from> [<to>] [--md] | status <file> [--base <ref>] [--eng <ref or file>]"
+        + " | compare <file> --base <ref> [--to <ref>] [--old <file>] [--html <page.html>]");
     return 1;
 }
 
@@ -58,7 +67,7 @@ int Versions()
     foreach (var (name, date, texts) in releases.Select(r => (r, Git("log", "-1", "--format=%cs", r)?.Trim() ?? "", EnglishAt(r)))
         .Append(("now", "", EnglishAt(null))))
     {
-        var since = before == null ? "" : Summary(Compare(before, texts));
+        var since = before == null ? "" : Summary(Diff(before, texts));
         Console.WriteLine($"{name,-10}{date,-12}{texts.Count,-7}{since}");
         before = texts;
     }
@@ -70,7 +79,7 @@ int Changes(string from, string? to, bool markdown)
 {
     var (fromName, toName) = (Resolve(from), to == null ? null : Resolve(to));
     var (old, now) = (EnglishAt(fromName), EnglishAt(toName));
-    var diff = Compare(old, now);
+    var diff = Diff(old, now);
     var title = $"English {fromName} ({old.Count} texts) -> {toName ?? "now"} ({now.Count}): {Summary(diff)}";
     if (markdown)
     {
@@ -84,59 +93,90 @@ int Changes(string from, string? to, bool markdown)
     }
     Console.WriteLine(title);
     foreach (var (kind, key, was, text) in diff)
-        Console.WriteLine(kind == "changed" ? $"CHANGED {Short(key)}\n  {WordDiff(was ?? "", text ?? "")}" : $"{kind.ToUpperInvariant()} {Short(key)} {Quoted(text ?? was ?? "")}");
+        Console.WriteLine(kind == "changed" ? $"CHANGED {Short(key)}\n  {OneLine(WordDiff(was ?? "", text ?? ""))}" : $"{kind.ToUpperInvariant()} {Short(key)} {Quoted(text ?? was ?? "")}");
     return 0;
 }
 
-// A translation against the English: what's new since it was made, what changed, what went.
+// A translation against the English: what's new since it was made, what changed, what went; each with its line.
 int Status(string file, string? baseRef, string? eng)
 {
-    if (!File.Exists(file))
-        throw new Problem($"{file} doesn't exist");
-    var (entries, todos, twice) = ReadTranslation(file);
+    var translation = ReadTranslation(file);
     var now = eng != null && File.Exists(eng) ? ReadEnglishFile(eng) : EnglishAt(eng == null ? null : Resolve(eng));
-    // The English each text was made from: its own `// en:` line, else --base's, else the inferred release's.
-    var keys = entries.Select(e => e.Key).ToHashSet();
-    string? inferred = null;
-    Dictionary<string, string>? baseTexts = null;
-    if (entries.Any(e => e.En == null))
-    {
-        if (baseRef != null)
-            baseTexts = EnglishAt(Resolve(baseRef));
-        else
-        {
-            // The oldest release with every key the file has (fewest texts the file lacks first). None without git or
-            // the tags.
-            var fits = Releases(quiet: true).Select(r => (Release: r, Texts: EnglishAt(r))).Where(r => keys.All(r.Texts.ContainsKey))
-                .OrderBy(r => r.Texts.Keys.Count(k => !keys.Contains(k))).FirstOrDefault();
-            (inferred, baseTexts) = (fits.Release, fits.Texts);
-        }
-    }
-    var withLines = entries.Count(e => e.En != null);
-    var rest = baseRef != null ? $"{Resolve(baseRef)} (--base)"
-        : inferred != null ? $"{inferred}, inferred from its texts (--base <version> to set it)"
-        : Releases(quiet: true).Count == 0 ? "unknown: no release tags here (git fetch --tags, or --base <version>), so their changed English can't be told"
-        : "unknown: no release has all its keys (--base <version> to set it), so their changed English can't be told";
-    var basis = withLines == entries.Count ? "the `// en:` line of each text"
-        : withLines > 0 ? $"the `// en:` lines of {withLines} texts; the other {entries.Count - withLines}: {rest}"
-        : rest;
-    var made = entries.ToDictionary(e => e.Key, e => e.En ?? baseTexts?.GetValueOrDefault(e.Key));
-
-    var fresh = now.Keys.Where(k => !keys.Contains(k)).ToList();
-    var gone = entries.Where(e => !now.ContainsKey(e.Key)).Select(e => e.Key).ToList();
-    var changed = entries.Where(e => now.TryGetValue(e.Key, out var text) && made[e.Key] is { } was && was != text).Select(e => e.Key).ToList();
-    Console.WriteLine($"{Path.GetFileName(file)} ({entries.Count} texts) against the English {(eng == null ? "now" : eng)} ({now.Count} texts)");
+    var (basis, made) = Basis(translation, baseRef);
+    var fresh = now.Keys.Where(k => !translation.Texts.ContainsKey(k)).ToList();
+    var gone = translation.Texts.Keys.Where(k => !now.ContainsKey(k)).ToList();
+    var changed = translation.Texts.Keys.Where(k => now.TryGetValue(k, out var text) && made?.GetValueOrDefault(k) is { } was && was != text).ToList();
+    var name = Path.GetFileName(file);
+    Console.WriteLine($"{name} ({translation.Texts.Count} texts) against the English {(eng == null ? "now" : eng)} ({now.Count} texts)");
     Console.WriteLine($"made from: {basis}");
-    Console.WriteLine($"{fresh.Count} new, {changed.Count} changed, {gone.Count} no longer in English{(todos > 0 ? $", {todos} marked TODO" : "")}");
-    if (twice.Count > 0)
-        Console.WriteLine($"listed twice (the last one counts, as for the mod): {string.Join(", ", twice.Select(Short))}");
+    Console.WriteLine($"{fresh.Count} new, {changed.Count} changed, {gone.Count} no longer in English{(translation.Todos > 0 ? $", {translation.Todos} marked TODO" : "")}");
+    if (translation.Twice.Count > 0)
+        Console.WriteLine($"listed twice (the last one counts, as for the mod): {string.Join(", ", translation.Twice.Select(Short))}");
     foreach (var key in fresh)
-        Console.WriteLine($"NEW     {Short(key)} {Quoted(now[key])}");
+        Console.WriteLine($"NEW      {Short(key)} {Quoted(now[key])}");
     foreach (var key in changed)
-        Console.WriteLine($"CHANGED {Short(key)}\n  {WordDiff(made[key] ?? "", now[key])}");
+        Console.WriteLine($"CHANGED  {name}:{translation.Lines[key]} {Short(key)}\n  English: {OneLine(WordDiff(made?.GetValueOrDefault(key) ?? "", now[key]))}\n  yours:   {OneLine(translation.Texts[key])}");
     foreach (var key in gone)
-        Console.WriteLine($"GONE    {Short(key)}");
-    return fresh.Count + changed.Count + gone.Count + todos > 0 ? 1 : 0;
+        Console.WriteLine($"GONE     {name}:{translation.Lines[key]} {Short(key)}");
+    return fresh.Count + changed.Count + gone.Count + translation.Todos > 0 ? 1 : 0;
+}
+
+// Both sides of each English change since a version: the English then and now, the translation then and now.
+int Compare(string file, string from, string? to, string? oldFile, string? html)
+{
+    var (fromName, toName) = (Resolve(from), to == null ? null : Resolve(to));
+    var (englishThen, englishNow) = (EnglishAt(fromName), EnglishAt(toName));
+    var now = ReadTranslation(file);
+    var then = oldFile == null ? null : ReadTranslation(oldFile);
+    var name = Path.GetFileName(file);
+    // Per English change: what the translation has to do, given what it did since (when its old copy says).
+    var rows = Diff(englishThen, englishNow).Select(change =>
+    {
+        var (kind, key, was, text) = change;
+        var (old, current) = (then?.Texts.GetValueOrDefault(key), now.Texts.GetValueOrDefault(key));
+        var state = kind switch
+        {
+            "new" => current == null ? "to translate" : "translated",
+            "removed" => current == null ? "removed" : "to remove",
+            _ when then == null => current == null ? "to translate" : "to check",
+            _ => current == null ? "to translate" : old == current ? "to update" : "updated",
+        };
+        return new Row(key, kind, was, text, old, current, now.Lines.GetValueOrDefault(key), state);
+    }).OrderBy(r => r.Kind switch { "changed" => 0, "new" => 1, _ => 2 }).ToList(); // the changed first: they need both sides
+    var title = $"{name} for English {fromName} -> {toName ?? "now"}" + (then != null ? $", its copy then: {Path.GetFileName(oldFile)}" : "");
+    var counts = string.Join(", ", rows.GroupBy(r => r.State).Select(g => $"{g.Count()} {g.Key}"));
+    if (html != null)
+    {
+        File.WriteAllText(html, Page(title, counts, name, rows, then != null));
+        Console.WriteLine($"{title}: {counts}\nwritten to {Path.GetFullPath(html)}");
+        return rows.Any(r => r.State.StartsWith("to ")) ? 1 : 0;
+    }
+    Console.WriteLine($"{title}\n{(rows.Count == 0 ? "no English change" : counts)}");
+    foreach (var row in rows)
+    {
+        Console.WriteLine($"\n{row.State.ToUpperInvariant(),-13} {(row.Line > 0 ? $"{name}:{row.Line} " : "")}{Short(row.Key)} ({row.Kind})");
+        Console.WriteLine($"  English:     {(row.Kind == "changed" ? OneLine(WordDiff(row.Was ?? "", row.Text ?? "")) : Quoted(row.Text ?? row.Was ?? ""))}");
+        if (then != null && row.Old != row.Current)
+            Console.WriteLine($"  translation: {OneLine(WordDiff(row.Old ?? "", row.Current ?? ""))}");
+        else if (row.Current != null)
+            Console.WriteLine($"  translation: {OneLine(row.Current)}{(then != null ? " (unchanged)" : "")}");
+    }
+    return rows.Any(r => r.State.StartsWith("to ")) ? 1 : 0;
+}
+
+// The English each text of a translation was made from: --base's, else the oldest release it fits (null: unknown).
+(string Basis, Dictionary<string, string>? Made) Basis(Translation translation, string? baseRef)
+{
+    if (baseRef != null)
+        return ($"{Resolve(baseRef)} (--base)", EnglishAt(Resolve(baseRef)));
+    // The oldest release with every key the file has (fewest texts the file lacks first). None without git or tags.
+    var releases = Releases(quiet: true);
+    var fits = releases.Select(r => (Release: r, Texts: EnglishAt(r))).Where(r => translation.Texts.Keys.All(r.Texts.ContainsKey))
+        .OrderBy(r => r.Texts.Keys.Count(k => !translation.Texts.ContainsKey(k))).FirstOrDefault();
+    if (fits.Release != null)
+        return ($"{fits.Release}, inferred from its texts (--base <version> to set it)", fits.Texts);
+    return (releases.Count == 0 ? "unknown: no release tags here (git fetch --tags, or --base <version>), so changed English can't be told"
+        : "unknown: no release has all its keys (--base <version> to set it), so changed English can't be told", null);
 }
 
 // The release tags, oldest first: vX.Y.Z only (not v0.1.0-before-retag, not mvp).
@@ -167,14 +207,16 @@ static Dictionary<string, string> Flat(string json)
     return texts;
 }
 
-// A translation file's texts in order, each with the English its `// en:` line names (if any), its TODO marks, and
-// the keys it lists twice (the last copy kept, as the mod's reader keeps it).
-static (List<Entry> Entries, int Todos, List<string> Twice) ReadTranslation(string path)
+// A translation file: its texts in order (a key listed twice: the last copy, as the mod's reader keeps it, and named),
+// each key's line, and its TODO marks.
+static Translation ReadTranslation(string path)
 {
-    var bytes = Encoding.UTF8.GetBytes(File.ReadAllText(path)); // UTF-8 with or without a BOM, or UTF-16, as the mod reads it
-    var reader = new Utf8JsonReader(bytes, new JsonReaderOptions { CommentHandling = JsonCommentHandling.Allow, AllowTrailingCommas = true });
-    var (entries, todos, depth) = (new List<Entry>(), 0, 0);
-    string? en = null, key = null, keyEn = null;
+    if (!File.Exists(path))
+        throw new Problem($"{path} doesn't exist");
+    var source = File.ReadAllText(path); // UTF-8 with or without a BOM, or UTF-16, as the mod reads it
+    var reader = new Utf8JsonReader(Encoding.UTF8.GetBytes(source), new JsonReaderOptions { CommentHandling = JsonCommentHandling.Allow, AllowTrailingCommas = true });
+    var (texts, seen, twice, todos, depth) = (new Dictionary<string, string>(), new HashSet<string>(), new List<string>(), 0, 0);
+    string? key = null;
     try
     {
         while (reader.Read())
@@ -187,47 +229,39 @@ static (List<Entry> Entries, int Todos, List<string> Twice) ReadTranslation(stri
                 case JsonTokenType.EndObject or JsonTokenType.EndArray:
                     depth--;
                     break;
-                case JsonTokenType.Comment:
-                    var comment = reader.GetComment().Trim();
-                    if (comment.StartsWith("en:"))
-                        en = Literal(comment[3..].Trim());
-                    else if (comment.StartsWith("TODO"))
-                        todos++;
+                case JsonTokenType.Comment when reader.GetComment().Trim().StartsWith("TODO"):
+                    todos++;
                     break;
                 case JsonTokenType.PropertyName when depth == 1:
-                    (key, keyEn, en) = (reader.GetString(), en, null); // the `// en:` line above this key is this key's
+                    key = reader.GetString();
                     break;
                 case JsonTokenType.String when depth == 1 && key != null:
-                    entries.Add(new Entry(key, reader.GetString() ?? "", keyEn));
-                    (key, keyEn) = (null, null);
+                    if (!seen.Add(key))
+                        twice.Add(key);
+                    texts[key] = reader.GetString() ?? "";
+                    key = null;
                     break;
             }
         }
     }
     catch (JsonException e)
     {
-        throw new Problem($"{Path.GetFileName(path)} isn't valid JSON (line {e.LineNumber + 1}, at byte {e.BytePositionInLine + 1}): {e.Message}");
+        throw new Problem($"{Path.GetFileName(path)} isn't valid JSON (line {e.LineNumber + 1}, at byte {e.BytePositionInLine + 1}): {Regex.Replace(e.Message, @"\s*LineNumber:.*$", "")}");
     }
-    var twice = entries.GroupBy(e => e.Key).Where(g => g.Count() > 1).Select(g => g.Key).ToList();
-    return ([.. entries.GroupBy(e => e.Key).Select(g => g.Last())], todos, twice);
+    // Each key's line (its last listing), for "file:line" pointers.
+    var lines = new Dictionary<string, int>();
+    var number = 0;
+    foreach (var line in source.Split('\n'))
+    {
+        number++;
+        if (Regex.Match(line, "^\\s*\"([^\"]+)\"\\s*:") is { Success: true } match && texts.ContainsKey(match.Groups[1].Value))
+            lines[match.Groups[1].Value] = number;
+    }
+    return new Translation(texts, lines, todos, [.. twice.Distinct()]);
 }
 
-// A JSON string literal ("..." with its escapes), or null if it isn't one.
-static string? Literal(string text)
-{
-    try
-    {
-        using var document = JsonDocument.Parse(text);
-        return document.RootElement.ValueKind == JsonValueKind.String ? document.RootElement.GetString() : null;
-    }
-    catch (JsonException)
-    {
-        return null;
-    }
-}
-
-// Text by text from one English to another: new, removed, changed (old and new), in the newer one's order.
-static List<(string Kind, string Key, string? Was, string? Text)> Compare(Dictionary<string, string> old, Dictionary<string, string> now) =>
+// Text by text from one English to another: new, changed (old and new), removed, in the newer one's order.
+static List<(string Kind, string Key, string? Was, string? Text)> Diff(Dictionary<string, string> old, Dictionary<string, string> now) =>
 [
     .. now.Where(p => !old.ContainsKey(p.Key)).Select(p => ("new", p.Key, (string?)null, (string?)p.Value)),
     .. now.Where(p => old.TryGetValue(p.Key, out var was) && was != p.Value).Select(p => ("changed", p.Key, (string?)old[p.Key], (string?)p.Value)),
@@ -237,15 +271,19 @@ static List<(string Kind, string Key, string? Was, string? Text)> Compare(Dictio
 static string Summary(List<(string Kind, string Key, string? Was, string? Text)> diff) => diff.Count == 0 ? "no change"
     : $"{diff.Count(d => d.Kind == "new")} new, {diff.Count(d => d.Kind == "removed")} removed, {diff.Count(d => d.Kind == "changed")} changed";
 
-// The words that went in [-...-] and the words that came in {+...+}, as git's --word-diff writes them.
-static string WordDiff(string was, string now)
+// What stayed (0), went (-1) and came (+1), word by word (letter by letter in Chinese, Japanese and Korean, which
+// don't space their words). A kept run of at most one word between two changes joins them: "turned on or off" ->
+// "enabled or disabled" reads as one change, not three.
+static List<(int Side, string Text)> Pieces(string was, string now)
 {
-    var (a, b) = (Regex.Split(was, @"(\s+)"), Regex.Split(now, @"(\s+)"));
+    const string Cjk = @"\p{IsCJKUnifiedIdeographs}\p{IsHiragana}\p{IsKatakana}\p{IsHangulSyllables}";
+    // A [tag] or {slot} on its own, a CJK letter, a space run, or a word up to the next of those.
+    static string[] Tokens(string text) => [.. Regex.Matches(text, $@"\[[^\]\s]*\]|\{{[^}}\s]*\}}|[{Cjk}]|\s+|[^\s\[{{{Cjk}]+|.").Select(m => m.Value)];
+    var (a, b) = (Tokens(was), Tokens(now));
     var common = new int[a.Length + 1, b.Length + 1];
     for (var i = a.Length - 1; i >= 0; i--)
         for (var j = b.Length - 1; j >= 0; j--)
             common[i, j] = a[i] == b[j] ? common[i + 1, j + 1] + 1 : Math.Max(common[i + 1, j], common[i, j + 1]);
-    // Each piece: kept (0), gone (-1) or come (+1).
     var pieces = new List<(int Side, string Text)>();
     var (p, q) = (0, 0);
     while (p < a.Length || q < b.Length)
@@ -260,8 +298,6 @@ static string WordDiff(string was, string now)
         else
             pieces.Add((-1, a[p++]));
     }
-    // A kept run of at most one word between two changes joins them ("turned on or off" -> "enabled or disabled"
-    // reads as one change, not three).
     for (var i = 0; i < pieces.Count; i++)
     {
         if (pieces[i].Side != 0)
@@ -279,27 +315,81 @@ static string WordDiff(string was, string now)
         }
         i = end - 1;
     }
-    var (text, gone, came) = (new StringBuilder(), new StringBuilder(), new StringBuilder());
+    return pieces;
+}
+
+// The pieces as git's --word-diff writes them: [-went-]{+came+}.
+static string WordDiff(string was, string now) => Render(Pieces(was, now), text => text, gone => $"[-{gone}-]", came => $"{{+{came}+}}");
+
+// The pieces as HTML: went struck through in red, came in green.
+static string HtmlDiff(string was, string now) => Render(Pieces(was, now), WebUtility.HtmlEncode,
+    gone => $"<del>{WebUtility.HtmlEncode(gone)}</del>", came => $"<ins>{WebUtility.HtmlEncode(came)}</ins>");
+
+static string Render(List<(int Side, string Text)> pieces, Func<string, string> kept, Func<string, string> went, Func<string, string> came)
+{
+    var (text, gone, come) = (new StringBuilder(), new StringBuilder(), new StringBuilder());
     void Flush()
     {
         if (gone.Length > 0)
-            text.Append("[-").Append(gone).Append("-]");
-        if (came.Length > 0)
-            text.Append("{+").Append(came).Append("+}");
-        (gone.Length, came.Length) = (0, 0);
+            text.Append(went(gone.ToString()));
+        if (come.Length > 0)
+            text.Append(came(come.ToString()));
+        (gone.Length, come.Length) = (0, 0);
     }
     foreach (var (side, piece) in pieces)
     {
         if (side == 0)
         {
             Flush();
-            text.Append(piece);
+            text.Append(kept(piece));
         }
         else
-            (side < 0 ? gone : came).Append(piece);
+            (side < 0 ? gone : come).Append(piece);
     }
     Flush();
     return text.ToString();
+}
+
+// The comparison as one page: a row per English change, its state, the English then -> now and the translation then
+// -> now side by side. Light or dark with the system.
+static string Page(string title, string counts, string file, List<Row> rows, bool hasOld)
+{
+    static string E(string? text) => WebUtility.HtmlEncode(text ?? "");
+    var body = new StringBuilder();
+    foreach (var row in rows)
+    {
+        var english = row.Kind == "changed" ? HtmlDiff(row.Was ?? "", row.Text ?? "") : row.Kind == "new" ? $"<ins>{E(row.Text)}</ins>" : $"<del>{E(row.Was)}</del>";
+        var translation = row.Current == null && row.Old == null ? "<span class=none>none</span>"
+            : hasOld && row.Old != row.Current ? HtmlDiff(row.Old ?? "", row.Current ?? "") : E(row.Current) + (hasOld ? " <span class=none>(unchanged)</span>" : "");
+        body.Append($"<tr class=\"{(row.State.StartsWith("to ") ? "todo" : "done")}\"><td><code>{E(Short(row.Key))}</code>{(row.Line > 0 ? $"<br><span class=line>{E(file)}:{row.Line}</span>" : "")}</td>"
+            + $"<td class=state>{E(row.State)}</td><td class=en>{english}</td><td class=tr>{translation}</td></tr>\n");
+    }
+    return $$"""
+<!doctype html>
+<html><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1">
+<title>{{E(title)}}</title>
+<style>
+:root { --bg: #fdfcf8; --text: #222; --muted: #777; --line: #ddd; --del: #c62828; --del-bg: #fde7e7; --ins: #1b5e20; --ins-bg: #e3f4e4; --todo: #fff6dd; }
+@media (prefers-color-scheme: dark) { :root { --bg: #16181d; --text: #e6e6e6; --muted: #9a9a9a; --line: #333; --del: #ff8a80; --del-bg: #3a1f1f; --ins: #a5d6a7; --ins-bg: #1e3321; --todo: #2c2716; } }
+body { background: var(--bg); color: var(--text); font: 15px/1.5 system-ui, sans-serif; margin: 24px; }
+h1 { font-size: 18px; margin: 0 0 4px; } p { color: var(--muted); margin: 0 0 16px; }
+table { border-collapse: collapse; width: 100%; } th, td { border-bottom: 1px solid var(--line); padding: 8px; text-align: left; vertical-align: top; }
+th { font-size: 13px; color: var(--muted); font-weight: 600; } .en, .tr { width: 40%; white-space: pre-wrap; }
+tr.todo td { background: var(--todo); } .state { white-space: nowrap; font-weight: 600; }
+del { color: var(--del); background: var(--del-bg); text-decoration: line-through; } ins { color: var(--ins); background: var(--ins-bg); text-decoration: none; }
+.line, .none { color: var(--muted); font-size: 13px; } code { font-size: 13px; }
+@media (max-width: 700px) {
+  body { margin: 16px; } tr.head { display: none; }
+  table, tbody, tr, td { display: block; } .en, .tr { width: auto; }
+  tr { border-bottom: 1px solid var(--line); padding: 6px 0; } td { border: 0; padding: 2px 8px; }
+  .en::before, .tr::before { display: block; color: var(--muted); font-size: 13px; }
+  .en::before { content: "English, then \2192  now"; } .tr::before { content: "Translation"; }
+}
+</style></head><body>
+<h1>{{E(title)}}</h1><p>{{E(counts)}}. Rows to do first, highlighted; struck-through red went, green came.</p>
+<table><tr class=head><th>Text</th><th>State</th><th>English, then &rarr; now</th><th>Translation{{(hasOld ? ", then &rarr; now" : ", now")}}</th></tr>
+{{body}}</table></body></html>
+""";
 }
 
 static string Short(string key) => key.StartsWith(Prefix) ? key[Prefix.Length..] : key;
@@ -312,6 +402,9 @@ static string Quoted(string text)
         writer.WriteStringValue(text);
     return Encoding.UTF8.GetString(buffer.ToArray());
 }
+
+// The text on one line, its line breaks and tabs as the file writes them (\n, \t).
+static string OneLine(string text) => text.Replace("\r", @"\r").Replace("\n", @"\n").Replace("\t", @"\t");
 
 static string Cell(string text) => text.Replace("|", "\\|").Replace("\n", "<br>");
 
@@ -332,7 +425,7 @@ string? Git(params string[] arguments)
     {
         started = null;
     }
-    using var git = started ?? throw new Problem("git isn't installed or isn't on the PATH: it's needed for versions (a translation with `// en:` lines and --eng <file> needs none)");
+    using var git = started ?? throw new Problem("git isn't installed or isn't on the PATH: it's needed for the English of other versions (--eng <file> needs none)");
     var output = git.StandardOutput.ReadToEnd();
     git.WaitForExit();
     return git.ExitCode == 0 ? output : null;
@@ -353,7 +446,9 @@ static string? Quietly(bool quiet, Func<string?> call)
 
 static string ScriptDir([CallerFilePath] string path = "") => Path.GetDirectoryName(path) ?? ".";
 
-record Entry(string Key, string Text, string? En);
+record Translation(Dictionary<string, string> Texts, Dictionary<string, int> Lines, int Todos, List<string> Twice);
+
+record Row(string Key, string Kind, string? Was, string? Text, string? Old, string? Current, int Line, string State);
 
 // A refusal: its message says what's wrong and what to do.
 class Problem(string message) : Exception(message);
