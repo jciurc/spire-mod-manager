@@ -225,11 +225,19 @@ static class History
             .Concat(mods.Where(m => !now.Any(n => n.Id == m.Id && n.Source == m.Source))).ToList());
     }
 
-    // Order from the snapshot, on/off as it is now (entries the snapshot doesn't have go last).
+    // Order from the snapshot, on/off as it is now (entries the snapshot doesn't have go last). Entries of one id and
+    // source (two copies of a mod) take that key's places in the snapshot in turn, not all the first one.
     static void ApplyOrder(IReadOnlyList<ModEntry> mods)
     {
-        var position = mods.Select((m, i) => (m, i)).DistinctBy(p => (p.m.Id, p.m.Source)).ToDictionary(p => (p.m.Id, p.m.Source), p => p.i);
-        Apply(CurrentMods().OrderBy(m => position.TryGetValue((m.Id, m.Source), out var i) ? i : int.MaxValue).ToList());
+        var places = new Dictionary<(string?, ModSource), Queue<int>>();
+        for (var i = 0; i < mods.Count; i++)
+        {
+            if (!places.TryGetValue((mods[i].Id, mods[i].Source), out var queue))
+                places[(mods[i].Id, mods[i].Source)] = queue = new Queue<int>();
+            queue.Enqueue(i);
+        }
+        Apply(CurrentMods().Select(m => (Mod: m, At: places.TryGetValue((m.Id, m.Source), out var queue) && queue.TryDequeue(out var i) ? i : int.MaxValue))
+            .OrderBy(p => p.At).Select(p => p.Mod).ToList());
     }
 
     static void Apply(IReadOnlyList<ModEntry> mods)

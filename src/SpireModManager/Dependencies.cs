@@ -69,20 +69,36 @@ static class Dependencies
         return needed;
     }
 
+    // Every saved entry of each (id, source), in the list's order. The game reads a mod as off if any of its entries is
+    // off, so turning a mod listed twice (two copies with one id and source) on or off sets them all.
+    public static Dictionary<(string?, ModSource), List<SettingsSaveMod>> AllSavedEntries(IEnumerable<SettingsSaveMod> saved)
+    {
+        var entries = new Dictionary<(string?, ModSource), List<SettingsSaveMod>>();
+        foreach (var entry in saved)
+        {
+            if (!entries.TryGetValue((entry.Id, entry.Source), out var list))
+                entries[(entry.Id, entry.Source)] = list = [];
+            list.Add(entry);
+        }
+        return entries;
+    }
+
     // Turns mods on or off in the saved list and ticks the page's boxes; the caller's redraw records one change. This
     // mod stays on.
     public static void Set(IEnumerable<Mod> mods, bool on, NModdingScreen? screen)
     {
         var settings = SaveManager.Instance.SettingsSave.ModSettings ??= new ModSettings();
-        var entries = SavedEntries(settings.ModList);
+        var entries = AllSavedEntries(settings.ModList);
         foreach (var mod in mods)
         {
-            if (!entries.TryGetValue((mod.manifest?.id, mod.modSource), out var entry))
+            if (!entries.TryGetValue((mod.manifest?.id, mod.modSource), out var list))
             {
-                settings.ModList.Add(entry = new SettingsSaveMod(mod));
-                entries[(mod.manifest?.id, mod.modSource)] = entry;
+                var entry = new SettingsSaveMod(mod);
+                settings.ModList.Add(entry);
+                entries[(mod.manifest?.id, mod.modSource)] = list = [entry];
             }
-            entry.IsEnabled = on || mod.manifest?.id == ModEntry.ModId;
+            foreach (var entry in list)
+                entry.IsEnabled = on || mod.manifest?.id == ModEntry.ModId;
         }
         SaveManager.Instance.SaveSettings();
         if (screen != null)

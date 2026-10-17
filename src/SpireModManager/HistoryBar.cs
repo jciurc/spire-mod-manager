@@ -96,6 +96,7 @@ static class HistoryBar
             FitChanges(changes);
             if (info.GetNodeOrNull<Control>(ViewName) is { Visible: true } view)
                 FillList(view);
+            Layout.UpdateDot(screen); // the "after a restart" line follows every change, as the main menu button does
         }
         // After undo/redo/revert, everything on screen redraws from the restored state; the right panel stays
         // on what it showed (the changes list, or the mod, refilled).
@@ -495,7 +496,7 @@ static class HistoryBar
     }
 
     // Installed mods whose place in the load order changed since launch: (mod, position then, now), 1-based.
-    static List<(Mod Mod, int Before, int After)> Moves()
+    public static List<(Mod Mod, int Before, int After)> Moves()
     {
         if (History.Loaded is not { } loaded)
             return [];

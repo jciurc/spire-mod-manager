@@ -26,7 +26,8 @@ are in [workshop/README.md](../../workshop/README.md).
 9. **After the upload:** local builds must be versioned above it, as the next version plus `-dev.N` (after
    0.1.0: `0.1.1-dev.1`), or the game loads the Workshop copy instead. With both installed the game loads the
    newer by its `SemanticVersion` (major, minor and patch first, then the `-dev.N` part), and marks the other a
-   duplicate.
+   duplicate. Raise the dev builds' default `version` in `build.cs` to match, in a pull request (after 0.1.1:
+   `0.1.2-dev.0`), so a plain local build isn't the one that loses.
 
 ## Before each upload
 
