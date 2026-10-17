@@ -5,6 +5,7 @@ using Godot;
 using MegaCrit.Sts2.Core.Localization;
 using MegaCrit.Sts2.Core.Logging;
 using MegaCrit.Sts2.Core.Modding;
+using MegaCrit.Sts2.Core.Nodes;
 using MegaCrit.Sts2.Core.Nodes.CommonUi;
 using MegaCrit.Sts2.Core.Saves;
 
@@ -12,12 +13,16 @@ namespace SpireModManager;
 
 // Crash-safe launch. Our initializer records the mods this launch loads; reaching the main menu deletes the record and
 // saves them as the last working setup. A record still there at the next launch means that launch never reached the
-// menu, and a notice offers Restore (that setup, then a relaunch) or Keep. Nothing happens on its own, and every step
-// fails open.
+// menu, and a notice offers Restore (that setup, then a relaunch) or Keep. A launch the game reports it couldn't start
+// (its startup error, StartupErrorPatch) gets the offer at once, in place of the game's dialog with only Quit: a mod that
+// stops every launch never lets the menu come. Nothing happens on its own, and every step fails open.
 static class LaunchGuard
 {
     public record Entry(string Id, ModSource Source, bool Enabled, string? Version);
-    public record Setup(DateTime At, List<Entry> Mods);
+
+    // Game: the game's version and build (none in a record from before it was kept), so a crash after a game update can
+    // say a setup from before it may not help.
+    public record Setup(DateTime At, List<Entry> Mods, string? Game = null);
 
     // One difference, for the notice: Kind is New, Enabled, Disabled, Updated (From and To are the versions) or Order.
     public enum Kind { New, Enabled, Disabled, Updated, Order }
@@ -49,7 +54,7 @@ static class LaunchGuard
         {
             var off = Dependencies.SavedOff();
             var planned = new Setup(DateTime.Now, ModManager.Mods.Where(m => m.manifest?.id != null)
-                .Select(m => new Entry(m.manifest!.id!, m.modSource, !off.Contains((m.manifest.id, m.modSource)), m.manifest.version)).ToList());
+                .Select(m => new Entry(m.manifest!.id!, m.modSource, !off.Contains((m.manifest.id, m.modSource)), m.manifest.version)).ToList(), GameNow());
             var dir = Store.Dir;
             (_failed, _working) = Begin(dir, planned);
             (Dir, _planned) = (dir, planned);
@@ -178,22 +183,9 @@ static class LaunchGuard
     {
         try
         {
-            static string Escaped(string text) => text.Replace("[", "[lb]");
-            string Name(string id) => Escaped(ModManager.Mods.FirstOrDefault(m => m.manifest?.id == id)?.manifest?.name ?? id);
-            var lines = changes.Take(changes.Count > LinesShown ? LinesShown - 1 : LinesShown).Select(c => "  •  " + c.Kind switch
-            {
-                Kind.New => Menus.Format("SPIRE_MOD_MANAGER.LAUNCH_NEW", ("mod", Name(c.Id))),
-                Kind.Enabled => Menus.Format("SPIRE_MOD_MANAGER.LAUNCH_ENABLED", ("mod", Name(c.Id))),
-                Kind.Disabled => Menus.Format("SPIRE_MOD_MANAGER.LAUNCH_DISABLED", ("mod", Name(c.Id))),
-                Kind.Updated => Menus.Format("SPIRE_MOD_MANAGER.LAUNCH_UPDATED", ("mod", Name(c.Id)),
-                    ("from", Escaped(c.From ?? "")), ("to", Escaped(c.To ?? ""))),
-                _ => Menus.Text("SPIRE_MOD_MANAGER.LAUNCH_ORDER"),
-            }).ToList();
-            if (changes.Count > LinesShown)
-                lines.Add("  •  " + Menus.Format("SPIRE_MOD_MANAGER.LAUNCH_MORE", ("count", Menus.Number(changes.Count - LinesShown + 1))));
             var body = new LocString("settings_ui", "SPIRE_MOD_MANAGER.LAUNCH_FAILED_BODY");
-            body.Add("date", $"{ModDetails.Date(working.At)}, {working.At.ToString("HH:mm", CultureInfo.InvariantCulture)}");
-            body.Add("changes", string.Join("\n", lines));
+            body.Add("date", When(working));
+            body.Add("changes", string.Join("\n", Lines(changes)));
             if (await Menus.Confirm(new LocString("settings_ui", "SPIRE_MOD_MANAGER.LAUNCH_FAILED_TITLE"), body,
                     new LocString("settings_ui", "SPIRE_MOD_MANAGER.LAUNCH_KEEP"), new LocString("settings_ui", "SPIRE_MOD_MANAGER.LAUNCH_RESTORE")))
                 Restore(working.Mods, menu);
@@ -204,10 +196,39 @@ static class LaunchGuard
         }
     }
 
+    static string When(Setup setup) => $"{ModDetails.Date(setup.At)}, {setup.At.ToString("HH:mm", CultureInfo.InvariantCulture)}";
+
+    static string Escaped(string text) => text.Replace("[", "[lb]");
+
+    static string Name(string id) => Escaped(ModManager.Mods.FirstOrDefault(m => m.manifest?.id == id)?.manifest?.name ?? id);
+
+    // The changes as the popups list them, a line each, the last ones counted in one line if there are many.
+    static List<string> Lines(List<Change> changes)
+    {
+        var lines = changes.Take(changes.Count > LinesShown ? LinesShown - 1 : LinesShown).Select(c => "  •  " + c.Kind switch
+        {
+            Kind.New => Menus.Format("SPIRE_MOD_MANAGER.LAUNCH_NEW", ("mod", Name(c.Id))),
+            Kind.Enabled => Menus.Format("SPIRE_MOD_MANAGER.LAUNCH_ENABLED", ("mod", Name(c.Id))),
+            Kind.Disabled => Menus.Format("SPIRE_MOD_MANAGER.LAUNCH_DISABLED", ("mod", Name(c.Id))),
+            Kind.Updated => Menus.Format("SPIRE_MOD_MANAGER.LAUNCH_UPDATED", ("mod", Name(c.Id)),
+                ("from", Escaped(c.From ?? "")), ("to", Escaped(c.To ?? ""))),
+            _ => Menus.Text("SPIRE_MOD_MANAGER.LAUNCH_ORDER"),
+        }).ToList();
+        if (changes.Count > LinesShown)
+            lines.Add("  •  " + Menus.Format("SPIRE_MOD_MANAGER.LAUNCH_MORE", ("count", Menus.Number(changes.Count - LinesShown + 1))));
+        return lines;
+    }
+
     // The working setup's mod list back (order and on/off), mods installed since then off (a mod the list doesn't name
     // loads), ours always on; then a relaunch through the relaunch check (owner: the main menu), which catches a mod
     // left on that now needs one installed since (its dialog offers the fix).
     public static void Restore(IReadOnlyList<Entry> working, Node owner)
+    {
+        WriteList(working);
+        RelaunchCheck.Relaunch(owner);
+    }
+
+    static void WriteList(IReadOnlyList<Entry> working)
     {
         var settings = SaveManager.Instance.SettingsSave.ModSettings ??= new ModSettings();
         var entries = working.Select(m => new SettingsSaveMod { Id = m.Id, Source = m.Source, IsEnabled = m.Enabled || m.Id == ModEntry.ModId }).ToList();
@@ -217,7 +238,73 @@ static class LaunchGuard
         settings.ModList.AddRange(entries);
         SaveManager.Instance.SaveSettings();
         Log.Info($"[{ModEntry.ModId}] Restored the mod list of the last launch that worked");
-        RelaunchCheck.Relaunch(owner);
+    }
+
+    // The game couldn't start: what this launch changed since the last working setup, to offer that setup back, and
+    // whether the game itself changed since (then the old setup may not help). Null when there's nothing to offer: no
+    // working setup, the same mods, or only updates (Restore can't undo an update).
+    public static (Setup Working, List<Change> Changes, bool GameChanged)? CrashOffer() => CrashOffer(_planned, _working);
+
+    public static (Setup Working, List<Change> Changes, bool GameChanged)? CrashOffer(Setup? planned, Setup? working)
+    {
+        if (planned == null || working == null)
+            return null;
+        var changes = Changes(planned.Mods, working.Mods);
+        if (!changes.Any(c => c.Kind != Kind.Updated))
+            return null;
+        return (working, changes, working.Game != null && planned.Game != null && working.Game != planned.Game);
+    }
+
+    // In place of the game's startup error dialog (StartupErrorPatch): the changes since the last setup that worked, and
+    // Restore and restart or Quit. The game's own setup for its dialog first (TryErrorInit), and Mod Doctor's suspects
+    // if it found any. If anything fails before the choice, the game's own dialog shows instead.
+    public static async Task AskAfterCrash(NGame game, (Setup Working, List<Change> Changes, bool GameChanged) offer)
+    {
+        Log.Error($"[{ModEntry.ModId}] The game couldn't start; offering the mods of the last launch that worked ({When(offer.Working)})");
+        bool restore;
+        try
+        {
+            if (HarmonyLib.AccessTools.Method(typeof(NGame), "TryErrorInit")?.Invoke(game, null) is Task init)
+                await init;
+            var lines = Lines(offer.Changes);
+            if (offer.GameChanged)
+                lines.Add("\n" + Menus.Text("SPIRE_MOD_MANAGER.CRASH_GAME_CHANGED"));
+            if (await ModDoctor.Suspects(game) is { Count: > 0 } suspects)
+                lines.Add("\n" + Menus.Format("SPIRE_MOD_MANAGER.CRASH_SUSPECTS", ("mods", string.Join(", ", suspects.Select(Name)))));
+            var body = new LocString("settings_ui", "SPIRE_MOD_MANAGER.CRASH_BODY");
+            body.Add("date", When(offer.Working));
+            body.Add("changes", string.Join("\n", lines));
+            restore = await Menus.Confirm(new LocString("settings_ui", "SPIRE_MOD_MANAGER.CRASH_TITLE"), body,
+                new LocString("main_menu_ui", "QUIT"), new LocString("settings_ui", "SPIRE_MOD_MANAGER.CRASH_RESTORE"));
+        }
+        catch (Exception e)
+        {
+            Log.Error($"[{ModEntry.ModId}] Could not offer the last working mods, so the game's own dialog shows: {e}");
+            await StartupErrorPatch.GamesDialog(game);
+            return;
+        }
+        if (!restore)
+        {
+            ModEntry.Quit();
+            return;
+        }
+        // The game didn't start: only its settings (the mod list) are written, then a plain quit and a relaunch, as its
+        // own dialog quits (NGame.Quit would save the profile and progress of a half-started game).
+        WriteList(offer.Working.Mods);
+        ModEntry.Relaunch(plain: true);
+    }
+
+    // The game's version and build, or null if it doesn't say.
+    static string? GameNow()
+    {
+        try
+        {
+            return MegaCrit.Sts2.Core.Debug.ReleaseInfoManager.Instance.ReleaseInfo is { } info ? $"{info.Version} ({info.Commit})" : null;
+        }
+        catch (Exception)
+        {
+            return null;
+        }
     }
 
     // A record or working setup from its file, or null. A mod without an id or a known source, or a missing time, makes

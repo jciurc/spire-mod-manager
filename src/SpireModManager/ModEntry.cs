@@ -209,14 +209,16 @@ public static class ModEntry
 #endif
 
 #if DEVTOOLS
-    // Self-test: Relaunch calls it instead, so the test run doesn't end.
-    public static Action? TestRelaunch;
+    // Self-test: Relaunch and Quit call them instead, so the test run doesn't end.
+    public static Action? TestRelaunch, TestQuit;
 #endif
 
     // Starts a new copy of the game with the same arguments, then quits through the game's own path
     // so settings (mod toggles) and profile data are saved first. The new process inherits Steam's
     // environment (SteamAppId), so it attaches to the running Steam client without a Steam relaunch.
-    public static void Relaunch()
+    // plain: a game that didn't start (its startup error) quits without the game's path, which would save the profile
+    // and progress of a half-started game; whoever calls it saved the settings already.
+    public static void Relaunch(bool plain = false)
     {
 #if DEVTOOLS
         if (TestRelaunch is { } test)
@@ -228,10 +230,23 @@ public static class ModEntry
         var args = RelaunchArgs();
         Log.Info($"[{ModId}] Relaunching with args: {string.Join(' ', args)}");
         OS.SetRestartOnExit(true, args);
-        if (NGame.Instance is { } game)
+        if (!plain && NGame.Instance is { } game)
             game.Quit();
         else
             ((SceneTree)Engine.GetMainLoop()).Quit();
+    }
+
+    // A plain quit, as the game's startup error dialog quits.
+    public static void Quit()
+    {
+#if DEVTOOLS
+        if (TestQuit is { } test)
+        {
+            test();
+            return;
+        }
+#endif
+        ((SceneTree)Engine.GetMainLoop()).Quit();
     }
 
     // This session's arguments plus the current window mode, so the new copy opens the way this one looks

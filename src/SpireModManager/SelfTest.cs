@@ -98,6 +98,7 @@ static class SelfTest
             TestBetterModMenuImport(outDir);
             await TestMenuButtonRelaunch(menu, outDir); // before the Modding page opens: the check's fixes without it
             await TestLaunchGuard(menu, outDir);
+            await TestCrashOffer(menu);
             await TestTranslationsFolder(menu);
             await TestTranslations(menu);
             await TestPrewarm(menu);
@@ -1434,6 +1435,80 @@ static class SelfTest
                 settings.ModList.AddRange(listWas);
                 SaveManager.Instance.SaveSettings();
             }
+        }
+    }
+
+    // The game's startup error (StartupErrorPatch): LaunchGuard.CrashOffer offers the last working setup only when this
+    // launch changed mods since it, beyond updates, and says when the game changed too. The dialog in place of the
+    // game's: its title, the changes, Quit (nothing written) and Restore and restart (the working list, then a plain
+    // relaunch). Quit and the relaunch are caught here, and the saved list is put back.
+    static async Task TestCrashOffer(NMainMenu menu)
+    {
+        var now = DateTime.Now;
+        static LaunchGuard.Entry Mod(string id, bool on, string? version = "1.0") => new(id, ModSource.ModsDirectory, on, version);
+        LaunchGuard.Setup Setup(List<LaunchGuard.Entry> mods, string game = "0.111.0 (abc)") => new(now, mods, game);
+        List<LaunchGuard.Entry> working = [Mod(ModEntry.ModId, true), Mod("SmmTestFixes", true), Mod("SmmTestLib", true)];
+        var none = LaunchGuard.CrashOffer(Setup(working), null);
+        var same = LaunchGuard.CrashOffer(Setup(working), Setup(working));
+        var updated = LaunchGuard.CrashOffer(Setup([Mod(ModEntry.ModId, true), Mod("SmmTestFixes", true, "1.1"), Mod("SmmTestLib", true)]), Setup(working));
+        var added = LaunchGuard.CrashOffer(Setup([.. working, Mod("SmmTestUi", true)]), Setup(working));
+        var newGame = LaunchGuard.CrashOffer(Setup([.. working, Mod("SmmTestUi", true)], "0.112.0 (def)"), Setup(working));
+        Check("after a failed start: nothing to offer without a working setup, with the same mods or with only an update; "
+            + "a mod new since: offered; a game update since: said",
+            none == null && same == null && updated == null && added is { GameChanged: false } offered
+            && offered.Changes.Any(c => c.Id == "SmmTestUi" && c.Kind == LaunchGuard.Kind.New) && newGame is { GameChanged: true },
+            $"none {none != null}, same {same != null}, updated {updated != null}, added {added?.Changes.Count}, new game {newGame?.GameChanged}");
+
+        var settings = SaveManager.Instance.SettingsSave.ModSettings;
+        if (settings == null || NGame.Instance is not { } game || Dependencies.Find("SmmTestFixes") is not { } fixes || !Dependencies.IsOn(fixes))
+        {
+            Results.Add("SKIP the dialog after a failed start: no mod list, game, or Test Fixes on");
+            return;
+        }
+        var listWas = settings.ModList.Select(e => new SettingsSaveMod { Id = e.Id, Source = e.Source, IsEnabled = e.IsEnabled }).ToList();
+        // This launch as it is; the working setup the same but with Test Fixes off (so it was enabled since).
+        var current = History.CurrentMods().Select(m => new LaunchGuard.Entry(m.Id, m.Source, m.Enabled, null)).ToList();
+        var before = current.Select(m => m.Id == "SmmTestFixes" ? m with { Enabled = false } : m).ToList();
+        if (LaunchGuard.CrashOffer(new(now, current), new(now.AddHours(-1), before)) is not { } offer)
+        {
+            Check("the dialog after a failed start: an offer to show", false);
+            return;
+        }
+        var (quits, relaunches) = (0, 0);
+        ModEntry.TestQuit = () => quits++;
+        ModEntry.TestRelaunch = () => relaunches++;
+        // The popup's button, by its node and signal names (the same in every game version so far).
+        static void Press(string button)
+        {
+            if (NModalContainer.Instance?.OpenModal is Node popup && popup.GetNodeOrNull($"VerticalPopup/{button}") is { } found)
+                found.EmitSignal("Released", found);
+        }
+        try
+        {
+            var asked = LaunchGuard.AskAfterCrash(game, offer);
+            await Wait(menu, 0.8);
+            var texts = string.Join(" | ", PopupTexts());
+            CheckMark("dialog after a failed start", NModalContainer.Instance?.OpenModal as Control);
+            Press("NoButton");
+            await Wait(menu, 0.3);
+            Check("the dialog after a failed start: its title, what changed, Quit and Restore and restart; Quit writes nothing and quits",
+                asked.IsCompleted && texts.Contains("The game couldn't start") && texts.Contains("Test Fixes") && texts.Contains("Restore and restart")
+                && quits == 1 && relaunches == 0 && Dependencies.IsOn(fixes), $"{texts}; quits {quits}, relaunches {relaunches}");
+            asked = LaunchGuard.AskAfterCrash(game, offer);
+            await Wait(menu, 0.8);
+            Press("YesButton");
+            await Wait(menu, 0.3);
+            Check("the dialog after a failed start: Restore and restart writes the working list (Test Fixes off again), then relaunches",
+                asked.IsCompleted && relaunches == 1 && quits == 1 && !Dependencies.IsOn(fixes), $"quits {quits}, relaunches {relaunches}, Test Fixes on {Dependencies.IsOn(fixes)}");
+        }
+        finally
+        {
+            ModEntry.TestQuit = null;
+            ModEntry.TestRelaunch = null;
+            NModalContainer.Instance?.Clear();
+            settings.ModList.Clear();
+            settings.ModList.AddRange(listWas);
+            SaveManager.Instance.SaveSettings();
         }
     }
 
