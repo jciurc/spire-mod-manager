@@ -783,6 +783,13 @@ static class SelfTest
         OursHold("main list", 175);
         var toggles = new[] { "SpireModManagerViewToggle", "SpireModManagerLoadOrderToggle" }.Select(name => screen.GetNode<Control>(name)).ToList();
         Check("the button to its page still says Vanilla List", toggles[0].GetNode<Label>("Visuals/Label").Text == Menus.Text("SPIRE_MOD_MANAGER.VANILLA_VIEW"));
+        // Where it leads, in its tip: the game's own page (as Better Mod Menu shows it, with that loaded), and back.
+        var vanillaTip = Hover.TipOf(toggles[0]);
+        var backTip = "";
+        await WithVanillaView(screen, menu, () => (backTip = Hover.TipOf(screen.GetNode<Control>("SpireModManagerViewToggle"))) is var _);
+        Check("the Vanilla List button's tip says it's the game's own page (without Spire Mod Manager), and on it, the way back",
+            vanillaTip == Menus.Text(Bmm.Present ? "SPIRE_MOD_MANAGER.VANILLA_VIEW_TIP_BMM" : "SPIRE_MOD_MANAGER.VANILLA_VIEW_TIP")
+            && backTip == Menus.Text("SPIRE_MOD_MANAGER.CATEGORY_VIEW_TIP"), $"{vanillaTip} | {backTip}");
         var bannerBox = border.GetNode<Control>(LoadOrder.ManagersName).GetGlobalRect();
         var searchBox = border.GetNode<Control>("SpireModManagerSearch").GetGlobalRect();
         var pendingBox = screen.GetNode<Control>("%PendingChangesLabel").GetGlobalRect();
@@ -921,8 +928,8 @@ static class SelfTest
         Check("main menu button reads the active profile and the profile bar's count", MenuButtonText(menu) == MenuButtonExpected(),
             $"{MenuButtonText(menu)} vs {MenuButtonExpected()}");
         Check("main menu button: hovering it says what it opens, and names the profile in gold",
-            Hover.TipOf(button) == $"View and manage installed mods. Currently using profile [gold]{Profiles.Active?.Name}[/gold]"
-            && MenuButton.Tip("[b]Odd") == "View and manage installed mods. Currently using profile [gold][lb]b]Odd[/gold]", Hover.TipOf(button));
+            Hover.TipOf(button) == $"Spire Mod Manager: view and manage installed mods. Currently using profile [gold]{Profiles.Active?.Name}[/gold]"
+            && MenuButton.Tip("[b]Odd") == "Spire Mod Manager: view and manage installed mods. Currently using profile [gold][lb]b]Odd[/gold]", Hover.TipOf(button));
         var screen = button.GetViewportRect();
         Check("main menu button: as wide as its words, whole on screen", MenuButtonMisfit(menu) == null, MenuButtonMisfit(menu) ?? "");
         // The game's hover carets reach 54 from the text either side (NMainMenu.MainMenuButtonFocused): inside the button.
@@ -1025,7 +1032,7 @@ static class SelfTest
             return Task.CompletedTask;
         }, seconds: Hover.SlowDelay + 0.2);
         Check("main menu button: its card waits a second, then names the profile in gold", early == "" && Hover.SlowDelay == 1.0
-            && late.Text == $"View and manage installed mods. Currently using profile {Profiles.Active?.Name}"
+            && late.Text == $"Spire Mod Manager: view and manage installed mods. Currently using profile {Profiles.Active?.Name}"
             && !card.Contains("[gold]") && card.Contains("[color=#") && card.Contains($"]{Profiles.Active?.Name}[/color]"), $"early \"{early}\", then \"{late.Text}\"");
     }
 
@@ -2879,7 +2886,7 @@ static class SelfTest
                 var shown = panel.GetNode<RichTextLabel>("ModDescription").GetParsedText();
                 var card = ModDetails.Card(erring); // the row's hover card shows the same lines (as BBCode: "[lb]" is a "[")
                 Check("a game load error shows in the panel and the row's card as text, without the game's colour tags ([red])",
-                    shown.Contains("only supports Steam branch public") && !shown.Contains("[red]") && !shown.Contains("[/red]")
+                    shown.Contains("From the game: Mod ") && shown.Contains("only supports Steam branch public") && !shown.Contains("[red]") && !shown.Contains("[/red]")
                     && card.Contains("only supports Steam branch public") && !card.Contains("[lb]red]") && !card.Contains("[lb]/red]"),
                     $"{shown.Split('\n')[0]} | card: {card.Split('\n').FirstOrDefault(l => l.Contains("branch"))}");
             }
@@ -5368,8 +5375,11 @@ static class SelfTest
 
         other.CustomMinimumSize = new Vector2(560, 600);
         where = await Refill();
-        Check("another mod's panel with no room for it: out of sight, our fields right under the details", OutOfSight()
-            && Math.Abs(yours.OffsetTop - details.OffsetBottom - ModDetails.FieldsGap) < 1, where);
+        var parkedLine = info.GetNodeOrNull<Label>(ModDetails.OthersName);
+        Check("another mod's panel with no room for it: out of sight, a line under the details says so, our fields right under it", OutOfSight()
+            && parkedLine is { Visible: true } && parkedLine.Text == "1 more from other mods: see Vanilla List"
+            && Math.Abs(parkedLine.OffsetTop - details.OffsetBottom - ModDetails.FieldsGap) < 1
+            && Math.Abs(yours.OffsetTop - parkedLine.OffsetBottom - ModDetails.FieldsGap) < 1, $"{where}; line \"{parkedLine?.Text}\" shown {parkedLine?.Visible}");
         var inVanilla = "";
         Check("another mod's panel in Vanilla View: back where its mod put it, shown, in keyboard reach", await WithVanillaView(screen, menu, () =>
         {
@@ -5416,6 +5426,8 @@ static class SelfTest
         await Wait(menu, 0.2);
         Check("another mod's panel behind the changes list: out of sight and keyboard reach, shown as far as its mod can tell; its overlay too",
             HistoryBar.ListOpen(info) && other.Visible && Behind(other) && overlay.Visible && Behind(overlay), Seen());
+        ModDetails.PlaceFields(info); // as a resize does while the list is open
+        Check("behind the changes list: no \"more from other mods\" line over it", info.GetNodeOrNull<Control>(ModDetails.OthersName) is not { Visible: true });
         other.Visible = false; // its mod hides it
         HistoryBar.CloseList(info);
         await Wait(menu, 0.2);

@@ -50,6 +50,7 @@ static class CategoryList
             Selection.Clear(content); // a picked set belongs to the view it was picked in
             Store.Save();
             Label(vanilla, data.VanillaView ? "SPIRE_MOD_MANAGER.CATEGORY_VIEW" : "SPIRE_MOD_MANAGER.VANILLA_VIEW");
+            VanillaTip(vanilla);
             Label(loadOrder, data.LoadOrderView ? "SPIRE_MOD_MANAGER.BACK" : "SPIRE_MOD_MANAGER.LOAD_ORDER");
             Apply(content);
             Layout.Apply(screen);
@@ -82,9 +83,18 @@ static class CategoryList
         loadOrder.Name = "SpireModManagerLoadOrderToggle";
         // Labels for the saved view.
         Label(vanilla, Store.Data.VanillaView ? "SPIRE_MOD_MANAGER.CATEGORY_VIEW" : "SPIRE_MOD_MANAGER.VANILLA_VIEW");
+        VanillaTip(vanilla);
         Label(loadOrder, Store.Data.LoadOrderView ? "SPIRE_MOD_MANAGER.BACK" : "SPIRE_MOD_MANAGER.LOAD_ORDER");
 
         Apply(content);
+    }
+
+    // What the view switch leads to: the game's own page (as Better Mod Menu shows it, with that loaded), or back to ours.
+    static void VanillaTip(Control? toggle)
+    {
+        if (toggle != null)
+            Hover.Tip(toggle, Menus.Text(Store.Data.VanillaView ? "SPIRE_MOD_MANAGER.CATEGORY_VIEW_TIP"
+                : Bmm.Present ? "SPIRE_MOD_MANAGER.VANILLA_VIEW_TIP_BMM" : "SPIRE_MOD_MANAGER.VANILLA_VIEW_TIP"));
     }
 
     static void Label(Control? button, string key)

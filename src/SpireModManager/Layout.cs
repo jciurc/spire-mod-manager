@@ -406,6 +406,9 @@ static class Layout
             (part.OffsetLeft + dx, part.OffsetTop + dy, part.OffsetRight + dx, part.OffsetBottom + dy);
     }
 
+    // How many of other mods' parts are out of sight for lack of room (not the ones new this frame, still settling).
+    public static int Parked(Control info) => OtherParts(info).Count(p => p.HasMeta(ParkedMeta));
+
     // Out of sight for lack of room: far above the panel and out of keyboard reach. Never hidden, so its mod's own
     // Visible still holds when room comes back.
     static void Park(Control part)
