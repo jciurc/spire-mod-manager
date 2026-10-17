@@ -2114,7 +2114,8 @@ static class SelfTest
                 && taken.GetNode<Label>("NameWarning").Text.Length > 0);
             taken.EmitSignal(Control.SignalName.FocusExited);
             await Wait(menu, 0.3);
-            Check("clicking away keeps the old name", category.Name == "Renamed" && Header(content, "Renamed") != null);
+            Check("clicking away keeps the old name, the count shown again", category.Name == "Renamed"
+                && Header(content, "Renamed") is Node kept && kept.GetNodeOrNull<Control>("Count") is { Visible: true });
         }
 
         Categories.Move(category, -1);
