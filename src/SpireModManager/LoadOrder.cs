@@ -313,7 +313,7 @@ static class LoadOrder
         // the info panel.
         var stops = broken.SelectMany(b => b.Needs.Select(d => d.Dep).OfType<Mod>().Prepend(b.Mod)).Distinct().ToList();
         var show = Menus.SmallButton(Menus.Text("SPIRE_MOD_MANAGER.SHOW_PROBLEM"),
-            () => GoTo(content, stops[(stops.IndexOf(CategoryList.Selected!) + 1) % stops.Count]), name: "ShowProblemButton");
+            () => GoTo(content, Next(stops)), name: "ShowProblemButton");
         Hover.Tip(show, Menus.Text("SPIRE_MOD_MANAGER.SHOW_PROBLEM_TIP"));
         List<Control> buttons = [show];
         var needed = Dependencies.NeededOff(mods);
@@ -368,7 +368,7 @@ static class LoadOrder
         {
             var managers = Bmm.TickedManagers().OrderBy(m => m.manifest?.id == ModEntry.ModId).ToList();
             if (managers.Count > 0)
-                GoTo(content, managers[(managers.IndexOf(CategoryList.Selected!) + 1) % managers.Count]);
+                GoTo(content, Next(managers));
         }, name: "ShowManagersButton");
         Hover.Tip(show, Menus.Text("SPIRE_MOD_MANAGER.SHOW_PROBLEM_TIP")); // the same words as the other banner's: no manager named
         var dismiss = Menus.SmallButton(Menus.Text("SPIRE_MOD_MANAGER.DISMISS_MANAGERS"), () =>
@@ -445,6 +445,11 @@ static class LoadOrder
         CategoryList.Reveal(content, mod.manifest?.id ?? "", flash: true);
         CategoryList.Select(content, row);
     }
+
+    // A Show button's next stop: the mod after the one in the info panel, round to the first at the end (and the first
+    // when that mod isn't one of them, or no mod is there).
+    static Mod Next(List<Mod> stops) =>
+        stops[((CategoryList.Selected is { } selected ? stops.IndexOf(selected) : -1) + 1) % stops.Count];
 
     // A banner under the search box: its text, then its buttons; red unless color says otherwise. card: what hovering
     // the text shows. name, textName: the node names (the page's warning by default).
