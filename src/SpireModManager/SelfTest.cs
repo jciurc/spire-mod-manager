@@ -1485,15 +1485,6 @@ static class SelfTest
         }
     }
 
-    // Drop-in translations (Translations) in German, which has no packed translation, so our text is all English there
-    // until now: a file in the translations folder, read as the game switches language (its own switch, as in its
-    // settings, without the menu rebuild). Its text shows, in the game's table and on the main menu button's menu, and its
-    // {count} takes German numbers; a key it leaves out, an empty text, a number, a broken placeholder and one English
-    // doesn't fill in (renamed or added) show in English, and a key English doesn't have is left out.
-    // Back in English, English. A file that isn't JSON, isn't an object or is over 1 MB changes nothing and throws
-    // nothing. One saved as deu.json.txt (a browser's "Save as", the .txt hidden) is read. The file is removed and the
-    // language set back afterwards.
-
     // The page's text shaped ahead on the main menu (Prewarm): only texts with a letter Kreon lacks (a Chinese alias
     // here; the fixtures' own text is Latin), each once, and the pass gets to the end.
     static async Task TestPrewarm(NMainMenu menu)
@@ -1515,6 +1506,15 @@ static class SelfTest
             Store.EditMod("SmmTestContent", info => info.Alias = before);
         }
     }
+
+    // Drop-in translations (Translations) in German, which has no packed translation, so our text is all English there
+    // until now: a file in the translations folder, read as the game switches language (its own switch, as in its
+    // settings, without the menu rebuild). Its text shows, in the game's table and on the main menu button's menu, and its
+    // {count} takes German numbers; a key it leaves out, an empty text, a number, a broken placeholder and one English
+    // doesn't fill in (renamed or added) show in English, and a key English doesn't have is left out.
+    // Back in English, English. A file that isn't JSON, isn't an object or is over 1 MB changes nothing and throws
+    // nothing. One saved as deu.json.txt (a browser's "Save as", the .txt hidden) is read. The file is removed and the
+    // language set back afterwards.
     static async Task TestTranslations(NMainMenu menu)
     {
         var start = LocManager.Instance.Language;

@@ -24,7 +24,20 @@ static class Prewarm
     public static double SlowestMs { get; private set; } // the longest frame's shaping: the worst hitch on the menu
 #endif
 
+    // Never throws: a pass that can't start leaves the page to shape its text as it opens.
     public static void Start(Node menu)
+    {
+        try
+        {
+            Schedule(menu);
+        }
+        catch (Exception e)
+        {
+            Log.Warn($"[{ModEntry.ModId}] Could not start shaping the Modding page's text ahead (it's shaped when the page opens): {e.Message}");
+        }
+    }
+
+    static void Schedule(Node menu)
     {
         var pass = ++_pass;
 #if DEVTOOLS

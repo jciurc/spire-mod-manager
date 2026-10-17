@@ -87,7 +87,6 @@ static class ModdingScreenPatch
     [HarmonyPriority(Priority.First)]
     static void Postfix(NModdingScreen __instance)
     {
-        SetupCheckPatch.Built(); // our own calls to the game's check run from here on
         // A patch the page needs didn't apply: the game's page, with one line saying so.
         try
         {
@@ -267,14 +266,12 @@ static class SetupCheckPatch
     [HarmonyPrefix, HarmonyPatch(nameof(NModdingScreen._Ready))]
     static void Building() => _building = true;
 
-    // Over before any _Ready postfix runs its own calls (ours clears it too: Built); the finalizer, if _Ready throws.
-    [HarmonyPostfix, HarmonyPatch(nameof(NModdingScreen._Ready)), HarmonyPriority(Priority.First)]
+    // Over before any other _Ready postfix runs (theirs and ours may call the check); the finalizer, if _Ready throws.
+    [HarmonyPostfix, HarmonyPatch(nameof(NModdingScreen._Ready)), HarmonyPriority(Priority.First + 1)]
     static void Ready() => _building = false;
 
     [HarmonyFinalizer, HarmonyPatch(nameof(NModdingScreen._Ready))]
     static void Finished() => _building = false;
-
-    public static void Built() => _building = false;
 
     [HarmonyPrefix, HarmonyPatch(nameof(NModdingScreen.OnModEnabledOrDisabled))]
     static bool Check() => !_building;
