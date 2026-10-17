@@ -26,11 +26,13 @@ static class BranchErrors
     public static int DropFromOffMods(IEnumerable<Mod> mods)
     {
         var dropped = new List<string>();
-        foreach (var mod in mods.Where(m => m.state == ModLoadState.Disabled && m.errors != null))
+        foreach (var mod in mods)
         {
-            if (mod.errors!.RemoveAll(e => e.LocTable == Table && e.LocEntryKey == Key) > 0)
+            if (mod.state != ModLoadState.Disabled || mod.errors is not { } errors)
+                continue;
+            if (errors.RemoveAll(e => e.LocTable == Table && e.LocEntryKey == Key) > 0)
                 dropped.Add(mod.manifest?.id ?? "?");
-            if (mod.errors.Count == 0)
+            if (errors.Count == 0)
                 mod.errors = null;
         }
         if (dropped.Count > 0)
