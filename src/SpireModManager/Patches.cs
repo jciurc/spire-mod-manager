@@ -87,6 +87,7 @@ static class ModdingScreenPatch
     [HarmonyPriority(Priority.First)]
     static void Postfix(NModdingScreen __instance)
     {
+        SetupCheckPatch.Built(); // our own calls to the game's check run from here on
         // A patch the page needs didn't apply: the game's page, with one line saying so.
         try
         {
@@ -253,6 +254,30 @@ static class ModToggledPatch
             Log.Error($"[{ModEntry.ModId}] Could not update the active profile: {e}");
         }
     }
+}
+
+// The game checks every mod for a pending change after adding each row in its page's _Ready (the saved list walked per
+// mod, per row: ~25-90 ms with 250 mods), then hides the line at the end of _Ready anyway. The checks are skipped while
+// the game's _Ready runs; the patches on the check (ours, Better Mod Menu's) still run each time, as before.
+[HarmonyPatch(typeof(NModdingScreen))]
+static class SetupCheckPatch
+{
+    static bool _building;
+
+    [HarmonyPrefix, HarmonyPatch(nameof(NModdingScreen._Ready))]
+    static void Building() => _building = true;
+
+    // Over before any _Ready postfix runs its own calls (ours clears it too: Built); the finalizer, if _Ready throws.
+    [HarmonyPostfix, HarmonyPatch(nameof(NModdingScreen._Ready)), HarmonyPriority(Priority.First)]
+    static void Ready() => _building = false;
+
+    [HarmonyFinalizer, HarmonyPatch(nameof(NModdingScreen._Ready))]
+    static void Finished() => _building = false;
+
+    public static void Built() => _building = false;
+
+    [HarmonyPrefix, HarmonyPatch(nameof(NModdingScreen.OnModEnabledOrDisabled))]
+    static bool Check() => !_building;
 }
 
 // A mod subscribed while the page is open: once the game adds its row, a redraw puts it in its category (keep: not
