@@ -236,10 +236,10 @@ static class Hover
             void Check()
             {
                 // Holding Alt: the whole text, in a wider card.
-                if (cut && text != null && Input.IsKeyPressed(Key.Alt) != expanded)
+                if (cut && full is { } whole && text != null && Input.IsKeyPressed(Key.Alt) != expanded)
                 {
                     expanded = !expanded;
-                    text.Text = expanded ? full! : shortText;
+                    text.Text = expanded ? whole : shortText;
                     text.CustomMinimumSize = new Vector2(expanded ? FullWidth : width, 0);
                     // Laid out at the new width first, then measured (after the panel has sorted its child).
                     text.Size = new Vector2(expanded ? FullWidth : width, 0);

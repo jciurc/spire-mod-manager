@@ -264,11 +264,13 @@ static class ProfileShare
         copy = AddButton(buttons, "SPIRE_MOD_MANAGER.COPY", () =>
         {
             DisplayServer.ClipboardSet(csv);
-            copy!.Text = Menus.Text("SPIRE_MOD_MANAGER.COPIED");
-            copy.GetTree().CreateTimer(1.5).Timeout += () =>
+            if (copy is not { } button) // set as AddButton returns, before any press
+                return;
+            button.Text = Menus.Text("SPIRE_MOD_MANAGER.COPIED");
+            button.GetTree().CreateTimer(1.5).Timeout += () =>
             {
-                if (GodotObject.IsInstanceValid(copy))
-                    copy.Text = Menus.Text("SPIRE_MOD_MANAGER.COPY");
+                if (GodotObject.IsInstanceValid(button))
+                    button.Text = Menus.Text("SPIRE_MOD_MANAGER.COPY");
             };
         }, "CopyButton");
         Spacer(buttons);
