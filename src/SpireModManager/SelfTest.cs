@@ -3178,6 +3178,28 @@ static class SelfTest
         Check("two copies of one mod: moved back, nothing moved for Changes or the menu, and the list is as long as before",
             list.Count == count && Entries() == entries && HistoryBar.Moves().Count == 0 && !LoadOrder.OrderChanged && LineFollows(),
             $"{list.Count} entries (was {count}), moved {HistoryBar.Moves().Count}, order changed {LoadOrder.OrderChanged}");
+        // A click on one copy's box (the game's own handler sets every entry of the id): the other copy's box follows, and
+        // Changes and the counts name the mod once. Then back, from the other copy.
+        var twinRows = Rows().Where(r => r.Mod != null && twins.Contains(r.Mod)).ToList();
+        if (twinRows.Count == 2)
+        {
+            var name = twins.First().manifest?.name ?? id ?? "";
+            bool Ticked(NModMenuRow row) => row.GetNode<NTickbox>("Tickbox").IsTicked;
+            var (onBefore, offBefore, _) = HistoryBar.Counts();
+            twinRows[0].GetNode<NTickbox>("Tickbox").ForceToggleTick();
+            await Wait(menu, 0.3);
+            var (first, second) = (Ticked(twinRows[0]), Ticked(twinRows[1]));
+            var lines = HistoryBar.Describe().Count(l => l.Contains(name));
+            var (onNow, offNow, _) = HistoryBar.Counts();
+            var counted = Math.Abs(onNow - onBefore) + Math.Abs(offNow - offBefore);
+            twinRows[1].GetNode<NTickbox>("Tickbox").ForceToggleTick();
+            await Wait(menu, 0.3);
+            Check("two copies of one mod: a click on one's box switches the other's too, and Changes and the counts name the mod once",
+                first == second && lines == 1 && counted == 1 && Ticked(twinRows[0]) == Ticked(twinRows[1]) && Ticked(twinRows[0]) != first,
+                $"boxes {first}/{second}, {lines} lines naming {name}, counted {counted}; back {Ticked(twinRows[0])}/{Ticked(twinRows[1])}");
+        }
+        else
+            Results.Add($"SKIP two copies of one mod: a click on one's box (rows {twinRows.Count})");
         var on = list.Where(e => e.Id == id && e.Source == source).Select(e => e.IsEnabled).ToList();
         Dependencies.Set([twins.First()], false, screen);
         var offAll = list.Where(e => e.Id == id && e.Source == source).All(e => !e.IsEnabled);
