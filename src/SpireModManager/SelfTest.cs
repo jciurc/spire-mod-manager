@@ -2045,7 +2045,7 @@ static class SelfTest
             termCards.Add(await HoverCard(menu, term, ModField.TipName));
         var termLayer = menu.GetTree().Root.FindChild(ModField.TipName, true, false); // gone again after each hover
         Check("each field's term explains it in our hover card, over the menu, the term no wider than its word",
-            terms.All(t => t != null) && termCards.SequenceEqual(termTips) && termLayer == null
+            termCards.SequenceEqual(termTips) && termLayer == null
             && terms.All(t => t is { TooltipText: "" } && t.Size.X <= t.GetMinimumSize().X + 1),
             string.Join(" | ", termCards) + string.Join(" ", terms.Select(t => t == null ? " none" : $" ({t.Size.X:0}/{t.GetMinimumSize().X:0})")));
         await Capture(screen, outDir, "5-row-menu");
@@ -2711,8 +2711,10 @@ static class SelfTest
         // A dialog takes the keys from the page: with an unsaved edit and the search box focused, holding text, Ctrl+S
         // and Ctrl+Z do nothing behind Share, and Esc closes it and leaves the search alone. Then the edit is discarded.
         var content = screen.GetNode<Control>("%ModsScrollContainer/Mask/Content");
-        if (Dependencies.Find("SmmTestUi") is { } testUi) // without it, no edit: the Ctrl+S check below fails
+        if (Dependencies.Find("SmmTestUi") is { } testUi)
             Dependencies.Set([testUi], !IsOn("SmmTestUi"), screen);
+        else
+            Results.Add("FAIL Share profile's keys: no Test UI mod to edit");
         CategoryList.Redraw(content);
         await Wait(menu, 0.3);
         var edited = (Profiles.Edited, string.Join(", ", ModListState()));

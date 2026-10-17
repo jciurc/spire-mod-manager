@@ -280,8 +280,9 @@ static class LaunchGuard
         bool On(string id, ModSource source, bool then) =>
             id == ModEntry.ModId || (id == ModDoctor.ModId ? !off.Contains((id, source)) : then);
         var entries = working.Select(m => new SettingsSaveMod { Id = m.Id, Source = m.Source, IsEnabled = On(m.Id, m.Source, m.Enabled) }).ToList();
-        entries.AddRange(ModManager.Mods.Union(Installed.Mods).Select(m => m.manifest?.id is { } id && !working.Any(w => w.Id == id && w.Source == m.modSource)
-            ? new SettingsSaveMod(m) { IsEnabled = On(id, m.modSource, false) } : null).OfType<SettingsSaveMod>());
+        foreach (var m in ModManager.Mods.Union(Installed.Mods))
+            if (m.manifest?.id is { } id && !working.Any(w => w.Id == id && w.Source == m.modSource))
+                entries.Add(new SettingsSaveMod(m) { IsEnabled = On(id, m.modSource, false) });
         return entries;
     }
 
