@@ -482,12 +482,12 @@ static class HistoryBar
 
     static string Name(Mod mod) => mod.manifest?.name ?? mod.manifest?.id ?? "";
 
-    // Installed mods whose on/off differs from the given list (no entry = on).
+    // Installed mods whose on/off differs from the given list (no entry = on), two copies of one mod once.
     static List<(Mod Mod, bool Enabled)> ModChanges(IReadOnlyList<History.ModEntry> before)
     {
         var then = before.DistinctBy(m => (m.Id, m.Source)).ToDictionary(m => (m.Id, m.Source), m => m.Enabled);
         var now = History.CurrentMods().DistinctBy(m => (m.Id, m.Source)).ToDictionary(m => (m.Id, m.Source), m => m.Enabled);
-        return ModManager.Mods.Where(m => m.manifest?.id != null)
+        return Dependencies.OnePerKey(ModManager.Mods.Where(m => m.manifest?.id != null))
             .Select(m => (Mod: m, Key: (m.manifest?.id ?? "", m.modSource)))
             .Select(p => (p.Mod, Then: then.GetValueOrDefault(p.Key, true), Now: now.GetValueOrDefault(p.Key, true)))
             .Where(p => p.Then != p.Now)

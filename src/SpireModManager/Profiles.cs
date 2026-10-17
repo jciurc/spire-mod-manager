@@ -442,8 +442,12 @@ static class Profiles
     {
         var off = Dependencies.SavedOff();
         foreach (var row in screen.GetNode("%ModsScrollContainer/Mask/Content").GetChildren().OfType<NModMenuRow>())
-            if (row.Mod is { } mod)
-                row.GetNode<NTickbox>("Tickbox").IsTicked = !off.Contains((mod.manifest?.id, mod.modSource));
+        {
+            // Only where it differs (setting the box alone fires no toggle).
+            if (row.Mod is { } mod && row.GetNode<NTickbox>("Tickbox") is var tickbox
+                && tickbox.IsTicked == off.Contains((mod.manifest?.id, mod.modSource)))
+                tickbox.IsTicked = !tickbox.IsTicked;
+        }
     }
 
     // After a profile wrote the mod list: the whole list redrawn, as after undo, and the pending-changes warning. The
@@ -491,8 +495,9 @@ static class Profiles
     }
 
     // Every installed mod: the ones the game loaded at launch and the ones installed since (they load after a
-    // relaunch), so a mod installed while the game runs belongs to profiles at once.
-    static IEnumerable<Mod> AllMods() => ModManager.Mods.Union(SpireModManager.Installed.Mods).Where(m => m.manifest?.id != null);
+    // relaunch), so a mod installed while the game runs belongs to profiles at once. Two copies of one mod: once.
+    static IEnumerable<Mod> AllMods() =>
+        Dependencies.OnePerKey(ModManager.Mods.Union(SpireModManager.Installed.Mods).Where(m => m.manifest?.id != null));
 
     static IEnumerable<(string Id, ModSource Source)> Installed() =>
         AllMods().Select(m => (m.manifest?.id ?? "", m.modSource));
