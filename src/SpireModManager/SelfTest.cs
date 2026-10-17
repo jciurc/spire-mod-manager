@@ -6,6 +6,7 @@ using MegaCrit.Sts2.Core.Localization;
 using MegaCrit.Sts2.Core.Localization.Fonts;
 using MegaCrit.Sts2.Core.Modding;
 using MegaCrit.Sts2.Core.Nodes;
+using MegaCrit.Sts2.Core.Nodes.Debug;
 using MegaCrit.Sts2.Core.Nodes.CommonUi;
 using MegaCrit.Sts2.Core.Nodes.GodotExtensions;
 using MegaCrit.Sts2.Core.Nodes.Screens;
@@ -2888,6 +2889,17 @@ static class SelfTest
                 Check("the game's message taken off a mod that's off still shows in its card, marked as the game's, not as a problem",
                     card.Contains(gameMessage) && !ModDetails.Problems(offMod).Any(p => p.Contains("only supports Steam branch")),
                     card.Split('\n').FirstOrDefault(l => l.Contains("branch")) ?? card.Split('\n')[0]);
+                // The second pass, just before the main menu's warning reads the errors (BranchErrorsLatePatch): one
+                // marked after our Init goes there too.
+                if (menu.GetTree().Root.FindChildren("*", "", true, false).OfType<NDebugInfoLabelManager>().FirstOrDefault() is { } warning)
+                {
+                    offMod.errors = [Branch(offMod)];
+                    HarmonyLib.AccessTools.Method(typeof(NDebugInfoLabelManager), "UpdateText")?.Invoke(warning, [null]);
+                    Check("the main menu's warning: a Steam branch error put on a mod that's off after our Init goes before the warning reads it",
+                        offMod.errors == null, $"{offMod.errors?.Count} left");
+                }
+                else
+                    Results.Add("SKIP the late pass of the Steam branch error: no main menu warning in the tree");
                 offMod.errors = [Error("MOD_ERROR.STEAM_BRANCH_UNSUPPORTED")];
                 BranchErrors.DropFromOffMods([offMod]);
                 Check("a mod that's off loses the game's Steam branch error (it doesn't load) and keeps its others; one on keeps it; "

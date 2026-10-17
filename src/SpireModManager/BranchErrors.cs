@@ -20,11 +20,16 @@ static class BranchErrors
     public static IReadOnlyList<LocString> Dropped(Mod mod) => _dropped.TryGetValue(mod, out var messages) ? messages : [];
 
     // From ModEntry.Init: the game's branch check and the mods' off states are in place by then, and the main menu
-    // reads the errors later.
-    public static int DropFromOffMods()
+    // reads the errors later. Again (late) just before the main menu's MODDED warning reads them (BranchErrorsLatePatch),
+    // in case a game update ever checks branches after the mods load: one found then is dropped too, and the log says
+    // the order changed.
+    public static int DropFromOffMods(bool late = false)
     {
         Ran = true;
-        return DropFromOffMods(ModManager.Mods);
+        var dropped = DropFromOffMods(ModManager.Mods);
+        if (late && dropped > 0)
+            Log.Warn($"[{ModEntry.ModId}] The game marked mods' Steam branches after our Init (its order changed): dropped from the main menu's warning just in time");
+        return dropped;
     }
 
     // For the self-test: Init got here (a dev run has no Steam, so no real branch error to see go).

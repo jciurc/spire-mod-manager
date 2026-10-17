@@ -5,6 +5,7 @@ using MegaCrit.Sts2.Core.Modding;
 using MegaCrit.Sts2.Core.Localization;
 using MegaCrit.Sts2.Core.Nodes;
 using MegaCrit.Sts2.Core.Nodes.CommonUi;
+using MegaCrit.Sts2.Core.Nodes.Debug;
 using MegaCrit.Sts2.Core.Nodes.GodotExtensions;
 using MegaCrit.Sts2.Core.Nodes.Screens.MainMenu;
 using MegaCrit.Sts2.Core.Nodes.Screens.ModdingScreen;
@@ -76,6 +77,25 @@ static class MenuReachedPatch
         catch (Exception e)
         {
             Log.Error($"[{ModEntry.ModId}] Could not clear the launch record: {e}");
+        }
+    }
+}
+
+// The main menu's MODDED warning (and the line in a run) reads every mod's errors: the Steam branch errors of mods that
+// are off go first, again, should a game update ever check branches after our Init (BranchErrors; in the game's order
+// today there's nothing left to drop).
+[HarmonyPatch(typeof(NDebugInfoLabelManager), "UpdateText")]
+static class BranchErrorsLatePatch
+{
+    static void Prefix()
+    {
+        try
+        {
+            BranchErrors.DropFromOffMods(late: true);
+        }
+        catch (Exception e)
+        {
+            Log.Error($"[{ModEntry.ModId}] Could not drop the Steam branch error of mods that are off before the main menu's warning: {e}");
         }
     }
 }
