@@ -310,6 +310,15 @@ if (!game.HasExited)
 }
 
 var results = Path.Combine(outDir, "results.txt");
+// --crash: the relaunch after Restore reads the mod list from settings.save, and the self-test saw it only in memory.
+// So here, with the game gone: Test Retired (on for this launch) off again on disk.
+if (crash && File.Exists(results))
+{
+    var retired = JsonNode.Parse(File.ReadAllText(Path.Combine(sandbox, "settings.save")))?["mod_settings"]?["mod_list"]?.AsArray()
+        .Where(entry => (string?)entry?["id"] == "SmmTestRetired").Select(entry => (bool?)entry?["is_enabled"]).ToList() ?? [];
+    File.AppendAllLines(results, [$"{(retired.Count > 0 && retired.All(on => on == false) ? "PASS" : "FAIL")} a failed start: "
+        + $"settings.save on disk, which the relaunch reads, has Test Retired off again (is_enabled {string.Join(",", retired)})"]);
+}
 var text = File.Exists(results) ? File.ReadAllText(results) : "NO RESULTS (test did not finish)\n";
 Console.Write(text);
 Console.WriteLine("--- log ---");

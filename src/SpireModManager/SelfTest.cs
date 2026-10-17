@@ -1490,6 +1490,7 @@ static class SelfTest
         ModEntry.TestQuit = () => quits++;
         ModEntry.TestRelaunch = () => relaunches++;
         var transitionWas = game.Transition.Visible; // the dialog's setup hides the startup transition
+        var pendingPath = Path.Combine(LaunchGuard.Dir ?? OS.GetUserDataDir(), LaunchGuard.PendingFile);
         var root = menu.GetTree().Root;
         // Our popup's button (marked: no other popup's), by its node and signal names (the same in every game version so far).
         static void Press(string button)
@@ -1503,15 +1504,18 @@ static class SelfTest
         void Answer(StringName signal) => root.GetNodeOrNull<ConfirmationDialog>(LaunchGuard.PlainDialogName)?.EmitSignal(signal);
         try
         {
+            // A launch record as a failed start leaves one (none is left at the menu): an answer, Quit too, deletes it.
+            File.WriteAllText(pendingPath, "{}");
             var asked = LaunchGuard.AskAfterCrash(game, offer);
             await Wait(menu, 0.8);
             var texts = string.Join(" | ", PopupTexts());
             CheckMark("dialog after a failed start", NModalContainer.Instance?.OpenModal as Control);
             Press("NoButton");
             await Wait(menu, 0.3);
-            Check("the dialog after a failed start: its title, what changed, Quit and Restore and restart; Quit writes nothing and quits",
+            Check("the dialog after a failed start: its title, what changed, Quit and Restore and restart; Quit writes no list, deletes the launch's record and quits",
                 asked.IsCompleted && texts.Contains("The game couldn't start") && texts.Contains("Test Fixes") && texts.Contains("Restore and restart")
-                && quits == 1 && relaunches == 0 && Dependencies.IsOn(fixes), $"{texts}; quits {quits}, relaunches {relaunches}");
+                && quits == 1 && relaunches == 0 && Dependencies.IsOn(fixes) && !File.Exists(pendingPath),
+                $"{texts}; quits {quits}, relaunches {relaunches}, record left {File.Exists(pendingPath)}");
             asked = LaunchGuard.AskAfterCrash(game, offer);
             await Wait(menu, 0.8);
             Press("YesButton");
@@ -1547,6 +1551,7 @@ static class SelfTest
             game.Transition.Visible = transitionWas;
             NModalContainer.Instance?.Clear();
             root.GetNodeOrNull(LaunchGuard.PlainDialogName)?.QueueFree();
+            File.Delete(pendingPath);
             settings.ModList.Clear();
             settings.ModList.AddRange(listWas);
             SaveManager.Instance.SaveSettings();
@@ -1577,7 +1582,8 @@ static class SelfTest
             }
             catch (Exception e)
             {
-                File.WriteAllLines(results, [$"FAIL a failed start: the made-up failure couldn't be patched in: {e.Message}"]);
+                Results.Add($"FAIL a failed start: the made-up failure couldn't be patched in: {e.Message}"); // Run writes these at the menu
+                File.WriteAllLines(results, Results);
                 return; // the game starts; Run, at the main menu, says so too
             }
         }

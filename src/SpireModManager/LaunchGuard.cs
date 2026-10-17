@@ -1,6 +1,7 @@
 using System.Globalization;
 using System.Text.Json;
 using System.Text.Json.Serialization;
+using System.Text.RegularExpressions;
 using Godot;
 using MegaCrit.Sts2.Core.Localization;
 using MegaCrit.Sts2.Core.Logging;
@@ -206,22 +207,45 @@ static class LaunchGuard
 
     static string Name(string id) => Escaped(ModManager.Mods.FirstOrDefault(m => m.manifest?.id == id)?.manifest?.name ?? id);
 
-    // The changes as the popups list them, a line each, the last ones counted in one line if there are many.
-    static List<string> Lines(List<Change> changes)
+    // The changes as the popups list them, a line each, the last ones counted in one line if there are many. Plain: for
+    // where the game's text couldn't load, in English from our own file and without markup (Our).
+    static List<string> Lines(List<Change> changes, bool plain = false)
     {
+        string Mod(string id) => plain ? PlainName(id) : Name(id);
+        string Version(string? version) => plain ? version ?? "" : Escaped(version ?? "");
         var lines = changes.Take(changes.Count > LinesShown ? LinesShown - 1 : LinesShown).Select(c => "  •  " + c.Kind switch
         {
-            Kind.New => Menus.Format("SPIRE_MOD_MANAGER.LAUNCH_NEW", ("mod", Name(c.Id))),
-            Kind.Enabled => Menus.Format("SPIRE_MOD_MANAGER.LAUNCH_ENABLED", ("mod", Name(c.Id))),
-            Kind.Disabled => Menus.Format("SPIRE_MOD_MANAGER.LAUNCH_DISABLED", ("mod", Name(c.Id))),
-            Kind.Updated => Menus.Format("SPIRE_MOD_MANAGER.LAUNCH_UPDATED", ("mod", Name(c.Id)),
-                ("from", Escaped(c.From ?? "")), ("to", Escaped(c.To ?? ""))),
-            _ => Menus.Text("SPIRE_MOD_MANAGER.LAUNCH_ORDER"),
+            Kind.New => Our(plain, "SPIRE_MOD_MANAGER.LAUNCH_NEW", ("mod", Mod(c.Id))),
+            Kind.Enabled => Our(plain, "SPIRE_MOD_MANAGER.LAUNCH_ENABLED", ("mod", Mod(c.Id))),
+            Kind.Disabled => Our(plain, "SPIRE_MOD_MANAGER.LAUNCH_DISABLED", ("mod", Mod(c.Id))),
+            Kind.Updated => Our(plain, "SPIRE_MOD_MANAGER.LAUNCH_UPDATED", ("mod", Mod(c.Id)), ("from", Version(c.From)), ("to", Version(c.To))),
+            _ => Our(plain, "SPIRE_MOD_MANAGER.LAUNCH_ORDER"),
         }).ToList();
         if (changes.Count > LinesShown)
-            lines.Add("  •  " + Menus.Format("SPIRE_MOD_MANAGER.LAUNCH_MORE", ("count", Menus.Number(changes.Count - LinesShown + 1))));
+            lines.Add("  •  " + Our(plain, "SPIRE_MOD_MANAGER.LAUNCH_MORE", ("count", Count(plain, changes.Count - LinesShown + 1))));
         return lines;
     }
+
+    static string PlainName(string id) => ModManager.Mods.FirstOrDefault(m => m.manifest?.id == id)?.manifest?.name ?? id;
+
+    static string Count(bool plain, int count) => plain ? count.ToString(CultureInfo.InvariantCulture) : Menus.Number(count);
+
+    // One of our texts, filled in: through the game's text, or (plain) in English from our own file without markup, for
+    // where the game's text couldn't load. Names and versions go in as given (Lines escapes them for the game's markup).
+    static string Our(bool plain, string key, params (string Name, string Value)[] values)
+    {
+        if (!plain)
+            return values.Length == 0 ? Menus.Text(key) : Menus.Format(key, values);
+        _english ??= JsonSerializer.Deserialize<Dictionary<string, string>>(
+            Godot.FileAccess.GetFileAsString($"res://{ModEntry.ModId}/localization/eng/settings_ui.json")) ?? [];
+        var text = Markup.Replace(_english[key], "");
+        foreach (var (name, value) in values)
+            text = text.Replace("{" + name + "}", value);
+        return text;
+    }
+
+    static Dictionary<string, string>? _english;
+    static readonly Regex Markup = new(@"\[/?[a-z_]+(?:[ =][^\]]*)?\]");
 
     // The working setup's mod list back (order and on/off), mods installed since then off (a mod the list doesn't name
     // loads), ours always on; then a relaunch through the relaunch check (owner: the main menu), which catches a mod
@@ -289,17 +313,16 @@ static class LaunchGuard
     // In place of the game's startup error dialog (StartupErrorPatch): the changes since the last setup that worked, and
     // Restore and restart or Quit, with Mod Doctor's suspects if it found any. The game's own setup for its dialog first
     // (ErrorInit). Where the game's text can't load (a mod broke it), a plain dialog in English. If anything fails
-    // before the choice, the game's own dialog instead.
+    // before the choice, or the Restore fails, the game's own dialog instead.
     public static async Task AskAfterCrash(NGame game, Offer offer)
     {
-        Log.Error($"[{ModEntry.ModId}] The game couldn't start; offering the mods of the last launch that worked ({offer.Working.At:yyyy-MM-dd HH:mm})");
+        Log.Error($"[{ModEntry.ModId}] The game couldn't start; offering the mods of the last launch that worked ({offer.Working.At.ToString("yyyy-MM-dd HH:mm", CultureInfo.InvariantCulture)})");
         bool restore;
         try
         {
-            if (await ErrorInit(game))
-                restore = await AskStyled(offer, await ModDoctor.Suspects(game));
-            else
-                restore = await AskPlain(game, offer);
+            var styled = await ErrorInit(game);
+            var suspects = await ModDoctor.Suspects(game);
+            restore = styled ? await AskStyled(offer, suspects) : await AskPlain(game, offer, suspects);
         }
         catch (Exception e)
         {
@@ -308,26 +331,34 @@ static class LaunchGuard
             await StartupErrorPatch.GamesDialog(game);
             return;
         }
+        // Answered, so this launch's record goes either way: after a Restore the restored launch's notice would offer the
+        // same setup again, and after a Quit a fix made by hand would get that offer (the same mods failing again bring
+        // this dialog back without the record).
+        ClearPending();
         if (!restore)
         {
             ModEntry.Quit();
             return;
         }
         // The game didn't start: only its settings (the mod list) are written, then a plain quit and a relaunch, as its
-        // own dialog quits (NGame.Quit would save the profile and progress of a half-started game). This launch's record
-        // goes: it's answered, and the restored launch's notice would offer the same setup again.
-        WriteList(offer.Working.Mods);
-        ClearPending();
-        ModEntry.Relaunch(plain: true);
+        // own dialog quits (NGame.Quit would save the profile and progress of a half-started game).
+        try
+        {
+            WriteList(offer.Working.Mods);
+            ModEntry.Relaunch(plain: true);
+        }
+        catch (Exception e)
+        {
+            Log.Error($"[{ModEntry.ModId}] Could not restore the last working mods and restart, so the game's own dialog shows: {e}");
+            await StartupErrorPatch.GamesDialog(game);
+        }
     }
 
-    // The game's setup for its startup error dialog (its TryErrorInit) without its quit when that fails: the settings,
-    // then the language (false if a mod's patch on it throws: no game text, no game popup), the node ready, and the
-    // startup transition out of the way.
+    // The game's setup for its startup error dialog (its TryErrorInit) without its quit when that fails: the language
+    // (false if a mod's patch on it throws: no game text, no game popup), the node ready, and the startup transition out
+    // of the way. Its settings are read already (CrashOffer compared their mod list).
     static async Task<bool> ErrorInit(NGame game)
     {
-        if (SaveManager.Instance.SettingsSave == null)
-            SaveManager.Instance.InitSettingsData();
         var language = true;
         if (LocManager.Instance == null)
         {
@@ -351,23 +382,29 @@ static class LaunchGuard
         return language && LocManager.Instance != null;
     }
 
+    // The dialog's list: the changes, whether the game changed since, and the first few of Mod Doctor's suspects.
+    static List<string> CrashLines(Offer offer, List<string> suspects, bool plain)
+    {
+        var lines = Lines(offer.Changes, plain);
+        if (offer.GameChanged)
+            lines.Add("\n" + Our(plain, "SPIRE_MOD_MANAGER.CRASH_GAME_CHANGED"));
+        if (suspects.Count > 0)
+        {
+            var named = suspects.Take(SuspectsShown).Select(id => plain ? PlainName(id) : Name(id)).ToList();
+            if (suspects.Count > SuspectsShown)
+                named.Add(Our(plain, "SPIRE_MOD_MANAGER.LAUNCH_MORE", ("count", Count(plain, suspects.Count - SuspectsShown))));
+            lines.Add("\n" + Our(plain, "SPIRE_MOD_MANAGER.CRASH_SUSPECTS", ("mods", string.Join(", ", named))));
+        }
+        return lines;
+    }
+
     // The offer in the game's popup, our mark on it. Another mod's popup would keep ours out (the container takes one at
     // a time), so it goes; if ours still isn't the one shown, that's a failure (the game's dialog then).
     static async Task<bool> AskStyled(Offer offer, List<string> suspects)
     {
-        var lines = Lines(offer.Changes);
-        if (offer.GameChanged)
-            lines.Add("\n" + Menus.Text("SPIRE_MOD_MANAGER.CRASH_GAME_CHANGED"));
-        if (suspects.Count > 0)
-        {
-            var named = suspects.Take(SuspectsShown).Select(Name).ToList();
-            if (suspects.Count > SuspectsShown)
-                named.Add(Menus.Format("SPIRE_MOD_MANAGER.LAUNCH_MORE", ("count", Menus.Number(suspects.Count - SuspectsShown))));
-            lines.Add("\n" + Menus.Format("SPIRE_MOD_MANAGER.CRASH_SUSPECTS", ("mods", string.Join(", ", named))));
-        }
         var body = new LocString("settings_ui", "SPIRE_MOD_MANAGER.CRASH_BODY");
         body.Add("date", When(offer.Working));
-        body.Add("changes", string.Join("\n", lines));
+        body.Add("changes", string.Join("\n", CrashLines(offer, suspects, plain: false)));
         if (NGenericPopup.Create() is not { } popup || NModalContainer.Instance is not { } modals)
             throw new InvalidOperationException("the game's popup can't be made");
         modals.Clear();
@@ -381,30 +418,16 @@ static class LaunchGuard
 
     public const string PlainDialogName = "SpireModManagerCrashDialog";
 
-    // The offer where the game's text and popups can't be used: Godot's own dialog, in English (our text comes through
-    // the game's too), with the changes by mod name.
-    static async Task<bool> AskPlain(NGame game, Offer offer)
+    // The offer where the game's text and popups can't be used: Godot's own dialog, with our English texts (they come
+    // through the game's text too) and the game's word for Quit in English.
+    static async Task<bool> AskPlain(NGame game, Offer offer, List<string> suspects)
     {
-        static string Plain(string id) => ModManager.Mods.FirstOrDefault(m => m.manifest?.id == id)?.manifest?.name ?? id;
-        static string Line(Change c) => "  •  " + c.Kind switch
-        {
-            Kind.New => $"{Plain(c.Id)} (new)",
-            Kind.Enabled => $"{Plain(c.Id)} (enabled)",
-            Kind.Disabled => $"{Plain(c.Id)} (disabled)",
-            Kind.Updated => $"{Plain(c.Id)} (updated: {c.From} → {c.To})",
-            _ => "Load order (changed)",
-        };
-        var lines = offer.Changes.Take(LinesShown).Select(Line).ToList();
-        if (offer.Changes.Count > LinesShown)
-            lines.Add($"  •  {offer.Changes.Count - LinesShown} more");
-        var text = $"Changed since the last launch that worked ({offer.Working.At:yyyy-MM-dd HH:mm}):\n{string.Join("\n", lines)}\n\n"
-            + (offer.GameChanged ? "The game itself was updated since then, so the old setup may not start either.\n\n" : "")
-            + "Spire Mod Manager can restore that setup and restart the game. Newly added mods stay installed, but disabled, "
-            + "and other mods go back to how they were.";
+        var text = Our(true, "SPIRE_MOD_MANAGER.CRASH_BODY", ("date", offer.Working.At.ToString("yyyy-MM-dd HH:mm", CultureInfo.InvariantCulture)),
+            ("changes", string.Join("\n", CrashLines(offer, suspects, plain: true))));
         var dialog = new ConfirmationDialog
         {
-            Name = PlainDialogName, Title = "The game couldn't start", DialogText = text, DialogAutowrap = true,
-            OkButtonText = "Restore and restart", CancelButtonText = "Quit", Exclusive = true,
+            Name = PlainDialogName, Title = Our(true, "SPIRE_MOD_MANAGER.CRASH_TITLE"), DialogText = text, DialogAutowrap = true,
+            OkButtonText = Our(true, "SPIRE_MOD_MANAGER.CRASH_RESTORE"), CancelButtonText = "Quit", Exclusive = true,
         };
         var answer = new TaskCompletionSource<bool>();
         dialog.Confirmed += () => answer.TrySetResult(true);
@@ -421,7 +444,7 @@ static class LaunchGuard
         }
     }
 
-    // This launch's record, gone (a Restore answered it).
+    // This launch's record, gone (the dialog after its failed start was answered).
     static void ClearPending()
     {
         try
@@ -431,7 +454,7 @@ static class LaunchGuard
         }
         catch (Exception e)
         {
-            Log.Warn($"[{ModEntry.ModId}] Could not delete this launch's record after the Restore: {e.Message}");
+            Log.Warn($"[{ModEntry.ModId}] Could not delete this launch's record after the failed start: {e.Message}");
         }
     }
 
