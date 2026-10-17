@@ -1,0 +1,16 @@
+{
+  "SPIRE_MOD_MANAGER.A": "Alpha",
+  "SPIRE_MOD_MANAGER.B": "Bravo",
+  "SPIRE_MOD_MANAGER.C": "Charlie",
+  "SPIRE_MOD_MANAGER.D": "{count} mods",
+  "SPIRE_MOD_MANAGER.E": "{count} mods",
+  "SPIRE_MOD_MANAGER.F": "Foxtrot",
+  "SPIRE_MOD_MANAGER.G": "Golf",
+  "SPIRE_MOD_MANAGER.H": "Hotel",
+  "SPIRE_MOD_MANAGER.I": "India",
+  "SPIRE_MOD_MANAGER.J": "{count:plural:mod|mods}",
+  "SPIRE_MOD_MANAGER.K": "Kilo",
+  "SPIRE_MOD_MANAGER.L": "Lima",
+  "SPIRE_MOD_MANAGER.M": "Mike {name}",
+  "SPIRE_MOD_MANAGER.N": "November {name}"
+}

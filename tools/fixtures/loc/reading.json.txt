@@ -1,0 +1,23 @@
+// How a translation reads, case by case, as the mod's Translations.Read reads it. CI runs
+// `dotnet run tools/loc.cs read tools/fixtures/loc/reading.json.txt --eng tools/fixtures/loc/reading-eng.json`
+// and compares the output with reading.expected.txt. A file with comments and keys listed twice, so not *.json:
+// check.cs parses those strictly.
+{
+  // TODO a TODO mark (read doesn't count them; status does)
+  "SPIRE_MOD_MANAGER.A": "Alpha, translated",
+  "SPIRE_MOD_MANAGER.B": "",
+  "SPIRE_MOD_MANAGER.C": "   ",
+  "SPIRE_MOD_MANAGER.D": "{count} модов",
+  "SPIRE_MOD_MANAGER.E": "{cnt} mods",
+  "SPIRE_MOD_MANAGER.F": 5,
+  "SPIRE_MOD_MANAGER.G": "Golf, translated",
+  "SPIRE_MOD_MANAGER.G": " ",
+  "SPIRE_MOD_MANAGER.H": " ",
+  "SPIRE_MOD_MANAGER.H": "Hotel, translated",
+  "SPIRE_MOD_MANAGER.I": { "x": "y" },
+  "SPIRE_MOD_MANAGER.J": "{count:plural:мод|мода|модов}",
+  "SPIRE_MOD_MANAGER.M": "Майк {имя}",
+  "SPIRE_MOD_MANAGER.N": "November {name",
+  "SPIRE_MOD_MANAGER.OLD": "a key the English doesn't have", "SPIRE_MOD_MANAGER.K": null,
+  /* "SPIRE_MOD_MANAGER.A": "commented out, so it doesn't count", */
+}

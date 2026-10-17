@@ -70,6 +70,10 @@ none has the language's name. English is the source, so there's no `eng.json`. T
 
 ## Test it in the game
 
+In a copy of the repository, `dotnet run tools/loc.cs read <your file>` first shows how the mod reads it, key by
+key. Some texts it skips, and the English shows instead: blank ones, values that aren't text, and texts with a
+`{placeholder}` the English doesn't have.
+
 1. Put your file in the translations folder (above), build the mod with your folder in it (CONTRIBUTING.md,
    "Building"), or ask for a test build in a translation issue.
 2. Switch the game to your language in its settings. If some of our text stays in the old language, relaunch the
@@ -102,9 +106,9 @@ translation was made, run this in a copy of the repository (`git fetch --tags` f
 translated in place of `v0.1.2`:
 
 - `dotnet run tools/loc.cs status <your file> --base v0.1.2` lists the texts that are new, the ones whose English
-  changed (the old and the new English, word by word), and the keys English no longer has, each with its line in your
-  file. Without `--base`, the tool takes the oldest release your file fits: it may flag a text you already updated,
-  but it never misses one.
+  changed (the old and the new English, word by word), the keys English no longer has, and the texts the mod skips
+  (see "Test it in the game"), each with its line in your file. Without `--base`, the tool takes the oldest release
+  your file fits: it may flag a text you already updated, but it never misses one.
 - `dotnet run tools/loc.cs compare <your file> --base v0.1.2 --html changes.html` writes a page to open in a
   browser: each English change, old and new, next to your text and its line, then any text your file still lacks. If
   you kept the copy of your file from that version, add `--old <that copy>`: the page then shows how your text

@@ -1,0 +1,16 @@
+reading.json.txt: used 5, skipped 8 (the English shows), left out 1 (not in the English), missing 1 (English texts the file doesn't list)
+USED     reading.json.txt:7 A
+EMPTY    reading.json.txt:8 B: blank
+EMPTY    reading.json.txt:9 C: blank
+USED     reading.json.txt:10 D
+BROKEN   reading.json.txt:11 E: {cnt} isn't in the English
+BROKEN   reading.json.txt:12 F: not text
+USED     reading.json.txt:13 G
+USED     reading.json.txt:16 H
+BROKEN   reading.json.txt:17 I: not text
+USED     reading.json.txt:18 J
+BROKEN   reading.json.txt:19 M: the game can't read it ('и': Invalid character in the selector)
+BROKEN   reading.json.txt:20 N: the game can't read it (Format string is missing a closing brace)
+UNKNOWN  reading.json.txt:21 OLD
+BROKEN   reading.json.txt:21 K: not text
+listed twice (the mod uses the last copy it can): G, H
