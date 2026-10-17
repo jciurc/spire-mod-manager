@@ -54,6 +54,8 @@ static class Layout
         // The first call runs in our _Ready postfix (Priority.First, before other mods' postfixes and before any mod
         // fills the panel), so its parts are still the scene's own.
         _sceneParts ??= info.GetChildren().Select(c => c.Name.ToString()).ToHashSet();
+        if (info is NModInfoContainer panel)
+            ModDetails.Looks(panel, game: Store.Data.VanillaView); // also when no mod is picked (no fill)
         // Better Mod Menu loaded too: paused while we place things (its re-layout follows every resize), and its push
         // down of the list taken back. Vanilla View gives it the page again at the end.
         if (Bmm.Present)

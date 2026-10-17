@@ -146,7 +146,7 @@ static class ModDetails
 
     // The title's pointer and the links' underline: ours in our views (the title is a link to its row), the game's in
     // Vanilla View, as it left them before we first changed them.
-    static void Looks(NModInfoContainer container, bool game)
+    public static void Looks(NModInfoContainer container, bool game)
     {
         var title = container.GetNode<Control>("ModTitle");
         var description = container.GetNode<RichTextLabel>("ModDescription");
