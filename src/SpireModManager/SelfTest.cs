@@ -1210,7 +1210,7 @@ static class SelfTest
         await Capture(menu, outDir, "1c-menu-button-menu");
 
         var relaunches = 0;
-        ModEntry.TestRelaunch = () => relaunches++;
+        ModEntry.TestRelaunch = plain => relaunches += plain ? 0 : 1; // through the game's quit (a plain one doesn't count)
         try
         {
             Node? Dialog() => menu.GetTree().Root.GetNodeOrNull(RelaunchCheck.Name);
@@ -1411,7 +1411,7 @@ static class SelfTest
         var settings = SaveManager.Instance.SettingsSave.ModSettings;
         var listWas = settings?.ModList.Select(e => new SettingsSaveMod { Id = e.Id, Source = e.Source, IsEnabled = e.IsEnabled }).ToList() ?? [];
         var relaunches = 0;
-        ModEntry.TestRelaunch = () => relaunches++;
+        ModEntry.TestRelaunch = plain => relaunches += plain ? 0 : 1; // through the game's quit (a plain one doesn't count)
         try
         {
             var target = History.CurrentMods().Where(m => m.Id != "SmmTestUi").Reverse()
@@ -1470,6 +1470,14 @@ static class SelfTest
             none == null && same == null && updated == null && added is { GameChanged: false } offered
             && offered.Changes.Any(c => c.Id == "SmmTestUi" && c.Kind == LaunchGuard.Kind.New) && newGame is { GameChanged: true },
             $"none {none != null}, same {same != null}, updated {updated != null}, added {added?.Changes.Count}, new game {newGame?.GameChanged}");
+        // The list Restore would write against the one the launch read: no offer when they load the same (after a
+        // Restore, or an order the game's sorting sets), whatever the order of the mods off.
+        static (string, ModSource, bool) E(string id, bool on) => (id, ModSource.ModsDirectory, on);
+        List<(string, ModSource, bool)> read = [E(ModEntry.ModId, true), E("A", true), E("B", true), E("C", false), E("D", false)];
+        Check("after a failed start: the same load with the mods off in another order; not with mods on in another order, one switched, or one missing (it would load)",
+            LaunchGuard.SameLoad(read, read) && LaunchGuard.SameLoad(read, [read[0], read[1], read[2], read[4], read[3]])
+            && !LaunchGuard.SameLoad(read, [read[0], read[2], read[1], read[3], read[4]]) && !LaunchGuard.SameLoad(read, [.. read[..3], E("C", true), read[4]])
+            && !LaunchGuard.SameLoad(read, read[..4]));
 
         var settings = SaveManager.Instance.SettingsSave.ModSettings;
         if (settings == null || NGame.Instance is not { } game || Dependencies.Find("SmmTestFixes") is not { } fixes || !Dependencies.IsOn(fixes))
@@ -1481,6 +1489,25 @@ static class SelfTest
         // This launch as it is; the working setup the same but with Test Fixes off (so it was enabled since).
         var current = History.CurrentMods().Select(m => new LaunchGuard.Entry(m.Id, m.Source, m.Enabled, null)).ToList();
         var before = current.Select(m => m.Id == "SmmTestFixes" ? m with { Enabled = false } : m).ToList();
+        // An order the game's own sorting sets (a dependency an update added) against the list a Restore wrote: no
+        // offer, or each Restore would fail the same and offer it again. The same order as the player's own: offered.
+        var on = current.Select((m, i) => (m, i)).Where(p => p.m.Enabled && p.m.Id is not (ModEntry.ModId or ModDoctor.ModId)).Select(p => p.i).Take(2).ToList();
+        if (on.Count == 2)
+        {
+            var sorted = current.ToList();
+            (sorted[on[0]], sorted[on[1]]) = (sorted[on[1]], sorted[on[0]]);
+            var restored = LaunchGuard.Written(current).Select(e => (e.Id, e.Source, e.IsEnabled)).ToList();
+            var reordered = restored.ToList();
+            var (first, second) = (reordered.FindIndex(e => e.Id == current[on[0]].Id), reordered.FindIndex(e => e.Id == current[on[1]].Id));
+            (reordered[first], reordered[second]) = (reordered[second], reordered[first]);
+            var forced = LaunchGuard.CrashOffer(new(now, sorted), new(now.AddHours(-1), current), restored);
+            var chosen = LaunchGuard.CrashOffer(new(now, sorted), new(now.AddHours(-1), current), reordered);
+            Check("after a failed start: no offer for a load order the game's sorting sets (the list read is the one Restore writes); "
+                + "offered for one the player's list sets", forced == null && chosen is { } order && order.Changes.Any(c => c.Kind == LaunchGuard.Kind.Order),
+                $"forced {forced != null}, chosen {string.Join(", ", chosen?.Changes.Select(c => c.Kind) ?? [])}");
+        }
+        else
+            Results.Add("SKIP the offer for a sorted load order: fewer than two fixture mods on");
         if (LaunchGuard.CrashOffer(new(now, current), new(now.AddHours(-1), before)) is not { } offer)
         {
             Check("the dialog after a failed start: an offer to show", false);
@@ -1488,7 +1515,7 @@ static class SelfTest
         }
         var (quits, relaunches) = (0, 0);
         ModEntry.TestQuit = () => quits++;
-        ModEntry.TestRelaunch = () => relaunches++;
+        ModEntry.TestRelaunch = plain => relaunches += plain ? 1 : 0; // a plain quit (the game's would save a half-started game)
         var transitionWas = game.Transition.Visible; // the dialog's setup hides the startup transition
         var pendingPath = Path.Combine(LaunchGuard.Dir ?? OS.GetUserDataDir(), LaunchGuard.PendingFile);
         var root = menu.GetTree().Root;
@@ -1589,7 +1616,7 @@ static class SelfTest
         }
         var (quits, relaunches) = (0, 0);
         ModEntry.TestQuit = () => quits++;
-        ModEntry.TestRelaunch = () => relaunches++;
+        ModEntry.TestRelaunch = plain => relaunches += plain ? 1 : 0; // a plain quit (the game's would save a half-started game)
         var tree = (SceneTree)Engine.GetMainLoop();
         var started = DateTime.Now;
         string? texts = null;

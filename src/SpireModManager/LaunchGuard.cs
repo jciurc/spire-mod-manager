@@ -43,6 +43,7 @@ static class LaunchGuard
     // it), and the same folder clears the record whatever Store resolves later.
     public static string? Dir { get; private set; }
     static Setup? _failed, _working, _planned;
+    static List<(string Id, ModSource Source, bool On)>? _read;
     static bool _reached;
 
     // The notice after a launch that never reached the menu: shown once at the main menu, after any other popup.
@@ -58,6 +59,8 @@ static class LaunchGuard
             var planned = new Setup(DateTime.Now, ModManager.Mods.Where(m => m.manifest?.id != null)
                 .Select(m => new Entry(m.manifest!.id!, m.modSource, !off.Contains((m.manifest.id, m.modSource)), m.manifest.version)).ToList(), GameNow());
             var dir = Store.Dir;
+            // The mod list as the game read it: after the mods load, it puts its own in place (sorted by dependencies).
+            _read = SaveManager.Instance.SettingsSave.ModSettings?.ModList.Select(Key).ToList();
             (_failed, _working) = Begin(dir, planned);
             (Dir, _planned) = (dir, planned);
         }
@@ -268,7 +271,7 @@ static class LaunchGuard
 
     // The mod list a Restore writes: the working setup's, in its order and on or off; mods installed since then off (a
     // mod the list doesn't name loads); ours always on, and Mod Doctor as it is now (it's there to look at the failure).
-    static List<SettingsSaveMod> Written(IReadOnlyList<Entry> working)
+    public static List<SettingsSaveMod> Written(IReadOnlyList<Entry> working)
     {
         var off = Dependencies.SavedOff();
         bool On(string id, ModSource source, bool then) =>
@@ -283,14 +286,22 @@ static class LaunchGuard
     // whether the game itself changed since (then the old setup may not help).
     public record Offer(Setup Working, List<Change> Changes, bool GameChanged);
 
-    // An offer when Restore would change the mod list the game reads: this launch changed mods since the last working
-    // setup beyond updates (Restore can't undo one), and the list it would write isn't the saved one already (as after
-    // a Restore, or an order the game's own sorting sets: offering it again would loop).
-    public static Offer? CrashOffer() =>
-        CrashOffer(_planned, _working) is { } offer && SaveManager.Instance.SettingsSave.ModSettings?.ModList is { } saved
-        && !Written(offer.Working.Mods).Select(Key).SequenceEqual(saved.Select(Key)) ? offer : null;
+    // An offer when Restore would change what the game loads: this launch changed mods since the last working setup
+    // beyond updates (Restore can't undo one), and the list it would write loads differently from the list this launch
+    // read. Not after a Restore whose launch failed too, nor for an order the game's own sorting sets (a dependency an
+    // update added): offering it would loop, Restore and the same failure again.
+    public static Offer? CrashOffer() => CrashOffer(_planned, _working, _read);
+
+    public static Offer? CrashOffer(Setup? planned, Setup? working, IReadOnlyList<(string Id, ModSource Source, bool On)>? read) =>
+        CrashOffer(planned, working) is { } offer && read != null && !SameLoad([.. Written(offer.Working.Mods).Select(Key)], read) ? offer : null;
 
     static (string, ModSource, bool) Key(SettingsSaveMod entry) => (entry.Id, entry.Source, entry.IsEnabled);
+
+    // Whether two mod lists have a launch load the same: the same mods on, in the same order (the game's tie-break
+    // after dependencies), and every mod on or off alike (a mod a list doesn't name loads). Off mods' order doesn't count.
+    public static bool SameLoad(IReadOnlyList<(string Id, ModSource Source, bool On)> a, IReadOnlyList<(string Id, ModSource Source, bool On)> b) =>
+        a.Where(e => e.On).Select(e => (e.Id, e.Source)).SequenceEqual(b.Where(e => e.On).Select(e => (e.Id, e.Source)))
+        && a.ToHashSet().SetEquals(b);
 
     // The offer from a launch's record and the working setup: none without either, or with only updates since.
     public static Offer? CrashOffer(Setup? planned, Setup? working)
@@ -350,6 +361,10 @@ static class LaunchGuard
         catch (Exception e)
         {
             Log.Error($"[{ModEntry.ModId}] Could not restore the last working mods and restart, so the game's own dialog shows: {e}");
+            // The answer runs inside our popup's button handler, before the popup's own close clears the container,
+            // which would keep the game's popup out (it takes one at a time) and then clear it: a frame first.
+            await game.ToSignal(game.GetTree(), SceneTree.SignalName.ProcessFrame);
+            NModalContainer.Instance?.Clear();
             await StartupErrorPatch.GamesDialog(game);
         }
     }

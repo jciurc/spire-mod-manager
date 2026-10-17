@@ -212,8 +212,9 @@ public static class ModEntry
 #endif
 
 #if DEVTOOLS
-    // Self-test: Relaunch and Quit call them instead, so the test run doesn't end.
-    public static Action? TestRelaunch, TestQuit;
+    // Self-test: Relaunch and Quit call them instead, so the test run doesn't end. TestRelaunch gets Relaunch's plain.
+    public static Action<bool>? TestRelaunch;
+    public static Action? TestQuit;
 #endif
 
     // Starts a new copy of the game with the same arguments, then quits through the game's own path
@@ -226,7 +227,7 @@ public static class ModEntry
 #if DEVTOOLS
         if (TestRelaunch is { } test)
         {
-            test();
+            test(plain);
             return;
         }
 #endif
