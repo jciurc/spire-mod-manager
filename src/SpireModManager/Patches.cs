@@ -33,6 +33,7 @@ static class MainMenuPatch
             History.Start();
             Bmm.ForgetDismissedWarning(); // the dismissed Better Mod Menu banner, if the two changed outside our page
             WorkshopInfo.Start(); // background Steam query; does nothing without Steam
+            Prewarm.Start(__instance); // the Modding page's text, a little each frame from a second on
 #if DEVTOOLS
             ModEntry.MarkDevRun(__instance.GetTree());
 #endif
