@@ -152,6 +152,7 @@
   "SPIRE_MOD_MANAGER.PROBLEM_DEP_OFF": "Requires mods to be enabled: {mods}",
   "SPIRE_MOD_MANAGER.PROBLEM_DEP_OFF_ONE": "Requires mod to be enabled: {mods}",
   "SPIRE_MOD_MANAGER.STATE_DUPLICATE": "Disabled: another copy of this mod is loaded",
+  "SPIRE_MOD_MANAGER.GAME_MESSAGE_OFF": "From the game, not counted while this mod is off: {message}",
   "SPIRE_MOD_MANAGER.NEEDS_LABEL": "Needs",
   "SPIRE_MOD_MANAGER.NEEDED_BY": "Required for",
   "SPIRE_MOD_MANAGER.UPDATED": "Updated",

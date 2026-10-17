@@ -188,7 +188,10 @@ static class ModDetails
         var problems = Problems(mod);
         foreach (var problem in problems)
             text.Append($"[color={Problem}]{Escape(problem)}[/color]\n");
-        if (problems.Count > 0)
+        var notes = GameNotes(mod);
+        foreach (var note in notes)
+            text.Append($"[color={Disabled}]{Escape(note)}[/color]\n");
+        if (problems.Count + notes.Count > 0)
             text.Append('\n');
         text.Append(mod.manifest?.description is { Length: > 0 } description ? description : Faint("SPIRE_MOD_MANAGER.NO_DESCRIPTION")).Append("\n\n");
 
@@ -252,6 +255,7 @@ static class ModDetails
         var info = Store.InfoFor(id);
         var lines = new List<string> { $"[b]{Escape(id)}[/b]  {Bullet}  {Status(mod)}" };
         lines.AddRange(Problems(mod).Select(p => $"[color={Problem}]{Escape(p)}[/color]"));
+        lines.AddRange(GameNotes(mod).Select(n => $"[color={Disabled}]{Escape(n)}[/color]"));
         string Fact(string key, string value) => $"[color=#e8cf7a]{Menus.Text(key)}[/color]: {value}";
         lines.Add(Fact("SPIRE_MOD_MANAGER.AUTHOR", mod.manifest?.author is { Length: > 0 } author ? Escape(Cut(author, 80)) : Faint("SPIRE_MOD_MANAGER.UNKNOWN")));
         if (WorkshopInfo.For(mod) is { } workshop)
@@ -315,6 +319,11 @@ static class ModDetails
         problems.AddRange(DependencyProblems(mod));
         return problems;
     }
+
+    // The game's messages we took off a mod that's off (BranchErrors), each marked as the game's: not a problem (the mod
+    // doesn't load), but nothing of the game's is hidden.
+    public static List<string> GameNotes(Mod mod) =>
+        [.. BranchErrors.Dropped(mod).Select(e => Menus.Format("SPIRE_MOD_MANAGER.GAME_MESSAGE_OFF", ("message", WithoutTags(e.GetFormattedText()))))];
 
     // The text between tags in pairs ([red]...[/red], with any settings on the first), nested ones too. Only pairs: the
     // game's effects come in pairs, a bracket of a mod's own ("[CN] Pack") doesn't, and stays.

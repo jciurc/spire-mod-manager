@@ -2859,20 +2859,34 @@ static class SelfTest
         else
             Results.Add("SKIP a game load error in the panel: the fixture row has no mod");
         // The game marks every Workshop mod outside its author's branches before it knows which are off (a dev run has
-        // no Steam, so these are made up): a mod that's off loses that error and keeps its others, one on keeps it.
+        // no Steam, so these are made up): a mod that's off loses that error and keeps its others, one on keeps it, and
+        // the game's message still shows, marked as the game's, in the mod's card and panel.
         Check("our Init drops the Steam branch error of mods that are off", BranchErrors.Ran);
         if (ModManager.Mods.FirstOrDefault(m => m.state == ModLoadState.Disabled) is { } offMod
             && ModManager.Mods.FirstOrDefault(m => m.state == ModLoadState.Loaded && m.manifest?.id != ModEntry.ModId) is { } onMod)
         {
             var (offBefore, onBefore) = (offMod.errors, onMod.errors);
             static LocString Error(string key) => new("main_menu_ui", key);
-            offMod.errors = [Error("MOD_ERROR.STEAM_BRANCH_UNSUPPORTED"), Error("MOD_ERROR.DUPLICATE_ID")];
-            onMod.errors = [Error("MOD_ERROR.STEAM_BRANCH_UNSUPPORTED")];
+            LocString Branch(Mod mod)
+            {
+                var error = Error("MOD_ERROR.STEAM_BRANCH_UNSUPPORTED");
+                error.Add("id", mod.manifest?.id ?? "");
+                error.Add("supportedBranch", "public");
+                error.Add("currentBranch", "public-beta");
+                return error;
+            }
+            offMod.errors = [Branch(offMod), Error("MOD_ERROR.DUPLICATE_ID")];
+            onMod.errors = [Branch(onMod)];
             try
             {
                 var dropped = BranchErrors.DropFromOffMods([offMod, onMod]);
                 var offKeys = offMod.errors?.Select(e => e.LocEntryKey).ToList() ?? [];
                 var onKeys = onMod.errors?.Select(e => e.LocEntryKey).ToList() ?? [];
+                var card = ModDetails.Card(offMod);
+                var gameMessage = $"From the game, not counted while this mod is off: Mod {offMod.manifest?.id} only supports Steam branch public";
+                Check("the game's message taken off a mod that's off still shows in its card, marked as the game's, not as a problem",
+                    card.Contains(gameMessage) && !ModDetails.Problems(offMod).Any(p => p.Contains("only supports Steam branch")),
+                    card.Split('\n').FirstOrDefault(l => l.Contains("branch")) ?? card.Split('\n')[0]);
                 offMod.errors = [Error("MOD_ERROR.STEAM_BRANCH_UNSUPPORTED")];
                 BranchErrors.DropFromOffMods([offMod]);
                 Check("a mod that's off loses the game's Steam branch error (it doesn't load) and keeps its others; one on keeps it; "
@@ -2883,6 +2897,7 @@ static class SelfTest
             finally
             {
                 (offMod.errors, onMod.errors) = (offBefore, onBefore);
+                BranchErrors.TestForget(offMod);
             }
         }
         else
