@@ -9,6 +9,7 @@ namespace SpireModManager;
 // suspects. Read only, and only this process's (its id and start time match); without Mod Doctor there's no file.
 static class ModDoctor
 {
+    public const string ModId = "ModDoctor";
     const string FileName = "mod_doctor_startup.json";
     const int FramesToWait = 30; // about half a second: its suspects come a frame or so after the error
 

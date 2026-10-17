@@ -63,9 +63,15 @@ var workshopMods = new List<string>(); // the mod ids in those items' manifests,
 var twins = args.Contains("--twins"); // two --workshop items of one mod id on purpose (the self-test's two-copies check)
 
 if (mode is not ("test" or "launch" or "smoke"))
-    return Fail("usage: dotnet run tools/dev.cs [test [--window] [--bmm[-after]] [--bmm-local] [--real|--first-run|--first-run-bmm]|launch [--first-run|--first-run-bmm]|smoke [--bmm]] [--workshop <id>[,<id>...] [--twins]] [--stable]");
+    return Fail("usage: dotnet run tools/dev.cs [test [--window] [--bmm[-after]] [--bmm-local] [--real|--first-run|--first-run-bmm|--crash-prepare|--crash]|launch [--first-run|--first-run-bmm]|smoke [--bmm]] [--workshop <id>[,<id>...] [--twins]] [--stable]");
 if (real && firstRun)
     return Fail("--real brings your own data, so it can't be a first run");
+if (crashPrepare && crash)
+    return Fail("--crash-prepare and --crash are two runs, in that order: dotnet run tools/dev.cs test --crash-prepare, then test --crash");
+if ((crashPrepare || crash) && (mode != "test" || real || firstRun))
+    return Fail("--crash-prepare and --crash are test runs with the fixture mods and the data the first one leaves: not launch, smoke, --real or a first run");
+if (crashPrepare && workshopAt >= 0)
+    return Fail("--crash-prepare saves the setup that works, the fixture mods alone: --workshop goes with --crash, for mods that fail the start");
 // --workshop: every item has to be there, or the run would test without it and look like a pass. So it takes
 // one list: a second --workshop, --workshop=..., or ids after a space would be dropped without a word.
 if (args.Count(a => a.StartsWith("--workshop")) != (workshopAt < 0 ? 0 : 1))

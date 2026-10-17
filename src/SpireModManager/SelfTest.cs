@@ -52,6 +52,13 @@ static class SelfTest
             await RunReal(menu, outDir);
             return;
         }
+        if (mode is "crash" or "crash-real") // EarlyStart answers the dialog of a failed start: reaching the menu is the failure
+        {
+            Results.Add("FAIL a failed start: the game reached the main menu (nothing stopped its start)");
+            File.WriteAllLines(Path.Combine(outDir, "results.txt"), Results);
+            menu.GetTree().Quit();
+            return;
+        }
         if (mode == "crash-prepare")
         {
             await RunCrashPrepare(menu, outDir);
@@ -1482,12 +1489,18 @@ static class SelfTest
         var (quits, relaunches) = (0, 0);
         ModEntry.TestQuit = () => quits++;
         ModEntry.TestRelaunch = () => relaunches++;
-        // The popup's button, by its node and signal names (the same in every game version so far).
+        var transitionWas = game.Transition.Visible; // the dialog's setup hides the startup transition
+        var root = menu.GetTree().Root;
+        // Our popup's button (marked: no other popup's), by its node and signal names (the same in every game version so far).
         static void Press(string button)
         {
-            if (NModalContainer.Instance?.OpenModal is Node popup && popup.GetNodeOrNull($"VerticalPopup/{button}") is { } found)
+            if (NModalContainer.Instance?.OpenModal is Node popup && popup.FindChild(Menus.MarkName, true, false) != null
+                && popup.GetNodeOrNull($"VerticalPopup/{button}") is { } found)
                 found.EmitSignal("Released", found);
         }
+        string PlainTexts() => root.GetNodeOrNull<ConfirmationDialog>(LaunchGuard.PlainDialogName) is { Visible: true } plain
+            ? $"{plain.Title} | {plain.DialogText} | {plain.OkButtonText} | {plain.CancelButtonText}" : "";
+        void Answer(StringName signal) => root.GetNodeOrNull<ConfirmationDialog>(LaunchGuard.PlainDialogName)?.EmitSignal(signal);
         try
         {
             var asked = LaunchGuard.AskAfterCrash(game, offer);
@@ -1505,12 +1518,35 @@ static class SelfTest
             await Wait(menu, 0.3);
             Check("the dialog after a failed start: Restore and restart writes the working list (Test Fixes off again), then relaunches",
                 asked.IsCompleted && relaunches == 1 && quits == 1 && !Dependencies.IsOn(fixes), $"quits {quits}, relaunches {relaunches}, Test Fixes on {Dependencies.IsOn(fixes)}");
+
+            // Where the game's text can't load (a mod broke it): Godot's plain dialog, in English.
+            settings.ModList.Clear();
+            settings.ModList.AddRange(listWas.Select(e => new SettingsSaveMod { Id = e.Id, Source = e.Source, IsEnabled = e.IsEnabled }));
+            LaunchGuard.TestNoLanguage = true;
+            asked = LaunchGuard.AskAfterCrash(game, offer);
+            await Wait(menu, 0.5);
+            var plain = PlainTexts();
+            Answer(AcceptDialog.SignalName.Canceled);
+            await Wait(menu, 0.3);
+            Check("the plain dialog after a failed start (no game text): its title, what changed, Quit and Restore and restart; Quit writes nothing and quits",
+                asked.IsCompleted && plain.Contains("The game couldn't start") && plain.Contains("Test Fixes (enabled)") && plain.Contains("Restore and restart")
+                && plain.Contains("Quit") && quits == 2 && relaunches == 1 && Dependencies.IsOn(fixes), $"{plain}; quits {quits}, relaunches {relaunches}");
+            asked = LaunchGuard.AskAfterCrash(game, offer);
+            await Wait(menu, 0.5);
+            Answer(AcceptDialog.SignalName.Confirmed);
+            await Wait(menu, 0.3);
+            Check("the plain dialog after a failed start: Restore and restart writes the working list, then relaunches; the dialog goes",
+                asked.IsCompleted && relaunches == 2 && quits == 2 && !Dependencies.IsOn(fixes) && root.GetNodeOrNull(LaunchGuard.PlainDialogName) == null,
+                $"quits {quits}, relaunches {relaunches}, Test Fixes on {Dependencies.IsOn(fixes)}, dialog left {root.GetNodeOrNull(LaunchGuard.PlainDialogName) != null}");
         }
         finally
         {
             ModEntry.TestQuit = null;
             ModEntry.TestRelaunch = null;
+            LaunchGuard.TestNoLanguage = false;
+            game.Transition.Visible = transitionWas;
             NModalContainer.Instance?.Clear();
+            root.GetNodeOrNull(LaunchGuard.PlainDialogName)?.QueueFree();
             settings.ModList.Clear();
             settings.ModList.AddRange(listWas);
             SaveManager.Instance.SaveSettings();
@@ -1527,10 +1563,24 @@ static class SelfTest
         if (crashMode is not ("crash" or "crash-real")
             || System.Environment.GetEnvironmentVariable("SPIRE_MOD_MANAGER_SELFTEST") is not { Length: > 0 } outDir)
             return;
+        // Until answered, the result is that it wasn't: the game may quit before the watcher below sees anything.
+        var results = Path.Combine(outDir, "results.txt");
+        Directory.CreateDirectory(outDir);
+        File.WriteAllLines(results, ["FAIL a failed start: the game ended before our dialog was answered"]);
         if (crashMode == "crash") // crash-real: the --workshop mods fail the start themselves
-            new HarmonyLib.Harmony(ModEntry.ModId + ".SelfTestCrash").Patch(
-                HarmonyLib.AccessTools.Method(typeof(MegaCrit.Sts2.Core.Helpers.OneTimeInitialization), "ExecuteEssential"),
-                prefix: new HarmonyLib.HarmonyMethod(typeof(SelfTest), nameof(MadeUpFailure)));
+        {
+            try
+            {
+                new HarmonyLib.Harmony(ModEntry.ModId + ".SelfTestCrash").Patch(
+                    HarmonyLib.AccessTools.Method(typeof(MegaCrit.Sts2.Core.Helpers.OneTimeInitialization), "ExecuteEssential"),
+                    prefix: new HarmonyLib.HarmonyMethod(typeof(SelfTest), nameof(MadeUpFailure)));
+            }
+            catch (Exception e)
+            {
+                File.WriteAllLines(results, [$"FAIL a failed start: the made-up failure couldn't be patched in: {e.Message}"]);
+                return; // the game starts; Run, at the main menu, says so too
+            }
+        }
         var (quits, relaunches) = (0, 0);
         ModEntry.TestQuit = () => quits++;
         ModEntry.TestRelaunch = () => relaunches++;
@@ -1540,8 +1590,14 @@ static class SelfTest
         void Finish()
         {
             tree.ProcessFrame -= Watch;
-            File.WriteAllLines(Path.Combine(outDir, "results.txt"), Results);
-            tree.Quit();
+            try
+            {
+                File.WriteAllLines(results, Results);
+            }
+            finally
+            {
+                tree.Quit();
+            }
         }
         void Watch()
         {
@@ -1559,13 +1615,23 @@ static class SelfTest
                     popup.GetNodeOrNull("VerticalPopup/YesButton")?.EmitSignal("Released", popup.GetNode("VerticalPopup/YesButton"));
                     return;
                 }
-                if (texts != null && relaunches + quits > 0)
+                // Or the plain one, where a mod broke the game's text.
+                if (texts == null && tree.Root.GetNodeOrNull<ConfirmationDialog>(LaunchGuard.PlainDialogName) is { Visible: true } plain)
+                {
+                    texts = $"{plain.Title} | {plain.DialogText} | {plain.OkButtonText} | {plain.CancelButtonText}";
+                    Results.Add("INFO a failed start: the plain dialog (the game's text didn't load)");
+                    plain.EmitSignal(AcceptDialog.SignalName.Confirmed);
+                    return;
+                }
+                if (relaunches + quits > 0)
                 {
                     var retired = SaveManager.Instance.SettingsSave.ModSettings?.ModList.Where(e => e.Id == "SmmTestRetired").Select(e => e.IsEnabled).ToList() ?? [];
+                    var pending = LaunchGuard.Dir is { } dir && File.Exists(Path.Combine(dir, LaunchGuard.PendingFile));
                     Check("a failed start: our dialog in place of the game's, naming what changed since the last working launch",
-                        texts.Contains("The game couldn't start") && texts.Contains("Test Retired") && texts.Contains("Restore and restart"), texts);
-                    Check("a failed start: Restore and restart writes the last working list (Test Retired off again), then relaunches",
-                        relaunches == 1 && quits == 0 && retired.Count > 0 && retired.All(on => !on), $"relaunches {relaunches}, quits {quits}, Test Retired {string.Join(",", retired)}");
+                        texts != null && texts.Contains("The game couldn't start") && texts.Contains("Test Retired") && texts.Contains("Restore and restart"), texts ?? "no dialog");
+                    Check("a failed start: Restore and restart writes the last working list (Test Retired off again), clears this launch's record, then relaunches",
+                        relaunches == 1 && quits == 0 && retired.Count > 0 && retired.All(on => !on) && !pending,
+                        $"relaunches {relaunches}, quits {quits}, Test Retired {string.Join(",", retired)}, record left {pending}");
                     Finish();
                 }
                 else if (DateTime.Now - started > TimeSpan.FromSeconds(90))

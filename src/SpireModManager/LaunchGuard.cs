@@ -7,6 +7,7 @@ using MegaCrit.Sts2.Core.Logging;
 using MegaCrit.Sts2.Core.Modding;
 using MegaCrit.Sts2.Core.Nodes;
 using MegaCrit.Sts2.Core.Nodes.CommonUi;
+using MegaCrit.Sts2.Core.Nodes.Multiplayer;
 using MegaCrit.Sts2.Core.Saves;
 
 namespace SpireModManager;
@@ -134,13 +135,16 @@ static class LaunchGuard
         return changes.Any(c => c.Kind != Kind.Updated) ? changes : [];
     }
 
+    static bool Ours(string id) => id is ModEntry.ModId or ModDoctor.ModId;
+
     // What a launch's mods changed since a working setup: mods new, enabled, disabled or updated, and whether the
-    // ones enabled in both load in another order. Never ours: we were running, and an update of ours can't be undone.
+    // ones enabled in both load in another order. Never ours (we were running, and an update of ours can't be undone) nor
+    // Mod Doctor's (it's there to look at failures; Restore keeps it as it is).
     public static List<Change> Changes(IReadOnlyList<Entry> tried, IReadOnlyList<Entry> working)
     {
         var then = working.DistinctBy(m => (m.Id, m.Source)).ToDictionary(m => (m.Id, m.Source));
         var changes = new List<Change>();
-        foreach (var mod in tried.DistinctBy(m => (m.Id, m.Source)).Where(m => m.Id != ModEntry.ModId))
+        foreach (var mod in tried.DistinctBy(m => (m.Id, m.Source)).Where(m => !Ours(m.Id)))
             if (!then.TryGetValue((mod.Id, mod.Source), out var was))
             {
                 if (mod.Enabled)
@@ -150,7 +154,7 @@ static class LaunchGuard
                 changes.Add(new Change(mod.Enabled ? Kind.Enabled : Kind.Disabled, mod.Id));
             else if (mod.Enabled && was.Version != null && mod.Version != null && mod.Version != was.Version)
                 changes.Add(new Change(Kind.Updated, mod.Id, was.Version, mod.Version));
-        var both = tried.Where(m => m.Enabled && m.Id != ModEntry.ModId && then.TryGetValue((m.Id, m.Source), out var w) && w.Enabled)
+        var both = tried.Where(m => m.Enabled && !Ours(m.Id) && then.TryGetValue((m.Id, m.Source), out var w) && w.Enabled)
             .Select(m => (m.Id, m.Source)).Distinct().ToList();
         if (!both.SequenceEqual(working.Where(m => both.Contains((m.Id, m.Source))).Select(m => (m.Id, m.Source)).Distinct()))
             changes.Add(new Change(Kind.Order, ""));
@@ -231,55 +235,76 @@ static class LaunchGuard
     static void WriteList(IReadOnlyList<Entry> working)
     {
         var settings = SaveManager.Instance.SettingsSave.ModSettings ??= new ModSettings();
-        var entries = working.Select(m => new SettingsSaveMod { Id = m.Id, Source = m.Source, IsEnabled = m.Enabled || m.Id == ModEntry.ModId }).ToList();
-        entries.AddRange(ModManager.Mods.Union(Installed.Mods).Where(m => m.manifest?.id is { } id && !working.Any(w => w.Id == id && w.Source == m.modSource))
-            .Select(m => new SettingsSaveMod(m) { IsEnabled = m.manifest?.id == ModEntry.ModId }));
+        var entries = Written(working);
         settings.ModList.Clear();
         settings.ModList.AddRange(entries);
         SaveManager.Instance.SaveSettings();
         Log.Info($"[{ModEntry.ModId}] Restored the mod list of the last launch that worked");
     }
 
-    // The game couldn't start: what this launch changed since the last working setup, to offer that setup back, and
-    // whether the game itself changed since (then the old setup may not help). Null when there's nothing to offer: no
-    // working setup, the same mods, or only updates (Restore can't undo an update).
-    public static (Setup Working, List<Change> Changes, bool GameChanged)? CrashOffer() => CrashOffer(_planned, _working);
+    // The mod list a Restore writes: the working setup's, in its order and on or off; mods installed since then off (a
+    // mod the list doesn't name loads); ours always on, and Mod Doctor as it is now (it's there to look at the failure).
+    static List<SettingsSaveMod> Written(IReadOnlyList<Entry> working)
+    {
+        var off = Dependencies.SavedOff();
+        bool On(string id, ModSource source, bool then) =>
+            id == ModEntry.ModId || (id == ModDoctor.ModId ? !off.Contains((id, source)) : then);
+        var entries = working.Select(m => new SettingsSaveMod { Id = m.Id, Source = m.Source, IsEnabled = On(m.Id, m.Source, m.Enabled) }).ToList();
+        entries.AddRange(ModManager.Mods.Union(Installed.Mods).Where(m => m.manifest?.id is { } id && !working.Any(w => w.Id == id && w.Source == m.modSource))
+            .Select(m => new SettingsSaveMod(m) { IsEnabled = On(m.manifest!.id!, m.modSource, false) }));
+        return entries;
+    }
 
-    public static (Setup Working, List<Change> Changes, bool GameChanged)? CrashOffer(Setup? planned, Setup? working)
+    // What the game couldn't start with, offered back: the last working setup, what this launch changed since, and
+    // whether the game itself changed since (then the old setup may not help).
+    public record Offer(Setup Working, List<Change> Changes, bool GameChanged);
+
+    // An offer when Restore would change the mod list the game reads: this launch changed mods since the last working
+    // setup beyond updates (Restore can't undo one), and the list it would write isn't the saved one already (as after
+    // a Restore, or an order the game's own sorting sets: offering it again would loop).
+    public static Offer? CrashOffer() =>
+        CrashOffer(_planned, _working) is { } offer && SaveManager.Instance.SettingsSave.ModSettings?.ModList is { } saved
+        && !Written(offer.Working.Mods).Select(Key).SequenceEqual(saved.Select(Key)) ? offer : null;
+
+    static (string, ModSource, bool) Key(SettingsSaveMod entry) => (entry.Id, entry.Source, entry.IsEnabled);
+
+    // The offer from a launch's record and the working setup: none without either, or with only updates since.
+    public static Offer? CrashOffer(Setup? planned, Setup? working)
     {
         if (planned == null || working == null)
             return null;
         var changes = Changes(planned.Mods, working.Mods);
         if (!changes.Any(c => c.Kind != Kind.Updated))
             return null;
-        return (working, changes, working.Game != null && planned.Game != null && working.Game != planned.Game);
+        return new Offer(working, changes, working.Game != null && planned.Game != null && working.Game != planned.Game);
     }
 
+    const int SuspectsShown = 3; // Mod Doctor can name many (every mod patching the failing step)
+
+#if DEVTOOLS
+    // Self-test: as if the game's text couldn't load, for the plain dialog.
+    public static bool TestNoLanguage;
+#endif
+
     // In place of the game's startup error dialog (StartupErrorPatch): the changes since the last setup that worked, and
-    // Restore and restart or Quit. The game's own setup for its dialog first (TryErrorInit), and Mod Doctor's suspects
-    // if it found any. If anything fails before the choice, the game's own dialog shows instead.
-    public static async Task AskAfterCrash(NGame game, (Setup Working, List<Change> Changes, bool GameChanged) offer)
+    // Restore and restart or Quit, with Mod Doctor's suspects if it found any. The game's own setup for its dialog first
+    // (ErrorInit). Where the game's text can't load (a mod broke it), a plain dialog in English. If anything fails
+    // before the choice, the game's own dialog instead.
+    public static async Task AskAfterCrash(NGame game, Offer offer)
     {
-        Log.Error($"[{ModEntry.ModId}] The game couldn't start; offering the mods of the last launch that worked ({When(offer.Working)})");
+        Log.Error($"[{ModEntry.ModId}] The game couldn't start; offering the mods of the last launch that worked ({offer.Working.At:yyyy-MM-dd HH:mm})");
         bool restore;
         try
         {
-            if (HarmonyLib.AccessTools.Method(typeof(NGame), "TryErrorInit")?.Invoke(game, null) is Task init)
-                await init;
-            var lines = Lines(offer.Changes);
-            if (offer.GameChanged)
-                lines.Add("\n" + Menus.Text("SPIRE_MOD_MANAGER.CRASH_GAME_CHANGED"));
-            if (await ModDoctor.Suspects(game) is { Count: > 0 } suspects)
-                lines.Add("\n" + Menus.Format("SPIRE_MOD_MANAGER.CRASH_SUSPECTS", ("mods", string.Join(", ", suspects.Select(Name)))));
-            var body = new LocString("settings_ui", "SPIRE_MOD_MANAGER.CRASH_BODY");
-            body.Add("date", When(offer.Working));
-            body.Add("changes", string.Join("\n", lines));
-            restore = await Menus.Confirm(new LocString("settings_ui", "SPIRE_MOD_MANAGER.CRASH_TITLE"), body,
-                new LocString("main_menu_ui", "QUIT"), new LocString("settings_ui", "SPIRE_MOD_MANAGER.CRASH_RESTORE"));
+            if (await ErrorInit(game))
+                restore = await AskStyled(offer, await ModDoctor.Suspects(game));
+            else
+                restore = await AskPlain(game, offer);
         }
         catch (Exception e)
         {
             Log.Error($"[{ModEntry.ModId}] Could not offer the last working mods, so the game's own dialog shows: {e}");
+            NModalContainer.Instance?.Clear();
             await StartupErrorPatch.GamesDialog(game);
             return;
         }
@@ -289,9 +314,125 @@ static class LaunchGuard
             return;
         }
         // The game didn't start: only its settings (the mod list) are written, then a plain quit and a relaunch, as its
-        // own dialog quits (NGame.Quit would save the profile and progress of a half-started game).
+        // own dialog quits (NGame.Quit would save the profile and progress of a half-started game). This launch's record
+        // goes: it's answered, and the restored launch's notice would offer the same setup again.
         WriteList(offer.Working.Mods);
+        ClearPending();
         ModEntry.Relaunch(plain: true);
+    }
+
+    // The game's setup for its startup error dialog (its TryErrorInit) without its quit when that fails: the settings,
+    // then the language (false if a mod's patch on it throws: no game text, no game popup), the node ready, and the
+    // startup transition out of the way.
+    static async Task<bool> ErrorInit(NGame game)
+    {
+        if (SaveManager.Instance.SettingsSave == null)
+            SaveManager.Instance.InitSettingsData();
+        var language = true;
+        if (LocManager.Instance == null)
+        {
+            try
+            {
+                LocManager.Initialize();
+            }
+            catch (Exception e)
+            {
+                language = false;
+                Log.Error($"[{ModEntry.ModId}] The game's text couldn't load after the failed start, so the offer is in plain English: {e.Message}");
+            }
+        }
+        if (!game.IsNodeReady())
+            await game.ToSignal(game, Node.SignalName.Ready);
+        game.Transition.Visible = false;
+#if DEVTOOLS
+        if (TestNoLanguage)
+            return false;
+#endif
+        return language && LocManager.Instance != null;
+    }
+
+    // The offer in the game's popup, our mark on it. Another mod's popup would keep ours out (the container takes one at
+    // a time), so it goes; if ours still isn't the one shown, that's a failure (the game's dialog then).
+    static async Task<bool> AskStyled(Offer offer, List<string> suspects)
+    {
+        var lines = Lines(offer.Changes);
+        if (offer.GameChanged)
+            lines.Add("\n" + Menus.Text("SPIRE_MOD_MANAGER.CRASH_GAME_CHANGED"));
+        if (suspects.Count > 0)
+        {
+            var named = suspects.Take(SuspectsShown).Select(Name).ToList();
+            if (suspects.Count > SuspectsShown)
+                named.Add(Menus.Format("SPIRE_MOD_MANAGER.LAUNCH_MORE", ("count", Menus.Number(suspects.Count - SuspectsShown))));
+            lines.Add("\n" + Menus.Format("SPIRE_MOD_MANAGER.CRASH_SUSPECTS", ("mods", string.Join(", ", named))));
+        }
+        var body = new LocString("settings_ui", "SPIRE_MOD_MANAGER.CRASH_BODY");
+        body.Add("date", When(offer.Working));
+        body.Add("changes", string.Join("\n", lines));
+        if (NGenericPopup.Create() is not { } popup || NModalContainer.Instance is not { } modals)
+            throw new InvalidOperationException("the game's popup can't be made");
+        modals.Clear();
+        Menus.Mark(popup);
+        modals.Add(popup);
+        if (modals.OpenModal != popup)
+            throw new InvalidOperationException("the game's popup container didn't take ours");
+        return await popup.WaitForConfirmation(body, new LocString("settings_ui", "SPIRE_MOD_MANAGER.CRASH_TITLE"),
+            new LocString("main_menu_ui", "QUIT"), new LocString("settings_ui", "SPIRE_MOD_MANAGER.CRASH_RESTORE"));
+    }
+
+    public const string PlainDialogName = "SpireModManagerCrashDialog";
+
+    // The offer where the game's text and popups can't be used: Godot's own dialog, in English (our text comes through
+    // the game's too), with the changes by mod name.
+    static async Task<bool> AskPlain(NGame game, Offer offer)
+    {
+        static string Plain(string id) => ModManager.Mods.FirstOrDefault(m => m.manifest?.id == id)?.manifest?.name ?? id;
+        static string Line(Change c) => "  •  " + c.Kind switch
+        {
+            Kind.New => $"{Plain(c.Id)} (new)",
+            Kind.Enabled => $"{Plain(c.Id)} (enabled)",
+            Kind.Disabled => $"{Plain(c.Id)} (disabled)",
+            Kind.Updated => $"{Plain(c.Id)} (updated: {c.From} → {c.To})",
+            _ => "Load order (changed)",
+        };
+        var lines = offer.Changes.Take(LinesShown).Select(Line).ToList();
+        if (offer.Changes.Count > LinesShown)
+            lines.Add($"  •  {offer.Changes.Count - LinesShown} more");
+        var text = $"Changed since the last launch that worked ({offer.Working.At:yyyy-MM-dd HH:mm}):\n{string.Join("\n", lines)}\n\n"
+            + (offer.GameChanged ? "The game itself was updated since then, so the old setup may not start either.\n\n" : "")
+            + "Spire Mod Manager can restore that setup and restart the game. Newly added mods stay installed, but disabled, "
+            + "and other mods go back to how they were.";
+        var dialog = new ConfirmationDialog
+        {
+            Name = PlainDialogName, Title = "The game couldn't start", DialogText = text, DialogAutowrap = true,
+            OkButtonText = "Restore and restart", CancelButtonText = "Quit", Exclusive = true,
+        };
+        var answer = new TaskCompletionSource<bool>();
+        dialog.Confirmed += () => answer.TrySetResult(true);
+        dialog.Canceled += () => answer.TrySetResult(false);
+        game.GetTree().Root.AddChild(dialog);
+        dialog.PopupCentered(new Vector2I(760, 420));
+        try
+        {
+            return await answer.Task;
+        }
+        finally
+        {
+            dialog.QueueFree();
+        }
+    }
+
+    // This launch's record, gone (a Restore answered it).
+    static void ClearPending()
+    {
+        try
+        {
+            if (Dir != null)
+                File.Delete(Path.Combine(Dir, PendingFile));
+        }
+        catch (Exception e)
+        {
+            Log.Warn($"[{ModEntry.ModId}] Could not delete this launch's record after the Restore: {e.Message}");
+        }
     }
 
     // The game's version and build, or null if it doesn't say.
