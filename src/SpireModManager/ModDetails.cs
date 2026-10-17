@@ -4,6 +4,7 @@ using MegaCrit.Sts2.Core.Platform;
 using MegaCrit.Sts2.Core.Nodes.Screens.ModdingScreen;
 using MegaCrit.Sts2.addons.mega_text;
 using MegaCrit.Sts2.Core.Localization;
+using System.Text.RegularExpressions;
 
 namespace SpireModManager;
 
@@ -304,14 +305,27 @@ static class ModDetails
     }
 
     // What stops the mod working: the game's load errors, a duplicate copy, and (if on) dependencies missing or off.
+    // Plain text, escaped where it's shown: the game's errors lose the tags it marks parts with ("Mod [red]{id}[/red]
+    // only supports..."), which would show as text in our lines (one colour, escaped).
     public static List<string> Problems(Mod mod)
     {
-        var problems = (mod.errors ?? []).Select(e => e.GetFormattedText()).ToList();
+        var problems = (mod.errors ?? []).Select(e => WithoutTags(e.GetFormattedText())).ToList();
         if (mod.state == ModLoadState.DisabledDuplicate)
             problems.Add(Menus.Text("SPIRE_MOD_MANAGER.STATE_DUPLICATE"));
         problems.AddRange(DependencyProblems(mod));
         return problems;
     }
+
+    // The text between tags in pairs ([red]...[/red], with any settings on the first), nested ones too. Only pairs: the
+    // game's effects come in pairs, a bracket of a mod's own ("[CN] Pack") doesn't, and stays.
+    static string WithoutTags(string text)
+    {
+        while (PairedTag.Replace(text, "$2") is var plain && plain != text)
+            text = plain;
+        return text;
+    }
+
+    static readonly Regex PairedTag = new(@"\[([a-z_]+)(?:[ =][^\]]*)?\](.*?)\[/\1\]", RegexOptions.Singleline);
 
     // An enabled mod's missing or disabled dependencies, a line for each kind ("Requires mods to be installed: A, B").
     public static List<string> DependencyProblems(Mod mod)

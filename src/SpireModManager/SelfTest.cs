@@ -2544,6 +2544,34 @@ static class SelfTest
             CategoryList.Redraw(content);
             await Wait(menu, 0.2);
         }
+        // The game's own load errors mark parts with its colour tags ("Mod [red]{id}[/red] only supports..."): the panel
+        // shows their text, not the tags.
+        if (other.Mod is { } erring)
+        {
+            var errorsBefore = erring.errors;
+            var branchError = new LocString("main_menu_ui", "MOD_ERROR.STEAM_BRANCH_UNSUPPORTED");
+            branchError.Add("id", erring.manifest?.id ?? "");
+            branchError.Add("supportedBranch", "public");
+            branchError.Add("currentBranch", "public-beta");
+            erring.errors = [branchError];
+            try
+            {
+                CategoryList.Select(screen, other);
+                await Wait(menu, 0.5);
+                var shown = panel.GetNode<RichTextLabel>("ModDescription").GetParsedText();
+                var card = ModDetails.Card(erring); // the row's hover card shows the same lines (as BBCode: "[lb]" is a "[")
+                Check("a game load error shows in the panel and the row's card as text, without the game's colour tags ([red])",
+                    shown.Contains("only supports Steam branch public") && !shown.Contains("[red]") && !shown.Contains("[/red]")
+                    && card.Contains("only supports Steam branch public") && !card.Contains("[lb]red]") && !card.Contains("[lb]/red]"),
+                    $"{shown.Split('\n')[0]} | card: {card.Split('\n').FirstOrDefault(l => l.Contains("branch"))}");
+            }
+            finally
+            {
+                erring.errors = errorsBefore;
+            }
+        }
+        else
+            Results.Add("SKIP a game load error in the panel: the fixture row has no mod");
         CategoryList.Select(screen, ours);
         await Wait(menu, 0.5);
         Check("row state reads the game's: the selected row is selected, another not", RowState.Selected(ours) && !RowState.Selected(other));
