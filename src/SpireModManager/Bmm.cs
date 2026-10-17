@@ -15,21 +15,38 @@ static class Bmm
     const string Chrome = "BetterModMenuChrome", Actions = "BetterModMenuSelectedModActions", RowControls = "RowCustomControls";
     const string GroupPrefix = "ModGroup", RoomMeta = "better_mod_menu_top_bar_room";
 
-    static readonly Type? Context = AccessTools.TypeByName("BetterModMenu.Patches.ModdingScreenContext");
+    static readonly Type? Context = TypeNamed("BetterModMenu.Patches.ModdingScreenContext");
     static readonly FieldInfo? CurrentScreen = Context == null ? null : AccessTools.Field(Context, "_currentScreenRef");
     static readonly MethodInfo? Track = Context == null ? null : AccessTools.Method(Context, "TrackCurrentScreen");
     static readonly MethodInfo? Session = Context == null ? null : AccessTools.Method(Context, "GetSession");
     static readonly MethodInfo? IsCurrentScreen = Context == null ? null : AccessTools.Method(Context, "IsCurrentScreen");
-    static readonly MethodInfo? RefreshGroups = AccessTools.TypeByName("BetterModMenu.Patches.NModdingScreenPatch") is { } screenPatch
+    static readonly MethodInfo? RefreshGroups = TypeNamed("BetterModMenu.Patches.NModdingScreenPatch") is { } screenPatch
         ? AccessTools.Method(screenPatch, "RefreshGroupsUI", []) : null;
-    static readonly MethodInfo? ChromeLayout = AccessTools.TypeByName("BetterModMenu.Patches.ModdingScreenActionFlow") is { } flow
+    static readonly MethodInfo? ChromeLayout = TypeNamed("BetterModMenu.Patches.ModdingScreenActionFlow") is { } flow
         ? AccessTools.Method(flow, "UpdateChromeLayout") : null;
-    static readonly MethodInfo? RowNames = AccessTools.TypeByName("BetterModMenu.Patches.NModMenuRowPatch") is { } rowPatch
+    static readonly MethodInfo? RowNames = TypeNamed("BetterModMenu.Patches.NModMenuRowPatch") is { } rowPatch
         ? AccessTools.Method(rowPatch, "RefreshVisibleModNames") : null;
     static readonly HashSet<string> Missing = [];
 
     // Loaded: its patch class exists (whatever its mod id).
-    public static bool Present { get; } = AccessTools.TypeByName("BetterModMenu.Patches.NModdingScreenPatch") != null;
+    public static bool Present { get; } = TypeNamed("BetterModMenu.Patches.NModdingScreenPatch") != null;
+
+    // A type by its full name from whichever loaded assembly has it. Not AccessTools.TypeByName: when the type isn't
+    // there (most players), that scans every type of every loaded mod twice, ~200 ms with 250 mods.
+    static Type? TypeNamed(string fullName)
+    {
+        foreach (var assembly in AppDomain.CurrentDomain.GetAssemblies())
+            try
+            {
+                if (assembly.GetType(fullName, throwOnError: false) is { } type)
+                    return type;
+            }
+            catch (Exception)
+            {
+                // an assembly that can't be read for types: not Better Mod Menu's
+            }
+        return null;
+    }
 
     // Ticked in the mod list (on in the game's saved list), loaded now or not: either way it loads after a relaunch.
     public static bool Ticked => Dependencies.Find(ModId) is { } mod && Dependencies.IsOn(mod);
