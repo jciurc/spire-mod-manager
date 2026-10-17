@@ -314,10 +314,19 @@ var results = Path.Combine(outDir, "results.txt");
 // So here, with the game gone: Test Retired (on for this launch) off again on disk.
 if (crash && File.Exists(results))
 {
-    var retired = JsonNode.Parse(File.ReadAllText(Path.Combine(sandbox, "settings.save")))?["mod_settings"]?["mod_list"]?.AsArray()
-        .Where(entry => (string?)entry?["id"] == "SmmTestRetired").Select(entry => (bool?)entry?["is_enabled"]).ToList() ?? [];
-    File.AppendAllLines(results, [$"{(retired.Count > 0 && retired.All(on => on == false) ? "PASS" : "FAIL")} a failed start: "
-        + $"settings.save on disk, which the relaunch reads, has Test Retired off again (is_enabled {string.Join(",", retired)})"]);
+    string line;
+    try
+    {
+        var retired = JsonNode.Parse(File.ReadAllText(Path.Combine(sandbox, "settings.save")))?["mod_settings"]?["mod_list"]?.AsArray()
+            .Where(entry => (string?)entry?["id"] == "SmmTestRetired").Select(entry => (bool?)entry?["is_enabled"]).ToList() ?? [];
+        line = $"{(retired.Count > 0 && retired.All(on => on == false) ? "PASS" : "FAIL")} a failed start: settings.save on disk, "
+            + $"which the relaunch reads, has Test Retired off again (is_enabled {string.Join(",", retired)})";
+    }
+    catch (Exception e)
+    {
+        line = $"FAIL a failed start: settings.save couldn't be read after the run: {e.Message}";
+    }
+    File.AppendAllLines(results, [line]);
 }
 var text = File.Exists(results) ? File.ReadAllText(results) : "NO RESULTS (test did not finish)\n";
 Console.Write(text);

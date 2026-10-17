@@ -44,6 +44,9 @@ static class LaunchGuard
     public static string? Dir { get; private set; }
     static Setup? _failed, _working, _planned;
     static List<(string Id, ModSource Source, bool On)>? _read;
+
+    // The mod list as this launch read it (Begin), for the self-test.
+    public static IReadOnlyList<(string Id, ModSource Source, bool On)>? ReadList => _read;
     static bool _reached;
 
     // The notice after a launch that never reached the menu: shown once at the main menu, after any other popup.
@@ -208,7 +211,7 @@ static class LaunchGuard
 
     static string Escaped(string text) => text.Replace("[", "[lb]");
 
-    static string Name(string id) => Escaped(ModManager.Mods.FirstOrDefault(m => m.manifest?.id == id)?.manifest?.name ?? id);
+    static string Name(string id) => Escaped(PlainName(id));
 
     // The changes as the popups list them, a line each, the last ones counted in one line if there are many. Plain: for
     // where the game's text couldn't load, in English from our own file and without markup (Our).
@@ -371,7 +374,7 @@ static class LaunchGuard
 
     // The game's setup for its startup error dialog (its TryErrorInit) without its quit when that fails: the language
     // (false if a mod's patch on it throws: no game text, no game popup), the node ready, and the startup transition out
-    // of the way. Its settings are read already (CrashOffer compared their mod list).
+    // of the way. Its settings are read already: Begin took the mod list from them, and Restore writes it back.
     static async Task<bool> ErrorInit(NGame game)
     {
         var language = true;

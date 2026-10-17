@@ -1489,6 +1489,11 @@ static class SelfTest
         // This launch as it is; the working setup the same but with Test Fixes off (so it was enabled since).
         var current = History.CurrentMods().Select(m => new LaunchGuard.Entry(m.Id, m.Source, m.Enabled, null)).ToList();
         var before = current.Select(m => m.Id == "SmmTestFixes" ? m with { Enabled = false } : m).ToList();
+        // The guard below compares with the list as the game read it (Begin's copy), not the one it put in place once the
+        // mods loaded, which names every installed mod: dev.cs's list names only a few.
+        var listNow = SaveManager.Instance.SettingsSave.ModSettings?.ModList.Count ?? 0;
+        Check("after a failed start: the list compared is the one the game read, from before it put its own in place",
+            LaunchGuard.ReadList is { } readList && readList.Count < listNow, $"read {LaunchGuard.ReadList?.Count}, now {listNow}");
         // An order the game's own sorting sets (a dependency an update added) against the list a Restore wrote: no
         // offer, or each Restore would fail the same and offer it again. The same order as the player's own: offered.
         var on = current.Select((m, i) => (m, i)).Where(p => p.m.Enabled && p.m.Id is not (ModEntry.ModId or ModDoctor.ModId)).Select(p => p.i).Take(2).ToList();
