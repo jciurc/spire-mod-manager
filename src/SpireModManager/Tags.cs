@@ -46,6 +46,9 @@ static class Tags
         return chips;
     }
 
+    // What a #tag search finds on a mod: its chips' text.
+    public static IReadOnlyList<string> Searchable(Mod mod) => [.. For(mod).Select(c => c.Text)];
+
     // A usage hint for the foot of a card: small, bold, faint.
     public static string Hint(string text) => $"[b][font_size=14][color=#fff6e280]{Escape(text)}[/color][/font_size][/b]";
 

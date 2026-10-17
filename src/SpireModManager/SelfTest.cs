@@ -2904,6 +2904,38 @@ static class SelfTest
         Check("click-to-search: a #tag glued to a word is a tag, a lone # stays plain", glued.SequenceEqual(["foo", "C#"]), string.Join(" | ", glued));
         var local = await Shown("#local");
         Check("#tag matches the tag only, any case", local.Count > 1 && local.All(id => Tags.For(Dependencies.Find(id)).Any(c => c.Text == "Local")), string.Join(", ", local));
+        // A "-" before a word, #tag, @author or "exact text" leaves out the mods it matches; alone, every other mod shows.
+        var notWord = await Shown("test -fixes");
+        Check("a -word leaves out the mods with it", notWord.Contains("SmmTestContent") && !notWord.Contains("SmmTestFixes"), string.Join(", ", notWord));
+        var notAuthor = await Shown("#local -@symphony");
+        Check("-@author leaves out that author's mods", notAuthor.Count > 0 && !notAuthor.Contains("SmmTestFixes")
+            && notAuthor.All(id => Dependencies.Find(id)?.manifest?.author != "symphony"), string.Join(", ", notAuthor));
+        var notTag = await Shown("-#library");
+        Check("-#tag alone: every mod but the tagged ones", !notTag.Contains("SmmTestLib") && notTag.Contains("SmmTestFixes"), string.Join(", ", notTag));
+        // Punctuation and symbols count as spaces, in the search and in a mod's text; "exact text" keeps them, and case.
+        var spaced = await Shown("test-fixes!");
+        Check("punctuation in a search counts as spaces: test-fixes! finds Test Fixes", spaced.SequenceEqual(["SmmTestFixes"]), string.Join(", ", spaced));
+        var aliasBefore = Store.InfoFor("SmmTestContent")?.Alias;
+        Store.EditMod("SmmTestContent", info => info.Alias = "Don't Panic");
+        try
+        {
+            var apostrophe = await Shown("dont panic");
+            Check("punctuation in a mod's text is skipped: dont panic finds Don't Panic", apostrophe.SequenceEqual(["SmmTestContent"]), string.Join(", ", apostrophe));
+            var exact = await Shown("\"Don't\"");
+            var otherCase = await Shown("\"don't\"");
+            var noApostrophe = await Shown("\"Dont\"");
+            Check("\"exact text\" matches as typed: its symbols and case", exact.SequenceEqual(["SmmTestContent"]) && otherCase.Count == 0 && noApostrophe.Count == 0,
+                $"{string.Join(", ", exact)} | {string.Join(", ", otherCase)} | {string.Join(", ", noApostrophe)}");
+            var notExact = await Shown("test -\"Don't\"");
+            Check("-\"exact text\" leaves out the mods with it", !notExact.Contains("SmmTestContent") && notExact.Contains("SmmTestFixes"), string.Join(", ", notExact));
+        }
+        finally
+        {
+            Store.EditMod("SmmTestContent", info => info.Alias = aliasBefore);
+        }
+        string[] whole = [After("-#Library mod", () => Tag("Gameplay", true)), After("\"two words\" mod", () => Words("mod", true))];
+        Check("click-to-search: a -#tag and \"exact text\" stay whole terms", whole.SequenceEqual(["-#Library mod #Gameplay", "\"two words\""]),
+            string.Join(" | ", whole));
         var none = await Shown("zzz no such mod");
         Check("no match hides every row and header", none.Count == 0
             && !content.GetChildren().OfType<Control>().Any(c => c.IsInGroup("SpireModManagerCategoryHeader") && c.Visible));
