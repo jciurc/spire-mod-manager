@@ -568,8 +568,11 @@ static class LoadOrder
                 spare[(entry.Id, entry.Source)] = queue = new Queue<SettingsSaveMod>();
             queue.Enqueue(entry);
         }
-        var entries = mods.Select(m => spare.TryGetValue((m.manifest?.id, m.modSource), out var queue) && queue.TryDequeue(out var entry)
-            ? entry : new SettingsSaveMod(m)).ToList();
+        // A copy with no entry left (a second item of a mod saved once) gets a new one, on or off as its twin's.
+        var known = Dependencies.SavedEntries(list);
+        var entries = mods.Select(m => spare.TryGetValue((m.manifest?.id, m.modSource), out var queue) && queue.TryDequeue(out var entry) ? entry
+            : known.TryGetValue((m.manifest?.id, m.modSource), out var twin) ? new SettingsSaveMod(m) { IsEnabled = twin.IsEnabled }
+            : new SettingsSaveMod(m)).ToList();
         var kept = entries.ToHashSet();
         entries.AddRange(list.Where(e => !kept.Contains(e)));
         list.Clear();

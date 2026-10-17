@@ -93,13 +93,15 @@ workshopMods = workshopManifests.Select(m => Id(m.Manifest)).Distinct().ToList()
 // What each --workshop mod needs has to be on too, all the way down: the game won't load a mod whose dependency
 // didn't load. On in this run: ours, the --workshop mods, Better Mod Menu with --bmm, and the fixture mods (not --real).
 var installedManifests = Manifests(Path.Combine(GameDir, "mods")).ToList();
-var on = workshopManifests.GroupBy(m => Id(m.Manifest)).ToDictionary(g => g.Key, g => g.First().Manifest); // twins: the first's needs
+var on = workshopManifests.GroupBy(m => Id(m.Manifest)).ToDictionary(g => g.Key, g => g.First().Manifest); // twins: each copy is walked with its own, below
 on.TryAdd(ModId, []);
 var others = real ? [] : Manifests(Path.Combine(root, "tools", "fixtures", "mods"));
 foreach (var manifest in others.Concat(installedManifests.Where(m => bmm && Id(m) == "BetterModMenu")))
     on.TryAdd(Id(manifest), manifest);
 // Walked from the --workshop mods only: some self-test checks need a mod that won't load (Test Addon, as above).
 foreach (var (item, manifest) in workshopManifests)
+{
+    on[Id(manifest)] = manifest; // twins: each copy is walked with its own needs
     if (MissingDependency([Id(manifest)], []) is { } chain)
     {
         var needed = chain[^1];
@@ -115,6 +117,7 @@ foreach (var (item, manifest) in workshopManifests)
             : installed ? "dev runs don't switch on the mods installed for play (Better Mod Menu aside), so " + add
             : add));
     }
+}
 // Either copy: both play in the one sandbox data folder.
 if (Process.GetProcessesByName("SlayTheSpire2").Select(p => Path.GetDirectoryName(ExePath(p)))
         .FirstOrDefault(dir => dir != null && new[] { BetaDir, StableDir }.Contains(dir, StringComparer.OrdinalIgnoreCase)) is { } running)
