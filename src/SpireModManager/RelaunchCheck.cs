@@ -25,9 +25,10 @@ static class RelaunchCheck
             Show(owner);
     }
 
-    // Enabled mods with a dependency that's off or missing, each with the info panel's reason.
+    // Enabled mods with a dependency that's off or missing, each with the info panel's reason (two copies of one mod: the
+    // one that loads).
     static List<(Mod Mod, string Why)> Problems() =>
-        ModManager.Mods.Union(Installed.Mods).Where(m => m.manifest?.id != null)
+        Dependencies.OnePerKey(ModManager.Mods.Union(Installed.Mods).Where(m => m.manifest?.id != null))
             .SelectMany(m => ModDetails.DependencyProblems(m).Select(why => (m, why)))
             .ToList();
 

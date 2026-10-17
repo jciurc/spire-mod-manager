@@ -275,6 +275,9 @@ static class ModToggledPatch
                 return;
             Profiles.Track();
             History.Record(); // a tickbox change (Track only saves when the active profile changed)
+            // The game's tickbox sets every entry of the mod's id and source, so another copy of it (a second Workshop
+            // item) switched too: its row's box follows, or a click on its old tick would switch both back.
+            Profiles.RefreshTickboxes(__instance);
             var content = __instance.GetNode<Control>("%ModsScrollContainer/Mask/Content");
             RowTitles.MarkChanged(content.GetChildren().OfType<NModMenuRow>(), Store.Data.VanillaView);
             CategoryList.RefreshStrips(content);

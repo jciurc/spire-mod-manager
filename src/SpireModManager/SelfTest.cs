@@ -1772,9 +1772,12 @@ static class SelfTest
             Prewarm.Start(menu);
             for (var i = 0; i < 50 && !Prewarm.Done; i++)
                 await Wait(menu, 0.1);
-            Check("the page's text is shaped ahead on the main menu: a Chinese alias once, nothing all-Latin, to the end",
-                Prewarm.Done && Prewarm.Shaped.Count(t => t == Alias) == 1 && !Prewarm.Shaped.Any(t => t.All(c => c < 0x80)),
-                $"done {Prewarm.Done}: {string.Join(" | ", Prewarm.Shaped)}");
+            // Once if Kreon lacks its letters; not at all where a mod gave the font Chinese ones (RitsuLib-based mods can).
+            var font = ModEntry.Font("res://themes/kreon_regular_shared.tres");
+            var lacks = Alias.EnumerateRunes().Any(r => !font.HasChar(r.Value));
+            Check("the page's text is shaped ahead on the main menu: a Chinese alias once (none if the font has its letters), nothing all-Latin, to the end",
+                Prewarm.Done && Prewarm.Shaped.Count(t => t == Alias) == (lacks ? 1 : 0) && !Prewarm.Shaped.Any(t => t.All(c => c < 0x80)),
+                $"done {Prewarm.Done}, the font lacks its letters {lacks}: {string.Join(" | ", Prewarm.Shaped)}");
         }
         finally
         {
@@ -3446,7 +3449,37 @@ static class SelfTest
         Check("two copies of one mod: moved back, nothing moved for Changes or the menu, and the list is as long as before",
             list.Count == count && Entries() == entries && HistoryBar.Moves().Count == 0 && !LoadOrder.OrderChanged && LineFollows(),
             $"{list.Count} entries (was {count}), moved {HistoryBar.Moves().Count}, order changed {LoadOrder.OrderChanged}");
-        var on = list.Where(e => e.Id == id && e.Source == source).Select(e => e.IsEnabled).ToList();
+        var on = list.Where(e => e.Id == id && e.Source == source).Select(e => e.IsEnabled).ToList(); // to put back at the end
+        // A click on one copy's box (the game's own handler sets every entry of the id): the other copy's box follows, and
+        // Changes and the counts name the mod once. Then back, from the other copy.
+        var twinRows = Rows().Where(r => r.Mod != null && twins.Contains(r.Mod)).ToList();
+        if (twinRows.Count == 2)
+        {
+            var name = twins.First().manifest?.name ?? id ?? "";
+            bool Ticked(NModMenuRow row) => row.GetNode<NTickbox>("Tickbox").IsTicked;
+            // A click as the game's tickbox makes one (its ForceToggleTick is beta-only): the box flips, then Toggled fires.
+            static void Click(NModMenuRow row)
+            {
+                var box = row.GetNode<NTickbox>("Tickbox");
+                box.IsTicked = !box.IsTicked;
+                box.EmitSignal("Toggled", box);
+            }
+            var (onBefore, offBefore, _) = HistoryBar.Counts();
+            Click(twinRows[0]);
+            await Wait(menu, 0.3);
+            var (first, second) = (Ticked(twinRows[0]), Ticked(twinRows[1]));
+            var lines = HistoryBar.Describe().Count(l => l.Contains(name));
+            var bothChanged = twins.All(HistoryBar.ChangedMods().Contains); // Show: Changed lists both rows
+            var (onNow, offNow, _) = HistoryBar.Counts();
+            var counted = Math.Abs(onNow - onBefore) + Math.Abs(offNow - offBefore);
+            Click(twinRows[1]);
+            await Wait(menu, 0.3);
+            Check("two copies of one mod: a click on one's box switches the other's too, Changes and the counts name the mod once, Show: Changed both rows",
+                first == second && lines == 1 && counted == 1 && bothChanged && Ticked(twinRows[0]) == Ticked(twinRows[1]) && Ticked(twinRows[0]) != first,
+                $"boxes {first}/{second}, {lines} lines naming {name}, counted {counted}, both under Changed {bothChanged}; back {Ticked(twinRows[0])}/{Ticked(twinRows[1])}");
+        }
+        else
+            Results.Add($"SKIP two copies of one mod: a click on one's box (rows {twinRows.Count})");
         Dependencies.Set([twins.First()], false, screen);
         var offAll = list.Where(e => e.Id == id && e.Source == source).All(e => !e.IsEnabled);
         Dependencies.Set([twins.First()], true, screen);
@@ -3943,7 +3976,9 @@ static class SelfTest
         var border = screen.GetNode<Control>("ModsBorder");
         var search = border.GetNode<Control>("SpireModManagerSearch");
         Control? Banner() => border.GetNodeOrNull<Control>(LoadOrder.SelfName);
-        int OnNow() => ModManager.Mods.Union(Installed.Mods).Where(m => m.manifest?.id != null).Count(Dependencies.IsOn);
+        // Mods on now, two copies of one mod counted once (as the counts count them).
+        int OnNow() => Dependencies.OnePerKey(ModManager.Mods.Union(Installed.Mods).Where(m => m.manifest?.id != null))
+            .Count(Dependencies.IsOn);
         string Summary() => (screen.GetNodeOrNull<Control>(HistoryBar.ChangesName) as RichTextLabel)?.GetParsedText() ?? "";
         var on = OnNow();
         Check("the counts count this mod: the profile bar's, the main menu button's and Mods enabled's", Dependencies.IsOn(self)
