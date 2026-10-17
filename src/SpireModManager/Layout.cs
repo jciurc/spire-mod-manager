@@ -187,7 +187,7 @@ static class Layout
         var pending = screen.GetNode<MegaRichTextLabel>("%PendingChangesLabel");
         Place(pending, new Vector4(leftEnd + 12, 1000, right, 1068));
         pending.SetTextAutoSize(new LocString("settings_ui", Wide ? "SPIRE_MOD_MANAGER.PENDING_RESTART" : "MODDING_SCREEN.PENDING_CHANGES_WARNING").GetFormattedText());
-        pending.Modulate = view == View.LoadOrder ? Colors.Transparent : Colors.White; // the game sets Visible itself
+        pending.Modulate = view == View.LoadOrder ? Colors.Transparent : Colors.White; // Visible: UpdateDot, below
         Watermark(screen);
         BackLabel(screen);
         UpdateDot(screen);
@@ -306,10 +306,15 @@ static class Layout
     }
 
     // Vanilla View: the game's notification dot on "Spire Manager" while a relaunch is pending.
+    // The page's "after a restart" line and the view toggle's dot, by the main menu button's rule (the game's own check
+    // looks only at mods it loaded): on every build, show and change, so a page rebuilt after a run agrees with the menu.
     public static void UpdateDot(Node screen)
     {
+        var pending = ModEntry.HasPendingChanges();
+        if (screen.GetNodeOrNull<Control>("%PendingChangesLabel") is { } line)
+            line.Visible = pending;
         if (screen.GetNodeOrNull<Control>("SpireModManagerViewToggle/Dot") is { } dot)
-            dot.Visible = Current == View.Vanilla && ModEntry.HasPendingChanges();
+            dot.Visible = Current == View.Vanilla && pending;
     }
 
     // Places the info panel's parts: the head (title, source, facts) beside a large thumbnail, the description below,

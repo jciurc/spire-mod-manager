@@ -42,7 +42,10 @@ static class LoadOrder
     // The order this session loaded with, taken once the game has finished its own startup sorting.
     public static void RememberLoadedOrder() => _loadedOrder ??= Order().ToList();
 
-    public static bool OrderChanged => _loadedOrder != null && !_loadedOrder.SequenceEqual(Order());
+    // Moved since launch, as Changes counts it (↕): each installed mod once, by its first place. Not the raw saved list,
+    // which can hold repeats and entries for mods that aren't installed: those made the main menu ask for a relaunch
+    // while Changes showed nothing.
+    public static bool OrderChanged => HistoryBar.Moves().Count > 0;
 
     static IEnumerable<string> Order() =>
         SaveManager.Instance.SettingsSave.ModSettings?.ModList.Select(m => $"{m.Id}/{m.Source}") ?? [];
@@ -555,8 +558,18 @@ static class LoadOrder
         if (SaveManager.Instance.SettingsSave.ModSettings is not { } settings)
             return;
         var list = settings.ModList;
-        var first = Dependencies.SavedEntries(list);
-        var entries = mods.Select(m => first.GetValueOrDefault((m.manifest?.id, m.modSource)) ?? new SettingsSaveMod(m)).ToList();
+        // Each installed copy its own entry, in the list's order: two copies with one id and source (two Workshop items
+        // of one mod) take that key's first and second entries. Both took the first before, which left the second over,
+        // added again at the end: the list grew by one with every save.
+        var spare = new Dictionary<(string?, ModSource), Queue<SettingsSaveMod>>();
+        foreach (var entry in list)
+        {
+            if (!spare.TryGetValue((entry.Id, entry.Source), out var queue))
+                spare[(entry.Id, entry.Source)] = queue = new Queue<SettingsSaveMod>();
+            queue.Enqueue(entry);
+        }
+        var entries = mods.Select(m => spare.TryGetValue((m.manifest?.id, m.modSource), out var queue) && queue.TryDequeue(out var entry)
+            ? entry : new SettingsSaveMod(m)).ToList();
         var kept = entries.ToHashSet();
         entries.AddRange(list.Where(e => !kept.Contains(e)));
         list.Clear();

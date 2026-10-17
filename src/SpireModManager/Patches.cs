@@ -245,9 +245,7 @@ static class ModToggledPatch
             RowTitles.MarkChanged(content.GetChildren().OfType<NModMenuRow>(), Store.Data.VanillaView);
             CategoryList.RefreshStrips(content);
             ModDetails.Refresh(__instance); // its problems ("Needs X, which is off") follow too
-            Layout.UpdateDot(__instance);
-            if (LoadOrder.OrderChanged || Installed.Mods.Any(Installed.On)) // the game only checks mods it loaded
-                __instance.GetNode<Control>("%PendingChangesLabel").Visible = true;
+            Layout.UpdateDot(__instance); // the line too: the game only checks mods it loaded
         }
         catch (Exception e)
         {
