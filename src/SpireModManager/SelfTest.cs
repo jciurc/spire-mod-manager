@@ -1598,6 +1598,8 @@ static class SelfTest
                 Check("the dialog at its longest (7 changes, a game update since): 4 listed, 3 counted, the update said, the game's message first",
                     asked.IsCompleted && longTexts.Contains("3 more") && longTexts.Contains("The game itself was updated") && longTexts.Contains(gamesMessage), longTexts);
             }
+            else
+                Check("the dialog at its longest: an offer for 7 new mods and a game update since", false, "no offer");
         }
         finally
         {

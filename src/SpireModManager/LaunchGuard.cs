@@ -430,7 +430,10 @@ static class LaunchGuard
                 ? JsonSerializer.Deserialize<Dictionary<string, string>>(Godot.FileAccess.GetFileAsString("res://localization/eng/main_menu_ui.json"))?.GetValueOrDefault(Key)
                 : LocString.GetIfExists("main_menu_ui", Key)?.GetFormattedText();
             if (message is not { Length: > 0 })
+            {
+                Log.Warn($"[{ModEntry.ModId}] The game has no {Key} text{(plain ? " in English" : "")}, so the dialog leaves the game's own message out");
                 return "";
+            }
             message = Whitespace.Replace(plain ? Markup.Replace(message, "") : message, " ").Trim();
             return Our(plain, "SPIRE_MOD_MANAGER.CRASH_GAMES_MESSAGE", ("message", message)) + "\n\n";
         }
