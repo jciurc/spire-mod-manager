@@ -5422,6 +5422,8 @@ static class SelfTest
         await Wait(menu, 0.2);
         Check("another mod's panel behind the changes list: out of sight and keyboard reach, shown as far as its mod can tell; its overlay too",
             HistoryBar.ListOpen(info) && other.Visible && Behind(other) && overlay.Visible && Behind(overlay), Seen());
+        ModDetails.PlaceFields(info); // as a resize does while the list is open
+        Check("behind the changes list: no \"more from other mods\" line over it", info.GetNodeOrNull<Control>(ModDetails.OthersName) is not { Visible: true });
         other.Visible = false; // its mod hides it
         HistoryBar.CloseList(info);
         await Wait(menu, 0.2);

@@ -604,7 +604,11 @@ static class ModDetails
     public static void PlaceFields(Control container)
     {
         if (!Layout.Wide || HistoryBar.ListOpen(container) || container.GetNodeOrNull<Control>(FieldsName) is not { } yours)
+        {
+            if (container.GetNodeOrNull<Control>(OthersName) is { } stale)
+                stale.Visible = false; // the changes list or the narrow layout: no line placed
             return;
+        }
         const float fewLines = 80;
         var description = container.GetNode<RichTextLabel>("ModDescription");
         var top = description.OffsetTop;
@@ -614,7 +618,7 @@ static class ModDetails
         var others = Layout.FitOthers(container, room - Math.Min(text, fewLines));
         room -= others.Sum(o => o.Size.Y + FieldsGap);
         // Other mods' parts with no room are out of sight (Layout.Park): a line says how many, and where they are.
-        var parked = Layout.OtherParts(container).Count - others.Count;
+        var parked = Layout.Parked(container);
         var line = container.GetNodeOrNull<Label>(OthersName) ?? AddOthersLine(container);
         line.Visible = parked > 0;
         if (parked > 0)
