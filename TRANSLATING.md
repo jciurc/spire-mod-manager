@@ -106,9 +106,9 @@ translated in place of `v0.1.2`:
   file. Without `--base`, the tool takes the oldest release your file fits: it may flag a text you already updated,
   but it never misses one.
 - `dotnet run tools/loc.cs compare <your file> --base v0.1.2 --html changes.html` writes a page to open in a
-  browser: each English change, old and new, next to your text and its line. If you kept the copy of your file from
-  that version, add `--old <that copy>`: the page then shows how your text changed too, and which texts you've
-  already updated. Without `--html`, the same shows in the terminal.
+  browser: each English change, old and new, next to your text and its line, then any text your file still lacks. If
+  you kept the copy of your file from that version, add `--old <that copy>`: the page then shows how your text
+  changed too, and which texts you've already updated. Without `--html`, the same shows in the terminal.
 - `dotnet run tools/loc.cs versions` lists the releases and how much each one changed. `dotnet run tools/loc.cs changes
   v0.1.2` shows every English change since that release; `changes v0.1.1 v0.1.2` shows the changes between two.
 - In a browser, the English file's [history](https://github.com/jciurc/spire-mod-manager/commits/dev/localization/eng/settings_ui.json)

@@ -14,8 +14,9 @@
 //   dotnet run tools/loc.cs compare <file> --base <ref> [--to <ref>] [--old <file>] [--html <page.html>]
 //                                                          both sides of each English change since --base: the English
 //                                                          then and now, and the translation then (--old: the copy made for
-//                                                          that version) and now, with its line. --html: the same as a page
-//                                                          to open in a browser, side by side.
+//                                                          that version) and now, with its line; then the texts it still
+//                                                          lacks and the keys English doesn't have. --html: the same as a
+//                                                          page to open in a browser, side by side. Exit code 1 if any to do.
 //
 // A translation file holds only its own language, as the game reads it: the English it was made from is a version
 // (--base), else the oldest release whose texts the file has (said so in the report; it can flag a text that was
@@ -37,9 +38,9 @@ try
     return args[0] switch
     {
         "versions" => Versions(),
-        "changes" when args.Length >= 2 => Changes(args[1], args.Skip(2).FirstOrDefault(a => !a.StartsWith("--")), args.Contains("--md")),
-        "status" when args.Length >= 2 => Status(args[1], Option("--base"), Option("--eng")),
-        "compare" when args.Length >= 2 && Option("--base") is { } from => Compare(args[1], from, Option("--to"), Option("--old"), Option("--html")),
+        "changes" when Positional() is [var from, .. var rest] => Changes(from, rest.FirstOrDefault(), args.Contains("--md")),
+        "status" when Positional() is [var file, ..] => Status(file, Option("--base"), Option("--eng")),
+        "compare" when Positional() is [var file, ..] && Option("--base") is { } version => Compare(file, version, Option("--to"), Option("--old"), Option("--html")),
         _ => Usage(),
     };
 }
@@ -56,7 +57,24 @@ int Usage()
     return 1;
 }
 
-string? Option(string name) => Array.IndexOf(args, name) is var at and >= 0 && at + 1 < args.Length ? args[at + 1] : null;
+// An option's value (null: not given). Given without one, it's refused rather than read as the next option.
+string? Option(string name) => Array.IndexOf(args, name) is not (var at and >= 0) ? null
+    : at + 1 < args.Length && !args[at + 1].StartsWith("--") ? args[at + 1]
+    : throw new Problem($"{name} needs a value: {name} <{(name is "--old" or "--html" ? "file" : "version")}>");
+
+// The arguments after the command that aren't options or their values, in order.
+List<string> Positional()
+{
+    var (positional, valued) = (new List<string>(), new[] { "--base", "--eng", "--to", "--old", "--html" });
+    for (var i = 1; i < args.Length; i++)
+    {
+        if (valued.Contains(args[i]))
+            i++;
+        else if (!args[i].StartsWith("--"))
+            positional.Add(args[i]);
+    }
+    return positional;
+}
 
 // Each release's English, then now's: its count and what changed since the one before.
 int Versions()
@@ -121,7 +139,8 @@ int Status(string file, string? baseRef, string? eng)
     return fresh.Count + changed.Count + gone.Count + translation.Todos > 0 ? 1 : 0;
 }
 
-// Both sides of each English change since a version: the English then and now, the translation then and now.
+// Both sides of each English change since a version: the English then and now, the translation then and now. Then
+// what else the translation lacks or has extra, so the list is all there is to do.
 int Compare(string file, string from, string? to, string? oldFile, string? html)
 {
     var (fromName, toName) = (Resolve(from), to == null ? null : Resolve(to));
@@ -134,41 +153,62 @@ int Compare(string file, string from, string? to, string? oldFile, string? html)
     {
         var (kind, key, was, text) = change;
         var (old, current) = (then?.Texts.GetValueOrDefault(key), now.Texts.GetValueOrDefault(key));
-        var state = kind switch
+        var (state, todo) = kind switch
         {
-            "new" => current == null ? "to translate" : "translated",
-            "removed" => current == null ? "removed" : "to remove",
-            _ when then == null => current == null ? "to translate" : "to check",
-            _ => current == null ? "to translate" : old == current ? "to update" : "updated",
+            "new" => current == null ? ("to translate", true) : ("translated", false),
+            "removed" => current == null ? ("removed", false) : ("to remove", true),
+            _ when current == null => ("to translate", true),
+            _ when then == null => ("to check", true),
+            _ => old == current ? ("to update", true) : ("updated", false),
         };
-        return new Row(key, kind, was, text, old, current, now.Lines.GetValueOrDefault(key), state);
-    }).OrderBy(r => r.Kind switch { "changed" => 0, "new" => 1, _ => 2 }).ToList(); // the changed first: they need both sides
+        return new Row(key, kind, was, text, old, current, now.Lines.GetValueOrDefault(key), state, todo);
+    }).ToList();
+    var listed = rows.Select(r => r.Key).ToHashSet();
+    rows.AddRange(englishNow.Where(p => !listed.Contains(p.Key) && !now.Texts.ContainsKey(p.Key))
+        .Select(p => new Row(p.Key, "unchanged", p.Value, p.Value, then?.Texts.GetValueOrDefault(p.Key), null, 0, "to translate", true)));
+    rows.AddRange(now.Texts.Where(p => !listed.Contains(p.Key) && !englishNow.ContainsKey(p.Key))
+        .Select(p => new Row(p.Key, "not in English", null, null, then?.Texts.GetValueOrDefault(p.Key), p.Value, now.Lines.GetValueOrDefault(p.Key), "to remove", true)));
+    // The changed first: they need both sides.
+    rows = [.. rows.OrderBy(r => r.Kind switch { "changed" => 0, "new" => 1, "unchanged" => 2, "removed" => 3, _ => 4 })];
     var title = $"{name} for English {fromName} -> {toName ?? "now"}" + (then != null ? $", its copy then: {Path.GetFileName(oldFile)}" : "");
-    var counts = string.Join(", ", rows.GroupBy(r => r.State).Select(g => $"{g.Count()} {g.Key}"));
+    var counts = rows.Count == 0 ? "no English change, and no text missing" : string.Join(", ", rows.GroupBy(r => r.State).Select(g => $"{g.Count()} {g.Key}"));
+    var result = rows.Any(r => r.Todo) ? 1 : 0;
     if (html != null)
     {
-        File.WriteAllText(html, Page(title, counts, name, rows, then != null));
+        try
+        {
+            File.WriteAllText(html, Page(title, counts, name, rows, then != null));
+        }
+        catch (Exception e) when (e is IOException or UnauthorizedAccessException)
+        {
+            throw new Problem($"couldn't write {html}: {(e is DirectoryNotFoundException ? "its folder doesn't exist" : e.Message)}");
+        }
         Console.WriteLine($"{title}: {counts}\nwritten to {Path.GetFullPath(html)}");
-        return rows.Any(r => r.State.StartsWith("to ")) ? 1 : 0;
+        return result;
     }
-    Console.WriteLine($"{title}\n{(rows.Count == 0 ? "no English change" : counts)}");
+    Console.WriteLine($"{title}\n{counts}");
     foreach (var row in rows)
     {
         Console.WriteLine($"\n{row.State.ToUpperInvariant(),-13} {(row.Line > 0 ? $"{name}:{row.Line} " : "")}{Short(row.Key)} ({row.Kind})");
-        Console.WriteLine($"  English:     {(row.Kind == "changed" ? OneLine(WordDiff(row.Was ?? "", row.Text ?? "")) : Quoted(row.Text ?? row.Was ?? ""))}");
+        Console.WriteLine($"  English:     {row.Kind switch
+        {
+            "changed" => OneLine(WordDiff(row.Was ?? "", row.Text ?? "")),
+            "not in English" => "none",
+            _ => Quoted(row.Text ?? row.Was ?? ""),
+        }}");
         if (then != null && row.Old != row.Current)
             Console.WriteLine($"  translation: {OneLine(WordDiff(row.Old ?? "", row.Current ?? ""))}");
         else if (row.Current != null)
             Console.WriteLine($"  translation: {OneLine(row.Current)}{(then != null ? " (unchanged)" : "")}");
     }
-    return rows.Any(r => r.State.StartsWith("to ")) ? 1 : 0;
+    return result;
 }
 
 // The English each text of a translation was made from: --base's, else the oldest release it fits (null: unknown).
 (string Basis, Dictionary<string, string>? Made) Basis(Translation translation, string? baseRef)
 {
-    if (baseRef != null)
-        return ($"{Resolve(baseRef)} (--base)", EnglishAt(Resolve(baseRef)));
+    if (baseRef != null && Resolve(baseRef) is var version)
+        return ($"{version} (--base)", EnglishAt(version));
     // The oldest release with every key the file has (fewest texts the file lacks first). None without git or tags.
     var releases = Releases(quiet: true);
     var fits = releases.Select(r => (Release: r, Texts: EnglishAt(r))).Where(r => translation.Texts.Keys.All(r.Texts.ContainsKey))
@@ -214,8 +254,11 @@ static Translation ReadTranslation(string path)
     if (!File.Exists(path))
         throw new Problem($"{path} doesn't exist");
     var source = File.ReadAllText(path); // UTF-8 with or without a BOM, or UTF-16, as the mod reads it
-    var reader = new Utf8JsonReader(Encoding.UTF8.GetBytes(source), new JsonReaderOptions { CommentHandling = JsonCommentHandling.Allow, AllowTrailingCommas = true });
-    var (texts, seen, twice, todos, depth) = (new Dictionary<string, string>(), new HashSet<string>(), new List<string>(), 0, 0);
+    var bytes = Encoding.UTF8.GetBytes(source);
+    var reader = new Utf8JsonReader(bytes, new JsonReaderOptions { CommentHandling = JsonCommentHandling.Allow, AllowTrailingCommas = true });
+    var (texts, lines, seen, twice, todos, depth) = (new Dictionary<string, string>(), new Dictionary<string, int>(), new HashSet<string>(), new List<string>(), 0, 0);
+    // Each key's line (its last listing), for "file:line" pointers: the line breaks before where the reader found it.
+    var (line, scanned, keyLine) = (1, 0L, 0);
     string? key = null;
     try
     {
@@ -234,11 +277,15 @@ static Translation ReadTranslation(string path)
                     break;
                 case JsonTokenType.PropertyName when depth == 1:
                     key = reader.GetString();
+                    for (; scanned < reader.TokenStartIndex; scanned++)
+                        line += bytes[scanned] == '\n' ? 1 : 0;
+                    keyLine = line;
                     break;
                 case JsonTokenType.String when depth == 1 && key != null:
                     if (!seen.Add(key))
                         twice.Add(key);
                     texts[key] = reader.GetString() ?? "";
+                    lines[key] = keyLine;
                     key = null;
                     break;
             }
@@ -247,15 +294,6 @@ static Translation ReadTranslation(string path)
     catch (JsonException e)
     {
         throw new Problem($"{Path.GetFileName(path)} isn't valid JSON (line {e.LineNumber + 1}, at byte {e.BytePositionInLine + 1}): {Regex.Replace(e.Message, @"\s*LineNumber:.*$", "")}");
-    }
-    // Each key's line (its last listing), for "file:line" pointers.
-    var lines = new Dictionary<string, int>();
-    var number = 0;
-    foreach (var line in source.Split('\n'))
-    {
-        number++;
-        if (Regex.Match(line, "^\\s*\"([^\"]+)\"\\s*:") is { Success: true } match && texts.ContainsKey(match.Groups[1].Value))
-            lines[match.Groups[1].Value] = number;
     }
     return new Translation(texts, lines, todos, [.. twice.Distinct()]);
 }
@@ -276,9 +314,13 @@ static string Summary(List<(string Kind, string Key, string? Was, string? Text)>
 // "enabled or disabled" reads as one change, not three.
 static List<(int Side, string Text)> Pieces(string was, string now)
 {
-    const string Cjk = @"\p{IsCJKUnifiedIdeographs}\p{IsHiragana}\p{IsKatakana}\p{IsHangulSyllables}";
+    // Letters and marks of scripts written without spaces; the rarer ideographs past U+FFFF come as surrogate pairs.
+    const string Cjk = @"\p{IsCJKUnifiedIdeographs}\p{IsCJKUnifiedIdeographsExtensionA}\p{IsCJKCompatibilityIdeographs}\p{IsCJKSymbolsandPunctuation}"
+        + @"\p{IsHiragana}\p{IsKatakana}\p{IsKatakanaPhoneticExtensions}\p{IsHangulSyllables}\p{IsHangulJamo}\p{IsHangulCompatibilityJamo}"
+        + @"\p{IsHalfwidthandFullwidthForms}\uD840-\uD8BF";
     // A [tag] or {slot} on its own, a CJK letter, a space run, or a word up to the next of those.
-    static string[] Tokens(string text) => [.. Regex.Matches(text, $@"\[[^\]\s]*\]|\{{[^}}\s]*\}}|[{Cjk}]|\s+|[^\s\[{{{Cjk}]+|.").Select(m => m.Value)];
+    static string[] Tokens(string text) => [.. Regex.Matches(text, $@"\[[^\]\s]*\]|\{{[^}}\s]*\}}|[\uD840-\uD8BF][\uDC00-\uDFFF]|[{Cjk}]|\s+|[^\s\[{{{Cjk}]+|.")
+        .Select(m => m.Value)];
     var (a, b) = (Tokens(was), Tokens(now));
     var common = new int[a.Length + 1, b.Length + 1];
     for (var i = a.Length - 1; i >= 0; i--)
@@ -358,10 +400,17 @@ static string Page(string title, string counts, string file, List<Row> rows, boo
     var body = new StringBuilder();
     foreach (var row in rows)
     {
-        var english = row.Kind == "changed" ? HtmlDiff(row.Was ?? "", row.Text ?? "") : row.Kind == "new" ? $"<ins>{E(row.Text)}</ins>" : $"<del>{E(row.Was)}</del>";
+        var english = row.Kind switch
+        {
+            "changed" => HtmlDiff(row.Was ?? "", row.Text ?? ""),
+            "new" => $"<ins>{E(row.Text)}</ins>",
+            "removed" => $"<del>{E(row.Was)}</del>",
+            "not in English" => "<span class=none>not in English</span>",
+            _ => E(row.Text),
+        };
         var translation = row.Current == null && row.Old == null ? "<span class=none>none</span>"
             : hasOld && row.Old != row.Current ? HtmlDiff(row.Old ?? "", row.Current ?? "") : E(row.Current) + (hasOld ? " <span class=none>(unchanged)</span>" : "");
-        body.Append($"<tr class=\"{(row.State.StartsWith("to ") ? "todo" : "done")}\"><td><code>{E(Short(row.Key))}</code>{(row.Line > 0 ? $"<br><span class=line>{E(file)}:{row.Line}</span>" : "")}</td>"
+        body.Append($"<tr class=\"{(row.Todo ? "todo" : "done")}\"><td><code>{E(Short(row.Key))}</code>{(row.Line > 0 ? $"<br><span class=line>{E(file)}:{row.Line}</span>" : "")}</td>"
             + $"<td class=state>{E(row.State)}</td><td class=en>{english}</td><td class=tr>{translation}</td></tr>\n");
     }
     return $$"""
@@ -386,7 +435,7 @@ del { color: var(--del); background: var(--del-bg); text-decoration: line-throug
   .en::before { content: "English, then \2192  now"; } .tr::before { content: "Translation"; }
 }
 </style></head><body>
-<h1>{{E(title)}}</h1><p>{{E(counts)}}. Rows to do first, highlighted; struck-through red went, green came.</p>
+<h1>{{E(title)}}</h1><p>{{E(counts)}}.{{(rows.Count > 0 ? " The rows still to do are highlighted; struck-through red went, green came." : "")}}</p>
 <table><tr class=head><th>Text</th><th>State</th><th>English, then &rarr; now</th><th>Translation{{(hasOld ? ", then &rarr; now" : ", now")}}</th></tr>
 {{body}}</table></body></html>
 """;
@@ -448,7 +497,7 @@ static string ScriptDir([CallerFilePath] string path = "") => Path.GetDirectoryN
 
 record Translation(Dictionary<string, string> Texts, Dictionary<string, int> Lines, int Todos, List<string> Twice);
 
-record Row(string Key, string Kind, string? Was, string? Text, string? Old, string? Current, int Line, string State);
+record Row(string Key, string Kind, string? Was, string? Text, string? Old, string? Current, int Line, string State, bool Todo);
 
 // A refusal: its message says what's wrong and what to do.
 class Problem(string message) : Exception(message);
