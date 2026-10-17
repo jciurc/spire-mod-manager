@@ -93,7 +93,7 @@ int Status(string file, string? baseRef, string? eng)
 {
     if (!File.Exists(file))
         throw new Problem($"{file} doesn't exist");
-    var (entries, todos) = ReadTranslation(file);
+    var (entries, todos, twice) = ReadTranslation(file);
     var now = eng != null && File.Exists(eng) ? ReadEnglishFile(eng) : EnglishAt(eng == null ? null : Resolve(eng));
     // The English each text was made from: its own `// en:` line, else --base's, else the inferred release's.
     var keys = entries.Select(e => e.Key).ToHashSet();
@@ -105,8 +105,9 @@ int Status(string file, string? baseRef, string? eng)
             baseTexts = EnglishAt(Resolve(baseRef));
         else
         {
-            // The oldest release with every key the file has (fewest texts the file lacks first).
-            var fits = Releases().Select(r => (Release: r, Texts: EnglishAt(r))).Where(r => keys.All(r.Texts.ContainsKey))
+            // The oldest release with every key the file has (fewest texts the file lacks first). None without git or
+            // the tags.
+            var fits = Releases(quiet: true).Select(r => (Release: r, Texts: EnglishAt(r))).Where(r => keys.All(r.Texts.ContainsKey))
                 .OrderBy(r => r.Texts.Keys.Count(k => !keys.Contains(k))).FirstOrDefault();
             (inferred, baseTexts) = (fits.Release, fits.Texts);
         }
@@ -114,6 +115,7 @@ int Status(string file, string? baseRef, string? eng)
     var withLines = entries.Count(e => e.En != null);
     var rest = baseRef != null ? $"{Resolve(baseRef)} (--base)"
         : inferred != null ? $"{inferred}, inferred from its texts (--base <version> to set it)"
+        : Releases(quiet: true).Count == 0 ? "unknown: no release tags here (git fetch --tags, or --base <version>), so their changed English can't be told"
         : "unknown: no release has all its keys (--base <version> to set it), so their changed English can't be told";
     var basis = withLines == entries.Count ? "the `// en:` line of each text"
         : withLines > 0 ? $"the `// en:` lines of {withLines} texts; the other {entries.Count - withLines}: {rest}"
@@ -126,6 +128,8 @@ int Status(string file, string? baseRef, string? eng)
     Console.WriteLine($"{Path.GetFileName(file)} ({entries.Count} texts) against the English {(eng == null ? "now" : eng)} ({now.Count} texts)");
     Console.WriteLine($"made from: {basis}");
     Console.WriteLine($"{fresh.Count} new, {changed.Count} changed, {gone.Count} no longer in English{(todos > 0 ? $", {todos} marked TODO" : "")}");
+    if (twice.Count > 0)
+        Console.WriteLine($"listed twice (the last one counts, as for the mod): {string.Join(", ", twice.Select(Short))}");
     foreach (var key in fresh)
         Console.WriteLine($"NEW     {Short(key)} {Quoted(now[key])}");
     foreach (var key in changed)
@@ -136,7 +140,7 @@ int Status(string file, string? baseRef, string? eng)
 }
 
 // The release tags, oldest first: vX.Y.Z only (not v0.1.0-before-retag, not mvp).
-List<string> Releases() => [.. (Git("tag", "--list", "v*") ?? "").Split('\n', StringSplitOptions.RemoveEmptyEntries | StringSplitOptions.TrimEntries)
+List<string> Releases(bool quiet = false) => [.. (Quietly(quiet, () => Git("tag", "--list", "v*")) ?? "").Split('\n', StringSplitOptions.RemoveEmptyEntries | StringSplitOptions.TrimEntries)
     .Where(t => Regex.IsMatch(t, @"^v\d+\.\d+\.\d+$")).OrderBy(t => Version.Parse(t[1..]))];
 
 // "latest": the newest release; anything else as git takes it.
@@ -157,44 +161,55 @@ Dictionary<string, string> ReadEnglishFile(string path) => Flat(File.ReadAllText
 static Dictionary<string, string> Flat(string json)
 {
     using var document = JsonDocument.Parse(json, new JsonDocumentOptions { CommentHandling = JsonCommentHandling.Skip, AllowTrailingCommas = true });
-    return document.RootElement.EnumerateObject().Where(p => p.Value.ValueKind == JsonValueKind.String)
-        .ToDictionary(p => p.Name, p => p.Value.GetString() ?? "");
+    var texts = new Dictionary<string, string>();
+    foreach (var property in document.RootElement.EnumerateObject().Where(p => p.Value.ValueKind == JsonValueKind.String))
+        texts[property.Name] = property.Value.GetString() ?? ""; // a key listed twice: the last counts
+    return texts;
 }
 
-// A translation file's texts in order, each with the English its `// en:` line names (if any), and its TODO marks.
-static (List<Entry> Entries, int Todos) ReadTranslation(string path)
+// A translation file's texts in order, each with the English its `// en:` line names (if any), its TODO marks, and
+// the keys it lists twice (the last copy kept, as the mod's reader keeps it).
+static (List<Entry> Entries, int Todos, List<string> Twice) ReadTranslation(string path)
 {
     var bytes = Encoding.UTF8.GetBytes(File.ReadAllText(path)); // UTF-8 with or without a BOM, or UTF-16, as the mod reads it
     var reader = new Utf8JsonReader(bytes, new JsonReaderOptions { CommentHandling = JsonCommentHandling.Allow, AllowTrailingCommas = true });
     var (entries, todos, depth) = (new List<Entry>(), 0, 0);
-    string? en = null, key = null;
-    while (reader.Read())
+    string? en = null, key = null, keyEn = null;
+    try
     {
-        switch (reader.TokenType)
+        while (reader.Read())
         {
-            case JsonTokenType.StartObject or JsonTokenType.StartArray:
-                depth++;
-                break;
-            case JsonTokenType.EndObject or JsonTokenType.EndArray:
-                depth--;
-                break;
-            case JsonTokenType.Comment:
-                var comment = reader.GetComment().Trim();
-                if (comment.StartsWith("en:"))
-                    en = Literal(comment[3..].Trim());
-                else if (comment.StartsWith("TODO"))
-                    todos++;
-                break;
-            case JsonTokenType.PropertyName when depth == 1:
-                key = reader.GetString();
-                break;
-            case JsonTokenType.String when depth == 1 && key != null:
-                entries.Add(new Entry(key, reader.GetString() ?? "", en));
-                (key, en) = (null, null);
-                break;
+            switch (reader.TokenType)
+            {
+                case JsonTokenType.StartObject or JsonTokenType.StartArray:
+                    depth++;
+                    break;
+                case JsonTokenType.EndObject or JsonTokenType.EndArray:
+                    depth--;
+                    break;
+                case JsonTokenType.Comment:
+                    var comment = reader.GetComment().Trim();
+                    if (comment.StartsWith("en:"))
+                        en = Literal(comment[3..].Trim());
+                    else if (comment.StartsWith("TODO"))
+                        todos++;
+                    break;
+                case JsonTokenType.PropertyName when depth == 1:
+                    (key, keyEn, en) = (reader.GetString(), en, null); // the `// en:` line above this key is this key's
+                    break;
+                case JsonTokenType.String when depth == 1 && key != null:
+                    entries.Add(new Entry(key, reader.GetString() ?? "", keyEn));
+                    (key, keyEn) = (null, null);
+                    break;
+            }
         }
     }
-    return (entries, todos);
+    catch (JsonException e)
+    {
+        throw new Problem($"{Path.GetFileName(path)} isn't valid JSON (line {e.LineNumber + 1}, at byte {e.BytePositionInLine + 1}): {e.Message}");
+    }
+    var twice = entries.GroupBy(e => e.Key).Where(g => g.Count() > 1).Select(g => g.Key).ToList();
+    return ([.. entries.GroupBy(e => e.Key).Select(g => g.Last())], todos, twice);
 }
 
 // A JSON string literal ("..." with its escapes), or null if it isn't one.
@@ -308,10 +323,32 @@ string? Git(params string[] arguments)
     start.ArgumentList.Add(root);
     foreach (var argument in arguments)
         start.ArgumentList.Add(argument);
-    using var git = Process.Start(start) ?? throw new Problem("git didn't start (is it installed and on the PATH?)");
+    Process? started;
+    try
+    {
+        started = Process.Start(start);
+    }
+    catch (System.ComponentModel.Win32Exception)
+    {
+        started = null;
+    }
+    using var git = started ?? throw new Problem("git isn't installed or isn't on the PATH: it's needed for versions (a translation with `// en:` lines and --eng <file> needs none)");
     var output = git.StandardOutput.ReadToEnd();
     git.WaitForExit();
     return git.ExitCode == 0 ? output : null;
+}
+
+// What the call gives, or null when it's refused and that's allowed (quiet: inference without git or tags).
+static string? Quietly(bool quiet, Func<string?> call)
+{
+    try
+    {
+        return call();
+    }
+    catch (Problem) when (quiet)
+    {
+        return null;
+    }
 }
 
 static string ScriptDir([CallerFilePath] string path = "") => Path.GetDirectoryName(path) ?? ".";
