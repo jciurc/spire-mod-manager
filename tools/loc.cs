@@ -122,21 +122,26 @@ int Status(string file, string? baseRef, string? eng)
     var now = eng != null && File.Exists(eng) ? ReadEnglishFile(eng) : EnglishAt(eng == null ? null : Resolve(eng));
     var (basis, made) = Basis(translation, baseRef);
     var fresh = now.Keys.Where(k => !translation.Texts.ContainsKey(k)).ToList();
+    // Listed but blank: the mod shows the English, so they're to translate too, at their line.
+    var empty = fresh.Where(translation.Lines.ContainsKey).ToList();
+    fresh = [.. fresh.Except(empty)];
     var gone = translation.Texts.Keys.Where(k => !now.ContainsKey(k)).ToList();
     var changed = translation.Texts.Keys.Where(k => now.TryGetValue(k, out var text) && made?.GetValueOrDefault(k) is { } was && was != text).ToList();
     var name = Path.GetFileName(file);
     Console.WriteLine($"{name} ({translation.Texts.Count} texts) against the English {(eng == null ? "now" : eng)} ({now.Count} texts)");
     Console.WriteLine($"made from: {basis}");
-    Console.WriteLine($"{fresh.Count} new, {changed.Count} changed, {gone.Count} no longer in English{(translation.Todos > 0 ? $", {translation.Todos} marked TODO" : "")}");
+    Console.WriteLine($"{fresh.Count} new, {changed.Count} changed, {gone.Count} no longer in English{(empty.Count > 0 ? $", {empty.Count} empty" : "")}{(translation.Todos > 0 ? $", {translation.Todos} marked TODO" : "")}");
     if (translation.Twice.Count > 0)
         Console.WriteLine($"listed twice (the last one counts, as for the mod): {string.Join(", ", translation.Twice.Select(Short))}");
     foreach (var key in fresh)
         Console.WriteLine($"NEW      {Short(key)} {Quoted(now[key])}");
+    foreach (var key in empty)
+        Console.WriteLine($"EMPTY    {name}:{translation.Lines[key]} {Short(key)} {Quoted(now[key])}");
     foreach (var key in changed)
         Console.WriteLine($"CHANGED  {name}:{translation.Lines[key]} {Short(key)}\n  English: {OneLine(WordDiff(made?.GetValueOrDefault(key) ?? "", now[key]))}\n  yours:   {OneLine(translation.Texts[key])}");
     foreach (var key in gone)
         Console.WriteLine($"GONE     {name}:{translation.Lines[key]} {Short(key)}");
-    return fresh.Count + changed.Count + gone.Count + translation.Todos > 0 ? 1 : 0;
+    return fresh.Count + empty.Count + changed.Count + gone.Count + translation.Todos > 0 ? 1 : 0;
 }
 
 // Both sides of each English change since a version: the English then and now, the translation then and now. Then
@@ -165,7 +170,7 @@ int Compare(string file, string from, string? to, string? oldFile, string? html)
     }).ToList();
     var listed = rows.Select(r => r.Key).ToHashSet();
     rows.AddRange(englishNow.Where(p => !listed.Contains(p.Key) && !now.Texts.ContainsKey(p.Key))
-        .Select(p => new Row(p.Key, "unchanged", p.Value, p.Value, then?.Texts.GetValueOrDefault(p.Key), null, 0, "to translate", true)));
+        .Select(p => new Row(p.Key, "unchanged", p.Value, p.Value, then?.Texts.GetValueOrDefault(p.Key), null, now.Lines.GetValueOrDefault(p.Key), "to translate", true)));
     rows.AddRange(now.Texts.Where(p => !listed.Contains(p.Key) && !englishNow.ContainsKey(p.Key))
         .Select(p => new Row(p.Key, "not in English", null, null, then?.Texts.GetValueOrDefault(p.Key), p.Value, now.Lines.GetValueOrDefault(p.Key), "to remove", true)));
     // The changed first: they need both sides.
@@ -247,8 +252,8 @@ static Dictionary<string, string> Flat(string json)
     return texts;
 }
 
-// A translation file: its texts in order (a key listed twice: the last copy, as the mod's reader keeps it, and named),
-// each key's line, and its TODO marks.
+// A translation file: its texts in order (a key listed twice: the last copy, as the mod's reader keeps it, and named;
+// a blank one left out, as the mod leaves it out), each key's line, blank ones too, and its TODO marks.
 static Translation ReadTranslation(string path)
 {
     if (!File.Exists(path))
@@ -284,7 +289,11 @@ static Translation ReadTranslation(string path)
                 case JsonTokenType.String when depth == 1 && key != null:
                     if (!seen.Add(key))
                         twice.Add(key);
-                    texts[key] = reader.GetString() ?? "";
+                    // A blank text is as good as none: the mod shows the English for it (Translations.Read).
+                    if (reader.GetString() is { } text && text.Trim().Length > 0)
+                        texts[key] = text;
+                    else
+                        texts.Remove(key);
                     lines[key] = keyLine;
                     key = null;
                     break;
