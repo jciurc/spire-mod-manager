@@ -12,6 +12,7 @@
 // - Descriptions: no code sets the engine's TooltipText; Hover.Tip shows our card.
 // - Fixtures: the JSON under tools/fixtures parses, and each test mod's manifest has id, name and version.
 // - Both game branches: the members only the public-beta has go through Compat.
+// - Null-forgiving: no `!` that tells the compiler a value isn't null, in src, tools or build.cs.
 // - Tracked files: none over 1 MB, none holding what looks like a GitHub token.
 // Prints PASS, FAIL and WARN lines (as annotations on GitHub); exit code 1 on any FAIL.
 using System.Diagnostics;
@@ -153,6 +154,20 @@ foreach (var (path, source) in sources.Where(s => Path.GetFileName(s.Key) != "Co
 }
 Check("members only the beta has go through Compat (stable has no Mod.workshopId or NModInfoContainer.Clear)", branchy.Count == 0, List(branchy));
 
+// Null-forgiving: Jordan's code style has no `!` after a value to say it isn't null (null!, x!.y, F()!). A null there
+// throws far from its cause; a check that narrows (a pattern, or a checked local) gives the code its own way out.
+// Comments and the text of strings don't count; an interpolated string's holes do, as they're code.
+var forgiving = new Regex(@"(?<=[\w)\]])!(?!=)");
+var asserted = new List<string>();
+foreach (var path in Files("src", "*.cs").Concat(Files("tools", "*.cs")).Append(Path.Combine(root, "build.cs")).Where(File.Exists))
+{
+    var lines = CodeOnly(File.ReadAllText(path)).Split('\n');
+    for (var i = 0; i < lines.Length; i++)
+        if (forgiving.IsMatch(lines[i]))
+            asserted.Add($"{Name(path)}:{i + 1}");
+}
+Check("no null-forgiving ! (narrow instead: `is { } x`, `is not { } x` then return or continue, or a checked local)", asserted.Count == 0, List(asserted));
+
 // Fixtures: the test mods and data tools/dev.cs puts in the sandbox.
 var fixtures = Path.Combine(root, "tools", "fixtures");
 foreach (var file in Files(Path.Combine("tools", "fixtures"), "*.json"))
@@ -252,6 +267,117 @@ static IEnumerable<string> Calls(string source, string helper, string suffix) =>
 // Literal keys joined to a suffix variable ("SPIRE_MOD_MANAGER.X" + variable), each with that suffix.
 static IEnumerable<string> Joined(string source, string variable, string suffix) =>
     Regex.Matches(source, $@"""SPIRE_MOD_MANAGER\.([\w.]+)"" \+ {variable}\b").Select(m => m.Groups[1].Value + suffix);
+
+// A C# source with its comments and the text of its strings and chars blanked out, line breaks kept (so line numbers
+// hold). Strings: regular, verbatim (@) and raw (three quotes or more), each maybe interpolated ($, or $$ and more for
+// raw ones); their holes are code, so they stay.
+static string CodeOnly(string source)
+{
+    var code = new StringBuilder(source.Length);
+    var i = 0;
+    Code(hole: false);
+    return code.ToString();
+
+    char At(int offset) => i + offset < source.Length ? source[i + offset] : '\0';
+    int Run(char c) => source.AsSpan(i).IndexOfAnyExcept(c) is var n and >= 0 ? n : source.Length - i;
+    int Upto(string end, int from) => source.IndexOf(end, from, StringComparison.Ordinal) is var at and >= 0 ? at + end.Length - i : source.Length - i;
+    void Keep() => code.Append(source[i++]);
+    void Blank(int count)
+    {
+        for (var end = Math.Min(i + count, source.Length); i < end; i++)
+            code.Append(source[i] == '\n' ? '\n' : ' ');
+    }
+
+    // Code to the end, or in a hole to the brace that closes it (left for the string).
+    void Code(bool hole)
+    {
+        var depth = 0;
+        while (i < source.Length)
+        {
+            var c = source[i];
+            if (c == '/' && At(1) == '/')
+                Blank(Upto("\n", i));
+            else if (c == '/' && At(1) == '*')
+                Blank(Upto("*/", i + 2));
+            else if (c == '\'')
+                Char();
+            else if (c == '"' || c is '$' or '@' && source.AsSpan(i).TrimStart("$@").StartsWith("\""))
+                Text();
+            else if (hole && c == '}' && depth == 0)
+                return;
+            else
+            {
+                depth += hole && c == '{' ? 1 : hole && c == '}' ? -1 : 0;
+                Keep();
+            }
+        }
+    }
+
+    void Char()
+    {
+        var end = i + 1;
+        while (end < source.Length && source[end] is not ('\'' or '\n'))
+            end += source[end] == '\\' ? 2 : 1;
+        Blank(end + 1 - i);
+    }
+
+    void Text()
+    {
+        var (dollars, verbatim) = (0, false);
+        while (source[i] is '$' or '@')
+        {
+            dollars += source[i] == '$' ? 1 : 0;
+            verbatim |= source[i] == '@';
+            Blank(1);
+        }
+        var quotes = Run('"');
+        if (!verbatim && quotes >= 3)
+        {
+            Blank(quotes);
+            var close = new string('"', quotes);
+            while (i < source.Length && !source.AsSpan(i).StartsWith(close))
+                if (dollars > 0 && At(0) == '{' && Run('{') >= dollars)
+                    Hole(Run('{'), dollars);
+                else
+                    Blank(1);
+            Blank(quotes);
+            return;
+        }
+        if (!verbatim && quotes == 2)
+        {
+            Blank(2); // ""
+            return;
+        }
+        Blank(1);
+        while (i < source.Length)
+        {
+            if (verbatim ? At(0) == '"' && At(1) == '"' : At(0) == '\\')
+                Blank(2);
+            else if (At(0) == '"' || !verbatim && At(0) == '\n') // a verbatim string may span lines
+            {
+                Blank(1);
+                return;
+            }
+            else if (dollars > 0 && At(0) == '{')
+            {
+                if (At(1) == '{')
+                    Blank(2);
+                else
+                    Hole(1, 1);
+            }
+            else
+                Blank(1);
+        }
+    }
+
+    // A hole: its opening braces, its code, then its closing ones.
+    void Hole(int opening, int closing)
+    {
+        Blank(opening);
+        Code(hole: true);
+        Blank(Math.Min(closing, Run('}')));
+    }
+}
 
 static string ScriptDir([CallerFilePath] string path = "") => Path.GetDirectoryName(path) ?? ".";
 
