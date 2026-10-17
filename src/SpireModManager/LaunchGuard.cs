@@ -442,6 +442,15 @@ static class LaunchGuard
 
     static readonly Regex Whitespace = new(@"\s+");
 
+    // A popup's visible words, on one line and cut at 300 characters, for the log.
+    static string Words(Node popup)
+    {
+        var words = Whitespace.Replace(string.Join(" | ", popup.FindChildren("*", "", true, false)
+            .Select(n => n switch { RichTextLabel rich => rich.GetParsedText(), Label label => label.Text, _ => "" })
+            .Where(t => t.Length > 0)), " ");
+        return words.Length <= 300 ? words : words[..300] + "…";
+    }
+
     // The offer in the game's popup, our mark on it. Another mod's popup would keep ours out (the container takes one at
     // a time), so it goes; if ours still isn't the one shown, that's a failure (the game's dialog then).
     static async Task<bool> AskStyled(Offer offer, List<string> suspects)
@@ -452,6 +461,9 @@ static class LaunchGuard
         body.Add("changes", string.Join("\n", CrashLines(offer, suspects, plain: false)));
         if (NGenericPopup.Create() is not { } popup || NModalContainer.Instance is not { } modals)
             throw new InvalidOperationException("the game's popup can't be made");
+        // A popup already open (the game's or another mod's) goes, so what it said goes into the log first.
+        if (modals.OpenModal is Node open)
+            Log.Warn($"[{ModEntry.ModId}] A popup was open at the failed start and closes for the offer: {open.GetType().Name} \"{Words(open)}\"");
         modals.Clear();
         Menus.Mark(popup);
         modals.Add(popup);

@@ -1579,6 +1579,20 @@ static class SelfTest
             Check("the plain dialog after a failed start: Restore and restart writes the working list, then relaunches; the dialog goes",
                 asked.IsCompleted && relaunches == 2 && quits == 2 && !Dependencies.IsOn(fixes) && root.GetNodeOrNull(LaunchGuard.PlainDialogName) == null,
                 $"quits {quits}, relaunches {relaunches}, Test Fixes on {Dependencies.IsOn(fixes)}, dialog left {root.GetNodeOrNull(LaunchGuard.PlainDialogName) != null}");
+            // At its longest: more changes than it lists and a game update since, captured to see that it all fits.
+            LaunchGuard.TestNoLanguage = false;
+            List<LaunchGuard.Entry> many = [.. Enumerable.Range(1, 7).Select(i => Mod($"SmmTestMadeUp{i}", true))];
+            if (LaunchGuard.CrashOffer(Setup([.. working, .. many], "0.112.0 (def)"), Setup(working)) is { } longest)
+            {
+                asked = LaunchGuard.AskAfterCrash(game, longest);
+                await Wait(menu, 0.8);
+                await Capture(menu, outDir, "1g-crash-dialog-longest");
+                var longTexts = string.Join(" | ", PopupTexts());
+                Press("NoButton");
+                await Wait(menu, 0.3);
+                Check("the dialog at its longest (7 changes, a game update since): 4 listed, 3 counted, the update said, the game's message first",
+                    asked.IsCompleted && longTexts.Contains("3 more") && longTexts.Contains("The game itself was updated") && longTexts.Contains(GamesMessage), longTexts);
+            }
         }
         finally
         {
