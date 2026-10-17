@@ -52,6 +52,11 @@ static class SelfTest
             await RunReal(menu, outDir);
             return;
         }
+        if (mode == "crash-prepare")
+        {
+            await RunCrashPrepare(menu, outDir);
+            return;
+        }
         if (mode is "first-run" or "first-run-bmm")
         {
             await RunFirstRun(menu, outDir, imported: mode == "first-run-bmm");
@@ -1509,6 +1514,95 @@ static class SelfTest
             settings.ModList.Clear();
             settings.ModList.AddRange(listWas);
             SaveManager.Instance.SaveSettings();
+        }
+    }
+
+    // dev.cs --crash-prepare, then --crash: the second launch fails to start as a mod that stops every launch makes it
+    // (a made-up throw where the game's startup goes on after the mods load), and the dialog that replaces the game's is
+    // answered as a player would: Restore and restart. The first launch only reaches the main menu, so the last working
+    // setup is saved; the second has Test Retired on besides (dev.cs), so it differs. The relaunch is caught.
+    public static void EarlyStart()
+    {
+        var crashMode = System.Environment.GetEnvironmentVariable("SPIRE_MOD_MANAGER_SELFTEST_MODE");
+        if (crashMode is not ("crash" or "crash-real")
+            || System.Environment.GetEnvironmentVariable("SPIRE_MOD_MANAGER_SELFTEST") is not { Length: > 0 } outDir)
+            return;
+        if (crashMode == "crash") // crash-real: the --workshop mods fail the start themselves
+            new HarmonyLib.Harmony(ModEntry.ModId + ".SelfTestCrash").Patch(
+                HarmonyLib.AccessTools.Method(typeof(MegaCrit.Sts2.Core.Helpers.OneTimeInitialization), "ExecuteEssential"),
+                prefix: new HarmonyLib.HarmonyMethod(typeof(SelfTest), nameof(MadeUpFailure)));
+        var (quits, relaunches) = (0, 0);
+        ModEntry.TestQuit = () => quits++;
+        ModEntry.TestRelaunch = () => relaunches++;
+        var tree = (SceneTree)Engine.GetMainLoop();
+        var started = DateTime.Now;
+        string? texts = null;
+        void Finish()
+        {
+            tree.ProcessFrame -= Watch;
+            File.WriteAllLines(Path.Combine(outDir, "results.txt"), Results);
+            tree.Quit();
+        }
+        void Watch()
+        {
+            try
+            {
+                if (texts == null && NModalContainer.Instance?.OpenModal is Node popup)
+                {
+                    texts = string.Join(" | ", PopupTexts());
+                    if (!texts.Contains("The game couldn't start"))
+                    {
+                        Check("a failed start: our dialog in place of the game's", false, texts);
+                        Finish();
+                        return;
+                    }
+                    popup.GetNodeOrNull("VerticalPopup/YesButton")?.EmitSignal("Released", popup.GetNode("VerticalPopup/YesButton"));
+                    return;
+                }
+                if (texts != null && relaunches + quits > 0)
+                {
+                    var retired = SaveManager.Instance.SettingsSave.ModSettings?.ModList.Where(e => e.Id == "SmmTestRetired").Select(e => e.IsEnabled).ToList() ?? [];
+                    Check("a failed start: our dialog in place of the game's, naming what changed since the last working launch",
+                        texts.Contains("The game couldn't start") && texts.Contains("Test Retired") && texts.Contains("Restore and restart"), texts);
+                    Check("a failed start: Restore and restart writes the last working list (Test Retired off again), then relaunches",
+                        relaunches == 1 && quits == 0 && retired.Count > 0 && retired.All(on => !on), $"relaunches {relaunches}, quits {quits}, Test Retired {string.Join(",", retired)}");
+                    Finish();
+                }
+                else if (DateTime.Now - started > TimeSpan.FromSeconds(90))
+                {
+                    Check("a failed start: our dialog, answered, within 90 s", false, $"dialog {texts ?? "none"}, relaunches {relaunches}, quits {quits}");
+                    Finish();
+                }
+            }
+            catch (Exception e)
+            {
+                Results.Add($"FAIL exception: {e}");
+                Finish();
+            }
+        }
+        tree.ProcessFrame += Watch;
+    }
+
+    static void MadeUpFailure() => throw new InvalidOperationException("Spire Mod Manager dev run (--crash): a made-up failed start");
+
+    // --crash-prepare: the main menu reached, so the last working setup is saved (and this launch's record gone).
+    static async Task RunCrashPrepare(NMainMenu menu, string outDir)
+    {
+        try
+        {
+            await Wait(menu, 3);
+            var dir = LaunchGuard.Dir ?? "";
+            Check("--crash-prepare: the main menu reached, the last working setup saved",
+                File.Exists(Path.Combine(dir, LaunchGuard.WorkingFile)) && !File.Exists(Path.Combine(dir, LaunchGuard.PendingFile)), dir);
+        }
+        catch (Exception e)
+        {
+            Results.Add($"FAIL exception: {e}");
+        }
+        finally
+        {
+            File.WriteAllLines(Path.Combine(outDir, "results.txt"), Results);
+            menu.GetTree().Quit();
         }
     }
 

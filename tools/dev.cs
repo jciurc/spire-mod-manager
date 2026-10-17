@@ -9,6 +9,8 @@
 //                                     --real: your own mods (switched off) and a copy of your data
 //                                     --first-run, --first-run-bmm: a first launch, without or with Better Mod
 //                                      Menu's data to import
+//                                     --crash-prepare, then --crash: a launch that saves the last working setup,
+//                                      then one that fails to start (made up) with Test Retired on, our dialog answered
 //                                     --stable, with any of them: the stable branch's game, in its own dev copy
 //   dotnet run tools/dev.cs launch    build, open the sandboxed game to try by hand (--first-run,
 //                                     --first-run-bmm and --workshop as for test)
@@ -52,6 +54,8 @@ var real = args.Contains("--real"); // your own mods (switched off) and a copy o
 var bmm = args.Any(a => a.StartsWith("--bmm")); // Better Mod Menu on (any --bmm option)
 var bmmData = args.Contains("--first-run-bmm"); // its fixture data in the sandbox, for our first-run import
 var firstRun = bmmData || args.Contains("--first-run"); // no manager.json of ours
+var crashPrepare = args.Contains("--crash-prepare"); // reach the main menu only, so the last working setup is saved
+var crash = args.Contains("--crash"); // then: our data kept, Test Retired on, a made-up failed start and our dialog answered
 var workshopAt = Array.IndexOf(args, "--workshop"); // the Workshop item ids follow it, comma-separated
 var workshopItems = workshopAt < 0 ? [] : (args.ElementAtOrDefault(workshopAt + 1) ?? "")
     .Split(',', StringSplitOptions.RemoveEmptyEntries | StringSplitOptions.TrimEntries).Distinct().ToArray();
@@ -139,7 +143,7 @@ else
 if (LinkDevCopy() is { } noCopy)
     return Fail(noCopy);
 SyncMods();
-PrepareSandbox(mode is "test" or "smoke" || firstRun);
+PrepareSandbox((mode is "test" or "smoke" || firstRun) && !crash); // --crash keeps --crash-prepare's last working setup
 
 var start = new ProcessStartInfo(Path.Combine(DevDir, "SlayTheSpire2.exe"), ["--force-steam", "off", "--log-file", logPath])
     { WorkingDirectory = DevDir };
@@ -265,6 +269,9 @@ Directory.CreateDirectory(outDir);
 start.Environment["SPIRE_MOD_MANAGER_SELFTEST"] = outDir;
 if (real)
     start.Environment["SPIRE_MOD_MANAGER_SELFTEST_MODE"] = "real";
+else if (crashPrepare || crash)
+    // --crash with --workshop: the start fails by those mods (crash-real), not by our made-up throw.
+    start.Environment["SPIRE_MOD_MANAGER_SELFTEST_MODE"] = !crash ? "crash-prepare" : workshopMods.Count > 0 ? "crash-real" : "crash";
 else if (firstRun)
     start.Environment["SPIRE_MOD_MANAGER_SELFTEST_MODE"] = bmmData ? "first-run-bmm" : "first-run";
 // The game echoes its whole log to stdout; we read the log file instead.
@@ -448,12 +455,13 @@ void PrepareSandbox(bool resetData)
     var mods = settings["mod_settings"] as JsonObject ?? [];
     mods["mods_enabled"] = true;
     // A fresh mod list every run: everything on except Better Mod Menu (on with --bmm, after ours with --bmm-after), its
-    // fork's folder (--real) and the fixture's Test Retired (off in every mode, for the self-test's searches).
+    // fork's folder (--real) and the fixture's Test Retired (off for the self-test's searches; on with --crash, so that
+    // launch differs from the last working one).
     var list = new JsonArray();
     if (args.Contains("--bmm-after"))
         list.Add((JsonNode)new JsonObject { ["id"] = ModId, ["is_enabled"] = true, ["source"] = "mods_directory" });
     list.Add((JsonNode)new JsonObject { ["id"] = "BetterModMenu", ["is_enabled"] = bmm, ["source"] = "mods_directory" });
-    list.Add((JsonNode)new JsonObject { ["id"] = real ? "BetterModMenuFork" : "SmmTestRetired", ["is_enabled"] = false, ["source"] = "mods_directory" });
+    list.Add((JsonNode)new JsonObject { ["id"] = real ? "BetterModMenuFork" : "SmmTestRetired", ["is_enabled"] = crash && !real, ["source"] = "mods_directory" });
     // --workshop: the items' mods on, after ours, in the order given. An entry above for the same id (Better
     // Mod Menu's, when its Workshop item is given) gives way.
     if (workshopMods.Count > 0 && !args.Contains("--bmm-after"))

@@ -113,6 +113,9 @@ public static class ModEntry
         }
         Log.Info($"[{ModId}] Initialized{(IsDevRun ? " (dev run)" : "")}"
             + (_failedPatches.Count > 0 ? $", without {string.Join(", ", _failedPatches)}" : ""));
+#if DEVTOOLS
+        SelfTest.EarlyStart(); // dev.cs --crash: a made-up failed start, its dialog answered
+#endif
     }
 
     // Our own version, from the manifest the game loaded ("0.1.0"; the loaded copy's, if a second one is installed);
