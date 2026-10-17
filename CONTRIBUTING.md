@@ -69,6 +69,11 @@ Commands:
     copy and the sandbox, but what a mod writes is up to it, and files at the top of
     `%APPDATA%\SlayTheSpire2` (such as `mod_configs`) are shared with your real game. Subscribing also installs
     the item in your real game, where a new mod starts enabled.
+  - `--crash-prepare`, then `--crash`: the offer after a failed start, end to end. The first run only reaches
+    the main menu, so the last working setup is saved. The second keeps that data, turns Test Retired on and
+    fails the start with a made-up error. Our dialog replaces the game's and is answered with Restore and
+    restart (the relaunch is caught). For a real failure, add `--workshop` with the mods that cause it to
+    `--crash`.
   - `--real` (maintainer only): a read-only tour with your own mods (all switched off) and a copy of your data,
     in place of the test mods. Its output holds your own mod list, so it never goes into a pull request.
 - `dotnet run tools/dev.cs launch`: opens the sandboxed game to try things by hand (`--first-run`,
