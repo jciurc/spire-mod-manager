@@ -3178,6 +3178,7 @@ static class SelfTest
         Check("two copies of one mod: moved back, nothing moved for Changes or the menu, and the list is as long as before",
             list.Count == count && Entries() == entries && HistoryBar.Moves().Count == 0 && !LoadOrder.OrderChanged && LineFollows(),
             $"{list.Count} entries (was {count}), moved {HistoryBar.Moves().Count}, order changed {LoadOrder.OrderChanged}");
+        var on = list.Where(e => e.Id == id && e.Source == source).Select(e => e.IsEnabled).ToList(); // to put back at the end
         // A click on one copy's box (the game's own handler sets every entry of the id): the other copy's box follows, and
         // Changes and the counts name the mod once. Then back, from the other copy.
         var twinRows = Rows().Where(r => r.Mod != null && twins.Contains(r.Mod)).ToList();
@@ -3185,14 +3186,21 @@ static class SelfTest
         {
             var name = twins.First().manifest?.name ?? id ?? "";
             bool Ticked(NModMenuRow row) => row.GetNode<NTickbox>("Tickbox").IsTicked;
+            // A click as the game's tickbox makes one (its ForceToggleTick is beta-only): the box flips, then Toggled fires.
+            static void Click(NModMenuRow row)
+            {
+                var box = row.GetNode<NTickbox>("Tickbox");
+                box.IsTicked = !box.IsTicked;
+                box.EmitSignal("Toggled", box);
+            }
             var (onBefore, offBefore, _) = HistoryBar.Counts();
-            twinRows[0].GetNode<NTickbox>("Tickbox").ForceToggleTick();
+            Click(twinRows[0]);
             await Wait(menu, 0.3);
             var (first, second) = (Ticked(twinRows[0]), Ticked(twinRows[1]));
             var lines = HistoryBar.Describe().Count(l => l.Contains(name));
             var (onNow, offNow, _) = HistoryBar.Counts();
             var counted = Math.Abs(onNow - onBefore) + Math.Abs(offNow - offBefore);
-            twinRows[1].GetNode<NTickbox>("Tickbox").ForceToggleTick();
+            Click(twinRows[1]);
             await Wait(menu, 0.3);
             Check("two copies of one mod: a click on one's box switches the other's too, and Changes and the counts name the mod once",
                 first == second && lines == 1 && counted == 1 && Ticked(twinRows[0]) == Ticked(twinRows[1]) && Ticked(twinRows[0]) != first,
@@ -3200,7 +3208,6 @@ static class SelfTest
         }
         else
             Results.Add($"SKIP two copies of one mod: a click on one's box (rows {twinRows.Count})");
-        var on = list.Where(e => e.Id == id && e.Source == source).Select(e => e.IsEnabled).ToList();
         Dependencies.Set([twins.First()], false, screen);
         var offAll = list.Where(e => e.Id == id && e.Source == source).All(e => !e.IsEnabled);
         Dependencies.Set([twins.First()], true, screen);
@@ -3697,7 +3704,9 @@ static class SelfTest
         var border = screen.GetNode<Control>("ModsBorder");
         var search = border.GetNode<Control>("SpireModManagerSearch");
         Control? Banner() => border.GetNodeOrNull<Control>(LoadOrder.SelfName);
-        int OnNow() => ModManager.Mods.Union(Installed.Mods).Where(m => m.manifest?.id != null).Count(Dependencies.IsOn);
+        // Mods on now, two copies of one mod counted once (as the counts count them).
+        int OnNow() => Dependencies.OnePerKey(ModManager.Mods.Union(Installed.Mods).Where(m => m.manifest?.id != null))
+            .Count(Dependencies.IsOn);
         string Summary() => (screen.GetNodeOrNull<Control>(HistoryBar.ChangesName) as RichTextLabel)?.GetParsedText() ?? "";
         var on = OnNow();
         Check("the counts count this mod: the profile bar's, the main menu button's and Mods enabled's", Dependencies.IsOn(self)
