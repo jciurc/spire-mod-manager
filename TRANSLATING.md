@@ -58,8 +58,8 @@ such as those the author hosts outside this repository; they are not reviewed.
 2. Put the file there, named with the game's language code (table below): `zhs.json` for Simplified Chinese. It holds
    the same as `localization/eng/settings_ui.json`, with the values translated. All our text is in that one file.
    Opened from that menu, the folder has `example-eng.json`: every English text, ready to copy, rename and translate,
-   with the language codes at its top. The example itself is never loaded, and it's updated with the mod until you
-   edit it.
+   with the language codes at its top. The example itself is never loaded. Each time the folder is opened from that
+   menu, the example is brought up to date with the mod, until you edit it.
    Only the languages in the game's own language setting work.
 3. Switch the game to that language. If it's in that language already, relaunch it.
 
@@ -94,6 +94,23 @@ The languages the game offers. Our text can only show in one of these.
 | `ita` | Italian | `tha` | Thai |
 | `jpn` | Japanese | `tur` | Turkish |
 | `zhs` | Chinese (Simplified) | `zht` | Chinese (Traditional) |
+
+## Updating an older translation
+
+New versions of the mod add English texts, reword some, and now and then drop one. To see what changed since your
+translation was made, run this in a copy of the repository (`git fetch --tags` first):
+
+- `dotnet run tools/loc.cs status <your file>` lists the texts that are new, the ones whose English changed (the old
+  and the new English, word by word), and the keys English no longer has. Add `--base v0.1.2` with the version you
+  translated. Without it, the tool takes the oldest release your file fits: it may flag a text you already updated,
+  but it never misses one.
+- `dotnet run tools/loc.cs versions` lists the releases and how much each one changed. `dotnet run tools/loc.cs changes
+  v0.1.2` shows every English change since that release; `changes v0.1.1 v0.1.2` shows the changes between two.
+- In a browser, the English file's [history](https://github.com/jciurc/spire-mod-manager/commits/dev/localization/eng/settings_ui.json)
+  shows each change.
+
+A line `// en: "<the English>"` above a key records the English that text was made from, and the tool then needs no
+version. The mod skips comments, so a file with them loads as usual.
 
 ## Sending a translation
 

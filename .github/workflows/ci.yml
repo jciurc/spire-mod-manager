@@ -29,6 +29,8 @@ jobs:
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v7
+        with:
+          fetch-depth: 0 # the release tags and the base branch, for the English changes below
       - uses: actions/setup-dotnet@v6
         with:
           dotnet-version: 10.0.x
@@ -37,6 +39,15 @@ jobs:
       # dotnet build on a .cs file compiles the file-based app and stops there; nothing runs.
       - name: Compile the tool scripts
         run: |
-          for script in build.cs tools/dev.cs tools/pck.cs tools/check.cs tools/shot.cs tools/watchdog.cs; do
+          for script in build.cs tools/dev.cs tools/pck.cs tools/check.cs tools/shot.cs tools/watchdog.cs tools/loc.cs; do
             dotnet build "$script"
           done
+      # What the pull request (or push) changes in the English texts, in the run's summary: for translators and
+      # review. A report only: it never fails the check.
+      - name: English changes
+        continue-on-error: true
+        env:
+          BASE: ${{ github.base_ref }}
+        run: |
+          if [ -n "$BASE" ]; then from=$(git merge-base HEAD "origin/$BASE"); else from=latest; fi
+          dotnet run tools/loc.cs changes "$from" HEAD --md >> "$GITHUB_STEP_SUMMARY"
