@@ -98,19 +98,21 @@ The languages the game offers. Our text can only show in one of these.
 ## Updating an older translation
 
 New versions of the mod add English texts, reword some, and now and then drop one. To see what changed since your
-translation was made, run this in a copy of the repository (`git fetch --tags` first):
+translation was made, run this in a copy of the repository (`git fetch --tags` first), with the version you
+translated in place of `v0.1.2`:
 
-- `dotnet run tools/loc.cs status <your file>` lists the texts that are new, the ones whose English changed (the old
-  and the new English, word by word), and the keys English no longer has. Add `--base v0.1.2` with the version you
-  translated. Without it, the tool takes the oldest release your file fits: it may flag a text you already updated,
+- `dotnet run tools/loc.cs status <your file> --base v0.1.2` lists the texts that are new, the ones whose English
+  changed (the old and the new English, word by word), and the keys English no longer has, each with its line in your
+  file. Without `--base`, the tool takes the oldest release your file fits: it may flag a text you already updated,
   but it never misses one.
+- `dotnet run tools/loc.cs compare <your file> --base v0.1.2 --html changes.html` writes a page to open in a
+  browser: each English change, old and new, next to your text and its line, then any text your file still lacks. If
+  you kept the copy of your file from that version, add `--old <that copy>`: the page then shows how your text
+  changed too, and which texts you've already updated. Without `--html`, the same shows in the terminal.
 - `dotnet run tools/loc.cs versions` lists the releases and how much each one changed. `dotnet run tools/loc.cs changes
   v0.1.2` shows every English change since that release; `changes v0.1.1 v0.1.2` shows the changes between two.
 - In a browser, the English file's [history](https://github.com/jciurc/spire-mod-manager/commits/dev/localization/eng/settings_ui.json)
   shows each change.
-
-A line `// en: "<the English>"` above a key records the English that text was made from, and the tool then needs no
-version. The mod skips comments, so a file with them loads as usual.
 
 ## Sending a translation
 
