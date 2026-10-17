@@ -34,7 +34,9 @@ var manifest = new JsonObject
     ["author"] = "symphony",
     ["description"] = "Organize mods into categories, save profiles, set the load order and add notes and tags. " +
         "Relaunch the game in place to apply changes.",
-    ["version"] = "0.0.45", // pre-release: the last number goes up by one with each install to the game
+    // Dev builds: above the Workshop's ReleaseVersion, or the game loads the Workshop copy instead (RELEASING.md, step 9).
+    // The last number goes up by one with each install to the game; after the next release, the version after it.
+    ["version"] = "0.1.2-dev.0",
     ["has_pck"] = true,
     ["has_dll"] = true,
     ["affects_gameplay"] = false,
