@@ -20,6 +20,7 @@ static class ModDetails
     const string FolderMeta = "spire_mod_manager_folder";
     const string WorkshopMeta = "spire_mod_manager_workshop";
     const string FieldsName = "SpireModManagerYours";
+    public const string OthersName = "SpireModManagerOthersParked"; // "2 more from other mods: see Vanilla List"
     const string LinkName = "SpireModManagerLink", SourceName = "SpireModManagerSource";
     public const string HeadName = "SpireModManagerHead";
     const string WiredMeta = "spire_mod_manager_wired";
@@ -330,7 +331,7 @@ static class ModDetails
     // only supports..."), which would show as text in our lines (one colour, escaped).
     public static List<string> Problems(Mod mod)
     {
-        var problems = (mod.errors ?? []).Select(e => WithoutTags(e.GetFormattedText())).ToList();
+        var problems = (mod.errors ?? []).Select(e => Menus.Format("SPIRE_MOD_MANAGER.FROM_GAME", ("message", WithoutTags(e.GetFormattedText())))).ToList();
         if (mod.state == ModLoadState.DisabledDuplicate)
             problems.Add(Menus.Text("SPIRE_MOD_MANAGER.STATE_DUPLICATE"));
         problems.AddRange(DependencyProblems(mod));
@@ -452,7 +453,7 @@ static class ModDetails
     public static void HideButtons(Node container)
     {
         CommitEdits(container);
-        foreach (var name in new[] { "OpenFolderButton", SourceName, HeadName, FieldsName })
+        foreach (var name in new[] { "OpenFolderButton", SourceName, HeadName, FieldsName, OthersName })
             if (container.GetNodeOrNull<Control>(name) is { } control)
                 control.Visible = false;
     }
@@ -612,6 +613,15 @@ static class ModDetails
         var text = description.GetContentHeight() + 6;
         var others = Layout.FitOthers(container, room - Math.Min(text, fewLines));
         room -= others.Sum(o => o.Size.Y + FieldsGap);
+        // Other mods' parts with no room are out of sight (Layout.Park): a line says how many, and where they are.
+        var parked = Layout.OtherParts(container).Count - others.Count;
+        var line = container.GetNodeOrNull<Label>(OthersName) ?? AddOthersLine(container);
+        line.Visible = parked > 0;
+        if (parked > 0)
+        {
+            line.Text = Menus.Format("SPIRE_MOD_MANAGER.OTHERS_PARKED", ("count", Menus.Number(parked)));
+            room -= line.GetCombinedMinimumSize().Y + FieldsGap;
+        }
         var used = Math.Min(text, Math.Max(room, fewLines));
         description.OffsetBottom = top + used;
         var y = top + used + FieldsGap;
@@ -620,11 +630,27 @@ static class ModDetails
             Layout.PlaceOther(other, y);
             y += other.Size.Y + FieldsGap;
         }
+        if (line.Visible)
+        {
+            (line.OffsetTop, line.OffsetBottom) = (y, y + line.GetCombinedMinimumSize().Y);
+            y = line.OffsetBottom + FieldsGap;
+        }
         yours.OffsetTop = y;
         yours.OffsetBottom = yours.OffsetTop + height;
     }
 
     static string Escape(string text) => text.Replace("[", "[lb]");
+
+    // The line for other mods' parts out of sight, faint, across the panel at our left edge.
+    static Label AddOthersLine(Control container)
+    {
+        var line = new Label { Name = OthersName, MouseFilter = Control.MouseFilterEnum.Ignore, Visible = false };
+        Style(line, "res://themes/kreon_regular_shared.tres", 15, new Color(1, 0.964706f, 0.886275f, 0.6f));
+        container.AddChild(line);
+        line.SetAnchorsPreset(Control.LayoutPreset.TopWide);
+        (line.OffsetLeft, line.OffsetRight) = (Inset, -Inset);
+        return line;
+    }
 
     static void Style(Control control, string font, int size, Color color)
     {
