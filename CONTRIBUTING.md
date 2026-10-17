@@ -86,6 +86,9 @@ Commands:
   `launch`: those patches count as failed, as after a game update that broke them, to see the game's page and
   its "needs an update" line.
 - `dotnet run tools/pck.cs list|extract`: look inside the game's pack (scenes, images).
+- `dotnet run tools/loc.cs versions|changes|status`: the English texts across versions, and where a translation
+  stands against them (TRANSLATING.md, "Updating an older translation"). CI writes each pull request's English
+  changes into its run summary.
 
 Only one dev copy can run at a time; `tools/dev.cs` won't start while one is running.
 
