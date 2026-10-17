@@ -47,11 +47,13 @@ static class ModDetails
         if (Store.Data.VanillaView)
         {
             HideButtons(container);
+            Looks(container, game: true);
             return;
         }
         HistoryBar.CloseList(container); // a mod picked: the panel is about it again
         CommitEdits(container); // whatever was typed for the previous mod
         Wire(container);
+        Looks(container, game: false);
         var id = mod.manifest?.id;
         if (Meta(container, ModIdMeta) != (id ?? ""))
             HistoryBar.HideBack(container); // another mod: no way back to the changes list (the same one refilled keeps it)
@@ -142,6 +144,22 @@ static class ModDetails
         link.SetMeta(FullMeta, shown != id ? id : "");
     }
 
+    // The title's pointer and the links' underline: ours in our views (the title is a link to its row), the game's in
+    // Vanilla View, as it left them before we first changed them.
+    public static void Looks(NModInfoContainer container, bool game)
+    {
+        var title = container.GetNode<Control>("ModTitle");
+        var description = container.GetNode<RichTextLabel>("ModDescription");
+        if (!container.HasMeta(GameLooksMeta))
+            container.SetMeta(GameLooksMeta, new Godot.Collections.Array { (int)title.MouseFilter, (int)title.MouseDefaultCursorShape, description.MetaUnderlined });
+        var was = container.GetMeta(GameLooksMeta).AsGodotArray();
+        title.MouseFilter = game ? (Control.MouseFilterEnum)was[0].AsInt32() : Control.MouseFilterEnum.Stop;
+        title.MouseDefaultCursorShape = game ? (Control.CursorShape)was[1].AsInt32() : Control.CursorShape.PointingHand;
+        description.MetaUnderlined = game && was[2].AsBool();
+    }
+
+    const string GameLooksMeta = "spire_mod_manager_game_looks";
+
     // Clicks and hovers, connected once per panel: the title or a dependency's name scrolls to its row, a Workshop tag
     // searches, and hovering a name shows its card.
     static void Wire(NModInfoContainer container)
@@ -151,20 +169,19 @@ static class ModDetails
         container.SetMeta(WiredMeta, true);
         Control? Content() => container.GetParent()?.GetNodeOrNull<Control>("%ModsScrollContainer/Mask/Content");
         var title = container.GetNode<Control>("ModTitle");
-        title.MouseFilter = Control.MouseFilterEnum.Stop;
-        title.MouseDefaultCursorShape = Control.CursorShape.PointingHand;
         title.GuiInput += e =>
         {
-            if (e is InputEventMouseButton { ButtonIndex: MouseButton.Left, Pressed: false } && Content() is { } content)
+            if (!Store.Data.VanillaView && e is InputEventMouseButton { ButtonIndex: MouseButton.Left, Pressed: false } && Content() is { } content)
                 CategoryList.Reveal(content, Meta(container, ModIdMeta), flash: false, focus: true);
         };
         // Cut short (FitTitle, our views): the whole name and version in a plain tooltip.
         Hover.Watch(title, "SpireModManagerFullText", () => !Store.Data.VanillaView && title.GetMeta(FullMeta, "").AsString() is { Length: > 0 } whole
             ? Escape(whole) : null, Hover.Timing.Slow);
         var description = container.GetNode<RichTextLabel>("ModDescription");
-        description.MetaUnderlined = false;
         description.MetaClicked += meta =>
         {
+            if (Store.Data.VanillaView)
+                return; // the game's panel: its own text, none of our links
             if (meta.AsString() is { } target && target.StartsWith("mod:") && Content() is { } content)
                 CategoryList.Reveal(content, target[4..], flash: false, focus: true);
             else if (meta.AsString() is { } tag && tag.StartsWith("wtag:"))

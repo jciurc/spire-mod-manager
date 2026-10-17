@@ -292,6 +292,7 @@ public static class Store
             return false;
         if (NErrorPopup.Create(new LocString("settings_ui", "SPIRE_MOD_MANAGER.DATA_TITLE"), body, null, showReportBugButton: false) is not { } popup)
             return false;
+        Menus.Mark(popup); // ours, not the game's own save error
         modals.Add(popup);
         LinkFolder(popup);
         return true;
