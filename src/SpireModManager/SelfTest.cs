@@ -77,11 +77,12 @@ static class SelfTest
             Check("relaunch passes the window mode once", relaunchArgs.Count(a => a is "--fullscreen" or "--maximized" or "--windowed") == 1
                 && relaunchArgs.Contains("--force-steam"), string.Join(" ", relaunchArgs));
             // Started from a Steam invite: Steam adds +connect_lobby and the lobby's id, and the game joins it at startup.
+            // The forms the game reads: the id after it or after "=", dashes before it; one with no id keeps the flag after it.
             var invited = ModEntry.RelaunchArgs(["--force-steam", "+connect_lobby", "109775241000000001", "--log-file", "x.log",
-                "+connect_lobby=109775241000000002"]);
+                "+connect_lobby=109775241000000002", "--+connect_lobby", "109775241000000003", "+connect_lobby", "--nomods", "+connect_lobby"]);
             Check("relaunch leaves out the Steam invite the game was started from (+connect_lobby, its lobby), keeps the rest",
                 !invited.Any(a => a.Contains("connect_lobby") || a.StartsWith("10977524")) && invited.Contains("--force-steam")
-                && invited.Contains("--log-file") && invited.Contains("x.log"), string.Join(" ", invited));
+                && invited.Contains("--log-file") && invited.Contains("x.log") && invited.Contains("--nomods"), string.Join(" ", invited));
             Check("dev run marked", menu.GetTree().Root.Title.StartsWith("[DEV]") && menu.GetTree().Root.HasNode("SpireModManagerDevTag"),
                 menu.GetTree().Root.Title);
             await Capture(menu, outDir, "1-main-menu");

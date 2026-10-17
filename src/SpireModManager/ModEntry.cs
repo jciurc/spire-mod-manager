@@ -252,14 +252,16 @@ public static class ModEntry
                 continue;
             }
             // The Steam invite the game was started from (Steam adds it): passed on, the new copy would join that lobby
-            // again. Its lobby id follows it, as the game's CommandLineHelper reads it, or after an "=".
-            if (given[i] == "+connect_lobby")
+            // again. Read as the game's CommandLineHelper reads it: leading dashes ignored, the lobby id after it (not a
+            // flag) or after an "=".
+            var key = given[i].TrimStart('-');
+            if (key == "+connect_lobby")
             {
                 if (i + 1 < given.Length && !given[i + 1].StartsWith('-') && !given[i + 1].StartsWith('+'))
                     i++;
                 continue;
             }
-            if (given[i].StartsWith("+connect_lobby="))
+            if (key.StartsWith("+connect_lobby="))
                 continue;
             args.Add(given[i]);
         }
