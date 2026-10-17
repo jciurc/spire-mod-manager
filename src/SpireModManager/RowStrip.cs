@@ -101,10 +101,7 @@ static class RowStrip
             strip.OffsetBottom = -2;
 
             foreach (var chip in chips)
-            {
-                var tag = chip.Text;
-                strip.AddChild(Tags.Make(chip, add => Search.ByTag(row, tag, add)));
-            }
+                strip.AddChild(Tags.Make(chip, add => Search.ByChip(row, chip, add)));
 
             var note = new RichTextLabel
             {
