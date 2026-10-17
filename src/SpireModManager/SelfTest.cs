@@ -1847,6 +1847,8 @@ static class SelfTest
         const string Renamed = "SPIRE_MOD_MANAGER.PAGE_DISABLED", Added = "SPIRE_MOD_MANAGER.OPEN_TRANSLATIONS";
         const string Counted = "SPIRE_MOD_MANAGER.PAGE_ALL", NotText = "SPIRE_MOD_MANAGER.NEEDS_UPDATE";
         const string OnButton = "SPIRE_MOD_MANAGER.MAIN_MENU_PROFILE", OnButtonOne = "SPIRE_MOD_MANAGER.MAIN_MENU_PROFILE_ONE";
+        // Listed twice: a good copy, then a blank one; and a blank one, then a good one (tools/loc.cs reads them alike).
+        const string TwiceKept = "SPIRE_MOD_MANAGER.NOTES_TERM", TwiceLater = "SPIRE_MOD_MANAGER.NOTES_ADD";
         const string German = "Spiel neu starten (Änderungen, 模组)"; // not ASCII: read as UTF-8, with a byte order mark
         string[] keys = [Translated, LeftOut, Broken, Empty];
         static string Read(string key)
@@ -1894,6 +1896,10 @@ static class SelfTest
                   "{{Added}}": "Ordner {ordner}",
                   "{{NotText}}": 5,
                   "{{NotOurs}}": "Nicht unser Text",
+                  "{{TwiceKept}}": "Notizen",
+                  "{{TwiceKept}}": " ",
+                  "{{TwiceLater}}": "",
+                  "{{TwiceLater}}": "Notizen hinzufügen",
                 }
                 """);
             Check("a drop-in translation: its text shows in its language", threw == null && Read(Translated) == German, threw ?? Shown());
@@ -1906,6 +1912,8 @@ static class SelfTest
                 !table.IsLocalKey(Renamed) && !table.IsLocalKey(Added) && !table.IsLocalKey(NotText),
                 $"{table.GetRawText(Renamed)} | {table.GetRawText(Added)} | {table.GetRawText(NotText)}");
             Check("a drop-in translation: a key English doesn't have is left out", !table.HasEntry(NotOurs));
+            Check("a drop-in translation: a key listed twice shows its last copy that isn't blank",
+                Read(TwiceKept) == "Notizen" && Read(TwiceLater) == "Notizen hinzufügen", $"{Read(TwiceKept)} | {Read(TwiceLater)}");
             var popup = menu.GetNodeOrNull<Control>("SpireModManagerMenuButton") is { } button ? await ButtonMenu(menu, button) : null;
             var labels = popup == null ? [] : MenuPanel.Labels(popup);
             MenuPanel.Close();
