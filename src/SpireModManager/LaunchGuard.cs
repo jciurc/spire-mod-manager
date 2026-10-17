@@ -417,11 +417,37 @@ static class LaunchGuard
         return lines;
     }
 
+    // The game's own message for a failed start, the one its dialog (which ours replaces) shows, first and marked as
+    // the game's, so nothing of the game's is hidden: through the game's text, or (plain) in English from the game's own
+    // file. Its paragraphs on one line. None if it can't be read.
+    static string GamesMessage(bool plain)
+    {
+        const string Key = "STARTUP_ERROR.description";
+        try
+        {
+            var message = plain
+                ? JsonSerializer.Deserialize<Dictionary<string, string>>(Godot.FileAccess.GetFileAsString("res://localization/eng/main_menu_ui.json"))?.GetValueOrDefault(Key)
+                : new LocString("main_menu_ui", Key).GetFormattedText();
+            if (message is not { Length: > 0 })
+                return "";
+            message = Whitespace.Replace(plain ? Markup.Replace(message, "") : message, " ").Trim();
+            return Our(plain, "SPIRE_MOD_MANAGER.CRASH_GAMES_MESSAGE", ("message", plain ? message : Escaped(message))) + "\n\n";
+        }
+        catch (Exception e)
+        {
+            Log.Warn($"[{ModEntry.ModId}] Could not read the game's own startup error message, so the dialog leaves it out: {e.Message}");
+            return "";
+        }
+    }
+
+    static readonly Regex Whitespace = new(@"\s+");
+
     // The offer in the game's popup, our mark on it. Another mod's popup would keep ours out (the container takes one at
     // a time), so it goes; if ours still isn't the one shown, that's a failure (the game's dialog then).
     static async Task<bool> AskStyled(Offer offer, List<string> suspects)
     {
         var body = new LocString("settings_ui", "SPIRE_MOD_MANAGER.CRASH_BODY");
+        body.Add("game", GamesMessage(plain: false));
         body.Add("date", When(offer.Working));
         body.Add("changes", string.Join("\n", CrashLines(offer, suspects, plain: false)));
         if (NGenericPopup.Create() is not { } popup || NModalContainer.Instance is not { } modals)
@@ -441,7 +467,8 @@ static class LaunchGuard
     // through the game's text too) and the game's word for Quit in English.
     static async Task<bool> AskPlain(NGame game, Offer offer, List<string> suspects)
     {
-        var text = Our(true, "SPIRE_MOD_MANAGER.CRASH_BODY", ("date", offer.Working.At.ToString("yyyy-MM-dd HH:mm", CultureInfo.InvariantCulture)),
+        var text = Our(true, "SPIRE_MOD_MANAGER.CRASH_BODY", ("game", GamesMessage(plain: true)),
+            ("date", offer.Working.At.ToString("yyyy-MM-dd HH:mm", CultureInfo.InvariantCulture)),
             ("changes", string.Join("\n", CrashLines(offer, suspects, plain: true))));
         var dialog = new ConfirmationDialog
         {
