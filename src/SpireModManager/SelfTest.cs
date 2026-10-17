@@ -2857,6 +2857,7 @@ static class SelfTest
             Results.Add("SKIP a game load error in the panel: the fixture row has no mod");
         // The game marks every Workshop mod outside its author's branches before it knows which are off (a dev run has
         // no Steam, so these are made up): a mod that's off loses that error and keeps its others, one on keeps it.
+        Check("our Init drops the Steam branch error of mods that are off", BranchErrors.Ran);
         if (ModManager.Mods.FirstOrDefault(m => m.state == ModLoadState.Disabled) is { } offMod
             && ModManager.Mods.FirstOrDefault(m => m.state == ModLoadState.Loaded && m.manifest?.id != ModEntry.ModId) is { } onMod)
         {

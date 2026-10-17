@@ -13,7 +13,14 @@ static class BranchErrors
 
     // From ModEntry.Init: the game's branch check and the mods' off states are in place by then, and the main menu
     // reads the errors later.
-    public static int DropFromOffMods() => DropFromOffMods(ModManager.Mods);
+    public static int DropFromOffMods()
+    {
+        Ran = true;
+        return DropFromOffMods(ModManager.Mods);
+    }
+
+    // For the self-test: Init got here (a dev run has no Steam, so no real branch error to see go).
+    public static bool Ran { get; private set; }
 
     // Returns how many went.
     public static int DropFromOffMods(IEnumerable<Mod> mods)
