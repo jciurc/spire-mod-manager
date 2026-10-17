@@ -2118,6 +2118,9 @@ static class SelfTest
         CategoryList.Apply(content);
         var box = CategoryList.BeginRename(content, category);
         Check("rename box opens", box != null);
+        // The box covers the name, and the mod count after it would show through it (#186).
+        var countWhileRenaming = box?.GetParent()?.GetNodeOrNull<Control>("Count")?.Visible;
+        Check("while its rename box is open, the header's mod count is hidden", countWhileRenaming == false, $"{countWhileRenaming}");
         if (box != null)
         {
             box.Text = "Renamed";
@@ -2125,7 +2128,7 @@ static class SelfTest
         }
         await Wait(menu, 0.5);
         Check("rename keeps the mod in the category", Store.InfoFor(modId)?.Category == "Renamed");
-        Check("renamed header shown", Header(content, "Renamed") != null);
+        Check("renamed header shown, its count with it", Header(content, "Renamed") is Node renamed && renamed.GetNodeOrNull<Control>("Count") is { Visible: true });
 
         // A taken name warns, Enter doesn't take it, clicking away keeps the old name.
         if (Store.Data.Categories.FirstOrDefault(c => c != category) is { } otherCategory && CategoryList.BeginRename(content, category) is { } taken)
@@ -2138,7 +2141,8 @@ static class SelfTest
                 && taken.GetNode<Label>("NameWarning").Text.Length > 0);
             taken.EmitSignal(Control.SignalName.FocusExited);
             await Wait(menu, 0.3);
-            Check("clicking away keeps the old name", category.Name == "Renamed" && Header(content, "Renamed") != null);
+            Check("clicking away keeps the old name, the count shown again", category.Name == "Renamed"
+                && Header(content, "Renamed") is Node kept && kept.GetNodeOrNull<Control>("Count") is { Visible: true });
         }
 
         Categories.Move(category, -1);
