@@ -402,7 +402,7 @@ static class CategoryList
             for (var i = 0; i < rows.Count; i++)
             {
                 content.MoveChild(rows[i], i);
-                rows[i].Visible = Bmm.Present || Matches(rows[i]); // Better Mod Menu's page: its search and groups decide
+                rows[i].Visible = true; // every row, as the game's page shows them (no search box there; with Better Mod Menu its page decides)
             }
             RowTitles.FitVanilla(rows);
             if (screen != null)
