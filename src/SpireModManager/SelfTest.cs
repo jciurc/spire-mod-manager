@@ -1742,10 +1742,10 @@ static class SelfTest
             catch (JsonException)
             {
             }
-            var english = JsonSerializer.Deserialize<Dictionary<string, string>>(Godot.FileAccess.GetFileAsString($"res://{ModEntry.ModId}/localization/eng/settings_ui.json"))!;
+            var english = JsonSerializer.Deserialize<Dictionary<string, string>>(Godot.FileAccess.GetFileAsString($"res://{ModEntry.ModId}/localization/eng/settings_ui.json"));
             Check("the translations folder has the example: how-to lines, then every English text, never read (no language's name)",
-                text.StartsWith("// An example") && pairs != null && pairs.Count == english.Count && english.All(e => pairs.GetValueOrDefault(e.Key) == e.Value)
-                && !Path.GetFileNameWithoutExtension(Translations.ExampleFile).All(char.IsLetter), $"{text.Length} chars, {pairs?.Count} texts of {english.Count}");
+                text.StartsWith("// An example") && pairs != null && english != null && pairs.Count == english.Count && english.All(e => pairs.GetValueOrDefault(e.Key) == e.Value)
+                && !Path.GetFileNameWithoutExtension(Translations.ExampleFile).All(char.IsLetter), $"{text.Length} chars, {pairs?.Count} texts of {english?.Count}");
             // Written again while it's as we left it (an older version's, say); once edited, it's the player's.
             File.WriteAllText(example, "// an older example\n{}");
             File.SetLastWriteTimeUtc(example, Translations.ExampleTime);
@@ -2046,7 +2046,7 @@ static class SelfTest
         var termLayer = menu.GetTree().Root.FindChild(ModField.TipName, true, false); // gone again after each hover
         Check("each field's term explains it in our hover card, over the menu, the term no wider than its word",
             terms.All(t => t != null) && termCards.SequenceEqual(termTips) && termLayer == null
-            && terms.All(t => t!.TooltipText == "" && t.Size.X <= t.GetMinimumSize().X + 1),
+            && terms.All(t => t is { TooltipText: "" } && t.Size.X <= t.GetMinimumSize().X + 1),
             string.Join(" | ", termCards) + string.Join(" ", terms.Select(t => t == null ? " none" : $" ({t.Size.X:0}/{t.GetMinimumSize().X:0})")));
         await Capture(screen, outDir, "5-row-menu");
         if (rowMenu != null && aliasBox != null)
@@ -2503,7 +2503,7 @@ static class SelfTest
         var ids = records.Skip(1).Select(r => r[0]).ToList();
         var enabledOrder = order.Where(IsOn).ToList();
         Check("Share profile opens with the active profile's enabled mods in load order, under the default columns",
-            Dialog() != null && records.FirstOrDefault()?.SequenceEqual(ProfileCsv.Header(new())) == true && ids.Count == installed.Count(m => IsOn(m.manifest!.id!))
+            Dialog() != null && records.FirstOrDefault()?.SequenceEqual(ProfileCsv.Header(new())) == true && ids.Count == installed.Count(m => m.manifest?.id is { } id && IsOn(id))
             && ids.Take(enabledOrder.Count).SequenceEqual(enabledOrder) && records.Skip(1).All(r => r[3] == "TRUE") && !ids.Contains("SmmTestRetired")
             && Part<RichTextLabel>("Body")?.GetParsedText().Contains(startName) == true, $"{string.Join(" | ", ids)} vs order {string.Join(" | ", enabledOrder)}");
         var tops = new[] { "IncludeCategory", "IncludeDisabled", "IncludeAlias", "IncludeNotes", "RememberChoices" }
@@ -2711,7 +2711,8 @@ static class SelfTest
         // A dialog takes the keys from the page: with an unsaved edit and the search box focused, holding text, Ctrl+S
         // and Ctrl+Z do nothing behind Share, and Esc closes it and leaves the search alone. Then the edit is discarded.
         var content = screen.GetNode<Control>("%ModsScrollContainer/Mask/Content");
-        Dependencies.Set([Dependencies.Find("SmmTestUi")!], !IsOn("SmmTestUi"), screen);
+        if (Dependencies.Find("SmmTestUi") is { } testUi) // without it, no edit: the Ctrl+S check below fails
+            Dependencies.Set([testUi], !IsOn("SmmTestUi"), screen);
         CategoryList.Redraw(content);
         await Wait(menu, 0.3);
         var edited = (Profiles.Edited, string.Join(", ", ModListState()));
@@ -3368,20 +3369,20 @@ static class SelfTest
         var found = FindBar.Found(content);
         var view = border.GetNode<Control>("ModsScrollContainer").GetGlobalRect();
         Check("Load Order, a search: every row stays, \"N matches\" and ‹ › beside the box, the first match selected and in view",
-            found.Count >= 3 && Rows().All(r => r.Visible) && Bar() is { Visible: true } && Count() == $"{found.Count} matches" && At(found) == 0
-            && view.Intersects(found[0].GetGlobalRect()) && Bar()!.GetGlobalRect().Position.X >= box.GetGlobalRect().End.X,
+            found.Count >= 3 && Rows().All(r => r.Visible) && Bar() is { Visible: true } bar && Count() == $"{found.Count} matches" && At(found) == 0
+            && view.Intersects(found[0].GetGlobalRect()) && bar.GetGlobalRect().Position.X >= box.GetGlobalRect().End.X,
             $"{found.Count} found, count \"{Count()}\", at {At(found)}, rows shown {Rows().Count(r => r.Visible)}/{Rows().Count}");
-        Check("the arrows say where they go", Hover.TipOf(Bar()!.GetNode<Button>("PreviousMatch")) == "Go to previous found match"
-            && Hover.TipOf(Bar()!.GetNode<Button>("NextMatch")) == "Go to next found match");
+        Check("the arrows say where they go", Bar() is { } arrows && Hover.TipOf(arrows.GetNode<Button>("PreviousMatch")) == "Go to previous found match"
+            && Hover.TipOf(arrows.GetNode<Button>("NextMatch")) == "Go to next found match");
         // The rows it doesn't match fade below even a match that's off; a match keeps its usual look.
-        float Expected(NModMenuRow r, bool finding) => (!finding || found.Contains(r), Dependencies.IsOn(r.Mod!)) switch
+        float Expected(NModMenuRow r, bool finding) => (!finding || found.Contains(r), r.Mod is { } mod && Dependencies.IsOn(mod)) switch
         {
             (true, true) => 1, (true, false) => LoadOrder.OffAlpha, (false, true) => LoadOrder.UnmatchedAlpha, _ => LoadOrder.UnmatchedOffAlpha,
         };
         string Looks() => string.Join(", ", Rows().Select(r => $"{r.Mod?.manifest?.id} {r.Modulate.A:0.##}"));
         Check("finding: the rest fade (on 0.2, off 0.1) below a match that's off (0.4); matches look as usual",
             Rows().All(r => Math.Abs(r.Modulate.A - Expected(r, finding: true)) < 0.01f) && Rows().Any(r => !found.Contains(r))
-            && Rows().Any(r => found.Contains(r) && !Dependencies.IsOn(r.Mod!)), Looks());
+            && Rows().Any(r => found.Contains(r) && r.Mod is { } mod && !Dependencies.IsOn(mod)), Looks());
         LoadOrder.Reset(content); // as a drag ends
         Check("finding: the same looks after a drag ends", Rows().All(r => Math.Abs(r.Modulate.A - Expected(r, finding: true)) < 0.01f), Looks());
         await Capture(screen, outDir, "11c-load-order-find");
@@ -3405,7 +3406,7 @@ static class SelfTest
         Check("Enter goes to the next match, Shift+Enter the one before", byEnter == 1 && At(found) == 0, $"Enter {byEnter}, Shift+Enter {At(found)}");
         await Type("zzzz no such mod");
         Check("no match: \"No matches\", the arrows off, every row still shown", Count() == "No matches" && Rows().All(r => r.Visible)
-            && Bar()!.GetChildren().OfType<Button>().All(b => b.Disabled), Count());
+            && Bar() is { } emptyBar && emptyBar.GetChildren().OfType<Button>().All(b => b.Disabled), Count());
         Check("no match: every row faded", Rows().All(r => r.Modulate.A <= LoadOrder.UnmatchedAlpha + 0.01f), Looks());
         await Type("");
         Check("search cleared: no find bar, the box its full width again", Bar() is not { Visible: true }
@@ -3425,12 +3426,17 @@ static class SelfTest
     static async Task TestTwinCopies(Node menu, NModdingScreen screen, Control content)
     {
         List<NModMenuRow> Rows() => content.GetChildren().OfType<NModMenuRow>().ToList();
-        if (ModManager.Mods.Where(m => m.manifest?.id != null).GroupBy(m => (m.manifest!.id, m.modSource)).FirstOrDefault(g => g.Count() > 1) is not { } twins)
+        if (ModManager.Mods.Where(m => m.manifest?.id != null).GroupBy(m => (m.manifest?.id, m.modSource)).FirstOrDefault(g => g.Count() > 1) is not { } twins)
         {
             Results.Add("SKIP two copies of one mod: none installed (dev.cs test --workshop with two items of one mod)");
             return;
         }
-        var list = SaveManager.Instance.SettingsSave.ModSettings!.ModList;
+        if (SaveManager.Instance.SettingsSave.ModSettings is not { } settings)
+        {
+            Results.Add("FAIL two copies of one mod: the game has no saved mod list");
+            return;
+        }
+        var list = settings.ModList;
         var (id, source) = twins.Key;
         int Entries() => list.Count(e => e.Id == id && e.Source == source);
         bool LineFollows() => screen.GetNode<Control>("%PendingChangesLabel").Visible == ModEntry.HasPendingChanges();
@@ -3985,9 +3991,10 @@ static class SelfTest
         int OnNow() => Dependencies.OnePerKey(ModManager.Mods.Union(Installed.Mods).Where(m => m.manifest?.id != null))
             .Count(Dependencies.IsOn);
         string Summary() => (screen.GetNodeOrNull<Control>(HistoryBar.ChangesName) as RichTextLabel)?.GetParsedText() ?? "";
+        bool ProfileCountShown() => Profiles.Active is { } active && Profiles.ModCount(active) == Profiles.CountText();
         var on = OnNow();
         Check("the counts count this mod: the profile bar's, the main menu button's and Mods enabled's", Dependencies.IsOn(self)
-            && Profiles.OnCount() == on && Profiles.ModCount(Profiles.Active!) == Profiles.CountText() && Summary().StartsWith($"Mods enabled {Menus.Number(on)} "),
+            && Profiles.OnCount() == on && ProfileCountShown() && Summary().StartsWith($"Mods enabled {Menus.Number(on)} "),
             $"{on} on: profile {Profiles.OnCount()}, summary \"{Summary().Split('\n')[0]}\"");
         // Installed twice (a Workshop copy beside this local one): both on, as the game loads one, the newer, and the
         // counts name it once (#96: they counted each copy).
@@ -4002,7 +4009,7 @@ static class SelfTest
         CategoryList.Redraw(content);
         await Wait(menu, 0.2);
         Check("installed twice: both copies on, every count names it once", Dependencies.IsOn(copy) && Profiles.OnCount() == on
-            && Profiles.ModCount(Profiles.Active!) == Profiles.CountText() && Summary().StartsWith($"Mods enabled {Menus.Number(on)} "),
+            && ProfileCountShown() && Summary().StartsWith($"Mods enabled {Menus.Number(on)} "),
             $"copy on {Dependencies.IsOn(copy)}; {on} on before: profile {Profiles.OnCount()}, summary \"{Summary().Split('\n')[0]}\"");
         // Gone again, its row too (the game made one as it announced it; a later search would find it).
         if (content.GetChildren().OfType<NModMenuRow>().FirstOrDefault(r => r.Mod == copy) is { } copyRow)
@@ -4834,7 +4841,7 @@ static class SelfTest
         var rowButtons = row?.GetChildren().OfType<Button>().ToList() ?? [];
         Check("its Cancel comes first, at the left, the fixes and Relaunch anyway at the right",
             rowButtons.Select(b => b.Name.ToString()).SequenceEqual(["CancelRelaunchButton", "EnableNeededButton", "DisableBrokenButton", "RelaunchNowButton"])
-            && rowButtons[0].GetGlobalRect().Position.X - row!.GetGlobalRect().Position.X < 1
+            && row != null && rowButtons[0].GetGlobalRect().Position.X - row.GetGlobalRect().Position.X < 1
             && row.GetGlobalRect().End.X - rowButtons[^1].GetGlobalRect().End.X < 1,
             string.Join(", ", rowButtons.Select(b => $"{b.Name} {b.GetGlobalRect().Position.X:0}-{b.GetGlobalRect().End.X:0}")) + $" in {row?.GetGlobalRect()}");
         await Capture(screen, outDir, "15-relaunch-check");
