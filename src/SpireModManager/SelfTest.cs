@@ -4835,7 +4835,36 @@ static class SelfTest
         Check("back on the main list: still Disabled", Layout.Current == Layout.View.Categories && Choices() == "All Enabled Disabled* Changed"
             && Shown().SequenceEqual(Where(Off)), Say());
         if (!Bmm.Present) // its page shows its own groups
+        {
             Check("Vanilla List: every row, whatever the main list shows", await WithVanillaView(screen, menu, () => Shown().SequenceEqual(all)));
+            // A search typed on the main list doesn't follow to Vanilla List, which has no box for it: every row there,
+            // and the search still on the main list after. The game's panel title there: the game's pointer, no link.
+            var searchBox = screen.GetNode<LineEdit>("ModsBorder/SpireModManagerSearch");
+            void Search(string text)
+            {
+                searchBox.Text = text;
+                searchBox.EmitSignal(LineEdit.SignalName.TextChanged, text);
+            }
+            Search("SmmTestLib");
+            await Wait(menu, 0.5);
+            var searched = Shown().Count;
+            var title = screen.GetNode<Control>("%ModInfoContainer/ModTitle");
+            var vanillaAll = false;
+            var vanillaCursor = Control.CursorShape.PointingHand;
+            await WithVanillaView(screen, menu, () =>
+            {
+                vanillaAll = Shown().SequenceEqual(all);
+                vanillaCursor = title.MouseDefaultCursorShape;
+                return true;
+            });
+            var searchKept = Shown().Count == searched && searchBox.Text == "SmmTestLib";
+            var ourCursor = title.MouseDefaultCursorShape;
+            Search("");
+            await Wait(menu, 0.5);
+            Check("Vanilla List with a search typed on the main list: every row, and the search still there after; its panel title has the "
+                + "game's pointer (ours: the hand)", vanillaAll && searched < all.Count && searchKept && vanillaCursor != Control.CursorShape.PointingHand
+                && ourCursor == Control.CursorShape.PointingHand, $"searched {searched} of {all.Count}, kept {searchKept}, cursor {vanillaCursor} then {ourCursor}");
+        }
 
         await Press("ShowAllButton");
         Check("All: every row again, counted as installed mods", Shown().SequenceEqual(all) && Scope() == $"Mods installed ({all.Count})"
@@ -5913,6 +5942,7 @@ static class SelfTest
         {
             await Wait(menu, 0.4);
             await Capture(NModalContainer.Instance?.OpenModal as Node ?? screen, outDir, "19b-data-notice-read-only");
+            CheckMark("the notice about our unreadable data file (not the game's save error)", NModalContainer.Instance?.OpenModal as Control);
             NModalContainer.Instance?.Clear();
             await Wait(menu, 0.3);
         }
