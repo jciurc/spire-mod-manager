@@ -1504,9 +1504,12 @@ static class SelfTest
             Prewarm.Start(menu);
             for (var i = 0; i < 50 && !Prewarm.Done; i++)
                 await Wait(menu, 0.1);
-            Check("the page's text is shaped ahead on the main menu: a Chinese alias once, nothing all-Latin, to the end",
-                Prewarm.Done && Prewarm.Shaped.Count(t => t == Alias) == 1 && !Prewarm.Shaped.Any(t => t.All(c => c < 0x80)),
-                $"done {Prewarm.Done}: {string.Join(" | ", Prewarm.Shaped)}");
+            // Once if Kreon lacks its letters; not at all where a mod gave the font Chinese ones (RitsuLib-based mods can).
+            var font = ModEntry.Font("res://themes/kreon_regular_shared.tres");
+            var lacks = Alias.EnumerateRunes().Any(r => !font.HasChar(r.Value));
+            Check("the page's text is shaped ahead on the main menu: a Chinese alias once (none if the font has its letters), nothing all-Latin, to the end",
+                Prewarm.Done && Prewarm.Shaped.Count(t => t == Alias) == (lacks ? 1 : 0) && !Prewarm.Shaped.Any(t => t.All(c => c < 0x80)),
+                $"done {Prewarm.Done}, the font lacks its letters {lacks}: {string.Join(" | ", Prewarm.Shaped)}");
         }
         finally
         {
@@ -3198,13 +3201,14 @@ static class SelfTest
             await Wait(menu, 0.3);
             var (first, second) = (Ticked(twinRows[0]), Ticked(twinRows[1]));
             var lines = HistoryBar.Describe().Count(l => l.Contains(name));
+            var bothChanged = twins.All(HistoryBar.ChangedMods().Contains); // Show: Changed lists both rows
             var (onNow, offNow, _) = HistoryBar.Counts();
             var counted = Math.Abs(onNow - onBefore) + Math.Abs(offNow - offBefore);
             Click(twinRows[1]);
             await Wait(menu, 0.3);
-            Check("two copies of one mod: a click on one's box switches the other's too, and Changes and the counts name the mod once",
-                first == second && lines == 1 && counted == 1 && Ticked(twinRows[0]) == Ticked(twinRows[1]) && Ticked(twinRows[0]) != first,
-                $"boxes {first}/{second}, {lines} lines naming {name}, counted {counted}; back {Ticked(twinRows[0])}/{Ticked(twinRows[1])}");
+            Check("two copies of one mod: a click on one's box switches the other's too, Changes and the counts name the mod once, Show: Changed both rows",
+                first == second && lines == 1 && counted == 1 && bothChanged && Ticked(twinRows[0]) == Ticked(twinRows[1]) && Ticked(twinRows[0]) != first,
+                $"boxes {first}/{second}, {lines} lines naming {name}, counted {counted}, both under Changed {bothChanged}; back {Ticked(twinRows[0])}/{Ticked(twinRows[1])}");
         }
         else
             Results.Add($"SKIP two copies of one mod: a click on one's box (rows {twinRows.Count})");

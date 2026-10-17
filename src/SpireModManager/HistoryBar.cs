@@ -224,7 +224,10 @@ static class HistoryBar
         if (History.Loaded is not { } loaded)
             return [];
         var edited = DataChanges(loaded.Store, Store.EditsJson()).Edited.Select(e => e.Id).ToHashSet();
-        return [.. ModChanges(loaded.Mods).Select(c => c.Mod), .. Installed.Mods, .. Moves().Select(m => m.Mod),
+        // Turned on or off, or moved: every copy (two copies of one mod are one switch, and both rows show it changed).
+        var switched = ModChanges(loaded.Mods).Select(c => c.Mod).Concat(Moves().Select(m => m.Mod))
+            .Select(m => (m.manifest?.id, m.modSource)).ToHashSet();
+        return [.. ModManager.Mods.Where(m => switched.Contains((m.manifest?.id, m.modSource))), .. Installed.Mods,
             .. ModManager.Mods.Union(Installed.Mods).Where(m => m.manifest?.id is { } id && edited.Contains(id))];
     }
 
