@@ -2852,8 +2852,8 @@ static class SelfTest
         seen.Add($"local: [{string.Join("/", Tags.For(local).Where(c => c.Text is "Stable" or "Beta").Select(c => c.Text))}] "
             + string.Concat(queries.Select(q => Search.Matches(local, q) ? "y" : "n")));
         Check("Stable and Beta by the game's branch rule: a chip on one-branch mods that searches for it; #stable, #beta, #stable -#beta "
-            + "and the plain words find them, \"table\" doesn't",
-            seen.SequenceEqual(["stable only: [Stable (#Stable -#Beta)] ynyyyn", "beta and up: [Beta (#Beta -#Stable)] nynnnn",
+            + "and the plain words find them; \"table\" only through a chip's text (as any chip)",
+            seen.SequenceEqual(["stable only: [Stable (#Stable -#Beta)] ynyyyy", "beta and up: [Beta (#Beta -#Stable)] nynnnn",
                 "both: [] yynynn", "no range: [] yynynn", "local: [] yynynn"]),
             string.Join(" | ", seen));
     }
