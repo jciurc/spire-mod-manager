@@ -184,6 +184,7 @@ static class SelfTest
             await TestPendingNotes(menu, screen, content);
             await TestPendingLine(menu, screen, content);
             await TestSearch(menu, screen, content, outDir);
+            TestBranchTags();
             await TestRedrawCost(menu, screen, content);
             TestManyMods();
             await TestNewMod(menu, screen, content, outDir);
@@ -2814,6 +2815,43 @@ static class SelfTest
             added.QueueFree();
             CategoryList.Apply(content);
         }
+    }
+
+    // Stable and Beta, by the game's own branch rule over a Workshop mod's supported range (made-up mods and details):
+    // a chip only on a mod one branch loads; #stable and #beta find every mod a branch loads, "#stable -#beta" the ones
+    // only stable loads. No range, or a local mod: both, no chip.
+    static void TestBranchTags()
+    {
+        (string Name, List<(string, string)> Ranges)[] cases =
+            [("stable only", [("public", "public")]), ("beta and up", [("public-beta", "")]), ("both", [("public", "public-beta")]), ("no range", [])];
+        var seen = new List<string>();
+        for (var i = 0; i < cases.Length; i++)
+        {
+            var mod = new Mod
+            {
+                path = "", modSource = ModSource.SteamWorkshop, state = ModLoadState.Loaded,
+                manifest = new ModManifest { id = $"SmmBranchTest{i}", name = $"Branch Test {i}", author = "Someone Careful" },
+            };
+            var id = 4300ul + (ulong)i;
+            Compat.SetWorkshopId(mod, id);
+            WorkshopInfo.TestSet(id, new WorkshopInfo.Details(DateTime.Now, DateTime.Now, [], cases[i].Ranges, 0, null));
+            try
+            {
+                var chips = string.Join("/", Tags.For(mod).Where(c => c.Text is "Stable" or "Beta").Select(c => c.Text));
+                var found = string.Concat(new[] { "#stable", "#beta", "#stable -#beta" }.Select(q => Search.Matches(mod, q) ? "y" : "n"));
+                seen.Add($"{cases[i].Name}: [{chips}] {found}");
+            }
+            finally
+            {
+                WorkshopInfo.TestSet(id, null);
+            }
+        }
+        var local = Dependencies.Find("SmmTestFixes");
+        seen.Add($"local: [{string.Join("/", Tags.For(local).Where(c => c.Text is "Stable" or "Beta").Select(c => c.Text))}] "
+            + string.Concat(new[] { "#stable", "#beta", "#stable -#beta" }.Select(q => Search.Matches(local, q) ? "y" : "n")));
+        Check("Stable and Beta by the game's branch rule: a chip on one-branch mods; #stable, #beta and #stable -#beta find them",
+            seen.SequenceEqual(["stable only: [Stable] yny", "beta and up: [Beta] nyn", "both: [] yyn", "no range: [] yyn", "local: [] yyn"]),
+            string.Join(" | ", seen));
     }
 
     // By name, by alias (fixture: "The Manager"), no match, then cleared.
