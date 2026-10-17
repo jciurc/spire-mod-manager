@@ -66,7 +66,8 @@ public static class ModEntry
     }
 
     // Each patch class on its own, so one a game update breaks leaves the others working (PatchAll stops at the
-    // first failure). The launch record goes first, then watching for new mods: neither needs a patch.
+    // first failure). The launch record goes first, then watching for new mods and the branch errors of mods that are
+    // off: none needs a patch.
     public static void Init()
     {
         try
@@ -84,6 +85,14 @@ public static class ModEntry
         catch (Exception e)
         {
             Log.Error($"[{ModId}] Could not watch for mods installed while the game runs: {e}");
+        }
+        try
+        {
+            BranchErrors.DropFromOffMods();
+        }
+        catch (Exception e)
+        {
+            Log.Error($"[{ModId}] Could not drop the Steam branch error of mods that are off, so the main menu may show it: {e}");
         }
         var harmony = new Harmony(ModId);
 #if DEVTOOLS
