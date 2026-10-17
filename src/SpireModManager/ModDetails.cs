@@ -4,6 +4,7 @@ using MegaCrit.Sts2.Core.Platform;
 using MegaCrit.Sts2.Core.Nodes.Screens.ModdingScreen;
 using MegaCrit.Sts2.addons.mega_text;
 using MegaCrit.Sts2.Core.Localization;
+using System.Text.RegularExpressions;
 
 namespace SpireModManager;
 
@@ -304,14 +305,20 @@ static class ModDetails
     }
 
     // What stops the mod working: the game's load errors, a duplicate copy, and (if on) dependencies missing or off.
+    // Plain text, escaped where it's shown: the game's errors lose the colour tags it marks parts with ("Mod
+    // [red]{id}[/red] only supports..."), which would show as text in our lines (one colour, escaped).
     public static List<string> Problems(Mod mod)
     {
-        var problems = (mod.errors ?? []).Select(e => e.GetFormattedText()).ToList();
+        var problems = (mod.errors ?? []).Select(e => GameTags.Replace(e.GetFormattedText(), "")).ToList();
         if (mod.state == ModLoadState.DisabledDuplicate)
             problems.Add(Menus.Text("SPIRE_MOD_MANAGER.STATE_DUPLICATE"));
         problems.AddRange(DependencyProblems(mod));
         return problems;
     }
+
+    // The game's own rich-text effects (its RichTextRed and the like), opening or closing, with any settings.
+    static readonly Regex GameTags = new(
+        @"\[/?(?:red|blue|gold|green|orange|aqua|pink|purple|jitter|sine|fade_in|fly_in|scramble|thinky_dots|ancient_banner)(?:[ =][^\]]*)?\]");
 
     // An enabled mod's missing or disabled dependencies, a line for each kind ("Requires mods to be installed: A, B").
     public static List<string> DependencyProblems(Mod mod)
