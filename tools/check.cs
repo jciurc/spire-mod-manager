@@ -12,7 +12,7 @@
 // - Descriptions: no code sets the engine's TooltipText; Hover.Tip shows our card.
 // - Fixtures: the JSON under tools/fixtures parses, and each test mod's manifest has id, name and version.
 // - Both game branches: the members only the public-beta has go through Compat.
-// - Null-forgiving: no `!` that tells the compiler a value isn't null, in src, tools or build.cs.
+// - Null-forgiving: no `!` that tells the compiler a value isn't null, in src, tools, workshop or build.cs.
 // - Tracked files: none over 1 MB, none holding what looks like a GitHub token.
 // Prints PASS, FAIL and WARN lines (as annotations on GitHub); exit code 1 on any FAIL.
 using System.Diagnostics;
@@ -156,16 +156,29 @@ Check("members only the beta has go through Compat (stable has no Mod.workshopId
 
 // Null-forgiving: Jordan's code style has no `!` after a value to say it isn't null (null!, x!.y, F()!). A null there
 // throws far from its cause; a check that narrows (a pattern, or a checked local) gives the code its own way out.
-// Comments and the text of strings don't count; an interpolated string's holes do, as they're code.
-var forgiving = new Regex(@"(?<=[\w)\]])!(?!=)");
+// Comments and the text of strings don't count; an interpolated string's holes do, as they're code. The scan runs on a
+// sample first, so a scanner that blanks too much (and would pass everything) fails here.
+var forgiving = new Regex(@"(?<=[\w)\]])(?<!\boperator)!(?!=)");
+List<int> Forgiving(string source) =>
+    CodeOnly(source).Split('\n').Select((line, i) => (line, i)).Where(l => forgiving.IsMatch(l.line)).Select(l => l.i + 1).ToList();
+var sample = Forgiving(""""
+    var a = $"{x!.Y}";
+    var b = "Hi! there" + 'x' + '!' + '\'';
+    var c = @"a ""b"" c! d
+    still text!";
+    var d = $$"""{ "a!": {{x!}} }""";
+    /* x! */ var e = x != y && !z; // x!
+    var f = null!;
+    var g = F()! + a[0]!.Z;
+    var h = $@"{p!}" + """raw! "quoted!" text""" + $"{{not a hole! }}";
+    var i = $"{(q ? "a!" : r!)}" + "" + s!;
+    public static bool operator!(T t) => false;
+    """");
+Check("the null-forgiving scan finds the sample's (lines 1 5 7 8 9 10)", sample.SequenceEqual([1, 5, 7, 8, 9, 10]), "lines " + string.Join(" ", sample));
+var scripts = Files("tools", "*.cs").Concat(Files("workshop", "*.cs")).Append(Path.Combine(root, "build.cs")).Where(File.Exists);
 var asserted = new List<string>();
-foreach (var path in Files("src", "*.cs").Concat(Files("tools", "*.cs")).Append(Path.Combine(root, "build.cs")).Where(File.Exists))
-{
-    var lines = CodeOnly(File.ReadAllText(path)).Split('\n');
-    for (var i = 0; i < lines.Length; i++)
-        if (forgiving.IsMatch(lines[i]))
-            asserted.Add($"{Name(path)}:{i + 1}");
-}
+foreach (var (path, source) in sources.Concat(scripts.ToDictionary(f => f, File.ReadAllText)))
+    asserted.AddRange(Forgiving(source).Select(line => $"{Name(path)}:{line}"));
 Check("no null-forgiving ! (narrow instead: `is { } x`, `is not { } x` then return or continue, or a checked local)", asserted.Count == 0, List(asserted));
 
 // Fixtures: the test mods and data tools/dev.cs puts in the sandbox.
