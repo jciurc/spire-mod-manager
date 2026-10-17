@@ -1833,8 +1833,18 @@ static class SelfTest
     // Back in English, English. A file that isn't JSON, isn't an object or is over 1 MB changes nothing and throws
     // nothing. One saved as deu.json.txt (a browser's "Save as", the .txt hidden) is read. The file is removed and the
     // language set back afterwards.
+    // The SmartFormat version tools/loc.cs judges translations with (its #:package; check.cs keeps the two equal).
+    const string ToolParser = "3.3.0";
+
     static async Task TestTranslations(NMainMenu menu)
     {
+        // The tool reads texts as the game does only with the game's parser: when the game ships another version, update
+        // the package in tools/loc.cs and ToolParser here.
+        var parser = AppDomain.CurrentDomain.GetAssemblies().FirstOrDefault(a => a.GetName().Name == "SmartFormat")
+            ?.GetCustomAttributes(typeof(System.Reflection.AssemblyInformationalVersionAttribute), false)
+            .OfType<System.Reflection.AssemblyInformationalVersionAttribute>().FirstOrDefault()?.InformationalVersion.Split('+')[0];
+        Check($"translation tools: the game's text parser is SmartFormat {ToolParser}, the one tools/loc.cs uses", parser == ToolParser,
+            $"the game has {parser ?? "no SmartFormat loaded"}");
         var start = LocManager.Instance.Language;
         if (start != "eng" || Godot.FileAccess.FileExists($"res://{ModEntry.ModId}/localization/deu/settings_ui.json"))
         {
@@ -1847,6 +1857,8 @@ static class SelfTest
         const string Renamed = "SPIRE_MOD_MANAGER.PAGE_DISABLED", Added = "SPIRE_MOD_MANAGER.OPEN_TRANSLATIONS";
         const string Counted = "SPIRE_MOD_MANAGER.PAGE_ALL", NotText = "SPIRE_MOD_MANAGER.NEEDS_UPDATE";
         const string OnButton = "SPIRE_MOD_MANAGER.MAIN_MENU_PROFILE", OnButtonOne = "SPIRE_MOD_MANAGER.MAIN_MENU_PROFILE_ONE";
+        // Listed twice: a good copy, then a blank one; and a blank one, then a good one (tools/loc.cs reads them alike).
+        const string TwiceKept = "SPIRE_MOD_MANAGER.NOTES_TERM", TwiceLater = "SPIRE_MOD_MANAGER.NOTES_ADD";
         const string German = "Spiel neu starten (Änderungen, 模组)"; // not ASCII: read as UTF-8, with a byte order mark
         string[] keys = [Translated, LeftOut, Broken, Empty];
         static string Read(string key)
@@ -1894,6 +1906,10 @@ static class SelfTest
                   "{{Added}}": "Ordner {ordner}",
                   "{{NotText}}": 5,
                   "{{NotOurs}}": "Nicht unser Text",
+                  "{{TwiceKept}}": "Notizen",
+                  "{{TwiceKept}}": " ",
+                  "{{TwiceLater}}": "",
+                  "{{TwiceLater}}": "Notizen hinzufügen",
                 }
                 """);
             Check("a drop-in translation: its text shows in its language", threw == null && Read(Translated) == German, threw ?? Shown());
@@ -1906,6 +1922,8 @@ static class SelfTest
                 !table.IsLocalKey(Renamed) && !table.IsLocalKey(Added) && !table.IsLocalKey(NotText),
                 $"{table.GetRawText(Renamed)} | {table.GetRawText(Added)} | {table.GetRawText(NotText)}");
             Check("a drop-in translation: a key English doesn't have is left out", !table.HasEntry(NotOurs));
+            Check("a drop-in translation: a key listed twice shows its last copy that isn't blank",
+                Read(TwiceKept) == "Notizen" && Read(TwiceLater) == "Notizen hinzufügen", $"{Read(TwiceKept)} | {Read(TwiceLater)}");
             var popup = menu.GetNodeOrNull<Control>("SpireModManagerMenuButton") is { } button ? await ButtonMenu(menu, button) : null;
             var labels = popup == null ? [] : MenuPanel.Labels(popup);
             MenuPanel.Close();

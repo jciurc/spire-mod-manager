@@ -9,18 +9,27 @@
 //   dotnet run tools/loc.cs status <file> [--base <ref>] [--eng <ref or file>]
 //                                                          a translation against the English (now, or --eng): texts new
 //                                                          since it was made, texts whose English changed since, keys the
-//                                                          English no longer has, each with its line in the file. Exit code
-//                                                          1 if any.
+//                                                          English no longer has, and texts the mod skips (EMPTY, BROKEN;
+//                                                          see read), each with its line in the file. Exit code 1 if any.
 //   dotnet run tools/loc.cs compare <file> --base <ref> [--to <ref>] [--old <file>] [--html <page.html>]
 //                                                          both sides of each English change since --base: the English
 //                                                          then and now, and the translation then (--old: the copy made for
 //                                                          that version) and now, with its line; then the texts it still
-//                                                          lacks and the keys English doesn't have. --html: the same as a
+//                                                          lacks, the ones to fix (the mod skips them: see read) and the
+//                                                          keys English doesn't have. --html: the same as a
 //                                                          page to open in a browser, side by side. Exit code 1 if any to do.
+//   dotnet run tools/loc.cs read <file> [--eng <ref or file>]
+//                                                          how the mod reads a translation, key by key: the texts it uses,
+//                                                          and the ones it skips and why (the English shows for those).
+//                                                          Exit code 1 if it skips any. CI runs it on tools/fixtures/loc.
 //
 // A translation file holds only its own language, as the game reads it: the English it was made from is a version
 // (--base), else the oldest release whose texts the file has (said so in the report; it can flag a text that was
 // already updated, never miss one).
+// The game's own text parser, the version it ships (data_sts2_windows_x86_64/SmartFormat.dll): a text it can't parse,
+// the mod skips (Translations.Formats, through the game's LocValidator), and so does this tool. The self-test fails
+// when the game's version changes (SelfTest.ToolParser; check.cs keeps the two equal): then update both.
+#:package SmartFormat@3.3.0
 using System.Diagnostics;
 using System.Net;
 using System.Runtime.CompilerServices;
@@ -41,6 +50,7 @@ try
         "changes" when Positional() is [var from, .. var rest] => Changes(from, rest.FirstOrDefault(), args.Contains("--md")),
         "status" when Positional() is [var file, ..] => Status(file, Option("--base"), Option("--eng")),
         "compare" when Positional() is [var file, ..] && Option("--base") is { } version => Compare(file, version, Option("--to"), Option("--old"), Option("--html")),
+        "read" when Positional() is [var file, ..] => Read(file, Option("--eng")),
         _ => Usage(),
     };
 }
@@ -53,7 +63,7 @@ catch (Problem e)
 int Usage()
 {
     Console.Error.WriteLine("usage: dotnet run tools/loc.cs versions | changes <from> [<to>] [--md] | status <file> [--base <ref>] [--eng <ref or file>]"
-        + " | compare <file> --base <ref> [--to <ref>] [--old <file>] [--html <page.html>]");
+        + " | compare <file> --base <ref> [--to <ref>] [--old <file>] [--html <page.html>] | read <file> [--eng <ref or file>]");
     return 1;
 }
 
@@ -118,30 +128,33 @@ int Changes(string from, string? to, bool markdown)
 // A translation against the English: what's new since it was made, what changed, what went; each with its line.
 int Status(string file, string? baseRef, string? eng)
 {
-    var translation = ReadTranslation(file);
     var now = eng != null && File.Exists(eng) ? ReadEnglishFile(eng) : EnglishAt(eng == null ? null : Resolve(eng));
+    var translation = ReadTranslation(file, now);
     var (basis, made) = Basis(translation, baseRef);
-    var fresh = now.Keys.Where(k => !translation.Texts.ContainsKey(k)).ToList();
-    // Listed but blank: the mod shows the English, so they're to translate too, at their line.
-    var empty = fresh.Where(translation.Lines.ContainsKey).ToList();
-    fresh = [.. fresh.Except(empty)];
-    var gone = translation.Texts.Keys.Where(k => !now.ContainsKey(k)).ToList();
+    var fresh = now.Keys.Where(k => !translation.Lines.ContainsKey(k)).ToList();
+    // Listed, but the mod can't use them and shows the English: blank ones are still to translate, the others to fix.
+    var empty = translation.Skipped.Where(p => now.ContainsKey(p.Key) && p.Value.Why == "blank").Select(p => p.Key).ToList();
+    var broken = translation.Skipped.Where(p => now.ContainsKey(p.Key) && p.Value.Why != "blank").ToList();
+    var gone = translation.Lines.Keys.Where(k => !now.ContainsKey(k)).ToList();
     var changed = translation.Texts.Keys.Where(k => now.TryGetValue(k, out var text) && made?.GetValueOrDefault(k) is { } was && was != text).ToList();
     var name = Path.GetFileName(file);
     Console.WriteLine($"{name} ({translation.Texts.Count} texts) against the English {(eng == null ? "now" : eng)} ({now.Count} texts)");
     Console.WriteLine($"made from: {basis}");
-    Console.WriteLine($"{fresh.Count} new, {changed.Count} changed, {gone.Count} no longer in English{(empty.Count > 0 ? $", {empty.Count} empty" : "")}{(translation.Todos > 0 ? $", {translation.Todos} marked TODO" : "")}");
+    Console.WriteLine($"{fresh.Count} new, {changed.Count} changed, {gone.Count} no longer in English"
+        + $"{(empty.Count > 0 ? $", {empty.Count} empty" : "")}{(broken.Count > 0 ? $", {broken.Count} broken" : "")}{(translation.Todos > 0 ? $", {translation.Todos} marked TODO" : "")}");
     if (translation.Twice.Count > 0)
-        Console.WriteLine($"listed twice (the last one counts, as for the mod): {string.Join(", ", translation.Twice.Select(Short))}");
+        Console.WriteLine($"listed twice (the mod uses the last copy it can): {string.Join(", ", translation.Twice.Select(Short))}");
     foreach (var key in fresh)
         Console.WriteLine($"NEW      {Short(key)} {Quoted(now[key])}");
     foreach (var key in empty)
         Console.WriteLine($"EMPTY    {name}:{translation.Lines[key]} {Short(key)} {Quoted(now[key])}");
+    foreach (var (key, skip) in broken)
+        Console.WriteLine($"BROKEN   {name}:{translation.Lines[key]} {Short(key)}: {skip.Why}, so the English shows\n  yours:   {OneLine(skip.Text)}");
     foreach (var key in changed)
         Console.WriteLine($"CHANGED  {name}:{translation.Lines[key]} {Short(key)}\n  English: {OneLine(WordDiff(made?.GetValueOrDefault(key) ?? "", now[key]))}\n  yours:   {OneLine(translation.Texts[key])}");
     foreach (var key in gone)
         Console.WriteLine($"GONE     {name}:{translation.Lines[key]} {Short(key)}");
-    return fresh.Count + empty.Count + changed.Count + gone.Count + translation.Todos > 0 ? 1 : 0;
+    return fresh.Count + empty.Count + broken.Count + changed.Count + gone.Count + translation.Todos > 0 ? 1 : 0;
 }
 
 // Both sides of each English change since a version: the English then and now, the translation then and now. Then
@@ -150,29 +163,34 @@ int Compare(string file, string from, string? to, string? oldFile, string? html)
 {
     var (fromName, toName) = (Resolve(from), to == null ? null : Resolve(to));
     var (englishThen, englishNow) = (EnglishAt(fromName), EnglishAt(toName));
-    var now = ReadTranslation(file);
-    var then = oldFile == null ? null : ReadTranslation(oldFile);
+    var now = ReadTranslation(file, englishNow);
+    var then = oldFile == null ? null : ReadTranslation(oldFile, englishThen);
     var name = Path.GetFileName(file);
+    // A listed text the mod can't use for a reason other than being blank: to fix, not to translate.
+    Skip? Broken(string key) => now.Skipped.GetValueOrDefault(key) is { Why: not "blank" } skip ? skip : null;
     // Per English change: what the translation has to do, given what it did since (when its old copy says).
     var rows = Diff(englishThen, englishNow).Select(change =>
     {
         var (kind, key, was, text) = change;
-        var (old, current) = (then?.Texts.GetValueOrDefault(key), now.Texts.GetValueOrDefault(key));
+        var (old, current, broken) = (then?.Texts.GetValueOrDefault(key), now.Texts.GetValueOrDefault(key), Broken(key));
         var (state, todo) = kind switch
         {
+            "removed" => now.Lines.ContainsKey(key) ? ("to remove", true) : ("removed", false),
+            _ when broken != null => ("to fix", true),
             "new" => current == null ? ("to translate", true) : ("translated", false),
-            "removed" => current == null ? ("removed", false) : ("to remove", true),
             _ when current == null => ("to translate", true),
             _ when then == null => ("to check", true),
             _ => old == current ? ("to update", true) : ("updated", false),
         };
-        return new Row(key, kind, was, text, old, current, now.Lines.GetValueOrDefault(key), state, todo);
+        var shown = current ?? broken?.Text ?? (kind == "removed" ? now.Skipped.GetValueOrDefault(key)?.Text : null);
+        return new Row(key, kind, was, text, old, shown, now.Lines.GetValueOrDefault(key), state, todo, broken?.Why);
     }).ToList();
     var listed = rows.Select(r => r.Key).ToHashSet();
-    rows.AddRange(englishNow.Where(p => !listed.Contains(p.Key) && !now.Texts.ContainsKey(p.Key))
-        .Select(p => new Row(p.Key, "unchanged", p.Value, p.Value, then?.Texts.GetValueOrDefault(p.Key), null, now.Lines.GetValueOrDefault(p.Key), "to translate", true)));
-    rows.AddRange(now.Texts.Where(p => !listed.Contains(p.Key) && !englishNow.ContainsKey(p.Key))
-        .Select(p => new Row(p.Key, "not in English", null, null, then?.Texts.GetValueOrDefault(p.Key), p.Value, now.Lines.GetValueOrDefault(p.Key), "to remove", true)));
+    rows.AddRange(englishNow.Where(p => !listed.Contains(p.Key) && !now.Texts.ContainsKey(p.Key)).Select(p => Broken(p.Key) is { } broken
+        ? new Row(p.Key, "unchanged", p.Value, p.Value, then?.Texts.GetValueOrDefault(p.Key), broken.Text, now.Lines[p.Key], "to fix", true, broken.Why)
+        : new Row(p.Key, "unchanged", p.Value, p.Value, then?.Texts.GetValueOrDefault(p.Key), null, now.Lines.GetValueOrDefault(p.Key), "to translate", true)));
+    rows.AddRange(now.Lines.Keys.Where(k => !listed.Contains(k) && !englishNow.ContainsKey(k)).Select(k => new Row(k, "not in English", null, null,
+        then?.Texts.GetValueOrDefault(k), now.Texts.GetValueOrDefault(k) ?? now.Skipped.GetValueOrDefault(k)?.Text, now.Lines[k], "to remove", true)));
     // The changed first: they need both sides.
     rows = [.. rows.OrderBy(r => r.Kind switch { "changed" => 0, "new" => 1, "unchanged" => 2, "removed" => 3, _ => 4 })];
     var title = $"{name} for English {fromName} -> {toName ?? "now"}" + (then != null ? $", its copy then: {Path.GetFileName(oldFile)}" : "");
@@ -205,8 +223,32 @@ int Compare(string file, string from, string? to, string? oldFile, string? html)
             Console.WriteLine($"  translation: {OneLine(WordDiff(row.Old ?? "", row.Current ?? ""))}");
         else if (row.Current != null)
             Console.WriteLine($"  translation: {OneLine(row.Current)}{(then != null ? " (unchanged)" : "")}");
+        if (row.Note != null)
+            Console.WriteLine($"  problem:     {row.Note}, so the English shows");
     }
     return result;
+}
+
+// How the mod reads a translation (Translations.Read), key by key in the file's order: USED, EMPTY or BROKEN (skipped,
+// so the English shows), or UNKNOWN (a key the English doesn't have, left out).
+int Read(string file, string? eng)
+{
+    var english = eng != null && File.Exists(eng) ? ReadEnglishFile(eng) : EnglishAt(eng == null ? null : Resolve(eng));
+    var translation = ReadTranslation(file, english);
+    var name = Path.GetFileName(file);
+    var known = translation.Lines.Keys.Where(english.ContainsKey).ToList();
+    var skipped = known.Count(translation.Skipped.ContainsKey);
+    Console.WriteLine($"{name}: used {known.Count - skipped}, skipped {skipped} (the English shows), left out {translation.Lines.Count - known.Count}"
+        + $" (not in the English), missing {english.Keys.Count(k => !translation.Lines.ContainsKey(k))} (English texts the file doesn't list)");
+    foreach (var (key, line) in translation.Lines)
+    {
+        var skip = translation.Skipped.GetValueOrDefault(key);
+        var what = !english.ContainsKey(key) ? "UNKNOWN" : skip == null ? "USED" : skip.Why == "blank" ? "EMPTY" : "BROKEN";
+        Console.WriteLine($"{what,-8} {name}:{line} {Short(key)}{(skip != null && english.ContainsKey(key) ? $": {skip.Why}" : "")}");
+    }
+    if (translation.Twice.Count > 0)
+        Console.WriteLine($"listed twice (the mod uses the last copy it can): {string.Join(", ", translation.Twice.Select(Short))}");
+    return skipped + translation.Lines.Count - known.Count > 0 ? 1 : 0;
 }
 
 // The English each text of a translation was made from: --base's, else the oldest release it fits (null: unknown).
@@ -216,8 +258,9 @@ int Compare(string file, string from, string? to, string? oldFile, string? html)
         return ($"{version} (--base)", EnglishAt(version));
     // The oldest release with every key the file has (fewest texts the file lacks first). None without git or tags.
     var releases = Releases(quiet: true);
-    var fits = releases.Select(r => (Release: r, Texts: EnglishAt(r))).Where(r => translation.Texts.Keys.All(r.Texts.ContainsKey))
-        .OrderBy(r => r.Texts.Keys.Count(k => !translation.Texts.ContainsKey(k))).FirstOrDefault();
+    // Every key the file lists counts, blank or broken ones too: they were made for that English as well.
+    var fits = releases.Select(r => (Release: r, Texts: EnglishAt(r))).Where(r => translation.Lines.Keys.All(r.Texts.ContainsKey))
+        .OrderBy(r => r.Texts.Keys.Count(k => !translation.Lines.ContainsKey(k))).FirstOrDefault();
     if (fits.Release != null)
         return ($"{fits.Release}, inferred from its texts (--base <version> to set it)", fits.Texts);
     return (releases.Count == 0 ? "unknown: no release tags here (git fetch --tags, or --base <version>), so changed English can't be told"
@@ -252,26 +295,52 @@ static Dictionary<string, string> Flat(string json)
     return texts;
 }
 
-// A translation file: its texts in order (a key listed twice: the last copy, as the mod's reader keeps it, and named;
-// a blank one left out, as the mod leaves it out), each key's line, blank ones too, and its TODO marks.
-static Translation ReadTranslation(string path)
+// A translation file, read as the mod reads it (Translations.Read): per key, the last copy the mod can use. It skips a
+// copy, and shows the English instead, when the text is blank or isn't text, and (given the English) when the game
+// can't parse it or it has a {placeholder} the English doesn't (Unusable). Also each key's line (the copy that counts,
+// else the last one skipped), the keys listed twice, and the TODO marks. A file the mod leaves out whole (over 1 MB,
+// not JSON, not an object) is refused, saying so.
+static Translation ReadTranslation(string path, Dictionary<string, string>? english = null)
 {
     if (!File.Exists(path))
         throw new Problem($"{path} doesn't exist");
+    if (new FileInfo(path).Length > 1024 * 1024) // Translations.MaxBytes
+        throw new Problem($"{Path.GetFileName(path)} is over 1 MB, so the mod leaves it out whole");
     var source = File.ReadAllText(path); // UTF-8 with or without a BOM, or UTF-16, as the mod reads it
     var bytes = Encoding.UTF8.GetBytes(source);
     var reader = new Utf8JsonReader(bytes, new JsonReaderOptions { CommentHandling = JsonCommentHandling.Allow, AllowTrailingCommas = true });
-    var (texts, lines, seen, twice, todos, depth) = (new Dictionary<string, string>(), new Dictionary<string, int>(), new HashSet<string>(), new List<string>(), 0, 0);
-    // Each key's line (its last listing), for "file:line" pointers: the line breaks before where the reader found it.
+    var (texts, skipped, lines, seen, twice) = (new Dictionary<string, string>(), new Dictionary<string, Skip>(), new Dictionary<string, int>(), new HashSet<string>(), new List<string>());
+    var (todos, depth) = (0, 0);
+    // For "file:line" pointers: the line breaks before where the reader found the key.
     var (line, scanned, keyLine) = (1, 0L, 0);
     string? key = null;
+    // One copy of a key: the text the mod uses, or why it skips it (an earlier copy it can use then stays).
+    void Copy(string text, string? why)
+    {
+        if (key == null)
+            return;
+        if (!seen.Add(key))
+            twice.Add(key);
+        if (why == null)
+        {
+            (texts[key], lines[key]) = (text, keyLine);
+            skipped.Remove(key);
+        }
+        else if (!texts.ContainsKey(key))
+            (skipped[key], lines[key]) = (new Skip(text, why), keyLine);
+        key = null;
+    }
     try
     {
         while (reader.Read())
         {
+            if (depth == 0 && reader.TokenType is not (JsonTokenType.StartObject or JsonTokenType.Comment))
+                throw new Problem($"{Path.GetFileName(path)} isn't a list of \"key\": \"text\" pairs, so the mod leaves it out whole");
             switch (reader.TokenType)
             {
                 case JsonTokenType.StartObject or JsonTokenType.StartArray:
+                    if (depth == 1)
+                        Copy(reader.TokenType == JsonTokenType.StartObject ? "{…}" : "[…]", "not text");
                     depth++;
                     break;
                 case JsonTokenType.EndObject or JsonTokenType.EndArray:
@@ -287,15 +356,11 @@ static Translation ReadTranslation(string path)
                     keyLine = line;
                     break;
                 case JsonTokenType.String when depth == 1 && key != null:
-                    if (!seen.Add(key))
-                        twice.Add(key);
-                    // A blank text is as good as none: the mod shows the English for it (Translations.Read).
-                    if (reader.GetString() is { } text && text.Trim().Length > 0)
-                        texts[key] = text;
-                    else
-                        texts.Remove(key);
-                    lines[key] = keyLine;
-                    key = null;
+                    var text = reader.GetString() ?? "";
+                    Copy(text, Unusable(text, english?.GetValueOrDefault(key)));
+                    break;
+                case JsonTokenType.Number or JsonTokenType.True or JsonTokenType.False or JsonTokenType.Null when depth == 1:
+                    Copy(Encoding.UTF8.GetString(reader.ValueSpan), "not text");
                     break;
             }
         }
@@ -304,8 +369,39 @@ static Translation ReadTranslation(string path)
     {
         throw new Problem($"{Path.GetFileName(path)} isn't valid JSON (line {e.LineNumber + 1}, at byte {e.BytePositionInLine + 1}): {Regex.Replace(e.Message, @"\s*LineNumber:.*$", "")}");
     }
-    return new Translation(texts, lines, todos, [.. twice.Distinct()]);
+    return new Translation(texts, skipped, lines, todos, [.. twice.Distinct()]);
 }
+
+// Why the mod can't use a text (null: it can), as Translations.Read decides: blank, the game can't parse it, or a
+// {placeholder} its English doesn't have. The last two only for a key the English has, as in the mod.
+static string? Unusable(string text, string? english)
+{
+    if (text.Trim().Length == 0)
+        return "blank";
+    if (english == null)
+        return null;
+    try
+    {
+        Game.Parser.ParseFormat(text); // LocValidator.ValidateFormatString, as the game runs it
+    }
+    catch (SmartFormat.Core.Parsing.ParsingErrors e)
+    {
+        // Its issue names a character by its code ('0x43F'): shown as the character.
+        var issue = Regex.Replace(e.Issues.FirstOrDefault()?.Issue.TrimEnd('.') ?? "a format error", "'0x([0-9A-Fa-f]{1,4})'",
+            m => $"'{(char)Convert.ToInt32(m.Groups[1].Value, 16)}'");
+        return $"the game can't read it ({issue})";
+    }
+    catch (Exception)
+    {
+        // Any other failure of the check counts as a pass, as in Translations.Formats.
+    }
+    if (Placeholders(text).Except(Placeholders(english)).ToList() is not [_, ..] strange)
+        return null;
+    return $"{string.Join(", ", strange.Select(name => $"{{{name}}}"))} {(strange.Count == 1 ? "isn't" : "aren't")} in the English";
+}
+
+// The names a text's placeholders use: "count" in "{count}" and in "{count:plural:mod|mods}" (Translations.Placeholders).
+static HashSet<string> Placeholders(string text) => [.. Regex.Matches(text, @"\{([A-Za-z_]\w*)").Select(m => m.Groups[1].Value)];
 
 // Text by text from one English to another: new, changed (old and new), removed, in the newer one's order.
 static List<(string Kind, string Key, string? Was, string? Text)> Diff(Dictionary<string, string> old, Dictionary<string, string> now) =>
@@ -420,7 +516,8 @@ static string Page(string title, string counts, string file, List<Row> rows, boo
         var translation = row.Current == null && row.Old == null ? "<span class=none>none</span>"
             : hasOld && row.Old != row.Current ? HtmlDiff(row.Old ?? "", row.Current ?? "") : E(row.Current) + (hasOld ? " <span class=none>(unchanged)</span>" : "");
         body.Append($"<tr class=\"{(row.Todo ? "todo" : "done")}\"><td><code>{E(Short(row.Key))}</code>{(row.Line > 0 ? $"<br><span class=line>{E(file)}:{row.Line}</span>" : "")}</td>"
-            + $"<td class=state>{E(row.State)}</td><td class=en>{english}</td><td class=tr>{translation}</td></tr>\n");
+            + $"<td class=state>{E(row.State)}{(row.Note != null ? $"<br><span class=note>{E(row.Note)}, so the English shows</span>" : "")}</td>"
+            + $"<td class=en>{english}</td><td class=tr>{translation}</td></tr>\n");
     }
     return $$"""
 <!doctype html>
@@ -434,6 +531,7 @@ h1 { font-size: 18px; margin: 0 0 4px; } p { color: var(--muted); margin: 0 0 16
 table { border-collapse: collapse; width: 100%; } th, td { border-bottom: 1px solid var(--line); padding: 8px; text-align: left; vertical-align: top; }
 th { font-size: 13px; color: var(--muted); font-weight: 600; } .en, .tr { width: 40%; white-space: pre-wrap; }
 tr.todo td { background: var(--todo); } .state { white-space: nowrap; font-weight: 600; }
+.note { display: inline-block; max-width: 14em; white-space: normal; font-weight: normal; color: var(--del); font-size: 13px; }
 del { color: var(--del); background: var(--del-bg); text-decoration: line-through; } ins { color: var(--ins); background: var(--ins-bg); text-decoration: none; }
 .line, .none { color: var(--muted); font-size: 13px; } code { font-size: 13px; }
 @media (max-width: 700px) {
@@ -504,9 +602,19 @@ static string? Quietly(bool quiet, Func<string?> call)
 
 static string ScriptDir([CallerFilePath] string path = "") => Path.GetDirectoryName(path) ?? ".";
 
-record Translation(Dictionary<string, string> Texts, Dictionary<string, int> Lines, int Todos, List<string> Twice);
+// Texts: what the mod uses, per key. Skipped: the keys it can't use any copy of, and why. Lines: every key the file
+// lists, in order, at the copy that counts.
+record Translation(Dictionary<string, string> Texts, Dictionary<string, Skip> Skipped, Dictionary<string, int> Lines, int Todos, List<string> Twice);
 
-record Row(string Key, string Kind, string? Was, string? Text, string? Old, string? Current, int Line, string State, bool Todo);
+record Skip(string Text, string Why);
+
+record Row(string Key, string Kind, string? Was, string? Text, string? Old, string? Current, int Line, string State, bool Todo, string? Note = null);
+
+// The game's text parser with its default settings, as LocValidator makes it: one, reused for every text.
+static class Game
+{
+    public static readonly SmartFormat.Core.Parsing.Parser Parser = new();
+}
 
 // A refusal: its message says what's wrong and what to do.
 class Problem(string message) : Exception(message);
