@@ -237,10 +237,11 @@ public static class ModEntry
     // This session's arguments plus the current window mode, so the new copy opens the way this one looks
     // instead of starting in a small window until the game applies its display settings. Window flags
     // from an earlier relaunch are replaced, not repeated.
-    public static string[] RelaunchArgs()
+    public static string[] RelaunchArgs() => RelaunchArgs(OS.GetCmdlineArgs());
+
+    public static string[] RelaunchArgs(string[] given)
     {
         var args = new List<string>();
-        var given = OS.GetCmdlineArgs();
         for (var i = 0; i < given.Length; i++)
         {
             if (given[i] is "--fullscreen" or "-f" or "--maximized" or "-m" or "--windowed" or "-w")
