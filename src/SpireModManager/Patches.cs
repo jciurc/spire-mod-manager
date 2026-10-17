@@ -169,9 +169,17 @@ static class ModdingScreenPatch
         try
         {
             Layout.Apply(__instance); // last: it places everything above
-            // Refills the info panel when Workshop details arrive.
+            // Refills the info panel when Workshop details arrive, and redraws our views' list: chips and searches by
+            // Workshop tags and branches (Cosmetic, Stable, Beta) follow them.
             var screen = __instance;
-            void Refill() => Callable.From(() => ModDetails.Refresh(screen)).CallDeferred();
+            void Refill() => Callable.From(() =>
+            {
+                if (!GodotObject.IsInstanceValid(screen))
+                    return;
+                ModDetails.Refresh(screen);
+                if (!Store.Data.VanillaView)
+                    CategoryList.Apply(screen.GetNode<Control>("%ModsScrollContainer/Mask/Content"));
+            }).CallDeferred();
             WorkshopInfo.Loaded += Refill;
             screen.TreeExiting += () => WorkshopInfo.Loaded -= Refill;
         }

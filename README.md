@@ -35,11 +35,11 @@ Subscribe to it on the [Steam Workshop](https://steamcommunity.com/sharedfiles/f
 - **Warnings that name the mods:** a banner says when enabled mods need a mod that's disabled or not
   installed, and Enable required mods turns on the ones you have.
 - **Your notes on each mod:** an alias, notes and your own tags, plus automatic ones (New, Local, Stable or
-  Beta for a mod only one branch loads, Library, Gameplay, Cosmetic).
+  Beta for a mod marked for one branch only, Library, Gameplay, Cosmetic).
 - **Search:** names, aliases, notes, tags, authors, categories and Workshop tags; `#tag` and `@author` narrow
-  it down, and a `-` before a term leaves out what it matches: `#stable -#beta` lists the mods only the stable
-  branch loads, and Disable all turns them off. Punctuation counts as spaces; `"text in quotes"` matches exactly,
-  case too. Ctrl+F jumps to the search box.
+  it down, and a `-` before a term leaves out what it matches: `#stable -#beta` lists the mods marked for the
+  stable branch only, and Disable all turns them off. Punctuation counts as spaces; `"text in quotes"` matches
+  exactly, case too. Ctrl+F jumps to the search box.
 - **Select several mods** with Ctrl-click, Shift-click or Ctrl+A, then set their category, tags or notes, or turn
   them all on or off.
 - **Changes, undo and redo:** the bar at the bottom counts what changed since the game started. Ctrl+Z and

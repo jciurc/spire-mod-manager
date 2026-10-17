@@ -10,7 +10,8 @@ namespace SpireModManager;
 // player's own.
 static class Tags
 {
-    public record Chip(string Text, Color Color, bool Custom = false, string? Tip = null);
+    // Search: what a click on it searches for, if not its tag.
+    public record Chip(string Text, Color Color, bool Custom = false, string? Tip = null, string? Search = null);
 
     static readonly Color Gameplay = new(0.95f, 0.55f, 0.3f);
     static readonly Color Library = new(0.937f, 0.784f, 0.318f);
@@ -41,12 +42,14 @@ static class Tags
             chips.Add(new Chip(Menus.Text("SPIRE_MOD_MANAGER.TAG_NEW"), New, Tip: Menus.Text("SPIRE_MOD_MANAGER.TAG_NEW_TIP")));
         if (Compat.WorkshopId(mod) == null)
             chips.Add(new Chip(Menus.Text("SPIRE_MOD_MANAGER.TAG_LOCAL"), Local, Tip: Menus.Text("SPIRE_MOD_MANAGER.TAG_LOCAL_TIP")));
-        // A branch only when the mod is limited to one of the two (most load on both, and #stable, #beta find them anyway).
+        // A branch only when the mod is marked for one of the two (most are for both, and #stable, #beta find them anyway).
+        // A click searches for what the chip means: marked for this branch and not the other.
         var (stable, beta) = Branches(mod);
+        var (stableName, betaName) = (Menus.Text("SPIRE_MOD_MANAGER.TAG_STABLE"), Menus.Text("SPIRE_MOD_MANAGER.TAG_BETA"));
         if (stable && !beta)
-            chips.Add(new Chip(Menus.Text("SPIRE_MOD_MANAGER.TAG_STABLE"), Stable, Tip: Menus.Text("SPIRE_MOD_MANAGER.TAG_STABLE_TIP")));
+            chips.Add(new Chip(stableName, Stable, Tip: Menus.Text("SPIRE_MOD_MANAGER.TAG_STABLE_TIP"), Search: $"{Term(stableName)} -{Term(betaName)}"));
         else if (beta && !stable)
-            chips.Add(new Chip(Menus.Text("SPIRE_MOD_MANAGER.TAG_BETA"), Beta, Tip: Menus.Text("SPIRE_MOD_MANAGER.TAG_BETA_TIP")));
+            chips.Add(new Chip(betaName, Beta, Tip: Menus.Text("SPIRE_MOD_MANAGER.TAG_BETA_TIP"), Search: $"{Term(betaName)} -{Term(stableName)}"));
         if (Dependencies.NeededBy(manifest.id).Any(m => m != mod))
             chips.Add(new Chip(Menus.Text("SPIRE_MOD_MANAGER.TAG_LIBRARY"), Library, Tip: Menus.Text("SPIRE_MOD_MANAGER.TAG_LIBRARY_TIP")));
         if (manifest.affectsGameplay)
@@ -58,8 +61,8 @@ static class Tags
         return chips;
     }
 
-    // What a #tag search finds on a mod: its chips' text, and Stable and Beta for each branch it loads on, chip or not
-    // (so "#stable -#beta" finds the mods only stable loads).
+    // What a #tag search finds on a mod: its chips' text, and Stable and Beta for each branch it's marked for, chip or
+    // not (so "#stable -#beta" finds the mods marked for stable only).
     public static IReadOnlyList<string> Searchable(Mod mod)
     {
         var texts = For(mod).Select(c => c.Text).ToList();
@@ -71,7 +74,8 @@ static class Tags
         return texts;
     }
 
-    // The game's stable and beta branches a mod loads on, by the game's own rule over the Workshop's supported range.
+    // The game's stable and beta branches a mod is marked for, by the game's own rule over the Workshop's supported
+    // range (on another branch the game still loads it, with an error).
     // No range set, or no Workshop details (a local mod, or before they arrive), is every branch.
     public static (bool Stable, bool Beta) Branches(Mod mod) =>
         WorkshopInfo.For(mod)?.Branches is { Count: > 0 } ranges ? Supports(ranges) : (true, true);
@@ -101,6 +105,9 @@ static class Tags
     static (bool, bool) GameSupports(IReadOnlyList<(string, string)> ranges) =>
         (ModManager.EvaluateBranchSupport(PlatformBranch.Production, ranges).IsSupported,
             ModManager.EvaluateBranchSupport(PlatformBranch.PublicBeta, ranges).IsSupported);
+
+    // A tag as a search term: #name, quoted if it has spaces.
+    static string Term(string name) => name.Any(char.IsWhiteSpace) ? $"#\"{name}\"" : $"#{name}";
 
     // A usage hint for the foot of a card: small, bold, faint.
     public static string Hint(string text) => $"[b][font_size=14][color=#fff6e280]{Escape(text)}[/color][/font_size][/b]";

@@ -1,3 +1,6 @@
+using System.Globalization;
+using System.Text;
+using System.Text.RegularExpressions;
 using Godot;
 using MegaCrit.Sts2.Core.Modding;
 using MegaCrit.Sts2.Core.Nodes.Screens.ModdingScreen;
@@ -28,7 +31,8 @@ static class Search
             "#" => (tags ??= Tags.Searchable(mod)).Contains(term.Value, StringComparer.OrdinalIgnoreCase),
             "@" => string.Equals(manifest.author, term.Value, StringComparison.OrdinalIgnoreCase),
             Exact => Text().Raw.Contains(term.Value, StringComparison.Ordinal),
-            _ => term.Words.All(word => Text().All.Contains(word, StringComparison.OrdinalIgnoreCase)),
+            // A word that is a whole tag finds it too: "stable" finds what #stable finds, though no chip shows it.
+            _ => Found(Text(), term.Spaced, term.Joined) || (tags ??= Tags.Searchable(mod)).Contains(term.Spaced, StringComparer.OrdinalIgnoreCase),
         };
         if (query.Terms.Any(t => t.Not && Has(t)) || !query.Terms.Where(t => !t.Not && t.Kind.Length > 0).All(Has))
             return false;
@@ -37,11 +41,19 @@ static class Search
             || Text().Squeezed.Any(f => f.Contains(query.Squeezed, StringComparison.OrdinalIgnoreCase));
     }
 
+    // A typed word's pieces (the parts between its punctuation) side by side in one field: with a space between them
+    // ("test-fixes" finds "Test Fixes") or none ("spire-mod" finds "SpireMod", "don't" and "dont" find "Don't").
+    static bool Found(Haystack text, string spaced, string joined) => text.All.Contains(spaced, StringComparison.OrdinalIgnoreCase)
+        || text.Squeezed.Any(f => f.Contains(joined, StringComparison.OrdinalIgnoreCase));
+
+    // Whether a search says anything: "-", "!!!" or a lone quote alone count as an empty box.
+    public static bool HasTerms(string filter) => Parse(filter).Terms.Count > 0;
+
     const string Exact = "\"";
 
-    // One term of a search: a tag ("#"), an author ("@"), exact text (Exact), or a word as typed ("", Words: its pieces
-    // between punctuation); Not when a "-" leads it.
-    record Term(string Kind, string Value, bool Not, string[] Words);
+    // One term of a search: a tag ("#"), an author ("@"), exact text (Exact), or a word as typed (""; Spaced and Joined:
+    // its pieces with a space between and with none); Not when a "-" leads it.
+    record Term(string Kind, string Value, bool Not, string Spaced = "", string Joined = "");
 
     // A parsed search: its terms, and the words of those that must match without spaces. The last one is kept.
     record Query(string Text, IReadOnlyList<Term> Terms, string Squeezed);
@@ -52,26 +64,26 @@ static class Search
         if (_lastQuery?.Text == filter)
             return _lastQuery;
         var terms = new List<Term>();
-        foreach (System.Text.RegularExpressions.Match m in Token.Matches(filter))
+        foreach (Match m in Token.Matches(filter))
         {
             var not = m.Groups["not"].Success;
             if (m.Groups["kind"].Success)
-                terms.Add(new Term(m.Groups["kind"].Value, m.Groups["quoted"].Success ? m.Groups["quoted"].Value : m.Groups["bare"].Value, not, []));
+                terms.Add(new Term(m.Groups["kind"].Value, m.Groups["quoted"].Success ? m.Groups["quoted"].Value : m.Groups["bare"].Value, not));
             else if (m.Groups["exact"].Length > 0)
-                terms.Add(new Term(Exact, m.Groups["exact"].Value, not, []));
+                terms.Add(new Term(Exact, m.Groups["exact"].Value, not));
         }
         foreach (var word in Token.Replace(filter, " ").Split((char[]?)null, StringSplitOptions.RemoveEmptyEntries))
         {
             var not = word.Length > 1 && word[0] == '-'; // a "-" alone is nothing
-            if (Words(not ? word[1..] : word) is { Length: > 0 } words)
-                terms.Add(new Term("", word, not, words));
+            if (Fold(not ? word[1..] : word, " ").Trim() is { Length: > 0 } spaced)
+                terms.Add(new Term("", word, not, spaced, spaced.Replace(" ", "")));
         }
-        var squeezed = string.Concat(terms.Where(t => !t.Not && t.Kind.Length == 0).SelectMany(t => t.Words));
+        var squeezed = string.Concat(terms.Where(t => !t.Not && t.Kind.Length == 0).Select(t => t.Joined));
         return _lastQuery = new Query(filter, terms, squeezed);
     }
 
-    // The text a search is matched against: every field in one as it is (for exact text), the same with punctuation
-    // and symbols taken out (for words), and each field without them or spaces.
+    // The text a search is matched against: every field as it is (for exact text), the same with punctuation and
+    // symbols taken out (for words; fields a line apart, so a match stays in one), and each field without them or spaces.
     public record Haystack(string Raw, string All, string[] Squeezed);
 
     static Haystack HaystackOf(Mod mod)
@@ -79,36 +91,55 @@ static class Search
         var info = Store.InfoFor(mod.manifest?.id);
         string?[] fields = [mod.manifest?.name, mod.manifest?.id, mod.manifest?.author, info?.Alias, info?.Notes, info?.Category,
             .. Tags.For(mod).Select(c => c.Text), .. WorkshopInfo.For(mod)?.Tags ?? []];
-        var raw = string.Join('\n', fields);
-        return new Haystack(raw, Fold(raw, ""), [.. fields.OfType<string>().Select(f => Squeeze(Fold(f, "")))]);
+        var folded = fields.OfType<string>().Select(f => Fold(f, "")).ToList();
+        return new Haystack(string.Join('\n', fields), string.Join('\n', folded), [.. folded.Select(Squeeze)]);
     }
 
-    // Letters, digits and accents stay; spaces become one space; punctuation and symbols become between (nothing for a
-    // mod's text, so "Don't" reads "Dont"; a space for a search, so "spire-mod" is two words).
+    // Letters and numbers stay, with the accents on them; a run of spaces is one space; punctuation and symbols become
+    // between (nothing for a mod's text, so "Don't" reads "Dont"; a space for a search, so "spire-mod" is two words).
+    // Compatibility forms first, so full-width "ＡＢＣ" reads "ABC" and "Ⅱ" reads "II".
     static string Fold(string text, string between)
     {
-        var folded = new System.Text.StringBuilder(text.Length);
+        if (!text.IsNormalized(NormalizationForm.FormKC))
+            text = text.Normalize(NormalizationForm.FormKC);
+        var folded = new StringBuilder(text.Length);
+        Span<char> pair = stackalloc char[2];
+        var kept = false; // the last rune stayed, so an accent after it stays too (not one left by a symbol, like an emoji's)
         foreach (var rune in text.EnumerateRunes())
         {
-            if (System.Text.Rune.IsLetterOrDigit(rune) || System.Text.Rune.GetUnicodeCategory(rune) is System.Globalization.UnicodeCategory.NonSpacingMark
-                or System.Globalization.UnicodeCategory.SpacingCombiningMark or System.Globalization.UnicodeCategory.EnclosingMark)
-                folded.Append(rune.ToString());
-            else
-                folded.Append(System.Text.Rune.IsWhiteSpace(rune) ? " " : between);
+            var accent = Rune.GetUnicodeCategory(rune) is UnicodeCategory.NonSpacingMark or UnicodeCategory.SpacingCombiningMark
+                or UnicodeCategory.EnclosingMark;
+            if (Rune.IsLetterOrDigit(rune) || Rune.IsNumber(rune) || accent && kept)
+            {
+                folded.Append(pair[..rune.EncodeToUtf16(pair)]);
+                kept = true;
+                continue;
+            }
+            kept = false;
+            var gap = Rune.IsWhiteSpace(rune) ? " " : between;
+            if (gap.Length > 0 && (folded.Length == 0 || folded[^1] != ' '))
+                folded.Append(gap);
         }
         return folded.ToString();
     }
 
-    static string[] Words(string typed) => Fold(typed, " ").Split(' ', StringSplitOptions.RemoveEmptyEntries);
-
     // A #tag or @author (quoted for spaces), or "exact text" (its closing quote may be still to type); a "-" before
     // either, at a term's start, leaves out what it matches. A tag glued to a word ("foo#Library") counts; a lone "#"
     // is plain ("C#").
-    static readonly System.Text.RegularExpressions.Regex Token =
+    static readonly Regex Token =
         new(@"(?<not>(?<!\S)-)?(?:(?<kind>[#@])(?:""(?<quoted>[^""]+)""|(?<bare>\S+))|""(?<exact>[^""]*)(?:""|$))");
 
     // A clicked tag or author: searches for it; with Shift, adds it or takes it out.
     public static void ByTag(Node near, string tag, bool add) => Put(near, "#", tag, add);
+
+    // A clicked chip: its own search if it has one (Stable: "#Stable -#Beta"), else its tag.
+    public static void ByChip(Node near, Tags.Chip chip, bool add)
+    {
+        if (chip.Search is { } search)
+            Put(near, "", search, add);
+        else
+            ByTag(near, chip.Text, add);
+    }
 
     public static void ByAuthor(Node near, string author, bool add) => Put(near, "@", author, add);
 
@@ -119,7 +150,7 @@ static class Search
     {
         if (CategoryList.ScreenOf(near)?.GetNodeOrNull<LineEdit>("ModsBorder/SpireModManagerSearch") is not { } box)
             return;
-        var token = kind.Length == 0 ? value : value.Contains(' ') ? $"{kind}\"{value}\"" : $"{kind}{value}";
+        var token = kind.Length == 0 ? value : value.Any(char.IsWhiteSpace) ? $"{kind}\"{value}\"" : $"{kind}{value}";
         var text = Toggled(box.Text, token, add);
         box.Text = text;
         box.CaretColumn = text.Length;
@@ -146,12 +177,23 @@ static class Search
             else
                 i++;
         }
-        return string.Join(' ', terms.Count < before ? terms : terms.Concat(wanted));
+        if (terms.Count < before)
+            return string.Join(' ', terms.Select(Closed));
+        // Left out until now ("-#tag"): it's put in instead.
+        if (wanted.Count == 1)
+            terms.RemoveAll(t => Same(t, "-" + wanted[0]));
+        return string.Join(' ', terms.Select(Closed).Concat(wanted));
     }
 
-    // A search's terms as typed: #tag and @author (quoted or not), "exact text", each maybe after a "-", or a plain word.
-    static readonly System.Text.RegularExpressions.Regex Typed =
-        new(@"-?[#@](?:""[^""]+""|\S+)|-?""[^""]*(?:""|$)|(?:(?![#@](?:""[^""]+""|\S))\S)+");
+    // A quoted term still being typed gets its closing quote, so a term added after it stays a term of its own.
+    static string Closed(string term) => Unclosed.IsMatch(term) ? term + "\"" : term;
+
+    static readonly Regex Unclosed = new(@"^-?[#@]?""[^""]*$");
+
+    // A search's terms as typed: #tag and @author (quoted or not), "exact text", each maybe after a "-" (at a term's
+    // start, as Token reads it), or a plain word.
+    static readonly Regex Typed =
+        new(@"(?:(?<!\S)-)?[#@](?:""[^""]+""|\S+)|(?:(?<!\S)-)?""[^""]*(?:""|$)|(?:(?![#@](?:""[^""]+""|\S))\S)+");
 
     // Two terms are the same when they're the same kind with the same value, any case, quotes aside.
     static bool Same(string a, string b) => string.Equals(Plain(a), Plain(b), StringComparison.OrdinalIgnoreCase);
@@ -207,7 +249,7 @@ static class Search
 
         box.TextChanged += text =>
         {
-            content.SetMeta(CategoryList.FilterMeta, text.Trim());
+            content.SetMeta(CategoryList.FilterMeta, HasTerms(text) ? text.Trim() : ""); // "-" or "!!!" alone: no search yet
             CategoryList.Apply(content);
             if (Store.Data.LoadOrderView)
                 FindBar.Typed(content); // every row stays: to the first match

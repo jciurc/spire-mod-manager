@@ -2818,10 +2818,12 @@ static class SelfTest
     }
 
     // Stable and Beta, by the game's own branch rule over a Workshop mod's supported range (made-up mods and details):
-    // a chip only on a mod one branch loads; #stable and #beta find every mod a branch loads, "#stable -#beta" the ones
-    // only stable loads. No range, or a local mod: both, no chip.
+    // a chip only on a mod marked for one branch, whose click searches for that ("#Stable -#Beta"); #stable and #beta
+    // (and the plain words) find every mod marked for a branch, "#stable -#beta" the ones for stable only. No range, or a
+    // local mod: both, no chip.
     static void TestBranchTags()
     {
+        string[] queries = ["#stable", "#beta", "#stable -#beta", "stable", "stable -beta", "table"];
         (string Name, List<(string, string)> Ranges)[] cases =
             [("stable only", [("public", "public")]), ("beta and up", [("public-beta", "")]), ("both", [("public", "public-beta")]), ("no range", [])];
         var seen = new List<string>();
@@ -2837,8 +2839,8 @@ static class SelfTest
             WorkshopInfo.TestSet(id, new WorkshopInfo.Details(DateTime.Now, DateTime.Now, [], cases[i].Ranges, 0, null));
             try
             {
-                var chips = string.Join("/", Tags.For(mod).Where(c => c.Text is "Stable" or "Beta").Select(c => c.Text));
-                var found = string.Concat(new[] { "#stable", "#beta", "#stable -#beta" }.Select(q => Search.Matches(mod, q) ? "y" : "n"));
+                var chips = string.Join("/", Tags.For(mod).Where(c => c.Text is "Stable" or "Beta").Select(c => $"{c.Text} ({c.Search})"));
+                var found = string.Concat(queries.Select(q => Search.Matches(mod, q) ? "y" : "n"));
                 seen.Add($"{cases[i].Name}: [{chips}] {found}");
             }
             finally
@@ -2848,9 +2850,11 @@ static class SelfTest
         }
         var local = Dependencies.Find("SmmTestFixes");
         seen.Add($"local: [{string.Join("/", Tags.For(local).Where(c => c.Text is "Stable" or "Beta").Select(c => c.Text))}] "
-            + string.Concat(new[] { "#stable", "#beta", "#stable -#beta" }.Select(q => Search.Matches(local, q) ? "y" : "n")));
-        Check("Stable and Beta by the game's branch rule: a chip on one-branch mods; #stable, #beta and #stable -#beta find them",
-            seen.SequenceEqual(["stable only: [Stable] yny", "beta and up: [Beta] nyn", "both: [] yyn", "no range: [] yyn", "local: [] yyn"]),
+            + string.Concat(queries.Select(q => Search.Matches(local, q) ? "y" : "n")));
+        Check("Stable and Beta by the game's branch rule: a chip on one-branch mods that searches for it; #stable, #beta, #stable -#beta "
+            + "and the plain words find them, \"table\" doesn't",
+            seen.SequenceEqual(["stable only: [Stable (#Stable -#Beta)] ynyyyn", "beta and up: [Beta (#Beta -#Stable)] nynnnn",
+                "both: [] yynynn", "no range: [] yynynn", "local: [] yynynn"]),
             string.Join(" | ", seen));
     }
 
@@ -2966,14 +2970,31 @@ static class SelfTest
                 $"{string.Join(", ", exact)} | {string.Join(", ", otherCase)} | {string.Join(", ", noApostrophe)}");
             var notExact = await Shown("test -\"Don't\"");
             Check("-\"exact text\" leaves out the mods with it", !notExact.Contains("SmmTestContent") && notExact.Contains("SmmTestFixes"), string.Join(", ", notExact));
+            // A word's pieces sit together: "don't-panic" finds Don't Panic; "test-panic" isn't one, though "test panic"
+            // (two words, each anywhere) finds Test Content; "-don't" leaves out only that one.
+            var together = await Shown("don't-panic");
+            var apart = await Shown("test-panic");
+            var twoWords = await Shown("test panic");
+            var notDont = await Shown("-don't");
+            Check("a punctuated word's pieces sit together, and the same for a -word",
+                together.SequenceEqual(["SmmTestContent"]) && apart.Count == 0 && twoWords.SequenceEqual(["SmmTestContent"])
+                && !notDont.Contains("SmmTestContent") && notDont.Contains("SmmTestFixes"),
+                $"{string.Join(", ", together)} | {string.Join(", ", apart)} | {string.Join(", ", twoWords)} | {string.Join(", ", notDont)}");
         }
         finally
         {
             Store.EditMod("SmmTestContent", info => info.Alias = aliasBefore);
         }
+        var nothing = await Shown("!!!");
+        Check("a search with no terms (\"!!!\", a \"-\" alone) is no search: every row", nothing.Count == (await Shown("")).Count
+            && (await Shown("-")).Count == nothing.Count, $"{nothing.Count}");
         string[] whole = [After("-#Library mod", () => Tag("Gameplay", true)), After("\"two words\" mod", () => Words("mod", true))];
         Check("click-to-search: a -#tag and \"exact text\" stay whole terms", whole.SequenceEqual(["-#Library mod #Gameplay", "\"two words\""]),
             string.Join(" | ", whole));
+        string[] flipped = [After("-#Gameplay mod", () => Tag("Gameplay", true)), After("\"Don't", () => Tag("Local", true)),
+            After("", () => SpireModManager.Search.ByChip(content, new Tags.Chip("Stable", Colors.White, Search: "#Stable -#Beta"), false))];
+        Check("click-to-search: Shift on a left-out tag puts it in, an open quote is closed first, a branch chip searches for what it means",
+            flipped.SequenceEqual(["mod #Gameplay", "\"Don't\" #Local", "#Stable -#Beta"]), string.Join(" | ", flipped));
         var none = await Shown("zzz no such mod");
         Check("no match hides every row and header", none.Count == 0
             && !content.GetChildren().OfType<Control>().Any(c => c.IsInGroup("SpireModManagerCategoryHeader") && c.Visible));
