@@ -1524,8 +1524,13 @@ static class SelfTest
         var transitionWas = game.Transition.Visible; // the dialog's setup hides the startup transition
         var pendingPath = Path.Combine(LaunchGuard.Dir ?? OS.GetUserDataDir(), LaunchGuard.PendingFile);
         var root = menu.GetTree().Root;
-        // The game's own message for a failed start (its dialog, which ours replaces), in English, on one line.
-        const string GamesMessage = "The game's own message: There was a problem starting the game. Please report this problem to the devs.";
+        // The game's own message for a failed start (its dialog, which ours replaces), as each dialog has it: from the
+        // game's text, and in English from its file. Not empty: the game has one.
+        var gamesMessage = LaunchGuard.GamesMessage(plain: false).Trim();
+        var gamesMessagePlain = LaunchGuard.GamesMessage(plain: true).Trim();
+        Check("the game's own message for a failed start, as the dialogs show it: there, and marked as the game's",
+            gamesMessage.StartsWith("The game's own message: ") && gamesMessage.Length > 30 && gamesMessagePlain.StartsWith("The game's own message: "),
+            $"{gamesMessage} | {gamesMessagePlain}");
         // Our popup's button (marked: no other popup's), by its node and signal names (the same in every game version so far).
         static void Press(string button)
         {
@@ -1549,7 +1554,7 @@ static class SelfTest
             await Wait(menu, 0.3);
             Check("the dialog after a failed start: its title, the game's own message (marked as the game's), what changed, Quit and Restore and restart; "
                 + "Quit writes no list, deletes the launch's record and quits",
-                asked.IsCompleted && texts.Contains("The game couldn't start") && texts.Contains(GamesMessage) && texts.Contains("Test Fixes") && texts.Contains("Restore and restart")
+                asked.IsCompleted && texts.Contains("The game couldn't start") && texts.Contains(gamesMessage) && texts.Contains("Test Fixes") && texts.Contains("Restore and restart")
                 && quits == 1 && relaunches == 0 && Dependencies.IsOn(fixes) && !File.Exists(pendingPath),
                 $"{texts}; quits {quits}, relaunches {relaunches}, record left {File.Exists(pendingPath)}");
             asked = LaunchGuard.AskAfterCrash(game, offer);
@@ -1570,7 +1575,7 @@ static class SelfTest
             await Wait(menu, 0.3);
             Check("the plain dialog after a failed start (no game text): its title, the game's own message in English, what changed, Quit and Restore and restart; "
                 + "Quit writes nothing and quits",
-                asked.IsCompleted && plain.Contains("The game couldn't start") && plain.Contains(GamesMessage) && plain.Contains("Test Fixes (enabled)") && plain.Contains("Restore and restart")
+                asked.IsCompleted && plain.Contains("The game couldn't start") && plain.Contains(gamesMessagePlain) && plain.Contains("Test Fixes (enabled)") && plain.Contains("Restore and restart")
                 && plain.Contains("Quit") && quits == 2 && relaunches == 1 && Dependencies.IsOn(fixes), $"{plain}; quits {quits}, relaunches {relaunches}");
             asked = LaunchGuard.AskAfterCrash(game, offer);
             await Wait(menu, 0.5);
@@ -1591,7 +1596,7 @@ static class SelfTest
                 Press("NoButton");
                 await Wait(menu, 0.3);
                 Check("the dialog at its longest (7 changes, a game update since): 4 listed, 3 counted, the update said, the game's message first",
-                    asked.IsCompleted && longTexts.Contains("3 more") && longTexts.Contains("The game itself was updated") && longTexts.Contains(GamesMessage), longTexts);
+                    asked.IsCompleted && longTexts.Contains("3 more") && longTexts.Contains("The game itself was updated") && longTexts.Contains(gamesMessage), longTexts);
             }
         }
         finally

@@ -419,19 +419,20 @@ static class LaunchGuard
 
     // The game's own message for a failed start, the one its dialog (which ours replaces) shows, first and marked as
     // the game's, so nothing of the game's is hidden: through the game's text, or (plain) in English from the game's own
-    // file. Its paragraphs on one line. None if it can't be read.
-    static string GamesMessage(bool plain)
+    // file. Its paragraphs on one line, its markup as the game shows it (the plain dialog has none). None if it can't be
+    // read, or the game no longer has it.
+    public static string GamesMessage(bool plain)
     {
         const string Key = "STARTUP_ERROR.description";
         try
         {
             var message = plain
                 ? JsonSerializer.Deserialize<Dictionary<string, string>>(Godot.FileAccess.GetFileAsString("res://localization/eng/main_menu_ui.json"))?.GetValueOrDefault(Key)
-                : new LocString("main_menu_ui", Key).GetFormattedText();
+                : LocString.GetIfExists("main_menu_ui", Key)?.GetFormattedText();
             if (message is not { Length: > 0 })
                 return "";
             message = Whitespace.Replace(plain ? Markup.Replace(message, "") : message, " ").Trim();
-            return Our(plain, "SPIRE_MOD_MANAGER.CRASH_GAMES_MESSAGE", ("message", plain ? message : Escaped(message))) + "\n\n";
+            return Our(plain, "SPIRE_MOD_MANAGER.CRASH_GAMES_MESSAGE", ("message", message)) + "\n\n";
         }
         catch (Exception e)
         {
