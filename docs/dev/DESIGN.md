@@ -47,7 +47,7 @@ Ease of use is the heart of the mod, not just its utility.
   reached by name (`Compat.cs`), and the release test run on each (RELEASING.md).
 - Each first upload goes up private, gets tested, then goes public (unlisted as a soft launch).
 - Workshop pictures are real screenshots, never generated art.
-- Mouse and keyboard only for now; controller support is #118.
+- Mouse and keyboard only for now; controller support is planned.
 - Open source under MIT. Bugs go to GitHub issues; Workshop comments get read too.
 - The main menu button is the game's own text button ("Default (12 mods)"), with no picture; its right-click
   menu is headed "Spire Mod Manager v<version>".

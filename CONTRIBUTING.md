@@ -8,8 +8,8 @@ maintainer, so replies can take a few days.
 - **Translations:** see [TRANSLATING.md](TRANSLATING.md). No code needed.
 - **Code:** read on. For anything bigger than a fix, open an issue first so we can agree on the approach.
 
-The [issues](https://github.com/jciurc/spire-mod-manager/issues) are the to-do list: bugs, ideas and planned
-work. The ones labelled `good first issue` are a good start; say on the issue that you're taking it.
+The [issues](https://github.com/jciurc/spire-mod-manager/issues) hold reported bugs and the tasks open to
+contributors. The ones labelled `good first issue` are a good start; say on the issue that you're taking it.
 
 ## What you need
 
