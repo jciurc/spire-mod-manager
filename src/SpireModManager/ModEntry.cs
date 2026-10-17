@@ -236,7 +236,7 @@ public static class ModEntry
 
     // This session's arguments plus the current window mode, so the new copy opens the way this one looks
     // instead of starting in a small window until the game applies its display settings. Window flags
-    // from an earlier relaunch are replaced, not repeated.
+    // from an earlier relaunch are replaced, not repeated, and a Steam invite it was started from is left out.
     public static string[] RelaunchArgs() => RelaunchArgs(OS.GetCmdlineArgs());
 
     public static string[] RelaunchArgs(string[] given)
@@ -251,6 +251,16 @@ public static class ModEntry
                 i++; // and its value
                 continue;
             }
+            // The Steam invite the game was started from (Steam adds it): passed on, the new copy would join that lobby
+            // again. Its lobby id follows it, as the game's CommandLineHelper reads it, or after an "=".
+            if (given[i] == "+connect_lobby")
+            {
+                if (i + 1 < given.Length && !given[i + 1].StartsWith('-') && !given[i + 1].StartsWith('+'))
+                    i++;
+                continue;
+            }
+            if (given[i].StartsWith("+connect_lobby="))
+                continue;
             args.Add(given[i]);
         }
         switch (DisplayServer.WindowGetMode())
