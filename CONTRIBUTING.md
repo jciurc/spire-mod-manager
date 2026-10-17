@@ -93,7 +93,8 @@ Only one dev copy can run at a time; `tools/dev.cs` won't start while one is run
 
 1. Branch from `dev`, and open the pull request into `dev`. One change per pull request.
 2. Run `dotnet run tools/check.cs` (seconds): text files parse, every text key the code uses is in `eng`, the
-   fixtures are valid, and nothing over 1 MB or token-like is committed. CI runs the same checks.
+   fixtures are valid, no code uses a null-forgiving `!` (narrow with `is { } x` or a checked local instead),
+   and nothing over 1 MB or token-like is committed. CI runs the same checks.
 3. For code changes, run `dotnet run tools/dev.cs test` and put its pass and fail counts in the pull request.
 4. Say what a player will notice, in plain words. Screenshots are welcome: drag them into the description.
 5. Name the issue it closes ("Fixes #123"), so merging closes it.

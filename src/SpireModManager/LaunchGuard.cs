@@ -59,8 +59,8 @@ static class LaunchGuard
         try
         {
             var off = Dependencies.SavedOff();
-            var planned = new Setup(DateTime.Now, ModManager.Mods.Where(m => m.manifest?.id != null)
-                .Select(m => new Entry(m.manifest!.id!, m.modSource, !off.Contains((m.manifest.id, m.modSource)), m.manifest.version)).ToList(), GameNow());
+            var planned = new Setup(DateTime.Now, ModManager.Mods.Select(m => m.manifest is { id: { } id } manifest
+                ? new Entry(id, m.modSource, !off.Contains((id, m.modSource)), manifest.version) : null).OfType<Entry>().ToList(), GameNow());
             var dir = Store.Dir;
             // The mod list as the game read it: after the mods load, it puts its own in place (sorted by dependencies).
             _read = SaveManager.Instance.SettingsSave.ModSettings?.ModList.Select(Key).ToList();
@@ -99,8 +99,8 @@ static class LaunchGuard
         try
         {
             var changes = Reached(Dir, _planned with { At = DateTime.Now }, _failed, _working);
-            if (changes.Count > 0)
-                Notice = (_working!, changes);
+            if (changes.Count > 0 && _working is { } working) // Reached has changes only with a working setup
+                Notice = (working, changes);
         }
         catch (Exception e)
         {
@@ -280,8 +280,9 @@ static class LaunchGuard
         bool On(string id, ModSource source, bool then) =>
             id == ModEntry.ModId || (id == ModDoctor.ModId ? !off.Contains((id, source)) : then);
         var entries = working.Select(m => new SettingsSaveMod { Id = m.Id, Source = m.Source, IsEnabled = On(m.Id, m.Source, m.Enabled) }).ToList();
-        entries.AddRange(ModManager.Mods.Union(Installed.Mods).Where(m => m.manifest?.id is { } id && !working.Any(w => w.Id == id && w.Source == m.modSource))
-            .Select(m => new SettingsSaveMod(m) { IsEnabled = On(m.manifest!.id!, m.modSource, false) }));
+        foreach (var m in ModManager.Mods.Union(Installed.Mods))
+            if (m.manifest?.id is { } id && !working.Any(w => w.Id == id && w.Source == m.modSource))
+                entries.Add(new SettingsSaveMod(m) { IsEnabled = On(id, m.modSource, false) });
         return entries;
     }
 
