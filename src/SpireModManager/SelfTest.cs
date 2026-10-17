@@ -52,6 +52,18 @@ static class SelfTest
             await RunReal(menu, outDir);
             return;
         }
+        if (mode is "crash" or "crash-real") // EarlyStart answers the dialog of a failed start: reaching the menu is the failure
+        {
+            Results.Add("FAIL a failed start: the game reached the main menu (nothing stopped its start)");
+            File.WriteAllLines(Path.Combine(outDir, "results.txt"), Results);
+            menu.GetTree().Quit();
+            return;
+        }
+        if (mode == "crash-prepare")
+        {
+            await RunCrashPrepare(menu, outDir);
+            return;
+        }
         if (mode is "first-run" or "first-run-bmm")
         {
             await RunFirstRun(menu, outDir, imported: mode == "first-run-bmm");
@@ -98,6 +110,7 @@ static class SelfTest
             TestBetterModMenuImport(outDir);
             await TestMenuButtonRelaunch(menu, outDir); // before the Modding page opens: the check's fixes without it
             await TestLaunchGuard(menu, outDir);
+            await TestCrashOffer(menu);
             await TestTranslationsFolder(menu);
             await TestTranslations(menu);
             await TestPrewarm(menu);
@@ -1198,7 +1211,7 @@ static class SelfTest
         await Capture(menu, outDir, "1c-menu-button-menu");
 
         var relaunches = 0;
-        ModEntry.TestRelaunch = () => relaunches++;
+        ModEntry.TestRelaunch = plain => relaunches += plain ? 0 : 1; // through the game's quit (a plain one doesn't count)
         try
         {
             Node? Dialog() => menu.GetTree().Root.GetNodeOrNull(RelaunchCheck.Name);
@@ -1399,7 +1412,7 @@ static class SelfTest
         var settings = SaveManager.Instance.SettingsSave.ModSettings;
         var listWas = settings?.ModList.Select(e => new SettingsSaveMod { Id = e.Id, Source = e.Source, IsEnabled = e.IsEnabled }).ToList() ?? [];
         var relaunches = 0;
-        ModEntry.TestRelaunch = () => relaunches++;
+        ModEntry.TestRelaunch = plain => relaunches += plain ? 0 : 1; // through the game's quit (a plain one doesn't count)
         try
         {
             var target = History.CurrentMods().Where(m => m.Id != "SmmTestUi").Reverse()
@@ -1438,6 +1451,266 @@ static class SelfTest
         }
     }
 
+    // The game's startup error (StartupErrorPatch): LaunchGuard.CrashOffer offers the last working setup only when this
+    // launch changed mods since it, beyond updates, and says when the game changed too. The dialog in place of the
+    // game's: its title, the changes, Quit (nothing written) and Restore and restart (the working list, then a plain
+    // relaunch). Quit and the relaunch are caught here, and the saved list is put back.
+    static async Task TestCrashOffer(NMainMenu menu)
+    {
+        var now = DateTime.Now;
+        static LaunchGuard.Entry Mod(string id, bool on, string? version = "1.0") => new(id, ModSource.ModsDirectory, on, version);
+        LaunchGuard.Setup Setup(List<LaunchGuard.Entry> mods, string game = "0.111.0 (abc)") => new(now, mods, game);
+        List<LaunchGuard.Entry> working = [Mod(ModEntry.ModId, true), Mod("SmmTestFixes", true), Mod("SmmTestLib", true)];
+        var none = LaunchGuard.CrashOffer(Setup(working), null);
+        var same = LaunchGuard.CrashOffer(Setup(working), Setup(working));
+        var updated = LaunchGuard.CrashOffer(Setup([Mod(ModEntry.ModId, true), Mod("SmmTestFixes", true, "1.1"), Mod("SmmTestLib", true)]), Setup(working));
+        var added = LaunchGuard.CrashOffer(Setup([.. working, Mod("SmmTestUi", true)]), Setup(working));
+        var newGame = LaunchGuard.CrashOffer(Setup([.. working, Mod("SmmTestUi", true)], "0.112.0 (def)"), Setup(working));
+        Check("after a failed start: nothing to offer without a working setup, with the same mods or with only an update; "
+            + "a mod new since: offered; a game update since: said",
+            none == null && same == null && updated == null && added is { GameChanged: false } offered
+            && offered.Changes.Any(c => c.Id == "SmmTestUi" && c.Kind == LaunchGuard.Kind.New) && newGame is { GameChanged: true },
+            $"none {none != null}, same {same != null}, updated {updated != null}, added {added?.Changes.Count}, new game {newGame?.GameChanged}");
+        // The list Restore would write against the one the launch read: no offer when they load the same (after a
+        // Restore, or an order the game's sorting sets), whatever the order of the mods off.
+        static (string, ModSource, bool) E(string id, bool on) => (id, ModSource.ModsDirectory, on);
+        List<(string, ModSource, bool)> read = [E(ModEntry.ModId, true), E("A", true), E("B", true), E("C", false), E("D", false)];
+        Check("after a failed start: the same load with the mods off in another order; not with mods on in another order, one switched, or one missing (it would load)",
+            LaunchGuard.SameLoad(read, read) && LaunchGuard.SameLoad(read, [read[0], read[1], read[2], read[4], read[3]])
+            && !LaunchGuard.SameLoad(read, [read[0], read[2], read[1], read[3], read[4]]) && !LaunchGuard.SameLoad(read, [.. read[..3], E("C", true), read[4]])
+            && !LaunchGuard.SameLoad(read, read[..4]));
+
+        var settings = SaveManager.Instance.SettingsSave.ModSettings;
+        if (settings == null || NGame.Instance is not { } game || Dependencies.Find("SmmTestFixes") is not { } fixes || !Dependencies.IsOn(fixes))
+        {
+            Results.Add("SKIP the dialog after a failed start: no mod list, game, or Test Fixes on");
+            return;
+        }
+        var listWas = settings.ModList.Select(e => new SettingsSaveMod { Id = e.Id, Source = e.Source, IsEnabled = e.IsEnabled }).ToList();
+        // This launch as it is; the working setup the same but with Test Fixes off (so it was enabled since).
+        var current = History.CurrentMods().Select(m => new LaunchGuard.Entry(m.Id, m.Source, m.Enabled, null)).ToList();
+        var before = current.Select(m => m.Id == "SmmTestFixes" ? m with { Enabled = false } : m).ToList();
+        // The guard below compares with the list as the game read it (Begin's copy), not the one it put in place once the
+        // mods loaded, which names every installed mod: dev.cs's list names only a few.
+        var listNow = SaveManager.Instance.SettingsSave.ModSettings?.ModList.Count ?? 0;
+        Check("after a failed start: the list compared is the one the game read, from before it put its own in place",
+            LaunchGuard.ReadList is { } readList && readList.Count < listNow, $"read {LaunchGuard.ReadList?.Count}, now {listNow}");
+        // An order the game's own sorting sets (a dependency an update added) against the list a Restore wrote: no
+        // offer, or each Restore would fail the same and offer it again. The same order as the player's own: offered.
+        var on = current.Select((m, i) => (m, i)).Where(p => p.m.Enabled && p.m.Id is not (ModEntry.ModId or ModDoctor.ModId)).Select(p => p.i).Take(2).ToList();
+        if (on.Count == 2)
+        {
+            var sorted = current.ToList();
+            (sorted[on[0]], sorted[on[1]]) = (sorted[on[1]], sorted[on[0]]);
+            var restored = LaunchGuard.Written(current).Select(e => (e.Id, e.Source, e.IsEnabled)).ToList();
+            var reordered = restored.ToList();
+            var (first, second) = (reordered.FindIndex(e => e.Id == current[on[0]].Id), reordered.FindIndex(e => e.Id == current[on[1]].Id));
+            (reordered[first], reordered[second]) = (reordered[second], reordered[first]);
+            var forced = LaunchGuard.CrashOffer(new(now, sorted), new(now.AddHours(-1), current), restored);
+            var chosen = LaunchGuard.CrashOffer(new(now, sorted), new(now.AddHours(-1), current), reordered);
+            Check("after a failed start: no offer for a load order the game's sorting sets (the list read is the one Restore writes); "
+                + "offered for one the player's list sets", forced == null && chosen is { } order && order.Changes.Any(c => c.Kind == LaunchGuard.Kind.Order),
+                $"forced {forced != null}, chosen {string.Join(", ", chosen?.Changes.Select(c => c.Kind) ?? [])}");
+        }
+        else
+            Results.Add("SKIP the offer for a sorted load order: fewer than two fixture mods on");
+        if (LaunchGuard.CrashOffer(new(now, current), new(now.AddHours(-1), before)) is not { } offer)
+        {
+            Check("the dialog after a failed start: an offer to show", false);
+            return;
+        }
+        var (quits, relaunches) = (0, 0);
+        ModEntry.TestQuit = () => quits++;
+        ModEntry.TestRelaunch = plain => relaunches += plain ? 1 : 0; // a plain quit (the game's would save a half-started game)
+        var transitionWas = game.Transition.Visible; // the dialog's setup hides the startup transition
+        var pendingPath = Path.Combine(LaunchGuard.Dir ?? OS.GetUserDataDir(), LaunchGuard.PendingFile);
+        var root = menu.GetTree().Root;
+        // Our popup's button (marked: no other popup's), by its node and signal names (the same in every game version so far).
+        static void Press(string button)
+        {
+            if (NModalContainer.Instance?.OpenModal is Node popup && popup.FindChild(Menus.MarkName, true, false) != null
+                && popup.GetNodeOrNull($"VerticalPopup/{button}") is { } found)
+                found.EmitSignal("Released", found);
+        }
+        string PlainTexts() => root.GetNodeOrNull<ConfirmationDialog>(LaunchGuard.PlainDialogName) is { Visible: true } plain
+            ? $"{plain.Title} | {plain.DialogText} | {plain.OkButtonText} | {plain.CancelButtonText}" : "";
+        void Answer(StringName signal) => root.GetNodeOrNull<ConfirmationDialog>(LaunchGuard.PlainDialogName)?.EmitSignal(signal);
+        try
+        {
+            // A launch record as a failed start leaves one (none is left at the menu): an answer, Quit too, deletes it.
+            File.WriteAllText(pendingPath, "{}");
+            var asked = LaunchGuard.AskAfterCrash(game, offer);
+            await Wait(menu, 0.8);
+            var texts = string.Join(" | ", PopupTexts());
+            CheckMark("dialog after a failed start", NModalContainer.Instance?.OpenModal as Control);
+            Press("NoButton");
+            await Wait(menu, 0.3);
+            Check("the dialog after a failed start: its title, what changed, Quit and Restore and restart; Quit writes no list, deletes the launch's record and quits",
+                asked.IsCompleted && texts.Contains("The game couldn't start") && texts.Contains("Test Fixes") && texts.Contains("Restore and restart")
+                && quits == 1 && relaunches == 0 && Dependencies.IsOn(fixes) && !File.Exists(pendingPath),
+                $"{texts}; quits {quits}, relaunches {relaunches}, record left {File.Exists(pendingPath)}");
+            asked = LaunchGuard.AskAfterCrash(game, offer);
+            await Wait(menu, 0.8);
+            Press("YesButton");
+            await Wait(menu, 0.3);
+            Check("the dialog after a failed start: Restore and restart writes the working list (Test Fixes off again), then relaunches",
+                asked.IsCompleted && relaunches == 1 && quits == 1 && !Dependencies.IsOn(fixes), $"quits {quits}, relaunches {relaunches}, Test Fixes on {Dependencies.IsOn(fixes)}");
+
+            // Where the game's text can't load (a mod broke it): Godot's plain dialog, in English.
+            settings.ModList.Clear();
+            settings.ModList.AddRange(listWas.Select(e => new SettingsSaveMod { Id = e.Id, Source = e.Source, IsEnabled = e.IsEnabled }));
+            LaunchGuard.TestNoLanguage = true;
+            asked = LaunchGuard.AskAfterCrash(game, offer);
+            await Wait(menu, 0.5);
+            var plain = PlainTexts();
+            Answer(AcceptDialog.SignalName.Canceled);
+            await Wait(menu, 0.3);
+            Check("the plain dialog after a failed start (no game text): its title, what changed, Quit and Restore and restart; Quit writes nothing and quits",
+                asked.IsCompleted && plain.Contains("The game couldn't start") && plain.Contains("Test Fixes (enabled)") && plain.Contains("Restore and restart")
+                && plain.Contains("Quit") && quits == 2 && relaunches == 1 && Dependencies.IsOn(fixes), $"{plain}; quits {quits}, relaunches {relaunches}");
+            asked = LaunchGuard.AskAfterCrash(game, offer);
+            await Wait(menu, 0.5);
+            Answer(AcceptDialog.SignalName.Confirmed);
+            await Wait(menu, 0.3);
+            Check("the plain dialog after a failed start: Restore and restart writes the working list, then relaunches; the dialog goes",
+                asked.IsCompleted && relaunches == 2 && quits == 2 && !Dependencies.IsOn(fixes) && root.GetNodeOrNull(LaunchGuard.PlainDialogName) == null,
+                $"quits {quits}, relaunches {relaunches}, Test Fixes on {Dependencies.IsOn(fixes)}, dialog left {root.GetNodeOrNull(LaunchGuard.PlainDialogName) != null}");
+        }
+        finally
+        {
+            ModEntry.TestQuit = null;
+            ModEntry.TestRelaunch = null;
+            LaunchGuard.TestNoLanguage = false;
+            game.Transition.Visible = transitionWas;
+            NModalContainer.Instance?.Clear();
+            root.GetNodeOrNull(LaunchGuard.PlainDialogName)?.QueueFree();
+            File.Delete(pendingPath);
+            settings.ModList.Clear();
+            settings.ModList.AddRange(listWas);
+            SaveManager.Instance.SaveSettings();
+        }
+    }
+
+    // dev.cs --crash-prepare, then --crash: the second launch fails to start as a mod that stops every launch makes it
+    // (a made-up throw where the game's startup goes on after the mods load), and the dialog that replaces the game's is
+    // answered as a player would: Restore and restart. The first launch only reaches the main menu, so the last working
+    // setup is saved; the second has Test Retired on besides (dev.cs), so it differs. The relaunch is caught.
+    public static void EarlyStart()
+    {
+        var crashMode = System.Environment.GetEnvironmentVariable("SPIRE_MOD_MANAGER_SELFTEST_MODE");
+        if (crashMode is not ("crash" or "crash-real")
+            || System.Environment.GetEnvironmentVariable("SPIRE_MOD_MANAGER_SELFTEST") is not { Length: > 0 } outDir)
+            return;
+        // Until answered, the result is that it wasn't: the game may quit before the watcher below sees anything.
+        var results = Path.Combine(outDir, "results.txt");
+        Directory.CreateDirectory(outDir);
+        File.WriteAllLines(results, ["FAIL a failed start: the game ended before our dialog was answered"]);
+        if (crashMode == "crash") // crash-real: the --workshop mods fail the start themselves
+        {
+            try
+            {
+                new HarmonyLib.Harmony(ModEntry.ModId + ".SelfTestCrash").Patch(
+                    HarmonyLib.AccessTools.Method(typeof(MegaCrit.Sts2.Core.Helpers.OneTimeInitialization), "ExecuteEssential"),
+                    prefix: new HarmonyLib.HarmonyMethod(typeof(SelfTest), nameof(MadeUpFailure)));
+            }
+            catch (Exception e)
+            {
+                Results.Add($"FAIL a failed start: the made-up failure couldn't be patched in: {e.Message}"); // Run writes these at the menu
+                File.WriteAllLines(results, Results);
+                return; // the game starts; Run, at the main menu, says so too
+            }
+        }
+        var (quits, relaunches) = (0, 0);
+        ModEntry.TestQuit = () => quits++;
+        ModEntry.TestRelaunch = plain => relaunches += plain ? 1 : 0; // a plain quit (the game's would save a half-started game)
+        var tree = (SceneTree)Engine.GetMainLoop();
+        var started = DateTime.Now;
+        string? texts = null;
+        void Finish()
+        {
+            tree.ProcessFrame -= Watch;
+            try
+            {
+                File.WriteAllLines(results, Results);
+            }
+            finally
+            {
+                tree.Quit();
+            }
+        }
+        void Watch()
+        {
+            try
+            {
+                if (texts == null && NModalContainer.Instance?.OpenModal is Node popup)
+                {
+                    texts = string.Join(" | ", PopupTexts());
+                    if (!texts.Contains("The game couldn't start"))
+                    {
+                        Check("a failed start: our dialog in place of the game's", false, texts);
+                        Finish();
+                        return;
+                    }
+                    popup.GetNodeOrNull("VerticalPopup/YesButton")?.EmitSignal("Released", popup.GetNode("VerticalPopup/YesButton"));
+                    return;
+                }
+                // Or the plain one, where a mod broke the game's text.
+                if (texts == null && tree.Root.GetNodeOrNull<ConfirmationDialog>(LaunchGuard.PlainDialogName) is { Visible: true } plain)
+                {
+                    texts = $"{plain.Title} | {plain.DialogText} | {plain.OkButtonText} | {plain.CancelButtonText}";
+                    Results.Add("INFO a failed start: the plain dialog (the game's text didn't load)");
+                    plain.EmitSignal(AcceptDialog.SignalName.Confirmed);
+                    return;
+                }
+                if (relaunches + quits > 0)
+                {
+                    var retired = SaveManager.Instance.SettingsSave.ModSettings?.ModList.Where(e => e.Id == "SmmTestRetired").Select(e => e.IsEnabled).ToList() ?? [];
+                    var pending = LaunchGuard.Dir is { } dir && File.Exists(Path.Combine(dir, LaunchGuard.PendingFile));
+                    Check("a failed start: our dialog in place of the game's, naming what changed since the last working launch",
+                        texts != null && texts.Contains("The game couldn't start") && texts.Contains("Test Retired") && texts.Contains("Restore and restart"), texts ?? "no dialog");
+                    Check("a failed start: Restore and restart writes the last working list (Test Retired off again), clears this launch's record, then relaunches",
+                        relaunches == 1 && quits == 0 && retired.Count > 0 && retired.All(on => !on) && !pending,
+                        $"relaunches {relaunches}, quits {quits}, Test Retired {string.Join(",", retired)}, record left {pending}");
+                    Finish();
+                }
+                else if (DateTime.Now - started > TimeSpan.FromSeconds(90))
+                {
+                    Check("a failed start: our dialog, answered, within 90 s", false, $"dialog {texts ?? "none"}, relaunches {relaunches}, quits {quits}");
+                    Finish();
+                }
+            }
+            catch (Exception e)
+            {
+                Results.Add($"FAIL exception: {e}");
+                Finish();
+            }
+        }
+        tree.ProcessFrame += Watch;
+    }
+
+    static void MadeUpFailure() => throw new InvalidOperationException("Spire Mod Manager dev run (--crash): a made-up failed start");
+
+    // --crash-prepare: the main menu reached, so the last working setup is saved (and this launch's record gone).
+    static async Task RunCrashPrepare(NMainMenu menu, string outDir)
+    {
+        try
+        {
+            await Wait(menu, 3);
+            var dir = LaunchGuard.Dir ?? "";
+            Check("--crash-prepare: the main menu reached, the last working setup saved",
+                File.Exists(Path.Combine(dir, LaunchGuard.WorkingFile)) && !File.Exists(Path.Combine(dir, LaunchGuard.PendingFile)), dir);
+        }
+        catch (Exception e)
+        {
+            Results.Add($"FAIL exception: {e}");
+        }
+        finally
+        {
+            File.WriteAllLines(Path.Combine(outDir, "results.txt"), Results);
+            menu.GetTree().Quit();
+        }
+    }
+
     // The main menu button's Open translations folder: the folder, in our data folder beside manager.json, is made if it
     // isn't there (a fresh sandbox has none; an empty one is removed first) and handed to the system's file browser (to Translations.TestOpen here, so
     // no window opens).
@@ -1470,10 +1743,10 @@ static class SelfTest
             catch (JsonException)
             {
             }
-            var english = JsonSerializer.Deserialize<Dictionary<string, string>>(Godot.FileAccess.GetFileAsString($"res://{ModEntry.ModId}/localization/eng/settings_ui.json"))!;
+            var english = JsonSerializer.Deserialize<Dictionary<string, string>>(Godot.FileAccess.GetFileAsString($"res://{ModEntry.ModId}/localization/eng/settings_ui.json"));
             Check("the translations folder has the example: how-to lines, then every English text, never read (no language's name)",
-                text.StartsWith("// An example") && pairs != null && pairs.Count == english.Count && english.All(e => pairs.GetValueOrDefault(e.Key) == e.Value)
-                && !Path.GetFileNameWithoutExtension(Translations.ExampleFile).All(char.IsLetter), $"{text.Length} chars, {pairs?.Count} texts of {english.Count}");
+                text.StartsWith("// An example") && pairs != null && english != null && pairs.Count == english.Count && english.All(e => pairs.GetValueOrDefault(e.Key) == e.Value)
+                && !Path.GetFileNameWithoutExtension(Translations.ExampleFile).All(char.IsLetter), $"{text.Length} chars, {pairs?.Count} texts of {english?.Count}");
             // Written again while it's as we left it (an older version's, say); once edited, it's the player's.
             File.WriteAllText(example, "// an older example\n{}");
             File.SetLastWriteTimeUtc(example, Translations.ExampleTime);
@@ -1505,9 +1778,12 @@ static class SelfTest
             Prewarm.Start(menu);
             for (var i = 0; i < 50 && !Prewarm.Done; i++)
                 await Wait(menu, 0.1);
-            Check("the page's text is shaped ahead on the main menu: a Chinese alias once, nothing all-Latin, to the end",
-                Prewarm.Done && Prewarm.Shaped.Count(t => t == Alias) == 1 && !Prewarm.Shaped.Any(t => t.All(c => c < 0x80)),
-                $"done {Prewarm.Done}: {string.Join(" | ", Prewarm.Shaped)}");
+            // Once if Kreon lacks its letters; not at all where a mod gave the font Chinese ones (RitsuLib-based mods can).
+            var font = ModEntry.Font("res://themes/kreon_regular_shared.tres");
+            var lacks = Alias.EnumerateRunes().Any(r => !font.HasChar(r.Value));
+            Check("the page's text is shaped ahead on the main menu: a Chinese alias once (none if the font has its letters), nothing all-Latin, to the end",
+                Prewarm.Done && Prewarm.Shaped.Count(t => t == Alias) == (lacks ? 1 : 0) && !Prewarm.Shaped.Any(t => t.All(c => c < 0x80)),
+                $"done {Prewarm.Done}, the font lacks its letters {lacks}: {string.Join(" | ", Prewarm.Shaped)}");
         }
         finally
         {
@@ -1770,8 +2046,8 @@ static class SelfTest
             termCards.Add(await HoverCard(menu, term, ModField.TipName));
         var termLayer = menu.GetTree().Root.FindChild(ModField.TipName, true, false); // gone again after each hover
         Check("each field's term explains it in our hover card, over the menu, the term no wider than its word",
-            terms.All(t => t != null) && termCards.SequenceEqual(termTips) && termLayer == null
-            && terms.All(t => t!.TooltipText == "" && t.Size.X <= t.GetMinimumSize().X + 1),
+            termCards.SequenceEqual(termTips) && termLayer == null
+            && terms.All(t => t is { TooltipText: "" } && t.Size.X <= t.GetMinimumSize().X + 1),
             string.Join(" | ", termCards) + string.Join(" ", terms.Select(t => t == null ? " none" : $" ({t.Size.X:0}/{t.GetMinimumSize().X:0})")));
         await Capture(screen, outDir, "5-row-menu");
         if (rowMenu != null && aliasBox != null)
@@ -2228,7 +2504,7 @@ static class SelfTest
         var ids = records.Skip(1).Select(r => r[0]).ToList();
         var enabledOrder = order.Where(IsOn).ToList();
         Check("Share profile opens with the active profile's enabled mods in load order, under the default columns",
-            Dialog() != null && records.FirstOrDefault()?.SequenceEqual(ProfileCsv.Header(new())) == true && ids.Count == installed.Count(m => IsOn(m.manifest!.id!))
+            Dialog() != null && records.FirstOrDefault()?.SequenceEqual(ProfileCsv.Header(new())) == true && ids.Count == installed.Count(m => m.manifest?.id is { } id && IsOn(id))
             && ids.Take(enabledOrder.Count).SequenceEqual(enabledOrder) && records.Skip(1).All(r => r[3] == "TRUE") && !ids.Contains("SmmTestRetired")
             && Part<RichTextLabel>("Body")?.GetParsedText().Contains(startName) == true, $"{string.Join(" | ", ids)} vs order {string.Join(" | ", enabledOrder)}");
         var tops = new[] { "IncludeCategory", "IncludeDisabled", "IncludeAlias", "IncludeNotes", "RememberChoices" }
@@ -2436,7 +2712,10 @@ static class SelfTest
         // A dialog takes the keys from the page: with an unsaved edit and the search box focused, holding text, Ctrl+S
         // and Ctrl+Z do nothing behind Share, and Esc closes it and leaves the search alone. Then the edit is discarded.
         var content = screen.GetNode<Control>("%ModsScrollContainer/Mask/Content");
-        Dependencies.Set([Dependencies.Find("SmmTestUi")!], !IsOn("SmmTestUi"), screen);
+        if (Dependencies.Find("SmmTestUi") is { } testUi)
+            Dependencies.Set([testUi], !IsOn("SmmTestUi"), screen);
+        else
+            Results.Add("FAIL Share profile's keys: no Test UI mod to edit");
         CategoryList.Redraw(content);
         await Wait(menu, 0.3);
         var edited = (Profiles.Edited, string.Join(", ", ModListState()));
@@ -3183,20 +3462,20 @@ static class SelfTest
         var found = FindBar.Found(content);
         var view = border.GetNode<Control>("ModsScrollContainer").GetGlobalRect();
         Check("Load Order, a search: every row stays, \"N matches\" and ‹ › beside the box, the first match selected and in view",
-            found.Count >= 3 && Rows().All(r => r.Visible) && Bar() is { Visible: true } && Count() == $"{found.Count} matches" && At(found) == 0
-            && view.Intersects(found[0].GetGlobalRect()) && Bar()!.GetGlobalRect().Position.X >= box.GetGlobalRect().End.X,
+            found.Count >= 3 && Rows().All(r => r.Visible) && Bar() is { Visible: true } bar && Count() == $"{found.Count} matches" && At(found) == 0
+            && view.Intersects(found[0].GetGlobalRect()) && bar.GetGlobalRect().Position.X >= box.GetGlobalRect().End.X,
             $"{found.Count} found, count \"{Count()}\", at {At(found)}, rows shown {Rows().Count(r => r.Visible)}/{Rows().Count}");
-        Check("the arrows say where they go", Hover.TipOf(Bar()!.GetNode<Button>("PreviousMatch")) == "Go to previous found match"
-            && Hover.TipOf(Bar()!.GetNode<Button>("NextMatch")) == "Go to next found match");
+        Check("the arrows say where they go", Bar() is { } arrows && Hover.TipOf(arrows.GetNode<Button>("PreviousMatch")) == "Go to previous found match"
+            && Hover.TipOf(arrows.GetNode<Button>("NextMatch")) == "Go to next found match");
         // The rows it doesn't match fade below even a match that's off; a match keeps its usual look.
-        float Expected(NModMenuRow r, bool finding) => (!finding || found.Contains(r), Dependencies.IsOn(r.Mod!)) switch
+        float Expected(NModMenuRow r, bool finding) => (!finding || found.Contains(r), r.Mod is { } mod && Dependencies.IsOn(mod)) switch
         {
             (true, true) => 1, (true, false) => LoadOrder.OffAlpha, (false, true) => LoadOrder.UnmatchedAlpha, _ => LoadOrder.UnmatchedOffAlpha,
         };
         string Looks() => string.Join(", ", Rows().Select(r => $"{r.Mod?.manifest?.id} {r.Modulate.A:0.##}"));
         Check("finding: the rest fade (on 0.2, off 0.1) below a match that's off (0.4); matches look as usual",
             Rows().All(r => Math.Abs(r.Modulate.A - Expected(r, finding: true)) < 0.01f) && Rows().Any(r => !found.Contains(r))
-            && Rows().Any(r => found.Contains(r) && !Dependencies.IsOn(r.Mod!)), Looks());
+            && Rows().Any(r => found.Contains(r) && r.Mod is { } mod && !Dependencies.IsOn(mod)), Looks());
         LoadOrder.Reset(content); // as a drag ends
         Check("finding: the same looks after a drag ends", Rows().All(r => Math.Abs(r.Modulate.A - Expected(r, finding: true)) < 0.01f), Looks());
         await Capture(screen, outDir, "11c-load-order-find");
@@ -3220,7 +3499,7 @@ static class SelfTest
         Check("Enter goes to the next match, Shift+Enter the one before", byEnter == 1 && At(found) == 0, $"Enter {byEnter}, Shift+Enter {At(found)}");
         await Type("zzzz no such mod");
         Check("no match: \"No matches\", the arrows off, every row still shown", Count() == "No matches" && Rows().All(r => r.Visible)
-            && Bar()!.GetChildren().OfType<Button>().All(b => b.Disabled), Count());
+            && Bar() is { } emptyBar && emptyBar.GetChildren().OfType<Button>().All(b => b.Disabled), Count());
         Check("no match: every row faded", Rows().All(r => r.Modulate.A <= LoadOrder.UnmatchedAlpha + 0.01f), Looks());
         await Type("");
         Check("search cleared: no find bar, the box its full width again", Bar() is not { Visible: true }
@@ -3240,12 +3519,17 @@ static class SelfTest
     static async Task TestTwinCopies(Node menu, NModdingScreen screen, Control content)
     {
         List<NModMenuRow> Rows() => content.GetChildren().OfType<NModMenuRow>().ToList();
-        if (ModManager.Mods.Where(m => m.manifest?.id != null).GroupBy(m => (m.manifest!.id, m.modSource)).FirstOrDefault(g => g.Count() > 1) is not { } twins)
+        if (ModManager.Mods.Where(m => m.manifest?.id != null).GroupBy(m => (m.manifest?.id, m.modSource)).FirstOrDefault(g => g.Count() > 1) is not { } twins)
         {
             Results.Add("SKIP two copies of one mod: none installed (dev.cs test --workshop with two items of one mod)");
             return;
         }
-        var list = SaveManager.Instance.SettingsSave.ModSettings!.ModList;
+        if (SaveManager.Instance.SettingsSave.ModSettings is not { } settings)
+        {
+            Results.Add("FAIL two copies of one mod: the game has no saved mod list");
+            return;
+        }
+        var list = settings.ModList;
         var (id, source) = twins.Key;
         int Entries() => list.Count(e => e.Id == id && e.Source == source);
         bool LineFollows() => screen.GetNode<Control>("%PendingChangesLabel").Visible == ModEntry.HasPendingChanges();
@@ -3269,7 +3553,37 @@ static class SelfTest
         Check("two copies of one mod: moved back, nothing moved for Changes or the menu, and the list is as long as before",
             list.Count == count && Entries() == entries && HistoryBar.Moves().Count == 0 && !LoadOrder.OrderChanged && LineFollows(),
             $"{list.Count} entries (was {count}), moved {HistoryBar.Moves().Count}, order changed {LoadOrder.OrderChanged}");
-        var on = list.Where(e => e.Id == id && e.Source == source).Select(e => e.IsEnabled).ToList();
+        var on = list.Where(e => e.Id == id && e.Source == source).Select(e => e.IsEnabled).ToList(); // to put back at the end
+        // A click on one copy's box (the game's own handler sets every entry of the id): the other copy's box follows, and
+        // Changes and the counts name the mod once. Then back, from the other copy.
+        var twinRows = Rows().Where(r => r.Mod != null && twins.Contains(r.Mod)).ToList();
+        if (twinRows.Count == 2)
+        {
+            var name = twins.First().manifest?.name ?? id ?? "";
+            bool Ticked(NModMenuRow row) => row.GetNode<NTickbox>("Tickbox").IsTicked;
+            // A click as the game's tickbox makes one (its ForceToggleTick is beta-only): the box flips, then Toggled fires.
+            static void Click(NModMenuRow row)
+            {
+                var box = row.GetNode<NTickbox>("Tickbox");
+                box.IsTicked = !box.IsTicked;
+                box.EmitSignal("Toggled", box);
+            }
+            var (onBefore, offBefore, _) = HistoryBar.Counts();
+            Click(twinRows[0]);
+            await Wait(menu, 0.3);
+            var (first, second) = (Ticked(twinRows[0]), Ticked(twinRows[1]));
+            var lines = HistoryBar.Describe().Count(l => l.Contains(name));
+            var bothChanged = twins.All(HistoryBar.ChangedMods().Contains); // Show: Changed lists both rows
+            var (onNow, offNow, _) = HistoryBar.Counts();
+            var counted = Math.Abs(onNow - onBefore) + Math.Abs(offNow - offBefore);
+            Click(twinRows[1]);
+            await Wait(menu, 0.3);
+            Check("two copies of one mod: a click on one's box switches the other's too, Changes and the counts name the mod once, Show: Changed both rows",
+                first == second && lines == 1 && counted == 1 && bothChanged && Ticked(twinRows[0]) == Ticked(twinRows[1]) && Ticked(twinRows[0]) != first,
+                $"boxes {first}/{second}, {lines} lines naming {name}, counted {counted}, both under Changed {bothChanged}; back {Ticked(twinRows[0])}/{Ticked(twinRows[1])}");
+        }
+        else
+            Results.Add($"SKIP two copies of one mod: a click on one's box (rows {twinRows.Count})");
         Dependencies.Set([twins.First()], false, screen);
         var offAll = list.Where(e => e.Id == id && e.Source == source).All(e => !e.IsEnabled);
         Dependencies.Set([twins.First()], true, screen);
@@ -3766,11 +4080,14 @@ static class SelfTest
         var border = screen.GetNode<Control>("ModsBorder");
         var search = border.GetNode<Control>("SpireModManagerSearch");
         Control? Banner() => border.GetNodeOrNull<Control>(LoadOrder.SelfName);
-        int OnNow() => ModManager.Mods.Union(Installed.Mods).Where(m => m.manifest?.id != null).Count(Dependencies.IsOn);
+        // Mods on now, two copies of one mod counted once (as the counts count them).
+        int OnNow() => Dependencies.OnePerKey(ModManager.Mods.Union(Installed.Mods).Where(m => m.manifest?.id != null))
+            .Count(Dependencies.IsOn);
         string Summary() => (screen.GetNodeOrNull<Control>(HistoryBar.ChangesName) as RichTextLabel)?.GetParsedText() ?? "";
+        bool ProfileCountShown() => Profiles.Active is { } active && Profiles.ModCount(active) == Profiles.CountText();
         var on = OnNow();
         Check("the counts count this mod: the profile bar's, the main menu button's and Mods enabled's", Dependencies.IsOn(self)
-            && Profiles.OnCount() == on && Profiles.ModCount(Profiles.Active!) == Profiles.CountText() && Summary().StartsWith($"Mods enabled {Menus.Number(on)} "),
+            && Profiles.OnCount() == on && ProfileCountShown() && Summary().StartsWith($"Mods enabled {Menus.Number(on)} "),
             $"{on} on: profile {Profiles.OnCount()}, summary \"{Summary().Split('\n')[0]}\"");
         // Installed twice (a Workshop copy beside this local one): both on, as the game loads one, the newer, and the
         // counts name it once (#96: they counted each copy).
@@ -3785,7 +4102,7 @@ static class SelfTest
         CategoryList.Redraw(content);
         await Wait(menu, 0.2);
         Check("installed twice: both copies on, every count names it once", Dependencies.IsOn(copy) && Profiles.OnCount() == on
-            && Profiles.ModCount(Profiles.Active!) == Profiles.CountText() && Summary().StartsWith($"Mods enabled {Menus.Number(on)} "),
+            && ProfileCountShown() && Summary().StartsWith($"Mods enabled {Menus.Number(on)} "),
             $"copy on {Dependencies.IsOn(copy)}; {on} on before: profile {Profiles.OnCount()}, summary \"{Summary().Split('\n')[0]}\"");
         // Gone again, its row too (the game made one as it announced it; a later search would find it).
         if (content.GetChildren().OfType<NModMenuRow>().FirstOrDefault(r => r.Mod == copy) is { } copyRow)
@@ -4617,7 +4934,7 @@ static class SelfTest
         var rowButtons = row?.GetChildren().OfType<Button>().ToList() ?? [];
         Check("its Cancel comes first, at the left, the fixes and Relaunch anyway at the right",
             rowButtons.Select(b => b.Name.ToString()).SequenceEqual(["CancelRelaunchButton", "EnableNeededButton", "DisableBrokenButton", "RelaunchNowButton"])
-            && rowButtons[0].GetGlobalRect().Position.X - row!.GetGlobalRect().Position.X < 1
+            && row != null && rowButtons[0].GetGlobalRect().Position.X - row.GetGlobalRect().Position.X < 1
             && row.GetGlobalRect().End.X - rowButtons[^1].GetGlobalRect().End.X < 1,
             string.Join(", ", rowButtons.Select(b => $"{b.Name} {b.GetGlobalRect().Position.X:0}-{b.GetGlobalRect().End.X:0}")) + $" in {row?.GetGlobalRect()}");
         await Capture(screen, outDir, "15-relaunch-check");

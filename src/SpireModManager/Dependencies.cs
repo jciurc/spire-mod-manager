@@ -69,6 +69,11 @@ static class Dependencies
         return needed;
     }
 
+    // One mod per id and source, in order: two Workshop items of one mod are one mod to the saved list (one switch for
+    // both) and the game loads one of them, so lists, counts and changes name it once. The copy the game loaded, if any.
+    public static IEnumerable<Mod> OnePerKey(IEnumerable<Mod> mods) =>
+        mods.GroupBy(m => (m.manifest?.id, m.modSource)).Select(g => g.FirstOrDefault(m => m.state == ModLoadState.Loaded) ?? g.First());
+
     // Every saved entry of each (id, source), in the list's order. The game reads a mod as off if any of its entries is
     // off, so turning a mod listed twice (two copies with one id and source) on or off sets them all.
     public static Dictionary<(string?, ModSource), List<SettingsSaveMod>> AllSavedEntries(IEnumerable<SettingsSaveMod> saved)

@@ -80,6 +80,39 @@ static class MenuReachedPatch
     }
 }
 
+// The game couldn't start (a mod failed in its startup): instead of its dialog with only Quit, ours offers the mods of
+// the last launch that worked, when this launch changed any (LaunchGuard.AskAfterCrash). Nothing to offer, or ours
+// failing: the game's own dialog. After other mods' prefixes (Mod Doctor's writes its findings first).
+[HarmonyPatch(typeof(NGame), "GameStartupError")]
+static class StartupErrorPatch
+{
+    static bool _games; // the game's own dialog from here on
+
+    [HarmonyPriority(Priority.Low)]
+    static bool Prefix(NGame __instance, ref Task __result)
+    {
+        try
+        {
+            if (_games || LaunchGuard.CrashOffer() is not { } offer)
+                return true;
+            __result = LaunchGuard.AskAfterCrash(__instance, offer);
+            return false;
+        }
+        catch (Exception e)
+        {
+            Log.Error($"[{ModEntry.ModId}] Could not look at the last working launch after the failed start: {e}");
+            return true;
+        }
+    }
+
+    // The game's own dialog after all (ours couldn't show): its method again, which this prefix now lets through.
+    public static Task GamesDialog(NGame game)
+    {
+        _games = true;
+        return HarmonyLib.AccessTools.Method(typeof(NGame), "GameStartupError")?.Invoke(game, null) as Task ?? Task.CompletedTask;
+    }
+}
+
 // Modding page: our relaunch button, profiles, search, categories and undo bar.
 [HarmonyPatch(typeof(NModdingScreen), nameof(NModdingScreen._Ready))]
 static class ModdingScreenPatch
@@ -250,6 +283,9 @@ static class ModToggledPatch
                 return;
             Profiles.Track();
             History.Record(); // a tickbox change (Track only saves when the active profile changed)
+            // The game's tickbox sets every entry of the mod's id and source, so another copy of it (a second Workshop
+            // item) switched too: its row's box follows, or a click on its old tick would switch both back.
+            Profiles.RefreshTickboxes(__instance);
             var content = __instance.GetNode<Control>("%ModsScrollContainer/Mask/Content");
             RowTitles.MarkChanged(content.GetChildren().OfType<NModMenuRow>(), Store.Data.VanillaView);
             CategoryList.RefreshStrips(content);

@@ -69,6 +69,11 @@ Commands:
     copy and the sandbox, but what a mod writes is up to it, and files at the top of
     `%APPDATA%\SlayTheSpire2` (such as `mod_configs`) are shared with your real game. Subscribing also installs
     the item in your real game, where a new mod starts enabled.
+  - `--crash-prepare`, then `--crash`: the offer after a failed start, end to end. The first run only reaches
+    the main menu, so the last working setup is saved. The second keeps that data, turns Test Retired on and
+    fails the start with a made-up error. Our dialog replaces the game's and is answered with Restore and
+    restart (the relaunch is caught). For a real failure, add `--workshop` with the mods that cause it to
+    `--crash`.
   - `--real` (maintainer only): a read-only tour with your own mods (all switched off) and a copy of your data,
     in place of the test mods. Its output holds your own mod list, so it never goes into a pull request.
 - `dotnet run tools/dev.cs launch`: opens the sandboxed game to try things by hand (`--first-run`,
@@ -88,7 +93,8 @@ Only one dev copy can run at a time; `tools/dev.cs` won't start while one is run
 
 1. Branch from `dev`, and open the pull request into `dev`. One change per pull request.
 2. Run `dotnet run tools/check.cs` (seconds): text files parse, every text key the code uses is in `eng`, the
-   fixtures are valid, and nothing over 1 MB or token-like is committed. CI runs the same checks.
+   fixtures are valid, no code uses a null-forgiving `!` (narrow with `is { } x` or a checked local instead),
+   and nothing over 1 MB or token-like is committed. CI runs the same checks.
 3. For code changes, run `dotnet run tools/dev.cs test` and put its pass and fail counts in the pull request.
 4. Say what a player will notice, in plain words. Screenshots are welcome: drag them into the description.
 5. Name the issue it closes ("Fixes #123"), so merging closes it.

@@ -25,9 +25,10 @@ static class RelaunchCheck
             Show(owner);
     }
 
-    // Enabled mods with a dependency that's off or missing, each with the info panel's reason.
+    // Enabled mods with a dependency that's off or missing, each with the info panel's reason (two copies of one mod: the
+    // one that loads).
     static List<(Mod Mod, string Why)> Problems() =>
-        ModManager.Mods.Union(Installed.Mods).Where(m => m.manifest?.id != null)
+        Dependencies.OnePerKey(ModManager.Mods.Union(Installed.Mods).Where(m => m.manifest?.id != null))
             .SelectMany(m => ModDetails.DependencyProblems(m).Select(why => (m, why)))
             .ToList();
 
@@ -96,7 +97,7 @@ static class RelaunchCheck
             Add("SPIRE_MOD_MANAGER.DISABLE_BROKEN", () => Fix(problems.Select(p => p.Mod).Distinct(), false), "DisableBrokenButton");
         if (needed.Count > 0 || problems.Count > 0) // a gap between the fixes and Relaunch
             buttons.AddChild(new Control { CustomMinimumSize = new Vector2(24, 0), MouseFilter = Control.MouseFilterEnum.Ignore });
-        Add(problems.Count > 0 ? "SPIRE_MOD_MANAGER.RELAUNCH_ANYWAY" : "SPIRE_MOD_MANAGER.RELAUNCH_BUTTON", ModEntry.Relaunch, "RelaunchNowButton");
+        Add(problems.Count > 0 ? "SPIRE_MOD_MANAGER.RELAUNCH_ANYWAY" : "SPIRE_MOD_MANAGER.RELAUNCH_BUTTON", () => ModEntry.Relaunch(), "RelaunchNowButton");
         column.AddChild(buttons);
     }
 
