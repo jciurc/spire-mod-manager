@@ -62,15 +62,16 @@ static class Tags
     }
 
     // What a #tag search finds on a mod: its chips' text, and Stable and Beta for each branch it's marked for, chip or
-    // not (so "#stable -#beta" finds the mods marked for stable only).
+    // not (so "#stable -#beta" finds the mods marked for stable only), in the game's language and in English (a guide's
+    // "#stable" works in any language).
     public static IReadOnlyList<string> Searchable(Mod mod)
     {
         var texts = For(mod).Select(c => c.Text).ToList();
         var (stable, beta) = Branches(mod);
         if (stable)
-            texts.Add(Menus.Text("SPIRE_MOD_MANAGER.TAG_STABLE"));
+            texts.AddRange([Menus.Text("SPIRE_MOD_MANAGER.TAG_STABLE"), "Stable"]);
         if (beta)
-            texts.Add(Menus.Text("SPIRE_MOD_MANAGER.TAG_BETA"));
+            texts.AddRange([Menus.Text("SPIRE_MOD_MANAGER.TAG_BETA"), "Beta"]);
         return texts;
     }
 

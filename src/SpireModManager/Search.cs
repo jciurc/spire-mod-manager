@@ -249,6 +249,7 @@ static class Search
 
         box.TextChanged += text =>
         {
+            using var lookups = Lookups.Begin(); // the redraw and Load Order's find share one set of answers
             content.SetMeta(CategoryList.FilterMeta, HasTerms(text) ? text.Trim() : ""); // "-" or "!!!" alone: no search yet
             CategoryList.Apply(content);
             if (Store.Data.LoadOrderView)
