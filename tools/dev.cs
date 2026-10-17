@@ -5,6 +5,7 @@
 //                                     --bmm / --bmm-after: with Better Mod Menu loaded before / after ours
 //                                     --bmm-local: its local-fix build (BmmRepo) instead of the installed one
 //                                     --workshop <id>[,<id>...]: those subscribed Workshop items too, after ours
+//                                     --twins, with --workshop: allow two items of one mod id (the game loads one)
 //                                     --real: your own mods (switched off) and a copy of your data
 //                                     --first-run, --first-run-bmm: a first launch, without or with Better Mod
 //                                      Menu's data to import
@@ -55,9 +56,10 @@ var workshopAt = Array.IndexOf(args, "--workshop"); // the Workshop item ids fol
 var workshopItems = workshopAt < 0 ? [] : (args.ElementAtOrDefault(workshopAt + 1) ?? "")
     .Split(',', StringSplitOptions.RemoveEmptyEntries | StringSplitOptions.TrimEntries).Distinct().ToArray();
 var workshopMods = new List<string>(); // the mod ids in those items' manifests, in the order given
+var twins = args.Contains("--twins"); // two --workshop items of one mod id on purpose (the self-test's two-copies check)
 
 if (mode is not ("test" or "launch" or "smoke"))
-    return Fail("usage: dotnet run tools/dev.cs [test [--window] [--bmm[-after]] [--bmm-local] [--real|--first-run|--first-run-bmm]|launch [--first-run|--first-run-bmm]|smoke [--bmm]] [--workshop <id>[,<id>...]] [--stable]");
+    return Fail("usage: dotnet run tools/dev.cs [test [--window] [--bmm[-after]] [--bmm-local] [--real|--first-run|--first-run-bmm]|launch [--first-run|--first-run-bmm]|smoke [--bmm]] [--workshop <id>[,<id>...] [--twins]] [--stable]");
 if (real && firstRun)
     return Fail("--real brings your own data, so it can't be a first run");
 // --workshop: every item has to be there, or the run would test without it and look like a pass. So it takes
@@ -82,22 +84,24 @@ foreach (var item in workshopItems)
     // Two mods with one id (both ModTheSpire2s have ModTheSpire2): the game would load only one of them.
     foreach (var manifest in manifests)
     {
-        if (workshopManifests.FirstOrDefault(m => Id(m.Manifest) == Id(manifest)) is { Item: { } other })
-            return Fail($"Workshop items {other} and {item} both have the mod id {Id(manifest)}, and the game loads only one of them. Test them one at a time.");
+        if (!twins && workshopManifests.FirstOrDefault(m => Id(m.Manifest) == Id(manifest)) is { Item: { } other })
+            return Fail($"Workshop items {other} and {item} both have the mod id {Id(manifest)}, and the game loads only one of them. Test them one at a time, or add --twins to test both on purpose.");
         workshopManifests.Add((item, manifest));
     }
 }
-workshopMods = workshopManifests.Select(m => Id(m.Manifest)).ToList();
+workshopMods = workshopManifests.Select(m => Id(m.Manifest)).Distinct().ToList(); // twins: one id, one of them loads
 // What each --workshop mod needs has to be on too, all the way down: the game won't load a mod whose dependency
 // didn't load. On in this run: ours, the --workshop mods, Better Mod Menu with --bmm, and the fixture mods (not --real).
 var installedManifests = Manifests(Path.Combine(GameDir, "mods")).ToList();
-var on = workshopManifests.ToDictionary(m => Id(m.Manifest), m => m.Manifest);
+var on = workshopManifests.GroupBy(m => Id(m.Manifest)).ToDictionary(g => g.Key, g => g.First().Manifest); // twins: each copy is walked with its own, below
 on.TryAdd(ModId, []);
 var others = real ? [] : Manifests(Path.Combine(root, "tools", "fixtures", "mods"));
 foreach (var manifest in others.Concat(installedManifests.Where(m => bmm && Id(m) == "BetterModMenu")))
     on.TryAdd(Id(manifest), manifest);
 // Walked from the --workshop mods only: some self-test checks need a mod that won't load (Test Addon, as above).
 foreach (var (item, manifest) in workshopManifests)
+{
+    on[Id(manifest)] = manifest; // twins: each copy is walked with its own needs
     if (MissingDependency([Id(manifest)], []) is { } chain)
     {
         var needed = chain[^1];
@@ -113,6 +117,7 @@ foreach (var (item, manifest) in workshopManifests)
             : installed ? "dev runs don't switch on the mods installed for play (Better Mod Menu aside), so " + add
             : add));
     }
+}
 // Either copy: both play in the one sandbox data folder.
 if (Process.GetProcessesByName("SlayTheSpire2").Select(p => Path.GetDirectoryName(ExePath(p)))
         .FirstOrDefault(dir => dir != null && new[] { BetaDir, StableDir }.Contains(dir, StringComparer.OrdinalIgnoreCase)) is { } running)

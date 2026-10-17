@@ -373,7 +373,7 @@ static class Profiles
     {
         var settings = SaveManager.Instance.SettingsSave.ModSettings ??= new ModSettings();
         var wants = Index(mods);
-        var entries = Dependencies.SavedEntries(settings.ModList);
+        var entries = Dependencies.AllSavedEntries(settings.ModList); // a mod listed twice: every entry (the game reads any off as off)
         _applying = true;
         try
         {
@@ -385,14 +385,16 @@ static class Profiles
                 bool? wanted = id == ModEntry.ModId ? true : wants.GetValueOrDefault((id, mod.modSource))?.Enabled;
                 if (wanted is not { } enabled)
                     continue;
-                if (!entries.TryGetValue((id, mod.modSource), out var entry) && enabled)
+                if (!entries.TryGetValue((id, mod.modSource), out var list) && enabled)
                     continue; // no entry is on already (a mod installed while the game runs has none yet)
-                if (entry == null)
+                if (list == null)
                 {
-                    settings.ModList.Add(entry = new SettingsSaveMod(mod));
-                    entries[(id, mod.modSource)] = entry;
+                    var entry = new SettingsSaveMod(mod);
+                    settings.ModList.Add(entry);
+                    entries[(id, mod.modSource)] = list = [entry];
                 }
-                entry.IsEnabled = enabled;
+                foreach (var entry in list)
+                    entry.IsEnabled = enabled;
             }
             SaveManager.Instance.SaveSettings();
             RefreshTickboxes(screen);
