@@ -33,6 +33,7 @@ static class MainMenuPatch
             History.Start();
             Bmm.ForgetDismissedWarning(); // the dismissed Better Mod Menu banner, if the two changed outside our page
             WorkshopInfo.Start(); // background Steam query; does nothing without Steam
+            Prewarm.Start(__instance); // the Modding page's text, a little each frame from a second on
 #if DEVTOOLS
             ModEntry.MarkDevRun(__instance.GetTree());
 #endif
@@ -252,6 +253,28 @@ static class ModToggledPatch
             Log.Error($"[{ModEntry.ModId}] Could not update the active profile: {e}");
         }
     }
+}
+
+// The game checks every mod for a pending change after adding each row in its page's _Ready (the saved list walked per
+// mod, per row: ~25-90 ms with 250 mods), then hides the line at the end of _Ready anyway. The checks are skipped while
+// the game's _Ready runs; the patches on the check (ours, Better Mod Menu's) still run each time, as before.
+[HarmonyPatch(typeof(NModdingScreen))]
+static class SetupCheckPatch
+{
+    static bool _building;
+
+    [HarmonyPrefix, HarmonyPatch(nameof(NModdingScreen._Ready))]
+    static void Building() => _building = true;
+
+    // Over before any other _Ready postfix runs (theirs and ours may call the check); the finalizer, if _Ready throws.
+    [HarmonyPostfix, HarmonyPatch(nameof(NModdingScreen._Ready)), HarmonyPriority(Priority.First + 1)]
+    static void Ready() => _building = false;
+
+    [HarmonyFinalizer, HarmonyPatch(nameof(NModdingScreen._Ready))]
+    static void Finished() => _building = false;
+
+    [HarmonyPrefix, HarmonyPatch(nameof(NModdingScreen.OnModEnabledOrDisabled))]
+    static bool Check() => !_building;
 }
 
 // A mod subscribed while the page is open: once the game adds its row, a redraw puts it in its category (keep: not

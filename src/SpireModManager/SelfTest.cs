@@ -93,6 +93,7 @@ static class SelfTest
             await TestLaunchGuard(menu, outDir);
             await TestTranslationsFolder(menu);
             await TestTranslations(menu);
+            await TestPrewarm(menu);
 
             var screen = menu.SubmenuStack.PushSubmenuType<NModdingScreen>();
             // The page as first drawn, in the frame it opened. The stable game's scene holds a placeholder row (no mod),
@@ -228,7 +229,15 @@ static class SelfTest
         {
             await Wait(menu, 3);
             CheckPatches();
+            // The first open, timed to the end of its first frame, once the page's text has been shaped ahead (Prewarm).
+            for (var i = 0; i < 100 && !Prewarm.Done; i++)
+                await Wait(menu, 0.1);
+            var opening = System.Diagnostics.Stopwatch.StartNew();
             var screen = menu.SubmenuStack.PushSubmenuType<NModdingScreen>();
+            var built = opening.Elapsed.TotalMilliseconds;
+            await menu.ToSignal(menu.GetTree().CreateTimer(0), SceneTreeTimer.SignalName.Timeout);
+            Results.Add($"INFO first open: built in {built:0} ms, drawn by {opening.Elapsed.TotalMilliseconds:0} ms; text shaped ahead: "
+                + $"{Prewarm.Shaped.Count}{(Prewarm.Done ? "" : " (not finished)")}, its slowest frame {Prewarm.SlowestMs:0} ms");
             await Wait(menu, 2);
             var content = screen.GetNode<Control>("%ModsScrollContainer/Mask/Content");
             var rows = content.GetChildren().OfType<NModMenuRow>().ToList();
@@ -1473,6 +1482,28 @@ static class SelfTest
         {
             Translations.TestOpen = null;
             MenuPanel.Close();
+        }
+    }
+
+    // The page's text shaped ahead on the main menu (Prewarm): only texts with a letter Kreon lacks (a Chinese alias
+    // here; the fixtures' own text is Latin), each once, and the pass gets to the end.
+    static async Task TestPrewarm(NMainMenu menu)
+    {
+        const string Alias = "测试别名";
+        var before = Store.InfoFor("SmmTestContent")?.Alias;
+        Store.EditMod("SmmTestContent", info => info.Alias = Alias);
+        try
+        {
+            Prewarm.Start(menu);
+            for (var i = 0; i < 50 && !Prewarm.Done; i++)
+                await Wait(menu, 0.1);
+            Check("the page's text is shaped ahead on the main menu: a Chinese alias once, nothing all-Latin, to the end",
+                Prewarm.Done && Prewarm.Shaped.Count(t => t == Alias) == 1 && !Prewarm.Shaped.Any(t => t.All(c => c < 0x80)),
+                $"done {Prewarm.Done}: {string.Join(" | ", Prewarm.Shaped)}");
+        }
+        finally
+        {
+            Store.EditMod("SmmTestContent", info => info.Alias = before);
         }
     }
 
