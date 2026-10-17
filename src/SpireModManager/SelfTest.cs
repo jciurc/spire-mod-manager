@@ -113,6 +113,8 @@ static class SelfTest
             Check("profile bar", screen.GetNodeOrNull("ModsBorder/SpireModManagerProfileBar") != null);
             Check("our views use the wide layout", screen.GetNode<Control>("ModsBorder").OffsetLeft < 255 && screen.GetNode<Control>("%ModInfoContainer").OffsetRight > 1727);
             Check($"rows ({rows.Count}) match mods ({ModManager.Mods.Count})", rows.Count == ModManager.Mods.Count);
+            Check("the page's 'after a restart' line follows the main menu button's rule from the page's build",
+                screen.GetNode<Control>("%PendingChangesLabel").Visible == ModEntry.HasPendingChanges(), $"line {screen.GetNode<Control>("%PendingChangesLabel").Visible}, menu {ModEntry.HasPendingChanges()}");
             Results.Add($"INFO headers: {content.GetChildren().Count(c => c.IsInGroup("SpireModManagerCategoryHeader"))}, " +
                 $"profiles: {string.Join(", ", Store.Data.Profiles.Select(p => $"{p.Name} ({p.Mods.Count(m => m.Enabled)} on)"))}, " +
                 $"active: {Store.Data.ActiveProfile}");
@@ -3074,6 +3076,57 @@ static class SelfTest
         }
     }
 
+    // Two copies of one mod with one id and source (two Workshop items of it: dev.cs test --workshop with both). The
+    // saved list keeps one entry per copy through a move and back (it grew by one with every save), Changes and the main
+    // menu agree nothing moved, the page's line follows the menu's rule, and turning the mod off and on sets every entry
+    // (the game reads any entry off as off). Skipped without such a pair.
+    static async Task TestTwinCopies(Node menu, NModdingScreen screen, Control content)
+    {
+        List<NModMenuRow> Rows() => content.GetChildren().OfType<NModMenuRow>().ToList();
+        if (ModManager.Mods.Where(m => m.manifest?.id != null).GroupBy(m => (m.manifest!.id, m.modSource)).FirstOrDefault(g => g.Count() > 1) is not { } twins)
+        {
+            Results.Add("SKIP two copies of one mod: none installed (dev.cs test --workshop with two items of one mod)");
+            return;
+        }
+        var list = SaveManager.Instance.SettingsSave.ModSettings!.ModList;
+        var (id, source) = twins.Key;
+        int Entries() => list.Count(e => e.Id == id && e.Source == source);
+        bool LineFollows() => screen.GetNode<Control>("%PendingChangesLabel").Visible == ModEntry.HasPendingChanges();
+        var (count, entries) = (list.Count, Entries());
+        var other = Rows().Select(r => r.Mod).FirstOrDefault(m => m != null && m.manifest?.id != id && m.manifest?.id != ModEntry.ModId);
+        if (other == null)
+        {
+            Check("two copies of one mod: another mod to move", false);
+            return;
+        }
+        var at = Rows().FindIndex(r => r.Mod == other);
+        LoadOrder.Move(other, at == 0 ? 1 : 0, Rows());
+        CategoryList.Redraw(content);
+        await Wait(menu, 0.3);
+        Check("two copies of one mod: a move keeps one entry each (the list doesn't grow), and Changes, the menu and the page's line agree",
+            list.Count == count && Entries() == entries && HistoryBar.Moves().Count > 0 && LoadOrder.OrderChanged && ModEntry.HasPendingChanges() && LineFollows(),
+            $"{list.Count} entries (was {count}), {id}: {Entries()} (was {entries}), moved {HistoryBar.Moves().Count}");
+        LoadOrder.Move(other, at, Rows());
+        CategoryList.Redraw(content);
+        await Wait(menu, 0.3);
+        Check("two copies of one mod: moved back, nothing moved for Changes or the menu, and the list is as long as before",
+            list.Count == count && Entries() == entries && HistoryBar.Moves().Count == 0 && !LoadOrder.OrderChanged && LineFollows(),
+            $"{list.Count} entries (was {count}), moved {HistoryBar.Moves().Count}, order changed {LoadOrder.OrderChanged}");
+        var on = list.Where(e => e.Id == id && e.Source == source).Select(e => e.IsEnabled).ToList();
+        Dependencies.Set([twins.First()], false, screen);
+        var offAll = list.Where(e => e.Id == id && e.Source == source).All(e => !e.IsEnabled);
+        Dependencies.Set([twins.First()], true, screen);
+        var onAll = list.Where(e => e.Id == id && e.Source == source).All(e => e.IsEnabled);
+        var restore = list.Where(e => e.Id == id && e.Source == source).ToList();
+        for (var i = 0; i < restore.Count && i < on.Count; i++)
+            restore[i].IsEnabled = on[i];
+        SaveManager.Instance.SaveSettings();
+        Profiles.RefreshTickboxes(screen);
+        CategoryList.Redraw(content);
+        await Wait(menu, 0.3);
+        Check("two copies of one mod: turning it off and on sets every one of its entries", offAll && onAll, $"off {offAll}, on {onAll}");
+    }
+
     // Load Order view: rows in the saved order with handles; move by menu action and by dragging a handle
     // (real mouse events into its input handler); restore; back to categories.
     static async Task TestLoadOrder(Node menu, NModdingScreen screen, Control content, string outDir)
@@ -3207,6 +3260,7 @@ static class SelfTest
         CategoryList.Redraw(content);
         await Wait(menu, 0.5);
         Check("restoring the order clears pending", Ids().SequenceEqual(start) && !ModEntry.HasPendingChanges());
+        await TestTwinCopies(menu, screen, content);
 
         await TestDependencies(menu, screen, content, outDir);
 
