@@ -761,6 +761,8 @@ static class CategoryList
         edit.OffsetTop = 6;
         edit.OffsetBottom = -6;
         title.Visible = false;
+        if (header.GetNodeOrNull<Control>("Count") is { } count)
+            count.Visible = false; // it sits after the name, under the box (the header made again when the box closes has it)
         edit.GrabFocus();
 
         // An empty or taken name says so at the box's right end; Enter then does nothing, and clicking away
