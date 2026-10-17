@@ -42,8 +42,8 @@ jobs:
           for script in build.cs tools/dev.cs tools/pck.cs tools/check.cs tools/shot.cs tools/watchdog.cs tools/loc.cs; do
             dotnet build "$script"
           done
-      # loc.cs must read a translation as the mod does (Translations.Read; its in-game side is the self-test's drop-in
-      # translations): the fixture holds each case, the expected file what both make of it.
+      # loc.cs must read a translation as the mod does: the fixture holds each case of Translations.Read, the expected
+      # file what the mod makes of it. The self-test's drop-in translations check the same cases in the game.
       - name: Translation reading
         run: |
           dotnet run tools/loc.cs read tools/fixtures/loc/reading.json.txt --eng tools/fixtures/loc/reading-eng.json > "$RUNNER_TEMP/reading.txt" || true

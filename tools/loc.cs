@@ -9,13 +9,14 @@
 //   dotnet run tools/loc.cs status <file> [--base <ref>] [--eng <ref or file>]
 //                                                          a translation against the English (now, or --eng): texts new
 //                                                          since it was made, texts whose English changed since, keys the
-//                                                          English no longer has, each with its line in the file. Exit code
-//                                                          1 if any.
+//                                                          English no longer has, and texts the mod skips (EMPTY, BROKEN;
+//                                                          see read), each with its line in the file. Exit code 1 if any.
 //   dotnet run tools/loc.cs compare <file> --base <ref> [--to <ref>] [--old <file>] [--html <page.html>]
 //                                                          both sides of each English change since --base: the English
 //                                                          then and now, and the translation then (--old: the copy made for
 //                                                          that version) and now, with its line; then the texts it still
-//                                                          lacks and the keys English doesn't have. --html: the same as a
+//                                                          lacks, the ones to fix (the mod skips them: see read) and the
+//                                                          keys English doesn't have. --html: the same as a
 //                                                          page to open in a browser, side by side. Exit code 1 if any to do.
 //   dotnet run tools/loc.cs read <file> [--eng <ref or file>]
 //                                                          how the mod reads a translation, key by key: the texts it uses,
@@ -26,7 +27,8 @@
 // (--base), else the oldest release whose texts the file has (said so in the report; it can flag a text that was
 // already updated, never miss one).
 // The game's own text parser, the version it ships (data_sts2_windows_x86_64/SmartFormat.dll): a text it can't parse,
-// the mod skips (Translations.Formats, through the game's LocValidator), and so does this tool.
+// the mod skips (Translations.Formats, through the game's LocValidator), and so does this tool. The self-test fails
+// when the game's version changes (SelfTest.ToolParser; check.cs keeps the two equal): then update both.
 #:package SmartFormat@3.3.0
 using System.Diagnostics;
 using System.Net;
@@ -256,8 +258,9 @@ int Read(string file, string? eng)
         return ($"{version} (--base)", EnglishAt(version));
     // The oldest release with every key the file has (fewest texts the file lacks first). None without git or tags.
     var releases = Releases(quiet: true);
-    var fits = releases.Select(r => (Release: r, Texts: EnglishAt(r))).Where(r => translation.Texts.Keys.All(r.Texts.ContainsKey))
-        .OrderBy(r => r.Texts.Keys.Count(k => !translation.Texts.ContainsKey(k))).FirstOrDefault();
+    // Every key the file lists counts, blank or broken ones too: they were made for that English as well.
+    var fits = releases.Select(r => (Release: r, Texts: EnglishAt(r))).Where(r => translation.Lines.Keys.All(r.Texts.ContainsKey))
+        .OrderBy(r => r.Texts.Keys.Count(k => !translation.Lines.ContainsKey(k))).FirstOrDefault();
     if (fits.Release != null)
         return ($"{fits.Release}, inferred from its texts (--base <version> to set it)", fits.Texts);
     return (releases.Count == 0 ? "unknown: no release tags here (git fetch --tags, or --base <version>), so changed English can't be told"
@@ -293,13 +296,16 @@ static Dictionary<string, string> Flat(string json)
 }
 
 // A translation file, read as the mod reads it (Translations.Read): per key, the last copy the mod can use. It skips a
-// copy, and shows the English instead, when the text is blank, isn't text, or (given the English) has a {placeholder}
-// the English doesn't. The game's own format check isn't repeated here; the game logs those. Also each key's line (the
-// copy that counts, else the last one skipped), the keys listed twice, and the TODO marks.
+// copy, and shows the English instead, when the text is blank or isn't text, and (given the English) when the game
+// can't parse it or it has a {placeholder} the English doesn't (Unusable). Also each key's line (the copy that counts,
+// else the last one skipped), the keys listed twice, and the TODO marks. A file the mod leaves out whole (over 1 MB,
+// not JSON, not an object) is refused, saying so.
 static Translation ReadTranslation(string path, Dictionary<string, string>? english = null)
 {
     if (!File.Exists(path))
         throw new Problem($"{path} doesn't exist");
+    if (new FileInfo(path).Length > 1024 * 1024) // Translations.MaxBytes
+        throw new Problem($"{Path.GetFileName(path)} is over 1 MB, so the mod leaves it out whole");
     var source = File.ReadAllText(path); // UTF-8 with or without a BOM, or UTF-16, as the mod reads it
     var bytes = Encoding.UTF8.GetBytes(source);
     var reader = new Utf8JsonReader(bytes, new JsonReaderOptions { CommentHandling = JsonCommentHandling.Allow, AllowTrailingCommas = true });
@@ -328,6 +334,8 @@ static Translation ReadTranslation(string path, Dictionary<string, string>? engl
     {
         while (reader.Read())
         {
+            if (depth == 0 && reader.TokenType is not (JsonTokenType.StartObject or JsonTokenType.Comment))
+                throw new Problem($"{Path.GetFileName(path)} isn't a list of \"key\": \"text\" pairs, so the mod leaves it out whole");
             switch (reader.TokenType)
             {
                 case JsonTokenType.StartObject or JsonTokenType.StartArray:
@@ -374,7 +382,7 @@ static string? Unusable(string text, string? english)
         return null;
     try
     {
-        new SmartFormat.Core.Parsing.Parser().ParseFormat(text); // LocValidator.ValidateFormatString, as the game runs it
+        Game.Parser.ParseFormat(text); // LocValidator.ValidateFormatString, as the game runs it
     }
     catch (SmartFormat.Core.Parsing.ParsingErrors e)
     {
@@ -382,6 +390,10 @@ static string? Unusable(string text, string? english)
         var issue = Regex.Replace(e.Issues.FirstOrDefault()?.Issue.TrimEnd('.') ?? "a format error", "'0x([0-9A-Fa-f]{1,4})'",
             m => $"'{(char)Convert.ToInt32(m.Groups[1].Value, 16)}'");
         return $"the game can't read it ({issue})";
+    }
+    catch (Exception)
+    {
+        // Any other failure of the check counts as a pass, as in Translations.Formats.
     }
     if (Placeholders(text).Except(Placeholders(english)).ToList() is not [_, ..] strange)
         return null;
@@ -597,6 +609,12 @@ record Translation(Dictionary<string, string> Texts, Dictionary<string, Skip> Sk
 record Skip(string Text, string Why);
 
 record Row(string Key, string Kind, string? Was, string? Text, string? Old, string? Current, int Line, string State, bool Todo, string? Note = null);
+
+// The game's text parser with its default settings, as LocValidator makes it: one, reused for every text.
+static class Game
+{
+    public static readonly SmartFormat.Core.Parsing.Parser Parser = new();
+}
 
 // A refusal: its message says what's wrong and what to do.
 class Problem(string message) : Exception(message);

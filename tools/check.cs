@@ -11,6 +11,7 @@
 // - Game resources: no code loads one with ResourceLoader.Load or GD.Load; ModEntry.Load and Font do.
 // - Descriptions: no code sets the engine's TooltipText; Hover.Tip shows our card.
 // - Fixtures: the JSON under tools/fixtures parses, and each test mod's manifest has id, name and version.
+// - Translation tooling: tools/loc.cs's SmartFormat package and the self-test's ToolParser are the same version.
 // - Both game branches: the members only the public-beta has go through Compat.
 // - Null-forgiving: no `!` that tells the compiler a value isn't null, in src, tools, workshop or build.cs.
 // - Tracked files: none over 1 MB, none holding what looks like a GitHub token.
@@ -192,6 +193,15 @@ foreach (var file in Files(Path.Combine("tools", "fixtures"), "*.json"))
     var absent = new[] { "id", "name", "version" }.Where(field => !HasText(manifest, field)).ToList();
     Check($"{Name(file)}: manifest has id, name and version", absent.Count == 0, "missing " + List(absent));
 }
+
+// Translation tooling: tools/loc.cs judges texts with the game's parser, and the self-test checks the game still ships
+// that version, so both name the same one.
+var package = Regex.Match(File.ReadAllText(Path.Combine(root, "tools", "loc.cs")), @"^#:package SmartFormat@(\S+)", RegexOptions.Multiline)
+    .Groups[1].Value;
+var tested = Regex.Match(File.ReadAllText(Path.Combine(root, "src", "SpireModManager", "SelfTest.cs")), @"const string ToolParser = ""([^""]+)""")
+    .Groups[1].Value;
+Check($"tools/loc.cs and the self-test name the same SmartFormat ({package})", package.Length > 0 && package == tested,
+    $"loc.cs has {(package.Length > 0 ? package : "none")}, SelfTest.ToolParser {(tested.Length > 0 ? tested : "none")}");
 
 // Tracked files: nothing big (game files and builds never go in) and no tokens. Only the file and line of
 // a token are printed, never the token.

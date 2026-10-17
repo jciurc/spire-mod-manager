@@ -1833,8 +1833,18 @@ static class SelfTest
     // Back in English, English. A file that isn't JSON, isn't an object or is over 1 MB changes nothing and throws
     // nothing. One saved as deu.json.txt (a browser's "Save as", the .txt hidden) is read. The file is removed and the
     // language set back afterwards.
+    // The SmartFormat version tools/loc.cs judges translations with (its #:package; check.cs keeps the two equal).
+    const string ToolParser = "3.3.0";
+
     static async Task TestTranslations(NMainMenu menu)
     {
+        // The tool reads texts as the game does only with the game's parser: when the game ships another version, update
+        // the package in tools/loc.cs and ToolParser here.
+        var parser = AppDomain.CurrentDomain.GetAssemblies().FirstOrDefault(a => a.GetName().Name == "SmartFormat")
+            ?.GetCustomAttributes(typeof(System.Reflection.AssemblyInformationalVersionAttribute), false)
+            .OfType<System.Reflection.AssemblyInformationalVersionAttribute>().FirstOrDefault()?.InformationalVersion.Split('+')[0];
+        Check($"translation tools: the game's text parser is SmartFormat {ToolParser}, the one tools/loc.cs uses", parser == ToolParser,
+            $"the game has {parser ?? "no SmartFormat loaded"}");
         var start = LocManager.Instance.Language;
         if (start != "eng" || Godot.FileAccess.FileExists($"res://{ModEntry.ModId}/localization/deu/settings_ui.json"))
         {
