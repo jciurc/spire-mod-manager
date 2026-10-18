@@ -412,31 +412,49 @@ static class ModInfoClearPatch
     }
 }
 
-// Ctrl shortcuts on our Modding page: Z undo, Y or Shift+Z redo, F search, S save profile, A pick all shown. Unhandled
-// keys only, so a focused text box keeps its own.
+// Ctrl shortcuts on our Modding page: Z undo, Y or Shift+Z redo, F search, S save profile, A pick all shown, D let go
+// of the picked mods. Unhandled keys only, so a focused text box keeps its own.
 [HarmonyPatch(typeof(NInputManager), "_UnhandledKeyInput")]
 static class ShortcutsPatch
 {
     // Escape closes our open menu or dialog, ends the main menu button's move mode, or lets go of picked mods, in
-    // place of the game's Escape (which would leave the page).
+    // place of the game's Escape (which would leave the page). Ctrl+D lets go of picked mods, in place of the game's D.
     static bool Prefix(InputEvent inputEvent)
     {
         try
         {
-            if (inputEvent is not InputEventKey { Keycode: Key.Escape, Pressed: true, Echo: false } || !(MenuPanel.Close() || RelaunchCheck.Cancel() || ProfileShare.Close() || MenuButton.CancelMove() || LetGo()))
+            var handled = inputEvent switch
+            {
+                InputEventKey { Keycode: Key.Escape, Pressed: true, Echo: false } =>
+                    MenuPanel.Close() || RelaunchCheck.Cancel() || ProfileShare.Close() || MenuButton.CancelMove() || LetGo(),
+                InputEventKey { Keycode: Key.D, Pressed: true, Echo: false, CtrlPressed: true, ShiftPressed: false, AltPressed: false } => Deselect(),
+                _ => false,
+            };
+            if (!handled)
                 return true;
             ((SceneTree)Engine.GetMainLoop()).Root.SetInputAsHandled();
             return false;
         }
         catch (Exception e)
         {
-            Log.Error($"[{ModEntry.ModId}] Escape failed, so the game's own Escape runs: {e}");
+            Log.Error($"[{ModEntry.ModId}] A key failed, so the game's own runs: {e}");
             return true;
         }
     }
 
     static bool LetGo() => HistoryBar.Screen is { } screen && GodotObject.IsInstanceValid(screen) && screen.IsVisibleInTree()
         && Selection.Clear(screen.GetNode<Control>("%ModsScrollContainer/Mask/Content"));
+
+    // Ctrl+D on our page with mods picked: an open menu closes (the bulk menu edits the picks it opened with), then
+    // they're let go of.
+    static bool Deselect()
+    {
+        if (Store.Data.VanillaView || RelaunchCheck.IsOpen || ProfileShare.IsOpen || Selection.Mods.Count == 0
+            || HistoryBar.Screen is not { } screen || !GodotObject.IsInstanceValid(screen) || !screen.IsVisibleInTree())
+            return false;
+        MenuPanel.Close();
+        return LetGo();
+    }
 
     static void Postfix(InputEvent inputEvent)
     {
@@ -446,6 +464,10 @@ static class ShortcutsPatch
                 || HistoryBar.Screen is not { } screen || !GodotObject.IsInstanceValid(screen) || !screen.IsVisibleInTree()
                 || Store.Data.VanillaView || RelaunchCheck.IsOpen || ProfileShare.IsOpen)
                 return;
+            // These change the picks or what they show, so an open menu (the bulk menu edits the picks it opened with)
+            // closes first.
+            if (key.Keycode is Key.Z or Key.Y or Key.A)
+                MenuPanel.Close();
             switch (key.Keycode)
             {
                 case Key.Z when key.ShiftPressed:
@@ -547,6 +569,33 @@ static class NewModTogglePatch
         catch (Exception e)
         {
             Log.Error($"[{ModEntry.ModId}] Could not add a saved entry for a new mod: {e}");
+        }
+    }
+}
+
+// The tickbox of one of several picked rows on the main list sets them all to the state it took, as one undo step,
+// their rows kept under a Show: choice. In place of the game's toggle for that row; other rows' tickboxes, and Load
+// Order's, switch only their own mod. This mod stays on (Dependencies.Set). Falls back to the game's toggle on error.
+[HarmonyPatch(typeof(NModMenuRow), "OnTickboxToggled")]
+static class GroupTickPatch
+{
+    [HarmonyPriority(Priority.First)]
+    static bool Prefix(NModMenuRow __instance, NTickbox tickbox)
+    {
+        try
+        {
+            if (Layout.Current != Layout.View.Categories || !Selection.Several || !Selection.Contains(__instance.Mod)
+                || CategoryList.ScreenOf(__instance) is not { } screen || HistoryBar.Screen != screen)
+                return true;
+            ListFilter.Keep(Selection.Mods.Select(m => m.manifest?.id).OfType<string>());
+            Dependencies.Set(Selection.Mods, tickbox.IsTicked, screen);
+            CategoryList.Redraw(screen.GetNode<Control>("%ModsScrollContainer/Mask/Content"), keep: true);
+            return false;
+        }
+        catch (Exception e)
+        {
+            Log.Error($"[{ModEntry.ModId}] Could not set the picked mods together, so only this one changes: {e}");
+            return true;
         }
     }
 }

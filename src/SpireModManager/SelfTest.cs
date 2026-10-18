@@ -214,6 +214,7 @@ static class SelfTest
             await TestWorkshopHead(menu, screen);
             await TestOtherModPanel(menu, screen, content, outDir);
             await TestBulkEdit(menu, screen, content, outDir);
+            await TestPicks(menu, screen, content, outDir);
             await TestTagSuggestions(menu, screen, content, outDir);
             await TestHistory(menu, screen, content, outDir);
             TestFallbacks(screen);
@@ -5581,6 +5582,171 @@ static class SelfTest
         Input.ParseInputEvent(new InputEventKey { Keycode = Key.Escape, Pressed = false });
         Check("Esc lets go of the picked mods, staying on the page", Selection.Mods.Count == 0 && screen.IsVisibleInTree()
             && rows.All(r => r.GetNodeOrNull<Control>("SpireModManagerPicked") is not { Visible: true }));
+    }
+
+    // Picked mods on the bar, together on their tickboxes, and in undo (Selection, History.Picks). With two or more
+    // picked, the page bar counts them on a chip in the rows' blue, with a ×, and says Enable selected / Disable selected
+    // (headers keep Enable all / Disable all), as the bulk menu does; a click on the chip lets go. A picked row's tickbox
+    // sets every picked mod, one undo step; another row's only its own. Ctrl+D lets go. Each change to the tinted set is
+    // an undo step, in time with the edits, that leaves our data, the mod list and Changes alone; picking one mod with a
+    // plain click, none tinted, is none. A view switch lets go of the picks and their steps.
+    static async Task TestPicks(Node menu, NModdingScreen screen, Control content, string outDir)
+    {
+        List<NModMenuRow> Rows() => content.GetChildren().OfType<NModMenuRow>().ToList();
+        var rows = Rows().Where(r => r.Visible && r.Mod?.manifest?.id is { } id && id != ModEntry.ModId && id != Bmm.ModId).Take(4).ToList();
+        if (rows.Count < 4)
+        {
+            Results.Add("SKIP picked mods: fewer than 4 rows");
+            return;
+        }
+        void CtrlClick(NModMenuRow row) =>
+            row.EmitSignal(Control.SignalName.GuiInput, new InputEventMouseButton { ButtonIndex = MouseButton.Left, Pressed = true, CtrlPressed = true });
+        async Task Keys(Key key)
+        {
+            foreach (var pressed in new[] { true, false })
+            {
+                Input.ParseInputEvent(new InputEventKey { Keycode = key, CtrlPressed = true, Pressed = pressed });
+                await Wait(menu, 0.15);
+            }
+        }
+        bool On(NModMenuRow row) => row.Mod is { } mod && !(SaveManager.Instance.SettingsSave.ModSettings?.IsModDisabled(mod) ?? false);
+        int Tinted() => Rows().Count(r => r.GetNodeOrNull<Control>("SpireModManagerPicked") is { Visible: true });
+        Control? Bar() => screen.FindChild(PageBar.Name, true, false) as Control;
+        int Steps() => History.Steps(History.Track.List);
+        string Say() => $"{Selection.Mods.Count} picked, {Tinted()} tinted, {Steps()} steps";
+        // What a selection step leaves alone: our data, the mod list, Changes.
+        string Data() => $"{Store.EditsJson()}\n{string.Join(",", History.CurrentMods())}\n{string.Join(" | ", HistoryBar.Describe())}";
+        bool Picked(params NModMenuRow[] some) => Selection.Mods.Count == some.Length && some.All(r => Selection.Contains(r.Mod));
+        var (first, three) = (rows.Take(2).ToArray(), rows.Take(3).ToArray());
+
+        screen.GetViewport().GuiReleaseFocus(); // Ctrl+Z and Ctrl+D reach the page, not a text box
+        Selection.Clear(content);
+        await Wait(menu, 0.2);
+        var steps = Steps();
+        // A plain click on the main list (its press is the game's, its release lets go of picks), and Load Order's,
+        // which picks the one mod: neither is a step.
+        foreach (var pressed in new[] { true, false })
+            rows[0].EmitSignal(Control.SignalName.GuiInput, new InputEventMouseButton { ButtonIndex = MouseButton.Left, Pressed = pressed });
+        await Wait(menu, 0.2);
+        var mainList = Steps() == steps;
+        Selection.Pick(content, rows[0], toggle: false, range: false);
+        await Wait(menu, 0.2);
+        Check("a plain click on one mod, none picked, is no undo step (main list and Load Order's way)", mainList && Picked(rows[0]) && Steps() == steps, Say());
+        CtrlClick(rows[1]);
+        CtrlClick(rows[2]);
+        await Wait(menu, 0.2);
+        Check("each Ctrl-click that changes the tinted set is an undo step", Picked(three) && Tinted() == 3 && Steps() == steps + 2
+            && History.Newest(History.Track.List) is History.Picks, Say());
+
+        var chip = Bar()?.FindChild("SelectionChip", true, false) as Control;
+        var onOff = Bar()?.GetNodeOrNull("OnOff")?.GetChildren().OfType<Button>().Select(b => b.Text).ToList() ?? [];
+        var header = content.GetChildren().OfType<Node>().FirstOrDefault(n => n.IsInGroup("SpireModManagerCategoryHeader"))?.GetNodeOrNull("Actions")
+            ?.GetChildren().OfType<Button>().Select(b => b.Text).ToList() ?? [];
+        var scope = (chip?.FindChild("Scope", true, false) as Label)?.Text;
+        Check("picked: the bar counts them on a chip with a ×, and says Enable selected, Disable selected; headers keep Enable all, Disable all",
+            scope == "Selected (3)" && chip?.FindChild("Clear", true, false) is Label { Text: "×" } && onOff.SequenceEqual(["Enable selected", "Disable selected"])
+            && Bar()?.FindChild("ClearSelectionButton", true, false) == null && header.TakeLast(2).SequenceEqual(["Enable all", "Disable all"]),
+            $"{scope ?? "no chip"}; {string.Join(",", onOff)}; header {string.Join(",", header)}");
+        var listEnd = screen.GetNode<Control>("%ModsScrollContainer").GetGlobalRect().End.X;
+        var past = Bar()?.FindChildren("*", "Control", true, false).OfType<Control>().Where(c => c.IsVisibleInTree() && c.GetGlobalRect().End.X > listEnd + 0.5f)
+            .Select(c => $"{c.Name} to {c.GetGlobalRect().End.X:0}").ToList() ?? ["no bar"];
+        Check("picked: the page bar fits the list's width", past.Count == 0, $"{string.Join(", ", past)}; the list ends at {listEnd:0}");
+        await Capture(screen, outDir, "18d-picked-bar");
+        var bulk = CategoryList.ShowBulkMenu(content);
+        await Wait(menu, 0.3);
+        var bulkLabels = bulk == null ? [] : MenuPanel.Labels(bulk);
+        MenuPanel.Close();
+        Check("the bulk menu says Enable selected and Disable selected", bulkLabels.Contains("Enable selected") && bulkLabels.Contains("Disable selected")
+            && !bulkLabels.Contains("Enable all"), string.Join(", ", bulkLabels));
+
+        var data = Data();
+        await Keys(Key.Z);
+        Check("Ctrl+Z takes back the last pick, and only that: our data, the mod list and Changes as they were", Picked(first) && Tinted() == 2 && Data() == data, Say());
+        await Keys(Key.Y);
+        Check("Ctrl+Y picks it again", Picked(three) && Tinted() == 3 && Data() == data, Say());
+
+        // A picked row's tickbox: all three take the state it took; one undo puts them back. Another row's: just its own.
+        var states = rows.Select(On).ToList();
+        var target = !On(rows[1]);
+        var box = rows[1].GetNode<NTickbox>("Tickbox");
+        steps = Steps();
+        box.IsTicked = target;
+        box.EmitSignal(NTickbox.SignalName.Toggled, box);
+        await Wait(menu, 0.3);
+        Check("a picked row's tickbox sets every picked mod the same way, one undo step, the picks kept",
+            three.All(r => On(r) == target && r.GetNode<NTickbox>("Tickbox").IsTicked == target) && On(rows[3]) == states[3] && Steps() == steps + 1 && Picked(three),
+            $"{Say()}; {string.Join(",", rows.Select(On))}");
+        History.Undo();
+        await Wait(menu, 0.3);
+        Check("one undo puts them all back", rows.Select(On).SequenceEqual(states), string.Join(",", rows.Select(On)));
+        var other = rows[3].GetNode<NTickbox>("Tickbox");
+        other.IsTicked = !states[3];
+        other.EmitSignal(NTickbox.SignalName.Toggled, other);
+        await Wait(menu, 0.3);
+        Check("another row's tickbox switches only its own mod, the picks kept", On(rows[3]) != states[3] && three.Select(On).SequenceEqual(states.Take(3)) && Picked(three),
+            string.Join(",", rows.Select(On)));
+        History.Undo();
+        await Wait(menu, 0.3);
+
+        // In time with the edits: a category set for the picks is undone first, then the last pick.
+        var ids = three.Select(r => r.Mod?.manifest?.id ?? "").ToList();
+        var categoriesBefore = ids.Select(id => Store.InfoFor(id)?.Category).ToList();
+        if (Store.Data.Categories.FirstOrDefault(c => !ids.All(id => Store.InfoFor(id)?.Category == c.Name)) is { } category
+            && CategoryList.ShowBulkMenu(content) is { } move)
+        {
+            MenuPanel.Press(move, category.Name);
+            await Wait(menu, 0.3);
+            await Keys(Key.Z);
+            var categoryBack = ids.Select(id => Store.InfoFor(id)?.Category).SequenceEqual(categoriesBefore) && Picked(three);
+            await Keys(Key.Z);
+            Check("undo walks edits and picks in the order they happened: the category, then the last pick", categoryBack && Picked(first), Say());
+            await Keys(Key.Y);
+        }
+        else
+            Results.Add("SKIP undo in time with the edits: no category to move the picks to");
+
+        Selection.Add(content, three);
+        await Wait(menu, 0.2);
+        steps = Steps();
+        chip = Bar()?.FindChild("SelectionChip", true, false) as Control;
+        // A real click where there's a mouse (--window): the chip goes with the bar it rebuilds.
+        var clicked = chip == null ? "no chip" : DisplayServer.GetName() == "headless"
+            ? (chip.EmitSignal(Control.SignalName.GuiInput, new InputEventMouseButton { ButtonIndex = MouseButton.Left, Pressed = false }) == Error.Ok ? "emitted" : "failed")
+            : await RealClick(menu, chip);
+        await Wait(menu, 0.2);
+        Check("a click on the chip lets go of them, an undo step", Selection.Mods.Count == 0 && Tinted() == 0 && Steps() == steps + 1
+            && Bar()?.FindChild("SelectionChip", true, false) == null, $"{Say()}; {clicked}");
+        await Keys(Key.Z);
+        Check("Ctrl+Z after letting go picks them again", Picked(three) && Tinted() == 3, Say());
+        await Keys(Key.D);
+        Check("Ctrl+D lets go of them, staying on the page", Selection.Mods.Count == 0 && Tinted() == 0 && screen.IsVisibleInTree(), Say());
+        await Keys(Key.Z);
+        Check("Ctrl+Z after Ctrl+D picks them again", Picked(three) && Tinted() == 3, Say());
+
+        // A view switch lets go, and the picks' steps go with it. In Load Order, picks are steps of its own history, and
+        // the Undo button takes them back as Ctrl+Z does.
+        var toggle = screen.GetNode<NButton>("SpireModManagerLoadOrderToggle");
+        Click(toggle);
+        await Wait(menu, 0.5);
+        var letGo = Selection.Mods.Count == 0;
+        var orderSteps = History.Steps(History.Track.Order);
+        var orderRows = Rows().Where(r => r.Visible && r.Mod?.manifest?.id is { } id && id != ModEntry.ModId).Take(2).ToList();
+        if (orderRows.Count == 2)
+        {
+            Selection.Pick(content, orderRows[0], toggle: false, range: false); // Load Order's plain click: one mod, no step
+            CtrlClick(orderRows[1]);
+        }
+        await Wait(menu, 0.2);
+        var orderPicked = orderRows.Count == 2 && Selection.Mods.Count == 2 && History.Steps(History.Track.Order) == orderSteps + 1
+            && History.Newest(History.Track.Order) is History.Picks;
+        screen.FindChild("UndoButton", true, false)?.EmitSignal(BaseButton.SignalName.Pressed);
+        await Wait(menu, 0.2);
+        Check("in Load Order, picks are steps of its own history, and the Undo button takes them back", orderPicked
+            && Selection.Mods.Count == 1 && History.Steps(History.Track.Order) == orderSteps, $"{Selection.Mods.Count} picked, {History.Steps(History.Track.Order)} order steps");
+        Click(toggle);
+        await Wait(menu, 0.5);
+        Check("a view switch lets go of the picks, and their undo steps go too", letGo && Selection.Mods.Count == 0
+            && History.Newest(History.Track.List) is not History.Picks && History.Newest(History.Track.Order) is not History.Picks, Say());
     }
 
     // Tag suggestions, with made-up tags on made-up mods so the counts are known (the data is put back after): the
