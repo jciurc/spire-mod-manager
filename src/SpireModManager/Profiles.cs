@@ -77,13 +77,15 @@ static class Profiles
         {
             if (Active is not { } profile || !Unseen(profile).Any() && !Store.Data.Profiles.Any(Unheld))
                 return;
+            var took = false;
             History.Quietly(data =>
             {
-                TakeIn(data.Profiles.FirstOrDefault(p => p.Name == data.ActiveProfile), arrived: true);
+                took |= TakeIn(data.Profiles.FirstOrDefault(p => p.Name == data.ActiveProfile), arrived: true);
                 foreach (var each in data.Profiles)
                     HoldCopies(each);
             });
-            Track(); // on, it's the profile's unsaved edit now
+            if (took)
+                Track(); // on, it's the profile's unsaved edit now
             Switched?.Invoke(); // the count beside the name
         }
         catch (Exception e)

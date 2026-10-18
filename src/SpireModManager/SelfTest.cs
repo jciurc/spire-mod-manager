@@ -3544,14 +3544,14 @@ static class SelfTest
         Check("a mod installed now is listed as installed, loading after relaunch",
             HistoryBar.Describe().Any(l => l.Contains("Installed: Fresh Mod") && l.Contains("pending relaunch")), string.Join(" | ", HistoryBar.Describe()));
         // It joins the active profile at once as off (the profile was saved before it existed), so its being on is the
-        // profile's unsaved edit; Revert all's state has it on too. Turned on since launch: +1 on the first line.
+        // profile's unsaved edit; Revert all's state has it, off, too. Turned on since launch: +1 on the first line.
         var countsNew = HistoryBar.Counts();
         Check("a mod installed now joins the active profile as off, so its being on is an unsaved edit; it counts as turned on (+1)",
             Profiles.Active?.Mods.Any(m => m.Id == "SmmFreshMod" && !m.Enabled) == true && Profiles.Edited
-            && Profiles.UnsavedChanges().On.Any(m => m.Name == "Fresh Mod") && OnInSnapshot(History.Entered, "SmmFreshMod")
+            && Profiles.UnsavedChanges().On.Any(m => m.Name == "Fresh Mod") && OnInSnapshot(History.Entered, "SmmFreshMod", enabled: false)
             && countsNew.On == countsBefore.On + 1 && countsNew.Off == countsBefore.Off,
             $"saved off {Profiles.Active?.Mods.Any(m => m.Id == "SmmFreshMod" && !m.Enabled)}, edited {wasEdited} -> {Profiles.Edited}, "
-            + $"in Revert all's state {OnInSnapshot(History.Entered, "SmmFreshMod")}, counts {countsBefore} -> {countsNew}");
+            + $"off in Revert all's state {OnInSnapshot(History.Entered, "SmmFreshMod", enabled: false)}, counts {countsBefore} -> {countsNew}");
         Check("a mod installed now gets a New tag, first", Tags.For(fresh).FirstOrDefault()?.Text == "New");
         var freshRow = content.GetChildren().OfType<NModMenuRow>().Except(rowsBefore).FirstOrDefault(r => r.Mod == fresh);
         if (freshRow != null)
@@ -8765,13 +8765,13 @@ static class SelfTest
             .Select(m => $"{m.Id}/{m.Source}={(m.IsEnabled ? "on" : "off")}").OrderBy(s => s).ToList() ?? [];
 
     // Whether a history snapshot's active profile has the mod, on.
-    static bool OnInSnapshot(History.Snapshot? snapshot, string id)
+    static bool OnInSnapshot(History.Snapshot? snapshot, string id, bool enabled = true)
     {
         if (snapshot == null || JsonNode.Parse(snapshot.Store) is not JsonObject store)
             return false;
         var active = (string?)store["active_profile"];
         return (store["profiles"] as JsonArray ?? []).Any(p => (string?)p?["name"] == active
-            && (p?["mods"] as JsonArray ?? []).Any(m => (string?)m?["id"] == id && (bool?)m?["enabled"] == true));
+            && (p?["mods"] as JsonArray ?? []).Any(m => (string?)m?["id"] == id && (bool?)m?["enabled"] == enabled));
     }
 
     // A banner's fill (LoadOrder.Banner's rounded box): yellow for a warning, red for a problem with the mods, by hue too.
