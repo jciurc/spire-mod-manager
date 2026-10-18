@@ -808,8 +808,12 @@ static class SelfTest
         var vanillaTip = Hover.TipOf(toggles[0]);
         var backTip = "";
         await WithVanillaView(screen, menu, () => (backTip = Hover.TipOf(screen.GetNode<Control>("SpireModManagerViewToggle"))) is var _);
+        // While a mod is installed twice from one source (the fixture twins), a second line says how that page's tickbox
+        // treats its copies (its words are checked in TestSameIdCopies).
+        var tipLines = vanillaTip.Split('\n');
         Check("the Vanilla List button's tip says it's the game's own page (without Spire Mod Manager), and on it, the way back",
-            vanillaTip == Menus.Text(Bmm.Present ? "SPIRE_MOD_MANAGER.VANILLA_VIEW_TIP_BMM" : "SPIRE_MOD_MANAGER.VANILLA_VIEW_TIP")
+            tipLines[0] == Menus.Text(Bmm.Present ? "SPIRE_MOD_MANAGER.VANILLA_VIEW_TIP_BMM" : "SPIRE_MOD_MANAGER.VANILLA_VIEW_TIP")
+            && (Copies.TwinGroups().Count > 0 ? tipLines is [_, var copies] && copies.StartsWith("Here one tickbox enables or disables every copy of ") : tipLines.Length == 1)
             && backTip == Menus.Text("SPIRE_MOD_MANAGER.CATEGORY_VIEW_TIP"), $"{vanillaTip} | {backTip}");
         var bannerBox = border.GetNode<Control>(LoadOrder.ManagersName).GetGlobalRect();
         var searchBox = border.GetNode<Control>("SpireModManagerSearch").GetGlobalRect();
