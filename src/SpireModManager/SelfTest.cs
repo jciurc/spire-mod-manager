@@ -4363,15 +4363,15 @@ static class SelfTest
             Check("load order menu: Disable, then Enable", toggle.Label == "Disable" && offNow && again.Label == "Enable" && Dependencies.IsOn(uiMod),
                 $"{toggle.Label}, off {offNow}, {again.Label}");
         }
-        // Its Up, a button kept through the move, moves it from where it is now: to the top again. Then the moved mod goes
+        // Its Up, a button kept through the move, moves it from where it is now: to the top (under ours) again. Then the moved mod goes
         // back to the top for the drags below.
         if (passed?.GetNodeOrNull(RowStrip.OrderActionsName)?.GetChildOrNull<Button>(1) is { } up)
         {
             up.EmitSignal(BaseButton.SignalName.Pressed);
             await Wait(menu, 0.5);
             var upped = Ids();
-            Check("a kept Up button moves its row from where it is now (to the top)", upped[0] == passed.Mod?.manifest?.id && upped[1] == free
-                && ButtonIds().SequenceEqual(passedIds) && ButtonsOff().SequenceEqual([true, true, false, false]), string.Join(", ", upped.Take(3)));
+            Check("a kept Up button moves its row from where it is now (to the top, under ours)", upped[pinned] == passed.Mod?.manifest?.id && upped[pinned + 1] == free
+                && ButtonIds().SequenceEqual(passedIds) && ButtonsOff().SequenceEqual([true, true, false, false]), string.Join(", ", upped.Take(pinned + 2)));
             if (Rows().FirstOrDefault(r => r.Mod?.manifest?.id == free)?.Mod is { } freeAgain)
                 LoadOrder.Move(freeAgain, 0, Rows());
             CategoryList.Redraw(content);
