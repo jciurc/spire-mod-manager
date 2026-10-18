@@ -502,8 +502,11 @@ static class HistoryBar
     {
         var (thenOff, thenPicks) = (Dependencies.SavedOff(before.Mods), Store.PicksIn(before.Store));
         var (nowOff, nowPicks) = (Dependencies.SavedOff(), Picks.Now);
+        // A mod installed since launch wasn't loaded then: off, though the saved list (which had no entry for it) reads
+        // on. So arriving on counts as turned on, and turning it off again is no change.
+        var arrived = Installed.Mods.Select(Copies.SwitchKey).ToHashSet();
         return Dependencies.EachCopy(ModManager.Mods)
-            .Select(m => (Mod: m, Then: Dependencies.OnIn(m, thenOff, thenPicks), Now: Dependencies.OnIn(m, nowOff, nowPicks)))
+            .Select(m => (Mod: m, Then: !arrived.Contains(Copies.SwitchKey(m)) && Dependencies.OnIn(m, thenOff, thenPicks), Now: Dependencies.OnIn(m, nowOff, nowPicks)))
             .Where(p => p.Then != p.Now)
             .Select(p => (p.Mod, p.Now))
             .ToList();
