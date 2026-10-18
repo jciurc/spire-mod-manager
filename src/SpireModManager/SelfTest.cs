@@ -6738,7 +6738,8 @@ static class SelfTest
             localKey == id && copyKey == $"{id}|w:123" && Store.Data.Copies?.GetValueOrDefault(id) is [var first, "w:123"] && first == $"l:{id}"
             && Store.InfoFor(local) is { } localInfo && Store.InfoFor(copy) is { } copyInfo && localInfo != copyInfo
             && copyInfo.Alias == aliasBefore && copyInfo.Notes == notesBefore && Edits() == edits && History.Steps(History.Track.List) == steps,
-            $"keys {localKey}, {copyKey}; record {string.Join(",", Store.Data.Copies?.GetValueOrDefault(id) ?? [])}; edits {Edits()}");
+            $"keys {localKey}, {copyKey}; record {string.Join(",", Store.Data.Copies?.GetValueOrDefault(id) ?? [])}; edits {Edits()} (were {edits}); "
+            + $"steps {History.Steps(History.Track.List) - steps}; aliases {Store.InfoFor(local)?.Alias}/{Store.InfoFor(copy)?.Alias} (was {aliasBefore}); profile edited {Profiles.Edited}");
 
         // An alias on the new copy: that copy's only.
         Store.EditMod(copyKey, info => info.Alias = "Fixes from the Workshop");
