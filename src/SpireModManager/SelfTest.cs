@@ -1937,11 +1937,13 @@ static class SelfTest
                 var mark = item == null ? null : LinkMark.Rect(item);
                 var itemSize = item?.GetThemeFontSize("font_size") ?? 0;
                 var itemText = item == null ? 0 : item.GetThemeFont("font").GetStringSize(item.Text, fontSize: itemSize).X;
-                Check("Open translations folder: the external-link mark a small gap after its label, 14 px for its 20 px text, in the label's colour; no other item has one",
+                Check("Open translations folder: the external-link mark a small gap after its label, 14 px for its 20 px text; no other item has one",
                     item != null && itemSize == 20 && mark is { } at && at.Position.X >= itemText + 2 && at.Position.X <= itemText + 7 && at.Size == new Vector2(14, 14)
-                    && at.End.X <= item.Size.X + 0.5f && LinkMark.Tint(item) == item.GetThemeColor("font_color")
-                    && labels.Where(l => l.IsInGroup(LinkMark.Group)).SequenceEqual([item]),
+                    && at.End.X <= item.Size.X + 0.5f && labels.Where(l => l.IsInGroup(LinkMark.Group)).SequenceEqual([item]),
                     $"mark {mark} after text {itemText:0.#}, label {item?.Size}; marked: {string.Join(", ", labels.Where(l => l.IsInGroup(LinkMark.Group)).Select(l => l.Text))}");
+                var drawn = item == null ? null : await MarkDrawn(menu, item);
+                Check("Open translations folder's mark: drawn in the label's colour", item != null && drawn == item.GetThemeColor("font_color"),
+                    $"drawn {drawn?.ToString() ?? "nothing"}, label {item?.GetThemeColor("font_color")}");
                 MenuPanel.Press(popup, "Open translations folder");
             }
             await Wait(menu, 0.2);
@@ -5750,10 +5752,42 @@ static class SelfTest
                 && at.End.X <= link.Size.X + 0.5f && at.Position.Y >= 0 && at.End.Y <= link.Size.Y + 0.5f
                 && link.IsInGroup(LinkMark.Group) && link.GetSignalConnectionList(CanvasItem.SignalName.Draw).Count > 0,
                 $"mark {mark} after text {linkText:0.#}, link {link.Size}");
-            Check("the Workshop link's mark: the link's own colour, and its hover colour while the link is lit",
-                LinkMark.Tint(link, BaseButton.DrawMode.Normal) == link.GetThemeColor("font_color")
-                && LinkMark.Tint(link, BaseButton.DrawMode.Hover) == link.GetThemeColor("font_hover_color")
-                && link.GetThemeColor("font_hover_color") != link.GetThemeColor("font_color"));
+            // The mark as drawn: the link's colour with the mouse off it, then (a mouse motion through the viewport; none
+            // headless) its hover colour while the mouse is on it, and its own again once it leaves.
+            var (normal, lit) = (link.GetThemeColor("font_color"), link.GetThemeColor("font_hover_color"));
+            var headless = DisplayServer.GetName() == "headless";
+            static void MoveTo(Vector2 at) => Input.ParseInputEvent(new InputEventMouseMotion { Position = at, GlobalPosition = at });
+            var linkRect = link.GetGlobalRect();
+            var away = link.GetViewport().GetMousePosition(); // where the mouse was, unless that's on the link: above it then
+            if (linkRect.Grow(2).HasPoint(away))
+                away = linkRect.Position - new Vector2(0, 30);
+            if (!headless)
+            {
+                MoveTo(away);
+                await Wait(menu, 0.1);
+            }
+            var unlit = await MarkDrawn(menu, link);
+            Check("the Workshop link's mark: drawn in the link's own colour while it isn't lit",
+                link.GetDrawMode() == BaseButton.DrawMode.Normal && unlit == normal,
+                $"{link.GetDrawMode()}, drawn {unlit?.ToString() ?? "nothing"}; the link's {normal}");
+            if (headless)
+                Results.Add("SKIP the Workshop link's mark lit with the link: there's no mouse headless");
+            else
+            {
+                // Redrawn by the link itself as it lights and goes out (no QueueRedraw here).
+                LinkMark.TestForget(link);
+                MoveTo(linkRect.GetCenter());
+                await Wait(menu, 0.1);
+                var (onMode, onDrawn, under) = (link.GetDrawMode(), LinkMark.TestDrawn(link), link.GetViewport().GuiGetHoveredControl());
+                LinkMark.TestForget(link);
+                MoveTo(away);
+                await Wait(menu, 0.1);
+                var (offMode, offDrawn) = (link.GetDrawMode(), LinkMark.TestDrawn(link));
+                Check("the Workshop link's mark: redrawn in the link's hover colour while the mouse is on the link, and in its own once it leaves",
+                    lit != normal && onMode == BaseButton.DrawMode.Hover && onDrawn == lit && offMode == BaseButton.DrawMode.Normal && offDrawn == normal,
+                    $"on it ({under?.Name.ToString() ?? "nothing"} under the mouse at {linkRect.GetCenter()}): {onMode}, drawn {onDrawn?.ToString() ?? "nothing"}; "
+                    + $"off it: {offMode}, drawn {offDrawn?.ToString() ?? "nothing"}; the link's {normal}, lit {lit}");
+            }
             var source = info.GetNode<Control>("SpireModManagerSource");
             var status = (Label)source.FindChild("Status", true, false);
             var title = info.GetNode<Control>("ModTitle");
@@ -8226,6 +8260,16 @@ static class SelfTest
         Input.ParseInputEvent(new InputEventMouseButton { ButtonIndex = MouseButton.Left, Pressed = false, Position = at, GlobalPosition = at });
         await Wait(menu, 0.3);
         return where;
+    }
+
+    // The colour the control's external-link mark is drawn in at a fresh redraw (LinkMark.TestDrawn): null where none
+    // is drawn.
+    static async Task<Color?> MarkDrawn(Node node, Control control)
+    {
+        LinkMark.TestForget(control);
+        control.QueueRedraw();
+        await Wait(node, 0.1);
+        return LinkMark.TestDrawn(control);
     }
 
     // A point given as GetGlobalRect gives it, as the viewport's own input reads it (Viewport.PushInput in local

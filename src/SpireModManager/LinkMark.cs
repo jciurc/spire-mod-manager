@@ -29,11 +29,23 @@ static class LinkMark
         control.AddToGroup(Group);
         control.Draw += () =>
         {
-            if (Rect(control) is { } rect)
-                control.DrawTexture(Icons.ExternalLink((int)rect.Size.X), rect.Position, Tint(control));
+            if (Rect(control) is not { } rect)
+                return;
+            var tint = Tint(control);
+            control.DrawTexture(Icons.ExternalLink((int)rect.Size.X), rect.Position, tint);
+#if DEVTOOLS
+            control.SetMeta(DrawnMeta, tint);
+#endif
         };
         Fit(control);
     }
+
+#if DEVTOOLS
+    // Self-test: the colour the control last drew its mark in (null: none since TestForget, or ever).
+    const string DrawnMeta = "SpireModManagerLinkMarkDrawn";
+    public static Color? TestDrawn(Control control) => control.HasMeta(DrawnMeta) ? control.GetMeta(DrawnMeta).AsColor() : null;
+    public static void TestForget(Control control) => control.RemoveMeta(DrawnMeta);
+#endif
 
     // The control's width with the mark (the text's without it): again after its text, or a LinkButton's Uri or
     // Disabled, changes.
@@ -61,13 +73,13 @@ static class LinkMark
         return new Rect2(MathF.Round(font.GetStringSize(text + Gap, fontSize: fontSize).X), MathF.Round(font.GetAscent(fontSize)) - size, size, size);
     }
 
-    // The colour the control draws its text in: a LinkButton's for its state (now, or the one given), picked as
-    // LinkButton picks it; a Label's font colour.
-    public static Color Tint(Control control, BaseButton.DrawMode? state = null)
+    // The colour the control draws its text in now: a LinkButton's for its state, picked as LinkButton picks it; a
+    // Label's font colour.
+    static Color Tint(Control control)
     {
         if (control is not LinkButton link)
             return control.GetThemeColor("font_color");
-        return (state ?? link.GetDrawMode()) switch
+        return link.GetDrawMode() switch
         {
             BaseButton.DrawMode.Hover => link.GetThemeColor("font_hover_color"),
             BaseButton.DrawMode.Pressed or BaseButton.DrawMode.HoverPressed =>
