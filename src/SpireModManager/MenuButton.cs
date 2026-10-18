@@ -71,8 +71,10 @@ static class MenuButton
         {
             // The page's own line while a relaunch is pending, word for word: one text, one less to translate.
             note.Text = Menus.Text(outdated ? "SPIRE_MOD_MANAGER.NEEDS_UPDATE" : "SPIRE_MOD_MANAGER.PENDING_RESTART");
-            // What it opens, and the profile in gold; a second's wait, as the mouse crosses it for the game's buttons.
-            Hover.Tip(button, Tip(Profiles.Active?.Name ?? ""), Hover.Timing.Late, markup: true);
+            // What it opens, and the profile in gold; a second's wait, as the mouse crosses it for the game's buttons. Its
+            // card keeps off the note too, while that shows.
+            Hover.Tip(button, Tip(Profiles.Active?.Name ?? ""), Hover.Timing.Late, markup: true,
+                area: () => note.Visible ? button.GetGlobalRect().Merge(note.GetGlobalRect()) : button.GetGlobalRect());
             if (label == null)
                 ModEntry.SetText(button, Text(ModEntry.Font("res://themes/kreon_bold_shared.tres"), TextSize)); // the name cut as for ours; the fallback draws at its own size
             else

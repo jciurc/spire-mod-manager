@@ -1036,6 +1036,45 @@ static class SelfTest
         Check("main menu button: its card waits a second, then names the profile in gold", early == "" && Hover.SlowDelay == 1.0
             && late.Text == $"Spire Mod Manager: view and manage installed mods. Currently using profile {Profiles.Active?.Name}"
             && !card.Contains("[gold]") && card.Contains("[color=#") && card.Contains($"]{Profiles.Active?.Name}[/color]"), $"early \"{early}\", then \"{late.Text}\"");
+
+        // Where the card opens, chosen each time from where the button is then (CardMisplaced: exactly where Hover puts
+        // it, over neither the button nor the mouse, on screen): above it in its lower-left corner, with no room below;
+        // moved to the top-right corner, below it and left of the mouse; to the bottom-right corner, above it and left of
+        // the mouse. With the relaunch note showing (above the button in its corner, below it at the top), off the note
+        // too. Moved in memory only: nothing is saved.
+        var saved = Store.Data.MenuButtonAt;
+        var note = button.GetNodeOrNull<Control>("PendingNote");
+        var noteShown = note?.Visible ?? false;
+        async Task<string?> CardAt(ScreenPoint? at, bool up, bool left, bool withNote = false)
+        {
+            Store.Data.MenuButtonAt = at;
+            MenuButton.Place(button);
+            if (note == null)
+                return "no note";
+            note.Visible = withNote;
+            var area = withNote ? button.GetGlobalRect().Merge(note.GetGlobalRect()) : (Rect2?)null;
+            return CardMisplaced(await HoverCardBox(menu, button, Hover.TipName, Hover.SlowDelay + 0.2), button, up, left, area);
+        }
+        try
+        {
+            var corner = await CardAt(null, up: true, left: false);
+            Check("main menu button: in its corner, its card opens above it, not pushed up over it and the mouse", corner == null, corner ?? "");
+            var topRight = await CardAt(new ScreenPoint(5000, -5000), up: false, left: true);
+            var bottomRight = await CardAt(new ScreenPoint(5000, 5000), up: true, left: true);
+            Check("main menu button: moved, its card opens where there's room (top right: below, left of the mouse; bottom right: above, left of it)",
+                topRight == null && bottomRight == null, $"top right: {topRight ?? "fine"}; bottom right: {bottomRight ?? "fine"}");
+            var noteAbove = await CardAt(null, up: true, left: false, withNote: true);
+            var noteBelow = await CardAt(new ScreenPoint(5000, -5000), up: false, left: true, withNote: true);
+            Check("main menu button: its card keeps off the relaunch note too (above it in the corner, below it at the top)",
+                noteAbove == null && noteBelow == null, $"corner: {noteAbove ?? "fine"}; top: {noteBelow ?? "fine"}");
+        }
+        finally
+        {
+            if (note != null)
+                note.Visible = noteShown;
+            Store.Data.MenuButtonAt = saved;
+            MenuButton.Place(button);
+        }
     }
 
     // Our main menu button opens the page on our view even when Vanilla View was the last one shown; the game's way in
@@ -3118,6 +3157,49 @@ static class SelfTest
         Check("no grace period after the notepad: the title waits again", !CardShown());
         await Leave(hot, 0.3);
         Hover.TestMouse = null;
+
+        // Where Hover puts a card it places itself (CardMisplaced: exactly there, over neither the trigger nor the mouse,
+        // on screen), chosen each time a card opens from where its trigger is then: a probe with a tip, moved between
+        // hovers. Mid-screen, below the trigger and right of the mouse; near the bottom, above the trigger instead of
+        // pushed back up over it and the mouse; near the right edge, left of the mouse; in the bottom-right corner, both.
+        var probe = new Control { Name = "SpireModManagerHoverProbe", Size = new Vector2(200, 40) };
+        screen.AddChild(probe);
+        Hover.Tip(probe, "Where a card opens");
+        var view = probe.GetViewportRect().Size;
+        async Task<string?> ProbeAt(Vector2 at, bool up, bool left)
+        {
+            probe.GlobalPosition = at;
+            return CardMisplaced(await HoverCardBox(menu, probe, Hover.TipName), probe, up, left);
+        }
+        try
+        {
+            var middle = await ProbeAt(view / 2 - probe.Size / 2, up: false, left: false);
+            Check("hover cards: mid-screen, a card opens below its trigger, right of the mouse", middle == null, middle ?? "");
+            var bottom = await ProbeAt(new Vector2(100, view.Y - 50), up: true, left: false);
+            Check("hover cards: near the bottom, a card opens above its trigger, not pushed up over it and the mouse", bottom == null, bottom ?? "");
+            var right = await ProbeAt(new Vector2(view.X - 210, view.Y / 2 - 20), up: false, left: true);
+            Check("hover cards: near the right edge, a card opens left of the mouse", right == null, right ?? "");
+            var corner = await ProbeAt(view - new Vector2(210, 50), up: true, left: true);
+            Check("hover cards: in the bottom-right corner, a card opens above its trigger and left of the mouse", corner == null, corner ?? "");
+        }
+        finally
+        {
+            probe.QueueFree();
+        }
+        // A row's card, on the lowest row in full view: below its title where it fits, otherwise above it.
+        var list = content.GetParent<Control>().GetGlobalRect();
+        if (content.GetChildren().OfType<NModMenuRow>().Where(r => r.IsVisibleInTree() && r.Mod != null && list.Encloses(r.GetGlobalRect()))
+            .MaxBy(r => r.GetGlobalRect().Position.Y)?.GetNodeOrNull<Control>("SpireModManagerTitleHover") is { Visible: true } lowest)
+        {
+            var box = await HoverCardBox(menu, lowest, "SpireModManagerNotesCard");
+            var (title, mouse) = (lowest.GetGlobalRect(), lowest.GetGlobalRect().GetCenter());
+            var up = box is { } card && Math.Max(mouse.Y + 20, title.End.Y + Hover.Gap) + card.Size.Y > view.Y;
+            var misplaced = CardMisplaced(box, lowest, up, left: false);
+            Results.Add($"INFO the lowest row's card opened {(up ? "above" : "below")} its title");
+            Check("a row's card near the bottom of the list: below its title where it fits, otherwise above it", misplaced == null, misplaced ?? "");
+        }
+        else
+            Results.Add("SKIP a row's card near the bottom of the list: no row in full view");
         Check("Vanilla View shows plain names", await WithVanillaView(screen, menu, () => RowTitle(ModEntry.ModId) == "Spire Mod Manager"));
     }
 
@@ -6047,6 +6129,11 @@ static class SelfTest
         Check("hovering Changes shows the details at once", screen.HasNode("SpireModManagerChangesPanel"));
         var summary = screen.GetNodeOrNull("SpireModManagerChangesPanel")?.FindChildren("*", "RichTextLabel", true, false).OfType<RichTextLabel>().FirstOrDefault()?.GetParsedText() ?? "";
         Check("the summary is titled and names the mod turned off", summary.StartsWith("Changes since launch") && summary.Contains("Test UI"), summary);
+        // Its own place, kept (Hover turns only the cards it places itself): just above the lines, right edges together.
+        var summaryBox = screen.GetNodeOrNull("SpireModManagerChangesPanel")?.FindChildren("*", "PanelContainer", true, false).OfType<Control>().FirstOrDefault()?.GetGlobalRect();
+        var changesAt = changes.GetGlobalRect();
+        Check("the summary keeps its own place: just above the lines, right edges together", summaryBox is { } summaryAt
+            && Math.Abs(summaryAt.End.Y - (changesAt.Position.Y - 8)) < 0.5f && Math.Abs(summaryAt.End.X - changesAt.End.X) < 0.5f, $"{summaryBox} over {changesAt}");
         await Capture(screen, outDir, "14-changes");
         changes.EmitSignal(Control.SignalName.MouseExited);
         Hover.TestMouse = null;
@@ -6733,6 +6820,33 @@ static class SelfTest
         await Wait(menu, 0.1);
         Hover.TestMouse = null; // the real mouse again (menus open where it says)
         return seen;
+    }
+
+    // Where the hover card `name` that hovering `target` brings up sits on screen (null if none), the mouse put back after.
+    static async Task<Rect2?> HoverCardBox(Node menu, Control target, string name, double seconds = Hover.Delay + 0.2)
+    {
+        Rect2? box = null;
+        await SizedHoverCard(menu, target, name, () =>
+        {
+            box = target.GetTree().Root.FindChild(name, true, false)?.FindChildren("*", "PanelContainer", true, false).OfType<Control>().FirstOrDefault()?.GetGlobalRect();
+            return Task.CompletedTask;
+        }, seconds);
+        return box;
+    }
+
+    // Null if a card Hover placed itself for `trigger`, hovered at its middle, is exactly where it should be: whole on
+    // screen; Hover.Gap above the trigger (up), or below it, Hover.Gap off it and at least 20 under the mouse; its left
+    // edge 16 right of the mouse, or (left) its right edge 16 left of it. So over neither the trigger nor the mouse.
+    // area: what the card keeps off, when more than the trigger (Hover.Watch's area). Otherwise where it is.
+    static string? CardMisplaced(Rect2? box, Control trigger, bool up, bool left, Rect2? area = null)
+    {
+        if (box is not { } card)
+            return "no card";
+        var (at, screen) = (area ?? trigger.GetGlobalRect(), trigger.GetViewportRect());
+        var mouse = trigger.GetGlobalRect().GetCenter();
+        var y = up ? card.End.Y - (at.Position.Y - Hover.Gap) : card.Position.Y - Math.Max(mouse.Y + 20, at.End.Y + Hover.Gap);
+        var x = left ? card.End.X - (mouse.X - 16) : card.Position.X - (mouse.X + 16);
+        return screen.Encloses(card) && Math.Abs(x) < 0.5f && Math.Abs(y) < 0.5f ? null : $"card {card} for {at}, on {screen.Size}";
     }
 
     // The selected row's look: a gold rim the same width on every side.
