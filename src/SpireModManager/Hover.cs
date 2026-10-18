@@ -304,10 +304,14 @@ static class Hover
 
     // Along one axis: a card from `start` (size long), or from `other` instead when it runs off the screen (0..screen)
     // and less of it would from there.
-    static float Turned(float start, float size, float screen, float other)
+    static float Turned(float start, float size, float screen, float other) => Turns(start, size, screen, other) ? other : start;
+
+    // Whether that turns it: it runs off the screen from `start`, and less of it would from `other`. Our menus turn the
+    // same way (MenuPanel).
+    public static bool Turns(float start, float size, float screen, float other)
     {
         float Off(float from) => Math.Max(0, -from) + Math.Max(0, from + size - screen);
-        return Off(start) > 0 && Off(other) < Off(start) ? other : start;
+        return Off(start) > 0 && Off(other) < Off(start);
     }
 
     // Closes the card showing, if any.

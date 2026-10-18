@@ -5,7 +5,8 @@ namespace SpireModManager;
 // Our pop-up menus (right-click menus, the profile list, the category picker): an overlay inside the page, not an
 // engine popup. Rows have an optional mark, a label, a badge and a dim detail; headings separate groups; an optional
 // side column holds a mod's own fields. A press outside or Escape closes it (a right-click outside also reaches
-// what's underneath). One at a time.
+// what's underneath). One at a time. It opens below right of the mouse (or below a picker), and above (left of) it where
+// there's no room below (right), as Hover's cards do: never over the mouse while there's room on the other side.
 static class MenuPanel
 {
     static readonly Color Cream = new(1, 0.964706f, 0.886275f);
@@ -24,8 +25,8 @@ static class MenuPanel
     public static Node? Current => IsOpen ? _open : null;
 
     // items is called again on every redraw, so it can change; side builds the side column. With a toggleKey, showing
-    // the same menu again closes it.
-    public static Node? Show(Node owner, Func<IReadOnlyList<MenuItem>> items, Vector2? at = null, string? toggleKey = null,
+    // the same menu again closes it. from: what it opens from (a picker, Around), or null for the mouse.
+    public static Node? Show(Node owner, Func<IReadOnlyList<MenuItem>> items, Rect2? from = null, string? toggleKey = null,
         Func<Action, Control>? side = null)
     {
         var again = toggleKey != null && IsOpen && _openKey == toggleKey;
@@ -84,26 +85,40 @@ static class MenuPanel
 
         (_open, _openKey) = (layer, toggleKey);
 
-        // At the point asked (the mouse by default), kept on screen as its size changes.
+        // From the mouse (a point) by default: its top-left corner there, or, where that runs off the bottom (right) and
+        // less would the other way, its bottom (right) edge there instead. From a picker the same off its edges: under it
+        // from its left edge, or over it to its right edge. Placed again as its size changes; once turned it stays turned
+        // while it fits, so it doesn't jump back and forth as it grows and shrinks. Kept on screen.
 #if DEVTOOLS
-        var position = at ?? Hover.TestMouse?.Invoke() ?? viewport.GetMousePosition(); // (the self-test says where the mouse is)
+        var anchor = from ?? new Rect2(Hover.TestMouse?.Invoke() ?? viewport.GetMousePosition(), Vector2.Zero); // (the self-test says where the mouse is)
 #else
-        var position = at ?? viewport.GetMousePosition();
+        var anchor = from ?? new Rect2(viewport.GetMousePosition(), Vector2.Zero);
 #endif
+        var (up, left) = (false, false);
         void Fit()
         {
             if (!GodotObject.IsInstanceValid(panel))
                 return;
             var size = panel.GetCombinedMinimumSize();
             panel.Size = size;
-            panel.Position = new Vector2(Math.Clamp(position.X, 0, Math.Max(0, catcher.Size.X - size.X)),
-                Math.Clamp(position.Y, 0, Math.Max(0, catcher.Size.Y - size.Y)));
+            float Y(bool above) => above ? anchor.Position.Y - size.Y : anchor.End.Y;
+            float X(bool back) => back ? anchor.End.X - size.X : anchor.Position.X;
+            if (Hover.Turns(Y(up), size.Y, catcher.Size.Y, Y(!up)))
+                up = !up;
+            if (Hover.Turns(X(left), size.X, catcher.Size.X, X(!left)))
+                left = !left;
+            panel.Position = new Vector2(Math.Clamp(X(left), 0, Math.Max(0, catcher.Size.X - size.X)),
+                Math.Clamp(Y(up), 0, Math.Max(0, catcher.Size.Y - size.Y)));
         }
         panel.MinimumSizeChanged += Fit;
-        panel.Position = position;
+        panel.Position = new Vector2(anchor.Position.X, anchor.End.Y);
         Callable.From(Fit).CallDeferred();
         return layer;
     }
+
+    // What a menu from a button (a picker) opens from: the button and `gap` over and under it, so the menu drops that
+    // far below it, from its left edge, or opens that far above it.
+    public static Rect2 Around(Control button, float gap) => button.GetGlobalRect().GrowIndividual(0, gap, 0, gap);
 
     // Closes the open menu, if any. True if one was open.
     public static bool Close()
