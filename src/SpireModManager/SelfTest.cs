@@ -5828,6 +5828,62 @@ static class SelfTest
             && tried.Mods.GetValueOrDefault($"{id}|l:{id}")?.Notes == notesBefore && !tried.Mods.ContainsKey($"{id}|w:123"),
             $"record {string.Join(",", tried.Copies?.GetValueOrDefault(id) ?? [])}; plain {tried.Mods.GetValueOrDefault(id)?.Notes}");
 
+        // Both copies on: the same-id banner, yellow, in Jordan's words, and a Same ID chip on each whose tip names the
+        // other copy; Show steps between the two; Dismiss hides it for this pair through a redraw (view state: no change,
+        // no undo step). A copy the game set aside as a duplicate reads "Not loaded (same ID)", not "Pending relaunch".
+        var border = screen.GetNode<Control>("ModsBorder");
+        Control? SameId() => border.GetNodeOrNull<Control>(LoadOrder.SameIdName);
+        CategoryList.Redraw(content);
+        await Wait(menu, 0.3);
+        var bothOn = Dependencies.IsOn(local) && Dependencies.IsOn(copy);
+        var bannerText = (SameId()?.FindChild("SameIdWarning", true, false) as Label)?.Text;
+        var chips = Tags.For(local).Concat(Tags.For(copy)).Where(c => c.Text == "Same ID").ToList();
+        Check("both copies on: a yellow banner (\"2 mods with the same ID are enabled, and could lead to issues.\"), a Same ID chip on each naming the other",
+            bothOn && bannerText == "2 mods with the same ID are enabled, and could lead to issues." && Yellow(BannerFill(SameId()))
+            && chips.Count == 2 && chips[0].Tip?.Contains("(123)") == true && chips[1].Tip?.Contains("(Local)") == true,
+            $"on {bothOn}; banner {bannerText ?? "none"}; chips {string.Join(" / ", chips.Select(c => c.Tip))}");
+        void Press(string name) => (SameId()?.FindChild(name, true, false) as BaseButton)?.EmitSignal(BaseButton.SignalName.Pressed);
+        Press("ShowSameIdButton");
+        await Wait(menu, 0.3);
+        var firstStop = CategoryList.Selected;
+        Press("ShowSameIdButton");
+        await Wait(menu, 0.3);
+        Check("the banner's Show steps between the two copies", firstStop != null && CategoryList.Selected is { } secondStop && firstStop != secondStop
+            && new[] { firstStop, secondStop }.All(m => m == local || m == copy), $"{Copies.KeyOf(firstStop)} then {Copies.KeyOf(CategoryList.Selected)}");
+        var (editsShown, stepsShown) = (Edits(), History.Steps(History.Track.List));
+        Press("DismissSameIdButton");
+        await Wait(menu, 0.3);
+        CategoryList.Redraw(content);
+        await Wait(menu, 0.3);
+        Check("Dismiss hides it for this pair, through a redraw: no change, no undo step", SameId() == null
+            && Store.Data.SameIdDismissed == Copies.Signature([local, copy]) && Edits() == editsShown && History.Steps(History.Track.List) == stepsShown);
+        // The clash over (the new copy off), the dismissal is forgotten; both on again, the banner is back. In Load Order
+        // too. A click on the chip searches #"Same ID": both copies, no other mod.
+        Dependencies.Set([copy], false, screen);
+        CategoryList.Redraw(content);
+        await Wait(menu, 0.3);
+        var forgotten = Store.Data.SameIdDismissed == null && SameId() == null;
+        Dependencies.Set([copy], true, screen);
+        CategoryList.Redraw(content);
+        await Wait(menu, 0.3);
+        Check("the clash over, Dismiss is forgotten: both on again, the banner is back", forgotten && SameId() != null,
+            $"forgotten {forgotten}; banner {SameId() != null}");
+        var toggle = screen.GetNode<NButton>("SpireModManagerLoadOrderToggle");
+        Click(toggle);
+        await Wait(menu, 0.5);
+        var inLoadOrder = SameId() != null;
+        Click(toggle);
+        await Wait(menu, 0.5);
+        var sameIdSearch = "#\"Same ID\"";
+        var others = content.GetChildren().OfType<NModMenuRow>().Select(r => r.Mod).OfType<Mod>().Where(m => m.manifest?.id != id).ToList();
+        Check("the banner shows in Load Order too; the chip's search finds both copies and no other mod", inLoadOrder
+            && Search.Matches(local, sameIdSearch) && Search.Matches(copy, sameIdSearch) && !others.Any(m => Search.Matches(m, sameIdSearch)),
+            $"Load Order {inLoadOrder}; others found {string.Join(", ", others.Where(m => Search.Matches(m, sameIdSearch)).Select(m => m.manifest?.id))}");
+        copy.state = ModLoadState.DisabledDuplicate;
+        var setAside = ModDetails.Status(copy);
+        copy.state = ModLoadState.AddedAtRuntime;
+        Check("a copy the game set aside as a duplicate reads \"Not loaded (same ID)\", not a pending relaunch", setAside.Contains("Not loaded (same ID)"), setAside);
+
         // Put back: the copy, its row and saved entry, and its data (quietly, in every undo snapshot).
         if (content.GetChildren().OfType<NModMenuRow>().FirstOrDefault(r => r.Mod == copy) is { } copyRow)
         {

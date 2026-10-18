@@ -207,6 +207,7 @@ static class LoadOrder
     // Load Order, mods that won't load on the main list). Elsewhere a "!" on the Load Order button. Hovering a banner
     // lists its mods (BannerCard).
     public const string WarningName = "SpireModManagerOrderWarning", ManagersName = "SpireModManagerManagersWarning", AutoSortName = "AutoSortButton";
+    public const string SameIdName = "SpireModManagerSameIdWarning";
     public const string SelfName = "SpireModManagerSelfWarning";
     public const string AutoSortHintName = "AutoSortHint", BannerCardName = "SpireModManagerBannerCard";
     const string BadgeName = "WarningBadge";
@@ -272,7 +273,7 @@ static class LoadOrder
         var orderText = Menus.Format(misordered == 1 ? "SPIRE_MOD_MANAGER.ORDER_PROBLEMS_ONE" : "SPIRE_MOD_MANAGER.ORDER_PROBLEMS", ("count", Menus.Number(misordered)));
         // The "!"'s card: the warning alone (the mods it's about are Load Order's own card).
         Badge(content, misordered > 0 && !on ? orderText : null);
-        foreach (var name in new[] { WarningName, ManagersName, SelfName })
+        foreach (var name in new[] { WarningName, ManagersName, SameIdName, SelfName })
             if (border.GetNodeOrNull(name) is { } old)
             {
                 border.RemoveChild(old); // now, not at the end of the frame: a redraw in the same frame adds a new one
@@ -285,6 +286,16 @@ static class LoadOrder
             SelfBanner(content, border, search, self, redraw);
         if (Layout.Wide && Bmm.BothTicked && !Store.Data.ManagersWarningDismissed)
             ManagersBanner(content, border, search, redraw);
+        // Two or more copies of one mod id on (the game loads one), on our views, unless dismissed for this set.
+        // A dismissal is forgotten once no copies clash, so the problem coming back shows it again (as Dismiss's tip says).
+        var clashing = Copies.Clashing();
+        if (clashing.Count == 0 && Store.Data.SameIdDismissed != null)
+        {
+            Store.Data.SameIdDismissed = null;
+            Store.SaveViewState();
+        }
+        if (Layout.Wide && clashing.Count > 0 && Store.Data.SameIdDismissed != Copies.Signature(clashing))
+            SameIdBanner(content, border, search, clashing);
         if (on && misordered > 0)
             Banner(border, search, orderText, () => OrderCard(content),
                 [Menus.SmallButton(Menus.Text("SPIRE_MOD_MANAGER.FIX_ORDER"), () => Do(FixOrder), name: "FixOrderButton")]);
@@ -379,6 +390,24 @@ static class LoadOrder
         }, name: "DismissManagersButton");
         Hover.Tip(dismiss, Menus.Text("SPIRE_MOD_MANAGER.DISMISS_MANAGERS_TIP"));
         Banner(border, search, Menus.Text("SPIRE_MOD_MANAGER.MANAGERS_WARNING"), ManagersCard, [show, dismiss], ManagersName, "ManagersWarning", WarningColor);
+    }
+
+    // Copies of one mod id both on, in Jordan's words: a yellow warning, Show stepping through those copies, Dismiss for
+    // this set (a new one shows it again). Its card lists them, saying which copy each is.
+    static void SameIdBanner(Control content, Control border, Control? search, List<Mod> clashing)
+    {
+        var show = Menus.SmallButton(Menus.Text("SPIRE_MOD_MANAGER.SHOW_PROBLEM"), () => GoTo(content, Next(clashing)), name: "ShowSameIdButton");
+        Hover.Tip(show, Menus.Text("SPIRE_MOD_MANAGER.SHOW_PROBLEM_TIP"));
+        var dismiss = Menus.SmallButton(Menus.Text("SPIRE_MOD_MANAGER.DISMISS_MANAGERS"), () =>
+        {
+            Store.Data.SameIdDismissed = Copies.Signature(clashing);
+            Store.SaveViewState(); // view state: no undo step, not a change (Store.EditsJson)
+            CategoryList.Apply(content);
+        }, name: "DismissSameIdButton");
+        Hover.Tip(dismiss, Menus.Text("SPIRE_MOD_MANAGER.DISMISS_MANAGERS_TIP"));
+        Banner(border, search, Menus.Format("SPIRE_MOD_MANAGER.SAME_ID_WARNING", ("count", Menus.Number(clashing.Count))),
+            () => BannerCard("SPIRE_MOD_MANAGER.BANNER_SAME_ID_TITLE", clashing.Select(m => Shown(m) + Copies.Which(m)).ToList()),
+            [show, dismiss], SameIdName, "SameIdWarning", WarningColor);
     }
 
     // The banners' cards, worked out when one opens. Main list: each enabled mod that won't load, with what it needs.

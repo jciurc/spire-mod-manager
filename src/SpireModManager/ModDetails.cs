@@ -320,7 +320,9 @@ static class ModDetails
     {
         var on = Dependencies.IsOn(mod);
         var loaded = mod.state == ModLoadState.Loaded;
+        // A copy the game set aside for another copy of its id is on but never loads: not a relaunch away.
         var (key, color) = on && mod.state == ModLoadState.Failed ? ("SPIRE_MOD_MANAGER.STATUS_FAILED", Problem)
+            : on && mod.state == ModLoadState.DisabledDuplicate ? ("SPIRE_MOD_MANAGER.STATUS_DUPLICATE", Disabled)
             : on != loaded ? ("SPIRE_MOD_MANAGER.STATUS_PENDING", Pending)
             : on ? ("SPIRE_MOD_MANAGER.STATUS_ENABLED", Enabled)
             : ("SPIRE_MOD_MANAGER.STATUS_DISABLED", Disabled);
