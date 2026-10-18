@@ -49,8 +49,35 @@ static class Copies
         return rows.FirstOrDefault(r => r.Mod is { } m && Key(m) == key) ?? rows.FirstOrDefault(r => r.Mod?.manifest?.id == key);
     }
 
+    // The other installed copies of a mod (none for a mod installed once), from a table made again when mods come.
+    public static IReadOnlyList<Mod> Others(Mod mod) => mod.manifest?.id is { } id && ById().TryGetValue(id, out var copies)
+        ? [.. copies.Where(m => m != mod && CopyOf(m) != CopyOf(mod))] : [];
+
+    static Dictionary<string, List<Mod>>? _byId;
+    static int _byIdCount = -1;
+
+    static Dictionary<string, List<Mod>> ById()
+    {
+        var count = ModManager.Mods.Count + Installed.Mods.Count;
+        if (_byId == null || count != _byIdCount)
+        {
+            _byId = All.Where(m => m.manifest?.id != null).GroupBy(m => m.manifest?.id ?? "")
+                .Where(g => g.Select(CopyOf).Distinct().Count() > 1).ToDictionary(g => g.Key, g => g.ToList());
+            _byIdCount = count;
+        }
+        return _byId;
+    }
+
+    // The copies that are on where two or more copies of one id are on (the game loads only one of them): the same-id
+    // banner's mods, in list order.
+    public static List<Mod> Clashing() => [.. ById().Values.Select(copies => copies.Where(Dependencies.IsOn).DistinctBy(CopyOf).ToList())
+        .Where(on => on.Count > 1).SelectMany(on => on)];
+
+    // Which copies clash, as one string: a dismissed banner stays away for this set, and shows again for another.
+    public static string Signature(IEnumerable<Mod> clashing) => string.Join(",", clashing.Select(m => $"{m.manifest?.id}|{CopyOf(m)}").Order(StringComparer.Ordinal));
+
     // " (Local)" or " (<Workshop item id>)" after a mod's name, where another copy of it is installed; else nothing.
-    public static string Which(Mod mod) => mod.manifest?.id is not { } id || All.Count(m => m.manifest?.id == id) < 2 ? ""
+    public static string Which(Mod mod) => Others(mod).Count == 0 ? ""
         : $" ({(Compat.WorkshopId(mod) is { } item ? item.ToString() : Menus.Text("SPIRE_MOD_MANAGER.SOURCE_LOCAL"))})";
 
     // Brings the record in line with the copies installed: at the first main menu, before the undo baseline (so it's

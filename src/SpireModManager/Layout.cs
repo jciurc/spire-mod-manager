@@ -301,6 +301,7 @@ static class Layout
                     (beside.OffsetTop, beside.OffsetBottom) = (search.OffsetTop, search.OffsetBottom);
         Stack(list.GetNodeOrNull<Control>(LoadOrder.SelfName), Wide, 6);
         Stack(list.GetNodeOrNull<Control>(LoadOrder.ManagersName), Wide, 6);
+        Stack(list.GetNodeOrNull<Control>(LoadOrder.SameIdName), Wide, 6);
         Stack(list.GetNodeOrNull<Control>(LoadOrder.WarningName), Wide, 6);
         Stack(list.GetNodeOrNull<Control>(PageBar.Name), Current == View.Categories, 4);
         Stack(list.GetNodeOrNull<Control>(PageBar.HintName), Current == View.Categories, 4);

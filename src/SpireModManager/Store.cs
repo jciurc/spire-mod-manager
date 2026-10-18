@@ -30,6 +30,8 @@ public class StoreData
     public bool UncategorizedCollapsed { get; set; }
     // The two-mod-managers banner dismissed (LoadOrder): it stays away until the two aren't both ticked.
     public bool ManagersWarningDismissed { get; set; }
+    // The same-id banner dismissed, for this set of copies on (Copies.Signature): another set shows it again.
+    public string? SameIdDismissed { get; set; }
     // Where the player moved the main menu button (top-left, in the game's 1920x1080 frame); null: the corner.
     public ScreenPoint? MenuButtonAt { get; set; }
     public string? ImportedFrom { get; set; }
@@ -383,7 +385,7 @@ public static class Store
         Save();
     }
 
-    // Our data minus view state (views, collapsed categories, a dismissed banner, the share dialog's kept tick boxes):
+    // Our data minus view state (views, collapsed categories, dismissed banners, the share dialog's kept tick boxes):
     // what undo compares and restores.
     public static string EditsJson()
     {
@@ -393,6 +395,7 @@ public static class Store
         var copy = JsonSerializer.Deserialize<StoreData>(json, Json) ?? new StoreData();
         copy.VanillaView = copy.LoadOrderView = copy.UncategorizedCollapsed = copy.ManagersWarningDismissed = false;
         copy.ShareChoices = null;
+        copy.SameIdDismissed = null;
         foreach (var category in copy.Categories)
             category.Collapsed = false;
         var edits = JsonSerializer.Serialize(copy, Json);
@@ -422,6 +425,7 @@ public static class Store
         var now = Data;
         (restored.VanillaView, restored.LoadOrderView, restored.UncategorizedCollapsed, restored.ManagersWarningDismissed, restored.ShareChoices) =
             (now.VanillaView, now.LoadOrderView, now.UncategorizedCollapsed, now.ManagersWarningDismissed, now.ShareChoices);
+        restored.SameIdDismissed = now.SameIdDismissed;
         foreach (var category in restored.Categories)
             category.Collapsed = now.Categories.FirstOrDefault(c => c.Name == category.Name)?.Collapsed ?? false;
         _data = restored;
