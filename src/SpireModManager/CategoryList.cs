@@ -54,6 +54,7 @@ static class CategoryList
             Label(vanilla, data.VanillaView ? "SPIRE_MOD_MANAGER.CATEGORY_VIEW" : "SPIRE_MOD_MANAGER.VANILLA_VIEW");
             VanillaTip(vanilla);
             Label(loadOrder, data.LoadOrderView ? "SPIRE_MOD_MANAGER.BACK" : "SPIRE_MOD_MANAGER.LOAD_ORDER");
+            Profiles.RefreshTickboxes(screen); // the boxes as this view reads them (copies of a mod installed twice)
             Apply(content);
             Layout.Apply(screen);
             RestoreSelection(screen, content);
@@ -88,16 +89,33 @@ static class CategoryList
         VanillaTip(vanilla);
         Label(loadOrder, Store.Data.LoadOrderView ? "SPIRE_MOD_MANAGER.BACK" : "SPIRE_MOD_MANAGER.LOAD_ORDER");
 
+        Profiles.RefreshTickboxes(screen); // the game ticked them its way (one switch for copies of one id and source)
         Apply(content);
     }
 
     // What the view switch leads to: the game's own page (as Better Mod Menu shows it, with that loaded), or back to ours.
+    // While a mod is installed twice from one source, how that page's tickbox treats its copies, on a line of its own.
     static void VanillaTip(Control? toggle)
     {
-        if (toggle != null)
-            Hover.Tip(toggle, Menus.Text(Store.Data.VanillaView ? "SPIRE_MOD_MANAGER.CATEGORY_VIEW_TIP"
-                : Bmm.Present ? "SPIRE_MOD_MANAGER.VANILLA_VIEW_TIP_BMM" : "SPIRE_MOD_MANAGER.VANILLA_VIEW_TIP"));
+        if (toggle == null)
+            return;
+        var tip = Menus.Text(Store.Data.VanillaView ? "SPIRE_MOD_MANAGER.CATEGORY_VIEW_TIP"
+            : Bmm.Present ? "SPIRE_MOD_MANAGER.VANILLA_VIEW_TIP_BMM" : "SPIRE_MOD_MANAGER.VANILLA_VIEW_TIP");
+        if (!Store.Data.VanillaView && Copies.TwinGroups() is { Count: > 0 } twins)
+            tip += "\n" + Menus.Format("SPIRE_MOD_MANAGER.VANILLA_VIEW_SAME_ID", ("mods", string.Join(", ", twins.Select(g => g.Id).Distinct()
+                .Select(id => Dependencies.Find(id) is { } mod ? Store.InfoFor(mod)?.Alias ?? mod.manifest?.name ?? id : id))));
+        Hover.Tip(toggle, tip);
     }
+
+    // On our views, a copy of a mod installed twice that's off, while another copy of it is on: what enabling it turns
+    // off (its tickbox's tip, and Load Order's Enable). Null otherwise.
+    public static string? SwitchCopyTip(Mod mod) =>
+        !Store.Data.VanillaView && !Dependencies.IsOn(mod) && Dependencies.TurnedOffBy([mod], mod) is { Count: > 0 } off
+            ? Menus.Format("SPIRE_MOD_MANAGER.SWITCH_COPY_TIP", ("mods", Names(off))) : null;
+
+    // Mods as rows name them, each saying which copy where another is installed: "Test Twin (SmmTestTwinA)".
+    static string Names(IEnumerable<Mod> mods) =>
+        string.Join(", ", mods.Select(m => (Store.InfoFor(m)?.Alias ?? m.manifest?.name ?? m.manifest?.id) + Copies.Which(m)));
 
     static void Label(Control? button, string key)
     {
@@ -222,9 +240,12 @@ static class CategoryList
                 Highlight(list, target[4..], false);
         };
         Hover.WatchLinks(label, "SpireModManagerNotesCard",
-            meta => meta.StartsWith("mod:") && Dependencies.Find(meta[4..]) is { } mod ? ModDetails.Card(mod) : null,
-            full: meta => meta.StartsWith("mod:") && Dependencies.Find(meta[4..]) is { } mod ? ModDetails.Card(mod, full: true) : null);
+            meta => meta.StartsWith("mod:") && Linked(meta[4..]) is { } mod ? ModDetails.Card(mod) : null,
+            full: meta => meta.StartsWith("mod:") && Linked(meta[4..]) is { } mod ? ModDetails.Card(mod, full: true) : null);
     }
+
+    // The mod a link names: a copy by its key ("<id>|<copy>"), or a mod by its id (Dependencies.Find's copy).
+    static Mod? Linked(string key) => key.Contains('|') ? Copies.ModOf(key) : Dependencies.Find(key);
 
     // Once positions settle after this frame's layout.
     public static void ScrollSoon(Control content, Control row, bool flash, bool focus = false)
@@ -241,7 +262,8 @@ static class CategoryList
         };
     }
 
-    static void Flash(Control row)
+    // A short gold glow over a row (a banner's Show, the copy a switch to another one turned off).
+    public static void Flash(Control row)
     {
         var glow = new ColorRect { Color = new Color(0.937f, 0.784f, 0.318f, 0.35f), MouseFilter = Control.MouseFilterEnum.Ignore };
         row.AddChild(glow);
@@ -377,6 +399,10 @@ static class CategoryList
             .OrderBy(r => r.Mod is { } mod && order.TryGetValue(mod, out var i) ? i : int.MaxValue)
             .ToList();
         RowTitles.Apply(rows, Store.Data.VanillaView);
+        // A copy of a mod installed twice, off while another is on: what its tickbox turns off (Vanilla View: none).
+        foreach (var row in rows.Where(r => r.Mod is { } m && Copies.Others(m).Count > 0))
+            if (row.Mod is { } mod)
+                Hover.Tip(row.GetNode<Control>("Tickbox"), SwitchCopyTip(mod));
 
         // Right-click a row for its menu (category, alias, tags, notes; the bulk menu for picked mods; on/off and
         // moves in Load Order). Rows outlive Apply, so connect once.
@@ -731,6 +757,8 @@ static class CategoryList
 
     // Enable all / Disable all for some rows (a category's, or the page's), as one undo step; each greyed out
     // when there's nothing for it to do. This mod stays on. Enable selected / Disable selected for the picked mods.
+    // A mod installed twice turns on one copy (Dependencies.Write: one already on, else the picked one), and counts as
+    // done when one of its copies is on; turning one on that turns off copies outside these rows says so.
     public static List<MenuItem> OnOffItems(Control content, IEnumerable<NModMenuRow> members, bool selected = false)
     {
         var mods = members.Select(r => r.Mod).OfType<Mod>().ToList();
@@ -741,9 +769,12 @@ static class CategoryList
             Dependencies.Set(mods, on, screen);
             Redraw(content);
         }
+        var offs = Dependencies.TurnedOffBy(mods);
         return
         [
-            new(Menus.Text(selected ? "SPIRE_MOD_MANAGER.ENABLE_SELECTED" : "SPIRE_MOD_MANAGER.ENABLE_ALL"), () => Set(true), Disabled: mods.All(Dependencies.IsOn)),
+            new(Menus.Text(selected ? "SPIRE_MOD_MANAGER.ENABLE_SELECTED" : "SPIRE_MOD_MANAGER.ENABLE_ALL"), () => Set(true),
+                Disabled: mods.All(m => Dependencies.IsOn(m) || Copies.Others(m).Any(Dependencies.IsOn)),
+                Tip: offs.Count > 0 ? Menus.Format("SPIRE_MOD_MANAGER.BULK_DISABLES_COPIES_TIP", ("mods", Names(offs))) : null),
             new(Menus.Text(selected ? "SPIRE_MOD_MANAGER.DISABLE_SELECTED" : "SPIRE_MOD_MANAGER.DISABLE_ALL"), () => Set(false),
                 Disabled: mods.All(m => !Dependencies.IsOn(m) || m.manifest?.id == ModEntry.ModId),
                 // Where this mod is among them, it says it stays on.

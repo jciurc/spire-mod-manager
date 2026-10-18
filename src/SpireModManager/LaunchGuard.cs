@@ -1,5 +1,6 @@
 using System.Globalization;
 using System.Text.Json;
+using System.Text.Json.Nodes;
 using System.Text.Json.Serialization;
 using System.Text.RegularExpressions;
 using Godot;
@@ -20,14 +21,18 @@ namespace SpireModManager;
 // stops every launch never lets the menu come. Nothing happens on its own, and every step fails open.
 static class LaunchGuard
 {
-    public record Entry(string Id, ModSource Source, bool Enabled, string? Version);
+    // One copy. Copy: for a mod installed twice from one source, which copy (Copies.CopyOf), then Enabled says whether
+    // it's the one that loaded; none in a record from before copies were told apart.
+    public record Entry(string Id, ModSource Source, bool Enabled, string? Version,
+        [property: JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingNull)] string? Copy = null);
 
     // Game: the game's version and build (none in a record from before it was kept), so a crash after a game update can
     // say a setup from before it may not help.
     public record Setup(DateTime At, List<Entry> Mods, string? Game = null);
 
-    // One difference, for the notice: Kind is New, Enabled, Disabled, Updated (From and To are the versions) or Order.
-    public enum Kind { New, Enabled, Disabled, Updated, Order }
+    // One difference, for the notice: Kind is New, Enabled, Disabled, Updated (From and To are the versions), Order, or
+    // Switched (another copy of a mod installed twice loads; From and To are the copies).
+    public enum Kind { New, Enabled, Disabled, Updated, Order, Switched }
     public record Change(Kind Kind, string Id, string? From = null, string? To = null);
 
     public const string PendingFile = "launch-pending.json", WorkingFile = "last-working.json";
@@ -52,15 +57,31 @@ static class LaunchGuard
     // The notice after a launch that never reached the menu: shown once at the main menu, after any other popup.
     public static (Setup Working, List<Change> Changes)? Notice { get; set; }
 
-    // First thing in ModEntry.Init, inside a try there too (a renamed game member throws at the call, before this try).
-    // The mods in load order, each on or off by its own entry (the game's rebuilt list copies the first copy's state).
+    // In ModEntry.Init right after SameIdLoad.Apply, inside a try there too (a renamed game member throws at the call,
+    // before this try). The mods in load order, each on or off by its own entry (the game's rebuilt list copies the first
+    // copy's state); a mod installed twice from one source an entry per copy, on for the copy this launch loads (after
+    // Apply's swap, the first of them).
     public static void Begin()
     {
         try
         {
             var off = Dependencies.SavedOff();
-            var planned = new Setup(DateTime.Now, ModManager.Mods.Select(m => m.manifest is { id: { } id } manifest
-                ? new Entry(id, m.modSource, !off.Contains((id, m.modSource)), manifest.version) : null).OfType<Entry>().ToList(), GameNow());
+            var mods = ModManager.Mods;
+            Dictionary<(string Id, ModSource Source), string> loads;
+            try
+            {
+                loads = SameIdLoad.LoadsAtLaunch(mods);
+            }
+            catch (Exception e)
+            {
+                loads = []; // the record as before copies were told apart: each copy by its id and source's switch
+                Log.Warn($"[{ModEntry.ModId}] Could not tell which copy of a mod installed twice this launch loads, so the launch record doesn't say: {e.Message}");
+            }
+            var planned = new Setup(DateTime.Now, mods.Select(m => m.manifest is { id: { } id } manifest
+                ? loads.TryGetValue((id, m.modSource), out var copy)
+                    ? new Entry(id, m.modSource, !off.Contains((id, m.modSource)) && copy == Copies.CopyOf(m), manifest.version, Copies.CopyOf(m))
+                    : new Entry(id, m.modSource, !off.Contains((id, m.modSource)), manifest.version)
+                : null).OfType<Entry>().ToList(), GameNow());
             var dir = Store.Dir;
             // The mod list as the game read it: after the mods load, it puts its own in place (sorted by dependencies).
             _read = SaveManager.Instance.SettingsSave.ModSettings?.ModList.Select(Key).ToList();
@@ -144,14 +165,18 @@ static class LaunchGuard
 
     static bool Ours(string id) => id is ModEntry.ModId or ModDoctor.ModId;
 
-    // What a launch's mods changed since a working setup: mods new, enabled, disabled or updated, and whether the
-    // ones enabled in both load in another order. Never ours (we were running, and an update of ours can't be undone) nor
-    // Mod Doctor's (it's there to look at failures; Restore keeps it as it is).
+    // What a launch's mods changed since a working setup: mods new, enabled, disabled, switched to another copy or
+    // updated, and whether the ones enabled in both load in another order. Each id and source by its copy that's on
+    // (the first, for a record from before copies were told apart, where every copy has its switch). Never ours (we were
+    // running, and an update of ours can't be undone) nor Mod Doctor's (it's there to look at failures; Restore keeps it
+    // as it is).
     public static List<Change> Changes(IReadOnlyList<Entry> tried, IReadOnlyList<Entry> working)
     {
-        var then = working.DistinctBy(m => (m.Id, m.Source)).ToDictionary(m => (m.Id, m.Source));
+        static Dictionary<(string, ModSource), Entry> ByKey(IEnumerable<Entry> mods) =>
+            mods.GroupBy(m => (m.Id, m.Source)).ToDictionary(g => g.Key, g => g.FirstOrDefault(m => m.Enabled) ?? g.First());
+        var then = ByKey(working);
         var changes = new List<Change>();
-        foreach (var mod in tried.DistinctBy(m => (m.Id, m.Source)).Where(m => !Ours(m.Id)))
+        foreach (var mod in ByKey(tried.Where(m => !Ours(m.Id))).Values)
             if (!then.TryGetValue((mod.Id, mod.Source), out var was))
             {
                 if (mod.Enabled)
@@ -159,6 +184,8 @@ static class LaunchGuard
             }
             else if (mod.Enabled != was.Enabled)
                 changes.Add(new Change(mod.Enabled ? Kind.Enabled : Kind.Disabled, mod.Id));
+            else if (mod.Enabled && mod.Copy != null && was.Copy != null && mod.Copy != was.Copy)
+                changes.Add(new Change(Kind.Switched, mod.Id, was.Copy, mod.Copy)); // Restore can undo it
             else if (mod.Enabled && was.Version != null && mod.Version != null && mod.Version != was.Version)
                 changes.Add(new Change(Kind.Updated, mod.Id, was.Version, mod.Version));
         var both = tried.Where(m => m.Enabled && !Ours(m.Id) && then.TryGetValue((m.Id, m.Source), out var w) && w.Enabled)
@@ -225,6 +252,9 @@ static class LaunchGuard
             Kind.Enabled => Our(plain, "SPIRE_MOD_MANAGER.LAUNCH_ENABLED", ("mod", Mod(c.Id))),
             Kind.Disabled => Our(plain, "SPIRE_MOD_MANAGER.LAUNCH_DISABLED", ("mod", Mod(c.Id))),
             Kind.Updated => Our(plain, "SPIRE_MOD_MANAGER.LAUNCH_UPDATED", ("mod", Mod(c.Id)), ("from", Version(c.From)), ("to", Version(c.To))),
+            // The copies by Workshop item id, or folder for a local one.
+            Kind.Switched => Our(plain, "SPIRE_MOD_MANAGER.LAUNCH_SWITCHED", ("mod", Mod(c.Id)), ("from", Version(Copies.Shown(c.From ?? ""))),
+                ("to", Version(Copies.Shown(c.To ?? "")))),
             _ => Our(plain, "SPIRE_MOD_MANAGER.LAUNCH_ORDER"),
         }).ToList();
         if (changes.Count > LinesShown)
@@ -262,8 +292,10 @@ static class LaunchGuard
         RelaunchCheck.Relaunch(owner);
     }
 
+    // Our data first (the copies that loaded), then the game's list, as Dependencies.Write saves.
     static void WriteList(IReadOnlyList<Entry> working)
     {
+        WritePicks(working);
         var settings = SaveManager.Instance.SettingsSave.ModSettings ??= new ModSettings();
         var entries = Written(working);
         settings.ModList.Clear();
@@ -272,19 +304,56 @@ static class LaunchGuard
         Log.Info($"[{ModEntry.ModId}] Restored the mod list of the last launch that worked");
     }
 
-    // The mod list a Restore writes: the working setup's, in its order and on or off; mods installed since then off (a
-    // mod the list doesn't name loads); ours always on, and Mod Doctor as it is now (it's there to look at the failure).
+    // The mod list a Restore writes: the working setup's, in its order and on or off (copies of one id and source share
+    // a switch: on if one of them was), ours first (LoadOrder.OursFirst); mods installed since then off (a mod the list
+    // doesn't name loads); ours always on, and Mod Doctor as it is now (it's there to look at the failure).
     public static List<SettingsSaveMod> Written(IReadOnlyList<Entry> working)
     {
         var off = Dependencies.SavedOff();
+        var switches = working.GroupBy(m => (m.Id, m.Source)).ToDictionary(g => g.Key, g => g.Any(m => m.Enabled));
         bool On(string id, ModSource source, bool then) =>
             id == ModEntry.ModId || (id == ModDoctor.ModId ? !off.Contains((id, source)) : then);
-        var entries = working.Select(m => new SettingsSaveMod { Id = m.Id, Source = m.Source, IsEnabled = On(m.Id, m.Source, m.Enabled) }).ToList();
+        var entries = working.Select(m => new SettingsSaveMod { Id = m.Id, Source = m.Source, IsEnabled = On(m.Id, m.Source, switches[(m.Id, m.Source)]) }).ToList();
         foreach (var m in ModManager.Mods.Union(Installed.Mods))
             if (m.manifest?.id is { } id && !working.Any(w => w.Id == id && w.Source == m.modSource))
                 entries.Add(new SettingsSaveMod(m) { IsEnabled = On(id, m.modSource, false) });
+        LoadOrder.OursFirst(entries);
         return entries;
     }
+
+    // The picks a working setup's copies make (the copy that loaded, where an id was installed twice from one source).
+    public static List<string> PicksOf(IReadOnlyList<Entry> working) =>
+        [.. working.Where(m => m.Enabled && m.Copy != null && !Ours(m.Id)).Select(m => $"{m.Id}|{m.Copy}").Distinct()];
+
+    // The working setup's copies picked again: through our data where it's loaded, else in its file (a failed start,
+    // before the main menu loads it). A read-only session keeps the picks it has.
+    static void WritePicks(IReadOnlyList<Entry> working)
+    {
+        if (PicksOf(working) is not { Count: > 0 } picks)
+            return;
+        if (!Store.IsLoaded)
+        {
+            PatchPicks(Store.Dir, picks);
+            return;
+        }
+        if (Store.ReadOnly)
+        {
+            Log.Warn($"[{ModEntry.ModId}] Our data can't be saved this session, so the restored setup loads the copies picked now: {string.Join(", ", picks)}");
+            return;
+        }
+        Store.Data.CopyPicks = Copies.WithPicks(Store.Data.CopyPicks, picks);
+        Store.SaveViewState();
+    }
+
+    // The picks written into manager.json in a folder, the rest of it as it is (Store.PatchFile). True if saved.
+    public static bool PatchPicks(string dir, IReadOnlyList<string> picks) => Store.PatchFile(dir, json =>
+    {
+        var stored = (json["copy_picks"] as JsonArray ?? []).Select(p => p?.GetValueKind() == JsonValueKind.String ? (string?)p : null).OfType<string>();
+        if (Copies.WithPicks(stored, picks) is { } made)
+            json["copy_picks"] = new JsonArray([.. made.Select(p => (JsonNode?)JsonValue.Create(p))]);
+        else
+            json.Remove("copy_picks");
+    });
 
     // What the game couldn't start with, offered back: the last working setup, what this launch changed since, and
     // whether the game itself changed since (then the old setup may not help).
@@ -296,8 +365,10 @@ static class LaunchGuard
     // update added): offering it would loop, Restore and the same failure again.
     public static Offer? CrashOffer() => CrashOffer(_planned, _working, _read);
 
+    // A switch to another copy of a mod changes what loads with the game's list the same (the pick is ours).
     public static Offer? CrashOffer(Setup? planned, Setup? working, IReadOnlyList<(string Id, ModSource Source, bool On)>? read) =>
-        CrashOffer(planned, working) is { } offer && read != null && !SameLoad([.. Written(offer.Working.Mods).Select(Key)], read) ? offer : null;
+        CrashOffer(planned, working) is { } offer && read != null
+            && (offer.Changes.Any(c => c.Kind == Kind.Switched) || !SameLoad([.. Written(offer.Working.Mods).Select(Key)], read)) ? offer : null;
 
     static (string, ModSource, bool) Key(SettingsSaveMod entry) => (entry.Id, entry.Source, entry.IsEnabled);
 
