@@ -12,13 +12,17 @@ namespace SpireModManager;
 
 // Everything the manager remembers, as one JSON file per Steam account:
 // user://steam/<id>/mod_data/SpireModManager/manager.json
-// Categories, aliases and notes belong to a mod id, so a Workshop and a local copy share them. Profiles name each
-// mod's source too, like the game's own list.
+// Categories, aliases, notes and tags belong to a mod id; a mod installed more than once (a Workshop item and a local
+// fix, two Workshop items) has an entry per copy, seeded from its id's (Copies). Profiles name each mod's source too,
+// like the game's own list.
 public class StoreData
 {
     public int Version { get; set; } = 1;
     public List<Category> Categories { get; set; } = [];
+    // By mod id, or "<id>|<copy>" for a copy that isn't the holder of its id's entry (Copies.Key).
     public Dictionary<string, ModInfo> Mods { get; set; } = [];
+    // The copies of each id installed more than once, the holder of the plain entry first (Copies); null: none yet.
+    public Dictionary<string, List<string>>? Copies { get; set; }
     public List<Profile> Profiles { get; set; } = [];
     public string? ActiveProfile { get; set; }
     public bool VanillaView { get; set; }
@@ -400,6 +404,9 @@ public static class Store
     // its list), it's only made again when the data has changed.
     static (string Data, string Edits)? _edits;
 
+    // A copy of our data to try a change on.
+    public static StoreData Clone(StoreData data) => JsonSerializer.Deserialize<StoreData>(JsonSerializer.Serialize(data, Json), Json) ?? new StoreData();
+
     // A snapshot of our data (EditsJson) with a change made to it as well.
     public static string Patched(string json, Action<StoreData> change)
     {
@@ -470,9 +477,13 @@ public static class Store
         File.Move(temp, file, overwrite: true);
     }
 
+    // A mod's details by its key (Copies.Key: the id, or a copy's own key), or for an installed copy.
     public static ModInfo? InfoFor(string? modId) => modId != null && Data.Mods.TryGetValue(modId, out var info) ? info : null;
 
-    // Changes one mod's details and saves; a mod left with none of ours loses its entry, so it reads as unchanged.
+    public static ModInfo? InfoFor(Mod? mod) => mod == null ? null : InfoFor(Copies.Key(mod));
+
+    // Changes one mod's details (by its key) and saves; a mod left with none of ours loses its entry, so it reads as
+    // unchanged.
     public static void EditMod(string modId, Action<ModInfo> change)
     {
         if (!Data.Mods.TryGetValue(modId, out var info))

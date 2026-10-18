@@ -160,7 +160,7 @@ static class CategoryList
     {
         if (Store.Data.VanillaView || Store.Data.LoadOrderView || row.Visible)
             return;
-        if (Store.InfoFor(row.Mod?.manifest?.id)?.Category is { } name && Categories.Find(name) is { } category)
+        if (Store.InfoFor(row.Mod)?.Category is { } name && Categories.Find(name) is { } category)
             category.Collapsed = false;
         else
             Store.Data.UncategorizedCollapsed = false;
@@ -172,7 +172,7 @@ static class CategoryList
     // gold glow; focus: the "selected" look without changing the info panel.
     public static void Reveal(Control content, string modId, bool flash, bool focus = false)
     {
-        if (content.GetChildren().OfType<NModMenuRow>().FirstOrDefault(r => r.Mod?.manifest?.id == modId) is not { } row)
+        if (Copies.RowOf(content, modId) is not { } row)
             return;
         ListFilter.Bring(row.Mod); // hidden until the next redraw (the search's clearing, or Expand's)
         var filter = Filter(content);
@@ -188,7 +188,7 @@ static class CategoryList
 
     public static void Highlight(Control content, string modId, bool on)
     {
-        if (content.GetChildren().OfType<NModMenuRow>().FirstOrDefault(r => r.Mod?.manifest?.id == modId) is not { } row
+        if (Copies.RowOf(content, modId) is not { } row
             || row.GetNodeOrNull<CanvasItem>("SelectionHighlight") is not { } look)
             return;
         if (!on)
@@ -425,7 +425,7 @@ static class CategoryList
         var categories = Store.Data.Categories;
         var known = categories.Select(c => c.Name).ToHashSet();
         string? CategoryOf(NModMenuRow row) =>
-            Store.InfoFor(row.Mod?.manifest?.id)?.Category is { } name && known.Contains(name) ? name : null;
+            Store.InfoFor(row.Mod)?.Category is { } name && known.Contains(name) ? name : null;
         if (ListFilter.Current != ListFilter.Choice.All)
             ListFilter.Showed(rows.Where(Matches).Select(r => r.Mod)); // the rows a change to one mod keeps
 
@@ -561,7 +561,7 @@ static class CategoryList
         List<NModMenuRow>? placed = null;
         return Store.Data.LoadOrderView
             ? row => LoadOrder.Actions(content, row, () => Redraw(content), compact: true, placed ??= content.GetChildren().OfType<NModMenuRow>().ToList())
-            : row => [new MenuItem(CategoryName(row.Mod?.manifest?.id), () => ShowRowMenu(content, row), Tip: Menus.Text("SPIRE_MOD_MANAGER.CATEGORY_TIP"))];
+            : row => [new MenuItem(CategoryName(Copies.KeyOf(row.Mod)), () => ShowRowMenu(content, row), Tip: Menus.Text("SPIRE_MOD_MANAGER.CATEGORY_TIP"))];
     }
 
     // The main list's pencil, past the tickbox at the row's far right: the mod's menu. None in Load Order.
@@ -589,7 +589,7 @@ static class CategoryList
     // a Show: choice (ListFilter.Keep).
     public static Node? ShowRowMenu(Control content, NModMenuRow row)
     {
-        if (Store.Data.VanillaView || row.Mod?.manifest?.id is not { } id)
+        if (Store.Data.VanillaView || Copies.KeyOf(row.Mod) is not { Length: > 0 } id)
             return null;
         return MenuPanel.Show(content, () => CategoryItems(content, id), side: _ => ModField.Column(id, _ =>
         {
@@ -602,7 +602,7 @@ static class CategoryList
     // Edits keep their rows under a Show: choice (ListFilter.Keep); Enable selected and Disable selected apply it at once.
     public static Node? ShowBulkMenu(Control content)
     {
-        var ids = Selection.Mods.Select(m => m.manifest?.id).OfType<string>().ToList();
+        var ids = Selection.Mods.Select(Copies.Key).Where(key => key.Length > 0).Distinct().ToList(); // a key per copy
         if (Store.Data.VanillaView || ids.Count == 0)
             return null;
         return MenuPanel.Show(content, () => BulkItems(content, ids), side: _ => ModField.BulkColumn(ids, _ =>
@@ -636,7 +636,7 @@ static class CategoryList
                 ScrollSoon(content, header, flash: false);
         }));
         items.Add(MenuItem.Heading(""));
-        items.AddRange(OnOffItems(content, content.GetChildren().OfType<NModMenuRow>().Where(r => ids.Contains(r.Mod?.manifest?.id ?? "")), selected: true));
+        items.AddRange(OnOffItems(content, content.GetChildren().OfType<NModMenuRow>().Where(r => ids.Contains(Copies.KeyOf(r.Mod) ?? "")), selected: true));
         return items;
 
         void Move(string? category)

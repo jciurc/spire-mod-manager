@@ -56,9 +56,10 @@ static class ModDetails
         Wire(container);
         Looks(container, game: false);
         var id = mod.manifest?.id;
-        if (Meta(container, ModIdMeta) != (id ?? ""))
+        var key = Copies.Key(mod); // this copy's: a mod installed twice has an entry per copy
+        if (Meta(container, ModIdMeta) != key)
             HistoryBar.HideBack(container); // another mod: no way back to the changes list (the same one refilled keeps it)
-        container.SetMeta(ModIdMeta, id ?? "");
+        container.SetMeta(ModIdMeta, key);
         container.SetMeta(FolderMeta, mod.path);
         container.SetMeta(WorkshopMeta, Compat.WorkshopId(mod)?.ToString() ?? ""); // this copy's (a local one can share its id)
 
@@ -103,7 +104,7 @@ static class ModDetails
         foreach (var field in Fields.GetValueOrDefault(container.GetInstanceId(), []))
             field.Load();
         if (yours.GetNodeOrNull<Button>("Category/Picker") is { } picker)
-            picker.Text = CategoryList.CategoryName(id) + "  ▾";
+            picker.Text = CategoryList.CategoryName(key) + "  ▾";
         Callable.From(() => PlaceFields(container)).CallDeferred();
 
         var folder = container.GetNodeOrNull<Control>("OpenFolderButton") ?? AddButton(container, "OpenFolderButton",
@@ -270,7 +271,7 @@ static class ModDetails
     {
         string Cut(string text, int max) => full || text.Length <= max ? text : text[..max].TrimEnd() + "…";
         var id = mod.manifest?.id ?? "";
-        var info = Store.InfoFor(id);
+        var info = Store.InfoFor(mod);
         var lines = new List<string> { $"[b]{Escape(id)}[/b]  {Bullet}  {Status(mod)}" };
         lines.AddRange(Problems(mod).Select(p => $"[color={Problem}]{Escape(p)}[/color]"));
         lines.AddRange(GameNotes(mod).Select(n => $"[color={Disabled}]{Escape(n)}[/color]"));
@@ -444,7 +445,7 @@ static class ModDetails
     public static void Refresh(Node screen)
     {
         if (Store.Data.VanillaView || screen.GetNodeOrNull<NModInfoContainer>("%ModInfoContainer") is not { } container
-            || HistoryBar.ListOpen(container) || CategoryList.Selected is not { } mod || Meta(container, ModIdMeta) != mod.manifest?.id)
+            || HistoryBar.ListOpen(container) || CategoryList.Selected is not { } mod || Meta(container, ModIdMeta) != Copies.Key(mod))
             return;
         container.Fill(mod);
     }

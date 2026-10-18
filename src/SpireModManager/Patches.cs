@@ -29,6 +29,7 @@ static class MainMenuPatch
         {
             // Loads (on first run, imports) our data now, while the menu is idle.
             _ = Store.Data;
+            Copies.Start(); // mods installed more than once: a data entry per copy
             LoadOrder.RememberLoadedOrder(); // first main menu: the game's startup sorting is done
             Profiles.Prepare(); // one-time conversions belong to the baseline, not the undo history
             History.Start();
