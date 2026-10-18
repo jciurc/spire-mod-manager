@@ -210,10 +210,9 @@ static class ModDetails
         var copy = CopyLine(mod, links: true);
         if (copy is var (copyText, copyColor))
             text.Append($"[color={copyColor}]{copyText}[/color]\n");
-        var notes = GameNotes(mod);
-        foreach (var note in notes)
-            text.Append($"[color={Disabled}]{Escape(note)}[/color]\n");
-        if (problems.Count + notes.Count > 0 || copy != null)
+        var game = GameBlock(mod, effects: true);
+        text.Append(game);
+        if (problems.Count > 0 || game.Length > 0 || copy != null)
             text.Append('\n');
         text.Append(mod.manifest?.description is { Length: > 0 } description ? description : Faint("SPIRE_MOD_MANAGER.NO_DESCRIPTION")).Append("\n\n");
 
@@ -279,7 +278,8 @@ static class ModDetails
         lines.AddRange(Problems(mod).Select(p => $"[color={Problem}]{Escape(p)}[/color]"));
         if (CopyLine(mod, links: false) is var (copyText, copyColor))
             lines.Add($"[color={copyColor}]{copyText}[/color]");
-        lines.AddRange(GameNotes(mod).Select(n => $"[color={Disabled}]{Escape(n)}[/color]"));
+        if (GameBlock(mod, effects: false) is { Length: > 0 } game)
+            lines.Add(game.TrimEnd('\n'));
         string Fact(string key, string value) => $"[color=#e8cf7a]{Menus.Text(key)}[/color]: {value}";
         lines.Add(Fact("SPIRE_MOD_MANAGER.AUTHOR", mod.manifest?.author is { Length: > 0 } author ? Escape(Cut(author, 80)) : Faint("SPIRE_MOD_MANAGER.UNKNOWN")));
         if (WorkshopInfo.For(mod) is { } workshop)
@@ -338,12 +338,11 @@ static class ModDetails
     // On, set aside as a duplicate, and another copy of its id on as well.
     static bool LosesToOn(Mod mod) => mod.state == ModLoadState.DisabledDuplicate && Dependencies.IsOn(mod) && Copies.Others(mod).Any(Dependencies.IsOn);
 
-    // What stops the mod working: the game's load errors, a duplicate copy, and (if on) dependencies missing or off.
-    // Plain text, escaped where it's shown: the game's errors lose the tags it marks parts with ("Mod [red]{id}[/red]
-    // only supports..."), which would show as text in our lines (one colour, escaped).
+    // What stops the mod working, in our words: a duplicate copy, and (if on) dependencies missing or off. Plain text,
+    // escaped where it's shown. The game's own load errors are its words, shown apart from ours (GameErrors).
     public static List<string> Problems(Mod mod)
     {
-        var problems = (mod.errors ?? []).Select(e => Menus.Format("SPIRE_MOD_MANAGER.FROM_GAME", ("message", WithoutTags(e.GetFormattedText())))).ToList();
+        var problems = new List<string>();
         if (LosesToOn(mod))
             problems.Add(Menus.Text("SPIRE_MOD_MANAGER.STATE_DUPLICATE"));
         problems.AddRange(DependencyProblems(mod));
@@ -381,10 +380,33 @@ static class ModDetails
         return null;
     }
 
-    // The game's messages we took off a mod that's off (BranchErrors), each marked as the game's: not a problem (the mod
-    // doesn't load), but nothing of the game's is hidden.
-    public static List<string> GameNotes(Mod mod) =>
-        [.. BranchErrors.Dropped(mod).Select(e => Menus.Format("SPIRE_MOD_MANAGER.GAME_MESSAGE_OFF", ("message", WithoutTags(e.GetFormattedText()))))];
+    // The game's load errors for the mod, as its own panel shows them: its words, with the tags it marks parts with
+    // ("Mod [red]{id}[/red] only supports..."). Shown apart from ours, under "From the game" (GameBlock).
+    public static List<string> GameErrors(Mod mod) => [.. (mod.errors ?? []).Select(e => e.GetFormattedText())];
+
+    // The game's messages we took off a mod that's off (BranchErrors), as plain text: not a problem (the mod doesn't
+    // load), but nothing of the game's is hidden. Shown apart from ours, fainter (GameBlock).
+    public static List<string> GameNotes(Mod mod) => [.. BranchErrors.Dropped(mod).Select(e => WithoutTags(e.GetFormattedText()))];
+
+    // The game's words about the mod, set apart from ours (GameText): its load errors under "From the game", in its red
+    // as its own panel has them; then the messages taken off a mod that's off, under their own caption, fainter. effects:
+    // the label has the game's colour tags ([red], the panel's); our cards don't, so there the words go plain, in its red.
+    // Empty when the game says nothing.
+    static string GameBlock(Mod mod, bool effects)
+    {
+        var block = new System.Text.StringBuilder();
+        if (GameErrors(mod) is { Count: > 0 } errors)
+        {
+            var words = effects ? string.Join("\n", errors.Select(e => $"[red]{e}[/red]")) : $"[color={GameRed}]{Escape(string.Join("\n", errors.Select(WithoutTags)))}[/color]";
+            block.Append(GameText.Caption(Menus.Text("SPIRE_MOD_MANAGER.GAME_CAPTION"))).Append('\n').Append(GameText.Box(words)).Append('\n');
+        }
+        if (GameNotes(mod) is { Count: > 0 } notes)
+            block.Append(GameText.Caption(Menus.Text("SPIRE_MOD_MANAGER.GAME_CAPTION_OFF"))).Append('\n')
+                .Append(GameText.Box($"[color={Disabled}]{Escape(string.Join("\n", notes))}[/color]", dim: true)).Append('\n');
+        return block.ToString();
+    }
+
+    const string GameRed = "#ff5555"; // the game's [red] (StsColors.red)
 
     // The text between tags in pairs ([red]...[/red], with any settings on the first), nested ones too. Only pairs: the
     // game's effects come in pairs, a bracket of a mod's own ("[CN] Pack") doesn't, and stays.

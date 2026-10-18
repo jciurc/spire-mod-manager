@@ -3134,11 +3134,16 @@ static class SelfTest
             {
                 CategoryList.Select(screen, other);
                 await Wait(menu, 0.5);
-                var shown = panel.GetNode<RichTextLabel>("ModDescription").GetParsedText();
-                var card = ModDetails.Card(erring); // the row's hover card shows the same lines (as BBCode: "[lb]" is a "[")
-                Check("a game load error shows in the panel and the row's card as text, without the game's colour tags ([red])",
-                    shown.Contains("From the game: Mod ") && shown.Contains("only supports Steam branch public") && !shown.Contains("[red]") && !shown.Contains("[/red]")
-                    && card.Contains("only supports Steam branch public") && !card.Contains("[lb]red]") && !card.Contains("[lb]/red]"),
+                var descriptionLabel = panel.GetNode<RichTextLabel>("ModDescription");
+                var (shown, raw) = (descriptionLabel.GetParsedText(), descriptionLabel.Text);
+                await Capture(screen, outDir, "17b-game-error-panel");
+                var card = ModDetails.Card(erring); // the row's hover card shows the same (as BBCode: "[lb]" is a "[")
+                Check("a game load error shows apart from ours, in the panel and the row's card: under \"From the game\", alone in its box, "
+                    + "in the game's red (its own [red] in the panel, its colour in the card, no tags as text), not among our problems",
+                    shown.Contains("From the game") && shown.Contains("only supports Steam branch public") && !shown.Contains("[red]")
+                    && raw.Contains(GameText.Caption("From the game")) && raw.Contains("[table=1]") && raw.Contains("[red]Mod ")
+                    && card.Contains(GameText.Caption("From the game")) && card.Contains("[table=1]") && card.Contains("[color=#ff5555]Mod ")
+                    && !card.Contains("[lb]red]") && !ModDetails.Problems(erring).Any(p => p.Contains("Steam branch")),
                     $"{shown.Split('\n')[0]} | card: {card.Split('\n').FirstOrDefault(l => l.Contains("branch"))}");
             }
             finally
@@ -3173,9 +3178,11 @@ static class SelfTest
                 var offKeys = offMod.errors?.Select(e => e.LocEntryKey).ToList() ?? [];
                 var onKeys = onMod.errors?.Select(e => e.LocEntryKey).ToList() ?? [];
                 var card = ModDetails.Card(offMod);
-                var gameMessage = $"From the game, not counted while this mod is off: Mod {offMod.manifest?.id} only supports Steam branch public";
-                Check("the game's message taken off a mod that's off still shows in its card, marked as the game's, not as a problem",
-                    card.Contains(gameMessage) && !ModDetails.Problems(offMod).Any(p => p.Contains("only supports Steam branch")),
+                var gameMessage = $"Mod {offMod.manifest?.id} only supports Steam branch public";
+                Check("the game's message taken off a mod that's off still shows in its card, apart from ours under its own caption, in a fainter box, "
+                    + "not as a problem",
+                    card.Contains(GameText.Caption("From the game, not counted while this mod is off")) && card.Contains(gameMessage)
+                    && card.Contains(GameText.Box("", dim: true)[..40]) && !ModDetails.Problems(offMod).Any(p => p.Contains("only supports Steam branch")),
                     card.Split('\n').FirstOrDefault(l => l.Contains("branch")) ?? card.Split('\n')[0]);
                 // The second pass, just before the main menu's warning reads the errors (BranchErrorsLatePatch): one
                 // marked after our Init goes there too.
@@ -6977,7 +6984,8 @@ static class SelfTest
             var notes = ModDetails.GameNotes(aside);
             Check("same ID, a message on a copy set aside: off its errors (the MODDED label stays clear), into its panel as the game's; the late pass covers it",
                 aside.errors == null && dropped >= 1 && BranchErrors.Dropped(aside).Contains(error)
-                && notes.Any(n => n.StartsWith("From the game, not counted while this mod is off:") && n.Contains("only supports Steam branch public")),
+                && notes.Any(n => n.Contains("only supports Steam branch public"))
+                && ModDetails.Card(aside).Contains(GameText.Caption("From the game, not counted while this mod is off")),
                 $"errors {aside.errors?.Count}, dropped {dropped}; {string.Join(" | ", notes)}");
         }
         finally

@@ -490,7 +490,7 @@ static class LaunchGuard
 
     // The game's own message for a failed start, the one its dialog (which ours replaces) shows, first and set apart as
     // the game's, so nothing of the game's is hidden: "Notice from the game" centred over it, and the message in an
-    // outlined box of its own (GameBox), our text below. Through the game's text, or (plain: Godot's dialog has no
+    // outlined box of its own (GameText), our text below. Through the game's text, or (plain: Godot's dialog has no
     // markup) in English from the game's own file, under the same words. Its paragraphs on one line, its markup as the
     // game shows it. None if it can't be read, or the game no longer has it.
     public static string GamesMessage(bool plain)
@@ -508,7 +508,7 @@ static class LaunchGuard
             }
             message = Whitespace.Replace(plain ? Markup.Replace(message, "") : message, " ").Trim();
             var notice = Our(plain, "SPIRE_MOD_MANAGER.CRASH_GAME_NOTICE");
-            return plain ? $"{notice}:\n{message}\n\n" : $"[center][color={NoticeHex}]{notice}[/color][/center]\n{GameBox(message)}\n";
+            return plain ? $"{notice}:\n{message}\n\n" : $"{GameText.Caption(notice, centred: true)}\n{GameText.Box(message)}\n";
         }
         catch (Exception e)
         {
@@ -518,11 +518,6 @@ static class LaunchGuard
     }
 
     static readonly Regex Whitespace = new(@"\s+");
-
-    // The game's words in our dialog: a box across the text's width, outlined and faintly filled in a soft orange, so
-    // they read as another voice than ours (a one-cell table: the game's popup sizes its text to fit, boxes included).
-    const string NoticeHex = "#f5b56b";
-    static string GameBox(string message) => $"[table=1][cell expand=1 border={NoticeHex}b3 bg={NoticeHex}1f padding=14,8,14,8]{message}[/cell][/table]";
 
     // A popup's visible words, on one line and cut at 300 characters, for the log.
     static string Words(Node popup)
