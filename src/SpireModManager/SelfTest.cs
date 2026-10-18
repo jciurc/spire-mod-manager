@@ -2011,7 +2011,23 @@ static class SelfTest
         try
         {
             if (await ButtonMenu(menu, button) is { } popup)
+            {
+                // It opens the system's file browser (#126): the external-link mark after its label, in the label's
+                // colour, and only there in the menu.
+                var labels = popup.FindChildren("*", "Label", true, false).OfType<Label>().ToList();
+                var item = labels.FirstOrDefault(l => l.Text == "Open translations folder");
+                var mark = item == null ? null : LinkMark.Rect(item);
+                var itemSize = item?.GetThemeFontSize("font_size") ?? 0;
+                var itemText = item == null ? 0 : item.GetThemeFont("font").GetStringSize(item.Text, fontSize: itemSize).X;
+                Check("Open translations folder: the external-link mark a small gap after its label, 14 px for its 20 px text; no other item has one",
+                    item != null && itemSize == 20 && mark is { } at && at.Position.X >= itemText + 2 && at.Position.X <= itemText + 7 && at.Size == new Vector2(14, 14)
+                    && at.End.X <= item.Size.X + 0.5f && labels.Where(l => l.IsInGroup(LinkMark.Group)).SequenceEqual([item]),
+                    $"mark {mark} after text {itemText:0.#}, label {item?.Size}; marked: {string.Join(", ", labels.Where(l => l.IsInGroup(LinkMark.Group)).Select(l => l.Text))}");
+                var drawn = item == null ? null : await MarkDrawn(menu, item);
+                Check("Open translations folder's mark: drawn in the label's colour", item != null && drawn == item.GetThemeColor("font_color"),
+                    $"drawn {drawn?.ToString() ?? "nothing"}, label {item?.GetThemeColor("font_color")}");
                 MenuPanel.Press(popup, "Open translations folder");
+            }
             await Wait(menu, 0.2);
             Check("Open translations folder: made in the data folder and opened, the menu closed", !before && opened == folder && Directory.Exists(folder)
                 && folder.Replace('\\', '/').EndsWith($"/mod_data/{ModEntry.ModId}/translations") && !MenuPanel.IsOpen,
@@ -3028,6 +3044,15 @@ static class SelfTest
             && Preview().Contains("Not installed (2)") && Preview().Contains("Not Here Mod") && Preview().Contains("Gone Off (disabled)")
             && nameAt > linkAt && nameAt < bbcode.IndexOf("[/url]", linkAt, StringComparison.Ordinal)
             && bbcode.Split("[url=").Length == 2, Preview());
+        // That link leaves the game (#126): the external-link mark after the name, in the link; still the page's link.
+        var markTag = LinkMark.Tag(18, "#99ccff");
+        var markAt = linkAt < 0 ? -1 : bbcode.IndexOf(markTag, linkAt, StringComparison.Ordinal);
+        Check("an import's Workshop link: the external-link mark right after the name, inside its link and colour, 12 px for the preview's 18 px text; none after a name with no page",
+            markAt > nameAt && bbcode[..markAt].EndsWith("[color=#99ccff][b]Not Here Mod[/b]") && bbcode[(markAt + markTag.Length)..].StartsWith("[/color][/url]")
+            && bbcode.Split(markTag).Length == 2 && LinkMark.Size(18) == 12 && Part<RichTextLabel>("Preview")?.GetThemeFontSize("normal_font_size") == 18, bbcode);
+        Check("an import's Workshop link still opens its page: the link is the page's address, the preview still handles its click",
+            ProfileCsv.IsWorkshopLink(link) && Part<RichTextLabel>("Preview") is { MouseFilter: Control.MouseFilterEnum.Stop } shown
+            && shown.GetSignalConnectionList(RichTextLabel.SignalName.MetaClicked).Count > 0);
         await Capture(screen, outDir, "7d-import-preview");
         Press("CreateProfileButton");
         await Wait(menu, 0.3);
@@ -3289,6 +3314,8 @@ static class SelfTest
         var linkText = (panel.FindChild("SpireModManagerLink", true, false) as LinkButton)?.Text ?? "";
         Check("the source line: id (Local), then Enabled", panel.FindChild("SpireModManagerLink", true, false) is LinkButton { Disabled: true }
             && linkText == "SpireModManager (Local)" && (panel.FindChild("SpireModManagerSource", true, false)?.FindChild("Status", true, false) as Label)?.Text == "Enabled", linkText);
+        Check("a local mod's source line links nowhere: no external-link mark, and no room kept for one",
+            panel.FindChild("SpireModManagerLink", true, false) is LinkButton localLink && LinkMark.Rect(localLink) == null && localLink.CustomMinimumSize.X == 0);
         var headText = panel.GetNodeOrNull<RichTextLabel>("SpireModManagerHead")?.GetParsedText() ?? "";
         Check("the head: author and compatibility; the details: description, then size", headText.Contains("Author: symphony") && headText.Contains("Compatibility:")
             && !description.StartsWith("Enabled") && description.Contains("Size:") && !description.Contains("Compatibility"), $"{headText} / {description[..Math.Min(60, description.Length)]}");
@@ -4847,6 +4874,26 @@ static class SelfTest
         CategoryList.Redraw(content);
         await Wait(menu, 0.3);
         Check("fixed: the '!' goes", screen.GetNodeOrNull<Control>("SpireModManagerLoadOrderToggle/WarningBadge") is not { Visible: true });
+
+        // The banner every run can raise: Test Addon on needs a mod that isn't installed, so with it off the banner goes,
+        // and its tick brings the banner back (TestBannersKeepRows, the managers banner's checks without Better Mod Menu).
+        // On again after, as it started.
+        if (WontLoad() is { } wontLoad && Rows().FirstOrDefault(r => r.Mod == wontLoad) is { } addonRow)
+        {
+            var addonBox = addonRow.GetNode<NTickbox>("Tickbox");
+            addonBox.IsTicked = false;
+            addonBox.EmitSignal(NTickbox.SignalName.Toggled, addonBox);
+            await Wait(menu, 0.3);
+            await TestBannersKeepRows(menu, screen, content, addonRow, LoadOrder.WarningName, "main list banner");
+            if (!Dependencies.IsOn(wontLoad))
+            {
+                addonBox.IsTicked = true;
+                addonBox.EmitSignal(NTickbox.SignalName.Toggled, addonBox);
+                await Wait(menu, 0.3);
+            }
+        }
+        else
+            Results.Add("SKIP main list banner keeping the rows in place: Test Addon not installed, or off");
     }
 
     // Better Mod Menu ticked as well as ours: a yellow banner on our views, above the problem banners, with a Show that
@@ -5216,10 +5263,214 @@ static class SelfTest
 
         await Tick(tickbox, false);
         Check("Better Mod Menu unticked: the banner goes at once", !Bmm.Ticked && Banner() == null, Where());
+        await TestBannersKeepRows(menu, screen, content, row, LoadOrder.ManagersName, "managers banner");
         if (!was)
             return;
         await Tick(tickbox, true);
         Check("ticked again, as it started: the banner is back", Banner() is { Visible: true }, Where());
+    }
+
+    // Banners coming and going with the list scrolled part way: the rows on screen stay where they were in every frame
+    // (Layout.KeepRows), through a tick that raises one, undo and redo, and (the managers banner's) Dismiss; a redraw
+    // that makes a wrapped banner again moves nothing, at the list's top too. The page hidden, a banner coming or going
+    // keeps the rows in place too, but a list at its top stays there. Reveal still lands where it aimed with a banner
+    // coming as it eases, and a Show: choice with one coming in its frame still starts the list at its top. A spacer
+    // under the rows gives the short fixture list room to scroll; it goes after. bannerRow: the row whose tick raises the
+    // banner called name: Test Addon's (the main list banner, in every run) or Better Mod Menu's (the managers banner,
+    // where it's installed); what: that banner in the checks' names. Starts and ends with that row's mod off. Showing the
+    // page again enters it anew (History.Enter: Revert all's state then, no undo steps), so the page's opening state and
+    // both undo histories are kept first and put back after: the tests after it undo and Revert all as they would have.
+    static async Task TestBannersKeepRows(Node menu, NModdingScreen screen, Control content, NModMenuRow bannerRow, string name, string what)
+    {
+        var border = screen.GetNode<Control>("ModsBorder");
+        var list = border.GetNode<Control>("ModsScrollContainer");
+        var tickbox = bannerRow.GetNode<NTickbox>("Tickbox");
+        Control? Banner() => border.GetNodeOrNull<Control>(name);
+        if (bannerRow.Mod is not { } bannerMod || Layout.Current != Layout.View.Categories || Dependencies.IsOn(bannerMod) || Banner() != null
+            || ListFilter.Chosen != ListFilter.Choice.All || CategoryList.Filter(content).Length > 0)
+        {
+            Results.Add($"SKIP {what} keeping the rows in place: not on the main list showing every mod, its mod on, or the banner up without it");
+            return;
+        }
+        bool On() => Dependencies.IsOn(bannerMod);
+        float Target() => (float)list.Get("_targetDragPosY");
+        float Padding() => (float)list.Get("_paddingTop");
+        async Task ScrollTo(float target)
+        {
+            list.Set("_targetDragPosY", target);
+            await Wait(menu, 0.6);
+        }
+        void Tick(bool on)
+        {
+            tickbox.IsTicked = on;
+            tickbox.EmitSignal(NTickbox.SignalName.Toggled, tickbox);
+        }
+        // After act, over the next frames (each as drawn): how far the row strayed from where it was, at most, and how
+        // far the list's top moved.
+        async Task<(float Strayed, float Moved)> Watch(Control row, Action act)
+        {
+            var (y, top) = (row.GetGlobalRect().Position.Y, list.GetGlobalRect().Position.Y);
+            act();
+            var strayed = 0f;
+            for (var i = 0; i < 20; i++)
+            {
+                await menu.ToSignal(menu.GetTree(), SceneTree.SignalName.ProcessFrame);
+                strayed = Math.Max(strayed, Math.Abs(row.GetGlobalRect().Position.Y - y));
+            }
+            return (strayed, list.GetGlobalRect().Position.Y - top);
+        }
+
+        var (history, listWas, changesWas) = (History.TestKeep(), History.CurrentMods(), HistoryBar.Describe());
+        var spacer = new Control { Name = "SpireModManagerTestSpacer", CustomMinimumSize = new Vector2(0, 1500), MouseFilter = Control.MouseFilterEnum.Ignore };
+        content.AddChild(spacer);
+        const float narrower = 450;
+        var narrowed = 0f;
+        try
+        {
+            await Wait(menu, 0.1); // the rows' container grown first: scrolled past its old end, the list would spring back
+            await ScrollTo(-160);
+            var view = list.GetGlobalRect();
+            if (content.GetChildren().OfType<NModMenuRow>().Where(r => r.IsVisibleInTree() && view.Encloses(r.GetGlobalRect()))
+                .MinBy(r => Math.Abs(r.GetGlobalRect().GetCenter().Y - view.GetCenter().Y)) is not { } row)
+            {
+                Results.Add($"FAIL {what} keeping the rows in place: no row in view with the list scrolled part way");
+                return;
+            }
+
+            var ticked = await Watch(row, () => Tick(true));
+            Check($"{what}, scrolled part way: a tick that raises it moves the list's top down, the rows on screen stay where they were in every frame",
+                On() && Banner() is { Visible: true } && ticked.Moved > 30 && ticked.Strayed <= 1,
+                $"banner {Banner() != null}, the list's top moved {ticked.Moved}, the row strayed {ticked.Strayed}, scrolled to {Target()}");
+            var undone = await Watch(row, History.Undo);
+            var gone = !On() && Banner() == null;
+            var redone = await Watch(row, History.Redo);
+            Check($"{what}, scrolled part way: undo takes it away and redo brings it back, the rows staying where they were in every frame",
+                gone && On() && Banner() is { Visible: true } && undone.Moved < -30 && redone.Moved > 30 && undone.Strayed <= 1 && redone.Strayed <= 1,
+                $"gone on undo {gone}, back on redo {Banner() != null}; the list's top moved {undone.Moved}, then {redone.Moved}; the row strayed {undone.Strayed}, then {redone.Strayed}");
+
+            // The page hidden (the main menu over it), its banner switched on or off with a redraw, as the relaunch check's
+            // fixes do there: what the page shows once it opens again. Scrolled part way, the rows where they were; at the
+            // list's top, the list still at its top, its first row as far under the list's top as before (not scrolled
+            // under it by the banner's height).
+            async Task<(bool Hidden, float Moved)> SwitchHidden(bool on)
+            {
+                var top = list.GetGlobalRect().Position.Y;
+                screen.Visible = false;
+                Dependencies.Set([bannerMod], on, screen);
+                CategoryList.Redraw(content);
+                await Wait(menu, 0.3);
+                var hidden = !list.IsVisibleInTree() && (Banner() != null) == on;
+                screen.Visible = true;
+                await Wait(menu, 0.3);
+                return (hidden, list.GetGlobalRect().Position.Y - top);
+            }
+            await ScrollTo(-160);
+            var rowAt = row.GetGlobalRect().Position.Y;
+            var hiddenGone = await SwitchHidden(false);
+            var rowMoved = row.GetGlobalRect().Position.Y - rowAt;
+            Check($"{what}, the page hidden and scrolled part way: the banner going there leaves the rows where they were once the page shows again",
+                hiddenGone.Hidden && Banner() == null && hiddenGone.Moved < -30 && Math.Abs(rowMoved) <= 1,
+                $"gone while hidden {hiddenGone.Hidden}, the list's top moved {hiddenGone.Moved}, the row {rowMoved}, scrolled to {Target()}");
+            CategoryList.ScrollToTop(content);
+            await Wait(menu, 0.2);
+            var first = content.GetChildren().OfType<NModMenuRow>().Where(r => r.Visible).MinBy(r => r.Position.Y);
+            float Under(Control r) => r.GetGlobalRect().Position.Y - list.GetGlobalRect().Position.Y;
+            var under = first is { } firstRow ? Under(firstRow) : float.NaN;
+            var hiddenRaised = await SwitchHidden(true);
+            Check($"{what}, the page hidden at the list's top: the banner raised there leaves the list at its top once the page shows again, its first row where it was",
+                hiddenRaised.Hidden && Banner() is { Visible: true } && hiddenRaised.Moved > 30 && Target() == 0
+                && Math.Abs(content.Position.Y - Padding()) <= 0.5f && first != null && Math.Abs(Under(first) - under) <= 1,
+                $"raised while hidden {hiddenRaised.Hidden}, the list's top moved {hiddenRaised.Moved}, scrolled to {Target()} (rows at {content.Position.Y - Padding()}), "
+                + $"first row {first?.Mod?.manifest?.id} {under} under the list's top, then {(first != null ? Under(first) : float.NaN)}");
+
+            // The managers banner's text is long enough to wrap in a narrow list, and it has a Dismiss.
+            if (name == LoadOrder.ManagersName)
+            {
+                // Wrapped (a narrow list) and at the list's top, a redraw makes every banner again, as tall as before:
+                // nothing moves. (A banner that shrank and grew back there would be kept from scrolling one way but not the
+                // other.)
+                border.OffsetRight -= narrower;
+                narrowed = narrower;
+                await Wait(menu, 0.3);
+                CategoryList.ScrollToTop(content);
+                await Wait(menu, 0.2);
+                var wrapped = Banner()?.Size.Y > 40;
+                var redrawn = await Watch(row, () => CategoryList.Redraw(content));
+                Check("a redraw that makes a wrapped banner again, at the list's top: the list stays at its top, nothing moves",
+                    wrapped && Target() == 0 && redrawn.Moved == 0 && redrawn.Strayed <= 1,
+                    $"wrapped {wrapped} ({Banner()?.Size.Y}), scrolled to {Target()}, the list's top moved {redrawn.Moved}, the row strayed {redrawn.Strayed}");
+                border.OffsetRight += narrower;
+                narrowed = 0;
+                await Wait(menu, 0.3);
+
+                await ScrollTo(-160);
+                var dismissed = await Watch(row, () => Banner()?.FindChild("DismissManagersButton", true, false)?.EmitSignal(BaseButton.SignalName.Pressed));
+                Check("Dismiss, scrolled part way: the banner goes, the rows stay where they were in every frame",
+                    Store.Data.ManagersWarningDismissed && Banner() == null && dismissed.Moved < -30 && dismissed.Strayed <= 1,
+                    $"dismissed {Store.Data.ManagersWarningDismissed}, banner {Banner() != null}, the list's top moved {dismissed.Moved}, the row strayed {dismissed.Strayed}");
+            }
+
+            // Reveal from the list's top (a third of the way down the list, the spacer leaving room below), and a banner
+            // coming while its scroll still eases there, its target set: the rows keep to their course, so the row still
+            // ends where Reveal aimed it, a third of the way down the list as it was then (the target scrolled on by the
+            // banner's height with them), in view. Unticked first (which re-arms a dismissed managers banner).
+            Tick(false);
+            await Wait(menu, 0.3);
+            CategoryList.ScrollToTop(content);
+            await Wait(menu, 0.2);
+            var last = content.GetChildren().OfType<NModMenuRow>().Where(r => r.Visible).MaxBy(r => r.Position.Y);
+            if (last?.Mod is { } lastMod)
+            {
+                var aim = Math.Min(0, list.Size.Y / 3 - last.Position.Y);
+                CategoryList.Reveal(content, Copies.Key(lastMod), flash: false);
+                await Wait(menu, 0.1); // past ScrollSoon's 0.05 s: the target set, the rows on their way
+                var (aimed, easing) = (Target(), Math.Abs(content.Position.Y - Padding() - Target()) > 1);
+                var (origin, top) = (content.GlobalPosition.Y - content.Position.Y, list.GetGlobalRect().Position.Y); // the rows' container at 0
+                Tick(true);
+                await Wait(menu, 0.8);
+                var moved = list.GetGlobalRect().Position.Y - top;
+                var off = last.GetGlobalRect().Position.Y - (origin + Padding() + aim + last.Position.Y); // from where Reveal aimed it
+                Check($"{what}: Reveal, the banner coming while its scroll eases: the row still ends where Reveal aimed it, a third of the way down the list as it was, in view",
+                    Banner() is { Visible: true } && aim < 0 && Math.Abs(aimed - aim) <= 1 && easing && moved > 30 && Math.Abs(Target() - (aim - moved)) <= 1
+                    && Math.Abs(content.Position.Y - Padding() - Target()) <= 1 && Math.Abs(off) <= 1 && list.GetGlobalRect().Encloses(last.GetGlobalRect()),
+                    $"banner {Banner() != null}, aimed at {aim} (target {aimed}, still easing {easing}), the list's top moved {moved}, scrolled to {Target()} "
+                    + $"(rows at {content.Position.Y - Padding()}), the row {off} from where it was aimed, row {last.GetGlobalRect()}, list {list.GetGlobalRect()}");
+            }
+            else
+                Results.Add($"FAIL {what}: Reveal, the banner coming while its scroll eases: no row shown");
+
+            // A Show: choice scrolled part way, and a banner coming in that frame just after it: the list starts at its top,
+            // the rows where a fresh choice puts them (a choice starts the list where it always did, for the rest of its
+            // frame too). Unticked first, so the banner comes with the choice.
+            Tick(false);
+            await Wait(menu, 0.3);
+            await ScrollTo(-160);
+            var scrolled = Banner() == null && Target() < -100;
+            ListFilter.Choose(content, ListFilter.Choice.Enabled);
+            Tick(true);
+            await Wait(menu, 0.3);
+            Check($"{what}: a Show: choice scrolled part way, then the banner in that frame: the list starts at its top, the rows where a fresh choice puts them",
+                scrolled && Banner() is { Visible: true } && Target() == 0 && Math.Abs(content.Position.Y - Padding()) <= 0.5f,
+                $"scrolled part way, no banner first {scrolled}; banner {Banner() != null}, scrolled to {Target()}, rows at {content.Position.Y - Padding()}");
+        }
+        finally
+        {
+            border.OffsetRight += narrowed;
+            content.RemoveChild(spacer);
+            spacer.QueueFree();
+            if (On())
+                Tick(false);
+            ListFilter.Choose(content, ListFilter.Choice.All); // a redraw, which shrinks the rows' container again, then the top
+            await Wait(menu, 0.3);
+            var enteredAnew = History.Entered != history.Entered;
+            History.TestPutBack(history);
+            static string Said(IEnumerable<History.ModEntry> mods) => string.Join(", ", mods.Select(m => m.Id + (m.Enabled ? "" : " (off)")));
+            Check($"{what} keeping the rows in place: the saved list and Changes left as found, the page's opening state and both undo histories put back",
+                History.CurrentMods().SequenceEqual(listWas) && HistoryBar.Describe().SequenceEqual(changesWas) && History.Entered == history.Entered
+                && History.Steps(History.Track.List) == history.Past[History.Track.List].Count && History.Steps(History.Track.Order) == history.Past[History.Track.Order].Count,
+                $"entered anew by showing the page again {enteredAnew}; list {Said(History.CurrentMods())}, was {Said(listWas)}; "
+                + $"changes {string.Join(" | ", HistoryBar.Describe())}, were {string.Join(" | ", changesWas)}");
+        }
     }
 
     // The bar under the search box: Enable all / Disable all for the page (or the search's matches),
@@ -5995,6 +6246,91 @@ static class SelfTest
             && text.IndexOf("Updated") < text.IndexOf("Compatibility") && text.Contains("(4 days ago)  •\u00a0\u00a0Changelog") && head?.Text.Contains("[url=patchnotes]") == true, text);
         var link = info.FindChild("SpireModManagerLink", true, false) as LinkButton;
         Check("the source line: id (SteamID n)", link?.Text == "SmmWorkshopTest (SteamID 42)", link?.Text ?? "");
+
+        // Both leave the game (#126): the external-link mark after each, part of the link and in its colour, and each
+        // still goes where it went.
+        if (link != null && head != null)
+        {
+            var linkSize = link.GetThemeFontSize("font_size");
+            var linkText = link.GetThemeFont("font").GetStringSize(link.Text, fontSize: linkSize).X;
+            var mark = LinkMark.Rect(link);
+            Check("the Workshop link: the external-link mark a small gap after its text, 11 px for its 16 px text, inside the link's own (clickable) box",
+                linkSize == 16 && mark is { } at && at.Position.X >= linkText + 2 && at.Position.X <= linkText + 6 && at.Size == new Vector2(11, 11)
+                && at.End.X <= link.Size.X + 0.5f && at.Position.Y >= 0 && at.End.Y <= link.Size.Y + 0.5f
+                && link.IsInGroup(LinkMark.Group) && link.GetSignalConnectionList(CanvasItem.SignalName.Draw).Count > 0,
+                $"mark {mark} after text {linkText:0.#}, link {link.Size}");
+            // The mark as drawn: the link's colour with the mouse off it, then (a mouse motion through the viewport; none
+            // headless) its hover colour while the mouse is on it, and its own again once it leaves.
+            var (normal, lit) = (link.GetThemeColor("font_color"), link.GetThemeColor("font_hover_color"));
+            var headless = DisplayServer.GetName() == "headless";
+            static void MoveTo(Vector2 at) => Input.ParseInputEvent(new InputEventMouseMotion { Position = at, GlobalPosition = at });
+            var linkRect = link.GetGlobalRect();
+            var away = link.GetViewport().GetMousePosition(); // where the mouse was, unless that's on the link: above it then
+            if (linkRect.Grow(2).HasPoint(away))
+                away = linkRect.Position - new Vector2(0, 30);
+            if (!headless)
+            {
+                MoveTo(away);
+                await Wait(menu, 0.1);
+            }
+            var unlit = await MarkDrawn(menu, link);
+            Check("the Workshop link's mark: drawn in the link's own colour while it isn't lit",
+                link.GetDrawMode() == BaseButton.DrawMode.Normal && unlit == normal,
+                $"{link.GetDrawMode()}, drawn {unlit?.ToString() ?? "nothing"}; the link's {normal}");
+            if (headless)
+                Results.Add("SKIP the Workshop link's mark lit with the link: there's no mouse headless");
+            else
+            {
+                // Redrawn by the link itself as it lights and goes out (no QueueRedraw here).
+                LinkMark.TestForget(link);
+                MoveTo(linkRect.GetCenter());
+                await Wait(menu, 0.1);
+                var (onMode, onDrawn, under) = (link.GetDrawMode(), LinkMark.TestDrawn(link), link.GetViewport().GuiGetHoveredControl());
+                LinkMark.TestForget(link);
+                MoveTo(away);
+                await Wait(menu, 0.1);
+                var (offMode, offDrawn) = (link.GetDrawMode(), LinkMark.TestDrawn(link));
+                Check("the Workshop link's mark: redrawn in the link's hover colour while the mouse is on the link, and in its own once it leaves",
+                    lit != normal && onMode == BaseButton.DrawMode.Hover && onDrawn == lit && offMode == BaseButton.DrawMode.Normal && offDrawn == normal,
+                    $"on it ({under?.Name.ToString() ?? "nothing"} under the mouse at {linkRect.GetCenter()}): {onMode}, drawn {onDrawn?.ToString() ?? "nothing"}; "
+                    + $"off it: {offMode}, drawn {offDrawn?.ToString() ?? "nothing"}; the link's {normal}, lit {lit}");
+            }
+            // The status after the link: the link as wide as its mark's end, then the line's separation, the dot and its
+            // separation.
+            var source = info.GetNode<Control>("SpireModManagerSource");
+            var status = (Label)source.FindChild("Status", true, false);
+            var dot = (Control)source.FindChild("Dot", true, false);
+            var statusAt = link.GetGlobalRect().End.X + source.GetThemeConstant("separation") + dot.Size.X + dot.GetParent<Control>().GetThemeConstant("separation");
+            var title = info.GetNode<Control>("ModTitle");
+            Check("the Workshop link still opens the mod's Workshop page, and the status after it moves over only for the mark, within the title's width",
+                link is { Disabled: false, Uri: "https://steamcommunity.com/sharedfiles/filedetails/?id=42" } && mark is { } shown
+                && Math.Abs(link.Size.X - shown.End.X) <= 0.5f && Math.Abs(status.GlobalPosition.X - statusAt) <= 1
+                && status.GetGlobalRect().End.X <= title.GetGlobalRect().End.X + 2,
+                $"{link.Uri}; mark {mark}, link {link.GetGlobalRect()}, status {status.GetGlobalRect()} (expected at {statusAt:0.#}), title {title.GetGlobalRect()}");
+
+            var bbcode = head.Text;
+            var tag = LinkMark.Tag(16, "#99ccff");
+            var changelog = bbcode.IndexOf("[url=patchnotes]", StringComparison.Ordinal);
+            var tagAt = changelog < 0 ? -1 : bbcode.IndexOf(tag, changelog, StringComparison.Ordinal);
+            Check("Changelog: the external-link mark right after its text, inside its link and its colour, 11 px for the head's 16 px text",
+                tagAt >= 0 && bbcode[..tagAt].EndsWith("[url=patchnotes][color=#99ccff]Changelog") && bbcode[(tagAt + tag.Length)..].StartsWith("[/color][/url]")
+                && head.GetThemeFontSize("normal_font_size") == 16 && LinkMark.Size(16) == 11, bbcode);
+            // The [img] finds the mark by its path, and shows it: a line of just the mark is as wide as the gap and 11 px.
+            var probe = new RichTextLabel { BbcodeEnabled = true, FitContent = true, AutowrapMode = TextServer.AutowrapMode.Off, Text = tag };
+            Hover.Fonts(probe, 16);
+            info.AddChild(probe);
+            var gapOnly = probe.GetThemeFont("normal_font").GetStringSize("\u00a0", fontSize: 16).X;
+            var probeWidth = probe.GetContentWidth();
+            info.RemoveChild(probe);
+            probe.QueueFree();
+            Check("Changelog's mark: its [img] path loads the mark itself, which shows 11 px wide after the gap",
+                ModEntry.Load<Texture2D>(Icons.ExternalLink(11).ResourcePath)?.GetInstanceId() == Icons.ExternalLink(11).GetInstanceId()
+                && Icons.ExternalLink(11).GetSize() == new Vector2(11, 11) && Math.Abs(probeWidth - (gapOnly + 11)) <= 1,
+                $"path {Icons.ExternalLink(11).ResourcePath}, a line of it {probeWidth} wide (gap {gapOnly:0.#})");
+            Check("Changelog still opens the mod's change notes: the head's link is still patchnotes, its click still handled",
+                bbcode.Split("[url=patchnotes]").Length == 2 && head.GetSignalConnectionList(RichTextLabel.SignalName.MetaClicked).Count > 0
+                && head.MouseFilter != Control.MouseFilterEnum.Ignore);
+        }
         Check("how long ago: hours under a day, one day singular, green under two days",
             ModDetails.Ago(DateTime.Now.AddMinutes(-20)).Contains("(less than an hour ago)") && ModDetails.Ago(DateTime.Now.AddHours(-3)).Contains("(3 hours ago)") && ModDetails.Ago(DateTime.Now.AddMinutes(-70)).Contains("(1 hour ago)")
             && ModDetails.Ago(DateTime.Now.AddHours(-30)).Contains("(1 day ago)") && ModDetails.Ago(DateTime.Now.AddHours(-30)).Contains("#a6e3a1")
@@ -8467,6 +8803,16 @@ static class SelfTest
         Input.ParseInputEvent(new InputEventMouseButton { ButtonIndex = MouseButton.Left, Pressed = false, Position = at, GlobalPosition = at });
         await Wait(menu, 0.3);
         return where;
+    }
+
+    // The colour the control's external-link mark is drawn in at a fresh redraw (LinkMark.TestDrawn): null where none
+    // is drawn.
+    static async Task<Color?> MarkDrawn(Node node, Control control)
+    {
+        LinkMark.TestForget(control);
+        control.QueueRedraw();
+        await Wait(node, 0.1);
+        return LinkMark.TestDrawn(control);
     }
 
     // A point given as GetGlobalRect gives it, as the viewport's own input reads it (Viewport.PushInput in local
