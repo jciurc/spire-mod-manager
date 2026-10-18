@@ -669,8 +669,12 @@ static class LaunchGuard
         (link.AnchorLeft, link.AnchorRight, link.AnchorTop, link.AnchorBottom) = (0.5f, 0.5f, 1, 1);
         link.GrowHorizontal = Control.GrowDirection.Both;
         (link.OffsetLeft, link.OffsetRight, link.OffsetTop, link.OffsetBottom) = (0, 0, yes.OffsetBottom + 4, yes.OffsetBottom + 34);
+        // The mark is a point it grows from both ways (Menus.Mark): its middle half its height under the link's bottom.
         if (art.GetNodeOrNull<Control>(Menus.MarkName) is { } mark)
-            (mark.OffsetTop, mark.OffsetBottom) = (link.OffsetBottom + 6, link.OffsetBottom + 6 + mark.OffsetBottom - mark.OffsetTop);
+        {
+            var middle = link.OffsetBottom + 4 + mark.GetCombinedMinimumSize().Y / 2;
+            (mark.OffsetTop, mark.OffsetBottom) = (middle, middle);
+        }
     }
 
     public const string PlainDialogName = "SpireModManagerCrashDialog";

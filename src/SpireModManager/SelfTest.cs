@@ -1777,6 +1777,8 @@ static class SelfTest
                 settings.ModList.AddRange(listWas.Select(e => new SettingsSaveMod { Id = e.Id, Source = e.Source, IsEnabled = e.IsEnabled }));
             }
             bool Listed(string id, bool on) => settings.ModList.Any(e => e.Id == id && e.IsEnabled == on);
+            // Every entry of an id off, whatever its source (a mod listed from two sources has two).
+            bool AllOff(string id) => settings.ModList.Any(e => e.Id == id) && settings.ModList.Where(e => e.Id == id).All(e => !e.IsEnabled);
             ListAsItWas();
             var libWasOn = Listed("SmmTestLib", true);
             asked = LaunchGuard.AskAfterCrash(game, offer);
@@ -1791,7 +1793,8 @@ static class SelfTest
                 && art != null && quitButton != null && restoreButton != null && link.GetGlobalRect().Position.Y >= restoreButton.GetGlobalRect().End.Y - 4
                 && Math.Abs(link.GetGlobalRect().GetCenter().X - art.GetGlobalRect().GetCenter().X) < 2 && link.Size.X > 100
                 && !link.GetGlobalRect().Intersects(quitButton.GetGlobalRect()) && !link.GetGlobalRect().Intersects(restoreButton.GetGlobalRect())
-                && link.GetThemeColor("font_color") is { R: > 0.9f, G: > 0.6f and < 0.8f, B: < 0.5f } && link.GetThemeColor("font_hover_color") != link.GetThemeColor("font_color");
+                && link.GetThemeColor("font_color") is { R: > 0.9f, G: > 0.6f and < 0.8f, B: < 0.5f } && link.GetThemeColor("font_hover_color") != link.GetThemeColor("font_color")
+                && art.GetNodeOrNull<Control>(Menus.MarkName) is { } mark && mark.GetGlobalRect().Position.Y >= link.GetGlobalRect().End.Y; // our mark under it, clear of it
             var suspectTexts = string.Join(" | ", PopupTexts());
             await Capture(menu, outDir, "1h-crash-dialog-suspects");
             var suspectsCard = popup?.GetNodeOrNull<RichTextLabel>("VerticalPopup/Description") is { } description
@@ -1817,8 +1820,8 @@ static class SelfTest
             await Wait(menu, 0.3);
             Check("Disable suspect mods and restart: this launch's list with Test UI, Test Fixes and Test Framework off (not ours, not Mod Doctor, "
                 + "nothing added for a mod not installed), then a restart; the launch's record goes",
-                asked.IsCompleted && relaunches == 3 && quits == 3 && Listed("SmmTestUi", false) && Listed("SmmTestFixes", false)
-                && (!libWasOn || Listed("SmmTestLib", false)) && Listed(ModEntry.ModId, true) && !settings.ModList.Any(e => e.Id == "SmmTestNotThere")
+                asked.IsCompleted && relaunches == 3 && quits == 3 && AllOff("SmmTestUi") && AllOff("SmmTestFixes")
+                && (!libWasOn || AllOff("SmmTestLib")) && Listed(ModEntry.ModId, true) && !settings.ModList.Any(e => e.Id == "SmmTestNotThere")
                 && !File.Exists(pendingPath),
                 $"quits {quits}, relaunches {relaunches}; {string.Join(", ", settings.ModList.Select(e => $"{e.Id}={e.IsEnabled}"))}");
             // The plain dialog: the third answer as one more button.
@@ -1831,7 +1834,7 @@ static class SelfTest
             plainDialog?.EmitSignal(AcceptDialog.SignalName.CustomAction, "disable_suspects");
             await Wait(menu, 0.3);
             Check("the plain dialog with suspects: the third button, which turns them off and restarts",
-                plainThird && asked.IsCompleted && relaunches == 4 && quits == 3 && Listed("SmmTestUi", false) && Listed(ModEntry.ModId, true),
+                plainThird && asked.IsCompleted && relaunches == 4 && quits == 3 && AllOff("SmmTestUi") && Listed(ModEntry.ModId, true),
                 $"button {plainThird}, quits {quits}, relaunches {relaunches}");
             ModDoctor.TestSuspects = null;
             ListAsItWas();
