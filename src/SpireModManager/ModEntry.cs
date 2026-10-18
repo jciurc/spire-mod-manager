@@ -154,7 +154,35 @@ public static class ModEntry
     // One of the game's fonts, or Godot's own if it's gone. In languages the game draws in its own font (Chinese,
     // Japanese, Korean, Thai, Russian, Polish), Kreon gives way to that font as on the game's labels; only rich text's
     // bold (richBold) takes its bold one.
-    public static Font Font(string path, bool richBold = false) => LanguageFont(path, richBold) ?? Load<Font>(path) ?? ThemeDB.FallbackFont;
+    // Each is looked up once per language and kept (Fonts): a page build asks ~1,600 times, and every lookup went
+    // through Godot's resource loader.
+    public static Font Font(string path, bool richBold = false)
+    {
+#if DEVTOOLS
+        FontAsks++;
+#endif
+        var language = LocManager.Instance?.Language;
+        if (language != _fontsLanguage)
+        {
+            Fonts.Clear(); // the new language may draw in another font
+            _fontsLanguage = language;
+        }
+        if (Fonts.TryGetValue((path, richBold), out var kept) && GodotObject.IsInstanceValid(kept))
+            return kept;
+#if DEVTOOLS
+        FontLookups++;
+#endif
+        return Fonts[(path, richBold)] = LanguageFont(path, richBold) ?? Load<Font>(path) ?? ThemeDB.FallbackFont;
+    }
+
+    static readonly Dictionary<(string Path, bool RichBold), Font> Fonts = [];
+    static string? _fontsLanguage; // the language Fonts were looked up in
+
+#if DEVTOOLS
+    // Self-test: how often Font was asked for one, and how often it looked one up rather than giving the one it kept.
+    public static int FontAsks { get; private set; }
+    public static int FontLookups { get; private set; }
+#endif
 
     static bool _noLanguageFonts;
 

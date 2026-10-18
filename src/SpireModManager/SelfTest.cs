@@ -3545,8 +3545,9 @@ static class SelfTest
 
     // The same mods as rows of a page (out of sight to the left of this one), in our row style: each row's line under
     // its title (tags, note, author), its buttons and its pencil made from nothing, as a new page makes them (after a
-    // run the main menu is made again, and the page with it: #46), timed part by part, and redrawn with nothing to
-    // change. Then what the lines show, against what the mods say: their tags, notes and authors, the author at the
+    // run the main menu is made again, and the page with it: #46), timed part by part (with the titles' styling before
+    // them, and how often fonts were asked for and looked up), and redrawn with nothing to change. Then what the lines
+    // show, against what the mods say: their tags, notes and authors, the author at the
     // line's end, the pencil and the category button with their tips. Each part of a line styled exactly as its old
     // per-node overrides styled it (UnlikeOverrides), at the old sizes. Everything turned off (some notes go: no mod on
     // needs those libraries) and on again: the lines changed in place show what lines made afresh do, and then what
@@ -3605,15 +3606,19 @@ static class SelfTest
             static string Differ(List<string> shown, List<string> wanted) => shown.Zip(wanted).Where(p => p.First != p.Second)
                 .Select(p => $"{p.First} -- wanted: {p.Second}").FirstOrDefault() ?? (shown.Count == wanted.Count ? "" : $"{shown.Count} rows, wanted {wanted.Count}");
 
-            var madeMs = 0.0;
+            var (titlesMs, madeMs, fontAsks, fontLookups) = (0.0, 0.0, 0, 0);
             RowStrip.Costs.Clear();
             var frameMs = await FrameMs(menu, () =>
             {
-                RowTitles.Apply(rows, vanilla: false); // our row style first, as a redraw does (titles fitted at the frame's end)
-                RowStrip.Timing = true;
                 var watch = System.Diagnostics.Stopwatch.StartNew();
+                RowTitles.Apply(rows, vanilla: false); // our row style first, as a redraw does (titles fitted at the frame's end)
+                titlesMs = watch.Elapsed.TotalMilliseconds;
+                RowStrip.Timing = true;
+                (fontAsks, fontLookups) = (ModEntry.FontAsks, ModEntry.FontLookups);
+                watch.Restart();
                 Build(saved);
                 madeMs = watch.Elapsed.TotalMilliseconds;
+                (fontAsks, fontLookups) = (ModEntry.FontAsks - fontAsks, ModEntry.FontLookups - fontLookups);
                 RowStrip.Timing = false;
             });
             CleanHeap();
@@ -3621,7 +3626,8 @@ static class SelfTest
             Build(saved);
             var keptMs = again.Elapsed.TotalMilliseconds;
             Results.Add($"INFO 300 made-up rows: lines, buttons and pencils made from nothing {madeMs:0} ms ({Parts(RowStrip.Costs)}), "
-                + $"to the end of that frame {frameMs:0} ms; redrawn with nothing to change {keptMs:0.0} ms");
+                + $"to the end of that frame {frameMs:0} ms; redrawn with nothing to change {keptMs:0.0} ms; their titles styled first {titlesMs:0} ms; "
+                + $"fonts asked for {fontAsks} times while the lines were made, looked up {fontLookups}");
             await Wait(menu, 0.3);
 
             var first = rows.Select(LineOf).ToList();
@@ -6552,7 +6558,8 @@ static class SelfTest
     // language's font: a row title (the game's label, which ours mustn't cover), a category header, a tag chip, a row's
     // button, the profile bar, the history bar, the red banner if one shows, a menu item. The buttons' widths are cached
     // per font: they still start as far past the title as before. The shortcuts under Undo and Redo fit under their
-    // buttons, however wide the font. Back in the starting language, its fonts again
+    // buttons, however wide the font. ModEntry.Font looked its fonts up again after the switch (the language's own), and
+    // then gives the same one each time it's asked, without looking again. Back in the starting language, its fonts again
     // (Kreon in English). Skipped for a language the game has no font of its own for. Screenshots 20-fonts-<language>.
     static async Task TestLanguageFonts(NModdingScreen screen, string outDir)
     {
@@ -6590,6 +6597,7 @@ static class SelfTest
 
         async Task CheckLanguage(string language)
         {
+            var lookups = ModEntry.FontLookups;
             if (await Reopen(game, language) is not { } page)
             {
                 Results.Add($"FAIL fonts in {language}: the Modding page didn't open again");
@@ -6622,6 +6630,14 @@ static class SelfTest
             var wrong = samples.Where(s => FontOf(s.Text, s.Font) != GameFont(language, s.Type, s.KreonBold)).Select(s => $"{s.What}: {FontOf(s.Text, s.Font)}").ToList();
             Results.Add($"INFO fonts in {language}: {GameFont(language, FontType.Regular, false)}, {GameFont(language, FontType.Bold, true)}");
             Check($"in {language}: our text in its font ({string.Join(", ", samples.Select(s => s.What))})", wrong.Count == 0, string.Join("; ", wrong));
+            const string regular = "res://themes/kreon_regular_shared.tres";
+            var font = ModEntry.Font(regular);
+            var looked = ModEntry.FontLookups;
+            var again = ModEntry.Font(regular);
+            Check($"in {language}: our fonts looked up again after the switch (the language's own), then kept: the same font each time it's asked",
+                looked > lookups && font.ResourcePath == GameFont(language, FontType.Regular, false) && ReferenceEquals(again, font) && ModEntry.FontLookups == looked,
+                $"{looked - lookups} lookups since the switch, {font.ResourcePath}; asked again: {(ReferenceEquals(again, font) ? "the same" : again.ResourcePath)}, "
+                + $"{ModEntry.FontLookups - looked} more lookups");
             var (viewFont, viewWanted) = (ViewButtonFont(page), FontManager.GetSubstituteFont(language, FontType.Regular)?.ResourcePath ?? startViewFont);
             Check($"in {language}: a scene-made button (Load Order) in the language's font too", viewFont != null && viewFont == viewWanted,
                 $"{viewFont}, wanted {viewWanted}");
