@@ -314,11 +314,13 @@ static class ModToggledPatch
             // Not during the screen's setup: it calls this once per row as it opens.
             if (HistoryBar.Screen != __instance)
                 return;
-            Profiles.Track();
             if (Installed.JustArrived)
-                History.KeepCurrent(); // the game announcing a mod installed just now: no step (Profiles.TakeInInstalled)
+                History.AsCurrent(Profiles.Track); // the game announcing a mod installed just now: no step (Profiles.TakeInInstalled)
             else
+            {
+                Profiles.Track();
                 History.Record(); // a tickbox change, one step (Track only saves when the active profile changed)
+            }
             // Every row's box as its view reads it: in Vanilla View the game's tickbox sets every entry of the mod's id
             // and source, so another copy (a second Workshop item) switched too; on our views a switch to another copy
             // (CopyTickPatch) turned the old one off.

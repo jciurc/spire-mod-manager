@@ -113,10 +113,19 @@ static class History
         Changed?.Invoke();
     }
 
-    // Our data as it is now taken as the current state, with no step: for state that follows something else (a
-    // profile's unsaved edit following the mod list), which a restored state works out again for itself.
-    public static void KeepCurrent()
+    // A change taken as the current state, with no step (its saves record nothing): for state that follows something
+    // else (a profile's unsaved edit following the mod list), which a restored state works out again for itself.
+    public static void AsCurrent(Action change)
     {
+        _restoring = true;
+        try
+        {
+            change();
+        }
+        finally
+        {
+            _restoring = false;
+        }
         if (_current is { } current)
             _current = current with { Store = Take().Store };
     }

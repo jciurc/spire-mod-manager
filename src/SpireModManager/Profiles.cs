@@ -88,15 +88,7 @@ static class Profiles
             // mod list (worked out again wherever undo lands): now only, not as a step. At the frame's end, once the
             // rest of the arrival has run (a second copy's entry seeded, its pick held), so the edit is worked out once.
             if (took)
-                Callable.From(() =>
-                {
-                    if (Active is { } active && Edit(active))
-                    {
-                        Store.Save();
-                        History.KeepCurrent();
-                        Switched?.Invoke();
-                    }
-                }).CallDeferred();
+                Callable.From(() => History.AsCurrent(Track)).CallDeferred();
             Switched?.Invoke(); // the count beside the name
         }
         catch (Exception e)
