@@ -292,6 +292,10 @@ static class LoadOrder
             if (row.Mod is { } mod)
                 Move(mod, to, rows);
             redraw();
+            // The buttons are kept through a move (Menus.Refill), and Godot checks what's under a still mouse only when it
+            // moves: the button clicked would stay lit on its row, moved away, and the one now under the mouse not. Once the
+            // rows are in their new places, the hover goes where the mouse is.
+            Callable.From(() => content.GetViewport()?.UpdateMouseCursorState()).CallDeferred();
         }, Disabled: ours || to < pinned || to >= rows.Count || to == at);
         var moves = new List<MenuItem>
         {
