@@ -66,10 +66,19 @@ public static class ModEntry
     }
 
     // Each patch class on its own, so one a game update breaks leaves the others working (PatchAll stops at the
-    // first failure). The launch record goes first, then watching for new mods and the branch errors of mods that are
-    // off: none needs a patch.
+    // first failure). First which copy of a mod installed twice loads (it has to be before the game tries the next
+    // mod), then the launch record (of the copies that load), watching for new mods and the branch errors of mods
+    // that are off: none needs a patch.
     public static void Init()
     {
+        try
+        {
+            SameIdLoad.Apply();
+        }
+        catch (Exception e)
+        {
+            Log.Warn($"[{ModId}] Could not choose which copy of a mod installed twice loads, so the game's own choice applies: {e}");
+        }
         try
         {
             LaunchGuard.Begin();
@@ -311,17 +320,20 @@ public static class ModEntry
     }
 
     // True when the saved mod list differs from what this session loaded, i.e. a relaunch would change
-    // something: the vanilla Modding screen's pending-changes test, plus the load order and mods installed
-    // since launch that are on.
+    // something: the vanilla Modding screen's pending-changes test per copy (the picked copy of a mod installed twice
+    // from one source), plus the load order and mods installed since launch that are on. A copy set aside or failed
+    // doesn't count, as in the game's test, nor an id whose pick a relaunch wouldn't apply (SameIdLoad.Unchosen).
     public static bool HasPendingChanges()
     {
         if (LoadOrder.OrderChanged || Installed.Mods.Any(Installed.On))
             return true;
-        var off = Dependencies.SavedOff();
+        var (off, picks) = (Dependencies.SavedOff(), Picks.Now);
         return ModManager.Mods.Any(mod =>
         {
-            var disabled = off.Contains((mod.manifest?.id, mod.modSource));
-            return (mod.state == ModLoadState.Disabled && !disabled) || (mod.state == ModLoadState.Loaded && disabled);
+            if (mod.state is not (ModLoadState.Disabled or ModLoadState.Loaded) || SameIdLoad.Unchosen(mod.manifest?.id))
+                return false;
+            var on = Dependencies.OnIn(mod, off, picks);
+            return (mod.state == ModLoadState.Disabled && on) || (mod.state == ModLoadState.Loaded && !on);
         });
     }
 

@@ -1,5 +1,4 @@
 using MegaCrit.Sts2.Core.Modding;
-using MegaCrit.Sts2.Core.Saves;
 
 namespace SpireModManager;
 
@@ -20,9 +19,11 @@ static class Installed
     {
         if (mod.state != ModLoadState.AddedAtRuntime || mod.manifest?.id is not { } id)
             return;
-        if (ModManager.Mods.Any(m => m != mod && m.state != ModLoadState.AddedAtRuntime && m.manifest?.id == id && m.modSource == mod.modSource))
+        // The same copy (its Workshop item, or folder) again is an update; another one of the id is a new copy.
+        bool Same(Mod m) => m.manifest?.id == id && m.modSource == mod.modSource && Copies.CopyOf(m) == Copies.CopyOf(mod);
+        if (ModManager.Mods.Any(m => m != mod && m.state != ModLoadState.AddedAtRuntime && Same(m)))
             return; // an update of a mod loaded at launch, not a new mod
-        _mods.RemoveAll(m => m.manifest?.id == id && m.modSource == mod.modSource);
+        _mods.RemoveAll(Same);
         _mods.Add(mod);
         Added?.Invoke();
     }
@@ -32,6 +33,7 @@ static class Installed
     public static void Forget(Mod mod) => _mods.Remove(mod);
 #endif
 
-    // Whether it loads after a relaunch: on unless the saved list says off.
-    public static bool On(Mod mod) => !(SaveManager.Instance.SettingsSave.ModSettings?.IsModDisabled(mod) ?? false);
+    // Whether it loads after a relaunch: on unless the saved list says off, and the picked copy where it's another copy
+    // of a mod from its source.
+    public static bool On(Mod mod) => Dependencies.IsOn(mod);
 }

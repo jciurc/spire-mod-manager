@@ -1,4 +1,5 @@
 using Godot;
+using MegaCrit.Sts2.Core.Modding;
 using MegaCrit.Sts2.Core.Nodes.Screens.ModdingScreen;
 using MegaCrit.Sts2.addons.mega_text;
 
@@ -265,14 +266,15 @@ static class RowTitles
 
     public static void MarkChanged(IEnumerable<NModMenuRow> rows, bool vanilla)
     {
-        var loaded = History.Loaded?.Mods.DistinctBy(m => (m.Id, m.Source)).ToDictionary(m => (m.Id, m.Source), m => m.Enabled);
+        // Each copy against launch as Changes reads it (HistoryBar.ModChanges): a switch to another copy marks both.
+        var launch = History.Loaded is { } loaded ? (Off: Dependencies.SavedOff(loaded.Mods), Picks: Store.PicksIn(loaded.Store)) : default((HashSet<(string?, ModSource)> Off, Picks Picks)?);
         foreach (var row in rows)
         {
             var title = row.GetNode<Control>("Title");
             if (!title.HasMeta(TitleColorMeta))
                 title.SetMeta(TitleColorMeta, title.Modulate);
-            var changed = !vanilla && loaded != null && row.Mod is { manifest.id: { } id } mod
-                && loaded.GetValueOrDefault((id, mod.modSource), true) != Dependencies.IsOn(mod);
+            var changed = !vanilla && launch is { } then && row.Mod is { manifest.id: not null } mod
+                && Dependencies.OnIn(mod, then.Off, then.Picks) != Dependencies.IsOn(mod);
             title.Modulate = !changed ? (Color)title.GetMeta(TitleColorMeta)
                 : row.Mod is { } turned && Dependencies.IsOn(turned) ? ChangedTitle : ChangedOffTitle;
         }
