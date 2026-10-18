@@ -7,10 +7,10 @@ using MegaCrit.Sts2.addons.mega_text;
 namespace SpireModManager;
 
 // The main menu's "Default (12 mods)" button: a smaller copy of the game's Settings text button (its font, colours,
-// hover and carets) naming the active profile and how many mods are on. It always opens our view of the Modding page.
-// Lower-left, or wherever the player moved it (right-click > Move button), with the game's notification dot and a
-// "Relaunch to apply" note while a relaunch is pending. Its right-click menu also opens the translations folder and
-// relaunches the game.
+// hover and carets) naming the active profile and how many mods are on. It always opens our view of the Modding page,
+// as F8 on the main menu does. Lower-left, or wherever the player moved it (right-click > Move button), with the game's
+// notification dot and a "Relaunch to apply" note while a relaunch is pending. Its right-click menu also opens the
+// translations folder and relaunches the game.
 static class MenuButton
 {
     const string Name = "SpireModManagerMenuButton";
@@ -35,14 +35,16 @@ static class MenuButton
     public static readonly Color CaretColor = new("#ff69b4");
     static readonly Color CaretClear = new(CaretColor, 0);
 
+    // What the button does, and F8 on the main menu (ShortcutsPatch).
+    public static void Open(NMainMenu menu)
+    {
+        CategoryList.PreferOurs(); // our view, whatever was last shown
+        menu.SubmenuStack.PushSubmenuType<NModdingScreen>();
+    }
+
     public static void Add(NMainMenu menu)
     {
-        void Open()
-        {
-            CategoryList.PreferOurs(); // our view, whatever was last shown
-            menu.SubmenuStack.PushSubmenuType<NModdingScreen>();
-        }
-        var button = Native(menu, Open) ?? ModEntry.AddTextButton(menu, "", FallbackSize, Open);
+        var button = Native(menu, () => Open(menu)) ?? ModEntry.AddTextButton(menu, "", FallbackSize, () => Open(menu));
         button.Name = Name;
         // The game's label, or none for the fallback (its text then goes through ModEntry.SetText, its size fixed).
         var label = button is NMainMenuTextButton ? button.GetChild<MegaLabel>(0) : null;
@@ -71,8 +73,10 @@ static class MenuButton
         {
             // The page's own line while a relaunch is pending, word for word: one text, one less to translate.
             note.Text = Menus.Text(outdated ? "SPIRE_MOD_MANAGER.NEEDS_UPDATE" : "SPIRE_MOD_MANAGER.PENDING_RESTART");
-            // What it opens, and the profile in gold; a second's wait, as the mouse crosses it for the game's buttons.
-            Hover.Tip(button, Tip(Profiles.Active?.Name ?? ""), Hover.Timing.Late, markup: true);
+            // What it opens, and the profile in gold; a second's wait, as the mouse crosses it for the game's buttons. Its
+            // card keeps off the note too, while that shows.
+            Hover.Tip(button, Tip(Profiles.Active?.Name ?? ""), Hover.Timing.Late, markup: true,
+                area: () => note.Visible ? button.GetGlobalRect().Merge(note.GetGlobalRect()) : button.GetGlobalRect());
             if (label == null)
                 ModEntry.SetText(button, Text(ModEntry.Font("res://themes/kreon_bold_shared.tres"), TextSize)); // the name cut as for ours; the fallback draws at its own size
             else
@@ -166,8 +170,14 @@ static class MenuButton
         Menus.Format(on == 1 ? "SPIRE_MOD_MANAGER.MAIN_MENU_PROFILE_ONE" : "SPIRE_MOD_MANAGER.MAIN_MENU_PROFILE",
             ("name", RowTitles.Cut(font, name, size, NameWidth)), ("count", Menus.Number(on)));
 
-    // Its card's text (BBCode) for a profile: "View and manage installed mods. Currently using mod profile Default."
-    public static string Tip(string profile) => Menus.Format("SPIRE_MOD_MANAGER.MAIN_MENU_TIP", ("profile", Hover.Escape(profile)));
+    // Its card's text (BBCode) for a profile: "View and manage installed mods. Currently using mod profile Default.",
+    // then the key that also opens the page on a line of its own, as the selection chip's card gives its keys. No key if
+    // the patch that reads it didn't apply.
+    public static string Tip(string profile)
+    {
+        var tip = Menus.Format("SPIRE_MOD_MANAGER.MAIN_MENU_TIP", ("profile", Hover.Escape(profile)));
+        return ModEntry.FailedPatches.Contains(nameof(ShortcutsPatch)) ? tip : $"{tip}\n{OS.GetKeycodeString(ShortcutsPatch.ManagerKey)}";
+    }
 
     // A copy of the game's Settings button on the main menu, with our action (and none of the game's), its label for our
     // text, and a copy of the game's Timeline notification dot on that label, hidden; null if a game update moved them.
@@ -292,7 +302,7 @@ static class MenuButton
     // the mouse and keys are read every frame, so nothing on the menu takes them first.
     public const string MoveLayerName = "SpireModManagerMoveLayer";
 
-    // While moving: cancels it (Escape, through ShortcutsPatch, which then keeps the key from the game; the game's
+    // While moving: cancels it (Escape or F8, through ShortcutsPatch, which then keeps the key from the game; the game's
     // own Escape on the main menu opens its save profile screen). False when not moving.
     static Action? _cancelMove;
 

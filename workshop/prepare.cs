@@ -8,8 +8,11 @@ using System.Text;
 using System.Text.Encodings.Web;
 using System.Text.Json;
 using System.Text.Json.Nodes;
+using System.Text.RegularExpressions;
 
 const string ModId = "SpireModManager";
+// Steam shows a picture in the description from its address: ours are workshop/images/, on main (README.md).
+const string Pictures = "https://raw.githubusercontent.com/jciurc/spire-mod-manager/main/workshop/images/";
 const int MaxDescription = 8000; // Steam's limit for a Workshop description
 const long MaxPicture = 1_000_000; // Steam's 1 MB limit for image.png and each preview, taken low to be safe
 
@@ -25,6 +28,14 @@ var description = File.ReadAllText(Path.Combine(workshop, "description.bbcode"))
 var descriptionBytes = Encoding.UTF8.GetByteCount(description);
 if (descriptionBytes >= MaxDescription)
     problems.Add($"description.bbcode: {descriptionBytes:N0} bytes; Steam takes under {MaxDescription:N0}");
+var shown = Regex.Matches(description, @"\[img\](.*?)\[/img\]", RegexOptions.IgnoreCase).Select(m => m.Groups[1].Value.Trim()).ToList();
+foreach (var url in shown)
+{
+    if (!url.StartsWith(Pictures, StringComparison.Ordinal))
+        problems.Add($"description.bbcode: [img]{url}[/img] isn't in workshop/images/ (link it as {Pictures}<name>)");
+    else if (!File.Exists(Path.Combine(workshop, "images", url[Pictures.Length..])))
+        problems.Add($"description.bbcode: shows workshop/images/{url[Pictures.Length..]}, which doesn't exist");
+}
 if (Text(config, "description") != description)
 {
     config["description"] = description;
@@ -122,7 +133,8 @@ Console.WriteLine($"  branches:      {Branches(minBranch, maxBranch)}");
 Console.WriteLine($"  tags:          {(config["tags"] is JsonArray list ? string.Join(", ", list) : "")}");
 Console.WriteLine($"  dependencies:  {(config["dependencies"] is JsonArray { Count: > 0 } deps ? string.Join(", ", deps) : "none")}");
 Console.WriteLine($"  change note:   {changeNote}");
-Console.WriteLine($"  description:   {descriptionBytes:N0} of {MaxDescription:N0} bytes");
+Console.WriteLine($"  description:   {descriptionBytes:N0} of {MaxDescription:N0} bytes{(shown.Count > 0
+    ? $", showing {string.Join(", ", shown.Select(u => u.StartsWith(Pictures, StringComparison.Ordinal) ? $"images/{u[Pictures.Length..]}" : u))}" : "")}");
 Console.WriteLine($"  content:       {(version != null ? $"{string.Join(", ", expected)} (version {version})" : "none")}");
 Console.WriteLine($"  previews:      {previews switch
 {

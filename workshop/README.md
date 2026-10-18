@@ -11,6 +11,10 @@ steps before an upload (test, merge, tag, build) are in [docs/dev/RELEASING.md](
   1 MB; the Workshop shows it at about 200 px, so big shapes and few words read best.
 - `previews/`: the screenshots, from a real game (no generated art). Named in order (`01-main-list.jpg`, ...):
   the uploader adds new files in name order, which sets their order on the page. Each under 1 MB (`shrink.cs`).
+- `images/`: pictures the description shows, each under `[img]` by its address on `main`
+  (`https://raw.githubusercontent.com/jciurc/spire-mod-manager/main/workshop/images/<name>`), since Steam shows
+  them from there. The uploader doesn't send them, so a new one must be on `main` before the upload that shows it.
+  Real screenshots only, like the previews.
 - `content/`: the files players install, filled from `dist/` by `prepare.cs`. Gitignored.
 - `mod_id.txt`: the item id, written by the uploader after the first upload. Commit it: without it, the next
   upload makes a second item.
