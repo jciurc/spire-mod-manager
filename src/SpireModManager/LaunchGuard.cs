@@ -642,6 +642,16 @@ static class LaunchGuard
         button.Ready += () =>
         {
             button.DisconnectHotkeys();
+            // Its art (a ribbon in a box of fixed size, keeping its aspect) as wide as the button, stretched sideways, so
+            // its words get the room; it grows on hover from its middle.
+            if (button.GetNodeOrNull<Control>("Visuals") is { } visuals)
+            {
+                visuals.Size = new Vector2(visuals.Size.X + SuspectsButtonWidth - yes.Size.X, visuals.Size.Y);
+                visuals.Position = new Vector2((SuspectsButtonWidth - visuals.Size.X) / 2, visuals.Position.Y);
+                visuals.PivotOffset = visuals.Size / 2;
+                foreach (var art in visuals.GetChildren().OfType<TextureRect>())
+                    art.StretchMode = TextureRect.StretchModeEnum.Scale;
+            }
             button.SetText(Menus.Text("SPIRE_MOD_MANAGER.CRASH_DISABLE_SUSPECTS"));
         };
         button.Connect(NClickableControl.SignalName.Released, Callable.From<NButton>(_ =>

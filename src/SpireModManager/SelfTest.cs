@@ -1787,7 +1787,9 @@ static class SelfTest
             // Under the two, centred between them, wider than each (its words), overlapping neither.
             var between = third != null && quitButton != null && restoreButton != null && third.GetGlobalRect().Position.Y >= quitButton.GetGlobalRect().End.Y - 8
                 && Math.Abs(third.GetGlobalRect().GetCenter().X - (quitButton.GetGlobalRect().GetCenter().X + restoreButton.GetGlobalRect().GetCenter().X) / 2) < 2
-                && third.Size.X > restoreButton.Size.X && !third.GetGlobalRect().Intersects(restoreButton.GetGlobalRect().Grow(-8));
+                && third.Size.X > restoreButton.Size.X && !third.GetGlobalRect().Intersects(restoreButton.GetGlobalRect().Grow(-8))
+                && third.GetNodeOrNull<Control>("Visuals") is { } art && art.GetGlobalRect().Size.X > third.Size.X
+                && Math.Abs(art.GetGlobalRect().GetCenter().X - third.GetGlobalRect().GetCenter().X) < 2; // its art too, not just its box
             var suspectTexts = string.Join(" | ", PopupTexts());
             await Capture(menu, outDir, "1h-crash-dialog-suspects");
             var suspectsCard = popup?.GetNodeOrNull<RichTextLabel>("VerticalPopup/Description") is { } description
