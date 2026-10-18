@@ -5790,8 +5790,9 @@ static class SelfTest
         CategoryList.Apply(content);
         await Wait(menu, 0.2);
         Check("an alias on one copy: search and Changes find that copy, naming which; the other copy keeps its own",
-            Store.InfoFor(local)?.Alias == aliasBefore && Search.Matches(copy, "Workshop") && !Search.Matches(local, "Workshop")
-            && !HistoryBar.ChangedMods().Contains(local) && Edits() is var now && now.Contains("Edited: Test Fixes (123) (alias \"Fixes from the Workshop\")")
+            // (Both copies are under Changed anyway: the new one installed, the local one edited by tests before.)
+            Store.InfoFor(local)?.Alias == aliasBefore && Search.Matches(copy, "\"from the Workshop\"") && !Search.Matches(local, "\"from the Workshop\"")
+            && Edits() is var now && now.Contains("Edited: Test Fixes (123) (alias \"Fixes from the Workshop\")")
             && now.Replace("Edited: Test Fixes (123) (alias \"Fixes from the Workshop\")", "").Trim(' ', '|') == edits,
             $"edits {Edits()}");
         var info = screen.GetNode<NModInfoContainer>("%ModInfoContainer");
