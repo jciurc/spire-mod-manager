@@ -295,7 +295,10 @@ static class CategoryList
     // much at once, the container's target and the rows together, so the ones on screen stay where they were with no
     // easing and no frame drawn between. Worked out from where the frame began, so moves that cancel out within it (a
     // banner laid out on one line, then wrapped again) leave the list where it was, at its ends too. Kept within the
-    // list's ends; a list already past one, springing back, isn't snapped or pushed further.
+    // list's ends; a list already past one, springing back, isn't snapped or pushed further. Not while the page is
+    // hidden with the list at its top (a banner raised from the main menu, as a mod installs or the relaunch check's
+    // fixes redraw it): no row is under the mouse, so the top stays the top and the page opens there, its first header
+    // in view. Hidden and scrolled part way, the rows keep their place as ever.
     public static void KeepInPlace(Control content, float pixels)
     {
         if (ScrollContainer(content) is not NScrollableContainer scroll)
@@ -306,6 +309,8 @@ static class CategoryList
             _kept = (frame, target, 0);
         _kept.Moved += pixels;
         var from = _kept.From;
+        if (from >= 0 && !scroll.IsVisibleInTree())
+            return; // at its top as the frame began: the moves below are worked out from there too
         var bottom = Math.Min(0, content.GetParent<Control>().Size.Y - content.Size.Y - Ends.Top - Ends.Bottom);
         var moved = Math.Clamp(from - _kept.Moved, Math.Min(bottom, from), Math.Max(0, from)) - target;
         if (moved == 0)

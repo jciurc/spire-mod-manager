@@ -317,10 +317,11 @@ static class Layout
 
     // A banner coming, going or rewrapping moves the list's top by its change in height: the rows scroll by as much at
     // once, so the ones on screen stay where they were (CategoryList.KeepInPlace), at the list's top too (the row under
-    // the mouse, just ticked, stays under it). Not when the list shows something else than last time (another page or
-    // view, a Show: choice, a search): that starts where it always did, for the rest of its frame too, where a banner
-    // made at the old view's width can still change height. Scrolls on purpose (Reveal, Load Order's find) come later
-    // and set their own target.
+    // the mouse, just ticked, stays under it) while the page shows; hidden, a list at its top stays there and only the
+    // banners' height is taken. Not when the list shows something else than last time (another page or view, a Show:
+    // choice, a search): that starts where it always did, for the rest of its frame too, where a banner made at the old
+    // view's width can still change height. Scrolls on purpose (Reveal, Load Order's find) come later and set their own
+    // target.
     static void KeepRows(Control list, Control scroll, float banners)
     {
         if (scroll.GetNodeOrNull<Control>("Mask/Content") is not { } content)

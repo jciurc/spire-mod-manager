@@ -4933,7 +4933,7 @@ static class SelfTest
 
         await Tick(tickbox, false);
         Check("Better Mod Menu unticked: the banner goes at once", !Bmm.Ticked && Banner() == null, Where());
-        await TestBannersKeepRows(menu, screen, content, tickbox);
+        await TestBannersKeepRows(menu, screen, content, row);
         if (!was)
             return;
         await Tick(tickbox, true);
@@ -4942,21 +4942,24 @@ static class SelfTest
 
     // Banners coming and going with the list scrolled part way: the rows on screen stay where they were in every frame
     // (Layout.KeepRows), through Better Mod Menu ticked on (its banner shows), undo and redo, and Dismiss; a redraw that
-    // makes a wrapped banner again moves nothing, at the list's top too. Reveal still lands on its mod, and a Show:
-    // choice still starts the list at its top. A spacer under the rows gives the short fixture list room to scroll; it
-    // goes after. Starts and ends with Better Mod Menu unticked.
-    static async Task TestBannersKeepRows(Node menu, NModdingScreen screen, Control content, NTickbox tickbox)
+    // makes a wrapped banner again moves nothing, at the list's top too. The page hidden, a banner coming or going keeps
+    // the rows in place too, but a list at its top stays there. Reveal still lands on its mod, and a Show: choice still
+    // starts the list at its top. A spacer under the rows gives the short fixture list room to scroll; it goes after.
+    // bannerRow: Better Mod Menu's row, whose tick raises the banner. Starts and ends with it unticked.
+    static async Task TestBannersKeepRows(Node menu, NModdingScreen screen, Control content, NModMenuRow bannerRow)
     {
         var border = screen.GetNode<Control>("ModsBorder");
         var list = border.GetNode<Control>("ModsScrollContainer");
+        var tickbox = bannerRow.GetNode<NTickbox>("Tickbox");
         Control? Banner() => border.GetNodeOrNull<Control>(LoadOrder.ManagersName);
         if (Layout.Current != Layout.View.Categories || Bmm.Ticked || Banner() != null || ListFilter.Chosen != ListFilter.Choice.All
-            || CategoryList.Filter(content).Length > 0)
+            || CategoryList.Filter(content).Length > 0 || bannerRow.Mod is not { } bannerMod)
         {
             Results.Add("SKIP banners keeping the rows in place: not on the main list showing every mod, or Better Mod Menu ticked");
             return;
         }
         float Target() => (float)list.Get("_targetDragPosY");
+        float Padding() => (float)list.Get("_paddingTop");
         async Task ScrollTo(float target)
         {
             list.Set("_targetDragPosY", target);
@@ -5008,6 +5011,41 @@ static class SelfTest
             Check("undo takes the banner away and redo brings it back, scrolled part way: the rows stay where they were in every frame",
                 gone && Bmm.Ticked && Banner() is { Visible: true } && undone.Moved < -30 && redone.Moved > 30 && undone.Strayed <= 1 && redone.Strayed <= 1,
                 $"gone on undo {gone}, back on redo {Banner() != null}; the list's top moved {undone.Moved}, then {redone.Moved}; the row strayed {undone.Strayed}, then {redone.Strayed}");
+
+            // The page hidden (the main menu over it), its banner switched on or off with a redraw, as the relaunch check's
+            // fixes do there: what the page shows once it opens again. Scrolled part way, the rows where they were; at the
+            // list's top, the list still at its top, its first row as far under the list's top as before (not scrolled
+            // under it by the banner's height).
+            async Task<(bool Hidden, float Moved)> SwitchHidden(bool on)
+            {
+                var top = list.GetGlobalRect().Position.Y;
+                screen.Visible = false;
+                Dependencies.Set([bannerMod], on, screen);
+                CategoryList.Redraw(content);
+                await Wait(menu, 0.3);
+                var hidden = !list.IsVisibleInTree() && (Banner() != null) == on;
+                screen.Visible = true;
+                await Wait(menu, 0.3);
+                return (hidden, list.GetGlobalRect().Position.Y - top);
+            }
+            await ScrollTo(-160);
+            var rowAt = row.GetGlobalRect().Position.Y;
+            var hiddenGone = await SwitchHidden(false);
+            var rowMoved = row.GetGlobalRect().Position.Y - rowAt;
+            Check("the page hidden, scrolled part way: a banner going there leaves the rows where they were once the page shows again",
+                hiddenGone.Hidden && Banner() == null && hiddenGone.Moved < -30 && Math.Abs(rowMoved) <= 1,
+                $"gone while hidden {hiddenGone.Hidden}, the list's top moved {hiddenGone.Moved}, the row {rowMoved}, scrolled to {Target()}");
+            CategoryList.ScrollToTop(content);
+            await Wait(menu, 0.2);
+            var first = content.GetChildren().OfType<NModMenuRow>().Where(r => r.Visible).MinBy(r => r.Position.Y);
+            float Under(Control r) => r.GetGlobalRect().Position.Y - list.GetGlobalRect().Position.Y;
+            var under = first is { } firstRow ? Under(firstRow) : float.NaN;
+            var hiddenRaised = await SwitchHidden(true);
+            Check("the page hidden at the list's top: a banner raised there leaves the list at its top once the page shows again, its first row where it was",
+                hiddenRaised.Hidden && Banner() is { Visible: true } && hiddenRaised.Moved > 30 && Target() == 0
+                && Math.Abs(content.Position.Y - Padding()) <= 0.5f && first != null && Math.Abs(Under(first) - under) <= 1,
+                $"raised while hidden {hiddenRaised.Hidden}, the list's top moved {hiddenRaised.Moved}, scrolled to {Target()} (rows at {content.Position.Y - Padding()}), "
+                + $"first row {first?.Mod?.manifest?.id} {under} under the list's top, then {(first != null ? Under(first) : float.NaN)}");
 
             // Wrapped (a narrow list) and at the list's top, a redraw makes every banner again, as tall as before: nothing
             // moves. (A banner that shrank and grew back there would be kept from scrolling one way but not the other.)
