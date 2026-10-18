@@ -1,3 +1,4 @@
+using MegaCrit.Sts2.Core.Logging;
 using MegaCrit.Sts2.Core.Modding;
 using MegaCrit.Sts2.Core.Nodes.Screens.ModdingScreen;
 using MegaCrit.Sts2.Core.Saves;
@@ -14,7 +15,22 @@ static class Dependencies
     // Read from the manifest, every time.
     public static IReadOnlyList<string> Read(Mod mod) => mod.manifest?.dependencies?.Select(d => d.id).ToList() ?? [];
 
-    public static bool IsOn(Mod mod) => Lookups.Current?.IsOn(mod) ?? !(SaveManager.Instance.SettingsSave.ModSettings?.IsModDisabled(mod) ?? false);
+    // Whether this copy loads after a relaunch (OnIn, with the saved list and our picks as they are now).
+    public static bool IsOn(Mod mod) => Lookups.Current?.IsOn(mod)
+        ?? !(SaveManager.Instance.SettingsSave.ModSettings?.IsModDisabled(mod) ?? false) && IsPicked(mod, Picks.Now);
+
+    // The one rule for whether a copy is on, read against given lists (launch's, or now's): its id and source not off in
+    // the game's list, and where the id is installed more than once from that source, it's the picked copy. This mod
+    // goes by its switch alone (a second copy of it is the game's to sort out).
+    public static bool OnIn(Mod mod, HashSet<(string?, ModSource)> gameOff, Picks picks) =>
+        !gameOff.Contains((mod.manifest?.id, mod.modSource)) && IsPicked(mod, picks);
+
+    public static bool IsPicked(Mod mod, Picks picks) => mod.manifest?.id is not { } id || id == ModEntry.ModId
+        || Copies.Twins(mod).Count == 0 || picks.Picked(id, mod.modSource) == Copies.CopyOf(mod);
+
+    // A copy installed more than once from its source that isn't the one picked now: enabling it changes the pick.
+    public static bool ChangesPick(Mod mod) => mod.manifest?.id is { } id && id != ModEntry.ModId && Copies.Twins(mod).Count > 0
+        && Copies.Picked(id, mod.modSource) != Copies.CopyOf(mod);
 
     // The (id, source) pairs the saved list has off, for checking many mods at once (IsModDisabled walks the list per
     // mod): any entry for one off, as the game reads it.
@@ -22,6 +38,10 @@ static class Dependencies
 
     public static HashSet<(string?, ModSource)> SavedOff(IEnumerable<SettingsSaveMod> saved) =>
         saved.Where(e => !e.IsEnabled).Select(e => ((string?)e.Id, e.Source)).ToHashSet();
+
+    // The same from an undo snapshot's list (History.Loaded: launch).
+    public static HashSet<(string?, ModSource)> SavedOff(IEnumerable<History.ModEntry> saved) =>
+        saved.Where(e => !e.Enabled).Select(e => ((string?)e.Id, e.Source)).ToHashSet();
 
     // Each mod's saved entry by (id, source), the first if listed twice (as the game's own lookups find it), for looking
     // up many mods at once.
@@ -33,9 +53,15 @@ static class Dependencies
         return entries;
     }
 
-    // The installed copy of an id, preferring one that's on; mods installed this session count.
+    // The installed copy of an id: one that's on, else the picked one of copies from one source, else the one the game
+    // loaded, else the first (Preference); mods installed this session count.
     public static Mod? Find(string id) => id != null && Lookups.Current is { } now ? now.Find(id)
-        : ModManager.Mods.Union(Installed.Mods).Where(m => m.manifest?.id == id).OrderByDescending(IsOn).FirstOrDefault();
+        : ModManager.Mods.Union(Installed.Mods).Where(m => m.manifest?.id == id).OrderByDescending(m => Preference(m, IsOn, Picks.Now)).FirstOrDefault();
+
+    // How strongly Find prefers a copy (higher first; the first in list order among equals): what "enable the mod this
+    // one needs" turns on, so a needed id installed twice keeps its pick.
+    public static int Preference(Mod mod, Func<Mod, bool> isOn, Picks picks) =>
+        isOn(mod) ? 3 : Copies.Twins(mod).Count > 0 && IsPicked(mod, picks) ? 2 : mod.state == ModLoadState.Loaded ? 1 : 0;
 
     // The mods in the game's list that name this id as a dependency (whether they're on or not).
     public static IEnumerable<Mod> NeededBy(string? id) => id != null && Lookups.Current is { } now ? now.NeededBy(id)
@@ -69,10 +95,9 @@ static class Dependencies
         return needed;
     }
 
-    // One mod per id and source, in order: two Workshop items of one mod are one mod to the saved list (one switch for
-    // both) and the game loads one of them, so lists, counts and changes name it once. The copy the game loaded, if any.
-    public static IEnumerable<Mod> OnePerKey(IEnumerable<Mod> mods) =>
-        mods.GroupBy(m => (m.manifest?.id, m.modSource)).Select(g => g.FirstOrDefault(m => m.state == ModLoadState.Loaded) ?? g.First());
+    // Every installed copy once (a copy the game lists twice, as found at launch and installed since, is one), in order.
+    public static IEnumerable<Mod> EachCopy(IEnumerable<Mod> mods) => mods.Where(m => m.manifest?.id != null)
+        .DistinctBy(m => (m.manifest?.id, m.modSource, Copies.CopyOf(m)));
 
     // Every saved entry of each (id, source), in the list's order. The game reads a mod as off if any of its entries is
     // off, so turning a mod listed twice (two copies with one id and source) on or off sets them all.
@@ -88,26 +113,90 @@ static class Dependencies
         return entries;
     }
 
-    // Turns mods on or off in the saved list and ticks the page's boxes; the caller's redraw records one change. This
-    // mod stays on.
-    public static void Set(IEnumerable<Mod> mods, bool on, NModdingScreen? screen)
+    // Turns mods on or off (Write: one copy of an id on) and ticks the page's boxes; the caller's redraw records one
+    // change. winner: the copy that stays on where several of an id are turned on (the row clicked).
+    public static void Set(IEnumerable<Mod> mods, bool on, NModdingScreen? screen, Mod? winner = null)
     {
-        var settings = SaveManager.Instance.SettingsSave.ModSettings ??= new ModSettings();
-        var entries = AllSavedEntries(settings.ModList);
-        foreach (var mod in mods)
-        {
-            if (!entries.TryGetValue((mod.manifest?.id, mod.modSource), out var list))
-            {
-                var entry = new SettingsSaveMod(mod);
-                settings.ModList.Add(entry);
-                entries[(mod.manifest?.id, mod.modSource)] = list = [entry];
-            }
-            foreach (var entry in list)
-                entry.IsEnabled = on || mod.manifest?.id == ModEntry.ModId;
-        }
-        SaveManager.Instance.SaveSettings();
+        Write([.. mods.Select(m => (m, on))], winner);
         if (screen != null)
             Profiles.RefreshTickboxes(screen);
+    }
+
+    // Turns copies on or off, as one change the caller records: the game's list (one switch per id and source) and our
+    // picks (which copy of an id and source loads), our data saved first. exclusive: one copy of an id on — for each id
+    // with a copy turned on that was off, winner if it's one of them, else one on already, else the picked one, else the
+    // first; the id's other copies, of any source, go off (an id whose copies asked for are on already is left as it is).
+    // Otherwise (a profile, which holds exactly what loads) each as asked. An id and source with no copy left on keeps its
+    // pick. This mod stays on. A read-only session can't save a pick: the game's list changes, the picks don't.
+    public static void Write(IReadOnlyList<(Mod Mod, bool On)> wanted, Mod? winner = null, bool exclusive = true)
+    {
+        var all = EachCopy(ModManager.Mods.Union(Installed.Mods).Concat(wanted.Select(w => w.Mod))).ToList();
+        // By copy (SwitchKey), not by Mod: the game can list one copy twice (found at launch, and again on an update).
+        var final = new Dictionary<string, bool>();
+        foreach (var (mod, on) in wanted.Where(w => w.Mod.manifest?.id != null))
+            final[Copies.SwitchKey(mod)] = on || mod.manifest?.id == ModEntry.ModId;
+        if (exclusive)
+            foreach (var id in wanted.Where(w => w.On && !IsOn(w.Mod)).Select(w => w.Mod.manifest?.id).OfType<string>().Distinct().Where(id => id != ModEntry.ModId).ToList())
+            {
+                var win = Winner([.. wanted.Where(w => w.On && w.Mod.manifest?.id == id).Select(w => w.Mod)], winner);
+                foreach (var other in all.Where(m => m.manifest?.id == id))
+                    final[Copies.SwitchKey(other)] = Copies.CopyOf(other) == Copies.CopyOf(win);
+            }
+        bool Final(Mod m) => final.TryGetValue(Copies.SwitchKey(m), out var on) ? on : IsOn(m);
+
+        var settings = SaveManager.Instance.SettingsSave.ModSettings ??= new ModSettings();
+        var entries = AllSavedEntries(settings.ModList);
+        var picked = new List<string>();
+        foreach (var (id, source) in all.Where(m => final.ContainsKey(Copies.SwitchKey(m))).Select(m => (Id: m.manifest?.id, m.modSource)).Distinct().ToList())
+        {
+            if (id == null)
+                continue;
+            var copies = all.Where(m => m.manifest?.id == id && m.modSource == source).ToList();
+            var on = copies.Any(Final);
+            // No entry is on already (a mod installed while the game runs has none yet): one is made to turn it off.
+            if (!entries.TryGetValue((id, source), out var list) && !on)
+            {
+                var entry = new SettingsSaveMod { Id = id, Source = source };
+                settings.ModList.Add(entry);
+                entries[(id, source)] = list = [entry];
+            }
+            foreach (var entry in list ?? [])
+                entry.IsEnabled = on;
+            if (id != ModEntry.ModId && copies.Select(Copies.CopyOf).Distinct().Count() > 1 && copies.FirstOrDefault(Final) is { } loads)
+                picked.Add(Copies.SwitchKey(loads));
+        }
+        if (picked.Count > 0 && Copies.WithPicks(Store.Data.CopyPicks, picked) is var picks
+            && !(picks ?? []).SequenceEqual(Store.Data.CopyPicks ?? []))
+        {
+            if (Store.ReadOnly)
+                Log.Warn($"[{ModEntry.ModId}] Our data can't be saved this session, so which copy of a mod loads stays as it was: {string.Join(", ", picked)}");
+            else
+            {
+                Store.Data.CopyPicks = picks;
+                Store.SaveViewState(); // the caller records the change, both halves in one undo step
+            }
+        }
+        SaveManager.Instance.SaveSettings();
+    }
+
+    // Of copies of one id turned on together, the one that stays on (Write): winner if it's one of them, else one on
+    // already, else the picked one, else the first.
+    static Mod Winner(List<Mod> on, Mod? winner) => winner != null && on.Contains(winner) ? winner
+        : on.FirstOrDefault(IsOn) ?? on.FirstOrDefault(m => Copies.Twins(m).Count > 0 && !ChangesPick(m)) ?? on[0];
+
+    // The copies on now, besides the ones given, that turning these on turns off (Write: one copy of an id on), for a
+    // tip before the click.
+    public static List<Mod> TurnedOffBy(IReadOnlyCollection<Mod> turnedOn, Mod? winner = null)
+    {
+        var off = new List<Mod>();
+        foreach (var id in turnedOn.Where(m => !IsOn(m)).Select(m => m.manifest?.id).OfType<string>().Distinct().Where(id => id != ModEntry.ModId))
+        {
+            var on = turnedOn.Where(m => m.manifest?.id == id).ToList();
+            var win = Winner(on, winner);
+            off.AddRange(EachCopy(ModManager.Mods.Union(Installed.Mods))
+                .Where(m => m.manifest?.id == id && Copies.CopyOf(m) != Copies.CopyOf(win) && !on.Contains(m) && IsOn(m)));
+        }
+        return off;
     }
 
     // Enabled mods placed before an enabled mod they need.

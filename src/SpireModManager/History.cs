@@ -14,7 +14,9 @@ static class History
 
     public abstract record Change;
     public record ModEntry(string Id, ModSource Source, bool Enabled);
-    public record Snapshot(string Store, IReadOnlyList<ModEntry> Mods) : Change;
+    // Our data, the game's saved list, and which copy of a mod installed twice takes which of its key's entries there
+    // (LoadOrder.CopyOrder: the game's entries can't tell them apart): the order is the list and the copy order together.
+    public record Snapshot(string Store, IReadOnlyList<ModEntry> Mods, IReadOnlyDictionary<(string?, ModSource), IReadOnlyList<string>> CopyOrder) : Change;
     public record Picks(IReadOnlyList<Mod> Mods, Mod? Anchor) : Change;
 
     // Kept per history: this many snapshots of our data, and up to PicksLimit selection steps (small) among them.
@@ -194,7 +196,7 @@ static class History
         try
         {
             if (track == Track.Order)
-                ApplyOrder(target.Mods);
+                ApplyOrder(target);
             else
             {
                 ApplyStates(target.Mods);
@@ -219,6 +221,7 @@ static class History
         try
         {
             Apply(Entered.Mods);
+            LoadOrder.RestoreCopyOrder(Entered.CopyOrder);
             Store.RestoreEdits(Entered.Store);
             Profiles.Track(); // the active profile follows the restored tickboxes
         }
@@ -234,7 +237,7 @@ static class History
     public static IReadOnlyList<ModEntry> CurrentMods() =>
         SaveManager.Instance.SettingsSave.ModSettings?.ModList.Select(m => new ModEntry(m.Id, m.Source, m.IsEnabled)).ToList() ?? [];
 
-    static Snapshot Take() => new(Store.EditsJson(), CurrentMods());
+    static Snapshot Take() => new(Store.EditsJson(), CurrentMods(), LoadOrder.CopyOrderNow());
 
     static void Push(Track track, Change step)
     {
@@ -251,8 +254,9 @@ static class History
     static bool SameStates(Snapshot a, Snapshot b) =>
         a.Mods.Select(m => (m.Id, m.Source, m.Enabled)).ToHashSet().SetEquals(b.Mods.Select(m => (m.Id, m.Source, m.Enabled)));
 
+    // The list's order and the copy order both: a drop that only swaps two copies of a mod saves the same list.
     static bool SameOrder(Snapshot a, Snapshot b) =>
-        a.Mods.Select(m => (m.Id, m.Source)).SequenceEqual(b.Mods.Select(m => (m.Id, m.Source)));
+        a.Mods.Select(m => (m.Id, m.Source)).SequenceEqual(b.Mods.Select(m => (m.Id, m.Source))) && LoadOrder.SameCopyOrder(a.CopyOrder, b.CopyOrder);
 
     // On/off from the snapshot, order as it is now (entries the snapshot has and now lacks go last).
     static void ApplyStates(IReadOnlyList<ModEntry> mods)
@@ -265,10 +269,14 @@ static class History
             .Concat(mods.Where(m => !now.Any(n => n.Id == m.Id && n.Source == m.Source))).ToList());
     }
 
-    // Order from the snapshot, on/off as it is now (entries the snapshot doesn't have go last). Entries of one id and
-    // source (two copies of a mod) take that key's places in the snapshot in turn, not all the first one.
-    static void ApplyOrder(IReadOnlyList<ModEntry> mods)
+    // Order from the snapshot, on/off as it is now (entries the snapshot doesn't have go last), ours first whatever the
+    // snapshot had (one from before we kept it so: LoadOrder.OursFirst). Entries of one id and source (two copies of a
+    // mod) take that key's places in the snapshot in turn, not all the first one, and the copies take them in the
+    // snapshot's copy order.
+    static void ApplyOrder(Snapshot target)
     {
+        var mods = target.Mods;
+        LoadOrder.RestoreCopyOrder(target.CopyOrder);
         var places = new Dictionary<(string?, ModSource), Queue<int>>();
         for (var i = 0; i < mods.Count; i++)
         {
@@ -277,7 +285,7 @@ static class History
             queue.Enqueue(i);
         }
         Apply(CurrentMods().Select(m => (Mod: m, At: places.TryGetValue((m.Id, m.Source), out var queue) && queue.TryDequeue(out var i) ? i : int.MaxValue))
-            .OrderBy(p => p.At).Select(p => p.Mod).ToList());
+            .OrderBy(p => p.At).Select(p => p.Mod).OrderBy(m => m.Id == SpireModManager.ModEntry.ModId ? 0 : 1).ToList());
     }
 
     static void Apply(IReadOnlyList<ModEntry> mods)

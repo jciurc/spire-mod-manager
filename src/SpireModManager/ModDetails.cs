@@ -207,10 +207,13 @@ static class ModDetails
         var problems = Problems(mod);
         foreach (var problem in problems)
             text.Append($"[color={Problem}]{Escape(problem)}[/color]\n");
+        var copy = CopyLine(mod, links: true);
+        if (copy is var (copyText, copyColor))
+            text.Append($"[color={copyColor}]{copyText}[/color]\n");
         var notes = GameNotes(mod);
         foreach (var note in notes)
             text.Append($"[color={Disabled}]{Escape(note)}[/color]\n");
-        if (problems.Count + notes.Count > 0)
+        if (problems.Count + notes.Count > 0 || copy != null)
             text.Append('\n');
         text.Append(mod.manifest?.description is { Length: > 0 } description ? description : Faint("SPIRE_MOD_MANAGER.NO_DESCRIPTION")).Append("\n\n");
 
@@ -274,6 +277,8 @@ static class ModDetails
         var info = Store.InfoFor(mod);
         var lines = new List<string> { $"[b]{Escape(id)}[/b]  {Bullet}  {Status(mod)}" };
         lines.AddRange(Problems(mod).Select(p => $"[color={Problem}]{Escape(p)}[/color]"));
+        if (CopyLine(mod, links: false) is var (copyText, copyColor))
+            lines.Add($"[color={copyColor}]{copyText}[/color]");
         lines.AddRange(GameNotes(mod).Select(n => $"[color={Disabled}]{Escape(n)}[/color]"));
         string Fact(string key, string value) => $"[color=#e8cf7a]{Menus.Text(key)}[/color]: {value}";
         lines.Add(Fact("SPIRE_MOD_MANAGER.AUTHOR", mod.manifest?.author is { Length: > 0 } author ? Escape(Cut(author, 80)) : Faint("SPIRE_MOD_MANAGER.UNKNOWN")));
@@ -320,14 +325,18 @@ static class ModDetails
     {
         var on = Dependencies.IsOn(mod);
         var loaded = mod.state == ModLoadState.Loaded;
-        // A copy the game set aside for another copy of its id is on but never loads: not a relaunch away.
+        // A copy the game set aside for another copy of its id that's on too (a local and a Workshop copy) is on but
+        // never loads: not a relaunch away. One set aside as the copy not picked reads as it is now: off, or pending.
         var (key, color) = on && mod.state == ModLoadState.Failed ? ("SPIRE_MOD_MANAGER.STATUS_FAILED", Problem)
-            : on && mod.state == ModLoadState.DisabledDuplicate ? ("SPIRE_MOD_MANAGER.STATUS_DUPLICATE", Disabled)
+            : LosesToOn(mod) ? ("SPIRE_MOD_MANAGER.STATUS_DUPLICATE", Disabled)
             : on != loaded ? ("SPIRE_MOD_MANAGER.STATUS_PENDING", Pending)
             : on ? ("SPIRE_MOD_MANAGER.STATUS_ENABLED", Enabled)
             : ("SPIRE_MOD_MANAGER.STATUS_DISABLED", Disabled);
         return (Menus.Text(key), color);
     }
+
+    // On, set aside as a duplicate, and another copy of its id on as well.
+    static bool LosesToOn(Mod mod) => mod.state == ModLoadState.DisabledDuplicate && Dependencies.IsOn(mod) && Copies.Others(mod).Any(Dependencies.IsOn);
 
     // What stops the mod working: the game's load errors, a duplicate copy, and (if on) dependencies missing or off.
     // Plain text, escaped where it's shown: the game's errors lose the tags it marks parts with ("Mod [red]{id}[/red]
@@ -335,10 +344,41 @@ static class ModDetails
     public static List<string> Problems(Mod mod)
     {
         var problems = (mod.errors ?? []).Select(e => Menus.Format("SPIRE_MOD_MANAGER.FROM_GAME", ("message", WithoutTags(e.GetFormattedText())))).ToList();
-        if (mod.state == ModLoadState.DisabledDuplicate)
+        if (LosesToOn(mod))
             problems.Add(Menus.Text("SPIRE_MOD_MANAGER.STATE_DUPLICATE"));
         problems.AddRange(DependencyProblems(mod));
         return problems;
+    }
+
+    // For a mod installed more than once, a line about the other copy (BBCode, the other copy's name a link to its row
+    // where links: false gives it plain), with its colour; null for none:
+    // - off while another copy is on: that one is the enabled copy (dim);
+    // - picked, not loaded yet, another copy loaded: this one loads in its place on relaunch (orange);
+    // - picked and failed for its own reasons: enabling the other copy loads that one instead (dim, after the red);
+    // - the pick couldn't be applied this launch (SameIdLoad's self-check or canary): it says so (orange), on every copy.
+    // None for this mod (the running copy is ours whichever is on), nor for a copy on that loses to the other one on (the
+    // game's local-vs-Workshop rule: STATUS_DUPLICATE says so).
+    public static (string Text, string Color)? CopyLine(Mod mod, bool links)
+    {
+        if (mod.manifest?.id == ModEntry.ModId || Copies.Others(mod) is not { Count: > 0 } others)
+            return null;
+        string Other(Mod other)
+        {
+            var name = Escape((Store.InfoFor(other)?.Alias ?? other.manifest?.name ?? other.manifest?.id ?? "") + Copies.Which(other));
+            return links ? $"[url=mod:{Copies.LinkKey(other)}][color={ModLinkHex}]{name}[/color][/url]" : name;
+        }
+        string Line(string key, Mod other) => Menus.Format(key, ("other", Other(other)));
+        if (SameIdLoad.Unchosen(mod.manifest?.id))
+            return (Escape(Menus.Text("SPIRE_MOD_MANAGER.COPY_NOT_APPLIED")), Pending);
+        var on = Dependencies.IsOn(mod);
+        if (!on && others.FirstOrDefault(Dependencies.IsOn) is { } enabled)
+            return (Line("SPIRE_MOD_MANAGER.COPY_OTHER_ENABLED", enabled), Disabled);
+        if (on && mod.state != ModLoadState.Loaded && mod.state != ModLoadState.Failed && !LosesToOn(mod) && !Copies.Loses(mod)
+            && others.FirstOrDefault(o => o.state == ModLoadState.Loaded) is { } loaded)
+            return (Line("SPIRE_MOD_MANAGER.COPY_LOADS_AFTER", loaded), Pending);
+        if (on && mod.state == ModLoadState.Failed && mod.errors?.Any(e => e.LocEntryKey == "MOD_ERROR.DUPLICATE_ID") != true)
+            return (Line("SPIRE_MOD_MANAGER.COPY_PICKED_FAILED", others[0]), Disabled);
+        return null;
     }
 
     // The game's messages we took off a mod that's off (BranchErrors), each marked as the game's: not a problem (the mod

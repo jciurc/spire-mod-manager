@@ -1,0 +1,11 @@
+{
+  "id": "SmmTestTwin",
+  "name": "Test Twin",
+  "author": "Spire Mod Manager tests",
+  "description": "Empty mod for dev-sandbox tests: one of two copies of one mod id (SmmTestTwinB is the other), the older one. tools/dev.cs lists the id after Test Framework, which only the newer copy needs, so this one always sorts first.",
+  "version": "1.0.0",
+  "has_pck": false,
+  "has_dll": false,
+  "affects_gameplay": true,
+  "dependencies": []
+}
