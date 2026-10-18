@@ -20,6 +20,8 @@ static class RowTitles
     public const float RowHeight = 56; // our views (the game's: 72), with RowGap between rows
     public const int RowGap = 8;
     const string MarkName = "SpireModManagerEditedMark", HotName = "SpireModManagerTitleHover", RestName = "SpireModManagerOriginalName";
+    public const string MarkHotName = "SpireModManagerNoteHover"; // the notepad's hover area, a little bigger than it
+    const float MarkReach = 6; // how far that area goes left of the notepad (no further than the row's edge)
     const string FullMeta = "spire_mod_manager_full_title", FittedMeta = "spire_mod_manager_fitted_title";
 
     public static void Apply(IEnumerable<NModMenuRow> rows, bool vanilla)
@@ -67,7 +69,7 @@ static class RowTitles
                 title.RemoveThemeColorOverride("default_color"); // Better Mod Menu's name colour (its page restyles its own)
             Layout.FontSize(title, vanilla ? Layout.RowTitleVanillaSize : Layout.RowTitleSize);
             // Shown again by Fit, in our views.
-            foreach (var part in new[] { MarkName, HotName, RestName })
+            foreach (var part in new[] { MarkName, MarkHotName, HotName, RestName })
                 if (row.GetNodeOrNull<Control>(part) is { } old)
                     old.Visible = false;
             if (!vanilla)
@@ -82,7 +84,7 @@ static class RowTitles
         MarkChanged(rows, vanilla);
     }
 
-    // Cuts the title to fit, then places the notepad and the hover area; a row out of sight is fitted once it shows.
+    // Cuts the title to fit, then places the notepad and the hover areas; a row out of sight is fitted once it shows.
     static void Fit(NModMenuRow row, string name, string? alias, bool marked)
     {
         if (!GodotObject.IsInstanceValid(row) || row.Mod is not { } mod || Store.Data.VanillaView) // (switched since it was asked for)
@@ -153,17 +155,29 @@ static class RowTitles
             var mark = row.GetNodeOrNull<TextureRect>(MarkName);
             if (mark == null)
             {
+                // Only drawn: the mouse goes to its hover area.
                 mark = new TextureRect
                 {
                     Name = MarkName, Texture = Icons.Notepad, StretchMode = TextureRect.StretchModeEnum.Keep,
-                    MouseFilter = Control.MouseFilterEnum.Pass, Modulate = new Color(0.91f, 0.81f, 0.48f, 0.75f),
+                    MouseFilter = Control.MouseFilterEnum.Ignore, Modulate = new Color(0.91f, 0.81f, 0.48f, 0.75f),
                 };
                 row.AddChild(mark);
-                // A plain tooltip, not the mod's card (the title's hover has that).
-                Hover.Watch(mark, NoteTipName, () => Escape(Menus.Text("SPIRE_MOD_MANAGER.CONTAINS_NOTE")), Hover.Timing.Plain);
             }
             mark.Visible = true;
             mark.Position = new Vector2(title.Position.X - markSize.X - 5, top + (lineHeight - markSize.Y) / 2 - 1); // in the room before the title
+            // The notepad is small, so its hover area is a little bigger: left of it, and up and down over the title's line
+            // (as the title's area beside it). Not right, where the title's starts. Clicks go on to the row.
+            var markHot = row.GetNodeOrNull<Control>(MarkHotName);
+            if (markHot == null)
+            {
+                markHot = new Control { Name = MarkHotName, MouseFilter = Control.MouseFilterEnum.Pass };
+                row.AddChild(markHot);
+                // A plain tooltip, not the mod's card (the title's hover has that).
+                Hover.Watch(markHot, NoteTipName, () => Escape(Menus.Text("SPIRE_MOD_MANAGER.CONTAINS_NOTE")), Hover.Timing.Plain);
+            }
+            var left = Math.Max(0, mark.Position.X - MarkReach);
+            var (high, low) = (Math.Min(top, mark.Position.Y), Math.Max(top + lineHeight, mark.Position.Y + markSize.Y));
+            (markHot.Position, markHot.Size, markHot.Visible) = (new Vector2(left, high), new Vector2(mark.Position.X + markSize.X - left, low - high), true);
         }
     }
 
