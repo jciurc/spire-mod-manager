@@ -520,7 +520,10 @@ void PrepareSandbox(bool resetData)
         list.Add((JsonNode)new JsonObject { ["id"] = ModId, ["is_enabled"] = true, ["source"] = "mods_directory" });
     list.Add((JsonNode)new JsonObject { ["id"] = real ? "BetterModMenuFork" : "SmmTestRetired", ["is_enabled"] = crash && !real, ["source"] = "mods_directory" });
     // The fixture's two copies of SmmTestTwin in a known order: the newer one needs Test Framework, listed before them,
-    // so the older one (SmmTestTwinA) always sorts first and the picked newer one (SmmTestTwinB) second.
+    // so the older one (SmmTestTwinA) always sorts first and the picked newer one (SmmTestTwinB) second. Both share the
+    // id's place, so that rests on .NET's PriorityQueue keeping its root on a tie (A is queued first and is the root when
+    // B joins): if that changes, the self-test's "swapped" check fails, not the pick. Any pair that tests a swap has
+    // this tie.
     if (!real)
         foreach (var id in new[] { "SmmTestLib", "SmmTestTwin" })
             list.Add((JsonNode)new JsonObject { ["id"] = id, ["is_enabled"] = true, ["source"] = "mods_directory" });
@@ -544,9 +547,12 @@ void PrepareSandbox(bool resetData)
     settings["window_size"] = new JsonObject { ["X"] = 1920, ["Y"] = 1080 };
     File.WriteAllText(settingsPath, settings.ToJsonString(new() { WriteIndented = true }));
 
-    if (!resetData)
-        return;
     var data = Path.Combine(sandbox, "mod_data", ModId);
+    if (!resetData)
+    {
+        PickTwins(data); // --crash keeps --crash-prepare's data, which has no pick for the --workshop twins
+        return;
+    }
     if (Directory.Exists(data))
         Directory.Delete(data, recursive: true);
     // Better Mod Menu's data beside ours, cleared every run so no saves or fixture carry over.
@@ -576,14 +582,20 @@ void PrepareSandbox(bool resetData)
             .FirstOrDefault(f => f.Contains(Path.Combine("mod_data", ModId)))
         : null;
     File.Copy(source ?? Path.Combine(root, "tools", "fixtures", "manager.json"), Path.Combine(data, "manager.json"));
-    // --twins: the last given copy of each id picked to load (copied in as a local folder: l:workshop-<item>).
-    if (TwinPicks() is { Count: > 0 } picked && JsonNode.Parse(File.ReadAllText(Path.Combine(data, "manager.json"))) is JsonObject manager)
-    {
-        var keys = (manager["copy_picks"] as JsonArray ?? []).Select(p => (string?)p).OfType<string>()
-            .Where(key => !picked.Any(p => key.StartsWith(p.Id + "|"))).Concat(picked.Select(p => $"{p.Id}|l:workshop-{p.Item}")).Order(StringComparer.Ordinal);
-        manager["copy_picks"] = new JsonArray([.. keys.Select(k => (JsonNode?)JsonValue.Create(k))]);
-        File.WriteAllText(Path.Combine(data, "manager.json"), manager.ToJsonString(new() { WriteIndented = true }));
-    }
+    PickTwins(data);
+}
+
+// --twins: the last given copy of each id picked to load (copied in as a local folder: l:workshop-<item>), in the
+// sandbox's manager.json (none: nothing to pick in).
+void PickTwins(string data)
+{
+    var file = Path.Combine(data, "manager.json");
+    if (TwinPicks() is not { Count: > 0 } picked || !File.Exists(file) || JsonNode.Parse(File.ReadAllText(file)) is not JsonObject manager)
+        return;
+    var keys = (manager["copy_picks"] as JsonArray ?? []).Select(p => (string?)p).OfType<string>()
+        .Where(key => !picked.Any(p => key.StartsWith(p.Id + "|"))).Concat(picked.Select(p => $"{p.Id}|l:workshop-{p.Item}")).Order(StringComparer.Ordinal);
+    manager["copy_picks"] = new JsonArray([.. keys.Select(k => (JsonNode?)JsonValue.Create(k))]);
+    File.WriteAllText(file, manager.ToJsonString(new() { WriteIndented = true }));
 }
 
 // The chain from the last mod in chain to the first mod it needs (directly or not) that won't be on in this run, or
