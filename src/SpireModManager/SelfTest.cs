@@ -7872,7 +7872,9 @@ static class SelfTest
         var pairNew = pairPopup.Contains("New mods were detected") && !pairPopup.Contains("A new copy") && pairPicked == "l:PairB";
         History.Undo(); // the switch
         await Wait(menu, 0.3);
-        var backUndone = BackPicked() == "l:Back1" && !Profiles.Edited;
+        // (The pair below arrived on since: the profile's unsaved edit, but nothing about Back.)
+        var backUndone = BackPicked() == "l:Back1" && Profiles.UnsavedChanges() is var (backOn, backOff)
+            && !backOn.Concat(backOff).Any(m => m.Id.StartsWith(Back));
         // Put back: the made-up copies, their rows and our data for them (quietly, in every undo snapshot).
         foreach (var gone in new[] { backSecond, backUpdate, pairFirst, pairSecond })
         {
