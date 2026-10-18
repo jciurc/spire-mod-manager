@@ -113,6 +113,14 @@ static class History
         Changed?.Invoke();
     }
 
+    // Our data as it is now taken as the current state, with no step: for state that follows something else (a
+    // profile's unsaved edit following the mod list), which a restored state works out again for itself.
+    public static void KeepCurrent()
+    {
+        if (_current is { } current)
+            _current = current with { Store = Take().Store };
+    }
+
     // A change that isn't the player's edit (an installed mod joining the active profile): written into every
     // snapshot, so it's no undo step and no change since launch, and Revert all keeps it.
     public static void Quietly(Action<StoreData> change)

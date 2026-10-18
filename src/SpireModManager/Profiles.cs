@@ -77,15 +77,20 @@ static class Profiles
         {
             if (Active is not { } profile || !Unseen(profile).Any() && !Store.Data.Profiles.Any(Unheld))
                 return;
-            // Its being on is the profile's unsaved edit, written quietly too: the arrival isn't the player's step.
+            var took = false;
             History.Quietly(data =>
             {
-                var active = data.Profiles.FirstOrDefault(p => p.Name == data.ActiveProfile);
-                if (TakeIn(active, arrived: true))
-                    Edit(active);
+                took |= TakeIn(data.Profiles.FirstOrDefault(p => p.Name == data.ActiveProfile), arrived: true);
                 foreach (var each in data.Profiles)
                     HoldCopies(each);
             });
+            // Its being on is the profile's unsaved edit. The arrival isn't the player's step, and the edit follows the
+            // mod list (worked out again wherever undo lands): now only, not as a step.
+            if (took && Active is { } active && Edit(active))
+            {
+                Store.Save();
+                History.KeepCurrent();
+            }
             Switched?.Invoke(); // the count beside the name
         }
         catch (Exception e)
