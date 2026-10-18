@@ -241,9 +241,10 @@ static class History
         Recorded[track]++;
         var past = Past[track];
         past.Add(step);
-        // The oldest steps go first, until the snapshots and the selection steps both fit.
-        while (past.Count(s => s is Snapshot) > Limit || past.Count(s => s is Picks) > PicksLimit)
-            past.RemoveAt(0);
+        // Over its limit, a kind loses its oldest step: many picks never push out an edit's snapshot.
+        foreach (var (kind, limit) in new (Func<Change, bool>, int)[] { (s => s is Snapshot, Limit), (s => s is Picks, PicksLimit) })
+            if (past.Count(kind) > limit)
+                past.RemoveAt(past.FindIndex(s => kind(s)));
         Future[track].Clear();
     }
 

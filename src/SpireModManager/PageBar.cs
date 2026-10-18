@@ -145,7 +145,8 @@ static class PageBar
             if (input is InputEventMouseButton { ButtonIndex: MouseButton.Left, Pressed: false })
             {
                 chip.AcceptEvent();
-                Selection.Clear(content);
+                // After this input: letting go rebuilds the bar, this chip included.
+                Callable.From(() => Selection.Clear(content)).CallDeferred();
             }
         };
         Hover.Tip(chip, $"{Menus.Text("SPIRE_MOD_MANAGER.CLEAR_SELECTION")}\n{Menus.Text("SPIRE_MOD_MANAGER.CLEAR_SELECTION_KEYS")}");

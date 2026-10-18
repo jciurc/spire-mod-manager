@@ -5623,9 +5623,15 @@ static class SelfTest
         Selection.Clear(content);
         await Wait(menu, 0.2);
         var steps = Steps();
+        // A plain click on the main list (its press is the game's, its release lets go of picks), and Load Order's,
+        // which picks the one mod: neither is a step.
+        foreach (var pressed in new[] { true, false })
+            rows[0].EmitSignal(Control.SignalName.GuiInput, new InputEventMouseButton { ButtonIndex = MouseButton.Left, Pressed = pressed });
+        await Wait(menu, 0.2);
+        var mainList = Steps() == steps;
         Selection.Pick(content, rows[0], toggle: false, range: false);
         await Wait(menu, 0.2);
-        Check("picking one mod with a plain click, none picked, is no undo step", Picked(rows[0]) && Steps() == steps, Say());
+        Check("a plain click on one mod, none picked, is no undo step (main list and Load Order's way)", mainList && Picked(rows[0]) && Steps() == steps, Say());
         CtrlClick(rows[1]);
         CtrlClick(rows[2]);
         await Wait(menu, 0.2);
@@ -5703,10 +5709,13 @@ static class SelfTest
         await Wait(menu, 0.2);
         steps = Steps();
         chip = Bar()?.FindChild("SelectionChip", true, false) as Control;
-        chip?.EmitSignal(Control.SignalName.GuiInput, new InputEventMouseButton { ButtonIndex = MouseButton.Left, Pressed = false });
+        // A real click where there's a mouse (--window): the chip goes with the bar it rebuilds.
+        var clicked = chip == null ? "no chip" : DisplayServer.GetName() == "headless"
+            ? (chip.EmitSignal(Control.SignalName.GuiInput, new InputEventMouseButton { ButtonIndex = MouseButton.Left, Pressed = false }) == Error.Ok ? "emitted" : "failed")
+            : await RealClick(menu, chip);
         await Wait(menu, 0.2);
         Check("a click on the chip lets go of them, an undo step", Selection.Mods.Count == 0 && Tinted() == 0 && Steps() == steps + 1
-            && Bar()?.FindChild("SelectionChip", true, false) == null, Say());
+            && Bar()?.FindChild("SelectionChip", true, false) == null, $"{Say()}; {clicked}");
         await Keys(Key.Z);
         Check("Ctrl+Z after letting go picks them again", Picked(three) && Tinted() == 3, Say());
         await Keys(Key.D);
@@ -5714,15 +5723,30 @@ static class SelfTest
         await Keys(Key.Z);
         Check("Ctrl+Z after Ctrl+D picks them again", Picked(three) && Tinted() == 3, Say());
 
-        // A view switch lets go, and the picks' steps go with it.
+        // A view switch lets go, and the picks' steps go with it. In Load Order, picks are steps of its own history, and
+        // the Undo button takes them back as Ctrl+Z does.
         var toggle = screen.GetNode<NButton>("SpireModManagerLoadOrderToggle");
         Click(toggle);
         await Wait(menu, 0.5);
         var letGo = Selection.Mods.Count == 0;
+        var orderSteps = History.Steps(History.Track.Order);
+        var orderRows = Rows().Where(r => r.Visible && r.Mod?.manifest?.id is { } id && id != ModEntry.ModId).Take(2).ToList();
+        if (orderRows.Count == 2)
+        {
+            Selection.Pick(content, orderRows[0], toggle: false, range: false); // Load Order's plain click: one mod, no step
+            CtrlClick(orderRows[1]);
+        }
+        await Wait(menu, 0.2);
+        var orderPicked = orderRows.Count == 2 && Selection.Mods.Count == 2 && History.Steps(History.Track.Order) == orderSteps + 1
+            && History.Newest(History.Track.Order) is History.Picks;
+        screen.FindChild("UndoButton", true, false)?.EmitSignal(BaseButton.SignalName.Pressed);
+        await Wait(menu, 0.2);
+        Check("in Load Order, picks are steps of its own history, and the Undo button takes them back", orderPicked
+            && Selection.Mods.Count == 1 && History.Steps(History.Track.Order) == orderSteps, $"{Selection.Mods.Count} picked, {History.Steps(History.Track.Order)} order steps");
         Click(toggle);
         await Wait(menu, 0.5);
         Check("a view switch lets go of the picks, and their undo steps go too", letGo && Selection.Mods.Count == 0
-            && History.Newest(History.Track.List) is not History.Picks, Say());
+            && History.Newest(History.Track.List) is not History.Picks && History.Newest(History.Track.Order) is not History.Picks, Say());
     }
 
     // Tag suggestions, with made-up tags on made-up mods so the counts are known (the data is put back after): the
