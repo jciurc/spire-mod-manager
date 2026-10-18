@@ -233,11 +233,10 @@ static class HistoryBar
         if (History.Loaded is not { } loaded)
             return [];
         var edited = DataChanges(loaded.Store, Store.EditsJson()).Edited.Select(e => e.Id).ToHashSet();
-        // Each copy turned on or off (a switch to another copy of a mod: both), and every copy of a mod moved (one
-        // place in the order for them all).
-        var switched = ModChanges(loaded).Select(c => Copies.SwitchKey(c.Mod)).ToHashSet();
-        var moved = Moves().Select(m => (m.Mod.manifest?.id, m.Mod.modSource)).ToHashSet();
-        return [.. ModManager.Mods.Where(m => switched.Contains(Copies.SwitchKey(m)) || moved.Contains((m.manifest?.id, m.modSource))), .. Installed.Mods,
+        // Each copy turned on or off (a switch to another copy of a mod: both), or moved (each copy has its own place).
+        static (string?, ModSource, string) Copy(Mod m) => (m.manifest?.id, m.modSource, Copies.CopyOf(m));
+        var switched = ModChanges(loaded).Select(c => Copy(c.Mod)).Concat(Moves().Select(m => Copy(m.Mod))).ToHashSet();
+        return [.. ModManager.Mods.Where(m => switched.Contains(Copy(m))), .. Installed.Mods,
             .. ModManager.Mods.Union(Installed.Mods).Where(m => edited.Contains(Copies.Key(m)))]; // by key: one copy's own edits
     }
 
@@ -509,23 +508,17 @@ static class HistoryBar
             .ToList();
     }
 
-    // Installed mods whose place in the load order changed since launch: (mod, position then, now), 1-based.
+    // Installed copies whose place in the load order changed since launch: (copy, position then, now), 1-based among the
+    // copies installed, as Load Order numbers its rows (two copies of one mod each their own place, LoadOrder.Places).
     public static List<(Mod Mod, int Before, int After)> Moves()
     {
         if (History.Loaded is not { } loaded)
             return [];
-        // The game's mods by id and source (the first, if listed twice), and each one's place at launch, looked up once.
-        var installed = new Dictionary<(string?, ModSource), Mod>();
-        foreach (var mod in ModManager.Mods)
-            installed.TryAdd((mod.manifest?.id, mod.modSource), mod);
-        var before = loaded.Mods.Where(m => installed.ContainsKey((m.Id, m.Source))).Select(m => (m.Id, m.Source)).Distinct().ToList();
-        var after = History.CurrentMods().Where(m => installed.ContainsKey((m.Id, m.Source))).Select(m => (m.Id, m.Source)).Distinct().ToList();
-        var place = before.Select((key, i) => (key, i)).ToDictionary(p => p.key, p => p.i + 1);
-        var moves = new List<(Mod, int, int)>();
-        for (var i = 0; i < after.Count; i++)
-            if (place.TryGetValue(after[i], out var was) && was != i + 1)
-                moves.Add((installed[after[i]], was, i + 1));
-        return moves;
+        var copies = Dependencies.EachCopy(ModManager.Mods).ToList();
+        var before = LoadOrder.Ranks(LoadOrder.Places(loaded.Mods.Select(m => ((string?)m.Id, m.Source)), copies));
+        var after = LoadOrder.Ranks(LoadOrder.Places(copies));
+        return [.. after.OrderBy(p => p.Value).Where(p => before.TryGetValue(p.Key, out var was) && was != p.Value)
+            .Select(p => (p.Key, before[p.Key], p.Value))];
     }
 
     // Mods whose details changed: which ones (category, alias, notes, tags) and the alias now; profiles added,

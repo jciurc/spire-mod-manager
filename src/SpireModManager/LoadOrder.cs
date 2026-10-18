@@ -37,31 +37,77 @@ static class LoadOrder
     public static readonly Color ProblemColor = new(0.45f, 0.1f, 0.1f, 0.6f), WarningColor = new(0.6f, 0.44f, 0.06f, 0.9f);
     const float DragStart = 6; // px the mouse moves with the button down before a press becomes a drag
     const float EdgeScroll = 60, EdgeScrollSpeed = 700; // drag near an edge: px from it, px per second at the edge
-    static List<string>? _loadedOrder;
+    static List<(string? Id, ModSource Source)>? _loadedOrder;
 
     // The order this session loaded with, taken once the game has finished its own startup sorting.
     public static void RememberLoadedOrder() => _loadedOrder ??= Order().ToList();
 
-    // Moved since launch, as Changes counts it (↕): each installed mod once, by its first place. Not the raw saved list,
+    // Moved since launch, as Changes counts it (↕): each installed copy once, by its own place. Not the raw saved list,
     // which can hold repeats and entries for mods that aren't installed: those made the main menu ask for a relaunch
     // while Changes showed nothing.
     public static bool OrderChanged => HistoryBar.Moves().Count > 0;
 
-    static IEnumerable<string> Order() =>
-        SaveManager.Instance.SettingsSave.ModSettings?.ModList.Select(m => $"{m.Id}/{m.Source}") ?? [];
+    static IEnumerable<(string? Id, ModSource Source)> Order() =>
+        SaveManager.Instance.SettingsSave.ModSettings?.ModList.Select(m => ((string?)m.Id, m.Source)) ?? [];
 
-    static string Key(Mod? mod) => $"{mod?.manifest?.id}/{mod?.modSource}";
+    static int IndexOf(Mod? mod, Dictionary<Mod, int> places) => mod != null && places.TryGetValue(mod, out var i) ? i : int.MaxValue;
 
-    static int IndexOf(Mod? mod, Dictionary<(string, ModSource), int> places) =>
-        mod?.manifest?.id is { } id && places.TryGetValue((id, mod.modSource), out var i) ? i : int.MaxValue;
+    // Each installed copy's place in the saved list now, looked up once per sort.
+    public static Dictionary<Mod, int> Places(IEnumerable<Mod> mods) => Places(Order(), mods, CopyOrder);
 
-    // Each saved entry's place in the list (the first, if listed twice), looked up once per sort.
-    static Dictionary<(string, ModSource), int> Places(List<SettingsSaveMod> list)
+    // Each of these copies' place in a saved list (its index there; none: not listed). The game's entries can't tell two
+    // copies of one id and source apart (two Workshop items of one mod), so they take that key's entries in turn: in the
+    // order they were last saved in this session (asSaved: Save), else as the game lists them. A copy the game lists
+    // twice (found at launch, and again on an update) is one.
+    public static Dictionary<Mod, int> Places(IEnumerable<(string? Id, ModSource Source)> saved, IEnumerable<Mod> mods,
+        IReadOnlyDictionary<(string?, ModSource), List<string>>? asSaved = null)
     {
-        var places = new Dictionary<(string, ModSource), int>();
-        for (var i = 0; i < list.Count; i++)
-            places.TryAdd((list[i].Id, list[i].Source), i);
+        var free = new Dictionary<(string?, ModSource), Queue<int>>();
+        var i = 0;
+        foreach (var key in saved)
+        {
+            if (!free.TryGetValue(key, out var queue))
+                free[key] = queue = new Queue<int>();
+            queue.Enqueue(i++);
+        }
+        var wanted = mods.ToList();
+        var byCopy = new Dictionary<(string?, ModSource, string), int>();
+        foreach (var group in Dependencies.EachCopy(ModManager.Mods.Union(Installed.Mods).Concat(wanted)).GroupBy(m => (m.manifest?.id, m.modSource)))
+        {
+            var order = asSaved?.GetValueOrDefault(group.Key) ?? [];
+            int SavedAt(Mod m) => order.IndexOf(Copies.CopyOf(m)) is var k && k >= 0 ? k : int.MaxValue;
+            foreach (var copy in group.OrderBy(SavedAt)) // stable: the rest as listed
+                if (free.TryGetValue(group.Key, out var queue) && queue.TryDequeue(out var at))
+                    byCopy[(group.Key.id, group.Key.modSource, Copies.CopyOf(copy))] = at;
+        }
+        var places = new Dictionary<Mod, int>();
+        foreach (var mod in wanted)
+            if (byCopy.TryGetValue((mod.manifest?.id, mod.modSource, Copies.CopyOf(mod)), out var at))
+                places[mod] = at;
         return places;
+    }
+
+    // The order this session last saved the copies of each id and source in (Save), for Places: the drag of one copy
+    // past another stays where it was dropped, though the game's entries are alike.
+    static readonly Dictionary<(string?, ModSource), List<string>> CopyOrder = [];
+
+    // Each copy's place at launch, among the copies installed now (1-based), for "was 3"; none before the menu.
+    public static Dictionary<Mod, int> LaunchPlaces(IEnumerable<Mod> mods) => Ranks(Places(_loadedOrder ?? [], mods));
+
+    // Places as 1-based ranks, the copies not listed left out.
+    public static Dictionary<Mod, int> Ranks(Dictionary<Mod, int> places)
+    {
+        var ranks = new Dictionary<Mod, int>();
+        var rank = 0;
+        int? last = null;
+        foreach (var (mod, at) in places.OrderBy(p => p.Value))
+        {
+            if (at != last)
+                rank++; // two Mods of one copy share its place
+            ranks[mod] = rank;
+            last = at;
+        }
+        return ranks;
     }
 
     // Rows in load order with handles and numbers, every one shown: a search here finds rather than filters (FindBar).
@@ -77,17 +123,17 @@ static class LoadOrder
                     HoverLinks(content);
             };
         }
-        var places = Places(SaveManager.Instance.SettingsSave.ModSettings?.ModList ?? []);
+        var mods = rows.Select(r => r.Mod).OfType<Mod>().ToList();
+        var places = Places(mods);
         var ordered = rows.OrderBy(r => IndexOf(r.Mod, places)).ToList();
-        // Where each one was at launch, among the mods installed now (1-based).
-        var installed = ordered.Select(r => Key(r.Mod)).ToHashSet();
-        var launch = (_loadedOrder ?? []).Where(installed.Contains).Distinct().Select((key, i) => (key, i)).ToDictionary(p => p.key, p => p.i + 1);
+        // Where each one was at launch, among the copies installed now (1-based).
+        var launch = LaunchPlaces(mods);
         for (var i = 0; i < ordered.Count; i++)
         {
             var row = ordered[i];
             content.MoveChild(row, i);
             row.Visible = true;
-            Decorate(content, row, i + 1, launch.GetValueOrDefault(Key(row.Mod)), redraw);
+            Decorate(content, row, i + 1, row.Mod is { } mod ? launch.GetValueOrDefault(mod) : 0, redraw);
             OrderingOnly(row, true);
         }
     }
@@ -145,8 +191,9 @@ static class LoadOrder
     // The installed mods in saved order.
     public static List<Mod> Mods(IEnumerable<NModMenuRow> rows)
     {
-        var places = Places(SaveManager.Instance.SettingsSave.ModSettings?.ModList ?? []);
-        return rows.Select(r => r.Mod).OfType<Mod>().OrderBy(m => IndexOf(m, places)).ToList();
+        var mods = rows.Select(r => r.Mod).OfType<Mod>().ToList();
+        var places = Places(mods);
+        return mods.OrderBy(m => IndexOf(m, places)).ToList();
     }
 
     // Whether putting mod at to breaks an order between two enabled mods involving it (old problems elsewhere don't
@@ -634,6 +681,10 @@ static class LoadOrder
         list.Clear();
         list.AddRange(entries);
         OursFirst(list);
+        // Which copy took which of its key's entries, for Places to read them back so.
+        foreach (var group in mods.GroupBy(m => (m.manifest?.id, m.modSource)))
+            if (group.Select(Copies.CopyOf).Distinct().ToList() is { Count: > 1 } copies)
+                CopyOrder[group.Key] = copies;
         SaveManager.Instance.SaveSettings();
         History.Record();
     }
