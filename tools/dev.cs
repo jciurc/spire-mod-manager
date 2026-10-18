@@ -129,10 +129,12 @@ foreach (var (item, manifest) in workshopManifests)
             : add));
     }
 }
-// Either copy: both play in the one sandbox data folder.
-if (Process.GetProcessesByName("SlayTheSpire2").Select(p => Path.GetDirectoryName(ExePath(p)))
-        .FirstOrDefault(dir => dir != null && new[] { BetaDir, StableDir }.Contains(dir, StringComparer.OrdinalIgnoreCase)) is { } running)
-    return Fail($"A dev copy of the game is already running from {running}.");
+// Every dev copy of the game plays in the one no-Steam sandbox (default\1): ours on either branch, and other mods' dev
+// runners (sts-content-options, Mod Doctor). A run that writes it while another runs breaks that one, so wait until no
+// copy but the real install runs, here and again right before the sandbox is written (another can start while we
+// build and link).
+if (WaitForOtherDevCopies() is { } busy)
+    return Fail(busy);
 
 if (smoke)
 {
@@ -149,6 +151,8 @@ else
 
 if (LinkDevCopy() is { } noCopy)
     return Fail(noCopy);
+if (WaitForOtherDevCopies() is { } stillBusy)
+    return Fail(stillBusy);
 SyncMods();
 PrepareSandbox((mode is "test" or "smoke" || firstRun) && !crash); // --crash keeps --crash-prepare's last working setup
 
@@ -644,6 +648,27 @@ static string? ExePath(Process p)
 {
     try { return p.MainModule?.FileName; }
     catch { return null; } // another user's or an elevated process
+}
+
+// Waits while a copy of the game other than the real install runs (a dev copy: they share the sandbox), saying so once;
+// null when none is left, else why we stopped waiting (half an hour). One whose path can't be read counts as a dev copy.
+string? WaitForOtherDevCopies()
+{
+    var real = Path.GetFullPath(GameDir).TrimEnd('\\') + "\\";
+    List<string> Others() => [.. Process.GetProcessesByName("SlayTheSpire2").Select(p => ExePath(p) ?? $"process {p.Id}")
+        .Where(path => !path.StartsWith(real, StringComparison.OrdinalIgnoreCase))];
+    var giveUp = DateTime.Now.AddMinutes(30);
+    var said = false;
+    while (Others() is { Count: > 0 } others)
+    {
+        if (DateTime.Now > giveUp)
+            return $"Another dev copy of the game is still running after half an hour: {string.Join(", ", others)}.";
+        if (!said)
+            Console.WriteLine($"waiting for another dev copy of the game to close (they share the sandbox): {string.Join(", ", others)}");
+        said = true;
+        Thread.Sleep(5000);
+    }
+    return null;
 }
 
 static int Fail(string message)
