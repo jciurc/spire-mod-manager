@@ -299,13 +299,43 @@ static class Layout
             foreach (var name in new[] { LoadOrder.AutoSortName, LoadOrder.AutoSortHintName, FindBar.Name })
                 if (list.GetNodeOrNull<Control>(name) is { } beside)
                     (beside.OffsetTop, beside.OffsetBottom) = (search.OffsetTop, search.OffsetBottom);
+        var bannersTop = y;
         Stack(list.GetNodeOrNull<Control>(LoadOrder.SelfName), Wide, 6);
         Stack(list.GetNodeOrNull<Control>(LoadOrder.ManagersName), Wide, 6);
         Stack(list.GetNodeOrNull<Control>(LoadOrder.SameIdName), Wide, 6);
         Stack(list.GetNodeOrNull<Control>(LoadOrder.WarningName), Wide, 6);
+        var banners = y - bannersTop;
         Stack(list.GetNodeOrNull<Control>(PageBar.Name), Current == View.Categories, 4);
         Stack(list.GetNodeOrNull<Control>(PageBar.HintName), Current == View.Categories, 4);
         scroll.OffsetTop = Wide ? y : box.Y;
+        KeepRows(list, scroll, banners);
+    }
+
+    // What the list showed when last placed (the page, view, Show: choice and search), the banners' height then, and the
+    // frame it began showing that.
+    static ((ulong Page, View View, ListFilter.Choice Choice, string Search) Showing, float Banners, ulong Since) _placed;
+
+    // A banner coming, going or rewrapping moves the list's top by its change in height: the rows scroll by as much at
+    // once, so the ones on screen stay where they were (CategoryList.KeepInPlace), at the list's top too (the row under
+    // the mouse, just ticked, stays under it) while the page shows; hidden, a list at its top stays there and only the
+    // banners' height is taken. Not when the list shows something else than last time (another page or view, a Show:
+    // choice, a search): that starts where it always did, for the rest of its frame too, where a banner made at the old
+    // view's width can still change height. Scrolls on purpose (Reveal, Load Order's find) come later and set their own
+    // target.
+    static void KeepRows(Control list, Control scroll, float banners)
+    {
+        if (scroll.GetNodeOrNull<Control>("Mask/Content") is not { } content)
+            return;
+        var showing = (list.GetInstanceId(), Current, ListFilter.Chosen, CategoryList.Filter(content));
+        var frame = Engine.GetProcessFrames();
+        if (showing != _placed.Showing)
+            _placed = (showing, banners, frame);
+        else if (banners != _placed.Banners)
+        {
+            if (frame != _placed.Since)
+                CategoryList.KeepInPlace(content, banners - _placed.Banners);
+            _placed.Banners = banners;
+        }
     }
 
     // Vanilla View: the game's notification dot on "Spire Manager" while a relaunch is pending.

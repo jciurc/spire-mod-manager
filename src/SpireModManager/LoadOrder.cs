@@ -332,6 +332,11 @@ static class LoadOrder
     public const string AutoSortHintName = "AutoSortHint", BannerCardName = "SpireModManagerBannerCard";
     const string BadgeName = "WarningBadge";
     const int CardLines = 12; // a banner's card names at most this many mods, then says how many more
+    // Each banner's height when last taken down, by name and text (the main list's warning and Load Order's share a
+    // name): the next one saying the same starts as tall, so a wrapped banner a redraw makes again keeps its height until
+    // it's laid out (later, on a hidden page) rather than moving the list under it up and back (Layout.KeepRows).
+    static readonly Dictionary<string, float> Heights = [];
+    static readonly StringName HeightKeyMeta = "spire_mod_manager_banner_key";
 
     public static void UpdateToolbar(Control content, List<NModMenuRow> rows, Action redraw)
     {
@@ -394,8 +399,9 @@ static class LoadOrder
         // The "!"'s card: the warning alone (the mods it's about are Load Order's own card).
         Badge(content, misordered > 0 && !on ? orderText : null);
         foreach (var name in new[] { WarningName, ManagersName, SameIdName, SelfName })
-            if (border.GetNodeOrNull(name) is { } old)
+            if (border.GetNodeOrNull<Control>(name) is { } old)
             {
+                Heights[old.GetMeta(HeightKeyMeta, name).AsString()] = old.OffsetBottom - old.OffsetTop;
                 border.RemoveChild(old); // now, not at the end of the frame: a redraw in the same frame adds a new one
                 old.QueueFree();
             }
@@ -638,7 +644,9 @@ static class LoadOrder
         var scroll = border.GetNode<Control>("ModsScrollContainer");
         (bar.OffsetLeft, bar.OffsetRight) = (scroll.OffsetLeft, scroll.OffsetRight);
         var top = (search ?? scroll).OffsetBottom + 6;
-        (bar.OffsetTop, bar.OffsetBottom) = (top, top + height);
+        var key = $"{name}\n{message}";
+        bar.SetMeta(HeightKeyMeta, key);
+        (bar.OffsetTop, bar.OffsetBottom) = (top, top + Heights.GetValueOrDefault(key, height));
 
         // The text takes its one-line width, or what the buttons leave, wrapping there (a wrapping label asks for no
         // width of its own). The room comes from the bar's anchors, not its size, which the text may have widened.
