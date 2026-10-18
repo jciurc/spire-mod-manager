@@ -7185,6 +7185,7 @@ static class SelfTest
         await Wait(menu, 0.2);
         Check("on (re)entering the page, Undo and Revert all agree: nothing to undo", !History.CanUndo && History.AtEntered
             && screen.FindChild("UndoButton", true, false) is BaseButton { Disabled: true } && screen.FindChild("RevertAllButton", true, false) is BaseButton { Disabled: true });
+        await TestTwinOrder(menu, screen, content); // on the page just entered: its Revert all touches only that test's moves
 
         // Separate histories: an order change made in Load Order isn't undone from the list view.
         Click(screen.GetNode<NButton>("SpireModManagerLoadOrderToggle"));
@@ -7230,6 +7231,102 @@ static class SelfTest
             Profiles.Rename(renamed, was);
             Check("renamed back, no renamed line", !HistoryBar.Describe().Any(l => l.Contains("Renamed in test")), string.Join(" | ", HistoryBar.Describe()));
         }
+    }
+
+    // The fixture twins (one id and source) in Load Order: which copy takes which of their entries is part of the order as
+    // undo knows it. Side by side, a drop of the second above the first saves the same list: one undo step, and no move
+    // for Changes (the game reads the same list; which copy loads is the pick), no "was" line, nothing pending; undo and
+    // redo swap them back and again. Split by another mod, a drop of the second above the first changes the list and the
+    // copies' turn at once: undo puts both back, so the rows, Changes and pending are as before the drop, and Revert all
+    // goes back to the page's opening order the same way. (The copies' turn once stayed behind: the rows came back
+    // swapped, and Changes, the pending line and the main menu's dot showed moves a relaunch wouldn't make.) Run on a page
+    // just entered, so Revert all touches only these moves; back on the main list at the end.
+    static async Task TestTwinOrder(Node menu, NModdingScreen screen, Control content)
+    {
+        List<NModMenuRow> Rows() => content.GetChildren().OfType<NModMenuRow>().ToList();
+        List<Mod> Order() => Rows().Select(r => r.Mod).OfType<Mod>().ToList();
+        static string Short(Mod m) => m.manifest?.id == TwinId ? Copies.CopyOf(m) : m.manifest?.id ?? "";
+        static string Named(Mod m) => (m.manifest?.name ?? "") + Copies.Which(m);
+        string Moves() => string.Join(", ", HistoryBar.Moves().Select(m => $"{Short(m.Mod)} {m.Before}→{m.After}"));
+        string Was() => string.Join(",", Rows().Select(r => r.GetNodeOrNull<Label>("SpireModManagerWas")?.Text ?? ""));
+        var line = screen.GetNode<Control>("%PendingChangesLabel");
+        int Steps() => History.Steps(History.Track.Order);
+        string Say() => $"rows {string.Join(", ", Order().Select(Short))}; moves [{Moves()}]; order changed {LoadOrder.OrderChanged}, pending {ModEntry.HasPendingChanges()} "
+            + $"(line {line.Visible}); order steps {Steps()}; at the page's opening state {History.AtEntered}";
+        var toggle = screen.GetNode<NButton>("SpireModManagerLoadOrderToggle");
+        Click(toggle);
+        await Wait(menu, 0.5);
+        var twins = Order().Where(m => m.manifest?.id == TwinId && m.modSource == ModSource.ModsDirectory).ToList();
+        if (twins.Count != 2 || Order().FirstOrDefault(m => m.manifest?.id == "SmmTestFixes") is not { } fixes)
+        {
+            if (twins.Count != 2)
+                TwinsMissing("two copies' turn in Load Order");
+            else
+                Check("two copies' turn in Load Order: Test Fixes to move between them", false);
+            Click(toggle);
+            await Wait(menu, 0.5);
+            return;
+        }
+        var (first, second) = (twins[0], twins[1]);
+        var (start, list, steps, was) = (Order(), History.CurrentMods(), Steps(), Was());
+        var (pending, changed) = (ModEntry.HasPendingChanges(), HistoryBar.ChangedMods().Overlaps(twins));
+        bool NothingMoved(List<Mod> rows) => Order().SequenceEqual(rows) && Moves() == "" && !LoadOrder.OrderChanged && ModEntry.HasPendingChanges() == pending
+            && line.Visible == pending && Was() == was && HistoryBar.ChangedMods().Overlaps(twins) == changed
+            && !HistoryBar.Describe().Any(l => l.StartsWith("Moved: ") && twins.Any(t => l.Contains(Named(t))));
+
+        // Side by side: the second dropped above the first.
+        var sideBySide = Order().IndexOf(second) == Order().IndexOf(first) + 1 && NothingMoved(start);
+        var startSaid = Say();
+        LoadOrder.Move(second, Order().IndexOf(first), Rows());
+        CategoryList.Redraw(content);
+        await Wait(menu, 0.3);
+        var swapped = Order();
+        Check("two copies side by side in Load Order: a drop of the second above the first swaps their rows in one undo step, the saved list the same; no move "
+            + "for Changes or Show: Changed, no \"was\" line, nothing pending (a relaunch loads the same)",
+            sideBySide && swapped.IndexOf(second) == swapped.IndexOf(first) - 1 && History.CurrentMods().SequenceEqual(list) && Steps() == steps + 1
+            && !History.AtEntered && NothingMoved(swapped), $"at the start: {startSaid}; now {Say()}");
+        History.Undo();
+        await Wait(menu, 0.3);
+        var undone = NothingMoved(start) && Steps() == steps && History.AtEntered;
+        var undoneSaid = Say();
+        History.Redo();
+        await Wait(menu, 0.3);
+        var redone = NothingMoved(swapped);
+        History.Undo();
+        await Wait(menu, 0.3);
+        Check("... undo swaps them back, redo again, undo back (the copies' turn is in the step)", undone && redone && NothingMoved(start) && History.AtEntered,
+            $"undone {undone} ({undoneSaid}), redone {redone}; now {Say()}");
+
+        // Split by Test Fixes, then the second dropped above the first: the list and the copies' turn in one step.
+        var rest = LoadOrder.Mods(Rows());
+        rest.Remove(fixes);
+        LoadOrder.Move(fixes, rest.IndexOf(second), Rows());
+        CategoryList.Redraw(content);
+        await Wait(menu, 0.3);
+        var split = Order();
+        var (splitMoves, splitWas, splitPending, splitSteps, splitSaid) = (Moves(), Was(), ModEntry.HasPendingChanges(), Steps(), Say());
+        LoadOrder.Move(second, Order().IndexOf(first), Rows());
+        CategoryList.Redraw(content);
+        await Wait(menu, 0.3);
+        var dropped = Order();
+        var droppedSaid = Say();
+        History.Undo();
+        await Wait(menu, 0.3);
+        Check("two copies split by another mod: a drop of the second above the first is one step; undo puts the rows back, and Changes, the \"was\" lines "
+            + "and pending as before the drop (no move a relaunch wouldn't make)",
+            split.IndexOf(fixes) == split.IndexOf(first) + 1 && split.IndexOf(second) == split.IndexOf(fixes) + 1
+            && dropped.IndexOf(second) == dropped.IndexOf(first) - 1 && Order().SequenceEqual(split) && Moves() == splitMoves && Was() == splitWas
+            && ModEntry.HasPendingChanges() == splitPending && line.Visible == splitPending && Steps() == splitSteps,
+            $"split: {splitSaid}; dropped: {droppedSaid}; undone: {Say()}");
+        History.Redo();
+        await Wait(menu, 0.3);
+        var redoneDrop = Order().SequenceEqual(dropped);
+        History.RevertMods();
+        await Wait(menu, 0.3);
+        Check("... redo, then Revert all: the page's opening order back, the copies' turn too; no move, \"was\" line or pending relaunch left, the twins "
+            + "not under Show: Changed", redoneDrop && NothingMoved(start) && History.AtEntered, $"redone {redoneDrop}; reverted: {Say()}");
+        Click(toggle);
+        await Wait(menu, 0.5);
     }
 
     // Missing game resources: everything this run used loaded; a path that isn't there gives null without throwing
