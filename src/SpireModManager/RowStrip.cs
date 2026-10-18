@@ -177,9 +177,10 @@ static class RowStrip
         return (font, theme);
     }
 
-    // The note ("Needs: …", "Required for 3 mods") is made only for a line that has one: an empty one on every row was
-    // a sixth of a long list's lines (#46). Without one, a spacer keeps the author at the line's end, where the note's
-    // room put it. SetNote changes a kept line's note in place; true if it changed.
+    // The note ("Needs: …", "Required for 3 mods") is made only for a line that has one: rows with none each had an
+    // empty rich text label, one of the costlier parts of a long list's lines (#46). Without one, a spacer keeps the
+    // author at the line's end, where the note's room put it. SetNote changes a kept line's note in place; true if it
+    // changed.
     const string NeedsName = "Needs", AuthorName = "Author", SpacerName = "Spacer";
 
     static RichTextLabel Note(string text) => new()
