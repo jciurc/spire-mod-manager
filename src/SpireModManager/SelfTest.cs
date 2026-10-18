@@ -1709,8 +1709,14 @@ static class SelfTest
         // game's text, and in English from its file. Not empty: the game has one.
         var gamesMessage = LaunchGuard.GamesMessage(plain: false).Trim();
         var gamesMessagePlain = LaunchGuard.GamesMessage(plain: true).Trim();
-        Check("the game's own message for a failed start, as the dialogs show it: there, and marked as the game's",
-            gamesMessage.StartsWith("The game's own message: ") && gamesMessage.Length > 30 && gamesMessagePlain.StartsWith("The game's own message: "),
+        // Styled: "Notice from the game" centred, then the message alone in an outlined, faintly filled box (a one-cell
+        // table), our text after. Plain (no markup): the same words over the message.
+        var boxed = System.Text.RegularExpressions.Regex.Match(gamesMessage, @"^\[center\]\[color=#[0-9a-f]{6}\]Notice from the game\[/color\]\[/center\]\n"
+            + @"\[table=1\]\[cell expand=1 border=#[0-9a-f]{8} bg=#[0-9a-f]{8} padding=[0-9,]+\](?<message>.+)\[/cell\]\[/table\]$");
+        Check("the game's own message for a failed start, as the dialogs show it: under \"Notice from the game\" (centred), alone in its outlined box; "
+            + "plain, under the same words",
+            boxed.Success && boxed.Groups["message"].Value.Length > 30 && !boxed.Groups["message"].Value.Contains("Notice from the game")
+            && gamesMessagePlain.StartsWith("Notice from the game:\n") && gamesMessagePlain.Length > 50,
             $"{gamesMessage} | {gamesMessagePlain}");
         // Our popup's button (marked: no other popup's), by its node and signal names (the same in every game version so far).
         static void Press(string button)
