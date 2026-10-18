@@ -1,5 +1,7 @@
 using Godot;
 using HarmonyLib;
+using MegaCrit.Sts2.Core.Audio;
+using MegaCrit.Sts2.Core.Commands;
 using MegaCrit.Sts2.Core.Logging;
 using MegaCrit.Sts2.Core.Modding;
 using MegaCrit.Sts2.Core.Localization;
@@ -453,7 +455,7 @@ static class ShortcutsPatch
     static bool CloseOurs() => MenuPanel.Close() || RelaunchCheck.Cancel() || ProfileShare.Close() || MenuButton.CancelMove();
 
     // F8 on the main menu opens our page, as the main menu button does; on the Modding page it goes back, as the page's
-    // Back button does. Anything of ours that's open closes first instead, as with Escape. Elsewhere it's left to the
+    // Back button does, each with its sound. Anything of ours that's open closes first instead, as with Escape. Elsewhere it's left to the
     // game, which does nothing with it: on any other screen (by the game's own reckoning, where a popup counts as one),
     // during a fade, and while a text box has the keyboard (a text box doesn't take F8, so it would reach here).
     static bool OpenOrClose()
@@ -464,13 +466,17 @@ static class ShortcutsPatch
         {
             case NMainMenu menu:
                 if (!CloseOurs())
+                {
+                    SfxCmd.Play(FmodSfx.uiClick); // the main menu button's click
                     MenuButton.Open(menu);
+                }
                 return true;
             case NModdingScreen screen:
                 if (CloseOurs())
                     return true;
                 if (screen.GetNodeOrNull<NBackButton>("BackButton") is not { IsEnabled: true } back)
                     return false;
+                SfxCmd.Play(FmodSfx.backButton); // its press's sound, which ForceClick skips
                 back.ForceClick();
                 return true;
             default:
