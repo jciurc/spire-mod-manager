@@ -21,7 +21,7 @@ static class RowStrip
     const float LoadOrderMargin = 20; // Load Order has no tickbox
     const float ActionsGap = 12;
     const float AuthorMax = 200; // px
-    static readonly Color Note = new(0.937f, 0.784f, 0.318f, 0.75f);
+    static readonly Color NoteColor = new(0.937f, 0.784f, 0.318f, 0.75f), AuthorColor = new(1, 0.964706f, 0.886275f, 0.45f);
 
     // edge: a quiet button at the row's far right, past the tickbox (the main list's pencil), or none.
     public static void Apply(IList<NModMenuRow> rows, Func<NModMenuRow, IEnumerable<MenuItem>> actions, Func<NModMenuRow, MenuItem>? edge = null)
@@ -32,33 +32,29 @@ static class RowStrip
         var (name, other) = Store.Data.LoadOrderView ? (OrderActionsName, ActionsName) : (ActionsName, OrderActionsName);
         foreach (var row in rows)
         {
+            Lap(null);
             var title = row.GetNode<Control>("Title");
             if (!row.HasMeta(StripMeta))
             {
                 title.OffsetBottom -= Height + TitleGap;
                 row.SetMeta(StripMeta, true);
             }
+            Lap("title");
 
             Edge(row, edge?.Invoke(row));
+            Lap("pencil");
 
-            // The buttons, made again only when they'd differ: their labels and states, and in Load Order the
-            // row's place (what Up and Down do depends on it).
+            // The buttons, changed only when they'd differ: their labels and states, and in Load Order the row's place
+            // (what Up and Down do depends on it).
             var items = actions(row).ToList();
             var place = Store.Data.LoadOrderView ? $"{row.GetIndex()}/{row.GetParent()?.GetChildCount()}" : "";
             var does = $"{place}|{string.Join("|", items.Select(i => $"{i.Label}/{i.Disabled}/{i.Flat}/{i.Tip}"))}";
-            if (row.GetNodeOrNull<Control>(name) is not { } buttons || !buttons.HasMeta(SaysMeta) || (string)buttons.GetMeta(SaysMeta) != does)
-            {
-                Drop(row, name);
-                buttons = Menus.InlineButtons(items, name);
-                buttons.SetMeta(SaysMeta, does);
-                row.AddChild(buttons);
-                buttons.AnchorLeft = buttons.AnchorRight = 1;
-                buttons.AnchorBottom = 1;
-                buttons.GrowHorizontal = Control.GrowDirection.Begin;
-            }
+            if (row.GetNodeOrNull<HBoxContainer>(name) is not { } buttons || buttons.GetMeta(SaysMeta, "").AsString() != does)
+                buttons = Buttons(row, name, items, does);
             buttons.OffsetRight = buttons.OffsetLeft = Store.Data.LoadOrderView ? -LoadOrderMargin : -RightMargin;
             var clear = buttons.OffsetRight - Width(buttons, items) - ActionsGap;
             title.OffsetRight = clear;
+            Lap("buttons");
 
             // The line is remade only when its tags or author change (remaking every row's on each keystroke was most of
             // a redraw's time); otherwise it's updated in place.
@@ -69,7 +65,10 @@ static class RowStrip
             var says = $"{shows}|{Store.Data.LoadOrderView}|{title.OffsetLeft}|{clear}|{text}";
             var kept = row.GetNodeOrNull<HBoxContainer>(StripName);
             if (kept?.GetMeta(SaysMeta, "").AsString() == says)
+            {
+                Lap("rest");
                 continue;
+            }
             if (row.GetNodeOrNull<Control>(other) is { } hidden)
                 hidden.Visible = false;
             buttons.Visible = true;
@@ -77,53 +76,42 @@ static class RowStrip
             {
                 kept.SetMeta(SaysMeta, says);
                 (kept.OffsetLeft, kept.OffsetRight, kept.Visible) = (title.OffsetLeft, clear, true);
-                var needs = kept.GetNode<RichTextLabel>("Needs");
-                if (needs.Text != text)
-                {
-                    needs.Text = text;
-                    if (chips.Count > 0) // the tags fold again for the note's new width (a new width of the line refolds by itself)
-                        Callable.From(() => Fold(row, kept, chips)).CallDeferred();
-                }
+                if (SetNote(kept, text) && chips.Count > 0) // the tags fold again for the note's new width (a new width of the line refolds by itself)
+                    Callable.From(() => Fold(row, kept, chips)).CallDeferred();
+                Lap("rest");
                 continue;
             }
             Drop(row, StripName);
 
-            var strip = new HBoxContainer { Name = StripName, MouseFilter = Control.MouseFilterEnum.Ignore, ClipContents = true }; // too much for the line: cut at its edge, not under the buttons
+            // Made whole before it joins the row, so its parts enter the page together.
+            var look = Look();
+            var strip = new HBoxContainer
+            {
+                Name = StripName, MouseFilter = Control.MouseFilterEnum.Ignore, Theme = look.Theme,
+                ClipContents = true, // too much for the line: cut at its edge, not under the buttons
+            };
             strip.SetMeta(SaysMeta, says);
             strip.SetMeta(ShowsMeta, shows);
-            strip.AddThemeConstantOverride("separation", 6);
-            row.AddChild(strip);
-            strip.AnchorTop = strip.AnchorBottom = 1;
-            strip.OffsetLeft = title.OffsetLeft;
-            strip.AnchorRight = 1;
-            strip.OffsetRight = clear;
-            strip.OffsetTop = -Height - 2;
-            strip.OffsetBottom = -2;
+            (strip.AnchorTop, strip.AnchorBottom, strip.AnchorRight) = (1, 1, 1);
+            (strip.OffsetLeft, strip.OffsetRight, strip.OffsetTop, strip.OffsetBottom) = (title.OffsetLeft, clear, -Height - 2, -2);
+            Lap("rest");
 
             foreach (var chip in chips)
                 strip.AddChild(Tags.Make(chip, add => Search.ByChip(row, chip, add)));
+            Lap("tags");
 
-            var note = new RichTextLabel
-            {
-                Name = "Needs", Text = text, BbcodeEnabled = true, ScrollActive = false,
-                AutowrapMode = TextServer.AutowrapMode.Off, VerticalAlignment = VerticalAlignment.Center,
-                SizeFlagsHorizontal = Control.SizeFlags.ExpandFill, SizeFlagsVertical = Control.SizeFlags.Fill,
-                ClipContents = true, MouseFilter = Control.MouseFilterEnum.Ignore,
-            };
-            note.AddThemeFontOverride("normal_font", ModEntry.Font("res://themes/kreon_regular_shared.tres"));
-            note.AddThemeFontSizeOverride("normal_font_size", 13);
-            note.AddThemeColorOverride("default_color", Note);
-            strip.AddChild(note);
+            if (text.Length > 0)
+                strip.AddChild(Note(text));
+            else if (author.Length > 0)
+                strip.AddChild(Spacer());
+            Lap("needs");
+
             if (author.Length > 0)
             {
                 // Who made it, quietly. (Searching by author is in the info panel.)
-                var by = new Label { Name = "Author", Text = author, VerticalAlignment = VerticalAlignment.Center, MouseFilter = Control.MouseFilterEnum.Ignore };
-                by.AddThemeFontOverride("font", ModEntry.Font("res://themes/kreon_regular_shared.tres"));
-                by.AddThemeFontSizeOverride("font_size", 13);
-                by.AddThemeColorOverride("font_color", new Color(1, 0.964706f, 0.886275f, 0.45f));
+                var by = new Label { Name = AuthorName, Text = author, VerticalAlignment = VerticalAlignment.Center, MouseFilter = Control.MouseFilterEnum.Ignore };
                 // A long one is cut with "…"; the whole name after a second over it.
-                var wide = by.GetThemeFont("font").GetStringSize(author, fontSize: 13).X;
-                if (wide > AuthorMax)
+                if (RowTitles.Measure(look.Font, author, 13) > AuthorMax)
                 {
                     (by.ClipText, by.TextOverrunBehavior, by.CustomMinimumSize, by.MouseFilter) =
                         (true, TextServer.OverrunBehavior.TrimEllipsis, new Vector2(AuthorMax, 0), Control.MouseFilterEnum.Pass);
@@ -131,6 +119,10 @@ static class RowStrip
                 }
                 strip.AddChild(by);
             }
+            Lap("author");
+
+            row.AddChild(strip);
+            Lap("added");
 
             // Too many tags for the line: the last ones fold into "+N" (Fold). Worked out once the chips are laid
             // out, and again whenever the line changes width.
@@ -140,7 +132,103 @@ static class RowStrip
                 strip.Resized += Refold;
                 Callable.From(Refold).CallDeferred();
             }
+            Lap("rest");
         }
+    }
+
+    // A row's buttons for these items: the ones it has, given them (Menus.Refill), or new ones.
+    static HBoxContainer Buttons(NModMenuRow row, string name, List<MenuItem> items, string does)
+    {
+        if (row.GetNodeOrNull<HBoxContainer>(name) is not { } buttons || !Menus.Refill(buttons, items))
+        {
+            Drop(row, name);
+            buttons = Menus.InlineButtons(items, name);
+            row.AddChild(buttons);
+            buttons.AnchorLeft = buttons.AnchorRight = 1;
+            buttons.AnchorBottom = 1;
+            buttons.GrowHorizontal = Control.GrowDirection.Begin;
+        }
+        buttons.SetMeta(SaysMeta, does);
+        buttons.Visible = true; // as new ones are
+        return buttons;
+    }
+
+    // The line's look, one Theme on every line (made again when the font changes with the game's language): its gap,
+    // the note's text and the author's. The tags have their own (Tags.Look), which their text takes first.
+    static (Font Font, Theme Theme)? _look;
+
+    static (Font Font, Theme Theme) Look()
+    {
+        var font = ModEntry.Font("res://themes/kreon_regular_shared.tres");
+        if (_look is { } made && made.Font == font)
+            return made;
+        var theme = new Theme();
+        theme.SetConstant("separation", "HBoxContainer", 6);
+        theme.SetFont("normal_font", "RichTextLabel", font);
+        theme.SetFontSize("normal_font_size", "RichTextLabel", 13);
+        theme.SetColor("default_color", "RichTextLabel", NoteColor);
+        theme.SetFont("font", "Label", font);
+        theme.SetFontSize("font_size", "Label", 13);
+        theme.SetColor("font_color", "Label", AuthorColor);
+        _look = (font, theme);
+        return (font, theme);
+    }
+
+    // The note ("Needs: …", "Required for 3 mods") is made only for a line that has one: an empty one on every row was
+    // a sixth of a long list's lines (#46). Without one, a spacer keeps the author at the line's end, where the note's
+    // room put it. SetNote changes a kept line's note in place; true if it changed.
+    const string NeedsName = "Needs", AuthorName = "Author", SpacerName = "Spacer";
+
+    static RichTextLabel Note(string text) => new()
+    {
+        Name = NeedsName, BbcodeEnabled = true, Text = text, ScrollActive = false,
+        AutowrapMode = TextServer.AutowrapMode.Off, VerticalAlignment = VerticalAlignment.Center,
+        SizeFlagsHorizontal = Control.SizeFlags.ExpandFill, SizeFlagsVertical = Control.SizeFlags.Fill,
+        ClipContents = true, MouseFilter = Control.MouseFilterEnum.Ignore,
+    };
+
+    static Control Spacer() => new() { Name = SpacerName, MouseFilter = Control.MouseFilterEnum.Ignore, SizeFlagsHorizontal = Control.SizeFlags.ExpandFill };
+
+    static bool SetNote(HBoxContainer strip, string text)
+    {
+        var note = strip.GetNodeOrNull<RichTextLabel>(NeedsName);
+        if ((note?.Text ?? "") == text)
+            return false;
+        if (note != null && text.Length > 0)
+        {
+            note.Text = text;
+            return true;
+        }
+        Drop(strip, NeedsName);
+        Drop(strip, SpacerName);
+        var author = strip.GetNodeOrNull<Control>(AuthorName);
+        if (text.Length == 0 && author == null)
+            return true;
+        var part = text.Length > 0 ? Note(text) : Spacer();
+        strip.AddChild(part);
+        if (author != null)
+            strip.MoveChild(part, author.GetIndex()); // before the author, after the tags and "+N"
+        return true;
+    }
+
+#if DEVTOOLS
+    // Self-test: what each part of Apply took, added up while Timing is on (the many-mods test, the --real tour).
+    public static bool Timing { get; set; }
+    public static readonly Dictionary<string, double> Costs = [];
+    static readonly System.Diagnostics.Stopwatch Watch = new();
+#endif
+
+    // Ends the part being timed (null: a row's start) and starts the next. The calls vanish from the Workshop build.
+    [System.Diagnostics.Conditional("DEVTOOLS")]
+    static void Lap(string? part)
+    {
+#if DEVTOOLS
+        if (!Timing)
+            return;
+        if (part != null)
+            Costs[part] = Costs.GetValueOrDefault(part) + Watch.Elapsed.TotalMilliseconds;
+        Watch.Restart();
+#endif
     }
 
     // Shows as many tags as fit beside the author and the needs (up to half the line); the rest fold into "+N".
@@ -150,10 +238,9 @@ static class RowStrip
             return;
         var gap = strip.GetThemeConstant("separation");
         var room = row.Size.X - strip.OffsetLeft + strip.OffsetRight; // the line's own width (a line too full grows past it)
-        var note = strip.GetNode<RichTextLabel>("Needs");
-        var needs = note.GetParsedText() is { Length: > 0 } said
-            ? note.GetThemeFont("normal_font").GetStringSize(said, fontSize: note.GetThemeFontSize("normal_font_size")).X : 0;
-        var kept = Math.Min(needs, room / 2) + (strip.GetNodeOrNull<Control>("Author") is { } author ? gap + author.GetCombinedMinimumSize().X : 0);
+        var needs = strip.GetNodeOrNull<RichTextLabel>(NeedsName) is { } note && note.GetParsedText() is { Length: > 0 } said
+            ? RowTitles.Measure(note.GetThemeFont("normal_font"), said, note.GetThemeFontSize("normal_font_size")) : 0;
+        var kept = Math.Min(needs, room / 2) + (strip.GetNodeOrNull<Control>(AuthorName) is { } author ? gap + author.GetCombinedMinimumSize().X : 0);
         // Each tag with the gap after it (the chips come first on the line, in order).
         var tags = strip.GetChildren().OfType<Control>().Take(chips.Count).ToList();
         var widths = tags.Select(t => t.GetCombinedMinimumSize().X + gap).ToList();
@@ -197,10 +284,11 @@ static class RowStrip
         var button = Menus.SmallButton(item.Label, action, name: EdgeName);
         Menus.Flatten(button);
         Hover.Tip(button, item.Tip);
-        row.AddChild(button);
+        // Placed before it joins the row: in the page, each of these would lay it out again.
         (button.AnchorLeft, button.AnchorRight, button.AnchorTop, button.AnchorBottom) = (1, 1, 0.5f, 0.5f);
         button.GrowHorizontal = Control.GrowDirection.Begin;
         (button.OffsetLeft, button.OffsetRight, button.OffsetTop, button.OffsetBottom) = (-2, -2, -13, 13);
+        row.AddChild(button);
     }
 
     // Button widths per set of labels, measured once (shaping text is slow, and most rows share their labels).

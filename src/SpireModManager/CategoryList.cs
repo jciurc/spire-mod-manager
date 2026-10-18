@@ -554,8 +554,8 @@ static class CategoryList
     }
 
     // The small buttons at the right of each row's strip: moves in Load Order; otherwise its category, opening
-    // its menu (the pencil past the tickbox is EdgeAction).
-    static Func<NModMenuRow, IEnumerable<MenuItem>> StripActions(Control content)
+    // its menu (the pencil past the tickbox is EdgeAction). Public for the self-test's made-up rows.
+    public static Func<NModMenuRow, IEnumerable<MenuItem>> StripActions(Control content)
     {
         // The rows in place, read once for all the strips (Load Order has placed them by then).
         List<NModMenuRow>? placed = null;
@@ -565,7 +565,7 @@ static class CategoryList
     }
 
     // The main list's pencil, past the tickbox at the row's far right: the mod's menu. None in Load Order.
-    static Func<NModMenuRow, MenuItem>? EdgeAction(Control content) => Store.Data.LoadOrderView
+    public static Func<NModMenuRow, MenuItem>? EdgeAction(Control content) => Store.Data.LoadOrderView
         ? null
         : row => new MenuItem("✎", () => ShowRowMenu(content, row), Tip: Menus.Text("SPIRE_MOD_MANAGER.EDIT_TIP"), Flat: true);
 

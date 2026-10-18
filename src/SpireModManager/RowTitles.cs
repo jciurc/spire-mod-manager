@@ -231,10 +231,10 @@ static class RowTitles
     }
 
     // Text widths per font and size, measured once (shaping is slow, and the font's own cache is too small for a long
-    // list); cleared now and then, as cut texts add many.
+    // list); cleared now and then, as cut texts add many. Titles, and the line under them (tags, notes, authors).
     static readonly Dictionary<(Font Font, int Size, string Text), float> Widths = [];
 
-    static float Measure(Font font, string text, int size)
+    public static float Measure(Font font, string text, int size)
     {
         if (Widths.TryGetValue((font, size, text), out var width))
             return width;
