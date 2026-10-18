@@ -1,3 +1,4 @@
+using System.Runtime.CompilerServices;
 using Godot;
 using MegaCrit.Sts2.Core.Logging;
 using MegaCrit.Sts2.Core.Modding;
@@ -6,18 +7,23 @@ using MegaCrit.Sts2.Core.Nodes.Screens.ModdingScreen;
 namespace SpireModManager;
 
 // A mod installed more than once with one id (a Workshop item and a local fix, two Workshop items of one mod): each
-// copy is its own mod in our data, with its own category, alias, notes and tags. A copy is "w:<Workshop item id>" or
-// "l:<folder>". One copy of an id, the holder, keeps the plain id's entry; every other copy has "<id>|<copy>", seeded
-// from the plain entry the first time it's seen (StoreData.Copies lists them, the holder first). A mod installed once
-// has no record and its data stays under its id, so files without copies never change. The game's own list can't
-// tell same-source copies apart (it keeps id, source and on/off): this is our data only.
+// copy is its own mod in our data, with its own category, alias, notes and tags. A copy is "w:<Workshop item id>", or
+// its folder: "l:<folder>" for a local copy, "ws:<folder>" for a Workshop one whose item id can't be read. One copy of
+// an id, the holder, keeps the plain id's entry; every other copy has "<id>|<copy>", seeded from the plain entry the
+// first time it's seen (StoreData.Copies lists them, the holder first). A mod installed once has no record and its data
+// stays under its id, so files without copies never change. The game's own list can't tell same-source copies apart
+// (it keeps id, source and on/off): this is our data only.
 static class Copies
 {
     // Every mod the game found, and those installed this session.
     static IEnumerable<Mod> All => ModManager.Mods.Union(Installed.Mods);
 
-    public static string CopyOf(Mod mod) => Compat.WorkshopId(mod) is { } item ? $"w:{item}"
-        : "l:" + (Path.GetFileName(mod.path?.TrimEnd('/', '\\') ?? "") is { Length: > 0 } folder ? folder : mod.modSource.ToString());
+    // Worked out once per copy (a Workshop id read by reflection on the beta, a folder name).
+    static readonly ConditionalWeakTable<Mod, string> Names = new();
+
+    public static string CopyOf(Mod mod) => Names.GetValue(mod, m => Compat.WorkshopId(m) is { } item ? $"w:{item}"
+        : (m.modSource == ModSource.SteamWorkshop ? "ws:" : "l:")
+            + (Path.GetFileName(m.path?.TrimEnd('/', '\\') ?? "") is { Length: > 0 } folder ? folder : m.modSource.ToString()));
 
     // The key our data has for this copy: its id, or "<id>|<copy>" for a copy that isn't its id's holder.
     public static string Key(Mod mod) => mod.manifest?.id is not { } id ? ""
@@ -43,11 +49,17 @@ static class Copies
         return rows.FirstOrDefault(r => r.Mod is { } m && Key(m) == key) ?? rows.FirstOrDefault(r => r.Mod?.manifest?.id == key);
     }
 
+    // " (Local)" or " (<Workshop item id>)" after a mod's name, where another copy of it is installed; else nothing.
+    public static string Which(Mod mod) => mod.manifest?.id is not { } id || All.Count(m => m.manifest?.id == id) < 2 ? ""
+        : $" ({(Compat.WorkshopId(mod) is { } item ? item.ToString() : Menus.Text("SPIRE_MOD_MANAGER.SOURCE_LOCAL"))})";
+
     // Brings the record in line with the copies installed: at the first main menu, before the undo baseline (so it's
-    // neither an undo step nor a change since launch), and quietly for a mod installed mid-session. True if it changed.
+    // neither an undo step nor a change since launch). True if it changed.
     public static bool Reconcile(StoreData data)
     {
         var changed = false;
+        // Copies the game found at launch, before those installed since: they keep the id they had.
+        var launched = ModManager.Mods.Where(m => m.state != ModLoadState.AddedAtRuntime).Except(Installed.Mods).Select(CopyOf).ToHashSet();
         foreach (var group in All.Where(m => m.manifest?.id != null).GroupBy(m => m.manifest?.id ?? ""))
         {
             var id = group.Key;
@@ -57,9 +69,9 @@ static class Copies
             {
                 if (installed.Count < 2)
                     continue;
-                // First split: the plain entry stays with a Workshop copy before a local one, the oldest item first
-                // (fixed, so a version bump never moves it).
-                data.Copies[id] = copies = [.. installed.OrderBy(c => c.StartsWith("w:") ? 0 : 1)
+                // First split: the plain entry stays with a copy found at launch, then a Workshop copy before a local
+                // one, the oldest item first (fixed, so a version bump never moves it).
+                data.Copies[id] = copies = [.. installed.OrderBy(c => launched.Contains(c) ? 0 : 1).ThenBy(c => c.StartsWith("w:") ? 0 : 1)
                     .ThenBy(c => c.StartsWith("w:") && ulong.TryParse(c[2..], out var item) ? item : ulong.MaxValue).ThenBy(c => c, StringComparer.Ordinal)];
                 foreach (var copy in copies.Skip(1))
                     Seed(data, id, copy);
@@ -91,8 +103,10 @@ static class Copies
     static void Seed(StoreData data, string id, string copy)
     {
         if (data.Mods.TryGetValue(id, out var plain) && !data.Mods.ContainsKey($"{id}|{copy}"))
-            data.Mods[$"{id}|{copy}"] = new ModInfo { Category = plain.Category, Alias = plain.Alias, Notes = plain.Notes, Tags = plain.Tags?.ToList() };
+            data.Mods[$"{id}|{copy}"] = Clone(plain);
     }
+
+    static ModInfo Clone(ModInfo info) => new() { Category = info.Category, Alias = info.Alias, Notes = info.Notes, Tags = info.Tags?.ToList() };
 
     static void Put(StoreData data, string key, ModInfo? info)
     {
@@ -119,18 +133,29 @@ static class Copies
         {
             Log.Error($"[{ModEntry.ModId}] Could not sort out mods installed more than once: {e}");
         }
-        Installed.Added += () =>
+        Installed.Added += Arrived;
+    }
+
+    // A copy installed mid-session: worked out on our data as it is now, then written as it is into every undo
+    // snapshot (History.Quietly), so the new copy's entry is the same in each: no change since launch, no undo step.
+    static void Arrived()
+    {
+        try
         {
-            try
+            var now = Store.Clone(Store.Data);
+            if (!Reconcile(now) || now.Copies is not { } record)
+                return;
+            var added = now.Mods.Where(p => !Store.Data.Mods.ContainsKey(p.Key)).Select(p => (p.Key, p.Value)).ToList();
+            History.Quietly(data =>
             {
-                // Measured on a copy first: Quietly writes into every undo snapshot, worth it only for a real change.
-                if (Reconcile(Store.Clone(Store.Data)))
-                    History.Quietly(data => Reconcile(data));
-            }
-            catch (Exception e)
-            {
-                Log.Error($"[{ModEntry.ModId}] Could not sort out a newly installed copy of a mod: {e}");
-            }
-        };
+                data.Copies = record.ToDictionary(p => p.Key, p => p.Value.ToList());
+                foreach (var (key, info) in added)
+                    data.Mods[key] = Clone(info);
+            });
+        }
+        catch (Exception e)
+        {
+            Log.Error($"[{ModEntry.ModId}] Could not sort out a newly installed copy of a mod: {e}");
+        }
     }
 }
