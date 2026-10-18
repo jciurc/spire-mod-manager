@@ -47,7 +47,9 @@ static class CategoryList
         {
             var data = Store.Data;
             (data.VanillaView, data.LoadOrderView, shownVanilla) = (toVanilla, toLoadOrder, toVanilla);
-            Selection.Clear(content); // a picked set belongs to the view it was picked in
+            // A picked set belongs to the view it was picked in: let go of it, and of its undo steps.
+            Selection.Clear(content, record: false);
+            History.ForgetPicks();
             Store.Save();
             Label(vanilla, data.VanillaView ? "SPIRE_MOD_MANAGER.CATEGORY_VIEW" : "SPIRE_MOD_MANAGER.VANILLA_VIEW");
             VanillaTip(vanilla);
@@ -597,7 +599,7 @@ static class CategoryList
     }
 
     // The bulk menu for two or more picked mods: their category (marked if shared), on/off, and their tags and notes.
-    // Edits keep their rows under a Show: choice (ListFilter.Keep); Enable all and Disable all apply it at once.
+    // Edits keep their rows under a Show: choice (ListFilter.Keep); Enable selected and Disable selected apply it at once.
     public static Node? ShowBulkMenu(Control content)
     {
         var ids = Selection.Mods.Select(m => m.manifest?.id).OfType<string>().ToList();
@@ -634,7 +636,7 @@ static class CategoryList
                 ScrollSoon(content, header, flash: false);
         }));
         items.Add(MenuItem.Heading(""));
-        items.AddRange(OnOffItems(content, content.GetChildren().OfType<NModMenuRow>().Where(r => ids.Contains(r.Mod?.manifest?.id ?? ""))));
+        items.AddRange(OnOffItems(content, content.GetChildren().OfType<NModMenuRow>().Where(r => ids.Contains(r.Mod?.manifest?.id ?? "")), selected: true));
         return items;
 
         void Move(string? category)
@@ -697,8 +699,8 @@ static class CategoryList
     }
 
     // Enable all / Disable all for some rows (a category's, or the page's), as one undo step; each greyed out
-    // when there's nothing for it to do. This mod stays on.
-    public static List<MenuItem> OnOffItems(Control content, IEnumerable<NModMenuRow> members)
+    // when there's nothing for it to do. This mod stays on. Enable selected / Disable selected for the picked mods.
+    public static List<MenuItem> OnOffItems(Control content, IEnumerable<NModMenuRow> members, bool selected = false)
     {
         var mods = members.Select(r => r.Mod).OfType<Mod>().ToList();
         void Set(bool on)
@@ -710,8 +712,9 @@ static class CategoryList
         }
         return
         [
-            new(Menus.Text("SPIRE_MOD_MANAGER.ENABLE_ALL"), () => Set(true), Disabled: mods.All(Dependencies.IsOn)),
-            new(Menus.Text("SPIRE_MOD_MANAGER.DISABLE_ALL"), () => Set(false), Disabled: mods.All(m => !Dependencies.IsOn(m) || m.manifest?.id == ModEntry.ModId),
+            new(Menus.Text(selected ? "SPIRE_MOD_MANAGER.ENABLE_SELECTED" : "SPIRE_MOD_MANAGER.ENABLE_ALL"), () => Set(true), Disabled: mods.All(Dependencies.IsOn)),
+            new(Menus.Text(selected ? "SPIRE_MOD_MANAGER.DISABLE_SELECTED" : "SPIRE_MOD_MANAGER.DISABLE_ALL"), () => Set(false),
+                Disabled: mods.All(m => !Dependencies.IsOn(m) || m.manifest?.id == ModEntry.ModId),
                 // Where this mod is among them, it says it stays on.
                 Tip: mods.Any(m => m.manifest?.id == ModEntry.ModId) ? Menus.Text("SPIRE_MOD_MANAGER.DISABLE_ALL_KEEPS_SELF") : null),
         ];

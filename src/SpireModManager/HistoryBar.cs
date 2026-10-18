@@ -109,6 +109,13 @@ static class HistoryBar
             if (!ListOpen(info) && CategoryList.Selected is { } mod && Layout.Current == Layout.View.Categories)
                 info.Fill(mod);
         }
+        // After undo/redo of a selection step: only the tints and the page bar; an open menu (the bulk menu edits the
+        // picks it opened with) closes.
+        void Repicked()
+        {
+            MenuPanel.Close();
+            Selection.Show(content);
+        }
         // Revert all goes back to how things were when the page opened (the game may reuse the screen).
         History.Enter();
         screen.VisibilityChanged += () =>
@@ -123,6 +130,7 @@ static class HistoryBar
         };
         History.Changed += Update;
         History.Restored += Restored;
+        History.Repicked += Repicked;
         Profiles.Switched += Update;
         Installed.Added += Update;
         Screen = screen;
@@ -132,6 +140,7 @@ static class HistoryBar
                 Screen = null;
             History.Changed -= Update;
             History.Restored -= Restored;
+            History.Repicked -= Repicked;
             Profiles.Switched -= Update;
             Installed.Added -= Update;
         };

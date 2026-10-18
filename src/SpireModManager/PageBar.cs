@@ -4,7 +4,9 @@ using MegaCrit.Sts2.Core.Nodes.Screens.ModdingScreen;
 namespace SpireModManager;
 
 // The main list's page bar under the search box: Enable all / Disable all (on the mods shown, one undo step), the
-// Show: choice (ListFilter), and Expand all / Collapse all. With no categories yet, a hint below says how to add one.
+// Show: choice (ListFilter), and Expand all / Collapse all. With two or more mods picked, it acts on them: their count
+// on a chip that lets go of them, and Enable selected / Disable selected. With no categories yet, a hint below says
+// how to add one.
 static class PageBar
 {
     public const string Name = "SpireModManagerPageBar", HintName = "SpireModManagerCategoryHint";
@@ -56,11 +58,8 @@ static class PageBar
             Text = Menus.Format(scopeKey, ("count", Menus.Number(shown.Count))),
         };
         Quiet(scope);
-        bar.AddChild(scope);
-        List<MenuItem> onOff = [.. CategoryList.OnOffItems(content, shown)];
-        if (picked)
-            onOff.Add(new MenuItem(Menus.Text("SPIRE_MOD_MANAGER.CLEAR_SELECTION"), () => Selection.Clear(content)));
-        bar.AddChild(Menus.InlineButtons(onOff, "OnOff"));
+        bar.AddChild(picked ? Chip(content, scope) : scope);
+        bar.AddChild(Menus.InlineButtons(CategoryList.OnOffItems(content, shown, selected: picked), "OnOff"));
         bar.AddChild(new Control { SizeFlagsHorizontal = Control.SizeFlags.ExpandFill, MouseFilter = Control.MouseFilterEnum.Ignore });
 
         // "Show:" and its choices, the chosen one lit; a little apart from the folding buttons after them.
@@ -93,7 +92,7 @@ static class PageBar
             new(Menus.Text("SPIRE_MOD_MANAGER.EXPAND_ALL"), () => Fold(false), Disabled: !anyCollapsed || filter.Length > 0),
             new(Menus.Text("SPIRE_MOD_MANAGER.COLLAPSE_ALL"), () => Fold(true), Disabled: !anyOpen || filter.Length > 0),
         ], "Folding"));
-        foreach (var (group, names) in new[] { ("OnOff", new[] { "EnableAllButton", "DisableAllButton", "ClearSelectionButton" }), ("Folding", ["ExpandAllButton", "CollapseAllButton"]) })
+        foreach (var (group, names) in new[] { ("OnOff", new[] { "EnableAllButton", "DisableAllButton" }), ("Folding", ["ExpandAllButton", "CollapseAllButton"]) })
             foreach (var (button, name) in bar.GetNode(group).GetChildren().OfType<Button>().Zip(names))
                 button.Name = name;
 
@@ -117,11 +116,49 @@ static class PageBar
         (hint.OffsetLeft, hint.OffsetRight, hint.OffsetTop, hint.OffsetBottom) = (bar.OffsetLeft, bar.OffsetRight, 0, HintHeight);
     }
 
+    // "Selected (N)" while two or more mods are picked: on a chip in the picked rows' blue, with a × that lets go of
+    // them (as Esc and Ctrl+D do), lit under the mouse.
+    static Control Chip(Control content, Label scope)
+    {
+        var chip = new PanelContainer
+        {
+            Name = "SelectionChip", MouseFilter = Control.MouseFilterEnum.Stop, MouseDefaultCursorShape = Control.CursorShape.PointingHand,
+            SizeFlagsVertical = Control.SizeFlags.ShrinkCenter,
+        };
+        var look = new StyleBoxFlat { BgColor = Selection.Tint with { A = 0.3f }, ContentMarginLeft = 8, ContentMarginRight = 7 };
+        look.SetCornerRadiusAll(RowTitles.CornerRadius);
+        chip.AddThemeStyleboxOverride("panel", look);
+        var row = new HBoxContainer { MouseFilter = Control.MouseFilterEnum.Ignore };
+        row.AddThemeConstantOverride("separation", 6);
+        chip.AddChild(row);
+        var clear = new Label { Name = "Clear", Text = "×", VerticalAlignment = VerticalAlignment.Center, MouseFilter = Control.MouseFilterEnum.Ignore };
+        foreach (var label in new[] { scope, clear })
+        {
+            Quiet(label);
+            label.AddThemeColorOverride("font_color", Cream with { A = 0.9f }); // brighter than the bar's other words
+            row.AddChild(label);
+        }
+        chip.MouseEntered += () => look.BgColor = Selection.Tint with { A = 0.45f };
+        chip.MouseExited += () => look.BgColor = Selection.Tint with { A = 0.3f };
+        chip.GuiInput += input =>
+        {
+            if (input is InputEventMouseButton { ButtonIndex: MouseButton.Left, Pressed: false })
+            {
+                chip.AcceptEvent();
+                Selection.Clear(content);
+            }
+        };
+        Hover.Tip(chip, $"{Menus.Text("SPIRE_MOD_MANAGER.CLEAR_SELECTION")}\n{Menus.Text("SPIRE_MOD_MANAGER.CLEAR_SELECTION_KEYS")}");
+        return chip;
+    }
+
+    static readonly Color Cream = new(1, 0.964706f, 0.886275f);
+
     // The bar's own words: small, faint cream.
     static void Quiet(Label label)
     {
         label.AddThemeFontOverride("font", ModEntry.Font("res://themes/kreon_regular_shared.tres"));
         label.AddThemeFontSizeOverride("font_size", 15);
-        label.AddThemeColorOverride("font_color", new Color(1, 0.964706f, 0.886275f, 0.55f));
+        label.AddThemeColorOverride("font_color", Cream with { A = 0.55f });
     }
 }
