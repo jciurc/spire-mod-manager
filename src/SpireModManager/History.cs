@@ -265,8 +265,9 @@ static class History
             .Concat(mods.Where(m => !now.Any(n => n.Id == m.Id && n.Source == m.Source))).ToList());
     }
 
-    // Order from the snapshot, on/off as it is now (entries the snapshot doesn't have go last). Entries of one id and
-    // source (two copies of a mod) take that key's places in the snapshot in turn, not all the first one.
+    // Order from the snapshot, on/off as it is now (entries the snapshot doesn't have go last), ours first whatever the
+    // snapshot had (one from before we kept it so: LoadOrder.OursFirst). Entries of one id and source (two copies of a
+    // mod) take that key's places in the snapshot in turn, not all the first one.
     static void ApplyOrder(IReadOnlyList<ModEntry> mods)
     {
         var places = new Dictionary<(string?, ModSource), Queue<int>>();
@@ -277,7 +278,7 @@ static class History
             queue.Enqueue(i);
         }
         Apply(CurrentMods().Select(m => (Mod: m, At: places.TryGetValue((m.Id, m.Source), out var queue) && queue.TryDequeue(out var i) ? i : int.MaxValue))
-            .OrderBy(p => p.At).Select(p => p.Mod).ToList());
+            .OrderBy(p => p.At).Select(p => p.Mod).OrderBy(m => m.Id == SpireModManager.ModEntry.ModId ? 0 : 1).ToList());
     }
 
     static void Apply(IReadOnlyList<ModEntry> mods)

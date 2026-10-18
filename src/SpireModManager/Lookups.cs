@@ -11,6 +11,7 @@ sealed class Lookups : IDisposable
     public static Lookups? Current { get; private set; }
 
     readonly HashSet<(string? Id, ModSource Source)> _off;
+    readonly Picks _picks;
     readonly Dictionary<string, Mod> _byId = [];
     readonly Dictionary<string, List<Mod>> _neededBy = [];
     readonly Dictionary<Mod, IReadOnlyList<Tags.Chip>> _chips = [];
@@ -22,17 +23,17 @@ sealed class Lookups : IDisposable
 
     // From the game's lists as they are now.
     public static Lookups Begin() =>
-        Begin(ModManager.Mods, Installed.Mods, SaveManager.Instance.SettingsSave.ModSettings?.ModList ?? []);
+        Begin(ModManager.Mods, Installed.Mods, SaveManager.Instance.SettingsSave.ModSettings?.ModList ?? [], Picks.Now);
 
     // From given lists (the self-test's made-up mods); inside another redraw, that one's answers serve.
-    public static Lookups Begin(IReadOnlyList<Mod> mods, IReadOnlyList<Mod> installed, IEnumerable<SettingsSaveMod> saved)
+    public static Lookups Begin(IReadOnlyList<Mod> mods, IReadOnlyList<Mod> installed, IEnumerable<SettingsSaveMod> saved, Picks picks)
     {
         if (Current is { } outer)
         {
             outer._depth++;
             return outer;
         }
-        return Current = new Lookups(mods, installed, saved);
+        return Current = new Lookups(mods, installed, saved, picks);
     }
 
     public void Dispose()
@@ -41,12 +42,14 @@ sealed class Lookups : IDisposable
             Current = null;
     }
 
-    Lookups(IReadOnlyList<Mod> mods, IReadOnlyList<Mod> installed, IEnumerable<SettingsSaveMod> saved)
+    Lookups(IReadOnlyList<Mod> mods, IReadOnlyList<Mod> installed, IEnumerable<SettingsSaveMod> saved, Picks picks)
     {
         _off = Dependencies.SavedOff(saved);
-        // The copy Dependencies.Find picks for an id: the first one that is on, else the first.
+        _picks = picks;
+        // The copy Dependencies.Find picks for an id: the first it prefers most (Dependencies.Preference).
         foreach (var mod in mods.Concat(installed))
-            if (mod.manifest?.id is { } id && (!_byId.TryGetValue(id, out var kept) || !IsOn(kept) && IsOn(mod)))
+            if (mod.manifest?.id is { } id && (!_byId.TryGetValue(id, out var kept)
+                    || Dependencies.Preference(mod, IsOn, _picks) > Dependencies.Preference(kept, IsOn, _picks)))
                 _byId[id] = mod;
         // Who needs whom, from the game's list only; a mod naming one twice counts once.
         foreach (var mod in mods)
@@ -60,7 +63,7 @@ sealed class Lookups : IDisposable
             }
     }
 
-    public bool IsOn(Mod mod) => !_off.Contains((mod.manifest?.id, mod.modSource));
+    public bool IsOn(Mod mod) => Dependencies.OnIn(mod, _off, _picks);
 
     public Mod? Find(string id) => _byId.GetValueOrDefault(id);
 

@@ -3501,7 +3501,7 @@ static class SelfTest
             return ms;
         }
         var wrong = new List<string>();
-        using (Lookups.Begin(mods, [], saved))
+        using (Lookups.Begin(mods, [], saved, Picks.None))
         {
             var built = Lap();
             var notes = mods.ToDictionary(m => m, m => (Tags: Tags.For(m), Required: RowStrip.RequiredFor(m), Needs: RowStrip.Needs(m, order, loadOrder: false)));
@@ -4193,9 +4193,9 @@ static class SelfTest
         var border = screen.GetNode<Control>("ModsBorder");
         var search = border.GetNode<Control>("SpireModManagerSearch");
         Control? Banner() => border.GetNodeOrNull<Control>(LoadOrder.SelfName);
-        // Mods on now, two copies of one mod counted once (as the counts count them).
-        int OnNow() => Dependencies.OnePerKey(ModManager.Mods.Union(Installed.Mods).Where(m => m.manifest?.id != null))
-            .Count(Dependencies.IsOn);
+        // Mods on now, by id: two copies of one mod counted once (as the counts count them).
+        int OnNow() => ModManager.Mods.Union(Installed.Mods).Where(m => m.manifest?.id != null && Dependencies.IsOn(m))
+            .Select(m => m.manifest?.id).Distinct().Count();
         string Summary() => (screen.GetNodeOrNull<Control>(HistoryBar.ChangesName) as RichTextLabel)?.GetParsedText() ?? "";
         bool ProfileCountShown() => Profiles.Active is { } active && Profiles.ModCount(active) == Profiles.CountText();
         var on = OnNow();

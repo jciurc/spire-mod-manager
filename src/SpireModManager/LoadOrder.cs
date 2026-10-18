@@ -166,28 +166,30 @@ static class LoadOrder
     // Moves each needed mod just ahead of what needs it, keeping everything else in place.
     public static void FixOrder(IList<NModMenuRow> rows) => Save(Dependencies.Fixed(Mods(rows)));
 
-    // Disable (or Enable), then top, up, down, bottom (greyed where they can't move it). compact: the inline moves only;
-    // placed: the rows in place, when the caller already has them.
+    // Disable (or Enable), then top, up, down, bottom (greyed where they can't move it; ours, pinned first, never move,
+    // and nothing moves above them). compact: the inline moves only; placed: the rows in place, when the caller already
+    // has them.
     public static List<MenuItem> Actions(Control content, NModMenuRow row, Action redraw, bool compact = false, List<NModMenuRow>? placed = null)
     {
         var rows = placed ?? content.GetChildren().OfType<NModMenuRow>().ToList();
-        var at = rows.IndexOf(row);
+        var (at, pinned, ours) = (rows.IndexOf(row), Pinned(rows), Ours(row));
         MenuItem Item(string key, int to) => new(Menus.Text(key + (compact ? "_SHORT" : "")), () =>
         {
             if (row.Mod is { } mod)
                 Move(mod, to, rows);
             redraw();
-        }, Disabled: to < 0 || to >= rows.Count || to == at);
+        }, Disabled: ours || to < pinned || to >= rows.Count || to == at);
         var moves = new List<MenuItem>
         {
-            Item("SPIRE_MOD_MANAGER.MOVE_TO_TOP", 0),
+            Item("SPIRE_MOD_MANAGER.MOVE_TO_TOP", pinned),
             Item("SPIRE_MOD_MANAGER.MOVE_UP", at - 1),
             Item("SPIRE_MOD_MANAGER.MOVE_DOWN", at + 1),
             Item("SPIRE_MOD_MANAGER.MOVE_TO_BOTTOM", rows.Count - 1),
         };
         if (compact || row.Mod is not { } it)
             return moves;
-        // No tickboxes in this view: on and off live here. The game's own handler does the work.
+        // No tickboxes in this view: on and off live here. The game's own handler does the work (CopyTickPatch for a
+        // copy of a mod installed twice: enabling it disables the others, as its tip says).
         var on = Dependencies.IsOn(it);
         moves.Insert(0, new MenuItem(Menus.Text(on ? "SPIRE_MOD_MANAGER.DISABLE_MOD" : "SPIRE_MOD_MANAGER.ENABLE_MOD"), () =>
         {
@@ -195,7 +197,7 @@ static class LoadOrder
             tickbox.IsTicked = !on;
             tickbox.EmitSignal(NTickbox.SignalName.Toggled, tickbox);
             redraw();
-        }));
+        }, Tip: on ? null : CategoryList.SwitchCopyTip(it)));
         return moves;
     }
 
@@ -338,7 +340,7 @@ static class LoadOrder
                 redraw();
             }, name: "EnableNeededButton");
             Hover.Tip(enable, Menus.Format("SPIRE_MOD_MANAGER.ENABLE_NEEDED_TIP",
-                ("mods", string.Join(", ", needed.Select(m => m.manifest?.name ?? m.manifest?.id)))));
+                ("mods", string.Join(", ", needed.Select(m => (m.manifest?.name ?? m.manifest?.id) + Copies.Which(m)))))); // which copy, of one installed twice
             buttons.Add(enable);
         }
         Banner(border, search, text, () => NeedsCard(content), buttons);
@@ -586,7 +588,27 @@ static class LoadOrder
         Save(Dependencies.Fixed(mods.OrderBy(Tier).ToList())); // OrderBy is stable: same-tier mods keep their order
     }
 
-    // Writes a whole new order: installed mods as given, then entries for mods that aren't installed.
+    // Our entries (one per installed copy) at the top of a saved list, everything else in its order: the game sorts a
+    // mod by its id's last saved place and we need nothing, so we load first and our Init chooses which copy of a mod
+    // installed twice loads before the game tries it (SameIdLoad). Every writer of the order keeps it so. True if moved.
+    public static bool OursFirst(List<SettingsSaveMod> list)
+    {
+        var ours = list.Where(e => e.Id == ModEntry.ModId).ToList();
+        if (list.Take(ours.Count).All(e => e.Id == ModEntry.ModId))
+            return false;
+        var rest = list.Where(e => e.Id != ModEntry.ModId).ToList();
+        list.Clear();
+        list.AddRange(ours.Concat(rest));
+        return true;
+    }
+
+    // How many rows of ours lead the list (one per installed copy): pinned there.
+    static int Pinned(IList<NModMenuRow> rows) => rows.TakeWhile(r => r.Mod?.manifest?.id == ModEntry.ModId).Count();
+
+    static bool Ours(NModMenuRow row) => row.Mod?.manifest?.id == ModEntry.ModId;
+
+    // Writes a whole new order: installed mods as given (ours first, OursFirst), then entries for mods that aren't
+    // installed.
     static void Save(List<Mod> mods)
     {
         if (SaveManager.Instance.SettingsSave.ModSettings is not { } settings)
@@ -611,6 +633,7 @@ static class LoadOrder
         entries.AddRange(list.Where(e => !kept.Contains(e)));
         list.Clear();
         list.AddRange(entries);
+        OursFirst(list);
         SaveManager.Instance.SaveSettings();
         History.Record();
     }
@@ -653,19 +676,26 @@ static class LoadOrder
         number.AddThemeFontSizeOverride("font_size", 20);
         row.AddChild(number);
 
-        // Three short bars: the usual "grab here" grip (the whole row drags; see below).
+        // Three short bars: the usual "grab here" grip (the whole row drags; see below). Ours: a lock instead, as it
+        // stays first (OursFirst), with why on hovering it.
         var handle = new Control
         {
             Name = HandleName, AnchorBottom = 1, OffsetLeft = LinkGutter, OffsetRight = LinkGutter + 30,
-            MouseFilter = Control.MouseFilterEnum.Ignore,
+            MouseFilter = Ours(row) ? Control.MouseFilterEnum.Pass : Control.MouseFilterEnum.Ignore,
         };
-        for (var i = 0; i < 3; i++)
-            handle.AddChild(new ColorRect
-            {
-                Color = new Color(Gold, 0.7f), AnchorTop = 0.5f, AnchorBottom = 0.5f,
-                OffsetLeft = 6, OffsetRight = 24, OffsetTop = -9 + i * 8, OffsetBottom = -6 + i * 8,
-                MouseFilter = Control.MouseFilterEnum.Ignore,
-            });
+        if (Ours(row))
+        {
+            AddLock(handle);
+            Hover.Tip(handle, Menus.Text("SPIRE_MOD_MANAGER.LOADS_FIRST_TIP"));
+        }
+        else
+            for (var i = 0; i < 3; i++)
+                handle.AddChild(new ColorRect
+                {
+                    Color = new Color(Gold, 0.7f), AnchorTop = 0.5f, AnchorBottom = 0.5f,
+                    OffsetLeft = 6, OffsetRight = 24, OffsetTop = -9 + i * 8, OffsetBottom = -6 + i * 8,
+                    MouseFilter = Control.MouseFilterEnum.Ignore,
+                });
         row.AddChild(handle);
 
         // The handlers below are connected once per row: rows outlive this view (connecting again would start one
@@ -702,6 +732,12 @@ static class LoadOrder
                 case InputEventMouseButton { ButtonIndex: MouseButton.Left, Pressed: true } modified
                     when modified.CtrlPressed || modified.ShiftPressed || modified.MetaPressed:
                     Selection.Pick(content, row, toggle: modified.CtrlPressed || modified.MetaPressed, range: modified.ShiftPressed);
+                    row.AcceptEvent();
+                    break;
+                case InputEventMouseButton { ButtonIndex: MouseButton.Left, Pressed: true } when Ours(row) && !dragging:
+                    // Ours stays first: a press only selects it.
+                    Selection.Pick(content, row, toggle: false, range: false);
+                    CategoryList.Select(content, row);
                     row.AcceptEvent();
                     break;
                 case InputEventMouseButton { ButtonIndex: MouseButton.Left, Pressed: true } press:
@@ -925,17 +961,43 @@ static class LoadOrder
         HideLinks(content);
     }
 
-    // The gap the mouse is nearest: the index a dropped row would take, and that gap's screen y.
+    // The gap the mouse is nearest: the index a dropped row would take, and that gap's screen y. Never above our rows,
+    // pinned first.
     static (int Index, float Y) Target(Control content, List<NModMenuRow> all, float mouseY)
     {
-        var rows = all.Where(r => r.Visible).ToList();
+        var pinned = Pinned(all);
+        var rows = all.Skip(pinned).Where(r => r.Visible).ToList();
         for (var i = 0; i < rows.Count; i++)
         {
             var rect = rows[i].GetGlobalRect();
             if (mouseY < rect.GetCenter().Y)
                 return (all.IndexOf(rows[i]), rect.Position.Y - 4);
         }
-        var last = rows.LastOrDefault()?.GetGlobalRect();
+        var last = (rows.LastOrDefault() ?? all.Take(pinned).LastOrDefault())?.GetGlobalRect();
         return (all.Count, last is { } r ? r.End.Y + 4 : content.GlobalPosition.Y);
+    }
+
+    // A small padlock in the grip's place: a gold body under an arched shackle.
+    static void AddLock(Control handle)
+    {
+        var shackle = new Panel
+        {
+            AnchorTop = 0.5f, AnchorBottom = 0.5f, OffsetLeft = 10, OffsetRight = 20, OffsetTop = -10, OffsetBottom = 0,
+            MouseFilter = Control.MouseFilterEnum.Ignore,
+        };
+        var arch = new StyleBoxFlat { BgColor = Colors.Transparent, BorderColor = new Color(Gold, 0.8f), DrawCenter = false };
+        (arch.BorderWidthLeft, arch.BorderWidthRight, arch.BorderWidthTop, arch.BorderWidthBottom) = (2, 2, 2, 0);
+        (arch.CornerRadiusTopLeft, arch.CornerRadiusTopRight) = (5, 5);
+        shackle.AddThemeStyleboxOverride("panel", arch);
+        handle.AddChild(shackle);
+        var body = new Panel
+        {
+            AnchorTop = 0.5f, AnchorBottom = 0.5f, OffsetLeft = 7, OffsetRight = 23, OffsetTop = -3, OffsetBottom = 9,
+            MouseFilter = Control.MouseFilterEnum.Ignore,
+        };
+        var fill = new StyleBoxFlat { BgColor = new Color(Gold, 0.8f) };
+        fill.SetCornerRadiusAll(2);
+        body.AddThemeStyleboxOverride("panel", fill);
+        handle.AddChild(body);
     }
 }

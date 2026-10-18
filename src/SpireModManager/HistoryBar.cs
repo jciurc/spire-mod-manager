@@ -157,7 +157,7 @@ static class HistoryBar
     }
 
     // Mods turned on, off, and moved in the load order, compared with launch.
-    public static (int On, int Off, int Moved) Counts() => Counts(ModChanges(History.Loaded?.Mods ?? []));
+    public static (int On, int Off, int Moved) Counts() => Counts(History.Loaded is { } loaded ? ModChanges(loaded) : []);
 
     static (int On, int Off, int Moved) Counts(List<(Mod Mod, bool Enabled)> changed) =>
         (changed.Count(c => c.Enabled), changed.Count(c => !c.Enabled), Moves().Count);
@@ -181,7 +181,7 @@ static class HistoryBar
         var (edited, profiles, renamed) = DataChanges(loaded.Store, Store.EditsJson());
         if (Switch(renamed) is var (from, to))
             lines.Add(Menus.Format("SPIRE_MOD_MANAGER.CHANGE_SWITCH", ("from", $"[b]{Escape(from)}[/b]"), ("to", $"[b]{Escape(to)}[/b]")));
-        var changed = ModChanges(loaded.Mods);
+        var changed = ModChanges(loaded);
         var (on, off, moved) = Counts(changed);
         // Fewer than NameLimit mods turned on, off or installed: each by name under its count.
         var named = changed.Count + Installed.Mods.Count < NameLimit;
@@ -193,12 +193,12 @@ static class HistoryBar
         if (on > 0)
         {
             lines.Add($"[color={Added}]{Menus.Format("SPIRE_MOD_MANAGER.SUMMARY_ON", ("count", Menus.Number(on)))}[/color]");
-            Names(changed.Where(c => c.Enabled).Select(c => Name(c.Mod)));
+            Names(changed.Where(c => c.Enabled).Select(c => Name(c.Mod) + Copies.Which(c.Mod)));
         }
         if (off > 0)
         {
             lines.Add($"[color={Removed}]{Menus.Format("SPIRE_MOD_MANAGER.SUMMARY_OFF", ("count", Menus.Number(off)))}[/color]");
-            Names(changed.Where(c => !c.Enabled).Select(c => Name(c.Mod)));
+            Names(changed.Where(c => !c.Enabled).Select(c => Name(c.Mod) + Copies.Which(c.Mod)));
         }
         if (Installed.Mods.Count is var installed and > 0)
         {
@@ -233,10 +233,11 @@ static class HistoryBar
         if (History.Loaded is not { } loaded)
             return [];
         var edited = DataChanges(loaded.Store, Store.EditsJson()).Edited.Select(e => e.Id).ToHashSet();
-        // Turned on or off, or moved: every copy (two copies of one mod are one switch, and both rows show it changed).
-        var switched = ModChanges(loaded.Mods).Select(c => c.Mod).Concat(Moves().Select(m => m.Mod))
-            .Select(m => (m.manifest?.id, m.modSource)).ToHashSet();
-        return [.. ModManager.Mods.Where(m => switched.Contains((m.manifest?.id, m.modSource))), .. Installed.Mods,
+        // Each copy turned on or off (a switch to another copy of a mod: both), and every copy of a mod moved (one
+        // place in the order for them all).
+        var switched = ModChanges(loaded).Select(c => Copies.SwitchKey(c.Mod)).ToHashSet();
+        var moved = Moves().Select(m => (m.Mod.manifest?.id, m.Mod.modSource)).ToHashSet();
+        return [.. ModManager.Mods.Where(m => switched.Contains(Copies.SwitchKey(m)) || moved.Contains((m.manifest?.id, m.modSource))), .. Installed.Mods,
             .. ModManager.Mods.Union(Installed.Mods).Where(m => edited.Contains(Copies.Key(m)))]; // by key: one copy's own edits
     }
 
@@ -253,10 +254,11 @@ static class HistoryBar
         if (Switch(renamed) is var (from, to))
             entries.Add(new Entry("", Menus.Format("SPIRE_MOD_MANAGER.CHANGE_SWITCH", ("from", from), ("to", to)),
                 Menus.Format("SPIRE_MOD_MANAGER.CHANGE_SWITCH", ("from", $"[b]{Escape(from)}[/b]"), ("to", $"[b]{Escape(to)}[/b]"))));
-        foreach (var (mod, enabled) in ModChanges(loaded.Mods).OrderBy(c => !c.Enabled).ThenBy(c => Name(c.Mod)))
+        foreach (var (mod, enabled) in ModChanges(loaded).OrderBy(c => !c.Enabled).ThenBy(c => Name(c.Mod)))
         {
             var key = enabled ? "SPIRE_MOD_MANAGER.CHANGE_ON" : "SPIRE_MOD_MANAGER.CHANGE_OFF";
-            entries.Add(new Entry(enabled ? "on" : "off", Menus.Format(key, ("mod", Name(mod))), Link(mod.manifest?.id, Name(mod))));
+            var name = Name(mod) + Copies.Which(mod); // a copy says which ("Enabled: LucanaMod (3809131080)")
+            entries.Add(new Entry(enabled ? "on" : "off", Menus.Format(key, ("mod", name)), Link(Copies.Key(mod), name)));
         }
         foreach (var mod in Installed.Mods.OrderBy(Name))
         {
@@ -494,14 +496,14 @@ static class HistoryBar
 
     static string Name(Mod mod) => mod.manifest?.name ?? mod.manifest?.id ?? "";
 
-    // Installed mods whose on/off differs from the given list (no entry = on), two copies of one mod once.
-    static List<(Mod Mod, bool Enabled)> ModChanges(IReadOnlyList<History.ModEntry> before)
+    // Installed copies whose on/off differs from a snapshot's (its list and picks against now's, each read against the
+    // copies installed today; no entry = on). A switch to another copy of a mod is two: one on, one off.
+    static List<(Mod Mod, bool Enabled)> ModChanges(History.Snapshot before)
     {
-        var then = before.DistinctBy(m => (m.Id, m.Source)).ToDictionary(m => (m.Id, m.Source), m => m.Enabled);
-        var now = History.CurrentMods().DistinctBy(m => (m.Id, m.Source)).ToDictionary(m => (m.Id, m.Source), m => m.Enabled);
-        return Dependencies.OnePerKey(ModManager.Mods.Where(m => m.manifest?.id != null))
-            .Select(m => (Mod: m, Key: (m.manifest?.id ?? "", m.modSource)))
-            .Select(p => (p.Mod, Then: then.GetValueOrDefault(p.Key, true), Now: now.GetValueOrDefault(p.Key, true)))
+        var (thenOff, thenPicks) = (Dependencies.SavedOff(before.Mods), Store.PicksIn(before.Store));
+        var (nowOff, nowPicks) = (Dependencies.SavedOff(), Picks.Now);
+        return Dependencies.EachCopy(ModManager.Mods)
+            .Select(m => (Mod: m, Then: Dependencies.OnIn(m, thenOff, thenPicks), Now: Dependencies.OnIn(m, nowOff, nowPicks)))
             .Where(p => p.Then != p.Now)
             .Select(p => (p.Mod, p.Now))
             .ToList();

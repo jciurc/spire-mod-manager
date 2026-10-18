@@ -1,5 +1,4 @@
 using MegaCrit.Sts2.Core.Modding;
-using MegaCrit.Sts2.Core.Saves;
 
 namespace SpireModManager;
 
@@ -32,6 +31,7 @@ static class Installed
     public static void Forget(Mod mod) => _mods.Remove(mod);
 #endif
 
-    // Whether it loads after a relaunch: on unless the saved list says off.
-    public static bool On(Mod mod) => !(SaveManager.Instance.SettingsSave.ModSettings?.IsModDisabled(mod) ?? false);
+    // Whether it loads after a relaunch: on unless the saved list says off, and the picked copy where it's another copy
+    // of a mod from its source.
+    public static bool On(Mod mod) => Dependencies.IsOn(mod);
 }
