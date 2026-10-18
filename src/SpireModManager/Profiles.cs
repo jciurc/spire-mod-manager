@@ -66,15 +66,22 @@ static class Profiles
     }
 
     // A mod installed while the game runs: the active profile takes it in at once (on, as the game has it), before
-    // the player can untick it, so unticking it is an edit of that profile. Quietly (see History.Quietly).
-    // Fails soft: it runs inside the game's mod detection, beside Changes' own handler.
+    // the player can untick it, so unticking it is an edit of that profile. A second copy of a mod from one source: every
+    // profile holds the copy picked (the one that was there), as at launch, so a switch to the new copy is an edit of the
+    // active one. Quietly (see History.Quietly). Fails soft: it runs inside the game's mod detection, beside Changes'
+    // own handler.
     static void TakeInInstalled()
     {
         try
         {
-            if (Active is not { } profile || !Unseen(profile).Any())
+            if (Active is not { } profile || !Unseen(profile).Any() && !Store.Data.Profiles.Any(Unheld))
                 return;
-            History.Quietly(data => TakeIn(data.Profiles.FirstOrDefault(p => p.Name == data.ActiveProfile)));
+            History.Quietly(data =>
+            {
+                TakeIn(data.Profiles.FirstOrDefault(p => p.Name == data.ActiveProfile));
+                foreach (var each in data.Profiles)
+                    HoldCopies(each);
+            });
             Switched?.Invoke(); // the count beside the name
         }
         catch (Exception e)
@@ -119,6 +126,10 @@ static class Profiles
                         }
         return changed;
     }
+
+    // Whether HoldCopies has an entry to give a copy: one naming none for a mod installed more than once from one source.
+    static bool Unheld(Profile profile) => Copies.TwinGroups().Any(g =>
+        profile.Mods.Concat(profile.Edited ?? []).Any(m => m is { Copy: null } entry && entry.Id == g.Id && entry.Source == g.Source));
 
     // Installed mods the profile has no entry for, as they are in the mod list now.
     static IEnumerable<ProfileMod> Unseen(Profile profile)

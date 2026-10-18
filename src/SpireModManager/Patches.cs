@@ -537,7 +537,8 @@ static class NewModPopupPatch
 {
     const ulong EveryMs = 30_000;
     static ulong _lastShown;
-    static readonly HashSet<Mod> Announced = [];
+    // By copy (Copies.SwitchKey): an update of a copy installed this session is a new Mod of a copy already announced.
+    static readonly HashSet<string> Announced = [];
 
     static bool Prefix(Mod mod)
     {
@@ -547,9 +548,11 @@ static class NewModPopupPatch
             if ((_lastShown != 0 && now - _lastShown < EveryMs) || NModalContainer.Instance is not { } modals
                 || modals.GetChildren().OfType<NErrorPopup>().Any())
                 return false;
-            var arrived = Installed.Mods.Append(mod).Distinct().Where(m => !Announced.Contains(m)).ToList();
-            // A new copy is one Installed took as new (an update of either copy isn't: it keeps the new-mods text).
-            var copies = arrived.Where(m => Installed.Mods.Contains(m) && Copies.Twins(m).Count > 0).ToList();
+            var arrived = Installed.Mods.Append(mod).Distinct().Where(m => !Announced.Contains(Copies.SwitchKey(m))).ToList();
+            var keys = arrived.Select(Copies.SwitchKey).ToHashSet();
+            // A new copy is one Installed took as new (an update of either copy isn't: it keeps the new-mods text), beside a
+            // copy of its id and source from before these (two copies that came together are a new mod).
+            var copies = arrived.Where(m => Installed.Mods.Contains(m) && Copies.Twins(m).Any(t => !keys.Contains(Copies.SwitchKey(t)))).ToList();
             var title = new LocString("settings_ui", "SPIRE_MOD_MANAGER.NEW_MOD_TITLE");
             var copyBody = new LocString("settings_ui", "SPIRE_MOD_MANAGER.NEW_COPY_BODY");
             copyBody.Add("mods", string.Join(", ", copies.Select(m => (m.manifest?.name ?? m.manifest?.id) + Copies.Which(m))));
@@ -561,7 +564,7 @@ static class NewModPopupPatch
                 Menus.Mark(popup);
                 modals.Add(popup);
                 _lastShown = now;
-                Announced.UnionWith(arrived);
+                Announced.UnionWith(keys);
             }
             return false;
         }

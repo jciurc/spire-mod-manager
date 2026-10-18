@@ -6049,12 +6049,12 @@ static class SelfTest
 
     // SameIdLoad's plan on made-up lists, as the game's loop has them while our Init runs (us at the first slot still to
     // load): the pick first (no swap), later (swapped through the list's array: the game's loop carries on), a copy decided
-    // before us (picked, or not), the pick's source off or the pick gone (nothing said), the pick set aside by the game's
-    // local-vs-Workshop rule, a dependency of the pick after the id's slot (no swap; with a mod after us needing the id, no
-    // flip either; one not installed: swapped), the canary (not a List<Mod>, not us first, not the game's own list), three
-    // copies, two Workshop copies and a local one, a local and a Workshop copy only, our own second copy, no pick yet and a
-    // pick naming no copy installed, one Workshop item with two manifests, a set-aside copy's messages kept for its panel;
-    // then the self-check's verdicts (Judge) on what the game made of a plan.
+    // before us (picked, or not, or the pick gone: nothing waits), the pick's source off or the pick gone (nothing said),
+    // the pick set aside by the game's local-vs-Workshop rule, a dependency of the pick after the id's slot (no swap; with
+    // a mod after us needing the id, no flip either; one not installed: swapped), the canary (not a List<Mod>, not us
+    // first, not the game's own list), three copies, two Workshop copies and a local one, a local and a Workshop copy only,
+    // our own second copy, no pick yet and a pick naming no copy installed, one Workshop item with two manifests, a
+    // set-aside copy's messages kept for its panel; then the self-check's verdicts (Judge) on what the game made of a plan.
     static void TestSameIdPlan()
     {
         const string X = "SmmSameIdX";
@@ -6141,6 +6141,17 @@ static class SelfTest
                 && okAfter && planAfter.GetValueOrDefault(X) is { Why: SameIdLoad.Reason.None, HadPick: false } after && after.Loads == c && e.state == Aside
                 && judged == SameIdLoad.Result.Taken,
                 $"{Say(plan, a, b)} || {Say(planPicked, c, d)} || {Say(planNone, c, d)} || {Say(planAfter, c, d, e)}, self-check {judged}");
+        }
+        {
+            // The same with a pick naming a copy no longer installed: no pick waits for the next launch.
+            var (a, b) = (Made(X, "A", ModLoadState.Loaded), Made(X, "B"));
+            var (ok, plan) = Plan([a, us, b], $"{X}|l:Gone");
+            var (c, d) = (Made(X, "C", ModLoadState.Loaded), Made(X, "D", ModLoadState.Failed));
+            var (okNone, planNone) = Plan([c, d, us], $"{X}|l:Gone");
+            Check("... a copy that sorted before us and loaded, the pick naming a copy no longer installed: not one that waits for the next launch (the copy "
+                + "after us set aside all the same); nothing after us: nothing to say",
+                ok && plan.GetValueOrDefault(X) is { Why: SameIdLoad.Reason.None, HadPick: false } entry && entry.Loads == a && b.state == Aside
+                && okNone && planNone.Count == 0, $"{Say(plan, a, b)} || {Say(planNone, c, d)}");
         }
         {
             // The local copy chosen: the Workshop copies off in the game's list, their own pick kept. And a pick naming a
@@ -6543,7 +6554,9 @@ static class SelfTest
     // naming the id once sets the switch, keeps the pick; the not-installed copies it names are listed by item. The relaunch
     // check sees the picked copy's problem while the other one is loaded. Enable selected with both copies picked turns
     // on the clicked one only. A session that can't save our data: the tick is the game's (the pick stays). A new copy
-    // arriving keeps the pick, and its popup says so. COPY_NOT_APPLIED when the self-check finds the pick not taken.
+    // arriving keeps the pick, and its popup says so, even one a saved pick still names (back after an uninstall); the
+    // active profile then holds the copy there; an update of a new copy isn't announced as new again, nor are two copies
+    // of a mod that came together. COPY_NOT_APPLIED when the self-check finds the pick not taken.
     static async Task TestSameIdCopies(Node menu, NModdingScreen screen, Control content, string outDir)
     {
         List<NModMenuRow> Rows() => content.GetChildren().OfType<NModMenuRow>().ToList();
@@ -6938,6 +6951,95 @@ static class SelfTest
         await Wait(menu, 0.3);
         Check("... an update of a copy (its own folder again) isn't a new copy: the popup's usual words", notNew
             && updatePopup.Contains("New mods were detected") && !updatePopup.Contains("A new copy"), $"not new {notNew}; {updatePopup}");
+
+        // A mod installed once (made up, as found at launch) whose saved pick still names a second copy, uninstalled since
+        // (picks are never pruned), and an active profile naming no copy (as from before copies). That copy comes back
+        // mid-session: it doesn't take over, and the profile holds the copy there, so enabling the new one is its edit;
+        // an update of the new copy keeps that pick and isn't announced as a new copy again. Then two copies of a mod new
+        // to the game, one after the other (the first one's popup held back: one every 30 s): the new-mods words, not a
+        // new copy's, and the copy that came first keeps the pick (the record's order puts the second first).
+        const string Back = "SmmSameIdBack", Pair = "SmmSameIdPair";
+        var backFirst = Made(Back, "Back1", ModLoadState.Loaded);
+        var (backSecond, backUpdate) = (Made(Back, "Back2", ModLoadState.AddedAtRuntime), Made(Back, "Back2", ModLoadState.AddedAtRuntime, version: "1.0.1"));
+        var (pairFirst, pairSecond) = (Made(Pair, "PairB", ModLoadState.AddedAtRuntime), Made(Pair, "PairA", ModLoadState.AddedAtRuntime));
+        GameMods().Add(backFirst);
+        History.Quietly(data =>
+        {
+            data.CopyPicks = Copies.WithPicks(data.CopyPicks, [$"{Back}|l:Back2"]);
+            if (data.Profiles.FirstOrDefault(p => p.Name == data.ActiveProfile) is { } active)
+                foreach (var list in new[] { active.Mods, active.Edited })
+                    list?.Add(new ProfileMod(Back, ModSource.ModsDirectory, true));
+        });
+        string? BackPicked() => Copies.Picked(Back, ModSource.ModsDirectory);
+        string? Held() => Profiles.Active?.Mods.FirstOrDefault(m => m.Id == Back)?.Copy;
+        var backSteps = History.Steps(History.Track.List);
+        NewModPopupPatch.TestReset();
+        NModalContainer.Instance?.Clear();
+        GameInstalls(backSecond);
+        await Wait(menu, 0.4);
+        var backPopup = string.Join(" | ", PopupTexts());
+        NModalContainer.Instance?.Clear();
+        var cameBack = BackPicked() == "l:Back1" && Dependencies.IsOn(backFirst) && !Dependencies.IsOn(backSecond) && Held() == "l:Back1" && !Profiles.Edited
+            && History.Steps(History.Track.List) == backSteps && backPopup.Contains($"A new copy of {Back} (Back2) was detected");
+        var cameSay = $"pick {BackPicked()}, on {Dependencies.IsOn(backFirst)}/{Dependencies.IsOn(backSecond)}, held {Held()}, edited {Profiles.Edited}, "
+            + $"steps {History.Steps(History.Track.List) - backSteps}; {backPopup}";
+        Dependencies.Write([(backSecond, true)], winner: backSecond); // as its tick does (CopyTickPatch), the profile and history after
+        Profiles.Track();
+        History.Record();
+        var switched = BackPicked() == "l:Back2" && Profiles.Edited && History.Steps(History.Track.List) == backSteps + 1;
+        NewModPopupPatch.TestReset();
+        GameInstalls(backUpdate);
+        await Wait(menu, 0.4);
+        var backUpdatePopup = string.Join(" | ", PopupTexts());
+        NModalContainer.Instance?.Clear();
+        var updateKeeps = BackPicked() == "l:Back2" && Installed.Mods.Contains(backUpdate) && backUpdatePopup.Contains("New mods were detected")
+            && !backUpdatePopup.Contains("A new copy");
+        GameInstalls(pairFirst); // within 30 s of the last popup: none for it
+        await Wait(menu, 0.2);
+        NewModPopupPatch.TestReset();
+        NModalContainer.Instance?.Clear();
+        GameInstalls(pairSecond);
+        await Wait(menu, 0.4);
+        var pairPopup = string.Join(" | ", PopupTexts());
+        NModalContainer.Instance?.Clear();
+        var pairNew = pairPopup.Contains("New mods were detected") && !pairPopup.Contains("A new copy") && Copies.Picked(Pair, ModSource.ModsDirectory) == "l:PairB";
+        History.Undo(); // the switch
+        await Wait(menu, 0.3);
+        var backUndone = BackPicked() == "l:Back1" && !Profiles.Edited;
+        // Put back: the made-up copies, their rows and our data for them (quietly, in every undo snapshot).
+        foreach (var gone in new[] { backSecond, backUpdate, pairFirst, pairSecond })
+        {
+            if (Rows().FirstOrDefault(r => r.Mod == gone) is { } goneRow)
+            {
+                content.RemoveChild(goneRow);
+                goneRow.QueueFree();
+            }
+            GameForgets(gone);
+        }
+        GameMods().Remove(backFirst);
+        static bool MadeUp(string? id) => id is Back or Pair;
+        SaveManager.Instance.SettingsSave.ModSettings?.ModList.RemoveAll(e => MadeUp(e.Id));
+        History.Quietly(data =>
+        {
+            data.Copies?.Remove(Back);
+            data.Copies?.Remove(Pair);
+            foreach (var key in data.Mods.Keys.Where(k => MadeUp(Copies.IdOf(k))).ToList())
+                data.Mods.Remove(key);
+            data.CopyPicks = Store.TidyPicks(data.CopyPicks?.Where(k => !MadeUp(Copies.IdOf(k))));
+            foreach (var profile in data.Profiles)
+            {
+                profile.Mods.RemoveAll(m => MadeUp(m.Id));
+                profile.Edited?.RemoveAll(m => MadeUp(m.Id));
+            }
+        });
+        CategoryList.Redraw(content);
+        await Wait(menu, 0.3);
+        Check("... a copy back mid-session that a saved pick still names doesn't take over (its popup says the enabled copy keeps loading); the active "
+            + "profile, naming no copy, holds the one there, so enabling the new copy is its edit, one undo step; an update of the new copy keeps that "
+            + "pick and isn't a new copy again", cameBack && switched && updateKeeps && backUndone,
+            $"{cameSay}; switched {switched}, update keeps {updateKeeps} ({backUpdatePopup}), undone {backUndone}");
+        Check("... two copies of a mod new to the game, one after the other: the new-mods words, and the copy that came first picked",
+            pairNew, $"pick {Copies.Picked(Pair, ModSource.ModsDirectory)}; {pairPopup}");
         Check("... as it started: the fixture's pick, nothing changed since the page opened for the twins", Picked() == "l:SmmTestTwinB" && Ticked(rowB) && !Ticked(rowA)
             && SwitchOn() && !Profiles.Edited, Say());
     }

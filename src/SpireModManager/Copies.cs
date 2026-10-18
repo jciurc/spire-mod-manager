@@ -291,7 +291,11 @@ static class Copies
         try
         {
             var now = Store.Clone(Store.Data);
-            if (!Reconcile(now) || now.Copies is not { } record)
+            var changed = Reconcile(now);
+            // Installed adds the copy that came last.
+            if (Installed.Mods.LastOrDefault() is { } come && KeepThere(now, come))
+                changed = true;
+            if (!changed || now.Copies is not { } record)
                 return;
             var added = now.Mods.Where(p => !Store.Data.Mods.ContainsKey(p.Key)).Select(p => (p.Key, p.Value)).ToList();
             var seeded = (now.CopyPicks ?? []).Except(Store.Data.CopyPicks ?? []).ToList();
@@ -308,6 +312,25 @@ static class Copies
         {
             Log.Error($"[{ModEntry.ModId}] Could not sort out a newly installed copy of a mod: {e}");
         }
+    }
+
+    // Where the pick of its id and source names the copy just installed (a pick saved before it was uninstalled: picks
+    // are never pruned; or the record's order, where both came this session), the pick goes to the copy that loads
+    // without it, in Picked's order (the one loaded, else the record's first). Not for an update of a copy installed
+    // this session (the game keeps its earlier Mod): a pick of that one is the player's. True if it changed.
+    static bool KeepThere(StoreData data, Mod come)
+    {
+        if (come.manifest?.id is not { } id || id == ModEntry.ModId || All.Any(m => m != come && SwitchKey(m) == SwitchKey(come)))
+            return false;
+        var copy = CopyOf(come);
+        if (new Picks(data.CopyPicks, data.Copies).Picked(id, come.modSource) != copy)
+            return false;
+        var without = new Picks(data.CopyPicks?.Where(k => k != SwitchKey(come)),
+            data.Copies?.ToDictionary(p => p.Key, p => p.Value.Where(c => c != copy).ToList()));
+        if (without.Picked(id, come.modSource) is not { } there || there == copy)
+            return false;
+        data.CopyPicks = WithPicks(data.CopyPicks, [$"{id}|{there}"]);
+        return true;
     }
 }
 

@@ -98,8 +98,9 @@ static class SameIdLoad
             var todo = copies.Where(p => p.At > self && p.Mod.state == ModLoadState.None).ToList();
             var pickKeys = picks.Where(k => Copies.Parse(k) is { } p && p.Id == id).ToHashSet();
             bool IsPick(Mod m) => pickKeys.Contains(Copies.SwitchKey(m));
-            // A source's own pick: which of its copies loads (between sources, their switches in the game's list decide).
-            bool PickedIn(ModSource source) => pickKeys.Any(k => Copies.Parse(k)?.Source == source);
+            // A source's own pick: which of its copies loads (between sources, their switches in the game's list decide). One
+            // naming a copy no longer installed is none: there's nothing for it to wait for.
+            bool PickedIn(ModSource source) => copies.Any(p => p.Mod.modSource == source && IsPick(p.Mod));
             void Say(string line)
             {
                 if (log)
