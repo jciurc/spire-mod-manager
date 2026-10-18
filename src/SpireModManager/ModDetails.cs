@@ -31,6 +31,7 @@ static class ModDetails
     const string Quiet = "#fff6e299"; // no value to show (an unknown author, no description): subtle, so it doesn't read as one
     const string Bullet = "[color=#fff6e280]•[/color]"; // between facts on one line: dim
     const int VersionSize = 20;
+    const int HeadSize = 16; // the head's text
     const int TitleMinSize = 24; // a long name shrinks this far (from Layout's 32), then is cut short
 
     // Along the inside of the panel's bottom edge, whatever its size.
@@ -132,7 +133,8 @@ static class ModDetails
         title.SetMeta(FullMeta, shownName != name || shownNumber != number ? name + (number.Length > 0 ? gap + number : "") : "");
     }
 
-    // "<id> (<where>)" then the status, within width: a long id is cut with "…" (the whole id as a tooltip).
+    // "<id> (<where>)" then the status, within width: a long id is cut with "…" (the whole id as a tooltip). A link to
+    // the Workshop page has the external-link mark after it (LinkMark).
     static void FitSource(Control source, string id, string where, float width)
     {
         var link = source.GetNode<LinkButton>(LinkName);
@@ -140,9 +142,10 @@ static class ModDetails
         var size = link.GetThemeFontSize("font_size");
         var after = $" ({where})";
         var room = width - source.GetThemeConstant("separation") - source.GetNode<Control>("Raised").GetCombinedMinimumSize().X
-            - font.GetStringSize(after, fontSize: size).X;
+            - font.GetStringSize(after, fontSize: size).X - LinkMark.Room(link);
         var shown = RowTitles.Cut(font, id, size, room);
         link.Text = shown + after;
+        LinkMark.Fit(link);
         link.SetMeta(FullMeta, shown != id ? id : "");
     }
 
@@ -246,10 +249,11 @@ static class ModDetails
         string Fact(string key, string value) => $"[color={GoldHex}]{Menus.Text(key)}[/color]: {value}";
         var author = mod.manifest?.author is { Length: > 0 } who ? $"[url=author:{who}][color={ModLinkHex}]{Escape(Short(who))}[/color][/url]" : Faint("SPIRE_MOD_MANAGER.UNKNOWN");
         var lines = new List<string> { Fact("SPIRE_MOD_MANAGER.AUTHOR", author) };
-        // The last update, how long ago, a dim bullet, and Changelog: its change notes on the Workshop.
+        // The last update, how long ago, a dim bullet, and Changelog: its change notes on the Workshop (with the
+        // external-link mark, in the link).
         if (WorkshopInfo.For(mod) is { } workshop)
             lines.Add(Fact("SPIRE_MOD_MANAGER.UPDATED", $"{Date(workshop.Updated)} {Ago(workshop.Updated)}  {Bullet}\u00a0\u00a0" // no break after the bullet: it stays with the link
-                + $"[url=patchnotes][color={LinkHex}]{Menus.Text("SPIRE_MOD_MANAGER.CHANGELOG")}[/color][/url]"));
+                + $"[url=patchnotes][color={LinkHex}]{Menus.Text("SPIRE_MOD_MANAGER.CHANGELOG")}{LinkMark.Tag(HeadSize, LinkHex)}[/color][/url]"));
         lines.Add(Fact("SPIRE_MOD_MANAGER.COMPATIBILITY", Compatibility(mod)));
         return string.Join("\n", lines);
     }
@@ -494,6 +498,7 @@ static class ModDetails
         link.AddThemeColorOverride("font_color", new Color(0.6f, 0.8f, 1f));
         link.AddThemeColorOverride("font_hover_color", new Color(0.8f, 0.9f, 1f));
         link.AddThemeColorOverride("font_disabled_color", new Color(Cream, 0.6f));
+        LinkMark.Add(link); // while it links to the Workshop page: the external-link mark, lit with the link
         // A long id cut short (FitSource): the whole of it in a plain tooltip.
         Hover.Watch(link, "SpireModManagerFullText", () => link.GetMeta(FullMeta, "").AsString() is { Length: > 0 } whole ? Escape(whole) : null, Hover.Timing.Slow);
         line.AddChild(link);
@@ -524,7 +529,7 @@ static class ModDetails
             Name = HeadName, BbcodeEnabled = true, FitContent = true, ScrollActive = false, AutowrapMode = TextServer.AutowrapMode.WordSmart,
             MouseFilter = Control.MouseFilterEnum.Pass, MetaUnderlined = false,
         };
-        Hover.Fonts(head, 16);
+        Hover.Fonts(head, HeadSize);
         head.MetaClicked += meta =>
         {
             if (meta.AsString() is { } target && target.StartsWith("author:"))

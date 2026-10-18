@@ -146,8 +146,8 @@ static class MenuButton
                     Store.Save();
                     Place(button);
                 }, Disabled: Store.Data.MenuButtonAt == null),
-                // Where drop-in translations go (Translations), made if needed and opened.
-                new(Menus.Text("SPIRE_MOD_MANAGER.OPEN_TRANSLATIONS"), Translations.Open),
+                // Where drop-in translations go (Translations), made if needed and opened in the system's file browser.
+                new(Menus.Text("SPIRE_MOD_MANAGER.OPEN_TRANSLATIONS"), Translations.Open, External: true),
                 // A divider, then what the Modding page's Relaunch Game does: first the check for mods that won't
                 // load (its dialog over the main menu), then the relaunch. Last and on its own, as with nothing wrong
                 // it quits at once: a slip from the item above shouldn't land on it.

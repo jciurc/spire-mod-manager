@@ -186,6 +186,8 @@ static class MenuPanel
         }
         var label = new Label { Text = item.Label, MouseFilter = Control.MouseFilterEnum.Ignore };
         Style(label, "res://themes/kreon_regular_shared.tres", 20, item.Checked ? Gold : color);
+        if (item.External)
+            LinkMark.Add(label);
         line.AddChild(label);
         if (item.Badge is { } badge)
         {

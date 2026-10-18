@@ -192,6 +192,7 @@ static class ProfileShare
     static readonly Color Gold = new(0.937f, 0.784f, 0.318f);
     static readonly Color ErrorColor = new(1f, 0.5f, 0.44f);
     const string GoldHex = "#efc851", DimHex = "#fff6e299", LinkHex = "#99ccff";
+    const int BodySize = 18; // the dialogs' text
 
     public static bool IsOpen => Modal.IsOpen(Name);
 
@@ -377,9 +378,10 @@ static class ProfileShare
             lines.Add("");
             lines.Add(Menus.Format("SPIRE_MOD_MANAGER.IMPORT_MISSING", ("count", Menus.Number(plan.Missing.Count))));
             var off = Escape(Menus.Text("SPIRE_MOD_MANAGER.IMPORT_MISSING_OFF"));
-            // The name itself opens its Workshop page, when the list gives one.
+            // The name itself opens its Workshop page, when the list gives one (with the external-link mark, in the link).
             string Named(ProfileCsv.Entry m) => $"[b]{Escape(m.Name.Length > 0 ? m.Name : m.Id)}[/b]";
-            lines.AddRange(plan.Missing.Select(m => "  •  " + (m.WorkshopLink.Length > 0 ? $"[url={m.WorkshopLink}][color={LinkHex}]{Named(m)}[/color][/url]" : Named(m))
+            lines.AddRange(plan.Missing.Select(m => "  •  "
+                + (m.WorkshopLink.Length > 0 ? $"[url={m.WorkshopLink}][color={LinkHex}]{Named(m)}{LinkMark.Tag(BodySize, LinkHex)}[/color][/url]" : Named(m))
                 + (m.Enabled ? "" : $" [color={DimHex}]{off}[/color]")));
         }
         return string.Join("\n", lines);
@@ -452,7 +454,7 @@ static class ProfileShare
     static RichTextLabel Body(string name)
     {
         var body = new RichTextLabel { Name = name, BbcodeEnabled = true, FitContent = true, ScrollActive = false, MouseFilter = Control.MouseFilterEnum.Ignore };
-        Hover.Fonts(body, 18);
+        Hover.Fonts(body, BodySize);
         return body;
     }
 
