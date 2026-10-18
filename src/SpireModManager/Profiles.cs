@@ -85,12 +85,18 @@ static class Profiles
                     HoldCopies(each);
             });
             // Its being on is the profile's unsaved edit. The arrival isn't the player's step, and the edit follows the
-            // mod list (worked out again wherever undo lands): now only, not as a step.
-            if (took && Active is { } active && Edit(active))
-            {
-                Store.Save();
-                History.KeepCurrent();
-            }
+            // mod list (worked out again wherever undo lands): now only, not as a step. At the frame's end, once the
+            // rest of the arrival has run (a second copy's entry seeded, its pick held), so the edit is worked out once.
+            if (took)
+                Callable.From(() =>
+                {
+                    if (Active is { } active && Edit(active))
+                    {
+                        Store.Save();
+                        History.KeepCurrent();
+                        Switched?.Invoke();
+                    }
+                }).CallDeferred();
             Switched?.Invoke(); // the count beside the name
         }
         catch (Exception e)
