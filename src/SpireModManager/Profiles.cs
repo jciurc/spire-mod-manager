@@ -230,7 +230,7 @@ static class Profiles
             {
                 var id = m.manifest?.id ?? "";
                 var on = mods.GetValueOrDefault((id, m.modSource))?.Enabled ?? !off.Contains((id, m.modSource));
-                var info = Store.InfoFor(id);
+                var info = Store.InfoFor(m); // this copy's
                 return new ProfileCsv.Row(id, m.manifest?.name ?? "", m.manifest?.version ?? "", on, info?.Category ?? "",
                     Compat.WorkshopId(m) is { } workshop ? workshop.ToString() : "", info?.Alias ?? "", info?.Notes ?? "");
             }).ToList();

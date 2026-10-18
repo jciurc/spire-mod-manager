@@ -427,7 +427,7 @@ static class LoadOrder
         : lines.Take(CardLines).Append(Menus.Format("SPIRE_MOD_MANAGER.BANNER_CARD_MORE", ("count", Menus.Number(lines.Count - CardLines))));
 
     // A mod as its row names it: the player's alias, else its name.
-    static string Shown(Mod mod) => Store.InfoFor(mod.manifest?.id)?.Alias ?? mod.manifest?.name ?? mod.manifest?.id ?? "";
+    static string Shown(Mod mod) => Store.InfoFor(mod)?.Alias ?? mod.manifest?.name ?? mod.manifest?.id ?? "";
 
     static string Escape(string text) => text.Replace("[", "[lb]");
 
@@ -442,7 +442,7 @@ static class LoadOrder
         var filter = CategoryList.Filter(content);
         if (filter.Length > 0 && !Store.Data.LoadOrderView && !Search.Matches(mod, filter)) // Load Order hides no row
             Search.Clear(content);
-        CategoryList.Reveal(content, mod.manifest?.id ?? "", flash: true);
+        CategoryList.Reveal(content, Copies.Key(mod), flash: true);
         CategoryList.Select(content, row);
     }
 

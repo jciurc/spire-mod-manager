@@ -102,7 +102,7 @@ static class Prewarm
         foreach (var mod in ModManager.Mods.Concat(Installed.Mods).ToList())
         {
             var id = mod.manifest?.id;
-            var texts = new List<string> { mod.manifest?.name ?? id ?? "", Store.InfoFor(id)?.Alias ?? "", ModDetails.Short(mod.manifest?.author ?? "") };
+            var texts = new List<string> { mod.manifest?.name ?? id ?? "", Store.InfoFor(mod)?.Alias ?? "", ModDetails.Short(mod.manifest?.author ?? "") };
             texts.AddRange(Tags.For(mod).Select(c => c.Text));
             foreach (var text in texts)
                 if (text.Length > 0 && seen.Add((regular, text)))

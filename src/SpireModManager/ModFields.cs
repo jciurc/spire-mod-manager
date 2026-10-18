@@ -246,7 +246,7 @@ sealed class ModField
         if (_system != null)
         {
             Clear(_system);
-            foreach (var chip in _bulk ? Enumerable.Empty<Tags.Chip>() : Tags.For(Dependencies.Find(_modIds().FirstOrDefault() ?? "")).Where(c => !c.Custom))
+            foreach (var chip in _bulk ? Enumerable.Empty<Tags.Chip>() : Tags.For(Copies.ModOf(_modIds().FirstOrDefault())).Where(c => !c.Custom))
                 _system.AddChild(Tags.Make(chip, add => Search.ByChip(Root, chip, add)));
             _system.Visible = _system.GetChildCount() > 0;
         }

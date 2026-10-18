@@ -32,7 +32,7 @@ static class RowTitles
             // The game's label refits its text on every box or text change, and a view switch changes the box several
             // times: off while it's set, then fitted once (Fit in our views, FitVanilla in Vanilla View).
             title.AutoSizeEnabled = false;
-            var info = vanilla ? null : Store.InfoFor(row.Mod?.manifest?.id);
+            var info = vanilla ? null : Store.InfoFor(row.Mod);
             // Our views: smaller text in a shorter row with a smaller tickbox and no Steam/folder icon; the
             // title stretches with the (wider) row.
             row.CustomMinimumSize = new Vector2(0, vanilla ? 72 : RowHeight);

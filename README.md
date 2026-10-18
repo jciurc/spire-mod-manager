@@ -41,8 +41,9 @@ Subscribe to it on the [Steam Workshop](https://steamcommunity.com/sharedfiles/f
   stable branch only, and Disable all turns them off. Punctuation counts as spaces; `"text in quotes"` matches
   exactly, case too. Ctrl+F jumps to the search box.
 - **Select several mods** with Ctrl-click, Shift-click or Ctrl+A, then set their category, tags or notes, or turn
-  them all on or off, from their right-click menu, the bar above the list or any of their tickboxes. The bar
-  counts them; click the count, press Esc or Ctrl+D to let go. Selecting is a step in undo and redo too.
+  them all on or off, from their right-click menu, the bar above the list or any of their tickboxes on the main
+  list. The bar counts them; click the count, press Esc or Ctrl+D to let go. Selecting is a step in undo and redo
+  too.
 - **Changes, undo and redo:** the bar at the bottom counts what changed since the game started. Ctrl+Z and
   Ctrl+Y undo and redo; Revert all puts things back the way they were when you opened the page.
 - **Relaunch Game:** restarts in place, in the same window mode, so changes apply without going back through

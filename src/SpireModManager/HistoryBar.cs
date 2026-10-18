@@ -226,7 +226,7 @@ static class HistoryBar
     public static List<string> Describe() => Entries().Select(e => e.Plain).ToList();
 
     // The mods the full list names (Entries' sections, from the same rules): each one turned on or off, installed or
-    // moved, and every installed copy of a mod whose details were edited (they belong to its id). What the main list
+    // moved, and each copy whose own details were edited (Copies.Key). What the main list
     // shows under "Changed" (ListFilter).
     public static HashSet<Mod> ChangedMods()
     {
@@ -237,7 +237,7 @@ static class HistoryBar
         var switched = ModChanges(loaded.Mods).Select(c => c.Mod).Concat(Moves().Select(m => m.Mod))
             .Select(m => (m.manifest?.id, m.modSource)).ToHashSet();
         return [.. ModManager.Mods.Where(m => switched.Contains((m.manifest?.id, m.modSource))), .. Installed.Mods,
-            .. ModManager.Mods.Union(Installed.Mods).Where(m => m.manifest?.id is { } id && edited.Contains(id))];
+            .. ModManager.Mods.Union(Installed.Mods).Where(m => edited.Contains(Copies.Key(m)))]; // by key: one copy's own edits
     }
 
     record Entry(string Section, string Plain, string Rich);
@@ -266,11 +266,11 @@ static class HistoryBar
                 $"{Link(mod.manifest?.id, Name(mod))}\n        [color={Dim}][font_size=15]{Escape(state)}[/font_size][/color]"));
         }
         foreach (var (mod, before, after) in Moves())
-            entries.Add(new Entry("order", Menus.Format("SPIRE_MOD_MANAGER.CHANGE_MOVED", ("mod", Name(mod)), ("from", before.ToString()), ("to", after.ToString())),
-                $"{Link(mod.manifest?.id, Name(mod))}  [color={Dim}]{before} → {after}[/color]"));
+            entries.Add(new Entry("order", Menus.Format("SPIRE_MOD_MANAGER.CHANGE_MOVED", ("mod", Name(mod) + Copies.Which(mod)), ("from", before.ToString()), ("to", after.ToString())),
+                $"{Link(Copies.Key(mod), Name(mod) + Copies.Which(mod))}  [color={Dim}]{before} → {after}[/color]"));
         foreach (var (id, fields, alias) in edited)
         {
-            var name = Dependencies.Find(id)?.manifest?.name ?? id;
+            var name = Copies.ModOf(id) is { } copy ? Name(copy) + Copies.Which(copy) : Copies.IdOf(id); // id: a mod's key; a copy says which
             // "Name  (alias "Fixes", notes)": the new alias itself, the other details by name.
             var details = fields.Select(f => f == "alias" && alias is { } a
                 ? Menus.Format("SPIRE_MOD_MANAGER.FIELD_ALIAS_NOW", ("alias", a))
@@ -391,7 +391,7 @@ static class HistoryBar
     public static void OpenFromList(NModdingScreen screen, string modId)
     {
         var content = screen.GetNode<Control>("%ModsScrollContainer/Mask/Content");
-        if (content.GetChildren().OfType<NModMenuRow>().FirstOrDefault(r => r.Mod?.manifest?.id == modId) is not { } row)
+        if (Copies.RowOf(content, modId) is not { } row)
             return;
         CategoryList.Reveal(content, modId, flash: true);
         CategoryList.Select(screen, row); // fills the panel, which closes the list

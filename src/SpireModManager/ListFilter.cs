@@ -53,7 +53,7 @@ static class ListFilter
     public static void Keep(string? id)
     {
         if (Current != Choice.All && id != null)
-            Kept.UnionWith(_shown.Where(m => m.manifest?.id == id));
+            Kept.UnionWith(_shown.Where(m => m.manifest?.id == id || Copies.Key(m) == id)); // an id, or one copy's key
     }
 
     // Keeps the rows of mods edited together in the bulk menu.

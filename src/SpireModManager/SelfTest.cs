@@ -215,6 +215,7 @@ static class SelfTest
             await TestOtherModPanel(menu, screen, content, outDir);
             await TestBulkEdit(menu, screen, content, outDir);
             await TestPicks(menu, screen, content, outDir);
+            await TestCopies(menu, screen, content, outDir);
             await TestTagSuggestions(menu, screen, content, outDir);
             await TestHistory(menu, screen, content, outDir);
             TestFallbacks(screen);
@@ -5747,6 +5748,104 @@ static class SelfTest
         await Wait(menu, 0.5);
         Check("a view switch lets go of the picks, and their undo steps go too", letGo && Selection.Mods.Count == 0
             && History.Newest(History.Track.List) is not History.Picks && History.Newest(History.Track.Order) is not History.Picks, Say());
+    }
+
+    // A mod installed twice (a made-up Workshop copy of a local test mod, announced as the game announces one mid-session)
+    // is two mods in our data (Copies): the local copy, found at launch, keeps the id's entry; the new copy gets its own,
+    // seeded from it, the same in every undo snapshot (no edit since launch, no undo step). An alias set on one copy is
+    // that copy's only: search, Changes (naming which copy), the info panel, one undo. With the holder gone, the other
+    // copy takes the plain id with its own data, the gone one's kept under its key. Everything is put back after.
+    static async Task TestCopies(Node menu, NModdingScreen screen, Control content, string outDir)
+    {
+        const string id = "SmmTestFixes";
+        if (content.GetChildren().OfType<NModMenuRow>().FirstOrDefault(r => r.Mod?.manifest?.id == id) is not { Mod: { } local })
+        {
+            Results.Add("SKIP copies: test mod missing");
+            return;
+        }
+        // The Edited lines, read without the "(Local)" a line gains once a second copy is installed (Copies.Which).
+        string Edits() => string.Join(" | ", HistoryBar.Describe().Where(l => l.StartsWith("Edited:"))).Replace(" (Local)", "");
+        var (edits, steps) = (Edits(), History.Steps(History.Track.List));
+        var (aliasBefore, notesBefore) = (Store.InfoFor(id)?.Alias, Store.InfoFor(id)?.Notes);
+        var copy = new Mod
+        {
+            path = "", modSource = ModSource.SteamWorkshop, state = ModLoadState.AddedAtRuntime,
+            manifest = new ModManifest { id = id, name = local.manifest?.name, version = local.manifest?.version },
+        };
+        Compat.SetWorkshopId(copy, 123);
+        GameInstalls(copy);
+        await Wait(menu, 0.4);
+        NModalContainer.Instance?.Clear();
+        CategoryList.Redraw(content);
+        await Wait(menu, 0.2);
+        var (localKey, copyKey) = (Copies.Key(local), Copies.Key(copy));
+        Check("a copy installed mid-session: its own entry, seeded from the id's, which the copy found at launch keeps; no edit, no undo step",
+            localKey == id && copyKey == $"{id}|w:123" && Store.Data.Copies?.GetValueOrDefault(id) is [var first, "w:123"] && first == $"l:{id}"
+            && Store.InfoFor(local) is { } localInfo && Store.InfoFor(copy) is { } copyInfo && localInfo != copyInfo
+            && copyInfo.Alias == aliasBefore && copyInfo.Notes == notesBefore && Edits() == edits && History.Steps(History.Track.List) == steps,
+            $"keys {localKey}, {copyKey}; record {string.Join(",", Store.Data.Copies?.GetValueOrDefault(id) ?? [])}; edits {Edits()}");
+
+        // An alias on the new copy: that copy's only.
+        Store.EditMod(copyKey, info => info.Alias = "Fixes from the Workshop");
+        CategoryList.Apply(content);
+        await Wait(menu, 0.2);
+        Check("an alias on one copy: search and Changes find that copy, naming which; the other copy keeps its own",
+            // (Both copies are under Changed anyway: the new one installed, the local one edited by tests before.)
+            Store.InfoFor(local)?.Alias == aliasBefore && Search.Matches(copy, "\"from the Workshop\"") && !Search.Matches(local, "\"from the Workshop\"")
+            && Edits() is var now && now.Contains("Edited: Test Fixes (123) (alias \"Fixes from the Workshop\")")
+            && now.Replace("Edited: Test Fixes (123) (alias \"Fixes from the Workshop\")", "").Trim(' ', '|') == edits,
+            $"edits {Edits()}");
+        var info = screen.GetNode<NModInfoContainer>("%ModInfoContainer");
+        info.Fill(copy);
+        await Wait(menu, 0.2);
+        var copyAlias = (info.FindChild("Alias", true, false)?.GetNodeOrNull<LineEdit>("Box"))?.Text;
+        info.Fill(local);
+        await Wait(menu, 0.2);
+        var localAlias = (info.FindChild("Alias", true, false)?.GetNodeOrNull<LineEdit>("Box"))?.Text;
+        Check("the info panel shows each copy's own alias", copyAlias == "Fixes from the Workshop" && localAlias == (aliasBefore ?? ""), $"{copyAlias} / {localAlias}");
+        History.Undo();
+        await Wait(menu, 0.3);
+        Check("one undo takes the copy's alias back", Store.InfoFor(copy)?.Alias == aliasBefore && Store.InfoFor(local)?.Alias == aliasBefore && Edits() == edits,
+            $"{Store.InfoFor(copy)?.Alias} / {Store.InfoFor(local)?.Alias}; edits {Edits()}");
+
+        // The holder gone (the local copy off the game's list for a moment, our data tried on a copy): the Workshop copy
+        // takes the plain id with its own data, and the local copy's is kept under its key.
+        Store.EditMod(copyKey, i => i.Notes = "the Workshop copy's notes");
+        var mods = GameMods();
+        var at = mods.IndexOf(local);
+        var tried = Store.Clone(Store.Data);
+        mods.RemoveAt(at);
+        try
+        {
+            Copies.Reconcile(tried);
+        }
+        finally
+        {
+            mods.Insert(at, local);
+        }
+        Check("the holder gone: the other copy takes the plain id with its own data; the gone copy's stays under its key",
+            tried.Copies?.GetValueOrDefault(id) is ["w:123", var second] && second == $"l:{id}" && tried.Mods.GetValueOrDefault(id)?.Notes == "the Workshop copy's notes"
+            && tried.Mods.GetValueOrDefault($"{id}|l:{id}")?.Notes == notesBefore && !tried.Mods.ContainsKey($"{id}|w:123"),
+            $"record {string.Join(",", tried.Copies?.GetValueOrDefault(id) ?? [])}; plain {tried.Mods.GetValueOrDefault(id)?.Notes}");
+
+        // Put back: the copy, its row and saved entry, and its data (quietly, in every undo snapshot).
+        if (content.GetChildren().OfType<NModMenuRow>().FirstOrDefault(r => r.Mod == copy) is { } copyRow)
+        {
+            content.RemoveChild(copyRow);
+            copyRow.QueueFree();
+        }
+        GameForgets(copy);
+        SaveManager.Instance.SettingsSave.ModSettings?.ModList.RemoveAll(e => e.Id == id && e.Source == ModSource.SteamWorkshop);
+        History.Quietly(data =>
+        {
+            data.Mods.Remove($"{id}|w:123");
+            data.Copies?.Remove(id);
+        });
+        Profiles.Track();
+        CategoryList.Redraw(content);
+        await Wait(menu, 0.2);
+        Check("put back: one copy, its data under its id as before", Copies.Key(local) == id && Store.InfoFor(id)?.Notes == notesBefore
+            && Store.InfoFor(id)?.Alias == aliasBefore && Store.Data.Copies?.ContainsKey(id) != true && Edits() == edits, $"edits {Edits()}");
     }
 
     // Tag suggestions, with made-up tags on made-up mods so the counts are known (the data is put back after): the

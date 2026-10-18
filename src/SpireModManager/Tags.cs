@@ -56,7 +56,7 @@ static class Tags
             chips.Add(new Chip(Menus.Text("SPIRE_MOD_MANAGER.TAG_GAMEPLAY"), Gameplay, Tip: Menus.Text("SPIRE_MOD_MANAGER.TAG_GAMEPLAY_TIP")));
         if (IsCosmetic(mod))
             chips.Add(new Chip(Menus.Text("SPIRE_MOD_MANAGER.TAG_COSMETIC"), Cosmetic, Tip: Menus.Text("SPIRE_MOD_MANAGER.TAG_COSMETIC_TIP")));
-        foreach (var tag in Store.InfoFor(manifest.id)?.Tags ?? [])
+        foreach (var tag in Store.InfoFor(mod)?.Tags ?? [])
             chips.Add(new Chip(tag, CustomColor, Custom: true));
         return chips;
     }

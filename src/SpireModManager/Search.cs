@@ -88,7 +88,7 @@ static class Search
 
     static Haystack HaystackOf(Mod mod)
     {
-        var info = Store.InfoFor(mod.manifest?.id);
+        var info = Store.InfoFor(mod);
         string?[] fields = [mod.manifest?.name, mod.manifest?.id, mod.manifest?.author, info?.Alias, info?.Notes, info?.Category,
             .. Tags.For(mod).Select(c => c.Text), .. WorkshopInfo.For(mod)?.Tags ?? []];
         var folded = fields.OfType<string>().Select(f => Fold(f, "")).ToList();
