@@ -9,6 +9,7 @@ using MegaCrit.Sts2.Core.Nodes.Debug;
 using MegaCrit.Sts2.Core.Nodes.GodotExtensions;
 using MegaCrit.Sts2.Core.Nodes.Screens.MainMenu;
 using MegaCrit.Sts2.Core.Nodes.Screens.ModdingScreen;
+using MegaCrit.Sts2.Core.Nodes.Screens.ScreenContext;
 using MegaCrit.Sts2.Core.Nodes.Screens.Settings;
 using MegaCrit.Sts2.Core.Saves;
 
@@ -414,10 +415,14 @@ static class ModInfoClearPatch
 }
 
 // Ctrl shortcuts on our Modding page: Z undo, Y or Shift+Z redo, F search, S save profile, A pick all shown, D let go
-// of the picked mods. Unhandled keys only, so a focused text box keeps its own.
+// of the picked mods. F8 opens and closes the page. Unhandled keys only, so a focused text box keeps its own.
 [HarmonyPatch(typeof(NInputManager), "_UnhandledKeyInput")]
 static class ShortcutsPatch
 {
+    // The key that opens and closes the page: the game binds nothing to it (its debug keys skip it), unless the player
+    // moves one of its keys there. Not changeable yet.
+    public const Key ManagerKey = Key.F8;
+
     // Escape closes our open menu or dialog, ends the main menu button's move mode, or lets go of picked mods, in
     // place of the game's Escape (which would leave the page). Ctrl+D lets go of picked mods, in place of the game's D.
     static bool Prefix(InputEvent inputEvent)
@@ -426,8 +431,9 @@ static class ShortcutsPatch
         {
             var handled = inputEvent switch
             {
-                InputEventKey { Keycode: Key.Escape, Pressed: true, Echo: false } =>
-                    MenuPanel.Close() || RelaunchCheck.Cancel() || ProfileShare.Close() || MenuButton.CancelMove() || LetGo(),
+                InputEventKey { Keycode: Key.Escape, Pressed: true, Echo: false } => CloseOurs() || LetGo(),
+                InputEventKey { Keycode: ManagerKey, Pressed: true, Echo: false, CtrlPressed: false, ShiftPressed: false, AltPressed: false, MetaPressed: false } =>
+                    OpenOrClose(),
                 InputEventKey { Keycode: Key.D, Pressed: true, Echo: false, CtrlPressed: true, ShiftPressed: false, AltPressed: false } => Deselect(),
                 _ => false,
             };
@@ -442,6 +448,37 @@ static class ShortcutsPatch
             return true;
         }
     }
+
+    // Our open menu or dialog, or the main menu button's move mode: true if there was one (it's closed now).
+    static bool CloseOurs() => MenuPanel.Close() || RelaunchCheck.Cancel() || ProfileShare.Close() || MenuButton.CancelMove();
+
+    // F8 on the main menu opens our page, as the main menu button does; on the Modding page it goes back, as the page's
+    // Back button does. Anything of ours that's open closes first instead, as with Escape. Elsewhere it's left to the
+    // game, which does nothing with it: on any other screen (by the game's own reckoning, where a popup counts as one),
+    // during a fade, and while a text box has the keyboard (a text box doesn't take F8, so it would reach here).
+    static bool OpenOrClose()
+    {
+        if (Typing() || NGame.Instance?.Transition is not { InTransition: false })
+            return false;
+        switch (ActiveScreenContext.Instance.GetCurrentScreen())
+        {
+            case NMainMenu menu:
+                if (!CloseOurs())
+                    MenuButton.Open(menu);
+                return true;
+            case NModdingScreen screen:
+                if (CloseOurs())
+                    return true;
+                if (screen.GetNodeOrNull<NBackButton>("BackButton") is not { IsEnabled: true } back)
+                    return false;
+                back.ForceClick();
+                return true;
+            default:
+                return false;
+        }
+    }
+
+    static bool Typing() => ((SceneTree)Engine.GetMainLoop()).Root.GuiGetFocusOwner() is LineEdit { Editable: true } or TextEdit { Editable: true };
 
     static bool LetGo() => HistoryBar.Screen is { } screen && GodotObject.IsInstanceValid(screen) && screen.IsVisibleInTree()
         && Selection.Clear(screen.GetNode<Control>("%ModsScrollContainer/Mask/Content"));
