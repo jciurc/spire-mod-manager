@@ -58,6 +58,8 @@ static class RowStrip
             var margin = Store.Data.LoadOrderView ? -LoadOrderMargin : -RightMargin;
             if (row.GetNodeOrNull<HBoxContainer>(path) is not { } buttons || buttons.GetMeta(SaysMeta, "").AsString() != does)
                 buttons = Buttons(row, name, path, items, does, margin);
+            else
+                Menus.Rebind(buttons, items); // showing the same, but this redraw's actions
             buttons.OffsetRight = buttons.OffsetLeft = margin;
             var clear = buttons.OffsetRight - Width(buttons, items) - ActionsGap;
             title.OffsetRight = clear;
@@ -68,7 +70,7 @@ static class RowStrip
             var chips = Tags.For(row.Mod);
             var text = string.Join("    ", new[] { RequiredFor(row.Mod), Needs(row.Mod, order, Store.Data.LoadOrderView) }.Where(s => s.Length > 0));
             var author = ModDetails.Short(row.Mod?.manifest?.author ?? "");
-            var shows = $"{string.Join("|", chips.Select(c => $"{c.Text}/{c.Color}/{c.Custom}"))}|{author}";
+            var shows = Shows(chips, author);
             var says = $"{shows}|{Store.Data.LoadOrderView}|{title.OffsetLeft}|{clear}|{text}";
             var kept = row.GetNodeOrNull<HBoxContainer>(StripPath);
             if (kept?.GetMeta(SaysMeta, "").AsString() == says)
@@ -142,6 +144,12 @@ static class RowStrip
             Lap("rest");
         }
     }
+
+    // What a line's tags and author show, to know when the line must be made again: each tag's words, colour, kind,
+    // card and search (a tag keeps its card and its click's search: the Same ID tag's card names the other copies), and
+    // the author.
+    public static string Shows(IEnumerable<Tags.Chip> chips, string author) =>
+        $"{string.Join("|", chips.Select(c => $"{c.Text}/{c.Color}/{c.Custom}/{c.Tip}/{c.Search}"))}|{author}";
 
     // A row's buttons for these items: the ones it has, given them (Menus.Refill), or new ones, placed (margin: from
     // the row's right edge) before they join the row. path: their name's, to find them by.

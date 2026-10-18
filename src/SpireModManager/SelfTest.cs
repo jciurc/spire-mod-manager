@@ -3997,6 +3997,26 @@ static class SelfTest
             var back = rows.Select(LineOf).ToList();
             Check("300 made-up rows, on again: each line shows what it first did (the notes made again in place)", back.SequenceEqual(first), Differ(back, first));
             Check("300 made-up rows: no line holds an empty note", rows.All(r => r.GetNodeOrNull<RichTextLabel>("SpireModManagerStrip/Needs") is not { Text.Length: 0 }));
+
+            // A row's buttons kept through a redraw (the same words and states) run that redraw's actions: an action holds
+            // what its redraw knew (Load Order's rows). And a line is made again when a tag's card or search changes, its
+            // words, colour and kind the same (the Same ID tag's card names the other copies).
+            var ran = "";
+            using (Lookups.Begin(mods, [], saved))
+            {
+                RowStrip.Apply([rows[0]], _ => [new MenuItem("Probe", () => ran = "first")]);
+                RowStrip.Apply([rows[0]], _ => [new MenuItem("Probe", () => ran = "second")]);
+            }
+            var probeButtons = rows[0].GetNodeOrNull<HBoxContainer>(RowStrip.ActionsName)?.GetChildren().OfType<Button>().ToList() ?? [];
+            if (probeButtons is [var probe])
+                probe.EmitSignal(BaseButton.SignalName.Pressed);
+            Check("300 made-up rows: buttons kept through a redraw run that redraw's actions, not the ones they were made with",
+                probeButtons is [{ Text: "Probe" }] && ran == "second", $"{probeButtons.Count} buttons, ran \"{ran}\"");
+            var sameId = new Tags.Chip("Same ID", Colors.Yellow, Tip: "Another copy: A");
+            var shows = RowStrip.Shows([sameId], "Someone");
+            Check("300 made-up rows: a line is made again when a tag's card or search changes, its words, colour and kind the same",
+                RowStrip.Shows([sameId with { Tip = "Another copy: B" }], "Someone") != shows && RowStrip.Shows([sameId with { Search = "#same" }], "Someone") != shows
+                && RowStrip.Shows([sameId], "Someone") == shows, shows);
         }
         finally
         {

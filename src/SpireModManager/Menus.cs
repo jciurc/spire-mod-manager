@@ -198,13 +198,21 @@ static class Menus
         if (buttons.Count != box.GetChildCount() || buttons.Count != wanted.Count
             || buttons.Zip(wanted).Any(p => !Pressing.TryGetValue(p.First, out _) || p.First.Theme != (p.Second.Flat ? looks.Flat : looks.Small)))
             return false;
+        Rebind(box, wanted);
         foreach (var (button, item) in buttons.Zip(wanted))
         {
-            if (Pressing.TryGetValue(button, out var does))
-                does.Value = item.OnSelect;
             (button.Text, button.Disabled) = (item.Label, item.Disabled);
             Hover.Tip(button, item.Tip);
         }
         return true;
+    }
+
+    // InlineButtons' buttons given these items' actions only, for buttons that already show the items' words, states
+    // and tips: an action holds what its redraw knew (Load Order's rows), so one kept from an earlier redraw goes stale.
+    public static void Rebind(HBoxContainer box, IEnumerable<MenuItem> items)
+    {
+        foreach (var (button, item) in box.GetChildren().OfType<Button>().Zip(items.Where(i => i.OnSelect != null)))
+            if (Pressing.TryGetValue(button, out var does))
+                does.Value = item.OnSelect;
     }
 }
