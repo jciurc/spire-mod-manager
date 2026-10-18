@@ -4943,8 +4943,9 @@ static class SelfTest
     // Banners coming and going with the list scrolled part way: the rows on screen stay where they were in every frame
     // (Layout.KeepRows), through Better Mod Menu ticked on (its banner shows), undo and redo, and Dismiss; a redraw that
     // makes a wrapped banner again moves nothing, at the list's top too. The page hidden, a banner coming or going keeps
-    // the rows in place too, but a list at its top stays there. Reveal still lands on its mod, and a Show: choice still
-    // starts the list at its top. A spacer under the rows gives the short fixture list room to scroll; it goes after.
+    // the rows in place too, but a list at its top stays there. Reveal still lands where it aimed with a banner coming
+    // as it eases, and a Show: choice with one coming in its frame still starts the list at its top. A spacer under the
+    // rows gives the short fixture list room to scroll; it goes after.
     // bannerRow: Better Mod Menu's row, whose tick raises the banner. Starts and ends with it unticked.
     static async Task TestBannersKeepRows(Node menu, NModdingScreen screen, Control content, NModMenuRow bannerRow)
     {
@@ -5069,8 +5070,10 @@ static class SelfTest
                 Store.Data.ManagersWarningDismissed && Banner() == null && dismissed.Moved < -30 && dismissed.Strayed <= 1,
                 $"dismissed {Store.Data.ManagersWarningDismissed}, banner {Banner() != null}, the list's top moved {dismissed.Moved}, the row strayed {dismissed.Strayed}");
 
-            // Reveal in the frame a banner comes, from the list's top: it still lands where it aims (a third of the way
-            // down the list, the spacer leaving room below), in view. Unticked first, which re-arms the dismissed banner.
+            // Reveal from the list's top (a third of the way down the list, the spacer leaving room below), and a banner
+            // coming while its scroll still eases there, its target set: the rows keep to their course, so the row still
+            // ends where Reveal aimed it, a third of the way down the list as it was then (the target scrolled on by the
+            // banner's height with them), in view. Unticked first, which re-arms the dismissed banner.
             Tick(false);
             await Wait(menu, 0.3);
             CategoryList.ScrollToTop(content);
@@ -5078,27 +5081,37 @@ static class SelfTest
             var last = content.GetChildren().OfType<NModMenuRow>().Where(r => r.Visible).MaxBy(r => r.Position.Y);
             if (last?.Mod is { } lastMod)
             {
-                Tick(true);
-                CategoryList.Reveal(content, Copies.Key(lastMod), flash: false);
-                await Wait(menu, 0.8);
                 var aim = Math.Min(0, list.Size.Y / 3 - last.Position.Y);
-                var padding = (float)list.Get("_paddingTop");
-                Check("Reveal in the frame a banner appears still lands on its mod: a third of the way down the list, in view",
-                    Banner() is { Visible: true } && aim < 0 && Math.Abs(Target() - aim) <= 1 && Math.Abs(content.Position.Y - padding - aim) <= 1
-                    && list.GetGlobalRect().Encloses(last.GetGlobalRect()),
-                    $"banner {Banner() != null}, aimed at {aim}, scrolled to {Target()} (rows at {content.Position.Y - padding}), row {last.GetGlobalRect()}, list {list.GetGlobalRect()}");
+                CategoryList.Reveal(content, Copies.Key(lastMod), flash: false);
+                await Wait(menu, 0.1); // past ScrollSoon's 0.05 s: the target set, the rows on their way
+                var (aimed, easing) = (Target(), Math.Abs(content.Position.Y - Padding() - Target()) > 1);
+                var (origin, top) = (content.GlobalPosition.Y - content.Position.Y, list.GetGlobalRect().Position.Y); // the rows' container at 0
+                Tick(true);
+                await Wait(menu, 0.8);
+                var moved = list.GetGlobalRect().Position.Y - top;
+                var off = last.GetGlobalRect().Position.Y - (origin + Padding() + aim + last.Position.Y); // from where Reveal aimed it
+                Check("Reveal, a banner coming while its scroll eases: the row still ends where Reveal aimed it, a third of the way down the list as it was, in view",
+                    Banner() is { Visible: true } && aim < 0 && Math.Abs(aimed - aim) <= 1 && easing && moved > 30 && Math.Abs(Target() - (aim - moved)) <= 1
+                    && Math.Abs(content.Position.Y - Padding() - Target()) <= 1 && Math.Abs(off) <= 1 && list.GetGlobalRect().Encloses(last.GetGlobalRect()),
+                    $"banner {Banner() != null}, aimed at {aim} (target {aimed}, still easing {easing}), the list's top moved {moved}, scrolled to {Target()} "
+                    + $"(rows at {content.Position.Y - Padding()}), the row {off} from where it was aimed, row {last.GetGlobalRect()}, list {list.GetGlobalRect()}");
             }
             else
-                Results.Add("FAIL Reveal in the frame a banner appears: no row shown");
+                Results.Add("FAIL Reveal, a banner coming while its scroll eases: no row shown");
 
-            // A Show: choice in the frame a banner goes, scrolled part way: the list starts at its top, as before.
-            await ScrollTo(-160);
+            // A Show: choice scrolled part way, and a banner coming in that frame just after it: the list starts at its top,
+            // the rows where a fresh choice puts them (a choice starts the list where it always did, for the rest of its
+            // frame too). Unticked first, so the banner comes with the choice.
             Tick(false);
-            ListFilter.Choose(content, ListFilter.Choice.Enabled);
             await Wait(menu, 0.3);
-            Check("a Show: choice in the frame a banner goes, scrolled part way: the list starts at its top, as before",
-                Banner() == null && Target() == 0 && Math.Abs(content.Position.Y - (float)list.Get("_paddingTop")) <= 0.5f,
-                $"banner {Banner() != null}, scrolled to {Target()}, rows at {content.Position.Y}");
+            await ScrollTo(-160);
+            var scrolled = Banner() == null && Target() < -100;
+            ListFilter.Choose(content, ListFilter.Choice.Enabled);
+            Tick(true);
+            await Wait(menu, 0.3);
+            Check("a Show: choice scrolled part way, then a banner in that frame: the list starts at its top, the rows where a fresh choice puts them",
+                scrolled && Banner() is { Visible: true } && Target() == 0 && Math.Abs(content.Position.Y - Padding()) <= 0.5f,
+                $"scrolled part way, no banner first {scrolled}; banner {Banner() != null}, scrolled to {Target()}, rows at {content.Position.Y - Padding()}");
         }
         finally
         {
