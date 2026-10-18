@@ -49,9 +49,10 @@ static class RowStrip
             var items = actions(row).ToList();
             var place = Store.Data.LoadOrderView ? $"{row.GetIndex()}/{row.GetParent()?.GetChildCount()}" : "";
             var does = $"{place}|{string.Join("|", items.Select(i => $"{i.Label}/{i.Disabled}/{i.Flat}/{i.Tip}"))}";
+            var margin = Store.Data.LoadOrderView ? -LoadOrderMargin : -RightMargin;
             if (row.GetNodeOrNull<HBoxContainer>(name) is not { } buttons || buttons.GetMeta(SaysMeta, "").AsString() != does)
-                buttons = Buttons(row, name, items, does);
-            buttons.OffsetRight = buttons.OffsetLeft = Store.Data.LoadOrderView ? -LoadOrderMargin : -RightMargin;
+                buttons = Buttons(row, name, items, does, margin);
+            buttons.OffsetRight = buttons.OffsetLeft = margin;
             var clear = buttons.OffsetRight - Width(buttons, items) - ActionsGap;
             title.OffsetRight = clear;
             Lap("buttons");
@@ -136,17 +137,19 @@ static class RowStrip
         }
     }
 
-    // A row's buttons for these items: the ones it has, given them (Menus.Refill), or new ones.
-    static HBoxContainer Buttons(NModMenuRow row, string name, List<MenuItem> items, string does)
+    // A row's buttons for these items: the ones it has, given them (Menus.Refill), or new ones, placed (margin: from
+    // the row's right edge) before they join the row.
+    static HBoxContainer Buttons(NModMenuRow row, string name, List<MenuItem> items, string does, float margin)
     {
         if (row.GetNodeOrNull<HBoxContainer>(name) is not { } buttons || !Menus.Refill(buttons, items))
         {
             Drop(row, name);
             buttons = Menus.InlineButtons(items, name);
-            row.AddChild(buttons);
             buttons.AnchorLeft = buttons.AnchorRight = 1;
             buttons.AnchorBottom = 1;
             buttons.GrowHorizontal = Control.GrowDirection.Begin;
+            buttons.OffsetRight = buttons.OffsetLeft = margin;
+            row.AddChild(buttons);
         }
         buttons.SetMeta(SaysMeta, does);
         buttons.Visible = true; // as new ones are
