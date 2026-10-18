@@ -9,11 +9,19 @@ namespace SpireModManager;
 //   Delay; Late ones (the main menu button's) are Normal ones after SlowDelay. Slow, Plain and Late skip the grace;
 // - once a card has gone, any other shows at once for Grace (Instant cards don't start one);
 // - leaving, it goes after WindDown (Instant ones at once), so a quick wobble off the edge keeps it;
-// - one card at a time: a newer one closes the one before.
+// - one card at a time: a newer one closes the one before;
+// - unless its caller places it, it opens below right of the mouse, off its trigger, or above it (left of the mouse)
+//   where there's no room below (right): never over the trigger and the mouse while there's room on the other side. A
+//   picture card mirrors it across: below left of the mouse, turning right of it (or above) where there's no room.
 static class Hover
 {
     public const double Delay = 0.4, Grace = 0.25, WindDown = 0.02, SlowDelay = 1.0;
     public const int Depth = 80; // the cards' layer: over the page, under our menus (MenuPanel.Depth)
+    // A card beside its trigger: this far off it.
+    public const float Gap = 6;
+    // How far above and below the mouse a card keeps off its trigger: all of a button or a row (and a note beside it),
+    // only the part near the mouse of anything taller.
+    const float Reach = 100;
 
     public enum Timing { Normal, Instant, Slow, Plain, Late }
 
@@ -36,11 +44,13 @@ static class Hover
     static bool InGrace => Time.GetTicksMsec() < _graceUntil || (_shown != null && GodotObject.IsInstanceValid(_shown));
 
     // A card for `trigger` while the mouse is over it. card: its text, or null for none (asked when it opens).
-    // picture: a picture card instead (to the left of the mouse), or null for none. place: where it goes
-    // (default: below right of the mouse). full: the whole text, when the card's is cut short (Alt shows it). fit: the
-    // card only as wide as its text (up to width), for a few words.
+    // picture: a picture card instead (left of the mouse, or right of it or above it where there's no room), or null for none. place: where it goes, kept as it is
+    // (default: below right of the mouse, off the trigger, or the other way where there's no room: Show's around). full:
+    // the whole text, when the card's is cut short (Alt shows it). fit: the card only as wide as its text (up to width),
+    // for a few words. area: what the default place keeps off, when more than the trigger (a note of its own beside it).
     public static void Watch(Control trigger, string name, Func<string?> card, Timing timing = Timing.Normal, float width = 380,
-        Func<Texture2D?>? picture = null, Func<(Vector2 At, bool Right, bool Above)>? place = null, Func<string?>? full = null, bool fit = false)
+        Func<Texture2D?>? picture = null, Func<(Vector2 At, bool Right, bool Above)>? place = null, Func<string?>? full = null, bool fit = false,
+        Func<Rect2>? area = null)
     {
         bool Over() => GodotObject.IsInstanceValid(trigger) && trigger.IsVisibleInTree() && Allowed(trigger)
             && trigger.GetGlobalRect().HasPoint(Mouse(trigger));
@@ -52,12 +62,16 @@ static class Hover
             {
                 if (mine != token || !Over() || Owner(trigger) is not { } owner)
                     return;
+                var mouse = Mouse(trigger);
+                // A picture (the thumbnail under the mouse, bigger) keeps off the mouse only: beside it, over the thumbnail.
                 if (picture?.Invoke() is { } image)
-                    Show(owner, name, "", Mouse(trigger) + new Vector2(-16, 20), right: true, keep: Over, timing: timing, picture: image, depth: LayerFor(trigger));
+                    Show(owner, name, "", mouse + new Vector2(-16, 20), right: true, keep: Over, timing: timing, picture: image, depth: LayerFor(trigger),
+                        around: new Rect2(mouse, Vector2.Zero));
                 else if (picture == null && card() is { } text)
                 {
-                    var (at, right, above) = place?.Invoke() ?? (Mouse(trigger) + new Vector2(16, 20), false, false);
-                    Show(owner, name, text, at, right, above, width, Over, timing, full: full?.Invoke(), depth: LayerFor(trigger), fit: fit);
+                    var (at, right, above, around) = place?.Invoke() is { } own ? (own.At, own.Right, own.Above, (Rect2?)null)
+                        : (mouse + new Vector2(16, 20), false, false, Near(area?.Invoke() ?? trigger.GetGlobalRect(), mouse));
+                    Show(owner, name, text, at, right, above, width, Over, timing, full: full?.Invoke(), depth: LayerFor(trigger), fit: fit, around: around);
                 }
             }
             Later(trigger, timing, Open);
@@ -69,13 +83,21 @@ static class Hover
         };
     }
 
+    // What a card opens beside (Show's around): the trigger, as far as Reach above and below the mouse, at the mouse's x.
+    static Rect2 Near(Rect2 trigger, Vector2 mouse)
+    {
+        var (top, bottom) = (Math.Max(trigger.Position.Y, mouse.Y - Reach), Math.Min(trigger.End.Y, mouse.Y + Reach));
+        return new Rect2(mouse.X, top, 0, Math.Max(0, bottom - top));
+    }
+
     // What a control does (a button, an icon), in our card instead of the engine's TooltipText, which looks like none
     // of ours. Set it again to change the words; null or "" takes the card off. timing: when the card shows (the first
-    // call's stays). markup: the text is BBCode, anything of the player's in it escaped by the caller.
+    // call's stays). markup: the text is BBCode, anything of the player's in it escaped by the caller. area: as Watch's
+    // (the first call's stays).
     public const string TipName = "SpireModManagerTip";
     const string TipMeta = "spire_mod_manager_tip", MarkupMeta = "spire_mod_manager_tip_markup";
 
-    public static void Tip(Control control, string? text, Timing timing = Timing.Normal, bool markup = false)
+    public static void Tip(Control control, string? text, Timing timing = Timing.Normal, bool markup = false, Func<Rect2>? area = null)
     {
         var watched = control.HasMeta(TipMeta);
         if (!watched && string.IsNullOrEmpty(text))
@@ -84,7 +106,7 @@ static class Hover
         control.SetMeta(MarkupMeta, markup);
         if (!watched)
             Watch(control, TipName, () => TipOf(control) is { Length: > 0 } tip
-                ? control.GetMeta(MarkupMeta, false).AsBool() ? tip : Escape(tip) : null, timing, fit: true);
+                ? control.GetMeta(MarkupMeta, false).AsBool() ? tip : Escape(tip) : null, timing, fit: true, area: area);
     }
 
     public static string TipOf(Control control) => control.GetMeta(TipMeta, "").AsString();
@@ -104,9 +126,14 @@ static class Hover
             var mine = ++token;
             Later(label, Timing.Normal, () =>
             {
-                if (mine == token && Over(link) && card(link) is { } text && Owner(label) is { } owner)
-                    Show(owner, name, text, Mouse(label) + new Vector2(16, 20), width: width, keep: () => Over(link), full: full?.Invoke(link),
-                        depth: LayerFor(label)); // in the open menu: above it, like Watch's cards
+                if (mine != token || !Over(link) || card(link) is not { } text || Owner(label) is not { } owner)
+                    return;
+                // Turned above the link, it keeps off the link's line, which starts at most a line above the mouse.
+                var mouse = Mouse(label);
+                var line = label.GetThemeFont("normal_font").GetHeight(label.GetThemeFontSize("normal_font_size"));
+                Show(owner, name, text, mouse + new Vector2(16, 20), width: width, keep: () => Over(link), full: full?.Invoke(link),
+                    depth: LayerFor(label), // in the open menu: above it, like Watch's cards
+                    around: new Rect2(mouse.X, mouse.Y - line, 0, line));
             });
         };
         label.MetaHoverEnded += _ =>
@@ -154,10 +181,14 @@ static class Hover
     static string Unmarked(string bbcode) =>
         Regex.Replace(bbcode, @"\[(/?[a-z_]+(=[^\]]*)?)\]", m => m.Value == "[lb]" ? "[" : m.Value == "[rb]" ? "]" : "");
 
-    // at: the card's top-left corner (or, with right/above, that corner), kept on screen. keep: checked every frame;
-    // once false (for WindDown, unless Instant) the card goes. full: the whole text when it's cut short (hold Alt).
+    // at: the card's top-left corner (or, with right/above, that corner), kept on screen. around: what it opens beside
+    // (the trigger near the mouse, at the mouse's x; null: nothing, the card stays at `at`): at least Gap off it, and where
+    // it runs off the screen, on the other side of it (above, or left of the mouse) if less runs off there, chosen each
+    // time it's placed. keep: checked every frame; once false (for WindDown, unless Instant) the card goes. full: the
+    // whole text when it's cut short (hold Alt).
     public static void Show(Node owner, string name, string bbcode, Vector2 at, bool right = false, bool above = false, float width = 380,
-        Func<bool>? keep = null, Timing timing = Timing.Normal, Texture2D? picture = null, string? full = null, int depth = Depth, bool fit = false)
+        Func<bool>? keep = null, Timing timing = Timing.Normal, Texture2D? picture = null, string? full = null, int depth = Depth, bool fit = false,
+        Rect2? around = null)
     {
         Hide(); // one at a time
         (bbcode, full) = (Gamelike(bbcode), full == null ? null : Gamelike(full));
@@ -225,6 +256,15 @@ static class Hover
             panel.Size = size;
             var screen = panel.GetViewportRect().Size;
             var position = new Vector2(right ? at.X - size.X : at.X, above ? at.Y - size.Y : at.Y);
+            if (around is { } clear)
+            {
+                // Off the trigger on its own side; then, short of room, above it rather than kept on screen over it and the
+                // mouse (or below, for one above it), and left of the mouse by as much as it was right (or the reverse).
+                var (over, under) = (clear.Position.Y - Gap - size.Y, clear.End.Y + Gap);
+                position.Y = above ? Math.Min(position.Y, over) : Math.Max(position.Y, under);
+                position.Y = Turned(position.Y, size.Y, screen.Y, above ? under : over);
+                position.X = Turned(position.X, size.X, screen.X, 2 * clear.GetCenter().X - position.X - size.X);
+            }
             panel.Position = new Vector2(Math.Clamp(position.X, 0, Math.Max(0, screen.X - size.X)), Math.Clamp(position.Y, 0, Math.Max(0, screen.Y - size.Y)));
         }
         Callable.From(Place).CallDeferred();
@@ -261,6 +301,18 @@ static class Hover
             tree.ProcessFrame += Check;
             layer.TreeExiting += () => tree.ProcessFrame -= Check;
         }
+    }
+
+    // Along one axis: a card from `start` (size long), or from `other` instead when it runs off the screen (0..screen)
+    // and less of it would from there.
+    static float Turned(float start, float size, float screen, float other) => Turns(start, size, screen, other) ? other : start;
+
+    // Whether that turns it: it runs off the screen from `start`, and less of it would from `other`. Our menus turn the
+    // same way (MenuPanel).
+    public static bool Turns(float start, float size, float screen, float other)
+    {
+        float Off(float from) => Math.Max(0, -from) + Math.Max(0, from + size - screen);
+        return Off(start) > 0 && Off(other) < Off(start);
     }
 
     // Closes the card showing, if any.

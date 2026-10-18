@@ -19,9 +19,9 @@ static class Menus
     static readonly Color Cream = new(1, 0.964706f, 0.886275f);
     static readonly Color Gold = new(0.937f, 0.784f, 0.318f);
 
-    // A right-click menu at the mouse (see MenuPanel).
-    public static Node? Show(Node owner, IEnumerable<MenuItem> items, Vector2? at = null, string? toggleKey = null) =>
-        MenuPanel.Show(owner, () => items.ToList(), at, toggleKey);
+    // A right-click menu at the mouse, or from a picker (see MenuPanel).
+    public static Node? Show(Node owner, IEnumerable<MenuItem> items, Rect2? from = null, string? toggleKey = null) =>
+        MenuPanel.Show(owner, () => items.ToList(), from, toggleKey);
 
     // The game's yes/no popup with our mark; true if confirmed. no and yes relabel its buttons.
     public static async Task<bool> Confirm(LocString title, LocString body, LocString? no = null, LocString? yes = null)

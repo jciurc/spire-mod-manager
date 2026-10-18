@@ -18,6 +18,10 @@ static class Compat
     // Stable: each mod's Workshop id from its folder, worked out once.
     static readonly ConditionalWeakTable<Mod, StrongBox<ulong?>> FromFolder = new();
 
+    // Whether a Workshop copy newer than the local copy of its id loads in its place: the beta's rule, which came with
+    // Mod.workshopId; stable always loads the local copy.
+    public static bool WorkshopBeatsOlderLocal => WorkshopIdField != null;
+
     // A Workshop mod's item id: the game's field (beta), or its folder's name in workshop\content\<app id>\ (stable).
     public static ulong? WorkshopId(Mod? mod)
     {

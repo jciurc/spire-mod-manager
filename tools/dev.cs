@@ -5,7 +5,8 @@
 //                                     --bmm / --bmm-after: with Better Mod Menu loaded before / after ours
 //                                     --bmm-local: its local-fix build (BmmRepo) instead of the installed one
 //                                     --workshop <id>[,<id>...]: those subscribed Workshop items too, after ours
-//                                     --twins, with --workshop: allow two items of one mod id (the game loads one)
+//                                     --twins, with --workshop: allow two items of one mod id; the last given is
+//                                      picked to load, and the log is checked for it
 //                                     --real: your own mods (switched off) and a copy of your data
 //                                     --first-run, --first-run-bmm: a first launch, without or with Better Mod
 //                                      Menu's data to import
@@ -372,11 +373,39 @@ Console.WriteLine("screenshots: " + string.Join(", ", Directory.GetFiles(outDir,
 // A --workshop mod that didn't load, or failed to start, fails the run: the self-test passing says nothing about
 // running beside it then (and the cause is that mod, not ours).
 var notReady = workshopMods.Where(id => !loaded.TryGetValue(id, out var error) || error != null).ToList();
+// --twins: each id of two or more given items loaded once, from the picked copy (the last given, PrepareSandbox), with
+// no duplicate error. A picked copy the game refuses for its own reasons (a newer game version) isn't the pick failing.
+var twinFails = 0;
+var logged = LogLines();
+foreach (var (id, item) in TwinPicks())
+{
+    var folder = $"workshop-{item}";
+    var finished = logged.Select((line, at) => (line, at)).Where(p => p.line.Contains("Finished mod initialization for") && p.line.EndsWith($"({id}).")).ToList();
+    var duplicate = logged.Any(l => l.Contains($"Tried to load mod with id {id}, but a mod is already loaded"));
+    var from = finished.Count == 1 ? logged.Take(finished[0].at).LastOrDefault(l => l.Contains("Loading assembly DLL") || l.Contains("Loading Godot PCK")) : null;
+    if (finished.Count == 1 && !duplicate && from != null && (from.Contains(folder + "\\") || from.Contains(folder + "/")))
+        Console.WriteLine($"PASS twins: {id} loaded from {folder} as picked");
+    else if (finished.Count == 0 && !duplicate && logged.Any(l => l.Contains($"Tried to load mod with id {id}, but its declared min game version")))
+    {
+        Console.WriteLine($"INFO twins: {id}: the picked copy ({folder}) needs a newer game, so it failed for its own reasons (not the pick)");
+        notReady.Remove(id);
+    }
+    else
+    {
+        twinFails++;
+        Console.WriteLine($"FAIL twins: {id} finished loading {finished.Count} time(s){(duplicate ? ", with a duplicate-id error" : "")}, "
+            + $"from {from ?? "no file named"}; picked {folder}");
+    }
+}
 foreach (var id in notReady)
     Console.WriteLine(loaded.ContainsKey(id)
         ? $"FAIL --workshop: {id} loaded but failed to start (its error is in the log above), so this run didn't test beside all of it"
         : $"FAIL --workshop: {id} didn't load (the log above says why), so this run didn't test beside it");
-return !File.Exists(results) || text.Contains("FAIL") || notReady.Count > 0 ? 1 : 0;
+return !File.Exists(results) || text.Contains("FAIL") || notReady.Count > 0 || twinFails > 0 ? 1 : 0;
+
+// --twins: for each mod id two or more --workshop items have, the item picked to load: the last one given.
+List<(string Id, string Item)> TwinPicks() => !twins ? [] : [.. workshopManifests.GroupBy(m => Id(m.Manifest))
+    .Where(g => g.Select(m => m.Item).Distinct().Count() > 1).Select(g => (g.Key, g.Last().Item))];
 
 // The dev copy (hard links to the installed game, except mods\), linked again when the install changed and is on the
 // copy's branch. Returns why there's no copy to run (none yet, and the install is on the other branch), or null.
@@ -484,22 +513,31 @@ void PrepareSandbox(bool resetData)
     mods["mods_enabled"] = true;
     // A fresh mod list every run: everything on except Better Mod Menu (on with --bmm, after ours with --bmm-after), its
     // fork's folder (--real) and the fixture's Test Retired (off for the self-test's searches; on with --crash, so that
-    // launch differs from the last working one).
+    // launch differs from the last working one). Ours first (after Better Mod Menu with plain --bmm), as the mod keeps
+    // itself: its Init picks which copy of a mod installed twice loads, before the game tries one.
     var list = new JsonArray();
-    if (args.Contains("--bmm-after"))
+    var bmmFirst = bmm && !args.Contains("--bmm-after");
+    if (!bmmFirst)
         list.Add((JsonNode)new JsonObject { ["id"] = ModId, ["is_enabled"] = true, ["source"] = "mods_directory" });
     list.Add((JsonNode)new JsonObject { ["id"] = "BetterModMenu", ["is_enabled"] = bmm, ["source"] = "mods_directory" });
-    list.Add((JsonNode)new JsonObject { ["id"] = real ? "BetterModMenuFork" : "SmmTestRetired", ["is_enabled"] = crash && !real, ["source"] = "mods_directory" });
-    // --workshop: the items' mods on, after ours, in the order given. An entry above for the same id (Better
-    // Mod Menu's, when its Workshop item is given) gives way.
-    if (workshopMods.Count > 0 && !args.Contains("--bmm-after"))
+    if (bmmFirst)
         list.Add((JsonNode)new JsonObject { ["id"] = ModId, ["is_enabled"] = true, ["source"] = "mods_directory" });
+    list.Add((JsonNode)new JsonObject { ["id"] = real ? "BetterModMenuFork" : "SmmTestRetired", ["is_enabled"] = crash && !real, ["source"] = "mods_directory" });
+    // The fixture's two copies of SmmTestTwin in a known order: the newer one needs Test Framework, listed before them,
+    // so the older one (SmmTestTwinA) always sorts first and the picked newer one (SmmTestTwinB) second. Both share the
+    // id's place, so that rests on .NET's PriorityQueue keeping its root on a tie (A is queued first and is the root when
+    // B joins): if that changes, the self-test's "swapped" check fails, not the pick. Any pair that tests a swap has
+    // this tie.
+    if (!real)
+        foreach (var id in new[] { "SmmTestLib", "SmmTestTwin" })
+            list.Add((JsonNode)new JsonObject { ["id"] = id, ["is_enabled"] = true, ["source"] = "mods_directory" });
+    // --workshop: the items' mods on, after ours, in the order given (--twins: an entry per copy). An entry above for the
+    // same id (Better Mod Menu's, when its Workshop item is given) gives way.
     foreach (var id in workshopMods)
-    {
         if (list.FirstOrDefault(entry => (string?)entry?["id"] == id) is { } earlier)
             list.Remove(earlier);
-        list.Add((JsonNode)new JsonObject { ["id"] = id, ["is_enabled"] = true, ["source"] = "mods_directory" });
-    }
+    foreach (var (_, manifest) in workshopManifests)
+        list.Add((JsonNode)new JsonObject { ["id"] = Id(manifest), ["is_enabled"] = true, ["source"] = "mods_directory" });
     // --real: every other mod is listed but switched off, so none of their code runs (some write config
     // files to the shared user folder); only the manager and any --workshop mods load.
     if (real)
@@ -513,9 +551,12 @@ void PrepareSandbox(bool resetData)
     settings["window_size"] = new JsonObject { ["X"] = 1920, ["Y"] = 1080 };
     File.WriteAllText(settingsPath, settings.ToJsonString(new() { WriteIndented = true }));
 
-    if (!resetData)
-        return;
     var data = Path.Combine(sandbox, "mod_data", ModId);
+    if (!resetData)
+    {
+        PickTwins(data); // --crash keeps --crash-prepare's data, which has no pick for the --workshop twins
+        return;
+    }
     if (Directory.Exists(data))
         Directory.Delete(data, recursive: true);
     // Better Mod Menu's data beside ours, cleared every run so no saves or fixture carry over.
@@ -545,6 +586,20 @@ void PrepareSandbox(bool resetData)
             .FirstOrDefault(f => f.Contains(Path.Combine("mod_data", ModId)))
         : null;
     File.Copy(source ?? Path.Combine(root, "tools", "fixtures", "manager.json"), Path.Combine(data, "manager.json"));
+    PickTwins(data);
+}
+
+// --twins: the last given copy of each id picked to load (copied in as a local folder: l:workshop-<item>), in the
+// sandbox's manager.json (none: nothing to pick in).
+void PickTwins(string data)
+{
+    var file = Path.Combine(data, "manager.json");
+    if (TwinPicks() is not { Count: > 0 } picked || !File.Exists(file) || JsonNode.Parse(File.ReadAllText(file)) is not JsonObject manager)
+        return;
+    var keys = (manager["copy_picks"] as JsonArray ?? []).Select(p => (string?)p).OfType<string>()
+        .Where(key => !picked.Any(p => key.StartsWith(p.Id + "|"))).Concat(picked.Select(p => $"{p.Id}|l:workshop-{p.Item}")).Order(StringComparer.Ordinal);
+    manager["copy_picks"] = new JsonArray([.. keys.Select(k => (JsonNode?)JsonValue.Create(k))]);
+    File.WriteAllText(file, manager.ToJsonString(new() { WriteIndented = true }));
 }
 
 // The chain from the last mod in chain to the first mod it needs (directly or not) that won't be on in this run, or

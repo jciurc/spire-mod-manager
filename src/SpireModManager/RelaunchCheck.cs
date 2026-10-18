@@ -25,12 +25,19 @@ static class RelaunchCheck
             Show(owner);
     }
 
-    // Enabled mods with a dependency that's off or missing, each with the info panel's reason (two copies of one mod: the
-    // one that loads).
-    static List<(Mod Mod, string Why)> Problems() =>
-        Dependencies.OnePerKey(ModManager.Mods.Union(Installed.Mods).Where(m => m.manifest?.id != null))
+    // Every copy that's on with a dependency that's off or missing, each with the info panel's reason (the picked copy of a
+    // mod installed twice too, while the other copy is the one loaded); then a local or Workshop copy that's on but loses
+    // to the other copy of its id (the game loads one), unless the same-ID banner was dismissed for them.
+    static List<(Mod Mod, string Why)> Problems()
+    {
+        var problems = Dependencies.EachCopy(ModManager.Mods.Union(Installed.Mods))
             .SelectMany(m => ModDetails.DependencyProblems(m).Select(why => (m, why)))
             .ToList();
+        var clashing = Copies.Clashing();
+        if (clashing.Count > 0 && Store.Data.SameIdDismissed != Copies.Signature(clashing))
+            problems.AddRange(clashing.Where(m => m.manifest?.id != ModEntry.ModId && Copies.Loses(m)).Select(m => (m, Menus.Text("SPIRE_MOD_MANAGER.STATE_DUPLICATE"))));
+        return problems;
+    }
 
     public static void Show(Node owner)
     {
@@ -57,7 +64,7 @@ static class RelaunchCheck
         body.Text = problems.Count == 0
             ? Menus.Text("SPIRE_MOD_MANAGER.RELAUNCH_CHECK_OK")
             : Menus.Text("SPIRE_MOD_MANAGER.RELAUNCH_CHECK_INTRO") + "\n" + string.Join("\n", problems.GroupBy(p => p.Mod).Select(g =>
-                $"  •  [b]{Escape(g.Key.manifest?.name ?? g.Key.manifest?.id ?? "")}[/b]  [color={ProblemHex}]{Escape(string.Join("; ", g.Select(p => p.Why)))}[/color]"));
+                $"  •  [b]{Escape((g.Key.manifest?.name ?? g.Key.manifest?.id ?? "") + Copies.Which(g.Key))}[/b]  [color={ProblemHex}]{Escape(string.Join("; ", g.Select(p => p.Why)))}[/color]"));
         column.AddChild(body);
 
         // The Modding page, open or hidden behind the main menu: a fix ticks its boxes and its redraw records it. Before

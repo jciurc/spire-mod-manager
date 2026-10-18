@@ -12,6 +12,7 @@ using MegaCrit.Sts2.Core.Nodes.GodotExtensions;
 using MegaCrit.Sts2.Core.Nodes.Screens;
 using MegaCrit.Sts2.Core.Nodes.Screens.MainMenu;
 using MegaCrit.Sts2.Core.Nodes.Screens.ModdingScreen;
+using MegaCrit.Sts2.Core.Nodes.Screens.ScreenContext;
 using MegaCrit.Sts2.Core.Nodes.Screens.Settings;
 using MegaCrit.Sts2.Core.Saves;
 using MegaCrit.Sts2.addons.mega_text;
@@ -112,6 +113,12 @@ static class SelfTest
             await TestMenuButtonRelaunch(menu, outDir); // before the Modding page opens: the check's fixes without it
             await TestLaunchGuard(menu, outDir);
             await TestCrashOffer(menu, outDir);
+            TestSameIdCanary(); // which copy of a mod installed twice loads (SameIdLoad)
+            TestSameIdPlan();
+            TestSameIdPick();
+            TestSameIdSettle();
+            TestSameIdErrors();
+            await TestSameIdLaunchGuard(menu, outDir);
             await TestTranslationsFolder(menu);
             await TestTranslations(menu);
             await TestPrewarm(menu);
@@ -216,6 +223,7 @@ static class SelfTest
             await TestBulkEdit(menu, screen, content, outDir);
             await TestPicks(menu, screen, content, outDir);
             await TestCopies(menu, screen, content, outDir);
+            await TestSameIdCopies(menu, screen, content, outDir);
             await TestTagSuggestions(menu, screen, content, outDir);
             await TestHistory(menu, screen, content, outDir);
             TestFallbacks(screen);
@@ -551,6 +559,18 @@ static class SelfTest
             var missing = parts.Where(p => screen.GetNodeOrNull(p) == null).ToList();
             Check("first run: the page opens with all our parts", missing.Count == 0, "missing " + string.Join(", ", missing));
             Check($"first run: rows ({rows.Count}) match mods ({ModManager.Mods.Count})", rows.Count == ModManager.Mods.Count);
+            // The launch that brings picks (no data yet, so no pick): the game's own choice loads, the copy sorted first,
+            // the other set aside (no duplicate error); that one becomes the pick, so nothing is pending for them.
+            var twins = ModManager.Mods.Where(m => m.manifest?.id == TwinId).ToList();
+            if (twins.FirstOrDefault(m => Copies.CopyOf(m) == "l:SmmTestTwinA") is { } a && twins.FirstOrDefault(m => Copies.CopyOf(m) == "l:SmmTestTwinB") is { } b)
+                Check("first run: a mod installed twice, no pick saved yet: the game's own choice (the copy sorted first) loads, the other set aside with no "
+                    + "duplicate error; that one picked, nothing pending for them",
+                    SameIdLoad.Plan.GetValueOrDefault(TwinId) is { HadPick: false, Swapped: false } plan && plan.Loads == a && a.state == ModLoadState.Loaded
+                    && b.state == ModLoadState.DisabledDuplicate && !ModManager.Mods.Any(m => m.errors?.Any(e => e.LocEntryKey == "MOD_ERROR.DUPLICATE_ID") == true)
+                    && Store.Data.CopyPicks?.Contains($"{TwinId}|l:SmmTestTwinA") == true && Dependencies.IsOn(a) && !Dependencies.IsOn(b),
+                    $"A {a.state}, B {b.state}; picks {string.Join(", ", Store.Data.CopyPicks ?? [])}; plan {SameIdLoad.Plan.GetValueOrDefault(TwinId)}");
+            else
+                TwinsMissing("first run: a mod installed twice");
 
             if (imported)
                 await TestImported(menu, screen, content, outDir);
@@ -789,8 +809,12 @@ static class SelfTest
         var vanillaTip = Hover.TipOf(toggles[0]);
         var backTip = "";
         await WithVanillaView(screen, menu, () => (backTip = Hover.TipOf(screen.GetNode<Control>("SpireModManagerViewToggle"))) is var _);
+        // While a mod is installed twice from one source (the fixture twins), a second line says how that page's tickbox
+        // treats its copies (its words are checked in TestSameIdCopies).
+        var tipLines = vanillaTip.Split('\n');
         Check("the Vanilla List button's tip says it's the game's own page (without Spire Mod Manager), and on it, the way back",
-            vanillaTip == Menus.Text(Bmm.Present ? "SPIRE_MOD_MANAGER.VANILLA_VIEW_TIP_BMM" : "SPIRE_MOD_MANAGER.VANILLA_VIEW_TIP")
+            tipLines[0] == Menus.Text(Bmm.Present ? "SPIRE_MOD_MANAGER.VANILLA_VIEW_TIP_BMM" : "SPIRE_MOD_MANAGER.VANILLA_VIEW_TIP")
+            && (Copies.TwinGroups().Count > 0 ? tipLines is [_, var copies] && copies.StartsWith("Here one tickbox enables or disables every copy of ") : tipLines.Length == 1)
             && backTip == Menus.Text("SPIRE_MOD_MANAGER.CATEGORY_VIEW_TIP"), $"{vanillaTip} | {backTip}");
         var bannerBox = border.GetNode<Control>(LoadOrder.ManagersName).GetGlobalRect();
         var searchBox = border.GetNode<Control>("SpireModManagerSearch").GetGlobalRect();
@@ -929,9 +953,9 @@ static class SelfTest
             $"{button.GetType().Name}, size {label?.GetThemeFontSize("font_size")} vs {settings?.GetThemeFontSize("font_size")}");
         Check("main menu button reads the active profile and the profile bar's count", MenuButtonText(menu) == MenuButtonExpected(),
             $"{MenuButtonText(menu)} vs {MenuButtonExpected()}");
-        Check("main menu button: hovering it says what it opens, and names the profile in gold",
-            Hover.TipOf(button) == $"Spire Mod Manager: view and manage installed mods. Currently using profile [gold]{Profiles.Active?.Name}[/gold]"
-            && MenuButton.Tip("[b]Odd") == "Spire Mod Manager: view and manage installed mods. Currently using profile [gold][lb]b]Odd[/gold]", Hover.TipOf(button));
+        Check("main menu button: hovering it says what it opens, names the profile in gold, and gives the key that opens it too",
+            Hover.TipOf(button) == $"Spire Mod Manager: view and manage installed mods. Currently using profile [gold]{Profiles.Active?.Name}[/gold]{ManagerKeyLine}"
+            && MenuButton.Tip("[b]Odd") == $"Spire Mod Manager: view and manage installed mods. Currently using profile [gold][lb]b]Odd[/gold]{ManagerKeyLine}", Hover.TipOf(button));
         var screen = button.GetViewportRect();
         Check("main menu button: as wide as its words, whole on screen", MenuButtonMisfit(menu) == null, MenuButtonMisfit(menu) ?? "");
         // The game's hover carets reach 54 from the text either side (NMainMenu.MainMenuButtonFocused): inside the button.
@@ -1020,6 +1044,9 @@ static class SelfTest
             $"{left.Modulate.A:0.##}, {right.Modulate.A:0.##}");
     }
 
+    // The main menu button card's last line: the key that opens the page, unless the patch that reads it didn't apply.
+    static string ManagerKeyLine => ModEntry.FailedPatches.Contains(nameof(ShortcutsPatch)) ? "" : "\nF8";
+
     // The main menu button's card: nothing at the usual delay (the mouse crosses the button on its way to the game's), then
     // after a second, the normal card, its profile name in gold.
     static async Task TestMenuButtonCard(NMainMenu menu)
@@ -1033,14 +1060,54 @@ static class SelfTest
             card = menu.GetTree().Root.FindChild(Hover.TipName, true, false)?.FindChildren("*", "RichTextLabel", true, false).OfType<RichTextLabel>().FirstOrDefault()?.Text ?? "";
             return Task.CompletedTask;
         }, seconds: Hover.SlowDelay + 0.2);
-        Check("main menu button: its card waits a second, then names the profile in gold", early == "" && Hover.SlowDelay == 1.0
-            && late.Text == $"Spire Mod Manager: view and manage installed mods. Currently using profile {Profiles.Active?.Name}"
+        Check("main menu button: its card waits a second, then names the profile in gold, the key on its own line", early == "" && Hover.SlowDelay == 1.0
+            && late.Text == $"Spire Mod Manager: view and manage installed mods. Currently using profile {Profiles.Active?.Name}{ManagerKeyLine}"
             && !card.Contains("[gold]") && card.Contains("[color=#") && card.Contains($"]{Profiles.Active?.Name}[/color]"), $"early \"{early}\", then \"{late.Text}\"");
+
+        // Where the card opens, chosen each time from where the button is then (CardMisplaced: exactly where Hover puts
+        // it, over neither the button nor the mouse, on screen): above it in its lower-left corner, with no room below;
+        // moved to the top-right corner, below it and left of the mouse; to the bottom-right corner, above it and left of
+        // the mouse. With the relaunch note showing (above the button in its corner, below it at the top), off the note
+        // too. Moved in memory only: nothing is saved.
+        var saved = Store.Data.MenuButtonAt;
+        var note = button.GetNodeOrNull<Control>("PendingNote");
+        var noteShown = note?.Visible ?? false;
+        async Task<string?> CardAt(ScreenPoint? at, bool up, bool left, bool withNote = false)
+        {
+            Store.Data.MenuButtonAt = at;
+            MenuButton.Place(button);
+            if (note == null)
+                return "no note";
+            note.Visible = withNote;
+            var area = withNote ? button.GetGlobalRect().Merge(note.GetGlobalRect()) : (Rect2?)null;
+            return CardMisplaced(await HoverCardBox(menu, button, Hover.TipName, Hover.SlowDelay + 0.2), button, up, left, area);
+        }
+        try
+        {
+            var corner = await CardAt(null, up: true, left: false);
+            Check("main menu button: in its corner, its card opens above it, not pushed up over it and the mouse", corner == null, corner ?? "");
+            var topRight = await CardAt(new ScreenPoint(5000, -5000), up: false, left: true);
+            var bottomRight = await CardAt(new ScreenPoint(5000, 5000), up: true, left: true);
+            Check("main menu button: moved, its card opens where there's room (top right: below, left of the mouse; bottom right: above, left of it)",
+                topRight == null && bottomRight == null, $"top right: {topRight ?? "fine"}; bottom right: {bottomRight ?? "fine"}");
+            var noteAbove = await CardAt(null, up: true, left: false, withNote: true);
+            var noteBelow = await CardAt(new ScreenPoint(5000, -5000), up: false, left: true, withNote: true);
+            Check("main menu button: its card keeps off the relaunch note too (above it in the corner, below it at the top)",
+                noteAbove == null && noteBelow == null, $"corner: {noteAbove ?? "fine"}; top: {noteBelow ?? "fine"}");
+        }
+        finally
+        {
+            if (note != null)
+                note.Visible = noteShown;
+            Store.Data.MenuButtonAt = saved;
+            MenuButton.Place(button);
+        }
     }
 
     // Our main menu button opens the page on our view even when Vanilla View was the last one shown; the game's way in
     // (from its Settings) keeps the last view. The page closed for real, then opened each way: the
-    // game reuses the page, so this is the page shown again (on its first opening, ours was read as it was made).
+    // game reuses the page, so this is the page shown again (on its first opening, ours was read as it was made). Then
+    // F8, which opens and closes it.
     static async Task TestMenuButtonOpensOurs(NMainMenu menu, NModdingScreen screen)
     {
         if (menu.GetNodeOrNull<Control>("SpireModManagerMenuButton") is not { } button)
@@ -1068,6 +1135,67 @@ static class SelfTest
             Click(toggle);
             await Wait(menu, 1);
         }
+
+        // F8 (ShortcutsPatch.ManagerKey): on the page, in either view, back to the main menu as its Back button goes; on
+        // the main menu, our view, as the button opens it. A menu of ours open closes first, on the page and on the main
+        // menu. On another of the game's pages, or while the search box has the keyboard, it does nothing.
+        async Task Press()
+        {
+            foreach (var pressed in new[] { true, false })
+            {
+                Input.ParseInputEvent(new InputEventKey { Keycode = ShortcutsPatch.ManagerKey, Pressed = pressed });
+                await Wait(menu, 0.2);
+            }
+            await Wait(menu, 0.3);
+        }
+        bool OnMainMenu() => !menu.SubmenuStack.SubmenusOpen && !screen.IsVisibleInTree() && button.IsVisibleInTree() && !MenuPanel.IsOpen;
+        bool OnOurView() => menu.SubmenuStack.Peek() == screen && screen.IsVisibleInTree() && !Store.Data.VanillaView && !MenuPanel.IsOpen
+            && screen.GetNode<Control>("%ModsScrollContainer/Mask/Content").GetChildren().Any(c => c.IsInGroup("SpireModManagerCategoryHeader"));
+        string Where() => $"screen {ActiveScreenContext.Instance.GetCurrentScreen()?.GetType().Name ?? "none"}, page shown {screen.IsVisibleInTree()}, "
+            + $"vanilla {Store.Data.VanillaView}, menu open {MenuPanel.IsOpen}";
+        screen.GetViewport().GuiReleaseFocus(); // the key reaches the page, not a text box
+        Click(toggle);
+        await Wait(menu, 1);
+        await Press();
+        Check("F8 on the page goes back to the main menu, as its Back button does (from Vanilla View too)", OnMainMenu(), Where());
+        var settings = menu.SubmenuStack.PushSubmenuType<NSettingsScreen>();
+        await Wait(menu, 0.5);
+        await Press();
+        Check("F8 on another of the game's pages (Settings) does nothing", menu.SubmenuStack.Peek() == settings && settings.IsVisibleInTree()
+            && !screen.IsVisibleInTree(), Where());
+        menu.SubmenuStack.Pop();
+        await Wait(menu, 0.5);
+        await Press();
+        await Wait(menu, 0.7); // our view's redraw
+        Check("F8 on the main menu opens our view of the page, as the button does, after Vanilla View", OnOurView(), Where());
+
+        MenuPanel.Show(screen.GetNode<Control>("%ModsScrollContainer/Mask/Content"), () => [new MenuItem("One", () => { })]);
+        await Wait(menu, 0.1);
+        var pageMenu = MenuPanel.IsOpen;
+        await Press();
+        var pageMenuClosed = OnOurView();
+        await Press();
+        Check("F8 with a menu open on the page closes the menu first, staying; the next goes back to the main menu",
+            pageMenu && pageMenuClosed && OnMainMenu(), $"opened {pageMenu}, closed and stayed {pageMenuClosed}; {Where()}");
+        var buttonMenu = await ButtonMenu(menu, button) != null;
+        await Press();
+        var buttonMenuClosed = OnMainMenu();
+        await Press();
+        await Wait(menu, 0.7);
+        Check("F8 with the main menu button's menu open closes the menu first, staying; the next opens the page",
+            buttonMenu && buttonMenuClosed && OnOurView(), $"opened {buttonMenu}, closed and stayed {buttonMenuClosed}; {Where()}");
+
+        if (screen.GetNodeOrNull<LineEdit>("ModsBorder/SpireModManagerSearch") is { } search)
+        {
+            var text = search.Text;
+            search.GrabFocus();
+            await Press();
+            Check("F8 while typing in the search box does nothing to the page: it stays, the box keeps the keyboard and its text",
+                OnOurView() && search.HasFocus() && search.Text == text, $"focused {search.HasFocus()}, \"{search.Text}\"; {Where()}");
+            screen.GetViewport().GuiReleaseFocus();
+        }
+        else
+            Results.Add("FAIL F8 while typing in the search box: no search box");
     }
 
     // Right-click the main menu button, Move button, click somewhere: it stays there; Reset puts it back.
@@ -1174,6 +1302,35 @@ static class SelfTest
     {
         if (menu.GetNodeOrNull<Control>("SpireModManagerMenuButton") is not { } button)
             return;
+
+        // Where its menu opens, from the mouse on the button (MenuMisplaced), chosen from where the button is: in its
+        // lower-left corner, above the mouse (right of it), not pushed up over it; moved to the top-right corner, below it
+        // and left of it; to the bottom-right corner, above it and left of it. Moved in memory only: nothing is saved.
+        var saved = Store.Data.MenuButtonAt;
+        async Task<string?> MenuAt(ScreenPoint? at, bool up, bool left)
+        {
+            Store.Data.MenuButtonAt = at;
+            MenuButton.Place(button);
+            var mouse = new Rect2(button.GetGlobalRect().GetCenter(), Vector2.Zero);
+            var misplaced = MenuMisplaced(await ButtonMenu(menu, button), mouse, up, left);
+            MenuPanel.Close();
+            return misplaced;
+        }
+        try
+        {
+            var corner = await MenuAt(null, up: true, left: false);
+            Check("main menu button's menu: in its corner, it opens above the mouse, not pushed up over it", corner == null, corner ?? "");
+            var topRight = await MenuAt(new ScreenPoint(5000, -5000), up: false, left: true);
+            var bottomRight = await MenuAt(new ScreenPoint(5000, 5000), up: true, left: true);
+            Check("main menu button's menu: moved, it opens where there's room (top right: below the mouse, left of it; bottom right: above it, left of it)",
+                topRight == null && bottomRight == null, $"top right: {topRight ?? "fine"}; bottom right: {bottomRight ?? "fine"}");
+        }
+        finally
+        {
+            Store.Data.MenuButtonAt = saved;
+            MenuButton.Place(button);
+        }
+
         var popup = await ButtonMenu(menu, button);
         var labels = popup == null ? [] : MenuPanel.Labels(popup);
         Check("main menu button's menu: Move button, Reset position, Open translations folder, Relaunch game",
@@ -1296,7 +1453,13 @@ static class SelfTest
         Check("launch record: in the folder Store uses", ownDir == Store.Dir, $"{ownDir} vs {Store.Dir}");
         static string Listed(IEnumerable<LaunchGuard.Entry>? mods) => mods == null ? "(none)" : string.Join(", ", mods.Select(m => $"{m.Id}/{m.Source}={m.Enabled}"));
         var savedNow = Listed(History.CurrentMods().Where(m => m.Id != null).Select(m => new LaunchGuard.Entry(m.Id, m.Source, m.Enabled, null)));
-        var savedThen = Listed(LaunchGuard.Read(Path.Combine(ownDir, LaunchGuard.WorkingFile))?.Mods);
+        // The record has each copy of a mod installed twice from one source (the fixture twins), on for the one that
+        // loaded; the saved list one switch for them: on if one copy was.
+        var workingThen = LaunchGuard.Read(Path.Combine(ownDir, LaunchGuard.WorkingFile))?.Mods;
+        // The record keeps the order the mods loaded in; the saved list has ours first since (Settle), where Better Mod
+        // Menu loaded before us (--bmm).
+        var savedThen = Listed(workingThen?.OrderBy(m => m.Id == ModEntry.ModId ? 0 : 1)
+            .Select(m => m with { Enabled = workingThen.Any(o => o.Id == m.Id && o.Source == m.Source && o.Enabled) }));
         Check("launch record: gone at the main menu, and this launch's mods saved as the last working setup",
             !File.Exists(Path.Combine(ownDir, LaunchGuard.PendingFile)) && savedThen == savedNow, $"saved {savedThen}; now {savedNow}");
         var hook = HarmonyLib.Harmony.GetPatchInfo(HarmonyLib.AccessTools.Method(typeof(NMainMenu), nameof(NMainMenu._Ready)))?.Prefixes
@@ -1430,9 +1593,10 @@ static class SelfTest
             LaunchGuard.Restore(target, menu);
             await Wait(menu, 0.3);
             var after = string.Join(", ", History.CurrentMods().Select(m => $"{m.Id}={m.Enabled}"));
-            var expected = string.Join(", ", target.Select(m => $"{m.Id}={m.Enabled || m.Id == ModEntry.ModId}")
+            // Ours first whatever the order (LoadOrder.OursFirst: it has to load before any copy it picks for).
+            var expected = string.Join(", ", target.OrderBy(m => m.Id == ModEntry.ModId ? 0 : 1).Select(m => $"{m.Id}={m.Enabled || m.Id == ModEntry.ModId}")
                 .Concat(Enumerable.Repeat("SmmTestUi=False", Dependencies.Find("SmmTestUi") != null ? 1 : 0)));
-            Check("Restore: the working list back in its order, a mod added since off, ours on, then a relaunch",
+            Check("Restore: the working list back in its order (ours first), a mod added since off, ours on, then a relaunch",
                 relaunches == 1 && !RelaunchCheck.IsOpen && after == expected, $"{relaunches} relaunches; {after}; expected {expected}");
             RelaunchCheck.Close();
 
@@ -1507,7 +1671,9 @@ static class SelfTest
             LaunchGuard.ReadList is { } readList && readList.Count < listNow, $"read {LaunchGuard.ReadList?.Count}, now {listNow}");
         // An order the game's own sorting sets (a dependency an update added) against the list a Restore wrote: no
         // offer, or each Restore would fail the same and offer it again. The same order as the player's own: offered.
-        var on = current.Select((m, i) => (m, i)).Where(p => p.m.Enabled && p.m.Id is not (ModEntry.ModId or ModDoctor.ModId)).Select(p => p.i).Take(2).ToList();
+        // Mods listed once: the game sorts an id by its last entry, so swapping one of two copies' entries loads nothing differently.
+        var on = current.Select((m, i) => (m, i)).Where(p => p.m.Enabled && p.m.Id is not (ModEntry.ModId or ModDoctor.ModId) && current.Count(c => c.Id == p.m.Id) == 1)
+            .Select(p => p.i).Take(2).ToList();
         if (on.Count == 2)
         {
             var sorted = current.ToList();
@@ -2153,6 +2319,53 @@ static class SelfTest
         var again = MenuPanel.Show(content, () => [new MenuItem("One", () => { })], toggleKey: "test");
         Check("showing the same menu again closes it", picked != null && again == null && !MenuPanel.IsOpen);
 
+        // Where a menu opens from the mouse (MenuMisplaced: a corner exactly on it, whole on screen, so not over it):
+        // mid-screen, below right of it; near the bottom, above it instead of pushed up over it; near the right edge, left
+        // of it; in the bottom-right corner, both. Placed again as it grows: turned above, it grows upward, its bottom
+        // still at the mouse; grown past the bottom as it opens, it turns above; grown past it once open (slides), it only
+        // slides up by what's past, its top-left corner no longer at the mouse but not turned (its bottom at the screen's).
+        var view = content.GetViewportRect().Size;
+        async Task<string?> MenuAt(Vector2 mouse, bool up, bool left, float grow = 0, bool? upFirst = null, bool slides = false)
+        {
+            var point = new Rect2(mouse, Vector2.Zero);
+            Hover.TestMouse = () => mouse;
+            var probe = MenuPanel.Show(content, () => [new MenuItem("One", () => { }), new MenuItem("Two", () => { }), new MenuItem("Three", () => { })]);
+            Hover.TestMouse = null;
+            void Grow()
+            {
+                if (probe?.FindChild("Items", true, false) is Control list)
+                    list.AddChild(new Control { CustomMinimumSize = new Vector2(0, grow), MouseFilter = Control.MouseFilterEnum.Ignore });
+            }
+            if (grow > 0 && upFirst == null && !slides)
+                Grow(); // as it opens
+            await Wait(menu, 0.1);
+            var first = MenuMisplaced(probe, point, upFirst ?? up, left);
+            if (grow > 0 && (upFirst != null || slides))
+            {
+                Grow(); // once open
+                await Wait(menu, 0.1);
+            }
+            string? Slid() => probe?.GetNodeOrNull<Control>("Catcher/Panel")?.GetGlobalRect() is { } box && box.End.Y - view.Y is > -0.5f and < 0.5f
+                && box.Position.X - mouse.X is > -0.5f and < 0.5f && box.Position.Y >= 0 ? null : $"menu {probe?.GetNodeOrNull<Control>("Catcher/Panel")?.GetGlobalRect()} from {mouse}, on {view}";
+            var misplaced = first != null ? $"at first: {first}" : slides ? Slid() : MenuMisplaced(probe, point, up, left);
+            MenuPanel.Close();
+            return misplaced;
+        }
+        var middle = await MenuAt(view / 2, up: false, left: false);
+        Check("menus: mid-screen, a menu opens below right of the mouse", middle == null, middle ?? "");
+        var bottom = await MenuAt(new Vector2(300, view.Y - 60), up: true, left: false);
+        Check("menus: near the bottom, a menu opens above the mouse, not pushed up over it", bottom == null, bottom ?? "");
+        var right = await MenuAt(new Vector2(view.X - 40, 300), up: false, left: true);
+        Check("menus: near the right edge, a menu opens left of the mouse", right == null, right ?? "");
+        var corner = await MenuAt(view - new Vector2(40, 60), up: true, left: true);
+        Check("menus: in the bottom-right corner, a menu opens above the mouse and left of it", corner == null, corner ?? "");
+        var grownUp = await MenuAt(new Vector2(300, view.Y - 60), up: true, left: false, grow: 200, upFirst: true);
+        var grownPast = await MenuAt(new Vector2(300, view.Y - 300), up: true, left: false, grow: 300);
+        var grownOpen = await MenuAt(new Vector2(300, view.Y - 300), up: false, left: false, grow: 300, slides: true);
+        Check("menus: placed again as they grow (turned above, upward from the mouse; grown past the bottom as it opens, turned "
+            + "above; grown past it once open, only slid up, not turned)", grownUp == null && grownPast == null && grownOpen == null,
+            $"turned: {grownUp ?? "fine"}; grown past: {grownPast ?? "fine"}; once open: {grownOpen ?? "fine"}");
+
 
         var category = Categories.Add();
         Categories.Assign(modId, category.Name);
@@ -2306,6 +2519,8 @@ static class SelfTest
         Check("the picker opens the profile list, with details, then Share profile and Import profile", list != null
             && MenuPanel.Labels(list).SequenceEqual(Store.Data.Profiles.Select(p => p.Name).Concat(["Export profile", "Import profile"])),
             list == null ? "no list" : string.Join(", ", MenuPanel.Labels(list)));
+        var dropped = MenuMisplaced(list, picker.GetGlobalRect().GrowIndividual(0, 4, 0, 4), up: false, left: false);
+        Check("the profile list drops right under the picker (4 below it), left edges together", dropped == null, dropped ?? "");
         await Capture(screen, outDir, "7b-profile-list");
         await RealClick(menu, picker);
         Check("a second press on the picker closes it", !MenuPanel.IsOpen);
@@ -2323,7 +2538,8 @@ static class SelfTest
             return;
         }
         var tickbox = lib.GetNode<NTickbox>("Tickbox");
-        Check("a library says how many mods need it", Note("SmmTestLib").Contains("Required for 2 enabled mods"), Note("SmmTestLib"));
+        // Test Content, Test UI and the fixture's picked twin, Test Twin Beta (the other copy, not picked, is off).
+        Check("a library says how many mods need it", Note("SmmTestLib").Contains("Required for 3 enabled mods"), Note("SmmTestLib"));
         tickbox.IsTicked = false;
         tickbox.EmitSignal(NTickbox.SignalName.Toggled, tickbox);
         await Wait(menu, 0.3);
@@ -2575,8 +2791,9 @@ static class SelfTest
             .Where(id => installed.Any(m => m.manifest?.id == id)).Distinct().ToList();
         var ids = records.Skip(1).Select(r => r[0]).ToList();
         var enabledOrder = order.Where(IsOn).ToList();
+        // A row per copy that's on (of the fixture twins, the picked one).
         Check("Share profile opens with the active profile's enabled mods in load order, under the default columns",
-            Dialog() != null && records.FirstOrDefault()?.SequenceEqual(ProfileCsv.Header(new())) == true && ids.Count == installed.Count(m => m.manifest?.id is { } id && IsOn(id))
+            Dialog() != null && records.FirstOrDefault()?.SequenceEqual(ProfileCsv.Header(new())) == true && ids.Count == installed.Count(Dependencies.IsOn)
             && ids.Take(enabledOrder.Count).SequenceEqual(enabledOrder) && records.Skip(1).All(r => r[3] == "TRUE") && !ids.Contains("SmmTestRetired")
             && Part<RichTextLabel>("Body")?.GetParsedText().Contains(startName) == true, $"{string.Join(" | ", ids)} vs order {string.Join(" | ", enabledOrder)}");
         var tops = new[] { "IncludeCategory", "IncludeDisabled", "IncludeAlias", "IncludeNotes", "RememberChoices" }
@@ -2610,8 +2827,12 @@ static class SelfTest
         csv = Csv();
         records = ProfileCsv.Records(csv);
         ids = records.Skip(1).Select(r => r[0]).ToList();
+        // A row per copy (the fixture twins: two rows of one id, side by side, each on or off as that copy is, told apart
+        // by their versions).
+        bool RowOn(List<string> r) => installed.FirstOrDefault(m => m.manifest?.id == r[0] && m.manifest?.version == r[2]) is { } copy
+            ? Dependencies.IsOn(copy) : IsOn(r[0]);
         Check("Include disabled: a row per installed mod in load order, TRUE and FALSE as the profile has them", ids.Count == installed.Count
-            && ids.Take(order.Count).SequenceEqual(order) && records.Skip(1).All(r => r[3] == (IsOn(r[0]) ? "TRUE" : "FALSE")) && ids.Contains("SmmTestRetired")
+            && ids.Distinct().Take(order.Count).SequenceEqual(order) && records.Skip(1).All(r => r[3] == (RowOn(r) ? "TRUE" : "FALSE")) && ids.Contains("SmmTestRetired")
             && records.Any(r => r[3] == "FALSE") && records.FirstOrDefault()?.SequenceEqual(ProfileCsv.Header(new())) == true,
             string.Join(", ", records.Skip(1).Select(r => $"{r[0]}={r[3]}")));
         var clipboard = DisplayServer.ClipboardGet(); // put back after: a windowed run is on your desktop
@@ -3016,6 +3237,33 @@ static class SelfTest
             && !description.StartsWith("Enabled") && description.Contains("Size:") && !description.Contains("Compatibility"), $"{headText} / {description[..Math.Min(60, description.Length)]}");
         Check("fields in order: Alias, Category, Tags, Notes", string.Join(",", yours.GetChildren().Select(c => c.Name.ToString())) == "Alias,Category,Tags,Notes",
             string.Join(",", yours.GetChildren().Select(c => c.Name.ToString())));
+        // The category picker drops its list right under it (2 below it, from its left edge) where it fits, otherwise
+        // just above it; moved near the bottom of the screen, just above it, not pushed up over it. Moved for the press
+        // only, and put back in the same frame.
+        var categoryPicker = yours.GetNode<Button>("Category/Picker");
+        var screenSize = categoryPicker.GetViewportRect().Size;
+        async Task<(string? Misplaced, bool Up)> PickerMenu(float? top = null)
+        {
+            var home = categoryPicker.Position;
+            if (top is { } y)
+                categoryPicker.GlobalPosition = new Vector2(categoryPicker.GlobalPosition.X, y);
+            var from = categoryPicker.GetGlobalRect().GrowIndividual(0, 2, 0, 2);
+            categoryPicker.EmitSignal(BaseButton.SignalName.Pressed);
+            categoryPicker.Position = home;
+            await Wait(menu, 0.2);
+            var open = MenuPanel.Current;
+            var size = open?.GetNodeOrNull<Control>("Catcher/Panel")?.Size ?? Vector2.Zero;
+            var (up, left) = (from.End.Y + size.Y > screenSize.Y, from.Position.X + size.X > screenSize.X);
+            var misplaced = MenuMisplaced(open, from, up, left);
+            MenuPanel.Close();
+            return (misplaced, up);
+        }
+        var (ownPlace, ownUp) = await PickerMenu();
+        Results.Add($"INFO the category picker's list opened {(ownUp ? "above" : "below")} it");
+        Check("the category picker drops its list right under it where it fits, otherwise just above it", ownPlace == null, ownPlace ?? "");
+        var (lowPlace, lowUp) = await PickerMenu(screenSize.Y - categoryPicker.Size.Y - 10);
+        Check("the category picker near the bottom of the screen: its list opens just above it, not pushed up over it", lowUp && lowPlace == null,
+            lowPlace ?? "below it");
         Check("the thumbnail is 256 x 144 (the scene's minimum size lifted)", panel.GetNode<Control>("ModImage").Size == new Vector2(256, 144), $"{panel.GetNode<Control>("ModImage").Size}");
         Check("automatic tags beside the Tags term", yours.GetNodeOrNull<Control>("Tags/Term/SystemTags") is { Visible: true } system && system.GetChildCount() > 0);
         var image = panel.GetNode<TextureRect>("ModImage");
@@ -3198,6 +3446,49 @@ static class SelfTest
             $"at {clickAt} (in the list's view {inView}), selected before {selectedBefore}, landed on the area {landed}, "
             + $"selected after {RowState.Selected(other)} (ours {RowState.Selected(ours)})");
         Hover.TestMouse = null;
+
+        // Where Hover puts a card it places itself (CardMisplaced: exactly there, over neither the trigger nor the mouse,
+        // on screen), chosen each time a card opens from where its trigger is then: a probe with a tip, moved between
+        // hovers. Mid-screen, below the trigger and right of the mouse; near the bottom, above the trigger instead of
+        // pushed back up over it and the mouse; near the right edge, left of the mouse; in the bottom-right corner, both.
+        var probe = new Control { Name = "SpireModManagerHoverProbe", Size = new Vector2(200, 40) };
+        screen.AddChild(probe);
+        Hover.Tip(probe, "Where a card opens");
+        var view = probe.GetViewportRect().Size;
+        async Task<string?> ProbeAt(Vector2 at, bool up, bool left)
+        {
+            probe.GlobalPosition = at;
+            return CardMisplaced(await HoverCardBox(menu, probe, Hover.TipName), probe, up, left);
+        }
+        try
+        {
+            var middle = await ProbeAt(view / 2 - probe.Size / 2, up: false, left: false);
+            Check("hover cards: mid-screen, a card opens below its trigger, right of the mouse", middle == null, middle ?? "");
+            var bottom = await ProbeAt(new Vector2(100, view.Y - 50), up: true, left: false);
+            Check("hover cards: near the bottom, a card opens above its trigger, not pushed up over it and the mouse", bottom == null, bottom ?? "");
+            var right = await ProbeAt(new Vector2(view.X - 210, view.Y / 2 - 20), up: false, left: true);
+            Check("hover cards: near the right edge, a card opens left of the mouse", right == null, right ?? "");
+            var corner = await ProbeAt(view - new Vector2(210, 50), up: true, left: true);
+            Check("hover cards: in the bottom-right corner, a card opens above its trigger and left of the mouse", corner == null, corner ?? "");
+        }
+        finally
+        {
+            probe.QueueFree();
+        }
+        // A row's card, on the lowest row in full view: below its title where it fits, otherwise above it.
+        var list = content.GetParent<Control>().GetGlobalRect();
+        if (content.GetChildren().OfType<NModMenuRow>().Where(r => r.IsVisibleInTree() && r.Mod != null && list.Encloses(r.GetGlobalRect()))
+            .MaxBy(r => r.GetGlobalRect().Position.Y)?.GetNodeOrNull<Control>("SpireModManagerTitleHover") is { Visible: true } lowest)
+        {
+            var box = await HoverCardBox(menu, lowest, "SpireModManagerNotesCard");
+            var (title, mouse) = (lowest.GetGlobalRect(), lowest.GetGlobalRect().GetCenter());
+            var up = box is { } card && Math.Max(mouse.Y + 20, title.End.Y + Hover.Gap) + card.Size.Y > view.Y;
+            var misplaced = CardMisplaced(box, lowest, up, left: false);
+            Results.Add($"INFO the lowest row's card opened {(up ? "above" : "below")} its title");
+            Check("a row's card near the bottom of the list: below its title where it fits, otherwise above it", misplaced == null, misplaced ?? "");
+        }
+        else
+            Results.Add("SKIP a row's card near the bottom of the list: no row in full view");
         Check("Vanilla View shows plain names", await WithVanillaView(screen, menu, () => RowTitle(ModEntry.ModId) == "Spire Mod Manager"));
     }
 
@@ -3350,7 +3641,9 @@ static class SelfTest
         var byTag = await Shown("favorites");
         Check("search by own tag", byTag.SequenceEqual(["SmmTestFixes"]), string.Join(", ", byTag));
         var libraries = await Shown("library");
-        Check("search by automatic tag", libraries.SequenceEqual(["SmmTestLib"]), string.Join(", ", libraries));
+        // The libraries: Test Framework, and both copies of the fixture's twin (Test Twin User needs it).
+        List<string> Libraries() => ["SmmTestLib", .. ModManager.Mods.Where(m => m.manifest?.id == TwinId).Select(_ => TwinId)];
+        Check("search by automatic tag", libraries.Order().SequenceEqual(Libraries().Order()), string.Join(", ", libraries));
         Check("automatic tags, in order", Tags.For(Dependencies.Find("SmmTestLib")).Select(c => c.Text).SequenceEqual(["Local", "Library", "Gameplay"])
             && Tags.For(Dependencies.Find("SmmTestUi")).Select(c => c.Text).SequenceEqual(["Local"]),
             string.Join(", ", Tags.For(Dependencies.Find("SmmTestLib")).Select(c => c.Text)));
@@ -3365,10 +3658,10 @@ static class SelfTest
         var all = await Shown("");
         ClickChip("SmmTestLib", "Library", false);
         await Wait(menu, 0.3);
-        Check("clicking a row's tag searches for it", box.Text == "#Library" && Visible().SequenceEqual(["SmmTestLib"]), $"{box.Text}: {string.Join(", ", Visible())}");
+        Check("clicking a row's tag searches for it", box.Text == "#Library" && Visible().Order().SequenceEqual(Libraries().Order()), $"{box.Text}: {string.Join(", ", Visible())}");
         ClickChip("SmmTestLib", "Gameplay", true);
         await Wait(menu, 0.3);
-        Check("Shift-clicking another adds it", box.Text == "#Library #Gameplay" && Visible().SequenceEqual(["SmmTestLib"]), $"{box.Text}: {string.Join(", ", Visible())}");
+        Check("Shift-clicking another adds it", box.Text == "#Library #Gameplay" && Visible().Order().SequenceEqual(Libraries().Order()), $"{box.Text}: {string.Join(", ", Visible())}");
         // Clicking again undoes: Shift takes "#Gameplay" back out, then a plain click on the whole search clears it.
         ClickChip("SmmTestLib", "Gameplay", true);
         await Wait(menu, 0.3);
@@ -3581,7 +3874,7 @@ static class SelfTest
             return ms;
         }
         var wrong = new List<string>();
-        using (Lookups.Begin(mods, [], saved))
+        using (Lookups.Begin(mods, [], saved, Picks.None))
         {
             var built = Lap();
             var notes = mods.ToDictionary(m => m, m => (Tags: Tags.For(m), Required: RowStrip.RequiredFor(m), Needs: RowStrip.Needs(m, order, loadOrder: false)));
@@ -3705,16 +3998,20 @@ static class SelfTest
         }
     }
 
-    // Two copies of one mod with one id and source (two Workshop items of it: dev.cs test --workshop with both). The
-    // saved list keeps one entry per copy through a move and back (it grew by one with every save), Changes and the main
-    // menu agree nothing moved, the page's line follows the menu's rule, and turning the mod off and on sets every entry
-    // (the game reads any entry off as off). Skipped without such a pair.
+    // Two copies of one mod with one id and source (with dev.cs test --workshop and two items of one mod, those; else the
+    // fixture twins, SmmTestTwinA and B). The saved list keeps one entry per copy through a move and back (it grew by one
+    // with every save), Changes and the main menu agree nothing moved, and the page's line follows the menu's rule. On our
+    // main list (where a tick is its own undo step: Load Order's undo steps through the order) each copy has its own box,
+    // the picked one's ticked: a click on the other's makes that copy the one that loads and unticks the first, as one
+    // undo step, Changes naming both (one on, one off), the saved list's entries all on (one switch for both); undo puts
+    // the pick back. Turning the mod off and on sets every one of its entries (the game reads any entry off as off).
     static async Task TestTwinCopies(Node menu, NModdingScreen screen, Control content)
     {
         List<NModMenuRow> Rows() => content.GetChildren().OfType<NModMenuRow>().ToList();
-        if (ModManager.Mods.Where(m => m.manifest?.id != null).GroupBy(m => (m.manifest?.id, m.modSource)).FirstOrDefault(g => g.Count() > 1) is not { } twins)
+        if (ModManager.Mods.Where(m => m.manifest?.id != null).GroupBy(m => (Id: m.manifest?.id ?? "", m.modSource))
+            .Where(g => g.Select(Copies.CopyOf).Distinct().Count() > 1).OrderBy(g => g.Key.Id == TwinId ? 1 : 0).FirstOrDefault() is not { } twins)
         {
-            Results.Add("SKIP two copies of one mod: none installed (dev.cs test --workshop with two items of one mod)");
+            TwinsMissing("two copies of one mod");
             return;
         }
         if (SaveManager.Instance.SettingsSave.ModSettings is not { } settings)
@@ -3722,6 +4019,7 @@ static class SelfTest
             Results.Add("FAIL two copies of one mod: the game has no saved mod list");
             return;
         }
+        Results.Add($"INFO two copies of one mod: {twins.Key.Id} ({string.Join(", ", twins.Select(Copies.CopyOf))})");
         var list = settings.ModList;
         var (id, source) = twins.Key;
         int Entries() => list.Count(e => e.Id == id && e.Source == source);
@@ -3733,8 +4031,9 @@ static class SelfTest
             Check("two copies of one mod: another mod to move", false);
             return;
         }
+        // Past its neighbour (not to the top: ours stay first).
         var at = Rows().FindIndex(r => r.Mod == other);
-        LoadOrder.Move(other, at == 0 ? 1 : 0, Rows());
+        LoadOrder.Move(other, at + 1 < Rows().Count ? at + 1 : at - 1, Rows());
         CategoryList.Redraw(content);
         await Wait(menu, 0.3);
         Check("two copies of one mod: a move keeps one entry each (the list doesn't grow), and Changes, the menu and the page's line agree",
@@ -3747,48 +4046,73 @@ static class SelfTest
             list.Count == count && Entries() == entries && HistoryBar.Moves().Count == 0 && !LoadOrder.OrderChanged && LineFollows(),
             $"{list.Count} entries (was {count}), moved {HistoryBar.Moves().Count}, order changed {LoadOrder.OrderChanged}");
         var on = list.Where(e => e.Id == id && e.Source == source).Select(e => e.IsEnabled).ToList(); // to put back at the end
-        // A click on one copy's box (the game's own handler sets every entry of the id): the other copy's box follows, and
-        // Changes and the counts name the mod once. Then back, from the other copy.
-        var twinRows = Rows().Where(r => r.Mod != null && twins.Contains(r.Mod)).ToList();
-        if (twinRows.Count == 2)
+
+        // A click as the game's tickbox makes one (its ForceToggleTick is beta-only): the box flips, then Toggled fires.
+        static void Toggle(NModMenuRow row)
         {
-            var name = twins.First().manifest?.name ?? id ?? "";
-            bool Ticked(NModMenuRow row) => row.GetNode<NTickbox>("Tickbox").IsTicked;
-            // A click as the game's tickbox makes one (its ForceToggleTick is beta-only): the box flips, then Toggled fires.
-            static void Click(NModMenuRow row)
-            {
-                var box = row.GetNode<NTickbox>("Tickbox");
-                box.IsTicked = !box.IsTicked;
-                box.EmitSignal("Toggled", box);
-            }
+            var box = row.GetNode<NTickbox>("Tickbox");
+            box.IsTicked = !box.IsTicked;
+            box.EmitSignal("Toggled", box);
+        }
+        static bool Ticked(NModMenuRow row) => row.GetNode<NTickbox>("Tickbox").IsTicked;
+        var toggle = screen.GetNode<NButton>("SpireModManagerLoadOrderToggle");
+        Click(toggle); // to the main list
+        await Wait(menu, 0.5);
+        var twinRows = Rows().Where(r => r.Mod != null && twins.Contains(r.Mod)).ToList();
+        if (twinRows.Count == 2 && Copies.Picked(id, source) is { } pick && twinRows.FirstOrDefault(r => r.Mod is { } m && Copies.CopyOf(m) == pick) is { Mod: { } pickedMod } picked
+            && twinRows.FirstOrDefault(r => r != picked) is { Mod: { } otherMod } unpicked)
+        {
+            string Named(Mod mod) => (mod.manifest?.name ?? id) + Copies.Which(mod);
+            var wasOn = Dependencies.IsOn(pickedMod);
+            Check("two copies of one mod: a box each on our page, the picked copy's ticked as it's on, the other's not",
+                Ticked(picked) == wasOn && !Ticked(unpicked) && !Dependencies.IsOn(otherMod), $"boxes {Ticked(picked)}/{Ticked(unpicked)}, on {wasOn}");
+            var steps = History.Steps(History.Track.List);
             var (onBefore, offBefore, _) = HistoryBar.Counts();
-            Click(twinRows[0]);
+            Toggle(unpicked);
             await Wait(menu, 0.3);
-            var (first, second) = (Ticked(twinRows[0]), Ticked(twinRows[1]));
-            var lines = HistoryBar.Describe().Count(l => l.Contains(name));
-            var bothChanged = twins.All(HistoryBar.ChangedMods().Contains); // Show: Changed lists both rows
+            var lines = HistoryBar.Describe();
             var (onNow, offNow, _) = HistoryBar.Counts();
-            var counted = Math.Abs(onNow - onBefore) + Math.Abs(offNow - offBefore);
-            Click(twinRows[1]);
+            Check("two copies of one mod: ticking the other copy makes it the one that loads and unticks the first, one undo step; Changes names both, "
+                + "+1 -1; the saved list's entries all on; Show: Changed lists both rows",
+                Ticked(unpicked) && !Ticked(picked) && Dependencies.IsOn(otherMod) && !Dependencies.IsOn(pickedMod)
+                && Copies.Picked(id, source) == Copies.CopyOf(otherMod) && Store.Data.CopyPicks?.Contains(Copies.SwitchKey(otherMod)) == true
+                && list.Where(e => e.Id == id && e.Source == source).All(e => e.IsEnabled) && History.Steps(History.Track.List) == steps + 1
+                && lines.Contains($"Enabled: {Named(otherMod)}") && (!wasOn || lines.Contains($"Disabled: {Named(pickedMod)}"))
+                && onNow - onBefore == 1 && offNow - offBefore == (wasOn ? 1 : 0) && twins.All(HistoryBar.ChangedMods().Contains),
+                $"boxes {Ticked(picked)}/{Ticked(unpicked)}, pick {Copies.Picked(id, source)}, steps {steps} -> {History.Steps(History.Track.List)}, "
+                + $"counts +{onNow - onBefore} -{offNow - offBefore}; {string.Join(" | ", lines)}");
+            History.Undo();
             await Wait(menu, 0.3);
-            Check("two copies of one mod: a click on one's box switches the other's too, Changes and the counts name the mod once, Show: Changed both rows",
-                first == second && lines == 1 && counted == 1 && bothChanged && Ticked(twinRows[0]) == Ticked(twinRows[1]) && Ticked(twinRows[0]) != first,
-                $"boxes {first}/{second}, {lines} lines naming {name}, counted {counted}, both under Changed {bothChanged}; back {Ticked(twinRows[0])}/{Ticked(twinRows[1])}");
+            Check("two copies of one mod: undo puts the pick back, boxes and Changes too", Ticked(picked) == wasOn && !Ticked(unpicked)
+                && Copies.Picked(id, source) == pick && !HistoryBar.Describe().Any(l => l.Contains(Named(otherMod))),
+                $"boxes {Ticked(picked)}/{Ticked(unpicked)}, pick {Copies.Picked(id, source)}; {string.Join(" | ", HistoryBar.Describe())}");
+            Dependencies.Set([pickedMod], false, screen);
+            var offAll = list.Where(e => e.Id == id && e.Source == source).All(e => !e.IsEnabled);
+            Dependencies.Set([pickedMod], true, screen);
+            var onAll = list.Where(e => e.Id == id && e.Source == source).All(e => e.IsEnabled) && Copies.Picked(id, source) == pick;
+            Check("two copies of one mod: turning the picked copy off and on sets every one of the mod's entries, the pick kept", offAll && onAll,
+                $"off {offAll}, on {onAll}");
         }
         else
-            Results.Add($"SKIP two copies of one mod: a click on one's box (rows {twinRows.Count})");
-        Dependencies.Set([twins.First()], false, screen);
-        var offAll = list.Where(e => e.Id == id && e.Source == source).All(e => !e.IsEnabled);
-        Dependencies.Set([twins.First()], true, screen);
-        var onAll = list.Where(e => e.Id == id && e.Source == source).All(e => e.IsEnabled);
+            Check($"two copies of one mod: a box per copy (rows {twinRows.Count}), one of them picked ({Copies.Picked(id, source)})", false);
         var restore = list.Where(e => e.Id == id && e.Source == source).ToList();
         for (var i = 0; i < restore.Count && i < on.Count; i++)
             restore[i].IsEnabled = on[i];
         SaveManager.Instance.SaveSettings();
         Profiles.RefreshTickboxes(screen);
-        CategoryList.Redraw(content);
-        await Wait(menu, 0.3);
-        Check("two copies of one mod: turning it off and on sets every one of its entries", offAll && onAll, $"off {offAll}, on {onAll}");
+        Click(toggle); // back to Load Order
+        await Wait(menu, 0.5);
+    }
+
+    // The fixture twins missing: a FAIL where the fixture's other mods are there (staging lost them, or their copies are
+    // named another way), else a SKIP (a run without the fixtures).
+    static void TwinsMissing(string what)
+    {
+        if (Dependencies.Find("SmmTestTwinUser") != null)
+            Check($"{what}: the fixture twins installed, as l:SmmTestTwinA and l:SmmTestTwinB", false,
+                string.Join(", ", ModManager.Mods.Where(m => m.manifest?.id == TwinId).Select(Copies.CopyOf)));
+        else
+            Results.Add($"SKIP {what}: the fixture twins aren't installed");
     }
 
     // Load Order view: rows in the saved order with handles; move by menu action and by dragging a handle
@@ -3822,6 +4146,7 @@ static class SelfTest
         await Wait(menu, 0.3);
         HintPlaced("Load Order redrawn");
         var start = Ids();
+        var startMods = Rows().Select(r => r.Mod).OfType<Mod>().ToList(); // to put back by copy: two copies of a mod share an id
         Check("load order view: saved order, handles, no headers", start.SequenceEqual(Saved())
             && Rows().All(r => r.GetNodeOrNull<Control>("SpireModManagerHandle") is { Visible: true })
             && !content.GetChildren().Any(c => c.IsInGroup("SpireModManagerCategoryHeader")), string.Join(", ", start));
@@ -3835,13 +4160,17 @@ static class SelfTest
         await Wait(menu, 0.5);
         Check("a second visit to Load Order adds no handlers to the rows", Handlers() == wired && Store.Data.LoadOrderView, $"{wired} -> {Handlers()}");
 
+        // Ours lead the list (one row per copy), pinned: the moves below are of the rows after them.
+        var pinned = Ids().TakeWhile(id => id == ModEntry.ModId).Count();
+        Check("load order: ours first, pinned", pinned >= 1, string.Join(", ", start));
         // Moves use a mod with no dependencies either way, so no order rule can block them.
         const string free = "SmmTestFixes";
         if (Rows().FirstOrDefault(r => r.Mod?.manifest?.id == free)?.Mod is { } freeMod)
             LoadOrder.Move(freeMod, 0, Rows());
         CategoryList.Redraw(content);
         await Wait(menu, 0.5);
-        Check("move to top saves the order", Ids()[0] == free && Saved()[0] == free, string.Join(", ", Ids()));
+        Check("move to top saves the order, under ours", Ids()[pinned] == free && Saved()[pinned] == free && Ids()[0] == ModEntry.ModId,
+            string.Join(", ", Ids()));
         Check("an order change is pending", pending.Visible && ModEntry.HasPendingChanges());
         Check("load order: no tickboxes", Rows().All(r => !r.GetNode<Control>("Tickbox").Visible));
         // The first row's highlight (the same box under the mouse) reaches a little above the row; with the list at its
@@ -3853,7 +4182,7 @@ static class SelfTest
         var listTop = content.GetParent<Control>().GetGlobalRect().Position.Y;
         Check("load order: the first row's highlight shows whole, under the list's top edge", topLook.Position.Y >= listTop - 0.01f
             && topLook.Position.Y < Rows()[0].GetGlobalRect().Position.Y, $"highlight from {topLook.Position.Y}, row from {Rows()[0].GetGlobalRect().Position.Y}, list from {listTop}");
-        var wasText = Rows()[0].GetNodeOrNull<Label>("SpireModManagerWas")?.Text;
+        var wasText = Rows()[pinned].GetNodeOrNull<Label>("SpireModManagerWas")?.Text;
         Check("a moved row shows where it was at launch", wasText == $"{start.IndexOf(free) + 1} →",
             wasText ?? "none");
         if (Rows().FirstOrDefault(r => r.Mod?.manifest?.id == "SmmTestUi") is { Mod: { } uiMod } uiRow)
@@ -3869,11 +4198,11 @@ static class SelfTest
                 $"{toggle.Label}, off {offNow}, {again.Label}");
         }
 
-        // Drag the first row's handle to just below the third row.
-        var first = Rows()[0];
+        // Drag the first row after ours by its handle to just below the third.
+        var first = Rows()[pinned];
         var handle = first.GetNode<Control>("SpireModManagerHandle");
         var from = handle.GetGlobalRect().GetCenter();
-        var to = new Vector2(from.X, Rows()[2].GetGlobalRect().End.Y - 4);
+        var to = new Vector2(from.X, Rows()[pinned + 2].GetGlobalRect().End.Y - 4);
         void Send(InputEvent e) => handle.GetParent().EmitSignal(Control.SignalName.GuiInput, e);
         Send(new InputEventMouseButton { ButtonIndex = MouseButton.Left, Pressed = true, GlobalPosition = from, Position = from });
         Send(new InputEventMouseMotion { GlobalPosition = to, Position = to });
@@ -3882,11 +4211,11 @@ static class SelfTest
         Send(new InputEventMouseButton { ButtonIndex = MouseButton.Left, Pressed = false, GlobalPosition = to, Position = to });
         await Wait(menu, 0.5);
         var dragged = Ids();
-        Check("drag moves the row below the third", dragged.IndexOf(first.Mod?.manifest?.id ?? "") == 2 && dragged.SequenceEqual(Saved()),
+        Check("drag moves the row below the third", dragged.IndexOf(first.Mod?.manifest?.id ?? "") == pinned + 2 && dragged.SequenceEqual(Saved()),
             string.Join(", ", dragged));
 
         // A press alone already shows the drag (dimmed list, drop line); releasing without moving changes nothing.
-        var pressed = Rows()[1];
+        var pressed = Rows()[pinned];
         var at = pressed.GetGlobalRect().GetCenter();
         var orderBefore = Ids();
         pressed.EmitSignal(Control.SignalName.GuiInput, new InputEventMouseButton { ButtonIndex = MouseButton.Left, Pressed = true, GlobalPosition = at });
@@ -3897,15 +4226,15 @@ static class SelfTest
         await Wait(menu, 0.3);
         Check("a click without moving leaves the order alone", Ids().SequenceEqual(orderBefore));
 
-        // Multi-select: pick the first and third rows, drag the first's grip below the last row; both move,
+        // Multi-select: pick the first and third rows after ours, drag the first's grip below the last row; both move,
         // in their order.
         var all = Rows();
-        Selection.Pick(content, all[0], toggle: false, range: false);
-        Selection.Pick(content, all[2], toggle: true, range: false);
-        var pickedIds = new[] { all[0], all[2] }.Select(r => r.Mod?.manifest?.id ?? "").ToList();
+        Selection.Pick(content, all[pinned], toggle: false, range: false);
+        Selection.Pick(content, all[pinned + 2], toggle: true, range: false);
+        var pickedIds = new[] { all[pinned], all[pinned + 2] }.Select(r => r.Mod?.manifest?.id ?? "").ToList();
         Check("Ctrl-click picks a second row, both highlighted", Selection.Mods.Count == 2
             && Rows().Count(r => r.GetNodeOrNull<Control>("SpireModManagerPicked")?.Visible == true) == 2);
-        var grip = all[0].GetNode<Control>("SpireModManagerHandle");
+        var grip = all[pinned].GetNode<Control>("SpireModManagerHandle");
         var gripAt = grip.GetGlobalRect().GetCenter();
         var bottom = new Vector2(gripAt.X, all[^1].GetGlobalRect().End.Y - 2);
         grip.GetParent().EmitSignal(Control.SignalName.GuiInput, new InputEventMouseButton { ButtonIndex = MouseButton.Left, Pressed = true, GlobalPosition = gripAt });
@@ -3918,13 +4247,13 @@ static class SelfTest
         Selection.Clear(content);
 
         // Put the original order back: nothing pending again.
-        for (var i = 0; i < start.Count; i++)
-            if (Rows().FirstOrDefault(r => r.Mod?.manifest?.id == start[i])?.Mod is { } mod)
-                LoadOrder.Move(mod, i, Rows());
+        for (var i = 0; i < startMods.Count; i++)
+            LoadOrder.Move(startMods[i], i, Rows());
         CategoryList.Redraw(content);
         await Wait(menu, 0.5);
         Check("restoring the order clears pending", Ids().SequenceEqual(start) && !ModEntry.HasPendingChanges());
         await TestTwinCopies(menu, screen, content);
+        await TestSameIdLoadOrder(menu, screen, content);
 
         await TestDependencies(menu, screen, content, outDir);
 
@@ -4047,7 +4376,9 @@ static class SelfTest
             && after.Where(id => id != "SmmTestLib").SequenceEqual(before.Where(id => id != "SmmTestLib")),
             string.Join(", ", after));
 
-        // A move above the framework is flagged but allowed: by the inline/menu actions and by dragging.
+        // A move above the framework is flagged but allowed: by the inline/menu actions and by dragging. Ours, pinned
+        // first, counted before (counted after, a drop above ours would count none).
+        var pinned = Ids().TakeWhile(id => id == ModEntry.ModId).Count();
         var rowContent = Row("SmmTestContent");
         Check("moving above what it needs is flagged, not blocked", rowContent != null && LoadOrder.MoveBreaks(dependent, 0, Rows())
             && !LoadOrder.Actions(content, rowContent, () => { }, compact: true)[0].Disabled);
@@ -4067,10 +4398,13 @@ static class SelfTest
             handle.GetParent().EmitSignal(Control.SignalName.GuiInput, new InputEventMouseButton { ButtonIndex = MouseButton.Left, Pressed = false, GlobalPosition = to });
             await Wait(menu, 0.5);
         }
-        Check("a drag past a dependency goes through and is flagged", Ids()[0] == "SmmTestContent"
-            && screen.FindChild("OrderProblems", true, false) != null, string.Join(", ", Ids()));
+        // Dropped at the top, it lands under ours (pinned first).
+        Check("a drag past a dependency goes through and is flagged, landing under ours", pinned > 0 && Ids()[0] == ModEntry.ModId
+            && Ids()[pinned] == "SmmTestContent" && screen.FindChild("OrderProblems", true, false) != null, string.Join(", ", Ids()));
         screen.FindChild("FixOrderButton", true, false)?.EmitSignal(BaseButton.SignalName.Pressed);
         await Wait(menu, 0.5);
+        string? SavedFirst() => SaveManager.Instance.SettingsSave.ModSettings?.ModList.FirstOrDefault()?.Id;
+        Check("Fix order leaves ours first", Ids()[0] == ModEntry.ModId && SavedFirst() == ModEntry.ModId, string.Join(", ", Ids()));
 
         // Auto sort: libraries, then gameplay, then visual-only; dependencies satisfied; one undo puts it back.
         var beforeSort = Ids();
@@ -4078,8 +4412,9 @@ static class SelfTest
         await Wait(menu, 0.5);
         int Tier(NModMenuRow r) => Tags.For(r.Mod).Any(c => c.Text == "Library") ? 0
             : Tags.For(r.Mod).Any(c => c.Text == "Gameplay") ? 1 : 2;
-        var tiers = Rows().Select(Tier).ToList();
-        Check("auto sort: libraries, then gameplay, then visual-only, no dependency problems",
+        var tiers = Rows().Skip(pinned).Select(Tier).ToList(); // ours stay first, whatever their tier
+        Check("auto sort: ours first, then libraries, then gameplay, then visual-only, no dependency problems", Ids()[0] == ModEntry.ModId
+            && SavedFirst() == ModEntry.ModId && Ids().Take(pinned).All(id => id == ModEntry.ModId) &&
             tiers.Zip(tiers.Skip(1)).All(p => p.First <= p.Second) && Dependencies.OrderViolations(LoadOrder.Mods(Rows())).Count == 0,
             string.Join(", ", Ids()));
         await Capture(screen, outDir, "13c-auto-sort");
@@ -4122,7 +4457,8 @@ static class SelfTest
             await Capture(screen, outDir, "13b-hover-links");
             libRow.EmitSignal(Control.SignalName.MouseExited);
             await Wait(menu, 0.2);
-            Check("hover shows links to both dependents, and they go on leaving", shown == 2
+            // Test Content, Test UI and the fixture's newer twin, Test Twin Beta.
+            Check("hover shows links to each mod that needs it, and they go on leaving", shown == Dependencies.NeededBy("SmmTestLib").Count() && shown == 3
                 && !content.GetParent().GetChildren().Any(c => c.IsInGroup("SpireModManagerLinks")), $"{shown} shown");
         }
     }
@@ -4273,9 +4609,9 @@ static class SelfTest
         var border = screen.GetNode<Control>("ModsBorder");
         var search = border.GetNode<Control>("SpireModManagerSearch");
         Control? Banner() => border.GetNodeOrNull<Control>(LoadOrder.SelfName);
-        // Mods on now, two copies of one mod counted once (as the counts count them).
-        int OnNow() => Dependencies.OnePerKey(ModManager.Mods.Union(Installed.Mods).Where(m => m.manifest?.id != null))
-            .Count(Dependencies.IsOn);
+        // Mods on now, by id: two copies of one mod counted once (as the counts count them).
+        int OnNow() => ModManager.Mods.Union(Installed.Mods).Where(m => m.manifest?.id != null && Dependencies.IsOn(m))
+            .Select(m => m.manifest?.id).Distinct().Count();
         string Summary() => (screen.GetNodeOrNull<Control>(HistoryBar.ChangesName) as RichTextLabel)?.GetParsedText() ?? "";
         bool ProfileCountShown() => Profiles.Active is { } active && Profiles.ModCount(active) == Profiles.CountText();
         var on = OnNow();
@@ -4919,10 +5255,14 @@ static class SelfTest
         var wereOff = Rows().Where(r => r.Visible).Select(r => r.Mod).OfType<Mod>().ToList();
         if (wereOff.Count > 0)
         {
-            var others = Rows().Select(r => r.Mod).OfType<Mod>().Except(wereOff).ToDictionary(m => m, On);
+            // Turning on a copy of a mod installed twice turns its other copies off (the fixture twins: the one not
+            // picked is among these): those show here once off, the rest stays as it was.
+            var switched = Dependencies.TurnedOffBy(wereOff);
+            var others = Rows().Select(r => r.Mod).OfType<Mod>().Except(wereOff).Except(switched).ToDictionary(m => m, On);
             await Press("EnableAllButton");
-            Check("Show: Disabled, Enable all: just the mods shown, which then go", wereOff.All(On) && others.All(p => On(p.Key) == p.Value)
-                && Shown().Count == 0 && Scope() == "All disabled (0)", Say());
+            Check("Show: Disabled, Enable all: just the mods shown, which then go (and copies of them it turned off show)", wereOff.All(On)
+                && others.All(p => On(p.Key) == p.Value) && switched.All(Off) && Shown().SequenceEqual(Ids(Rows().Where(r => r.Mod is { } m && switched.Contains(m))))
+                && Scope() == $"All disabled ({switched.Count})", Say());
             History.Undo();
             await Wait(menu, 0.3);
             Check("undone: disabled and shown again", wereOff.All(Off) && Shown().SequenceEqual(Ids(Rows().Where(r => r.Mod is { } m && wereOff.Contains(m)))), Say());
@@ -5722,7 +6062,9 @@ static class SelfTest
     static async Task TestPicks(Node menu, NModdingScreen screen, Control content, string outDir)
     {
         List<NModMenuRow> Rows() => content.GetChildren().OfType<NModMenuRow>().ToList();
-        var rows = Rows().Where(r => r.Visible && r.Mod?.manifest?.id is { } id && id != ModEntry.ModId && id != Bmm.ModId).Take(4).ToList();
+        // Mods installed once: the copies of one installed twice share a switch (TestTwinCopies has theirs).
+        var rows = Rows().Where(r => r.Visible && r.Mod is { manifest.id: { } id } mod && id != ModEntry.ModId && id != Bmm.ModId && Copies.Others(mod).Count == 0)
+            .Take(4).ToList();
         if (rows.Count < 4)
         {
             Results.Add("SKIP picked mods: fewer than 4 rows");
@@ -5985,8 +6327,10 @@ static class SelfTest
         await Wait(menu, 0.3);
         Check("Dismiss hides it for this pair, through a redraw: no change, no undo step", SameId() == null
             && Store.Data.SameIdDismissed == Copies.Signature([local, copy]) && Edits() == editsShown && History.Steps(History.Track.List) == stepsShown);
-        // The clash over (the new copy off), the dismissal is forgotten; both on again, the banner is back. In Load Order
-        // too. A click on the chip searches #"Same ID": both copies, no other mod.
+        // The clash over (the new copy off), the dismissal is forgotten. Enabled again on our page, the new copy turns the
+        // local one off (one copy of an id on, of any source; undone). Both on again as the game's page or Better Mod Menu
+        // leaves them (the game's switch for its source alone): the banner is back. In Load Order too. A click on the chip
+        // searches #"Same ID": both copies, no other mod.
         Dependencies.Set([copy], false, screen);
         CategoryList.Redraw(content);
         await Wait(menu, 0.3);
@@ -5994,8 +6338,17 @@ static class SelfTest
         Dependencies.Set([copy], true, screen);
         CategoryList.Redraw(content);
         await Wait(menu, 0.3);
-        Check("the clash over, Dismiss is forgotten: both on again, the banner is back", forgotten && SameId() != null,
-            $"forgotten {forgotten}; banner {SameId() != null}");
+        var oneOn = Dependencies.IsOn(copy) && !Dependencies.IsOn(local) && SameId() == null;
+        History.Undo();
+        await Wait(menu, 0.3);
+        var undone = !Dependencies.IsOn(copy) && Dependencies.IsOn(local);
+        Dependencies.Write([(copy, true)], exclusive: false);
+        Profiles.RefreshTickboxes(screen);
+        CategoryList.Redraw(content);
+        await Wait(menu, 0.3);
+        Check("the clash over, Dismiss is forgotten; enabled on our page, the new copy turns the local one off (undone); both on again as the game's "
+            + "page leaves them: the banner is back", forgotten && oneOn && undone && Dependencies.IsOn(copy) && Dependencies.IsOn(local) && SameId() != null,
+            $"forgotten {forgotten}; one on {oneOn}, undone {undone}; on {Dependencies.IsOn(copy)}/{Dependencies.IsOn(local)}; banner {SameId() != null}");
         var toggle = screen.GetNode<NButton>("SpireModManagerLoadOrderToggle");
         Click(toggle);
         await Wait(menu, 0.5);
@@ -6003,14 +6356,19 @@ static class SelfTest
         Click(toggle);
         await Wait(menu, 0.5);
         var sameIdSearch = "#\"Same ID\"";
-        var others = content.GetChildren().OfType<NModMenuRow>().Select(r => r.Mod).OfType<Mod>().Where(m => m.manifest?.id != id).ToList();
+        // The other mods installed once (the fixture's own twins have the chip too).
+        var others = content.GetChildren().OfType<NModMenuRow>().Select(r => r.Mod).OfType<Mod>().Where(m => m.manifest?.id is { } other && other != id && other != TwinId).ToList();
         Check("the banner shows in Load Order too; the chip's search finds both copies and no other mod", inLoadOrder
             && Search.Matches(local, sameIdSearch) && Search.Matches(copy, sameIdSearch) && !others.Any(m => Search.Matches(m, sameIdSearch)),
             $"Load Order {inLoadOrder}; others found {string.Join(", ", others.Where(m => Search.Matches(m, sameIdSearch)).Select(m => m.manifest?.id))}");
+        // Its panel names no copy that loads in its place on relaunch: it loses to the local one, before and after.
+        var losing = ModDetails.CopyLine(copy, false)?.Text;
         copy.state = ModLoadState.DisabledDuplicate;
         var setAside = ModDetails.Status(copy);
+        var setAsideLine = ModDetails.CopyLine(copy, false)?.Text;
         copy.state = ModLoadState.AddedAtRuntime;
-        Check("a copy the game set aside as a duplicate reads \"Not loaded (same ID)\", not a pending relaunch", setAside.Contains("Not loaded (same ID)"), setAside);
+        Check("a copy the game set aside as a duplicate reads \"Not loaded (same ID)\", not a pending relaunch; its panel doesn't say it loads in the "
+            + "other's place", setAside.Contains("Not loaded (same ID)") && losing == null && setAsideLine == null, $"{setAside}; lines {losing} / {setAsideLine}");
 
         // Put back: the copy, its row and saved entry, and its data (quietly, in every undo snapshot).
         if (content.GetChildren().OfType<NModMenuRow>().FirstOrDefault(r => r.Mod == copy) is { } copyRow)
@@ -6030,6 +6388,1042 @@ static class SelfTest
         await Wait(menu, 0.2);
         Check("put back: one copy, its data under its id as before", Copies.Key(local) == id && Store.InfoFor(id)?.Notes == notesBefore
             && Store.InfoFor(id)?.Alias == aliasBefore && Store.Data.Copies?.ContainsKey(id) != true && Edits() == edits, $"edits {Edits()}");
+    }
+
+    // The fixture's two copies of one mod id (SmmTestTwinA 1.0.0, SmmTestTwinB 1.1.0 needing Test Framework, the picked
+    // one) and Test Twin User, which needs 1.1.0 or newer. dev.cs lists the id after the framework, so A sorts first.
+    const string TwinId = "SmmTestTwin";
+
+    // A made-up mod for SameIdLoad's plan, in a folder of its own: its copy "l:<folder>", or "w:<item>" with an item.
+    static Mod Made(string id, string folder, ModLoadState state = ModLoadState.None, ulong? item = null, string version = "1.0.0", params string[] needs)
+    {
+        var mod = new Mod
+        {
+            path = $"C:/SmmSameIdTest/{folder}", modSource = item == null ? ModSource.ModsDirectory : ModSource.SteamWorkshop, state = state,
+            manifest = new ModManifest { id = id, name = id, version = version, dependencies = [.. needs.Select(n => new ModDependency(n))] },
+        };
+        if (item is { } workshop)
+            Compat.SetWorkshopId(mod, workshop);
+        return mod;
+    }
+
+    // SameIdLoad's look at how the game loads (this launch): our Init found us the first mod still to load, in a
+    // List<Mod>, with the DisabledDuplicate state there. It ran before the launch record: the record names each copy of
+    // the fixture twins, on for the one that loads.
+    static void TestSameIdCanary()
+    {
+        var (at, first) = SameIdLoad.Self;
+        Check("same ID, the canary: our Init the first mod still to load, the game's list a List<Mod>, DisabledDuplicate there; the picks apply",
+            SameIdLoad.Canary == true && first == ModEntry.ModId && at >= 0 && at < ModManager.Mods.Count && ModManager.Mods[at].manifest?.id == ModEntry.ModId
+            && ModManager.Mods is List<Mod> && Enum.TryParse<ModLoadState>("DisabledDuplicate", out _) && !SameIdLoad.CanaryFailed,
+            $"canary {SameIdLoad.Canary}, first still to load {first} at {at}");
+        if (ModManager.Mods.Count(m => m.manifest?.id == TwinId) != 2)
+        {
+            TwinsMissing("same ID, the launch record's copies");
+            return;
+        }
+        var twins = (LaunchGuard.Read(Path.Combine(LaunchGuard.Dir ?? "", LaunchGuard.WorkingFile))?.Mods ?? []).Where(m => m.Id == TwinId).ToList();
+        Check("... it ran before the launch record: the record names each copy of the fixture twins, on for the picked one (SmmTestTwinB)",
+            twins.Count == 2 && twins.All(m => m.Copy != null) && twins.Where(m => m.Enabled).Select(m => m.Copy).SequenceEqual(["l:SmmTestTwinB"]),
+            string.Join(", ", twins.Select(m => $"{m.Copy}={m.Enabled}")));
+    }
+
+    // SameIdLoad's plan on made-up lists, as the game's loop has them while our Init runs (us at the first slot still to
+    // load): the pick first (no swap), later (swapped through the list's array: the game's loop carries on), a copy decided
+    // before us (picked, or not, or the pick gone: nothing waits), the pick's source off or the pick gone (nothing said),
+    // the pick set aside by the game's local-vs-Workshop rule, a dependency of the pick after the id's slot (no swap; with
+    // a mod after us needing the id, no flip either; one not installed: swapped), the canary (not a List<Mod>, not us
+    // first, not the game's own list), three copies, two Workshop copies and a local one, a local and a Workshop copy only,
+    // our own second copy, no pick yet and a pick naming no copy installed, one Workshop item with two manifests, a
+    // set-aside copy's messages kept for its panel; then the self-check's verdicts (Judge) on what the game made of a plan.
+    static void TestSameIdPlan()
+    {
+        const string X = "SmmSameIdX";
+        var us = Made(ModEntry.ModId, "SpireModManager");
+        var reads = 0;
+        (bool Canary, Dictionary<string, SameIdLoad.Entry> Plan) PlanOf(IReadOnlyList<Mod> mods, bool live, string[] picks)
+        {
+            var run = SameIdLoad.Run(mods, () =>
+            {
+                reads++;
+                return picks.ToHashSet();
+            }, m => m == us, log: false, live: live);
+            return (run.Canary, run.Plan);
+        }
+        // The game's list is a List<Mod> (a collection expression for a read-only list would make a list of its own kind).
+        (bool Canary, Dictionary<string, SameIdLoad.Entry> Plan) Plan(List<Mod> mods, params string[] picks) => PlanOf(mods, live: true, picks);
+        static string Copy(Mod? m) => m == null ? "none" : Copies.CopyOf(m);
+        static string Say(Dictionary<string, SameIdLoad.Entry> plan, params Mod[] mods) =>
+            string.Join("; ", plan.Select(p => $"{p.Key}: loads {Copy(p.Value.Loads)}, aside {string.Join(",", p.Value.SetAside.Select(Copy))}, "
+                + $"swapped {p.Value.Swapped} ({p.Value.From}->{p.Value.To}), had pick {p.Value.HadPick}, why {p.Value.Why}"))
+            + " | " + string.Join(", ", mods.Select(m => $"{Copy(m)} {m.state}"));
+        const ModLoadState None = ModLoadState.None, Aside = ModLoadState.DisabledDuplicate;
+        static LocString Error(string key, string? missing = null)
+        {
+            var error = new LocString("main_menu_ui", key);
+            if (missing != null)
+                error.Add("missingDependencies", missing);
+            return error;
+        }
+
+        {
+            var (a, b) = (Made(X, "A"), Made(X, "B"));
+            List<Mod> list = [us, a, b];
+            var (ok, plan) = Plan(list, $"{X}|l:A");
+            Check("same ID, the plan: the pick in the id's first slot loads there, the other copy set aside as the game's own duplicate, no swap",
+                ok && plan.GetValueOrDefault(X) is { Swapped: false, HadPick: true, Why: SameIdLoad.Reason.None } entry && entry.Loads == a
+                && a.state == None && b.state == Aside && list[1] == a, Say(plan, a, b));
+        }
+        {
+            // As in the game's loop: our Init runs while it's on us; the swap must leave its enumerator going.
+            var (a, b, c) = (Made(X, "A"), Made(X, "B"), Made("SmmSameIdOther", "C"));
+            List<Mod> list = [us, a, c, b];
+            var version = typeof(List<Mod>).GetField("_version", System.Reflection.BindingFlags.NonPublic | System.Reflection.BindingFlags.Instance);
+            var before = version?.GetValue(list);
+            var (ok, seen, thrown) = (false, new List<Mod>(), (string?)null);
+            Dictionary<string, SameIdLoad.Entry> plan = [];
+            try
+            {
+                foreach (var mod in list)
+                    if (mod == us)
+                        (ok, plan) = Plan(list, $"{X}|l:B");
+                    else
+                        seen.Add(mod);
+            }
+            catch (InvalidOperationException e)
+            {
+                thrown = e.Message;
+            }
+            Check("... the pick later: swapped into the id's first slot through the list's array (its version unchanged: the game's loop carries on), "
+                + "the other set aside",
+                ok && thrown == null && before != null && before.Equals(version?.GetValue(list)) && plan.GetValueOrDefault(X) is { Swapped: true, From: 3, To: 1 } entry
+                && entry.Loads == b && list[1] == b && list[3] == a && seen.SequenceEqual([b, c, a]) && a.state == Aside && b.state == None,
+                $"{thrown ?? "no throw"}; {Say(plan, a, b)}");
+        }
+        {
+            var (a, b) = (Made(X, "A", ModLoadState.Loaded), Made(X, "B"));
+            var (ok, plan) = Plan([a, us, b], $"{X}|l:B");
+            // The copy that loaded the pick, or no pick yet (the update's first launch, ours sorted last): the copies after
+            // us set aside; with none after us, nothing to say, nor any entry for the self-check to find "not taken" (the
+            // game failed the copy before us as a duplicate already).
+            var (c, d, e) = (Made(X, "C", ModLoadState.Loaded), Made(X, "D", ModLoadState.Failed), Made(X, "E"));
+            d.errors = [Error("MOD_ERROR.DUPLICATE_ID")];
+            var (okPicked, planPicked) = Plan([c, d, us], $"{X}|l:C");
+            var (okNone, planNone) = Plan([c, d, us]);
+            List<Mod> later = [c, d, us, e];
+            var (okAfter, planAfter) = Plan(later);
+            // The self-check on that one, as the game leaves it: the duplicate error before us is the game's own.
+            var judged = planAfter.GetValueOrDefault(X) is { } set ? SameIdLoad.Judge(X, set, later, 2) : (SameIdLoad.Result?)null;
+            Check("... a copy that sorted before us and loaded: the copies after us set aside (no duplicate error), another pick waits for the next "
+                + "launch; the loaded copy picked, or no pick, and nothing after us: nothing to say; something after us: taken, the game's duplicate "
+                + "error before us notwithstanding",
+                ok && plan.GetValueOrDefault(X) is { Why: SameIdLoad.Reason.DecidedBeforeUs } entry && entry.Loads == a && b.state == Aside
+                && okPicked && planPicked.Count == 0 && okNone && planNone.Count == 0
+                && okAfter && planAfter.GetValueOrDefault(X) is { Why: SameIdLoad.Reason.None, HadPick: false } after && after.Loads == c && e.state == Aside
+                && judged == SameIdLoad.Result.Taken,
+                $"{Say(plan, a, b)} || {Say(planPicked, c, d)} || {Say(planNone, c, d)} || {Say(planAfter, c, d, e)}, self-check {judged}");
+        }
+        {
+            // The same with a pick naming a copy no longer installed: no pick waits for the next launch.
+            var (a, b) = (Made(X, "A", ModLoadState.Loaded), Made(X, "B"));
+            var (ok, plan) = Plan([a, us, b], $"{X}|l:Gone");
+            var (c, d) = (Made(X, "C", ModLoadState.Loaded), Made(X, "D", ModLoadState.Failed));
+            var (okNone, planNone) = Plan([c, d, us], $"{X}|l:Gone");
+            Check("... a copy that sorted before us and loaded, the pick naming a copy no longer installed: not one that waits for the next launch (the copy "
+                + "after us set aside all the same); nothing after us: nothing to say",
+                ok && plan.GetValueOrDefault(X) is { Why: SameIdLoad.Reason.None, HadPick: false } entry && entry.Loads == a && b.state == Aside
+                && okNone && planNone.Count == 0, $"{Say(plan, a, b)} || {Say(planNone, c, d)}");
+        }
+        {
+            // The local copy chosen: the Workshop copies off in the game's list, their own pick kept. And a pick naming a
+            // Workshop copy since uninstalled, the one left set aside by the game's rule for the local copy.
+            var (local, w21, w22) = (Made(X, "L"), Made(X, "W21", ModLoadState.Disabled, 21), Made(X, "W22", ModLoadState.Disabled, 22));
+            var (okOff, planOff) = Plan([us, local, w21, w22], $"{X}|w:21");
+            var (local2, w32) = (Made(X, "L2"), Made(X, "W32", Aside, 32));
+            var (okGone, planGone) = Plan([us, local2, w32], $"{X}|w:31");
+            // Two Workshop copies and a local one, all on: the game's rule set the picked older one aside for the local
+            // copy, and the local one aside for the newer: the newer loads, the pick set aside by the game, said.
+            var (w41, w42, local3) = (Made(X, "W41", Aside, 41, "1.0.0"), Made(X, "W42", None, 42, "3.0.0"), Made(X, "L3", Aside, version: "2.0.0"));
+            var (okAside, planAside) = Plan([us, w41, w42, local3], $"{X}|w:41");
+            Check("... the pick's source off (the local copy chosen) or the pick uninstalled: nothing said, nothing flipped; the pick set aside by "
+                + "the game's local-vs-Workshop rule: said",
+                okOff && planOff.Count == 0 && local.state == None && okGone && planGone.Count == 0 && local2.state == None
+                && okAside && planAside.GetValueOrDefault(X) is { Why: SameIdLoad.Reason.SetAsideByGame } aside && aside.Loads == w42 && w42.state == None,
+                $"{Say(planOff, local, w21, w22)} || {Say(planGone, local2, w32)} || {Say(planAside, w41, w42, local3)}");
+        }
+        {
+            var (a, dep, b) = (Made(X, "A"), Made("SmmSameIdDep", "Dep"), Made(X, "B", needs: ["SmmSameIdDep"]));
+            var (ok, plan) = Plan([us, a, dep, b], $"{X}|l:B");
+            var (a2, dep2, b2, user) = (Made(X, "A"), Made("SmmSameIdDep", "Dep"), Made(X, "B", needs: ["SmmSameIdDep"]), Made("SmmSameIdUser", "U", needs: [X]));
+            var (okUser, planUser) = Plan([us, a2, dep2, b2, user], $"{X}|l:B");
+            var (a3, b3, user3) = (Made(X, "A"), Made(X, "B", needs: ["SmmSameIdNotInstalled"]), Made("SmmSameIdUser", "U", needs: [X]));
+            List<Mod> gone = [us, a3, b3, user3];
+            var (okGone, planGone) = Plan(gone, $"{X}|l:B");
+            Check("... the pick needing a mod after the id's first slot: no swap, the flip alone; with a mod after us needing the id, no flip (the game's "
+                + "own way); needing a mod not installed: swapped all the same",
+                ok && plan.GetValueOrDefault(X) is { Swapped: false, Why: SameIdLoad.Reason.None } entry && entry.Loads == b && a.state == Aside && b.state == None
+                && okUser && planUser.GetValueOrDefault(X) is { Why: SameIdLoad.Reason.DependencyAfterSlot } && a2.state == None && b2.state == None
+                && okGone && planGone.GetValueOrDefault(X) is { Swapped: true } && gone[1] == b3 && a3.state == Aside,
+                $"{Say(plan, a, b)} || {Say(planUser, a2, b2)} || {Say(planGone, a3, b3)}");
+        }
+        {
+            var (a, b) = (Made(X, "A"), Made(X, "B"));
+            Mod[] array = [us, a, b];
+            var (ok, plan) = PlanOf(array, live: true, [$"{X}|l:B"]);
+            var (c, d) = (Made(X, "C"), Made(X, "D"));
+            var (notFirst, planNotFirst) = Plan([c, us, d], $"{X}|l:D");
+            var (e, f) = (Made(X, "E"), Made(X, "F"));
+            var (copied, planCopied) = PlanOf(new List<Mod> { us, e, f }, live: false, [$"{X}|l:F"]);
+            Check("... the canary: no flip when the game's list isn't a List<Mod>, when the first mod still to load isn't us, nor when the list is a "
+                + "copy of the one the game loads from",
+                !ok && plan.Count == 0 && a.state == None && b.state == None && !notFirst && planNotFirst.Count == 0 && d.state == None
+                && !copied && planCopied.Count == 0 && e.state == None && f.state == None,
+                $"{Say(plan, a, b)} || {Say(planNotFirst, c, d)} || {Say(planCopied, e, f)}");
+        }
+        {
+            var (a, b, c) = (Made(X, "A"), Made(X, "B"), Made(X, "C"));
+            List<Mod> list = [us, a, b, c];
+            var (ok, plan) = Plan(list, $"{X}|l:C");
+            Check("... three copies from one source: the picked one loads, swapped into the first slot, the two others set aside",
+                ok && plan.GetValueOrDefault(X) is { Swapped: true } entry && entry.Loads == c && entry.SetAside.Count == 2 && list[1] == c
+                && a.state == Aside && b.state == Aside && c.state == None, Say(plan, a, b, c));
+        }
+        {
+            var (w1, w2, local) = (Made(X, "W1", item: 21), Made(X, "W2", item: 22), Made(X, "L"));
+            List<Mod> list = [us, w1, w2, local];
+            var (ok, plan) = Plan(list, $"{X}|w:22");
+            Check("... two Workshop copies and a local one, all still to load: exactly one loads, the picked one",
+                ok && plan.GetValueOrDefault(X)?.Loads == w2 && new[] { w1, w2, local }.Count(m => m.state == None) == 1 && list[1] == w2, Say(plan, w1, w2, local));
+        }
+        {
+            var (local, workshop) = (Made(X, "L"), Made(X, "W", Aside, 31));
+            var (ok, plan) = Plan([us, local, workshop]);
+            var (us2, solo) = (Made(ModEntry.ModId, "SpireModManagerOther"), Made("SmmSameIdSolo", "S"));
+            reads = 0;
+            var (okOurs, planOurs) = Plan([us, us2, solo]);
+            Check("... a local and a Workshop copy only (the game's rule chose): nothing to do; our own second copy is left alone, and no id twice "
+                + "means the picks aren't even read", ok && plan.Count == 0 && local.state == None && okOurs && planOurs.Count == 0 && us2.state == None && reads == 0,
+                $"{Say(plan, local, workshop)} || {Say(planOurs, us2)}; picks read {reads} times");
+        }
+        {
+            var (a, b) = (Made(X, "A"), Made(X, "B"));
+            var (ok, plan) = Plan([us, a, b]);
+            var (c, d) = (Made(X, "C"), Made(X, "D"));
+            var (okStale, planStale) = Plan([us, c, d], $"{X}|l:Gone");
+            Check("... no pick yet, or one naming no copy installed: the game's own choice (the first) loads, the others set aside, no duplicate error",
+                ok && plan.GetValueOrDefault(X) is { HadPick: false, Swapped: false } entry && entry.Loads == a && b.state == Aside
+                && okStale && planStale.GetValueOrDefault(X) is { HadPick: false } stale && stale.Loads == c && d.state == Aside,
+                $"{Say(plan, a, b)} || {Say(planStale, c, d)}");
+        }
+        {
+            // One Workshop item with two manifests of the id (one copy, w:5) after another item: the pick is that copy, its
+            // first manifest swapped into the id's first slot; its second set aside too (the game would fail it).
+            var (w6, w5a, w5b) = (Made(X, "W6", item: 6), Made(X, "W5a", item: 5), Made(X, "W5b", item: 5));
+            List<Mod> list = [us, w6, w5a, w5b];
+            var (ok, plan) = Plan(list, $"{X}|w:5");
+            Check("... one Workshop item with two manifests of the id, picked: its first loads, swapped there, the rest set aside",
+                ok && plan.GetValueOrDefault(X) is { HadPick: true, Swapped: true } entry && entry.Loads == w5a && list[1] == w5a
+                && w6.state == Aside && w5b.state == Aside, Say(plan, w6, w5a, w5b));
+        }
+        {
+            // A copy set aside with a message of the game's on it (a Steam branch error): off its errors, kept for its panel.
+            var (a, b) = (Made(X, "A"), Made(X, "B"));
+            var message = Error("MOD_ERROR.STEAM_BRANCH_UNSUPPORTED");
+            b.errors = [message];
+            try
+            {
+                var (ok, _) = Plan([us, a, b], $"{X}|l:A");
+                Check("... a copy set aside: the game's messages on it go from its errors (as the game clears its duplicates'), kept for its info panel",
+                    ok && b.state == Aside && b.errors == null && BranchErrors.Dropped(b).Contains(message), $"errors {b.errors?.Count}, kept {BranchErrors.Dropped(b).Count}");
+            }
+            finally
+            {
+                BranchErrors.TestForget(b);
+            }
+        }
+        {
+            // The self-check on a plan, against the states the game left: as planned, the picked copy failing for its own
+            // reasons, two copies loaded, a copy set aside back to load, a duplicate error after us, a mod needing the id
+            // missing it, the picked copy not the id's first, and the plan's own reason.
+            var (a, b, user) = (Made(X, "A"), Made(X, "B"), Made("SmmSameIdUser", "U", needs: [X]));
+            List<Mod> list = [us, a, b, user];
+            var (_, plan) = Plan(list, $"{X}|l:A");
+            if (plan.GetValueOrDefault(X) is not { } entry)
+            {
+                Check("... the self-check: a plan to check", false, Say(plan, a, b));
+                return;
+            }
+            var verdicts = new List<string>();
+            SameIdLoad.Result Judge(Action game, List<Mod>? mods = null, SameIdLoad.Entry? other = null)
+            {
+                (a.state, b.state, user.state) = (ModLoadState.Loaded, Aside, ModLoadState.Loaded);
+                a.errors = b.errors = user.errors = null;
+                game();
+                var verdict = SameIdLoad.Judge(X, other ?? entry, mods ?? list, 0);
+                verdicts.Add($"{verdict}");
+                return verdict;
+            }
+            Check("... the self-check: taken as planned; the picked copy failed for its own reasons; not taken for two loaded, a set-aside copy back to "
+                + "load, a duplicate error after us, a mod needing the id missing it, or the pick not the id's first; a plan with a reason: not applied",
+                Judge(() => { }) == SameIdLoad.Result.Taken
+                && Judge(() =>
+                {
+                    a.state = ModLoadState.Failed;
+                    a.errors = [Error("MOD_ERROR.GAME_VERSION_UNSUPPORTED")];
+                }) == SameIdLoad.Result.PickedFailed
+                && Judge(() => b.state = ModLoadState.Loaded) == SameIdLoad.Result.NotTaken
+                && Judge(() => b.state = None) == SameIdLoad.Result.NotTaken
+                && Judge(() => b.errors = [Error("MOD_ERROR.DUPLICATE_ID")]) == SameIdLoad.Result.NotTaken
+                && Judge(() =>
+                {
+                    user.state = ModLoadState.Failed;
+                    user.errors = [Error("MOD_ERROR.MISSING_DEPENDENCY", X)];
+                }) == SameIdLoad.Result.NotTaken
+                && Judge(() => { }, [us, b, a, user]) == SameIdLoad.Result.NotTaken
+                && Judge(() => { }, other: entry with { Why = SameIdLoad.Reason.DependencyAfterSlot }) == SameIdLoad.Result.NotApplied,
+                string.Join(", ", verdicts));
+        }
+    }
+
+    // The fixture twins this launch: the picked copy (SmmTestTwinB, sorted second) loaded, the other set aside as the
+    // game's duplicate with no messages, no duplicate error anywhere, the picked copy first of the id in the game's list
+    // (so Test Twin User, needing 1.1.0, loaded), swapped there; the saved list has both copies' entries on, ours first;
+    // the self-check says taken; and the twins add nothing to the MODDED label's errors. First, every id Apply planned for
+    // (real Workshop twins with dev.cs test --workshop a,b --twins too): what loads, whether it was swapped, the self-check.
+    static void TestSameIdPick()
+    {
+        foreach (var (id, e) in SameIdLoad.Plan)
+        {
+            Results.Add($"INFO same ID: {id} loads {(e.Loads == null ? "none" : Copies.CopyOf(e.Loads))}, swapped {e.Swapped} ({e.From}->{e.To}), "
+                + $"had pick {e.HadPick}, why {e.Why}, set aside {string.Join(",", e.SetAside.Select(Copies.CopyOf))}, self-check {SameIdLoad.ResultOf(id)}");
+            Check($"same ID, {id}: the self-check taken (or the picked copy failed for its own reasons), the canary fine",
+                SameIdLoad.ResultOf(id) is SameIdLoad.Result.Taken or SameIdLoad.Result.PickedFailed && !SameIdLoad.CanaryFailed,
+                $"{SameIdLoad.ResultOf(id)}, canary failed {SameIdLoad.CanaryFailed}");
+        }
+        var copies = ModManager.Mods.Where(m => m.manifest?.id == TwinId).ToList();
+        if (copies.Count != 2 || ModManager.Mods.FirstOrDefault(m => m.manifest?.id == "SmmTestTwinUser") is not { } user
+            || copies.FirstOrDefault(m => Copies.CopyOf(m) == "l:SmmTestTwinA") is not { } a || copies.FirstOrDefault(m => Copies.CopyOf(m) == "l:SmmTestTwinB") is not { } b)
+        {
+            TwinsMissing("same ID, the fixture twins");
+            return;
+        }
+        string States() => string.Join(", ", new[] { a, b, user }.Select(m => $"{Copies.CopyOf(m)} {m.state} ({string.Join(",", m.errors?.Select(e => e.LocEntryKey) ?? [])})"));
+        Check("same ID, the fixture twins: the picked copy (SmmTestTwinB, sorted second) loaded, the other set aside as the game's duplicate with no messages, "
+            + "no duplicate error anywhere, the picked copy the id's first in the game's list, Test Twin User (needs 1.1.0) loaded",
+            b.state == ModLoadState.Loaded && a.state == ModLoadState.DisabledDuplicate && a.errors == null && copies[0] == b && user.state == ModLoadState.Loaded
+            && !ModManager.Mods.Any(m => m.errors?.Any(e => e.LocEntryKey == "MOD_ERROR.DUPLICATE_ID") == true), States());
+        var plan = SameIdLoad.Plan.GetValueOrDefault(TwinId);
+        Check("... swapped into the id's first slot, as picked", plan is { Swapped: true, HadPick: true, Why: SameIdLoad.Reason.None } entry
+            && entry.Loads == b && entry.SetAside.SequenceEqual([a]) && entry.To < entry.From,
+            plan == null ? "no plan" : $"loads {Copies.KeyOf(plan.Loads)}, swapped {plan.Swapped} ({plan.From}->{plan.To}), had pick {plan.HadPick}, why {plan.Why}");
+        var list = SaveManager.Instance.SettingsSave.ModSettings?.ModList ?? [];
+        Check("... the saved list: both copies' entries on, ours first; the self-check: taken",
+            list.Count(e => e.Id == TwinId) == 2 && list.Where(e => e.Id == TwinId).All(e => e.IsEnabled) && list.FirstOrDefault()?.Id == ModEntry.ModId
+            && SameIdLoad.ResultOf(TwinId) == SameIdLoad.Result.Taken && !SameIdLoad.Unchosen(TwinId),
+            $"{string.Join(", ", list.Select(e => $"{e.Id}={e.IsEnabled}"))}; self-check {SameIdLoad.ResultOf(TwinId)}");
+        // The label turns red for a mod that failed or has an error: Test Addon alone (it needs a mod never installed).
+        var red = ModManager.Mods.Where(m => m.state == ModLoadState.Failed || (m.errors?.Count ?? 0) > 0).Select(m => m.manifest?.id).ToList();
+        Check("... the twins add nothing to the main menu's MODDED errors: Test Addon's alone", new[] { a, b, user }.All(m => m.state != ModLoadState.Failed
+            && (m.errors?.Count ?? 0) == 0) && red.All(id => id == "SmmTestAddon"), $"{States()}; failed or with errors: {string.Join(", ", red)}");
+    }
+
+    // Settle's part on a made-up saved list: the game's rebuilt list gave both copies of an id the first entry's on (the
+    // local one was off at launch): put back, the source that's on first in the id's places, ours at the top; saved
+    // once (a second pass changes nothing). And this launch's Settle ran before the baseline: ours first in it, and
+    // nothing of the twins changed since launch.
+    static void TestSameIdSettle()
+    {
+        const string X = "SmmSameIdX";
+        static SettingsSaveMod E(string id, ModSource source, bool on) => new() { Id = id, Source = source, IsEnabled = on };
+        List<SettingsSaveMod> list = [E("SmmSameIdOther", ModSource.ModsDirectory, true), E(X, ModSource.ModsDirectory, true), E(X, ModSource.SteamWorkshop, true),
+            E(ModEntry.ModId, ModSource.ModsDirectory, true)];
+        List<(string, ModSource, bool)> read = [(X, ModSource.ModsDirectory, false), (X, ModSource.SteamWorkshop, true), (ModEntry.ModId, ModSource.ModsDirectory, true)];
+        var first = SameIdLoad.SettleList(list, read);
+        var again = SameIdLoad.SettleList(list, read);
+        var said = string.Join(", ", list.Select(e => $"{e.Id}/{e.Source}={e.IsEnabled}"));
+        Check("same ID, settling a rebuilt list: each source's on/off as the game read it at launch, the one on first in the id's places, ours at the top; "
+            + "once (a second pass has nothing to save)", first && !again
+            && said == $"{ModEntry.ModId}/ModsDirectory=True, SmmSameIdOther/ModsDirectory=True, {X}/SteamWorkshop=True, {X}/ModsDirectory=False", said);
+        // A copy new this launch (its source not in the list the game read): it keeps what the rebuild gave it (the
+        // id's first entry's, as the game does without us), and nothing else changes.
+        List<SettingsSaveMod> withNew = [E(ModEntry.ModId, ModSource.ModsDirectory, true), E(X, ModSource.ModsDirectory, false), E(X, ModSource.SteamWorkshop, false)];
+        var newChanged = SameIdLoad.SettleList(withNew, [(ModEntry.ModId, ModSource.ModsDirectory, true), (X, ModSource.ModsDirectory, false)]);
+        Check("... a copy new this launch (its source not in the list read): it keeps the rebuild's, nothing to save", !newChanged
+            && withNew.Select(e => e.IsEnabled).SequenceEqual([true, false, false]), string.Join(", ", withNew.Select(e => $"{e.Id}/{e.Source}={e.IsEnabled}")));
+        // This launch: Settle ran before the baseline (its moves are no change since launch, nor an undo step), ours first in
+        // it and in the saved list. Where ours didn't load first (Better Mod Menu listed before us, with --bmm), it moved us.
+        var loadedFirst = ModManager.Mods.FirstOrDefault()?.manifest?.id == ModEntry.ModId;
+        Check("... this launch's settling: before the baseline, which has ours first, as the saved list does; no change since launch for the twins, "
+            + "nothing moved since",
+            SameIdLoad.Settled && History.Loaded?.Mods.FirstOrDefault()?.Id == ModEntry.ModId && !HistoryBar.Describe().Any(l => l.Contains("Test Twin"))
+            && SaveManager.Instance.SettingsSave.ModSettings?.ModList.FirstOrDefault()?.Id == ModEntry.ModId && HistoryBar.Moves().Count == 0
+            && !LoadOrder.OrderChanged, string.Join(" | ", HistoryBar.Describe()));
+        if (loadedFirst)
+            Results.Add("INFO same ID, settling: ours loaded first this launch, so Settle had nothing of ours to move");
+    }
+
+    // The launch record per copy (LaunchGuard): a copy round-trips, a record from before copies still reads; a switch to
+    // another copy is one Switched change and offers Restore (the game's list alone would be the same); Restore before our
+    // data loads writes the pick into the file, the rest of it kept, a backup first; the list it writes has ours first;
+    // the notice says "switched copy: 1 → 2".
+    static async Task TestSameIdLaunchGuard(NMainMenu menu, string outDir)
+    {
+        const string X = "SmmSameIdX";
+        static LaunchGuard.Entry Copy(string copy, bool on) => new(X, ModSource.SteamWorkshop, on, "1.0", copy);
+        var ours = new LaunchGuard.Entry(ModEntry.ModId, ModSource.ModsDirectory, true, "1.0");
+        List<LaunchGuard.Entry> working = [ours, Copy("w:1", true), Copy("w:2", false)];
+        List<LaunchGuard.Entry> tried = [ours, Copy("w:1", false), Copy("w:2", true)];
+        var dir = Path.Combine(outDir, "same-id-launch");
+        if (Directory.Exists(dir))
+            Directory.Delete(dir, recursive: true);
+        LaunchGuard.Begin(dir, new(DateTime.Now, working));
+        var back = LaunchGuard.Read(Path.Combine(dir, LaunchGuard.PendingFile));
+        var old = Path.Combine(dir, "old.json");
+        File.WriteAllText(old, "{\"at\":\"2026-10-14T09:30:00\",\"mods\":[{\"id\":\"SmmTestLib\",\"source\":\"ModsDirectory\",\"enabled\":true,\"version\":\"1.0\"}]}");
+        Check("same ID, the launch record: a copy round-trips; a record from before copies were told apart still reads",
+            back?.Mods.SequenceEqual(working) == true && LaunchGuard.Read(old) is { Mods: [{ Copy: null, Enabled: true }] },
+            string.Join(", ", back?.Mods.Select(m => $"{m.Id}/{m.Copy}={m.Enabled}") ?? []));
+        var changes = LaunchGuard.Changes(tried, working);
+        var offer = LaunchGuard.CrashOffer(new(DateTime.Now, tried), new(DateTime.Now.AddHours(-1), working),
+            [.. LaunchGuard.Written(working).Select(e => (e.Id, e.Source, e.IsEnabled))]);
+        Check("... a switch to another copy: one Switched change (from, to), and Restore offered though the game's list would be the same",
+            changes is [{ Kind: LaunchGuard.Kind.Switched, From: "w:1", To: "w:2" } switched] && switched.Id == X && offer != null,
+            string.Join(", ", changes.Select(c => $"{c.Kind} {c.Id} {c.From} {c.To}")) + $"; offer {offer != null}");
+        // The first launch after the update, against a working record from before copies were told apart (each copy its
+        // id's switch, no Copy): no change at all.
+        List<LaunchGuard.Entry> oldWorking = [ours, new(X, ModSource.SteamWorkshop, true, "1.0"), new(X, ModSource.SteamWorkshop, true, "1.0")];
+        var sinceOld = LaunchGuard.Changes([ours, Copy("w:1", false), Copy("w:2", true)], oldWorking);
+        Check("... against a record from before copies were told apart: no change", sinceOld.Count == 0,
+            string.Join(", ", sinceOld.Select(c => $"{c.Kind} {c.Id} {c.From} {c.To}")));
+        var written = LaunchGuard.Written([Copy("w:1", true), Copy("w:2", false), ours]);
+        Check("... the list a Restore writes: ours first, the copies' one switch on", written.FirstOrDefault()?.Id == ModEntry.ModId
+            && written.Where(e => e.Id == X).All(e => e.IsEnabled), string.Join(", ", written.Select(e => $"{e.Id}={e.IsEnabled}")));
+        var data = Path.Combine(dir, "data");
+        Directory.CreateDirectory(data);
+        File.WriteAllText(Path.Combine(data, "manager.json"),
+            "{\n  \"version\": 1,\n  \"mods\": { \"SmmTestUi\": { \"notes\": \"kept\" } },\n  \"copy_picks\": [\"SmmSameIdY|w:5\", \"SmmSameIdX|w:2\"]\n}");
+        var patched = LaunchGuard.PatchPicks(data, LaunchGuard.PicksOf(working));
+        var json = JsonNode.Parse(File.ReadAllText(Path.Combine(data, "manager.json")));
+        var picks = (json?["copy_picks"] as JsonArray)?.Select(p => (string?)p).ToList() ?? [];
+        var backups = Directory.Exists(Path.Combine(data, "backups")) ? Directory.GetFiles(Path.Combine(data, "backups"), "manager.*.json").Length : 0;
+        Check("... Restore before our data loads (a failed start): the working copy picked again in the file, the rest of it kept, a backup first",
+            patched && picks.SequenceEqual(["SmmSameIdX|w:1", "SmmSameIdY|w:5"]) && (string?)json?["mods"]?["SmmTestUi"]?["notes"] == "kept" && backups == 1,
+            $"patched {patched}, picks {string.Join(", ", picks)}, {backups} backups");
+        LaunchGuard.Notice = (new LaunchGuard.Setup(DateTime.Now.AddHours(-1), working), changes);
+        LaunchGuard.ShowNotice(menu);
+        await Wait(menu, 1);
+        var texts = string.Join(" | ", PopupTexts());
+        NModalContainer.Instance?.Clear();
+        await Wait(menu, 0.3);
+        Check("... the notice names the switch, by Workshop item: \"(switched copy: 1 → 2)\"", texts.Contains("(switched copy: 1 → 2)"), texts);
+    }
+
+    // A message the game puts on a copy we set aside (made up here: a Steam branch error on the fixture's copy not
+    // picked) goes from its errors, so the MODDED label stays clear, to its info panel, marked as the game's; the late
+    // pass before the label (BranchErrorsLatePatch) covers it.
+    static void TestSameIdErrors()
+    {
+        if (ModManager.Mods.FirstOrDefault(m => m.manifest?.id == TwinId && SameIdLoad.IsSetAside(m)) is not { } aside)
+        {
+            TwinsMissing("same ID, a message on a copy set aside (no fixture twin set aside)");
+            return;
+        }
+        var error = new LocString("main_menu_ui", "MOD_ERROR.STEAM_BRANCH_UNSUPPORTED");
+        error.Add("id", TwinId);
+        error.Add("supportedBranch", "public");
+        error.Add("currentBranch", "public-beta");
+        aside.errors = [error];
+        try
+        {
+            var dropped = BranchErrors.DropFromOffMods(late: true);
+            var notes = ModDetails.GameNotes(aside);
+            Check("same ID, a message on a copy set aside: off its errors (the MODDED label stays clear), into its panel as the game's; the late pass covers it",
+                aside.errors == null && dropped >= 1 && BranchErrors.Dropped(aside).Contains(error)
+                && notes.Any(n => n.StartsWith("From the game, not counted while this mod is off:") && n.Contains("only supports Steam branch public")),
+                $"errors {aside.errors?.Count}, dropped {dropped}; {string.Join(" | ", notes)}");
+        }
+        finally
+        {
+            aside.errors = null;
+            BranchErrors.TestForget(aside);
+        }
+    }
+
+    // Load Order with ours pinned first: our row's grip a lock that says why, its moves greyed, a drag of it moving
+    // nothing; another mod's Move to top lands under ours; a move of ours, or of a group with it, leaves ours first;
+    // OursFirst on a list from before (an old undo step's) puts ours on top, the rest in its order. Put back after.
+    static async Task TestSameIdLoadOrder(Node menu, NModdingScreen screen, Control content)
+    {
+        List<NModMenuRow> Rows() => content.GetChildren().OfType<NModMenuRow>().ToList();
+        List<string> Ids() => Rows().Select(r => r.Mod?.manifest?.id ?? "").ToList();
+        var pinned = Ids().TakeWhile(id => id == ModEntry.ModId).Count();
+        if (!Store.Data.LoadOrderView || pinned == 0 || Rows().Count < pinned + 3 || Rows()[0].Mod is not { } self)
+        {
+            Check("same ID, Load Order: ours first", false, string.Join(", ", Ids()));
+            return;
+        }
+        var start = Ids();
+        var startMods = Rows().Select(r => r.Mod).OfType<Mod>().ToList(); // to put back by copy: two copies of a mod share an id
+        var ours = Rows()[0];
+        var handle = ours.GetNode<Control>("SpireModManagerHandle");
+        var actions = LoadOrder.Actions(content, ours, () => { });
+        Check("same ID, Load Order: our row pinned first, a lock for its grip saying why, its moves greyed",
+            !handle.GetChildren().OfType<ColorRect>().Any() && handle.GetChildren().OfType<Panel>().Count() == 2
+            && Hover.TipOf(handle) == "Spire Mod Manager always loads first, so it can choose which copy of a mod loads"
+            && actions.Where(a => a.Label is not ("Disable" or "Enable")).All(a => a.Disabled),
+            $"{string.Join(", ", actions.Select(a => $"{a.Label}{(a.Disabled ? " (greyed)" : "")}"))}; tip {Hover.TipOf(handle)}");
+        var from = handle.GetGlobalRect().GetCenter();
+        var to = new Vector2(from.X, Rows()[pinned + 2].GetGlobalRect().End.Y - 4);
+        ours.EmitSignal(Control.SignalName.GuiInput, new InputEventMouseButton { ButtonIndex = MouseButton.Left, Pressed = true, GlobalPosition = from, Position = from });
+        ours.EmitSignal(Control.SignalName.GuiInput, new InputEventMouseMotion { GlobalPosition = to, Position = to });
+        ours.EmitSignal(Control.SignalName.GuiInput, new InputEventMouseButton { ButtonIndex = MouseButton.Left, Pressed = false, GlobalPosition = to, Position = to });
+        await Wait(menu, 0.3);
+        var undragged = Ids().SequenceEqual(start);
+        var row = Rows()[pinned + 2];
+        var moved = row.Mod?.manifest?.id;
+        LoadOrder.Actions(content, row, () => CategoryList.Redraw(content)).FirstOrDefault(a => a.Label == "Move to top")?.OnSelect?.Invoke();
+        await Wait(menu, 0.3);
+        Check("... a drag of our row moves nothing; another mod's Move to top lands right under ours (that very row, a copy of a mod installed twice too)",
+            undragged && Rows()[pinned] == row && Ids()[pinned] == moved && Ids()[0] == ModEntry.ModId, string.Join(", ", Ids()));
+        LoadOrder.Move(self, 3, Rows());
+        var afterMove = Ids()[0];
+        if (Rows()[pinned + 1].Mod is { } next)
+            LoadOrder.MoveGroup([self, next], Rows().Count, Rows());
+        CategoryList.Redraw(content);
+        await Wait(menu, 0.3);
+        SettingsSaveMod E(string id) => new() { Id = id, Source = ModSource.ModsDirectory };
+        List<SettingsSaveMod> old = [E("SmmSameIdA"), E(ModEntry.ModId), E("SmmSameIdB")];
+        var reordered = LoadOrder.OursFirst(old);
+        Check("... a move of ours, or of a group with it, leaves ours first; a list from before (an old undo step's) gets ours on top, the rest in its order",
+            afterMove == ModEntry.ModId && Ids()[0] == ModEntry.ModId && reordered && old.Select(e => e.Id).SequenceEqual([ModEntry.ModId, "SmmSameIdA", "SmmSameIdB"]),
+            string.Join(", ", Ids()));
+        // An undo step from before ours was kept first (an older version of this mod saved the list so): undone back to, the
+        // order is that step's, ours first all the same (History.ApplyOrder). Then undone to where it started.
+        if (SaveManager.Instance.SettingsSave.ModSettings is { } settings && Rows().Skip(pinned).FirstOrDefault()?.Mod is { } mover)
+        {
+            var list = settings.ModList;
+            var oursEntries = list.Where(e => e.Id == ModEntry.ModId).ToList();
+            list.RemoveAll(e => e.Id == ModEntry.ModId);
+            list.InsertRange(Math.Min(2, list.Count), oursEntries);
+            SaveManager.Instance.SaveSettings();
+            History.Record(); // as that older version left it
+            var oldOrder = list.Select(e => e.Id).Where(id => id != ModEntry.ModId).ToList();
+            LoadOrder.Move(mover, Rows().Count - 1, Rows());
+            History.Undo();
+            var undone = list.Select(e => e.Id).ToList();
+            History.Undo();
+            CategoryList.Redraw(content);
+            await Wait(menu, 0.3);
+            Check("... an undo step from before ours was kept first: its order back, ours first all the same",
+                undone.FirstOrDefault() == ModEntry.ModId && undone.Where(id => id != ModEntry.ModId).SequenceEqual(oldOrder), string.Join(", ", undone));
+        }
+        for (var i = 0; i < startMods.Count; i++)
+            LoadOrder.Move(startMods[i], i, Rows());
+        CategoryList.Redraw(content);
+        await Wait(menu, 0.3);
+        Check("... put back: the order as before, nothing pending", Ids().SequenceEqual(start) && !ModEntry.HasPendingChanges(), string.Join(", ", Ids()));
+    }
+
+    // The fixture twins on our main list. At launch: the picked copy (B) on, Enabled; the other off, Disabled, no
+    // duplicate problem, its box's tip and panel naming the enabled copy; Enable all over it says which copy it would
+    // disable; the view switch's tip says how the game's page treats them. Ticking the other copy (A) picks it: B unticked,
+    // the game's list still on, one undo step; both read Pending relaunch, A's panel saying it loads in place of B, the
+    // titles marked as changed, the profile's unsaved lines and the pending line following. Undo, redo, Revert all and its
+    // undo; in Load Order, an order undo leaves the pick. Vanilla View: one box per switch (both ticked), its tick switching
+    // every copy and keeping the pick; back on our page only the picked copy's box. A profile holds its copy: saved,
+    // switched to one naming the other and back, and one naming none keeps the pick; Discard puts the pick back. An import
+    // naming the id once sets the switch, keeps the pick; the not-installed copies it names are listed by item. The relaunch
+    // check sees the picked copy's problem while the other one is loaded. Enable selected with both copies picked turns
+    // on the clicked one only. A session that can't save our data: the tick is the game's (the pick stays). A new copy
+    // arriving keeps the pick, and its popup says so, even one a saved pick still names (back after an uninstall); the
+    // active profile then holds the copy there; an update of a new copy isn't announced as new again, nor are two copies
+    // of a mod that came together. COPY_NOT_APPLIED when the self-check finds the pick not taken.
+    static async Task TestSameIdCopies(Node menu, NModdingScreen screen, Control content, string outDir)
+    {
+        List<NModMenuRow> Rows() => content.GetChildren().OfType<NModMenuRow>().ToList();
+        NModMenuRow? RowOf(string copy) => Rows().FirstOrDefault(r => r.Mod is { } m && m.manifest?.id == TwinId && Copies.CopyOf(m) == copy);
+        if (Layout.Current != Layout.View.Categories || Profiles.Active == null)
+        {
+            Check("same ID on our page: on the main list, a profile active", false, $"{Layout.Current}, {Profiles.Active?.Name}");
+            return;
+        }
+        if (RowOf("l:SmmTestTwinA") is not { Mod: { } a } rowA || RowOf("l:SmmTestTwinB") is not { Mod: { } b } rowB)
+        {
+            TwinsMissing("same ID on our page");
+            return;
+        }
+        if (Profiles.Edited)
+            Profiles.Save(); // start clean
+        static bool Ticked(NModMenuRow row) => row.GetNode<NTickbox>("Tickbox").IsTicked;
+        async Task Tick(NModMenuRow row, bool on)
+        {
+            var box = row.GetNode<NTickbox>("Tickbox");
+            box.IsTicked = on;
+            box.EmitSignal(NTickbox.SignalName.Toggled, box);
+            await Wait(menu, 0.3);
+        }
+        static string Named(Mod mod) => (mod.manifest?.name ?? "") + Copies.Which(mod);
+        string? Picked() => Copies.Picked(TwinId, ModSource.ModsDirectory);
+        // Read again each time: an undo puts new entries in the game's list.
+        List<SettingsSaveMod> Entries() => SaveManager.Instance.SettingsSave.ModSettings?.ModList.Where(e => e.Id == TwinId).ToList() ?? [];
+        bool SwitchOn() => Entries() is { Count: > 0 } entries && entries.All(e => e.IsEnabled);
+        string Say() => $"pick {Picked()}, boxes A {Ticked(rowA)} B {Ticked(rowB)}, on A {Dependencies.IsOn(a)} B {Dependencies.IsOn(b)}, switch {SwitchOn()}; "
+            + $"status A {ModDetails.Status(a)}, B {ModDetails.Status(b)}; lines A {ModDetails.CopyLine(a, false)?.Text}, B {ModDetails.CopyLine(b, false)?.Text}";
+        // The picks in our file, as our Init reads them at the next launch (not just in memory).
+        string[] FilePicks() => [.. (JsonNode.Parse(File.ReadAllText(Store.FilePath))?["copy_picks"] as JsonArray ?? []).Select(p => (string?)p).OfType<string>()];
+        bool OnDisk(string copy) => FilePicks().Contains($"{TwinId}|{copy}");
+
+        var retired = Rows().FirstOrDefault(r => r.Mod?.manifest?.id == "SmmTestRetired");
+        var enableAll = CategoryList.OnOffItems(content, [rowA, .. retired == null ? Array.Empty<NModMenuRow>() : [retired]])[0];
+        // Both copies in an Enable all: one is on, so the mod counts as done.
+        var bothDone = CategoryList.OnOffItems(content, [rowA, rowB])[0].Disabled;
+        var toggleTip = Hover.TipOf(screen.GetNode<Control>("SpireModManagerViewToggle"));
+        Check("same ID on our page: the picked copy on (Enabled), the other off (Disabled, no duplicate problem), its box's tip and panel naming the enabled copy; "
+            + "Enable all over it says which copy it disables; the view switch's tip says how the game's page treats them",
+            Picked() == "l:SmmTestTwinB" && Ticked(rowB) && !Ticked(rowA) && ModDetails.Status(b).Contains("Enabled") && ModDetails.Status(a).Contains("Disabled")
+            && ModDetails.Problems(a).Count == 0 && Hover.TipOf(rowA.GetNode<Control>("Tickbox")) == $"Enabling this copy disables {Named(b)}"
+            && Hover.TipOf(rowB.GetNode<Control>("Tickbox")) == "" && ModDetails.CopyLine(a, links: false)?.Text == $"{Named(b)} is the enabled copy"
+            && enableAll.Tip == $"Also disables other copies: {Named(b)}"
+            && toggleTip.Contains("\nHere one tickbox enables or disables every copy of ") && toggleTip.Contains("the copy enabled on Spire Mod Manager's page is the one that loads.")
+            && bothDone && OnDisk("l:SmmTestTwinB"),
+            $"{Say()}; Enable all tip {enableAll.Tip}; both done {bothDone}; on disk {string.Join(", ", FilePicks())}; toggle tip {toggleTip}");
+
+        var (steps, picksWere) = (History.Steps(History.Track.List), Store.Data.CopyPicks);
+        await Tick(rowA, true);
+        var (unsavedOn, unsavedOff) = Profiles.UnsavedChanges();
+        Check("ticking the other copy picks it (copy_picks), unticks the first, the game's list still on, one undo step; both Pending relaunch, its panel "
+            + "saying it loads in place of the first; the titles marked as changed; the profile's unsaved lines and the pending line follow",
+            Picked() == "l:SmmTestTwinA" && Store.Data.CopyPicks?.Contains($"{TwinId}|l:SmmTestTwinA") == true && OnDisk("l:SmmTestTwinA") && Ticked(rowA) && !Ticked(rowB) && SwitchOn()
+            && History.Steps(History.Track.List) == steps + 1 && ModDetails.Status(a).Contains("Pending relaunch") && ModDetails.Status(b).Contains("Pending relaunch")
+            && ModDetails.CopyLine(a, links: false)?.Text == $"Loads on relaunch, in place of {Named(b)}"
+            && ModDetails.CopyLine(b, links: false)?.Text == $"{Named(a)} is the enabled copy"
+            && rowA.GetNode<Control>("Title").Modulate == RowTitles.ChangedTitle && rowB.GetNode<Control>("Title").Modulate == RowTitles.ChangedOffTitle
+            && unsavedOn.Any(m => m.Name == Named(a)) && unsavedOff.Any(m => m.Name == Named(b)) && ModEntry.HasPendingChanges()
+            && screen.GetNode<Control>("%PendingChangesLabel").Visible, $"{Say()}; unsaved +{string.Join(",", unsavedOn.Select(m => m.Name))} -{string.Join(",", unsavedOff.Select(m => m.Name))}");
+        await Capture(screen, outDir, "19-same-id-switched");
+        History.Undo();
+        await Wait(menu, 0.3);
+        var undone = Picked() == "l:SmmTestTwinB" && Ticked(rowB) && !Ticked(rowA) && SwitchOn() && (Store.Data.CopyPicks ?? []).SequenceEqual(picksWere ?? []) && !Profiles.Edited
+            && OnDisk("l:SmmTestTwinB");
+        History.Redo();
+        await Wait(menu, 0.3);
+        var redone = Picked() == "l:SmmTestTwinA" && Ticked(rowA) && !Ticked(rowB) && OnDisk("l:SmmTestTwinA");
+        History.RevertMods();
+        await Wait(menu, 0.3);
+        var reverted = Picked() == "l:SmmTestTwinB" && Ticked(rowB) && !Ticked(rowA) && History.AtEntered && OnDisk("l:SmmTestTwinB");
+        History.Undo(); // the revert
+        await Wait(menu, 0.3);
+        var revertUndone = Picked() == "l:SmmTestTwinA";
+        History.Undo(); // the tick
+        await Wait(menu, 0.3);
+        Check("... undo puts both back (the pick and the game's list, in our file too), redo again; Revert all goes back to the pick the page opened with, "
+            + "and undoes", undone && redone && reverted && revertUndone && Picked() == "l:SmmTestTwinB" && OnDisk("l:SmmTestTwinB"),
+            $"undo {undone}, redo {redone}, revert {reverted}, its undo {revertUndone}; on disk {string.Join(", ", FilePicks())}; {Say()}");
+
+        // Load Order: the pick through its Enable item, then a move; the order's undo leaves the pick.
+        Click(screen.GetNode<NButton>("SpireModManagerLoadOrderToggle"));
+        await Wait(menu, 0.5);
+        if (RowOf("l:SmmTestTwinA") is { } orderRow)
+        {
+            var enable = LoadOrder.Actions(content, orderRow, () => CategoryList.Redraw(content))[0];
+            var enableTip = enable.Tip;
+            enable.OnSelect?.Invoke();
+            await Wait(menu, 0.3);
+            var pickedHere = Picked() == "l:SmmTestTwinA";
+            if (Rows().Skip(1).FirstOrDefault(r => r.Mod?.manifest?.id is { } id && id != TwinId && id != ModEntry.ModId)?.Mod is { } mover)
+                LoadOrder.Move(mover, Rows().Count - 1, Rows());
+            CategoryList.Redraw(content);
+            await Wait(menu, 0.3);
+            History.Undo(); // the move: this view's undo steps through the order only
+            await Wait(menu, 0.3);
+            Check("... in Load Order: Enable on the other copy says what it disables, and picks it; an order undo leaves the pick",
+                enableTip == $"Enabling this copy disables {Named(b)}" && pickedHere && Picked() == "l:SmmTestTwinA" && !LoadOrder.OrderChanged,
+                $"tip {enableTip}; picked {pickedHere}; {Say()}");
+        }
+        Click(screen.GetNode<NButton>("SpireModManagerLoadOrderToggle"));
+        await Wait(menu, 0.5);
+        History.Undo(); // the pick made in Load Order
+        await Wait(menu, 0.3);
+
+        // Vanilla View: the game's own page, one switch for both copies (with Better Mod Menu, its page: not ours to tick).
+        if (!Bmm.Present)
+        {
+            var vanilla = await WithVanillaView(screen, menu, () => Ticked(rowA) && Ticked(rowB));
+            Click(screen.GetNode<NButton>("SpireModManagerViewToggle"));
+            await Wait(menu, 0.5);
+            await Tick(rowA, false); // the game's own tickbox: every entry of the id and source
+            var allOff = Entries().All(e => !e.IsEnabled) && !Ticked(rowB) && Picked() == "l:SmmTestTwinB";
+            await Tick(rowA, true);
+            var allOn = SwitchOn() && Ticked(rowB) && Picked() == "l:SmmTestTwinB";
+            Click(screen.GetNode<NButton>("SpireModManagerViewToggle"));
+            await Wait(menu, 0.5);
+            Check("... Vanilla View: both boxes ticked (the game's one switch); its tick switches every copy and keeps the pick; back on our page, the picked copy's box alone",
+                vanilla && allOff && allOn && Ticked(rowB) && !Ticked(rowA) && Picked() == "l:SmmTestTwinB", $"vanilla {vanilla}, off {allOff}, on {allOn}; {Say()}");
+            History.Undo(); // the two ticks there
+            History.Undo();
+            await Wait(menu, 0.3);
+        }
+        else
+            Results.Add("SKIP same ID, Vanilla View's tick: Better Mod Menu's page there");
+
+        // A profile holds its copy. The profiles read now: an undo puts new ones in our data.
+        if (Profiles.Active is { } home && Store.Data.Profiles.FirstOrDefault(p => p != home) is { } other)
+        {
+            await Tick(rowA, true);
+            var ticked = $"after the tick: pick {Picked()}, active {Profiles.Active?.Name} (home {home.Name}), vanilla {Store.Data.VanillaView}";
+            Profiles.Save();
+            var saved = home.Mods.FirstOrDefault(m => m.Id == TwinId)?.Copy;
+            // Its saved state, not an unsaved edit an earlier test left (a switch writes the edit).
+            var (otherWas, otherEdit) = (other.Mods.ToList(), other.Edited);
+            other.Edited = null;
+            other.Mods.RemoveAll(m => m.Id == TwinId);
+            other.Mods.Add(new ProfileMod(TwinId, ModSource.ModsDirectory, true, "l:SmmTestTwinB"));
+            Profiles.SwitchTo(other, screen);
+            await Wait(menu, 0.3);
+            var there = Picked() == "l:SmmTestTwinB" && Ticked(rowB) && !Ticked(rowA);
+            Profiles.SwitchTo(home, screen);
+            await Wait(menu, 0.3);
+            var back = Picked() == "l:SmmTestTwinA" && Ticked(rowA);
+            other.Mods.RemoveAll(m => m.Id == TwinId);
+            other.Mods.Add(new ProfileMod(TwinId, ModSource.ModsDirectory, true)); // no copy: as from before copies, or Better Mod Menu
+            Profiles.SwitchTo(other, screen);
+            await Wait(menu, 0.3);
+            var kept = Picked() == "l:SmmTestTwinA";
+            // From then on it holds that copy: a tick on the other one is its unsaved edit; ticked back, none.
+            var held = other.Mods.FirstOrDefault(m => m.Id == TwinId)?.Copy == "l:SmmTestTwinA";
+            await Tick(rowB, true);
+            var heldEdit = Profiles.Edited;
+            await Tick(rowA, true);
+            held &= heldEdit && !Profiles.Edited;
+            Profiles.SwitchTo(home, screen);
+            await Wait(menu, 0.3);
+            await Tick(rowB, true);
+            var edited = Profiles.Edited;
+            Profiles.Discard(screen);
+            await Wait(menu, 0.3);
+            Check("... a profile holds its copy: saved with it, switched to one naming the other and back, one naming none keeps the pick (and holds it "
+                + "from then on: another copy is its edit); Discard puts the profile's back",
+                saved == "l:SmmTestTwinA" && there && back && kept && held && edited && Picked() == "l:SmmTestTwinA" && !Profiles.Edited,
+                $"{ticked}; saved {saved}, there {there}, back {back}, kept {kept}, held {held}, edited {edited}; {Say()}");
+            other.Mods.Clear();
+            other.Mods.AddRange(otherWas);
+            other.Edited = otherEdit;
+            await Tick(rowB, true);
+            Profiles.Save(); // the profile back on the fixture's pick
+        }
+        else
+            Results.Add("SKIP same ID, profiles: one profile only");
+
+        // Shared lists: one row for the id sets the switch and keeps the pick; rows for copies not installed are listed
+        // by item when two share an id.
+        var once = Profiles.PlanImport([new(TwinId, false, "Test Twin", "")]);
+        var twoGone = Profiles.PlanImport([new("SmmSameIdGone", true, "Gone", ProfileCsv.WorkshopLink(41)), new("SmmSameIdGone", false, "Gone", ProfileCsv.WorkshopLink(42))]);
+        var preview = ProfileShare.PreviewFor([new("SmmSameIdGone", true, "Gone", ProfileCsv.WorkshopLink(41)), new("SmmSameIdGone", false, "Gone", ProfileCsv.WorkshopLink(42))], "Two gone");
+        Check("... a shared list naming the id once sets the switch and keeps the pick; two copies not installed are both listed, by item",
+            once.Mods.SingleOrDefault(m => m.Id == TwinId) is { Enabled: false, Copy: null } && once.Off == 1 && twoGone.Missing.Count == 2
+            && preview.Contains("Gone (41)") && preview.Contains("Gone (42)") && twoGone.Mods.SingleOrDefault(m => m.Id == "SmmSameIdGone") is { Enabled: true, Copy: "w:41" },
+            $"once {string.Join(", ", once.Mods.Where(m => m.Id == TwinId))}, off {once.Off}; gone {string.Join(", ", twoGone.Mods.Where(m => m.Id == "SmmSameIdGone"))}; {preview}");
+
+        // Two Workshop items of one mod (made up, in the game's list for a moment, not announced): each says its item; a
+        // shared list naming both matches each row to its copy by link, the one on picked; a row on naming an item not
+        // installed is the pick for when it is. The fixture's two local copies say their folders.
+        var (w124, w125) = (Made("SmmSameIdW", "SmmSameIdW124", ModLoadState.None, 124), Made("SmmSameIdW", "SmmSameIdW125", ModLoadState.None, 125));
+        GameMods().AddRange([w124, w125]);
+        try
+        {
+            var byLink = Profiles.PlanImport([new("SmmSameIdW", false, "W", ProfileCsv.WorkshopLink(124)), new("SmmSameIdW", true, "W", ProfileCsv.WorkshopLink(125))]);
+            var notYet = Profiles.PlanImport([new("SmmSameIdW", false, "W", ProfileCsv.WorkshopLink(124)), new("SmmSameIdW", true, "W", ProfileCsv.WorkshopLink(126))]);
+            Check("... two Workshop copies say their items, \" (124)\"; a list naming both picks the one on by its link, or one not installed yet; two local "
+                + "copies say their folders, \" (SmmTestTwinA)\"",
+                Copies.Which(w124) == " (124)" && Copies.Which(w125) == " (125)" && Copies.Which(a) == " (SmmTestTwinA)"
+                && byLink.Mods.SingleOrDefault(m => m.Id == "SmmSameIdW") is { Source: ModSource.SteamWorkshop, Enabled: true, Copy: "w:125" }
+                && notYet.Mods.SingleOrDefault(m => m.Id == "SmmSameIdW") is { Enabled: true, Copy: "w:126" },
+                $"{Copies.Which(w124)}, {Copies.Which(w125)}, {Copies.Which(a)}; {string.Join(", ", byLink.Mods.Where(m => m.Id == "SmmSameIdW"))}; "
+                + string.Join(", ", notYet.Mods.Where(m => m.Id == "SmmSameIdW")));
+        }
+        finally
+        {
+            GameMods().Remove(w124);
+            GameMods().Remove(w125);
+        }
+
+        // Restore of a working setup (the crash dialog's) with our data loaded: its copies picked again, in our file too.
+        if (SaveManager.Instance.SettingsSave.ModSettings is { } restoring)
+        {
+            var listWas = restoring.ModList.Select(e => new SettingsSaveMod { Id = e.Id, Source = e.Source, IsEnabled = e.IsEnabled }).ToList();
+            var picksBefore = Store.Data.CopyPicks;
+            var first = true;
+            var working = new List<LaunchGuard.Entry>();
+            foreach (var m in History.CurrentMods())
+            {
+                // The twins' first entry the copy that loaded then (A), the second the other; Test Addon off, so no check opens.
+                var twin = m.Id == TwinId ? (first ? "l:SmmTestTwinA" : "l:SmmTestTwinB") : null;
+                working.Add(new LaunchGuard.Entry(m.Id, m.Source, m.Id == TwinId ? first : m.Enabled && m.Id != "SmmTestAddon", null, twin));
+                if (m.Id == TwinId)
+                    first = false;
+            }
+            var relaunched = 0;
+            ModEntry.TestRelaunch = _ => relaunched++;
+            try
+            {
+                LaunchGuard.Restore(working, menu);
+                await Wait(menu, 0.3);
+                Check("... Restore of a working setup with our data loaded: the copy that loaded then picked again, in our file too",
+                    Store.Data.CopyPicks?.Contains($"{TwinId}|l:SmmTestTwinA") == true && OnDisk("l:SmmTestTwinA"),
+                    $"picks {string.Join(", ", Store.Data.CopyPicks ?? [])}; on disk {string.Join(", ", FilePicks())}; relaunched {relaunched}");
+            }
+            finally
+            {
+                ModEntry.TestRelaunch = null;
+                RelaunchCheck.Close();
+                restoring.ModList.Clear();
+                restoring.ModList.AddRange(listWas);
+                SaveManager.Instance.SaveSettings();
+                Store.Data.CopyPicks = picksBefore;
+                Store.SaveViewState();
+                Profiles.RefreshTickboxes(screen);
+                CategoryList.Redraw(content);
+                await Wait(menu, 0.3);
+            }
+        }
+
+        // The relaunch check on the copy picked to load next (here given a need it can't meet), while the other is loaded.
+        await Tick(rowA, true);
+        var needsWere = a.manifest?.dependencies;
+        if (a.manifest is { } manifest)
+            manifest.dependencies = [new ModDependency(Missing)];
+        try
+        {
+            RelaunchCheck.Show(screen);
+            await Wait(menu, 0.3);
+            var body = (menu.GetTree().Root.GetNodeOrNull(RelaunchCheck.Name)?.FindChild("Body", true, false) as RichTextLabel)?.GetParsedText() ?? "";
+            RelaunchCheck.Cancel();
+            await Wait(menu, 0.3);
+            Check("... the relaunch check sees the picked copy's problem, by its copy's name, while the other copy is the one loaded",
+                body.Contains(Named(a)) && body.Contains(Missing), body);
+        }
+        finally
+        {
+            if (a.manifest is { } restored)
+                restored.dependencies = needsWere;
+        }
+        History.Undo(); // the pick
+        await Wait(menu, 0.3);
+
+        // Enable selected with both copies picked: the row ticked wins.
+        Dependencies.Set([b], false, screen);
+        CategoryList.Redraw(content);
+        await Wait(menu, 0.3);
+        var beforePicks = History.Steps(History.Track.List);
+        Selection.Add(content, [rowA, rowB]);
+        await Tick(rowA, true);
+        var clickedWins = Picked() == "l:SmmTestTwinA" && Dependencies.IsOn(a) && !Dependencies.IsOn(b) && SwitchOn();
+        Selection.Clear(content, record: false);
+        while (History.Steps(History.Track.List) > beforePicks && History.CanUndo)
+            History.Undo(); // the group tick, then the picks
+        History.Undo(); // the off
+        await Wait(menu, 0.3);
+        Check("... both copies picked, a tick on one: that one turned on and picked, the other left off; undone, as before",
+            clickedWins && Picked() == "l:SmmTestTwinB" && SwitchOn() && Ticked(rowB), $"clicked wins {clickedWins}; {Say()}");
+        // Both off, Enable selected over both (no row clicked): the picked copy is the one turned on.
+        Dependencies.Set([b], false, screen);
+        CategoryList.Redraw(content);
+        await Wait(menu, 0.3);
+        CategoryList.OnOffItems(content, [rowA, rowB], selected: true)[0].OnSelect?.Invoke();
+        await Wait(menu, 0.3);
+        var pickWins = Picked() == "l:SmmTestTwinB" && Dependencies.IsOn(b) && !Dependencies.IsOn(a) && SwitchOn();
+        History.Undo(); // Enable selected
+        History.Undo(); // the off
+        await Wait(menu, 0.3);
+        Check("... both off, Enable selected over both: the picked copy turned on, the other left off; undone, as before",
+            pickWins && Picked() == "l:SmmTestTwinB" && SwitchOn() && Ticked(rowB) && !Ticked(rowA), $"pick wins {pickWins}; {Say()}");
+
+        // A session that can't save our data: a tick that would change the pick is the game's own (every copy's switch).
+        Store.TestReadOnly(true);
+        try
+        {
+            await Tick(rowA, true);
+            Check("... a session that can't save our data: ticking the other copy is the game's tick, the pick stays",
+                Picked() == "l:SmmTestTwinB" && !Ticked(rowA) && Ticked(rowB) && SwitchOn(), Say());
+        }
+        finally
+        {
+            Store.TestReadOnly(false);
+        }
+
+        // The self-check finding the pick not taken: every copy says it, and a relaunch is no change for them (the other
+        // copy picked, pending until then, isn't).
+        var pendingBefore = ModEntry.HasPendingChanges();
+        await Tick(rowA, true);
+        var pendingPicked = ModEntry.HasPendingChanges();
+        SameIdLoad.TestResult(TwinId, SameIdLoad.Result.NotTaken);
+        var notApplied = (ModDetails.CopyLine(a, false)?.Text, ModDetails.CopyLine(b, false)?.Text);
+        var pendingUnchosen = ModEntry.HasPendingChanges();
+        SameIdLoad.TestResult(TwinId, null);
+        History.Undo(); // the pick
+        await Wait(menu, 0.3);
+        const string couldnt = "Spire Mod Manager couldn't choose which copy of this mod loads: this game version loads mods differently. Spire Mod Manager may need an update.";
+        Check("... the pick not taken (the self-check): both copies say it, and the other copy picked is no relaunch away",
+            notApplied == (couldnt, couldnt) && SameIdLoad.ResultOf(TwinId) == SameIdLoad.Result.Taken && !pendingBefore && pendingPicked && !pendingUnchosen
+            && Picked() == "l:SmmTestTwinB", $"{notApplied}; then {SameIdLoad.ResultOf(TwinId)}; pending {pendingBefore}, picked {pendingPicked}, not taken {pendingUnchosen}");
+
+        // The picked copy failing for its own reasons (a newer game needed): the other copy, enabled, loads instead.
+        var (bState, bErrors) = (b.state, b.errors);
+        try
+        {
+            b.state = ModLoadState.Failed;
+            b.errors = [new LocString("main_menu_ui", "MOD_ERROR.GAME_VERSION_UNSUPPORTED")];
+            var failedLine = ModDetails.CopyLine(b, false)?.Text;
+            Check("... the picked copy failed for its own reasons: its panel says the other copy is installed, enabling it loads that one",
+                failedLine == $"{Named(a)} is installed too: enabling it loads that copy instead", failedLine ?? "none");
+        }
+        finally
+        {
+            (b.state, b.errors) = (bState, bErrors);
+        }
+
+        // A new copy of the mod arrives: the pick stays, and the popup says the enabled copy keeps loading.
+        var copy = new Mod
+        {
+            path = "C:/SmmSameIdTest/SmmTestTwinC", modSource = ModSource.ModsDirectory, state = ModLoadState.AddedAtRuntime,
+            manifest = new ModManifest { id = TwinId, name = "Test Twin", version = "1.2.0" },
+        };
+        NewModPopupPatch.TestReset();
+        NModalContainer.Instance?.Clear();
+        GameInstalls(copy);
+        await Wait(menu, 0.4);
+        var popup = string.Join(" | ", PopupTexts());
+        NModalContainer.Instance?.Clear();
+        var keepsPick = Picked() == "l:SmmTestTwinB" && !Dependencies.IsOn(copy) && Installed.Mods.Contains(copy);
+        if (Rows().FirstOrDefault(r => r.Mod == copy) is { } copyRow)
+        {
+            content.RemoveChild(copyRow);
+            copyRow.QueueFree();
+        }
+        GameForgets(copy);
+        History.Quietly(data =>
+        {
+            data.Copies?.GetValueOrDefault(TwinId)?.Remove("l:SmmTestTwinC");
+            data.Mods.Remove($"{TwinId}|l:SmmTestTwinC");
+        });
+        CategoryList.Redraw(content);
+        await Wait(menu, 0.3);
+        Check("... a new copy arriving keeps the pick (it's off), and the popup says the enabled copy keeps loading",
+            keepsPick && popup.Contains("A new copy of Test Twin (SmmTestTwinC) was detected. The copy enabled now keeps loading"), $"keeps {keepsPick}; {popup}");
+        var update = new Mod
+        {
+            path = a.path, modSource = ModSource.ModsDirectory, state = ModLoadState.AddedAtRuntime,
+            manifest = new ModManifest { id = TwinId, name = "Test Twin", version = "1.0.1" },
+        };
+        NewModPopupPatch.TestReset();
+        NModalContainer.Instance?.Clear();
+        GameInstalls(update);
+        await Wait(menu, 0.4);
+        var updatePopup = string.Join(" | ", PopupTexts());
+        NModalContainer.Instance?.Clear();
+        var notNew = !Installed.Mods.Contains(update);
+        if (Rows().FirstOrDefault(r => r.Mod == update) is { } updateRow)
+        {
+            content.RemoveChild(updateRow);
+            updateRow.QueueFree();
+        }
+        GameForgets(update);
+        CategoryList.Redraw(content);
+        await Wait(menu, 0.3);
+        Check("... an update of a copy (its own folder again) isn't a new copy: the popup's usual words", notNew
+            && updatePopup.Contains("New mods were detected") && !updatePopup.Contains("A new copy"), $"not new {notNew}; {updatePopup}");
+
+        // A mod installed once (made up, as found at launch) whose saved pick still names a second copy, uninstalled since
+        // (picks are never pruned), and an active profile naming no copy (as from before copies). That copy comes back
+        // mid-session: it doesn't take over, and the profile holds the copy there, so enabling the new one is its edit;
+        // an update of the new copy keeps that pick and isn't announced as a new copy again. Then two copies of a mod new
+        // to the game, one after the other (the first one's popup held back: one every 30 s): the new-mods words, not a
+        // new copy's, and the copy that came first keeps the pick (the record's order puts the second first).
+        const string Back = "SmmSameIdBack", Pair = "SmmSameIdPair";
+        var backFirst = Made(Back, "Back1", ModLoadState.Loaded);
+        var (backSecond, backUpdate) = (Made(Back, "Back2", ModLoadState.AddedAtRuntime), Made(Back, "Back2", ModLoadState.AddedAtRuntime, version: "1.0.1"));
+        var (pairFirst, pairSecond) = (Made(Pair, "PairB", ModLoadState.AddedAtRuntime), Made(Pair, "PairA", ModLoadState.AddedAtRuntime));
+        GameMods().Add(backFirst);
+        History.Quietly(data =>
+        {
+            data.CopyPicks = Copies.WithPicks(data.CopyPicks, [$"{Back}|l:Back2"]);
+            if (data.Profiles.FirstOrDefault(p => p.Name == data.ActiveProfile) is { } active)
+                foreach (var list in new[] { active.Mods, active.Edited })
+                    list?.Add(new ProfileMod(Back, ModSource.ModsDirectory, true));
+        });
+        string? BackPicked() => Copies.Picked(Back, ModSource.ModsDirectory);
+        string? Held() => Profiles.Active?.Mods.FirstOrDefault(m => m.Id == Back)?.Copy;
+        var backSteps = History.Steps(History.Track.List);
+        NewModPopupPatch.TestReset();
+        NModalContainer.Instance?.Clear();
+        GameInstalls(backSecond);
+        await Wait(menu, 0.4);
+        var backPopup = string.Join(" | ", PopupTexts());
+        NModalContainer.Instance?.Clear();
+        var cameBack = BackPicked() == "l:Back1" && Dependencies.IsOn(backFirst) && !Dependencies.IsOn(backSecond) && Held() == "l:Back1" && !Profiles.Edited
+            && History.Steps(History.Track.List) == backSteps && backPopup.Contains($"A new copy of {Back} (Back2) was detected");
+        var cameSay = $"pick {BackPicked()}, on {Dependencies.IsOn(backFirst)}/{Dependencies.IsOn(backSecond)}, held {Held()}, edited {Profiles.Edited}, "
+            + $"steps {History.Steps(History.Track.List) - backSteps}; {backPopup}";
+        Dependencies.Write([(backSecond, true)], winner: backSecond); // as its tick does (CopyTickPatch), the profile and history after
+        Profiles.Track();
+        History.Record();
+        var switched = BackPicked() == "l:Back2" && Profiles.Edited && History.Steps(History.Track.List) == backSteps + 1;
+        NewModPopupPatch.TestReset();
+        GameInstalls(backUpdate);
+        await Wait(menu, 0.4);
+        var backUpdatePopup = string.Join(" | ", PopupTexts());
+        NModalContainer.Instance?.Clear();
+        var updateKeeps = BackPicked() == "l:Back2" && Installed.Mods.Contains(backUpdate) && backUpdatePopup.Contains("New mods were detected")
+            && !backUpdatePopup.Contains("A new copy");
+        GameInstalls(pairFirst); // within 30 s of the last popup: none for it
+        await Wait(menu, 0.2);
+        NewModPopupPatch.TestReset();
+        NModalContainer.Instance?.Clear();
+        GameInstalls(pairSecond);
+        await Wait(menu, 0.4);
+        var pairPopup = string.Join(" | ", PopupTexts());
+        NModalContainer.Instance?.Clear();
+        var pairPicked = Copies.Picked(Pair, ModSource.ModsDirectory);
+        var pairNew = pairPopup.Contains("New mods were detected") && !pairPopup.Contains("A new copy") && pairPicked == "l:PairB";
+        History.Undo(); // the switch
+        await Wait(menu, 0.3);
+        var backUndone = BackPicked() == "l:Back1" && !Profiles.Edited;
+        // Put back: the made-up copies, their rows and our data for them (quietly, in every undo snapshot).
+        foreach (var gone in new[] { backSecond, backUpdate, pairFirst, pairSecond })
+        {
+            if (Rows().FirstOrDefault(r => r.Mod == gone) is { } goneRow)
+            {
+                content.RemoveChild(goneRow);
+                goneRow.QueueFree();
+            }
+            GameForgets(gone);
+        }
+        GameMods().Remove(backFirst);
+        static bool MadeUp(string? id) => id is Back or Pair;
+        SaveManager.Instance.SettingsSave.ModSettings?.ModList.RemoveAll(e => MadeUp(e.Id));
+        History.Quietly(data =>
+        {
+            data.Copies?.Remove(Back);
+            data.Copies?.Remove(Pair);
+            foreach (var key in data.Mods.Keys.Where(k => MadeUp(Copies.IdOf(k))).ToList())
+                data.Mods.Remove(key);
+            data.CopyPicks = Store.TidyPicks(data.CopyPicks?.Where(k => !MadeUp(Copies.IdOf(k))));
+            foreach (var profile in data.Profiles)
+            {
+                profile.Mods.RemoveAll(m => MadeUp(m.Id));
+                profile.Edited?.RemoveAll(m => MadeUp(m.Id));
+            }
+        });
+        CategoryList.Redraw(content);
+        await Wait(menu, 0.3);
+        Check("... a copy back mid-session that a saved pick still names doesn't take over (its popup says the enabled copy keeps loading); the active "
+            + "profile, naming no copy, holds the one there, so enabling the new copy is its edit, one undo step; an update of the new copy keeps that "
+            + "pick and isn't a new copy again", cameBack && switched && updateKeeps && backUndone,
+            $"{cameSay}; switched {switched}, update keeps {updateKeeps} ({backUpdatePopup}), undone {backUndone}");
+        Check("... two copies of a mod new to the game, one after the other: the new-mods words, and the copy that came first picked",
+            pairNew, $"pick {pairPicked}; {pairPopup}");
+        Check("... as it started: the fixture's pick, nothing changed since the page opened for the twins", Picked() == "l:SmmTestTwinB" && Ticked(rowB) && !Ticked(rowA)
+            && SwitchOn() && !Profiles.Edited, Say());
     }
 
     // Tag suggestions, with made-up tags on made-up mods so the counts are known (the data is put back after): the
@@ -6175,6 +7569,11 @@ static class SelfTest
         Check("hovering Changes shows the details at once", screen.HasNode("SpireModManagerChangesPanel"));
         var summary = screen.GetNodeOrNull("SpireModManagerChangesPanel")?.FindChildren("*", "RichTextLabel", true, false).OfType<RichTextLabel>().FirstOrDefault()?.GetParsedText() ?? "";
         Check("the summary is titled and names the mod turned off", summary.StartsWith("Changes since launch") && summary.Contains("Test UI"), summary);
+        // Its own place, kept (Hover turns only the cards it places itself): just above the lines, right edges together.
+        var summaryBox = screen.GetNodeOrNull("SpireModManagerChangesPanel")?.FindChildren("*", "PanelContainer", true, false).OfType<Control>().FirstOrDefault()?.GetGlobalRect();
+        var changesAt = changes.GetGlobalRect();
+        Check("the summary keeps its own place: just above the lines, right edges together", summaryBox is { } summaryAt
+            && Math.Abs(summaryAt.End.Y - (changesAt.Position.Y - 8)) < 0.5f && Math.Abs(summaryAt.End.X - changesAt.End.X) < 0.5f, $"{summaryBox} over {changesAt}");
         await Capture(screen, outDir, "14-changes");
         changes.EmitSignal(Control.SignalName.MouseExited);
         Hover.TestMouse = null;
@@ -6275,6 +7674,7 @@ static class SelfTest
         await Wait(menu, 0.2);
         Check("on (re)entering the page, Undo and Revert all agree: nothing to undo", !History.CanUndo && History.AtEntered
             && screen.FindChild("UndoButton", true, false) is BaseButton { Disabled: true } && screen.FindChild("RevertAllButton", true, false) is BaseButton { Disabled: true });
+        await TestTwinOrder(menu, screen, content); // on the page just entered: its Revert all touches only that test's moves
 
         // Separate histories: an order change made in Load Order isn't undone from the list view.
         Click(screen.GetNode<NButton>("SpireModManagerLoadOrderToggle"));
@@ -6320,6 +7720,102 @@ static class SelfTest
             Profiles.Rename(renamed, was);
             Check("renamed back, no renamed line", !HistoryBar.Describe().Any(l => l.Contains("Renamed in test")), string.Join(" | ", HistoryBar.Describe()));
         }
+    }
+
+    // The fixture twins (one id and source) in Load Order: which copy takes which of their entries is part of the order as
+    // undo knows it. Side by side, a drop of the second above the first saves the same list: one undo step, and no move
+    // for Changes (the game reads the same list; which copy loads is the pick), no "was" line, nothing pending; undo and
+    // redo swap them back and again. Split by another mod, a drop of the second above the first changes the list and the
+    // copies' turn at once: undo puts both back, so the rows, Changes and pending are as before the drop, and Revert all
+    // goes back to the page's opening order the same way. (The copies' turn once stayed behind: the rows came back
+    // swapped, and Changes, the pending line and the main menu's dot showed moves a relaunch wouldn't make.) Run on a page
+    // just entered, so Revert all touches only these moves; back on the main list at the end.
+    static async Task TestTwinOrder(Node menu, NModdingScreen screen, Control content)
+    {
+        List<NModMenuRow> Rows() => content.GetChildren().OfType<NModMenuRow>().ToList();
+        List<Mod> Order() => Rows().Select(r => r.Mod).OfType<Mod>().ToList();
+        static string Short(Mod m) => m.manifest?.id == TwinId ? Copies.CopyOf(m) : m.manifest?.id ?? "";
+        static string Named(Mod m) => (m.manifest?.name ?? "") + Copies.Which(m);
+        string Moves() => string.Join(", ", HistoryBar.Moves().Select(m => $"{Short(m.Mod)} {m.Before}→{m.After}"));
+        string Was() => string.Join(",", Rows().Select(r => r.GetNodeOrNull<Label>("SpireModManagerWas")?.Text ?? ""));
+        var line = screen.GetNode<Control>("%PendingChangesLabel");
+        int Steps() => History.Steps(History.Track.Order);
+        string Say() => $"rows {string.Join(", ", Order().Select(Short))}; moves [{Moves()}]; order changed {LoadOrder.OrderChanged}, pending {ModEntry.HasPendingChanges()} "
+            + $"(line {line.Visible}); order steps {Steps()}; at the page's opening state {History.AtEntered}";
+        var toggle = screen.GetNode<NButton>("SpireModManagerLoadOrderToggle");
+        Click(toggle);
+        await Wait(menu, 0.5);
+        var twins = Order().Where(m => m.manifest?.id == TwinId && m.modSource == ModSource.ModsDirectory).ToList();
+        if (twins.Count != 2 || Order().FirstOrDefault(m => m.manifest?.id == "SmmTestFixes") is not { } fixes)
+        {
+            if (twins.Count != 2)
+                TwinsMissing("two copies' turn in Load Order");
+            else
+                Check("two copies' turn in Load Order: Test Fixes to move between them", false);
+            Click(toggle);
+            await Wait(menu, 0.5);
+            return;
+        }
+        var (first, second) = (twins[0], twins[1]);
+        var (start, list, steps, was) = (Order(), History.CurrentMods(), Steps(), Was());
+        var (pending, changed) = (ModEntry.HasPendingChanges(), HistoryBar.ChangedMods().Overlaps(twins));
+        bool NothingMoved(List<Mod> rows) => Order().SequenceEqual(rows) && Moves() == "" && !LoadOrder.OrderChanged && ModEntry.HasPendingChanges() == pending
+            && line.Visible == pending && Was() == was && HistoryBar.ChangedMods().Overlaps(twins) == changed
+            && !HistoryBar.Describe().Any(l => l.StartsWith("Moved: ") && twins.Any(t => l.Contains(Named(t))));
+
+        // Side by side: the second dropped above the first.
+        var sideBySide = Order().IndexOf(second) == Order().IndexOf(first) + 1 && NothingMoved(start);
+        var startSaid = Say();
+        LoadOrder.Move(second, Order().IndexOf(first), Rows());
+        CategoryList.Redraw(content);
+        await Wait(menu, 0.3);
+        var swapped = Order();
+        Check("two copies side by side in Load Order: a drop of the second above the first swaps their rows in one undo step, the saved list the same; no move "
+            + "for Changes or Show: Changed, no \"was\" line, nothing pending (a relaunch loads the same)",
+            sideBySide && swapped.IndexOf(second) == swapped.IndexOf(first) - 1 && History.CurrentMods().SequenceEqual(list) && Steps() == steps + 1
+            && !History.AtEntered && NothingMoved(swapped), $"at the start: {startSaid}; now {Say()}");
+        History.Undo();
+        await Wait(menu, 0.3);
+        var undone = NothingMoved(start) && Steps() == steps && History.AtEntered;
+        var undoneSaid = Say();
+        History.Redo();
+        await Wait(menu, 0.3);
+        var redone = NothingMoved(swapped);
+        History.Undo();
+        await Wait(menu, 0.3);
+        Check("... undo swaps them back, redo again, undo back (the copies' turn is in the step)", undone && redone && NothingMoved(start) && History.AtEntered,
+            $"undone {undone} ({undoneSaid}), redone {redone}; now {Say()}");
+
+        // Split by Test Fixes, then the second dropped above the first: the list and the copies' turn in one step.
+        var rest = LoadOrder.Mods(Rows());
+        rest.Remove(fixes);
+        LoadOrder.Move(fixes, rest.IndexOf(second), Rows());
+        CategoryList.Redraw(content);
+        await Wait(menu, 0.3);
+        var split = Order();
+        var (splitMoves, splitWas, splitPending, splitSteps, splitSaid) = (Moves(), Was(), ModEntry.HasPendingChanges(), Steps(), Say());
+        LoadOrder.Move(second, Order().IndexOf(first), Rows());
+        CategoryList.Redraw(content);
+        await Wait(menu, 0.3);
+        var dropped = Order();
+        var droppedSaid = Say();
+        History.Undo();
+        await Wait(menu, 0.3);
+        Check("two copies split by another mod: a drop of the second above the first is one step; undo puts the rows back, and Changes, the \"was\" lines "
+            + "and pending as before the drop (no move a relaunch wouldn't make)",
+            split.IndexOf(fixes) == split.IndexOf(first) + 1 && split.IndexOf(second) == split.IndexOf(fixes) + 1
+            && dropped.IndexOf(second) == dropped.IndexOf(first) - 1 && Order().SequenceEqual(split) && Moves() == splitMoves && Was() == splitWas
+            && ModEntry.HasPendingChanges() == splitPending && line.Visible == splitPending && Steps() == splitSteps,
+            $"split: {splitSaid}; dropped: {droppedSaid}; undone: {Say()}");
+        History.Redo();
+        await Wait(menu, 0.3);
+        var redoneDrop = Order().SequenceEqual(dropped);
+        History.RevertMods();
+        await Wait(menu, 0.3);
+        Check("... redo, then Revert all: the page's opening order back, the copies' turn too; no move, \"was\" line or pending relaunch left, the twins "
+            + "not under Show: Changed", redoneDrop && NothingMoved(start) && History.AtEntered, $"redone {redoneDrop}; reverted: {Say()}");
+        Click(toggle);
+        await Wait(menu, 0.5);
     }
 
     // Missing game resources: everything this run used loaded; a path that isn't there gives null without throwing
@@ -6865,6 +8361,46 @@ static class SelfTest
         await Wait(menu, 0.1);
         Hover.TestMouse = null; // the real mouse again (menus open where it says)
         return seen;
+    }
+
+    // Where the hover card `name` that hovering `target` brings up sits on screen (null if none), the mouse put back after.
+    static async Task<Rect2?> HoverCardBox(Node menu, Control target, string name, double seconds = Hover.Delay + 0.2)
+    {
+        Rect2? box = null;
+        await SizedHoverCard(menu, target, name, () =>
+        {
+            box = target.GetTree().Root.FindChild(name, true, false)?.FindChildren("*", "PanelContainer", true, false).OfType<Control>().FirstOrDefault()?.GetGlobalRect();
+            return Task.CompletedTask;
+        }, seconds);
+        return box;
+    }
+
+    // Null if a card Hover placed itself for `trigger`, hovered at its middle, is exactly where it should be: whole on
+    // screen; Hover.Gap above the trigger (up), or below it, Hover.Gap off it and at least 20 under the mouse; its left
+    // edge 16 right of the mouse, or (left) its right edge 16 left of it. So over neither the trigger nor the mouse.
+    // area: what the card keeps off, when more than the trigger (Hover.Watch's area). Otherwise where it is.
+    static string? CardMisplaced(Rect2? box, Control trigger, bool up, bool left, Rect2? area = null)
+    {
+        if (box is not { } card)
+            return "no card";
+        var (at, screen) = (area ?? trigger.GetGlobalRect(), trigger.GetViewportRect());
+        var mouse = trigger.GetGlobalRect().GetCenter();
+        var y = up ? card.End.Y - (at.Position.Y - Hover.Gap) : card.Position.Y - Math.Max(mouse.Y + 20, at.End.Y + Hover.Gap);
+        var x = left ? card.End.X - (mouse.X - 16) : card.Position.X - (mouse.X + 16);
+        return screen.Encloses(card) && Math.Abs(x) < 0.5f && Math.Abs(y) < 0.5f ? null : $"card {card} for {at}, on {screen.Size}";
+    }
+
+    // Null if the open menu `menu`, opened from `from` (the mouse, a point; or a picker, MenuPanel.Around), is exactly
+    // where it should be: whole on screen; its top at from's bottom, or (up) its bottom at from's top; its left edge at
+    // from's left, or (left) its right edge at from's right. So over neither the mouse nor the picker. Otherwise where it is.
+    static string? MenuMisplaced(Node? menu, Rect2 from, bool up, bool left)
+    {
+        if (menu?.GetNodeOrNull<Control>("Catcher/Panel") is not { } panel)
+            return "no menu";
+        var (box, screen) = (panel.GetGlobalRect(), panel.GetViewportRect());
+        var y = up ? box.End.Y - from.Position.Y : box.Position.Y - from.End.Y;
+        var x = left ? box.End.X - from.End.X : box.Position.X - from.Position.X;
+        return screen.Encloses(box) && Math.Abs(x) < 0.5f && Math.Abs(y) < 0.5f ? null : $"menu {box} from {from}, on {screen.Size}";
     }
 
     // The selected row's look: a gold rim the same width on every side.

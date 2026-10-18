@@ -1,0 +1,11 @@
+{
+  "id": "SmmTestTwinUser",
+  "name": "Test Twin User",
+  "author": "Spire Mod Manager tests",
+  "description": "Empty mod for dev-sandbox tests: needs SmmTestTwin 1.1.0 or newer, so it loads only when the picked newer copy takes the id's first slot.",
+  "version": "1.0.0",
+  "has_pck": false,
+  "has_dll": false,
+  "affects_gameplay": false,
+  "dependencies": [{ "id": "SmmTestTwin", "min_version": "1.1.0" }]
+}

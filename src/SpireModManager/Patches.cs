@@ -1,5 +1,7 @@
 using Godot;
 using HarmonyLib;
+using MegaCrit.Sts2.Core.Audio;
+using MegaCrit.Sts2.Core.Commands;
 using MegaCrit.Sts2.Core.Logging;
 using MegaCrit.Sts2.Core.Modding;
 using MegaCrit.Sts2.Core.Localization;
@@ -9,6 +11,7 @@ using MegaCrit.Sts2.Core.Nodes.Debug;
 using MegaCrit.Sts2.Core.Nodes.GodotExtensions;
 using MegaCrit.Sts2.Core.Nodes.Screens.MainMenu;
 using MegaCrit.Sts2.Core.Nodes.Screens.ModdingScreen;
+using MegaCrit.Sts2.Core.Nodes.Screens.ScreenContext;
 using MegaCrit.Sts2.Core.Nodes.Screens.Settings;
 using MegaCrit.Sts2.Core.Saves;
 
@@ -63,8 +66,9 @@ static class MainMenuPatch
     }
 }
 
-// Clears the launch record (LaunchGuard) once the main menu is reached. A prefix, so a throw in the menu's own _Ready
-// can't skip it.
+// Clears the launch record (LaunchGuard) once the main menu is reached, then settles the copies of mods installed
+// twice (SameIdLoad.Settle: the game's rebuilt list repaired, our entries first, the self-check), before our data loads
+// and the undo history starts. A prefix, so a throw in the menu's own _Ready can't skip it.
 [HarmonyPatch(typeof(NMainMenu), nameof(NMainMenu._Ready))]
 static class MenuReachedPatch
 {
@@ -79,12 +83,20 @@ static class MenuReachedPatch
         {
             Log.Error($"[{ModEntry.ModId}] Could not clear the launch record: {e}");
         }
+        try
+        {
+            SameIdLoad.Settle();
+        }
+        catch (Exception e)
+        {
+            Log.Warn($"[{ModEntry.ModId}] Could not settle the mods installed twice after launch (the saved list stays as the game wrote it): {e}");
+        }
     }
 }
 
 // The main menu's MODDED warning (and the line in a run) reads every mod's errors: the Steam branch errors of mods that
-// are off go first, again, should a game update ever check branches after our Init (BranchErrors; in the game's order
-// today there's nothing left to drop).
+// are off, and the messages of copies we set aside as duplicates, go first, again, should a game update ever check
+// branches after our Init (BranchErrors; in the game's order today there's nothing left to drop).
 [HarmonyPatch(typeof(NDebugInfoLabelManager), "UpdateText")]
 static class BranchErrorsLatePatch
 {
@@ -303,9 +315,10 @@ static class ModToggledPatch
             if (HistoryBar.Screen != __instance)
                 return;
             Profiles.Track();
-            History.Record(); // a tickbox change (Track only saves when the active profile changed)
-            // The game's tickbox sets every entry of the mod's id and source, so another copy of it (a second Workshop
-            // item) switched too: its row's box follows, or a click on its old tick would switch both back.
+            History.Record(); // a tickbox change, one step (Track only saves when the active profile changed)
+            // Every row's box as its view reads it: in Vanilla View the game's tickbox sets every entry of the mod's id
+            // and source, so another copy (a second Workshop item) switched too; on our views a switch to another copy
+            // (CopyTickPatch) turned the old one off.
             Profiles.RefreshTickboxes(__instance);
             var content = __instance.GetNode<Control>("%ModsScrollContainer/Mask/Content");
             RowTitles.MarkChanged(content.GetChildren().OfType<NModMenuRow>(), Store.Data.VanillaView);
@@ -414,10 +427,14 @@ static class ModInfoClearPatch
 }
 
 // Ctrl shortcuts on our Modding page: Z undo, Y or Shift+Z redo, F search, S save profile, A pick all shown, D let go
-// of the picked mods. Unhandled keys only, so a focused text box keeps its own.
+// of the picked mods. F8 opens and closes the page. Unhandled keys only, so a focused text box keeps its own.
 [HarmonyPatch(typeof(NInputManager), "_UnhandledKeyInput")]
 static class ShortcutsPatch
 {
+    // The key that opens and closes the page: the game binds nothing to it (its debug keys skip it), unless the player
+    // moves one of its keys there. Not changeable yet.
+    public const Key ManagerKey = Key.F8;
+
     // Escape closes our open menu or dialog, ends the main menu button's move mode, or lets go of picked mods, in
     // place of the game's Escape (which would leave the page). Ctrl+D lets go of picked mods, in place of the game's D.
     static bool Prefix(InputEvent inputEvent)
@@ -426,8 +443,9 @@ static class ShortcutsPatch
         {
             var handled = inputEvent switch
             {
-                InputEventKey { Keycode: Key.Escape, Pressed: true, Echo: false } =>
-                    MenuPanel.Close() || RelaunchCheck.Cancel() || ProfileShare.Close() || MenuButton.CancelMove() || LetGo(),
+                InputEventKey { Keycode: Key.Escape, Pressed: true, Echo: false } => CloseOurs() || LetGo(),
+                InputEventKey { Keycode: ManagerKey, Pressed: true, Echo: false, CtrlPressed: false, ShiftPressed: false, AltPressed: false, MetaPressed: false } =>
+                    OpenOrClose(),
                 InputEventKey { Keycode: Key.D, Pressed: true, Echo: false, CtrlPressed: true, ShiftPressed: false, AltPressed: false } => Deselect(),
                 _ => false,
             };
@@ -442,6 +460,41 @@ static class ShortcutsPatch
             return true;
         }
     }
+
+    // Our open menu or dialog, or the main menu button's move mode: true if there was one (it's closed now).
+    static bool CloseOurs() => MenuPanel.Close() || RelaunchCheck.Cancel() || ProfileShare.Close() || MenuButton.CancelMove();
+
+    // F8 on the main menu opens our page, as the main menu button does; on the Modding page it goes back, as the page's
+    // Back button does, each with its sound. Anything of ours that's open closes first instead, as with Escape. Elsewhere it's left to the
+    // game, which does nothing with it: on any other screen (by the game's own reckoning, where a popup counts as one),
+    // during a fade, and while a text box has the keyboard (a text box doesn't take F8, so it would reach here).
+    static bool OpenOrClose()
+    {
+        if (Typing() || NGame.Instance?.Transition is not { InTransition: false })
+            return false;
+        switch (ActiveScreenContext.Instance.GetCurrentScreen())
+        {
+            case NMainMenu menu:
+                if (!CloseOurs())
+                {
+                    SfxCmd.Play(FmodSfx.uiClick); // the main menu button's click
+                    MenuButton.Open(menu);
+                }
+                return true;
+            case NModdingScreen screen:
+                if (CloseOurs())
+                    return true;
+                if (screen.GetNodeOrNull<NBackButton>("BackButton") is not { IsEnabled: true } back)
+                    return false;
+                SfxCmd.Play(FmodSfx.backButton); // its press's sound, which ForceClick skips
+                back.ForceClick();
+                return true;
+            default:
+                return false;
+        }
+    }
+
+    static bool Typing() => ((SceneTree)Engine.GetMainLoop()).Root.GuiGetFocusOwner() is LineEdit { Editable: true } or TextEdit { Editable: true };
 
     static bool LetGo() => HistoryBar.Screen is { } screen && GodotObject.IsInstanceValid(screen) && screen.IsVisibleInTree()
         && Selection.Clear(screen.GetNode<Control>("%ModsScrollContainer/Mask/Content"));
@@ -520,27 +573,41 @@ static class RowSelectedPatch
 }
 
 // The game's "mod not loaded" popup for a mod installed while it runs: ours ("New Mod Added") instead, at most one
-// every 30 seconds.
+// every 30 seconds. A new copy of a mod installed from the same source doesn't load in place of the one there (its pick
+// stays), so it gets its own words; with other new mods, both.
 [HarmonyPatch(typeof(NGame), "OnNewModDetected")]
 static class NewModPopupPatch
 {
     const ulong EveryMs = 30_000;
     static ulong _lastShown;
+    // By copy (Copies.SwitchKey): an update of a copy installed this session is a new Mod of a copy already announced.
+    static readonly HashSet<string> Announced = [];
 
-    static bool Prefix()
+    static bool Prefix(Mod mod)
     {
         try
         {
             var now = Time.GetTicksMsec();
             if ((_lastShown != 0 && now - _lastShown < EveryMs) || NModalContainer.Instance is not { } modals
-                || modals.GetChildren().OfType<NErrorPopup>().Any())
+                || modals.GetChildren().OfType<NErrorPopup>().Any(p => !p.IsQueuedForDeletion())) // a closed one stays till the frame ends
                 return false;
-            if (NErrorPopup.Create(new LocString("settings_ui", "SPIRE_MOD_MANAGER.NEW_MOD_TITLE"),
-                    new LocString("settings_ui", "SPIRE_MOD_MANAGER.NEW_MOD_BODY"), null, showReportBugButton: false) is { } popup)
+            var arrived = Installed.Mods.Append(mod).Distinct().Where(m => !Announced.Contains(Copies.SwitchKey(m))).ToList();
+            var keys = arrived.Select(Copies.SwitchKey).ToHashSet();
+            // A new copy is one Installed took as new (an update of either copy isn't: it keeps the new-mods text), beside a
+            // copy of its id and source from before these (two copies that came together are a new mod).
+            var copies = arrived.Where(m => Installed.Mods.Contains(m) && Copies.Twins(m).Any(t => !keys.Contains(Copies.SwitchKey(t)))).ToList();
+            var title = new LocString("settings_ui", "SPIRE_MOD_MANAGER.NEW_MOD_TITLE");
+            var copyBody = new LocString("settings_ui", "SPIRE_MOD_MANAGER.NEW_COPY_BODY");
+            copyBody.Add("mods", string.Join(", ", copies.Select(m => (m.manifest?.name ?? m.manifest?.id) + Copies.Which(m))));
+            var popup = copies.Count == 0 ? NErrorPopup.Create(title, new LocString("settings_ui", "SPIRE_MOD_MANAGER.NEW_MOD_BODY"), null, showReportBugButton: false)
+                : copies.Count == arrived.Count ? NErrorPopup.Create(title, copyBody, null, showReportBugButton: false)
+                : Both(title, copyBody);
+            if (popup != null)
             {
                 Menus.Mark(popup);
                 modals.Add(popup);
                 _lastShown = now;
+                Announced.UnionWith(keys);
             }
             return false;
         }
@@ -549,6 +616,21 @@ static class NewModPopupPatch
             Log.Error($"[{ModEntry.ModId}] Could not show the new mod popup, showing the game's: {e}");
             return true;
         }
+    }
+
+#if DEVTOOLS
+    // Self-test: the next mod installed gets its popup, as if none was shown in the last 30 s.
+    public static void TestReset() => _lastShown = 0;
+#endif
+
+    // New mods and a new copy: both texts, a blank line between, through the popup's plain-text Create, found by name
+    // (where it's missing, the new mods' text alone).
+    static NErrorPopup? Both(LocString title, LocString copyBody)
+    {
+        var body = $"{Menus.Text("SPIRE_MOD_MANAGER.NEW_MOD_BODY")}\n\n{copyBody.GetFormattedText()}";
+        if (AccessTools.Method(typeof(NErrorPopup), nameof(NErrorPopup.Create), [typeof(string), typeof(string), typeof(bool)]) is { } create)
+            return create.Invoke(null, [title.GetFormattedText(), body, false]) as NErrorPopup;
+        return NErrorPopup.Create(title, new LocString("settings_ui", "SPIRE_MOD_MANAGER.NEW_MOD_BODY"), null, showReportBugButton: false);
     }
 }
 
@@ -576,7 +658,8 @@ static class NewModTogglePatch
 
 // The tickbox of one of several picked rows on the main list sets them all to the state it took, as one undo step,
 // their rows kept under a Show: choice. In place of the game's toggle for that row; other rows' tickboxes, and Load
-// Order's, switch only their own mod. This mod stays on (Dependencies.Set). Falls back to the game's toggle on error.
+// Order's, switch only their own mod. This mod stays on, and where two copies of a mod are picked, the clicked row's
+// copy is the one turned on (Dependencies.Set). Falls back to the game's toggle on error.
 [HarmonyPatch(typeof(NModMenuRow), "OnTickboxToggled")]
 static class GroupTickPatch
 {
@@ -588,8 +671,8 @@ static class GroupTickPatch
             if (Layout.Current != Layout.View.Categories || !Selection.Several || !Selection.Contains(__instance.Mod)
                 || CategoryList.ScreenOf(__instance) is not { } screen || HistoryBar.Screen != screen)
                 return true;
-            ListFilter.Keep(Selection.Mods.Select(m => m.manifest?.id).OfType<string>());
-            Dependencies.Set(Selection.Mods, tickbox.IsTicked, screen);
+            ListFilter.KeepCopies(Selection.Mods.Select(m => m.manifest?.id));
+            Dependencies.Set(Selection.Mods, tickbox.IsTicked, screen, winner: __instance.Mod);
             CategoryList.Redraw(screen.GetNode<Control>("%ModsScrollContainer/Mask/Content"), keep: true);
             return false;
         }
@@ -601,8 +684,45 @@ static class GroupTickPatch
     }
 }
 
-// Keeps a ticked or unticked row in the list under the Show: choice (ListFilter.Keep), so it doesn't vanish under the
-// mouse. A prefix, so the page bar's redraw counts it.
+// On our views, the tickbox of a mod installed more than once switches that copy: ticked, it becomes the copy that loads
+// and the id's other copies, of any source, go off; unticked, the mod goes off and keeps its pick. One undo step: the
+// game's check runs as after its own toggle, and ModToggledPatch records it once. The game's own toggle would switch
+// every copy of the id and source (Vanilla View still does). After GroupTickPatch (a tick on several picked rows is
+// that one's: then __runOriginal is false) and still ahead of Better Mod Menu's. Falls back to the game's toggle on
+// error, and in a session that can't save our data when the tick would change the pick.
+[HarmonyPatch(typeof(NModMenuRow), "OnTickboxToggled")]
+static class CopyTickPatch
+{
+    [HarmonyPriority(Priority.First - 1)]
+    static bool Prefix(NModMenuRow __instance, NTickbox tickbox, bool __runOriginal)
+    {
+        try
+        {
+            if (!__runOriginal || Store.Data.VanillaView || __instance.Mod is not { manifest.id: { } id } mod || id == ModEntry.ModId
+                || Copies.Others(mod).Count == 0 || CategoryList.ScreenOf(__instance) is not { } screen || HistoryBar.Screen != screen)
+                return true;
+            if (tickbox.IsTicked && Store.ReadOnly && Dependencies.ChangesPick(mod))
+                return true;
+            var wereOn = Copies.Others(mod).Where(Dependencies.IsOn).ToList();
+            Dependencies.Write([(mod, tickbox.IsTicked)], winner: mod);
+            Profiles.RefreshTickboxes(screen);
+            screen.OnModEnabledOrDisabled();
+            // The copy this switched off: its title turns (ModToggledPatch) and its row glows, as a banner's Show does.
+            foreach (var row in screen.GetNode("%ModsScrollContainer/Mask/Content").GetChildren().OfType<NModMenuRow>()
+                .Where(r => r.Mod is { } other && wereOn.Contains(other) && !Dependencies.IsOn(other) && r.IsVisibleInTree()))
+                CategoryList.Flash(row);
+            return false;
+        }
+        catch (Exception e)
+        {
+            Log.Error($"[{ModEntry.ModId}] Could not switch a copy of a mod installed twice; the game's tickbox switches every copy of it: {e}");
+            return true;
+        }
+    }
+}
+
+// Keeps a ticked or unticked row in the list under the Show: choice (ListFilter.KeepCopies: with every copy of its id,
+// which a tick switches together), so it doesn't vanish under the mouse. A prefix, so the page bar's redraw counts it.
 [HarmonyPatch(typeof(NModMenuRow), "OnTickboxToggled")]
 static class TickKeepPatch
 {
@@ -610,7 +730,7 @@ static class TickKeepPatch
     {
         try
         {
-            ListFilter.Keep(__instance.Mod?.manifest?.id);
+            ListFilter.KeepCopies([__instance.Mod?.manifest?.id]);
         }
         catch (Exception e)
         {

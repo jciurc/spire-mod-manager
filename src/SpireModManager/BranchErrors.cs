@@ -19,6 +19,11 @@ static class BranchErrors
 
     public static IReadOnlyList<LocString> Dropped(Mod mod) => _dropped.TryGetValue(mod, out var messages) ? messages : [];
 
+    // Every message of a copy SameIdLoad set aside (it doesn't load, like the game's own duplicates, whose messages it
+    // clears): kept for the copy's info panel.
+    public static void Keep(Mod mod, IEnumerable<LocString> errors) =>
+        (_dropped.TryGetValue(mod, out var kept) ? kept : _dropped[mod] = []).AddRange(errors);
+
     // From ModEntry.Init: the game's branch check and the mods' off states are in place by then, and the main menu
     // reads the errors later. Again (late) just before the main menu's MODDED warning reads them (BranchErrorsLatePatch),
     // in case a game update ever checks branches after the mods load: one found then is dropped too, and the log says
@@ -35,12 +40,19 @@ static class BranchErrors
     // For the self-test: Init got here (a dev run has no Steam, so no real branch error to see go).
     public static bool Ran { get; private set; }
 
-    // Returns how many mods had one.
+    // Returns how many mods had one. A copy SameIdLoad set aside gives up every message (none should be left by then).
     public static int DropFromOffMods(IEnumerable<Mod> mods)
     {
-        var dropped = new List<string>();
+        var (dropped, aside) = (new List<string>(), new List<string>());
         foreach (var mod in mods)
         {
+            if (SameIdLoad.IsSetAside(mod) && mod.errors is { Count: > 0 } late)
+            {
+                Keep(mod, late);
+                mod.errors = null;
+                aside.Add(Copies.CopyOf(mod));
+                continue;
+            }
             if (mod.state != ModLoadState.Disabled || mod.errors is not { } errors)
                 continue;
             var branch = errors.Where(e => e.LocTable == Table && e.LocEntryKey == Key).ToList();
@@ -55,7 +67,9 @@ static class BranchErrors
         }
         if (dropped.Count > 0)
             Log.Info($"[{ModEntry.ModId}] Took the Steam branch error off mods that are off (they don't load; their info panels still show it): {string.Join(", ", dropped)}");
-        return dropped.Count;
+        if (aside.Count > 0)
+            Log.Info($"[{ModEntry.ModId}] Took the game's messages off copies set aside as duplicates (they don't load; their info panels still show them): {string.Join(", ", aside)}");
+        return dropped.Count + aside.Count;
     }
 
 #if DEVTOOLS
