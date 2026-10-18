@@ -1,3 +1,4 @@
+using System.Runtime.CompilerServices;
 using Godot;
 using MegaCrit.Sts2.Core.Localization;
 using MegaCrit.Sts2.Core.Nodes.CommonUi;
@@ -103,23 +104,45 @@ static class Menus
         return box;
     }
 
+    // A small button's look and a flat one's (Flatten), each a Theme set on the button: one property instead of a
+    // dozen overrides, on each of the ~500 buttons a 248-mod list makes (#46). What a look leaves out comes from the
+    // page, as it did. Made again when the font changes (with the game's language); buttons made before keep theirs.
+    static (Font Font, Theme Small, Theme Flat)? _looks;
+
+    static (Theme Small, Theme Flat) Looks()
+    {
+        var font = ModEntry.Font("res://themes/kreon_regular_shared.tres");
+        if (_looks is { } made && made.Font == font)
+            return (made.Small, made.Flat);
+        Theme Make(IEnumerable<(string State, StyleBox Box)> boxes, int size, params (string Name, Color Color)[] colors)
+        {
+            var theme = new Theme();
+            foreach (var (state, box) in boxes)
+                theme.SetStylebox(state, "Button", box);
+            theme.SetFont("font", "Button", font);
+            theme.SetFontSize("font_size", "Button", size);
+            foreach (var (name, color) in colors)
+                theme.SetColor(name, "Button", color);
+            return theme;
+        }
+        var small = Make(SmallBoxes, 16, ("font_color", Cream), ("font_hover_color", Colors.White), ("font_disabled_color", new Color(Cream, 0.3f)));
+        // Flat: no box, the text bigger and dimmer, gold under the mouse; disabled as a small one.
+        var flat = Make(new[] { "normal", "hover", "pressed", "disabled" }.Select(state => (state, (StyleBox)FlatBox)), 18,
+            ("font_color", new Color(Cream, 0.6f)), ("font_hover_color", Gold), ("font_pressed_color", Gold), ("font_disabled_color", new Color(Cream, 0.3f)));
+        _looks = (font, small, flat);
+        return (small, flat);
+    }
+
     // A plain, compact text button for inline actions: no art, a thin border, lit on hover.
     public static Button SmallButton(string text, Action onPressed, bool disabled = false, string? name = null)
     {
         var button = new Button
         {
             Text = text, Disabled = disabled, FocusMode = Control.FocusModeEnum.None,
-            MouseDefaultCursorShape = Control.CursorShape.PointingHand,
+            MouseDefaultCursorShape = Control.CursorShape.PointingHand, Theme = Looks().Small,
         };
         if (name != null)
             button.Name = name;
-        foreach (var (state, box) in SmallBoxes)
-            button.AddThemeStyleboxOverride(state, box);
-        button.AddThemeFontOverride("font", ModEntry.Font("res://themes/kreon_regular_shared.tres"));
-        button.AddThemeFontSizeOverride("font_size", 16);
-        button.AddThemeColorOverride("font_color", Cream);
-        button.AddThemeColorOverride("font_hover_color", Colors.White);
-        button.AddThemeColorOverride("font_disabled_color", new Color(Cream, 0.3f));
         button.Pressed += onPressed;
         return button;
     }
@@ -136,26 +159,24 @@ static class Menus
         return button;
     }
 
-    // Just the text: no box at rest, gold on hover (a quiet button among others, like the row's pencil).
-    public static void Flatten(Button button)
-    {
-        foreach (var state in new[] { "normal", "hover", "pressed", "disabled" })
-            button.AddThemeStyleboxOverride(state, FlatBox);
-        button.AddThemeColorOverride("font_color", new Color(Cream, 0.6f));
-        button.AddThemeColorOverride("font_hover_color", Gold);
-        button.AddThemeColorOverride("font_pressed_color", Gold);
-        button.AddThemeFontSizeOverride("font_size", 18);
-    }
+    // Just the text: no box at rest, gold on hover (a quiet button among others, like the row's pencil). For a
+    // SmallButton: its look swapped for the flat one.
+    public static void Flatten(Button button) => button.Theme = Looks().Flat;
+
+    static readonly StringName Separation = "separation"; // made once: every row's buttons set it (a text is converted anew each time)
 
     // The same actions a right-click menu offers, as a row of small buttons (headings are skipped).
     public static HBoxContainer InlineButtons(IEnumerable<MenuItem> items, string name)
     {
         var box = new HBoxContainer { Name = name, MouseFilter = Control.MouseFilterEnum.Ignore, SizeFlagsVertical = Control.SizeFlags.ShrinkCenter };
-        box.AddThemeConstantOverride("separation", 4);
+        box.AddThemeConstantOverride(Separation, 4);
         foreach (var item in items)
             if (item.OnSelect is { } action)
             {
-                var button = SmallButton(item.Label, action, item.Disabled);
+                // A press runs the button's action as it is then: Refill can give it another.
+                var does = new StrongBox<Action?>(action);
+                var button = SmallButton(item.Label, () => does.Value?.Invoke(), item.Disabled);
+                Pressing.Add(button, does);
                 Hover.Tip(button, item.Tip);
                 if (item.Flat)
                     Flatten(button);
@@ -165,4 +186,34 @@ static class Menus
         return box;
     }
 
+    static readonly ConditionalWeakTable<Button, StrongBox<Action?>> Pressing = new();
+
+    // InlineButtons' buttons given other items in place (their words, states, tips and actions) rather than made
+    // again: in Load Order every move changes what Up and Down do on each row it passes. False, nothing changed,
+    // unless there are as many buttons as items, each in the look its item wants.
+    public static bool Refill(HBoxContainer box, IEnumerable<MenuItem> items)
+    {
+        var wanted = items.Where(i => i.OnSelect != null).ToList();
+        var buttons = box.GetChildren().OfType<Button>().ToList();
+        var looks = Looks();
+        if (buttons.Count != box.GetChildCount() || buttons.Count != wanted.Count
+            || buttons.Zip(wanted).Any(p => !Pressing.TryGetValue(p.First, out _) || p.First.Theme != (p.Second.Flat ? looks.Flat : looks.Small)))
+            return false;
+        Rebind(box, wanted);
+        foreach (var (button, item) in buttons.Zip(wanted))
+        {
+            (button.Text, button.Disabled) = (item.Label, item.Disabled);
+            Hover.Tip(button, item.Tip);
+        }
+        return true;
+    }
+
+    // InlineButtons' buttons given these items' actions only, for buttons that already show the items' words, states
+    // and tips: an action holds what its redraw knew (Load Order's rows), so one kept from an earlier redraw goes stale.
+    public static void Rebind(HBoxContainer box, IEnumerable<MenuItem> items)
+    {
+        foreach (var (button, item) in box.GetChildren().OfType<Button>().Zip(items.Where(i => i.OnSelect != null)))
+            if (Pressing.TryGetValue(button, out var does))
+                does.Value = item.OnSelect;
+    }
 }
