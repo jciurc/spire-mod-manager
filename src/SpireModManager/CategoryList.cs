@@ -265,6 +265,36 @@ static class CategoryList
         scroll.Set("_targetDragPosY", Math.Clamp((float)scroll.Get("_targetDragPosY") + pixels, bottom, 0));
     }
 
+    // The frame the rows were last kept in place in: the scroll target before its first move, and how far the list's
+    // top has moved since.
+    static (ulong Frame, float From, float Moved) _kept;
+
+    // The list's top moved down by pixels (up, for less than 0) as the banners above it changed: the rows scroll up as
+    // much at once, the container's target and the rows together, so the ones on screen stay where they were with no
+    // easing and no frame drawn between. Worked out from where the frame began, so moves that cancel out within it (a
+    // banner laid out on one line, then wrapped again) leave the list where it was, at its ends too. Kept within the
+    // list's ends; a list already past one, springing back, isn't snapped or pushed further.
+    public static void KeepInPlace(Control content, float pixels)
+    {
+        if (ScrollContainer(content) is not NScrollableContainer scroll)
+            return;
+        var target = (float)scroll.Get("_targetDragPosY");
+        var frame = Engine.GetProcessFrames();
+        if (_kept.Frame != frame)
+            _kept = (frame, target, 0);
+        _kept.Moved += pixels;
+        var from = _kept.From;
+        var bottom = Math.Min(0, content.GetParent<Control>().Size.Y - content.Size.Y - Ends.Top - Ends.Bottom);
+        var moved = Math.Clamp(from - _kept.Moved, Math.Min(bottom, from), Math.Max(0, from)) - target;
+        if (moved == 0)
+            return;
+        scroll.Set("_targetDragPosY", target + moved);
+        content.Position += new Vector2(0, moved);
+        // The scrollbar as the container sets it while it scrolls, which it won't now: the rows are where it aims.
+        if (bottom < 0)
+            scroll.Scrollbar.SetValueWithoutAnimation(Math.Clamp((content.Position.Y - Ends.Top) / bottom, 0, 1) * 100);
+    }
+
     // At once: the game's container stops scrolling once the rows fit (DisableScrollingIfContentFits), so a
     // target alone would never be reached once a search makes the list short.
     public static void ScrollToTop(Control content)
