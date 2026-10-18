@@ -3220,6 +3220,13 @@ static class SelfTest
             target.EmitSignal(Control.SignalName.MouseEntered);
             await Wait(menu, seconds);
         }
+        // The mouse at a given point over a hover area (not its centre), as the area sees it coming in.
+        async Task HoverAt(Control target, Vector2 at, double seconds)
+        {
+            Hover.TestMouse = () => at;
+            target.EmitSignal(Control.SignalName.MouseEntered);
+            await Wait(menu, seconds);
+        }
         async Task Leave(Control target, double seconds)
         {
             Hover.TestMouse = () => new Vector2(5, 5);
@@ -3228,6 +3235,7 @@ static class SelfTest
         }
         var hot = other.GetNode<Control>("SpireModManagerTitleHover");
         var mark = other.GetNode<Control>("SpireModManagerEditedMark");
+        var markHot = other.GetNode<Control>(RowTitles.MarkHotName); // the notepad's hover area, over it (the notepad takes no mouse)
         var oursHot = ours.GetNode<Control>("SpireModManagerTitleHover");
         Check("the notepad sits left of the name, in the room before the title", mark.Position.X + mark.Size.X <= other.GetNode<Control>("Title").Position.X && mark.Position.X >= 0,
             $"mark at {mark.Position.X}, title text {other.GetNode<Control>("Title").Position.X}..+{hot.Size.X}");
@@ -3251,16 +3259,63 @@ static class SelfTest
         bool TipShown() => screen.HasNode(RowTitles.NoteTipName);
         string TipText() => screen.GetNodeOrNull(RowTitles.NoteTipName)?.FindChildren("*", "RichTextLabel", true, false).OfType<RichTextLabel>()
             .FirstOrDefault()?.GetParsedText() ?? "";
-        await HoverOver(mark, 0.1);
+        await HoverAt(markHot, mark.GetGlobalRect().GetCenter(), 0.1); // on the notepad itself
         var early = TipShown() || CardShown();
         await Wait(menu, Hover.Delay);
         Check("the notepad: a plain \"Contains note\" after the usual delay, not the mod's card", !early && TipShown() && TipText() == "Contains note"
             && Cards() == 0, $"early {early}, tip \"{TipText()}\", cards {Cards()}");
-        await Leave(mark, 0.1);
+        await Leave(markHot, 0.1);
         Check("the notepad's tip goes with the mouse", !TipShown());
         await HoverOver(hot, 0.2);
         Check("no grace period after the notepad: the title waits again", !CardShown());
         await Leave(hot, 0.3);
+
+        // The notepad's hover area (issue 124): the notepad is small, so the area reaches a little left of it (no further
+        // than the row's edge), above and below (the title's line, as the title's area beside it), and not right, where the
+        // title's area starts. The notepad is drawn as before, its own size, and takes no mouse; the area passes clicks on.
+        var (markAt, areaAt, titleAt, rowAt) = (mark.GetGlobalRect(), markHot.GetGlobalRect(), hot.GetGlobalRect(), other.GetGlobalRect());
+        Check("the notepad's hover area reaches a little left of it, above and below, not right into the title; clicks pass through it",
+            markHot.Visible && areaAt.Encloses(markAt) && areaAt.Position.X < markAt.Position.X && areaAt.Position.X >= rowAt.Position.X
+            && areaAt.Position.Y < markAt.Position.Y && areaAt.End.Y > markAt.End.Y && Math.Abs(areaAt.End.X - markAt.End.X) < 0.5f
+            && areaAt.End.X <= titleAt.Position.X && Math.Abs(areaAt.Position.Y - titleAt.Position.Y) < 0.5f && Math.Abs(areaAt.End.Y - titleAt.End.Y) < 0.5f
+            && mark.Size == Icons.Notepad.GetSize() && mark.MouseFilter == Control.MouseFilterEnum.Ignore && markHot.MouseFilter == Control.MouseFilterEnum.Pass,
+            $"area {areaAt}, notepad {markAt} ({mark.MouseFilter}), title's area {titleAt}, row {rowAt}");
+        // Just left of the notepad, off it but in the area: its "Contains note", as on the notepad.
+        Vector2 LeftOfMark() => new((markHot.GetGlobalRect().Position.X + mark.GetGlobalRect().Position.X) / 2, mark.GetGlobalRect().GetCenter().Y);
+        var leftOf = LeftOfMark();
+        await HoverAt(markHot, leftOf, Hover.Delay + 0.15);
+        Check("hovering just left of the notepad shows its \"Contains note\"", areaAt.HasPoint(leftOf) && !markAt.HasPoint(leftOf)
+            && TipShown() && TipText() == "Contains note", $"at {leftOf}, area {areaAt}, notepad {markAt}, tip \"{TipText()}\"");
+        await Leave(markHot, 0.1);
+        // A click there, through the viewport as the game gets a player's (works headless too; only hover needs a window):
+        // it lands on the area, which passes it on to the row, selected as by a click anywhere else on it. The game's row
+        // takes a click only while the mouse is on it, so first its mouse_entered (a mouse motion doesn't hover headless).
+        // The row in view first, as a player's click needs it.
+        var listView = content.GetParent<Control>();
+        if (!listView.GetGlobalRect().Encloses(markHot.GetGlobalRect()))
+        {
+            CategoryList.ScrollTo(content, other);
+            await Wait(menu, 1.5);
+        }
+        CategoryList.Select(screen, ours);
+        await Wait(menu, 0.3);
+        var selectedBefore = RowState.Selected(other);
+        var landed = false;
+        void Landed(InputEvent e) => landed |= e is InputEventMouseButton { ButtonIndex: MouseButton.Left, Pressed: true };
+        markHot.GuiInput += Landed;
+        other.EmitSignal(Control.SignalName.MouseEntered);
+        var clickAt = LeftOfMark();
+        var inView = listView.GetGlobalRect().HasPoint(clickAt);
+        var viewportAt = ViewportPoint(markHot, clickAt);
+        foreach (var pressed in new[] { true, false })
+            other.GetViewport().PushInput(new InputEventMouseButton { ButtonIndex = MouseButton.Left, Pressed = pressed, Position = viewportAt, GlobalPosition = viewportAt }, true);
+        await Wait(menu, 0.3);
+        markHot.GuiInput -= Landed;
+        other.EmitSignal(Control.SignalName.MouseExited);
+        Check("a click just left of the notepad lands on its hover area and still selects the row", !selectedBefore && landed
+            && RowState.Selected(other) && !RowState.Selected(ours) && CategoryList.Selected == other.Mod,
+            $"at {clickAt} (in the list's view {inView}), selected before {selectedBefore}, landed on the area {landed}, "
+            + $"selected after {RowState.Selected(other)} (ours {RowState.Selected(ours)})");
         Hover.TestMouse = null;
 
         // Where Hover puts a card it places itself (CardMisplaced: exactly there, over neither the trigger nor the mouse,
@@ -6795,6 +6850,10 @@ static class SelfTest
         await Wait(menu, 0.3);
         return where;
     }
+
+    // A point given as GetGlobalRect gives it, as the viewport's own input reads it (Viewport.PushInput in local
+    // coordinates): through the control's canvas, so a scaled window or a layer moved doesn't put the click elsewhere.
+    static Vector2 ViewportPoint(Control control, Vector2 global) => control.GetGlobalTransformWithCanvas() * (control.GetGlobalTransform().AffineInverse() * global);
 
     // A mod installed while the game runs, made up, the way the game does it: read into its mod list (not loaded),
     // then announced. Gone again: off both lists.
