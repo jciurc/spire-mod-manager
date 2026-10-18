@@ -1767,7 +1767,7 @@ static class SelfTest
                 $"quits {quits}, relaunches {relaunches}, Test Fixes on {Dependencies.IsOn(fixes)}, dialog left {root.GetNodeOrNull(LaunchGuard.PlainDialogName) != null}");
             // Mod Doctor's suspects (made up: Test UI, which this launch has on, among them, ours and Mod Doctor never
             // turned off, and one not installed): three named, the rest under "more", whose card names them; a third button
-            // between the game's two, which turns them off and restarts, the rest of this launch's list as it was. Escape
+            // under the game's two, which turns them off and restarts, the rest of this launch's list as it was. Escape
             // stays the game's Quit.
             LaunchGuard.TestNoLanguage = false;
             ModDoctor.TestSuspects = [ModEntry.ModId, ModDoctor.ModId, "SmmTestUi", "SmmTestFixes", "SmmTestLib", "SmmTestNotThere"];
@@ -1784,16 +1784,18 @@ static class SelfTest
             var popup = NModalContainer.Instance?.OpenModal as Control;
             var third = popup?.FindChild(LaunchGuard.SuspectsButtonName, true, false) as Control;
             var (quitButton, restoreButton) = (popup?.GetNodeOrNull<Control>("VerticalPopup/NoButton"), popup?.GetNodeOrNull<Control>("VerticalPopup/YesButton"));
-            var between = third != null && quitButton != null && restoreButton != null && third.GetGlobalRect().Position.X > quitButton.GetGlobalRect().Position.X
-                && third.GetGlobalRect().End.X < restoreButton.GetGlobalRect().End.X;
+            // Under the two, centred between them, wider than each (its words), overlapping neither.
+            var between = third != null && quitButton != null && restoreButton != null && third.GetGlobalRect().Position.Y >= quitButton.GetGlobalRect().End.Y - 8
+                && Math.Abs(third.GetGlobalRect().GetCenter().X - (quitButton.GetGlobalRect().GetCenter().X + restoreButton.GetGlobalRect().GetCenter().X) / 2) < 2
+                && third.Size.X > restoreButton.Size.X && !third.GetGlobalRect().Intersects(restoreButton.GetGlobalRect().Grow(-8));
             var suspectTexts = string.Join(" | ", PopupTexts());
             await Capture(menu, outDir, "1h-crash-dialog-suspects");
             var suspectsCard = popup?.GetNodeOrNull<RichTextLabel>("VerticalPopup/Description") is { } description
                 ? await LinkCard(description, "spire-mod-manager-more-suspects") : "";
             Check("the dialog with Mod Doctor's suspects: three named, the rest counted as a link whose card names them; a third button, "
-                + "\"Disable suspect mods and restart\", between Quit and Restore and restart",
+                + "\"Disable suspect mods and restart\", under Quit and Restore and restart, centred and wider",
                 third is { Visible: true } && between && suspectTexts.Contains("Disable suspect mods and restart") && suspectTexts.Contains("3 more")
-                && suspectsCard.Contains("Test UI") && suspectsCard.Contains("SmmTestNotThere") && !suspectsCard.Contains("Test Fixes"),
+                && suspectsCard.Contains("Test Fixes") && suspectsCard.Contains("SmmTestNotThere") && !suspectsCard.Contains("Test UI"),
                 $"third {third != null}, between {between}; {suspectTexts}; card: {suspectsCard}");
             Input.ParseInputEvent(new InputEventKey { Keycode = Key.Escape, Pressed = true });
             await Wait(menu, 0.1);

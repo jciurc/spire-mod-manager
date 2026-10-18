@@ -594,7 +594,7 @@ static class LaunchGuard
 
     // The offer in the game's popup, our mark on it. Another mod's popup would keep ours out (the container takes one at
     // a time), so it goes; if ours still isn't the one shown, that's a failure (the game's dialog then). With suspects to
-    // turn off, a third button between the game's two (SuspectsButton).
+    // turn off, a third button under the game's two (SuspectsButton).
     static async Task<Answer> AskStyled(Offer offer, List<string> suspects)
     {
         var body = new LocString("settings_ui", "SPIRE_MOD_MANAGER.CRASH_BODY");
@@ -628,12 +628,11 @@ static class LaunchGuard
 
     public const string SuspectsButtonName = "SpireModManagerSuspectsButton";
 
-    // The third button: a copy of the game's own (its Restore), between its two, without their signals or keys (Enter and
-    // Escape stay the game's two). It closes the popup as the game's do.
+    // The third button: a copy of the game's own (its Restore), without their signals or keys (Enter and Escape stay the
+    // game's two). It closes the popup as the game's do.
     static void SuspectsButton(NGenericPopup popup, Action pressed)
     {
-        if (popup.GetNodeOrNull<NPopupYesNoButton>("VerticalPopup/YesButton") is not { } yes
-            || popup.GetNodeOrNull<NPopupYesNoButton>("VerticalPopup/NoButton") is not { } no)
+        if (popup.GetNodeOrNull<NPopupYesNoButton>("VerticalPopup/YesButton") is not { } yes)
             return;
         // Groups, script and scene, not signals: the game connects its own answer to its buttons.
         if (yes.Duplicate((int)(Node.DuplicateFlags.Groups | Node.DuplicateFlags.Scripts | Node.DuplicateFlags.UseInstantiation)) is not NPopupYesNoButton button)
@@ -650,9 +649,19 @@ static class LaunchGuard
             pressed();
             NModalContainer.Instance?.Clear();
         }));
-        yes.GetParent().AddChild(button);
-        button.Position = new Vector2((yes.Position.X + no.Position.X) / 2, yes.Position.Y);
+        // Under the game's two, centred and wider (its words don't fit their width), at the art's bottom edge, where our
+        // mark was: the mark goes just under the art. The art keeps its size (it keeps its aspect).
+        var art = (Control)yes.GetParent();
+        art.AddChild(button);
+        (button.AnchorLeft, button.AnchorRight, button.AnchorTop, button.AnchorBottom) = (0.5f, 0.5f, 1, 1);
+        var below = yes.OffsetBottom - 6;
+        (button.OffsetLeft, button.OffsetRight, button.OffsetTop, button.OffsetBottom) =
+            (-SuspectsButtonWidth / 2, SuspectsButtonWidth / 2, below, below + (yes.OffsetBottom - yes.OffsetTop));
+        if (art.GetNodeOrNull<Control>(Menus.MarkName) is { } mark)
+            (mark.OffsetTop, mark.OffsetBottom) = (mark.OffsetTop - mark.OffsetBottom + button.OffsetBottom + 4, button.OffsetBottom + 4);
     }
+
+    const float SuspectsButtonWidth = 300;
 
     public const string PlainDialogName = "SpireModManagerCrashDialog";
     const string DisableSuspectsAction = "disable_suspects";
