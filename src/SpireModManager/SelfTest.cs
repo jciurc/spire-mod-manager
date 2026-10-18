@@ -2210,22 +2210,32 @@ static class SelfTest
         // Where a menu opens from the mouse (MenuMisplaced: a corner exactly on it, whole on screen, so not over it):
         // mid-screen, below right of it; near the bottom, above it instead of pushed up over it; near the right edge, left
         // of it; in the bottom-right corner, both. Placed again as it grows: turned above, it grows upward, its bottom
-        // still at the mouse; opened below, then grown past the bottom, it turns above.
+        // still at the mouse; grown past the bottom as it opens, it turns above; grown past it once open (slides), it only
+        // slides up by what's past, its top-left corner no longer at the mouse but not turned (its bottom at the screen's).
         var view = content.GetViewportRect().Size;
-        async Task<string?> MenuAt(Vector2 mouse, bool up, bool left, float grow = 0, bool? upFirst = null)
+        async Task<string?> MenuAt(Vector2 mouse, bool up, bool left, float grow = 0, bool? upFirst = null, bool slides = false)
         {
             var point = new Rect2(mouse, Vector2.Zero);
             Hover.TestMouse = () => mouse;
             var probe = MenuPanel.Show(content, () => [new MenuItem("One", () => { }), new MenuItem("Two", () => { }), new MenuItem("Three", () => { })]);
             Hover.TestMouse = null;
+            void Grow()
+            {
+                if (probe?.FindChild("Items", true, false) is Control list)
+                    list.AddChild(new Control { CustomMinimumSize = new Vector2(0, grow), MouseFilter = Control.MouseFilterEnum.Ignore });
+            }
+            if (grow > 0 && upFirst == null && !slides)
+                Grow(); // as it opens
             await Wait(menu, 0.1);
             var first = MenuMisplaced(probe, point, upFirst ?? up, left);
-            if (grow > 0 && probe?.FindChild("Items", true, false) is Control list)
+            if (grow > 0 && (upFirst != null || slides))
             {
-                list.AddChild(new Control { CustomMinimumSize = new Vector2(0, grow), MouseFilter = Control.MouseFilterEnum.Ignore });
+                Grow(); // once open
                 await Wait(menu, 0.1);
             }
-            var misplaced = first == null ? MenuMisplaced(probe, point, up, left) : $"at first: {first}";
+            string? Slid() => probe?.GetNodeOrNull<Control>("Catcher/Panel")?.GetGlobalRect() is { } box && box.End.Y - view.Y is > -0.5f and < 0.5f
+                && box.Position.X - mouse.X is > -0.5f and < 0.5f && box.Position.Y >= 0 ? null : $"menu {probe?.GetNodeOrNull<Control>("Catcher/Panel")?.GetGlobalRect()} from {mouse}, on {view}";
+            var misplaced = first != null ? $"at first: {first}" : slides ? Slid() : MenuMisplaced(probe, point, up, left);
             MenuPanel.Close();
             return misplaced;
         }
@@ -2237,10 +2247,12 @@ static class SelfTest
         Check("menus: near the right edge, a menu opens left of the mouse", right == null, right ?? "");
         var corner = await MenuAt(view - new Vector2(40, 60), up: true, left: true);
         Check("menus: in the bottom-right corner, a menu opens above the mouse and left of it", corner == null, corner ?? "");
-        var grownUp = await MenuAt(new Vector2(300, view.Y - 60), up: true, left: false, grow: 200);
-        var grownPast = await MenuAt(new Vector2(300, view.Y - 300), up: true, left: false, grow: 300, upFirst: false);
-        Check("menus: placed again as they grow (turned above, upward from the mouse; grown past the bottom, turned above)",
-            grownUp == null && grownPast == null, $"turned: {grownUp ?? "fine"}; grown past: {grownPast ?? "fine"}");
+        var grownUp = await MenuAt(new Vector2(300, view.Y - 60), up: true, left: false, grow: 200, upFirst: true);
+        var grownPast = await MenuAt(new Vector2(300, view.Y - 300), up: true, left: false, grow: 300);
+        var grownOpen = await MenuAt(new Vector2(300, view.Y - 300), up: false, left: false, grow: 300, slides: true);
+        Check("menus: placed again as they grow (turned above, upward from the mouse; grown past the bottom as it opens, turned "
+            + "above; grown past it once open, only slid up, not turned)", grownUp == null && grownPast == null && grownOpen == null,
+            $"turned: {grownUp ?? "fine"}; grown past: {grownPast ?? "fine"}; once open: {grownOpen ?? "fine"}");
 
 
         var category = Categories.Add();

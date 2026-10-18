@@ -87,14 +87,16 @@ static class MenuPanel
 
         // From the mouse (a point) by default: its top-left corner there, or, where that runs off the bottom (right) and
         // less would the other way, its bottom (right) edge there instead. From a picker the same off its edges: under it
-        // from its left edge, or over it to its right edge. Placed again as its size changes; once turned it stays turned
-        // while it fits, so it doesn't jump back and forth as it grows and shrinks. Kept on screen.
+        // where there's room below, over it where there isn't; from its left edge where there's room to the right, to its
+        // right edge where there isn't. It turns only while it opens (its first sizes, through the second frame): growing
+        // later (tags wrapping, the notes box), it only slides back on screen, so what the player is using stays under the
+        // mouse. Kept on screen.
 #if DEVTOOLS
         var anchor = from ?? new Rect2(Hover.TestMouse?.Invoke() ?? viewport.GetMousePosition(), Vector2.Zero); // (the self-test says where the mouse is)
 #else
         var anchor = from ?? new Rect2(viewport.GetMousePosition(), Vector2.Zero);
 #endif
-        var (up, left) = (false, false);
+        var (up, left, settled) = (false, false, false);
         void Fit()
         {
             if (!GodotObject.IsInstanceValid(panel))
@@ -103,9 +105,9 @@ static class MenuPanel
             panel.Size = size;
             float Y(bool above) => above ? anchor.Position.Y - size.Y : anchor.End.Y;
             float X(bool back) => back ? anchor.End.X - size.X : anchor.Position.X;
-            if (Hover.Turns(Y(up), size.Y, catcher.Size.Y, Y(!up)))
+            if (!settled && Hover.Turns(Y(up), size.Y, catcher.Size.Y, Y(!up)))
                 up = !up;
-            if (Hover.Turns(X(left), size.X, catcher.Size.X, X(!left)))
+            if (!settled && Hover.Turns(X(left), size.X, catcher.Size.X, X(!left)))
                 left = !left;
             panel.Position = new Vector2(Math.Clamp(X(left), 0, Math.Max(0, catcher.Size.X - size.X)),
                 Math.Clamp(Y(up), 0, Math.Max(0, catcher.Size.Y - size.Y)));
@@ -113,6 +115,15 @@ static class MenuPanel
         panel.MinimumSizeChanged += Fit;
         panel.Position = new Vector2(anchor.Position.X, anchor.End.Y);
         Callable.From(Fit).CallDeferred();
+        var (tree, frames) = (viewport.GetTree(), 0);
+        void Settle()
+        {
+            if (GodotObject.IsInstanceValid(panel) && ++frames < 2)
+                return;
+            settled = true;
+            tree.ProcessFrame -= Settle;
+        }
+        tree.ProcessFrame += Settle;
         return layer;
     }
 

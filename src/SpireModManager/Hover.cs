@@ -11,7 +11,8 @@ namespace SpireModManager;
 // - leaving, it goes after WindDown (Instant ones at once), so a quick wobble off the edge keeps it;
 // - one card at a time: a newer one closes the one before;
 // - unless its caller places it, it opens below right of the mouse, off its trigger, or above it (left of the mouse)
-//   where there's no room below (right): never over the trigger and the mouse while there's room on the other side.
+//   where there's no room below (right): never over the trigger and the mouse while there's room on the other side. A
+//   picture card mirrors it across: below left of the mouse, turning right of it (or above) where there's no room.
 static class Hover
 {
     public const double Delay = 0.4, Grace = 0.25, WindDown = 0.02, SlowDelay = 1.0;
@@ -43,7 +44,7 @@ static class Hover
     static bool InGrace => Time.GetTicksMsec() < _graceUntil || (_shown != null && GodotObject.IsInstanceValid(_shown));
 
     // A card for `trigger` while the mouse is over it. card: its text, or null for none (asked when it opens).
-    // picture: a picture card instead (to the left of the mouse), or null for none. place: where it goes, kept as it is
+    // picture: a picture card instead (left of the mouse, or right of it or above it where there's no room), or null for none. place: where it goes, kept as it is
     // (default: below right of the mouse, off the trigger, or the other way where there's no room: Show's around). full:
     // the whole text, when the card's is cut short (Alt shows it). fit: the card only as wide as its text (up to width),
     // for a few words. area: what the default place keeps off, when more than the trigger (a note of its own beside it).
