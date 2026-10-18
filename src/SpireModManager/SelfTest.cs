@@ -1036,6 +1036,45 @@ static class SelfTest
         Check("main menu button: its card waits a second, then names the profile in gold", early == "" && Hover.SlowDelay == 1.0
             && late.Text == $"Spire Mod Manager: view and manage installed mods. Currently using profile {Profiles.Active?.Name}"
             && !card.Contains("[gold]") && card.Contains("[color=#") && card.Contains($"]{Profiles.Active?.Name}[/color]"), $"early \"{early}\", then \"{late.Text}\"");
+
+        // Where the card opens, chosen each time from where the button is then (CardMisplaced: exactly where Hover puts
+        // it, over neither the button nor the mouse, on screen): above it in its lower-left corner, with no room below;
+        // moved to the top-right corner, below it and left of the mouse; to the bottom-right corner, above it and left of
+        // the mouse. With the relaunch note showing (above the button in its corner, below it at the top), off the note
+        // too. Moved in memory only: nothing is saved.
+        var saved = Store.Data.MenuButtonAt;
+        var note = button.GetNodeOrNull<Control>("PendingNote");
+        var noteShown = note?.Visible ?? false;
+        async Task<string?> CardAt(ScreenPoint? at, bool up, bool left, bool withNote = false)
+        {
+            Store.Data.MenuButtonAt = at;
+            MenuButton.Place(button);
+            if (note == null)
+                return "no note";
+            note.Visible = withNote;
+            var area = withNote ? button.GetGlobalRect().Merge(note.GetGlobalRect()) : (Rect2?)null;
+            return CardMisplaced(await HoverCardBox(menu, button, Hover.TipName, Hover.SlowDelay + 0.2), button, up, left, area);
+        }
+        try
+        {
+            var corner = await CardAt(null, up: true, left: false);
+            Check("main menu button: in its corner, its card opens above it, not pushed up over it and the mouse", corner == null, corner ?? "");
+            var topRight = await CardAt(new ScreenPoint(5000, -5000), up: false, left: true);
+            var bottomRight = await CardAt(new ScreenPoint(5000, 5000), up: true, left: true);
+            Check("main menu button: moved, its card opens where there's room (top right: below, left of the mouse; bottom right: above, left of it)",
+                topRight == null && bottomRight == null, $"top right: {topRight ?? "fine"}; bottom right: {bottomRight ?? "fine"}");
+            var noteAbove = await CardAt(null, up: true, left: false, withNote: true);
+            var noteBelow = await CardAt(new ScreenPoint(5000, -5000), up: false, left: true, withNote: true);
+            Check("main menu button: its card keeps off the relaunch note too (above it in the corner, below it at the top)",
+                noteAbove == null && noteBelow == null, $"corner: {noteAbove ?? "fine"}; top: {noteBelow ?? "fine"}");
+        }
+        finally
+        {
+            if (note != null)
+                note.Visible = noteShown;
+            Store.Data.MenuButtonAt = saved;
+            MenuButton.Place(button);
+        }
     }
 
     // Our main menu button opens the page on our view even when Vanilla View was the last one shown; the game's way in
@@ -1174,6 +1213,35 @@ static class SelfTest
     {
         if (menu.GetNodeOrNull<Control>("SpireModManagerMenuButton") is not { } button)
             return;
+
+        // Where its menu opens, from the mouse on the button (MenuMisplaced), chosen from where the button is: in its
+        // lower-left corner, above the mouse (right of it), not pushed up over it; moved to the top-right corner, below it
+        // and left of it; to the bottom-right corner, above it and left of it. Moved in memory only: nothing is saved.
+        var saved = Store.Data.MenuButtonAt;
+        async Task<string?> MenuAt(ScreenPoint? at, bool up, bool left)
+        {
+            Store.Data.MenuButtonAt = at;
+            MenuButton.Place(button);
+            var mouse = new Rect2(button.GetGlobalRect().GetCenter(), Vector2.Zero);
+            var misplaced = MenuMisplaced(await ButtonMenu(menu, button), mouse, up, left);
+            MenuPanel.Close();
+            return misplaced;
+        }
+        try
+        {
+            var corner = await MenuAt(null, up: true, left: false);
+            Check("main menu button's menu: in its corner, it opens above the mouse, not pushed up over it", corner == null, corner ?? "");
+            var topRight = await MenuAt(new ScreenPoint(5000, -5000), up: false, left: true);
+            var bottomRight = await MenuAt(new ScreenPoint(5000, 5000), up: true, left: true);
+            Check("main menu button's menu: moved, it opens where there's room (top right: below the mouse, left of it; bottom right: above it, left of it)",
+                topRight == null && bottomRight == null, $"top right: {topRight ?? "fine"}; bottom right: {bottomRight ?? "fine"}");
+        }
+        finally
+        {
+            Store.Data.MenuButtonAt = saved;
+            MenuButton.Place(button);
+        }
+
         var popup = await ButtonMenu(menu, button);
         var labels = popup == null ? [] : MenuPanel.Labels(popup);
         Check("main menu button's menu: Move button, Reset position, Open translations folder, Relaunch game",
@@ -2139,6 +2207,53 @@ static class SelfTest
         var again = MenuPanel.Show(content, () => [new MenuItem("One", () => { })], toggleKey: "test");
         Check("showing the same menu again closes it", picked != null && again == null && !MenuPanel.IsOpen);
 
+        // Where a menu opens from the mouse (MenuMisplaced: a corner exactly on it, whole on screen, so not over it):
+        // mid-screen, below right of it; near the bottom, above it instead of pushed up over it; near the right edge, left
+        // of it; in the bottom-right corner, both. Placed again as it grows: turned above, it grows upward, its bottom
+        // still at the mouse; grown past the bottom as it opens, it turns above; grown past it once open (slides), it only
+        // slides up by what's past, its top-left corner no longer at the mouse but not turned (its bottom at the screen's).
+        var view = content.GetViewportRect().Size;
+        async Task<string?> MenuAt(Vector2 mouse, bool up, bool left, float grow = 0, bool? upFirst = null, bool slides = false)
+        {
+            var point = new Rect2(mouse, Vector2.Zero);
+            Hover.TestMouse = () => mouse;
+            var probe = MenuPanel.Show(content, () => [new MenuItem("One", () => { }), new MenuItem("Two", () => { }), new MenuItem("Three", () => { })]);
+            Hover.TestMouse = null;
+            void Grow()
+            {
+                if (probe?.FindChild("Items", true, false) is Control list)
+                    list.AddChild(new Control { CustomMinimumSize = new Vector2(0, grow), MouseFilter = Control.MouseFilterEnum.Ignore });
+            }
+            if (grow > 0 && upFirst == null && !slides)
+                Grow(); // as it opens
+            await Wait(menu, 0.1);
+            var first = MenuMisplaced(probe, point, upFirst ?? up, left);
+            if (grow > 0 && (upFirst != null || slides))
+            {
+                Grow(); // once open
+                await Wait(menu, 0.1);
+            }
+            string? Slid() => probe?.GetNodeOrNull<Control>("Catcher/Panel")?.GetGlobalRect() is { } box && box.End.Y - view.Y is > -0.5f and < 0.5f
+                && box.Position.X - mouse.X is > -0.5f and < 0.5f && box.Position.Y >= 0 ? null : $"menu {probe?.GetNodeOrNull<Control>("Catcher/Panel")?.GetGlobalRect()} from {mouse}, on {view}";
+            var misplaced = first != null ? $"at first: {first}" : slides ? Slid() : MenuMisplaced(probe, point, up, left);
+            MenuPanel.Close();
+            return misplaced;
+        }
+        var middle = await MenuAt(view / 2, up: false, left: false);
+        Check("menus: mid-screen, a menu opens below right of the mouse", middle == null, middle ?? "");
+        var bottom = await MenuAt(new Vector2(300, view.Y - 60), up: true, left: false);
+        Check("menus: near the bottom, a menu opens above the mouse, not pushed up over it", bottom == null, bottom ?? "");
+        var right = await MenuAt(new Vector2(view.X - 40, 300), up: false, left: true);
+        Check("menus: near the right edge, a menu opens left of the mouse", right == null, right ?? "");
+        var corner = await MenuAt(view - new Vector2(40, 60), up: true, left: true);
+        Check("menus: in the bottom-right corner, a menu opens above the mouse and left of it", corner == null, corner ?? "");
+        var grownUp = await MenuAt(new Vector2(300, view.Y - 60), up: true, left: false, grow: 200, upFirst: true);
+        var grownPast = await MenuAt(new Vector2(300, view.Y - 300), up: true, left: false, grow: 300);
+        var grownOpen = await MenuAt(new Vector2(300, view.Y - 300), up: false, left: false, grow: 300, slides: true);
+        Check("menus: placed again as they grow (turned above, upward from the mouse; grown past the bottom as it opens, turned "
+            + "above; grown past it once open, only slid up, not turned)", grownUp == null && grownPast == null && grownOpen == null,
+            $"turned: {grownUp ?? "fine"}; grown past: {grownPast ?? "fine"}; once open: {grownOpen ?? "fine"}");
+
 
         var category = Categories.Add();
         Categories.Assign(modId, category.Name);
@@ -2292,6 +2407,8 @@ static class SelfTest
         Check("the picker opens the profile list, with details, then Share profile and Import profile", list != null
             && MenuPanel.Labels(list).SequenceEqual(Store.Data.Profiles.Select(p => p.Name).Concat(["Export profile", "Import profile"])),
             list == null ? "no list" : string.Join(", ", MenuPanel.Labels(list)));
+        var dropped = MenuMisplaced(list, picker.GetGlobalRect().GrowIndividual(0, 4, 0, 4), up: false, left: false);
+        Check("the profile list drops right under the picker (4 below it), left edges together", dropped == null, dropped ?? "");
         await Capture(screen, outDir, "7b-profile-list");
         await RealClick(menu, picker);
         Check("a second press on the picker closes it", !MenuPanel.IsOpen);
@@ -2991,6 +3108,33 @@ static class SelfTest
             && !description.StartsWith("Enabled") && description.Contains("Size:") && !description.Contains("Compatibility"), $"{headText} / {description[..Math.Min(60, description.Length)]}");
         Check("fields in order: Alias, Category, Tags, Notes", string.Join(",", yours.GetChildren().Select(c => c.Name.ToString())) == "Alias,Category,Tags,Notes",
             string.Join(",", yours.GetChildren().Select(c => c.Name.ToString())));
+        // The category picker drops its list right under it (2 below it, from its left edge) where it fits, otherwise
+        // just above it; moved near the bottom of the screen, just above it, not pushed up over it. Moved for the press
+        // only, and put back in the same frame.
+        var categoryPicker = yours.GetNode<Button>("Category/Picker");
+        var screenSize = categoryPicker.GetViewportRect().Size;
+        async Task<(string? Misplaced, bool Up)> PickerMenu(float? top = null)
+        {
+            var home = categoryPicker.Position;
+            if (top is { } y)
+                categoryPicker.GlobalPosition = new Vector2(categoryPicker.GlobalPosition.X, y);
+            var from = categoryPicker.GetGlobalRect().GrowIndividual(0, 2, 0, 2);
+            categoryPicker.EmitSignal(BaseButton.SignalName.Pressed);
+            categoryPicker.Position = home;
+            await Wait(menu, 0.2);
+            var open = MenuPanel.Current;
+            var size = open?.GetNodeOrNull<Control>("Catcher/Panel")?.Size ?? Vector2.Zero;
+            var (up, left) = (from.End.Y + size.Y > screenSize.Y, from.Position.X + size.X > screenSize.X);
+            var misplaced = MenuMisplaced(open, from, up, left);
+            MenuPanel.Close();
+            return (misplaced, up);
+        }
+        var (ownPlace, ownUp) = await PickerMenu();
+        Results.Add($"INFO the category picker's list opened {(ownUp ? "above" : "below")} it");
+        Check("the category picker drops its list right under it where it fits, otherwise just above it", ownPlace == null, ownPlace ?? "");
+        var (lowPlace, lowUp) = await PickerMenu(screenSize.Y - categoryPicker.Size.Y - 10);
+        Check("the category picker near the bottom of the screen: its list opens just above it, not pushed up over it", lowUp && lowPlace == null,
+            lowPlace ?? "below it");
         Check("the thumbnail is 256 x 144 (the scene's minimum size lifted)", panel.GetNode<Control>("ModImage").Size == new Vector2(256, 144), $"{panel.GetNode<Control>("ModImage").Size}");
         Check("automatic tags beside the Tags term", yours.GetNodeOrNull<Control>("Tags/Term/SystemTags") is { Visible: true } system && system.GetChildCount() > 0);
         var image = panel.GetNode<TextureRect>("ModImage");
@@ -3173,6 +3317,49 @@ static class SelfTest
             $"at {clickAt} (in the list's view {inView}), selected before {selectedBefore}, landed on the area {landed}, "
             + $"selected after {RowState.Selected(other)} (ours {RowState.Selected(ours)})");
         Hover.TestMouse = null;
+
+        // Where Hover puts a card it places itself (CardMisplaced: exactly there, over neither the trigger nor the mouse,
+        // on screen), chosen each time a card opens from where its trigger is then: a probe with a tip, moved between
+        // hovers. Mid-screen, below the trigger and right of the mouse; near the bottom, above the trigger instead of
+        // pushed back up over it and the mouse; near the right edge, left of the mouse; in the bottom-right corner, both.
+        var probe = new Control { Name = "SpireModManagerHoverProbe", Size = new Vector2(200, 40) };
+        screen.AddChild(probe);
+        Hover.Tip(probe, "Where a card opens");
+        var view = probe.GetViewportRect().Size;
+        async Task<string?> ProbeAt(Vector2 at, bool up, bool left)
+        {
+            probe.GlobalPosition = at;
+            return CardMisplaced(await HoverCardBox(menu, probe, Hover.TipName), probe, up, left);
+        }
+        try
+        {
+            var middle = await ProbeAt(view / 2 - probe.Size / 2, up: false, left: false);
+            Check("hover cards: mid-screen, a card opens below its trigger, right of the mouse", middle == null, middle ?? "");
+            var bottom = await ProbeAt(new Vector2(100, view.Y - 50), up: true, left: false);
+            Check("hover cards: near the bottom, a card opens above its trigger, not pushed up over it and the mouse", bottom == null, bottom ?? "");
+            var right = await ProbeAt(new Vector2(view.X - 210, view.Y / 2 - 20), up: false, left: true);
+            Check("hover cards: near the right edge, a card opens left of the mouse", right == null, right ?? "");
+            var corner = await ProbeAt(view - new Vector2(210, 50), up: true, left: true);
+            Check("hover cards: in the bottom-right corner, a card opens above its trigger and left of the mouse", corner == null, corner ?? "");
+        }
+        finally
+        {
+            probe.QueueFree();
+        }
+        // A row's card, on the lowest row in full view: below its title where it fits, otherwise above it.
+        var list = content.GetParent<Control>().GetGlobalRect();
+        if (content.GetChildren().OfType<NModMenuRow>().Where(r => r.IsVisibleInTree() && r.Mod != null && list.Encloses(r.GetGlobalRect()))
+            .MaxBy(r => r.GetGlobalRect().Position.Y)?.GetNodeOrNull<Control>("SpireModManagerTitleHover") is { Visible: true } lowest)
+        {
+            var box = await HoverCardBox(menu, lowest, "SpireModManagerNotesCard");
+            var (title, mouse) = (lowest.GetGlobalRect(), lowest.GetGlobalRect().GetCenter());
+            var up = box is { } card && Math.Max(mouse.Y + 20, title.End.Y + Hover.Gap) + card.Size.Y > view.Y;
+            var misplaced = CardMisplaced(box, lowest, up, left: false);
+            Results.Add($"INFO the lowest row's card opened {(up ? "above" : "below")} its title");
+            Check("a row's card near the bottom of the list: below its title where it fits, otherwise above it", misplaced == null, misplaced ?? "");
+        }
+        else
+            Results.Add("SKIP a row's card near the bottom of the list: no row in full view");
         Check("Vanilla View shows plain names", await WithVanillaView(screen, menu, () => RowTitle(ModEntry.ModId) == "Spire Mod Manager"));
     }
 
@@ -6102,6 +6289,11 @@ static class SelfTest
         Check("hovering Changes shows the details at once", screen.HasNode("SpireModManagerChangesPanel"));
         var summary = screen.GetNodeOrNull("SpireModManagerChangesPanel")?.FindChildren("*", "RichTextLabel", true, false).OfType<RichTextLabel>().FirstOrDefault()?.GetParsedText() ?? "";
         Check("the summary is titled and names the mod turned off", summary.StartsWith("Changes since launch") && summary.Contains("Test UI"), summary);
+        // Its own place, kept (Hover turns only the cards it places itself): just above the lines, right edges together.
+        var summaryBox = screen.GetNodeOrNull("SpireModManagerChangesPanel")?.FindChildren("*", "PanelContainer", true, false).OfType<Control>().FirstOrDefault()?.GetGlobalRect();
+        var changesAt = changes.GetGlobalRect();
+        Check("the summary keeps its own place: just above the lines, right edges together", summaryBox is { } summaryAt
+            && Math.Abs(summaryAt.End.Y - (changesAt.Position.Y - 8)) < 0.5f && Math.Abs(summaryAt.End.X - changesAt.End.X) < 0.5f, $"{summaryBox} over {changesAt}");
         await Capture(screen, outDir, "14-changes");
         changes.EmitSignal(Control.SignalName.MouseExited);
         Hover.TestMouse = null;
@@ -6792,6 +6984,46 @@ static class SelfTest
         await Wait(menu, 0.1);
         Hover.TestMouse = null; // the real mouse again (menus open where it says)
         return seen;
+    }
+
+    // Where the hover card `name` that hovering `target` brings up sits on screen (null if none), the mouse put back after.
+    static async Task<Rect2?> HoverCardBox(Node menu, Control target, string name, double seconds = Hover.Delay + 0.2)
+    {
+        Rect2? box = null;
+        await SizedHoverCard(menu, target, name, () =>
+        {
+            box = target.GetTree().Root.FindChild(name, true, false)?.FindChildren("*", "PanelContainer", true, false).OfType<Control>().FirstOrDefault()?.GetGlobalRect();
+            return Task.CompletedTask;
+        }, seconds);
+        return box;
+    }
+
+    // Null if a card Hover placed itself for `trigger`, hovered at its middle, is exactly where it should be: whole on
+    // screen; Hover.Gap above the trigger (up), or below it, Hover.Gap off it and at least 20 under the mouse; its left
+    // edge 16 right of the mouse, or (left) its right edge 16 left of it. So over neither the trigger nor the mouse.
+    // area: what the card keeps off, when more than the trigger (Hover.Watch's area). Otherwise where it is.
+    static string? CardMisplaced(Rect2? box, Control trigger, bool up, bool left, Rect2? area = null)
+    {
+        if (box is not { } card)
+            return "no card";
+        var (at, screen) = (area ?? trigger.GetGlobalRect(), trigger.GetViewportRect());
+        var mouse = trigger.GetGlobalRect().GetCenter();
+        var y = up ? card.End.Y - (at.Position.Y - Hover.Gap) : card.Position.Y - Math.Max(mouse.Y + 20, at.End.Y + Hover.Gap);
+        var x = left ? card.End.X - (mouse.X - 16) : card.Position.X - (mouse.X + 16);
+        return screen.Encloses(card) && Math.Abs(x) < 0.5f && Math.Abs(y) < 0.5f ? null : $"card {card} for {at}, on {screen.Size}";
+    }
+
+    // Null if the open menu `menu`, opened from `from` (the mouse, a point; or a picker, MenuPanel.Around), is exactly
+    // where it should be: whole on screen; its top at from's bottom, or (up) its bottom at from's top; its left edge at
+    // from's left, or (left) its right edge at from's right. So over neither the mouse nor the picker. Otherwise where it is.
+    static string? MenuMisplaced(Node? menu, Rect2 from, bool up, bool left)
+    {
+        if (menu?.GetNodeOrNull<Control>("Catcher/Panel") is not { } panel)
+            return "no menu";
+        var (box, screen) = (panel.GetGlobalRect(), panel.GetViewportRect());
+        var y = up ? box.End.Y - from.Position.Y : box.Position.Y - from.End.Y;
+        var x = left ? box.End.X - from.End.X : box.Position.X - from.Position.X;
+        return screen.Encloses(box) && Math.Abs(x) < 0.5f && Math.Abs(y) < 0.5f ? null : $"menu {box} from {from}, on {screen.Size}";
     }
 
     // The selected row's look: a gold rim the same width on every side.

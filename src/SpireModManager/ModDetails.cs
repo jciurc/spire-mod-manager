@@ -595,8 +595,7 @@ static class ModDetails
         picker.Pressed += () =>
         {
             if (content() is { } list && modId() is { } id)
-                Menus.Show(container, CategoryList.CategoryItems(list, id), at: picker.GlobalPosition + new Vector2(0, picker.Size.Y + 2),
-                    toggleKey: "panel-category");
+                Menus.Show(container, CategoryList.CategoryItems(list, id), from: MenuPanel.Around(picker, 2), toggleKey: "panel-category");
         };
         line.AddChild(picker);
         return line;

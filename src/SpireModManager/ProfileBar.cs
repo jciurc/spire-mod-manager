@@ -150,7 +150,7 @@ static class ProfileBar
         picker.Pressed += () => Menus.Show(bar, Store.Data.Profiles.Select(p => new MenuItem(
                 p.Name, () => Profiles.SwitchTo(p, screen), Checked: p == Profiles.Active, Radio: true, Detail: Profiles.Details(p),
                 Badge: p.Edited != null ? (" *", UnsavedMark) : null)).Concat(Sharing()).ToList(),
-            at: picker.GlobalPosition + new Vector2(0, picker.Size.Y + 4), toggleKey: "profiles");
+            from: MenuPanel.Around(picker, 4), toggleKey: "profiles");
         picker.GuiInput += e =>
         {
             if (e is InputEventMouseButton { ButtonIndex: MouseButton.Right, Pressed: false })
