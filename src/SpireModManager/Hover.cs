@@ -73,7 +73,8 @@ static class Hover
     // of ours. Set it again to change the words; null or "" takes the card off. timing: when the card shows (the first
     // call's stays). markup: the text is BBCode, anything of the player's in it escaped by the caller.
     public const string TipName = "SpireModManagerTip";
-    const string TipMeta = "spire_mod_manager_tip", MarkupMeta = "spire_mod_manager_tip_markup";
+    // Made once: each of a page's buttons sets them (a text passed as one is converted anew each time).
+    static readonly StringName TipMeta = "spire_mod_manager_tip", MarkupMeta = "spire_mod_manager_tip_markup";
 
     public static void Tip(Control control, string? text, Timing timing = Timing.Normal, bool markup = false)
     {

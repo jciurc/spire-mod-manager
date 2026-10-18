@@ -162,11 +162,13 @@ static class Menus
     // SmallButton: its look swapped for the flat one.
     public static void Flatten(Button button) => button.Theme = Looks().Flat;
 
+    static readonly StringName Separation = "separation"; // made once: every row's buttons set it (a text is converted anew each time)
+
     // The same actions a right-click menu offers, as a row of small buttons (headings are skipped).
     public static HBoxContainer InlineButtons(IEnumerable<MenuItem> items, string name)
     {
         var box = new HBoxContainer { Name = name, MouseFilter = Control.MouseFilterEnum.Ignore, SizeFlagsVertical = Control.SizeFlags.ShrinkCenter };
-        box.AddThemeConstantOverride("separation", 4);
+        box.AddThemeConstantOverride(Separation, 4);
         foreach (var item in items)
             if (item.OnSelect is { } action)
             {

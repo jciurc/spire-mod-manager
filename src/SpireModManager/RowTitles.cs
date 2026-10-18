@@ -10,9 +10,9 @@ static class RowTitles
 {
     const int OriginalNameSize = 16;
     const float TitleShift = 18; // room before the title in our views (the notepad sits there)
-    const string ShiftMeta = "spire_mod_manager_title_shift";
-    const string FocusMeta = "spire_mod_manager_game_focus"; // the row's focus mode as the game's scene made it
-    const string TickMeta = "spire_mod_manager_tick_shift";
+    static readonly StringName ShiftMeta = "spire_mod_manager_title_shift";
+    static readonly StringName FocusMeta = "spire_mod_manager_game_focus"; // the row's focus mode as the game's scene made it
+    static readonly StringName TickMeta = "spire_mod_manager_tick_shift";
     const float TickShift = 8;
     const string NotesCard = "SpireModManagerNotesCard";
     public const string NoteTipName = "SpireModManagerNoteTip"; // the notepad's "Contains note"
@@ -20,7 +20,14 @@ static class RowTitles
     public const float RowHeight = 56; // our views (the game's: 72), with RowGap between rows
     public const int RowGap = 8;
     const string MarkName = "SpireModManagerEditedMark", HotName = "SpireModManagerTitleHover", RestName = "SpireModManagerOriginalName";
-    const string FullMeta = "spire_mod_manager_full_title", FittedMeta = "spire_mod_manager_fitted_title";
+    static readonly StringName FullMeta = "spire_mod_manager_full_title", FittedMeta = "spire_mod_manager_fitted_title";
+
+    // What Apply, Fit and Look ask each row for, in the types Godot takes, made once: a text passed as one is converted
+    // anew each time (a native call), on every row of every redraw.
+    static readonly NodePath TitlePath = "Title", IconPath = "PlatformIcon", TickboxPath = "Tickbox", HighlightPath = "SelectionHighlight",
+        MarkPath = MarkName, HotPath = HotName, RestPath = RestName;
+    static readonly NodePath[] FitParts = [MarkPath, HotPath, RestPath];
+    static readonly StringName NormalFont = "normal_font", DefaultColor = "default_color", PanelStyle = "panel";
 
     public static void Apply(IEnumerable<NModMenuRow> rows, bool vanilla)
     {
@@ -28,7 +35,7 @@ static class RowTitles
         {
             Unfitted.Remove(row.GetInstanceId()); // this redraw's fit replaces one still waiting (none in Vanilla View)
             var name = row.Mod?.manifest?.name ?? row.Mod?.manifest?.id ?? "";
-            var title = row.GetNode<MegaRichTextLabel>("Title");
+            var title = row.GetNode<MegaRichTextLabel>(TitlePath);
             // The game's label refits its text on every box or text change, and a view switch changes the box several
             // times: off while it's set, then fitted once (Fit in our views, FitVanilla in Vanilla View).
             title.AutoSizeEnabled = false;
@@ -36,14 +43,14 @@ static class RowTitles
             // Our views: smaller text in a shorter row with a smaller tickbox and no Steam/folder icon; the
             // title stretches with the (wider) row.
             row.CustomMinimumSize = new Vector2(0, vanilla ? 72 : RowHeight);
-            row.GetNode<Control>("PlatformIcon").Visible = vanilla;
+            row.GetNode<Control>(IconPath).Visible = vanilla;
             // Focusable in our views, as on the beta, so going to a mod lights its row through focus (stable's row isn't).
             // Vanilla View: as the game's scene has it.
             if (!row.HasMeta(FocusMeta))
                 row.SetMeta(FocusMeta, (int)row.FocusMode);
             row.FocusMode = vanilla ? (Control.FocusModeEnum)(int)row.GetMeta(FocusMeta) : Control.FocusModeEnum.All;
             Look(row, RowState.Selected(row), RowState.Focused(row));
-            var tickbox = row.GetNode<Control>("Tickbox");
+            var tickbox = row.GetNode<Control>(TickboxPath);
             tickbox.PivotOffset = tickbox.Size / 2;
             tickbox.Scale = vanilla ? Vector2.One : new Vector2(0.68f, 0.68f);
             // A little to the left in our views: the pencil goes past it, at the row's far right.
@@ -63,11 +70,11 @@ static class RowTitles
             // The plain name in Vanilla View; in ours Fit sets the text (setting it here too refitted it every redraw).
             if (vanilla)
                 title.Text = Escape(name);
-            if (title.HasThemeColorOverride("default_color")) // (removing one restyles the text, even when there is none)
-                title.RemoveThemeColorOverride("default_color"); // Better Mod Menu's name colour (its page restyles its own)
+            if (title.HasThemeColorOverride(DefaultColor)) // (removing one restyles the text, even when there is none)
+                title.RemoveThemeColorOverride(DefaultColor); // Better Mod Menu's name colour (its page restyles its own)
             Layout.FontSize(title, vanilla ? Layout.RowTitleVanillaSize : Layout.RowTitleSize);
             // Shown again by Fit, in our views.
-            foreach (var part in new[] { MarkName, HotName, RestName })
+            foreach (var part in FitParts)
                 if (row.GetNodeOrNull<Control>(part) is { } old)
                     old.Visible = false;
             if (!vanilla)
@@ -87,13 +94,13 @@ static class RowTitles
     {
         if (!GodotObject.IsInstanceValid(row) || row.Mod is not { } mod || Store.Data.VanillaView) // (switched since it was asked for)
             return;
-        var title = row.GetNode<MegaRichTextLabel>("Title");
+        var title = row.GetNode<MegaRichTextLabel>(TitlePath);
         if (!row.IsVisibleInTree() || title.Size.X <= 4)
         {
             FitLater(row, title, () => Fit(row, name, alias, marked));
             return;
         }
-        var font = title.GetThemeFont("normal_font");
+        var font = title.GetThemeFont(NormalFont);
         float Width(string text, int size) => Measure(font, text, size);
         var markSize = Icons.Notepad.GetSize();
         var room = title.Size.X - 4;
@@ -118,7 +125,7 @@ static class RowTitles
         var top = title.Position.Y + Math.Max(0, (title.Size.Y - lineHeight) / 2); // the text sits in the middle of the title's box
 
         // Hovering the text (not the whole row): the mod's card.
-        var hot = row.GetNodeOrNull<Control>(HotName);
+        var hot = row.GetNodeOrNull<Control>(HotPath);
         if (hot == null)
         {
             hot = new Control { Name = HotName, MouseFilter = Control.MouseFilterEnum.Pass };
@@ -133,7 +140,7 @@ static class RowTitles
         (hot.Position, hot.Size, hot.Visible) = (new Vector2(title.Position.X, top), new Vector2(mainWidth, lineHeight), true);
         hot.SetMeta(FullMeta, main != (alias ?? name) ? alias ?? name : "");
         // The original name, when cut short: the whole of it in a plain tooltip (a second over it).
-        var rest = row.GetNodeOrNull<Control>(RestName);
+        var rest = row.GetNodeOrNull<Control>(RestPath);
         if (rest == null)
         {
             rest = new Control { Name = RestName, MouseFilter = Control.MouseFilterEnum.Pass };
@@ -150,7 +157,7 @@ static class RowTitles
 
         if (marked)
         {
-            var mark = row.GetNodeOrNull<TextureRect>(MarkName);
+            var mark = row.GetNodeOrNull<TextureRect>(MarkPath);
             if (mark == null)
             {
                 mark = new TextureRect
@@ -169,7 +176,7 @@ static class RowTitles
 
     // A row out of sight may have no width yet (in a folded category): its title is fitted once it shows.
     static readonly Dictionary<ulong, Action> Unfitted = [];
-    const string WatchedMeta = "spire_mod_manager_fit_watched";
+    static readonly StringName WatchedMeta = "spire_mod_manager_fit_watched";
 
     static void FitLater(NModMenuRow row, MegaRichTextLabel title, Action fit)
     {
@@ -199,7 +206,7 @@ static class RowTitles
     {
         foreach (var row in rows)
         {
-            var title = row.GetNode<MegaRichTextLabel>("Title");
+            var title = row.GetNode<MegaRichTextLabel>(TitlePath);
             AutoSize(title, title.Text);
         }
     }
@@ -247,14 +254,14 @@ static class RowTitles
     // colour.
     public static readonly Color ChangedTitle = new(1f, 0.82f, 0.45f); // turned on: bright gold
     public static readonly Color ChangedOffTitle = new(0.72f, 0.6f, 0.42f, 0.8f); // turned off: a dim, dusky gold
-    const string TitleColorMeta = "spire_mod_manager_title_color";
+    static readonly StringName TitleColorMeta = "spire_mod_manager_title_color";
 
     public static void MarkChanged(IEnumerable<NModMenuRow> rows, bool vanilla)
     {
         var loaded = History.Loaded?.Mods.DistinctBy(m => (m.Id, m.Source)).ToDictionary(m => (m.Id, m.Source), m => m.Enabled);
         foreach (var row in rows)
         {
-            var title = row.GetNode<Control>("Title");
+            var title = row.GetNode<Control>(TitlePath);
             if (!title.HasMeta(TitleColorMeta))
                 title.SetMeta(TitleColorMeta, title.Modulate);
             var changed = !vanilla && loaded != null && row.Mod is { manifest.id: { } id } mod
@@ -269,7 +276,7 @@ static class RowTitles
     public const int CornerRadius = 4;
     public const int SelectedRim = 2;
     public static readonly Vector4 LookInset = new(-6, -3, 6, 3); // left, top, right, bottom offsets from the row
-    const string GameLookMeta = "spire_mod_manager_game_look", GameBoxMeta = "spire_mod_manager_game_box";
+    static readonly StringName GameLookMeta = "spire_mod_manager_game_look", GameBoxMeta = "spire_mod_manager_game_box";
     static readonly Color Gamelike = MegaCrit.Sts2.Core.Helpers.StsColors.darkBlue, GameSelected = MegaCrit.Sts2.Core.Helpers.StsColors.blue;
     public static readonly Color Gold = new(0.937f, 0.784f, 0.318f, 0.9f);
     static StyleBoxFlat? _hover, _selected;
@@ -291,17 +298,17 @@ static class RowTitles
     {
         if (!RowState.Found)
             return; // a game update renamed the row's own state: we can't tell its look, so it stays the game's
-        if (row.GetNodeOrNull<Panel>("SelectionHighlight") is not { } look)
+        if (row.GetNodeOrNull<Panel>(HighlightPath) is not { } look)
             return;
         if (!look.HasMeta(GameLookMeta))
         {
-            look.SetMeta(GameLookMeta, look.GetThemeStylebox("panel"));
+            look.SetMeta(GameLookMeta, look.GetThemeStylebox(PanelStyle));
             look.SetMeta(GameBoxMeta, new Vector4(look.OffsetLeft, look.OffsetTop, look.OffsetRight, look.OffsetBottom));
         }
         if (Store.Data.VanillaView)
         {
             // The game's panel, size and colours (as its row would set them).
-            look.AddThemeStyleboxOverride("panel", (StyleBox)look.GetMeta(GameLookMeta));
+            look.AddThemeStyleboxOverride(PanelStyle, (StyleBox)look.GetMeta(GameLookMeta));
             var box = (Vector4)look.GetMeta(GameBoxMeta);
             (look.OffsetLeft, look.OffsetTop, look.OffsetRight, look.OffsetBottom) = (box.X, box.Y, box.Z, box.W);
             look.Modulate = selected ? new Color(GameSelected, 0.25f) : focused ? new Color(Gamelike, 0.25f) : Colors.Transparent;
@@ -310,7 +317,7 @@ static class RowTitles
         _hover ??= Box(new Color(0.45f, 0.62f, 0.85f, 0.1f));
         _selected ??= Box(new Color(0.16f, 0.3f, 0.48f, 0.55f), Gold);
         (look.OffsetLeft, look.OffsetTop, look.OffsetRight, look.OffsetBottom) = (LookInset.X, LookInset.Y, LookInset.Z, LookInset.W);
-        look.AddThemeStyleboxOverride("panel", selected ? _selected : _hover);
+        look.AddThemeStyleboxOverride(PanelStyle, selected ? _selected : _hover);
         look.Modulate = selected || focused ? Colors.White : Colors.Transparent;
     }
 

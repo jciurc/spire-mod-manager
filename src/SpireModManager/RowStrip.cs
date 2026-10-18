@@ -11,10 +11,16 @@ static class RowStrip
     const string StripName = "SpireModManagerStrip";
     public const string ActionsName = "SpireModManagerActions", OrderActionsName = "SpireModManagerOrderActions"; // main list, Load Order
     public const string MoreName = "SpireModManagerMoreTags"; // the "+N" chip
-    const string StripMeta = "spire_mod_manager_strip";
-    const string SaysMeta = "spire_mod_manager_says"; // on a strip or buttons: what they show and where, to know when to change them
-    const string ShowsMeta = "spire_mod_manager_shows"; // on a strip: its tags and author, to know when to remake it
-    const string ShownMeta = "spire_mod_manager_tags_shown"; // on a strip: how many tags show (the rest fold into "+N")
+    static readonly StringName StripMeta = "spire_mod_manager_strip";
+    static readonly StringName SaysMeta = "spire_mod_manager_says"; // on a strip or buttons: what they show and where, to know when to change them
+    static readonly StringName ShowsMeta = "spire_mod_manager_shows"; // on a strip: its tags and author, to know when to remake it
+    static readonly StringName ShownMeta = "spire_mod_manager_tags_shown"; // on a strip: how many tags show (the rest fold into "+N")
+
+    // What Apply and Fold ask each row for, in the types Godot takes, made once: a text passed as one is converted anew
+    // each time (a native call), on every row of every redraw.
+    static readonly NodePath TitlePath = "Title", StripPath = StripName, ActionsPath = ActionsName, OrderActionsPath = OrderActionsName,
+        EdgePath = EdgeName, NeedsPath = NeedsName, AuthorPath = AuthorName, SpacerPath = SpacerName, MorePath = MoreName;
+    static readonly StringName Separation = "separation", NormalFont = "normal_font", NormalFontSize = "normal_font_size";
     const float Height = 20;
     const float TitleGap = 4; // more room between the title and the line under it
     const float RightMargin = 84; // from the row's right edge: clear of the (smaller, moved) tickbox and the pencil
@@ -29,11 +35,11 @@ static class RowStrip
         var order = LoadOrder.Mods(rows).Select((m, i) => (m, i)).DistinctBy(p => p.m).ToDictionary(p => p.m, p => p.i);
         // Each view keeps its own buttons and hides the other's, so a switch between the main list and Load Order
         // doesn't make every row's again.
-        var (name, other) = Store.Data.LoadOrderView ? (OrderActionsName, ActionsName) : (ActionsName, OrderActionsName);
+        var (name, path, other) = Store.Data.LoadOrderView ? (OrderActionsName, OrderActionsPath, ActionsPath) : (ActionsName, ActionsPath, OrderActionsPath);
         foreach (var row in rows)
         {
             Lap(null);
-            var title = row.GetNode<Control>("Title");
+            var title = row.GetNode<Control>(TitlePath);
             if (!row.HasMeta(StripMeta))
             {
                 title.OffsetBottom -= Height + TitleGap;
@@ -50,8 +56,8 @@ static class RowStrip
             var place = Store.Data.LoadOrderView ? $"{row.GetIndex()}/{row.GetParent()?.GetChildCount()}" : "";
             var does = $"{place}|{string.Join("|", items.Select(i => $"{i.Label}/{i.Disabled}/{i.Flat}/{i.Tip}"))}";
             var margin = Store.Data.LoadOrderView ? -LoadOrderMargin : -RightMargin;
-            if (row.GetNodeOrNull<HBoxContainer>(name) is not { } buttons || buttons.GetMeta(SaysMeta, "").AsString() != does)
-                buttons = Buttons(row, name, items, does, margin);
+            if (row.GetNodeOrNull<HBoxContainer>(path) is not { } buttons || buttons.GetMeta(SaysMeta, "").AsString() != does)
+                buttons = Buttons(row, name, path, items, does, margin);
             buttons.OffsetRight = buttons.OffsetLeft = margin;
             var clear = buttons.OffsetRight - Width(buttons, items) - ActionsGap;
             title.OffsetRight = clear;
@@ -64,7 +70,7 @@ static class RowStrip
             var author = ModDetails.Short(row.Mod?.manifest?.author ?? "");
             var shows = $"{string.Join("|", chips.Select(c => $"{c.Text}/{c.Color}/{c.Custom}"))}|{author}";
             var says = $"{shows}|{Store.Data.LoadOrderView}|{title.OffsetLeft}|{clear}|{text}";
-            var kept = row.GetNodeOrNull<HBoxContainer>(StripName);
+            var kept = row.GetNodeOrNull<HBoxContainer>(StripPath);
             if (kept?.GetMeta(SaysMeta, "").AsString() == says)
             {
                 Lap("rest");
@@ -82,7 +88,7 @@ static class RowStrip
                 Lap("rest");
                 continue;
             }
-            Drop(row, StripName);
+            Drop(row, StripPath);
 
             // Made whole before it joins the row, so its parts enter the page together.
             var look = Look();
@@ -138,12 +144,12 @@ static class RowStrip
     }
 
     // A row's buttons for these items: the ones it has, given them (Menus.Refill), or new ones, placed (margin: from
-    // the row's right edge) before they join the row.
-    static HBoxContainer Buttons(NModMenuRow row, string name, List<MenuItem> items, string does, float margin)
+    // the row's right edge) before they join the row. path: their name's, to find them by.
+    static HBoxContainer Buttons(NModMenuRow row, string name, NodePath path, List<MenuItem> items, string does, float margin)
     {
-        if (row.GetNodeOrNull<HBoxContainer>(name) is not { } buttons || !Menus.Refill(buttons, items))
+        if (row.GetNodeOrNull<HBoxContainer>(path) is not { } buttons || !Menus.Refill(buttons, items))
         {
-            Drop(row, name);
+            Drop(row, path);
             buttons = Menus.InlineButtons(items, name);
             buttons.AnchorLeft = buttons.AnchorRight = 1;
             buttons.AnchorBottom = 1;
@@ -195,7 +201,7 @@ static class RowStrip
 
     static bool SetNote(HBoxContainer strip, string text)
     {
-        var note = strip.GetNodeOrNull<RichTextLabel>(NeedsName);
+        var note = strip.GetNodeOrNull<RichTextLabel>(NeedsPath);
         if ((note?.Text ?? "") == text)
             return false;
         if (note != null && text.Length > 0)
@@ -203,9 +209,9 @@ static class RowStrip
             note.Text = text;
             return true;
         }
-        Drop(strip, NeedsName);
-        Drop(strip, SpacerName);
-        var author = strip.GetNodeOrNull<Control>(AuthorName);
+        Drop(strip, NeedsPath);
+        Drop(strip, SpacerPath);
+        var author = strip.GetNodeOrNull<Control>(AuthorPath);
         if (text.Length == 0 && author == null)
             return true;
         var part = text.Length > 0 ? Note(text) : Spacer();
@@ -240,11 +246,11 @@ static class RowStrip
     {
         if (!GodotObject.IsInstanceValid(row) || !GodotObject.IsInstanceValid(strip) || !strip.IsInsideTree())
             return;
-        var gap = strip.GetThemeConstant("separation");
+        var gap = strip.GetThemeConstant(Separation);
         var room = row.Size.X - strip.OffsetLeft + strip.OffsetRight; // the line's own width (a line too full grows past it)
-        var needs = strip.GetNodeOrNull<RichTextLabel>(NeedsName) is { } note && note.GetParsedText() is { Length: > 0 } said
-            ? RowTitles.Measure(note.GetThemeFont("normal_font"), said, note.GetThemeFontSize("normal_font_size")) : 0;
-        var kept = Math.Min(needs, room / 2) + (strip.GetNodeOrNull<Control>(AuthorName) is { } author ? gap + author.GetCombinedMinimumSize().X : 0);
+        var needs = strip.GetNodeOrNull<RichTextLabel>(NeedsPath) is { } note && note.GetParsedText() is { Length: > 0 } said
+            ? RowTitles.Measure(note.GetThemeFont(NormalFont), said, note.GetThemeFontSize(NormalFontSize)) : 0;
+        var kept = Math.Min(needs, room / 2) + (strip.GetNodeOrNull<Control>(AuthorPath) is { } author ? gap + author.GetCombinedMinimumSize().X : 0);
         // Each tag with the gap after it (the chips come first on the line, in order).
         var tags = strip.GetChildren().OfType<Control>().Take(chips.Count).ToList();
         var widths = tags.Select(t => t.GetCombinedMinimumSize().X + gap).ToList();
@@ -260,7 +266,7 @@ static class RowStrip
         strip.SetMeta(ShownMeta, count);
         for (var i = 0; i < tags.Count; i++)
             tags[i].Visible = i < count;
-        Drop(strip, MoreName);
+        Drop(strip, MorePath);
         if (count == tags.Count)
             return;
         var more = Tags.More(chips.Skip(count).ToList());
@@ -273,7 +279,7 @@ static class RowStrip
 
     static void Edge(NModMenuRow row, MenuItem? item)
     {
-        var old = row.GetNodeOrNull<Button>(EdgeName);
+        var old = row.GetNodeOrNull<Button>(EdgePath);
         if (item?.OnSelect is not { } action)
         {
             if (old != null)
@@ -312,20 +318,22 @@ static class RowStrip
     {
         foreach (var row in rows)
         {
-            foreach (var name in new[] { StripName, ActionsName, OrderActionsName, EdgeName })
-                if (row.GetNodeOrNull<Control>(name) is { } part)
+            foreach (var path in HiddenParts)
+                if (row.GetNodeOrNull<Control>(path) is { } part)
                     part.Visible = false;
-            row.GetNodeOrNull(StripName)?.SetMeta(SaysMeta, ""); // so the next Apply shows it again
+            row.GetNodeOrNull(StripPath)?.SetMeta(SaysMeta, ""); // so the next Apply shows it again
             if (!row.HasMeta(StripMeta))
                 continue;
-            row.GetNode<Control>("Title").OffsetBottom += Height + TitleGap;
+            row.GetNode<Control>(TitlePath).OffsetBottom += Height + TitleGap;
             row.RemoveMeta(StripMeta);
         }
     }
 
-    static void Drop(Node row, string name)
+    static readonly NodePath[] HiddenParts = [StripPath, ActionsPath, OrderActionsPath, EdgePath];
+
+    static void Drop(Node row, NodePath path)
     {
-        if (row.GetNodeOrNull(name) is not { } old)
+        if (row.GetNodeOrNull(path) is not { } old)
             return;
         row.RemoveChild(old);
         old.QueueFree();

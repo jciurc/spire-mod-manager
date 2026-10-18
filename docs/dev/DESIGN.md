@@ -10,7 +10,9 @@ Ease of use is the heart of the mod, not just its utility.
 - **Careful with data:** think through how it loads, merges, updates and resolves conflicts.
 - **Nondestructive:** undo and redo, a diff of pending changes, save versus discard.
 - **Fast:** heavy work (Workshop queries, scans) runs once and is cached; redraws use `Lookups`. What every row
-  has shares one look (a `Theme` on it, not per-node overrides), and a row makes only the parts it shows.
+  has shares one look (a `Theme` on it, not per-node overrides), and a row makes only the parts it shows. Fonts
+  (`ModEntry.Font`, once per language) and the node paths, meta keys and theme names that per-row code passes to
+  Godot are made once, not converted from text on each call.
 - **Function first,** visual design after. Reuse the game's own elements; no AI-generated textures.
 - **Clearly ours:** our views use more of the screen and smaller text than the game's page.
 
