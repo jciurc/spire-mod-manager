@@ -160,6 +160,7 @@ static class Copies
         {
             Log.Error($"[{ModEntry.ModId}] Could not sort out mods installed more than once: {e}");
         }
+        Installed.Added += () => _byId = null; // an update can replace a copy's Mod with no change in the count
         Installed.Added += Arrived;
     }
 

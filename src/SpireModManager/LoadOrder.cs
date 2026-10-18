@@ -287,7 +287,14 @@ static class LoadOrder
         if (Layout.Wide && Bmm.BothTicked && !Store.Data.ManagersWarningDismissed)
             ManagersBanner(content, border, search, redraw);
         // Two or more copies of one mod id on (the game loads one), on our views, unless dismissed for this set.
-        if (Layout.Wide && Copies.Clashing() is { Count: > 0 } clashing && Store.Data.SameIdDismissed != Copies.Signature(clashing))
+        // A dismissal is forgotten once no copies clash, so the problem coming back shows it again (as Dismiss's tip says).
+        var clashing = Copies.Clashing();
+        if (clashing.Count == 0 && Store.Data.SameIdDismissed != null)
+        {
+            Store.Data.SameIdDismissed = null;
+            Store.SaveViewState();
+        }
+        if (Layout.Wide && clashing.Count > 0 && Store.Data.SameIdDismissed != Copies.Signature(clashing))
             SameIdBanner(content, border, search, clashing);
         if (on && misordered > 0)
             Banner(border, search, orderText, () => OrderCard(content),

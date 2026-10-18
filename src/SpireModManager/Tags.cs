@@ -50,7 +50,7 @@ static class Tags
             var clash = Dependencies.IsOn(mod) && others.Any(Dependencies.IsOn);
             var named = string.Join(", ", others.Select(o => (Store.InfoFor(o)?.Alias ?? o.manifest?.name ?? o.manifest?.id) + Copies.Which(o)));
             chips.Add(new Chip(Menus.Text("SPIRE_MOD_MANAGER.TAG_SAME_ID"), clash ? SameIdClash : Local,
-                Tip: Menus.Format("SPIRE_MOD_MANAGER.TAG_SAME_ID_TIP", ("others", named))));
+                Tip: Menus.Format(clash ? "SPIRE_MOD_MANAGER.TAG_SAME_ID_CLASH_TIP" : "SPIRE_MOD_MANAGER.TAG_SAME_ID_TIP", ("others", named))));
         }
         // A branch only when the mod is marked for one of the two (most are for both, and #stable, #beta find them anyway).
         // A click searches for what the chip means: marked for this branch and not the other.

@@ -5857,7 +5857,28 @@ static class SelfTest
         await Wait(menu, 0.3);
         Check("Dismiss hides it for this pair, through a redraw: no change, no undo step", SameId() == null
             && Store.Data.SameIdDismissed == Copies.Signature([local, copy]) && Edits() == editsShown && History.Steps(History.Track.List) == stepsShown);
-        Store.Data.SameIdDismissed = null;
+        // The clash over (the new copy off), the dismissal is forgotten; both on again, the banner is back. In Load Order
+        // too. A click on the chip searches #"Same ID": both copies, no other mod.
+        Dependencies.Set([copy], false, screen);
+        CategoryList.Redraw(content);
+        await Wait(menu, 0.3);
+        var forgotten = Store.Data.SameIdDismissed == null && SameId() == null;
+        Dependencies.Set([copy], true, screen);
+        CategoryList.Redraw(content);
+        await Wait(menu, 0.3);
+        Check("the clash over, Dismiss is forgotten: both on again, the banner is back", forgotten && SameId() != null,
+            $"forgotten {forgotten}; banner {SameId() != null}");
+        var toggle = screen.GetNode<NButton>("SpireModManagerLoadOrderToggle");
+        Click(toggle);
+        await Wait(menu, 0.5);
+        var inLoadOrder = SameId() != null;
+        Click(toggle);
+        await Wait(menu, 0.5);
+        var sameIdSearch = "#\"Same ID\"";
+        var others = content.GetChildren().OfType<NModMenuRow>().Select(r => r.Mod).OfType<Mod>().Where(m => m.manifest?.id != id).ToList();
+        Check("the banner shows in Load Order too; the chip's search finds both copies and no other mod", inLoadOrder
+            && Search.Matches(local, sameIdSearch) && Search.Matches(copy, sameIdSearch) && !others.Any(m => Search.Matches(m, sameIdSearch)),
+            $"Load Order {inLoadOrder}; others found {string.Join(", ", others.Where(m => Search.Matches(m, sameIdSearch)).Select(m => m.manifest?.id))}");
         copy.state = ModLoadState.DisabledDuplicate;
         var setAside = ModDetails.Status(copy);
         copy.state = ModLoadState.AddedAtRuntime;
