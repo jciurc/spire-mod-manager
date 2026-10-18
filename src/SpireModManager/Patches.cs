@@ -595,7 +595,7 @@ static class GroupTickPatch
         }
         catch (Exception e)
         {
-            Log.Error($"[{ModEntry.ModId}] Could not set the picked mods together, so only this one changes: {e}");
+            Log.Error($"[{ModEntry.ModId}] Could not switch the picked mods together; the game's tickbox switches only this mod: {e}");
             return true;
         }
     }

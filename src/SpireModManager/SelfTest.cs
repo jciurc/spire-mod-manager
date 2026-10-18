@@ -5763,7 +5763,8 @@ static class SelfTest
             Results.Add("SKIP copies: test mod missing");
             return;
         }
-        string Edits() => string.Join(" | ", HistoryBar.Describe().Where(l => l.StartsWith("Edited:")));
+        // The Edited lines, read without the "(Local)" a line gains once a second copy is installed (Copies.Which).
+        string Edits() => string.Join(" | ", HistoryBar.Describe().Where(l => l.StartsWith("Edited:"))).Replace(" (Local)", "");
         var (edits, steps) = (Edits(), History.Steps(History.Track.List));
         var (aliasBefore, notesBefore) = (Store.InfoFor(id)?.Alias, Store.InfoFor(id)?.Notes);
         var copy = new Mod

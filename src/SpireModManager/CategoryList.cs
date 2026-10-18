@@ -636,7 +636,8 @@ static class CategoryList
                 ScrollSoon(content, header, flash: false);
         }));
         items.Add(MenuItem.Heading(""));
-        items.AddRange(OnOffItems(content, content.GetChildren().OfType<NModMenuRow>().Where(r => ids.Contains(Copies.KeyOf(r.Mod) ?? "")), selected: true));
+        // The picked rows themselves: a copy picked without its twin switches alone.
+        items.AddRange(OnOffItems(content, content.GetChildren().OfType<NModMenuRow>().Where(r => Selection.Contains(r.Mod)), selected: true));
         return items;
 
         void Move(string? category)
