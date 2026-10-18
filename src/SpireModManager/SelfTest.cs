@@ -7002,7 +7002,8 @@ static class SelfTest
         await Wait(menu, 0.4);
         var pairPopup = string.Join(" | ", PopupTexts());
         NModalContainer.Instance?.Clear();
-        var pairNew = pairPopup.Contains("New mods were detected") && !pairPopup.Contains("A new copy") && Copies.Picked(Pair, ModSource.ModsDirectory) == "l:PairB";
+        var pairPicked = Copies.Picked(Pair, ModSource.ModsDirectory);
+        var pairNew = pairPopup.Contains("New mods were detected") && !pairPopup.Contains("A new copy") && pairPicked == "l:PairB";
         History.Undo(); // the switch
         await Wait(menu, 0.3);
         var backUndone = BackPicked() == "l:Back1" && !Profiles.Edited;
@@ -7039,7 +7040,7 @@ static class SelfTest
             + "pick and isn't a new copy again", cameBack && switched && updateKeeps && backUndone,
             $"{cameSay}; switched {switched}, update keeps {updateKeeps} ({backUpdatePopup}), undone {backUndone}");
         Check("... two copies of a mod new to the game, one after the other: the new-mods words, and the copy that came first picked",
-            pairNew, $"pick {Copies.Picked(Pair, ModSource.ModsDirectory)}; {pairPopup}");
+            pairNew, $"pick {pairPicked}; {pairPopup}");
         Check("... as it started: the fixture's pick, nothing changed since the page opened for the twins", Picked() == "l:SmmTestTwinB" && Ticked(rowB) && !Ticked(rowA)
             && SwitchOn() && !Profiles.Edited, Say());
     }

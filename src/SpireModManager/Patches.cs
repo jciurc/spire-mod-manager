@@ -546,7 +546,7 @@ static class NewModPopupPatch
         {
             var now = Time.GetTicksMsec();
             if ((_lastShown != 0 && now - _lastShown < EveryMs) || NModalContainer.Instance is not { } modals
-                || modals.GetChildren().OfType<NErrorPopup>().Any())
+                || modals.GetChildren().OfType<NErrorPopup>().Any(p => !p.IsQueuedForDeletion())) // a closed one stays till the frame ends
                 return false;
             var arrived = Installed.Mods.Append(mod).Distinct().Where(m => !Announced.Contains(Copies.SwitchKey(m))).ToList();
             var keys = arrived.Select(Copies.SwitchKey).ToHashSet();
