@@ -1798,7 +1798,7 @@ static class SelfTest
                 ? await LinkCard(description, "spire-mod-manager-more-suspects") : "";
             Check("the dialog with Mod Doctor's suspects: three named, the rest counted as a link whose card names them; a third button, "
                 + "\"Disable suspect mods and restart\", a quiet orange link under Quit and Restore and restart, centred",
-                third is { Visible: true } && between && suspectTexts.Contains("Disable suspect mods and restart") && suspectTexts.Contains("3 more")
+                third is LinkButton { Visible: true, Text: "Disable suspect mods and restart" } && between && suspectTexts.Contains("3 more")
                 && suspectsCard.Contains("Test Fixes") && suspectsCard.Contains("SmmTestNotThere") && !suspectsCard.Contains("Test UI"),
                 $"third {third != null}, between {between}; {suspectTexts}; card: {suspectsCard}");
             Input.ParseInputEvent(new InputEventKey { Keycode = Key.Escape, Pressed = true });
