@@ -3647,6 +3647,29 @@ static class SelfTest
                 && button?.GetThemeFontSize("font_size") == 16 && button.GetThemeStylebox("normal") is StyleBoxFlat
                 && tagText?.GetThemeFontSize("font_size") == 12 && note?.GetThemeFontSize("normal_font_size") == 13
                 && author?.GetThemeFontSize("font_size") == 13 && line?.GetThemeConstant("separation") == 6, string.Join("; ", unlike.Take(6)));
+            // The old overrides' own values, written out here, so a look changed by mistake (a colour, a font, a box)
+            // shows: UnlikeOverrides compares each part with its new look only.
+            var (kreon, cream, gold) = (ModEntry.Font("res://themes/kreon_regular_shared.tres"), new Color(1, 0.964706f, 0.886275f), new Color(0.937f, 0.784f, 0.318f));
+            var chip = Tags.For(sample.Mod).FirstOrDefault();
+            var olds = new (string Part, bool Same)[]
+            {
+                ("pencil", pencil?.GetThemeFont("font") == kreon && pencil.GetThemeColor("font_color") == new Color(cream, 0.6f)
+                    && pencil.GetThemeColor("font_hover_color") == gold && pencil.GetThemeColor("font_pressed_color") == gold
+                    && pencil.GetThemeColor("font_disabled_color") == new Color(cream, 0.3f)
+                    && pencil.GetThemeStylebox("hover") is StyleBoxEmpty { ContentMarginLeft: 4, ContentMarginRight: 4 }),
+                ("button", button?.GetThemeFont("font") == kreon && button.GetThemeColor("font_color") == cream
+                    && button.GetThemeColor("font_hover_color") == Colors.White && button.GetThemeColor("font_disabled_color") == new Color(cream, 0.3f)
+                    && button.GetThemeStylebox("normal") is StyleBoxFlat { } normal && normal.BgColor == new Color(0.0756f, 0.12084f, 0.18f, 0.7f)
+                    && normal.BorderColor == new Color(gold, 0.35f) && button.GetThemeStylebox("hover") is StyleBoxFlat { } hover
+                    && hover.BgColor == new Color(0.2f, 0.32f, 0.42f) && hover.BorderColor == gold),
+                ("tag", chip != null && tag?.GetThemeStylebox("panel") is StyleBoxFlat { CornerRadiusTopLeft: 2, ContentMarginTop: 0 } panel
+                    && panel.BgColor == new Color(chip.Color, chip.Custom ? 0.1f : 0.2f) && tagText?.GetThemeFont("font") == kreon
+                    && tagText.GetThemeColor("font_color") == chip.Color),
+                ("note", note?.GetThemeFont("normal_font") == kreon && note.GetThemeColor("default_color") == new Color(0.937f, 0.784f, 0.318f, 0.75f)),
+                ("author", author?.GetThemeFont("font") == kreon && author.GetThemeColor("font_color") == new Color(1, 0.964706f, 0.886275f, 0.45f)),
+            };
+            Check("300 made-up rows: the pencil, a button, a tag, the note and the author in the old overrides' own fonts, colours and boxes",
+                olds.All(o => o.Same), "unlike: " + string.Join(", ", olds.Where(o => !o.Same).Select(o => o.Part)));
 
             var off = mods.Select(m => new SettingsSaveMod(m) { IsEnabled = false }).ToList();
             Build(off);
