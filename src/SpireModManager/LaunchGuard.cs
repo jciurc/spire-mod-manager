@@ -4,6 +4,8 @@ using System.Text.Json.Nodes;
 using System.Text.Json.Serialization;
 using System.Text.RegularExpressions;
 using Godot;
+using MegaCrit.Sts2.Core.Audio;
+using MegaCrit.Sts2.Core.Commands;
 using MegaCrit.Sts2.Core.Localization;
 using MegaCrit.Sts2.Core.Logging;
 using MegaCrit.Sts2.Core.Modding;
@@ -627,51 +629,49 @@ static class LaunchGuard
         suspects.Count > SuspectsShown ? string.Join("\n", suspects.Skip(SuspectsShown).Select(id => "  •  " + Name(id))) : "";
 
     public const string SuspectsButtonName = "SpireModManagerSuspectsButton";
+    static readonly Color LinkColor = new(0.961f, 0.71f, 0.42f), LinkHoverColor = new(1, 0.82f, 0.58f); // the panel's pending orange
 
-    // The third button: a copy of the game's own (its Restore), without their signals or keys (Enter and Escape stay the
-    // game's two). It closes the popup as the game's do.
+    // The third answer: a quiet link under the game's two buttons, centred, in orange, lit and underlined on hover, a
+    // pointer over it. No keys (Enter and Escape stay the game's two). It closes the popup as the game's buttons do, with
+    // the game's click.
     static void SuspectsButton(NGenericPopup popup, Action pressed)
     {
-        if (popup.GetNodeOrNull<NPopupYesNoButton>("VerticalPopup/YesButton") is not { } yes)
+        if (popup.GetNodeOrNull<Control>("VerticalPopup/YesButton") is not { } yes || yes.GetParent() is not Control art)
             return;
-        // Groups, script and scene, not signals: the game connects its own answer to its buttons.
-        if (yes.Duplicate((int)(Node.DuplicateFlags.Groups | Node.DuplicateFlags.Scripts | Node.DuplicateFlags.UseInstantiation)) is not NPopupYesNoButton button)
-            return;
-        button.Name = SuspectsButtonName;
-        // Its keys go once it's ready (a No button's are Escape's, which the game's Quit has).
-        button.Ready += () =>
+        var link = new LinkButton
         {
-            button.DisconnectHotkeys();
-            // Its art (a ribbon in a box of fixed size, keeping its aspect) as wide as the button, stretched sideways, so
-            // its words get the room; it grows on hover from its middle.
-            if (button.GetNodeOrNull<Control>("Visuals") is { } visuals)
-            {
-                visuals.Size = new Vector2(visuals.Size.X + SuspectsButtonWidth - yes.Size.X, visuals.Size.Y);
-                visuals.Position = new Vector2((SuspectsButtonWidth - visuals.Size.X) / 2, visuals.Position.Y);
-                visuals.PivotOffset = visuals.Size / 2;
-                foreach (var art in visuals.GetChildren().OfType<TextureRect>())
-                    art.StretchMode = TextureRect.StretchModeEnum.Scale;
-            }
-            button.SetText(Menus.Text("SPIRE_MOD_MANAGER.CRASH_DISABLE_SUSPECTS"));
+            Name = SuspectsButtonName, Text = Menus.Text("SPIRE_MOD_MANAGER.CRASH_DISABLE_SUSPECTS"), Underline = LinkButton.UnderlineMode.OnHover,
+            FocusMode = Control.FocusModeEnum.None, MouseDefaultCursorShape = Control.CursorShape.PointingHand,
         };
-        button.Connect(NClickableControl.SignalName.Released, Callable.From<NButton>(_ =>
+        link.AddThemeFontOverride("font", ModEntry.Font("res://themes/kreon_bold_shared.tres"));
+        link.AddThemeFontSizeOverride("font_size", 20);
+        link.AddThemeColorOverride("font_color", LinkColor);
+        link.AddThemeColorOverride("font_hover_color", LinkHoverColor);
+        link.AddThemeColorOverride("font_pressed_color", LinkHoverColor);
+        link.AddThemeColorOverride("font_hover_pressed_color", LinkHoverColor);
+        link.AddThemeColorOverride("font_outline_color", new Color(0, 0, 0, 0.6f)); // readable on the popup's stone
+        link.AddThemeConstantOverride("outline_size", 4);
+        link.Pressed += () =>
         {
+            try
+            {
+                SfxCmd.Play(FmodSfx.uiClick);
+            }
+            catch (Exception)
+            {
+                // no sound this early in a failed start
+            }
             pressed();
             NModalContainer.Instance?.Clear();
-        }));
-        // Under the game's two, centred and wider (its words don't fit their width), at the art's bottom edge, where our
-        // mark was: the mark goes just under the art. The art keeps its size (it keeps its aspect).
-        var art = (Control)yes.GetParent();
-        art.AddChild(button);
-        (button.AnchorLeft, button.AnchorRight, button.AnchorTop, button.AnchorBottom) = (0.5f, 0.5f, 1, 1);
-        var below = yes.OffsetBottom - 6;
-        (button.OffsetLeft, button.OffsetRight, button.OffsetTop, button.OffsetBottom) =
-            (-SuspectsButtonWidth / 2, SuspectsButtonWidth / 2, below, below + (yes.OffsetBottom - yes.OffsetTop));
+        };
+        art.AddChild(link);
+        // Centred on the art just under the buttons, as wide as its words; our mark moves under it.
+        (link.AnchorLeft, link.AnchorRight, link.AnchorTop, link.AnchorBottom) = (0.5f, 0.5f, 1, 1);
+        link.GrowHorizontal = Control.GrowDirection.Both;
+        (link.OffsetLeft, link.OffsetRight, link.OffsetTop, link.OffsetBottom) = (0, 0, yes.OffsetBottom + 4, yes.OffsetBottom + 34);
         if (art.GetNodeOrNull<Control>(Menus.MarkName) is { } mark)
-            (mark.OffsetTop, mark.OffsetBottom) = (mark.OffsetTop - mark.OffsetBottom + button.OffsetBottom + 4, button.OffsetBottom + 4);
+            (mark.OffsetTop, mark.OffsetBottom) = (link.OffsetBottom + 2, link.OffsetBottom + 2 + mark.OffsetBottom - mark.OffsetTop);
     }
-
-    const float SuspectsButtonWidth = 300;
 
     public const string PlainDialogName = "SpireModManagerCrashDialog";
     const string DisableSuspectsAction = "disable_suspects";

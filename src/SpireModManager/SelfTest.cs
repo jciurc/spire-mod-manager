@@ -1767,7 +1767,7 @@ static class SelfTest
                 $"quits {quits}, relaunches {relaunches}, Test Fixes on {Dependencies.IsOn(fixes)}, dialog left {root.GetNodeOrNull(LaunchGuard.PlainDialogName) != null}");
             // Mod Doctor's suspects (made up: Test UI, which this launch has on, among them, ours and Mod Doctor never
             // turned off, and one not installed): three named, the rest under "more", whose card names them; a third button
-            // under the game's two, which turns them off and restarts, the rest of this launch's list as it was. Escape
+            // as a quiet link under the game's two, which turns them off and restarts, the rest of this launch's list as it was. Escape
             // stays the game's Quit.
             LaunchGuard.TestNoLanguage = false;
             ModDoctor.TestSuspects = [ModEntry.ModId, ModDoctor.ModId, "SmmTestUi", "SmmTestFixes", "SmmTestLib", "SmmTestNotThere"];
@@ -1784,18 +1784,20 @@ static class SelfTest
             var popup = NModalContainer.Instance?.OpenModal as Control;
             var third = popup?.FindChild(LaunchGuard.SuspectsButtonName, true, false) as Control;
             var (quitButton, restoreButton) = (popup?.GetNodeOrNull<Control>("VerticalPopup/NoButton"), popup?.GetNodeOrNull<Control>("VerticalPopup/YesButton"));
-            // Under the two, centred between them, wider than each (its words), overlapping neither.
-            var between = third != null && quitButton != null && restoreButton != null && third.GetGlobalRect().Position.Y >= quitButton.GetGlobalRect().End.Y - 8
-                && Math.Abs(third.GetGlobalRect().GetCenter().X - (quitButton.GetGlobalRect().GetCenter().X + restoreButton.GetGlobalRect().GetCenter().X) / 2) < 2
-                && third.Size.X > restoreButton.Size.X && !third.GetGlobalRect().Intersects(restoreButton.GetGlobalRect().Grow(-8))
-                && third.GetNodeOrNull<Control>("Visuals") is { } art && art.GetGlobalRect().Size.X > third.Size.X
-                && Math.Abs(art.GetGlobalRect().GetCenter().X - third.GetGlobalRect().GetCenter().X) < 2; // its art too, not just its box
+            // A quiet link under the two, centred on the popup's art, overlapping neither: orange, a pointer over it, lit and
+            // underlined on hover.
+            var art = popup?.GetNodeOrNull<Control>("VerticalPopup");
+            var between = third is LinkButton { Underline: LinkButton.UnderlineMode.OnHover, MouseDefaultCursorShape: Control.CursorShape.PointingHand } link
+                && art != null && quitButton != null && restoreButton != null && link.GetGlobalRect().Position.Y >= restoreButton.GetGlobalRect().End.Y - 4
+                && Math.Abs(link.GetGlobalRect().GetCenter().X - art.GetGlobalRect().GetCenter().X) < 2 && link.Size.X > 100
+                && !link.GetGlobalRect().Intersects(quitButton.GetGlobalRect()) && !link.GetGlobalRect().Intersects(restoreButton.GetGlobalRect())
+                && link.GetThemeColor("font_color") is { R: > 0.9f, G: > 0.6f and < 0.8f, B: < 0.5f } && link.GetThemeColor("font_hover_color") != link.GetThemeColor("font_color");
             var suspectTexts = string.Join(" | ", PopupTexts());
             await Capture(menu, outDir, "1h-crash-dialog-suspects");
             var suspectsCard = popup?.GetNodeOrNull<RichTextLabel>("VerticalPopup/Description") is { } description
                 ? await LinkCard(description, "spire-mod-manager-more-suspects") : "";
             Check("the dialog with Mod Doctor's suspects: three named, the rest counted as a link whose card names them; a third button, "
-                + "\"Disable suspect mods and restart\", under Quit and Restore and restart, centred and wider",
+                + "\"Disable suspect mods and restart\", a quiet orange link under Quit and Restore and restart, centred",
                 third is { Visible: true } && between && suspectTexts.Contains("Disable suspect mods and restart") && suspectTexts.Contains("3 more")
                 && suspectsCard.Contains("Test Fixes") && suspectsCard.Contains("SmmTestNotThere") && !suspectsCard.Contains("Test UI"),
                 $"third {third != null}, between {between}; {suspectTexts}; card: {suspectsCard}");
@@ -1810,8 +1812,8 @@ static class SelfTest
             ListAsItWas();
             asked = LaunchGuard.AskAfterCrash(game, offer);
             await Wait(menu, 0.8);
-            if ((NModalContainer.Instance?.OpenModal as Node)?.FindChild(LaunchGuard.SuspectsButtonName, true, false) is { } suspectsButton)
-                suspectsButton.EmitSignal("Released", suspectsButton);
+            if ((NModalContainer.Instance?.OpenModal as Node)?.FindChild(LaunchGuard.SuspectsButtonName, true, false) is BaseButton suspectsButton)
+                suspectsButton.EmitSignal(BaseButton.SignalName.Pressed);
             await Wait(menu, 0.3);
             Check("Disable suspect mods and restart: this launch's list with Test UI, Test Fixes and Test Framework off (not ours, not Mod Doctor, "
                 + "nothing added for a mod not installed), then a restart; the launch's record goes",
