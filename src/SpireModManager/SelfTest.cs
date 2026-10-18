@@ -1933,7 +1933,23 @@ static class SelfTest
         try
         {
             if (await ButtonMenu(menu, button) is { } popup)
+            {
+                // It opens the system's file browser (#126): the external-link mark after its label, in the label's
+                // colour, and only there in the menu.
+                var labels = popup.FindChildren("*", "Label", true, false).OfType<Label>().ToList();
+                var item = labels.FirstOrDefault(l => l.Text == "Open translations folder");
+                var mark = item == null ? null : LinkMark.Rect(item);
+                var itemSize = item?.GetThemeFontSize("font_size") ?? 0;
+                var itemText = item == null ? 0 : item.GetThemeFont("font").GetStringSize(item.Text, fontSize: itemSize).X;
+                Check("Open translations folder: the external-link mark a small gap after its label, 14 px for its 20 px text; no other item has one",
+                    item != null && itemSize == 20 && mark is { } at && at.Position.X >= itemText + 2 && at.Position.X <= itemText + 7 && at.Size == new Vector2(14, 14)
+                    && at.End.X <= item.Size.X + 0.5f && labels.Where(l => l.IsInGroup(LinkMark.Group)).SequenceEqual([item]),
+                    $"mark {mark} after text {itemText:0.#}, label {item?.Size}; marked: {string.Join(", ", labels.Where(l => l.IsInGroup(LinkMark.Group)).Select(l => l.Text))}");
+                var drawn = item == null ? null : await MarkDrawn(menu, item);
+                Check("Open translations folder's mark: drawn in the label's colour", item != null && drawn == item.GetThemeColor("font_color"),
+                    $"drawn {drawn?.ToString() ?? "nothing"}, label {item?.GetThemeColor("font_color")}");
                 MenuPanel.Press(popup, "Open translations folder");
+            }
             await Wait(menu, 0.2);
             Check("Open translations folder: made in the data folder and opened, the menu closed", !before && opened == folder && Directory.Exists(folder)
                 && folder.Replace('\\', '/').EndsWith($"/mod_data/{ModEntry.ModId}/translations") && !MenuPanel.IsOpen,
@@ -2950,6 +2966,15 @@ static class SelfTest
             && Preview().Contains("Not installed (2)") && Preview().Contains("Not Here Mod") && Preview().Contains("Gone Off (disabled)")
             && nameAt > linkAt && nameAt < bbcode.IndexOf("[/url]", linkAt, StringComparison.Ordinal)
             && bbcode.Split("[url=").Length == 2, Preview());
+        // That link leaves the game (#126): the external-link mark after the name, in the link; still the page's link.
+        var markTag = LinkMark.Tag(18, "#99ccff");
+        var markAt = linkAt < 0 ? -1 : bbcode.IndexOf(markTag, linkAt, StringComparison.Ordinal);
+        Check("an import's Workshop link: the external-link mark right after the name, inside its link and colour, 12 px for the preview's 18 px text; none after a name with no page",
+            markAt > nameAt && bbcode[..markAt].EndsWith("[color=#99ccff][b]Not Here Mod[/b]") && bbcode[(markAt + markTag.Length)..].StartsWith("[/color][/url]")
+            && bbcode.Split(markTag).Length == 2 && LinkMark.Size(18) == 12 && Part<RichTextLabel>("Preview")?.GetThemeFontSize("normal_font_size") == 18, bbcode);
+        Check("an import's Workshop link still opens its page: the link is the page's address, the preview still handles its click",
+            ProfileCsv.IsWorkshopLink(link) && Part<RichTextLabel>("Preview") is { MouseFilter: Control.MouseFilterEnum.Stop } shown
+            && shown.GetSignalConnectionList(RichTextLabel.SignalName.MetaClicked).Count > 0);
         await Capture(screen, outDir, "7d-import-preview");
         Press("CreateProfileButton");
         await Wait(menu, 0.3);
@@ -3211,6 +3236,8 @@ static class SelfTest
         var linkText = (panel.FindChild("SpireModManagerLink", true, false) as LinkButton)?.Text ?? "";
         Check("the source line: id (Local), then Enabled", panel.FindChild("SpireModManagerLink", true, false) is LinkButton { Disabled: true }
             && linkText == "SpireModManager (Local)" && (panel.FindChild("SpireModManagerSource", true, false)?.FindChild("Status", true, false) as Label)?.Text == "Enabled", linkText);
+        Check("a local mod's source line links nowhere: no external-link mark, and no room kept for one",
+            panel.FindChild("SpireModManagerLink", true, false) is LinkButton localLink && LinkMark.Rect(localLink) == null && localLink.CustomMinimumSize.X == 0);
         var headText = panel.GetNodeOrNull<RichTextLabel>("SpireModManagerHead")?.GetParsedText() ?? "";
         Check("the head: author and compatibility; the details: description, then size", headText.Contains("Author: symphony") && headText.Contains("Compatibility:")
             && !description.StartsWith("Enabled") && description.Contains("Size:") && !description.Contains("Compatibility"), $"{headText} / {description[..Math.Min(60, description.Length)]}");
@@ -5917,6 +5944,91 @@ static class SelfTest
             && text.IndexOf("Updated") < text.IndexOf("Compatibility") && text.Contains("(4 days ago)  •\u00a0\u00a0Changelog") && head?.Text.Contains("[url=patchnotes]") == true, text);
         var link = info.FindChild("SpireModManagerLink", true, false) as LinkButton;
         Check("the source line: id (SteamID n)", link?.Text == "SmmWorkshopTest (SteamID 42)", link?.Text ?? "");
+
+        // Both leave the game (#126): the external-link mark after each, part of the link and in its colour, and each
+        // still goes where it went.
+        if (link != null && head != null)
+        {
+            var linkSize = link.GetThemeFontSize("font_size");
+            var linkText = link.GetThemeFont("font").GetStringSize(link.Text, fontSize: linkSize).X;
+            var mark = LinkMark.Rect(link);
+            Check("the Workshop link: the external-link mark a small gap after its text, 11 px for its 16 px text, inside the link's own (clickable) box",
+                linkSize == 16 && mark is { } at && at.Position.X >= linkText + 2 && at.Position.X <= linkText + 6 && at.Size == new Vector2(11, 11)
+                && at.End.X <= link.Size.X + 0.5f && at.Position.Y >= 0 && at.End.Y <= link.Size.Y + 0.5f
+                && link.IsInGroup(LinkMark.Group) && link.GetSignalConnectionList(CanvasItem.SignalName.Draw).Count > 0,
+                $"mark {mark} after text {linkText:0.#}, link {link.Size}");
+            // The mark as drawn: the link's colour with the mouse off it, then (a mouse motion through the viewport; none
+            // headless) its hover colour while the mouse is on it, and its own again once it leaves.
+            var (normal, lit) = (link.GetThemeColor("font_color"), link.GetThemeColor("font_hover_color"));
+            var headless = DisplayServer.GetName() == "headless";
+            static void MoveTo(Vector2 at) => Input.ParseInputEvent(new InputEventMouseMotion { Position = at, GlobalPosition = at });
+            var linkRect = link.GetGlobalRect();
+            var away = link.GetViewport().GetMousePosition(); // where the mouse was, unless that's on the link: above it then
+            if (linkRect.Grow(2).HasPoint(away))
+                away = linkRect.Position - new Vector2(0, 30);
+            if (!headless)
+            {
+                MoveTo(away);
+                await Wait(menu, 0.1);
+            }
+            var unlit = await MarkDrawn(menu, link);
+            Check("the Workshop link's mark: drawn in the link's own colour while it isn't lit",
+                link.GetDrawMode() == BaseButton.DrawMode.Normal && unlit == normal,
+                $"{link.GetDrawMode()}, drawn {unlit?.ToString() ?? "nothing"}; the link's {normal}");
+            if (headless)
+                Results.Add("SKIP the Workshop link's mark lit with the link: there's no mouse headless");
+            else
+            {
+                // Redrawn by the link itself as it lights and goes out (no QueueRedraw here).
+                LinkMark.TestForget(link);
+                MoveTo(linkRect.GetCenter());
+                await Wait(menu, 0.1);
+                var (onMode, onDrawn, under) = (link.GetDrawMode(), LinkMark.TestDrawn(link), link.GetViewport().GuiGetHoveredControl());
+                LinkMark.TestForget(link);
+                MoveTo(away);
+                await Wait(menu, 0.1);
+                var (offMode, offDrawn) = (link.GetDrawMode(), LinkMark.TestDrawn(link));
+                Check("the Workshop link's mark: redrawn in the link's hover colour while the mouse is on the link, and in its own once it leaves",
+                    lit != normal && onMode == BaseButton.DrawMode.Hover && onDrawn == lit && offMode == BaseButton.DrawMode.Normal && offDrawn == normal,
+                    $"on it ({under?.Name.ToString() ?? "nothing"} under the mouse at {linkRect.GetCenter()}): {onMode}, drawn {onDrawn?.ToString() ?? "nothing"}; "
+                    + $"off it: {offMode}, drawn {offDrawn?.ToString() ?? "nothing"}; the link's {normal}, lit {lit}");
+            }
+            // The status after the link: the link as wide as its mark's end, then the line's separation, the dot and its
+            // separation.
+            var source = info.GetNode<Control>("SpireModManagerSource");
+            var status = (Label)source.FindChild("Status", true, false);
+            var dot = (Control)source.FindChild("Dot", true, false);
+            var statusAt = link.GetGlobalRect().End.X + source.GetThemeConstant("separation") + dot.Size.X + dot.GetParent<Control>().GetThemeConstant("separation");
+            var title = info.GetNode<Control>("ModTitle");
+            Check("the Workshop link still opens the mod's Workshop page, and the status after it moves over only for the mark, within the title's width",
+                link is { Disabled: false, Uri: "https://steamcommunity.com/sharedfiles/filedetails/?id=42" } && mark is { } shown
+                && Math.Abs(link.Size.X - shown.End.X) <= 0.5f && Math.Abs(status.GlobalPosition.X - statusAt) <= 1
+                && status.GetGlobalRect().End.X <= title.GetGlobalRect().End.X + 2,
+                $"{link.Uri}; mark {mark}, link {link.GetGlobalRect()}, status {status.GetGlobalRect()} (expected at {statusAt:0.#}), title {title.GetGlobalRect()}");
+
+            var bbcode = head.Text;
+            var tag = LinkMark.Tag(16, "#99ccff");
+            var changelog = bbcode.IndexOf("[url=patchnotes]", StringComparison.Ordinal);
+            var tagAt = changelog < 0 ? -1 : bbcode.IndexOf(tag, changelog, StringComparison.Ordinal);
+            Check("Changelog: the external-link mark right after its text, inside its link and its colour, 11 px for the head's 16 px text",
+                tagAt >= 0 && bbcode[..tagAt].EndsWith("[url=patchnotes][color=#99ccff]Changelog") && bbcode[(tagAt + tag.Length)..].StartsWith("[/color][/url]")
+                && head.GetThemeFontSize("normal_font_size") == 16 && LinkMark.Size(16) == 11, bbcode);
+            // The [img] finds the mark by its path, and shows it: a line of just the mark is as wide as the gap and 11 px.
+            var probe = new RichTextLabel { BbcodeEnabled = true, FitContent = true, AutowrapMode = TextServer.AutowrapMode.Off, Text = tag };
+            Hover.Fonts(probe, 16);
+            info.AddChild(probe);
+            var gapOnly = probe.GetThemeFont("normal_font").GetStringSize("\u00a0", fontSize: 16).X;
+            var probeWidth = probe.GetContentWidth();
+            info.RemoveChild(probe);
+            probe.QueueFree();
+            Check("Changelog's mark: its [img] path loads the mark itself, which shows 11 px wide after the gap",
+                ModEntry.Load<Texture2D>(Icons.ExternalLink(11).ResourcePath)?.GetInstanceId() == Icons.ExternalLink(11).GetInstanceId()
+                && Icons.ExternalLink(11).GetSize() == new Vector2(11, 11) && Math.Abs(probeWidth - (gapOnly + 11)) <= 1,
+                $"path {Icons.ExternalLink(11).ResourcePath}, a line of it {probeWidth} wide (gap {gapOnly:0.#})");
+            Check("Changelog still opens the mod's change notes: the head's link is still patchnotes, its click still handled",
+                bbcode.Split("[url=patchnotes]").Length == 2 && head.GetSignalConnectionList(RichTextLabel.SignalName.MetaClicked).Count > 0
+                && head.MouseFilter != Control.MouseFilterEnum.Ignore);
+        }
         Check("how long ago: hours under a day, one day singular, green under two days",
             ModDetails.Ago(DateTime.Now.AddMinutes(-20)).Contains("(less than an hour ago)") && ModDetails.Ago(DateTime.Now.AddHours(-3)).Contains("(3 hours ago)") && ModDetails.Ago(DateTime.Now.AddMinutes(-70)).Contains("(1 hour ago)")
             && ModDetails.Ago(DateTime.Now.AddHours(-30)).Contains("(1 day ago)") && ModDetails.Ago(DateTime.Now.AddHours(-30)).Contains("#a6e3a1")
@@ -8368,6 +8480,16 @@ static class SelfTest
         Input.ParseInputEvent(new InputEventMouseButton { ButtonIndex = MouseButton.Left, Pressed = false, Position = at, GlobalPosition = at });
         await Wait(menu, 0.3);
         return where;
+    }
+
+    // The colour the control's external-link mark is drawn in at a fresh redraw (LinkMark.TestDrawn): null where none
+    // is drawn.
+    static async Task<Color?> MarkDrawn(Node node, Control control)
+    {
+        LinkMark.TestForget(control);
+        control.QueueRedraw();
+        await Wait(node, 0.1);
+        return LinkMark.TestDrawn(control);
     }
 
     // A point given as GetGlobalRect gives it, as the viewport's own input reads it (Viewport.PushInput in local

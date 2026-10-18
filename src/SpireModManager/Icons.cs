@@ -2,10 +2,11 @@ using Godot;
 
 namespace SpireModManager;
 
-// Small icons drawn in code: a notepad page and an "i" in a ring.
+// Small icons drawn in code: a notepad page, an "i" in a ring and the external-link mark.
 static class Icons
 {
     static Texture2D? _notepad, _info;
+    static readonly Dictionary<int, Texture2D> ExternalLinks = []; // by size
 
     // A 14x14 ring with an "i" in it: a dot, then a stem.
     public static Texture2D Info => _info ??= Draw(14, 14, (x, y, w, h) =>
@@ -27,6 +28,29 @@ static class Icons
         var ruled = y is 4 or 6 && x >= 2 && x <= w - 3;
         return edge || foldLine ? 1f : ruled ? 0.7f : 0f;
     });
+
+    // The external-link mark, size px square (LinkMark puts it after a link's text): a square open at its top-right
+    // corner, and an arrow from its middle out through that corner. One of each size, made when first asked for.
+    public static Texture2D ExternalLink(int size)
+    {
+        if (ExternalLinks.TryGetValue(size, out var made))
+            return made;
+        var mark = Draw(size, size, (x, y, w, _) =>
+        {
+            var last = w - 1;
+            var right = last - 2; // the square's right edge; its top edge is row 2, so the arrow's tip is 2 px past its corner
+            var reach = (w - 2) / 2; // how far its top and right edges come towards that corner
+            var arm = (w - 1) * 2 / 5; // the arrowhead: along the top row and down the last column
+            var square = (x == 0 && y >= 2) || (y == last && x <= right) || (y == 2 && x <= reach) || (x == right && y >= last - reach);
+            var head = (y == 0 && x >= last - arm) || (x == last && y <= arm);
+            var shaft = x + y == last && x >= right / 2;
+            return square || head || shaft ? 1f : 0f;
+        });
+        // A path no file has: Godot's resource cache answers it before looking for one, so a RichTextLabel's [img]
+        // can show the mark (LinkMark.Tag).
+        mark.ResourcePath = $"res://{ModEntry.ModId}/drawn/external_link_{size}";
+        return ExternalLinks[size] = mark;
+    }
 
     static Texture2D Draw(int width, int height, Func<int, int, int, int, float> alpha)
     {

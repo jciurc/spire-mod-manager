@@ -15,6 +15,8 @@ Ease of use is the heart of the mod, not just its utility.
   Godot are made once, not converted from text on each call.
 - **Function first,** visual design after. Reuse the game's own elements; no AI-generated textures.
 - **Clearly ours:** our views use more of the screen and smaller text than the game's page.
+- **Leaving the game shows:** our links and menu items that open a web page or the system's file browser have the
+  external-link mark after their text (`LinkMark.cs`); not the copy of the game's Get Mods button, nor the game's popups.
 
 ## The game's data comes first
 

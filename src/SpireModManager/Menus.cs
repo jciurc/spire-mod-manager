@@ -7,9 +7,10 @@ using MegaCrit.Sts2.Core.Nodes.Multiplayer;
 namespace SpireModManager;
 
 // A menu entry, or a heading when it has no action. Detail: dim text on the right; Radio: one of several choices;
-// Badge: a mark after the label; Tip: a hover card (inline buttons); Flat: drawn as plain text.
+// Badge: a mark after the label; Tip: a hover card (inline buttons); Flat: drawn as plain text; External: it opens
+// something outside the game, with the external-link mark after the label (menus).
 record MenuItem(string Label, Action? OnSelect, bool Checked = false, bool Disabled = false, string? Detail = null,
-    bool Radio = false, (string Text, Color Color)? Badge = null, string? Tip = null, bool Flat = false)
+    bool Radio = false, (string Text, Color Color)? Badge = null, string? Tip = null, bool Flat = false, bool External = false)
 {
     public static MenuItem Heading(string label) => new(label, null);
 }
