@@ -4850,10 +4850,145 @@ static class SelfTest
 
         await Tick(tickbox, false);
         Check("Better Mod Menu unticked: the banner goes at once", !Bmm.Ticked && Banner() == null, Where());
+        await TestBannersKeepRows(menu, screen, content, tickbox);
         if (!was)
             return;
         await Tick(tickbox, true);
         Check("ticked again, as it started: the banner is back", Banner() is { Visible: true }, Where());
+    }
+
+    // Banners coming and going with the list scrolled part way: the rows on screen stay where they were in every frame
+    // (Layout.KeepRows), through Better Mod Menu ticked on (its banner shows), undo and redo, and Dismiss; a redraw that
+    // makes a wrapped banner again moves nothing, at the list's top too. Reveal still lands on its mod, and a Show:
+    // choice still starts the list at its top. A spacer under the rows gives the short fixture list room to scroll; it
+    // goes after. Starts and ends with Better Mod Menu unticked.
+    static async Task TestBannersKeepRows(Node menu, NModdingScreen screen, Control content, NTickbox tickbox)
+    {
+        var border = screen.GetNode<Control>("ModsBorder");
+        var list = border.GetNode<Control>("ModsScrollContainer");
+        Control? Banner() => border.GetNodeOrNull<Control>(LoadOrder.ManagersName);
+        if (Layout.Current != Layout.View.Categories || Bmm.Ticked || Banner() != null || ListFilter.Chosen != ListFilter.Choice.All
+            || CategoryList.Filter(content).Length > 0)
+        {
+            Results.Add("SKIP banners keeping the rows in place: not on the main list showing every mod, or Better Mod Menu ticked");
+            return;
+        }
+        float Target() => (float)list.Get("_targetDragPosY");
+        async Task ScrollTo(float target)
+        {
+            list.Set("_targetDragPosY", target);
+            await Wait(menu, 0.6);
+        }
+        void Tick(bool on)
+        {
+            tickbox.IsTicked = on;
+            tickbox.EmitSignal(NTickbox.SignalName.Toggled, tickbox);
+        }
+        // After act, over the next frames (each as drawn): how far the row strayed from where it was, at most, and how
+        // far the list's top moved.
+        async Task<(float Strayed, float Moved)> Watch(Control row, Action act)
+        {
+            var (y, top) = (row.GetGlobalRect().Position.Y, list.GetGlobalRect().Position.Y);
+            act();
+            var strayed = 0f;
+            for (var i = 0; i < 20; i++)
+            {
+                await menu.ToSignal(menu.GetTree(), SceneTree.SignalName.ProcessFrame);
+                strayed = Math.Max(strayed, Math.Abs(row.GetGlobalRect().Position.Y - y));
+            }
+            return (strayed, list.GetGlobalRect().Position.Y - top);
+        }
+
+        var spacer = new Control { Name = "SpireModManagerTestSpacer", CustomMinimumSize = new Vector2(0, 1500), MouseFilter = Control.MouseFilterEnum.Ignore };
+        content.AddChild(spacer);
+        const float narrower = 450;
+        var narrowed = 0f;
+        try
+        {
+            await Wait(menu, 0.1); // the rows' container grown first: scrolled past its old end, the list would spring back
+            await ScrollTo(-160);
+            var view = list.GetGlobalRect();
+            if (content.GetChildren().OfType<NModMenuRow>().Where(r => r.IsVisibleInTree() && view.Encloses(r.GetGlobalRect()))
+                .MinBy(r => Math.Abs(r.GetGlobalRect().GetCenter().Y - view.GetCenter().Y)) is not { } row)
+            {
+                Results.Add("FAIL banners keeping the rows in place: no row in view with the list scrolled part way");
+                return;
+            }
+
+            var ticked = await Watch(row, () => Tick(true));
+            Check("scrolled part way, a mod switched on raises a banner (Better Mod Menu's): the list's top moves down, the rows on screen stay where they were in every frame",
+                Bmm.Ticked && Banner() is { Visible: true } && ticked.Moved > 30 && ticked.Strayed <= 1,
+                $"banner {Banner() != null}, the list's top moved {ticked.Moved}, the row strayed {ticked.Strayed}, scrolled to {Target()}");
+            var undone = await Watch(row, History.Undo);
+            var gone = !Bmm.Ticked && Banner() == null;
+            var redone = await Watch(row, History.Redo);
+            Check("undo takes the banner away and redo brings it back, scrolled part way: the rows stay where they were in every frame",
+                gone && Bmm.Ticked && Banner() is { Visible: true } && undone.Moved < -30 && redone.Moved > 30 && undone.Strayed <= 1 && redone.Strayed <= 1,
+                $"gone on undo {gone}, back on redo {Banner() != null}; the list's top moved {undone.Moved}, then {redone.Moved}; the row strayed {undone.Strayed}, then {redone.Strayed}");
+
+            // Wrapped (a narrow list) and at the list's top, a redraw makes every banner again, as tall as before: nothing
+            // moves. (A banner that shrank and grew back there would be kept from scrolling one way but not the other.)
+            border.OffsetRight -= narrower;
+            narrowed = narrower;
+            await Wait(menu, 0.3);
+            CategoryList.ScrollToTop(content);
+            await Wait(menu, 0.2);
+            var wrapped = Banner()?.Size.Y > 40;
+            var redrawn = await Watch(row, () => CategoryList.Redraw(content));
+            Check("a redraw that makes a wrapped banner again, at the list's top: the list stays at its top, nothing moves",
+                wrapped && Target() == 0 && redrawn.Moved == 0 && redrawn.Strayed <= 1,
+                $"wrapped {wrapped} ({Banner()?.Size.Y}), scrolled to {Target()}, the list's top moved {redrawn.Moved}, the row strayed {redrawn.Strayed}");
+            border.OffsetRight += narrower;
+            narrowed = 0;
+            await Wait(menu, 0.3);
+
+            await ScrollTo(-160);
+            var dismissed = await Watch(row, () => Banner()?.FindChild("DismissManagersButton", true, false)?.EmitSignal(BaseButton.SignalName.Pressed));
+            Check("Dismiss, scrolled part way: the banner goes, the rows stay where they were in every frame",
+                Store.Data.ManagersWarningDismissed && Banner() == null && dismissed.Moved < -30 && dismissed.Strayed <= 1,
+                $"dismissed {Store.Data.ManagersWarningDismissed}, banner {Banner() != null}, the list's top moved {dismissed.Moved}, the row strayed {dismissed.Strayed}");
+
+            // Reveal in the frame a banner comes, from the list's top: it still lands where it aims (a third of the way
+            // down the list, the spacer leaving room below), in view. Unticked first, which re-arms the dismissed banner.
+            Tick(false);
+            await Wait(menu, 0.3);
+            CategoryList.ScrollToTop(content);
+            await Wait(menu, 0.2);
+            var last = content.GetChildren().OfType<NModMenuRow>().Where(r => r.Visible).MaxBy(r => r.Position.Y);
+            if (last?.Mod is { } lastMod)
+            {
+                Tick(true);
+                CategoryList.Reveal(content, Copies.Key(lastMod), flash: false);
+                await Wait(menu, 0.8);
+                var aim = Math.Min(0, list.Size.Y / 3 - last.Position.Y);
+                var padding = (float)list.Get("_paddingTop");
+                Check("Reveal in the frame a banner appears still lands on its mod: a third of the way down the list, in view",
+                    Banner() is { Visible: true } && aim < 0 && Math.Abs(Target() - aim) <= 1 && Math.Abs(content.Position.Y - padding - aim) <= 1
+                    && list.GetGlobalRect().Encloses(last.GetGlobalRect()),
+                    $"banner {Banner() != null}, aimed at {aim}, scrolled to {Target()} (rows at {content.Position.Y - padding}), row {last.GetGlobalRect()}, list {list.GetGlobalRect()}");
+            }
+            else
+                Results.Add("FAIL Reveal in the frame a banner appears: no row shown");
+
+            // A Show: choice in the frame a banner goes, scrolled part way: the list starts at its top, as before.
+            await ScrollTo(-160);
+            Tick(false);
+            ListFilter.Choose(content, ListFilter.Choice.Enabled);
+            await Wait(menu, 0.3);
+            Check("a Show: choice in the frame a banner goes, scrolled part way: the list starts at its top, as before",
+                Banner() == null && Target() == 0 && Math.Abs(content.Position.Y - (float)list.Get("_paddingTop")) <= 0.5f,
+                $"banner {Banner() != null}, scrolled to {Target()}, rows at {content.Position.Y}");
+        }
+        finally
+        {
+            border.OffsetRight += narrowed;
+            content.RemoveChild(spacer);
+            spacer.QueueFree();
+            if (Bmm.Ticked)
+                Tick(false);
+            ListFilter.Choose(content, ListFilter.Choice.All); // a redraw, which shrinks the rows' container again, then the top
+            await Wait(menu, 0.3);
+        }
     }
 
     // The bar under the search box: Enable all / Disable all for the page (or the search's matches),
