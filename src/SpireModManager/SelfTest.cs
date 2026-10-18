@@ -4967,7 +4967,9 @@ static class SelfTest
     // coming as it eases, and a Show: choice with one coming in its frame still starts the list at its top. A spacer
     // under the rows gives the short fixture list room to scroll; it goes after. bannerRow: the row whose tick raises the
     // banner called name: Test Addon's (the main list banner, in every run) or Better Mod Menu's (the managers banner,
-    // where it's installed); what: that banner in the checks' names. Starts and ends with that row's mod off.
+    // where it's installed); what: that banner in the checks' names. Starts and ends with that row's mod off. Showing the
+    // page again enters it anew (History.Enter: Revert all's state then, no undo steps), so the page's opening state and
+    // both undo histories are kept first and put back after: the tests after it undo and Revert all as they would have.
     static async Task TestBannersKeepRows(Node menu, NModdingScreen screen, Control content, NModMenuRow bannerRow, string name, string what)
     {
         var border = screen.GetNode<Control>("ModsBorder");
@@ -5008,6 +5010,7 @@ static class SelfTest
             return (strayed, list.GetGlobalRect().Position.Y - top);
         }
 
+        var (history, listWas, changesWas) = (History.TestKeep(), History.CurrentMods(), HistoryBar.Describe());
         var spacer = new Control { Name = "SpireModManagerTestSpacer", CustomMinimumSize = new Vector2(0, 1500), MouseFilter = Control.MouseFilterEnum.Ignore };
         content.AddChild(spacer);
         const float narrower = 450;
@@ -5149,6 +5152,14 @@ static class SelfTest
                 Tick(false);
             ListFilter.Choose(content, ListFilter.Choice.All); // a redraw, which shrinks the rows' container again, then the top
             await Wait(menu, 0.3);
+            var enteredAnew = History.Entered != history.Entered;
+            History.TestPutBack(history);
+            static string Said(IEnumerable<History.ModEntry> mods) => string.Join(", ", mods.Select(m => m.Id + (m.Enabled ? "" : " (off)")));
+            Check($"{what} keeping the rows in place: the saved list and Changes left as found, the page's opening state and both undo histories put back",
+                History.CurrentMods().SequenceEqual(listWas) && HistoryBar.Describe().SequenceEqual(changesWas) && History.Entered == history.Entered
+                && History.Steps(History.Track.List) == history.Past[History.Track.List].Count && History.Steps(History.Track.Order) == history.Past[History.Track.Order].Count,
+                $"entered anew by showing the page again {enteredAnew}; list {Said(History.CurrentMods())}, was {Said(listWas)}; "
+                + $"changes {string.Join(" | ", HistoryBar.Describe())}, were {string.Join(" | ", changesWas)}");
         }
     }
 

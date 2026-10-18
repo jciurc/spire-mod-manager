@@ -171,6 +171,27 @@ static class History
     // Self-test: how many undo steps a history has, and its newest.
     public static int Steps(Track track) => Past[track].Count;
     public static Change? Newest(Track track) => Past[track].LastOrDefault();
+
+    // Self-test: the page's opening state and both histories, for a test that shows the page again (which enters it
+    // anew) to put back after, so the tests after it undo and Revert all as they would have.
+    public sealed record Kept(Snapshot? Entered, IReadOnlyDictionary<Track, List<Change>> Past, IReadOnlyDictionary<Track, List<Change>> Future);
+
+    public static Kept TestKeep() => new(Entered, Past.ToDictionary(p => p.Key, p => p.Value.ToList()), Future.ToDictionary(f => f.Key, f => f.Value.ToList()));
+
+    public static void TestPutBack(Kept kept)
+    {
+        Entered = kept.Entered;
+        foreach (var track in new[] { Track.List, Track.Order })
+        {
+            Past[track].Clear();
+            Past[track].AddRange(kept.Past[track]);
+            Future[track].Clear();
+            Future[track].AddRange(kept.Future[track]);
+        }
+        if (_current != null)
+            _current = Take();
+        Changed?.Invoke();
+    }
 #endif
 
     // Takes the last step of the track from one side, puts now on the other, and restores it: the picked mods for a
