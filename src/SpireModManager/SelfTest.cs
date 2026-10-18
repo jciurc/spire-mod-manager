@@ -1765,6 +1765,80 @@ static class SelfTest
             Check("the plain dialog after a failed start: Restore and restart writes the working list, then relaunches; the dialog goes",
                 asked.IsCompleted && relaunches == 2 && quits == 2 && !Dependencies.IsOn(fixes) && root.GetNodeOrNull(LaunchGuard.PlainDialogName) == null,
                 $"quits {quits}, relaunches {relaunches}, Test Fixes on {Dependencies.IsOn(fixes)}, dialog left {root.GetNodeOrNull(LaunchGuard.PlainDialogName) != null}");
+            // Mod Doctor's suspects (made up: Test UI, which this launch has on, among them, ours and Mod Doctor never
+            // turned off, and one not installed): three named, the rest under "more", whose card names them; a third button
+            // as a quiet link under the game's two, which turns them off and restarts, the rest of this launch's list as it was. Escape
+            // stays the game's Quit.
+            LaunchGuard.TestNoLanguage = false;
+            ModDoctor.TestSuspects = [ModEntry.ModId, ModDoctor.ModId, "SmmTestUi", "SmmTestFixes", "SmmTestLib", "SmmTestNotThere"];
+            void ListAsItWas()
+            {
+                settings.ModList.Clear();
+                settings.ModList.AddRange(listWas.Select(e => new SettingsSaveMod { Id = e.Id, Source = e.Source, IsEnabled = e.IsEnabled }));
+            }
+            bool Listed(string id, bool on) => settings.ModList.Any(e => e.Id == id && e.IsEnabled == on);
+            // Every entry of an id off, whatever its source (a mod listed from two sources has two).
+            bool AllOff(string id) => settings.ModList.Any(e => e.Id == id) && settings.ModList.Where(e => e.Id == id).All(e => !e.IsEnabled);
+            ListAsItWas();
+            var libWasOn = Listed("SmmTestLib", true);
+            asked = LaunchGuard.AskAfterCrash(game, offer);
+            await Wait(menu, 0.8);
+            var popup = NModalContainer.Instance?.OpenModal as Control;
+            var third = popup?.FindChild(LaunchGuard.SuspectsButtonName, true, false) as Control;
+            var (quitButton, restoreButton) = (popup?.GetNodeOrNull<Control>("VerticalPopup/NoButton"), popup?.GetNodeOrNull<Control>("VerticalPopup/YesButton"));
+            // A quiet link under the two, centred on the popup's art, overlapping neither: orange, a pointer over it, lit and
+            // underlined on hover.
+            var art = popup?.GetNodeOrNull<Control>("VerticalPopup");
+            var between = third is LinkButton { Underline: LinkButton.UnderlineMode.OnHover, MouseDefaultCursorShape: Control.CursorShape.PointingHand } link
+                && art != null && quitButton != null && restoreButton != null && link.GetGlobalRect().Position.Y >= restoreButton.GetGlobalRect().End.Y - 4
+                && Math.Abs(link.GetGlobalRect().GetCenter().X - art.GetGlobalRect().GetCenter().X) < 2 && link.Size.X > 100
+                && !link.GetGlobalRect().Intersects(quitButton.GetGlobalRect()) && !link.GetGlobalRect().Intersects(restoreButton.GetGlobalRect())
+                && link.GetThemeColor("font_color") is { R: > 0.9f, G: > 0.6f and < 0.8f, B: < 0.5f } && link.GetThemeColor("font_hover_color") != link.GetThemeColor("font_color")
+                && art.GetNodeOrNull<Control>(Menus.MarkName) is { } mark && mark.GetGlobalRect().Position.Y >= link.GetGlobalRect().End.Y; // our mark under it, clear of it
+            var suspectTexts = string.Join(" | ", PopupTexts());
+            await Capture(menu, outDir, "1h-crash-dialog-suspects");
+            var suspectsCard = popup?.GetNodeOrNull<RichTextLabel>("VerticalPopup/Description") is { } description
+                ? await LinkCard(description, "spire-mod-manager-more-suspects") : "";
+            Check("the dialog with Mod Doctor's suspects: three named, the rest counted as a link whose card names them; a third button, "
+                + "\"Disable suspect mods and restart\", a quiet orange link under Quit and Restore and restart, centred",
+                third is LinkButton { Visible: true, Text: "Disable suspect mods and restart" } && between && suspectTexts.Contains("3 more")
+                && suspectsCard.Contains("Test Fixes") && suspectsCard.Contains("SmmTestNotThere") && !suspectsCard.Contains("Test UI"),
+                $"third {third != null}, between {between}; {suspectTexts}; card: {suspectsCard}");
+            Input.ParseInputEvent(new InputEventKey { Keycode = Key.Escape, Pressed = true });
+            await Wait(menu, 0.1);
+            Input.ParseInputEvent(new InputEventKey { Keycode = Key.Escape, Pressed = false });
+            await Wait(menu, 0.3);
+            Check("Escape on that dialog is still the game's Quit, not the third button", asked.IsCompleted && quits == 3 && relaunches == 2
+                && Listed("SmmTestUi", true) == listWas.Any(e => e.Id == "SmmTestUi" && e.IsEnabled), $"quits {quits}, relaunches {relaunches}");
+            if (!asked.IsCompleted)
+                Press("NoButton");
+            ListAsItWas();
+            asked = LaunchGuard.AskAfterCrash(game, offer);
+            await Wait(menu, 0.8);
+            if ((NModalContainer.Instance?.OpenModal as Node)?.FindChild(LaunchGuard.SuspectsButtonName, true, false) is BaseButton suspectsButton)
+                suspectsButton.EmitSignal(BaseButton.SignalName.Pressed);
+            await Wait(menu, 0.3);
+            Check("Disable suspect mods and restart: this launch's list with Test UI, Test Fixes and Test Framework off (not ours, not Mod Doctor, "
+                + "nothing added for a mod not installed), then a restart; the launch's record goes",
+                asked.IsCompleted && relaunches == 3 && quits == 3 && AllOff("SmmTestUi") && AllOff("SmmTestFixes")
+                && (!libWasOn || AllOff("SmmTestLib")) && Listed(ModEntry.ModId, true) && !settings.ModList.Any(e => e.Id == "SmmTestNotThere")
+                && !File.Exists(pendingPath),
+                $"quits {quits}, relaunches {relaunches}; {string.Join(", ", settings.ModList.Select(e => $"{e.Id}={e.IsEnabled}"))}");
+            // The plain dialog: the third answer as one more button.
+            ListAsItWas();
+            LaunchGuard.TestNoLanguage = true;
+            asked = LaunchGuard.AskAfterCrash(game, offer);
+            await Wait(menu, 0.5);
+            var plainDialog = root.GetNodeOrNull<ConfirmationDialog>(LaunchGuard.PlainDialogName);
+            var plainThird = plainDialog?.FindChildren("*", "Button", true, false).OfType<Button>().Any(b => b.Text == "Disable suspect mods and restart") == true;
+            plainDialog?.EmitSignal(AcceptDialog.SignalName.CustomAction, "disable_suspects");
+            await Wait(menu, 0.3);
+            Check("the plain dialog with suspects: the third button, which turns them off and restarts",
+                plainThird && asked.IsCompleted && relaunches == 4 && quits == 3 && AllOff("SmmTestUi") && Listed(ModEntry.ModId, true),
+                $"button {plainThird}, quits {quits}, relaunches {relaunches}");
+            ModDoctor.TestSuspects = null;
+            ListAsItWas();
+
             // At its longest: more changes than it lists and a game update since, captured to see that it all fits.
             LaunchGuard.TestNoLanguage = false;
             List<LaunchGuard.Entry> many = [.. Enumerable.Range(1, 7).Select(i => Mod($"SmmTestMadeUp{i}", true))];
@@ -1774,10 +1848,16 @@ static class SelfTest
                 await Wait(menu, 0.8);
                 await Capture(menu, outDir, "1g-crash-dialog-longest");
                 var longTexts = string.Join(" | ", PopupTexts());
+                var moreCard = (NModalContainer.Instance?.OpenModal as Node)?.GetNodeOrNull<RichTextLabel>("VerticalPopup/Description") is { } longDescription
+                    ? await LinkCard(longDescription, "spire-mod-manager-more-changes") : "";
+                var noThird = (NModalContainer.Instance?.OpenModal as Node)?.FindChild(LaunchGuard.SuspectsButtonName, true, false) == null;
                 Press("NoButton");
                 await Wait(menu, 0.3);
-                Check("the dialog at its longest (7 changes, a game update since): 4 listed, 3 counted, the update said, the game's message first",
-                    asked.IsCompleted && longTexts.Contains("3 more") && longTexts.Contains("The game itself was updated") && longTexts.Contains(gamesMessage), longTexts);
+                Check("the dialog at its longest (7 changes, a game update since): 4 listed, 3 counted, the update said, the game's message first; "
+                    + "no suspects, so no third button",
+                    asked.IsCompleted && longTexts.Contains("3 more") && longTexts.Contains("The game itself was updated") && longTexts.Contains(gamesMessage) && noThird, longTexts);
+                Check("the dialog at its longest: \"3 more\" is a link whose card names the three changes it counts",
+                    moreCard.Contains("SmmTestMadeUp5") && moreCard.Contains("SmmTestMadeUp7") && !moreCard.Contains("SmmTestMadeUp4"), moreCard);
             }
             else
                 Check("the dialog at its longest: an offer for 7 new mods and a game update since", false, "no offer");
@@ -1787,6 +1867,7 @@ static class SelfTest
             ModEntry.TestQuit = null;
             ModEntry.TestRelaunch = null;
             LaunchGuard.TestNoLanguage = false;
+            ModDoctor.TestSuspects = null;
             game.Transition.Visible = transitionWas;
             NModalContainer.Instance?.Clear();
             root.GetNodeOrNull(LaunchGuard.PlainDialogName)?.QueueFree();
@@ -8668,6 +8749,27 @@ static class SelfTest
     static Node? Header(Control content, string category) => content.GetNodeOrNull($"Category {category}");
 
     // Every text in the popup open now (the game's modal), for checking its wording.
+    // The card a [url] link in a text brings up (Hover.WatchLinks), hovered with the mouse on the text, then let go: its
+    // words, or "" for none.
+    static async Task<string> LinkCard(RichTextLabel text, string link)
+    {
+        Hover.TestMouse = () => text.GetGlobalRect().GetCenter();
+        try
+        {
+            text.EmitSignal(RichTextLabel.SignalName.MetaHoverStarted, link);
+            await Wait(text, Hover.Delay + 0.3);
+            var card = text.GetTree().Root.FindChild(LaunchGuard.MoreCardName, true, false)?.FindChildren("*", "RichTextLabel", true, false)
+                .OfType<RichTextLabel>().FirstOrDefault()?.GetParsedText() ?? "";
+            text.EmitSignal(RichTextLabel.SignalName.MetaHoverEnded, link);
+            return card;
+        }
+        finally
+        {
+            Hover.TestMouse = null;
+            Hover.Hide();
+        }
+    }
+
     static List<string> PopupTexts() => NModalContainer.Instance?.OpenModal is Node popup
         ? popup.FindChildren("*", "", true, false).Select(n => n is Label l ? l.Text : n is RichTextLabel r ? r.Text : "").ToList() : [];
 

@@ -25,11 +25,13 @@ static class Menus
         MenuPanel.Show(owner, () => items.ToList(), from, toggleKey);
 
     // The game's yes/no popup with our mark; true if confirmed. no and yes relabel its buttons.
-    public static async Task<bool> Confirm(LocString title, LocString body, LocString? no = null, LocString? yes = null)
+    public static async Task<bool> Confirm(LocString title, LocString body, LocString? no = null, LocString? yes = null,
+        Action<NGenericPopup>? setup = null)
     {
         if (NGenericPopup.Create() is not { } popup || NModalContainer.Instance is not { } modals)
             return false;
         Mark(popup);
+        setup?.Invoke(popup);
         modals.Add(popup);
         return await popup.WaitForConfirmation(body, title,
             no ?? new LocString("main_menu_ui", "GENERIC_POPUP.cancel"), yes ?? new LocString("main_menu_ui", "GENERIC_POPUP.confirm"));
