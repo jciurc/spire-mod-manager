@@ -356,14 +356,16 @@ static class ModDetails
     // - picked, not loaded yet, another copy loaded: this one loads in its place on relaunch (orange);
     // - picked and failed for its own reasons: enabling the other copy loads that one instead (dim, after the red);
     // - the pick couldn't be applied this launch (SameIdLoad's self-check or canary): it says so (orange), on every copy.
+    // None for this mod (the running copy is ours whichever is on), nor for a copy on that loses to the other one on (the
+    // game's local-vs-Workshop rule: STATUS_DUPLICATE says so).
     public static (string Text, string Color)? CopyLine(Mod mod, bool links)
     {
-        if (Copies.Others(mod) is not { Count: > 0 } others)
+        if (mod.manifest?.id == ModEntry.ModId || Copies.Others(mod) is not { Count: > 0 } others)
             return null;
         string Other(Mod other)
         {
             var name = Escape((Store.InfoFor(other)?.Alias ?? other.manifest?.name ?? other.manifest?.id ?? "") + Copies.Which(other));
-            return links ? $"[url=mod:{Copies.Key(other)}][color={ModLinkHex}]{name}[/color][/url]" : name;
+            return links ? $"[url=mod:{Copies.LinkKey(other)}][color={ModLinkHex}]{name}[/color][/url]" : name;
         }
         string Line(string key, Mod other) => Menus.Format(key, ("other", Other(other)));
         if (SameIdLoad.Unchosen(mod.manifest?.id))
@@ -371,7 +373,8 @@ static class ModDetails
         var on = Dependencies.IsOn(mod);
         if (!on && others.FirstOrDefault(Dependencies.IsOn) is { } enabled)
             return (Line("SPIRE_MOD_MANAGER.COPY_OTHER_ENABLED", enabled), Disabled);
-        if (on && mod.state != ModLoadState.Loaded && mod.state != ModLoadState.Failed && others.FirstOrDefault(o => o.state == ModLoadState.Loaded) is { } loaded)
+        if (on && mod.state != ModLoadState.Loaded && mod.state != ModLoadState.Failed && !LosesToOn(mod) && !Copies.Loses(mod)
+            && others.FirstOrDefault(o => o.state == ModLoadState.Loaded) is { } loaded)
             return (Line("SPIRE_MOD_MANAGER.COPY_LOADS_AFTER", loaded), Pending);
         if (on && mod.state == ModLoadState.Failed && mod.errors?.Any(e => e.LocEntryKey == "MOD_ERROR.DUPLICATE_ID") != true)
             return (Line("SPIRE_MOD_MANAGER.COPY_PICKED_FAILED", others[0]), Disabled);

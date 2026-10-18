@@ -52,6 +52,8 @@ static class Profiles
         }
         if (TakeIn(Active))
             changed = true;
+        foreach (var profile in data.Profiles)
+            changed |= HoldCopies(profile);
         if (changed)
             Store.Save();
         if (!_watching)
@@ -98,6 +100,26 @@ static class Profiles
         return true;
     }
 
+    // Gives a profile's entries for a mod installed more than once from one source the copy picked now where they name
+    // none (profiles from before copies were told apart, Better Mod Menu's, a shared list naming the id once, which keep
+    // the pick there is), as TakeIn does for a mod it has never seen: from then on a switch to another copy is a change
+    // to the profile, as for any mod. At launch, before the undo history starts, and as a profile is switched to. True
+    // if any changed.
+    static bool HoldCopies(Profile profile)
+    {
+        var changed = false;
+        foreach (var (id, source, _) in Copies.TwinGroups())
+            if (Copies.Picked(id, source) is { } pick)
+                foreach (var list in new[] { profile.Mods, profile.Edited })
+                    for (var i = 0; i < (list?.Count ?? 0); i++)
+                        if (list?[i] is { Copy: null } entry && entry.Id == id && entry.Source == source)
+                        {
+                            list[i] = entry with { Copy = pick };
+                            changed = true;
+                        }
+        return changed;
+    }
+
     // Installed mods the profile has no entry for, as they are in the mod list now.
     static IEnumerable<ProfileMod> Unseen(Profile profile)
     {
@@ -140,6 +162,7 @@ static class Profiles
         Track(); // the profile being left keeps its edit
         Apply(target.Edited ?? target.Mods, screen); // mods it has never seen stay as they are,
         TakeIn(target); // and it keeps them that way from now on
+        HoldCopies(target); // the picked copies too, where it names none
         Store.Data.ActiveProfile = target.Name;
         Store.Save();
         Track(); // the list as it is now, against the profile (normally the same)
@@ -161,7 +184,7 @@ static class Profiles
                 continue;
             var now = Dependencies.IsOn(copy);
             if (CopyOn(copy, entry) != now)
-                (now ? on : off).Add((Copies.Key(copy), (copy.manifest?.name ?? id) + Copies.Which(copy)));
+                (now ? on : off).Add((Copies.LinkKey(copy), (copy.manifest?.name ?? id) + Copies.Which(copy)));
         }
         return (on, off);
     }
@@ -194,6 +217,7 @@ static class Profiles
         if (Active is not { } profile)
             return;
         Apply(profile.Mods, screen);
+        HoldCopies(profile);
         (profile.Edited, profile.EditedAt) = (null, null);
         Store.Save();
         Redraw(screen);
@@ -297,10 +321,19 @@ static class Profiles
         // Not installed: by id and link, so a list naming two copies of a mod not installed names both.
         var installed = current.Select(c => c.Id).ToHashSet();
         var missing = entries.Where(e => !Manager(e.Id) && !installed.Contains(e.Id)).DistinctBy(e => (e.Id, e.WorkshopLink)).ToList();
-        mods.AddRange(missing.DistinctBy(e => (e.Id, e.WorkshopLink.Length > 0))
-            .Select(e => new ProfileMod(e.Id, e.WorkshopLink.Length > 0 ? ModSource.SteamWorkshop : ModSource.ModsDirectory, e.Enabled)));
+        // Each id and source on if one of its rows is; where two Workshop rows name it, the one on is the copy that loads
+        // once installed.
+        foreach (var rows in missing.GroupBy(e => (e.Id, Source: e.WorkshopLink.Length > 0 ? ModSource.SteamWorkshop : ModSource.ModsDirectory)))
+        {
+            var loads = rows.FirstOrDefault(e => e.Enabled);
+            mods.Add(new ProfileMod(rows.Key.Id, rows.Key.Source, loads != null, rows.Count() > 1 && loads != null ? CopyOfLink(loads.WorkshopLink) : null));
+        }
         return new ImportPlan(mods, on, off, same, unlisted, missing);
     }
+
+    // The copy a Workshop link names ("w:<item>"), or null for none.
+    static string? CopyOfLink(string link) =>
+        link.Length > 0 && ulong.TryParse(link[(link.LastIndexOf('=') + 1)..], out var item) ? $"w:{item}" : null;
 
     // A listed mod's entry for one id and source installed. A list naming the id once sets the switch and keeps the pick,
     // as before copies were told apart. Naming it more than once: the rows of this source (a Workshop link, or none for a
@@ -314,8 +347,7 @@ static class Profiles
         var rows = listed.Where(e => (e.WorkshopLink.Length > 0) == (mod.Source == ModSource.SteamWorkshop)).OrderBy(e => links.Contains(e.WorkshopLink) ? 0 : 1)
             .ToList() is { Count: > 0 } ofSource ? ofSource : [listed[0]];
         var loads = rows.FirstOrDefault(e => e.Enabled);
-        var item = loads?.WorkshopLink is { Length: > 0 } link && ulong.TryParse(link[(link.LastIndexOf('=') + 1)..], out var id) ? $"w:{id}" : null;
-        return mod with { Enabled = loads != null, Copy = item ?? mod.Copy };
+        return mod with { Enabled = loads != null, Copy = (loads == null ? null : CopyOfLink(loads.WorkshopLink)) ?? mod.Copy };
     }
 
     // A new profile from a shared list, placed after the active one and switched to, as New does: one undo step.

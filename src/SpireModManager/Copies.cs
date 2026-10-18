@@ -68,18 +68,25 @@ static class Copies
     // The mod id in a key.
     public static string IdOf(string key) => key.Split('|')[0];
 
-    // The installed copy a key names; a plain id with no holder installed: its first copy.
-    public static Mod? ModOf(string? key) => key == null ? null
-        : All.FirstOrDefault(m => Key(m) == key) ?? All.FirstOrDefault(m => m.manifest?.id == key);
+    // What a link to this copy names ("mod:<key>"): where its id is installed more than once, its own copy ("<id>|<copy>",
+    // SwitchKey), so a link to the copy that holds the plain id never finds the copy that's on; else its id.
+    public static string LinkKey(Mod mod) => Others(mod).Count > 0 ? SwitchKey(mod) : mod.manifest?.id ?? "";
 
-    // The row a key names (a copy's, or for a plain id, its holder's or else its first copy's: a dependency link names
-    // only the id).
+    // The installed copy a key names (our data's key, or a link's SwitchKey); a plain id with no holder installed: its
+    // first copy.
+    public static Mod? ModOf(string? key) => key == null ? null
+        : All.FirstOrDefault(m => Key(m) == key) ?? All.FirstOrDefault(m => key.Contains('|') && SwitchKey(m) == key)
+            ?? All.FirstOrDefault(m => m.manifest?.id == key);
+
+    // The row a key names (a copy's, by our data's key or a link's, or for a plain id, its holder's or else its first
+    // copy's: a dependency link names only the id).
     public static NModMenuRow? RowOf(Control content, string? key)
     {
         if (key == null)
             return null;
         var rows = content.GetChildren().OfType<NModMenuRow>().ToList();
-        return rows.FirstOrDefault(r => r.Mod is { } m && Key(m) == key) ?? rows.FirstOrDefault(r => r.Mod?.manifest?.id == key);
+        return rows.FirstOrDefault(r => r.Mod is { } m && Key(m) == key) ?? rows.FirstOrDefault(r => r.Mod is { } m && key.Contains('|') && SwitchKey(m) == key)
+            ?? rows.FirstOrDefault(r => r.Mod?.manifest?.id == key);
     }
 
     // The other installed copies of a mod (none for a mod installed once), from a table made again when mods come.

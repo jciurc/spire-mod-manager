@@ -1,4 +1,5 @@
 using System.Diagnostics;
+using System.Reflection;
 using System.Runtime.CompilerServices;
 using System.Runtime.InteropServices;
 using System.Text.Json;
@@ -18,10 +19,11 @@ namespace SpireModManager;
 // the pick was taken. Anything unexpected: no flip, a warning, and the game's own behaviour.
 static class SameIdLoad
 {
-    // Why the pick doesn't load this launch: a copy of the id sorted before us (the game decided it already), the picked
-    // copy isn't installed, its id and source are off, the game's local-vs-Workshop rule set it aside, or a dependency of
-    // it loads after the id's first slot while a mod after us needs the id (no flip, the game's own choice).
-    public enum Reason { None, DecidedBeforeUs, NotInstalled, Off, SetAsideByGame, DependencyAfterSlot }
+    // Why the pick doesn't load this launch: a copy of the id sorted before us (the game decided it already), the game's
+    // local-vs-Workshop rule set it aside, or a dependency of it loads after the id's first slot while a mod after us
+    // needs the id (no flip, the game's own choice). A pick whose source is off, or that names a copy no longer
+    // installed, isn't one: the player chose the other source, or it has nothing to apply to.
+    public enum Reason { None, DecidedBeforeUs, SetAsideByGame, DependencyAfterSlot }
 
     // What Apply did for one id installed more than once. Loads: the copy that loads, or that the game tries; SetAside:
     // the copies Apply set aside; Swapped: the copy that loads moved from slot From to To (the id's first); HadPick: a
@@ -51,7 +53,8 @@ static class SameIdLoad
     {
         try
         {
-            var (canary, why, plan, self) = Run(ModManager.Mods, ReadPicks, IsUs);
+            var mods = ModManager.Mods;
+            var (canary, why, plan, self) = Run(mods, ReadPicks, IsUs, live: IsLive(mods));
             (Canary, _plan, Self) = (canary, plan, self);
             if (!canary)
                 Log.Warn($"[{ModEntry.ModId}] Same ID: the game now loads mods differently ({why}); copy picks can't apply until Spire Mod Manager is updated");
@@ -65,12 +68,15 @@ static class SameIdLoad
 
     // The look and the flips, on the game's list or a self-test's made-up one: the canary, then each id installed more
     // than once, in the order of its first slot. readPicks runs only when some id has two copies; isUs tells our own
-    // entry apart. log: false for the self-test's made-up lists.
+    // entry apart; live: the list is the one the game loads from (a copy would take the swap, not the game's loop). log:
+    // false for the self-test's made-up lists.
     public static (bool Canary, string Why, Dictionary<string, Entry> Plan, (int At, string? Id) Self) Run(IReadOnlyList<Mod> mods,
-        Func<IReadOnlySet<string>?> readPicks, Func<Mod, bool> isUs, bool log = true)
+        Func<IReadOnlySet<string>?> readPicks, Func<Mod, bool> isUs, bool log = true, bool live = true)
     {
         if (mods is not List<Mod> list)
             return (false, "its list of mods isn't a List<Mod>", [], (-1, null));
+        if (!live)
+            return (false, "its list of mods is a copy, not the one it loads from", [], (-1, null));
         if (!Enum.TryParse<ModLoadState>("DisabledDuplicate", out var aside))
             return (false, "it has no DisabledDuplicate state", [], (-1, null));
         // TryLoadMod decides each mod in turn, so everything before us is decided and we're the first still at None.
@@ -92,6 +98,8 @@ static class SameIdLoad
             var todo = copies.Where(p => p.At > self && p.Mod.state == ModLoadState.None).ToList();
             var pickKeys = picks.Where(k => Copies.Parse(k) is { } p && p.Id == id).ToHashSet();
             bool IsPick(Mod m) => pickKeys.Contains(Copies.SwitchKey(m));
+            // A source's own pick: which of its copies loads (between sources, their switches in the game's list decide).
+            bool PickedIn(ModSource source) => pickKeys.Any(k => Copies.Parse(k)?.Source == source);
             void Say(string line)
             {
                 if (log)
@@ -104,46 +112,39 @@ static class SameIdLoad
             }
 
             // A copy of it sorted before us and loaded: each copy still to come would fail as a duplicate, so they're set
-            // aside anyway.
+            // aside anyway. Nothing to set aside and the loaded copy picked (or no pick yet): nothing to say, nor to check
+            // (the game failed the copies before us as duplicates: the update's first launch, before Settle put us first).
             if (copies.FirstOrDefault(p => p.Mod.state == ModLoadState.Loaded) is { Mod: { } loaded } early)
             {
                 foreach (var p in todo)
                     SetAside(p.Mod, aside, log);
-                var decided = pickKeys.Count > 0 && !IsPick(loaded);
+                var decided = PickedIn(loaded.modSource) && !IsPick(loaded);
+                if (todo.Count == 0 && !decided)
+                    continue;
                 if (decided)
                     Skipped($"already decided: it sorted before us, at {early.At}, and we load at {self}; applies next launch");
                 plan[id] = new Entry(loaded, [.. todo.Select(p => p.Mod)], false, early.At, early.At, IsPick(loaded),
                     decided ? Reason.DecidedBeforeUs : Reason.None, watch.Elapsed.TotalMilliseconds);
                 continue;
             }
-            // One copy (or none) still to come: nothing to choose. Said only where the one that loads isn't the pick.
+            // One copy (or none) still to come: nothing to choose. Said only where the pick of its own source is another
+            // copy installed, which the game's local-vs-Workshop rule set aside (two copies of one source share a switch,
+            // so the pick can't be off while this one is on). The other source's pick goes by that source's switch: off,
+            // the player chose this copy. A pick naming a copy no longer installed has nothing to apply to.
             if (todo.Count < 2)
             {
-                if (todo.FirstOrDefault() is not { Mod: { } only } || pickKeys.Count == 0 || IsPick(only))
+                if (todo.FirstOrDefault() is not { Mod: { } only } || IsPick(only)
+                    || copies.Select(p => p.Mod).FirstOrDefault(m => m.modSource == only.modSource && IsPick(m)) is not { } pick || pick.state != aside)
                     continue;
-                var pick = copies.Where(p => IsPick(p.Mod)).Select(p => p.Mod).FirstOrDefault();
-                var why = pick == null ? Reason.NotInstalled : pick.state switch
-                {
-                    ModLoadState.Disabled => Reason.Off,
-                    _ when pick.state == aside => Reason.SetAsideByGame,
-                    _ => Reason.None,
-                };
-                if (why == Reason.None)
-                    continue;
-                Skipped(why switch
-                {
-                    Reason.NotInstalled => "it isn't installed",
-                    Reason.Off => "off in the game's list",
-                    _ => "the game's local-vs-Workshop rule set it aside",
-                });
-                plan[id] = new Entry(only, [], false, todo[0].At, todo[0].At, false, why, watch.Elapsed.TotalMilliseconds);
+                Skipped("the game's local-vs-Workshop rule set it aside");
+                plan[id] = new Entry(only, [], false, todo[0].At, todo[0].At, false, Reason.SetAsideByGame, watch.Elapsed.TotalMilliseconds);
                 continue;
             }
 
             // The pick, or with none (or two: a local and a Workshop copy each picked) the game's own choice: the copy it
-            // would load before failing the rest.
+            // would load before failing the rest. One copy can be two manifests (of one Workshop item): its first.
             var matching = todo.Where(p => IsPick(p.Mod)).ToList();
-            var hadPick = matching.Count == 1;
+            var hadPick = matching.Select(p => Copies.CopyOf(p.Mod)).Distinct().Count() == 1;
             var picked = hadPick ? matching[0] : todo[0];
             var (s1, sp) = (todo[0].At, picked.At);
             var swapped = false;
@@ -207,6 +208,12 @@ static class SameIdLoad
     }
 
     static string Folder(string? path) => string.IsNullOrEmpty(path) ? "" : Path.TrimEndingDirectorySeparator(Path.GetFullPath(path));
+
+    // Whether the game's Mods is the list its load loop walks (its _mods field), not a copy of it; where the field is
+    // renamed, at least the same list on every read.
+    static bool IsLive(IReadOnlyList<Mod> mods) =>
+        typeof(ModManager).GetField("_mods", BindingFlags.NonPublic | BindingFlags.Static)?.GetValue(null) is { } field
+            ? ReferenceEquals(field, mods) : ReferenceEquals(mods, ModManager.Mods);
 
     // The picks as saved (manager.json's copy_picks), read from the file: loading our data does work of its own that waits
     // for the main menu (Store.Load). None for no file; an unreadable file counts as none, logged.
@@ -340,24 +347,29 @@ static class SameIdLoad
     // installed more than once (a game update that reorders its startup trips it on its first day).
     static void Check(IReadOnlyList<Mod> mods)
     {
-        _twinIds = mods.Where(m => m.manifest?.id is { } id && id != ModEntry.ModId).GroupBy(m => m.manifest?.id ?? "")
-            .Where(g => g.Select(Copies.CopyOf).Distinct().Count() > 1).Select(g => g.Key).ToHashSet();
+        // Ids installed more than once from one source: the ones whose copy we choose (a local and a Workshop copy are
+        // the game's to choose between, by their switches and its own rule).
+        _twinIds = mods.Where(m => m.manifest?.id is { } id && id != ModEntry.ModId).GroupBy(m => (Id: m.manifest?.id ?? "", m.modSource))
+            .Where(g => g.Select(Copies.CopyOf).Distinct().Count() > 1).Select(g => g.Key.Id).ToHashSet();
         CanaryFailed = Canary != true && _twinIds.Count > 0;
         if (CanaryFailed)
             Log.Warn($"[{ModEntry.ModId}] Same ID: {string.Join(", ", _twinIds)} installed more than once, and which copy loads couldn't be chosen this launch (the game's own choice applied)");
         foreach (var (id, entry) in _plan)
-            Results[id] = Judge(id, entry, mods);
+            Results[id] = Judge(id, entry, mods, Self.At);
     }
 
-    public static Result Judge(string id, Entry entry, IReadOnlyList<Mod> mods)
+    // self: where our Init found us; a copy before it the game decided on its own (a duplicate error there is the game's,
+    // from before we could set it aside).
+    public static Result Judge(string id, Entry entry, IReadOnlyList<Mod> mods, int self)
     {
         if (entry.Why != Reason.None)
             return Result.NotApplied;
         var copies = mods.Where(m => m.manifest?.id == id).ToList();
+        var after = mods.Skip(self + 1).Where(m => m.manifest?.id == id);
         if (entry.Loads is { state: ModLoadState.Failed } failed && !HasError(failed, DuplicateKey))
             return Result.PickedFailed;
         if (entry.Loads is { state: ModLoadState.Loaded } picked && entry.SetAside.All(m => m.state == ModLoadState.DisabledDuplicate)
-            && !copies.Any(m => HasError(m, DuplicateKey)) && copies.FirstOrDefault() == picked && !mods.Any(m => Misses(m, id)))
+            && !after.Any(m => HasError(m, DuplicateKey)) && copies.FirstOrDefault() == picked && !mods.Any(m => Misses(m, id)))
             return Result.Taken;
         Log.Warn($"[{ModEntry.ModId}] Same ID: {id}: the picked copy wasn't taken as planned: "
             + string.Join("; ", copies.Select(m => $"{Copies.CopyOf(m)} {m.state}" + (m.errors is { Count: > 0 } e ? $" ({string.Join(", ", e.Select(x => x.LocEntryKey))})" : ""))));
@@ -402,7 +414,7 @@ static class SameIdLoad
         if (result is { } found)
             Results[id] = found;
         else if (_plan.TryGetValue(id, out var entry))
-            Results[id] = Judge(id, entry, ModManager.Mods);
+            Results[id] = Judge(id, entry, ModManager.Mods, Self.At);
         else
             Results.Remove(id);
     }

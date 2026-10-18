@@ -548,7 +548,8 @@ static class NewModPopupPatch
                 || modals.GetChildren().OfType<NErrorPopup>().Any())
                 return false;
             var arrived = Installed.Mods.Append(mod).Distinct().Where(m => !Announced.Contains(m)).ToList();
-            var copies = arrived.Where(m => Copies.Twins(m).Count > 0).ToList();
+            // A new copy is one Installed took as new (an update of either copy isn't: it keeps the new-mods text).
+            var copies = arrived.Where(m => Installed.Mods.Contains(m) && Copies.Twins(m).Count > 0).ToList();
             var title = new LocString("settings_ui", "SPIRE_MOD_MANAGER.NEW_MOD_TITLE");
             var copyBody = new LocString("settings_ui", "SPIRE_MOD_MANAGER.NEW_COPY_BODY");
             copyBody.Add("mods", string.Join(", ", copies.Select(m => (m.manifest?.name ?? m.manifest?.id) + Copies.Which(m))));
@@ -624,7 +625,7 @@ static class GroupTickPatch
             if (Layout.Current != Layout.View.Categories || !Selection.Several || !Selection.Contains(__instance.Mod)
                 || CategoryList.ScreenOf(__instance) is not { } screen || HistoryBar.Screen != screen)
                 return true;
-            ListFilter.Keep(Selection.Mods.Select(m => m.manifest?.id).OfType<string>());
+            ListFilter.KeepCopies(Selection.Mods.Select(m => m.manifest?.id));
             Dependencies.Set(Selection.Mods, tickbox.IsTicked, screen, winner: __instance.Mod);
             CategoryList.Redraw(screen.GetNode<Control>("%ModsScrollContainer/Mask/Content"), keep: true);
             return false;
@@ -674,8 +675,8 @@ static class CopyTickPatch
     }
 }
 
-// Keeps a ticked or unticked row in the list under the Show: choice (ListFilter.Keep), so it doesn't vanish under the
-// mouse. A prefix, so the page bar's redraw counts it.
+// Keeps a ticked or unticked row in the list under the Show: choice (ListFilter.KeepCopies: with every copy of its id,
+// which a tick switches together), so it doesn't vanish under the mouse. A prefix, so the page bar's redraw counts it.
 [HarmonyPatch(typeof(NModMenuRow), "OnTickboxToggled")]
 static class TickKeepPatch
 {
@@ -683,7 +684,7 @@ static class TickKeepPatch
     {
         try
         {
-            ListFilter.Keep(__instance.Mod?.manifest?.id);
+            ListFilter.KeepCopies([__instance.Mod?.manifest?.id]);
         }
         catch (Exception e)
         {

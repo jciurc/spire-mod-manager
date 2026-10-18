@@ -257,28 +257,29 @@ static class HistoryBar
         {
             var key = enabled ? "SPIRE_MOD_MANAGER.CHANGE_ON" : "SPIRE_MOD_MANAGER.CHANGE_OFF";
             var name = Name(mod) + Copies.Which(mod); // a copy says which ("Enabled: LucanaMod (3809131080)")
-            entries.Add(new Entry(enabled ? "on" : "off", Menus.Format(key, ("mod", name)), Link(Copies.Key(mod), name)));
+            entries.Add(new Entry(enabled ? "on" : "off", Menus.Format(key, ("mod", name)), Link(Copies.LinkKey(mod), name)));
         }
         foreach (var mod in Installed.Mods.OrderBy(Name))
         {
             // Under the name: whether it loads after a relaunch.
             var state = Menus.Text(Installed.On(mod) ? "SPIRE_MOD_MANAGER.INSTALLED_ON" : "SPIRE_MOD_MANAGER.INSTALLED_OFF");
             entries.Add(new Entry("installed", Menus.Format("SPIRE_MOD_MANAGER.CHANGE_INSTALLED", ("mod", Name(mod)), ("state", state)),
-                $"{Link(mod.manifest?.id, Name(mod))}\n        [color={Dim}][font_size=15]{Escape(state)}[/font_size][/color]"));
+                $"{Link(Copies.LinkKey(mod), Name(mod))}\n        [color={Dim}][font_size=15]{Escape(state)}[/font_size][/color]")); // a new copy: itself, not the copy that holds the id
         }
         foreach (var (mod, before, after) in Moves())
             entries.Add(new Entry("order", Menus.Format("SPIRE_MOD_MANAGER.CHANGE_MOVED", ("mod", Name(mod) + Copies.Which(mod)), ("from", before.ToString()), ("to", after.ToString())),
-                $"{Link(Copies.Key(mod), Name(mod) + Copies.Which(mod))}  [color={Dim}]{before} → {after}[/color]"));
+                $"{Link(Copies.LinkKey(mod), Name(mod) + Copies.Which(mod))}  [color={Dim}]{before} → {after}[/color]"));
         foreach (var (id, fields, alias) in edited)
         {
-            var name = Copies.ModOf(id) is { } copy ? Name(copy) + Copies.Which(copy) : Copies.IdOf(id); // id: a mod's key; a copy says which
+            var copy = Copies.ModOf(id); // id: a mod's key in our data
+            var name = copy != null ? Name(copy) + Copies.Which(copy) : Copies.IdOf(id); // a copy says which
             // "Name  (alias "Fixes", notes)": the new alias itself, the other details by name.
             var details = fields.Select(f => f == "alias" && alias is { } a
                 ? Menus.Format("SPIRE_MOD_MANAGER.FIELD_ALIAS_NOW", ("alias", a))
                 : Menus.Text($"SPIRE_MOD_MANAGER.FIELD_{f.ToUpperInvariant()}"));
             var said = string.Join(", ", details);
             entries.Add(new Entry("edited", Menus.Format("SPIRE_MOD_MANAGER.CHANGE_EDITED_ONE", ("mod", name)) + $" ({said})",
-                $"{Link(id, name)}  [color={Dim}]({Escape(said)})[/color]"));
+                $"{Link(copy != null ? Copies.LinkKey(copy) : id, name)}  [color={Dim}]({Escape(said)})[/color]"));
         }
         foreach (var line in profiles)
             entries.Add(new Entry("profiles", line, Escape(line)));
