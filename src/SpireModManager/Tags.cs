@@ -139,16 +139,39 @@ static class Tags
         return tags.Count > 0 ? tags : null;
     }
 
+    // A chip's look, one Theme per colour (and font: it changes with the game's language), shared by every chip of that
+    // colour: its box, and its text (the label inherits it). The player's own tags are fainter than the automatic ones.
+    static readonly Dictionary<(Font Font, Color Color, bool Custom), Theme> Looks = [];
+
+    static Theme Look(Font font, Color color, bool custom)
+    {
+        if (Looks.TryGetValue((font, color, custom), out var look))
+            return look;
+        var style = new StyleBoxFlat
+        {
+            BgColor = new Color(color, custom ? 0.1f : 0.2f),
+            ContentMarginLeft = Margin, ContentMarginRight = Margin, ContentMarginTop = 0, ContentMarginBottom = 0,
+        };
+        style.SetCornerRadiusAll(2);
+        look = new Theme();
+        look.SetStylebox("panel", "PanelContainer", style);
+        look.SetFont("font", "Label", font);
+        look.SetFontSize("font_size", "Label", 12);
+        look.SetColor("font_color", "Label", color);
+        return Looks[(font, color, custom)] = look;
+    }
+
     // A chip with its hover card; clicked gets whether Shift was held.
     public static Control Make(Chip chip, Action<bool>? clicked = null)
     {
         var tip = chip.Tip ?? Menus.Text(chip.Custom ? "SPIRE_MOD_MANAGER.TAG_CUSTOM_TIP" : "SPIRE_MOD_MANAGER.TAG_AUTO_TIP");
+        var font = ModEntry.Font("res://themes/kreon_regular_shared.tres");
         var box = new PanelContainer
         {
-            MouseFilter = Control.MouseFilterEnum.Pass, SizeFlagsVertical = Control.SizeFlags.ShrinkCenter,
+            MouseFilter = Control.MouseFilterEnum.Pass, SizeFlagsVertical = Control.SizeFlags.ShrinkCenter, Theme = Look(font, chip.Color, chip.Custom),
         };
         // A long tag is cut with "…"; its card then starts with the whole tag.
-        var cut = ModEntry.Font("res://themes/kreon_regular_shared.tres").GetStringSize(chip.Text, fontSize: 12).X > ChipMax;
+        var cut = RowTitles.Measure(font, chip.Text, 12) > ChipMax;
         var about = (cut ? $"[b]{Escape(chip.Text)}[/b]\n" : "") + Escape(tip);
         var card = clicked == null ? about : $"{about}\n\n{Hint(Menus.Text("SPIRE_MOD_MANAGER.SEARCH_CLICK_TIP"))}";
         Hover.Watch(box, "SpireModManagerTagCard", () => card, width: 320);
@@ -164,18 +187,7 @@ static class Tags
                     clicked(button.ShiftPressed);
             };
         }
-        var style = new StyleBoxFlat
-        {
-            // The player's own tags are fainter than the automatic ones.
-            BgColor = new Color(chip.Color, chip.Custom ? 0.1f : 0.2f),
-            ContentMarginLeft = Margin, ContentMarginRight = Margin, ContentMarginTop = 0, ContentMarginBottom = 0,
-        };
-        style.SetCornerRadiusAll(2);
-        box.AddThemeStyleboxOverride("panel", style);
         var label = new Label { Text = chip.Text, MouseFilter = Control.MouseFilterEnum.Ignore };
-        label.AddThemeFontOverride("font", ModEntry.Font("res://themes/kreon_regular_shared.tres"));
-        label.AddThemeFontSizeOverride("font_size", 12);
-        label.AddThemeColorOverride("font_color", chip.Color);
         if (cut)
             (label.ClipText, label.TextOverrunBehavior, label.CustomMinimumSize) = (true, TextServer.OverrunBehavior.TrimEllipsis, new Vector2(ChipMax, 0));
         box.AddChild(label);
@@ -188,7 +200,7 @@ static class Tags
 
     // The "+N" chip's width: its text plus both margins.
     public static float MoreWidth(int count) =>
-        ModEntry.Font("res://themes/kreon_regular_shared.tres").GetStringSize(MoreText(count), fontSize: 12).X + 2 * Margin;
+        RowTitles.Measure(ModEntry.Font("res://themes/kreon_regular_shared.tres"), MoreText(count), 12) + 2 * Margin;
 
     static string MoreText(int count) => Menus.Format("SPIRE_MOD_MANAGER.TAGS_MORE", ("count", Menus.Number(count)));
 }

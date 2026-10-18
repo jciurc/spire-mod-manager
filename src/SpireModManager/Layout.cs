@@ -545,15 +545,15 @@ static class Layout
     static void ViewFont(MegaRichTextLabel label, int size)
     {
         if (!label.HasMeta(FontMeta))
-            label.SetMeta(FontMeta, new Vector2I(label.GetThemeFontSize("normal_font_size"), label.MaxFontSize));
+            label.SetMeta(FontMeta, new Vector2I(label.GetThemeFontSize(NormalFontSize), label.MaxFontSize));
         var original = (Vector2I)label.GetMeta(FontMeta);
         if (Wide)
         {
             FontSize(label, size);
             return;
         }
-        label.AddThemeFontSizeOverride("normal_font_size", original.X);
-        label.AddThemeFontSizeOverride("bold_font_size", original.X);
+        label.AddThemeFontSizeOverride(NormalFontSize, original.X);
+        label.AddThemeFontSizeOverride(BoldFontSize, original.X);
         label.MaxFontSize = original.Y;
         Refit(label);
     }
@@ -562,12 +562,12 @@ static class Layout
     // override restyles the text, and every row title passes here each redraw) or when it's the auto-size's own pick.
     public static void FontSize(MegaRichTextLabel label, int size)
     {
-        var drawn = label.GetThemeFontSize("normal_font_size");
-        if (label.MaxFontSize == size && label.GetThemeFontSize("bold_font_size") == drawn
+        var drawn = label.GetThemeFontSize(NormalFontSize);
+        if (label.MaxFontSize == size && label.GetThemeFontSize(BoldFontSize) == drawn
             && (drawn == size || ((_refits ??= Refits()) && drawn == (int)label.Get(LastSetSize))))
             return;
-        label.AddThemeFontSizeOverride("normal_font_size", size);
-        label.AddThemeFontSizeOverride("bold_font_size", size);
+        label.AddThemeFontSizeOverride(NormalFontSize, size);
+        label.AddThemeFontSizeOverride(BoldFontSize, size);
         label.MaxFontSize = size;
 #if DEVTOOLS
         TestFitting?.Invoke(label);
@@ -587,7 +587,7 @@ static class Layout
             label.Set(LastSetSize, 0);
             return;
         }
-        var drawn = label.GetThemeFontSize("normal_font_size");
+        var drawn = label.GetThemeFontSize(NormalFontSize);
         if (now && !newText && (int)label.Get(LastSetSize) == drawn && label.Size == (Vector2)label.Get(LastAdjustedSize))
             return;
         label.Set(LastSetSize, drawn);
@@ -601,6 +601,8 @@ static class Layout
     }
 
     static readonly StringName LastSetSize = "_lastSetSize", LastAdjustedSize = "_lastAdjustedSize", AdjustFontSize = "AdjustFontSize";
+    // Made once, as every row title asks for both each redraw (a text passed as one is converted anew each time).
+    static readonly StringName NormalFontSize = "normal_font_size", BoldFontSize = "bold_font_size";
     static bool? _refits;
 
     // Whether Refit can fit a label (its members found, looked up once).

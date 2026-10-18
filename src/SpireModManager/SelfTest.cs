@@ -207,7 +207,7 @@ static class SelfTest
             await TestSearch(menu, screen, content, outDir);
             TestBranchTags();
             await TestRedrawCost(menu, screen, content);
-            TestManyMods();
+            await TestManyMods(menu, screen, content);
             await TestNewMod(menu, screen, content, outDir);
             await TestLoadOrder(menu, screen, content, outDir);
             await TestLoadOrderFind(menu, screen, content, outDir);
@@ -264,12 +264,16 @@ static class SelfTest
             // The first open, timed to the end of its first frame, once the page's text has been shaped ahead (Prewarm).
             for (var i = 0; i < 100 && !Prewarm.Done; i++)
                 await Wait(menu, 0.1);
+            RowStrip.Costs.Clear();
+            RowStrip.Timing = true; // the rows' lines, buttons and pencils, part by part (#46)
             var opening = System.Diagnostics.Stopwatch.StartNew();
             var screen = menu.SubmenuStack.PushSubmenuType<NModdingScreen>();
             var built = opening.Elapsed.TotalMilliseconds;
+            RowStrip.Timing = false;
             await menu.ToSignal(menu.GetTree().CreateTimer(0), SceneTreeTimer.SignalName.Timeout);
             Results.Add($"INFO first open: built in {built:0} ms, drawn by {opening.Elapsed.TotalMilliseconds:0} ms; text shaped ahead: "
                 + $"{Prewarm.Shaped.Count}{(Prewarm.Done ? "" : " (not finished)")}, its slowest frame {Prewarm.SlowestMs:0} ms");
+            Results.Add($"INFO of the build, the rows' lines, buttons and pencils {RowStrip.Costs.Values.Sum():0} ms: {Parts(RowStrip.Costs)}");
             await Wait(menu, 2);
             var content = screen.GetNode<Control>("%ModsScrollContainer/Mask/Content");
             var rows = content.GetChildren().OfType<NModMenuRow>().ToList();
@@ -1929,7 +1933,23 @@ static class SelfTest
         try
         {
             if (await ButtonMenu(menu, button) is { } popup)
+            {
+                // It opens the system's file browser (#126): the external-link mark after its label, in the label's
+                // colour, and only there in the menu.
+                var labels = popup.FindChildren("*", "Label", true, false).OfType<Label>().ToList();
+                var item = labels.FirstOrDefault(l => l.Text == "Open translations folder");
+                var mark = item == null ? null : LinkMark.Rect(item);
+                var itemSize = item?.GetThemeFontSize("font_size") ?? 0;
+                var itemText = item == null ? 0 : item.GetThemeFont("font").GetStringSize(item.Text, fontSize: itemSize).X;
+                Check("Open translations folder: the external-link mark a small gap after its label, 14 px for its 20 px text; no other item has one",
+                    item != null && itemSize == 20 && mark is { } at && at.Position.X >= itemText + 2 && at.Position.X <= itemText + 7 && at.Size == new Vector2(14, 14)
+                    && at.End.X <= item.Size.X + 0.5f && labels.Where(l => l.IsInGroup(LinkMark.Group)).SequenceEqual([item]),
+                    $"mark {mark} after text {itemText:0.#}, label {item?.Size}; marked: {string.Join(", ", labels.Where(l => l.IsInGroup(LinkMark.Group)).Select(l => l.Text))}");
+                var drawn = item == null ? null : await MarkDrawn(menu, item);
+                Check("Open translations folder's mark: drawn in the label's colour", item != null && drawn == item.GetThemeColor("font_color"),
+                    $"drawn {drawn?.ToString() ?? "nothing"}, label {item?.GetThemeColor("font_color")}");
                 MenuPanel.Press(popup, "Open translations folder");
+            }
             await Wait(menu, 0.2);
             Check("Open translations folder: made in the data folder and opened, the menu closed", !before && opened == folder && Directory.Exists(folder)
                 && folder.Replace('\\', '/').EndsWith($"/mod_data/{ModEntry.ModId}/translations") && !MenuPanel.IsOpen,
@@ -2946,6 +2966,15 @@ static class SelfTest
             && Preview().Contains("Not installed (2)") && Preview().Contains("Not Here Mod") && Preview().Contains("Gone Off (disabled)")
             && nameAt > linkAt && nameAt < bbcode.IndexOf("[/url]", linkAt, StringComparison.Ordinal)
             && bbcode.Split("[url=").Length == 2, Preview());
+        // That link leaves the game (#126): the external-link mark after the name, in the link; still the page's link.
+        var markTag = LinkMark.Tag(18, "#99ccff");
+        var markAt = linkAt < 0 ? -1 : bbcode.IndexOf(markTag, linkAt, StringComparison.Ordinal);
+        Check("an import's Workshop link: the external-link mark right after the name, inside its link and colour, 12 px for the preview's 18 px text; none after a name with no page",
+            markAt > nameAt && bbcode[..markAt].EndsWith("[color=#99ccff][b]Not Here Mod[/b]") && bbcode[(markAt + markTag.Length)..].StartsWith("[/color][/url]")
+            && bbcode.Split(markTag).Length == 2 && LinkMark.Size(18) == 12 && Part<RichTextLabel>("Preview")?.GetThemeFontSize("normal_font_size") == 18, bbcode);
+        Check("an import's Workshop link still opens its page: the link is the page's address, the preview still handles its click",
+            ProfileCsv.IsWorkshopLink(link) && Part<RichTextLabel>("Preview") is { MouseFilter: Control.MouseFilterEnum.Stop } shown
+            && shown.GetSignalConnectionList(RichTextLabel.SignalName.MetaClicked).Count > 0);
         await Capture(screen, outDir, "7d-import-preview");
         Press("CreateProfileButton");
         await Wait(menu, 0.3);
@@ -3207,6 +3236,8 @@ static class SelfTest
         var linkText = (panel.FindChild("SpireModManagerLink", true, false) as LinkButton)?.Text ?? "";
         Check("the source line: id (Local), then Enabled", panel.FindChild("SpireModManagerLink", true, false) is LinkButton { Disabled: true }
             && linkText == "SpireModManager (Local)" && (panel.FindChild("SpireModManagerSource", true, false)?.FindChild("Status", true, false) as Label)?.Text == "Enabled", linkText);
+        Check("a local mod's source line links nowhere: no external-link mark, and no room kept for one",
+            panel.FindChild("SpireModManagerLink", true, false) is LinkButton localLink && LinkMark.Rect(localLink) == null && localLink.CustomMinimumSize.X == 0);
         var headText = panel.GetNodeOrNull<RichTextLabel>("SpireModManagerHead")?.GetParsedText() ?? "";
         Check("the head: author and compatibility; the details: description, then size", headText.Contains("Author: symphony") && headText.Contains("Compatibility:")
             && !description.StartsWith("Enabled") && description.Contains("Size:") && !description.Contains("Compatibility"), $"{headText} / {description[..Math.Min(60, description.Length)]}");
@@ -3807,8 +3838,8 @@ static class SelfTest
     // "Required for", searches) and the page's warnings, answered as a redraw does (Lookups) and timed, then each
     // answer checked against the slow way (the saved list searched every time). Every seventh mod is off, every
     // tenth is a library the next ones need, every 25th also needs one that isn't installed, and one library has
-    // a second copy that is on while the first is off.
-    static void TestManyMods()
+    // a second copy that is on while the first is off. Then their rows (TestManyRows).
+    static async Task TestManyMods(Node menu, NModdingScreen screen, Control content)
     {
         var mods = new List<Mod>();
         var saved = new List<SettingsSaveMod>();
@@ -3884,6 +3915,181 @@ static class SelfTest
         }
         Check("300 made-up mods: the same answers as the slow way (on, copies, libraries, required for, missing, off)",
             wrong.Count == 0 && Lookups.Current == null, $"{wrong.Count} differ: {string.Join(" | ", wrong.Take(3))}");
+        await TestManyRows(menu, screen, content, mods, saved);
+    }
+
+    // The same mods as rows of a page (out of sight to the left of this one), in our row style: each row's line under
+    // its title (tags, note, author), its buttons and its pencil made from nothing, as a new page makes them (after a
+    // run the main menu is made again, and the page with it: #46), timed part by part (with the titles' styling before
+    // them, and how often fonts were asked for and looked up), and redrawn with nothing to change. Then what the lines
+    // show, against what the mods say: their tags, notes and authors, the author at the
+    // line's end, the pencil and the category button with their tips. Each part of a line styled exactly as its old
+    // per-node overrides styled it (UnlikeOverrides), at the old sizes. Everything turned off (some notes go: no mod on
+    // needs those libraries) and on again: the lines changed in place show what lines made afresh do, and then what
+    // they first did; no line holds an empty note.
+    static async Task TestManyRows(Node menu, NModdingScreen screen, Control content, List<Mod> mods, List<SettingsSaveMod> saved)
+    {
+        if (Bmm.Present)
+        {
+            Results.Add("SKIP 300 made-up rows: Better Mod Menu dresses every row the game makes, and leaves handlers on the page for each");
+            return;
+        }
+        var box = new VBoxContainer { Name = "SpireModManagerManyRows", MouseFilter = Control.MouseFilterEnum.Ignore };
+        screen.AddChild(box);
+        // Wide enough that no line folds its tags (what folds is the long-details test's).
+        (box.Position, box.Size) = (new Vector2(-3000, 0), new Vector2(1600, 0));
+        try
+        {
+            // The game's own rows, from its factory (found by name: a game update may change it).
+            var create = typeof(NModMenuRow).GetMethod("Create", [typeof(NModdingScreen), typeof(Mod)]);
+            var rows = new List<NModMenuRow>();
+            foreach (var mod in mods)
+                if (create?.Invoke(null, [screen, mod]) is NModMenuRow made)
+                {
+                    box.AddChild(made);
+                    rows.Add(made);
+                }
+            if (rows.Count != mods.Count)
+            {
+                Results.Add($"SKIP 300 made-up rows: the game made {rows.Count} of {mods.Count}");
+                return;
+            }
+            void Build(List<SettingsSaveMod> list)
+            {
+                using (Lookups.Begin(mods, [], list, Picks.None))
+                    RowStrip.Apply(rows, CategoryList.StripActions(content), CategoryList.EdgeAction(content));
+            }
+            List<string> Expected(List<SettingsSaveMod> list)
+            {
+                using (Lookups.Begin(mods, [], list, Picks.None))
+                {
+                    var order = LoadOrder.Mods(rows).Select((m, i) => (m, i)).DistinctBy(p => p.m).ToDictionary(p => p.m, p => p.i);
+                    return [.. rows.Select(row =>
+                    {
+                        var says = string.Join("    ", new[] { RowStrip.RequiredFor(row.Mod), RowStrip.Needs(row.Mod, order, false) }.Where(s => s.Length > 0));
+                        var by = ModDetails.Short(row.Mod?.manifest?.author ?? "");
+                        return string.Join(" | ", new[]
+                        {
+                            $"pencil ✎ ({Menus.Text("SPIRE_MOD_MANAGER.EDIT_TIP")})",
+                            $"button {CategoryList.CategoryName(Copies.KeyOf(row.Mod))} ({Menus.Text("SPIRE_MOD_MANAGER.CATEGORY_TIP")})",
+                        }.Concat(Tags.For(row.Mod).Select(c => $"tag {c.Text}"))
+                            .Append(says.Length > 0 ? $"note {System.Text.RegularExpressions.Regex.Replace(says, @"\[[^\]]+\]", "")}" : "")
+                            .Append(by.Length > 0 ? $"author {by} at the end" : "").Where(p => p.Length > 0));
+                    })];
+                }
+            }
+            static string Differ(List<string> shown, List<string> wanted) => shown.Zip(wanted).Where(p => p.First != p.Second)
+                .Select(p => $"{p.First} -- wanted: {p.Second}").FirstOrDefault() ?? (shown.Count == wanted.Count ? "" : $"{shown.Count} rows, wanted {wanted.Count}");
+
+            var (titlesMs, madeMs, fontAsks, fontLookups) = (0.0, 0.0, 0, 0);
+            RowStrip.Costs.Clear();
+            var frameMs = await FrameMs(menu, () =>
+            {
+                var watch = System.Diagnostics.Stopwatch.StartNew();
+                RowTitles.Apply(rows, vanilla: false); // our row style first, as a redraw does (titles fitted at the frame's end)
+                titlesMs = watch.Elapsed.TotalMilliseconds;
+                RowStrip.Timing = true;
+                (fontAsks, fontLookups) = (ModEntry.FontAsks, ModEntry.FontLookups);
+                watch.Restart();
+                Build(saved);
+                madeMs = watch.Elapsed.TotalMilliseconds;
+                (fontAsks, fontLookups) = (ModEntry.FontAsks - fontAsks, ModEntry.FontLookups - fontLookups);
+                RowStrip.Timing = false;
+            });
+            CleanHeap();
+            var again = System.Diagnostics.Stopwatch.StartNew();
+            Build(saved);
+            var keptMs = again.Elapsed.TotalMilliseconds;
+            Results.Add($"INFO 300 made-up rows: lines, buttons and pencils made from nothing {madeMs:0} ms ({Parts(RowStrip.Costs)}), "
+                + $"to the end of that frame {frameMs:0} ms; redrawn with nothing to change {keptMs:0.0} ms; their titles styled first {titlesMs:0} ms; "
+                + $"fonts asked for {fontAsks} times while the lines were made, looked up {fontLookups}");
+            await Wait(menu, 0.3);
+
+            var first = rows.Select(LineOf).ToList();
+            Check("300 made-up rows: each line shows its tags, note and author (at the line's end), with the pencil and the category button and their tips",
+                first.SequenceEqual(Expected(saved)), Differ(first, Expected(saved)));
+            var sample = rows[10]; // a library: three tags, "Required for", an author
+            var line = sample.GetNodeOrNull<Control>("SpireModManagerStrip");
+            var tag = line?.GetChildren().OfType<PanelContainer>().FirstOrDefault();
+            var (pencil, button, tagText) = (sample.GetNodeOrNull<Control>("SpireModManagerEdit"),
+                sample.GetNodeOrNull<Control>(RowStrip.ActionsName)?.GetChildOrNull<Control>(0), tag?.GetChildOrNull<Control>(0));
+            var (note, author) = (line?.GetNodeOrNull<Control>("Needs"), line?.GetNodeOrNull<Control>("Author"));
+            var unlike = new[] { pencil, button, line, tag, tagText, note, author }
+                .SelectMany((part, i) => part == null ? [$"part {i} missing"] : UnlikeOverrides(sample, part)).ToList();
+            Check("300 made-up rows: the pencil, a button, the line, a tag and its text, the note and the author styled as their overrides did "
+                + "(every theme item of their kind), at the old sizes (18, 16, 12, 13, 13; gap 6)", unlike.Count == 0
+                && pencil?.GetThemeFontSize("font_size") == 18 && pencil.GetThemeStylebox("normal") is StyleBoxEmpty
+                && button?.GetThemeFontSize("font_size") == 16 && button.GetThemeStylebox("normal") is StyleBoxFlat
+                && tagText?.GetThemeFontSize("font_size") == 12 && note?.GetThemeFontSize("normal_font_size") == 13
+                && author?.GetThemeFontSize("font_size") == 13 && line?.GetThemeConstant("separation") == 6, string.Join("; ", unlike.Take(6)));
+            // The old overrides' own values, written out here, so a look changed by mistake (a colour, a font, a box)
+            // shows: UnlikeOverrides compares each part with its new look only.
+            var (kreon, cream, gold) = (ModEntry.Font("res://themes/kreon_regular_shared.tres"), new Color(1, 0.964706f, 0.886275f), new Color(0.937f, 0.784f, 0.318f));
+            var chip = Tags.For(sample.Mod).FirstOrDefault();
+            var olds = new (string Part, bool Same)[]
+            {
+                ("pencil", pencil?.GetThemeFont("font") == kreon && pencil.GetThemeColor("font_color") == new Color(cream, 0.6f)
+                    && pencil.GetThemeColor("font_hover_color") == gold && pencil.GetThemeColor("font_pressed_color") == gold
+                    && pencil.GetThemeColor("font_disabled_color") == new Color(cream, 0.3f)
+                    && pencil.GetThemeStylebox("hover") is StyleBoxEmpty { ContentMarginLeft: 4, ContentMarginRight: 4 }),
+                ("button", button?.GetThemeFont("font") == kreon && button.GetThemeColor("font_color") == cream
+                    && button.GetThemeColor("font_hover_color") == Colors.White && button.GetThemeColor("font_disabled_color") == new Color(cream, 0.3f)
+                    && button.GetThemeStylebox("normal") is StyleBoxFlat { } normal && normal.BgColor == new Color(0.0756f, 0.12084f, 0.18f, 0.7f)
+                    && normal.BorderColor == new Color(gold, 0.35f) && button.GetThemeStylebox("hover") is StyleBoxFlat { } hover
+                    && hover.BgColor == new Color(0.2f, 0.32f, 0.42f) && hover.BorderColor == gold),
+                ("tag", chip != null && tag?.GetThemeStylebox("panel") is StyleBoxFlat { CornerRadiusTopLeft: 2, ContentMarginTop: 0 } panel
+                    && panel.BgColor == new Color(chip.Color, chip.Custom ? 0.1f : 0.2f) && tagText?.GetThemeFont("font") == kreon
+                    && tagText.GetThemeColor("font_color") == chip.Color),
+                ("note", note?.GetThemeFont("normal_font") == kreon && note.GetThemeColor("default_color") == new Color(0.937f, 0.784f, 0.318f, 0.75f)),
+                ("author", author?.GetThemeFont("font") == kreon && author.GetThemeColor("font_color") == new Color(1, 0.964706f, 0.886275f, 0.45f)),
+            };
+            Check("300 made-up rows: the pencil, a button, a tag, the note and the author in the old overrides' own fonts, colours and boxes",
+                olds.All(o => o.Same), "unlike: " + string.Join(", ", olds.Where(o => !o.Same).Select(o => o.Part)));
+
+            var off = mods.Select(m => new SettingsSaveMod(m) { IsEnabled = false }).ToList();
+            Build(off);
+            await Wait(menu, 0.3);
+            var changed = rows.Select(LineOf).ToList();
+            var noted = rows.Count(r => r.HasNode("SpireModManagerStrip/Needs"));
+            foreach (var row in rows)
+                Unmake(row);
+            Build(off);
+            await Wait(menu, 0.3);
+            var fresh = rows.Select(LineOf).ToList();
+            Check("300 made-up rows, all turned off: the lines changed in place show what lines made afresh do (and what the mods say)",
+                noted < rows.Count && changed.SequenceEqual(fresh) && fresh.SequenceEqual(Expected(off)),
+                $"{rows.Count - noted} notes gone; {Differ(changed, fresh)} {Differ(fresh, Expected(off))}");
+            Build(saved);
+            await Wait(menu, 0.3);
+            var back = rows.Select(LineOf).ToList();
+            Check("300 made-up rows, on again: each line shows what it first did (the notes made again in place)", back.SequenceEqual(first), Differ(back, first));
+            Check("300 made-up rows: no line holds an empty note", rows.All(r => r.GetNodeOrNull<RichTextLabel>("SpireModManagerStrip/Needs") is not { Text.Length: 0 }));
+
+            // A row's buttons kept through a redraw (the same words and states) run that redraw's actions: an action holds
+            // what its redraw knew (Load Order's rows). And a line is made again when a tag's card or search changes, its
+            // words, colour and kind the same (the Same ID tag's card names the other copies).
+            var ran = "";
+            using (Lookups.Begin(mods, [], saved, Picks.None))
+            {
+                RowStrip.Apply([rows[0]], _ => [new MenuItem("Probe", () => ran = "first")]);
+                RowStrip.Apply([rows[0]], _ => [new MenuItem("Probe", () => ran = "second")]);
+            }
+            var probeButtons = rows[0].GetNodeOrNull<HBoxContainer>(RowStrip.ActionsName)?.GetChildren().OfType<Button>().ToList() ?? [];
+            if (probeButtons is [var probe])
+                probe.EmitSignal(BaseButton.SignalName.Pressed);
+            Check("300 made-up rows: buttons kept through a redraw run that redraw's actions, not the ones they were made with",
+                probeButtons is [{ Text: "Probe" }] && ran == "second", $"{probeButtons.Count} buttons, ran \"{ran}\"");
+            var sameId = new Tags.Chip("Same ID", Colors.Yellow, Tip: "Another copy: A");
+            var shows = RowStrip.Shows([sameId], "Someone");
+            Check("300 made-up rows: a line is made again when a tag's card or search changes, its words, colour and kind the same",
+                RowStrip.Shows([sameId with { Tip = "Another copy: B" }], "Someone") != shows && RowStrip.Shows([sameId with { Search = "#same" }], "Someone") != shows
+                && RowStrip.Shows([sameId], "Someone") == shows, shows);
+        }
+        finally
+        {
+            screen.RemoveChild(box);
+            box.QueueFree();
+        }
     }
 
     // Load Order's search finds rather than filters: every row stays; beside the box, "N matches · ‹ ›"
@@ -4140,12 +4346,24 @@ static class SelfTest
         Check("load order: ours first, pinned", pinned >= 1, string.Join(", ", start));
         // Moves use a mod with no dependencies either way, so no order rule can block them.
         const string free = "SmmTestFixes";
+        // The first row after ours, which the move pushes down: its buttons (Top, Up, Down, Bottom) are given their new
+        // states and actions in place (Menus.Refill), not made again.
+        var passed = Rows()[pinned].Mod?.manifest?.id == free ? null : Rows()[pinned];
+        List<ulong> ButtonIds() => passed?.GetNodeOrNull(RowStrip.OrderActionsName)?.GetChildren().Select(c => c.GetInstanceId()).ToList() ?? [];
+        List<bool> ButtonsOff() => passed?.GetNodeOrNull(RowStrip.OrderActionsName)?.GetChildren().OfType<Button>().Select(b => b.Disabled).ToList() ?? [];
+        var (passedIds, passedOff) = (ButtonIds(), ButtonsOff());
         if (Rows().FirstOrDefault(r => r.Mod?.manifest?.id == free)?.Mod is { } freeMod)
             LoadOrder.Move(freeMod, 0, Rows());
         CategoryList.Redraw(content);
         await Wait(menu, 0.5);
         Check("move to top saves the order, under ours", Ids()[pinned] == free && Saved()[pinned] == free && Ids()[0] == ModEntry.ModId,
             string.Join(", ", Ids()));
+        if (passed != null)
+            Check("the row the move pushed down keeps its buttons, given their new states (Top and Up free now)", passedIds.Count == 4
+                && ButtonIds().SequenceEqual(passedIds) && passedOff.SequenceEqual([true, true, false, false]) && ButtonsOff().SequenceEqual([false, false, false, false]),
+                $"{string.Join(",", passedIds)} -> {string.Join(",", ButtonIds())}; disabled {string.Join(",", passedOff)} -> {string.Join(",", ButtonsOff())}");
+        else
+            Results.Add($"SKIP a move's passed row keeps its buttons: {free} was first after ours already");
         Check("an order change is pending", pending.Visible && ModEntry.HasPendingChanges());
         Check("load order: no tickboxes", Rows().All(r => !r.GetNode<Control>("Tickbox").Visible));
         // The first row's highlight (the same box under the mouse) reaches a little above the row; with the list at its
@@ -4171,6 +4389,20 @@ static class SelfTest
             await Wait(menu, 0.3);
             Check("load order menu: Disable, then Enable", toggle.Label == "Disable" && offNow && again.Label == "Enable" && Dependencies.IsOn(uiMod),
                 $"{toggle.Label}, off {offNow}, {again.Label}");
+        }
+        // Its Up, a button kept through the move, moves it from where it is now: to the top (under ours) again. Then the moved mod goes
+        // back to the top for the drags below.
+        if (passed?.GetNodeOrNull(RowStrip.OrderActionsName)?.GetChildOrNull<Button>(1) is { } up)
+        {
+            up.EmitSignal(BaseButton.SignalName.Pressed);
+            await Wait(menu, 0.5);
+            var upped = Ids();
+            Check("a kept Up button moves its row from where it is now (to the top, under ours)", upped[pinned] == passed.Mod?.manifest?.id && upped[pinned + 1] == free
+                && ButtonIds().SequenceEqual(passedIds) && ButtonsOff().SequenceEqual([true, true, false, false]), string.Join(", ", upped.Take(pinned + 2)));
+            if (Rows().FirstOrDefault(r => r.Mod?.manifest?.id == free)?.Mod is { } freeAgain)
+                LoadOrder.Move(freeAgain, 0, Rows());
+            CategoryList.Redraw(content);
+            await Wait(menu, 0.5);
         }
 
         // Drag the first row after ours by its handle to just below the third.
@@ -5936,6 +6168,91 @@ static class SelfTest
             && text.IndexOf("Updated") < text.IndexOf("Compatibility") && text.Contains("(4 days ago)  •\u00a0\u00a0Changelog") && head?.Text.Contains("[url=patchnotes]") == true, text);
         var link = info.FindChild("SpireModManagerLink", true, false) as LinkButton;
         Check("the source line: id (SteamID n)", link?.Text == "SmmWorkshopTest (SteamID 42)", link?.Text ?? "");
+
+        // Both leave the game (#126): the external-link mark after each, part of the link and in its colour, and each
+        // still goes where it went.
+        if (link != null && head != null)
+        {
+            var linkSize = link.GetThemeFontSize("font_size");
+            var linkText = link.GetThemeFont("font").GetStringSize(link.Text, fontSize: linkSize).X;
+            var mark = LinkMark.Rect(link);
+            Check("the Workshop link: the external-link mark a small gap after its text, 11 px for its 16 px text, inside the link's own (clickable) box",
+                linkSize == 16 && mark is { } at && at.Position.X >= linkText + 2 && at.Position.X <= linkText + 6 && at.Size == new Vector2(11, 11)
+                && at.End.X <= link.Size.X + 0.5f && at.Position.Y >= 0 && at.End.Y <= link.Size.Y + 0.5f
+                && link.IsInGroup(LinkMark.Group) && link.GetSignalConnectionList(CanvasItem.SignalName.Draw).Count > 0,
+                $"mark {mark} after text {linkText:0.#}, link {link.Size}");
+            // The mark as drawn: the link's colour with the mouse off it, then (a mouse motion through the viewport; none
+            // headless) its hover colour while the mouse is on it, and its own again once it leaves.
+            var (normal, lit) = (link.GetThemeColor("font_color"), link.GetThemeColor("font_hover_color"));
+            var headless = DisplayServer.GetName() == "headless";
+            static void MoveTo(Vector2 at) => Input.ParseInputEvent(new InputEventMouseMotion { Position = at, GlobalPosition = at });
+            var linkRect = link.GetGlobalRect();
+            var away = link.GetViewport().GetMousePosition(); // where the mouse was, unless that's on the link: above it then
+            if (linkRect.Grow(2).HasPoint(away))
+                away = linkRect.Position - new Vector2(0, 30);
+            if (!headless)
+            {
+                MoveTo(away);
+                await Wait(menu, 0.1);
+            }
+            var unlit = await MarkDrawn(menu, link);
+            Check("the Workshop link's mark: drawn in the link's own colour while it isn't lit",
+                link.GetDrawMode() == BaseButton.DrawMode.Normal && unlit == normal,
+                $"{link.GetDrawMode()}, drawn {unlit?.ToString() ?? "nothing"}; the link's {normal}");
+            if (headless)
+                Results.Add("SKIP the Workshop link's mark lit with the link: there's no mouse headless");
+            else
+            {
+                // Redrawn by the link itself as it lights and goes out (no QueueRedraw here).
+                LinkMark.TestForget(link);
+                MoveTo(linkRect.GetCenter());
+                await Wait(menu, 0.1);
+                var (onMode, onDrawn, under) = (link.GetDrawMode(), LinkMark.TestDrawn(link), link.GetViewport().GuiGetHoveredControl());
+                LinkMark.TestForget(link);
+                MoveTo(away);
+                await Wait(menu, 0.1);
+                var (offMode, offDrawn) = (link.GetDrawMode(), LinkMark.TestDrawn(link));
+                Check("the Workshop link's mark: redrawn in the link's hover colour while the mouse is on the link, and in its own once it leaves",
+                    lit != normal && onMode == BaseButton.DrawMode.Hover && onDrawn == lit && offMode == BaseButton.DrawMode.Normal && offDrawn == normal,
+                    $"on it ({under?.Name.ToString() ?? "nothing"} under the mouse at {linkRect.GetCenter()}): {onMode}, drawn {onDrawn?.ToString() ?? "nothing"}; "
+                    + $"off it: {offMode}, drawn {offDrawn?.ToString() ?? "nothing"}; the link's {normal}, lit {lit}");
+            }
+            // The status after the link: the link as wide as its mark's end, then the line's separation, the dot and its
+            // separation.
+            var source = info.GetNode<Control>("SpireModManagerSource");
+            var status = (Label)source.FindChild("Status", true, false);
+            var dot = (Control)source.FindChild("Dot", true, false);
+            var statusAt = link.GetGlobalRect().End.X + source.GetThemeConstant("separation") + dot.Size.X + dot.GetParent<Control>().GetThemeConstant("separation");
+            var title = info.GetNode<Control>("ModTitle");
+            Check("the Workshop link still opens the mod's Workshop page, and the status after it moves over only for the mark, within the title's width",
+                link is { Disabled: false, Uri: "https://steamcommunity.com/sharedfiles/filedetails/?id=42" } && mark is { } shown
+                && Math.Abs(link.Size.X - shown.End.X) <= 0.5f && Math.Abs(status.GlobalPosition.X - statusAt) <= 1
+                && status.GetGlobalRect().End.X <= title.GetGlobalRect().End.X + 2,
+                $"{link.Uri}; mark {mark}, link {link.GetGlobalRect()}, status {status.GetGlobalRect()} (expected at {statusAt:0.#}), title {title.GetGlobalRect()}");
+
+            var bbcode = head.Text;
+            var tag = LinkMark.Tag(16, "#99ccff");
+            var changelog = bbcode.IndexOf("[url=patchnotes]", StringComparison.Ordinal);
+            var tagAt = changelog < 0 ? -1 : bbcode.IndexOf(tag, changelog, StringComparison.Ordinal);
+            Check("Changelog: the external-link mark right after its text, inside its link and its colour, 11 px for the head's 16 px text",
+                tagAt >= 0 && bbcode[..tagAt].EndsWith("[url=patchnotes][color=#99ccff]Changelog") && bbcode[(tagAt + tag.Length)..].StartsWith("[/color][/url]")
+                && head.GetThemeFontSize("normal_font_size") == 16 && LinkMark.Size(16) == 11, bbcode);
+            // The [img] finds the mark by its path, and shows it: a line of just the mark is as wide as the gap and 11 px.
+            var probe = new RichTextLabel { BbcodeEnabled = true, FitContent = true, AutowrapMode = TextServer.AutowrapMode.Off, Text = tag };
+            Hover.Fonts(probe, 16);
+            info.AddChild(probe);
+            var gapOnly = probe.GetThemeFont("normal_font").GetStringSize("\u00a0", fontSize: 16).X;
+            var probeWidth = probe.GetContentWidth();
+            info.RemoveChild(probe);
+            probe.QueueFree();
+            Check("Changelog's mark: its [img] path loads the mark itself, which shows 11 px wide after the gap",
+                ModEntry.Load<Texture2D>(Icons.ExternalLink(11).ResourcePath)?.GetInstanceId() == Icons.ExternalLink(11).GetInstanceId()
+                && Icons.ExternalLink(11).GetSize() == new Vector2(11, 11) && Math.Abs(probeWidth - (gapOnly + 11)) <= 1,
+                $"path {Icons.ExternalLink(11).ResourcePath}, a line of it {probeWidth} wide (gap {gapOnly:0.#})");
+            Check("Changelog still opens the mod's change notes: the head's link is still patchnotes, its click still handled",
+                bbcode.Split("[url=patchnotes]").Length == 2 && head.GetSignalConnectionList(RichTextLabel.SignalName.MetaClicked).Count > 0
+                && head.MouseFilter != Control.MouseFilterEnum.Ignore);
+        }
         Check("how long ago: hours under a day, one day singular, green under two days",
             ModDetails.Ago(DateTime.Now.AddMinutes(-20)).Contains("(less than an hour ago)") && ModDetails.Ago(DateTime.Now.AddHours(-3)).Contains("(3 hours ago)") && ModDetails.Ago(DateTime.Now.AddMinutes(-70)).Contains("(1 hour ago)")
             && ModDetails.Ago(DateTime.Now.AddHours(-30)).Contains("(1 day ago)") && ModDetails.Ago(DateTime.Now.AddHours(-30)).Contains("#a6e3a1")
@@ -8171,7 +8488,8 @@ static class SelfTest
     // language's font: a row title (the game's label, which ours mustn't cover), a category header, a tag chip, a row's
     // button, the profile bar, the history bar, the red banner if one shows, a menu item. The buttons' widths are cached
     // per font: they still start as far past the title as before. The shortcuts under Undo and Redo fit under their
-    // buttons, however wide the font. Back in the starting language, its fonts again
+    // buttons, however wide the font. ModEntry.Font looked its fonts up again after the switch (the language's own), and
+    // then gives the same one each time it's asked, without looking again. Back in the starting language, its fonts again
     // (Kreon in English). Skipped for a language the game has no font of its own for. Screenshots 20-fonts-<language>.
     static async Task TestLanguageFonts(NModdingScreen screen, string outDir)
     {
@@ -8209,6 +8527,7 @@ static class SelfTest
 
         async Task CheckLanguage(string language)
         {
+            var lookups = ModEntry.FontLookups;
             if (await Reopen(game, language) is not { } page)
             {
                 Results.Add($"FAIL fonts in {language}: the Modding page didn't open again");
@@ -8241,6 +8560,14 @@ static class SelfTest
             var wrong = samples.Where(s => FontOf(s.Text, s.Font) != GameFont(language, s.Type, s.KreonBold)).Select(s => $"{s.What}: {FontOf(s.Text, s.Font)}").ToList();
             Results.Add($"INFO fonts in {language}: {GameFont(language, FontType.Regular, false)}, {GameFont(language, FontType.Bold, true)}");
             Check($"in {language}: our text in its font ({string.Join(", ", samples.Select(s => s.What))})", wrong.Count == 0, string.Join("; ", wrong));
+            const string regular = "res://themes/kreon_regular_shared.tres";
+            var font = ModEntry.Font(regular);
+            var looked = ModEntry.FontLookups;
+            var again = ModEntry.Font(regular);
+            Check($"in {language}: our fonts looked up again after the switch (the language's own), then kept: the same font each time it's asked",
+                looked > lookups && font.ResourcePath == GameFont(language, FontType.Regular, false) && ReferenceEquals(again, font) && ModEntry.FontLookups == looked,
+                $"{looked - lookups} lookups since the switch, {font.ResourcePath}; asked again: {(ReferenceEquals(again, font) ? "the same" : again.ResourcePath)}, "
+                + $"{ModEntry.FontLookups - looked} more lookups");
             var (viewFont, viewWanted) = (ViewButtonFont(page), FontManager.GetSubstituteFont(language, FontType.Regular)?.ResourcePath ?? startViewFont);
             Check($"in {language}: a scene-made button (Load Order) in the language's font too", viewFont != null && viewFont == viewWanted,
                 $"{viewFont}, wanted {viewWanted}");
@@ -8379,6 +8706,16 @@ static class SelfTest
         return where;
     }
 
+    // The colour the control's external-link mark is drawn in at a fresh redraw (LinkMark.TestDrawn): null where none
+    // is drawn.
+    static async Task<Color?> MarkDrawn(Node node, Control control)
+    {
+        LinkMark.TestForget(control);
+        control.QueueRedraw();
+        await Wait(node, 0.1);
+        return LinkMark.TestDrawn(control);
+    }
+
     // A point given as GetGlobalRect gives it, as the viewport's own input reads it (Viewport.PushInput in local
     // coordinates): through the control's canvas, so a scaled window or a layer moved doesn't put the click elsewhere.
     static Vector2 ViewportPoint(Control control, Vector2 global) => control.GetGlobalTransformWithCanvas() * (control.GetGlobalTransform().AffineInverse() * global);
@@ -8512,6 +8849,82 @@ static class SelfTest
         await Wait(menu, 0.1);
         Hover.TestMouse = null; // the real mouse again (menus open where it says)
         return seen;
+    }
+
+    // What a row's pencil, buttons and line show, part by part in order: the pencil and buttons with their tips, then
+    // the line's tags (folded ones as "+N"), note and author, and whether the author ends the line. A spacer or an empty
+    // note shows nothing, so isn't listed: two rows that show the same things read the same, however they were made.
+    static string LineOf(NModMenuRow row)
+    {
+        var parts = new List<string>();
+        if (row.GetNodeOrNull<Button>("SpireModManagerEdit") is { Visible: true } pencil)
+            parts.Add($"pencil {pencil.Text} ({Hover.TipOf(pencil)})");
+        foreach (var name in new[] { RowStrip.ActionsName, RowStrip.OrderActionsName })
+            if (row.GetNodeOrNull<Control>(name) is { Visible: true } buttons)
+                parts.AddRange(buttons.GetChildren().OfType<Button>().Where(b => b.Visible)
+                    .Select(b => $"button {b.Text}{(b.Disabled ? " (disabled)" : "")} ({Hover.TipOf(b)})"));
+        if (row.GetNodeOrNull<Control>("SpireModManagerStrip") is { Visible: true } line)
+            foreach (var part in line.GetChildren().OfType<Control>().Where(c => c.Visible))
+                parts.Add(part switch
+                {
+                    PanelContainer tag => $"tag {tag.GetChildOrNull<Label>(0)?.Text}",
+                    RichTextLabel { Text.Length: > 0 } note => $"note {note.GetParsedText()}",
+                    Label author => $"author {author.Text}{(Math.Abs(author.GetGlobalRect().End.X - line.GetGlobalRect().End.X) < 1 ? " at the end" : "")}",
+                    _ => "",
+                });
+        return string.Join(" | ", parts.Where(p => p.Length > 0));
+    }
+
+    // A row without its line, buttons and pencil, so the next RowStrip.Apply makes them afresh, as on a new page.
+    static void Unmake(NModMenuRow row)
+    {
+        foreach (var name in new[] { "SpireModManagerStrip", RowStrip.ActionsName, RowStrip.OrderActionsName, "SpireModManagerEdit" })
+            if (row.GetNodeOrNull(name) is { } part)
+            {
+                row.RemoveChild(part);
+                part.QueueFree();
+            }
+    }
+
+    // RowStrip's timed parts (RowStrip.Costs), in the order a row makes them: "title 1.2 ms, pencil 30.5 ms, ...".
+    static string Parts(IReadOnlyDictionary<string, double> costs) => string.Join(", ",
+        new[] { "title", "pencil", "buttons", "tags", "needs", "author", "added", "rest" }.Select(part => $"{part} {costs.GetValueOrDefault(part):0.0}"))
+        + " ms";
+
+    // How a part of a row's line differs from how per-node overrides styled it (before #46): a node of its kind beside
+    // the line, given the items of the part's look as overrides (its look: the nearest Theme on it or above it within
+    // the row: its own, its tag's or its line's), and every theme item of that kind compared. Lists the items that
+    // differ, none when the shared Theme looks exactly as the overrides did, page and all.
+    static List<string> UnlikeOverrides(NModMenuRow row, Control part)
+    {
+        Theme? look = null;
+        for (Node? at = part; at != null && at != row && look == null; at = at.GetParent())
+            look = (at as Control)?.Theme;
+        var type = part.GetClass();
+        if (look == null || ClassDB.Instantiate(type).AsGodotObject() is not Control plain)
+            return [$"{part.Name}: no look"];
+        foreach (var name in look.GetColorList(type))
+            plain.AddThemeColorOverride(name, look.GetColor(name, type));
+        foreach (var name in look.GetConstantList(type))
+            plain.AddThemeConstantOverride(name, look.GetConstant(name, type));
+        foreach (var name in look.GetFontList(type))
+            plain.AddThemeFontOverride(name, look.GetFont(name, type));
+        foreach (var name in look.GetFontSizeList(type))
+            plain.AddThemeFontSizeOverride(name, look.GetFontSize(name, type));
+        foreach (var name in look.GetStyleboxList(type))
+            plain.AddThemeStyleboxOverride(name, look.GetStylebox(name, type));
+        row.AddChild(plain);
+        var all = ThemeDB.GetDefaultTheme();
+        var unlike = all.GetColorList(type).Where(n => part.GetThemeColor(n) != plain.GetThemeColor(n))
+            .Concat(all.GetConstantList(type).Where(n => part.GetThemeConstant(n) != plain.GetThemeConstant(n)))
+            .Concat(all.GetFontList(type).Where(n => part.GetThemeFont(n) != plain.GetThemeFont(n)))
+            .Concat(all.GetFontSizeList(type).Where(n => part.GetThemeFontSize(n) != plain.GetThemeFontSize(n)))
+            .Concat(all.GetStyleboxList(type).Where(n => part.GetThemeStylebox(n) != plain.GetThemeStylebox(n)))
+            .Concat(all.GetIconList(type).Where(n => part.GetThemeIcon(n) != plain.GetThemeIcon(n)))
+            .Select(n => $"{part.Name} {n}").ToList();
+        row.RemoveChild(plain);
+        plain.Free();
+        return unlike;
     }
 
     // Where the hover card `name` that hovering `target` brings up sits on screen (null if none), the mouse put back after.
