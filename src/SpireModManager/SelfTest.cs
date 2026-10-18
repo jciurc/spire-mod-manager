@@ -12,6 +12,7 @@ using MegaCrit.Sts2.Core.Nodes.GodotExtensions;
 using MegaCrit.Sts2.Core.Nodes.Screens;
 using MegaCrit.Sts2.Core.Nodes.Screens.MainMenu;
 using MegaCrit.Sts2.Core.Nodes.Screens.ModdingScreen;
+using MegaCrit.Sts2.Core.Nodes.Screens.ScreenContext;
 using MegaCrit.Sts2.Core.Nodes.Screens.Settings;
 using MegaCrit.Sts2.Core.Saves;
 using MegaCrit.Sts2.addons.mega_text;
@@ -929,9 +930,9 @@ static class SelfTest
             $"{button.GetType().Name}, size {label?.GetThemeFontSize("font_size")} vs {settings?.GetThemeFontSize("font_size")}");
         Check("main menu button reads the active profile and the profile bar's count", MenuButtonText(menu) == MenuButtonExpected(),
             $"{MenuButtonText(menu)} vs {MenuButtonExpected()}");
-        Check("main menu button: hovering it says what it opens, and names the profile in gold",
-            Hover.TipOf(button) == $"Spire Mod Manager: view and manage installed mods. Currently using profile [gold]{Profiles.Active?.Name}[/gold]"
-            && MenuButton.Tip("[b]Odd") == "Spire Mod Manager: view and manage installed mods. Currently using profile [gold][lb]b]Odd[/gold]", Hover.TipOf(button));
+        Check("main menu button: hovering it says what it opens, names the profile in gold, and gives the key that opens it too",
+            Hover.TipOf(button) == $"Spire Mod Manager: view and manage installed mods. Currently using profile [gold]{Profiles.Active?.Name}[/gold]{ManagerKeyLine}"
+            && MenuButton.Tip("[b]Odd") == $"Spire Mod Manager: view and manage installed mods. Currently using profile [gold][lb]b]Odd[/gold]{ManagerKeyLine}", Hover.TipOf(button));
         var screen = button.GetViewportRect();
         Check("main menu button: as wide as its words, whole on screen", MenuButtonMisfit(menu) == null, MenuButtonMisfit(menu) ?? "");
         // The game's hover carets reach 54 from the text either side (NMainMenu.MainMenuButtonFocused): inside the button.
@@ -1020,6 +1021,9 @@ static class SelfTest
             $"{left.Modulate.A:0.##}, {right.Modulate.A:0.##}");
     }
 
+    // The main menu button card's last line: the key that opens the page, unless the patch that reads it didn't apply.
+    static string ManagerKeyLine => ModEntry.FailedPatches.Contains(nameof(ShortcutsPatch)) ? "" : "\nF8";
+
     // The main menu button's card: nothing at the usual delay (the mouse crosses the button on its way to the game's), then
     // after a second, the normal card, its profile name in gold.
     static async Task TestMenuButtonCard(NMainMenu menu)
@@ -1033,8 +1037,8 @@ static class SelfTest
             card = menu.GetTree().Root.FindChild(Hover.TipName, true, false)?.FindChildren("*", "RichTextLabel", true, false).OfType<RichTextLabel>().FirstOrDefault()?.Text ?? "";
             return Task.CompletedTask;
         }, seconds: Hover.SlowDelay + 0.2);
-        Check("main menu button: its card waits a second, then names the profile in gold", early == "" && Hover.SlowDelay == 1.0
-            && late.Text == $"Spire Mod Manager: view and manage installed mods. Currently using profile {Profiles.Active?.Name}"
+        Check("main menu button: its card waits a second, then names the profile in gold, the key on its own line", early == "" && Hover.SlowDelay == 1.0
+            && late.Text == $"Spire Mod Manager: view and manage installed mods. Currently using profile {Profiles.Active?.Name}{ManagerKeyLine}"
             && !card.Contains("[gold]") && card.Contains("[color=#") && card.Contains($"]{Profiles.Active?.Name}[/color]"), $"early \"{early}\", then \"{late.Text}\"");
 
         // Where the card opens, chosen each time from where the button is then (CardMisplaced: exactly where Hover puts
@@ -1079,7 +1083,8 @@ static class SelfTest
 
     // Our main menu button opens the page on our view even when Vanilla View was the last one shown; the game's way in
     // (from its Settings) keeps the last view. The page closed for real, then opened each way: the
-    // game reuses the page, so this is the page shown again (on its first opening, ours was read as it was made).
+    // game reuses the page, so this is the page shown again (on its first opening, ours was read as it was made). Then
+    // F8, which opens and closes it.
     static async Task TestMenuButtonOpensOurs(NMainMenu menu, NModdingScreen screen)
     {
         if (menu.GetNodeOrNull<Control>("SpireModManagerMenuButton") is not { } button)
@@ -1107,6 +1112,67 @@ static class SelfTest
             Click(toggle);
             await Wait(menu, 1);
         }
+
+        // F8 (ShortcutsPatch.ManagerKey): on the page, in either view, back to the main menu as its Back button goes; on
+        // the main menu, our view, as the button opens it. A menu of ours open closes first, on the page and on the main
+        // menu. On another of the game's pages, or while the search box has the keyboard, it does nothing.
+        async Task Press()
+        {
+            foreach (var pressed in new[] { true, false })
+            {
+                Input.ParseInputEvent(new InputEventKey { Keycode = ShortcutsPatch.ManagerKey, Pressed = pressed });
+                await Wait(menu, 0.2);
+            }
+            await Wait(menu, 0.3);
+        }
+        bool OnMainMenu() => !menu.SubmenuStack.SubmenusOpen && !screen.IsVisibleInTree() && button.IsVisibleInTree() && !MenuPanel.IsOpen;
+        bool OnOurView() => menu.SubmenuStack.Peek() == screen && screen.IsVisibleInTree() && !Store.Data.VanillaView && !MenuPanel.IsOpen
+            && screen.GetNode<Control>("%ModsScrollContainer/Mask/Content").GetChildren().Any(c => c.IsInGroup("SpireModManagerCategoryHeader"));
+        string Where() => $"screen {ActiveScreenContext.Instance.GetCurrentScreen()?.GetType().Name ?? "none"}, page shown {screen.IsVisibleInTree()}, "
+            + $"vanilla {Store.Data.VanillaView}, menu open {MenuPanel.IsOpen}";
+        screen.GetViewport().GuiReleaseFocus(); // the key reaches the page, not a text box
+        Click(toggle);
+        await Wait(menu, 1);
+        await Press();
+        Check("F8 on the page goes back to the main menu, as its Back button does (from Vanilla View too)", OnMainMenu(), Where());
+        var settings = menu.SubmenuStack.PushSubmenuType<NSettingsScreen>();
+        await Wait(menu, 0.5);
+        await Press();
+        Check("F8 on another of the game's pages (Settings) does nothing", menu.SubmenuStack.Peek() == settings && settings.IsVisibleInTree()
+            && !screen.IsVisibleInTree(), Where());
+        menu.SubmenuStack.Pop();
+        await Wait(menu, 0.5);
+        await Press();
+        await Wait(menu, 0.7); // our view's redraw
+        Check("F8 on the main menu opens our view of the page, as the button does, after Vanilla View", OnOurView(), Where());
+
+        MenuPanel.Show(screen.GetNode<Control>("%ModsScrollContainer/Mask/Content"), () => [new MenuItem("One", () => { })]);
+        await Wait(menu, 0.1);
+        var pageMenu = MenuPanel.IsOpen;
+        await Press();
+        var pageMenuClosed = OnOurView();
+        await Press();
+        Check("F8 with a menu open on the page closes the menu first, staying; the next goes back to the main menu",
+            pageMenu && pageMenuClosed && OnMainMenu(), $"opened {pageMenu}, closed and stayed {pageMenuClosed}; {Where()}");
+        var buttonMenu = await ButtonMenu(menu, button) != null;
+        await Press();
+        var buttonMenuClosed = OnMainMenu();
+        await Press();
+        await Wait(menu, 0.7);
+        Check("F8 with the main menu button's menu open closes the menu first, staying; the next opens the page",
+            buttonMenu && buttonMenuClosed && OnOurView(), $"opened {buttonMenu}, closed and stayed {buttonMenuClosed}; {Where()}");
+
+        if (screen.GetNodeOrNull<LineEdit>("ModsBorder/SpireModManagerSearch") is { } search)
+        {
+            var text = search.Text;
+            search.GrabFocus();
+            await Press();
+            Check("F8 while typing in the search box does nothing to the page: it stays, the box keeps the keyboard and its text",
+                OnOurView() && search.HasFocus() && search.Text == text, $"focused {search.HasFocus()}, \"{search.Text}\"; {Where()}");
+            screen.GetViewport().GuiReleaseFocus();
+        }
+        else
+            Results.Add("FAIL F8 while typing in the search box: no search box");
     }
 
     // Right-click the main menu button, Move button, click somewhere: it stays there; Reset puts it back.
