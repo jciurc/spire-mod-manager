@@ -42,9 +42,9 @@ static class LoadOrder
     // The order this session loaded with, taken once the game has finished its own startup sorting.
     public static void RememberLoadedOrder() => _loadedOrder ??= Order().ToList();
 
-    // Moved since launch, as Changes counts it (↕): each installed copy once, by its own place. Not the raw saved list,
-    // which can hold repeats and entries for mods that aren't installed: those made the main menu ask for a relaunch
-    // while Changes showed nothing.
+    // Moved since launch, as Changes counts it (↕): each installed copy once, by its own place (MovedSince). Not the raw
+    // saved list, which can hold repeats and entries for mods that aren't installed: those made the main menu ask for a
+    // relaunch while Changes showed nothing.
     public static bool OrderChanged => HistoryBar.Moves().Count > 0;
 
     static IEnumerable<(string? Id, ModSource Source)> Order() =>
@@ -57,10 +57,10 @@ static class LoadOrder
 
     // Each of these copies' place in a saved list (its index there; none: not listed). The game's entries can't tell two
     // copies of one id and source apart (two Workshop items of one mod), so they take that key's entries in turn: in the
-    // order they were last saved in this session (asSaved: Save), else as the game lists them. A copy the game lists
-    // twice (found at launch, and again on an update) is one.
+    // order they were last saved (asSaved: a copy order, CopyOrder's or a snapshot's), else as the game lists them. A
+    // copy the game lists twice (found at launch, and again on an update) is one.
     public static Dictionary<Mod, int> Places(IEnumerable<(string? Id, ModSource Source)> saved, IEnumerable<Mod> mods,
-        IReadOnlyDictionary<(string?, ModSource), List<string>>? asSaved = null)
+        IReadOnlyDictionary<(string?, ModSource), IReadOnlyList<string>>? asSaved = null)
     {
         var free = new Dictionary<(string?, ModSource), Queue<int>>();
         var i = 0;
@@ -72,11 +72,10 @@ static class LoadOrder
         }
         var wanted = mods.ToList();
         var byCopy = new Dictionary<(string?, ModSource, string), int>();
-        foreach (var group in Dependencies.EachCopy(ModManager.Mods.Union(Installed.Mods).Concat(wanted)).GroupBy(m => (m.manifest?.id, m.modSource)))
+        foreach (var group in Copied(wanted))
         {
             var order = asSaved?.GetValueOrDefault(group.Key) ?? [];
-            int SavedAt(Mod m) => order.IndexOf(Copies.CopyOf(m)) is var k && k >= 0 ? k : int.MaxValue;
-            foreach (var copy in group.OrderBy(SavedAt)) // stable: the rest as listed
+            foreach (var copy in group.OrderBy(m => Turn(order, Copies.CopyOf(m)))) // stable: the rest as listed
                 if (free.TryGetValue(group.Key, out var queue) && queue.TryDequeue(out var at))
                     byCopy[(group.Key.id, group.Key.modSource, Copies.CopyOf(copy))] = at;
         }
@@ -87,12 +86,80 @@ static class LoadOrder
         return places;
     }
 
-    // The order this session last saved the copies of each id and source in (Save), for Places: the drag of one copy
-    // past another stays where it was dropped, though the game's entries are alike.
-    static readonly Dictionary<(string?, ModSource), List<string>> CopyOrder = [];
+    // Every installed copy (and these) once, by id and source, as the game lists them.
+    static IEnumerable<IGrouping<(string? id, ModSource modSource), Mod>> Copied(IEnumerable<Mod> mods) =>
+        Dependencies.EachCopy(ModManager.Mods.Union(Installed.Mods).Concat(mods)).GroupBy(m => (m.manifest?.id, m.modSource));
 
-    // Each copy's place at launch, among the copies installed now (1-based), for "was 3"; none before the menu.
-    public static Dictionary<Mod, int> LaunchPlaces(IEnumerable<Mod> mods) => Ranks(Places(_loadedOrder ?? [], mods));
+    // A copy's place in a copy order (one it doesn't name: after those it does).
+    static int Turn(IReadOnlyList<string> order, string copy)
+    {
+        for (var k = 0; k < order.Count; k++)
+            if (order[k] == copy)
+                return k;
+        return int.MaxValue;
+    }
+
+    // The order this session last saved the copies of each id and source in (Save), for Places: the drag of one copy
+    // past another stays where it was dropped, though the game's entries are alike. Part of the order as undo knows it
+    // (History's snapshots hold it beside the saved list, and an undo, redo or Revert all puts it back), so a drop that
+    // only swaps two copies is a step of its own. Each save puts in a new list, so a snapshot can share them.
+    static readonly Dictionary<(string?, ModSource), IReadOnlyList<string>> CopyOrder = [];
+
+    // None saved: every copy in the game's order, as at launch.
+    public static readonly IReadOnlyDictionary<(string?, ModSource), IReadOnlyList<string>> NoCopyOrder =
+        new Dictionary<(string?, ModSource), IReadOnlyList<string>>();
+
+    // The copy order now, for a snapshot (none at launch: the copies as the game lists them).
+    public static IReadOnlyDictionary<(string?, ModSource), IReadOnlyList<string>> CopyOrderNow() =>
+        CopyOrder.Count == 0 ? NoCopyOrder : new Dictionary<(string?, ModSource), IReadOnlyList<string>>(CopyOrder);
+
+    // A snapshot's copy order back (History: undo, redo, Revert all).
+    public static void RestoreCopyOrder(IReadOnlyDictionary<(string?, ModSource), IReadOnlyList<string>> order)
+    {
+        CopyOrder.Clear();
+        foreach (var (key, copies) in order)
+            CopyOrder[key] = copies;
+    }
+
+    // Whether two copy orders put the installed copies of each id and source in the same turn: one can leave a key to
+    // the game's order that the other names in that same order.
+    public static bool SameCopyOrder(IReadOnlyDictionary<(string?, ModSource), IReadOnlyList<string>> a,
+        IReadOnlyDictionary<(string?, ModSource), IReadOnlyList<string>> b)
+    {
+        if (a.Count == 0 && b.Count == 0)
+            return true; // most players: no copies saved in an order of their own
+        var keys = a.Keys.Union(b.Keys).ToHashSet();
+        foreach (var group in Copied([]).Where(g => keys.Contains(g.Key)))
+        {
+            var copies = group.Select(Copies.CopyOf).ToList();
+            var (inA, inB) = (a.GetValueOrDefault(group.Key) ?? [], b.GetValueOrDefault(group.Key) ?? []);
+            if (!copies.OrderBy(c => Turn(inA, c)).SequenceEqual(copies.OrderBy(c => Turn(inB, c))))
+                return false;
+        }
+        return true;
+    }
+
+    // Where each copy that moved since launch was then (1-based, among the copies installed now), for "5 →": the moves
+    // Changes lists (MovedSince). None before the menu.
+    public static Dictionary<Mod, int> LaunchPlaces(IEnumerable<Mod> mods) =>
+        MovedSince(_loadedOrder ?? [], NoCopyOrder, mods).ToDictionary(m => m.Mod, m => m.Before);
+
+    // These copies whose place changed since a saved list (and the copy order it had): (copy, place then, now), 1-based
+    // among them as Load Order numbers its rows, in load order now. Copies of one id and source that have only traded
+    // their key's places are no move: the list the game reads is the same there, and which of them loads is the pick,
+    // not the row, so a relaunch would change nothing (an undo or a drag back can leave them so).
+    public static List<(Mod Mod, int Before, int After)> MovedSince(IEnumerable<(string? Id, ModSource Source)> saved,
+        IReadOnlyDictionary<(string?, ModSource), IReadOnlyList<string>> copyOrder, IEnumerable<Mod> mods)
+    {
+        var wanted = mods.ToList();
+        var (before, after) = (Ranks(Places(saved, wanted, copyOrder)), Ranks(Places(wanted)));
+        var traded = wanted.GroupBy(m => (m.manifest?.id, m.modSource))
+            .Where(g => g.Select(Copies.CopyOf).Distinct().Count() > 1
+                && g.Where(before.ContainsKey).Select(m => before[m]).ToHashSet().SetEquals(g.Where(after.ContainsKey).Select(m => after[m])))
+            .SelectMany(g => g).ToHashSet();
+        return [.. after.OrderBy(p => p.Value).Where(p => !traded.Contains(p.Key) && before.TryGetValue(p.Key, out var was) && was != p.Value)
+            .Select(p => (p.Key, before[p.Key], p.Value))];
+    }
 
     // Places as 1-based ranks, the copies not listed left out.
     public static Dictionary<Mod, int> Ranks(Dictionary<Mod, int> places)

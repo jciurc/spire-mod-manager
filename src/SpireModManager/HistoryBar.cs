@@ -510,17 +510,11 @@ static class HistoryBar
     }
 
     // Installed copies whose place in the load order changed since launch: (copy, position then, now), 1-based among the
-    // copies installed, as Load Order numbers its rows (two copies of one mod each their own place, LoadOrder.Places).
-    public static List<(Mod Mod, int Before, int After)> Moves()
-    {
-        if (History.Loaded is not { } loaded)
-            return [];
-        var copies = Dependencies.EachCopy(ModManager.Mods).ToList();
-        var before = LoadOrder.Ranks(LoadOrder.Places(loaded.Mods.Select(m => ((string?)m.Id, m.Source)), copies));
-        var after = LoadOrder.Ranks(LoadOrder.Places(copies));
-        return [.. after.OrderBy(p => p.Value).Where(p => before.TryGetValue(p.Key, out var was) && was != p.Value)
-            .Select(p => (p.Key, before[p.Key], p.Value))];
-    }
+    // copies installed, as Load Order numbers its rows (two copies of one mod each their own place, LoadOrder.Places;
+    // then with the launch's copy order, now with today's; two that only traded places are no move, LoadOrder.MovedSince).
+    public static List<(Mod Mod, int Before, int After)> Moves() => History.Loaded is { } loaded
+        ? LoadOrder.MovedSince(loaded.Mods.Select(m => ((string?)m.Id, m.Source)), loaded.CopyOrder, Dependencies.EachCopy(ModManager.Mods))
+        : [];
 
     // Mods whose details changed: which ones (category, alias, notes, tags) and the alias now; profiles added,
     // deleted or renamed (lines), and the renames (old name -> new).
