@@ -67,7 +67,16 @@ static class LaunchGuard
         {
             var off = Dependencies.SavedOff();
             var mods = ModManager.Mods;
-            var loads = SameIdLoad.LoadsAtLaunch(mods);
+            Dictionary<(string Id, ModSource Source), string> loads;
+            try
+            {
+                loads = SameIdLoad.LoadsAtLaunch(mods);
+            }
+            catch (Exception e)
+            {
+                loads = []; // the record as before copies were told apart: each copy by its id and source's switch
+                Log.Warn($"[{ModEntry.ModId}] Could not tell which copy of a mod installed twice this launch loads, so the launch record doesn't say: {e.Message}");
+            }
             var planned = new Setup(DateTime.Now, mods.Select(m => m.manifest is { id: { } id } manifest
                 ? loads.TryGetValue((id, m.modSource), out var copy)
                     ? new Entry(id, m.modSource, !off.Contains((id, m.modSource)) && copy == Copies.CopyOf(m), manifest.version, Copies.CopyOf(m))

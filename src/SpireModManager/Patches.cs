@@ -571,6 +571,11 @@ static class NewModPopupPatch
         }
     }
 
+#if DEVTOOLS
+    // Self-test: the next mod installed gets its popup, as if none was shown in the last 30 s.
+    public static void TestReset() => _lastShown = 0;
+#endif
+
     // New mods and a new copy: both texts, a blank line between, through the popup's plain-text Create, found by name
     // (where it's missing, the new mods' text alone).
     static NErrorPopup? Both(LocString title, LocString copyBody)

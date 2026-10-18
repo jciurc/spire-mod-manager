@@ -265,20 +265,24 @@ static class SameIdLoad
         if (_settled)
             return;
         _settled = true;
-        if (SaveManager.Instance.SettingsSave.ModSettings is { } settings)
-        {
-            var changed = Repair(settings.ModList, LaunchGuard.ReadList);
-            changed |= OnFirst(settings.ModList);
-            var at = settings.ModList.FindIndex(e => e.Id == ModEntry.ModId);
-            if (LoadOrder.OursFirst(settings.ModList))
-            {
-                changed = true;
-                Log.Info($"[{ModEntry.ModId}] Same ID: moved our entries to the top of the load order (we were {Ordinal(at + 1)}), so we load first next launch");
-            }
-            if (changed)
-                SaveManager.Instance.SaveSettings();
-        }
+        if (SaveManager.Instance.SettingsSave.ModSettings is { } settings && SettleList(settings.ModList, LaunchGuard.ReadList))
+            SaveManager.Instance.SaveSettings(); // once, only when something changed
         Check(ModManager.Mods);
+    }
+
+    // Settle's changes to a saved list (the game's, or the self-test's made-up one): the rebuild repaired, each id's
+    // entries that are on first, ours at the top. True if anything changed.
+    public static bool SettleList(List<SettingsSaveMod> list, IReadOnlyList<(string Id, ModSource Source, bool On)>? read)
+    {
+        var changed = Repair(list, read);
+        changed |= OnFirst(list);
+        var at = list.FindIndex(e => e.Id == ModEntry.ModId);
+        if (LoadOrder.OursFirst(list))
+        {
+            changed = true;
+            Log.Info($"[{ModEntry.ModId}] Same ID: moved our entries to the top of the load order (we were {Ordinal(at + 1)}), so we load first next launch");
+        }
+        return changed;
     }
 
     static string Ordinal(int n) => n + (n % 100 is 11 or 12 or 13 ? "th" : (n % 10) switch { 1 => "st", 2 => "nd", 3 => "rd", _ => "th" });
@@ -392,7 +396,15 @@ static class SameIdLoad
     public static bool IsSetAside(Mod mod) => _plan.Values.Any(e => e.SetAside.Contains(mod));
 
 #if DEVTOOLS
-    // Self-test: the picks Apply read, as if read at Init.
-    public static void TestPicks(IReadOnlySet<string>? picks) => InitPicks = picks;
+    // Self-test: an id's self-check as if it had found this (null: as it did).
+    public static void TestResult(string id, Result? result)
+    {
+        if (result is { } found)
+            Results[id] = found;
+        else if (_plan.TryGetValue(id, out var entry))
+            Results[id] = Judge(id, entry, ModManager.Mods);
+        else
+            Results.Remove(id);
+    }
 #endif
 }

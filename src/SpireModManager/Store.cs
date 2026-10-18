@@ -113,6 +113,9 @@ public static class Store
 #if DEVTOOLS
     // Self-test: the next use loads again, from the file the first load wrote (a second launch).
     public static void Reload() => _data = null;
+
+    // Self-test: a session that can't save our data, or one that can again.
+    public static void TestReadOnly(bool readOnly) => _readOnly = readOnly;
 #endif
 
     // The mod's data folder (known from Init on): manager.json, backups, drop-in translations and the launch record.
