@@ -5788,13 +5788,18 @@ static class SelfTest
                     $"on it ({under?.Name.ToString() ?? "nothing"} under the mouse at {linkRect.GetCenter()}): {onMode}, drawn {onDrawn?.ToString() ?? "nothing"}; "
                     + $"off it: {offMode}, drawn {offDrawn?.ToString() ?? "nothing"}; the link's {normal}, lit {lit}");
             }
+            // The status after the link: the link as wide as its mark's end, then the line's separation, the dot and its
+            // separation.
             var source = info.GetNode<Control>("SpireModManagerSource");
             var status = (Label)source.FindChild("Status", true, false);
+            var dot = (Control)source.FindChild("Dot", true, false);
+            var statusAt = link.GetGlobalRect().End.X + source.GetThemeConstant("separation") + dot.Size.X + dot.GetParent<Control>().GetThemeConstant("separation");
             var title = info.GetNode<Control>("ModTitle");
             Check("the Workshop link still opens the mod's Workshop page, and the status after it moves over only for the mark, within the title's width",
-                link is { Disabled: false, Uri: "https://steamcommunity.com/sharedfiles/filedetails/?id=42" }
-                && status.GlobalPosition.X >= link.GlobalPosition.X + (mark?.End.X ?? 0) && status.GetGlobalRect().End.X <= title.GetGlobalRect().End.X + 2,
-                $"{link.Uri}; status {status.GetGlobalRect()}, link {link.GetGlobalRect()}, title {title.GetGlobalRect()}");
+                link is { Disabled: false, Uri: "https://steamcommunity.com/sharedfiles/filedetails/?id=42" } && mark is { } shown
+                && Math.Abs(link.Size.X - shown.End.X) <= 0.5f && Math.Abs(status.GlobalPosition.X - statusAt) <= 1
+                && status.GetGlobalRect().End.X <= title.GetGlobalRect().End.X + 2,
+                $"{link.Uri}; mark {mark}, link {link.GetGlobalRect()}, status {status.GetGlobalRect()} (expected at {statusAt:0.#}), title {title.GetGlobalRect()}");
 
             var bbcode = head.Text;
             var tag = LinkMark.Tag(16, "#99ccff");
