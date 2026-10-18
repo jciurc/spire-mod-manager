@@ -14,10 +14,11 @@ static class Installed
     // Raised when one is added.
     public static event Action? Added;
 
-    // When the last one came (Time.GetTicksMsec), and whether that was just now: the game announces a new mod as a
-    // change of the mod list (OnModEnabledOrDisabled), which isn't the player's step.
-    static ulong _arrivedAt;
-    public static bool JustArrived => _arrivedAt != 0 && Time.GetTicksMsec() - _arrivedAt < 500;
+    // The frame the last one came in, and whether that's this one or the one before: the game announces a new mod as a
+    // change of the mod list (OnModEnabledOrDisabled) as it comes, which isn't the player's step. Frames, not time: a
+    // player's click soon after is a step.
+    static ulong _arrivedIn;
+    public static bool JustArrived => _arrivedIn != 0 && Engine.GetProcessFrames() - _arrivedIn <= 1;
 
     public static void Watch() => ModManager.OnModDetected += Detected;
 
@@ -31,7 +32,7 @@ static class Installed
             return; // an update of a mod loaded at launch, not a new mod
         _mods.RemoveAll(Same);
         _mods.Add(mod);
-        _arrivedAt = Time.GetTicksMsec();
+        _arrivedIn = Engine.GetProcessFrames();
         Added?.Invoke();
     }
 

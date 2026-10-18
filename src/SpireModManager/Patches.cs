@@ -315,7 +315,7 @@ static class ModToggledPatch
             if (HistoryBar.Screen != __instance)
                 return;
             if (Installed.JustArrived)
-                History.AsCurrent(Profiles.Track); // the game announcing a mod installed just now: no step (Profiles.TakeInInstalled)
+                History.AsCurrent(Profiles.Track); // the game announcing a mod as it comes: no step (Profiles.TakeInInstalled)
             else
             {
                 Profiles.Track();
