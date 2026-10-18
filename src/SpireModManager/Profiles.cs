@@ -65,8 +65,9 @@ static class Profiles
         Track();
     }
 
-    // A mod installed while the game runs: the active profile takes it in at once (on, as the game has it), before
-    // the player can untick it, so unticking it is an edit of that profile. A second copy of a mod from one source: every
+    // A mod installed while the game runs: the active profile takes it in at once as off (the profile was saved before it
+    // existed), so the mod arriving on is that profile's unsaved edit: Save keeps it on, Discard turns it off, and
+    // unticking it is no change. A second copy of a mod from one source: every
     // profile holds the copy picked (the one that was there), as at launch, so a switch to the new copy is an edit of the
     // active one. Quietly (see History.Quietly). Fails soft: it runs inside the game's mod detection, beside Changes'
     // own handler.
@@ -78,10 +79,11 @@ static class Profiles
                 return;
             History.Quietly(data =>
             {
-                TakeIn(data.Profiles.FirstOrDefault(p => p.Name == data.ActiveProfile));
+                TakeIn(data.Profiles.FirstOrDefault(p => p.Name == data.ActiveProfile), arrived: true);
                 foreach (var each in data.Profiles)
                     HoldCopies(each);
             });
+            Track(); // on, it's the profile's unsaved edit now
             Switched?.Invoke(); // the count beside the name
         }
         catch (Exception e)
@@ -91,12 +93,14 @@ static class Profiles
     }
 
     // Takes the installed mods a profile has never seen into its saved state, and into its unsaved edit if it has
-    // one, as they are in the mod list now (so they don't count as an edit). True if there were any.
-    static bool TakeIn(Profile? profile)
+    // one, as they are in the mod list now (so they don't count as an edit). arrived: installed while the game runs,
+    // so into the saved state as off (it was saved before they existed), and their being on is an edit (Track). True if
+    // there were any.
+    static bool TakeIn(Profile? profile, bool arrived = false)
     {
         if (profile == null || Unseen(profile).ToList() is not { Count: > 0 } unseen)
             return false;
-        profile.Mods.AddRange(unseen);
+        profile.Mods.AddRange(arrived ? unseen.Select(m => m with { Enabled = false }) : unseen);
         if (profile.Edited is { } edit)
         {
             var known = Index(edit);

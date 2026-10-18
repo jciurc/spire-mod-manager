@@ -3537,15 +3537,21 @@ static class SelfTest
         };
         var rowsBefore = content.GetChildren().OfType<NModMenuRow>().ToList();
         var wasEdited = Profiles.Edited;
+        var countsBefore = HistoryBar.Counts();
         GameInstalls(fresh);
         await Wait(menu, 0.4);
         NModalContainer.Instance?.Clear();
         Check("a mod installed now is listed as installed, loading after relaunch",
             HistoryBar.Describe().Any(l => l.Contains("Installed: Fresh Mod") && l.Contains("pending relaunch")), string.Join(" | ", HistoryBar.Describe()));
-        // It joins the active profile at once, on, quietly: no unsaved edit, and Revert all's state has it too.
-        Check("a mod installed now joins the active profile, on, quietly",
-            Profiles.Active?.Mods.Any(m => m.Id == "SmmFreshMod" && m.Enabled) == true && Profiles.Edited == wasEdited && OnInSnapshot(History.Entered, "SmmFreshMod"),
-            $"in the profile {Profiles.Active?.Mods.Any(m => m.Id == "SmmFreshMod")}, edited {wasEdited} -> {Profiles.Edited}, in Revert all's state {OnInSnapshot(History.Entered, "SmmFreshMod")}");
+        // It joins the active profile at once as off (the profile was saved before it existed), so its being on is the
+        // profile's unsaved edit; Revert all's state has it on too. Turned on since launch: +1 on the first line.
+        var countsNew = HistoryBar.Counts();
+        Check("a mod installed now joins the active profile as off, so its being on is an unsaved edit; it counts as turned on (+1)",
+            Profiles.Active?.Mods.Any(m => m.Id == "SmmFreshMod" && !m.Enabled) == true && Profiles.Edited
+            && Profiles.UnsavedChanges().On.Any(m => m.Name == "Fresh Mod") && OnInSnapshot(History.Entered, "SmmFreshMod")
+            && countsNew.On == countsBefore.On + 1 && countsNew.Off == countsBefore.Off,
+            $"saved off {Profiles.Active?.Mods.Any(m => m.Id == "SmmFreshMod" && !m.Enabled)}, edited {wasEdited} -> {Profiles.Edited}, "
+            + $"in Revert all's state {OnInSnapshot(History.Entered, "SmmFreshMod")}, counts {countsBefore} -> {countsNew}");
         Check("a mod installed now gets a New tag, first", Tags.For(fresh).FirstOrDefault()?.Text == "New");
         var freshRow = content.GetChildren().OfType<NModMenuRow>().Except(rowsBefore).FirstOrDefault(r => r.Mod == fresh);
         if (freshRow != null)
@@ -3557,17 +3563,20 @@ static class SelfTest
             Check("unticking a new mod is saved, and Changes says it's disabled",
                 SaveManager.Instance.SettingsSave.ModSettings?.IsModDisabled(fresh) == true
                 && HistoryBar.Describe().Any(l => l.Contains("Fresh Mod") && l.Contains("Disabled")), string.Join(" | ", HistoryBar.Describe()));
-            Check("unticking it is an unsaved edit of the profile", Profiles.Edited && Profiles.UnsavedChanges().Off.Any(m => m.Name == "Fresh Mod"),
-                $"edited {Profiles.Edited}, off: {string.Join(", ", Profiles.UnsavedChanges().Off.Select(m => m.Name))}");
+            var countsOff = HistoryBar.Counts();
+            Check("unticking it matches the profile again (no edit), and the counts go back to before it came (no -1)",
+                Profiles.Edited == wasEdited && !Profiles.UnsavedChanges().Off.Any(m => m.Name == "Fresh Mod") && countsOff == countsBefore,
+                $"edited {wasEdited} -> {Profiles.Edited}, off: {string.Join(", ", Profiles.UnsavedChanges().Off.Select(m => m.Name))}, counts {countsBefore} -> {countsOff}");
             HistoryBar.ShowList(screen);
             await Wait(menu, 0.2);
             await Capture(screen, outDir, "10c-installed-change");
             HistoryBar.CloseList(screen.GetNode<Control>("%ModInfoContainer"));
-            // Undone: before the untick the game had no entry for it (on), and the profile had it on.
+            // Undone: before the untick the game had no entry for it (on), the profile's edit, +1 again.
             History.Undo();
             await Wait(menu, 0.3);
-            Check("undoing the untick: the new mod on again, the profile as it was", SaveManager.Instance.SettingsSave.ModSettings?.IsModDisabled(fresh) == false
-                && Profiles.Edited == wasEdited, $"disabled {SaveManager.Instance.SettingsSave.ModSettings?.IsModDisabled(fresh)}, edited {wasEdited} -> {Profiles.Edited}");
+            Check("undoing the untick: the new mod on again, the profile's unsaved edit again, +1 again", SaveManager.Instance.SettingsSave.ModSettings?.IsModDisabled(fresh) == false
+                && Profiles.Edited && HistoryBar.Counts() == countsNew,
+                $"disabled {SaveManager.Instance.SettingsSave.ModSettings?.IsModDisabled(fresh)}, edited {wasEdited} -> {Profiles.Edited}, counts {HistoryBar.Counts()}");
             content.RemoveChild(freshRow);
             freshRow.QueueFree();
         }
@@ -3575,6 +3584,14 @@ static class SelfTest
             Results.Add("FAIL a mod installed now gets a row");
         GameForgets(fresh);
         SaveManager.Instance.SettingsSave.ModSettings?.ModList.RemoveAll(e => e.Id == "SmmFreshMod");
+        History.Quietly(data =>
+        {
+            foreach (var profile in data.Profiles)
+            {
+                profile.Mods.RemoveAll(m => m.Id == "SmmFreshMod");
+                profile.Edited?.RemoveAll(m => m.Id == "SmmFreshMod");
+            }
+        });
         Profiles.Track(); // its unsaved edit goes with it
         History.Record();
         CategoryList.Redraw(content); // the pending note too
