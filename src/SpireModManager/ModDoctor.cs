@@ -13,9 +13,18 @@ static class ModDoctor
     const string FileName = "mod_doctor_startup.json";
     const int FramesToWait = 30; // about half a second: its suspects come a frame or so after the error
 
+#if DEVTOOLS
+    // Self-test: the suspects Mod Doctor would name, without it.
+    public static List<string>? TestSuspects;
+#endif
+
     // The mod ids it suspects, once it has written them; none if it isn't there, or hasn't named any in time.
     public static async Task<List<string>> Suspects(Node node)
     {
+#if DEVTOOLS
+        if (TestSuspects is { } made)
+            return [.. made];
+#endif
         try
         {
             for (var i = 0; i < FramesToWait; i++)

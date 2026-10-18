@@ -9,6 +9,7 @@ using MegaCrit.Sts2.Core.Logging;
 using MegaCrit.Sts2.Core.Modding;
 using MegaCrit.Sts2.Core.Nodes;
 using MegaCrit.Sts2.Core.Nodes.CommonUi;
+using MegaCrit.Sts2.Core.Nodes.GodotExtensions;
 using MegaCrit.Sts2.Core.Nodes.Multiplayer;
 using MegaCrit.Sts2.Core.Saves;
 
@@ -225,7 +226,8 @@ static class LaunchGuard
             body.Add("date", When(working));
             body.Add("changes", string.Join("\n", Lines(changes)));
             if (await Menus.Confirm(new LocString("settings_ui", "SPIRE_MOD_MANAGER.LAUNCH_FAILED_TITLE"), body,
-                    new LocString("settings_ui", "SPIRE_MOD_MANAGER.LAUNCH_KEEP"), new LocString("settings_ui", "SPIRE_MOD_MANAGER.LAUNCH_RESTORE")))
+                    new LocString("settings_ui", "SPIRE_MOD_MANAGER.LAUNCH_KEEP"), new LocString("settings_ui", "SPIRE_MOD_MANAGER.LAUNCH_RESTORE"),
+                    popup => Links(popup, Rest(changes), "")))
                 Restore(working.Mods, menu);
         }
         catch (Exception e)
@@ -244,9 +246,49 @@ static class LaunchGuard
     // where the game's text couldn't load, in English from our own file and without markup (Our).
     static List<string> Lines(List<Change> changes, bool plain = false)
     {
+        var shown = changes.Count > LinesShown ? LinesShown - 1 : LinesShown;
+        var lines = changes.Take(shown).Select(c => Line(c, plain)).ToList();
+        if (changes.Count > LinesShown)
+            lines.Add("  •  " + More(plain, MoreChanges, changes.Count - shown));
+        return lines;
+    }
+
+    // The changes the list counts in its last line rather than lists: the card over that line.
+    static string Rest(List<Change> changes) =>
+        changes.Count > LinesShown ? string.Join("\n", changes.Skip(LinesShown - 1).Select(c => Line(c, plain: false))) : "";
+
+    // "{count} more", for the changes or Mod Doctor's suspects a dialog doesn't list: a link whose card names them, in
+    // the game's popup (Links); plain text in the plain dialog, which can't show a card.
+    const string MoreChanges = "spire-mod-manager-more-changes", MoreSuspects = "spire-mod-manager-more-suspects";
+    public const string MoreCardName = "SpireModManagerMoreCard";
+
+    static string More(bool plain, string link, int count)
+    {
+        var text = Our(plain, "SPIRE_MOD_MANAGER.LAUNCH_MORE", ("count", Count(plain, count)));
+        return plain ? text : $"[url={link}]{text}[/url]";
+    }
+
+    // The game's popup's text: its "more" links show what they stand for. The text box takes the mouse for that (the
+    // game's leaves it to the popup).
+    static void Links(NGenericPopup popup, string changes, string suspects)
+    {
+        if (popup.GetNodeOrNull<RichTextLabel>("VerticalPopup/Description") is not { } text)
+            return;
+        text.MouseFilter = Control.MouseFilterEnum.Pass;
+        Hover.WatchLinks(text, MoreCardName, link => link switch
+        {
+            MoreChanges when changes.Length > 0 => changes,
+            MoreSuspects when suspects.Length > 0 => suspects,
+            _ => null,
+        }, width: 420);
+    }
+
+    // One change as the popups list it.
+    static string Line(Change c, bool plain)
+    {
         string Mod(string id) => plain ? PlainName(id) : Name(id);
         string Version(string? version) => plain ? version ?? "" : Escaped(version ?? "");
-        var lines = changes.Take(changes.Count > LinesShown ? LinesShown - 1 : LinesShown).Select(c => "  •  " + c.Kind switch
+        return "  •  " + c.Kind switch
         {
             Kind.New => Our(plain, "SPIRE_MOD_MANAGER.LAUNCH_NEW", ("mod", Mod(c.Id))),
             Kind.Enabled => Our(plain, "SPIRE_MOD_MANAGER.LAUNCH_ENABLED", ("mod", Mod(c.Id))),
@@ -256,10 +298,7 @@ static class LaunchGuard
             Kind.Switched => Our(plain, "SPIRE_MOD_MANAGER.LAUNCH_SWITCHED", ("mod", Mod(c.Id)), ("from", Version(Copies.Shown(c.From ?? ""))),
                 ("to", Version(Copies.Shown(c.To ?? "")))),
             _ => Our(plain, "SPIRE_MOD_MANAGER.LAUNCH_ORDER"),
-        }).ToList();
-        if (changes.Count > LinesShown)
-            lines.Add("  •  " + Our(plain, "SPIRE_MOD_MANAGER.LAUNCH_MORE", ("count", Count(plain, changes.Count - LinesShown + 1))));
-        return lines;
+        };
     }
 
     static string PlainName(string id) => ModManager.Mods.FirstOrDefault(m => m.manifest?.id == id)?.manifest?.name ?? id;
@@ -319,6 +358,25 @@ static class LaunchGuard
                 entries.Add(new SettingsSaveMod(m) { IsEnabled = On(id, m.modSource, false) });
         LoadOrder.OursFirst(entries);
         return entries;
+    }
+
+    // The mods Mod Doctor suspects that the third answer turns off: not ours, nor Mod Doctor (it's there to look at the
+    // failure).
+    public static List<string> Disableable(IReadOnlyList<string> suspects) => [.. suspects.Where(id => !Ours(id)).Distinct()];
+
+    // This launch's mod list as it is, the suspects off (every copy and source of each; one the list doesn't name gets an
+    // entry, or it would load), saved.
+    static void WriteWithout(IReadOnlyList<string> suspects)
+    {
+        var ids = Disableable(suspects).ToHashSet();
+        var settings = SaveManager.Instance.SettingsSave.ModSettings ??= new ModSettings();
+        foreach (var entry in settings.ModList.Where(e => ids.Contains(e.Id)))
+            entry.IsEnabled = false;
+        foreach (var m in ModManager.Mods.Union(Installed.Mods))
+            if (m.manifest?.id is { } id && ids.Contains(id) && !settings.ModList.Any(e => e.Id == id && e.Source == m.modSource))
+                settings.ModList.Add(new SettingsSaveMod(m) { IsEnabled = false });
+        SaveManager.Instance.SaveSettings();
+        Log.Info($"[{ModEntry.ModId}] Turned off the mods Mod Doctor suspects: {string.Join(", ", ids)}");
     }
 
     // The picks a working setup's copies make (the copy that loaded, where an id was installed twice from one source).
@@ -396,19 +454,24 @@ static class LaunchGuard
     public static bool TestNoLanguage;
 #endif
 
+    // The dialog's answers, its buttons left to right.
+    public enum Answer { Quit, DisableSuspects, Restore }
+
     // In place of the game's startup error dialog (StartupErrorPatch): the changes since the last setup that worked, and
-    // Restore and restart or Quit, with Mod Doctor's suspects if it found any. The game's own setup for its dialog first
-    // (ErrorInit). Where the game's text can't load (a mod broke it), a plain dialog in English. If anything fails
-    // before the choice, or the Restore fails, the game's own dialog instead.
+    // Restore and restart or Quit, with Mod Doctor's suspects if it found any, and then a third answer: those mods off,
+    // the rest as this launch had them, and a restart. The game's own setup for its dialog first (ErrorInit). Where the
+    // game's text can't load (a mod broke it), a plain dialog in English. If anything fails before the choice, or the
+    // answer's writing does, the game's own dialog instead.
     public static async Task AskAfterCrash(NGame game, Offer offer)
     {
         Log.Error($"[{ModEntry.ModId}] The game couldn't start; offering the mods of the last launch that worked ({offer.Working.At.ToString("yyyy-MM-dd HH:mm", CultureInfo.InvariantCulture)})");
-        bool restore;
+        Answer answer;
+        List<string> suspects;
         try
         {
             var styled = await ErrorInit(game);
-            var suspects = await ModDoctor.Suspects(game);
-            restore = styled ? await AskStyled(offer, suspects) : await AskPlain(game, offer, suspects);
+            suspects = await ModDoctor.Suspects(game);
+            answer = styled ? await AskStyled(offer, suspects) : await AskPlain(game, offer, suspects);
         }
         catch (Exception e)
         {
@@ -421,7 +484,7 @@ static class LaunchGuard
         // same setup again, and after a Quit a fix made by hand would get that offer (the same mods failing again bring
         // this dialog back without the record).
         ClearPending();
-        if (!restore)
+        if (answer == Answer.Quit)
         {
             ModEntry.Quit();
             return;
@@ -430,12 +493,15 @@ static class LaunchGuard
         // own dialog quits (NGame.Quit would save the profile and progress of a half-started game).
         try
         {
-            WriteList(offer.Working.Mods);
+            if (answer == Answer.Restore)
+                WriteList(offer.Working.Mods);
+            else
+                WriteWithout(suspects);
             ModEntry.Relaunch(plain: true);
         }
         catch (Exception e)
         {
-            Log.Error($"[{ModEntry.ModId}] Could not restore the last working mods and restart, so the game's own dialog shows: {e}");
+            Log.Error($"[{ModEntry.ModId}] Could not {(answer == Answer.Restore ? "restore the last working mods" : "turn off the mods Mod Doctor suspects")} and restart, so the game's own dialog shows: {e}");
             // The answer runs inside our popup's button handler, before the popup's own close clears the container,
             // which would keep the game's popup out (it takes one at a time) and then clear it: a frame first.
             await game.ToSignal(game.GetTree(), SceneTree.SignalName.ProcessFrame);
@@ -482,7 +548,7 @@ static class LaunchGuard
         {
             var named = suspects.Take(SuspectsShown).Select(id => plain ? PlainName(id) : Name(id)).ToList();
             if (suspects.Count > SuspectsShown)
-                named.Add(Our(plain, "SPIRE_MOD_MANAGER.LAUNCH_MORE", ("count", Count(plain, suspects.Count - SuspectsShown))));
+                named.Add(More(plain, MoreSuspects, suspects.Count - SuspectsShown));
             lines.Add("\n" + Our(plain, "SPIRE_MOD_MANAGER.CRASH_SUSPECTS", ("mods", string.Join(", ", named))));
         }
         return lines;
@@ -527,8 +593,9 @@ static class LaunchGuard
     }
 
     // The offer in the game's popup, our mark on it. Another mod's popup would keep ours out (the container takes one at
-    // a time), so it goes; if ours still isn't the one shown, that's a failure (the game's dialog then).
-    static async Task<bool> AskStyled(Offer offer, List<string> suspects)
+    // a time), so it goes; if ours still isn't the one shown, that's a failure (the game's dialog then). With suspects to
+    // turn off, a third button between the game's two (SuspectsButton).
+    static async Task<Answer> AskStyled(Offer offer, List<string> suspects)
     {
         var body = new LocString("settings_ui", "SPIRE_MOD_MANAGER.CRASH_BODY");
         body.Add("game", GamesMessage(plain: false));
@@ -541,18 +608,58 @@ static class LaunchGuard
             Log.Warn($"[{ModEntry.ModId}] A popup was open at the failed start and closes for the offer: {open.GetType().Name} \"{Words(open)}\"");
         modals.Clear();
         Menus.Mark(popup);
+        Links(popup, Rest(offer.Changes), MoreSuspectsCard(suspects));
         modals.Add(popup);
         if (modals.OpenModal != popup)
             throw new InvalidOperationException("the game's popup container didn't take ours");
-        return await popup.WaitForConfirmation(body, new LocString("settings_ui", "SPIRE_MOD_MANAGER.CRASH_TITLE"),
+        var third = new TaskCompletionSource<Answer>();
+        if (Disableable(suspects).Count > 0)
+            SuspectsButton(popup, () => third.TrySetResult(Answer.DisableSuspects));
+        var confirmed = popup.WaitForConfirmation(body, new LocString("settings_ui", "SPIRE_MOD_MANAGER.CRASH_TITLE"),
             new LocString("main_menu_ui", "QUIT"), new LocString("settings_ui", "SPIRE_MOD_MANAGER.CRASH_RESTORE"));
+        if (await Task.WhenAny(confirmed, third.Task) == third.Task)
+            return third.Task.Result;
+        return await confirmed ? Answer.Restore : Answer.Quit;
+    }
+
+    // The suspects the line counts rather than names: the card over its "more".
+    static string MoreSuspectsCard(List<string> suspects) =>
+        suspects.Count > SuspectsShown ? string.Join("\n", suspects.Skip(SuspectsShown).Select(id => "  •  " + Name(id))) : "";
+
+    public const string SuspectsButtonName = "SpireModManagerSuspectsButton";
+
+    // The third button: a copy of the game's own (its Restore), between its two, without their signals or keys (Enter and
+    // Escape stay the game's two). It closes the popup as the game's do.
+    static void SuspectsButton(NGenericPopup popup, Action pressed)
+    {
+        if (popup.GetNodeOrNull<NPopupYesNoButton>("VerticalPopup/YesButton") is not { } yes
+            || popup.GetNodeOrNull<NPopupYesNoButton>("VerticalPopup/NoButton") is not { } no)
+            return;
+        // Groups, script and scene, not signals: the game connects its own answer to its buttons.
+        if (yes.Duplicate((int)(Node.DuplicateFlags.Groups | Node.DuplicateFlags.Scripts | Node.DuplicateFlags.UseInstantiation)) is not NPopupYesNoButton button)
+            return;
+        button.Name = SuspectsButtonName;
+        // Its keys go once it's ready (a No button's are Escape's, which the game's Quit has).
+        button.Ready += () =>
+        {
+            button.DisconnectHotkeys();
+            button.SetText(Menus.Text("SPIRE_MOD_MANAGER.CRASH_DISABLE_SUSPECTS"));
+        };
+        button.Connect(NClickableControl.SignalName.Released, Callable.From<NButton>(_ =>
+        {
+            pressed();
+            NModalContainer.Instance?.Clear();
+        }));
+        yes.GetParent().AddChild(button);
+        button.Position = new Vector2((yes.Position.X + no.Position.X) / 2, yes.Position.Y);
     }
 
     public const string PlainDialogName = "SpireModManagerCrashDialog";
+    const string DisableSuspectsAction = "disable_suspects";
 
     // The offer where the game's text and popups can't be used: Godot's own dialog, with our English texts (they come
     // through the game's text too) and the game's word for Quit in English.
-    static async Task<bool> AskPlain(NGame game, Offer offer, List<string> suspects)
+    static async Task<Answer> AskPlain(NGame game, Offer offer, List<string> suspects)
     {
         var text = Our(true, "SPIRE_MOD_MANAGER.CRASH_BODY", ("game", GamesMessage(plain: true)),
             ("date", offer.Working.At.ToString("yyyy-MM-dd HH:mm", CultureInfo.InvariantCulture)),
@@ -562,9 +669,21 @@ static class LaunchGuard
             Name = PlainDialogName, Title = Our(true, "SPIRE_MOD_MANAGER.CRASH_TITLE"), DialogText = text, DialogAutowrap = true,
             OkButtonText = Our(true, "SPIRE_MOD_MANAGER.CRASH_RESTORE"), CancelButtonText = "Quit", Exclusive = true,
         };
-        var answer = new TaskCompletionSource<bool>();
-        dialog.Confirmed += () => answer.TrySetResult(true);
-        dialog.Canceled += () => answer.TrySetResult(false);
+        var answer = new TaskCompletionSource<Answer>();
+        dialog.Confirmed += () => answer.TrySetResult(Answer.Restore);
+        dialog.Canceled += () => answer.TrySetResult(Answer.Quit);
+        if (Disableable(suspects).Count > 0)
+        {
+            dialog.AddButton(Our(true, "SPIRE_MOD_MANAGER.CRASH_DISABLE_SUSPECTS"), false, DisableSuspectsAction);
+            dialog.CustomAction += action =>
+            {
+                if (action == DisableSuspectsAction)
+                {
+                    answer.TrySetResult(Answer.DisableSuspects);
+                    dialog.Hide();
+                }
+            };
+        }
         game.GetTree().Root.AddChild(dialog);
         dialog.PopupCentered(new Vector2I(760, 420));
         try
