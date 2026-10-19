@@ -1111,7 +1111,7 @@ static class SelfTest
     // Our main menu button opens the page on our view even when Vanilla View was the last one shown; the game's way in
     // (from its Settings) keeps the last view. The page closed for real, then opened each way: the
     // game reuses the page, so this is the page shown again (on its first opening, ours was read as it was made). Then
-    // F8, which opens and closes it.
+    // F3, which opens and closes it.
     static async Task TestMenuButtonOpensOurs(NMainMenu menu, NModdingScreen screen)
     {
         if (menu.GetNodeOrNull<Control>("SpireModManagerMenuButton") is not { } button)
@@ -1140,7 +1140,7 @@ static class SelfTest
             await Wait(menu, 1);
         }
 
-        // F8 (ShortcutsPatch.ManagerKey): on the page, in either view, back to the main menu as its Back button goes; on
+        // F3 (ShortcutsPatch.ManagerKey): on the page, in either view, back to the main menu as its Back button goes; on
         // the main menu, our view, as the button opens it. A menu of ours open closes first, on the page and on the main
         // menu. On another of the game's pages, or while the search box has the keyboard, it does nothing.
         async Task Press()
@@ -1161,17 +1161,17 @@ static class SelfTest
         Click(toggle);
         await Wait(menu, 1);
         await Press();
-        Check("F8 on the page goes back to the main menu, as its Back button does (from Vanilla View too)", OnMainMenu(), Where());
+        Check("F3 on the page goes back to the main menu, as its Back button does (from Vanilla View too)", OnMainMenu(), Where());
         var settings = menu.SubmenuStack.PushSubmenuType<NSettingsScreen>();
         await Wait(menu, 0.5);
         await Press();
-        Check("F8 on another of the game's pages (Settings) does nothing", menu.SubmenuStack.Peek() == settings && settings.IsVisibleInTree()
+        Check("F3 on another of the game's pages (Settings) does nothing", menu.SubmenuStack.Peek() == settings && settings.IsVisibleInTree()
             && !screen.IsVisibleInTree(), Where());
         menu.SubmenuStack.Pop();
         await Wait(menu, 0.5);
         await Press();
         await Wait(menu, 0.7); // our view's redraw
-        Check("F8 on the main menu opens our view of the page, as the button does, after Vanilla View", OnOurView(), Where());
+        Check("F3 on the main menu opens our view of the page, as the button does, after Vanilla View", OnOurView(), Where());
 
         MenuPanel.Show(screen.GetNode<Control>("%ModsScrollContainer/Mask/Content"), () => [new MenuItem("One", () => { })]);
         await Wait(menu, 0.1);
@@ -1179,14 +1179,14 @@ static class SelfTest
         await Press();
         var pageMenuClosed = OnOurView();
         await Press();
-        Check("F8 with a menu open on the page closes the menu first, staying; the next goes back to the main menu",
+        Check("F3 with a menu open on the page closes the menu first, staying; the next goes back to the main menu",
             pageMenu && pageMenuClosed && OnMainMenu(), $"opened {pageMenu}, closed and stayed {pageMenuClosed}; {Where()}");
         var buttonMenu = await ButtonMenu(menu, button) != null;
         await Press();
         var buttonMenuClosed = OnMainMenu();
         await Press();
         await Wait(menu, 0.7);
-        Check("F8 with the main menu button's menu open closes the menu first, staying; the next opens the page",
+        Check("F3 with the main menu button's menu open closes the menu first, staying; the next opens the page",
             buttonMenu && buttonMenuClosed && OnOurView(), $"opened {buttonMenu}, closed and stayed {buttonMenuClosed}; {Where()}");
 
         if (screen.GetNodeOrNull<LineEdit>("ModsBorder/SpireModManagerSearch") is { } search)
@@ -1194,12 +1194,12 @@ static class SelfTest
             var text = search.Text;
             search.GrabFocus();
             await Press();
-            Check("F8 while typing in the search box does nothing to the page: it stays, the box keeps the keyboard and its text",
+            Check("F3 while typing in the search box does nothing to the page: it stays, the box keeps the keyboard and its text",
                 OnOurView() && search.HasFocus() && search.Text == text, $"focused {search.HasFocus()}, \"{search.Text}\"; {Where()}");
             screen.GetViewport().GuiReleaseFocus();
         }
         else
-            Results.Add("FAIL F8 while typing in the search box: no search box");
+            Results.Add("FAIL F3 while typing in the search box: no search box");
     }
 
     // Right-click the main menu button, Move button, click somewhere: it stays there; Reset puts it back.

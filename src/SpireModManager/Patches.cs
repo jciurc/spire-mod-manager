@@ -432,13 +432,13 @@ static class ModInfoClearPatch
 }
 
 // Ctrl shortcuts on our Modding page: Z undo, Y or Shift+Z redo, F search, S save profile, A pick all shown, D let go
-// of the picked mods. F8 opens and closes the page. Unhandled keys only, so a focused text box keeps its own.
+// of the picked mods. F3 opens and closes the page. Unhandled keys only, so a focused text box keeps its own.
 [HarmonyPatch(typeof(NInputManager), "_UnhandledKeyInput")]
 static class ShortcutsPatch
 {
     // The key that opens and closes the page: the game binds nothing to it (its debug keys skip it), unless the player
     // moves one of its keys there. Not changeable yet.
-    public const Key ManagerKey = Key.F8;
+    public const Key ManagerKey = Key.F3;
 
     // Escape closes our open menu or dialog, ends the main menu button's move mode, or lets go of picked mods, in
     // place of the game's Escape (which would leave the page). Ctrl+D lets go of picked mods, in place of the game's D.
@@ -469,10 +469,10 @@ static class ShortcutsPatch
     // Our open menu or dialog, or the main menu button's move mode: true if there was one (it's closed now).
     static bool CloseOurs() => MenuPanel.Close() || RelaunchCheck.Cancel() || ProfileShare.Close() || MenuButton.CancelMove();
 
-    // F8 on the main menu opens our page, as the main menu button does; on the Modding page it goes back, as the page's
+    // F3 on the main menu opens our page, as the main menu button does; on the Modding page it goes back, as the page's
     // Back button does, each with its sound. Anything of ours that's open closes first instead, as with Escape. Elsewhere it's left to the
     // game, which does nothing with it: on any other screen (by the game's own reckoning, where a popup counts as one),
-    // during a fade, and while a text box has the keyboard (a text box doesn't take F8, so it would reach here).
+    // during a fade, and while a text box has the keyboard (a text box doesn't take F3, so it would reach here).
     static bool OpenOrClose()
     {
         if (Typing() || NGame.Instance?.Transition is not { InTransition: false })
