@@ -22,7 +22,7 @@ Subscribe to it on the [Steam Workshop](https://steamcommunity.com/sharedfiles/f
 
 - **Main menu button:** "Default (12 mods)" in the lower-left corner names your active profile and
   opens the page. Right-click it to move it or to relaunch the game. A dot shows when a relaunch is pending.
-  F3 opens the page from the main menu and goes back from it.
+  F3 opens or closes the page from the main menu.
 - **Quick with long lists:** timed with about 250 mods, searching and switching views take a fraction of a
   second.
 - **Categories:** sort mods into your own collapsible categories, from a button on each row or the mod's

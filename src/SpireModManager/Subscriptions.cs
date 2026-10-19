@@ -72,7 +72,7 @@ static class Subscriptions
         catch (Exception e)
         {
             Log.Warn($"[{ModEntry.ModId}] Could not subscribe to Workshop item {item}: {e.Message}");
-            Set(item, new Status(State.Failed, Error: Menus.Text("SPIRE_MOD_MANAGER.SUBSCRIBE_FAILED_STEAM")));
+            Set(item, new Status(State.Failed, Error: Failure("SPIRE_MOD_MANAGER.SUBSCRIBE_FAILED_STEAM")));
         }
     }
 
@@ -87,13 +87,17 @@ static class Subscriptions
         return (await call.Task).m_eResult;
     }
 
-    // Why Steam said no, for the player.
-    static string Reason(EResult result) => Menus.Text(result switch
+    // Why Steam said no, for the player, as the line shows it.
+    static string Reason(EResult result) => Failure(result switch
     {
         EResult.k_EResultFileNotFound or EResult.k_EResultAccessDenied => "SPIRE_MOD_MANAGER.SUBSCRIBE_FAILED_GONE",
         EResult.k_EResultNoConnection or EResult.k_EResultNotLoggedOn or EResult.k_EResultTimeout => "SPIRE_MOD_MANAGER.SUBSCRIBE_FAILED_OFFLINE",
         _ => "SPIRE_MOD_MANAGER.SUBSCRIBE_FAILED_STEAM",
     });
+
+    // "Couldn't subscribe: <why>"; a mod that's gone says so in a line of its own.
+    static string Failure(string reason) => reason == "SPIRE_MOD_MANAGER.SUBSCRIBE_FAILED_GONE" ? Menus.Text(reason)
+        : Menus.Format("SPIRE_MOD_MANAGER.SUBSCRIBE_FAILED", ("reason", Menus.Text(reason)));
 
     static void Set(ulong item, Status status)
     {

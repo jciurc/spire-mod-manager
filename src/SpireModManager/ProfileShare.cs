@@ -427,7 +427,7 @@ static class ProfileShare
             Subscriptions.State.Subscribing => (Menus.Text("SPIRE_MOD_MANAGER.SUBSCRIBE_SUBSCRIBING"), DimHex),
             Subscriptions.State.Downloading => (Menus.Format("SPIRE_MOD_MANAGER.SUBSCRIBE_DOWNLOADING", ("percent", MissingMods.Percent(status.Progress))), GoldHex),
             Subscriptions.State.Installed => (Menus.Text("SPIRE_MOD_MANAGER.SUBSCRIBE_INSTALLED"), "#99db8c"),
-            _ => (Menus.Format("SPIRE_MOD_MANAGER.SUBSCRIBE_FAILED", ("reason", status.Error ?? "")), "#ff8070"),
+            _ => (status.Error ?? "", "#ff8070"),
         };
         return $"  [color={color}]{Escape(text)}[/color]";
     }

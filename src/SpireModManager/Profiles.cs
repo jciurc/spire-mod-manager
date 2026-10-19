@@ -269,17 +269,14 @@ static class Profiles
 
     static ulong? ItemOf(string? copy) => copy is { } c && c.StartsWith("w:") && ulong.TryParse(c[2..], out var item) ? item : null;
 
-    // "Disable missing mods": the active profile's missing mods off, in its saved state and its edit, so it no longer
-    // has them on (it still knows them: a later install arrives off). One undo step.
+    // "Disable missing mods": the active profile's missing mods taken out of it, its saved state and its edit, so it
+    // no longer asks for them (a later install arrives off, as a mod it doesn't know). One undo step.
     public static void DisableMissing(NModdingScreen screen)
     {
         if (Active is not { } profile || Missing(profile).Select(m => (m.Id, m.Source)).ToHashSet() is not { Count: > 0 } missing)
             return;
         foreach (var list in new[] { profile.Mods, profile.Edited })
-            if (list != null)
-                for (var i = 0; i < list.Count; i++)
-                    if (list[i] is { Enabled: true } entry && missing.Contains((entry.Id, entry.Source)))
-                        list[i] = entry with { Enabled = false };
+            list?.RemoveAll(entry => entry.Enabled && missing.Contains((entry.Id, entry.Source)));
         Store.Save();
         Redraw(screen);
         Switched?.Invoke();
