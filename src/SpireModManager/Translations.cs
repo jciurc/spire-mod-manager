@@ -153,14 +153,17 @@ static class Translations
             }
             var english = English();
             var texts = new Dictionary<string, string>();
-            List<string> unknown = [], unusable = [];
+            List<string> unknown = [], unusable = [], untranslated = [];
             foreach (var entry in json.RootElement.EnumerateObject())
             {
                 if (!english.TryGetValue(entry.Name, out var names))
                     unknown.Add(entry.Name);
-                // Not text, empty, placeholders English doesn't have, or what the game can't format (a plural, a misspelled
+                // Empty: not translated yet (a bundle lists new keys as ""), so English shows, as for a key left out.
+                else if (entry.Value.ValueKind == JsonValueKind.String && entry.Value.GetString() is { } blank && blank.Trim().Length == 0)
+                    untranslated.Add(entry.Name);
+                // Not text, placeholders English doesn't have, or what the game can't format (a plural, a misspelled
                 // formatter): English shows instead (the game would show it raw, and log and report an error on every draw).
-                else if (entry.Value.ValueKind != JsonValueKind.String || entry.Value.GetString() is not { } text || text.Trim().Length == 0
+                else if (entry.Value.ValueKind != JsonValueKind.String || entry.Value.GetString() is not { } text
                     || Placeholders(text) is not { } used || !used.IsSubsetOf(names) || !Formats(text, used))
                     unusable.Add(entry.Name);
                 else
@@ -169,7 +172,9 @@ static class Translations
             if (unknown.Count > 0)
                 Log.Warn($"[{ModEntry.ModId}] Translation {file}: {unknown.Count} keys English doesn't have, left out: {Some(unknown)}");
             if (unusable.Count > 0)
-                Log.Warn($"[{ModEntry.ModId}] Translation {file}: {unusable.Count} texts empty or unreadable (a broken or renamed {{placeholder}}, or a plural form?), shown in English: {Some(unusable)}");
+                Log.Warn($"[{ModEntry.ModId}] Translation {file}: {unusable.Count} texts unreadable (a broken or renamed {{placeholder}}, or a plural form?), shown in English: {Some(unusable)}");
+            if (untranslated.Except(texts.Keys).ToList() is { Count: > 0 } empty)
+                Log.Info($"[{ModEntry.ModId}] Translation {file}: {empty.Count} texts not translated yet (empty), shown in English");
             return texts;
         }
         catch (Exception e)
