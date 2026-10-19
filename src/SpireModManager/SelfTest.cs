@@ -2880,8 +2880,8 @@ static class SelfTest
             await Wait(menu, 0.4);
             var importedName = Profiles.Active?.Name ?? "";
             var imported = Profiles.Active;
-            Check("the imported profile keeps each missing Workshop mod's item, and the banner counts the three",
-                importedName != startName && imported?.Mods.Any(m => m.Id == HereId && m.Copy == $"w:{Here}" && m.Enabled) == true
+            Check("the imported profile keeps each missing Workshop mod's item and the list's name for it, and the banner counts the three",
+                importedName != startName && imported?.Mods.Any(m => m.Id == HereId && m.Copy == $"w:{Here}" && m.Name == "Sub Here" && m.Enabled) == true
                 && imported.Mods.Any(m => m.Id == LocalId && m.Copy == null && m.Enabled) && Banner() is { Visible: true }
                 && BannerText() == "This profile has 3 enabled mods that aren't installed.", $"{importedName}: {BannerText()}");
             await Capture(screen, outDir, "2l-missing-banner");
@@ -2889,8 +2889,8 @@ static class SelfTest
             // Show: the list, as it was when it opened.
             BannerPress("ShowMissingButton");
             await Wait(menu, 0.4);
-            Check("Show lists the missing mods: one downloading with its bar, one that failed with Subscribe again, the local one not on the Workshop",
-                RowText(HereId).Contains("bar 0.45") && RowText(HereId).Contains("Downloading 45%")
+            Check("Show lists the missing mods by the list's names: one downloading with its bar, one that failed with Subscribe again, the local one not on the Workshop",
+                RowText(HereId).StartsWith("Sub Here") && RowText(LocalId).StartsWith("Sub Local") && RowText(HereId).Contains("bar 0.45") && RowText(HereId).Contains("Downloading 45%")
                 && RowText(GoneId).Contains("Couldn't subscribe") && RowText(GoneId).Contains("[Subscribe]") && RowText(LocalId).Contains("Not on the Workshop")
                 && Part<Button>(MissingMods.Name, "SubscribeAllButton") is { Text: "Subscribe to all (1)" },
                 $"{RowText(HereId)} | {RowText(GoneId)} | {RowText(LocalId)} | {Part<Button>(MissingMods.Name, "SubscribeAllButton")?.Text}");

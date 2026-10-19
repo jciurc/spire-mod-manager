@@ -89,7 +89,7 @@ static class MissingMods
             MouseFilter = Control.MouseFilterEnum.Pass, ClipContents = true,
         };
         Hover.Fonts(name, 18);
-        var shown = Hover.Escape(mod.Id);
+        var shown = Hover.Escape(mod.Name);
         name.Text = mod.Item is { } item
             ? $"[url={ProfileCsv.WorkshopLink(item)}][color={ModDetails.ModLinkHex}]{shown}{LinkMark.Tag(18, ModDetails.ModLinkHex)}[/color][/url]" : shown;
         name.MetaClicked += meta =>

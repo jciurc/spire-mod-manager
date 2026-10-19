@@ -255,7 +255,7 @@ static class Profiles
 
     // A mod a profile has on that isn't installed (a list imported, or a mod uninstalled since): its Workshop item where
     // the profile knows it ("w:<item>"), else none (a local mod, or one listed without a link).
-    public record MissingMod(string Id, ModSource Source, ulong? Item);
+    public record MissingMod(string Id, ModSource Source, ulong? Item, string Name);
 
     // The profile's (default: the active one's) missing mods, as it is now: its unsaved edit if it has one.
     public static List<MissingMod> Missing(Profile? profile = null)
@@ -264,7 +264,7 @@ static class Profiles
             return [];
         var installed = Installed().Select(m => (m.Id, m.Source)).ToHashSet();
         return [.. (p.Edited ?? p.Mods).Where(m => m.Enabled && !Manager(m.Id) && !installed.Contains((m.Id, m.Source)))
-            .DistinctBy(m => (m.Id, m.Source)).Select(m => new MissingMod(m.Id, m.Source, ItemOf(m.Copy)))];
+            .DistinctBy(m => (m.Id, m.Source)).Select(m => new MissingMod(m.Id, m.Source, ItemOf(m.Copy), m.Name ?? m.Id))];
     }
 
     static ulong? ItemOf(string? copy) => copy is { } c && c.StartsWith("w:") && ulong.TryParse(c[2..], out var item) ? item : null;
@@ -397,7 +397,9 @@ static class Profiles
             // A Workshop mod keeps its item ("w:<item>": the copy that loads once installed), so it can be subscribed to
             // from the missing-mods list later.
             var loads = rows.FirstOrDefault(e => e.Enabled);
-            mods.Add(new ProfileMod(rows.Key.Id, rows.Key.Source, loads != null, rows.Key.Source == ModSource.SteamWorkshop ? CopyOfLink((loads ?? rows.First()).WorkshopLink) : null));
+            var row = loads ?? rows.First();
+            mods.Add(new ProfileMod(rows.Key.Id, rows.Key.Source, loads != null, rows.Key.Source == ModSource.SteamWorkshop ? CopyOfLink(row.WorkshopLink) : null,
+                row.Name.Length > 0 ? row.Name : null));
         }
         return new ImportPlan(mods, on, off, same, unlisted, missing);
     }
