@@ -12,7 +12,9 @@ static class GameText
         centred ? $"[center][color={Hex}]{text}[/color][/center]" : $"[color={Hex}]{text}[/color]";
 
     // The words in their box. dim: fainter, for words that aren't a problem now (a mod that's off). centred: the words
-    // centred in the box (a centred label's alignment doesn't reach into a table's cell).
+    // centred in the box (a centred label's alignment doesn't reach into a table's cell). Godot wraps a cell's lines to
+    // its width less both paddings but centres them over the whole width, then shifts them by the left padding: so
+    // centred, the sides' padding all goes on the right, and the lines wrap the same and sit in the middle.
     public static string Box(string bbcode, bool dim = false, bool centred = false) =>
-        $"[table=1][cell expand=1 border={Hex}{(dim ? "66" : "b3")} bg={Hex}{(dim ? "0f" : "1f")} padding=12,6,12,6]{(centred ? $"[center]{bbcode}[/center]" : bbcode)}[/cell][/table]";
+        $"[table=1][cell expand=1 border={Hex}{(dim ? "66" : "b3")} bg={Hex}{(dim ? "0f" : "1f")} padding={(centred ? "0,6,24,6" : "12,6,12,6")}]{(centred ? $"[center]{bbcode}[/center]" : bbcode)}[/cell][/table]";
 }
