@@ -3709,31 +3709,33 @@ static class SelfTest
             manifest = new ModManifest { id = id, name = "Description Test", author = "Someone Careful", description = description },
         };
         // Words at a word's start (any start of one: "recolor"), with punctuation ("per-card"), quoted text as shown (its
-        // markup out); not inside a word ("ui" in "quick", "olor"), not the markup ("gold"), not as a tag.
-        string[] queries = ["contrast", "card art", "recolor", "\"art recoloring\"", "per-card", "ui", "gold", "olor", "#contrast", "-contrast", "zzz"];
+        // markup out, [lb] and [rb] as brackets); not inside a word ("ui" in "quick", "olor"), not the markup ("gold") or a
+        // picture's path ("banner"), not as a tag.
+        string[] queries = ["contrast", "card art", "recolor", "\"art recoloring\"", "per-card", "ui", "gold", "olor", "#contrast", "-contrast", "zzz", "banner", "\"[v2]\""];
         var seen = new List<string>();
-        foreach (var mod in new[] { Made("SmmDescTest", "Shared card art [gold]recoloring[/gold]: per-card hue, color, contrast; quick to build."), Made("SmmDescNone", null) })
+        foreach (var mod in new[] { Made("SmmDescTest", "Shared card art [gold]recoloring[/gold]: per-card hue, color, contrast; quick to build. [img]res://pics/banner.png[/img] [lb]v2[rb]"), Made("SmmDescNone", null) })
             seen.Add($"{mod.manifest!.id}: {string.Concat(queries.Select(q => Search.Matches(mod, q) ? "y" : "n"))}");
         // A script written without spaces: anywhere, words can't be told apart.
         var cjk = Made("SmmDescCjk", "卡牌对比度调整");
         seen.Add($"SmmDescCjk: {string.Concat(new[] { "对比", "调整", "卡牌对比度调整", "色" }.Select(q => Search.Matches(cjk, q) ? "y" : "n"))}");
         Check("search finds a mod's description by the starts of its words (not inside one, not its markup, not as a tag); "
             + "anywhere in a script without spaces; one with none still searches",
-            seen.SequenceEqual(["SmmDescTest: yyyyynnnnnn", "SmmDescNone: nnnnnnnnnyn", "SmmDescCjk: yyyn"]), string.Join(" | ", seen));
+            seen.SequenceEqual(["SmmDescTest: yyyyynnnnnnny", "SmmDescNone: nnnnnnnnnynnn", "SmmDescCjk: yyyn"]), string.Join(" | ", seen));
 
         // A Workshop tag is a #tag (the panel's click on one searches that): the mods with it, not ones whose description
         // only says the word, which plain words still find.
         const ulong item = 4400;
         var tagged = Made("SmmDescTagged", null, ModSource.SteamWorkshop);
         Compat.SetWorkshopId(tagged, item);
-        WorkshopInfo.TestSet(item, new WorkshopInfo.Details(DateTime.Now, DateTime.Now, ["Cards", "Tools & APIs"], [], 0, null));
+        WorkshopInfo.TestSet(item, new WorkshopInfo.Details(DateTime.Now, DateTime.Now, ["Cards", "Tools & APIs", "Library"], [], 0, null));
         try
         {
             var says = Made("SmmDescSays", "Adds cards to every act.");
-            var found = $"tagged {Search.Matches(tagged, "#cards")}/{Search.Matches(tagged, "#\"tools & apis\"")}/{Search.Matches(tagged, "cards")}, "
+            var found = $"tagged {Search.Matches(tagged, "#cards")}/{Search.Matches(tagged, "#\"tools & apis\"")}/{Search.Matches(tagged, "cards")}/{Search.Matches(tagged, "#library")}, "
                 + $"description only {Search.Matches(says, "#cards")}/{Search.Matches(says, "cards")}";
-            Check("a Workshop tag is a #tag (its own mods, quoted for spaces); a word finds it in tags and descriptions alike",
-                found == "tagged True/True/True, description only False/True", found);
+            Check("a Workshop tag is a #tag (its own mods, quoted for spaces), but not one named like an automatic chip (#library: "
+                + "mods others need); a word finds it in tags and descriptions alike",
+                found == "tagged True/True/True/False, description only False/True", found);
         }
         finally
         {

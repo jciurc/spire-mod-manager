@@ -71,13 +71,19 @@ static class Tags
         return chips;
     }
 
-    // What a #tag search finds on a mod: its chips' text, its Workshop tags (a click on one in the panel searches it), and
-    // Stable and Beta for each branch it's marked for, chip or not (so "#stable -#beta" finds the mods marked for stable
-    // only), in the game's language and in English (a guide's "#stable" works in any language).
+    // What a #tag search finds on a mod: its chips' text, its Workshop tags (a click on one in the panel searches it; your
+    // own "Utility" and the Workshop's are one tag), and Stable and Beta for each branch it's marked for, chip or not (so
+    // "#stable -#beta" finds the mods marked for stable only), in the game's language and in English (a guide's "#stable"
+    // works in any language). A Workshop tag named like one of the automatic chips isn't that chip: "#library" is the
+    // mods others need, and a Workshop "Beta" doesn't hide a stable-only mod from its own Stable chip's search.
     public static IReadOnlyList<string> Searchable(Mod mod)
     {
         var texts = For(mod).Select(c => c.Text).ToList();
-        texts.AddRange(WorkshopInfo.For(mod)?.Tags ?? []);
+        if (WorkshopInfo.For(mod)?.Tags is { Count: > 0 } workshop)
+        {
+            var automatic = Automatic().ToHashSet(StringComparer.OrdinalIgnoreCase);
+            texts.AddRange(workshop.Where(t => !automatic.Contains(t)));
+        }
         var (stable, beta) = Branches(mod);
         if (stable)
             texts.AddRange([Menus.Text("SPIRE_MOD_MANAGER.TAG_STABLE"), "Stable"]);
@@ -87,6 +93,11 @@ static class Tags
             texts.Add("Same ID");
         return texts;
     }
+
+    // The automatic chips' names, in the game's language and in English.
+    static IEnumerable<string> Automatic() =>
+        new[] { "NEW", "LOCAL", "SAME_ID", "STABLE", "BETA", "LIBRARY", "GAMEPLAY", "COSMETIC" }.Select(k => Menus.Text($"SPIRE_MOD_MANAGER.TAG_{k}"))
+            .Concat(["New", "Local", "Same ID", "Stable", "Beta", "Library", "Gameplay", "Cosmetic"]);
 
     // The game's stable and beta branches a mod is marked for, by the game's own rule over the Workshop's supported
     // range (on another branch the game still loads it, with an error).

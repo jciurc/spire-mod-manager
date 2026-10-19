@@ -112,11 +112,15 @@ static class Search
         string?[] fields = [mod.manifest?.name, mod.manifest?.id, mod.manifest?.author, info?.Alias, info?.Notes, info?.Category,
             .. Tags.For(mod).Select(c => c.Text), .. WorkshopInfo.For(mod)?.Tags ?? []];
         var folded = fields.OfType<string>().Select(f => Fold(f, "")).ToList();
-        // As the panel shows it: its markup's pairs taken out ("[gold]Art[/gold]" is "Art", not "gold").
-        var description = mod.manifest?.description is { Length: > 0 } text ? ModDetails.WithoutTags(text) : "";
+        // As the panel shows it: its markup's pairs taken out ("[gold]Art[/gold]" is "Art", not "gold"), a picture's
+        // path with its tag, and [lb] and [rb] as the brackets they show.
+        var description = mod.manifest?.description is { Length: > 0 } text
+            ? ModDetails.WithoutTags(Picture.Replace(text, "")).Replace("[lb]", "[").Replace("[rb]", "]") : "";
         return new Haystack(string.Join('\n', fields.Append(description)), string.Join('\n', folded), [.. folded.Select(Squeeze)],
             Fold(description, ""), Fold(description, " "));
     }
+
+    static readonly Regex Picture = new(@"\[img[^\]]*\].*?\[/img\]", RegexOptions.Singleline | RegexOptions.IgnoreCase);
 
     // Letters and numbers stay, with the accents on them; a run of spaces is one space; punctuation and symbols become
     // between (nothing for a mod's text, so "Don't" reads "Dont"; a space for a search, so "spire-mod" is two words).
