@@ -327,7 +327,7 @@ static class LoadOrder
     // Load Order, mods that won't load on the main list). Elsewhere a "!" on the Load Order button. Hovering a banner
     // lists its mods (BannerCard).
     public const string WarningName = "SpireModManagerOrderWarning", ManagersName = "SpireModManagerManagersWarning", AutoSortName = "AutoSortButton";
-    public const string SameIdName = "SpireModManagerSameIdWarning";
+    public const string SameIdName = "SpireModManagerSameIdWarning", MissingName = "SpireModManagerMissingWarning";
     public const string SelfName = "SpireModManagerSelfWarning";
     public const string AutoSortHintName = "AutoSortHint", BannerCardName = "SpireModManagerBannerCard";
     const string BadgeName = "WarningBadge";
@@ -398,7 +398,7 @@ static class LoadOrder
         var orderText = Menus.Format(misordered == 1 ? "SPIRE_MOD_MANAGER.ORDER_PROBLEMS_ONE" : "SPIRE_MOD_MANAGER.ORDER_PROBLEMS", ("count", Menus.Number(misordered)));
         // The "!"'s card: the warning alone (the mods it's about are Load Order's own card).
         Badge(content, misordered > 0 && !on ? orderText : null);
-        foreach (var name in new[] { WarningName, ManagersName, SameIdName, SelfName })
+        foreach (var name in new[] { WarningName, ManagersName, SameIdName, MissingName, SelfName })
             if (border.GetNodeOrNull<Control>(name) is { } old)
             {
                 Heights[old.GetMeta(HeightKeyMeta, name).AsString()] = old.OffsetBottom - old.OffsetTop;
@@ -422,6 +422,9 @@ static class LoadOrder
         }
         if (Layout.Wide && clashing.Count > 0 && Store.Data.SameIdDismissed != Copies.Signature(clashing))
             SameIdBanner(content, border, search, clashing);
+        // The active profile's mods that are on but not installed, unless dismissed for it (Profiles.MissingDismissed).
+        if (Layout.Wide && !Profiles.MissingDismissed && Profiles.Missing() is { Count: > 0 } missing)
+            MissingBanner(content, border, search, missing);
         if (on && misordered > 0)
             Banner(border, search, orderText, () => OrderCard(content),
                 [Menus.SmallButton(Menus.Text("SPIRE_MOD_MANAGER.FIX_ORDER"), () => Do(FixOrder), name: "FixOrderButton")]);
@@ -516,6 +519,34 @@ static class LoadOrder
         }, name: "DismissManagersButton");
         Hover.Tip(dismiss, Menus.Text("SPIRE_MOD_MANAGER.DISMISS_MANAGERS_TIP"));
         Banner(border, search, Menus.Text("SPIRE_MOD_MANAGER.MANAGERS_WARNING"), ManagersCard, [show, dismiss], ManagersName, "ManagersWarning", WarningColor);
+    }
+
+    // The active profile's mods that are on but not installed (a list imported, or a mod uninstalled since), in Jordan's
+    // design: Show lists them, with a way to subscribe to each (MissingMods); Disable missing mods turns them off in the
+    // profile; Dismiss hides it until the profile is switched to again or its edit discarded. Its card names them.
+    static void MissingBanner(Control content, Control border, Control? search, List<Profiles.MissingMod> missing)
+    {
+        var show = Menus.SmallButton(Menus.Text("SPIRE_MOD_MANAGER.SHOW_PROBLEM"), () =>
+        {
+            if (CategoryList.ScreenOf(content) is { } screen)
+                MissingMods.Show(screen);
+        }, name: "ShowMissingButton");
+        Hover.Tip(show, Menus.Text("SPIRE_MOD_MANAGER.MISSING_SHOW_TIP"));
+        var disable = Menus.SmallButton(Menus.Text("SPIRE_MOD_MANAGER.MISSING_DISABLE"), () =>
+        {
+            if (CategoryList.ScreenOf(content) is { } screen)
+                Profiles.DisableMissing(screen);
+        }, name: "DisableMissingButton");
+        Hover.Tip(disable, Menus.Text("SPIRE_MOD_MANAGER.MISSING_DISABLE_TIP"));
+        var dismiss = Menus.SmallButton(Menus.Text("SPIRE_MOD_MANAGER.DISMISS_MANAGERS"), () =>
+        {
+            Profiles.DismissMissing();
+            CategoryList.Apply(content); // no mod changed, so rows kept under a filter stay
+        }, name: "DismissMissingButton");
+        Hover.Tip(dismiss, Menus.Text("SPIRE_MOD_MANAGER.MISSING_DISMISS_TIP"));
+        var text = Menus.Format(missing.Count == 1 ? "SPIRE_MOD_MANAGER.MISSING_WARNING_ONE" : "SPIRE_MOD_MANAGER.MISSING_WARNING", ("count", Menus.Number(missing.Count)));
+        Banner(border, search, text, () => BannerCard("SPIRE_MOD_MANAGER.MISSING_TITLE", [.. missing.Select(m => m.Id)]),
+            [show, disable, dismiss], MissingName, "MissingWarning", WarningColor);
     }
 
     // Copies of one mod id both on, in Jordan's words: a yellow warning, Show stepping through those copies, Dismiss for

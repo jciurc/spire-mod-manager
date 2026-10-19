@@ -201,6 +201,7 @@ static class SelfTest
             await TestProfileEditing(menu, screen, outDir);
             await TestUnsavedProfile(menu, screen, content, outDir);
             await TestProfileShare(menu, screen, outDir);
+            await TestSubscribeMissing(menu, screen, content, outDir);
             await TestNotes(menu, screen, content, outDir);
             await TestPendingNotes(menu, screen, content);
             await TestPendingLine(menu, screen, content);
@@ -2787,6 +2788,180 @@ static class SelfTest
     // Sharing a profile as CSV text and importing one (ProfileShare): the format on its own, the Share dialog (from the
     // profile list), Copy and saving, then the Import dialog with our own list and a Better Mod Menu one, its preview,
     // its errors, and an import as one undo step. Starts and ends on the active profile with nothing changed.
+    // A made-up Steam for the subscription checks (the sandbox runs without Steam): each item's answer, set before, and
+    // its download's progress, set as the test goes.
+    sealed class FakeSteam : Subscriptions.ITestSteam
+    {
+        public readonly Dictionary<ulong, Steamworks.EResult> Answers = [];
+        public readonly Dictionary<ulong, float> Downloaded = [];
+        public readonly List<ulong> Asked = [];
+        public Task<Steamworks.EResult> Subscribe(ulong item)
+        {
+            Asked.Add(item);
+            return Task.FromResult(Answers.GetValueOrDefault(item, Steamworks.EResult.k_EResultOK));
+        }
+        public float? Progress(ulong item) => Downloaded.TryGetValue(item, out var done) ? done : null;
+    }
+
+    // Subscribing to a profile's missing mods, with Steam made up: an imported list naming Workshop mods that aren't
+    // installed offers Subscribe in the preview, which then follows each download or says why it failed; the new profile
+    // keeps each item, and its banner (Jordan's design) counts the missing mods, lists them with Show (progress, a failure
+    // and Subscribe again, a mod not on the Workshop), turns them off with Disable missing mods (one undo step), and
+    // Dismiss hides it until the profile is switched to again or its edit discarded. The mod arriving (the game finding
+    // it) takes it off the banner. Save as new keeps the missing mods. Everything made up goes after.
+    static async Task TestSubscribeMissing(Node menu, NModdingScreen screen, Control content, string outDir)
+    {
+        if (Profiles.Active is not { } start || Store.Data.Profiles.FirstOrDefault(p => p != start) == null)
+        {
+            Results.Add("SKIP subscribing to missing mods: needs two profiles");
+            return;
+        }
+        if (Profiles.Edited)
+            Profiles.Save();
+        const ulong Here = 3700000001, Gone = 3700000002;
+        const string HereId = "SmmSubHere", GoneId = "SmmSubGone", LocalId = "SmmSubLocal";
+        var (startName, profiles) = (start.Name, Store.Data.Profiles.Count);
+        var steam = new FakeSteam();
+        steam.Answers[Gone] = Steamworks.EResult.k_EResultFileNotFound;
+        Subscriptions.TestSteam = steam;
+        Node? Dialog(string name) => menu.GetTree().Root.GetNodeOrNull(name);
+        T? Part<T>(string dialog, string name) where T : class => Dialog(dialog)?.FindChild(name, true, false) as T;
+        void Press(string dialog, string name) => Part<BaseButton>(dialog, name)?.EmitSignal(BaseButton.SignalName.Pressed);
+        var border = screen.GetNode<Control>("ModsBorder");
+        Control? Banner() => border.GetNodeOrNull<Control>(LoadOrder.MissingName);
+        string BannerText() => Banner()?.FindChild("MissingWarning", true, false) is Label { } label ? label.Text : "";
+        void BannerPress(string name) => (Banner()?.FindChild(name, true, false) as BaseButton)?.EmitSignal(BaseButton.SignalName.Pressed);
+        string RowText(string id) => Dialog(MissingMods.Name)?.FindChild("Rows", true, false)?.GetNodeOrNull(id) is Node row
+            ? string.Join(" ", row.FindChildren("*", "", true, false).Select(n => n switch
+            {
+                RichTextLabel r => r.GetParsedText(),
+                Label l => l.Text,
+                Button b => $"[{b.Text}]",
+                ProgressBar p => $"bar {p.Value:0.00}",
+                _ => "",
+            }).Where(s => s.Length > 0))
+            : "none";
+        var arrived = new Mod
+        {
+            path = "", modSource = ModSource.SteamWorkshop, state = ModLoadState.AddedAtRuntime,
+            manifest = new ModManifest { id = HereId, name = "Sub Here", version = "1.0.0" },
+        };
+        Compat.SetWorkshopId(arrived, Here);
+        try
+        {
+            // The import: three mods not installed, two on the Workshop (one Steam will refuse), one local.
+            var csv = ProfileCsv.Write([
+                new ProfileCsv.Row(HereId, "Sub Here", "1.0", true, "", Here.ToString()),
+                new ProfileCsv.Row(GoneId, "Sub Gone", "1.0", true, "", Gone.ToString()),
+                new ProfileCsv.Row(LocalId, "Sub Local", "1.0", true, "", ""),
+            ], new ProfileCsv.Options(false, false, false, false));
+            ProfileShare.ShowImport(screen);
+            await Wait(menu, 0.2);
+            if (Part<TextEdit>(ProfileShare.Name, "CsvText") is { } box)
+            {
+                box.Text = csv;
+                box.EmitSignal(TextEdit.SignalName.TextChanged);
+            }
+            await Wait(menu, 0.2);
+            var offer = Part<Button>(ProfileShare.Name, "SubscribeMissingButton");
+            Check("import preview: Subscribe offers the missing mods on the Workshop (not the local one), with Steam",
+                offer is { Visible: true, Text: "Subscribe to 2 missing mods" }, offer == null ? "no button" : $"{offer.Visible} \"{offer.Text}\"");
+            await Capture(screen, outDir, "7f-import-subscribe");
+            Press(ProfileShare.Name, "SubscribeMissingButton");
+            steam.Downloaded[Here] = 0.45f;
+            await Wait(menu, 0.6);
+            var preview = Part<RichTextLabel>(ProfileShare.Name, "Preview")?.GetParsedText() ?? "";
+            Check("import preview: Subscribe asks Steam for both; one downloads (its progress), the other fails and says why; Subscribe offers that one again",
+                steam.Asked.Order().SequenceEqual([Here, Gone]) && preview.Contains("Downloading 45%")
+                && preview.Contains("Couldn't subscribe: it's no longer on the Workshop, or it's private") && offer is { Visible: true, Text: "Subscribe to the missing mod" },
+                $"{string.Join(",", steam.Asked)}; button {offer?.Visible} \"{offer?.Text}\"; {preview.Replace("\n", " | ")}");
+            await Capture(screen, outDir, "7g-import-downloading");
+            Press(ProfileShare.Name, "CreateProfileButton");
+            await Wait(menu, 0.4);
+            var importedName = Profiles.Active?.Name ?? "";
+            var imported = Profiles.Active;
+            Check("the imported profile keeps each missing Workshop mod's item, and the banner counts the three",
+                importedName != startName && imported?.Mods.Any(m => m.Id == HereId && m.Copy == $"w:{Here}" && m.Enabled) == true
+                && imported.Mods.Any(m => m.Id == LocalId && m.Copy == null && m.Enabled) && Banner() is { Visible: true }
+                && BannerText() == "This profile has 3 enabled mods that aren't installed.", $"{importedName}: {BannerText()}");
+            await Capture(screen, outDir, "2l-missing-banner");
+
+            // Show: the list, as it was when it opened.
+            BannerPress("ShowMissingButton");
+            await Wait(menu, 0.4);
+            Check("Show lists the missing mods: one downloading with its bar, one that failed with Subscribe again, the local one not on the Workshop",
+                RowText(HereId).Contains("bar 0.45") && RowText(HereId).Contains("Downloading 45%")
+                && RowText(GoneId).Contains("Couldn't subscribe") && RowText(GoneId).Contains("[Subscribe]") && RowText(LocalId).Contains("Not on the Workshop")
+                && Part<Button>(MissingMods.Name, "SubscribeAllButton") is { Text: "Subscribe to all (1)" },
+                $"{RowText(HereId)} | {RowText(GoneId)} | {RowText(LocalId)} | {Part<Button>(MissingMods.Name, "SubscribeAllButton")?.Text}");
+            await Capture(screen, outDir, "2m-missing-list");
+
+            // The download lands: the game finds the mod, the list says so and the banner counts two.
+            GameInstalls(arrived);
+            await Wait(menu, 0.6);
+            NModalContainer.Instance?.Clear();
+            CategoryList.Redraw(content);
+            await Wait(menu, 0.3);
+            Check("the mod arriving: the list says it's installed, and the banner counts the two left",
+                RowText(HereId).Contains("Installed: loads after a relaunch") && BannerText() == "This profile has 2 enabled mods that aren't installed.",
+                $"{RowText(HereId)} | {BannerText()}");
+            Modal.Close(MissingMods.Name);
+            await Wait(menu, 0.2);
+
+            // Dismiss: gone; back after switching away and back; gone again, then back after Discard.
+            BannerPress("DismissMissingButton");
+            await Wait(menu, 0.3);
+            var dismissed = Banner() == null;
+            Profiles.SwitchTo(Store.Data.Profiles.First(p => p.Name == startName), screen);
+            await Wait(menu, 0.3);
+            var awayClear = Banner() == null;
+            Profiles.SwitchTo(Store.Data.Profiles.First(p => p.Name == importedName), screen);
+            await Wait(menu, 0.3);
+            var backShown = Banner() != null;
+            Profiles.DismissMissing();
+            Profiles.Discard(screen);
+            await Wait(menu, 0.3);
+            Check("Dismiss hides the banner; switching to the profile again shows it, and so does Discard",
+                dismissed && awayClear && backShown && Banner() != null, $"dismissed {dismissed}, away {awayClear}, back {backShown}, after Discard {Banner() != null}");
+
+            // Save as new keeps the missing mods.
+            var copy = Profiles.Create(Profiles.NewKind.SaveAsNew, "SmmSubCopy", screen);
+            await Wait(menu, 0.3);
+            Check("Save as new keeps the missing mods, as Save does",
+                copy.Mods.Any(m => m.Id == GoneId && m.Enabled && m.Copy == $"w:{Gone}") && copy.Mods.Any(m => m.Id == LocalId && m.Enabled),
+                string.Join(", ", copy.Mods.Where(m => m.Id.StartsWith("SmmSub")).Select(m => $"{m.Id}={m.Enabled}/{m.Copy}")));
+
+            // Disable missing mods: off in the profile, the banner gone, one undo step back.
+            var steps = History.Steps(History.Track.List);
+            BannerPress("DisableMissingButton");
+            await Wait(menu, 0.3);
+            var off = Profiles.Active?.Mods.Where(m => m.Id is GoneId or LocalId).All(m => !m.Enabled) == true && Banner() == null
+                && History.Steps(History.Track.List) == steps + 1;
+            History.Undo();
+            await Wait(menu, 0.3);
+            Check("Disable missing mods turns them off in the profile (the banner goes), one undo step that brings them back",
+                off && Profiles.Missing().Count == 2 && Banner() != null, $"off {off}, missing after undo {Profiles.Missing().Count}");
+        }
+        finally
+        {
+            Modal.Close(MissingMods.Name);
+            ProfileShare.Close();
+            GameForgets(arrived);
+            Subscriptions.TestSteam = null;
+            Subscriptions.TestReset();
+            if (Store.Data.Profiles.FirstOrDefault(p => p.Name == startName) is { } back)
+                Profiles.SwitchTo(back, screen);
+            History.Quietly(data => data.Profiles.RemoveAll(p => p.Name != startName && p.Mods.Any(m => m.Id.StartsWith("SmmSub"))));
+            Profiles.Track();
+            CategoryList.Redraw(content);
+            await Wait(menu, 0.3);
+        }
+        Check("as it started: the start profile active, the made-up profiles gone, no missing-mods banner",
+            Profiles.Active?.Name == startName && Store.Data.Profiles.Count == profiles && Banner() == null
+            && !Store.Data.Profiles.Any(p => p.Mods.Any(m => m.Id.StartsWith("SmmSub"))),
+            $"{Profiles.Active?.Name}, {Store.Data.Profiles.Count} profiles (were {profiles})");
+    }
+
     static async Task TestProfileShare(Node menu, NModdingScreen screen, string outDir)
     {
         var bar = screen.GetNode("ModsBorder/SpireModManagerProfileBar");

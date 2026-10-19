@@ -186,6 +186,7 @@ static class Profiles
     // profile and coming back finds it as it was), its saved state otherwise.
     public static void SwitchTo(Profile target, NModdingScreen screen)
     {
+        _missingDismissed = null; // its missing-mods banner shows again
         Track(); // the profile being left keeps its edit
         Apply(target.Edited ?? target.Mods, screen); // mods it has never seen stay as they are,
         TakeIn(target); // and it keeps them that way from now on
@@ -243,6 +244,7 @@ static class Profiles
     {
         if (Active is not { } profile)
             return;
+        _missingDismissed = null; // its missing-mods banner shows again
         Apply(profile.Mods, screen);
         HoldCopies(profile);
         (profile.Edited, profile.EditedAt) = (null, null);
@@ -251,12 +253,51 @@ static class Profiles
         Switched?.Invoke();
     }
 
+    // A mod a profile has on that isn't installed (a list imported, or a mod uninstalled since): its Workshop item where
+    // the profile knows it ("w:<item>"), else none (a local mod, or one listed without a link).
+    public record MissingMod(string Id, ModSource Source, ulong? Item);
+
+    // The profile's (default: the active one's) missing mods, as it is now: its unsaved edit if it has one.
+    public static List<MissingMod> Missing(Profile? profile = null)
+    {
+        if ((profile ?? Active) is not { } p)
+            return [];
+        var installed = Installed().Select(m => (m.Id, m.Source)).ToHashSet();
+        return [.. (p.Edited ?? p.Mods).Where(m => m.Enabled && !Manager(m.Id) && !installed.Contains((m.Id, m.Source)))
+            .DistinctBy(m => (m.Id, m.Source)).Select(m => new MissingMod(m.Id, m.Source, ItemOf(m.Copy)))];
+    }
+
+    static ulong? ItemOf(string? copy) => copy is { } c && c.StartsWith("w:") && ulong.TryParse(c[2..], out var item) ? item : null;
+
+    // "Disable missing mods": the active profile's missing mods off, in its saved state and its edit, so it no longer
+    // has them on (it still knows them: a later install arrives off). One undo step.
+    public static void DisableMissing(NModdingScreen screen)
+    {
+        if (Active is not { } profile || Missing(profile).Select(m => (m.Id, m.Source)).ToHashSet() is not { Count: > 0 } missing)
+            return;
+        foreach (var list in new[] { profile.Mods, profile.Edited })
+            if (list != null)
+                for (var i = 0; i < list.Count; i++)
+                    if (list[i] is { Enabled: true } entry && missing.Contains((entry.Id, entry.Source)))
+                        list[i] = entry with { Enabled = false };
+        Store.Save();
+        Redraw(screen);
+        Switched?.Invoke();
+    }
+
+    // The missing-mods banner dismissed, for the active profile, this session: it shows again once the profile is
+    // switched to again, or its edit discarded.
+    static string? _missingDismissed;
+    public static bool MissingDismissed => Active is { } profile && _missingDismissed == profile.Name;
+    public static void DismissMissing() => _missingDismissed = Active?.Name;
+
     public enum NewKind { Blank, Duplicate, SaveAsNew }
 
     // A new profile, made active:
     // - Blank: nothing on but this mod;
     // - Duplicate: a copy of the active profile's saved state (the active one keeps any unsaved edit);
-    // - SaveAsNew: the mod list as it is now (the active profile's edit moves into it).
+    // - SaveAsNew: the mod list as it is now (the active profile's edit moves into it), with the mods it keeps that
+    //   aren't installed, as Save keeps them.
     public static Profile Create(NewKind kind, string name, NModdingScreen screen)
     {
         var from = Active;
@@ -264,6 +305,7 @@ static class Profiles
         {
             NewKind.Blank => Installed().Select(m => new ProfileMod(m.Id, m.Source, m.Id == ModEntry.ModId)).ToList(),
             NewKind.Duplicate when from != null => from.Mods.ToList(),
+            NewKind.SaveAsNew when from != null => Merge(from.Edited ?? from.Mods, Current()),
             _ => Current(),
         };
         var profile = new Profile { Name = name, Mods = mods, SavedAt = DateTime.Now };
@@ -352,8 +394,10 @@ static class Profiles
         // once installed.
         foreach (var rows in missing.GroupBy(e => (e.Id, Source: e.WorkshopLink.Length > 0 ? ModSource.SteamWorkshop : ModSource.ModsDirectory)))
         {
+            // A Workshop mod keeps its item ("w:<item>": the copy that loads once installed), so it can be subscribed to
+            // from the missing-mods list later.
             var loads = rows.FirstOrDefault(e => e.Enabled);
-            mods.Add(new ProfileMod(rows.Key.Id, rows.Key.Source, loads != null, rows.Count() > 1 && loads != null ? CopyOfLink(loads.WorkshopLink) : null));
+            mods.Add(new ProfileMod(rows.Key.Id, rows.Key.Source, loads != null, rows.Key.Source == ModSource.SteamWorkshop ? CopyOfLink((loads ?? rows.First()).WorkshopLink) : null));
         }
         return new ImportPlan(mods, on, off, same, unlisted, missing);
     }
