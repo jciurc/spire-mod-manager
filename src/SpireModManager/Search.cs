@@ -7,8 +7,8 @@ using MegaCrit.Sts2.Core.Nodes.Screens.ModdingScreen;
 
 namespace SpireModManager;
 
-// The search box over the list. Every word must appear (any case) in a mod's name, id, author, alias, notes,
-// category or tags, or the whole query without spaces in one of them; punctuation and symbols count as spaces, in the
+// The search box over the list. Every word must appear (any case) in a mod's name, id, author, alias, notes, category
+// or tags, or start a word of its description, or the whole query without spaces be in one of the short fields; punctuation and symbols count as spaces, in the
 // search and in the mod's text ("dont" finds "Don't", "spire-mod" finds "Spire Mod"). "#tag" matches a whole tag,
 // "@author" the author, and "text in quotes" that exact text, spaces, symbols and case too. A "-" before any of them
 // leaves out the mods that match it ("#stable -#beta"). Clicking a tag or author searches for it, Shift-click adds or
@@ -43,8 +43,26 @@ static class Search
 
     // A typed word's pieces (the parts between its punctuation) side by side in one field: with a space between them
     // ("test-fixes" finds "Test Fixes") or none ("spire-mod" finds "SpireMod", "don't" and "dont" find "Don't").
+    // In the description, each at the start of one of its words, punctuation gone or as spaces ("dont" finds "Don't",
+    // "per-card" finds "per-card" and "percard").
     static bool Found(Haystack text, string spaced, string joined) => text.All.Contains(spaced, StringComparison.OrdinalIgnoreCase)
-        || text.Squeezed.Any(f => f.Contains(joined, StringComparison.OrdinalIgnoreCase));
+        || text.Squeezed.Any(f => f.Contains(joined, StringComparison.OrdinalIgnoreCase))
+        || StartsWord(text.Description, spaced) || StartsWord(text.DescriptionSpaced, spaced) || StartsWord(text.Description, joined);
+
+    // Whether a word is in folded text at a word's start: after a space or at the start, or anywhere in a script written
+    // without spaces (Chinese, Japanese, Thai...), where words can't be told apart.
+    static bool StartsWord(string text, string word)
+    {
+        if (word.Length == 0)
+            return false;
+        for (var at = text.IndexOf(word, StringComparison.OrdinalIgnoreCase); at >= 0; at = text.IndexOf(word, at + 1, StringComparison.OrdinalIgnoreCase))
+            if (at == 0 || text[at - 1] == ' ' || Spaceless(text[at - 1]) || Spaceless(word[0]))
+                return true;
+        return false;
+    }
+
+    static bool Spaceless(char c) => c is >= '\u2E80' and <= '\u9FFF' or >= '\uF900' and <= '\uFAFF' or >= '\uFF66' and <= '\uFF9F'
+        or >= '\u0E00' and <= '\u0EFF' or >= '\u1000' and <= '\u109F' or >= '\u1780' and <= '\u17FF' || char.IsSurrogate(c);
 
     // Whether a search says anything: "-", "!!!" or a lone quote alone count as an empty box.
     public static bool HasTerms(string filter) => Parse(filter).Terms.Count > 0;
@@ -84,7 +102,9 @@ static class Search
 
     // The text a search is matched against: every field as it is (for exact text), the same with punctuation and
     // symbols taken out (for words; fields a line apart, so a match stays in one), and each field without them or spaces.
-    public record Haystack(string Raw, string All, string[] Squeezed);
+    // The description apart (Description, folded with punctuation gone and as spaces): long text, so a word must start
+    // one of its words ("ui" doesn't find "build"), and it isn't squeezed ("hero" doesn't find "the roster").
+    public record Haystack(string Raw, string All, string[] Squeezed, string Description, string DescriptionSpaced);
 
     static Haystack HaystackOf(Mod mod)
     {
@@ -92,8 +112,15 @@ static class Search
         string?[] fields = [mod.manifest?.name, mod.manifest?.id, mod.manifest?.author, info?.Alias, info?.Notes, info?.Category,
             .. Tags.For(mod).Select(c => c.Text), .. WorkshopInfo.For(mod)?.Tags ?? []];
         var folded = fields.OfType<string>().Select(f => Fold(f, "")).ToList();
-        return new Haystack(string.Join('\n', fields), string.Join('\n', folded), [.. folded.Select(Squeeze)]);
+        // As the panel shows it: its markup's pairs taken out ("[gold]Art[/gold]" is "Art", not "gold"), a picture's
+        // path with its tag, and [lb] and [rb] as the brackets they show.
+        var description = mod.manifest?.description is { Length: > 0 } text
+            ? ModDetails.WithoutTags(Picture.Replace(text, "")).Replace("[lb]", "[").Replace("[rb]", "]") : "";
+        return new Haystack(string.Join('\n', fields.Append(description)), string.Join('\n', folded), [.. folded.Select(Squeeze)],
+            Fold(description, ""), Fold(description, " "));
     }
+
+    static readonly Regex Picture = new(@"\[img[^\]]*\].*?\[/img\]", RegexOptions.Singleline | RegexOptions.IgnoreCase);
 
     // Letters and numbers stay, with the accents on them; a run of spaces is one space; punctuation and symbols become
     // between (nothing for a mod's text, so "Don't" reads "Dont"; a space for a search, so "spire-mod" is two words).
@@ -143,9 +170,6 @@ static class Search
 
     public static void ByAuthor(Node near, string author, bool add) => Put(near, "@", author, add);
 
-    // Plain words (a Workshop tag): found in any field, like typing them.
-    public static void ByText(Node near, string text, bool add) => Put(near, "", text, add);
-
     static void Put(Node near, string kind, string value, bool add)
     {
         if (CategoryList.ScreenOf(near)?.GetNodeOrNull<LineEdit>("ModsBorder/SpireModManagerSearch") is not { } box)
@@ -165,7 +189,7 @@ static class Search
         var wanted = Typed.Matches(term).Select(m => m.Value).ToList();
         if (wanted.Count == 0)
             return search;
-        // A plain term can be several words (a Workshop tag like "Tools & APIs"): they count when found side by side.
+        // A term can be several (a chip's own search, "#Stable -#Beta"): they count when found side by side.
         bool At(int i) => i + wanted.Count <= terms.Count && Enumerable.Range(0, wanted.Count).All(j => Same(terms[i + j], wanted[j]));
         if (!add)
             return terms.Count == wanted.Count && At(0) ? "" : string.Join(' ', wanted);
