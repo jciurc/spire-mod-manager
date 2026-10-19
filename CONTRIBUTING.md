@@ -77,7 +77,8 @@ Commands:
   - `--real` (maintainer only): a read-only tour with your own mods (all switched off) and a copy of your data,
     in place of the test mods. Its output holds your own mod list, so it never goes into a pull request.
 - `dotnet run tools/dev.cs launch`: opens the sandboxed game to try things by hand (`--first-run`,
-  `--first-run-bmm` and `--workshop` as for `test`). It returns when you close the game.
+  `--first-run-bmm` and `--workshop` as for `test`). It returns when you close the game. Every run starts with the
+  sandbox's saves empty (progress, runs, history); `--keep-saves` keeps them, to try something across launches.
 - `dotnet run tools/dev.cs smoke`: the release build from `dotnet run build.cs --dist`, which has no self-test
   inside, in the sandbox until the main menu has loaded. It fails if the build is older than the checked-out
   commit, the mod didn't start or kept its dev switches, the main menu never loaded, the game exited on its own,

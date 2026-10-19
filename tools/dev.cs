@@ -14,7 +14,8 @@
 //                                      then one that fails to start (made up) with Test Retired on, our dialog answered
 //                                     --stable, with any of them: the stable branch's game, in its own dev copy
 //   dotnet run tools/dev.cs launch    build, open the sandboxed game to try by hand (--first-run,
-//                                     --first-run-bmm and --workshop as for test); returns when you close it
+//                                     --first-run-bmm and --workshop as for test); returns when you close it;
+//                                     --keep-saves keeps the sandbox's saves, which every run empties
 //   dotnet run tools/dev.cs smoke     the release build (dist/SpireModManager) headless until the main menu
 //                                     loads; fails if our mod didn't start or logged errors
 //
@@ -64,7 +65,7 @@ var workshopMods = new List<string>(); // the mod ids in those items' manifests,
 var twins = args.Contains("--twins"); // two --workshop items of one mod id on purpose (the self-test's two-copies check)
 
 if (mode is not ("test" or "launch" or "smoke"))
-    return Fail("usage: dotnet run tools/dev.cs [test [--window] [--bmm[-after]] [--bmm-local] [--real|--first-run|--first-run-bmm|--crash-prepare|--crash]|launch [--first-run|--first-run-bmm]|smoke [--bmm]] [--workshop <id>[,<id>...] [--twins]] [--stable] [--no-wait]");
+    return Fail("usage: dotnet run tools/dev.cs [test [--window] [--bmm[-after]] [--bmm-local] [--real|--first-run|--first-run-bmm|--crash-prepare|--crash]|launch [--first-run|--first-run-bmm] [--keep-saves]|smoke [--bmm]] [--workshop <id>[,<id>...] [--twins]] [--stable] [--no-wait]");
 if (real && firstRun)
     return Fail("--real brings your own data, so it can't be a first run");
 if (crashPrepare && crash)
@@ -161,6 +162,11 @@ if (WaitForOtherDevCopies() is { } stillBusy)
     return Fail(stillBusy);
 SyncMods();
 PrepareSandbox((mode is "test" or "smoke" || firstRun) && !crash); // --crash keeps --crash-prepare's last working setup
+// Saves start empty every run (the guidelines' sts2-mods add-on): progress, runs and history in the sandbox, so no other
+// mod's ids and no half-played run are left from an earlier run, in any repo. launch --keep-saves keeps them, to try
+// something across launches by hand. Nothing is backed up: only dev runs write there.
+if (!(mode == "launch" && args.Contains("--keep-saves")))
+    EmptySaves();
 
 var start = new ProcessStartInfo(Path.Combine(DevDir, "SlayTheSpire2.exe"), ["--force-steam", "off", "--log-file", logPath])
     { WorkingDirectory = DevDir };
@@ -533,6 +539,20 @@ void SyncMods()
 // Mods accepted with Better Mod Menu off (it patches the same screen), and for tests our data reset
 // to the fixture (none for a first run) and Better Mod Menu's cleared (its fixture for --first-run-bmm).
 // The game creates settings.save on first launch; a minimal one is enough before that.
+// The sandbox's save folders emptied: profileN\saves and modded\profileN\saves (each profile's progress, runs, history).
+void EmptySaves()
+{
+    var folders = new[] { sandbox, Path.Combine(sandbox, "modded") }.Where(Directory.Exists)
+        .SelectMany(dir => Directory.GetDirectories(dir, "profile*")).Select(profile => Path.Combine(profile, "saves")).Where(Directory.Exists);
+    foreach (var saves in folders)
+    {
+        foreach (var file in Directory.GetFiles(saves))
+            File.Delete(file);
+        foreach (var dir in Directory.GetDirectories(saves))
+            Directory.Delete(dir, recursive: true);
+    }
+}
+
 void PrepareSandbox(bool resetData)
 {
     Directory.CreateDirectory(sandbox);
