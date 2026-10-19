@@ -2954,11 +2954,29 @@ static class SelfTest
             Modal.Close(MissingMods.Name);
             ProfileShare.Close();
             GameForgets(arrived);
+            // The row the game made for the arrival goes with it, as after every made-up arrival.
+            foreach (var row in content.GetChildren().OfType<NModMenuRow>().Where(r => r.Mod == arrived).ToList())
+            {
+                content.RemoveChild(row);
+                row.QueueFree();
+            }
             Subscriptions.TestSteam = null;
             Subscriptions.TestReset();
             if (Store.Data.Profiles.FirstOrDefault(p => p.Name == startName) is { } back)
                 Profiles.SwitchTo(back, screen);
-            History.Quietly(data => data.Profiles.RemoveAll(p => p.Name != startName && p.Mods.Any(m => m.Id.StartsWith("SmmSub"))));
+            // The made-up profiles, and the arrival the start profile took in (off) while it wasn't active.
+            History.Quietly(data =>
+            {
+                data.Profiles.RemoveAll(p => p.Name != startName && p.Mods.Any(m => m.Id.StartsWith("SmmSub")));
+                foreach (var p in data.Profiles)
+                {
+                    p.Mods.RemoveAll(m => m.Id.StartsWith("SmmSub"));
+                    p.Edited?.RemoveAll(m => m.Id.StartsWith("SmmSub"));
+                }
+            });
+            // The game's list keeps a mod it found (the arrival), and switching back wrote the start profile's entry for
+            // it there too: gone with it, as after every made-up arrival.
+            SaveManager.Instance.SettingsSave.ModSettings?.ModList.RemoveAll(e => e.Id.StartsWith("SmmSub"));
             Profiles.Track();
             CategoryList.Redraw(content);
             await Wait(menu, 0.3);
