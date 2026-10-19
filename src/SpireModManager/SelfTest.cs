@@ -121,6 +121,7 @@ static class SelfTest
             await TestSameIdLaunchGuard(menu, outDir);
             await TestTranslationsFolder(menu);
             await TestTranslations(menu);
+            await TestModDoctorFile(menu, outDir);
             await TestPrewarm(menu);
 
             var screen = menu.SubmenuStack.PushSubmenuType<NModdingScreen>();
@@ -2249,6 +2250,46 @@ static class SelfTest
             File.Delete(file + ".txt");
             LocManager.Instance.SetLanguage(start);
         }
+    }
+
+    // Mod Doctor's file (no Mod Doctor here: written by hand, as it would for this process), read where it writes now,
+    // mod_data/ModDoctor/startup.json, and at the user folder's top where it wrote before its move, the new place first.
+    // In a folder of the test's own, as the game's user folder (the real game's too).
+    static async Task TestModDoctorFile(Node menu, string outDir)
+    {
+        var top = Path.Combine(outDir, "mod-doctor-file");
+        string[] files = [Path.Combine(top, "mod_data", ModDoctor.ModId, "startup.json"), Path.Combine(top, "mod_doctor_startup.json")];
+        ModDoctor.TestFolder = top;
+        using var self = System.Diagnostics.Process.GetCurrentProcess();
+        void Write(string file, string suspect)
+        {
+            Directory.CreateDirectory(Path.GetDirectoryName(file) ?? top);
+            File.WriteAllText(file, new System.Text.Json.Nodes.JsonObject
+            {
+                ["version"] = 1, ["processId"] = System.Environment.ProcessId, ["processStartUtc"] = self.StartTime.ToUniversalTime().ToString("o"),
+                ["fatal"] = new System.Text.Json.Nodes.JsonObject { ["kind"] = "test", ["message"] = "made up", ["step"] = "test", ["suspects"] = new System.Text.Json.Nodes.JsonArray(suspect) },
+                ["failedMods"] = new System.Text.Json.Nodes.JsonArray(),
+            }.ToJsonString());
+        }
+        var seen = new List<string>();
+        try
+        {
+            Write(files[0], "SmmNewPlace");
+            seen.Add($"new {string.Join(",", await ModDoctor.Suspects(menu))}");
+            File.Delete(files[0]);
+            Write(files[1], "SmmOldPlace");
+            seen.Add($"old {string.Join(",", await ModDoctor.Suspects(menu))}");
+            Write(files[0], "SmmNewPlace");
+            seen.Add($"both {string.Join(",", await ModDoctor.Suspects(menu))}");
+        }
+        finally
+        {
+            foreach (var file in files)
+                File.Delete(file);
+            ModDoctor.TestFolder = null;
+        }
+        Check("Mod Doctor's file: read where it writes now, else where it wrote before its move; the new place first",
+            seen.SequenceEqual(["new SmmNewPlace", "old SmmOldPlace", "both SmmNewPlace"]), string.Join(" | ", seen));
     }
 
     // The first-run import reads Better Mod Menu's file as it does: comments and trailing commas, its old format (just
