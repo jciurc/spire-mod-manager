@@ -692,7 +692,9 @@ static IDisposable? TakeDevRunLock(string what, bool noWait, out string? refused
     {
         try
         {
-            return JsonNode.Parse(File.ReadAllText(holderFile)) is JsonObject held
+            // Shared, so reading it never stops its holder deleting it.
+            using var stream = new FileStream(holderFile, FileMode.Open, FileAccess.Read, FileShare.ReadWrite | FileShare.Delete);
+            return JsonNode.Parse(new StreamReader(stream).ReadToEnd()) is JsonObject held
                 ? $"{held["repo"]} ({held["mode"]}, process {held["pid"]}, since {held["started"]})" : "another run";
         }
         catch
@@ -724,10 +726,18 @@ static IDisposable? TakeDevRunLock(string what, bool noWait, out string? refused
     {
         // the last holder died without letting go: ours now, and its file is stale
     }
-    File.WriteAllText(holderFile, new JsonObject
+    // The holder file only names us for those waiting: if it can't be written, the lock still holds.
+    try
     {
-        ["repo"] = "spire-mod-manager", ["mode"] = what, ["pid"] = Environment.ProcessId, ["started"] = DateTime.UtcNow.ToString("yyyy-MM-ddTHH:mm:ssZ"),
-    }.ToJsonString());
+        File.WriteAllText(holderFile, new JsonObject
+        {
+            ["repo"] = "spire-mod-manager", ["mode"] = what, ["pid"] = Environment.ProcessId, ["started"] = DateTime.UtcNow.ToString("yyyy-MM-ddTHH:mm:ssZ"),
+        }.ToJsonString());
+    }
+    catch (Exception e) when (e is IOException or UnauthorizedAccessException)
+    {
+        Console.WriteLine($"(couldn't write {holderFile}: {e.Message}; the lock holds all the same)");
+    }
     return new DevRunLock(mutex, holderFile);
 }
 
@@ -775,7 +785,8 @@ static extern bool SetWindowPos(IntPtr window, IntPtr insertAfter, int x, int y,
 [DllImport("user32.dll")]
 static extern bool SetForegroundWindow(IntPtr window);
 
-// Lets the shared dev-run lock go: its holder file, then the mutex.
+// Lets the shared dev-run lock go: its holder file, then the mutex, which is released whatever the file does. There's
+// no Ctrl+C handler: Ctrl+C ends the process, which leaves the mutex abandoned, and that counts as free.
 sealed class DevRunLock(Mutex mutex, string holderFile) : IDisposable
 {
     public void Dispose()
@@ -784,10 +795,14 @@ sealed class DevRunLock(Mutex mutex, string holderFile) : IDisposable
         {
             File.Delete(holderFile);
         }
-        catch (IOException)
+        catch (Exception e) when (e is IOException or UnauthorizedAccessException)
         {
+            // a stale file is overwritten by the next holder
         }
-        mutex.ReleaseMutex();
-        mutex.Dispose();
+        finally
+        {
+            mutex.ReleaseMutex();
+            mutex.Dispose();
+        }
     }
 }
