@@ -1,3 +1,4 @@
+using Godot;
 using MegaCrit.Sts2.Core.Modding;
 
 namespace SpireModManager;
@@ -13,6 +14,12 @@ static class Installed
     // Raised when one is added.
     public static event Action? Added;
 
+    // The frame the last one came in, and whether that's this one or the one before: the game announces a new mod as a
+    // change of the mod list (OnModEnabledOrDisabled) as it comes, which isn't the player's step. Frames, not time: a
+    // player's click soon after is a step.
+    static ulong _arrivedIn;
+    public static bool JustArrived => _arrivedIn != 0 && Engine.GetProcessFrames() - _arrivedIn <= 1;
+
     public static void Watch() => ModManager.OnModDetected += Detected;
 
     public static void Detected(Mod mod)
@@ -25,6 +32,7 @@ static class Installed
             return; // an update of a mod loaded at launch, not a new mod
         _mods.RemoveAll(Same);
         _mods.Add(mod);
+        _arrivedIn = Engine.GetProcessFrames();
         Added?.Invoke();
     }
 

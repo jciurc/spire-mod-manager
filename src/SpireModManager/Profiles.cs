@@ -65,8 +65,9 @@ static class Profiles
         Track();
     }
 
-    // A mod installed while the game runs: the active profile takes it in at once (on, as the game has it), before
-    // the player can untick it, so unticking it is an edit of that profile. A second copy of a mod from one source: every
+    // A mod installed while the game runs: the active profile takes it in at once as off (the profile was saved before it
+    // existed), so the mod arriving on is that profile's unsaved edit: Save keeps it on, Discard turns it off, and
+    // unticking it is no change. A second copy of a mod from one source: every
     // profile holds the copy picked (the one that was there), as at launch, so a switch to the new copy is an edit of the
     // active one. Quietly (see History.Quietly). Fails soft: it runs inside the game's mod detection, beside Changes'
     // own handler.
@@ -76,12 +77,18 @@ static class Profiles
         {
             if (Active is not { } profile || !Unseen(profile).Any() && !Store.Data.Profiles.Any(Unheld))
                 return;
+            var took = false;
             History.Quietly(data =>
             {
-                TakeIn(data.Profiles.FirstOrDefault(p => p.Name == data.ActiveProfile));
+                took |= TakeIn(data.Profiles.FirstOrDefault(p => p.Name == data.ActiveProfile), arrived: true);
                 foreach (var each in data.Profiles)
                     HoldCopies(each);
             });
+            // Its being on is the profile's unsaved edit. The arrival isn't the player's step, and the edit follows the
+            // mod list (worked out again wherever undo lands): now only, not as a step. At the frame's end, once the
+            // rest of the arrival has run (a second copy's entry seeded, its pick held), so the edit is worked out once.
+            if (took)
+                Callable.From(() => History.AsCurrent(Track)).CallDeferred();
             Switched?.Invoke(); // the count beside the name
         }
         catch (Exception e)
@@ -91,12 +98,14 @@ static class Profiles
     }
 
     // Takes the installed mods a profile has never seen into its saved state, and into its unsaved edit if it has
-    // one, as they are in the mod list now (so they don't count as an edit). True if there were any.
-    static bool TakeIn(Profile? profile)
+    // one, as they are in the mod list now (so they don't count as an edit). arrived: installed while the game runs,
+    // so into the saved state as off (it was saved before they existed), and their being on is an edit (Track). True if
+    // there were any.
+    static bool TakeIn(Profile? profile, bool arrived = false)
     {
         if (profile == null || Unseen(profile).ToList() is not { Count: > 0 } unseen)
             return false;
-        profile.Mods.AddRange(unseen);
+        profile.Mods.AddRange(arrived ? unseen.Select(m => m with { Enabled = false }) : unseen);
         if (profile.Edited is { } edit)
         {
             var known = Index(edit);
@@ -146,24 +155,31 @@ static class Profiles
     // overwritten silently: saving is the player's choice.
     public static void Track()
     {
-        if (_applying || Active is not { } profile)
+        if (_applying || Active is not { } profile || !Edit(profile))
             return;
+        Store.Save();
+        Switched?.Invoke(); // the bar shows "Unsaved" or not
+    }
+
+    // Sets a profile's unsaved edit from the mod list now: none when it matches the saved state, otherwise the list
+    // (timestamped). True if it changed.
+    static bool Edit(Profile? profile)
+    {
+        if (profile == null)
+            return false;
         var current = Current();
         if (Same(current, profile.Mods))
         {
             if (profile.Edited == null)
-                return;
+                return false;
             (profile.Edited, profile.EditedAt) = (null, null);
+            return true;
         }
-        else
-        {
-            if (profile.Edited is { } edit && Same(current, edit))
-                return;
-            profile.Edited = Merge(profile.Edited ?? profile.Mods, current);
-            profile.EditedAt = DateTime.Now;
-        }
-        Store.Save();
-        Switched?.Invoke(); // the bar shows "Unsaved" or not
+        if (profile.Edited is { } edit && Same(current, edit))
+            return false;
+        profile.Edited = Merge(profile.Edited ?? profile.Mods, current);
+        profile.EditedAt = DateTime.Now;
+        return true;
     }
 
     // Writes a profile to the mod list and makes it active: its unsaved edit if it has one (so leaving a

@@ -1771,6 +1771,80 @@ static class SelfTest
             Check("the plain dialog after a failed start: Restore and restart writes the working list, then relaunches; the dialog goes",
                 asked.IsCompleted && relaunches == 2 && quits == 2 && !Dependencies.IsOn(fixes) && root.GetNodeOrNull(LaunchGuard.PlainDialogName) == null,
                 $"quits {quits}, relaunches {relaunches}, Test Fixes on {Dependencies.IsOn(fixes)}, dialog left {root.GetNodeOrNull(LaunchGuard.PlainDialogName) != null}");
+            // Mod Doctor's suspects (made up: Test UI, which this launch has on, among them, ours and Mod Doctor never
+            // turned off, and one not installed): three named, the rest under "more", whose card names them; a third button
+            // as a quiet link under the game's two, which turns them off and restarts, the rest of this launch's list as it was. Escape
+            // stays the game's Quit.
+            LaunchGuard.TestNoLanguage = false;
+            ModDoctor.TestSuspects = [ModEntry.ModId, ModDoctor.ModId, "SmmTestUi", "SmmTestFixes", "SmmTestLib", "SmmTestNotThere"];
+            void ListAsItWas()
+            {
+                settings.ModList.Clear();
+                settings.ModList.AddRange(listWas.Select(e => new SettingsSaveMod { Id = e.Id, Source = e.Source, IsEnabled = e.IsEnabled }));
+            }
+            bool Listed(string id, bool on) => settings.ModList.Any(e => e.Id == id && e.IsEnabled == on);
+            // Every entry of an id off, whatever its source (a mod listed from two sources has two).
+            bool AllOff(string id) => settings.ModList.Any(e => e.Id == id) && settings.ModList.Where(e => e.Id == id).All(e => !e.IsEnabled);
+            ListAsItWas();
+            var libWasOn = Listed("SmmTestLib", true);
+            asked = LaunchGuard.AskAfterCrash(game, offer);
+            await Wait(menu, 0.8);
+            var popup = NModalContainer.Instance?.OpenModal as Control;
+            var third = popup?.FindChild(LaunchGuard.SuspectsButtonName, true, false) as Control;
+            var (quitButton, restoreButton) = (popup?.GetNodeOrNull<Control>("VerticalPopup/NoButton"), popup?.GetNodeOrNull<Control>("VerticalPopup/YesButton"));
+            // A quiet link under the two, centred on the popup's art, overlapping neither: orange, a pointer over it, lit and
+            // underlined on hover.
+            var art = popup?.GetNodeOrNull<Control>("VerticalPopup");
+            var between = third is LinkButton { Underline: LinkButton.UnderlineMode.OnHover, MouseDefaultCursorShape: Control.CursorShape.PointingHand } link
+                && art != null && quitButton != null && restoreButton != null && link.GetGlobalRect().Position.Y >= restoreButton.GetGlobalRect().End.Y - 4
+                && Math.Abs(link.GetGlobalRect().GetCenter().X - art.GetGlobalRect().GetCenter().X) < 2 && link.Size.X > 100
+                && !link.GetGlobalRect().Intersects(quitButton.GetGlobalRect()) && !link.GetGlobalRect().Intersects(restoreButton.GetGlobalRect())
+                && link.GetThemeColor("font_color") is { R: > 0.9f, G: > 0.6f and < 0.8f, B: < 0.5f } && link.GetThemeColor("font_hover_color") != link.GetThemeColor("font_color")
+                && art.GetNodeOrNull<Control>(Menus.MarkName) is { } mark && mark.GetGlobalRect().Position.Y >= link.GetGlobalRect().End.Y; // our mark under it, clear of it
+            var suspectTexts = string.Join(" | ", PopupTexts());
+            await Capture(menu, outDir, "1h-crash-dialog-suspects");
+            var suspectsCard = popup?.GetNodeOrNull<RichTextLabel>("VerticalPopup/Description") is { } description
+                ? await LinkCard(description, "spire-mod-manager-more-suspects") : "";
+            Check("the dialog with Mod Doctor's suspects: three named, the rest counted as a link whose card names them; a third button, "
+                + "\"Disable suspect mods and restart\", a quiet orange link under Quit and Restore and restart, centred",
+                third is LinkButton { Visible: true, Text: "Disable suspect mods and restart" } && between && suspectTexts.Contains("3 more")
+                && suspectsCard.Contains("Test Fixes") && suspectsCard.Contains("SmmTestNotThere") && !suspectsCard.Contains("Test UI"),
+                $"third {third != null}, between {between}; {suspectTexts}; card: {suspectsCard}");
+            Input.ParseInputEvent(new InputEventKey { Keycode = Key.Escape, Pressed = true });
+            await Wait(menu, 0.1);
+            Input.ParseInputEvent(new InputEventKey { Keycode = Key.Escape, Pressed = false });
+            await Wait(menu, 0.3);
+            Check("Escape on that dialog is still the game's Quit, not the third button", asked.IsCompleted && quits == 3 && relaunches == 2
+                && Listed("SmmTestUi", true) == listWas.Any(e => e.Id == "SmmTestUi" && e.IsEnabled), $"quits {quits}, relaunches {relaunches}");
+            if (!asked.IsCompleted)
+                Press("NoButton");
+            ListAsItWas();
+            asked = LaunchGuard.AskAfterCrash(game, offer);
+            await Wait(menu, 0.8);
+            if ((NModalContainer.Instance?.OpenModal as Node)?.FindChild(LaunchGuard.SuspectsButtonName, true, false) is BaseButton suspectsButton)
+                suspectsButton.EmitSignal(BaseButton.SignalName.Pressed);
+            await Wait(menu, 0.3);
+            Check("Disable suspect mods and restart: this launch's list with Test UI, Test Fixes and Test Framework off (not ours, not Mod Doctor, "
+                + "nothing added for a mod not installed), then a restart; the launch's record goes",
+                asked.IsCompleted && relaunches == 3 && quits == 3 && AllOff("SmmTestUi") && AllOff("SmmTestFixes")
+                && (!libWasOn || AllOff("SmmTestLib")) && Listed(ModEntry.ModId, true) && !settings.ModList.Any(e => e.Id == "SmmTestNotThere")
+                && !File.Exists(pendingPath),
+                $"quits {quits}, relaunches {relaunches}; {string.Join(", ", settings.ModList.Select(e => $"{e.Id}={e.IsEnabled}"))}");
+            // The plain dialog: the third answer as one more button.
+            ListAsItWas();
+            LaunchGuard.TestNoLanguage = true;
+            asked = LaunchGuard.AskAfterCrash(game, offer);
+            await Wait(menu, 0.5);
+            var plainDialog = root.GetNodeOrNull<ConfirmationDialog>(LaunchGuard.PlainDialogName);
+            var plainThird = plainDialog?.FindChildren("*", "Button", true, false).OfType<Button>().Any(b => b.Text == "Disable suspect mods and restart") == true;
+            plainDialog?.EmitSignal(AcceptDialog.SignalName.CustomAction, "disable_suspects");
+            await Wait(menu, 0.3);
+            Check("the plain dialog with suspects: the third button, which turns them off and restarts",
+                plainThird && asked.IsCompleted && relaunches == 4 && quits == 3 && AllOff("SmmTestUi") && Listed(ModEntry.ModId, true),
+                $"button {plainThird}, quits {quits}, relaunches {relaunches}");
+            ModDoctor.TestSuspects = null;
+            ListAsItWas();
+
             // At its longest: more changes than it lists and a game update since, captured to see that it all fits.
             LaunchGuard.TestNoLanguage = false;
             List<LaunchGuard.Entry> many = [.. Enumerable.Range(1, 7).Select(i => Mod($"SmmTestMadeUp{i}", true))];
@@ -1780,10 +1854,16 @@ static class SelfTest
                 await Wait(menu, 0.8);
                 await Capture(menu, outDir, "1g-crash-dialog-longest");
                 var longTexts = string.Join(" | ", PopupTexts());
+                var moreCard = (NModalContainer.Instance?.OpenModal as Node)?.GetNodeOrNull<RichTextLabel>("VerticalPopup/Description") is { } longDescription
+                    ? await LinkCard(longDescription, "spire-mod-manager-more-changes") : "";
+                var noThird = (NModalContainer.Instance?.OpenModal as Node)?.FindChild(LaunchGuard.SuspectsButtonName, true, false) == null;
                 Press("NoButton");
                 await Wait(menu, 0.3);
-                Check("the dialog at its longest (7 changes, a game update since): 4 listed, 3 counted, the update said, the game's message first",
-                    asked.IsCompleted && longTexts.Contains("3 more") && longTexts.Contains("The game itself was updated") && longTexts.Contains(gamesMessage), longTexts);
+                Check("the dialog at its longest (7 changes, a game update since): 4 listed, 3 counted, the update said, the game's message first; "
+                    + "no suspects, so no third button",
+                    asked.IsCompleted && longTexts.Contains("3 more") && longTexts.Contains("The game itself was updated") && longTexts.Contains(gamesMessage) && noThird, longTexts);
+                Check("the dialog at its longest: \"3 more\" is a link whose card names the three changes it counts",
+                    moreCard.Contains("SmmTestMadeUp5") && moreCard.Contains("SmmTestMadeUp7") && !moreCard.Contains("SmmTestMadeUp4"), moreCard);
             }
             else
                 Check("the dialog at its longest: an offer for 7 new mods and a game update since", false, "no offer");
@@ -1793,6 +1873,7 @@ static class SelfTest
             ModEntry.TestQuit = null;
             ModEntry.TestRelaunch = null;
             LaunchGuard.TestNoLanguage = false;
+            ModDoctor.TestSuspects = null;
             game.Transition.Visible = transitionWas;
             NModalContainer.Instance?.Clear();
             root.GetNodeOrNull(LaunchGuard.PlainDialogName)?.QueueFree();
@@ -3550,15 +3631,21 @@ static class SelfTest
         };
         var rowsBefore = content.GetChildren().OfType<NModMenuRow>().ToList();
         var wasEdited = Profiles.Edited;
+        var countsBefore = HistoryBar.Counts();
         GameInstalls(fresh);
         await Wait(menu, 0.4);
         NModalContainer.Instance?.Clear();
         Check("a mod installed now is listed as installed, loading after relaunch",
             HistoryBar.Describe().Any(l => l.Contains("Installed: Fresh Mod") && l.Contains("pending relaunch")), string.Join(" | ", HistoryBar.Describe()));
-        // It joins the active profile at once, on, quietly: no unsaved edit, and Revert all's state has it too.
-        Check("a mod installed now joins the active profile, on, quietly",
-            Profiles.Active?.Mods.Any(m => m.Id == "SmmFreshMod" && m.Enabled) == true && Profiles.Edited == wasEdited && OnInSnapshot(History.Entered, "SmmFreshMod"),
-            $"in the profile {Profiles.Active?.Mods.Any(m => m.Id == "SmmFreshMod")}, edited {wasEdited} -> {Profiles.Edited}, in Revert all's state {OnInSnapshot(History.Entered, "SmmFreshMod")}");
+        // It joins the active profile at once as off (the profile was saved before it existed), so its being on is the
+        // profile's unsaved edit; Revert all's state has it, off, too. Turned on since launch: +1 on the first line.
+        var countsNew = HistoryBar.Counts();
+        Check("a mod installed now joins the active profile as off, so its being on is an unsaved edit; it counts as turned on (+1)",
+            Profiles.Active?.Mods.Any(m => m.Id == "SmmFreshMod" && !m.Enabled) == true && Profiles.Edited
+            && Profiles.UnsavedChanges().On.Any(m => m.Name == "Fresh Mod") && OnInSnapshot(History.Entered, "SmmFreshMod", enabled: false)
+            && countsNew.On == countsBefore.On + 1 && countsNew.Off == countsBefore.Off,
+            $"saved off {Profiles.Active?.Mods.Any(m => m.Id == "SmmFreshMod" && !m.Enabled)}, edited {wasEdited} -> {Profiles.Edited}, "
+            + $"off in Revert all's state {OnInSnapshot(History.Entered, "SmmFreshMod", enabled: false)}, counts {countsBefore} -> {countsNew}");
         Check("a mod installed now gets a New tag, first", Tags.For(fresh).FirstOrDefault()?.Text == "New");
         var freshRow = content.GetChildren().OfType<NModMenuRow>().Except(rowsBefore).FirstOrDefault(r => r.Mod == fresh);
         if (freshRow != null)
@@ -3570,17 +3657,20 @@ static class SelfTest
             Check("unticking a new mod is saved, and Changes says it's disabled",
                 SaveManager.Instance.SettingsSave.ModSettings?.IsModDisabled(fresh) == true
                 && HistoryBar.Describe().Any(l => l.Contains("Fresh Mod") && l.Contains("Disabled")), string.Join(" | ", HistoryBar.Describe()));
-            Check("unticking it is an unsaved edit of the profile", Profiles.Edited && Profiles.UnsavedChanges().Off.Any(m => m.Name == "Fresh Mod"),
-                $"edited {Profiles.Edited}, off: {string.Join(", ", Profiles.UnsavedChanges().Off.Select(m => m.Name))}");
+            var countsOff = HistoryBar.Counts();
+            Check("unticking it matches the profile again (no edit), and the counts go back to before it came (no -1)",
+                Profiles.Edited == wasEdited && !Profiles.UnsavedChanges().Off.Any(m => m.Name == "Fresh Mod") && countsOff == countsBefore,
+                $"edited {wasEdited} -> {Profiles.Edited}, off: {string.Join(", ", Profiles.UnsavedChanges().Off.Select(m => m.Name))}, counts {countsBefore} -> {countsOff}");
             HistoryBar.ShowList(screen);
             await Wait(menu, 0.2);
             await Capture(screen, outDir, "10c-installed-change");
             HistoryBar.CloseList(screen.GetNode<Control>("%ModInfoContainer"));
-            // Undone: before the untick the game had no entry for it (on), and the profile had it on.
+            // Undone: before the untick the game had no entry for it (on), the profile's edit, +1 again.
             History.Undo();
             await Wait(menu, 0.3);
-            Check("undoing the untick: the new mod on again, the profile as it was", SaveManager.Instance.SettingsSave.ModSettings?.IsModDisabled(fresh) == false
-                && Profiles.Edited == wasEdited, $"disabled {SaveManager.Instance.SettingsSave.ModSettings?.IsModDisabled(fresh)}, edited {wasEdited} -> {Profiles.Edited}");
+            Check("undoing the untick: the new mod on again, the profile's unsaved edit again, +1 again", SaveManager.Instance.SettingsSave.ModSettings?.IsModDisabled(fresh) == false
+                && Profiles.Edited && HistoryBar.Counts() == countsNew,
+                $"disabled {SaveManager.Instance.SettingsSave.ModSettings?.IsModDisabled(fresh)}, edited {wasEdited} -> {Profiles.Edited}, counts {HistoryBar.Counts()}");
             content.RemoveChild(freshRow);
             freshRow.QueueFree();
         }
@@ -3588,6 +3678,14 @@ static class SelfTest
             Results.Add("FAIL a mod installed now gets a row");
         GameForgets(fresh);
         SaveManager.Instance.SettingsSave.ModSettings?.ModList.RemoveAll(e => e.Id == "SmmFreshMod");
+        History.Quietly(data =>
+        {
+            foreach (var profile in data.Profiles)
+            {
+                profile.Mods.RemoveAll(m => m.Id == "SmmFreshMod");
+                profile.Edited?.RemoveAll(m => m.Id == "SmmFreshMod");
+            }
+        });
         Profiles.Track(); // its unsaved edit goes with it
         History.Record();
         CategoryList.Redraw(content); // the pending note too
@@ -6734,7 +6832,8 @@ static class SelfTest
             localKey == id && copyKey == $"{id}|w:123" && Store.Data.Copies?.GetValueOrDefault(id) is [var first, "w:123"] && first == $"l:{id}"
             && Store.InfoFor(local) is { } localInfo && Store.InfoFor(copy) is { } copyInfo && localInfo != copyInfo
             && copyInfo.Alias == aliasBefore && copyInfo.Notes == notesBefore && Edits() == edits && History.Steps(History.Track.List) == steps,
-            $"keys {localKey}, {copyKey}; record {string.Join(",", Store.Data.Copies?.GetValueOrDefault(id) ?? [])}; edits {Edits()}");
+            $"keys {localKey}, {copyKey}; record {string.Join(",", Store.Data.Copies?.GetValueOrDefault(id) ?? [])}; edits {Edits()} (were {edits}); "
+            + $"steps {History.Steps(History.Track.List) - steps}; aliases {Store.InfoFor(local)?.Alias}/{Store.InfoFor(copy)?.Alias} (was {aliasBefore}); profile edited {Profiles.Edited}");
 
         // An alias on the new copy: that copy's only.
         Store.EditMod(copyKey, info => info.Alias = "Fixes from the Workshop");
@@ -7869,7 +7968,9 @@ static class SelfTest
         var pairNew = pairPopup.Contains("New mods were detected") && !pairPopup.Contains("A new copy") && pairPicked == "l:PairB";
         History.Undo(); // the switch
         await Wait(menu, 0.3);
-        var backUndone = BackPicked() == "l:Back1" && !Profiles.Edited;
+        // (The pair below arrived on since: the profile's unsaved edit, but nothing about Back.)
+        var backUndone = BackPicked() == "l:Back1" && Profiles.UnsavedChanges() is var (backOn, backOff)
+            && !backOn.Concat(backOff).Any(m => m.Id.StartsWith(Back));
         // Put back: the made-up copies, their rows and our data for them (quietly, in every undo snapshot).
         foreach (var gone in new[] { backSecond, backUpdate, pairFirst, pairSecond })
         {
@@ -8662,6 +8763,27 @@ static class SelfTest
     static Node? Header(Control content, string category) => content.GetNodeOrNull($"Category {category}");
 
     // Every text in the popup open now (the game's modal), for checking its wording.
+    // The card a [url] link in a text brings up (Hover.WatchLinks), hovered with the mouse on the text, then let go: its
+    // words, or "" for none.
+    static async Task<string> LinkCard(RichTextLabel text, string link)
+    {
+        Hover.TestMouse = () => text.GetGlobalRect().GetCenter();
+        try
+        {
+            text.EmitSignal(RichTextLabel.SignalName.MetaHoverStarted, link);
+            await Wait(text, Hover.Delay + 0.3);
+            var card = text.GetTree().Root.FindChild(LaunchGuard.MoreCardName, true, false)?.FindChildren("*", "RichTextLabel", true, false)
+                .OfType<RichTextLabel>().FirstOrDefault()?.GetParsedText() ?? "";
+            text.EmitSignal(RichTextLabel.SignalName.MetaHoverEnded, link);
+            return card;
+        }
+        finally
+        {
+            Hover.TestMouse = null;
+            Hover.Hide();
+        }
+    }
+
     static List<string> PopupTexts() => NModalContainer.Instance?.OpenModal is Node popup
         ? popup.FindChildren("*", "", true, false).Select(n => n is Label l ? l.Text : n is RichTextLabel r ? r.Text : "").ToList() : [];
 
@@ -8762,13 +8884,13 @@ static class SelfTest
             .Select(m => $"{m.Id}/{m.Source}={(m.IsEnabled ? "on" : "off")}").OrderBy(s => s).ToList() ?? [];
 
     // Whether a history snapshot's active profile has the mod, on.
-    static bool OnInSnapshot(History.Snapshot? snapshot, string id)
+    static bool OnInSnapshot(History.Snapshot? snapshot, string id, bool enabled = true)
     {
         if (snapshot == null || JsonNode.Parse(snapshot.Store) is not JsonObject store)
             return false;
         var active = (string?)store["active_profile"];
         return (store["profiles"] as JsonArray ?? []).Any(p => (string?)p?["name"] == active
-            && (p?["mods"] as JsonArray ?? []).Any(m => (string?)m?["id"] == id && (bool?)m?["enabled"] == true));
+            && (p?["mods"] as JsonArray ?? []).Any(m => (string?)m?["id"] == id && (bool?)m?["enabled"] == enabled));
     }
 
     // A banner's fill (LoadOrder.Banner's rounded box): yellow for a warning, red for a problem with the mods, by hue too.
