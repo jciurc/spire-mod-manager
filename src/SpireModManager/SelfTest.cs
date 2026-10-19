@@ -206,6 +206,7 @@ static class SelfTest
             await TestPendingLine(menu, screen, content);
             await TestSearch(menu, screen, content, outDir);
             TestBranchTags();
+            TestDescriptionSearch();
             await TestRedrawCost(menu, screen, content);
             await TestManyMods(menu, screen, content);
             await TestNewMod(menu, screen, content, outDir);
@@ -3696,6 +3697,25 @@ static class SelfTest
             added.QueueFree();
             CategoryList.Apply(content);
         }
+    }
+
+    // A mod's description is searched too (Jordan: "contrast" didn't find Art Roller, whose description says it): its
+    // words, the whole query without spaces, and quoted text; not as a tag. A mod with no description still searches.
+    static void TestDescriptionSearch()
+    {
+        string[] queries = ["contrast", "card art", "cardart", "\"art recoloring\"", "#contrast", "-contrast", "zzz"];
+        var seen = new List<string>();
+        foreach (var (id, description) in new[] { ("SmmDescTest", "Shared card art recoloring: per-card hue, color, contrast."), ("SmmDescNone", null) })
+        {
+            var mod = new Mod
+            {
+                path = "", modSource = ModSource.ModsDirectory, state = ModLoadState.Loaded,
+                manifest = new ModManifest { id = id, name = "Description Test", author = "Someone Careful", description = description },
+            };
+            seen.Add($"{id}: {string.Concat(queries.Select(q => Search.Matches(mod, q) ? "y" : "n"))}");
+        }
+        Check("search finds words in a mod's description (words, joined, quoted; not as a tag); one with none still searches",
+            seen.SequenceEqual(["SmmDescTest: yyyynnn", "SmmDescNone: nnnnnyn"]), string.Join(" | ", seen));
     }
 
     // Stable and Beta, by the game's own branch rule over a Workshop mod's supported range (made-up mods and details):

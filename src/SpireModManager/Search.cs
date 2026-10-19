@@ -7,8 +7,8 @@ using MegaCrit.Sts2.Core.Nodes.Screens.ModdingScreen;
 
 namespace SpireModManager;
 
-// The search box over the list. Every word must appear (any case) in a mod's name, id, author, alias, notes,
-// category or tags, or the whole query without spaces in one of them; punctuation and symbols count as spaces, in the
+// The search box over the list. Every word must appear (any case) in a mod's name, id, author, description, alias,
+// notes, category or tags, or the whole query without spaces in one of them; punctuation and symbols count as spaces, in the
 // search and in the mod's text ("dont" finds "Don't", "spire-mod" finds "Spire Mod"). "#tag" matches a whole tag,
 // "@author" the author, and "text in quotes" that exact text, spaces, symbols and case too. A "-" before any of them
 // leaves out the mods that match it ("#stable -#beta"). Clicking a tag or author searches for it, Shift-click adds or
@@ -89,7 +89,7 @@ static class Search
     static Haystack HaystackOf(Mod mod)
     {
         var info = Store.InfoFor(mod);
-        string?[] fields = [mod.manifest?.name, mod.manifest?.id, mod.manifest?.author, info?.Alias, info?.Notes, info?.Category,
+        string?[] fields = [mod.manifest?.name, mod.manifest?.id, mod.manifest?.author, mod.manifest?.description, info?.Alias, info?.Notes, info?.Category,
             .. Tags.For(mod).Select(c => c.Text), .. WorkshopInfo.For(mod)?.Tags ?? []];
         var folded = fields.OfType<string>().Select(f => Fold(f, "")).ToList();
         return new Haystack(string.Join('\n', fields), string.Join('\n', folded), [.. folded.Select(Squeeze)]);
