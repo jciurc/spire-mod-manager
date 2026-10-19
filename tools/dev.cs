@@ -174,12 +174,31 @@ if (File.Exists(Path.Combine(DevDir, "override.cfg")))
     File.Delete(Path.Combine(DevDir, "override.cfg")); // an earlier no-focus experiment: it kept the window on top
 var previousForeground = GetForegroundWindow();
 
-// Launch waits for you to close the game, so the shared dev-run lock is held while it's open, as for every mode.
+// Launch waits for you to close the game, so the shared dev-run lock is held while it's open, as for every mode. A
+// relaunch (our Relaunch game, the crash dialog's restart) starts a new game from the dev copy as the first exits: so
+// it waits until none has run from there for a few seconds.
 if (mode == "launch")
 {
     using var launched = Process.Start(start) ?? throw new InvalidOperationException("could not start the game");
     Console.WriteLine($"launched the dev copy in the sandbox (log: {logPath}); this returns when you close the game");
     launched.WaitForExit();
+    var devCopy = Path.GetFullPath(DevDir).TrimEnd('\\') + "\\";
+    bool DevGameRuns() => Process.GetProcessesByName("SlayTheSpire2")
+        .Any(p => ExePath(p)?.StartsWith(devCopy, StringComparison.OrdinalIgnoreCase) == true);
+    var said = false;
+    for (var quiet = 0; quiet < 3;)
+    {
+        Thread.Sleep(2000);
+        if (!DevGameRuns())
+            quiet++;
+        else
+        {
+            quiet = 0;
+            if (!said)
+                Console.WriteLine("the game relaunched: waiting for that one too");
+            said = true;
+        }
+    }
     return 0;
 }
 
