@@ -545,7 +545,7 @@ static class LoadOrder
         }, name: "DismissMissingButton");
         Hover.Tip(dismiss, Menus.Text("SPIRE_MOD_MANAGER.MISSING_DISMISS_TIP"));
         var text = Menus.Format(missing.Count == 1 ? "SPIRE_MOD_MANAGER.MISSING_WARNING_ONE" : "SPIRE_MOD_MANAGER.MISSING_WARNING", ("count", Menus.Number(missing.Count)));
-        Banner(border, search, text, () => BannerCard("SPIRE_MOD_MANAGER.MISSING_TITLE", [.. missing.Select(m => m.Id)]),
+        Banner(border, search, text, () => BannerCard("SPIRE_MOD_MANAGER.MISSING_TITLE", [.. missing.Select(m => m.Name)]),
             [show, disable, dismiss], MissingName, "MissingWarning", WarningColor);
     }
 
