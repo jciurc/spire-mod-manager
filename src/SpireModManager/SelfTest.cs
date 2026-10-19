@@ -88,15 +88,47 @@ static class SelfTest
             TestMenuButtonLook(menu);
             await TestMenuButtonCard(menu);
             var relaunchArgs = ModEntry.RelaunchArgs();
-            Check("relaunch passes the window mode once", relaunchArgs.Count(a => a is "--fullscreen" or "--maximized" or "--windowed") == 1
-                && relaunchArgs.Contains("--force-steam"), string.Join(" ", relaunchArgs));
+            // Once, or not at all for a minimized window or one with no size (a headless run's reads Minimized, 0x0).
+            var sized = DisplayServer.WindowGetMode() switch
+            {
+                DisplayServer.WindowMode.Fullscreen or DisplayServer.WindowMode.ExclusiveFullscreen or DisplayServer.WindowMode.Maximized => true,
+                DisplayServer.WindowMode.Windowed => DisplayServer.WindowGetSize() is { X: > 0, Y: > 0 },
+                _ => false,
+            };
+            Check("relaunch passes the window mode once (none for a window with no size, as headless)",
+                relaunchArgs.Count(a => a is "--fullscreen" or "--maximized" or "--windowed") == (sized ? 1 : 0)
+                && relaunchArgs.Contains("--force-steam"), $"{string.Join(" ", relaunchArgs)} (window {DisplayServer.WindowGetMode()} {DisplayServer.WindowGetSize()})");
             // Started from a Steam invite: Steam adds +connect_lobby and the lobby's id, and the game joins it at startup.
             // The forms the game reads: the id after it or after "=", dashes before it; one with no id keeps the flag after it.
-            var invited = ModEntry.RelaunchArgs(["--force-steam", "+connect_lobby", "109775241000000001", "--log-file", "x.log",
-                "+connect_lobby=109775241000000002", "--+connect_lobby", "109775241000000003", "+connect_lobby", "--nomods", "+connect_lobby"]);
+            // Fixed cases (the game's arguments: Godot keeps its own options, like --log-file, out of them).
+            string Args(string[] given, string[] process, DisplayServer.WindowMode mode, int width = 1600, int height = 900) =>
+                string.Join(" ", ModEntry.RelaunchArgs(given, process, mode, new Vector2I(width, height), new Vector2I(40, 30)));
+            var invited = ModEntry.RelaunchArgs(["--force-steam", "+connect_lobby", "109775241000000001", "--seed", "ABC",
+                "+connect_lobby=109775241000000002", "--+connect_lobby", "109775241000000003", "+connect_lobby", "--nomods", "+connect_lobby"],
+                [], DisplayServer.WindowMode.Windowed, new Vector2I(1600, 900), new Vector2I(40, 30));
             Check("relaunch leaves out the Steam invite the game was started from (+connect_lobby, its lobby), keeps the rest",
                 !invited.Any(a => a.Contains("connect_lobby") || a.StartsWith("10977524")) && invited.Contains("--force-steam")
-                && invited.Contains("--log-file") && invited.Contains("x.log") && invited.Contains("--nomods"), string.Join(" ", invited));
+                && invited.Contains("--seed") && invited.Contains("ABC") && invited.Contains("--nomods"), string.Join(" ", invited));
+            string[] windows =
+            [
+                Args(["--nomods"], [], DisplayServer.WindowMode.Windowed), Args(["--nomods"], [], DisplayServer.WindowMode.Maximized),
+                Args(["--nomods"], [], DisplayServer.WindowMode.ExclusiveFullscreen), Args(["--nomods"], [], DisplayServer.WindowMode.Minimized),
+                Args(["--nomods"], [], DisplayServer.WindowMode.Windowed, 0, 0),
+            ];
+            Check("relaunch opens as this window is: windowed at its size and place, maximized, fullscreen; minimized or 0x0 (headless): no window options",
+                windows.SequenceEqual(["--nomods --windowed --resolution 1600x900 --position 40,30", "--nomods --maximized", "--nomods --fullscreen", "--nomods", "--nomods"]),
+                string.Join(" | ", windows));
+            // launch_opengl.bat: the renderer is an engine option, in the process's arguments only.
+            string[] renderers =
+            [
+                Args([], ["SlayTheSpire2.exe", "--rendering-driver", "opengl3", "--rendering-method", "gl_compatibility"], DisplayServer.WindowMode.Maximized),
+                Args([], ["SlayTheSpire2.exe", "--rendering-driver", "vulkan"], DisplayServer.WindowMode.Maximized),
+                Args([], ["SlayTheSpire2.exe", "--rendering-driver"], DisplayServer.WindowMode.Maximized),
+                Args(["--rendering-driver", "d3d12"], ["SlayTheSpire2.exe", "--rendering-driver", "opengl3"], DisplayServer.WindowMode.Maximized),
+            ];
+            Check("relaunch keeps the renderer the game was started with (launch_opengl.bat, launch_vulkan.bat), once",
+                renderers.SequenceEqual(["--rendering-driver opengl3 --rendering-method gl_compatibility --maximized", "--rendering-driver vulkan --maximized",
+                    "--maximized", "--rendering-driver d3d12 --maximized"]), string.Join(" | ", renderers));
             Check("dev run marked", menu.GetTree().Root.Title.StartsWith("[DEV]") && menu.GetTree().Root.HasNode("SpireModManagerDevTag"),
                 menu.GetTree().Root.Title);
             await Capture(menu, outDir, "1-main-menu");

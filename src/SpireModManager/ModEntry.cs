@@ -300,15 +300,22 @@ public static class ModEntry
     }
 
     // This session's arguments plus the current window mode, so the new copy opens the way this one looks
-    // instead of starting in a small window until the game applies its display settings. Window flags
-    // from an earlier relaunch are replaced, not repeated, and a Steam invite it was started from is left out.
-    public static string[] RelaunchArgs() => RelaunchArgs(OS.GetCmdlineArgs());
+    // instead of starting in a small window until the game applies its display settings, and the renderer it was
+    // started with (the game's launch_opengl.bat and launch_vulkan.bat pass it as an engine option, which
+    // OS.GetCmdlineArgs leaves out, so the new copy would open on the default one). A Steam invite it was started from
+    // is left out.
+    public static string[] RelaunchArgs() => RelaunchArgs(OS.GetCmdlineArgs(), System.Environment.GetCommandLineArgs(),
+        DisplayServer.WindowGetMode(), DisplayServer.WindowGetSize(), DisplayServer.WindowGetPosition());
 
-    public static string[] RelaunchArgs(string[] given)
+    // The same from what it's given, for the self-test: the game's arguments, the process's own (for the engine's
+    // renderer options), and the window's mode, size and position.
+    public static string[] RelaunchArgs(string[] given, string[] process, DisplayServer.WindowMode mode, Vector2I size, Vector2I position)
     {
         var args = new List<string>();
         for (var i = 0; i < given.Length; i++)
         {
+            // Engine options, which OS.GetCmdlineArgs doesn't pass on: dropped in case a game version does, so the
+            // window's own come once.
             if (given[i] is "--fullscreen" or "-f" or "--maximized" or "-m" or "--windowed" or "-w")
                 continue;
             if (given[i] is "--resolution" or "--position")
@@ -330,7 +337,11 @@ public static class ModEntry
                 continue;
             args.Add(given[i]);
         }
-        switch (DisplayServer.WindowGetMode())
+        // The renderer, as the process was started with it ("--rendering-driver opengl3", "--rendering-method gl_compatibility").
+        foreach (var option in new[] { "--rendering-driver", "--rendering-method" })
+            if (!args.Contains(option) && Array.IndexOf(process, option) is var at and >= 0 && at + 1 < process.Length && !process[at + 1].StartsWith('-'))
+                args.AddRange([option, process[at + 1]]);
+        switch (mode)
         {
             case DisplayServer.WindowMode.Fullscreen or DisplayServer.WindowMode.ExclusiveFullscreen:
                 args.Add("--fullscreen");
@@ -338,9 +349,8 @@ public static class ModEntry
             case DisplayServer.WindowMode.Maximized:
                 args.Add("--maximized");
                 break;
-            default:
-                var size = DisplayServer.WindowGetSize();
-                var position = DisplayServer.WindowGetPosition();
+            // A window with a size; minimized (or headless, 0x0) gets nothing, and the game's display settings apply.
+            case DisplayServer.WindowMode.Windowed when size.X > 0 && size.Y > 0:
                 args.AddRange(["--windowed", "--resolution", $"{size.X}x{size.Y}", "--position", $"{position.X},{position.Y}"]);
                 break;
         }
