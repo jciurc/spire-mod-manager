@@ -3714,7 +3714,7 @@ static class SelfTest
         string[] queries = ["contrast", "card art", "recolor", "\"art recoloring\"", "per-card", "ui", "gold", "olor", "#contrast", "-contrast", "zzz", "banner", "\"[v2]\""];
         var seen = new List<string>();
         foreach (var mod in new[] { Made("SmmDescTest", "Shared card art [gold]recoloring[/gold]: per-card hue, color, contrast; quick to build. [img]res://pics/banner.png[/img] [lb]v2[rb]"), Made("SmmDescNone", null) })
-            seen.Add($"{mod.manifest!.id}: {string.Concat(queries.Select(q => Search.Matches(mod, q) ? "y" : "n"))}");
+            seen.Add($"{mod.manifest?.id}: {string.Concat(queries.Select(q => Search.Matches(mod, q) ? "y" : "n"))}");
         // A script written without spaces: anywhere, words can't be told apart.
         var cjk = Made("SmmDescCjk", "卡牌对比度调整");
         seen.Add($"SmmDescCjk: {string.Concat(new[] { "对比", "调整", "卡牌对比度调整", "色" }.Select(q => Search.Matches(cjk, q) ? "y" : "n"))}");

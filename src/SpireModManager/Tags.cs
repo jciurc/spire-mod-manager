@@ -96,8 +96,11 @@ static class Tags
 
     // The automatic chips' names, in the game's language and in English.
     static IEnumerable<string> Automatic() =>
-        new[] { "NEW", "LOCAL", "SAME_ID", "STABLE", "BETA", "LIBRARY", "GAMEPLAY", "COSMETIC" }.Select(k => Menus.Text($"SPIRE_MOD_MANAGER.TAG_{k}"))
-            .Concat(["New", "Local", "Same ID", "Stable", "Beta", "Library", "Gameplay", "Cosmetic"]);
+        new[]
+        {
+            "SPIRE_MOD_MANAGER.TAG_NEW", "SPIRE_MOD_MANAGER.TAG_LOCAL", "SPIRE_MOD_MANAGER.TAG_SAME_ID", "SPIRE_MOD_MANAGER.TAG_STABLE",
+            "SPIRE_MOD_MANAGER.TAG_BETA", "SPIRE_MOD_MANAGER.TAG_LIBRARY", "SPIRE_MOD_MANAGER.TAG_GAMEPLAY", "SPIRE_MOD_MANAGER.TAG_COSMETIC",
+        }.Select(Menus.Text).Concat(["New", "Local", "Same ID", "Stable", "Beta", "Library", "Gameplay", "Cosmetic"]);
 
     // The game's stable and beta branches a mod is marked for, by the game's own rule over the Workshop's supported
     // range (on another branch the game still loads it, with an error).
