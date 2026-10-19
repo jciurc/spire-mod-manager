@@ -99,8 +99,7 @@ static class CategoryList
     {
         if (toggle == null)
             return;
-        var tip = Menus.Text(Store.Data.VanillaView ? "SPIRE_MOD_MANAGER.CATEGORY_VIEW_TIP"
-            : Bmm.Present ? "SPIRE_MOD_MANAGER.VANILLA_VIEW_TIP_BMM" : "SPIRE_MOD_MANAGER.VANILLA_VIEW_TIP");
+        var tip = Menus.Text(Store.Data.VanillaView ? "SPIRE_MOD_MANAGER.CATEGORY_VIEW_TIP" : "SPIRE_MOD_MANAGER.VANILLA_VIEW_TIP");
         if (!Store.Data.VanillaView && Copies.TwinGroups() is { Count: > 0 } twins)
             tip += "\n" + Menus.Format("SPIRE_MOD_MANAGER.VANILLA_VIEW_SAME_ID", ("mods", string.Join(", ", twins.Select(g => g.Id).Distinct()
                 .Select(id => Dependencies.Find(id) is { } mod ? Store.InfoFor(mod)?.Alias ?? mod.manifest?.name ?? id : id))));

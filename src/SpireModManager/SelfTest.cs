@@ -121,6 +121,7 @@ static class SelfTest
             await TestSameIdLaunchGuard(menu, outDir);
             await TestTranslationsFolder(menu);
             await TestTranslations(menu);
+            await TestModDoctorFile(menu, outDir);
             await TestPrewarm(menu);
 
             var screen = menu.SubmenuStack.PushSubmenuType<NModdingScreen>();
@@ -201,6 +202,7 @@ static class SelfTest
             await TestProfileEditing(menu, screen, outDir);
             await TestUnsavedProfile(menu, screen, content, outDir);
             await TestProfileShare(menu, screen, outDir);
+            await TestSubscribeMissing(menu, screen, content, outDir);
             await TestNotes(menu, screen, content, outDir);
             await TestPendingNotes(menu, screen, content);
             await TestPendingLine(menu, screen, content);
@@ -818,8 +820,8 @@ static class SelfTest
         // treats its copies (its words are checked in TestSameIdCopies).
         var tipLines = vanillaTip.Split('\n');
         Check("the Vanilla List button's tip says it's the game's own page (without Spire Mod Manager), and on it, the way back",
-            tipLines[0] == Menus.Text(Bmm.Present ? "SPIRE_MOD_MANAGER.VANILLA_VIEW_TIP_BMM" : "SPIRE_MOD_MANAGER.VANILLA_VIEW_TIP")
-            && (Copies.TwinGroups().Count > 0 ? tipLines is [_, var copies] && copies.StartsWith("Here one tickbox enables or disables every copy of ") : tipLines.Length == 1)
+            tipLines[0] == Menus.Text("SPIRE_MOD_MANAGER.VANILLA_VIEW_TIP")
+            && (Copies.TwinGroups().Count > 0 ? tipLines is [_, var copies] && copies.StartsWith("In vanilla, mods ") : tipLines.Length == 1)
             && backTip == Menus.Text("SPIRE_MOD_MANAGER.CATEGORY_VIEW_TIP"), $"{vanillaTip} | {backTip}");
         var bannerBox = border.GetNode<Control>(LoadOrder.ManagersName).GetGlobalRect();
         var searchBox = border.GetNode<Control>("SpireModManagerSearch").GetGlobalRect();
@@ -1820,6 +1822,13 @@ static class SelfTest
                 && Listed("SmmTestUi", true) == listWas.Any(e => e.Id == "SmmTestUi" && e.IsEnabled), $"quits {quits}, relaunches {relaunches}");
             if (!asked.IsCompleted)
                 Press("NoButton");
+            // On stable the same Escape then reaches the main menu, where it's the profile button's hotkey (pauseAndBack):
+            // the profile screen opens. A player's game would have quit; here, back to the main menu for what follows.
+            for (var i = 0; i < 3 && menu.SubmenuStack.SubmenusOpen; i++)
+            {
+                menu.SubmenuStack.Pop();
+                await Wait(menu, 0.3);
+            }
             ListAsItWas();
             asked = LaunchGuard.AskAfterCrash(game, offer);
             await Wait(menu, 0.8);
@@ -2058,6 +2067,12 @@ static class SelfTest
             Check("the translations folder has the example: how-to lines, then every English text, never read (no language's name)",
                 text.StartsWith("// An example") && pairs != null && english != null && pairs.Count == english.Count && english.All(e => pairs.GetValueOrDefault(e.Key) == e.Value)
                 && !Path.GetFileNameWithoutExtension(Translations.ExampleFile).All(char.IsLetter), $"{text.Length} chars, {pairs?.Count} texts of {english?.Count}");
+            // Its codes: the languages this game has, every one but English (stable has fewer than beta), within 118 columns.
+            var codeLines = Translations.CodeLines().ToList();
+            var listed = codeLines.SelectMany(l => System.Text.RegularExpressions.Regex.Matches(l, @"(?<![\w(])[a-z]{3}(?=[ ,.])").Select(m => m.Value)).ToList();
+            Check("the example's codes: the game's languages but English, each once, wrapped within 118 columns, in the example",
+                listed.Order().SequenceEqual(LocManager.Languages.Where(c => c != "eng").Order()) && codeLines.All(l => l.Length <= 118 && text.Contains(l)),
+                $"{string.Join(" ", listed)} vs {string.Join(" ", LocManager.Languages)}");
             // Written again while it's as we left it (an older version's, say); once edited, it's the player's.
             File.WriteAllText(example, "// an older example\n{}");
             File.SetLastWriteTimeUtc(example, Translations.ExampleTime);
@@ -2113,6 +2128,11 @@ static class SelfTest
     // The SmartFormat version tools/loc.cs judges translations with (its #:package; check.cs keeps the two equal).
     const string ToolParser = "3.3.0";
 
+    // A key's text in our packed English, as written (placeholders and all), whatever the game's language is now.
+    static string EnglishText(string key) =>
+        JsonSerializer.Deserialize<Dictionary<string, string>>(Godot.FileAccess.GetFileAsString($"res://{ModEntry.ModId}/localization/eng/settings_ui.json"))
+            ?.GetValueOrDefault(key) ?? "";
+
     static async Task TestTranslations(NMainMenu menu)
     {
         // The tool reads texts as the game does only with the game's parser: when the game ships another version, update
@@ -2133,6 +2153,9 @@ static class SelfTest
         const string NotOurs = Translated + "X"; // a key mistyped
         const string Renamed = "SPIRE_MOD_MANAGER.PAGE_DISABLED", Added = "SPIRE_MOD_MANAGER.OPEN_TRANSLATIONS";
         const string Counted = "SPIRE_MOD_MANAGER.PAGE_ALL", NotText = "SPIRE_MOD_MANAGER.NEEDS_UPDATE";
+        // A plural (the game's formatter takes one only of a number; ours pass text) and a misspelled formatter: both parse,
+        // and both fail on screen (shown raw, an error logged and reported on every draw).
+        const string Plural = "SPIRE_MOD_MANAGER.MISSING_WARNING", Misspelled = "SPIRE_MOD_MANAGER.SUBSCRIBE_ALL";
         const string OnButton = "SPIRE_MOD_MANAGER.MAIN_MENU_PROFILE", OnButtonOne = "SPIRE_MOD_MANAGER.MAIN_MENU_PROFILE_ONE";
         // Listed twice: a good copy, then a blank one; and a blank one, then a good one (tools/loc.cs reads them alike).
         const string TwiceKept = "SPIRE_MOD_MANAGER.NOTES_TERM", TwiceLater = "SPIRE_MOD_MANAGER.NOTES_ADD";
@@ -2181,6 +2204,8 @@ static class SelfTest
                   "{{Empty}}": " ",
                   "{{Renamed}}": "Deaktivierte Mods ({anzahl})",
                   "{{Added}}": "Ordner {ordner}",
+                  "{{Plural}}": "Dieses Profil hat {count} aktivierte {count:plural:Mod|Mods}, die nicht installiert sind.",
+                  "{{Misspelled}}": "Alle abonnieren ({count:plurl:eins|mehr})",
                   "{{NotText}}": 5,
                   "{{NotOurs}}": "Nicht unser Text",
                   "{{TwiceKept}}": "Notizen",
@@ -2198,6 +2223,10 @@ static class SelfTest
             Check("a drop-in translation: a renamed placeholder, an added one and a number show in English",
                 !table.IsLocalKey(Renamed) && !table.IsLocalKey(Added) && !table.IsLocalKey(NotText),
                 $"{table.GetRawText(Renamed)} | {table.GetRawText(Added)} | {table.GetRawText(NotText)}");
+            var plural = Menus.Format(Plural, ("count", Menus.Number(5)));
+            Check("a drop-in translation: a plural form and a misspelled formatter show in English (the game can't format them)",
+                !table.IsLocalKey(Plural) && !table.IsLocalKey(Misspelled) && plural == EnglishText(Plural).Replace("{count}", "5"),
+                $"{table.GetRawText(Plural)} | {table.GetRawText(Misspelled)} | {plural}");
             Check("a drop-in translation: a key English doesn't have is left out", !table.HasEntry(NotOurs));
             Check("a drop-in translation: a key listed twice shows its last copy that isn't blank",
                 Read(TwiceKept) == "Notizen" && Read(TwiceLater) == "Notizen hinzufügen", $"{Read(TwiceKept)} | {Read(TwiceLater)}");
@@ -2241,6 +2270,46 @@ static class SelfTest
             File.Delete(file + ".txt");
             LocManager.Instance.SetLanguage(start);
         }
+    }
+
+    // Mod Doctor's file (no Mod Doctor here: written by hand, as it would for this process), read where it writes now,
+    // mod_data/ModDoctor/startup.json, and at the user folder's top where it wrote before its move, the new place first.
+    // In a folder of the test's own, as the game's user folder (the real game's too).
+    static async Task TestModDoctorFile(Node menu, string outDir)
+    {
+        var top = Path.Combine(outDir, "mod-doctor-file");
+        string[] files = [Path.Combine(top, "mod_data", ModDoctor.ModId, "startup.json"), Path.Combine(top, "mod_doctor_startup.json")];
+        ModDoctor.TestFolder = top;
+        using var self = System.Diagnostics.Process.GetCurrentProcess();
+        void Write(string file, string suspect)
+        {
+            Directory.CreateDirectory(Path.GetDirectoryName(file) ?? top);
+            File.WriteAllText(file, new System.Text.Json.Nodes.JsonObject
+            {
+                ["version"] = 1, ["processId"] = System.Environment.ProcessId, ["processStartUtc"] = self.StartTime.ToUniversalTime().ToString("o"),
+                ["fatal"] = new System.Text.Json.Nodes.JsonObject { ["kind"] = "test", ["message"] = "made up", ["step"] = "test", ["suspects"] = new System.Text.Json.Nodes.JsonArray(suspect) },
+                ["failedMods"] = new System.Text.Json.Nodes.JsonArray(),
+            }.ToJsonString());
+        }
+        var seen = new List<string>();
+        try
+        {
+            Write(files[0], "SmmNewPlace");
+            seen.Add($"new {string.Join(",", await ModDoctor.Suspects(menu))}");
+            File.Delete(files[0]);
+            Write(files[1], "SmmOldPlace");
+            seen.Add($"old {string.Join(",", await ModDoctor.Suspects(menu))}");
+            Write(files[0], "SmmNewPlace");
+            seen.Add($"both {string.Join(",", await ModDoctor.Suspects(menu))}");
+        }
+        finally
+        {
+            foreach (var file in files)
+                File.Delete(file);
+            ModDoctor.TestFolder = null;
+        }
+        Check("Mod Doctor's file: read where it writes now, else where it wrote before its move; the new place first",
+            seen.SequenceEqual(["new SmmNewPlace", "old SmmOldPlace", "both SmmNewPlace"]), string.Join(" | ", seen));
     }
 
     // The first-run import reads Better Mod Menu's file as it does: comments and trailing commas, its old format (just
@@ -2795,6 +2864,198 @@ static class SelfTest
     // Sharing a profile as CSV text and importing one (ProfileShare): the format on its own, the Share dialog (from the
     // profile list), Copy and saving, then the Import dialog with our own list and a Better Mod Menu one, its preview,
     // its errors, and an import as one undo step. Starts and ends on the active profile with nothing changed.
+    // A made-up Steam for the subscription checks (the sandbox runs without Steam): each item's answer, set before, and
+    // its download's progress, set as the test goes.
+    sealed class FakeSteam : Subscriptions.ITestSteam
+    {
+        public readonly Dictionary<ulong, Steamworks.EResult> Answers = [];
+        public readonly Dictionary<ulong, float> Downloaded = [];
+        public readonly List<ulong> Asked = [];
+        public Task<Steamworks.EResult> Subscribe(ulong item)
+        {
+            Asked.Add(item);
+            return Task.FromResult(Answers.GetValueOrDefault(item, Steamworks.EResult.k_EResultOK));
+        }
+        public float? Progress(ulong item) => Downloaded.TryGetValue(item, out var done) ? done : null;
+    }
+
+    // Subscribing to a profile's missing mods, with Steam made up: an imported list naming Workshop mods that aren't
+    // installed offers Subscribe in the preview, which then follows each download or says why it failed; the new profile
+    // keeps each item, and its banner (Jordan's design) counts the missing mods, lists them with Show (progress, a failure
+    // and Subscribe again, a mod not on the Workshop), turns them off with Disable missing mods (one undo step), and
+    // Dismiss hides it until the profile is switched to again or its edit discarded. The mod arriving (the game finding
+    // it) takes it off the banner. Save as new keeps the missing mods. Everything made up goes after.
+    static async Task TestSubscribeMissing(Node menu, NModdingScreen screen, Control content, string outDir)
+    {
+        if (Profiles.Active is not { } start || Store.Data.Profiles.FirstOrDefault(p => p != start) == null)
+        {
+            Results.Add("SKIP subscribing to missing mods: needs two profiles");
+            return;
+        }
+        if (Profiles.Edited)
+            Profiles.Save();
+        const ulong Here = 3700000001, Gone = 3700000002;
+        const string HereId = "SmmSubHere", GoneId = "SmmSubGone", LocalId = "SmmSubLocal";
+        var (startName, profiles) = (start.Name, Store.Data.Profiles.Count);
+        var steam = new FakeSteam();
+        steam.Answers[Gone] = Steamworks.EResult.k_EResultFileNotFound;
+        Subscriptions.TestSteam = steam;
+        Node? Dialog(string name) => menu.GetTree().Root.GetNodeOrNull(name);
+        T? Part<T>(string dialog, string name) where T : class => Dialog(dialog)?.FindChild(name, true, false) as T;
+        void Press(string dialog, string name) => Part<BaseButton>(dialog, name)?.EmitSignal(BaseButton.SignalName.Pressed);
+        var border = screen.GetNode<Control>("ModsBorder");
+        Control? Banner() => border.GetNodeOrNull<Control>(LoadOrder.MissingName);
+        string BannerText() => Banner()?.FindChild("MissingWarning", true, false) is Label { } label ? label.Text : "";
+        void BannerPress(string name) => (Banner()?.FindChild(name, true, false) as BaseButton)?.EmitSignal(BaseButton.SignalName.Pressed);
+        string RowText(string id) => Dialog(MissingMods.Name)?.FindChild("Rows", true, false)?.GetNodeOrNull(id) is Node row
+            ? string.Join(" ", row.FindChildren("*", "", true, false).Select(n => n switch
+            {
+                RichTextLabel r => r.GetParsedText(),
+                Label l => l.Text,
+                Button b => $"[{b.Text}]",
+                ProgressBar p => $"bar {p.Value:0.00}",
+                _ => "",
+            }).Where(s => s.Length > 0))
+            : "none";
+        var arrived = new Mod
+        {
+            path = "", modSource = ModSource.SteamWorkshop, state = ModLoadState.AddedAtRuntime,
+            manifest = new ModManifest { id = HereId, name = "Sub Here", version = "1.0.0" },
+        };
+        Compat.SetWorkshopId(arrived, Here);
+        try
+        {
+            // The import: three mods not installed, two on the Workshop (one Steam will refuse), one local.
+            var csv = ProfileCsv.Write([
+                new ProfileCsv.Row(HereId, "Sub Here", "1.0", true, "", Here.ToString()),
+                new ProfileCsv.Row(GoneId, "Sub Gone", "1.0", true, "", Gone.ToString()),
+                new ProfileCsv.Row(LocalId, "Sub Local", "1.0", true, "", ""),
+            ], new ProfileCsv.Options(false, false, false, false));
+            ProfileShare.ShowImport(screen);
+            await Wait(menu, 0.2);
+            if (Part<TextEdit>(ProfileShare.Name, "CsvText") is { } box)
+            {
+                box.Text = csv;
+                box.EmitSignal(TextEdit.SignalName.TextChanged);
+            }
+            await Wait(menu, 0.2);
+            var offer = Part<Button>(ProfileShare.Name, "SubscribeMissingButton");
+            Check("import preview: Subscribe offers the missing mods on the Workshop (not the local one), with Steam",
+                offer is { Visible: true, Text: "Subscribe to 2 missing mods" }, offer == null ? "no button" : $"{offer.Visible} \"{offer.Text}\"");
+            await Capture(screen, outDir, "7f-import-subscribe");
+            Press(ProfileShare.Name, "SubscribeMissingButton");
+            steam.Downloaded[Here] = 0.45f;
+            await Wait(menu, 0.6);
+            var preview = Part<RichTextLabel>(ProfileShare.Name, "Preview")?.GetParsedText() ?? "";
+            Check("import preview: Subscribe asks Steam for both; one downloads (its progress), the other fails and says why; Subscribe offers that one again",
+                steam.Asked.Order().SequenceEqual([Here, Gone]) && preview.Contains("Downloading 45%")
+                && preview.Contains("Couldn't find mod. The listing could be removed, or set to private.") && !preview.Contains("Couldn't subscribe") && offer is { Visible: true, Text: "Subscribe to the missing mod" },
+                $"{string.Join(",", steam.Asked)}; button {offer?.Visible} \"{offer?.Text}\"; {preview.Replace("\n", " | ")}");
+            await Capture(screen, outDir, "7g-import-downloading");
+            Press(ProfileShare.Name, "CreateProfileButton");
+            await Wait(menu, 0.4);
+            var importedName = Profiles.Active?.Name ?? "";
+            var imported = Profiles.Active;
+            Check("the imported profile keeps each missing Workshop mod's item and the list's name for it, and the banner counts the three",
+                importedName != startName && imported?.Mods.Any(m => m.Id == HereId && m.Copy == $"w:{Here}" && m.Name == "Sub Here" && m.Enabled) == true
+                && imported.Mods.Any(m => m.Id == LocalId && m.Copy == null && m.Enabled) && Banner() is { Visible: true }
+                && BannerText() == "This profile contains 3 mods that aren't installed.", $"{importedName}: {BannerText()}");
+            await Capture(screen, outDir, "2l-missing-banner");
+
+            // Show: the list, as it was when it opened.
+            BannerPress("ShowMissingButton");
+            await Wait(menu, 0.4);
+            Check("Show lists the missing mods by the list's names: one downloading with its bar, one that failed with Subscribe again, the local one not on the Workshop",
+                RowText(HereId).StartsWith("Sub Here") && RowText(LocalId).StartsWith("Sub Local") && RowText(HereId).Contains("bar 0.45") && RowText(HereId).Contains("Downloading 45%")
+                && RowText(GoneId).Contains("Couldn't find mod") && RowText(GoneId).Contains("[Subscribe]") && RowText(LocalId).Contains("Not on Workshop")
+                && Part<Button>(MissingMods.Name, "SubscribeAllButton") is { Text: "Subscribe to all (1)" },
+                $"{RowText(HereId)} | {RowText(GoneId)} | {RowText(LocalId)} | {Part<Button>(MissingMods.Name, "SubscribeAllButton")?.Text}");
+            await Capture(screen, outDir, "2m-missing-list");
+
+            // The download lands: the game finds the mod, the list says so and the banner counts two.
+            GameInstalls(arrived);
+            await Wait(menu, 0.6);
+            NModalContainer.Instance?.Clear();
+            CategoryList.Redraw(content);
+            await Wait(menu, 0.3);
+            Check("the mod arriving: the list says it's installed, and the banner counts the two left",
+                RowText(HereId).Contains("Installed: loads after a relaunch") && BannerText() == "This profile contains 2 mods that aren't installed.",
+                $"{RowText(HereId)} | {BannerText()}");
+            Modal.Close(MissingMods.Name);
+            await Wait(menu, 0.2);
+
+            // Dismiss: gone; back after switching away and back; gone again, then back after Discard.
+            BannerPress("DismissMissingButton");
+            await Wait(menu, 0.3);
+            var dismissed = Banner() == null;
+            Profiles.SwitchTo(Store.Data.Profiles.First(p => p.Name == startName), screen);
+            await Wait(menu, 0.3);
+            var awayClear = Banner() == null;
+            Profiles.SwitchTo(Store.Data.Profiles.First(p => p.Name == importedName), screen);
+            await Wait(menu, 0.3);
+            var backShown = Banner() != null;
+            Profiles.DismissMissing();
+            Profiles.Discard(screen);
+            await Wait(menu, 0.3);
+            Check("Dismiss hides the banner; switching to the profile again shows it, and so does Discard",
+                dismissed && awayClear && backShown && Banner() != null, $"dismissed {dismissed}, away {awayClear}, back {backShown}, after Discard {Banner() != null}");
+
+            // Save as new keeps the missing mods.
+            var copy = Profiles.Create(Profiles.NewKind.SaveAsNew, "SmmSubCopy", screen);
+            await Wait(menu, 0.3);
+            Check("Save as new keeps the missing mods, as Save does",
+                copy.Mods.Any(m => m.Id == GoneId && m.Enabled && m.Copy == $"w:{Gone}") && copy.Mods.Any(m => m.Id == LocalId && m.Enabled),
+                string.Join(", ", copy.Mods.Where(m => m.Id.StartsWith("SmmSub")).Select(m => $"{m.Id}={m.Enabled}/{m.Copy}")));
+
+            // Disable missing mods: out of the profile, the banner gone, one undo step back.
+            var steps = History.Steps(History.Track.List);
+            BannerPress("DisableMissingButton");
+            await Wait(menu, 0.3);
+            var off = Profiles.Active?.Mods.Any(m => m.Id is GoneId or LocalId) == false && Profiles.Active?.Edited?.Any(m => m.Id is GoneId or LocalId) != true && Banner() == null
+                && History.Steps(History.Track.List) == steps + 1;
+            History.Undo();
+            await Wait(menu, 0.3);
+            Check("Disable missing mods takes them out of the profile (the banner goes), one undo step that brings them back",
+                off && Profiles.Missing().Count == 2 && Banner() != null, $"off {off}, missing after undo {Profiles.Missing().Count}");
+        }
+        finally
+        {
+            Modal.Close(MissingMods.Name);
+            ProfileShare.Close();
+            GameForgets(arrived);
+            // The row the game made for the arrival goes with it, as after every made-up arrival.
+            foreach (var row in content.GetChildren().OfType<NModMenuRow>().Where(r => r.Mod == arrived).ToList())
+            {
+                content.RemoveChild(row);
+                row.QueueFree();
+            }
+            Subscriptions.TestSteam = null;
+            Subscriptions.TestReset();
+            if (Store.Data.Profiles.FirstOrDefault(p => p.Name == startName) is { } back)
+                Profiles.SwitchTo(back, screen);
+            // The made-up profiles, and the arrival the start profile took in (off) while it wasn't active.
+            History.Quietly(data =>
+            {
+                data.Profiles.RemoveAll(p => p.Name != startName && p.Mods.Any(m => m.Id.StartsWith("SmmSub")));
+                foreach (var p in data.Profiles)
+                {
+                    p.Mods.RemoveAll(m => m.Id.StartsWith("SmmSub"));
+                    p.Edited?.RemoveAll(m => m.Id.StartsWith("SmmSub"));
+                }
+            });
+            // The game's list keeps a mod it found (the arrival), and switching back wrote the start profile's entry for
+            // it there too: gone with it, as after every made-up arrival.
+            SaveManager.Instance.SettingsSave.ModSettings?.ModList.RemoveAll(e => e.Id.StartsWith("SmmSub"));
+            Profiles.Track();
+            CategoryList.Redraw(content);
+            await Wait(menu, 0.3);
+        }
+        Check("as it started: the start profile active, the made-up profiles gone, no missing-mods banner",
+            Profiles.Active?.Name == startName && Store.Data.Profiles.Count == profiles && Banner() == null
+            && !Store.Data.Profiles.Any(p => p.Mods.Any(m => m.Id.StartsWith("SmmSub"))),
+            $"{Profiles.Active?.Name}, {Store.Data.Profiles.Count} profiles (were {profiles})");
+    }
+
     static async Task TestProfileShare(Node menu, NModdingScreen screen, string outDir)
     {
         var bar = screen.GetNode("ModsBorder/SpireModManagerProfileBar");
@@ -3246,11 +3507,11 @@ static class SelfTest
                 var (shown, raw) = (descriptionLabel.GetParsedText(), descriptionLabel.Text);
                 await Capture(screen, outDir, "17b-game-error-panel");
                 var card = ModDetails.Card(erring); // the row's hover card shows the same (as BBCode: "[lb]" is a "[")
-                Check("a game load error shows apart from ours, in the panel and the row's card: under \"From the game\", alone in its box, "
+                Check("a game load error shows apart from ours, in the panel and the row's card: under \"Error while loading\", alone in its box, "
                     + "in the game's red (its own [red] in the panel, its colour in the card, no tags as text), not among our problems",
-                    shown.Contains("From the game") && shown.Contains("only supports Steam branch public") && !shown.Contains("[red]")
-                    && raw.Contains(GameText.Caption("From the game")) && raw.Contains("[table=1]") && raw.Contains("[red]Mod ")
-                    && card.Contains(GameText.Caption("From the game")) && card.Contains("[table=1]") && card.Contains("[color=#ff5555]Mod ")
+                    shown.Contains("Error while loading") && shown.Contains("only supports Steam branch public") && !shown.Contains("[red]")
+                    && raw.Contains(GameText.Caption("Error while loading")) && raw.Contains("[table=1]") && raw.Contains("[red]Mod ")
+                    && card.Contains(GameText.Caption("Error while loading")) && card.Contains("[table=1]") && card.Contains("[color=#ff5555]Mod ")
                     && !card.Contains("[lb]red]") && !ModDetails.Problems(erring).Any(p => p.Contains("Steam branch")),
                     $"{shown.Split('\n')[0]} | card: {card.Split('\n').FirstOrDefault(l => l.Contains("branch"))}");
             }
@@ -3289,7 +3550,7 @@ static class SelfTest
                 var gameMessage = $"Mod {offMod.manifest?.id} only supports Steam branch public";
                 Check("the game's message taken off a mod that's off still shows in its card, apart from ours under its own caption, in a fainter box, "
                     + "not as a problem",
-                    card.Contains(GameText.Caption("From the game, not counted while this mod is off")) && card.Contains(gameMessage)
+                    card.Contains(GameText.Caption("Error while loading; Can be ignored if mod is disabled")) && card.Contains(gameMessage)
                     && card.Contains(GameText.Box("", dim: true)[..40]) && !ModDetails.Problems(offMod).Any(p => p.Contains("only supports Steam branch")),
                     card.Split('\n').FirstOrDefault(l => l.Contains("branch")) ?? card.Split('\n')[0]);
                 // The second pass, just before the main menu's warning reads the errors (BranchErrorsLatePatch): one
@@ -7485,7 +7746,7 @@ static class SelfTest
             Check("same ID, a message on a copy set aside: off its errors (the MODDED label stays clear), into its panel as the game's; the late pass covers it",
                 aside.errors == null && dropped >= 1 && BranchErrors.Dropped(aside).Contains(error)
                 && notes.Any(n => n.Contains("only supports Steam branch public"))
-                && ModDetails.Card(aside).Contains(GameText.Caption("From the game, not counted while this mod is off")),
+                && ModDetails.Card(aside).Contains(GameText.Caption("Error while loading; Can be ignored if mod is disabled")),
                 $"errors {aside.errors?.Count}, dropped {dropped}; {string.Join(" | ", notes)}");
         }
         finally
@@ -7515,7 +7776,7 @@ static class SelfTest
         var actions = LoadOrder.Actions(content, ours, () => { });
         Check("same ID, Load Order: our row pinned first, a lock for its grip saying why, its moves greyed",
             !handle.GetChildren().OfType<ColorRect>().Any() && handle.GetChildren().OfType<Panel>().Count() == 2
-            && Hover.TipOf(handle) == "Spire Mod Manager always loads first, so it can choose which copy of a mod loads"
+            && Hover.TipOf(handle) == "Spire Mod Manager always loads first, so it can configure the rest of the list properly."
             && actions.Where(a => a.Label is not ("Disable" or "Enable")).All(a => a.Disabled),
             $"{string.Join(", ", actions.Select(a => $"{a.Label}{(a.Disabled ? " (greyed)" : "")}"))}; tip {Hover.TipOf(handle)}");
         var from = handle.GetGlobalRect().GetCenter();
@@ -7630,7 +7891,7 @@ static class SelfTest
             && ModDetails.Problems(a).Count == 0 && Hover.TipOf(rowA.GetNode<Control>("Tickbox")) == $"Enabling this copy disables {Named(b)}"
             && Hover.TipOf(rowB.GetNode<Control>("Tickbox")) == "" && ModDetails.CopyLine(a, links: false)?.Text == $"{Named(b)} is the enabled copy"
             && enableAll.Tip == $"Also disables other copies: {Named(b)}"
-            && toggleTip.Contains("\nHere one tickbox enables or disables every copy of ") && toggleTip.Contains("the copy enabled on Spire Mod Manager's page is the one that loads.")
+            && toggleTip.Contains("\nIn vanilla, mods ") && toggleTip.Contains("These will use the Spire Mod Manager configuration as a fallback.")
             && bothDone && OnDisk("l:SmmTestTwinB"),
             $"{Say()}; Enable all tip {enableAll.Tip}; both done {bothDone}; on disk {string.Join(", ", FilePicks())}; toggle tip {toggleTip}");
 
@@ -7908,7 +8169,7 @@ static class SelfTest
         SameIdLoad.TestResult(TwinId, null);
         History.Undo(); // the pick
         await Wait(menu, 0.3);
-        const string couldnt = "Spire Mod Manager couldn't choose which copy of this mod loads: this game version loads mods differently. Spire Mod Manager may need an update.";
+        const string couldnt = "Spire Mod Manager couldn't choose which copy was loaded. If the game is on a different version, Spire Mod Manager may need to be updated.";
         Check("... the pick not taken (the self-check): both copies say it, and the other copy picked is no relaunch away",
             notApplied == (couldnt, couldnt) && SameIdLoad.ResultOf(TwinId) == SameIdLoad.Result.Taken && !pendingBefore && pendingPicked && !pendingUnchosen
             && Picked() == "l:SmmTestTwinB", $"{notApplied}; then {SameIdLoad.ResultOf(TwinId)}; pending {pendingBefore}, picked {pendingPicked}, not taken {pendingUnchosen}");
@@ -7921,7 +8182,7 @@ static class SelfTest
             b.errors = [new LocString("main_menu_ui", "MOD_ERROR.GAME_VERSION_UNSUPPORTED")];
             var failedLine = ModDetails.CopyLine(b, false)?.Text;
             Check("... the picked copy failed for its own reasons: its panel says the other copy is installed, enabling it loads that one",
-                failedLine == $"{Named(a)} is installed too: enabling it loads that copy instead", failedLine ?? "none");
+                failedLine == $"{Named(a)} is also installed: enabling will load that copy instead", failedLine ?? "none");
         }
         finally
         {
@@ -7955,7 +8216,7 @@ static class SelfTest
         CategoryList.Redraw(content);
         await Wait(menu, 0.3);
         Check("... a new copy arriving keeps the pick (it's off), and the popup says the enabled copy keeps loading",
-            keepsPick && popup.Contains("A new copy of Test Twin (SmmTestTwinC) was detected. The copy enabled now keeps loading"), $"keeps {keepsPick}; {popup}");
+            keepsPick && popup.Contains("A new copy of Test Twin (SmmTestTwinC) was detected. Enable the new copy to load it instead."), $"keeps {keepsPick}; {popup}");
         var update = new Mod
         {
             path = a.path, modSource = ModSource.ModsDirectory, state = ModLoadState.AddedAtRuntime,

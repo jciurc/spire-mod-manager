@@ -18,9 +18,11 @@ static class LinkMark
     public static int Size(int fontSize) => Math.Max(7, (int)MathF.Round(fontSize * CapHeight));
 
     // The mark in a RichTextLabel's BBCode, for inside the link's [url] and [color] (its underline, if any, stays that
-    // colour), right after its text. Not for the game's MegaRichTextLabel, which measures an [img] through the game's
-    // asset cache.
-    public static string Tag(int fontSize, string color) => $"{Gap}[img color={color}]{Icons.ExternalLink(Size(fontSize)).ResourcePath}[/img]";
+    // colour), right after its text, its foot on the text's baseline like a capital (centred on the line, the default, it
+    // sat low: the line's middle is below the capitals'). Not for the game's MegaRichTextLabel, which measures an [img]
+    // through the game's asset cache.
+    public static string Tag(int fontSize, string color) =>
+        $"{Gap}[img color={color} valign=bottom,baseline]{Icons.ExternalLink(Size(fontSize)).ResourcePath}[/img]";
 
     // The mark drawn by a one-line LinkButton or Label after its text, in its text's colour at each redraw (a link's
     // hover colour while it's lit). A LinkButton shows it while it links somewhere: enabled, with a Uri.

@@ -77,8 +77,9 @@ public class Profile
 }
 
 // Copy: for a mod installed more than once from one source, the copy that loads (Copies.CopyOf); null keeps the pick
-// as it is (profiles from before it, Better Mod Menu's).
-public record ProfileMod(string Id, ModSource Source, bool Enabled, string? Copy = null);
+// as it is (profiles from before it, Better Mod Menu's). Name: for a mod an imported list named that isn't installed,
+// the list's name for it, to show it by until it is (an installed mod goes by its own).
+public record ProfileMod(string Id, ModSource Source, bool Enabled, string? Copy = null, string? Name = null);
 
 public record ScreenPoint(float X, float Y);
 
