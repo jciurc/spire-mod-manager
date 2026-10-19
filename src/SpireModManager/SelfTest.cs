@@ -2058,6 +2058,12 @@ static class SelfTest
             Check("the translations folder has the example: how-to lines, then every English text, never read (no language's name)",
                 text.StartsWith("// An example") && pairs != null && english != null && pairs.Count == english.Count && english.All(e => pairs.GetValueOrDefault(e.Key) == e.Value)
                 && !Path.GetFileNameWithoutExtension(Translations.ExampleFile).All(char.IsLetter), $"{text.Length} chars, {pairs?.Count} texts of {english?.Count}");
+            // Its codes: the languages this game has, every one but English (stable has fewer than beta), within 118 columns.
+            var codeLines = Translations.CodeLines().ToList();
+            var listed = codeLines.SelectMany(l => System.Text.RegularExpressions.Regex.Matches(l, @"(?<![\w(])[a-z]{3}(?=[ ,.])").Select(m => m.Value)).ToList();
+            Check("the example's codes: the game's languages but English, each once, wrapped within 118 columns, in the example",
+                listed.Order().SequenceEqual(LocManager.Languages.Where(c => c != "eng").Order()) && codeLines.All(l => l.Length <= 118 && text.Contains(l)),
+                $"{string.Join(" ", listed)} vs {string.Join(" ", LocManager.Languages)}");
             // Written again while it's as we left it (an older version's, say); once edited, it's the player's.
             File.WriteAllText(example, "// an older example\n{}");
             File.SetLastWriteTimeUtc(example, Translations.ExampleTime);
@@ -2133,6 +2139,9 @@ static class SelfTest
         const string NotOurs = Translated + "X"; // a key mistyped
         const string Renamed = "SPIRE_MOD_MANAGER.PAGE_DISABLED", Added = "SPIRE_MOD_MANAGER.OPEN_TRANSLATIONS";
         const string Counted = "SPIRE_MOD_MANAGER.PAGE_ALL", NotText = "SPIRE_MOD_MANAGER.NEEDS_UPDATE";
+        // A plural (the game's formatter takes one only of a number; ours pass text) and a misspelled formatter: both parse,
+        // and both fail on screen (shown raw, an error logged and reported on every draw).
+        const string Plural = "SPIRE_MOD_MANAGER.MISSING_WARNING", Misspelled = "SPIRE_MOD_MANAGER.SUBSCRIBE_ALL";
         const string OnButton = "SPIRE_MOD_MANAGER.MAIN_MENU_PROFILE", OnButtonOne = "SPIRE_MOD_MANAGER.MAIN_MENU_PROFILE_ONE";
         // Listed twice: a good copy, then a blank one; and a blank one, then a good one (tools/loc.cs reads them alike).
         const string TwiceKept = "SPIRE_MOD_MANAGER.NOTES_TERM", TwiceLater = "SPIRE_MOD_MANAGER.NOTES_ADD";
@@ -2181,6 +2190,8 @@ static class SelfTest
                   "{{Empty}}": " ",
                   "{{Renamed}}": "Deaktivierte Mods ({anzahl})",
                   "{{Added}}": "Ordner {ordner}",
+                  "{{Plural}}": "Dieses Profil hat {count} aktivierte {count:plural:Mod|Mods}, die nicht installiert sind.",
+                  "{{Misspelled}}": "Alle abonnieren ({count:plurl:eins|mehr})",
                   "{{NotText}}": 5,
                   "{{NotOurs}}": "Nicht unser Text",
                   "{{TwiceKept}}": "Notizen",
@@ -2198,6 +2209,10 @@ static class SelfTest
             Check("a drop-in translation: a renamed placeholder, an added one and a number show in English",
                 !table.IsLocalKey(Renamed) && !table.IsLocalKey(Added) && !table.IsLocalKey(NotText),
                 $"{table.GetRawText(Renamed)} | {table.GetRawText(Added)} | {table.GetRawText(NotText)}");
+            var plural = Menus.Format(Plural, ("count", Menus.Number(5)));
+            Check("a drop-in translation: a plural form and a misspelled formatter show in English (the game can't format them)",
+                !table.IsLocalKey(Plural) && !table.IsLocalKey(Misspelled) && plural == "This profile has 5 enabled mods that aren't installed.",
+                $"{table.GetRawText(Plural)} | {table.GetRawText(Misspelled)} | {plural}");
             Check("a drop-in translation: a key English doesn't have is left out", !table.HasEntry(NotOurs));
             Check("a drop-in translation: a key listed twice shows its last copy that isn't blank",
                 Read(TwiceKept) == "Notizen" && Read(TwiceLater) == "Notizen hinzufügen", $"{Read(TwiceKept)} | {Read(TwiceLater)}");

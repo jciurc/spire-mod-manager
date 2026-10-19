@@ -1,9 +1,14 @@
+using System.Globalization;
 using System.Runtime.CompilerServices;
 using System.Text.Json;
 using System.Text.RegularExpressions;
 using Godot;
 using MegaCrit.Sts2.Core.Localization;
 using MegaCrit.Sts2.Core.Logging;
+using SmartFormat;
+using SmartFormat.Core.Formatting;
+using SmartFormat.Core.Parsing;
+using SmartFormat.Extensions;
 
 namespace SpireModManager;
 
@@ -30,16 +35,42 @@ static class Translations
     public static readonly DateTime ExampleTime = new(2000, 1, 1, 0, 0, 0, DateTimeKind.Utc);
 
     // Its lines end in CRLF, as Notepad writes them, the English table's included.
-    public static string ExampleText() => string.Join("\r\n",
+    public static string ExampleText() => string.Join("\r\n", [
         "// An example: every text of Spire Mod Manager, in English. This file is never loaded.",
         "// To translate: copy it, name the copy with your language's code from the list below (zhs.json for Simplified",
         "// Chinese), and translate the texts on the right. Keep the keys on the left, {placeholders} and [tags] as they are.",
+        "// Plural forms ({count:plural:mod|mods}) don't work here; a text with one shows in English. Word it to fit any number.",
         "// A text left out shows in English. Then switch the game to that language (or relaunch it, if it's in it already).",
         "// This example is updated with the mod until you edit it.",
-        "// Codes: deu German, esp Spanish (Latin America), fra French, ind Indonesian, ita Italian, jpn Japanese,",
-        "// kor Korean, pol Polish, ptb Portuguese (Brazil), rus Russian, spa Spanish (Spain), tha Thai, tur Turkish,",
-        "// zhs Chinese (Simplified), zht Chinese (Traditional).",
-        Godot.FileAccess.GetFileAsString($"res://{ModEntry.ModId}/localization/eng/{Table}.json").Trim().ReplaceLineEndings("\r\n")) + "\r\n";
+        .. CodeLines(),
+        Godot.FileAccess.GetFileAsString($"res://{ModEntry.ModId}/localization/eng/{Table}.json").Trim().ReplaceLineEndings("\r\n")]) + "\r\n";
+
+    // The game's languages by code (LocManager's own table), named for the example.
+    static readonly Dictionary<string, string> LanguageNames = new()
+    {
+        ["zhs"] = "Chinese (Simplified)", ["zht"] = "Chinese (Traditional)", ["deu"] = "German", ["esp"] = "Spanish (Latin America)",
+        ["fra"] = "French", ["ind"] = "Indonesian", ["ita"] = "Italian", ["jpn"] = "Japanese", ["kor"] = "Korean", ["pol"] = "Polish",
+        ["ptb"] = "Portuguese (Brazil)", ["rus"] = "Russian", ["spa"] = "Spanish (Spain)", ["tha"] = "Thai", ["tur"] = "Turkish",
+    };
+
+    // "// Codes: deu German, ..." for the languages this game has (stable has fewer than beta), wrapped.
+    public static IEnumerable<string> CodeLines()
+    {
+        var codes = LocManager.Languages.Where(code => code != "eng").Order()
+            .Select(code => LanguageNames.TryGetValue(code, out var name) ? $"{code} {name}" : code).ToList();
+        var line = "// Codes:";
+        for (var i = 0; i < codes.Count; i++)
+        {
+            var part = $" {codes[i]}{(i == codes.Count - 1 ? "." : ",")}";
+            if (line.Length + part.Length > 118)
+            {
+                yield return line;
+                line = "//";
+            }
+            line += part;
+        }
+        yield return line;
+    }
 
     // The example written, unless the player has edited it. Fails soft: a folder with no example is no worse than before.
     public static void WriteExample(string folder)
@@ -127,10 +158,10 @@ static class Translations
             {
                 if (!english.TryGetValue(entry.Name, out var names))
                     unknown.Add(entry.Name);
-                // Not text, empty, or placeholders the game can't read or English doesn't have: English shows instead
-                // (the game would show it raw and log an error on every draw).
+                // Not text, empty, placeholders English doesn't have, or what the game can't format (a plural, a misspelled
+                // formatter): English shows instead (the game would show it raw, and log and report an error on every draw).
                 else if (entry.Value.ValueKind != JsonValueKind.String || entry.Value.GetString() is not { } text || text.Trim().Length == 0
-                    || !Formats(text) || !Placeholders(text).IsSubsetOf(names))
+                    || Placeholders(text) is not { } used || !used.IsSubsetOf(names) || !Formats(text, used))
                     unusable.Add(entry.Name);
                 else
                     texts[entry.Name] = text;
@@ -138,7 +169,7 @@ static class Translations
             if (unknown.Count > 0)
                 Log.Warn($"[{ModEntry.ModId}] Translation {file}: {unknown.Count} keys English doesn't have, left out: {Some(unknown)}");
             if (unusable.Count > 0)
-                Log.Warn($"[{ModEntry.ModId}] Translation {file}: {unusable.Count} texts empty or unreadable (a broken or renamed {{placeholder}}?), shown in English: {Some(unusable)}");
+                Log.Warn($"[{ModEntry.ModId}] Translation {file}: {unusable.Count} texts empty or unreadable (a broken or renamed {{placeholder}}, or a plural form?), shown in English: {Some(unusable)}");
             return texts;
         }
         catch (Exception e)
@@ -166,12 +197,14 @@ static class Translations
     static HashSet<string> Placeholders(string text) =>
         Regex.Matches(text, @"\{([A-Za-z_]\w*)").Select(m => m.Groups[1].Value).ToHashSet();
 
-    // Whether the game can format the text, checked as for its own override files (all pass if that check is gone).
-    static bool Formats(string text)
+    // Whether the game can format the text: its own check for override files, then the text formatted as the game does,
+    // its placeholders filled with text as ours always are (Menus.Format), so a plural fails here as it would on screen.
+    // All pass if either check is gone or changed in a game update.
+    static bool Formats(string text, HashSet<string> names)
     {
         try
         {
-            return GameFormats(text);
+            return GameFormats(text) && TrialFormats(text, names);
         }
         catch (Exception)
         {
@@ -182,4 +215,38 @@ static class Translations
     // On its own, so a game update without LocValidator fails in Formats' try, not where that is compiled.
     [MethodImpl(MethodImplOptions.NoInlining)]
     static bool GameFormats(string text) => LocValidator.ValidateFormatString(text, out _);
+
+    static SmartFormatter? _formatter;
+
+    // The extensions of the game's formatter (LocManager.LoadLocFormatters) a text of ours can use; LocManager's own
+    // isn't made yet when the first language loads.
+    static SmartFormatter Formatter()
+    {
+        if (_formatter != null)
+            return _formatter;
+        var formatter = new SmartFormatter();
+        formatter.AddExtensions(new DictionarySource(), new DefaultSource());
+        formatter.AddExtensions(new PluralLocalizationFormatter(), new ConditionalFormatter(), new ChooseFormatter(), new DefaultFormatter());
+        return _formatter = formatter;
+    }
+
+    // The game's formatter takes a plural only of a number: ours pass text, so "{count:plural:Mod|Mods}" fails, as does
+    // a misspelled "{count:plurl:…}". Only those failures count; anything else (a SmartFormat change) passes.
+    [MethodImpl(MethodImplOptions.NoInlining)]
+    static bool TrialFormats(string text, HashSet<string> names)
+    {
+        try
+        {
+            Formatter().Format(CultureInfo.InvariantCulture, text, names.ToDictionary(name => name, name => (object)"x"));
+            return true;
+        }
+        catch (FormattingException)
+        {
+            return false;
+        }
+        catch (ParsingErrors)
+        {
+            return false;
+        }
+    }
 }
