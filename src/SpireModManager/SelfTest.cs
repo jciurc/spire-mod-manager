@@ -2127,6 +2127,11 @@ static class SelfTest
     // The SmartFormat version tools/loc.cs judges translations with (its #:package; check.cs keeps the two equal).
     const string ToolParser = "3.3.0";
 
+    // A key's text in our packed English, as written (placeholders and all), whatever the game's language is now.
+    static string EnglishText(string key) =>
+        JsonSerializer.Deserialize<Dictionary<string, string>>(Godot.FileAccess.GetFileAsString($"res://{ModEntry.ModId}/localization/eng/settings_ui.json"))
+            ?.GetValueOrDefault(key) ?? "";
+
     static async Task TestTranslations(NMainMenu menu)
     {
         // The tool reads texts as the game does only with the game's parser: when the game ships another version, update
@@ -2219,7 +2224,7 @@ static class SelfTest
                 $"{table.GetRawText(Renamed)} | {table.GetRawText(Added)} | {table.GetRawText(NotText)}");
             var plural = Menus.Format(Plural, ("count", Menus.Number(5)));
             Check("a drop-in translation: a plural form and a misspelled formatter show in English (the game can't format them)",
-                !table.IsLocalKey(Plural) && !table.IsLocalKey(Misspelled) && plural == "This profile has 5 enabled mods that aren't installed.",
+                !table.IsLocalKey(Plural) && !table.IsLocalKey(Misspelled) && plural == EnglishText(Plural).Replace("{count}", "5"),
                 $"{table.GetRawText(Plural)} | {table.GetRawText(Misspelled)} | {plural}");
             Check("a drop-in translation: a key English doesn't have is left out", !table.HasEntry(NotOurs));
             Check("a drop-in translation: a key listed twice shows its last copy that isn't blank",
