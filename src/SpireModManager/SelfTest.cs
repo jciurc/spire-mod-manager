@@ -1712,7 +1712,7 @@ static class SelfTest
         // Styled: "Notice from the game" centred, then the message alone in an outlined, faintly filled box (a one-cell
         // table), our text after. Plain (no markup): the same words over the message.
         var boxed = System.Text.RegularExpressions.Regex.Match(gamesMessage, @"^\[center\]\[color=#[0-9a-f]{6}\]Notice from the game\[/color\]\[/center\]\n"
-            + @"\[table=1\]\[cell expand=1 border=#[0-9a-f]{8} bg=#[0-9a-f]{8} padding=[0-9,]+\](?<message>.+)\[/cell\]\[/table\]$");
+            + @"\[table=1\]\[cell expand=1 border=#[0-9a-f]{8} bg=#[0-9a-f]{8} padding=[0-9,]+\]\[center\](?<message>.+)\[/center\]\[/cell\]\[/table\]$");
         Check("the game's own message for a failed start, as the dialogs show it: under \"Notice from the game\" (centred), alone in its outlined box; "
             + "plain, under the same words",
             boxed.Success && boxed.Groups["message"].Value.Length > 30 && !boxed.Groups["message"].Value.Contains("Notice from the game")

@@ -11,7 +11,8 @@ static class GameText
     public static string Caption(string text, bool centred = false) =>
         centred ? $"[center][color={Hex}]{text}[/color][/center]" : $"[color={Hex}]{text}[/color]";
 
-    // The words in their box. dim: fainter, for words that aren't a problem now (a mod that's off).
-    public static string Box(string bbcode, bool dim = false) =>
-        $"[table=1][cell expand=1 border={Hex}{(dim ? "66" : "b3")} bg={Hex}{(dim ? "0f" : "1f")} padding=12,6,12,6]{bbcode}[/cell][/table]";
+    // The words in their box. dim: fainter, for words that aren't a problem now (a mod that's off). centred: the words
+    // centred in the box (a centred label's alignment doesn't reach into a table's cell).
+    public static string Box(string bbcode, bool dim = false, bool centred = false) =>
+        $"[table=1][cell expand=1 border={Hex}{(dim ? "66" : "b3")} bg={Hex}{(dim ? "0f" : "1f")} padding=12,6,12,6]{(centred ? $"[center]{bbcode}[/center]" : bbcode)}[/cell][/table]";
 }

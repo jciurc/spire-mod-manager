@@ -508,7 +508,7 @@ static class LaunchGuard
             }
             message = Whitespace.Replace(plain ? Markup.Replace(message, "") : message, " ").Trim();
             var notice = Our(plain, "SPIRE_MOD_MANAGER.CRASH_GAME_NOTICE");
-            return plain ? $"{notice}:\n{message}\n\n" : $"{GameText.Caption(notice, centred: true)}\n{GameText.Box(message)}\n";
+            return plain ? $"{notice}:\n{message}\n\n" : $"{GameText.Caption(notice, centred: true)}\n{GameText.Box(message, centred: true)}\n";
         }
         catch (Exception e)
         {
