@@ -1049,7 +1049,7 @@ static class SelfTest
     }
 
     // The main menu button card's last line: the key that opens the page, unless the patch that reads it didn't apply.
-    static string ManagerKeyLine => ModEntry.FailedPatches.Contains(nameof(ShortcutsPatch)) ? "" : "\nF8";
+    static string ManagerKeyLine => ModEntry.FailedPatches.Contains(nameof(ShortcutsPatch)) ? "" : "\n" + OS.GetKeycodeString(ShortcutsPatch.ManagerKey);
 
     // The main menu button's card: nothing at the usual delay (the mouse crosses the button on its way to the game's), then
     // after a second, the normal card, its profile name in gold.
