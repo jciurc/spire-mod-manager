@@ -64,7 +64,7 @@ var workshopMods = new List<string>(); // the mod ids in those items' manifests,
 var twins = args.Contains("--twins"); // two --workshop items of one mod id on purpose (the self-test's two-copies check)
 
 if (mode is not ("test" or "launch" or "smoke"))
-    return Fail("usage: dotnet run tools/dev.cs [test [--window] [--bmm[-after]] [--bmm-local] [--real|--first-run|--first-run-bmm|--crash-prepare|--crash]|launch [--first-run|--first-run-bmm]|smoke [--bmm]] [--workshop <id>[,<id>...] [--twins]] [--stable]");
+    return Fail("usage: dotnet run tools/dev.cs [test [--window] [--bmm[-after]] [--bmm-local] [--real|--first-run|--first-run-bmm|--crash-prepare|--crash]|launch [--first-run|--first-run-bmm]|smoke [--bmm]] [--workshop <id>[,<id>...] [--twins]] [--stable] [--no-wait]");
 if (real && firstRun)
     return Fail("--real brings your own data, so it can't be a first run");
 if (crashPrepare && crash)
@@ -129,10 +129,16 @@ foreach (var (item, manifest) in workshopManifests)
             : add));
     }
 }
+// One dev game at a time across every repo and session (the guidelines' sts2-mods add-on, "One dev game at a time"):
+// the shared lock, taken before anything touches the sandbox and held to the end of this script, after the game has
+// exited and its cleanup is done. --no-wait refuses at once instead of waiting for it.
+using var devRun = TakeDevRunLock(string.Join(' ', args.DefaultIfEmpty("test")), args.Contains("--no-wait"), out var held);
+if (held != null)
+    return Fail(held);
 // Every dev copy of the game plays in the one no-Steam sandbox (default\1): ours on either branch, and other mods' dev
 // runners (sts-content-options, Mod Doctor). A run that writes it while another runs breaks that one, so wait until no
 // copy but the real install runs, here and again right before the sandbox is written (another can start while we
-// build and link).
+// build and link). A second guard after the lock, for a dev copy started by hand.
 if (WaitForOtherDevCopies() is { } busy)
     return Fail(busy);
 
@@ -673,11 +679,62 @@ string? WaitForOtherDevCopies()
     return null;
 }
 
+// The shared dev-run lock: the named mutex Local\sts2-dev-run, with %TEMP%\sts2-dev-run.json naming who holds it. Waits up
+// to 15 minutes, naming the holder once (none with noWait); a holder that died left the mutex abandoned, which counts as
+// free. The lock to dispose (on this thread: a mutex is released by the thread that took it), or null and why not.
+static IDisposable? TakeDevRunLock(string what, bool noWait, out string? refused)
+{
+    refused = null;
+    var holderFile = Path.Combine(Path.GetTempPath(), "sts2-dev-run.json");
+    string Holder()
+    {
+        try
+        {
+            return JsonNode.Parse(File.ReadAllText(holderFile)) is JsonObject held
+                ? $"{held["repo"]} ({held["mode"]}, process {held["pid"]}, since {held["started"]})" : "another run";
+        }
+        catch
+        {
+            return "another run (no holder file)";
+        }
+    }
+    var mutex = new Mutex(false, @"Local\sts2-dev-run");
+    try
+    {
+        if (!mutex.WaitOne(0))
+        {
+            if (noWait)
+            {
+                mutex.Dispose();
+                refused = $"another dev run holds the game: {Holder()} (--no-wait)";
+                return null;
+            }
+            Console.WriteLine($"waiting for another dev run to finish (one game at a time across every repo): {Holder()}");
+            if (!mutex.WaitOne(TimeSpan.FromMinutes(15)))
+            {
+                refused = $"another dev run still holds the game after 15 minutes: {Holder()}";
+                mutex.Dispose();
+                return null;
+            }
+        }
+    }
+    catch (AbandonedMutexException)
+    {
+        // the last holder died without letting go: ours now, and its file is stale
+    }
+    File.WriteAllText(holderFile, new JsonObject
+    {
+        ["repo"] = "spire-mod-manager", ["mode"] = what, ["pid"] = Environment.ProcessId, ["started"] = DateTime.UtcNow.ToString("yyyy-MM-ddTHH:mm:ssZ"),
+    }.ToJsonString());
+    return new DevRunLock(mutex, holderFile);
+}
+
 static int Fail(string message)
 {
     Console.Error.WriteLine(message);
     return 1;
 }
+
 
 static string ScriptDir([CallerFilePath] string path = "") => Path.GetDirectoryName(path) ?? ".";
 
@@ -715,3 +772,20 @@ static extern bool SetWindowPos(IntPtr window, IntPtr insertAfter, int x, int y,
 
 [DllImport("user32.dll")]
 static extern bool SetForegroundWindow(IntPtr window);
+
+// Lets the shared dev-run lock go: its holder file, then the mutex.
+sealed class DevRunLock(Mutex mutex, string holderFile) : IDisposable
+{
+    public void Dispose()
+    {
+        try
+        {
+            File.Delete(holderFile);
+        }
+        catch (IOException)
+        {
+        }
+        mutex.ReleaseMutex();
+        mutex.Dispose();
+    }
+}
