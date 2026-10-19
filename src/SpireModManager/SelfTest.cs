@@ -1820,6 +1820,13 @@ static class SelfTest
                 && Listed("SmmTestUi", true) == listWas.Any(e => e.Id == "SmmTestUi" && e.IsEnabled), $"quits {quits}, relaunches {relaunches}");
             if (!asked.IsCompleted)
                 Press("NoButton");
+            // On stable the same Escape then reaches the main menu, where it's the profile button's hotkey (pauseAndBack):
+            // the profile screen opens. A player's game would have quit; here, back to the main menu for what follows.
+            for (var i = 0; i < 3 && menu.SubmenuStack.SubmenusOpen; i++)
+            {
+                menu.SubmenuStack.Pop();
+                await Wait(menu, 0.3);
+            }
             ListAsItWas();
             asked = LaunchGuard.AskAfterCrash(game, offer);
             await Wait(menu, 0.8);
