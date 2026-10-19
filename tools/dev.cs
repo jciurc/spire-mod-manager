@@ -14,7 +14,7 @@
 //                                      then one that fails to start (made up) with Test Retired on, our dialog answered
 //                                     --stable, with any of them: the stable branch's game, in its own dev copy
 //   dotnet run tools/dev.cs launch    build, open the sandboxed game to try by hand (--first-run,
-//                                     --first-run-bmm and --workshop as for test)
+//                                     --first-run-bmm and --workshop as for test); returns when you close it
 //   dotnet run tools/dev.cs smoke     the release build (dist/SpireModManager) headless until the main menu
 //                                     loads; fails if our mod didn't start or logged errors
 //
@@ -174,10 +174,12 @@ if (File.Exists(Path.Combine(DevDir, "override.cfg")))
     File.Delete(Path.Combine(DevDir, "override.cfg")); // an earlier no-focus experiment: it kept the window on top
 var previousForeground = GetForegroundWindow();
 
+// Launch waits for you to close the game, so the shared dev-run lock is held while it's open, as for every mode.
 if (mode == "launch")
 {
-    Process.Start(start);
-    Console.WriteLine($"launched the dev copy in the sandbox (log: {logPath})");
+    using var launched = Process.Start(start) ?? throw new InvalidOperationException("could not start the game");
+    Console.WriteLine($"launched the dev copy in the sandbox (log: {logPath}); this returns when you close the game");
+    launched.WaitForExit();
     return 0;
 }
 
