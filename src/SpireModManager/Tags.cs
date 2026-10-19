@@ -71,12 +71,13 @@ static class Tags
         return chips;
     }
 
-    // What a #tag search finds on a mod: its chips' text, and Stable and Beta for each branch it's marked for, chip or
-    // not (so "#stable -#beta" finds the mods marked for stable only), in the game's language and in English (a guide's
-    // "#stable" works in any language).
+    // What a #tag search finds on a mod: its chips' text, its Workshop tags (a click on one in the panel searches it), and
+    // Stable and Beta for each branch it's marked for, chip or not (so "#stable -#beta" finds the mods marked for stable
+    // only), in the game's language and in English (a guide's "#stable" works in any language).
     public static IReadOnlyList<string> Searchable(Mod mod)
     {
         var texts = For(mod).Select(c => c.Text).ToList();
+        texts.AddRange(WorkshopInfo.For(mod)?.Tags ?? []);
         var (stable, beta) = Branches(mod);
         if (stable)
             texts.AddRange([Menus.Text("SPIRE_MOD_MANAGER.TAG_STABLE"), "Stable"]);

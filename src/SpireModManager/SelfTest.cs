@@ -3703,19 +3703,42 @@ static class SelfTest
     // words, the whole query without spaces, and quoted text; not as a tag. A mod with no description still searches.
     static void TestDescriptionSearch()
     {
-        string[] queries = ["contrast", "card art", "cardart", "\"art recoloring\"", "#contrast", "-contrast", "zzz"];
-        var seen = new List<string>();
-        foreach (var (id, description) in new[] { ("SmmDescTest", "Shared card art recoloring: per-card hue, color, contrast."), ("SmmDescNone", null) })
+        static Mod Made(string id, string? description, ModSource source = ModSource.ModsDirectory) => new()
         {
-            var mod = new Mod
-            {
-                path = "", modSource = ModSource.ModsDirectory, state = ModLoadState.Loaded,
-                manifest = new ModManifest { id = id, name = "Description Test", author = "Someone Careful", description = description },
-            };
-            seen.Add($"{id}: {string.Concat(queries.Select(q => Search.Matches(mod, q) ? "y" : "n"))}");
+            path = "", modSource = source, state = ModLoadState.Loaded,
+            manifest = new ModManifest { id = id, name = "Description Test", author = "Someone Careful", description = description },
+        };
+        // Words at a word's start (any start of one: "recolor"), with punctuation ("per-card"), quoted text as shown (its
+        // markup out); not inside a word ("ui" in "quick", "olor"), not the markup ("gold"), not as a tag.
+        string[] queries = ["contrast", "card art", "recolor", "\"art recoloring\"", "per-card", "ui", "gold", "olor", "#contrast", "-contrast", "zzz"];
+        var seen = new List<string>();
+        foreach (var mod in new[] { Made("SmmDescTest", "Shared card art [gold]recoloring[/gold]: per-card hue, color, contrast; quick to build."), Made("SmmDescNone", null) })
+            seen.Add($"{mod.manifest!.id}: {string.Concat(queries.Select(q => Search.Matches(mod, q) ? "y" : "n"))}");
+        // A script written without spaces: anywhere, words can't be told apart.
+        var cjk = Made("SmmDescCjk", "卡牌对比度调整");
+        seen.Add($"SmmDescCjk: {string.Concat(new[] { "对比", "调整", "卡牌对比度调整", "色" }.Select(q => Search.Matches(cjk, q) ? "y" : "n"))}");
+        Check("search finds a mod's description by the starts of its words (not inside one, not its markup, not as a tag); "
+            + "anywhere in a script without spaces; one with none still searches",
+            seen.SequenceEqual(["SmmDescTest: yyyyynnnnnn", "SmmDescNone: nnnnnnnnnyn", "SmmDescCjk: yyyn"]), string.Join(" | ", seen));
+
+        // A Workshop tag is a #tag (the panel's click on one searches that): the mods with it, not ones whose description
+        // only says the word, which plain words still find.
+        const ulong item = 4400;
+        var tagged = Made("SmmDescTagged", null, ModSource.SteamWorkshop);
+        Compat.SetWorkshopId(tagged, item);
+        WorkshopInfo.TestSet(item, new WorkshopInfo.Details(DateTime.Now, DateTime.Now, ["Cards", "Tools & APIs"], [], 0, null));
+        try
+        {
+            var says = Made("SmmDescSays", "Adds cards to every act.");
+            var found = $"tagged {Search.Matches(tagged, "#cards")}/{Search.Matches(tagged, "#\"tools & apis\"")}/{Search.Matches(tagged, "cards")}, "
+                + $"description only {Search.Matches(says, "#cards")}/{Search.Matches(says, "cards")}";
+            Check("a Workshop tag is a #tag (its own mods, quoted for spaces); a word finds it in tags and descriptions alike",
+                found == "tagged True/True/True, description only False/True", found);
         }
-        Check("search finds words in a mod's description (words, joined, quoted; not as a tag); one with none still searches",
-            seen.SequenceEqual(["SmmDescTest: yyyynnn", "SmmDescNone: nnnnnyn"]), string.Join(" | ", seen));
+        finally
+        {
+            WorkshopInfo.TestSet(item, null);
+        }
     }
 
     // Stable and Beta, by the game's own branch rule over a Workshop mod's supported range (made-up mods and details):
@@ -3774,7 +3797,8 @@ static class SelfTest
         var byName = await Shown("test fixes");
         Check("search by name", byName.SequenceEqual(["SmmTestFixes"]), string.Join(", ", byName));
         await Capture(screen, outDir, "10-search");
-        var byAlias = await Shown("the manager");
+        // The alias's exact text: its words alone are in other mods' descriptions too ("the … mod manager").
+        var byAlias = await Shown("\"The Manager\"");
         Check("search by alias", byAlias.SequenceEqual([ModEntry.ModId]), string.Join(", ", byAlias));
         var byTag = await Shown("favorites");
         Check("search by own tag", byTag.SequenceEqual(["SmmTestFixes"]), string.Join(", ", byTag));
@@ -3830,15 +3854,14 @@ static class SelfTest
             return box.Text;
         }
         void Tag(string tag, bool shift) => SpireModManager.Search.ByTag(content, tag, shift);
-        void Words(string text, bool shift) => SpireModManager.Search.ByText(content, text, shift);
         string[] clears = [After(" #library ", () => Tag("Library", false)), After("#\"Library\"", () => Tag("Library", false)),
-            After("tools  &  apis", () => Words("Tools & APIs", false))];
+            After("#\"tools & apis\"", () => Tag("Tools & APIs", false))];
         Check("click-to-search: a click on the whole search clears it (any case, quotes aside)", clears.All(s => s == ""), string.Join(" | ", clears));
         string[] replaces = [After("mod fixes", () => Tag("Library", false)), After("#Library #Gameplay", () => Tag("Library", false))];
         Check("click-to-search: a click replaces any other search", replaces.All(s => s == "#Library"), string.Join(" | ", replaces));
-        string[] adds = [After("@symphony", () => Tag("Local", true)), After("mod", () => Words("Tools & APIs", true))];
-        Check("click-to-search: Shift-click adds the term, keeping the rest", adds.SequenceEqual(["@symphony #Local", "mod Tools & APIs"]), string.Join(" | ", adds));
-        string[] removes = [After("@symphony #local mod", () => Tag("Local", true)), After("#Library Tools & APIs", () => Words("tools & apis", true))];
+        string[] adds = [After("@symphony", () => Tag("Local", true)), After("mod", () => Tag("Tools & APIs", true))];
+        Check("click-to-search: Shift-click adds the term, keeping the rest", adds.SequenceEqual(["@symphony #Local", "mod #\"Tools & APIs\""]), string.Join(" | ", adds));
+        string[] removes = [After("@symphony #local mod", () => Tag("Local", true)), After("#Library #\"Tools & APIs\"", () => Tag("tools & apis", true))];
         Check("click-to-search: Shift-click removes a term already searched, any case", removes.SequenceEqual(["@symphony mod", "#Library"]), string.Join(" | ", removes));
         string[] quoted = [After("#\"two words\" @symphony", () => Tag("Two Words", true)),
             After("mod @\"Some One\"", () => SpireModManager.Search.ByAuthor(content, "some one", true))];
@@ -3891,7 +3914,7 @@ static class SelfTest
         var nothing = await Shown("!!!");
         Check("a search with no terms (\"!!!\", a \"-\" alone) is no search: every row", nothing.Count == (await Shown("")).Count
             && (await Shown("-")).Count == nothing.Count, $"{nothing.Count}");
-        string[] whole = [After("-#Library mod", () => Tag("Gameplay", true)), After("\"two words\" mod", () => Words("mod", true))];
+        string[] whole = [After("-#Library mod", () => Tag("Gameplay", true)), After("\"two words\" #mod", () => Tag("mod", true))];
         Check("click-to-search: a -#tag and \"exact text\" stay whole terms", whole.SequenceEqual(["-#Library mod #Gameplay", "\"two words\""]),
             string.Join(" | ", whole));
         string[] flipped = [After("-#Gameplay mod", () => Tag("Gameplay", true)), After("\"Don't", () => Tag("Local", true)),
@@ -3987,7 +4010,12 @@ static class SelfTest
             var mod = new Mod
             {
                 path = "", modSource = ModSource.ModsDirectory,
-                manifest = new ModManifest { id = $"SmmMany{i:000}", name = $"Many Mods {i}", author = $"Author {i % 12}", dependencies = needs, affectsGameplay = i % 2 == 0 },
+                manifest = new ModManifest
+                {
+                    id = $"SmmMany{i:000}", name = $"Many Mods {i}", author = $"Author {i % 12}", dependencies = needs, affectsGameplay = i % 2 == 0,
+                    // About as long as a long real one (searched too).
+                    description = string.Concat(Enumerable.Repeat($"Many Mods {i} adds [gold]cards[/gold], relics and events to every act. ", 8)),
+                },
             };
             mods.Add(mod);
             saved.Add(new SettingsSaveMod(mod) { IsEnabled = i % 7 != 0 });
