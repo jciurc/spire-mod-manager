@@ -556,10 +556,11 @@ static class LaunchGuard
         return lines;
     }
 
-    // The game's own message for a failed start, the one its dialog (which ours replaces) shows, first and marked as
-    // the game's, so nothing of the game's is hidden: through the game's text, or (plain) in English from the game's own
-    // file. Its paragraphs on one line, its markup as the game shows it (the plain dialog has none). None if it can't be
-    // read, or the game no longer has it.
+    // The game's own message for a failed start, the one its dialog (which ours replaces) shows, first and set apart as
+    // the game's, so nothing of the game's is hidden: "Notice from the game" centred over it, and the message in an
+    // outlined box of its own (GameText), our text below. Through the game's text, or (plain: Godot's dialog has no
+    // markup) in English from the game's own file, under the same words. Its paragraphs on one line, its markup as the
+    // game shows it. None if it can't be read, or the game no longer has it.
     public static string GamesMessage(bool plain)
     {
         const string Key = "STARTUP_ERROR.description";
@@ -574,7 +575,8 @@ static class LaunchGuard
                 return "";
             }
             message = Whitespace.Replace(plain ? Markup.Replace(message, "") : message, " ").Trim();
-            return Our(plain, "SPIRE_MOD_MANAGER.CRASH_GAMES_MESSAGE", ("message", message)) + "\n\n";
+            var notice = Our(plain, "SPIRE_MOD_MANAGER.CRASH_GAME_NOTICE");
+            return plain ? $"{notice}:\n{message}\n\n" : $"{GameText.Caption(notice, centred: true)}\n{GameText.Box(message, centred: true)}\n";
         }
         catch (Exception e)
         {

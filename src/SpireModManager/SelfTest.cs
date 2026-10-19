@@ -1050,7 +1050,7 @@ static class SelfTest
     }
 
     // The main menu button card's last line: the key that opens the page, unless the patch that reads it didn't apply.
-    static string ManagerKeyLine => ModEntry.FailedPatches.Contains(nameof(ShortcutsPatch)) ? "" : "\nF8";
+    static string ManagerKeyLine => ModEntry.FailedPatches.Contains(nameof(ShortcutsPatch)) ? "" : "\n" + OS.GetKeycodeString(ShortcutsPatch.ManagerKey);
 
     // The main menu button's card: nothing at the usual delay (the mouse crosses the button on its way to the game's), then
     // after a second, the normal card, its profile name in gold.
@@ -1112,7 +1112,7 @@ static class SelfTest
     // Our main menu button opens the page on our view even when Vanilla View was the last one shown; the game's way in
     // (from its Settings) keeps the last view. The page closed for real, then opened each way: the
     // game reuses the page, so this is the page shown again (on its first opening, ours was read as it was made). Then
-    // F8, which opens and closes it.
+    // F3, which opens and closes it.
     static async Task TestMenuButtonOpensOurs(NMainMenu menu, NModdingScreen screen)
     {
         if (menu.GetNodeOrNull<Control>("SpireModManagerMenuButton") is not { } button)
@@ -1141,7 +1141,7 @@ static class SelfTest
             await Wait(menu, 1);
         }
 
-        // F8 (ShortcutsPatch.ManagerKey): on the page, in either view, back to the main menu as its Back button goes; on
+        // F3 (ShortcutsPatch.ManagerKey): on the page, in either view, back to the main menu as its Back button goes; on
         // the main menu, our view, as the button opens it. A menu of ours open closes first, on the page and on the main
         // menu. On another of the game's pages, or while the search box has the keyboard, it does nothing.
         async Task Press()
@@ -1162,17 +1162,17 @@ static class SelfTest
         Click(toggle);
         await Wait(menu, 1);
         await Press();
-        Check("F8 on the page goes back to the main menu, as its Back button does (from Vanilla View too)", OnMainMenu(), Where());
+        Check("F3 on the page goes back to the main menu, as its Back button does (from Vanilla View too)", OnMainMenu(), Where());
         var settings = menu.SubmenuStack.PushSubmenuType<NSettingsScreen>();
         await Wait(menu, 0.5);
         await Press();
-        Check("F8 on another of the game's pages (Settings) does nothing", menu.SubmenuStack.Peek() == settings && settings.IsVisibleInTree()
+        Check("F3 on another of the game's pages (Settings) does nothing", menu.SubmenuStack.Peek() == settings && settings.IsVisibleInTree()
             && !screen.IsVisibleInTree(), Where());
         menu.SubmenuStack.Pop();
         await Wait(menu, 0.5);
         await Press();
         await Wait(menu, 0.7); // our view's redraw
-        Check("F8 on the main menu opens our view of the page, as the button does, after Vanilla View", OnOurView(), Where());
+        Check("F3 on the main menu opens our view of the page, as the button does, after Vanilla View", OnOurView(), Where());
 
         MenuPanel.Show(screen.GetNode<Control>("%ModsScrollContainer/Mask/Content"), () => [new MenuItem("One", () => { })]);
         await Wait(menu, 0.1);
@@ -1180,14 +1180,14 @@ static class SelfTest
         await Press();
         var pageMenuClosed = OnOurView();
         await Press();
-        Check("F8 with a menu open on the page closes the menu first, staying; the next goes back to the main menu",
+        Check("F3 with a menu open on the page closes the menu first, staying; the next goes back to the main menu",
             pageMenu && pageMenuClosed && OnMainMenu(), $"opened {pageMenu}, closed and stayed {pageMenuClosed}; {Where()}");
         var buttonMenu = await ButtonMenu(menu, button) != null;
         await Press();
         var buttonMenuClosed = OnMainMenu();
         await Press();
         await Wait(menu, 0.7);
-        Check("F8 with the main menu button's menu open closes the menu first, staying; the next opens the page",
+        Check("F3 with the main menu button's menu open closes the menu first, staying; the next opens the page",
             buttonMenu && buttonMenuClosed && OnOurView(), $"opened {buttonMenu}, closed and stayed {buttonMenuClosed}; {Where()}");
 
         if (screen.GetNodeOrNull<LineEdit>("ModsBorder/SpireModManagerSearch") is { } search)
@@ -1195,12 +1195,12 @@ static class SelfTest
             var text = search.Text;
             search.GrabFocus();
             await Press();
-            Check("F8 while typing in the search box does nothing to the page: it stays, the box keeps the keyboard and its text",
+            Check("F3 while typing in the search box does nothing to the page: it stays, the box keeps the keyboard and its text",
                 OnOurView() && search.HasFocus() && search.Text == text, $"focused {search.HasFocus()}, \"{search.Text}\"; {Where()}");
             screen.GetViewport().GuiReleaseFocus();
         }
         else
-            Results.Add("FAIL F8 while typing in the search box: no search box");
+            Results.Add("FAIL F3 while typing in the search box: no search box");
     }
 
     // Right-click the main menu button, Move button, click somewhere: it stays there; Reset puts it back.
@@ -1338,8 +1338,9 @@ static class SelfTest
 
         var popup = await ButtonMenu(menu, button);
         var labels = popup == null ? [] : MenuPanel.Labels(popup);
-        Check("main menu button's menu: Move button, Reset position, Open translations folder, Relaunch game",
-            labels.SequenceEqual(["Move button", "Reset position", "Open translations folder", "Relaunch game"]), string.Join(", ", labels));
+        var manage = $"Manage mods{(ModEntry.FailedPatches.Contains(nameof(ShortcutsPatch)) ? "" : $" ({OS.GetKeycodeString(ShortcutsPatch.ManagerKey)})")}";
+        Check("main menu button's menu: Manage mods (with its key), Move button, Reset position, Open translations folder, Relaunch game",
+            labels.SequenceEqual([manage, "Move button", "Reset position", "Open translations folder", "Relaunch game"]), string.Join(", ", labels));
         if (popup == null)
             return;
         string? Label(Node item) => item.IsInGroup(MenuPanel.ItemGroup) ? (string)item.GetMeta("label") : null;
@@ -1348,13 +1349,13 @@ static class SelfTest
         // At the top, our name and version (from the manifest the game loaded), a heading with a line under it: not an
         // item, so nothing in it takes the mouse or the focus, and a click on it leaves the menu open.
         var version = ModEntry.Version;
-        var header = $"Spire Mod Manager v{version}";
+        var header = $"Spire Mod Manager {version}";
         var top = items.FirstOrDefault();
         var parts = top?.FindChildren("*", "Control", true, false).OfType<Control>().Prepend(top).ToList() ?? [];
-        Check("main menu button's menu: \"Spire Mod Manager v<version>\" first, a heading, not an item", version != null && top != null
+        Check("main menu button's menu: \"Spire Mod Manager <version>\" first (no \"v\"), a heading, not an item", version != null && top != null
             && top.IsInGroup(MenuPanel.HeadingGroup) && (string)top.GetMeta("label") == header && MenuPanel.Headings(popup).FirstOrDefault() == header
             && !labels.Contains(header) && top.FindChildren("*", "Label", true, false).OfType<Label>().Any(l => l.Text == header)
-            && top.FindChildren("*", "ColorRect", true, false).Count == 1 && items.Count > 1 && Label(items[1]) == "Move button"
+            && top.FindChildren("*", "ColorRect", true, false).Count == 1 && items.Count > 1 && Label(items[1]) == manage
             && parts.All(c => c.MouseFilter == Control.MouseFilterEnum.Ignore && c.FocusMode == Control.FocusModeEnum.None),
             $"{string.Join(" | ", MenuPanel.Headings(popup))}; version {version}");
         // A real click on it, through the viewport (and the menu's Catcher): the menu stays open, nothing runs.
@@ -1710,8 +1711,14 @@ static class SelfTest
         // game's text, and in English from its file. Not empty: the game has one.
         var gamesMessage = LaunchGuard.GamesMessage(plain: false).Trim();
         var gamesMessagePlain = LaunchGuard.GamesMessage(plain: true).Trim();
-        Check("the game's own message for a failed start, as the dialogs show it: there, and marked as the game's",
-            gamesMessage.StartsWith("The game's own message: ") && gamesMessage.Length > 30 && gamesMessagePlain.StartsWith("The game's own message: "),
+        // Styled: "Notice from the game" centred, then the message alone in an outlined, faintly filled box (a one-cell
+        // table), our text after. Plain (no markup): the same words over the message.
+        var boxed = System.Text.RegularExpressions.Regex.Match(gamesMessage, @"^\[center\]\[color=#[0-9a-f]{6}\]Notice from the game\[/color\]\[/center\]\n"
+            + @"\[table=1\]\[cell expand=1 border=#[0-9a-f]{8} bg=#[0-9a-f]{8} padding=[0-9,]+\]\[center\](?<message>.+)\[/center\]\[/cell\]\[/table\]$");
+        Check("the game's own message for a failed start, as the dialogs show it: under \"Notice from the game\" (centred), alone in its outlined box; "
+            + "plain, under the same words",
+            boxed.Success && boxed.Groups["message"].Value.Length > 30 && !boxed.Groups["message"].Value.Contains("Notice from the game")
+            && gamesMessagePlain.StartsWith("Notice from the game:\n") && gamesMessagePlain.Length > 50,
             $"{gamesMessage} | {gamesMessagePlain}");
         // Our popup's button (marked: no other popup's), by its node and signal names (the same in every game version so far).
         static void Press(string button)
@@ -3409,11 +3416,16 @@ static class SelfTest
             {
                 CategoryList.Select(screen, other);
                 await Wait(menu, 0.5);
-                var shown = panel.GetNode<RichTextLabel>("ModDescription").GetParsedText();
-                var card = ModDetails.Card(erring); // the row's hover card shows the same lines (as BBCode: "[lb]" is a "[")
-                Check("a game load error shows in the panel and the row's card as text, without the game's colour tags ([red])",
-                    shown.Contains("From the game: Mod ") && shown.Contains("only supports Steam branch public") && !shown.Contains("[red]") && !shown.Contains("[/red]")
-                    && card.Contains("only supports Steam branch public") && !card.Contains("[lb]red]") && !card.Contains("[lb]/red]"),
+                var descriptionLabel = panel.GetNode<RichTextLabel>("ModDescription");
+                var (shown, raw) = (descriptionLabel.GetParsedText(), descriptionLabel.Text);
+                await Capture(screen, outDir, "17b-game-error-panel");
+                var card = ModDetails.Card(erring); // the row's hover card shows the same (as BBCode: "[lb]" is a "[")
+                Check("a game load error shows apart from ours, in the panel and the row's card: under \"From the game\", alone in its box, "
+                    + "in the game's red (its own [red] in the panel, its colour in the card, no tags as text), not among our problems",
+                    shown.Contains("From the game") && shown.Contains("only supports Steam branch public") && !shown.Contains("[red]")
+                    && raw.Contains(GameText.Caption("From the game")) && raw.Contains("[table=1]") && raw.Contains("[red]Mod ")
+                    && card.Contains(GameText.Caption("From the game")) && card.Contains("[table=1]") && card.Contains("[color=#ff5555]Mod ")
+                    && !card.Contains("[lb]red]") && !ModDetails.Problems(erring).Any(p => p.Contains("Steam branch")),
                     $"{shown.Split('\n')[0]} | card: {card.Split('\n').FirstOrDefault(l => l.Contains("branch"))}");
             }
             finally
@@ -3448,9 +3460,11 @@ static class SelfTest
                 var offKeys = offMod.errors?.Select(e => e.LocEntryKey).ToList() ?? [];
                 var onKeys = onMod.errors?.Select(e => e.LocEntryKey).ToList() ?? [];
                 var card = ModDetails.Card(offMod);
-                var gameMessage = $"From the game, not counted while this mod is off: Mod {offMod.manifest?.id} only supports Steam branch public";
-                Check("the game's message taken off a mod that's off still shows in its card, marked as the game's, not as a problem",
-                    card.Contains(gameMessage) && !ModDetails.Problems(offMod).Any(p => p.Contains("only supports Steam branch")),
+                var gameMessage = $"Mod {offMod.manifest?.id} only supports Steam branch public";
+                Check("the game's message taken off a mod that's off still shows in its card, apart from ours under its own caption, in a fainter box, "
+                    + "not as a problem",
+                    card.Contains(GameText.Caption("From the game, not counted while this mod is off")) && card.Contains(gameMessage)
+                    && card.Contains(GameText.Box("", dim: true)[..40]) && !ModDetails.Problems(offMod).Any(p => p.Contains("only supports Steam branch")),
                     card.Split('\n').FirstOrDefault(l => l.Contains("branch")) ?? card.Split('\n')[0]);
                 // The second pass, just before the main menu's warning reads the errors (BranchErrorsLatePatch): one
                 // marked after our Init goes there too.
@@ -7581,7 +7595,8 @@ static class SelfTest
             var notes = ModDetails.GameNotes(aside);
             Check("same ID, a message on a copy set aside: off its errors (the MODDED label stays clear), into its panel as the game's; the late pass covers it",
                 aside.errors == null && dropped >= 1 && BranchErrors.Dropped(aside).Contains(error)
-                && notes.Any(n => n.StartsWith("From the game, not counted while this mod is off:") && n.Contains("only supports Steam branch public")),
+                && notes.Any(n => n.Contains("only supports Steam branch public"))
+                && ModDetails.Card(aside).Contains(GameText.Caption("From the game, not counted while this mod is off")),
                 $"errors {aside.errors?.Count}, dropped {dropped}; {string.Join(" | ", notes)}");
         }
         finally

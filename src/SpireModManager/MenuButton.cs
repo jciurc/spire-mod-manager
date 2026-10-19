@@ -8,7 +8,7 @@ namespace SpireModManager;
 
 // The main menu's "Default (12 mods)" button: a smaller copy of the game's Settings text button (its font, colours,
 // hover and carets) naming the active profile and how many mods are on. It always opens our view of the Modding page,
-// as F8 on the main menu does. Lower-left, or wherever the player moved it (right-click > Move button), with the game's
+// as F3 on the main menu does. Lower-left, or wherever the player moved it (right-click > Move button), with the game's
 // notification dot and a "Relaunch to apply" note while a relaunch is pending. Its right-click menu also opens the
 // translations folder and relaunches the game.
 static class MenuButton
@@ -35,7 +35,7 @@ static class MenuButton
     public static readonly Color CaretColor = new("#ff69b4");
     static readonly Color CaretClear = new(CaretColor, 0);
 
-    // What the button does, and F8 on the main menu (ShortcutsPatch).
+    // What the button does, and F3 on the main menu (ShortcutsPatch).
     public static void Open(NMainMenu menu)
     {
         CategoryList.PreferOurs(); // our view, whatever was last shown
@@ -143,6 +143,9 @@ static class MenuButton
                 MenuItem.Heading(ModEntry.Version is { } version
                     ? Menus.Format("SPIRE_MOD_MANAGER.MENU_HEADER", ("version", version))
                     : Menus.Text("SPIRE_MOD_MANAGER.POPUP_MARK")),
+                // What a click on the button does, first, with its key (none if the patch that reads it didn't apply).
+                new(ModEntry.FailedPatches.Contains(nameof(ShortcutsPatch)) ? Menus.Text("SPIRE_MOD_MANAGER.MANAGE_MODS")
+                    : Menus.Format("SPIRE_MOD_MANAGER.MANAGE_MODS_KEY", ("key", OS.GetKeycodeString(ShortcutsPatch.ManagerKey))), () => Open(menu)),
                 new(Menus.Text("SPIRE_MOD_MANAGER.MOVE_BUTTON"), () => BeginMove(menu, button)),
                 new(Menus.Text("SPIRE_MOD_MANAGER.RESET_POSITION"), () =>
                 {
@@ -302,7 +305,7 @@ static class MenuButton
     // the mouse and keys are read every frame, so nothing on the menu takes them first.
     public const string MoveLayerName = "SpireModManagerMoveLayer";
 
-    // While moving: cancels it (Escape or F8, through ShortcutsPatch, which then keeps the key from the game; the game's
+    // While moving: cancels it (Escape or F3, through ShortcutsPatch, which then keeps the key from the game; the game's
     // own Escape on the main menu opens its save profile screen). False when not moving.
     static Action? _cancelMove;
 
