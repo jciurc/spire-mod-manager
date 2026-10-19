@@ -120,7 +120,7 @@ static class MissingMods
                     break;
                 default:
                     if (status.State == Subscriptions.State.Failed)
-                        row.AddChild(Text(Menus.Format("SPIRE_MOD_MANAGER.SUBSCRIBE_FAILED", ("reason", status.Error ?? "")), Failed, "Status"));
+                        row.AddChild(Text(status.Error ?? "", Failed, "Status"));
                     var subscribe = Menus.SmallButton(Menus.Text("SPIRE_MOD_MANAGER.SUBSCRIBE"), () => Subscriptions.Subscribe([workshop]),
                         disabled: !Subscriptions.Available, name: "SubscribeButton");
                     Hover.Tip(subscribe, Menus.Text("SPIRE_MOD_MANAGER.SUBSCRIBE_TIP"));

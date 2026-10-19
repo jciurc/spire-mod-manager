@@ -207,6 +207,7 @@ static class SelfTest
             await TestPendingLine(menu, screen, content);
             await TestSearch(menu, screen, content, outDir);
             TestBranchTags();
+            TestDescriptionSearch();
             await TestRedrawCost(menu, screen, content);
             await TestManyMods(menu, screen, content);
             await TestNewMod(menu, screen, content, outDir);
@@ -818,8 +819,8 @@ static class SelfTest
         // treats its copies (its words are checked in TestSameIdCopies).
         var tipLines = vanillaTip.Split('\n');
         Check("the Vanilla List button's tip says it's the game's own page (without Spire Mod Manager), and on it, the way back",
-            tipLines[0] == Menus.Text(Bmm.Present ? "SPIRE_MOD_MANAGER.VANILLA_VIEW_TIP_BMM" : "SPIRE_MOD_MANAGER.VANILLA_VIEW_TIP")
-            && (Copies.TwinGroups().Count > 0 ? tipLines is [_, var copies] && copies.StartsWith("Here one tickbox enables or disables every copy of ") : tipLines.Length == 1)
+            tipLines[0] == Menus.Text("SPIRE_MOD_MANAGER.VANILLA_VIEW_TIP")
+            && (Copies.TwinGroups().Count > 0 ? tipLines is [_, var copies] && copies.StartsWith("In vanilla, mods ") : tipLines.Length == 1)
             && backTip == Menus.Text("SPIRE_MOD_MANAGER.CATEGORY_VIEW_TIP"), $"{vanillaTip} | {backTip}");
         var bannerBox = border.GetNode<Control>(LoadOrder.ManagersName).GetGlobalRect();
         var searchBox = border.GetNode<Control>("SpireModManagerSearch").GetGlobalRect();
@@ -2902,7 +2903,7 @@ static class SelfTest
             var preview = Part<RichTextLabel>(ProfileShare.Name, "Preview")?.GetParsedText() ?? "";
             Check("import preview: Subscribe asks Steam for both; one downloads (its progress), the other fails and says why; Subscribe offers that one again",
                 steam.Asked.Order().SequenceEqual([Here, Gone]) && preview.Contains("Downloading 45%")
-                && preview.Contains("Couldn't subscribe: it's no longer on the Workshop, or it's private") && offer is { Visible: true, Text: "Subscribe to the missing mod" },
+                && preview.Contains("Couldn't find mod. The listing could be removed, or set to private.") && !preview.Contains("Couldn't subscribe") && offer is { Visible: true, Text: "Subscribe to the missing mod" },
                 $"{string.Join(",", steam.Asked)}; button {offer?.Visible} \"{offer?.Text}\"; {preview.Replace("\n", " | ")}");
             await Capture(screen, outDir, "7g-import-downloading");
             Press(ProfileShare.Name, "CreateProfileButton");
@@ -2912,7 +2913,7 @@ static class SelfTest
             Check("the imported profile keeps each missing Workshop mod's item and the list's name for it, and the banner counts the three",
                 importedName != startName && imported?.Mods.Any(m => m.Id == HereId && m.Copy == $"w:{Here}" && m.Name == "Sub Here" && m.Enabled) == true
                 && imported.Mods.Any(m => m.Id == LocalId && m.Copy == null && m.Enabled) && Banner() is { Visible: true }
-                && BannerText() == "This profile has 3 enabled mods that aren't installed.", $"{importedName}: {BannerText()}");
+                && BannerText() == "This profile contains 3 mods that aren't installed.", $"{importedName}: {BannerText()}");
             await Capture(screen, outDir, "2l-missing-banner");
 
             // Show: the list, as it was when it opened.
@@ -2920,7 +2921,7 @@ static class SelfTest
             await Wait(menu, 0.4);
             Check("Show lists the missing mods by the list's names: one downloading with its bar, one that failed with Subscribe again, the local one not on the Workshop",
                 RowText(HereId).StartsWith("Sub Here") && RowText(LocalId).StartsWith("Sub Local") && RowText(HereId).Contains("bar 0.45") && RowText(HereId).Contains("Downloading 45%")
-                && RowText(GoneId).Contains("Couldn't subscribe") && RowText(GoneId).Contains("[Subscribe]") && RowText(LocalId).Contains("Not on the Workshop")
+                && RowText(GoneId).Contains("Couldn't find mod") && RowText(GoneId).Contains("[Subscribe]") && RowText(LocalId).Contains("Not on Workshop")
                 && Part<Button>(MissingMods.Name, "SubscribeAllButton") is { Text: "Subscribe to all (1)" },
                 $"{RowText(HereId)} | {RowText(GoneId)} | {RowText(LocalId)} | {Part<Button>(MissingMods.Name, "SubscribeAllButton")?.Text}");
             await Capture(screen, outDir, "2m-missing-list");
@@ -2932,7 +2933,7 @@ static class SelfTest
             CategoryList.Redraw(content);
             await Wait(menu, 0.3);
             Check("the mod arriving: the list says it's installed, and the banner counts the two left",
-                RowText(HereId).Contains("Installed: loads after a relaunch") && BannerText() == "This profile has 2 enabled mods that aren't installed.",
+                RowText(HereId).Contains("Installed: loads after a relaunch") && BannerText() == "This profile contains 2 mods that aren't installed.",
                 $"{RowText(HereId)} | {BannerText()}");
             Modal.Close(MissingMods.Name);
             await Wait(menu, 0.2);
@@ -2960,15 +2961,15 @@ static class SelfTest
                 copy.Mods.Any(m => m.Id == GoneId && m.Enabled && m.Copy == $"w:{Gone}") && copy.Mods.Any(m => m.Id == LocalId && m.Enabled),
                 string.Join(", ", copy.Mods.Where(m => m.Id.StartsWith("SmmSub")).Select(m => $"{m.Id}={m.Enabled}/{m.Copy}")));
 
-            // Disable missing mods: off in the profile, the banner gone, one undo step back.
+            // Disable missing mods: out of the profile, the banner gone, one undo step back.
             var steps = History.Steps(History.Track.List);
             BannerPress("DisableMissingButton");
             await Wait(menu, 0.3);
-            var off = Profiles.Active?.Mods.Where(m => m.Id is GoneId or LocalId).All(m => !m.Enabled) == true && Banner() == null
+            var off = Profiles.Active?.Mods.Any(m => m.Id is GoneId or LocalId) == false && Profiles.Active?.Edited?.Any(m => m.Id is GoneId or LocalId) != true && Banner() == null
                 && History.Steps(History.Track.List) == steps + 1;
             History.Undo();
             await Wait(menu, 0.3);
-            Check("Disable missing mods turns them off in the profile (the banner goes), one undo step that brings them back",
+            Check("Disable missing mods takes them out of the profile (the banner goes), one undo step that brings them back",
                 off && Profiles.Missing().Count == 2 && Banner() != null, $"off {off}, missing after undo {Profiles.Missing().Count}");
         }
         finally
@@ -3460,11 +3461,11 @@ static class SelfTest
                 var (shown, raw) = (descriptionLabel.GetParsedText(), descriptionLabel.Text);
                 await Capture(screen, outDir, "17b-game-error-panel");
                 var card = ModDetails.Card(erring); // the row's hover card shows the same (as BBCode: "[lb]" is a "[")
-                Check("a game load error shows apart from ours, in the panel and the row's card: under \"From the game\", alone in its box, "
+                Check("a game load error shows apart from ours, in the panel and the row's card: under \"Error while loading\", alone in its box, "
                     + "in the game's red (its own [red] in the panel, its colour in the card, no tags as text), not among our problems",
-                    shown.Contains("From the game") && shown.Contains("only supports Steam branch public") && !shown.Contains("[red]")
-                    && raw.Contains(GameText.Caption("From the game")) && raw.Contains("[table=1]") && raw.Contains("[red]Mod ")
-                    && card.Contains(GameText.Caption("From the game")) && card.Contains("[table=1]") && card.Contains("[color=#ff5555]Mod ")
+                    shown.Contains("Error while loading") && shown.Contains("only supports Steam branch public") && !shown.Contains("[red]")
+                    && raw.Contains(GameText.Caption("Error while loading")) && raw.Contains("[table=1]") && raw.Contains("[red]Mod ")
+                    && card.Contains(GameText.Caption("Error while loading")) && card.Contains("[table=1]") && card.Contains("[color=#ff5555]Mod ")
                     && !card.Contains("[lb]red]") && !ModDetails.Problems(erring).Any(p => p.Contains("Steam branch")),
                     $"{shown.Split('\n')[0]} | card: {card.Split('\n').FirstOrDefault(l => l.Contains("branch"))}");
             }
@@ -3503,7 +3504,7 @@ static class SelfTest
                 var gameMessage = $"Mod {offMod.manifest?.id} only supports Steam branch public";
                 Check("the game's message taken off a mod that's off still shows in its card, apart from ours under its own caption, in a fainter box, "
                     + "not as a problem",
-                    card.Contains(GameText.Caption("From the game, not counted while this mod is off")) && card.Contains(gameMessage)
+                    card.Contains(GameText.Caption("Error while loading; Can be ignored if mod is disabled")) && card.Contains(gameMessage)
                     && card.Contains(GameText.Box("", dim: true)[..40]) && !ModDetails.Problems(offMod).Any(p => p.Contains("only supports Steam branch")),
                     card.Split('\n').FirstOrDefault(l => l.Contains("branch")) ?? card.Split('\n')[0]);
                 // The second pass, just before the main menu's warning reads the errors (BranchErrorsLatePatch): one
@@ -3913,6 +3914,50 @@ static class SelfTest
         }
     }
 
+    // A mod's description is searched too (Jordan: "contrast" didn't find Art Roller, whose description says it): its
+    // words, the whole query without spaces, and quoted text; not as a tag. A mod with no description still searches.
+    static void TestDescriptionSearch()
+    {
+        static Mod Made(string id, string? description, ModSource source = ModSource.ModsDirectory) => new()
+        {
+            path = "", modSource = source, state = ModLoadState.Loaded,
+            manifest = new ModManifest { id = id, name = "Description Test", author = "Someone Careful", description = description },
+        };
+        // Words at a word's start (any start of one: "recolor"), with punctuation ("per-card"), quoted text as shown (its
+        // markup out, [lb] and [rb] as brackets); not inside a word ("ui" in "quick", "olor"), not the markup ("gold") or a
+        // picture's path ("banner"), not as a tag.
+        string[] queries = ["contrast", "card art", "recolor", "\"art recoloring\"", "per-card", "ui", "gold", "olor", "#contrast", "-contrast", "zzz", "banner", "\"[v2]\""];
+        var seen = new List<string>();
+        foreach (var mod in new[] { Made("SmmDescTest", "Shared card art [gold]recoloring[/gold]: per-card hue, color, contrast; quick to build. [img]res://pics/banner.png[/img] [lb]v2[rb]"), Made("SmmDescNone", null) })
+            seen.Add($"{mod.manifest?.id}: {string.Concat(queries.Select(q => Search.Matches(mod, q) ? "y" : "n"))}");
+        // A script written without spaces: anywhere, words can't be told apart.
+        var cjk = Made("SmmDescCjk", "卡牌对比度调整");
+        seen.Add($"SmmDescCjk: {string.Concat(new[] { "对比", "调整", "卡牌对比度调整", "色" }.Select(q => Search.Matches(cjk, q) ? "y" : "n"))}");
+        Check("search finds a mod's description by the starts of its words (not inside one, not its markup, not as a tag); "
+            + "anywhere in a script without spaces; one with none still searches",
+            seen.SequenceEqual(["SmmDescTest: yyyyynnnnnnny", "SmmDescNone: nnnnnnnnnynnn", "SmmDescCjk: yyyn"]), string.Join(" | ", seen));
+
+        // A Workshop tag is a #tag (the panel's click on one searches that): the mods with it, not ones whose description
+        // only says the word, which plain words still find.
+        const ulong item = 4400;
+        var tagged = Made("SmmDescTagged", null, ModSource.SteamWorkshop);
+        Compat.SetWorkshopId(tagged, item);
+        WorkshopInfo.TestSet(item, new WorkshopInfo.Details(DateTime.Now, DateTime.Now, ["Cards", "Tools & APIs", "Library"], [], 0, null));
+        try
+        {
+            var says = Made("SmmDescSays", "Adds cards to every act.");
+            var found = $"tagged {Search.Matches(tagged, "#cards")}/{Search.Matches(tagged, "#\"tools & apis\"")}/{Search.Matches(tagged, "cards")}/{Search.Matches(tagged, "#library")}, "
+                + $"description only {Search.Matches(says, "#cards")}/{Search.Matches(says, "cards")}";
+            Check("a Workshop tag is a #tag (its own mods, quoted for spaces), but not one named like an automatic chip (#library: "
+                + "mods others need); a word finds it in tags and descriptions alike",
+                found == "tagged True/True/True/False, description only False/True", found);
+        }
+        finally
+        {
+            WorkshopInfo.TestSet(item, null);
+        }
+    }
+
     // Stable and Beta, by the game's own branch rule over a Workshop mod's supported range (made-up mods and details):
     // a chip only on a mod marked for one branch, whose click searches for that ("#Stable -#Beta"); #stable and #beta
     // (and the plain words) find every mod marked for a branch, "#stable -#beta" the ones for stable only. No range, or a
@@ -3969,7 +4014,8 @@ static class SelfTest
         var byName = await Shown("test fixes");
         Check("search by name", byName.SequenceEqual(["SmmTestFixes"]), string.Join(", ", byName));
         await Capture(screen, outDir, "10-search");
-        var byAlias = await Shown("the manager");
+        // The alias's exact text: its words alone are in other mods' descriptions too ("the … mod manager").
+        var byAlias = await Shown("\"The Manager\"");
         Check("search by alias", byAlias.SequenceEqual([ModEntry.ModId]), string.Join(", ", byAlias));
         var byTag = await Shown("favorites");
         Check("search by own tag", byTag.SequenceEqual(["SmmTestFixes"]), string.Join(", ", byTag));
@@ -4025,15 +4071,14 @@ static class SelfTest
             return box.Text;
         }
         void Tag(string tag, bool shift) => SpireModManager.Search.ByTag(content, tag, shift);
-        void Words(string text, bool shift) => SpireModManager.Search.ByText(content, text, shift);
         string[] clears = [After(" #library ", () => Tag("Library", false)), After("#\"Library\"", () => Tag("Library", false)),
-            After("tools  &  apis", () => Words("Tools & APIs", false))];
+            After("#\"tools & apis\"", () => Tag("Tools & APIs", false))];
         Check("click-to-search: a click on the whole search clears it (any case, quotes aside)", clears.All(s => s == ""), string.Join(" | ", clears));
         string[] replaces = [After("mod fixes", () => Tag("Library", false)), After("#Library #Gameplay", () => Tag("Library", false))];
         Check("click-to-search: a click replaces any other search", replaces.All(s => s == "#Library"), string.Join(" | ", replaces));
-        string[] adds = [After("@symphony", () => Tag("Local", true)), After("mod", () => Words("Tools & APIs", true))];
-        Check("click-to-search: Shift-click adds the term, keeping the rest", adds.SequenceEqual(["@symphony #Local", "mod Tools & APIs"]), string.Join(" | ", adds));
-        string[] removes = [After("@symphony #local mod", () => Tag("Local", true)), After("#Library Tools & APIs", () => Words("tools & apis", true))];
+        string[] adds = [After("@symphony", () => Tag("Local", true)), After("mod", () => Tag("Tools & APIs", true))];
+        Check("click-to-search: Shift-click adds the term, keeping the rest", adds.SequenceEqual(["@symphony #Local", "mod #\"Tools & APIs\""]), string.Join(" | ", adds));
+        string[] removes = [After("@symphony #local mod", () => Tag("Local", true)), After("#Library #\"Tools & APIs\"", () => Tag("tools & apis", true))];
         Check("click-to-search: Shift-click removes a term already searched, any case", removes.SequenceEqual(["@symphony mod", "#Library"]), string.Join(" | ", removes));
         string[] quoted = [After("#\"two words\" @symphony", () => Tag("Two Words", true)),
             After("mod @\"Some One\"", () => SpireModManager.Search.ByAuthor(content, "some one", true))];
@@ -4086,7 +4131,7 @@ static class SelfTest
         var nothing = await Shown("!!!");
         Check("a search with no terms (\"!!!\", a \"-\" alone) is no search: every row", nothing.Count == (await Shown("")).Count
             && (await Shown("-")).Count == nothing.Count, $"{nothing.Count}");
-        string[] whole = [After("-#Library mod", () => Tag("Gameplay", true)), After("\"two words\" mod", () => Words("mod", true))];
+        string[] whole = [After("-#Library mod", () => Tag("Gameplay", true)), After("\"two words\" #mod", () => Tag("mod", true))];
         Check("click-to-search: a -#tag and \"exact text\" stay whole terms", whole.SequenceEqual(["-#Library mod #Gameplay", "\"two words\""]),
             string.Join(" | ", whole));
         string[] flipped = [After("-#Gameplay mod", () => Tag("Gameplay", true)), After("\"Don't", () => Tag("Local", true)),
@@ -4182,7 +4227,12 @@ static class SelfTest
             var mod = new Mod
             {
                 path = "", modSource = ModSource.ModsDirectory,
-                manifest = new ModManifest { id = $"SmmMany{i:000}", name = $"Many Mods {i}", author = $"Author {i % 12}", dependencies = needs, affectsGameplay = i % 2 == 0 },
+                manifest = new ModManifest
+                {
+                    id = $"SmmMany{i:000}", name = $"Many Mods {i}", author = $"Author {i % 12}", dependencies = needs, affectsGameplay = i % 2 == 0,
+                    // About as long as a long real one (searched too).
+                    description = string.Concat(Enumerable.Repeat($"Many Mods {i} adds [gold]cards[/gold], relics and events to every act. ", 8)),
+                },
             };
             mods.Add(mod);
             saved.Add(new SettingsSaveMod(mod) { IsEnabled = i % 7 != 0 });
@@ -7636,7 +7686,7 @@ static class SelfTest
             Check("same ID, a message on a copy set aside: off its errors (the MODDED label stays clear), into its panel as the game's; the late pass covers it",
                 aside.errors == null && dropped >= 1 && BranchErrors.Dropped(aside).Contains(error)
                 && notes.Any(n => n.Contains("only supports Steam branch public"))
-                && ModDetails.Card(aside).Contains(GameText.Caption("From the game, not counted while this mod is off")),
+                && ModDetails.Card(aside).Contains(GameText.Caption("Error while loading; Can be ignored if mod is disabled")),
                 $"errors {aside.errors?.Count}, dropped {dropped}; {string.Join(" | ", notes)}");
         }
         finally
@@ -7666,7 +7716,7 @@ static class SelfTest
         var actions = LoadOrder.Actions(content, ours, () => { });
         Check("same ID, Load Order: our row pinned first, a lock for its grip saying why, its moves greyed",
             !handle.GetChildren().OfType<ColorRect>().Any() && handle.GetChildren().OfType<Panel>().Count() == 2
-            && Hover.TipOf(handle) == "Spire Mod Manager always loads first, so it can choose which copy of a mod loads"
+            && Hover.TipOf(handle) == "Spire Mod Manager always loads first, so it can configure the rest of the list properly."
             && actions.Where(a => a.Label is not ("Disable" or "Enable")).All(a => a.Disabled),
             $"{string.Join(", ", actions.Select(a => $"{a.Label}{(a.Disabled ? " (greyed)" : "")}"))}; tip {Hover.TipOf(handle)}");
         var from = handle.GetGlobalRect().GetCenter();
@@ -7781,7 +7831,7 @@ static class SelfTest
             && ModDetails.Problems(a).Count == 0 && Hover.TipOf(rowA.GetNode<Control>("Tickbox")) == $"Enabling this copy disables {Named(b)}"
             && Hover.TipOf(rowB.GetNode<Control>("Tickbox")) == "" && ModDetails.CopyLine(a, links: false)?.Text == $"{Named(b)} is the enabled copy"
             && enableAll.Tip == $"Also disables other copies: {Named(b)}"
-            && toggleTip.Contains("\nHere one tickbox enables or disables every copy of ") && toggleTip.Contains("the copy enabled on Spire Mod Manager's page is the one that loads.")
+            && toggleTip.Contains("\nIn vanilla, mods ") && toggleTip.Contains("These will use the Spire Mod Manager configuration as a fallback.")
             && bothDone && OnDisk("l:SmmTestTwinB"),
             $"{Say()}; Enable all tip {enableAll.Tip}; both done {bothDone}; on disk {string.Join(", ", FilePicks())}; toggle tip {toggleTip}");
 
@@ -8059,7 +8109,7 @@ static class SelfTest
         SameIdLoad.TestResult(TwinId, null);
         History.Undo(); // the pick
         await Wait(menu, 0.3);
-        const string couldnt = "Spire Mod Manager couldn't choose which copy of this mod loads: this game version loads mods differently. Spire Mod Manager may need an update.";
+        const string couldnt = "Spire Mod Manager couldn't choose which copy was loaded. If the game is on a different version, Spire Mod Manager may need to be updated.";
         Check("... the pick not taken (the self-check): both copies say it, and the other copy picked is no relaunch away",
             notApplied == (couldnt, couldnt) && SameIdLoad.ResultOf(TwinId) == SameIdLoad.Result.Taken && !pendingBefore && pendingPicked && !pendingUnchosen
             && Picked() == "l:SmmTestTwinB", $"{notApplied}; then {SameIdLoad.ResultOf(TwinId)}; pending {pendingBefore}, picked {pendingPicked}, not taken {pendingUnchosen}");
@@ -8072,7 +8122,7 @@ static class SelfTest
             b.errors = [new LocString("main_menu_ui", "MOD_ERROR.GAME_VERSION_UNSUPPORTED")];
             var failedLine = ModDetails.CopyLine(b, false)?.Text;
             Check("... the picked copy failed for its own reasons: its panel says the other copy is installed, enabling it loads that one",
-                failedLine == $"{Named(a)} is installed too: enabling it loads that copy instead", failedLine ?? "none");
+                failedLine == $"{Named(a)} is also installed: enabling will load that copy instead", failedLine ?? "none");
         }
         finally
         {
@@ -8106,7 +8156,7 @@ static class SelfTest
         CategoryList.Redraw(content);
         await Wait(menu, 0.3);
         Check("... a new copy arriving keeps the pick (it's off), and the popup says the enabled copy keeps loading",
-            keepsPick && popup.Contains("A new copy of Test Twin (SmmTestTwinC) was detected. The copy enabled now keeps loading"), $"keeps {keepsPick}; {popup}");
+            keepsPick && popup.Contains("A new copy of Test Twin (SmmTestTwinC) was detected. Enable the new copy to load it instead."), $"keeps {keepsPick}; {popup}");
         var update = new Mod
         {
             path = a.path, modSource = ModSource.ModsDirectory, state = ModLoadState.AddedAtRuntime,

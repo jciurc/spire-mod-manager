@@ -190,7 +190,7 @@ static class ModDetails
             if (meta.AsString() is { } target && target.StartsWith("mod:") && Content() is { } content)
                 CategoryList.Reveal(content, target[4..], flash: false, focus: true);
             else if (meta.AsString() is { } tag && tag.StartsWith("wtag:"))
-                Search.ByText(container, tag[5..], Input.IsKeyPressed(Key.Shift)); // a Workshop tag: plain words
+                Search.ByTag(container, tag[5..], Input.IsKeyPressed(Key.Shift)); // a Workshop tag: #tag, the mods with it
         };
         Hover.WatchLinks(description, "SpireModManagerTagCard",
             meta => meta.StartsWith("wtag:") ? Tags.Hint(Menus.Text("SPIRE_MOD_MANAGER.SEARCH_CLICK_TIP")) : null, width: 320);
@@ -414,7 +414,7 @@ static class ModDetails
 
     // The text between tags in pairs ([red]...[/red], with any settings on the first), nested ones too. Only pairs: the
     // game's effects come in pairs, a bracket of a mod's own ("[CN] Pack") doesn't, and stays.
-    static string WithoutTags(string text)
+    public static string WithoutTags(string text)
     {
         while (PairedTag.Replace(text, "$2") is var plain && plain != text)
             text = plain;
