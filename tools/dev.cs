@@ -42,7 +42,7 @@ var DevDir = stable ? StableDir : BetaDir;
 var WorkshopDir = Path.Combine(steamapps, "workshop", "content", "2868840");
 var BmmRepo = Env("STS2_BMM_REPO", @"C:\repos\gaming\slay the spire\bettermodmenu"); // Better Mod Menu's local-fix checkout (--bmm-local)
 const string ModId = "SpireModManager";
-const int TimeoutSeconds = 300; // the whole run, killed after this; with --bmm and the language reloads the suite passed 150 s on a busy machine
+const int TimeoutSeconds = 480; // the whole run, killed after this; the plain suite takes about 280 s (October 2026), more with --bmm
 var root = Path.GetDirectoryName(ScriptDir()) ?? ".";
 var userData = Path.Combine(Environment.GetFolderPath(Environment.SpecialFolder.ApplicationData), "SlayTheSpire2");
 var sandbox = Path.Combine(userData, "default", "1");
@@ -309,7 +309,9 @@ while (!game.WaitForExit(100) && DateTime.Now < deadline)
 }
 if (!game.HasExited)
 {
-    Console.WriteLine($"game still running after {TimeoutSeconds}s, killing it");
+    // Where it got to: the newest of the self-test's files (a suite that's only slow ends late, one that's stuck early).
+    var last = Directory.Exists(outDir) ? new DirectoryInfo(outDir).GetFiles().OrderByDescending(f => f.LastWriteTimeUtc).FirstOrDefault() : null;
+    Console.WriteLine($"game still running after {TimeoutSeconds}s, killing it" + (last == null ? "" : $" (last written: {last.Name}, {(DateTime.UtcNow - last.LastWriteTimeUtc).TotalSeconds:0} s before)"));
     game.Kill();
     game.WaitForExit();
 }
