@@ -143,6 +143,9 @@ static class MenuButton
                 MenuItem.Heading(ModEntry.Version is { } version
                     ? Menus.Format("SPIRE_MOD_MANAGER.MENU_HEADER", ("version", version))
                     : Menus.Text("SPIRE_MOD_MANAGER.POPUP_MARK")),
+                // What a click on the button does, first, with its key (none if the patch that reads it didn't apply).
+                new(ModEntry.FailedPatches.Contains(nameof(ShortcutsPatch)) ? Menus.Text("SPIRE_MOD_MANAGER.MANAGE_MODS")
+                    : Menus.Format("SPIRE_MOD_MANAGER.MANAGE_MODS_KEY", ("key", OS.GetKeycodeString(ShortcutsPatch.ManagerKey))), () => Open(menu)),
                 new(Menus.Text("SPIRE_MOD_MANAGER.MOVE_BUTTON"), () => BeginMove(menu, button)),
                 new(Menus.Text("SPIRE_MOD_MANAGER.RESET_POSITION"), () =>
                 {

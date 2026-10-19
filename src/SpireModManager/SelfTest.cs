@@ -1337,8 +1337,9 @@ static class SelfTest
 
         var popup = await ButtonMenu(menu, button);
         var labels = popup == null ? [] : MenuPanel.Labels(popup);
-        Check("main menu button's menu: Move button, Reset position, Open translations folder, Relaunch game",
-            labels.SequenceEqual(["Move button", "Reset position", "Open translations folder", "Relaunch game"]), string.Join(", ", labels));
+        var manage = $"Manage mods{(ModEntry.FailedPatches.Contains(nameof(ShortcutsPatch)) ? "" : $" ({OS.GetKeycodeString(ShortcutsPatch.ManagerKey)})")}";
+        Check("main menu button's menu: Manage mods (with its key), Move button, Reset position, Open translations folder, Relaunch game",
+            labels.SequenceEqual([manage, "Move button", "Reset position", "Open translations folder", "Relaunch game"]), string.Join(", ", labels));
         if (popup == null)
             return;
         string? Label(Node item) => item.IsInGroup(MenuPanel.ItemGroup) ? (string)item.GetMeta("label") : null;
@@ -1347,13 +1348,13 @@ static class SelfTest
         // At the top, our name and version (from the manifest the game loaded), a heading with a line under it: not an
         // item, so nothing in it takes the mouse or the focus, and a click on it leaves the menu open.
         var version = ModEntry.Version;
-        var header = $"Spire Mod Manager v{version}";
+        var header = $"Spire Mod Manager {version}";
         var top = items.FirstOrDefault();
         var parts = top?.FindChildren("*", "Control", true, false).OfType<Control>().Prepend(top).ToList() ?? [];
-        Check("main menu button's menu: \"Spire Mod Manager v<version>\" first, a heading, not an item", version != null && top != null
+        Check("main menu button's menu: \"Spire Mod Manager <version>\" first (no \"v\"), a heading, not an item", version != null && top != null
             && top.IsInGroup(MenuPanel.HeadingGroup) && (string)top.GetMeta("label") == header && MenuPanel.Headings(popup).FirstOrDefault() == header
             && !labels.Contains(header) && top.FindChildren("*", "Label", true, false).OfType<Label>().Any(l => l.Text == header)
-            && top.FindChildren("*", "ColorRect", true, false).Count == 1 && items.Count > 1 && Label(items[1]) == "Move button"
+            && top.FindChildren("*", "ColorRect", true, false).Count == 1 && items.Count > 1 && Label(items[1]) == manage
             && parts.All(c => c.MouseFilter == Control.MouseFilterEnum.Ignore && c.FocusMode == Control.FocusModeEnum.None),
             $"{string.Join(" | ", MenuPanel.Headings(popup))}; version {version}");
         // A real click on it, through the viewport (and the menu's Catcher): the menu stays open, nothing runs.
