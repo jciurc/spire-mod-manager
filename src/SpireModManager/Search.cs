@@ -8,8 +8,9 @@ using MegaCrit.Sts2.Core.Nodes.Screens.ModdingScreen;
 namespace SpireModManager;
 
 // The search box over the list. Every word must appear (any case) in a mod's name, id, author, alias, notes, category
-// or tags, or start a word of its description, or the whole query without spaces be in one of the short fields; punctuation and symbols count as spaces, in the
-// search and in the mod's text ("dont" finds "Don't", "spire-mod" finds "Spire Mod"). "#tag" matches a whole tag,
+// or tags, or start a word of its description, or the whole query without spaces be in one of the short fields. The
+// punctuation of sentences counts as spaces, in the search and in the mod's text ("dont" finds "Don't", "spire-mod"
+// finds "Spire Mod"); other symbols are part of a word ("C#"). "#tag" matches a whole tag,
 // "@author" the author, and "text in quotes" that exact text, spaces, symbols and case too. A "-" before any of them
 // leaves out the mods that match it ("#stable -#beta"). Clicking a tag or author searches for it, Shift-click adds or
 // removes it.
@@ -122,21 +123,22 @@ static class Search
 
     static readonly Regex Picture = new(@"\[img[^\]]*\].*?\[/img\]", RegexOptions.Singleline | RegexOptions.IgnoreCase);
 
-    // Letters and numbers stay, with the accents on them; a run of spaces is one space; punctuation and symbols become
-    // between (nothing for a mod's text, so "Don't" reads "Dont"; a space for a search, so "spire-mod" is two words).
-    // Compatibility forms first, so full-width "ＡＢＣ" reads "ABC" and "Ⅱ" reads "II".
+    // Letters, numbers and symbols stay ("C#", "C++", "&"), with the accents on them; a run of spaces is one space; the
+    // punctuation of sentences (Grammatical) becomes between (nothing for a mod's text, so "Don't" reads "Dont"; a space
+    // for a search, so "spire-mod" is two words). Compatibility forms first, so full-width "ＡＢＣ" reads "ABC" and "Ⅱ"
+    // reads "II".
     static string Fold(string text, string between)
     {
         if (!text.IsNormalized(NormalizationForm.FormKC))
             text = text.Normalize(NormalizationForm.FormKC);
         var folded = new StringBuilder(text.Length);
         Span<char> pair = stackalloc char[2];
-        var kept = false; // the last rune stayed, so an accent after it stays too (not one left by a symbol, like an emoji's)
+        var kept = false; // the last rune stayed, so an accent after it stays too (not one left after punctuation)
         foreach (var rune in text.EnumerateRunes())
         {
             var accent = Rune.GetUnicodeCategory(rune) is UnicodeCategory.NonSpacingMark or UnicodeCategory.SpacingCombiningMark
                 or UnicodeCategory.EnclosingMark;
-            if (Rune.IsLetterOrDigit(rune) || Rune.IsNumber(rune) || accent && kept)
+            if (accent ? kept : !Rune.IsWhiteSpace(rune) && !Grammatical(rune) && !Rune.IsControl(rune))
             {
                 folded.Append(pair[..rune.EncodeToUtf16(pair)]);
                 kept = true;
@@ -149,6 +151,12 @@ static class Search
         }
         return folded.ToString();
     }
+
+    // The punctuation of sentences, which a search reads past (Jordan: only grammatical characters): brackets, quotes,
+    // dashes, and . , ; : ! ? ' … · ¡ ¿ / and the CJK 、。・. Every other symbol is part of a word ("C#" searches "c#").
+    static bool Grammatical(Rune rune) => Rune.GetUnicodeCategory(rune) is UnicodeCategory.OpenPunctuation or UnicodeCategory.ClosePunctuation
+        or UnicodeCategory.InitialQuotePunctuation or UnicodeCategory.FinalQuotePunctuation or UnicodeCategory.DashPunctuation
+        || rune.Value is '.' or ',' or ';' or ':' or '!' or '?' or '\'' or '"' or '…' or '·' or '¡' or '¿' or '/' or '、' or '。' or '・';
 
     // A #tag or @author (quoted for spaces), or "exact text" (its closing quote may be still to type); a "-" before
     // either, at a term's start, leaves out what it matches. A tag glued to a word ("foo#Library") counts; a lone "#"

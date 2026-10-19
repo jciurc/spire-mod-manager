@@ -3913,6 +3913,20 @@ static class SelfTest
         {
             Store.EditMod("SmmTestContent", info => info.Alias = aliasBefore);
         }
+        // Only the punctuation of sentences is read past (Jordan); other symbols are part of a word: "C#" isn't "c".
+        Store.EditMod("SmmTestContent", info => info.Alias = "C# & C++ Kit!");
+        try
+        {
+            var symbols = string.Join(" | ", new[] { "c#", "C++", "&", "kit", "c# kit" }.Select(q => string.Join(",", content.GetChildren().OfType<NModMenuRow>().Where(r => r.Mod != null
+                && SpireModManager.Search.Matches(r.Mod, q)).Select(r => r.Mod?.manifest?.id).Distinct().Order())));
+            var plainC = content.GetChildren().OfType<NModMenuRow>().Count(r => r.Mod != null && SpireModManager.Search.Matches(r.Mod, "c"));
+            Check("symbols are part of a word (C#, C++, &), sentence punctuation isn't (Kit!); a lone letter still finds more",
+                symbols == "SmmTestContent | SmmTestContent | SmmTestContent | SmmTestContent | SmmTestContent" && plainC > 1, $"{symbols}; \"c\" finds {plainC}");
+        }
+        finally
+        {
+            Store.EditMod("SmmTestContent", info => info.Alias = aliasBefore);
+        }
         var nothing = await Shown("!!!");
         Check("a search with no terms (\"!!!\", a \"-\" alone) is no search: every row", nothing.Count == (await Shown("")).Count
             && (await Shown("-")).Count == nothing.Count, $"{nothing.Count}");
