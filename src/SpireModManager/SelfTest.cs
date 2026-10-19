@@ -88,8 +88,13 @@ static class SelfTest
             TestMenuButtonLook(menu);
             await TestMenuButtonCard(menu);
             var relaunchArgs = ModEntry.RelaunchArgs();
-            // Once, or not at all for a window with no size (a headless run's reads 0x0).
-            var sized = DisplayServer.WindowGetSize() is { X: > 0, Y: > 0 } || DisplayServer.WindowGetMode() is not DisplayServer.WindowMode.Windowed;
+            // Once, or not at all for a minimized window or one with no size (a headless run's reads Minimized, 0x0).
+            var sized = DisplayServer.WindowGetMode() switch
+            {
+                DisplayServer.WindowMode.Fullscreen or DisplayServer.WindowMode.ExclusiveFullscreen or DisplayServer.WindowMode.Maximized => true,
+                DisplayServer.WindowMode.Windowed => DisplayServer.WindowGetSize() is { X: > 0, Y: > 0 },
+                _ => false,
+            };
             Check("relaunch passes the window mode once (none for a window with no size, as headless)",
                 relaunchArgs.Count(a => a is "--fullscreen" or "--maximized" or "--windowed") == (sized ? 1 : 0)
                 && relaunchArgs.Contains("--force-steam"), $"{string.Join(" ", relaunchArgs)} (window {DisplayServer.WindowGetMode()} {DisplayServer.WindowGetSize()})");
