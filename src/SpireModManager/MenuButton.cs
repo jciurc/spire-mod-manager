@@ -108,8 +108,9 @@ static class MenuButton
             Retext();
             Refresh();
         }));
-        // A change made on the main menu itself (a fix in the relaunch check) can start or end a pending relaunch. Changes
-        // on a page over the menu are caught as it closes, above, but the text follows at once (it's hidden meanwhile).
+        // A change made on the main menu itself (a fix in the relaunch check), or a mod installed while it shows (it
+        // arrives on, wanting a relaunch), can start or end a pending relaunch. Changes on a page over the menu are caught
+        // as it closes, above, but the text follows at once (it's hidden meanwhile).
         void Changed()
         {
             Retext();
@@ -117,6 +118,7 @@ static class MenuButton
                 Refresh();
         }
         History.Changed += Changed;
+        Installed.Added += Changed;
         Profiles.Switched += Retext;
         // The language: its text and font. The game goes through its list of these as it calls them, so ours leaves it a
         // frame later, never during that.
@@ -129,6 +131,7 @@ static class MenuButton
         button.TreeExiting += () =>
         {
             History.Changed -= Changed;
+            Installed.Added -= Changed;
             Profiles.Switched -= Retext;
             Callable.From(() => LocManager.Instance.UnsubscribeToLocaleChange(language)).CallDeferred();
         };
