@@ -1087,7 +1087,7 @@ static class SelfTest
         Leave();
         await Wait(menu, 0.4);
         Enter();
-        await Wait(menu, 0.5);
+        await WaitReal(menu, 0.5);
         var text = label.GetGlobalRect();
         Check("main menu button: a hover brings its own carets out either side of its text, in their own colour",
             left.IsVisibleInTree() && right.IsVisibleInTree() && left.Modulate.IsEqualApprox(MenuButton.CaretColor) && right.Modulate.IsEqualApprox(MenuButton.CaretColor)
@@ -1096,7 +1096,7 @@ static class SelfTest
             $"left {left.GetGlobalRect()} a {left.Modulate.A:0.##}, right {right.GetGlobalRect()} a {right.Modulate.A:0.##}, text {text}");
         await Capture(menu, outDir, "1f-menu-button-carets");
         Leave();
-        await Wait(menu, 0.5);
+        await WaitReal(menu, 0.5);
         Check("main menu button: its carets fade once the mouse leaves", left.Modulate.A < 0.05f && right.Modulate.A < 0.05f,
             $"{left.Modulate.A:0.##}, {right.Modulate.A:0.##}");
         // A pass across it in one frame (on the way to the game's buttons): the carets, put up a frame late, stay down.
@@ -1640,7 +1640,7 @@ static class SelfTest
         await Wait(menu, 0.3);
         var waited = LaunchGuard.Notice != null && NModalContainer.Instance?.OpenModal == firstPopup;
         NModalContainer.Instance?.Clear();
-        await Wait(menu, 1.5);
+        await WaitReal(menu, 1.5); // ShowNotice tries again a second after it found a popup up (LaunchGuard.ShowNotice's CreateTimer(1))
         Check("the notice waits while another popup is up, then shows", waited && LaunchGuard.Notice == null
             && NModalContainer.Instance?.OpenModal is { } later && later != firstPopup, $"waited {waited}");
         NModalContainer.Instance?.Clear();
@@ -2164,7 +2164,7 @@ static class SelfTest
         {
             Prewarm.Start(menu);
             for (var i = 0; i < 50 && !Prewarm.Done; i++)
-                await Wait(menu, 0.1);
+                await WaitReal(menu, 0.1); // Prewarm starts a second after Start (StartDelay), then works a frame at a time
             // Once if Kreon lacks its letters; not at all where a mod gave the font Chinese ones (RitsuLib-based mods can).
             var font = ModEntry.Font("res://themes/kreon_regular_shared.tres");
             var lacks = Alias.EnumerateRunes().Any(r => !font.HasChar(r.Value));
@@ -2563,7 +2563,7 @@ static class SelfTest
             }
             if (grow > 0 && upFirst == null && !slides)
                 Grow(); // as it opens
-            await Wait(menu, 0.1);
+            await WaitReal(menu, 0.1); // past MenuPanel's Settle (its second frame): it turns only while it opens
             var first = MenuMisplaced(probe, point, upFirst ?? up, left);
             if (grow > 0 && (upFirst != null || slides))
             {
@@ -3022,7 +3022,7 @@ static class SelfTest
             await Capture(screen, outDir, "7f-import-subscribe");
             Press(ProfileShare.Name, "SubscribeMissingButton");
             steam.Downloaded[Here] = 0.45f;
-            await Wait(menu, 0.6);
+            await WaitReal(menu, 0.6); // Subscriptions.Watch reads each download's progress a quarter second apart
             var preview = Part<RichTextLabel>(ProfileShare.Name, "Preview")?.GetParsedText() ?? "";
             Check("import preview: Subscribe asks Steam for both; one downloads (its progress), the other fails and says why; Subscribe offers that one again",
                 steam.Asked.Order().SequenceEqual([Here, Gone]) && preview.Contains("Downloading 45%")
@@ -3781,11 +3781,11 @@ static class SelfTest
         image.Texture = ImageTexture.CreateFromImage(Image.CreateEmpty(1600, 900, false, Image.Format.Rgba8));
         Hover.TestMouse = () => image.GetGlobalRect().GetCenter();
         image.EmitSignal(Control.SignalName.MouseEntered);
-        await Wait(menu, Hover.Delay + 0.15);
+        await WaitReal(menu, Hover.Delay + 0.15);
         var big = screen.GetNodeOrNull("SpireModManagerPictureCard")?.FindChildren("*", "TextureRect", true, false).OfType<TextureRect>().FirstOrDefault();
         Check("hovering the thumbnail shows the whole picture, at most 800 wide", big != null && big.Size.X == 800 && big.Size.Y == 450, $"{big?.Size}");
         Hover.TestMouse = () => new Vector2(5, 5);
-        await Wait(menu, 0.1);
+        await WaitReal(menu, Hover.WindDown + Hover.Grace + 0.1); // the picture card gone and its grace over: the title's card below waits the delay
         Hover.TestMouse = null;
         image.Texture = null;
         Layout.PlaceInfo(panel);
@@ -3849,20 +3849,20 @@ static class SelfTest
         {
             Hover.TestMouse = () => target.GetGlobalRect().GetCenter();
             target.EmitSignal(Control.SignalName.MouseEntered);
-            await Wait(menu, seconds);
+            await WaitReal(menu, seconds);
         }
         // The mouse at a given point over a hover area (not its centre), as the area sees it coming in.
         async Task HoverAt(Control target, Vector2 at, double seconds)
         {
             Hover.TestMouse = () => at;
             target.EmitSignal(Control.SignalName.MouseEntered);
-            await Wait(menu, seconds);
+            await WaitReal(menu, seconds);
         }
         async Task Leave(Control target, double seconds)
         {
             Hover.TestMouse = () => new Vector2(5, 5);
             target.EmitSignal(Control.SignalName.MouseExited);
-            await Wait(menu, seconds);
+            await WaitReal(menu, seconds);
         }
         var hot = other.GetNode<Control>("SpireModManagerTitleHover");
         var mark = other.GetNode<Control>("SpireModManagerEditedMark");
@@ -3872,7 +3872,7 @@ static class SelfTest
             $"mark at {mark.Position.X}, title text {other.GetNode<Control>("Title").Position.X}..+{hot.Size.X}");
         await HoverOver(hot, Hover.Delay - 0.15);
         Check("the title's card waits for the delay", !CardShown());
-        await Wait(menu, 0.3);
+        await WaitReal(menu, 0.3);
         Check("after the delay, the title's card: id and state first", CardShown() && CardText().StartsWith("SmmTestFixes") && CardText().Contains("Enabled"), CardText());
         await Capture(screen, outDir, "9b-notes-hover");
         Hover.TestMouse = () => new Vector2(5, 5);
@@ -3892,7 +3892,7 @@ static class SelfTest
             .FirstOrDefault()?.GetParsedText() ?? "";
         await HoverAt(markHot, mark.GetGlobalRect().GetCenter(), 0.1); // on the notepad itself
         var early = TipShown() || CardShown();
-        await Wait(menu, Hover.Delay);
+        await WaitReal(menu, Hover.Delay);
         Check("the notepad: a plain \"Contains note\" after the usual delay, not the mod's card", !early && TipShown() && TipText() == "Contains note"
             && Cards() == 0, $"early {early}, tip \"{TipText()}\", cards {Cards()}");
         await Leave(markHot, 0.1);
@@ -4009,6 +4009,7 @@ static class SelfTest
             && added.CustomMinimumSize.Y == RowTitles.RowHeight, added == null ? "no new row" : $"strip {added.HasNode("SpireModManagerStrip")}, height {added.CustomMinimumSize.Y}");
         // The game's popup for it: our wording, and only one for two mods in quick succession.
         var detected = typeof(NGame).GetMethod("OnNewModDetected", System.Reflection.BindingFlags.NonPublic | System.Reflection.BindingFlags.Instance);
+        NewModPopupPatch.TestReset(); // TestSubscribeMissing's arrival had its popup, maybe within 30 s
         detected?.Invoke(NGame.Instance, [mod]);
         await Wait(menu, 0.3);
         var texts = PopupTexts();
@@ -5801,7 +5802,7 @@ static class SelfTest
         async Task ScrollTo(float target)
         {
             list.Set("_targetDragPosY", target);
-            await Wait(menu, 0.6);
+            await WaitReal(menu, 0.6);
         }
         void Tick(bool on)
         {
@@ -5926,11 +5927,11 @@ static class SelfTest
             {
                 var aim = Math.Min(0, list.Size.Y / 3 - last.Position.Y);
                 CategoryList.Reveal(content, Copies.Key(lastMod), flash: false);
-                await Wait(menu, 0.1); // past ScrollSoon's 0.05 s: the target set, the rows on their way
+                await WaitReal(menu, 0.1); // past ScrollSoon's 0.05 s: the target set, the rows on their way
                 var (aimed, easing) = (Target(), Math.Abs(content.Position.Y - Padding() - Target()) > 1);
                 var (origin, top) = (content.GlobalPosition.Y - content.Position.Y, list.GetGlobalRect().Position.Y); // the rows' container at 0
                 Tick(true);
-                await Wait(menu, 0.8);
+                await WaitReal(menu, 0.8);
                 var moved = list.GetGlobalRect().Position.Y - top;
                 var off = last.GetGlobalRect().Position.Y - (origin + Padding() + aim + last.Position.Y); // from where Reveal aimed it
                 Check($"{what}: Reveal, the banner coming while its scroll eases: the row still ends where Reveal aimed it, a third of the way down the list as it was, in view",
@@ -6074,7 +6075,7 @@ static class SelfTest
             description.EmitSignal(RichTextLabel.SignalName.MetaHoverEnded, "mod:SmmTestUi");
             Check("hovering a mod's name in the panel lights its row (visibly), and lets go", lit.A * litFill > 0.05f && look.Modulate == before, $"{before} -> {lit} x {litFill} -> {look.Modulate}");
             description.EmitSignal(RichTextLabel.SignalName.MetaClicked, "mod:SmmTestUi");
-            await Wait(menu, 0.3);
+            await WaitReal(menu, 0.1); // past ScrollSoon's 0.05 s: the row focused
             Check("clicking it gives the row the selected look; the panel stays", uiRow.HasFocus() && CategoryList.Selected?.manifest?.id == "SmmTestLib",
                 $"focus {uiRow.HasFocus()} (focused: {screen.GetViewport().GuiGetFocusOwner()?.Name}), selected {CategoryList.Selected?.manifest?.id}");
         }
@@ -6637,7 +6638,7 @@ static class SelfTest
             {
                 Hover.TestMouse = () => target.GetGlobalRect().GetCenter();
                 target.EmitSignal(Control.SignalName.MouseEntered);
-                await Wait(menu, seconds);
+                await WaitReal(menu, seconds);
                 var text = screen.GetNodeOrNull(card)?.FindChildren("*", "RichTextLabel", true, false).OfType<RichTextLabel>().FirstOrDefault()?.GetParsedText() ?? "";
                 Hover.TestMouse = () => new Vector2(5, 5);
                 target.EmitSignal(Control.SignalName.MouseExited);
@@ -9363,7 +9364,7 @@ static class SelfTest
         try
         {
             text.EmitSignal(RichTextLabel.SignalName.MetaHoverStarted, link);
-            await Wait(text, Hover.Delay + 0.3);
+            await WaitReal(text, Hover.Delay + 0.3); // the link card's delay
             var card = text.GetTree().Root.FindChild(LaunchGuard.MoreCardName, true, false)?.FindChildren("*", "RichTextLabel", true, false)
                 .OfType<RichTextLabel>().FirstOrDefault()?.GetParsedText() ?? "";
             text.EmitSignal(RichTextLabel.SignalName.MetaHoverEnded, link);
@@ -9592,7 +9593,7 @@ static class SelfTest
     {
         Hover.TestMouse = () => target.GetGlobalRect().GetCenter();
         target.EmitSignal(Control.SignalName.MouseEntered);
-        await Wait(menu, seconds);
+        await WaitReal(menu, seconds); // the card's delay (Hover.Delay, or SlowDelay for Late/Slow cards)
         if (shown != null)
             await shown();
         var card = target.GetTree().Root.FindChild(name, true, false);
@@ -9600,7 +9601,7 @@ static class SelfTest
             card?.FindChildren("*", "PanelContainer", true, false).OfType<Control>().FirstOrDefault()?.Size.X ?? 0);
         Hover.TestMouse = () => new Vector2(5, 5);
         target.EmitSignal(Control.SignalName.MouseExited);
-        await Wait(menu, 0.1);
+        await WaitReal(menu, 0.1); // the card's wind-down (Hover.WindDown): gone before the real mouse takes over
         Hover.TestMouse = null; // the real mouse again (menus open where it says)
         return seen;
     }
@@ -9725,10 +9726,12 @@ static class SelfTest
     static bool EvenGoldRim(StyleBoxFlat box) => box.BorderColor == RowTitles.Gold
         && new[] { box.BorderWidthTop, box.BorderWidthBottom, box.BorderWidthLeft, box.BorderWidthRight }.All(w => w == RowTitles.SelectedRim);
 
-    // An experiment's switch (notes#73): SPIRE_MOD_MANAGER_WAIT_SCALE shortens every fixed wait (to a frame at least), so
-    // the checks that fail show which waits are real timing (hover delays, tweens) and which only let a frame pass.
+    // Wait lets the UI settle (a redraw, a deferred call, a layout pass): a tenth of the time it names, at least 0.05 s
+    // (three frames at 60 fps). Waits that are the time itself (a hover card's delay, a tween, a popup's timer, an ease)
+    // are WaitReal. Measured (notes#73): 272 s of a 289 s run was fixed waits. SPIRE_MOD_MANAGER_WAIT_SCALE sets the
+    // fraction (1: the old full waits, to compare).
     static readonly double WaitScale = double.TryParse(System.Environment.GetEnvironmentVariable("SPIRE_MOD_MANAGER_WAIT_SCALE"),
-        System.Globalization.NumberStyles.Float, System.Globalization.CultureInfo.InvariantCulture, out var scale) && scale > 0 ? scale : 1;
+        System.Globalization.NumberStyles.Float, System.Globalization.CultureInfo.InvariantCulture, out var scale) && scale > 0 ? scale : 0.1;
 
     // A wait that is the time itself (a hover card's delay, a tween, a popup's timer, an ease): never shortened.
     static async Task WaitReal(Node node, double seconds, [System.Runtime.CompilerServices.CallerMemberName] string caller = "")
@@ -9740,7 +9743,7 @@ static class SelfTest
     static async Task Wait(Node node, double seconds, [System.Runtime.CompilerServices.CallerMemberName] string caller = "")
     {
         if (WaitScale != 1)
-            seconds = Math.Max(seconds * WaitScale, 1.0 / 60);
+            seconds = Math.Max(seconds * WaitScale, 0.05);
         Seen(caller, seconds);
         await node.ToSignal(node.GetTree().CreateTimer(seconds), SceneTreeTimer.SignalName.Timeout);
     }
