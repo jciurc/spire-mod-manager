@@ -164,14 +164,15 @@ static class PageBar
     // "All (20)": a choice's name and its count.
     static string Counted(string name, int count) => Menus.Format("SPIRE_MOD_MANAGER.SHOW_COUNT", ("name", name), ("count", Menus.Number(count)));
 
-    // A choice button's width for its name with the widest 4-digit count (digits needn't be the same width), so it
+    // A choice button's width for its name with the widest 3-digit count (digits needn't be the same width), so it
     // keeps its size, and the bar its layout, as the count changes; its text centred in it.
-    public const int RoomFor = 4;
+    // Three: four made the bar run past the list with a selection's chip and buttons in it (by ~27 px); 999 mods is room.
+    public const int RoomFor = 3;
 
     public static float Roomy(Button button, string name)
     {
         var (font, size) = (button.GetThemeFont("font"), button.GetThemeFontSize("font_size"));
-        var widest = Enumerable.Range(1, 9).Max(digit => font.GetStringSize(Counted(name, digit * 1111), fontSize: size).X);
+        var widest = Enumerable.Range(1, 9).Max(digit => font.GetStringSize(Counted(name, int.Parse(new string((char)('0' + digit), RoomFor))), fontSize: size).X);
         return MathF.Ceiling(widest) + button.GetThemeStylebox("normal").GetMinimumSize().X;
     }
 

@@ -5914,7 +5914,7 @@ static class SelfTest
         void Press(string name) => Bar()?.FindChild(name, true, false)?.EmitSignal(BaseButton.SignalName.Pressed);
         Check("page bar on the main list", Bar() is { Visible: true } bar && bar.FindChild("Scope", true, false) is Label { Text: var all } && all.StartsWith("Mods installed"));
         // Each choice with how many mods it's for ("All (20)"), the same counts as the scope's for the chosen one, and
-        // room for a 4-digit count, so a count changing never moves the bar; the bar still fits its row.
+        // room for a 3-digit count (PageBar.RoomFor), so a count changing never moves the bar; the bar still fits its row.
         var filterNames = new[] { ("ShowAllButton", "All", ListFilter.Choice.All), ("ShowEnabledButton", "Enabled", ListFilter.Choice.Enabled),
             ("ShowDisabledButton", "Disabled", ListFilter.Choice.Disabled), ("ShowChangedButton", "Changed", ListFilter.Choice.Changed) };
         var filterTexts = filterNames.Select(f => (Bar()?.FindChild(f.Item1, true, false) as Button, f.Item2, Rows().Count(r => ListFilter.Matches(r.Mod, f.Item3)))).ToList();
@@ -5922,9 +5922,9 @@ static class SelfTest
             filterTexts.All(f => f.Item1?.Text == $"{f.Item2} ({Menus.Number(f.Item3)})") && filterTexts[0].Item3 == Rows().Count
             && filterTexts[1].Item3 + filterTexts[2].Item3 == Rows().Count(r => r.Mod != null),
             string.Join(" | ", filterTexts.Select(f => $"{f.Item1?.Text} / {f.Item3}")));
-        Check("each filter keeps room for a 4-digit count: its width doesn't follow its count, and the bar fits its row",
+        Check("each filter keeps room for a 3-digit count: its width doesn't follow its count, and the bar fits its row",
             filterTexts.All(f => f.Item1 is { } b && b.CustomMinimumSize.X == PageBar.Roomy(b, f.Item2) && Math.Abs(b.Size.X - b.CustomMinimumSize.X) < 0.5f
-                && b.CustomMinimumSize.X >= b.GetThemeFont("font").GetStringSize($"{f.Item2} (8,888)", fontSize: b.GetThemeFontSize("font_size")).X)
+                && b.CustomMinimumSize.X >= b.GetThemeFont("font").GetStringSize($"{f.Item2} ({new string('8', PageBar.RoomFor)})", fontSize: b.GetThemeFontSize("font_size")).X)
             && Bar() is { } fits && fits.GetCombinedMinimumSize().X <= fits.GetParent<Control>().Size.X - fits.OffsetLeft + fits.OffsetRight + 0.5f,
             $"{string.Join(", ", filterTexts.Select(f => $"{f.Item1?.Size.X:0}/{f.Item1?.CustomMinimumSize.X:0}"))}; bar {Bar()?.GetCombinedMinimumSize().X:0} in {(Bar() is { } room ? room.GetParent<Control>().Size.X - room.OffsetLeft + room.OffsetRight : 0):0}");
         await Capture(screen, outDir, "2d-page-bar");
@@ -6417,7 +6417,7 @@ static class SelfTest
             return;
         }
         string Lit() => string.Join(" ", screen.FindChild(PageBar.Name, true, false)?.FindChild("Show", true, false)?.GetChildren().OfType<Button>()
-            .Where(b => b.GetThemeColor("font_color") == Colors.White).Select(b => b.Text) ?? []);
+            .Where(b => b.GetThemeColor("font_color") == Colors.White).Select(b => System.Text.RegularExpressions.Regex.Replace(b.Text, @" \([\d,]+\)$", "")) ?? []);
         ListFilter.Choose(content, ListFilter.Choice.Disabled);
         CategoryList.Reveal(content, ModEntry.ModId, flash: false); // kept beside the disabled ones
         await Wait(menu, 0.5);
