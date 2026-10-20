@@ -3682,7 +3682,7 @@ static class SelfTest
                 var gameMessage = $"Mod {offMod.manifest?.id} only supports Steam branch public";
                 Check("the game's message taken off a mod that's off still shows in its card, apart from ours under its own caption, in a fainter box, "
                     + "not as a problem",
-                    card.Contains(GameText.Caption("Error while loading; Can be ignored if mod is disabled")) && card.Contains(gameMessage)
+                    card.Contains(GameText.Caption("Error while loading - Can be ignored if mod is disabled")) && card.Contains(gameMessage)
                     && card.Contains(GameText.Box("", dim: true)[..40]) && !ModDetails.Problems(offMod).Any(p => p.Contains("only supports Steam branch")),
                     card.Split('\n').FirstOrDefault(l => l.Contains("branch")) ?? card.Split('\n')[0]);
                 // The second pass, just before the main menu's warning reads the errors (BranchErrorsLatePatch): one
@@ -8000,7 +8000,7 @@ static class SelfTest
             Check("same ID, a message on a copy set aside: off its errors (the MODDED label stays clear), into its panel as the game's; the late pass covers it",
                 aside.errors == null && dropped >= 1 && BranchErrors.Dropped(aside).Contains(error)
                 && notes.Any(n => n.Contains("only supports Steam branch public"))
-                && ModDetails.Card(aside).Contains(GameText.Caption("Error while loading; Can be ignored if mod is disabled")),
+                && ModDetails.Card(aside).Contains(GameText.Caption("Error while loading - Can be ignored if mod is disabled")),
                 $"errors {aside.errors?.Count}, dropped {dropped}; {string.Join(" | ", notes)}");
         }
         finally
