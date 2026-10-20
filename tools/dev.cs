@@ -153,7 +153,8 @@ else
     // Its own build may clear out/ while it holds the lock (build.cs refuses anyone else's while this run is going).
     var buildStart = new ProcessStartInfo("dotnet", ["run", Path.Combine(root, "build.cs"), "--no-install"]);
     buildStart.Environment["SPIRE_MOD_MANAGER_DEV_RUN"] = Environment.ProcessId.ToString();
-    var build = Process.Start(buildStart)!;
+    if (Process.Start(buildStart) is not { } build)
+        return Fail("could not start the build");
     build.WaitForExit();
     if (build.ExitCode != 0)
         return Fail("build failed");
