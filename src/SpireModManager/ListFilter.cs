@@ -24,11 +24,13 @@ static class ListFilter
     static HashSet<Mod> _shown = [];
 
     // Whether the choice lets a mod's row show (the search is CategoryList's).
-    public static bool Shows(Mod? mod) => Current switch
+    public static bool Shows(Mod? mod) => Current == Choice.All || (mod != null && Kept.Contains(mod)) || Matches(mod, Current);
+
+    // Whether a mod is one a choice is for, kept rows aside: what its button counts.
+    public static bool Matches(Mod? mod, Choice choice) => choice switch
     {
         Choice.All => true,
         _ when mod == null => false,
-        _ when Kept.Contains(mod) => true,
         Choice.Enabled => Dependencies.IsOn(mod),
         Choice.Disabled => !Dependencies.IsOn(mod),
         _ => Changed().Contains(mod),

@@ -4,9 +4,9 @@ using MegaCrit.Sts2.Core.Nodes.Screens.ModdingScreen;
 
 namespace SpireModManager;
 
-// The profile bar above the mod list: on the left the profile picker, Share, Import, and "Unsaved •" with Save, Save
-// as new and Discard; on the right New, Duplicate, Rename and Delete. Naming opens a name box in the picker's place,
-// which refuses empty or taken names.
+// The profile bar above the mod list: on the left the profile picker (each profile's mod count is in its list), Share,
+// Import, and "Unsaved (3) •" with Save, Save as new and Discard; on the right New, Duplicate, Rename and Delete.
+// Naming opens a name box in the picker's place, which refuses empty or taken names.
 static class ProfileBar
 {
     const float Height = 40;
@@ -54,10 +54,6 @@ static class ProfileBar
         picker.AddThemeConstantOverride("icon_max_width", 14);
         picker.Icon = arrow;
         row.AddChild(picker);
-        // How many mods are on in it right now, beside the name.
-        var count = new Label { Name = "ProfileCount", VerticalAlignment = VerticalAlignment.Center, MouseFilter = Control.MouseFilterEnum.Ignore };
-        Style(count, "res://themes/kreon_regular_shared.tres", 15, new Color(Cream, 0.5f));
-        row.AddChild(count);
 
         // The name box, in the picker's place while naming, with its buttons and a warning.
         var name = new LineEdit
@@ -85,8 +81,13 @@ static class ProfileBar
         Style(warning, "res://themes/kreon_regular_shared.tres", 15, WarningColor);
         row.AddChild(warning);
 
-        // Unsaved changes: the label and what to do about them.
-        var unsaved = new Label { Name = "Unsaved", Text = Menus.Text("SPIRE_MOD_MANAGER.UNSAVED"), VerticalAlignment = VerticalAlignment.Center };
+        // Unsaved changes: the label, with how many, and what to do about them.
+        var unsaved = new Label { Name = "Unsaved", VerticalAlignment = VerticalAlignment.Center };
+        void Recount()
+        {
+            var (on, off) = Profiles.UnsavedChanges();
+            unsaved.Text = Menus.Format("SPIRE_MOD_MANAGER.UNSAVED", ("count", Menus.Number(on.Count + off.Count)));
+        }
         Style(unsaved, "res://themes/kreon_regular_shared.tres", 16, UnsavedColor);
         row.AddChild(unsaved);
         // Hovering lists this profile's own unsaved changes, without delay; a click lists them in the info panel, and a
@@ -135,8 +136,7 @@ static class ProfileBar
             var edited = Profiles.Edited;
             picker.Text = (Profiles.Active?.Name ?? "") + (arrow == null ? "  ▾" : "");
             picker.Visible = !editing;
-            count.Visible = !editing;
-            count.Text = Profiles.CountText();
+            Recount();
             (name.Visible, nameButtons.Visible) = (editing, editing);
             if (!editing)
                 warning.Visible = false;
@@ -270,7 +270,6 @@ static class ProfileBar
         row.OffsetRight = -8;
 
         // The bar lives as long as the screen; the event is static, so unsubscribe when it goes.
-        void Recount() => count.Text = Profiles.CountText();
         History.Changed += Recount; // every tickbox change
         Profiles.Switched += Refresh;
         bar.TreeExiting += () =>

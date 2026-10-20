@@ -147,11 +147,13 @@ static class HistoryBar
         Update();
     }
 
-    // The hover summary's text, with how to see the full list.
-    static string Summary()
+    // The hover summary's text, with how to see the full list (cta: on the page, where a click shows it).
+    public static string Summary() => Summary(cta: true);
+
+    public static string Summary(bool cta)
     {
         var lines = SummaryLines();
-        if (Layout.Current == Layout.View.Categories && Describe().Count > 0)
+        if (cta && Layout.Current == Layout.View.Categories && Describe().Count > 0)
             lines.Add($"\n[color={Dim}]{Menus.Text("SPIRE_MOD_MANAGER.CHANGES_CLICK")}[/color]");
         return string.Join("\n", lines);
     }
