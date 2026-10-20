@@ -81,14 +81,17 @@ static class Layout
         var titleText = new LocString("settings_ui", Wide ? "SPIRE_MOD_MANAGER.PAGE_TITLE" : "MODDING_SCREEN.INSTALLED_MODS_TITLE").GetFormattedText();
         title.SetTextAutoSize(titleText);
 
-        // The way to the other page: a link right of the title, on the main list and the game's page (not Load Order).
+        // The way to the other page: a link right of our page's title, on the main list and the game's page (not Load
+        // Order). In the same place on both, so the link just clicked is under the mouse to go back; on the game's page
+        // that band is clear (its title sits lower, with Make Mods and Get Mods beside it).
         if (screen.GetNodeOrNull<Control>("SpireModManagerViewToggle") is { } pageLink)
         {
             pageLink.Visible = view != View.LoadOrder;
-            var titleWidth = title.GetThemeFont(NormalFont).GetStringSize(titleText, HorizontalAlignment.Left, -1, title.GetThemeFontSize(NormalFontSize)).X;
+            var ours = new LocString("settings_ui", "SPIRE_MOD_MANAGER.PAGE_TITLE").GetFormattedText();
+            var titleWidth = title.GetThemeFont(NormalFont).GetStringSize(ours, HorizontalAlignment.Left, -1, PageTitleSize).X;
             pageLink.Size = pageLink.GetCombinedMinimumSize();
-            pageLink.GlobalPosition = new Vector2(title.GlobalPosition.X + titleWidth + 28,
-                title.GlobalPosition.Y + (title.Size.Y - pageLink.Size.Y) / 2 + 3); // a little below the middle: the title's baseline
+            pageLink.Position = new Vector2(PageLeft + titleWidth + 28,
+                TitleTop + (TitleBottom - TitleTop - pageLink.Size.Y) / 2 + 3); // a little below the middle: the title's baseline
         }
 
         // Load Order: its name centred over the list.

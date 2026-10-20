@@ -853,7 +853,20 @@ static class SelfTest
         // Where it leads, in its tip: the game's own page (as Better Mod Menu shows it, with that loaded), and back.
         var vanillaTip = Hover.TipOf(toggles[0]);
         var backTip = "";
-        await WithVanillaView(screen, menu, () => (backTip = Hover.TipOf(screen.GetNode<Control>("SpireModManagerViewToggle"))) is var _);
+        var linkAt = toggles[0].GetGlobalRect();
+        (Rect2 At, string Overlaps) back = default;
+        await WithVanillaView(screen, menu, () =>
+        {
+            var link = screen.GetNode<Control>("SpireModManagerViewToggle");
+            backTip = Hover.TipOf(link);
+            // Clear of the game's page: its list, its title and its buttons beside it (the beta's page shows them).
+            var parts = new[] { "%ModsScrollContainer", "%InstalledModsTitle", "%MakeModsButton", "%GetModsButton", "%ModInfoContainer" }
+                .Select(name => screen.GetNodeOrNull<Control>(name)).OfType<Control>().Where(c => c.IsVisibleInTree());
+            back = (link.GetGlobalRect(), string.Join(", ", parts.Where(c => c.GetGlobalRect().Intersects(link.GetGlobalRect())).Select(c => c.Name.ToString())));
+            return true;
+        });
+        Check("the link back from the game's page is where ours was (under the mouse that clicked it), clear of the game's page",
+            back.At.Size.X > 0 && back.At.Position.DistanceTo(linkAt.Position) < 1 && back.Overlaps == "", $"{linkAt} / back {back.At}, over: {back.Overlaps}");
         // While a mod is installed twice from one source (the fixture twins), a second line says how that page's tickbox
         // treats its copies (its words are checked in TestSameIdCopies).
         var tipLines = vanillaTip.Split('\n');
