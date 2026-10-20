@@ -102,6 +102,7 @@
   "SPIRE_MOD_MANAGER.NOTES_TERM": "Notes",
   "SPIRE_MOD_MANAGER.CONTAINS_NOTE": "Contains note",
   "SPIRE_MOD_MANAGER.TAGS_TERM": "Tags",
+  "SPIRE_MOD_MANAGER.TAG_SUGGESTIONS_HEADING": "Currently used tags; Shift-click to add multiple",
   "SPIRE_MOD_MANAGER.ALIAS_ADD": "Add alias",
   "SPIRE_MOD_MANAGER.NOTES_ADD": "Add notes",
   "SPIRE_MOD_MANAGER.TAGS_ADD": "Add tags",

@@ -8443,13 +8443,16 @@ static class SelfTest
         Check("tag suggestions: none when nothing matches", TagSuggestions.Current == null, Listed());
         await TypeIn(box, "Strategy, Story-heavy, f");
         Check("tag suggestions: typing brings the list back", Listed() == "Fast", Listed());
-        TagSuggestions.Press("Fast");
+        Check("tag suggestions: a heading over them says what they are and how to take several",
+            TagSuggestions.Heading() == "Currently used tags; Shift-click to add multiple", TagSuggestions.Heading());
+        TagSuggestions.Press("Fast", shift: true);
         await Wait(menu, 0.2);
-        Check("tag suggestions: a click takes one, the box keeps focus", box.Text == "Strategy, Story-heavy, Fast, " && box.HasFocus(), box.Text);
-        box.ReleaseFocus();
+        Check("tag suggestions: a Shift-click takes one, the box keeps focus and the list stays for more", box.Text == "Strategy, Story-heavy, Fast, " && box.HasFocus()
+            && TagSuggestions.Current != null && TagSuggestions.Labels().Contains("Co-op"), $"\"{box.Text}\": {Listed()}");
+        TagSuggestions.Press("Co-op");
         await Wait(menu, 0.3);
-        Check("tag suggestions: leaving the box closes the list; the tags are saved, tidied", TagSuggestions.Current == null
-            && Store.InfoFor("SmmTestUi")?.Tags?.SequenceEqual(["Strategy", "Story-heavy", "Fast"]) == true, string.Join(", ", Store.InfoFor("SmmTestUi")?.Tags ?? []));
+        Check("tag suggestions: a click takes one and finishes: the box left, the list closed, the tags saved, tidied", TagSuggestions.Current == null && !box.HasFocus()
+            && Store.InfoFor("SmmTestUi")?.Tags?.SequenceEqual(["Strategy", "Story-heavy", "Fast", "Co-op"]) == true, string.Join(", ", Store.InfoFor("SmmTestUi")?.Tags ?? []));
 
         Selection.Clear(content);
         Selection.Add(content, [lib, other]);

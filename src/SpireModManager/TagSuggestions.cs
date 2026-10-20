@@ -3,9 +3,10 @@ using Godot;
 namespace SpireModManager;
 
 // Suggestions under a tags box while it has focus: the player's own tags, most used first, matching the word being
-// typed (starts-with, then contains). Up/Down or the mouse light one, and Enter, Tab, a comma or a click take it;
-// nothing is lit until then, so Enter still saves. Escape closes the list. Styled like MenuPanel, on its own layer
-// above our menus (the box can be in one).
+// typed (starts-with, then contains), under a heading that says so. Up/Down or the mouse light one; Enter, Tab or a
+// comma take the lit one and keep editing; a click takes one and finishes (the box left, so it saves), a Shift-click
+// takes one and keeps the list for more. Nothing is lit until then, so Enter still saves. Escape closes the list.
+// Styled like MenuPanel, on its own layer above our menus (the box can be in one).
 sealed class TagSuggestions
 {
     const int Max = 6;
@@ -44,11 +45,13 @@ sealed class TagSuggestions
 
     public static string? Highlighted => _open is { } open && open._highlight >= 0 && open._highlight < open._tags.Count ? open._tags[open._highlight] : null;
 
-    public static void Press(string tag)
+    public static void Press(string tag, bool shift = false)
     {
         if (_open?._list?.GetChildren().FirstOrDefault(row => (string)row.GetMeta(TagMeta) == tag) is Control row)
-            row.EmitSignal(Control.SignalName.GuiInput, new InputEventMouseButton { ButtonIndex = MouseButton.Left, Pressed = false });
+            row.EmitSignal(Control.SignalName.GuiInput, new InputEventMouseButton { ButtonIndex = MouseButton.Left, Pressed = false, ShiftPressed = shift });
     }
+
+    public static string Heading() => _open?._layer?.FindChild("Heading", true, false) is Label heading ? heading.Text : "";
 #endif
 
     // A key pressed in the box: true when the list took it (the box then leaves it alone).
@@ -125,9 +128,26 @@ sealed class TagSuggestions
             var layer = _layer = new CanvasLayer { Name = LayerName, Layer = MenuPanel.Depth + 5 };
             var panel = new PanelContainer { Name = "Panel" };
             panel.AddThemeStyleboxOverride("panel", PanelBox);
+            var column = new VBoxContainer { Name = "Column" };
+            column.AddThemeConstantOverride("separation", 4);
+            // What these are and how to take several (Jordan's words), over a faint line.
+            // One line, so the list's height is known when it's placed (a wrapping label's isn't until it's laid out);
+            // the list widens for it under a narrow box.
+            var heading = new Label { Name = "Heading", Text = Menus.Text("SPIRE_MOD_MANAGER.TAG_SUGGESTIONS_HEADING"), MouseFilter = Control.MouseFilterEnum.Ignore };
+            heading.AddThemeFontOverride("font", ModEntry.Font("res://themes/kreon_regular_shared.tres"));
+            heading.AddThemeFontSizeOverride("font_size", 14);
+            heading.AddThemeColorOverride("font_color", new Color(Cream, 0.6f));
+            var headingBox = new MarginContainer { Name = "HeadingBox", MouseFilter = Control.MouseFilterEnum.Ignore };
+            headingBox.AddThemeConstantOverride("margin_left", 10);
+            headingBox.AddThemeConstantOverride("margin_right", 10);
+            headingBox.AddChild(heading);
+            column.AddChild(headingBox);
+            var line = new ColorRect { Name = "Divider", Color = new Color(Gold, 0.25f), CustomMinimumSize = new Vector2(0, 1), MouseFilter = Control.MouseFilterEnum.Ignore };
+            column.AddChild(line);
             _list = new VBoxContainer { Name = "Tags" };
             _list.AddThemeConstantOverride("separation", 2);
-            panel.AddChild(_list);
+            column.AddChild(_list);
+            panel.AddChild(column);
             layer.AddChild(panel);
             panel.MinimumSizeChanged += Place;
             var tree = _box.GetTree();
@@ -179,8 +199,12 @@ sealed class TagSuggestions
             if (e is not InputEventMouseButton { ButtonIndex: MouseButton.Left } button)
                 return;
             row.AcceptEvent(); // nothing underneath gets it; the box keeps focus (rows don't take it)
-            if (!button.Pressed)
-                Pick(tag);
+            if (button.Pressed)
+                return;
+            Pick(tag);
+            // A click finishes: the box left, which saves and closes the list. Shift: more to take, the list stays.
+            if (!button.ShiftPressed)
+                _box.ReleaseFocus();
         };
         return row;
     }
