@@ -9,8 +9,9 @@ namespace SpireModManager;
 // The main menu's "Default (12 mods)" button: a smaller copy of the game's Settings text button (its font, colours,
 // hover and carets) naming the active profile and how many mods are on. It always opens our view of the Modding page,
 // as F3 on the main menu does. Lower-left, or wherever the player moved it (right-click > Move button), with the game's
-// notification dot and a "Relaunch to apply" note while a relaunch is pending. Its right-click menu also opens the
-// translations folder and relaunches the game.
+// notification dot and a "15 Mod changes will be applied after a restart" note while a relaunch is pending, its card
+// then starting with the page's summary of the changes. Its right-click menu also opens the translations folder and
+// relaunches the game.
 static class MenuButton
 {
     const string Name = "SpireModManagerMenuButton";
@@ -71,11 +72,10 @@ static class MenuButton
         // The text, and with it the button's width: its words and the margins. Kept in place (Place), and on screen.
         void Retext()
         {
-            // The page's own line while a relaunch is pending, word for word: one text, one less to translate.
-            note.Text = Menus.Text(outdated ? "SPIRE_MOD_MANAGER.NEEDS_UPDATE" : "SPIRE_MOD_MANAGER.PENDING_RESTART");
-            // What it opens, and the profile in gold; a second's wait, as the mouse crosses it for the game's buttons. Its
-            // card keeps off the note too, while that shows.
-            Hover.Tip(button, Tip(Profiles.Active?.Name ?? ""), Hover.Timing.Late, markup: true,
+            note.Text = outdated ? Menus.Text("SPIRE_MOD_MANAGER.NEEDS_UPDATE") : PendingText();
+            // What it opens, and the profile in gold, under what a relaunch would apply while one is pending; a second's
+            // wait, as the mouse crosses it for the game's buttons. Its card keeps off the note too, while that shows.
+            Hover.Tip(button, Card(Profiles.Active?.Name ?? "", ModEntry.HasPendingChanges()), Hover.Timing.Late, markup: true,
                 area: () => note.Visible ? button.GetGlobalRect().Merge(note.GetGlobalRect()) : button.GetGlobalRect());
             if (label == null)
                 ModEntry.SetText(button, Text(ModEntry.Font("res://themes/kreon_bold_shared.tres"), TextSize)); // the name cut as for ours; the fallback draws at its own size
@@ -108,8 +108,9 @@ static class MenuButton
             Retext();
             Refresh();
         }));
-        // A change made on the main menu itself (a fix in the relaunch check) can start or end a pending relaunch. Changes
-        // on a page over the menu are caught as it closes, above, but the text follows at once (it's hidden meanwhile).
+        // A change made on the main menu itself (a fix in the relaunch check), or a mod installed while it shows (it
+        // arrives on, wanting a relaunch), can start or end a pending relaunch. Changes on a page over the menu are caught
+        // as it closes, above, but the text follows at once (it's hidden meanwhile).
         void Changed()
         {
             Retext();
@@ -117,6 +118,7 @@ static class MenuButton
                 Refresh();
         }
         History.Changed += Changed;
+        Installed.Added += Changed;
         Profiles.Switched += Retext;
         // The language: its text and font. The game goes through its list of these as it calls them, so ours leaves it a
         // frame later, never during that.
@@ -129,6 +131,7 @@ static class MenuButton
         button.TreeExiting += () =>
         {
             History.Changed -= Changed;
+            Installed.Added -= Changed;
             Profiles.Switched -= Retext;
             Callable.From(() => LocManager.Instance.UnsubscribeToLocaleChange(language)).CallDeferred();
         };
@@ -172,6 +175,23 @@ static class MenuButton
     public static string Text(string name, int on, Font font, int size) =>
         Menus.Format(on == 1 ? "SPIRE_MOD_MANAGER.MAIN_MENU_PROFILE_ONE" : "SPIRE_MOD_MANAGER.MAIN_MENU_PROFILE",
             ("name", RowTitles.Cut(font, name, size, NameWidth)), ("count", Menus.Number(on)));
+
+    // The pending note: the page's own line, word for word (one text, one less to translate), after how many changes the
+    // relaunch applies: mods turned on, off and moved in the load order (Changes' counts; edits to our data, which take
+    // effect at once, aren't among them). The line alone with none of those (the game's own state wants one).
+    public static string PendingText()
+    {
+        var (on, off, moved) = HistoryBar.Counts();
+        var line = Menus.Text("SPIRE_MOD_MANAGER.PENDING_RESTART");
+        return on + off + moved > 0 ? $"{Menus.Number(on + off + moved)} {line}" : line;
+    }
+
+    // Its card while a relaunch is pending: the page's summary of the changes (without "Click for the full list"), a
+    // faint line, then its own text. Without one, its own text alone.
+    public const string Divider = "[hr color=#fff6e233 height=1 width=100%]";
+
+    public static string Card(string profile, bool pending) => pending && HistoryBar.Summary(cta: false) is { Length: > 0 } changes
+        ? $"{changes}\n{Divider}\n{Tip(profile)}" : Tip(profile);
 
     // Its card's text (BBCode) for a profile, in Jordan's words: what it is, the key that opens the page and the
     // right-click menu, then the profile. Without the key if the patch that reads it didn't apply.

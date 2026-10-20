@@ -2785,6 +2785,19 @@ static class SelfTest
             tickbox.EmitSignal(NTickbox.SignalName.Toggled, tickbox);
             await Wait(menu, 0.3);
             shown = line.Visible ? line.Text : "not shown";
+            if (menu.GetNodeOrNull<Control>("SpireModManagerMenuButton") is { } menuButton)
+            {
+                var (on, off, moved) = HistoryBar.Counts();
+                var noteText = menuButton.GetNodeOrNull<Label>("PendingNote")?.Text ?? "";
+                var card = Hover.TipOf(menuButton);
+                Check("main menu button, a relaunch pending: its note counts the mods turned on, off and moved before the page's line; its card starts with the changes, a faint line, then its own words",
+                    on + off + moved >= 1 && noteText == $"{Menus.Number(on + off + moved)} {ours}"
+                    && card.StartsWith($"[b]{Menus.Text("SPIRE_MOD_MANAGER.CHANGES_TITLE")}[/b]") && card.Contains($"\n{MenuButton.Divider}\n")
+                    && card.EndsWith(MenuButton.Tip(Profiles.Active?.Name ?? "")) && !card.Contains(Menus.Text("SPIRE_MOD_MANAGER.CHANGES_CLICK")),
+                    $"\"{noteText}\" ({on}/{off}/{moved}); card \"{card}\"");
+            }
+            else
+                Results.Add("FAIL the main menu button's pending note: no button");
             tickbox.IsTicked = !tickbox.IsTicked;
             tickbox.EmitSignal(NTickbox.SignalName.Toggled, tickbox);
             await Wait(menu, 0.3);
@@ -2843,6 +2856,9 @@ static class SelfTest
             && bar.FindChild("Unsaved", true, false) is Control { Visible: true } && bar.FindChild("SaveProfileButton", true, false) != null,
             $"edited {Profiles.Edited}, saved on {SavedOn()}, was on {wasOn}, now on {On()}, unsaved {(bar.FindChild("Unsaved", true, false) as Control)?.Visible}, save {bar.FindChild("SaveProfileButton", true, false) != null}");
         Check("edited: Save, Save as new, Discard beside Unsaved", Shown("UnsavedButtons") == "SaveProfileButton,SaveAsNewButton,DiscardButton", Shown("UnsavedButtons"));
+        var (unsavedOn, unsavedOff) = Profiles.UnsavedChanges();
+        Check("Unsaved says how many changes: Unsaved (1) • for one tickbox", unsavedOn.Count + unsavedOff.Count == 1
+            && bar.FindChild("Unsaved", true, false) is Label { Text: "Unsaved (1) •" }, (bar.FindChild("Unsaved", true, false) as Label)?.Text ?? "none");
         await Capture(screen, outDir, "3b-unsaved-profile");
 
         // "Unsaved •": its card opens at once, with no delay (checked outside any grace period, which would open a
@@ -3985,7 +4001,9 @@ static class SelfTest
         detected?.Invoke(NGame.Instance, [mod]);
         await Wait(menu, 0.3);
         Check("new mod popup: our text, at most one per 30 s", NModalContainer.Instance?.OpenModal == null);
-        Check("the profile bar shows how many mods are on", screen.FindChild("ProfileCount", true, false) is Label { Text: var count } && count.EndsWith("mods"));
+        Check("the profile bar leaves the mod count to the profile list (none beside the name)", screen.FindChild("SpireModManagerProfileBar", true, false) is { } profileBar
+            && profileBar.FindChild("ProfileCount", true, false) == null && Profiles.Active is { } listed && Profiles.Details(listed).Contains(Profiles.CountText()),
+            Profiles.Active is { } a ? Profiles.Details(a) : "no profile");
 
         // A mod installed while the game runs (made up here, the way the game announces one): Changes lists it
         // as installed, with whether it loads after a relaunch; unticking it sticks (the game's tickbox alone
@@ -5946,6 +5964,20 @@ static class SelfTest
         Control? Bar() => screen.FindChild(PageBar.Name, true, false) as Control;
         void Press(string name) => Bar()?.FindChild(name, true, false)?.EmitSignal(BaseButton.SignalName.Pressed);
         Check("page bar on the main list", Bar() is { Visible: true } bar && bar.FindChild("Scope", true, false) is Label { Text: var all } && all.StartsWith("Mods installed"));
+        // Each choice with how many mods it's for ("All (20)"), the same counts as the scope's for the chosen one, and
+        // room for a 3-digit count (PageBar.RoomFor), so a count changing never moves the bar; the bar still fits its row.
+        var filterNames = new[] { ("ShowAllButton", "All", ListFilter.Choice.All), ("ShowEnabledButton", "Enabled", ListFilter.Choice.Enabled),
+            ("ShowDisabledButton", "Disabled", ListFilter.Choice.Disabled), ("ShowChangedButton", "Changed", ListFilter.Choice.Changed) };
+        var filterTexts = filterNames.Select(f => (Bar()?.FindChild(f.Item1, true, false) as Button, f.Item2, Rows().Count(r => ListFilter.Matches(r.Mod, f.Item3)))).ToList();
+        Check("the filters say how many mods each is for: All (n), Enabled (n), Disabled (n), Changed (n)",
+            filterTexts.All(f => f.Item1?.Text == $"{f.Item2} ({Menus.Number(f.Item3)})") && filterTexts[0].Item3 == Rows().Count
+            && filterTexts[1].Item3 + filterTexts[2].Item3 == Rows().Count(r => r.Mod != null),
+            string.Join(" | ", filterTexts.Select(f => $"{f.Item1?.Text} / {f.Item3}")));
+        Check("each filter keeps room for a 3-digit count: its width doesn't follow its count, and the bar fits its row",
+            filterTexts.All(f => f.Item1 is { } b && b.CustomMinimumSize.X == PageBar.Roomy(b, f.Item2) && Math.Abs(b.Size.X - b.CustomMinimumSize.X) < 0.5f
+                && b.CustomMinimumSize.X >= b.GetThemeFont("font").GetStringSize($"{f.Item2} ({new string('8', PageBar.RoomFor)})", fontSize: b.GetThemeFontSize("font_size")).X)
+            && Bar() is { } fits && fits.GetCombinedMinimumSize().X <= fits.GetParent<Control>().Size.X - fits.OffsetLeft + fits.OffsetRight + 0.5f,
+            $"{string.Join(", ", filterTexts.Select(f => $"{f.Item1?.Size.X:0}/{f.Item1?.CustomMinimumSize.X:0}"))}; bar {Bar()?.GetCombinedMinimumSize().X:0} in {(Bar() is { } room ? room.GetParent<Control>().Size.X - room.OffsetLeft + room.OffsetRight : 0):0}");
         await Capture(screen, outDir, "2d-page-bar");
         // What each filter shows: our hover card (not the engine's tooltip), only as wide as its words. And no engine
         // tooltip on anything of ours: every description we write is the same card. Other mods'
@@ -6055,8 +6087,12 @@ static class SelfTest
         List<string> Where(Func<Mod, bool> rule) => Ids(Rows().Where(r => r.Mod is { } mod && rule(mod)));
         string Scope() => (Bar()?.FindChild("Scope", true, false) as Label)?.Text ?? "";
         // The choices as the bar shows them, the lit one (white text) with a *.
-        string Choices() => string.Join(" ", Bar()?.FindChild("Show", true, false)?.GetChildren().OfType<Button>()
-            .Select(b => b.Text + (b.GetThemeColor("font_color") == Colors.White ? "*" : "")) ?? []);
+        // The choices by name ("All (20)" reads All), the lit one starred; and the counts they show, in order.
+        IEnumerable<Button> ChoiceButtons() => Bar()?.FindChild("Show", true, false)?.GetChildren().OfType<Button>() ?? [];
+        string Choices() => string.Join(" ", ChoiceButtons()
+            .Select(b => System.Text.RegularExpressions.Regex.Replace(b.Text, @" \([\d,]+\)$", "") + (b.GetThemeColor("font_color") == Colors.White ? "*" : "")));
+        List<int> ChoiceCounts() => ChoiceButtons().Select(b => System.Text.RegularExpressions.Regex.Match(b.Text, @"\(([\d,]+)\)$") is { Success: true } m
+            ? int.Parse(m.Groups[1].Value.Replace(",", "")) : -1).ToList();
         string Say() => $"shown {string.Join(", ", Shown())} | {Scope()} | {Choices()}";
         // Each category's header: the count of its rows the rule shows, or no header when that's none. "" when all agree.
         string Headers(Func<Mod, bool> rule)
@@ -6134,6 +6170,11 @@ static class SelfTest
             Check("Show: Disabled with a search: the rows matching both, counted as search matches", both.Count > 0 && both.Count < found.Count
                 && Shown().SequenceEqual(both) && Scope() == $"Search matches ({both.Count})" && Choices() == "All Enabled Disabled* Changed",
                 $"{Say()}; expected {string.Join(", ", both)} of the search's {string.Join(", ", found)}");
+            // The choices count within the search too: All its matches, Enabled and Disabled splitting them, the lit one
+            // as many as it shows (the count before Enable all says the same).
+            Check("with a search, each choice counts its matches: All the search's, Disabled what it shows",
+                ChoiceCounts() is [var allCount, var onCount, var offCount, _] && allCount == found.Count && offCount == both.Count && onCount + offCount == found.Count,
+                $"{string.Join(", ", ChoiceCounts())}; search {found.Count}, both {both.Count}");
             await Find("");
 
             CategoryList.Redraw(content);
@@ -6427,7 +6468,7 @@ static class SelfTest
             return;
         }
         string Lit() => string.Join(" ", screen.FindChild(PageBar.Name, true, false)?.FindChild("Show", true, false)?.GetChildren().OfType<Button>()
-            .Where(b => b.GetThemeColor("font_color") == Colors.White).Select(b => b.Text) ?? []);
+            .Where(b => b.GetThemeColor("font_color") == Colors.White).Select(b => System.Text.RegularExpressions.Regex.Replace(b.Text, @" \([\d,]+\)$", "")) ?? []);
         ListFilter.Choose(content, ListFilter.Choice.Disabled);
         CategoryList.Reveal(content, ModEntry.ModId, flash: false); // kept beside the disabled ones
         await Wait(menu, 0.5);

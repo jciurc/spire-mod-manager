@@ -536,7 +536,8 @@ static class Profiles
         }
     }
 
-    // Beside the picker: "12 mods", how many are on in the mod list right now, this mod and Better Mod Menu included.
+    // "12 mods": how many are on in the mod list right now, this mod and Better Mod Menu included (the active profile's
+    // count in the profile list, ModCount).
     public static string CountText()
     {
         var on = OnCount();

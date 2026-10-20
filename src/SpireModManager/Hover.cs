@@ -180,7 +180,7 @@ static class Hover
 
     // The text a card shows, without its tags: what its width is measured on.
     static string Unmarked(string bbcode) =>
-        Regex.Replace(bbcode, @"\[(/?[a-z_]+(=[^\]]*)?)\]", m => m.Value == "[lb]" ? "[" : m.Value == "[rb]" ? "]" : "");
+        Regex.Replace(bbcode, @"\[(/?[a-z_]+([= ][^\]]*)?)\]", m => m.Value == "[lb]" ? "[" : m.Value == "[rb]" ? "]" : "");
 
     // at: the card's top-left corner (or, with right/above, that corner), kept on screen. around: what it opens beside
     // (the trigger near the mouse, at the mouse's x; null: nothing, the card stays at `at`): at least Gap off it, and where
