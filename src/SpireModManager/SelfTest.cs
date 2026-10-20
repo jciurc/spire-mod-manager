@@ -3310,7 +3310,26 @@ static class SelfTest
             + $"SmmTestNotHere,Not Here Mod,2.0,TRUE,\"Content, mostly\",{link},'=cool,\"Line one\r\nline two\"\r\n"
             + "SmmTestLib,Test Framework,1.0.0,TRUE,Frameworks,,,\r\n"
             + "SmmTestUi,Test UI,1.0.0,FALSE,Ungrouped,,,\r\n";
-        var plan = Profiles.PlanImport(ProfileCsv.Read(bmm).Mods);
+        var read = ProfileCsv.Read(bmm).Mods;
+        var plan = Profiles.PlanImport(read);
+        Check("a Better Mod Menu list: its groups read as categories (Ungrouped as none), its alias unguarded, its notes on two lines",
+            read.Select(e => e.Category).SequenceEqual(["Content, mostly", "Content, mostly", "Frameworks", ""])
+            && read[1] is { Alias: "=cool", Notes: "Line one\nline two" } && read[0] is { Alias: "", Notes: "" },
+            string.Join(" | ", read.Select(e => $"{e.Id}: {e.Category}/{e.Alias}/{e.Notes}")));
+        var ours = ProfileCsv.Read(ProfileCsv.Write([new("SmmA", "A", "1", true, "Tools", "", "Aye", "Some notes")], new ProfileCsv.Options(Alias: true, Notes: true))).Mods;
+        Check("our own list: its category, alias and notes read back", ours is [{ Category: "Tools", Alias: "Aye", Notes: "Some notes" }],
+            string.Join(" | ", ours.Select(e => $"{e.Category}/{e.Alias}/{e.Notes}")));
+        // What the list gives that the mods don't have: Test Framework keeps its own category (the fixture's), and the
+        // mods not installed get theirs, an alias and notes, so they arrive sorted.
+        var libCategory = Store.InfoFor("SmmTestLib")?.Category;
+        var libSorted = libCategory == null || Categories.Find(libCategory) == null;
+        var hadContent = Categories.Find("Content, mostly") != null;
+        Check("an import sorts only mods without a category of their own, makes the categories it needs, fills in empty aliases and notes",
+            plan.Extras.Sorted.OrderBy(s => s.Key).SequenceEqual(new[] { ("SmmTestGoneOff", "Content, mostly"), ("SmmTestNotHere", "Content, mostly") }
+                .Concat(libSorted ? [("SmmTestLib", "Frameworks")] : []).OrderBy(s => s.Item1))
+            && plan.Extras.NewCategories.SequenceEqual(hadContent ? [] : ["Content, mostly"]) && plan.Extras.Details == 2
+            && plan.Extras.Named is [("SmmTestNotHere", "=cool", "Line one\nline two")],
+            $"{string.Join(", ", plan.Extras.Sorted)}; new {string.Join(", ", plan.Extras.NewCategories)}; named {string.Join(", ", plan.Extras.Named)}");
         // A mod listed twice, a Workshop copy first: the local test mod takes the row without a link.
         var libOn = IsOn("SmmTestLib");
         var twice = Profiles.PlanImport([new("SmmTestLib", !libOn, "Test Framework", link), new("SmmTestLib", libOn, "Test Framework", "")]);
@@ -3361,6 +3380,11 @@ static class SelfTest
         Press("CreateProfileButton");
         await Wait(menu, 0.3);
         var made = Profiles.Active;
+        Check("its categories, alias and notes applied: the mods not installed sorted for when they are; Test Framework's own category kept",
+            Categories.Find("Content, mostly") != null && Store.InfoFor("SmmTestNotHere") is { Category: "Content, mostly", Alias: "=cool", Notes: "Line one\nline two" }
+            && Store.InfoFor("SmmTestGoneOff")?.Category == "Content, mostly" && Store.InfoFor("SmmTestLib")?.Category == (libSorted ? "Frameworks" : libCategory)
+            && Store.InfoFor("SmmTestUi")?.Category == null == (Store.InfoFor("SmmTestUi")?.Category == null),
+            $"{Store.InfoFor("SmmTestNotHere")?.Category}/{Store.InfoFor("SmmTestNotHere")?.Alias}; lib {Store.InfoFor("SmmTestLib")?.Category}");
         Check("its states applied; the new profile keeps the mods that aren't installed, for later", made?.Name == "Imported profile"
             && IsOn("SmmTestLib") && !IsOn("SmmTestUi")
             && made.Mods.Any(m => m is { Id: "SmmTestNotHere", Source: ModSource.SteamWorkshop, Enabled: true })
@@ -3368,7 +3392,10 @@ static class SelfTest
             string.Join(", ", made?.Mods.Select(m => $"{m.Id}/{m.Source}={m.Enabled}") ?? []));
         History.Undo();
         await Wait(menu, 0.3);
-        Check("and undo takes that one away too", Named("Imported profile") == null && Profiles.Active?.Name == otherName && ModListState().SequenceEqual(otherStates));
+        Check("and undo takes that one away too, its categories, alias and notes with it (one step)", Named("Imported profile") == null && Profiles.Active?.Name == otherName
+            && ModListState().SequenceEqual(otherStates) && (Categories.Find("Content, mostly") != null) == hadContent
+            && Store.InfoFor("SmmTestNotHere") == null && Store.InfoFor("SmmTestGoneOff") == null && Store.InfoFor("SmmTestLib")?.Category == libCategory,
+            $"{Store.InfoFor("SmmTestNotHere")?.Category}; content {Categories.Find("Content, mostly") != null}");
 
         // Errors show in red in the dialog, and nothing is made: no Mod Id column, Enabled that isn't a yes or no, no text.
         await Choose("Import profile");

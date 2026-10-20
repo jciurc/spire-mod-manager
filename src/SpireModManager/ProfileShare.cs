@@ -10,7 +10,7 @@ namespace SpireModManager;
 // Category, Workshop Id (the id only, as Steam may move an item's page), Alias and Notes. Writing follows RFC 4180,
 // with a ' before values a spreadsheet would run as a formula. Reading is forgiving: a BOM, CRLF or LF, a ; or tab
 // separator, columns by header in any order. Only Mod Id and Enabled are needed, and a blank or missing Enabled means
-// enabled.
+// enabled. Category (Better Mod Menu's Group, where "Ungrouped" is none), Alias and Notes are read when there.
 static class ProfileCsv
 {
     // What a shared list holds besides id, name, version and Enabled: the category by default, the rest off. Disabled:
@@ -26,8 +26,11 @@ static class ProfileCsv
     // One mod to write. WorkshopId: "" for a mod that isn't from the Workshop.
     public record Row(string Id, string Name, string Version, bool Enabled, string Category, string WorkshopId, string Alias = "", string Notes = "");
 
-    // One mod read: the parts an import uses.
-    public record Entry(string Id, bool Enabled, string Name, string WorkshopLink);
+    // One mod read: the parts an import uses ("" for a value the list doesn't give).
+    public record Entry(string Id, bool Enabled, string Name, string WorkshopLink, string Category = "", string Alias = "", string Notes = "");
+
+    // As long as the boxes that name them take: a category's rename box, a mod's alias box.
+    const int CategoryMax = 40, AliasMax = 80;
 
     // What Read found: the mods, or why there are none (the text to show).
     public record Result(List<Entry> Mods, string? Error);
@@ -154,6 +157,7 @@ static class ProfileCsv
         var header = records[0].Select(h => h.Trim()).ToList();
         int Column(params string[] names) => header.FindIndex(h => names.Any(n => string.Equals(h, n, StringComparison.OrdinalIgnoreCase)));
         var (id, enabled, name, link) = (Column("Mod Id", "Id", "ModId"), Column("Enabled"), Column("Name"), Column("Workshop Id", "Workshop Link", "WorkshopId"));
+        var (category, alias, notes) = (Column("Category", "Group"), Column("Alias"), Column("Notes"));
         if (id < 0)
             return Problem(Menus.Text("SPIRE_MOD_MANAGER.IMPORT_NO_ID"));
         if (enabled < 0)
@@ -167,10 +171,15 @@ static class ProfileCsv
                 continue;
             if (Bool(Cell(enabled)) is not { } on) // (a row cut short: blank)
                 return Problem(Menus.Format("SPIRE_MOD_MANAGER.IMPORT_BAD_ENABLED", ("mod", modId), ("value", Cell(enabled))));
-            mods.Add(new Entry(modId, on, Cell(name), WorkshopFrom(Cell(link))));
+            var group = Cell(category);
+            mods.Add(new Entry(modId, on, Cell(name), WorkshopFrom(Cell(link)),
+                string.Equals(group, "Ungrouped", StringComparison.OrdinalIgnoreCase) ? "" : Cut(group, CategoryMax), Cut(Cell(alias), AliasMax),
+                Cell(notes).Replace("\r\n", "\n").Replace('\r', '\n')));
         }
         return mods.Count == 0 ? Problem(Menus.Text("SPIRE_MOD_MANAGER.IMPORT_NO_MODS")) : new Result(mods, null);
     }
+
+    static string Cut(string value, int most) => value.Length <= most ? value : value[..most].TrimEnd();
 
     static bool? Bool(string value) => value.ToLowerInvariant() switch
     {
@@ -397,7 +406,14 @@ static class ProfileShare
             lines.Add("  •  " + Menus.Format("SPIRE_MOD_MANAGER.IMPORT_ON", ("count", Menus.Number(plan.On))));
         if (plan.Off > 0)
             lines.Add("  •  " + Menus.Format("SPIRE_MOD_MANAGER.IMPORT_OFF", ("count", Menus.Number(plan.Off))));
-        if (plan.On == 0 && plan.Off == 0)
+        var extras = plan.Extras;
+        if (extras.Sorted.Count > 0)
+            lines.Add("  •  " + Menus.Format("SPIRE_MOD_MANAGER.IMPORT_SORTED", ("count", Menus.Number(extras.Sorted.Count))));
+        if (extras.NewCategories.Count > 0)
+            lines.Add("  •  " + Menus.Format("SPIRE_MOD_MANAGER.IMPORT_NEW_CATEGORIES", ("count", Menus.Number(extras.NewCategories.Count))));
+        if (extras.Details > 0)
+            lines.Add("  •  " + Menus.Format("SPIRE_MOD_MANAGER.IMPORT_DETAILS", ("count", Menus.Number(extras.Details))));
+        if (plan.On == 0 && plan.Off == 0 && extras.Sorted.Count == 0 && extras.Details == 0)
             lines.Add("  •  " + Menus.Text("SPIRE_MOD_MANAGER.IMPORT_NO_CHANGE"));
         if (plan.Missing.Count > 0)
         {
