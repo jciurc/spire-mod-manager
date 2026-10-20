@@ -32,7 +32,7 @@ static class GameChanges
     // A mod's changes, or None (nothing found, or what it ships can't be read).
     public static Changes For(Mod? mod)
     {
-        if (mod?.manifest == null)
+        if (mod?.manifest is null) // not ==: the beta's ModManifest has an == operator, stable's doesn't
             return None;
         try
         {
