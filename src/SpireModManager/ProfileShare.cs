@@ -171,10 +171,11 @@ static class ProfileCsv
                 continue;
             if (Bool(Cell(enabled)) is not { } on) // (a row cut short: blank)
                 return Problem(Menus.Format("SPIRE_MOD_MANAGER.IMPORT_BAD_ENABLED", ("mod", modId), ("value", Cell(enabled))));
-            // Better Mod Menu writes "Unassigned" for a mod in no group (BetterModMenu.dll; there's no other word for it).
+            // Better Mod Menu writes "Unassigned", exactly, for a mod in no group (its UnassignedGroupName; its own rules
+            // compare it case for case, so "unassigned" is a group there).
             var group = OneLine(Cell(category));
             mods.Add(new Entry(modId, on, Cell(name), WorkshopFrom(Cell(link)),
-                string.Equals(group, "Unassigned", StringComparison.OrdinalIgnoreCase) ? "" : Cut(group, CategoryMax), Cut(OneLine(Cell(alias)), AliasMax),
+                group == "Unassigned" ? "" : Cut(group, CategoryMax), Cut(OneLine(Cell(alias)), AliasMax),
                 Cell(notes).Replace("\r\n", "\n").Replace('\r', '\n')));
         }
         return mods.Count == 0 ? Problem(Menus.Text("SPIRE_MOD_MANAGER.IMPORT_NO_MODS")) : new Result(mods, null);

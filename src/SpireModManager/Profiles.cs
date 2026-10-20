@@ -377,11 +377,12 @@ static class Profiles
             {
                 var info = Store.InfoFor(key);
                 // A category of its own that's gone counts as none: the mod shows under Uncategorized. The list's category
-                // is one of the player's, or one made already, under the same name in any case ("tools" goes into Tools).
+                // is one of the player's, or one made already: by its name, or else the same name in another case ("tools" goes
+                // into Tools).
                 if (category.Length > 0 && !(info?.Category is { } own && Categories.Find(own) != null))
                 {
                     bool Same(string name) => string.Equals(name, category, StringComparison.OrdinalIgnoreCase);
-                    var name = Store.Data.Categories.FirstOrDefault(c => Same(c.Name))?.Name ?? created.FirstOrDefault(Same);
+                    var name = Categories.Find(category)?.Name ?? Store.Data.Categories.FirstOrDefault(c => Same(c.Name))?.Name ?? created.FirstOrDefault(Same);
                     if (name == null)
                         created.Add(name = category);
                     sorted.Add((key, name));
