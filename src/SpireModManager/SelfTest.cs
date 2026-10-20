@@ -3310,8 +3310,42 @@ static class SelfTest
             + "SmmTestGoneOff,Gone Off,1.0,FALSE,\"Content, mostly\",,,\r\n"
             + $"SmmTestNotHere,Not Here Mod,2.0,TRUE,\"Content, mostly\",{link},'=cool,\"Line one\r\nline two\"\r\n"
             + "SmmTestLib,Test Framework,1.0.0,TRUE,Frameworks,,,\r\n"
-            + "SmmTestUi,Test UI,1.0.0,FALSE,Ungrouped,,,\r\n";
-        var plan = Profiles.PlanImport(ProfileCsv.Read(bmm).Mods);
+            + "SmmTestUi,Test UI,1.0.0,FALSE,Unassigned,,,\r\n";
+        var read = ProfileCsv.Read(bmm).Mods;
+        var plan = Profiles.PlanImport(read);
+        Check("a Better Mod Menu list: its groups read as categories (its Unassigned as none), its alias unguarded, its notes on two lines",
+            read.Select(e => e.Category).SequenceEqual(["Content, mostly", "Content, mostly", "Frameworks", ""])
+            && read[1] is { Alias: "=cool", Notes: "Line one\nline two" } && read[0] is { Alias: "", Notes: "" },
+            string.Join(" | ", read.Select(e => $"{e.Id}: {e.Category}/{e.Alias}/{e.Notes}")));
+        var ours = ProfileCsv.Read(ProfileCsv.Write([new("SmmA", "A", "1", true, "Tools", "", "Aye", "Some notes")], new ProfileCsv.Options(Alias: true, Notes: true))).Mods;
+        Check("our own list: its category, alias and notes read back", ours is [{ Category: "Tools", Alias: "Aye", Notes: "Some notes" }],
+            string.Join(" | ", ours.Select(e => $"{e.Category}/{e.Alias}/{e.Notes}")));
+        var messy = ProfileCsv.Read("Mod Id,Enabled,Category,Alias\nSmmA,TRUE,\"Two\nlines\",\"" + new string('x', 79) + "\U0001F600\U0001F600\"\n").Mods;
+        Check("a category or alias from a list: on one line, cut to its box's length by characters, never half of one",
+            messy is [{ Category: "Two lines" } one] && one.Alias == new string('x', 79) + "\U0001F600", messy.FirstOrDefault()?.Category ?? "none");
+        // What the list gives that the mods don't have: Test Framework keeps its own category while it has one (the
+        // fixture's Frameworks, unless an earlier test took that category away), and the mods not installed get theirs,
+        // an alias and notes, so they arrive sorted. The categories made: those needed that don't exist, in list order.
+        var libCategory = Store.InfoFor("SmmTestLib")?.Category;
+        var libSorted = libCategory == null || Categories.Find(libCategory) == null;
+        var uiCategory = Store.InfoFor("SmmTestUi")?.Category;
+        var (hadContent, hadFrameworks) = (Categories.Find("Content, mostly") != null, Categories.Find("Frameworks") != null);
+        var toMake = new[] { "Content, mostly" }.Concat(libSorted ? ["Frameworks"] : Array.Empty<string>()).Where(c => Categories.Find(c) == null).ToList();
+        Check("an import sorts only mods without a category of their own, makes the categories it needs, fills in empty aliases and notes",
+            plan.Extras.Sorted.OrderBy(s => s.Key).SequenceEqual(new[] { ("SmmTestGoneOff", "Content, mostly"), ("SmmTestNotHere", "Content, mostly") }
+                .Concat(libSorted ? [("SmmTestLib", "Frameworks")] : []).OrderBy(s => s.Item1))
+            && plan.Extras.NewCategories.SequenceEqual(toMake) && plan.Extras.Details == 2
+            && plan.Extras.Named is [("SmmTestNotHere", "=cool", "Line one\nline two")],
+            $"{string.Join(", ", plan.Extras.Sorted)}; new {string.Join(", ", plan.Extras.NewCategories)}; named {string.Join(", ", plan.Extras.Named)}");
+        // A category the player has, named in another case, is that one; an alias or notes a mod already has stay.
+        var existing = Store.Data.Categories.FirstOrDefault()?.Name;
+        var libInfo = Store.InfoFor("SmmTestLib");
+        var byCase = Profiles.PlanImport([new("SmmTestNotHere", true, "", "", existing?.ToUpperInvariant() ?? "", "", ""),
+            new("SmmTestLib", true, "", "", "", "Other alias", "Other notes")]).Extras;
+        Check("an import puts a mod into the player's category named in another case, and leaves aliases and notes a mod has",
+            existing == null || (byCase.Sorted is [("SmmTestNotHere", var into)] && into == existing && byCase.NewCategories.Count == 0)
+            && byCase.Named.Where(n => n.Key == "SmmTestLib").All(n => (n.Alias != null) == string.IsNullOrEmpty(libInfo?.Alias) && (n.Notes != null) == string.IsNullOrEmpty(libInfo?.Notes)),
+            $"{existing}: {string.Join(", ", byCase.Sorted)}; new {string.Join(", ", byCase.NewCategories)}; named {string.Join(", ", byCase.Named)}");
         // A mod listed twice, a Workshop copy first: the local test mod takes the row without a link.
         var libOn = IsOn("SmmTestLib");
         var twice = Profiles.PlanImport([new("SmmTestLib", !libOn, "Test Framework", link), new("SmmTestLib", libOn, "Test Framework", "")]);
@@ -3330,9 +3364,13 @@ static class SelfTest
         Check("a Better Mod Menu list: what it holds (2 enabled, 2 disabled), then what it changes compared with now, and nothing about the rest",
             Status() == "" && plan.On == wantOn && plan.Off == wantOff && plan.Same == 2 - wantOn - wantOff && plan.Unlisted == others
             && Preview().Contains("Contains 2 enabled mods and 2 disabled mods") && Preview().Contains("Changes compared to the current profile:\n"
-                + (wantOn == 0 && wantOff == 0 ? "  •  None" : Changes(wantOn, wantOff)))
+                + (wantOn == 0 && wantOff == 0 ? "" : Changes(wantOn, wantOff) + "\n") + "  •  Mods sorted into categories ")
             && !Preview().Contains("already set") && !Preview().Contains("aren't in the list") && !Preview().Contains("isn't in the list"),
             $"on {plan.On}/{wantOn}, off {plan.Off}/{wantOff}, same {plan.Same}, unlisted {plan.Unlisted}/{others}: {Preview()}");
+        Check("the preview counts what else the list does: mods sorted into categories, new categories, aliases and notes added; no None then",
+            Preview().Contains($"Mods sorted into categories {plan.Extras.Sorted.Count}\n")
+            && (plan.Extras.NewCategories.Count == 0 ? !Preview().Contains("New categories") : Preview().Contains($"New categories {plan.Extras.NewCategories.Count}\n"))
+            && Preview().Contains("Aliases and notes added 2\n") && !Preview().Contains("  •  None"), Preview());
         var onlyOn = ProfileShare.PreviewFor(ProfileCsv.Read("Mod Id,Enabled\nSmmTestLib,\nSmmTestUi,TRUE\n").Mods, "Only on");
         Check("a list with nothing disabled says just its enabled mods; a blank Enabled reads as enabled", onlyOn.Contains("Contains 2 enabled mods")
             && !onlyOn.Contains("disabled mods"), onlyOn);
@@ -3362,6 +3400,11 @@ static class SelfTest
         Press("CreateProfileButton");
         await Wait(menu, 0.3);
         var made = Profiles.Active;
+        Check("its categories, alias and notes applied: the mods not installed sorted for when they are; Test Framework's own category kept",
+            Categories.Find("Content, mostly") != null && Store.InfoFor("SmmTestNotHere") is { Category: "Content, mostly", Alias: "=cool", Notes: "Line one\nline two" }
+            && Store.InfoFor("SmmTestGoneOff")?.Category == "Content, mostly" && Store.InfoFor("SmmTestLib")?.Category == (libSorted ? "Frameworks" : libCategory)
+            && Store.InfoFor("SmmTestUi")?.Category == uiCategory,
+            $"{Store.InfoFor("SmmTestNotHere")?.Category}/{Store.InfoFor("SmmTestNotHere")?.Alias}; lib {Store.InfoFor("SmmTestLib")?.Category}");
         Check("its states applied; the new profile keeps the mods that aren't installed, for later", made?.Name == "Imported profile"
             && IsOn("SmmTestLib") && !IsOn("SmmTestUi")
             && made.Mods.Any(m => m is { Id: "SmmTestNotHere", Source: ModSource.SteamWorkshop, Enabled: true })
@@ -3369,7 +3412,11 @@ static class SelfTest
             string.Join(", ", made?.Mods.Select(m => $"{m.Id}/{m.Source}={m.Enabled}") ?? []));
         History.Undo();
         await Wait(menu, 0.3);
-        Check("and undo takes that one away too", Named("Imported profile") == null && Profiles.Active?.Name == otherName && ModListState().SequenceEqual(otherStates));
+        Check("and undo takes that one away too, its categories, alias and notes with it (one step)", Named("Imported profile") == null && Profiles.Active?.Name == otherName
+            && ModListState().SequenceEqual(otherStates) && (Categories.Find("Content, mostly") != null) == hadContent
+            && (Categories.Find("Frameworks") != null) == hadFrameworks
+            && Store.InfoFor("SmmTestNotHere") == null && Store.InfoFor("SmmTestGoneOff") == null && Store.InfoFor("SmmTestLib")?.Category == libCategory,
+            $"{Store.InfoFor("SmmTestNotHere")?.Category}; content {Categories.Find("Content, mostly") != null}");
 
         // Errors show in red in the dialog, and nothing is made: no Mod Id column, Enabled that isn't a yes or no, no text.
         await Choose("Import profile");
@@ -4105,6 +4152,9 @@ static class SelfTest
         Check("automatic tags, in order", Tags.For(Dependencies.Find("SmmTestLib")).Select(c => c.Text).SequenceEqual(["Local", "Library", "Gameplay"])
             && Tags.For(Dependencies.Find("SmmTestUi")).Select(c => c.Text).SequenceEqual(["Local"]),
             string.Join(", ", Tags.For(Dependencies.Find("SmmTestLib")).Select(c => c.Text)));
+        Check("Cosmetic: the Workshop's Cosmetics and Audio categories and art or sound words; not QoL, tools or UI",
+            Tags.IsCosmetic(["Cosmetics"]) && Tags.IsCosmetic(["Characters", "Audio"]) && Tags.IsCosmetic(["Sound Effects"]) && Tags.IsCosmetic(["Card Art"])
+            && !Tags.IsCosmetic(["QoL", "Tools & APIs", "Utility"]) && !Tags.IsCosmetic(["UI"]) && !Tags.IsCosmetic([]) && !Tags.IsCosmetic(null));
         // Tags clicked on a row: "#Library" alone; Shift adds "#Gameplay" (both needed); "#Local" matches only the tag.
         List<string> Visible() => content.GetChildren().OfType<NModMenuRow>().Where(r => r.Visible).Select(r => r.Mod?.manifest?.id ?? "").ToList();
         void ClickChip(string modId, string tag, bool shift)
@@ -8532,13 +8582,16 @@ static class SelfTest
         Check("tag suggestions: none when nothing matches", TagSuggestions.Current == null, Listed());
         await TypeIn(box, "Strategy, Story-heavy, f");
         Check("tag suggestions: typing brings the list back", Listed() == "Fast", Listed());
-        TagSuggestions.Press("Fast");
+        Check("tag suggestions: a heading over them says what they are and how to take several",
+            TagSuggestions.Heading() == "Currently used tags; Shift-click to add multiple", TagSuggestions.Heading());
+        TagSuggestions.Press("Fast", shift: true);
         await Wait(menu, 0.2);
-        Check("tag suggestions: a click takes one, the box keeps focus", box.Text == "Strategy, Story-heavy, Fast, " && box.HasFocus(), box.Text);
-        box.ReleaseFocus();
+        Check("tag suggestions: a Shift-click takes one, the box keeps focus and the list stays for more", box.Text == "Strategy, Story-heavy, Fast, " && box.HasFocus()
+            && TagSuggestions.Current != null && TagSuggestions.Labels().Contains("Co-op"), $"\"{box.Text}\": {Listed()}");
+        TagSuggestions.Press("Co-op");
         await Wait(menu, 0.3);
-        Check("tag suggestions: leaving the box closes the list; the tags are saved, tidied", TagSuggestions.Current == null
-            && Store.InfoFor("SmmTestUi")?.Tags?.SequenceEqual(["Strategy", "Story-heavy", "Fast"]) == true, string.Join(", ", Store.InfoFor("SmmTestUi")?.Tags ?? []));
+        Check("tag suggestions: a click takes one and finishes: the box left, the list closed, the tags saved, tidied", TagSuggestions.Current == null && !box.HasFocus()
+            && Store.InfoFor("SmmTestUi")?.Tags?.SequenceEqual(["Strategy", "Story-heavy", "Fast", "Co-op"]) == true, string.Join(", ", Store.InfoFor("SmmTestUi")?.Tags ?? []));
 
         Selection.Clear(content);
         Selection.Add(content, [lib, other]);

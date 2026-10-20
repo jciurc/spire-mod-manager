@@ -80,8 +80,9 @@ sealed class ModField
             (_system.SizeFlagsHorizontal, _system.SizeFlagsVertical) = (Control.SizeFlags.ExpandFill, Control.SizeFlags.ShrinkCenter);
             term.AddChild(_system);
         }
-        else // the term is only as wide as its word (its tooltip with it); the rest of the line pushes Save and Cancel right
-            term.AddChild(new Control { Name = "Space", SizeFlagsHorizontal = Control.SizeFlags.ExpandFill, MouseFilter = Control.MouseFilterEnum.Ignore });
+        // The term is only as wide as its word (its tooltip with it); the rest of the line pushes Save and Cancel right,
+        // with the automatic tags or without them (none, or hidden while editing).
+        term.AddChild(new Control { Name = "Space", SizeFlagsHorizontal = Control.SizeFlags.ExpandFill, MouseFilter = Control.MouseFilterEnum.Ignore });
         _buttons = Menus.InlineButtons([
             new(Menus.Text("SPIRE_MOD_MANAGER.SAVE"), () => _box?.ReleaseFocus()), // leaving the box saves
             new(Menus.Text("SPIRE_MOD_MANAGER.CANCEL"), Cancel),

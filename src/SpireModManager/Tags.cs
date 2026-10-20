@@ -24,8 +24,11 @@ static class Tags
     public static readonly Color CustomColor = new(0.75f, 0.9f, 0.8f);
     static readonly Color Folded = new(0.8f, 0.78f, 0.72f); // the "+N" chip
 
-    // Workshop tag words that mark a mod as cosmetic (lower case, whole words).
-    static readonly string[] CosmeticWords = ["cosmetic", "cosmetics", "skin", "skins", "visual", "visuals", "ui", "texture", "textures", "art", "animation", "animations"];
+    // Workshop tag words that mark a mod as cosmetic (lower case, whole words): art and sound, as its card says. The
+    // Workshop's own categories for the game have Cosmetics and Audio (Oct 2026); the rest are for tags set other ways.
+    // Not "ui": that more often means an interface tool than a new look.
+    static readonly string[] CosmeticWords = ["cosmetic", "cosmetics", "skin", "skins", "reskin", "reskins", "visual", "visuals", "texture", "textures", "art",
+        "animation", "animations", "audio", "sound", "sounds", "sfx", "music"];
 
     const float ChipMax = 140; // px of text on a chip
     const float Margin = 6; // either side of a chip's text
@@ -142,8 +145,10 @@ static class Tags
 
     static string Escape(string text) => text.Replace("[", "[lb]");
 
-    static bool IsCosmetic(Mod mod) =>
-        WorkshopInfo.For(mod)?.Tags.SelectMany(t => t.ToLowerInvariant().Split([' ', '&', '/', '-', ','], StringSplitOptions.RemoveEmptyEntries))
+    static bool IsCosmetic(Mod mod) => IsCosmetic(WorkshopInfo.For(mod)?.Tags);
+
+    public static bool IsCosmetic(IEnumerable<string>? workshopTags) =>
+        workshopTags?.SelectMany(t => t.ToLowerInvariant().Split([' ', '&', '/', '-', ','], StringSplitOptions.RemoveEmptyEntries))
             .Any(word => CosmeticWords.Contains(word)) == true;
 
     // "a, b ,c" -> ["a", "b", "c"], blanks and repeats dropped; null when there are none.
