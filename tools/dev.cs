@@ -150,7 +150,10 @@ if (smoke)
 }
 else
 {
-    var build = Process.Start("dotnet", ["run", Path.Combine(root, "build.cs"), "--no-install"]);
+    // Its own build may clear out/ while it holds the lock (build.cs refuses anyone else's while this run is going).
+    var buildStart = new ProcessStartInfo("dotnet", ["run", Path.Combine(root, "build.cs"), "--no-install"]);
+    buildStart.Environment["SPIRE_MOD_MANAGER_DEV_RUN"] = Environment.ProcessId.ToString();
+    var build = Process.Start(buildStart)!;
     build.WaitForExit();
     if (build.ExitCode != 0)
         return Fail("build failed");
@@ -771,6 +774,8 @@ static IDisposable? TakeDevRunLock(string what, bool noWait, out string? refused
         File.WriteAllText(holderFile, new JsonObject
         {
             ["repo"] = "spire-mod-manager", ["mode"] = what, ["pid"] = Environment.ProcessId, ["started"] = DateTime.UtcNow.ToString("yyyy-MM-ddTHH:mm:ssZ"),
+            // The checkout the run is from: build.cs won't clear its out/ (the run's build and results) meanwhile.
+            ["dir"] = Path.GetDirectoryName(ScriptDir()) ?? "",
         }.ToJsonString());
     }
     catch (Exception e) when (e is IOException or UnauthorizedAccessException)
