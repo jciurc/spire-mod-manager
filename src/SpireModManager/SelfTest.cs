@@ -255,6 +255,7 @@ static class SelfTest
             await TestLongDetails(menu, screen, content, outDir);
             await TestWorkshopHead(menu, screen);
             await TestOtherModPanel(menu, screen, content, outDir);
+            await TestGameChanges(menu, screen, content, outDir);
             await TestBulkEdit(menu, screen, content, outDir);
             await TestPicks(menu, screen, content, outDir);
             await TestCopies(menu, screen, content, outDir);
@@ -6807,6 +6808,94 @@ static class SelfTest
         WorkshopInfo.TestSet(42, null);
         Installed.Forget(mod);
         Compat.Clear(info);
+    }
+
+    // What a mod changes in the game (GameChanges; Jordan: a mod that turned the Regent into another character was hard
+    // to track down). The files: a real mod's (EnderLilis's 16 at the game's paths, as its pack has them) told by
+    // character and what they are; a pack written here, read as the game's packs are, with one of the game's files in
+    // it, in a made-up mod's folder: that file counted, the mod's own and the engine's not, and found by searching
+    // "regent". The code: our own patches, by the game's classes, in our info panel. Screenshot 17c.
+    static async Task TestGameChanges(Node menu, NModdingScreen screen, Control content, string outDir)
+    {
+        (string, string)[] characters = [("ironclad", "The Ironclad"), ("regent", "The Regent")];
+        string[] lilis =
+        [
+            "animations/character_select/regent/characterselect_regent.png.import", "images/packed/character_select/char_select_regent.png.import",
+            "images/packed/sprite_fonts/regent_energy_icon.png.import", "images/packed/sprite_fonts/star_icon.png.import",
+            "images/ui/combat/energy_counters/regent/regent_orb_layer_1.png.import", "images/ui/combat/energy_counters/regent/regent_orb_layer_2.png.import",
+            "images/ui/combat/energy_counters/regent/regent_orb_layer_3.png.import", "images/ui/combat/energy_counters/regent/regent_orb_layer_5.png.import",
+            "images/ui/combat/energy_star.png.import", "images/ui/combat/energy_star_layer_2.png.import", "images/ui/combat/energy_star_layer_3.png.import",
+            "images/ui/hands/multiplayer_hand_regent_paper.png.import", "images/ui/hands/multiplayer_hand_regent_point.png.import",
+            "images/ui/hands/multiplayer_hand_regent_rock.png.import", "images/ui/hands/multiplayer_hand_regent_scissors.png.import",
+            "images/ui/top_panel/character_icon_regent.png.import", ".godot/imported/char_select_regent.png-0123.ctex",
+        ];
+        var assets = lilis.Select(GameChanges.Asset).OfType<string>().Distinct().ToList();
+        var subjects = GameChanges.FileSubjects(assets, characters);
+        Check("a mod's files at the game's paths: counted once each (not the engine's), told by character and what they are, most first",
+            assets.Count == 16 && subjects.SequenceEqual(["The Regent (energy orb, hands, character select, sprite fonts, top panel)", "combat", "sprite fonts"]),
+            $"{assets.Count}: {string.Join(" | ", subjects)}");
+        string[] classes = [GameChanges.Class(typeof(NModdingScreen)), GameChanges.Class(typeof(MegaCrit.Sts2.Core.Models.CharacterModel)),
+            GameChanges.Class(typeof(NModMenuRow)), GameChanges.Class(typeof(MegaCrit.Sts2.Core.Models.ModelDb))];
+        Check("the game's classes as words: modding screen, character (no \"Model\"), mod menu row, model db",
+            classes.SequenceEqual(["modding screen", "character", "mod menu row", "model db"]), string.Join(" | ", classes));
+
+        // A pack of a made-up mod: one of the game's files (the Regent's rock hand), one of its own, one of the engine's.
+        var folder = Path.Combine(outDir, "game-changes-mod");
+        Directory.CreateDirectory(folder);
+        var gameFile = "images/ui/hands/multiplayer_hand_regent_rock.png.import";
+        WritePack(Path.Combine(folder, "SmmChangesTest.pck"), [gameFile, "SmmChangesTest/thing.png.import", ".godot/imported/thing.png-0123.ctex"]);
+        var made = new Mod { path = folder, modSource = ModSource.ModsDirectory, state = ModLoadState.Loaded,
+            manifest = new ModManifest { id = "SmmChangesTest", name = "Changes Test", author = "Someone Careful" } };
+        var changes = GameChanges.For(made);
+        var regent = MegaCrit.Sts2.Core.Models.ModelDb.AllCharacters.First(c => c.Id.Entry == "REGENT").Title.GetFormattedText();
+        Check("a pack read as the game's are: the game's file it has counted, its own and the engine's not; the Regent's hands; found by \"regent\" and \"hands\"",
+            changes.Files == 1 && changes.FileSubjects.SequenceEqual([$"{regent} (hands)"]) && changes.Code == 0
+            && SpireModManager.Search.Matches(made, "regent") && SpireModManager.Search.Matches(made, "hands") && !SpireModManager.Search.Matches(made, "ironclad"),
+            $"{changes.Files} files: {string.Join(" | ", changes.FileSubjects)}; code {changes.Code}");
+
+        // Our own patches, in our info panel.
+        if (content.GetChildren().OfType<NModMenuRow>().FirstOrDefault(r => r.Mod is { manifest.id: ModEntry.ModId, state: ModLoadState.Loaded }) is not { Mod: { } ours } row)
+        {
+            Results.Add("SKIP what a mod changes in the panel: our row isn't there");
+            return;
+        }
+        var own = GameChanges.For(ours);
+        CategoryList.Select(screen, row);
+        await Wait(menu, 0.4);
+        var shown = screen.GetNode<NModInfoContainer>("%ModInfoContainer").GetNode<RichTextLabel>("ModDescription").GetParsedText();
+        Check("our own patches: the game's code we change, by class (modding screen among them), in our info panel with how many places",
+            own.Code > 0 && own.Files == 0 && own.CodeSubjects.Contains("modding screen") && shown.Contains("Changes game code: ")
+            && shown.Contains($"({own.Code} places)") && !shown.Contains("Replaces game files"),
+            $"{own.Code}: {string.Join(", ", own.CodeSubjects)} | {shown.Replace("\n", " / ")}");
+        await Capture(screen, outDir, "17c-game-changes");
+    }
+
+    // A Godot pack (format v3, as GameChanges reads one) listing these paths, each with no content.
+    static void WritePack(string file, string[] paths)
+    {
+        using var w = new BinaryWriter(File.Create(file));
+        w.Write("GDPC"u8.ToArray());
+        w.Write(3); // format
+        w.Write(4); w.Write(5); w.Write(1); // engine version
+        w.Write(0); // flags
+        w.Write(0L); // where the files start
+        var directoryAt = w.BaseStream.Position + 8 + 16 * 4;
+        w.Write(directoryAt);
+        for (var i = 0; i < 16; i++)
+            w.Write(0); // reserved
+        w.Write(paths.Length);
+        foreach (var path in paths)
+        {
+            var name = System.Text.Encoding.UTF8.GetBytes(path);
+            var padded = (name.Length + 3) / 4 * 4;
+            w.Write(padded);
+            w.Write(name);
+            w.Write(new byte[padded - name.Length]);
+            w.Write(0L); // offset
+            w.Write(0L); // size
+            w.Write(new byte[16]); // MD5
+            w.Write(0); // flags
+        }
     }
 
     // Another mod's part in the info panel (Undo And Restart adds a settings panel at a fixed (0,318), over our

@@ -117,8 +117,10 @@ static class Search
         // path with its tag, and [lb] and [rb] as the brackets they show.
         var description = mod.manifest?.description is { Length: > 0 } text
             ? ModDetails.WithoutTags(Picture.Replace(text, "")).Replace("[lb]", "[").Replace("[rb]", "]") : "";
+        // What it changes in the game ("The Regent (energy orb)", "creature"), searched as its description is.
+        var words = (description + " " + GameChanges.For(mod).Words).Trim();
         return new Haystack(string.Join('\n', fields.Append(description)), string.Join('\n', folded), [.. folded.Select(Squeeze)],
-            Fold(description, ""), Fold(description, " "));
+            Fold(words, ""), Fold(words, " "));
     }
 
     static readonly Regex Picture = new(@"\[img[^\]]*\].*?\[/img\]", RegexOptions.Singleline | RegexOptions.IgnoreCase);
