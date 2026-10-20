@@ -6036,8 +6036,12 @@ static class SelfTest
         List<string> Where(Func<Mod, bool> rule) => Ids(Rows().Where(r => r.Mod is { } mod && rule(mod)));
         string Scope() => (Bar()?.FindChild("Scope", true, false) as Label)?.Text ?? "";
         // The choices as the bar shows them, the lit one (white text) with a *.
-        string Choices() => string.Join(" ", Bar()?.FindChild("Show", true, false)?.GetChildren().OfType<Button>()
-            .Select(b => b.Text + (b.GetThemeColor("font_color") == Colors.White ? "*" : "")) ?? []);
+        // The choices by name ("All (20)" reads All), the lit one starred; and the counts they show, in order.
+        IEnumerable<Button> ChoiceButtons() => Bar()?.FindChild("Show", true, false)?.GetChildren().OfType<Button>() ?? [];
+        string Choices() => string.Join(" ", ChoiceButtons()
+            .Select(b => System.Text.RegularExpressions.Regex.Replace(b.Text, @" \([\d,]+\)$", "") + (b.GetThemeColor("font_color") == Colors.White ? "*" : "")));
+        List<int> ChoiceCounts() => ChoiceButtons().Select(b => System.Text.RegularExpressions.Regex.Match(b.Text, @"\(([\d,]+)\)$") is { Success: true } m
+            ? int.Parse(m.Groups[1].Value.Replace(",", "")) : -1).ToList();
         string Say() => $"shown {string.Join(", ", Shown())} | {Scope()} | {Choices()}";
         // Each category's header: the count of its rows the rule shows, or no header when that's none. "" when all agree.
         string Headers(Func<Mod, bool> rule)
@@ -6115,6 +6119,11 @@ static class SelfTest
             Check("Show: Disabled with a search: the rows matching both, counted as search matches", both.Count > 0 && both.Count < found.Count
                 && Shown().SequenceEqual(both) && Scope() == $"Search matches ({both.Count})" && Choices() == "All Enabled Disabled* Changed",
                 $"{Say()}; expected {string.Join(", ", both)} of the search's {string.Join(", ", found)}");
+            // The choices count within the search too: All its matches, Enabled and Disabled splitting them, the lit one
+            // as many as it shows (the count before Enable all says the same).
+            Check("with a search, each choice counts its matches: All the search's, Disabled what it shows",
+                ChoiceCounts() is [var allCount, var onCount, var offCount, _] && allCount == found.Count && offCount == both.Count && onCount + offCount == found.Count,
+                $"{string.Join(", ", ChoiceCounts())}; search {found.Count}, both {both.Count}");
             await Find("");
 
             CategoryList.Redraw(content);
