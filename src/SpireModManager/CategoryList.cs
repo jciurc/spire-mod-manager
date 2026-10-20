@@ -1,4 +1,6 @@
 using Godot;
+using MegaCrit.Sts2.Core.Audio;
+using MegaCrit.Sts2.Core.Commands;
 using MegaCrit.Sts2.Core.Localization;
 using MegaCrit.Sts2.Core.Logging;
 using MegaCrit.Sts2.Core.Modding;
@@ -37,9 +39,10 @@ static class CategoryList
     {
         var content = screen.GetNode<Control>("%ModsScrollContainer/Mask/Content");
 
-        // Two view switches along the bottom (Layout places them): Vanilla and Load Order. Each turns the
-        // other off; pressing the lit one again goes back to categories, and its label says so.
-        Control? vanilla = null, loadOrder = null;
+        // The way to the other page (a link at the top, right of the title) and Load Order (a button along the bottom);
+        // Layout places them. Each turns the other off; Load Order's again goes back to categories, and its label says so.
+        LinkButton? vanilla = null;
+        Control? loadOrder = null;
         // Whether Vanilla View was laid out last, so the saved view is laid out if it changed while the page was closed.
         var shownVanilla = false;
         void Switch(bool toVanilla) => Show(toVanilla && !Store.Data.VanillaView, !toVanilla && !Store.Data.LoadOrderView);
@@ -51,8 +54,7 @@ static class CategoryList
             Selection.Clear(content, record: false);
             History.ForgetPicks();
             Store.Save();
-            Label(vanilla, data.VanillaView ? "SPIRE_MOD_MANAGER.CATEGORY_VIEW" : "SPIRE_MOD_MANAGER.VANILLA_VIEW");
-            VanillaTip(vanilla);
+            PageLinkText(vanilla);
             Label(loadOrder, data.LoadOrderView ? "SPIRE_MOD_MANAGER.BACK" : "SPIRE_MOD_MANAGER.LOAD_ORDER");
             Profiles.RefreshTickboxes(screen); // the boxes as this view reads them (copies of a mod installed twice)
             Apply(content);
@@ -80,30 +82,61 @@ static class CategoryList
             else if (released)
                 Apply(content);
         };
-        vanilla = ModEntry.AddButton(screen, "SPIRE_MOD_MANAGER.VANILLA_VIEW", new Vector2(200, 70), () => Switch(true));
-        vanilla.Name = "SpireModManagerViewToggle";
+        vanilla = PageLink(screen, () => Switch(true));
+        // Ours, in the bottom-left corner, in place of the game's back arrow (Layout): back to the main menu as that goes.
+        var mainMenu = ModEntry.AddButton(screen, "SPIRE_MOD_MANAGER.MAIN_MENU", new Vector2(200, 70), () => Layout.GoBack(screen, sound: false));
+        mainMenu.Name = Layout.MainMenuName;
         loadOrder = ModEntry.AddButton(screen, "SPIRE_MOD_MANAGER.LOAD_ORDER", new Vector2(200, 70), () => Switch(false));
         loadOrder.Name = "SpireModManagerLoadOrderToggle";
         // Labels for the saved view.
-        Label(vanilla, Store.Data.VanillaView ? "SPIRE_MOD_MANAGER.CATEGORY_VIEW" : "SPIRE_MOD_MANAGER.VANILLA_VIEW");
-        VanillaTip(vanilla);
+        PageLinkText(vanilla);
         Label(loadOrder, Store.Data.LoadOrderView ? "SPIRE_MOD_MANAGER.BACK" : "SPIRE_MOD_MANAGER.LOAD_ORDER");
 
         Profiles.RefreshTickboxes(screen); // the game ticked them its way (one switch for copies of one id and source)
         Apply(content);
     }
 
-    // What the view switch leads to: the game's own page (as Better Mod Menu shows it, with that loaded), or back to ours.
-    // While a mod is installed twice from one source, how that page's tickbox treats its copies, on a line of its own.
-    static void VanillaTip(Control? toggle)
+    // The way to the other page, as a plain link (Jordan: no button look) at the top, right of the page's title.
+    static LinkButton PageLink(NModdingScreen screen, Action onPressed)
     {
-        if (toggle == null)
+        var link = new LinkButton
+        {
+            Name = "SpireModManagerViewToggle", Underline = LinkButton.UnderlineMode.Always, FocusMode = Control.FocusModeEnum.None,
+            MouseDefaultCursorShape = Control.CursorShape.PointingHand,
+        };
+        link.AddThemeFontOverride("font", ModEntry.Font("res://themes/kreon_regular_shared.tres"));
+        link.AddThemeFontSizeOverride("font_size", PageLinkSize);
+        link.AddThemeColorOverride("font_color", new Color(ModDetails.ModLinkHex));
+        link.AddThemeColorOverride("font_hover_color", Colors.White);
+        link.AddThemeColorOverride("font_pressed_color", Colors.White);
+        link.Pressed += () =>
+        {
+            SfxCmd.Play(FmodSfx.uiClick);
+            onPressed();
+        };
+        screen.AddChild(link);
+        return link;
+    }
+
+    public const int PageLinkSize = 20;
+
+    // Its words for the page now shown: "Go to vanilla Modding page" on ours, "Go to Spire Mod Manager page" on the
+    // game's. On ours, while a mod is installed twice from one source, its card says how that page's tickbox treats
+    // the copies; on the game's, no card (Jordan).
+    static void PageLinkText(LinkButton? link)
+    {
+        if (link == null)
             return;
-        var tip = Menus.Text(Store.Data.VanillaView ? "SPIRE_MOD_MANAGER.CATEGORY_VIEW_TIP" : "SPIRE_MOD_MANAGER.VANILLA_VIEW_TIP");
-        if (!Store.Data.VanillaView && Copies.TwinGroups() is { Count: > 0 } twins)
-            tip += "\n" + Menus.Format("SPIRE_MOD_MANAGER.VANILLA_VIEW_SAME_ID", ("mods", string.Join(", ", twins.Select(g => g.Id).Distinct()
-                .Select(id => Dependencies.Find(id) is { } mod ? Store.InfoFor(mod)?.Alias ?? mod.manifest?.name ?? id : id))));
-        Hover.Tip(toggle, tip);
+        link.Text = Menus.Text(Store.Data.VanillaView ? "SPIRE_MOD_MANAGER.GO_TO_OURS" : "SPIRE_MOD_MANAGER.GO_TO_VANILLA");
+        string? tip = null;
+        if (!Store.Data.VanillaView)
+        {
+            tip = Menus.Text("SPIRE_MOD_MANAGER.VANILLA_VIEW_TIP");
+            if (Copies.TwinGroups() is { Count: > 0 } twins)
+                tip += "\n" + Menus.Format("SPIRE_MOD_MANAGER.VANILLA_VIEW_SAME_ID", ("mods", string.Join(", ", twins.Select(g => g.Id).Distinct()
+                    .Select(id => Dependencies.Find(id) is { } mod ? Store.InfoFor(mod)?.Alias ?? mod.manifest?.name ?? id : id))));
+        }
+        Hover.Tip(link, tip);
     }
 
     // On our views, a copy of a mod installed twice that's off, while another copy of it is on: what enabling it turns
@@ -598,7 +631,10 @@ static class CategoryList
             };
         }
 
-        var byCategory = rows.ToLookup(CategoryOf); // each row's category read once, in list order
+        // Each category's rows by the name they show (an alias, else the mod's name), as the game's language sorts
+        // them, any case; two of one name keep the game's order. Each row's category read once.
+        var names = StringComparer.Create(Menus.Culture, ignoreCase: true);
+        var byCategory = rows.OrderBy(r => Store.InfoFor(r.Mod)?.Alias ?? r.Mod?.manifest?.name ?? r.Mod?.manifest?.id ?? "", names).ToLookup(CategoryOf);
         foreach (var category in categories)
             AddSection(category.Name, byCategory[category.Name].ToList(),
                 category.Collapsed, c => category.Collapsed = c, category);
