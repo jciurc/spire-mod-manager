@@ -5943,6 +5943,12 @@ static class SelfTest
         {
             CategoryList.Select(screen, libRow);
             await Wait(menu, 0.3);
+            // Its row in view, as hovering lights only one on screen (the names sort apart).
+            if (!content.GetParent<Control>().GetGlobalRect().Intersects(uiRow.GetGlobalRect()))
+            {
+                CategoryList.ScrollTo(content, uiRow);
+                await Wait(menu, 1.5);
+            }
             var description = screen.GetNode<RichTextLabel>("%ModInfoContainer/ModDescription");
             var look = uiRow.GetNode<Panel>("SelectionHighlight");
             var before = look.Modulate;
