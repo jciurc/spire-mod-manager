@@ -57,7 +57,7 @@ static class SelfTest
         if (mode is "crash" or "crash-real") // EarlyStart answers the dialog of a failed start: reaching the menu is the failure
         {
             Results.Add("FAIL a failed start: the game reached the main menu (nothing stopped its start)");
-            File.WriteAllLines(Path.Combine(outDir, "results.txt"), Results);
+            File.WriteAllLines(Path.Combine(outDir, "results.txt"), [.. Results, .. Timing()]);
             menu.GetTree().Quit();
             return;
         }
@@ -284,7 +284,7 @@ static class SelfTest
         }
         finally
         {
-            File.WriteAllLines(Path.Combine(outDir, "results.txt"), Results);
+            File.WriteAllLines(Path.Combine(outDir, "results.txt"), [.. Results, .. Timing()]);
             tree.Quit();
         }
     }
@@ -425,7 +425,7 @@ static class SelfTest
         }
         finally
         {
-            File.WriteAllLines(Path.Combine(outDir, "results.txt"), Results);
+            File.WriteAllLines(Path.Combine(outDir, "results.txt"), [.. Results, .. Timing()]);
             menu.GetTree().Quit();
         }
     }
@@ -630,7 +630,7 @@ static class SelfTest
         }
         finally
         {
-            File.WriteAllLines(Path.Combine(outDir, "results.txt"), Results);
+            File.WriteAllLines(Path.Combine(outDir, "results.txt"), [.. Results, .. Timing()]);
             menu.GetTree().Quit();
         }
     }
@@ -2071,7 +2071,7 @@ static class SelfTest
         }
         finally
         {
-            File.WriteAllLines(Path.Combine(outDir, "results.txt"), Results);
+            File.WriteAllLines(Path.Combine(outDir, "results.txt"), [.. Results, .. Timing()]);
             menu.GetTree().Quit();
         }
     }
@@ -9549,8 +9549,31 @@ static class SelfTest
         return lines;
     }
 
-    static void Check(string name, bool ok, string detail = "") =>
+    static void Check(string name, bool ok, string detail = "", [System.Runtime.CompilerServices.CallerMemberName] string caller = "")
+    {
+        Seen(caller, 0);
         Results.Add($"{(ok ? "PASS" : "FAIL")} {name}{(ok || detail.Length == 0 ? "" : $": {detail}")}");
+    }
+
+    // Where a run's time goes: per test (the method that waited or checked), from its first to its last wait or check,
+    // and how much of that was fixed waits. Written as INFO lines after the results (notes#73: measure first).
+    static readonly System.Diagnostics.Stopwatch RunClock = System.Diagnostics.Stopwatch.StartNew();
+    static readonly Dictionary<string, (double First, double Last, double Waited, int Waits)> Times = [];
+
+    static void Seen(string caller, double waited)
+    {
+        var now = RunClock.Elapsed.TotalSeconds;
+        var (first, _, total, count) = Times.GetValueOrDefault(caller, (now, now, 0, 0));
+        Times[caller] = (first, now + waited, total + waited, count + (waited > 0 ? 1 : 0));
+    }
+
+    static IEnumerable<string> Timing()
+    {
+        var waited = Times.Values.Sum(t => t.Waited);
+        yield return $"INFO time: {RunClock.Elapsed.TotalSeconds:0} s since the self-test started, {waited:0} s of it in fixed waits ({Times.Values.Sum(t => t.Waits)})";
+        foreach (var (name, t) in Times.OrderByDescending(p => p.Value.Last - p.Value.First).Take(25))
+            yield return $"INFO time: {name} {t.Last - t.First:0.0} s, waits {t.Waited:0.0} s ({t.Waits})";
+    }
 
     // The fixture's mod that won't load: Test Addon (on) needs SmmTestMissing, a mod id nothing has. Null when it isn't
     // installed (--real) or is off, so the checks that need a mod that won't load skip.
@@ -9702,8 +9725,25 @@ static class SelfTest
     static bool EvenGoldRim(StyleBoxFlat box) => box.BorderColor == RowTitles.Gold
         && new[] { box.BorderWidthTop, box.BorderWidthBottom, box.BorderWidthLeft, box.BorderWidthRight }.All(w => w == RowTitles.SelectedRim);
 
-    static async Task Wait(Node node, double seconds) =>
+    // An experiment's switch (notes#73): SPIRE_MOD_MANAGER_WAIT_SCALE shortens every fixed wait (to a frame at least), so
+    // the checks that fail show which waits are real timing (hover delays, tweens) and which only let a frame pass.
+    static readonly double WaitScale = double.TryParse(System.Environment.GetEnvironmentVariable("SPIRE_MOD_MANAGER_WAIT_SCALE"),
+        System.Globalization.NumberStyles.Float, System.Globalization.CultureInfo.InvariantCulture, out var scale) && scale > 0 ? scale : 1;
+
+    // A wait that is the time itself (a hover card's delay, a tween, a popup's timer, an ease): never shortened.
+    static async Task WaitReal(Node node, double seconds, [System.Runtime.CompilerServices.CallerMemberName] string caller = "")
+    {
+        Seen(caller, seconds);
         await node.ToSignal(node.GetTree().CreateTimer(seconds), SceneTreeTimer.SignalName.Timeout);
+    }
+
+    static async Task Wait(Node node, double seconds, [System.Runtime.CompilerServices.CallerMemberName] string caller = "")
+    {
+        if (WaitScale != 1)
+            seconds = Math.Max(seconds * WaitScale, 1.0 / 60);
+        Seen(caller, seconds);
+        await node.ToSignal(node.GetTree().CreateTimer(seconds), SceneTreeTimer.SignalName.Timeout);
+    }
 
     // <name>.txt: the visible UI under root as an indented tree; <name>.png: a screenshot, unless the
     // game runs headless (nothing is drawn then).
