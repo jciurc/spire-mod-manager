@@ -36,7 +36,7 @@ var manifest = new JsonObject
         "Relaunch the game in place to apply changes.",
     // Dev builds: above the Workshop's ReleaseVersion, or the game loads the Workshop copy instead (RELEASING.md, step 9).
     // The last number goes up by one with each install to the game; after the next release, the version after it.
-    ["version"] = "0.1.3-dev.0",
+    ["version"] = "0.1.5-dev.0",
     ["has_pck"] = true,
     ["has_dll"] = true,
     ["affects_gameplay"] = false,
