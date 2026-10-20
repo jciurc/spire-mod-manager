@@ -24,7 +24,7 @@ var dist = args.Contains("--dist");
 
 // The version a --dist build carries, the one on the Workshop. Raised by hand for each upload; it never
 // changes on its own, and dev builds keep their own number below.
-const string ReleaseVersion = "0.1.2";
+const string ReleaseVersion = "0.1.3";
 
 var manifest = new JsonObject
 {
