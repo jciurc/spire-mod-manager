@@ -4104,6 +4104,9 @@ static class SelfTest
         Check("automatic tags, in order", Tags.For(Dependencies.Find("SmmTestLib")).Select(c => c.Text).SequenceEqual(["Local", "Library", "Gameplay"])
             && Tags.For(Dependencies.Find("SmmTestUi")).Select(c => c.Text).SequenceEqual(["Local"]),
             string.Join(", ", Tags.For(Dependencies.Find("SmmTestLib")).Select(c => c.Text)));
+        Check("Cosmetic: the Workshop's Cosmetics and Audio categories and art or sound words; not QoL, tools or UI",
+            Tags.IsCosmetic(["Cosmetics"]) && Tags.IsCosmetic(["Characters", "Audio"]) && Tags.IsCosmetic(["Sound Effects"]) && Tags.IsCosmetic(["Card Art"])
+            && !Tags.IsCosmetic(["QoL", "Tools & APIs", "Utility"]) && !Tags.IsCosmetic(["UI"]) && !Tags.IsCosmetic([]) && !Tags.IsCosmetic(null));
         // Tags clicked on a row: "#Library" alone; Shift adds "#Gameplay" (both needed); "#Local" matches only the tag.
         List<string> Visible() => content.GetChildren().OfType<NModMenuRow>().Where(r => r.Visible).Select(r => r.Mod?.manifest?.id ?? "").ToList();
         void ClickChip(string modId, string tag, bool shift)
