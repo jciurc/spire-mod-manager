@@ -242,6 +242,23 @@ static class ModDetails
             Fact("SPIRE_MOD_MANAGER.DEPENDENCIES", Links(needs));
         if (neededBy.Count > 0)
             Fact("SPIRE_MOD_MANAGER.NEEDED_BY", Links(neededBy));
+
+        // What it changes in the game itself: the game's files it replaces and the game's code it patches (GameChanges).
+        var changes = GameChanges.For(mod);
+        string Changed(IReadOnlyList<string> subjects, int count, string many, string one)
+        {
+            const int Shown = 5;
+            var listed = string.Join(", ", subjects.Take(Shown).Select(Escape));
+            if (subjects.Count > Shown)
+                listed += ", " + Menus.Format("SPIRE_MOD_MANAGER.BANNER_CARD_MORE", ("count", Menus.Number(subjects.Count - Shown)));
+            return $"{listed} [color={Quiet}]({(count == 1 ? Menus.Text(one) : Menus.Format(many, ("count", Menus.Number(count))))})[/color]";
+        }
+        if (changes.Any && (needs.Count > 0 || neededBy.Count > 0))
+            text.Append('\n');
+        if (changes.Files > 0)
+            Fact("SPIRE_MOD_MANAGER.GAME_FILES", Changed(changes.FileSubjects, changes.Files, "SPIRE_MOD_MANAGER.GAME_FILES_COUNT", "SPIRE_MOD_MANAGER.GAME_FILES_COUNT_ONE"));
+        if (changes.Code > 0)
+            Fact("SPIRE_MOD_MANAGER.GAME_CODE", Changed(changes.CodeSubjects, changes.Code, "SPIRE_MOD_MANAGER.GAME_CODE_COUNT", "SPIRE_MOD_MANAGER.GAME_CODE_COUNT_ONE"));
         return text.ToString().TrimEnd();
     }
 
