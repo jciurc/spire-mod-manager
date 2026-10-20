@@ -22,6 +22,7 @@ Subscribe to it on the [Steam Workshop](https://steamcommunity.com/sharedfiles/f
 
 - **Main menu button:** "Default (12 mods)" in the lower-left corner names your active profile and
   opens the page. Right-click it to move it or to relaunch the game. A dot shows when a relaunch is pending.
+  F3 opens or closes the page from the main menu.
 - **Quick with long lists:** timed with about 250 mods, searching and switching views take a fraction of a
   second.
 - **Categories:** sort mods into your own collapsible categories, from a button on each row or the mod's
@@ -34,12 +35,16 @@ Subscribe to it on the [Steam Workshop](https://steamcommunity.com/sharedfiles/f
   needs it, green where the order works and red where it doesn't. Fix now and Auto sort put things right.
 - **Warnings that name the mods:** a banner says when enabled mods need a mod that's disabled or not
   installed, and Enable required mods turns on the ones you have.
-- **Your notes on each mod:** an alias, notes and your own tags, plus automatic ones (New, Local, Library,
-  Gameplay, Cosmetic).
-- **Search:** names, aliases, notes, tags, authors, categories and Workshop tags; `#tag` and `@author` narrow
-  it down. Ctrl+F jumps to the search box.
+- **Your notes on each mod:** an alias, notes and your own tags, plus automatic ones (New, Local, Stable or
+  Beta for a mod marked for one branch only, Library, Gameplay, Cosmetic).
+- **Search:** names, descriptions, aliases, notes, tags, authors, categories and Workshop tags; `#tag` (yours, the
+  automatic ones and Workshop tags) and `@author` narrow it down, and a `-` before a term leaves out what it matches: `#stable -#beta` lists the mods marked for the
+  stable branch only, and Disable all turns them off. Punctuation counts as spaces; `"text in quotes"` matches
+  exactly, case too. Ctrl+F jumps to the search box.
 - **Select several mods** with Ctrl-click, Shift-click or Ctrl+A, then set their category, tags or notes, or turn
-  them all on or off.
+  them all on or off, from their right-click menu, the bar above the list or any of their tickboxes on the main
+  list. The bar counts them; click the count, press Esc or Ctrl+D to let go. Selecting is a step in undo and redo
+  too.
 - **Changes, undo and redo:** the bar at the bottom counts what changed since the game started. Ctrl+Z and
   Ctrl+Y undo and redo; Revert all puts things back the way they were when you opened the page.
 - **Relaunch Game:** restarts in place, in the same window mode, so changes apply without going back through

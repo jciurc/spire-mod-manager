@@ -192,6 +192,7 @@ static class ProfileShare
     static readonly Color Gold = new(0.937f, 0.784f, 0.318f);
     static readonly Color ErrorColor = new(1f, 0.5f, 0.44f);
     const string GoldHex = "#efc851", DimHex = "#fff6e299", LinkHex = "#99ccff";
+    const int BodySize = 18; // the dialogs' text
 
     public static bool IsOpen => Modal.IsOpen(Name);
 
@@ -264,11 +265,13 @@ static class ProfileShare
         copy = AddButton(buttons, "SPIRE_MOD_MANAGER.COPY", () =>
         {
             DisplayServer.ClipboardSet(csv);
-            copy!.Text = Menus.Text("SPIRE_MOD_MANAGER.COPIED");
-            copy.GetTree().CreateTimer(1.5).Timeout += () =>
+            if (copy is not { } button) // set as AddButton returns, before any press
+                return;
+            button.Text = Menus.Text("SPIRE_MOD_MANAGER.COPIED");
+            button.GetTree().CreateTimer(1.5).Timeout += () =>
             {
-                if (GodotObject.IsInstanceValid(copy))
-                    copy.Text = Menus.Text("SPIRE_MOD_MANAGER.COPY");
+                if (GodotObject.IsInstanceValid(button))
+                    button.Text = Menus.Text("SPIRE_MOD_MANAGER.COPY");
             };
         }, "CopyButton");
         Spacer(buttons);
@@ -302,15 +305,34 @@ static class ProfileShare
         // The file loaded and its text: the profile is named after the file while the text is still that.
         (string? file, string? loaded) = (null, null);
         ProfileCsv.Result? read = null;
+        Button? subscribe = null;
         void Update()
         {
+            if (!GodotObject.IsInstanceValid(box))
+                return;
             read = box.Text.Trim().Length == 0 ? null : ProfileCsv.Read(box.Text);
             if (box.Text != loaded)
                 file = null;
             Say(status, read?.Error ?? "", error: true);
-            preview.Text = read is { Error: null } ? Preview(read.Mods, Profiles.PlanImport(read.Mods), Profiles.ImportName(file)) : "";
+            var plan = read is { Error: null } ? Profiles.PlanImport(read.Mods) : null;
+            preview.Text = plan != null && read != null ? Preview(read.Mods, plan, Profiles.ImportName(file)) : "";
+            // Subscribe to the missing mods on the Workshop that aren't on their way: there while there are any, with Steam.
+            if (subscribe != null)
+            {
+                var ready = plan != null ? Subscribable(plan).Count : 0;
+                subscribe.Visible = ready > 0 && Subscriptions.Available;
+                subscribe.Text = Menus.Format(ready == 1 ? "SPIRE_MOD_MANAGER.SUBSCRIBE_MISSING_ONE" : "SPIRE_MOD_MANAGER.SUBSCRIBE_MISSING", ("count", Menus.Number(ready)));
+            }
         }
         box.TextChanged += Update;
+        // The preview follows each subscription and each mod the game finds (it leaves Not installed), until it closes.
+        Subscriptions.Changed += Update;
+        SpireModManager.Installed.Added += Update;
+        column.TreeExiting += () =>
+        {
+            Subscriptions.Changed -= Update;
+            SpireModManager.Installed.Added -= Update;
+        };
 
         var buttons = Buttons();
         AddButton(buttons, "SPIRE_MOD_MANAGER.LOAD_LIST", () => Browse(column, save: false, "", path =>
@@ -326,6 +348,13 @@ static class ProfileShare
                 Say(status, Menus.Format("SPIRE_MOD_MANAGER.LOAD_FAILED", ("error", e.Message)), error: true);
             }
         }), "LoadCsvButton");
+        subscribe = AddButton(buttons, "SPIRE_MOD_MANAGER.SUBSCRIBE", () =>
+        {
+            if (read is { Error: null } ok)
+                Subscriptions.Subscribe(Subscribable(Profiles.PlanImport(ok.Mods)));
+        }, "SubscribeMissingButton");
+        Hover.Tip(subscribe, Menus.Text("SPIRE_MOD_MANAGER.SUBSCRIBE_TIP"));
+        subscribe.Visible = false;
         Spacer(buttons);
         AddButton(buttons, "SPIRE_MOD_MANAGER.CANCEL", () => Close(), "CancelImportButton");
         AddButton(buttons, "SPIRE_MOD_MANAGER.CREATE_PROFILE", () =>
@@ -357,7 +386,7 @@ static class ProfileShare
         var lines = new List<string> { Menus.Format("SPIRE_MOD_MANAGER.IMPORT_NEW_NAME", ("name", $"[color={GoldHex}]{Escape(name)}[/color]")) };
         string Enabled(int count) => Menus.Format(count == 1 ? "SPIRE_MOD_MANAGER.IMPORT_ENABLED_COUNT_ONE" : "SPIRE_MOD_MANAGER.IMPORT_ENABLED_COUNT", ("count", Menus.Number(count)));
         string Disabled(int count) => Menus.Format(count == 1 ? "SPIRE_MOD_MANAGER.IMPORT_DISABLED_COUNT_ONE" : "SPIRE_MOD_MANAGER.IMPORT_DISABLED_COUNT", ("count", Menus.Number(count)));
-        var mods = listed.DistinctBy(m => m.Id).ToList(); // a mod listed twice (a local and a Workshop copy) counts once
+        var mods = listed.DistinctBy(m => (m.Id, m.WorkshopLink)).ToList(); // each copy listed once, as Changes counts them
         var (enabled, disabled) = (mods.Count(m => m.Enabled), mods.Count(m => !m.Enabled));
         lines.Add("  •  " + (disabled > 0
             ? Menus.Format("SPIRE_MOD_MANAGER.IMPORT_CONTAINS_BOTH", ("enabled", Enabled(enabled)), ("disabled", Disabled(disabled)))
@@ -375,13 +404,40 @@ static class ProfileShare
             lines.Add("");
             lines.Add(Menus.Format("SPIRE_MOD_MANAGER.IMPORT_MISSING", ("count", Menus.Number(plan.Missing.Count))));
             var off = Escape(Menus.Text("SPIRE_MOD_MANAGER.IMPORT_MISSING_OFF"));
-            // The name itself opens its Workshop page, when the list gives one.
-            string Named(ProfileCsv.Entry m) => $"[b]{Escape(m.Name.Length > 0 ? m.Name : m.Id)}[/b]";
-            lines.AddRange(plan.Missing.Select(m => "  •  " + (m.WorkshopLink.Length > 0 ? $"[url={m.WorkshopLink}][color={LinkHex}]{Named(m)}[/color][/url]" : Named(m))
-                + (m.Enabled ? "" : $" [color={DimHex}]{off}[/color]")));
+            // The name itself opens its Workshop page, when the list gives one (with the external-link mark, in the
+            // link); two copies of one mod say which item.
+            string Item(ProfileCsv.Entry m) => plan.Missing.Count(o => o.Id == m.Id) > 1 && m.WorkshopLink.Length > 0
+                ? $" ({m.WorkshopLink[(m.WorkshopLink.LastIndexOf('=') + 1)..]})" : "";
+            string Named(ProfileCsv.Entry m) => $"[b]{Escape((m.Name.Length > 0 ? m.Name : m.Id) + Item(m))}[/b]";
+            lines.AddRange(plan.Missing.Select(m => "  •  "
+                + (m.WorkshopLink.Length > 0 ? $"[url={m.WorkshopLink}][color={LinkHex}]{Named(m)}{LinkMark.Tag(BodySize, LinkHex)}[/color][/url]" : Named(m))
+                + (m.Enabled ? "" : $" [color={DimHex}]{off}[/color]") + Progress(m)));
         }
         return string.Join("\n", lines);
     }
+
+    // A missing mod's subscription, once one has started (Subscriptions): subscribing, its download, installed, or why it
+    // failed. None before.
+    static string Progress(ProfileCsv.Entry m)
+    {
+        if (ItemOf(m.WorkshopLink) is not { } item || Subscriptions.Of(item) is not { State: not Subscriptions.State.None } status)
+            return "";
+        var (text, color) = status.State switch
+        {
+            Subscriptions.State.Subscribing => (Menus.Text("SPIRE_MOD_MANAGER.SUBSCRIBE_SUBSCRIBING"), DimHex),
+            Subscriptions.State.Downloading => (Menus.Format("SPIRE_MOD_MANAGER.SUBSCRIBE_DOWNLOADING", ("percent", MissingMods.Percent(status.Progress))), GoldHex),
+            Subscriptions.State.Installed => (Menus.Text("SPIRE_MOD_MANAGER.SUBSCRIBE_INSTALLED"), "#99db8c"),
+            _ => (status.Error ?? "", "#ff8070"),
+        };
+        return $"  [color={color}]{Escape(text)}[/color]";
+    }
+
+    // The Workshop item a link names, or null.
+    static ulong? ItemOf(string link) => link.Length > 0 && ulong.TryParse(link[(link.LastIndexOf('=') + 1)..], out var item) ? item : null;
+
+    // The listed mods not installed that Subscribe would start: on the Workshop, not on their way or done.
+    static List<ulong> Subscribable(Profiles.ImportPlan plan) => [.. plan.Missing.Select(m => ItemOf(m.WorkshopLink)).OfType<ulong>().Distinct()
+        .Where(item => Subscriptions.Of(item).State is Subscriptions.State.None or Subscriptions.State.Failed)];
 
     // A saved list's file name: spire-mods-<profile>-<yyyyMMddHHmmss>.txt, with characters a file name can't have as
     // "_" (the prefix also avoids Windows' device names, such as CON). Profiles.ImportName reads the name back out.
@@ -450,7 +506,7 @@ static class ProfileShare
     static RichTextLabel Body(string name)
     {
         var body = new RichTextLabel { Name = name, BbcodeEnabled = true, FitContent = true, ScrollActive = false, MouseFilter = Control.MouseFilterEnum.Ignore };
-        Hover.Fonts(body, 18);
+        Hover.Fonts(body, BodySize);
         return body;
     }
 

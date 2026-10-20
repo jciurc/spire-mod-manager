@@ -118,7 +118,7 @@ static (int Code, string Output, string Error) Exec(string file, string[] argume
     var start = new ProcessStartInfo(file) { RedirectStandardOutput = true, RedirectStandardError = true };
     foreach (var argument in arguments)
         start.ArgumentList.Add(argument);
-    using var process = Process.Start(start)!;
+    using var process = Process.Start(start) ?? throw new InvalidOperationException($"could not start {file}");
     var error = process.StandardError.ReadToEndAsync();
     var output = process.StandardOutput.ReadToEnd();
     process.WaitForExit();

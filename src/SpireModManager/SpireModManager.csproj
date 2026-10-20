@@ -40,6 +40,8 @@
     <Reference Include="GodotSharp" HintPath="$(GameData)\GodotSharp.dll" Private="false" />
     <Reference Include="0Harmony" HintPath="$(GameData)\0Harmony.dll" Private="false" />
     <Reference Include="Steamworks.NET" HintPath="$(GameData)\Steamworks.NET.dll" Private="false" />
+    <!-- The game's text formatter, to check drop-in translations format as the game does (Translations). -->
+    <Reference Include="SmartFormat" HintPath="$(GameData)\SmartFormat.dll" Private="false" />
   </ItemGroup>
 
 </Project>

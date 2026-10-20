@@ -54,6 +54,8 @@ static class Layout
         // The first call runs in our _Ready postfix (Priority.First, before other mods' postfixes and before any mod
         // fills the panel), so its parts are still the scene's own.
         _sceneParts ??= info.GetChildren().Select(c => c.Name.ToString()).ToHashSet();
+        if (info is NModInfoContainer panel)
+            ModDetails.Looks(panel, game: Store.Data.VanillaView); // also when no mod is picked (no fill)
         // Better Mod Menu loaded too: paused while we place things (its re-layout follows every resize), and its push
         // down of the list taken back. Vanilla View gives it the page again at the end.
         if (Bmm.Present)
@@ -297,12 +299,44 @@ static class Layout
             foreach (var name in new[] { LoadOrder.AutoSortName, LoadOrder.AutoSortHintName, FindBar.Name })
                 if (list.GetNodeOrNull<Control>(name) is { } beside)
                     (beside.OffsetTop, beside.OffsetBottom) = (search.OffsetTop, search.OffsetBottom);
+        var bannersTop = y;
         Stack(list.GetNodeOrNull<Control>(LoadOrder.SelfName), Wide, 6);
         Stack(list.GetNodeOrNull<Control>(LoadOrder.ManagersName), Wide, 6);
+        Stack(list.GetNodeOrNull<Control>(LoadOrder.SameIdName), Wide, 6);
+        Stack(list.GetNodeOrNull<Control>(LoadOrder.MissingName), Wide, 6);
         Stack(list.GetNodeOrNull<Control>(LoadOrder.WarningName), Wide, 6);
+        var banners = y - bannersTop;
         Stack(list.GetNodeOrNull<Control>(PageBar.Name), Current == View.Categories, 4);
         Stack(list.GetNodeOrNull<Control>(PageBar.HintName), Current == View.Categories, 4);
         scroll.OffsetTop = Wide ? y : box.Y;
+        KeepRows(list, scroll, banners);
+    }
+
+    // What the list showed when last placed (the page, view, Show: choice and search), the banners' height then, and the
+    // frame it began showing that.
+    static ((ulong Page, View View, ListFilter.Choice Choice, string Search) Showing, float Banners, ulong Since) _placed;
+
+    // A banner coming, going or rewrapping moves the list's top by its change in height: the rows scroll by as much at
+    // once, so the ones on screen stay where they were (CategoryList.KeepInPlace), at the list's top too (the row under
+    // the mouse, just ticked, stays under it) while the page shows; hidden, a list at its top stays there and only the
+    // banners' height is taken. Not when the list shows something else than last time (another page or view, a Show:
+    // choice, a search): that starts where it always did, for the rest of its frame too, where a banner made at the old
+    // view's width can still change height. Scrolls on purpose (Reveal, Load Order's find) come later and set their own
+    // target.
+    static void KeepRows(Control list, Control scroll, float banners)
+    {
+        if (scroll.GetNodeOrNull<Control>("Mask/Content") is not { } content)
+            return;
+        var showing = (list.GetInstanceId(), Current, ListFilter.Chosen, CategoryList.Filter(content));
+        var frame = Engine.GetProcessFrames();
+        if (showing != _placed.Showing)
+            _placed = (showing, banners, frame);
+        else if (banners != _placed.Banners)
+        {
+            if (frame != _placed.Since)
+                CategoryList.KeepInPlace(content, banners - _placed.Banners);
+            _placed.Banners = banners;
+        }
     }
 
     // Vanilla View: the game's notification dot on "Spire Manager" while a relaunch is pending.
@@ -403,6 +437,9 @@ static class Layout
         (part.OffsetLeft, part.OffsetTop, part.OffsetRight, part.OffsetBottom) =
             (part.OffsetLeft + dx, part.OffsetTop + dy, part.OffsetRight + dx, part.OffsetBottom + dy);
     }
+
+    // How many of other mods' parts are out of sight for lack of room (not the ones new this frame, still settling).
+    public static int Parked(Control info) => OtherParts(info).Count(p => p.HasMeta(ParkedMeta));
 
     // Out of sight for lack of room: far above the panel and out of keyboard reach. Never hidden, so its mod's own
     // Visible still holds when room comes back.
@@ -509,15 +546,15 @@ static class Layout
     static void ViewFont(MegaRichTextLabel label, int size)
     {
         if (!label.HasMeta(FontMeta))
-            label.SetMeta(FontMeta, new Vector2I(label.GetThemeFontSize("normal_font_size"), label.MaxFontSize));
+            label.SetMeta(FontMeta, new Vector2I(label.GetThemeFontSize(NormalFontSize), label.MaxFontSize));
         var original = (Vector2I)label.GetMeta(FontMeta);
         if (Wide)
         {
             FontSize(label, size);
             return;
         }
-        label.AddThemeFontSizeOverride("normal_font_size", original.X);
-        label.AddThemeFontSizeOverride("bold_font_size", original.X);
+        label.AddThemeFontSizeOverride(NormalFontSize, original.X);
+        label.AddThemeFontSizeOverride(BoldFontSize, original.X);
         label.MaxFontSize = original.Y;
         Refit(label);
     }
@@ -526,12 +563,12 @@ static class Layout
     // override restyles the text, and every row title passes here each redraw) or when it's the auto-size's own pick.
     public static void FontSize(MegaRichTextLabel label, int size)
     {
-        var drawn = label.GetThemeFontSize("normal_font_size");
-        if (label.MaxFontSize == size && label.GetThemeFontSize("bold_font_size") == drawn
+        var drawn = label.GetThemeFontSize(NormalFontSize);
+        if (label.MaxFontSize == size && label.GetThemeFontSize(BoldFontSize) == drawn
             && (drawn == size || ((_refits ??= Refits()) && drawn == (int)label.Get(LastSetSize))))
             return;
-        label.AddThemeFontSizeOverride("normal_font_size", size);
-        label.AddThemeFontSizeOverride("bold_font_size", size);
+        label.AddThemeFontSizeOverride(NormalFontSize, size);
+        label.AddThemeFontSizeOverride(BoldFontSize, size);
         label.MaxFontSize = size;
 #if DEVTOOLS
         TestFitting?.Invoke(label);
@@ -551,7 +588,7 @@ static class Layout
             label.Set(LastSetSize, 0);
             return;
         }
-        var drawn = label.GetThemeFontSize("normal_font_size");
+        var drawn = label.GetThemeFontSize(NormalFontSize);
         if (now && !newText && (int)label.Get(LastSetSize) == drawn && label.Size == (Vector2)label.Get(LastAdjustedSize))
             return;
         label.Set(LastSetSize, drawn);
@@ -565,6 +602,8 @@ static class Layout
     }
 
     static readonly StringName LastSetSize = "_lastSetSize", LastAdjustedSize = "_lastAdjustedSize", AdjustFontSize = "AdjustFontSize";
+    // Made once, as every row title asks for both each redraw (a text passed as one is converted anew each time).
+    static readonly StringName NormalFontSize = "normal_font_size", BoldFontSize = "bold_font_size";
     static bool? _refits;
 
     // Whether Refit can fit a label (its members found, looked up once).

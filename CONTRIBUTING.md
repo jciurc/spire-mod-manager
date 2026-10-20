@@ -8,8 +8,8 @@ maintainer, so replies can take a few days.
 - **Translations:** see [TRANSLATING.md](TRANSLATING.md). No code needed.
 - **Code:** read on. For anything bigger than a fix, open an issue first so we can agree on the approach.
 
-The [issues](https://github.com/jciurc/spire-mod-manager/issues) are the to-do list: bugs, ideas and planned
-work. The ones labelled `good first issue` are a good start; say on the issue that you're taking it.
+The [issues](https://github.com/jciurc/spire-mod-manager/issues) hold reported bugs and the tasks open to
+contributors. The ones labelled `good first issue` are a good start; say on the issue that you're taking it.
 
 ## What you need
 
@@ -69,10 +69,16 @@ Commands:
     copy and the sandbox, but what a mod writes is up to it, and files at the top of
     `%APPDATA%\SlayTheSpire2` (such as `mod_configs`) are shared with your real game. Subscribing also installs
     the item in your real game, where a new mod starts enabled.
+  - `--crash-prepare`, then `--crash`: the offer after a failed start, end to end. The first run only reaches
+    the main menu, so the last working setup is saved. The second keeps that data, turns Test Retired on and
+    fails the start with a made-up error. Our dialog replaces the game's and is answered with Restore and
+    restart (the relaunch is caught). For a real failure, add `--workshop` with the mods that cause it to
+    `--crash`.
   - `--real` (maintainer only): a read-only tour with your own mods (all switched off) and a copy of your data,
     in place of the test mods. Its output holds your own mod list, so it never goes into a pull request.
 - `dotnet run tools/dev.cs launch`: opens the sandboxed game to try things by hand (`--first-run`,
-  `--first-run-bmm` and `--workshop` as for `test`).
+  `--first-run-bmm` and `--workshop` as for `test`). It returns when you close the game. Every run starts with the
+  sandbox's saves empty (progress, runs, history); `--keep-saves` keeps them, to try something across launches.
 - `dotnet run tools/dev.cs smoke`: the release build from `dotnet run build.cs --dist`, which has no self-test
   inside, in the sandbox until the main menu has loaded. It fails if the build is older than the checked-out
   commit, the mod didn't start or kept its dev switches, the main menu never loaded, the game exited on its own,
@@ -81,6 +87,9 @@ Commands:
   `launch`: those patches count as failed, as after a game update that broke them, to see the game's page and
   its "needs an update" line.
 - `dotnet run tools/pck.cs list|extract`: look inside the game's pack (scenes, images).
+- `dotnet run tools/loc.cs versions|changes|status|compare|read`: the English texts across versions, and where a
+  translation stands against them (TRANSLATING.md, "Updating an older translation"). CI writes each pull request's English
+  changes into its run summary.
 
 Only one dev copy can run at a time; `tools/dev.cs` won't start while one is running.
 
@@ -88,7 +97,8 @@ Only one dev copy can run at a time; `tools/dev.cs` won't start while one is run
 
 1. Branch from `dev`, and open the pull request into `dev`. One change per pull request.
 2. Run `dotnet run tools/check.cs` (seconds): text files parse, every text key the code uses is in `eng`, the
-   fixtures are valid, and nothing over 1 MB or token-like is committed. CI runs the same checks.
+   fixtures are valid, no code uses a null-forgiving `!` (narrow with `is { } x` or a checked local instead),
+   and nothing over 1 MB or token-like is committed. CI runs the same checks.
 3. For code changes, run `dotnet run tools/dev.cs test` and put its pass and fail counts in the pull request.
 4. Say what a player will notice, in plain words. Screenshots are welcome: drag them into the description.
 5. Name the issue it closes ("Fixes #123"), so merging closes it.

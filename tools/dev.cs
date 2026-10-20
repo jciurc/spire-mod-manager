@@ -5,13 +5,17 @@
 //                                     --bmm / --bmm-after: with Better Mod Menu loaded before / after ours
 //                                     --bmm-local: its local-fix build (BmmRepo) instead of the installed one
 //                                     --workshop <id>[,<id>...]: those subscribed Workshop items too, after ours
-//                                     --twins, with --workshop: allow two items of one mod id (the game loads one)
+//                                     --twins, with --workshop: allow two items of one mod id; the last given is
+//                                      picked to load, and the log is checked for it
 //                                     --real: your own mods (switched off) and a copy of your data
 //                                     --first-run, --first-run-bmm: a first launch, without or with Better Mod
 //                                      Menu's data to import
+//                                     --crash-prepare, then --crash: a launch that saves the last working setup,
+//                                      then one that fails to start (made up) with Test Retired on, our dialog answered
 //                                     --stable, with any of them: the stable branch's game, in its own dev copy
 //   dotnet run tools/dev.cs launch    build, open the sandboxed game to try by hand (--first-run,
-//                                     --first-run-bmm and --workshop as for test)
+//                                     --first-run-bmm and --workshop as for test); returns when you close it;
+//                                     --keep-saves keeps the sandbox's saves, which every run empties
 //   dotnet run tools/dev.cs smoke     the release build (dist/SpireModManager) headless until the main menu
 //                                     loads; fails if our mod didn't start or logged errors
 //
@@ -39,7 +43,7 @@ var DevDir = stable ? StableDir : BetaDir;
 var WorkshopDir = Path.Combine(steamapps, "workshop", "content", "2868840");
 var BmmRepo = Env("STS2_BMM_REPO", @"C:\repos\gaming\slay the spire\bettermodmenu"); // Better Mod Menu's local-fix checkout (--bmm-local)
 const string ModId = "SpireModManager";
-const int TimeoutSeconds = 300; // the whole run, killed after this; with --bmm and the language reloads the suite passed 150 s on a busy machine
+const int TimeoutSeconds = 480; // the whole run, killed after this; the plain suite takes about 280 s (October 2026), more with --bmm
 var root = Path.GetDirectoryName(ScriptDir()) ?? ".";
 var userData = Path.Combine(Environment.GetFolderPath(Environment.SpecialFolder.ApplicationData), "SlayTheSpire2");
 var sandbox = Path.Combine(userData, "default", "1");
@@ -52,6 +56,8 @@ var real = args.Contains("--real"); // your own mods (switched off) and a copy o
 var bmm = args.Any(a => a.StartsWith("--bmm")); // Better Mod Menu on (any --bmm option)
 var bmmData = args.Contains("--first-run-bmm"); // its fixture data in the sandbox, for our first-run import
 var firstRun = bmmData || args.Contains("--first-run"); // no manager.json of ours
+var crashPrepare = args.Contains("--crash-prepare"); // reach the main menu only, so the last working setup is saved
+var crash = args.Contains("--crash"); // then: our data kept, Test Retired on, a made-up failed start and our dialog answered
 var workshopAt = Array.IndexOf(args, "--workshop"); // the Workshop item ids follow it, comma-separated
 var workshopItems = workshopAt < 0 ? [] : (args.ElementAtOrDefault(workshopAt + 1) ?? "")
     .Split(',', StringSplitOptions.RemoveEmptyEntries | StringSplitOptions.TrimEntries).Distinct().ToArray();
@@ -59,9 +65,15 @@ var workshopMods = new List<string>(); // the mod ids in those items' manifests,
 var twins = args.Contains("--twins"); // two --workshop items of one mod id on purpose (the self-test's two-copies check)
 
 if (mode is not ("test" or "launch" or "smoke"))
-    return Fail("usage: dotnet run tools/dev.cs [test [--window] [--bmm[-after]] [--bmm-local] [--real|--first-run|--first-run-bmm]|launch [--first-run|--first-run-bmm]|smoke [--bmm]] [--workshop <id>[,<id>...] [--twins]] [--stable]");
+    return Fail("usage: dotnet run tools/dev.cs [test [--window] [--bmm[-after]] [--bmm-local] [--real|--first-run|--first-run-bmm|--crash-prepare|--crash]|launch [--first-run|--first-run-bmm] [--keep-saves]|smoke [--bmm]] [--workshop <id>[,<id>...] [--twins]] [--stable] [--no-wait]");
 if (real && firstRun)
     return Fail("--real brings your own data, so it can't be a first run");
+if (crashPrepare && crash)
+    return Fail("--crash-prepare and --crash are two runs, in that order: dotnet run tools/dev.cs test --crash-prepare, then test --crash");
+if ((crashPrepare || crash) && (mode != "test" || real || firstRun))
+    return Fail("--crash-prepare and --crash are test runs with the fixture mods and the data the first one leaves: not launch, smoke, --real or a first run");
+if (crashPrepare && workshopAt >= 0)
+    return Fail("--crash-prepare saves the setup that works, the fixture mods alone: --workshop goes with --crash, for mods that fail the start");
 // --workshop: every item has to be there, or the run would test without it and look like a pass. So it takes
 // one list: a second --workshop, --workshop=..., or ids after a space would be dropped without a word.
 if (args.Count(a => a.StartsWith("--workshop")) != (workshopAt < 0 ? 0 : 1))
@@ -118,10 +130,18 @@ foreach (var (item, manifest) in workshopManifests)
             : add));
     }
 }
-// Either copy: both play in the one sandbox data folder.
-if (Process.GetProcessesByName("SlayTheSpire2").Select(p => Path.GetDirectoryName(ExePath(p)))
-        .FirstOrDefault(dir => dir != null && new[] { BetaDir, StableDir }.Contains(dir, StringComparer.OrdinalIgnoreCase)) is { } running)
-    return Fail($"A dev copy of the game is already running from {running}.");
+// One dev game at a time across every repo and session (the guidelines' sts2-mods add-on, "One dev game at a time"):
+// the shared lock, taken before anything touches the sandbox and held to the end of this script, after the game has
+// exited and its cleanup is done. --no-wait refuses at once instead of waiting for it.
+using var devRun = TakeDevRunLock(string.Join(' ', args.DefaultIfEmpty("test")), args.Contains("--no-wait"), out var held);
+if (held != null)
+    return Fail(held);
+// Every dev copy of the game plays in the one no-Steam sandbox (default\1): ours on either branch, and other mods' dev
+// runners (sts-content-options, Mod Doctor). A run that writes it while another runs breaks that one, so wait until no
+// copy but the real install runs, here and again right before the sandbox is written (another can start while we
+// build and link). A second guard after the lock, for a dev copy started by hand.
+if (WaitForOtherDevCopies() is { } busy)
+    return Fail(busy);
 
 if (smoke)
 {
@@ -138,8 +158,15 @@ else
 
 if (LinkDevCopy() is { } noCopy)
     return Fail(noCopy);
+if (WaitForOtherDevCopies() is { } stillBusy)
+    return Fail(stillBusy);
 SyncMods();
-PrepareSandbox(mode is "test" or "smoke" || firstRun);
+PrepareSandbox((mode is "test" or "smoke" || firstRun) && !crash); // --crash keeps --crash-prepare's last working setup
+// Saves start empty every run (the guidelines' sts2-mods add-on): progress, runs and history in the sandbox, so no other
+// mod's ids and no half-played run are left from an earlier run, in any repo. launch --keep-saves keeps them, to try
+// something across launches by hand. Nothing is backed up: only dev runs write there.
+if (!(mode == "launch" && args.Contains("--keep-saves")))
+    EmptySaves();
 
 var start = new ProcessStartInfo(Path.Combine(DevDir, "SlayTheSpire2.exe"), ["--force-steam", "off", "--log-file", logPath])
     { WorkingDirectory = DevDir };
@@ -153,10 +180,31 @@ if (File.Exists(Path.Combine(DevDir, "override.cfg")))
     File.Delete(Path.Combine(DevDir, "override.cfg")); // an earlier no-focus experiment: it kept the window on top
 var previousForeground = GetForegroundWindow();
 
+// Launch waits for you to close the game, so the shared dev-run lock is held while it's open, as for every mode. A
+// relaunch (our Relaunch game, the crash dialog's restart) starts a new game from the dev copy as the first exits: so
+// it waits until none has run from there for a few seconds.
 if (mode == "launch")
 {
-    Process.Start(start);
-    Console.WriteLine($"launched the dev copy in the sandbox (log: {logPath})");
+    using var launched = Process.Start(start) ?? throw new InvalidOperationException("could not start the game");
+    Console.WriteLine($"launched the dev copy in the sandbox (log: {logPath}); this returns when you close the game");
+    launched.WaitForExit();
+    var devCopy = Path.GetFullPath(DevDir).TrimEnd('\\') + "\\";
+    bool DevGameRuns() => Process.GetProcessesByName("SlayTheSpire2")
+        .Any(p => ExePath(p)?.StartsWith(devCopy, StringComparison.OrdinalIgnoreCase) == true);
+    var said = false;
+    for (var quiet = 0; quiet < 3;)
+    {
+        Thread.Sleep(2000);
+        if (!DevGameRuns())
+            quiet++;
+        else
+        {
+            quiet = 0;
+            if (!said)
+                Console.WriteLine("the game relaunched: waiting for that one too");
+            said = true;
+        }
+    }
     return 0;
 }
 
@@ -265,6 +313,9 @@ Directory.CreateDirectory(outDir);
 start.Environment["SPIRE_MOD_MANAGER_SELFTEST"] = outDir;
 if (real)
     start.Environment["SPIRE_MOD_MANAGER_SELFTEST_MODE"] = "real";
+else if (crashPrepare || crash)
+    // --crash with --workshop: the start fails by those mods (crash-real), not by our made-up throw.
+    start.Environment["SPIRE_MOD_MANAGER_SELFTEST_MODE"] = !crash ? "crash-prepare" : workshopMods.Count > 0 ? "crash-real" : "crash";
 else if (firstRun)
     start.Environment["SPIRE_MOD_MANAGER_SELFTEST_MODE"] = bmmData ? "first-run-bmm" : "first-run";
 // The game echoes its whole log to stdout; we read the log file instead.
@@ -291,12 +342,32 @@ while (!game.WaitForExit(100) && DateTime.Now < deadline)
 }
 if (!game.HasExited)
 {
-    Console.WriteLine($"game still running after {TimeoutSeconds}s, killing it");
+    // Where it got to: the newest of the self-test's files (a suite that's only slow ends late, one that's stuck early).
+    var last = Directory.Exists(outDir) ? new DirectoryInfo(outDir).GetFiles().OrderByDescending(f => f.LastWriteTimeUtc).FirstOrDefault() : null;
+    Console.WriteLine($"game still running after {TimeoutSeconds}s, killing it" + (last == null ? "" : $" (last written: {last.Name}, {(DateTime.UtcNow - last.LastWriteTimeUtc).TotalSeconds:0} s before)"));
     game.Kill();
     game.WaitForExit();
 }
 
 var results = Path.Combine(outDir, "results.txt");
+// --crash: the relaunch after Restore reads the mod list from settings.save, and the self-test saw it only in memory.
+// So here, with the game gone: Test Retired (on for this launch) off again on disk.
+if (crash && File.Exists(results))
+{
+    string line;
+    try
+    {
+        var retired = JsonNode.Parse(File.ReadAllText(Path.Combine(sandbox, "settings.save")))?["mod_settings"]?["mod_list"]?.AsArray()
+            .Where(entry => (string?)entry?["id"] == "SmmTestRetired").Select(entry => (bool?)entry?["is_enabled"]).ToList() ?? [];
+        line = $"{(retired.Count > 0 && retired.All(on => on == false) ? "PASS" : "FAIL")} a failed start: settings.save on disk, "
+            + $"which the relaunch reads, has Test Retired off again (is_enabled {string.Join(",", retired)})";
+    }
+    catch (Exception e)
+    {
+        line = $"FAIL a failed start: settings.save couldn't be read after the run: {e.Message}";
+    }
+    File.AppendAllLines(results, [line]);
+}
 var text = File.Exists(results) ? File.ReadAllText(results) : "NO RESULTS (test did not finish)\n";
 Console.Write(text);
 Console.WriteLine("--- log ---");
@@ -337,11 +408,39 @@ Console.WriteLine("screenshots: " + string.Join(", ", Directory.GetFiles(outDir,
 // A --workshop mod that didn't load, or failed to start, fails the run: the self-test passing says nothing about
 // running beside it then (and the cause is that mod, not ours).
 var notReady = workshopMods.Where(id => !loaded.TryGetValue(id, out var error) || error != null).ToList();
+// --twins: each id of two or more given items loaded once, from the picked copy (the last given, PrepareSandbox), with
+// no duplicate error. A picked copy the game refuses for its own reasons (a newer game version) isn't the pick failing.
+var twinFails = 0;
+var logged = LogLines();
+foreach (var (id, item) in TwinPicks())
+{
+    var folder = $"workshop-{item}";
+    var finished = logged.Select((line, at) => (line, at)).Where(p => p.line.Contains("Finished mod initialization for") && p.line.EndsWith($"({id}).")).ToList();
+    var duplicate = logged.Any(l => l.Contains($"Tried to load mod with id {id}, but a mod is already loaded"));
+    var from = finished.Count == 1 ? logged.Take(finished[0].at).LastOrDefault(l => l.Contains("Loading assembly DLL") || l.Contains("Loading Godot PCK")) : null;
+    if (finished.Count == 1 && !duplicate && from != null && (from.Contains(folder + "\\") || from.Contains(folder + "/")))
+        Console.WriteLine($"PASS twins: {id} loaded from {folder} as picked");
+    else if (finished.Count == 0 && !duplicate && logged.Any(l => l.Contains($"Tried to load mod with id {id}, but its declared min game version")))
+    {
+        Console.WriteLine($"INFO twins: {id}: the picked copy ({folder}) needs a newer game, so it failed for its own reasons (not the pick)");
+        notReady.Remove(id);
+    }
+    else
+    {
+        twinFails++;
+        Console.WriteLine($"FAIL twins: {id} finished loading {finished.Count} time(s){(duplicate ? ", with a duplicate-id error" : "")}, "
+            + $"from {from ?? "no file named"}; picked {folder}");
+    }
+}
 foreach (var id in notReady)
     Console.WriteLine(loaded.ContainsKey(id)
         ? $"FAIL --workshop: {id} loaded but failed to start (its error is in the log above), so this run didn't test beside all of it"
         : $"FAIL --workshop: {id} didn't load (the log above says why), so this run didn't test beside it");
-return !File.Exists(results) || text.Contains("FAIL") || notReady.Count > 0 ? 1 : 0;
+return !File.Exists(results) || text.Contains("FAIL") || notReady.Count > 0 || twinFails > 0 ? 1 : 0;
+
+// --twins: for each mod id two or more --workshop items have, the item picked to load: the last one given.
+List<(string Id, string Item)> TwinPicks() => !twins ? [] : [.. workshopManifests.GroupBy(m => Id(m.Manifest))
+    .Where(g => g.Select(m => m.Item).Distinct().Count() > 1).Select(g => (g.Key, g.Last().Item))];
 
 // The dev copy (hard links to the installed game, except mods\), linked again when the install changed and is on the
 // copy's branch. Returns why there's no copy to run (none yet, and the install is on the other branch), or null.
@@ -440,6 +539,20 @@ void SyncMods()
 // Mods accepted with Better Mod Menu off (it patches the same screen), and for tests our data reset
 // to the fixture (none for a first run) and Better Mod Menu's cleared (its fixture for --first-run-bmm).
 // The game creates settings.save on first launch; a minimal one is enough before that.
+// The sandbox's save folders emptied: profileN\saves and modded\profileN\saves (each profile's progress, runs, history).
+void EmptySaves()
+{
+    var folders = new[] { sandbox, Path.Combine(sandbox, "modded") }.Where(Directory.Exists)
+        .SelectMany(dir => Directory.GetDirectories(dir, "profile*")).Select(profile => Path.Combine(profile, "saves")).Where(Directory.Exists);
+    foreach (var saves in folders)
+    {
+        foreach (var file in Directory.GetFiles(saves))
+            File.Delete(file);
+        foreach (var dir in Directory.GetDirectories(saves))
+            Directory.Delete(dir, recursive: true);
+    }
+}
+
 void PrepareSandbox(bool resetData)
 {
     Directory.CreateDirectory(sandbox);
@@ -448,22 +561,32 @@ void PrepareSandbox(bool resetData)
     var mods = settings["mod_settings"] as JsonObject ?? [];
     mods["mods_enabled"] = true;
     // A fresh mod list every run: everything on except Better Mod Menu (on with --bmm, after ours with --bmm-after), its
-    // fork's folder (--real) and the fixture's Test Retired (off in every mode, for the self-test's searches).
+    // fork's folder (--real) and the fixture's Test Retired (off for the self-test's searches; on with --crash, so that
+    // launch differs from the last working one). Ours first (after Better Mod Menu with plain --bmm), as the mod keeps
+    // itself: its Init picks which copy of a mod installed twice loads, before the game tries one.
     var list = new JsonArray();
-    if (args.Contains("--bmm-after"))
+    var bmmFirst = bmm && !args.Contains("--bmm-after");
+    if (!bmmFirst)
         list.Add((JsonNode)new JsonObject { ["id"] = ModId, ["is_enabled"] = true, ["source"] = "mods_directory" });
     list.Add((JsonNode)new JsonObject { ["id"] = "BetterModMenu", ["is_enabled"] = bmm, ["source"] = "mods_directory" });
-    list.Add((JsonNode)new JsonObject { ["id"] = real ? "BetterModMenuFork" : "SmmTestRetired", ["is_enabled"] = false, ["source"] = "mods_directory" });
-    // --workshop: the items' mods on, after ours, in the order given. An entry above for the same id (Better
-    // Mod Menu's, when its Workshop item is given) gives way.
-    if (workshopMods.Count > 0 && !args.Contains("--bmm-after"))
+    if (bmmFirst)
         list.Add((JsonNode)new JsonObject { ["id"] = ModId, ["is_enabled"] = true, ["source"] = "mods_directory" });
+    list.Add((JsonNode)new JsonObject { ["id"] = real ? "BetterModMenuFork" : "SmmTestRetired", ["is_enabled"] = crash && !real, ["source"] = "mods_directory" });
+    // The fixture's two copies of SmmTestTwin in a known order: the newer one needs Test Framework, listed before them,
+    // so the older one (SmmTestTwinA) always sorts first and the picked newer one (SmmTestTwinB) second. Both share the
+    // id's place, so that rests on .NET's PriorityQueue keeping its root on a tie (A is queued first and is the root when
+    // B joins): if that changes, the self-test's "swapped" check fails, not the pick. Any pair that tests a swap has
+    // this tie.
+    if (!real)
+        foreach (var id in new[] { "SmmTestLib", "SmmTestTwin" })
+            list.Add((JsonNode)new JsonObject { ["id"] = id, ["is_enabled"] = true, ["source"] = "mods_directory" });
+    // --workshop: the items' mods on, after ours, in the order given (--twins: an entry per copy). An entry above for the
+    // same id (Better Mod Menu's, when its Workshop item is given) gives way.
     foreach (var id in workshopMods)
-    {
         if (list.FirstOrDefault(entry => (string?)entry?["id"] == id) is { } earlier)
             list.Remove(earlier);
-        list.Add((JsonNode)new JsonObject { ["id"] = id, ["is_enabled"] = true, ["source"] = "mods_directory" });
-    }
+    foreach (var (_, manifest) in workshopManifests)
+        list.Add((JsonNode)new JsonObject { ["id"] = Id(manifest), ["is_enabled"] = true, ["source"] = "mods_directory" });
     // --real: every other mod is listed but switched off, so none of their code runs (some write config
     // files to the shared user folder); only the manager and any --workshop mods load.
     if (real)
@@ -477,9 +600,12 @@ void PrepareSandbox(bool resetData)
     settings["window_size"] = new JsonObject { ["X"] = 1920, ["Y"] = 1080 };
     File.WriteAllText(settingsPath, settings.ToJsonString(new() { WriteIndented = true }));
 
-    if (!resetData)
-        return;
     var data = Path.Combine(sandbox, "mod_data", ModId);
+    if (!resetData)
+    {
+        PickTwins(data); // --crash keeps --crash-prepare's data, which has no pick for the --workshop twins
+        return;
+    }
     if (Directory.Exists(data))
         Directory.Delete(data, recursive: true);
     // Better Mod Menu's data beside ours, cleared every run so no saves or fixture carry over.
@@ -509,6 +635,20 @@ void PrepareSandbox(bool resetData)
             .FirstOrDefault(f => f.Contains(Path.Combine("mod_data", ModId)))
         : null;
     File.Copy(source ?? Path.Combine(root, "tools", "fixtures", "manager.json"), Path.Combine(data, "manager.json"));
+    PickTwins(data);
+}
+
+// --twins: the last given copy of each id picked to load (copied in as a local folder: l:workshop-<item>), in the
+// sandbox's manager.json (none: nothing to pick in).
+void PickTwins(string data)
+{
+    var file = Path.Combine(data, "manager.json");
+    if (TwinPicks() is not { Count: > 0 } picked || !File.Exists(file) || JsonNode.Parse(File.ReadAllText(file)) is not JsonObject manager)
+        return;
+    var keys = (manager["copy_picks"] as JsonArray ?? []).Select(p => (string?)p).OfType<string>()
+        .Where(key => !picked.Any(p => key.StartsWith(p.Id + "|"))).Concat(picked.Select(p => $"{p.Id}|l:workshop-{p.Item}")).Order(StringComparer.Ordinal);
+    manager["copy_picks"] = new JsonArray([.. keys.Select(k => (JsonNode?)JsonValue.Create(k))]);
+    File.WriteAllText(file, manager.ToJsonString(new() { WriteIndented = true }));
 }
 
 // The chain from the last mod in chain to the first mod it needs (directly or not) that won't be on in this run, or
@@ -559,11 +699,93 @@ static string? ExePath(Process p)
     catch { return null; } // another user's or an elevated process
 }
 
+// Waits while a copy of the game other than the real install runs (a dev copy: they share the sandbox), saying so once;
+// null when none is left, else why we stopped waiting (half an hour). One whose path can't be read counts as a dev copy.
+string? WaitForOtherDevCopies()
+{
+    var real = Path.GetFullPath(GameDir).TrimEnd('\\') + "\\";
+    List<string> Others() => [.. Process.GetProcessesByName("SlayTheSpire2").Select(p => ExePath(p) ?? $"process {p.Id}")
+        .Where(path => !path.StartsWith(real, StringComparison.OrdinalIgnoreCase))];
+    var giveUp = DateTime.Now.AddMinutes(30);
+    var said = false;
+    while (Others() is { Count: > 0 } others)
+    {
+        if (DateTime.Now > giveUp)
+            return $"Another dev copy of the game is still running after half an hour: {string.Join(", ", others)}.";
+        if (!said)
+            Console.WriteLine($"waiting for another dev copy of the game to close (they share the sandbox): {string.Join(", ", others)}");
+        said = true;
+        Thread.Sleep(5000);
+    }
+    return null;
+}
+
+// The shared dev-run lock: the named mutex Local\sts2-dev-run, with %TEMP%\sts2-dev-run.json naming who holds it. Waits up
+// to 15 minutes, naming the holder once (none with noWait); a holder that died left the mutex abandoned, which counts as
+// free. The lock to dispose (on this thread: a mutex is released by the thread that took it), or null and why not.
+static IDisposable? TakeDevRunLock(string what, bool noWait, out string? refused)
+{
+    refused = null;
+    var holderFile = Path.Combine(Path.GetTempPath(), "sts2-dev-run.json");
+    string Holder()
+    {
+        try
+        {
+            // Shared, so reading it never stops its holder deleting it.
+            using var stream = new FileStream(holderFile, FileMode.Open, FileAccess.Read, FileShare.ReadWrite | FileShare.Delete);
+            return JsonNode.Parse(new StreamReader(stream).ReadToEnd()) is JsonObject held
+                ? $"{held["repo"]} ({held["mode"]}, process {held["pid"]}, since {held["started"]})" : "another run";
+        }
+        catch
+        {
+            return "another run (no holder file)";
+        }
+    }
+    var mutex = new Mutex(false, @"Local\sts2-dev-run");
+    try
+    {
+        if (!mutex.WaitOne(0))
+        {
+            if (noWait)
+            {
+                mutex.Dispose();
+                refused = $"another dev run holds the game: {Holder()} (--no-wait)";
+                return null;
+            }
+            Console.WriteLine($"waiting for another dev run to finish (one game at a time across every repo): {Holder()}");
+            if (!mutex.WaitOne(TimeSpan.FromMinutes(15)))
+            {
+                refused = $"another dev run still holds the game after 15 minutes: {Holder()}";
+                mutex.Dispose();
+                return null;
+            }
+        }
+    }
+    catch (AbandonedMutexException)
+    {
+        // the last holder died without letting go: ours now, and its file is stale
+    }
+    // The holder file only names us for those waiting: if it can't be written, the lock still holds.
+    try
+    {
+        File.WriteAllText(holderFile, new JsonObject
+        {
+            ["repo"] = "spire-mod-manager", ["mode"] = what, ["pid"] = Environment.ProcessId, ["started"] = DateTime.UtcNow.ToString("yyyy-MM-ddTHH:mm:ssZ"),
+        }.ToJsonString());
+    }
+    catch (Exception e) when (e is IOException or UnauthorizedAccessException)
+    {
+        Console.WriteLine($"(couldn't write {holderFile}: {e.Message}; the lock holds all the same)");
+    }
+    return new DevRunLock(mutex, holderFile);
+}
+
 static int Fail(string message)
 {
     Console.Error.WriteLine(message);
     return 1;
 }
+
 
 static string ScriptDir([CallerFilePath] string path = "") => Path.GetDirectoryName(path) ?? ".";
 
@@ -601,3 +823,25 @@ static extern bool SetWindowPos(IntPtr window, IntPtr insertAfter, int x, int y,
 
 [DllImport("user32.dll")]
 static extern bool SetForegroundWindow(IntPtr window);
+
+// Lets the shared dev-run lock go: its holder file, then the mutex, which is released whatever the file does. There's
+// no Ctrl+C handler: Ctrl+C ends the process, which leaves the mutex abandoned, and that counts as free.
+sealed class DevRunLock(Mutex mutex, string holderFile) : IDisposable
+{
+    public void Dispose()
+    {
+        try
+        {
+            File.Delete(holderFile);
+        }
+        catch (Exception e) when (e is IOException or UnauthorizedAccessException)
+        {
+            // a stale file is overwritten by the next holder
+        }
+        finally
+        {
+            mutex.ReleaseMutex();
+            mutex.Dispose();
+        }
+    }
+}

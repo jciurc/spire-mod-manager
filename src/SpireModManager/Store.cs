@@ -1,5 +1,6 @@
 using System.Globalization;
 using System.Text.Json;
+using System.Text.Json.Nodes;
 using System.Text.Json.Serialization;
 using Godot;
 using MegaCrit.Sts2.Core.Localization;
@@ -12,13 +13,20 @@ namespace SpireModManager;
 
 // Everything the manager remembers, as one JSON file per Steam account:
 // user://steam/<id>/mod_data/SpireModManager/manager.json
-// Categories, aliases and notes belong to a mod id, so a Workshop and a local copy share them. Profiles name each
-// mod's source too, like the game's own list.
+// Categories, aliases, notes and tags belong to a mod id; a mod installed more than once (a Workshop item and a local
+// fix, two Workshop items) has an entry per copy, seeded from its id's (Copies). Profiles name each mod's source too,
+// like the game's own list.
 public class StoreData
 {
     public int Version { get; set; } = 1;
     public List<Category> Categories { get; set; } = [];
+    // By mod id, or "<id>|<copy>" for a copy that isn't the holder of its id's entry (Copies.Key).
     public Dictionary<string, ModInfo> Mods { get; set; } = [];
+    // The copies of each id installed more than once, the holder of the plain entry first (Copies); null: none yet.
+    public Dictionary<string, List<string>>? Copies { get; set; }
+    // The copy that loads, for each id and source installed more than once, as "<id>|<copy>" (Copies.SwitchKey); the
+    // game's list has one switch for them. Sorted, so equal sets save alike; null: none.
+    public List<string>? CopyPicks { get; set; }
     public List<Profile> Profiles { get; set; } = [];
     public string? ActiveProfile { get; set; }
     public bool VanillaView { get; set; }
@@ -26,6 +34,8 @@ public class StoreData
     public bool UncategorizedCollapsed { get; set; }
     // The two-mod-managers banner dismissed (LoadOrder): it stays away until the two aren't both ticked.
     public bool ManagersWarningDismissed { get; set; }
+    // The same-id banner dismissed, for this set of copies on (Copies.Signature): another set shows it again.
+    public string? SameIdDismissed { get; set; }
     // Where the player moved the main menu button (top-left, in the game's 1920x1080 frame); null: the corner.
     public ScreenPoint? MenuButtonAt { get; set; }
     public string? ImportedFrom { get; set; }
@@ -66,7 +76,10 @@ public class Profile
     public List<ModRef>? Disabled { get; set; }
 }
 
-public record ProfileMod(string Id, ModSource Source, bool Enabled);
+// Copy: for a mod installed more than once from one source, the copy that loads (Copies.CopyOf); null keeps the pick
+// as it is (profiles from before it, Better Mod Menu's). Name: for a mod an imported list named that isn't installed,
+// the list's name for it, to show it by until it is (an installed mod goes by its own).
+public record ProfileMod(string Id, ModSource Source, bool Enabled, string? Copy = null, string? Name = null);
 
 public record ScreenPoint(float X, float Y);
 
@@ -93,9 +106,17 @@ public static class Store
     // Loaded on first use (or while the main menu is idle), not in Init, so it doesn't slow the launch.
     public static StoreData Data => _data ??= Load();
 
+    public static bool IsLoaded => _data != null;
+
+    // Nothing is saved this session: the file couldn't be read, nor set aside.
+    public static bool ReadOnly => _readOnly;
+
 #if DEVTOOLS
     // Self-test: the next use loads again, from the file the first load wrote (a second launch).
     public static void Reload() => _data = null;
+
+    // Self-test: a session that can't save our data, or one that can again.
+    public static void TestReadOnly(bool readOnly) => _readOnly = readOnly;
 #endif
 
     // The mod's data folder (known from Init on): manager.json, backups, drop-in translations and the launch record.
@@ -212,8 +233,48 @@ public static class Store
             profile.Edited = profile.Edited?.Where(m => m?.Id != null).ToList();
             profile.Disabled = profile.Disabled?.Where(m => m?.Id != null).ToList();
         }
+        data.CopyPicks = TidyPicks(data.CopyPicks);
         return data;
     }
+
+    // One pick per id and source (the first), none that names no copy, sorted; null for none. Never pruned of copies
+    // that aren't installed: a Steam item missing for one launch keeps its choice.
+    public static List<string>? TidyPicks(IEnumerable<string?>? picks)
+    {
+        var kept = new Dictionary<(string, ModSource), string>();
+        foreach (var key in picks ?? [])
+            if (Copies.Parse(key) is { } pick && key != null)
+                kept.TryAdd((pick.Id, pick.Source), key);
+        return kept.Count == 0 ? null : [.. kept.Values.Order(StringComparer.Ordinal)];
+    }
+
+    // The picks in a snapshot of our data (EditsJson), for reading launch and the page's opening against now; the last
+    // one asked is kept (the changes bar asks for the same snapshot on every change).
+    public static Picks PicksIn(string json)
+    {
+        if (_picksIn is { } last && last.Json == json)
+            return last.Picks;
+        List<string>? stored = null;
+        Dictionary<string, List<string>>? record = null;
+        try
+        {
+            using var doc = JsonDocument.Parse(json);
+            if (doc.RootElement.TryGetProperty("copy_picks", out var picks) && picks.ValueKind == JsonValueKind.Array)
+                stored = [.. picks.EnumerateArray().Where(p => p.ValueKind == JsonValueKind.String).Select(p => p.GetString() ?? "")];
+            if (doc.RootElement.TryGetProperty("copies", out var copies) && copies.ValueKind == JsonValueKind.Object)
+                record = copies.EnumerateObject().Where(p => p.Value.ValueKind == JsonValueKind.Array).ToDictionary(p => p.Name,
+                    p => p.Value.EnumerateArray().Where(c => c.ValueKind == JsonValueKind.String).Select(c => c.GetString() ?? "").ToList());
+        }
+        catch (JsonException e)
+        {
+            Log.Warn($"[{ModEntry.ModId}] Could not read the copy picks in a snapshot of our data, so it reads as having none: {e.Message}");
+        }
+        var read = new Picks(stored, record);
+        _picksIn = (json, read);
+        return read;
+    }
+
+    static (string Json, Picks Picks)? _picksIn;
 
     // The newest backup that reads, or a fresh start when none does.
     static (StoreData Data, (string Path, DateTime Saved)? From) NewestBackup(string dir)
@@ -292,6 +353,7 @@ public static class Store
             return false;
         if (NErrorPopup.Create(new LocString("settings_ui", "SPIRE_MOD_MANAGER.DATA_TITLE"), body, null, showReportBugButton: false) is not { } popup)
             return false;
+        Menus.Mark(popup); // ours, not the game's own save error
         modals.Add(popup);
         LinkFolder(popup);
         return true;
@@ -378,7 +440,7 @@ public static class Store
         Save();
     }
 
-    // Our data minus view state (views, collapsed categories, a dismissed banner, the share dialog's kept tick boxes):
+    // Our data minus view state (views, collapsed categories, dismissed banners, the share dialog's kept tick boxes):
     // what undo compares and restores.
     public static string EditsJson()
     {
@@ -388,6 +450,7 @@ public static class Store
         var copy = JsonSerializer.Deserialize<StoreData>(json, Json) ?? new StoreData();
         copy.VanillaView = copy.LoadOrderView = copy.UncategorizedCollapsed = copy.ManagersWarningDismissed = false;
         copy.ShareChoices = null;
+        copy.SameIdDismissed = null;
         foreach (var category in copy.Categories)
             category.Collapsed = false;
         var edits = JsonSerializer.Serialize(copy, Json);
@@ -398,6 +461,9 @@ public static class Store
     // The last EditsJson and the data it was made from: asked several times per change (undo history, the changes bar,
     // its list), it's only made again when the data has changed.
     static (string Data, string Edits)? _edits;
+
+    // A copy of our data to try a change on.
+    public static StoreData Clone(StoreData data) => JsonSerializer.Deserialize<StoreData>(JsonSerializer.Serialize(data, Json), Json) ?? new StoreData();
 
     // A snapshot of our data (EditsJson) with a change made to it as well.
     public static string Patched(string json, Action<StoreData> change)
@@ -414,6 +480,7 @@ public static class Store
         var now = Data;
         (restored.VanillaView, restored.LoadOrderView, restored.UncategorizedCollapsed, restored.ManagersWarningDismissed, restored.ShareChoices) =
             (now.VanillaView, now.LoadOrderView, now.UncategorizedCollapsed, now.ManagersWarningDismissed, now.ShareChoices);
+        restored.SameIdDismissed = now.SameIdDismissed;
         foreach (var category in restored.Categories)
             category.Collapsed = now.Categories.FirstOrDefault(c => c.Name == category.Name)?.Collapsed ?? false;
         _data = restored;
@@ -433,20 +500,7 @@ public static class Store
     {
         var file = Path.Combine(dir, FileName);
         if (backUp && File.Exists(file))
-            try
-            {
-                var backups = Path.Combine(dir, BackupsFolder);
-                Directory.CreateDirectory(backups);
-                // Named in UTC ("Z"), so daylight saving can't put two out of order or one over another. Older ones
-                // are in local time; NewestFirst reads both.
-                File.Copy(file, Path.Combine(backups, $"manager.{DateTime.UtcNow:yyyyMMdd-HHmmss}Z.json"), overwrite: true);
-                foreach (var old in NewestFirst(Directory.GetFiles(backups, BackupPattern)).Skip(BackupsKept))
-                    File.Delete(old);
-            }
-            catch (Exception e)
-            {
-                Log.Error($"[{ModEntry.ModId}] Could not back up {file}, saving without a backup: {e}");
-            }
+            BackUp(dir, file);
 
         try
         {
@@ -456,6 +510,49 @@ public static class Store
         catch (Exception e)
         {
             Log.Error($"[{ModEntry.ModId}] Could not save {file}: {e}");
+        }
+    }
+
+    static void BackUp(string dir, string file)
+    {
+        try
+        {
+            var backups = Path.Combine(dir, BackupsFolder);
+            Directory.CreateDirectory(backups);
+            // Named in UTC ("Z"), so daylight saving can't put two out of order or one over another. Older ones are in
+            // local time; NewestFirst reads both.
+            File.Copy(file, Path.Combine(backups, $"manager.{DateTime.UtcNow:yyyyMMdd-HHmmss}Z.json"), overwrite: true);
+            foreach (var old in NewestFirst(Directory.GetFiles(backups, BackupPattern)).Skip(BackupsKept))
+                File.Delete(old);
+        }
+        catch (Exception e)
+        {
+            Log.Error($"[{ModEntry.ModId}] Could not back up {file}, saving without a backup: {e}");
+        }
+    }
+
+    // Changes manager.json on disk where our data isn't loaded (a failed start, before the main menu): the file backed
+    // up first, the change made to its JSON, everything else in it kept as it is. A file that doesn't read is left
+    // alone. True if saved.
+    public static bool PatchFile(Action<JsonObject> change) => PatchFile(Dir, change);
+
+    public static bool PatchFile(string dir, Action<JsonObject> change)
+    {
+        var file = Path.Combine(dir, FileName);
+        try
+        {
+            var json = File.Exists(file) ? JsonNode.Parse(File.ReadAllText(file)) as JsonObject ?? throw new JsonException("no data in the file") : [];
+            change(json);
+            if (File.Exists(file))
+                BackUp(dir, file);
+            Directory.CreateDirectory(dir);
+            WriteAtomic(file, json.ToJsonString(Json));
+            return true;
+        }
+        catch (Exception e)
+        {
+            Log.Error($"[{ModEntry.ModId}] Could not change {file}: {e}");
+            return false;
         }
     }
 
@@ -469,9 +566,13 @@ public static class Store
         File.Move(temp, file, overwrite: true);
     }
 
+    // A mod's details by its key (Copies.Key: the id, or a copy's own key), or for an installed copy.
     public static ModInfo? InfoFor(string? modId) => modId != null && Data.Mods.TryGetValue(modId, out var info) ? info : null;
 
-    // Changes one mod's details and saves; a mod left with none of ours loses its entry, so it reads as unchanged.
+    public static ModInfo? InfoFor(Mod? mod) => mod == null ? null : InfoFor(Copies.Key(mod));
+
+    // Changes one mod's details (by its key) and saves; a mod left with none of ours loses its entry, so it reads as
+    // unchanged.
     public static void EditMod(string modId, Action<ModInfo> change)
     {
         if (!Data.Mods.TryGetValue(modId, out var info))

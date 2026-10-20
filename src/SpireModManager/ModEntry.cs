@@ -66,9 +66,19 @@ public static class ModEntry
     }
 
     // Each patch class on its own, so one a game update breaks leaves the others working (PatchAll stops at the
-    // first failure). The launch record goes first, then watching for new mods: neither needs a patch.
+    // first failure). First which copy of a mod installed twice loads (it has to be before the game tries the next
+    // mod), then the launch record (of the copies that load), watching for new mods and the branch errors of mods
+    // that are off: none needs a patch.
     public static void Init()
     {
+        try
+        {
+            SameIdLoad.Apply();
+        }
+        catch (Exception e)
+        {
+            Log.Warn($"[{ModId}] Could not choose which copy of a mod installed twice loads, so the game's own choice applies: {e}");
+        }
         try
         {
             LaunchGuard.Begin();
@@ -84,6 +94,14 @@ public static class ModEntry
         catch (Exception e)
         {
             Log.Error($"[{ModId}] Could not watch for mods installed while the game runs: {e}");
+        }
+        try
+        {
+            BranchErrors.DropFromOffMods();
+        }
+        catch (Exception e)
+        {
+            Log.Error($"[{ModId}] Could not drop the Steam branch error of mods that are off, so the main menu may show it: {e}");
         }
         var harmony = new Harmony(ModId);
 #if DEVTOOLS
@@ -113,6 +131,9 @@ public static class ModEntry
         }
         Log.Info($"[{ModId}] Initialized{(IsDevRun ? " (dev run)" : "")}"
             + (_failedPatches.Count > 0 ? $", without {string.Join(", ", _failedPatches)}" : ""));
+#if DEVTOOLS
+        SelfTest.EarlyStart(); // dev.cs --crash: a made-up failed start, its dialog answered
+#endif
     }
 
     // Our own version, from the manifest the game loaded ("0.1.0"; the loaded copy's, if a second one is installed);
@@ -142,7 +163,35 @@ public static class ModEntry
     // One of the game's fonts, or Godot's own if it's gone. In languages the game draws in its own font (Chinese,
     // Japanese, Korean, Thai, Russian, Polish), Kreon gives way to that font as on the game's labels; only rich text's
     // bold (richBold) takes its bold one.
-    public static Font Font(string path, bool richBold = false) => LanguageFont(path, richBold) ?? Load<Font>(path) ?? ThemeDB.FallbackFont;
+    // Each is looked up once per language and kept (Fonts): a page build asks ~1,600 times, and every lookup went
+    // through Godot's resource loader.
+    public static Font Font(string path, bool richBold = false)
+    {
+#if DEVTOOLS
+        FontAsks++;
+#endif
+        var language = LocManager.Instance?.Language;
+        if (language != _fontsLanguage)
+        {
+            Fonts.Clear(); // the new language may draw in another font
+            _fontsLanguage = language;
+        }
+        if (Fonts.TryGetValue((path, richBold), out var kept) && GodotObject.IsInstanceValid(kept))
+            return kept;
+#if DEVTOOLS
+        FontLookups++;
+#endif
+        return Fonts[(path, richBold)] = LanguageFont(path, richBold) ?? Load<Font>(path) ?? ThemeDB.FallbackFont;
+    }
+
+    static readonly Dictionary<(string Path, bool RichBold), Font> Fonts = [];
+    static string? _fontsLanguage; // the language Fonts were looked up in
+
+#if DEVTOOLS
+    // Self-test: how often Font was asked for one, and how often it looked one up rather than giving the one it kept.
+    public static int FontAsks { get; private set; }
+    public static int FontLookups { get; private set; }
+#endif
 
     static bool _noLanguageFonts;
 
@@ -209,40 +258,64 @@ public static class ModEntry
 #endif
 
 #if DEVTOOLS
-    // Self-test: Relaunch calls it instead, so the test run doesn't end.
-    public static Action? TestRelaunch;
+    // Self-test: Relaunch and Quit call them instead, so the test run doesn't end. TestRelaunch gets Relaunch's plain.
+    public static Action<bool>? TestRelaunch;
+    public static Action? TestQuit;
 #endif
 
     // Starts a new copy of the game with the same arguments, then quits through the game's own path
     // so settings (mod toggles) and profile data are saved first. The new process inherits Steam's
     // environment (SteamAppId), so it attaches to the running Steam client without a Steam relaunch.
-    public static void Relaunch()
+    // plain: a game that didn't start (its startup error) quits without the game's path, which would save the profile
+    // and progress of a half-started game; whoever calls it saved the settings already.
+    public static void Relaunch(bool plain = false)
     {
 #if DEVTOOLS
         if (TestRelaunch is { } test)
         {
-            test();
+            test(plain);
             return;
         }
 #endif
         var args = RelaunchArgs();
         Log.Info($"[{ModId}] Relaunching with args: {string.Join(' ', args)}");
         OS.SetRestartOnExit(true, args);
-        if (NGame.Instance is { } game)
+        if (!plain && NGame.Instance is { } game)
             game.Quit();
         else
             ((SceneTree)Engine.GetMainLoop()).Quit();
     }
 
+    // A plain quit, as the game's startup error dialog quits.
+    public static void Quit()
+    {
+#if DEVTOOLS
+        if (TestQuit is { } test)
+        {
+            test();
+            return;
+        }
+#endif
+        ((SceneTree)Engine.GetMainLoop()).Quit();
+    }
+
     // This session's arguments plus the current window mode, so the new copy opens the way this one looks
-    // instead of starting in a small window until the game applies its display settings. Window flags
-    // from an earlier relaunch are replaced, not repeated.
-    public static string[] RelaunchArgs()
+    // instead of starting in a small window until the game applies its display settings, and the renderer it was
+    // started with (the game's launch_opengl.bat and launch_vulkan.bat pass it as an engine option, which
+    // OS.GetCmdlineArgs leaves out, so the new copy would open on the default one). A Steam invite it was started from
+    // is left out.
+    public static string[] RelaunchArgs() => RelaunchArgs(OS.GetCmdlineArgs(), System.Environment.GetCommandLineArgs(),
+        DisplayServer.WindowGetMode(), DisplayServer.WindowGetSize(), DisplayServer.WindowGetPosition());
+
+    // The same from what it's given, for the self-test: the game's arguments, the process's own (for the engine's
+    // renderer options), and the window's mode, size and position.
+    public static string[] RelaunchArgs(string[] given, string[] process, DisplayServer.WindowMode mode, Vector2I size, Vector2I position)
     {
         var args = new List<string>();
-        var given = OS.GetCmdlineArgs();
         for (var i = 0; i < given.Length; i++)
         {
+            // Engine options, which OS.GetCmdlineArgs doesn't pass on: dropped in case a game version does, so the
+            // window's own come once.
             if (given[i] is "--fullscreen" or "-f" or "--maximized" or "-m" or "--windowed" or "-w")
                 continue;
             if (given[i] is "--resolution" or "--position")
@@ -250,9 +323,25 @@ public static class ModEntry
                 i++; // and its value
                 continue;
             }
+            // The Steam invite the game was started from (Steam adds it): passed on, the new copy would join that lobby
+            // again. Read as the game's CommandLineHelper reads it: leading dashes ignored, the lobby id after it (not a
+            // flag) or after an "=".
+            var key = given[i].TrimStart('-');
+            if (key == "+connect_lobby")
+            {
+                if (i + 1 < given.Length && !given[i + 1].StartsWith('-') && !given[i + 1].StartsWith('+'))
+                    i++;
+                continue;
+            }
+            if (key.StartsWith("+connect_lobby="))
+                continue;
             args.Add(given[i]);
         }
-        switch (DisplayServer.WindowGetMode())
+        // The renderer, as the process was started with it ("--rendering-driver opengl3", "--rendering-method gl_compatibility").
+        foreach (var option in new[] { "--rendering-driver", "--rendering-method" })
+            if (!args.Contains(option) && Array.IndexOf(process, option) is var at and >= 0 && at + 1 < process.Length && !process[at + 1].StartsWith('-'))
+                args.AddRange([option, process[at + 1]]);
+        switch (mode)
         {
             case DisplayServer.WindowMode.Fullscreen or DisplayServer.WindowMode.ExclusiveFullscreen:
                 args.Add("--fullscreen");
@@ -260,9 +349,8 @@ public static class ModEntry
             case DisplayServer.WindowMode.Maximized:
                 args.Add("--maximized");
                 break;
-            default:
-                var size = DisplayServer.WindowGetSize();
-                var position = DisplayServer.WindowGetPosition();
+            // A window with a size; minimized (or headless, 0x0) gets nothing, and the game's display settings apply.
+            case DisplayServer.WindowMode.Windowed when size.X > 0 && size.Y > 0:
                 args.AddRange(["--windowed", "--resolution", $"{size.X}x{size.Y}", "--position", $"{position.X},{position.Y}"]);
                 break;
         }
@@ -270,17 +358,20 @@ public static class ModEntry
     }
 
     // True when the saved mod list differs from what this session loaded, i.e. a relaunch would change
-    // something: the vanilla Modding screen's pending-changes test, plus the load order and mods installed
-    // since launch that are on.
+    // something: the vanilla Modding screen's pending-changes test per copy (the picked copy of a mod installed twice
+    // from one source), plus the load order and mods installed since launch that are on. A copy set aside or failed
+    // doesn't count, as in the game's test, nor an id whose pick a relaunch wouldn't apply (SameIdLoad.Unchosen).
     public static bool HasPendingChanges()
     {
         if (LoadOrder.OrderChanged || Installed.Mods.Any(Installed.On))
             return true;
-        var off = Dependencies.SavedOff();
+        var (off, picks) = (Dependencies.SavedOff(), Picks.Now);
         return ModManager.Mods.Any(mod =>
         {
-            var disabled = off.Contains((mod.manifest?.id, mod.modSource));
-            return (mod.state == ModLoadState.Disabled && !disabled) || (mod.state == ModLoadState.Loaded && disabled);
+            if (mod.state is not (ModLoadState.Disabled or ModLoadState.Loaded) || SameIdLoad.Unchosen(mod.manifest?.id))
+                return false;
+            var on = Dependencies.OnIn(mod, off, picks);
+            return (mod.state == ModLoadState.Disabled && on) || (mod.state == ModLoadState.Loaded && !on);
         });
     }
 

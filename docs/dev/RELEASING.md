@@ -35,5 +35,5 @@ are in [workshop/README.md](../../workshop/README.md).
   build runs on stable and the beta; a build that needs the beta sets `"public-beta"`. Each player gets the
   newest upload their branch allows.
 - A game update can rename the members the patches reach. Run the self-test on the current game version.
-- Known limits players should hear about stay in the description: managers that rewrite `mod_list` (#138),
-  data that doesn't follow players between PCs (#146), relaunch tested on Windows only (#140).
+- Known limits players should hear about stay in the description: managers that rewrite `mod_list`,
+  data that doesn't follow players between PCs, relaunch tested on Windows only.

@@ -49,18 +49,29 @@ static class ListFilter
     // The main list's redraw, with what it showed.
     public static void Showed(IEnumerable<Mod?> mods) => _shown = mods.OfType<Mod>().ToHashSet();
 
-    // Keeps a mod's row after a change by hand, if the last redraw showed it (every copy of the id).
-    public static void Keep(string? id)
+    // Keeps a mod's row after an edit by hand, if the last redraw showed it: the copy our data's key names (a mod
+    // installed once, or the copy holding the plain id, by its id), not the other copies of its id.
+    public static void Keep(string? key)
     {
-        if (Current != Choice.All && id != null)
-            Kept.UnionWith(_shown.Where(m => m.manifest?.id == id));
+        if (Current != Choice.All && key != null)
+            Kept.UnionWith(_shown.Where(m => Copies.Key(m) == key));
     }
 
-    // Keeps the rows of mods edited together in the bulk menu.
-    public static void Keep(IEnumerable<string> ids)
+    // Keeps the rows of mods edited together in the bulk menu (their keys).
+    public static void Keep(IEnumerable<string> keys)
     {
-        foreach (var id in ids)
-            Keep(id);
+        foreach (var key in keys)
+            Keep(key);
+    }
+
+    // Keeps the rows of every copy of these ids after a tick: it switches them together (the game's one switch for an
+    // id and source; on our page, one copy on turns the others off).
+    public static void KeepCopies(IEnumerable<string?> ids)
+    {
+        if (Current == Choice.All)
+            return;
+        var ticked = ids.OfType<string>().ToHashSet();
+        Kept.UnionWith(_shown.Where(m => m.manifest?.id is { } id && ticked.Contains(id)));
     }
 
     // Shows a mod gone to even if the choice leaves it out; true if it was hidden.

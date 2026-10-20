@@ -11,7 +11,9 @@
 // - Game resources: no code loads one with ResourceLoader.Load or GD.Load; ModEntry.Load and Font do.
 // - Descriptions: no code sets the engine's TooltipText; Hover.Tip shows our card.
 // - Fixtures: the JSON under tools/fixtures parses, and each test mod's manifest has id, name and version.
+// - Translation tooling: tools/loc.cs's SmartFormat package and the self-test's ToolParser are the same version.
 // - Both game branches: the members only the public-beta has go through Compat.
+// - Null-forgiving: no `!` that tells the compiler a value isn't null, in src, tools, workshop or build.cs.
 // - Tracked files: none over 1 MB, none holding what looks like a GitHub token.
 // Prints PASS, FAIL and WARN lines (as annotations on GitHub); exit code 1 on any FAIL.
 using System.Diagnostics;
@@ -153,6 +155,33 @@ foreach (var (path, source) in sources.Where(s => Path.GetFileName(s.Key) != "Co
 }
 Check("members only the beta has go through Compat (stable has no Mod.workshopId or NModInfoContainer.Clear)", branchy.Count == 0, List(branchy));
 
+// Null-forgiving: Jordan's code style has no `!` after a value to say it isn't null (null!, x!.y, F()!). A null there
+// throws far from its cause; a check that narrows (a pattern, or a checked local) gives the code its own way out.
+// Comments and the text of strings don't count; an interpolated string's holes do, as they're code. The scan runs on a
+// sample first, so a scanner that blanks too much (and would pass everything) fails here.
+var forgiving = new Regex(@"(?<=[\w)\]])(?<!\boperator)!(?!=)");
+List<int> Forgiving(string source) =>
+    CodeOnly(source).Split('\n').Select((line, i) => (line, i)).Where(l => forgiving.IsMatch(l.line)).Select(l => l.i + 1).ToList();
+var sample = Forgiving(""""
+    var a = $"{x!.Y}";
+    var b = "Hi! there" + 'x' + '!' + '\'';
+    var c = @"a ""b"" c! d
+    still text!";
+    var d = $$"""{ "a!": {{x!}} }""";
+    /* x! */ var e = x != y && !z; // x!
+    var f = null!;
+    var g = F()! + a[0]!.Z;
+    var h = $@"{p!}" + """raw! "quoted!" text""" + $"{{not a hole! }}";
+    var i = $"{(q ? "a!" : r!)}" + "" + s!;
+    public static bool operator!(T t) => false;
+    """");
+Check("the null-forgiving scan finds the sample's (lines 1 5 7 8 9 10)", sample.SequenceEqual([1, 5, 7, 8, 9, 10]), "lines " + string.Join(" ", sample));
+var scripts = Files("tools", "*.cs").Concat(Files("workshop", "*.cs")).Append(Path.Combine(root, "build.cs")).Where(File.Exists);
+var asserted = new List<string>();
+foreach (var (path, source) in sources.Concat(scripts.ToDictionary(f => f, File.ReadAllText)))
+    asserted.AddRange(Forgiving(source).Select(line => $"{Name(path)}:{line}"));
+Check("no null-forgiving ! (narrow instead: `is { } x`, `is not { } x` then return or continue, or a checked local)", asserted.Count == 0, List(asserted));
+
 // Fixtures: the test mods and data tools/dev.cs puts in the sandbox.
 var fixtures = Path.Combine(root, "tools", "fixtures");
 foreach (var file in Files(Path.Combine("tools", "fixtures"), "*.json"))
@@ -164,6 +193,15 @@ foreach (var file in Files(Path.Combine("tools", "fixtures"), "*.json"))
     var absent = new[] { "id", "name", "version" }.Where(field => !HasText(manifest, field)).ToList();
     Check($"{Name(file)}: manifest has id, name and version", absent.Count == 0, "missing " + List(absent));
 }
+
+// Translation tooling: tools/loc.cs judges texts with the game's parser, and the self-test checks the game still ships
+// that version, so both name the same one.
+var package = Regex.Match(File.ReadAllText(Path.Combine(root, "tools", "loc.cs")), @"^#:package SmartFormat@(\S+)", RegexOptions.Multiline)
+    .Groups[1].Value;
+var tested = Regex.Match(File.ReadAllText(Path.Combine(root, "src", "SpireModManager", "SelfTest.cs")), @"const string ToolParser = ""([^""]+)""")
+    .Groups[1].Value;
+Check($"tools/loc.cs and the self-test name the same SmartFormat ({package})", package.Length > 0 && package == tested,
+    $"loc.cs has {(package.Length > 0 ? package : "none")}, SelfTest.ToolParser {(tested.Length > 0 ? tested : "none")}");
 
 // Tracked files: nothing big (game files and builds never go in) and no tokens. Only the file and line of
 // a token are printed, never the token.
@@ -252,6 +290,117 @@ static IEnumerable<string> Calls(string source, string helper, string suffix) =>
 // Literal keys joined to a suffix variable ("SPIRE_MOD_MANAGER.X" + variable), each with that suffix.
 static IEnumerable<string> Joined(string source, string variable, string suffix) =>
     Regex.Matches(source, $@"""SPIRE_MOD_MANAGER\.([\w.]+)"" \+ {variable}\b").Select(m => m.Groups[1].Value + suffix);
+
+// A C# source with its comments and the text of its strings and chars blanked out, line breaks kept (so line numbers
+// hold). Strings: regular, verbatim (@) and raw (three quotes or more), each maybe interpolated ($, or $$ and more for
+// raw ones); their holes are code, so they stay.
+static string CodeOnly(string source)
+{
+    var code = new StringBuilder(source.Length);
+    var i = 0;
+    Code(hole: false);
+    return code.ToString();
+
+    char At(int offset) => i + offset < source.Length ? source[i + offset] : '\0';
+    int Run(char c) => source.AsSpan(i).IndexOfAnyExcept(c) is var n and >= 0 ? n : source.Length - i;
+    int Upto(string end, int from) => source.IndexOf(end, from, StringComparison.Ordinal) is var at and >= 0 ? at + end.Length - i : source.Length - i;
+    void Keep() => code.Append(source[i++]);
+    void Blank(int count)
+    {
+        for (var end = Math.Min(i + count, source.Length); i < end; i++)
+            code.Append(source[i] == '\n' ? '\n' : ' ');
+    }
+
+    // Code to the end, or in a hole to the brace that closes it (left for the string).
+    void Code(bool hole)
+    {
+        var depth = 0;
+        while (i < source.Length)
+        {
+            var c = source[i];
+            if (c == '/' && At(1) == '/')
+                Blank(Upto("\n", i));
+            else if (c == '/' && At(1) == '*')
+                Blank(Upto("*/", i + 2));
+            else if (c == '\'')
+                Char();
+            else if (c == '"' || c is '$' or '@' && source.AsSpan(i).TrimStart("$@").StartsWith("\""))
+                Text();
+            else if (hole && c == '}' && depth == 0)
+                return;
+            else
+            {
+                depth += hole && c == '{' ? 1 : hole && c == '}' ? -1 : 0;
+                Keep();
+            }
+        }
+    }
+
+    void Char()
+    {
+        var end = i + 1;
+        while (end < source.Length && source[end] is not ('\'' or '\n'))
+            end += source[end] == '\\' ? 2 : 1;
+        Blank(end + 1 - i);
+    }
+
+    void Text()
+    {
+        var (dollars, verbatim) = (0, false);
+        while (source[i] is '$' or '@')
+        {
+            dollars += source[i] == '$' ? 1 : 0;
+            verbatim |= source[i] == '@';
+            Blank(1);
+        }
+        var quotes = Run('"');
+        if (!verbatim && quotes >= 3)
+        {
+            Blank(quotes);
+            var close = new string('"', quotes);
+            while (i < source.Length && !source.AsSpan(i).StartsWith(close))
+                if (dollars > 0 && At(0) == '{' && Run('{') >= dollars)
+                    Hole(Run('{'), dollars);
+                else
+                    Blank(1);
+            Blank(quotes);
+            return;
+        }
+        if (!verbatim && quotes == 2)
+        {
+            Blank(2); // ""
+            return;
+        }
+        Blank(1);
+        while (i < source.Length)
+        {
+            if (verbatim ? At(0) == '"' && At(1) == '"' : At(0) == '\\')
+                Blank(2);
+            else if (At(0) == '"' || !verbatim && At(0) == '\n') // a verbatim string may span lines
+            {
+                Blank(1);
+                return;
+            }
+            else if (dollars > 0 && At(0) == '{')
+            {
+                if (At(1) == '{')
+                    Blank(2);
+                else
+                    Hole(1, 1);
+            }
+            else
+                Blank(1);
+        }
+    }
+
+    // A hole: its opening braces, its code, then its closing ones.
+    void Hole(int opening, int closing)
+    {
+        Blank(opening);
+        Code(hole: true);
+        Blank(Math.Min(closing, Run('}')));
+    }
+}
 
 static string ScriptDir([CallerFilePath] string path = "") => Path.GetDirectoryName(path) ?? ".";
 

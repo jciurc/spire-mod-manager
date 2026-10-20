@@ -24,7 +24,7 @@ var dist = args.Contains("--dist");
 
 // The version a --dist build carries, the one on the Workshop. Raised by hand for each upload; it never
 // changes on its own, and dev builds keep their own number below.
-const string ReleaseVersion = "0.1.2";
+const string ReleaseVersion = "0.1.3";
 
 var manifest = new JsonObject
 {
@@ -36,7 +36,7 @@ var manifest = new JsonObject
         "Relaunch the game in place to apply changes.",
     // Dev builds: above the Workshop's ReleaseVersion, or the game loads the Workshop copy instead (RELEASING.md, step 9).
     // The last number goes up by one with each install to the game; after the next release, the version after it.
-    ["version"] = "0.1.2-dev.0",
+    ["version"] = "0.1.3-dev.0",
     ["has_pck"] = true,
     ["has_dll"] = true,
     ["affects_gameplay"] = false,
