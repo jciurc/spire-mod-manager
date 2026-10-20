@@ -3,6 +3,7 @@ using System.Reflection;
 using System.Text;
 using Godot;
 using HarmonyLib;
+using MegaCrit.Sts2.Core.Localization;
 using MegaCrit.Sts2.Core.Logging;
 using MegaCrit.Sts2.Core.Modding;
 using MegaCrit.Sts2.Core.Models;
@@ -97,9 +98,17 @@ static class GameChanges
         return paths;
     }
 
-    // The game's characters: the id their files use ("regent") and their name ("The Regent").
-    static (string Id, string Name)[]? _characters;
-    static (string Id, string Name)[] Characters() => _characters ??= [.. ModelDb.AllCharacters.Select(c => (c.Id.Entry.ToLowerInvariant(), c.Title.GetFormattedText()))];
+    // The game's characters: the id their files use ("regent") and their name in the game's language ("The Regent"),
+    // made again when the language changes.
+    static (string Language, (string Id, string Name)[] List)? _characters;
+
+    static (string Id, string Name)[] Characters()
+    {
+        var language = LocManager.Instance?.Language ?? "";
+        if (_characters is not { } known || known.Language != language)
+            _characters = known = (language, [.. ModelDb.AllCharacters.Select(c => (c.Id.Entry.ToLowerInvariant(), c.Title.GetFormattedText()))]);
+        return known.List;
+    }
 
     // What the files are, most first: each character's ("The Regent (character select, energy orb)"), then the rest by
     // what they are ("hands", "top panel", "game text").
@@ -148,14 +157,16 @@ static class GameChanges
 
     // ---- The game's code
 
-    // Each loaded mod's assemblies' patches on the game's methods, worked out again when the patched methods change.
-    static (int Count, Dictionary<Assembly, List<MethodBase>> ByAssembly)? _patches;
+    // Each loaded mod's assemblies' patches on the game's methods, worked out at most once a frame: a page's mods share
+    // one look, and a patch added or taken off since (on a method already patched too) is in the next.
+    static (ulong Frame, Dictionary<Assembly, List<MethodBase>> ByAssembly)? _patches;
 
     static (int, IReadOnlyList<string>) PatchedCode(Mod mod)
     {
-        var patched = Harmony.GetAllPatchedMethods().ToList();
-        if (_patches is not { } known || known.Count != patched.Count)
+        var frame = Engine.GetProcessFrames();
+        if (_patches is not { } known || known.Frame != frame)
         {
+            var patched = Harmony.GetAllPatchedMethods().ToList();
             var game = typeof(ModelDb).Assembly;
             var byAssembly = new Dictionary<Assembly, List<MethodBase>>();
             foreach (var method in patched.Where(m => m.DeclaringType?.Assembly == game))
@@ -167,7 +178,7 @@ static class GameChanges
                             byAssembly[owner] = list = [];
                         list.Add(method);
                     }
-            _patches = known = (patched.Count, byAssembly);
+            _patches = known = (frame, byAssembly);
         }
         var methods = mod.assemblies.SelectMany(a => known.ByAssembly.GetValueOrDefault(a) ?? []).Distinct().ToList();
         return (methods.Count, [.. methods.Select(m => Class(m.DeclaringType)).GroupBy(c => c).OrderByDescending(g => g.Count()).Select(g => g.Key)]);
