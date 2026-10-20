@@ -10,7 +10,7 @@ namespace SpireModManager;
 // Category, Workshop Id (the id only, as Steam may move an item's page), Alias and Notes. Writing follows RFC 4180,
 // with a ' before values a spreadsheet would run as a formula. Reading is forgiving: a BOM, CRLF or LF, a ; or tab
 // separator, columns by header in any order. Only Mod Id and Enabled are needed, and a blank or missing Enabled means
-// enabled. Category (Better Mod Menu's Group, where "Ungrouped" is none), Alias and Notes are read when there.
+// enabled. Category (Better Mod Menu's Group, where "Unassigned" is none), Alias and Notes are read when there.
 static class ProfileCsv
 {
     // What a shared list holds besides id, name, version and Enabled: the category by default, the rest off. Disabled:
@@ -171,15 +171,21 @@ static class ProfileCsv
                 continue;
             if (Bool(Cell(enabled)) is not { } on) // (a row cut short: blank)
                 return Problem(Menus.Format("SPIRE_MOD_MANAGER.IMPORT_BAD_ENABLED", ("mod", modId), ("value", Cell(enabled))));
-            var group = Cell(category);
+            // Better Mod Menu writes "Unassigned" for a mod in no group (BetterModMenu.dll; there's no other word for it).
+            var group = OneLine(Cell(category));
             mods.Add(new Entry(modId, on, Cell(name), WorkshopFrom(Cell(link)),
-                string.Equals(group, "Ungrouped", StringComparison.OrdinalIgnoreCase) ? "" : Cut(group, CategoryMax), Cut(Cell(alias), AliasMax),
+                string.Equals(group, "Unassigned", StringComparison.OrdinalIgnoreCase) ? "" : Cut(group, CategoryMax), Cut(OneLine(Cell(alias)), AliasMax),
                 Cell(notes).Replace("\r\n", "\n").Replace('\r', '\n')));
         }
         return mods.Count == 0 ? Problem(Menus.Text("SPIRE_MOD_MANAGER.IMPORT_NO_MODS")) : new Result(mods, null);
     }
 
-    static string Cut(string value, int most) => value.Length <= most ? value : value[..most].TrimEnd();
+    // At most `most` characters as Godot counts them (code points, as its boxes' MaxLength does), never half of one.
+    static string Cut(string value, int most) =>
+        value.EnumerateRunes().Count() <= most ? value : string.Concat(value.EnumerateRunes().Take(most).Select(r => r.ToString())).TrimEnd();
+
+    // A category or alias on one line, as our boxes make them: line breaks and tabs in a quoted cell become spaces.
+    static string OneLine(string value) => string.Join(" ", value.Split(['\r', '\n', '\t'], StringSplitOptions.RemoveEmptyEntries | StringSplitOptions.TrimEntries));
 
     static bool? Bool(string value) => value.ToLowerInvariant() switch
     {
