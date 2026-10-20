@@ -3145,7 +3145,7 @@ static class SelfTest
         Node? Dialog() => menu.GetTree().Root.GetNodeOrNull(ProfileShare.Name);
         T? Part<T>(string name) where T : class => Dialog()?.FindChild(name, true, false) as T;
         void Press(string name) => Part<BaseButton>(name)?.EmitSignal(BaseButton.SignalName.Pressed);
-        string Status() => Part<Label>("Status") is { Visible: true } status ? status.Text : "";
+        string Status() => Part<Label>("Status") is { Visible: true } status && status.Modulate.A > 0 ? status.Text : "";
         bool StatusRed() => Part<Label>("Status")?.GetThemeColor("font_color") is { R: > 0.9f, G: < 0.6f };
         string Preview() => Part<RichTextLabel>("Preview")?.GetParsedText() ?? "";
         async Task Paste(string text)
@@ -3173,7 +3173,8 @@ static class SelfTest
         ], new(Disabled: true));
         var back = ProfileCsv.Read(tricky).Mods;
         var trickyRecords = ProfileCsv.Records(tricky);
-        Check("CSV: a name with a comma, quotes and a line break round-trips, quoted", tricky.Contains("\"Comma, \"\"quoted\"\"\nname\"")
+        Check("CSV: a name with a comma, quotes and a line break round-trips, quoted; no line break after the last row",
+            !tricky.EndsWith('\n') && !tricky.EndsWith('\r') && tricky.Contains("\"Comma, \"\"quoted\"\"\nname\"")
             && back is [{ Id: "SmmQuote", Enabled: true, Name: "Comma, \"quoted\"\nname" }, ..] && trickyRecords.Count == 3 && trickyRecords[1][4] == "A, B",
             tricky);
         Check("CSV: a value starting with = + - @ gets a ' in front, taken off again when read", tricky.Contains("\"'=HYPERLINK(\"\"x\"\")\",'-1,FALSE,'@group,")
@@ -3391,10 +3392,19 @@ static class SelfTest
         Check("a mod listed twice: each copy takes the row for its source", Dependencies.Find("SmmTestLib")?.modSource == ModSource.ModsDirectory
             && twice.Mods.SingleOrDefault(m => m.Id == "SmmTestLib")?.Enabled == libOn && twice is { Same: 1, On: 0, Off: 0, Missing.Count: 0 },
             string.Join(", ", twice.Mods.Where(m => m.Id == "SmmTestLib").Select(m => $"{m.Source}={m.Enabled}")));
+        // A list naming a mod's Workshop copy while its copy installed by hand stays on: both would be on, and the preview
+        // says so (Jordan's words), naming it; listed off, that copy goes off with it, so nothing to say.
+        var bothOn = Profiles.PlanImport([new("SmmTestLib", true, "Test Framework", link)]);
+        var bothOff = Profiles.PlanImport([new("SmmTestLib", false, "Test Framework", link)]);
+        var bothPreview = ProfileShare.PreviewFor([new("SmmTestLib", true, "Test Framework", link)], "Both");
+        Check("a list's Workshop copy beside one installed by hand that stays on: the preview says both stay installed, one should be on, and names it",
+            bothOn.BothCopies is [{ Id: "SmmTestLib" }] && bothOff.BothCopies.Count == 0
+            && bothPreview.Contains(Menus.Text("SPIRE_MOD_MANAGER.IMPORT_BOTH_COPIES") + "\n  •  [b]Test Framework[/b]"), bothPreview);
         var (wantOn, wantOff) = ((IsOn("SmmTestLib") ? 0 : 1), (IsOn("SmmTestUi") ? 1 : 0));
         var others = installed.Count(m => m.manifest?.id is { } id && id != ModEntry.ModId && id != Bmm.ModId && id != "SmmTestLib" && id != "SmmTestUi");
         await Choose("Import profile");
         await Paste(bmm);
+        var buttonsWithPreview = Part<Control>("Buttons")?.GetGlobalRect().Position.Y ?? -1;
         var bbcode = Part<RichTextLabel>("Preview")?.Text ?? "";
         // The summary: what the list holds, then only what changes compared with now (no line for the mods
         // already as listed, nor for the ones it doesn't name).
@@ -3461,6 +3471,9 @@ static class SelfTest
         await Choose("Import profile");
         await Paste("Name,Enabled\r\nTest UI,TRUE\r\n");
         var noId = (Status(), StatusRed(), Preview());
+        var buttonsWithError = Part<Control>("Buttons")?.GetGlobalRect().Position.Y ?? -2;
+        Check("Import profile keeps its size and place as an error replaces the preview: the buttons stay put",
+            Math.Abs(buttonsWithPreview - buttonsWithError) < 1, $"buttons at {buttonsWithPreview:0} with a preview, {buttonsWithError:0} with an error");
         await Capture(screen, outDir, "7e-import-error");
         await Paste("Mod Id,Enabled\nSmmTestUi,maybe\n");
         var badValue = Status();

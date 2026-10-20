@@ -59,7 +59,7 @@ static class ProfileCsv
                 row.Id, row.Name, row.Version, row.Enabled ? "TRUE" : "FALSE", .. options.Category ? [row.Category] : Array.Empty<string>(),
                 row.WorkshopId, .. options.Alias ? [row.Alias] : Array.Empty<string>(), .. options.Notes ? [row.Notes] : Array.Empty<string>(),
             ]);
-        return text.ToString();
+        return text.ToString().TrimEnd('\r', '\n'); // no line break after the last row (a quoted value's own ends in '"')
     }
 
     static void Line(StringBuilder text, IReadOnlyList<string> values)
@@ -266,7 +266,7 @@ static class ProfileShare
         row.AddChild(remember);
         column.AddChild(row);
         column.AddChild(box);
-        var status = Status();
+        var status = Status(reserved: true);
         column.AddChild(status);
 
         var buttons = Buttons();
@@ -306,17 +306,23 @@ static class ProfileShare
         box.CustomMinimumSize = new Vector2(0, 200); // shorter than Share's: the preview below gets the room
         box.PlaceholderText = Menus.Text("SPIRE_MOD_MANAGER.IMPORT_HINT");
         column.AddChild(box);
+        // The message (an error) and the preview share one area of a fixed height: a message takes its lines from the
+        // preview, so the dialog keeps its size (and place) as one comes and goes.
+        var area = new VBoxContainer { Name = "Below", CustomMinimumSize = new Vector2(0, PreviewArea), SizeFlagsVertical = Control.SizeFlags.ExpandFill };
+        area.AddThemeConstantOverride("separation", column.GetThemeConstant("separation"));
+        column.AddChild(area);
         var status = Status();
-        column.AddChild(status);
+        area.AddChild(status);
         var preview = Body("Preview");
-        (preview.FitContent, preview.ScrollActive, preview.CustomMinimumSize) = (false, true, new Vector2(0, 250));
+        (preview.FitContent, preview.ScrollActive, preview.CustomMinimumSize) = (false, true, new Vector2(0, 150));
+        preview.SizeFlagsVertical = Control.SizeFlags.ExpandFill;
         preview.MouseFilter = Control.MouseFilterEnum.Stop; // its links, and the wheel
         preview.MetaClicked += meta =>
         {
             if (meta.AsString() is var link && ProfileCsv.IsWorkshopLink(link))
                 OS.ShellOpen(link);
         };
-        column.AddChild(preview);
+        area.AddChild(preview);
 
         // The file loaded and its text: the profile is named after the file while the text is still that.
         (string? file, string? loaded) = (null, null);
@@ -422,6 +428,12 @@ static class ProfileShare
             lines.Add("  •  " + Menus.Format("SPIRE_MOD_MANAGER.IMPORT_DETAILS", ("count", Menus.Number(extras.Details))));
         if (plan.On == 0 && plan.Off == 0 && extras.Sorted.Count == 0 && extras.Details == 0)
             lines.Add("  •  " + Menus.Text("SPIRE_MOD_MANAGER.IMPORT_NO_CHANGE"));
+        if (plan.BothCopies.Count > 0)
+        {
+            lines.Add("");
+            lines.Add(Menus.Text("SPIRE_MOD_MANAGER.IMPORT_BOTH_COPIES"));
+            lines.AddRange(plan.BothCopies.Select(m => $"  •  [b]{Escape(m.Name.Length > 0 ? m.Name : m.Id)}[/b]"));
+        }
         if (plan.Missing.Count > 0)
         {
             lines.Add("");
@@ -564,19 +576,39 @@ static class ProfileShare
     }
 
     // One line under the box: a problem (red) or what happened (dim). Hidden when empty.
-    static Label Status()
+    // The import preview's area: the preview's 250 px and room for a two-line message above it.
+    const float PreviewArea = 310;
+
+    // A line saying what just happened or what's wrong. reserved: it always takes its one line, cut with "…" (the share
+    // dialog's, right above its buttons), so a message coming and going moves nothing.
+    const string ReservedMeta = "spire_mod_manager_reserved";
+
+    static Label Status(bool reserved = false)
     {
         var status = new Label { Name = "Status", Visible = false, AutowrapMode = TextServer.AutowrapMode.WordSmart };
         status.AddThemeFontOverride("font", ModEntry.Font("res://themes/kreon_regular_shared.tres"));
         status.AddThemeFontSizeOverride("font_size", 17);
+        if (reserved)
+        {
+            (status.AutowrapMode, status.ClipText, status.TextOverrunBehavior) = (TextServer.AutowrapMode.Off, true, TextServer.OverrunBehavior.TrimEllipsis);
+            status.SetMeta(ReservedMeta, true);
+            status.Visible = true;
+            status.Modulate = Colors.Transparent; // its line kept, nothing shown
+            status.Text = " ";
+        }
         return status;
     }
 
     static void Say(Label status, string text, bool error)
     {
+        status.AddThemeColorOverride("font_color", error ? ErrorColor : new Color(Cream, 0.7f));
+        if (status.HasMeta(ReservedMeta))
+        {
+            (status.Text, status.Modulate) = text.Length > 0 ? (text, Colors.White) : (" ", Colors.Transparent);
+            return;
+        }
         status.Text = text;
         status.Visible = text.Length > 0;
-        status.AddThemeColorOverride("font_color", error ? ErrorColor : new Color(Cream, 0.7f));
     }
 
     static HBoxContainer Buttons()
