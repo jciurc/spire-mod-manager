@@ -350,7 +350,10 @@ static class Profiles
     // (by id, as Workshop mods if the list links them, else local), so installing one later and switching to it sets
     // it. A mod installed while this profile is active arrives on; if the list had it off, that shows as an unsaved
     // change. The mod managers are in none of the counts: a profile never turns them on or off.
-    public record ImportPlan(List<ProfileMod> Mods, int On, int Off, int Same, int Unlisted, List<ProfileCsv.Entry> Missing, ImportExtras Extras);
+    // BothCopies: listed mods from the Workshop whose copy installed by hand stays on (or is turned on), so both copies are
+    // on once the Workshop one is there too; the preview says so (one copy should be on).
+    public record ImportPlan(List<ProfileMod> Mods, int On, int Off, int Same, int Unlisted, List<ProfileCsv.Entry> Missing, ImportExtras Extras,
+        List<ProfileCsv.Entry> BothCopies);
 
     // What else a list gives: categories, aliases and notes, taken only where a mod has none of its own. Categories are
     // every profile's, so an import never moves a mod that's already in one, nor renames anything. Sorted: each mod's key
@@ -442,7 +445,13 @@ static class Profiles
             mods.Add(new ProfileMod(rows.Key.Id, rows.Key.Source, loads != null, rows.Key.Source == ModSource.SteamWorkshop ? CopyOfLink(row.WorkshopLink) : null,
                 row.Name.Length > 0 ? row.Name : null));
         }
-        return new ImportPlan(mods, on, off, same, unlisted, missing, PlanExtras(entries));
+        // A Workshop row for an id installed by hand: that copy on after the import (as planned, or as it is when the list
+        // doesn't name its source) beside the Workshop one.
+        var both = entries.Where(e => !Manager(e.Id) && e.WorkshopLink.Length > 0)
+            .Where(e => current.FirstOrDefault(c => c.Id == e.Id && c.Source == ModSource.ModsDirectory) is { } local
+                && (mods.FirstOrDefault(m => m.Id == e.Id && m.Source == ModSource.ModsDirectory)?.Enabled ?? local.Enabled))
+            .DistinctBy(e => e.Id).ToList();
+        return new ImportPlan(mods, on, off, same, unlisted, missing, PlanExtras(entries), both);
     }
 
     // The copy a Workshop link names ("w:<item>"), or null for none.
