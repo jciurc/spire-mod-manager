@@ -489,11 +489,7 @@ static class ShortcutsPatch
             case NModdingScreen screen:
                 if (CloseOurs())
                     return true;
-                if (screen.GetNodeOrNull<NBackButton>("BackButton") is not { IsEnabled: true } back)
-                    return false;
-                SfxCmd.Play(FmodSfx.backButton); // its press's sound, which ForceClick skips
-                back.ForceClick();
-                return true;
+                return Layout.GoBack(screen);
             default:
                 return false;
         }

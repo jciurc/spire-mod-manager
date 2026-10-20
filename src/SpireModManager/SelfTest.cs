@@ -212,7 +212,7 @@ static class SelfTest
                 Results.Add("SKIP profile round trip: only one profile");
             await TestNewModsOnSwitch(menu, screen, content);
 
-            Click(screen.GetNode<NButton>("SpireModManagerViewToggle"));
+            Click(screen.GetNode<BaseButton>("SpireModManagerViewToggle"));
             await Wait(menu, 1);
             Check("vanilla view hides headers", !content.GetChildren().Any(c => c.IsInGroup("SpireModManagerCategoryHeader")));
             var border = screen.GetNode<Control>("ModsBorder");
@@ -226,7 +226,7 @@ static class SelfTest
             Check("vanilla view: Make Mods and Get Mods as the game's own page has them (shown on the beta, hidden on stable)",
                 makeMods.Visible == (Compat.InfoClear != null) && getMods.Visible == makeMods.Visible, $"Make Mods {makeMods.Visible}, Get Mods {getMods.Visible}");
             await Capture(screen, outDir, "4-vanilla-view");
-            Click(screen.GetNode<NButton>("SpireModManagerViewToggle"));
+            Click(screen.GetNode<BaseButton>("SpireModManagerViewToggle"));
             await Wait(menu, 1);
 
             await TestCategories(menu, screen, content, outDir);
@@ -378,10 +378,10 @@ static class SelfTest
             search.EmitSignal(LineEdit.SignalName.TextChanged, "");
 
             Click(screen.GetNode<NButton>("SpireModManagerLoadOrderToggle"));
-            Click(screen.GetNode<NButton>("SpireModManagerViewToggle"));
+            Click(screen.GetNode<BaseButton>("SpireModManagerViewToggle"));
             await Wait(menu, 1);
             await Capture(screen, outDir, "real-4-vanilla");
-            Click(screen.GetNode<NButton>("SpireModManagerViewToggle"));
+            Click(screen.GetNode<BaseButton>("SpireModManagerViewToggle"));
             await Wait(menu, 0.5);
 
             // Scrolled to the bottom, a search for one mod: it shows, in view. (The game's container stops scrolling
@@ -442,7 +442,13 @@ static class SelfTest
         {
             if (!times.TryGetValue(name, out var list))
                 times[name] = list = [];
-            list.Add(await FrameMs(menu, () => Click(screen.GetNode<NButton>(toggle))));
+            list.Add(await FrameMs(menu, () =>
+            {
+                if (screen.GetNode(toggle) is BaseButton link)
+                    Click(link);
+                else
+                    Click(screen.GetNode<NButton>(toggle));
+            }));
             await Wait(menu, 0.3);
         }
         for (var round = 0; round < 3; round++)
@@ -841,9 +847,9 @@ static class SelfTest
         }
 
         // Opening on our main list, after its deferred work.
-        OursHold("main list", 175);
+        OursHold("main list", Layout.CornerX);
         var toggles = new[] { "SpireModManagerViewToggle", "SpireModManagerLoadOrderToggle" }.Select(name => screen.GetNode<Control>(name)).ToList();
-        Check("the button to its page still says Vanilla List", toggles[0].GetNode<Label>("Visuals/Label").Text == Menus.Text("SPIRE_MOD_MANAGER.VANILLA_VIEW"));
+        Check("the link to its page says Go to vanilla Modding page", toggles[0] is LinkButton { Text: var linkText } && linkText == Menus.Text("SPIRE_MOD_MANAGER.GO_TO_VANILLA"));
         // Where it leads, in its tip: the game's own page (as Better Mod Menu shows it, with that loaded), and back.
         var vanillaTip = Hover.TipOf(toggles[0]);
         var backTip = "";
@@ -851,10 +857,10 @@ static class SelfTest
         // While a mod is installed twice from one source (the fixture twins), a second line says how that page's tickbox
         // treats its copies (its words are checked in TestSameIdCopies).
         var tipLines = vanillaTip.Split('\n');
-        Check("the Vanilla List button's tip says it's the game's own page (without Spire Mod Manager), and on it, the way back",
+        Check("the vanilla page link's card says it's the game's own page; the link back from it has none",
             tipLines[0] == Menus.Text("SPIRE_MOD_MANAGER.VANILLA_VIEW_TIP")
             && (Copies.TwinGroups().Count > 0 ? tipLines is [_, var copies] && copies.StartsWith("In vanilla, mods ") : tipLines.Length == 1)
-            && backTip == Menus.Text("SPIRE_MOD_MANAGER.CATEGORY_VIEW_TIP"), $"{vanillaTip} | {backTip}");
+            && string.IsNullOrEmpty(backTip), $"{vanillaTip} | {backTip}");
         var bannerBox = border.GetNode<Control>(LoadOrder.ManagersName).GetGlobalRect();
         var searchBox = border.GetNode<Control>("SpireModManagerSearch").GetGlobalRect();
         var pendingBox = screen.GetNode<Control>("%PendingChangesLabel").GetGlobalRect();
@@ -891,7 +897,7 @@ static class SelfTest
         var make = border.GetNode<Control>("%MakeModsButton");
         async Task<string> ToVanilla()
         {
-            Click(screen.GetNode<NButton>("SpireModManagerViewToggle"));
+            Click(screen.GetNode<BaseButton>("SpireModManagerViewToggle"));
             await Wait(menu, 1);
             Check("its page: none of ours (headers, strips, managers banner), the game's icons hidden, the list clipped",
                 !content.GetChildren().Any(c => c.IsInGroup("SpireModManagerCategoryHeader"))
@@ -928,9 +934,9 @@ static class SelfTest
         }
         async Task ToOurs(string when)
         {
-            Click(screen.GetNode<NButton>("SpireModManagerViewToggle"));
+            Click(screen.GetNode<BaseButton>("SpireModManagerViewToggle"));
             await Wait(menu, 1);
-            OursHold(when, 175);
+            OursHold(when, Layout.CornerX);
         }
         var first = await ToVanilla();
         await Capture(screen, outDir, "3-better-mod-menu-page");
@@ -993,8 +999,7 @@ static class SelfTest
         Check("main menu button reads the active profile and the profile bar's count", MenuButtonText(menu) == MenuButtonExpected(),
             $"{MenuButtonText(menu)} vs {MenuButtonExpected()}");
         Check("main menu button: hovering it says what it opens, names the profile in gold, and gives the key that opens it too",
-            Hover.TipOf(button) == $"Spire Mod Manager: view and manage installed mods. Currently using profile [gold]{Profiles.Active?.Name}[/gold]{ManagerKeyLine}"
-            && MenuButton.Tip("[b]Odd") == $"Spire Mod Manager: view and manage installed mods. Currently using profile [gold][lb]b]Odd[/gold]{ManagerKeyLine}", Hover.TipOf(button));
+            Hover.TipOf(button) == MenuCard($"[gold]{Profiles.Active?.Name}[/gold]") && MenuButton.Tip("[b]Odd") == MenuCard("[gold][lb]b]Odd[/gold]"), Hover.TipOf(button));
         var screen = button.GetViewportRect();
         Check("main menu button: as wide as its words, whole on screen", MenuButtonMisfit(menu) == null, MenuButtonMisfit(menu) ?? "");
         // The game's hover carets reach 54 from the text either side (NMainMenu.MainMenuButtonFocused): inside the button.
@@ -1086,6 +1091,11 @@ static class SelfTest
     // The main menu button card's last line: the key that opens the page, unless the patch that reads it didn't apply.
     static string ManagerKeyLine => ModEntry.FailedPatches.Contains(nameof(ShortcutsPatch)) ? "" : "\n" + OS.GetKeycodeString(ShortcutsPatch.ManagerKey);
 
+    // The main menu button's card for a profile (as written), with the key that opens the page, or without one.
+    static string MenuCard(string profile) => ModEntry.FailedPatches.Contains(nameof(ShortcutsPatch))
+        ? $"Spire Mod Manager - View and manage your mods\nRight-click for more options\n\nCurrently using profile {profile}"
+        : $"Spire Mod Manager - View and manage your mods\n{OS.GetKeycodeString(ShortcutsPatch.ManagerKey)} to open, or right-click for more options\n\nCurrently using profile {profile}";
+
     // The main menu button's card: nothing at the usual delay (the mouse crosses the button on its way to the game's), then
     // after a second, the normal card, its profile name in gold.
     static async Task TestMenuButtonCard(NMainMenu menu)
@@ -1100,7 +1110,7 @@ static class SelfTest
             return Task.CompletedTask;
         }, seconds: Hover.SlowDelay + 0.2);
         Check("main menu button: its card waits a second, then names the profile in gold, the key on its own line", early == "" && Hover.SlowDelay == 1.0
-            && late.Text == $"Spire Mod Manager: view and manage installed mods. Currently using profile {Profiles.Active?.Name}{ManagerKeyLine}"
+            && late.Text == MenuCard($"{Profiles.Active?.Name}")
             && !card.Contains("[gold]") && card.Contains("[color=#") && card.Contains($"]{Profiles.Active?.Name}[/color]"), $"early \"{early}\", then \"{late.Text}\"");
 
         // Where the card opens, chosen each time from where the button is then (CardMisplaced: exactly where Hover puts
@@ -1162,7 +1172,7 @@ static class SelfTest
             return closed && screen.IsVisibleInTree() && Store.Data.VanillaView == vanilla && headers != vanilla
                 ? null : $"closed {closed}, shown {screen.IsVisibleInTree()}, vanilla {Store.Data.VanillaView}, headers {headers}";
         }
-        var toggle = screen.GetNode<NButton>("SpireModManagerViewToggle");
+        var toggle = screen.GetNode<BaseButton>("SpireModManagerViewToggle");
         Click(toggle);
         await Wait(menu, 1);
         var game = await Reopened(() => menu.SubmenuStack.PushSubmenuType<NModdingScreen>(), vanilla: true);
@@ -6546,7 +6556,7 @@ static class SelfTest
             {
                 var rowTitle = row.GetNode<RichTextLabel>("Title");
                 (int Panel, int Row) Sizes() => (title.GetThemeFontSize("normal_font_size"), rowTitle.GetThemeFontSize("normal_font_size"));
-                Click(screen.GetNode<NButton>("SpireModManagerViewToggle"));
+                Click(screen.GetNode<BaseButton>("SpireModManagerViewToggle"));
                 await Wait(menu, 0.5);
                 var fitted = Sizes();
                 var refitted = new List<string>();
@@ -6560,7 +6570,7 @@ static class SelfTest
                 await Wait(menu, 0.3);
                 Layout.TestFitting = null;
                 var again = Sizes();
-                Click(screen.GetNode<NButton>("SpireModManagerViewToggle"));
+                Click(screen.GetNode<BaseButton>("SpireModManagerViewToggle"));
                 await Wait(menu, 0.5);
                 Check("long details: in Vanilla View the long name is fitted in the panel's title and the row's, and stays so after a redraw and a re-layout",
                     fitted is (< 60, < 32) && again == fitted, $"panel {fitted.Panel}, row {fitted.Row}; after {again.Panel}, {again.Row}");
@@ -7988,13 +7998,13 @@ static class SelfTest
         if (!Bmm.Present)
         {
             var vanilla = await WithVanillaView(screen, menu, () => Ticked(rowA) && Ticked(rowB));
-            Click(screen.GetNode<NButton>("SpireModManagerViewToggle"));
+            Click(screen.GetNode<BaseButton>("SpireModManagerViewToggle"));
             await Wait(menu, 0.5);
             await Tick(rowA, false); // the game's own tickbox: every entry of the id and source
             var allOff = Entries().All(e => !e.IsEnabled) && !Ticked(rowB) && Picked() == "l:SmmTestTwinB";
             await Tick(rowA, true);
             var allOn = SwitchOn() && Ticked(rowB) && Picked() == "l:SmmTestTwinB";
-            Click(screen.GetNode<NButton>("SpireModManagerViewToggle"));
+            Click(screen.GetNode<BaseButton>("SpireModManagerViewToggle"));
             await Wait(menu, 0.5);
             Check("... Vanilla View: both boxes ticked (the game's one switch); its tick switches every copy and keeps the pick; back on our page, the picked copy's box alone",
                 vanilla && allOff && allOn && Ticked(rowB) && !Ticked(rowA) && Picked() == "l:SmmTestTwinB", $"vanilla {vanilla}, off {allOff}, on {allOn}; {Say()}");
@@ -9110,10 +9120,10 @@ static class SelfTest
 
     static async Task<bool> WithVanillaView(NModdingScreen screen, Node menu, Func<bool> check)
     {
-        Click(screen.GetNode<NButton>("SpireModManagerViewToggle"));
+        Click(screen.GetNode<BaseButton>("SpireModManagerViewToggle"));
         await Wait(menu, 0.5);
         var ok = check();
-        Click(screen.GetNode<NButton>("SpireModManagerViewToggle"));
+        Click(screen.GetNode<BaseButton>("SpireModManagerViewToggle"));
         await Wait(menu, 0.5);
         return ok;
     }
@@ -9177,6 +9187,9 @@ static class SelfTest
     }
 
     static void Click(NButton button) => button.EmitSignal(NClickableControl.SignalName.Released, button);
+
+    // A link's press (the page link at the top).
+    static void Click(BaseButton button) => button.EmitSignal(BaseButton.SignalName.Pressed);
 
     // A real mouse click at the control's centre, through the game's input like a player's: catches anything
     // drawn over it or eating the click. Returns the control under the mouse, for the report.

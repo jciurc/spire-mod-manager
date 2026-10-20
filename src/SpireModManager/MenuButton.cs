@@ -173,17 +173,16 @@ static class MenuButton
         Menus.Format(on == 1 ? "SPIRE_MOD_MANAGER.MAIN_MENU_PROFILE_ONE" : "SPIRE_MOD_MANAGER.MAIN_MENU_PROFILE",
             ("name", RowTitles.Cut(font, name, size, NameWidth)), ("count", Menus.Number(on)));
 
-    // Its card's text (BBCode) for a profile: "View and manage installed mods. Currently using mod profile Default.",
-    // then the key that also opens the page on a line of its own, as the selection chip's card gives its keys. No key if
-    // the patch that reads it didn't apply.
-    public static string Tip(string profile)
-    {
-        var tip = Menus.Format("SPIRE_MOD_MANAGER.MAIN_MENU_TIP", ("profile", Hover.Escape(profile)));
-        return ModEntry.FailedPatches.Contains(nameof(ShortcutsPatch)) ? tip : $"{tip}\n{OS.GetKeycodeString(ShortcutsPatch.ManagerKey)}";
-    }
+    // Its card's text (BBCode) for a profile, in Jordan's words: what it is, the key that opens the page and the
+    // right-click menu, then the profile. Without the key if the patch that reads it didn't apply.
+    public static string Tip(string profile) => ModEntry.FailedPatches.Contains(nameof(ShortcutsPatch))
+        ? Menus.Format("SPIRE_MOD_MANAGER.MAIN_MENU_TIP_NO_KEY", ("profile", Hover.Escape(profile)))
+        : Menus.Format("SPIRE_MOD_MANAGER.MAIN_MENU_TIP", ("profile", Hover.Escape(profile)), ("key", OS.GetKeycodeString(ShortcutsPatch.ManagerKey)));
 
     // A copy of the game's Settings button on the main menu, with our action (and none of the game's), its label for our
     // text, and a copy of the game's Timeline notification dot on that label, hidden; null if a game update moved them.
+    public static readonly Vector2 DotShift = new(10, 6);
+
     static Control? Native(NMainMenu menu, Action onPressed)
     {
         if (menu.GetNodeOrNull<NMainMenuTextButton>("MainMenuTextButtons/SettingsButton") is not { } settings
@@ -202,6 +201,9 @@ static class MenuButton
             dot.Name = "Dot";
             dot.Visible = false;
             label.AddChild(dot);
+            // A little left and up from where the game puts it on its own label, clear of our button's right caret.
+            (dot.OffsetLeft, dot.OffsetRight, dot.OffsetTop, dot.OffsetBottom) = (dot.OffsetLeft - DotShift.X, dot.OffsetRight - DotShift.X,
+                dot.OffsetTop - DotShift.Y, dot.OffsetBottom - DotShift.Y);
         }
         menu.AddChild(button);
         button.Released += _ => onPressed();
