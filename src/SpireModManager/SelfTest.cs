@@ -435,7 +435,10 @@ static class SelfTest
     static async Task TimeSwitches(Node menu, NModdingScreen screen, Control content)
     {
         if (content.GetChildren().OfType<NModMenuRow>().FirstOrDefault() is { } row)
+        {
             CategoryList.Select(screen, row);
+            await PanelFor(menu, screen, row);
+        }
         await Wait(menu, 0.5);
         var idle = new List<double>();
         var times = new Dictionary<string, List<double>>();
@@ -566,6 +569,7 @@ static class SelfTest
         if (screen.GetNode("%ModsScrollContainer/Mask/Content").GetChildren().OfType<NModMenuRow>().FirstOrDefault() is { } row)
         {
             CategoryList.Select(screen, row);
+            await PanelFor(menu, screen, row);
             await Wait(menu, 0.5);
             Check("a mod shown in the panel: the game's details only", screen.GetNode("%ModInfoContainer").GetNodeOrNull(ModDetails.HeadName) == null);
             // Our row look never ran (it saves the game's look the first time it does).
@@ -899,6 +903,7 @@ static class SelfTest
         // A mod shown in the panel: ours, with the description where ours goes (its Fill postfix runs first).
         var row = content.GetChildren().OfType<NModMenuRow>().First(r => r.Visible && r.Mod?.manifest?.version is { Length: > 0 });
         CategoryList.Select(screen, row);
+        await PanelFor(menu, screen, row);
         await Wait(menu, 0.5);
         var description = info.GetNode<Control>("ModDescription");
         Check("our views: the panel's title and description ours", info.GetNode<RichTextLabel>("ModTitle").Text.Contains("[font_size=")
@@ -3641,6 +3646,7 @@ static class SelfTest
             try
             {
                 CategoryList.Select(screen, other);
+                await PanelFor(menu, screen, other);
                 await Wait(menu, 0.5);
                 var descriptionLabel = panel.GetNode<RichTextLabel>("ModDescription");
                 var (shown, raw) = (descriptionLabel.GetParsedText(), descriptionLabel.Text);
@@ -3719,6 +3725,7 @@ static class SelfTest
         else
             Results.Add("SKIP the Steam branch error of a mod that's off: no fixture mod off, or none on");
         CategoryList.Select(screen, ours);
+        await PanelFor(menu, screen, ours);
         await Wait(menu, 0.5);
         Check("row state reads the game's: the selected row is selected, another not", RowState.Selected(ours) && !RowState.Selected(other));
         var description = panel.GetNode<RichTextLabel>("ModDescription").GetParsedText();
@@ -3795,6 +3802,7 @@ static class SelfTest
 
         // Notes and tags typed in the panel save when focus leaves; notes are trimmed, tags tidied.
         CategoryList.Select(screen, other);
+        await PanelFor(menu, screen, other);
         await Wait(menu, 0.5);
         notes.Text = "  Typed in the panel \n";
         notes.EmitSignal(Control.SignalName.FocusExited);
@@ -3929,6 +3937,7 @@ static class SelfTest
             await Wait(menu, 1.5);
         }
         CategoryList.Select(screen, ours);
+        await PanelFor(menu, screen, ours);
         await Wait(menu, 0.3);
         var selectedBefore = RowState.Selected(other);
         var landed = false;
@@ -5088,7 +5097,10 @@ static class SelfTest
         // The info panel: where it's from, and dependencies both ways.
         var panel = screen.GetNode<NModInfoContainer>("%ModInfoContainer");
         if (Row("SmmTestLib") is { } libSelected)
+        {
             CategoryList.Select(screen, libSelected);
+            await PanelFor(menu, screen, libSelected);
+        }
         await Wait(menu, 0.3);
         var facts = panel.GetNode<RichTextLabel>("ModDescription").Text;
         Check("panel: required for, Open Folder", facts.Contains("Required for")
@@ -5590,7 +5602,10 @@ static class SelfTest
         Store.Data.UncategorizedCollapsed = true;
         CategoryList.Apply(content);
         if (Rows().FirstOrDefault(r => r != row) is { } other)
+        {
             CategoryList.Select(screen, other);
+            await PanelFor(menu, screen, other);
+        }
         await Wait(menu, 0.2);
         int Glows() => row.GetChildren().OfType<ColorRect>().Count(c => c.Color.R > 0.9f && c.Color.B < 0.4f); // CategoryList's gold flash
         var (hidden, glows) = (!row.Visible, Glows());
@@ -5618,7 +5633,10 @@ static class SelfTest
             searchBox.EmitSignal(LineEdit.SignalName.TextChanged, query);
             await Wait(menu, 0.3);
             if (Rows().FirstOrDefault(r => r != row && r.Visible) is { } match)
+            {
                 CategoryList.Select(screen, match);
+                await PanelFor(menu, screen, match);
+            }
             await Wait(menu, 0.2);
             var left = !row.Visible && !SpireModManager.Search.Matches(bmm, query);
             var old = row.GetChildren().OfType<ColorRect>().ToList(); // an earlier glow may still be fading
@@ -6059,6 +6077,7 @@ static class SelfTest
             && Rows().FirstOrDefault(r => r.Mod?.manifest?.id == "SmmTestUi") is { } uiRow)
         {
             CategoryList.Select(screen, libRow);
+            await PanelFor(menu, screen, libRow);
             await Wait(menu, 0.3);
             // Its row in view, as hovering lights only one on screen (the names sort apart).
             if (!content.GetParent<Control>().GetGlobalRect().Intersects(uiRow.GetGlobalRect()))
@@ -6451,6 +6470,7 @@ static class SelfTest
             && Rows().FirstOrDefault(r => r.Mod?.manifest?.id == "SmmTestUi") is { Mod: { } linked } linkedRow)
         {
             CategoryList.Select(screen, panelRow);
+            await PanelFor(menu, screen, panelRow);
             await Wait(menu, 0.3);
             var description = screen.GetNode<RichTextLabel>("%ModInfoContainer/ModDescription");
             string Filter() => content.HasMeta(CategoryList.FilterMeta) ? (string)content.GetMeta(CategoryList.FilterMeta) : "";
@@ -6954,6 +6974,7 @@ static class SelfTest
         }
         var own = GameChanges.For(ours);
         CategoryList.Select(screen, row);
+        await PanelFor(menu, screen, row);
         await Wait(menu, 0.4);
         var shown = screen.GetNode<NModInfoContainer>("%ModInfoContainer").GetNode<RichTextLabel>("ModDescription").GetParsedText();
         Check("our own patches: the game's code we change, by class (modding screen among them), in our info panel with how many places",
@@ -7005,6 +7026,7 @@ static class SelfTest
         }
         var info = screen.GetNode<NModInfoContainer>("%ModInfoContainer");
         CategoryList.Select(screen, row); // a short description and no picture, so it fits
+        await PanelFor(menu, screen, row);
         await Wait(menu, 0.3);
         var home = new Vector2(0, 318);
         var other = new PanelContainer { Name = "OtherModSettingsPanel", Position = home, CustomMinimumSize = new Vector2(560, 174) };
@@ -8650,6 +8672,7 @@ static class SelfTest
         }
 
         CategoryList.Select(screen, ui);
+        await PanelFor(menu, screen, ui);
         await Wait(menu, 0.5);
         var box = screen.GetNode<LineEdit>("%ModInfoContainer/SpireModManagerYours/Tags/Box");
         box.GrabFocus();
@@ -8838,7 +8861,10 @@ static class SelfTest
         HistoryBar.OpenFromList(screen, "SmmTestUi");
         await Wait(menu, 0.2);
         if (content.GetChildren().OfType<NModMenuRow>().FirstOrDefault(r => r.Mod?.manifest?.id is { } id && id != "SmmTestUi") is { } another)
+        {
             CategoryList.Select(screen, another);
+            await PanelFor(menu, screen, another);
+        }
         await Wait(menu, 0.2);
         Check("picking another mod takes Back away", back is { Visible: false });
         ClickChanges(); // open again, for the close test below
@@ -9732,6 +9758,30 @@ static class SelfTest
     // fraction (1: the old full waits, to compare).
     static readonly double WaitScale = double.TryParse(System.Environment.GetEnvironmentVariable("SPIRE_MOD_MANAGER_WAIT_SCALE"),
         System.Globalization.NumberStyles.Float, System.Globalization.CultureInfo.InvariantCulture, out var scale) && scale > 0 ? scale : 0.1;
+
+    // Waits for the thing, not a time: frame by frame until ready() holds, for at most `timeout` seconds; false if it
+    // never does (the check after it then says what's wrong).
+    static async Task<bool> WaitUntil(Node node, Func<bool> ready, double timeout = 3, [System.Runtime.CompilerServices.CallerMemberName] string caller = "")
+    {
+        var (tree, start) = (node.GetTree(), RunClock.Elapsed.TotalSeconds);
+        var held = true;
+        while (!ready())
+        {
+            if (RunClock.Elapsed.TotalSeconds - start > timeout)
+            {
+                held = false;
+                break;
+            }
+            await node.ToSignal(tree, SceneTree.SignalName.ProcessFrame);
+        }
+        Seen(caller, RunClock.Elapsed.TotalSeconds - start);
+        return held;
+    }
+
+    // After a row is picked: the info panel filled for its copy, our fields in it (the stable branch fills it a little
+    // later than the beta). Vanilla View fills only the game's part, so nothing to wait for there.
+    static Task<bool> PanelFor(Node menu, NModdingScreen screen, NModMenuRow? row) => WaitUntil(menu, () => Store.Data.VanillaView || row?.Mod is not { } mod
+        || screen.GetNodeOrNull<Control>("%ModInfoContainer") is { } panel && ModDetails.ShownKey(panel) == Copies.Key(mod) && panel.HasNode("SpireModManagerYours"));
 
     // A wait that is the time itself (a hover card's delay, a tween, a popup's timer, an ease): never shortened.
     static async Task WaitReal(Node node, double seconds, [System.Runtime.CompilerServices.CallerMemberName] string caller = "")
