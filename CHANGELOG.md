@@ -5,8 +5,9 @@ What changed in each Workshop release, for players. Each version's first line is
 
 ## 0.1.4 (2026-10-20)
 
-0.1.4: 
-- fixed profile import not including shared categories, or custom user notes
+0.1.4:
+- fixed profile import not including shared categories, aliases or notes
+- import preview now shows category changes count
 
 - Importing a profile now applies the list's categories, aliases and notes. Our own lists carry them in their
   Category, Alias and Notes columns; Better Mod Menu's lists call categories groups. A mod takes the list's category,
