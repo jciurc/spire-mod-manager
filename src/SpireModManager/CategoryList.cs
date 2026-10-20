@@ -812,7 +812,7 @@ static class CategoryList
             if (count > 0)
             {
                 var body = new LocString("settings_ui", count == 1 ? "SPIRE_MOD_MANAGER.DELETE_CATEGORY_BODY_ONE" : "SPIRE_MOD_MANAGER.DELETE_CATEGORY_BODY");
-                body.Add("name", category.Name);
+                body.Add("name", Hover.Escape(category.Name)); // the dialog's text is BBCode; a name can come from a shared list
                 body.Add("count", Menus.Number(count));
                 if (!await Menus.Confirm(new LocString("settings_ui", "SPIRE_MOD_MANAGER.DELETE_CATEGORY_TITLE"), body))
                     return;
