@@ -9780,8 +9780,18 @@ static class SelfTest
 
     // After a row is picked: the info panel filled for its copy, our fields in it (the stable branch fills it a little
     // later than the beta). Vanilla View fills only the game's part, so nothing to wait for there.
-    static Task<bool> PanelFor(Node menu, NModdingScreen screen, NModMenuRow? row) => WaitUntil(menu, () => Store.Data.VanillaView || row?.Mod is not { } mod
-        || screen.GetNodeOrNull<Control>("%ModInfoContainer") is { } panel && ModDetails.ShownKey(panel) == Copies.Key(mod) && panel.HasNode("SpireModManagerYours"));
+    static async Task<bool> PanelFor(Node menu, NModdingScreen screen, NModMenuRow? row, [System.Runtime.CompilerServices.CallerMemberName] string caller = "")
+    {
+        var panel = screen.GetNodeOrNull<Control>("%ModInfoContainer");
+        var description = panel?.GetNodeOrNull<RichTextLabel>("ModDescription");
+        var ready = await WaitUntil(menu, () => Store.Data.VanillaView || row?.Mod is not { } mod
+            || panel != null && ModDetails.ShownKey(panel) == Copies.Key(mod) && panel.HasNode("SpireModManagerYours") && description?.IsFinished() != false, caller: caller);
+        if (!ready)
+            Results.Add($"INFO {caller}: the panel didn't show {row?.Mod?.manifest?.id} in 3 s: view {Layout.Current}, vanilla {Store.Data.VanillaView}, "
+                + $"shown \"{(panel == null ? "no panel" : ModDetails.ShownKey(panel))}\", ours {panel?.HasNode("SpireModManagerYours")}, text done {description?.IsFinished()}, "
+                + $"visible {screen.IsVisibleInTree()}");
+        return ready;
+    }
 
     // A wait that is the time itself (a hover card's delay, a tween, a popup's timer, an ease): never shortened.
     static async Task WaitReal(Node node, double seconds, [System.Runtime.CompilerServices.CallerMemberName] string caller = "")

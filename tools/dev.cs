@@ -142,6 +142,26 @@ if (held != null)
 // build and link). A second guard after the lock, for a dev copy started by hand.
 if (WaitForOtherDevCopies() is { } busy)
     return Fail(busy);
+// Mod Doctor's runs put a fixture mod (MdTestCopy) in a dev copy's mods_STEAMTEST, which the game reads as Workshop items,
+// and take it out again after every run; one killed outright can leave it behind, a second copy our runs don't expect.
+// Only that fixture goes, and only while we hold the lock (no other run is using the dev copy).
+var steamTest = Path.Combine(DevDir, "mods_STEAMTEST");
+if (Directory.Exists(steamTest))
+    foreach (var leftover in Directory.EnumerateFileSystemEntries(steamTest, "MdTestCopy*"))
+    {
+        try
+        {
+            if (Directory.Exists(leftover))
+                Directory.Delete(leftover, recursive: true);
+            else
+                File.Delete(leftover);
+            Console.WriteLine($"removed Mod Doctor's leftover fixture {leftover}");
+        }
+        catch (Exception e) when (e is IOException or UnauthorizedAccessException)
+        {
+            Console.WriteLine($"(couldn't remove Mod Doctor's leftover fixture {leftover}: {e.Message})");
+        }
+    }
 
 if (smoke)
 {
