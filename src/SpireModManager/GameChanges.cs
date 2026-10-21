@@ -32,7 +32,7 @@ static class GameChanges
     // A mod's changes, or None (nothing found, or what it ships can't be read).
     public static Changes For(Mod? mod)
     {
-        if (mod?.manifest == null)
+        if (mod?.manifest is null) // not ==: the beta's ModManifest has an == operator, stable's doesn't
             return None;
         try
         {
@@ -180,7 +180,7 @@ static class GameChanges
                     }
             _patches = known = (frame, byAssembly);
         }
-        var methods = mod.assemblies.SelectMany(a => known.ByAssembly.GetValueOrDefault(a) ?? []).Distinct().ToList();
+        var methods = Compat.Assemblies(mod).SelectMany(a => known.ByAssembly.GetValueOrDefault(a) ?? []).Distinct().ToList();
         return (methods.Count, [.. methods.Select(m => Class(m.DeclaringType)).GroupBy(c => c).OrderByDescending(g => g.Count()).Select(g => g.Key)]);
     }
 
