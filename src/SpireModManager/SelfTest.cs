@@ -323,13 +323,14 @@ static partial class SelfTest
         return Task.CompletedTask;
     }, call);
 
-    // After a test that threw: our menus and dialogs closed, the game's popup too, the real mouse back, and on the page the
-    // main list with nothing picked and no search.
+    // After a test that threw: our menus and dialogs closed, the game's popup too, the real mouse and title fitting back,
+    // and on the page the main list with nothing picked and no search.
     static void PutBack()
     {
         try
         {
             Hover.TestMouse = null;
+            Layout.TestFitting = null;
             Hover.Hide();
             MenuPanel.Close();
             RelaunchCheck.Close();
@@ -5595,11 +5596,18 @@ static partial class SelfTest
             Mouse(new InputEventMouseMotion { GlobalPosition = heldAt + new Vector2(0, 40) });
             await Wait(menu, 0.1);
             scroller.Visible = false;
-            if (atOnce)
-                Mouse(top);
-            await Wait(menu, 0.1);
-            var lines = content.GetParent().GetChildren().OfType<Panel>().Count(c => c.Size.Y == 5 && !c.IsQueuedForDeletion());
-            scroller.Visible = true;
+            int lines;
+            try
+            {
+                if (atOnce)
+                    Mouse(top);
+                await Wait(menu, 0.1);
+                lines = content.GetParent().GetChildren().OfType<Panel>().Count(c => c.Size.Y == 5 && !c.IsQueuedForDeletion());
+            }
+            finally
+            {
+                scroller.Visible = true; // a throw while it's hidden would hide the list for every later test
+            }
             if (!atOnce)
                 Mouse(top);
             await Wait(menu, 0.3);
@@ -7657,6 +7665,27 @@ static partial class SelfTest
                     fitted is (< 60, < 32) && again == fitted, $"panel {fitted.Panel}, row {fitted.Row}; after {again.Panel}, {again.Row}");
                 Check("long details: a redraw in Vanilla View fits no row title again, the long one included (each stays at its own fitted size)",
                     refitted.Count == 0, $"{refitted.Count} fitted again: {string.Join(", ", refitted.Distinct().Take(8))}");
+                // The same for a panel our page fills before anything recorded the game's looks (one fresh from the game's
+                // scene, hidden on the menu, filled in our view): the page's own panel has them recorded at its _Ready.
+                var scene = screen.SceneFilePath is { Length: > 0 } scenePath ? ModEntry.Load<PackedScene>(scenePath)?.Instantiate() : null;
+                var freshSay = "no panel in the game's scene";
+                if (scene?.GetNodeOrNull<NModInfoContainer>("%ModInfoContainer") is { } fresh)
+                {
+                    var freshText = fresh.GetNode<RichTextLabel>("ModDescription");
+                    var sceneUnderline = freshText.MetaUnderlined;
+                    fresh.GetParent()?.RemoveChild(fresh);
+                    fresh.Visible = false;
+                    menu.AddChild(fresh);
+                    ModDetails.Fill(fresh, mod);
+                    var oursUnderline = freshText.MetaUnderlined;
+                    ModDetails.Looks(fresh, game: true);
+                    freshSay = $"scene {sceneUnderline}, ours {oursUnderline}, vanilla {freshText.MetaUnderlined}";
+                    await Wait(menu, 0.1); // its fields' deferred placing first
+                    fresh.QueueFree();
+                }
+                scene?.Free();
+                Check("Vanilla View: a panel our page filled before the game's looks were recorded gets the game's underline back",
+                    freshSay == "scene True, ours False, vanilla True", freshSay);
             }
             // Our main list: the same for a title with an alias (the alias, the name beside it) or cut with "…" (the long
             // one). Apply put the plain name back while the auto-size was off and Fit set the whole text again, so the
@@ -9204,7 +9233,8 @@ static partial class SelfTest
         // switch now: it reads ticked and its entry goes at the menu (Reconcile), a profile's entry the same (HoldCopies),
         // while the pick and the profile's copy still name the copy gone, which loads again once it's back. A new twin
         // arriving before the next launch instead doesn't take over, wherever the game lists it: the copy that was there
-        // loads (our record has it, not the new one), the new one set aside, and at the menu both are ticked.
+        // loads (our record has it, not the new one), the new one set aside, and at the menu both are ticked, the pick
+        // still the copy gone. That one back too: it loads, and the active profile naming it isn't Unsaved.
         const string Y = "SmmSameIdAlone";
         var alone = Made(Y, "A", ModLoadState.Loaded);
         var data = new StoreData { CopyPicks = [$"{Y}|l:C"], CopiesOff = [$"{Y}|l:A"], Copies = new() { [Y] = ["l:A", "l:C"] } };
@@ -9225,18 +9255,19 @@ static partial class SelfTest
         var alonePicked = data.CopyPicks?.FirstOrDefault(k => Copies.IdOf(k) == Y);
         var heldEntry = held.Mods.Single();
         var us = Made(ModEntry.ModId, "SpireModManager");
-        SameIdLoad.Entry? Launch(params Mod[] copies) => SameIdLoad.Run(new List<Mod>(copies.Prepend(us)), () => data.CopyPicks?.ToHashSet(), m => m == us,
-            log: false, readOff: () => data.CopiesOff?.ToHashSet(), readRecord: () => data.Copies).Plan.GetValueOrDefault(Y);
+        // A launch with these copies (one id's) and our data as given: its plan for the id.
+        SameIdLoad.Entry? Launch(StoreData from, params Mod[] copies) => SameIdLoad.Run(new List<Mod>(copies.Prepend(us)), () => from.CopyPicks?.ToHashSet(),
+            m => m == us, log: false, readOff: () => from.CopiesOff?.ToHashSet(), readRecord: () => from.Copies).Plan.GetValueOrDefault(copies[0].manifest?.id ?? "");
         var (backA, backC) = (Made(Y, "A"), Made(Y, "C"));
-        var back = Launch(backA, backC) is { HadPick: true } backPlan && backPlan.Loads == backC && backA.state == ModLoadState.DisabledDuplicate;
+        var back = Launch(data, backA, backC) is { HadPick: true } backPlan && backPlan.Loads == backC && backA.state == ModLoadState.DisabledDuplicate;
         var (again, come) = (Made(Y, "A"), Made(Y, "D"));
         // The new twin listed first by the game: the copy that was there still loads (swapped into the id's first slot).
-        var plan = Launch(come, again);
+        var plan = Launch(data, come, again);
         var launched = plan?.Loads == again && again.state == ModLoadState.None && come.state == ModLoadState.DisabledDuplicate;
         var launchSay = $"loads {(plan?.Loads is { } loads ? Copies.CopyOf(loads) : "none")}, {Copies.CopyOf(again)} {again.state}, {Copies.CopyOf(come)} {come.state}";
         again.state = ModLoadState.Loaded;
         GameMods().AddRange([again, come]); // two: the count the copies are worked out by differs from each before (Copies.ById)
-        string? pickAfter;
+        string? pickAfter, loadsAfter;
         bool bothTicked;
         try
         {
@@ -9244,19 +9275,109 @@ static partial class SelfTest
             pickAfter = data.CopyPicks?.FirstOrDefault(k => Copies.IdOf(k) == Y);
             var picks = new Picks(data.CopyPicks, data.Copies, data.CopiesOff);
             bothTicked = Copies.TickedIn(again, [], picks) && Copies.TickedIn(come, [], picks);
+            loadsAfter = picks.Picked(Y, ModSource.ModsDirectory);
         }
         finally
         {
             GameMods().Remove(again);
             GameMods().Remove(come);
         }
+        var (thenA, thenC, thenD) = (Made(Y, "A"), Made(Y, "C"), Made(Y, "D"));
+        var thenPlan = Launch(data, thenD, thenA, thenC);
+        if (thenPlan?.Loads is { } thenLoads)
+            thenLoads.state = ModLoadState.Loaded;
+        var thenUnsaved = Unsaved(data, heldEntry, thenA, thenC, thenD);
         Check("copies_off: a copy in it alone on its switch now (its twin uninstalled) reads ticked and loses its entry at the menu, a profile's entry "
             + "the same, the pick and the profile's copy still the copy gone, which loads when it's back; a new twin arriving before the next launch, "
-            + "listed first, doesn't take over (the copy that was there loads, the new one set aside; then both ticked, the old one picked)",
+            + "listed first, doesn't take over (the copy that was there loads, the new one set aside; then both ticked, the old one loading, the pick still "
+            + "the copy gone); that one back too: it loads, and the profile naming it isn't Unsaved",
             tickedAlone && aloneOff.Count == 0 && alonePicked == $"{Y}|l:C" && heldEntry is { Copy: "l:C", CopiesOff: [] } && back && launched
-            && pickAfter == $"{Y}|l:A" && bothTicked,
+            && pickAfter == $"{Y}|l:C" && loadsAfter == "l:A" && bothTicked && thenPlan is { HadPick: true } && thenPlan.Loads == thenC && thenUnsaved == null,
             $"ticked {tickedAlone}, off after [{string.Join(", ", aloneOff)}], picked {alonePicked}; profile {heldEntry.Copy} off "
-            + $"[{string.Join(", ", heldEntry.CopiesOff ?? [])}]; back loads {back}; launch: {launchSay}; then pick {pickAfter}, both ticked {bothTicked}");
+            + $"[{string.Join(", ", heldEntry.CopiesOff ?? [])}]; back loads {back}; launch: {launchSay}; then pick {pickAfter}, loads {loadsAfter}, "
+            + $"both ticked {bothTicked}; back too: loads {PlanLoads(thenPlan)}, unsaved {thenUnsaved ?? "none"}");
+
+        // Three copies from one source, the picked one missing for a launch: the other two still share the switch. The pick
+        // and the profile's copy stay the copy gone (the one the game loaded loading meanwhile); back, it loads, and the
+        // profile naming it isn't Unsaved.
+        const string Z = "SmmSameIdThree";
+        var three = new StoreData { CopyPicks = [$"{Z}|l:B"], CopiesOff = [$"{Z}|l:A", $"{Z}|l:C"], Copies = new() { [Z] = ["l:A", "l:B", "l:C"] } };
+        var threeHeld = new Profile { Name = "Three", Mods = [new ProfileMod(Z, ModSource.ModsDirectory, true, "l:B", CopiesOff: ["l:A", "l:C"])] };
+        var (missA, missC) = (Made(Z, "A"), Made(Z, "C"));
+        if (Launch(three, missA, missC)?.Loads is { } meanwhile)
+            meanwhile.state = ModLoadState.Loaded;
+        GameMods().AddRange([missA, missC]);
+        string? threePick, threeLoads;
+        try
+        {
+            Copies.Reconcile(three);
+            Profiles.TestHold(threeHeld);
+            threePick = three.CopyPicks?.FirstOrDefault(k => Copies.IdOf(k) == Z);
+            threeLoads = new Picks(three.CopyPicks, three.Copies, three.CopiesOff).Picked(Z, ModSource.ModsDirectory);
+        }
+        finally
+        {
+            GameMods().Remove(missA);
+            GameMods().Remove(missC);
+        }
+        var (zA, zB, zC) = (Made(Z, "A"), Made(Z, "B"), Made(Z, "C"));
+        var threePlan = Launch(three, zA, zB, zC);
+        if (threePlan?.Loads is { } threeLoaded)
+            threeLoaded.state = ModLoadState.Loaded;
+        var threeEntry = threeHeld.Mods.Single();
+        var threeUnsaved = Unsaved(three, threeEntry, zA, zB, zC);
+        Check("copies: three from one source, the picked one missing for a launch: the pick and the profile's copy stay it, the copy loaded loading "
+            + "meanwhile; back, it loads, and the profile naming it isn't Unsaved",
+            threePick == $"{Z}|l:B" && threeLoads == "l:A" && threeEntry is { Copy: "l:B", CopiesOff: ["l:A", "l:C"] } && threePlan is { HadPick: true }
+            && threePlan.Loads == zB && threeUnsaved == null,
+            $"pick {threePick}, loads {threeLoads}, profile {threeEntry.Copy}; back: loads {PlanLoads(threePlan)}, unsaved {threeUnsaved ?? "none"}");
+    }
+
+    // The copy a plan loads, for a check's details.
+    static string PlanLoads(SameIdLoad.Entry? plan) => plan?.Loads is { } loads ? Copies.CopyOf(loads) : "none";
+
+    // The active profile's unsaved changes with these copies of one id installed, our data's record, pick and copies off
+    // for it as data has them and the profile's entry for it as given (in our data, every undo snapshot and the game's
+    // list for a moment, quietly, as a launch would find them; then taken out again): null for none, else what they are.
+    static string? Unsaved(StoreData data, ProfileMod entry, params Mod[] copies)
+    {
+        var id = entry.Id;
+        bool Ours(string key) => Copies.IdOf(key) == id;
+        if (Profiles.Edited)
+            return "the profile was Unsaved before";
+        GameMods().AddRange(copies);
+        Copies.TestRecount();
+        try
+        {
+            History.Quietly(now =>
+            {
+                (now.Copies ??= [])[id] = [.. data.Copies?.GetValueOrDefault(id) ?? []];
+                now.CopyPicks = Copies.WithPicks(now.CopyPicks, data.CopyPicks?.Where(Ours) ?? []);
+                now.CopiesOff = Store.TidyOff([.. now.CopiesOff ?? [], .. data.CopiesOff?.Where(Ours) ?? []], now.CopyPicks);
+                now.Profiles.FirstOrDefault(p => p.Name == now.ActiveProfile)?.Mods.Add(entry);
+            });
+            Profiles.Track();
+            var (on, off, switched) = Profiles.UnsavedChanges();
+            return !Profiles.Edited ? null : $"on {on.Count}, off {off.Count}, switched {string.Join(", ", switched.Select(s => $"{Copies.CopyOf(s.From)} to {Copies.CopyOf(s.To)}"))}";
+        }
+        finally
+        {
+            foreach (var copy in copies)
+                GameMods().Remove(copy);
+            Copies.TestRecount();
+            History.Quietly(now =>
+            {
+                now.Copies?.Remove(id);
+                now.CopyPicks = Store.TidyPicks(now.CopyPicks?.Where(k => !Ours(k)));
+                now.CopiesOff = now.CopiesOff?.Where(k => !Ours(k)).ToList();
+                foreach (var profile in now.Profiles)
+                {
+                    profile.Mods.RemoveAll(m => m.Id == id);
+                    profile.Edited?.RemoveAll(m => m.Id == id);
+                }
+            });
+            Profiles.Track();
+        }
     }
 
     // The launch record per copy (LaunchGuard): a copy round-trips, a record from before copies still reads; a switch to
@@ -10428,6 +10549,29 @@ static partial class SelfTest
         var switchLine = Draft(CopySwitchLine, ("mod", a.manifest?.name ?? ""), ("to", Copies.Named(a)), ("from", Copies.Named(b)));
         var (switchChanges, pendingNote, switchedPending) = (HistoryBar.Describe(), MenuButton.PendingText(), ModEntry.HasPendingChanges());
         var hintedLine = ModDetails.CopyLine(b, false)?.Text;
+        // Not counted where a relaunch can't apply the pick (the plan left the game's choice, or the self-check found it
+        // not taken); one the game decided before us still is (Settle put us first).
+        var stuck = new List<string>();
+        var planWas = SameIdLoad.Plan.GetValueOrDefault(TwinId);
+        try
+        {
+            if (planWas != null)
+                foreach (var why in new[] { SameIdLoad.Reason.DependencyAfterSlot, SameIdLoad.Reason.SetAsideByGame, SameIdLoad.Reason.DecidedBeforeUs })
+                {
+                    SameIdLoad.TestPlan(TwinId, planWas with { Why = why });
+                    stuck.Add($"{why} {HistoryBar.CopySwitchCount()}");
+                }
+            SameIdLoad.TestPlan(TwinId, planWas);
+            SameIdLoad.TestResult(TwinId, SameIdLoad.Result.NotTaken);
+            stuck.Add($"not taken {HistoryBar.CopySwitchCount()}");
+        }
+        finally
+        {
+            SameIdLoad.TestPlan(TwinId, planWas);
+            SameIdLoad.TestResult(TwinId, null);
+        }
+        Check("... a switch a relaunch can't apply isn't counted: the plan left the game's choice, or the self-check found the pick not taken; one the "
+            + "game decided before us is", string.Join(", ", stuck) == "DependencyAfterSlot 0, SetAsideByGame 0, DecidedBeforeUs 1, not taken 0", string.Join(", ", stuck));
         Dependencies.Write([(b, true)], pick: [b]);
         Profiles.RefreshTickboxes(screen);
         await Wait(menu, 0.3);

@@ -315,12 +315,13 @@ static class Copies
             : mod.modSource == ModSource.ModsDirectory && Twins(mod).Count > 0 ? Shown(CopyOf(mod)) : Menus.Text("SPIRE_MOD_MANAGER.SOURCE_LOCAL"))})";
 
     // Brings the record in line with the copies installed, gives each id and source installed more than once a pick
-    // when it has none that names one of its copies (Picked: the copy the game loaded, so nothing changes until the
-    // player picks another), and tidies copies_off: a file from before it (or a first run) gets the reading it had, only
-    // the pick on (LegacyOff), so nothing looks different on the update; a pick in it comes out, so a switch that's on
-    // always has a copy ticked; so does a copy now alone on its switch (its twins uninstalled since), as Write drops one
-    // clicked, so another copy arriving later doesn't find it off and take over (its pick stays as it was). At the first
-    // main menu, before the undo baseline (so it's neither an undo step nor a change since launch). True if it changed.
+    // when it has none, or one naming a copy our record never had (Picked: the copy the game loaded, so nothing changes
+    // until the player picks another), and tidies copies_off: a file from before it (or a first run) gets the reading it
+    // had, only the pick on (LegacyOff), so nothing looks different on the update; a pick in it comes out, so a switch
+    // that's on always has a copy ticked; so does a copy now alone on its switch (its twins uninstalled since), as Write
+    // drops one clicked, so another copy arriving later doesn't find it off and take over (its pick stays as it was). At
+    // the first main menu, before the undo baseline (so it's neither an undo step nor a change since launch). True if it
+    // changed.
     public static bool Reconcile(StoreData data)
     {
         var changed = false;
@@ -359,8 +360,10 @@ static class Copies
                 changed = true;
             }
         }
+        // A stored pick naming a copy in our record stays while that copy is missing and two or more others are installed
+        // (Picked goes by the copy loaded meanwhile), so it and every profile's copy keep the player's choice.
         var picks = new Picks(data.CopyPicks, data.Copies, data.CopiesOff);
-        var seeded = TwinGroups().Where(g => picks.Stored(g.Id, g.Source) is not { } stored || !g.Copies.Contains(stored))
+        var seeded = TwinGroups().Where(g => picks.Stored(g.Id, g.Source) is not { } stored || data.Copies?.GetValueOrDefault(g.Id)?.Contains(stored) != true)
             .Select(g => Picked(g.Id, g.Source, picks) is { } copy ? $"{g.Id}|{copy}" : null).OfType<string>().ToList();
         if (seeded.Count > 0)
         {

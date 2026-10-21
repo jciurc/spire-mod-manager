@@ -469,5 +469,14 @@ static class SameIdLoad
         else
             Results.Remove(id);
     }
+
+    // Self-test: an id's plan as if Apply had made this one (null: none).
+    public static void TestPlan(string id, Entry? entry)
+    {
+        if (entry is { } made)
+            _plan[id] = made;
+        else
+            _plan.Remove(id);
+    }
 #endif
 }

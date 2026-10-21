@@ -43,10 +43,10 @@ var DevDir = stable ? StableDir : BetaDir;
 var WorkshopDir = Path.Combine(steamapps, "workshop", "content", "2868840");
 var BmmRepo = Env("STS2_BMM_REPO", @"C:\repos\gaming\slay the spire\bettermodmenu"); // Better Mod Menu's local-fix checkout (--bmm-local)
 const string ModId = "SpireModManager";
-// The whole run, killed after this. The plain suite takes about 125 s from the game's start, as do --bmm and --stable
-// (October 2026): this leaves it room on a slower PC, and a hung game is killed within 4 minutes, so the next run (any
-// repo's) gets the game.
-const int TimeoutSeconds = 240;
+// The whole run, killed after this. The full suite takes 110-125 s from the game's start, windowed too (October 2026),
+// and grows with every check: this leaves it room on a slower PC, and a hung game is killed within 5 minutes, so the
+// next run (any repo's) gets the game.
+const int TimeoutSeconds = 300;
 var root = Path.GetDirectoryName(ScriptDir()) ?? ".";
 var userData = Path.Combine(Environment.GetFolderPath(Environment.SpecialFolder.ApplicationData), "SlayTheSpire2");
 var sandbox = Path.Combine(userData, "default", "1");
