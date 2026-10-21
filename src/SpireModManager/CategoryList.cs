@@ -703,12 +703,14 @@ static class CategoryList
                     return;
                 if (click.Pressed)
                     pressedAt = click.GlobalPosition;
-                else if (click.GlobalPosition.DistanceTo(pressedAt) < DragThreshold)
+                // Not while searching: every section shows open then (Show), so a fold would change out of sight.
+                else if (click.GlobalPosition.DistanceTo(pressedAt) < DragThreshold && !searching)
                 {
-                    collapsed = !collapsed;
-                    Show(collapsed);
-                    setCollapsed(collapsed);
-                    Store.Save();
+                    setCollapsed(!collapsed);
+                    Store.SaveViewState(); // view state: no undo step
+                    Apply(content); // the page bar's Expand all and Collapse all follow
+                    // The header made again under a still mouse is lit, as the one clicked was.
+                    Callable.From(() => content.GetViewport()?.UpdateMouseCursorState()).CallDeferred();
                 }
             };
         }

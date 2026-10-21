@@ -537,18 +537,21 @@ static class HistoryBar
             .ToList();
     }
 
-    // Mods installed more than once whose copy that loads after a relaunch is another than at a snapshot while none of
-    // their boxes changed (changed: ModChanges for it), e.g. a copy unticked and ticked again (a copy ticked on becomes
-    // the one that loads), or a profile naming another copy: the copy that loaded then, and the one now. Not this mod
-    // (the game decides which of its copies loads).
-    static List<(Mod From, Mod To)> CopySwitches(History.Snapshot before, List<(Mod Mod, bool Enabled)> changed)
+    // Mods installed more than once whose copy that loads after a relaunch is another than at launch while none of their
+    // boxes changed (changed: ModChanges for it), e.g. a copy unticked and ticked again (a copy ticked on becomes the one
+    // that loads), or a profile naming another copy: the copy that loaded then, and the one now. Then is the copy the game
+    // loaded, else the launch's lists' (launch: History.Loaded): those lists read with today's manifests name the copy a
+    // Workshop update made the winner since (Copies.Newest), so the switch to it went unlisted. Not this mod (the game
+    // decides which of its copies loads).
+    static List<(Mod From, Mod To)> CopySwitches(History.Snapshot launch, List<(Mod Mod, bool Enabled)> changed)
     {
-        var (thenOff, thenPicks) = (Dependencies.SavedOff(before.Mods), Store.PicksIn(before.Store));
+        var (thenOff, thenPicks) = (Dependencies.SavedOff(launch.Mods), Store.PicksIn(launch.Store));
         var (nowOff, nowPicks) = (Dependencies.SavedOff(), Picks.Now);
         var ticked = changed.Select(c => c.Mod.manifest?.id).ToHashSet();
+        Mod? Then(string id) => ModManager.Mods.FirstOrDefault(m => m.manifest?.id == id && m.state == ModLoadState.Loaded) ?? Copies.LoadingIn(id, thenOff, thenPicks);
         var switches = new List<(Mod, Mod)>();
         foreach (var id in Dependencies.EachCopy(ModManager.Mods).Where(m => Copies.Others(m).Count > 0).Select(m => m.manifest?.id).OfType<string>().Distinct())
-            if (id != ModEntry.ModId && !ticked.Contains(id) && Copies.LoadingIn(id, thenOff, thenPicks) is { } from
+            if (id != ModEntry.ModId && !ticked.Contains(id) && Then(id) is { } from
                 && Copies.LoadingIn(id, nowOff, nowPicks) is { } to && Copies.CopyOf(from) != Copies.CopyOf(to))
                 switches.Add((from, to));
         return switches;

@@ -3109,6 +3109,11 @@ static partial class SelfTest
             Hint()?.EmitSignal(RichTextLabel.SignalName.MetaClicked, "missing");
             await Wait(menu, 0.4);
             var opened = Modal.IsOpen(MissingMods.Name);
+            Input.ParseInputEvent(new InputEventKey { Keycode = Key.Escape, Pressed = true });
+            await Wait(menu, 0.2);
+            Input.ParseInputEvent(new InputEventKey { Keycode = Key.Escape, Pressed = false });
+            Check("Esc closes the missing mods list (no dimmer left over the main menu); the page stays open",
+                opened && !Modal.IsOpen(MissingMods.Name) && screen.IsVisibleInTree(), $"opened {opened}, still open {Modal.IsOpen(MissingMods.Name)}, page {screen.IsVisibleInTree()}");
             Modal.Close(MissingMods.Name);
             await Wait(menu, 0.2);
             await Type("#Uninstalled OR #enabled");
@@ -4299,6 +4304,7 @@ static partial class SelfTest
                 ("\"OR\"", "nyn"), ("\"or\"", "nnn"), ("#cards -(@alice OR @bob)", "nny"), ("-(#relics OR @carl)", "ynn"), ("NOT #relics", "ynn"),
                 ("(@alice OR @bob", "yyn"), ("(#cards)) @carl", "nny"), ("#cards OR", "yny"), ("OR #relics", "nyy"), ("#cards AND", "yny"),
                 ("#\"two kinds\" OR @carl", "yny"), ("(#cards @alice) OR (#relics @carl)", "yny"), ("stone -(rock)", "nny"), ("#relics)", "nnn"), ("(#relics)", "nyy"),
+                ("#\"two kinds", "ynn"), ("@\"alice", "ynn"), ("#\"\" @bob", "nyn"), // a quote still to type runs to the end; an empty one is nothing
             ];
             var wrong = cases.Select(c => (c.Query, c.Finds, Found: string.Concat(mods.Select(m => Search.Matches(m, c.Query) ? "y" : "n"))))
                 .Where(c => c.Found != c.Finds).Select(c => $"{c.Query}: {c.Found}, not {c.Finds}").ToList();
@@ -4396,7 +4402,7 @@ static partial class SelfTest
                 wrongKeywords.Count == 0, string.Join(" | ", wrongKeywords));
             Check($"search grammar: never an error: a missing or extra \")\", \"()\", a dangling operator, a lone - or NOT, a bracket in a #tag ({forgiving.Length} queries)",
                 wrongForgiving.Count == 0, string.Join(" | ", wrongForgiving));
-            string[] nothing = ["()", "( )", "OR", "AND", "NOT", "-", "|", "( OR )", "AND |", "-()", "NOT ()", "(((", ")))", "\"", "\"\""];
+            string[] nothing = ["()", "( )", "OR", "AND", "NOT", "-", "|", "( OR )", "AND |", "-()", "NOT ()", "(((", ")))", "\"", "\"\"", "#\"", "#\"\"", "@\""];
             Check("brackets, operators, a lone - or an empty quote alone: no search, every mod shown",
                 !nothing.Any(Search.HasTerms) && nothing.All(q => designed.All(m => Search.Matches(m, q))), string.Join(", ", nothing.Where(Search.HasTerms)));
         }
@@ -5483,6 +5489,32 @@ static partial class SelfTest
         pressed.EmitSignal(Control.SignalName.GuiInput, new InputEventMouseButton { ButtonIndex = MouseButton.Left, Pressed = false, GlobalPosition = at });
         await Wait(menu, 0.3);
         Check("a click without moving leaves the order alone", Ids().SequenceEqual(orderBefore));
+        // The list hidden mid-drag (the page left with the button held): the drag stops, its drop line gone, and a release
+        // from the hidden list's top (Godot's, as the row hides) or after it shows again drops nothing.
+        var scroller = content.GetParent().GetParent<Control>();
+        var held = Rows()[pinned + 2]; // a drop at the top would move it
+        var heldAt = held.GetGlobalRect().GetCenter();
+        void Mouse(InputEvent e) => held.EmitSignal(Control.SignalName.GuiInput, e);
+        var hiddenDrags = new List<string>();
+        foreach (var atOnce in new[] { true, false })
+        {
+            var top = new InputEventMouseButton { ButtonIndex = MouseButton.Left, Pressed = false, GlobalPosition = new Vector2(heldAt.X, 10) };
+            Mouse(new InputEventMouseButton { ButtonIndex = MouseButton.Left, Pressed = true, GlobalPosition = heldAt });
+            Mouse(new InputEventMouseMotion { GlobalPosition = heldAt + new Vector2(0, 40) });
+            await Wait(menu, 0.1);
+            scroller.Visible = false;
+            if (atOnce)
+                Mouse(top);
+            await Wait(menu, 0.1);
+            var lines = content.GetParent().GetChildren().OfType<Panel>().Count(c => c.Size.Y == 5 && !c.IsQueuedForDeletion());
+            scroller.Visible = true;
+            if (!atOnce)
+                Mouse(top);
+            await Wait(menu, 0.3);
+            hiddenDrags.Add($"{(atOnce ? "released" : "held")}: {lines} lines, {(Ids().SequenceEqual(orderBefore) ? "kept" : "moved")}");
+        }
+        Check("the list hidden mid-drag: the drag stops (no drop line left) and no release drops the row",
+            hiddenDrags.All(d => d.EndsWith(": 0 lines, kept")), string.Join("; ", hiddenDrags));
 
         // Multi-select: pick the first and third rows after ours, drag the first's grip below the last row; both move,
         // in their order.
@@ -5850,6 +5882,15 @@ static partial class SelfTest
         // Under the page bar's Show: Enabled, its Show still shows all its mods, the disabled one they need too (the choice
         // goes back to All). Then its Enable required mods: the mods it was about stay on screen under the search, though
         // fixed they no longer match it and the banner goes, until the search changes. Test Framework off again after.
+        // Test Framework needs Test Fixes (off) meanwhile: a need's own need, which #needed lists and Enable required mods
+        // turns on, though not among the banner's own mods.
+        var (fixes, libNeeds) = (Row("SmmTestFixes")?.Mod, lib.manifest?.dependencies);
+        var fixesOn = fixes != null && Copies.Ticked(fixes);
+        if (fixes != null && lib.manifest is { } libManifest)
+        {
+            libManifest.dependencies = [new ModDependency("SmmTestFixes")];
+            Dependencies.Set([fixes], false, screen);
+        }
         ListFilter.Choose(content, ListFilter.Choice.Enabled);
         await Wait(menu, 0.3);
         Filter()?.EmitSignal(BaseButton.SignalName.Pressed);
@@ -5867,9 +5908,15 @@ static partial class SelfTest
         tickbox.IsTicked = false;
         tickbox.EmitSignal(NTickbox.SignalName.Toggled, tickbox);
         await Wait(menu, 0.3);
+        var fixesListed = fixes == null || shownThen.Contains(Copies.Key(fixes));
+        if (lib.manifest is { } libBack)
+            libBack.dependencies = libNeeds;
+        if (fixes != null)
+            Dependencies.Set([fixes], fixesOn, screen);
+        await Wait(menu, 0.3);
         Check("main list banner: its Show under Show: Enabled shows all its mods (the choice back to All); its Enable required mods then keeps them on "
-            + "screen under the search", choiceAfter == ListFilter.Choice.All && libShown && libOn && stayed && boxKept == problems,
-            $"choice {choiceAfter}, Test Framework shown {libShown}; after Enable: Test Framework on {libOn}, stayed {stayed} (gone {gone}), box \"{boxKept}\"");
+            + "screen under the search, a need's own need too", choiceAfter == ListFilter.Choice.All && libShown && libOn && stayed && fixesListed && boxKept == problems,
+            $"choice {choiceAfter}, Test Framework shown {libShown}, Test Fixes {fixesListed}; after Enable: Test Framework on {libOn}, stayed {stayed} (gone {gone}), box \"{boxKept}\"");
 
         // A mod fixed by hand under it keeps its row through a redraw (Test Framework ticked: no longer needed), counted,
         // while the mods it fixed go; until the search changes. Unticked after, as it was.
@@ -6776,6 +6823,31 @@ static partial class SelfTest
         Press("ExpandAllButton");
         await Wait(menu, 0.3);
         Check("Expand all opens them again", Store.Data.Categories.All(c => !c.Collapsed) && !Store.Data.UncategorizedCollapsed && Rows().Any(r => r.Visible));
+        // A header's click folds its category and the bar's Expand all follows at once; while searching every category
+        // shows open, so a click there folds nothing out of sight.
+        if (Store.Data.Categories.FirstOrDefault(c => Rows().Any(r => Store.InfoFor(r.Mod)?.Category == c.Name)) is { } folding)
+        {
+            void ClickHeader()
+            {
+                foreach (var pressed in new[] { true, false })
+                    Header(content, folding.Name)?.EmitSignal(Control.SignalName.GuiInput, new InputEventMouseButton { ButtonIndex = MouseButton.Left, Pressed = pressed });
+            }
+            Button? ExpandAll() => Bar()?.FindChild("ExpandAllButton", true, false) as Button;
+            Find(Rows().First(r => Store.InfoFor(r.Mod)?.Category == folding.Name).Mod?.manifest?.id ?? "");
+            await Wait(menu, 0.3);
+            ClickHeader();
+            var foldedSearching = folding.Collapsed;
+            Find("");
+            await Wait(menu, 0.3);
+            ClickHeader();
+            await Wait(menu, 0.3);
+            Check("a header's click folds its category and the bar's Expand all comes on; while searching it folds nothing",
+                !foldedSearching && folding.Collapsed && ExpandAll() is { Disabled: false }, $"searching {foldedSearching}, then {folding.Collapsed}, Expand all off {ExpandAll()?.Disabled}");
+            ClickHeader();
+            await Wait(menu, 0.3);
+        }
+        else
+            Results.Add("SKIP a header's click: no category holds a mod");
 
         var headerButtons = (Header(content, Store.Data.Categories.First().Name) as Node)?.GetNodeOrNull("Actions")?.GetChildren().OfType<Button>().Select(b => b.Text).ToList() ?? [];
         Check("category headers: Enable all, Disable all inline, last", headerButtons.TakeLast(2).SequenceEqual(["Enable all", "Disable all"]), string.Join(",", headerButtons));
@@ -7482,8 +7554,13 @@ static partial class SelfTest
                 await Wait(menu, 0.3);
                 Layout.TestFitting = null;
                 var again = Sizes();
+                var description = panel.GetNode<RichTextLabel>("ModDescription");
+                var underlined = description.MetaUnderlined;
                 Click(screen.GetNode<BaseButton>("SpireModManagerViewToggle"));
                 await Wait(menu, 0.5);
+                // The game's scene leaves Godot's default: underlined. Our page filled the panel first (WatchLinks takes it off).
+                Check("Vanilla View: the game's panel underlines its links as the game has it, after our page filled it; ours don't",
+                    underlined && !description.MetaUnderlined, $"vanilla {underlined}, ours {description.MetaUnderlined}");
                 Check("long details: in Vanilla View the long name is fitted in the panel's title and the row's, and stays so after a redraw and a re-layout",
                     fitted is (< 60, < 32) && again == fitted, $"panel {fitted.Panel}, row {fitted.Row}; after {again.Panel}, {again.Row}");
                 Check("long details: a redraw in Vanilla View fits no row title again, the long one included (each stays at its own fitted size)",
@@ -7705,10 +7782,13 @@ static partial class SelfTest
         Check("a mod's files at the game's paths: counted once each (not the engine's), told by character and what they are, most first",
             assets.Count == 16 && subjects.SequenceEqual(["The Regent (energy orb, hands, character select, sprite fonts, top panel)", "combat", "sprite fonts"]),
             $"{assets.Count}: {string.Join(" | ", subjects)}");
+        // And the compiler's classes inside one (an async method's state machine, the lambdas' "<>c"), here this test's.
+        var nested = typeof(SelfTest).GetNestedTypes(System.Reflection.BindingFlags.NonPublic);
         string[] classes = [GameChanges.Class(typeof(NModdingScreen)), GameChanges.Class(typeof(MegaCrit.Sts2.Core.Models.CharacterModel)),
-            GameChanges.Class(typeof(NModMenuRow)), GameChanges.Class(typeof(MegaCrit.Sts2.Core.Models.ModelDb))];
-        Check("the game's classes as words: modding screen, character (no \"Model\"), mod menu row, model db",
-            classes.SequenceEqual(["modding screen", "character", "mod menu row", "model db"]), string.Join(" | ", classes));
+            GameChanges.Class(typeof(NModMenuRow)), GameChanges.Class(typeof(MegaCrit.Sts2.Core.Models.ModelDb)),
+            GameChanges.Class(nested.FirstOrDefault(t => t.Name.StartsWith("<TestGameChanges>d__"))), GameChanges.Class(nested.FirstOrDefault(t => t.Name == "<>c"))];
+        Check("the game's classes as words: modding screen, character (no \"Model\"), mod menu row, model db; a compiler-made one by the class it's in",
+            classes.SequenceEqual(["modding screen", "character", "mod menu row", "model db", "self test", "self test"]), string.Join(" | ", classes));
 
         // A pack of a made-up mod: one of the game's files (the Regent's rock hand), one of its own, one of the engine's.
         var folder = Path.Combine(outDir, "game-changes-mod");
@@ -9591,11 +9671,14 @@ static partial class SelfTest
             var w = Compat.WorkshopBeatsOlderLocal;
             var mixLoads = w ? mix61 : mixLocal;
             var lost = Copies.LosesTo(mix62);
-            Check("... one Workshop item newer than the local copy, the other picked: " + (w ? "on the beta the newer loads (the game's rule), and the picked "
-                + "one says it loads instead as the higher version" : "on stable the local copy still loads, and the picked one says why"),
+            // As an update while the game runs makes it: Changes says the newer loads instead of the local copy that loaded.
+            var updated = HistoryBar.Describe().Contains(Draft(CopySwitchLine, ("mod", Mix), ("to", Copies.Named(mix61)), ("from", Copies.Named(mixLocal))));
+            Check("... one Workshop item newer than the local copy, the other picked: " + (w ? "on the beta the newer loads (the game's rule), the picked "
+                + "one says it loads instead as the higher version, and Changes lists the switch" : "on stable the local copy still loads, and the picked one says why"),
                 lost is { } why && why.Loads == mixLoads && why.Why == (w ? Copies.LoseReason.HigherVersion : Copies.LoseReason.LocalCopy)
-                && ModDetails.CopyLine(mix62, false)?.Text == Draft(CopyLoses, ("other", Copies.Named(mixLoads)), ("why", w ? WhyHigher : WhyLocal)),
-                $"beta rule {w}; loses to {Copies.KeyOf(lost?.Loads)} ({lost?.Why}); line {ModDetails.CopyLine(mix62, false)?.Text}");
+                && ModDetails.CopyLine(mix62, false)?.Text == Draft(CopyLoses, ("other", Copies.Named(mixLoads)), ("why", w ? WhyHigher : WhyLocal)) && updated == w,
+                $"beta rule {w}; loses to {Copies.KeyOf(lost?.Loads)} ({lost?.Why}); line {ModDetails.CopyLine(mix62, false)?.Text}; "
+                + string.Join(" | ", HistoryBar.Describe().Where(l => l.Contains(Mix))));
         }
         finally
         {

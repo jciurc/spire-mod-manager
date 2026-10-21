@@ -180,8 +180,8 @@ static class Search
         return _lastQuery = new Query(filter, All(grouped: false));
     }
 
-    // Whether a term has something to look for: not a word of punctuation alone ("!!!") or "".
-    static bool Says(Term term) => term.Kind switch { "" => term.Spaced.Length > 0, Exact => term.Value.Length > 0, _ => true };
+    // Whether a term has something to look for: not a word of punctuation alone ("!!!"), nor empty quotes ("", #"", @"").
+    static bool Says(Term term) => term.Kind switch { "" => term.Spaced.Length > 0, _ => term.Value.Length > 0 };
 
     // Terms that must all match: the plain words among them as one Words, last (the others are quicker to look for).
     static Clause? Together(List<Clause> each)
@@ -195,13 +195,13 @@ static class Search
         return all.Count switch { 0 => null, 1 => all[0], _ => new AllOf(all) };
     }
 
-    // A search's pieces in order: #tag or #"two words", @author (quoted the same), "exact text" (its closing quote may be
-    // still to type), a word, a bracket, OR, "|", AND or NOT. A "-" at a term's start leaves out the term or group after
-    // it ("-" alone is nothing, and a second one is part of a word: "--x" leaves out "-x"). A word ends at a space, a "|",
-    // a quote, and a #tag or @author glued to it ("foo#Library" is two terms; a lone "#" is plain: "C#"); a word or a
-    // bare #tag also ends at a ")" while a group is open, and a bare #tag or @author at a quote or a "(" too, which start
-    // the next term ("#Library(lib)" is the tag and a group; #"x (y)" keeps its brackets). A ")" that closes nothing is
-    // nothing.
+    // A search's pieces in order: #tag or #"two words", @author (quoted the same), "exact text" (a closing quote, here and
+    // after # or @, may be still to type: the rest is the term), a word, a bracket, OR, "|", AND or NOT. A "-" at a term's
+    // start leaves out the term or group after it ("-" alone is nothing, and a second one is part of a word: "--x" leaves
+    // out "-x"). A word ends at a space, a "|", a quote, and a #tag or @author glued to it ("foo#Library" is two terms; a
+    // lone "#" is plain: "C#"); a word or a bare #tag also ends at a ")" while a group is open, and a bare #tag or @author
+    // at a quote or a "(" too, which start the next term ("#Library(lib)" is the tag and a group; #"x (y)" keeps its
+    // brackets). A ")" that closes nothing is nothing.
     static List<Lexed> Lex(string text)
     {
         var pieces = new List<Lexed>();
@@ -233,10 +233,12 @@ static class Search
             }
             else if (Marked(at))
             {
-                var close = text[at + 1] == '"' ? text.IndexOf('"', at + 2) : -1;
                 string value;
-                if (close > at + 2)
-                    (value, at) = (text[(at + 2)..close], close + 1);
+                if (text[at + 1] == '"')
+                {
+                    var close = text.IndexOf('"', at + 2);
+                    (value, at) = close < 0 ? (text[(at + 2)..], text.Length) : (text[(at + 2)..close], close + 1);
+                }
                 else
                 {
                     at++;
