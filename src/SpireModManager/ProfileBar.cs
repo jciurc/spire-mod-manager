@@ -122,8 +122,8 @@ static class ProfileBar
         // Share and Import, under a divider at the end of both menus (the bar has no room for more buttons).
         List<MenuItem> Sharing() => [
             MenuItem.Heading(""),
-            new(Menus.Text("SPIRE_MOD_MANAGER.SHARE_PROFILE"), () => ProfileShare.ShowShare(screen)),
             new(Menus.Text("SPIRE_MOD_MANAGER.IMPORT_PROFILE"), () => ProfileShare.ShowImport(screen)),
+            new(Menus.Text("SPIRE_MOD_MANAGER.SHARE_PROFILE"), () => ProfileShare.ShowShare(screen)),
         ];
         List<MenuItem> Actions() => [
             new(Menus.Text("SPIRE_MOD_MANAGER.RENAME"), () => BeginNaming(Naming.Rename)),

@@ -421,7 +421,8 @@ static class ProfileShare
             lines.Add("  •  " + Menus.Format("SPIRE_MOD_MANAGER.IMPORT_OFF", ("count", Menus.Number(plan.Off))));
         var extras = plan.Extras;
         if (extras.Sorted.Count > 0)
-            lines.Add("  •  " + Menus.Format("SPIRE_MOD_MANAGER.IMPORT_SORTED", ("count", Menus.Number(extras.Sorted.Count))));
+            lines.Add("  •  " + Menus.Format(extras.Sorted.Count == 1 ? "SPIRE_MOD_MANAGER.IMPORT_SORTED_ONE" : "SPIRE_MOD_MANAGER.IMPORT_SORTED",
+                ("count", Menus.Number(extras.Sorted.Count))));
         if (extras.NewCategories.Count > 0)
             lines.Add("  •  " + Menus.Format("SPIRE_MOD_MANAGER.IMPORT_NEW_CATEGORIES", ("count", Menus.Number(extras.NewCategories.Count))));
         if (extras.Details > 0)
