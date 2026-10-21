@@ -3411,21 +3411,21 @@ static partial class SelfTest
             && twice.Same == (libOn ? 1 : 0) && twice is { Off: 0, Missing.Count: 0 }, LibPlanned(twice));
         // A list naming the mod by its Workshop item alone, while it's installed here by hand (a friend's list: ours and
         // Better Mod Menu's write a Workshop mod's link): the row sets the copy installed, and nothing is missing (nothing to
-        // subscribe to). Listed on, it's on, and the preview says both copies would stay installed, one should be on
-        // (Jordan's words), naming it; listed off, it goes off, nothing to say.
+        // subscribe to). Listed on or off, no word about both copies: there's one, and the import adds none (that line is
+        // for a Workshop copy installed beside it: TestCopies).
         var bothOn = Profiles.PlanImport([new("SmmTestLib", true, "Test Framework", link), new("SmmTestLib", true, "Test Framework", "")]);
         var linkOn = Profiles.PlanImport([new("SmmTestLib", true, "Test Framework", link)]);
         var linkOff = Profiles.PlanImport([new("SmmTestLib", false, "Test Framework", link)]);
         var (onPreview, offPreview) = (ProfileShare.PreviewFor([new("SmmTestLib", true, "Test Framework", link)], "On"),
             ProfileShare.PreviewFor([new("SmmTestLib", false, "Test Framework", link)], "Off"));
         var bothCopies = Menus.Text("SPIRE_MOD_MANAGER.IMPORT_BOTH_COPIES");
-        Check("a list's Workshop row for a mod installed by hand sets that copy: on turns it on, off turns it off, nothing missing either way (no subscribe); "
-            + "on, the preview says both stay installed, one should be on, and names it; off, nothing to say",
-            bothOn.BothCopies is [{ Id: "SmmTestLib" }] && linkOn.BothCopies is [{ Id: "SmmTestLib" }] && linkOff.BothCopies.Count == 0
+        Check("a list's Workshop row for a mod installed by hand sets that copy: on turns it on, off turns it off, nothing missing either way (no subscribe), "
+            + "and no word about both copies (there's one)",
+            bothOn.BothCopies.Count == 0 && linkOn.BothCopies.Count == 0 && linkOff.BothCopies.Count == 0
             && linkOn.Mods.SingleOrDefault(m => m.Id == "SmmTestLib") is { Source: ModSource.ModsDirectory, Enabled: true } && linkOn.On == (libOn ? 0 : 1)
             && linkOff.Mods.SingleOrDefault(m => m.Id == "SmmTestLib") is { Source: ModSource.ModsDirectory, Enabled: false } && linkOff.Off == (libOn ? 1 : 0)
             && linkOn.Missing.Count == 0 && linkOff.Missing.Count == 0 && bothOn.Missing.Count == 0
-            && onPreview.Contains(bothCopies + "\n  •  [b]Test Framework[/b]") && !onPreview.Contains("Not installed")
+            && !onPreview.Contains(bothCopies) && !onPreview.Contains("Not installed")
             && !offPreview.Contains(bothCopies) && !offPreview.Contains("Not installed"),
             $"framework on {libOn}; on: {LibPlanned(linkOn)}; off: {LibPlanned(linkOff)}; both: {LibPlanned(bothOn)}; {onPreview} || {offPreview}");
         var (wantOn, wantOff) = ((IsOn("SmmTestLib") ? 0 : 1), (IsOn("SmmTestUi") ? 1 : 0));
@@ -7573,6 +7573,12 @@ static partial class SelfTest
         await Wait(menu, 0.2);
         Check("a Workshop copy arriving beside the local one: the new copy's words, enabled, naming the copy that loads (the local one: the same version)",
             popup.Contains(Draft(NewCopyOn, ("mods", Named(copy)), ("loads", Named(local)))), popup);
+        // A list's row on for this Workshop copy, with the local copy on beside it: the preview's word about both copies
+        // installed, one of which should be on (Jordan's words), naming the mod.
+        var bothPlan = Profiles.PlanImport([new(id, true, local.manifest?.name ?? "", "https://steamcommunity.com/sharedfiles/filedetails/?id=123")]);
+        Check("an import's Workshop row on beside a local copy that's on: the preview says both copies stay installed, one should be on",
+            !Copies.Ticked(local) || bothPlan.BothCopies is [{ Id: var bothId }] && bothId == id,
+            $"local ticked {Copies.Ticked(local)}; both {string.Join(", ", bothPlan.BothCopies.Select(e => e.Id))}");
         var (localKey, copyKey) = (Copies.Key(local), Copies.Key(copy));
         Check("a copy installed mid-session: its own entry, seeded from the id's, which the copy found at launch keeps; no edit, no undo step",
             localKey == id && copyKey == $"{id}|w:123" && Store.Data.Copies?.GetValueOrDefault(id) is [var first, "w:123"] && first == $"l:{id}"
@@ -8356,27 +8362,33 @@ static partial class SelfTest
         }
 
         // A copy in copies_off from when it had a twin (that one uninstalled since, the pick still naming it), alone on its
-        // switch now: it reads ticked, and its entry goes at the menu (Reconcile). So a new twin arriving before the next
-        // launch doesn't take over: Apply's no-pick fallback still loads the copy that was there (sorted first), the new
-        // one set aside, and at the menu that copy is the pick, the new one ticked beside it.
+        // switch now: it reads ticked, its entry goes at the menu and it's the pick there (Reconcile), and a profile's entry
+        // for it the same (HoldCopies). So a new twin arriving before the next launch doesn't take over, wherever the game
+        // lists it: the copy that was there loads (picked), the new one set aside, and at the menu both are ticked.
         const string Y = "SmmSameIdAlone";
         var alone = Made(Y, "A", ModLoadState.Loaded);
         var data = new StoreData { CopyPicks = [$"{Y}|l:C"], CopiesOff = [$"{Y}|l:A"], Copies = new() { [Y] = ["l:A", "l:C"] } };
         GameMods().Add(alone);
         bool tickedAlone;
+        var held = new Profile { Name = "Alone", Mods = [new ProfileMod(Y, ModSource.ModsDirectory, true, "l:C", CopiesOff: ["l:A"])] };
         try
         {
             tickedAlone = Copies.TickedIn(alone, [], new Picks(data.CopyPicks, data.Copies, data.CopiesOff));
             Copies.Reconcile(data);
+            Profiles.TestHold(held);
         }
         finally
         {
             GameMods().Remove(alone);
         }
         var aloneOff = data.CopiesOff?.Where(k => Copies.IdOf(k) == Y).ToList() ?? [];
+        var alonePicked = data.CopyPicks?.FirstOrDefault(k => Copies.IdOf(k) == Y);
+        var heldEntry = held.Mods.Single();
         var us = Made(ModEntry.ModId, "SpireModManager");
         var (again, come) = (Made(Y, "A"), Made(Y, "D"));
-        var plan = SameIdLoad.Run(new List<Mod> { us, again, come }, () => data.CopyPicks?.ToHashSet(), m => m == us, log: false,
+        // The new twin listed first by the game: the copy that was there still loads (it's the pick now, swapped into the
+        // id's first slot).
+        var plan = SameIdLoad.Run(new List<Mod> { us, come, again }, () => data.CopyPicks?.ToHashSet(), m => m == us, log: false,
             readOff: () => data.CopiesOff?.ToHashSet()).Plan.GetValueOrDefault(Y);
         var launched = plan?.Loads == again && again.state == ModLoadState.None && come.state == ModLoadState.DisabledDuplicate;
         var launchSay = $"loads {(plan?.Loads is { } loads ? Copies.CopyOf(loads) : "none")}, {Copies.CopyOf(again)} {again.state}, {Copies.CopyOf(come)} {come.state}";
@@ -8396,10 +8408,13 @@ static partial class SelfTest
             GameMods().Remove(again);
             GameMods().Remove(come);
         }
-        Check("copies_off: a copy in it alone on its switch now (its twin uninstalled) reads ticked and loses its entry at the menu; a new twin arriving "
-            + "before the next launch doesn't take over (the copy that was there loads, the new one set aside; then it's the pick, both ticked)",
-            tickedAlone && aloneOff.Count == 0 && launched && pickAfter == $"{Y}|l:A" && bothTicked,
-            $"ticked {tickedAlone}, off after [{string.Join(", ", aloneOff)}]; launch: {launchSay}; then pick {pickAfter}, both ticked {bothTicked}");
+        Check("copies_off: a copy in it alone on its switch now (its twin uninstalled) reads ticked, loses its entry and is the pick at the menu, and a "
+            + "profile's entry the same; a new twin arriving before the next launch, listed first, doesn't take over (the copy that was there loads, the "
+            + "new one set aside; then both ticked, the old one picked)",
+            tickedAlone && aloneOff.Count == 0 && alonePicked == $"{Y}|l:A" && heldEntry is { Copy: "l:A", CopiesOff: [] } && launched
+            && pickAfter == $"{Y}|l:A" && bothTicked,
+            $"ticked {tickedAlone}, off after [{string.Join(", ", aloneOff)}], picked {alonePicked}; profile {heldEntry.Copy} off "
+            + $"[{string.Join(", ", heldEntry.CopiesOff ?? [])}]; launch: {launchSay}; then pick {pickAfter}, both ticked {bothTicked}");
     }
 
     // The launch record per copy (LaunchGuard): a copy round-trips, a record from before copies still reads; a switch to
@@ -9349,8 +9364,8 @@ static partial class SelfTest
     // here once for every check that reads them (an edit there is one edit here). Draft fills in their values.
     const string CopyOnTip = "{other} is already enabled. If both are enabled, only {loads} loads.";
     const string BulkEnablesTip = "Enables more than one copy of {mods}. Only one copy of each loads.";
-    const string SelfLockedTip = "Spire Mod Manager is installed more than once, so both copies stay enabled. If one is removed, the other still loads. "
-        + "To turn Spire Mod Manager off, disable both on the vanilla Modding page.";
+    const string SelfLockedTip = "Spire Mod Manager is installed more than once, so its copies stay enabled. If one is removed, another still loads. "
+        + "To turn Spire Mod Manager off, disable them all on the vanilla Modding page.";
     const string SelfLockedOtherOffTip = "Spire Mod Manager stays enabled. {other} is disabled, so Spire Mod Manager won't load if this copy is removed. Enable it too.";
     const string SameIdText = "{count} mods with the same ID are enabled. Only one copy of each loads.";
     const string BannerLoads = "{mod}: loads", BannerWontLoad = "{mod}: won't load";

@@ -153,7 +153,7 @@ static class CategoryList
         if (Store.Data.VanillaView || mod.manifest?.id is not { } id || Copies.Others(mod) is not { Count: > 0 } others)
             return null;
         if (LockedOn(mod))
-            return others.FirstOrDefault(o => !Copies.Ticked(o)) is { } off
+            return !others.Any(Copies.Ticked) && others.FirstOrDefault() is { } off // with three, one other ticked still loads
                 ? Menus.Format("SPIRE_MOD_MANAGER.SELF_COPY_LOCKED_OTHER_OFF_TIP", ("other", Copies.Named(off)))
                 : Menus.Text("SPIRE_MOD_MANAGER.SELF_COPY_LOCKED_TIP");
         if (Copies.Ticked(mod) || others.FirstOrDefault(Copies.Ticked) is not { } ticked)

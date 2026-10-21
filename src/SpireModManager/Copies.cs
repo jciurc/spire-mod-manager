@@ -16,12 +16,15 @@ namespace SpireModManager;
 // stays under its id, so files without copies never change. The game's own list can't tell same-source copies apart
 // (it keeps id, source and on/off, one switch for them): which of them are ticked is ours (StoreData.CopiesOff: those
 // off while the switch is on), and which of the ticked ones loads is our pick (StoreData.CopyPicks, applied by
-// SameIdLoad), the copy enabled last. So a copy's box (Ticked) and whether it loads after a relaunch (Loads) are two
+// SameIdLoad), which a copy ticked on becomes. So a copy's box (Ticked) and whether it loads after a relaunch (Loads) are two
 // things: two copies of an id ticked, only one loads.
 static class Copies
 {
     // Every mod the game found, and those installed this session.
     static IEnumerable<Mod> All => ModManager.Mods.Union(Installed.Mods);
+
+    // Copies alone on their switch: a mod installed once from that source (not this mod's), one each.
+    public static IEnumerable<Mod> Alone() => All.Where(m => m.manifest?.id is { } id && id != ModEntry.ModId && Twins(m).Count == 0).DistinctBy(SwitchKey);
 
     // Worked out once per copy (a Workshop id read by reflection on the beta, a folder name).
     static readonly ConditionalWeakTable<Mod, string> Names = new();
@@ -364,7 +367,18 @@ static class Copies
             data.CopyPicks = WithPicks(data.CopyPicks, seeded);
             changed = true;
         }
-        var alone = All.Where(m => m.manifest?.id is { } each && each != ModEntry.ModId && Twins(m).Count == 0).Select(SwitchKey).ToHashSet();
+        // A copy alone on its switch (its twin gone) can't be off, and it's the pick there: a stored one may name the copy
+        // since removed, and a twin installed with the game closed would then take over at launch (SameIdLoad's no-pick
+        // choice), where one arriving mid-session is set aside (KeepThere).
+        var lone = Alone().ToList();
+        var repicked = lone.Where(m => picks.Stored(m.manifest?.id ?? "", m.modSource) is { } stored && stored != CopyOf(m))
+            .Select(m => $"{m.manifest?.id}|{CopyOf(m)}").ToList();
+        if (repicked.Count > 0)
+        {
+            data.CopyPicks = WithPicks(data.CopyPicks, repicked);
+            changed = true;
+        }
+        var alone = lone.Select(SwitchKey).ToHashSet();
         var off = Store.TidyOff((data.CopiesOff ?? LegacyOff(data)).Where(k => !alone.Contains(k)), data.CopyPicks) ?? [];
         if (data.CopiesOff is not { } was || !off.SequenceEqual(was))
         {

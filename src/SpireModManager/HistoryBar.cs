@@ -534,9 +534,9 @@ static class HistoryBar
     }
 
     // Mods installed more than once whose copy that loads after a relaunch is another than at a snapshot while none of
-    // their boxes changed (changed: ModChanges for it), e.g. a copy unticked and ticked again (the copy enabled last
-    // loads), or a profile naming another copy: the copy that loaded then, and the one now. Not this mod (the game
-    // decides which of its copies loads).
+    // their boxes changed (changed: ModChanges for it), e.g. a copy unticked and ticked again (a copy ticked on becomes
+    // the one that loads), or a profile naming another copy: the copy that loaded then, and the one now. Not this mod
+    // (the game decides which of its copies loads).
     static List<(Mod From, Mod To)> CopySwitches(History.Snapshot before, List<(Mod Mod, bool Enabled)> changed)
     {
         var (thenOff, thenPicks) = (Dependencies.SavedOff(before.Mods), Store.PicksIn(before.Store));

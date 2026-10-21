@@ -196,7 +196,7 @@ static class SameIdLoad
                     + (swapped ? $"; moved the picked copy from slot {sp} to {s1} so mods needing {id} find it" : "") + $" ({ms:0.0} ms)"
                 : $"{id} has no picked copy yet: "
                     + (picked.Mod == todo[0].Mod ? $"kept the game's choice, {Copies.CopyOf(picked.Mod)}" : $"loads {Copies.CopyOf(picked.Mod)}, the first copy not disabled on our page")
-                    + (blocked != null ? $" (that one needs {blocked}, which loads after slot {s1})" : "")
+                    + (blocked != null ? $" (the first copy not disabled on our page needs {blocked}, which loads after slot {s1})" : "")
                     + $"; set aside {string.Join(", ", setAside.Select(Copies.CopyOf))} as a duplicate"
                     + (swapped ? $"; moved it from slot {sp} to {s1} so mods needing {id} find it" : ""));
         }

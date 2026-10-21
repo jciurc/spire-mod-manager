@@ -145,6 +145,22 @@ static class Profiles
     static bool HoldCopies(Profile profile)
     {
         var changed = false;
+        // A mod now installed once from a source (its twin gone): its copy isn't off in any entry, and an entry naming a copy
+        // since removed names it, as for our data (Copies.Reconcile), so a twin installed later doesn't take over through
+        // a profile that still has it off.
+        foreach (var alone in Copies.Alone())
+            if (alone.manifest?.id is { } aloneId)
+            {
+                var copy = Copies.CopyOf(alone);
+                foreach (var list in new[] { profile.Mods, profile.Edited })
+                    for (var i = 0; i < (list?.Count ?? 0); i++)
+                        if (list?[i] is { } entry && entry.Id == aloneId && entry.Source == alone.modSource
+                            && (entry.CopiesOff?.Contains(copy) == true || entry.Copy is { } named && named != copy))
+                        {
+                            list[i] = entry with { Copy = entry.Copy == null ? null : copy, CopiesOff = entry.CopiesOff?.Where(c => c != copy).ToList() };
+                            changed = true;
+                        }
+            }
         foreach (var (id, source, copies) in Copies.TwinGroups())
             if (Copies.Picked(id, source) is { } pick)
                 foreach (var list in new[] { profile.Mods, profile.Edited })
@@ -158,6 +174,11 @@ static class Profiles
                         }
         return changed;
     }
+
+#if DEVTOOLS
+    // Self-test: HoldCopies on a made-up profile.
+    public static bool TestHold(Profile profile) => HoldCopies(profile);
+#endif
 
     // Whether HoldCopies has an entry to fill in: one naming no copy, or no copies off, for a mod installed more than once
     // from one source.
@@ -557,7 +578,8 @@ static class Profiles
         }
         // A Workshop row on for an id installed by hand: that copy on after the import (as planned, or as it is when the list
         // doesn't name it) beside the Workshop one.
-        var both = entries.Where(e => !Manager(e.Id) && e.Enabled && e.WorkshopLink.Length > 0)
+        var both = entries.Where(e => !Manager(e.Id) && e.Enabled && e.WorkshopLink.Length > 0
+                && current.Any(c => c.Id == e.Id && c.Source == ModSource.SteamWorkshop)) // a Workshop copy installed too (an import adds none)
             .Where(e => current.FirstOrDefault(c => c.Id == e.Id && c.Source == ModSource.ModsDirectory) is { } local
                 && (mods.FirstOrDefault(m => m.Id == e.Id && m.Source == ModSource.ModsDirectory)?.Enabled ?? local.Enabled))
             .DistinctBy(e => e.Id).ToList();
