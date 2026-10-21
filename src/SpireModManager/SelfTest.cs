@@ -243,6 +243,8 @@ static partial class SelfTest
             await TestSearch(menu, screen, content, outDir);
             TestBranchTags();
             TestDescriptionSearch();
+            TestSearchGrammar();
+            TestHiddenTags(content);
             await TestRedrawCost(menu, screen, content);
             await TestManyMods(menu, screen, content);
             await TestNewMod(menu, screen, content, outDir);
@@ -351,7 +353,8 @@ static partial class SelfTest
                 typed.Text = text;
                 typed.EmitSignal(LineEdit.SignalName.TextChanged, text);
             }
-            Results.Add($"INFO a search keystroke {Ms(() => { Type("lib"); Type(""); }) / 2:0.0} ms");
+            Results.Add($"INFO a search keystroke {Ms(() => { Type("lib"); Type(""); }) / 2:0.0} ms, "
+                + $"by hidden tags over the whole list {Ms(() => { Type("#problem OR #pending"); Type(""); }) / 2:0.0} ms");
             // The same to the end of the frame (FrameMs), with what they leave for it: titles fitted, layout.
             await Wait(menu, 0.3);
             var redrawFrame = await FrameMs(menu, () => CategoryList.Apply(content));
@@ -4179,6 +4182,122 @@ static partial class SelfTest
         }
     }
 
+    // AND, OR, NOT and brackets on made-up mods (Workshop tags made up too): OR binds before the space ("#a OR #b #c" is
+    // "(#a OR #b) #c"), "|" is OR, and NOT closer still; or/and/not in small letters are words, but operators between #tags,
+    // @authors, quotes and groups; quotes are literal; a missing ")" closes at the end, an extra one is nothing, and so is an
+    // operator with nothing on one side; in a bare #tag a ")" ends it only while a group is open.
+    static void TestSearchGrammar()
+    {
+        static Mod Made(int i, string name, string author, string? description, List<string> tags)
+        {
+            var mod = new Mod
+            {
+                path = "", modSource = ModSource.SteamWorkshop, state = ModLoadState.Loaded,
+                manifest = new ModManifest { id = $"SmmGrammarTest{i}", name = name, author = author, description = description },
+            };
+            Compat.SetWorkshopId(mod, 4500ul + (ulong)i);
+            WorkshopInfo.TestSet(4500ul + (ulong)i, new WorkshopInfo.Details(DateTime.Now, DateTime.Now, tags, [], 0, null));
+            return mod;
+        }
+        Mod[] mods = [Made(0, "Rock Stone", "Alice", "Heavy things.", ["Cards", "Two Kinds"]), Made(1, "Mod Fixes", "Bob", "Fight OR Flight, every act.", ["Relics"]),
+            Made(2, "Stone Age", "Carl", null, ["Cards", "Relics"])];
+        try
+        {
+            // Each query, and which of the three it finds.
+            (string Query, string Finds)[] cases =
+            [
+                ("#cards OR #relics", "yyy"), ("#cards | #relics", "yyy"), ("#cards #relics", "nny"), ("#cards AND #relics", "nny"),
+                ("#cards OR #relics @bob", "nyn"), ("(#cards OR #relics) @bob", "nyn"), ("#cards OR (#relics @bob)", "yyy"), ("@bob OR @alice #cards", "ynn"),
+                ("#cards or #relics", "yyy"), ("#cards and #relics", "nny"), ("#cards not #relics", "ynn"), ("rock OR stone", "yny"), ("rock or stone", "nnn"),
+                ("\"OR\"", "nyn"), ("\"or\"", "nnn"), ("#cards -(@alice OR @bob)", "nny"), ("-(#relics OR @carl)", "ynn"), ("NOT #relics", "ynn"),
+                ("(@alice OR @bob", "yyn"), ("(#cards)) @carl", "nny"), ("#cards OR", "yny"), ("OR #relics", "nyy"), ("#cards AND", "yny"),
+                ("#\"two kinds\" OR @carl", "yny"), ("(#cards @alice) OR (#relics @carl)", "yny"), ("stone -(rock)", "nny"), ("#relics)", "nnn"), ("(#relics)", "nyy"),
+            ];
+            var wrong = cases.Select(c => (c.Query, c.Finds, Found: string.Concat(mods.Select(m => Search.Matches(m, c.Query) ? "y" : "n"))))
+                .Where(c => c.Found != c.Finds).Select(c => $"{c.Query}: {c.Found}, not {c.Finds}").ToList();
+            Check($"search grammar: AND, OR, NOT and brackets, keywords in capitals or between terms that aren't words, forgiving ({cases.Length} queries)",
+                wrong.Count == 0, string.Join(" | ", wrong));
+            string[] empty = ["()", "OR", "NOT", "( OR )", "AND |", "-()"];
+            Check("a search of brackets or operators alone is no search", !empty.Any(Search.HasTerms) && Search.HasTerms("#cards OR"),
+                string.Join(", ", empty.Where(Search.HasTerms)));
+        }
+        finally
+        {
+            for (var i = 0; i < mods.Length; i++)
+                WorkshopInfo.TestSet(4500ul + (ulong)i, null);
+        }
+    }
+
+    // Hidden tags on the fixture's list: each finds inside a redraw (Lookups) what it finds worked out on its own; #enabled
+    // the ticked rows and #disabled the others, any case; #installed every row, #missing and #uninstalled none. Then what
+    // each means, on made-up mods in a made-up saved list: A needs C (off) and D (after A), B needs a mod that isn't
+    // installed and the game failed it, D has a game error, E is off but loaded, with a tag of its own named "Enabled".
+    static void TestHiddenTags(Control content)
+    {
+        var rows = content.GetChildren().OfType<NModMenuRow>().Select(r => r.Mod).OfType<Mod>().ToList();
+        string[] tags = ["#enabled", "#disabled", "#workshop", "#local", "#installed", "#missing", "#uninstalled", "#loaded", "#notloaded", "#pending", "#new",
+            "#changed", "#moved", "#edited", "#renamed", "#notes", "#uncategorized", "#unmet", "#needed", "#order", "#sameid", "#clash", "#aside", "#managers",
+            "#failed", "#gameerror", "#error", "#warning", "#problem"];
+        List<string> Answers() => [.. tags.Select(t => $"{t} {string.Concat(rows.Select(m => Search.Matches(m, t) ? "y" : "n"))}")];
+        var fresh = Answers();
+        List<string> kept;
+        using (Lookups.Begin())
+            kept = Answers();
+        var differ = fresh.Zip(kept).Where(p => p.First != p.Second).Select(p => $"{p.First} -> {p.Second}").ToList();
+        Check("hidden tags: inside a redraw, the same mods as worked out one at a time", differ.Count == 0 && fresh.Count == kept.Count, string.Join(" | ", differ));
+        bool Finds(string query, Func<Mod, bool> expected) => rows.All(m => Search.Matches(m, query) == expected(m));
+        Check("#enabled finds the ticked rows and #Disabled the others; #installed every row, #missing and #UNINSTALLED none",
+            rows.Any(Copies.Ticked) && rows.Any(m => !Copies.Ticked(m)) && Finds("#enabled", Copies.Ticked) && Finds("#Disabled", m => !Copies.Ticked(m))
+            && Finds("#installed", _ => true) && Finds("#missing", _ => false) && Finds("#UNINSTALLED", _ => false));
+
+        static Mod Made(string letter, ModLoadState state, ModSource source, params string[] needs) => new()
+        {
+            path = "", modSource = source, state = state,
+            manifest = new ModManifest { id = $"SmmHidden{letter}", name = $"Hidden Test {letter}", dependencies = [.. needs.Select(n => new ModDependency(n))] },
+        };
+        Mod[] made = [Made("A", ModLoadState.Loaded, ModSource.ModsDirectory, "SmmHiddenC", "SmmHiddenD"),
+            Made("B", ModLoadState.Failed, ModSource.SteamWorkshop, "SmmHiddenMissing"), Made("C", ModLoadState.Disabled, ModSource.ModsDirectory),
+            Made("D", ModLoadState.Loaded, ModSource.ModsDirectory), Made("E", ModLoadState.Loaded, ModSource.ModsDirectory)];
+        Compat.SetWorkshopId(made[1], 4600);
+        made[3].errors = [new LocString("main_menu_ui", "MOD_ERROR.DUPLICATE_ID")];
+        List<SettingsSaveMod> saved = [.. made.Select(m => new SettingsSaveMod(m) { IsEnabled = m.manifest?.id is not ("SmmHiddenC" or "SmmHiddenE") })];
+        // A renamed, B with notes, C in a category the list has, D in one it doesn't: our data, until the end.
+        var category = Store.Data.Categories.FirstOrDefault()?.Name ?? "";
+        Store.Batch(() =>
+        {
+            Store.EditMod("SmmHiddenA", info => info.Alias = "Hidden Rock");
+            Store.EditMod("SmmHiddenB", info => info.Notes = "A note");
+            Store.EditMod("SmmHiddenC", info => info.Category = category);
+            Store.EditMod("SmmHiddenD", info => info.Category = "SmmNoSuchCategory");
+            Store.EditMod("SmmHiddenE", info => info.Tags = ["Enabled"]);
+        });
+        try
+        {
+            (string Query, string Finds)[] cases =
+            [
+                ("#enabled", "yynyy"), ("#disabled", "nnyny"), ("enabled", "nnnny"), ("#workshop", "nynnn"), ("#local", "ynyyy"), ("#installed", "yyyyy"),
+                ("#missing", "nnnnn"), ("#loaded", "ynnyy"), ("#notloaded", "nyynn"), ("#pending", "nynny"), ("#unmet", "yynnn"), ("#needed", "nnynn"),
+                ("#order", "ynnnn"), ("#failed", "nynnn"), ("#gameerror", "nnnyn"), ("#error", "yyynn"), ("#warning", "nnnyn"), ("#problem", "yyyyn"),
+                ("#renamed", "ynnnn"), ("#notes", "nynnn"), ("#uncategorized", "yynyy"), ("#edited", "yyyyy"), ("#sameid OR #clash OR #aside OR #managers", "nnnnn"),
+                ("#enabled -#local", "nynnn"), ("#problem #local", "ynyyn"), ("(#unmet OR #needed) -#failed", "ynynn"),
+            ];
+            List<string> wrong;
+            using (Lookups.Begin(made, [], saved, Picks.None))
+                wrong = [.. cases.Select(c => (c.Query, c.Finds, Found: string.Concat(made.Select(m => Search.Matches(m, c.Query) ? "y" : "n"))))
+                    .Where(c => c.Found != c.Finds).Select(c => $"{c.Query}: {c.Found}, not {c.Finds}")];
+            Check("hidden tags mean what they say: state, problems (#error, #warning, #problem gather them), our details; only after #; "
+                + "a tag of the player's named like one finds its mods too", wrong.Count == 0, string.Join(" | ", wrong));
+        }
+        finally
+        {
+            Store.Batch(() =>
+            {
+                foreach (var m in made)
+                    Store.EditMod(m.manifest?.id ?? "", info => (info.Alias, info.Notes, info.Category, info.Tags) = (null, null, null, null));
+            });
+        }
+    }
+
     // Stable and Beta, by the game's own branch rule over a Workshop mod's supported range (made-up mods and details):
     // a chip only on a mod marked for one branch, whose click searches for that ("#Stable -#Beta"); #stable and #beta
     // (and the plain words) find every mod marked for a branch, "#stable -#beta" the ones for stable only. No range, or a
@@ -4376,6 +4495,15 @@ static partial class SelfTest
             After("", () => SpireModManager.Search.ByChip(content, new Tags.Chip("Stable", Colors.White, Search: "#Stable -#Beta"), false))];
         Check("click-to-search: Shift on a left-out tag puts it in, an open quote is closed first, a branch chip searches for what it means",
             flipped.SequenceEqual(["mod #Gameplay", "\"Don't\" #Local", "#Stable -#Beta"]), string.Join(" | ", flipped));
+        // Brackets, OR, "|" and AND are pieces of their own: a term taken out takes the OR (else AND) that joined it, so the
+        // rest means what it did, and brackets left empty go; one added after an OR still being typed completes it.
+        string[] operators = [After("#a OR #b #c", () => Tag("b", true)), After("(#a OR #b) #c", () => Tag("a", true)),
+            After("#a AND #b OR #c", () => Tag("b", true)), After("(#a) #c", () => Tag("a", true)), After("#a | #b", () => Tag("a", true)),
+            After("#a or #b", () => Tag("b", true)), After("#a OR", () => Tag("b", true)), After("-(#a OR #b) #c", () => Tag("c", true)),
+            After("NOT #a", () => Tag("a", true)), After("#x", () => Tag("x (y)", true))];
+        Check("click-to-search: brackets, OR, \"|\" and AND stay; a term taken out takes its OR (else AND) and empty brackets with it",
+            operators.SequenceEqual(["#a #c", "(#b) #c", "#a AND #c", "#c", "#b", "#a", "#a OR #b", "-(#a OR #b)", "#a", "#x #\"x (y)\""]),
+            string.Join(" | ", operators));
         var none = await Shown("zzz no such mod");
         Check("no match hides every row and header", none.Count == 0
             && !content.GetChildren().OfType<Control>().Any(c => c.IsInGroup("SpireModManagerCategoryHeader") && c.Visible));
@@ -4512,6 +4640,16 @@ static partial class SelfTest
                 + $"{queries.Length} searches {searches:0.0} ms, warnings {warnings:0.0} ms ({problems} problems)");
             Check("300 made-up mods: every row's questions and five searches stay quick (under 100 ms)", built + strips + searches + warnings < 100,
                 $"{built + strips + searches + warnings:0.0} ms");
+            // Hidden tags that need the whole list (#problem asks for all of them) work it out once for the redraw.
+            string[] hidden = ["#problem", "#needed OR #order", "#enabled -#local", "(#pending OR #unmet) many"];
+            Lap();
+            foreach (var query in hidden)
+                for (var pass = 0; pass < 4; pass++)
+                    foreach (var mod in mods)
+                        Search.Matches(mod, query);
+            var hiddenMs = Lap();
+            Results.Add($"INFO 300 made-up mods: {hidden.Length} searches by hidden tags {hiddenMs:0.0} ms");
+            Check("300 made-up mods: searches by hidden tags stay quick too (under 50 ms)", hiddenMs < 50, $"{hiddenMs:0.0} ms");
 
             string Times(string text, string word) => (text.Split(word).Length - 1).ToString();
             foreach (var mod in mods)

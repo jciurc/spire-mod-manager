@@ -4,7 +4,8 @@ using MegaCrit.Sts2.Core.Saves;
 namespace SpireModManager;
 
 // Answers every row of a redraw asks for (ticked, loads, which copy an id means, who needs whom, tags, search text,
-// changes since launch), worked out once per redraw: asked row by row, a 250-mod redraw took about 70 ms.
+// changes since launch, the sets over the whole list a search's hidden tags ask for), worked out once per redraw: asked
+// row by row, a 250-mod redraw took about 70 ms.
 // Use `using var lookups = Lookups.Begin();` at the top of a redraw; outside one, everything is worked out fresh.
 sealed class Lookups : IDisposable
 {
@@ -19,6 +20,8 @@ sealed class Lookups : IDisposable
     readonly Dictionary<Mod, IReadOnlyList<string>> _dependencies = [];
     readonly Dictionary<Mod, Search.Haystack> _haystacks = [];
     readonly Dictionary<string, string> _texts = [];
+    readonly IReadOnlyList<Mod> _mods;
+    readonly Dictionary<string, HashSet<Mod>> _wholes = [];
     HashSet<Mod>? _changed;
     int _depth = 1; // redraws started inside this one (one redraw can start another): the outermost ends it
 
@@ -45,7 +48,7 @@ sealed class Lookups : IDisposable
 
     Lookups(IReadOnlyList<Mod> mods, IReadOnlyList<Mod> installed, IEnumerable<SettingsSaveMod> saved, Picks picks)
     {
-        _off = Dependencies.SavedOff(saved);
+        (_mods, _off) = (mods, Dependencies.SavedOff(saved));
         _picks = picks;
         // The copy Dependencies.Find picks for an id: the first it prefers most (Dependencies.Preference), read against
         // these lists (Current isn't this one yet).
@@ -93,6 +96,9 @@ sealed class Lookups : IDisposable
 
     // The mods changed since launch, asked for every row.
     public HashSet<Mod> Changed(Func<HashSet<Mod>> make) => _changed ??= make();
+
+    // A set over the redraw's whole list, by name (HiddenTags: #needed, #order...).
+    public HashSet<Mod> Whole(string name, Func<IReadOnlyList<Mod>, HashSet<Mod>> make) => Kept(_wholes, name, _ => make(_mods));
 
     static TValue Kept<TKey, TValue>(Dictionary<TKey, TValue> kept, TKey key, Func<TKey, TValue> make) where TKey : notnull
     {

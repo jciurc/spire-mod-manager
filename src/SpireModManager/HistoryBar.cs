@@ -238,7 +238,7 @@ static class HistoryBar
     {
         if (History.Loaded is not { } loaded)
             return [];
-        var edited = DataChanges(loaded.Store, Store.EditsJson()).Edited.Select(e => e.Id).ToHashSet();
+        var edited = EditedKeys();
         // Each copy turned on or off, switched to or from, or moved (each copy has its own place).
         static (string?, ModSource, string) Copy(Mod m) => (m.manifest?.id, m.modSource, Copies.CopyOf(m));
         var changed = ModChanges(loaded);
@@ -247,6 +247,10 @@ static class HistoryBar
         return [.. ModManager.Mods.Where(m => switched.Contains(Copy(m))), .. Installed.Mods,
             .. ModManager.Mods.Union(Installed.Mods).Where(m => edited.Contains(Copies.Key(m)))]; // by key: one copy's own edits
     }
+
+    // Our data's keys (Copies.Key) of the copies whose own details were edited since launch.
+    public static HashSet<string> EditedKeys() =>
+        History.Loaded is { } loaded ? DataChanges(loaded.Store, Store.EditsJson()).Edited.Select(e => e.Id).ToHashSet() : [];
 
     record Entry(string Section, string Plain, string Rich);
 

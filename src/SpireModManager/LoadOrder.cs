@@ -256,9 +256,12 @@ static class LoadOrder
     }
 
     // The installed mods in saved order.
-    public static List<Mod> Mods(IEnumerable<NModMenuRow> rows)
+    public static List<Mod> Mods(IEnumerable<NModMenuRow> rows) => InOrder(rows.Select(r => r.Mod).OfType<Mod>());
+
+    // Mods in the saved list's order (those it doesn't have last).
+    public static List<Mod> InOrder(IEnumerable<Mod> given)
     {
-        var mods = rows.Select(r => r.Mod).OfType<Mod>().ToList();
+        var mods = given.ToList();
         var places = Places(mods);
         return mods.OrderBy(m => IndexOf(m, places)).ToList();
     }

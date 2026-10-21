@@ -10,10 +10,11 @@ namespace SpireModManager;
 // The search box over the list. Every word must appear (any case) in a mod's name, id, author, alias, notes, category
 // or tags, or start a word of its description, or the whole query without spaces be in one of the short fields. The
 // punctuation of sentences counts as spaces, in the search and in the mod's text ("dont" finds "Don't", "spire-mod"
-// finds "Spire Mod"); other symbols are part of a word ("C#"). "#tag" matches a whole tag,
-// "@author" the author, and "text in quotes" that exact text, spaces, symbols and case too. A "-" before any of them
-// leaves out the mods that match it ("#stable -#beta"). Clicking a tag or author searches for it, Shift-click adds or
-// removes it.
+// finds "Spire Mod"); other symbols are part of a word ("C#"). "#tag" matches a whole tag (or a hidden one: "#enabled",
+// "#problem", HiddenTags), "@author" the author, and "text in quotes" that exact text, spaces, symbols and case too. A
+// "-" or NOT before any of them, or before a group in brackets, leaves out the mods that match it ("#stable -#beta");
+// OR or "|" between two finds either. Brackets go first, then NOT, then OR, then the space (or AND) between terms:
+// "#a OR #b #c" is "(#a OR #b) #c". Clicking a tag or author searches for it, Shift-click adds or removes it.
 static class Search
 {
     const float Height = 32;
@@ -23,23 +24,32 @@ static class Search
     {
         if (mod?.manifest is not { } manifest)
             return false;
-        var query = Parse(filter);
+        if (Parse(filter).Root is not { } root)
+            return true;
         Haystack? haystack = null;
         Haystack Text() => haystack ??= Lookups.Current?.Haystack(mod, HaystackOf) ?? HaystackOf(mod);
         IReadOnlyList<string>? tags = null;
         bool Has(Term term) => term.Kind switch
         {
-            "#" => (tags ??= Tags.Searchable(mod)).Contains(term.Value, StringComparer.OrdinalIgnoreCase),
+            // A hidden tag first (no list of the mod's tags needed), then its own tags: a tag of the player's named like a
+            // hidden one finds its mods too.
+            "#" => term.Hidden?.Invoke(mod) == true || (tags ??= Tags.Searchable(mod)).Contains(term.Value, StringComparer.OrdinalIgnoreCase),
             "@" => string.Equals(manifest.author, term.Value, StringComparison.OrdinalIgnoreCase),
             Exact => Text().Raw.Contains(term.Value, StringComparison.Ordinal),
             // A word that is a whole tag finds it too: "stable" finds what #stable finds, though no chip shows it.
             _ => Found(Text(), term.Spaced, term.Joined) || (tags ??= Tags.Searchable(mod)).Contains(term.Spaced, StringComparer.OrdinalIgnoreCase),
         };
-        if (query.Terms.Any(t => t.Not && Has(t)) || !query.Terms.Where(t => !t.Not && t.Kind.Length > 0).All(Has))
-            return false;
-        // Every word somewhere, or the whole query's words without spaces in one field ("mod fixes" finds "ModFixes").
-        return query.Terms.Where(t => !t.Not && t.Kind.Length == 0).All(Has)
-            || Text().Squeezed.Any(f => f.Contains(query.Squeezed, StringComparison.OrdinalIgnoreCase));
+        bool Test(Clause clause) => clause switch
+        {
+            Term term => Has(term),
+            // Every word somewhere, or all of them without spaces in one field ("mod fixes" finds "ModFixes").
+            Words words => words.Each.All(Has) || Text().Squeezed.Any(f => f.Contains(words.Squeezed, StringComparison.OrdinalIgnoreCase)),
+            Not not => !Test(not.Of),
+            AnyOf any => any.Of.Any(Test),
+            AllOf all => all.Of.All(Test),
+            _ => false,
+        };
+        return Test(root);
     }
 
     // A typed word's pieces (the parts between its punctuation) side by side in one field: with a space between them
@@ -62,43 +72,189 @@ static class Search
         return false;
     }
 
-    static bool Spaceless(char c) => c is >= '\u2E80' and <= '\u9FFF' or >= '\uF900' and <= '\uFAFF' or >= '\uFF66' and <= '\uFF9F'
-        or >= '\u0E00' and <= '\u0EFF' or >= '\u1000' and <= '\u109F' or >= '\u1780' and <= '\u17FF' || char.IsSurrogate(c);
+    static bool Spaceless(char c) => c is >= '⺀' and <= '鿿' or >= '豈' and <= '﫿' or >= 'ｦ' and <= 'ﾟ'
+        or >= '฀' and <= '໿' or >= 'က' and <= '႟' or >= 'ក' and <= '៿' || char.IsSurrogate(c);
 
-    // Whether a search says anything: "-", "!!!" or a lone quote alone count as an empty box.
-    public static bool HasTerms(string filter) => Parse(filter).Terms.Count > 0;
+    // Whether a search says anything: "-", "!!!", "()", OR or a lone quote alone count as an empty box.
+    public static bool HasTerms(string filter) => Parse(filter).Root != null;
 
     const string Exact = "\"";
 
-    // One term of a search: a tag ("#"), an author ("@"), exact text (Exact), or a word as typed (""; Spaced and Joined:
-    // its pieces with a space between and with none); Not when a "-" leads it.
-    record Term(string Kind, string Value, bool Not, string Spaced = "", string Joined = "");
+    // A search as a tree, tested against each mod.
+    abstract record Clause;
 
-    // A parsed search: its terms, and the words of those that must match without spaces. The last one is kept.
-    record Query(string Text, IReadOnlyList<Term> Terms, string Squeezed);
+    // One term: a tag ("#"), an author ("@"), exact text (Exact), or a word as typed (""; Spaced and Joined: its pieces
+    // with a space between and with none). Hidden: what a hidden tag of a tag's name finds.
+    sealed record Term(string Kind, string Value, string Spaced = "", string Joined = "", Func<Mod, bool>? Hidden = null) : Clause;
+
+    // A group's plain words, each to be found (or Squeezed, all of them without spaces, in one field).
+    sealed record Words(IReadOnlyList<Term> Each, string Squeezed) : Clause;
+
+    sealed record Not(Clause Of) : Clause;
+
+    sealed record AnyOf(IReadOnlyList<Clause> Of) : Clause;
+
+    sealed record AllOf(IReadOnlyList<Clause> Of) : Clause;
+
+    // A parsed search (Root null: nothing to search). The last one is kept: a redraw asks about every row.
+    record Query(string Text, Clause? Root);
     static Query? _lastQuery;
 
+    // What a piece of a search is: a term, a bracket, or an operator (OR and "|"; AND; NOT and a "-" before a term).
+    enum Piece { Term, Open, Close, Or, And, Not }
+
+    // A piece as typed, and its term if it's one.
+    record Lexed(Piece Piece, string Text, Term? Term = null);
+
+    // Never an error, as a search box should be: a missing ")" closes at the end, "()" is nothing, an OR or AND with
+    // nothing on one side is left out, and so is a NOT (or "-") before nothing. Terms side by side, or with AND between,
+    // must all match; OR binds closer ("#a OR #b #c" is "(#a OR #b) #c"), NOT closer still. Without operators, a search
+    // is what it always was: every term, and its plain words together (Words).
     static Query Parse(string filter)
     {
         if (_lastQuery?.Text == filter)
             return _lastQuery;
-        var terms = new List<Term>();
-        foreach (Match m in Token.Matches(filter))
+        var pieces = Lex(filter);
+        var at = 0;
+        Piece? Next() => at < pieces.Count ? pieces[at].Piece : null;
+        // Up to the ")" closing the group (none at the top: Lex drops one that closes nothing).
+        Clause? All(bool grouped)
         {
-            var not = m.Groups["not"].Success;
-            if (m.Groups["kind"].Success)
-                terms.Add(new Term(m.Groups["kind"].Value, m.Groups["quoted"].Success ? m.Groups["quoted"].Value : m.Groups["bare"].Value, not));
-            else if (m.Groups["exact"].Length > 0)
-                terms.Add(new Term(Exact, m.Groups["exact"].Value, not));
+            var each = new List<Clause>();
+            while (Next() is { } next && !(grouped && next == Piece.Close))
+            {
+                if (next is Piece.And or Piece.Or or Piece.Close)
+                    at++; // with nothing before it
+                else if (Either() is { } clause)
+                    each.Add(clause);
+            }
+            return Together(each);
         }
-        foreach (var word in Token.Replace(filter, " ").Split((char[]?)null, StringSplitOptions.RemoveEmptyEntries))
+        Clause? Either()
         {
-            var not = word.Length > 1 && word[0] == '-'; // a "-" alone is nothing
-            if (Fold(not ? word[1..] : word, " ").Trim() is { Length: > 0 } spaced)
-                terms.Add(new Term("", word, not, spaced, spaced.Replace(" ", "")));
+            var clause = Negated();
+            while (Next() == Piece.Or)
+            {
+                at++;
+                if (Next() is null or Piece.Close or Piece.And)
+                    break; // nothing after it
+                if (Negated() is { } other)
+                    clause = clause switch { null => other, AnyOf any => new AnyOf([.. any.Of, other]), _ => new AnyOf([clause, other]) };
+            }
+            return clause;
         }
-        var squeezed = string.Concat(terms.Where(t => !t.Not && t.Kind.Length == 0).Select(t => t.Joined));
-        return _lastQuery = new Query(filter, terms, squeezed);
+        Clause? Negated()
+        {
+            if (Next() != Piece.Not)
+                return Single();
+            at++;
+            return Negated() is { } clause ? new Not(clause) : null;
+        }
+        Clause? Single()
+        {
+            if (Next() == Piece.Open)
+            {
+                at++;
+                var group = All(grouped: true);
+                if (Next() == Piece.Close)
+                    at++;
+                return group;
+            }
+            return Next() == Piece.Term && pieces[at++].Term is { } term && Says(term) ? term : null;
+        }
+        return _lastQuery = new Query(filter, All(grouped: false));
+    }
+
+    // Whether a term has something to look for: not a word of punctuation alone ("!!!") or "".
+    static bool Says(Term term) => term.Kind switch { "" => term.Spaced.Length > 0, Exact => term.Value.Length > 0, _ => true };
+
+    // Terms that must all match: the plain words among them as one Words, last (the others are quicker to look for).
+    static Clause? Together(List<Clause> each)
+    {
+        var words = each.OfType<Term>().Where(t => t.Kind.Length == 0).ToList();
+        var all = each.Where(c => c is not Term { Kind: "" }).ToList();
+        if (words.Count > 1)
+            all.Add(new Words(words, string.Concat(words.Select(w => w.Joined))));
+        else
+            all.AddRange(words);
+        return all.Count switch { 0 => null, 1 => all[0], _ => new AllOf(all) };
+    }
+
+    // A search's pieces in order: #tag or #"two words", @author (quoted the same), "exact text" (its closing quote may be
+    // still to type), a word, a bracket, OR, "|", AND or NOT. A "-" at a term's start leaves out the term or group after
+    // it ("-" alone is nothing, and a second one is part of a word: "--x" leaves out "-x"). A word ends at a space, a "|",
+    // a quote, and a #tag or @author glued to it ("foo#Library" is two terms; a lone "#" is plain: "C#"); a word or a
+    // bare #tag also ends at a ")" while a group is open (#"x (y)" keeps it). A ")" that closes nothing is nothing.
+    static List<Lexed> Lex(string text)
+    {
+        var pieces = new List<Lexed>();
+        var depth = 0;
+        var dashed = -1; // just after a "-" that leaves out: no second one there
+        bool Ends(int at) => char.IsWhiteSpace(text[at]) || text[at] == '|' || text[at] == ')' && depth > 0;
+        bool Marked(int at) => text[at] is '#' or '@' && at + 1 < text.Length && !Ends(at + 1);
+        for (var at = 0; at < text.Length;)
+        {
+            var (from, c) = (at, text[at]);
+            if (char.IsWhiteSpace(c) || c == ')' && depth == 0)
+                at++;
+            else if (c is '(' or ')' or '|')
+            {
+                depth += c switch { '(' => 1, ')' => -1, _ => 0 };
+                pieces.Add(new Lexed(c switch { '(' => Piece.Open, ')' => Piece.Close, _ => Piece.Or }, c.ToString()));
+                at++;
+            }
+            else if (c == '-' && at != dashed && at + 1 < text.Length && !char.IsWhiteSpace(text[at + 1]) && text[at + 1] is not ('|' or ')'))
+            {
+                pieces.Add(new Lexed(Piece.Not, "-"));
+                dashed = ++at;
+            }
+            else if (c == '"')
+            {
+                var end = text.IndexOf('"', at + 1);
+                at = end < 0 ? text.Length : end + 1;
+                pieces.Add(new Lexed(Piece.Term, text[from..at], new Term(Exact, text[(from + 1)..(end < 0 ? at : end)])));
+            }
+            else if (Marked(at))
+            {
+                var close = text[at + 1] == '"' ? text.IndexOf('"', at + 2) : -1;
+                string value;
+                if (close > at + 2)
+                    (value, at) = (text[(at + 2)..close], close + 1);
+                else
+                {
+                    at++;
+                    while (at < text.Length && !Ends(at))
+                        at++;
+                    value = text[(from + 1)..at];
+                }
+                pieces.Add(new Lexed(Piece.Term, text[from..at], new Term(c.ToString(), value, Hidden: c == '#' ? HiddenTags.Find(value) : null)));
+            }
+            else
+            {
+                at++;
+                while (at < text.Length && !Ends(at) && text[at] != '"' && !Marked(at))
+                    at++;
+                var word = text[from..at];
+                var spaced = Fold(word, " ").Trim();
+                pieces.Add(word switch
+                {
+                    "OR" => new Lexed(Piece.Or, word),
+                    "AND" => new Lexed(Piece.And, word),
+                    "NOT" => new Lexed(Piece.Not, word),
+                    _ => new Lexed(Piece.Term, word, new Term("", word, spaced, spaced.Replace(" ", ""))),
+                });
+            }
+        }
+        // OR, AND and NOT in capitals are operators anywhere; in small letters they're words ("rock and stone"), but
+        // operators between two terms that aren't words (#tags, @authors, quotes, groups: "#warning or #error").
+        static Piece? Keyword(Lexed piece) => piece.Term is { Kind: "" } word
+            ? word.Value.ToLowerInvariant() switch { "or" => Piece.Or, "and" => Piece.And, "not" => Piece.Not, _ => null } : null;
+        static bool Joins(Lexed piece) => piece.Piece is Piece.Or or Piece.And or Piece.Not || Keyword(piece) != null;
+        for (var i = 0; i < pieces.Count; i++)
+            if (Keyword(pieces[i]) is { } op && pieces.Take(i).LastOrDefault(p => !Joins(p)) is { Piece: Piece.Close } or { Term.Kind: not "" }
+                && pieces.Skip(i + 1).FirstOrDefault(p => !Joins(p)) is { Piece: Piece.Open } or { Term.Kind: not "" })
+                pieces[i] = new Lexed(op, pieces[i].Text);
+        return pieces;
     }
 
     // The text a search is matched against: every field as it is (for exact text), the same with punctuation and
@@ -160,12 +316,6 @@ static class Search
         or UnicodeCategory.InitialQuotePunctuation or UnicodeCategory.FinalQuotePunctuation or UnicodeCategory.DashPunctuation
         || rune.Value is '.' or ',' or ';' or ':' or '!' or '?' or '\'' or '"' or '…' or '·' or '¡' or '¿' or '/' or '、' or '。' or '・';
 
-    // A #tag or @author (quoted for spaces), or "exact text" (its closing quote may be still to type); a "-" before
-    // either, at a term's start, leaves out what it matches. A tag glued to a word ("foo#Library") counts; a lone "#"
-    // is plain ("C#").
-    static readonly Regex Token =
-        new(@"(?<not>(?<!\S)-)?(?:(?<kind>[#@])(?:""(?<quoted>[^""]+)""|(?<bare>\S+))|""(?<exact>[^""]*)(?:""|$))");
-
     // A clicked tag or author: searches for it; with Shift, adds it or takes it out.
     public static void ByTag(Node near, string tag, bool add) => Put(near, "#", tag, add);
 
@@ -184,58 +334,133 @@ static class Search
     {
         if (CategoryList.ScreenOf(near)?.GetNodeOrNull<LineEdit>("ModsBorder/SpireModManagerSearch") is not { } box)
             return;
-        var token = kind.Length == 0 ? value : value.Any(char.IsWhiteSpace) ? $"{kind}\"{value}\"" : $"{kind}{value}";
-        var text = Toggled(box.Text, token, add);
+        var text = Toggled(box.Text, kind.Length == 0 ? value : TermFor(kind, value), add);
         box.Text = text;
         box.CaretColumn = text.Length;
         box.EmitSignal(LineEdit.SignalName.TextChanged, text);
     }
 
+    // A tag or author as a search term: quoted where it has a space, a bracket or a "|", which would end it or open a group.
+    public static string TermFor(string kind, string value) =>
+        value.Any(c => char.IsWhiteSpace(c) || c is '(' or ')' or '|') ? $"{kind}\"{value}\"" : $"{kind}{value}";
+
     // The search after clicking a term, so a second click undoes it: a click searches for just the term (or clears it),
-    // Shift-click adds or removes it. Terms compare by kind and value, any case, quotes ignored.
+    // Shift-click adds or removes it. Terms compare by kind and value, any case, quotes ignored, and a "-" or NOT before
+    // one is part of it. Brackets and operators stay as typed (Units).
     static string Toggled(string search, string term, bool add)
     {
-        var terms = Typed.Matches(search).Select(m => m.Value).ToList();
-        var wanted = Typed.Matches(term).Select(m => m.Value).ToList();
+        var units = Units(search);
+        var wanted = Units(term);
         if (wanted.Count == 0)
             return search;
-        // A term can be several (a chip's own search, "#Stable -#Beta"): they count when found side by side.
-        bool At(int i) => i + wanted.Count <= terms.Count && Enumerable.Range(0, wanted.Count).All(j => Same(terms[i + j], wanted[j]));
         if (!add)
-            return terms.Count == wanted.Count && At(0) ? "" : string.Join(' ', wanted);
-        var before = terms.Count;
-        for (var i = 0; i < terms.Count;)
-        {
-            if (At(i))
-                terms.RemoveRange(i, wanted.Count);
-            else
-                i++;
-        }
-        if (terms.Count < before)
-            return string.Join(' ', terms.Select(Closed));
+            return units.Count == wanted.Count && units.Zip(wanted).All(p => Same(p.First, p.Second)) ? "" : Joined(wanted);
+        if (Remove(units, wanted))
+            return Joined(units);
         // Left out until now ("-#tag"): it's put in instead.
         if (wanted.Count == 1)
-            terms.RemoveAll(t => Same(t, "-" + wanted[0]));
-        return string.Join(' ', terms.Select(Closed).Concat(wanted));
+            Remove(units, [wanted[0] with { Left = "-" + wanted[0].Left, Nots = wanted[0].Nots + 1 }]);
+        return Joined([.. units, .. wanted]);
     }
 
-    // A quoted term still being typed gets its closing quote, so a term added after it stays a term of its own.
-    static string Closed(string term) => Unclosed.IsMatch(term) ? term + "\"" : term;
+    // A search's pieces as a click moves them: each term or "(" with the "-" or NOT that leaves it out (Left, as typed;
+    // Nots, how many), and each ")" and OR or AND. A NOT before nothing stays a piece of its own.
+    record Unit(Lexed Piece, string Left = "", int Nots = 0);
 
-    static readonly Regex Unclosed = new(@"^-?[#@]?""[^""]*$");
+    static List<Unit> Units(string search)
+    {
+        var units = new List<Unit>();
+        var (left, nots) = ("", 0);
+        foreach (var piece in Lex(search))
+        {
+            if (piece.Piece == Piece.Not)
+            {
+                (left, nots) = (left + (piece.Text == "-" ? "-" : piece.Text + " "), nots + 1);
+                continue;
+            }
+            if (piece.Piece is not (Piece.Term or Piece.Open) && nots > 0)
+                units.Add(new Unit(new Lexed(Piece.Not, left.TrimEnd())));
+            units.Add(piece.Piece is Piece.Term or Piece.Open ? new Unit(piece, left, nots) : new Unit(piece));
+            (left, nots) = ("", 0);
+        }
+        if (nots > 0)
+            units.Add(new Unit(new Lexed(Piece.Not, left.TrimEnd())));
+        return units;
+    }
 
-    // A search's terms as typed: #tag and @author (quoted or not), "exact text", each maybe after a "-" (at a term's
-    // start, as Token reads it), or a plain word.
-    static readonly Regex Typed =
-        new(@"(?:(?<!\S)-)?[#@](?:""[^""]+""|\S+)|(?:(?<!\S)-)?""[^""]*(?:""|$)|(?:(?![#@](?:""[^""]+""|\S))\S)+");
+    // Two pieces are the same when they're left out alike and are the same kind with the same value, any case, quotes
+    // aside (#"Library" is #library), or the same bracket or operator (OR is "|").
+    static bool Same(Unit a, Unit b) => a.Nots == b.Nots && a.Piece.Piece == b.Piece.Piece
+        && (a.Piece.Term is not { } x || b.Piece.Term is { } y && x.Kind == y.Kind && string.Equals(x.Value, y.Value, StringComparison.OrdinalIgnoreCase));
 
-    // Two terms are the same when they're the same kind with the same value, any case, quotes aside.
-    static bool Same(string a, string b) => string.Equals(Plain(a), Plain(b), StringComparison.OrdinalIgnoreCase);
+    // Takes each run of these pieces out of the search, with the OR (else AND) that joined it to the rest, so what's left
+    // reads the same ("#a OR #b #c" without #b is "#a #c"); then brackets left empty, and an operator left with nothing
+    // on one side. False if they weren't there.
+    static bool Remove(List<Unit> units, List<Unit> these)
+    {
+        var found = false;
+        bool Is(int at, Piece piece) => at >= 0 && at < units.Count && units[at].Piece.Piece == piece;
+        for (var i = 0; i < units.Count;)
+        {
+            if (i + these.Count > units.Count || !Enumerable.Range(0, these.Count).All(j => Same(units[i + j], these[j])))
+            {
+                i++;
+                continue;
+            }
+            found = true;
+            var (from, count) = (i, these.Count);
+            // The operator joining it: an OR beside it (OR binds closer than AND), else an AND; the one before it first.
+            foreach (var (at, op) in new[] { (i - 1, Piece.Or), (i + count, Piece.Or), (i - 1, Piece.And), (i + count, Piece.And) })
+                if (Is(at, op))
+                {
+                    (from, count) = (Math.Min(from, at), count + 1);
+                    break;
+                }
+            units.RemoveRange(from, count);
+            i = from;
+        }
+        if (!found)
+            return false;
+        // Whether the piece there ends a term or group (a term or ")"), or starts one (a term or "(").
+        bool Closes(int at) => Is(at, Piece.Term) || Is(at, Piece.Close);
+        bool Opens(int at) => Is(at, Piece.Term) || Is(at, Piece.Open);
+        for (var i = 0; i < units.Count;)
+        {
+            var gone = units[i].Piece.Piece switch
+            {
+                Piece.Open when Is(i + 1, Piece.Close) => 2,
+                Piece.Or or Piece.And when !Closes(i - 1) || !Opens(i + 1) => 1,
+                Piece.Not => 1, // before nothing (Units)
+                _ => 0,
+            };
+            if (gone == 0)
+                i++;
+            else
+            {
+                units.RemoveRange(i, gone);
+                i = Math.Max(0, i - 1); // the piece before may be left hanging now
+            }
+        }
+        return true;
+    }
 
-    // #"two words" reads as #two words, so quoted and bare terms compare alike; other terms stay as they are.
-    static string Plain(string term) => Token.Match(term) is { Success: true, Index: 0 } m && m.Length == term.Length && m.Groups["kind"].Success
-        ? (m.Groups["not"].Success ? "-" : "") + m.Groups["kind"].Value + (m.Groups["quoted"].Success ? m.Groups["quoted"].Value : m.Groups["bare"].Value)
-        : term;
+    // Pieces as one search: a space between each, none inside brackets ("(#a OR #b)"); a quote still being typed gets its
+    // closing quote, so a term added after it stays a term of its own.
+    static string Joined(IEnumerable<Unit> units)
+    {
+        var text = new StringBuilder();
+        Piece? last = null;
+        foreach (var unit in units)
+        {
+            if (last is not (null or Piece.Open) && unit.Piece.Piece != Piece.Close)
+                text.Append(' ');
+            text.Append(unit.Left).Append(Unclosed.IsMatch(unit.Piece.Text) ? unit.Piece.Text + "\"" : unit.Piece.Text);
+            last = unit.Piece.Piece;
+        }
+        return text.ToString();
+    }
+
+    static readonly Regex Unclosed = new(@"^[#@]?""[^""]*$");
 
     static string Squeeze(string text) => string.Concat(text.Where(c => !char.IsWhiteSpace(c)));
 
@@ -258,7 +483,7 @@ static class Search
             Name = "SpireModManagerSearch",
             PlaceholderText = Menus.Text("SPIRE_MOD_MANAGER.SEARCH"),
             ClearButtonEnabled = true,
-            MaxLength = 60,
+            MaxLength = 200,
         };
         box.AddThemeFontOverride("font", ModEntry.Font("res://themes/kreon_regular_shared.tres"));
         box.AddThemeFontSizeOverride("font_size", 16);
