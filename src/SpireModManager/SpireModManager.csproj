@@ -18,7 +18,7 @@
     <!-- The reference assembly (the public surface, no code) beside the dll: build.cs hands it to dependents with its dist option. -->
     <ProduceReferenceAssembly>true</ProduceReferenceAssembly>
     <ProduceReferenceAssemblyInOutDir>true</ProduceReferenceAssemblyInOutDir>
-    <WarningsAsErrors>$(WarningsAsErrors);CS1591;RS0016;RS0017;RS0026;RS0027;RS0036;RS0037</WarningsAsErrors>
+    <WarningsAsErrors>$(WarningsAsErrors);CS1591;RS0016;RS0017;RS0024;RS0025;RS0026;RS0027;RS0036;RS0037</WarningsAsErrors>
     <!-- build.cs and tools/dev.cs find the Steam library that has the game and pass it in. Building any
          other way (an IDE, a plain dotnet build) uses STS2_STEAMAPPS, else the first of Steam's default
          folder and the SteamLibrary folder Steam suggests at a drive's root that has the game: if yours is

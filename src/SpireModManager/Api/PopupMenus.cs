@@ -66,7 +66,7 @@ public static class PopupMenus
 
     // A row as SMM's menus have it: a heading (or a divider: one with no words), a dimmed row that does nothing, or a row
     // whose action runs guarded once the menu has closed.
-    static MenuItem Item(MenuEntry entry) => entry.IsHeading ? MenuItem.Heading(entry.Label)
-        : entry.OnSelect is { } select && !entry.Disabled ? new MenuItem(entry.Label, ApiGuard.Callback("a PopupMenus entry's OnSelect", select))
-        : new MenuItem(entry.Label, () => { }, Disabled: true);
+    static MenuItem Item(MenuEntry entry) => entry.IsHeading ? MenuItem.Heading(entry.Label ?? "")
+        : entry.OnSelect is { } select && !entry.Disabled ? new MenuItem(entry.Label ?? "", ApiGuard.Callback("a PopupMenus entry's OnSelect", select))
+        : new MenuItem(entry.Label ?? "", () => { }, Disabled: true);
 }

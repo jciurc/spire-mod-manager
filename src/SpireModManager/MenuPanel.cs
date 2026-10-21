@@ -1,4 +1,6 @@
+using System.Runtime.CompilerServices;
 using Godot;
+using MegaCrit.Sts2.Core.Logging;
 using MegaCrit.Sts2.Core.Nodes.CommonUi;
 
 namespace SpireModManager;
@@ -23,6 +25,7 @@ static class MenuPanel
     static Node? _open;
     static string? _openKey;
     static Action? _letGo; // what the open menu holds on to (its owner's signal, a frame check, the hotkeys), let go as it closes
+    static bool _noHotkeyBlock; // the game's hotkey manager didn't take a block: not tried again
 
     public static bool IsOpen => _open != null && GodotObject.IsInstanceValid(_open) && _open.IsInsideTree();
 
@@ -45,140 +48,182 @@ static class MenuPanel
         var layer = new CanvasLayer { Name = RootName, Layer = Depth };
         owner.GetTree().Root.AddChild(layer);
         Action letGo = () => { };
-        var gone = Callable.From(() =>
+        try
         {
-            if (_open == layer)
-                Close();
-        });
-        owner.Connect(Node.SignalName.TreeExiting, gone, (uint)GodotObject.ConnectFlags.OneShot);
-        letGo += () =>
-        {
-            if (GodotObject.IsInstanceValid(owner) && owner.IsConnected(Node.SignalName.TreeExiting, gone))
-                owner.Disconnect(Node.SignalName.TreeExiting, gone);
-        };
-        if (owner is CanvasItem shown && shown.IsVisibleInTree())
-        {
-            var ownerTree = owner.GetTree();
-            void Hidden()
+            var gone = Callable.From(() =>
             {
-                if (_open == layer && (!GodotObject.IsInstanceValid(shown) || !shown.IsVisibleInTree()))
+                if (_open == layer)
                     Close();
-            }
-            ownerTree.ProcessFrame += Hidden;
-            letGo += () => ownerTree.ProcessFrame -= Hidden;
-        }
-        var viewport = owner.GetViewport();
-        var catcher = new Control { Name = "Catcher", MouseFilter = Control.MouseFilterEnum.Stop, Size = viewport.GetVisibleRect().Size };
-        layer.AddChild(catcher);
-
-        var panel = new PanelContainer { Name = "Panel" };
-        var style = new StyleBoxFlat
-        {
-            BgColor = new Color(0.0756f, 0.12084f, 0.18f, 0.98f), BorderColor = new Color(Gold, 0.6f),
-            ContentMarginLeft = 8, ContentMarginRight = 8, ContentMarginTop = 8, ContentMarginBottom = 8,
-            ShadowColor = new Color(0, 0, 0, 0.4f), ShadowSize = 8,
-        };
-        style.SetBorderWidthAll(2);
-        style.SetCornerRadiusAll(6);
-        panel.AddThemeStyleboxOverride("panel", style);
-        catcher.AddChild(panel);
-
-        var columns = new HBoxContainer { Name = "Columns" };
-        columns.AddThemeConstantOverride("separation", 12);
-        panel.AddChild(columns);
-        var list = new VBoxContainer { Name = "Items" };
-        list.AddThemeConstantOverride("separation", 2);
-        columns.AddChild(list);
-        Fill(list, items);
-        if (side != null)
-        {
-            columns.AddChild(new ColorRect { Color = new Color(Gold, 0.25f), CustomMinimumSize = new Vector2(1, 0), MouseFilter = Control.MouseFilterEnum.Ignore });
-            columns.AddChild(side(() => Close()));
-        }
-
-        catcher.GuiInput += e =>
-        {
-            if (keyboard && (e.IsActionPressed(CancelAction) || e.IsActionPressed(PauseAction)))
+            });
+            owner.Connect(Node.SignalName.TreeExiting, gone, (uint)GodotObject.ConnectFlags.OneShot);
+            letGo += () =>
             {
+                if (GodotObject.IsInstanceValid(owner) && owner.IsConnected(Node.SignalName.TreeExiting, gone))
+                    owner.Disconnect(Node.SignalName.TreeExiting, gone);
+            };
+            if (owner is CanvasItem shown && shown.IsVisibleInTree())
+            {
+                var ownerTree = owner.GetTree();
+                void Hidden()
+                {
+                    if (_open == layer && (!GodotObject.IsInstanceValid(shown) || !shown.IsVisibleInTree()))
+                        Close();
+                }
+                ownerTree.ProcessFrame += Hidden;
+                letGo += () => ownerTree.ProcessFrame -= Hidden;
+            }
+            var viewport = owner.GetViewport();
+            var catcher = new Control { Name = "Catcher", MouseFilter = Control.MouseFilterEnum.Stop, Size = viewport.GetVisibleRect().Size };
+            layer.AddChild(catcher);
+
+            var panel = new PanelContainer { Name = "Panel" };
+            var style = new StyleBoxFlat
+            {
+                BgColor = new Color(0.0756f, 0.12084f, 0.18f, 0.98f), BorderColor = new Color(Gold, 0.6f),
+                ContentMarginLeft = 8, ContentMarginRight = 8, ContentMarginTop = 8, ContentMarginBottom = 8,
+                ShadowColor = new Color(0, 0, 0, 0.4f), ShadowSize = 8,
+            };
+            style.SetBorderWidthAll(2);
+            style.SetCornerRadiusAll(6);
+            panel.AddThemeStyleboxOverride("panel", style);
+            catcher.AddChild(panel);
+
+            var columns = new HBoxContainer { Name = "Columns" };
+            columns.AddThemeConstantOverride("separation", 12);
+            panel.AddChild(columns);
+            var list = new VBoxContainer { Name = "Items" };
+            list.AddThemeConstantOverride("separation", 2);
+            columns.AddChild(list);
+            Fill(list, items);
+            if (side != null)
+            {
+                columns.AddChild(new ColorRect { Color = new Color(Gold, 0.25f), CustomMinimumSize = new Vector2(1, 0), MouseFilter = Control.MouseFilterEnum.Ignore });
+                columns.AddChild(side(() => Close()));
+            }
+
+            catcher.GuiInput += e =>
+            {
+                if (keyboard && (e.IsActionPressed(CancelAction) || e.IsActionPressed(PauseAction)))
+                {
+                    catcher.AcceptEvent();
+                    Close();
+                    return;
+                }
+                if (e is not InputEventMouseButton { Pressed: true } press || panel.GetGlobalRect().HasPoint(press.GlobalPosition))
+                    return;
                 catcher.AcceptEvent();
                 Close();
-                return;
-            }
-            if (e is not InputEventMouseButton { Pressed: true } press || panel.GetGlobalRect().HasPoint(press.GlobalPosition))
-                return;
-            catcher.AcceptEvent();
-            Close();
-            // A right-click (or the wheel) carries on to what's underneath; a left click only closes.
-            if (press.ButtonIndex != MouseButton.Left)
-                Callable.From(() => Input.ParseInputEvent(press)).CallDeferred();
-        };
+                // A right-click (or the wheel) carries on to what's underneath; a left click only closes.
+                if (press.ButtonIndex != MouseButton.Left)
+                    Callable.From(() => Input.ParseInputEvent(press)).CallDeferred();
+            };
 
-        (_open, _openKey) = (layer, toggleKey);
-
-        // The keyboard is the menu's: focus on it, so the game's cancel reaches it, and the screen's hotkeys blocked while
-        // it's open (let go as it closes, or if whoever holds it frees it first).
-        if (keyboard)
-        {
-            catcher.FocusMode = Control.FocusModeEnum.All;
-            catcher.GrabFocus();
-            if (NHotkeyManager.Instance is { } hotkeys)
+            // The keyboard is the menu's: focus on it, so the game's cancel reaches it, and the screen's hotkeys blocked while
+            // it's open (let go as it closes, or if whoever holds it frees it first).
+            if (keyboard)
             {
-                hotkeys.AddBlockingScreen(layer);
-                var released = false;
-                void Release()
+                catcher.FocusMode = Control.FocusModeEnum.All;
+                catcher.GrabFocus();
+                if (!_noHotkeyBlock)
                 {
-                    if (released)
-                        return;
-                    released = true;
-                    if (GodotObject.IsInstanceValid(hotkeys))
-                        hotkeys.RemoveBlockingScreen(layer);
+                    try
+                    {
+                        if (BlockHotkeys(layer) is { } release)
+                        {
+                            letGo += release;
+                            catcher.TreeExiting += release;
+                        }
+                    }
+                    catch (Exception e)
+                    {
+                        _noHotkeyBlock = true;
+                        Log.Warn($"[{ModEntry.ModId}] Could not block the screen's hotkeys while a menu is open, so they stay on (logged once): {e.Message}");
+                    }
                 }
-                letGo += Release;
-                catcher.TreeExiting += Release;
             }
-        }
-        _letGo = letGo;
+            (_open, _openKey, _letGo) = (layer, toggleKey, letGo);
 
-        // From the mouse (a point) by default: its top-left corner there, or, where that runs off the bottom (right) and
-        // less would the other way, its bottom (right) edge there instead. From a picker the same off its edges: under it
-        // where there's room below, over it where there isn't; from its left edge where there's room to the right, to its
-        // right edge where there isn't. It turns only while it opens (its first sizes, through the second frame): growing
-        // later (tags wrapping, the notes box), it only slides back on screen, so what the player is using stays under the
-        // mouse. Kept on screen.
+            // From the mouse (a point) by default: its top-left corner there, or, where that runs off the bottom (right) and
+            // less would the other way, its bottom (right) edge there instead. From a picker the same off its edges: under it
+            // where there's room below, over it where there isn't; from its left edge where there's room to the right, to its
+            // right edge where there isn't. It turns only while it opens (its first sizes, through the second frame): growing
+            // later (tags wrapping, the notes box), it only slides back on screen, so what the player is using stays under the
+            // mouse. Kept on screen.
 #if DEVTOOLS
-        var anchor = from ?? new Rect2(Hover.TestMouse?.Invoke() ?? viewport.GetMousePosition(), Vector2.Zero); // (the self-test says where the mouse is)
+            var anchor = from ?? new Rect2(Hover.TestMouse?.Invoke() ?? viewport.GetMousePosition(), Vector2.Zero); // (the self-test says where the mouse is)
 #else
-        var anchor = from ?? new Rect2(viewport.GetMousePosition(), Vector2.Zero);
+            var anchor = from ?? new Rect2(viewport.GetMousePosition(), Vector2.Zero);
 #endif
-        var (up, left, settled) = (false, false, false);
-        void Fit()
-        {
-            if (!GodotObject.IsInstanceValid(panel))
-                return;
-            var size = panel.GetCombinedMinimumSize();
-            panel.Size = size;
-            float Y(bool above) => above ? anchor.Position.Y - size.Y : anchor.End.Y;
-            float X(bool back) => back ? anchor.End.X - size.X : anchor.Position.X;
-            if (!settled && Hover.Turns(Y(up), size.Y, catcher.Size.Y, Y(!up)))
-                up = !up;
-            if (!settled && Hover.Turns(X(left), size.X, catcher.Size.X, X(!left)))
-                left = !left;
-            panel.Position = new Vector2(Math.Clamp(X(left), 0, Math.Max(0, catcher.Size.X - size.X)),
-                Math.Clamp(Y(up), 0, Math.Max(0, catcher.Size.Y - size.Y)));
+            var (up, left, settled) = (false, false, false);
+            void Fit()
+            {
+                if (!GodotObject.IsInstanceValid(panel))
+                    return;
+                var size = panel.GetCombinedMinimumSize();
+                panel.Size = size;
+                float Y(bool above) => above ? anchor.Position.Y - size.Y : anchor.End.Y;
+                float X(bool back) => back ? anchor.End.X - size.X : anchor.Position.X;
+                if (!settled && Hover.Turns(Y(up), size.Y, catcher.Size.Y, Y(!up)))
+                    up = !up;
+                if (!settled && Hover.Turns(X(left), size.X, catcher.Size.X, X(!left)))
+                    left = !left;
+                panel.Position = new Vector2(Math.Clamp(X(left), 0, Math.Max(0, catcher.Size.X - size.X)),
+                    Math.Clamp(Y(up), 0, Math.Max(0, catcher.Size.Y - size.Y)));
+            }
+            panel.MinimumSizeChanged += Fit;
+            panel.Position = new Vector2(anchor.Position.X, anchor.End.Y);
+            Callable.From(Fit).CallDeferred();
+            var (tree, frames) = (viewport.GetTree(), 0);
+            void Settle()
+            {
+                if (GodotObject.IsInstanceValid(panel) && ++frames < 2)
+                    return;
+                settled = true;
+                tree.ProcessFrame -= Settle;
+            }
+            tree.ProcessFrame += Settle;
+            return layer;
         }
-        panel.MinimumSizeChanged += Fit;
-        panel.Position = new Vector2(anchor.Position.X, anchor.End.Y);
-        Callable.From(Fit).CallDeferred();
-        var (tree, frames) = (viewport.GetTree(), 0);
-        void Settle()
+        catch
         {
-            if (GodotObject.IsInstanceValid(panel) && ++frames < 2)
-                return;
-            settled = true;
-            tree.ProcessFrame -= Settle;
+            // Half-built (a bad item, a game update): none of it stays, least of all its catcher over the whole screen.
+            if (_open == layer)
+                Close();
+            else
+            {
+                letGo();
+                layer.GetParent()?.RemoveChild(layer);
+                layer.QueueFree();
+            }
+            throw;
         }
-        tree.ProcessFrame += Settle;
-        return layer;
+    }
+
+    // The screen's hotkeys off (the game's NHotkeyManager), and the way to turn them back on, once; null with no manager.
+    // On its own, kept out of Show: a game update that changes the manager costs the API's menus their block, not every
+    // menu its opening.
+    [MethodImpl(MethodImplOptions.NoInlining)]
+    static Action? BlockHotkeys(Node layer)
+    {
+        if (NHotkeyManager.Instance is not { } hotkeys)
+            return null;
+        hotkeys.AddBlockingScreen(layer);
+        var released = false;
+        return () =>
+        {
+            if (released)
+                return;
+            released = true;
+            try
+            {
+                if (GodotObject.IsInstanceValid(hotkeys))
+                    hotkeys.RemoveBlockingScreen(layer);
+            }
+            catch (Exception e)
+            {
+                Log.Warn($"[{ModEntry.ModId}] Could not turn the screen's hotkeys back on after a menu: {e.Message}");
+            }
+        };
     }
 
     // What a menu from a button (a picker) opens from: the button and `gap` over and under it, so the menu drops that

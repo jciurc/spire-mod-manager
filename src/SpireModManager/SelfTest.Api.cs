@@ -56,6 +56,9 @@ static partial class SelfTest
         typeof(NHotkeyManager).GetField("_blockingScreens", BindingFlags.NonPublic | BindingFlags.Instance)?.GetValue(NHotkeyManager.Instance) is System.Collections.ICollection held
             ? held.Count : -1;
 
+    // SMM's menu layers on the scene root (none stays after a menu closes, or fails).
+    static int MenuLayers(Node menu) => menu.GetTree().Root.GetChildren().Count(c => c.Name.ToString().StartsWith(MenuPanel.RootName));
+
     static async Task TestApiMenus(NMainMenu menu)
     {
         var owner = new Control { Name = "SmmApiMenuOwner", Size = new Vector2(10, 10) };
@@ -85,15 +88,15 @@ static partial class SelfTest
 
             shown = PopupMenus.Show(owner, Entries());
             Check("API menus: an action that throws is logged, and the menu still closes", shown != null && PopupMenus.Press(shown, "Throws")
-                && !PopupMenus.IsOpen && ApiGuard.HasLogged("a PopupMenus entry's OnSelect"));
+                && !PopupMenus.IsOpen && ApiGuard.HasLogged($"a PopupMenus entry's OnSelect from {typeof(SelfTest).Assembly.GetName().Name}"));
 
-            PopupMenus.Show(owner, Entries());
+            var escaped = PopupMenus.Show(owner, Entries());
             await Wait(menu, 0.1);
             Input.ParseInputEvent(new InputEventKey { Keycode = Key.Escape, Pressed = true });
             await Wait(menu, 0.1);
             Input.ParseInputEvent(new InputEventKey { Keycode = Key.Escape, Pressed = false });
-            Check("API menus: the game's cancel (Escape) closes one, and the hotkeys are back", !PopupMenus.IsOpen && HotkeyBlockers() == blockers,
-                $"open {PopupMenus.IsOpen}, blockers {HotkeyBlockers()}");
+            Check("API menus: the game's cancel (Escape) closes one, and the hotkeys are back", escaped != null && !PopupMenus.IsOpen && HotkeyBlockers() == blockers,
+                $"opened {escaped != null}, open {PopupMenus.IsOpen}, blockers {HotkeyBlockers()}");
 
             var first = PopupMenus.Show(owner, Entries());
             var second = PopupMenus.Show(owner, Entries());
@@ -104,11 +107,34 @@ static partial class SelfTest
             await Wait(menu, 0.1);
             Check("API menus: freed by the caller, it lets go of the hotkeys", !PopupMenus.IsOpen && HotkeyBlockers() == blockers, $"blockers {HotkeyBlockers()}");
 
-            PopupMenus.Show(owner, Entries());
+            var hidden = PopupMenus.Show(owner, Entries());
             owner.Visible = false;
             await Wait(menu, 0.1);
-            Check("API menus: hiding its owner closes it within a frame", !PopupMenus.IsOpen && HotkeyBlockers() == blockers);
+            Check("API menus: hiding its owner closes it within a frame", hidden != null && !PopupMenus.IsOpen && HotkeyBlockers() == blockers);
             owner.Visible = true;
+
+            // One that fails as it's built (its rows throw): nothing of it stays, least of all its catcher over the screen.
+            var (layers, holds) = (MenuLayers(menu), owner.GetSignalConnectionList(Node.SignalName.TreeExiting).Count);
+            var threw = false;
+            try
+            {
+                MenuPanel.Show(owner, () => throw new InvalidOperationException("a test menu whose rows throw"), keyboard: true);
+            }
+            catch (InvalidOperationException)
+            {
+                threw = true;
+            }
+            Check("API menus: one that fails as it's built leaves nothing behind (no layer over the screen, no hold on its owner or the hotkeys)",
+                threw && MenuLayers(menu) == layers && !PopupMenus.IsOpen && owner.GetSignalConnectionList(Node.SignalName.TreeExiting).Count == holds
+                && HotkeyBlockers() == blockers, $"threw {threw}, layers {layers} -> {MenuLayers(menu)}, blockers {HotkeyBlockers()}");
+            // A caller without nullable checks: a null label is no words (a heading of none is the line), never a failure.
+            var unnamed = new MenuEntry { OnSelect = () => { } };
+            typeof(MenuEntry).GetProperty(nameof(MenuEntry.Label))?.SetValue(unnamed, null);
+            var blank = typeof(MenuEntry).GetMethod(nameof(MenuEntry.Heading))?.Invoke(null, [null]) is MenuEntry nameless
+                ? PopupMenus.Show(owner, [nameless, unnamed]) : null;
+            Check("API menus: null labels (a caller without nullable checks) are no words, not a failure", blank != null && PopupMenus.IsOpen
+                && PopupMenus.Rows(blank).SequenceEqual([("", false)]) && PopupMenus.Headings(blank).Count == 0);
+            PopupMenus.Close();
 
             var exits = owner.GetSignalConnectionList(Node.SignalName.TreeExiting).Count;
             for (var i = 0; i < 50; i++)
@@ -123,11 +149,15 @@ static partial class SelfTest
             var offThread = await Task.Run(() => PopupMenus.Show(owner, Entries()));
             Check("API menus: Show from a worker thread returns null and logs once", offThread == null && !PopupMenus.IsOpen && ApiGuard.HasLogged("PopupMenus.Show"));
 
-            PopupMenus.Show(owner, Entries(), new MenuOptions { From = new Rect2(40, 40, 100, 30) });
+            var dropped = PopupMenus.Show(owner, Entries(), new MenuOptions { From = new Rect2(40, 40, 100, 30) });
+            await Wait(menu, 0.1);
+            var under = (dropped?.FindChild("Panel", true, false) as Control)?.GetGlobalRect() ?? new Rect2();
+            Check("API menus: From opens it off the rect: under it, from its left edge, where there's room", dropped != null
+                && under.Position.Y >= 70 - 0.5f && Math.Abs(under.Position.X - 40) < 0.5f, $"{under}");
             owner.QueueFree();
             await Wait(menu, 0.1);
-            Check("API menus: its owner freed, it closes and lets go of the hotkeys", !PopupMenus.IsOpen && !PopupMenus.Close() && HotkeyBlockers() == blockers,
-                $"blockers {HotkeyBlockers()}");
+            Check("API menus: its owner freed, it closes and lets go of the hotkeys", dropped != null && !PopupMenus.IsOpen && !PopupMenus.Close()
+                && HotkeyBlockers() == blockers, $"blockers {HotkeyBlockers()}");
         }
         finally
         {
@@ -163,6 +193,35 @@ static partial class SelfTest
             box.AddChild(problem);
             Check("API banners: Problem (the default) is the palette's problem colour, with no Dismiss without OnDismiss",
                 (problem as PanelContainer)?.GetThemeStylebox("panel") is StyleBoxFlat { BgColor: var red } && red == Palette.Problem && problem.FindChild("Dismiss", true, false) == null);
+
+            // In a MarginContainer it wraps inside the margins, never pushing the container wider; under a plain Control, in
+            // the span its anchors and offsets give it.
+            var margins = new MarginContainer { Name = "SmmApiBannerMargins" };
+            margins.AddThemeConstantOverride("margin_left", 16);
+            margins.AddThemeConstantOverride("margin_right", 16);
+            var column = new VBoxContainer { Name = "SmmApiBannerColumn", Position = new Vector2(100, 300), Size = new Vector2(600, 0) };
+            menu.AddChild(column);
+            column.AddChild(margins);
+            var inside = Banners.Create(new BannerOptions { Text = text });
+            margins.AddChild(inside);
+            var plain = new Control { Name = "SmmApiBannerPlain", Position = new Vector2(100, 600), Size = new Vector2(600, 200) };
+            menu.AddChild(plain);
+            var anchored = Banners.Create(new BannerOptions { Text = text });
+            anchored.AnchorRight = 1;
+            (anchored.OffsetLeft, anchored.OffsetRight) = (20, -20);
+            plain.AddChild(anchored);
+            await Wait(menu, 0.2);
+            Check("API banners: in a MarginContainer it wraps inside the margins without widening it; under a plain Control, in its anchors' span",
+                margins.Size.X <= 600.5f && inside.Size.X <= 568.5f && inside.Size.Y > BannerBar.Height + 4 && anchored.Size.X <= 560.5f
+                && anchored.GetGlobalRect().End.X <= plain.GetGlobalRect().End.X - 19.5f,
+                $"margins {margins.Size.X:0}, inside {inside.Size.X:0}x{inside.Size.Y:0}, anchored {anchored.Size.X:0}");
+            column.QueueFree();
+            plain.QueueFree();
+
+            // A caller without nullable checks: made from nothing, the stand-in (a plain panel), logged.
+            var standIn = typeof(Banners).GetMethod(nameof(Banners.Create))?.Invoke(null, [null]) as Control;
+            Check("API banners: one that can't be made (null options) is a plain panel instead, logged", standIn is PanelContainer && ApiGuard.HasLogged("Banners.Create"));
+            standIn?.Free();
         }
         finally
         {
@@ -203,18 +262,39 @@ static partial class SelfTest
         const string missing = "res://SpireModManager/selftest/api_missing.png";
         Check("API resources: GameResources.Load on a missing path is null, noted once", GameResources.Load<Texture2D>(missing) == null
             && GameResources.Load<Texture2D>(missing) == null && ModEntry.MissingResources.Count(p => p == missing) == 1);
+        const string kreonFile = "res://themes/kreon_regular_shared.tres";
+        Check("API resources: asked for as another type, null but not missing: asked for as what it is, it still loads (for SMM too)",
+            GameResources.Load<Texture2D>(kreonFile) == null && !ModEntry.MissingResources.Contains(kreonFile) && GameResources.Load<Font>(kreonFile) != null);
     }
 
     static async Task TestApiMods(NMainMenu menu)
     {
         Check("API mods: Version is the manifest's, null for a mod that isn't installed", Mods.Version(ModEntry.ModId) == ModEntry.Version
             && ModEntry.Version != null && Mods.Version("SmmApiNotInstalled") == null, Mods.Version(ModEntry.ModId) ?? "null");
-        var lib = Store.InfoFor(ModEntry.CopyOf("SmmTestLib") is { } copy ? Copies.Key(copy) : "SmmTestLib");
-        var details = Mods.Details("SmmTestLib");
+        // SMM's own entry has an alias, notes and a category in the fixture; tags, padded and twice, for the moment.
+        var info = Store.InfoFor(ModEntry.CopyOf(ModEntry.ModId));
+        var keptTags = info?.Tags;
+        ModNotes details;
+        try
+        {
+            if (info != null)
+                info.Tags = [" Beta ", "beta", " ", "Gamma"];
+            details = Mods.Details(ModEntry.ModId);
+        }
+        finally
+        {
+            if (info != null)
+                info.Tags = keptTags;
+        }
         var none = Mods.Details("SmmApiNotInstalled");
-        Check("API mods: Details is what the player keeps (alias, notes, tags, category); empty for a mod with nothing",
-            details.Alias == lib?.Alias?.Trim() && details.Notes == lib?.Notes?.Trim() && details.Tags.SequenceEqual(lib?.Tags ?? [])
-            && none is { Alias: null, Notes: null, Category: null, Tags.Count: 0 }, $"{details.Alias} / {details.Category} / {string.Join(",", details.Tags)}");
+        Check("API mods: Details is what the player keeps (alias, notes, category, trimmed; tags once each, no blanks); empty for a mod with nothing",
+            info is { Alias: { } alias, Notes: { } notes, Category: { } category } && details.Alias == alias.Trim() && details.Notes == notes.Trim()
+            && details.Category == category.Trim() && details.Tags.SequenceEqual(["Beta", "Gamma"])
+            && none is { Alias: null, Notes: null, Category: null, Tags.Count: 0 },
+            $"{details.Alias} / {details.Notes} / {details.Category} / {string.Join(",", details.Tags)}");
+        var described = ModDetails.Described("[blue]Frost[/blue] [sine]waves[/sine] [b]" + string.Join(" ", Enumerable.Repeat("bold words", 40)), 60);
+        Check("API cards: a description's game tags are drawn as the game's (colours; moving ones as their text), and what a cut leaves open is closed",
+            described.StartsWith("[color=#87ceeb]Frost[/color] waves [b]bold") && described.EndsWith("…[/b]") && !described.Contains("sine"), described);
 
         var ours = ModCards.Text(ModEntry.ModId) ?? "";
         var ourAlias = Store.InfoFor(ModEntry.ModId)?.Alias;
@@ -230,24 +310,29 @@ static partial class SelfTest
         try
         {
             ModCards.Watch(trigger, ModEntry.ModId);
+            var hoverable = trigger.MouseFilter == Control.MouseFilterEnum.Pass; // a Label ignores the mouse until then
             var card = await HoverCard(menu, trigger, SharedCards.CardName);
             ModCards.Watch(trigger, "SmmTestLib");
             var repointed = await HoverCard(menu, trigger, SharedCards.CardName);
-            Check("API cards: Watch shows the mod's card on hover; a second Watch points it at another mod",
-                card.Contains("Spire Mod Manager") && card.Contains("symphony") && repointed.Contains("Test Framework") && !repointed.Contains("symphony"),
+            Check("API cards: Watch makes a Label hoverable and shows the mod's card on hover; a second Watch points it at another mod",
+                hoverable && card.Contains("Spire Mod Manager") && card.Contains("symphony") && repointed.Contains("Test Framework") && !repointed.Contains("symphony"),
                 $"{(card.Length > 80 ? card[..80] : card)} / {(repointed.Length > 80 ? repointed[..80] : repointed)}");
 
             var underlined = links.MetaUnderlined;
             ModCards.WatchLinks(links, meta => meta.StartsWith("mod:") ? meta[4..] : null);
-            Hover.TestMouse = () => links.GetGlobalRect().GetCenter();
-            links.EmitSignal(RichTextLabel.SignalName.MetaHoverStarted, "mod:SmmTestLib");
-            await WaitReal(menu, Hover.Delay + 0.3); // the link card's delay
-            var linked = menu.GetTree().Root.FindChild(SharedCards.CardName, true, false)?.FindChildren("*", "RichTextLabel", true, false)
-                .OfType<RichTextLabel>().FirstOrDefault()?.GetParsedText() ?? "";
-            links.EmitSignal(RichTextLabel.SignalName.MetaHoverEnded, "mod:SmmTestLib");
-            Hover.TestMouse = null;
+            var linked = await LinkCard(menu, links, "mod:SmmTestLib");
             Check("API cards: WatchLinks shows the card of the mod a link names, and leaves the label's look as it was",
                 linked.Contains("Test Framework") && links.MetaUnderlined == underlined, linked.Length > 80 ? linked[..80] : linked);
+            var handlers = links.GetSignalConnectionList(RichTextLabel.SignalName.MetaHoverStarted).Count;
+            ModCards.WatchLinks(links, meta => meta.StartsWith("mod:") ? ModEntry.ModId : null); // every link: SMM's card
+            var relinked = await LinkCard(menu, links, "mod:SmmTestLib");
+            Check("API cards: WatchLinks again on the same label swaps the mapping, adding no handlers",
+                links.GetSignalConnectionList(RichTextLabel.SignalName.MetaHoverStarted).Count == handlers && relinked.Contains("symphony")
+                && !relinked.Contains("Test Framework"), $"{handlers} handlers -> {links.GetSignalConnectionList(RichTextLabel.SignalName.MetaHoverStarted).Count}");
+            ModCards.WatchLinks(links, meta => throw new InvalidOperationException("a test mapping that throws"));
+            var failed = await LinkCard(menu, links, "mod:SmmTestLib");
+            Check("API cards: a WatchLinks mapping that throws shows no card, and is logged naming the mod", failed.Length == 0
+                && ApiGuard.HasLogged($"a ModCards.WatchLinks mapping from {typeof(SelfTest).Assembly.GetName().Name}"), failed);
         }
         finally
         {
@@ -255,5 +340,19 @@ static partial class SelfTest
             trigger.QueueFree();
             links.QueueFree();
         }
+    }
+
+    // The card a link shows once the pointer has rested on it ("" for none); hidden again after.
+    static async Task<string> LinkCard(Node menu, RichTextLabel links, string meta)
+    {
+        Hover.TestMouse = () => links.GetGlobalRect().GetCenter();
+        links.EmitSignal(RichTextLabel.SignalName.MetaHoverStarted, meta);
+        await WaitReal(menu, Hover.Delay + 0.3); // the link card's delay
+        var shown = menu.GetTree().Root.FindChild(SharedCards.CardName, true, false)?.FindChildren("*", "RichTextLabel", true, false)
+            .OfType<RichTextLabel>().FirstOrDefault()?.GetParsedText() ?? "";
+        links.EmitSignal(RichTextLabel.SignalName.MetaHoverEnded, meta);
+        Hover.TestMouse = null;
+        Hover.Hide();
+        return shown;
     }
 }

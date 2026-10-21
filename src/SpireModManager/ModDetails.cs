@@ -349,7 +349,7 @@ static class ModDetails
             lines.Add(Fact("SPIRE_MOD_MANAGER.UPDATED", Date(workshop.Updated)));
         // Its own words, as the panel shows them (markup kept), a few lines of them; cut outside a tag.
         if (mod.manifest?.description is { Length: > 0 } description)
-            lines.AddRange(["", CutMarkup(description.Trim(), full ? int.MaxValue : 240)]);
+            lines.AddRange(["", Described(description.Trim(), full ? int.MaxValue : 240)]);
         lines.Add("");
         lines.Add(Fact("SPIRE_MOD_MANAGER.CATEGORY", CategoryList.CategoryName(Copies.Key(mod)) is var category ? Escape(category) : ""));
         if (Tags.For(mod) is { Count: > 0 } chips)
@@ -359,7 +359,40 @@ static class ModDetails
         return string.Join("\n", lines);
     }
 
-    // Rich text cut to about max characters at a space, never inside a [tag] (an open one closes at the text's end).
+    // A mod's description in a card of ours (a plain RichTextLabel, not the game's): the game label's colour tags as
+    // colours, its moving ones ([sine], [jitter] and the like) dropped for their text, cut to about max characters, and
+    // whatever it leaves open closed at its end.
+    public static string Described(string description, int max) => Closed(CutMarkup(GameMarkup.Replace(description, m =>
+        GameColors.TryGetValue(m.Groups[2].Value, out var color) ? m.Groups[1].Length > 0 ? "[/color]" : $"[color=#{color}]" : ""), max));
+
+    static readonly Regex GameMarkup = new(@"\[(/?)(aqua|blue|gold|green|orange|pink|purple|red|sine|jitter|fade_in|fly_in|scramble|thinky_dots|ancient_banner)\b[^\]]*\]");
+
+    // The game's (StsColors, as its RichText tags use them).
+    static readonly Dictionary<string, string> GameColors = new()
+    {
+        ["aqua"] = "2aebbe", ["blue"] = "87ceeb", ["gold"] = "efc851", ["green"] = "7fff00", ["orange"] = "ffa518", ["pink"] = "ff78a0",
+        ["purple"] = "ee82ee", ["red"] = "ff5555",
+    };
+
+    // Each tag Godot's rich text draws that's still open at the end, closed there (innermost first); a stray closer is
+    // left as it is (Godot ignores it).
+    static string Closed(string bbcode)
+    {
+        var open = new List<string>();
+        foreach (Match tag in OpeningOrClosing.Matches(bbcode))
+        {
+            var name = tag.Groups[2].Value;
+            if (tag.Groups[1].Length == 0)
+                open.Add(name);
+            else if (open.LastIndexOf(name) is var at and >= 0)
+                open.RemoveRange(at, open.Count - at);
+        }
+        return open.Count == 0 ? bbcode : bbcode + string.Concat(Enumerable.Reverse(open).Select(name => $"[/{name}]"));
+    }
+
+    static readonly Regex OpeningOrClosing = new(@"\[(/?)(b|i|u|s|code|center|left|right|fill|indent|url|hint|font|font_size|color|bgcolor|fgcolor|outline_size|outline_color|table|cell|ul|ol|lang|p|wave|tornado|shake|fade|rainbow|pulse|img|dropcap|opentype_features)\b[^\]]*\]");
+
+    // Rich text cut to about max characters at a space, never inside a [tag] (Closed closes what it leaves open).
     static string CutMarkup(string text, int max)
     {
         if (text.Length <= max)

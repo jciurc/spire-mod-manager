@@ -46,6 +46,18 @@ var manifest = new JsonObject
 if (dist)
     manifest["version"] = ReleaseVersion;
 
+// A release ships the API as it is (docs/dev/API.md): first what PublicAPI.Unshipped.txt holds moves to
+// PublicAPI.Shipped.txt, and VERSIONS.md's "unreleased" row names this release (RELEASING.md, step 1). Otherwise the
+// next change could take out what this release's mods were built against, and nothing would notice.
+if (dist)
+{
+    var unshippedApi = File.ReadAllLines(Path.Combine(root, "src", ModId, "PublicAPI.Unshipped.txt")).Count(l => l.Trim() is { Length: > 0 } line && !line.StartsWith('#'));
+    var lastRow = File.ReadAllLines(Path.Combine(root, "src", ModId, "Api", "VERSIONS.md")).LastOrDefault(l => Regex.IsMatch(l, @"^\|\s*\d+\s*\|"));
+    if (unshippedApi > 0 || lastRow?.Contains("unreleased", StringComparison.OrdinalIgnoreCase) == true)
+        return Fail($"the API isn't shipped yet ({unshippedApi} line(s) in PublicAPI.Unshipped.txt, VERSIONS.md's last row: {lastRow?.Trim()}): "
+            + "move them to PublicAPI.Shipped.txt and write this release in that row first (docs/dev/RELEASING.md, step 1)");
+}
+
 // What a player's mods folder gets: the pack, the manifest and the DLL.
 string[] shipped = [".pck", ".json", ".dll"];
 

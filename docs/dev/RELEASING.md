@@ -9,7 +9,8 @@ are in [workshop/README.md](../../workshop/README.md).
    keeps them in the tested tree (step 4) and in the tag. Release builds don't bump the version on their own.
    If the API grew ([API.md](API.md): `src/SpireModManager/PublicAPI.Unshipped.txt` has lines), ship it in the
    same pull request: move those lines to the end of `PublicAPI.Shipped.txt`, and write the version in the
-   "unreleased" row of `src/SpireModManager/Api/VERSIONS.md`.
+   "unreleased" row of `src/SpireModManager/Api/VERSIONS.md`. The release build (step 6) refuses an API left
+   unshipped.
 2. **Test that commit** with the full in-game suite: `dotnet run tools/dev.cs test` plain, `--bmm`,
    `--bmm-after`, `--first-run`, `--first-run-bmm --bmm`, and `--real`, then the same six with `--stable` added,
    on the stable branch's game. The Workshop build has no self-test, so the suite runs on that commit's dev

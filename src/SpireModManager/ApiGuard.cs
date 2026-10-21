@@ -7,7 +7,7 @@ namespace SpireModManager;
 // Every call another mod makes into the API comes through here: on the main thread only (from anywhere else nothing
 // happens and the stand-in comes back), and never throwing back at the caller: a failure, the caller's or ours, is
 // logged once per member, naming the mod that called. Callbacks a caller hands in (a menu entry's action, a banner's
-// dismiss) run guarded the same way.
+// dismiss, a link's mapping) run guarded the same way, logged once per member and mod.
 static class ApiGuard
 {
     static readonly HashSet<string> Logged = [];
@@ -46,14 +46,36 @@ static class ApiGuard
         }
         catch (Exception e)
         {
-            Once(member, e.ToString());
+            CallbackFailed(member, action, e);
         }
     };
 
-    static void Once(string member, string what)
+    // A caller's callback threw. By now the stack is the engine's (the click that ran it), so the mod is the one whose
+    // code the callback is.
+    public static void CallbackFailed(string member, Delegate callback, Exception e)
     {
-        if (Logged.Add(member))
-            Log.Warn($"[{ModEntry.ModId}] API {member}, called from {Caller()}: {what}");
+        var mod = callback.Method.DeclaringType?.Assembly.GetName().Name ?? "an unknown mod";
+        Once($"{member} from {mod}", () => $"API {member}: a callback from {mod} failed: {e}");
+    }
+
+    static void Once(string member, string what) => Once(member, () => $"API {member}, called from {Caller()}: {what}");
+
+    // Once per key, from any thread; the logging itself never throws at the caller.
+    static void Once(string key, Func<string> message)
+    {
+        bool first;
+        lock (Logged)
+            first = Logged.Add(key);
+        if (!first)
+            return;
+        try
+        {
+            Log.Warn($"[{ModEntry.ModId}] {message()}");
+        }
+        catch (Exception)
+        {
+            // nowhere left to say it
+        }
     }
 
     // The first frame outside SMM (and the runtime, Godot and Harmony): the mod that called, or handed in the callback.
@@ -68,7 +90,11 @@ static class ApiGuard
     }
 
 #if DEVTOOLS
-    // Self-test: whether a member has logged its one warning.
-    public static bool HasLogged(string member) => Logged.Contains(member);
+    // Self-test: whether a member (or "<member> from <mod>", for a callback) has logged its one warning.
+    public static bool HasLogged(string key)
+    {
+        lock (Logged)
+            return Logged.Contains(key);
+    }
 #endif
 }

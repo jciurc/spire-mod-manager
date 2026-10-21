@@ -156,16 +156,23 @@ internal static class ModEntry
 #endif
 
     // A game resource we use (a scene, texture or font; ours too, as they use the game's), or null if a game update
-    // moved or broke it. Never throws; each missing one is logged once and not tried again.
+    // moved or broke it, or it isn't a T. Never throws; each missing one is logged once and not tried again; one of
+    // another type is logged once per type asked for (it's there: asked for as what it is, it loads).
     public static T? Load<T>(string path) where T : Resource
     {
         if (Missing.Contains(path))
             return null;
-        if (ResourceLoader.Load(path) is T resource)
+        var loaded = ResourceLoader.Load(path);
+        if (loaded is T resource)
             return resource;
-        NoteMissing(path);
+        if (loaded == null)
+            NoteMissing(path);
+        else if (OtherType.Add($"{path} as {typeof(T).Name}"))
+            Log.Warn($"[{ModId}] Game resource {path} is a {loaded.GetClass()}, not a {typeof(T).Name}, so it isn't used there (logged once)");
         return null;
     }
+
+    static readonly HashSet<string> OtherType = [];
 
     // One of the game's fonts, or Godot's own if it's gone. In languages the game draws in its own font (Chinese,
     // Japanese, Korean, Thai, Russian, Polish), Kreon gives way to that font as on the game's labels; only rich text's

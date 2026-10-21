@@ -1,3 +1,4 @@
+using System.Runtime.CompilerServices;
 using Godot;
 
 namespace SpireModManager;
@@ -13,9 +14,12 @@ static class SharedCards
 
     public static string? Text(string modId, bool full = false) => ModEntry.CopyOf(modId) is { } mod ? ModDetails.SharedCard(mod, full) : null;
 
-    // Watched once per trigger; another call points it at another mod (a card open for the old one closes).
+    // Watched once per trigger; another call points it at another mod (a card open for the old one closes). A trigger
+    // that ignores the mouse would never be hovered (a Label's default): it passes it on instead.
     public static void Watch(Control trigger, string modId)
     {
+        if (trigger.MouseFilter == Control.MouseFilterEnum.Ignore)
+            trigger.MouseFilter = Control.MouseFilterEnum.Pass;
         var watched = trigger.HasMeta(ModIdMeta);
         var before = watched ? trigger.GetMeta(ModIdMeta).AsString() : null;
         trigger.SetMeta(ModIdMeta, modId);
@@ -27,18 +31,31 @@ static class SharedCards
     }
 
     // The card for whichever mod a link names (forMeta: its id for a link's meta, or null for none); the label's own look
-    // is left as it is (Hover.WatchLinks takes our links' underline off).
+    // is left as it is (Hover.WatchLinks takes our links' underline off). Watched once per label (a caller that sets its
+    // links up again on each refresh mustn't pile up handlers): another call swaps the mapping.
+    static readonly ConditionalWeakTable<RichTextLabel, StrongBox<Func<string, string?>>> Links = [];
+
     public static void WatchLinks(RichTextLabel label, Func<string, string?> forMeta)
     {
+        if (Links.TryGetValue(label, out var kept))
+        {
+            kept.Value = forMeta;
+            return;
+        }
+        var mapping = new StrongBox<Func<string, string?>>(forMeta);
+        Links.Add(label, mapping);
         string? Id(string meta)
         {
+            if (mapping.Value is not { } map)
+                return null;
             try
             {
-                return forMeta(meta);
+                return map(meta);
             }
-            catch (Exception)
+            catch (Exception e)
             {
-                return null; // the caller's mapping failed: no card for that link
+                ApiGuard.CallbackFailed("a ModCards.WatchLinks mapping", map, e);
+                return null; // no card for that link
             }
         }
         var underlined = label.MetaUnderlined;

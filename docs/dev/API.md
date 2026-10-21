@@ -50,10 +50,11 @@ Callers' self-tests use the test hooks (`PopupMenus.Rows` and the like) instead.
 ## How it behaves
 
 - **No member throws.** Each body runs through `ApiGuard`: on a failure it logs once per member, naming the calling
-  mod, and returns a stand-in (null, false, an empty list, Godot's fallback font, a hidden control, or nothing).
-  Callbacks a caller hands in (`OnSelect`, `OnDismiss`) are guarded the same way.
-- **Main thread only** for anything that touches nodes, fonts or resources. From another thread a member logs once
-  and returns its stand-in. `ApiInfo.Version`, `Palette` and `Mods.Version` are safe from any thread.
+  mod, and returns a stand-in (null, false, an empty list, Godot's fallback font, a plain panel with the banner's
+  text, or nothing). Callbacks a caller hands in (`OnSelect`, `OnDismiss`, a `WatchLinks` mapping) are guarded the
+  same way, logged once per member and mod, naming the mod whose code the callback is.
+- **Main thread only**, apart from `ApiInfo.Version` and `Palette`, which are safe from any thread. From another
+  thread a member logs once and returns its stand-in (`Mods.Version` gives null).
 - **When:** `ApiInfo`, `Palette`, `GameResources` and `Mods.Version` work from a mod's `Init`. `Fonts` there gives
   Kreon (there's no language yet), so ask again each time you build, never keep a font across a language change.
   Menus, banners and cards work from the main menu on.
@@ -87,9 +88,12 @@ SMM's self-test makes the same lookups.
   `PublicAPI.Unshipped.txt`, or a recorded one changes or disappears; a public member without a doc comment fails too
   (CS1591). `dotnet format analyzers src/SpireModManager/SpireModManager.csproj --diagnostics RS0016 --severity error`
   records new members.
-- **`tools/check.cs`** (CI, no build): only `Api/` is public; its files keep the shapes above; the shipped surface at
-  the last release tag is all still there; `ApiInfo.Version` matches VERSIONS.md; `AssemblyVersion` stays
-  `1.0.0.0`; every member is named in the self-test.
+- **`tools/check.cs`** (CI, no build): only `Api/` is public; its files keep the shapes above; no member is ever
+  removed (no `*REMOVED*` line), and the shipped surface at the latest release tag is all still there;
+  `ApiInfo.Version` matches VERSIONS.md; `AssemblyVersion` stays `1.0.0.0`; every member is named in the self-test's
+  code.
+- **The release build** (`build.cs --dist`) refuses an API that isn't shipped yet: lines left in
+  `PublicAPI.Unshipped.txt`, or VERSIONS.md's last row still "unreleased".
 - **The self-test** (`SelfTest.Api.cs`): the assembly as another mod sees it (only the API exported, the version,
   sealed options, enum values, Mod Doctor's lookups), then each member doing what its doc comment says.
 
