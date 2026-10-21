@@ -72,21 +72,23 @@ static partial class SelfTest
             return;
         }
         var tree = menu.GetTree(); // to quit by: TestLanguageFonts rebuilds the main menu, this one with it
+        // Each test through Step: one that throws is a FAIL and the next runs. This try is for the checks in between.
         try
         {
             await Wait(menu, 3);
-            TestText(); // our pack's text, whichever page shows
-            TestFailSoft();
+            await Step(() => TestText()); // our pack's text, whichever page shows
+            await Step(() => TestFailSoft());
             if (!ModEntry.OurPage)
             {
-                await TestGamePage(menu, outDir); // nothing more of ours to test
+                await Step(() => TestGamePage(menu, outDir)); // nothing more of ours to test
                 return;
             }
             Check("no popup open", NModalContainer.Instance?.OpenModal == null,
                 NModalContainer.Instance?.OpenModal?.GetType().Name ?? "");
             Check("main menu button", menu.GetNodeOrNull("SpireModManagerMenuButton") != null);
-            TestMenuButtonLook(menu);
-            await TestMenuButtonCard(menu);
+            await TestStep();
+            await Step(() => TestMenuButtonLook(menu));
+            await Step(() => TestMenuButtonCard(menu));
             var relaunchArgs = ModEntry.RelaunchArgs();
             // Once, or not at all for a minimized window or one with no size (a headless run's reads Minimized, 0x0).
             var sized = DisplayServer.WindowGetMode() switch
@@ -132,8 +134,8 @@ static partial class SelfTest
             Check("dev run marked", menu.GetTree().Root.Title.StartsWith("[DEV]") && menu.GetTree().Root.HasNode("SpireModManagerDevTag"),
                 menu.GetTree().Root.Title);
             await Capture(menu, outDir, "1-main-menu");
-            await TestMenuButtonCarets(menu, outDir);
-            await TestApi(menu, outDir); // the API, as another mod uses it (SelfTest.Api.cs)
+            await Step(() => TestMenuButtonCarets(menu, outDir));
+            await Step(() => TestApi(menu, outDir)); // the API, as another mod uses it (SelfTest.Api.cs)
             // The relaunch note as it shows while one is pending: centred above the button (shown here for the shot).
             if (menu.GetNodeOrNull<Control>("SpireModManagerMenuButton/PendingNote") is { Visible: false } pendingNote)
             {
@@ -141,24 +143,25 @@ static partial class SelfTest
                 await Capture(menu, outDir, "1e-menu-button-note");
                 pendingNote.Visible = false;
             }
-            await TestMenuButtonMove(menu, outDir);
-            TestBetterModMenuImport(outDir);
-            await TestMenuButtonRelaunch(menu, outDir); // before the Modding page opens: the check's fixes without it
-            await TestLaunchGuard(menu, outDir);
-            await TestCrashOffer(menu, outDir);
-            TestSameIdCanary(); // which copy of a mod installed twice loads (SameIdLoad)
-            TestSameIdPlan();
-            TestSameIdPick();
-            TestSameIdSettle();
-            TestCopiesOff();
-            TestSameIdErrors();
-            await TestSameIdLaunchGuard(menu, outDir);
-            await TestTranslationsFolder(menu);
-            await TestTranslations(menu);
-            await TestModDoctorFile(menu, outDir);
-            await TestPrewarm(menu);
+            await Step(() => TestMenuButtonMove(menu, outDir));
+            await Step(() => TestBetterModMenuImport(outDir));
+            await Step(() => TestMenuButtonRelaunch(menu, outDir)); // before the Modding page opens: the check's fixes without it
+            await Step(() => TestLaunchGuard(menu, outDir));
+            await Step(() => TestCrashOffer(menu, outDir));
+            await Step(() => TestSameIdCanary()); // which copy of a mod installed twice loads (SameIdLoad)
+            await Step(() => TestSameIdPlan());
+            await Step(() => TestSameIdPick());
+            await Step(() => TestSameIdSettle());
+            await Step(() => TestCopiesOff());
+            await Step(() => TestSameIdErrors());
+            await Step(() => TestSameIdLaunchGuard(menu, outDir));
+            await Step(() => TestTranslationsFolder(menu));
+            await Step(() => TestTranslations(menu));
+            await Step(() => TestModDoctorFile(menu, outDir));
+            await Step(() => TestPrewarm(menu));
 
             var screen = menu.SubmenuStack.PushSubmenuType<NModdingScreen>();
+            _page = screen; // what Step puts back after a test that throws
             // The page as first drawn, in the frame it opened. The stable game's scene holds a placeholder row (no mod),
             // freed only at the frame's end; counting it made the list one mod longer until the next redraw.
             var firstCount = screen.FindChild(PageBar.Name, true, false)?.GetNodeOrNull<Label>("Scope")?.Text;
@@ -170,9 +173,9 @@ static partial class SelfTest
                 firstCount == Menus.Format("SPIRE_MOD_MANAGER.PAGE_ALL", ("count", Menus.Number(ModManager.Mods.Count)))
                 && firstUncategorized == UncategorizedCount(content), $"{firstCount}; uncategorized {firstUncategorized} then {UncategorizedCount(content)}");
             Check("relaunch button", screen.GetNodeOrNull("SpireModManagerRelaunchButton") != null);
-            TestNewModsAtLaunch(); // first: before anything switches profiles
+            await Step(() => TestNewModsAtLaunch()); // first: before anything switches profiles
             if (Bmm.Present) // dev.cs test --bmm
-                await TestBetterModMenu(menu, screen, content, outDir);
+                await Step(() => TestBetterModMenu(menu, screen, content, outDir));
             Check("view toggle", screen.GetNodeOrNull("SpireModManagerViewToggle") != null);
             Check("profile bar", screen.GetNodeOrNull("ModsBorder/SpireModManagerProfileBar") != null);
             Check("our views use the wide layout", screen.GetNode<Control>("ModsBorder").OffsetLeft < 255 && screen.GetNode<Control>("%ModInfoContainer").OffsetRight > 1727);
@@ -212,7 +215,7 @@ static partial class SelfTest
             }
             else
                 Results.Add("SKIP profile round trip: only one profile");
-            await TestNewModsOnSwitch(menu, screen, content);
+            await Step(() => TestNewModsOnSwitch(menu, screen, content));
 
             Click(screen.GetNode<BaseButton>("SpireModManagerViewToggle"));
             await Wait(menu, 1);
@@ -231,44 +234,44 @@ static partial class SelfTest
             Click(screen.GetNode<BaseButton>("SpireModManagerViewToggle"));
             await Wait(menu, 1);
 
-            await TestCategories(menu, screen, content, outDir);
-            await TestListFixes(menu, screen, content);
-            await TestProfileEditing(menu, screen, outDir);
-            await TestUnsavedProfile(menu, screen, content, outDir);
-            await TestProfileShare(menu, screen, outDir);
-            await TestSubscribeMissing(menu, screen, content, outDir);
-            await TestNotes(menu, screen, content, outDir);
-            await TestPendingNotes(menu, screen, content);
-            await TestPendingLine(menu, screen, content);
-            await TestSearch(menu, screen, content, outDir);
-            TestBranchTags();
-            TestDescriptionSearch();
-            TestSearchGrammar();
-            TestHiddenTags(content);
-            await TestRedrawCost(menu, screen, content);
-            await TestManyMods(menu, screen, content);
-            await TestNewMod(menu, screen, content, outDir);
-            await TestLoadOrder(menu, screen, content, outDir);
-            await TestLoadOrderFind(menu, screen, content, outDir);
-            await TestListBanner(menu, screen, content, outDir);
-            await TestManagersBanner(menu, screen, content, outDir);
-            await TestSelfIncluded(menu, screen, content, outDir);
-            await TestPageBar(menu, screen, content, outDir);
-            await TestListFilters(menu, screen, content, outDir);
-            await TestRelaunchCheck(menu, screen, content, outDir);
-            await TestLongDetails(menu, screen, content, outDir);
-            await TestWorkshopHead(menu, screen);
-            await TestOtherModPanel(menu, screen, content, outDir);
-            await TestGameChanges(menu, screen, content, outDir);
-            await TestBulkEdit(menu, screen, content, outDir);
-            await TestPicks(menu, screen, content, outDir);
-            await TestCopies(menu, screen, content, outDir);
-            await TestSameIdCopies(menu, screen, content, outDir);
-            await TestSameIdBothOn(menu, screen, content, outDir); // both copies ticked: which loads, and the words for it
-            await TestTagSuggestions(menu, screen, content, outDir);
-            await TestTagPills(menu, screen, content, outDir);
-            await TestHistory(menu, screen, content, outDir);
-            TestFallbacks(screen);
+            await Step(() => TestCategories(menu, screen, content, outDir));
+            await Step(() => TestListFixes(menu, screen, content));
+            await Step(() => TestProfileEditing(menu, screen, outDir));
+            await Step(() => TestUnsavedProfile(menu, screen, content, outDir));
+            await Step(() => TestProfileShare(menu, screen, outDir));
+            await Step(() => TestSubscribeMissing(menu, screen, content, outDir));
+            await Step(() => TestNotes(menu, screen, content, outDir));
+            await Step(() => TestPendingNotes(menu, screen, content));
+            await Step(() => TestPendingLine(menu, screen, content));
+            await Step(() => TestSearch(menu, screen, content, outDir));
+            await Step(() => TestBranchTags());
+            await Step(() => TestDescriptionSearch());
+            await Step(() => TestSearchGrammar());
+            await Step(() => TestHiddenTags(content));
+            await Step(() => TestRedrawCost(menu, screen, content));
+            await Step(() => TestManyMods(menu, screen, content));
+            await Step(() => TestNewMod(menu, screen, content, outDir));
+            await Step(() => TestLoadOrder(menu, screen, content, outDir));
+            await Step(() => TestLoadOrderFind(menu, screen, content, outDir));
+            await Step(() => TestListBanner(menu, screen, content, outDir));
+            await Step(() => TestManagersBanner(menu, screen, content, outDir));
+            await Step(() => TestSelfIncluded(menu, screen, content, outDir));
+            await Step(() => TestPageBar(menu, screen, content, outDir));
+            await Step(() => TestListFilters(menu, screen, content, outDir));
+            await Step(() => TestRelaunchCheck(menu, screen, content, outDir));
+            await Step(() => TestLongDetails(menu, screen, content, outDir));
+            await Step(() => TestWorkshopHead(menu, screen));
+            await Step(() => TestOtherModPanel(menu, screen, content, outDir));
+            await Step(() => TestGameChanges(menu, screen, content, outDir));
+            await Step(() => TestBulkEdit(menu, screen, content, outDir));
+            await Step(() => TestPicks(menu, screen, content, outDir));
+            await Step(() => TestCopies(menu, screen, content, outDir));
+            await Step(() => TestSameIdCopies(menu, screen, content, outDir));
+            await Step(() => TestSameIdBothOn(menu, screen, content, outDir)); // both copies ticked: which loads, and the words for it
+            await Step(() => TestTagSuggestions(menu, screen, content, outDir));
+            await Step(() => TestTagPills(menu, screen, content, outDir));
+            await Step(() => TestHistory(menu, screen, content, outDir));
+            await Step(() => TestFallbacks(screen));
 
             // Leaving from Load Order: the page comes back on the main list.
             Click(screen.GetNode<NButton>("SpireModManagerLoadOrderToggle"));
@@ -278,11 +281,11 @@ static partial class SelfTest
             await Wait(menu, 0.3);
             Check("reopening after Load Order shows the main list", Layout.Current == Layout.View.Categories
                 && screen.GetNode<Control>("%ModInfoContainer").Visible);
-            await TestListFilterReopen(menu, screen, content);
-            await TestMenuButtonOpensOurs(menu, screen);
+            await Step(() => TestListFilterReopen(menu, screen, content));
+            await Step(() => TestMenuButtonOpensOurs(menu, screen));
 
-            await TestStoreSafety(menu, screen, outDir);
-            await TestLanguageFonts(screen, outDir); // last: the main menu, the page with it, is made again
+            await Step(() => TestStoreSafety(menu, screen, outDir));
+            await Step(() => TestLanguageFonts(screen, outDir)); // last: the main menu, the page with it, is made again
         }
         catch (Exception e)
         {
@@ -293,6 +296,74 @@ static partial class SelfTest
             File.WriteAllLines(Path.Combine(outDir, "results.txt"), [.. Results, .. Timing()]);
             tree.Quit();
         }
+    }
+
+    // The page the run opened, for Step to put back (none before it opens).
+    static NModdingScreen? _page;
+
+    // One test, guarded: an exception in it is a FAIL naming it (from the call: Step(() => TestX(...))), and the run goes
+    // on to the next test instead of losing every check after it. First what it may have left open is put back (PutBack);
+    // data it left changed isn't, so a later failure may come from this one.
+    static async Task Step(Func<Task> test, [System.Runtime.CompilerServices.CallerArgumentExpression(nameof(test))] string call = "")
+    {
+        try
+        {
+            await test();
+        }
+        catch (Exception e)
+        {
+            Results.Add($"FAIL {call.Split("=>")[^1].Trim().Split('(')[0]} threw: {e}");
+            PutBack();
+        }
+    }
+
+    static Task Step(Action test, [System.Runtime.CompilerServices.CallerArgumentExpression(nameof(test))] string call = "") => Step(() =>
+    {
+        test();
+        return Task.CompletedTask;
+    }, call);
+
+    // After a test that threw: our menus and dialogs closed, the game's popup too, the real mouse back, and on the page the
+    // main list with nothing picked and no search.
+    static void PutBack()
+    {
+        try
+        {
+            Hover.TestMouse = null;
+            Hover.Hide();
+            MenuPanel.Close();
+            RelaunchCheck.Close();
+            ProfileShare.Close();
+            MissingMods.Close();
+            MenuButton.CancelMove();
+            NModalContainer.Instance?.Clear();
+            if (_page is not { } page || !GodotObject.IsInstanceValid(page) || !page.IsInsideTree())
+                return;
+            if (Store.Data.VanillaView)
+                Click(page.GetNode<BaseButton>("SpireModManagerViewToggle"));
+            if (Store.Data.LoadOrderView)
+                Click(page.GetNode<NButton>("SpireModManagerLoadOrderToggle"));
+            var content = page.GetNode<Control>("%ModsScrollContainer/Mask/Content");
+            Selection.Clear(content, record: false);
+            Search.Clear(content);
+        }
+        catch (Exception e)
+        {
+            Results.Add($"INFO couldn't put everything back after it: {e.Message}");
+        }
+    }
+
+    // The guard itself: a test that throws is one FAIL naming it and its exception, and the run goes on (the probe's line
+    // is taken back: it's this check's).
+    static async Task TestStep()
+    {
+        static Task Probe() => throw new InvalidOperationException("the probe's own");
+        var at = Results.Count;
+        await Step(() => Probe());
+        var said = Results.Skip(at).ToList();
+        Results.RemoveRange(at, said.Count);
+        Check("a test that throws: one FAIL naming it and its exception, then the run goes on",
+            said is [var line] && line.StartsWith("FAIL Probe threw: System.InvalidOperationException: the probe's own"), string.Join(" | ", said));
     }
 
     // --real: your own mods (all off) and data. No edits; a tour of the views for screenshots and
@@ -362,7 +433,8 @@ static partial class SelfTest
             var keyFrame = (await FrameMs(menu, () => Type("lib")) + await FrameMs(menu, () => Type(""))) / 2;
             Results.Add($"INFO to the end of the frame: a redraw {redrawFrame:0.0} ms, a search keystroke {keyFrame:0.0} ms");
             await Wait(menu, 1);
-            await TimeSwitches(menu, screen, content);
+            _page = screen;
+            await Step(() => TimeSwitches(menu, screen, content));
             await Capture(screen, outDir, "real-1-categories");
 
             Click(screen.GetNode<NButton>("SpireModManagerLoadOrderToggle"));
@@ -629,11 +701,12 @@ static partial class SelfTest
             else
                 TwinsMissing("first run: a mod installed twice");
 
+            _page = screen;
             if (imported)
-                await TestImported(menu, screen, content, outDir);
+                await Step(() => TestImported(menu, screen, content, outDir));
             else
-                await TestNoData(menu, screen, content, outDir);
-            TestSecondLoad();
+                await Step(() => TestNoData(menu, screen, content, outDir));
+            await Step(() => TestSecondLoad());
         }
         catch (Exception e)
         {
@@ -2824,14 +2897,32 @@ static partial class SelfTest
             shown = line.Visible ? line.Text : "not shown";
             if (menu.GetNodeOrNull<Control>("SpireModManagerMenuButton") is { } menuButton)
             {
-                var (on, off, moved) = HistoryBar.Counts();
-                var noteText = menuButton.GetNodeOrNull<Label>("PendingNote")?.Text ?? "";
-                var card = Hover.TipOf(menuButton);
-                Check("main menu button, a relaunch pending: its note counts the mods turned on, off and moved before the page's line; its card starts with the changes, a faint line, then its own words",
-                    on + off + moved >= 1 && noteText == $"{Menus.Number(on + off + moved)} {ours}"
+                string Note() => menuButton.GetNodeOrNull<Label>("PendingNote")?.Text ?? "";
+                int Count()
+                {
+                    var (on, off, moved) = HistoryBar.Counts();
+                    return on + off + moved + HistoryBar.CopySwitchCount();
+                }
+                static string Said(int count) => count == 1 ? "1 mod change will be applied after a restart" : $"{Menus.Number(count)} mod changes will be applied after a restart";
+                var (count, noteText, card) = (Count(), Note(), Hover.TipOf(menuButton));
+                Check("main menu button, a relaunch pending: its note counts the mods turned on, off and moved (\"1 mod change\", \"2 mod changes\"); its card starts with the changes, a faint line, then its own words",
+                    count >= 1 && noteText == Said(count)
                     && card.StartsWith($"[b]{Menus.Text("SPIRE_MOD_MANAGER.CHANGES_TITLE")}[/b]") && card.Contains($"\n{MenuButton.Divider}\n")
                     && card.EndsWith(MenuButton.Tip(Profiles.Active?.Name ?? "")) && !card.Contains(Menus.Text("SPIRE_MOD_MANAGER.CHANGES_CLICK")),
-                    $"\"{noteText}\" ({on}/{off}/{moved}); card \"{card}\"");
+                    $"\"{noteText}\" ({count}); card \"{card}\"");
+                // One change more or less (Test Fixes, which nothing needs, flipped and back): the note follows, in its own form.
+                if (content.GetChildren().OfType<NModMenuRow>().FirstOrDefault(r => r.Mod?.manifest?.id == "SmmTestFixes")?.GetNode<NTickbox>("Tickbox") is { } fixes)
+                {
+                    fixes.IsTicked = !fixes.IsTicked;
+                    fixes.EmitSignal(NTickbox.SignalName.Toggled, fixes);
+                    await Wait(menu, 0.3);
+                    var (more, moreText) = (Count(), Note());
+                    fixes.IsTicked = !fixes.IsTicked;
+                    fixes.EmitSignal(NTickbox.SignalName.Toggled, fixes);
+                    await Wait(menu, 0.3);
+                    Check("main menu button: one change more or less, its note says the new count", Math.Abs(more - count) == 1 && moreText == Said(more),
+                        $"\"{moreText}\" ({more}, was {count})");
+                }
             }
             else
                 Results.Add("FAIL the main menu button's pending note: no button");
@@ -7896,7 +7987,7 @@ static partial class SelfTest
         where = await Refill();
         var parkedLine = info.GetNodeOrNull<Label>(ModDetails.OthersName);
         Check("another mod's panel with no room for it: out of sight, a line under the details says so, our fields right under it", OutOfSight()
-            && parkedLine is { Visible: true } && parkedLine.Text == "1 more from other mods: see Vanilla List"
+            && parkedLine is { Visible: true } && parkedLine.Text == "1 more from other mods: see the vanilla Modding page"
             && Math.Abs(parkedLine.OffsetTop - details.OffsetBottom - ModDetails.FieldsGap) < 1
             && Math.Abs(yours.OffsetTop - parkedLine.OffsetBottom - ModDetails.FieldsGap) < 1, $"{where}; line \"{parkedLine?.Text}\" shown {parkedLine?.Visible}");
         var inVanilla = "";

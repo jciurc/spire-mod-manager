@@ -20,7 +20,7 @@ Ease of use is the heart of the mod, not just its utility.
 
 ## The game's data comes first
 
-- The vanilla Modding page keeps working untouched, one click away (Vanilla List).
+- The vanilla Modding page keeps working untouched, one click away (the link by our page's title).
 - The game's `mod_list` is the truth for what's on and the load order. Edits go to it at once and take effect
   on relaunch; nothing of ours can disagree with the game's tickboxes.
 - One exception, because the game has one switch for them: copies of a mod installed twice from one source (two
