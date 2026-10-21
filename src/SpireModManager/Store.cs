@@ -27,6 +27,11 @@ internal class StoreData
     // The copy that loads, for each id and source installed more than once, as "<id>|<copy>" (Copies.SwitchKey); the
     // game's list has one switch for them. Sorted, so equal sets save alike; null: none.
     public List<string>? CopyPicks { get; set; }
+    // The copies off while their id and source's switch is on, the same keys as CopyPicks: copies from one source share
+    // the game's switch, so which of them are ticked is ours. Never a pick (the pick always counts as on), never ours,
+    // sorted. Null: a file from before it, or saved by a version without it, where only the pick counts as on
+    // (Copies.Reconcile fills it in at the first main menu); empty: none off.
+    public List<string>? CopiesOff { get; set; }
     public List<Profile> Profiles { get; set; } = [];
     public string? ActiveProfile { get; set; }
     public bool VanillaView { get; set; }
@@ -78,8 +83,10 @@ internal class Profile
 
 // Copy: for a mod installed more than once from one source, the copy that loads (Copies.CopyOf); null keeps the pick
 // as it is (profiles from before it, Better Mod Menu's). Name: for a mod an imported list named that isn't installed,
-// the list's name for it, to show it by until it is (an installed mod goes by its own).
-internal record ProfileMod(string Id, ModSource Source, bool Enabled, string? Copy = null, string? Name = null);
+// the list's name for it, to show it by until it is (an installed mod goes by its own). CopiesOff: for a mod installed
+// more than once from one source, the copies off while the entry is on (copy names, as Copy; never Copy), kept while
+// it's off too; null: only Copy is on, as before copies had a box each (Profiles.HoldCopies fills it in).
+internal record ProfileMod(string Id, ModSource Source, bool Enabled, string? Copy = null, string? Name = null, List<string>? CopiesOff = null);
 
 internal record ScreenPoint(float X, float Y);
 
@@ -229,13 +236,18 @@ internal static class Store
             if (string.IsNullOrEmpty(profile.Id) || !ids.Add(profile.Id)) // none (a hand-edited file), or another's
                 ids.Add(profile.Id = Profile.NewId());
             profile.Name ??= "";
-            profile.Mods = profile.Mods?.Where(m => m?.Id != null).ToList() ?? [];
-            profile.Edited = profile.Edited?.Where(m => m?.Id != null).ToList();
+            profile.Mods = profile.Mods?.Where(m => m?.Id != null).Select(TidyCopies).ToList() ?? [];
+            profile.Edited = profile.Edited?.Where(m => m?.Id != null).Select(TidyCopies).ToList();
             profile.Disabled = profile.Disabled?.Where(m => m?.Id != null).ToList();
         }
         data.CopyPicks = TidyPicks(data.CopyPicks);
+        data.CopiesOff = TidyOff(data.CopiesOff, data.CopyPicks);
         return data;
     }
+
+    // A profile's entry with no null among its copies off (a hand-edited file), each once.
+    static ProfileMod TidyCopies(ProfileMod mod) => mod.CopiesOff is { } off && (off.Any(c => c == null) || off.Distinct().Count() < off.Count)
+        ? mod with { CopiesOff = [.. off.OfType<string>().Distinct()] } : mod;
 
     // One pick per id and source (the first), none that names no copy, sorted; null for none. Never pruned of copies
     // that aren't installed: a Steam item missing for one launch keeps its choice.
@@ -248,19 +260,34 @@ internal static class Store
         return kept.Count == 0 ? null : [.. kept.Values.Order(StringComparer.Ordinal)];
     }
 
-    // The picks in a snapshot of our data (EditsJson), for reading launch and the page's opening against now; the last
-    // one asked is kept (the changes bar asks for the same snapshot on every change).
+    // Each copy off once, none that names no copy or names ours, none that's a stored pick (picks: tidied; the pick
+    // always counts as on), sorted. Null stays null (only the pick counts as on), and empty stays empty, unlike the
+    // picks: none off isn't the same as none read. Never pruned of copies that aren't installed, as the picks aren't.
+    public static List<string>? TidyOff(IEnumerable<string?>? off, IEnumerable<string>? picks)
+    {
+        if (off == null)
+            return null;
+        var picked = (picks ?? []).ToHashSet();
+        return [.. off.OfType<string>().Where(key => Copies.Parse(key) is { } copy && copy.Id != ModEntry.ModId && !picked.Contains(key))
+            .Distinct().Order(StringComparer.Ordinal)];
+    }
+
+    // The picks in a snapshot of our data (EditsJson), with its copies off (none read: a snapshot from before them, where
+    // only the pick counts as on), for reading launch and the page's opening against now; the last one asked is kept
+    // (the changes bar asks for the same snapshot on every change).
     public static Picks PicksIn(string json)
     {
         if (_picksIn is { } last && last.Json == json)
             return last.Picks;
-        List<string>? stored = null;
+        List<string>? stored = null, off = null;
         Dictionary<string, List<string>>? record = null;
         try
         {
             using var doc = JsonDocument.Parse(json);
             if (doc.RootElement.TryGetProperty("copy_picks", out var picks) && picks.ValueKind == JsonValueKind.Array)
                 stored = [.. picks.EnumerateArray().Where(p => p.ValueKind == JsonValueKind.String).Select(p => p.GetString() ?? "")];
+            if (doc.RootElement.TryGetProperty("copies_off", out var copiesOff) && copiesOff.ValueKind == JsonValueKind.Array)
+                off = [.. copiesOff.EnumerateArray().Where(p => p.ValueKind == JsonValueKind.String).Select(p => p.GetString() ?? "")];
             if (doc.RootElement.TryGetProperty("copies", out var copies) && copies.ValueKind == JsonValueKind.Object)
                 record = copies.EnumerateObject().Where(p => p.Value.ValueKind == JsonValueKind.Array).ToDictionary(p => p.Name,
                     p => p.Value.EnumerateArray().Where(c => c.ValueKind == JsonValueKind.String).Select(c => c.GetString() ?? "").ToList());
@@ -269,7 +296,7 @@ internal static class Store
         {
             Log.Warn($"[{ModEntry.ModId}] Could not read the copy picks in a snapshot of our data, so it reads as having none: {e.Message}");
         }
-        var read = new Picks(stored, record);
+        var read = new Picks(stored, record, off);
         _picksIn = (json, read);
         return read;
     }

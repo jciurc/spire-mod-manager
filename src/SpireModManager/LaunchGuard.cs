@@ -25,7 +25,8 @@ namespace SpireModManager;
 static class LaunchGuard
 {
     // One copy. Copy: for a mod installed twice from one source, which copy (Copies.CopyOf), then Enabled says whether
-    // it's the one that loaded; none in a record from before copies were told apart.
+    // it's the one that loaded, not whether its box was ticked (our copies_off says that: two can be ticked, and only one
+    // loads); none in a record from before copies were told apart. What loaded is what a crash is about.
     public record Entry(string Id, ModSource Source, bool Enabled, string? Version,
         [property: JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingNull)] string? Copy = null);
 
@@ -63,7 +64,7 @@ static class LaunchGuard
     // In ModEntry.Init right after SameIdLoad.Apply, inside a try there too (a renamed game member throws at the call,
     // before this try). The mods in load order, each on or off by its own entry (the game's rebuilt list copies the first
     // copy's state); a mod installed twice from one source an entry per copy, on for the copy this launch loads (after
-    // Apply's swap, the first of them).
+    // Apply's swap, the first of them) and off for the rest, ticked or not.
     public static void Begin()
     {
         try
@@ -169,7 +170,7 @@ static class LaunchGuard
     static bool Ours(string id) => id is ModEntry.ModId or ModDoctor.ModId;
 
     // What a launch's mods changed since a working setup: mods new, enabled, disabled, switched to another copy or
-    // updated, and whether the ones enabled in both load in another order. Each id and source by its copy that's on
+    // updated, and whether the ones enabled in both load in another order. Each id and source by its copy that loaded
     // (the first, for a record from before copies were told apart, where every copy has its switch). Never ours (we were
     // running, and an update of ours can't be undone) nor Mod Doctor's (it's there to look at failures; Restore keeps it
     // as it is).
@@ -333,7 +334,8 @@ static class LaunchGuard
         RelaunchCheck.Relaunch(owner);
     }
 
-    // Our data first (the copies that loaded), then the game's list, as Dependencies.Write saves.
+    // Our data first (the copies that loaded, picked and ticked again; the other copies' boxes as they are: they don't
+    // change what loads), then the game's list, as Dependencies.Write saves.
     static void WriteList(IReadOnlyList<Entry> working)
     {
         WritePicks(working);
@@ -385,8 +387,9 @@ static class LaunchGuard
     public static List<string> PicksOf(IReadOnlyList<Entry> working) =>
         [.. working.Where(m => m.Enabled && m.Copy != null && !Ours(m.Id)).Select(m => $"{m.Id}|{m.Copy}").Distinct()];
 
-    // The working setup's copies picked again: through our data where it's loaded, else in its file (a failed start,
-    // before the main menu loads it). A read-only session keeps the picks it has.
+    // The working setup's copies picked again, and so ticked (a pick is never in copies_off): through our data where it's
+    // loaded, else in its file (a failed start, before the main menu loads it). A read-only session keeps the picks it
+    // has.
     static void WritePicks(IReadOnlyList<Entry> working)
     {
         if (PicksOf(working) is not { Count: > 0 } picks)
@@ -401,11 +404,14 @@ static class LaunchGuard
             Log.Warn($"[{ModEntry.ModId}] Our data can't be saved this session, so the restored setup loads the copies picked now: {string.Join(", ", picks)}");
             return;
         }
+        // New lists: Picks reads them again only then.
         Store.Data.CopyPicks = Copies.WithPicks(Store.Data.CopyPicks, picks);
+        Store.Data.CopiesOff = Store.TidyOff(Store.Data.CopiesOff, Store.Data.CopyPicks);
         Store.SaveViewState();
     }
 
-    // The picks written into manager.json in a folder, the rest of it as it is (Store.PatchFile). True if saved.
+    // The picks written into manager.json in a folder, and taken out of its copies off, the rest of it as it is
+    // (Store.PatchFile). A file from before copies_off keeps none: only the pick reads as on there. True if saved.
     public static bool PatchPicks(string dir, IReadOnlyList<string> picks) => Store.PatchFile(dir, json =>
     {
         var stored = (json["copy_picks"] as JsonArray ?? []).Select(p => p?.GetValueKind() == JsonValueKind.String ? (string?)p : null).OfType<string>();
@@ -413,6 +419,10 @@ static class LaunchGuard
             json["copy_picks"] = new JsonArray([.. made.Select(p => (JsonNode?)JsonValue.Create(p))]);
         else
             json.Remove("copy_picks");
+        if (json["copies_off"] is JsonArray off)
+            for (var i = off.Count - 1; i >= 0; i--)
+                if (off[i]?.GetValueKind() == JsonValueKind.String && (string?)off[i] is { } key && picks.Contains(key))
+                    off.RemoveAt(i);
     });
 
     // What the game couldn't start with, offered back: the last working setup, what this launch changed since, and

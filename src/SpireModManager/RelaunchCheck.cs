@@ -4,9 +4,9 @@ using MegaCrit.Sts2.Core.Nodes.Screens.ModdingScreen;
 
 namespace SpireModManager;
 
-// The check before Relaunch Game: enabled mods that won't load (a mod they need is off or missing). With none it
-// relaunches at once; otherwise a dialog lists them, with fixes, Relaunch anyway and Cancel. Cancel (first, at the
-// left) undoes the fixes made in the dialog.
+// The check before Relaunch Game: enabled mods that won't load (a mod they need is off or missing, or another copy of
+// one loads in its place). With none it relaunches at once; otherwise a dialog lists them, with fixes, Relaunch anyway
+// and Cancel. Cancel (first, at the left) undoes the fixes made in the dialog.
 static class RelaunchCheck
 {
     public const string Name = "SpireModManagerRelaunchCheck";
@@ -25,9 +25,10 @@ static class RelaunchCheck
             Show(owner);
     }
 
-    // Every copy that's on with a dependency that's off or missing, each with the info panel's reason (the picked copy of a
-    // mod installed twice too, while the other copy is the one loaded); then a local or Workshop copy that's on but loses
-    // to the other copy of its id (the game loads one), unless the same-ID banner was dismissed for them.
+    // Every copy that loads after a relaunch with a dependency that's off or missing, each with the info panel's reason;
+    // then each copy that's ticked while another copy of its id loads instead (only one copy of an id loads; copies from
+    // one source too), naming that one, unless the same-ID banner was dismissed for them. A copy that won't load has no
+    // dependency problems, so none is listed twice. This mod's copies are left out (Copies.Clashing): they stay on together.
     static List<(Mod Mod, string Why)> Problems()
     {
         var problems = Dependencies.EachCopy(ModManager.Mods.Union(Installed.Mods))
@@ -35,7 +36,9 @@ static class RelaunchCheck
             .ToList();
         var clashing = Copies.Clashing();
         if (clashing.Count > 0 && Store.Data.SameIdDismissed != Copies.Signature(clashing))
-            problems.AddRange(clashing.Where(m => m.manifest?.id != ModEntry.ModId && Copies.Loses(m)).Select(m => (m, Menus.Text("SPIRE_MOD_MANAGER.STATE_DUPLICATE"))));
+            foreach (var copy in clashing)
+                if (Copies.LosesTo(copy) is { } lost)
+                    problems.Add((copy, Menus.Format("SPIRE_MOD_MANAGER.RELAUNCH_COPY_LOSES", ("other", Copies.Named(lost.Loads)))));
         return problems;
     }
 
@@ -61,10 +64,11 @@ static class RelaunchCheck
         var body = new RichTextLabel { Name = "Body", BbcodeEnabled = true, FitContent = true, ScrollActive = false, MouseFilter = Control.MouseFilterEnum.Ignore };
         Hover.Fonts(body, 18);
         string Escape(string text) => text.Replace("[", "[lb]");
+        // Each mod as its row names it, its reasons one sentence each.
         body.Text = problems.Count == 0
             ? Menus.Text("SPIRE_MOD_MANAGER.RELAUNCH_CHECK_OK")
             : Menus.Text("SPIRE_MOD_MANAGER.RELAUNCH_CHECK_INTRO") + "\n" + string.Join("\n", problems.GroupBy(p => p.Mod).Select(g =>
-                $"  •  [b]{Escape((g.Key.manifest?.name ?? g.Key.manifest?.id ?? "") + Copies.Which(g.Key))}[/b]  [color={ProblemHex}]{Escape(string.Join("; ", g.Select(p => p.Why)))}[/color]"));
+                $"  •  [b]{Escape(Copies.Named(g.Key))}[/b]  [color={ProblemHex}]{Escape(string.Join(". ", g.Select(p => p.Why)))}[/color]"));
         column.AddChild(body);
 
         // The Modding page, open or hidden behind the main menu: a fix ticks its boxes and its redraw records it. Before

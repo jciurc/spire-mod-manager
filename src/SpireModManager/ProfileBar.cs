@@ -85,8 +85,8 @@ static class ProfileBar
         var unsaved = new Label { Name = "Unsaved", VerticalAlignment = VerticalAlignment.Center };
         void Recount()
         {
-            var (on, off) = Profiles.UnsavedChanges();
-            unsaved.Text = Menus.Format("SPIRE_MOD_MANAGER.UNSAVED", ("count", Menus.Number(on.Count + off.Count)));
+            var (on, off, switched) = Profiles.UnsavedChanges();
+            unsaved.Text = Menus.Format("SPIRE_MOD_MANAGER.UNSAVED", ("count", Menus.Number(on.Count + off.Count + switched.Count)));
         }
         Style(unsaved, "res://themes/kreon_regular_shared.tres", 16, UnsavedColor);
         row.AddChild(unsaved);

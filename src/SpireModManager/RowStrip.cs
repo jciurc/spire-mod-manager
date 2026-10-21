@@ -348,13 +348,14 @@ static class RowStrip
     }
 
     // "Needs: BaseLib, RitsuLib", each dependency green when fine, red with why when missing, off or loading after this
-    // mod ("before"/"after" in Load Order). A disabled mod's line only shows whether each dependency is on.
+    // mod ("before"/"after" in Load Order). The line of a mod that won't load (off, or another copy of it loads) only
+    // shows whether each dependency loads (any copy of it).
     public static string Needs(Mod? mod, IReadOnlyDictionary<Mod, int> order, bool loadOrder)
     {
         var deps = Dependencies.Of(mod);
         if (mod == null || deps.Count == 0)
             return "";
-        var on = Dependencies.IsOn(mod);
+        var on = Copies.Loads(mod);
         var parts = deps.Select(id =>
         {
             var name = Escape(Dependencies.Find(id)?.manifest?.name ?? id);
@@ -367,8 +368,8 @@ static class RowStrip
                 Dependencies.Problem.Off => (Menus.Text("SPIRE_MOD_MANAGER.DEP_OFF"), ProblemHex),
                 Dependencies.Problem.LoadsBefore => (Menus.Text("SPIRE_MOD_MANAGER.DEP_AFTER"), ProblemHex),
                 _ when loadOrder && on => (Menus.Text("SPIRE_MOD_MANAGER.DEP_BEFORE"), FineHex),
-                // A mod that's off: no problems to report yet, but each dependency still shows whether it's on.
-                _ => (null, Dependencies.Find(id) is { } dep && Dependencies.IsOn(dep) ? FineHex : ProblemHex),
+                // A mod that won't load: no problems to report yet, but each dependency still shows whether it loads.
+                _ => (null, Dependencies.Find(id) is { } dep && Copies.Loads(dep) ? FineHex : ProblemHex),
             };
             if (word != null)
                 return $"[color={NameHex}]{name}[/color] [color={color}]{word}[/color]";
@@ -377,16 +378,16 @@ static class RowStrip
         return $"{Menus.Text("SPIRE_MOD_MANAGER.NEEDS_LABEL")}: {string.Join(", ", parts)}";
     }
 
-    // "Required for 3 mods": how many mods that are on need this one; red when this one is off.
+    // "Required for 3 mods": how many mods that load need this one; red when no copy of it loads.
     public static string RequiredFor(Mod? mod)
     {
         if (mod?.manifest?.id is not { } id)
             return "";
-        var count = Dependencies.NeededBy(id).Count(m => m != mod && Dependencies.IsOn(m));
+        var count = Dependencies.NeededBy(id).Count(m => m != mod && Copies.Loads(m));
         if (count == 0)
             return "";
         var text = Menus.Format(count == 1 ? "SPIRE_MOD_MANAGER.REQUIRED_FOR_ONE" : "SPIRE_MOD_MANAGER.REQUIRED_FOR", ("count", Menus.Number(count)));
-        return $"[color={(Dependencies.IsOn(mod) ? RequiredHex : ProblemHex)}]{text}[/color]";
+        return $"[color={(Copies.Loading(id) != null ? RequiredHex : ProblemHex)}]{text}[/color]";
     }
 
     const string FineHex = "#9fdc9f", ProblemHex = "#ff8070", NameHex = "#fff6e2", RequiredHex = "#e8cf7a";

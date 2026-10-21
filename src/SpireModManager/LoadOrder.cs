@@ -240,7 +240,7 @@ static class LoadOrder
     {
         if (!Store.Data.LoadOrderView || row.Mod is not { } mod)
             return Colors.White;
-        var on = Dependencies.IsOn(mod);
+        var on = Copies.Ticked(mod);
         if (row.GetParent() is Control content && CategoryList.Filter(content) is { Length: > 0 } filter && !Search.Matches(mod, filter))
             return new Color(1, 1, 1, on ? UnmatchedAlpha : UnmatchedOffAlpha);
         return on ? Colors.White : new Color(1, 1, 1, OffAlpha);
@@ -267,7 +267,7 @@ static class LoadOrder
     // block unrelated moves).
     public static bool MoveBreaks(Mod mod, int to, IList<NModMenuRow> rows)
     {
-        if (!Dependencies.IsOn(mod))
+        if (!Copies.Loads(mod))
             return false;
         int Involving(List<Mod> order) => Dependencies.OrderViolations(order).Count(v => v.Mod == mod || v.Needs == mod);
         var order = Mods(rows);
@@ -307,15 +307,16 @@ static class LoadOrder
         if (compact || row.Mod is not { } it)
             return moves;
         // No tickboxes in this view: on and off live here. The game's own handler does the work (CopyTickPatch for a
-        // copy of a mod installed twice: enabling it disables the others, as its tip says).
-        var on = Dependencies.IsOn(it);
+        // copy of a mod installed more than once: that copy alone, as its tip says). The hidden box still toggles, so
+        // this mod's copy locked on (CategoryList.LockedOn) has its Disable greyed here.
+        var on = Copies.Ticked(it);
         moves.Insert(0, new MenuItem(Menus.Text(on ? "SPIRE_MOD_MANAGER.DISABLE_MOD" : "SPIRE_MOD_MANAGER.ENABLE_MOD"), () =>
         {
             var tickbox = row.GetNode<NTickbox>("Tickbox");
             tickbox.IsTicked = !on;
             tickbox.EmitSignal(NTickbox.SignalName.Toggled, tickbox);
             redraw();
-        }, Tip: on ? null : CategoryList.SwitchCopyTip(it)));
+        }, Disabled: CategoryList.LockedOn(it), Tip: CategoryList.CopyTip(it)));
         return moves;
     }
 
@@ -408,12 +409,15 @@ static class LoadOrder
         // Better Mod Menu and ours both ticked, on our views, unless dismissed; it shows and goes at once on a tickbox
         // change. A dismissal is forgotten once the two aren't both ticked.
         Bmm.ForgetDismissedWarning();
-        if (Layout.Wide && Dependencies.Find(ModEntry.ModId) is { } self && !Dependencies.IsOn(self))
-            SelfBanner(content, border, search, self, redraw);
+        // This mod unticked: every copy of it, where it's installed more than once (one ticked still loads).
+        var ours = Dependencies.EachCopy(ModManager.Mods.Union(Installed.Mods)).Where(m => m.manifest?.id == ModEntry.ModId).ToList();
+        if (Layout.Wide && ours.Count > 0 && !ours.Any(Copies.Ticked))
+            SelfBanner(content, border, search, ours, redraw);
         if (Layout.Wide && Bmm.BothTicked && !Store.Data.ManagersWarningDismissed)
             ManagersBanner(content, border, search, redraw);
-        // Two or more copies of one mod id on (the game loads one), on our views, unless dismissed for this set.
-        // A dismissal is forgotten once no copies clash, so the problem coming back shows it again (as Dismiss's tip says).
+        // Two or more copies of one mod id ticked (only one of them loads; this mod's aside, Copies.Clashing), on our
+        // views, unless dismissed for this set. A dismissal is forgotten once no copies clash, so the problem coming back
+        // shows it again (as Dismiss's tip says).
         var clashing = Copies.Clashing();
         if (clashing.Count == 0 && Store.Data.SameIdDismissed != null)
         {
@@ -467,7 +471,7 @@ static class LoadOrder
                 redraw();
             }, name: "EnableNeededButton");
             Hover.Tip(enable, Menus.Format("SPIRE_MOD_MANAGER.ENABLE_NEEDED_TIP",
-                ("mods", string.Join(", ", needed.Select(m => (m.manifest?.name ?? m.manifest?.id) + Copies.Which(m)))))); // which copy, of one installed twice
+                ("mods", string.Join(", ", needed.Select(Copies.Named))))); // which copy, of one installed twice
             buttons.Add(enable);
         }
         Banner(border, search, text, () => NeedsCard(content), buttons);
@@ -476,24 +480,26 @@ static class LoadOrder
     // Enabled mods that won't load, each with what it needs that's disabled (Dep) or not installed (Dep null); the ones
     // needing a disabled mod first.
     static List<(Mod Mod, List<(string Id, Mod? Dep)> Needs)> Unloadable(IEnumerable<Mod> mods) =>
-        mods.Where(Dependencies.IsOn)
+        mods.Where(Copies.Loads)
             .Select(m => (Mod: m, Needs: Dependencies.Of(m).Distinct().Select(id => (Id: id, Dep: Dependencies.Find(id)))
-                .Where(d => d.Dep == null || !Dependencies.IsOn(d.Dep)).ToList()))
+                .Where(d => d.Dep == null || !Copies.Loads(d.Dep)).ToList()))
             .Where(b => b.Needs.Count > 0)
             .OrderBy(b => b.Needs.All(d => d.Dep == null)) // stable: each group keeps its order
             .ToList();
 
-    // This mod unticked: the page goes with it at the relaunch, so a red banner says so, with Show and Enable now.
-    // Ticking it again (or undo) takes the banner away.
-    static void SelfBanner(Control content, Control border, Control? search, Mod self, Action redraw)
+    // This mod unticked (ours: every copy of it): the page goes with it at the relaunch, so a red banner says so, with
+    // Show (the copy running) and Enable now (every copy, so one still loads if another is removed). Ticking it again
+    // (or undo) takes the banner away.
+    static void SelfBanner(Control content, Control border, Control? search, List<Mod> ours, Action redraw)
     {
-        var show = Menus.SmallButton(Menus.Text("SPIRE_MOD_MANAGER.SHOW_PROBLEM"), () => GoTo(content, self), name: "ShowSelfButton");
+        var running = ours.FirstOrDefault(m => m.state == ModLoadState.Loaded) ?? ours[0];
+        var show = Menus.SmallButton(Menus.Text("SPIRE_MOD_MANAGER.SHOW_PROBLEM"), () => GoTo(content, running), name: "ShowSelfButton");
         Hover.Tip(show, Menus.Text("SPIRE_MOD_MANAGER.SHOW_SELF_TIP"));
         var enable = Menus.SmallButton(Menus.Text("SPIRE_MOD_MANAGER.ENABLE_SELF"), () =>
         {
             if (CategoryList.ScreenOf(content) is not { } screen)
                 return;
-            Dependencies.Set([self], true, screen);
+            Dependencies.Set(ours, true, screen);
             redraw();
         }, name: "EnableSelfButton");
         Hover.Tip(enable, Menus.Text("SPIRE_MOD_MANAGER.ENABLE_SELF_TIP"));
@@ -549,8 +555,9 @@ static class LoadOrder
             [show, disable, dismiss], MissingName, "MissingWarning", WarningColor);
     }
 
-    // Copies of one mod id both on, in Jordan's words: a yellow warning, Show stepping through those copies, Dismiss for
-    // this set (a new one shows it again). Its card lists them, saying which copy each is.
+    // Copies of one mod id both ticked (only one loads), in Jordan's words: a yellow warning, Show stepping through those
+    // copies, Dismiss for this set (a new one shows it again). Its card lists them, saying which copy each is and
+    // whether it's the one that loads.
     static void SameIdBanner(Control content, Control border, Control? search, List<Mod> clashing)
     {
         var show = Menus.SmallButton(Menus.Text("SPIRE_MOD_MANAGER.SHOW_PROBLEM"), () => GoTo(content, Next(clashing)), name: "ShowSameIdButton");
@@ -563,8 +570,15 @@ static class LoadOrder
         }, name: "DismissSameIdButton");
         Hover.Tip(dismiss, Menus.Text("SPIRE_MOD_MANAGER.DISMISS_MANAGERS_TIP"));
         Banner(border, search, Menus.Format("SPIRE_MOD_MANAGER.SAME_ID_WARNING", ("count", Menus.Number(clashing.Count))),
-            () => BannerCard("SPIRE_MOD_MANAGER.BANNER_SAME_ID_TITLE", clashing.Select(m => Shown(m) + Copies.Which(m)).ToList()),
-            [show, dismiss], SameIdName, "SameIdWarning", WarningColor);
+            () => SameIdCard(clashing), [show, dismiss], SameIdName, "SameIdWarning", WarningColor);
+    }
+
+    // Copies of one id ticked together: a line per copy, whether it loads after a relaunch.
+    static string? SameIdCard(List<Mod> clashing)
+    {
+        using var lookups = Lookups.Begin();
+        return BannerCard("SPIRE_MOD_MANAGER.BANNER_SAME_ID_TITLE", clashing.Select(m => Menus.Format(Copies.Loads(m)
+            ? "SPIRE_MOD_MANAGER.BANNER_COPY_LOADS" : "SPIRE_MOD_MANAGER.BANNER_COPY_WONT_LOAD", ("mod", Copies.Named(m)))).ToList());
     }
 
     // The banners' cards, worked out when one opens. Main list: each enabled mod that won't load, with what it needs.
@@ -813,7 +827,7 @@ static class LoadOrder
         };
         if (Ours(row))
         {
-            AddLock(handle);
+            Icons.AddPadlock(handle, new Vector2(0.5f, 0.5f)); // in the grip's place (the handle is 30 px wide)
             Hover.Tip(handle, Menus.Text("SPIRE_MOD_MANAGER.LOADS_FIRST_TIP"));
         }
         else
@@ -1105,27 +1119,4 @@ static class LoadOrder
         return (all.Count, last is { } r ? r.End.Y + 4 : content.GlobalPosition.Y);
     }
 
-    // A small padlock in the grip's place: a gold body under an arched shackle.
-    static void AddLock(Control handle)
-    {
-        var shackle = new Panel
-        {
-            AnchorTop = 0.5f, AnchorBottom = 0.5f, OffsetLeft = 10, OffsetRight = 20, OffsetTop = -10, OffsetBottom = 0,
-            MouseFilter = Control.MouseFilterEnum.Ignore,
-        };
-        var arch = new StyleBoxFlat { BgColor = Colors.Transparent, BorderColor = new Color(Gold, 0.8f), DrawCenter = false };
-        (arch.BorderWidthLeft, arch.BorderWidthRight, arch.BorderWidthTop, arch.BorderWidthBottom) = (2, 2, 2, 0);
-        (arch.CornerRadiusTopLeft, arch.CornerRadiusTopRight) = (5, 5);
-        shackle.AddThemeStyleboxOverride("panel", arch);
-        handle.AddChild(shackle);
-        var body = new Panel
-        {
-            AnchorTop = 0.5f, AnchorBottom = 0.5f, OffsetLeft = 7, OffsetRight = 23, OffsetTop = -3, OffsetBottom = 9,
-            MouseFilter = Control.MouseFilterEnum.Ignore,
-        };
-        var fill = new StyleBoxFlat { BgColor = new Color(Gold, 0.8f) };
-        fill.SetCornerRadiusAll(2);
-        body.AddThemeStyleboxOverride("panel", fill);
-        handle.AddChild(body);
-    }
 }

@@ -20,7 +20,7 @@ static class Tags
     static readonly Color New = new(0.5f, 0.84f, 0.78f);
     static readonly Color Stable = new(0.58f, 0.84f, 0.5f);
     static readonly Color Beta = new(0.5f, 0.7f, 1f);
-    static readonly Color SameIdClash = new(0.95f, 0.78f, 0.35f);
+    public static readonly Color SameIdClash = new(0.95f, 0.78f, 0.35f); // copies of an id ticked together (the self-test reads it)
     public static readonly Color CustomColor = new(0.75f, 0.9f, 0.8f);
     static readonly Color Folded = new(0.8f, 0.78f, 0.72f); // the "+N" chip
 
@@ -46,14 +46,18 @@ static class Tags
             chips.Add(new Chip(Menus.Text("SPIRE_MOD_MANAGER.TAG_NEW"), New, Tip: Menus.Text("SPIRE_MOD_MANAGER.TAG_NEW_TIP")));
         if (Compat.WorkshopId(mod) == null)
             chips.Add(new Chip(Menus.Text("SPIRE_MOD_MANAGER.TAG_LOCAL"), Local, Tip: Menus.Text("SPIRE_MOD_MANAGER.TAG_LOCAL_TIP")));
-        // Another copy of this mod id installed (Copies): yellow while both are on (the game loads one), grey otherwise.
-        // Its tip names the others; a click lists every mod installed more than once.
-        if (Copies.Others(mod) is { Count: > 0 } others)
+        // Another copy of this mod id installed (Copies): yellow while this copy and another are ticked (only one of them
+        // loads), grey otherwise, and always for this mod's copies (they stay ticked together: Copies.Clashes). Its tip
+        // names the others (while yellow, the ticked ones, and the copy that loads); a click lists every mod installed
+        // more than once.
+        if (manifest.id is { } id && Copies.Others(mod) is { Count: > 0 } others)
         {
-            var clash = Dependencies.IsOn(mod) && others.Any(Dependencies.IsOn);
-            var named = string.Join(", ", others.Select(o => (Store.InfoFor(o)?.Alias ?? o.manifest?.name ?? o.manifest?.id) + Copies.Which(o)));
-            chips.Add(new Chip(Menus.Text("SPIRE_MOD_MANAGER.TAG_SAME_ID"), clash ? SameIdClash : Local,
-                Tip: Menus.Format(clash ? "SPIRE_MOD_MANAGER.TAG_SAME_ID_CLASH_TIP" : "SPIRE_MOD_MANAGER.TAG_SAME_ID_TIP", ("others", named))));
+            var clash = Copies.Clashes(mod);
+            string Names(IEnumerable<Mod> copies) => string.Join(", ", copies.DistinctBy(Copies.CopyOf).Select(Copies.Named));
+            var tip = clash
+                ? Menus.Format("SPIRE_MOD_MANAGER.TAG_SAME_ID_CLASH_TIP", ("others", Names(others.Where(Copies.Ticked))), ("loads", Copies.Named(Copies.Loading(id) ?? mod)))
+                : Menus.Format("SPIRE_MOD_MANAGER.TAG_SAME_ID_TIP", ("others", Names(others)));
+            chips.Add(new Chip(Menus.Text("SPIRE_MOD_MANAGER.TAG_SAME_ID"), clash ? SameIdClash : Local, Tip: tip));
         }
         // A branch only when the mod is marked for one of the two (most are for both, and #stable, #beta find them anyway).
         // A click searches for what the chip means: marked for this branch and not the other.

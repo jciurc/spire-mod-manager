@@ -182,8 +182,9 @@ static class MenuButton
     public static string PendingText()
     {
         var (on, off, moved) = HistoryBar.Counts();
+        var count = on + off + moved + HistoryBar.CopySwitchCount(); // a copy switched counts too: Changes lists it
         var line = Menus.Text("SPIRE_MOD_MANAGER.PENDING_RESTART");
-        return on + off + moved > 0 ? $"{Menus.Number(on + off + moved)} {line}" : line;
+        return count > 0 ? $"{Menus.Number(count)} {line}" : line;
     }
 
     // Its card while a relaunch is pending: the page's summary of the changes (without "Click for the full list"), a
