@@ -4746,6 +4746,11 @@ static partial class SelfTest
             After("(#Library OR #Gameplay) @symphony", () => ClickChip("SmmTestLib", "Gameplay", true)), After("#Library | #Local", () => ClickChip("SmmTestLib", "Local", false))];
         Check("click-to-search: a term taken out of brackets or an OR leaves the rest as it was, through a row's chips too; a plain click searches for it alone",
             grouped.SequenceEqual(["#b", "#a", "#a OR (#c)", "#a (#b)", "#a OR #c", "#a", "@b", "#Local", "(#Library) @symphony", "#Local"]), string.Join(" | ", grouped));
+        // A bare #tag ends at a quote or a "(", which start the next term (a group, "exact text"), as a word does.
+        var framework = ModEntry.CopyOf("SmmTestLib");
+        Check("search: a bare #tag ends at a quote or a \"(\" (#Library\"Test Framework\", #Library(Framework) find Test Framework)",
+            framework != null && SpireModManager.Search.Matches(framework, "#Library\"Test Framework\"") && SpireModManager.Search.Matches(framework, "#Library(Framework)")
+            && !SpireModManager.Search.Matches(framework, "#Library\"no such words\""));
         // The box takes 200 characters (60 before the grammar): a search longer than 60 stays whole and finds its mods; more
         // than 200 is cut there.
         const string longSearch = "(#Library OR #Gameplay) @\"Spire Mod Manager tests\" -@nobody -@\"no one at all\" -\"no such words\"";
