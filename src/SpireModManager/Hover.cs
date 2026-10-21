@@ -320,6 +320,9 @@ static class Hover
     // Closes the card showing, if any.
     public static void Hide() => Close(_shown);
 
+    // The card showing now (its layer's name, as Watch or Show was given it), or null.
+    public static string? ShownName => _shown is { } shown && GodotObject.IsInstanceValid(shown) ? shown.Name.ToString() : null;
+
     static void Close(Node? layer)
     {
         if (layer == null || !GodotObject.IsInstanceValid(layer))

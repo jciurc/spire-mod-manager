@@ -16,7 +16,7 @@ namespace SpireModManager;
 // Categories, aliases, notes and tags belong to a mod id; a mod installed more than once (a Workshop item and a local
 // fix, two Workshop items) has an entry per copy, seeded from its id's (Copies). Profiles name each mod's source too,
 // like the game's own list.
-public class StoreData
+internal class StoreData
 {
     public int Version { get; set; } = 1;
     public List<Category> Categories { get; set; } = [];
@@ -43,15 +43,15 @@ public class StoreData
     public ShareChoice? ShareChoices { get; set; }
 }
 
-public record ShareChoice(bool Category, bool Disabled, bool Alias, bool Notes);
+internal record ShareChoice(bool Category, bool Disabled, bool Alias, bool Notes);
 
-public class Category
+internal class Category
 {
     public string Name { get; set; } = "";
     public bool Collapsed { get; set; }
 }
 
-public class ModInfo
+internal class ModInfo
 {
     public string? Category { get; set; }
     public string? Alias { get; set; }
@@ -59,7 +59,7 @@ public class ModInfo
     public List<string>? Tags { get; set; }
 }
 
-public class Profile
+internal class Profile
 {
     // Kept through renames and saves, new for a duplicate or import, so a profile renamed since launch isn't read as
     // one deleted and another added. Files from before it get one on load.
@@ -79,13 +79,13 @@ public class Profile
 // Copy: for a mod installed more than once from one source, the copy that loads (Copies.CopyOf); null keeps the pick
 // as it is (profiles from before it, Better Mod Menu's). Name: for a mod an imported list named that isn't installed,
 // the list's name for it, to show it by until it is (an installed mod goes by its own).
-public record ProfileMod(string Id, ModSource Source, bool Enabled, string? Copy = null, string? Name = null);
+internal record ProfileMod(string Id, ModSource Source, bool Enabled, string? Copy = null, string? Name = null);
 
-public record ScreenPoint(float X, float Y);
+internal record ScreenPoint(float X, float Y);
 
-public record ModRef(string Id, ModSource? Source);
+internal record ModRef(string Id, ModSource? Source);
 
-public static class Store
+internal static class Store
 {
     const string FileName = "manager.json";
     const string BackupsFolder = "backups", BackupPattern = "manager.*.json", BrokenPattern = "manager.broken-*.json";

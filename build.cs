@@ -2,6 +2,8 @@
 // Usage: dotnet run build.cs [--no-install]     (needs the .NET 10 SDK; close the game first to install)
 //        dotnet run build.cs --dist             the release: ReleaseVersion, only the files players get, in
 //                                               dist/SpireModManager/ for the Workshop upload; never installs
+//                                               --unshipped-api: a trial of it with the API not shipped yet (to
+//                                               try the Workshop build, as dev.cs smoke does; never to upload)
 using System.Diagnostics;
 using System.Runtime.CompilerServices;
 using System.Security.Cryptography;
@@ -46,6 +48,19 @@ var manifest = new JsonObject
 if (dist)
     manifest["version"] = ReleaseVersion;
 
+// A release ships the API as it is (docs/dev/API.md): first what PublicAPI.Unshipped.txt holds moves to
+// PublicAPI.Shipped.txt, and VERSIONS.md's "unreleased" row names this release (RELEASING.md, step 1). Otherwise the
+// next change could take out what this release's mods were built against, and nothing would notice.
+if (dist && !args.Contains("--unshipped-api"))
+{
+    var unshippedApi = File.ReadAllLines(Path.Combine(root, "src", ModId, "PublicAPI.Unshipped.txt")).Count(l => l.Trim() is { Length: > 0 } line && !line.StartsWith('#'));
+    var lastRow = File.ReadAllLines(Path.Combine(root, "src", ModId, "Api", "VERSIONS.md")).LastOrDefault(l => Regex.IsMatch(l, @"^\|\s*\d+\s*\|"));
+    if (unshippedApi > 0 || lastRow?.Contains("unreleased", StringComparison.OrdinalIgnoreCase) == true)
+        return Fail($"the API isn't shipped yet ({unshippedApi} line(s) in PublicAPI.Unshipped.txt, VERSIONS.md's last row: {lastRow?.Trim()}): "
+            + "move them to PublicAPI.Shipped.txt and write this release in that row first (docs/dev/RELEASING.md, step 1); "
+            + "--unshipped-api builds a trial, never to upload");
+}
+
 // What a player's mods folder gets: the pack, the manifest and the DLL.
 string[] shipped = [".pck", ".json", ".dll"];
 
@@ -87,8 +102,10 @@ File.WriteAllText(Path.Combine(outDir, ModId + ".json"), manifest.ToJsonString(n
 
 // SpireModManagerWorkshop leaves the dev-only code out of the Workshop build: the in-game self-test, the
 // dev-run switches and the debug information (SpireModManager.csproj).
+// The assembly's own version stays 1.0.0.0 (other mods bind to it); the release's goes in as its informational version.
 var build = Process.Start("dotnet", ["build", project, "-c", "Release", "-nologo", "-v", "q",
-    $"-p:SteamLibrary={Steam}", $"-p:SpireModManagerWorkshop={(dist ? "true" : "false")}", $"-o:{Path.Combine(outDir, "bin")}"]);
+    $"-p:SteamLibrary={Steam}", $"-p:SpireModManagerWorkshop={(dist ? "true" : "false")}", $"-o:{Path.Combine(outDir, "bin")}",
+    $"-p:InformationalVersion={manifest["version"]}"]);
 build.WaitForExit();
 if (build.ExitCode != 0)
     return Fail("dotnet build failed");
@@ -111,6 +128,16 @@ if (dist)
     if (!found.SequenceEqual(expected))
         return Fail($"dist/{ModId} must hold exactly {string.Join(", ", expected)}, but holds: {string.Join(", ", found)}");
     Console.WriteLine($"release {ReleaseVersion} in {distDir}: {string.Join(", ", found)}");
+    // For mods that build against the API: the reference assembly (the public surface only, no code), its doc comments
+    // and the release's version, outside the upload folder (docs/dev/API.md: a dependent commits these under lib/).
+    var apiDir = Path.Combine(root, "dist", "api");
+    if (Directory.Exists(apiDir))
+        Directory.Delete(apiDir, recursive: true);
+    Directory.CreateDirectory(apiDir);
+    File.Copy(Path.Combine(outDir, "bin", "ref", ModId + ".dll"), Path.Combine(apiDir, ModId + ".dll"));
+    File.Copy(Path.Combine(outDir, "bin", ModId + ".xml"), Path.Combine(apiDir, ModId + ".xml"));
+    File.WriteAllText(Path.Combine(apiDir, "VERSION"), ReleaseVersion + "\n");
+    Console.WriteLine($"api reference in {apiDir}: {ModId}.dll, {ModId}.xml, VERSION");
     return 0;
 }
 

@@ -322,6 +322,90 @@ static class ModDetails
         return string.Join("\n", lines);
     }
 
+    // The card other mods show for a mod (the API's ModCards): what the row's card says, with Jordan's list for it on
+    // top: the mod's picture, its name as it gives it (never the player's alias: the caller's row shows that), its
+    // version, author and description, then the player's category, every tag (the automatic ones too, in their
+    // colours) and notes. full: nothing cut short (held with Alt).
+    public static string SharedCard(Mod mod, bool full = false)
+    {
+        string Cut(string text, int max) => full || text.Length <= max ? text : text[..max].TrimEnd() + "…";
+        var id = mod.manifest?.id ?? "";
+        var info = Store.InfoFor(mod);
+        var lines = new List<string>();
+        var picture = $"res://{id}/mod_image.png"; // where the game's Modding page finds it
+        if (id.Length > 0 && ResourceLoader.Exists(picture))
+            lines.Add($"[img width=200]{picture}[/img]");
+        var version = mod.manifest?.version is { Length: > 0 } v ? $"  [color=#fff6e280]{Escape(v)}[/color]" : "";
+        lines.Add($"[b][font_size=20]{Escape(mod.manifest?.name is { Length: > 0 } name ? name : id)}[/font_size][/b]{version}");
+        lines.Add($"{Escape(id)}  {Bullet}  {Status(mod)}");
+        lines.AddRange(Problems(mod).Select(p => $"[color={Problem}]{Escape(p)}[/color]"));
+        if (CopyLine(mod, links: false) is var (copyText, copyColor))
+            lines.Add($"[color={copyColor}]{copyText}[/color]");
+        if (GameBlock(mod, effects: false) is { Length: > 0 } game)
+            lines.Add(game.TrimEnd('\n'));
+        string Fact(string key, string value) => $"[color=#e8cf7a]{Menus.Text(key)}[/color]: {value}";
+        lines.Add(Fact("SPIRE_MOD_MANAGER.AUTHOR", mod.manifest?.author is { Length: > 0 } author ? Escape(Cut(author, 80)) : Faint("SPIRE_MOD_MANAGER.UNKNOWN")));
+        if (WorkshopInfo.For(mod) is { } workshop)
+            lines.Add(Fact("SPIRE_MOD_MANAGER.UPDATED", Date(workshop.Updated)));
+        // Its own words, as the panel shows them (markup kept), a few lines of them; cut outside a tag.
+        if (mod.manifest?.description is { Length: > 0 } description)
+            lines.AddRange(["", Described(description.Trim(), full ? int.MaxValue : 240)]);
+        lines.Add("");
+        lines.Add(Fact("SPIRE_MOD_MANAGER.CATEGORY", CategoryList.CategoryName(Copies.Key(mod)) is var category ? Escape(category) : ""));
+        if (Tags.For(mod) is { Count: > 0 } chips)
+            lines.Add(Fact("SPIRE_MOD_MANAGER.TAGS_TERM", string.Join("  ", chips.Select(c => $"[color=#{c.Color.ToHtml(false)}]{Escape(c.Text)}[/color]"))));
+        if (info?.Notes is { } notes)
+            lines.Add($"[color=#e8cf7a]{Menus.Text("SPIRE_MOD_MANAGER.NOTES_TERM")}[/color]\n{Escape(Cut(notes, 300))}");
+        return string.Join("\n", lines);
+    }
+
+    // A mod's description in a card of ours (a plain RichTextLabel, not the game's): the game label's colour tags as
+    // colours, its moving ones ([sine], [jitter] and the like) dropped for their text, cut to about max characters, and
+    // whatever it leaves open closed at its end.
+    public static string Described(string description, int max) => Closed(CutMarkup(GameMarkup.Replace(description, m =>
+        GameColors.TryGetValue(m.Groups[2].Value, out var color) ? m.Groups[1].Length > 0 ? "[/color]" : $"[color=#{color}]" : ""), max));
+
+    static readonly Regex GameMarkup = new(@"\[(/?)(aqua|blue|gold|green|orange|pink|purple|red|sine|jitter|fade_in|fly_in|scramble|thinky_dots|ancient_banner)(?=[\]=\s])[^\]]*\]");
+
+    // The game's (StsColors, as its RichText tags use them).
+    static readonly Dictionary<string, string> GameColors = new()
+    {
+        ["aqua"] = "2aebbe", ["blue"] = "87ceeb", ["gold"] = "efc851", ["green"] = "7fff00", ["orange"] = "ffa518", ["pink"] = "ff78a0",
+        ["purple"] = "ee82ee", ["red"] = "ff5555",
+    };
+
+    // Each tag Godot's rich text draws that's still open at the end, closed there (innermost first). As in Godot, a
+    // closer closes the innermost open tag only when it names it; any other is drawn as text, and closes nothing.
+    static string Closed(string bbcode)
+    {
+        var open = new List<string>();
+        foreach (Match tag in OpeningOrClosing.Matches(bbcode))
+        {
+            var name = tag.Groups[2].Value;
+            if (tag.Groups[1].Length == 0)
+                open.Add(name);
+            else if (open.Count > 0 && open[^1] == name)
+                open.RemoveAt(open.Count - 1);
+        }
+        return open.Count == 0 ? bbcode : bbcode + string.Concat(Enumerable.Reverse(open).Select(name => $"[/{name}]"));
+    }
+
+    // A tag as Godot reads one: its name, then ], = or a space (so "[right-click]" is text, not [right]).
+    static readonly Regex OpeningOrClosing = new(@"\[(/?)(b|i|u|s|code|center|left|right|fill|indent|url|hint|font|font_size|color|bgcolor|fgcolor|outline_size|outline_color|table|cell|ul|ol|lang|p|wave|tornado|shake|fade|rainbow|pulse|img|dropcap|opentype_features)(?=[\]=\s])[^\]]*\]");
+
+    // Rich text cut to about max characters at a space, never inside a [tag] (Closed closes what it leaves open).
+    static string CutMarkup(string text, int max)
+    {
+        if (text.Length <= max)
+            return text;
+        var at = text.LastIndexOf(' ', max);
+        if (at <= 0)
+            at = max;
+        if (text.LastIndexOf('[', at - 1) is var open && open > text.LastIndexOf(']', at - 1))
+            at = open;
+        return text[..at].TrimEnd() + "…";
+    }
+
     // Text cut after 200 characters (some authors write a paragraph where their name goes).
     public static string Short(string text) => text.Length <= 200 ? text : text[..200].TrimEnd() + "…";
 

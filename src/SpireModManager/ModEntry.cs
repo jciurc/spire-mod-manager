@@ -13,7 +13,7 @@ using MegaCrit.Sts2.addons.mega_text;
 namespace SpireModManager;
 
 [ModInitializer(nameof(Init))]
-public static class ModEntry
+internal static class ModEntry
 {
     public const string ModId = "SpireModManager";
 
@@ -138,8 +138,15 @@ public static class ModEntry
 
     // Our own version, from the manifest the game loaded ("0.1.0"; the loaded copy's, if a second one is installed);
     // null if it isn't found.
-    public static string? Version => ModManager.Mods.Where(m => m.manifest?.id == ModId)
-        .OrderByDescending(m => m.state == ModLoadState.Loaded).FirstOrDefault()?.manifest?.version;
+    public static string? Version => VersionOf(ModId);
+
+    // A mod's copy as the API speaks of it: the one loaded, else the first installed (one that arrived while the game
+    // runs too); null if none is.
+    public static Mod? CopyOf(string? id) => id == null ? null
+        : ModManager.Mods.Concat(SpireModManager.Installed.Mods).Where(m => m.manifest?.id == id).OrderByDescending(m => m.state == ModLoadState.Loaded).FirstOrDefault();
+
+    // That copy's version, from its manifest ("0.1.0"), or null.
+    public static string? VersionOf(string? id) => CopyOf(id)?.manifest?.version;
 
     static readonly HashSet<string> Missing = [];
 
@@ -149,16 +156,23 @@ public static class ModEntry
 #endif
 
     // A game resource we use (a scene, texture or font; ours too, as they use the game's), or null if a game update
-    // moved or broke it. Never throws; each missing one is logged once and not tried again.
+    // moved or broke it, or it isn't a T. Never throws; each missing one is logged once and not tried again; one of
+    // another type is logged once per type asked for (it's there: asked for as what it is, it loads).
     public static T? Load<T>(string path) where T : Resource
     {
         if (Missing.Contains(path))
             return null;
-        if (ResourceLoader.Load(path) is T resource)
+        var loaded = ResourceLoader.Load(path);
+        if (loaded is T resource)
             return resource;
-        NoteMissing(path);
+        if (loaded == null)
+            NoteMissing(path);
+        else if (OtherType.Add($"{path} as {typeof(T).Name}"))
+            Log.Warn($"[{ModId}] Game resource {path} is a {loaded.GetClass()}, not a {typeof(T).Name}, so it isn't used there (logged once)");
         return null;
     }
+
+    static readonly HashSet<string> OtherType = [];
 
     // One of the game's fonts, or Godot's own if it's gone. In languages the game draws in its own font (Chinese,
     // Japanese, Korean, Thai, Russian, Polish), Kreon gives way to that font as on the game's labels; only rich text's

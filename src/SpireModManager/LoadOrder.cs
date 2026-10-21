@@ -34,7 +34,7 @@ static class LoadOrder
     static readonly Color LinkFine = new(0.62f, 0.86f, 0.62f);
     // The banners' fills: a deep red for a problem with the mods, a deep amber (the game's gold, darkened) for a warning.
     // Dark enough for the cream text to read on both (about 4.8:1 for the amber over the page).
-    public static readonly Color ProblemColor = new(0.45f, 0.1f, 0.1f, 0.6f), WarningColor = new(0.6f, 0.44f, 0.06f, 0.9f);
+    public static readonly Color ProblemColor = Look.Problem, WarningColor = Look.Warning;
     const float DragStart = 6; // px the mouse moves with the button down before a press becomes a drag
     const float EdgeScroll = 60, EdgeScrollSpeed = 700; // drag near an edge: px from it, px per second at the edge
     static List<(string? Id, ModSource Source)>? _loadedOrder;
@@ -329,7 +329,7 @@ static class LoadOrder
     public const string WarningName = "SpireModManagerOrderWarning", ManagersName = "SpireModManagerManagersWarning", AutoSortName = "AutoSortButton";
     public const string SameIdName = "SpireModManagerSameIdWarning", MissingName = "SpireModManagerMissingWarning";
     public const string SelfName = "SpireModManagerSelfWarning";
-    public const string AutoSortHintName = "AutoSortHint", BannerCardName = "SpireModManagerBannerCard";
+    public const string AutoSortHintName = "AutoSortHint", BannerCardName = BannerBar.CardName;
     const string BadgeName = "WarningBadge";
     const int CardLines = 12; // a banner's card names at most this many mods, then says how many more
     // Each banner's height when last taken down, by name and text (the main list's warning and Load Order's share a
@@ -642,34 +642,9 @@ static class LoadOrder
     static void Banner(Control border, Control? search, string message, Func<string?> card, List<Control> buttons, string name = WarningName,
         string textName = "OrderProblems", Color? color = null)
     {
-        const float height = 34, gap = 6;
-        var bar = new PanelContainer { Name = name };
-        var look = new StyleBoxFlat
-        {
-            BgColor = color ?? ProblemColor, ContentMarginLeft = 12, ContentMarginRight = 8, ContentMarginTop = 4, ContentMarginBottom = 4,
-        };
-        look.SetCornerRadiusAll(RowTitles.CornerRadius); // rounded like the rows and the search box
-        bar.AddThemeStyleboxOverride("panel", look);
-        var line = new HBoxContainer(); // nothing in it expands: all of it sits at the left
-        line.AddThemeConstantOverride("separation", (int)gap);
-        bar.AddChild(line);
-        var text = new Label
-        {
-            Name = textName, Text = message, VerticalAlignment = VerticalAlignment.Center, AutowrapMode = TextServer.AutowrapMode.WordSmart,
-            MouseFilter = Control.MouseFilterEnum.Pass,
-        };
-        text.AddThemeFontOverride("font", ModEntry.Font("res://themes/kreon_regular_shared.tres"));
-        text.AddThemeFontSizeOverride("font_size", 16);
-        line.AddChild(text);
-        // Hovering the text: its card at once, under the banner from the text's left edge. (A redraw makes a new banner,
-        // so a card open over the old one goes with it.)
-        Hover.Watch(text, BannerCardName, card, Hover.Timing.Instant, width: 440,
-            place: () => (new Vector2(text.GlobalPosition.X, bar.GlobalPosition.Y + bar.Size.Y + 6), false, false));
-        foreach (var button in buttons)
-        {
-            button.SizeFlagsVertical = Control.SizeFlags.ShrinkCenter;
-            line.AddChild(button);
-        }
+        const float height = BannerBar.Height;
+        // The room for its text comes from the bar's anchors, not its size, which the text may have widened.
+        var (bar, fit) = BannerBar.Make(message, card, buttons, color ?? ProblemColor, name, textName, b => border.Size.X + b.OffsetRight - b.OffsetLeft);
         border.AddChild(bar);
         bar.SetAnchorsPreset(Control.LayoutPreset.TopWide);
         var scroll = border.GetNode<Control>("ModsScrollContainer");
@@ -679,17 +654,9 @@ static class LoadOrder
         bar.SetMeta(HeightKeyMeta, key);
         (bar.OffsetTop, bar.OffsetBottom) = (top, top + Heights.GetValueOrDefault(key, height));
 
-        // The text takes its one-line width, or what the buttons leave, wrapping there (a wrapping label asks for no
-        // width of its own). The room comes from the bar's anchors, not its size, which the text may have widened.
-        var oneLine = Mathf.Ceil(text.GetThemeFont("font").GetStringSize(message, fontSize: 16).X + text.GetThemeStylebox("normal").GetMinimumSize().X) + 1;
-        void Fit()
-        {
-            var room = border.Size.X + bar.OffsetRight - bar.OffsetLeft - look.GetMinimumSize().X - buttons.Sum(b => b.GetCombinedMinimumSize().X + gap);
-            text.CustomMinimumSize = new Vector2(Math.Min(oneLine, Math.Max(room, 0)), 0);
-        }
-        Fit();
-        border.Resized += Fit;
-        bar.TreeExiting += () => border.Resized -= Fit; // a redraw makes a new bar
+        fit(); // its anchors set
+        border.Resized += fit;
+        bar.TreeExiting += () => border.Resized -= fit; // a redraw makes a new bar
         // Wrapped, the bar grows to fit the lines and what's under it moves down (Layout stacks by each one's height).
         // Hidden (Vanilla View), it leaves the list alone: Better Mod Menu may have laid it out there.
         bar.MinimumSizeChanged += () =>

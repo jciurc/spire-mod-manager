@@ -25,7 +25,7 @@ namespace SpireModManager;
 // the view, writes results.txt, and quits. The runner uses the no-Steam dev sandbox, never real saves.
 // SPIRE_MOD_MANAGER_SELFTEST_MODE picks a shorter suite instead: "real" (RunReal), "first-run" or
 // "first-run-bmm" (RunFirstRun).
-static class SelfTest
+static partial class SelfTest
 {
     const string EnvVar = "SPIRE_MOD_MANAGER_SELFTEST";
     static bool _started;
@@ -133,6 +133,7 @@ static class SelfTest
                 menu.GetTree().Root.Title);
             await Capture(menu, outDir, "1-main-menu");
             await TestMenuButtonCarets(menu, outDir);
+            await TestApi(menu); // the API, as another mod uses it (SelfTest.Api.cs)
             // The relaunch note as it shows while one is pending: centred above the button (shown here for the shot).
             if (menu.GetNodeOrNull<Control>("SpireModManagerMenuButton/PendingNote") is { Visible: false } pendingNote)
             {
@@ -9019,13 +9020,15 @@ static class SelfTest
         await Wait(menu, 0.5);
     }
 
-    // Missing game resources: everything this run used loaded; a path that isn't there gives null without throwing
+    // Missing game resources: everything this run used loaded (bar the self-test's own made-up paths, under
+    // res://SpireModManager/selftest/); a path that isn't there gives null without throwing
     // (noted, and logged, once); a missing font falls back to Godot's own; AddButton's plain stand-in is a working
     // button with the label, at the asked size, with the hidden "Dot" callers show; the category header made in
     // code has the parts a redraw reads.
     static void TestFallbacks(NModdingScreen screen)
     {
-        Check("every game resource used so far loaded", ModEntry.MissingResources.Count == 0, string.Join(", ", ModEntry.MissingResources));
+        var missed = ModEntry.MissingResources.Where(p => !p.StartsWith("res://SpireModManager/selftest/")).ToList();
+        Check("every game resource used so far loaded", missed.Count == 0, string.Join(", ", missed));
         const string madeUp = "res://SpireModManager/selftest/no_such_picture.png";
         Texture2D? first = null, second = null;
         var threw = "";

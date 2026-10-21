@@ -337,7 +337,7 @@ static class Copies
 // Which copy loads for each id and source installed more than once (StoreData.CopyPicks), read once for many asks: our
 // data as it is now, or a snapshot of it (Store.PicksIn). Record: the copies record it came with (StoreData.Copies),
 // for Copies.Picked's fallback.
-public sealed class Picks
+internal sealed class Picks
 {
     readonly Dictionary<(string Id, ModSource Source), string> _stored = [];
 
