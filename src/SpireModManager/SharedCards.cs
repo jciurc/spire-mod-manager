@@ -13,7 +13,7 @@ static class SharedCards
     const float Width = 420;
 
     public static string? Text(string modId, bool full = false) =>
-        ModEntry.CopyOf(modId) is { } mod ? ModDetails.SharedCard(mod, full, StandIns.GetValueOrDefault(modId)) : null;
+        ModEntry.CopyOf(modId) is { } mod ? ModDetails.SharedCard(mod, full, StandIns.TryGetValue(modId, out var standIn) ? standIn : null) : null; // (a tuple: none is null, not an empty one)
 
     // Self-tests (the API's Mods.TestDetails): a mod's details for now, by id, in place of the player's, for the API's
     // reads only (Details and the card): never saved, and SMM's own page and search keep the player's. Gone with the game.
