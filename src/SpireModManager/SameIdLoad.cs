@@ -46,6 +46,9 @@ static class SameIdLoad
     // The copies off read at Init (copies_off; null: none read, or a file from before it).
     public static IReadOnlySet<string>? InitOff { get; private set; }
 
+    // Our record of each id's copies read at Init (StoreData.Copies; null: none read).
+    static IReadOnlyDictionary<string, List<string>>? _initRecord;
+
     // Where our Init found itself among the mods, and the first still to load there (the canary's look).
     public static (int At, string? Id) Self { get; private set; } = (-1, null);
 
@@ -57,7 +60,7 @@ static class SameIdLoad
         try
         {
             var mods = ModManager.Mods;
-            var (canary, why, plan, self) = Run(mods, ReadPicks, IsUs, live: IsLive(mods), readOff: () => InitOff);
+            var (canary, why, plan, self) = Run(mods, ReadPicks, IsUs, live: IsLive(mods), readOff: () => InitOff, readRecord: () => _initRecord);
             (Canary, _plan, Self) = (canary, plan, self);
             if (!canary)
                 Log.Warn($"[{ModEntry.ModId}] Same ID: the game now loads mods differently ({why}); copy picks can't apply until Spire Mod Manager is updated");
@@ -71,10 +74,12 @@ static class SameIdLoad
 
     // The look and the flips, on the game's list or a self-test's made-up one: the canary, then each id installed more
     // than once, in the order of its first slot. readPicks runs only when some id has two copies, readOff (the copies off,
-    // for an id with no pick) after it; isUs tells our own entry apart; live: the list is the one the game loads from (a
-    // copy would take the swap, not the game's loop). log: false for the self-test's made-up lists.
+    // for an id with no pick) and readRecord (our record of its copies, the same) after it; isUs tells our own entry apart;
+    // live: the list is the one the game loads from (a copy would take the swap, not the game's loop). log: false for the
+    // self-test's made-up lists.
     public static (bool Canary, string Why, Dictionary<string, Entry> Plan, (int At, string? Id) Self) Run(IReadOnlyList<Mod> mods,
-        Func<IReadOnlySet<string>?> readPicks, Func<Mod, bool> isUs, bool log = true, bool live = true, Func<IReadOnlySet<string>?>? readOff = null)
+        Func<IReadOnlySet<string>?> readPicks, Func<Mod, bool> isUs, bool log = true, bool live = true, Func<IReadOnlySet<string>?>? readOff = null,
+        Func<IReadOnlyDictionary<string, List<string>>?>? readRecord = null)
     {
         if (mods is not List<Mod> list)
             return (false, "its list of mods isn't a List<Mod>", [], (-1, null));
@@ -94,6 +99,7 @@ static class SameIdLoad
             return (true, "", plan, (self, first));
         var picks = readPicks() ?? new HashSet<string>();
         var off = readOff?.Invoke();
+        var record = readRecord?.Invoke();
         foreach (var group in groups)
         {
             var watch = Stopwatch.StartNew();
@@ -147,14 +153,17 @@ static class SameIdLoad
             }
 
             // The pick, or with none (one naming a copy no longer installed, or two: a local and a Workshop copy each
-            // picked) the first copy that isn't off on our page (copies_off), else the game's own choice: the copy it would
-            // load before failing the rest (also where that first copy not off can't take the id's first slot). A pick in
-            // copies_off (a hand-edited file) loads all the same. One copy can be two manifests (of one Workshop item): its
-            // first.
+            // picked) the first copy that isn't off on our page (copies_off), the copies our record has first, in its order
+            // (as Copies.Picked has them), so a copy new to it (installed with the game closed) doesn't take over from the
+            // one the player had; else the game's own choice: the copy it would load before failing the rest (also where
+            // that first copy not off can't take the id's first slot). A pick in copies_off (a hand-edited file) loads all
+            // the same. One copy can be two manifests (of one Workshop item): its first.
             var matching = todo.Where(p => IsPick(p.Mod)).ToList();
             var hadPick = matching.Select(p => Copies.CopyOf(p.Mod)).Distinct().Count() == 1;
+            var known = record?.GetValueOrDefault(id) ?? [];
+            int Known(Mod m) => known.IndexOf(Copies.CopyOf(m)) is var at && at >= 0 ? at : int.MaxValue;
             var picked = hadPick ? matching[0]
-                : todo.FirstOrDefault(p => off?.Contains(Copies.SwitchKey(p.Mod)) != true) is { Mod: not null } ticked ? ticked : todo[0];
+                : todo.OrderBy(p => Known(p.Mod)).FirstOrDefault(p => off?.Contains(Copies.SwitchKey(p.Mod)) != true) is { Mod: not null } ticked ? ticked : todo[0];
             var (s1, sp) = (todo[0].At, picked.At);
             var swapped = false;
             string? blocked = null;
@@ -195,7 +204,8 @@ static class SameIdLoad
                 ? $"{id} loads from {Copies.CopyOf(picked.Mod)} ({picked.Mod.manifest?.version}, {picked.Mod.path}) as picked; set aside {others} as a duplicate, so the game doesn't fail it"
                     + (swapped ? $"; moved the picked copy from slot {sp} to {s1} so mods needing {id} find it" : "") + $" ({ms:0.0} ms)"
                 : $"{id} has no picked copy yet: "
-                    + (picked.Mod == todo[0].Mod ? $"kept the game's choice, {Copies.CopyOf(picked.Mod)}" : $"loads {Copies.CopyOf(picked.Mod)}, the first copy not disabled on our page")
+                    + (picked.Mod == todo[0].Mod ? $"kept the game's choice, {Copies.CopyOf(picked.Mod)}"
+                        : $"loads {Copies.CopyOf(picked.Mod)}, the first copy not disabled on our page (copies we knew before first)")
                     + (blocked != null ? $" (the first copy not disabled on our page needs {blocked}, which loads after slot {s1})" : "")
                     + $"; set aside {string.Join(", ", setAside.Select(Copies.CopyOf))} as a duplicate"
                     + (swapped ? $"; moved it from slot {sp} to {s1} so mods needing {id} find it" : ""));
@@ -237,7 +247,7 @@ static class SameIdLoad
 
     // The picks as saved (manager.json's copy_picks), read from the file: loading our data does work of its own that waits
     // for the main menu (Store.Load). None for no file; an unreadable file counts as none, logged. The copies off
-    // (copies_off) are read with them, into InitOff.
+    // (copies_off) and our record of the copies (copies) are read with them, into InitOff and _initRecord.
     static IReadOnlySet<string>? ReadPicks()
     {
         try
@@ -252,6 +262,7 @@ static class SameIdLoad
             InitOff = doc.RootElement.TryGetProperty("copies_off", out var off) && off.ValueKind == JsonValueKind.Array
                 ? off.EnumerateArray().Where(p => p.ValueKind == JsonValueKind.String).Select(p => p.GetString() ?? "").ToHashSet()
                 : null;
+            _initRecord = Store.RecordIn(doc.RootElement);
             return InitPicks;
         }
         catch (Exception e)

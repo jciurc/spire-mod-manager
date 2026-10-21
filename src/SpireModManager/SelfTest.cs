@@ -689,6 +689,17 @@ static partial class SelfTest
         if (Header(content, made.Name)?.GetNodeOrNull<LineEdit>("RenameBox") is { } box)
             box.EmitSignal(LineEdit.SignalName.TextSubmitted, box.Text);
         await Wait(menu, 0.3);
+        // One undo step, as from the bulk menu: an undo takes the category and the mod's move back together; a redo both
+        // again.
+        History.Undo();
+        await Wait(menu, 0.3);
+        var undone = Store.Data.Categories.Count == 0 && Store.InfoFor(modId)?.Category == null;
+        History.Redo();
+        await Wait(menu, 0.3);
+        Check("a category made from a mod's menu is one undo step: an undo takes the category and the move back, a redo both again",
+            undone && Store.Data.Categories.FirstOrDefault()?.Name is { } redone && Store.InfoFor(modId)?.Category == redone,
+            $"undone {undone}; {Store.Data.Categories.Count} categories, the mod's {Store.InfoFor(modId)?.Category}");
+        made = Store.Data.Categories.FirstOrDefault() ?? made; // undo restores the data as new objects
         Categories.Delete(made);
         CategoryList.Apply(content);
         await Wait(menu, 0.3);
@@ -2745,6 +2756,15 @@ static partial class SelfTest
         await Wait(menu, 0.5);
         Check("delete the active profile switches to a neighbour", Store.Data.Profiles.Count == count && Profiles.Active != null
             && Store.Data.Profiles.All(p => p.Name != "Brother co-op") && picker.Text == Profiles.Active.Name);
+        // One undo step: an undo brings it back, active (a step for the switch alone would leave the neighbour active); a
+        // redo deletes it again.
+        History.Undo();
+        await Wait(menu, 0.3);
+        var undone = Profiles.Active?.Name == "Brother co-op" && Store.Data.Profiles.Count == count + 1;
+        History.Redo();
+        await Wait(menu, 0.3);
+        Check("deleting the active profile is one undo step: an undo brings it back, active; a redo deletes it again", undone
+            && Store.Data.Profiles.Count == count && Store.Data.Profiles.All(p => p.Name != "Brother co-op"), $"undone {undone}; active {Profiles.Active?.Name}");
         if (start != null && Profiles.Active != start)
             Profiles.SwitchTo(start, screen);
         Check("mod list unchanged after new/duplicate/rename/delete", before.SequenceEqual(ModListState()));
@@ -8963,7 +8983,8 @@ static partial class SelfTest
     // Reconcile makes of data: from before copies_off (only the pick on: every other copy off, once), with none off
     // (nothing seeded; a copy new since its last session reads ticked, with no entry), with the pick in it (it comes
     // out), and with every copy in it and the pick gone (the copy that loaded picked, and out of it). The version stays.
-    // Last, a copy in it that's alone on its switch now: its entry goes, so a twin arriving later doesn't take over.
+    // Last, a copy in it that's alone on its switch now: its entry goes, so a twin arriving later doesn't take over, and
+    // the pick still names the copy gone, which loads once it's back.
     static void TestCopiesOff()
     {
         if (Copies.TwinGroups().All(g => g.Id != TwinId))
@@ -9008,9 +9029,10 @@ static partial class SelfTest
         }
 
         // A copy in copies_off from when it had a twin (that one uninstalled since, the pick still naming it), alone on its
-        // switch now: it reads ticked, its entry goes at the menu and it's the pick there (Reconcile), and a profile's entry
-        // for it the same (HoldCopies). So a new twin arriving before the next launch doesn't take over, wherever the game
-        // lists it: the copy that was there loads (picked), the new one set aside, and at the menu both are ticked.
+        // switch now: it reads ticked and its entry goes at the menu (Reconcile), a profile's entry the same (HoldCopies),
+        // while the pick and the profile's copy still name the copy gone, which loads again once it's back. A new twin
+        // arriving before the next launch instead doesn't take over, wherever the game lists it: the copy that was there
+        // loads (our record has it, not the new one), the new one set aside, and at the menu both are ticked.
         const string Y = "SmmSameIdAlone";
         var alone = Made(Y, "A", ModLoadState.Loaded);
         var data = new StoreData { CopyPicks = [$"{Y}|l:C"], CopiesOff = [$"{Y}|l:A"], Copies = new() { [Y] = ["l:A", "l:C"] } };
@@ -9031,11 +9053,13 @@ static partial class SelfTest
         var alonePicked = data.CopyPicks?.FirstOrDefault(k => Copies.IdOf(k) == Y);
         var heldEntry = held.Mods.Single();
         var us = Made(ModEntry.ModId, "SpireModManager");
+        SameIdLoad.Entry? Launch(params Mod[] copies) => SameIdLoad.Run(new List<Mod>(copies.Prepend(us)), () => data.CopyPicks?.ToHashSet(), m => m == us,
+            log: false, readOff: () => data.CopiesOff?.ToHashSet(), readRecord: () => data.Copies).Plan.GetValueOrDefault(Y);
+        var (backA, backC) = (Made(Y, "A"), Made(Y, "C"));
+        var back = Launch(backA, backC) is { HadPick: true } backPlan && backPlan.Loads == backC && backA.state == ModLoadState.DisabledDuplicate;
         var (again, come) = (Made(Y, "A"), Made(Y, "D"));
-        // The new twin listed first by the game: the copy that was there still loads (it's the pick now, swapped into the
-        // id's first slot).
-        var plan = SameIdLoad.Run(new List<Mod> { us, come, again }, () => data.CopyPicks?.ToHashSet(), m => m == us, log: false,
-            readOff: () => data.CopiesOff?.ToHashSet()).Plan.GetValueOrDefault(Y);
+        // The new twin listed first by the game: the copy that was there still loads (swapped into the id's first slot).
+        var plan = Launch(come, again);
         var launched = plan?.Loads == again && again.state == ModLoadState.None && come.state == ModLoadState.DisabledDuplicate;
         var launchSay = $"loads {(plan?.Loads is { } loads ? Copies.CopyOf(loads) : "none")}, {Copies.CopyOf(again)} {again.state}, {Copies.CopyOf(come)} {come.state}";
         again.state = ModLoadState.Loaded;
@@ -9054,13 +9078,13 @@ static partial class SelfTest
             GameMods().Remove(again);
             GameMods().Remove(come);
         }
-        Check("copies_off: a copy in it alone on its switch now (its twin uninstalled) reads ticked, loses its entry and is the pick at the menu, and a "
-            + "profile's entry the same; a new twin arriving before the next launch, listed first, doesn't take over (the copy that was there loads, the "
-            + "new one set aside; then both ticked, the old one picked)",
-            tickedAlone && aloneOff.Count == 0 && alonePicked == $"{Y}|l:A" && heldEntry is { Copy: "l:A", CopiesOff: [] } && launched
+        Check("copies_off: a copy in it alone on its switch now (its twin uninstalled) reads ticked and loses its entry at the menu, a profile's entry "
+            + "the same, the pick and the profile's copy still the copy gone, which loads when it's back; a new twin arriving before the next launch, "
+            + "listed first, doesn't take over (the copy that was there loads, the new one set aside; then both ticked, the old one picked)",
+            tickedAlone && aloneOff.Count == 0 && alonePicked == $"{Y}|l:C" && heldEntry is { Copy: "l:C", CopiesOff: [] } && back && launched
             && pickAfter == $"{Y}|l:A" && bothTicked,
             $"ticked {tickedAlone}, off after [{string.Join(", ", aloneOff)}], picked {alonePicked}; profile {heldEntry.Copy} off "
-            + $"[{string.Join(", ", heldEntry.CopiesOff ?? [])}]; launch: {launchSay}; then pick {pickAfter}, both ticked {bothTicked}");
+            + $"[{string.Join(", ", heldEntry.CopiesOff ?? [])}]; back loads {back}; launch: {launchSay}; then pick {pickAfter}, both ticked {bothTicked}");
     }
 
     // The launch record per copy (LaunchGuard): a copy round-trips, a record from before copies still reads; a switch to
@@ -9987,12 +10011,27 @@ static partial class SelfTest
             && !Profiles.Edited && againOn.Count == 0;
         var againSay = $"clean before {againClean}; ticked {Copies.Ticked(againBack)}, pick {Copies.Picked(Again, ModSource.ModsDirectory)}, held {againHeld?.Copy} "
             + $"off [{string.Join(",", againHeld?.CopiesOff ?? [])}], edited {Profiles.Edited} (+{string.Join(",", againOn)})";
-        if (Rows().FirstOrDefault(r => r.Mod == againBack) is { } againRow)
+        void Uninstall(Mod gone)
         {
-            content.RemoveChild(againRow);
-            againRow.QueueFree();
+            if (Rows().FirstOrDefault(r => r.Mod == gone) is { } left)
+            {
+                content.RemoveChild(left);
+                left.QueueFree();
+            }
+            GameForgets(gone);
+            Copies.TestRecount();
         }
-        GameForgets(againBack);
+        // Gone and back again, the pick naming it now (as a launch without it leaves the pick): our record has it, so it
+        // stays the pick, and loads after a relaunch.
+        Uninstall(againBack);
+        History.Quietly(data => data.CopyPicks = Copies.WithPicks(data.CopyPicks, [$"{Again}|l:Again2"]));
+        var againReturn = Made(Again, "Again2", ModLoadState.AddedAtRuntime);
+        NewModPopupPatch.TestReset();
+        GameInstalls(againReturn);
+        await Wait(menu, 0.4);
+        NModalContainer.Instance?.Clear();
+        var pickKept = Copies.Picked(Again, ModSource.ModsDirectory) == "l:Again2" && Copies.Loads(againReturn) && !Copies.Loads(againThere);
+        Uninstall(againReturn);
         GameMods().Remove(againThere);
         Copies.TestRecount();
         SaveManager.Instance.SettingsSave.ModSettings?.ModList.RemoveAll(e => e.Id == Again);
@@ -10014,6 +10053,7 @@ static partial class SelfTest
         await Wait(menu, 0.3);
         Check("... a copy uninstalled and back mid-session (our record has it), the profile saved with both ticked: it arrives ticked and keeps the "
             + "profile's tick, nothing unsaved (as when it's back before a launch)", keptTick, againSay);
+        Check("... gone and back again mid-session, the saved pick naming it (our record has it): it stays the pick, loading after a relaunch", pickKept);
         Check("... as it started: the fixture's pick, the other copy off (copies_off as the page opened with, in our file too), nothing changed since the "
             + "page opened for the twins", Picked() == "l:SmmTestTwinB" && Ticked(rowB) && !Ticked(rowA) && SwitchOn() && !Profiles.Edited && OffAsAtStart()
             && CopiesBroken() == null, Say());
@@ -11207,6 +11247,11 @@ static partial class SelfTest
             + "none stays none", offsRead.Data?.CopiesOff is ["SmmX|l:A", "SmmX|l:C"] && File.ReadAllText(Manager(offsDir)) == offs
             && emptyOff.Data?.CopiesOff is [] && noOff.Data is { CopiesOff: null },
             $"{string.Join(", ", offsRead.Data?.CopiesOff ?? [])}; empty {emptyOff.Data?.CopiesOff?.Count}, none {noOff.Data?.CopiesOff?.Count}");
+        // The copies record by hand: an id's null list (Copies.Key would throw on every row) or one left empty goes, nulls
+        // and repeats in one go, the holder still first.
+        var record = Store.LoadFrom(Folder("copies-null", "{\"copies\":{\"X\":null,\"Y\":[\"l:B\",null,\"l:A\",\"l:B\"],\"Z\":[null]}}"), now).Data?.Copies;
+        Check("the copies record in a hand-edited file: a null or emptied list dropped, nulls and repeats in one dropped, the holder first",
+            record is { } kept && kept.Keys.SequenceEqual(["Y"]) && kept["Y"] is ["l:B", "l:A"], string.Join("; ", record?.Select(p => $"{p.Key}: {p.Value?.Count}") ?? []));
         Check("no file and nothing set aside: a first run", Store.LoadFrom(Folder("first", null), now).Data == null
             && Store.LoadFrom(Path.Combine(root, "no-folder"), now).Data == null);
 

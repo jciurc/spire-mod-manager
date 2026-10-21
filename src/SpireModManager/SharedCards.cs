@@ -87,13 +87,14 @@ static class SharedCards
         label.MetaUnderlined = underlined;
     }
 
-    // What the player keeps about a mod: its copy's entry (else the id's), trimmed, blanks as none, tags once each. A
-    // self-test's stand-in comes first.
+    // What the player keeps about a mod: its copy's entry (the id's only with no copy installed: a copy with none of its
+    // own has none, as its card says, never another copy's), trimmed, blanks as none, tags once each. A self-test's
+    // stand-in comes first.
     public static (string? Alias, string? Notes, List<string> Tags, string? Category) Details(string modId)
     {
         if (StandIns.TryGetValue(modId, out var standIn))
             return (standIn.Alias, standIn.Notes, [.. standIn.Tags], standIn.Category);
-        var info = (ModEntry.CopyOf(modId) is { } mod ? Store.InfoFor(mod) : null) ?? Store.InfoFor(modId);
+        var info = ModEntry.CopyOf(modId) is { } mod ? Store.InfoFor(mod) : Store.InfoFor(modId);
         static string? Clean(string? text) => string.IsNullOrWhiteSpace(text) ? null : text.Trim();
         var category = Clean(info?.Category) is { } named && Categories.Find(named) != null ? named : null;
         return (Clean(info?.Alias), Clean(info?.Notes), Once(info?.Tags), category);

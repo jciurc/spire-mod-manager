@@ -801,20 +801,7 @@ static class CategoryList
             items.Add(new MenuItem(category.Name, () => Move(category.Name), Checked: category.Name == common, Radio: true));
         items.Add(new MenuItem(Menus.Text("SPIRE_MOD_MANAGER.UNCATEGORIZED"), () => Move(null), Checked: common == null, Radio: true));
         items.Add(MenuItem.Heading(""));
-        items.Add(new MenuItem(Menus.Text("SPIRE_MOD_MANAGER.NEW_CATEGORY"), () =>
-        {
-            Category? made = null;
-            Store.Batch(() =>
-            {
-                made = Categories.Add();
-                foreach (var id in ids)
-                    Categories.Assign(id, made.Name);
-            });
-            ListFilter.Keep(ids);
-            Edited(content);
-            if (made != null && BeginRename(content, made)?.GetParent() is Control header)
-                ScrollSoon(content, header, flash: false);
-        }));
+        items.Add(new MenuItem(Menus.Text("SPIRE_MOD_MANAGER.NEW_CATEGORY"), () => NewCategory(content, ids)));
         items.Add(MenuItem.Heading(""));
         // The picked rows themselves: a copy picked without its twin switches alone.
         items.AddRange(OnOffItems(content, content.GetChildren().OfType<NModMenuRow>().Where(r => Selection.Contains(r.Mod)), selected: true));
@@ -850,14 +837,7 @@ static class CategoryList
             items.Add(new MenuItem(category.Name, () => Move(category.Name), Checked: category.Name == current, Radio: true));
         items.Add(new MenuItem(Menus.Text("SPIRE_MOD_MANAGER.UNCATEGORIZED"), () => Move(null), Checked: current == null, Radio: true));
         items.Add(MenuItem.Heading(""));
-        items.Add(new MenuItem(Menus.Text("SPIRE_MOD_MANAGER.NEW_CATEGORY"), () =>
-        {
-            var category = Categories.Add();
-            Move(category.Name);
-            // Its name box, at the bottom of the categories: scrolled into view.
-            if (BeginRename(content, category)?.GetParent() is Control header)
-                ScrollSoon(content, header, flash: false);
-        }));
+        items.Add(new MenuItem(Menus.Text("SPIRE_MOD_MANAGER.NEW_CATEGORY"), () => NewCategory(content, [id])));
         return items;
 
         void Move(string? category)
@@ -866,6 +846,23 @@ static class CategoryList
             ListFilter.Keep(id);
             Edited(content);
         }
+    }
+
+    // New category, from a mod's menu or the bulk one: made with these mods in it as one undo step, their rows kept under
+    // a Show: choice (ListFilter.Keep), and its name box opened (at the bottom of the categories: scrolled into view).
+    static void NewCategory(Control content, List<string> ids)
+    {
+        Category? made = null;
+        Store.Batch(() =>
+        {
+            made = Categories.Add();
+            foreach (var id in ids)
+                Categories.Assign(id, made.Name);
+        });
+        ListFilter.Keep(ids);
+        Edited(content);
+        if (made != null && BeginRename(content, made)?.GetParent() is Control header)
+            ScrollSoon(content, header, flash: false);
     }
 
     // Enable all / Disable all / Select all (the mods shown under it: all of them, or the search's matches), then,

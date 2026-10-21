@@ -145,19 +145,18 @@ static class Profiles
     static bool HoldCopies(Profile profile)
     {
         var changed = false;
-        // A mod now installed once from a source (its twin gone): its copy isn't off in any entry, and an entry naming a copy
-        // since removed names it, as for our data (Copies.Reconcile), so a twin installed later doesn't take over through
-        // a profile that still has it off.
+        // A mod now installed once from a source (its twin gone): its copy isn't off in any entry, as for our data
+        // (Copies.Reconcile), so a twin installed later doesn't take over through a profile that still has it off. The copy
+        // an entry names stays, as our pick does: one missing for a launch loads again through the profile once it's back.
         foreach (var alone in Copies.Alone())
             if (alone.manifest?.id is { } aloneId)
             {
                 var copy = Copies.CopyOf(alone);
                 foreach (var list in new[] { profile.Mods, profile.Edited })
                     for (var i = 0; i < (list?.Count ?? 0); i++)
-                        if (list?[i] is { } entry && entry.Id == aloneId && entry.Source == alone.modSource
-                            && (entry.CopiesOff?.Contains(copy) == true || entry.Copy is { } named && named != copy))
+                        if (list?[i] is { } entry && entry.Id == aloneId && entry.Source == alone.modSource && entry.CopiesOff?.Contains(copy) == true)
                         {
-                            list[i] = entry with { Copy = entry.Copy == null ? null : copy, CopiesOff = entry.CopiesOff?.Where(c => c != copy).ToList() };
+                            list[i] = entry with { CopiesOff = entry.CopiesOff?.Where(c => c != copy).ToList() };
                             changed = true;
                         }
             }
@@ -850,18 +849,18 @@ static class Profiles
         return profile;
     }
 
-    // Never the last profile. Deleting the active one first switches to its neighbour.
+    // Never the last profile. Deleting the active one switches to its neighbour (the next, else the one before), one undo
+    // step: out of the list first, so the switch's save records both together. A Store.Batch can't: the switch's redraw
+    // records a step of its own (ModToggledPatch), mid-batch.
     public static bool Delete(Profile profile, NModdingScreen screen)
     {
         var list = Store.Data.Profiles;
         if (list.Count <= 1 || !list.Contains(profile))
             return false;
-        if (profile == Active)
-        {
-            var i = list.IndexOf(profile);
-            SwitchTo(list[i == list.Count - 1 ? i - 1 : i + 1], screen);
-        }
+        var (i, active) = (list.IndexOf(profile), profile == Active);
         list.Remove(profile);
+        if (active)
+            SwitchTo(list[Math.Min(i, list.Count - 1)], screen);
         Store.Save();
         Switched?.Invoke();
         return true;
