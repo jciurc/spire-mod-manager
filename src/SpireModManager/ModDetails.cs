@@ -444,7 +444,7 @@ static class ModDetails
     // relaunch: whether it loads changes at the relaunch. Else Enabled or Disabled, by its box.
     // Pending relaunch, as the status says it: what loads after a relaunch isn't what loaded, for a copy neither set aside
     // as another loads nor failed (those statuses come first). #pending finds these.
-    public static bool Pending(Mod mod) => !Copies.Loses(mod) && !(Copies.Ticked(mod) && mod.state == ModLoadState.Failed)
+    public static bool PendingRelaunch(Mod mod) => !Copies.Loses(mod) && !(Copies.Ticked(mod) && mod.state == ModLoadState.Failed)
         && Copies.Loads(mod) != (mod.state == ModLoadState.Loaded);
 
     static (string Text, string Color) StatusParts(Mod mod)
@@ -452,7 +452,7 @@ static class ModDetails
         var ticked = Copies.Ticked(mod);
         var (key, color) = Copies.Loses(mod) ? ("SPIRE_MOD_MANAGER.STATUS_WONT_LOAD", mod.manifest?.id == ModEntry.ModId ? Disabled : Pending)
             : ticked && mod.state == ModLoadState.Failed ? ("SPIRE_MOD_MANAGER.STATUS_FAILED", Problem)
-            : Pending(mod) ? ("SPIRE_MOD_MANAGER.STATUS_PENDING", Pending)
+            : PendingRelaunch(mod) ? ("SPIRE_MOD_MANAGER.STATUS_PENDING", Pending)
             : ticked ? ("SPIRE_MOD_MANAGER.STATUS_ENABLED", Enabled)
             : ("SPIRE_MOD_MANAGER.STATUS_DISABLED", Disabled);
         return (Menus.Text(key), color);
