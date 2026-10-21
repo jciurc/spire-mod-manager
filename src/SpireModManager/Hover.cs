@@ -37,6 +37,17 @@ static class Hover
     public static Vector2 Mouse(CanvasItem item) => item.GetGlobalMousePosition();
 #endif
 
+    // The mouse over control where it can be seen: inside it, and inside every ancestor that clips what it holds. In a
+    // scrolled list a row slid under its edge isn't hovered, so a card open for it goes once the list scrolls it away.
+    // (Content Options' cards in its scrolled table found this.)
+    public static bool Under(Control control, Vector2 mouse)
+    {
+        for (Node? at = control; at != null; at = at.GetParent())
+            if (at is Control shown && (shown == control || shown.ClipContents) && !shown.GetGlobalRect().HasPoint(mouse))
+                return false;
+        return true;
+    }
+
     static ulong _graceUntil;
     static Node? _shown; // the card showing (its layer), if any
 
@@ -53,7 +64,7 @@ static class Hover
         Func<Rect2>? area = null)
     {
         bool Over() => GodotObject.IsInstanceValid(trigger) && trigger.IsVisibleInTree() && Allowed(trigger)
-            && trigger.GetGlobalRect().HasPoint(Mouse(trigger));
+            && Under(trigger, Mouse(trigger));
         var token = 0;
         trigger.MouseEntered += () =>
         {
@@ -120,7 +131,7 @@ static class Hover
         string? current = null;
         var token = 0;
         bool Over(string meta) => current == meta && GodotObject.IsInstanceValid(label) && label.IsVisibleInTree() && Allowed(label)
-            && label.GetGlobalRect().HasPoint(Mouse(label));
+            && Under(label, Mouse(label));
         label.MetaHoverStarted += meta =>
         {
             var link = meta.AsString();

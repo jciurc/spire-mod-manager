@@ -424,6 +424,45 @@ static partial class SelfTest
             Check("API cards: a WatchLinks mapping that throws shows no card, and is logged naming the mod", failed.Length == 0
                 && ApiGuard.HasLogged($"a ModCards.WatchLinks mapping from {typeof(SelfTest).Assembly.GetName().Name}"), failed);
 
+            // In a scrolled list a row counts as hovered only where it can be seen: none for a row out of view, and the card
+            // goes once the list scrolls its row away under a still mouse.
+            var scroll = new ScrollContainer { Name = "SmmApiCardScroll", Position = new Vector2(300, 500), Size = new Vector2(300, 120) };
+            var column = new VBoxContainer { Name = "Rows" };
+            scroll.AddChild(column);
+            var listed = Enumerable.Range(0, 10).Select(i => new Label { Name = $"Row{i}", Text = $"Row {i}", CustomMinimumSize = new Vector2(280, 30) }).ToList();
+            foreach (var row in listed)
+                column.AddChild(row);
+            menu.AddChild(scroll);
+            bool CardUp() => menu.GetTree().Root.FindChild(SharedCards.CardName, true, false) != null;
+            try
+            {
+                await Wait(menu, 0.1);
+                ModCards.Watch(listed[1], "SmmTestLib");
+                ModCards.Watch(listed[8], "SmmTestLib");
+                var below = listed[8].GetGlobalRect().GetCenter(); // past the list's bottom edge
+                Hover.TestMouse = () => below;
+                listed[8].EmitSignal(Control.SignalName.MouseEntered);
+                await WaitReal(menu, Hover.Delay + 0.2);
+                var outOfView = CardUp();
+                Hover.Hide();
+                var on = listed[1].GetGlobalRect().GetCenter();
+                Hover.TestMouse = () => on;
+                listed[1].EmitSignal(Control.SignalName.MouseEntered);
+                await WaitReal(menu, Hover.Delay + 0.2);
+                var inView = CardUp();
+                scroll.ScrollVertical = 200;
+                await WaitReal(menu, Hover.WindDown + 0.3);
+                var scrolledAway = !CardUp();
+                Check("API cards: in a scrolled list only what can be seen is hovered: no card for a row out of view, and a card goes once its row scrolls away",
+                    !outOfView && inView && scrolledAway, $"out of view {outOfView}, in view {inView}, gone on scroll {scrolledAway}");
+            }
+            finally
+            {
+                Hover.TestMouse = null;
+                Hover.Hide();
+                scroll.QueueFree();
+            }
+
             // A self-test's own way to a card: Show opens the trigger's at once, wherever the mouse is, until Close.
             Hover.TestMouse = () => new Vector2(5, 5); // nowhere near the trigger
             var shownNow = ModCards.Show(trigger);
