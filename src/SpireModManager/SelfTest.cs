@@ -295,11 +295,10 @@ static class SelfTest
     {
         try
         {
-            await Wait(menu, 3);
+            await WaitReal(menu, 3); // the main menu settled: nothing timed below shares its frames with start-up work
             CheckPatches();
             // The first open, timed to the end of its first frame, once the page's text has been shaped ahead (Prewarm).
-            for (var i = 0; i < 100 && !Prewarm.Done; i++)
-                await Wait(menu, 0.1);
+            await WaitUntil(menu, () => Prewarm.Done, timeout: 10);
             RowStrip.Costs.Clear();
             RowStrip.Timing = true; // the rows' lines, buttons and pencils, part by part (#46)
             var opening = System.Diagnostics.Stopwatch.StartNew();
@@ -310,7 +309,7 @@ static class SelfTest
             Results.Add($"INFO first open: built in {built:0} ms, drawn by {opening.Elapsed.TotalMilliseconds:0} ms; text shaped ahead: "
                 + $"{Prewarm.Shaped.Count}{(Prewarm.Done ? "" : " (not finished)")}, its slowest frame {Prewarm.SlowestMs:0} ms");
             Results.Add($"INFO of the build, the rows' lines, buttons and pencils {RowStrip.Costs.Values.Sum():0} ms: {Parts(RowStrip.Costs)}");
-            await Wait(menu, 2);
+            await WaitReal(menu, 2); // the first open settled (its pictures, deferred layout) before the redraws are timed
             var content = screen.GetNode<Control>("%ModsScrollContainer/Mask/Content");
             var rows = content.GetChildren().OfType<NModMenuRow>().ToList();
             Check($"rows ({rows.Count}) match mods ({ModManager.Mods.Count})", rows.Count == ModManager.Mods.Count);
