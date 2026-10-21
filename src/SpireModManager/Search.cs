@@ -78,6 +78,21 @@ static class Search
     // Whether a search says anything: "-", "!!!", "()", OR or a lone quote alone count as an empty box.
     public static bool HasTerms(string filter) => Parse(filter).Root != null;
 
+    // Whether a search looks for one of these tags (any case; not where it leaves the tag out): the main list's line
+    // for #missing and #uninstalled, which no row matches.
+    public static bool Wants(string filter, params string[] tags)
+    {
+        bool In(Clause? clause, bool left) => clause switch
+        {
+            Term { Kind: "#" } term => !left && tags.Contains(term.Value, StringComparer.OrdinalIgnoreCase),
+            Not not => In(not.Of, !left),
+            AnyOf any => any.Of.Any(c => In(c, left)),
+            AllOf all => all.Of.Any(c => In(c, left)),
+            _ => false,
+        };
+        return In(Parse(filter).Root, left: false);
+    }
+
     const string Exact = "\"";
 
     // A search as a tree, tested against each mod.
@@ -330,6 +345,12 @@ static class Search
 
     public static void ByAuthor(Node near, string author, bool add) => Put(near, "@", author, add);
 
+    // A banner's Show: its search in the box, or the box emptied when it holds that search already (as a chip's click).
+    public static void Toggle(Node near, string search) => Put(near, "", search, add: false);
+
+    // Whether a search is this one, as a click compares them (Toggled): a banner's Show is lit while the box holds its own.
+    public static bool Holds(string search, string wanted) => Units(wanted) is { Count: > 0 } pieces && Alike(Units(search), pieces);
+
     static void Put(Node near, string kind, string value, bool add)
     {
         if (CategoryList.ScreenOf(near)?.GetNodeOrNull<LineEdit>("ModsBorder/SpireModManagerSearch") is not { } box)
@@ -354,7 +375,7 @@ static class Search
         if (wanted.Count == 0)
             return search;
         if (!add)
-            return units.Count == wanted.Count && units.Zip(wanted).All(p => Same(p.First, p.Second)) ? "" : Joined(wanted);
+            return Alike(units, wanted) ? "" : Joined(wanted);
         if (Remove(units, wanted))
             return Joined(units);
         // Left out until now ("-#tag"): it's put in instead.
@@ -392,6 +413,8 @@ static class Search
     // aside (#"Library" is #library), or the same bracket or operator (OR is "|").
     static bool Same(Unit a, Unit b) => a.Nots == b.Nots && a.Piece.Piece == b.Piece.Piece
         && (a.Piece.Term is not { } x || b.Piece.Term is { } y && x.Kind == y.Kind && string.Equals(x.Value, y.Value, StringComparison.OrdinalIgnoreCase));
+
+    static bool Alike(List<Unit> a, List<Unit> b) => a.Count == b.Count && a.Zip(b).All(p => Same(p.First, p.Second));
 
     // Takes each run of these pieces out of the search, with the OR (else AND) that joined it to the rest, so what's left
     // reads the same ("#a OR #b #c" without #b is "#a #c"); then brackets left empty, and an operator left with nothing

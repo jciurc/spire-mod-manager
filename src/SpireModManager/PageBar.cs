@@ -28,7 +28,7 @@ static class PageBar
         // Picked mods (two or more) first: then the bar acts on them.
         var picked = Selection.Several;
         var shown = picked ? rows.Where(r => Selection.Contains(r.Mod)).ToList()
-            : rows.Where(r => (filter.Length == 0 || Search.Matches(r.Mod, filter)) && ListFilter.Shows(r.Mod)).ToList();
+            : rows.Where(r => ListFilter.Finds(r.Mod, filter) && ListFilter.Shows(r.Mod)).ToList();
         var choice = ListFilter.Chosen;
         var categories = Store.Data.Categories;
         void Fold(bool collapsed)
@@ -64,7 +64,7 @@ static class PageBar
 
         // "Show:" and its choices, the chosen one lit, each with how many mods it's for (the search applies, as to the
         // count before Enable all); a little apart from the folding buttons after them.
-        var searched = rows.Where(r => filter.Length == 0 || Search.Matches(r.Mod, filter)).ToList();
+        var searched = rows.Where(r => ListFilter.Finds(r.Mod, filter)).ToList();
         var choices = new List<(Button Button, string Name)>();
         var show = new HBoxContainer { Name = "Show", MouseFilter = Control.MouseFilterEnum.Ignore, SizeFlagsVertical = Control.SizeFlags.ShrinkCenter };
         show.AddThemeConstantOverride("separation", 2);

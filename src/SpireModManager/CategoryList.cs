@@ -305,7 +305,7 @@ static class CategoryList
             return;
         ListFilter.Bring(row.Mod); // hidden until the next redraw (the search's clearing, or Expand's)
         var filter = Filter(content);
-        if (filter.Length > 0 && !Store.Data.LoadOrderView && !Search.Matches(row.Mod, filter)) // Load Order hides no row
+        if (filter.Length > 0 && !Store.Data.LoadOrderView && !ListFilter.Finds(row.Mod, filter)) // Load Order hides no row
             Search.Clear(content);
         Expand(content, row);
         ScrollSoon(content, row, flash, focus);
@@ -552,14 +552,15 @@ static class CategoryList
         }
 
         // Search hides the rows that don't match and opens categories with matches; on the main list the Show: choice
-        // too (a row shows when it matches both).
+        // too (a row shows when it matches both). A row kept for an edit by hand counts as matching both (ListFilter).
         var filter = Filter(content);
         var searching = filter.Length > 0;
         var filtering = searching || ListFilter.Current != ListFilter.Choice.All;
+        ListFilter.Searching(filter);
         // Worked out for every row on first use, then looked up: a redraw asks about each row up to four times.
         HashSet<NModMenuRow>? matching = null;
         bool Matches(NModMenuRow row) =>
-            (matching ??= rows.Where(r => (!searching || Search.Matches(r.Mod, filter)) && ListFilter.Shows(r.Mod)).ToHashSet()).Contains(row);
+            (matching ??= rows.Where(r => ListFilter.Finds(r.Mod, filter) && ListFilter.Shows(r.Mod)).ToHashSet()).Contains(row);
 
         LoadOrder.UpdateToolbar(content, rows, () => Redraw(content));
         if (Store.Data.LoadOrderView)
@@ -596,7 +597,7 @@ static class CategoryList
         var known = categories.Select(c => c.Name).ToHashSet();
         string? CategoryOf(NModMenuRow row) =>
             Store.InfoFor(row.Mod)?.Category is { } name && known.Contains(name) ? name : null;
-        if (ListFilter.Current != ListFilter.Choice.All)
+        if (filtering)
             ListFilter.Showed(rows.Where(Matches).Select(r => r.Mod)); // the rows a change to one mod keeps
 
         var index = 0;
@@ -607,6 +608,10 @@ static class CategoryList
             content.AddChild(node);
             content.MoveChild(node, index++);
         }
+        // A search for #missing or #uninstalled: the profile's mods that aren't installed have no rows, so a line at the
+        // list's top says how many, with a link to their list.
+        if (searching && Search.Wants(filter, "missing", "uninstalled") && Profiles.Missing() is { Count: > 0 } missing)
+            Add(MissingHint(content, missing.Count));
 
         void AddSection(string title, List<NModMenuRow> members, bool collapsed, Action<bool> setCollapsed, Category? category = null)
         {
@@ -1065,5 +1070,33 @@ static class CategoryList
         line.OffsetTop = -1;
         line.OffsetBottom = 1;
         return divider;
+    }
+
+    public const string MissingHintName = "SpireModManagerMissingHint";
+
+    // How many of the profile's mods aren't installed, in faint cream, its [url=missing] opening their list
+    // (MissingMods) in our links' colour (no underline; the pointing hand).
+    static Control MissingHint(Control content, int count)
+    {
+        var text = Menus.Format(count == 1 ? "SPIRE_MOD_MANAGER.MISSING_SEARCH_HINT_ONE" : "SPIRE_MOD_MANAGER.MISSING_SEARCH_HINT",
+            ("count", Menus.Number(count)));
+        var line = new RichTextLabel
+        {
+            Name = "Line", BbcodeEnabled = true, FitContent = true, ScrollActive = false, SelectionEnabled = false, MetaUnderlined = false,
+            MouseFilter = Control.MouseFilterEnum.Pass, // the wheel still scrolls the list
+            Text = text.Replace("[url=missing]", $"[url=missing][color={ModDetails.ModLinkHex}]").Replace("[/url]", "[/color][/url]"),
+        };
+        Hover.Fonts(line, 16);
+        line.AddThemeColorOverride("default_color", new Color(1, 0.964706f, 0.886275f, 0.75f));
+        line.MetaClicked += meta =>
+        {
+            if (meta.AsString() == "missing" && ScreenOf(content) is { } screen)
+                MissingMods.Show(screen);
+        };
+        var hint = new MarginContainer { Name = MissingHintName, MouseFilter = Control.MouseFilterEnum.Pass };
+        foreach (var (side, room) in new[] { ("margin_left", 16), ("margin_right", 16), ("margin_top", 8), ("margin_bottom", 8) })
+            hint.AddThemeConstantOverride(side, room);
+        hint.AddChild(line);
+        return hint;
     }
 }

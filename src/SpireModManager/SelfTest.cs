@@ -3072,6 +3072,34 @@ static partial class SelfTest
             Modal.Close(MissingMods.Name);
             await Wait(menu, 0.2);
 
+            // A search for #missing (or #uninstalled): no rows, those mods have none; a line at the list's top says how many
+            // the profile has, its link opening their list. Not for -#missing, nor without a search.
+            var searchBox = border.GetNode<LineEdit>("SpireModManagerSearch");
+            async Task Type(string text)
+            {
+                searchBox.Text = text;
+                searchBox.EmitSignal(LineEdit.SignalName.TextChanged, text);
+                await Wait(menu, 0.3);
+            }
+            RichTextLabel? Hint() => content.GetNodeOrNull<RichTextLabel>($"{CategoryList.MissingHintName}/Line");
+            await Type("#missing");
+            var (hint, rowsShown) = (Hint()?.GetParsedText(), content.GetChildren().OfType<NModMenuRow>().Count(r => r.Visible));
+            await Capture(screen, outDir, "2n-missing-search");
+            Hint()?.EmitSignal(RichTextLabel.SignalName.MetaClicked, "missing");
+            await Wait(menu, 0.4);
+            var opened = Modal.IsOpen(MissingMods.Name);
+            Modal.Close(MissingMods.Name);
+            await Wait(menu, 0.2);
+            await Type("#Uninstalled OR #enabled");
+            var withOr = Hint() != null;
+            await Type("#enabled -#missing");
+            var leftOut = Hint() == null;
+            await Type("");
+            Check("a search for #missing: no rows, a line saying the profile's 2 mods aren't installed, its link opening their list; "
+                + "#Uninstalled in an OR too; not -#missing, nor no search",
+                hint == "2 mods in this profile aren't installed. Show them" && rowsShown == 0 && opened && withOr && leftOut && Hint() == null,
+                $"\"{hint}\", {rowsShown} rows, list opened {opened}, in an OR {withOr}, -#missing none {leftOut}, no search none {Hint() == null}");
+
             // Dismiss: gone; back after switching away and back; gone again, then back after Discard.
             BannerPress("DismissMissingButton");
             await Wait(menu, 0.3);
@@ -5288,7 +5316,25 @@ static partial class SelfTest
         Check("the order warning is red", Red(BannerFill(screen.FindChild(LoadOrder.WarningName, true, false))),
             $"fill {BannerFill(screen.FindChild(LoadOrder.WarningName, true, false))}");
         var fixAfter = ButtonsAfterText(screen.FindChild(LoadOrder.WarningName, true, false));
-        Check("Load Order: the order warning's Fix now right after its text", fixAfter.Ok, fixAfter.Detail);
+        Check("Load Order: the order warning's Go to, Show and Fix now right after its text", fixAfter.Ok, fixAfter.Detail);
+        // Its Go to goes to the mod loading too early; its Show finds it ("#order": every row in place, "1 match").
+        void OrderPress(string name) => (screen.FindChild(LoadOrder.WarningName, true, false)?.FindChild(name, true, false) as BaseButton)
+            ?.EmitSignal(BaseButton.SignalName.Pressed);
+        if (Row(ModEntry.ModId) is { } elsewhere)
+            CategoryList.Select(screen, elsewhere);
+        OrderPress("GoToOrderButton");
+        await Wait(menu, 0.3);
+        var goneTo = CategoryList.Selected;
+        OrderPress("FilterOrderButton");
+        await Wait(menu, 0.3);
+        var searchBox = screen.GetNode<LineEdit>("ModsBorder/SpireModManagerSearch");
+        var (orderBox, orderFound, everyRow) = (searchBox.Text, (screen.FindChild(FindBar.Name, true, false)?.GetNodeOrNull<Label>("Count"))?.Text,
+            Rows().All(r => r.Visible));
+        OrderPress("FilterOrderButton");
+        await Wait(menu, 0.3);
+        Check("Load Order: the order warning's Go to goes to Test Content; its Show puts \"#order\" in the box and finds it alone, every row in place; again, the box empty",
+            goneTo == dependent && orderBox == "#order" && orderFound == "1 match" && everyRow && searchBox.Text == "",
+            $"went to {goneTo?.manifest?.id}; box \"{orderBox}\", find \"{orderFound}\", every row {everyRow}; then \"{searchBox.Text}\"");
         Check("Auto sort has its hint", screen.FindChild("AutoSortHint", true, false) is Label { Visible: true } hintLabel && hintLabel.Text.Contains("compatibility"));
         Check("order warning and Auto sort stay above the list, outside its scrolling",
             screen.FindChild("OrderProblems", true, false) is Node warning && !content.IsAncestorOf(warning)
@@ -5451,27 +5497,74 @@ static partial class SelfTest
         var text = (screen.FindChild("OrderProblems", true, false) as Label)?.Text ?? "";
         Check("main list: a needed mod that is off gets a banner", text.Contains("require a mod that is disabled"), text);
         var warning = screen.FindChild(LoadOrder.WarningName, true, false);
-        var showTip = TipOf(warning?.FindChild("ShowProblemButton", true, false));
-        Check("main list banner: red, its Show tip \"Open the next affected mod\", no \"Better Mod Menu\" in it",
-            Red(BannerFill(warning)) && showTip == "Open the next affected mod" && !BannerWords(warning).Any(w => w.Contains("Better Mod Menu")),
-            $"fill {BannerFill(warning)}; {string.Join(" | ", BannerWords(warning))}");
+        var goToTip = TipOf(warning?.FindChild("GoToProblemButton", true, false));
+        var showTip = TipOf(warning?.FindChild("FilterProblemButton", true, false));
+        Check("main list banner: red, its Go to tip \"Open the next affected mod\", its Show's saying it filters, no \"Better Mod Menu\" in it",
+            Red(BannerFill(warning)) && goToTip == "Open the next affected mod" && showTip?.StartsWith("Shows only these mods") == true
+            && !BannerWords(warning).Any(w => w.Contains("Better Mod Menu")), $"fill {BannerFill(warning)}; {string.Join(" | ", BannerWords(warning))}");
         var after = ButtonsAfterText(warning);
-        Check("main list banner: Show and Enable required mods right after its text", after.Ok
+        Check("main list banner: Go to, Show and Enable required mods right after its text", after.Ok
             && warning?.FindChild("EnableNeededButton", true, false) is Control { Visible: true }, after.Detail);
         await Capture(screen, outDir, "2b-list-banner");
-        // Its Show steps through both sides: the mods that won't load and the disabled one they need.
+        // Its Go to steps through both sides: the mods that won't load and the disabled one they need.
         if (Row(ModEntry.ModId) is { } notAbout)
             CategoryList.Select(screen, notAbout);
         var stepped = new List<string>();
         for (var i = 0; i < 4; i++)
         {
-            warning?.FindChild("ShowProblemButton", true, false)?.EmitSignal(BaseButton.SignalName.Pressed);
+            warning?.FindChild("GoToProblemButton", true, false)?.EmitSignal(BaseButton.SignalName.Pressed);
             await Wait(menu, 0.3);
             stepped.Add(CategoryList.Selected?.manifest?.id ?? "");
         }
-        Check("main list banner: Show steps through the mods that won't load and the disabled mod they need, each once",
+        Check("main list banner: Go to steps through the mods that won't load and the disabled mod they need, each once",
             stepped.Distinct().Count() == 4 && stepped.Contains("SmmTestLib") && stepped.Contains("SmmTestContent") && stepped.Contains("SmmTestUi")
             && stepped[1] == "SmmTestLib", string.Join(", ", stepped)); // a mod that needs it, then it
+
+        // Its Show: "#unmet OR #needed" in the search box, just those rows (Go to's stops among them), the button lit;
+        // pressed again, the box empty, every row back and the button not lit.
+        var searchBox = screen.GetNode<LineEdit>("ModsBorder/SpireModManagerSearch");
+        const string problems = "#unmet OR #needed";
+        Button? Filter() => screen.FindChild(LoadOrder.WarningName, true, false)?.FindChild("FilterProblemButton", true, false) as Button;
+        static bool Lit(Button? button) => button?.HasThemeStyleboxOverride("normal") == true; // Menus.ChoiceButton's chosen look
+        List<string> Visible() => [.. Rows().Where(r => r.Visible).Select(r => r.Mod?.manifest?.id ?? "")];
+        var unfiltered = Visible();
+        Filter()?.EmitSignal(BaseButton.SignalName.Pressed);
+        await Wait(menu, 0.3);
+        var (filtered, matching, lit) = (Visible(), Rows().Where(r => SpireModManager.Search.Matches(r.Mod, problems)).Select(r => r.Mod?.manifest?.id ?? "").ToList(), Lit(Filter()));
+        await Capture(screen, outDir, "2b-list-banner-show");
+        Filter()?.EmitSignal(BaseButton.SignalName.Pressed);
+        await Wait(menu, 0.3);
+        Check("main list banner: its Show puts \"#unmet OR #needed\" in the box and shows just those mods (Go to's stops), lit; again, every row and not lit",
+            filtered.SequenceEqual(matching) && stepped.All(filtered.Contains) && filtered.Count < Rows().Count && lit
+            && searchBox.Text == "" && Visible().SequenceEqual(unfiltered) && !Lit(Filter()),
+            $"shown {string.Join(", ", filtered)}; matching {string.Join(", ", matching)}; lit {lit}, then box \"{searchBox.Text}\", {Visible().Count} rows (before {unfiltered.Count}), lit {Lit(Filter())}");
+
+        // A mod fixed by hand under it keeps its row through a redraw (Test Framework ticked: no longer needed), counted,
+        // while the mods it fixed go; until the search changes. Unticked after, as it was.
+        Filter()?.EmitSignal(BaseButton.SignalName.Pressed);
+        await Wait(menu, 0.3);
+        tickbox.IsTicked = true;
+        tickbox.EmitSignal(NTickbox.SignalName.Toggled, tickbox);
+        await Wait(menu, 0.3);
+        CategoryList.Apply(content);
+        await Wait(menu, 0.3);
+        string Scope() => (screen.FindChild(PageBar.Name, true, false)?.FindChild("Scope", true, false) as Label)?.Text ?? "";
+        var (kept, fixedGone, keptScope, keptCount) = (libRow.Visible, Row("SmmTestContent") is { Visible: false }, Scope(), Visible().Count);
+        searchBox.Text = problems + " ";
+        searchBox.EmitSignal(LineEdit.SignalName.TextChanged, searchBox.Text);
+        await Wait(menu, 0.3);
+        var spaced = libRow.Visible; // the same search: a space more doesn't change it
+        searchBox.Text = "#needed OR #unmet";
+        searchBox.EmitSignal(LineEdit.SignalName.TextChanged, searchBox.Text);
+        await Wait(menu, 0.3);
+        Check("a mod fixed by hand under Show keeps its row, counted, through a redraw, as the mods it fixed go; it goes once the search changes",
+            Copies.Ticked(lib) && kept && fixedGone && keptScope == $"Search matches ({keptCount})" && spaced && !libRow.Visible,
+            $"kept {kept}, Test Content gone {fixedGone}, \"{keptScope}\", with a space {spaced}, changed {libRow.Visible}");
+        tickbox.IsTicked = false;
+        tickbox.EmitSignal(NTickbox.SignalName.Toggled, tickbox);
+        await Wait(menu, 0.3);
+        SpireModManager.Search.Clear(content);
+        await Wait(menu, 0.3);
 
         // Hovering its text: a card with each mod that won't load and what it needs, by the names the list shows (Test
         // Content and the framework by an alias here): Test Content and Test UI, and every other enabled mod whose own row
@@ -5581,14 +5674,15 @@ static partial class SelfTest
             Results.Add("SKIP main list banner keeping the rows in place: Test Addon not installed, or off");
     }
 
-    // Better Mod Menu ticked as well as ours: a yellow banner on our views, above the problem banners, with a Show that
-    // goes to its row and a Dismiss that hides it until the two aren't both ticked. It comes and goes with its tickbox at
+    // Better Mod Menu ticked as well as ours: a yellow banner on our views, above the problem banners, with a Go to that
+    // goes to its row, a Show that searches for the managers, and a Dismiss that hides it until the two aren't both
+    // ticked. It comes and goes with its tickbox at
     // once (no relaunch). The fixture has it installed but off; with --bmm it's on and loaded, so the banner is there from
     // the start. It ends as it started.
     // This mod among the others: the counts count it; installed twice, its boxes are locked on (a click puts one back),
     // the panel says which copy runs, and there's no Same ID warning for it; a Disable all that covers it says it stays
     // on; and installed once and unticked on its own row, a red banner above everything says it (and this page) goes at
-    // the relaunch, with Show (its row) and Enable now. Enable now, and undo, take the banner away.
+    // the relaunch, with Go to (its row) and Enable now. Enable now, and undo, take the banner away.
     static async Task TestSelfIncluded(Node menu, NModdingScreen screen, Control content, string outDir)
     {
         if (Layout.Current != Layout.View.Categories || content.GetChildren().OfType<NModMenuRow>().FirstOrDefault(r => r.Mod?.manifest?.id == ModEntry.ModId)
@@ -5748,18 +5842,19 @@ static partial class SelfTest
         var first = Banner() is { Visible: true } banner && banner.GetGlobalRect().Position.Y >= search.GetGlobalRect().End.Y
             && new[] { LoadOrder.ManagersName, LoadOrder.WarningName }.Select(n => border.GetNodeOrNull<Control>(n)).OfType<Control>()
                 .All(other => !other.Visible || other.GetGlobalRect().Position.Y >= banner.GetGlobalRect().End.Y);
-        Check("this mod unticked: a red banner, first under the search box, says it and this page go at the relaunch, with Show and Enable now",
+        Check("this mod unticked: a red banner, first under the search box, says it and this page go at the relaunch, with Go to (no Show: one mod) and Enable now",
             !Copies.Ticked(self) && first && text == "Spire Mod Manager (this mod) will be disabled on relaunch, and this menu will no longer be accessible until enabled again."
-            && Banner()?.FindChild("ShowSelfButton", true, false) is Button && Banner()?.FindChild("EnableSelfButton", true, false) is Button enableButton
+            && Banner()?.FindChild("GoToSelfButton", true, false) is Button && Banner()?.FindChild("EnableSelfButton", true, false) is Button enableButton
             && Hover.TipOf(enableButton) == "Keep Spire Mod Manager (this mod) enabled" && Profiles.OnCount() == on - 1
-            && Banner()?.FindChild("ShowSelfButton", true, false) is Button showButton && Hover.TipOf(showButton) == "Open Spire Mod Manager (this mod)",
+            && Banner()?.FindChild("GoToSelfButton", true, false) is Button goToButton && goToButton.Text == "Go to"
+            && Hover.TipOf(goToButton) == "Open Spire Mod Manager (this mod)" && Banner()?.FindChildren("*", "Button", true, false).Count == 2,
             $"on {Copies.Ticked(self)}, first {first}, text \"{text}\", count {Profiles.OnCount()}");
         await Capture(screen, outDir, "2k-self-banner");
         if (content.GetChildren().OfType<NModMenuRow>().FirstOrDefault(r => r != row) is { } elsewhere)
             CategoryList.Select(screen, elsewhere);
-        Banner()?.FindChild("ShowSelfButton", true, false)?.EmitSignal(BaseButton.SignalName.Pressed);
+        Banner()?.FindChild("GoToSelfButton", true, false)?.EmitSignal(BaseButton.SignalName.Pressed);
         await Wait(menu, 0.5);
-        Check("its Show goes to this mod's row", CategoryList.Selected == self, CategoryList.Selected?.manifest?.id ?? "none");
+        Check("its Go to goes to this mod's row", CategoryList.Selected == self, CategoryList.Selected?.manifest?.id ?? "none");
         Banner()?.FindChild("EnableSelfButton", true, false)?.EmitSignal(BaseButton.SignalName.Pressed);
         await Wait(menu, 0.3);
         Check("Enable now turns it on and takes the banner away", Copies.Ticked(self) && tickbox.IsTicked && Banner() == null && Profiles.OnCount() == on,
@@ -5809,8 +5904,8 @@ static partial class SelfTest
         Check("Better Mod Menu ticked: the managers banner at once, under the search box, above the list", Bmm.Ticked && Placed()
             && text == "Multiple mod managers are currently enabled, and may cause unexpected behavior.", $"\"{text}\"; {Where()}");
         Check("the managers banner is yellow: a warning, not an error", Yellow(BannerFill(Banner())), $"fill {BannerFill(Banner())}");
-        var showTip = TipOf(Banner()?.FindChild("ShowManagersButton", true, false));
-        Check("the managers banner's Show tip is the other banner's: \"Open the next affected mod\"", showTip == "Open the next affected mod", showTip ?? "no Show");
+        var goToTip = TipOf(Banner()?.FindChild("GoToManagersButton", true, false));
+        Check("the managers banner's Go to tip is the other banner's: \"Open the next affected mod\"", goToTip == "Open the next affected mod", goToTip ?? "no Go to");
         Check("the managers banner names no manager: no \"Better Mod Menu\" in its text or tips",
             BannerWords(Banner()) is { Count: > 0 } words && !words.Any(w => w.Contains("Better Mod Menu")), string.Join(" | ", BannerWords(Banner())));
         // Hovering its text: a card naming the mod managers that are on, by the names the list gives them (ours by the
@@ -5820,7 +5915,7 @@ static partial class SelfTest
         Check("the managers banner's card: the managers that are on, ours by its alias (\"The Manager\"), then Better Mod Menu, nothing else",
             Store.InfoFor(ModEntry.ModId)?.Alias == "The Manager" && managers == $"Enabled mod managers | The Manager | {bmmShown}", managers);
         var after = ButtonsAfterText(Banner());
-        Check("main list: the managers banner's Show and Dismiss right after its text", after.Ok, after.Detail);
+        Check("main list: the managers banner's Go to, Show and Dismiss right after its text", after.Ok, after.Detail);
         await Capture(screen, outDir, "2e-managers-banner");
 
         // A narrow list: the text wraps in what the buttons leave, they follow it, the banner no wider than the list (a
@@ -5831,7 +5926,7 @@ static partial class SelfTest
         border.OffsetRight -= narrower;
         await Wait(menu, 0.3);
         after = ButtonsAfterText(Banner());
-        Check("a narrow list: the managers text wraps, Show and Dismiss right after it inside the list's width, the banner taller, the list below it",
+        Check("a narrow list: the managers text wraps, Go to, Show and Dismiss right after it inside the list's width, the banner taller, the list below it",
             wording?.GetLineCount() > 1 && after.Ok && Banner()?.Size.Y > 40 && Placed(), $"{wording?.GetLineCount()} lines; {after.Detail}; {Where()}");
         await Capture(screen, outDir, "2e-managers-banner-narrow");
         border.OffsetRight += narrower;
@@ -5867,23 +5962,36 @@ static partial class SelfTest
         await Wait(menu, 0.2);
         int Glows() => row.GetChildren().OfType<ColorRect>().Count(c => c.Color.R > 0.9f && c.Color.B < 0.4f); // CategoryList's gold flash
         var (hidden, glows) = (!row.Visible, Glows());
-        Banner()?.FindChild("ShowManagersButton", true, false)?.EmitSignal(BaseButton.SignalName.Pressed);
+        Banner()?.FindChild("GoToManagersButton", true, false)?.EmitSignal(BaseButton.SignalName.Pressed);
         await Wait(menu, 0.5);
-        Check("its Show opens Better Mod Menu's category, scrolls to its row with a glow and shows it in the panel",
+        Check("its Go to opens Better Mod Menu's category, scrolls to its row with a glow and shows it in the panel",
             hidden && row.Visible && list.GetGlobalRect().Intersects(row.GetGlobalRect()) && Glows() > glows && CategoryList.Selected == bmm,
             $"hidden before {hidden}, shown {row.Visible}, row {row.GetGlobalRect()}, list {list.GetGlobalRect()}, glows {glows} -> {Glows()}, panel {CategoryList.Selected?.manifest?.id}");
         // Pressed again: this mod's row, the other manager, then back to Better Mod Menu.
-        Banner()?.FindChild("ShowManagersButton", true, false)?.EmitSignal(BaseButton.SignalName.Pressed);
+        Banner()?.FindChild("GoToManagersButton", true, false)?.EmitSignal(BaseButton.SignalName.Pressed);
         await Wait(menu, 0.5);
         var secondStop = CategoryList.Selected?.manifest?.id;
-        Banner()?.FindChild("ShowManagersButton", true, false)?.EmitSignal(BaseButton.SignalName.Pressed);
+        Banner()?.FindChild("GoToManagersButton", true, false)?.EmitSignal(BaseButton.SignalName.Pressed);
         await Wait(menu, 0.5);
-        Check("its Show, pressed again, goes to this mod's row, then back to Better Mod Menu's", secondStop == ModEntry.ModId && CategoryList.Selected == bmm,
+        Check("its Go to, pressed again, goes to this mod's row, then back to Better Mod Menu's", secondStop == ModEntry.ModId && CategoryList.Selected == bmm,
             $"{secondStop}, then {CategoryList.Selected?.manifest?.id}");
 
-        // Show while a search leaves its row out (main list and Load Order): the search clears, box and list, and the
-        // row shows as above. On the main list its category is closed again too.
+        // Its Show: "#managers" in the box, just the two managers' rows, lit; pressed again, every row.
         var searchBox = border.GetNode<LineEdit>("SpireModManagerSearch");
+        Button? Filter() => Banner()?.FindChild("FilterManagersButton", true, false) as Button;
+        Filter()?.EmitSignal(BaseButton.SignalName.Pressed);
+        await Wait(menu, 0.3);
+        var (managersBox, managerRows, managersLit) = (searchBox.Text, Rows().Where(r => r.Visible).Select(r => r.Mod).ToList(),
+            Filter()?.HasThemeStyleboxOverride("normal") == true);
+        Filter()?.EmitSignal(BaseButton.SignalName.Pressed);
+        await Wait(menu, 0.3);
+        Check("its Show: \"#managers\" in the box, just the two managers' rows, lit; pressed again, the box empty and not lit",
+            managersBox == "#managers" && managerRows.Count == 2 && managerRows.Contains(bmm) && managerRows.Any(m => m?.manifest?.id == ModEntry.ModId) && managersLit
+            && searchBox.Text == "" && Filter()?.HasThemeStyleboxOverride("normal") == false,
+            $"box \"{managersBox}\", rows {string.Join(", ", managerRows.Select(m => m?.manifest?.id))}, lit {managersLit}; then \"{searchBox.Text}\"");
+
+        // Go to while a search leaves its row out (main list and Load Order): the search clears, box and list, and the
+        // row shows as above. On the main list its category is closed again too.
         async Task ShowThroughSearch(string view)
         {
             const string query = "SmmTest"; // the test mods, not Better Mod Menu
@@ -5898,11 +6006,11 @@ static partial class SelfTest
             await Wait(menu, 0.2);
             var left = !row.Visible && !SpireModManager.Search.Matches(bmm, query);
             var old = row.GetChildren().OfType<ColorRect>().ToList(); // an earlier glow may still be fading
-            Banner()?.FindChild("ShowManagersButton", true, false)?.EmitSignal(BaseButton.SignalName.Pressed);
+            Banner()?.FindChild("GoToManagersButton", true, false)?.EmitSignal(BaseButton.SignalName.Pressed);
             await Wait(menu, 0.5);
             var filter = content.HasMeta(CategoryList.FilterMeta) ? (string)content.GetMeta(CategoryList.FilterMeta) : "";
             var glowed = row.GetChildren().OfType<ColorRect>().Except(old).Any(c => c.Color.R > 0.9f && c.Color.B < 0.4f);
-            Check($"{view}: with a search that hides Better Mod Menu's row, its Show clears the search and shows the row, scrolled to with a glow and in the panel",
+            Check($"{view}: with a search that hides Better Mod Menu's row, its Go to clears the search and shows the row, scrolled to with a glow and in the panel",
                 left && searchBox.Text == "" && filter == "" && row.Visible && list.GetGlobalRect().Intersects(row.GetGlobalRect()) && glowed
                 && CategoryList.Selected == bmm,
                 $"hidden by the search {left}, box \"{searchBox.Text}\", filter \"{filter}\", shown {row.Visible}, row {row.GetGlobalRect()}, "
@@ -5925,17 +6033,26 @@ static partial class SelfTest
         await Wait(menu, 0.5);
         Check("Load Order: the managers banner too, under the search box", Placed(), Where());
         after = ButtonsAfterText(Banner());
-        Check("Load Order: the managers banner's Show and Dismiss right after its text", after.Ok, after.Detail);
-        // Load Order finds rather than filters (FindBar): the same search leaves Better Mod Menu's row in place, and Show
-        // goes to it with the search kept.
+        Check("Load Order: the managers banner's Go to, Show and Dismiss right after its text", after.Ok, after.Detail);
+        // Load Order finds rather than filters (FindBar): its Show leaves every row in place, the find bar counting the two
+        // managers, the first in the panel.
+        Filter()?.EmitSignal(BaseButton.SignalName.Pressed);
+        await Wait(menu, 0.5);
+        var found = (border.GetNodeOrNull(FindBar.Name)?.GetNodeOrNull<Label>("Count"))?.Text;
+        var (allShown, firstFound) = (Rows().All(r => r.Visible), CategoryList.Selected);
+        SpireModManager.Search.Clear(content);
+        await Wait(menu, 0.2);
+        Check("Load Order: the managers banner's Show finds the two managers (\"2 matches\"), every row in place, the first in the panel",
+            found == "2 matches" && allShown && (firstFound == bmm || firstFound?.manifest?.id == ModEntry.ModId), $"\"{found}\", all shown {allShown}, panel {firstFound?.manifest?.id}");
+        // The same search leaves Better Mod Menu's row in place, and Go to goes to it with the search kept.
         const string notBmm = "SmmTest";
         searchBox.Text = notBmm;
         searchBox.EmitSignal(LineEdit.SignalName.TextChanged, notBmm);
         await Wait(menu, 0.3);
         var stays = row.Visible && !SpireModManager.Search.Matches(bmm, notBmm);
-        Banner()?.FindChild("ShowManagersButton", true, false)?.EmitSignal(BaseButton.SignalName.Pressed);
+        Banner()?.FindChild("GoToManagersButton", true, false)?.EmitSignal(BaseButton.SignalName.Pressed);
         await Wait(menu, 0.5);
-        Check("Load Order: a search leaves Better Mod Menu's row in place; the banner's Show goes to it, the search kept",
+        Check("Load Order: a search leaves Better Mod Menu's row in place; the banner's Go to goes to it, the search kept",
             stays && row.Visible && searchBox.Text == notBmm && list.GetGlobalRect().Intersects(row.GetGlobalRect()) && CategoryList.Selected == bmm,
             $"in place {stays}, box \"{searchBox.Text}\", row {row.GetGlobalRect()}, list {list.GetGlobalRect()}, panel {CategoryList.Selected?.manifest?.id}");
         SpireModManager.Search.Clear(content);
@@ -5944,9 +6061,10 @@ static partial class SelfTest
         await Wait(menu, 0.5);
         Check("Vanilla View: no managers banner", await WithVanillaView(screen, menu, () => Banner() is not { Visible: true }));
 
-        // Dismiss, beside Show: the banner goes and leaves no gap (the next thing under the search box, the page's own
-        // warning, the page bar or the list, right under it). View state: no undo step, not a change or pending, saved.
-        bool Buttons() => Banner()?.FindChild("ShowManagersButton", true, false) is Button { Visible: true } show
+        // Dismiss, after Go to and Show: the banner goes and leaves no gap (the next thing under the search box, the page's
+        // own warning, the page bar or the list, right under it). View state: no undo step, not a change or pending, saved.
+        bool Buttons() => Banner()?.FindChild("GoToManagersButton", true, false) is Button { Visible: true } goTo
+            && Filter() is { Visible: true } show && show.GetGlobalRect().Position.X > goTo.GetGlobalRect().End.X
             && Banner()?.FindChild("DismissManagersButton", true, false) is Button { Visible: true } dismiss
             && dismiss.GetGlobalRect().Position.X > show.GetGlobalRect().End.X && Hover.TipOf(dismiss).StartsWith("Dismiss the warning");
         bool Closed() => Banner() == null && (new[] { LoadOrder.WarningName, PageBar.Name, PageBar.HintName }
@@ -5960,7 +6078,7 @@ static partial class SelfTest
             Banner()?.FindChild("DismissManagersButton", true, false)?.EmitSignal(BaseButton.SignalName.Pressed);
             await Wait(menu, 0.3);
         }
-        Check("the managers banner has Show, then Dismiss with its tip", Buttons(), Where());
+        Check("the managers banner has Go to, Show, then Dismiss with its tip", Buttons(), Where());
         var before = State();
         var moves = 0;
         void Moved() => moves++; // the history moves when a step is added
@@ -5992,7 +6110,7 @@ static partial class SelfTest
             $"flag {Store.Data.ManagersWarningDismissed}, saved {Saved()}, history moved {moves}; {Where()}");
         Check("no Better Mod Menu warning in the bottom row anywhere (the banner says it now)", screen.FindChild("SpireModManagerBmmWarning", true, false) == null);
         await Tick(tickbox, true);
-        Check("ticked again: the banner is back, with its Show and Dismiss", Placed() && Buttons(), Where());
+        Check("ticked again: the banner is back, with its Go to, Show and Dismiss", Placed() && Buttons(), Where());
 
         // Turned off with another mod, the way Disable all and the relaunch check's fixes do it (their redraw re-arms it,
         // before the profile follows): still one undo step, which turns both back on, and the banner is back.
@@ -6668,7 +6786,7 @@ static partial class SelfTest
             Check("Changed pressed again: they go", pairRows.All(r => !r.Visible), Say());
         }
 
-        // Going to a mod the choice leaves out (a name in the panel, a banner's Show) shows its row; the choice stays.
+        // Going to a mod the choice leaves out (a name in the panel, a banner's Go to) shows its row; the choice stays.
         await Press("ShowDisabledButton");
         if (Rows().FirstOrDefault(r => r.Mod?.manifest?.id == ModEntry.ModId) is { } ours)
         {
@@ -7788,13 +7906,23 @@ static partial class SelfTest
             && chips[1].Tip == Draft(ClashTip, ("others", Named(local)), ("loads", Named(local))),
             $"on {bothOn}; banner {bannerText ?? "none"} ({string.Join(" | ", card)}); chips {string.Join(" / ", chips.Select(c => c.Tip))}");
         void Press(string name) => (SameId()?.FindChild(name, true, false) as BaseButton)?.EmitSignal(BaseButton.SignalName.Pressed);
-        Press("ShowSameIdButton");
+        Press("GoToSameIdButton");
         await Wait(menu, 0.3);
         var firstStop = CategoryList.Selected;
-        Press("ShowSameIdButton");
+        Press("GoToSameIdButton");
         await Wait(menu, 0.3);
-        Check("the banner's Show steps between the two copies", firstStop != null && CategoryList.Selected is { } secondStop && firstStop != secondStop
+        Check("the banner's Go to steps between the two copies", firstStop != null && CategoryList.Selected is { } secondStop && firstStop != secondStop
             && new[] { firstStop, secondStop }.All(m => m == local || m == copy), $"{Copies.KeyOf(firstStop)} then {Copies.KeyOf(CategoryList.Selected)}");
+        // Its Show: "#clash" in the box, just the two copies' rows; pressed again, every row.
+        var searchBox = border.GetNode<LineEdit>("SpireModManagerSearch");
+        Press("FilterSameIdButton");
+        await Wait(menu, 0.3);
+        var (clashBox, clashRows) = (searchBox.Text, content.GetChildren().OfType<NModMenuRow>().Where(r => r.Visible).Select(r => r.Mod).ToList());
+        Press("FilterSameIdButton");
+        await Wait(menu, 0.3);
+        Check("the banner's Show: \"#clash\" in the box, just the two copies; pressed again, the box empty",
+            clashBox == "#clash" && clashRows.Count == 2 && clashRows.Contains(local) && clashRows.Contains(copy) && searchBox.Text == "",
+            $"box \"{clashBox}\", rows {string.Join(", ", clashRows.Select(Copies.KeyOf))}; then \"{searchBox.Text}\"");
         var (editsShown, stepsShown) = (Edits(), History.Steps(History.Track.List));
         Press("DismissSameIdButton");
         await Wait(menu, 0.3);
