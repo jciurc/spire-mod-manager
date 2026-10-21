@@ -133,7 +133,7 @@ static partial class SelfTest
                 menu.GetTree().Root.Title);
             await Capture(menu, outDir, "1-main-menu");
             await TestMenuButtonCarets(menu, outDir);
-            await TestApi(menu); // the API, as another mod uses it (SelfTest.Api.cs)
+            await TestApi(menu, outDir); // the API, as another mod uses it (SelfTest.Api.cs)
             // The relaunch note as it shows while one is pending: centred above the button (shown here for the shot).
             if (menu.GetNodeOrNull<Control>("SpireModManagerMenuButton/PendingNote") is { Visible: false } pendingNote)
             {

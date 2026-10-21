@@ -9,9 +9,10 @@ namespace SpireModManager;
 // engine popup. Rows have an optional mark, a label, a badge and a dim detail; headings separate groups; an optional
 // side column holds a mod's own fields. A press outside or Escape closes it (a right-click outside also reaches
 // what's underneath). One at a time. It opens below right of the mouse (or below a picker), and above (left of) it where
-// there's no room below (right), as Hover's cards do: never over the mouse while there's room on the other side. It
-// closes when its owner leaves the tree, or is hidden. The API's menus (PopupMenus, keyboard) also take the keyboard:
-// the game's cancel closes them, and the screen's hotkeys are off while one is open.
+// there's no room below (right), as Hover's cards do: never over the mouse while there's room on the other side. One
+// taller than the screen goes into columns (Columns). It closes when its owner leaves the tree, or is hidden. The API's
+// menus (PopupMenus, keyboard) also take the keyboard: the game's cancel closes them, and the screen's hotkeys are off
+// while one is open.
 static class MenuPanel
 {
     static readonly Color Cream = Look.Cream;
@@ -267,6 +268,71 @@ static class MenuPanel
         var marks = items.Any(i => i.Checked || i.Radio);
         foreach (var item in items)
             list.AddChild(item.OnSelect == null ? Heading(item.Label) : Row(item, marks));
+        Columns(list);
+    }
+
+    const float ScreenMargin = 16, PanelEdge = 10, ColumnGap = 6; // PanelEdge: the panel's margin and border
+
+    // A menu taller than the screen (Content Options' 40 characters): its rows dealt into columns side by side, top to
+    // bottom and then the next, as even as they go. A heading never ends a column (it goes on with what it heads), and
+    // one the menu starts with stays on top, over them all. More columns than fit across are capped, and they then
+    // scroll up and down. A menu that fits stays one list.
+    static void Columns(VBoxContainer list)
+    {
+        var parts = list.GetChildren().OfType<Control>().ToList();
+        var top = parts.Count > 0 && !parts[0].IsInGroup(ItemGroup) ? parts[0] : null;
+        var dealt = top == null ? parts : parts.Skip(1).ToList();
+        if (dealt.Count < 2)
+            return;
+        var screen = list.GetViewportRect().Size;
+        var gap = list.GetThemeConstant("separation");
+        var room = screen.Y - 2 * (ScreenMargin + PanelEdge) - (top == null ? 0 : top.GetCombinedMinimumSize().Y + gap);
+        var heights = dealt.Select(p => p.GetCombinedMinimumSize().Y + gap).ToList();
+        if (heights.Sum() - gap <= room)
+            return;
+        var across = Math.Max(1, (int)((screen.X - 2 * (ScreenMargin + PanelEdge) + ColumnGap) / (dealt.Max(p => p.GetCombinedMinimumSize().X) + ColumnGap)));
+        var count = Math.Clamp((int)Math.Ceiling(heights.Sum() / (room + gap)), 1, across);
+        var share = heights.Sum() / count;
+        var columns = new List<List<Control>> { new() };
+        var used = 0f;
+        for (var i = 0; i < dealt.Count; i++)
+        {
+            if (columns[^1].Count > 0 && used + heights[i] > share + 0.5f && columns.Count < count)
+                (columns, used) = ([.. columns, []], 0);
+            columns[^1].Add(dealt[i]);
+            used += heights[i];
+        }
+        for (var c = 0; c < columns.Count - 1; c++)
+            while (columns[c].Count > 1 && !columns[c][^1].IsInGroup(ItemGroup))
+            {
+                columns[c + 1].Insert(0, columns[c][^1]);
+                columns[c].RemoveAt(columns[c].Count - 1);
+            }
+        var box = new HBoxContainer { Name = "RowColumns", MouseFilter = Control.MouseFilterEnum.Ignore }; // (Columns is the list and side column's)
+        box.AddThemeConstantOverride("separation", (int)ColumnGap);
+        foreach (var (column, c) in columns.Select((column, c) => (column, c)))
+        {
+            var stack = new VBoxContainer { Name = $"RowColumn{c}", MouseFilter = Control.MouseFilterEnum.Ignore };
+            stack.AddThemeConstantOverride("separation", gap);
+            box.AddChild(stack);
+            foreach (var part in column)
+            {
+                list.RemoveChild(part);
+                stack.AddChild(part);
+            }
+        }
+        var tallest = columns.Max(column => column.Sum(p => p.GetCombinedMinimumSize().Y + gap)) - gap;
+        if (tallest <= room)
+        {
+            list.AddChild(box);
+            return;
+        }
+        var scroll = new ScrollContainer
+        {
+            Name = "Scroll", HorizontalScrollMode = ScrollContainer.ScrollMode.Disabled, CustomMinimumSize = new Vector2(0, room),
+        };
+        scroll.AddChild(box);
+        list.AddChild(scroll);
     }
 
     // A heading: its text in gold over a line, or just the line (a divider). Not an item: no hover, no click, no focus.
@@ -327,7 +393,14 @@ static class MenuPanel
             Style(mark, "res://themes/kreon_regular_shared.tres", 15, item.Checked ? Gold : new Color(Cream, 0.35f));
             line.AddChild(mark);
         }
-        var label = new Label { Text = item.Label, MouseFilter = Control.MouseFilterEnum.Ignore };
+        if (item.Icon is { } icon)
+            line.AddChild(new TextureRect
+            {
+                Name = "Icon", Texture = icon, CustomMinimumSize = new Vector2(26, 36), ExpandMode = TextureRect.ExpandModeEnum.IgnoreSize,
+                StretchMode = TextureRect.StretchModeEnum.KeepAspectCentered, MouseFilter = Control.MouseFilterEnum.Ignore,
+                Modulate = item.Disabled ? new Color(1, 1, 1, 0.45f) : Colors.White,
+            });
+        var label = new Label { Text = item.Label, MouseFilter = Control.MouseFilterEnum.Ignore, VerticalAlignment = VerticalAlignment.Center };
         Style(label, "res://themes/kreon_regular_shared.tres", 20, item.Checked ? Gold : color);
         if (item.External)
             LinkMark.Add(label);

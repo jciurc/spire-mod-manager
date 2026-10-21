@@ -19,6 +19,8 @@ SpireModManager.Api.GameResources
 SpireModManager.Api.MenuEntry
 SpireModManager.Api.MenuEntry.Disabled.get -> bool
 SpireModManager.Api.MenuEntry.Disabled.init -> void
+SpireModManager.Api.MenuEntry.Icon.get -> Godot.Texture2D?
+SpireModManager.Api.MenuEntry.Icon.init -> void
 SpireModManager.Api.MenuEntry.Label.get -> string!
 SpireModManager.Api.MenuEntry.Label.init -> void
 SpireModManager.Api.MenuEntry.MenuEntry() -> void

@@ -14,6 +14,9 @@ public sealed class MenuEntry
     /// <summary>Dimmed and not clickable.</summary>
     public bool Disabled { get; init; }
 
+    /// <summary>A picture before the words (a character's portrait, say), drawn 26x36 keeping its shape, and faded with the row when it's dimmed; null for none.</summary>
+    public Texture2D? Icon { get; init; }
+
     internal bool IsHeading { get; init; }
 
     /// <summary>A gold heading over a line (your mod's name and version, for example).</summary>
@@ -30,7 +33,7 @@ public sealed class MenuOptions
     public Rect2? From { get; init; }
 }
 
-/// <summary>SMM's pop-up menus: an overlay on its own layer, not an engine popup. One open at a time across mods. A press outside or Esc closes it; the screen's hotkeys are off and the keyboard is the menu's while it's open. It closes on its own when its owner leaves the tree or stops being visible.</summary>
+/// <summary>SMM's pop-up menus: an overlay on its own layer, not an engine popup. One open at a time across mods. A press outside or Esc closes it; the screen's hotkeys are off and the keyboard is the menu's while it's open. It closes on its own when its owner leaves the tree or stops being visible. One taller than the screen goes into columns side by side, scrolling up and down past what fits across.</summary>
 public static class PopupMenus
 {
     /// <summary>Opens a menu at the mouse (closing any open one, whichever mod's); returns it, or null if there's nowhere to show it. SMM owns it.</summary>
@@ -67,6 +70,6 @@ public static class PopupMenus
     // A row as SMM's menus have it: a heading (or a divider: one with no words), a dimmed row that does nothing, or a row
     // whose action runs guarded once the menu has closed.
     static MenuItem Item(MenuEntry entry) => entry.IsHeading ? MenuItem.Heading(entry.Label ?? "")
-        : entry.OnSelect is { } select && !entry.Disabled ? new MenuItem(entry.Label ?? "", ApiGuard.Callback("a PopupMenus entry's OnSelect", select))
-        : new MenuItem(entry.Label ?? "", () => { }, Disabled: true);
+        : entry.OnSelect is { } select && !entry.Disabled ? new MenuItem(entry.Label ?? "", ApiGuard.Callback("a PopupMenus entry's OnSelect", select), Icon: entry.Icon)
+        : new MenuItem(entry.Label ?? "", () => { }, Disabled: true, Icon: entry.Icon);
 }
