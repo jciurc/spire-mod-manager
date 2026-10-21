@@ -5,7 +5,8 @@ namespace SpireModManager;
 // One of the player's own fields for a mod (alias, notes, tags), the same in the info panel and a right-click menu.
 // For several mods (the bulk menu), tags edit the ones all share and notes replace all (a warning counts the notes
 // overwritten). At rest: the value (tags as pills) or a call to action. Editing: a box with ✕; Enter saves (Ctrl+Enter
-// in notes), Escape or Cancel restores, clicking away saves. Tags also show the automatic ones, and suggestions.
+// in notes), Escape or Cancel restores, clicking away saves. Tags also show the automatic ones, suggestions, and pills
+// while typing (TagPills).
 sealed class ModField
 {
     public enum Kind { Alias, Notes, Tags }
@@ -118,7 +119,10 @@ sealed class ModField
         _box.MouseDefaultCursorShape = Control.CursorShape.Ibeam;
         root.AddChild(_box);
         if (kind == Kind.Tags && _box is LineEdit tagsBox)
+        {
             _suggestions = new TagSuggestions(tagsBox);
+            TagPills.Attach(tagsBox);
+        }
 
         // Notes has no built-in clear button: a small ✕ in its top-right corner while editing.
         Button? clear = null;
@@ -169,8 +173,9 @@ sealed class ModField
         };
         _box.GuiInput += e =>
         {
-            // The suggestions' keys first: arrows, Escape closing the list, Enter taking a tag rather than saving.
-            if (_suggestions?.Use(e) == true)
+            // The suggestions' keys first: arrows, Escape closing the list, Enter taking a tag rather than saving. Then the
+            // pills': Backspace and Delete on a whole pill, Copy, Cut and Paste, a comma, a double-click.
+            if (_suggestions?.Use(e) == true || (_kind == Kind.Tags && _box is LineEdit tags && TagPills.Use(tags, e)))
             {
                 _box.AcceptEvent();
                 return;
