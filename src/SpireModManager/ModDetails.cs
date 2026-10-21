@@ -43,6 +43,11 @@ static class ModDetails
     // The panel's own fields, one set per panel.
     static readonly Dictionary<ulong, List<ModField>> Fields = [];
 
+#if DEVTOOLS
+    // Self-test: the copy the panel was last filled for (its key), or "" for none.
+    public static string ShownKey(Control container) => Meta(container, ModIdMeta);
+#endif
+
     // After the game fills the panel for a mod.
     public static void Fill(NModInfoContainer container, Mod mod)
     {

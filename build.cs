@@ -49,6 +49,10 @@ if (dist)
 // What a player's mods folder gets: the pack, the manifest and the DLL.
 string[] shipped = [".pck", ".json", ".dll"];
 
+// A dev run from this checkout uses out/ (its build, its results, its screenshots): clearing it mid-run loses the run.
+// The shared lock's holder file names the checkout a run is from (tools/dev.cs); that run's own build goes ahead.
+if (RunUsingOut(root) is { } running)
+    return Fail($"a dev run from this checkout is using out/ ({running}): wait for it to finish, or build in another worktree");
 if (Directory.Exists(outDir))
     Directory.Delete(outDir, recursive: true);
 Directory.CreateDirectory(outDir);
@@ -130,6 +134,27 @@ static int Fail(string message)
 {
     Console.Error.WriteLine(message);
     return 1;
+}
+
+// The dev run holding the shared lock, if it's from this checkout and still going (and isn't the one building now).
+static string? RunUsingOut(string root)
+{
+    try
+    {
+        var file = Path.Combine(Path.GetTempPath(), "sts2-dev-run.json");
+        if (!File.Exists(file) || JsonNode.Parse(File.ReadAllText(file)) is not JsonObject held || held["dir"]?.GetValue<string>() is not { Length: > 0 } dir)
+            return null;
+        static string Full(string p) => Path.GetFullPath(p).TrimEnd('\\', '/');
+        if (!string.Equals(Full(dir), Full(root), StringComparison.OrdinalIgnoreCase) || held["pid"]?.GetValue<int>() is not { } pid
+            || Environment.GetEnvironmentVariable("SPIRE_MOD_MANAGER_DEV_RUN") == pid.ToString())
+            return null;
+        using var process = Process.GetProcessById(pid);
+        return process.HasExited ? null : $"{held["mode"]}, process {pid}, since {held["started"]}";
+    }
+    catch (Exception e) when (e is IOException or UnauthorizedAccessException or ArgumentException or InvalidOperationException or System.Text.Json.JsonException)
+    {
+        return null; // no holder, a stale one, or its process gone: nothing to guard
+    }
 }
 
 static string ScriptDir([CallerFilePath] string path = "") => Path.GetDirectoryName(path) ?? ".";

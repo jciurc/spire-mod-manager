@@ -57,7 +57,7 @@ static class SelfTest
         if (mode is "crash" or "crash-real") // EarlyStart answers the dialog of a failed start: reaching the menu is the failure
         {
             Results.Add("FAIL a failed start: the game reached the main menu (nothing stopped its start)");
-            File.WriteAllLines(Path.Combine(outDir, "results.txt"), Results);
+            File.WriteAllLines(Path.Combine(outDir, "results.txt"), [.. Results, .. Timing()]);
             menu.GetTree().Quit();
             return;
         }
@@ -284,7 +284,7 @@ static class SelfTest
         }
         finally
         {
-            File.WriteAllLines(Path.Combine(outDir, "results.txt"), Results);
+            File.WriteAllLines(Path.Combine(outDir, "results.txt"), [.. Results, .. Timing()]);
             tree.Quit();
         }
     }
@@ -295,11 +295,10 @@ static class SelfTest
     {
         try
         {
-            await Wait(menu, 3);
+            await WaitReal(menu, 3); // the main menu settled: nothing timed below shares its frames with start-up work
             CheckPatches();
             // The first open, timed to the end of its first frame, once the page's text has been shaped ahead (Prewarm).
-            for (var i = 0; i < 100 && !Prewarm.Done; i++)
-                await Wait(menu, 0.1);
+            await WaitUntil(menu, () => Prewarm.Done, timeout: 10);
             RowStrip.Costs.Clear();
             RowStrip.Timing = true; // the rows' lines, buttons and pencils, part by part (#46)
             var opening = System.Diagnostics.Stopwatch.StartNew();
@@ -310,7 +309,7 @@ static class SelfTest
             Results.Add($"INFO first open: built in {built:0} ms, drawn by {opening.Elapsed.TotalMilliseconds:0} ms; text shaped ahead: "
                 + $"{Prewarm.Shaped.Count}{(Prewarm.Done ? "" : " (not finished)")}, its slowest frame {Prewarm.SlowestMs:0} ms");
             Results.Add($"INFO of the build, the rows' lines, buttons and pencils {RowStrip.Costs.Values.Sum():0} ms: {Parts(RowStrip.Costs)}");
-            await Wait(menu, 2);
+            await WaitReal(menu, 2); // the first open settled (its pictures, deferred layout) before the redraws are timed
             var content = screen.GetNode<Control>("%ModsScrollContainer/Mask/Content");
             var rows = content.GetChildren().OfType<NModMenuRow>().ToList();
             Check($"rows ({rows.Count}) match mods ({ModManager.Mods.Count})", rows.Count == ModManager.Mods.Count);
@@ -425,7 +424,7 @@ static class SelfTest
         }
         finally
         {
-            File.WriteAllLines(Path.Combine(outDir, "results.txt"), Results);
+            File.WriteAllLines(Path.Combine(outDir, "results.txt"), [.. Results, .. Timing()]);
             menu.GetTree().Quit();
         }
     }
@@ -435,7 +434,10 @@ static class SelfTest
     static async Task TimeSwitches(Node menu, NModdingScreen screen, Control content)
     {
         if (content.GetChildren().OfType<NModMenuRow>().FirstOrDefault() is { } row)
+        {
             CategoryList.Select(screen, row);
+            await PanelFor(menu, screen, row);
+        }
         await Wait(menu, 0.5);
         var idle = new List<double>();
         var times = new Dictionary<string, List<double>>();
@@ -566,6 +568,7 @@ static class SelfTest
         if (screen.GetNode("%ModsScrollContainer/Mask/Content").GetChildren().OfType<NModMenuRow>().FirstOrDefault() is { } row)
         {
             CategoryList.Select(screen, row);
+            await PanelFor(menu, screen, row);
             await Wait(menu, 0.5);
             Check("a mod shown in the panel: the game's details only", screen.GetNode("%ModInfoContainer").GetNodeOrNull(ModDetails.HeadName) == null);
             // Our row look never ran (it saves the game's look the first time it does).
@@ -630,7 +633,7 @@ static class SelfTest
         }
         finally
         {
-            File.WriteAllLines(Path.Combine(outDir, "results.txt"), Results);
+            File.WriteAllLines(Path.Combine(outDir, "results.txt"), [.. Results, .. Timing()]);
             menu.GetTree().Quit();
         }
     }
@@ -899,6 +902,7 @@ static class SelfTest
         // A mod shown in the panel: ours, with the description where ours goes (its Fill postfix runs first).
         var row = content.GetChildren().OfType<NModMenuRow>().First(r => r.Visible && r.Mod?.manifest?.version is { Length: > 0 });
         CategoryList.Select(screen, row);
+        await PanelFor(menu, screen, row);
         await Wait(menu, 0.5);
         var description = info.GetNode<Control>("ModDescription");
         Check("our views: the panel's title and description ours", info.GetNode<RichTextLabel>("ModTitle").Text.Contains("[font_size=")
@@ -1087,7 +1091,7 @@ static class SelfTest
         Leave();
         await Wait(menu, 0.4);
         Enter();
-        await Wait(menu, 0.5);
+        await WaitReal(menu, 0.5);
         var text = label.GetGlobalRect();
         Check("main menu button: a hover brings its own carets out either side of its text, in their own colour",
             left.IsVisibleInTree() && right.IsVisibleInTree() && left.Modulate.IsEqualApprox(MenuButton.CaretColor) && right.Modulate.IsEqualApprox(MenuButton.CaretColor)
@@ -1096,7 +1100,7 @@ static class SelfTest
             $"left {left.GetGlobalRect()} a {left.Modulate.A:0.##}, right {right.GetGlobalRect()} a {right.Modulate.A:0.##}, text {text}");
         await Capture(menu, outDir, "1f-menu-button-carets");
         Leave();
-        await Wait(menu, 0.5);
+        await WaitReal(menu, 0.5);
         Check("main menu button: its carets fade once the mouse leaves", left.Modulate.A < 0.05f && right.Modulate.A < 0.05f,
             $"{left.Modulate.A:0.##}, {right.Modulate.A:0.##}");
         // A pass across it in one frame (on the way to the game's buttons): the carets, put up a frame late, stay down.
@@ -1640,7 +1644,7 @@ static class SelfTest
         await Wait(menu, 0.3);
         var waited = LaunchGuard.Notice != null && NModalContainer.Instance?.OpenModal == firstPopup;
         NModalContainer.Instance?.Clear();
-        await Wait(menu, 1.5);
+        await WaitReal(menu, 1.5); // ShowNotice tries again a second after it found a popup up (LaunchGuard.ShowNotice's CreateTimer(1))
         Check("the notice waits while another popup is up, then shows", waited && LaunchGuard.Notice == null
             && NModalContainer.Instance?.OpenModal is { } later && later != firstPopup, $"waited {waited}");
         NModalContainer.Instance?.Clear();
@@ -2071,7 +2075,7 @@ static class SelfTest
         }
         finally
         {
-            File.WriteAllLines(Path.Combine(outDir, "results.txt"), Results);
+            File.WriteAllLines(Path.Combine(outDir, "results.txt"), [.. Results, .. Timing()]);
             menu.GetTree().Quit();
         }
     }
@@ -2164,7 +2168,7 @@ static class SelfTest
         {
             Prewarm.Start(menu);
             for (var i = 0; i < 50 && !Prewarm.Done; i++)
-                await Wait(menu, 0.1);
+                await WaitReal(menu, 0.1); // Prewarm starts a second after Start (StartDelay), then works a frame at a time
             // Once if Kreon lacks its letters; not at all where a mod gave the font Chinese ones (RitsuLib-based mods can).
             var font = ModEntry.Font("res://themes/kreon_regular_shared.tres");
             var lacks = Alias.EnumerateRunes().Any(r => !font.HasChar(r.Value));
@@ -2563,7 +2567,7 @@ static class SelfTest
             }
             if (grow > 0 && upFirst == null && !slides)
                 Grow(); // as it opens
-            await Wait(menu, 0.1);
+            await WaitReal(menu, 0.1); // past MenuPanel's Settle (its second frame): it turns only while it opens
             var first = MenuMisplaced(probe, point, upFirst ?? up, left);
             if (grow > 0 && (upFirst != null || slides))
             {
@@ -3022,7 +3026,7 @@ static class SelfTest
             await Capture(screen, outDir, "7f-import-subscribe");
             Press(ProfileShare.Name, "SubscribeMissingButton");
             steam.Downloaded[Here] = 0.45f;
-            await Wait(menu, 0.6);
+            await WaitReal(menu, 0.6); // Subscriptions.Watch reads each download's progress a quarter second apart
             var preview = Part<RichTextLabel>(ProfileShare.Name, "Preview")?.GetParsedText() ?? "";
             Check("import preview: Subscribe asks Steam for both; one downloads (its progress), the other fails and says why; Subscribe offers that one again",
                 steam.Asked.Order().SequenceEqual([Here, Gone]) && preview.Contains("Downloading 45%")
@@ -3641,6 +3645,7 @@ static class SelfTest
             try
             {
                 CategoryList.Select(screen, other);
+                await PanelFor(menu, screen, other);
                 await Wait(menu, 0.5);
                 var descriptionLabel = panel.GetNode<RichTextLabel>("ModDescription");
                 var (shown, raw) = (descriptionLabel.GetParsedText(), descriptionLabel.Text);
@@ -3719,6 +3724,7 @@ static class SelfTest
         else
             Results.Add("SKIP the Steam branch error of a mod that's off: no fixture mod off, or none on");
         CategoryList.Select(screen, ours);
+        await PanelFor(menu, screen, ours);
         await Wait(menu, 0.5);
         Check("row state reads the game's: the selected row is selected, another not", RowState.Selected(ours) && !RowState.Selected(other));
         var description = panel.GetNode<RichTextLabel>("ModDescription").GetParsedText();
@@ -3781,11 +3787,11 @@ static class SelfTest
         image.Texture = ImageTexture.CreateFromImage(Image.CreateEmpty(1600, 900, false, Image.Format.Rgba8));
         Hover.TestMouse = () => image.GetGlobalRect().GetCenter();
         image.EmitSignal(Control.SignalName.MouseEntered);
-        await Wait(menu, Hover.Delay + 0.15);
+        await WaitReal(menu, Hover.Delay + 0.15);
         var big = screen.GetNodeOrNull("SpireModManagerPictureCard")?.FindChildren("*", "TextureRect", true, false).OfType<TextureRect>().FirstOrDefault();
         Check("hovering the thumbnail shows the whole picture, at most 800 wide", big != null && big.Size.X == 800 && big.Size.Y == 450, $"{big?.Size}");
         Hover.TestMouse = () => new Vector2(5, 5);
-        await Wait(menu, 0.1);
+        await WaitReal(menu, Hover.WindDown + Hover.Grace + 0.1); // the picture card gone and its grace over: the title's card below waits the delay
         Hover.TestMouse = null;
         image.Texture = null;
         Layout.PlaceInfo(panel);
@@ -3795,6 +3801,7 @@ static class SelfTest
 
         // Notes and tags typed in the panel save when focus leaves; notes are trimmed, tags tidied.
         CategoryList.Select(screen, other);
+        await PanelFor(menu, screen, other);
         await Wait(menu, 0.5);
         notes.Text = "  Typed in the panel \n";
         notes.EmitSignal(Control.SignalName.FocusExited);
@@ -3849,20 +3856,20 @@ static class SelfTest
         {
             Hover.TestMouse = () => target.GetGlobalRect().GetCenter();
             target.EmitSignal(Control.SignalName.MouseEntered);
-            await Wait(menu, seconds);
+            await WaitReal(menu, seconds);
         }
         // The mouse at a given point over a hover area (not its centre), as the area sees it coming in.
         async Task HoverAt(Control target, Vector2 at, double seconds)
         {
             Hover.TestMouse = () => at;
             target.EmitSignal(Control.SignalName.MouseEntered);
-            await Wait(menu, seconds);
+            await WaitReal(menu, seconds);
         }
         async Task Leave(Control target, double seconds)
         {
             Hover.TestMouse = () => new Vector2(5, 5);
             target.EmitSignal(Control.SignalName.MouseExited);
-            await Wait(menu, seconds);
+            await WaitReal(menu, seconds);
         }
         var hot = other.GetNode<Control>("SpireModManagerTitleHover");
         var mark = other.GetNode<Control>("SpireModManagerEditedMark");
@@ -3872,7 +3879,7 @@ static class SelfTest
             $"mark at {mark.Position.X}, title text {other.GetNode<Control>("Title").Position.X}..+{hot.Size.X}");
         await HoverOver(hot, Hover.Delay - 0.15);
         Check("the title's card waits for the delay", !CardShown());
-        await Wait(menu, 0.3);
+        await WaitReal(menu, 0.3);
         Check("after the delay, the title's card: id and state first", CardShown() && CardText().StartsWith("SmmTestFixes") && CardText().Contains("Enabled"), CardText());
         await Capture(screen, outDir, "9b-notes-hover");
         Hover.TestMouse = () => new Vector2(5, 5);
@@ -3892,7 +3899,7 @@ static class SelfTest
             .FirstOrDefault()?.GetParsedText() ?? "";
         await HoverAt(markHot, mark.GetGlobalRect().GetCenter(), 0.1); // on the notepad itself
         var early = TipShown() || CardShown();
-        await Wait(menu, Hover.Delay);
+        await WaitReal(menu, Hover.Delay);
         Check("the notepad: a plain \"Contains note\" after the usual delay, not the mod's card", !early && TipShown() && TipText() == "Contains note"
             && Cards() == 0, $"early {early}, tip \"{TipText()}\", cards {Cards()}");
         await Leave(markHot, 0.1);
@@ -3929,6 +3936,7 @@ static class SelfTest
             await Wait(menu, 1.5);
         }
         CategoryList.Select(screen, ours);
+        await PanelFor(menu, screen, ours);
         await Wait(menu, 0.3);
         var selectedBefore = RowState.Selected(other);
         var landed = false;
@@ -4009,6 +4017,7 @@ static class SelfTest
             && added.CustomMinimumSize.Y == RowTitles.RowHeight, added == null ? "no new row" : $"strip {added.HasNode("SpireModManagerStrip")}, height {added.CustomMinimumSize.Y}");
         // The game's popup for it: our wording, and only one for two mods in quick succession.
         var detected = typeof(NGame).GetMethod("OnNewModDetected", System.Reflection.BindingFlags.NonPublic | System.Reflection.BindingFlags.Instance);
+        NewModPopupPatch.TestReset(); // TestSubscribeMissing's arrival had its popup, maybe within 30 s
         detected?.Invoke(NGame.Instance, [mod]);
         await Wait(menu, 0.3);
         var texts = PopupTexts();
@@ -5087,7 +5096,10 @@ static class SelfTest
         // The info panel: where it's from, and dependencies both ways.
         var panel = screen.GetNode<NModInfoContainer>("%ModInfoContainer");
         if (Row("SmmTestLib") is { } libSelected)
+        {
             CategoryList.Select(screen, libSelected);
+            await PanelFor(menu, screen, libSelected);
+        }
         await Wait(menu, 0.3);
         var facts = panel.GetNode<RichTextLabel>("ModDescription").Text;
         Check("panel: required for, Open Folder", facts.Contains("Required for")
@@ -5589,7 +5601,10 @@ static class SelfTest
         Store.Data.UncategorizedCollapsed = true;
         CategoryList.Apply(content);
         if (Rows().FirstOrDefault(r => r != row) is { } other)
+        {
             CategoryList.Select(screen, other);
+            await PanelFor(menu, screen, other);
+        }
         await Wait(menu, 0.2);
         int Glows() => row.GetChildren().OfType<ColorRect>().Count(c => c.Color.R > 0.9f && c.Color.B < 0.4f); // CategoryList's gold flash
         var (hidden, glows) = (!row.Visible, Glows());
@@ -5617,7 +5632,10 @@ static class SelfTest
             searchBox.EmitSignal(LineEdit.SignalName.TextChanged, query);
             await Wait(menu, 0.3);
             if (Rows().FirstOrDefault(r => r != row && r.Visible) is { } match)
+            {
                 CategoryList.Select(screen, match);
+                await PanelFor(menu, screen, match);
+            }
             await Wait(menu, 0.2);
             var left = !row.Visible && !SpireModManager.Search.Matches(bmm, query);
             var old = row.GetChildren().OfType<ColorRect>().ToList(); // an earlier glow may still be fading
@@ -5801,7 +5819,7 @@ static class SelfTest
         async Task ScrollTo(float target)
         {
             list.Set("_targetDragPosY", target);
-            await Wait(menu, 0.6);
+            await WaitReal(menu, 0.6);
         }
         void Tick(bool on)
         {
@@ -5926,11 +5944,11 @@ static class SelfTest
             {
                 var aim = Math.Min(0, list.Size.Y / 3 - last.Position.Y);
                 CategoryList.Reveal(content, Copies.Key(lastMod), flash: false);
-                await Wait(menu, 0.1); // past ScrollSoon's 0.05 s: the target set, the rows on their way
+                await WaitReal(menu, 0.1); // past ScrollSoon's 0.05 s: the target set, the rows on their way
                 var (aimed, easing) = (Target(), Math.Abs(content.Position.Y - Padding() - Target()) > 1);
                 var (origin, top) = (content.GlobalPosition.Y - content.Position.Y, list.GetGlobalRect().Position.Y); // the rows' container at 0
                 Tick(true);
-                await Wait(menu, 0.8);
+                await WaitReal(menu, 0.8);
                 var moved = list.GetGlobalRect().Position.Y - top;
                 var off = last.GetGlobalRect().Position.Y - (origin + Padding() + aim + last.Position.Y); // from where Reveal aimed it
                 Check($"{what}: Reveal, the banner coming while its scroll eases: the row still ends where Reveal aimed it, a third of the way down the list as it was, in view",
@@ -6058,6 +6076,7 @@ static class SelfTest
             && Rows().FirstOrDefault(r => r.Mod?.manifest?.id == "SmmTestUi") is { } uiRow)
         {
             CategoryList.Select(screen, libRow);
+            await PanelFor(menu, screen, libRow);
             await Wait(menu, 0.3);
             // Its row in view, as hovering lights only one on screen (the names sort apart).
             if (!content.GetParent<Control>().GetGlobalRect().Intersects(uiRow.GetGlobalRect()))
@@ -6074,7 +6093,7 @@ static class SelfTest
             description.EmitSignal(RichTextLabel.SignalName.MetaHoverEnded, "mod:SmmTestUi");
             Check("hovering a mod's name in the panel lights its row (visibly), and lets go", lit.A * litFill > 0.05f && look.Modulate == before, $"{before} -> {lit} x {litFill} -> {look.Modulate}");
             description.EmitSignal(RichTextLabel.SignalName.MetaClicked, "mod:SmmTestUi");
-            await Wait(menu, 0.3);
+            await WaitReal(menu, 0.1); // past ScrollSoon's 0.05 s: the row focused
             Check("clicking it gives the row the selected look; the panel stays", uiRow.HasFocus() && CategoryList.Selected?.manifest?.id == "SmmTestLib",
                 $"focus {uiRow.HasFocus()} (focused: {screen.GetViewport().GuiGetFocusOwner()?.Name}), selected {CategoryList.Selected?.manifest?.id}");
         }
@@ -6450,6 +6469,7 @@ static class SelfTest
             && Rows().FirstOrDefault(r => r.Mod?.manifest?.id == "SmmTestUi") is { Mod: { } linked } linkedRow)
         {
             CategoryList.Select(screen, panelRow);
+            await PanelFor(menu, screen, panelRow);
             await Wait(menu, 0.3);
             var description = screen.GetNode<RichTextLabel>("%ModInfoContainer/ModDescription");
             string Filter() => content.HasMeta(CategoryList.FilterMeta) ? (string)content.GetMeta(CategoryList.FilterMeta) : "";
@@ -6637,7 +6657,7 @@ static class SelfTest
             {
                 Hover.TestMouse = () => target.GetGlobalRect().GetCenter();
                 target.EmitSignal(Control.SignalName.MouseEntered);
-                await Wait(menu, seconds);
+                await WaitReal(menu, seconds);
                 var text = screen.GetNodeOrNull(card)?.FindChildren("*", "RichTextLabel", true, false).OfType<RichTextLabel>().FirstOrDefault()?.GetParsedText() ?? "";
                 Hover.TestMouse = () => new Vector2(5, 5);
                 target.EmitSignal(Control.SignalName.MouseExited);
@@ -6953,6 +6973,7 @@ static class SelfTest
         }
         var own = GameChanges.For(ours);
         CategoryList.Select(screen, row);
+        await PanelFor(menu, screen, row);
         await Wait(menu, 0.4);
         var shown = screen.GetNode<NModInfoContainer>("%ModInfoContainer").GetNode<RichTextLabel>("ModDescription").GetParsedText();
         Check("our own patches: the game's code we change, by class (modding screen among them), in our info panel with how many places",
@@ -7004,6 +7025,7 @@ static class SelfTest
         }
         var info = screen.GetNode<NModInfoContainer>("%ModInfoContainer");
         CategoryList.Select(screen, row); // a short description and no picture, so it fits
+        await PanelFor(menu, screen, row);
         await Wait(menu, 0.3);
         var home = new Vector2(0, 318);
         var other = new PanelContainer { Name = "OtherModSettingsPanel", Position = home, CustomMinimumSize = new Vector2(560, 174) };
@@ -8649,6 +8671,7 @@ static class SelfTest
         }
 
         CategoryList.Select(screen, ui);
+        await PanelFor(menu, screen, ui);
         await Wait(menu, 0.5);
         var box = screen.GetNode<LineEdit>("%ModInfoContainer/SpireModManagerYours/Tags/Box");
         box.GrabFocus();
@@ -8837,7 +8860,10 @@ static class SelfTest
         HistoryBar.OpenFromList(screen, "SmmTestUi");
         await Wait(menu, 0.2);
         if (content.GetChildren().OfType<NModMenuRow>().FirstOrDefault(r => r.Mod?.manifest?.id is { } id && id != "SmmTestUi") is { } another)
+        {
             CategoryList.Select(screen, another);
+            await PanelFor(menu, screen, another);
+        }
         await Wait(menu, 0.2);
         Check("picking another mod takes Back away", back is { Visible: false });
         ClickChanges(); // open again, for the close test below
@@ -9363,7 +9389,7 @@ static class SelfTest
         try
         {
             text.EmitSignal(RichTextLabel.SignalName.MetaHoverStarted, link);
-            await Wait(text, Hover.Delay + 0.3);
+            await WaitReal(text, Hover.Delay + 0.3); // the link card's delay
             var card = text.GetTree().Root.FindChild(LaunchGuard.MoreCardName, true, false)?.FindChildren("*", "RichTextLabel", true, false)
                 .OfType<RichTextLabel>().FirstOrDefault()?.GetParsedText() ?? "";
             text.EmitSignal(RichTextLabel.SignalName.MetaHoverEnded, link);
@@ -9549,8 +9575,31 @@ static class SelfTest
         return lines;
     }
 
-    static void Check(string name, bool ok, string detail = "") =>
+    static void Check(string name, bool ok, string detail = "", [System.Runtime.CompilerServices.CallerMemberName] string caller = "")
+    {
+        Seen(caller, 0);
         Results.Add($"{(ok ? "PASS" : "FAIL")} {name}{(ok || detail.Length == 0 ? "" : $": {detail}")}");
+    }
+
+    // Where a run's time goes: per test (the method that waited or checked), from its first to its last wait or check,
+    // and how much of that was fixed waits. Written as INFO lines after the results (notes#73: measure first).
+    static readonly System.Diagnostics.Stopwatch RunClock = System.Diagnostics.Stopwatch.StartNew();
+    static readonly Dictionary<string, (double First, double Last, double Waited, int Waits)> Times = [];
+
+    static void Seen(string caller, double waited)
+    {
+        var now = RunClock.Elapsed.TotalSeconds;
+        var (first, _, total, count) = Times.GetValueOrDefault(caller, (now, now, 0, 0));
+        Times[caller] = (first, now + waited, total + waited, count + (waited > 0 ? 1 : 0));
+    }
+
+    static IEnumerable<string> Timing()
+    {
+        var waited = Times.Values.Sum(t => t.Waited);
+        yield return $"INFO time: {RunClock.Elapsed.TotalSeconds:0} s since the self-test started, {waited:0} s of it in fixed waits ({Times.Values.Sum(t => t.Waits)})";
+        foreach (var (name, t) in Times.OrderByDescending(p => p.Value.Last - p.Value.First).Take(25))
+            yield return $"INFO time: {name} {t.Last - t.First:0.0} s, waits {t.Waited:0.0} s ({t.Waits})";
+    }
 
     // The fixture's mod that won't load: Test Addon (on) needs SmmTestMissing, a mod id nothing has. Null when it isn't
     // installed (--real) or is off, so the checks that need a mod that won't load skip.
@@ -9569,7 +9618,7 @@ static class SelfTest
     {
         Hover.TestMouse = () => target.GetGlobalRect().GetCenter();
         target.EmitSignal(Control.SignalName.MouseEntered);
-        await Wait(menu, seconds);
+        await WaitReal(menu, seconds); // the card's delay (Hover.Delay, or SlowDelay for Late/Slow cards)
         if (shown != null)
             await shown();
         var card = target.GetTree().Root.FindChild(name, true, false);
@@ -9577,7 +9626,7 @@ static class SelfTest
             card?.FindChildren("*", "PanelContainer", true, false).OfType<Control>().FirstOrDefault()?.Size.X ?? 0);
         Hover.TestMouse = () => new Vector2(5, 5);
         target.EmitSignal(Control.SignalName.MouseExited);
-        await Wait(menu, 0.1);
+        await WaitReal(menu, 0.1); // the card's wind-down (Hover.WindDown): gone before the real mouse takes over
         Hover.TestMouse = null; // the real mouse again (menus open where it says)
         return seen;
     }
@@ -9702,8 +9751,61 @@ static class SelfTest
     static bool EvenGoldRim(StyleBoxFlat box) => box.BorderColor == RowTitles.Gold
         && new[] { box.BorderWidthTop, box.BorderWidthBottom, box.BorderWidthLeft, box.BorderWidthRight }.All(w => w == RowTitles.SelectedRim);
 
-    static async Task Wait(Node node, double seconds) =>
+    // Wait lets the UI settle (a redraw, a deferred call, a layout pass): a tenth of the time it names, at least 0.05 s
+    // (three frames at 60 fps). Waits that are the time itself (a hover card's delay, a tween, a popup's timer, an ease)
+    // are WaitReal. Measured (notes#73): 272 s of a 289 s run was fixed waits. SPIRE_MOD_MANAGER_WAIT_SCALE sets the
+    // fraction (1: the old full waits, to compare).
+    static readonly double WaitScale = double.TryParse(System.Environment.GetEnvironmentVariable("SPIRE_MOD_MANAGER_WAIT_SCALE"),
+        System.Globalization.NumberStyles.Float, System.Globalization.CultureInfo.InvariantCulture, out var scale) && scale > 0 ? scale : 0.1;
+
+    // Waits for the thing, not a time: frame by frame until ready() holds, for at most `timeout` seconds; false if it
+    // never does (the check after it then says what's wrong).
+    static async Task<bool> WaitUntil(Node node, Func<bool> ready, double timeout = 3, [System.Runtime.CompilerServices.CallerMemberName] string caller = "")
+    {
+        var (tree, start) = (node.GetTree(), RunClock.Elapsed.TotalSeconds);
+        var held = true;
+        while (!ready())
+        {
+            if (RunClock.Elapsed.TotalSeconds - start > timeout)
+            {
+                held = false;
+                break;
+            }
+            await node.ToSignal(tree, SceneTree.SignalName.ProcessFrame);
+        }
+        Seen(caller, RunClock.Elapsed.TotalSeconds - start);
+        return held;
+    }
+
+    // After a row is picked: the info panel filled for its copy, our fields in it (the stable branch fills it a little
+    // later than the beta). Vanilla View fills only the game's part, so nothing to wait for there.
+    static async Task<bool> PanelFor(Node menu, NModdingScreen screen, NModMenuRow? row, [System.Runtime.CompilerServices.CallerMemberName] string caller = "")
+    {
+        var panel = screen.GetNodeOrNull<Control>("%ModInfoContainer");
+        var description = panel?.GetNodeOrNull<RichTextLabel>("ModDescription");
+        var ready = await WaitUntil(menu, () => Store.Data.VanillaView || row?.Mod is not { } mod
+            || panel != null && ModDetails.ShownKey(panel) == Copies.Key(mod) && panel.HasNode("SpireModManagerYours") && description?.IsFinished() != false, caller: caller);
+        if (!ready)
+            Results.Add($"INFO {caller}: the panel didn't show {row?.Mod?.manifest?.id} in 3 s: view {Layout.Current}, vanilla {Store.Data.VanillaView}, "
+                + $"shown \"{(panel == null ? "no panel" : ModDetails.ShownKey(panel))}\", ours {panel?.HasNode("SpireModManagerYours")}, text done {description?.IsFinished()}, "
+                + $"visible {screen.IsVisibleInTree()}");
+        return ready;
+    }
+
+    // A wait that is the time itself (a hover card's delay, a tween, a popup's timer, an ease): never shortened.
+    static async Task WaitReal(Node node, double seconds, [System.Runtime.CompilerServices.CallerMemberName] string caller = "")
+    {
+        Seen(caller, seconds);
         await node.ToSignal(node.GetTree().CreateTimer(seconds), SceneTreeTimer.SignalName.Timeout);
+    }
+
+    static async Task Wait(Node node, double seconds, [System.Runtime.CompilerServices.CallerMemberName] string caller = "")
+    {
+        if (WaitScale != 1)
+            seconds = Math.Max(seconds * WaitScale, 0.05);
+        Seen(caller, seconds);
+        await node.ToSignal(node.GetTree().CreateTimer(seconds), SceneTreeTimer.SignalName.Timeout);
+    }
 
     // <name>.txt: the visible UI under root as an indented tree; <name>.png: a screenshot, unless the
     // game runs headless (nothing is drawn then).
