@@ -10398,8 +10398,9 @@ static partial class SelfTest
     // as pills where the box draws its text (a click on one lands in its tag), the word being typed plain, the colours;
     // a typed comma makes a pill; Backspace and Delete by Jordan's rule (a fresh press next to a pill takes it and its
     // separator as one undo step, a held key's repeats stop at it); Copy, Cut and Paste of whole tags; a double-click
-    // takes the whole tag; Ctrl+Z takes back a picked suggestion; a long list scrolls, its pills with it; leaving the
-    // box still tidies. Keys and clicks go through Godot's input as a player's do (a held key's repeats are Echo
+    // takes the whole tag; all of that after an emoji too, and the pills with a right-to-left tag first; a comma the full
+    // box has no room for takes no undo step; Ctrl+Z takes back a picked suggestion; a long list scrolls, its pills with
+    // it; leaving the box still tidies. Keys and clicks go through Godot's input as a player's do (a held key's repeats are Echo
     // events), each edit landed at its frame's end before the next; the clipboard is the test's own.
     static async Task TestTagPills(Node menu, NModdingScreen screen, Control content, string outDir)
     {
@@ -10435,7 +10436,7 @@ static partial class SelfTest
             async Task Typed(string text, int? caret = null)
             {
                 box.Text = text;
-                box.CaretColumn = caret ?? text.Length;
+                box.CaretColumn = caret ?? TagPills.Columns(text);
                 box.EmitSignal(LineEdit.SignalName.TextChanged, text);
                 await Wait(menu, 0.05);
             }
@@ -10484,21 +10485,32 @@ static partial class SelfTest
                 $"{string.Join(" | ", ink.Select(r => $"\"{r.Text}\" {r.Color}"))}; the box's own {ownInk}; with Favorites selected: \"{unselected}\"");
 
             // Where the pills are drawn, by where the box puts the caret for a click: 1 px into each end of a pill's tag
-            // lands on that end (more than about half a letter of drift would miss it), its middle inside it.
-            await Typed("co-op, Favorites, Story-heavy, wor");
-            var missed = new List<string>();
-            foreach (var (tag, rect) in TagPills.TestPills(box))
+            // lands on that end (more than about half a letter of drift would miss it), its middle inside it. In the
+            // box's columns (an emoji is one, and two chars of the C# string).
+            async Task<List<string>> Misses(bool ends = true)
             {
-                var start = box.Text.IndexOf(tag, StringComparison.Ordinal);
-                var middle = rect.GetCenter().Y;
-                await ClickAt(new Vector2(rect.Position.X + TagPills.PadLeft + 1, middle));
-                var left = box.CaretColumn;
-                await ClickAt(new Vector2(rect.End.X - TagPills.PadRight - 1, middle));
-                var right = box.CaretColumn;
-                await ClickAt(rect.GetCenter());
-                if (left != start || right != start + tag.Length || box.CaretColumn <= start || box.CaretColumn >= start + tag.Length)
-                    missed.Add($"{tag} ({start}..{start + tag.Length}) at {rect}: {left}, {right}, middle {box.CaretColumn}");
+                var list = new List<string>();
+                foreach (var (tag, rect) in TagPills.TestPills(box))
+                {
+                    var start = TagPills.Column(box.Text, box.Text.IndexOf(tag, StringComparison.Ordinal));
+                    var end = start + TagPills.Columns(tag);
+                    var middle = rect.GetCenter().Y;
+                    var (left, right) = (start, end);
+                    if (ends)
+                    {
+                        await ClickAt(new Vector2(rect.Position.X + TagPills.PadLeft + 1, middle));
+                        left = box.CaretColumn;
+                        await ClickAt(new Vector2(rect.End.X - TagPills.PadRight - 1, middle));
+                        right = box.CaretColumn;
+                    }
+                    await ClickAt(rect.GetCenter());
+                    if (left != start || right != end || box.CaretColumn <= start || box.CaretColumn >= end)
+                        list.Add($"{tag} ({start}..{end}) at {rect}: {left}, {right}, middle {box.CaretColumn}");
+                }
+                return list;
             }
+            await Typed("co-op, Favorites, Story-heavy, wor");
+            var missed = await Misses();
             Check("tag pills: drawn where the box draws the text: a click at either end of a pill's tag puts the caret there, in its middle inside it",
                 TagPills.TestPills(box).Count == 3 && missed.Count == 0, missed.Count > 0 ? string.Join("; ", missed) : Say());
             if (TagPills.TestPills(box) is [_, (_, var favorites), ..])
@@ -10511,6 +10523,47 @@ static partial class SelfTest
             Check("tag pills: a double-click selects the whole tag", box.GetSelectedText() == "Story-heavy", $"\"{box.GetSelectedText()}\" selected");
             await WaitReal(menu, 0.7); // not a triple-click with the next
             box.Deselect();
+
+            // An emoji is one column of the box but two chars of the C# string: after one, the pills are still where the
+            // box draws the text, and the keys, a double-click and a picked suggestion take the right tag. A right-to-left
+            // tag first: the box lays the line out right to left (its text direction, Auto), the pills with it (a click
+            // at the edge of a right-to-left run can land either side of it, so only the middles there).
+            await Typed("🎮 games, co-op, Favorites, wor");
+            var missedAfterEmoji = await Misses();
+            Check("tag pills: after an emoji, still drawn where the box draws the text: a click at either end of a pill's tag puts the caret there, in its middle inside it",
+                TagPills.TestPills(box).Count == 3 && missedAfterEmoji.Count == 0, missedAfterEmoji.Count > 0 ? string.Join("; ", missedAfterEmoji) : Say());
+            await Typed("מועדפים, co-op, Favorites, wor");
+            var missedRtl = await Misses(ends: false);
+            Check("tag pills: a right-to-left tag first: the pills go where the box lays the line out right to left (a click in a pill's middle lands inside its tag)",
+                TagPills.TestPills(box).Count == 3 && missedRtl.Count == 0, missedRtl.Count > 0 ? string.Join("; ", missedRtl) : Say());
+            await Typed("🎮 games, B, C, ");
+            if (TagPills.TestPills(box) is [(_, var games), ..])
+                await ClickAt(new Vector2(games.Position.X + games.Size.X * 3 / 4, games.GetCenter().Y), doubleClick: true); // on "games"
+            Check("tag pills: after an emoji, a double-click selects the whole tag, the emoji with it", box.GetSelectedText() == "🎮 games",
+                $"\"{box.GetSelectedText()}\" selected; {Say()}");
+            await WaitReal(menu, 0.7); // not a triple-click with the next
+            box.Deselect();
+            await Typed("🎮, A, B, ");
+            await Tap(Key.Backspace);
+            Check("tag pills: after an emoji, a fresh Backspace at the end takes the last pill and its separator", (box.Text, box.CaretColumn) == ("🎮, A, ", 6), Say());
+            await Typed("🎮 games, B, C, ", caret: 12); // just before "C"
+            await Tap(Key.Backspace);
+            Check("tag pills: after an emoji, a Backspace just before a pill takes the one before it", (box.Text, box.CaretColumn) == ("🎮 games, C, ", 9), Say());
+            await Typed("🎮, A, B, ", caret: 3); // at the start of "A"
+            await Tap(Key.Delete);
+            Check("tag pills: after an emoji, a Delete at a pill's start takes that pill and its separator", (box.Text, box.CaretColumn) == ("🎮, B, ", 3), Say());
+            await Typed("🎮, A, B, ");
+            await Tap(Key.A, ctrl: true);
+            var all = box.GetSelectedText();
+            await Tap(Key.X, ctrl: true);
+            Check("tag pills: after an emoji, Ctrl+A then Ctrl+X cuts every tag", box.Text == "" && TagPills.TestClipboard == "🎮, A, B",
+                $"\"{all}\" selected, then {Say()}, clipboard \"{TagPills.TestClipboard}\"");
+            await Typed("🎮, zebr");
+            await Tap(Key.Down);
+            var litAfterEmoji = TagSuggestions.Highlighted;
+            await Tap(Key.Enter);
+            Check("tag pills: after an emoji, a picked suggestion takes the place of the word being typed", box.Text == "🎮, Zebra-stripes, ",
+                $"lit {litAfterEmoji}: {Say()}");
 
             await Typed("co-op, Favorites, wor");
             await Tap(Key.Comma, unicode: ',');
@@ -10630,6 +10683,34 @@ static partial class SelfTest
             Check("tag pills: pasting a list makes pills: the tags the box hasn't got, as many whole ones as fit, one undo step",
                 pasted == ("x, y, z, ", "x, y, z") && skipped == "co-op, Fast, " && unpasted == "co-op, " && box.Text == full + "longer-tag-one, longer-tag-two, ",
                 $"{pasted}, \"{skipped}\", \"{unpasted}\", then {box.Text.Length} characters: ...{box.Text[Math.Max(0, box.Text.Length - 40)..]}");
+            TagPills.TestClipboard = "Roguelike\vDeckbuilder, Co-op"; // \v: Word's line break (Shift+Enter)
+            await Typed("");
+            await Tap(Key.V, ctrl: true);
+            Check("tag pills: a pasted list drops the characters below a space, as the box's own paste does", box.Text == "RoguelikeDeckbuilder, Co-op, ",
+                Say().Replace("\v", "\\v"));
+            TagPills.TestClipboard = "Co-op, Fast";
+            await Typed("Co-op, Fast, Story");
+            box.Select(13, 18); // "Story"
+            await Tap(Key.V, ctrl: true);
+            var overSelection = (box.Text, box.HasSelection());
+            await Tap(Key.Z, ctrl: true);
+            Check("tag pills: a paste over a selection with nothing new to add still takes the selection, one undo step",
+                overSelection == ("Co-op, Fast, ", false) && box.Text == "Co-op, Fast, Story", $"{overSelection}, then \"{box.Text}\"");
+            // A comma the full box has no room for changes nothing, so it takes no undo step (one would clear the redo).
+            var full200 = string.Join(", ", Enumerable.Range(1, 28).Select(i => $"tag{i:00}")) + ", word"; // the box's 200
+            await Typed(full200);
+            await Tap(Key.Backspace); // the box's own: the word's last letter
+            await Tap(Key.Z, ctrl: true);
+            var announced = 0;
+            void Announced(string _) => announced++;
+            box.TextChanged += Announced;
+            await Tap(Key.Comma, unicode: ',');
+            box.TextChanged -= Announced;
+            var unchanged = box.Text == full200;
+            await Tap(Key.Y, ctrl: true);
+            Check("tag pills: a comma the full box has no room for changes nothing and takes no undo step: Ctrl+Y still redoes",
+                full200.Length == 200 && unchanged && announced == 0 && box.Text == full200[..^1],
+                $"{full200.Length} characters, unchanged {unchanged}, text_changed {announced} times, then ...{box.Text[Math.Max(0, box.Text.Length - 12)..]}");
 
             // A picked suggestion is one undo step (setting the text would have wiped the box's undo).
             await Typed("zebr");

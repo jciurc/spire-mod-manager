@@ -26,7 +26,7 @@ static class TagPills
     public static void Attach(LineEdit box)
     {
         var ink = box.GetThemeColor("font_color"); // its own (cream): the word being typed, and the commas faint
-        var shaper = new TextLine { Direction = TextServer.Direction.Ltr, TextOverrunBehavior = TextServer.OverrunBehavior.NoTrimming };
+        var shaper = new TextLine { TextOverrunBehavior = TextServer.OverrunBehavior.NoTrimming }; // its direction the box's, each Draw
         // Dragging text would strand ", ,", and the right-click menu's Copy, Cut and Paste don't come through Use.
         (box.DragAndDropSelectionEnabled, box.ContextMenuEnabled) = (false, false);
         box.FocusEntered += () => Ink(box, ink);
@@ -118,10 +118,14 @@ static class TagPills
 #endif
             return;
         }
+        // What LineEdit shapes: the composition at the caret. The shaper counts columns, as the box does (Column).
         var caret = box.CaretColumn;
-        var line = text[..caret] + ime + text[caret..]; // what LineEdit shapes: the composition at the caret
-        int InLine(int column) => column >= caret ? column + ime.Length : column;
+        var split = Index(text, caret);
+        var line = text[..split] + ime + text[split..];
+        var imeColumns = Columns(ime);
+        int InLine(int column) => column >= caret ? column + imeColumns : column;
         shaper.Clear();
+        shaper.Direction = Direction(box);
         shaper.AddString(line, box.GetThemeFont("font"), box.GetThemeFontSize("font_size"), box.Language);
         var server = TextServerManager.GetPrimaryInterface();
         var rid = shaper.GetRid();
@@ -140,7 +144,7 @@ static class TagPills
         {
             if (!finished)
                 continue;
-            foreach (var span in server.ShapedTextGetSelection(rid, InLine(start), InLine(end)))
+            foreach (var span in server.ShapedTextGetSelection(rid, InLine(Column(text, start)), InLine(Column(text, end))))
             {
                 var rect = new Rect2(x0 + span.X, top, span.Y - span.X, height).GrowIndividual(PadLeft, 0, PadRight, 0).Intersection(band);
                 if (!rect.HasArea())
@@ -157,7 +161,7 @@ static class TagPills
         if (box.GetThemeColor("font_color").A == 0)
         {
             var inks = Inks(text, ink);
-            Color[] lineInks = [.. inks[..caret], .. Enumerable.Repeat(ink, ime.Length), .. inks[caret..]];
+            Color[] lineInks = [.. inks[..caret], .. Enumerable.Repeat(ink, imeColumns), .. inks[caret..]];
             var (from, to) = box.HasSelection() ? (box.GetSelectionFromColumn(), box.GetSelectionToColumn()) : (0, 0);
             var canvas = box.GetCanvasItem();
             var at = new Vector2(x0, top + (float)server.ShapedTextGetAscent(rid));
@@ -178,7 +182,7 @@ static class TagPills
 #if DEVTOOLS
                         if (end > inkedUpTo)
                         {
-                            var piece = line[Math.Max(start, inkedUpTo)..end];
+                            var piece = line[Index(line, Math.Max(start, inkedUpTo))..Index(line, end)];
                             if (inked.Count > 0 && inked[^1].Color == tint)
                                 inked[^1] = (inked[^1].Text + piece, tint);
                             else
@@ -209,14 +213,24 @@ static class TagPills
             server.DrawHexCodeBox(canvas, size, at, index, color);
     }
 
-    // The colour of each column of the text: a finished tag's in the tag colour, the word being typed in ink, the rest
-    // (each comma and the spaces about it) faint.
+    // The direction LineEdit shapes its text in (its _shape): its own, Auto unless set (the first letter with a
+    // direction decides, so a right-to-left tag first lays the line out right to left), or its layout's when inherited.
+    // Auto, Ltr and Rtl are the same values in both enums.
+    static TextServer.Direction Direction(LineEdit box) => box.TextDirection == Control.TextDirection.Inherited
+        ? (box.IsLayoutRtl() ? TextServer.Direction.Rtl : TextServer.Direction.Ltr)
+        : (TextServer.Direction)box.TextDirection;
+
+    // The colour of each column of the text, as the glyphs count them: a finished tag's in the tag colour, the word
+    // being typed in ink, the rest (each comma and the spaces about it) faint.
     static Color[] Inks(string text, Color ink)
     {
-        var inks = new Color[text.Length];
+        var inks = new Color[Columns(text)];
         Array.Fill(inks, new Color(ink, Faint));
         foreach (var (start, end, finished) in Segments(text))
-            Array.Fill(inks, finished ? Tags.CustomColor : ink, start, end - start);
+        {
+            var from = Column(text, start);
+            Array.Fill(inks, finished ? Tags.CustomColor : ink, from, Column(text, end) - from);
+        }
         return inks;
     }
 
@@ -252,28 +266,35 @@ static class TagPills
         }
         if (box.HasSelection())
             return false;
-        var (text, caret) = (box.Text, box.CaretColumn);
+        var text = box.Text;
+        var caret = Index(text, box.CaretColumn);
         var pill = key.IsAction(BackAction, true) || key.IsAction(BackWordAction, true) ? PillBefore(text, caret)
             : key.IsAction(DeleteAction, true) || key.IsAction(DeleteWordAction, true) ? PillAfter(text, caret) : null;
         if (pill is not { } range)
             return false;
         // A fresh press takes the pill and its separator, one undo step; a held key's repeats stop at it.
         if (!key.Echo)
-            box.DeleteText(range.From, range.To);
+            box.DeleteText(Column(text, range.From), Column(text, range.To));
         return true;
     }
 
     // A comma typed: ASCII, or a Chinese or Japanese IME's full-width one. Each becomes ", ".
     public static bool Comma(long unicode) => unicode is ',' or '，' or '、';
 
-    // Puts text in place of from..to, the caret after it, as one undo step: DeleteText has the box announce the change
-    // and take its undo step at the end of the frame, after the insert (InsertTextAtCaret alone does neither).
+    // Puts text in place of from..to (columns), the caret after it, as one undo step: DeleteText has the box announce
+    // the change and take its undo step at the end of the frame, after the insert (InsertTextAtCaret alone does
+    // neither). Over no selection, only when the insert changed the text: one refused at MaxLength is no step at all
+    // (an empty one would clear the redo).
     public static void Replace(LineEdit box, int from, int to, string text)
     {
+        var before = box.Text;
         box.Deselect();
-        box.DeleteText(from, to);
+        if (to > from)
+            box.DeleteText(from, to);
         box.CaretColumn = from;
         box.InsertTextAtCaret(text);
+        if (to == from && box.Text != before)
+            box.DeleteText(from, from); // nothing deleted: the announcement alone
     }
 
     static (int From, int To) Selected(LineEdit box) =>
@@ -283,31 +304,35 @@ static class TagPills
     // The key's release is taken too: LineEdit copies again on it (its action matches either way).
     static bool Copy(LineEdit box, InputEventKey key)
     {
-        if (!box.HasSelection() || Copied(box.Text, box.GetSelectionFromColumn(), box.GetSelectionToColumn()) is not { } copied)
+        var text = box.Text;
+        var (from, to) = Indexes(text, Selected(box));
+        if (!box.HasSelection() || Copied(text, from, to) is not { } copied)
             return false; // part of a tag: native
         if (!key.Pressed)
             return true;
         Clipboard = copied;
         if (key.IsAction(CutAction, true))
         {
-            var (from, to) = CutRange(box.Text, box.GetSelectionFromColumn(), box.GetSelectionToColumn());
+            var (start, end) = CutRange(text, from, to);
             box.Deselect();
-            box.DeleteText(from, to); // one undo step
+            box.DeleteText(Column(text, start), Column(text, end)); // one undo step
         }
         return true;
     }
 
     // Ctrl+V of a list: its tags the box hasn't got, as pills, in place of the selection, as many whole ones as fit.
-    // Text with no separator in it: native.
+    // Text with no separator in it: native. With nothing left to add, the selection still goes, as a native paste
+    // takes it (one undo step).
     static bool Paste(LineEdit box)
     {
-        var (from, to) = Selected(box);
-        var rest = box.Text[..from] + box.Text[to..];
-        var room = box.MaxLength > 0 ? box.MaxLength - rest.Length : int.MaxValue;
+        var (text, selected) = (box.Text, Selected(box));
+        var (from, to) = Indexes(text, selected);
+        var rest = text[..from] + text[to..];
+        var room = box.MaxLength > 0 ? box.MaxLength - Columns(rest) : int.MaxValue;
         if (PasteText(rest, from, Clipboard, room) is not { } paste)
             return false;
-        if (paste.Length > 0)
-            Replace(box, from, to, paste);
+        if (paste.Length > 0 || from < to)
+            Replace(box, selected.From, selected.To, paste);
         return true;
     }
 
@@ -316,20 +341,46 @@ static class TagPills
     {
         if (!GodotObject.IsInstanceValid(box) || !box.HasSelection())
             return;
-        var (from, to) = (box.GetSelectionFromColumn(), box.GetSelectionToColumn());
-        foreach (var (start, end, _) in Segments(box.Text))
+        var text = box.Text;
+        var (from, to) = Indexes(text, Selected(box));
+        foreach (var (start, end, _) in Segments(text))
         {
             if (start > from || to > end)
                 continue;
-            box.Select(start, end);
-            box.CaretColumn = end;
+            box.Select(Column(text, start), Column(text, end));
+            box.CaretColumn = Column(text, end);
             return;
         }
     }
 
-    // --- The text rules: columns of the box's text, no Godot ---
+    // LineEdit counts its text in columns, one per code point (Godot's strings are UTF-32), and so does the shaper; a
+    // C# string counts UTF-16 chars, so an emoji is one column but two chars. The text rules below work on the C#
+    // string: a column read from the box goes through Index first, and an index handed back to it (DeleteText, Select,
+    // CaretColumn, Replace) through Column.
+    static int Index(string text, int column)
+    {
+        var index = 0;
+        for (var i = 0; i < column && index < text.Length; i++)
+            index += char.IsSurrogatePair(text, index) ? 2 : 1;
+        return index;
+    }
 
-    // Its tags as column ranges, in order, blanks left out; Finished: a comma follows (a pill). An unfinished last one
+    public static int Column(string text, int index)
+    {
+        var column = 0;
+        for (var i = 0; i < index; i += char.IsSurrogatePair(text, i) ? 2 : 1)
+            column++;
+        return column;
+    }
+
+    // The columns text takes in the box (its MaxLength counts these).
+    public static int Columns(string text) => Column(text, text.Length);
+
+    static (int From, int To) Indexes(string text, (int From, int To) columns) => (Index(text, columns.From), Index(text, columns.To));
+
+    // --- The text rules: indexes into the C# string of the box's text (not its columns), no Godot ---
+
+    // Its tags as index ranges, in order, blanks left out; Finished: a comma follows (a pill). An unfinished last one
     // is the word being typed.
     static List<(int Start, int End, bool Finished)> Segments(string text)
     {
@@ -411,20 +462,22 @@ static class TagPills
         return end;
     }
 
-    // What a paste of clip at the caret inserts: its tags (between commas, full-width ones, lines or tabs), less those
-    // the text has (any case) and repeats, with a separator before them where a tag ends at the caret and one after,
-    // so they're pills; dropped from the end until it fits in room. Null when clip has no separator: pasted natively.
+    // What a paste of clip at the caret inserts: its tags (between commas, full-width ones, lines or tabs; any other
+    // character below a space dropped, as the box's own paste drops them), less those the text has (any case) and
+    // repeats, with a separator before them where a tag ends at the caret and one after, so they're pills; dropped from
+    // the end until it fits in room (columns). Null when clip has no separator: pasted natively.
     static string? PasteText(string text, int caret, string clip, int room)
     {
         var parts = clip.Split([',', '，', '、', '\n', '\r', '\t']);
         if (parts.Length < 2)
             return null;
         var have = Segments(text).Select(t => text[t.Start..t.End]).ToHashSet(StringComparer.OrdinalIgnoreCase);
-        var tags = parts.Select(p => p.Trim()).Where(p => p.Length > 0 && !have.Contains(p)).Distinct(StringComparer.OrdinalIgnoreCase).ToList();
+        var tags = parts.Select(p => string.Concat(p.Where(c => c >= ' ')).Trim()).Where(p => p.Length > 0 && !have.Contains(p))
+            .Distinct(StringComparer.OrdinalIgnoreCase).ToList();
         var head = text[..caret];
         var before = head.TrimEnd().Length == 0 ? "" : head.TrimEnd().EndsWith(',') ? (char.IsWhiteSpace(head[^1]) ? "" : " ") : ", ";
         var after = text[caret..].TrimStart().StartsWith(',') ? "" : ", ";
-        while (tags.Count > 0 && before.Length + string.Join(", ", tags).Length + after.Length > room)
+        while (tags.Count > 0 && Columns(before + string.Join(", ", tags) + after) > room)
             tags.RemoveAt(tags.Count - 1);
         return tags.Count == 0 ? "" : before + string.Join(", ", tags) + after;
     }

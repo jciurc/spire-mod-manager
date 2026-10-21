@@ -110,8 +110,9 @@ sealed class TagSuggestions
     // The tag in place of the word being typed, then ", " for the next one; Ctrl+Z takes it back.
     void Pick(string tag)
     {
-        var cut = _box.Text.LastIndexOf(',') + 1;
-        TagPills.Replace(_box, cut, _box.Text.Length, (cut == 0 ? "" : " ") + tag + ", ");
+        var text = _box.Text;
+        var cut = text.LastIndexOf(',') + 1; // in chars, where Replace takes the box's columns
+        TagPills.Replace(_box, TagPills.Column(text, cut), TagPills.Columns(text), (cut == 0 ? "" : " ") + tag + ", ");
         Update(); // now: the box says its text changed only at the frame's end
     }
 
