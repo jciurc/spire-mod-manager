@@ -6942,6 +6942,8 @@ static class SelfTest
             changes.Files == 1 && changes.FileSubjects.SequenceEqual([$"{regent} (hands)"]) && changes.Code == 0
             && SpireModManager.Search.Matches(made, "regent") && SpireModManager.Search.Matches(made, "hands") && !SpireModManager.Search.Matches(made, "ironclad"),
             $"{changes.Files} files: {string.Join(" | ", changes.FileSubjects)}; code {changes.Code}");
+        Check("search's words for what a mod changes are kept for the session, the same as worked out afresh",
+            GameChanges.Words(made) == changes.Words && GameChanges.Words(made) == GameChanges.Words(made), GameChanges.Words(made));
 
         // Our own patches, in our info panel.
         if (content.GetChildren().OfType<NModMenuRow>().FirstOrDefault(r => r.Mod is { manifest.id: ModEntry.ModId, state: ModLoadState.Loaded }) is not { Mod: { } ours } row)

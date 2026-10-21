@@ -1,5 +1,6 @@
 using System.Collections.Concurrent;
 using System.Reflection;
+using System.Runtime.CompilerServices;
 using System.Text;
 using Godot;
 using HarmonyLib;
@@ -28,6 +29,20 @@ static class GameChanges
 
     static readonly Changes None = new(0, [], 0, []);
     static readonly HashSet<string> Warned = []; // once a mod each
+
+    // Search's words for a mod's changes, kept for the session and made again when the language changes: a keystroke
+    // searches every mod, and working them out each time (its pack against the game's, its patches) made one take
+    // 172 ms with 249 mods (29 ms before). The patches are the launch's; an updated mod arrives as a new Mod.
+    static readonly ConditionalWeakTable<Mod, StrongBox<(string Language, string Words)>> SearchWords = new();
+
+    public static string Words(Mod mod)
+    {
+        var language = LocManager.Instance?.Language ?? "";
+        var kept = SearchWords.GetValue(mod, m => new StrongBox<(string, string)>((language, For(m).Words)));
+        if (kept.Value.Language != language)
+            kept.Value = (language, For(mod).Words);
+        return kept.Value.Words;
+    }
 
     // A mod's changes, or None (nothing found, or what it ships can't be read).
     public static Changes For(Mod? mod)

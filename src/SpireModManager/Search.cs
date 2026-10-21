@@ -118,7 +118,7 @@ static class Search
         var description = mod.manifest?.description is { Length: > 0 } text
             ? ModDetails.WithoutTags(Picture.Replace(text, "")).Replace("[lb]", "[").Replace("[rb]", "]") : "";
         // What it changes in the game ("The Regent (energy orb)", "creature"), searched as its description is.
-        var words = (description + " " + GameChanges.For(mod).Words).Trim();
+        var words = (description + " " + GameChanges.Words(mod)).Trim();
         return new Haystack(string.Join('\n', fields.Append(description)), string.Join('\n', folded), [.. folded.Select(Squeeze)],
             Fold(words, ""), Fold(words, " "));
     }
