@@ -20,7 +20,7 @@ static class Tags
     static readonly Color New = new(0.5f, 0.84f, 0.78f);
     static readonly Color Stable = new(0.58f, 0.84f, 0.5f);
     static readonly Color Beta = new(0.5f, 0.7f, 1f);
-    static readonly Color SameIdClash = new(0.95f, 0.78f, 0.35f);
+    public static readonly Color SameIdClash = new(0.95f, 0.78f, 0.35f); // copies of an id ticked together (the self-test reads it)
     public static readonly Color CustomColor = new(0.75f, 0.9f, 0.8f);
     static readonly Color Folded = new(0.8f, 0.78f, 0.72f); // the "+N" chip
 

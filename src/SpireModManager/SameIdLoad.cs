@@ -308,9 +308,9 @@ static class SameIdLoad
         return changed;
     }
 
-    // Every entry of ours on (Settle runs, so this launch loaded us): a copy of ours left off (unticked on the game's page,
-    // or by Repair from the list as the game read it) would leave the mod off once the copy that runs is removed. Our
-    // views keep every copy of ours ticked (Copies.Locked). True if anything changed.
+    // Every entry of ours on (Settle runs, so this launch loaded us): a copy of ours left off (unticked on the game's page)
+    // would leave the mod off once the copy that runs is removed. Our views keep every copy of ours ticked
+    // (Copies.Locked). True if anything changed.
     public static bool OursOn(List<SettingsSaveMod> list)
     {
         var off = list.Where(e => e.Id == ModEntry.ModId && !e.IsEnabled).ToList();
@@ -327,13 +327,14 @@ static class SameIdLoad
     // The game's rebuilt list gives every copy of an id the first entry's on/off (it matches by id only): each id whose
     // entries at launch (read: the list as the game read it, LaunchGuard.ReadList) had two or more sources gets each
     // source's own back, off if any of its entries was. A source the launch's list didn't have (a new copy) keeps the
-    // rebuild's. True if anything changed.
+    // rebuild's. Not ours: every entry of ours goes on (OursOn), so putting one off back would only be undone again. True
+    // if anything changed.
     public static bool Repair(List<SettingsSaveMod> list, IReadOnlyList<(string Id, ModSource Source, bool On)>? read)
     {
         if (read == null)
             return false;
         var changed = false;
-        foreach (var id in read.GroupBy(e => e.Id).Where(g => g.Select(e => e.Source).Distinct().Count() > 1).Select(g => g.Key))
+        foreach (var id in read.GroupBy(e => e.Id).Where(g => g.Key != ModEntry.ModId && g.Select(e => e.Source).Distinct().Count() > 1).Select(g => g.Key))
         {
             var put = new List<string>();
             foreach (var source in read.Where(e => e.Id == id).Select(e => e.Source).Distinct())
