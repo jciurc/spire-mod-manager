@@ -13,10 +13,10 @@ namespace SpireModManager;
 // member is named here (tools/check.cs checks), so none ships untested.
 static partial class SelfTest
 {
-    static async Task TestApi(NMainMenu menu)
+    static async Task TestApi(NMainMenu menu, string outDir)
     {
         TestApiShape();
-        await TestApiMenus(menu);
+        await TestApiMenus(menu, outDir);
         await TestApiBanners(menu);
         TestApiLooks();
         await TestApiMods(menu);
@@ -49,6 +49,13 @@ static partial class SelfTest
             && Method<Action<Control, string>>("ModCards", "Watch", typeof(Control), typeof(string)) != null
             && Method<Action<RichTextLabel, Func<string, string?>>>("ModCards", "WatchLinks", typeof(RichTextLabel), typeof(Func<string, string?>)) != null
             && Method<Func<string, string?>>("ModCards", "Text", typeof(string)) != null);
+        // Mod Doctor's dev self-test opens one of our menus by reflection: Show(owner, entries), a heading, and an entry
+        // made with the parameterless constructor and its Label set through the init setter.
+        var entryType = assembly.GetType("SpireModManager.Api.MenuEntry");
+        Check("API: Mod Doctor's lookups find what its self-test binds (PopupMenus.Show, MenuEntry.Heading, MenuEntry's constructor and Label's setter)",
+            entryType != null && Method<Func<Node, IReadOnlyList<MenuEntry>, Node?>>("PopupMenus", "Show", typeof(Node), typeof(IReadOnlyList<MenuEntry>)) != null
+            && Method<Func<string, MenuEntry>>("MenuEntry", "Heading", typeof(string)) != null && entryType.GetConstructor(Type.EmptyTypes) != null
+            && entryType.GetProperty("Label", BindingFlags.Public | BindingFlags.Instance)?.SetMethod is { IsPublic: true });
     }
 
     // The screen's hotkey blockers (the game's NHotkeyManager._blockingScreens), to see a menu let go of them.
@@ -59,7 +66,7 @@ static partial class SelfTest
     // SMM's menu layers on the scene root (none stays after a menu closes, or fails).
     static int MenuLayers(Node menu) => menu.GetTree().Root.GetChildren().Count(c => c.Name.ToString().StartsWith(MenuPanel.RootName));
 
-    static async Task TestApiMenus(NMainMenu menu)
+    static async Task TestApiMenus(NMainMenu menu, string outDir)
     {
         var owner = new Control { Name = "SmmApiMenuOwner", Size = new Vector2(10, 10) };
         menu.AddChild(owner);
@@ -157,6 +164,8 @@ static partial class SelfTest
 
             // An icon before a row's words, faded with a dimmed row.
             var picture = ImageTexture.CreateFromImage(Image.CreateEmpty(8, 8, false, Image.Format.Rgba8));
+            var portraits = new[] { "ironclad", "silent", "defect", "necrobinder", "regent" }.Select(c => $"res://images/packed/character_select/char_select_{c}.png")
+                .Where(p => ResourceLoader.Exists(p)).Select(p => GameResources.Load<Texture2D>(p)).OfType<Texture2D>().ToList();
             var pictured = PopupMenus.Show(owner, [new MenuEntry { Label = "Pictured", OnSelect = () => { }, Icon = picture },
                 new MenuEntry { Label = "Faded", Icon = picture, Disabled = true }]);
             var icons = pictured?.FindChildren("Icon", "TextureRect", true, false).OfType<TextureRect>().ToList() ?? [];
@@ -169,11 +178,13 @@ static partial class SelfTest
             // screen; past what fits across, they scroll; one that fits stays one list.
             var screen = owner.GetViewport().GetVisibleRect().Size;
             List<MenuEntry> Many(int count) => [MenuEntry.Heading("Characters"),
-                .. Enumerable.Range(1, count).Select(i => new MenuEntry { Label = $"Character {i}", OnSelect = () => { }, Icon = picture })];
+                .. Enumerable.Range(1, count).Select(i => new MenuEntry { Label = $"Character {i}", OnSelect = () => { },
+                    Icon = portraits.Count > 0 ? portraits[i % portraits.Count] : picture, Disabled = i % 9 == 0 })];
             Rect2 PanelOf(Node? shown) => (shown?.FindChild("Panel", true, false) as Control)?.GetGlobalRect() ?? new Rect2();
             bool OnScreen(Rect2 rect) => rect.Size.X > 0 && rect.Position.X >= -0.5f && rect.Position.Y >= -0.5f && rect.End.X <= screen.X + 0.5f && rect.End.Y <= screen.Y + 0.5f;
             var tall = PopupMenus.Show(owner, Many(40));
             await Wait(menu, 0.1);
+            await Capture(menu.GetTree().Root, outDir, "api-menu-columns");
             var (tallColumns, tallPanel) = (tall?.FindChildren("RowColumn*", "VBoxContainer", true, false).Count ?? 0, PanelOf(tall));
             Check("API menus: one taller than the screen goes into columns, its heading on top, every row there in order, all on screen",
                 tall != null && tallColumns >= 2 && PopupMenus.Rows(tall).Select(r => r.Label).SequenceEqual(Enumerable.Range(1, 40).Select(i => $"Character {i}"))
@@ -181,6 +192,7 @@ static partial class SelfTest
                 $"{tallColumns} columns, panel {tallPanel}, screen {screen}");
             var huge = PopupMenus.Show(owner, Many(400));
             await Wait(menu, 0.1);
+            await Capture(menu.GetTree().Root, outDir, "api-menu-scroll");
             var hugePanel = PanelOf(huge);
             Check("API menus: one with more columns than fit across scrolls up and down, and still fits the screen", huge != null
                 && huge.FindChild("Scroll", true, false) is ScrollContainer && OnScreen(hugePanel) && PopupMenus.Rows(huge).Count == 400, $"panel {hugePanel}");
