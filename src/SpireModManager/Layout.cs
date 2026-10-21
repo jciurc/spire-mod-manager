@@ -90,8 +90,7 @@ static class Layout
             var ours = new LocString("settings_ui", "SPIRE_MOD_MANAGER.PAGE_TITLE").GetFormattedText();
             var titleWidth = title.GetThemeFont(NormalFont).GetStringSize(ours, HorizontalAlignment.Left, -1, PageTitleSize).X;
             pageLink.Size = pageLink.GetCombinedMinimumSize();
-            pageLink.Position = new Vector2(PageLeft + titleWidth + 28,
-                TitleTop + (TitleBottom - TitleTop - pageLink.Size.Y) / 2 + 3); // a little below the middle: the title's baseline
+            pageLink.Position = new Vector2(PageLeft + titleWidth + 28, TitleBaseline(title) - LinkBaseline(pageLink));
         }
 
         // Load Order: its name centred over the list.
@@ -220,6 +219,29 @@ static class Layout
             else
                 Bmm.Attach(screen);
         }
+    }
+
+    // Where our page title's text sits on its line (the same on the game's page, whose title is elsewhere): its box's
+    // top, its text placed in the box by its vertical alignment, then the font's ascent. Worked out from the font, not
+    // the label's laid-out text, so it holds before a frame is drawn and on either page.
+    static float TitleBaseline(RichTextLabel title)
+    {
+        var font = title.GetThemeFont(NormalFont);
+        var room = TitleBottom - TitleTop - font.GetHeight(PageTitleSize);
+        var offset = title.VerticalAlignment switch
+        {
+            VerticalAlignment.Center => room / 2,
+            VerticalAlignment.Bottom => room,
+            _ => 0,
+        };
+        return TitleTop + title.GetThemeStylebox("normal").GetMargin(Side.Top) + offset + font.GetAscent(PageTitleSize);
+    }
+
+    // How far a link's baseline sits below its top: its text centred in its height, then the font's ascent.
+    static float LinkBaseline(Control link)
+    {
+        var (font, size) = (link.GetThemeFont("font"), link.GetThemeFontSize("font_size"));
+        return (link.Size.Y - font.GetHeight(size)) / 2 + font.GetAscent(size);
     }
 
     // The game's back arrow: on our pages our Main Menu button takes its place, and the arrow stays, unseen and taking

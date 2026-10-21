@@ -96,12 +96,13 @@ static class CategoryList
         Apply(content);
     }
 
-    // The way to the other page, as a plain link (Jordan: no button look) at the top, right of the page's title.
+    // The way to the other page, as a plain link (Jordan: no button look) at the top, right of the page's title; like
+    // all our links, its colour and the pointing hand, never an underline.
     static LinkButton PageLink(NModdingScreen screen, Action onPressed)
     {
         var link = new LinkButton
         {
-            Name = "SpireModManagerViewToggle", Underline = LinkButton.UnderlineMode.Always, FocusMode = Control.FocusModeEnum.None,
+            Name = "SpireModManagerViewToggle", Underline = LinkButton.UnderlineMode.Never, FocusMode = Control.FocusModeEnum.None,
             MouseDefaultCursorShape = Control.CursorShape.PointingHand,
         };
         link.AddThemeFontOverride("font", ModEntry.Font("res://themes/kreon_regular_shared.tres"));
@@ -118,7 +119,7 @@ static class CategoryList
         return link;
     }
 
-    public const int PageLinkSize = 20;
+    public const int PageLinkSize = 18;
 
     // Its words for the page now shown: "Go to vanilla Modding page" on ours, "Go to Spire Mod Manager page" on the
     // game's. On ours, while a mod is installed twice from one source, its card says how that page's tickbox treats

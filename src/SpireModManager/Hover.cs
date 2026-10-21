@@ -116,6 +116,7 @@ static class Hover
     // meta, or null for none.
     public static void WatchLinks(RichTextLabel label, string name, Func<string, string?> card, float width = 380, Func<string, string?>? full = null)
     {
+        label.MetaUnderlined = false; // our links: their colour and the pointing hand, never an underline
         string? current = null;
         var token = 0;
         bool Over(string meta) => current == meta && GodotObject.IsInstanceValid(label) && label.IsVisibleInTree() && Allowed(label)

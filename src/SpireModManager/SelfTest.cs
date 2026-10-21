@@ -851,6 +851,11 @@ static class SelfTest
         OursHold("main list", Layout.CornerX);
         var toggles = new[] { "SpireModManagerViewToggle", "SpireModManagerLoadOrderToggle" }.Select(name => screen.GetNode<Control>(name)).ToList();
         Check("the link to its page says Go to vanilla Modding page", toggles[0] is LinkButton { Text: var linkText } && linkText == Menus.Text("SPIRE_MOD_MANAGER.GO_TO_VANILLA"));
+        Check("the page link is a little smaller than the row text, never underlined (our links: colour and the pointer), like our other links",
+            toggles[0] is LinkButton { Underline: LinkButton.UnderlineMode.Never, MouseDefaultCursorShape: Control.CursorShape.PointingHand } pageLink
+            && pageLink.GetThemeFontSize("font_size") == CategoryList.PageLinkSize
+            && screen.FindChildren("SpireModManager*", "LinkButton", true, false).OfType<LinkButton>().All(l => l.Underline == LinkButton.UnderlineMode.Never)
+            && CategoryList.PageLinkSize < 20, $"{(toggles[0] as LinkButton)?.Underline}");
         // Where it leads, in its tip: the game's own page (as Better Mod Menu shows it, with that loaded), and back.
         var vanillaTip = Hover.TipOf(toggles[0]);
         var backTip = "";
@@ -1855,7 +1860,7 @@ static class SelfTest
             // A quiet link under the two, centred on the popup's art, overlapping neither: orange, a pointer over it, lit and
             // underlined on hover.
             var art = popup?.GetNodeOrNull<Control>("VerticalPopup");
-            var between = third is LinkButton { Underline: LinkButton.UnderlineMode.OnHover, MouseDefaultCursorShape: Control.CursorShape.PointingHand } link
+            var between = third is LinkButton { Underline: LinkButton.UnderlineMode.Never, MouseDefaultCursorShape: Control.CursorShape.PointingHand } link
                 && art != null && quitButton != null && restoreButton != null && link.GetGlobalRect().Position.Y >= restoreButton.GetGlobalRect().End.Y - 4
                 && Math.Abs(link.GetGlobalRect().GetCenter().X - art.GetGlobalRect().GetCenter().X) < 2 && link.Size.X > 100
                 && !link.GetGlobalRect().Intersects(quitButton.GetGlobalRect()) && !link.GetGlobalRect().Intersects(restoreButton.GetGlobalRect())
