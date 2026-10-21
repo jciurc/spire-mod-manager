@@ -5817,16 +5817,21 @@ static partial class SelfTest
         Filter()?.EmitSignal(BaseButton.SignalName.Pressed);
         await Wait(menu, 0.3);
         var (choiceAfter, libShown) = (ListFilter.Current, libRow.Visible);
+        // By copy (Copies.Key): a mod installed twice has a row per copy, and only one of the twins is among them.
+        List<string> VisibleCopies() => [.. Rows().Where(r => r.Visible).Select(r => r.Mod is { } m ? Copies.Key(m) : "")];
+        var shownThen = VisibleCopies();
         (screen.FindChild(LoadOrder.WarningName, true, false)?.FindChild("EnableNeededButton", true, false) as BaseButton)?.EmitSignal(BaseButton.SignalName.Pressed);
         await Wait(menu, 0.3);
-        var (stayed, bannerGone, boxKept) = (stepped.All(id => Row(id) is { Visible: true }), screen.FindChild(LoadOrder.WarningName, true, false) == null, searchBox.Text);
+        var (stayed, boxKept) = (shownThen.All(VisibleCopies().Contains), searchBox.Text);
+        var gone = string.Join(", ", shownThen.Except(VisibleCopies()));
+        var libOn = Copies.Ticked(lib);
         await Type("");
         tickbox.IsTicked = false;
         tickbox.EmitSignal(NTickbox.SignalName.Toggled, tickbox);
         await Wait(menu, 0.3);
         Check("main list banner: its Show under Show: Enabled shows all its mods (the choice back to All); its Enable required mods then keeps them on "
-            + "screen under the search, the banner gone", choiceAfter == ListFilter.Choice.All && libShown && stayed && bannerGone && boxKept == problems,
-            $"choice {choiceAfter}, Test Framework shown {libShown}; after Enable: stayed {stayed}, banner gone {bannerGone}, box \"{boxKept}\"");
+            + "screen under the search", choiceAfter == ListFilter.Choice.All && libShown && libOn && stayed && boxKept == problems,
+            $"choice {choiceAfter}, Test Framework shown {libShown}; after Enable: Test Framework on {libOn}, stayed {stayed} (gone {gone}), box \"{boxKept}\"");
 
         // A mod fixed by hand under it keeps its row through a redraw (Test Framework ticked: no longer needed), counted,
         // while the mods it fixed go; until the search changes. Unticked after, as it was.
