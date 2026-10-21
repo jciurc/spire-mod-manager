@@ -374,9 +374,12 @@ static class TagPills
     }
 
     // What a Backspace at the caret takes: the pill before it and its separator, when only spaces lie between that
-    // pill's comma and the caret. Null: native.
+    // pill's comma and the caret, or the pill the caret is at the end of (at either edge of a pill, a key deleting into
+    // it takes it whole; inside one, letters). Null: native.
     static (int From, int To)? PillBefore(string text, int caret)
     {
+        if (Segments(text).FirstOrDefault(t => t.End == caret) is { Finished: true } ending)
+            return (ending.Start, SeparatorEnd(text, text.IndexOf(',', ending.End)));
         var comma = text[..caret].TrimEnd().Length - 1;
         if (comma < 0 || text[comma] != ',')
             return null;
@@ -385,10 +388,13 @@ static class TagPills
     }
 
     // What a Delete at the caret takes, PillBefore's mirror: the pill after it and the separator before that pill, when
-    // only spaces lie between the caret and the separator's comma. Null: native, so a held Delete from inside a tag
-    // takes its letters and stops at its comma, as a held Backspace does from inside one.
+    // only spaces lie between the caret and the separator's comma, or the pill the caret is at the start of and the
+    // separator after it (Jordan, 21 Oct: Delete at a pill takes it whole). Null: native, so a held Delete from inside a
+    // tag takes its letters and stops at its comma, as a held Backspace does from inside one.
     static (int From, int To)? PillAfter(string text, int caret)
     {
+        if (Segments(text).FirstOrDefault(t => t.Start == caret) is { Finished: true } starting)
+            return (starting.Start, SeparatorEnd(text, text.IndexOf(',', starting.End)));
         var comma = text.Length - text[caret..].TrimStart().Length;
         if (comma == text.Length || text[comma] != ',')
             return null;

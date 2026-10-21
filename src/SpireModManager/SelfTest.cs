@@ -10557,6 +10557,32 @@ static partial class SelfTest
             Check("tag pills: a fresh Delete there takes the whole pill and its separator, and one Ctrl+Z puts it back",
                 freshDelete == ("co-op, Fav, Fast, wor", 10) && box.Text == "co-op, Fav, Story-heavy, Fast, wor", $"{freshDelete}, then \"{box.Text}\"");
             Check("tag pills: Delete held on after that press stops at the next pill", heldOnDelete == "co-op, Fav, Fast, wor", heldOnDelete);
+            // At a pill's own edge (Jordan, 21 Oct): Delete at its start, or Backspace at its end, takes it whole with the
+            // separator after it, one undo step; held there, it stops (nothing goes).
+            await Typed("co-op, Favorites, wor", caret: 7); // at the start of "Favorites"
+            await Send(Key.Delete, true);
+            var deleteAtStart = (box.Text, box.CaretColumn);
+            await Send(Key.Delete, false);
+            await Tap(Key.Z, ctrl: true);
+            var deleteUndone = box.Text;
+            await Typed("co-op, Favorites, wor", caret: 7);
+            await Repeats(Key.Delete, 3);
+            var deleteHeld = box.Text;
+            await Send(Key.Delete, false);
+            Check("tag pills: a fresh Delete at a pill's start takes the whole pill and its separator (Ctrl+Z puts it back); held there, nothing goes",
+                deleteAtStart == ("co-op, wor", 7) && deleteUndone == "co-op, Favorites, wor" && deleteHeld == "co-op, Favorites, wor",
+                $"{deleteAtStart}, undone \"{deleteUndone}\", held \"{deleteHeld}\"");
+            await Typed("co-op, Favorites, wor", caret: 16); // at the end of "Favorites"
+            await Send(Key.Backspace, true);
+            var backAtEnd = (box.Text, box.CaretColumn);
+            await Send(Key.Backspace, false);
+            await Typed("co-op, Favorites, wor", caret: 16);
+            await Repeats(Key.Backspace, 3);
+            var backHeld = box.Text;
+            await Send(Key.Backspace, false);
+            Check("tag pills: a fresh Backspace at a pill's end takes the whole pill and its separator; held there, nothing goes",
+                backAtEnd == ("co-op, wor", 7) && backHeld == "co-op, Favorites, wor", $"{backAtEnd}, held \"{backHeld}\"");
+
             await Typed("co-op, Favorites, ");
             await Tap(Key.Backspace, ctrl: true);
             var wordBack = box.Text;
