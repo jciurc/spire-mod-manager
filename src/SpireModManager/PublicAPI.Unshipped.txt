@@ -53,9 +53,12 @@ static SpireModManager.Api.GameResources.Load<T>(string! path) -> T?
 static SpireModManager.Api.MenuEntry.Divider() -> SpireModManager.Api.MenuEntry!
 static SpireModManager.Api.MenuEntry.Heading(string! label) -> SpireModManager.Api.MenuEntry!
 static SpireModManager.Api.ModCards.Text(string! modId) -> string?
+static SpireModManager.Api.ModCards.Show(Godot.Control! trigger) -> bool
+static SpireModManager.Api.ModCards.Close() -> bool
 static SpireModManager.Api.ModCards.Watch(Godot.Control! trigger, string! modId) -> void
 static SpireModManager.Api.ModCards.WatchLinks(Godot.RichTextLabel! label, System.Func<string!, string?>! modIdForLink) -> void
 static SpireModManager.Api.Mods.Details(string! modId) -> SpireModManager.Api.ModNotes!
+static SpireModManager.Api.Mods.TestDetails(string! modId, SpireModManager.Api.ModNotes? notes) -> void
 static SpireModManager.Api.Mods.Version(string! modId) -> string?
 static SpireModManager.Api.Palette.Cream.get -> Godot.Color
 static SpireModManager.Api.Palette.DeepNavy.get -> Godot.Color

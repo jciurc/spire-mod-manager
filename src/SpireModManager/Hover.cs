@@ -154,6 +154,18 @@ static class Hover
             node.GetTree().CreateTimer(timing is Timing.Slow or Timing.Late ? SlowDelay : Delay).Timeout += open;
     }
 
+    // A card for trigger now, as Watch would show it, wherever the mouse is (the API's ModCards.Show, for self-tests):
+    // below the trigger, up while it's in the tree and shown, until Hide. False if it has nowhere to go.
+    public static bool ShowNow(Control trigger, string name, string text, float width, string? full = null)
+    {
+        if (!GodotObject.IsInstanceValid(trigger) || !trigger.IsInsideTree() || Owner(trigger) is not { } owner)
+            return false;
+        var rect = trigger.GetGlobalRect();
+        Show(owner, name, text, new Vector2(rect.Position.X, rect.End.Y + 6), width: width, keep: () => GodotObject.IsInstanceValid(trigger) && trigger.IsVisibleInTree(),
+            timing: Timing.Instant, full: full, depth: LayerFor(trigger), around: rect);
+        return true;
+    }
+
     // Cards belong to the page they're on (they go with it), else to the window.
     static Node? Owner(Node node) => CategoryList.ScreenOf(node) ?? (Node?)node.GetTree()?.Root;
 

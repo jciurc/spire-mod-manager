@@ -14,4 +14,15 @@ public static class ModCards
 
     /// <summary>The card's BBCode as it would show now (not in full); null if the mod isn't installed. For self-tests.</summary>
     public static string? Text(string modId) => ApiGuard.Run<string?>("ModCards.Text", null, () => SharedCards.Text(modId));
+
+    /// <summary>For self-tests: opens the card a Watch set on trigger at once, as a hover would, wherever the real mouse is (below the trigger). It stays up until Close, or until the trigger leaves the tree or is hidden. False if there's no Watch on trigger, or its mod isn't installed.</summary>
+    public static bool Show(Control trigger) => ApiGuard.Run("ModCards.Show", false, () => SharedCards.ShowNow(trigger));
+
+    /// <summary>For self-tests: closes the open card (SMM's cards are one at a time, across mods); true if one was open.</summary>
+    public static bool Close() => ApiGuard.Run("ModCards.Close", false, () =>
+    {
+        var open = Hover.ShownName != null;
+        Hover.Hide();
+        return open;
+    });
 }

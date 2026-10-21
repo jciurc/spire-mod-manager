@@ -12,7 +12,31 @@ static class SharedCards
     const string ModIdMeta = "spire_mod_manager_card_mod";
     const float Width = 420;
 
-    public static string? Text(string modId, bool full = false) => ModEntry.CopyOf(modId) is { } mod ? ModDetails.SharedCard(mod, full) : null;
+    public static string? Text(string modId, bool full = false) =>
+        ModEntry.CopyOf(modId) is { } mod ? ModDetails.SharedCard(mod, full, StandIns.GetValueOrDefault(modId)) : null;
+
+    // Self-tests (the API's Mods.TestDetails): a mod's details for now, by id, in place of the player's, for the API's
+    // reads only (Details and the card): never saved, and SMM's own page and search keep the player's. Gone with the game.
+    static readonly Dictionary<string, (string? Alias, string? Notes, List<string> Tags, string? Category)> StandIns = [];
+
+    public static void StandIn(string modId, string? alias, string? notes, IEnumerable<string>? tags, string? category)
+    {
+        static string? Clean(string? text) => string.IsNullOrWhiteSpace(text) ? null : text.Trim();
+        StandIns[modId] = (Clean(alias), Clean(notes), Once(tags), Clean(category));
+    }
+
+    public static void NoStandIn(string modId) => StandIns.Remove(modId);
+
+    static List<string> Once(IEnumerable<string?>? tags) =>
+        (tags ?? []).OfType<string>().Select(t => t.Trim()).Where(t => t.Length > 0).Distinct(StringComparer.OrdinalIgnoreCase).ToList();
+
+    // Self-tests (the API's ModCards.Show): the card a Watch set on trigger, now, wherever the mouse is. False without one.
+    public static bool ShowNow(Control trigger)
+    {
+        if (!trigger.HasMeta(ModIdMeta) || trigger.GetMeta(ModIdMeta, "").AsString() is not { Length: > 0 } modId || Text(modId) is not { } text)
+            return false;
+        return Hover.ShowNow(trigger, CardName, text, Width, Text(modId, full: true));
+    }
 
     // Watched once per trigger; another call points it at another mod (a card open for the old one closes). A trigger
     // that ignores the mouse would never be hovered (a Label's default): it passes it on instead.
@@ -63,13 +87,15 @@ static class SharedCards
         label.MetaUnderlined = underlined;
     }
 
-    // What the player keeps about a mod: its copy's entry (else the id's), trimmed, blanks as none, tags once each.
+    // What the player keeps about a mod: its copy's entry (else the id's), trimmed, blanks as none, tags once each. A
+    // self-test's stand-in comes first.
     public static (string? Alias, string? Notes, List<string> Tags, string? Category) Details(string modId)
     {
+        if (StandIns.TryGetValue(modId, out var standIn))
+            return (standIn.Alias, standIn.Notes, [.. standIn.Tags], standIn.Category);
         var info = (ModEntry.CopyOf(modId) is { } mod ? Store.InfoFor(mod) : null) ?? Store.InfoFor(modId);
         static string? Clean(string? text) => string.IsNullOrWhiteSpace(text) ? null : text.Trim();
-        var tags = (info?.Tags ?? []).Select(t => t.Trim()).Where(t => t.Length > 0).Distinct(StringComparer.OrdinalIgnoreCase).ToList();
         var category = Clean(info?.Category) is { } named && Categories.Find(named) != null ? named : null;
-        return (Clean(info?.Alias), Clean(info?.Notes), tags, category);
+        return (Clean(info?.Alias), Clean(info?.Notes), Once(info?.Tags), category);
     }
 }
