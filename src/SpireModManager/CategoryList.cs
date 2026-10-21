@@ -142,16 +142,20 @@ static class CategoryList
     }
 
     // On our views, the tip on the tickbox of a copy of a mod installed more than once (and on Load Order's Enable or
-    // Disable for it): this mod's copy locked on says why, and how to turn it off; one of ours that's off, why to enable
-    // it too; any other copy that's off while another is on, which of them would load with both on (a tick makes this
-    // one its source's pick, so of two copies from one source, this one). Null otherwise: a copy that's on says what it
-    // does in the info panel (ModDetails.CopyLine). Nothing is turned off by enabling a copy (Dependencies.Write).
+    // Disable for it): this mod's copy locked on says why, and how to turn it off, or with another copy of ours off (the
+    // vanilla page unticks one), that this one is then the only one that loads, so to enable that too; one of ours that's
+    // off, why to enable it too; any other copy that's off while another is on, which of them would load with both on (a
+    // tick makes this one its source's pick, so of two copies from one source, this one). Null otherwise: a copy that's
+    // on says what it does in the info panel (ModDetails.CopyLine). Nothing is turned off by enabling a copy
+    // (Dependencies.Write).
     public static string? CopyTip(Mod mod)
     {
         if (Store.Data.VanillaView || mod.manifest?.id is not { } id || Copies.Others(mod) is not { Count: > 0 } others)
             return null;
         if (LockedOn(mod))
-            return Menus.Text("SPIRE_MOD_MANAGER.SELF_COPY_LOCKED_TIP");
+            return others.FirstOrDefault(o => !Copies.Ticked(o)) is { } off
+                ? Menus.Format("SPIRE_MOD_MANAGER.SELF_COPY_LOCKED_OTHER_OFF_TIP", ("other", Copies.Named(off)))
+                : Menus.Text("SPIRE_MOD_MANAGER.SELF_COPY_LOCKED_TIP");
         if (Copies.Ticked(mod) || others.FirstOrDefault(Copies.Ticked) is not { } ticked)
             return null;
         if (id == ModEntry.ModId)

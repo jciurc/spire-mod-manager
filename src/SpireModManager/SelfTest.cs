@@ -5528,6 +5528,37 @@ static partial class SelfTest
         var lines = (Running: ModDetails.CopyLine(self, false)?.Text, Other: ModDetails.CopyLine(copy, false)?.Text);
         Check("... the copy running says the other stays enabled, in case it's removed; the other says which copy runs",
             lines == (Draft(SelfRuns, ("other", Named(copy))), Draft(SelfBackup, ("other", Named(self)))), $"{lines.Running} / {lines.Other}");
+        // The backup copy failed by the game as a duplicate (made up: two copies of ours from one source, the second fails):
+        // grey "Won't load (same ID)" all the same, not a red "Failed to load" (it's kept on by design, and won't load).
+        var (stateWas, errorsWas, backupStatus) = (copy.state, copy.errors, ModDetails.Status(copy));
+        copy.state = ModLoadState.Failed;
+        copy.errors = [new LocString("main_menu_ui", "MOD_ERROR.DUPLICATE_ID")];
+        var failedStatus = ModDetails.Status(copy);
+        (copy.state, copy.errors) = (stateWas, errorsWas);
+        Check("... the backup copy failed by the game as a duplicate (made up): grey Won't load (same ID) as before, not a red Failed to load",
+            backupStatus.Contains(StatusWontLoad) && failedStatus == backupStatus, $"{backupStatus} / failed {failedStatus}");
+        // The other copy unticked (as the vanilla page does: the game's switch for it): this one's locked box says Spire Mod
+        // Manager won't load if this copy is removed, and to enable the other too, not that the other still loads. Put back.
+        var settings = SaveManager.Instance.SettingsSave.ModSettings;
+        var copyEntries = settings?.ModList.Where(e => e.Id == ModEntry.ModId && e.Source == ModSource.SteamWorkshop).ToList() ?? [];
+        if (copyEntries.Count == 0 && settings != null)
+        {
+            copyEntries.Add(new SettingsSaveMod { Id = ModEntry.ModId, Source = ModSource.SteamWorkshop });
+            settings.ModList.Add(copyEntries[0]);
+        }
+        foreach (var entry in copyEntries)
+            entry.IsEnabled = false;
+        CategoryList.Redraw(content);
+        await Wait(menu, 0.2);
+        var otherOffTip = Draft(SelfLockedOtherOffTip, ("other", Named(copy)));
+        var (offTip, offBox, copyTicked) = (CategoryList.CopyTip(self), Hover.TipOf(row.GetNode<NTickbox>("Tickbox")), Copies.Ticked(copy));
+        foreach (var entry in copyEntries)
+            entry.IsEnabled = true;
+        CategoryList.Redraw(content);
+        await Wait(menu, 0.2);
+        Check("... the other copy unticked (as the vanilla page does): this one's locked box says Spire Mod Manager won't load if this copy is removed, to "
+            + "enable the other too; ticked again, the lock's own tip", !copyTicked && offTip == otherOffTip && offBox == otherOffTip && ourRows.All(Locked),
+            $"other ticked {copyTicked}; tip {offTip}; box {offBox}; then {string.Join(" | ", ourRows.Select(Box))}");
         var ourChips = new[] { self, copy }.Select(m => Tags.For(m).FirstOrDefault(c => c.Text == "Same ID")).ToList();
         Check("... no Same ID banner or yellow chip for this mod: both on is as it should be",
             !Copies.Clashing().Any(m => m.manifest?.id == ModEntry.ModId) && border.GetNodeOrNull<Control>(LoadOrder.SameIdName) == null
@@ -9313,8 +9344,9 @@ static partial class SelfTest
     // here once for every check that reads them (an edit there is one edit here). Draft fills in their values.
     const string CopyOnTip = "{other} is already enabled. If both are enabled, only {loads} loads.";
     const string BulkEnablesTip = "Enables more than one copy of {mods}. Only one copy of each loads.";
-    const string SelfLockedTip = "Spire Mod Manager is installed twice, so both copies stay enabled. If one is removed, the other still loads. "
+    const string SelfLockedTip = "Spire Mod Manager is installed more than once, so both copies stay enabled. If one is removed, the other still loads. "
         + "To turn Spire Mod Manager off, disable both on the vanilla Modding page.";
+    const string SelfLockedOtherOffTip = "Spire Mod Manager stays enabled. {other} is disabled, so Spire Mod Manager won't load if this copy is removed. Enable it too.";
     const string SameIdText = "{count} mods with the same ID are enabled. Only one copy of each loads.";
     const string BannerLoads = "{mod}: loads", BannerWontLoad = "{mod}: won't load";
     const string RelaunchLoses = "{other} loads instead";
@@ -9329,7 +9361,7 @@ static partial class SelfTest
     const string SelfBackup = "{other} is running. This copy stays enabled, in case that one is removed.";
     const string NewCopyOn = "A new copy of {mods} was installed and is enabled. Only {loads} loads. Disable the copy you don't want.";
     const string NewCopyOff = "A new copy of {mods} was installed and is disabled.";
-    const string NewSelfCopy = "A new copy of Spire Mod Manager (this mod) was installed. Both copies stay enabled, and only {loads} loads.";
+    const string NewSelfCopy = "A new copy of Spire Mod Manager (this mod) was installed. Its copies stay enabled, and only {loads} loads.";
 
     static string Draft(string text, params (string Name, string Value)[] values) =>
         values.Aggregate(text, (filled, value) => filled.Replace($"{{{value.Name}}}", value.Value));

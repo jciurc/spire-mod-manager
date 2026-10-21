@@ -437,15 +437,16 @@ static class ModDetails
         return $"[color={color}]{text}[/color]";
     }
 
-    // Failed to load: ticked, and the game failed it. Won't load (same ID): ticked while another copy of its id loads
-    // after a relaunch (Copies.Loses), before a launch too, not a relaunch away: orange, as nothing else says it won't
-    // load, but grey for a copy of this mod (kept on as a backup on purpose). Pending relaunch: whether it loads changes
-    // at the relaunch. Else Enabled or Disabled, by its box.
+    // Won't load (same ID): ticked while another copy of its id loads after a relaunch (Copies.Loses), before a launch
+    // too, not a relaunch away: orange, as nothing else says it won't load, but grey for a copy of this mod (kept on as a
+    // backup on purpose). First, as it tells the next launch: a copy the game failed as a duplicate this launch says it
+    // too (the game's error shows under From the game). Failed to load: ticked, and the game failed it. Pending
+    // relaunch: whether it loads changes at the relaunch. Else Enabled or Disabled, by its box.
     static (string Text, string Color) StatusParts(Mod mod)
     {
         var ticked = Copies.Ticked(mod);
-        var (key, color) = ticked && mod.state == ModLoadState.Failed ? ("SPIRE_MOD_MANAGER.STATUS_FAILED", Problem)
-            : Copies.Loses(mod) ? ("SPIRE_MOD_MANAGER.STATUS_WONT_LOAD", mod.manifest?.id == ModEntry.ModId ? Disabled : Pending)
+        var (key, color) = Copies.Loses(mod) ? ("SPIRE_MOD_MANAGER.STATUS_WONT_LOAD", mod.manifest?.id == ModEntry.ModId ? Disabled : Pending)
+            : ticked && mod.state == ModLoadState.Failed ? ("SPIRE_MOD_MANAGER.STATUS_FAILED", Problem)
             : Copies.Loads(mod) != (mod.state == ModLoadState.Loaded) ? ("SPIRE_MOD_MANAGER.STATUS_PENDING", Pending)
             : ticked ? ("SPIRE_MOD_MANAGER.STATUS_ENABLED", Enabled)
             : ("SPIRE_MOD_MANAGER.STATUS_DISABLED", Disabled);
