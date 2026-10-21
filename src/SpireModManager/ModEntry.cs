@@ -138,8 +138,15 @@ internal static class ModEntry
 
     // Our own version, from the manifest the game loaded ("0.1.0"; the loaded copy's, if a second one is installed);
     // null if it isn't found.
-    public static string? Version => ModManager.Mods.Where(m => m.manifest?.id == ModId)
-        .OrderByDescending(m => m.state == ModLoadState.Loaded).FirstOrDefault()?.manifest?.version;
+    public static string? Version => VersionOf(ModId);
+
+    // A mod's copy as the API speaks of it: the one loaded, else the first installed (one that arrived while the game
+    // runs too); null if none is.
+    public static Mod? CopyOf(string? id) => id == null ? null
+        : ModManager.Mods.Concat(SpireModManager.Installed.Mods).Where(m => m.manifest?.id == id).OrderByDescending(m => m.state == ModLoadState.Loaded).FirstOrDefault();
+
+    // That copy's version, from its manifest ("0.1.0"), or null.
+    public static string? VersionOf(string? id) => CopyOf(id)?.manifest?.version;
 
     static readonly HashSet<string> Missing = [];
 

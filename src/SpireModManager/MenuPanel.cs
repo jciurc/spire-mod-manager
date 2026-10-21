@@ -1,4 +1,5 @@
 using Godot;
+using MegaCrit.Sts2.Core.Nodes.CommonUi;
 
 namespace SpireModManager;
 
@@ -6,11 +7,14 @@ namespace SpireModManager;
 // engine popup. Rows have an optional mark, a label, a badge and a dim detail; headings separate groups; an optional
 // side column holds a mod's own fields. A press outside or Escape closes it (a right-click outside also reaches
 // what's underneath). One at a time. It opens below right of the mouse (or below a picker), and above (left of) it where
-// there's no room below (right), as Hover's cards do: never over the mouse while there's room on the other side.
+// there's no room below (right), as Hover's cards do: never over the mouse while there's room on the other side. It
+// closes when its owner leaves the tree, or is hidden. The API's menus (PopupMenus, keyboard) also take the keyboard:
+// the game's cancel closes them, and the screen's hotkeys are off while one is open.
 static class MenuPanel
 {
-    static readonly Color Cream = new(1, 0.964706f, 0.886275f);
-    static readonly Color Gold = new(0.937f, 0.784f, 0.318f);
+    static readonly Color Cream = Look.Cream;
+    static readonly Color Gold = Look.Gold;
+    static readonly StringName CancelAction = "ui_cancel", PauseAction = "mega_pause_and_back"; // the game's (MegaInput.cancel, .pauseAndBack)
     public const string RootName = "SpireModManagerMenu";
     public const string ItemGroup = "SpireModManagerMenuItem";
     public const string HeadingGroup = "SpireModManagerMenuHeading";
@@ -18,6 +22,7 @@ static class MenuPanel
 
     static Node? _open;
     static string? _openKey;
+    static Action? _letGo; // what the open menu holds on to (its owner's signal, a frame check, the hotkeys), let go as it closes
 
     public static bool IsOpen => _open != null && GodotObject.IsInstanceValid(_open) && _open.IsInsideTree();
 
@@ -27,7 +32,7 @@ static class MenuPanel
     // items is called again on every redraw, so it can change; side builds the side column. With a toggleKey, showing
     // the same menu again closes it. from: what it opens from (a picker, Around), or null for the mouse.
     public static Node? Show(Node owner, Func<IReadOnlyList<MenuItem>> items, Rect2? from = null, string? toggleKey = null,
-        Func<Action, Control>? side = null)
+        Func<Action, Control>? side = null, bool keyboard = false)
     {
         var again = toggleKey != null && IsOpen && _openKey == toggleKey;
         Close();
@@ -35,14 +40,33 @@ static class MenuPanel
             return null;
 
         // On the scene root, not in the page: closing it mid-edit redraws the list, which mustn't be removing it then.
-        // It closes when its owner goes.
+        // It closes when its owner goes (one connection, let go as it closes: a page opening menus all session mustn't
+        // pile them up), or once its owner is hidden (checked each frame; an owner hidden already doesn't count).
         var layer = new CanvasLayer { Name = RootName, Layer = Depth };
         owner.GetTree().Root.AddChild(layer);
-        owner.TreeExiting += () =>
+        Action letGo = () => { };
+        var gone = Callable.From(() =>
         {
             if (_open == layer)
                 Close();
+        });
+        owner.Connect(Node.SignalName.TreeExiting, gone, (uint)GodotObject.ConnectFlags.OneShot);
+        letGo += () =>
+        {
+            if (GodotObject.IsInstanceValid(owner) && owner.IsConnected(Node.SignalName.TreeExiting, gone))
+                owner.Disconnect(Node.SignalName.TreeExiting, gone);
         };
+        if (owner is CanvasItem shown && shown.IsVisibleInTree())
+        {
+            var ownerTree = owner.GetTree();
+            void Hidden()
+            {
+                if (_open == layer && (!GodotObject.IsInstanceValid(shown) || !shown.IsVisibleInTree()))
+                    Close();
+            }
+            ownerTree.ProcessFrame += Hidden;
+            letGo += () => ownerTree.ProcessFrame -= Hidden;
+        }
         var viewport = owner.GetViewport();
         var catcher = new Control { Name = "Catcher", MouseFilter = Control.MouseFilterEnum.Stop, Size = viewport.GetVisibleRect().Size };
         layer.AddChild(catcher);
@@ -74,6 +98,12 @@ static class MenuPanel
 
         catcher.GuiInput += e =>
         {
+            if (keyboard && e is InputEventKey && (e.IsActionPressed(CancelAction) || e.IsActionPressed(PauseAction)))
+            {
+                catcher.AcceptEvent();
+                Close();
+                return;
+            }
             if (e is not InputEventMouseButton { Pressed: true } press || panel.GetGlobalRect().HasPoint(press.GlobalPosition))
                 return;
             catcher.AcceptEvent();
@@ -84,6 +114,30 @@ static class MenuPanel
         };
 
         (_open, _openKey) = (layer, toggleKey);
+
+        // The keyboard is the menu's: focus on it, so the game's cancel reaches it, and the screen's hotkeys blocked while
+        // it's open (let go as it closes, or if whoever holds it frees it first).
+        if (keyboard)
+        {
+            catcher.FocusMode = Control.FocusModeEnum.All;
+            catcher.GrabFocus();
+            if (NHotkeyManager.Instance is { } hotkeys)
+            {
+                hotkeys.AddBlockingScreen(layer);
+                var released = false;
+                void Release()
+                {
+                    if (released)
+                        return;
+                    released = true;
+                    if (GodotObject.IsInstanceValid(hotkeys))
+                        hotkeys.RemoveBlockingScreen(layer);
+                }
+                letGo += Release;
+                catcher.TreeExiting += Release;
+            }
+        }
+        _letGo = letGo;
 
         // From the mouse (a point) by default: its top-left corner there, or, where that runs off the bottom (right) and
         // less would the other way, its bottom (right) edge there instead. From a picker the same off its edges: under it
@@ -134,6 +188,9 @@ static class MenuPanel
     // Closes the open menu, if any. True if one was open.
     public static bool Close()
     {
+        var letGo = _letGo;
+        _letGo = null;
+        letGo?.Invoke();
         if (!IsOpen || _open is not { } open)
         {
             (_open, _openKey) = (null, null);
@@ -184,6 +241,7 @@ static class MenuPanel
         };
         row.AddToGroup(ItemGroup);
         row.SetMeta("label", item.Label);
+        row.SetMeta("disabled", item.Disabled);
         StyleBoxFlat Box(Color color)
         {
             var box = new StyleBoxFlat { BgColor = color, ContentMarginLeft = 12, ContentMarginRight = 14, ContentMarginTop = 6, ContentMarginBottom = 6 };
@@ -245,20 +303,25 @@ static class MenuPanel
         return row;
     }
 
-#if DEVTOOLS
-    // Self-test: a menu's labels (Headings: its headings'), and a click on one.
-    public static List<string> Labels(Node menu) =>
-        menu.FindChildren("*", "", true, false).Where(n => n.IsInGroup(ItemGroup)).Select(n => (string)n.GetMeta("label")).ToList();
+    // A menu's labels (Headings: its headings'; Rows: with whether each is dimmed), and a click on one: false if there's
+    // no such row, or it's dimmed. Every build: other mods' self-tests use them through the API.
+    public static List<string> Labels(Node menu) => Rows(menu).Select(r => r.Label).ToList();
+
+    public static List<(string Label, bool Disabled)> Rows(Node menu) =>
+        menu.FindChildren("*", "", true, false).Where(n => n.IsInGroup(ItemGroup))
+            .Select(n => ((string)n.GetMeta("label"), n.GetMeta("disabled", false).AsBool())).ToList();
 
     public static List<string> Headings(Node menu) =>
         menu.FindChildren("*", "", true, false).Where(n => n.IsInGroup(HeadingGroup)).Select(n => (string)n.GetMeta("label")).ToList();
 
-    public static void Press(Node menu, string label)
+    public static bool Press(Node menu, string label)
     {
-        if (menu.FindChildren("*", "", true, false).FirstOrDefault(n => n.IsInGroup(ItemGroup) && (string)n.GetMeta("label") == label) is Control row)
-            row.EmitSignal(Control.SignalName.GuiInput, new InputEventMouseButton { ButtonIndex = MouseButton.Left, Pressed = false });
+        if (menu.FindChildren("*", "", true, false).FirstOrDefault(n => n.IsInGroup(ItemGroup) && (string)n.GetMeta("label") == label) is not Control row
+            || row.GetMeta("disabled", false).AsBool())
+            return false;
+        row.EmitSignal(Control.SignalName.GuiInput, new InputEventMouseButton { ButtonIndex = MouseButton.Left, Pressed = false });
+        return true;
     }
-#endif
 
     static void Style(Control control, string font, int size, Color color)
     {
