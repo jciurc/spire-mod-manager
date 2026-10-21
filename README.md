@@ -39,8 +39,11 @@ Subscribe to it on the [Steam Workshop](https://steamcommunity.com/sharedfiles/f
   Beta for a mod marked for one branch only, Library, Gameplay, Cosmetic).
 - **Search:** names, descriptions, aliases, notes, tags, authors, categories and Workshop tags; `#tag` (yours, the
   automatic ones and Workshop tags) and `@author` narrow it down, and a `-` before a term leaves out what it matches: `#stable -#beta` lists the mods marked for the
-  stable branch only, and Disable all turns them off. Punctuation counts as spaces; `"text in quotes"` matches
-  exactly, case too. Ctrl+F jumps to the search box.
+  stable branch only, and Disable all turns them off. `OR` (or `|`) finds either side and brackets group terms:
+  `(#gameplay OR #library) #enabled`. Tags that aren't chips find mods by state: `#enabled`, `#disabled`,
+  `#workshop`, `#pending`, `#changed`, `#error`, `#warning` and more, and a warning banner's Show puts its own in the
+  search box. Punctuation counts as spaces; `"text in quotes"` matches exactly, case too. Ctrl+F jumps to the search
+  box.
 - **Select several mods** with Ctrl-click, Shift-click or Ctrl+A, then set their category, tags or notes, or turn
   them all on or off, from their right-click menu, the bar above the list or any of their tickboxes on the main
   list. The bar counts them; click the count, press Esc or Ctrl+D to let go. Selecting is a step in undo and redo

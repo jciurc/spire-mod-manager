@@ -21,7 +21,7 @@ static class HiddenTags
         ["missing"] = _ => false,
         ["loaded"] = m => m.state == ModLoadState.Loaded,
         ["notloaded"] = m => m.state != ModLoadState.Loaded,
-        ["pending"] = m => Copies.Loads(m) != (m.state == ModLoadState.Loaded), // the panel's Pending relaunch
+        ["pending"] = ModDetails.Pending, // the panel's Pending relaunch (not a copy set aside, nor one that failed)
         ["new"] = Tags.IsNew, // the New chip's, in any language
         ["changed"] = m => ListFilter.Matches(m, ListFilter.Choice.Changed),
         ["moved"] = m => Whole("moved", Moved).Contains(m),

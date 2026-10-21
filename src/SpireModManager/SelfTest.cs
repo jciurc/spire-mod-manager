@@ -4457,7 +4457,7 @@ static partial class SelfTest
             (string Query, string Finds)[] cases =
             [
                 ("#enabled", "yynyy"), ("#disabled", "nnyny"), ("enabled", "nnnny"), ("#workshop", "nynnn"), ("#local", "ynyyy"), ("#installed", "yyyyy"),
-                ("#missing", "nnnnn"), ("#loaded", "ynnyy"), ("#notloaded", "nyynn"), ("#pending", "nynny"), ("#unmet", "yynnn"), ("#needed", "nnynn"),
+                ("#missing", "nnnnn"), ("#loaded", "ynnyy"), ("#notloaded", "nyynn"), ("#pending", "nnnny"), ("#unmet", "yynnn"), ("#needed", "nnynn"),
                 ("#order", "ynnnn"), ("#failed", "nynnn"), ("#gameerror", "nnnyn"), ("#error", "yyynn"), ("#warning", "nnnyn"), ("#problem", "yyyyn"),
                 ("#renamed", "ynnnn"), ("#notes", "nynnn"), ("#uncategorized", "yynyy"), ("#edited", "yyyyy"), ("#sameid OR #clash OR #aside OR #managers", "nnnnn"),
                 ("#enabled -#local", "nynnn"), ("#problem #local", "ynyyn"), ("(#unmet OR #needed) -#failed", "ynynn"),
@@ -4510,7 +4510,7 @@ static partial class SelfTest
             ("enabled", ticked.Contains), ("disabled", m => !ticked.Contains(m)), ("workshop", m => m.modSource == ModSource.SteamWorkshop),
             ("local", m => Chip(m, "SPIRE_MOD_MANAGER.TAG_LOCAL")), ("installed", _ => true), ("uninstalled", _ => false), ("missing", _ => false),
             ("loaded", m => m.state == ModLoadState.Loaded), ("notloaded", m => m.state != ModLoadState.Loaded),
-            ("pending", m => Copies.Loads(m) != (m.state == ModLoadState.Loaded)), ("new", m => Chip(m, "SPIRE_MOD_MANAGER.TAG_NEW")),
+            ("pending", m => ModDetails.Status(m).Contains(Menus.Text("SPIRE_MOD_MANAGER.STATUS_PENDING"))), ("new", m => Chip(m, "SPIRE_MOD_MANAGER.TAG_NEW")),
             ("changed", changed.Contains), ("moved", moved.Contains), ("edited", m => edited.Contains(Copies.Key(m))),
             ("renamed", m => Store.InfoFor(m)?.Alias is { Length: > 0 }), ("notes", m => !string.IsNullOrWhiteSpace(Store.InfoFor(m)?.Notes)),
             ("uncategorized", m => CategoryList.CategoryName(Copies.KeyOf(m)) == Menus.Text("SPIRE_MOD_MANAGER.UNCATEGORIZED")),
