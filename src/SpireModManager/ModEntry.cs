@@ -13,7 +13,7 @@ using MegaCrit.Sts2.addons.mega_text;
 namespace SpireModManager;
 
 [ModInitializer(nameof(Init))]
-public static class ModEntry
+internal static class ModEntry
 {
     public const string ModId = "SpireModManager";
 

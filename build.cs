@@ -87,8 +87,10 @@ File.WriteAllText(Path.Combine(outDir, ModId + ".json"), manifest.ToJsonString(n
 
 // SpireModManagerWorkshop leaves the dev-only code out of the Workshop build: the in-game self-test, the
 // dev-run switches and the debug information (SpireModManager.csproj).
+// The assembly's own version stays 1.0.0.0 (other mods bind to it); the release's goes in as its informational version.
 var build = Process.Start("dotnet", ["build", project, "-c", "Release", "-nologo", "-v", "q",
-    $"-p:SteamLibrary={Steam}", $"-p:SpireModManagerWorkshop={(dist ? "true" : "false")}", $"-o:{Path.Combine(outDir, "bin")}"]);
+    $"-p:SteamLibrary={Steam}", $"-p:SpireModManagerWorkshop={(dist ? "true" : "false")}", $"-o:{Path.Combine(outDir, "bin")}",
+    $"-p:InformationalVersion={manifest["version"]}"]);
 build.WaitForExit();
 if (build.ExitCode != 0)
     return Fail("dotnet build failed");
@@ -111,6 +113,16 @@ if (dist)
     if (!found.SequenceEqual(expected))
         return Fail($"dist/{ModId} must hold exactly {string.Join(", ", expected)}, but holds: {string.Join(", ", found)}");
     Console.WriteLine($"release {ReleaseVersion} in {distDir}: {string.Join(", ", found)}");
+    // For mods that build against the API: the reference assembly (the public surface only, no code), its doc comments
+    // and the release's version, outside the upload folder (docs/dev/API.md: a dependent commits these under lib/).
+    var apiDir = Path.Combine(root, "dist", "api");
+    if (Directory.Exists(apiDir))
+        Directory.Delete(apiDir, recursive: true);
+    Directory.CreateDirectory(apiDir);
+    File.Copy(Path.Combine(outDir, "bin", "ref", ModId + ".dll"), Path.Combine(apiDir, ModId + ".dll"));
+    File.Copy(Path.Combine(outDir, "bin", ModId + ".xml"), Path.Combine(apiDir, ModId + ".xml"));
+    File.WriteAllText(Path.Combine(apiDir, "VERSION"), ReleaseVersion + "\n");
+    Console.WriteLine($"api reference in {apiDir}: {ModId}.dll, {ModId}.xml, VERSION");
     return 0;
 }
 
