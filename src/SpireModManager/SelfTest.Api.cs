@@ -1,5 +1,7 @@
 using System.Reflection;
 using Godot;
+using MegaCrit.Sts2.Core.Localization;
+using MegaCrit.Sts2.Core.Localization.Fonts;
 using MegaCrit.Sts2.Core.Nodes.CommonUi;
 using MegaCrit.Sts2.Core.Nodes.Screens.MainMenu;
 using SpireModManager.Api;
@@ -175,9 +177,30 @@ static partial class SelfTest
         Check("API fonts: Regular and Bold are fonts; Style sets a label's font, size and colour", Fonts.Regular() != null && Fonts.Bold() != null
             && label.HasThemeFontOverride("font") && label.GetThemeFontSize("font_size") == 19 && label.GetThemeColor("font_color") == Palette.Gold);
         label.Free();
+        // Asked again after a language change, the language's own font; Kreon again once it's back.
+        var start = LocManager.Instance.Language;
+        var kreon = Fonts.Regular().ResourcePath;
+        if (FontManager.GetSubstituteFont("zhs", FontType.Regular) == null)
+            Results.Add("SKIP API fonts in Chinese: the game has none of its own for it");
+        else
+        {
+            string chinese, back;
+            try
+            {
+                LocManager.Instance.SetLanguage("zhs");
+                chinese = Fonts.Regular().ResourcePath;
+            }
+            finally
+            {
+                LocManager.Instance.SetLanguage(start);
+            }
+            back = Fonts.Regular().ResourcePath;
+            Check("API fonts: asked again after a switch to Chinese, Regular is its font; switched back, Kreon again",
+                chinese != kreon && back == kreon && kreon.Contains("kreon"), $"{kreon} / {chinese} / {back}");
+        }
         Check("API palette: its colours are SMM's", Palette.Cream == Look.Cream && Palette.Gold == Look.Gold && Palette.Navy == Look.Navy
             && Palette.DeepNavy == Look.DeepNavy && Palette.Warning == Look.Warning && Palette.Problem == Look.Problem);
-        const string missing = "res://SmmApiTest/missing.png";
+        const string missing = "res://SpireModManager/selftest/api_missing.png";
         Check("API resources: GameResources.Load on a missing path is null, noted once", GameResources.Load<Texture2D>(missing) == null
             && GameResources.Load<Texture2D>(missing) == null && ModEntry.MissingResources.Count(p => p == missing) == 1);
     }
@@ -211,7 +234,7 @@ static partial class SelfTest
             ModCards.Watch(trigger, "SmmTestLib");
             var repointed = await HoverCard(menu, trigger, SharedCards.CardName);
             Check("API cards: Watch shows the mod's card on hover; a second Watch points it at another mod",
-                card.Contains("Spire Mod Manager") && repointed.Contains("Test Framework") && !repointed.Contains("Spire Mod Manager"),
+                card.Contains("Spire Mod Manager") && card.Contains("symphony") && repointed.Contains("Test Framework") && !repointed.Contains("symphony"),
                 $"{(card.Length > 80 ? card[..80] : card)} / {(repointed.Length > 80 ? repointed[..80] : repointed)}");
 
             var underlined = links.MetaUnderlined;

@@ -14,6 +14,9 @@
 // - Translation tooling: tools/loc.cs's SmartFormat package and the self-test's ToolParser are the same version.
 // - Both game branches: the members only the public-beta has go through Compat.
 // - Null-forgiving: no `!` that tells the compiler a value isn't null, in src, tools, workshop or build.cs.
+// - The API (src/SpireModManager/Api, docs/dev/API.md): it's the only public code; its files keep the shapes that can
+//   grow without breaking a mod built against them; the shipped surface only grows; ApiInfo.Version follows the
+//   snapshot and VERSIONS.md; the assembly version stays 1.0.0.0; every member is named in the API self-test.
 // - Tracked files: none over 1 MB, none holding what looks like a GitHub token.
 // Prints PASS, FAIL and WARN lines (as annotations on GitHub); exit code 1 on any FAIL.
 using System.Diagnostics;
@@ -195,6 +198,88 @@ foreach (var file in Files(Path.Combine("tools", "fixtures"), "*.json"))
     var absent = new[] { "id", "name", "version" }.Where(field => !HasText(manifest, field)).ToList();
     Check($"{Name(file)}: manifest has id, name and version", absent.Count == 0, "missing " + List(absent));
 }
+
+// The API. Other mods compile against SpireModManager.dll's public surface and bind to it at run time, so it may only
+// grow (docs/dev/API.md). Build time already holds the line exactly (PublicApiAnalyzers: every public signature recorded
+// in src/SpireModManager/PublicAPI.*.txt); these are the rules it doesn't cover, and its safety net in CI.
+var apiDir = Path.Combine(root, "src", "SpireModManager", "Api");
+bool InApi(string path) => Path.GetFullPath(path).StartsWith(Path.GetFullPath(apiDir) + Path.DirectorySeparatorChar, StringComparison.OrdinalIgnoreCase);
+// 1. Only the API is public: no top-level public type anywhere else (files use file-scoped namespaces, so one starts at
+//    column 0).
+var outside = sources.Where(s => !InApi(s.Key)).SelectMany(s => s.Value.Split('\n').Select((line, i) => (s.Key, line, i)))
+    .Where(l => l.line.StartsWith("public ")).Select(l => $"{Name(l.Key)}:{l.i + 1}").ToList();
+Check("only the API is public: no top-level public type outside src/SpireModManager/Api", outside.Count == 0, List(outside));
+// 2. Its files keep the shapes that can grow without breaking a caller: no record, struct, interface, event, const
+//    (copied into the caller), required, protected, virtual or abstract; no #if; no game types (using MegaCrit); classes
+//    sealed or static; no public instance field; no parameter defaults (copied into the caller too: overloads instead).
+var shapes = new List<string>();
+var banned = new Regex(@"\b(record|struct|interface|event|const|required|protected|virtual|abstract)\b");
+var openClass = new Regex(@"\bpublic\s+(?!static\b|sealed\b)(partial\s+)?class\b");
+var instanceField = new Regex(@"^\s*public\s+(?!static\b)(readonly\s+)?[\w.<>?,\[\]]+\s+\w+\s*(=(?!>)[^;]*)?;\s*$");
+var defaulted = new Regex(@"\bpublic\b[^(]*\(([^)]*)\)");
+foreach (var (path, source) in sources.Where(s => InApi(s.Key)))
+{
+    var code = CodeOnly(source).Split('\n');
+    for (var i = 0; i < code.Length; i++)
+    {
+        var line = code[i];
+        string? why = banned.Match(line) is { Success: true } word ? word.Value : line.TrimStart().StartsWith("#if") ? "#if"
+            : line.Contains("using MegaCrit") ? "using MegaCrit" : openClass.IsMatch(line) ? "a class neither sealed nor static"
+            : instanceField.IsMatch(line) ? "a public instance field"
+            : defaulted.Match(line) is { Success: true } call && Regex.IsMatch(call.Groups[1].Value, "=(?!>)") ? "a parameter default" : null;
+        if (why != null)
+            shapes.Add($"{Name(path)}:{i + 1} ({why})");
+    }
+}
+Check("the API's files keep its shapes (no const, record, struct, interface, event, #if, game types, open classes, public fields or parameter defaults)",
+    shapes.Count == 0, List(shapes));
+// 3. The shipped surface only grows: every line PublicAPI.Shipped.txt had at the latest release tag is still there.
+var shippedPath = Path.Combine(root, "src", "SpireModManager", "PublicAPI.Shipped.txt");
+var unshippedPath = Path.Combine(root, "src", "SpireModManager", "PublicAPI.Unshipped.txt");
+static List<string> ApiLines(string text) => text.Replace("\r", "").Split('\n').Select(l => l.Trim()).Where(l => l.Length > 0 && !l.StartsWith('#')).ToList();
+string? Git(params string[] arguments)
+{
+    try
+    {
+        var info = new ProcessStartInfo("git", ["-C", root, .. arguments]) { RedirectStandardOutput = true, RedirectStandardError = true };
+        using var git = Process.Start(info);
+        var output = git?.StandardOutput.ReadToEnd();
+        git?.WaitForExit();
+        return git?.ExitCode == 0 ? output : null;
+    }
+    catch (System.ComponentModel.Win32Exception)
+    {
+        return null; // no git: nothing to compare with
+    }
+}
+var shipped = File.Exists(shippedPath) ? ApiLines(File.ReadAllText(shippedPath)) : [];
+var lastTag = Git("describe", "--tags", "--abbrev=0", "--match", "v*")?.Trim();
+var atTag = lastTag is { Length: > 0 } ? Git("show", $"{lastTag}:src/SpireModManager/PublicAPI.Shipped.txt") : null; // none before the API shipped
+var dropped = atTag == null ? [] : ApiLines(atTag).Except(shipped).ToList();
+Check($"the shipped API only grows: every line of PublicAPI.Shipped.txt at {lastTag ?? "the last release"} is still there", dropped.Count == 0, List(dropped));
+// 4. ApiInfo.Version follows the snapshot: it's VERSIONS.md's last row; while PublicAPI.Unshipped.txt has lines, that
+//    row reads "unreleased" and is the one before it plus one; it's a public static readonly int.
+var infoSource = sources.FirstOrDefault(s => InApi(s.Key) && Path.GetFileName(s.Key) == "ApiInfo.cs").Value ?? "";
+var versionField = Regex.Match(infoSource, @"public static readonly int Version = (\d+);");
+var versionsPath = Path.Combine(apiDir, "VERSIONS.md");
+var rows = File.Exists(versionsPath)
+    ? Regex.Matches(File.ReadAllText(versionsPath), @"^\|\s*(\d+)\s*\|\s*([^|]+?)\s*\|", RegexOptions.Multiline)
+        .Select(m => (Api: int.Parse(m.Groups[1].Value), Release: m.Groups[2].Value)).ToList()
+    : [];
+var unshipped = File.Exists(unshippedPath) ? ApiLines(File.ReadAllText(unshippedPath)) : [];
+var versionOk = versionField.Success && rows.Count > 0 && int.Parse(versionField.Groups[1].Value) == rows[^1].Api
+    && (unshipped.Count == 0 || rows[^1].Release.Equals("unreleased", StringComparison.OrdinalIgnoreCase) && rows[^1].Api == (rows.Count > 1 ? rows[^2].Api + 1 : 1));
+Check("ApiInfo.Version is VERSIONS.md's last row (\"unreleased\", one more than the row before, while PublicAPI.Unshipped.txt has lines)", versionOk,
+    $"field {(versionField.Success ? versionField.Groups[1].Value : "missing")}, last row {(rows.Count > 0 ? $"{rows[^1].Api} {rows[^1].Release}" : "none")}, {unshipped.Count} unshipped");
+// 5. The assembly version stays 1.0.0.0: dependents bind to it, and the game matches it strictly.
+Check("the assembly version stays 1.0.0.0 (other mods bind to it)",
+    File.ReadAllText(Path.Combine(root, "src", "SpireModManager", "SpireModManager.csproj")).Contains("<AssemblyVersion>1.0.0.0</AssemblyVersion>"));
+// 6. Every API member has a test: each name in the PublicAPI files appears in SelfTest.Api.cs.
+var apiTest = sources.FirstOrDefault(s => Path.GetFileName(s.Key) == "SelfTest.Api.cs").Value ?? "";
+var memberName = new Regex(@"SpireModManager\.Api\.(?:\w+\.)*?(\w+)(?:\.(?:get|init|set))?(?:<\w+>)?(?:\(| ->| =|$)");
+var untested = shipped.Concat(unshipped).Select(l => memberName.Match(l)).Where(m => m.Success).Select(m => m.Groups[1].Value).Distinct()
+    .Where(n => !Regex.IsMatch(apiTest, $@"\b{Regex.Escape(n)}\b")).ToList();
+Check("every API member is named in the API self-test (SelfTest.Api.cs)", unshipped.Count + shipped.Count > 0 && untested.Count == 0, List(untested));
 
 // Translation tooling: tools/loc.cs judges texts with the game's parser, and the self-test checks the game still ships
 // that version, so both name the same one.

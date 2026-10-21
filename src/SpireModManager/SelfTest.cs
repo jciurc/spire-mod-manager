@@ -9020,13 +9020,15 @@ static partial class SelfTest
         await Wait(menu, 0.5);
     }
 
-    // Missing game resources: everything this run used loaded; a path that isn't there gives null without throwing
+    // Missing game resources: everything this run used loaded (bar the self-test's own made-up paths, under
+    // res://SpireModManager/selftest/); a path that isn't there gives null without throwing
     // (noted, and logged, once); a missing font falls back to Godot's own; AddButton's plain stand-in is a working
     // button with the label, at the asked size, with the hidden "Dot" callers show; the category header made in
     // code has the parts a redraw reads.
     static void TestFallbacks(NModdingScreen screen)
     {
-        Check("every game resource used so far loaded", ModEntry.MissingResources.Count == 0, string.Join(", ", ModEntry.MissingResources));
+        var missed = ModEntry.MissingResources.Where(p => !p.StartsWith("res://SpireModManager/selftest/")).ToList();
+        Check("every game resource used so far loaded", missed.Count == 0, string.Join(", ", missed));
         const string madeUp = "res://SpireModManager/selftest/no_such_picture.png";
         Texture2D? first = null, second = null;
         var threw = "";
