@@ -216,14 +216,21 @@ static class MenuPanel
             released = true;
             try
             {
-                if (GodotObject.IsInstanceValid(hotkeys))
-                    hotkeys.RemoveBlockingScreen(layer);
+                Unblock(hotkeys, layer);
             }
             catch (Exception e)
             {
                 Log.Warn($"[{ModEntry.ModId}] Could not turn the screen's hotkeys back on after a menu: {e.Message}");
             }
         };
+    }
+
+    // On its own for the same reason: a game update that changes it fails here, inside the release's guard.
+    [MethodImpl(MethodImplOptions.NoInlining)]
+    static void Unblock(NHotkeyManager hotkeys, Node layer)
+    {
+        if (GodotObject.IsInstanceValid(hotkeys))
+            hotkeys.RemoveBlockingScreen(layer);
     }
 
     // What a menu from a button (a picker) opens from: the button and `gap` over and under it, so the menu drops that
@@ -235,7 +242,14 @@ static class MenuPanel
     {
         var letGo = _letGo;
         _letGo = null;
-        letGo?.Invoke();
+        try
+        {
+            letGo?.Invoke();
+        }
+        catch (Exception e)
+        {
+            Log.Warn($"[{ModEntry.ModId}] A menu didn't let go of everything it held as it closed: {e}"); // it still closes
+        }
         if (!IsOpen || _open is not { } open)
         {
             (_open, _openKey) = (null, null);
@@ -281,7 +295,7 @@ static class MenuPanel
     {
         var row = new PanelContainer
         {
-            Name = item.Label, MouseFilter = Control.MouseFilterEnum.Stop,
+            Name = item.Label.Length > 0 ? item.Label : "Row", MouseFilter = Control.MouseFilterEnum.Stop, // (Godot takes no empty name)
             MouseDefaultCursorShape = item.Disabled ? Control.CursorShape.Arrow : Control.CursorShape.PointingHand,
         };
         row.AddToGroup(ItemGroup);

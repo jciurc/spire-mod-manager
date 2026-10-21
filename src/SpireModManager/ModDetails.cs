@@ -365,7 +365,7 @@ static class ModDetails
     public static string Described(string description, int max) => Closed(CutMarkup(GameMarkup.Replace(description, m =>
         GameColors.TryGetValue(m.Groups[2].Value, out var color) ? m.Groups[1].Length > 0 ? "[/color]" : $"[color=#{color}]" : ""), max));
 
-    static readonly Regex GameMarkup = new(@"\[(/?)(aqua|blue|gold|green|orange|pink|purple|red|sine|jitter|fade_in|fly_in|scramble|thinky_dots|ancient_banner)\b[^\]]*\]");
+    static readonly Regex GameMarkup = new(@"\[(/?)(aqua|blue|gold|green|orange|pink|purple|red|sine|jitter|fade_in|fly_in|scramble|thinky_dots|ancient_banner)(?=[\]=\s])[^\]]*\]");
 
     // The game's (StsColors, as its RichText tags use them).
     static readonly Dictionary<string, string> GameColors = new()
@@ -374,8 +374,8 @@ static class ModDetails
         ["purple"] = "ee82ee", ["red"] = "ff5555",
     };
 
-    // Each tag Godot's rich text draws that's still open at the end, closed there (innermost first); a stray closer is
-    // left as it is (Godot ignores it).
+    // Each tag Godot's rich text draws that's still open at the end, closed there (innermost first). As in Godot, a
+    // closer closes the innermost open tag only when it names it; any other is drawn as text, and closes nothing.
     static string Closed(string bbcode)
     {
         var open = new List<string>();
@@ -384,13 +384,14 @@ static class ModDetails
             var name = tag.Groups[2].Value;
             if (tag.Groups[1].Length == 0)
                 open.Add(name);
-            else if (open.LastIndexOf(name) is var at and >= 0)
-                open.RemoveRange(at, open.Count - at);
+            else if (open.Count > 0 && open[^1] == name)
+                open.RemoveAt(open.Count - 1);
         }
         return open.Count == 0 ? bbcode : bbcode + string.Concat(Enumerable.Reverse(open).Select(name => $"[/{name}]"));
     }
 
-    static readonly Regex OpeningOrClosing = new(@"\[(/?)(b|i|u|s|code|center|left|right|fill|indent|url|hint|font|font_size|color|bgcolor|fgcolor|outline_size|outline_color|table|cell|ul|ol|lang|p|wave|tornado|shake|fade|rainbow|pulse|img|dropcap|opentype_features)\b[^\]]*\]");
+    // A tag as Godot reads one: its name, then ], = or a space (so "[right-click]" is text, not [right]).
+    static readonly Regex OpeningOrClosing = new(@"\[(/?)(b|i|u|s|code|center|left|right|fill|indent|url|hint|font|font_size|color|bgcolor|fgcolor|outline_size|outline_color|table|cell|ul|ol|lang|p|wave|tornado|shake|fade|rainbow|pulse|img|dropcap|opentype_features)(?=[\]=\s])[^\]]*\]");
 
     // Rich text cut to about max characters at a space, never inside a [tag] (Closed closes what it leaves open).
     static string CutMarkup(string text, int max)

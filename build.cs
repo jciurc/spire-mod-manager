@@ -2,6 +2,8 @@
 // Usage: dotnet run build.cs [--no-install]     (needs the .NET 10 SDK; close the game first to install)
 //        dotnet run build.cs --dist             the release: ReleaseVersion, only the files players get, in
 //                                               dist/SpireModManager/ for the Workshop upload; never installs
+//                                               --unshipped-api: a trial of it with the API not shipped yet (to
+//                                               try the Workshop build, as dev.cs smoke does; never to upload)
 using System.Diagnostics;
 using System.Runtime.CompilerServices;
 using System.Security.Cryptography;
@@ -49,13 +51,14 @@ if (dist)
 // A release ships the API as it is (docs/dev/API.md): first what PublicAPI.Unshipped.txt holds moves to
 // PublicAPI.Shipped.txt, and VERSIONS.md's "unreleased" row names this release (RELEASING.md, step 1). Otherwise the
 // next change could take out what this release's mods were built against, and nothing would notice.
-if (dist)
+if (dist && !args.Contains("--unshipped-api"))
 {
     var unshippedApi = File.ReadAllLines(Path.Combine(root, "src", ModId, "PublicAPI.Unshipped.txt")).Count(l => l.Trim() is { Length: > 0 } line && !line.StartsWith('#'));
     var lastRow = File.ReadAllLines(Path.Combine(root, "src", ModId, "Api", "VERSIONS.md")).LastOrDefault(l => Regex.IsMatch(l, @"^\|\s*\d+\s*\|"));
     if (unshippedApi > 0 || lastRow?.Contains("unreleased", StringComparison.OrdinalIgnoreCase) == true)
         return Fail($"the API isn't shipped yet ({unshippedApi} line(s) in PublicAPI.Unshipped.txt, VERSIONS.md's last row: {lastRow?.Trim()}): "
-            + "move them to PublicAPI.Shipped.txt and write this release in that row first (docs/dev/RELEASING.md, step 1)");
+            + "move them to PublicAPI.Shipped.txt and write this release in that row first (docs/dev/RELEASING.md, step 1); "
+            + "--unshipped-api builds a trial, never to upload");
 }
 
 // What a player's mods folder gets: the pack, the manifest and the DLL.

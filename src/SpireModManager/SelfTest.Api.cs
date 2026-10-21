@@ -89,6 +89,10 @@ static partial class SelfTest
             shown = PopupMenus.Show(owner, Entries());
             Check("API menus: an action that throws is logged, and the menu still closes", shown != null && PopupMenus.Press(shown, "Throws")
                 && !PopupMenus.IsOpen && ApiGuard.HasLogged($"a PopupMenus entry's OnSelect from {typeof(SelfTest).Assembly.GetName().Name}"));
+            // Named by the callback's own code, not by who's on the stack: one of .NET's (it throws outside a no-GC region).
+            var foreign = PopupMenus.Show(owner, [new MenuEntry { Label = "Foreign", OnSelect = GC.EndNoGCRegion }]);
+            Check("API menus: a callback that throws is logged naming the mod whose code it is (here .NET's own)", foreign != null
+                && PopupMenus.Press(foreign, "Foreign") && ApiGuard.HasLogged($"a PopupMenus entry's OnSelect from {typeof(GC).Assembly.GetName().Name}"));
 
             var escaped = PopupMenus.Show(owner, Entries());
             await Wait(menu, 0.1);
@@ -105,7 +109,8 @@ static partial class SelfTest
                 $"first valid {first != null && GodotObject.IsInstanceValid(first)}");
             second?.QueueFree(); // the caller frees it
             await Wait(menu, 0.1);
-            Check("API menus: freed by the caller, it lets go of the hotkeys", !PopupMenus.IsOpen && HotkeyBlockers() == blockers, $"blockers {HotkeyBlockers()}");
+            Check("API menus: freed by the caller, it lets go of the hotkeys", second != null && !PopupMenus.IsOpen && HotkeyBlockers() == blockers,
+                $"opened {second != null}, blockers {HotkeyBlockers()}");
 
             var hidden = PopupMenus.Show(owner, Entries());
             owner.Visible = false;
@@ -136,15 +141,16 @@ static partial class SelfTest
                 && PopupMenus.Rows(blank).SequenceEqual([("", false)]) && PopupMenus.Headings(blank).Count == 0);
             PopupMenus.Close();
 
-            var exits = owner.GetSignalConnectionList(Node.SignalName.TreeExiting).Count;
+            var (exits, opens) = (owner.GetSignalConnectionList(Node.SignalName.TreeExiting).Count, 0);
             for (var i = 0; i < 50; i++)
             {
-                PopupMenus.Show(owner, Entries());
+                if (PopupMenus.Show(owner, Entries()) != null)
+                    opens++;
                 PopupMenus.Close();
             }
             Check("API menus: 50 opens on one owner leave its tree_exiting connections as they were (no leak)",
-                owner.GetSignalConnectionList(Node.SignalName.TreeExiting).Count == exits && HotkeyBlockers() == blockers,
-                $"{exits} -> {owner.GetSignalConnectionList(Node.SignalName.TreeExiting).Count}, blockers {HotkeyBlockers()}");
+                opens == 50 && owner.GetSignalConnectionList(Node.SignalName.TreeExiting).Count == exits && HotkeyBlockers() == blockers,
+                $"{opens} opened, {exits} -> {owner.GetSignalConnectionList(Node.SignalName.TreeExiting).Count}, blockers {HotkeyBlockers()}");
 
             var offThread = await Task.Run(() => PopupMenus.Show(owner, Entries()));
             Check("API menus: Show from a worker thread returns null and logs once", offThread == null && !PopupMenus.IsOpen && ApiGuard.HasLogged("PopupMenus.Show"));
@@ -181,9 +187,12 @@ static partial class SelfTest
             var narrow = banner.Size.Y;
             box.Size = new Vector2(1700, 0);
             await Wait(menu, 0.2);
-            var wide = banner.Size.Y;
-            Check("API banners: in a 600-wide box a long text wraps and the banner grows; widened, it shrinks again", narrow > wide && wide > 0
-                && banner.Size.X >= 1600, $"{narrow:0} high at 600, {wide:0} at 1700 ({banner.Size.X:0} wide)");
+            var (wide, wideWidth) = (banner.Size.Y, banner.Size.X);
+            box.Size = new Vector2(600, 0);
+            await Wait(menu, 0.2);
+            Check("API banners: in a 600-wide box a long text wraps and the banner grows; widened, it shrinks again; narrowed, it follows",
+                narrow > wide && wide > 0 && wideWidth >= 1600 && banner.Size.X <= 600.5f && Math.Abs(banner.Size.Y - narrow) < 1,
+                $"{narrow:0} high at 600, {wide:0} at 1700 ({wideWidth:0} wide), back to {banner.Size.X:0}x{banner.Size.Y:0}");
             Check("API banners: Name is set; Warning is the palette's warning", banner.Name == "SmmApiTestBanner"
                 && (banner as PanelContainer)?.GetThemeStylebox("panel") is StyleBoxFlat { BgColor: var warning } && warning == Palette.Warning);
             if (banner.FindChild("Dismiss", true, false) is BaseButton dismiss)

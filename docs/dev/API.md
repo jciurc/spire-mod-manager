@@ -18,7 +18,7 @@ and `PublicAPI.Unshipped.txt` (not yet released).
 | `GameResources` | `Load<T>`: a game resource, or null (logged once) if it isn't there. |
 | `Mods` | `Version` of an installed mod; `Details`, what the player keeps about it (alias, notes, tags, category). |
 | `PopupMenus` | SMM's right-click menu (`MenuEntry`, `MenuOptions`): one open at a time across mods, Escape closes it, the screen's hotkeys wait. `Rows`, `Headings` and `Press` are for self-tests. |
-| `Banners` | SMM's banner strip (`BannerOptions`, `BannerKind`), with an optional Dismiss button, for the caller to place. |
+| `Banners` | SMM's banner strip (`BannerOptions`, `BannerKind`), with an optional Dismiss button at its end, for the caller to place: its text wraps at the width it's given. |
 | `ModCards` | SMM's card for a mod, shown on hover over a control (`Watch`) or a link (`WatchLinks`); `Text` is for self-tests. |
 
 ## Rules for changing it
@@ -92,8 +92,9 @@ SMM's self-test makes the same lookups.
   removed (no `*REMOVED*` line), and the shipped surface at the latest release tag is all still there;
   `ApiInfo.Version` matches VERSIONS.md; `AssemblyVersion` stays `1.0.0.0`; every member is named in the self-test's
   code.
-- **The release build** (`build.cs --dist`) refuses an API that isn't shipped yet: lines left in
-  `PublicAPI.Unshipped.txt`, or VERSIONS.md's last row still "unreleased".
+- **A release** has the API shipped: on a pull request into `main`, `check.cs` fails while
+  `PublicAPI.Unshipped.txt` has lines or VERSIONS.md's last row reads "unreleased", and the release build
+  (`build.cs --dist`) refuses the same (`--unshipped-api` builds a trial, never to upload).
 - **The self-test** (`SelfTest.Api.cs`): the assembly as another mod sees it (only the API exported, the version,
   sealed options, enum values, Mod Doctor's lookups), then each member doing what its doc comment says.
 

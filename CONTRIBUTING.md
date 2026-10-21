@@ -35,7 +35,8 @@ contributors. The ones labelled `good first issue` are a good start; say on the 
 - `dotnet run build.cs --dist` makes the release for the Workshop and never installs: `dist/SpireModManager/`
   holds just the `.dll`, `.json` and `.pck`, and the manifest gets `ReleaseVersion` (set by hand in build.cs).
   That DLL leaves out the in-game self-test, the dev-run switches and debug information; every other build
-  keeps them.
+  keeps them. It refuses an API that isn't shipped yet ([docs/dev/API.md](docs/dev/API.md));
+  `--dist --unshipped-api` builds a trial of it anyway, to try the Workshop build, never to upload.
 - Player text lives in `localization/<lang>/*.json`, packed into `SpireModManager.pck` (pictures would go in
   `images/`, packed the same way; there are none now). A player can also drop a translation file into the mod's data folder, which comes before the
   packed one (TRANSLATING.md, "Drop-in translation files"; `Translations.cs`).

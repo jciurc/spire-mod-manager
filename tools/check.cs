@@ -256,7 +256,7 @@ foreach (var (path, source) in sources.Where(s => InApi(s.Key)))
                         depth++;
                     else if (code[close] == ')' && --depth == 0)
                         break;
-                var before = Regex.Match(code[..at], @"(\w+)\s*$").Groups[1].Value;
+                var before = Regex.Match(code[..at], @"(\w+)\s*(?:<[^()]*>)?\s*$").Groups[1].Value; // a generic method's name too
                 if (before.Length == 0 || modifiers.Contains(before))
                 {
                     at = close; // a tuple type: the parameters come after the name
@@ -315,11 +315,16 @@ var versionOk = versionField.Success && rows.Count > 0 && int.Parse(versionField
     && unreleased == unshipped.Count > 0 && (!unreleased || rows[^1].Api == (rows.Count > 1 ? rows[^2].Api + 1 : 1));
 Check("ApiInfo.Version is VERSIONS.md's last row, which reads \"unreleased\" (one more than the row before) exactly while PublicAPI.Unshipped.txt has lines",
     versionOk, $"field {(versionField.Success ? versionField.Groups[1].Value : "missing")}, last row {(rows.Count > 0 ? $"{rows[^1].Api} {rows[^1].Release}" : "none")}, {unshipped.Count} unshipped");
+// A release (a pull request into main: RELEASING.md, step 3) has shipped the API in its prep (step 1): before the merge
+// and the tag, not at the build after them.
+if (Environment.GetEnvironmentVariable("GITHUB_BASE_REF") == "main")
+    Check("a release ships the API: PublicAPI.Unshipped.txt is empty and VERSIONS.md's last row names the release (RELEASING.md, step 1)",
+        unshipped.Count == 0 && !unreleased, $"{unshipped.Count} unshipped, last row {(rows.Count > 0 ? rows[^1].Release : "none")}");
 // 5. The assembly version stays 1.0.0.0: dependents bind to it, and the game matches it strictly.
 Check("the assembly version stays 1.0.0.0 (other mods bind to it)",
     File.ReadAllText(Path.Combine(root, "src", "SpireModManager", "SpireModManager.csproj")).Contains("<AssemblyVersion>1.0.0.0</AssemblyVersion>"));
 // 6. Every API member has a test: SelfTest.Api.cs's code (not its comments or check names) names each type, each static
-//    member as Type.Member, and each instance member (an option's property, an enum's value) by name.
+//    member and enum value as Type.Member, and each instance member (an option's property) by name.
 var apiTest = CodeOnly(sources.FirstOrDefault(s => Path.GetFileName(s.Key) == "SelfTest.Api.cs").Value ?? "");
 var (untested, unread) = (new List<string>(), new List<string>());
 foreach (var line in shipped.Concat(unshipped))
@@ -336,8 +341,9 @@ foreach (var line in shipped.Concat(unshipped))
     while (Regex.IsMatch(name, "<[^<>]*>"))
         name = Regex.Replace(name, "<[^<>]*>", "");
     var parts = Regex.Replace(name, @"\.(get|init|set)$", "").Split('.');
+    var enumValue = Regex.IsMatch(declared, @" = -?\d+ -> ");
     var needed = parts.Length == 1 || !declared.Contains('(') && !declared.Contains(" ->") && !declared.Contains(" =") ? parts[^1]
-        : isStatic ? $"{parts[^2]}.{parts[^1]}" : parts[^1];
+        : isStatic || enumValue ? $"{parts[^2]}.{parts[^1]}" : parts[^1];
     if (!Regex.IsMatch(apiTest, $@"(?<!\w){Regex.Escape(needed)}\b"))
         untested.Add(needed);
 }
