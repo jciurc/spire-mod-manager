@@ -326,7 +326,8 @@ static class ModDetails
     // top: the mod's picture, its name as it gives it (never the player's alias: the caller's row shows that), its
     // version, author and description, then the player's category, every tag (the automatic ones too, in their
     // colours) and notes. full: nothing cut short (held with Alt).
-    public static string SharedCard(Mod mod, bool full = false)
+    // standIn: a self-test's details in place of the player's (SharedCards.StandIn).
+    public static string SharedCard(Mod mod, bool full = false, (string? Alias, string? Notes, List<string> Tags, string? Category)? standIn = null)
     {
         string Cut(string text, int max) => full || text.Length <= max ? text : text[..max].TrimEnd() + "…";
         var id = mod.manifest?.id ?? "";
@@ -351,10 +352,14 @@ static class ModDetails
         if (mod.manifest?.description is { Length: > 0 } description)
             lines.AddRange(["", Described(description.Trim(), full ? int.MaxValue : 240)]);
         lines.Add("");
-        lines.Add(Fact("SPIRE_MOD_MANAGER.CATEGORY", CategoryList.CategoryName(Copies.Key(mod)) is var category ? Escape(category) : ""));
-        if (Tags.For(mod) is { Count: > 0 } chips)
+        var category = standIn is { } stand ? stand.Category ?? Menus.Text("SPIRE_MOD_MANAGER.UNCATEGORIZED") : CategoryList.CategoryName(Copies.Key(mod));
+        lines.Add(Fact("SPIRE_MOD_MANAGER.CATEGORY", Escape(category)));
+        var chips = standIn is { } instead
+            ? [.. Tags.For(mod).Where(c => !c.Custom), .. instead.Tags.Select(t => new Tags.Chip(t, Tags.CustomColor, Custom: true))]
+            : Tags.For(mod).ToList();
+        if (chips.Count > 0)
             lines.Add(Fact("SPIRE_MOD_MANAGER.TAGS_TERM", string.Join("  ", chips.Select(c => $"[color=#{c.Color.ToHtml(false)}]{Escape(c.Text)}[/color]"))));
-        if (info?.Notes is { } notes)
+        if ((standIn is { } given ? given.Notes : info?.Notes) is { } notes)
             lines.Add($"[color=#e8cf7a]{Menus.Text("SPIRE_MOD_MANAGER.NOTES_TERM")}[/color]\n{Escape(Cut(notes, 300))}");
         return string.Join("\n", lines);
     }
