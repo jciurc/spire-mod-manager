@@ -384,8 +384,10 @@ static class Search
         return Joined([.. units, .. wanted]);
     }
 
-    // A search's pieces as a click moves them: each term or "(" with the "-" or NOT that leaves it out (Left, as typed;
-    // Nots, how many), and each ")" and OR or AND. A NOT before nothing stays a piece of its own.
+    // A search's pieces as a click moves them: each term or "(" with the "-" or NOT that leaves it out (Left; Nots, how
+    // many), and each ")" and OR or AND. A NOT before nothing stays a piece of its own. Operators are written back in
+    // capitals ("-" and "|" as they are), which are operators anywhere: a lowercase one, an operator only between two
+    // tags, could be left beside a word by a removal and read as one, flipping what's left.
     record Unit(Lexed Piece, string Left = "", int Nots = 0);
 
     static List<Unit> Units(string search)
@@ -396,12 +398,18 @@ static class Search
         {
             if (piece.Piece == Piece.Not)
             {
-                (left, nots) = (left + (piece.Text == "-" ? "-" : piece.Text + " "), nots + 1);
+                (left, nots) = (left + (piece.Text == "-" ? "-" : "NOT "), nots + 1);
                 continue;
             }
             if (piece.Piece is not (Piece.Term or Piece.Open) && nots > 0)
                 units.Add(new Unit(new Lexed(Piece.Not, left.TrimEnd())));
-            units.Add(piece.Piece is Piece.Term or Piece.Open ? new Unit(piece, left, nots) : new Unit(piece));
+            units.Add(piece.Piece switch
+            {
+                Piece.Term or Piece.Open => new Unit(piece, left, nots),
+                Piece.Or => new Unit(piece with { Text = piece.Text == "|" ? "|" : "OR" }),
+                Piece.And => new Unit(piece with { Text = "AND" }),
+                _ => new Unit(piece),
+            });
             (left, nots) = ("", 0);
         }
         if (nots > 0)
@@ -449,9 +457,17 @@ static class Search
         bool Opens(int at) => Is(at, Piece.Term) || Is(at, Piece.Open);
         for (var i = 0; i < units.Count;)
         {
+            if (Is(i, Piece.Open) && Is(i + 1, Piece.Close))
+            {
+                // An emptied group goes with what joined it, as a term does ("#a OR (#b) #c" without #b is "#a #c").
+                var (start, length) = Is(i - 1, Piece.Or) ? (i - 1, 3) : Is(i + 2, Piece.Or) ? (i, 3)
+                    : Is(i - 1, Piece.And) ? (i - 1, 3) : Is(i + 2, Piece.And) ? (i, 3) : (i, 2);
+                units.RemoveRange(start, length);
+                i = Math.Max(0, start - 1);
+                continue;
+            }
             var gone = units[i].Piece.Piece switch
             {
-                Piece.Open when Is(i + 1, Piece.Close) => 2,
                 Piece.Or or Piece.And when !Closes(i - 1) || !Opens(i + 1) => 1,
                 Piece.Not => 1, // before nothing (Units)
                 _ => 0,

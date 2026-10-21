@@ -4731,6 +4731,13 @@ static partial class SelfTest
         Check("click-to-search: brackets, OR, \"|\" and AND stay; a term taken out takes its OR (else AND) and empty brackets with it",
             operators.SequenceEqual(["#a #c", "(#b) #c", "#a AND #c", "#c", "#b", "#a", "#a OR #b", "-(#a OR #b)", "#a", "#x #\"x (y)\""]),
             string.Join(" | ", operators));
+        // Operators written back in capitals (lowercase ones, operators only between two tags, could be left beside a word
+        // and read as one); an emptied group taking the OR or AND that joined it, as a term does.
+        string[] written = [After("#Gameplay not #Library", () => Tag("Gameplay", true)), After("#a or not #b", () => Tag("a", true)),
+            After("foo (#a) or #b", () => Tag("a", true)), After("#c OR (#b) #a", () => Tag("b", true)), After("#c (#b) OR #a", () => Tag("b", true)),
+            After("#a AND (#b) OR #c", () => Tag("b", true)), After("#a or #b", () => Tag("c", true))];
+        Check("click-to-search: operators come back in capitals (a lowercase one could turn into a word); an emptied group goes with what joined it",
+            written.SequenceEqual(["NOT #Library", "NOT #b", "foo #b", "#c #a", "#c #a", "#a AND #c", "#a OR #b #c"]), string.Join(" | ", written));
         // More of it: a term in brackets beside an OR, in an OR of three, an author; and through a row's chips, Shift taking
         // one out of an OR (in brackets too), a plain click searching for it alone.
         string[] grouped = [After("(#a) OR #b", () => Tag("a", true)), After("#a OR (#b)", () => Tag("b", true)), After("#a OR (#b OR #c)", () => Tag("b", true)),
@@ -5557,8 +5564,10 @@ static partial class SelfTest
             $"went to {goneTo?.manifest?.id}; box \"{orderBox}\", find \"{orderFound}\", every row {everyRow}; then \"{searchBox.Text}\"");
         var orderWords = (Go: (screen.FindChild(LoadOrder.WarningName, true, false)?.FindChild("GoToOrderButton", true, false) as Button)?.Text,
             Show: (screen.FindChild(LoadOrder.WarningName, true, false)?.FindChild("FilterOrderButton", true, false) as Button)?.Text);
-        Check("Load Order: the order warning's Show is lit while the box holds \"#order\", not after; its buttons read \"Go to\" and \"Show\"",
-            orderLit && !OrderLit() && orderWords == (GoToProblem, ShowFilter), $"lit {orderLit}, after {OrderLit()}; {orderWords}");
+        var orderShowTip = TipOf(screen.FindChild(LoadOrder.WarningName, true, false)?.FindChild("FilterOrderButton", true, false));
+        Check("Load Order: the order warning's Show is lit while the box holds \"#order\", not after; its buttons read \"Go to\" and \"Show\"; its tip says it "
+            + "finds them (Load Order hides no row)",
+            orderLit && !OrderLit() && orderWords == (GoToProblem, ShowFilter) && orderShowTip == ShowFilterFindTip, $"lit {orderLit}, after {OrderLit()}; {orderWords}; {orderShowTip}");
         // The hidden tags on the list as it is: Test Content #order (and #moved: it was moved here), each finding the rows it means.
         var asMeant = HiddenTagsAsMeant(content);
         Check("bad order: hidden tags on the list as it is (Test Content #order and #moved), each finding the rows it means",
@@ -5799,6 +5808,25 @@ static partial class SelfTest
             + "and pressed it puts \"#unmet OR #needed\" there, lit",
             typedLit && typedRows.SequenceEqual(filtered) && typedThen == "" && !moreLit && moreThen == problems && moreThenLit,
             $"lit {typedLit}, rows {string.Join(", ", typedRows)}, then \"{typedThen}\"; with more lit {moreLit}, then \"{moreThen}\" lit {moreThenLit}");
+
+        // Under the page bar's Show: Enabled, its Show still shows all its mods, the disabled one they need too (the choice
+        // goes back to All). Then its Enable required mods: the mods it was about stay on screen under the search, though
+        // fixed they no longer match it and the banner goes, until the search changes. Test Framework off again after.
+        ListFilter.Choose(content, ListFilter.Choice.Enabled);
+        await Wait(menu, 0.3);
+        Filter()?.EmitSignal(BaseButton.SignalName.Pressed);
+        await Wait(menu, 0.3);
+        var (choiceAfter, libShown) = (ListFilter.Current, libRow.Visible);
+        (screen.FindChild(LoadOrder.WarningName, true, false)?.FindChild("EnableNeededButton", true, false) as BaseButton)?.EmitSignal(BaseButton.SignalName.Pressed);
+        await Wait(menu, 0.3);
+        var (stayed, bannerGone, boxKept) = (stepped.All(id => Row(id) is { Visible: true }), screen.FindChild(LoadOrder.WarningName, true, false) == null, searchBox.Text);
+        await Type("");
+        tickbox.IsTicked = false;
+        tickbox.EmitSignal(NTickbox.SignalName.Toggled, tickbox);
+        await Wait(menu, 0.3);
+        Check("main list banner: its Show under Show: Enabled shows all its mods (the choice back to All); its Enable required mods then keeps them on "
+            + "screen under the search, the banner gone", choiceAfter == ListFilter.Choice.All && libShown && stayed && bannerGone && boxKept == problems,
+            $"choice {choiceAfter}, Test Framework shown {libShown}; after Enable: stayed {stayed}, banner gone {bannerGone}, box \"{boxKept}\"");
 
         // A mod fixed by hand under it keeps its row through a redraw (Test Framework ticked: no longer needed), counted,
         // while the mods it fixed go; until the search changes. Unticked after, as it was.
@@ -9981,7 +10009,8 @@ static partial class SelfTest
     // The banners' Go to and Show, and the search's line for a profile's mods that aren't installed, the same way: drafts
     // until the copy pass, word for word as settings_ui.json has them.
     const string GoToProblem = "Go to", GoToProblemTip = "Open the next affected mod";
-    const string ShowFilter = "Show", ShowFilterTip = "Shows only these mods (the search box holds the filter; press again to show every mod)";
+    const string ShowFilter = "Show", ShowFilterTip = "Shows only these mods. The search box holds the filter. Press again to clear it.",
+        ShowFilterFindTip = "Finds these mods in the list. Press again to clear the search.";
     const string MissingSearchHint = "{count} mods in this profile aren't installed. [url=missing]Show them[/url]";
     const string MissingSearchHintOne = "1 mod in this profile isn't installed. [url=missing]Show it[/url]";
 

@@ -477,8 +477,11 @@ static class LoadOrder
             {
                 if (CategoryList.ScreenOf(content) is not { } screen)
                     return;
+                // The banner's mods stay on screen under its Show's search until the search changes, though they no longer
+                // match it (fixed), as a row edited by hand does.
+                ListFilter.KeepCopies(stops.Select(m => m.manifest?.id));
                 Dependencies.Set(needed, true, screen);
-                redraw();
+                CategoryList.Redraw(content, keep: true);
             }, name: "EnableNeededButton");
             Hover.Tip(enable, Menus.Format("SPIRE_MOD_MANAGER.ENABLE_NEEDED_TIP",
                 ("mods", string.Join(", ", needed.Select(Copies.Named))))); // which copy, of one installed twice
@@ -667,9 +670,14 @@ static class LoadOrder
     // emptied when pressed again or while the box holds that search already (Search.Toggle); lit while it does.
     static Button ShowButton(Control content, string search, string name)
     {
-        var show = Menus.ChoiceButton(Menus.Text("SPIRE_MOD_MANAGER.SHOW_FILTER"), Search.Holds(CategoryList.Filter(content), search),
-            () => Search.Toggle(content, search), name);
-        Hover.Tip(show, Menus.Text("SPIRE_MOD_MANAGER.SHOW_FILTER_TIP"));
+        var show = Menus.ChoiceButton(Menus.Text("SPIRE_MOD_MANAGER.SHOW_FILTER"), Search.Holds(CategoryList.Filter(content), search), () =>
+        {
+            // On the main list, all its mods: the page bar's Show: choice (Enabled, say) would hide some of them.
+            if (!Store.Data.LoadOrderView && !Search.Holds(CategoryList.Filter(content), search) && ListFilter.Current != ListFilter.Choice.All)
+                ListFilter.Choose(content, ListFilter.Choice.All);
+            Search.Toggle(content, search);
+        }, name);
+        Hover.Tip(show, Menus.Text(Store.Data.LoadOrderView ? "SPIRE_MOD_MANAGER.SHOW_FILTER_FIND_TIP" : "SPIRE_MOD_MANAGER.SHOW_FILTER_TIP"));
         return show;
     }
 
