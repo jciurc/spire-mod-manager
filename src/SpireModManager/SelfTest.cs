@@ -25,7 +25,7 @@ namespace SpireModManager;
 // the view, writes results.txt, and quits. The runner uses the no-Steam dev sandbox, never real saves.
 // SPIRE_MOD_MANAGER_SELFTEST_MODE picks a shorter suite instead: "real" (RunReal), "first-run" or
 // "first-run-bmm" (RunFirstRun).
-static class SelfTest
+static partial class SelfTest
 {
     const string EnvVar = "SPIRE_MOD_MANAGER_SELFTEST";
     static bool _started;
@@ -133,6 +133,7 @@ static class SelfTest
                 menu.GetTree().Root.Title);
             await Capture(menu, outDir, "1-main-menu");
             await TestMenuButtonCarets(menu, outDir);
+            await TestApi(menu); // the API, as another mod uses it (SelfTest.Api.cs)
             // The relaunch note as it shows while one is pending: centred above the button (shown here for the shot).
             if (menu.GetNodeOrNull<Control>("SpireModManagerMenuButton/PendingNote") is { Visible: false } pendingNote)
             {

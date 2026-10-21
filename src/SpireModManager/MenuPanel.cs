@@ -98,7 +98,7 @@ static class MenuPanel
 
         catcher.GuiInput += e =>
         {
-            if (keyboard && e is InputEventKey && (e.IsActionPressed(CancelAction) || e.IsActionPressed(PauseAction)))
+            if (keyboard && (e.IsActionPressed(CancelAction) || e.IsActionPressed(PauseAction)))
             {
                 catcher.AcceptEvent();
                 Close();
