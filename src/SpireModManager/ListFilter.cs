@@ -66,8 +66,8 @@ static class ListFilter
             Keep(key);
     }
 
-    // Keeps the rows of every copy of these ids after a tick: it switches them together (the game's one switch for an
-    // id and source; on our page, one copy on turns the others off).
+    // Keeps the rows of every copy of these ids after a tick: it can change which of them loads, and the game's one switch
+    // for an id and source sets its copies together (Vanilla View, a session that can't save our data).
     public static void KeepCopies(IEnumerable<string?> ids)
     {
         if (Current == Choice.All)

@@ -30,6 +30,9 @@ Ease of use is the heart of the mod, not just its utility.
 - Profiles key mods by id and source, like `mod_list` (plus the picked copy). A newly installed mod joins the active profile, enabled.
   With no profiles yet, an ordinary one named "Default" is made from the current list.
 - The mod managers (this one, Better Mod Menu) are never turned on or off by a profile.
+- Spire Mod Manager installed more than once: our page keeps every copy of it ticked (its boxes locked, with our
+  padlock), so removing the copy that runs still leaves one that loads. The vanilla page keeps the game's boxes, the
+  way to turn it off.
 - Our own data is one JSON file per Steam account, written atomically, with 10 backups.
 
 ## Load order

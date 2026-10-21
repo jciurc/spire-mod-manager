@@ -49,14 +49,18 @@ static class Bmm
     }
 
     // Ticked in the mod list (on in the game's saved list), loaded now or not: either way it loads after a relaunch.
-    public static bool Ticked => Dependencies.Find(ModId) is { } mod && Copies.Ticked(mod);
+    public static bool Ticked => TickedCopy(ModId) != null;
 
     // Both managers ticked (LoadOrder's banner says so); profiles keep ours on, but the player can untick its row.
-    public static bool BothTicked => Ticked && Dependencies.Find(ModEntry.ModId) is { } ours && Copies.Ticked(ours);
+    public static bool BothTicked => Ticked && TickedCopy(ModEntry.ModId) != null;
 
     // The mod managers we know of that are ticked, ours first: what the banner's card names.
-    public static IEnumerable<Mod> TickedManagers() =>
-        new[] { ModEntry.ModId, ModId }.Select(Dependencies.Find).OfType<Mod>().Where(Copies.Ticked);
+    public static IEnumerable<Mod> TickedManagers() => new[] { ModEntry.ModId, ModId }.Select(TickedCopy).OfType<Mod>();
+
+    // A copy of a mod that's ticked, any of them where it's installed more than once (the one Find prefers if it is);
+    // null for none.
+    static Mod? TickedCopy(string id) => Dependencies.Find(id) is { } found && Copies.Ticked(found) ? found
+        : Dependencies.EachCopy(ModManager.Mods.Union(Installed.Mods)).FirstOrDefault(m => m.manifest?.id == id && Copies.Ticked(m));
 
     // Forgets a dismissed banner once the two aren't both ticked, so it shows again next time (view state, no undo).
     // Checked on every toolbar update and once at launch.

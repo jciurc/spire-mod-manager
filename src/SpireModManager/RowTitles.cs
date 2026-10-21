@@ -6,7 +6,8 @@ using MegaCrit.Sts2.addons.mega_text;
 namespace SpireModManager;
 
 // Row titles in our views: the alias with the original name small and dim beside it, cut with "…" to fit, a notepad
-// before it when the mod has notes, and gold for mods turned on or off since launch. Vanilla View: the game's.
+// before it when the mod has notes, gold for mods turned on or off since launch, and white for a ticked copy the game
+// greyed. Vanilla View: the game's.
 static class RowTitles
 {
     const int OriginalNameSize = 16;
@@ -265,25 +266,33 @@ static class RowTitles
         return Widths[(font, size, text)] = font.GetStringSize(text, fontSize: size).X;
     }
 
-    // Our views: a mod turned on since launch gets a bright gold title, one turned off a dim one; otherwise the game's
-    // colour.
+    // Our views: a mod turned on since launch gets a bright gold title, one turned off a dim one. Otherwise the game's
+    // colour from launch, but white for a ticked copy of a mod installed more than once that the game greyed (set aside
+    // as a duplicate, off, or installed since): it's on, though only one copy of its id loads. The game's red (failed)
+    // and purple (not tried) stay: they're what the launch did.
     public static readonly Color ChangedTitle = new(1f, 0.82f, 0.45f); // turned on: bright gold
     public static readonly Color ChangedOffTitle = new(0.72f, 0.6f, 0.42f, 0.8f); // turned off: a dim, dusky gold
     static readonly StringName TitleColorMeta = "spire_mod_manager_title_color";
 
     public static void MarkChanged(IEnumerable<NModMenuRow> rows, bool vanilla)
     {
-        // Each copy against launch as Changes reads it (HistoryBar.ModChanges): a switch to another copy marks both.
+        // Each copy against launch as Changes reads it (HistoryBar.ModChanges): its own box, copies_off included.
         var launch = History.Loaded is { } loaded ? (Off: Dependencies.SavedOff(loaded.Mods), Picks: Store.PicksIn(loaded.Store)) : default((HashSet<(string?, ModSource)> Off, Picks Picks)?);
         foreach (var row in rows)
         {
             var title = row.GetNode<Control>(TitlePath);
             if (!title.HasMeta(TitleColorMeta))
                 title.SetMeta(TitleColorMeta, title.Modulate);
-            var changed = !vanilla && launch is { } then && row.Mod is { manifest.id: not null } mod
-                && Copies.TickedIn(mod, then.Off, then.Picks) != Copies.Ticked(mod);
-            title.Modulate = !changed ? (Color)title.GetMeta(TitleColorMeta)
-                : row.Mod is { } turned && Copies.Ticked(turned) ? ChangedTitle : ChangedOffTitle;
+            if (vanilla || row.Mod is not { manifest.id: not null } mod)
+            {
+                title.Modulate = (Color)title.GetMeta(TitleColorMeta);
+                continue;
+            }
+            var ticked = Copies.Ticked(mod);
+            title.Modulate = launch is { } then && Copies.TickedIn(mod, then.Off, then.Picks) != ticked ? (ticked ? ChangedTitle : ChangedOffTitle)
+                : ticked && mod.state is ModLoadState.Disabled or ModLoadState.DisabledDuplicate or ModLoadState.AddedAtRuntime
+                    && Copies.Others(mod).Count > 0 ? Colors.White
+                : (Color)title.GetMeta(TitleColorMeta);
         }
     }
 
