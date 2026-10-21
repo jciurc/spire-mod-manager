@@ -4,9 +4,9 @@ namespace SpireModManager;
 
 // Suggestions under a tags box while it has focus: the player's own tags, most used first, matching the word being
 // typed (starts-with, then contains), under a heading that says so. Up/Down or the mouse light one; Enter, Tab or a
-// comma take the lit one and keep editing; a click takes one and finishes (the box left, so it saves), a Shift-click
-// takes one and keeps the list for more. Nothing is lit until then, so Enter still saves. Escape closes the list.
-// Styled like MenuPanel, on its own layer above our menus (the box can be in one).
+// comma (a full-width one too) take the lit one and keep editing, as one undo step; a click takes one and finishes (the
+// box left, so it saves), a Shift-click takes one and keeps the list for more. Nothing is lit until then, so Enter still
+// saves. Escape closes the list. Styled like MenuPanel, on its own layer above our menus (the box can be in one).
 sealed class TagSuggestions
 {
     const int Max = 6;
@@ -75,7 +75,7 @@ sealed class TagSuggestions
             return true;
         }
         // Shift+Tab still goes back a field.
-        var take = key.Keycode is Key.Enter or Key.KpEnter || (key.Keycode == Key.Tab && !key.ShiftPressed) || key.Unicode == ',';
+        var take = key.Keycode is Key.Enter or Key.KpEnter || (key.Keycode == Key.Tab && !key.ShiftPressed) || TagPills.Comma(key.Unicode);
         if (!take || _highlight < 0 || _highlight >= _tags.Count)
             return false;
         Pick(_tags[_highlight]);
@@ -107,14 +107,12 @@ sealed class TagSuggestions
             Build();
     }
 
-    // The tag in place of the word being typed, then ", " for the next one.
+    // The tag in place of the word being typed, then ", " for the next one; Ctrl+Z takes it back.
     void Pick(string tag)
     {
-        var text = _box.Text;
-        var cut = text.LastIndexOf(',');
-        _box.Text = (cut < 0 ? "" : text[..(cut + 1)] + " ") + tag + ", ";
-        _box.CaretColumn = _box.Text.Length;
-        Update(); // (setting the text doesn't count as typing)
+        var cut = _box.Text.LastIndexOf(',') + 1;
+        TagPills.Replace(_box, cut, _box.Text.Length, (cut == 0 ? "" : " ") + tag + ", ");
+        Update(); // now: the box says its text changed only at the frame's end
     }
 
     // The rows for _tags; the list itself first if it isn't showing.

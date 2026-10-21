@@ -3899,7 +3899,19 @@ static partial class SelfTest
         Check("a click on the tag pills opens the box ready for another tag", tags.Visible && tags.HasFocus() && tags.Text == "co-op, Favorites, " && tags.CaretColumn == tags.Text.Length
             && !TagSuggestions.Labels().Any(t => t.Contains("Favorites", StringComparison.OrdinalIgnoreCase)),
             $"\"{tags.Text}\" caret {tags.CaretColumn}, focus {tags.HasFocus()}, offered {string.Join(", ", TagSuggestions.Labels())}");
+        // The look of the tags while they're typed (TagPills): three pills and a word being typed, then as they were.
+        void Typed(string text)
+        {
+            tags.Text = text;
+            tags.CaretColumn = text.Length;
+            tags.EmitSignal(LineEdit.SignalName.TextChanged, text);
+        }
+        Typed("co-op, Favorites, Story-heavy, wor");
+        await Wait(menu, 0.2);
+        Results.Add($"INFO tag pills drawn: {string.Join(", ", TagPills.TestPills(tags).Select(p => $"{p.Tag} {p.Rect}"))}; text: "
+            + string.Join(" | ", TagPills.TestInk(tags).Select(r => $"\"{r.Text}\" {r.Color}")));
         await Capture(screen, outDir, "9a-tags-editing");
+        Typed("co-op, Favorites, ");
         tags.ReleaseFocus();
         await Wait(menu, 0.3);
         Check("clicking away after that keeps the tags as pills", Store.InfoFor("SmmTestFixes")?.Tags?.SequenceEqual(["co-op", "Favorites"]) == true
@@ -11499,6 +11511,8 @@ static partial class SelfTest
         };
         if (text.Length > 0)
             dump.Append(" \"").Append(text.ReplaceLineEndings(" ")).Append('"');
+        if (node is LineEdit box && TagPills.TestPills(box) is { Count: > 0 } pills)
+            dump.Append(" pills ").Append(string.Join(", ", pills.Select(p => $"{p.Tag} ({p.Rect.Position.X:0},{p.Rect.Position.Y:0} {p.Rect.Size.X:0}x{p.Rect.Size.Y:0} in the box)")));
         if (node is NTickbox tickbox)
             dump.Append(tickbox.IsTicked ? " ticked" : " unticked");
         dump.AppendLine();
