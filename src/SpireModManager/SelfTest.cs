@@ -7731,6 +7731,7 @@ static partial class SelfTest
         finally
         {
             GameMods().Remove(update);
+            Copies.TestRecount(); // the count as it was with the update in
         }
         Check("local and Workshop both ticked, the Workshop copy updated to a newer version while the game runs: which loads goes by its newest manifest "
             + "(the beta: it; stable: the local copy), and so does pending (a move since launch aside)", updated, updatedSay);
@@ -8878,6 +8879,7 @@ static partial class SelfTest
         var mixLocal = Made(Mix, "MixLocal", ModLoadState.Loaded, version: "2.0.0");
         var (mix61, mix62) = (Made(Mix, "Mix61", ModLoadState.DisabledDuplicate, 61), Made(Mix, "Mix62", ModLoadState.DisabledDuplicate, 62));
         GameMods().AddRange([mixLocal, mix61, mix62]);
+        Copies.TestRecount(); // as many as the Workshop items above
         var (mixPicks, mixOff) = (Store.Data.CopyPicks, Store.Data.CopiesOff);
         try
         {
@@ -8915,6 +8917,7 @@ static partial class SelfTest
             GameMods().Remove(mixLocal);
             GameMods().Remove(mix61);
             GameMods().Remove(mix62);
+            Copies.TestRecount();
             (Store.Data.CopyPicks, Store.Data.CopiesOff) = (mixPicks, mixOff);
             Store.SaveViewState();
             History.Quietly(data =>
@@ -9287,6 +9290,7 @@ static partial class SelfTest
         const string Again = "SmmSameIdAgain";
         var (againThere, againBack) = (Made(Again, "Again1", ModLoadState.Loaded), Made(Again, "Again2", ModLoadState.AddedAtRuntime));
         GameMods().Add(againThere);
+        Copies.TestRecount(); // one in for one out above
         History.Quietly(data =>
         {
             (data.Copies ??= [])[Again] = ["l:Again1", "l:Again2"];
@@ -9316,6 +9320,7 @@ static partial class SelfTest
         }
         GameForgets(againBack);
         GameMods().Remove(againThere);
+        Copies.TestRecount();
         SaveManager.Instance.SettingsSave.ModSettings?.ModList.RemoveAll(e => e.Id == Again);
         History.Quietly(data =>
         {

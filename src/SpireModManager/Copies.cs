@@ -495,6 +495,12 @@ static class Copies
         data.CopyPicks = WithPicks(data.CopyPicks, [$"{id}|{there}"]);
         return true;
     }
+
+#if DEVTOOLS
+    // Self-test: the copies worked out again after made-up mods were put in the game's list or taken out (as many of
+    // each leave the count the table is kept by as it was).
+    public static void TestRecount() => _byId = null;
+#endif
 }
 
 // Which copy loads for each id and source installed more than once (StoreData.CopyPicks), and which copies are off while
