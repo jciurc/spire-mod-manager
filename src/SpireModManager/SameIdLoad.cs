@@ -452,8 +452,15 @@ static class SameIdLoad
     public static Result? ResultOf(string? id) => id != null && Results.TryGetValue(id, out var result) ? result : null;
 
     // A relaunch wouldn't change which copy of the id loads: the self-check found the pick not taken, or the canary
-    // failed. Left out of the pending test, and the info panel says so (COPY_NOT_APPLIED).
+    // failed. Stuck counts it too, and the info panel says so (COPY_NOT_APPLIED).
     public static bool Unchosen(string? id) => id != null && (ResultOf(id) == Result.NotTaken || CanaryFailed && _twinIds.Contains(id));
+
+    // Whether a relaunch can't apply the pick of an id: this launch couldn't choose (Unchosen), or its plan left the game's
+    // choice for a reason the next launch has too: the game's local-vs-Workshop rule, or a dependency after the id's first
+    // slot (unless the player moves it up in Load Order, a move Changes lists itself). Not one the game decided before us:
+    // Settle put us first, so the next launch applies it. Changes lists no copy switch on such an id, and the pending test
+    // reads it by its switches (HistoryBar.CopySwitches, ModEntry.HasPendingChanges).
+    public static bool Stuck(string? id) => Unchosen(id) || id != null && _plan.GetValueOrDefault(id)?.Why is Reason.DependencyAfterSlot or Reason.SetAsideByGame;
 
     // A copy Apply set aside this launch (its messages are ours to keep, BranchErrors).
     public static bool IsSetAside(Mod mod) => _plan.Values.Any(e => e.SetAside.Contains(mod));

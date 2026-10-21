@@ -9282,69 +9282,95 @@ static partial class SelfTest
             GameMods().Remove(again);
             GameMods().Remove(come);
         }
+        Check("copies_off: a copy in it alone on its switch now (its twin uninstalled) reads ticked and loses its entry at the menu, a profile's entry "
+            + "the same, the pick and the profile's copy still the copy gone, which loads when it's back; a new twin arriving before the next launch, "
+            + "listed first, doesn't take over (the copy that was there loads, the new one set aside; then both ticked, the old one loading, the pick still "
+            + "the copy gone)",
+            tickedAlone && aloneOff.Count == 0 && alonePicked == $"{Y}|l:C" && heldEntry is { Copy: "l:C", CopiesOff: [] } && back && launched
+            && pickAfter == $"{Y}|l:C" && loadsAfter == "l:A" && bothTicked,
+            $"ticked {tickedAlone}, off after [{string.Join(", ", aloneOff)}], picked {alonePicked}; profile {heldEntry.Copy} off "
+            + $"[{string.Join(", ", heldEntry.CopiesOff ?? [])}]; back loads {back}; launch: {launchSay}; then pick {pickAfter}, loads {loadsAfter}, "
+            + $"both ticked {bothTicked}");
+
+        // Then another profile naming the copy that loads is applied, and the first one again (as a switch, Discard or an
+        // import applies one): the copy gone is the pick again (Write picks only among those installed). Back, it loads, and
+        // the profile naming it isn't Unsaved.
+        string? Pick() => Store.Data.CopyPicks?.FirstOrDefault(k => Copies.IdOf(k) == Y);
+        var reapplied = WithCopies(data, Y, [again, come], () =>
+        {
+            Profiles.TestApply([heldEntry with { Copy = "l:A" }]);
+            var other = Pick();
+            Profiles.TestApply([heldEntry]);
+            (data.CopyPicks, data.CopiesOff) = (Store.TidyPicks([Pick()]), CopiesOff().Where(k => Copies.IdOf(k) == Y).ToList());
+            return $"{other}, then {Pick()}";
+        });
         var (thenA, thenC, thenD) = (Made(Y, "A"), Made(Y, "C"), Made(Y, "D"));
         var thenPlan = Launch(data, thenD, thenA, thenC);
         if (thenPlan?.Loads is { } thenLoads)
             thenLoads.state = ModLoadState.Loaded;
         var thenUnsaved = Unsaved(data, heldEntry, thenA, thenC, thenD);
-        Check("copies_off: a copy in it alone on its switch now (its twin uninstalled) reads ticked and loses its entry at the menu, a profile's entry "
-            + "the same, the pick and the profile's copy still the copy gone, which loads when it's back; a new twin arriving before the next launch, "
-            + "listed first, doesn't take over (the copy that was there loads, the new one set aside; then both ticked, the old one loading, the pick still "
-            + "the copy gone); that one back too: it loads, and the profile naming it isn't Unsaved",
-            tickedAlone && aloneOff.Count == 0 && alonePicked == $"{Y}|l:C" && heldEntry is { Copy: "l:C", CopiesOff: [] } && back && launched
-            && pickAfter == $"{Y}|l:C" && loadsAfter == "l:A" && bothTicked && thenPlan is { HadPick: true } && thenPlan.Loads == thenC && thenUnsaved == null,
-            $"ticked {tickedAlone}, off after [{string.Join(", ", aloneOff)}], picked {alonePicked}; profile {heldEntry.Copy} off "
-            + $"[{string.Join(", ", heldEntry.CopiesOff ?? [])}]; back loads {back}; launch: {launchSay}; then pick {pickAfter}, loads {loadsAfter}, "
-            + $"both ticked {bothTicked}; back too: loads {PlanLoads(thenPlan)}, unsaved {thenUnsaved ?? "none"}");
+        Check("copies: the pick missing (two copies, a new twin), another profile naming the copy loading applied, then the first again: the pick is the "
+            + "copy gone again; back, it loads, and the profile naming it isn't Unsaved",
+            reapplied == $"{Y}|l:A, then {Y}|l:C" && thenPlan is { HadPick: true } && thenPlan.Loads == thenC && thenUnsaved == null,
+            $"picks {reapplied}; back: loads {PlanLoads(thenPlan)}, unsaved {thenUnsaved ?? "none"}");
 
         // Three copies from one source, the picked one missing for a launch: the other two still share the switch. The pick
-        // and the profile's copy stay the copy gone (the one the game loaded loading meanwhile); back, it loads, and the
-        // profile naming it isn't Unsaved.
+        // and the profile's copy stay the copy gone, as the mod list now has it (what Save keeps; an import turning it off
+        // shows it); the one the game loaded loads meanwhile, out of copies_off and the profile's. Back, the pick loads, and
+        // the profile naming it isn't Unsaved; a fourth copy before then doesn't take over.
         const string Z = "SmmSameIdThree";
         var three = new StoreData { CopyPicks = [$"{Z}|l:B"], CopiesOff = [$"{Z}|l:A", $"{Z}|l:C"], Copies = new() { [Z] = ["l:A", "l:B", "l:C"] } };
         var threeHeld = new Profile { Name = "Three", Mods = [new ProfileMod(Z, ModSource.ModsDirectory, true, "l:B", CopiesOff: ["l:A", "l:C"])] };
         var (missA, missC) = (Made(Z, "A"), Made(Z, "C"));
         if (Launch(three, missA, missC)?.Loads is { } meanwhile)
             meanwhile.state = ModLoadState.Loaded;
-        GameMods().AddRange([missA, missC]);
-        string? threePick, threeLoads;
-        try
+        // Profiles reads our data: it has the made-up copies' meanwhile, as that launch's menu has them.
+        var (threeLoads, threeNow) = WithCopies(three, Z, [missA, missC], () =>
         {
             Copies.Reconcile(three);
             Profiles.TestHold(threeHeld);
-            threePick = three.CopyPicks?.FirstOrDefault(k => Copies.IdOf(k) == Z);
-            threeLoads = new Picks(three.CopyPicks, three.Copies, three.CopiesOff).Picked(Z, ModSource.ModsDirectory);
-        }
-        finally
-        {
-            GameMods().Remove(missA);
-            GameMods().Remove(missC);
-        }
+            return (new Picks(three.CopyPicks, three.Copies, three.CopiesOff).Picked(Z, ModSource.ModsDirectory),
+                Profiles.PlanImport([new(Z, false, "Z", "")]).Mods.FirstOrDefault(m => m.Id == Z)?.Copy);
+        });
+        var (threePick, threeOff) = (three.CopyPicks?.FirstOrDefault(k => Copies.IdOf(k) == Z), three.CopiesOff?.Where(k => Copies.IdOf(k) == Z).ToList() ?? []);
         var (zA, zB, zC) = (Made(Z, "A"), Made(Z, "B"), Made(Z, "C"));
         var threePlan = Launch(three, zA, zB, zC);
         if (threePlan?.Loads is { } threeLoaded)
             threeLoaded.state = ModLoadState.Loaded;
         var threeEntry = threeHeld.Mods.Single();
         var threeUnsaved = Unsaved(three, threeEntry, zA, zB, zC);
-        Check("copies: three from one source, the picked one missing for a launch: the pick and the profile's copy stay it, the copy loaded loading "
-            + "meanwhile; back, it loads, and the profile naming it isn't Unsaved",
-            threePick == $"{Z}|l:B" && threeLoads == "l:A" && threeEntry is { Copy: "l:B", CopiesOff: ["l:A", "l:C"] } && threePlan is { HadPick: true }
-            && threePlan.Loads == zB && threeUnsaved == null,
-            $"pick {threePick}, loads {threeLoads}, profile {threeEntry.Copy}; back: loads {PlanLoads(threePlan)}, unsaved {threeUnsaved ?? "none"}");
+        Check("copies: three from one source, the picked one missing for a launch: the pick and the profile's copy stay it, as the mod list has it; the "
+            + "copy loaded loads meanwhile, out of copies_off and the profile's; back, the pick loads, and the profile naming it isn't Unsaved",
+            threePick == $"{Z}|l:B" && threeLoads == "l:A" && threeOff.SequenceEqual([$"{Z}|l:C"]) && threeEntry is { Copy: "l:B", CopiesOff: ["l:C"] }
+            && threeNow == "l:B" && threePlan is { HadPick: true } && threePlan.Loads == zB && threeUnsaved == null,
+            $"pick {threePick}, loads {threeLoads}, off [{string.Join(", ", threeOff)}], profile {threeEntry.Copy} off [{string.Join(", ", threeEntry.CopiesOff ?? [])}], "
+            + $"now {threeNow}; back: loads {PlanLoads(threePlan)}, unsaved {threeUnsaved ?? "none"}");
+        var (fourA, fourC, fourD) = (Made(Z, "A"), Made(Z, "C"), Made(Z, "D"));
+        var fourPlan = Launch(three, fourD, fourA, fourC);
+        Check("... then a fourth copy installed before the next launch (the game closed), listed first: the copy loaded meanwhile loads again",
+            fourPlan is { HadPick: false } && fourPlan.Loads == fourA, $"loads {PlanLoads(fourPlan)}");
     }
 
     // The copy a plan loads, for a check's details.
     static string PlanLoads(SameIdLoad.Entry? plan) => plan?.Loads is { } loads ? Copies.CopyOf(loads) : "none";
 
-    // The active profile's unsaved changes with these copies of one id installed, our data's record, pick and copies off
-    // for it as data has them and the profile's entry for it as given (in our data, every undo snapshot and the game's
-    // list for a moment, quietly, as a launch would find them; then taken out again): null for none, else what they are.
-    static string? Unsaved(StoreData data, ProfileMod entry, params Mod[] copies)
+    // The active profile's unsaved changes with these copies of one id installed, our data for it as data has it and the
+    // profile's entry for it as given (WithCopies): null for none, else what they are.
+    static string? Unsaved(StoreData data, ProfileMod entry, params Mod[] copies) => Profiles.Edited ? "the profile was Unsaved before"
+        : WithCopies(data, entry.Id, copies, () =>
+        {
+            History.Quietly(now => now.Profiles.FirstOrDefault(p => p.Name == now.ActiveProfile)?.Mods.Add(entry));
+            Profiles.Track();
+            var (on, off, switched) = Profiles.UnsavedChanges();
+            return !Profiles.Edited ? null : $"on {on.Count}, off {off.Count}, switched {string.Join(", ", switched.Select(s => $"{Copies.CopyOf(s.From)} to {Copies.CopyOf(s.To)}"))}";
+        });
+
+    // What read gives with these copies of one id installed and our data's record, pick and copies off for it as data has
+    // them (in our data, every undo snapshot and the game's list for a moment, quietly, as a launch would find them; then
+    // taken out again, with the id's profile entries).
+    static T WithCopies<T>(StoreData data, string id, Mod[] copies, Func<T> read)
     {
-        var id = entry.Id;
         bool Ours(string key) => Copies.IdOf(key) == id;
-        if (Profiles.Edited)
-            return "the profile was Unsaved before";
         GameMods().AddRange(copies);
         Copies.TestRecount();
         try
@@ -9354,11 +9380,8 @@ static partial class SelfTest
                 (now.Copies ??= [])[id] = [.. data.Copies?.GetValueOrDefault(id) ?? []];
                 now.CopyPicks = Copies.WithPicks(now.CopyPicks, data.CopyPicks?.Where(Ours) ?? []);
                 now.CopiesOff = Store.TidyOff([.. now.CopiesOff ?? [], .. data.CopiesOff?.Where(Ours) ?? []], now.CopyPicks);
-                now.Profiles.FirstOrDefault(p => p.Name == now.ActiveProfile)?.Mods.Add(entry);
             });
-            Profiles.Track();
-            var (on, off, switched) = Profiles.UnsavedChanges();
-            return !Profiles.Edited ? null : $"on {on.Count}, off {off.Count}, switched {string.Join(", ", switched.Select(s => $"{Copies.CopyOf(s.From)} to {Copies.CopyOf(s.To)}"))}";
+            return read();
         }
         finally
         {
@@ -10550,28 +10573,34 @@ static partial class SelfTest
         var (switchChanges, pendingNote, switchedPending) = (HistoryBar.Describe(), MenuButton.PendingText(), ModEntry.HasPendingChanges());
         var hintedLine = ModDetails.CopyLine(b, false)?.Text;
         // Not counted where a relaunch can't apply the pick (the plan left the game's choice, or the self-check found it
-        // not taken); one the game decided before us still is (Settle put us first).
+        // not taken), nor pending, so the menu's dot and Changes agree; one the game decided before us still is both (Settle
+        // put us first). Its switch turned off is pending all the same.
         var stuck = new List<string>();
         var planWas = SameIdLoad.Plan.GetValueOrDefault(TwinId);
+        var switchWas = Entries().Select(e => (Entry: e, e.IsEnabled)).ToList();
         try
         {
             if (planWas != null)
                 foreach (var why in new[] { SameIdLoad.Reason.DependencyAfterSlot, SameIdLoad.Reason.SetAsideByGame, SameIdLoad.Reason.DecidedBeforeUs })
                 {
                     SameIdLoad.TestPlan(TwinId, planWas with { Why = why });
-                    stuck.Add($"{why} {HistoryBar.CopySwitchCount()}");
+                    stuck.Add($"{why} {HistoryBar.CopySwitchCount()} {ModEntry.HasPendingChanges()}");
                 }
             SameIdLoad.TestPlan(TwinId, planWas);
             SameIdLoad.TestResult(TwinId, SameIdLoad.Result.NotTaken);
-            stuck.Add($"not taken {HistoryBar.CopySwitchCount()}");
+            stuck.Add($"not taken {HistoryBar.CopySwitchCount()} {ModEntry.HasPendingChanges()}");
+            switchWas.ForEach(s => s.Entry.IsEnabled = false);
+            stuck.Add($"switch off {ModEntry.HasPendingChanges()}");
         }
         finally
         {
+            switchWas.ForEach(s => s.Entry.IsEnabled = s.IsEnabled);
             SameIdLoad.TestPlan(TwinId, planWas);
             SameIdLoad.TestResult(TwinId, null);
         }
-        Check("... a switch a relaunch can't apply isn't counted: the plan left the game's choice, or the self-check found the pick not taken; one the "
-            + "game decided before us is", string.Join(", ", stuck) == "DependencyAfterSlot 0, SetAsideByGame 0, DecidedBeforeUs 1, not taken 0", string.Join(", ", stuck));
+        Check("... a switch a relaunch can't apply isn't counted, nor pending: the plan left the game's choice, or the self-check found the pick not "
+            + "taken; one the game decided before us is both; the id's switch turned off is pending all the same", string.Join(", ", stuck)
+            == "DependencyAfterSlot 0 False, SetAsideByGame 0 False, DecidedBeforeUs 1 True, not taken 0 False, switch off True", string.Join(", ", stuck));
         Dependencies.Write([(b, true)], pick: [b]);
         Profiles.RefreshTickboxes(screen);
         await Wait(menu, 0.3);

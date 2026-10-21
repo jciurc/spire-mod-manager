@@ -162,6 +162,23 @@ static class Copies
         return Ordered(copies, Launched()).First();
     }
 
+    // Where an id and source's stored pick names a copy our record has that isn't installed, two or more others from that
+    // source being: that copy (Pick), and the one loading in its place meanwhile (Copy, Picked's choice). The pick stays
+    // the player's until they pick another, in our data and in every profile (Chosen), so it loads again once it's back;
+    // the stand-in reads ticked, and is never off (Reconcile, Profiles), so SameIdLoad's no-pick choice lands on it at
+    // every launch meanwhile, whatever new copy arrives. Null for none.
+    public static (string Pick, string Copy)? StandIn(string id, ModSource source, Picks picks) =>
+        picks.Stored(id, source) is { } stored && picks.Record?.GetValueOrDefault(id)?.Contains(stored) == true
+            && Picked(id, source, picks) is { } copy && copy != stored ? (stored, copy) : null;
+
+    // Every copy standing in for a pick that's missing, by its key (SwitchKey).
+    public static HashSet<string> StandIns(Picks picks) =>
+        [.. TwinGroups().Select(g => StandIn(g.Id, g.Source, picks) is { } s ? $"{g.Id}|{s.Copy}" : null).OfType<string>()];
+
+    // The pick as the player chose it, as a profile saves it: Picked, but the stored pick itself while a copy stands in
+    // for it.
+    public static string? Chosen(string id, ModSource source) => StandIn(id, source, Picks.Now)?.Pick ?? Picked(id, source);
+
     // Copies the game found at launch, before those installed since: they keep the id they had.
     static HashSet<string> Launched() =>
         ModManager.Mods.Where(m => m.state != ModLoadState.AddedAtRuntime).Except(Installed.Mods).Select(CopyOf).ToHashSet();
@@ -319,9 +336,9 @@ static class Copies
     // until the player picks another), and tidies copies_off: a file from before it (or a first run) gets the reading it
     // had, only the pick on (LegacyOff), so nothing looks different on the update; a pick in it comes out, so a switch
     // that's on always has a copy ticked; so does a copy now alone on its switch (its twins uninstalled since), as Write
-    // drops one clicked, so another copy arriving later doesn't find it off and take over (its pick stays as it was). At
-    // the first main menu, before the undo baseline (so it's neither an undo step nor a change since launch). True if it
-    // changed.
+    // drops one clicked, so another copy arriving later doesn't find it off and take over (its pick stays as it was), and
+    // so does the copy standing in for a pick that's missing (StandIn). At the first main menu, before the undo baseline
+    // (so it's neither an undo step nor a change since launch). True if it changed.
     public static bool Reconcile(StoreData data)
     {
         var changed = false;
@@ -370,12 +387,13 @@ static class Copies
             data.CopyPicks = WithPicks(data.CopyPicks, seeded);
             changed = true;
         }
-        // A copy alone on its switch (its twin gone) can't be off. A stored pick naming the copy since removed stays (a
-        // Steam item missing for one launch keeps its choice, Store.TidyPicks), so that copy loads again once it's back,
-        // at a launch or mid-session (KeepThere leaves it); a twin new to our record doesn't take over, installed with the
-        // game closed (SameIdLoad's no-pick choice prefers a copy the record has) or mid-session (KeepThere).
-        var alone = Alone().Select(SwitchKey).ToHashSet();
-        var off = Store.TidyOff((data.CopiesOff ?? LegacyOff(data)).Where(k => !alone.Contains(k)), data.CopyPicks) ?? [];
+        // A copy alone on its switch (its twin gone) can't be off, nor one standing in for a pick that's missing (it reads
+        // ticked already). A stored pick naming the copy since removed stays (a Steam item missing for one launch keeps its
+        // choice, Store.TidyPicks), so that copy loads again once it's back, at a launch or mid-session (KeepThere leaves
+        // it); a twin new to our record doesn't take over, installed with the game closed (SameIdLoad's no-pick choice
+        // prefers a copy the record has that isn't off: the stand-in) or mid-session (KeepThere).
+        var on = Alone().Select(SwitchKey).Concat(StandIns(picks)).ToHashSet();
+        var off = Store.TidyOff((data.CopiesOff ?? LegacyOff(data)).Where(k => !on.Contains(k)), data.CopyPicks) ?? [];
         if (data.CopiesOff is not { } was || !off.SequenceEqual(was))
         {
             data.CopiesOff = off;

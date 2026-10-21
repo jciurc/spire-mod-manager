@@ -542,7 +542,7 @@ static class HistoryBar
     // that loads), or a profile naming another copy: the copy that loaded then, and the one now. Then is the copy the game
     // loaded, else the launch's lists' (launch: History.Loaded): those lists read with today's manifests name the copy a
     // Workshop update made the winner since (Copies.Newest), so the switch to it went unlisted. Not this mod (the game
-    // decides which of its copies loads), nor an id whose pick a relaunch can't apply (PickStuck): the game loaded
+    // decides which of its copies loads), nor an id whose pick a relaunch can't apply (SameIdLoad.Stuck): the game loaded
     // another copy than the pick, and the next launch would too.
     static List<(Mod From, Mod To)> CopySwitches(History.Snapshot launch, List<(Mod Mod, bool Enabled)> changed)
     {
@@ -552,18 +552,11 @@ static class HistoryBar
         Mod? Then(string id) => ModManager.Mods.FirstOrDefault(m => m.manifest?.id == id && m.state == ModLoadState.Loaded) ?? Copies.LoadingIn(id, thenOff, thenPicks);
         var switches = new List<(Mod, Mod)>();
         foreach (var id in Dependencies.EachCopy(ModManager.Mods).Where(m => Copies.Others(m).Count > 0).Select(m => m.manifest?.id).OfType<string>().Distinct())
-            if (id != ModEntry.ModId && !ticked.Contains(id) && !PickStuck(id) && Then(id) is { } from
+            if (id != ModEntry.ModId && !ticked.Contains(id) && !SameIdLoad.Stuck(id) && Then(id) is { } from
                 && Copies.LoadingIn(id, nowOff, nowPicks) is { } to && Copies.CopyOf(from) != Copies.CopyOf(to))
                 switches.Add((from, to));
         return switches;
     }
-
-    // Whether a relaunch can't apply the pick of an id: SameIdLoad couldn't choose this launch (Unchosen: the canary
-    // failed, or the self-check found the pick not taken), or its plan left the game's choice for a reason the next
-    // launch has too (a dependency after the id's first slot, the game's local-vs-Workshop rule). Not one the game
-    // decided before us: Settle put us first, so the next launch applies it.
-    static bool PickStuck(string id) => SameIdLoad.Unchosen(id)
-        || SameIdLoad.Plan.GetValueOrDefault(id)?.Why is SameIdLoad.Reason.DependencyAfterSlot or SameIdLoad.Reason.SetAsideByGame;
 
     // A switch to another copy of a mod with no box changed, as Changes words it ("Test Twin: Test Twin (SmmTestTwinA)
     // loads instead of Test Twin Beta (SmmTestTwinB)"): plain, and rich with each copy's name opening it.
