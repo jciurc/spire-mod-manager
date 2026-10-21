@@ -180,7 +180,7 @@ static class GameChanges
                     }
             _patches = known = (frame, byAssembly);
         }
-        var methods = mod.assemblies.SelectMany(a => known.ByAssembly.GetValueOrDefault(a) ?? []).Distinct().ToList();
+        var methods = Compat.Assemblies(mod).SelectMany(a => known.ByAssembly.GetValueOrDefault(a) ?? []).Distinct().ToList();
         return (methods.Count, [.. methods.Select(m => Class(m.DeclaringType)).GroupBy(c => c).OrderByDescending(g => g.Count()).Select(g => g.Key)]);
     }
 

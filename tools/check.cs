@@ -146,7 +146,7 @@ Check("descriptions use Hover.Tip, not the engine's TooltipText", native.Count =
 // stable, where the method using it throws as it's first called. Comment lines don't count. Also the beta's == operator
 // on ModManifest: `manifest == null` compiles to it, and on stable the method using it can't run at all (a
 // MissingMethodException as it's first called: the info panel lost our fields); `is null` and `?.` need no operator.
-var betaOnly = new Regex(@"\.workshopId\b|\bworkshopId\s*=|NModInfoContainer\.Clear\b|ModInfoContainer""\)\.Clear\(|\binfo\.Clear\(\)|\bmanifest\s*[!=]=");
+var betaOnly = new Regex(@"\.workshopId\b|\bworkshopId\s*=|\.assemblies\b|NModInfoContainer\.Clear\b|ModInfoContainer""\)\.Clear\(|\binfo\.Clear\(\)|\bmanifest\s*[!=]=");
 var branchy = new List<string>();
 foreach (var (path, source) in sources.Where(s => Path.GetFileName(s.Key) != "Compat.cs"))
 {
@@ -155,7 +155,7 @@ foreach (var (path, source) in sources.Where(s => Path.GetFileName(s.Key) != "Co
         if (betaOnly.IsMatch(lines[i]) && !lines[i].TrimStart().StartsWith("//"))
             branchy.Add($"{Name(path)}:{i + 1}");
 }
-Check("members only the beta has go through Compat (stable has no Mod.workshopId, NModInfoContainer.Clear or ModManifest ==)", branchy.Count == 0, List(branchy));
+Check("members only the beta has go through Compat (stable has no Mod.workshopId, Mod.assemblies, NModInfoContainer.Clear or ModManifest ==)", branchy.Count == 0, List(branchy));
 
 // Null-forgiving: Jordan's code style has no `!` after a value to say it isn't null (null!, x!.y, F()!). A null there
 // throws far from its cause; a check that narrows (a pattern, or a checked local) gives the code its own way out.

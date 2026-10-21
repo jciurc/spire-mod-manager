@@ -8,10 +8,11 @@ using MegaCrit.Sts2.Core.Nodes.Screens.ModdingScreen;
 namespace SpireModManager;
 
 // Game members that only one branch has, reached by name so one build loads on both: the beta (v0.111) has
-// Mod.workshopId and NModInfoContainer.Clear; stable (v0.107) has neither.
+// Mod.workshopId, Mod.assemblies and NModInfoContainer.Clear; stable (v0.107) has none of them (Mod.assembly, one).
 static class Compat
 {
     static readonly FieldInfo? WorkshopIdField = AccessTools.Field(typeof(Mod), "workshopId");
+    static readonly FieldInfo? AssembliesField = AccessTools.Field(typeof(Mod), "assemblies"), AssemblyField = AccessTools.Field(typeof(Mod), "assembly");
     public static readonly MethodInfo? InfoClear = AccessTools.Method(typeof(NModInfoContainer), "Clear");
     static readonly FieldInfo?[] InfoParts = new[] { "_title", "_description", "_image" }.Select(name => AccessTools.Field(typeof(NModInfoContainer), name)).ToArray();
 
@@ -54,6 +55,10 @@ static class Compat
             mod.path = $@"C:\steamapps\workshop\content\2868840\{id}";
     }
 #endif
+
+    // A mod's loaded assemblies: the beta's Mod.assemblies (a list), or stable's Mod.assembly (one, or none yet).
+    public static IEnumerable<Assembly> Assemblies(Mod mod) =>
+        AssembliesField?.GetValue(mod) is IEnumerable<Assembly> list ? list : AssemblyField?.GetValue(mod) is Assembly one ? [one] : [];
 
     // Empties the info panel: the game's Clear (beta), or its title, text and picture cleared (stable).
     public static void Clear(NModInfoContainer info)
