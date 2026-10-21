@@ -184,7 +184,7 @@
   "SPIRE_MOD_MANAGER.COPY_LOSES_PLAIN": "{other} loads instead. Disable one to choose.",
   "SPIRE_MOD_MANAGER.COPY_WHY_LOCAL": "The game loads the local copy.",
   "SPIRE_MOD_MANAGER.COPY_WHY_HIGHER": "The game loads the higher version.",
-  "SPIRE_MOD_MANAGER.COPY_WHY_LAST": "Spire Mod Manager loads the copy you enabled last.",
+  "SPIRE_MOD_MANAGER.COPY_WHY_SOURCE": "Only one copy from the same source loads.",
   "SPIRE_MOD_MANAGER.COPY_LOADS_ALSO": "{other} is also enabled - this copy is the one that loads.",
   "SPIRE_MOD_MANAGER.COPY_FAILED_OTHER": "{other} is also installed. To load that copy instead, enable it and disable this one.",
   "SPIRE_MOD_MANAGER.COPY_NOT_APPLIED": "Spire Mod Manager couldn't choose which copy was loaded. If the game is on a different version, Spire Mod Manager may need to be updated.",

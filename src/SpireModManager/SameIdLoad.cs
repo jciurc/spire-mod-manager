@@ -148,14 +148,16 @@ static class SameIdLoad
 
             // The pick, or with none (one naming a copy no longer installed, or two: a local and a Workshop copy each
             // picked) the first copy that isn't off on our page (copies_off), else the game's own choice: the copy it would
-            // load before failing the rest. A pick in copies_off (a hand-edited file) loads all the same. One copy can be
-            // two manifests (of one Workshop item): its first.
+            // load before failing the rest (also where that first copy not off can't take the id's first slot). A pick in
+            // copies_off (a hand-edited file) loads all the same. One copy can be two manifests (of one Workshop item): its
+            // first.
             var matching = todo.Where(p => IsPick(p.Mod)).ToList();
             var hadPick = matching.Select(p => Copies.CopyOf(p.Mod)).Distinct().Count() == 1;
             var picked = hadPick ? matching[0]
                 : todo.FirstOrDefault(p => off?.Contains(Copies.SwitchKey(p.Mod)) != true) is { Mod: not null } ticked ? ticked : todo[0];
             var (s1, sp) = (todo[0].At, picked.At);
             var swapped = false;
+            string? blocked = null;
             // The game finds a dependency at the id's first copy in the list, so the picked copy goes there, if what it
             // needs loads before that slot.
             if (sp != s1)
@@ -172,9 +174,15 @@ static class SameIdLoad
                 else if (list.Skip(self + 1).Any(m => m.state == ModLoadState.None && m.manifest?.id != id
                     && m.manifest?.dependencies?.Any(d => d.id == id) == true))
                 {
-                    Skipped($"its dependency {late} loads after slot {s1}");
-                    plan[id] = new Entry(todo[0].Mod, [], false, sp, s1, hadPick, Reason.DependencyAfterSlot, watch.Elapsed.TotalMilliseconds);
-                    continue;
+                    if (hadPick)
+                    {
+                        Skipped($"its dependency {late} loads after slot {s1}");
+                        plan[id] = new Entry(todo[0].Mod, [], false, sp, s1, hadPick, Reason.DependencyAfterSlot, watch.Elapsed.TotalMilliseconds);
+                        continue;
+                    }
+                    // No pick: the game's own choice instead (it needs no swap), the rest set aside as ever, so the game
+                    // doesn't fail them as duplicates of it.
+                    (picked, sp, blocked) = (todo[0], s1, late);
                 }
             }
             var setAside = todo.Where(p => p.Mod != picked.Mod).Select(p => p.Mod).ToList();
@@ -188,6 +196,7 @@ static class SameIdLoad
                     + (swapped ? $"; moved the picked copy from slot {sp} to {s1} so mods needing {id} find it" : "") + $" ({ms:0.0} ms)"
                 : $"{id} has no picked copy yet: "
                     + (picked.Mod == todo[0].Mod ? $"kept the game's choice, {Copies.CopyOf(picked.Mod)}" : $"loads {Copies.CopyOf(picked.Mod)}, the first copy not disabled on our page")
+                    + (blocked != null ? $" (that one needs {blocked}, which loads after slot {s1})" : "")
                     + $"; set aside {string.Join(", ", setAside.Select(Copies.CopyOf))} as a duplicate"
                     + (swapped ? $"; moved it from slot {sp} to {s1} so mods needing {id} find it" : ""));
         }

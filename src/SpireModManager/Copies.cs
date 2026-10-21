@@ -240,14 +240,20 @@ static class Copies
 
     // Whether the game keeps this Workshop copy over this local one, both on: the beta keeps the higher version (a
     // pre-release sorts lower), a tie or an unreadable one going to the local copy; stable always keeps the local copy.
+    // Each copy's newest manifest, as the next launch reads it (Newest).
     static bool Beats(Mod workshop, Mod local) => Compat.WorkshopBeatsOlderLocal
-        && SemanticVersion.TryFromString(workshop.manifest?.version ?? "", out var w)
-        && SemanticVersion.TryFromString(local.manifest?.version ?? "", out var l) && w != null && l != null && w.CompareTo(l) > 0;
+        && SemanticVersion.TryFromString(Newest(workshop).manifest?.version ?? "", out var w)
+        && SemanticVersion.TryFromString(Newest(local).manifest?.version ?? "", out var l) && w != null && l != null && w.CompareTo(l) > 0;
+
+    // A copy's last Mod in the game's list: an update while the game runs adds one with the new manifest after the one
+    // found at launch, which keeps the old version (the copy is still told by its first, CopyOf).
+    static Mod Newest(Mod copy) => copy.manifest?.id is { } id && ById().TryGetValue(id, out var all)
+        ? all.LastOrDefault(m => CopyOf(m) == CopyOf(copy)) ?? copy : copy;
 
     // Why a ticked copy doesn't load (LosesTo): the game keeps the local copy (stable, or a tie or an unreadable version
-    // on the beta), or the higher version (the beta); of copies sharing a switch, the copy enabled last loads (the
-    // pick); Other: none of these says it, e.g. a Workshop copy that isn't ticked loads, as its switch is shared with one
-    // that is and it beats the local copy (the game sees switches only).
+    // on the beta), or the higher version (the beta); of copies sharing a switch that the game's rule left, our pick loads
+    // (EnabledLast: a copy ticked on becomes the pick); Other: none of these says it, e.g. a Workshop copy that isn't ticked
+    // loads, as its switch is shared with one that is and it beats the local copy (the game sees switches only).
     public enum LoseReason { LocalCopy, HigherVersion, EnabledLast, Other }
 
     // For a ticked copy that won't load after a relaunch while another copy of its id will: that copy, and why. Null for
@@ -307,8 +313,9 @@ static class Copies
     // when it has none that names one of its copies (Picked: the copy the game loaded, so nothing changes until the
     // player picks another), and tidies copies_off: a file from before it (or a first run) gets the reading it had, only
     // the pick on (LegacyOff), so nothing looks different on the update; a pick in it comes out, so a switch that's on
-    // always has a copy ticked. At the first main menu, before the undo baseline (so it's neither an undo step nor a
-    // change since launch). True if it changed.
+    // always has a copy ticked; so does a copy now alone on its switch (its twins uninstalled since), as Write drops one
+    // clicked, so another copy arriving later doesn't find it off and take over. At the first main menu, before the undo
+    // baseline (so it's neither an undo step nor a change since launch). True if it changed.
     public static bool Reconcile(StoreData data)
     {
         var changed = false;
@@ -355,7 +362,8 @@ static class Copies
             data.CopyPicks = WithPicks(data.CopyPicks, seeded);
             changed = true;
         }
-        var off = Store.TidyOff(data.CopiesOff ?? LegacyOff(data), data.CopyPicks) ?? [];
+        var alone = All.Where(m => m.manifest?.id is { } each && each != ModEntry.ModId && Twins(m).Count == 0).Select(SwitchKey).ToHashSet();
+        var off = Store.TidyOff((data.CopiesOff ?? LegacyOff(data)).Where(k => !alone.Contains(k)), data.CopyPicks) ?? [];
         if (data.CopiesOff is not { } was || !off.SequenceEqual(was))
         {
             data.CopiesOff = off;

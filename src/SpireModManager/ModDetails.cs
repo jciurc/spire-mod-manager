@@ -532,7 +532,7 @@ static class ModDetails
     {
         Copies.LoseReason.LocalCopy => Escape(Menus.Text("SPIRE_MOD_MANAGER.COPY_WHY_LOCAL")),
         Copies.LoseReason.HigherVersion => Escape(Menus.Text("SPIRE_MOD_MANAGER.COPY_WHY_HIGHER")),
-        Copies.LoseReason.EnabledLast => Escape(Menus.Text("SPIRE_MOD_MANAGER.COPY_WHY_LAST")),
+        Copies.LoseReason.EnabledLast => Escape(Menus.Text("SPIRE_MOD_MANAGER.COPY_WHY_SOURCE")),
         _ => null,
     };
 
