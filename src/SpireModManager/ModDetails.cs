@@ -78,7 +78,7 @@ static class ModDetails
         {
             where = Menus.Format("SPIRE_MOD_MANAGER.SOURCE_STEAM", ("id", workshopId.ToString()));
             link.Uri = $"https://steamcommunity.com/sharedfiles/filedetails/?id={workshopId}";
-            (link.Disabled, link.Underline) = (false, LinkButton.UnderlineMode.OnHover);
+            (link.Disabled, link.Underline) = (false, LinkButton.UnderlineMode.Never); // our links: colour and the pointer
         }
         else
         {
@@ -571,7 +571,7 @@ static class ModDetails
     {
         var line = new HBoxContainer { Name = SourceName, MouseFilter = Control.MouseFilterEnum.Ignore };
         line.AddThemeConstantOverride("separation", 8);
-        var link = new LinkButton { Name = LinkName, FocusMode = Control.FocusModeEnum.None };
+        var link = new LinkButton { Name = LinkName, FocusMode = Control.FocusModeEnum.None, MouseDefaultCursorShape = Control.CursorShape.PointingHand };
         link.AddThemeFontOverride("font", ModEntry.Font("res://themes/kreon_regular_shared.tres"));
         link.AddThemeFontSizeOverride("font_size", 16);
         link.AddThemeColorOverride("font_color", new Color(0.6f, 0.8f, 1f));

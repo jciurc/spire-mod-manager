@@ -317,6 +317,7 @@ static class ProfileShare
         (preview.FitContent, preview.ScrollActive, preview.CustomMinimumSize) = (false, true, new Vector2(0, 150));
         preview.SizeFlagsVertical = Control.SizeFlags.ExpandFill;
         preview.MouseFilter = Control.MouseFilterEnum.Stop; // its links, and the wheel
+        preview.MetaUnderlined = false; // our links: their colour and the pointing hand
         preview.MetaClicked += meta =>
         {
             if (meta.AsString() is var link && ProfileCsv.IsWorkshopLink(link))

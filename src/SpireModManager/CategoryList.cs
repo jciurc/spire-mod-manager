@@ -97,12 +97,12 @@ static class CategoryList
     }
 
     // The way to the other page, as a plain link (Jordan: no button look) at the top, right of the page's title; like
-    // all our links, underlined only under the mouse.
+    // all our links, its colour and the pointing hand, never an underline.
     static LinkButton PageLink(NModdingScreen screen, Action onPressed)
     {
         var link = new LinkButton
         {
-            Name = "SpireModManagerViewToggle", Underline = LinkButton.UnderlineMode.OnHover, FocusMode = Control.FocusModeEnum.None,
+            Name = "SpireModManagerViewToggle", Underline = LinkButton.UnderlineMode.Never, FocusMode = Control.FocusModeEnum.None,
             MouseDefaultCursorShape = Control.CursorShape.PointingHand,
         };
         link.AddThemeFontOverride("font", ModEntry.Font("res://themes/kreon_regular_shared.tres"));

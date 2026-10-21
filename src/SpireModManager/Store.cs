@@ -370,6 +370,7 @@ public static class Store
         if (popup.FindChild("Description", true, false) is not RichTextLabel text)
             return;
         text.MouseFilter = Control.MouseFilterEnum.Stop; // the game's label lets clicks through
+        text.MetaUnderlined = false; // our links: their colour and the pointing hand
         text.MetaClicked += meta =>
         {
             if (meta.AsString() != "folder")

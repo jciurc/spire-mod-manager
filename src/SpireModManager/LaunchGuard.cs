@@ -642,7 +642,7 @@ static class LaunchGuard
             return;
         var link = new LinkButton
         {
-            Name = SuspectsButtonName, Text = Menus.Text("SPIRE_MOD_MANAGER.CRASH_DISABLE_SUSPECTS"), Underline = LinkButton.UnderlineMode.OnHover,
+            Name = SuspectsButtonName, Text = Menus.Text("SPIRE_MOD_MANAGER.CRASH_DISABLE_SUSPECTS"), Underline = LinkButton.UnderlineMode.Never,
             FocusMode = Control.FocusModeEnum.None, MouseDefaultCursorShape = Control.CursorShape.PointingHand,
         };
         link.AddThemeFontOverride("font", ModEntry.Font("res://themes/kreon_bold_shared.tres"));

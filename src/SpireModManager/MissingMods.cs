@@ -92,6 +92,7 @@ static class MissingMods
         var shown = Hover.Escape(mod.Name);
         name.Text = mod.Item is { } item
             ? $"[url={ProfileCsv.WorkshopLink(item)}][color={ModDetails.ModLinkHex}]{shown}{LinkMark.Tag(18, ModDetails.ModLinkHex)}[/color][/url]" : shown;
+        name.MetaUnderlined = false; // our links: their colour and the pointing hand
         name.MetaClicked += meta =>
         {
             if (meta.AsString() is var link && ProfileCsv.IsWorkshopLink(link))
