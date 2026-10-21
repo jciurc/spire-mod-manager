@@ -169,11 +169,19 @@ static class PageBar
     // Three: four made the bar run past the list with a selection's chip and buttons in it (by ~27 px); 999 mods is room.
     public const int RoomFor = 3;
 
+    // Measured once per name, font, size and margins: nine formatted texts per button on every redraw doubled the bar's
+    // share of one (10 ms to 20 ms with 249 mods).
+    static readonly Dictionary<(string Name, Rid Font, int Size, float Margins), float> Widths = [];
+
     public static float Roomy(Button button, string name)
     {
         var (font, size) = (button.GetThemeFont("font"), button.GetThemeFontSize("font_size"));
+        var margins = button.GetThemeStylebox("normal").GetMinimumSize().X;
+        var key = (name, font.GetRid(), size, margins);
+        if (Widths.TryGetValue(key, out var width))
+            return width;
         var widest = Enumerable.Range(1, 9).Max(digit => font.GetStringSize(Counted(name, int.Parse(new string((char)('0' + digit), RoomFor))), fontSize: size).X);
-        return MathF.Ceiling(widest) + button.GetThemeStylebox("normal").GetMinimumSize().X;
+        return Widths[key] = MathF.Ceiling(widest) + margins;
     }
 
     static readonly Color Cream = new(1, 0.964706f, 0.886275f);
