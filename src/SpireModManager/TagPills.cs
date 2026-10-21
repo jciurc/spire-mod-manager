@@ -283,12 +283,17 @@ static class TagPills
 
     // Puts text in place of from..to (columns), the caret after it, as one undo step: DeleteText has the box announce
     // the change and take its undo step at the end of the frame, after the insert (InsertTextAtCaret alone does
-    // neither). Over no selection, only when the insert changed the text: one refused at MaxLength is no step at all
-    // (an empty one would clear the redo).
+    // neither). A replacement that changes nothing is no step at all (an empty one would clear the redo): the same text
+    // over itself (", " typed over a selected separator), or an insert refused at MaxLength over no selection.
     public static void Replace(LineEdit box, int from, int to, string text)
     {
         var before = box.Text;
         box.Deselect();
+        if (before[Index(before, from)..Index(before, to)] == text)
+        {
+            box.CaretColumn = to;
+            return;
+        }
         if (to > from)
             box.DeleteText(from, to);
         box.CaretColumn = from;

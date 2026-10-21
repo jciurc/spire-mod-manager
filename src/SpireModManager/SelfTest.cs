@@ -10696,6 +10696,30 @@ static partial class SelfTest
             await Tap(Key.Z, ctrl: true);
             Check("tag pills: a paste over a selection with nothing new to add still takes the selection, one undo step",
                 overSelection == ("Co-op, Fast, ", false) && box.Text == "Co-op, Fast, Story", $"{overSelection}, then \"{box.Text}\"");
+            // After an emoji (two chars, one column), Paste splits the text and Copy reads the selection in the right place.
+            TagPills.TestClipboard = "x, y";
+            await Typed("🎮, A, ");
+            await Tap(Key.V, ctrl: true);
+            var pastedAfter = box.Text;
+            await Typed("🎮, A, B");
+            box.Select(3, 4); // "A"
+            await Tap(Key.C, ctrl: true);
+            Check("tag pills: after an emoji, a paste lands at the caret and Ctrl+C on a whole tag copies it with its comma",
+                pastedAfter == "🎮, A, x, y, " && TagPills.TestClipboard == "A,", $"\"{pastedAfter}\", copied \"{TagPills.TestClipboard}\"");
+            // A comma typed over a selected separator changes nothing, so it takes no undo step either.
+            await Typed("A, B, wordx");
+            await Tap(Key.Backspace); // the box's own: the word's last letter
+            await Tap(Key.Z, ctrl: true);
+            box.Select(1, 3); // ", "
+            var sameAnnounced = 0;
+            void SameAnnounced(string _) => sameAnnounced++;
+            box.TextChanged += SameAnnounced;
+            await Tap(Key.Comma, unicode: ',');
+            box.TextChanged -= SameAnnounced;
+            var same = box.Text;
+            await Tap(Key.Y, ctrl: true);
+            Check("tag pills: a comma typed over a selected separator changes nothing and takes no undo step: Ctrl+Y still redoes",
+                same == "A, B, wordx" && sameAnnounced == 0 && box.Text == "A, B, word", $"\"{same}\", text_changed {sameAnnounced} times, then \"{box.Text}\"");
             // A comma the full box has no room for changes nothing, so it takes no undo step (one would clear the redo).
             var full200 = string.Join(", ", Enumerable.Range(1, 28).Select(i => $"tag{i:00}")) + ", word"; // the box's 200
             await Typed(full200);
