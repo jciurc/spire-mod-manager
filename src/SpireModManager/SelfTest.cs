@@ -266,6 +266,7 @@ static partial class SelfTest
             await TestSameIdCopies(menu, screen, content, outDir);
             await TestSameIdBothOn(menu, screen, content, outDir); // both copies ticked: which loads, and the words for it
             await TestTagSuggestions(menu, screen, content, outDir);
+            await TestTagPills(menu, screen, content, outDir);
             await TestHistory(menu, screen, content, outDir);
             TestFallbacks(screen);
 
@@ -10390,6 +10391,259 @@ static partial class SelfTest
         Store.RestoreEdits(before);
         CategoryList.Apply(content);
         ModDetails.Refresh(screen);
+        await Wait(menu, 0.3);
+    }
+
+    // Tag pills (TagPills) in the panel's tags box, with made-up tags (the data is put back after): finished tags drawn
+    // as pills where the box draws its text (a click on one lands in its tag), the word being typed plain, the colours;
+    // a typed comma makes a pill; Backspace and Delete by Jordan's rule (a fresh press next to a pill takes it and its
+    // separator as one undo step, a held key's repeats stop at it); Copy, Cut and Paste of whole tags; a double-click
+    // takes the whole tag; Ctrl+Z takes back a picked suggestion; a long list scrolls, its pills with it; leaving the
+    // box still tidies. Keys and clicks go through Godot's input as a player's do (a held key's repeats are Echo
+    // events), each edit landed at its frame's end before the next; the clipboard is the test's own.
+    static async Task TestTagPills(Node menu, NModdingScreen screen, Control content, string outDir)
+    {
+        if (content.GetChildren().OfType<NModMenuRow>().FirstOrDefault(r => r.Mod?.manifest?.id == "SmmTestUi") is not { } ui)
+        {
+            Results.Add("SKIP tag pills: test mods not installed");
+            return;
+        }
+        var before = Store.EditsJson();
+        try
+        {
+            Store.Batch(() =>
+            {
+                Store.EditMod("SmmTestUi", info => info.Tags = null); // its box showing, not its pills at rest
+                Store.EditMod("SmmPillsA", info => info.Tags = ["Zebra-stripes"]);
+            });
+            CategoryList.Select(screen, ui);
+            await PanelFor(menu, screen, ui);
+            await Wait(menu, 0.5);
+            var box = screen.GetNode<LineEdit>("%ModInfoContainer/SpireModManagerYours/Tags/Box");
+            box.GrabFocus();
+            await Wait(menu, 0.2);
+            if (!box.HasFocus() || !box.IsEditing())
+            {
+                Results.Add($"FAIL tag pills: the tags box didn't take the keyboard (focus {box.HasFocus()}, editing {box.IsEditing()})");
+                return;
+            }
+            TagPills.TestClipboard = "";
+            var cream = new Color(1, 0.964706f, 0.886275f);
+            var inBox = new Rect2(Vector2.Zero, box.Size);
+            string Pills() => string.Join(", ", TagPills.TestPills(box).Select(p => p.Tag));
+            string Say() => $"\"{box.Text}\" caret {box.CaretColumn}, pills: {Pills()}";
+            async Task Typed(string text, int? caret = null)
+            {
+                box.Text = text;
+                box.CaretColumn = caret ?? text.Length;
+                box.EmitSignal(LineEdit.SignalName.TextChanged, text);
+                await Wait(menu, 0.05);
+            }
+            async Task Send(Key key, bool pressed, bool echo = false, bool ctrl = false, char unicode = '\0')
+            {
+                Input.ParseInputEvent(new InputEventKey { Keycode = key, Unicode = unicode, CtrlPressed = ctrl, Pressed = pressed, Echo = echo });
+                await Wait(menu, 0.05);
+            }
+            async Task Tap(Key key, bool ctrl = false, char unicode = '\0')
+            {
+                await Send(key, true, ctrl: ctrl, unicode: unicode);
+                await Send(key, false, ctrl: ctrl, unicode: unicode);
+            }
+            async Task Repeats(Key key, int count) // a held key, after its press
+            {
+                for (var i = 0; i < count; i++)
+                    await Send(key, true, echo: true);
+            }
+            // A click at a point in the box, through the viewport as a player's (works headless).
+            async Task ClickAt(Vector2 local, bool doubleClick = false)
+            {
+                var at = ViewportPoint(box, box.GetGlobalTransform() * local);
+                foreach (var pressed in new[] { true, false })
+                {
+                    box.GetViewport().PushInput(new InputEventMouseButton
+                        { ButtonIndex = MouseButton.Left, Pressed = pressed, DoubleClick = doubleClick && pressed, Position = at, GlobalPosition = at }, true);
+                    await Wait(menu, 0.05);
+                }
+            }
+
+            await Typed("co-op, Favorites, wor");
+            var drawn = TagPills.TestPills(box);
+            Check("tag pills: finished tags are pills, left to right inside the box; the word being typed isn't one",
+                Pills() == "co-op, Favorites" && drawn[0].Rect.End.X < drawn[1].Rect.Position.X && drawn.All(p => inBox.Encloses(p.Rect)),
+                $"{Say()}: {string.Join(", ", drawn.Select(p => p.Rect))} in {inBox}");
+            var ink = TagPills.TestInk(box);
+            (string, Color)[] inks = [("co-op", Tags.CustomColor), (", ", new Color(cream, 0.3f)), ("Favorites", Tags.CustomColor), (", ", new Color(cream, 0.3f)), ("wor", cream)];
+            var ownInk = box.GetThemeColor("font_color");
+            box.Select(7, 16);
+            await Wait(menu, 0.05);
+            var unselected = string.Concat(TagPills.TestInk(box).Select(r => r.Text));
+            box.Deselect();
+            Check("tag pills: tag text in the tag colour, commas faint, the word being typed cream, over the box's own text (clear "
+                + "while it's typed in); a selected tag is left to the box", ink.Count == inks.Length
+                && ink.Zip(inks).All(r => r.First.Text == r.Second.Item1 && r.First.Color.IsEqualApprox(r.Second.Item2)) && ownInk.A == 0 && unselected == "co-op, , wor",
+                $"{string.Join(" | ", ink.Select(r => $"\"{r.Text}\" {r.Color}"))}; the box's own {ownInk}; with Favorites selected: \"{unselected}\"");
+
+            // Where the pills are drawn, by where the box puts the caret for a click: 1 px into each end of a pill's tag
+            // lands on that end (more than about half a letter of drift would miss it), its middle inside it.
+            await Typed("co-op, Favorites, Story-heavy, wor");
+            var missed = new List<string>();
+            foreach (var (tag, rect) in TagPills.TestPills(box))
+            {
+                var start = box.Text.IndexOf(tag, StringComparison.Ordinal);
+                var middle = rect.GetCenter().Y;
+                await ClickAt(new Vector2(rect.Position.X + TagPills.PadLeft + 1, middle));
+                var left = box.CaretColumn;
+                await ClickAt(new Vector2(rect.End.X - TagPills.PadRight - 1, middle));
+                var right = box.CaretColumn;
+                await ClickAt(rect.GetCenter());
+                if (left != start || right != start + tag.Length || box.CaretColumn <= start || box.CaretColumn >= start + tag.Length)
+                    missed.Add($"{tag} ({start}..{start + tag.Length}) at {rect}: {left}, {right}, middle {box.CaretColumn}");
+            }
+            Check("tag pills: drawn where the box draws the text: a click at either end of a pill's tag puts the caret there, in its middle inside it",
+                TagPills.TestPills(box).Count == 3 && missed.Count == 0, missed.Count > 0 ? string.Join("; ", missed) : Say());
+            if (TagPills.TestPills(box) is [_, (_, var favorites), ..])
+            {
+                await ClickAt(favorites.GetCenter());
+                await Capture(screen, outDir, "19c-tag-pills-caret"); // the caret between two of our letters
+            }
+            if (TagPills.TestPills(box) is [.., (_, var storyHeavy)])
+                await ClickAt(new Vector2(storyHeavy.Position.X + storyHeavy.Size.X / 4, storyHeavy.GetCenter().Y), doubleClick: true); // on "Story"
+            Check("tag pills: a double-click selects the whole tag", box.GetSelectedText() == "Story-heavy", $"\"{box.GetSelectedText()}\" selected");
+            await WaitReal(menu, 0.7); // not a triple-click with the next
+            box.Deselect();
+
+            await Typed("co-op, Favorites, wor");
+            await Tap(Key.Comma, unicode: ',');
+            var comma = (box.Text, Pills());
+            var gaps = TagPills.TestPills(box).Zip(TagPills.TestPills(box).Skip(1), (a, b) => b.Rect.Position.X - a.Rect.End.X).ToList();
+            await Typed("co-op, Fast");
+            await Tap(Key.Comma, unicode: '，');
+            Check("tag pills: a typed comma, or a full-width one, makes a pill: \", \" after its tag, a gap before the next",
+                comma == ("co-op, Favorites, wor, ", "co-op, Favorites, wor") && gaps.Count == 2 && gaps.All(g => g >= 2) && box.Text == "co-op, Fast, ",
+                $"{comma}, gaps {string.Join(", ", gaps.Select(g => $"{g:0.0}"))}; then \"{box.Text}\"");
+
+            // Backspace: held from the end of the word being typed, it takes the word and stops at the pill; a fresh press
+            // there takes the pill and its ", " (one undo step), and holding on stops at the next.
+            await Typed("co-op, Favorites, wor");
+            await Send(Key.Backspace, true);
+            await Repeats(Key.Backspace, 6);
+            var held = (box.Text, box.CaretColumn);
+            await Send(Key.Backspace, false);
+            await Send(Key.Backspace, true);
+            var fresh = box.Text;
+            await Repeats(Key.Backspace, 3);
+            var heldOn = box.Text;
+            await Send(Key.Backspace, false);
+            await Tap(Key.Z, ctrl: true);
+            Check("tag pills: a held Backspace stops at the first pill (the word being typed goes, the pill stays)", held == ("co-op, Favorites, ", 18), $"{held}");
+            Check("tag pills: a fresh Backspace there takes the whole pill and its separator, and one Ctrl+Z puts it back",
+                fresh == "co-op, " && box.Text == "co-op, Favorites, ", $"\"{fresh}\", then \"{box.Text}\"");
+            Check("tag pills: Backspace held on after that press stops at the next pill", heldOn == "co-op, ", heldOn);
+            // Delete, its mirror: held from inside a tag, it takes the letters after the caret and stops at the separator
+            // before the next pill; a fresh press there takes that separator and pill, and holding on stops at the next.
+            await Typed("co-op, Favorites, Story-heavy, Fast, wor", caret: 10); // after "Fav"
+            await Send(Key.Delete, true);
+            await Repeats(Key.Delete, 8);
+            var heldDelete = (box.Text, box.CaretColumn);
+            await Send(Key.Delete, false);
+            await Send(Key.Delete, true);
+            var freshDelete = (box.Text, box.CaretColumn);
+            await Repeats(Key.Delete, 3);
+            var heldOnDelete = box.Text;
+            await Send(Key.Delete, false);
+            await Tap(Key.Z, ctrl: true);
+            Check("tag pills: a held Delete stops at the first pill (the tag's letters after the caret go, the next pill stays)",
+                heldDelete == ("co-op, Fav, Story-heavy, Fast, wor", 10), $"{heldDelete}");
+            Check("tag pills: a fresh Delete there takes the whole pill and its separator, and one Ctrl+Z puts it back",
+                freshDelete == ("co-op, Fav, Fast, wor", 10) && box.Text == "co-op, Fav, Story-heavy, Fast, wor", $"{freshDelete}, then \"{box.Text}\"");
+            Check("tag pills: Delete held on after that press stops at the next pill", heldOnDelete == "co-op, Fav, Fast, wor", heldOnDelete);
+            await Typed("co-op, Favorites, ");
+            await Tap(Key.Backspace, ctrl: true);
+            var wordBack = box.Text;
+            await Typed("co-op, Favorites, wor", caret: 5);
+            await Tap(Key.Delete, ctrl: true);
+            Check("tag pills: Ctrl+Backspace and Ctrl+Delete next to a pill take it whole too", wordBack == "co-op, " && box.Text == "co-op, wor",
+                $"\"{wordBack}\", \"{box.Text}\"");
+
+            // Copy, Cut and Paste of whole tags (part of a tag is the box's own).
+            await Typed("co-op, Favorites, wor");
+            box.Select(0, 5);
+            await Tap(Key.C, ctrl: true);
+            var one = TagPills.TestClipboard;
+            box.Select(0, 16);
+            await Tap(Key.C, ctrl: true);
+            var two = TagPills.TestClipboard;
+            await Typed("co-op, Favorites, ");
+            box.Select(7, 16);
+            await Tap(Key.C, ctrl: true);
+            Check("tag pills: Ctrl+C on whole tags copies them with a comma after when another value follows, the last one without; "
+                + "the box's own drag and right-click menu are off (their copies wouldn't keep to that)",
+                one == "co-op," && two == "co-op, Favorites," && TagPills.TestClipboard == "Favorites" && !box.DragAndDropSelectionEnabled && !box.ContextMenuEnabled,
+                $"\"{one}\", \"{two}\", \"{TagPills.TestClipboard}\"; drag {box.DragAndDropSelectionEnabled}, menu {box.ContextMenuEnabled}");
+            await Typed("co-op, Favorites, wor");
+            box.Select(7, 16);
+            await Tap(Key.X, ctrl: true);
+            var cut = (box.Text, TagPills.TestClipboard);
+            await Tap(Key.Z, ctrl: true);
+            Check("tag pills: Ctrl+X takes the pill and its separator; Ctrl+Z puts it back", cut == ("co-op, wor", "Favorites,") && box.Text == "co-op, Favorites, wor",
+                $"{cut}, then \"{box.Text}\"");
+            TagPills.TestClipboard = "x, y\nz";
+            await Typed("");
+            await Tap(Key.V, ctrl: true);
+            var pasted = (box.Text, Pills());
+            TagPills.TestClipboard = "Co-op, Fast";
+            await Typed("co-op, ");
+            await Tap(Key.V, ctrl: true);
+            var skipped = box.Text;
+            await Tap(Key.Z, ctrl: true);
+            var unpasted = box.Text;
+            var full = string.Join(", ", Enumerable.Range(1, 23).Select(i => $"tag{i:00}")) + ", "; // 161 of the box's 200
+            TagPills.TestClipboard = "longer-tag-one, longer-tag-two, longer-tag-three";
+            await Typed(full);
+            await Tap(Key.V, ctrl: true);
+            Check("tag pills: pasting a list makes pills: the tags the box hasn't got, as many whole ones as fit, one undo step",
+                pasted == ("x, y, z, ", "x, y, z") && skipped == "co-op, Fast, " && unpasted == "co-op, " && box.Text == full + "longer-tag-one, longer-tag-two, ",
+                $"{pasted}, \"{skipped}\", \"{unpasted}\", then {box.Text.Length} characters: ...{box.Text[Math.Max(0, box.Text.Length - 40)..]}");
+
+            // A picked suggestion is one undo step (setting the text would have wiped the box's undo).
+            await Typed("zebr");
+            await Tap(Key.Down);
+            var lit = TagSuggestions.Highlighted;
+            await Tap(Key.Enter);
+            var picked = box.Text;
+            await Tap(Key.Z, ctrl: true);
+            var unpicked = box.Text;
+            await Tap(Key.Y, ctrl: true);
+            Check("tag pills: Ctrl+Z takes back a picked suggestion, Ctrl+Y brings it back", lit == "Zebra-stripes" && picked == "Zebra-stripes, "
+                && unpicked == "zebr" && box.Text == "Zebra-stripes, " && box.HasFocus(), $"lit {lit}: \"{picked}\", \"{unpicked}\", \"{box.Text}\"");
+
+            // A long list: scrolled to the caret at its end, the first pills out of sight; Home brings them back.
+            await Typed(string.Join(", ", Enumerable.Range(1, 20).Select(i => $"tag-{i:00}")) + ", wor");
+            var atEnd = TagPills.TestPills(box);
+            var scrolled = box.GetScrollOffset();
+            await Capture(screen, outDir, "19d-tag-pills-scrolled");
+            await Tap(Key.Home);
+            var atStart = TagPills.TestPills(box);
+            Check("tag pills: a long list scrolls, its pills with it, none drawn outside the box", scrolled < 0 && box.GetScrollOffset() == 0
+                && atEnd.LastOrDefault().Tag == "tag-20" && atEnd.All(p => p.Tag != "tag-01") && atStart.FirstOrDefault().Tag == "tag-01" && atStart.All(p => p.Tag != "tag-20")
+                && atEnd.Concat(atStart).All(p => inBox.Encloses(p.Rect)),
+                $"scrolled {scrolled}: {string.Join(", ", atEnd.Select(p => $"{p.Tag} {p.Rect}"))}; at the start: {string.Join(", ", atStart.Select(p => $"{p.Tag} {p.Rect}"))} in {inBox}");
+
+            await Typed("co-op, Favorites, , co-op, wor");
+            await Tap(Key.Comma, unicode: ',');
+            box.ReleaseFocus();
+            await Wait(menu, 0.3);
+            Check("tag pills: leaving the box still saves the tags tidied, its own text cream again", Store.InfoFor("SmmTestUi")?.Tags?.SequenceEqual(["co-op", "Favorites", "wor"]) == true
+                && box.Text == "co-op, Favorites, wor" && box.GetThemeColor("font_color").IsEqualApprox(cream),
+                $"\"{box.Text}\": {string.Join(", ", Store.InfoFor("SmmTestUi")?.Tags ?? [])}; {box.GetThemeColor("font_color")}");
+        }
+        finally
+        {
+            TagPills.TestClipboard = null;
+            Store.RestoreEdits(before);
+            CategoryList.Apply(content);
+            ModDetails.Refresh(screen);
+        }
         await Wait(menu, 0.3);
     }
 

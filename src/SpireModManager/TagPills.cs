@@ -14,7 +14,7 @@ namespace SpireModManager;
 static class TagPills
 {
     // px of a pill either side of its tag: ", " leaves about 8 between tags at 18, and its comma sits at the left of that
-    const float PadLeft = 3, PadRight = 1;
+    public const float PadLeft = 3, PadRight = 1;
     const float Faint = 0.3f; // the commas' alpha
     static readonly StringName CopyAction = "ui_copy", CutAction = "ui_cut", PasteAction = "ui_paste", BackAction = "ui_text_backspace",
         BackWordAction = "ui_text_backspace_word", DeleteAction = "ui_text_delete", DeleteWordAction = "ui_text_delete_word";
@@ -50,6 +50,24 @@ static class TagPills
         box.SetMeta(PillsMeta, new Godot.Collections.Array(pills.SelectMany(p => new Variant[] { p.Tag, p.Rect })));
         box.SetMeta(InkMeta, new Godot.Collections.Array(ink.SelectMany(r => new Variant[] { r.Text, r.Color })));
     }
+
+    // Self-test: the clipboard Copy, Cut and Paste use while it's set (a headless run has none, and a windowed run's is
+    // your desktop's). What LineEdit copies itself still goes to the real one.
+    public static string? TestClipboard { get; set; }
+
+    static string Clipboard
+    {
+        get => TestClipboard ?? DisplayServer.ClipboardGet();
+        set
+        {
+            if (TestClipboard != null)
+                TestClipboard = value;
+            else
+                DisplayServer.ClipboardSet(value);
+        }
+    }
+#else
+    static string Clipboard { get => DisplayServer.ClipboardGet(); set => DisplayServer.ClipboardSet(value); }
 #endif
 
     // Whether Paint draws the box's text: while it has focus, unless drawing failed or the box is composing text Paint
@@ -269,7 +287,7 @@ static class TagPills
             return false; // part of a tag: native
         if (!key.Pressed)
             return true;
-        DisplayServer.ClipboardSet(copied);
+        Clipboard = copied;
         if (key.IsAction(CutAction, true))
         {
             var (from, to) = CutRange(box.Text, box.GetSelectionFromColumn(), box.GetSelectionToColumn());
@@ -286,7 +304,7 @@ static class TagPills
         var (from, to) = Selected(box);
         var rest = box.Text[..from] + box.Text[to..];
         var room = box.MaxLength > 0 ? box.MaxLength - rest.Length : int.MaxValue;
-        if (PasteText(rest, from, DisplayServer.ClipboardGet(), room) is not { } paste)
+        if (PasteText(rest, from, Clipboard, room) is not { } paste)
             return false;
         if (paste.Length > 0)
             Replace(box, from, to, paste);
@@ -366,17 +384,16 @@ static class TagPills
         return pill.Finished && text.IndexOf(',', pill.End) == comma ? (pill.Start, SeparatorEnd(text, comma)) : null;
     }
 
-    // What a Delete at the caret takes: the pill after it and its separator, when the caret is at the start or past a
-    // comma and only spaces lie between it and the pill. Null: native.
+    // What a Delete at the caret takes, PillBefore's mirror: the pill after it and the separator before that pill, when
+    // only spaces lie between the caret and the separator's comma. Null: native, so a held Delete from inside a tag
+    // takes its letters and stops at its comma, as a held Backspace does from inside one.
     static (int From, int To)? PillAfter(string text, int caret)
     {
-        var head = text[..caret].TrimEnd();
-        if (head.Length > 0 && head[^1] != ',')
+        var comma = text.Length - text[caret..].TrimStart().Length;
+        if (comma == text.Length || text[comma] != ',')
             return null;
-        var pill = Segments(text).FirstOrDefault(t => t.Start >= caret);
-        if (!pill.Finished || text[caret..pill.Start].Trim().Length > 0)
-            return null;
-        return (pill.Start, SeparatorEnd(text, text.IndexOf(',', pill.End)));
+        var pill = Segments(text).FirstOrDefault(t => t.Start > comma);
+        return pill.Finished && text.LastIndexOf(',', pill.Start - 1) == comma ? (text[..comma].TrimEnd().Length, pill.End) : null;
     }
 
     // Past a comma and the spaces after it.
