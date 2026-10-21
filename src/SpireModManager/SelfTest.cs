@@ -9238,6 +9238,22 @@ static partial class SelfTest
             undone && redone && reverted && revertUndone && Ticked(rowA) && Ticked(rowB) && Picked() == "l:SmmTestTwinB" && CopiesOff().SequenceEqual(bothOff),
             $"undo {undone}, redo {redone}, revert {reverted}, its undo {revertUndone}; {Say()}");
 
+        // The copy that loads switched with no box changed (as a profile naming the other copy does): Changes says which
+        // loads instead, and the main menu's note counts it. Put back.
+        Dependencies.Write([(a, true)], pick: [a]);
+        Profiles.RefreshTickboxes(screen);
+        await Wait(menu, 0.3);
+        var switchLine = Menus.Format("SPIRE_MOD_MANAGER.CHANGE_COPY_SWITCH", ("mod", a.manifest?.name ?? ""), ("to", Copies.Named(a)), ("from", Copies.Named(b)));
+        var (switchChanges, pendingNote, switchedPending) = (HistoryBar.Describe(), MenuButton.PendingText(), ModEntry.HasPendingChanges());
+        Dependencies.Write([(b, true)], pick: [b]);
+        Profiles.RefreshTickboxes(screen);
+        await Wait(menu, 0.3);
+        Check("... the copy that loads switched with no box changed (a profile naming the other copy): Changes says which loads instead, the main "
+            + "menu's note counts it, pending; switched back, none of it",
+            switchChanges.Contains(switchLine) && pendingNote.StartsWith("1 ") && switchedPending && Picked() == "l:SmmTestTwinB" && Ticked(rowA) && Ticked(rowB)
+            && !HistoryBar.Describe().Contains(switchLine) && !ModEntry.HasPendingChanges(),
+            $"note {pendingNote}; changes {string.Join(" | ", switchChanges)}; then {Say()}");
+
         // Unticking the copy that doesn't load: a change, but what loads is the same, so nothing is pending.
         await Tick(rowA, false);
         var pendingLine = screen.GetNode<Control>("%PendingChangesLabel").Visible;

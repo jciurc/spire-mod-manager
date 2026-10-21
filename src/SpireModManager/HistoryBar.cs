@@ -161,6 +161,9 @@ static class HistoryBar
     // Mods turned on, off, and moved in the load order, compared with launch.
     public static (int On, int Off, int Moved) Counts() => Counts(History.Loaded is { } loaded ? ModChanges(loaded) : []);
 
+    // Mods where another copy loads with no box changed (a profile naming the other copy), since launch.
+    public static int CopySwitchCount() => History.Loaded is { } loaded ? CopySwitches(loaded, ModChanges(loaded)).Count : 0;
+
     static (int On, int Off, int Moved) Counts(List<(Mod Mod, bool Enabled)> changed) =>
         (changed.Count(c => c.Enabled), changed.Count(c => !c.Enabled), Moves().Count);
 

@@ -419,6 +419,8 @@ static class MenuPanel
             line.AddChild(new Control { CustomMinimumSize = new Vector2(16, 0), MouseFilter = Control.MouseFilterEnum.Ignore });
             line.AddChild(dim);
         }
+        if (item.Tip is { Length: > 0 } tip)
+            Hover.Tip(row, tip); // a dimmed row's too: it says why
         if (item.Disabled)
             return row;
 

@@ -210,6 +210,13 @@ static partial class SelfTest
             Check("menus: in columns, a heading never ends one (it goes on with the rows it heads)", grouped != null && ends.Count >= 1
                 && ends.All(n => n.IsInGroup(MenuPanel.ItemGroup)) && MenuPanel.Rows(grouped).Count == 56, $"{ends.Count + 1} columns");
             MenuPanel.Close();
+            // A row's tip (SMM's own menus): its card on hover, a dimmed row's too (why it's dimmed).
+            var tipped = MenuPanel.Show(owner, () => [new MenuItem("Tipped", () => { }, Disabled: true, Tip: "Why it's dimmed")]);
+            await Wait(menu, 0.1);
+            var tipRow = tipped?.FindChildren("*", "PanelContainer", true, false).OfType<Control>().FirstOrDefault(n => n.IsInGroup(MenuPanel.ItemGroup));
+            var tipCard = tipRow == null ? "" : await HoverCard(menu, tipRow, Hover.TipName);
+            Check("menus: a row's tip shows on hover, a dimmed row's too", tipCard.Contains("Why it's dimmed"), tipCard);
+            MenuPanel.Close();
 
             var dropped = PopupMenus.Show(owner, Entries(), new MenuOptions { From = new Rect2(40, 40, 100, 30) });
             await Wait(menu, 0.1);
