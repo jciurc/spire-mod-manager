@@ -9710,6 +9710,19 @@ static partial class SelfTest
             var failedLine = ModDetails.CopyLine(b, false)?.Text;
             Check("... the picked copy failed for its own reasons: its panel says the other copy is installed, and how to load it instead",
                 failedLine == Draft(FailedOther, ("other", Named(a))), failedLine ?? "none");
+            // The other copy ticked too: still how to load it, not "this copy is the one that loads" (it failed).
+            BothTickedQuietly(true);
+            string? failedBoth;
+            try
+            {
+                failedBoth = ModDetails.CopyLine(b, false)?.Text;
+            }
+            finally
+            {
+                BothTickedQuietly(false);
+            }
+            Check("... failed for its own reasons with the other copy ticked too: still how to load that one, not that this copy loads",
+                failedBoth == Draft(FailedOther, ("other", Named(a))), failedBoth ?? "none");
         }
         finally
         {

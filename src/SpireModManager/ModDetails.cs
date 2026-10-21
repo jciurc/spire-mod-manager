@@ -468,9 +468,10 @@ static class ModDetails
     // - the pick couldn't be applied this launch (SameIdLoad's self-check or canary): it says so (orange), on every copy;
     // - ticked while another copy loads after a relaunch: that one, and why (orange; the status says it won't load);
     // - ticked, not loaded now, and loading after a relaunch in place of the copy loaded now: so (orange);
+    // - ticked and failed for its own reasons: how to load another copy instead (dim, after the red), another copy
+    //   ticked or not (it isn't "the one that loads" when it failed);
     // - ticked with another copy ticked too: this one is the copy that loads (dim);
-    // - off while another copy is on: the copy that loads (dim);
-    // - ticked and failed for its own reasons: how to load another copy instead (dim, after the red).
+    // - off while another copy is on: the copy that loads (dim).
     // This mod's copies: SelfLine.
     public static (string Text, string Color)? CopyLine(Mod mod, bool links)
     {
@@ -493,12 +494,12 @@ static class ModDetails
         if (ticked && mod.state is not (ModLoadState.Loaded or ModLoadState.Failed) && Copies.Loads(mod)
             && others.FirstOrDefault(o => o.state == ModLoadState.Loaded) is { } loaded)
             return (Line("SPIRE_MOD_MANAGER.COPY_LOADS_AFTER", loaded), Pending);
+        if (ticked && mod.state == ModLoadState.Failed && mod.errors?.Any(e => e.LocEntryKey == "MOD_ERROR.DUPLICATE_ID") != true)
+            return (Line("SPIRE_MOD_MANAGER.COPY_FAILED_OTHER", others.FirstOrDefault(Copies.Ticked) ?? others[0]), Disabled);
         if (others.FirstOrDefault(Copies.Ticked) is { } enabled)
             return ticked ? (Line("SPIRE_MOD_MANAGER.COPY_LOADS_ALSO", enabled), Disabled)
                 // The one of them that loads (a copy that's off loads only through a switch it shares: then another).
                 : (Line("SPIRE_MOD_MANAGER.COPY_OTHER_ENABLED", Copies.Loading(id) is { } loads && others.Contains(loads) && Copies.Ticked(loads) ? loads : enabled), Disabled);
-        if (ticked && mod.state == ModLoadState.Failed && mod.errors?.Any(e => e.LocEntryKey == "MOD_ERROR.DUPLICATE_ID") != true)
-            return (Line("SPIRE_MOD_MANAGER.COPY_FAILED_OTHER", others[0]), Disabled);
         return null;
     }
 
