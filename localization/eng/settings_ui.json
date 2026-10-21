@@ -67,6 +67,7 @@
   "SPIRE_MOD_MANAGER.ENABLE_SELF": "Enable now",
   "SPIRE_MOD_MANAGER.ENABLE_SELF_TIP": "Keep Spire Mod Manager (this mod) enabled",
   "SPIRE_MOD_MANAGER.DISMISS_MANAGERS": "Dismiss",
+  "SPIRE_MOD_MANAGER.SHARED_DISMISS": "Dismiss",
   "SPIRE_MOD_MANAGER.DISMISS_MANAGERS_TIP": "Dismiss the warning. Will reappear if the problem is retriggered.",
   "SPIRE_MOD_MANAGER.BANNER_CARD_TITLE": "Affected mods",
   "SPIRE_MOD_MANAGER.BANNER_NEEDS": "{mod}: requires {needs}",
