@@ -2737,7 +2737,7 @@ static class SelfTest
         await RealClick(menu, picker);
         var list = MenuPanel.Current;
         Check("the picker opens the profile list, with details, then Share profile and Import profile", list != null
-            && MenuPanel.Labels(list).SequenceEqual(Store.Data.Profiles.Select(p => p.Name).Concat(["Export profile", "Import profile"])),
+            && MenuPanel.Labels(list).SequenceEqual(Store.Data.Profiles.Select(p => p.Name).Concat(["Import profile", "Export profile"])),
             list == null ? "no list" : string.Join(", ", MenuPanel.Labels(list)));
         var dropped = MenuMisplaced(list, picker.GetGlobalRect().GrowIndividual(0, 4, 0, 4), up: false, left: false);
         Check("the profile list drops right under the picker (4 below it), left edges together", dropped == null, dropped ?? "");
@@ -3401,6 +3401,8 @@ static class SelfTest
             bothOn.BothCopies is [{ Id: "SmmTestLib" }] && bothOff.BothCopies.Count == 0
             && bothPreview.Contains(Menus.Text("SPIRE_MOD_MANAGER.IMPORT_BOTH_COPIES") + "\n  •  [b]Test Framework[/b]"), bothPreview);
         var (wantOn, wantOff) = ((IsOn("SmmTestLib") ? 0 : 1), (IsOn("SmmTestUi") ? 1 : 0));
+        // "1 mod sorted into categories", "3 mods sorted into categories": a count of mods, said as one.
+        static string SortedLine(int count) => count == 1 ? "1 mod sorted into categories" : $"{count} mods sorted into categories";
         var others = installed.Count(m => m.manifest?.id is { } id && id != ModEntry.ModId && id != Bmm.ModId && id != "SmmTestLib" && id != "SmmTestUi");
         await Choose("Import profile");
         await Paste(bmm);
@@ -3413,11 +3415,11 @@ static class SelfTest
         Check("a Better Mod Menu list: what it holds (2 enabled, 2 disabled), then what it changes compared with now, and nothing about the rest",
             Status() == "" && plan.On == wantOn && plan.Off == wantOff && plan.Same == 2 - wantOn - wantOff && plan.Unlisted == others
             && Preview().Contains("Contains 2 enabled mods and 2 disabled mods") && Preview().Contains("Changes compared to the current profile:\n"
-                + (wantOn == 0 && wantOff == 0 ? "" : Changes(wantOn, wantOff) + "\n") + "  •  Mods sorted into categories ")
+                + (wantOn == 0 && wantOff == 0 ? "" : Changes(wantOn, wantOff) + "\n") + "  •  " + SortedLine(plan.Extras.Sorted.Count))
             && !Preview().Contains("already set") && !Preview().Contains("aren't in the list") && !Preview().Contains("isn't in the list"),
             $"on {plan.On}/{wantOn}, off {plan.Off}/{wantOff}, same {plan.Same}, unlisted {plan.Unlisted}/{others}: {Preview()}");
         Check("the preview counts what else the list does: mods sorted into categories, new categories, aliases and notes added; no None then",
-            Preview().Contains($"Mods sorted into categories {plan.Extras.Sorted.Count}\n")
+            Preview().Contains(SortedLine(plan.Extras.Sorted.Count) + "\n")
             && (plan.Extras.NewCategories.Count == 0 ? !Preview().Contains("New categories") : Preview().Contains($"New categories {plan.Extras.NewCategories.Count}\n"))
             && Preview().Contains("Aliases and notes added 2\n") && !Preview().Contains("  •  None"), Preview());
         var onlyOn = ProfileShare.PreviewFor(ProfileCsv.Read("Mod Id,Enabled\nSmmTestLib,\nSmmTestUi,TRUE\n").Mods, "Only on");
