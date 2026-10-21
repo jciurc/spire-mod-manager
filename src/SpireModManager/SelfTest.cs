@@ -5501,6 +5501,10 @@ static partial class SelfTest
             && Hover.TipOf(box) == SelfLockedTip && r.GetNodeOrNull<Control>("SpireModManagerSelfLock") is { Visible: true };
         var locked = ourRows.Count == 2 && ourRows.All(Locked);
         var lockedSay = string.Join(" | ", ourRows.Select(Box));
+        if (ourRows.FirstOrDefault() is { } shownRow)
+            CategoryList.ScrollTo(content, shownRow); // our rows in view for the screenshot
+        await Wait(menu, 0.2);
+        await Capture(screen, outDir, "2n-self-twice-locked");
         var stepsTwice = History.Steps(History.Track.List);
         var keptOn = new List<bool>();
         foreach (var ourRow in ourRows)
