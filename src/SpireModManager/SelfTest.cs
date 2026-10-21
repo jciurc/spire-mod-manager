@@ -9523,8 +9523,8 @@ static partial class SelfTest
             $"undo {undone}, redo {redone}, revert {reverted}, its undo {revertUndone}; {Say()}");
 
         // The copy that loads switched with no box changed (as a profile naming the other copy does): Changes says which
-        // loads instead, and the main menu's note counts it. B, which nobody enabled after A, says A loads as only one copy
-        // from a source does (not that A was enabled last). Put back.
+        // loads instead, and the main menu's note counts it. B says A loads as only one copy from a source does (not that A
+        // was enabled last: nobody enabled it, the profile's copy is picked). Put back.
         Dependencies.Write([(a, true)], pick: [a]);
         Profiles.RefreshTickboxes(screen);
         await Wait(menu, 0.3);
