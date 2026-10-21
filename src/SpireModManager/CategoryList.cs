@@ -207,16 +207,21 @@ static class CategoryList
             {
                 padlock = new Control { Name = SelfLockName, MouseFilter = Control.MouseFilterEnum.Ignore };
                 row.AddChild(padlock);
-                // On the box's lower-right corner as drawn (scaled about its centre), a little inside it.
-                Icons.AddPadlock(padlock, new Vector2(0.5f, 0.5f) + tickbox.Scale / 2, new Vector2(-4, -5));
+                Icons.AddPadlock(padlock, Vector2.Zero, new Vector2(-4, -5)); // a little inside the corner
+                var (box, shown) = (tickbox, padlock);
+                box.ItemRectChanged += () => PlaceLock(shown, box); // it follows the box (RowTitles scales a new row's later)
             }
-            // Over the box's own place (RowTitles moves it a little in our views).
-            (padlock.AnchorLeft, padlock.AnchorTop, padlock.AnchorRight, padlock.AnchorBottom) =
-                (tickbox.AnchorLeft, tickbox.AnchorTop, tickbox.AnchorRight, tickbox.AnchorBottom);
-            (padlock.OffsetLeft, padlock.OffsetTop, padlock.OffsetRight, padlock.OffsetBottom) =
-                (tickbox.OffsetLeft, tickbox.OffsetTop, tickbox.OffsetRight, tickbox.OffsetBottom);
+            PlaceLock(padlock, tickbox);
             padlock.Visible = true;
         }
+    }
+
+    // On the box's lower-right corner as drawn: scaled about its pivot (RowTitles sets both, and moves it a little in our
+    // views), whatever they are when the padlock is placed.
+    static void PlaceLock(Control padlock, Control box)
+    {
+        if (GodotObject.IsInstanceValid(padlock) && GodotObject.IsInstanceValid(box))
+            padlock.Position = box.Position + box.PivotOffset + (box.Size - box.PivotOffset) * box.Scale;
     }
 
     static void Label(Control? button, string key)
