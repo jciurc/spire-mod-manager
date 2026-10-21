@@ -16,10 +16,10 @@ and `PublicAPI.Unshipped.txt` (not yet released).
 | `Palette` | SMM's colours: Cream, Gold, Navy, DeepNavy, Warning, Problem. |
 | `Fonts` | Kreon regular and bold, or the language's font; `Style` sets a control's font, size and colour. |
 | `GameResources` | `Load<T>`: a game resource, or null (logged once) if it isn't there. |
-| `Mods` | `Version` of an installed mod; `Details`, what the player keeps about it (alias, notes, tags, category). |
+| `Mods` | `Version` of an installed mod; `Details`, what the player keeps about it (alias, notes, tags, category); `TestDetails`, a stand-in for those in a self-test (never saved). |
 | `PopupMenus` | SMM's right-click menu (`MenuEntry`, with an optional icon; `MenuOptions`): one open at a time across mods, Escape closes it, the screen's hotkeys wait, and one taller than the screen goes into columns. `Rows`, `Headings` and `Press` are for self-tests. |
 | `Banners` | SMM's banner strip (`BannerOptions`, `BannerKind`), with an optional Dismiss button at its end, for the caller to place: its text wraps at the width it's given. |
-| `ModCards` | SMM's card for a mod, shown on hover over a control (`Watch`) or a link (`WatchLinks`); `Text` is for self-tests. |
+| `ModCards` | SMM's card for a mod, shown on hover over a control (`Watch`) or a link (`WatchLinks`); `Text`, `Show` and `Close` are for self-tests (`Show` opens a watched card without the mouse). |
 
 ## Rules for changing it
 

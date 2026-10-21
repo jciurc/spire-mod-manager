@@ -12,6 +12,15 @@ public static class Mods
         var (alias, notes, tags, category) = SharedCards.Details(modId);
         return new ModNotes { Alias = alias, Notes = notes, Tags = tags, Category = category };
     });
+
+    /// <summary>For self-tests: while notes is set, Details(modId) and the mod's card (ModCards) read it in place of what the player keeps (trimmed, blanks as none, tags once each; the card shows its category, tags and notes, never the alias). Null clears it. Nothing is saved, and SMM's own page and search keep the player's; it's gone when the game closes.</summary>
+    public static void TestDetails(string modId, ModNotes? notes) => ApiGuard.Run("Mods.TestDetails", () =>
+    {
+        if (notes == null)
+            SharedCards.NoStandIn(modId);
+        else
+            SharedCards.StandIn(modId, notes.Alias, notes.Notes, notes.Tags, notes.Category);
+    });
 }
 
 /// <summary>What the player keeps about a mod in SMM.</summary>

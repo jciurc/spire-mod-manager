@@ -49,6 +49,9 @@ static partial class SelfTest
             && Method<Action<Control, string>>("ModCards", "Watch", typeof(Control), typeof(string)) != null
             && Method<Action<RichTextLabel, Func<string, string?>>>("ModCards", "WatchLinks", typeof(RichTextLabel), typeof(Func<string, string?>)) != null
             && Method<Func<string, string?>>("ModCards", "Text", typeof(string)) != null);
+        Check("API: a self-test's hooks bind too (ModCards.Show and Close, Mods.TestDetails)",
+            Method<Func<Control, bool>>("ModCards", "Show", typeof(Control)) != null && Method<Func<bool>>("ModCards", "Close") != null
+            && Method<Action<string, ModNotes?>>("Mods", "TestDetails", typeof(string), typeof(ModNotes)) != null);
         // Mod Doctor's dev self-test opens one of our menus by reflection: Show(owner, entries), a heading, and an entry
         // made with the parameterless constructor and its Label set through the init setter.
         var entryType = assembly.GetType("SpireModManager.Api.MenuEntry");
@@ -348,6 +351,31 @@ static partial class SelfTest
             if (info != null)
                 info.Tags = keptTags;
         }
+        // A self-test's stand-in for a mod's details: Details and its card read it, nothing is saved, and null clears it.
+        var libInfo = Store.InfoFor(ModEntry.CopyOf("SmmTestLib"));
+        var (savedAlias, savedNotes) = (libInfo?.Alias, libInfo?.Notes);
+        var before = Mods.Details("SmmTestLib");
+        ModNotes standIn;
+        string standCard;
+        try
+        {
+            Mods.TestDetails("SmmTestLib", new ModNotes { Alias = " Stand-in Lib ", Notes = "A stand-in note", Tags = ["Alpha", "alpha", " ", "Beta"], Category = "Stand-ins" });
+            standIn = Mods.Details("SmmTestLib");
+            standCard = ModCards.Text("SmmTestLib") ?? "";
+        }
+        finally
+        {
+            Mods.TestDetails("SmmTestLib", null);
+        }
+        var after = Mods.Details("SmmTestLib");
+        var kept = Store.InfoFor(ModEntry.CopyOf("SmmTestLib"));
+        Check("API mods: TestDetails stands in for a mod's details (Details and its card, never the alias there), saves nothing, and null clears it",
+            standIn is { Alias: "Stand-in Lib", Notes: "A stand-in note", Category: "Stand-ins" } && standIn.Tags.SequenceEqual(["Alpha", "Beta"])
+            && standCard.Contains("A stand-in note") && standCard.Contains("Stand-ins") && standCard.Contains("Alpha") && !standCard.Contains("Stand-in Lib")
+            && kept?.Alias == savedAlias && kept?.Notes == savedNotes && after.Alias == before.Alias && after.Notes == before.Notes
+            && after.Category == before.Category && after.Tags.SequenceEqual(before.Tags),
+            $"{standIn.Alias} / {standIn.Category} / {string.Join(",", standIn.Tags)}");
+
         var none = Mods.Details("SmmApiNotInstalled");
         Check("API mods: Details is what the player keeps (alias, notes, category, trimmed; tags once each, no blanks); empty for a mod with nothing",
             info is { Alias: { } alias, Notes: { } notes, Category: { } category } && details.Alias == alias.Trim() && details.Notes == notes.Trim()
@@ -395,6 +423,68 @@ static partial class SelfTest
             var failed = await LinkCard(menu, links, "mod:SmmTestLib");
             Check("API cards: a WatchLinks mapping that throws shows no card, and is logged naming the mod", failed.Length == 0
                 && ApiGuard.HasLogged($"a ModCards.WatchLinks mapping from {typeof(SelfTest).Assembly.GetName().Name}"), failed);
+
+            // In a scrolled list a row counts as hovered only where it can be seen: none for a row out of view, and the card
+            // goes once the list scrolls its row away under a still mouse.
+            var scroll = new ScrollContainer { Name = "SmmApiCardScroll", Position = new Vector2(300, 500), Size = new Vector2(300, 120) };
+            var column = new VBoxContainer { Name = "Rows" };
+            scroll.AddChild(column);
+            var listed = Enumerable.Range(0, 10).Select(i => new Label { Name = $"Row{i}", Text = $"Row {i}", CustomMinimumSize = new Vector2(280, 30) }).ToList();
+            foreach (var row in listed)
+                column.AddChild(row);
+            menu.AddChild(scroll);
+            bool CardUp() => menu.GetTree().Root.FindChild(SharedCards.CardName, true, false) != null;
+            try
+            {
+                await Wait(menu, 0.1);
+                ModCards.Watch(listed[1], "SmmTestLib");
+                ModCards.Watch(listed[8], "SmmTestLib");
+                var below = listed[8].GetGlobalRect().GetCenter(); // past the list's bottom edge
+                Hover.TestMouse = () => below;
+                listed[8].EmitSignal(Control.SignalName.MouseEntered);
+                await WaitReal(menu, Hover.Delay + 0.2);
+                var outOfView = CardUp();
+                Hover.Hide();
+                var on = listed[1].GetGlobalRect().GetCenter();
+                Hover.TestMouse = () => on;
+                listed[1].EmitSignal(Control.SignalName.MouseEntered);
+                await WaitReal(menu, Hover.Delay + 0.2);
+                var inView = CardUp();
+                scroll.ScrollVertical = 200;
+                await WaitReal(menu, Hover.WindDown + 0.3);
+                var scrolledAway = !CardUp();
+                Check("API cards: in a scrolled list only what can be seen is hovered: no card for a row out of view, and a card goes once its row scrolls away",
+                    !outOfView && inView && scrolledAway, $"out of view {outOfView}, in view {inView}, gone on scroll {scrolledAway}");
+            }
+            finally
+            {
+                Hover.TestMouse = null;
+                Hover.Hide();
+                scroll.QueueFree();
+            }
+
+            // A self-test's own way to a card: Show opens the trigger's at once, wherever the mouse is, until Close.
+            Hover.TestMouse = () => new Vector2(5, 5); // nowhere near the trigger
+            var shownNow = ModCards.Show(trigger);
+            await Wait(menu, 0.1);
+            var opened = menu.GetTree().Root.FindChild(SharedCards.CardName, true, false)?.FindChildren("*", "RichTextLabel", true, false)
+                .OfType<RichTextLabel>().FirstOrDefault()?.GetParsedText() ?? "";
+            var closed = ModCards.Close();
+            await Wait(menu, 0.1);
+            var gone = menu.GetTree().Root.FindChild(SharedCards.CardName, true, false) == null;
+            var bare = new Label { Name = "SmmApiUnwatched" };
+            menu.AddChild(bare);
+            var unwatched = ModCards.Show(bare);
+            bare.QueueFree();
+            Check("API cards: Show opens a watched trigger's card at once, wherever the mouse is, and it stays until Close; none for a trigger with no Watch",
+                shownNow && opened.Contains("Test Framework") && closed && gone && !ModCards.Close() && !unwatched,
+                $"shown {shownNow}, closed {closed}, gone {gone}, unwatched {unwatched}");
+            ModCards.Show(trigger);
+            trigger.Visible = false;
+            await Wait(menu, 0.1);
+            Check("API cards: a card Show opened closes when its trigger is hidden", menu.GetTree().Root.FindChild(SharedCards.CardName, true, false) == null);
+            trigger.Visible = true;
+            Hover.TestMouse = null;
         }
         finally
         {
