@@ -5499,8 +5499,11 @@ static partial class SelfTest
                 + $"tip {Hover.TipOf(box)}" : "";
         bool Locked(NModMenuRow r) => r.GetNode<NTickbox>("Tickbox") is { IsTicked: true, IsEnabled: false } box && box.Modulate == Colors.White
             && Hover.TipOf(box) == SelfLockedTip && r.GetNodeOrNull<Control>("SpireModManagerSelfLock") is { Visible: true };
-        var locked = ourRows.Count == 2 && ourRows.All(Locked);
-        var lockedSay = string.Join(" | ", ourRows.Select(Box));
+        // The padlock on each box's corner, the same on both rows (it follows the box: a new row's is scaled after it's locked).
+        var lockPlaces = ourRows.Select(r => r.GetNodeOrNull<Control>("SpireModManagerSelfLock") is { } padlock
+            ? (padlock.Position - r.GetNode<Control>("Tickbox").Position).Round() : new Vector2(-1, -1)).Distinct().ToList();
+        var locked = ourRows.Count == 2 && ourRows.All(Locked) && lockPlaces.Count == 1 && lockPlaces[0] != new Vector2(-1, -1);
+        var lockedSay = string.Join(" | ", ourRows.Select(Box)) + $"; padlocks at {string.Join(", ", lockPlaces)} from their boxes";
         if (ourRows.FirstOrDefault() is { } shownRow)
             CategoryList.ScrollTo(content, shownRow); // our rows in view for the screenshot
         await Wait(menu, 0.2);
