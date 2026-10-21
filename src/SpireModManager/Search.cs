@@ -199,7 +199,9 @@ static class Search
     // still to type), a word, a bracket, OR, "|", AND or NOT. A "-" at a term's start leaves out the term or group after
     // it ("-" alone is nothing, and a second one is part of a word: "--x" leaves out "-x"). A word ends at a space, a "|",
     // a quote, and a #tag or @author glued to it ("foo#Library" is two terms; a lone "#" is plain: "C#"); a word or a
-    // bare #tag also ends at a ")" while a group is open (#"x (y)" keeps it). A ")" that closes nothing is nothing.
+    // bare #tag also ends at a ")" while a group is open, and a bare #tag or @author at a quote or a "(" too, which start
+    // the next term ("#Library(lib)" is the tag and a group; #"x (y)" keeps its brackets). A ")" that closes nothing is
+    // nothing.
     static List<Lexed> Lex(string text)
     {
         var pieces = new List<Lexed>();
@@ -238,7 +240,7 @@ static class Search
                 else
                 {
                     at++;
-                    while (at < text.Length && !Ends(at))
+                    while (at < text.Length && !Ends(at) && text[at] is not ('"' or '('))
                         at++;
                     value = text[(from + 1)..at];
                 }
