@@ -7679,12 +7679,14 @@ static partial class SelfTest
         var (winner, loser) = w ? (copy, local) : (local, copy);
         var winnerLine = w ? $"Loads on relaunch, in place of {Named(local)}" : Draft(LoadsAlso, ("other", Named(copy)));
         var loserLine = Draft(CopyLoses, ("other", Named(winner)), ("why", w ? WhyHigher : WhyLocal));
+        // (An earlier test can leave the order moved since launch, as on stable: a relaunch for that, whichever copy loads.)
         Check("local and Workshop both ticked, the Workshop copy newer: which loads follows the game's rule for this branch (the beta: the higher version; "
-            + "stable: the local copy); the other reads Won't load, saying why; pending only where the new copy loads",
+            + "stable: the local copy); the other reads Won't load, saying why; pending where the new copy loads (a move since launch aside)",
             Copies.Loads(copy) == w && Copies.Loads(local) == !w && ModDetails.Status(winner).Contains(w ? "Pending relaunch" : "Enabled")
-            && ModDetails.Status(loser).Contains(StatusWontLoad) && Line(winner) == winnerLine && Line(loser) == loserLine && ModEntry.HasPendingChanges() == w,
+            && ModDetails.Status(loser).Contains(StatusWontLoad) && Line(winner) == winnerLine && Line(loser) == loserLine
+            && ModEntry.HasPendingChanges() == (w || LoadOrder.OrderChanged),
             $"beta rule {w}; loads copy {Copies.Loads(copy)}, local {Copies.Loads(local)}; status {ModDetails.Status(local)} / {ModDetails.Status(copy)}; "
-            + $"lines {Line(local)} / {Line(copy)}; pending {ModEntry.HasPendingChanges()}");
+            + $"lines {Line(local)} / {Line(copy)}; pending {ModEntry.HasPendingChanges()}, moved since launch {LoadOrder.OrderChanged}");
         var newerChips = new[] { local, copy }.Select(m => Tags.For(m).FirstOrDefault(c => c.Text == "Same ID")?.Tip).ToList();
         RelaunchCheck.Show(screen);
         await Wait(menu, 0.3);
