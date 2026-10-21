@@ -155,6 +155,47 @@ static partial class SelfTest
             var offThread = await Task.Run(() => PopupMenus.Show(owner, Entries()));
             Check("API menus: Show from a worker thread returns null and logs once", offThread == null && !PopupMenus.IsOpen && ApiGuard.HasLogged("PopupMenus.Show"));
 
+            // An icon before a row's words, faded with a dimmed row.
+            var picture = ImageTexture.CreateFromImage(Image.CreateEmpty(8, 8, false, Image.Format.Rgba8));
+            var pictured = PopupMenus.Show(owner, [new MenuEntry { Label = "Pictured", OnSelect = () => { }, Icon = picture },
+                new MenuEntry { Label = "Faded", Icon = picture, Disabled = true }]);
+            var icons = pictured?.FindChildren("Icon", "TextureRect", true, false).OfType<TextureRect>().ToList() ?? [];
+            Check("API menus: an entry's Icon is drawn 26x36 before its words, faded with a dimmed row", icons.Count == 2
+                && icons.All(i => i.Texture == picture && i.CustomMinimumSize == new Vector2(26, 36) && i.GetIndex() < i.GetParent().GetChildren().OfType<Label>().First().GetIndex())
+                && icons[0].Modulate.A == 1 && Math.Abs(icons[1].Modulate.A - 0.45f) < 0.01f, $"{icons.Count} icons");
+            PopupMenus.Close();
+
+            // Taller than the screen: columns side by side (its heading on top), every row still there in order, all on
+            // screen; past what fits across, they scroll; one that fits stays one list.
+            var screen = owner.GetViewport().GetVisibleRect().Size;
+            List<MenuEntry> Many(int count) => [MenuEntry.Heading("Characters"),
+                .. Enumerable.Range(1, count).Select(i => new MenuEntry { Label = $"Character {i}", OnSelect = () => { }, Icon = picture })];
+            Rect2 PanelOf(Node? shown) => (shown?.FindChild("Panel", true, false) as Control)?.GetGlobalRect() ?? new Rect2();
+            bool OnScreen(Rect2 rect) => rect.Size.X > 0 && rect.Position.X >= -0.5f && rect.Position.Y >= -0.5f && rect.End.X <= screen.X + 0.5f && rect.End.Y <= screen.Y + 0.5f;
+            var tall = PopupMenus.Show(owner, Many(40));
+            await Wait(menu, 0.1);
+            var (tallColumns, tallPanel) = (tall?.FindChildren("RowColumn*", "VBoxContainer", true, false).Count ?? 0, PanelOf(tall));
+            Check("API menus: one taller than the screen goes into columns, its heading on top, every row there in order, all on screen",
+                tall != null && tallColumns >= 2 && PopupMenus.Rows(tall).Select(r => r.Label).SequenceEqual(Enumerable.Range(1, 40).Select(i => $"Character {i}"))
+                && PopupMenus.Headings(tall).SequenceEqual(["Characters"]) && OnScreen(tallPanel) && tall.FindChild("Scroll", true, false) == null,
+                $"{tallColumns} columns, panel {tallPanel}, screen {screen}");
+            var huge = PopupMenus.Show(owner, Many(400));
+            await Wait(menu, 0.1);
+            var hugePanel = PanelOf(huge);
+            Check("API menus: one with more columns than fit across scrolls up and down, and still fits the screen", huge != null
+                && huge.FindChild("Scroll", true, false) is ScrollContainer && OnScreen(hugePanel) && PopupMenus.Rows(huge).Count == 400, $"panel {hugePanel}");
+            var fits = PopupMenus.Show(owner, Entries());
+            Check("API menus: one that fits stays one list (no columns)", fits != null && fits.FindChild("RowColumns", true, false) == null);
+            PopupMenus.Close();
+            // SMM's own menus too, which have headings between groups: a heading never ends a column.
+            List<MenuItem> groups = [.. Enumerable.Range(0, 8).SelectMany(g =>
+                new[] { MenuItem.Heading($"Group {g}") }.Concat(Enumerable.Range(1, 7).Select(i => new MenuItem($"Item {g}.{i}", () => { }))))];
+            var grouped = MenuPanel.Show(owner, () => groups);
+            var ends = grouped?.FindChildren("RowColumn*", "VBoxContainer", true, false).SkipLast(1).Select(c => c.GetChild(c.GetChildCount() - 1)).ToList() ?? [];
+            Check("menus: in columns, a heading never ends one (it goes on with the rows it heads)", grouped != null && ends.Count >= 1
+                && ends.All(n => n.IsInGroup(MenuPanel.ItemGroup)) && MenuPanel.Rows(grouped).Count == 56, $"{ends.Count + 1} columns");
+            MenuPanel.Close();
+
             var dropped = PopupMenus.Show(owner, Entries(), new MenuOptions { From = new Rect2(40, 40, 100, 30) });
             await Wait(menu, 0.1);
             var under = (dropped?.FindChild("Panel", true, false) as Control)?.GetGlobalRect() ?? new Rect2();

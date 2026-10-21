@@ -4,6 +4,8 @@
 //                                               dist/SpireModManager/ for the Workshop upload; never installs
 //                                               --unshipped-api: a trial of it with the API not shipped yet (to
 //                                               try the Workshop build, as dev.cs smoke does; never to upload)
+// Each build also leaves the API for mods that build against it (docs/dev/API.md): dist/api/ for a release, out/api/
+// (with runtime/, the build itself) for their dev runs.
 using System.Diagnostics;
 using System.Runtime.CompilerServices;
 using System.Security.Cryptography;
@@ -130,15 +132,30 @@ if (dist)
     Console.WriteLine($"release {ReleaseVersion} in {distDir}: {string.Join(", ", found)}");
     // For mods that build against the API: the reference assembly (the public surface only, no code), its doc comments
     // and the release's version, outside the upload folder (docs/dev/API.md: a dependent commits these under lib/).
-    var apiDir = Path.Combine(root, "dist", "api");
-    if (Directory.Exists(apiDir))
-        Directory.Delete(apiDir, recursive: true);
-    Directory.CreateDirectory(apiDir);
-    File.Copy(Path.Combine(outDir, "bin", "ref", ModId + ".dll"), Path.Combine(apiDir, ModId + ".dll"));
-    File.Copy(Path.Combine(outDir, "bin", ModId + ".xml"), Path.Combine(apiDir, ModId + ".xml"));
-    File.WriteAllText(Path.Combine(apiDir, "VERSION"), ReleaseVersion + "\n");
-    Console.WriteLine($"api reference in {apiDir}: {ModId}.dll, {ModId}.xml, VERSION");
+    // No runtime/: a dependent's dev runs load the Workshop's copy of a release.
+    WriteApi(Path.Combine(root, "dist", "api"), ReleaseVersion, runtime: false);
     return 0;
+}
+
+// A dev build's drop for a dependent's dev runs (docs/dev/API.md): the same, its version, and runtime/, this build, for
+// them to load in place of the Workshop's copy while their VERSION names a dev build.
+WriteApi(Path.Combine(outDir, "api"), (string?)manifest["version"] ?? "", runtime: true);
+
+void WriteApi(string dir, string version, bool runtime)
+{
+    if (Directory.Exists(dir))
+        Directory.Delete(dir, recursive: true);
+    Directory.CreateDirectory(dir);
+    File.Copy(Path.Combine(outDir, "bin", "ref", ModId + ".dll"), Path.Combine(dir, ModId + ".dll"));
+    File.Copy(Path.Combine(outDir, "bin", ModId + ".xml"), Path.Combine(dir, ModId + ".xml"));
+    File.WriteAllText(Path.Combine(dir, "VERSION"), version + "\n");
+    if (runtime)
+    {
+        Directory.CreateDirectory(Path.Combine(dir, "runtime"));
+        foreach (var ext in shipped)
+            File.Copy(Path.Combine(outDir, ModId + ext), Path.Combine(dir, "runtime", ModId + ext));
+    }
+    Console.WriteLine($"api {(runtime ? "drop" : "reference")} {version} in {dir}: {ModId}.dll, {ModId}.xml, VERSION{(runtime ? ", runtime/" : "")}");
 }
 
 if (!args.Contains("--no-install"))
