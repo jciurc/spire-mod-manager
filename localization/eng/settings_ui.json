@@ -238,6 +238,7 @@
   "SPIRE_MOD_MANAGER.SUMMARY_INSTALLED_ONE": "Installed: 1 mod",
   "SPIRE_MOD_MANAGER.CHANGE_INSTALLED": "Installed: {mod} ({state})",
   "SPIRE_MOD_MANAGER.INSTALLED_ON": "Enabled, and pending relaunch",
+  "SPIRE_MOD_MANAGER.INSTALLED_WONT_LOAD": "Enabled, won't load (same ID)",
   "SPIRE_MOD_MANAGER.INSTALLED_OFF": "Disabled",
   "SPIRE_MOD_MANAGER.CHANGES_CLICK": "Click for the full list",
   "SPIRE_MOD_MANAGER.CHANGES_TITLE": "Changes since launch",

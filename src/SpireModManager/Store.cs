@@ -83,8 +83,10 @@ internal class Profile
 
 // Copy: for a mod installed more than once from one source, the copy that loads (Copies.CopyOf); null keeps the pick
 // as it is (profiles from before it, Better Mod Menu's). Name: for a mod an imported list named that isn't installed,
-// the list's name for it, to show it by until it is (an installed mod goes by its own).
-internal record ProfileMod(string Id, ModSource Source, bool Enabled, string? Copy = null, string? Name = null);
+// the list's name for it, to show it by until it is (an installed mod goes by its own). CopiesOff: for a mod installed
+// more than once from one source, the copies off while the entry is on (copy names, as Copy; never Copy), kept while
+// it's off too; null: only Copy is on, as before copies had a box each (Profiles.HoldCopies fills it in).
+internal record ProfileMod(string Id, ModSource Source, bool Enabled, string? Copy = null, string? Name = null, List<string>? CopiesOff = null);
 
 internal record ScreenPoint(float X, float Y);
 
@@ -234,14 +236,18 @@ internal static class Store
             if (string.IsNullOrEmpty(profile.Id) || !ids.Add(profile.Id)) // none (a hand-edited file), or another's
                 ids.Add(profile.Id = Profile.NewId());
             profile.Name ??= "";
-            profile.Mods = profile.Mods?.Where(m => m?.Id != null).ToList() ?? [];
-            profile.Edited = profile.Edited?.Where(m => m?.Id != null).ToList();
+            profile.Mods = profile.Mods?.Where(m => m?.Id != null).Select(TidyCopies).ToList() ?? [];
+            profile.Edited = profile.Edited?.Where(m => m?.Id != null).Select(TidyCopies).ToList();
             profile.Disabled = profile.Disabled?.Where(m => m?.Id != null).ToList();
         }
         data.CopyPicks = TidyPicks(data.CopyPicks);
         data.CopiesOff = TidyOff(data.CopiesOff, data.CopyPicks);
         return data;
     }
+
+    // A profile's entry with no null among its copies off (a hand-edited file), each once.
+    static ProfileMod TidyCopies(ProfileMod mod) => mod.CopiesOff is { } off && (off.Any(c => c == null) || off.Distinct().Count() < off.Count)
+        ? mod with { CopiesOff = [.. off.OfType<string>().Distinct()] } : mod;
 
     // One pick per id and source (the first), none that names no copy, sorted; null for none. Never pruned of copies
     // that aren't installed: a Steam item missing for one launch keeps its choice.

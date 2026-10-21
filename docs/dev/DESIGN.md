@@ -27,7 +27,8 @@ Ease of use is the heart of the mod, not just its utility.
   Workshop items). Which of them are ticked is ours (`copies_off`), and which of the ticked ones loads is our pick
   (`copy_picks`, the copy enabled last), applied in our Init, before the game tries the copies. Our page has a
   tickbox per copy, and two copies of an id can both be ticked (only one loads). The game's page keeps its one switch.
-- Profiles key mods by id and source, like `mod_list` (plus the picked copy). A newly installed mod joins the active profile, enabled.
+- Profiles key mods by id and source, like `mod_list` (plus, for copies from one source, which are ticked and which
+  loads). A shared list's row with a Workshop link sets that copy alone. A newly installed mod joins the active profile, enabled.
   With no profiles yet, an ordinary one named "Default" is made from the current list.
 - The mod managers (this one, Better Mod Menu) are never turned on or off by a profile.
 - Spire Mod Manager installed more than once: our page keeps every copy of it ticked (its boxes locked, with our

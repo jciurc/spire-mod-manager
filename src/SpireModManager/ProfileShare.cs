@@ -409,7 +409,10 @@ static class ProfileShare
         var lines = new List<string> { Menus.Format("SPIRE_MOD_MANAGER.IMPORT_NEW_NAME", ("name", $"[color={GoldHex}]{Escape(name)}[/color]")) };
         string Enabled(int count) => Menus.Format(count == 1 ? "SPIRE_MOD_MANAGER.IMPORT_ENABLED_COUNT_ONE" : "SPIRE_MOD_MANAGER.IMPORT_ENABLED_COUNT", ("count", Menus.Number(count)));
         string Disabled(int count) => Menus.Format(count == 1 ? "SPIRE_MOD_MANAGER.IMPORT_DISABLED_COUNT_ONE" : "SPIRE_MOD_MANAGER.IMPORT_DISABLED_COUNT", ("count", Menus.Number(count)));
-        var mods = listed.DistinctBy(m => (m.Id, m.WorkshopLink)).ToList(); // each copy listed once, as Changes counts them
+        // Each copy listed once, as Changes counts them: a Workshop item's rows as one, and each row with no link as its own
+        // (two copies of a mod installed by hand share an id and have no link).
+        var mods = listed.Where(m => m.WorkshopLink.Length > 0).DistinctBy(m => (m.Id, m.WorkshopLink))
+            .Concat(listed.Where(m => m.WorkshopLink.Length == 0)).ToList();
         var (enabled, disabled) = (mods.Count(m => m.Enabled), mods.Count(m => !m.Enabled));
         lines.Add("  •  " + (disabled > 0
             ? Menus.Format("SPIRE_MOD_MANAGER.IMPORT_CONTAINS_BOTH", ("enabled", Enabled(enabled)), ("disabled", Disabled(disabled)))
@@ -442,8 +445,8 @@ static class ProfileShare
             lines.Add(Menus.Format("SPIRE_MOD_MANAGER.IMPORT_MISSING", ("count", Menus.Number(plan.Missing.Count))));
             var off = Escape(Menus.Text("SPIRE_MOD_MANAGER.IMPORT_MISSING_OFF"));
             // The name itself opens its Workshop page, when the list gives one (with the external-link mark, in the
-            // link); two copies of one mod say which item.
-            string Item(ProfileCsv.Entry m) => plan.Missing.Count(o => o.Id == m.Id) > 1 && m.WorkshopLink.Length > 0
+            // link); two copies of one mod say which item, as does one whose mod is installed another way.
+            string Item(ProfileCsv.Entry m) => m.WorkshopLink.Length > 0 && (plan.Missing.Count(o => o.Id == m.Id) > 1 || Dependencies.Find(m.Id) != null)
                 ? $" ({m.WorkshopLink[(m.WorkshopLink.LastIndexOf('=') + 1)..]})" : "";
             string Named(ProfileCsv.Entry m) => $"[b]{Escape((m.Name.Length > 0 ? m.Name : m.Id) + Item(m))}[/b]";
             lines.AddRange(plan.Missing.Select(m => "  •  "

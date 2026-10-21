@@ -2866,7 +2866,7 @@ static partial class SelfTest
             && bar.FindChild("Unsaved", true, false) is Control { Visible: true } && bar.FindChild("SaveProfileButton", true, false) != null,
             $"edited {Profiles.Edited}, saved on {SavedOn()}, was on {wasOn}, now on {On()}, unsaved {(bar.FindChild("Unsaved", true, false) as Control)?.Visible}, save {bar.FindChild("SaveProfileButton", true, false) != null}");
         Check("edited: Save, Save as new, Discard beside Unsaved", Shown("UnsavedButtons") == "SaveProfileButton,SaveAsNewButton,DiscardButton", Shown("UnsavedButtons"));
-        var (unsavedOn, unsavedOff) = Profiles.UnsavedChanges();
+        var (unsavedOn, unsavedOff, _) = Profiles.UnsavedChanges();
         Check("Unsaved says how many changes: Unsaved (1) • for one tickbox", unsavedOn.Count + unsavedOff.Count == 1
             && bar.FindChild("Unsaved", true, false) is Label { Text: "Unsaved (1) •" }, (bar.FindChild("Unsaved", true, false) as Label)?.Text ?? "none");
         await Capture(screen, outDir, "3b-unsaved-profile");
@@ -3400,7 +3400,7 @@ static partial class SelfTest
         var libOn = IsOn("SmmTestLib");
         var twice = Profiles.PlanImport([new("SmmTestLib", !libOn, "Test Framework", link), new("SmmTestLib", libOn, "Test Framework", "")]);
         Check("a mod listed twice: each copy takes the row for its source", Dependencies.Find("SmmTestLib")?.modSource == ModSource.ModsDirectory
-            && twice.Mods.SingleOrDefault(m => m.Id == "SmmTestLib")?.Enabled == libOn && twice is { Same: 1, On: 0, Off: 0, Missing.Count: 0 },
+            && twice.Mods.FirstOrDefault(m => m.Id == "SmmTestLib" && m.Source == ModSource.ModsDirectory)?.Enabled == libOn && twice is { Same: 1, On: 0, Off: 0, Missing.Count: 0 },
             string.Join(", ", twice.Mods.Where(m => m.Id == "SmmTestLib").Select(m => $"{m.Source}={m.Enabled}")));
         // A list naming a mod's Workshop copy while its copy installed by hand stays on: both would be on, and the preview
         // says so (Jordan's words), naming it; listed off, that copy goes off with it, so nothing to say.
@@ -3562,7 +3562,7 @@ static partial class SelfTest
         }
         Check("mods the active profile had never seen joined it at launch, on", ids.All(id => profile.Mods.Any(m => m.Id == id && m.Enabled)),
             string.Join(", ", profile.Mods.Select(m => $"{m.Id}={(m.Enabled ? "on" : "off")}")));
-        var (on, off) = Profiles.UnsavedChanges();
+        var (on, off, _) = Profiles.UnsavedChanges();
         Check("quietly: no unsaved edit, and already so in the launch state", !Profiles.Edited && ids.All(id => OnInSnapshot(History.Loaded, id)),
             $"edited {Profiles.Edited} (+{string.Join(", +", on.Select(m => m.Name))} -{string.Join(", -", off.Select(m => m.Name))}), in the launch state {ids.Count(id => OnInSnapshot(History.Loaded, id))} of {ids.Length}");
     }
@@ -8183,7 +8183,7 @@ static partial class SelfTest
 
         var (steps, picksWere) = (History.Steps(History.Track.List), Store.Data.CopyPicks);
         await Tick(rowA, true);
-        var (unsavedOn, unsavedOff) = Profiles.UnsavedChanges();
+        var (unsavedOn, unsavedOff, _) = Profiles.UnsavedChanges();
         Check("ticking the other copy picks it (copy_picks), unticks the first, the game's list still on, one undo step; both Pending relaunch, its panel "
             + "saying it loads in place of the first; the titles marked as changed; the profile's unsaved lines and the pending line follow",
             Picked() == "l:SmmTestTwinA" && Store.Data.CopyPicks?.Contains($"{TwinId}|l:SmmTestTwinA") == true && OnDisk("l:SmmTestTwinA") && Ticked(rowA) && !Ticked(rowB) && SwitchOn()
@@ -8581,7 +8581,7 @@ static partial class SelfTest
         History.Undo(); // the switch
         await Wait(menu, 0.3);
         // (The pair below arrived on since: the profile's unsaved edit, but nothing about Back.)
-        var backUndone = BackPicked() == "l:Back1" && Profiles.UnsavedChanges() is var (backOn, backOff)
+        var backUndone = BackPicked() == "l:Back1" && Profiles.UnsavedChanges() is var (backOn, backOff, _)
             && !backOn.Concat(backOff).Any(m => m.Id.StartsWith(Back));
         // Put back: the made-up copies, their rows and our data for them (quietly, in every undo snapshot).
         foreach (var gone in new[] { backSecond, backUpdate, pairFirst, pairSecond })
