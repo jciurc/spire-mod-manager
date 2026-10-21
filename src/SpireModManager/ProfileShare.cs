@@ -431,7 +431,9 @@ static class ProfileShare
             lines.Add("  •  " + Menus.Format("SPIRE_MOD_MANAGER.IMPORT_NEW_CATEGORIES", ("count", Menus.Number(extras.NewCategories.Count))));
         if (extras.Details > 0)
             lines.Add("  •  " + Menus.Format("SPIRE_MOD_MANAGER.IMPORT_DETAILS", ("count", Menus.Number(extras.Details))));
-        if (plan.On == 0 && plan.Off == 0 && extras.Sorted.Count == 0 && extras.Details == 0)
+        // Another copy loading with no box changed, in Changes' words.
+        lines.AddRange(plan.Switched.Select(s => "  •  " + Escape(HistoryBar.CopySwitch(s.From, s.To).Plain)));
+        if (plan.On == 0 && plan.Off == 0 && plan.Switched.Count == 0 && extras.Sorted.Count == 0 && extras.Details == 0)
             lines.Add("  •  " + Menus.Text("SPIRE_MOD_MANAGER.IMPORT_NO_CHANGE"));
         if (plan.BothCopies.Count > 0)
         {
@@ -445,8 +447,8 @@ static class ProfileShare
             lines.Add(Menus.Format("SPIRE_MOD_MANAGER.IMPORT_MISSING", ("count", Menus.Number(plan.Missing.Count))));
             var off = Escape(Menus.Text("SPIRE_MOD_MANAGER.IMPORT_MISSING_OFF"));
             // The name itself opens its Workshop page, when the list gives one (with the external-link mark, in the
-            // link); two copies of one mod say which item, as does one whose mod is installed another way.
-            string Item(ProfileCsv.Entry m) => m.WorkshopLink.Length > 0 && (plan.Missing.Count(o => o.Id == m.Id) > 1 || Dependencies.Find(m.Id) != null)
+            // link); two copies of one mod say which item.
+            string Item(ProfileCsv.Entry m) => m.WorkshopLink.Length > 0 && plan.Missing.Count(o => o.Id == m.Id) > 1
                 ? $" ({m.WorkshopLink[(m.WorkshopLink.LastIndexOf('=') + 1)..]})" : "";
             string Named(ProfileCsv.Entry m) => $"[b]{Escape((m.Name.Length > 0 ? m.Name : m.Id) + Item(m))}[/b]";
             lines.AddRange(plan.Missing.Select(m => "  •  "

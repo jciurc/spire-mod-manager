@@ -263,7 +263,9 @@ static class Copies
         if (mod.manifest?.id is not { } id || Others(mod).Count == 0 || !Ticked(mod) || Loads(mod) || Loading(id) is not { } loads)
             return null;
         var why = !Ticked(loads) ? LoseReason.Other
-            : loads.modSource == mod.modSource ? (id == ModEntry.ModId ? LoseReason.Other : LoseReason.EnabledLast)
+            : loads.modSource == mod.modSource && id == ModEntry.ModId ? LoseReason.Other
+            : loads.modSource == mod.modSource && CopyOf(loads) == Picked(id, mod.modSource) ? LoseReason.EnabledLast
+            // Not the pick of its source: the game's rule between sources set the pick aside (a newer Workshop copy loads).
             : loads.modSource == ModSource.SteamWorkshop ? LoseReason.HigherVersion
             // A newer Workshop copy losing to a local one: two local copies, so which one the game compares isn't known.
             : Beats(mod, loads) ? LoseReason.Other : LoseReason.LocalCopy;
@@ -424,19 +426,27 @@ static class Copies
         Installed.Added += Arrived;
     }
 
+    // The copies installed this session (SwitchKey) that our record (StoreData.Copies) didn't have yet: new to us, not
+    // ones uninstalled and back, which a profile has its own tick for (Profiles.TakeInInstalled).
+    static readonly HashSet<string> NewToRecord = [];
+
+    public static bool IsNewToRecord(Mod mod) => NewToRecord.Contains(SwitchKey(mod));
+
     // A copy installed mid-session: worked out on our data as it is now, then written as it is into every undo
     // snapshot (History.Quietly), so the new copy's entry is the same in each: no change since launch, no undo step.
     // It arrives as the game has it, ticked where its switch is on (an entry copies_off kept for it from before it was
     // uninstalled goes), and its id and source's pick stays the copy that was there (it never takes over; enabling it
-    // does).
+    // does). Before Profiles' handler (Start runs before Profiles.Prepare), which asks IsNewToRecord.
     static void Arrived()
     {
         try
         {
-            var now = Store.Clone(Store.Data);
-            var changed = Reconcile(now);
             // Installed adds the copy that came last.
             var come = Installed.Mods.LastOrDefault();
+            if (come?.manifest?.id is { } id && Store.Data.Copies?.GetValueOrDefault(id)?.Contains(CopyOf(come)) != true)
+                NewToRecord.Add(SwitchKey(come));
+            var now = Store.Clone(Store.Data);
+            var changed = Reconcile(now);
             if (come != null && KeepThere(now, come))
                 changed = true;
             // Not for an update of a copy installed this session (the game keeps its earlier Mod): it's ticked or not

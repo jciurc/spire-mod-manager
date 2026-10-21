@@ -68,17 +68,19 @@ static class Profiles
 
     // A mod installed while the game runs: the active profile takes it in at once as off (the profile was saved before it
     // existed), so the mod arriving on is that profile's unsaved edit: Save keeps it on, Discard turns it off, and
-    // unticking it is no change. Another copy of a mod from one source likewise: the active profile has the new copy off
-    // (it arrives ticked where its switch is on), every profile holds the copy picked (the one that was there), as at
-    // launch, and the other profiles read the new copy as on, as they read a mod they've never seen. Quietly (see
-    // History.Quietly). Fails soft: it runs inside the game's mod detection, beside Changes' own handler.
+    // unticking it is no change. Another copy of a mod from one source likewise, one new to our record: the active
+    // profile has the new copy off (it arrives ticked where its switch is on), every profile holds the copy picked (the
+    // one that was there), as at launch, and the other profiles read the new copy as on, as they read a mod they've never
+    // seen. A copy uninstalled and back keeps the tick the profile saved for it, as the same reinstall before a launch
+    // does. Quietly (see History.Quietly). Fails soft: it runs inside the game's mod detection, beside Changes' own
+    // handler.
     static void TakeInInstalled()
     {
         try
         {
             // Not an update of a copy installed this session (the game keeps its earlier Mod): the profile knows that one.
             var come = SpireModManager.Installed.Mods.LastOrDefault();
-            var copy = come != null && Copies.Twins(come).Count > 0
+            var copy = come != null && Copies.Twins(come).Count > 0 && Copies.IsNewToRecord(come)
                 && !ModManager.Mods.Union(SpireModManager.Installed.Mods).Any(m => m != come && Copies.SwitchKey(m) == Copies.SwitchKey(come)) ? come : null;
             if (Active is not { } profile || !Unseen(profile).Any() && !Store.Data.Profiles.Any(Unheld) && copy == null)
                 return;
@@ -229,15 +231,16 @@ static class Profiles
     }
 
     // The active profile's unsaved changes: copies turned on and off compared with its saved state (keys, for links to
-    // them, and names; a copy of a mod installed twice says which), and mods installed more than once from one source
-    // where another of the copies ticked loads, no box changed (the copy the profile loads, the one now).
+    // them, and names; a copy of a mod installed twice says which), and mods installed more than once where another copy
+    // loads after a relaunch, no box of theirs changed (the copy that loads as the profile has it, the one now), as
+    // Changes has them (HistoryBar.CopySwitches): a pick that changes nothing that loads isn't one.
     public static (List<(string Id, string Name)> On, List<(string Id, string Name)> Off, List<(Mod From, Mod To)> Switched) UnsavedChanges()
     {
         if (Active is not { Edited: not null } profile)
             return ([], [], []);
         var saved = Index(profile.Mods);
         var (on, off) = (new List<(string, string)>(), new List<(string, string)>());
-        var ticked = new HashSet<(string, ModSource)>(); // a box changed
+        var ticked = new HashSet<string>(); // ids with a box changed
         foreach (var copy in AllMods())
         {
             if (copy.manifest?.id is not { } id || Manager(id) || saved.GetValueOrDefault((id, copy.modSource)) is not { } entry)
@@ -246,15 +249,39 @@ static class Profiles
             if (CopyOn(copy, entry) != now)
             {
                 (now ? on : off).Add((Copies.LinkKey(copy), (copy.manifest?.name ?? id) + Copies.Which(copy)));
-                ticked.Add((id, copy.modSource));
+                ticked.Add(id);
             }
         }
+        var current = Index(Current());
         var switched = new List<(Mod, Mod)>();
-        foreach (var (id, source, _) in Copies.TwinGroups())
-            if (!Manager(id) && !ticked.Contains((id, source)) && saved.GetValueOrDefault((id, source)) is { Enabled: true } entry && PickOf(entry) is { } then
-                && Copies.Picked(id, source) is { } now && then != now && CopyNamed(id, source, then) is { } from && CopyNamed(id, source, now) is { } to)
+        foreach (var id in Copies.TwinGroups().Select(g => g.Id).Distinct())
+            if (!Manager(id) && !ticked.Contains(id) && LoadingAs(id, saved) is { } from && LoadingAs(id, current) is { } to && Copies.CopyOf(from) != Copies.CopyOf(to))
                 switched.Add((from, to));
         return (on, off, switched);
+    }
+
+    // The copy of an id that loads after a relaunch as these entries have it (each source's switch, the copy it loads and
+    // those it has off; a source they don't name as it is now), by the same rule as now (Copies.LoadingIn).
+    static Mod? LoadingAs(string id, Dictionary<(string, ModSource), ProfileMod> entries)
+    {
+        var gameOff = Dependencies.SavedOff();
+        var (stored, off) = (Store.Data.CopyPicks ?? [], Store.Data.CopiesOff ?? Copies.LegacyOff(Store.Data));
+        foreach (var source in AllMods().Where(m => m.manifest?.id == id).Select(m => m.modSource).Distinct().ToList())
+        {
+            if (entries.GetValueOrDefault((id, source)) is not { } entry)
+                continue;
+            if (entry.Enabled)
+                gameOff.Remove((id, source));
+            else
+                gameOff.Add((id, source));
+            if (Group(id, source) is not { } copies || PickOf(entry) is not { } pick)
+                continue;
+            stored = [.. stored.Where(k => Copies.Parse(k) is not { } other || other.Id != id || other.Source != source), $"{id}|{pick}"];
+            // An entry naming no copies off has only the copy it loads on.
+            var keys = copies.Select(c => $"{id}|{c}").ToHashSet();
+            off = [.. off.Where(k => !keys.Contains(k)), .. copies.Where(c => c != pick && (entry.CopiesOff is not { } named || named.Contains(c))).Select(c => $"{id}|{c}")];
+        }
+        return Copies.LoadingIn(id, gameOff, new Picks(stored, Store.Data.Copies, off));
     }
 
     // Whether a copy is on as a profile's entry for its id and source has it: the entry on and, for a mod installed more
@@ -410,15 +437,17 @@ static class Profiles
 
     // What a shared list would do, compared with the mod list now (ProfileShare shows it first). Mods: the new
     // profile's entries. On, Off: installed copies it turns on and off; Same: ones already that way; Unlisted: installed
-    // copies it doesn't name (RowsOf), left as they are. Missing: ones it names that aren't installed, by link (a Workshop
-    // item no copy installed is, even where its id is installed another way: it can be subscribed to); the profile keeps
-    // those too (by id, as Workshop mods if the list links them, else local), so installing one later and switching to
-    // it sets it. A mod installed while this profile is active arrives on; if the list had it off, that shows as an
-    // unsaved change. The mod managers are in none of the counts: a profile never turns them on or off.
-    // BothCopies: listed mods from the Workshop whose copy installed by hand stays on (or is turned on), so both copies are
-    // on once the Workshop one is there too; the preview says so (one copy should be on).
+    // copies it doesn't name (RowsOf), left as they are. Switched: mods installed more than once where another copy loads
+    // after the import with no box changed (the copy that loads now, then), as Changes words it. Missing: ones it names
+    // that aren't installed, by id (a row for an id installed sets that copy: the preview never offers to subscribe to a
+    // second copy of a mod the player has); the profile keeps those too (by id, as Workshop mods if the list links them,
+    // else local), so installing one later and switching to it sets it. A mod installed while this profile is active
+    // arrives on; if the list had it off, that shows as an unsaved change. The mod managers are in none of the counts: a
+    // profile never turns them on or off. BothCopies: listed mods on from the Workshop whose copy installed by hand stays
+    // on (or is turned on), so both copies are on once the Workshop one is there too; the preview says so (one copy should
+    // be on).
     public record ImportPlan(List<ProfileMod> Mods, int On, int Off, int Same, int Unlisted, List<ProfileCsv.Entry> Missing, ImportExtras Extras,
-        List<ProfileCsv.Entry> BothCopies);
+        List<ProfileCsv.Entry> BothCopies, List<(Mod From, Mod To)> Switched);
 
     // What else a list gives: categories, aliases and notes, taken only where a mod has none of its own. Categories are
     // every profile's, so an import never moves a mod that's already in one, nor renames anything. Sorted: each mod's key
@@ -464,8 +493,9 @@ static class Profiles
         return new ImportExtras(sorted, created, named);
     }
 
-    // Counted per copy, as Changes counts. Each installed copy is set by the rows that name it (RowsOf), so a row linking
-    // a Workshop item sets that copy alone and leaves a copy installed by hand beside it as it is.
+    // Counted per copy, as Changes counts. Each installed copy is set by the rows that name it (RowsOf), so where its id
+    // is installed more than once, a row linking a Workshop item sets that copy alone and leaves a copy installed by hand
+    // beside it as it is.
     public static ImportPlan PlanImport(IReadOnlyList<ProfileCsv.Entry> entries)
     {
         var current = Current();
@@ -473,6 +503,7 @@ static class Profiles
         var all = AllMods().ToList();
         var mods = new List<ProfileMod>();
         var (on, off, same, unlisted) = (0, 0, 0, 0);
+        var ticked = new HashSet<string>(); // ids with a box changed
         foreach (var mod in current.Where(c => !Manager(c.Id)))
         {
             var copies = all.Where(m => m.manifest?.id == mod.Id && m.modSource == mod.Source).ToList();
@@ -495,24 +526,27 @@ static class Profiles
                         break;
                     case (_, _, true):
                         on++;
+                        ticked.Add(mod.Id);
                         break;
                     default:
                         off++;
+                        ticked.Add(mod.Id);
                         break;
                 }
         }
-        // Not installed, by link: a row linking a Workshop item no installed copy has (even where its id is installed
-        // another way: the preview offers to subscribe to it), or a row with no link for an id not installed. By id and
-        // link, so a list naming two copies of a mod not installed names both.
-        var items = all.Select(Compat.WorkshopId).OfType<ulong>().Select(ProfileCsv.WorkshopLink).ToHashSet();
+        // Where no box of a mod installed more than once changes, the copy that loads still can (a list whose copy that
+        // loads is another): as UnsavedChanges and Changes have it.
+        var (was, will) = (Index(current), Index(mods));
+        var switched = new List<(Mod, Mod)>();
+        foreach (var id in Copies.TwinGroups().Select(g => g.Id).Distinct())
+            if (!Manager(id) && !ticked.Contains(id) && LoadingAs(id, was) is { } from && LoadingAs(id, will) is { } to && Copies.CopyOf(from) != Copies.CopyOf(to))
+                switched.Add((from, to));
+        // Not installed, by id and link, so a list naming two copies of a mod not installed names both.
         var ids = current.Select(c => c.Id).ToHashSet();
-        var missing = entries.Where(e => !Manager(e.Id) && (e.WorkshopLink.Length > 0 ? !items.Contains(e.WorkshopLink) : !ids.Contains(e.Id)))
-            .DistinctBy(e => (e.Id, e.WorkshopLink)).ToList();
+        var missing = entries.Where(e => !Manager(e.Id) && !ids.Contains(e.Id)).DistinctBy(e => (e.Id, e.WorkshopLink)).ToList();
         // Each id and source not installed on if one of its rows is; where two Workshop rows name it, the one on is the copy
-        // that loads once installed. One installed from that source (another Workshop item of it) keeps its entry above.
-        var sources = current.Select(c => (c.Id, c.Source)).ToHashSet();
-        foreach (var rows in missing.GroupBy(e => (e.Id, Source: e.WorkshopLink.Length > 0 ? ModSource.SteamWorkshop : ModSource.ModsDirectory))
-            .Where(g => !sources.Contains(g.Key)))
+        // that loads once installed.
+        foreach (var rows in missing.GroupBy(e => (e.Id, Source: e.WorkshopLink.Length > 0 ? ModSource.SteamWorkshop : ModSource.ModsDirectory)))
         {
             // A Workshop mod keeps its item ("w:<item>": the copy that loads once installed), so it can be subscribed to
             // from the missing-mods list later.
@@ -521,25 +555,29 @@ static class Profiles
             mods.Add(new ProfileMod(rows.Key.Id, rows.Key.Source, loads != null, rows.Key.Source == ModSource.SteamWorkshop ? CopyOfLink(row.WorkshopLink) : null,
                 row.Name.Length > 0 ? row.Name : null));
         }
-        // A Workshop row for an id installed by hand: that copy on after the import (as planned, or as it is when the list
+        // A Workshop row on for an id installed by hand: that copy on after the import (as planned, or as it is when the list
         // doesn't name it) beside the Workshop one.
-        var both = entries.Where(e => !Manager(e.Id) && e.WorkshopLink.Length > 0)
+        var both = entries.Where(e => !Manager(e.Id) && e.Enabled && e.WorkshopLink.Length > 0)
             .Where(e => current.FirstOrDefault(c => c.Id == e.Id && c.Source == ModSource.ModsDirectory) is { } local
                 && (mods.FirstOrDefault(m => m.Id == e.Id && m.Source == ModSource.ModsDirectory)?.Enabled ?? local.Enabled))
             .DistinctBy(e => e.Id).ToList();
-        return new ImportPlan(mods, on, off, same, unlisted, missing, PlanExtras(entries), both);
+        return new ImportPlan(mods, on, off, same, unlisted, missing, PlanExtras(entries), both, switched);
     }
 
     // The copy a Workshop link names ("w:<item>"), or null for none.
     static string? CopyOfLink(string link) =>
         link.Length > 0 && ulong.TryParse(link[(link.LastIndexOf('=') + 1)..], out var item) ? $"w:{item}" : null;
 
-    // The rows of a shared list (its id's) that set an installed copy: those linking its Workshop item; else those with
-    // no link, which name a copy installed by hand, or one whose item can't be told: a Workshop copy takes them only where
-    // its id has no local copy installed (local: one is). None: the list doesn't name it, so it's left as it is.
+    // The rows of a shared list (its id's) that set an installed copy. Its id installed once: every row of it, linked ones
+    // first, whichever copy they link (a list names a mod by its id: a friend's Workshop copy is the one installed here by
+    // hand). Else those linking its Workshop item; else those with no link, which name a copy installed by hand, or one
+    // whose item can't be told: a Workshop copy takes them only where its id has no local copy installed (local: one is).
+    // None: the list doesn't name it, so it's left as it is.
     static List<ProfileCsv.Entry> RowsOf(Mod copy, IEnumerable<ProfileCsv.Entry> listed, bool local)
     {
         var rows = listed.ToList();
+        if (Copies.Others(copy).Count == 0)
+            return [.. rows.OrderBy(e => e.WorkshopLink.Length > 0 ? 0 : 1)];
         if (Compat.WorkshopId(copy) is { } item)
         {
             var link = ProfileCsv.WorkshopLink(item);
@@ -552,15 +590,20 @@ static class Profiles
     }
 
     // A listed mod's entry for one id and source installed, from its copies' rows (RowsOf; a copy with none as it is now):
-    // each copy on if one of its rows is, the entry on if a copy is. Of copies from one source, the one that loads is the
-    // copy the first row on links (one installed first; a Workshop item not installed yet loads once it is), else the
-    // pick now if it's on, else the first on; the rest go in CopiesOff (none on: the copy and copies off as they are, so
-    // turned on elsewhere the same copies come back). Null when no row names a copy of it.
+    // each copy on if one of its rows is, the entry on if a copy is. Copies given the same rows, none linked (two copies
+    // installed by hand, or Workshop ones whose item can't be read), can't be told apart by them: those rows set only
+    // whether they're on, each keeping its box as it reads with the switch on (the Copy and CopiesOff Current gave mod),
+    // so a list shared from this mod list reads back as it is. Of copies from one source, the one that loads is the copy
+    // the first row on links (one installed first; a Workshop item not installed yet loads once it is), else the pick now
+    // if it's on, else the first on; the rest go in CopiesOff (none on: the copy and copies off as they are, so turned on
+    // elsewhere the same copies come back). Null when no row names a copy of it.
     static ProfileMod? Planned(ProfileMod mod, List<Mod> copies, Dictionary<Mod, List<ProfileCsv.Entry>> rows, IEnumerable<ProfileCsv.Entry> listed)
     {
         if (copies.All(c => rows[c].Count == 0))
             return null;
-        var on = copies.Where(c => rows[c].Count > 0 ? rows[c].Any(e => e.Enabled) : Copies.Ticked(c)).ToList();
+        bool Alike(Mod copy) => rows[copy] is { Count: > 0 } own && own.All(e => e.WorkshopLink.Length == 0) && copies.Any(c => c != copy && rows[c].SequenceEqual(own));
+        var on = copies.Where(c => rows[c].Count == 0 ? Copies.Ticked(c)
+            : rows[c].Any(e => e.Enabled) && (!Alike(c) || On(mod with { Enabled = true }, Copies.CopyOf(c)))).ToList();
         if (copies.Count < 2 || on.Count == 0)
             return mod with { Enabled = on.Count > 0 };
         static string? LinkOf(Mod copy) => Compat.WorkshopId(copy) is { } item ? ProfileCsv.WorkshopLink(item) : null;
@@ -724,18 +767,21 @@ static class Profiles
     }
 
     // Whether a mod's on/off in the current list differs from the profile's: its switch or, on, for a mod installed more
-    // than once from one source, any copy's own box or the copy that loads (only copies installed count). A mod the profile
-    // has never seen never differs (switching to the profile leaves it as it is); the managers don't count.
-    static bool Differs(ProfileMod current, Dictionary<(string, ModSource), ProfileMod> profile) =>
+    // than once from one source, any copy's own box or the copy of the id that loads after a relaunch (LoadingAs: a pick
+    // that changes nothing that loads is no difference; only copies installed count). A mod the profile has never seen
+    // never differs (switching to the profile leaves it as it is); the managers don't count. now: the current list's.
+    static bool Differs(ProfileMod current, Dictionary<(string, ModSource), ProfileMod> profile, Dictionary<(string, ModSource), ProfileMod> now) =>
         !Manager(current.Id) && profile.GetValueOrDefault((current.Id, current.Source)) is { } saved
         && (saved.Enabled != current.Enabled || current.Enabled && Group(current.Id, current.Source) is { } copies
-            && (copies.Any(c => On(saved, c) != On(current, c)) || PickOf(saved) != PickOf(current)));
+            && (copies.Any(c => On(saved, c) != On(current, c)) || CopyOf(LoadingAs(current.Id, profile)) != CopyOf(LoadingAs(current.Id, now))));
+
+    static string? CopyOf(Mod? copy) => copy == null ? null : Copies.CopyOf(copy);
 
     // Same on/off for every installed mod.
     static bool Same(List<ProfileMod> current, List<ProfileMod> profile)
     {
-        var saved = Index(profile);
-        return !current.Any(c => Differs(c, saved));
+        var (saved, now) = (Index(profile), Index(current));
+        return !current.Any(c => Differs(c, saved, now));
     }
 
     // The current list, plus the old list's entries for mods that aren't installed right now, and the copies an entry

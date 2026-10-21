@@ -552,7 +552,7 @@ static class HistoryBar
 
     // A switch to another copy of a mod with no box changed, as Changes words it ("Test Twin: Test Twin (SmmTestTwinA)
     // loads instead of Test Twin Beta (SmmTestTwinB)"): plain, and rich with each copy's name opening it.
-    static (string Plain, string Rich) CopySwitch(Mod from, Mod to) =>
+    public static (string Plain, string Rich) CopySwitch(Mod from, Mod to) =>
         (Menus.Format("SPIRE_MOD_MANAGER.CHANGE_COPY_SWITCH", ("mod", Name(to)), ("to", Copies.Named(to)), ("from", Copies.Named(from))),
             Menus.Format("SPIRE_MOD_MANAGER.CHANGE_COPY_SWITCH", ("mod", Escape(Name(to))), ("to", Link(Copies.LinkKey(to), Copies.Named(to))),
                 ("from", Link(Copies.LinkKey(from), Copies.Named(from)))));

@@ -3399,31 +3399,35 @@ static partial class SelfTest
             existing == null || (byCase.Sorted is [("SmmTestNotHere", var into)] && into == existing && byCase.NewCategories.Count == 0)
             && byCase.Named.Where(n => n.Key == "SmmTestLib").All(n => (n.Alias != null) == string.IsNullOrEmpty(libInfo?.Alias) && (n.Notes != null) == string.IsNullOrEmpty(libInfo?.Notes)),
             $"{existing}: {string.Join(", ", byCase.Sorted)}; new {string.Join(", ", byCase.NewCategories)}; named {string.Join(", ", byCase.Named)}");
-        // A mod listed twice, a Workshop copy first: the local test mod takes the row without a link; the linked one, an item
-        // not installed, is missing (the preview offers to subscribe to it), though its id is installed by hand.
+        // A mod installed once (the local test mod) listed twice, a Workshop copy first: its one copy takes every row of its
+        // id, on as one of them is; nothing is missing, though the list links a Workshop item it doesn't have (an import
+        // never offers a second copy of a mod the player has).
         var libOn = IsOn("SmmTestLib");
+        string LibPlanned(Profiles.ImportPlan plan) => string.Join(", ", plan.Mods.Where(m => m.Id == "SmmTestLib").Select(m => $"{m.Source}={m.Enabled}"))
+            + $" (on {plan.On}, off {plan.Off}, same {plan.Same}); missing {string.Join(", ", plan.Missing)}; both {plan.BothCopies.Count}";
         var twice = Profiles.PlanImport([new("SmmTestLib", !libOn, "Test Framework", link), new("SmmTestLib", libOn, "Test Framework", "")]);
-        Check("a mod listed twice: each copy takes the row for its source; the Workshop item not installed is missing", Dependencies.Find("SmmTestLib")?.modSource == ModSource.ModsDirectory
-            && twice.Mods.FirstOrDefault(m => m.Id == "SmmTestLib" && m.Source == ModSource.ModsDirectory)?.Enabled == libOn && twice is { Same: 1, On: 0, Off: 0 }
-            && twice.Missing is [{ Id: "SmmTestLib", WorkshopLink: link }],
-            string.Join(", ", twice.Mods.Where(m => m.Id == "SmmTestLib").Select(m => $"{m.Source}={m.Enabled}")) + $"; missing {string.Join(", ", twice.Missing)}");
-        // A list naming a mod's Workshop copy, its row on, while its copy installed by hand is on too (here: listed on as
-        // well, with no link): both would be on, and the preview says so (Jordan's words), naming it. A row with a link sets
-        // that copy alone: listed off, the copy installed by hand is left as it is (unlisted), and isn't turned off with it;
-        // listed on alone, the copy by hand stays as it is, so both are on only if it is.
+        Check("a mod installed once, listed twice: its copy takes every row of its id (on, as one is); nothing missing", Dependencies.Find("SmmTestLib")?.modSource == ModSource.ModsDirectory
+            && twice.Mods.SingleOrDefault(m => m.Id == "SmmTestLib") is { Source: ModSource.ModsDirectory, Enabled: true } && twice.On == (libOn ? 0 : 1)
+            && twice.Same == (libOn ? 1 : 0) && twice is { Off: 0, Missing.Count: 0 }, LibPlanned(twice));
+        // A list naming the mod by its Workshop item alone, while it's installed here by hand (a friend's list: ours and
+        // Better Mod Menu's write a Workshop mod's link): the row sets the copy installed, and nothing is missing (nothing to
+        // subscribe to). Listed on, it's on, and the preview says both copies would stay installed, one should be on
+        // (Jordan's words), naming it; listed off, it goes off, nothing to say.
         var bothOn = Profiles.PlanImport([new("SmmTestLib", true, "Test Framework", link), new("SmmTestLib", true, "Test Framework", "")]);
         var linkOn = Profiles.PlanImport([new("SmmTestLib", true, "Test Framework", link)]);
-        var bothOff = Profiles.PlanImport([new("SmmTestLib", false, "Test Framework", link)]);
-        var bothPreview = ProfileShare.PreviewFor([new("SmmTestLib", true, "Test Framework", link), new("SmmTestLib", true, "Test Framework", "")], "Both");
-        Check("a list's Workshop copy beside one installed by hand that's on: the preview says both stay installed, one should be on, and names it; a row "
-            + "linking the Workshop copy leaves the copy by hand as it is (off, nothing to say)",
-            bothOn.BothCopies is [{ Id: "SmmTestLib" }] && linkOn.BothCopies.Count == (libOn ? 1 : 0) && bothOff.BothCopies.Count == 0
-            && !bothOff.Mods.Any(m => m.Id == "SmmTestLib" && m.Source == ModSource.ModsDirectory) && !linkOn.Mods.Any(m => m.Id == "SmmTestLib" && m.Source == ModSource.ModsDirectory)
-            && bothOff.Unlisted == linkOn.Unlisted && linkOn.Missing is [{ WorkshopLink: link }]
-            && bothPreview.Contains(Menus.Text("SPIRE_MOD_MANAGER.IMPORT_BOTH_COPIES") + "\n  •  [b]Test Framework[/b]"),
-            $"framework on {libOn}; link on: {string.Join(", ", linkOn.Mods.Where(m => m.Id == "SmmTestLib").Select(m => $"{m.Source}={m.Enabled}"))}, "
-            + $"both {linkOn.BothCopies.Count}, unlisted {linkOn.Unlisted}; off: {string.Join(", ", bothOff.Mods.Where(m => m.Id == "SmmTestLib").Select(m => $"{m.Source}={m.Enabled}"))}, "
-            + $"unlisted {bothOff.Unlisted}; {bothPreview}");
+        var linkOff = Profiles.PlanImport([new("SmmTestLib", false, "Test Framework", link)]);
+        var (onPreview, offPreview) = (ProfileShare.PreviewFor([new("SmmTestLib", true, "Test Framework", link)], "On"),
+            ProfileShare.PreviewFor([new("SmmTestLib", false, "Test Framework", link)], "Off"));
+        var bothCopies = Menus.Text("SPIRE_MOD_MANAGER.IMPORT_BOTH_COPIES");
+        Check("a list's Workshop row for a mod installed by hand sets that copy: on turns it on, off turns it off, nothing missing either way (no subscribe); "
+            + "on, the preview says both stay installed, one should be on, and names it; off, nothing to say",
+            bothOn.BothCopies is [{ Id: "SmmTestLib" }] && linkOn.BothCopies is [{ Id: "SmmTestLib" }] && linkOff.BothCopies.Count == 0
+            && linkOn.Mods.SingleOrDefault(m => m.Id == "SmmTestLib") is { Source: ModSource.ModsDirectory, Enabled: true } && linkOn.On == (libOn ? 0 : 1)
+            && linkOff.Mods.SingleOrDefault(m => m.Id == "SmmTestLib") is { Source: ModSource.ModsDirectory, Enabled: false } && linkOff.Off == (libOn ? 1 : 0)
+            && linkOn.Missing.Count == 0 && linkOff.Missing.Count == 0 && bothOn.Missing.Count == 0
+            && onPreview.Contains(bothCopies + "\n  •  [b]Test Framework[/b]") && !onPreview.Contains("Not installed")
+            && !offPreview.Contains(bothCopies) && !offPreview.Contains("Not installed"),
+            $"framework on {libOn}; on: {LibPlanned(linkOn)}; off: {LibPlanned(linkOff)}; both: {LibPlanned(bothOn)}; {onPreview} || {offPreview}");
         var (wantOn, wantOff) = ((IsOn("SmmTestLib") ? 0 : 1), (IsOn("SmmTestUi") ? 1 : 0));
         // "1 mod sorted into categories", "3 mods sorted into categories": a count of mods, said as one.
         static string SortedLine(int count) => count == 1 ? "1 mod sorted into categories" : $"{count} mods sorted into categories";
@@ -8758,30 +8762,47 @@ static partial class SelfTest
         else
             Results.Add("SKIP same ID, profiles: one profile only");
 
-        // Shared lists: a row for the id with no link sets both copies (two copies installed by hand look alike in a list):
-        // off, the entry keeping its pick and copies off; on, both on, the pick kept. Rows for copies not installed are
-        // listed by item when two share an id.
+        // Shared lists: a row for the id with no link names both copies (two copies installed by hand look alike in a list),
+        // so it sets their switch alone: off, the entry keeping its pick and copies off; on, each copy as its box is, the
+        // pick kept. Rows for copies not installed are listed by item when two share an id.
         var once = Profiles.PlanImport([new(TwinId, false, "Test Twin", "")]);
         var onceOn = Profiles.PlanImport([new(TwinId, true, "Test Twin", "")]);
         var twoGone = Profiles.PlanImport([new("SmmSameIdGone", true, "Gone", ProfileCsv.WorkshopLink(41)), new("SmmSameIdGone", false, "Gone", ProfileCsv.WorkshopLink(42))]);
         var preview = ProfileShare.PreviewFor([new("SmmSameIdGone", true, "Gone", ProfileCsv.WorkshopLink(41)), new("SmmSameIdGone", false, "Gone", ProfileCsv.WorkshopLink(42))], "Two gone");
         static string Planned(Profiles.ImportPlan plan, string id) => string.Join(", ", plan.Mods.Where(m => m.Id == id)
-            .Select(m => $"{m.Source} {m.Enabled} {m.Copy ?? "no copy"} off [{string.Join(",", m.CopiesOff ?? [])}]"));
-        Check("... a shared list naming the id once (no link) sets both copies: off keeps the pick and copies off, on turns both on and keeps the pick; two "
-            + "copies not installed are both listed, by item",
+            .Select(m => $"{m.Source} {m.Enabled} {m.Copy ?? "no copy"} off [{string.Join(",", m.CopiesOff ?? [])}]"))
+            + $" (on {plan.On}, off {plan.Off}, same {plan.Same}, switched {plan.Switched.Count}, missing {plan.Missing.Count})";
+        Check("... a shared list naming the id once (no link) sets both copies' switch: off keeps the pick and copies off; on, each copy as its box is, the "
+            + "pick kept; two copies not installed are both listed, by item",
             once.Mods.SingleOrDefault(m => m.Id == TwinId) is { Enabled: false, Copy: "l:SmmTestTwinB", CopiesOff: ["l:SmmTestTwinA"] } && once is { Off: 1, Same: 1 }
-            && onceOn.Mods.SingleOrDefault(m => m.Id == TwinId) is { Enabled: true, Copy: "l:SmmTestTwinB", CopiesOff: [] } && onceOn is { On: 1, Same: 1 }
+            && onceOn.Mods.SingleOrDefault(m => m.Id == TwinId) is { Enabled: true, Copy: "l:SmmTestTwinB", CopiesOff: ["l:SmmTestTwinA"] } && onceOn is { On: 0, Off: 0, Same: 2 }
             && twoGone.Missing.Count == 2 && preview.Contains("Gone (41)") && preview.Contains("Gone (42)")
             && twoGone.Mods.SingleOrDefault(m => m.Id == "SmmSameIdGone") is { Enabled: true, Copy: "w:41" },
-            $"once {Planned(once, TwinId)} (on {once.On}, off {once.Off}, same {once.Same}); on {Planned(onceOn, TwinId)} (on {onceOn.On}, same {onceOn.Same}); "
-            + $"gone {Planned(twoGone, "SmmSameIdGone")}; {preview}");
+            $"once {Planned(once, TwinId)}; on {Planned(onceOn, TwinId)}; gone {Planned(twoGone, "SmmSameIdGone")}; {preview}");
+        // The profile shared (the off copy's row too, or the enabled one's alone, as by default) and read back on this mod
+        // list: nothing changes (rows with no link can't say which copy each is, so they don't turn the off one on). Local
+        // copies have no link.
+        var shared = (Profiles.Active is { } sharing ? Profiles.ShareRows(sharing) : []).Where(r => r.Id == TwinId).ToList();
+        List<ProfileCsv.Entry> Read(IEnumerable<ProfileCsv.Row> rows) => [.. rows.Select(r => new ProfileCsv.Entry(r.Id, r.Enabled, r.Name, ""))];
+        var (readAll, readOn) = (Profiles.PlanImport(Read(shared)), Profiles.PlanImport(Read(shared.Where(r => r.Enabled))));
+        var sharePreview = ProfileShare.PreviewFor(Read(shared), "Shared");
+        Check("... the profile shared with one twin off (its row too, or the enabled one's alone) and read back here: nothing changes (no copy turned on, "
+            + "the pick and copies off kept; the preview says None)",
+            shared.Count == 2 && shared.Count(r => r.Enabled) == 1
+            && new[] { readAll, readOn }.All(p => p.Mods.SingleOrDefault(m => m.Id == TwinId) is { Enabled: true, Copy: "l:SmmTestTwinB", CopiesOff: ["l:SmmTestTwinA"] }
+                && p is { On: 0, Off: 0, Same: 2, Switched.Count: 0 })
+            && sharePreview.Contains("Changes compared to the current profile:\n  •  None"),
+            $"rows {string.Join(" | ", shared.Select(r => $"{r.Id} {r.Version} {r.Enabled}"))}; all {Planned(readAll, TwinId)}; on {Planned(readOn, TwinId)}; {sharePreview}");
 
         // Two Workshop items of one mod (made up, in the game's list for a moment, not announced): each says its item; a
         // shared list naming both sets each copy by its link, the one on picked; a row on naming an item not installed is
         // the pick for when it is; both rows on, both on, the first row's picked. The fixture's two local copies say their
-        // folders.
+        // folders. Both on with the other picked first (a friend's list loading the other copy) changes no box, but which
+        // copy loads: the preview says so in Changes' words, not None. And a Workshop item of another mod installed once
+        // (111), listed by another item of it (222, a re-upload): the row sets the one installed, nothing missing.
         var (w124, w125) = (Made("SmmSameIdW", "SmmSameIdW124", ModLoadState.None, 124), Made("SmmSameIdW", "SmmSameIdW125", ModLoadState.None, 125));
-        GameMods().AddRange([w124, w125]);
+        var w111 = Made("SmmSameIdOnce", "SmmSameIdOnce111", ModLoadState.None, 111);
+        GameMods().AddRange([w124, w125, w111]);
         try
         {
             var byLink = Profiles.PlanImport([new("SmmSameIdW", false, "W", ProfileCsv.WorkshopLink(124)), new("SmmSameIdW", true, "W", ProfileCsv.WorkshopLink(125))]);
@@ -8795,11 +8816,86 @@ static partial class SelfTest
                 && bothLinked.Mods.SingleOrDefault(m => m.Id == "SmmSameIdW") is { Enabled: true, Copy: "w:124", CopiesOff: [] },
                 $"{Copies.Which(w124)}, {Copies.Which(w125)}, {Copies.Which(a)}; {Planned(byLink, "SmmSameIdW")}; {Planned(notYet, "SmmSameIdW")}; "
                 + Planned(bothLinked, "SmmSameIdW"));
+            List<ProfileCsv.Entry> otherFirst = [new("SmmSameIdW", true, "W", ProfileCsv.WorkshopLink(125)), new("SmmSameIdW", true, "W", ProfileCsv.WorkshopLink(124))];
+            var (switchedTo, switchPreview) = (Profiles.PlanImport(otherFirst), ProfileShare.PreviewFor(otherFirst, "Other first"));
+            var switchLine = Draft(CopySwitchLine, ("mod", "SmmSameIdW"), ("to", Copies.Named(w125)), ("from", Copies.Named(w124)));
+            Check("... both Workshop copies on, the other one first in the list: no box changes, but the copy that loads does, and the preview says so in "
+                + "Changes' words, not None", Copies.Picked("SmmSameIdW", ModSource.SteamWorkshop) == "w:124"
+                && switchedTo is { On: 0, Off: 0, Same: 2, Switched: [var (from, to)] } && from == w124 && to == w125
+                && switchedTo.Mods.SingleOrDefault(m => m.Id == "SmmSameIdW") is { Enabled: true, Copy: "w:125", CopiesOff: [] }
+                && switchPreview.Contains($"Changes compared to the current profile:\n  •  {switchLine}") && !switchPreview.Contains("  •  None"),
+                $"{Planned(switchedTo, "SmmSameIdW")}; {switchPreview}");
+            List<ProfileCsv.Entry> reupload = [new("SmmSameIdOnce", false, "Once", ProfileCsv.WorkshopLink(222))];
+            var (once222, once222Preview) = (Profiles.PlanImport(reupload), ProfileShare.PreviewFor(reupload, "Re-upload"));
+            Check("... a mod installed once from the Workshop (item 111), listed by another item of it (222): the row sets the one installed (off), nothing "
+                + "missing, nothing to subscribe to", once222.Mods.SingleOrDefault(m => m.Id == "SmmSameIdOnce") is { Source: ModSource.SteamWorkshop, Enabled: false }
+                && once222 is { Off: 1, Missing.Count: 0 } && !once222Preview.Contains("Not installed"), $"{Planned(once222, "SmmSameIdOnce")}; {once222Preview}");
         }
         finally
         {
             GameMods().Remove(w124);
             GameMods().Remove(w125);
+            GameMods().Remove(w111);
+        }
+
+        // A local copy beside two Workshop items of one mod (made up, as found at launch; the local copy newer, so the game
+        // keeps it on either branch), all ticked, as the active profile has them: the other Workshop item picked changes
+        // nothing that loads, so it's no unsaved change, as Changes has none. Then one Workshop item newer than the local
+        // copy, the other picked: on the beta the newer loads (the game's rule), and the picked one says so, not that it's
+        // its source's one copy that loads; on stable the local copy still loads.
+        const string Mix = "SmmSameIdMix";
+        var mixLocal = Made(Mix, "MixLocal", ModLoadState.Loaded, version: "2.0.0");
+        var (mix61, mix62) = (Made(Mix, "Mix61", ModLoadState.DisabledDuplicate, 61), Made(Mix, "Mix62", ModLoadState.DisabledDuplicate, 62));
+        GameMods().AddRange([mixLocal, mix61, mix62]);
+        var (mixPicks, mixOff) = (Store.Data.CopyPicks, Store.Data.CopiesOff);
+        try
+        {
+            History.Quietly(data =>
+            {
+                if (data.Profiles.FirstOrDefault(p => p.Name == data.ActiveProfile) is { } active)
+                    foreach (var list in new[] { active.Mods, active.Edited })
+                        list?.AddRange([new ProfileMod(Mix, ModSource.ModsDirectory, true), new ProfileMod(Mix, ModSource.SteamWorkshop, true, "w:61", CopiesOff: [])]);
+            });
+            Profiles.Track();
+            var mixClean = !Profiles.Edited && Copies.Picked(Mix, ModSource.SteamWorkshop) == "w:61" && Copies.Loading(Mix) == mixLocal;
+            Dependencies.Write([(mix62, true)], pick: [mix62]); // as a tick on it after unticking it, or a profile naming it
+            Profiles.Track();
+            var mixSwitched = Profiles.UnsavedChanges().Switched.Where(s => s.To.manifest?.id == Mix).ToList();
+            var pickOnly = Copies.Picked(Mix, ModSource.SteamWorkshop) == "w:62" && Copies.Loading(Mix) == mixLocal && !Profiles.Edited && mixSwitched.Count == 0
+                && !HistoryBar.Describe().Any(l => l.Contains(Mix));
+            var pickSay = $"clean before {mixClean}; pick {Copies.Picked(Mix, ModSource.SteamWorkshop)}, loads {Copies.KeyOf(Copies.Loading(Mix))}, edited {Profiles.Edited}, "
+                + $"switched {string.Join(", ", mixSwitched.Select(s => $"{Copies.CopyOf(s.From)}->{Copies.CopyOf(s.To)}"))}; "
+                + string.Join(" | ", HistoryBar.Describe().Where(l => l.Contains(Mix)));
+            Check("... a local copy (newer) beside two Workshop items, all ticked and saved in the profile: the other Workshop item picked changes nothing that "
+                + "loads, so it's no unsaved change (and no line in Changes)", mixClean && pickOnly, pickSay);
+            if (mix61.manifest is { } newer)
+                newer.version = "3.0.0";
+            var w = Compat.WorkshopBeatsOlderLocal;
+            var mixLoads = w ? mix61 : mixLocal;
+            var lost = Copies.LosesTo(mix62);
+            Check("... one Workshop item newer than the local copy, the other picked: " + (w ? "on the beta the newer loads (the game's rule), and the picked "
+                + "one says it loads instead as the higher version" : "on stable the local copy still loads, and the picked one says why"),
+                lost is { } why && why.Loads == mixLoads && why.Why == (w ? Copies.LoseReason.HigherVersion : Copies.LoseReason.LocalCopy)
+                && ModDetails.CopyLine(mix62, false)?.Text == Draft(CopyLoses, ("other", Copies.Named(mixLoads)), ("why", w ? WhyHigher : WhyLocal)),
+                $"beta rule {w}; loses to {Copies.KeyOf(lost?.Loads)} ({lost?.Why}); line {ModDetails.CopyLine(mix62, false)?.Text}");
+        }
+        finally
+        {
+            GameMods().Remove(mixLocal);
+            GameMods().Remove(mix61);
+            GameMods().Remove(mix62);
+            (Store.Data.CopyPicks, Store.Data.CopiesOff) = (mixPicks, mixOff);
+            Store.SaveViewState();
+            History.Quietly(data =>
+            {
+                data.CopyPicks = Store.TidyPicks(data.CopyPicks?.Where(k => Copies.IdOf(k) != Mix));
+                foreach (var profile in data.Profiles)
+                {
+                    profile.Mods.RemoveAll(m => m.Id == Mix);
+                    profile.Edited?.RemoveAll(m => m.Id == Mix);
+                }
+            });
+            Profiles.Track();
         }
 
         // Restore of a working setup (the crash dialog's) with our data loaded: its copies picked again, and so ticked (out
@@ -9052,12 +9148,13 @@ static partial class SelfTest
             && updatePopup.Contains("New mods were detected") && !updatePopup.Contains("A new copy"), $"not new {notNew}; {updatePopup}");
 
         // A mod installed once (made up, as found at launch) whose saved pick still names a second copy, uninstalled since
-        // (picks are never pruned), and an active profile naming no copy (as from before copies). That copy comes back
-        // mid-session: ticked, it doesn't take over, and the profile holds the copy there with the new one off, so its
-        // arriving on is the profile's unsaved edit; unticking the copy there makes the new one load; an update of the new
-        // copy keeps that pick and isn't announced as a new copy again. Then two copies of a mod new to the game, one after
-        // the other (the first one's popup held back: one every 30 s): the new-mods words, not a new copy's, both ticked,
-        // and the copy that came first keeps the pick (the record's order puts the second first).
+        // (picks are never pruned; our record never had it: new to us), and an active profile naming no copy (as from
+        // before copies). That copy comes mid-session: ticked, it doesn't take over, and the profile holds the copy there
+        // with the new one off, so its arriving on is the profile's unsaved edit; unticking the copy there makes the new
+        // one load; an update of the new copy keeps that pick and isn't announced as a new copy again. Then two copies of a
+        // mod new to the game, one after the other (the first one's popup held back: one every 30 s): the new-mods words,
+        // not a new copy's, both ticked, and the copy that came first keeps the pick (the record's order puts the second
+        // first).
         const string Back = "SmmSameIdBack", Pair = "SmmSameIdPair";
         var backFirst = Made(Back, "Back1", ModLoadState.Loaded);
         var (backSecond, backUpdate) = (Made(Back, "Back2", ModLoadState.AddedAtRuntime), Made(Back, "Back2", ModLoadState.AddedAtRuntime, version: "1.0.1"));
@@ -9144,13 +9241,69 @@ static partial class SelfTest
         Profiles.Track();
         CategoryList.Redraw(content);
         await Wait(menu, 0.3);
-        Check("... a copy back mid-session that a saved pick still names arrives ticked and doesn't take over (its popup says which copy loads); the active "
-            + "profile, naming no copy, holds the one there with the new one off, so its arriving on is the profile's edit; unticking the copy there makes the "
-            + "new one load, one undo step; an update of the new copy keeps that pick and isn't a new copy again", cameBack && switched && updateKeeps && backUndone,
+        Check("... a copy new to our record mid-session that a saved pick still names arrives ticked and doesn't take over (its popup says which copy "
+            + "loads); the active profile, naming no copy, holds the one there with the new one off, so its arriving on is the profile's edit; unticking the "
+            + "copy there makes the new one load, one undo step; an update of the new copy keeps that pick and isn't a new copy again",
+            cameBack && switched && updateKeeps && backUndone,
             $"{cameSay}; switched {switched}, update keeps {updateKeeps} ({backUpdatePopup}), undone {backUndone} "
             + $"(+{string.Join(",", backOn.Select(m => m.Name))} -{string.Join(",", backOff.Select(m => m.Name))} ~{backSwitched.Count})");
         Check("... two copies of a mod new to the game, one after the other: the new-mods words, both ticked, and the copy that came first picked",
             pairNew, $"pick {pairPicked}; {pairPopup}");
+
+        // A copy uninstalled and back mid-session (made up: our record has it, from when both were installed, the pick the
+        // copy there), the active profile saved with both ticked: it arrives ticked and keeps the profile's tick, so
+        // nothing is unsaved, as when it's back before a launch.
+        const string Again = "SmmSameIdAgain";
+        var (againThere, againBack) = (Made(Again, "Again1", ModLoadState.Loaded), Made(Again, "Again2", ModLoadState.AddedAtRuntime));
+        GameMods().Add(againThere);
+        History.Quietly(data =>
+        {
+            (data.Copies ??= [])[Again] = ["l:Again1", "l:Again2"];
+            data.CopyPicks = Copies.WithPicks(data.CopyPicks, [$"{Again}|l:Again1"]);
+            if (data.Profiles.FirstOrDefault(p => p.Name == data.ActiveProfile) is { } active)
+                foreach (var list in new[] { active.Mods, active.Edited })
+                    list?.Add(new ProfileMod(Again, ModSource.ModsDirectory, true, "l:Again1", CopiesOff: []));
+        });
+        Profiles.Track();
+        var againClean = !Profiles.Edited;
+        NewModPopupPatch.TestReset();
+        NModalContainer.Instance?.Clear();
+        GameInstalls(againBack);
+        await Wait(menu, 0.4);
+        NModalContainer.Instance?.Clear();
+        Profiles.Track();
+        var againHeld = Profiles.Active?.Mods.FirstOrDefault(m => m.Id == Again);
+        var againOn = Profiles.UnsavedChanges().On.Where(m => m.Id.StartsWith(Again)).Select(m => m.Name).ToList();
+        var keptTick = againClean && Copies.Ticked(againBack) && Copies.Picked(Again, ModSource.ModsDirectory) == "l:Again1" && againHeld is { Copy: "l:Again1", CopiesOff: [] }
+            && !Profiles.Edited && againOn.Count == 0;
+        var againSay = $"clean before {againClean}; ticked {Copies.Ticked(againBack)}, pick {Copies.Picked(Again, ModSource.ModsDirectory)}, held {againHeld?.Copy} "
+            + $"off [{string.Join(",", againHeld?.CopiesOff ?? [])}], edited {Profiles.Edited} (+{string.Join(",", againOn)})";
+        if (Rows().FirstOrDefault(r => r.Mod == againBack) is { } againRow)
+        {
+            content.RemoveChild(againRow);
+            againRow.QueueFree();
+        }
+        GameForgets(againBack);
+        GameMods().Remove(againThere);
+        SaveManager.Instance.SettingsSave.ModSettings?.ModList.RemoveAll(e => e.Id == Again);
+        History.Quietly(data =>
+        {
+            data.Copies?.Remove(Again);
+            foreach (var key in data.Mods.Keys.Where(k => Copies.IdOf(k) == Again).ToList())
+                data.Mods.Remove(key);
+            data.CopyPicks = Store.TidyPicks(data.CopyPicks?.Where(k => Copies.IdOf(k) != Again));
+            data.CopiesOff = data.CopiesOff?.Where(k => Copies.IdOf(k) != Again).ToList();
+            foreach (var profile in data.Profiles)
+            {
+                profile.Mods.RemoveAll(m => m.Id == Again);
+                profile.Edited?.RemoveAll(m => m.Id == Again);
+            }
+        });
+        Profiles.Track();
+        CategoryList.Redraw(content);
+        await Wait(menu, 0.3);
+        Check("... a copy uninstalled and back mid-session (our record has it), the profile saved with both ticked: it arrives ticked and keeps the "
+            + "profile's tick, nothing unsaved (as when it's back before a launch)", keptTick, againSay);
         Check("... as it started: the fixture's pick, the other copy off (copies_off as the page opened with, in our file too), nothing changed since the "
             + "page opened for the twins", Picked() == "l:SmmTestTwinB" && Ticked(rowB) && !Ticked(rowA) && SwitchOn() && !Profiles.Edited && OffAsAtStart()
             && CopiesBroken() == null, Say());
