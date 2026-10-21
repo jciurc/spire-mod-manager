@@ -372,21 +372,19 @@ internal static class ModEntry
     }
 
     // True when the saved mod list differs from what this session loaded, i.e. a relaunch would change
-    // something: the vanilla Modding screen's pending-changes test per copy (the picked copy of a mod installed twice
-    // from one source), plus the load order and mods installed since launch that are on. A copy set aside or failed
-    // doesn't count, as in the game's test, nor an id whose pick a relaunch wouldn't apply (SameIdLoad.Unchosen).
+    // something: the vanilla Modding screen's pending-changes test per copy, by which copy of an id loads (Copies.Loads:
+    // ticking a second copy that won't load changes nothing), plus the load order and mods installed since launch that
+    // would load. A copy set aside counts too (Loads knows whether it loads next time); one that failed doesn't, as in
+    // the game's test, nor an id whose pick a relaunch wouldn't apply (SameIdLoad.Unchosen).
     public static bool HasPendingChanges()
     {
-        if (LoadOrder.OrderChanged || Installed.Mods.Any(Installed.On))
+        if (LoadOrder.OrderChanged)
             return true;
         var (off, picks) = (Dependencies.SavedOff(), Picks.Now);
-        return ModManager.Mods.Any(mod =>
-        {
-            if (mod.state is not (ModLoadState.Disabled or ModLoadState.Loaded) || SameIdLoad.Unchosen(mod.manifest?.id))
-                return false;
-            var on = Dependencies.OnIn(mod, off, picks);
-            return (mod.state == ModLoadState.Disabled && on) || (mod.state == ModLoadState.Loaded && !on);
-        });
+        if (Installed.Mods.Any(m => Copies.LoadsIn(m, off, picks)))
+            return true;
+        return ModManager.Mods.Any(mod => mod.state is (ModLoadState.Disabled or ModLoadState.Loaded or ModLoadState.DisabledDuplicate)
+            && !SameIdLoad.Unchosen(mod.manifest?.id) && (mod.state == ModLoadState.Loaded) != Copies.LoadsIn(mod, off, picks));
     }
 
     // Adds a button in the style of the vanilla Get Mods button, sized freely (the art is a 9-slice).

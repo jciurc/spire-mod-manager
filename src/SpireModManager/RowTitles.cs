@@ -281,9 +281,9 @@ static class RowTitles
             if (!title.HasMeta(TitleColorMeta))
                 title.SetMeta(TitleColorMeta, title.Modulate);
             var changed = !vanilla && launch is { } then && row.Mod is { manifest.id: not null } mod
-                && Dependencies.OnIn(mod, then.Off, then.Picks) != Dependencies.IsOn(mod);
+                && Copies.TickedIn(mod, then.Off, then.Picks) != Copies.Ticked(mod);
             title.Modulate = !changed ? (Color)title.GetMeta(TitleColorMeta)
-                : row.Mod is { } turned && Dependencies.IsOn(turned) ? ChangedTitle : ChangedOffTitle;
+                : row.Mod is { } turned && Copies.Ticked(turned) ? ChangedTitle : ChangedOffTitle;
         }
     }
 

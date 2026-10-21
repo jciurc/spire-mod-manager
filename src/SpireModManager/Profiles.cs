@@ -210,7 +210,7 @@ static class Profiles
         {
             if (copy.manifest?.id is not { } id || Manager(id) || saved.GetValueOrDefault((id, copy.modSource)) is not { } entry)
                 continue;
-            var now = Dependencies.IsOn(copy);
+            var now = Copies.Ticked(copy);
             if (CopyOn(copy, entry) != now)
                 (now ? on : off).Add((Copies.LinkKey(copy), (copy.manifest?.name ?? id) + Copies.Which(copy)));
         }
@@ -337,7 +337,7 @@ static class Profiles
             .Select(m =>
             {
                 var id = m.manifest?.id ?? "";
-                var on = mods.GetValueOrDefault((id, m.modSource)) is { } entry ? CopyOn(m, entry) : Dependencies.IsOn(m);
+                var on = mods.GetValueOrDefault((id, m.modSource)) is { } entry ? CopyOn(m, entry) : Copies.Ticked(m);
                 var info = Store.InfoFor(m); // this copy's
                 return new ProfileCsv.Row(id, m.manifest?.name ?? "", m.manifest?.version ?? "", on, info?.Category ?? "",
                     Compat.WorkshopId(m) is { } workshop ? workshop.ToString() : "", info?.Alias ?? "", info?.Notes ?? "");
@@ -418,7 +418,7 @@ static class Profiles
             var planned = Planned(mod, copies, listed);
             mods.Add(planned);
             foreach (var copy in copies)
-                switch ((Then: Dependencies.IsOn(copy), Now: CopyOn(copy, planned)))
+                switch ((Then: Copies.Ticked(copy), Now: CopyOn(copy, planned)))
                 {
                     case var (then, now) when then == now:
                         same++;
@@ -598,7 +598,7 @@ static class Profiles
                 else if (wants.GetValueOrDefault((id, copy.modSource)) is { } entry)
                     wanted.Add((copy, CopyOn(copy, entry)));
             }
-            Dependencies.Write(wanted, exclusive: false);
+            Dependencies.Write(wanted);
             RefreshTickboxes(screen);
         }
         finally
@@ -652,7 +652,7 @@ static class Profiles
         {
             if (row.Mod is not { } mod)
                 continue;
-            var on = vanilla ? !off.Contains((mod.manifest?.id, mod.modSource)) : Dependencies.OnIn(mod, off, picks);
+            var on = vanilla ? !off.Contains((mod.manifest?.id, mod.modSource)) : Copies.TickedIn(mod, off, picks);
             // Only where it differs (setting the box alone fires no toggle).
             if (row.GetNode<NTickbox>("Tickbox") is var tickbox && tickbox.IsTicked != on)
                 tickbox.IsTicked = on;

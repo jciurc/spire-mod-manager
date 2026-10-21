@@ -49,14 +49,14 @@ static class Bmm
     }
 
     // Ticked in the mod list (on in the game's saved list), loaded now or not: either way it loads after a relaunch.
-    public static bool Ticked => Dependencies.Find(ModId) is { } mod && Dependencies.IsOn(mod);
+    public static bool Ticked => Dependencies.Find(ModId) is { } mod && Copies.Ticked(mod);
 
     // Both managers ticked (LoadOrder's banner says so); profiles keep ours on, but the player can untick its row.
-    public static bool BothTicked => Ticked && Dependencies.Find(ModEntry.ModId) is { } ours && Dependencies.IsOn(ours);
+    public static bool BothTicked => Ticked && Dependencies.Find(ModEntry.ModId) is { } ours && Copies.Ticked(ours);
 
     // The mod managers we know of that are ticked, ours first: what the banner's card names.
     public static IEnumerable<Mod> TickedManagers() =>
-        new[] { ModEntry.ModId, ModId }.Select(Dependencies.Find).OfType<Mod>().Where(Dependencies.IsOn);
+        new[] { ModEntry.ModId, ModId }.Select(Dependencies.Find).OfType<Mod>().Where(Copies.Ticked);
 
     // Forgets a dismissed banner once the two aren't both ticked, so it shows again next time (view state, no undo).
     // Checked on every toolbar update and once at launch.

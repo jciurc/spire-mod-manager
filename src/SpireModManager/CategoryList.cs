@@ -141,10 +141,9 @@ static class CategoryList
     }
 
     // On our views, a copy of a mod installed twice that's off, while another copy of it is on: what enabling it turns
-    // off (its tickbox's tip, and Load Order's Enable). Null otherwise.
-    public static string? SwitchCopyTip(Mod mod) =>
-        !Store.Data.VanillaView && !Dependencies.IsOn(mod) && Dependencies.TurnedOffBy([mod], mod) is { Count: > 0 } off
-            ? Menus.Format("SPIRE_MOD_MANAGER.SWITCH_COPY_TIP", ("mods", Names(off))) : null;
+    // off (its tickbox's tip, and Load Order's Enable). Enabling a copy turns no other off any more (Dependencies.Write),
+    // so none until the tip says what enabling it does instead.
+    public static string? SwitchCopyTip(Mod mod) => null;
 
     // Mods as rows name them, each saying which copy where another is installed: "Test Twin (SmmTestTwinA)".
     static string Names(IEnumerable<Mod> mods) =>
@@ -810,14 +809,14 @@ static class CategoryList
             Dependencies.Set(mods, on, screen);
             Redraw(content);
         }
-        var offs = Dependencies.TurnedOffBy(mods);
+        List<Mod> offs = []; // turning a copy on turns no other off any more (Dependencies.Write)
         return
         [
             new(Menus.Text(selected ? "SPIRE_MOD_MANAGER.ENABLE_SELECTED" : "SPIRE_MOD_MANAGER.ENABLE_ALL"), () => Set(true),
-                Disabled: mods.All(m => Dependencies.IsOn(m) || Copies.Others(m).Any(Dependencies.IsOn)),
+                Disabled: mods.All(m => Copies.Ticked(m) || Copies.Others(m).Any(Copies.Ticked)),
                 Tip: offs.Count > 0 ? Menus.Format("SPIRE_MOD_MANAGER.BULK_DISABLES_COPIES_TIP", ("mods", Names(offs))) : null),
             new(Menus.Text(selected ? "SPIRE_MOD_MANAGER.DISABLE_SELECTED" : "SPIRE_MOD_MANAGER.DISABLE_ALL"), () => Set(false),
-                Disabled: mods.All(m => !Dependencies.IsOn(m) || m.manifest?.id == ModEntry.ModId),
+                Disabled: mods.All(m => !Copies.Ticked(m) || m.manifest?.id == ModEntry.ModId),
                 // Where this mod is among them, it says it stays on.
                 Tip: mods.Any(m => m.manifest?.id == ModEntry.ModId) ? Menus.Text("SPIRE_MOD_MANAGER.DISABLE_ALL_KEEPS_SELF") : null),
         ];

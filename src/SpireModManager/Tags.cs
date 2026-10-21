@@ -50,7 +50,7 @@ static class Tags
         // Its tip names the others; a click lists every mod installed more than once.
         if (Copies.Others(mod) is { Count: > 0 } others)
         {
-            var clash = Dependencies.IsOn(mod) && others.Any(Dependencies.IsOn);
+            var clash = Copies.Clashes(mod);
             var named = string.Join(", ", others.Select(o => (Store.InfoFor(o)?.Alias ?? o.manifest?.name ?? o.manifest?.id) + Copies.Which(o)));
             chips.Add(new Chip(Menus.Text("SPIRE_MOD_MANAGER.TAG_SAME_ID"), clash ? SameIdClash : Local,
                 Tip: Menus.Format(clash ? "SPIRE_MOD_MANAGER.TAG_SAME_ID_CLASH_TIP" : "SPIRE_MOD_MANAGER.TAG_SAME_ID_TIP", ("others", named))));

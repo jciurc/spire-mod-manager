@@ -205,7 +205,7 @@ static class HistoryBar
         if (Installed.Mods.Count is var installed and > 0)
         {
             lines.Add($"[color={New}]{Menus.Format(installed == 1 ? "SPIRE_MOD_MANAGER.SUMMARY_INSTALLED_ONE" : "SPIRE_MOD_MANAGER.SUMMARY_INSTALLED", ("count", Menus.Number(installed)))}[/color]");
-            Names(Installed.Mods.Select(m => $"{Name(m)} ({Menus.Text(Installed.On(m) ? "SPIRE_MOD_MANAGER.STATUS_ENABLED" : "SPIRE_MOD_MANAGER.STATUS_DISABLED")})"));
+            Names(Installed.Mods.Select(m => $"{Name(m)} ({Menus.Text(Copies.Ticked(m) ? "SPIRE_MOD_MANAGER.STATUS_ENABLED" : "SPIRE_MOD_MANAGER.STATUS_DISABLED")})"));
         }
         if (moved > 0)
             lines.Add($"[color={Moved}]{Menus.Format("SPIRE_MOD_MANAGER.SUMMARY_ORDER", ("count", Menus.Number(moved)))}[/color]");
@@ -264,7 +264,7 @@ static class HistoryBar
         foreach (var mod in Installed.Mods.OrderBy(Name))
         {
             // Under the name: whether it loads after a relaunch.
-            var state = Menus.Text(Installed.On(mod) ? "SPIRE_MOD_MANAGER.INSTALLED_ON" : "SPIRE_MOD_MANAGER.INSTALLED_OFF");
+            var state = Menus.Text(Copies.Ticked(mod) ? "SPIRE_MOD_MANAGER.INSTALLED_ON" : "SPIRE_MOD_MANAGER.INSTALLED_OFF");
             entries.Add(new Entry("installed", Menus.Format("SPIRE_MOD_MANAGER.CHANGE_INSTALLED", ("mod", Name(mod)), ("state", state)),
                 $"{Link(Copies.LinkKey(mod), Name(mod))}\n        [color={Dim}][font_size=15]{Escape(state)}[/font_size][/color]")); // a new copy: itself, not the copy that holds the id
         }
@@ -508,7 +508,7 @@ static class HistoryBar
         // on. So arriving on counts as turned on, and turning it off again is no change.
         var arrived = Installed.Mods.Select(Copies.SwitchKey).ToHashSet();
         return Dependencies.EachCopy(ModManager.Mods)
-            .Select(m => (Mod: m, Then: !arrived.Contains(Copies.SwitchKey(m)) && Dependencies.OnIn(m, thenOff, thenPicks), Now: Dependencies.OnIn(m, nowOff, nowPicks)))
+            .Select(m => (Mod: m, Then: !arrived.Contains(Copies.SwitchKey(m)) && Copies.TickedIn(m, thenOff, thenPicks), Now: Copies.TickedIn(m, nowOff, nowPicks)))
             .Where(p => p.Then != p.Now)
             .Select(p => (p.Mod, p.Now))
             .ToList();

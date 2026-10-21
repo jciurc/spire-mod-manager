@@ -3,7 +3,7 @@ using MegaCrit.Sts2.Core.Saves;
 
 namespace SpireModManager;
 
-// Answers every row of a redraw asks for (on/off, which copy an id means, who needs whom, tags, search text,
+// Answers every row of a redraw asks for (ticked, loads, which copy an id means, who needs whom, tags, search text,
 // changes since launch), worked out once per redraw: asked row by row, a 250-mod redraw took about 70 ms.
 // Use `using var lookups = Lookups.Begin();` at the top of a redraw; outside one, everything is worked out fresh.
 sealed class Lookups : IDisposable
@@ -13,6 +13,7 @@ sealed class Lookups : IDisposable
     readonly HashSet<(string? Id, ModSource Source)> _off;
     readonly Picks _picks;
     readonly Dictionary<string, Mod> _byId = [];
+    readonly Dictionary<string, Mod?> _loading = [];
     readonly Dictionary<string, List<Mod>> _neededBy = [];
     readonly Dictionary<Mod, IReadOnlyList<Tags.Chip>> _chips = [];
     readonly Dictionary<Mod, IReadOnlyList<string>> _dependencies = [];
@@ -46,10 +47,11 @@ sealed class Lookups : IDisposable
     {
         _off = Dependencies.SavedOff(saved);
         _picks = picks;
-        // The copy Dependencies.Find picks for an id: the first it prefers most (Dependencies.Preference).
+        // The copy Dependencies.Find picks for an id: the first it prefers most (Dependencies.Preference), read against
+        // these lists (Current isn't this one yet).
         foreach (var mod in mods.Concat(installed))
             if (mod.manifest?.id is { } id && (!_byId.TryGetValue(id, out var kept)
-                    || Dependencies.Preference(mod, IsOn, _picks) > Dependencies.Preference(kept, IsOn, _picks)))
+                    || Dependencies.Preference(mod, Loads, Ticked, _picks) > Dependencies.Preference(kept, Loads, Ticked, _picks)))
                 _byId[id] = mod;
         // Who needs whom, from the game's list only; a mod naming one twice counts once.
         foreach (var mod in mods)
@@ -63,7 +65,18 @@ sealed class Lookups : IDisposable
             }
     }
 
-    public bool IsOn(Mod mod) => Dependencies.OnIn(mod, _off, _picks);
+    // A copy's box and whether it loads after a relaunch (Copies.Ticked, Copies.Loads), and the copy of an id that loads
+    // (worked out once per id).
+    public bool Ticked(Mod mod) => Copies.TickedIn(mod, _off, _picks);
+
+    public bool Loads(Mod mod) => Copies.LoadsWith(mod, _off, Loading);
+
+    public Mod? Loading(string id) => Kept(_loading, id, i => Copies.LoadingIn(i, _off, _picks));
+
+    // The lists it answers from (Copies.LoadingIf tries a tick on them).
+    public HashSet<(string? Id, ModSource Source)> Off => _off;
+
+    public Picks Picks => _picks;
 
     public Mod? Find(string id) => _byId.GetValueOrDefault(id);
 

@@ -354,7 +354,7 @@ static class RowStrip
         var deps = Dependencies.Of(mod);
         if (mod == null || deps.Count == 0)
             return "";
-        var on = Dependencies.IsOn(mod);
+        var on = Copies.Loads(mod);
         var parts = deps.Select(id =>
         {
             var name = Escape(Dependencies.Find(id)?.manifest?.name ?? id);
@@ -368,7 +368,7 @@ static class RowStrip
                 Dependencies.Problem.LoadsBefore => (Menus.Text("SPIRE_MOD_MANAGER.DEP_AFTER"), ProblemHex),
                 _ when loadOrder && on => (Menus.Text("SPIRE_MOD_MANAGER.DEP_BEFORE"), FineHex),
                 // A mod that's off: no problems to report yet, but each dependency still shows whether it's on.
-                _ => (null, Dependencies.Find(id) is { } dep && Dependencies.IsOn(dep) ? FineHex : ProblemHex),
+                _ => (null, Dependencies.Find(id) is { } dep && Copies.Loads(dep) ? FineHex : ProblemHex),
             };
             if (word != null)
                 return $"[color={NameHex}]{name}[/color] [color={color}]{word}[/color]";
@@ -382,11 +382,11 @@ static class RowStrip
     {
         if (mod?.manifest?.id is not { } id)
             return "";
-        var count = Dependencies.NeededBy(id).Count(m => m != mod && Dependencies.IsOn(m));
+        var count = Dependencies.NeededBy(id).Count(m => m != mod && Copies.Loads(m));
         if (count == 0)
             return "";
         var text = Menus.Format(count == 1 ? "SPIRE_MOD_MANAGER.REQUIRED_FOR_ONE" : "SPIRE_MOD_MANAGER.REQUIRED_FOR", ("count", Menus.Number(count)));
-        return $"[color={(Dependencies.IsOn(mod) ? RequiredHex : ProblemHex)}]{text}[/color]";
+        return $"[color={(Copies.Loading(id) != null ? RequiredHex : ProblemHex)}]{text}[/color]";
     }
 
     const string FineHex = "#9fdc9f", ProblemHex = "#ff8070", NameHex = "#fff6e2", RequiredHex = "#e8cf7a";

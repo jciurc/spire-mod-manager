@@ -23,9 +23,10 @@ Ease of use is the heart of the mod, not just its utility.
 - The vanilla Modding page keeps working untouched, one click away (Vanilla List).
 - The game's `mod_list` is the truth for what's on and the load order. Edits go to it at once and take effect
   on relaunch; nothing of ours can disagree with the game's tickboxes.
-- One exception, because the game has one switch for them: which copy loads of a mod installed twice from one
-  source (two Workshop items). That's our pick (`copy_picks`), applied in our Init, before the game tries the
-  copies; our page has a tickbox per copy, one copy of an id on. The game's page keeps its one switch.
+- One exception, because the game has one switch for them: copies of a mod installed twice from one source (two
+  Workshop items). Which of them are ticked is ours (`copies_off`), and which of the ticked ones loads is our pick
+  (`copy_picks`, the copy enabled last), applied in our Init, before the game tries the copies. Our page has a
+  tickbox per copy, and two copies of an id can both be ticked (only one loads). The game's page keeps its one switch.
 - Profiles key mods by id and source, like `mod_list` (plus the picked copy). A newly installed mod joins the active profile, enabled.
   With no profiles yet, an ordinary one named "Default" is made from the current list.
 - The mod managers (this one, Better Mod Menu) are never turned on or off by a profile.

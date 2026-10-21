@@ -433,7 +433,7 @@ static class ModDetails
 
     static (string Text, string Color) StatusParts(Mod mod)
     {
-        var on = Dependencies.IsOn(mod);
+        var on = Copies.Ticked(mod);
         var loaded = mod.state == ModLoadState.Loaded;
         // A copy the game set aside for another copy of its id that's on too (a local and a Workshop copy) is on but
         // never loads: not a relaunch away. One set aside as the copy not picked reads as it is now: off, or pending.
@@ -446,7 +446,7 @@ static class ModDetails
     }
 
     // On, set aside as a duplicate, and another copy of its id on as well.
-    static bool LosesToOn(Mod mod) => mod.state == ModLoadState.DisabledDuplicate && Dependencies.IsOn(mod) && Copies.Others(mod).Any(Dependencies.IsOn);
+    static bool LosesToOn(Mod mod) => mod.state == ModLoadState.DisabledDuplicate && Copies.Ticked(mod) && Copies.Others(mod).Any(Copies.Ticked);
 
     // What stops the mod working, in our words: a duplicate copy, and (if on) dependencies missing or off. Plain text,
     // escaped where it's shown. The game's own load errors are its words, shown apart from ours (GameErrors).
@@ -479,8 +479,8 @@ static class ModDetails
         string Line(string key, Mod other) => Menus.Format(key, ("other", Other(other)));
         if (SameIdLoad.Unchosen(mod.manifest?.id))
             return (Escape(Menus.Text("SPIRE_MOD_MANAGER.COPY_NOT_APPLIED")), Pending);
-        var on = Dependencies.IsOn(mod);
-        if (!on && others.FirstOrDefault(Dependencies.IsOn) is { } enabled)
+        var on = Copies.Ticked(mod);
+        if (!on && others.FirstOrDefault(Copies.Ticked) is { } enabled)
             return (Line("SPIRE_MOD_MANAGER.COPY_OTHER_ENABLED", enabled), Disabled);
         if (on && mod.state != ModLoadState.Loaded && mod.state != ModLoadState.Failed && !LosesToOn(mod) && !Copies.Loses(mod)
             && others.FirstOrDefault(o => o.state == ModLoadState.Loaded) is { } loaded)
@@ -532,11 +532,11 @@ static class ModDetails
     // An enabled mod's missing or disabled dependencies, a line for each kind ("Requires mods to be installed: A, B").
     public static List<string> DependencyProblems(Mod mod)
     {
-        if (!Dependencies.IsOn(mod))
+        if (!Copies.Loads(mod))
             return [];
         var needs = Dependencies.Of(mod).Distinct().Select(id => (Id: id, Mod: Dependencies.Find(id))).ToList();
         var missing = needs.Where(d => d.Mod == null).Select(d => d.Id).ToList();
-        var off = needs.Where(d => d.Mod is { } found && !Dependencies.IsOn(found)).Select(d => d.Mod?.manifest?.name ?? d.Id).ToList();
+        var off = needs.Where(d => d.Mod is { } found && !Copies.Loads(found)).Select(d => d.Mod?.manifest?.name ?? d.Id).ToList();
         var lines = new List<string>();
         if (missing.Count > 0)
             lines.Add(Menus.Format(missing.Count == 1 ? "SPIRE_MOD_MANAGER.PROBLEM_DEP_MISSING_ONE" : "SPIRE_MOD_MANAGER.PROBLEM_DEP_MISSING",

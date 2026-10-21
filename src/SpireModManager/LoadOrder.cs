@@ -240,7 +240,7 @@ static class LoadOrder
     {
         if (!Store.Data.LoadOrderView || row.Mod is not { } mod)
             return Colors.White;
-        var on = Dependencies.IsOn(mod);
+        var on = Copies.Ticked(mod);
         if (row.GetParent() is Control content && CategoryList.Filter(content) is { Length: > 0 } filter && !Search.Matches(mod, filter))
             return new Color(1, 1, 1, on ? UnmatchedAlpha : UnmatchedOffAlpha);
         return on ? Colors.White : new Color(1, 1, 1, OffAlpha);
@@ -267,7 +267,7 @@ static class LoadOrder
     // block unrelated moves).
     public static bool MoveBreaks(Mod mod, int to, IList<NModMenuRow> rows)
     {
-        if (!Dependencies.IsOn(mod))
+        if (!Copies.Loads(mod))
             return false;
         int Involving(List<Mod> order) => Dependencies.OrderViolations(order).Count(v => v.Mod == mod || v.Needs == mod);
         var order = Mods(rows);
@@ -308,7 +308,7 @@ static class LoadOrder
             return moves;
         // No tickboxes in this view: on and off live here. The game's own handler does the work (CopyTickPatch for a
         // copy of a mod installed twice: enabling it disables the others, as its tip says).
-        var on = Dependencies.IsOn(it);
+        var on = Copies.Ticked(it);
         moves.Insert(0, new MenuItem(Menus.Text(on ? "SPIRE_MOD_MANAGER.DISABLE_MOD" : "SPIRE_MOD_MANAGER.ENABLE_MOD"), () =>
         {
             var tickbox = row.GetNode<NTickbox>("Tickbox");
@@ -408,7 +408,7 @@ static class LoadOrder
         // Better Mod Menu and ours both ticked, on our views, unless dismissed; it shows and goes at once on a tickbox
         // change. A dismissal is forgotten once the two aren't both ticked.
         Bmm.ForgetDismissedWarning();
-        if (Layout.Wide && Dependencies.Find(ModEntry.ModId) is { } self && !Dependencies.IsOn(self))
+        if (Layout.Wide && Dependencies.Find(ModEntry.ModId) is { } self && !Copies.Ticked(self))
             SelfBanner(content, border, search, self, redraw);
         if (Layout.Wide && Bmm.BothTicked && !Store.Data.ManagersWarningDismissed)
             ManagersBanner(content, border, search, redraw);
@@ -476,9 +476,9 @@ static class LoadOrder
     // Enabled mods that won't load, each with what it needs that's disabled (Dep) or not installed (Dep null); the ones
     // needing a disabled mod first.
     static List<(Mod Mod, List<(string Id, Mod? Dep)> Needs)> Unloadable(IEnumerable<Mod> mods) =>
-        mods.Where(Dependencies.IsOn)
+        mods.Where(Copies.Loads)
             .Select(m => (Mod: m, Needs: Dependencies.Of(m).Distinct().Select(id => (Id: id, Dep: Dependencies.Find(id)))
-                .Where(d => d.Dep == null || !Dependencies.IsOn(d.Dep)).ToList()))
+                .Where(d => d.Dep == null || !Copies.Loads(d.Dep)).ToList()))
             .Where(b => b.Needs.Count > 0)
             .OrderBy(b => b.Needs.All(d => d.Dep == null)) // stable: each group keeps its order
             .ToList();

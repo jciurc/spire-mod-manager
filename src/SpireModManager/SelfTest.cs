@@ -617,7 +617,7 @@ static partial class SelfTest
                     + "duplicate error; that one picked, nothing pending for them",
                     SameIdLoad.Plan.GetValueOrDefault(TwinId) is { HadPick: false, Swapped: false } plan && plan.Loads == a && a.state == ModLoadState.Loaded
                     && b.state == ModLoadState.DisabledDuplicate && !ModManager.Mods.Any(m => m.errors?.Any(e => e.LocEntryKey == "MOD_ERROR.DUPLICATE_ID") == true)
-                    && Store.Data.CopyPicks?.Contains($"{TwinId}|l:SmmTestTwinA") == true && Dependencies.IsOn(a) && !Dependencies.IsOn(b),
+                    && Store.Data.CopyPicks?.Contains($"{TwinId}|l:SmmTestTwinA") == true && Copies.Ticked(a) && !Copies.Ticked(b),
                     $"A {a.state}, B {b.state}; picks {string.Join(", ", Store.Data.CopyPicks ?? [])}; plan {SameIdLoad.Plan.GetValueOrDefault(TwinId)}");
             else
                 TwinsMissing("first run: a mod installed twice");
@@ -1485,7 +1485,7 @@ static partial class SelfTest
             Press("DisableBrokenButton");
             await Wait(menu, 0.3);
             Check("from the main menu, Disable mods that can't load: off, the profile and the dot follow, then a plain Relaunch",
-                !Dependencies.IsOn(addon) && Profiles.Edited && dot.Visible == ModEntry.HasPendingChanges()
+                !Copies.Ticked(addon) && Profiles.Edited && dot.Visible == ModEntry.HasPendingChanges()
                 && Dialog()?.FindChild("RelaunchNowButton", true, false) is Button { Text: "Relaunch Game" }, Body());
             Check("the main menu button's count follows a change made on the main menu, as wide as its words", MenuButtonText(menu) == MenuButtonExpected()
                 && MenuButtonText(menu) != text && MenuButtonMisfit(menu) == null,
@@ -1729,7 +1729,7 @@ static partial class SelfTest
             && !LaunchGuard.SameLoad(read, read[..4]));
 
         var settings = SaveManager.Instance.SettingsSave.ModSettings;
-        if (settings == null || NGame.Instance is not { } game || Dependencies.Find("SmmTestFixes") is not { } fixes || !Dependencies.IsOn(fixes))
+        if (settings == null || NGame.Instance is not { } game || Dependencies.Find("SmmTestFixes") is not { } fixes || !Copies.Ticked(fixes))
         {
             Results.Add("SKIP the dialog after a failed start: no mod list, game, or Test Fixes on");
             return;
@@ -1812,14 +1812,14 @@ static partial class SelfTest
             Check("the dialog after a failed start: its title, the game's own message (marked as the game's), what changed, Quit and Restore and restart; "
                 + "Quit writes no list, deletes the launch's record and quits",
                 asked.IsCompleted && texts.Contains("The game couldn't start") && texts.Contains(gamesMessage) && texts.Contains("Test Fixes") && texts.Contains("Restore and restart")
-                && quits == 1 && relaunches == 0 && Dependencies.IsOn(fixes) && !File.Exists(pendingPath),
+                && quits == 1 && relaunches == 0 && Copies.Ticked(fixes) && !File.Exists(pendingPath),
                 $"{texts}; quits {quits}, relaunches {relaunches}, record left {File.Exists(pendingPath)}");
             asked = LaunchGuard.AskAfterCrash(game, offer);
             await Wait(menu, 0.8);
             Press("YesButton");
             await Wait(menu, 0.3);
             Check("the dialog after a failed start: Restore and restart writes the working list (Test Fixes off again), then relaunches",
-                asked.IsCompleted && relaunches == 1 && quits == 1 && !Dependencies.IsOn(fixes), $"quits {quits}, relaunches {relaunches}, Test Fixes on {Dependencies.IsOn(fixes)}");
+                asked.IsCompleted && relaunches == 1 && quits == 1 && !Copies.Ticked(fixes), $"quits {quits}, relaunches {relaunches}, Test Fixes on {Copies.Ticked(fixes)}");
 
             // Where the game's text can't load (a mod broke it): Godot's plain dialog, in English.
             settings.ModList.Clear();
@@ -1833,14 +1833,14 @@ static partial class SelfTest
             Check("the plain dialog after a failed start (no game text): its title, the game's own message in English, what changed, Quit and Restore and restart; "
                 + "Quit writes nothing and quits",
                 asked.IsCompleted && plain.Contains("The game couldn't start") && plain.Contains(gamesMessagePlain) && plain.Contains("Test Fixes (enabled)") && plain.Contains("Restore and restart")
-                && plain.Contains("Quit") && quits == 2 && relaunches == 1 && Dependencies.IsOn(fixes), $"{plain}; quits {quits}, relaunches {relaunches}");
+                && plain.Contains("Quit") && quits == 2 && relaunches == 1 && Copies.Ticked(fixes), $"{plain}; quits {quits}, relaunches {relaunches}");
             asked = LaunchGuard.AskAfterCrash(game, offer);
             await Wait(menu, 0.5);
             Answer(AcceptDialog.SignalName.Confirmed);
             await Wait(menu, 0.3);
             Check("the plain dialog after a failed start: Restore and restart writes the working list, then relaunches; the dialog goes",
-                asked.IsCompleted && relaunches == 2 && quits == 2 && !Dependencies.IsOn(fixes) && root.GetNodeOrNull(LaunchGuard.PlainDialogName) == null,
-                $"quits {quits}, relaunches {relaunches}, Test Fixes on {Dependencies.IsOn(fixes)}, dialog left {root.GetNodeOrNull(LaunchGuard.PlainDialogName) != null}");
+                asked.IsCompleted && relaunches == 2 && quits == 2 && !Copies.Ticked(fixes) && root.GetNodeOrNull(LaunchGuard.PlainDialogName) == null,
+                $"quits {quits}, relaunches {relaunches}, Test Fixes on {Copies.Ticked(fixes)}, dialog left {root.GetNodeOrNull(LaunchGuard.PlainDialogName) != null}");
             // Mod Doctor's suspects (made up: Test UI, which this launch has on, among them, ours and Mod Doctor never
             // turned off, and one not installed): three named, the rest under "more", whose card names them; a third button
             // as a quiet link under the game's two, which turns them off and restarts, the rest of this launch's list as it was. Escape
@@ -2645,16 +2645,16 @@ static partial class SelfTest
         // Disable all turns the category's mods off (this mod stays on), as one undo step.
         History.Record(); // the category edits above went straight to the store
         var inCategory = Members().Select(r => r.Mod).OfType<Mod>().ToList();
-        var wereOn = inCategory.Where(Dependencies.IsOn).ToList();
+        var wereOn = inCategory.Where(Copies.Ticked).ToList();
         if (CategoryList.ShowHeaderMenu(content, category, Members()) is { } allMenu)
         {
             MenuPanel.Press(allMenu, "Disable all");
             await Wait(menu, 0.3);
-            Check("Disable all turns the category's mods off", inCategory.All(m => !Dependencies.IsOn(m) || m.manifest?.id == ModEntry.ModId),
-                string.Join(", ", inCategory.Select(m => $"{m.manifest?.id} {Dependencies.IsOn(m)}")));
+            Check("Disable all turns the category's mods off", inCategory.All(m => !Copies.Ticked(m) || m.manifest?.id == ModEntry.ModId),
+                string.Join(", ", inCategory.Select(m => $"{m.manifest?.id} {Copies.Ticked(m)}")));
             History.Undo();
             await Wait(menu, 0.3);
-            Check("one undo turns them back on", wereOn.All(Dependencies.IsOn));
+            Check("one undo turns them back on", wereOn.All(Copies.Ticked));
         }
         category = Store.Data.Categories.First(c => c.Name == "Renamed"); // undo restores the data as new objects
 
@@ -2843,7 +2843,7 @@ static partial class SelfTest
             return;
         }
         var tickbox = row.GetNode<NTickbox>("Tickbox");
-        bool On() => Dependencies.IsOn(mod);
+        bool On() => Copies.Ticked(mod);
         bool SavedOn() => profile.Mods.FirstOrDefault(m => m.Id == "SmmTestUi")?.Enabled ?? false;
         async Task Toggle(bool on)
         {
@@ -3174,7 +3174,7 @@ static partial class SelfTest
                 MenuPanel.Press(list, label);
             await Wait(menu, 0.3);
         }
-        bool IsOn(string id) => Dependencies.Find(id) is { } mod && Dependencies.IsOn(mod);
+        bool IsOn(string id) => Dependencies.Find(id) is { } mod && Copies.Ticked(mod);
 
         // The format on its own: quoting, the formula guard, and a forgiving read.
         var tricky = ProfileCsv.Write([
@@ -3232,7 +3232,7 @@ static partial class SelfTest
         var enabledOrder = order.Where(IsOn).ToList();
         // A row per copy that's on (of the fixture twins, the picked one).
         Check("Share profile opens with the active profile's enabled mods in load order, under the default columns",
-            Dialog() != null && records.FirstOrDefault()?.SequenceEqual(ProfileCsv.Header(new())) == true && ids.Count == installed.Count(Dependencies.IsOn)
+            Dialog() != null && records.FirstOrDefault()?.SequenceEqual(ProfileCsv.Header(new())) == true && ids.Count == installed.Count(Copies.Ticked)
             && ids.Take(enabledOrder.Count).SequenceEqual(enabledOrder) && records.Skip(1).All(r => r[3] == "TRUE") && !ids.Contains("SmmTestRetired")
             && Part<RichTextLabel>("Body")?.GetParsedText().Contains(startName) == true, $"{string.Join(" | ", ids)} vs order {string.Join(" | ", enabledOrder)}");
         var tops = new[] { "IncludeCategory", "IncludeDisabled", "IncludeAlias", "IncludeNotes", "RememberChoices" }
@@ -3269,7 +3269,7 @@ static partial class SelfTest
         // A row per copy (the fixture twins: two rows of one id, side by side, each on or off as that copy is, told apart
         // by their versions).
         bool RowOn(List<string> r) => installed.FirstOrDefault(m => m.manifest?.id == r[0] && m.manifest?.version == r[2]) is { } copy
-            ? Dependencies.IsOn(copy) : IsOn(r[0]);
+            ? Copies.Ticked(copy) : IsOn(r[0]);
         Check("Include disabled: a row per installed mod in load order, TRUE and FALSE as the profile has them", ids.Count == installed.Count
             && ids.Distinct().Take(order.Count).SequenceEqual(order) && records.Skip(1).All(r => r[3] == (RowOn(r) ? "TRUE" : "FALSE")) && ids.Contains("SmmTestRetired")
             && records.Any(r => r[3] == "FALSE") && records.FirstOrDefault()?.SequenceEqual(ProfileCsv.Header(new())) == true,
@@ -4371,7 +4371,7 @@ static partial class SelfTest
         static string Key(Mod? mod) => mod == null ? "none" : $"{mod.manifest?.id}/{mod.modSource}";
         List<string> Answers() =>
         [
-            .. mods.Select(mod => $"{Key(mod)}: on {Dependencies.IsOn(mod)}, copy {Key(Dependencies.Find(mod.manifest?.id ?? ""))}, "
+            .. mods.Select(mod => $"{Key(mod)}: on {Copies.Ticked(mod)}, copy {Key(Dependencies.Find(mod.manifest?.id ?? ""))}, "
                 + $"needed by {string.Join(",", Dependencies.NeededBy(mod.manifest?.id).Select(Key))}, "
                 + $"needs {string.Join(",", Dependencies.Of(mod).Select(id => Key(Dependencies.Find(id))))}, "
                 + $"tags {string.Join(",", Tags.For(mod).Select(c => $"{c.Text}/{c.Color}/{c.Custom}/{c.Tip}"))}, "
@@ -4497,7 +4497,7 @@ static partial class SelfTest
                 var deps = Dependencies.Of(mod);
                 var expected = $"on {On(mod)}, copy {Copy(id)?.modSource}, library {Needing(mod, false) > 0}, required for {Needing(mod, true)}, "
                     + $"missing {(On(mod) ? deps.Count(d => Copy(d) == null) : 0)}, off {(On(mod) ? deps.Count(d => Copy(d) is { } dep && !On(dep)) : 0)}";
-                var answered = $"on {Dependencies.IsOn(mod)}, copy {Dependencies.Find(id)?.modSource}, library {tags.Any(c => c.Text == "Library")}, "
+                var answered = $"on {Copies.Ticked(mod)}, copy {Dependencies.Find(id)?.modSource}, library {tags.Any(c => c.Text == "Library")}, "
                     + $"required for {(System.Text.RegularExpressions.Regex.Match(required, @"Required for (\d+)") is { Success: true } match ? match.Groups[1].Value : "0")}, "
                     + $"missing {Times(needs, "(not installed)")}, off {Times(needs, "(disabled)")}";
                 if (answered != expected)
@@ -4726,14 +4726,14 @@ static partial class SelfTest
         Check("the arrows say where they go", Bar() is { } arrows && Hover.TipOf(arrows.GetNode<Button>("PreviousMatch")) == "Go to previous found match"
             && Hover.TipOf(arrows.GetNode<Button>("NextMatch")) == "Go to next found match");
         // The rows it doesn't match fade below even a match that's off; a match keeps its usual look.
-        float Expected(NModMenuRow r, bool finding) => (!finding || found.Contains(r), r.Mod is { } mod && Dependencies.IsOn(mod)) switch
+        float Expected(NModMenuRow r, bool finding) => (!finding || found.Contains(r), r.Mod is { } mod && Copies.Ticked(mod)) switch
         {
             (true, true) => 1, (true, false) => LoadOrder.OffAlpha, (false, true) => LoadOrder.UnmatchedAlpha, _ => LoadOrder.UnmatchedOffAlpha,
         };
         string Looks() => string.Join(", ", Rows().Select(r => $"{r.Mod?.manifest?.id} {r.Modulate.A:0.##}"));
         Check("finding: the rest fade (on 0.2, off 0.1) below a match that's off (0.4); matches look as usual",
             Rows().All(r => Math.Abs(r.Modulate.A - Expected(r, finding: true)) < 0.01f) && Rows().Any(r => !found.Contains(r))
-            && Rows().Any(r => found.Contains(r) && r.Mod is { } mod && !Dependencies.IsOn(mod)), Looks());
+            && Rows().Any(r => found.Contains(r) && r.Mod is { } mod && !Copies.Ticked(mod)), Looks());
         LoadOrder.Reset(content); // as a drag ends
         Check("finding: the same looks after a drag ends", Rows().All(r => Math.Abs(r.Modulate.A - Expected(r, finding: true)) < 0.01f), Looks());
         await Capture(screen, outDir, "11c-load-order-find");
@@ -4835,9 +4835,9 @@ static partial class SelfTest
             && twinRows.FirstOrDefault(r => r != picked) is { Mod: { } otherMod } unpicked)
         {
             string Named(Mod mod) => (mod.manifest?.name ?? id) + Copies.Which(mod);
-            var wasOn = Dependencies.IsOn(pickedMod);
+            var wasOn = Copies.Ticked(pickedMod);
             Check("two copies of one mod: a box each on our page, the picked copy's ticked as it's on, the other's not",
-                Ticked(picked) == wasOn && !Ticked(unpicked) && !Dependencies.IsOn(otherMod), $"boxes {Ticked(picked)}/{Ticked(unpicked)}, on {wasOn}");
+                Ticked(picked) == wasOn && !Ticked(unpicked) && !Copies.Ticked(otherMod), $"boxes {Ticked(picked)}/{Ticked(unpicked)}, on {wasOn}");
             var steps = History.Steps(History.Track.List);
             var (onBefore, offBefore, _) = HistoryBar.Counts();
             Toggle(unpicked);
@@ -4846,7 +4846,7 @@ static partial class SelfTest
             var (onNow, offNow, _) = HistoryBar.Counts();
             Check("two copies of one mod: ticking the other copy makes it the one that loads and unticks the first, one undo step; Changes names both, "
                 + "+1 -1; the saved list's entries all on; Show: Changed lists both rows",
-                Ticked(unpicked) && !Ticked(picked) && Dependencies.IsOn(otherMod) && !Dependencies.IsOn(pickedMod)
+                Ticked(unpicked) && !Ticked(picked) && Copies.Ticked(otherMod) && !Copies.Ticked(pickedMod)
                 && Copies.Picked(id, source) == Copies.CopyOf(otherMod) && Store.Data.CopyPicks?.Contains(Copies.SwitchKey(otherMod)) == true
                 && list.Where(e => e.Id == id && e.Source == source).All(e => e.IsEnabled) && History.Steps(History.Track.List) == steps + 1
                 && lines.Contains($"Enabled: {Named(otherMod)}") && (!wasOn || lines.Contains($"Disabled: {Named(pickedMod)}"))
@@ -4974,11 +4974,11 @@ static partial class SelfTest
             var toggle = LoadOrder.Actions(content, uiRow, () => CategoryList.Redraw(content))[0];
             toggle.OnSelect?.Invoke();
             await Wait(menu, 0.3);
-            var offNow = !Dependencies.IsOn(uiMod);
+            var offNow = !Copies.Ticked(uiMod);
             var again = LoadOrder.Actions(content, uiRow, () => CategoryList.Redraw(content))[0];
             again.OnSelect?.Invoke();
             await Wait(menu, 0.3);
-            Check("load order menu: Disable, then Enable", toggle.Label == "Disable" && offNow && again.Label == "Enable" && Dependencies.IsOn(uiMod),
+            Check("load order menu: Disable, then Enable", toggle.Label == "Disable" && offNow && again.Label == "Enable" && Copies.Ticked(uiMod),
                 $"{toggle.Label}, off {offNow}, {again.Label}");
         }
         // Its Up, a button kept through the move, moves it from where it is now: to the top (under ours) again. Then the moved mod goes
@@ -5162,7 +5162,7 @@ static partial class SelfTest
             await Wait(menu, 0.3);
             History.Undo();
             await Wait(menu, 0.3);
-            Check("enabled again and the move undone: Test UI on, in its place", Dependencies.IsOn(ui) && Ids().SequenceEqual(idsWere), string.Join(", ", Ids()));
+            Check("enabled again and the move undone: Test UI on, in its place", Copies.Ticked(ui) && Ids().SequenceEqual(idsWere), string.Join(", ", Ids()));
         }
         else
             Results.Add("FAIL the order warning's card: no row for Test UI");
@@ -5223,7 +5223,7 @@ static partial class SelfTest
         await Wait(menu, 0.5);
         Check("one undo restores the order from before auto sort", Ids().SequenceEqual(beforeSort), string.Join(", ", Ids()));
         await Wait(menu, 0.2);
-        Check("dropping restores the list look (only mods that are off stay dim)", Rows().All(r => r.Modulate == (r.Mod is { } m && !Dependencies.IsOn(m) ? new Color(1, 1, 1, 0.4f) : Colors.White))
+        Check("dropping restores the list look (only mods that are off stay dim)", Rows().All(r => r.Modulate == (r.Mod is { } m && !Copies.Ticked(m) ? new Color(1, 1, 1, 0.4f) : Colors.White))
             && !content.GetParent().GetChildren().Any(c => c.IsInGroup("SpireModManagerLinks")));
 
         // Hovering the framework shows a line to each mod that needs it.
@@ -5315,7 +5315,7 @@ static partial class SelfTest
         string Shown(Mod mod) => Store.InfoFor(mod.manifest?.id)?.Alias ?? mod.manifest?.name ?? "";
         string NoteOf(Mod mod) => Rows().FirstOrDefault(r => r.Mod == mod)?.GetNodeOrNull<RichTextLabel>("SpireModManagerStrip/Needs")?.GetParsedText() ?? "";
         var flaggedMods = Rows().Select(r => r.Mod).OfType<Mod>()
-            .Where(m => Dependencies.IsOn(m) && (NoteOf(m).Contains("(disabled)") || NoteOf(m).Contains("(not installed)"))).ToList();
+            .Where(m => Copies.Ticked(m) && (NoteOf(m).Contains("(disabled)") || NoteOf(m).Contains("(not installed)"))).ToList();
         var flagged = flaggedMods.Select(Shown).Order().ToList();
         var card = await BannerCard(menu, screen, screen.FindChild(LoadOrder.WarningName, true, false), "2j-banner-card", outDir);
         var named = card.Skip(1).Select(l => l.Split(": requires ")[0]).Order().ToList();
@@ -5366,12 +5366,12 @@ static partial class SelfTest
         await Wait(menu, 0.3);
         screen.FindChild("EnableNeededButton", true, false)?.EmitSignal(BaseButton.SignalName.Pressed);
         await Wait(menu, 0.3);
-        Check("Enable required mods turns it on, banner says no more", Dependencies.IsOn(lib) && tickbox.IsTicked
+        Check("Enable required mods turns it on, banner says no more", Copies.Ticked(lib) && tickbox.IsTicked
             && screen.FindChild("EnableNeededButton", true, false) == null
             && (screen.FindChild("OrderProblems", true, false) as Label)?.Text.Contains("is disabled") != true);
         History.Undo();
         await Wait(menu, 0.3);
-        Check("one undo turns it off again", !Dependencies.IsOn(lib));
+        Check("one undo turns it off again", !Copies.Ticked(lib));
         tickbox.IsTicked = true;
         tickbox.EmitSignal(NTickbox.SignalName.Toggled, tickbox);
         await Wait(menu, 0.3);
@@ -5401,7 +5401,7 @@ static partial class SelfTest
             addonBox.EmitSignal(NTickbox.SignalName.Toggled, addonBox);
             await Wait(menu, 0.3);
             await TestBannersKeepRows(menu, screen, content, addonRow, LoadOrder.WarningName, "main list banner");
-            if (!Dependencies.IsOn(wontLoad))
+            if (!Copies.Ticked(wontLoad))
             {
                 addonBox.IsTicked = true;
                 addonBox.EmitSignal(NTickbox.SignalName.Toggled, addonBox);
@@ -5431,12 +5431,12 @@ static partial class SelfTest
         var search = border.GetNode<Control>("SpireModManagerSearch");
         Control? Banner() => border.GetNodeOrNull<Control>(LoadOrder.SelfName);
         // Mods on now, by id: two copies of one mod counted once (as the counts count them).
-        int OnNow() => ModManager.Mods.Union(Installed.Mods).Where(m => m.manifest?.id != null && Dependencies.IsOn(m))
+        int OnNow() => ModManager.Mods.Union(Installed.Mods).Where(m => m.manifest?.id != null && Copies.Ticked(m))
             .Select(m => m.manifest?.id).Distinct().Count();
         string Summary() => (screen.GetNodeOrNull<Control>(HistoryBar.ChangesName) as RichTextLabel)?.GetParsedText() ?? "";
         bool ProfileCountShown() => Profiles.Active is { } active && Profiles.ModCount(active) == Profiles.CountText();
         var on = OnNow();
-        Check("the counts count this mod: the profile bar's, the main menu button's and Mods enabled's", Dependencies.IsOn(self)
+        Check("the counts count this mod: the profile bar's, the main menu button's and Mods enabled's", Copies.Ticked(self)
             && Profiles.OnCount() == on && ProfileCountShown() && Summary().StartsWith($"Mods enabled {Menus.Number(on)} "),
             $"{on} on: profile {Profiles.OnCount()}, summary \"{Summary().Split('\n')[0]}\"");
         // Installed twice (a Workshop copy beside this local one): both on, as the game loads one, the newer, and the
@@ -5451,9 +5451,9 @@ static partial class SelfTest
         NModalContainer.Instance?.Clear();
         CategoryList.Redraw(content);
         await Wait(menu, 0.2);
-        Check("installed twice: both copies on, every count names it once", Dependencies.IsOn(copy) && Profiles.OnCount() == on
+        Check("installed twice: both copies on, every count names it once", Copies.Ticked(copy) && Profiles.OnCount() == on
             && ProfileCountShown() && Summary().StartsWith($"Mods enabled {Menus.Number(on)} "),
-            $"copy on {Dependencies.IsOn(copy)}; {on} on before: profile {Profiles.OnCount()}, summary \"{Summary().Split('\n')[0]}\"");
+            $"copy on {Copies.Ticked(copy)}; {on} on before: profile {Profiles.OnCount()}, summary \"{Summary().Split('\n')[0]}\"");
         // Gone again, its row too (the game made one as it announced it; a later search would find it).
         if (content.GetChildren().OfType<NModMenuRow>().FirstOrDefault(r => r.Mod == copy) is { } copyRow)
         {
@@ -5491,11 +5491,11 @@ static partial class SelfTest
             && new[] { LoadOrder.ManagersName, LoadOrder.WarningName }.Select(n => border.GetNodeOrNull<Control>(n)).OfType<Control>()
                 .All(other => !other.Visible || other.GetGlobalRect().Position.Y >= banner.GetGlobalRect().End.Y);
         Check("this mod unticked: a red banner, first under the search box, says it and this page go at the relaunch, with Show and Enable now",
-            !Dependencies.IsOn(self) && first && text == "Spire Mod Manager (this mod) will be disabled on relaunch, and this menu will no longer be accessible until enabled again."
+            !Copies.Ticked(self) && first && text == "Spire Mod Manager (this mod) will be disabled on relaunch, and this menu will no longer be accessible until enabled again."
             && Banner()?.FindChild("ShowSelfButton", true, false) is Button && Banner()?.FindChild("EnableSelfButton", true, false) is Button enableButton
             && Hover.TipOf(enableButton) == "Keep Spire Mod Manager (this mod) enabled" && Profiles.OnCount() == on - 1
             && Banner()?.FindChild("ShowSelfButton", true, false) is Button showButton && Hover.TipOf(showButton) == "Open Spire Mod Manager (this mod)",
-            $"on {Dependencies.IsOn(self)}, first {first}, text \"{text}\", count {Profiles.OnCount()}");
+            $"on {Copies.Ticked(self)}, first {first}, text \"{text}\", count {Profiles.OnCount()}");
         await Capture(screen, outDir, "2k-self-banner");
         if (content.GetChildren().OfType<NModMenuRow>().FirstOrDefault(r => r != row) is { } elsewhere)
             CategoryList.Select(screen, elsewhere);
@@ -5504,15 +5504,15 @@ static partial class SelfTest
         Check("its Show goes to this mod's row", CategoryList.Selected == self, CategoryList.Selected?.manifest?.id ?? "none");
         Banner()?.FindChild("EnableSelfButton", true, false)?.EmitSignal(BaseButton.SignalName.Pressed);
         await Wait(menu, 0.3);
-        Check("Enable now turns it on and takes the banner away", Dependencies.IsOn(self) && tickbox.IsTicked && Banner() == null && Profiles.OnCount() == on,
-            $"on {Dependencies.IsOn(self)}, ticked {tickbox.IsTicked}, banner {Banner() != null}");
+        Check("Enable now turns it on and takes the banner away", Copies.Ticked(self) && tickbox.IsTicked && Banner() == null && Profiles.OnCount() == on,
+            $"on {Copies.Ticked(self)}, ticked {tickbox.IsTicked}, banner {Banner() != null}");
         tickbox.IsTicked = false;
         tickbox.EmitSignal(NTickbox.SignalName.Toggled, tickbox);
         await Wait(menu, 0.3);
         var shown = Banner() != null;
         History.Undo();
         await Wait(menu, 0.3);
-        Check("unticked again, then undone: on, and no banner", shown && Dependencies.IsOn(self) && Banner() == null, $"shown {shown}, on {Dependencies.IsOn(self)}");
+        Check("unticked again, then undone: on, and no banner", shown && Copies.Ticked(self) && Banner() == null, $"shown {shown}, on {Copies.Ticked(self)}");
     }
 
     static async Task TestManagersBanner(Node menu, NModdingScreen screen, Control content, string outDir)
@@ -5749,7 +5749,7 @@ static partial class SelfTest
                 dismissed && !Bmm.Ticked && Banner() == null && !Store.Data.ManagersWarningDismissed, $"dismissed first {dismissed}; {Where()}");
             History.Undo();
             await Wait(menu, 0.3);
-            Check("one undo turns both back on, and the banner is back", Bmm.Ticked && Dependencies.IsOn(libMod) && Placed() && Buttons(), Where());
+            Check("one undo turns both back on, and the banner is back", Bmm.Ticked && Copies.Ticked(libMod) && Placed() && Buttons(), Where());
         }
         else
             Results.Add("SKIP managers banner turned off with another mod: SmmTestLib not installed");
@@ -5808,13 +5808,13 @@ static partial class SelfTest
         var list = border.GetNode<Control>("ModsScrollContainer");
         var tickbox = bannerRow.GetNode<NTickbox>("Tickbox");
         Control? Banner() => border.GetNodeOrNull<Control>(name);
-        if (bannerRow.Mod is not { } bannerMod || Layout.Current != Layout.View.Categories || Dependencies.IsOn(bannerMod) || Banner() != null
+        if (bannerRow.Mod is not { } bannerMod || Layout.Current != Layout.View.Categories || Copies.Ticked(bannerMod) || Banner() != null
             || ListFilter.Chosen != ListFilter.Choice.All || CategoryList.Filter(content).Length > 0)
         {
             Results.Add($"SKIP {what} keeping the rows in place: not on the main list showing every mod, its mod on, or the banner up without it");
             return;
         }
-        bool On() => Dependencies.IsOn(bannerMod);
+        bool On() => Copies.Ticked(bannerMod);
         float Target() => (float)list.Get("_targetDragPosY");
         float Padding() => (float)list.Get("_paddingTop");
         async Task ScrollTo(float target)
@@ -6047,11 +6047,11 @@ static partial class SelfTest
         Find("#Gameplay");
         await Wait(menu, 0.3);
         var matched = Rows().Where(r => SpireModManager.Search.Matches(r.Mod, "#Gameplay")).Select(r => r.Mod).OfType<Mod>().ToList();
-        var others = Rows().Select(r => r.Mod).OfType<Mod>().Except(matched).ToDictionary(m => m, Dependencies.IsOn);
+        var others = Rows().Select(r => r.Mod).OfType<Mod>().Except(matched).ToDictionary(m => m, Copies.Ticked);
         Check("searching: the bar says it acts on the matches", (Bar()?.FindChild("Scope", true, false) as Label)?.Text.StartsWith("Search matches") == true);
         Press("DisableAllButton");
         await Wait(menu, 0.3);
-        Check("Disable all turns off just the matches", matched.All(m => !Dependencies.IsOn(m)) && others.All(p => Dependencies.IsOn(p.Key) == p.Value),
+        Check("Disable all turns off just the matches", matched.All(m => !Copies.Ticked(m)) && others.All(p => Copies.Ticked(p.Key) == p.Value),
             string.Join(", ", matched.Select(m => m.manifest?.id)));
         History.Undo();
         await Wait(menu, 0.3);
@@ -6156,8 +6156,8 @@ static partial class SelfTest
             box.EmitSignal(LineEdit.SignalName.TextChanged, text);
             await Wait(menu, 0.3);
         }
-        static bool On(Mod mod) => Dependencies.IsOn(mod);
-        static bool Off(Mod mod) => !Dependencies.IsOn(mod);
+        static bool On(Mod mod) => Copies.Ticked(mod);
+        static bool Off(Mod mod) => !Copies.Ticked(mod);
 
         await Find("");
         if (Bar()?.FindChild("ExpandAllButton", true, false) is Button { Disabled: false })
@@ -6318,7 +6318,7 @@ static partial class SelfTest
         {
             // Turning on a copy of a mod installed twice turns its other copies off (the fixture twins: the one not
             // picked is among these): those show here once off, the rest stays as it was.
-            var switched = Dependencies.TurnedOffBy(wereOff);
+            List<Mod> switched = []; // turning a copy on turns no other off any more
             var others = Rows().Select(r => r.Mod).OfType<Mod>().Except(wereOff).Except(switched).ToDictionary(m => m, On);
             await Press("EnableAllButton");
             Check("Show: Disabled, Enable all: just the mods shown, which then go (and copies of them it turned off show)", wereOff.All(On)
@@ -6564,38 +6564,38 @@ static partial class SelfTest
         await Capture(screen, outDir, "15-relaunch-check");
         Press("EnableNeededButton");
         await Wait(menu, 0.3);
-        Check("Enable required mods fixes the off ones, the list updates", Dependencies.IsOn(lib) && !Body().Contains("Test Framework") && Body().Contains(Missing), Body());
+        Check("Enable required mods fixes the off ones, the list updates", Copies.Ticked(lib) && !Body().Contains("Test Framework") && Body().Contains(Missing), Body());
         Press("DisableBrokenButton");
         await Wait(menu, 0.3);
-        Check("Disable mods that can't load: nothing left, plain Relaunch", !Dependencies.IsOn(addon)
+        Check("Disable mods that can't load: nothing left, plain Relaunch", !Copies.Ticked(addon)
             && Dialog()?.FindChild("RelaunchNowButton", true, false) is Button { Text: "Relaunch Game" }, Body());
         // Cancel takes both fixes back: Test Framework off again (as this test set it), Test Addon on (the fixture's).
         // It forgets them too: nothing to redo.
         Press("CancelRelaunchButton");
         await Wait(menu, 0.3);
-        Check("Cancel closes it and takes back the fixes made in it", Dialog() == null && !Dependencies.IsOn(lib) && Dependencies.IsOn(addon)
-            && !tickbox.IsTicked && !History.CanRedo, $"framework on {Dependencies.IsOn(lib)}, addon on {Dependencies.IsOn(addon)}");
+        Check("Cancel closes it and takes back the fixes made in it", Dialog() == null && !Copies.Ticked(lib) && Copies.Ticked(addon)
+            && !tickbox.IsTicked && !History.CanRedo, $"framework on {Copies.Ticked(lib)}, addon on {Copies.Ticked(addon)}");
         // Esc the same, after one fix; the page stays.
         RelaunchCheck.Show(screen);
         await Wait(menu, 0.2);
         Press("EnableNeededButton");
         await Wait(menu, 0.3);
-        var fixedIt = Dependencies.IsOn(lib);
+        var fixedIt = Copies.Ticked(lib);
         Input.ParseInputEvent(new InputEventKey { Keycode = Key.Escape, Pressed = true });
         await Wait(menu, 0.2);
         Input.ParseInputEvent(new InputEventKey { Keycode = Key.Escape, Pressed = false });
         await Wait(menu, 0.2);
         Check("Esc closes it the same way, the fix taken back, and stays on the page", fixedIt && Dialog() == null && screen.IsVisibleInTree()
-            && !Dependencies.IsOn(lib) && Dependencies.IsOn(addon), $"fixed {fixedIt}, framework on {Dependencies.IsOn(lib)}");
+            && !Copies.Ticked(lib) && Copies.Ticked(addon), $"fixed {fixedIt}, framework on {Copies.Ticked(lib)}");
         // Cancel with nothing done takes nothing back: the undo step before the dialog (this test's untick) stays.
         RelaunchCheck.Show(screen);
         await Wait(menu, 0.2);
         Press("CancelRelaunchButton");
         await Wait(menu, 0.3);
-        Check("Cancel with no fix made changes nothing", Dialog() == null && !Dependencies.IsOn(lib) && Dependencies.IsOn(addon));
+        Check("Cancel with no fix made changes nothing", Dialog() == null && !Copies.Ticked(lib) && Copies.Ticked(addon));
         History.Undo(); // this test's untick: Test Framework on again, as the fixture has it
         await Wait(menu, 0.3);
-        Check("then one undo puts the framework back on, as the fixture has it", Dependencies.IsOn(lib) && tickbox.IsTicked);
+        Check("then one undo puts the framework back on, as the fixture has it", Copies.Ticked(lib) && tickbox.IsTicked);
     }
 
     // A made-up mod with very long everything (name, id, author, version, description, alias, many tags, notes),
@@ -7497,7 +7497,7 @@ static partial class SelfTest
         Control? SameId() => border.GetNodeOrNull<Control>(LoadOrder.SameIdName);
         CategoryList.Redraw(content);
         await Wait(menu, 0.3);
-        var bothOn = Dependencies.IsOn(local) && Dependencies.IsOn(copy);
+        var bothOn = Copies.Ticked(local) && Copies.Ticked(copy);
         var bannerText = (SameId()?.FindChild("SameIdWarning", true, false) as Label)?.Text;
         var chips = Tags.For(local).Concat(Tags.For(copy)).Where(c => c.Text == "Same ID").ToList();
         Check("both copies on: a yellow banner (\"2 mods with the same ID are enabled, and could lead to issues.\"), a Same ID chip on each naming the other",
@@ -7530,17 +7530,17 @@ static partial class SelfTest
         Dependencies.Set([copy], true, screen);
         CategoryList.Redraw(content);
         await Wait(menu, 0.3);
-        var oneOn = Dependencies.IsOn(copy) && !Dependencies.IsOn(local) && SameId() == null;
+        var oneOn = Copies.Ticked(copy) && !Copies.Ticked(local) && SameId() == null;
         History.Undo();
         await Wait(menu, 0.3);
-        var undone = !Dependencies.IsOn(copy) && Dependencies.IsOn(local);
-        Dependencies.Write([(copy, true)], exclusive: false);
+        var undone = !Copies.Ticked(copy) && Copies.Ticked(local);
+        Dependencies.Write([(copy, true)]);
         Profiles.RefreshTickboxes(screen);
         CategoryList.Redraw(content);
         await Wait(menu, 0.3);
         Check("the clash over, Dismiss is forgotten; enabled on our page, the new copy turns the local one off (undone); both on again as the game's "
-            + "page leaves them: the banner is back", forgotten && oneOn && undone && Dependencies.IsOn(copy) && Dependencies.IsOn(local) && SameId() != null,
-            $"forgotten {forgotten}; one on {oneOn}, undone {undone}; on {Dependencies.IsOn(copy)}/{Dependencies.IsOn(local)}; banner {SameId() != null}");
+            + "page leaves them: the banner is back", forgotten && oneOn && undone && Copies.Ticked(copy) && Copies.Ticked(local) && SameId() != null,
+            $"forgotten {forgotten}; one on {oneOn}, undone {undone}; on {Copies.Ticked(copy)}/{Copies.Ticked(local)}; banner {SameId() != null}");
         var toggle = screen.GetNode<NButton>("SpireModManagerLoadOrderToggle");
         Click(toggle);
         await Wait(menu, 0.5);
@@ -8160,7 +8160,7 @@ static partial class SelfTest
         // Read again each time: an undo puts new entries in the game's list.
         List<SettingsSaveMod> Entries() => SaveManager.Instance.SettingsSave.ModSettings?.ModList.Where(e => e.Id == TwinId).ToList() ?? [];
         bool SwitchOn() => Entries() is { Count: > 0 } entries && entries.All(e => e.IsEnabled);
-        string Say() => $"pick {Picked()}, boxes A {Ticked(rowA)} B {Ticked(rowB)}, on A {Dependencies.IsOn(a)} B {Dependencies.IsOn(b)}, switch {SwitchOn()}; "
+        string Say() => $"pick {Picked()}, boxes A {Ticked(rowA)} B {Ticked(rowB)}, on A {Copies.Ticked(a)} B {Copies.Ticked(b)}, switch {SwitchOn()}; "
             + $"status A {ModDetails.Status(a)}, B {ModDetails.Status(b)}; lines A {ModDetails.CopyLine(a, false)?.Text}, B {ModDetails.CopyLine(b, false)?.Text}";
         // The picks in our file, as our Init reads them at the next launch (not just in memory).
         string[] FilePicks() => [.. (JsonNode.Parse(File.ReadAllText(Store.FilePath))?["copy_picks"] as JsonArray ?? []).Select(p => (string?)p).OfType<string>()];
@@ -8410,7 +8410,7 @@ static partial class SelfTest
         var beforePicks = History.Steps(History.Track.List);
         Selection.Add(content, [rowA, rowB]);
         await Tick(rowA, true);
-        var clickedWins = Picked() == "l:SmmTestTwinA" && Dependencies.IsOn(a) && !Dependencies.IsOn(b) && SwitchOn();
+        var clickedWins = Picked() == "l:SmmTestTwinA" && Copies.Ticked(a) && !Copies.Ticked(b) && SwitchOn();
         Selection.Clear(content, record: false);
         while (History.Steps(History.Track.List) > beforePicks && History.CanUndo)
             History.Undo(); // the group tick, then the picks
@@ -8424,7 +8424,7 @@ static partial class SelfTest
         await Wait(menu, 0.3);
         CategoryList.OnOffItems(content, [rowA, rowB], selected: true)[0].OnSelect?.Invoke();
         await Wait(menu, 0.3);
-        var pickWins = Picked() == "l:SmmTestTwinB" && Dependencies.IsOn(b) && !Dependencies.IsOn(a) && SwitchOn();
+        var pickWins = Picked() == "l:SmmTestTwinB" && Copies.Ticked(b) && !Copies.Ticked(a) && SwitchOn();
         History.Undo(); // Enable selected
         History.Undo(); // the off
         await Wait(menu, 0.3);
@@ -8487,7 +8487,7 @@ static partial class SelfTest
         await Wait(menu, 0.4);
         var popup = string.Join(" | ", PopupTexts());
         NModalContainer.Instance?.Clear();
-        var keepsPick = Picked() == "l:SmmTestTwinB" && !Dependencies.IsOn(copy) && Installed.Mods.Contains(copy);
+        var keepsPick = Picked() == "l:SmmTestTwinB" && !Copies.Ticked(copy) && Installed.Mods.Contains(copy);
         if (Rows().FirstOrDefault(r => r.Mod == copy) is { } copyRow)
         {
             content.RemoveChild(copyRow);
@@ -8553,11 +8553,11 @@ static partial class SelfTest
         await Wait(menu, 0.4);
         var backPopup = string.Join(" | ", PopupTexts());
         NModalContainer.Instance?.Clear();
-        var cameBack = BackPicked() == "l:Back1" && Dependencies.IsOn(backFirst) && !Dependencies.IsOn(backSecond) && Held() == "l:Back1" && !Profiles.Edited
+        var cameBack = BackPicked() == "l:Back1" && Copies.Ticked(backFirst) && !Copies.Ticked(backSecond) && Held() == "l:Back1" && !Profiles.Edited
             && History.Steps(History.Track.List) == backSteps && backPopup.Contains($"A new copy of {Back} (Back2) was detected");
-        var cameSay = $"pick {BackPicked()}, on {Dependencies.IsOn(backFirst)}/{Dependencies.IsOn(backSecond)}, held {Held()}, edited {Profiles.Edited}, "
+        var cameSay = $"pick {BackPicked()}, on {Copies.Ticked(backFirst)}/{Copies.Ticked(backSecond)}, held {Held()}, edited {Profiles.Edited}, "
             + $"steps {History.Steps(History.Track.List) - backSteps}; {backPopup}";
-        Dependencies.Write([(backSecond, true)], winner: backSecond); // as its tick does (CopyTickPatch), the profile and history after
+        Dependencies.Write([(backSecond, true)], pick: [backSecond]); // as its tick does (CopyTickPatch), the profile and history after
         Profiles.Track();
         History.Record();
         var switched = BackPicked() == "l:Back2" && Profiles.Edited && History.Steps(History.Track.List) == backSteps + 1;
@@ -9606,7 +9606,7 @@ static partial class SelfTest
 
     // The fixture's mod that won't load: Test Addon (on) needs SmmTestMissing, a mod id nothing has. Null when it isn't
     // installed (--real) or is off, so the checks that need a mod that won't load skip.
-    static Mod? WontLoad() => Dependencies.Find("SmmTestAddon") is { } addon && Dependencies.IsOn(addon) ? addon : null;
+    static Mod? WontLoad() => Dependencies.Find("SmmTestAddon") is { } addon && Copies.Ticked(addon) ? addon : null;
 
     // Test Addon's dependency: never installed, so it's shown by its id.
     const string Missing = "SmmTestMissing";

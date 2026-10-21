@@ -673,7 +673,7 @@ static class GroupTickPatch
                 || CategoryList.ScreenOf(__instance) is not { } screen || HistoryBar.Screen != screen)
                 return true;
             ListFilter.KeepCopies(Selection.Mods.Select(m => m.manifest?.id));
-            Dependencies.Set(Selection.Mods, tickbox.IsTicked, screen, winner: __instance.Mod);
+            Dependencies.Set(Selection.Mods, tickbox.IsTicked, screen, pick: __instance.Mod);
             CategoryList.Redraw(screen.GetNode<Control>("%ModsScrollContainer/Mask/Content"), keep: true);
             return false;
         }
@@ -702,15 +702,15 @@ static class CopyTickPatch
             if (!__runOriginal || Store.Data.VanillaView || __instance.Mod is not { manifest.id: { } id } mod || id == ModEntry.ModId
                 || Copies.Others(mod).Count == 0 || CategoryList.ScreenOf(__instance) is not { } screen || HistoryBar.Screen != screen)
                 return true;
-            if (tickbox.IsTicked && Store.ReadOnly && Dependencies.ChangesPick(mod))
+            if (Store.ReadOnly && Copies.Twins(mod).Count > 0)
                 return true;
-            var wereOn = Copies.Others(mod).Where(Dependencies.IsOn).ToList();
-            Dependencies.Write([(mod, tickbox.IsTicked)], winner: mod);
+            var wereOn = Copies.Others(mod).Where(Copies.Ticked).ToList();
+            Dependencies.Write([(mod, tickbox.IsTicked)], pick: [mod]);
             Profiles.RefreshTickboxes(screen);
             screen.OnModEnabledOrDisabled();
             // The copy this switched off: its title turns (ModToggledPatch) and its row glows, as a banner's Show does.
             foreach (var row in screen.GetNode("%ModsScrollContainer/Mask/Content").GetChildren().OfType<NModMenuRow>()
-                .Where(r => r.Mod is { } other && wereOn.Contains(other) && !Dependencies.IsOn(other) && r.IsVisibleInTree()))
+                .Where(r => r.Mod is { } other && wereOn.Contains(other) && !Copies.Ticked(other) && r.IsVisibleInTree()))
                 CategoryList.Flash(row);
             return false;
         }

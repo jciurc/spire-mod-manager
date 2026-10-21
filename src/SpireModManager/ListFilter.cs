@@ -31,8 +31,8 @@ static class ListFilter
     {
         Choice.All => true,
         _ when mod == null => false,
-        Choice.Enabled => Dependencies.IsOn(mod),
-        Choice.Disabled => !Dependencies.IsOn(mod),
+        Choice.Enabled => Copies.Ticked(mod),
+        Choice.Disabled => !Copies.Ticked(mod),
         _ => Changed().Contains(mod),
     };
 
