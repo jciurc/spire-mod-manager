@@ -872,13 +872,14 @@ static partial class SelfTest
         CategoryList.Apply(content);
         await Wait(menu, 0.3);
         var folded = content.GetChildren().OfType<Control>().First(c => c.IsInGroup("SpireModManagerCategoryHeader") && c.Name.ToString().StartsWith("Category "));
+        var foldedName = folded.Name.ToString(); // read now: the click redraws the list, and the header is made again
         folded.EmitSignal(Control.SignalName.GuiInput, new InputEventMouseButton { ButtonIndex = MouseButton.Left, Pressed = true });
         folded.EmitSignal(Control.SignalName.GuiInput, new InputEventMouseButton { ButtonIndex = MouseButton.Left, Pressed = false });
         await Wait(menu, 0.3);
         var opened = content.GetChildren().OfType<NModMenuRow>().Where(r => r.Visible).ToList();
         string Shown(NModMenuRow row) => row.GetNode<RichTextLabel>("Title").GetParsedText().Trim();
         Check("a category folded since launch shows its mods' names when opened", opened.Count > 0 && opened.All(r => Shown(r).Length > 0),
-            $"{folded.Name}: {string.Join(" | ", opened.Select(r => $"{r.Mod?.manifest?.id}=\"{Shown(r)}\""))}");
+            $"{foldedName}: {string.Join(" | ", opened.Select(r => $"{r.Mod?.manifest?.id}=\"{Shown(r)}\""))}");
         for (var i = 0; i < collapsed.Count; i++)
             Store.Data.Categories[i].Collapsed = collapsed[i];
         Store.Data.UncategorizedCollapsed = uncategorized;
