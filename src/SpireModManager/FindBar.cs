@@ -11,10 +11,15 @@ static class FindBar
     public const float Width = 168;
     static readonly Color Cream = new(1, 0.964706f, 0.886275f);
 
-    // The rows the search matches, in list order (none without a search).
-    public static List<NModMenuRow> Found(Control content) => CategoryList.Filter(content) is { Length: > 0 } filter
-        ? [.. content.GetChildren().OfType<NModMenuRow>().Where(r => Search.Matches(r.Mod, filter))]
-        : [];
+    // The rows the search matches, in list order (none without a search). One set of answers for every row (Lookups), as
+    // ‹ › and Enter step outside a redraw: a hidden tag like #needed asks about the whole list.
+    public static List<NModMenuRow> Found(Control content)
+    {
+        if (CategoryList.Filter(content) is not { Length: > 0 } filter)
+            return [];
+        using var lookups = Lookups.Begin();
+        return [.. content.GetChildren().OfType<NModMenuRow>().Where(r => Search.Matches(r.Mod, filter))];
+    }
 
     // Shows the bar (made once) in Load Order while there's a search; true if shown.
     public static bool Update(Control border, Control content, bool loadOrder)

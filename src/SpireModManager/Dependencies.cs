@@ -72,6 +72,10 @@ static class Dependencies
         return order.TryGetValue(dep, out var d) && order.TryGetValue(mod, out var m) && d > m ? Problem.LoadsBefore : Problem.None;
     }
 
+    // Whether a mod that loads after a relaunch needs one that's missing or won't load, so it fails to: the main list's red
+    // banner's mods (LoadOrder.Unloadable).
+    public static bool Unmet(Mod mod) => Copies.Loads(mod) && Of(mod).Any(id => Find(id) is not { } dep || !Copies.Loads(dep));
+
     // Installed mods that won't load but are needed by one that will, directly or through another one of these.
     public static List<Mod> NeededOff(IEnumerable<Mod> mods)
     {

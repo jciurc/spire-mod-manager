@@ -42,9 +42,9 @@ static class Tags
             return [];
         // Order: New, Local, Same ID, Stable or Beta, Library, Gameplay, Cosmetic, then the player's own.
         var chips = new List<Chip>();
-        if (Installed.Mods.Contains(mod))
+        if (IsNew(mod))
             chips.Add(new Chip(Menus.Text("SPIRE_MOD_MANAGER.TAG_NEW"), New, Tip: Menus.Text("SPIRE_MOD_MANAGER.TAG_NEW_TIP")));
-        if (Compat.WorkshopId(mod) == null)
+        if (IsLocal(mod))
             chips.Add(new Chip(Menus.Text("SPIRE_MOD_MANAGER.TAG_LOCAL"), Local, Tip: Menus.Text("SPIRE_MOD_MANAGER.TAG_LOCAL_TIP")));
         // Another copy of this mod id installed (Copies): yellow while this copy and another are ticked (only one of them
         // loads), grey otherwise, and always for this mod's copies (they stay ticked together: Copies.Clashes). Its tip
@@ -77,6 +77,11 @@ static class Tags
             chips.Add(new Chip(tag, CustomColor, Custom: true));
         return chips;
     }
+
+    // The New chip's mods (installed this session) and the Local chip's (not from the Workshop); #new and #local too.
+    public static bool IsNew(Mod mod) => Installed.Mods.Contains(mod);
+
+    public static bool IsLocal(Mod mod) => Compat.WorkshopId(mod) == null;
 
     // What a #tag search finds on a mod: its chips' text, its Workshop tags (a click on one in the panel searches it; your
     // own "Utility" and the Workshop's are one tag), and Stable and Beta for each branch it's marked for, chip or not (so
@@ -141,8 +146,8 @@ static class Tags
         (ModManager.EvaluateBranchSupport(PlatformBranch.Production, ranges).IsSupported,
             ModManager.EvaluateBranchSupport(PlatformBranch.PublicBeta, ranges).IsSupported);
 
-    // A tag as a search term: #name, quoted if it has spaces.
-    static string Term(string name) => name.Any(char.IsWhiteSpace) ? $"#\"{name}\"" : $"#{name}";
+    // A tag as a search term: #name, quoted where it has to be (Search.TermFor).
+    static string Term(string name) => Search.TermFor("#", name);
 
     // A usage hint for the foot of a card: small, bold, faint.
     public static string Hint(string text) => $"[b][font_size=14][color=#fff6e280]{Escape(text)}[/color][/font_size][/b]";

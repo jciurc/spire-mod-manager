@@ -256,9 +256,12 @@ static class LoadOrder
     }
 
     // The installed mods in saved order.
-    public static List<Mod> Mods(IEnumerable<NModMenuRow> rows)
+    public static List<Mod> Mods(IEnumerable<NModMenuRow> rows) => InOrder(rows.Select(r => r.Mod).OfType<Mod>());
+
+    // Mods in the saved list's order (those it doesn't have last).
+    public static List<Mod> InOrder(IEnumerable<Mod> given)
     {
-        var mods = rows.Select(r => r.Mod).OfType<Mod>().ToList();
+        var mods = given.ToList();
         var places = Places(mods);
         return mods.OrderBy(m => IndexOf(m, places)).ToList();
     }
@@ -326,7 +329,8 @@ static class LoadOrder
     // The bar above the list (it doesn't scroll): Auto sort at the search box's right end, and banners: this mod
     // unticked (red), Better Mod Menu ticked too (yellow), and the page's warning (red: misordered mods with Fix now in
     // Load Order, mods that won't load on the main list). Elsewhere a "!" on the Load Order button. Hovering a banner
-    // lists its mods (BannerCard).
+    // lists its mods (BannerCard); on one about several, Go to steps through them and Show searches for them (its hidden
+    // tags: #unmet OR #needed, #clash, #managers, #order).
     public const string WarningName = "SpireModManagerOrderWarning", ManagersName = "SpireModManagerManagersWarning", AutoSortName = "AutoSortButton";
     public const string SameIdName = "SpireModManagerSameIdWarning", MissingName = "SpireModManagerMissingWarning";
     public const string SelfName = "SpireModManagerSelfWarning";
@@ -430,8 +434,14 @@ static class LoadOrder
         if (Layout.Wide && !Profiles.MissingDismissed && Profiles.Missing() is { Count: > 0 } missing)
             MissingBanner(content, border, search, missing);
         if (on && misordered > 0)
-            Banner(border, search, orderText, () => OrderCard(content),
-                [Menus.SmallButton(Menus.Text("SPIRE_MOD_MANAGER.FIX_ORDER"), () => Do(FixOrder), name: "FixOrderButton")]);
+        {
+            // Go to steps through the misordered mods in load order.
+            var stops = violations.Select(v => v.Mod).Distinct().ToList();
+            var goTo = Menus.SmallButton(Menus.Text("SPIRE_MOD_MANAGER.GO_TO_PROBLEM"), () => GoTo(content, Next(stops)), name: "GoToOrderButton");
+            Hover.Tip(goTo, Menus.Text("SPIRE_MOD_MANAGER.GO_TO_PROBLEM_TIP"));
+            Banner(border, search, orderText, () => OrderCard(content), [goTo, ShowButton(content, "#order", "FilterOrderButton"),
+                Menus.SmallButton(Menus.Text("SPIRE_MOD_MANAGER.FIX_ORDER"), () => Do(FixOrder), name: "FixOrderButton")]);
+        }
         else if (Layout.Current == Layout.View.Categories)
             ListBanner(content, border, search, mods, redraw);
         PageBar.Update(content, border, rows);
@@ -453,13 +463,13 @@ static class LoadOrder
             needMissing > 0 ? Part("SPIRE_MOD_MANAGER.LIST_PROBLEMS_MISSING", needMissing) : null,
         }.OfType<string>());
 
-        // Show steps through each mod that won't load, then the disabled mods it needs, from the one after the mod in
-        // the info panel.
+        // Go to steps through each mod that won't load, then the disabled mods it needs, from the one after the mod in
+        // the info panel; Show finds the same mods.
         var stops = broken.SelectMany(b => b.Needs.Select(d => d.Dep).OfType<Mod>().Prepend(b.Mod)).Distinct().ToList();
-        var show = Menus.SmallButton(Menus.Text("SPIRE_MOD_MANAGER.SHOW_PROBLEM"),
-            () => GoTo(content, Next(stops)), name: "ShowProblemButton");
-        Hover.Tip(show, Menus.Text("SPIRE_MOD_MANAGER.SHOW_PROBLEM_TIP"));
-        List<Control> buttons = [show];
+        var goTo = Menus.SmallButton(Menus.Text("SPIRE_MOD_MANAGER.GO_TO_PROBLEM"),
+            () => GoTo(content, Next(stops)), name: "GoToProblemButton");
+        Hover.Tip(goTo, Menus.Text("SPIRE_MOD_MANAGER.GO_TO_PROBLEM_TIP"));
+        List<Control> buttons = [goTo, ShowButton(content, "#unmet OR #needed", "FilterProblemButton")];
         var needed = Dependencies.NeededOff(mods);
         if (needed.Count > 0)
         {
@@ -467,8 +477,11 @@ static class LoadOrder
             {
                 if (CategoryList.ScreenOf(content) is not { } screen)
                     return;
+                // The banner's mods stay on screen under its Show's search until the search changes, though they no longer
+                // match it (fixed), as a row edited by hand does.
+                ListFilter.KeepCopies(stops.Select(m => m.manifest?.id));
                 Dependencies.Set(needed, true, screen);
-                redraw();
+                CategoryList.Redraw(content, keep: true);
             }, name: "EnableNeededButton");
             Hover.Tip(enable, Menus.Format("SPIRE_MOD_MANAGER.ENABLE_NEEDED_TIP",
                 ("mods", string.Join(", ", needed.Select(Copies.Named))))); // which copy, of one installed twice
@@ -488,13 +501,13 @@ static class LoadOrder
             .ToList();
 
     // This mod unticked (ours: every copy of it): the page goes with it at the relaunch, so a red banner says so, with
-    // Show (the copy running) and Enable now (every copy, so one still loads if another is removed). Ticking it again
-    // (or undo) takes the banner away.
+    // Go to (the copy running; no Show for one mod) and Enable now (every copy, so one still loads if another is
+    // removed). Ticking it again (or undo) takes the banner away.
     static void SelfBanner(Control content, Control border, Control? search, List<Mod> ours, Action redraw)
     {
         var running = ours.FirstOrDefault(m => m.state == ModLoadState.Loaded) ?? ours[0];
-        var show = Menus.SmallButton(Menus.Text("SPIRE_MOD_MANAGER.SHOW_PROBLEM"), () => GoTo(content, running), name: "ShowSelfButton");
-        Hover.Tip(show, Menus.Text("SPIRE_MOD_MANAGER.SHOW_SELF_TIP"));
+        var goTo = Menus.SmallButton(Menus.Text("SPIRE_MOD_MANAGER.GO_TO_PROBLEM"), () => GoTo(content, running), name: "GoToSelfButton");
+        Hover.Tip(goTo, Menus.Text("SPIRE_MOD_MANAGER.SHOW_SELF_TIP"));
         var enable = Menus.SmallButton(Menus.Text("SPIRE_MOD_MANAGER.ENABLE_SELF"), () =>
         {
             if (CategoryList.ScreenOf(content) is not { } screen)
@@ -503,20 +516,20 @@ static class LoadOrder
             redraw();
         }, name: "EnableSelfButton");
         Hover.Tip(enable, Menus.Text("SPIRE_MOD_MANAGER.ENABLE_SELF_TIP"));
-        Banner(border, search, Menus.Text("SPIRE_MOD_MANAGER.SELF_OFF"), () => null, [show, enable], SelfName, "SelfOff");
+        Banner(border, search, Menus.Text("SPIRE_MOD_MANAGER.SELF_OFF"), () => null, [goTo, enable], SelfName, "SelfOff");
     }
 
-    // Better Mod Menu ticked as well as us: a yellow warning, with Show stepping through the managers' rows (Better Mod
-    // Menu first) and Dismiss for a player happy to run both.
+    // Better Mod Menu ticked as well as us: a yellow warning, with Go to stepping through the managers' rows (Better Mod
+    // Menu first), Show finding them, and Dismiss for a player happy to run both.
     static void ManagersBanner(Control content, Control border, Control? search, Action redraw)
     {
-        var show = Menus.SmallButton(Menus.Text("SPIRE_MOD_MANAGER.SHOW_PROBLEM"), () =>
+        var goTo = Menus.SmallButton(Menus.Text("SPIRE_MOD_MANAGER.GO_TO_PROBLEM"), () =>
         {
             var managers = Bmm.TickedManagers().OrderBy(m => m.manifest?.id == ModEntry.ModId).ToList();
             if (managers.Count > 0)
                 GoTo(content, Next(managers));
-        }, name: "ShowManagersButton");
-        Hover.Tip(show, Menus.Text("SPIRE_MOD_MANAGER.SHOW_PROBLEM_TIP")); // the same words as the other banner's: no manager named
+        }, name: "GoToManagersButton");
+        Hover.Tip(goTo, Menus.Text("SPIRE_MOD_MANAGER.GO_TO_PROBLEM_TIP")); // the same words as the other banner's: no manager named
         var dismiss = Menus.SmallButton(Menus.Text("SPIRE_MOD_MANAGER.DISMISS_MANAGERS"), () =>
         {
             Store.Data.ManagersWarningDismissed = true;
@@ -524,12 +537,14 @@ static class LoadOrder
             CategoryList.Apply(content); // no mod changed, so rows kept under a filter stay (a Redraw lets them go)
         }, name: "DismissManagersButton");
         Hover.Tip(dismiss, Menus.Text("SPIRE_MOD_MANAGER.DISMISS_MANAGERS_TIP"));
-        Banner(border, search, Menus.Text("SPIRE_MOD_MANAGER.MANAGERS_WARNING"), ManagersCard, [show, dismiss], ManagersName, "ManagersWarning", WarningColor);
+        Banner(border, search, Menus.Text("SPIRE_MOD_MANAGER.MANAGERS_WARNING"), ManagersCard,
+            [goTo, ShowButton(content, "#managers", "FilterManagersButton"), dismiss], ManagersName, "ManagersWarning", WarningColor);
     }
 
     // The active profile's mods that are on but not installed (a list imported, or a mod uninstalled since), in Jordan's
-    // design: Show lists them, with a way to subscribe to each (MissingMods); Disable missing mods turns them off in the
-    // profile; Dismiss hides it until the profile is switched to again or its edit discarded. Its card names them.
+    // design: Show lists them, with a way to subscribe to each (MissingMods; they have no rows to go to or find);
+    // Disable missing mods turns them off in the profile; Dismiss hides it until the profile is switched to again or its
+    // edit discarded. Its card names them.
     static void MissingBanner(Control content, Control border, Control? search, List<Profiles.MissingMod> missing)
     {
         var show = Menus.SmallButton(Menus.Text("SPIRE_MOD_MANAGER.SHOW_PROBLEM"), () =>
@@ -555,13 +570,13 @@ static class LoadOrder
             [show, disable, dismiss], MissingName, "MissingWarning", WarningColor);
     }
 
-    // Copies of one mod id both ticked (only one loads), in Jordan's words: a yellow warning, Show stepping through those
-    // copies, Dismiss for this set (a new one shows it again). Its card lists them, saying which copy each is and
-    // whether it's the one that loads.
+    // Copies of one mod id both ticked (only one loads), in Jordan's words: a yellow warning, Go to stepping through those
+    // copies, Show finding them, Dismiss for this set (a new one shows it again). Its card lists them, saying which copy
+    // each is and whether it's the one that loads.
     static void SameIdBanner(Control content, Control border, Control? search, List<Mod> clashing)
     {
-        var show = Menus.SmallButton(Menus.Text("SPIRE_MOD_MANAGER.SHOW_PROBLEM"), () => GoTo(content, Next(clashing)), name: "ShowSameIdButton");
-        Hover.Tip(show, Menus.Text("SPIRE_MOD_MANAGER.SHOW_PROBLEM_TIP"));
+        var goTo = Menus.SmallButton(Menus.Text("SPIRE_MOD_MANAGER.GO_TO_PROBLEM"), () => GoTo(content, Next(clashing)), name: "GoToSameIdButton");
+        Hover.Tip(goTo, Menus.Text("SPIRE_MOD_MANAGER.GO_TO_PROBLEM_TIP"));
         var dismiss = Menus.SmallButton(Menus.Text("SPIRE_MOD_MANAGER.DISMISS_MANAGERS"), () =>
         {
             Store.Data.SameIdDismissed = Copies.Signature(clashing);
@@ -570,7 +585,7 @@ static class LoadOrder
         }, name: "DismissSameIdButton");
         Hover.Tip(dismiss, Menus.Text("SPIRE_MOD_MANAGER.DISMISS_MANAGERS_TIP"));
         Banner(border, search, Menus.Format("SPIRE_MOD_MANAGER.SAME_ID_WARNING", ("count", Menus.Number(clashing.Count))),
-            () => SameIdCard(clashing), [show, dismiss], SameIdName, "SameIdWarning", WarningColor);
+            () => SameIdCard(clashing), [goTo, ShowButton(content, "#clash", "FilterSameIdButton"), dismiss], SameIdName, "SameIdWarning", WarningColor);
     }
 
     // Copies of one id ticked together: a line per copy, whether it loads after a relaunch.
@@ -631,7 +646,7 @@ static class LoadOrder
 
     static string Escape(string text) => text.Replace("[", "[lb]");
 
-    // A banner's Show: the mod's row scrolled into view (its category opened, a search that leaves it out cleared) with
+    // A banner's Go to: the mod's row scrolled into view (its category opened, a search that leaves it out cleared) with
     // a short glow, and the mod in the info panel.
     static void GoTo(Control content, Mod mod)
     {
@@ -640,16 +655,31 @@ static class LoadOrder
         // This very copy against the search: Reveal looks at the first row with the id, and a local and a Workshop copy
         // share one (their search text can differ).
         var filter = CategoryList.Filter(content);
-        if (filter.Length > 0 && !Store.Data.LoadOrderView && !Search.Matches(mod, filter)) // Load Order hides no row
+        if (filter.Length > 0 && !Store.Data.LoadOrderView && !ListFilter.Finds(mod, filter)) // Load Order hides no row
             Search.Clear(content);
         CategoryList.Reveal(content, Copies.Key(mod), flash: true);
         CategoryList.Select(content, row);
     }
 
-    // A Show button's next stop: the mod after the one in the info panel, round to the first at the end (and the first
+    // A Go to button's next stop: the mod after the one in the info panel, round to the first at the end (and the first
     // when that mod isn't one of them, or no mod is there).
     static Mod Next(List<Mod> stops) =>
         stops[((CategoryList.Selected is { } selected ? stops.IndexOf(selected) : -1) + 1) % stops.Count];
+
+    // A banner's Show: its search in the box, so the list shows only its mods (Load Order finds them), and the box
+    // emptied when pressed again or while the box holds that search already (Search.Toggle); lit while it does.
+    static Button ShowButton(Control content, string search, string name)
+    {
+        var show = Menus.ChoiceButton(Menus.Text("SPIRE_MOD_MANAGER.SHOW_FILTER"), Search.Holds(CategoryList.Filter(content), search), () =>
+        {
+            // On the main list, all its mods: the page bar's Show: choice (Enabled, say) would hide some of them.
+            if (!Store.Data.LoadOrderView && !Search.Holds(CategoryList.Filter(content), search) && ListFilter.Current != ListFilter.Choice.All)
+                ListFilter.Choose(content, ListFilter.Choice.All);
+            Search.Toggle(content, search);
+        }, name);
+        Hover.Tip(show, Menus.Text(Store.Data.LoadOrderView ? "SPIRE_MOD_MANAGER.SHOW_FILTER_FIND_TIP" : "SPIRE_MOD_MANAGER.SHOW_FILTER_TIP"));
+        return show;
+    }
 
     // A banner under the search box: its text, then its buttons; red unless color says otherwise. card: what hovering
     // the text shows. name, textName: the node names (the page's warning by default).
@@ -1098,6 +1128,7 @@ static class LoadOrder
     {
         if (content.HasMeta(DraggingMeta))
             content.RemoveMeta(DraggingMeta);
+        using var lookups = Lookups.Begin(); // a search's hidden tags (#order, #needed) ask about the whole list, per row
         foreach (var r in content.GetChildren().OfType<NModMenuRow>())
             r.Modulate = Rest(r);
         HideLinks(content);
