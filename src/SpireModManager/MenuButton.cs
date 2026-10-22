@@ -9,7 +9,7 @@ namespace SpireModManager;
 // The main menu's "Default (12 mods)" button: a smaller copy of the game's Settings text button (its font, colours,
 // hover and carets) naming the active profile and how many mods are on. It always opens our view of the Modding page,
 // as F3 on the main menu does. Lower-left, or wherever the player moved it (right-click > Move button), with the game's
-// notification dot and a "15 Mod changes will be applied after a restart" note while a relaunch is pending, its card
+// notification dot and a "15 mod changes will be applied after a restart" note while a relaunch is pending, its card
 // then starting with the page's summary of the changes. Its right-click menu also opens the translations folder and
 // relaunches the game.
 static class MenuButton
@@ -176,15 +176,19 @@ static class MenuButton
         Menus.Format(on == 1 ? "SPIRE_MOD_MANAGER.MAIN_MENU_PROFILE_ONE" : "SPIRE_MOD_MANAGER.MAIN_MENU_PROFILE",
             ("name", RowTitles.Cut(font, name, size, NameWidth)), ("count", Menus.Number(on)));
 
-    // The pending note: the page's own line, word for word (one text, one less to translate), after how many changes the
-    // relaunch applies: mods turned on, off and moved in the load order (Changes' counts; edits to our data, which take
-    // effect at once, aren't among them). The line alone with none of those (the game's own state wants one).
+    // The pending note: how many changes the relaunch applies, "15 mod changes will be applied after a restart" (one:
+    // "1 mod change ..."): mods turned on, off and moved in the load order (Changes' counts; edits to our data, which take
+    // effect at once, aren't among them). With none of those (the game's own state wants one), the page's own line.
     public static string PendingText()
     {
         var (on, off, moved) = HistoryBar.Counts();
         var count = on + off + moved + HistoryBar.CopySwitchCount(); // a copy switched counts too: Changes lists it
-        var line = Menus.Text("SPIRE_MOD_MANAGER.PENDING_RESTART");
-        return count > 0 ? $"{Menus.Number(count)} {line}" : line;
+        return count switch
+        {
+            0 => Menus.Text("SPIRE_MOD_MANAGER.PENDING_RESTART"),
+            1 => Menus.Text("SPIRE_MOD_MANAGER.PENDING_RESTART_COUNT_ONE"),
+            _ => Menus.Format("SPIRE_MOD_MANAGER.PENDING_RESTART_COUNT", ("count", Menus.Number(count))),
+        };
     }
 
     // Its card while a relaunch is pending: the page's summary of the changes (without "Click for the full list"), a

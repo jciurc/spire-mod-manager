@@ -467,7 +467,10 @@ static class ShortcutsPatch
     }
 
     // Our open menu or dialog, or the main menu button's move mode: true if there was one (it's closed now).
-    static bool CloseOurs() => MenuPanel.Close() || RelaunchCheck.Cancel() || ProfileShare.Close() || MenuButton.CancelMove();
+    static bool CloseOurs() => MenuPanel.Close() || RelaunchCheck.Cancel() || ProfileShare.Close() || MissingMods.Close() || MenuButton.CancelMove();
+
+    // One of our dialogs is open: the page's Ctrl keys wait (they'd change the list under it).
+    static bool DialogOpen => RelaunchCheck.IsOpen || ProfileShare.IsOpen || MissingMods.IsOpen;
 
     // F3 on the main menu opens our page, as the main menu button does; on the Modding page it goes back, as the page's
     // Back button does, each with its sound. Anything of ours that's open closes first instead, as with Escape. Elsewhere it's left to the
@@ -504,7 +507,7 @@ static class ShortcutsPatch
     // they're let go of.
     static bool Deselect()
     {
-        if (Store.Data.VanillaView || RelaunchCheck.IsOpen || ProfileShare.IsOpen || Selection.Mods.Count == 0
+        if (Store.Data.VanillaView || DialogOpen || Selection.Mods.Count == 0
             || HistoryBar.Screen is not { } screen || !GodotObject.IsInstanceValid(screen) || !screen.IsVisibleInTree())
             return false;
         MenuPanel.Close();
@@ -517,7 +520,7 @@ static class ShortcutsPatch
         {
             if (inputEvent is not InputEventKey { Pressed: true, Echo: false, CtrlPressed: true } key
                 || HistoryBar.Screen is not { } screen || !GodotObject.IsInstanceValid(screen) || !screen.IsVisibleInTree()
-                || Store.Data.VanillaView || RelaunchCheck.IsOpen || ProfileShare.IsOpen)
+                || Store.Data.VanillaView || DialogOpen)
                 return;
             // These change the picks or what they show, so an open menu (the bulk menu edits the picks it opened with)
             // closes first.

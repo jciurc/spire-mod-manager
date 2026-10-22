@@ -478,8 +478,9 @@ static class LoadOrder
                 if (CategoryList.ScreenOf(content) is not { } screen)
                     return;
                 // The banner's mods stay on screen under its Show's search until the search changes, though they no longer
-                // match it (fixed), as a row edited by hand does.
-                ListFilter.KeepCopies(stops.Select(m => m.manifest?.id));
+                // match it (fixed), as a row edited by hand does: the mods it turns on too (a need's own needs, which #needed
+                // lists, aren't among the stops).
+                ListFilter.KeepCopies(stops.Concat(needed).Select(m => m.manifest?.id));
                 Dependencies.Set(needed, true, screen);
                 CategoryList.Redraw(content, keep: true);
             }, name: "EnableNeededButton");
@@ -935,12 +936,12 @@ static class LoadOrder
                     row.AcceptEvent(); // the marker, lines and edge scrolling update every frame (DragFrame)
                     break;
                 case InputEventMouseButton { ButtonIndex: MouseButton.Left, Pressed: false } release when dragging:
-                    dragging = false;
                     row.AcceptEvent();
-                    content.GetTree().ProcessFrame -= DragFrame;
-                    marker?.QueueFree();
-                    marker = null;
-                    EndDragLook(content);
+                    EndDrag();
+                    // The list hidden (the page left with the button held): Godot lets go of it as the row hides, at a
+                    // position from the hidden page. No drop.
+                    if (!content.IsVisibleInTree())
+                        break;
                     if (!moved)
                     {
                         Selection.Pick(content, row, toggle: false, range: false);
@@ -965,12 +966,28 @@ static class LoadOrder
             }
         };
 
+        // The drag over, dropped or not: no per-frame work or marker left, the list's look back.
+        void EndDrag()
+        {
+            dragging = false;
+            content.GetTree().ProcessFrame -= DragFrame;
+            marker?.QueueFree();
+            marker = null;
+            EndDragLook(content);
+        }
+
         // Every frame while dragging: the list scrolls near an edge (faster nearer it), and the marker follows the gap.
         void DragFrame()
         {
             if (!GodotObject.IsInstanceValid(content) || !content.IsInsideTree() || marker == null)
             {
                 ((SceneTree)Engine.GetMainLoop()).ProcessFrame -= DragFrame;
+                return;
+            }
+            // The list hidden or Load Order left with the button held (F3 or Esc go back): the drag ends, nothing dropped.
+            if (!content.IsVisibleInTree() || !Store.Data.LoadOrderView)
+            {
+                EndDrag();
                 return;
             }
             var view = content.GetParent<Control>().GetGlobalRect();

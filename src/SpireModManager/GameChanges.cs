@@ -199,9 +199,13 @@ static class GameChanges
         return (methods.Count, [.. methods.Select(m => Class(m.DeclaringType)).GroupBy(c => c).OrderByDescending(g => g.Count()).Select(g => g.Key)]);
     }
 
-    // A game class as words: "NMerchantRoom" is "merchant room", "RelicModel" is "relic", "NCreature" is "creature".
+    // A game class as words: "NMerchantRoom" is "merchant room", "RelicModel" is "relic", "NCreature" is "creature". One
+    // the compiler made (an async method's "<OnPlay>d__42", a lambda's "<>c": a patch on their body lands there) is told
+    // by the class it's in.
     public static string Class(Type? type)
     {
+        while (type is { DeclaringType: { } outer } && (type.Name.StartsWith('<') || type.IsDefined(typeof(CompilerGeneratedAttribute), false)))
+            type = outer;
         var name = type?.Name ?? "";
         if (name.IndexOf('`') is var tick and >= 0)
             name = name[..tick];

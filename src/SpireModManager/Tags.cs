@@ -176,19 +176,27 @@ static class Tags
     {
         if (Looks.TryGetValue((font, color, custom), out var look))
             return look;
+        look = new Theme();
+        look.SetStylebox("panel", "PanelContainer", Box(color, custom));
+        look.SetFont("font", "Label", font);
+        look.SetFontSize("font_size", "Label", 12);
+        look.SetColor("font_color", "Label", color);
+        return Looks[(font, color, custom)] = look;
+    }
+
+    // A chip's box; PillBox is a player's tag's, drawn behind the tags being typed (TagPills).
+    static StyleBoxFlat Box(Color color, bool custom)
+    {
         var style = new StyleBoxFlat
         {
             BgColor = new Color(color, custom ? 0.1f : 0.2f),
             ContentMarginLeft = Margin, ContentMarginRight = Margin, ContentMarginTop = 0, ContentMarginBottom = 0,
         };
         style.SetCornerRadiusAll(2);
-        look = new Theme();
-        look.SetStylebox("panel", "PanelContainer", style);
-        look.SetFont("font", "Label", font);
-        look.SetFontSize("font_size", "Label", 12);
-        look.SetColor("font_color", "Label", color);
-        return Looks[(font, color, custom)] = look;
+        return style;
     }
+
+    public static readonly StyleBoxFlat PillBox = Box(CustomColor, custom: true);
 
     // A chip with its hover card; clicked gets whether Shift was held.
     public static Control Make(Chip chip, Action<bool>? clicked = null)

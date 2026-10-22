@@ -375,7 +375,9 @@ internal static class ModEntry
     // something: the vanilla Modding screen's pending-changes test per copy, by which copy of an id loads (Copies.Loads:
     // ticking a second copy that won't load changes nothing), plus the load order and mods installed since launch that
     // would load. A copy set aside counts too (Loads knows whether it loads next time); one that failed doesn't, as in
-    // the game's test, nor an id whose pick a relaunch wouldn't apply (SameIdLoad.Unchosen).
+    // the game's test. An id whose pick a relaunch wouldn't apply (SameIdLoad.Stuck) keeps the game's choice, so it goes
+    // by the game's own test on its switches, leaving out the copies set aside: a switch turned on or off is pending, a
+    // pick isn't (Changes lists no copy switch on it either).
     public static bool HasPendingChanges()
     {
         if (LoadOrder.OrderChanged)
@@ -384,7 +386,9 @@ internal static class ModEntry
         if (Installed.Mods.Any(m => Copies.LoadsIn(m, off, picks)))
             return true;
         return ModManager.Mods.Any(mod => mod.state is (ModLoadState.Disabled or ModLoadState.Loaded or ModLoadState.DisabledDuplicate)
-            && !SameIdLoad.Unchosen(mod.manifest?.id) && (mod.state == ModLoadState.Loaded) != Copies.LoadsIn(mod, off, picks));
+            && (SameIdLoad.Stuck(mod.manifest?.id)
+                ? mod.state != ModLoadState.DisabledDuplicate && (mod.state == ModLoadState.Loaded) == off.Contains((mod.manifest?.id, mod.modSource))
+                : (mod.state == ModLoadState.Loaded) != Copies.LoadsIn(mod, off, picks)));
     }
 
     // Adds a button in the style of the vanilla Get Mods button, sized freely (the art is a 9-slice).

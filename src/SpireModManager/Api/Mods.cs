@@ -6,7 +6,7 @@ public static class Mods
     /// <summary>The version in a mod's manifest ("0.1.0"): its loaded copy's, else (still loading, or off) its first installed copy's; null if it isn't installed.</summary>
     public static string? Version(string modId) => ApiGuard.Run<string?>("Mods.Version", null, () => ModEntry.VersionOf(modId));
 
-    /// <summary>What the player keeps about a mod (its loaded copy's entry, else its first installed copy's, else the id's); never null: empty when there's nothing. Read it when you draw; it changes as the player edits.</summary>
+    /// <summary>What the player keeps about a mod (its loaded copy's entry, else its first installed copy's; the id's when it isn't installed); never null: empty when there's nothing. Read it when you draw; it changes as the player edits.</summary>
     public static ModNotes Details(string modId) => ApiGuard.Run("Mods.Details", new ModNotes(), () =>
     {
         var (alias, notes, tags, category) = SharedCards.Details(modId);
