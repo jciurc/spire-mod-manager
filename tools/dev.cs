@@ -2,7 +2,9 @@
 //
 //   dotnet run tools/dev.cs test      build, reset the sandbox, run the in-game self-test headless
 //                                     --window: with a window, for screenshots, kept behind others
-//                                     --size WxH, with --window: that window size instead of 1920x1080
+//                                     --size WxH, with --window: that window size instead of 1920x1080, for
+//                                      screenshots (the mouse checks place the pointer in 1920x1080 units, so
+//                                      they fail at other sizes)
 //                                     --bmm / --bmm-after: with Better Mod Menu loaded before / after ours
 //                                     --bmm-local: its local-fix build (BmmRepo) instead of the installed one
 //                                     --workshop <id>[,<id>...]: those subscribed Workshop items too, after ours
