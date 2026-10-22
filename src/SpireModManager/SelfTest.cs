@@ -1210,10 +1210,15 @@ static partial class SelfTest
     // The main menu button card's last line: the key that opens the page, unless the patch that reads it didn't apply.
     static string ManagerKeyLine => ModEntry.FailedPatches.Contains(nameof(ShortcutsPatch)) ? "" : "\n" + OS.GetKeycodeString(ShortcutsPatch.ManagerKey);
 
-    // The main menu button's card for a profile (as written), with the key that opens the page, or without one.
-    static string MenuCard(string profile) => ModEntry.FailedPatches.Contains(nameof(ShortcutsPatch))
-        ? $"Spire Mod Manager - View and manage your mods\nRight-click for more options\n\nCurrently using profile {profile}"
-        : $"Spire Mod Manager - View and manage your mods\n{OS.GetKeycodeString(ShortcutsPatch.ManagerKey)} to open, or right-click for more options\n\nCurrently using profile {profile}";
+    // The main menu button's card for a profile (as written: the key and right-click in bold), with the key that opens the
+    // page, or without one. shown: as the card shows it, without the bold's tags.
+    static string MenuCard(string profile, bool shown = false)
+    {
+        string Bold(string words) => shown ? words : $"[b]{words}[/b]";
+        return ModEntry.FailedPatches.Contains(nameof(ShortcutsPatch))
+            ? $"Spire Mod Manager - View and manage your mods\n{Bold("Right-click")} for more options\n\nCurrently using profile {profile}"
+            : $"Spire Mod Manager - View and manage your mods\n{Bold(OS.GetKeycodeString(ShortcutsPatch.ManagerKey))} to open, or {Bold("right-click")} for more options\n\nCurrently using profile {profile}";
+    }
 
     // The main menu button's card: nothing at the usual delay (the mouse crosses the button on its way to the game's), then
     // after a second, the normal card, its profile name in gold.
@@ -1229,7 +1234,7 @@ static partial class SelfTest
             return Task.CompletedTask;
         }, seconds: Hover.SlowDelay + 0.2);
         Check("main menu button: its card waits a second, then names the profile in gold, the key on its own line", early == "" && Hover.SlowDelay == 1.0
-            && late.Text == MenuCard($"{Profiles.Active?.Name}")
+            && late.Text == MenuCard($"{Profiles.Active?.Name}", shown: true)
             && !card.Contains("[gold]") && card.Contains("[color=#") && card.Contains($"]{Profiles.Active?.Name}[/color]"), $"early \"{early}\", then \"{late.Text}\"");
 
         // Where the card opens, chosen each time from where the button is then (CardMisplaced: exactly where Hover puts
@@ -1879,8 +1884,8 @@ static partial class SelfTest
         var boxed = System.Text.RegularExpressions.Regex.Match(gamesMessage, @"^\[center\]\[color=#[0-9a-f]{6}\]Notice from the game\[/color\]\[/center\]\n"
             + @"\[table=1\]\[cell expand=1 border=#[0-9a-f]{8} bg=#[0-9a-f]{8} padding=[0-9,]+\]\[center\]\p{Cf}(?<message>.+)\[/center\]\[/cell\]\[/table\]$");
         Check("the game's own message for a failed start, as the dialogs show it: under \"Notice from the game\" (centred), alone in its outlined box; "
-            + "plain, under the same words",
-            boxed.Success && boxed.Groups["message"].Value.Length > 30 && !boxed.Groups["message"].Value.Contains("Notice from the game")
+            + "plain, under the same words; its markup read by the game's auto-size",
+            boxed.Success && GameReads(gamesMessage) && boxed.Groups["message"].Value.Length > 30 && !boxed.Groups["message"].Value.Contains("Notice from the game")
             && gamesMessagePlain.StartsWith("Notice from the game:\n") && gamesMessagePlain.Length > 50,
             $"{gamesMessage} | {gamesMessagePlain}");
         // Our popup's button (marked: no other popup's), by its node and signal names (the same in every game version so far).
@@ -3879,6 +3884,7 @@ static partial class SelfTest
         if (other.Mod is { } erring)
         {
             var errorsBefore = erring.errors;
+            var notesBefore = Store.InfoFor("SmmTestFixes")?.Notes;
             var branchError = new LocString("main_menu_ui", "MOD_ERROR.STEAM_BRANCH_UNSUPPORTED");
             branchError.Add("id", erring.manifest?.id ?? "");
             branchError.Add("supportedBranch", "public");
@@ -3892,72 +3898,84 @@ static partial class SelfTest
                 var descriptionLabel = panel.GetNode<RichTextLabel>("ModDescription");
                 var (shown, raw) = (descriptionLabel.GetParsedText(), descriptionLabel.Text);
                 await Capture(screen, outDir, "17b-game-error-panel");
-                // Its row's card in the shots too: the game's box, then the gap before Author.
+                // Its row's card in the shots too: the game's box, then the gap before Author; with a note, the card's other
+                // gap, before it, to measure that one against and to see them together.
+                Store.EditMod("SmmTestFixes", info => info.Notes = "The gap above this note");
                 await HoverOver(other.GetNode<Control>("SpireModManagerTitleHover"), Hover.Delay + 0.2);
                 await Capture(screen, outDir, "17b2-game-error-card");
-                // The box drawn in both (GameText), and in the card one gap after it, as after anything else wrong: Author's
-                // line starts a line below the box's table (an empty line between them made it two).
+                // The box drawn in both (GameText), and in the card one gap after it, as after anything else: from the box's
+                // line to Author's as from Author's to the note's (an empty line after the box made it a line more).
                 var cardText = CardLabel(screen, "SpireModManagerNotesCard");
                 var panelBox = BoxesWrong(descriptionLabel, 1);
                 string? cardBox = "no card";
-                var (gapAfter, lineTall) = (-1f, 0f);
+                var (gapAfter, gapBefore, cardGap, lineTall) = (-1f, -1f, 0f, 0f);
                 if (cardText != null)
                 {
                     cardBox = BoxesWrong(cardText, 1);
                     lineTall = cardText.GetThemeFont("normal_font").GetHeight(cardText.GetThemeFontSize("normal_font_size"));
-                    if (GameText.Drawn(cardText) is [var boxed] && cardText.GetParsedText().IndexOf(Menus.Text("SPIRE_MOD_MANAGER.AUTHOR") + ":") is >= 0 and var author)
-                        gapAfter = cardText.GetLineOffset(cardText.GetCharacterLine(author)) - cardText.GetLineOffset(boxed.Line) - cardText.GetLineHeight(boxed.Line);
+                    var cardWords = cardText.GetParsedText();
+                    int CardLine(string key) => cardWords.IndexOf(Menus.Text(key) + ":") is >= 0 and var at ? cardText.GetCharacterLine(at) : -1;
+                    float Between(int from, int to) => cardText.GetLineOffset(to) - cardText.GetLineOffset(from) - cardText.GetLineHeight(from);
+                    if (GameText.Drawn(cardText) is [var boxed] && CardLine("SPIRE_MOD_MANAGER.AUTHOR") is > 0 and var authorLine
+                        && CardLine("SPIRE_MOD_MANAGER.NOTES_TERM") is > 0 and var noteLine)
+                        (gapAfter, gapBefore, cardGap) = (Between(boxed.Line, authorLine), Between(authorLine, noteLine), cardText.GetLineHeight(authorLine - 1));
                 }
                 await Leave(other.GetNode<Control>("SpireModManagerTitleHover"), Hover.Grace + 0.1);
+                Results.Add($"INFO the row's card: {gapAfter} from the box's line to Author's, {gapBefore} from Author's to the note's; "
+                    + $"a gap's line {cardGap} tall, a line of text {lineTall}");
                 Check("the game's box in the panel and the row's card: an even 2 px border with round corners, 2 px inside its table on every side, "
-                    + "no side cut off; in the card, one gap after it", panelBox == null && cardBox == null && gapAfter >= 0 && gapAfter < lineTall * 1.5f,
-                    $"panel: {panelBox}; card: {cardBox}; {gapAfter} after the box, a line {lineTall}");
+                    + "no side cut off; in the card, one gap after it, as before the note", panelBox == null && cardBox == null && gapBefore > 0
+                    && Math.Abs(gapAfter - gapBefore) <= 2, $"panel: {panelBox}; card: {cardBox}; {gapAfter} after the box, {gapBefore} before the note");
                 Hover.TestMouse = null;
                 var card = ModDetails.Card(erring); // the row's hover card shows the same (as BBCode: "[lb]" is a "[")
                 Check("a game load error shows apart from ours, in the panel and the row's card: under \"Error while loading\", alone in its box, "
-                    + "in the game's red (its own [red] in the panel, its colour in the card, no tags as text), not among our problems",
-                    shown.Contains("Error while loading") && shown.Contains("only supports Steam branch public") && !shown.Contains("[red]")
-                    && raw.Contains(GameText.Caption("Error while loading")) && raw.Contains("[table=1]") && raw.Contains("[red]Mod ")
-                    && card.Contains(GameText.Caption("Error while loading")) && card.Contains("[table=1]") && card.Contains("[color=#ff5555]Mod ")
+                    + "in the game's red (its own [red] in the panel, its colour in the card, no tags as text), not among our problems; its markup read by "
+                    + "the game's auto-size", GameReads(raw) && GameReads(card) && shown.Contains("Error while loading") && shown.Contains("only supports Steam branch public") && !shown.Contains("[red]")
+                    && raw.Contains(GameText.Caption("Error while loading")) && raw.Contains("[table=3]") && raw.Contains("[red]Mod ")
+                    && card.Contains(GameText.Caption("Error while loading")) && card.Contains("[table=3]") && card.Contains("[color=#ff5555]Mod ")
                     && !card.Contains("[lb]red]") && !ModDetails.Problems(erring).Any(p => p.Contains("Steam branch")),
                     $"{shown.Split('\n')[0]} | card: {card.Split('\n').FirstOrDefault(l => l.Contains("branch"))}");
                 var gapThenAuthor = $"[/table]\n{ModDetails.CardGap}\n{ModDetails.CardFact("SPIRE_MOD_MANAGER.AUTHOR", "")}";
                 Check("the row's card and the API's: a gap after what's wrong, before Author", card.Contains(gapThenAuthor)
                     && ModDetails.SharedCard(erring).Contains(gapThenAuthor), card.Replace("\n", " | "));
+                // A row's card has the mod's picture at its top, as the API's card does (where the game's Modding page finds
+                // it), and none without one. No fixture mod has one: Test Fixes is lent one, in the game's resource cache,
+                // while it has its error, so the box comes after a picture (each counted as the label counts it).
+                if (erring.manifest?.id is { } fixesId && ours.Mod is { } plain)
+                {
+                    var art = Image.CreateEmpty(256, 144, false, Image.Format.Rgba8);
+                    art.Fill(new Color(0.18f, 0.3f, 0.45f));
+                    art.FillRect(new Rect2I(24, 24, 208, 96), new Color(0.85f, 0.62f, 0.32f));
+                    var lent = ImageTexture.CreateFromImage(art);
+                    lent.TakeOverPath($"res://{fixesId}/mod_image.png");
+                    try
+                    {
+                        var hotTitle = other.GetNode<Control>("SpireModManagerTitleHover");
+                        await HoverOver(hotTitle, Hover.Delay + 0.2);
+                        await Capture(screen, outDir, "17b3-card-thumbnail");
+                        var pictureCard = CardLabel(screen, "SpireModManagerNotesCard");
+                        var (shownCard, boxAfterPicture) = (pictureCard?.Text ?? "", pictureCard == null ? "no card" : BoxesWrong(pictureCard, 1));
+                        await Leave(hotTitle, Hover.Grace + 0.1);
+                        var picture = $"[img width=200]res://{fixesId}/mod_image.png[/img]\n";
+                        Check("a row's card shows the mod's picture at its top when it has one, as the API's card does; none without one",
+                            shownCard.StartsWith($"{picture}[b]{fixesId}[/b]") && ModDetails.SharedCard(erring).StartsWith(picture) && !ModDetails.Card(plain).Contains("[img"),
+                            shownCard.Split('\n')[0]);
+                        Check("the game's box after the mod's picture in a card: drawn on its own line, as without one", boxAfterPicture == null, boxAfterPicture ?? "");
+                    }
+                    finally
+                    {
+                        lent.ResourcePath = "";
+                    }
+                }
             }
             finally
             {
                 erring.errors = errorsBefore;
+                Store.EditMod("SmmTestFixes", info => info.Notes = notesBefore);
             }
         }
         else
             Results.Add("SKIP a game load error in the panel: the fixture row has no mod");
-        // A row's card has the mod's picture at its top, as the API's card does (where the game's Modding page finds it),
-        // and none without one. No fixture mod has one: Test Fixes is lent one, in the game's resource cache.
-        if (other.Mod is { manifest.id: { } fixesId } pictured && ours.Mod is { } plain)
-        {
-            var art = Image.CreateEmpty(256, 144, false, Image.Format.Rgba8);
-            art.Fill(new Color(0.18f, 0.3f, 0.45f));
-            art.FillRect(new Rect2I(24, 24, 208, 96), new Color(0.85f, 0.62f, 0.32f));
-            var lent = ImageTexture.CreateFromImage(art);
-            lent.TakeOverPath($"res://{fixesId}/mod_image.png");
-            try
-            {
-                var hotTitle = other.GetNode<Control>("SpireModManagerTitleHover");
-                await HoverOver(hotTitle, Hover.Delay + 0.2);
-                await Capture(screen, outDir, "17b3-card-thumbnail");
-                var shownCard = CardLabel(screen, "SpireModManagerNotesCard")?.Text ?? "";
-                await Leave(hotTitle, Hover.Grace + 0.1);
-                var picture = $"[img width=200]res://{fixesId}/mod_image.png[/img]\n";
-                Check("a row's card shows the mod's picture at its top when it has one, as the API's card does; none without one",
-                    shownCard.StartsWith($"{picture}[b]{fixesId}[/b]") && ModDetails.SharedCard(pictured).StartsWith(picture) && !ModDetails.Card(plain).Contains("[img"),
-                    shownCard.Split('\n')[0]);
-            }
-            finally
-            {
-                lent.ResourcePath = "";
-            }
-        }
         // The game marks every Workshop mod outside its author's branches before it knows which are off (a dev run has
         // no Steam, so these are made up): a mod that's off loses that error and keeps its others, one on keeps it, and
         // the game's message still shows, marked as the game's, in the mod's card and panel.
@@ -3987,8 +4005,23 @@ static partial class SelfTest
                 Check("the game's message taken off a mod that's off still shows in its card, apart from ours under its own caption, in a fainter box, "
                     + "not as a problem",
                     card.Contains(GameText.Caption("Error while loading - Can be ignored if disabled")) && card.Contains(gameMessage)
-                    && card.Contains(GameText.Box("", dim: true)[..^"[/cell][/table]".Length]) && !ModDetails.Problems(offMod).Any(p => p.Contains("only supports Steam branch")),
+                    && card.Contains(GameText.Box("|", dim: true).Split('|')[0]) && !ModDetails.Problems(offMod).Any(p => p.Contains("only supports Steam branch")),
                     card.Split('\n').FirstOrDefault(l => l.Contains("branch")) ?? card.Split('\n')[0]);
+                // Drawn in a card as the row's is (its width): a lit box for the error it keeps, then a dim one, each on its
+                // own line (the first table counted as the label counts it); and a box whose words fill its room, over lines,
+                // inside the card (the words' cell padding took it past the edge).
+                async Task<string?> BoxesShown(string text, int count)
+                {
+                    Hover.ShowNow(other.GetNode<Control>("SpireModManagerTitleHover"), "SpireModManagerNotesCard", text, 380);
+                    await WaitReal(menu, 0.2);
+                    var wrong = CardLabel(screen, "SpireModManagerNotesCard") is { } boxCard ? BoxesWrong(boxCard, count)
+                        ?? (count == 2 && !GameText.Drawn(boxCard).Select(b => b.Dim).SequenceEqual([false, true]) ? "not lit, then dim" : null) : "no card";
+                    Hover.Hide();
+                    return wrong;
+                }
+                var (twoBoxes, filledBox) = (await BoxesShown(card, 2), await BoxesShown(GameText.Box(string.Join(" ", Enumerable.Repeat("aa bb", 30))), 1));
+                Check("in a card: a lit box for the game's error, then a dim one for the message taken off, each drawn on its own line; a box whose words "
+                    + "fill its room stays inside the card", twoBoxes == null && filledBox == null, $"two boxes: {twoBoxes ?? "fine"}; filled: {filledBox ?? "fine"}");
                 // The second pass, just before the main menu's warning reads the errors (BranchErrorsLatePatch): one
                 // marked after our Init goes there too.
                 if (menu.GetTree().Root.FindChildren("*", "", true, false).OfType<NDebugInfoLabelManager>().FirstOrDefault() is { } warning)
@@ -4914,6 +4947,26 @@ static partial class SelfTest
             var x = i < 0 ? 2 : RowTitles.Measure(links.GetThemeFont("font"), before + string.Join(", ", linked.Take(i)) + (i > 0 ? ", " : ""), links.GetThemeFontSize("font_size")) + 2;
             links.EmitSignal(Control.SignalName.GuiInput, new InputEventMouseButton { ButtonIndex = MouseButton.Left, Pressed = false, ShiftPressed = shift, Position = new Vector2(x, 8) });
         }
+        // The mouse in over "Additional keywords:" (from the tags), then onto a keyword: its card, as if it came in there.
+        var (cardEarly, cardOnWord) = (true, false);
+        if (links != null)
+        {
+            var onWord = new Vector2(RowTitles.Measure(links.GetThemeFont("font"), before, links.GetThemeFontSize("font_size")) + 4, links.Size.Y / 2);
+            Hover.TestMouse = () => links.GetGlobalTransform() * new Vector2(2, onWord.Y);
+            links.EmitSignal(Control.SignalName.MouseEntered);
+            await WaitReal(menu, Hover.Delay + 0.2);
+            cardEarly = screen.HasNode("SpireModManagerTagCard");
+            Hover.TestMouse = () => links.GetGlobalTransform() * onWord;
+            links.EmitSignal(Control.SignalName.GuiInput, new InputEventMouseMotion { Position = onWord });
+            await WaitReal(menu, Hover.Delay + 0.2);
+            cardOnWord = screen.HasNode("SpireModManagerTagCard");
+            Hover.TestMouse = () => new Vector2(5, 5);
+            links.EmitSignal(Control.SignalName.MouseExited);
+            await WaitReal(menu, Hover.Grace + 0.1);
+            Hover.TestMouse = null;
+        }
+        Check("a row's keywords: the mouse in over \"Additional keywords:\", then onto a keyword, brings up the keyword's card", !cardEarly && cardOnWord,
+            $"a card over the words before them: {cardEarly}, then on a keyword: {cardOnWord}");
         ClickWord(-1, false);
         await Wait(menu, 0.3);
         var clickedTitle = box.Text;
@@ -8760,7 +8813,7 @@ static partial class SelfTest
         var bannerText = (SameId()?.FindChild("SameIdWarning", true, false) as Label)?.Text;
         var chips = Tags.For(local).Concat(Tags.For(copy)).Where(c => c.Text == DuplicateChip).ToList();
         var card = await BannerCard(menu, screen, SameId());
-        Check("both copies on: a yellow banner (\"2 mods with the same ID are enabled. Only one copy of each loads.\"), its card saying which loads (the local "
+        Check("both copies on: a yellow banner (\"2 mods with the same ID are enabled. Only one copy will be loaded.\"), its card saying which loads (the local "
             + "copy: the same version); a Duplicate chip on each naming the other and the copy that loads",
             bothOn && bannerText == Draft(SameIdText, ("count", "2")) && Yellow(BannerFill(SameId()))
             && card.Contains(Draft(BannerLoads, ("mod", Named(local)))) && card.Contains(Draft(BannerWontLoad, ("mod", Named(copy))))
@@ -10730,7 +10783,7 @@ static partial class SelfTest
     const string SelfLockedTip = "Spire Mod Manager is installed more than once, so its copies stay enabled. If one is removed, another still loads. "
         + "To turn Spire Mod Manager off, disable them all on the vanilla Modding page.";
     const string SelfLockedOtherOffTip = "Spire Mod Manager stays enabled. {other} is disabled, so Spire Mod Manager won't load if this copy is removed. Enable it too.";
-    const string SameIdText = "{count} mods with the same ID are enabled. Only one copy of each loads.";
+    const string SameIdText = "{count} mods with the same ID are enabled. Only one copy will be loaded.";
     const string BannerLoads = "{mod}: loads", BannerWontLoad = "{mod}: won't load";
     const string RelaunchLoses = "{other} loads instead";
     const string CopySwitchLine = "{mod}: {to} loads instead of {from}";
@@ -12255,6 +12308,20 @@ static partial class SelfTest
     // The text of the hover card `name` open over a page, or null.
     static RichTextLabel? CardLabel(Node page, string name) =>
         page.GetNodeOrNull(name)?.FindChildren("*", "RichTextLabel", true, false).OfType<RichTextLabel>().FirstOrDefault();
+
+    // Whether the game's auto-size reads a text's markup (MegaLabelHelper.ParseBbcode throws at a tag out of its pair).
+    static bool GameReads(string bbcode)
+    {
+        try
+        {
+            MegaLabelHelper.ParseBbcode(bbcode);
+            return true;
+        }
+        catch (InvalidOperationException)
+        {
+            return false;
+        }
+    }
 
     // Null if label drew its game boxes (GameText) as meant: count of them, each in its look (Border wide on every side,
     // Radius round), Margin inside its table on every side, the table within the label's width (no side cut off), no

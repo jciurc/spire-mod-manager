@@ -182,10 +182,20 @@ static class RowStrip
         };
         Hover.Watch(links, "SpireModManagerTagCard", () => KeywordAt(links, (links.GetGlobalTransform().AffineInverse() * Hover.Mouse(links)).X) != null
             ? Tags.Hint(Menus.Text("SPIRE_MOD_MANAGER.SEARCH_CLICK_TIP")) : null, width: 320);
+        // The card is decided once, where the mouse came in: one coming from the tags comes in over the words before the
+        // keywords, and has none. So moving onto a keyword from there starts its card, as if the mouse came in on it.
+        string? under = null;
+        links.MouseExited += () => under = null;
         links.GuiInput += e =>
         {
             if (e is InputEventMouseMotion moved) // the row's own (Load Order's drag) over the words before them
-                links.MouseDefaultCursorShape = KeywordAt(links, moved.Position.X) == null ? row.MouseDefaultCursorShape : Control.CursorShape.PointingHand;
+            {
+                var at = KeywordAt(links, moved.Position.X);
+                links.MouseDefaultCursorShape = at == null ? row.MouseDefaultCursorShape : Control.CursorShape.PointingHand;
+                if (under == null && at != null)
+                    links.EmitSignal(Control.SignalName.MouseEntered);
+                under = at;
+            }
             if (e is not InputEventMouseButton { ButtonIndex: MouseButton.Left } button || KeywordAt(links, button.Position.X) is not { } keyword)
                 return;
             links.AcceptEvent(); // not the row's click (or drag) too

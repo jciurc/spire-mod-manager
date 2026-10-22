@@ -400,7 +400,8 @@ static class ModDetails
     static string? Picture(Mod mod) => mod.manifest?.id is { Length: > 0 } id && $"res://{id}/mod_image.png" is var picture && ResourceLoader.Exists(picture)
         ? $"[img width=200]{picture}[/img]" : null;
 
-    // The cards' one gap between their parts: half a line.
+    // The cards' one gap between their parts: a line as tall as the text's (its line break, outside the small size, is at
+    // the card's size, and Godot makes the line as tall as that).
     public const string CardGap = "[font_size=8] [/font_size]";
 
     // A fact in a card: the term in the cards' gold, the value after it on the same line.

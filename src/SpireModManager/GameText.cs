@@ -4,19 +4,21 @@ using Godot;
 namespace SpireModManager;
 
 // The game's words inside our text, set apart as another voice than ours: a caption naming the source, in a soft orange,
-// then the words alone in a box outlined and faintly filled in the same orange. The box's room is a one-cell table, so a
-// label that sizes its text to fit (the game's popup) sizes the box too, and the words wrap inside it. The table itself
-// is clear: the box is drawn behind the words (Watch), Margin inside the table's edges, with an even Border all round and
-// round corners. (A cell's own border is a thin line along the label's edges, cut off at the sides, with no width or
-// radius to set.) BBCode: callers pass the words ready to show.
+// then the words alone in a box outlined and faintly filled in the same orange. The box's room is a table, the words in
+// its middle cell, so a label that sizes its text to fit (the game's popup) sizes the box too, and the words wrap inside
+// it. The table itself is clear: the box is drawn behind the words (Watch), Margin inside the table's edges, with an even
+// Border all round and round corners. (A cell's own border is a thin line along the label's edges, cut off at the sides,
+// with no width or radius to set.) BBCode: callers pass the words ready to show.
 static class GameText
 {
     public const string Hex = "#f5b56b";
     public const int Margin = 2, Border = 2, Radius = 2;
+    const int Inset = 16; // from the table's side to the words: the margin, the border and the room inside it
 
     // At the start of each box's words, a character that shows nothing and takes no room, one for each look: how Watch
     // finds the boxes in a label's text.
     const char Mark = (char)0x2060, DimMark = (char)0x2063; // the word joiner, the invisible separator
+    const char ZeroWidth = (char)0x200b; // the zero-width space: in a box's side cells (Side), not a mark
     static readonly char[] Marks = [Mark, DimMark];
 
     // A cell's colour of #00000000 means the theme's: this one is as clear, and its own.
@@ -31,17 +33,27 @@ static class GameText
     public static string Caption(string text, bool centred = false) =>
         centred ? $"[center][color={Hex}]{text}[/color][/center]" : $"[color={Hex}]{text}[/color]";
 
-    // The words in their box. dim: fainter, for words that aren't a problem now (a mod that's off). centred: the words
-    // centred in the box (a centred label's alignment doesn't reach into a table's cell). Godot wraps a cell's lines to
-    // its width less both paddings but centres them over the whole width, then shifts them by the left padding: so
-    // centred, the sides' padding all goes on the right, and the lines wrap the same and sit in the middle. The paddings
-    // hold the margin and the border too, so the words keep their room inside the border.
+    // The words in their box. dim: fainter, for words that aren't a problem now (a mod that's off). The room at the box's
+    // sides is a cell of its own each side (Side), not the words' cell's padding: Godot lays a cell's words out as wide
+    // as the label's room and adds that padding on top, so words that filled the room took the table past the label's
+    // edge (the right side cut off, and the line break after it wrapped onto an empty line of its own). The padding holds
+    // the room above and below the words.
+    // centred: the words centred in the box (a centred label's alignment doesn't reach into a table's cell), for the
+    // game's popup, in one cell: its auto-size measures its text as one paragraph as wide as the label, as Godot lays out
+    // one cell's words, and words kept narrower would outgrow what it measured. Godot centres a cell's lines over its
+    // width and then shifts them by the left padding, so the padding all goes on the right. (Words that fill the popup's
+    // width still take that padding past its edge.)
     public static string Box(string bbcode, bool dim = false, bool centred = false)
     {
         var words = (dim ? DimMark : Mark) + bbcode;
-        return $"[table=1][cell expand=1 border={Clear} bg={Clear} padding={(centred ? "0,10,32,10" : "16,10,16,10")}]"
-            + $"{(centred ? $"[center]{words}[/center]" : words)}[/cell][/table]";
+        return centred ? $"[table=1][cell expand=1 border={Clear} bg={Clear} padding=0,10,{2 * Inset},10][center]{words}[/center][/cell][/table]"
+            : $"[table=3]{Side}[cell expand=1 border={Clear} bg={Clear} padding=0,10,0,10]{words}[/cell]{Side}[/table]";
     }
+
+    // A cell at the box's side, Inset wide: a table of its own in it, one cell padded that much around a zero-width space
+    // (a space's width depends on the font; padding is what it's given, and a table's counts in its width). Every tag in
+    // pairs, as the game's auto-size reads them (MegaLabelHelper.ParseBbcode).
+    static readonly string Side = $"[cell border={Clear} bg={Clear}][table=1][cell border={Clear} bg={Clear} padding={Inset},0,0,0]{ZeroWidth}[/cell][/table][/cell]";
 
     static readonly StyleBoxFlat Lit = Look("b3", "1f"), Faint = Look("66", "0f");
 
