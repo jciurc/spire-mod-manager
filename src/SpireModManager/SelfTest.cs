@@ -4063,8 +4063,11 @@ static partial class SelfTest
         Typed("co-op, Favorites, Story-heavy, wor");
         await Wait(menu, 0.2);
         Results.Add($"INFO tag pills drawn: {string.Join(", ", TagPills.TestPills(tags).Select(p => $"{p.Tag} {p.Rect}"))}; text: "
-            + string.Join(" | ", TagPills.TestInk(tags).Select(r => $"\"{r.Text}\" {r.Color}")));
+            + string.Join(" | ", TagPills.TestInk(tags).Select(r => $"\"{r.Text}\" {r.Color} {r.Size}px")));
         await Capture(screen, outDir, "9a-tags-editing");
+        tags.CaretColumn = 10; // in "Favorites": that pill at the box's size, the others smaller
+        await Wait(menu, 0.1);
+        await Capture(screen, outDir, "9a-tags-caret-in-pill");
         Typed("co-op, Favorites, ");
         tags.ReleaseFocus();
         await Wait(menu, 0.3);
@@ -10905,7 +10908,8 @@ static partial class SelfTest
     }
 
     // Tag pills (TagPills) in the panel's tags box, with made-up tags (the data is put back after): finished tags drawn
-    // as pills where the box draws its text (a click on one lands in its tag), the word being typed plain, the colours;
+    // as pills where the box draws its text, their text smaller unless the caret or a selection is at one (a click on
+    // one lands in its tag and opens it), the word being typed plain, the colours, the commas invisible;
     // a typed comma makes a pill; Backspace and Delete by Jordan's rule (a fresh press next to a pill takes it and its
     // separator as one undo step, a held key's repeats stop at it); Copy, Cut and Paste of whole tags; a double-click
     // takes the whole tag; all of that after an emoji too, and the pills with a right-to-left tag first; a comma the full
@@ -10983,27 +10987,46 @@ static partial class SelfTest
                 Pills() == "co-op, Favorites" && drawn[0].Rect.End.X < drawn[1].Rect.Position.X && drawn.All(p => inBox.Encloses(p.Rect)),
                 $"{Say()}: {string.Join(", ", drawn.Select(p => p.Rect))} in {inBox}");
             var ink = TagPills.TestInk(box);
-            (string, Color)[] inks = [("co-op", Tags.CustomColor), (", ", new Color(cream, 0.3f)), ("Favorites", Tags.CustomColor), (", ", new Color(cream, 0.3f)), ("wor", cream)];
+            var (boxSize, pillSize) = (box.GetThemeFontSize("font_size"), box.GetThemeFontSize("font_size") - TagPills.Smaller);
+            (string, Color, int)[] inks = [("co-op", Tags.CustomColor, pillSize), (", ", new Color(cream, 0), boxSize), ("Favorites", Tags.CustomColor, pillSize),
+                (", ", new Color(cream, 0), boxSize), ("wor", cream, boxSize)];
             var ownInk = box.GetThemeColor("font_color");
             box.Select(7, 16);
             await Wait(menu, 0.05);
             var unselected = string.Concat(TagPills.TestInk(box).Select(r => r.Text));
+            var selectedPill = TagPills.TestPills(box).ElementAtOrDefault(1).Rect;
             box.Deselect();
-            Check("tag pills: tag text in the tag colour, commas faint, the word being typed cream, over the box's own text (clear "
-                + "while it's typed in); a selected tag is left to the box", ink.Count == inks.Length
-                && ink.Zip(inks).All(r => r.First.Text == r.Second.Item1 && r.First.Color.IsEqualApprox(r.Second.Item2)) && ownInk.A == 0 && unselected == "co-op, , wor",
-                $"{string.Join(" | ", ink.Select(r => $"\"{r.Text}\" {r.Color}"))}; the box's own {ownInk}; with Favorites selected: \"{unselected}\"");
+            Check("tag pills: tag text in the tag colour and smaller, the commas invisible (alpha 0), the word being typed cream at the box's size, "
+                + "over the box's own text (clear while it's typed in); a selected tag is left to the box", ink.Count == inks.Length
+                && ink.Zip(inks).All(r => r.First.Text == r.Second.Item1 && r.First.Color.IsEqualApprox(r.Second.Item2) && r.First.Size == r.Second.Item3)
+                && ownInk.A == 0 && unselected == "co-op, , wor",
+                $"{string.Join(" | ", ink.Select(r => $"\"{r.Text}\" {r.Color} {r.Size}px"))}; the box's own {ownInk}; with Favorites selected: \"{unselected}\"");
+            // The box lays its caret and selection out at its own size, so the pill the caret is in, or a selection
+            // touches, is drawn at that size, the others smaller.
+            box.CaretColumn = 10; // in "Favorites"
+            await Wait(menu, 0.05);
+            var (openPills, openInk) = (TagPills.TestPills(box), TagPills.TestInk(box));
+            Check("tag pills: a pill with the caret in it, or a selection touching it, is drawn at the box's size, the others smaller",
+                openPills is [var openCoop, var openFavorites] && drawn is [var smallCoop, var smallFavorites] && openCoop.Rect == smallCoop.Rect
+                && openFavorites.Rect.Size.X > smallFavorites.Rect.Size.X && openFavorites.Rect == selectedPill
+                && openInk.Find(r => r.Text == "Favorites").Size == boxSize && openInk.Find(r => r.Text == "co-op").Size == pillSize,
+                $"{string.Join(", ", openPills.Select(p => $"{p.Tag} {p.Rect}"))} (smaller {string.Join(", ", drawn.Select(p => p.Rect))}, selected {selectedPill}); "
+                + string.Join(" | ", openInk.Select(r => $"\"{r.Text}\" {r.Size}px")));
 
-            // Where the pills are drawn, by where the box puts the caret for a click: 1 px into each end of a pill's tag
-            // lands on that end (more than about half a letter of drift would miss it), its middle inside it. In the
-            // box's columns (an emoji is one, and two chars of the C# string).
+            // Where the pills are drawn, by where the box puts the caret for a click: a click in a smaller pill's middle
+            // lands inside its tag and opens the pill to the box's size; then 1 px into each end of its tag lands on that
+            // end (more than about half a letter of drift would miss it), its middle inside it. In the box's columns (an
+            // emoji is one, and two chars of the C# string).
             async Task<List<string>> Misses(bool ends = true)
             {
                 var list = new List<string>();
-                foreach (var (tag, rect) in TagPills.TestPills(box))
+                foreach (var (tag, smaller) in TagPills.TestPills(box)) // the caret at the end: in none of them
                 {
                     var start = TagPills.Column(box.Text, box.Text.IndexOf(tag, StringComparison.Ordinal));
                     var end = start + TagPills.Columns(tag);
+                    await ClickAt(smaller.GetCenter());
+                    var inSmaller = box.CaretColumn;
+                    var rect = TagPills.TestPills(box).FirstOrDefault(p => p.Tag == tag).Rect;
                     var middle = rect.GetCenter().Y;
                     var (left, right) = (start, end);
                     if (ends)
@@ -11014,8 +11037,9 @@ static partial class SelfTest
                         right = box.CaretColumn;
                     }
                     await ClickAt(rect.GetCenter());
-                    if (left != start || right != end || box.CaretColumn <= start || box.CaretColumn >= end)
-                        list.Add($"{tag} ({start}..{end}) at {rect}: {left}, {right}, middle {box.CaretColumn}");
+                    if (inSmaller <= start || inSmaller >= end || rect.Size.X <= smaller.Size.X || left != start || right != end
+                        || box.CaretColumn <= start || box.CaretColumn >= end)
+                        list.Add($"{tag} ({start}..{end}) at {smaller}: middle {inSmaller}; opened at {rect}: {left}, {right}, middle {box.CaretColumn}");
                 }
                 return list;
             }
