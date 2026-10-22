@@ -261,7 +261,7 @@ static partial class SelfTest
             await Step(() => TestListFilters(menu, screen, content, outDir));
             await Step(() => TestRelaunchCheck(menu, screen, content, outDir));
             await Step(() => TestLongDetails(menu, screen, content, outDir));
-            await Step(() => TestWorkshopHead(menu, screen));
+            await Step(() => TestWorkshopHead(menu, screen, outDir));
             await Step(() => TestOtherModPanel(menu, screen, content, outDir));
             await Step(() => TestGameChanges(menu, screen, content, outDir));
             await Step(() => TestBulkEdit(menu, screen, content, outDir));
@@ -3975,6 +3975,40 @@ static partial class SelfTest
         var headText = panel.GetNodeOrNull<RichTextLabel>("SpireModManagerHead")?.GetParsedText() ?? "";
         Check("the head: author and compatibility; the details: description, then size", headText.Contains("Author: symphony") && headText.Contains("Compatibility:")
             && !description.StartsWith("Enabled") && description.Contains("Size:") && !description.Contains("Compatibility"), $"{headText} / {description[..Math.Min(60, description.Length)]}");
+        // Other keywords: where Workshop tags would be (a local mod has none: right after Size), the hidden tags that find the
+        // mod as #name, in their order; the whole row at about half the panel text's alpha, links too; a click on one
+        // searches it as a Workshop tag's does, a second clears it; none in the game's panel (Vanilla View).
+        var keywordsLabel = Menus.Text("SPIRE_MOD_MANAGER.OTHER_KEYWORDS");
+        var facts = description.Split('\n');
+        var keywordsAt = Array.FindIndex(facts, l => l.StartsWith(keywordsLabel + ": "));
+        var keywords = $"{keywordsLabel}: {string.Join(", ", HiddenTagNames.Where(t => Search.Matches(ours.Mod, t)))}";
+        Check("Other keywords right after Size: the hidden tags that find the mod as #name, in their order (this mod: #enabled, #local, #installed, #loaded... "
+            + "#renamed, #notes)", keywordsAt > 0 && facts[keywordsAt - 1].StartsWith(Menus.Text("SPIRE_MOD_MANAGER.SIZE") + ": ") && facts[keywordsAt] == keywords
+            && keywords.StartsWith($"{keywordsLabel}: #enabled, #local, #installed, #loaded, ") && keywords.Contains("#renamed, #notes"),
+            $"{(keywordsAt < 0 ? "no row" : facts[keywordsAt])}; wanted {keywords}");
+        var panelText = panel.GetNode<RichTextLabel>("ModDescription");
+        var keywordsRow = panelText.Text.Split('\n').FirstOrDefault(l => l.Contains(keywordsLabel)) ?? "";
+        var faint = keywordsRow.StartsWith("[color=#") ? keywordsRow[7..keywordsRow.IndexOf(']')] : "";
+        var (alpha, textAlpha) = (Color.HtmlIsValid(faint) ? Color.FromHtml(faint).A : 0, panelText.GetThemeColor("default_color").A);
+        Check("Other keywords fainter than the facts: the whole row, label and links, at about half the panel text's alpha (no gold, no colour of their own)",
+            keywordsRow.EndsWith("[/color]") && keywordsRow.Split("[color=").Length == 2 && !keywordsRow.Contains("[gold]") && Math.Abs(alpha - textAlpha / 2) < 0.08f
+            && keywordsRow.Contains("[url=htag:enabled]#enabled[/url], "), $"{keywordsRow} (alpha {alpha:0.00}, the panel text's {textAlpha:0.00})");
+        var searchBox = screen.GetNode<LineEdit>("ModsBorder/SpireModManagerSearch");
+        panelText.EmitSignal(RichTextLabel.SignalName.MetaClicked, "htag:enabled");
+        var searched = searchBox.Text;
+        panelText.EmitSignal(RichTextLabel.SignalName.MetaClicked, "htag:enabled");
+        await Wait(menu, 0.3);
+        Check("a click on an Other keyword searches it, as a Workshop tag's does; a second clears it", searched == "#enabled" && searchBox.Text == "",
+            $"\"{searched}\", then \"{searchBox.Text}\"");
+        var inVanilla = "";
+        await WithVanillaView(screen, menu, () =>
+        {
+            inVanilla = panelText.Text;
+            return true;
+        });
+        await PanelFor(menu, screen, ours);
+        Check("Vanilla View: the game's panel has no Other keywords; ours has them again after", inVanilla.Length > 0 && !inVanilla.Contains(keywordsLabel)
+            && !inVanilla.Contains("htag:") && panelText.Text.Contains(keywordsLabel), inVanilla[..Math.Min(80, inVanilla.Length)]);
         Check("fields in order: Alias, Category, Tags, Notes", string.Join(",", yours.GetChildren().Select(c => c.Name.ToString())) == "Alias,Category,Tags,Notes",
             string.Join(",", yours.GetChildren().Select(c => c.Name.ToString())));
         // The category picker drops its list right under it (2 below it, from its left edge) where it fits, otherwise
@@ -4549,12 +4583,15 @@ static partial class SelfTest
     // rows it means (HiddenTagsAsMeant); a tag of the player's named like each finds its mod too. Then what each means, on
     // made-up mods in a made-up saved list: A needs C (off) and D (after A), B needs a mod that isn't installed and the
     // game failed it, D has a game error, E is off but loaded, with a tag of its own named "Enabled".
+    // Every hidden tag, in HiddenTags' order (the info panel's Other keywords lists them in it).
+    static readonly string[] HiddenTagNames = ["#enabled", "#disabled", "#workshop", "#local", "#installed", "#uninstalled", "#missing", "#loaded", "#notloaded",
+        "#pending", "#new", "#changed", "#moved", "#edited", "#renamed", "#notes", "#uncategorized", "#unmet", "#needed", "#order", "#sameid", "#clash", "#aside",
+        "#managers", "#failed", "#gameerror", "#error", "#warning", "#problem"];
+
     static void TestHiddenTags(Control content)
     {
         var rows = content.GetChildren().OfType<NModMenuRow>().Select(r => r.Mod).OfType<Mod>().ToList();
-        string[] tags = ["#enabled", "#disabled", "#workshop", "#local", "#installed", "#missing", "#uninstalled", "#loaded", "#notloaded", "#pending", "#new",
-            "#changed", "#moved", "#edited", "#renamed", "#notes", "#uncategorized", "#unmet", "#needed", "#order", "#sameid", "#clash", "#aside", "#managers",
-            "#failed", "#gameerror", "#error", "#warning", "#problem"];
+        var tags = HiddenTagNames;
         List<string> Answers() => [.. tags.Select(t => $"{t} {string.Concat(rows.Select(m => Search.Matches(m, t) ? "y" : "n"))}")];
         var fresh = Answers();
         List<string> kept;
@@ -7778,8 +7815,8 @@ static partial class SelfTest
 
     // A Workshop mod's head (made-up details; the sandbox has no Steam): Author, Updated (how long ago, and a link
     // to its change notes on the Workshop), Compatibility. "Ago" in hours under a day, singular for one. Dates and
-    // numbers in the game's language.
-    static async Task TestWorkshopHead(Node menu, NModdingScreen screen)
+    // numbers in the game's language. Its Other keywords after its Workshop tags (screenshot 8b).
+    static async Task TestWorkshopHead(Node menu, NModdingScreen screen, string outDir)
     {
         var mod = new Mod
         {
@@ -7788,7 +7825,7 @@ static partial class SelfTest
         };
         Compat.SetWorkshopId(mod, 42);
         Installed.Detected(mod); // so the panel can find it by id
-        WorkshopInfo.TestSet(42, new WorkshopInfo.Details(DateTime.Now.AddDays(-30), DateTime.Now.AddDays(-4), [], [], 1_572_864, 1234)); // 1.5 MB
+        WorkshopInfo.TestSet(42, new WorkshopInfo.Details(DateTime.Now.AddDays(-30), DateTime.Now.AddDays(-4), ["QoL", "Utility"], [], 1_572_864, 1234)); // 1.5 MB
         var info = screen.GetNode<NModInfoContainer>("%ModInfoContainer");
         info.Fill(mod);
         await Wait(menu, 0.3);
@@ -7893,6 +7930,11 @@ static partial class SelfTest
         var english = info.GetNode<RichTextLabel>("ModDescription").GetParsedText();
         Check("in English: October 11, 2026; Size: 1.5 MB; Subscribers: 1,234; the profile list's Oct 11", ModDetails.Date(new DateTime(2026, 10, 11)) == "October 11, 2026"
             && english.Contains("Size: 1.5 MB") && english.Contains("Subscribers: 1,234") && Profiles.ShortDate(new DateTime(2026, 10, 11)) == "Oct 11", english);
+        var facts = english.Split('\n');
+        var tagsAt = Array.IndexOf(facts, $"{Menus.Text("SPIRE_MOD_MANAGER.WORKSHOP_TAGS")}: QoL, Utility");
+        Check("a Workshop mod: Other keywords right after its Workshop tags, #workshop among them (see 8b-other-keywords)", tagsAt >= 0 && tagsAt + 1 < facts.Length
+            && facts[tagsAt + 1].StartsWith($"{Menus.Text("SPIRE_MOD_MANAGER.OTHER_KEYWORDS")}: #") && facts[tagsAt + 1].Contains("#workshop"), english);
+        await Capture(screen, outDir, "8b-other-keywords");
         var language = LocManager.Instance.Language;
         try
         {

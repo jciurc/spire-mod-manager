@@ -9,8 +9,9 @@ using System.Text.RegularExpressions;
 namespace SpireModManager;
 
 // The info panel in our views, top to bottom: the head beside the thumbnail (name and version, id and Workshop link,
-// status, author, last update, compatibility); anything wrong; the description; size, published, subscribers and
-// Workshop tags; dependencies both ways; the player's Alias, Category, Tags and Notes; Open Folder.
+// status, author, last update, compatibility); anything wrong; the description; size, published, subscribers, Workshop
+// tags and other keywords (the hidden tags); dependencies both ways; the player's Alias, Category, Tags and Notes; Open
+// Folder.
 // Vanilla View: the panel exactly as the game makes it.
 static class ModDetails
 {
@@ -29,6 +30,7 @@ static class ModDetails
     const string GoldHex = "#efc851", LinkHex = "#99ccff";
     public const string ModLinkHex = "#cfe3ff"; // a mod's name, or its author, that a click acts on: light blue
     const string Quiet = "#fff6e299"; // no value to show (an unknown author, no description): subtle, so it doesn't read as one
+    const string Fainter = "#fff6e280"; // Other keywords: half the panel text's alpha, below the facts without reading as one
     const string Bullet = "[color=#fff6e280]•[/color]"; // between facts on one line: dim
     const int VersionSize = 20;
     const int HeadSize = 16; // the head's text
@@ -179,8 +181,8 @@ static class ModDetails
         return container.GetMeta(GameLooksMeta).AsGodotArray();
     }
 
-    // Clicks and hovers, connected once per panel: the title or a dependency's name scrolls to its row, a Workshop tag
-    // searches, and hovering a name shows its card.
+    // Clicks and hovers, connected once per panel: the title or a dependency's name scrolls to its row, a Workshop tag or
+    // another keyword searches, and hovering a name shows its card.
     static void Wire(NModInfoContainer container)
     {
         if (container.HasMeta(WiredMeta))
@@ -198,17 +200,18 @@ static class ModDetails
         Hover.Watch(title, "SpireModManagerFullText", () => !Store.Data.VanillaView && title.GetMeta(FullMeta, "").AsString() is { Length: > 0 } whole
             ? Escape(whole) : null, Hover.Timing.Slow);
         var description = container.GetNode<RichTextLabel>("ModDescription");
+        static bool Searches(string meta) => meta.StartsWith("wtag:") || meta.StartsWith("htag:"); // a Workshop tag, a hidden one
         description.MetaClicked += meta =>
         {
             if (Store.Data.VanillaView)
                 return; // the game's panel: its own text, none of our links
             if (meta.AsString() is { } target && target.StartsWith("mod:") && Content() is { } content)
                 CategoryList.Reveal(content, target[4..], flash: false, focus: true);
-            else if (meta.AsString() is { } tag && tag.StartsWith("wtag:"))
-                Search.ByTag(container, tag[5..], Input.IsKeyPressed(Key.Shift)); // a Workshop tag: #tag, the mods with it
+            else if (meta.AsString() is { } tag && Searches(tag))
+                Search.ByTag(container, tag[5..], Input.IsKeyPressed(Key.Shift)); // #tag, the mods with it
         };
         Hover.WatchLinks(description, "SpireModManagerTagCard",
-            meta => meta.StartsWith("wtag:") ? Tags.Hint(Menus.Text("SPIRE_MOD_MANAGER.SEARCH_CLICK_TIP")) : null, width: 320);
+            meta => Searches(meta) ? Tags.Hint(Menus.Text("SPIRE_MOD_MANAGER.SEARCH_CLICK_TIP")) : null, width: 320);
         CategoryList.WatchNames(description, Content); // hovering a name: its row lit (if in view), then its card
         // Hovering the thumbnail: the whole picture (our views).
         var image = container.GetNode<TextureRect>("ModImage");
@@ -216,7 +219,8 @@ static class ModDetails
         Hover.Watch(image, "SpireModManagerPictureCard", () => null, picture: () => Store.Data.VanillaView ? null : image.Texture);
     }
 
-    // Anything wrong, the description, more facts (size, published, subscribers, Workshop tags), then dependencies.
+    // Anything wrong, the description, more facts (size, published, subscribers, Workshop tags, other keywords), then
+    // dependencies.
     static string Describe(Mod mod)
     {
         var text = new System.Text.StringBuilder();
@@ -244,7 +248,12 @@ static class ModDetails
             Fact("SPIRE_MOD_MANAGER.SUBSCRIBERS", Menus.Number(subscribers));
         if (workshop?.Tags.Count > 0)
             Fact("SPIRE_MOD_MANAGER.WORKSHOP_TAGS", string.Join(", ", workshop.Tags.Select(t => $"[url=wtag:{t}]{Escape(t)}[/url]"))); // click: search for it
-        if (bytes > 0 || workshop != null)
+        // The hidden tags that find it (Jordan: "so that way they're at least visible"), links as the Workshop tags are,
+        // the whole line fainter.
+        var keywords = HiddenTags.Of(mod);
+        if (keywords.Count > 0)
+            text.Append($"[color={Fainter}]{Menus.Text("SPIRE_MOD_MANAGER.OTHER_KEYWORDS")}: {string.Join(", ", keywords.Select(k => $"[url=htag:{k}]#{k}[/url]"))}[/color]\n");
+        if (bytes > 0 || workshop != null || keywords.Count > 0)
             text.Append('\n');
 
         // What it needs, and what needs it.
