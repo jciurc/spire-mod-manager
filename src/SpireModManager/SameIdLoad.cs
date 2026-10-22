@@ -153,17 +153,19 @@ static class SameIdLoad
             }
 
             // The pick, or with none (one naming a copy no longer installed, or two: a local and a Workshop copy each
-            // picked) the first copy that isn't off on our page (copies_off), the copies our record has first, in its order
-            // (as Copies.Picked has them), so a copy new to it (installed with the game closed) doesn't take over from the
-            // one the player had; else the game's own choice: the copy it would load before failing the rest (also where
-            // that first copy not off can't take the id's first slot). A pick in copies_off (a hand-edited file) loads all
-            // the same. One copy can be two manifests (of one Workshop item): its first.
+            // picked) the first copy in the game's list that isn't off on our page (copies_off), which keeps the game's
+            // choice between sources; of that copy's source, the copies our record has come first, in its order (as
+            // Copies.Picked has them), so a copy new to it (installed with the game closed) doesn't take over from the one
+            // the player had. Else the game's own choice: the copy it would load before failing the rest (also where that
+            // first copy not off can't take the id's first slot). A pick in copies_off (a hand-edited file) loads all the
+            // same. One copy can be two manifests (of one Workshop item): its first.
             var matching = todo.Where(p => IsPick(p.Mod)).ToList();
             var hadPick = matching.Select(p => Copies.CopyOf(p.Mod)).Distinct().Count() == 1;
             var known = record?.GetValueOrDefault(id) ?? [];
             int Known(Mod m) => known.IndexOf(Copies.CopyOf(m)) is var at && at >= 0 ? at : int.MaxValue;
+            var ticked = todo.Where(p => off?.Contains(Copies.SwitchKey(p.Mod)) != true).ToList();
             var picked = hadPick ? matching[0]
-                : todo.OrderBy(p => Known(p.Mod)).FirstOrDefault(p => off?.Contains(Copies.SwitchKey(p.Mod)) != true) is { Mod: not null } ticked ? ticked : todo[0];
+                : ticked.FirstOrDefault() is { Mod: { } firstTicked } ? ticked.Where(p => p.Mod.modSource == firstTicked.modSource).OrderBy(p => Known(p.Mod)).First() : todo[0];
             var (s1, sp) = (todo[0].At, picked.At);
             var swapped = false;
             string? blocked = null;

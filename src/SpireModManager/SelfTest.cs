@@ -9405,6 +9405,16 @@ static partial class SelfTest
             && backB.Data.CopyPicks?.SequenceEqual([$"{W}|l:B"]) == true && backB.Loading == "l:A" && PlanLoads(backBPlan) == "l:A",
             $"C loaded: {NamedSay(keepsC.Data)}, page {keepsC.Loading}, launch {PlanLoads(keepsCPlan)}; A loaded: {NamedSay(backB.Data)}, page {backB.Loading}, "
             + $"launch {PlanLoads(backBPlan)}");
+        // Our record orders a source's own copies, never the game's choice between sources: with no pick, a local copy the
+        // game lists first loads though the record has a Workshop copy first; of two Workshop copies listed first, the one
+        // the record has (not the new one) loads.
+        const string V = "SmmSameIdSources";
+        var sources = new StoreData { Copies = new() { [V] = ["w:12", "l:L"] } };
+        var localFirst = Launch(sources, Made(V, "L"), Made(V, "W12", item: 12));
+        var workshopFirst = Launch(sources, Made(V, "W13", item: 13), Made(V, "W12", item: 12), Made(V, "L"));
+        Check("copies: with no pick, our record orders a source's own copies, not the game's choice between sources: the local copy listed first loads "
+            + "though the record has a Workshop copy first; of two Workshop copies listed first, the one the record has loads",
+            PlanLoads(localFirst) == "l:L" && PlanLoads(workshopFirst) == "w:12", $"local first: loads {PlanLoads(localFirst)}; Workshop first: loads {PlanLoads(workshopFirst)}");
     }
 
     // The copy a plan loads, for a check's details.
