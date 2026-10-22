@@ -6819,6 +6819,9 @@ static partial class SelfTest
         searchBox.EmitSignal(LineEdit.SignalName.TextChanged, notBmm);
         await Wait(menu, 0.3);
         var stays = row.Visible && !SpireModManager.Search.Matches(bmm, notBmm);
+        // From our row, first in load order: Go to's next stop below it is Better Mod Menu's (the list's order).
+        if (Rows().FirstOrDefault(r => r.Mod?.manifest?.id == ModEntry.ModId) is { } ourRow)
+            CategoryList.Select(screen, ourRow);
         Banner()?.FindChild("GoToManagersButton", true, false)?.EmitSignal(BaseButton.SignalName.Pressed);
         await Wait(menu, 0.5);
         Check("Load Order: a search leaves Better Mod Menu's row in place; the banner's Go to goes to it, the search kept",
