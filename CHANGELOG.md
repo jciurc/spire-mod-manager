@@ -7,7 +7,7 @@ What changed in each Workshop release, for players. Each version's first line is
 
 0.1.5:
 - mods that share the same ID can now be edited independently
-- Mods that share the same ID (duplicate) will only load one copy, while an explanation of which and why
+- Mods that share the same ID (duplicate) will only load one copy, with an explanation of which and why
 - search supports OR, NOT and brackets, e.g. (#gameplay OR #library) #enabled
 - hidden tags to help filter specific content was added. #enabled, #workshop, #pending, #changed, #error and #warning
 - warning banner show button now filters to the list of affected mods, the previous show functionality moved to "Go to" button
