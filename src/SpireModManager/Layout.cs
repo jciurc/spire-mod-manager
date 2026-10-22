@@ -84,13 +84,13 @@ static class Layout
         // The way to the other page: a link right of our page's title, on the main list and the game's page (not Load
         // Order). In the same place on both, so the link just clicked is under the mouse to go back; on the game's page
         // that band is clear (its title sits lower, with Make Mods and Get Mods beside it).
-        if (screen.GetNodeOrNull<Control>("SpireModManagerViewToggle") is { } pageLink)
+        if (screen.GetNodeOrNull<LinkButton>("SpireModManagerViewToggle") is { } pageLink)
         {
             pageLink.Visible = view != View.LoadOrder;
             var ours = new LocString("settings_ui", "SPIRE_MOD_MANAGER.PAGE_TITLE").GetFormattedText();
             var titleWidth = title.GetThemeFont(NormalFont).GetStringSize(ours, HorizontalAlignment.Left, -1, PageTitleSize).X;
             pageLink.Size = pageLink.GetCombinedMinimumSize();
-            pageLink.Position = new Vector2(PageLeft + titleWidth + 28, TitleBaseline(title) - LinkBaseline(pageLink));
+            pageLink.Position = new Vector2(PageLeft + titleWidth + 28, TitleBaseline(title, ours) - LinkBaseline(pageLink));
         }
 
         // Load Order: its name centred over the list.
@@ -222,26 +222,34 @@ static class Layout
     }
 
     // Where our page title's text sits on its line (the same on the game's page, whose title is elsewhere): its box's
-    // top, its text placed in the box by its vertical alignment, then the font's ascent. Worked out from the font, not
-    // the label's laid-out text, so it holds before a frame is drawn and on either page.
-    static float TitleBaseline(RichTextLabel title)
+    // top, its text placed in the box by its vertical alignment, then its line's ascent. Worked out from our title's
+    // words shaped in its font (Line), not the label's laid-out text, so it holds before a frame is drawn and on either
+    // page.
+    static float TitleBaseline(RichTextLabel title, string text)
     {
-        var font = title.GetThemeFont(NormalFont);
-        var room = TitleBottom - TitleTop - font.GetHeight(PageTitleSize);
+        var (ascent, height) = Line(text, title.GetThemeFont(NormalFont), PageTitleSize);
+        var room = TitleBottom - TitleTop - height;
         var offset = title.VerticalAlignment switch
         {
             VerticalAlignment.Center => room / 2,
             VerticalAlignment.Bottom => room,
             _ => 0,
         };
-        return TitleTop + title.GetThemeStylebox("normal").GetMargin(Side.Top) + offset + font.GetAscent(PageTitleSize);
+        return TitleTop + title.GetThemeStylebox("normal").GetMargin(Side.Top) + offset + ascent;
     }
 
-    // How far a link's baseline sits below its top: its text centred in its height, then the font's ascent.
-    static float LinkBaseline(Control link)
+    // How far a link's baseline sits below its top: a LinkButton draws its text at its top, so its line's ascent.
+    static float LinkBaseline(LinkButton link) => Line(link.Text, link.GetThemeFont("font"), link.GetThemeFontSize("font_size")).Ascent;
+
+    // A line of text's ascent and height as it's shaped, from the fonts its letters use. A font's own GetAscent and
+    // GetHeight take every fallback too, and a mod that adds one to the game's shared Kreon (for its own script) makes
+    // them taller by an amount that grows with the size, so the title and the smaller link moved apart (Jordan's game,
+    // 22 Oct: the link 7 px low at 1440p).
+    static (float Ascent, float Height) Line(string text, Font font, int size)
     {
-        var (font, size) = (link.GetThemeFont("font"), link.GetThemeFontSize("font_size"));
-        return (link.Size.Y - font.GetHeight(size)) / 2 + font.GetAscent(size);
+        var line = new TextLine();
+        line.AddString(text, font, size);
+        return (line.GetLineAscent(), line.GetSize().Y);
     }
 
     // The game's back arrow: on our pages our Main Menu button takes its place, and the arrow stays, unseen and taking

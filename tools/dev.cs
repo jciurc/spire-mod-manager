@@ -2,6 +2,7 @@
 //
 //   dotnet run tools/dev.cs test      build, reset the sandbox, run the in-game self-test headless
 //                                     --window: with a window, for screenshots, kept behind others
+//                                     --size WxH, with --window: that window size instead of 1920x1080
 //                                     --bmm / --bmm-after: with Better Mod Menu loaded before / after ours
 //                                     --bmm-local: its local-fix build (BmmRepo) instead of the installed one
 //                                     --workshop <id>[,<id>...]: those subscribed Workshop items too, after ours
@@ -66,9 +67,13 @@ var workshopItems = workshopAt < 0 ? [] : (args.ElementAtOrDefault(workshopAt + 
     .Split(',', StringSplitOptions.RemoveEmptyEntries | StringSplitOptions.TrimEntries).Distinct().ToArray();
 var workshopMods = new List<string>(); // the mod ids in those items' manifests, in the order given
 var twins = args.Contains("--twins"); // two --workshop items of one mod id on purpose (the self-test's two-copies check)
+// --size WxH: test --window at another window size than 1920x1080 (a 2560x1440 screen draws layout and text at another
+// scale; screenshots then show it).
+var sizeAt = Array.IndexOf(args, "--size");
+var windowSize = (X: 1920, Y: 1080);
 
 if (mode is not ("test" or "launch" or "smoke"))
-    return Fail("usage: dotnet run tools/dev.cs [test [--window] [--bmm[-after]] [--bmm-local] [--real|--first-run|--first-run-bmm|--crash-prepare|--crash]|launch [--first-run|--first-run-bmm] [--keep-saves]|smoke [--bmm]] [--workshop <id>[,<id>...] [--twins]] [--stable] [--no-wait]");
+    return Fail("usage: dotnet run tools/dev.cs [test [--window [--size WxH]] [--bmm[-after]] [--bmm-local] [--real|--first-run|--first-run-bmm|--crash-prepare|--crash]|launch [--first-run|--first-run-bmm] [--keep-saves]|smoke [--bmm]] [--workshop <id>[,<id>...] [--twins]] [--stable] [--no-wait]");
 if (real && firstRun)
     return Fail("--real brings your own data, so it can't be a first run");
 if (crashPrepare && crash)
@@ -85,13 +90,22 @@ if (args.Count(a => a.StartsWith("--workshop")) != (workshopAt < 0 ? 0 : 1))
 // plain suite, and its pass would read as that option's.
 string[] known = ["--bmm", "--bmm-after", "--bmm-local", "--workshop", "--twins", "--stable", "--no-wait", .. mode switch
 {
-    "test" => new[] { "--window", "--real", "--first-run", "--first-run-bmm", "--crash-prepare", "--crash" },
+    "test" => new[] { "--window", "--size", "--real", "--first-run", "--first-run-bmm", "--crash-prepare", "--crash" },
     "launch" => ["--first-run", "--first-run-bmm", "--keep-saves"],
     _ => [],
 }];
 if (args.Skip(1).FirstOrDefault(a => a.StartsWith("--") && !known.Contains(a)) is { } unknown)
     return Fail($"\"{unknown}\" isn't an option of {mode}. It takes {string.Join(", ", known)}.");
-if (args.Where((a, i) => i > 0 && i != workshopAt + 1 && !a.StartsWith("--")).FirstOrDefault() is { } stray)
+if (sizeAt >= 0)
+{
+    if (!args.Contains("--window"))
+        return Fail("--size goes with --window: a run with no window draws nothing to measure");
+    if (args.ElementAtOrDefault(sizeAt + 1)?.Split('x') is not [var w, var h] || !int.TryParse(w, out var width) || !int.TryParse(h, out var height)
+        || width < 800 || height < 600)
+        return Fail("--size needs a window size of at least 800x600, as in: --size 2560x1440");
+    windowSize = (width, height);
+}
+if (args.Where((a, i) => i > 0 && i != workshopAt + 1 && i != sizeAt + 1 && !a.StartsWith("--")).FirstOrDefault() is { } stray)
     return Fail($"\"{stray}\" isn't an option. Workshop ids go after --workshop, comma-separated with no spaces, as in: --workshop 3747605109,3750485606");
 if (workshopAt >= 0 && workshopItems.Length == 0)
     return Fail("--workshop needs Workshop item ids, comma-separated, as in: --workshop 3747605109,3750485606");
@@ -633,8 +647,8 @@ void PrepareSandbox(bool resetData)
     settings["mod_settings"] = mods;
     settings["seen_ea_disclaimer"] = true; // the one-time Early Access popup would cover every screenshot
     settings["volume_master"] = 0.0;      // silent, so dev runs don't play over your own game
-    settings["fullscreen"] = false;       // a 1920x1080 window, easy to tell apart and to move aside
-    settings["window_size"] = new JsonObject { ["X"] = 1920, ["Y"] = 1080 };
+    settings["fullscreen"] = false;       // a 1920x1080 window (or --size's), easy to tell apart and to move aside
+    settings["window_size"] = new JsonObject { ["X"] = windowSize.X, ["Y"] = windowSize.Y };
     File.WriteAllText(settingsPath, settings.ToJsonString(new() { WriteIndented = true }));
 
     var data = Path.Combine(sandbox, "mod_data", ModId);

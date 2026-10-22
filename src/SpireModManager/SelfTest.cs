@@ -177,6 +177,7 @@ static partial class SelfTest
             if (Bmm.Present) // dev.cs test --bmm
                 await Step(() => TestBetterModMenu(menu, screen, content, outDir));
             Check("view toggle", screen.GetNodeOrNull("SpireModManagerViewToggle") != null);
+            await Step(() => TestPageLinkBaseline(screen));
             Check("profile bar", screen.GetNodeOrNull("ModsBorder/SpireModManagerProfileBar") != null);
             Check("our views use the wide layout", screen.GetNode<Control>("ModsBorder").OffsetLeft < 255 && screen.GetNode<Control>("%ModInfoContainer").OffsetRight > 1727);
             Check($"rows ({rows.Count}) match mods ({ModManager.Mods.Count})", rows.Count == ModManager.Mods.Count);
@@ -953,6 +954,7 @@ static partial class SelfTest
             && pageLink.GetThemeFontSize("font_size") == CategoryList.PageLinkSize
             && screen.FindChildren("SpireModManager*", "LinkButton", true, false).OfType<LinkButton>().All(l => l.Underline == LinkButton.UnderlineMode.Never)
             && CategoryList.PageLinkSize < 20, $"{(toggles[0] as LinkButton)?.Underline}");
+
         // Where it leads, in its tip: the game's own page (as Better Mod Menu shows it, with that loaded), and back.
         var vanillaTip = Hover.TipOf(toggles[0]);
         var backTip = "";
@@ -3742,6 +3744,39 @@ static partial class SelfTest
     // New mods and profiles. The fixture's Default profile doesn't list the test mods, which
     // are on (the game's default for a new mod): they joined it at launch, on, quietly (no unsaved edit, and so
     // already in the state the session started from, which Changes and Revert all compare with).
+    // The page link on our title's baseline, with or without a taller fallback a mod adds to the game's shared fonts (for
+    // its own script): the letters don't use it, though each font's own ascent and height grow (Jordan's game, 22 Oct: the
+    // link 7 px low at 1440p).
+    static void TestPageLinkBaseline(NModdingScreen screen)
+    {
+        if (screen.GetNodeOrNull<LinkButton>("SpireModManagerViewToggle") is not { } link)
+        {
+            Check("the page link stays on the title's baseline when a mod adds a taller fallback to the game's fonts", false, "no page link");
+            return;
+        }
+        var fonts = new[] { screen.FindChild("InstalledModsTitle", true, false) is RichTextLabel title ? title.GetThemeFont("normal_font") : null,
+            link.GetThemeFont("font") }.OfType<Font>().Distinct().ToList();
+        var (linkY, before) = (link.Position.Y, fonts.Select(f => new Godot.Collections.Array<Font>(f.Fallbacks)).ToList());
+        var ascent = fonts.Select(f => f.GetAscent(CategoryList.PageLinkSize)).ToList();
+        var (tallY, tallAscent) = (0f, new List<float>());
+        try
+        {
+            foreach (var font in fonts)
+                font.Fallbacks = new Godot.Collections.Array<Font>(font.Fallbacks) { new FontVariation { BaseFont = ThemeDB.FallbackFont, SpacingTop = 24, SpacingBottom = 12 } };
+            Layout.Apply(screen);
+            (tallY, tallAscent) = (link.Position.Y, fonts.Select(f => f.GetAscent(CategoryList.PageLinkSize)).ToList());
+        }
+        finally
+        {
+            for (var i = 0; i < fonts.Count; i++)
+                fonts[i].Fallbacks = before[i];
+            Layout.Apply(screen);
+        }
+        Check("the page link stays on the title's baseline when a mod adds a taller fallback to the game's fonts (the letters don't use it)",
+            fonts.Count > 0 && tallAscent.Zip(ascent).All(p => p.First > p.Second + 1) && Math.Abs(tallY - linkY) < 0.5 && Math.Abs(link.Position.Y - linkY) < 0.5,
+            $"{fonts.Count} font(s), ascent {string.Join("/", ascent)} -> {string.Join("/", tallAscent)}, link y {linkY} -> {tallY} -> {link.Position.Y}");
+    }
+
     static void TestNewModsAtLaunch()
     {
         string[] ids = ["SmmTestLib", "SmmTestUi", "SmmTestContent"];
