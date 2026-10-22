@@ -389,6 +389,31 @@ static partial class SelfTest
             && details.Category == category.Trim() && details.Tags.SequenceEqual(["Beta", "Gamma"])
             && none is { Alias: null, Notes: null, Category: null, Tags.Count: 0 },
             $"{details.Alias} / {details.Notes} / {details.Category} / {string.Join(",", details.Tags)}");
+        // A mod installed twice whose loaded copy has no entry of its own: none, as its card has it, never the other copy's
+        // (the plain id's, its holder's), for the moment.
+        if (ModEntry.CopyOf(TwinId) is { } twin && Copies.Key(twin) is var twinKey && twinKey != TwinId)
+        {
+            var (holder, own) = (Store.Data.Mods.GetValueOrDefault(TwinId), Store.Data.Mods.GetValueOrDefault(twinKey));
+            ModNotes twinDetails;
+            try
+            {
+                Store.Data.Mods[TwinId] = new ModInfo { Alias = "Other copy", Tags = ["other"] };
+                Store.Data.Mods.Remove(twinKey);
+                twinDetails = Mods.Details(TwinId);
+            }
+            finally
+            {
+                foreach (var (key, was) in new[] { (TwinId, holder), (twinKey, own) })
+                    if (was == null)
+                        Store.Data.Mods.Remove(key);
+                    else
+                        Store.Data.Mods[key] = was;
+            }
+            Check("API mods: Details for a mod installed twice is its loaded copy's own (none), never the other copy's", twinDetails is { Alias: null, Tags.Count: 0 },
+                $"{twinDetails.Alias} / {string.Join(",", twinDetails.Tags)}");
+        }
+        else
+            TwinsMissing("API mods, a copy's details");
         var described = ModDetails.Described("[blue]Frost[/blue] [sine]waves[/sine] [b]" + string.Join(" ", Enumerable.Repeat("bold words", 40)), 60);
         Check("API cards: a description's game tags are drawn as the game's (colours; moving ones as their text), and what a cut leaves open is closed",
             described.StartsWith("[color=#87ceeb]Frost[/color] waves [b]bold") && described.EndsWith("…[/b]") && !described.Contains("sine"), described);

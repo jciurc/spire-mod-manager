@@ -54,7 +54,7 @@ Subscribe to it on the [Steam Workshop](https://steamcommunity.com/sharedfiles/f
   Steam. It checks first for mods that won't load and offers to fix them.
 - **Workshop details in the info panel:** dates, size, subscribers, tags, supported branches and a link to the
   mod's change notes, with problems shown first in red.
-- **Vanilla List:** the game's own Modding page, unchanged, one click away.
+- **Vanilla Modding page:** the game's own Modding page, unchanged, one click away from the link by the title.
 
 **Better Mod Menu:** both can be on at once, and they're tested together. On first run Spire Mod Manager copies
 Better Mod Menu's groups, aliases, notes and profiles (its own file is never changed). A warning says when more

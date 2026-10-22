@@ -2,8 +2,8 @@ using Godot;
 
 namespace SpireModManager;
 
-// Our dialogs' frame (RelaunchCheck, ProfileShare): a dimming layer that takes the page's clicks, with a centred
-// panel. One open at a time; it takes keyboard focus so Esc reaches it, and it closes when its owner leaves.
+// Our dialogs' frame (RelaunchCheck, ProfileShare, MissingMods): a dimming layer that takes the page's clicks, with a
+// centred panel. One open at a time; Esc and F3 close it (ShortcutsPatch.CloseOurs), and so does its owner leaving.
 static class Modal
 {
     public static readonly Color Cream = new(1, 0.964706f, 0.886275f);

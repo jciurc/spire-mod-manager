@@ -240,6 +240,10 @@ internal static class Store
             profile.Edited = profile.Edited?.Where(m => m?.Id != null).Select(TidyCopies).ToList();
             profile.Disabled = profile.Disabled?.Where(m => m?.Id != null).ToList();
         }
+        // The copies record with no null list or copy (Copies.Key reads it for every row), each copy once, the holder still
+        // first; an id left with none has no record.
+        data.Copies = data.Copies?.Select(p => (p.Key, List: p.Value?.OfType<string>().Distinct().ToList()))
+            .Where(p => p.List is { Count: > 0 }).ToDictionary(p => p.Key, p => p.List ?? []);
         data.CopyPicks = TidyPicks(data.CopyPicks);
         data.CopiesOff = TidyOff(data.CopiesOff, data.CopyPicks);
         return data;
@@ -288,9 +292,7 @@ internal static class Store
                 stored = [.. picks.EnumerateArray().Where(p => p.ValueKind == JsonValueKind.String).Select(p => p.GetString() ?? "")];
             if (doc.RootElement.TryGetProperty("copies_off", out var copiesOff) && copiesOff.ValueKind == JsonValueKind.Array)
                 off = [.. copiesOff.EnumerateArray().Where(p => p.ValueKind == JsonValueKind.String).Select(p => p.GetString() ?? "")];
-            if (doc.RootElement.TryGetProperty("copies", out var copies) && copies.ValueKind == JsonValueKind.Object)
-                record = copies.EnumerateObject().Where(p => p.Value.ValueKind == JsonValueKind.Array).ToDictionary(p => p.Name,
-                    p => p.Value.EnumerateArray().Where(c => c.ValueKind == JsonValueKind.String).Select(c => c.GetString() ?? "").ToList());
+            record = RecordIn(doc.RootElement);
         }
         catch (JsonException e)
         {
@@ -302,6 +304,14 @@ internal static class Store
     }
 
     static (string Json, Picks Picks)? _picksIn;
+
+    // The copies record (StoreData.Copies) in our data's JSON, read without loading it (a snapshot, or our file at Init);
+    // null for none. An id named twice (by hand): its first.
+    public static Dictionary<string, List<string>>? RecordIn(JsonElement root) =>
+        root.TryGetProperty("copies", out var copies) && copies.ValueKind == JsonValueKind.Object
+            ? copies.EnumerateObject().Where(p => p.Value.ValueKind == JsonValueKind.Array).DistinctBy(p => p.Name).ToDictionary(p => p.Name,
+                p => p.Value.EnumerateArray().Where(c => c.ValueKind == JsonValueKind.String).Select(c => c.GetString() ?? "").ToList())
+            : null;
 
     // The newest backup that reads, or a fresh start when none does.
     static (StoreData Data, (string Path, DateTime Saved)? From) NewestBackup(string dir)

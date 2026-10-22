@@ -78,9 +78,9 @@ key. Some texts it skips, and the English shows instead: blank ones, values that
    "Building"), or ask for a test build in a translation issue.
 2. Switch the game to your language in its settings. If some of our text stays in the old language, relaunch the
    game.
-3. Open the Modding screen and go through every part: the main list, Vanilla List, Load Order, the info panel,
-   the profile bar, Changes, the right-click menus, the main menu button, and the popups (a new mod, the
-   relaunch check, deleting a profile or a category).
+3. Open the Modding screen and go through every part: the main list, the vanilla Modding page, Load Order, the
+   info panel, the profile bar, Changes, the right-click menus, the main menu button, and the popups (a new mod,
+   the relaunch check, deleting a profile or a category).
 4. Look for text that is cut off or runs past its box (many labels have little room), English you meant to
    translate, and placeholders that show as `{count}` instead of a number.
 

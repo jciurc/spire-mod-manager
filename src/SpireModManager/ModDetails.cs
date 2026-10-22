@@ -20,7 +20,7 @@ static class ModDetails
     const string FolderMeta = "spire_mod_manager_folder";
     const string WorkshopMeta = "spire_mod_manager_workshop";
     const string FieldsName = "SpireModManagerYours";
-    public const string OthersName = "SpireModManagerOthersParked"; // "2 more from other mods: see Vanilla List"
+    public const string OthersName = "SpireModManagerOthersParked"; // "2 more from other mods: see the vanilla Modding page"
     const string LinkName = "SpireModManagerLink", SourceName = "SpireModManagerSource";
     public const string HeadName = "SpireModManagerHead";
     const string WiredMeta = "spire_mod_manager_wired";
@@ -160,15 +160,24 @@ static class ModDetails
     {
         var title = container.GetNode<Control>("ModTitle");
         var description = container.GetNode<RichTextLabel>("ModDescription");
-        if (!container.HasMeta(GameLooksMeta))
-            container.SetMeta(GameLooksMeta, new Godot.Collections.Array { (int)title.MouseFilter, (int)title.MouseDefaultCursorShape, description.MetaUnderlined });
-        var was = container.GetMeta(GameLooksMeta).AsGodotArray();
+        var was = GameLooks(container);
         title.MouseFilter = game ? (Control.MouseFilterEnum)was[0].AsInt32() : Control.MouseFilterEnum.Stop;
         title.MouseDefaultCursorShape = game ? (Control.CursorShape)was[1].AsInt32() : Control.CursorShape.PointingHand;
         description.MetaUnderlined = game && was[2].AsBool();
     }
 
     const string GameLooksMeta = "spire_mod_manager_game_looks";
+
+    // The game's looks for Looks, recorded the first time anything of ours reaches the panel, before we change them.
+    static Godot.Collections.Array GameLooks(NModInfoContainer container)
+    {
+        if (!container.HasMeta(GameLooksMeta))
+        {
+            var (title, description) = (container.GetNode<Control>("ModTitle"), container.GetNode<RichTextLabel>("ModDescription"));
+            container.SetMeta(GameLooksMeta, new Godot.Collections.Array { (int)title.MouseFilter, (int)title.MouseDefaultCursorShape, description.MetaUnderlined });
+        }
+        return container.GetMeta(GameLooksMeta).AsGodotArray();
+    }
 
     // Clicks and hovers, connected once per panel: the title or a dependency's name scrolls to its row, a Workshop tag
     // searches, and hovering a name shows its card.
@@ -177,6 +186,7 @@ static class ModDetails
         if (container.HasMeta(WiredMeta))
             return;
         container.SetMeta(WiredMeta, true);
+        GameLooks(container); // first: WatchLinks takes the links' underline off, and Vanilla View puts back the game's
         Control? Content() => container.GetParent()?.GetNodeOrNull<Control>("%ModsScrollContainer/Mask/Content");
         var title = container.GetNode<Control>("ModTitle");
         title.GuiInput += e =>

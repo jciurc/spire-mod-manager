@@ -43,7 +43,10 @@ var DevDir = stable ? StableDir : BetaDir;
 var WorkshopDir = Path.Combine(steamapps, "workshop", "content", "2868840");
 var BmmRepo = Env("STS2_BMM_REPO", @"C:\repos\gaming\slay the spire\bettermodmenu"); // Better Mod Menu's local-fix checkout (--bmm-local)
 const string ModId = "SpireModManager";
-const int TimeoutSeconds = 480; // the whole run, killed after this; the plain suite takes about 280 s (October 2026), more with --bmm
+// The whole run, killed after this. The full suite takes 110-125 s from the game's start, windowed too (October 2026),
+// and grows with every check: this leaves it room on a slower PC, and a hung game is killed within 5 minutes, so the
+// next run (any repo's) gets the game.
+const int TimeoutSeconds = 300;
 var root = Path.GetDirectoryName(ScriptDir()) ?? ".";
 var userData = Path.Combine(Environment.GetFolderPath(Environment.SpecialFolder.ApplicationData), "SlayTheSpire2");
 var sandbox = Path.Combine(userData, "default", "1");
@@ -53,7 +56,7 @@ var mode = args.FirstOrDefault() ?? "test";
 var smoke = mode == "smoke"; // the release build from dist/, not a fresh one
 var distDir = Path.Combine(root, "dist", ModId);
 var real = args.Contains("--real"); // your own mods (switched off) and a copy of your manager data
-var bmm = args.Any(a => a.StartsWith("--bmm")); // Better Mod Menu on (any --bmm option)
+var bmm = new[] { "--bmm", "--bmm-after", "--bmm-local" }.Any(args.Contains); // Better Mod Menu on
 var bmmData = args.Contains("--first-run-bmm"); // its fixture data in the sandbox, for our first-run import
 var firstRun = bmmData || args.Contains("--first-run"); // no manager.json of ours
 var crashPrepare = args.Contains("--crash-prepare"); // reach the main menu only, so the last working setup is saved
@@ -78,6 +81,16 @@ if (crashPrepare && workshopAt >= 0)
 // one list: a second --workshop, --workshop=..., or ids after a space would be dropped without a word.
 if (args.Count(a => a.StartsWith("--workshop")) != (workshopAt < 0 ? 0 : 1))
     return Fail("--workshop comes once, with its ids after a space, as in: --workshop 3747605109,3750485606");
+// The options each mode takes, spelled exactly: any other is refused, or a typo (--stabel, --frist-run) would run the
+// plain suite, and its pass would read as that option's.
+string[] known = ["--bmm", "--bmm-after", "--bmm-local", "--workshop", "--twins", "--stable", "--no-wait", .. mode switch
+{
+    "test" => new[] { "--window", "--real", "--first-run", "--first-run-bmm", "--crash-prepare", "--crash" },
+    "launch" => ["--first-run", "--first-run-bmm", "--keep-saves"],
+    _ => [],
+}];
+if (args.Skip(1).FirstOrDefault(a => a.StartsWith("--") && !known.Contains(a)) is { } unknown)
+    return Fail($"\"{unknown}\" isn't an option of {mode}. It takes {string.Join(", ", known)}.");
 if (args.Where((a, i) => i > 0 && i != workshopAt + 1 && !a.StartsWith("--")).FirstOrDefault() is { } stray)
     return Fail($"\"{stray}\" isn't an option. Workshop ids go after --workshop, comma-separated with no spaces, as in: --workshop 3747605109,3750485606");
 if (workshopAt >= 0 && workshopItems.Length == 0)
