@@ -3,9 +3,9 @@
 What changed in each Workshop release, for players. Each version's first line is its Workshop change note
 (`changeNote` in `workshop/workshop.json`), word for word.
 
-## 0.1.5 (2026-10-22)
+## 0.2.0 (2026-10-22)
 
-0.1.5:
+0.2.0:
 - mods that share the same ID can now be edited independently
 - Mods that share the same ID (duplicate) will only load one copy, with an explanation of which and why
 - search supports OR, NOT and brackets, e.g. (#gameplay OR #library) #enabled

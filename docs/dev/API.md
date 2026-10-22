@@ -73,7 +73,7 @@ Callers' self-tests use the test hooks (`PopupMenus.Rows` and the like) instead.
   installed SMM is the one that runs.
 - Raising the floor is copying a newer `dist/api/` in, a reviewed diff. To try an addition before it's released, copy
   in a dev build's `out/api/` instead (every `build.cs` leaves one): the same three files, its `VERSION` a dev
-  version such as `0.1.5-dev.3`, and `runtime/`, that build, for the dependent's dev runs to load in place of the
+  version such as `0.2.0-dev.3`, and `runtime/`, that build, for the dependent's dev runs to load in place of the
   Workshop's copy (it's about 1 MB: keep it out of git). Tested staging builds' drops are kept outside the repo, in
   the maintainer's `session-tools/smm-api/<version>/`. A dependent's release build refuses a `VERSION` with a
   prerelease part, so a release always names a released SMM.
