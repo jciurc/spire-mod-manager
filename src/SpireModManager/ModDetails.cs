@@ -801,6 +801,13 @@ static class ModDetails
             ListFilter.Keep(ModId()); // its row stays under the list's Show: choice
             if (Content() is { } content)
                 CategoryList.Apply(content); // rows: alias, tags, the notepad
+            // The description's Other keywords follow the edit (#renamed, #notes, #edited, #changed): its text alone, as a
+            // full Fill would commit and reload the fields while focus moves on to the next one.
+            if (CategoryList.Selected is { } shown && Copies.Key(shown) == ModId())
+            {
+                container.GetNode<MegaRichTextLabel>("ModDescription").Text = Describe(shown);
+                Callable.From(() => PlaceFields(container)).CallDeferred(); // once the text is laid out
+            }
         }
         var fields = new List<ModField>();
         void Add(ModField.Kind kind)

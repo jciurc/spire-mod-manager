@@ -948,7 +948,7 @@ static partial class SelfTest
         // Opening on our main list, after its deferred work.
         OursHold("main list", Layout.CornerX);
         var toggles = new[] { "SpireModManagerViewToggle", "SpireModManagerLoadOrderToggle" }.Select(name => screen.GetNode<Control>(name)).ToList();
-        Check("the link to its page says Go to vanilla Modding page", toggles[0] is LinkButton { Text: var linkText } && linkText == Menus.Text("SPIRE_MOD_MANAGER.GO_TO_VANILLA"));
+        Check("the link to its page says Go to vanilla modding page", toggles[0] is LinkButton { Text: var linkText } && linkText == Menus.Text("SPIRE_MOD_MANAGER.GO_TO_VANILLA"));
         Check("the page link is a little smaller than the row text, never underlined (our links: colour and the pointer), like our other links",
             toggles[0] is LinkButton { Underline: LinkButton.UnderlineMode.Never, MouseDefaultCursorShape: Control.CursorShape.PointingHand } pageLink
             && pageLink.GetThemeFontSize("font_size") == CategoryList.PageLinkSize
@@ -3926,7 +3926,7 @@ static partial class SelfTest
                 var gameMessage = $"Mod {offMod.manifest?.id} only supports Steam branch public";
                 Check("the game's message taken off a mod that's off still shows in its card, apart from ours under its own caption, in a fainter box, "
                     + "not as a problem",
-                    card.Contains(GameText.Caption("Error while loading - Can be ignored if mod is disabled")) && card.Contains(gameMessage)
+                    card.Contains(GameText.Caption("Error while loading - Can be ignored if disabled")) && card.Contains(gameMessage)
                     && card.Contains(GameText.Box("", dim: true)[..40]) && !ModDetails.Problems(offMod).Any(p => p.Contains("only supports Steam branch")),
                     card.Split('\n').FirstOrDefault(l => l.Contains("branch")) ?? card.Split('\n')[0]);
                 // The second pass, just before the main menu's warning reads the errors (BranchErrorsLatePatch): one
@@ -4069,6 +4069,7 @@ static partial class SelfTest
         CategoryList.Select(screen, other);
         await PanelFor(menu, screen, other);
         await Wait(menu, 0.5);
+        var keywordsBefore = panel.GetNode<RichTextLabel>("ModDescription").Text;
         notes.Text = "  Typed in the panel \n";
         notes.EmitSignal(Control.SignalName.FocusExited);
         var tags = Line("Tags");
@@ -4076,6 +4077,9 @@ static partial class SelfTest
         tags.EmitSignal(Control.SignalName.FocusExited);
         await Wait(menu, 0.3);
         Check("panel saves notes, trimmed", Store.InfoFor("SmmTestFixes")?.Notes == "Typed in the panel" && notes.Text == "Typed in the panel", notes.Text);
+        var keywordsAfter = panel.GetNode<RichTextLabel>("ModDescription").Text;
+        Check("Other keywords follow a save in the panel: #notes once it has notes", !keywordsBefore.Contains("#notes") && keywordsAfter.Contains("#notes"),
+            $"before \"{keywordsBefore[Math.Max(0, keywordsBefore.Length - 160)..]}\", after \"{keywordsAfter[Math.Max(0, keywordsAfter.Length - 160)..]}\"");
         Check("panel saves tags, repeats dropped; at rest they're pills", Store.InfoFor("SmmTestFixes")?.Tags?.SequenceEqual(["co-op", "Favorites"]) == true
             && yours.GetNode<Control>("Tags/CustomTags") is { Visible: true } && yours.GetNode("Tags/CustomTags/Pills").GetChildCount() == 2,
             string.Join(", ", Store.InfoFor("SmmTestFixes")?.Tags ?? []));
@@ -6318,13 +6322,13 @@ static partial class SelfTest
         Check("... the copy running says the other stays enabled, in case it's removed; the other says which copy runs",
             lines == (Draft(SelfRuns, ("other", Named(copy))), Draft(SelfBackup, ("other", Named(self)))), $"{lines.Running} / {lines.Other}");
         // The backup copy failed by the game as a duplicate (made up: two copies of ours from one source, the second fails):
-        // grey "Won't load (same ID)" all the same, not a red "Failed to load" (it's kept on by design, and won't load).
+        // grey "Duplicate - Won't load" all the same, not a red "Failed to load" (it's kept on by design, and won't load).
         var (stateWas, errorsWas, backupStatus) = (copy.state, copy.errors, ModDetails.Status(copy));
         copy.state = ModLoadState.Failed;
         copy.errors = [new LocString("main_menu_ui", "MOD_ERROR.DUPLICATE_ID")];
         var failedStatus = ModDetails.Status(copy);
         (copy.state, copy.errors) = (stateWas, errorsWas);
-        Check("... the backup copy failed by the game as a duplicate (made up): grey Won't load (same ID) as before, not a red Failed to load",
+        Check("... the backup copy failed by the game as a duplicate (made up): grey Duplicate - Won't load as before, not a red Failed to load",
             backupStatus.Contains(StatusWontLoad) && failedStatus == backupStatus, $"{backupStatus} / failed {failedStatus}");
         // The other copy unticked (as the vanilla page does: the game's switch for it): this one's locked box says Spire Mod
         // Manager won't load if this copy is removed, and to enable the other too, not that the other still loads. Put back.
@@ -8552,7 +8556,7 @@ static partial class SelfTest
 
         // Both copies on: the same-id banner, yellow, saying only one loads, its card which copy; a Same ID chip on each
         // whose tip names the other copy and the one that loads; Show steps between the two; Dismiss hides it for this pair
-        // through a redraw (view state: no change, no undo step). The copy that won't load reads "Won't load (same ID)",
+        // through a redraw (view state: no change, no undo step). The copy that won't load reads "Duplicate - Won't load",
         // not "Pending relaunch", before a launch too.
         var border = screen.GetNode<Control>("ModsBorder");
         Control? SameId() => border.GetNodeOrNull<Control>(LoadOrder.SameIdName);
@@ -8658,7 +8662,7 @@ static partial class SelfTest
         var (setAside, setAsideLine) = (ModDetails.Status(copy), Line(copy));
         copy.state = ModLoadState.AddedAtRuntime;
         var losesLine = Draft(CopyLoses, ("other", Named(local)), ("why", WhyLocal));
-        Check("a Workshop copy enabled beside the local one that wins reads \"Won't load (same ID)\", before a launch too and once the game set it aside; "
+        Check("a Workshop copy enabled beside the local one that wins reads \"Duplicate - Won't load\", before a launch too and once the game set it aside; "
             + "its panel says the local copy loads instead, and why; the local copy's that it's the one that loads",
             beforeStatus.Contains(StatusWontLoad) && setAside.Contains(StatusWontLoad) && beforeLine == losesLine && setAsideLine == losesLine
             && Line(local) == Draft(LoadsAlso, ("other", Named(copy))), $"{beforeStatus} / {setAside}; lines {beforeLine} / {setAsideLine}; local {Line(local)}");
@@ -9641,7 +9645,7 @@ static partial class SelfTest
             Check("same ID, a message on a copy set aside: off its errors (the MODDED label stays clear), into its panel as the game's; the late pass covers it",
                 aside.errors == null && dropped >= 1 && BranchErrors.Dropped(aside).Contains(error)
                 && notes.Any(n => n.Contains("only supports Steam branch public"))
-                && ModDetails.Card(aside).Contains(GameText.Caption("Error while loading - Can be ignored if mod is disabled")),
+                && ModDetails.Card(aside).Contains(GameText.Caption("Error while loading - Can be ignored if disabled")),
                 $"errors {aside.errors?.Count}, dropped {dropped}; {string.Join(" | ", notes)}");
         }
         finally
@@ -10537,9 +10541,9 @@ static partial class SelfTest
     const string RelaunchLoses = "{other} loads instead";
     const string CopySwitchLine = "{mod}: {to} loads instead of {from}";
     const string ClashTip = "Another copy of this mod is enabled: {others}. Only {loads} loads.";
-    const string StatusWontLoad = "Won't load (same ID)";
+    const string StatusWontLoad = "Duplicate - Won't load";
     const string CopyLoses = "{other} loads instead. {why} Disable one to choose.";
-    const string WhyLocal = "The game loads the local copy.", WhyHigher = "The game loads the higher version.", WhySource = "Only one copy from the same source loads.";
+    const string WhyLocal = "The game prioritizes a local copy.", WhyHigher = "The game prioritizes a higher version.", WhySource = "Only one copy from the same source loads.";
     const string LoadsAlso = "{other} is also enabled - this copy is the one that loads.";
     const string FailedOther = "{other} is also installed. To load that copy instead, enable it and disable this one.";
     const string SelfRuns = "This copy is running. {other} stays enabled too, in case this one is removed.";
@@ -10906,7 +10910,7 @@ static partial class SelfTest
         await TypeIn(box, "Strategy, Story-heavy, f");
         Check("tag suggestions: typing brings the list back", Listed() == "Fast", Listed());
         Check("tag suggestions: a heading over them says what they are and how to take several",
-            TagSuggestions.Heading() == "Currently used tags; Shift-click to add multiple", TagSuggestions.Heading());
+            TagSuggestions.Heading() == "Tags in use; Shift-click to add multiple", TagSuggestions.Heading());
         TagSuggestions.Press("Fast", shift: true);
         await Wait(menu, 0.2);
         Check("tag suggestions: a Shift-click takes one, the box keeps focus and the list stays for more", box.Text == "Strategy, Story-heavy, Fast, " && box.HasFocus()
