@@ -382,6 +382,9 @@ static partial class SelfTest
             && kept?.Alias == savedAlias && kept?.Notes == savedNotes && after.Alias == before.Alias && after.Notes == before.Notes
             && after.Category == before.Category && after.Tags.SequenceEqual(before.Tags),
             $"{standIn.Alias} / {standIn.Category} / {string.Join(",", standIn.Tags)}");
+        Check("API cards: the player's category, tags and note together after one gap, the note on its term's line",
+            standCard.Contains($"\n{ModDetails.CardGap}\n{ModDetails.CardFact("SPIRE_MOD_MANAGER.CATEGORY", "Stand-ins")}\n{ModDetails.CardFact("SPIRE_MOD_MANAGER.TAGS_TERM", "")}")
+            && standCard.EndsWith($"[/color]\n{ModDetails.CardFact("SPIRE_MOD_MANAGER.NOTES_TERM", "A stand-in note")}"), standCard.Replace("\n", " | "));
 
         var none = Mods.Details("SmmApiNotInstalled");
         Check("API mods: Details is what the player keeps (alias, notes, category, trimmed; tags once each, no blanks); empty for a mod with nothing",

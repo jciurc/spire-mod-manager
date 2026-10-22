@@ -10,7 +10,7 @@ namespace SpireModManager;
 
 // The info panel in our views, top to bottom: the head beside the thumbnail (name and version, id and Workshop link,
 // status, author, last update, compatibility); anything wrong; the description; size, published, subscribers, Workshop
-// tags and other keywords (the hidden tags); dependencies both ways; the player's Alias, Category, Tags and Notes; Open
+// tags and other keywords (the hidden tags); dependencies both ways; the player's Alias, Category, Tags and Note; Open
 // Folder.
 // Vanilla View: the panel exactly as the game makes it.
 static class ModDetails
@@ -312,7 +312,7 @@ static class ModDetails
         return $"[color={(age.TotalHours < 48 ? Enabled : Disabled)}]({text})[/color]";
     }
 
-    // A row's hover card: id and state, anything wrong, author, last update, and the player's alias, tags and notes.
+    // A row's hover card: id and state, anything wrong, author, last update, and the player's alias, tags and note.
     // full: nothing cut short (held with Alt).
     public static string Card(Mod mod, bool full = false)
     {
@@ -320,31 +320,27 @@ static class ModDetails
         var id = mod.manifest?.id ?? "";
         var info = Store.InfoFor(mod);
         var lines = new List<string> { $"[b]{Escape(id)}[/b]  {Bullet}  {Status(mod)}" };
-        lines.AddRange(Problems(mod).Select(p => $"[color={Problem}]{Escape(p)}[/color]"));
-        if (CopyLine(mod, links: false) is var (copyText, copyColor))
-            lines.Add($"[color={copyColor}]{copyText}[/color]");
-        if (GameBlock(mod, effects: false) is { Length: > 0 } game)
-            lines.Add(game.TrimEnd('\n'));
-        string Fact(string key, string value) => $"[color=#e8cf7a]{Menus.Text(key)}[/color]: {value}";
-        lines.Add(Fact("SPIRE_MOD_MANAGER.AUTHOR", mod.manifest?.author is { Length: > 0 } author ? Escape(Cut(author, 80)) : Faint("SPIRE_MOD_MANAGER.UNKNOWN")));
+        AddWarnings(lines, mod);
+        lines.Add(CardFact("SPIRE_MOD_MANAGER.AUTHOR", mod.manifest?.author is { Length: > 0 } author ? Escape(Cut(author, 80)) : Faint("SPIRE_MOD_MANAGER.UNKNOWN")));
         if (WorkshopInfo.For(mod) is { } workshop)
-            lines.Add(Fact("SPIRE_MOD_MANAGER.UPDATED", Date(workshop.Updated)));
+            lines.Add(CardFact("SPIRE_MOD_MANAGER.UPDATED", Date(workshop.Updated)));
+        // The player's own, together after one gap (none without them).
+        var yours = new List<string>();
         if (info?.Alias is { } alias)
-        {
-            const string halfLine = "[font_size=8] [/font_size]"; // a little air around it
-            lines.AddRange([halfLine, Fact("SPIRE_MOD_MANAGER.ALIAS_TERM", Escape(Cut(alias, 80))), halfLine]);
-        }
+            yours.Add(CardFact("SPIRE_MOD_MANAGER.ALIAS_TERM", Escape(Cut(alias, 80))));
         if (info?.Tags is { Count: > 0 } tags)
-            lines.Add(Fact("SPIRE_MOD_MANAGER.TAGS_TERM", Escape(Cut(string.Join(", ", tags), 160))));
+            yours.Add(CardFact("SPIRE_MOD_MANAGER.TAGS_TERM", Escape(Cut(string.Join(", ", tags), 160))));
         if (info?.Notes is { } notes)
-            lines.Add($"[color=#e8cf7a]{Menus.Text("SPIRE_MOD_MANAGER.NOTES_TERM")}[/color]\n{Escape(Cut(notes, 300))}");
+            yours.Add(CardFact("SPIRE_MOD_MANAGER.NOTES_TERM", Escape(Cut(notes, 300))));
+        if (yours.Count > 0)
+            lines.AddRange([CardGap, .. yours]);
         return string.Join("\n", lines);
     }
 
     // The card other mods show for a mod (the API's ModCards): what the row's card says, with Jordan's list for it on
     // top: the mod's picture, its name as it gives it (never the player's alias: the caller's row shows that), its
     // version, author and description, then the player's category, every tag (the automatic ones too, in their
-    // colours) and notes. full: nothing cut short (held with Alt).
+    // colours) and note. full: nothing cut short (held with Alt).
     // standIn: a self-test's details in place of the player's (SharedCards.StandIn).
     public static string SharedCard(Mod mod, bool full = false, (string? Alias, string? Notes, List<string> Tags, string? Category)? standIn = null)
     {
@@ -358,29 +354,44 @@ static class ModDetails
         var version = mod.manifest?.version is { Length: > 0 } v ? $"  [color=#fff6e280]{Escape(v)}[/color]" : "";
         lines.Add($"[b][font_size=20]{Escape(mod.manifest?.name is { Length: > 0 } name ? name : id)}[/font_size][/b]{version}");
         lines.Add($"{Escape(id)}  {Bullet}  {Status(mod)}");
+        AddWarnings(lines, mod);
+        lines.Add(CardFact("SPIRE_MOD_MANAGER.AUTHOR", mod.manifest?.author is { Length: > 0 } author ? Escape(Cut(author, 80)) : Faint("SPIRE_MOD_MANAGER.UNKNOWN")));
+        if (WorkshopInfo.For(mod) is { } workshop)
+            lines.Add(CardFact("SPIRE_MOD_MANAGER.UPDATED", Date(workshop.Updated)));
+        // Its own words, as the panel shows them (markup kept), a few lines of them; cut outside a tag.
+        if (mod.manifest?.description is { Length: > 0 } description)
+            lines.AddRange([CardGap, Described(description.Trim(), full ? int.MaxValue : 240)]);
+        // The player's own, together after one gap: there's always a category (Uncategorized at least).
+        lines.Add(CardGap);
+        var category = standIn is { } stand ? stand.Category ?? Menus.Text("SPIRE_MOD_MANAGER.UNCATEGORIZED") : CategoryList.CategoryName(Copies.Key(mod));
+        lines.Add(CardFact("SPIRE_MOD_MANAGER.CATEGORY", Escape(category)));
+        var chips = standIn is { } instead
+            ? [.. Tags.For(mod).Where(c => !c.Custom), .. instead.Tags.Select(t => new Tags.Chip(t, Tags.CustomColor, Custom: true))]
+            : Tags.For(mod).ToList();
+        if (chips.Count > 0)
+            lines.Add(CardFact("SPIRE_MOD_MANAGER.TAGS_TERM", string.Join("  ", chips.Select(c => $"[color=#{c.Color.ToHtml(false)}]{Escape(c.Text)}[/color]"))));
+        if ((standIn is { } given ? given.Notes : info?.Notes) is { } notes)
+            lines.Add(CardFact("SPIRE_MOD_MANAGER.NOTES_TERM", Escape(Cut(notes, 300))));
+        return string.Join("\n", lines);
+    }
+
+    // The cards' one gap between their parts: half a line.
+    public const string CardGap = "[font_size=8] [/font_size]";
+
+    // A fact in a card: the term in the cards' gold, the value after it on the same line.
+    public static string CardFact(string key, string value) => $"[color=#e8cf7a]{Menus.Text(key)}[/color]: {value}";
+
+    // What's wrong in a card (the problems, the copy line, the game's words), then a gap before the facts when any shows.
+    static void AddWarnings(List<string> lines, Mod mod)
+    {
+        var before = lines.Count;
         lines.AddRange(Problems(mod).Select(p => $"[color={Problem}]{Escape(p)}[/color]"));
         if (CopyLine(mod, links: false) is var (copyText, copyColor))
             lines.Add($"[color={copyColor}]{copyText}[/color]");
         if (GameBlock(mod, effects: false) is { Length: > 0 } game)
             lines.Add(game.TrimEnd('\n'));
-        string Fact(string key, string value) => $"[color=#e8cf7a]{Menus.Text(key)}[/color]: {value}";
-        lines.Add(Fact("SPIRE_MOD_MANAGER.AUTHOR", mod.manifest?.author is { Length: > 0 } author ? Escape(Cut(author, 80)) : Faint("SPIRE_MOD_MANAGER.UNKNOWN")));
-        if (WorkshopInfo.For(mod) is { } workshop)
-            lines.Add(Fact("SPIRE_MOD_MANAGER.UPDATED", Date(workshop.Updated)));
-        // Its own words, as the panel shows them (markup kept), a few lines of them; cut outside a tag.
-        if (mod.manifest?.description is { Length: > 0 } description)
-            lines.AddRange(["", Described(description.Trim(), full ? int.MaxValue : 240)]);
-        lines.Add("");
-        var category = standIn is { } stand ? stand.Category ?? Menus.Text("SPIRE_MOD_MANAGER.UNCATEGORIZED") : CategoryList.CategoryName(Copies.Key(mod));
-        lines.Add(Fact("SPIRE_MOD_MANAGER.CATEGORY", Escape(category)));
-        var chips = standIn is { } instead
-            ? [.. Tags.For(mod).Where(c => !c.Custom), .. instead.Tags.Select(t => new Tags.Chip(t, Tags.CustomColor, Custom: true))]
-            : Tags.For(mod).ToList();
-        if (chips.Count > 0)
-            lines.Add(Fact("SPIRE_MOD_MANAGER.TAGS_TERM", string.Join("  ", chips.Select(c => $"[color=#{c.Color.ToHtml(false)}]{Escape(c.Text)}[/color]"))));
-        if ((standIn is { } given ? given.Notes : info?.Notes) is { } notes)
-            lines.Add($"[color=#e8cf7a]{Menus.Text("SPIRE_MOD_MANAGER.NOTES_TERM")}[/color]\n{Escape(Cut(notes, 300))}");
-        return string.Join("\n", lines);
+        if (lines.Count > before)
+            lines.Add(CardGap);
     }
 
     // A mod's description in a card of ours (a plain RichTextLabel, not the game's): the game label's colour tags as
@@ -785,7 +796,7 @@ static class ModDetails
         return head;
     }
 
-    // The player's own fields: Alias, Category (a picker), Tags and Notes.
+    // The player's own fields: Alias, Category (a picker), Tags and Note.
     static Control AddFields(NModInfoContainer container)
     {
         var box = new VBoxContainer { Name = FieldsName };
@@ -801,7 +812,7 @@ static class ModDetails
             ListFilter.Keep(ModId()); // its row stays under the list's Show: choice
             if (Content() is { } content)
                 CategoryList.Apply(content); // rows: alias, tags, the notepad
-            // The description's Other keywords follow the edit (#renamed, #notes, #edited, #changed): its text alone, as a
+            // The description's Other keywords follow the edit (#renamed, #note, #edited, #changed): its text alone, as a
             // full Fill would commit and reload the fields while focus moves on to the next one.
             if (CategoryList.Selected is { } shown && Copies.Key(shown) == ModId())
             {

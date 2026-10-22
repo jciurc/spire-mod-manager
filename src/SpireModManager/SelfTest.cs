@@ -3384,8 +3384,8 @@ static partial class SelfTest
         Check("CSV: the Workshop Id column holds just the id, read back as the item's page",
             ProfileCsv.Records(withId) is [_, [.., "3123456789"]] && ProfileCsv.Read(withId).Mods is [{ WorkshopLink: var idLink }]
             && idLink == ProfileCsv.WorkshopLink(3123456789), withId);
-        Check("CSV: the columns follow the tick boxes", ProfileCsv.Header(new()).SequenceEqual(["Mod Id", "Name", "Version", "Enabled", "Category", "Workshop Id"])
-            && ProfileCsv.Header(new(Category: false, Alias: true, Notes: true)).SequenceEqual(["Mod Id", "Name", "Version", "Enabled", "Workshop Id", "Alias", "Notes"]),
+        Check("CSV: the columns follow the tick boxes (the note's is Note)", ProfileCsv.Header(new()).SequenceEqual(["Mod Id", "Name", "Version", "Enabled", "Category", "Workshop Id"])
+            && ProfileCsv.Header(new(Category: false, Alias: true, Notes: true)).SequenceEqual(["Mod Id", "Name", "Version", "Enabled", "Workshop Id", "Alias", "Note"]),
             string.Join(",", ProfileCsv.Header(new(Category: false, Alias: true, Notes: true))));
 
         // Share profile, from the profile list: at first the active profile's enabled mods in load
@@ -3495,7 +3495,7 @@ static partial class SelfTest
         ProfileShare.Close();
         await Wait(menu, 0.2);
         await Choose("Export profile");
-        var restored = Ticked("IncludeNotes") && Ticked("IncludeCategory") && Ticked("RememberChoices") && ProfileCsv.Records(Csv()).FirstOrDefault()?.Contains("Notes") == true;
+        var restored = Ticked("IncludeNotes") && Ticked("IncludeCategory") && Ticked("RememberChoices") && ProfileCsv.Records(Csv()).FirstOrDefault()?.Contains("Note") == true;
         await Tick("RememberChoices", false);
         var forgotten = Store.Data.ShareChoices == null;
         ProfileShare.ForgetSessionChoices();
@@ -3545,8 +3545,12 @@ static partial class SelfTest
             && read[1] is { Alias: "=cool", Notes: "Line one\nline two" } && read[0] is { Alias: "", Notes: "" },
             string.Join(" | ", read.Select(e => $"{e.Id}: {e.Category}/{e.Alias}/{e.Notes}")));
         var ours = ProfileCsv.Read(ProfileCsv.Write([new("SmmA", "A", "1", true, "Tools", "", "Aye", "Some notes")], new ProfileCsv.Options(Alias: true, Notes: true))).Mods;
-        Check("our own list: its category, alias and notes read back", ours is [{ Category: "Tools", Alias: "Aye", Notes: "Some notes" }],
+        Check("our own list: its category, alias and note read back", ours is [{ Category: "Tools", Alias: "Aye", Notes: "Some notes" }],
             string.Join(" | ", ours.Select(e => $"{e.Category}/{e.Alias}/{e.Notes}")));
+        // The note's column: Note in our lists, Notes in Better Mod Menu's and our older ones, any case.
+        string Planned(string column) => Profiles.PlanImport(ProfileCsv.Read($"Mod Id,Enabled,{column}\nSmmTestNoteOnly,TRUE,From the list\n").Mods).Extras.Named.FirstOrDefault().Notes ?? "";
+        Check("an import fills in a note from a Note column or a Notes one, any case", new[] { "Note", "Notes", "nOTES" }.All(c => Planned(c) == "From the list"),
+            string.Join(" | ", new[] { "Note", "Notes" }.Select(Planned)));
         var messy = ProfileCsv.Read("Mod Id,Enabled,Category,Alias\nSmmA,TRUE,\"Two\nlines\",\"" + new string('x', 79) + "\U0001F600\U0001F600\"\n").Mods;
         Check("a category or alias from a list: on one line, cut to its box's length by characters, never half of one",
             messy is [{ Category: "Two lines" } one] && one.Alias == new string('x', 79) + "\U0001F600", messy.FirstOrDefault()?.Category ?? "none");
@@ -3890,6 +3894,9 @@ static partial class SelfTest
                     && card.Contains(GameText.Caption("Error while loading")) && card.Contains("[table=1]") && card.Contains("[color=#ff5555]Mod ")
                     && !card.Contains("[lb]red]") && !ModDetails.Problems(erring).Any(p => p.Contains("Steam branch")),
                     $"{shown.Split('\n')[0]} | card: {card.Split('\n').FirstOrDefault(l => l.Contains("branch"))}");
+                var gapThenAuthor = $"[/table]\n{ModDetails.CardGap}\n{ModDetails.CardFact("SPIRE_MOD_MANAGER.AUTHOR", "")}";
+                Check("the row's card and the API's: a gap after what's wrong, before Author", card.Contains(gapThenAuthor)
+                    && ModDetails.SharedCard(erring).Contains(gapThenAuthor), card.Replace("\n", " | "));
             }
             finally
             {
@@ -3967,6 +3974,7 @@ static partial class SelfTest
         Check("panel titles with the mod's own name, the version beside it (no v); the alias is in its field",
             titleText.StartsWith("Spire Mod Manager") && Dependencies.Find(ModEntry.ModId)?.manifest?.version is { } version && titleText.TrimEnd().EndsWith(" " + version) && !titleText.Contains("v" + version)
             && Line("Alias").Text == "The Manager" && notes.Text == "Fixture note");
+        Check("the panel's note field reads Note", yours.GetNode<Label>("Notes/Term/Label").Text == "Note", yours.GetNode<Label>("Notes/Term/Label").Text);
         var linkText = (panel.FindChild("SpireModManagerLink", true, false) as LinkButton)?.Text ?? "";
         Check("the source line: id (Local), then Enabled", panel.FindChild("SpireModManagerLink", true, false) is LinkButton { Disabled: true }
             && linkText == "SpireModManager (Local)" && (panel.FindChild("SpireModManagerSource", true, false)?.FindChild("Status", true, false) as Label)?.Text == "Enabled", linkText);
@@ -3983,8 +3991,8 @@ static partial class SelfTest
         var keywordsAt = Array.FindIndex(facts, l => l.StartsWith(keywordsLabel + ": "));
         var keywords = $"{keywordsLabel}: {string.Join(", ", HiddenTagNames.Where(t => Search.Matches(ours.Mod, t)))}";
         Check("Other keywords right after Size: the hidden tags that find the mod as #name, in their order (this mod: #enabled, #local, #installed, #loaded... "
-            + "#renamed, #notes)", keywordsAt > 0 && facts[keywordsAt - 1].StartsWith(Menus.Text("SPIRE_MOD_MANAGER.SIZE") + ": ") && facts[keywordsAt] == keywords
-            && keywords.StartsWith($"{keywordsLabel}: #enabled, #local, #installed, #loaded, ") && keywords.Contains("#renamed, #notes"),
+            + "#renamed, #note)", keywordsAt > 0 && facts[keywordsAt - 1].StartsWith(Menus.Text("SPIRE_MOD_MANAGER.SIZE") + ": ") && facts[keywordsAt] == keywords
+            && keywords.StartsWith($"{keywordsLabel}: #enabled, #local, #installed, #loaded, ") && keywords.Contains("#renamed, #note") && !keywords.Contains("#notes"),
             $"{(keywordsAt < 0 ? "no row" : facts[keywordsAt])}; wanted {keywords}");
         var panelText = panel.GetNode<RichTextLabel>("ModDescription");
         var keywordsRow = panelText.Text.Split('\n').FirstOrDefault(l => l.Contains(keywordsLabel)) ?? "";
@@ -4078,7 +4086,7 @@ static partial class SelfTest
         await Wait(menu, 0.3);
         Check("panel saves notes, trimmed", Store.InfoFor("SmmTestFixes")?.Notes == "Typed in the panel" && notes.Text == "Typed in the panel", notes.Text);
         var keywordsAfter = panel.GetNode<RichTextLabel>("ModDescription").Text;
-        Check("Other keywords follow a save in the panel: #notes once it has notes", !keywordsBefore.Contains("#notes") && keywordsAfter.Contains("#notes"),
+        Check("Other keywords follow a save in the panel: #note once it has a note", !keywordsBefore.Contains("#note") && keywordsAfter.Contains("#note"),
             $"before \"{keywordsBefore[Math.Max(0, keywordsBefore.Length - 160)..]}\", after \"{keywordsAfter[Math.Max(0, keywordsAfter.Length - 160)..]}\"");
         Check("panel saves tags, repeats dropped; at rest they're pills", Store.InfoFor("SmmTestFixes")?.Tags?.SequenceEqual(["co-op", "Favorites"]) == true
             && yours.GetNode<Control>("Tags/CustomTags") is { Visible: true } && yours.GetNode("Tags/CustomTags/Pills").GetChildCount() == 2,
@@ -4167,6 +4175,12 @@ static partial class SelfTest
         await WaitReal(menu, 0.3);
         Check("after the delay, the title's card: id and state first", CardShown() && CardText().StartsWith("SmmTestFixes") && CardText().Contains("Enabled"), CardText());
         await Capture(screen, outDir, "9b-notes-hover");
+        var fixesCard = other.Mod is { } fixes ? ModDetails.Card(fixes) : "";
+        Check("the row's card ends with the player's alias, tags and note, together after one gap, the note on its term's line",
+            fixesCard.EndsWith(string.Join("\n", "", ModDetails.CardGap, ModDetails.CardFact("SPIRE_MOD_MANAGER.ALIAS_TERM", "Fixes"),
+                ModDetails.CardFact("SPIRE_MOD_MANAGER.TAGS_TERM", "co-op, Favorites"), ModDetails.CardFact("SPIRE_MOD_MANAGER.NOTES_TERM", "Typed in the panel")))
+            && content.GetChildren().OfType<NModMenuRow>().All(r => r.Mod == null || ModDetails.Card(r.Mod) is var c && !c.EndsWith(ModDetails.CardGap) && !c.Contains($"{ModDetails.CardGap}\n{ModDetails.CardGap}")),
+            fixesCard.Replace("\n", " | "));
         Hover.TestMouse = () => new Vector2(5, 5);
         await menu.ToSignal(menu.GetTree(), SceneTree.SignalName.ProcessFrame);
         Hover.TestMouse = () => hot.GetGlobalRect().GetCenter();
@@ -4589,7 +4603,7 @@ static partial class SelfTest
     // game failed it, D has a game error, E is off but loaded, with a tag of its own named "Enabled".
     // Every hidden tag, in HiddenTags' order (the info panel's Other keywords lists them in it).
     static readonly string[] HiddenTagNames = ["#enabled", "#disabled", "#workshop", "#local", "#installed", "#uninstalled", "#missing", "#loaded", "#notloaded",
-        "#pending", "#new", "#changed", "#moved", "#edited", "#renamed", "#notes", "#uncategorized", "#unmet", "#needed", "#order", "#sameid", "#clash", "#aside",
+        "#pending", "#new", "#changed", "#moved", "#edited", "#renamed", "#note", "#uncategorized", "#unmet", "#needed", "#order", "#sameid", "#clash", "#aside",
         "#managers", "#failed", "#gameerror", "#error", "#warning", "#problem"];
 
     static void TestHiddenTags(Control content)
@@ -4614,9 +4628,9 @@ static partial class SelfTest
         bool Has(string tag, params string[] ids) => ids.All(id => rows.Any(m => m.manifest?.id == id && Search.Matches(m, tag)));
         var twins = rows.Where(m => m.manifest?.id == TwinId).ToList();
         Check("hidden tags on the fixture: each finds the rows it means (the box, chips, status, the banners' rules, changes since launch); Test Addon #unmet, "
-            + "the twins #sameid, this mod #renamed and #notes, Test Retired #disabled and #notloaded, every row #local",
+            + "the twins #sameid, this mod #renamed and #note, Test Retired #disabled and #notloaded, every row #local",
             asMeant.Wrong.Count == 0 && (WontLoad() == null || Has("#unmet", "SmmTestAddon")) && twins.Count == 2 && twins.All(m => Search.Matches(m, "#sameid"))
-            && Has("#renamed", ModEntry.ModId) && Has("#notes", ModEntry.ModId) && Has("#disabled", "SmmTestRetired") && Has("#notloaded", "SmmTestRetired")
+            && Has("#renamed", ModEntry.ModId) && Has("#note", ModEntry.ModId) && Has("#disabled", "SmmTestRetired") && Has("#notloaded", "SmmTestRetired")
             && Finds("#local", _ => true), $"{string.Join(" | ", asMeant.Wrong)}; found {asMeant.Found}");
         Results.Add($"INFO hidden tags on the fixture, rows found: {asMeant.Found}");
 
@@ -4670,15 +4684,15 @@ static partial class SelfTest
                 ("#enabled", "yynyy"), ("#disabled", "nnyny"), ("enabled", "nnnny"), ("#workshop", "nynnn"), ("#local", "ynyyy"), ("#installed", "yyyyy"),
                 ("#missing", "nnnnn"), ("#loaded", "ynnyy"), ("#notloaded", "nyynn"), ("#pending", "nnnny"), ("#unmet", "yynnn"), ("#needed", "nnynn"),
                 ("#order", "ynnnn"), ("#failed", "nynnn"), ("#gameerror", "nnnyn"), ("#error", "yyynn"), ("#warning", "nnnyn"), ("#problem", "yyyyn"),
-                ("#renamed", "ynnnn"), ("#notes", "nynnn"), ("#uncategorized", "yynyy"), ("#edited", "yyyyy"), ("#sameid OR #clash OR #aside OR #managers", "nnnnn"),
+                ("#renamed", "ynnnn"), ("#note", "nynnn"), ("#notes", "nynnn"), ("#uncategorized", "yynyy"), ("#edited", "yyyyy"), ("#sameid OR #clash OR #aside OR #managers", "nnnnn"),
                 ("#enabled -#local", "nynnn"), ("#problem #local", "ynyyn"), ("(#unmet OR #needed) -#failed", "ynynn"),
             ];
             List<string> wrong;
             using (Lookups.Begin(made, [], saved, Picks.None))
                 wrong = [.. cases.Select(c => (c.Query, c.Finds, Found: string.Concat(made.Select(m => Search.Matches(m, c.Query) ? "y" : "n"))))
                     .Where(c => c.Found != c.Finds).Select(c => $"{c.Query}: {c.Found}, not {c.Finds}")];
-            Check("hidden tags mean what they say: state, problems (#error, #warning, #problem gather them), our details; only after #; "
-                + "a tag of the player's named like one finds its mods too", wrong.Count == 0, string.Join(" | ", wrong));
+            Check("hidden tags mean what they say: state, problems (#error, #warning, #problem gather them), our details (#notes still finds what #note does); "
+                + "only after #; a tag of the player's named like one finds its mods too", wrong.Count == 0, string.Join(" | ", wrong));
         }
         finally
         {
@@ -4723,7 +4737,7 @@ static partial class SelfTest
             ("loaded", m => m.state == ModLoadState.Loaded), ("notloaded", m => m.state != ModLoadState.Loaded),
             ("pending", m => ModDetails.Status(m).Contains(Menus.Text("SPIRE_MOD_MANAGER.STATUS_PENDING"))), ("new", m => Chip(m, "SPIRE_MOD_MANAGER.TAG_NEW")),
             ("changed", changed.Contains), ("moved", moved.Contains), ("edited", m => edited.Contains(Copies.Key(m))),
-            ("renamed", m => Store.InfoFor(m)?.Alias is { Length: > 0 }), ("notes", m => !string.IsNullOrWhiteSpace(Store.InfoFor(m)?.Notes)),
+            ("renamed", m => Store.InfoFor(m)?.Alias is { Length: > 0 }), ("note", m => !string.IsNullOrWhiteSpace(Store.InfoFor(m)?.Notes)),
             ("uncategorized", m => CategoryList.CategoryName(Copies.KeyOf(m)) == Menus.Text("SPIRE_MOD_MANAGER.UNCATEGORIZED")),
             ("unmet", Unmet), ("needed", Needed), ("order", Misordered), ("sameid", m => Chip(m, "SPIRE_MOD_MANAGER.TAG_SAME_ID")),
             ("clash", clashing.Contains), ("aside", Copies.Loses), ("managers", managers.Contains), ("failed", Failed), ("gameerror", GameError),

@@ -3,7 +3,7 @@ using MegaCrit.Sts2.Core.Modding;
 namespace SpireModManager;
 
 // Tags a search finds without a chip: a mod's state (#enabled, #loaded, #pending...), what changed since launch (#changed,
-// #moved, #edited), our details (#renamed, #notes, #uncategorized) and what's wrong with it (#unmet, #needed, #order,
+// #moved, #edited), our details (#renamed, #note, #uncategorized) and what's wrong with it (#unmet, #needed, #order,
 // #clash, #managers, #failed, #gameerror; #error, #warning and #problem gather them). English words in any language, as
 // #stable is, and only after a "#": "enabled" alone is a word. A tag of the player's with the same name finds its mods
 // too (Search.Matches). What needs the whole list is worked out once per redraw (Lookups). The info panel lists those that
@@ -28,7 +28,7 @@ static class HiddenTags
         ["moved"] = m => Whole("moved", Moved).Contains(m),
         ["edited"] = m => Whole("edited", Edited).Contains(m),
         ["renamed"] = m => Store.InfoFor(m)?.Alias is { Length: > 0 },
-        ["notes"] = m => !string.IsNullOrWhiteSpace(Store.InfoFor(m)?.Notes),
+        ["note"] = m => !string.IsNullOrWhiteSpace(Store.InfoFor(m)?.Notes),
         ["uncategorized"] = m => Store.InfoFor(m)?.Category is not { } name || Categories.Find(name) == null, // as the list files it
         ["unmet"] = Dependencies.Unmet,
         ["needed"] = Needed,
@@ -44,8 +44,11 @@ static class HiddenTags
         ["problem"] = m => Error(m) || Warning(m),
     };
 
+    // A tag's old name, which still finds its mods for players who learnt it (#notes, now #note); Of lists the new one.
+    static readonly Dictionary<string, string> Renamed = new(StringComparer.OrdinalIgnoreCase) { ["notes"] = "note" };
+
     // What the hidden tag of this name finds (any case); null for a name that isn't one.
-    public static Func<Mod, bool>? Find(string name) => Finds.GetValueOrDefault(name);
+    public static Func<Mod, bool>? Find(string name) => Finds.GetValueOrDefault(Renamed.GetValueOrDefault(name, name));
 
     // The names of those that find this mod, in the order above. Each set over the whole list is worked out once for
     // all of them (#order, #error and #problem share one).
