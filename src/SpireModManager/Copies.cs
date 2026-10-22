@@ -165,8 +165,10 @@ static class Copies
     // Where an id and source's stored pick names a copy our record has that isn't installed, two or more others from that
     // source being: that copy (Pick), and the one loading in its place meanwhile (Copy, Picked's choice). The pick stays
     // the player's until they pick another, in our data and in every profile (Chosen), so it loads again once it's back;
-    // the stand-in reads ticked, and is never off (Reconcile, Profiles), so SameIdLoad's no-pick choice lands on it at
-    // every launch meanwhile, whatever new copy arrives. Null for none.
+    // the stand-in reads ticked, and is never off in our data or the active profile (Reconcile, Profiles.HoldCopies), so
+    // SameIdLoad's no-pick choice lands on it at every launch meanwhile, whatever new copy arrives. A profile switched to
+    // makes a missing copy it names the pick again only where its stand-in is the copy the profile loads
+    // (Profiles.KeepNamed), so that stays true. Null for none.
     public static (string Pick, string Copy)? StandIn(string id, ModSource source, Picks picks) =>
         picks.Stored(id, source) is { } stored && picks.Record?.GetValueOrDefault(id)?.Contains(stored) == true
             && Picked(id, source, picks) is { } copy && copy != stored ? (stored, copy) : null;

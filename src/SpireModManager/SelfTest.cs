@@ -9245,7 +9245,7 @@ static partial class SelfTest
         {
             tickedAlone = Copies.TickedIn(alone, [], new Picks(data.CopyPicks, data.Copies, data.CopiesOff));
             Copies.Reconcile(data);
-            Profiles.TestHold(held);
+            Profiles.TestHold(held, active: true);
         }
         finally
         {
@@ -9328,7 +9328,7 @@ static partial class SelfTest
         var (threeLoads, threeNow) = WithCopies(three, Z, [missA, missC], () =>
         {
             Copies.Reconcile(three);
-            Profiles.TestHold(threeHeld);
+            Profiles.TestHold(threeHeld, active: true);
             return (new Picks(three.CopyPicks, three.Copies, three.CopiesOff).Picked(Z, ModSource.ModsDirectory),
                 Profiles.PlanImport([new(Z, false, "Z", "")]).Mods.FirstOrDefault(m => m.Id == Z)?.Copy);
         });
@@ -9349,6 +9349,43 @@ static partial class SelfTest
         var fourPlan = Launch(three, fourD, fourA, fourC);
         Check("... then a fourth copy installed before the next launch (the game closed), listed first: the copy loaded meanwhile loads again",
             fourPlan is { HadPick: false } && fourPlan.Loads == fourA, $"loads {PlanLoads(fourPlan)}");
+
+        // Three copies from one source, B missing, C the pick and loaded, A and B off. A profile naming B with C off, applied
+        // (a switch, Discard or an import): the pick stays A, the copy Write picks, and C stays off, so the copy the page says
+        // loads is the one the next launch loads. Then one naming B with A off: C, loading in B's place, is the copy it loads,
+        // so B is the pick again (out of copies_off), and the page and the launch agree again. Then the active profile naming
+        // B with C off has C on, as our data has it; another profile keeps C off.
+        const string W = "SmmSameIdNamed";
+        var named = new StoreData { CopyPicks = [$"{W}|l:C"], CopiesOff = [$"{W}|l:A", $"{W}|l:B"], Copies = new() { [W] = ["l:A", "l:B", "l:C"] } };
+        static ProfileMod NamesB(string off) => new(W, ModSource.ModsDirectory, true, "l:B", CopiesOff: [off]);
+        var (namedActive, namedOther) = (new Profile { Name = "Active", Mods = [NamesB("l:C")] }, new Profile { Name = "Other", Mods = [NamesB("l:C")] });
+        var (namedOff, namedOn) = WithCopies(named, W, [Made(W, "A", ModLoadState.DisabledDuplicate), Made(W, "C", ModLoadState.Loaded)], () =>
+        {
+            // Our data for the id now, and the copy the page says loads after a relaunch.
+            (StoreData Data, string Loading) NamedNow() => (new StoreData { CopyPicks = Store.TidyPicks(Store.Data.CopyPicks?.Where(k => Copies.IdOf(k) == W)),
+                CopiesOff = [.. CopiesOff().Where(k => Copies.IdOf(k) == W)], Copies = named.Copies }, Copies.Loading(W) is { } loading ? Copies.CopyOf(loading) : "none");
+            Profiles.TestApply([NamesB("l:C")]);
+            var cOff = NamedNow();
+            Profiles.TestApply([NamesB("l:A")]);
+            var cOn = NamedNow();
+            Profiles.TestHold(namedActive, active: true);
+            Profiles.TestHold(namedOther, active: false);
+            return (cOff, cOn);
+        });
+        var (namedOffPlan, namedOnPlan) = (Launch(namedOff.Data, Made(W, "A"), Made(W, "C")), Launch(namedOn.Data, Made(W, "A"), Made(W, "C")));
+        var (namedActiveOff, namedOtherOff) = (namedActive.Mods.Single().CopiesOff ?? [], namedOther.Mods.Single().CopiesOff ?? []);
+        static string NamedSay(StoreData data) => $"pick {string.Join(", ", data.CopyPicks ?? [])}, off [{string.Join(", ", data.CopiesOff ?? [])}]";
+        Check("copies: three from one source, the pick loaded and another missing: a profile naming the missing one with the loaded one off, applied, keeps "
+            + "the copy Write picks and the loaded one off, and the copy the page says loads is the one the next launch loads; one naming it with the loaded one "
+            + "on makes it the pick again (out of copies_off), page and launch agreeing; then the active profile naming it has the loaded one on, another "
+            + "keeps it off",
+            namedOff.Data.CopyPicks?.SequenceEqual([$"{W}|l:A"]) == true && namedOff.Data.CopiesOff?.SequenceEqual([$"{W}|l:B", $"{W}|l:C"]) == true
+            && namedOff.Loading == "l:A" && PlanLoads(namedOffPlan) == namedOff.Loading
+            && namedOn.Data.CopyPicks?.SequenceEqual([$"{W}|l:B"]) == true && namedOn.Data.CopiesOff?.SequenceEqual([$"{W}|l:A"]) == true
+            && namedOn.Loading == "l:C" && PlanLoads(namedOnPlan) == namedOn.Loading
+            && namedActiveOff.Count == 0 && namedOtherOff.SequenceEqual(["l:C"]),
+            $"C off: {NamedSay(namedOff.Data)}, page {namedOff.Loading}, launch {PlanLoads(namedOffPlan)}; C on: {NamedSay(namedOn.Data)}, page {namedOn.Loading}, "
+            + $"launch {PlanLoads(namedOnPlan)}; active off [{string.Join(", ", namedActiveOff)}], other off [{string.Join(", ", namedOtherOff)}]");
     }
 
     // The copy a plan loads, for a check's details.

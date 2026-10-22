@@ -54,7 +54,7 @@ static class Profiles
         if (TakeIn(Active))
             changed = true;
         foreach (var profile in data.Profiles)
-            changed |= HoldCopies(profile);
+            changed |= HoldCopies(profile, profile.Name == data.ActiveProfile ? Picks.Now : null);
         if (changed)
             Store.Save();
         if (!_watching)
@@ -87,8 +87,9 @@ static class Profiles
             var took = false;
             History.Quietly(data =>
             {
+                // Each snapshot's active profile by that snapshot's own picks: undo brings them back together.
                 foreach (var each in data.Profiles)
-                    HoldCopies(each);
+                    HoldCopies(each, each.Name == data.ActiveProfile ? new Picks(data.CopyPicks, data.Copies, data.CopiesOff) : null);
                 took |= TakeIn(data.Profiles.FirstOrDefault(p => p.Name == data.ActiveProfile), arrived: true, copy);
             });
             // Its being on is the profile's unsaved edit. The arrival isn't the player's step, and the edit follows the
@@ -141,9 +142,11 @@ static class Profiles
     // now where they name none (profiles from before copies were told apart, Better Mod Menu's, which keep the pick there
     // is), as TakeIn does for a mod it has never seen; and an entry from before copies had a box each its copies off as
     // it read then (all but the copy it names). From then on a tick on another copy is a change to the profile, as for any
-    // mod. An entry naming a pick that's missing has the copy standing in for it on, as our data does (Copies.StandIn). At
-    // launch, before the undo history starts, and as a profile is switched to. True if any changed.
-    static bool HoldCopies(Profile profile)
+    // mod. The active profile's entry naming a pick that's missing has the copy standing in for it on, as our data does
+    // (Copies.StandIn); another profile keeps the copies it has off. ours: the picks of the data the profile is active in
+    // (our data's, or an undo snapshot's), null for a profile that isn't. At launch, before the undo history starts, and as
+    // a profile is switched to. True if any changed.
+    static bool HoldCopies(Profile profile, Picks? ours)
     {
         var changed = false;
         // A mod now installed once from a source (its twin gone): its copy isn't off in any entry, as for our data
@@ -172,9 +175,13 @@ static class Profiles
                                 : entry with { Copy = pick, CopiesOff = entry.CopiesOff ?? OffNow(id, copies) };
                             changed = true;
                         }
-        // Applied, the entry keeps the stand-in loading; once the pick is back, the same copies are ticked as in our data.
+        // The active profile, applied, keeps the stand-in loading; once the pick is back, the same copies are ticked as in our
+        // data. Another profile keeps its own choice: switched to, it loads the copy Write picks for it, and the missing pick
+        // comes back only where that copy is the stand-in (KeepNamed), so nothing it has off comes on.
+        if (ours == null)
+            return changed;
         foreach (var (id, source, _) in Copies.TwinGroups())
-            if (Copies.StandIn(id, source, Picks.Now) is { } standIn)
+            if (Copies.StandIn(id, source, ours) is { } standIn)
                 foreach (var list in new[] { profile.Mods, profile.Edited })
                     for (var i = 0; i < (list?.Count ?? 0); i++)
                         if (list?[i] is { } entry && entry.Id == id && entry.Source == source && entry.Copy == standIn.Pick
@@ -187,8 +194,8 @@ static class Profiles
     }
 
 #if DEVTOOLS
-    // Self-test: HoldCopies on a made-up profile.
-    public static bool TestHold(Profile profile) => HoldCopies(profile);
+    // Self-test: HoldCopies on a made-up profile, as the active one or another.
+    public static bool TestHold(Profile profile, bool active) => HoldCopies(profile, active ? Picks.Now : null);
 
     // Self-test: a profile's entries applied as a switch, Discard or an import applies them, with no page to tick.
     public static void TestApply(List<ProfileMod> mods) => Apply(mods, null);
@@ -257,7 +264,7 @@ static class Profiles
         Track(); // the profile being left keeps its edit
         Apply(target.Edited ?? target.Mods, screen); // mods it has never seen stay as they are,
         TakeIn(target); // and it keeps them that way from now on
-        HoldCopies(target); // the copies picked and off too, where it names none
+        HoldCopies(target, Picks.Now); // the copies picked and off too, where it names none
         Store.Data.ActiveProfile = target.Name;
         Store.Save();
         Track(); // the list as it is now, against the profile (normally the same)
@@ -369,7 +376,7 @@ static class Profiles
             return;
         _missingDismissed = null; // its missing-mods banner shows again
         Apply(profile.Mods, screen);
-        HoldCopies(profile);
+        HoldCopies(profile, Picks.Now);
         (profile.Edited, profile.EditedAt) = (null, null);
         Store.Save();
         Redraw(screen);
@@ -758,7 +765,8 @@ static class Profiles
     }
 
     // Each copy's box as the profile has it (Dependencies.Write: a local and a Workshop copy both on included), and of
-    // copies from one source, the one it loads as their pick, or the copy it names where that's missing (KeepNamed).
+    // copies from one source, the one it loads as their pick, or the copy it names where that's missing and the one it
+    // loads is the copy standing in for it (KeepNamed).
     static void Apply(List<ProfileMod> mods, NModdingScreen? screen)
     {
         var wants = Index(mods);
@@ -793,16 +801,23 @@ static class Profiles
 
     // Write picks only among the copies installed: the copy each entry on names, where our record has it (one missing, or
     // one alone on its switch), is the pick after all, so once its copies are all installed again it's the one that loads,
-    // as the profile has it. The copy standing in for one missing stays on (Copies.StandIn). Saved with Write's change: the
-    // caller's save is one undo step.
+    // as the profile has it. A missing one goes back only where the copy that would stand in for it (Copies.StandIn: the
+    // one loaded, else our record's first not off) is the copy Write just picked for the entry (PickOf), which Write has
+    // on. Elsewhere Write's pick stays: with the missing copy as the pick, the page would say the stand-in loads while the
+    // next launch loads our record's first copy not off (SameIdLoad), and the stand-in would come on though the profile
+    // has it off. A copy named that's in copies_off comes out of it as it becomes the pick (the pick is always on). Saved
+    // with Write's change: the caller's save is one undo step.
     static void KeepNamed(IEnumerable<ProfileMod> entries)
     {
-        var named = entries.Where(e => e.Enabled && !Manager(e.Id) && e.Copy is { } copy && Store.Data.Copies?.GetValueOrDefault(e.Id)?.Contains(copy) == true)
-            .Select(e => $"{e.Id}|{e.Copy}").ToList();
-        if (named.Count == 0 || Store.ReadOnly || Copies.WithPicks(Store.Data.CopyPicks, named) is not { } picks)
+        static string KeyOf(ProfileMod entry) => $"{entry.Id}|{entry.Copy}";
+        var named = entries.Where(e => e.Enabled && !Manager(e.Id) && e.Copy is { } copy && Store.Data.Copies?.GetValueOrDefault(e.Id)?.Contains(copy) == true).ToList();
+        if (named.Count == 0 || Store.ReadOnly)
             return;
-        var standIns = Copies.StandIns(new Picks(picks, Store.Data.Copies, Store.Data.CopiesOff));
-        var off = Store.TidyOff(Store.Data.CopiesOff?.Where(k => !standIns.Contains(k)), picks);
+        var implied = new Picks(Copies.WithPicks(Store.Data.CopyPicks, named.Select(KeyOf)), Store.Data.Copies, Store.Data.CopiesOff);
+        var kept = named.Where(e => Copies.StandIn(e.Id, e.Source, implied) is not { } standIn || standIn.Copy == PickOf(e)).Select(KeyOf).ToList();
+        if (kept.Count == 0 || Copies.WithPicks(Store.Data.CopyPicks, kept) is not { } picks)
+            return;
+        var off = Store.TidyOff(Store.Data.CopiesOff, picks);
         if (picks.SequenceEqual(Store.Data.CopyPicks ?? []) && (off ?? []).SequenceEqual(Store.Data.CopiesOff ?? []))
             return;
         (Store.Data.CopyPicks, Store.Data.CopiesOff) = (picks, off);
