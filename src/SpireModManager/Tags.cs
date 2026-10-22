@@ -24,7 +24,6 @@ static class Tags
     // is too dark to read on a card). The copy lines say it in this too (ModDetails.CopyLine); the self-test reads it.
     public static readonly Color SameIdClash = new(0.95f, 0.78f, 0.35f);
     public static readonly Color CustomColor = new(0.75f, 0.9f, 0.8f);
-    static readonly Color Folded = new(0.8f, 0.78f, 0.72f); // the "+N" chip
 
     // Workshop tag words that mark a mod as cosmetic (lower case, whole words): art and sound, as its card says. The
     // Workshop's own categories for the game have Cosmetics and Audio (Oct 2026); the rest are for tags set other ways.
@@ -246,13 +245,9 @@ static class Tags
         return Menus.Format(count == 1 ? "SPIRE_MOD_MANAGER.TAG_CUSTOM_COUNT_TIP_ONE" : "SPIRE_MOD_MANAGER.TAG_CUSTOM_COUNT_TIP", ("count", Menus.Number(count)));
     }
 
-    // The "+N" chip for tags that don't fit on a row; its card lists them.
-    public static Control More(IReadOnlyList<Chip> rest) =>
-        Make(new Chip(MoreText(rest.Count), Folded, Tip: string.Join("\n", rest.Select(c => c.Text))));
-
-    // The "+N" chip's width: its text plus both margins.
-    public static float MoreWidth(int count) =>
-        RowTitles.Measure(ModEntry.Font("res://themes/kreon_regular_shared.tres"), MoreText(count), 12) + 2 * Margin;
-
-    static string MoreText(int count) => Menus.Format("SPIRE_MOD_MANAGER.TAGS_MORE", ("count", Menus.Number(count)));
+    // A chip in a card's text (the tags a row's "and 3 more..." stands for): its words in its colour on its box's tint,
+    // smaller than the card's text, as the chip is beside the row's.
+    public static string Pill(Chip chip) =>
+        $"[font_size=14][bgcolor=#{new Color(chip.Color, chip.Custom ? 0.1f : 0.2f).ToHtml()}][color=#{chip.Color.ToHtml(false)}]"
+        + $"\u00a0{Escape(chip.Text)}\u00a0[/color][/bgcolor][/font_size]";
 }

@@ -4897,6 +4897,35 @@ static partial class SelfTest
         ClickChip("SmmTestLib", "Library", false);
         await Wait(menu, 0.3);
         Check("clicking the tag that is the whole search clears it", box.Text == "" && Visible().SequenceEqual(all), $"{box.Text}: {Visible().Count} shown");
+        // A row's keywords after its tags, all of them where they fit (no "and N more..."): faint, no "#", after "Additional
+        // keywords:"; a click on one searches #name, a Shift-click adds another, one on the words before them is the row's
+        // (16c-row-keywords).
+        var fits = content.GetChildren().OfType<NModMenuRow>().FirstOrDefault(r => r.Visible && !r.HasNode($"SpireModManagerStrip/{RowStrip.MoreName}")
+            && r.GetNodeOrNull<Label>($"SpireModManagerStrip/{RowStrip.KeywordsName}")?.Text.Contains(", ") == true);
+        var links = fits?.GetNode<Label>($"SpireModManagerStrip/{RowStrip.KeywordsName}");
+        var before = RowStrip.KeywordsLine([]);
+        var linked = links?.Text[before.Length..].Split(", ") ?? [];
+        if (fits != null)
+            await Capture(screen, outDir, "16c-row-keywords");
+        void ClickWord(int i, bool shift)
+        {
+            if (links == null)
+                return;
+            var x = i < 0 ? 2 : RowTitles.Measure(links.GetThemeFont("font"), before + string.Join(", ", linked.Take(i)) + (i > 0 ? ", " : ""), links.GetThemeFontSize("font_size")) + 2;
+            links.EmitSignal(Control.SignalName.GuiInput, new InputEventMouseButton { ButtonIndex = MouseButton.Left, Pressed = false, ShiftPressed = shift, Position = new Vector2(x, 8) });
+        }
+        ClickWord(-1, false);
+        await Wait(menu, 0.3);
+        var clickedTitle = box.Text;
+        ClickWord(1, false);
+        await Wait(menu, 0.3);
+        var clickedWord = box.Text;
+        ClickWord(0, true);
+        await Wait(menu, 0.3);
+        Check("a row's keywords: all shown where they fit, faint, no \"#\", after \"Additional keywords:\"; a click on one searches #name, Shift-click adds another, "
+            + "one on \"Additional keywords:\" none", fits != null && links?.Text == RowStrip.KeywordsLine(RowStrip.Keywords(fits.Mod)) && !links.Text.Contains('#')
+            && links.Text.StartsWith($"{AdditionalKeywords}: ") && links.GetThemeColor("font_color") == Color.FromHtml(RowStrip.FaintHex) && clickedTitle == ""
+            && clickedWord == $"#{linked[1]}" && box.Text == $"#{linked[1]} #{linked[0]}", $"{fits?.Mod?.manifest?.id}: {links?.Text}; \"{clickedTitle}\", \"{clickedWord}\", then \"{box.Text}\"");
         // Authors: from the info panel's author (the row's is plain text); Shift on a tag adds it after a space.
         await Shown("");
         var rowAuthor = content.GetChildren().OfType<NModMenuRow>().FirstOrDefault(r => r.Mod?.manifest?.id == "SmmTestFixes")?.GetNodeOrNull<Label>("SpireModManagerStrip/Author");
@@ -5226,7 +5255,7 @@ static partial class SelfTest
         }
         var box = new VBoxContainer { Name = "SpireModManagerManyRows", MouseFilter = Control.MouseFilterEnum.Ignore };
         screen.AddChild(box);
-        // Wide enough that no line folds its tags (what folds is the long-details test's).
+        // Wide enough that no line folds its tags or keywords (what folds is the long-details test's, and a narrower box's below).
         (box.Position, box.Size) = (new Vector2(-3000, 0), new Vector2(1600, 0));
         try
         {
@@ -5263,6 +5292,7 @@ static partial class SelfTest
                             $"pencil ✎ ({Menus.Text("SPIRE_MOD_MANAGER.EDIT_TIP")})",
                             $"button {CategoryList.CategoryName(Copies.KeyOf(row.Mod))} ({Menus.Text("SPIRE_MOD_MANAGER.CATEGORY_TIP")})",
                         }.Concat(Tags.For(row.Mod).Select(c => $"tag {c.Text}"))
+                            .Append(RowStrip.Keywords(row.Mod) is { Count: > 0 } words ? $"{RowStrip.KeywordsName} {RowStrip.KeywordsLine(words)}" : "")
                             .Append(says.Length > 0 ? $"note {System.Text.RegularExpressions.Regex.Replace(says, @"\[[^\]]+\]", "")}" : "")
                             .Append(by.Length > 0 ? $"author {by} at the end" : "").Where(p => p.Length > 0));
                     })];
@@ -5354,6 +5384,23 @@ static partial class SelfTest
             var back = rows.Select(LineOf).ToList();
             Check("300 made-up rows, on again: each line shows what it first did (the notes made again in place)", back.SequenceEqual(first), Differ(back, first));
             Check("300 made-up rows: no line holds an empty note", rows.All(r => r.GetNodeOrNull<RichTextLabel>("SpireModManagerStrip/Needs") is not { Text.Length: 0 }));
+            // Narrower lines: keywords that don't fit after every tag are "and N more...", whose card has those keywords
+            // and no tags; the rows keep their height.
+            box.Size = new Vector2(900, 0);
+            await Wait(menu, 0.3);
+            var narrow = rows.FirstOrDefault(r => r.GetNodeOrNull($"SpireModManagerStrip/{RowStrip.MoreName}") != null
+                && r.GetNode("SpireModManagerStrip").GetChildren().OfType<PanelContainer>().All(c => c.Visible));
+            var narrowCard = narrow?.GetNode<Control>($"SpireModManagerStrip/{RowStrip.MoreName}") is { } narrowMore
+                ? (await SizedHoverCard(menu, narrowMore, "SpireModManagerTagCard")).Text : "";
+            List<string> narrowWords;
+            using (Lookups.Begin(mods, [], saved, Picks.None))
+                narrowWords = narrow == null ? [] : RowStrip.Keywords(narrow.Mod);
+            var narrowShown = narrow?.GetNodeOrNull<Label>($"SpireModManagerStrip/{RowStrip.KeywordsName}") is { Visible: true } shownWords ? shownWords.Text[RowStrip.KeywordsLine([]).Length..].Split(", ").Length : 0;
+            Check("300 made-up rows, narrower: keywords that don't fit after the tags are \"and N more...\", its card those keywords and no tags",
+                narrow != null && narrowCard.Split('\n') is [var foldedWords, "", var hint] && foldedWords == RowStrip.KeywordsLine(narrowWords.Skip(narrowShown))
+                && hint == Menus.Text("SPIRE_MOD_MANAGER.MORE_TAGS_CLICK") && rows.All(r => r.Size.Y == RowTitles.RowHeight), $"{narrow?.Mod?.manifest?.id}: {narrowCard.ReplaceLineEndings(" / ")}");
+            box.Size = new Vector2(1600, 0);
+            await Wait(menu, 0.3);
 
             // A row's buttons kept through a redraw (the same words and states) run that redraw's actions: an action holds
             // what its redraw knew (Load Order's rows). And a line is made again when a tag's card or search changes, its
@@ -7719,7 +7766,7 @@ static partial class SelfTest
     // A made-up mod with very long everything (name, id, author, version, description, alias, many tags, notes),
     // shown in the list and the panel (screenshot 16-long-details). The panel's title stays on one line with its
     // version and the source line keeps its status, both cut with "…" (the whole text a second over them); the
-    // row keeps its author, the tags that don't fit folded into "+N". A redraw fits no row title again, its cut one
+    // row keeps its author and its height, what doesn't fit as "and N more...". A redraw fits no row title again, its cut one
     // and an aliased one included, in Vanilla View and in our main list. It's removed again afterwards.
     static async Task TestLongDetails(Node menu, NModdingScreen screen, Control content, string outDir)
     {
@@ -7791,18 +7838,52 @@ static partial class SelfTest
             var longAuthor = row.GetNodeOrNull<Label>("SpireModManagerStrip/Author");
             var longTag = row.GetNodeOrNull("SpireModManagerStrip")?.GetChildren().OfType<PanelContainer>().Select(c => c.GetChildOrNull<Label>(0)).FirstOrDefault(l => l?.Text.StartsWith("really-long") == true);
             Check("long details: the row's author and a long tag are cut with an ellipsis", longAuthor is { ClipText: true, TextOverrunBehavior: TextServer.OverrunBehavior.TrimEllipsis } && longTag is { ClipText: true });
-            // Many tags: the line ends short of the row's buttons, with the author in it; the tags that don't fit
-            // are folded into "+N", whose card lists them.
+            // Many tags: the line ends short of the row's buttons, with the author in it, the row its usual height. Tags
+            // first, then keywords: what doesn't fit is "and N more..." (here every keyword too), whose card has those tags
+            // as pills, "Additional keywords:" and those keywords, then the click hint (16b-more-card).
             var strip = row.GetNode<Control>("SpireModManagerStrip");
             var lineEnd = row.GetGlobalRect().End.X + strip.OffsetRight;
             Check("long details: many tags: the author still shows, inside the line", longAuthor is { Visible: true } && longAuthor.GetGlobalRect().End.X <= lineEnd + 1
                 && strip.GetGlobalRect().End.X <= lineEnd + 1, $"author {longAuthor?.GetGlobalRect()}, line {strip.GetGlobalRect()}, ends at {lineEnd}");
             var folded = strip.GetChildren().OfType<PanelContainer>().Where(c => !c.Visible).Select(c => c.GetChildOrNull<Label>(0)?.Text ?? "").ToList();
-            var more = strip.GetNodeOrNull<Control>(RowStrip.MoreName);
-            var moreCard = more == null ? "" : await Tooltip(more, "SpireModManagerTagCard", Hover.Delay + 0.15);
-            Check("long details: the tags that don't fit fold into \"+N\", its card listing them", more is { Visible: true } && folded.Count > 0
-                && more.GetChildOrNull<Label>(0)?.Text == $"+{folded.Count}" && folded.Last() == "late-game"
-                && moreCard.Split('\n').SequenceEqual(folded), $"{folded.Count} folded, card: {moreCard.ReplaceLineEndings(", ")}");
+            var rowWords = RowStrip.Keywords(mod);
+            var more = strip.GetNodeOrNull<Label>(RowStrip.MoreName);
+            var moreCard = more == null ? "" : (await SizedHoverCard(menu, more, "SpireModManagerTagCard", () => Capture(screen, outDir, "16b-more-card"))).Text;
+            Check("long details: what doesn't fit is \"and N more...\" (tags first), its card those tags as pills, then \"Additional keywords:\" and those "
+                + "keywords, then the click hint; the row its usual height", more is { Visible: true } && folded.Count > 0 && rowWords.Count > 0 && folded.Last() == "late-game"
+                && more.Text == MoreTags(folded.Count + rowWords.Count) && strip.GetNodeOrNull<Control>(RowStrip.KeywordsName) is { Visible: false }
+                && moreCard.Split('\n') is [var pills, " ", var cardWords, "", var cardHint] && folded.All(t => pills.Contains($"\u00a0{t}\u00a0"))
+                && cardWords == RowStrip.KeywordsLine(rowWords) && cardHint == Menus.Text("SPIRE_MOD_MANAGER.MORE_TAGS_CLICK")
+                && row.Size.Y == RowTitles.RowHeight, $"\"{more?.Text}\", {folded.Count} tags and {rowWords.Count} keywords folded, height {row.Size.Y}, "
+                + $"card: {moreCard.ReplaceLineEndings(" / ")}");
+            // Every other row: all its tags and keywords where they fit, no "and N more..."; otherwise its count is what's left out.
+            var lines = content.GetChildren().OfType<NModMenuRow>().Where(r => r != row && r.Visible && r.HasNode("SpireModManagerStrip")).Select(r =>
+            {
+                var line = r.GetNode("SpireModManagerStrip");
+                var (hidden, all) = (line.GetChildren().OfType<PanelContainer>().Count(c => !c.Visible), RowStrip.Keywords(r.Mod));
+                var shown = line.GetNodeOrNull<Label>(RowStrip.KeywordsName) is { Visible: true } on ? on.Text[RowStrip.KeywordsLine([]).Length..] : "";
+                var fine = all.Count == 0 || string.Join(", ", all).StartsWith(shown);
+                return (Fits: hidden == 0 && shown == string.Join(", ", all), Right: fine && (line.GetNodeOrNull<Label>(RowStrip.MoreName) is { } rest
+                    ? rest.Text == MoreTags(hidden + all.Count - (shown.Length > 0 ? shown.Split(", ").Length : 0)) : hidden == 0 && shown == string.Join(", ", all)), Id: r.Mod?.manifest?.id);
+            }).ToList();
+            Check("rows with room show every tag and keyword and no \"and N more...\"; the others count what's left out", lines.Any(l => l.Fits) && lines.All(l => l.Right),
+                string.Join(", ", lines.Where(l => !l.Right).Select(l => l.Id)));
+            // A click on "and N more...", through the viewport as a player's (headless too, the row hovered first): it goes on
+            // to the row, which it selects, so the info panel shows all of them.
+            if (content.GetChildren().OfType<NModMenuRow>().FirstOrDefault(r => r != row && r.Mod != null) is { } elsewhere)
+                CategoryList.Select(screen, elsewhere);
+            await Wait(menu, 0.2);
+            row.EmitSignal(Control.SignalName.MouseEntered);
+            var moreAt = more == null ? Vector2.Zero : ViewportPoint(more, more.GetGlobalRect().GetCenter());
+            foreach (var pressed in new[] { true, false })
+                row.GetViewport().PushInput(new InputEventMouseButton { ButtonIndex = MouseButton.Left, Pressed = pressed, Position = moreAt, GlobalPosition = moreAt }, true);
+            await Wait(menu, 0.3);
+            row.EmitSignal(Control.SignalName.MouseExited);
+            Check("long details: a click on \"and N more...\" selects the mod, as a click on the row does", more != null && CategoryList.Selected == mod && RowState.Selected(row),
+                $"selected {CategoryList.Selected?.manifest?.id}");
+            if (CategoryList.Selected != mod)
+                CategoryList.Select(screen, row);
+            await Wait(menu, 0.3);
             // A tag of the player's: its card says so, and how many mods have it, counted as it shows: one, then two once
             // another row's mod has it too, in another case (that mod's tags put back after).
             var tagChip = longTag?.GetParent<Control>();
@@ -7816,9 +7897,6 @@ static partial class SelfTest
                 otherKey.Length > 0 && oneCard.Split('\n').Contains(CustomTagTipOne) && twoCard.Split('\n').Contains(Draft(CustomTagTip, ("count", "2"))),
                 $"{oneCard.ReplaceLineEndings(" / ")}, then with {otherKey}: {twoCard.ReplaceLineEndings(" / ")}");
             Hover.TestMouse = null;
-            Check("rows whose tags fit show them all, no \"+N\"", content.GetChildren().OfType<NModMenuRow>().Where(r => r != row && r.Visible)
-                .All(r => r.GetNodeOrNull<Control>("SpireModManagerStrip") is not { } line
-                    || (line.GetNodeOrNull(RowStrip.MoreName) == null && line.GetChildren().OfType<PanelContainer>().All(c => c.Visible))));
             // Load Order and back: the view switch sets the title's size to 32 again, then fills the panel again. The
             // title is drawn at the size it was fitted at before, not left at 32 (on two lines).
             Click(screen.GetNode<NButton>("SpireModManagerLoadOrderToggle"));
@@ -10683,6 +10761,8 @@ static partial class SelfTest
     static string DuplicateChip => Menus.Text("SPIRE_MOD_MANAGER.TAG_SAME_ID");
     static string CustomTagTip => Template("SPIRE_MOD_MANAGER.TAG_CUSTOM_COUNT_TIP");
     static string CustomTagTipOne => Menus.Text("SPIRE_MOD_MANAGER.TAG_CUSTOM_COUNT_TIP_ONE");
+    static string AdditionalKeywords => Menus.Text("SPIRE_MOD_MANAGER.ADDITIONAL_KEYWORDS");
+    static string MoreTags(int count) => count == 1 ? Menus.Text("SPIRE_MOD_MANAGER.MORE_TAGS_ONE") : Draft(Template("SPIRE_MOD_MANAGER.MORE_TAGS"), ("count", $"{count}"));
 
     // A text with its {values} still in it, for Draft (Menus.Text formats it, and these need their values).
     static string Template(string key) => new LocString("settings_ui", key).GetRawText();
@@ -12421,7 +12501,7 @@ static partial class SelfTest
     }
 
     // What a row's pencil, buttons and line show, part by part in order: the pencil and buttons with their tips, then
-    // the line's tags (folded ones as "+N"), note and author, and whether the author ends the line. A spacer or an empty
+    // the line's tags, keywords and "and N more...", note and author, and whether the author ends the line. A spacer or an empty
     // note shows nothing, so isn't listed: two rows that show the same things read the same, however they were made.
     static string LineOf(NModMenuRow row)
     {
@@ -12438,6 +12518,7 @@ static partial class SelfTest
                 {
                     PanelContainer tag => $"tag {tag.GetChildOrNull<Label>(0)?.Text}",
                     RichTextLabel { Text.Length: > 0 } note => $"note {note.GetParsedText()}",
+                    Label words when words.Name.ToString() is RowStrip.KeywordsName or RowStrip.MoreName => $"{words.Name} {words.Text}",
                     Label author => $"author {author.Text}{(Math.Abs(author.GetGlobalRect().End.X - line.GetGlobalRect().End.X) < 1 ? " at the end" : "")}",
                     _ => "",
                 });
@@ -12457,7 +12538,7 @@ static partial class SelfTest
 
     // RowStrip's timed parts (RowStrip.Costs), in the order a row makes them: "title 1.2 ms, pencil 30.5 ms, ...".
     static string Parts(IReadOnlyDictionary<string, double> costs) => string.Join(", ",
-        new[] { "title", "pencil", "buttons", "tags", "needs", "author", "added", "rest" }.Select(part => $"{part} {costs.GetValueOrDefault(part):0.0}"))
+        new[] { "title", "pencil", "buttons", "keywords", "tags", "needs", "author", "added", "rest" }.Select(part => $"{part} {costs.GetValueOrDefault(part):0.0}"))
         + " ms";
 
     // How a part of a row's line differs from how per-node overrides styled it (before #46): a node of its kind beside
