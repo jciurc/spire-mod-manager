@@ -19,7 +19,7 @@ static partial class SelfTest
         await TestApiMenus(menu, outDir);
         await TestApiBanners(menu);
         TestApiLooks();
-        await TestApiMods(menu);
+        await TestApiMods(menu, outDir);
     }
 
     static void TestApiShape()
@@ -339,7 +339,7 @@ static partial class SelfTest
             GameResources.Load<Texture2D>(kreonFile) == null && !ModEntry.MissingResources.Contains(kreonFile) && GameResources.Load<Font>(kreonFile) != null);
     }
 
-    static async Task TestApiMods(NMainMenu menu)
+    static async Task TestApiMods(NMainMenu menu, string outDir)
     {
         Check("API mods: Version is the manifest's, null for a mod that isn't installed", Mods.Version(ModEntry.ModId) == ModEntry.Version
             && ModEntry.Version != null && Mods.Version("SmmApiNotInstalled") == null, Mods.Version(ModEntry.ModId) ?? "null");
@@ -436,7 +436,7 @@ static partial class SelfTest
         {
             ModCards.Watch(trigger, ModEntry.ModId);
             var hoverable = trigger.MouseFilter == Control.MouseFilterEnum.Pass; // a Label ignores the mouse until then
-            var card = await HoverCard(menu, trigger, SharedCards.CardName);
+            var card = (await SizedHoverCard(menu, trigger, SharedCards.CardName, () => Capture(menu, outDir, "api-card"))).Text;
             ModCards.Watch(trigger, "SmmTestLib");
             var repointed = await HoverCard(menu, trigger, SharedCards.CardName);
             Check("API cards: Watch makes a Label hoverable and shows the mod's card on hover; a second Watch points it at another mod",

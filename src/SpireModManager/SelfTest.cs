@@ -3886,6 +3886,11 @@ static partial class SelfTest
                 var descriptionLabel = panel.GetNode<RichTextLabel>("ModDescription");
                 var (shown, raw) = (descriptionLabel.GetParsedText(), descriptionLabel.Text);
                 await Capture(screen, outDir, "17b-game-error-panel");
+                // Its row's card in the shots too: the game's box, then the gap before Author.
+                await HoverOver(other.GetNode<Control>("SpireModManagerTitleHover"), Hover.Delay + 0.2);
+                await Capture(screen, outDir, "17b2-game-error-card");
+                await Leave(other.GetNode<Control>("SpireModManagerTitleHover"), Hover.Grace + 0.1);
+                Hover.TestMouse = null;
                 var card = ModDetails.Card(erring); // the row's hover card shows the same (as BBCode: "[lb]" is a "[")
                 Check("a game load error shows apart from ours, in the panel and the row's card: under \"Error while loading\", alone in its box, "
                     + "in the game's red (its own [red] in the panel, its colour in the card, no tags as text), not among our problems",
