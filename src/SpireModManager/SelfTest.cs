@@ -1877,7 +1877,7 @@ static partial class SelfTest
         // Styled: "Notice from the game" centred, then the message alone in an outlined, faintly filled box (a one-cell
         // table), our text after. Plain (no markup): the same words over the message.
         var boxed = System.Text.RegularExpressions.Regex.Match(gamesMessage, @"^\[center\]\[color=#[0-9a-f]{6}\]Notice from the game\[/color\]\[/center\]\n"
-            + @"\[table=1\]\[cell expand=1 border=#[0-9a-f]{8} bg=#[0-9a-f]{8} padding=[0-9,]+\]\[center\](?<message>.+)\[/center\]\[/cell\]\[/table\]$");
+            + @"\[table=1\]\[cell expand=1 border=#[0-9a-f]{8} bg=#[0-9a-f]{8} padding=[0-9,]+\]\[center\]\p{Cf}(?<message>.+)\[/center\]\[/cell\]\[/table\]$");
         Check("the game's own message for a failed start, as the dialogs show it: under \"Notice from the game\" (centred), alone in its outlined box; "
             + "plain, under the same words",
             boxed.Success && boxed.Groups["message"].Value.Length > 30 && !boxed.Groups["message"].Value.Contains("Notice from the game")
@@ -1902,6 +1902,12 @@ static partial class SelfTest
             var texts = string.Join(" | ", PopupTexts());
             CheckMark("dialog after a failed start", NModalContainer.Instance?.OpenModal as Control);
             await Capture(menu, outDir, "1f-crash-dialog");
+            // The game's message in its box (GameText), as in the panel and the cards; the popup still fits its text.
+            var words = (NModalContainer.Instance?.OpenModal as Node)?.GetNodeOrNull<RichTextLabel>("VerticalPopup/Description");
+            var dialogBox = words == null ? "no text" : BoxesWrong(words, 1);
+            Check("the game's box in the dialog after a failed start: as in the panel and the cards (an even 2 px border, round corners, 2 px inside its "
+                + "table, no side cut off); the dialog's text fits it", dialogBox == null && words != null && words.GetContentHeight() <= words.Size.Y + 1,
+                $"{dialogBox}; {words?.GetContentHeight()} tall in {words?.Size}");
             Press("NoButton");
             await Wait(menu, 0.3);
             Check("the dialog after a failed start: its title, the game's own message (marked as the game's), what changed, Quit and Restore and restart; "
@@ -3889,7 +3895,23 @@ static partial class SelfTest
                 // Its row's card in the shots too: the game's box, then the gap before Author.
                 await HoverOver(other.GetNode<Control>("SpireModManagerTitleHover"), Hover.Delay + 0.2);
                 await Capture(screen, outDir, "17b2-game-error-card");
+                // The box drawn in both (GameText), and in the card one gap after it, as after anything else wrong: Author's
+                // line starts a line below the box's table (an empty line between them made it two).
+                var cardText = CardLabel(screen, "SpireModManagerNotesCard");
+                var panelBox = BoxesWrong(descriptionLabel, 1);
+                string? cardBox = "no card";
+                var (gapAfter, lineTall) = (-1f, 0f);
+                if (cardText != null)
+                {
+                    cardBox = BoxesWrong(cardText, 1);
+                    lineTall = cardText.GetThemeFont("normal_font").GetHeight(cardText.GetThemeFontSize("normal_font_size"));
+                    if (GameText.Drawn(cardText) is [var boxed] && cardText.GetParsedText().IndexOf(Menus.Text("SPIRE_MOD_MANAGER.AUTHOR") + ":") is >= 0 and var author)
+                        gapAfter = cardText.GetLineOffset(cardText.GetCharacterLine(author)) - cardText.GetLineOffset(boxed.Line) - cardText.GetLineHeight(boxed.Line);
+                }
                 await Leave(other.GetNode<Control>("SpireModManagerTitleHover"), Hover.Grace + 0.1);
+                Check("the game's box in the panel and the row's card: an even 2 px border with round corners, 2 px inside its table on every side, "
+                    + "no side cut off; in the card, one gap after it", panelBox == null && cardBox == null && gapAfter >= 0 && gapAfter < lineTall * 1.5f,
+                    $"panel: {panelBox}; card: {cardBox}; {gapAfter} after the box, a line {lineTall}");
                 Hover.TestMouse = null;
                 var card = ModDetails.Card(erring); // the row's hover card shows the same (as BBCode: "[lb]" is a "[")
                 Check("a game load error shows apart from ours, in the panel and the row's card: under \"Error while loading\", alone in its box, "
@@ -3910,6 +3932,32 @@ static partial class SelfTest
         }
         else
             Results.Add("SKIP a game load error in the panel: the fixture row has no mod");
+        // A row's card has the mod's picture at its top, as the API's card does (where the game's Modding page finds it),
+        // and none without one. No fixture mod has one: Test Fixes is lent one, in the game's resource cache.
+        if (other.Mod is { manifest.id: { } fixesId } pictured && ours.Mod is { } plain)
+        {
+            var art = Image.CreateEmpty(256, 144, false, Image.Format.Rgba8);
+            art.Fill(new Color(0.18f, 0.3f, 0.45f));
+            art.FillRect(new Rect2I(24, 24, 208, 96), new Color(0.85f, 0.62f, 0.32f));
+            var lent = ImageTexture.CreateFromImage(art);
+            lent.TakeOverPath($"res://{fixesId}/mod_image.png");
+            try
+            {
+                var hotTitle = other.GetNode<Control>("SpireModManagerTitleHover");
+                await HoverOver(hotTitle, Hover.Delay + 0.2);
+                await Capture(screen, outDir, "17b3-card-thumbnail");
+                var shownCard = CardLabel(screen, "SpireModManagerNotesCard")?.Text ?? "";
+                await Leave(hotTitle, Hover.Grace + 0.1);
+                var picture = $"[img width=200]res://{fixesId}/mod_image.png[/img]\n";
+                Check("a row's card shows the mod's picture at its top when it has one, as the API's card does; none without one",
+                    shownCard.StartsWith($"{picture}[b]{fixesId}[/b]") && ModDetails.SharedCard(pictured).StartsWith(picture) && !ModDetails.Card(plain).Contains("[img"),
+                    shownCard.Split('\n')[0]);
+            }
+            finally
+            {
+                lent.ResourcePath = "";
+            }
+        }
         // The game marks every Workshop mod outside its author's branches before it knows which are off (a dev run has
         // no Steam, so these are made up): a mod that's off loses that error and keeps its others, one on keeps it, and
         // the game's message still shows, marked as the game's, in the mod's card and panel.
@@ -3939,7 +3987,7 @@ static partial class SelfTest
                 Check("the game's message taken off a mod that's off still shows in its card, apart from ours under its own caption, in a fainter box, "
                     + "not as a problem",
                     card.Contains(GameText.Caption("Error while loading - Can be ignored if disabled")) && card.Contains(gameMessage)
-                    && card.Contains(GameText.Box("", dim: true)[..40]) && !ModDetails.Problems(offMod).Any(p => p.Contains("only supports Steam branch")),
+                    && card.Contains(GameText.Box("", dim: true)[..^"[/cell][/table]".Length]) && !ModDetails.Problems(offMod).Any(p => p.Contains("only supports Steam branch")),
                     card.Split('\n').FirstOrDefault(l => l.Contains("branch")) ?? card.Split('\n')[0]);
                 // The second pass, just before the main menu's warning reads the errors (BranchErrorsLatePatch): one
                 // marked after our Init goes there too.
@@ -12123,6 +12171,28 @@ static partial class SelfTest
 
     static List<string> PopupTexts() => NModalContainer.Instance?.OpenModal is Node popup
         ? popup.FindChildren("*", "", true, false).Select(n => n is Label l ? l.Text : n is RichTextLabel r ? r.Text : "").ToList() : [];
+
+    // The text of the hover card `name` open over a page, or null.
+    static RichTextLabel? CardLabel(Node page, string name) =>
+        page.GetNodeOrNull(name)?.FindChildren("*", "RichTextLabel", true, false).OfType<RichTextLabel>().FirstOrDefault();
+
+    // Null if label drew its game boxes (GameText) as meant: count of them, each in its look (Border wide on every side,
+    // Radius round), Margin inside its table on every side, the table within the label's width (no side cut off), no
+    // wider than its text room (wider, the line break after it wrapped onto an empty line of its own) and taller than a
+    // line of text (it's the table's line); else what's wrong.
+    static string? BoxesWrong(RichTextLabel label, int count)
+    {
+        var boxes = GameText.Drawn(label);
+        var line = label.GetThemeFont("normal_font").GetHeight(label.GetThemeFontSize("normal_font_size"));
+        var bar = label.GetVScrollBar();
+        var room = label.Size.X - label.GetThemeStylebox("normal").GetMinimumSize().X - (bar.Visible ? bar.Size.X : 0);
+        static bool Even(StyleBoxFlat look) => Enum.GetValues<Side>().All(s => look.GetBorderWidth(s) == GameText.Border)
+            && Enum.GetValues<Corner>().All(c => look.GetCornerRadius(c) == GameText.Radius);
+        return boxes.Count != count ? $"{boxes.Count} boxes, not {count}"
+            : boxes.FirstOrDefault(b => b.Box != b.Table.Grow(-GameText.Margin) || b.Table.Position.X < 0 || b.Table.End.X > label.Size.X
+                || label.GetLineWidth(b.Line) > room + 0.5f || b.Table.Size.Y < line * 1.5f || !Even(GameText.Style(b.Dim))) is { Table.Size.X: > 0 } wrong
+                ? $"table {wrong.Table} on a line {label.GetLineWidth(wrong.Line)} wide, box {wrong.Box}, in {label.Size} ({room} for text)" : null;
+    }
 
     // A popup of ours in the game's style: our mark, once (marking it again adds none), shown, inside the popup's
     // art (clear of its painted edge), and clear of its title, text and buttons (their art included).

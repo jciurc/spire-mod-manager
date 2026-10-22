@@ -157,8 +157,9 @@ static class ModDetails
         link.SetMeta(FullMeta, shown != id ? id : "");
     }
 
-    // The title's pointer and the links' underline: ours in our views (the title is a link to its row), the game's in
-    // Vanilla View, as it left them before we first changed them.
+    // The title's pointer, the links' underline and the description's table gaps: ours in our views (the title is a link
+    // to its row; no gaps, for the game's box: GameText.TableGaps), the game's in Vanilla View, as it left them before we
+    // first changed them.
     public static void Looks(NModInfoContainer container, bool game)
     {
         var title = container.GetNode<Control>("ModTitle");
@@ -167,6 +168,16 @@ static class ModDetails
         title.MouseFilter = game ? (Control.MouseFilterEnum)was[0].AsInt32() : Control.MouseFilterEnum.Stop;
         title.MouseDefaultCursorShape = game ? (Control.CursorShape)was[1].AsInt32() : Control.CursorShape.PointingHand;
         description.MetaUnderlined = game && was[2].AsBool();
+        for (var i = 0; i < GameText.TableGaps.Length; i++)
+        {
+            var (gap, gameGap) = (GameText.TableGaps[i], was[3 + i]); // the scene's own setting, or none (the theme's)
+            int? wanted = !game ? 0 : gameGap.VariantType == Variant.Type.Int ? gameGap.AsInt32() : null;
+            // Set only when it changes: any change lays the text out again.
+            if (wanted is { } value && (!description.HasThemeConstantOverride(gap) || description.GetThemeConstant(gap) != value))
+                description.AddThemeConstantOverride(gap, value);
+            else if (wanted == null && description.HasThemeConstantOverride(gap))
+                description.RemoveThemeConstantOverride(gap);
+        }
     }
 
     const string GameLooksMeta = "spire_mod_manager_game_looks";
@@ -177,7 +188,10 @@ static class ModDetails
         if (!container.HasMeta(GameLooksMeta))
         {
             var (title, description) = (container.GetNode<Control>("ModTitle"), container.GetNode<RichTextLabel>("ModDescription"));
-            container.SetMeta(GameLooksMeta, new Godot.Collections.Array { (int)title.MouseFilter, (int)title.MouseDefaultCursorShape, description.MetaUnderlined });
+            var looks = new Godot.Collections.Array { (int)title.MouseFilter, (int)title.MouseDefaultCursorShape, description.MetaUnderlined };
+            foreach (var gap in GameText.TableGaps)
+                looks.Add(description.HasThemeConstantOverride(gap) ? description.GetThemeConstant(gap) : default(Variant));
+            container.SetMeta(GameLooksMeta, looks);
         }
         return container.GetMeta(GameLooksMeta).AsGodotArray();
     }
@@ -214,6 +228,7 @@ static class ModDetails
         Hover.WatchLinks(description, "SpireModManagerTagCard",
             meta => Searches(meta) ? Tags.Hint(Menus.Text("SPIRE_MOD_MANAGER.SEARCH_CLICK_TIP")) : null, width: 320);
         CategoryList.WatchNames(description, Content); // hovering a name: its row lit (if in view), then its card
+        GameText.Watch(description); // the game's words in their box (GameBlock)
         // Hovering the thumbnail: the whole picture (our views).
         var image = container.GetNode<TextureRect>("ModImage");
         image.MouseFilter = Control.MouseFilterEnum.Pass;
@@ -313,14 +328,20 @@ static class ModDetails
         return $"[color={(age.TotalHours < 48 ? Enabled : Disabled)}]({text})[/color]";
     }
 
-    // A row's hover card: id and state, anything wrong, author, last update, and the player's alias, tags and note.
-    // full: nothing cut short (held with Alt).
-    public static string Card(Mod mod, bool full = false)
+    // A row's hover card: the mod's picture, id and state, anything wrong, author, last update, and the player's alias,
+    // tags and note. title: the whole name, under the picture, when the row's is cut short. full: nothing cut short (held
+    // with Alt).
+    public static string Card(Mod mod, bool full = false, string? title = null)
     {
         string Cut(string text, int max) => full || text.Length <= max ? text : text[..max].TrimEnd() + "…";
         var id = mod.manifest?.id ?? "";
         var info = Store.InfoFor(mod);
-        var lines = new List<string> { $"[b]{Escape(id)}[/b]  {Bullet}  {Status(mod)}" };
+        var lines = new List<string>();
+        if (Picture(mod) is { } picture)
+            lines.Add(picture);
+        if (title != null)
+            lines.Add($"[b]{Escape(title)}[/b]");
+        lines.Add($"[b]{Escape(id)}[/b]  {Bullet}  {Status(mod)}");
         AddWarnings(lines, mod);
         lines.Add(CardFact("SPIRE_MOD_MANAGER.AUTHOR", mod.manifest?.author is { Length: > 0 } author ? Escape(Cut(author, 80)) : Faint("SPIRE_MOD_MANAGER.UNKNOWN")));
         if (WorkshopInfo.For(mod) is { } workshop)
@@ -349,9 +370,8 @@ static class ModDetails
         var id = mod.manifest?.id ?? "";
         var info = Store.InfoFor(mod);
         var lines = new List<string>();
-        var picture = $"res://{id}/mod_image.png"; // where the game's Modding page finds it
-        if (id.Length > 0 && ResourceLoader.Exists(picture))
-            lines.Add($"[img width=200]{picture}[/img]");
+        if (Picture(mod) is { } picture)
+            lines.Add(picture);
         var version = mod.manifest?.version is { Length: > 0 } v ? $"  [color=#fff6e280]{Escape(v)}[/color]" : "";
         lines.Add($"[b][font_size=20]{Escape(mod.manifest?.name is { Length: > 0 } name ? name : id)}[/font_size][/b]{version}");
         lines.Add($"{Escape(id)}  {Bullet}  {Status(mod)}");
@@ -375,6 +395,10 @@ static class ModDetails
             lines.Add(CardFact("SPIRE_MOD_MANAGER.NOTES_TERM", Escape(Cut(notes, 300))));
         return string.Join("\n", lines);
     }
+
+    // The mod's picture at the top of a card, from where the game's Modding page finds it; null without one.
+    static string? Picture(Mod mod) => mod.manifest?.id is { Length: > 0 } id && $"res://{id}/mod_image.png" is var picture && ResourceLoader.Exists(picture)
+        ? $"[img width=200]{picture}[/img]" : null;
 
     // The cards' one gap between their parts: half a line.
     public const string CardGap = "[font_size=8] [/font_size]";
