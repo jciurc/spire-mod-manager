@@ -9386,6 +9386,25 @@ static partial class SelfTest
             && namedActiveOff.Count == 0 && namedOtherOff.SequenceEqual(["l:C"]),
             $"C off: {NamedSay(namedOff.Data)}, page {namedOff.Loading}, launch {PlanLoads(namedOffPlan)}; C on: {NamedSay(namedOn.Data)}, page {namedOn.Loading}, "
             + $"launch {PlanLoads(namedOnPlan)}; active off [{string.Join(", ", namedActiveOff)}], other off [{string.Join(", ", namedOtherOff)}]");
+        // The stand-in has to be the copy the next launch loads with no pick (our record's first not off), not only a copy
+        // the profile has on. C the pick and loaded, nothing off: a profile naming B with nothing off keeps C (with B the
+        // pick, A would load next). A loaded, C the pick and A off: the same profile makes B the pick again, A loading in its
+        // place, page and launch agreeing.
+        (StoreData Data, string Loading) NamesBOn(StoreData data, ModLoadState a, ModLoadState c) => WithCopies(data, W, [Made(W, "A", a), Made(W, "C", c)], () =>
+        {
+            Profiles.TestApply([new(W, ModSource.ModsDirectory, true, "l:B", CopiesOff: [])]);
+            return (new StoreData { CopyPicks = Store.TidyPicks(Store.Data.CopyPicks?.Where(k => Copies.IdOf(k) == W)), CopiesOff = [.. CopiesOff().Where(k => Copies.IdOf(k) == W)],
+                Copies = named.Copies }, Copies.Loading(W) is { } loading ? Copies.CopyOf(loading) : "none");
+        });
+        var keepsC = NamesBOn(new StoreData { CopyPicks = [$"{W}|l:C"], CopiesOff = [], Copies = named.Copies }, ModLoadState.DisabledDuplicate, ModLoadState.Loaded);
+        var backB = NamesBOn(new StoreData { CopyPicks = [$"{W}|l:C"], CopiesOff = [$"{W}|l:A"], Copies = named.Copies }, ModLoadState.Loaded, ModLoadState.DisabledDuplicate);
+        var (keepsCPlan, backBPlan) = (Launch(keepsC.Data, Made(W, "A"), Made(W, "C")), Launch(backB.Data, Made(W, "A"), Made(W, "C")));
+        Check("copies: a profile naming the missing copy makes it the pick again only where the copy loading in its place is the one the next launch loads "
+            + "with no pick: kept C where A would load next, B again where A loads in its place, the page and the launch agreeing both times",
+            keepsC.Data.CopyPicks?.SequenceEqual([$"{W}|l:C"]) == true && keepsC.Loading == "l:C" && PlanLoads(keepsCPlan) == "l:C"
+            && backB.Data.CopyPicks?.SequenceEqual([$"{W}|l:B"]) == true && backB.Loading == "l:A" && PlanLoads(backBPlan) == "l:A",
+            $"C loaded: {NamedSay(keepsC.Data)}, page {keepsC.Loading}, launch {PlanLoads(keepsCPlan)}; A loaded: {NamedSay(backB.Data)}, page {backB.Loading}, "
+            + $"launch {PlanLoads(backBPlan)}");
     }
 
     // The copy a plan loads, for a check's details.

@@ -167,11 +167,22 @@ static class Copies
     // the player's until they pick another, in our data and in every profile (Chosen), so it loads again once it's back;
     // the stand-in reads ticked, and is never off in our data or the active profile (Reconcile, Profiles.HoldCopies), so
     // SameIdLoad's no-pick choice lands on it at every launch meanwhile, whatever new copy arrives. A profile switched to
-    // makes a missing copy it names the pick again only where its stand-in is the copy the profile loads
-    // (Profiles.KeepNamed), so that stays true. Null for none.
+    // makes a missing copy it names the pick again only where its stand-in is the copy that no-pick choice takes
+    // (NoPickChoice, in Profiles.KeepNamed), so that stays true. Null for none.
     public static (string Pick, string Copy)? StandIn(string id, ModSource source, Picks picks) =>
         picks.Stored(id, source) is { } stored && picks.Record?.GetValueOrDefault(id)?.Contains(stored) == true
             && Picked(id, source, picks) is { } copy && copy != stored ? (stored, copy) : null;
+
+    // The copy SameIdLoad's no-pick choice takes for an id and source at the next launch, as copies_off stands: our
+    // record's first copy installed from that source that isn't off. Null when every recorded one is off (the game's order
+    // decides then).
+    public static string? NoPickChoice(string id, ModSource source, Picks picks)
+    {
+        if (!ById().TryGetValue(id, out var all))
+            return null;
+        var copies = all.Where(m => m.modSource == source).Select(CopyOf).ToHashSet();
+        return picks.Record?.GetValueOrDefault(id)?.FirstOrDefault(c => copies.Contains(c) && picks.Off?.Contains($"{id}|{c}") != true);
+    }
 
     // Every copy standing in for a pick that's missing, by its key (SwitchKey).
     public static HashSet<string> StandIns(Picks picks) =>

@@ -802,11 +802,11 @@ static class Profiles
     // Write picks only among the copies installed: the copy each entry on names, where our record has it (one missing, or
     // one alone on its switch), is the pick after all, so once its copies are all installed again it's the one that loads,
     // as the profile has it. A missing one goes back only where the copy that would stand in for it (Copies.StandIn: the
-    // one loaded, else our record's first not off) is the copy Write just picked for the entry (PickOf), which Write has
-    // on. Elsewhere Write's pick stays: with the missing copy as the pick, the page would say the stand-in loads while the
-    // next launch loads our record's first copy not off (SameIdLoad), and the stand-in would come on though the profile
-    // has it off. A copy named that's in copies_off comes out of it as it becomes the pick (the pick is always on). Saved
-    // with Write's change: the caller's save is one undo step.
+    // one loaded, else our record's first not off) is the copy the next launch loads with no pick (Copies.NoPickChoice:
+    // our record's first not off, as Write left copies_off), which Write has on. Elsewhere Write's pick stays: with the
+    // missing copy as the pick, the page would say the stand-in loads while the next launch loads another, or the stand-in
+    // would come on though the profile has it off. A copy named that's in copies_off comes out of it as it becomes the
+    // pick (the pick is always on). Saved with Write's change: the caller's save is one undo step.
     static void KeepNamed(IEnumerable<ProfileMod> entries)
     {
         static string KeyOf(ProfileMod entry) => $"{entry.Id}|{entry.Copy}";
@@ -814,7 +814,8 @@ static class Profiles
         if (named.Count == 0 || Store.ReadOnly)
             return;
         var implied = new Picks(Copies.WithPicks(Store.Data.CopyPicks, named.Select(KeyOf)), Store.Data.Copies, Store.Data.CopiesOff);
-        var kept = named.Where(e => Copies.StandIn(e.Id, e.Source, implied) is not { } standIn || standIn.Copy == PickOf(e)).Select(KeyOf).ToList();
+        var kept = named.Where(e => Copies.StandIn(e.Id, e.Source, implied) is not { } standIn || standIn.Copy == Copies.NoPickChoice(e.Id, e.Source, implied))
+            .Select(KeyOf).ToList();
         if (kept.Count == 0 || Copies.WithPicks(Store.Data.CopyPicks, kept) is not { } picks)
             return;
         var off = Store.TidyOff(Store.Data.CopiesOff, picks);
