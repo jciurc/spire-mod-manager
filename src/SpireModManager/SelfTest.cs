@@ -6024,19 +6024,55 @@ static partial class SelfTest
         Check("main list banner: Go to, Show and Enable required mods right after its text", after.Ok
             && warning?.FindChild("EnableNeededButton", true, false) is Control { Visible: true }, after.Detail);
         await Capture(screen, outDir, "2b-list-banner");
-        // Its Go to steps through both sides: the mods that won't load and the disabled one they need.
+        // Its Go to steps through both sides (the mods that won't load, the disabled one they need) as the list shows them,
+        // from the row below the mod in the panel and round to the top: categories top to bottom, each one's rows top to
+        // bottom, a folded one's where they sit (Go to opens it). Test UI in the first category and Test Content in the
+        // second put the one that sorts later first. Each press finds the banner again: opening a category makes a new one.
+        var folds = (Each: Store.Data.Categories.Select(c => c.Collapsed).ToList(), Other: Store.Data.UncategorizedCollapsed);
+        var filed = (Ui: Store.InfoFor("SmmTestUi")?.Category, Content: Store.InfoFor("SmmTestContent")?.Category);
+        if (Store.Data.Categories is [var first, var second, ..])
+            Store.Batch(() =>
+            {
+                Store.EditMod("SmmTestUi", info => info.Category = first.Name);
+                Store.EditMod("SmmTestContent", info => info.Category = second.Name);
+            });
+        foreach (var each in Store.Data.Categories)
+            each.Collapsed = true;
+        Store.Data.UncategorizedCollapsed = true;
+        CategoryList.Apply(content);
         if (Row(ModEntry.ModId) is { } notAbout)
             CategoryList.Select(screen, notAbout);
-        var stepped = new List<string>();
-        for (var i = 0; i < 4; i++)
+        await Wait(menu, 0.2);
+        var placed = Rows();
+        int At(Mod? mod) => placed.FindIndex(r => r.Mod == mod);
+        var (ours, uiAt, contentAt) = (At(Row(ModEntry.ModId)?.Mod), At(Row("SmmTestUi")?.Mod), At(dependent));
+        var steps = new List<Mod?>();
+        var opened = true;
+        while (steps.Count < 12 && (steps.Count < 2 || steps[^1] != steps[0]))
         {
-            warning?.FindChild("GoToProblemButton", true, false)?.EmitSignal(BaseButton.SignalName.Pressed);
+            screen.FindChild(LoadOrder.WarningName, true, false)?.FindChild("GoToProblemButton", true, false)?.EmitSignal(BaseButton.SignalName.Pressed);
             await Wait(menu, 0.3);
-            stepped.Add(CategoryList.Selected?.manifest?.id ?? "");
+            steps.Add(CategoryList.Selected);
+            opened &= Rows().FirstOrDefault(r => r.Mod == CategoryList.Selected) is { Visible: true };
         }
-        Check("main list banner: Go to steps through the mods that won't load and the disabled mod they need, each once",
-            stepped.Distinct().Count() == 4 && stepped.Contains("SmmTestLib") && stepped.Contains("SmmTestContent") && stepped.Contains("SmmTestUi")
-            && stepped[1] == "SmmTestLib", string.Join(", ", stepped)); // a mod that needs it, then it
+        var cycle = steps.Take(steps.Count - 1).ToList(); // the last press back at the first
+        var stepped = cycle.Select(m => m?.manifest?.id ?? "").ToList();
+        for (var i = 0; i < folds.Each.Count && i < Store.Data.Categories.Count; i++)
+            Store.Data.Categories[i].Collapsed = folds.Each[i];
+        Store.Data.UncategorizedCollapsed = folds.Other;
+        Store.Batch(() =>
+        {
+            Store.EditMod("SmmTestUi", info => info.Category = filed.Ui);
+            Store.EditMod("SmmTestContent", info => info.Category = filed.Content);
+        });
+        CategoryList.Apply(content);
+        await Wait(menu, 0.3);
+        Check("main list banner: Go to steps through the mods that won't load and the disabled one they need in the rows' order on screen, from the row "
+            + "below the panel's mod and round, each once, folded categories opened; Test UI (first category) before Test Content (second), though it sorts after",
+            steps.Count > 1 && steps[^1] == steps[0] && cycle.Distinct().Count() == cycle.Count && opened
+            && cycle.SequenceEqual(cycle.OrderBy(m => At(m) > ours ? 0 : 1).ThenBy(At))
+            && new[] { "SmmTestLib", "SmmTestContent", "SmmTestUi" }.All(stepped.Contains) && uiAt < contentAt,
+            $"{string.Join(", ", cycle.Select(m => $"{m?.manifest?.id} ({At(m)})"))}; ours at {ours}; opened {opened}; {Store.Data.Categories.Count} categories");
 
         // Its Show: "#unmet OR #needed" in the search box, just those rows (Go to's stops among them), the button lit;
         // pressed again, the box empty, every row back and the button not lit.

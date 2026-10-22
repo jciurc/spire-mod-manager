@@ -437,9 +437,9 @@ static class LoadOrder
             MissingBanner(content, border, search, missing);
         if (on && misordered > 0)
         {
-            // Go to steps through the misordered mods in load order.
+            // Go to steps through the misordered mods as the rows show them: in load order here.
             var stops = violations.Select(v => v.Mod).Distinct().ToList();
-            var goTo = Menus.SmallButton(Menus.Text("SPIRE_MOD_MANAGER.GO_TO_PROBLEM"), () => GoTo(content, Next(stops)), name: "GoToOrderButton");
+            var goTo = Menus.SmallButton(Menus.Text("SPIRE_MOD_MANAGER.GO_TO_PROBLEM"), () => GoTo(content, Next(content, stops)), name: "GoToOrderButton");
             Hover.Tip(goTo, Menus.Text("SPIRE_MOD_MANAGER.GO_TO_PROBLEM_TIP"));
             Banner(border, search, orderText, () => OrderCard(content), [goTo, ShowButton(content, "#order", "FilterOrderButton"),
                 Menus.SmallButton(Menus.Text("SPIRE_MOD_MANAGER.FIX_ORDER"), () => Do(FixOrder), name: "FixOrderButton")]);
@@ -465,11 +465,11 @@ static class LoadOrder
             needMissing > 0 ? Part("SPIRE_MOD_MANAGER.LIST_PROBLEMS_MISSING", needMissing) : null,
         }.OfType<string>());
 
-        // Go to steps through each mod that won't load, then the disabled mods it needs, from the one after the mod in
-        // the info panel; Show finds the same mods.
+        // Go to steps through the mods that won't load and the disabled mods they need, as the rows show them (Next); Show
+        // finds the same mods.
         var stops = broken.SelectMany(b => b.Needs.Select(d => d.Dep).OfType<Mod>().Prepend(b.Mod)).Distinct().ToList();
         var goTo = Menus.SmallButton(Menus.Text("SPIRE_MOD_MANAGER.GO_TO_PROBLEM"),
-            () => GoTo(content, Next(stops)), name: "GoToProblemButton");
+            () => GoTo(content, Next(content, stops)), name: "GoToProblemButton");
         Hover.Tip(goTo, Menus.Text("SPIRE_MOD_MANAGER.GO_TO_PROBLEM_TIP"));
         List<Control> buttons = [goTo, ShowButton(content, "#unmet OR #needed", "FilterProblemButton")];
         var needed = Dependencies.NeededOff(mods);
@@ -522,15 +522,15 @@ static class LoadOrder
         Banner(border, search, Menus.Text("SPIRE_MOD_MANAGER.SELF_OFF"), () => null, [goTo, enable], SelfName, "SelfOff");
     }
 
-    // Better Mod Menu ticked as well as us: a yellow warning, with Go to stepping through the managers' rows (Better Mod
-    // Menu first), Show finding them, and Dismiss for a player happy to run both.
+    // Better Mod Menu ticked as well as us: a yellow warning, with Go to stepping through the managers' rows as the list
+    // shows them, Show finding them, and Dismiss for a player happy to run both.
     static void ManagersBanner(Control content, Control border, Control? search, Action redraw)
     {
         var goTo = Menus.SmallButton(Menus.Text("SPIRE_MOD_MANAGER.GO_TO_PROBLEM"), () =>
         {
-            var managers = Bmm.TickedManagers().OrderBy(m => m.manifest?.id == ModEntry.ModId).ToList();
+            var managers = Bmm.TickedManagers().ToList();
             if (managers.Count > 0)
-                GoTo(content, Next(managers));
+                GoTo(content, Next(content, managers));
         }, name: "GoToManagersButton");
         Hover.Tip(goTo, Menus.Text("SPIRE_MOD_MANAGER.GO_TO_PROBLEM_TIP")); // the same words as the other banner's: no manager named
         var dismiss = Menus.SmallButton(Menus.Text("SPIRE_MOD_MANAGER.DISMISS_MANAGERS"), () =>
@@ -578,7 +578,7 @@ static class LoadOrder
     // each is and whether it's the one that loads.
     static void SameIdBanner(Control content, Control border, Control? search, List<Mod> clashing)
     {
-        var goTo = Menus.SmallButton(Menus.Text("SPIRE_MOD_MANAGER.GO_TO_PROBLEM"), () => GoTo(content, Next(clashing)), name: "GoToSameIdButton");
+        var goTo = Menus.SmallButton(Menus.Text("SPIRE_MOD_MANAGER.GO_TO_PROBLEM"), () => GoTo(content, Next(content, clashing)), name: "GoToSameIdButton");
         Hover.Tip(goTo, Menus.Text("SPIRE_MOD_MANAGER.GO_TO_PROBLEM_TIP"));
         var dismiss = Menus.SmallButton(Menus.Text("SPIRE_MOD_MANAGER.DISMISS_MANAGERS"), () =>
         {
@@ -664,10 +664,23 @@ static class LoadOrder
         CategoryList.Select(content, row);
     }
 
-    // A Go to button's next stop: the mod after the one in the info panel, round to the first at the end (and the first
-    // when that mod isn't one of them, or no mod is there).
-    static Mod Next(List<Mod> stops) =>
-        stops[((CategoryList.Selected is { } selected ? stops.IndexOf(selected) : -1) + 1) % stops.Count];
+    // A Go to button's next stop, in the order the list shows its rows (Jordan, 22 Oct): on the main list its categories
+    // top to bottom and each one's rows top to bottom, in Load Order load order. Read from the rows as placed, not sorted
+    // again here, so it follows however the list places them (ours wherever it sits, a sort of the player's later); a row
+    // a folded category or a search hides counts where it sits (Go to opens its category, or clears the search). The
+    // first stop below the mod in the info panel, round to the first at the end (and the first when no mod is there).
+    static Mod Next(Control content, List<Mod> stops)
+    {
+        var places = new Dictionary<Mod, int>();
+        foreach (var row in content.GetChildren().OfType<NModMenuRow>())
+            if (row.Mod is { } mod)
+                places.TryAdd(mod, places.Count);
+        var shown = stops.Where(places.ContainsKey).OrderBy(m => places[m]).ToList();
+        if (shown.Count == 0)
+            return stops[0]; // no row for any of them: Go to finds none
+        var from = CategoryList.Selected is { } selected && places.TryGetValue(selected, out var at) ? at : -1;
+        return shown.FirstOrDefault(m => places[m] > from) ?? shown[0];
+    }
 
     // A banner's Show: its search in the box, so the list shows only its mods (Load Order finds them), and the box
     // emptied when pressed again or while the box holds that search already (Search.Toggle); lit while it does.
