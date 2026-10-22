@@ -268,6 +268,7 @@ static class Hover
             }
             else
                 text.CustomMinimumSize = new Vector2(width, 0);
+            GameText.Watch(text); // the game's words in their box, if the text has any
             panel.AddChild(text);
         }
         layer.AddChild(panel);

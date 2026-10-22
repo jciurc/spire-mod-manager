@@ -261,7 +261,7 @@ static partial class SelfTest
             await Step(() => TestListFilters(menu, screen, content, outDir));
             await Step(() => TestRelaunchCheck(menu, screen, content, outDir));
             await Step(() => TestLongDetails(menu, screen, content, outDir));
-            await Step(() => TestWorkshopHead(menu, screen));
+            await Step(() => TestWorkshopHead(menu, screen, outDir));
             await Step(() => TestOtherModPanel(menu, screen, content, outDir));
             await Step(() => TestGameChanges(menu, screen, content, outDir));
             await Step(() => TestBulkEdit(menu, screen, content, outDir));
@@ -948,7 +948,7 @@ static partial class SelfTest
         // Opening on our main list, after its deferred work.
         OursHold("main list", Layout.CornerX);
         var toggles = new[] { "SpireModManagerViewToggle", "SpireModManagerLoadOrderToggle" }.Select(name => screen.GetNode<Control>(name)).ToList();
-        Check("the link to its page says Go to vanilla Modding page", toggles[0] is LinkButton { Text: var linkText } && linkText == Menus.Text("SPIRE_MOD_MANAGER.GO_TO_VANILLA"));
+        Check("the link to its page says Go to vanilla modding page", toggles[0] is LinkButton { Text: var linkText } && linkText == Menus.Text("SPIRE_MOD_MANAGER.GO_TO_VANILLA"));
         Check("the page link is a little smaller than the row text, never underlined (our links: colour and the pointer), like our other links",
             toggles[0] is LinkButton { Underline: LinkButton.UnderlineMode.Never, MouseDefaultCursorShape: Control.CursorShape.PointingHand } pageLink
             && pageLink.GetThemeFontSize("font_size") == CategoryList.PageLinkSize
@@ -1210,10 +1210,15 @@ static partial class SelfTest
     // The main menu button card's last line: the key that opens the page, unless the patch that reads it didn't apply.
     static string ManagerKeyLine => ModEntry.FailedPatches.Contains(nameof(ShortcutsPatch)) ? "" : "\n" + OS.GetKeycodeString(ShortcutsPatch.ManagerKey);
 
-    // The main menu button's card for a profile (as written), with the key that opens the page, or without one.
-    static string MenuCard(string profile) => ModEntry.FailedPatches.Contains(nameof(ShortcutsPatch))
-        ? $"Spire Mod Manager - View and manage your mods\nRight-click for more options\n\nCurrently using profile {profile}"
-        : $"Spire Mod Manager - View and manage your mods\n{OS.GetKeycodeString(ShortcutsPatch.ManagerKey)} to open, or right-click for more options\n\nCurrently using profile {profile}";
+    // The main menu button's card for a profile (as written: the key and right-click in bold), with the key that opens the
+    // page, or without one. shown: as the card shows it, without the bold's tags.
+    static string MenuCard(string profile, bool shown = false)
+    {
+        string Bold(string words) => shown ? words : $"[b]{words}[/b]";
+        return ModEntry.FailedPatches.Contains(nameof(ShortcutsPatch))
+            ? $"Spire Mod Manager - View and manage your mods\n{Bold("Right-click")} for more options\n\nCurrently using profile {profile}"
+            : $"Spire Mod Manager - View and manage your mods\n{Bold(OS.GetKeycodeString(ShortcutsPatch.ManagerKey))} to open, or {Bold("right-click")} for more options\n\nCurrently using profile {profile}";
+    }
 
     // The main menu button's card: nothing at the usual delay (the mouse crosses the button on its way to the game's), then
     // after a second, the normal card, its profile name in gold.
@@ -1229,7 +1234,7 @@ static partial class SelfTest
             return Task.CompletedTask;
         }, seconds: Hover.SlowDelay + 0.2);
         Check("main menu button: its card waits a second, then names the profile in gold, the key on its own line", early == "" && Hover.SlowDelay == 1.0
-            && late.Text == MenuCard($"{Profiles.Active?.Name}")
+            && late.Text == MenuCard($"{Profiles.Active?.Name}", shown: true)
             && !card.Contains("[gold]") && card.Contains("[color=#") && card.Contains($"]{Profiles.Active?.Name}[/color]"), $"early \"{early}\", then \"{late.Text}\"");
 
         // Where the card opens, chosen each time from where the button is then (CardMisplaced: exactly where Hover puts
@@ -1877,10 +1882,10 @@ static partial class SelfTest
         // Styled: "Notice from the game" centred, then the message alone in an outlined, faintly filled box (a one-cell
         // table), our text after. Plain (no markup): the same words over the message.
         var boxed = System.Text.RegularExpressions.Regex.Match(gamesMessage, @"^\[center\]\[color=#[0-9a-f]{6}\]Notice from the game\[/color\]\[/center\]\n"
-            + @"\[table=1\]\[cell expand=1 border=#[0-9a-f]{8} bg=#[0-9a-f]{8} padding=[0-9,]+\]\[center\](?<message>.+)\[/center\]\[/cell\]\[/table\]$");
+            + @"\[table=1\]\[cell expand=1 border=#[0-9a-f]{8} bg=#[0-9a-f]{8} padding=[0-9,]+\]\[center\]\p{Cf}(?<message>.+)\[/center\]\[/cell\]\[/table\]$");
         Check("the game's own message for a failed start, as the dialogs show it: under \"Notice from the game\" (centred), alone in its outlined box; "
-            + "plain, under the same words",
-            boxed.Success && boxed.Groups["message"].Value.Length > 30 && !boxed.Groups["message"].Value.Contains("Notice from the game")
+            + "plain, under the same words; its markup read by the game's auto-size",
+            boxed.Success && GameReads(gamesMessage) && boxed.Groups["message"].Value.Length > 30 && !boxed.Groups["message"].Value.Contains("Notice from the game")
             && gamesMessagePlain.StartsWith("Notice from the game:\n") && gamesMessagePlain.Length > 50,
             $"{gamesMessage} | {gamesMessagePlain}");
         // Our popup's button (marked: no other popup's), by its node and signal names (the same in every game version so far).
@@ -1902,6 +1907,12 @@ static partial class SelfTest
             var texts = string.Join(" | ", PopupTexts());
             CheckMark("dialog after a failed start", NModalContainer.Instance?.OpenModal as Control);
             await Capture(menu, outDir, "1f-crash-dialog");
+            // The game's message in its box (GameText), as in the panel and the cards; the popup still fits its text.
+            var words = (NModalContainer.Instance?.OpenModal as Node)?.GetNodeOrNull<RichTextLabel>("VerticalPopup/Description");
+            var dialogBox = words == null ? "no text" : BoxesWrong(words, 1);
+            Check("the game's box in the dialog after a failed start: as in the panel and the cards (an even 2 px border, round corners, 2 px inside its "
+                + "table, no side cut off); the dialog's text fits it", dialogBox == null && words != null && words.GetContentHeight() <= words.Size.Y + 1,
+                $"{dialogBox}; {words?.GetContentHeight()} tall in {words?.Size}");
             Press("NoButton");
             await Wait(menu, 0.3);
             Check("the dialog after a failed start: its title, the game's own message (marked as the game's), what changed, Quit and Restore and restart; "
@@ -3384,8 +3395,8 @@ static partial class SelfTest
         Check("CSV: the Workshop Id column holds just the id, read back as the item's page",
             ProfileCsv.Records(withId) is [_, [.., "3123456789"]] && ProfileCsv.Read(withId).Mods is [{ WorkshopLink: var idLink }]
             && idLink == ProfileCsv.WorkshopLink(3123456789), withId);
-        Check("CSV: the columns follow the tick boxes", ProfileCsv.Header(new()).SequenceEqual(["Mod Id", "Name", "Version", "Enabled", "Category", "Workshop Id"])
-            && ProfileCsv.Header(new(Category: false, Alias: true, Notes: true)).SequenceEqual(["Mod Id", "Name", "Version", "Enabled", "Workshop Id", "Alias", "Notes"]),
+        Check("CSV: the columns follow the tick boxes (the note's is Note)", ProfileCsv.Header(new()).SequenceEqual(["Mod Id", "Name", "Version", "Enabled", "Category", "Workshop Id"])
+            && ProfileCsv.Header(new(Category: false, Alias: true, Notes: true)).SequenceEqual(["Mod Id", "Name", "Version", "Enabled", "Workshop Id", "Alias", "Note"]),
             string.Join(",", ProfileCsv.Header(new(Category: false, Alias: true, Notes: true))));
 
         // Share profile, from the profile list: at first the active profile's enabled mods in load
@@ -3495,7 +3506,7 @@ static partial class SelfTest
         ProfileShare.Close();
         await Wait(menu, 0.2);
         await Choose("Export profile");
-        var restored = Ticked("IncludeNotes") && Ticked("IncludeCategory") && Ticked("RememberChoices") && ProfileCsv.Records(Csv()).FirstOrDefault()?.Contains("Notes") == true;
+        var restored = Ticked("IncludeNotes") && Ticked("IncludeCategory") && Ticked("RememberChoices") && ProfileCsv.Records(Csv()).FirstOrDefault()?.Contains("Note") == true;
         await Tick("RememberChoices", false);
         var forgotten = Store.Data.ShareChoices == null;
         ProfileShare.ForgetSessionChoices();
@@ -3545,8 +3556,12 @@ static partial class SelfTest
             && read[1] is { Alias: "=cool", Notes: "Line one\nline two" } && read[0] is { Alias: "", Notes: "" },
             string.Join(" | ", read.Select(e => $"{e.Id}: {e.Category}/{e.Alias}/{e.Notes}")));
         var ours = ProfileCsv.Read(ProfileCsv.Write([new("SmmA", "A", "1", true, "Tools", "", "Aye", "Some notes")], new ProfileCsv.Options(Alias: true, Notes: true))).Mods;
-        Check("our own list: its category, alias and notes read back", ours is [{ Category: "Tools", Alias: "Aye", Notes: "Some notes" }],
+        Check("our own list: its category, alias and note read back", ours is [{ Category: "Tools", Alias: "Aye", Notes: "Some notes" }],
             string.Join(" | ", ours.Select(e => $"{e.Category}/{e.Alias}/{e.Notes}")));
+        // The note's column: Note in our lists, Notes in Better Mod Menu's and our older ones, any case.
+        string Planned(string column) => Profiles.PlanImport(ProfileCsv.Read($"Mod Id,Enabled,{column}\nSmmTestNoteOnly,TRUE,From the list\n").Mods).Extras.Named.FirstOrDefault().Notes ?? "";
+        Check("an import fills in a note from a Note column or a Notes one, any case", new[] { "Note", "Notes", "nOTES" }.All(c => Planned(c) == "From the list"),
+            string.Join(" | ", new[] { "Note", "Notes" }.Select(Planned)));
         var messy = ProfileCsv.Read("Mod Id,Enabled,Category,Alias\nSmmA,TRUE,\"Two\nlines\",\"" + new string('x', 79) + "\U0001F600\U0001F600\"\n").Mods;
         Check("a category or alias from a list: on one line, cut to its box's length by characters, never half of one",
             messy is [{ Category: "Two lines" } one] && one.Alias == new string('x', 79) + "\U0001F600", messy.FirstOrDefault()?.Category ?? "none");
@@ -3869,6 +3884,7 @@ static partial class SelfTest
         if (other.Mod is { } erring)
         {
             var errorsBefore = erring.errors;
+            var notesBefore = Store.InfoFor("SmmTestFixes")?.Notes;
             var branchError = new LocString("main_menu_ui", "MOD_ERROR.STEAM_BRANCH_UNSUPPORTED");
             branchError.Add("id", erring.manifest?.id ?? "");
             branchError.Add("supportedBranch", "public");
@@ -3882,18 +3898,80 @@ static partial class SelfTest
                 var descriptionLabel = panel.GetNode<RichTextLabel>("ModDescription");
                 var (shown, raw) = (descriptionLabel.GetParsedText(), descriptionLabel.Text);
                 await Capture(screen, outDir, "17b-game-error-panel");
+                // Its row's card in the shots too: the game's box, then the gap before Author; with a note, the card's other
+                // gap, before it, to measure that one against and to see them together.
+                Store.EditMod("SmmTestFixes", info => info.Notes = "The gap above this note");
+                await HoverOver(other.GetNode<Control>("SpireModManagerTitleHover"), Hover.Delay + 0.2);
+                await Capture(screen, outDir, "17b2-game-error-card");
+                // The box drawn in both (GameText), and in the card one gap after it, as after anything else: from the box's
+                // line to Author's as from Author's to the note's (an empty line after the box made it a line more).
+                var cardText = CardLabel(screen, "SpireModManagerNotesCard");
+                var panelBox = BoxesWrong(descriptionLabel, 1);
+                string? cardBox = "no card";
+                var (gapAfter, gapBefore, cardGap, lineTall) = (-1f, -1f, 0f, 0f);
+                if (cardText != null)
+                {
+                    cardBox = BoxesWrong(cardText, 1);
+                    lineTall = cardText.GetThemeFont("normal_font").GetHeight(cardText.GetThemeFontSize("normal_font_size"));
+                    var cardWords = cardText.GetParsedText();
+                    int CardLine(string key) => cardWords.IndexOf(Menus.Text(key) + ":") is >= 0 and var at ? cardText.GetCharacterLine(at) : -1;
+                    float Between(int from, int to) => cardText.GetLineOffset(to) - cardText.GetLineOffset(from) - cardText.GetLineHeight(from);
+                    if (GameText.Drawn(cardText) is [var boxed] && CardLine("SPIRE_MOD_MANAGER.AUTHOR") is > 0 and var authorLine
+                        && CardLine("SPIRE_MOD_MANAGER.NOTES_TERM") is > 0 and var noteLine)
+                        (gapAfter, gapBefore, cardGap) = (Between(boxed.Line, authorLine), Between(authorLine, noteLine), cardText.GetLineHeight(authorLine - 1));
+                }
+                await Leave(other.GetNode<Control>("SpireModManagerTitleHover"), Hover.Grace + 0.1);
+                Results.Add($"INFO the row's card: {gapAfter} from the box's line to Author's, {gapBefore} from Author's to the note's; "
+                    + $"a gap's line {cardGap} tall, a line of text {lineTall}");
+                Check("the game's box in the panel and the row's card: an even 2 px border with round corners, 2 px inside its table on every side, "
+                    + "no side cut off; in the card, one gap after it, as before the note", panelBox == null && cardBox == null && gapBefore > 0
+                    && Math.Abs(gapAfter - gapBefore) <= 2, $"panel: {panelBox}; card: {cardBox}; {gapAfter} after the box, {gapBefore} before the note");
+                Hover.TestMouse = null;
                 var card = ModDetails.Card(erring); // the row's hover card shows the same (as BBCode: "[lb]" is a "[")
                 Check("a game load error shows apart from ours, in the panel and the row's card: under \"Error while loading\", alone in its box, "
-                    + "in the game's red (its own [red] in the panel, its colour in the card, no tags as text), not among our problems",
-                    shown.Contains("Error while loading") && shown.Contains("only supports Steam branch public") && !shown.Contains("[red]")
-                    && raw.Contains(GameText.Caption("Error while loading")) && raw.Contains("[table=1]") && raw.Contains("[red]Mod ")
-                    && card.Contains(GameText.Caption("Error while loading")) && card.Contains("[table=1]") && card.Contains("[color=#ff5555]Mod ")
+                    + "in the game's red (its own [red] in the panel, its colour in the card, no tags as text), not among our problems; its markup read by "
+                    + "the game's auto-size", GameReads(raw) && GameReads(card) && shown.Contains("Error while loading") && shown.Contains("only supports Steam branch public") && !shown.Contains("[red]")
+                    && raw.Contains(GameText.Caption("Error while loading")) && raw.Contains("[table=3]") && raw.Contains("[red]Mod ")
+                    && card.Contains(GameText.Caption("Error while loading")) && card.Contains("[table=3]") && card.Contains("[color=#ff5555]Mod ")
                     && !card.Contains("[lb]red]") && !ModDetails.Problems(erring).Any(p => p.Contains("Steam branch")),
                     $"{shown.Split('\n')[0]} | card: {card.Split('\n').FirstOrDefault(l => l.Contains("branch"))}");
+                var gapThenAuthor = $"[/table]\n{ModDetails.CardGap}\n{ModDetails.CardFact("SPIRE_MOD_MANAGER.AUTHOR", "")}";
+                Check("the row's card and the API's: a gap after what's wrong, before Author", card.Contains(gapThenAuthor)
+                    && ModDetails.SharedCard(erring).Contains(gapThenAuthor), card.Replace("\n", " | "));
+                // A row's card has the mod's picture at its top, as the API's card does (where the game's Modding page finds
+                // it), and none without one. No fixture mod has one: Test Fixes is lent one, in the game's resource cache,
+                // while it has its error, so the box comes after a picture (each counted as the label counts it).
+                if (erring.manifest?.id is { } fixesId && ours.Mod is { } plain)
+                {
+                    var art = Image.CreateEmpty(256, 144, false, Image.Format.Rgba8);
+                    art.Fill(new Color(0.18f, 0.3f, 0.45f));
+                    art.FillRect(new Rect2I(24, 24, 208, 96), new Color(0.85f, 0.62f, 0.32f));
+                    var lent = ImageTexture.CreateFromImage(art);
+                    lent.TakeOverPath($"res://{fixesId}/mod_image.png");
+                    try
+                    {
+                        var hotTitle = other.GetNode<Control>("SpireModManagerTitleHover");
+                        await HoverOver(hotTitle, Hover.Delay + 0.2);
+                        await Capture(screen, outDir, "17b3-card-thumbnail");
+                        var pictureCard = CardLabel(screen, "SpireModManagerNotesCard");
+                        var (shownCard, boxAfterPicture) = (pictureCard?.Text ?? "", pictureCard == null ? "no card" : BoxesWrong(pictureCard, 1));
+                        await Leave(hotTitle, Hover.Grace + 0.1);
+                        var picture = $"[img width=200]res://{fixesId}/mod_image.png[/img]\n";
+                        Check("a row's card shows the mod's picture at its top when it has one, as the API's card does; none without one",
+                            shownCard.StartsWith($"{picture}[b]{fixesId}[/b]") && ModDetails.SharedCard(erring).StartsWith(picture) && !ModDetails.Card(plain).Contains("[img"),
+                            shownCard.Split('\n')[0]);
+                        Check("the game's box after the mod's picture in a card: drawn on its own line, as without one", boxAfterPicture == null, boxAfterPicture ?? "");
+                    }
+                    finally
+                    {
+                        lent.ResourcePath = "";
+                    }
+                }
             }
             finally
             {
                 erring.errors = errorsBefore;
+                Store.EditMod("SmmTestFixes", info => info.Notes = notesBefore);
             }
         }
         else
@@ -3926,9 +4004,24 @@ static partial class SelfTest
                 var gameMessage = $"Mod {offMod.manifest?.id} only supports Steam branch public";
                 Check("the game's message taken off a mod that's off still shows in its card, apart from ours under its own caption, in a fainter box, "
                     + "not as a problem",
-                    card.Contains(GameText.Caption("Error while loading - Can be ignored if mod is disabled")) && card.Contains(gameMessage)
-                    && card.Contains(GameText.Box("", dim: true)[..40]) && !ModDetails.Problems(offMod).Any(p => p.Contains("only supports Steam branch")),
+                    card.Contains(GameText.Caption("Error while loading - Can be ignored if disabled")) && card.Contains(gameMessage)
+                    && card.Contains(GameText.Box("|", dim: true).Split('|')[0]) && !ModDetails.Problems(offMod).Any(p => p.Contains("only supports Steam branch")),
                     card.Split('\n').FirstOrDefault(l => l.Contains("branch")) ?? card.Split('\n')[0]);
+                // Drawn in a card as the row's is (its width): a lit box for the error it keeps, then a dim one, each on its
+                // own line (the first table counted as the label counts it); and a box whose words fill its room, over lines,
+                // inside the card (the words' cell padding took it past the edge).
+                async Task<string?> BoxesShown(string text, int count)
+                {
+                    Hover.ShowNow(other.GetNode<Control>("SpireModManagerTitleHover"), "SpireModManagerNotesCard", text, 380);
+                    await WaitReal(menu, 0.2);
+                    var wrong = CardLabel(screen, "SpireModManagerNotesCard") is { } boxCard ? BoxesWrong(boxCard, count)
+                        ?? (count == 2 && !GameText.Drawn(boxCard).Select(b => b.Dim).SequenceEqual([false, true]) ? "not lit, then dim" : null) : "no card";
+                    Hover.Hide();
+                    return wrong;
+                }
+                var (twoBoxes, filledBox) = (await BoxesShown(card, 2), await BoxesShown(GameText.Box(string.Join(" ", Enumerable.Repeat("aa bb", 30))), 1));
+                Check("in a card: a lit box for the game's error, then a dim one for the message taken off, each drawn on its own line; a box whose words "
+                    + "fill its room stays inside the card", twoBoxes == null && filledBox == null, $"two boxes: {twoBoxes ?? "fine"}; filled: {filledBox ?? "fine"}");
                 // The second pass, just before the main menu's warning reads the errors (BranchErrorsLatePatch): one
                 // marked after our Init goes there too.
                 if (menu.GetTree().Root.FindChildren("*", "", true, false).OfType<NDebugInfoLabelManager>().FirstOrDefault() is { } warning)
@@ -3967,6 +4060,7 @@ static partial class SelfTest
         Check("panel titles with the mod's own name, the version beside it (no v); the alias is in its field",
             titleText.StartsWith("Spire Mod Manager") && Dependencies.Find(ModEntry.ModId)?.manifest?.version is { } version && titleText.TrimEnd().EndsWith(" " + version) && !titleText.Contains("v" + version)
             && Line("Alias").Text == "The Manager" && notes.Text == "Fixture note");
+        Check("the panel's note field reads Note", yours.GetNode<Label>("Notes/Term/Label").Text == "Note", yours.GetNode<Label>("Notes/Term/Label").Text);
         var linkText = (panel.FindChild("SpireModManagerLink", true, false) as LinkButton)?.Text ?? "";
         Check("the source line: id (Local), then Enabled", panel.FindChild("SpireModManagerLink", true, false) is LinkButton { Disabled: true }
             && linkText == "SpireModManager (Local)" && (panel.FindChild("SpireModManagerSource", true, false)?.FindChild("Status", true, false) as Label)?.Text == "Enabled", linkText);
@@ -3975,6 +4069,40 @@ static partial class SelfTest
         var headText = panel.GetNodeOrNull<RichTextLabel>("SpireModManagerHead")?.GetParsedText() ?? "";
         Check("the head: author and compatibility; the details: description, then size", headText.Contains("Author: symphony") && headText.Contains("Compatibility:")
             && !description.StartsWith("Enabled") && description.Contains("Size:") && !description.Contains("Compatibility"), $"{headText} / {description[..Math.Min(60, description.Length)]}");
+        // Other keywords: where Workshop tags would be (a local mod has none: right after Size), the hidden tags that find the
+        // mod as #name, in their order; the whole row at about half the panel text's alpha, links too; a click on one
+        // searches it as a Workshop tag's does, a second clears it; none in the game's panel (Vanilla View).
+        var keywordsLabel = Menus.Text("SPIRE_MOD_MANAGER.OTHER_KEYWORDS");
+        var facts = description.Split('\n');
+        var keywordsAt = Array.FindIndex(facts, l => l.StartsWith(keywordsLabel + ": "));
+        var keywords = $"{keywordsLabel}: {string.Join(", ", HiddenTagNames.Where(t => Search.Matches(ours.Mod, t)))}";
+        Check("Other keywords right after Size: the hidden tags that find the mod as #name, in their order (this mod: #enabled, #local, #installed, #loaded... "
+            + "#renamed, #note)", keywordsAt > 0 && facts[keywordsAt - 1].StartsWith(Menus.Text("SPIRE_MOD_MANAGER.SIZE") + ": ") && facts[keywordsAt] == keywords
+            && keywords.StartsWith($"{keywordsLabel}: #enabled, #local, #installed, #loaded, ") && keywords.Contains("#renamed, #note") && !keywords.Contains("#notes"),
+            $"{(keywordsAt < 0 ? "no row" : facts[keywordsAt])}; wanted {keywords}");
+        var panelText = panel.GetNode<RichTextLabel>("ModDescription");
+        var keywordsRow = panelText.Text.Split('\n').FirstOrDefault(l => l.Contains(keywordsLabel)) ?? "";
+        var faint = keywordsRow.StartsWith("[color=#") ? keywordsRow[7..keywordsRow.IndexOf(']')] : "";
+        var (alpha, textAlpha) = (Color.HtmlIsValid(faint) ? Color.FromHtml(faint).A : 0, panelText.GetThemeColor("default_color").A);
+        Check("Other keywords fainter than the facts: the whole row, label and links, at about half the panel text's alpha (no gold, no colour of their own)",
+            keywordsRow.EndsWith("[/color]") && keywordsRow.Split("[color=").Length == 2 && !keywordsRow.Contains("[gold]") && Math.Abs(alpha - textAlpha / 2) < 0.08f
+            && keywordsRow.Contains("[url=htag:enabled]#enabled[/url], "), $"{keywordsRow} (alpha {alpha:0.00}, the panel text's {textAlpha:0.00})");
+        var searchBox = screen.GetNode<LineEdit>("ModsBorder/SpireModManagerSearch");
+        panelText.EmitSignal(RichTextLabel.SignalName.MetaClicked, "htag:enabled");
+        var searched = searchBox.Text;
+        panelText.EmitSignal(RichTextLabel.SignalName.MetaClicked, "htag:enabled");
+        await Wait(menu, 0.3);
+        Check("a click on an Other keyword searches it, as a Workshop tag's does; a second clears it", searched == "#enabled" && searchBox.Text == "",
+            $"\"{searched}\", then \"{searchBox.Text}\"");
+        var inVanilla = "";
+        await WithVanillaView(screen, menu, () =>
+        {
+            inVanilla = panelText.Text;
+            return true;
+        });
+        await PanelFor(menu, screen, ours);
+        Check("Vanilla View: the game's panel has no Other keywords; ours has them again after", inVanilla.Length > 0 && !inVanilla.Contains(keywordsLabel)
+            && !inVanilla.Contains("htag:") && panelText.Text.Contains(keywordsLabel), inVanilla[..Math.Min(80, inVanilla.Length)]);
         Check("fields in order: Alias, Category, Tags, Notes", string.Join(",", yours.GetChildren().Select(c => c.Name.ToString())) == "Alias,Category,Tags,Notes",
             string.Join(",", yours.GetChildren().Select(c => c.Name.ToString())));
         // The category picker drops its list right under it (2 below it, from its left edge) where it fits, otherwise
@@ -4035,6 +4163,7 @@ static partial class SelfTest
         CategoryList.Select(screen, other);
         await PanelFor(menu, screen, other);
         await Wait(menu, 0.5);
+        var keywordsBefore = panel.GetNode<RichTextLabel>("ModDescription").Text;
         notes.Text = "  Typed in the panel \n";
         notes.EmitSignal(Control.SignalName.FocusExited);
         var tags = Line("Tags");
@@ -4042,6 +4171,9 @@ static partial class SelfTest
         tags.EmitSignal(Control.SignalName.FocusExited);
         await Wait(menu, 0.3);
         Check("panel saves notes, trimmed", Store.InfoFor("SmmTestFixes")?.Notes == "Typed in the panel" && notes.Text == "Typed in the panel", notes.Text);
+        var keywordsAfter = panel.GetNode<RichTextLabel>("ModDescription").Text;
+        Check("Other keywords follow a save in the panel: #note once it has a note", !keywordsBefore.Contains("#note") && keywordsAfter.Contains("#note"),
+            $"before \"{keywordsBefore[Math.Max(0, keywordsBefore.Length - 160)..]}\", after \"{keywordsAfter[Math.Max(0, keywordsAfter.Length - 160)..]}\"");
         Check("panel saves tags, repeats dropped; at rest they're pills", Store.InfoFor("SmmTestFixes")?.Tags?.SequenceEqual(["co-op", "Favorites"]) == true
             && yours.GetNode<Control>("Tags/CustomTags") is { Visible: true } && yours.GetNode("Tags/CustomTags/Pills").GetChildCount() == 2,
             string.Join(", ", Store.InfoFor("SmmTestFixes")?.Tags ?? []));
@@ -4063,8 +4195,11 @@ static partial class SelfTest
         Typed("co-op, Favorites, Story-heavy, wor");
         await Wait(menu, 0.2);
         Results.Add($"INFO tag pills drawn: {string.Join(", ", TagPills.TestPills(tags).Select(p => $"{p.Tag} {p.Rect}"))}; text: "
-            + string.Join(" | ", TagPills.TestInk(tags).Select(r => $"\"{r.Text}\" {r.Color}")));
+            + string.Join(" | ", TagPills.TestInk(tags).Select(r => $"\"{r.Text}\" {r.Color} {r.Size}px")));
         await Capture(screen, outDir, "9a-tags-editing");
+        tags.CaretColumn = 10; // in "Favorites": that pill at the box's size, the others smaller
+        await Wait(menu, 0.1);
+        await Capture(screen, outDir, "9a-tags-caret-in-pill");
         Typed("co-op, Favorites, ");
         tags.ReleaseFocus();
         await Wait(menu, 0.3);
@@ -4126,6 +4261,12 @@ static partial class SelfTest
         await WaitReal(menu, 0.3);
         Check("after the delay, the title's card: id and state first", CardShown() && CardText().StartsWith("SmmTestFixes") && CardText().Contains("Enabled"), CardText());
         await Capture(screen, outDir, "9b-notes-hover");
+        var fixesCard = other.Mod is { } fixes ? ModDetails.Card(fixes) : "";
+        Check("the row's card ends with the player's alias, tags and note, together after one gap, the note on its term's line",
+            fixesCard.EndsWith(string.Join("\n", "", ModDetails.CardGap, ModDetails.CardFact("SPIRE_MOD_MANAGER.ALIAS_TERM", "Fixes"),
+                ModDetails.CardFact("SPIRE_MOD_MANAGER.TAGS_TERM", "co-op, Favorites"), ModDetails.CardFact("SPIRE_MOD_MANAGER.NOTES_TERM", "Typed in the panel")))
+            && content.GetChildren().OfType<NModMenuRow>().All(r => r.Mod == null || ModDetails.Card(r.Mod) is var c && !c.EndsWith(ModDetails.CardGap) && !c.Contains($"{ModDetails.CardGap}\n{ModDetails.CardGap}")),
+            fixesCard.Replace("\n", " | "));
         Hover.TestMouse = () => new Vector2(5, 5);
         await menu.ToSignal(menu.GetTree(), SceneTree.SignalName.ProcessFrame);
         Hover.TestMouse = () => hot.GetGlobalRect().GetCenter();
@@ -4546,12 +4687,15 @@ static partial class SelfTest
     // rows it means (HiddenTagsAsMeant); a tag of the player's named like each finds its mod too. Then what each means, on
     // made-up mods in a made-up saved list: A needs C (off) and D (after A), B needs a mod that isn't installed and the
     // game failed it, D has a game error, E is off but loaded, with a tag of its own named "Enabled".
+    // Every hidden tag, in HiddenTags' order (the info panel's Other keywords lists them in it).
+    static readonly string[] HiddenTagNames = ["#enabled", "#disabled", "#workshop", "#local", "#installed", "#uninstalled", "#missing", "#loaded", "#notloaded",
+        "#pending", "#new", "#changed", "#moved", "#edited", "#renamed", "#note", "#uncategorized", "#unmet", "#needed", "#order", "#duplicate", "#clash", "#aside",
+        "#managers", "#failed", "#gameerror", "#error", "#warning", "#problem"];
+
     static void TestHiddenTags(Control content)
     {
         var rows = content.GetChildren().OfType<NModMenuRow>().Select(r => r.Mod).OfType<Mod>().ToList();
-        string[] tags = ["#enabled", "#disabled", "#workshop", "#local", "#installed", "#missing", "#uninstalled", "#loaded", "#notloaded", "#pending", "#new",
-            "#changed", "#moved", "#edited", "#renamed", "#notes", "#uncategorized", "#unmet", "#needed", "#order", "#sameid", "#clash", "#aside", "#managers",
-            "#failed", "#gameerror", "#error", "#warning", "#problem"];
+        var tags = HiddenTagNames;
         List<string> Answers() => [.. tags.Select(t => $"{t} {string.Concat(rows.Select(m => Search.Matches(m, t) ? "y" : "n"))}")];
         var fresh = Answers();
         List<string> kept;
@@ -4564,15 +4708,16 @@ static partial class SelfTest
             rows.Any(Copies.Ticked) && rows.Any(m => !Copies.Ticked(m)) && Finds("#enabled", Copies.Ticked) && Finds("#Disabled", m => !Copies.Ticked(m))
             && Finds("#installed", _ => true) && Finds("#missing", _ => false) && Finds("#UNINSTALLED", _ => false));
         // Each of them on the fixture's rows, by what it means (HiddenTagsAsMeant), and the ones the fixture holds by name:
-        // Test Addon needs a mod that isn't installed, the twins share an id, this mod has its alias and note, Test Retired
-        // is off, every row is local.
+        // Test Addon needs a mod that isn't installed, the twins share an id (#sameid, the old name, finds them too), this
+        // mod has its alias and note, Test Retired is off, every row is local.
         var asMeant = HiddenTagsAsMeant(content);
         bool Has(string tag, params string[] ids) => ids.All(id => rows.Any(m => m.manifest?.id == id && Search.Matches(m, tag)));
         var twins = rows.Where(m => m.manifest?.id == TwinId).ToList();
         Check("hidden tags on the fixture: each finds the rows it means (the box, chips, status, the banners' rules, changes since launch); Test Addon #unmet, "
-            + "the twins #sameid, this mod #renamed and #notes, Test Retired #disabled and #notloaded, every row #local",
-            asMeant.Wrong.Count == 0 && (WontLoad() == null || Has("#unmet", "SmmTestAddon")) && twins.Count == 2 && twins.All(m => Search.Matches(m, "#sameid"))
-            && Has("#renamed", ModEntry.ModId) && Has("#notes", ModEntry.ModId) && Has("#disabled", "SmmTestRetired") && Has("#notloaded", "SmmTestRetired")
+            + "the twins #duplicate (and #sameid, its old name), this mod #renamed and #note, Test Retired #disabled and #notloaded, every row #local",
+            asMeant.Wrong.Count == 0 && (WontLoad() == null || Has("#unmet", "SmmTestAddon")) && twins.Count == 2
+            && twins.All(m => Search.Matches(m, "#duplicate") && Search.Matches(m, "#sameid")) && Finds("#sameid", m => Search.Matches(m, "#duplicate"))
+            && Has("#renamed", ModEntry.ModId) && Has("#note", ModEntry.ModId) && Has("#disabled", "SmmTestRetired") && Has("#notloaded", "SmmTestRetired")
             && Finds("#local", _ => true), $"{string.Join(" | ", asMeant.Wrong)}; found {asMeant.Found}");
         Results.Add($"INFO hidden tags on the fixture, rows found: {asMeant.Found}");
 
@@ -4626,15 +4771,15 @@ static partial class SelfTest
                 ("#enabled", "yynyy"), ("#disabled", "nnyny"), ("enabled", "nnnny"), ("#workshop", "nynnn"), ("#local", "ynyyy"), ("#installed", "yyyyy"),
                 ("#missing", "nnnnn"), ("#loaded", "ynnyy"), ("#notloaded", "nyynn"), ("#pending", "nnnny"), ("#unmet", "yynnn"), ("#needed", "nnynn"),
                 ("#order", "ynnnn"), ("#failed", "nynnn"), ("#gameerror", "nnnyn"), ("#error", "yyynn"), ("#warning", "nnnyn"), ("#problem", "yyyyn"),
-                ("#renamed", "ynnnn"), ("#notes", "nynnn"), ("#uncategorized", "yynyy"), ("#edited", "yyyyy"), ("#sameid OR #clash OR #aside OR #managers", "nnnnn"),
+                ("#renamed", "ynnnn"), ("#note", "nynnn"), ("#notes", "nynnn"), ("#uncategorized", "yynyy"), ("#edited", "yyyyy"), ("#duplicate OR #sameid OR #clash OR #aside OR #managers", "nnnnn"),
                 ("#enabled -#local", "nynnn"), ("#problem #local", "ynyyn"), ("(#unmet OR #needed) -#failed", "ynynn"),
             ];
             List<string> wrong;
             using (Lookups.Begin(made, [], saved, Picks.None))
                 wrong = [.. cases.Select(c => (c.Query, c.Finds, Found: string.Concat(made.Select(m => Search.Matches(m, c.Query) ? "y" : "n"))))
                     .Where(c => c.Found != c.Finds).Select(c => $"{c.Query}: {c.Found}, not {c.Finds}")];
-            Check("hidden tags mean what they say: state, problems (#error, #warning, #problem gather them), our details; only after #; "
-                + "a tag of the player's named like one finds its mods too", wrong.Count == 0, string.Join(" | ", wrong));
+            Check("hidden tags mean what they say: state, problems (#error, #warning, #problem gather them), our details (#notes still finds what #note does); "
+                + "only after #; a tag of the player's named like one finds its mods too", wrong.Count == 0, string.Join(" | ", wrong));
         }
         finally
         {
@@ -4648,7 +4793,7 @@ static partial class SelfTest
 
     // Each hidden tag against the list's rows, by what it means told from what the page shows or from where the search's
     // decisions say it comes from, not by HiddenTags' own rules: the row's box (#enabled), its chips (#local, #new,
-    // #sameid), its category as the list files it; a dependency missing or off by Dependencies.Check (#unmet), NeededOff,
+    // #duplicate), its category as the list files it; a dependency missing or off by Dependencies.Check (#unmet), NeededOff,
     // OrderViolations, Copies.Clashing and Loses, the managers both ticked, what changed since launch (ChangedMods, Moves,
     // the edited keys). Wrong: each tag that finds other rows than it means, with them; Found: how many each finds.
     static (List<string> Wrong, string Found) HiddenTagsAsMeant(Control content)
@@ -4679,9 +4824,9 @@ static partial class SelfTest
             ("loaded", m => m.state == ModLoadState.Loaded), ("notloaded", m => m.state != ModLoadState.Loaded),
             ("pending", m => ModDetails.Status(m).Contains(Menus.Text("SPIRE_MOD_MANAGER.STATUS_PENDING"))), ("new", m => Chip(m, "SPIRE_MOD_MANAGER.TAG_NEW")),
             ("changed", changed.Contains), ("moved", moved.Contains), ("edited", m => edited.Contains(Copies.Key(m))),
-            ("renamed", m => Store.InfoFor(m)?.Alias is { Length: > 0 }), ("notes", m => !string.IsNullOrWhiteSpace(Store.InfoFor(m)?.Notes)),
+            ("renamed", m => Store.InfoFor(m)?.Alias is { Length: > 0 }), ("note", m => !string.IsNullOrWhiteSpace(Store.InfoFor(m)?.Notes)),
             ("uncategorized", m => CategoryList.CategoryName(Copies.KeyOf(m)) == Menus.Text("SPIRE_MOD_MANAGER.UNCATEGORIZED")),
-            ("unmet", Unmet), ("needed", Needed), ("order", Misordered), ("sameid", m => Chip(m, "SPIRE_MOD_MANAGER.TAG_SAME_ID")),
+            ("unmet", Unmet), ("needed", Needed), ("order", Misordered), ("duplicate", m => Chip(m, "SPIRE_MOD_MANAGER.TAG_SAME_ID")),
             ("clash", clashing.Contains), ("aside", Copies.Loses), ("managers", managers.Contains), ("failed", Failed), ("gameerror", GameError),
             ("error", Error), ("warning", Warning), ("problem", m => Error(m) || Warning(m)),
         ];
@@ -4785,6 +4930,55 @@ static partial class SelfTest
         ClickChip("SmmTestLib", "Library", false);
         await Wait(menu, 0.3);
         Check("clicking the tag that is the whole search clears it", box.Text == "" && Visible().SequenceEqual(all), $"{box.Text}: {Visible().Count} shown");
+        // A row's keywords after its tags, all of them where they fit (no "and N more..."): faint, no "#", after "Additional
+        // keywords:"; a click on one searches #name, a Shift-click adds another, one on the words before them is the row's
+        // (16c-row-keywords).
+        var fits = content.GetChildren().OfType<NModMenuRow>().FirstOrDefault(r => r.Visible && !r.HasNode($"SpireModManagerStrip/{RowStrip.MoreName}")
+            && r.GetNodeOrNull<Label>($"SpireModManagerStrip/{RowStrip.KeywordsName}")?.Text.Contains(", ") == true);
+        var links = fits?.GetNode<Label>($"SpireModManagerStrip/{RowStrip.KeywordsName}");
+        var before = RowStrip.KeywordsLine([]);
+        var linked = links?.Text[before.Length..].Split(", ") ?? [];
+        if (fits != null)
+            await Capture(screen, outDir, "16c-row-keywords");
+        void ClickWord(int i, bool shift)
+        {
+            if (links == null)
+                return;
+            var x = i < 0 ? 2 : RowTitles.Measure(links.GetThemeFont("font"), before + string.Join(", ", linked.Take(i)) + (i > 0 ? ", " : ""), links.GetThemeFontSize("font_size")) + 2;
+            links.EmitSignal(Control.SignalName.GuiInput, new InputEventMouseButton { ButtonIndex = MouseButton.Left, Pressed = false, ShiftPressed = shift, Position = new Vector2(x, 8) });
+        }
+        // The mouse in over "Additional keywords:" (from the tags), then onto a keyword: its card, as if it came in there.
+        var (cardEarly, cardOnWord) = (true, false);
+        if (links != null)
+        {
+            var onWord = new Vector2(RowTitles.Measure(links.GetThemeFont("font"), before, links.GetThemeFontSize("font_size")) + 4, links.Size.Y / 2);
+            Hover.TestMouse = () => links.GetGlobalTransform() * new Vector2(2, onWord.Y);
+            links.EmitSignal(Control.SignalName.MouseEntered);
+            await WaitReal(menu, Hover.Delay + 0.2);
+            cardEarly = screen.HasNode("SpireModManagerTagCard");
+            Hover.TestMouse = () => links.GetGlobalTransform() * onWord;
+            links.EmitSignal(Control.SignalName.GuiInput, new InputEventMouseMotion { Position = onWord });
+            await WaitReal(menu, Hover.Delay + 0.2);
+            cardOnWord = screen.HasNode("SpireModManagerTagCard");
+            Hover.TestMouse = () => new Vector2(5, 5);
+            links.EmitSignal(Control.SignalName.MouseExited);
+            await WaitReal(menu, Hover.Grace + 0.1);
+            Hover.TestMouse = null;
+        }
+        Check("a row's keywords: the mouse in over \"Additional keywords:\", then onto a keyword, brings up the keyword's card", !cardEarly && cardOnWord,
+            $"a card over the words before them: {cardEarly}, then on a keyword: {cardOnWord}");
+        ClickWord(-1, false);
+        await Wait(menu, 0.3);
+        var clickedTitle = box.Text;
+        ClickWord(1, false);
+        await Wait(menu, 0.3);
+        var clickedWord = box.Text;
+        ClickWord(0, true);
+        await Wait(menu, 0.3);
+        Check("a row's keywords: all shown where they fit, faint, no \"#\", after \"Additional keywords:\"; a click on one searches #name, Shift-click adds another, "
+            + "one on \"Additional keywords:\" none", fits != null && links?.Text == RowStrip.KeywordsLine(RowStrip.Keywords(fits.Mod)) && !links.Text.Contains('#')
+            && links.Text.StartsWith($"{AdditionalKeywords}: ") && links.GetThemeColor("font_color") == Color.FromHtml(RowStrip.FaintHex) && clickedTitle == ""
+            && clickedWord == $"#{linked[1]}" && box.Text == $"#{linked[1]} #{linked[0]}", $"{fits?.Mod?.manifest?.id}: {links?.Text}; \"{clickedTitle}\", \"{clickedWord}\", then \"{box.Text}\"");
         // Authors: from the info panel's author (the row's is plain text); Shift on a tag adds it after a space.
         await Shown("");
         var rowAuthor = content.GetChildren().OfType<NModMenuRow>().FirstOrDefault(r => r.Mod?.manifest?.id == "SmmTestFixes")?.GetNodeOrNull<Label>("SpireModManagerStrip/Author");
@@ -5114,7 +5308,7 @@ static partial class SelfTest
         }
         var box = new VBoxContainer { Name = "SpireModManagerManyRows", MouseFilter = Control.MouseFilterEnum.Ignore };
         screen.AddChild(box);
-        // Wide enough that no line folds its tags (what folds is the long-details test's).
+        // Wide enough that no line folds its tags or keywords (what folds is the long-details test's, and a narrower box's below).
         (box.Position, box.Size) = (new Vector2(-3000, 0), new Vector2(1600, 0));
         try
         {
@@ -5151,6 +5345,7 @@ static partial class SelfTest
                             $"pencil ✎ ({Menus.Text("SPIRE_MOD_MANAGER.EDIT_TIP")})",
                             $"button {CategoryList.CategoryName(Copies.KeyOf(row.Mod))} ({Menus.Text("SPIRE_MOD_MANAGER.CATEGORY_TIP")})",
                         }.Concat(Tags.For(row.Mod).Select(c => $"tag {c.Text}"))
+                            .Append(RowStrip.Keywords(row.Mod) is { Count: > 0 } words ? $"{RowStrip.KeywordsName} {RowStrip.KeywordsLine(words)}" : "")
                             .Append(says.Length > 0 ? $"note {System.Text.RegularExpressions.Regex.Replace(says, @"\[[^\]]+\]", "")}" : "")
                             .Append(by.Length > 0 ? $"author {by} at the end" : "").Where(p => p.Length > 0));
                     })];
@@ -5242,10 +5437,27 @@ static partial class SelfTest
             var back = rows.Select(LineOf).ToList();
             Check("300 made-up rows, on again: each line shows what it first did (the notes made again in place)", back.SequenceEqual(first), Differ(back, first));
             Check("300 made-up rows: no line holds an empty note", rows.All(r => r.GetNodeOrNull<RichTextLabel>("SpireModManagerStrip/Needs") is not { Text.Length: 0 }));
+            // Narrower lines: keywords that don't fit after every tag are "and N more...", whose card has those keywords
+            // and no tags; the rows keep their height.
+            box.Size = new Vector2(900, 0);
+            await Wait(menu, 0.3);
+            var narrow = rows.FirstOrDefault(r => r.GetNodeOrNull($"SpireModManagerStrip/{RowStrip.MoreName}") != null
+                && r.GetNode("SpireModManagerStrip").GetChildren().OfType<PanelContainer>().All(c => c.Visible));
+            var narrowCard = narrow?.GetNode<Control>($"SpireModManagerStrip/{RowStrip.MoreName}") is { } narrowMore
+                ? (await SizedHoverCard(menu, narrowMore, "SpireModManagerTagCard")).Text : "";
+            List<string> narrowWords;
+            using (Lookups.Begin(mods, [], saved, Picks.None))
+                narrowWords = narrow == null ? [] : RowStrip.Keywords(narrow.Mod);
+            var narrowShown = narrow?.GetNodeOrNull<Label>($"SpireModManagerStrip/{RowStrip.KeywordsName}") is { Visible: true } shownWords ? shownWords.Text[RowStrip.KeywordsLine([]).Length..].Split(", ").Length : 0;
+            Check("300 made-up rows, narrower: keywords that don't fit after the tags are \"and N more...\", its card those keywords and no tags",
+                narrow != null && narrowCard.Split('\n') is [var foldedWords, "", var hint] && foldedWords == RowStrip.KeywordsLine(narrowWords.Skip(narrowShown))
+                && hint == Menus.Text("SPIRE_MOD_MANAGER.MORE_TAGS_CLICK") && rows.All(r => r.Size.Y == RowTitles.RowHeight), $"{narrow?.Mod?.manifest?.id}: {narrowCard.ReplaceLineEndings(" / ")}");
+            box.Size = new Vector2(1600, 0);
+            await Wait(menu, 0.3);
 
             // A row's buttons kept through a redraw (the same words and states) run that redraw's actions: an action holds
             // what its redraw knew (Load Order's rows). And a line is made again when a tag's card or search changes, its
-            // words, colour and kind the same (the Same ID tag's card names the other copies).
+            // words, colour and kind the same (the Duplicate tag's card names the other copies).
             var ran = "";
             using (Lookups.Begin(mods, [], saved, Picks.None))
             {
@@ -5257,7 +5469,7 @@ static partial class SelfTest
                 probe.EmitSignal(BaseButton.SignalName.Pressed);
             Check("300 made-up rows: buttons kept through a redraw run that redraw's actions, not the ones they were made with",
                 probeButtons is [{ Text: "Probe" }] && ran == "second", $"{probeButtons.Count} buttons, ran \"{ran}\"");
-            var sameId = new Tags.Chip("Same ID", Colors.Yellow, Tip: "Another copy: A");
+            var sameId = new Tags.Chip("Duplicate", Colors.Yellow, Tip: "Another copy: A");
             var shows = RowStrip.Shows([sameId], "Someone");
             Check("300 made-up rows: a line is made again when a tag's card or search changes, its words, colour and kind the same",
                 RowStrip.Shows([sameId with { Tip = "Another copy: B" }], "Someone") != shows && RowStrip.Shows([sameId with { Search = "#same" }], "Someone") != shows
@@ -5961,19 +6173,55 @@ static partial class SelfTest
         Check("main list banner: Go to, Show and Enable required mods right after its text", after.Ok
             && warning?.FindChild("EnableNeededButton", true, false) is Control { Visible: true }, after.Detail);
         await Capture(screen, outDir, "2b-list-banner");
-        // Its Go to steps through both sides: the mods that won't load and the disabled one they need.
+        // Its Go to steps through both sides (the mods that won't load, the disabled one they need) as the list shows them,
+        // from the row below the mod in the panel and round to the top: categories top to bottom, each one's rows top to
+        // bottom, a folded one's where they sit (Go to opens it). Test UI in the first category and Test Content in the
+        // second put the one that sorts later first. Each press finds the banner again: opening a category makes a new one.
+        var folds = (Each: Store.Data.Categories.Select(c => c.Collapsed).ToList(), Other: Store.Data.UncategorizedCollapsed);
+        var filed = (Ui: Store.InfoFor("SmmTestUi")?.Category, Content: Store.InfoFor("SmmTestContent")?.Category);
+        if (Store.Data.Categories is [var first, var second, ..])
+            Store.Batch(() =>
+            {
+                Store.EditMod("SmmTestUi", info => info.Category = first.Name);
+                Store.EditMod("SmmTestContent", info => info.Category = second.Name);
+            });
+        foreach (var each in Store.Data.Categories)
+            each.Collapsed = true;
+        Store.Data.UncategorizedCollapsed = true;
+        CategoryList.Apply(content);
         if (Row(ModEntry.ModId) is { } notAbout)
             CategoryList.Select(screen, notAbout);
-        var stepped = new List<string>();
-        for (var i = 0; i < 4; i++)
+        await Wait(menu, 0.2);
+        var placed = Rows();
+        int At(Mod? mod) => placed.FindIndex(r => r.Mod == mod);
+        var (ours, uiAt, contentAt) = (At(Row(ModEntry.ModId)?.Mod), At(Row("SmmTestUi")?.Mod), At(dependent));
+        var steps = new List<Mod?>();
+        var opened = true;
+        while (steps.Count < 12 && (steps.Count < 2 || steps[^1] != steps[0]))
         {
-            warning?.FindChild("GoToProblemButton", true, false)?.EmitSignal(BaseButton.SignalName.Pressed);
+            screen.FindChild(LoadOrder.WarningName, true, false)?.FindChild("GoToProblemButton", true, false)?.EmitSignal(BaseButton.SignalName.Pressed);
             await Wait(menu, 0.3);
-            stepped.Add(CategoryList.Selected?.manifest?.id ?? "");
+            steps.Add(CategoryList.Selected);
+            opened &= Rows().FirstOrDefault(r => r.Mod == CategoryList.Selected) is { Visible: true };
         }
-        Check("main list banner: Go to steps through the mods that won't load and the disabled mod they need, each once",
-            stepped.Distinct().Count() == 4 && stepped.Contains("SmmTestLib") && stepped.Contains("SmmTestContent") && stepped.Contains("SmmTestUi")
-            && stepped[1] == "SmmTestLib", string.Join(", ", stepped)); // a mod that needs it, then it
+        var cycle = steps.Take(steps.Count - 1).ToList(); // the last press back at the first
+        var stepped = cycle.Select(m => m?.manifest?.id ?? "").ToList();
+        for (var i = 0; i < folds.Each.Count && i < Store.Data.Categories.Count; i++)
+            Store.Data.Categories[i].Collapsed = folds.Each[i];
+        Store.Data.UncategorizedCollapsed = folds.Other;
+        Store.Batch(() =>
+        {
+            Store.EditMod("SmmTestUi", info => info.Category = filed.Ui);
+            Store.EditMod("SmmTestContent", info => info.Category = filed.Content);
+        });
+        CategoryList.Apply(content);
+        await Wait(menu, 0.3);
+        Check("main list banner: Go to steps through the mods that won't load and the disabled one they need in the rows' order on screen, from the row "
+            + "below the panel's mod and round, each once, folded categories opened; Test UI (first category) before Test Content (second), though it sorts after",
+            steps.Count > 1 && steps[^1] == steps[0] && cycle.Distinct().Count() == cycle.Count && opened
+            && cycle.SequenceEqual(cycle.OrderBy(m => At(m) > ours ? 0 : 1).ThenBy(At))
+            && new[] { "SmmTestLib", "SmmTestContent", "SmmTestUi" }.All(stepped.Contains) && uiAt < contentAt,
+            $"{string.Join(", ", cycle.Select(m => $"{m?.manifest?.id} ({At(m)})"))}; ours at {ours}; opened {opened}; {Store.Data.Categories.Count} categories");
 
         // Its Show: "#unmet OR #needed" in the search box, just those rows (Go to's stops among them), the button lit;
         // pressed again, the box empty, every row back and the button not lit.
@@ -6197,7 +6445,7 @@ static partial class SelfTest
     // once (no relaunch). The fixture has it installed but off; with --bmm it's on and loaded, so the banner is there from
     // the start. It ends as it started.
     // This mod among the others: the counts count it; installed twice, its boxes are locked on (a click puts one back),
-    // the panel says which copy runs, and there's no Same ID warning for it; a Disable all that covers it says it stays
+    // the panel says which copy runs, and there's no same-ID warning for it; a Disable all that covers it says it stays
     // on; and installed once and unticked on its own row, a red banner above everything says it (and this page) goes at
     // the relaunch, with Go to (its row) and Enable now. Enable now, and undo, take the banner away.
     static async Task TestSelfIncluded(Node menu, NModdingScreen screen, Control content, string outDir)
@@ -6244,7 +6492,7 @@ static partial class SelfTest
         // Its boxes locked on our page while it's installed twice (removing the copy that runs still leaves one that loads):
         // each disabled, white again, our padlock on it, its tip saying why and how to turn it off; unticking either (a click,
         // or the controller's hotkey, which ignores a disabled box) puts it back: every entry of ours on, no undo step, no
-        // red banner. The panel says which copy runs and that the other stays on; no Same ID banner or yellow chip (both on
+        // red banner. The panel says which copy runs and that the other stays on; no same-ID banner or yellow chip (both on
         // is as it should be). Disable all keeps both on.
         var ourRows = content.GetChildren().OfType<NModMenuRow>().Where(r => r.Mod?.manifest?.id == ModEntry.ModId).ToList();
         string Box(NModMenuRow r) => r.GetNode<NTickbox>("Tickbox") is var box
@@ -6278,13 +6526,13 @@ static partial class SelfTest
         Check("... the copy running says the other stays enabled, in case it's removed; the other says which copy runs",
             lines == (Draft(SelfRuns, ("other", Named(copy))), Draft(SelfBackup, ("other", Named(self)))), $"{lines.Running} / {lines.Other}");
         // The backup copy failed by the game as a duplicate (made up: two copies of ours from one source, the second fails):
-        // grey "Won't load (same ID)" all the same, not a red "Failed to load" (it's kept on by design, and won't load).
+        // grey "Duplicate - Won't load" all the same, not a red "Failed to load" (it's kept on by design, and won't load).
         var (stateWas, errorsWas, backupStatus) = (copy.state, copy.errors, ModDetails.Status(copy));
         copy.state = ModLoadState.Failed;
         copy.errors = [new LocString("main_menu_ui", "MOD_ERROR.DUPLICATE_ID")];
         var failedStatus = ModDetails.Status(copy);
         (copy.state, copy.errors) = (stateWas, errorsWas);
-        Check("... the backup copy failed by the game as a duplicate (made up): grey Won't load (same ID) as before, not a red Failed to load",
+        Check("... the backup copy failed by the game as a duplicate (made up): grey Duplicate - Won't load as before, not a red Failed to load",
             backupStatus.Contains(StatusWontLoad) && failedStatus == backupStatus, $"{backupStatus} / failed {failedStatus}");
         // The other copy unticked (as the vanilla page does: the game's switch for it): this one's locked box says Spire Mod
         // Manager won't load if this copy is removed, and to enable the other too, not that the other still loads. Put back.
@@ -6308,8 +6556,8 @@ static partial class SelfTest
         Check("... the other copy unticked (as the vanilla page does): this one's locked box says Spire Mod Manager won't load if this copy is removed, to "
             + "enable the other too; ticked again, the lock's own tip", !copyTicked && offTip == otherOffTip && offBox == otherOffTip && ourRows.All(Locked),
             $"other ticked {copyTicked}; tip {offTip}; box {offBox}; then {string.Join(" | ", ourRows.Select(Box))}");
-        var ourChips = new[] { self, copy }.Select(m => Tags.For(m).FirstOrDefault(c => c.Text == "Same ID")).ToList();
-        Check("... no Same ID banner or yellow chip for this mod: both on is as it should be",
+        var ourChips = new[] { self, copy }.Select(m => Tags.For(m).FirstOrDefault(c => c.Text == DuplicateChip)).ToList();
+        Check("... no same-ID banner or yellow Duplicate chip for this mod: both on is as it should be",
             !Copies.Clashing().Any(m => m.manifest?.id == ModEntry.ModId) && border.GetNodeOrNull<Control>(LoadOrder.SameIdName) == null
             && ourChips.All(c => c != null && c.Color != Tags.SameIdClash), string.Join(" / ", ourChips.Select(c => $"{c?.Color} {c?.Tip}")));
         if (border.FindChild(PageBar.Name, true, false)?.FindChildren("*", "Button", true, false).OfType<Button>().FirstOrDefault(b => b.Text == "Disable all") is { } disableAll)
@@ -6571,6 +6819,9 @@ static partial class SelfTest
         searchBox.EmitSignal(LineEdit.SignalName.TextChanged, notBmm);
         await Wait(menu, 0.3);
         var stays = row.Visible && !SpireModManager.Search.Matches(bmm, notBmm);
+        // From our row, first in load order: Go to's next stop below it is Better Mod Menu's (the list's order).
+        if (Rows().FirstOrDefault(r => r.Mod?.manifest?.id == ModEntry.ModId) is { } ourRow)
+            CategoryList.Select(screen, ourRow);
         Banner()?.FindChild("GoToManagersButton", true, false)?.EmitSignal(BaseButton.SignalName.Pressed);
         await Wait(menu, 0.5);
         Check("Load Order: a search leaves Better Mod Menu's row in place; the banner's Go to goes to it, the search kept",
@@ -7571,7 +7822,7 @@ static partial class SelfTest
     // A made-up mod with very long everything (name, id, author, version, description, alias, many tags, notes),
     // shown in the list and the panel (screenshot 16-long-details). The panel's title stays on one line with its
     // version and the source line keeps its status, both cut with "…" (the whole text a second over them); the
-    // row keeps its author, the tags that don't fit folded into "+N". A redraw fits no row title again, its cut one
+    // row keeps its author and its height, what doesn't fit as "and N more...". A redraw fits no row title again, its cut one
     // and an aliased one included, in Vanilla View and in our main list. It's removed again afterwards.
     static async Task TestLongDetails(Node menu, NModdingScreen screen, Control content, string outDir)
     {
@@ -7643,22 +7894,65 @@ static partial class SelfTest
             var longAuthor = row.GetNodeOrNull<Label>("SpireModManagerStrip/Author");
             var longTag = row.GetNodeOrNull("SpireModManagerStrip")?.GetChildren().OfType<PanelContainer>().Select(c => c.GetChildOrNull<Label>(0)).FirstOrDefault(l => l?.Text.StartsWith("really-long") == true);
             Check("long details: the row's author and a long tag are cut with an ellipsis", longAuthor is { ClipText: true, TextOverrunBehavior: TextServer.OverrunBehavior.TrimEllipsis } && longTag is { ClipText: true });
-            // Many tags: the line ends short of the row's buttons, with the author in it; the tags that don't fit
-            // are folded into "+N", whose card lists them.
+            // Many tags: the line ends short of the row's buttons, with the author in it, the row its usual height. Tags
+            // first, then keywords: what doesn't fit is "and N more..." (here every keyword too), whose card has those tags
+            // as pills, "Additional keywords:" and those keywords, then the click hint (16b-more-card).
             var strip = row.GetNode<Control>("SpireModManagerStrip");
             var lineEnd = row.GetGlobalRect().End.X + strip.OffsetRight;
             Check("long details: many tags: the author still shows, inside the line", longAuthor is { Visible: true } && longAuthor.GetGlobalRect().End.X <= lineEnd + 1
                 && strip.GetGlobalRect().End.X <= lineEnd + 1, $"author {longAuthor?.GetGlobalRect()}, line {strip.GetGlobalRect()}, ends at {lineEnd}");
             var folded = strip.GetChildren().OfType<PanelContainer>().Where(c => !c.Visible).Select(c => c.GetChildOrNull<Label>(0)?.Text ?? "").ToList();
-            var more = strip.GetNodeOrNull<Control>(RowStrip.MoreName);
-            var moreCard = more == null ? "" : await Tooltip(more, "SpireModManagerTagCard", Hover.Delay + 0.15);
-            Check("long details: the tags that don't fit fold into \"+N\", its card listing them", more is { Visible: true } && folded.Count > 0
-                && more.GetChildOrNull<Label>(0)?.Text == $"+{folded.Count}" && folded.Last() == "late-game"
-                && moreCard.Split('\n').SequenceEqual(folded), $"{folded.Count} folded, card: {moreCard.ReplaceLineEndings(", ")}");
+            var rowWords = RowStrip.Keywords(mod);
+            var more = strip.GetNodeOrNull<Label>(RowStrip.MoreName);
+            var moreCard = more == null ? "" : (await SizedHoverCard(menu, more, "SpireModManagerTagCard", () => Capture(screen, outDir, "16b-more-card"))).Text;
+            Check("long details: what doesn't fit is \"and N more...\" (tags first), its card those tags as pills, then \"Additional keywords:\" and those "
+                + "keywords, then the click hint; the row its usual height", more is { Visible: true } && folded.Count > 0 && rowWords.Count > 0 && folded.Last() == "late-game"
+                && more.Text == MoreTags(folded.Count + rowWords.Count) && strip.GetNodeOrNull<Control>(RowStrip.KeywordsName) is { Visible: false }
+                && moreCard.Split('\n') is [var pills, " ", var cardWords, "", var cardHint] && folded.All(t => pills.Contains($"\u00a0{t}\u00a0"))
+                && cardWords == RowStrip.KeywordsLine(rowWords) && cardHint == Menus.Text("SPIRE_MOD_MANAGER.MORE_TAGS_CLICK")
+                && row.Size.Y == RowTitles.RowHeight, $"\"{more?.Text}\", {folded.Count} tags and {rowWords.Count} keywords folded, height {row.Size.Y}, "
+                + $"card: {moreCard.ReplaceLineEndings(" / ")}");
+            // Every other row: all its tags and keywords where they fit, no "and N more..."; otherwise its count is what's left out.
+            var lines = content.GetChildren().OfType<NModMenuRow>().Where(r => r != row && r.Visible && r.HasNode("SpireModManagerStrip")).Select(r =>
+            {
+                var line = r.GetNode("SpireModManagerStrip");
+                var (hidden, all) = (line.GetChildren().OfType<PanelContainer>().Count(c => !c.Visible), RowStrip.Keywords(r.Mod));
+                var shown = line.GetNodeOrNull<Label>(RowStrip.KeywordsName) is { Visible: true } on ? on.Text[RowStrip.KeywordsLine([]).Length..] : "";
+                var fine = all.Count == 0 || string.Join(", ", all).StartsWith(shown);
+                return (Fits: hidden == 0 && shown == string.Join(", ", all), Right: fine && (line.GetNodeOrNull<Label>(RowStrip.MoreName) is { } rest
+                    ? rest.Text == MoreTags(hidden + all.Count - (shown.Length > 0 ? shown.Split(", ").Length : 0)) : hidden == 0 && shown == string.Join(", ", all)), Id: r.Mod?.manifest?.id);
+            }).ToList();
+            Check("rows with room show every tag and keyword and no \"and N more...\"; the others count what's left out", lines.Any(l => l.Fits) && lines.All(l => l.Right),
+                string.Join(", ", lines.Where(l => !l.Right).Select(l => l.Id)));
+            // A click on "and N more...", through the viewport as a player's (headless too, the row hovered first): it goes on
+            // to the row, which it selects, so the info panel shows all of them.
+            if (content.GetChildren().OfType<NModMenuRow>().FirstOrDefault(r => r != row && r.Mod != null) is { } elsewhere)
+                CategoryList.Select(screen, elsewhere);
+            await Wait(menu, 0.2);
+            row.EmitSignal(Control.SignalName.MouseEntered);
+            var moreAt = more == null ? Vector2.Zero : ViewportPoint(more, more.GetGlobalRect().GetCenter());
+            foreach (var pressed in new[] { true, false })
+                row.GetViewport().PushInput(new InputEventMouseButton { ButtonIndex = MouseButton.Left, Pressed = pressed, Position = moreAt, GlobalPosition = moreAt }, true);
+            await Wait(menu, 0.3);
+            row.EmitSignal(Control.SignalName.MouseExited);
+            Check("long details: a click on \"and N more...\" selects the mod, as a click on the row does", more != null && CategoryList.Selected == mod && RowState.Selected(row),
+                $"selected {CategoryList.Selected?.manifest?.id}");
+            if (CategoryList.Selected != mod)
+                CategoryList.Select(screen, row);
+            await Wait(menu, 0.3);
+            // A tag of the player's: its card says so, and how many mods have it, counted as it shows: one, then two once
+            // another row's mod has it too, in another case (that mod's tags put back after).
+            var tagChip = longTag?.GetParent<Control>();
+            var oneCard = tagChip == null ? "" : await Tooltip(tagChip, "SpireModManagerTagCard", Hover.Delay + 0.15);
+            var otherKey = Copies.KeyOf(content.GetChildren().OfType<NModMenuRow>().Select(r => r.Mod).FirstOrDefault(m => m != null && m != mod)) ?? "";
+            var otherTags = Store.InfoFor(otherKey)?.Tags;
+            Store.EditMod(otherKey, info => info.Tags = [.. otherTags ?? [], "Really-Long-Tag-Name-For-Testing"]);
+            var twoCard = tagChip == null ? "" : await Tooltip(tagChip, "SpireModManagerTagCard", Hover.Delay + 0.15);
+            Store.EditMod(otherKey, info => info.Tags = otherTags);
+            Check("long details: a tag of the player's: its card says it's theirs and how many mods have it (any case), counted as it shows",
+                otherKey.Length > 0 && oneCard.Split('\n').Contains(CustomTagTipOne) && twoCard.Split('\n').Contains(Draft(CustomTagTip, ("count", "2"))),
+                $"{oneCard.ReplaceLineEndings(" / ")}, then with {otherKey}: {twoCard.ReplaceLineEndings(" / ")}");
             Hover.TestMouse = null;
-            Check("rows whose tags fit show them all, no \"+N\"", content.GetChildren().OfType<NModMenuRow>().Where(r => r != row && r.Visible)
-                .All(r => r.GetNodeOrNull<Control>("SpireModManagerStrip") is not { } line
-                    || (line.GetNodeOrNull(RowStrip.MoreName) == null && line.GetChildren().OfType<PanelContainer>().All(c => c.Visible))));
             // Load Order and back: the view switch sets the title's size to 32 again, then fills the panel again. The
             // title is drawn at the size it was fitted at before, not left at 32 (on two lines).
             Click(screen.GetNode<NButton>("SpireModManagerLoadOrderToggle"));
@@ -7775,8 +8069,8 @@ static partial class SelfTest
 
     // A Workshop mod's head (made-up details; the sandbox has no Steam): Author, Updated (how long ago, and a link
     // to its change notes on the Workshop), Compatibility. "Ago" in hours under a day, singular for one. Dates and
-    // numbers in the game's language.
-    static async Task TestWorkshopHead(Node menu, NModdingScreen screen)
+    // numbers in the game's language. Its Other keywords after its Workshop tags (screenshot 8b).
+    static async Task TestWorkshopHead(Node menu, NModdingScreen screen, string outDir)
     {
         var mod = new Mod
         {
@@ -7785,7 +8079,7 @@ static partial class SelfTest
         };
         Compat.SetWorkshopId(mod, 42);
         Installed.Detected(mod); // so the panel can find it by id
-        WorkshopInfo.TestSet(42, new WorkshopInfo.Details(DateTime.Now.AddDays(-30), DateTime.Now.AddDays(-4), [], [], 1_572_864, 1234)); // 1.5 MB
+        WorkshopInfo.TestSet(42, new WorkshopInfo.Details(DateTime.Now.AddDays(-30), DateTime.Now.AddDays(-4), ["QoL", "Utility"], [], 1_572_864, 1234)); // 1.5 MB
         var info = screen.GetNode<NModInfoContainer>("%ModInfoContainer");
         info.Fill(mod);
         await Wait(menu, 0.3);
@@ -7890,6 +8184,11 @@ static partial class SelfTest
         var english = info.GetNode<RichTextLabel>("ModDescription").GetParsedText();
         Check("in English: October 11, 2026; Size: 1.5 MB; Subscribers: 1,234; the profile list's Oct 11", ModDetails.Date(new DateTime(2026, 10, 11)) == "October 11, 2026"
             && english.Contains("Size: 1.5 MB") && english.Contains("Subscribers: 1,234") && Profiles.ShortDate(new DateTime(2026, 10, 11)) == "Oct 11", english);
+        var facts = english.Split('\n');
+        var tagsAt = Array.IndexOf(facts, $"{Menus.Text("SPIRE_MOD_MANAGER.WORKSHOP_TAGS")}: QoL, Utility");
+        Check("a Workshop mod: Other keywords right after its Workshop tags, #workshop among them (see 8b-other-keywords)", tagsAt >= 0 && tagsAt + 1 < facts.Length
+            && facts[tagsAt + 1].StartsWith($"{Menus.Text("SPIRE_MOD_MANAGER.OTHER_KEYWORDS")}: #") && facts[tagsAt + 1].Contains("#workshop"), english);
+        await Capture(screen, outDir, "8b-other-keywords");
         var language = LocManager.Instance.Language;
         try
         {
@@ -8505,9 +8804,9 @@ static partial class SelfTest
             && tried.Mods.GetValueOrDefault($"{id}|l:{id}")?.Notes == notesBefore && !tried.Mods.ContainsKey($"{id}|w:123"),
             $"record {string.Join(",", tried.Copies?.GetValueOrDefault(id) ?? [])}; plain {tried.Mods.GetValueOrDefault(id)?.Notes}");
 
-        // Both copies on: the same-id banner, yellow, saying only one loads, its card which copy; a Same ID chip on each
+        // Both copies on: the same-id banner, yellow, saying only one loads, its card which copy; a Duplicate chip on each
         // whose tip names the other copy and the one that loads; Show steps between the two; Dismiss hides it for this pair
-        // through a redraw (view state: no change, no undo step). The copy that won't load reads "Won't load (same ID)",
+        // through a redraw (view state: no change, no undo step). The copy that won't load reads "Duplicate - Won't load",
         // not "Pending relaunch", before a launch too.
         var border = screen.GetNode<Control>("ModsBorder");
         Control? SameId() => border.GetNodeOrNull<Control>(LoadOrder.SameIdName);
@@ -8515,10 +8814,10 @@ static partial class SelfTest
         await Wait(menu, 0.3);
         var bothOn = Copies.Ticked(local) && Copies.Ticked(copy);
         var bannerText = (SameId()?.FindChild("SameIdWarning", true, false) as Label)?.Text;
-        var chips = Tags.For(local).Concat(Tags.For(copy)).Where(c => c.Text == "Same ID").ToList();
+        var chips = Tags.For(local).Concat(Tags.For(copy)).Where(c => c.Text == DuplicateChip).ToList();
         var card = await BannerCard(menu, screen, SameId());
-        Check("both copies on: a yellow banner (\"2 mods with the same ID are enabled. Only one copy of each loads.\"), its card saying which loads (the local "
-            + "copy: the same version); a Same ID chip on each naming the other and the copy that loads",
+        Check("both copies on: a yellow banner (\"2 mods with the same ID are enabled. Only one copy will be loaded.\"), its card saying which loads (the local "
+            + "copy: the same version); a Duplicate chip on each naming the other and the copy that loads",
             bothOn && bannerText == Draft(SameIdText, ("count", "2")) && Yellow(BannerFill(SameId()))
             && card.Contains(Draft(BannerLoads, ("mod", Named(local)))) && card.Contains(Draft(BannerWontLoad, ("mod", Named(copy))))
             && chips.Count == 2 && chips[0].Tip == Draft(ClashTip, ("others", Named(copy)), ("loads", Named(local)))
@@ -8546,11 +8845,11 @@ static partial class SelfTest
             $"box \"{clashBox}\", rows {string.Join(", ", clashRows.Select(Copies.KeyOf))}; then \"{searchBox.Text}\"");
         Check("the banner's Show is lit while the box holds \"#clash\", not before or after", !litBefore && clashLit && !Lit(),
             $"before {litBefore}, with it {clashLit}, after {Lit()}");
-        // The hidden tags on the list as it is: both copies #clash, #sameid and #warning; the Workshop copy (the local one
+        // The hidden tags on the list as it is: both copies #clash, #duplicate and #warning; the Workshop copy (the local one
         // loads) #aside; each finding the rows it means.
         var asMeant = HiddenTagsAsMeant(content);
-        Check("both copies on: hidden tags on the list as it is (both #clash, #sameid, #warning; the Workshop copy #aside), each finding the rows it means",
-            asMeant.Wrong.Count == 0 && new[] { local, copy }.All(m => Search.Matches(m, "#clash") && Search.Matches(m, "#sameid") && Search.Matches(m, "#warning"))
+        Check("both copies on: hidden tags on the list as it is (both #clash, #duplicate, #warning; the Workshop copy #aside), each finding the rows it means",
+            asMeant.Wrong.Count == 0 && new[] { local, copy }.All(m => Search.Matches(m, "#clash") && Search.Matches(m, "#duplicate") && Search.Matches(m, "#warning"))
             && Search.Matches(copy, "#aside") && !Search.Matches(local, "#aside"), $"{string.Join(" | ", asMeant.Wrong)}; found {asMeant.Found}");
         var (editsShown, stepsShown) = (Edits(), History.Steps(History.Track.List));
         Press("DismissSameIdButton");
@@ -8562,7 +8861,7 @@ static partial class SelfTest
         // The clash over (the new copy off), the dismissal is forgotten. Enabled again on our page, the new copy is on beside
         // the local one (nothing turns another copy off; a local and a Workshop copy have a switch each, so nothing is
         // stored per copy): the banner is back; undone, it's off again. On again for the rest. In Load Order too. A click on
-        // the chip searches #"Same ID": both copies, no other mod.
+        // the chip searches #Duplicate: both copies, no other mod.
         Dependencies.Set([copy], false, screen);
         CategoryList.Redraw(content);
         await Wait(menu, 0.3);
@@ -8599,7 +8898,7 @@ static partial class SelfTest
             $"\"{orderFound}\", every row {orderEvery}, lit {orderLit}; then \"{searchBox.Text}\"");
         Click(toggle);
         await Wait(menu, 0.5);
-        var sameIdSearch = "#\"Same ID\"";
+        var sameIdSearch = Search.TermFor("#", DuplicateChip);
         // The other mods installed once (the fixture's own twins have the chip too).
         var others = content.GetChildren().OfType<NModMenuRow>().Select(r => r.Mod).OfType<Mod>().Where(m => m.manifest?.id is { } other && other != id && other != TwinId).ToList();
         Check("the banner shows in Load Order too; the chip's search finds both copies and no other mod", inLoadOrder
@@ -8613,7 +8912,7 @@ static partial class SelfTest
         var (setAside, setAsideLine) = (ModDetails.Status(copy), Line(copy));
         copy.state = ModLoadState.AddedAtRuntime;
         var losesLine = Draft(CopyLoses, ("other", Named(local)), ("why", WhyLocal));
-        Check("a Workshop copy enabled beside the local one that wins reads \"Won't load (same ID)\", before a launch too and once the game set it aside; "
+        Check("a Workshop copy enabled beside the local one that wins reads \"Duplicate - Won't load\", before a launch too and once the game set it aside; "
             + "its panel says the local copy loads instead, and why; the local copy's that it's the one that loads",
             beforeStatus.Contains(StatusWontLoad) && setAside.Contains(StatusWontLoad) && beforeLine == losesLine && setAsideLine == losesLine
             && Line(local) == Draft(LoadsAlso, ("other", Named(copy))), $"{beforeStatus} / {setAside}; lines {beforeLine} / {setAsideLine}; local {Line(local)}");
@@ -8668,7 +8967,7 @@ static partial class SelfTest
             && ModEntry.HasPendingChanges() == (w || LoadOrder.OrderChanged),
             $"beta rule {w}; loads copy {Copies.Loads(copy)}, local {Copies.Loads(local)}; status {ModDetails.Status(local)} / {ModDetails.Status(copy)}; "
             + $"lines {Line(local)} / {Line(copy)}; pending {ModEntry.HasPendingChanges()}, moved since launch {LoadOrder.OrderChanged}");
-        var newerChips = new[] { local, copy }.Select(m => Tags.For(m).FirstOrDefault(c => c.Text == "Same ID")?.Tip).ToList();
+        var newerChips = new[] { local, copy }.Select(m => Tags.For(m).FirstOrDefault(c => c.Text == DuplicateChip)?.Tip).ToList();
         RelaunchCheck.Show(screen);
         await Wait(menu, 0.3);
         var relaunchBody = (menu.GetTree().Root.GetNodeOrNull(RelaunchCheck.Name)?.FindChild("Body", true, false) as RichTextLabel)?.GetParsedText() ?? "";
@@ -8687,7 +8986,7 @@ static partial class SelfTest
         var localRow = content.GetChildren().OfType<NModMenuRow>().FirstOrDefault(r => r.Mod == local);
         var boxTip = workshopRow == null ? null : Hover.TipOf(workshopRow.GetNode<Control>("Tickbox"));
         var orderTip = workshopRow == null ? null : LoadOrder.Actions(content, workshopRow, () => { })[0].Tip;
-        Check("... the box of the copy that's off says both would be enabled, and which loads; Load Order's Enable too", boxTip == tipOff && orderTip == tipOff,
+        Check("... the box of the copy that's off says the other is also enabled, and which loads; Load Order's Enable too", boxTip == tipOff && orderTip == tipOff,
             $"box {boxTip}; Load Order {orderTip}");
         if (workshopRow != null && localRow != null)
         {
@@ -9596,7 +9895,7 @@ static partial class SelfTest
             Check("same ID, a message on a copy set aside: off its errors (the MODDED label stays clear), into its panel as the game's; the late pass covers it",
                 aside.errors == null && dropped >= 1 && BranchErrors.Dropped(aside).Contains(error)
                 && notes.Any(n => n.Contains("only supports Steam branch public"))
-                && ModDetails.Card(aside).Contains(GameText.Caption("Error while loading - Can be ignored if mod is disabled")),
+                && ModDetails.Card(aside).Contains(GameText.Caption("Error while loading - Can be ignored if disabled")),
                 $"errors {aside.errors?.Count}, dropped {dropped}; {string.Join(" | ", notes)}");
         }
         finally
@@ -9683,7 +9982,7 @@ static partial class SelfTest
 
     // The fixture twins on our main list, a box per copy. At launch (the update's reading of our file: only the pick
     // ticked, as before): the picked copy (B) on, Enabled; the other off (copies_off), Disabled, no duplicate problem, its
-    // box's tip saying both would be enabled and which would load, its panel naming the enabled copy; Enable all over it
+    // box's tip saying the other is on too and which would load, its panel naming the enabled copy; Enable all over it
     // says it enables a second copy; the view switch's tip says how the game's page treats them. Ticking the other copy
     // (A) picks it, the first staying ticked: the game's list still on, one undo step; A reads Pending relaunch, loading
     // in B's place, and B Won't load (the copy enabled last loads); A's title marked as changed, B's white. Undo, redo,
@@ -9747,7 +10046,7 @@ static partial class SelfTest
         var toggleTip = Hover.TipOf(screen.GetNode<Control>("SpireModManagerViewToggle"));
         var boxTip = Hover.TipOf(rowA.GetNode<Control>("Tickbox"));
         Check("same ID on our page: the picked copy on (Enabled), the other off (Disabled, no duplicate problem, in copies_off, in our file too), its box's "
-            + "tip saying both would be enabled and which loads, its panel naming the enabled copy; Enable all over it says it enables a second copy, over "
+            + "tip saying the other is also enabled and which loads, its panel naming the enabled copy; Enable all over it says it enables a second copy, over "
             + "both it isn't greyed; the view switch's tip says how the game's page treats them",
             Picked() == "l:SmmTestTwinB" && Ticked(rowB) && !Ticked(rowA) && ModDetails.Status(b).Contains("Enabled") && ModDetails.Status(a).Contains("Disabled")
             && ModDetails.Problems(a).Count == 0 && boxTip == Draft(CopyOnTip, ("other", Named(b)), ("loads", Named(a)))
@@ -9810,7 +10109,7 @@ static partial class SelfTest
             await Wait(menu, 0.3);
             History.Undo(); // the move: this view's undo steps through the order only
             await Wait(menu, 0.3);
-            Check("... in Load Order: Enable on the other copy says both would be enabled and which loads, and picks it beside the first; an order undo "
+            Check("... in Load Order: Enable on the other copy says the first is also enabled and which loads, and picks it beside the first; an order undo "
                 + "leaves the pick and copies_off",
                 enableTip == Draft(CopyOnTip, ("other", Named(b)), ("loads", Named(a))) && pickedHere && Picked() == "l:SmmTestTwinA" && CopiesOff().SequenceEqual(offHere)
                 && !LoadOrder.OrderChanged, $"tip {enableTip}; picked {pickedHere}; {Say()}");
@@ -10300,7 +10599,7 @@ static partial class SelfTest
         CategoryList.Redraw(content);
         await Wait(menu, 0.3);
         Check("... an update of a copy (its own folder again) isn't a new copy: the popup's usual words", notNew
-            && updatePopup.Contains("New mods were detected") && !updatePopup.Contains("A new copy"), $"not new {notNew}; {updatePopup}");
+            && updatePopup.Contains("New mods were detected") && !NewCopyWords(updatePopup), $"not new {notNew}; {updatePopup}");
 
         // A mod installed once (made up, as found at launch) whose saved pick still names a second copy, uninstalled since
         // (picks are never pruned; our record never had it: new to us), and an active profile naming no copy (as from
@@ -10347,7 +10646,7 @@ static partial class SelfTest
         var backUpdatePopup = string.Join(" | ", PopupTexts());
         NModalContainer.Instance?.Clear();
         var updateKeeps = BackPicked() == "l:Back2" && Installed.Mods.Contains(backUpdate) && backUpdatePopup.Contains("New mods were detected")
-            && !backUpdatePopup.Contains("A new copy");
+            && !NewCopyWords(backUpdatePopup);
         GameInstalls(pairFirst); // within 30 s of the last popup: none for it
         await Wait(menu, 0.2);
         NewModPopupPatch.TestReset();
@@ -10357,7 +10656,7 @@ static partial class SelfTest
         var pairPopup = string.Join(" | ", PopupTexts());
         NModalContainer.Instance?.Clear();
         var pairPicked = Copies.Picked(Pair, ModSource.ModsDirectory);
-        var pairNew = pairPopup.Contains("New mods were detected") && !pairPopup.Contains("A new copy") && pairPicked == "l:PairB"
+        var pairNew = pairPopup.Contains("New mods were detected") && !NewCopyWords(pairPopup) && pairPicked == "l:PairB"
             && Copies.Ticked(pairFirst) && Copies.Ticked(pairSecond);
         History.Undo(); // the switch
         await Wait(menu, 0.3);
@@ -10484,34 +10783,52 @@ static partial class SelfTest
 
     // The words of the duplicate copies, word for word as settings_ui.json has them: drafts until Jordan's copy pass, so
     // here once for every check that reads them (an edit there is one edit here). Draft fills in their values.
-    const string CopyOnTip = "{other} is already enabled. If both are enabled, only {loads} loads.";
-    const string BulkEnablesTip = "Enables more than one copy of {mods}. Only one copy of each loads.";
     const string SelfLockedTip = "Spire Mod Manager is installed more than once, so its copies stay enabled. If one is removed, another still loads. "
         + "To turn Spire Mod Manager off, disable them all on the vanilla Modding page.";
     const string SelfLockedOtherOffTip = "Spire Mod Manager stays enabled. {other} is disabled, so Spire Mod Manager won't load if this copy is removed. Enable it too.";
-    const string SameIdText = "{count} mods with the same ID are enabled. Only one copy of each loads.";
+    const string SameIdText = "{count} mods with the same ID are enabled. Only one copy will be loaded.";
     const string BannerLoads = "{mod}: loads", BannerWontLoad = "{mod}: won't load";
     const string RelaunchLoses = "{other} loads instead";
     const string CopySwitchLine = "{mod}: {to} loads instead of {from}";
     const string ClashTip = "Another copy of this mod is enabled: {others}. Only {loads} loads.";
-    const string StatusWontLoad = "Won't load (same ID)";
+    const string StatusWontLoad = "Duplicate - Won't load";
     const string CopyLoses = "{other} loads instead. {why} Disable one to choose.";
-    const string WhyLocal = "The game loads the local copy.", WhyHigher = "The game loads the higher version.", WhySource = "Only one copy from the same source loads.";
+    const string WhyLocal = "The game prioritizes a local copy.", WhyHigher = "The game prioritizes a higher version.", WhySource = "Only one copy from the same source loads.";
     const string LoadsAlso = "{other} is also enabled - this copy is the one that loads.";
     const string FailedOther = "{other} is also installed. To load that copy instead, enable it and disable this one.";
     const string SelfRuns = "This copy is running. {other} stays enabled too, in case this one is removed.";
     const string SelfBackup = "{other} is running. This copy stays enabled, in case that one is removed.";
-    const string NewCopyOn = "A new copy of {mods} was installed and is enabled. Only {loads} loads. Disable the copy you don't want.";
     const string NewCopyOff = "A new copy of {mods} was installed and is disabled.";
     const string NewSelfCopy = "A new copy of Spire Mod Manager (this mod) was installed. Its copies stay enabled, and only {loads} loads.";
 
-    // The banners' Go to and Show, and the search's line for a profile's mods that aren't installed, the same way: drafts
-    // until the copy pass, word for word as settings_ui.json has them.
+    // The banners' Go to and Show the same way: drafts until the copy pass, word for word as settings_ui.json has them.
     const string GoToProblem = "Go to", GoToProblemTip = "Open the next affected mod";
-    const string ShowFilter = "Show", ShowFilterTip = "Shows only these mods. The search box holds the filter. Press again to clear it.",
-        ShowFilterFindTip = "Finds these mods in the list. Press again to clear the search.";
-    const string MissingSearchHint = "{count} mods in this profile aren't installed. [url=missing]Show them[/url]";
-    const string MissingSearchHintOne = "1 mod in this profile isn't installed. [url=missing]Show it[/url]";
+    const string ShowFilter = "Show";
+
+    // Jordan's words from his copy pass, read as the game shows them (settings_ui.json, or a translation over it) rather
+    // than quoted, so a later edit there needs none here. Draft fills in the values by the names the code passes.
+    static string CopyOnTip => Template("SPIRE_MOD_MANAGER.COPY_ON_TIP");
+    static string BulkEnablesTip => Template("SPIRE_MOD_MANAGER.BULK_ENABLES_COPIES_TIP");
+    static string NewCopyOn => Template("SPIRE_MOD_MANAGER.NEW_COPY_ON_BODY");
+    static string MissingSearchHint => Template("SPIRE_MOD_MANAGER.MISSING_SEARCH_HINT");
+    static string MissingSearchHintOne => Menus.Text("SPIRE_MOD_MANAGER.MISSING_SEARCH_HINT_ONE");
+    static string ShowFilterTip => Menus.Text("SPIRE_MOD_MANAGER.SHOW_FILTER_TIP");
+    static string ShowFilterFindTip => Menus.Text("SPIRE_MOD_MANAGER.SHOW_FILTER_FIND_TIP");
+    static string DuplicateChip => Menus.Text("SPIRE_MOD_MANAGER.TAG_SAME_ID");
+    static string CustomTagTip => Template("SPIRE_MOD_MANAGER.TAG_CUSTOM_COUNT_TIP");
+    static string CustomTagTipOne => Menus.Text("SPIRE_MOD_MANAGER.TAG_CUSTOM_COUNT_TIP_ONE");
+    static string AdditionalKeywords => Menus.Text("SPIRE_MOD_MANAGER.ADDITIONAL_KEYWORDS");
+    static string MoreTags(int count) => count == 1 ? Menus.Text("SPIRE_MOD_MANAGER.MORE_TAGS_ONE") : Draft(Template("SPIRE_MOD_MANAGER.MORE_TAGS"), ("count", $"{count}"));
+
+    // A text with its {values} still in it, for Draft (Menus.Text formats it, and these need their values).
+    static string Template(string key) => new LocString("settings_ui", key).GetRawText();
+
+    // Whether a popup has a new copy's words (NewModPopupPatch), whichever mods they name: each text's longest run
+    // between its values.
+    static bool NewCopyWords(string popup) => new[] { "SPIRE_MOD_MANAGER.NEW_COPY_ON_BODY", "SPIRE_MOD_MANAGER.NEW_COPIES_ON_BODY",
+            "SPIRE_MOD_MANAGER.NEW_COPY_OFF_BODY", "SPIRE_MOD_MANAGER.NEW_SELF_COPY_BODY" }
+        .Select(key => Template(key).Split('{', '}').Where((_, i) => i % 2 == 0).MaxBy(s => s.Length) ?? "")
+        .Any(words => words.Length > 0 && popup.Contains(words));
 
     static string Draft(string text, params (string Name, string Value)[] values) =>
         values.Aggregate(text, (filled, value) => filled.Replace($"{{{value.Name}}}", value.Value));
@@ -10519,7 +10836,8 @@ static partial class SelfTest
     // The fixture twins both ticked at launch (BothTickedQuietly: as a launch would have them, A set aside, B loaded): B,
     // the pick, loads and A won't, with no duplicate error and nothing pending or changed; A's title white, not the
     // game's grey for a copy set aside; its status and panel say B loads instead, one copy of a source loading; both chips
-    // yellow, naming the copy that loads; the banner and its card; the relaunch check, gone with the banner's Dismiss;
+    // yellow, naming the copy that loads, and both copy lines in that yellow (A off beside B: its own colour); the banner
+    // and its card; the relaunch check, gone with the banner's Dismiss;
     // Find takes the copy that loads, and a need of the copy that won't load is no problem. Unticking the copy that loads:
     // the other one loads (picked), one undo step, pending; undo, redo, Revert all. Unticking the one that doesn't load: a
     // change, nothing pending. The last ticked copy unticked: the switch off, the pick kept; then a tick on the other
@@ -10579,18 +10897,26 @@ static partial class SelfTest
         // As the page has them: A off (copies_off), its title the game's grey for a copy set aside. Then both ticked.
         var greyOff = !Ticked(rowA) && Title(rowA) == MegaCrit.Sts2.Core.Helpers.StsColors.gray && a.state == ModLoadState.DisabledDuplicate;
         var offWere = CopiesOff();
+        // The copy lines' colour: A off beside B isn't in a clash (its own dim colour, B none); both ticked, each in the
+        // Duplicate chip's warning yellow, B (the copy that loads) too.
+        var clash = $"#{Tags.SameIdClash.ToHtml(false)}";
+        var (offColor, onAlone) = (ModDetails.CopyLine(a, false)?.Color, ModDetails.CopyLine(b, false));
         BothTickedQuietly(true);
         Profiles.RefreshTickboxes(screen);
         CategoryList.Redraw(content);
         await Wait(menu, 0.3);
         var bothOff = CopiesOff();
         var steps = History.Steps(History.Track.List);
-        var chips = new[] { a, b }.Select(m => Tags.For(m).FirstOrDefault(c => c.Text == "Same ID")).ToList();
+        var chips = new[] { a, b }.Select(m => Tags.For(m).FirstOrDefault(c => c.Text == DuplicateChip)).ToList();
+        var lineColors = (A: ModDetails.CopyLine(a, false)?.Color, B: ModDetails.CopyLine(b, false)?.Color);
+        Check("same ID, the copy lines: A off beside B in its own colour (not the clash's), B none; both ticked, each in the Duplicate chip's warning yellow, "
+            + "the copy that loads too", offColor != null && offColor != clash && onAlone == null && lineColors == (clash, clash),
+            $"off {offColor}, B alone {onAlone}; both {lineColors.A} / {lineColors.B} (yellow {clash})");
         var bannerText = (SameId()?.FindChild("SameIdWarning", true, false) as Label)?.Text;
         var card = await BannerCard(menu, screen, SameId());
         Check("same ID, both copies ticked at launch: the pick (B) loads and A won't, no duplicate error, nothing pending or changed; A's title white, not the "
-            + "game's grey for a copy set aside; A reads Won't load, B loading in its place (one copy of a source loads); both chips yellow, naming the copy that "
-            + "loads; the banner and its card say which loads; Find takes the copy that loads",
+            + "game's grey for a copy set aside; A reads Won't load, B loading in its place (one copy of a source loads); both Duplicate chips yellow (B's, "
+            + "the copy that loads, too), naming the copy that loads; the banner and its card say which loads; Find takes the copy that loads",
             greyOff && Ticked(rowA) && Ticked(rowB) && Picked() == "l:SmmTestTwinB" && Copies.Loads(b) && !Copies.Loads(a) && SwitchOn() && !bothOff.Contains(keyA)
             && b.state == ModLoadState.Loaded && a.state == ModLoadState.DisabledDuplicate
             && !ModManager.Mods.Any(m => m.errors?.Any(e => e.LocEntryKey == "MOD_ERROR.DUPLICATE_ID") == true)
@@ -10848,7 +11174,7 @@ static partial class SelfTest
         await TypeIn(box, "Strategy, Story-heavy, f");
         Check("tag suggestions: typing brings the list back", Listed() == "Fast", Listed());
         Check("tag suggestions: a heading over them says what they are and how to take several",
-            TagSuggestions.Heading() == "Currently used tags; Shift-click to add multiple", TagSuggestions.Heading());
+            TagSuggestions.Heading() == "Tags in use; Shift-click to add multiple", TagSuggestions.Heading());
         TagSuggestions.Press("Fast", shift: true);
         await Wait(menu, 0.2);
         Check("tag suggestions: a Shift-click takes one, the box keeps focus and the list stays for more", box.Text == "Strategy, Story-heavy, Fast, " && box.HasFocus()
@@ -10892,7 +11218,8 @@ static partial class SelfTest
     }
 
     // Tag pills (TagPills) in the panel's tags box, with made-up tags (the data is put back after): finished tags drawn
-    // as pills where the box draws its text (a click on one lands in its tag), the word being typed plain, the colours;
+    // as pills where the box draws its text, their text smaller unless the caret or a selection is at one (a click on
+    // one lands in its tag and opens it), the word being typed plain, the colours, the commas invisible;
     // a typed comma makes a pill; Backspace and Delete by Jordan's rule (a fresh press next to a pill takes it and its
     // separator as one undo step, a held key's repeats stop at it); Copy, Cut and Paste of whole tags; a double-click
     // takes the whole tag; all of that after an emoji too, and the pills with a right-to-left tag first; a comma the full
@@ -10970,27 +11297,46 @@ static partial class SelfTest
                 Pills() == "co-op, Favorites" && drawn[0].Rect.End.X < drawn[1].Rect.Position.X && drawn.All(p => inBox.Encloses(p.Rect)),
                 $"{Say()}: {string.Join(", ", drawn.Select(p => p.Rect))} in {inBox}");
             var ink = TagPills.TestInk(box);
-            (string, Color)[] inks = [("co-op", Tags.CustomColor), (", ", new Color(cream, 0.3f)), ("Favorites", Tags.CustomColor), (", ", new Color(cream, 0.3f)), ("wor", cream)];
+            var (boxSize, pillSize) = (box.GetThemeFontSize("font_size"), box.GetThemeFontSize("font_size") - TagPills.Smaller);
+            (string, Color, int)[] inks = [("co-op", Tags.CustomColor, pillSize), (", ", new Color(cream, 0), boxSize), ("Favorites", Tags.CustomColor, pillSize),
+                (", ", new Color(cream, 0), boxSize), ("wor", cream, boxSize)];
             var ownInk = box.GetThemeColor("font_color");
             box.Select(7, 16);
             await Wait(menu, 0.05);
             var unselected = string.Concat(TagPills.TestInk(box).Select(r => r.Text));
+            var selectedPill = TagPills.TestPills(box).ElementAtOrDefault(1).Rect;
             box.Deselect();
-            Check("tag pills: tag text in the tag colour, commas faint, the word being typed cream, over the box's own text (clear "
-                + "while it's typed in); a selected tag is left to the box", ink.Count == inks.Length
-                && ink.Zip(inks).All(r => r.First.Text == r.Second.Item1 && r.First.Color.IsEqualApprox(r.Second.Item2)) && ownInk.A == 0 && unselected == "co-op, , wor",
-                $"{string.Join(" | ", ink.Select(r => $"\"{r.Text}\" {r.Color}"))}; the box's own {ownInk}; with Favorites selected: \"{unselected}\"");
+            Check("tag pills: tag text in the tag colour and smaller, the commas invisible (alpha 0), the word being typed cream at the box's size, "
+                + "over the box's own text (clear while it's typed in); a selected tag is left to the box", ink.Count == inks.Length
+                && ink.Zip(inks).All(r => r.First.Text == r.Second.Item1 && r.First.Color.IsEqualApprox(r.Second.Item2) && r.First.Size == r.Second.Item3)
+                && ownInk.A == 0 && unselected == "co-op, , wor",
+                $"{string.Join(" | ", ink.Select(r => $"\"{r.Text}\" {r.Color} {r.Size}px"))}; the box's own {ownInk}; with Favorites selected: \"{unselected}\"");
+            // The box lays its caret and selection out at its own size, so the pill the caret is in, or a selection
+            // touches, is drawn at that size, the others smaller.
+            box.CaretColumn = 10; // in "Favorites"
+            await Wait(menu, 0.05);
+            var (openPills, openInk) = (TagPills.TestPills(box), TagPills.TestInk(box));
+            Check("tag pills: a pill with the caret in it, or a selection touching it, is drawn at the box's size, the others smaller",
+                openPills is [var openCoop, var openFavorites] && drawn is [var smallCoop, var smallFavorites] && openCoop.Rect == smallCoop.Rect
+                && openFavorites.Rect.Size.X > smallFavorites.Rect.Size.X && openFavorites.Rect == selectedPill
+                && openInk.Find(r => r.Text == "Favorites").Size == boxSize && openInk.Find(r => r.Text == "co-op").Size == pillSize,
+                $"{string.Join(", ", openPills.Select(p => $"{p.Tag} {p.Rect}"))} (smaller {string.Join(", ", drawn.Select(p => p.Rect))}, selected {selectedPill}); "
+                + string.Join(" | ", openInk.Select(r => $"\"{r.Text}\" {r.Size}px")));
 
-            // Where the pills are drawn, by where the box puts the caret for a click: 1 px into each end of a pill's tag
-            // lands on that end (more than about half a letter of drift would miss it), its middle inside it. In the
-            // box's columns (an emoji is one, and two chars of the C# string).
+            // Where the pills are drawn, by where the box puts the caret for a click: a click in a smaller pill's middle
+            // lands inside its tag and opens the pill to the box's size; then 1 px into each end of its tag lands on that
+            // end (more than about half a letter of drift would miss it), its middle inside it. In the box's columns (an
+            // emoji is one, and two chars of the C# string).
             async Task<List<string>> Misses(bool ends = true)
             {
                 var list = new List<string>();
-                foreach (var (tag, rect) in TagPills.TestPills(box))
+                foreach (var (tag, smaller) in TagPills.TestPills(box)) // the caret at the end: in none of them
                 {
                     var start = TagPills.Column(box.Text, box.Text.IndexOf(tag, StringComparison.Ordinal));
                     var end = start + TagPills.Columns(tag);
+                    await ClickAt(smaller.GetCenter());
+                    var inSmaller = box.CaretColumn;
+                    var rect = TagPills.TestPills(box).FirstOrDefault(p => p.Tag == tag).Rect;
                     var middle = rect.GetCenter().Y;
                     var (left, right) = (start, end);
                     if (ends)
@@ -11001,8 +11347,9 @@ static partial class SelfTest
                         right = box.CaretColumn;
                     }
                     await ClickAt(rect.GetCenter());
-                    if (left != start || right != end || box.CaretColumn <= start || box.CaretColumn >= end)
-                        list.Add($"{tag} ({start}..{end}) at {rect}: {left}, {right}, middle {box.CaretColumn}");
+                    if (inSmaller <= start || inSmaller >= end || rect.Size.X <= smaller.Size.X || left != start || right != end
+                        || box.CaretColumn <= start || box.CaretColumn >= end)
+                        list.Add($"{tag} ({start}..{end}) at {smaller}: middle {inSmaller}; opened at {rect}: {left}, {right}, middle {box.CaretColumn}");
                 }
                 return list;
             }
@@ -11961,6 +12308,42 @@ static partial class SelfTest
     static List<string> PopupTexts() => NModalContainer.Instance?.OpenModal is Node popup
         ? popup.FindChildren("*", "", true, false).Select(n => n is Label l ? l.Text : n is RichTextLabel r ? r.Text : "").ToList() : [];
 
+    // The text of the hover card `name` open over a page, or null.
+    static RichTextLabel? CardLabel(Node page, string name) =>
+        page.GetNodeOrNull(name)?.FindChildren("*", "RichTextLabel", true, false).OfType<RichTextLabel>().FirstOrDefault();
+
+    // Whether the game's auto-size reads a text's markup (MegaLabelHelper.ParseBbcode throws at a tag out of its pair).
+    static bool GameReads(string bbcode)
+    {
+        try
+        {
+            MegaLabelHelper.ParseBbcode(bbcode);
+            return true;
+        }
+        catch (InvalidOperationException)
+        {
+            return false;
+        }
+    }
+
+    // Null if label drew its game boxes (GameText) as meant: count of them, each in its look (Border wide on every side,
+    // Radius round), Margin inside its table on every side, the table within the label's width (no side cut off), no
+    // wider than its text room (wider, the line break after it wrapped onto an empty line of its own) and taller than a
+    // line of text (it's the table's line); else what's wrong.
+    static string? BoxesWrong(RichTextLabel label, int count)
+    {
+        var boxes = GameText.Drawn(label);
+        var line = label.GetThemeFont("normal_font").GetHeight(label.GetThemeFontSize("normal_font_size"));
+        var bar = label.GetVScrollBar();
+        var room = label.Size.X - label.GetThemeStylebox("normal").GetMinimumSize().X - (bar.Visible ? bar.Size.X : 0);
+        static bool Even(StyleBoxFlat look) => Enum.GetValues<Side>().All(s => look.GetBorderWidth(s) == GameText.Border)
+            && Enum.GetValues<Corner>().All(c => look.GetCornerRadius(c) == GameText.Radius);
+        return boxes.Count != count ? $"{boxes.Count} boxes, not {count}"
+            : boxes.FirstOrDefault(b => b.Box != b.Table.Grow(-GameText.Margin) || b.Table.Position.X < 0 || b.Table.End.X > label.Size.X
+                || label.GetLineWidth(b.Line) > room + 0.5f || b.Table.Size.Y < line * 1.5f || !Even(GameText.Style(b.Dim))) is { Table.Size.X: > 0 } wrong
+                ? $"table {wrong.Table} on a line {label.GetLineWidth(wrong.Line)} wide, box {wrong.Box}, in {label.Size} ({room} for text)" : null;
+    }
+
     // A popup of ours in the game's style: our mark, once (marking it again adds none), shown, inside the popup's
     // art (clear of its painted edge), and clear of its title, text and buttons (their art included).
     static void CheckMark(string which, Control? popup)
@@ -12188,7 +12571,7 @@ static partial class SelfTest
     }
 
     // What a row's pencil, buttons and line show, part by part in order: the pencil and buttons with their tips, then
-    // the line's tags (folded ones as "+N"), note and author, and whether the author ends the line. A spacer or an empty
+    // the line's tags, keywords and "and N more...", note and author, and whether the author ends the line. A spacer or an empty
     // note shows nothing, so isn't listed: two rows that show the same things read the same, however they were made.
     static string LineOf(NModMenuRow row)
     {
@@ -12205,6 +12588,7 @@ static partial class SelfTest
                 {
                     PanelContainer tag => $"tag {tag.GetChildOrNull<Label>(0)?.Text}",
                     RichTextLabel { Text.Length: > 0 } note => $"note {note.GetParsedText()}",
+                    Label words when words.Name.ToString() is RowStrip.KeywordsName or RowStrip.MoreName => $"{words.Name} {words.Text}",
                     Label author => $"author {author.Text}{(Math.Abs(author.GetGlobalRect().End.X - line.GetGlobalRect().End.X) < 1 ? " at the end" : "")}",
                     _ => "",
                 });
@@ -12224,7 +12608,7 @@ static partial class SelfTest
 
     // RowStrip's timed parts (RowStrip.Costs), in the order a row makes them: "title 1.2 ms, pencil 30.5 ms, ...".
     static string Parts(IReadOnlyDictionary<string, double> costs) => string.Join(", ",
-        new[] { "title", "pencil", "buttons", "tags", "needs", "author", "added", "rest" }.Select(part => $"{part} {costs.GetValueOrDefault(part):0.0}"))
+        new[] { "title", "pencil", "buttons", "keywords", "tags", "needs", "author", "added", "rest" }.Select(part => $"{part} {costs.GetValueOrDefault(part):0.0}"))
         + " ms";
 
     // How a part of a row's line differs from how per-node overrides styled it (before #46): a node of its kind beside

@@ -9,8 +9,9 @@ using System.Text.RegularExpressions;
 namespace SpireModManager;
 
 // The info panel in our views, top to bottom: the head beside the thumbnail (name and version, id and Workshop link,
-// status, author, last update, compatibility); anything wrong; the description; size, published, subscribers and
-// Workshop tags; dependencies both ways; the player's Alias, Category, Tags and Notes; Open Folder.
+// status, author, last update, compatibility); anything wrong; the description; size, published, subscribers, Workshop
+// tags and other keywords (the hidden tags); dependencies both ways; the player's Alias, Category, Tags and Note; Open
+// Folder.
 // Vanilla View: the panel exactly as the game makes it.
 static class ModDetails
 {
@@ -26,9 +27,11 @@ static class ModDetails
     const string WiredMeta = "spire_mod_manager_wired";
     const string FullMeta = "spire_mod_manager_full_text"; // on the title and the link: their whole text when cut short, else ""
     const string Enabled = "#a6e3a1", Disabled = "#fff6e299", Pending = "#f5b56b", Problem = "#ff8070";
+    static readonly string Clash = $"#{Tags.SameIdClash.ToHtml(false)}"; // copies of an id ticked together: the Duplicate chip's yellow
     const string GoldHex = "#efc851", LinkHex = "#99ccff";
     public const string ModLinkHex = "#cfe3ff"; // a mod's name, or its author, that a click acts on: light blue
     const string Quiet = "#fff6e299"; // no value to show (an unknown author, no description): subtle, so it doesn't read as one
+    const string Fainter = "#fff6e280"; // Other keywords: half the panel text's alpha, below the facts without reading as one
     const string Bullet = "[color=#fff6e280]•[/color]"; // between facts on one line: dim
     const int VersionSize = 20;
     const int HeadSize = 16; // the head's text
@@ -154,8 +157,9 @@ static class ModDetails
         link.SetMeta(FullMeta, shown != id ? id : "");
     }
 
-    // The title's pointer and the links' underline: ours in our views (the title is a link to its row), the game's in
-    // Vanilla View, as it left them before we first changed them.
+    // The title's pointer, the links' underline and the description's table gaps: ours in our views (the title is a link
+    // to its row; no gaps, for the game's box: GameText.TableGaps), the game's in Vanilla View, as it left them before we
+    // first changed them.
     public static void Looks(NModInfoContainer container, bool game)
     {
         var title = container.GetNode<Control>("ModTitle");
@@ -164,6 +168,16 @@ static class ModDetails
         title.MouseFilter = game ? (Control.MouseFilterEnum)was[0].AsInt32() : Control.MouseFilterEnum.Stop;
         title.MouseDefaultCursorShape = game ? (Control.CursorShape)was[1].AsInt32() : Control.CursorShape.PointingHand;
         description.MetaUnderlined = game && was[2].AsBool();
+        for (var i = 0; i < GameText.TableGaps.Length; i++)
+        {
+            var (gap, gameGap) = (GameText.TableGaps[i], was[3 + i]); // the scene's own setting, or none (the theme's)
+            int? wanted = !game ? 0 : gameGap.VariantType == Variant.Type.Int ? gameGap.AsInt32() : null;
+            // Set only when it changes: any change lays the text out again.
+            if (wanted is { } value && (!description.HasThemeConstantOverride(gap) || description.GetThemeConstant(gap) != value))
+                description.AddThemeConstantOverride(gap, value);
+            else if (wanted == null && description.HasThemeConstantOverride(gap))
+                description.RemoveThemeConstantOverride(gap);
+        }
     }
 
     const string GameLooksMeta = "spire_mod_manager_game_looks";
@@ -174,13 +188,16 @@ static class ModDetails
         if (!container.HasMeta(GameLooksMeta))
         {
             var (title, description) = (container.GetNode<Control>("ModTitle"), container.GetNode<RichTextLabel>("ModDescription"));
-            container.SetMeta(GameLooksMeta, new Godot.Collections.Array { (int)title.MouseFilter, (int)title.MouseDefaultCursorShape, description.MetaUnderlined });
+            var looks = new Godot.Collections.Array { (int)title.MouseFilter, (int)title.MouseDefaultCursorShape, description.MetaUnderlined };
+            foreach (var gap in GameText.TableGaps)
+                looks.Add(description.HasThemeConstantOverride(gap) ? description.GetThemeConstant(gap) : default(Variant));
+            container.SetMeta(GameLooksMeta, looks);
         }
         return container.GetMeta(GameLooksMeta).AsGodotArray();
     }
 
-    // Clicks and hovers, connected once per panel: the title or a dependency's name scrolls to its row, a Workshop tag
-    // searches, and hovering a name shows its card.
+    // Clicks and hovers, connected once per panel: the title or a dependency's name scrolls to its row, a Workshop tag or
+    // another keyword searches, and hovering a name shows its card.
     static void Wire(NModInfoContainer container)
     {
         if (container.HasMeta(WiredMeta))
@@ -198,25 +215,28 @@ static class ModDetails
         Hover.Watch(title, "SpireModManagerFullText", () => !Store.Data.VanillaView && title.GetMeta(FullMeta, "").AsString() is { Length: > 0 } whole
             ? Escape(whole) : null, Hover.Timing.Slow);
         var description = container.GetNode<RichTextLabel>("ModDescription");
+        static bool Searches(string meta) => meta.StartsWith("wtag:") || meta.StartsWith("htag:"); // a Workshop tag, a hidden one
         description.MetaClicked += meta =>
         {
             if (Store.Data.VanillaView)
                 return; // the game's panel: its own text, none of our links
             if (meta.AsString() is { } target && target.StartsWith("mod:") && Content() is { } content)
                 CategoryList.Reveal(content, target[4..], flash: false, focus: true);
-            else if (meta.AsString() is { } tag && tag.StartsWith("wtag:"))
-                Search.ByTag(container, tag[5..], Input.IsKeyPressed(Key.Shift)); // a Workshop tag: #tag, the mods with it
+            else if (meta.AsString() is { } tag && Searches(tag))
+                Search.ByTag(container, tag[5..], Input.IsKeyPressed(Key.Shift)); // #tag, the mods with it
         };
         Hover.WatchLinks(description, "SpireModManagerTagCard",
-            meta => meta.StartsWith("wtag:") ? Tags.Hint(Menus.Text("SPIRE_MOD_MANAGER.SEARCH_CLICK_TIP")) : null, width: 320);
+            meta => Searches(meta) ? Tags.Hint(Menus.Text("SPIRE_MOD_MANAGER.SEARCH_CLICK_TIP")) : null, width: 320);
         CategoryList.WatchNames(description, Content); // hovering a name: its row lit (if in view), then its card
+        GameText.Watch(description); // the game's words in their box (GameBlock)
         // Hovering the thumbnail: the whole picture (our views).
         var image = container.GetNode<TextureRect>("ModImage");
         image.MouseFilter = Control.MouseFilterEnum.Pass;
         Hover.Watch(image, "SpireModManagerPictureCard", () => null, picture: () => Store.Data.VanillaView ? null : image.Texture);
     }
 
-    // Anything wrong, the description, more facts (size, published, subscribers, Workshop tags), then dependencies.
+    // Anything wrong, the description, more facts (size, published, subscribers, Workshop tags, other keywords), then
+    // dependencies.
     static string Describe(Mod mod)
     {
         var text = new System.Text.StringBuilder();
@@ -244,7 +264,12 @@ static class ModDetails
             Fact("SPIRE_MOD_MANAGER.SUBSCRIBERS", Menus.Number(subscribers));
         if (workshop?.Tags.Count > 0)
             Fact("SPIRE_MOD_MANAGER.WORKSHOP_TAGS", string.Join(", ", workshop.Tags.Select(t => $"[url=wtag:{t}]{Escape(t)}[/url]"))); // click: search for it
-        if (bytes > 0 || workshop != null)
+        // The hidden tags that find it (Jordan: "so that way they're at least visible"), links as the Workshop tags are,
+        // the whole line fainter.
+        var keywords = HiddenTags.Of(mod);
+        if (keywords.Count > 0)
+            text.Append($"[color={Fainter}]{Menus.Text("SPIRE_MOD_MANAGER.OTHER_KEYWORDS")}: {string.Join(", ", keywords.Select(k => $"[url=htag:{k}]#{k}[/url]"))}[/color]\n");
+        if (bytes > 0 || workshop != null || keywords.Count > 0)
             text.Append('\n');
 
         // What it needs, and what needs it.
@@ -303,39 +328,41 @@ static class ModDetails
         return $"[color={(age.TotalHours < 48 ? Enabled : Disabled)}]({text})[/color]";
     }
 
-    // A row's hover card: id and state, anything wrong, author, last update, and the player's alias, tags and notes.
-    // full: nothing cut short (held with Alt).
-    public static string Card(Mod mod, bool full = false)
+    // A row's hover card: the mod's picture, id and state, anything wrong, author, last update, and the player's alias,
+    // tags and note. title: the whole name, under the picture, when the row's is cut short. full: nothing cut short (held
+    // with Alt).
+    public static string Card(Mod mod, bool full = false, string? title = null)
     {
         string Cut(string text, int max) => full || text.Length <= max ? text : text[..max].TrimEnd() + "…";
         var id = mod.manifest?.id ?? "";
         var info = Store.InfoFor(mod);
-        var lines = new List<string> { $"[b]{Escape(id)}[/b]  {Bullet}  {Status(mod)}" };
-        lines.AddRange(Problems(mod).Select(p => $"[color={Problem}]{Escape(p)}[/color]"));
-        if (CopyLine(mod, links: false) is var (copyText, copyColor))
-            lines.Add($"[color={copyColor}]{copyText}[/color]");
-        if (GameBlock(mod, effects: false) is { Length: > 0 } game)
-            lines.Add(game.TrimEnd('\n'));
-        string Fact(string key, string value) => $"[color=#e8cf7a]{Menus.Text(key)}[/color]: {value}";
-        lines.Add(Fact("SPIRE_MOD_MANAGER.AUTHOR", mod.manifest?.author is { Length: > 0 } author ? Escape(Cut(author, 80)) : Faint("SPIRE_MOD_MANAGER.UNKNOWN")));
+        var lines = new List<string>();
+        if (Picture(mod) is { } picture)
+            lines.Add(picture);
+        if (title != null)
+            lines.Add($"[b]{Escape(title)}[/b]");
+        lines.Add($"[b]{Escape(id)}[/b]  {Bullet}  {Status(mod)}");
+        AddWarnings(lines, mod);
+        lines.Add(CardFact("SPIRE_MOD_MANAGER.AUTHOR", mod.manifest?.author is { Length: > 0 } author ? Escape(Cut(author, 80)) : Faint("SPIRE_MOD_MANAGER.UNKNOWN")));
         if (WorkshopInfo.For(mod) is { } workshop)
-            lines.Add(Fact("SPIRE_MOD_MANAGER.UPDATED", Date(workshop.Updated)));
+            lines.Add(CardFact("SPIRE_MOD_MANAGER.UPDATED", Date(workshop.Updated)));
+        // The player's own, together after one gap (none without them).
+        var yours = new List<string>();
         if (info?.Alias is { } alias)
-        {
-            const string halfLine = "[font_size=8] [/font_size]"; // a little air around it
-            lines.AddRange([halfLine, Fact("SPIRE_MOD_MANAGER.ALIAS_TERM", Escape(Cut(alias, 80))), halfLine]);
-        }
+            yours.Add(CardFact("SPIRE_MOD_MANAGER.ALIAS_TERM", Escape(Cut(alias, 80))));
         if (info?.Tags is { Count: > 0 } tags)
-            lines.Add(Fact("SPIRE_MOD_MANAGER.TAGS_TERM", Escape(Cut(string.Join(", ", tags), 160))));
+            yours.Add(CardFact("SPIRE_MOD_MANAGER.TAGS_TERM", Escape(Cut(string.Join(", ", tags), 160))));
         if (info?.Notes is { } notes)
-            lines.Add($"[color=#e8cf7a]{Menus.Text("SPIRE_MOD_MANAGER.NOTES_TERM")}[/color]\n{Escape(Cut(notes, 300))}");
+            yours.Add(CardFact("SPIRE_MOD_MANAGER.NOTES_TERM", Escape(Cut(notes, 300))));
+        if (yours.Count > 0)
+            lines.AddRange([CardGap, .. yours]);
         return string.Join("\n", lines);
     }
 
     // The card other mods show for a mod (the API's ModCards): what the row's card says, with Jordan's list for it on
     // top: the mod's picture, its name as it gives it (never the player's alias: the caller's row shows that), its
     // version, author and description, then the player's category, every tag (the automatic ones too, in their
-    // colours) and notes. full: nothing cut short (held with Alt).
+    // colours) and note. full: nothing cut short (held with Alt).
     // standIn: a self-test's details in place of the player's (SharedCards.StandIn).
     public static string SharedCard(Mod mod, bool full = false, (string? Alias, string? Notes, List<string> Tags, string? Category)? standIn = null)
     {
@@ -343,35 +370,54 @@ static class ModDetails
         var id = mod.manifest?.id ?? "";
         var info = Store.InfoFor(mod);
         var lines = new List<string>();
-        var picture = $"res://{id}/mod_image.png"; // where the game's Modding page finds it
-        if (id.Length > 0 && ResourceLoader.Exists(picture))
-            lines.Add($"[img width=200]{picture}[/img]");
+        if (Picture(mod) is { } picture)
+            lines.Add(picture);
         var version = mod.manifest?.version is { Length: > 0 } v ? $"  [color=#fff6e280]{Escape(v)}[/color]" : "";
         lines.Add($"[b][font_size=20]{Escape(mod.manifest?.name is { Length: > 0 } name ? name : id)}[/font_size][/b]{version}");
         lines.Add($"{Escape(id)}  {Bullet}  {Status(mod)}");
+        AddWarnings(lines, mod);
+        lines.Add(CardFact("SPIRE_MOD_MANAGER.AUTHOR", mod.manifest?.author is { Length: > 0 } author ? Escape(Cut(author, 80)) : Faint("SPIRE_MOD_MANAGER.UNKNOWN")));
+        if (WorkshopInfo.For(mod) is { } workshop)
+            lines.Add(CardFact("SPIRE_MOD_MANAGER.UPDATED", Date(workshop.Updated)));
+        // Its own words, as the panel shows them (markup kept), a few lines of them; cut outside a tag.
+        if (mod.manifest?.description is { Length: > 0 } description)
+            lines.AddRange([CardGap, Described(description.Trim(), full ? int.MaxValue : 240)]);
+        // The player's own, together after one gap: there's always a category (Uncategorized at least).
+        lines.Add(CardGap);
+        var category = standIn is { } stand ? stand.Category ?? Menus.Text("SPIRE_MOD_MANAGER.UNCATEGORIZED") : CategoryList.CategoryName(Copies.Key(mod));
+        lines.Add(CardFact("SPIRE_MOD_MANAGER.CATEGORY", Escape(category)));
+        var chips = standIn is { } instead
+            ? [.. Tags.For(mod).Where(c => !c.Custom), .. instead.Tags.Select(t => new Tags.Chip(t, Tags.CustomColor, Custom: true))]
+            : Tags.For(mod).ToList();
+        if (chips.Count > 0)
+            lines.Add(CardFact("SPIRE_MOD_MANAGER.TAGS_TERM", string.Join("  ", chips.Select(c => $"[color=#{c.Color.ToHtml(false)}]{Escape(c.Text)}[/color]"))));
+        if ((standIn is { } given ? given.Notes : info?.Notes) is { } notes)
+            lines.Add(CardFact("SPIRE_MOD_MANAGER.NOTES_TERM", Escape(Cut(notes, 300))));
+        return string.Join("\n", lines);
+    }
+
+    // The mod's picture at the top of a card, from where the game's Modding page finds it; null without one.
+    static string? Picture(Mod mod) => mod.manifest?.id is { Length: > 0 } id && $"res://{id}/mod_image.png" is var picture && ResourceLoader.Exists(picture)
+        ? $"[img width=200]{picture}[/img]" : null;
+
+    // The cards' one gap between their parts: a line as tall as the text's (its line break, outside the small size, is at
+    // the card's size, and Godot makes the line as tall as that).
+    public const string CardGap = "[font_size=8] [/font_size]";
+
+    // A fact in a card: the term in the cards' gold, the value after it on the same line.
+    public static string CardFact(string key, string value) => $"[color=#e8cf7a]{Menus.Text(key)}[/color]: {value}";
+
+    // What's wrong in a card (the problems, the copy line, the game's words), then a gap before the facts when any shows.
+    static void AddWarnings(List<string> lines, Mod mod)
+    {
+        var before = lines.Count;
         lines.AddRange(Problems(mod).Select(p => $"[color={Problem}]{Escape(p)}[/color]"));
         if (CopyLine(mod, links: false) is var (copyText, copyColor))
             lines.Add($"[color={copyColor}]{copyText}[/color]");
         if (GameBlock(mod, effects: false) is { Length: > 0 } game)
             lines.Add(game.TrimEnd('\n'));
-        string Fact(string key, string value) => $"[color=#e8cf7a]{Menus.Text(key)}[/color]: {value}";
-        lines.Add(Fact("SPIRE_MOD_MANAGER.AUTHOR", mod.manifest?.author is { Length: > 0 } author ? Escape(Cut(author, 80)) : Faint("SPIRE_MOD_MANAGER.UNKNOWN")));
-        if (WorkshopInfo.For(mod) is { } workshop)
-            lines.Add(Fact("SPIRE_MOD_MANAGER.UPDATED", Date(workshop.Updated)));
-        // Its own words, as the panel shows them (markup kept), a few lines of them; cut outside a tag.
-        if (mod.manifest?.description is { Length: > 0 } description)
-            lines.AddRange(["", Described(description.Trim(), full ? int.MaxValue : 240)]);
-        lines.Add("");
-        var category = standIn is { } stand ? stand.Category ?? Menus.Text("SPIRE_MOD_MANAGER.UNCATEGORIZED") : CategoryList.CategoryName(Copies.Key(mod));
-        lines.Add(Fact("SPIRE_MOD_MANAGER.CATEGORY", Escape(category)));
-        var chips = standIn is { } instead
-            ? [.. Tags.For(mod).Where(c => !c.Custom), .. instead.Tags.Select(t => new Tags.Chip(t, Tags.CustomColor, Custom: true))]
-            : Tags.For(mod).ToList();
-        if (chips.Count > 0)
-            lines.Add(Fact("SPIRE_MOD_MANAGER.TAGS_TERM", string.Join("  ", chips.Select(c => $"[color=#{c.Color.ToHtml(false)}]{Escape(c.Text)}[/color]"))));
-        if ((standIn is { } given ? given.Notes : info?.Notes) is { } notes)
-            lines.Add($"[color=#e8cf7a]{Menus.Text("SPIRE_MOD_MANAGER.NOTES_TERM")}[/color]\n{Escape(Cut(notes, 300))}");
-        return string.Join("\n", lines);
+        if (lines.Count > before)
+            lines.Add(CardGap);
     }
 
     // A mod's description in a card of ours (a plain RichTextLabel, not the game's): the game label's colour tags as
@@ -474,16 +520,21 @@ static class ModDetails
     public static List<string> Problems(Mod mod) => DependencyProblems(mod);
 
     // For a mod installed more than once, a line about its copies (BBCode, another copy's name a link to its row where
-    // links, plain where not), with its colour; null for none. The first that holds:
+    // links, plain where not), with its colour; null for none. While another copy is ticked too, every ticked copy's
+    // line is in the Duplicate chip's warning yellow, whatever it says, the copy that loads included (Jordan: "they all
+    // own the same problem equally"); a copy that's off isn't in the clash, and keeps its colour. The first that holds:
     // - the pick couldn't be applied this launch (SameIdLoad's self-check or canary): it says so (orange), on every copy;
     // - ticked while another copy loads after a relaunch: that one, and why (orange; the status says it won't load);
     // - ticked, not loaded now, and loading after a relaunch in place of the copy loaded now: so (orange);
     // - ticked and failed for its own reasons: how to load another copy instead (dim, after the red), another copy
     //   ticked or not (it isn't "the one that loads" when it failed);
-    // - ticked with another copy ticked too: this one is the copy that loads (dim);
+    // - ticked with another copy ticked too: this one is the copy that loads;
     // - off while another copy is on: the copy that loads (dim).
-    // This mod's copies: SelfLine.
-    public static (string Text, string Color)? CopyLine(Mod mod, bool links)
+    // This mod's copies (SelfLine) stay ticked together on purpose: no clash, their own colours.
+    public static (string Text, string Color)? CopyLine(Mod mod, bool links) =>
+        CopySays(mod, links) is var (text, color) ? (text, Copies.Clashes(mod) ? Clash : color) : null;
+
+    static (string Text, string Color)? CopySays(Mod mod, bool links)
     {
         if (mod.manifest?.id is not { } id || Copies.Others(mod) is not { Count: > 0 } others)
             return null;
@@ -507,7 +558,7 @@ static class ModDetails
         if (ticked && mod.state == ModLoadState.Failed && mod.errors?.Any(e => e.LocEntryKey == "MOD_ERROR.DUPLICATE_ID") != true)
             return (Line("SPIRE_MOD_MANAGER.COPY_FAILED_OTHER", others.FirstOrDefault(Copies.Ticked) ?? others[0]), Disabled);
         if (others.FirstOrDefault(Copies.Ticked) is { } enabled)
-            return ticked ? (Line("SPIRE_MOD_MANAGER.COPY_LOADS_ALSO", enabled), Disabled)
+            return ticked ? (Line("SPIRE_MOD_MANAGER.COPY_LOADS_ALSO", enabled), Clash)
                 // The one of them that loads (a copy that's off loads only through a switch it shares: then another).
                 : (Line("SPIRE_MOD_MANAGER.COPY_OTHER_ENABLED", Copies.Loading(id) is { } loads && others.Contains(loads) && Copies.Ticked(loads) ? loads : enabled), Disabled);
         return null;
@@ -776,7 +827,7 @@ static class ModDetails
         return head;
     }
 
-    // The player's own fields: Alias, Category (a picker), Tags and Notes.
+    // The player's own fields: Alias, Category (a picker), Tags and Note.
     static Control AddFields(NModInfoContainer container)
     {
         var box = new VBoxContainer { Name = FieldsName };
@@ -792,6 +843,13 @@ static class ModDetails
             ListFilter.Keep(ModId()); // its row stays under the list's Show: choice
             if (Content() is { } content)
                 CategoryList.Apply(content); // rows: alias, tags, the notepad
+            // The description's Other keywords follow the edit (#renamed, #note, #edited, #changed): its text alone, as a
+            // full Fill would commit and reload the fields while focus moves on to the next one.
+            if (CategoryList.Selected is { } shown && Copies.Key(shown) == ModId())
+            {
+                container.GetNode<MegaRichTextLabel>("ModDescription").Text = Describe(shown);
+                Callable.From(() => PlaceFields(container)).CallDeferred(); // once the text is laid out
+            }
         }
         var fields = new List<ModField>();
         void Add(ModField.Kind kind)

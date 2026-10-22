@@ -134,10 +134,10 @@ static class RowTitles
         {
             hot = new Control { Name = HotName, MouseFilter = Control.MouseFilterEnum.Pass };
             row.AddChild(hot);
-            // Cut short: the card starts with the whole title. (Alt: the card with nothing cut.)
+            // Cut short: the card starts with the whole title (under the mod's picture). (Alt: the card with nothing cut.)
             var watched = hot;
             string? Card(bool full) => row.Mod is { } shown
-                ? (watched.GetMeta(FullMeta, "").AsString() is { Length: > 0 } title ? $"[b]{Escape(title)}[/b]\n" : "") + ModDetails.Card(shown, full) : null;
+                ? ModDetails.Card(shown, full, watched.GetMeta(FullMeta, "").AsString() is { Length: > 0 } title ? title : null) : null;
             Hover.Watch(hot, NotesCard, () => Card(false), full: () => Card(true));
         }
         // Over the main title only (the alias), not the original name beside it.
