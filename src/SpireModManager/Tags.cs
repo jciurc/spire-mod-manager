@@ -6,7 +6,7 @@ using MegaCrit.Sts2.Core.Platform;
 
 namespace SpireModManager;
 
-// Tag chips on each mod: the automatic ones (New, Local, Same ID, Stable or Beta, Library, Gameplay, Cosmetic) and the
+// Tag chips on each mod: the automatic ones (New, Local, Duplicate, Stable or Beta, Library, Gameplay, Cosmetic) and the
 // player's own.
 static class Tags
 {
@@ -20,7 +20,9 @@ static class Tags
     static readonly Color New = new(0.5f, 0.84f, 0.78f);
     static readonly Color Stable = new(0.58f, 0.84f, 0.5f);
     static readonly Color Beta = new(0.5f, 0.7f, 1f);
-    public static readonly Color SameIdClash = new(0.95f, 0.78f, 0.35f); // copies of an id ticked together (the self-test reads it)
+    // Copies of an id ticked together: the same-ID banner's warning yellow, light enough for text (the banner's own fill
+    // is too dark to read on a card). The copy lines say it in this too (ModDetails.CopyLine); the self-test reads it.
+    public static readonly Color SameIdClash = new(0.95f, 0.78f, 0.35f);
     public static readonly Color CustomColor = new(0.75f, 0.9f, 0.8f);
     static readonly Color Folded = new(0.8f, 0.78f, 0.72f); // the "+N" chip
 
@@ -40,16 +42,16 @@ static class Tags
     {
         if (mod.manifest is not { } manifest)
             return [];
-        // Order: New, Local, Same ID, Stable or Beta, Library, Gameplay, Cosmetic, then the player's own.
+        // Order: New, Local, Duplicate, Stable or Beta, Library, Gameplay, Cosmetic, then the player's own.
         var chips = new List<Chip>();
         if (IsNew(mod))
             chips.Add(new Chip(Menus.Text("SPIRE_MOD_MANAGER.TAG_NEW"), New, Tip: Menus.Text("SPIRE_MOD_MANAGER.TAG_NEW_TIP")));
         if (IsLocal(mod))
             chips.Add(new Chip(Menus.Text("SPIRE_MOD_MANAGER.TAG_LOCAL"), Local, Tip: Menus.Text("SPIRE_MOD_MANAGER.TAG_LOCAL_TIP")));
-        // Another copy of this mod id installed (Copies): yellow while this copy and another are ticked (only one of them
-        // loads), grey otherwise, and always for this mod's copies (they stay ticked together: Copies.Clashes). Its tip
-        // names the others (while yellow, the ticked ones, and the copy that loads); a click lists every mod installed
-        // more than once.
+        // Duplicate: another copy of this mod id installed (Copies). Yellow on every copy ticked while another is (only one
+        // of them loads), the one that loads too: they all share the problem. Grey otherwise, and always for this mod's
+        // copies (they stay ticked together: Copies.Clashes). Its tip names the others (while yellow, the ticked ones, and
+        // the copy that loads); a click lists every mod installed more than once.
         if (manifest.id is { } id && Copies.Others(mod) is { Count: > 0 } others)
         {
             var clash = Copies.Clashes(mod);
@@ -102,7 +104,7 @@ static class Tags
         if (beta)
             texts.AddRange([Menus.Text("SPIRE_MOD_MANAGER.TAG_BETA"), "Beta"]);
         if (Copies.Others(mod).Count > 0)
-            texts.Add("Same ID");
+            texts.Add("Duplicate");
         return texts;
     }
 
@@ -112,7 +114,7 @@ static class Tags
         {
             "SPIRE_MOD_MANAGER.TAG_NEW", "SPIRE_MOD_MANAGER.TAG_LOCAL", "SPIRE_MOD_MANAGER.TAG_SAME_ID", "SPIRE_MOD_MANAGER.TAG_STABLE",
             "SPIRE_MOD_MANAGER.TAG_BETA", "SPIRE_MOD_MANAGER.TAG_LIBRARY", "SPIRE_MOD_MANAGER.TAG_GAMEPLAY", "SPIRE_MOD_MANAGER.TAG_COSMETIC",
-        }.Select(Menus.Text).Concat(["New", "Local", "Same ID", "Stable", "Beta", "Library", "Gameplay", "Cosmetic"]);
+        }.Select(Menus.Text).Concat(["New", "Local", "Duplicate", "Stable", "Beta", "Library", "Gameplay", "Cosmetic"]);
 
     // The game's stable and beta branches a mod is marked for, by the game's own rule over the Workshop's supported
     // range (on another branch the game still loads it, with an error).
@@ -201,17 +203,21 @@ static class Tags
     // A chip with its hover card; clicked gets whether Shift was held.
     public static Control Make(Chip chip, Action<bool>? clicked = null)
     {
-        var tip = chip.Tip ?? Menus.Text(chip.Custom ? "SPIRE_MOD_MANAGER.TAG_CUSTOM_TIP" : "SPIRE_MOD_MANAGER.TAG_AUTO_TIP");
         var font = ModEntry.Font("res://themes/kreon_regular_shared.tres");
         var box = new PanelContainer
         {
             MouseFilter = Control.MouseFilterEnum.Pass, SizeFlagsVertical = Control.SizeFlags.ShrinkCenter, Theme = Look(font, chip.Color, chip.Custom),
         };
-        // A long tag is cut with "…"; its card then starts with the whole tag.
+        // A long tag is cut with "…"; its card then starts with the whole tag. Made when it shows: a tag of the player's
+        // says how many mods have it, which an edit on another row changes without remaking this one.
         var cut = RowTitles.Measure(font, chip.Text, 12) > ChipMax;
-        var about = (cut ? $"[b]{Escape(chip.Text)}[/b]\n" : "") + Escape(tip);
-        var card = clicked == null ? about : $"{about}\n\n{Hint(Menus.Text("SPIRE_MOD_MANAGER.SEARCH_CLICK_TIP"))}";
-        Hover.Watch(box, "SpireModManagerTagCard", () => card, width: 320);
+        string Card()
+        {
+            var tip = chip.Tip ?? (chip.Custom ? CustomTip(chip.Text) : Menus.Text("SPIRE_MOD_MANAGER.TAG_AUTO_TIP"));
+            var about = (cut ? $"[b]{Escape(chip.Text)}[/b]\n" : "") + Escape(tip);
+            return clicked == null ? about : $"{about}\n\n{Hint(Menus.Text("SPIRE_MOD_MANAGER.SEARCH_CLICK_TIP"))}";
+        }
+        Hover.Watch(box, "SpireModManagerTagCard", Card, width: 320);
         if (clicked != null)
         {
             (box.MouseFilter, box.MouseDefaultCursorShape) = (Control.MouseFilterEnum.Stop, Control.CursorShape.PointingHand);
@@ -229,6 +235,15 @@ static class Tags
             (label.ClipText, label.TextOverrunBehavior, label.CustomMinimumSize) = (true, TextServer.OverrunBehavior.TrimEllipsis, new Vector2(ChipMax, 0));
         box.AddChild(label);
         return box;
+    }
+
+    // What the card of a tag of the player's says: "Your custom tag, applied to 3 mods", counting the installed copies
+    // that have it among their own tags (any case, as a search finds them).
+    static string CustomTip(string tag)
+    {
+        var count = Dependencies.EachCopy(ModManager.Mods.Union(Installed.Mods))
+            .Count(m => Store.InfoFor(m)?.Tags?.Contains(tag, StringComparer.OrdinalIgnoreCase) == true);
+        return Menus.Format(count == 1 ? "SPIRE_MOD_MANAGER.TAG_CUSTOM_COUNT_TIP_ONE" : "SPIRE_MOD_MANAGER.TAG_CUSTOM_COUNT_TIP", ("count", Menus.Number(count)));
     }
 
     // The "+N" chip for tags that don't fit on a row; its card lists them.

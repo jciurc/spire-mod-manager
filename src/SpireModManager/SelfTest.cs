@@ -4608,7 +4608,7 @@ static partial class SelfTest
     // game failed it, D has a game error, E is off but loaded, with a tag of its own named "Enabled".
     // Every hidden tag, in HiddenTags' order (the info panel's Other keywords lists them in it).
     static readonly string[] HiddenTagNames = ["#enabled", "#disabled", "#workshop", "#local", "#installed", "#uninstalled", "#missing", "#loaded", "#notloaded",
-        "#pending", "#new", "#changed", "#moved", "#edited", "#renamed", "#note", "#uncategorized", "#unmet", "#needed", "#order", "#sameid", "#clash", "#aside",
+        "#pending", "#new", "#changed", "#moved", "#edited", "#renamed", "#note", "#uncategorized", "#unmet", "#needed", "#order", "#duplicate", "#clash", "#aside",
         "#managers", "#failed", "#gameerror", "#error", "#warning", "#problem"];
 
     static void TestHiddenTags(Control content)
@@ -4627,14 +4627,15 @@ static partial class SelfTest
             rows.Any(Copies.Ticked) && rows.Any(m => !Copies.Ticked(m)) && Finds("#enabled", Copies.Ticked) && Finds("#Disabled", m => !Copies.Ticked(m))
             && Finds("#installed", _ => true) && Finds("#missing", _ => false) && Finds("#UNINSTALLED", _ => false));
         // Each of them on the fixture's rows, by what it means (HiddenTagsAsMeant), and the ones the fixture holds by name:
-        // Test Addon needs a mod that isn't installed, the twins share an id, this mod has its alias and note, Test Retired
-        // is off, every row is local.
+        // Test Addon needs a mod that isn't installed, the twins share an id (#sameid, the old name, finds them too), this
+        // mod has its alias and note, Test Retired is off, every row is local.
         var asMeant = HiddenTagsAsMeant(content);
         bool Has(string tag, params string[] ids) => ids.All(id => rows.Any(m => m.manifest?.id == id && Search.Matches(m, tag)));
         var twins = rows.Where(m => m.manifest?.id == TwinId).ToList();
         Check("hidden tags on the fixture: each finds the rows it means (the box, chips, status, the banners' rules, changes since launch); Test Addon #unmet, "
-            + "the twins #sameid, this mod #renamed and #note, Test Retired #disabled and #notloaded, every row #local",
-            asMeant.Wrong.Count == 0 && (WontLoad() == null || Has("#unmet", "SmmTestAddon")) && twins.Count == 2 && twins.All(m => Search.Matches(m, "#sameid"))
+            + "the twins #duplicate (and #sameid, its old name), this mod #renamed and #note, Test Retired #disabled and #notloaded, every row #local",
+            asMeant.Wrong.Count == 0 && (WontLoad() == null || Has("#unmet", "SmmTestAddon")) && twins.Count == 2
+            && twins.All(m => Search.Matches(m, "#duplicate") && Search.Matches(m, "#sameid")) && Finds("#sameid", m => Search.Matches(m, "#duplicate"))
             && Has("#renamed", ModEntry.ModId) && Has("#note", ModEntry.ModId) && Has("#disabled", "SmmTestRetired") && Has("#notloaded", "SmmTestRetired")
             && Finds("#local", _ => true), $"{string.Join(" | ", asMeant.Wrong)}; found {asMeant.Found}");
         Results.Add($"INFO hidden tags on the fixture, rows found: {asMeant.Found}");
@@ -4689,7 +4690,7 @@ static partial class SelfTest
                 ("#enabled", "yynyy"), ("#disabled", "nnyny"), ("enabled", "nnnny"), ("#workshop", "nynnn"), ("#local", "ynyyy"), ("#installed", "yyyyy"),
                 ("#missing", "nnnnn"), ("#loaded", "ynnyy"), ("#notloaded", "nyynn"), ("#pending", "nnnny"), ("#unmet", "yynnn"), ("#needed", "nnynn"),
                 ("#order", "ynnnn"), ("#failed", "nynnn"), ("#gameerror", "nnnyn"), ("#error", "yyynn"), ("#warning", "nnnyn"), ("#problem", "yyyyn"),
-                ("#renamed", "ynnnn"), ("#note", "nynnn"), ("#notes", "nynnn"), ("#uncategorized", "yynyy"), ("#edited", "yyyyy"), ("#sameid OR #clash OR #aside OR #managers", "nnnnn"),
+                ("#renamed", "ynnnn"), ("#note", "nynnn"), ("#notes", "nynnn"), ("#uncategorized", "yynyy"), ("#edited", "yyyyy"), ("#duplicate OR #sameid OR #clash OR #aside OR #managers", "nnnnn"),
                 ("#enabled -#local", "nynnn"), ("#problem #local", "ynyyn"), ("(#unmet OR #needed) -#failed", "ynynn"),
             ];
             List<string> wrong;
@@ -4711,7 +4712,7 @@ static partial class SelfTest
 
     // Each hidden tag against the list's rows, by what it means told from what the page shows or from where the search's
     // decisions say it comes from, not by HiddenTags' own rules: the row's box (#enabled), its chips (#local, #new,
-    // #sameid), its category as the list files it; a dependency missing or off by Dependencies.Check (#unmet), NeededOff,
+    // #duplicate), its category as the list files it; a dependency missing or off by Dependencies.Check (#unmet), NeededOff,
     // OrderViolations, Copies.Clashing and Loses, the managers both ticked, what changed since launch (ChangedMods, Moves,
     // the edited keys). Wrong: each tag that finds other rows than it means, with them; Found: how many each finds.
     static (List<string> Wrong, string Found) HiddenTagsAsMeant(Control content)
@@ -4744,7 +4745,7 @@ static partial class SelfTest
             ("changed", changed.Contains), ("moved", moved.Contains), ("edited", m => edited.Contains(Copies.Key(m))),
             ("renamed", m => Store.InfoFor(m)?.Alias is { Length: > 0 }), ("note", m => !string.IsNullOrWhiteSpace(Store.InfoFor(m)?.Notes)),
             ("uncategorized", m => CategoryList.CategoryName(Copies.KeyOf(m)) == Menus.Text("SPIRE_MOD_MANAGER.UNCATEGORIZED")),
-            ("unmet", Unmet), ("needed", Needed), ("order", Misordered), ("sameid", m => Chip(m, "SPIRE_MOD_MANAGER.TAG_SAME_ID")),
+            ("unmet", Unmet), ("needed", Needed), ("order", Misordered), ("duplicate", m => Chip(m, "SPIRE_MOD_MANAGER.TAG_SAME_ID")),
             ("clash", clashing.Contains), ("aside", Copies.Loses), ("managers", managers.Contains), ("failed", Failed), ("gameerror", GameError),
             ("error", Error), ("warning", Warning), ("problem", m => Error(m) || Warning(m)),
         ];
@@ -5308,7 +5309,7 @@ static partial class SelfTest
 
             // A row's buttons kept through a redraw (the same words and states) run that redraw's actions: an action holds
             // what its redraw knew (Load Order's rows). And a line is made again when a tag's card or search changes, its
-            // words, colour and kind the same (the Same ID tag's card names the other copies).
+            // words, colour and kind the same (the Duplicate tag's card names the other copies).
             var ran = "";
             using (Lookups.Begin(mods, [], saved, Picks.None))
             {
@@ -5320,7 +5321,7 @@ static partial class SelfTest
                 probe.EmitSignal(BaseButton.SignalName.Pressed);
             Check("300 made-up rows: buttons kept through a redraw run that redraw's actions, not the ones they were made with",
                 probeButtons is [{ Text: "Probe" }] && ran == "second", $"{probeButtons.Count} buttons, ran \"{ran}\"");
-            var sameId = new Tags.Chip("Same ID", Colors.Yellow, Tip: "Another copy: A");
+            var sameId = new Tags.Chip("Duplicate", Colors.Yellow, Tip: "Another copy: A");
             var shows = RowStrip.Shows([sameId], "Someone");
             Check("300 made-up rows: a line is made again when a tag's card or search changes, its words, colour and kind the same",
                 RowStrip.Shows([sameId with { Tip = "Another copy: B" }], "Someone") != shows && RowStrip.Shows([sameId with { Search = "#same" }], "Someone") != shows
@@ -6296,7 +6297,7 @@ static partial class SelfTest
     // once (no relaunch). The fixture has it installed but off; with --bmm it's on and loaded, so the banner is there from
     // the start. It ends as it started.
     // This mod among the others: the counts count it; installed twice, its boxes are locked on (a click puts one back),
-    // the panel says which copy runs, and there's no Same ID warning for it; a Disable all that covers it says it stays
+    // the panel says which copy runs, and there's no same-ID warning for it; a Disable all that covers it says it stays
     // on; and installed once and unticked on its own row, a red banner above everything says it (and this page) goes at
     // the relaunch, with Go to (its row) and Enable now. Enable now, and undo, take the banner away.
     static async Task TestSelfIncluded(Node menu, NModdingScreen screen, Control content, string outDir)
@@ -6343,7 +6344,7 @@ static partial class SelfTest
         // Its boxes locked on our page while it's installed twice (removing the copy that runs still leaves one that loads):
         // each disabled, white again, our padlock on it, its tip saying why and how to turn it off; unticking either (a click,
         // or the controller's hotkey, which ignores a disabled box) puts it back: every entry of ours on, no undo step, no
-        // red banner. The panel says which copy runs and that the other stays on; no Same ID banner or yellow chip (both on
+        // red banner. The panel says which copy runs and that the other stays on; no same-ID banner or yellow chip (both on
         // is as it should be). Disable all keeps both on.
         var ourRows = content.GetChildren().OfType<NModMenuRow>().Where(r => r.Mod?.manifest?.id == ModEntry.ModId).ToList();
         string Box(NModMenuRow r) => r.GetNode<NTickbox>("Tickbox") is var box
@@ -6407,8 +6408,8 @@ static partial class SelfTest
         Check("... the other copy unticked (as the vanilla page does): this one's locked box says Spire Mod Manager won't load if this copy is removed, to "
             + "enable the other too; ticked again, the lock's own tip", !copyTicked && offTip == otherOffTip && offBox == otherOffTip && ourRows.All(Locked),
             $"other ticked {copyTicked}; tip {offTip}; box {offBox}; then {string.Join(" | ", ourRows.Select(Box))}");
-        var ourChips = new[] { self, copy }.Select(m => Tags.For(m).FirstOrDefault(c => c.Text == "Same ID")).ToList();
-        Check("... no Same ID banner or yellow chip for this mod: both on is as it should be",
+        var ourChips = new[] { self, copy }.Select(m => Tags.For(m).FirstOrDefault(c => c.Text == DuplicateChip)).ToList();
+        Check("... no same-ID banner or yellow Duplicate chip for this mod: both on is as it should be",
             !Copies.Clashing().Any(m => m.manifest?.id == ModEntry.ModId) && border.GetNodeOrNull<Control>(LoadOrder.SameIdName) == null
             && ourChips.All(c => c != null && c.Color != Tags.SameIdClash), string.Join(" / ", ourChips.Select(c => $"{c?.Color} {c?.Tip}")));
         if (border.FindChild(PageBar.Name, true, false)?.FindChildren("*", "Button", true, false).OfType<Button>().FirstOrDefault(b => b.Text == "Disable all") is { } disableAll)
@@ -7754,6 +7755,18 @@ static partial class SelfTest
             Check("long details: the tags that don't fit fold into \"+N\", its card listing them", more is { Visible: true } && folded.Count > 0
                 && more.GetChildOrNull<Label>(0)?.Text == $"+{folded.Count}" && folded.Last() == "late-game"
                 && moreCard.Split('\n').SequenceEqual(folded), $"{folded.Count} folded, card: {moreCard.ReplaceLineEndings(", ")}");
+            // A tag of the player's: its card says so, and how many mods have it, counted as it shows: one, then two once
+            // another row's mod has it too, in another case (that mod's tags put back after).
+            var tagChip = longTag?.GetParent<Control>();
+            var oneCard = tagChip == null ? "" : await Tooltip(tagChip, "SpireModManagerTagCard", Hover.Delay + 0.15);
+            var otherKey = Copies.KeyOf(content.GetChildren().OfType<NModMenuRow>().Select(r => r.Mod).FirstOrDefault(m => m != null && m != mod)) ?? "";
+            var otherTags = Store.InfoFor(otherKey)?.Tags;
+            Store.EditMod(otherKey, info => info.Tags = [.. otherTags ?? [], "Really-Long-Tag-Name-For-Testing"]);
+            var twoCard = tagChip == null ? "" : await Tooltip(tagChip, "SpireModManagerTagCard", Hover.Delay + 0.15);
+            Store.EditMod(otherKey, info => info.Tags = otherTags);
+            Check("long details: a tag of the player's: its card says it's theirs and how many mods have it (any case), counted as it shows",
+                otherKey.Length > 0 && oneCard.Split('\n').Contains(CustomTagTipOne) && twoCard.Split('\n').Contains(Draft(CustomTagTip, ("count", "2"))),
+                $"{oneCard.ReplaceLineEndings(" / ")}, then with {otherKey}: {twoCard.ReplaceLineEndings(" / ")}");
             Hover.TestMouse = null;
             Check("rows whose tags fit show them all, no \"+N\"", content.GetChildren().OfType<NModMenuRow>().Where(r => r != row && r.Visible)
                 .All(r => r.GetNodeOrNull<Control>("SpireModManagerStrip") is not { } line
@@ -8609,7 +8622,7 @@ static partial class SelfTest
             && tried.Mods.GetValueOrDefault($"{id}|l:{id}")?.Notes == notesBefore && !tried.Mods.ContainsKey($"{id}|w:123"),
             $"record {string.Join(",", tried.Copies?.GetValueOrDefault(id) ?? [])}; plain {tried.Mods.GetValueOrDefault(id)?.Notes}");
 
-        // Both copies on: the same-id banner, yellow, saying only one loads, its card which copy; a Same ID chip on each
+        // Both copies on: the same-id banner, yellow, saying only one loads, its card which copy; a Duplicate chip on each
         // whose tip names the other copy and the one that loads; Show steps between the two; Dismiss hides it for this pair
         // through a redraw (view state: no change, no undo step). The copy that won't load reads "Duplicate - Won't load",
         // not "Pending relaunch", before a launch too.
@@ -8619,10 +8632,10 @@ static partial class SelfTest
         await Wait(menu, 0.3);
         var bothOn = Copies.Ticked(local) && Copies.Ticked(copy);
         var bannerText = (SameId()?.FindChild("SameIdWarning", true, false) as Label)?.Text;
-        var chips = Tags.For(local).Concat(Tags.For(copy)).Where(c => c.Text == "Same ID").ToList();
+        var chips = Tags.For(local).Concat(Tags.For(copy)).Where(c => c.Text == DuplicateChip).ToList();
         var card = await BannerCard(menu, screen, SameId());
         Check("both copies on: a yellow banner (\"2 mods with the same ID are enabled. Only one copy of each loads.\"), its card saying which loads (the local "
-            + "copy: the same version); a Same ID chip on each naming the other and the copy that loads",
+            + "copy: the same version); a Duplicate chip on each naming the other and the copy that loads",
             bothOn && bannerText == Draft(SameIdText, ("count", "2")) && Yellow(BannerFill(SameId()))
             && card.Contains(Draft(BannerLoads, ("mod", Named(local)))) && card.Contains(Draft(BannerWontLoad, ("mod", Named(copy))))
             && chips.Count == 2 && chips[0].Tip == Draft(ClashTip, ("others", Named(copy)), ("loads", Named(local)))
@@ -8650,11 +8663,11 @@ static partial class SelfTest
             $"box \"{clashBox}\", rows {string.Join(", ", clashRows.Select(Copies.KeyOf))}; then \"{searchBox.Text}\"");
         Check("the banner's Show is lit while the box holds \"#clash\", not before or after", !litBefore && clashLit && !Lit(),
             $"before {litBefore}, with it {clashLit}, after {Lit()}");
-        // The hidden tags on the list as it is: both copies #clash, #sameid and #warning; the Workshop copy (the local one
+        // The hidden tags on the list as it is: both copies #clash, #duplicate and #warning; the Workshop copy (the local one
         // loads) #aside; each finding the rows it means.
         var asMeant = HiddenTagsAsMeant(content);
-        Check("both copies on: hidden tags on the list as it is (both #clash, #sameid, #warning; the Workshop copy #aside), each finding the rows it means",
-            asMeant.Wrong.Count == 0 && new[] { local, copy }.All(m => Search.Matches(m, "#clash") && Search.Matches(m, "#sameid") && Search.Matches(m, "#warning"))
+        Check("both copies on: hidden tags on the list as it is (both #clash, #duplicate, #warning; the Workshop copy #aside), each finding the rows it means",
+            asMeant.Wrong.Count == 0 && new[] { local, copy }.All(m => Search.Matches(m, "#clash") && Search.Matches(m, "#duplicate") && Search.Matches(m, "#warning"))
             && Search.Matches(copy, "#aside") && !Search.Matches(local, "#aside"), $"{string.Join(" | ", asMeant.Wrong)}; found {asMeant.Found}");
         var (editsShown, stepsShown) = (Edits(), History.Steps(History.Track.List));
         Press("DismissSameIdButton");
@@ -8666,7 +8679,7 @@ static partial class SelfTest
         // The clash over (the new copy off), the dismissal is forgotten. Enabled again on our page, the new copy is on beside
         // the local one (nothing turns another copy off; a local and a Workshop copy have a switch each, so nothing is
         // stored per copy): the banner is back; undone, it's off again. On again for the rest. In Load Order too. A click on
-        // the chip searches #"Same ID": both copies, no other mod.
+        // the chip searches #Duplicate: both copies, no other mod.
         Dependencies.Set([copy], false, screen);
         CategoryList.Redraw(content);
         await Wait(menu, 0.3);
@@ -8703,7 +8716,7 @@ static partial class SelfTest
             $"\"{orderFound}\", every row {orderEvery}, lit {orderLit}; then \"{searchBox.Text}\"");
         Click(toggle);
         await Wait(menu, 0.5);
-        var sameIdSearch = "#\"Same ID\"";
+        var sameIdSearch = Search.TermFor("#", DuplicateChip);
         // The other mods installed once (the fixture's own twins have the chip too).
         var others = content.GetChildren().OfType<NModMenuRow>().Select(r => r.Mod).OfType<Mod>().Where(m => m.manifest?.id is { } other && other != id && other != TwinId).ToList();
         Check("the banner shows in Load Order too; the chip's search finds both copies and no other mod", inLoadOrder
@@ -8772,7 +8785,7 @@ static partial class SelfTest
             && ModEntry.HasPendingChanges() == (w || LoadOrder.OrderChanged),
             $"beta rule {w}; loads copy {Copies.Loads(copy)}, local {Copies.Loads(local)}; status {ModDetails.Status(local)} / {ModDetails.Status(copy)}; "
             + $"lines {Line(local)} / {Line(copy)}; pending {ModEntry.HasPendingChanges()}, moved since launch {LoadOrder.OrderChanged}");
-        var newerChips = new[] { local, copy }.Select(m => Tags.For(m).FirstOrDefault(c => c.Text == "Same ID")?.Tip).ToList();
+        var newerChips = new[] { local, copy }.Select(m => Tags.For(m).FirstOrDefault(c => c.Text == DuplicateChip)?.Tip).ToList();
         RelaunchCheck.Show(screen);
         await Wait(menu, 0.3);
         var relaunchBody = (menu.GetTree().Root.GetNodeOrNull(RelaunchCheck.Name)?.FindChild("Body", true, false) as RichTextLabel)?.GetParsedText() ?? "";
@@ -10619,6 +10632,9 @@ static partial class SelfTest
     static string MissingSearchHintOne => Menus.Text("SPIRE_MOD_MANAGER.MISSING_SEARCH_HINT_ONE");
     static string ShowFilterTip => Menus.Text("SPIRE_MOD_MANAGER.SHOW_FILTER_TIP");
     static string ShowFilterFindTip => Menus.Text("SPIRE_MOD_MANAGER.SHOW_FILTER_FIND_TIP");
+    static string DuplicateChip => Menus.Text("SPIRE_MOD_MANAGER.TAG_SAME_ID");
+    static string CustomTagTip => Template("SPIRE_MOD_MANAGER.TAG_CUSTOM_COUNT_TIP");
+    static string CustomTagTipOne => Menus.Text("SPIRE_MOD_MANAGER.TAG_CUSTOM_COUNT_TIP_ONE");
 
     // A text with its {values} still in it, for Draft (Menus.Text formats it, and these need their values).
     static string Template(string key) => new LocString("settings_ui", key).GetRawText();
@@ -10636,7 +10652,8 @@ static partial class SelfTest
     // The fixture twins both ticked at launch (BothTickedQuietly: as a launch would have them, A set aside, B loaded): B,
     // the pick, loads and A won't, with no duplicate error and nothing pending or changed; A's title white, not the
     // game's grey for a copy set aside; its status and panel say B loads instead, one copy of a source loading; both chips
-    // yellow, naming the copy that loads; the banner and its card; the relaunch check, gone with the banner's Dismiss;
+    // yellow, naming the copy that loads, and both copy lines in that yellow (A off beside B: its own colour); the banner
+    // and its card; the relaunch check, gone with the banner's Dismiss;
     // Find takes the copy that loads, and a need of the copy that won't load is no problem. Unticking the copy that loads:
     // the other one loads (picked), one undo step, pending; undo, redo, Revert all. Unticking the one that doesn't load: a
     // change, nothing pending. The last ticked copy unticked: the switch off, the pick kept; then a tick on the other
@@ -10696,18 +10713,26 @@ static partial class SelfTest
         // As the page has them: A off (copies_off), its title the game's grey for a copy set aside. Then both ticked.
         var greyOff = !Ticked(rowA) && Title(rowA) == MegaCrit.Sts2.Core.Helpers.StsColors.gray && a.state == ModLoadState.DisabledDuplicate;
         var offWere = CopiesOff();
+        // The copy lines' colour: A off beside B isn't in a clash (its own dim colour, B none); both ticked, each in the
+        // Duplicate chip's warning yellow, B (the copy that loads) too.
+        var clash = $"#{Tags.SameIdClash.ToHtml(false)}";
+        var (offColor, onAlone) = (ModDetails.CopyLine(a, false)?.Color, ModDetails.CopyLine(b, false));
         BothTickedQuietly(true);
         Profiles.RefreshTickboxes(screen);
         CategoryList.Redraw(content);
         await Wait(menu, 0.3);
         var bothOff = CopiesOff();
         var steps = History.Steps(History.Track.List);
-        var chips = new[] { a, b }.Select(m => Tags.For(m).FirstOrDefault(c => c.Text == "Same ID")).ToList();
+        var chips = new[] { a, b }.Select(m => Tags.For(m).FirstOrDefault(c => c.Text == DuplicateChip)).ToList();
+        var lineColors = (A: ModDetails.CopyLine(a, false)?.Color, B: ModDetails.CopyLine(b, false)?.Color);
+        Check("same ID, the copy lines: A off beside B in its own colour (not the clash's), B none; both ticked, each in the Duplicate chip's warning yellow, "
+            + "the copy that loads too", offColor != null && offColor != clash && onAlone == null && lineColors == (clash, clash),
+            $"off {offColor}, B alone {onAlone}; both {lineColors.A} / {lineColors.B} (yellow {clash})");
         var bannerText = (SameId()?.FindChild("SameIdWarning", true, false) as Label)?.Text;
         var card = await BannerCard(menu, screen, SameId());
         Check("same ID, both copies ticked at launch: the pick (B) loads and A won't, no duplicate error, nothing pending or changed; A's title white, not the "
-            + "game's grey for a copy set aside; A reads Won't load, B loading in its place (one copy of a source loads); both chips yellow, naming the copy that "
-            + "loads; the banner and its card say which loads; Find takes the copy that loads",
+            + "game's grey for a copy set aside; A reads Won't load, B loading in its place (one copy of a source loads); both Duplicate chips yellow (B's, "
+            + "the copy that loads, too), naming the copy that loads; the banner and its card say which loads; Find takes the copy that loads",
             greyOff && Ticked(rowA) && Ticked(rowB) && Picked() == "l:SmmTestTwinB" && Copies.Loads(b) && !Copies.Loads(a) && SwitchOn() && !bothOff.Contains(keyA)
             && b.state == ModLoadState.Loaded && a.state == ModLoadState.DisabledDuplicate
             && !ModManager.Mods.Any(m => m.errors?.Any(e => e.LocEntryKey == "MOD_ERROR.DUPLICATE_ID") == true)

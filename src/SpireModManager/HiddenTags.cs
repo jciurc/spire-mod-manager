@@ -33,7 +33,7 @@ static class HiddenTags
         ["unmet"] = Dependencies.Unmet,
         ["needed"] = Needed,
         ["order"] = Misordered,
-        ["sameid"] = m => Copies.Others(m).Count > 0, // the Same ID chip's
+        ["duplicate"] = m => Copies.Others(m).Count > 0, // the Duplicate chip's, in any language
         ["clash"] = Clash,
         ["aside"] = Copies.Loses, // ticked, but another copy of its id loads
         ["managers"] = Managers,
@@ -44,8 +44,9 @@ static class HiddenTags
         ["problem"] = m => Error(m) || Warning(m),
     };
 
-    // A tag's old name, which still finds its mods for players who learnt it (#notes, now #note); Of lists the new one.
-    static readonly Dictionary<string, string> Renamed = new(StringComparer.OrdinalIgnoreCase) { ["notes"] = "note" };
+    // A tag's old name, which still finds its mods for players who learnt it (#notes, now #note; #sameid, now #duplicate
+    // with its chip); Of lists the new one.
+    static readonly Dictionary<string, string> Renamed = new(StringComparer.OrdinalIgnoreCase) { ["notes"] = "note", ["sameid"] = "duplicate" };
 
     // What the hidden tag of this name finds (any case); null for a name that isn't one.
     public static Func<Mod, bool>? Find(string name) => Finds.GetValueOrDefault(Renamed.GetValueOrDefault(name, name));

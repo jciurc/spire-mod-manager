@@ -27,6 +27,7 @@ static class ModDetails
     const string WiredMeta = "spire_mod_manager_wired";
     const string FullMeta = "spire_mod_manager_full_text"; // on the title and the link: their whole text when cut short, else ""
     const string Enabled = "#a6e3a1", Disabled = "#fff6e299", Pending = "#f5b56b", Problem = "#ff8070";
+    static readonly string Clash = $"#{Tags.SameIdClash.ToHtml(false)}"; // copies of an id ticked together: the Duplicate chip's yellow
     const string GoldHex = "#efc851", LinkHex = "#99ccff";
     public const string ModLinkHex = "#cfe3ff"; // a mod's name, or its author, that a click acts on: light blue
     const string Quiet = "#fff6e299"; // no value to show (an unknown author, no description): subtle, so it doesn't read as one
@@ -494,16 +495,21 @@ static class ModDetails
     public static List<string> Problems(Mod mod) => DependencyProblems(mod);
 
     // For a mod installed more than once, a line about its copies (BBCode, another copy's name a link to its row where
-    // links, plain where not), with its colour; null for none. The first that holds:
+    // links, plain where not), with its colour; null for none. While another copy is ticked too, every ticked copy's
+    // line is in the Duplicate chip's warning yellow, whatever it says, the copy that loads included (Jordan: "they all
+    // own the same problem equally"); a copy that's off isn't in the clash, and keeps its colour. The first that holds:
     // - the pick couldn't be applied this launch (SameIdLoad's self-check or canary): it says so (orange), on every copy;
     // - ticked while another copy loads after a relaunch: that one, and why (orange; the status says it won't load);
     // - ticked, not loaded now, and loading after a relaunch in place of the copy loaded now: so (orange);
     // - ticked and failed for its own reasons: how to load another copy instead (dim, after the red), another copy
     //   ticked or not (it isn't "the one that loads" when it failed);
-    // - ticked with another copy ticked too: this one is the copy that loads (dim);
+    // - ticked with another copy ticked too: this one is the copy that loads;
     // - off while another copy is on: the copy that loads (dim).
-    // This mod's copies: SelfLine.
-    public static (string Text, string Color)? CopyLine(Mod mod, bool links)
+    // This mod's copies (SelfLine) stay ticked together on purpose: no clash, their own colours.
+    public static (string Text, string Color)? CopyLine(Mod mod, bool links) =>
+        CopySays(mod, links) is var (text, color) ? (text, Copies.Clashes(mod) ? Clash : color) : null;
+
+    static (string Text, string Color)? CopySays(Mod mod, bool links)
     {
         if (mod.manifest?.id is not { } id || Copies.Others(mod) is not { Count: > 0 } others)
             return null;
@@ -527,7 +533,7 @@ static class ModDetails
         if (ticked && mod.state == ModLoadState.Failed && mod.errors?.Any(e => e.LocEntryKey == "MOD_ERROR.DUPLICATE_ID") != true)
             return (Line("SPIRE_MOD_MANAGER.COPY_FAILED_OTHER", others.FirstOrDefault(Copies.Ticked) ?? others[0]), Disabled);
         if (others.FirstOrDefault(Copies.Ticked) is { } enabled)
-            return ticked ? (Line("SPIRE_MOD_MANAGER.COPY_LOADS_ALSO", enabled), Disabled)
+            return ticked ? (Line("SPIRE_MOD_MANAGER.COPY_LOADS_ALSO", enabled), Clash)
                 // The one of them that loads (a copy that's off loads only through a switch it shares: then another).
                 : (Line("SPIRE_MOD_MANAGER.COPY_OTHER_ENABLED", Copies.Loading(id) is { } loads && others.Contains(loads) && Copies.Ticked(loads) ? loads : enabled), Disabled);
         return null;

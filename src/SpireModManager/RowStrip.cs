@@ -146,7 +146,7 @@ static class RowStrip
     }
 
     // What a line's tags and author show, to know when the line must be made again: each tag's words, colour, kind,
-    // card and search (a tag keeps its card and its click's search: the Same ID tag's card names the other copies), and
+    // card and search (a tag keeps its card and its click's search: the Duplicate tag's card names the other copies), and
     // the author.
     public static string Shows(IEnumerable<Tags.Chip> chips, string author) =>
         $"{string.Join("|", chips.Select(c => $"{c.Text}/{c.Color}/{c.Custom}/{c.Tip}/{c.Search}"))}|{author}";
