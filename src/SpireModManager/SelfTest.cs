@@ -8687,7 +8687,7 @@ static partial class SelfTest
         var localRow = content.GetChildren().OfType<NModMenuRow>().FirstOrDefault(r => r.Mod == local);
         var boxTip = workshopRow == null ? null : Hover.TipOf(workshopRow.GetNode<Control>("Tickbox"));
         var orderTip = workshopRow == null ? null : LoadOrder.Actions(content, workshopRow, () => { })[0].Tip;
-        Check("... the box of the copy that's off says both would be enabled, and which loads; Load Order's Enable too", boxTip == tipOff && orderTip == tipOff,
+        Check("... the box of the copy that's off says the other is also enabled, and which loads; Load Order's Enable too", boxTip == tipOff && orderTip == tipOff,
             $"box {boxTip}; Load Order {orderTip}");
         if (workshopRow != null && localRow != null)
         {
@@ -9683,7 +9683,7 @@ static partial class SelfTest
 
     // The fixture twins on our main list, a box per copy. At launch (the update's reading of our file: only the pick
     // ticked, as before): the picked copy (B) on, Enabled; the other off (copies_off), Disabled, no duplicate problem, its
-    // box's tip saying both would be enabled and which would load, its panel naming the enabled copy; Enable all over it
+    // box's tip saying the other is on too and which would load, its panel naming the enabled copy; Enable all over it
     // says it enables a second copy; the view switch's tip says how the game's page treats them. Ticking the other copy
     // (A) picks it, the first staying ticked: the game's list still on, one undo step; A reads Pending relaunch, loading
     // in B's place, and B Won't load (the copy enabled last loads); A's title marked as changed, B's white. Undo, redo,
@@ -9747,7 +9747,7 @@ static partial class SelfTest
         var toggleTip = Hover.TipOf(screen.GetNode<Control>("SpireModManagerViewToggle"));
         var boxTip = Hover.TipOf(rowA.GetNode<Control>("Tickbox"));
         Check("same ID on our page: the picked copy on (Enabled), the other off (Disabled, no duplicate problem, in copies_off, in our file too), its box's "
-            + "tip saying both would be enabled and which loads, its panel naming the enabled copy; Enable all over it says it enables a second copy, over "
+            + "tip saying the other is also enabled and which loads, its panel naming the enabled copy; Enable all over it says it enables a second copy, over "
             + "both it isn't greyed; the view switch's tip says how the game's page treats them",
             Picked() == "l:SmmTestTwinB" && Ticked(rowB) && !Ticked(rowA) && ModDetails.Status(b).Contains("Enabled") && ModDetails.Status(a).Contains("Disabled")
             && ModDetails.Problems(a).Count == 0 && boxTip == Draft(CopyOnTip, ("other", Named(b)), ("loads", Named(a)))
@@ -9810,7 +9810,7 @@ static partial class SelfTest
             await Wait(menu, 0.3);
             History.Undo(); // the move: this view's undo steps through the order only
             await Wait(menu, 0.3);
-            Check("... in Load Order: Enable on the other copy says both would be enabled and which loads, and picks it beside the first; an order undo "
+            Check("... in Load Order: Enable on the other copy says the first is also enabled and which loads, and picks it beside the first; an order undo "
                 + "leaves the pick and copies_off",
                 enableTip == Draft(CopyOnTip, ("other", Named(b)), ("loads", Named(a))) && pickedHere && Picked() == "l:SmmTestTwinA" && CopiesOff().SequenceEqual(offHere)
                 && !LoadOrder.OrderChanged, $"tip {enableTip}; picked {pickedHere}; {Say()}");
@@ -10300,7 +10300,7 @@ static partial class SelfTest
         CategoryList.Redraw(content);
         await Wait(menu, 0.3);
         Check("... an update of a copy (its own folder again) isn't a new copy: the popup's usual words", notNew
-            && updatePopup.Contains("New mods were detected") && !updatePopup.Contains("A new copy"), $"not new {notNew}; {updatePopup}");
+            && updatePopup.Contains("New mods were detected") && !NewCopyWords(updatePopup), $"not new {notNew}; {updatePopup}");
 
         // A mod installed once (made up, as found at launch) whose saved pick still names a second copy, uninstalled since
         // (picks are never pruned; our record never had it: new to us), and an active profile naming no copy (as from
@@ -10347,7 +10347,7 @@ static partial class SelfTest
         var backUpdatePopup = string.Join(" | ", PopupTexts());
         NModalContainer.Instance?.Clear();
         var updateKeeps = BackPicked() == "l:Back2" && Installed.Mods.Contains(backUpdate) && backUpdatePopup.Contains("New mods were detected")
-            && !backUpdatePopup.Contains("A new copy");
+            && !NewCopyWords(backUpdatePopup);
         GameInstalls(pairFirst); // within 30 s of the last popup: none for it
         await Wait(menu, 0.2);
         NewModPopupPatch.TestReset();
@@ -10357,7 +10357,7 @@ static partial class SelfTest
         var pairPopup = string.Join(" | ", PopupTexts());
         NModalContainer.Instance?.Clear();
         var pairPicked = Copies.Picked(Pair, ModSource.ModsDirectory);
-        var pairNew = pairPopup.Contains("New mods were detected") && !pairPopup.Contains("A new copy") && pairPicked == "l:PairB"
+        var pairNew = pairPopup.Contains("New mods were detected") && !NewCopyWords(pairPopup) && pairPicked == "l:PairB"
             && Copies.Ticked(pairFirst) && Copies.Ticked(pairSecond);
         History.Undo(); // the switch
         await Wait(menu, 0.3);
@@ -10484,8 +10484,6 @@ static partial class SelfTest
 
     // The words of the duplicate copies, word for word as settings_ui.json has them: drafts until Jordan's copy pass, so
     // here once for every check that reads them (an edit there is one edit here). Draft fills in their values.
-    const string CopyOnTip = "{other} is already enabled. If both are enabled, only {loads} loads.";
-    const string BulkEnablesTip = "Enables more than one copy of {mods}. Only one copy of each loads.";
     const string SelfLockedTip = "Spire Mod Manager is installed more than once, so its copies stay enabled. If one is removed, another still loads. "
         + "To turn Spire Mod Manager off, disable them all on the vanilla Modding page.";
     const string SelfLockedOtherOffTip = "Spire Mod Manager stays enabled. {other} is disabled, so Spire Mod Manager won't load if this copy is removed. Enable it too.";
@@ -10501,17 +10499,32 @@ static partial class SelfTest
     const string FailedOther = "{other} is also installed. To load that copy instead, enable it and disable this one.";
     const string SelfRuns = "This copy is running. {other} stays enabled too, in case this one is removed.";
     const string SelfBackup = "{other} is running. This copy stays enabled, in case that one is removed.";
-    const string NewCopyOn = "A new copy of {mods} was installed and is enabled. Only {loads} loads. Disable the copy you don't want.";
     const string NewCopyOff = "A new copy of {mods} was installed and is disabled.";
     const string NewSelfCopy = "A new copy of Spire Mod Manager (this mod) was installed. Its copies stay enabled, and only {loads} loads.";
 
-    // The banners' Go to and Show, and the search's line for a profile's mods that aren't installed, the same way: drafts
-    // until the copy pass, word for word as settings_ui.json has them.
+    // The banners' Go to and Show the same way: drafts until the copy pass, word for word as settings_ui.json has them.
     const string GoToProblem = "Go to", GoToProblemTip = "Open the next affected mod";
-    const string ShowFilter = "Show", ShowFilterTip = "Shows only these mods. The search box holds the filter. Press again to clear it.",
-        ShowFilterFindTip = "Finds these mods in the list. Press again to clear the search.";
-    const string MissingSearchHint = "{count} mods in this profile aren't installed. [url=missing]Show them[/url]";
-    const string MissingSearchHintOne = "1 mod in this profile isn't installed. [url=missing]Show it[/url]";
+    const string ShowFilter = "Show";
+
+    // Jordan's words from his copy pass, read as the game shows them (settings_ui.json, or a translation over it) rather
+    // than quoted, so a later edit there needs none here. Draft fills in the values by the names the code passes.
+    static string CopyOnTip => Template("SPIRE_MOD_MANAGER.COPY_ON_TIP");
+    static string BulkEnablesTip => Template("SPIRE_MOD_MANAGER.BULK_ENABLES_COPIES_TIP");
+    static string NewCopyOn => Template("SPIRE_MOD_MANAGER.NEW_COPY_ON_BODY");
+    static string MissingSearchHint => Template("SPIRE_MOD_MANAGER.MISSING_SEARCH_HINT");
+    static string MissingSearchHintOne => Menus.Text("SPIRE_MOD_MANAGER.MISSING_SEARCH_HINT_ONE");
+    static string ShowFilterTip => Menus.Text("SPIRE_MOD_MANAGER.SHOW_FILTER_TIP");
+    static string ShowFilterFindTip => Menus.Text("SPIRE_MOD_MANAGER.SHOW_FILTER_FIND_TIP");
+
+    // A text with its {values} still in it, for Draft (Menus.Text formats it, and these need their values).
+    static string Template(string key) => new LocString("settings_ui", key).GetRawText();
+
+    // Whether a popup has a new copy's words (NewModPopupPatch), whichever mods they name: each text's longest run
+    // between its values.
+    static bool NewCopyWords(string popup) => new[] { "SPIRE_MOD_MANAGER.NEW_COPY_ON_BODY", "SPIRE_MOD_MANAGER.NEW_COPIES_ON_BODY",
+            "SPIRE_MOD_MANAGER.NEW_COPY_OFF_BODY", "SPIRE_MOD_MANAGER.NEW_SELF_COPY_BODY" }
+        .Select(key => Template(key).Split('{', '}').Where((_, i) => i % 2 == 0).MaxBy(s => s.Length) ?? "")
+        .Any(words => words.Length > 0 && popup.Contains(words));
 
     static string Draft(string text, params (string Name, string Value)[] values) =>
         values.Aggregate(text, (filled, value) => filled.Replace($"{{{value.Name}}}", value.Value));
