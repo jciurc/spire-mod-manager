@@ -5301,6 +5301,7 @@ static partial class SelfTest
         int At(List<NModMenuRow> found) => found.FindIndex(r => r.Mod == CategoryList.Selected);
 
         Check("Load Order, no search: no find bar", Bar() is not { Visible: true });
+        var boxEnd = box.GetGlobalRect().End.X;
         if (Rows().FirstOrDefault(r => !SpireModManager.Search.Matches(r.Mod, "SmmTest")) is { } other)
             CategoryList.Select(screen, other); // a row the search won't match: typing goes to the first match
         await Type("SmmTest");
@@ -5310,6 +5311,8 @@ static partial class SelfTest
             found.Count >= 3 && Rows().All(r => r.Visible) && Bar() is { Visible: true } bar && Count() == $"{found.Count} matches" && At(found) == 0
             && view.Intersects(found[0].GetGlobalRect()) && bar.GetGlobalRect().Position.X >= box.GetGlobalRect().End.X,
             $"{found.Count} found, count \"{Count()}\", at {At(found)}, rows shown {Rows().Count(r => r.Visible)}/{Rows().Count}");
+        Check("Load Order: the search box keeps its width as a search starts (the find bar's room kept beside it)",
+            Math.Abs(box.GetGlobalRect().End.X - boxEnd) < 0.5f, $"box ends at {boxEnd}, then {box.GetGlobalRect().End.X}");
         Check("the arrows say where they go", Bar() is { } arrows && Hover.TipOf(arrows.GetNode<Button>("PreviousMatch")) == "Go to previous found match"
             && Hover.TipOf(arrows.GetNode<Button>("NextMatch")) == "Go to next found match");
         // The rows it doesn't match fade below even a match that's off; a match keeps its usual look.
@@ -5347,8 +5350,8 @@ static partial class SelfTest
             && Bar() is { } emptyBar && emptyBar.GetChildren().OfType<Button>().All(b => b.Disabled), Count());
         Check("no match: every row faded", Rows().All(r => r.Modulate.A <= LoadOrder.UnmatchedAlpha + 0.01f), Looks());
         await Type("");
-        Check("search cleared: no find bar, the box its full width again", Bar() is not { Visible: true }
-            && box.GetGlobalRect().End.X > border.GetNode<Control>(FindBar.Name).GetGlobalRect().Position.X);
+        Check("search cleared: no find bar, the box the same width, its room kept", Bar() is not { Visible: true }
+            && Math.Abs(box.GetGlobalRect().End.X - boxEnd) < 0.5f, $"box ends at {boxEnd}, then {box.GetGlobalRect().End.X}");
         Check("search cleared: every row its usual look again", Rows().All(r => Math.Abs(r.Modulate.A - Expected(r, finding: false)) < 0.01f), Looks());
         if (!wasLoadOrder)
         {

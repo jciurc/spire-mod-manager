@@ -387,12 +387,14 @@ static class LoadOrder
             hint.OffsetRight = sort.OffsetLeft - gap;
             hint.OffsetLeft = hint.OffsetRight - hintWidth;
             search.OffsetRight = on ? hint.OffsetLeft - gap * 2 : sort.OffsetRight;
-            // While searching: "6 matches · ‹ ›" between the search box and the hint.
+            // While searching: "6 matches · ‹ ›" between the search box and the hint. In Load Order the box always ends where
+            // that room begins, so it keeps its width as matches come and go and the count never crowds it (Jordan, 22 Oct:
+            // the box a set width, room kept for the results); only a count too long for the room takes more of the box.
             if (border.GetNodeOrNull<Control>(FindBar.Name) is { } find)
             {
                 find.OffsetRight = hint.OffsetLeft - gap * 2;
-                find.OffsetLeft = find.OffsetRight - Math.Max(FindBar.Width, find.GetCombinedMinimumSize().X); // a longer count gets room
-                if (finding)
+                find.OffsetLeft = find.OffsetRight - (finding ? Math.Max(FindBar.Width, find.GetCombinedMinimumSize().X) : FindBar.Width);
+                if (on)
                     search.OffsetRight = find.OffsetLeft - gap;
             }
         }
