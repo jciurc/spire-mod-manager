@@ -3,6 +3,93 @@
 What changed in each Workshop release, for players. Each version's first line is its Workshop change note
 (`changeNote` in `workshop/workshop.json`), word for word.
 
+## 0.1.5 (2026-10-22)
+
+0.1.5:
+- mods that share the same ID can now be configured independently
+- search supports OR, NOT and brackets, e.g. (#gameplay OR #library) #enabled
+- hidden tags to help filter specific content was added. #enabled, #workshop, #pending, #changed, #error and #warning
+- warning banner show button now filters to the list of affected mods, the previous show functionality moved to "Go to" button
+- Vanilla menu button was moved to the top of the page and now has a simple link style
+- mods are sorted alphabetically within each category 
+- tags show as their styled pills within the input while editing them; they can be deleted using backspace
+- the info panel now explains mods that affect base game content, such as a character reskin
+- filter buttons, unsaved profile indicator, and restart message in the main menu, now all show the count of their respective mods
+- fixed dropdowns from clipping long lists; content now wraps to additional columns if overflowing
+- other mods can now use Spire Mod Manager's menus, banners and mod cards (API version 1)
+
+- A mod installed more than once (a Workshop item and a local copy, or two from one source) has a box per copy, and
+  a box now means just that copy is enabled: enabling one no longer disables the others, so disable the copy you
+  don't want. With two enabled, only one loads, by the game's rule: the local copy on stable, the higher version on
+  beta (else the local copy), and of two from one source, the one you enabled last. The page says which: the other
+  reads "Won't load (same ID)" (it was "Not loaded (same ID)"), its info panel says which copy loads instead and why,
+  the Same ID tag and the yellow banner's card say which loads and which won't, and "Before you relaunch" lists it.
+  An enabled copy's name is no longer greyed out. Profiles keep each copy's box, a change of which copy loads shows
+  in Changes (which copy loads instead of which) and counts toward the main menu's restart line, and a setup from
+  before this update looks as it did, with only the loading copy enabled.
+- A newly installed copy of a mod you have arrives enabled, and its New Mod Added popup says which copy loads. With
+  Spire Mod Manager itself installed twice, both copies stay enabled and their boxes are locked with a padlock, so
+  one still loads if the other is removed; to turn it off, disable them all on the vanilla Modding page. A copy of it
+  found disabled is turned back on at the next launch.
+- Importing a profile: for a mod you have more than once, a row with a Workshop link sets only that copy, and a mod
+  you already have is never offered for subscribing as a second copy. The preview lists any change of which copy
+  loads, and when the list's Workshop copy of a mod would be enabled alongside one you installed by hand, it names
+  them under "You currently have a manual installation of one of the listed mods. Both copies will remain installed,
+  but only one should be enabled to prevent issues." It reads "1 mod sorted into categories" for one, and the dialog
+  keeps its size as an error comes and goes. Import profile now comes before Export profile in the profile list and
+  its right-click menu, and an exported list no longer ends with a line break.
+- Search: OR (or `|`) finds either side, NOT leaves a term out as "-" does, and brackets group terms:
+  `(#gameplay OR #library) #enabled`. A space or AND means both, and OR is read first, so `#a OR #b #c` is
+  `(#a OR #b) #c`. In capitals, OR, AND and NOT are always operators (put them in quotes to search for the word); in
+  lowercase, only between tags, authors, quotes or brackets, so `#warning or #error` works and `rock and stone` is
+  still three words. A search without them finds what it did before, an unfinished one never fails (a missing
+  bracket closes at the end), and the box takes 200 characters, up from 60.
+- Tags that aren't chips find mods by state, in English in every language: `#enabled`, `#disabled`, `#workshop`,
+  `#local`, `#installed`, `#loaded`, `#notloaded`, `#pending`, `#new`, `#changed`, `#moved`, `#edited`, `#renamed`,
+  `#notes` and `#uncategorized`, and for problems `#unmet`, `#needed`, `#order`, `#sameid`, `#clash`, `#aside`,
+  `#managers`, `#failed` and `#gameerror`, with `#error`, `#warning` and `#problem` gathering them. A tag of yours
+  with the same name finds its mods too. `#missing` shows a line counting the profile's mods that aren't installed,
+  with "Show them" to list them.
+- On the warning banners, the old Show, which opens the next affected mod, is now Go to, and a new Show lists just
+  the banner's mods by putting its search in the box (`#unmet OR #needed`, `#clash`, `#managers`, `#order`); press
+  it again to clear it. The missing-mods banner's Show still opens its list. A mod you fix while a search lists it
+  stays in the list until the search changes, so it doesn't vanish from under the mouse.
+- The page has its own Main Menu button in the bottom-left corner, beside Load Order (and beside Return in Load
+  Order), where the game's back arrow was; Escape and F3 still leave the page. The Vanilla List button is gone: "Go to
+  vanilla Modding page", a link right of the page's title, opens the game's page, and "Go to Spire Mod Manager page",
+  in the same spot there, comes back. Mods are listed alphabetically by alias or name within each category. The main
+  menu button's card says F3 opens the page and right-click has more options.
+- Editing a mod's tags, each finished tag shows as a pill while you type. Backspace or Delete next to a pill removes
+  the whole tag (Ctrl+Z puts it back), and holding the key stops at a tag instead of running on through it. A comma
+  finishes a tag, pasting a list adds each as a tag (skipping repeats), Copy and Cut take whole tags, and a
+  double-click selects one. The suggestions have a heading, "Currently used tags; Shift-click to add multiple": a
+  click adds a tag and finishes editing, a Shift-click adds it and keeps the list open, and Ctrl+Z takes back a
+  picked one. Save and Cancel sit at the right end of the Tags line.
+- The Cosmetic and Gameplay tags' cards are reworded, and the Cosmetic tag now also comes from Workshop tags for
+  audio, sound, music or reskins, and no longer from "UI".
+- A mod's info panel says what it changes in the game itself: "Replaces game files" (how many, and what they're for,
+  such as a character's parts, combat or card art) and "Changes game code" (how many places, by part of the game).
+  Search finds a mod by these too, so "regent" lists the mods that change the Regent.
+- Counts: the filters read All (20), Enabled (15), Disabled (4) and Changed (3), after the search, and keep their
+  width as the numbers change. The profile bar's "Unsaved (14) •" says how many changes aren't saved (each
+  profile's mod count is in the profile list). While a relaunch is pending, the main menu's note counts the mods
+  turned on, off or moved ("15 mod changes will be applied after a restart", or "1 mod change ..."), and the main
+  menu button's card starts with a summary of those changes.
+- Menus taller than the screen go into columns, scrolling if there are more than fit across, instead of running off
+  it. Menu items show their tips, such as a category's Enable all saying when it would enable more than one copy of
+  a mod.
+- Links no longer underline: their colour and the pointing hand mark them, the info panel's source link included. A
+  mod's hover card closes when its row scrolls out of view under the mouse, and a row scrolled out of the list no
+  longer counts as hovered. The caption over a disabled mod's load errors reads "Error while loading - Can be
+  ignored if mod is disabled".
+- Fixes: deleting the active profile, or making a new category from one mod's menu, is one undo step; Escape and F3
+  close the missing mods list; an unfinished `#"quoted tag` no longer hides every mod; clicking a category header
+  while searching no longer folds it out of sight; leaving Load Order mid-drag no longer drops the mod at the top;
+  and with a mod installed twice from one source, a copy missing for one launch (a Steam update, say) keeps your
+  choice of copy and your profiles' choices.
+- For other mods: Spire Mod Manager has an API (version 1), so mods built on it can use its menus, banners and mod
+  cards, and show the alias, notes, tags and category you've given a mod.
+
 ## 0.1.4 (2026-10-20)
 
 0.1.4:
