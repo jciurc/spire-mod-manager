@@ -387,6 +387,15 @@ static partial class SelfTest
             + "its panel says the local copy loads instead, and why; the local copy's that it's the one that loads",
             beforeStatus.Contains(StatusWontLoad) && setAside.Contains(StatusWontLoad) && beforeLine == losesLine && setAsideLine == losesLine
             && Line(local) == Draft(LoadsAlso, ("other", Named(copy))), $"{beforeStatus} / {setAside}; lines {beforeLine} / {setAsideLine}; local {Line(local)}");
+        // For the screenshot: the two rows, both ticked, and the Workshop copy's panel with its line and reason.
+        if (content.GetChildren().OfType<NModMenuRow>().FirstOrDefault(r => r.Mod == copy) is { } shownCopy)
+        {
+            CategoryList.Select(content, shownCopy);
+            await PanelFor(menu, screen, shownCopy);
+            CategoryList.ScrollTo(content, shownCopy);
+            await Wait(menu, 0.2);
+            await Capture(screen, outDir, "19a-copies-local-workshop");
+        }
 
         // The Workshop copy updated while the game runs, to a newer version: the game adds a Mod for it after the one found
         // first, which keeps its manifest, and the next launch reads the new one. Which loads goes by that (the beta: the
@@ -794,6 +803,38 @@ static partial class SelfTest
         var nested = Copies.FirstRead([Made("SmmRuleRead", "Alpha2"), Made("SmmRuleRead", "Alpha/inner"), Made("SmmRuleRead", "Alpha")]);
         Check("the first local copy the game reads (FirstRead): folders in Godot's own order, a folder's manifest before its subfolders'",
             order.SequenceEqual(godot) && nested.path == "C:/SmmSameIdTest/Alpha", $"ours {string.Join(", ", order)}; Godot's {string.Join(", ", godot)}; nested {nested.path}");
+    }
+
+    // A tie when the copy holding the id's entry is gone for a launch (PENDING JORDAN, P4; the design's risk 3): our record
+    // hands its front to the next copy installed, the one that loads meanwhile, so that copy ranks first among equal
+    // versions from then on, and the old holder back at the same version switches nothing. Made-up copies, our data tried
+    // on a copy (Reconcile); without the move, the old holder would load again.
+    static void TestSameIdTie()
+    {
+        const string id = "SmmSameIdTie";
+        var (holder, next) = (Made(id, "Tie1"), Made(id, "Tie2"));
+        var data = Store.Clone(Store.Data);
+        (data.Copies ??= [])[id] = ["l:Tie1", "l:Tie2"];
+        string? Loads() => Copies.Next(id, new HashSet<(string?, ModSource)>(), new Ticks(data.CopiesOff, data.Copies)).Loads is { } loads ? Copies.CopyOf(loads) : null;
+        GameMods().Add(next);
+        Copies.TestRecount();
+        try
+        {
+            var before = Loads(); // the holder gone: the copy left
+            Copies.Reconcile(data);
+            var record = string.Join(",", data.Copies?.GetValueOrDefault(id) ?? []);
+            GameMods().Add(holder);
+            Copies.TestRecount();
+            var back = Loads();
+            Check("a tie with the holder gone for a launch (P4): our record puts the copy left first, so with the old holder back at the same version that one "
+                + "still loads", before == "l:Tie2" && record == "l:Tie2,l:Tie1" && back == "l:Tie2", $"meanwhile {before}; record {record}; back {back}");
+        }
+        finally
+        {
+            GameMods().Remove(next);
+            GameMods().Remove(holder);
+            Copies.TestRecount();
+        }
     }
 
     // SameIdLoad's plan on made-up lists, as the game's loop has them while our Init runs (us at the first slot still to
@@ -2901,6 +2942,250 @@ static partial class SelfTest
         Check("... put back: A off again (copies_off as the page had it), B loading, nothing changed", !Ticked(rowA) && Ticked(rowB) && Loads() == "l:SmmTestTwinB"
             && CopiesOff().SequenceEqual(offWere) && FileCopiesOff().SequenceEqual(offWere) && TwinChanges().Count == 0 && !Profiles.Edited && !ModEntry.HasPendingChanges()
             && CopiesBroken() == null, Say());
+    }
+
+    // The one rule on the page (Copies.Next), so no two views can disagree: the fixture twins in each state that decides
+    // differently, every view naming the copy Next loads and giving the others its reason. The views: Next itself, the
+    // statuses, the copy lines (the other copy and the reason), the Duplicate chips' tips, the same-ID banner's card, the
+    // relaunch check, Changes (a switch of which copy loads with no box changed) and pending (the main menu's dot). Each
+    // state made quietly, as a launch would have had the boxes (nothing changed since launch but which copy loads), then
+    // put back. The states: both ticked (B, the higher version); A alone (A, after a relaunch); equal versions (A, the copy
+    // installed first, our record's first, whatever the game's list order: PENDING JORDAN, P4); A's version unreadable
+    // (B: P5); A's "1.2", read leniently above B's 1.1.0 but not by the game, while Test Twin User needs 1.1.0 or newer (B:
+    // the N4 guard; without it A); the self-check finding the choice not taken (the game's own choice, B, every line
+    // saying so); the launch unable to swap B in, A loaded instead (A, both lines naming the dependency: P7). Screenshots:
+    // the panel of the copy that won't load, with the higher version loading; the banner's card; a tie; an unreadable
+    // version; the blocked copy.
+    static async Task TestCopyOutcome(Node menu, NModdingScreen screen, Control content, string outDir)
+    {
+        List<NModMenuRow> Rows() => content.GetChildren().OfType<NModMenuRow>().ToList();
+        NModMenuRow? RowOf(Mod mod) => Rows().FirstOrDefault(r => r.Mod == mod);
+        if (Layout.Current != Layout.View.Categories || Profiles.Active == null)
+        {
+            Check("the one rule on the page: on the main list, a profile active", false, $"{Layout.Current}, {Profiles.Active?.Name}");
+            return;
+        }
+        var twins = Rows().Select(r => r.Mod).OfType<Mod>().Where(m => m.manifest?.id == TwinId).ToList();
+        if (twins.FirstOrDefault(m => Copies.CopyOf(m) == "l:SmmTestTwinA") is not { } a || twins.FirstOrDefault(m => Copies.CopyOf(m) == "l:SmmTestTwinB") is not { } b)
+        {
+            TwinsMissing("the one rule on the page");
+            return;
+        }
+        if (Profiles.Edited)
+            Profiles.Save(); // start clean
+        var border = screen.GetNode<Control>("ModsBorder");
+        Control? SameId() => border.GetNodeOrNull<Control>(LoadOrder.SameIdName);
+        List<string> TwinChanges() => HistoryBar.Describe().Where(l => l.Contains(Copies.Named(a)) || l.Contains(Copies.Named(b))).ToList();
+        async Task<string> RelaunchBody()
+        {
+            RelaunchCheck.Show(screen);
+            await Wait(menu, 0.3);
+            var body = (menu.GetTree().Root.GetNodeOrNull(RelaunchCheck.Name)?.FindChild("Body", true, false) as RichTextLabel)?.GetParsedText() ?? "";
+            RelaunchCheck.Cancel();
+            await Wait(menu, 0.3);
+            return body;
+        }
+        // The twins' copies off (none: both ticked), as if the launch had them so: in every undo snapshot and the active
+        // profile's entry, so no box changed since launch and nothing is unsaved.
+        static void OffQuietly(params string[] off) => History.Quietly(data =>
+        {
+            data.CopiesOff = Store.TidyOff((data.CopiesOff ?? []).Where(k => Copies.IdOf(k) != TwinId).Concat(off.Select(c => $"{TwinId}|{c}")));
+            if (data.Profiles.FirstOrDefault(p => p.Name == data.ActiveProfile) is { } active)
+                foreach (var list in new[] { active.Mods, active.Edited })
+                    for (var i = 0; i < (list?.Count ?? 0); i++)
+                        if (list?[i] is { Id: TwinId, Source: ModSource.ModsDirectory } entry)
+                            list[i] = entry with { CopiesOff = [.. off] };
+        });
+        void SetA(string? version)
+        {
+            if (a.manifest is { } manifest)
+                manifest.version = version;
+        }
+        string Named(Mod mod) => Copies.Named(mod);
+        // What every view says now, against what the rule should give: loads, the copy that loads; losing, a ticked copy
+        // that won't, and its line; loadsLine, the line of the copy that loads (null: none to check); switched, whether
+        // which copy loads changed since launch with no box changed (Changes and pending say so). shot: the panel of the
+        // copy that won't load (or of the copy that loads, with none); cardShot: the banner's card.
+        async Task State(string name, Mod loads, Mod? losing, string? losingLine, string? loadsLine, bool switched, string? shot = null, string? cardShot = null)
+        {
+            Profiles.RefreshTickboxes(screen);
+            CategoryList.Redraw(content);
+            await Wait(menu, 0.3);
+            // The row for the screenshots first, so the banner's card shows over its panel too.
+            var shownRow = shot == null ? null : RowOf(losing ?? loads);
+            if (shownRow != null)
+            {
+                CategoryList.Select(content, shownRow);
+                await PanelFor(menu, screen, shownRow);
+                CategoryList.ScrollTo(content, shownRow);
+                await Wait(menu, 0.2);
+            }
+            var other = loads == a ? b : a;
+            var clash = Copies.Ticked(a) && Copies.Ticked(b);
+            string? Line(Mod mod) => ModDetails.CopyLine(mod, false)?.Text;
+            var chips = new[] { a, b }.Select(m => Tags.For(m).FirstOrDefault(c => c.Text == DuplicateChip)?.Tip ?? "").ToList();
+            var card = clash && Layout.Wide ? await BannerCard(menu, screen, SameId(), cardShot, outDir) : [];
+            var body = await RelaunchBody();
+            var changes = TwinChanges();
+            var switchLine = Draft(CopySwitchLine, ("mod", a.manifest?.name ?? ""), ("to", Named(loads)), ("from", Named(b)));
+            var wrong = new List<string>();
+            void Want(bool ok, string what)
+            {
+                if (!ok)
+                    wrong.Add(what);
+            }
+            Want(LoadingCopy(TwinId) == Copies.CopyOf(loads), $"Next loads {LoadingCopy(TwinId) ?? "none"}");
+            Want(!ModDetails.Status(loads).Contains(StatusWontLoad), $"its status {ModDetails.Status(loads)}");
+            if (loadsLine != null)
+                Want(Line(loads) == loadsLine, $"its line \"{Line(loads)}\"");
+            if (losing != null)
+            {
+                Want(ModDetails.Status(losing).Contains(StatusWontLoad), $"the other's status {ModDetails.Status(losing)}");
+                Want(Line(losing) == losingLine, $"the other's line \"{Line(losing)}\"");
+                Want(body.Contains($"{Named(losing)}  {Draft(RelaunchLoses, ("other", Named(loads)))}"), $"the relaunch check: {body}");
+            }
+            else
+                Want(!body.Contains(Draft(RelaunchLoses, ("other", Named(loads)))), $"the relaunch check names a copy that won't load: {body}");
+            if (clash)
+            {
+                Want(chips[0] == Draft(ClashTip, ("others", Named(b)), ("loads", Named(loads))) && chips[1] == Draft(ClashTip, ("others", Named(a)), ("loads", Named(loads))),
+                    $"the chips \"{string.Join("\" / \"", chips)}\"");
+                if (Layout.Wide)
+                    Want(card.Contains(Draft(BannerLoads, ("mod", Named(loads)))) && card.Contains(Draft(BannerWontLoad, ("mod", Named(other)))),
+                        $"the banner's card: {string.Join(" | ", card)}");
+            }
+            Want(changes.Contains(switchLine) == switched, $"Changes: {string.Join(" | ", changes)}");
+            Want(ModEntry.HasPendingChanges() == (switched || LoadOrder.OrderChanged), $"pending {ModEntry.HasPendingChanges()} (moved since launch {LoadOrder.OrderChanged})");
+            if (shot != null && shownRow != null)
+                await Capture(screen, outDir, shot);
+            Check($"the one rule on the page, {name}: every view names {Named(loads)} as the copy that loads"
+                + (losing == null ? "" : $", and says why {Named(losing)} won't"), wrong.Count == 0, string.Join("; ", wrong));
+        }
+
+        var offWere = CopiesOff();
+        var heldOff = offWere.Where(k => Copies.IdOf(k) == TwinId).Select(k => k[(k.IndexOf('|') + 1)..]).ToArray();
+        var (versionWas, aState, bState) = (a.manifest?.version, a.state, b.state);
+        var planWas = SameIdLoad.Plan.GetValueOrDefault(TwinId);
+        var dep = Dependencies.Find("SmmTestLib") is { } lib ? Named(lib) : "SmmTestLib";
+        var needed = Dependencies.Find("SmmTestTwinUser") is { } user && Copies.Ticked(user);
+        try
+        {
+            OffQuietly();
+            await State("both ticked", b, a, Draft(CopyLoses, ("other", Named(b)), ("why", WhyHigher)), Draft(LoadsAlso, ("other", Named(a))), false,
+                "20a-rule-higher", "20c-rule-banner-card");
+            OffQuietly("l:SmmTestTwinB");
+            await State("A alone ticked", a, null, null, Draft(LoadsAfter, ("other", Named(b))), true);
+            OffQuietly();
+            SetA(b.manifest?.version);
+            await State("equal versions (PENDING JORDAN, P4): the copy installed first, our record's first", a, b,
+                Draft(CopyLoses, ("other", Named(a)), ("why", WhyFirst)), Draft(LoadsAfter, ("other", Named(b))), true, "20b-rule-tie");
+            // The game's list the other way round: a tie still goes by our record, not by it.
+            var mods = GameMods();
+            var (atA, atB) = (mods.IndexOf(a), mods.IndexOf(b));
+            (mods[atA], mods[atB]) = (b, a);
+            Copies.TestRecount();
+            var reversed = LoadingCopy(TwinId);
+            (mods[atA], mods[atB]) = (a, b);
+            Copies.TestRecount();
+            Check("... equal versions with the game's list the other way round: the same copy, our record's first", reversed == "l:SmmTestTwinA", reversed ?? "none");
+            SetA("abc");
+            await State("A's version unreadable (PENDING JORDAN, P5)", b, a, Draft(CopyLoses, ("other", Named(b)), ("why", WhyUnreadable)),
+                Draft(LoadsAlso, ("other", Named(a))), false, "20d-rule-unreadable");
+            SetA("1.2");
+            if (needed)
+                await State("A's \"1.2\" read leniently above B, while Test Twin User needs 1.1.0 or newer: the copy the game can read (N4)", b, a,
+                    Draft(CopyLoses, ("other", Named(b)), ("why", WhyUnreadable)), Draft(LoadsAlso, ("other", Named(a))), false);
+            else
+                await State("A's \"1.2\" read leniently above B (nothing needs a minimum version)", a, b, Draft(CopyLoses, ("other", Named(a)), ("why", WhyHigher)),
+                    Draft(LoadsAfter, ("other", Named(b))), true);
+            SetA(versionWas);
+            SameIdLoad.TestResult(TwinId, SameIdLoad.Result.NotTaken);
+            await State("the self-check finding the choice not taken: the game's own choice", b, a, NotApplied, NotApplied, false);
+            SameIdLoad.TestResult(TwinId, null);
+            // The launch couldn't swap B in (its dependency after the id's first slot, a mod after us needing the id), so A,
+            // the game's choice, loaded: while nothing changes, the next launch does the same.
+            if (!needed || LoadOrder.OrderChanged || planWas == null)
+                Results.Add($"SKIP the one rule on the page, the copy the launch couldn't swap in: Test Twin User on {needed}, moved since launch {LoadOrder.OrderChanged}, "
+                    + $"a plan {planWas != null}");
+            else
+            {
+                SameIdLoad.TestPlan(TwinId, planWas with { Why = SameIdLoad.Reason.DependencyAfterSlot, Blocked = "l:SmmTestTwinB", Late = "SmmTestLib" });
+                (a.state, b.state) = (ModLoadState.Loaded, ModLoadState.DisabledDuplicate);
+                await State("the copy the launch couldn't swap in (P7): the game's choice, which loaded", a, b,
+                    Draft(CopyBlocked, ("other", Named(a)), ("dep", dep)), Draft(LoadsBlocked, ("other", Named(b)), ("dep", dep)), false, "20e-rule-blocked");
+            }
+        }
+        finally
+        {
+            SetA(versionWas);
+            (a.state, b.state) = (aState, bState);
+            SameIdLoad.TestPlan(TwinId, planWas);
+            SameIdLoad.TestResult(TwinId, null);
+            OffQuietly(heldOff);
+            Profiles.RefreshTickboxes(screen);
+            CategoryList.Redraw(content);
+            await Wait(menu, 0.3);
+        }
+        Check("... put back: the twins as the page had them, B loading, nothing changed or unsaved", CopiesOff().SequenceEqual(offWere) && LoadingCopy(TwinId) == "l:SmmTestTwinB"
+            && TwinChanges().Count == 0 && !Profiles.Edited && CopiesBroken() == null, $"off {string.Join(",", CopiesOff())}; loads {LoadingCopy(TwinId)}; "
+            + $"changes {string.Join(" | ", TwinChanges())}; edited {Profiles.Edited}; {CopiesBroken() ?? "kept"}");
+    }
+
+    // The beta's edge where a copy loads unticked (P7, P17): W1 ticked (1.0.0), W2 not (3.0.0) but on W1's switch, and a
+    // local copy L ticked (2.0.0). The game sees W2 on through the switch they share: W2 beats L, W1 loses to L, and only
+    // W2 is left, so W2 loads. Made-up copies of a made-up id, as a launch had them (W2 loaded, W1 and L set aside): W2
+    // reads Enabled, its line naming W1 and L; L says W2 loads instead, the higher version; W1 that W2 loads instead,
+    // with no reason (it lost to L, which doesn't load); the same-ID banner shows (W1 and L ticked). Stable has no such
+    // edge (every Workshop copy beside a local one is out): a SKIP there.
+    static async Task TestCopyUnticked(Node menu, NModdingScreen screen, Control content)
+    {
+        if (!Compat.WorkshopBeatsOlderLocal)
+        {
+            Results.Add("SKIP a copy that loads unticked: only the beta's rule has it (stable takes out every Workshop copy beside a local one)");
+            return;
+        }
+        const string id = "SmmUnticked";
+        var w1 = Made(id, "W101", ModLoadState.DisabledDuplicate, item: 101, version: "1.0.0");
+        var w2 = Made(id, "W102", ModLoadState.Loaded, item: 102, version: "3.0.0");
+        var l = Made(id, "SmmUntickedL", ModLoadState.DisabledDuplicate, version: "2.0.0");
+        GameMods().AddRange([w1, w2, l]);
+        Copies.TestRecount();
+        History.Quietly(data =>
+        {
+            (data.Copies ??= [])[id] = ["w:101", "w:102", "l:SmmUntickedL"];
+            data.CopiesOff = Store.TidyOff([.. data.CopiesOff ?? [], $"{id}|w:102"]);
+        });
+        try
+        {
+            CategoryList.RefreshStrips(content);
+            await Wait(menu, 0.3);
+            string? Line(Mod mod) => ModDetails.CopyLine(mod, false)?.Text;
+            var banner = screen.GetNode<Control>("ModsBorder").GetNodeOrNull<Control>(LoadOrder.SameIdName);
+            Check("a copy that loads unticked (the beta: W1 ticked 1.0.0, W2 not, 3.0.0, on W1's switch, L ticked 2.0.0): W2 loads and reads Enabled, its line "
+                + "naming the enabled copy it shares the switch with and the local copy it beat; L: W2 loads instead, the higher version; W1: W2 loads instead, "
+                + "no reason; the same-ID banner",
+                LoadingCopy(id) == "w:102" && !Copies.Ticked(w2) && Copies.Ticked(w1) && Copies.Ticked(l)
+                && ModDetails.Status(w2).Contains(Menus.Text("SPIRE_MOD_MANAGER.STATUS_ENABLED"))
+                && Line(w2) == Draft(LoadsUnticked, ("other", Copies.Named(w1)), ("local", Copies.Named(l)))
+                && ModDetails.Status(l).Contains(StatusWontLoad) && Line(l) == Draft(CopyLoses, ("other", Copies.Named(w2)), ("why", WhyHigher))
+                && ModDetails.Status(w1).Contains(StatusWontLoad) && Line(w1) == Draft(CopyLosesPlain, ("other", Copies.Named(w2)))
+                && (!Layout.Wide || banner != null),
+                $"loads {LoadingCopy(id)}; ticked W1 {Copies.Ticked(w1)} W2 {Copies.Ticked(w2)} L {Copies.Ticked(l)}; statuses {ModDetails.Status(w1)} / "
+                + $"{ModDetails.Status(w2)} / {ModDetails.Status(l)}; lines {Line(w1)} | {Line(w2)} | {Line(l)}; banner {banner != null}");
+        }
+        finally
+        {
+            foreach (var made in new[] { w1, w2, l })
+                GameMods().Remove(made);
+            Copies.TestRecount();
+            History.Quietly(data =>
+            {
+                data.Copies?.Remove(id);
+                data.CopiesOff = data.CopiesOff?.Where(k => Copies.IdOf(k) != id).ToList();
+            });
+            CategoryList.RefreshStrips(content);
+            await Wait(menu, 0.2);
+        }
     }
 
     // The fixture twins (one id and source) in Load Order: which copy takes which of their entries is part of the order as

@@ -143,6 +143,7 @@ static partial class SelfTest
             await Step(() => TestCrashOffer(menu, outDir));
             await Step(() => TestSameIdCanary()); // which copy of a mod installed twice loads (SameIdLoad)
             await Step(() => TestCopyRule(outDir)); // the rule every view and the launch share (Copies.Next), on made-up copies
+            await Step(() => TestSameIdTie());
             await Step(() => TestSameIdPlan());
             await Step(() => TestSameIdLaunch());
             await Step(() => TestSameIdSettle());
@@ -266,6 +267,8 @@ static partial class SelfTest
             await Step(() => TestCopies(menu, screen, content, outDir));
             await Step(() => TestSameIdCopies(menu, screen, content, outDir));
             await Step(() => TestSameIdBothOn(menu, screen, content, outDir)); // both copies ticked: which loads, and the words for it
+            await Step(() => TestCopyOutcome(menu, screen, content, outDir)); // every view from the one rule, in each state it decides
+            await Step(() => TestCopyUnticked(menu, screen, content));
             await Step(() => TestTagSuggestions(menu, screen, content, outDir));
             await Step(() => TestTagPills(menu, screen, content, outDir));
             await Step(() => TestHistory(menu, screen, content, outDir));
@@ -934,23 +937,33 @@ static partial class SelfTest
 
     // The words of the duplicate copies, word for word as settings_ui.json has them: drafts until Jordan's copy pass, so
     // here once for every check that reads them (an edit there is one edit here). Draft fills in their values.
-    const string SelfLockedTip = "Spire Mod Manager is installed more than once, so its copies stay enabled. If one is removed, another still loads. "
-        + "To turn Spire Mod Manager off, disable them all on the vanilla modding page.";
-    const string SelfLockedOtherOffTip = "Spire Mod Manager stays enabled. {other} is disabled, so Spire Mod Manager won't load if this copy is removed. Enable it too.";
     const string SameIdText = "{count} mods with the same ID are enabled. Only one copy will be loaded.";
     const string BannerLoads = "{mod}: loads", BannerWontLoad = "{mod}: won't load";
     const string RelaunchLoses = "{other} loads instead";
     const string CopySwitchLine = "{mod}: {to} loads instead of {from}";
     const string ClashTip = "Another copy of this mod is enabled: {others}. Only {loads} loads.";
     const string StatusWontLoad = "Duplicate - Won't load";
-    const string CopyLoses = "{other} loads instead. {why} Disable one to choose.";
+    const string CopyLoses = "{other} loads instead. {why} Disable one to choose.", CopyLosesPlain = "{other} loads instead. Disable one to choose.";
     const string WhyLocal = "The game prioritizes a local copy.", WhyHigher = "The game prioritizes a higher version.";
+    const string WhyFirst = "With no higher version, the copy installed first is prioritized.";
+    const string WhyUnreadable = "This copy's version can't be read, so a copy with a readable version is prioritized.";
+    const string CopyBlocked = "{other} loads instead: this copy needs {dep}, which loads after {other}.";
+    const string LoadsBlocked = "{other} can't load in this copy's place: it needs {dep}, which loads after this copy.";
+    const string LoadsUnticked = "This copy loads though it's disabled: it shares the game's switch with {other}, which is enabled, and the game prioritizes "
+        + "it over {local} as the higher version.";
     const string LoadsAlso = "{other} is also enabled - this copy is the one that loads.";
+    const string LoadsAfter = "Loads on relaunch, in place of {other}";
     const string FailedOther = "{other} is also installed. To load that copy instead, enable it and disable this one.";
-    const string SelfRuns = "This copy is running. {other} stays enabled too, in case this one is removed.";
-    const string SelfBackup = "{other} is running. This copy stays enabled, in case that one is removed.";
+    const string NotApplied = "Spire Mod Manager couldn't choose which copy was loaded. If the game is on a different version, Spire Mod Manager may need to be updated.";
+    const string SelfBackup = "{other} is running. This copy is enabled too, in case that one is removed.";
+    const string SelfCopyOff = "{other} is running. This copy is disabled, so Spire Mod Manager won't load if that one is removed.";
+    const string SelfRunsOtherOff = "This copy is running. {other} is disabled, so Spire Mod Manager won't load if this one is removed.";
+    const string SelfRunsSwitch = "This copy is running. After a relaunch, {other} loads instead. {why}";
+    const string SelfBackupSwitch = "{other} is running. After a relaunch, this copy loads instead. {why}";
+    const string RelaunchSelfOff = "Spire Mod Manager (this mod) will be disabled on the next launch. To use it again, enable it on the vanilla modding page, "
+        + "and it will load after the next restart.";
     const string NewCopyOff = "A new copy of {mods} was installed and is disabled.";
-    const string NewSelfCopy = "A new copy of Spire Mod Manager (this mod) was installed. Its copies stay enabled, and only {loads} loads.";
+    const string NewSelfCopy = "A new copy of Spire Mod Manager (this mod) was installed and enabled. {loads} will be loaded.";
 
     // The banners' Go to and Show the same way: drafts until the copy pass, word for word as settings_ui.json has them.
     const string GoToProblem = "Go to", GoToProblemTip = "Open the next affected mod";
