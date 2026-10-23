@@ -32,8 +32,9 @@ What changed in each Workshop release, for players. Each version's first line is
   `#failed` and `#gameerror`, with `#error`, `#warning` and `#problem` gathering them. A tag of yours with the same
   name finds its mods too. `#missing` (or `#uninstalled`) shows a line counting the profile's mods that aren't
   installed, with "See list" to list them. The info panel lists the hidden tags that find its mod under "Other
-  keywords", and each row shows them after its tags as "Additional keywords: enabled, installed", leaving out
-  what its tags already say. Click one to search for it, or Shift-click to add it to the search.
+  keywords", and each row shows them after its tags as "Additional keywords: enabled, loaded", leaving out what
+  the row already says (its tags, "installed", and on the main list the "uncategorized" of its heading). Click one
+  to search for it, or Shift-click to add it to the search.
 - On the warning banners, the old Show, which opens the next affected mod, is now Go to, and it steps through the
   banner's mods in the order the list shows them, from the mod in the info panel down. A new Show lists just the
   banner's mods by putting its search in the box (`#unmet OR #needed`, `#clash`, `#managers`, `#order`); press it
