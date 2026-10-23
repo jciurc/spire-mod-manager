@@ -2023,14 +2023,14 @@ static partial class SelfTest
         var redone = Loads() == "l:SmmTestTwinB" && Ticked(rowA) && Ticked(rowB) && !CopiesOff().Contains(keyA);
         History.RevertMods();
         await Wait(menu, 0.3);
-        var reverted = Ticked(rowB) && !Ticked(rowA) && History.AtEntered && OffAsAtStart();
+        var reverted = Ticked(rowB) && !Ticked(rowA) && History.AtLaunch && OffAsAtStart();
         History.Undo(); // the revert
         await Wait(menu, 0.3);
         var revertUndone = Ticked(rowA) && Ticked(rowB);
         History.Undo(); // the tick
         await Wait(menu, 0.3);
-        Check("... undo puts it back (copies_off and the game's list, in our file too), redo again; Revert all goes back to the ticks the page opened with, "
-            + "and undoes", undone && redone && reverted && revertUndone && Loads() == "l:SmmTestTwinB" && OffAsAtStart(),
+        Check("... undo puts it back (copies_off and the game's list, in our file too), redo again; Revert all goes back to the launch's ticks, and undoes",
+            undone && redone && reverted && revertUndone && Loads() == "l:SmmTestTwinB" && OffAsAtStart(),
             $"undo {undone}, redo {redone}, revert {reverted}, its undo {revertUndone}; {Say()}");
 
         // Load Order: A through its Enable item, then a move; the order's undo leaves the ticks.
@@ -2677,7 +2677,10 @@ static partial class SelfTest
             && !HistoryBar.Describe().Any(l => l.Contains($"{Lone} (Lone1)")) && lonePopup.Contains(Draft(NewCopyOn, ("mods", $"{Lone} (Lone3)"), ("loads", $"{Lone} (Lone1)")));
         History.RevertMods();
         await Wait(menu, 0.3);
-        var loneReverted = LoadingCopy(Lone) == "l:Lone1" && Copies.Ticked(loneThere);
+        // The new copy stays installed, put off as it was at launch (it didn't load), in copies_off: its switch is the lone copy's.
+        var loneReverted = LoadingCopy(Lone) == "l:Lone1" && Copies.Ticked(loneThere) && !Copies.Ticked(loneCome) && CopiesOff().Contains($"{Lone}|l:Lone3")
+            && History.AtLaunch;
+        var loneRevertedSay = $"loads {LoadingCopy(Lone)}, ticked {Copies.Ticked(loneThere)}/{Copies.Ticked(loneCome)}, at launch {History.AtLaunch}";
         History.Undo(); // the revert
         await Wait(menu, 0.3);
         if (Rows().FirstOrDefault(r => r.Mod == loneCome) is { } loneRow)
@@ -2706,7 +2709,8 @@ static partial class SelfTest
         await Wait(menu, 0.3);
         Check("... a lone copy in copies_off (its ticked twin gone), a new lower copy arriving mid-session: the lone copy leaves copies_off (now and in "
             + "the launch's state) and the active profile's copies off, stays ticked and loads, the popup naming it; Changes says nothing of it; Revert all "
-            + "keeps it loading", loneClean && loneEverywhere && loneKeeps && loneReverted, $"clean before {loneClean}; {loneSay}; reverted {loneReverted}; {lonePopup}");
+            + "keeps it loading and puts the new copy off (in copies_off, beside it on their switch)", loneClean && loneEverywhere && loneKeeps && loneReverted,
+            $"clean before {loneClean}; {loneSay}; reverted {loneReverted} ({loneRevertedSay}); {lonePopup}");
 
         // A copy uninstalled and back mid-session (made up: our record has it, from when both were installed), the active
         // profile saved with both ticked: it arrives ticked and keeps the profile's tick, so nothing is unsaved, as when it's
@@ -2954,7 +2958,7 @@ static partial class SelfTest
         var redone = Loads() == "l:SmmTestTwinA" && Ticked(rowA) && !Ticked(rowB);
         History.RevertMods();
         await Wait(menu, 0.3);
-        var reverted = Ticked(rowA) && Ticked(rowB) && Loads() == "l:SmmTestTwinB" && History.AtEntered && CopiesOff().SequenceEqual(bothOff);
+        var reverted = Ticked(rowA) && Ticked(rowB) && Loads() == "l:SmmTestTwinB" && History.AtLaunch && CopiesOff().SequenceEqual(bothOff);
         History.Undo(); // the revert
         await Wait(menu, 0.3);
         var revertUndone = Loads() == "l:SmmTestTwinA" && !Ticked(rowB);
@@ -3339,9 +3343,10 @@ static partial class SelfTest
     // for Changes (the game reads the same list; which copy loads goes by the copies, not their places), no "was" line, nothing pending; undo and
     // redo swap them back and again. Split by another mod, a drop of the second above the first changes the list and the
     // copies' turn at once: undo puts both back, so the rows, Changes and pending are as before the drop, and Revert all
-    // goes back to the page's opening order the same way. (The copies' turn once stayed behind: the rows came back
-    // swapped, and Changes, the pending line and the main menu's dot showed moves a relaunch wouldn't make.) Run on a page
-    // just entered, so Revert all touches only these moves; back on the main list at the end.
+    // goes back to the launch's order the same way, then one undo brings the drop back. (The copies' turn once stayed
+    // behind: the rows came back swapped, and Changes, the pending line and the main menu's dot showed moves a relaunch
+    // wouldn't make.) Run on a page just entered, so its undo steps are only these; undone to the start, back on the main
+    // list at the end.
     static async Task TestTwinOrder(Node menu, NModdingScreen screen, Control content)
     {
         List<NModMenuRow> Rows() => content.GetChildren().OfType<NModMenuRow>().ToList();
@@ -3353,7 +3358,7 @@ static partial class SelfTest
         var line = screen.GetNode<Control>("%PendingChangesLabel");
         int Steps() => History.Steps(History.Track.Order);
         string Say() => $"rows {string.Join(", ", Order().Select(Short))}; moves [{Moves()}]; order changed {LoadOrder.OrderChanged}, pending {ModEntry.HasPendingChanges()} "
-            + $"(line {line.Visible}); order steps {Steps()}; at the page's opening state {History.AtEntered}";
+            + $"(line {line.Visible}); order steps {Steps()}";
         var toggle = screen.GetNode<NButton>("SpireModManagerLoadOrderToggle");
         Click(toggle);
         await Wait(menu, 0.5);
@@ -3385,17 +3390,17 @@ static partial class SelfTest
         Check("two copies side by side in Load Order: a drop of the second above the first swaps their rows in one undo step, the saved list the same; no move "
             + "for Changes or Show: Changed, no \"was\" line, nothing pending (a relaunch loads the same)",
             sideBySide && swapped.IndexOf(second) == swapped.IndexOf(first) - 1 && History.CurrentMods().SequenceEqual(list) && Steps() == steps + 1
-            && !History.AtEntered && NothingMoved(swapped), $"at the start: {startSaid}; now {Say()}");
+            && NothingMoved(swapped), $"at the start: {startSaid}; now {Say()}");
         History.Undo();
         await Wait(menu, 0.3);
-        var undone = NothingMoved(start) && Steps() == steps && History.AtEntered;
+        var undone = NothingMoved(start) && Steps() == steps;
         var undoneSaid = Say();
         History.Redo();
         await Wait(menu, 0.3);
         var redone = NothingMoved(swapped);
         History.Undo();
         await Wait(menu, 0.3);
-        Check("... undo swaps them back, redo again, undo back (the copies' turn is in the step)", undone && redone && NothingMoved(start) && History.AtEntered,
+        Check("... undo swaps them back, redo again, undo back (the copies' turn is in the step)", undone && redone && NothingMoved(start) && Steps() == steps,
             $"undone {undone} ({undoneSaid}), redone {redone}; now {Say()}");
 
         // Split by Test Fixes, then the second dropped above the first: the list and the copies' turn in one step.
@@ -3424,8 +3429,20 @@ static partial class SelfTest
         var redoneDrop = Order().SequenceEqual(dropped);
         History.RevertMods();
         await Wait(menu, 0.3);
-        Check("... redo, then Revert all: the page's opening order back, the copies' turn too; no move, \"was\" line or pending relaunch left, the twins "
-            + "not under Show: Changed", redoneDrop && NothingMoved(start) && History.AtEntered, $"redone {redoneDrop}; reverted: {Say()}");
+        // Launch's order: the saved list as it was, the copies in the game's turn (none saved then), no move at all.
+        var reverted = History.Loaded is { } launch && History.CurrentMods().SequenceEqual(launch.Mods) && LoadOrder.SameCopyOrder(LoadOrder.CopyOrderNow(), launch.CopyOrder)
+            && Moves() == "" && !LoadOrder.OrderChanged && Was().Split(',').All(w => w == "") && !HistoryBar.ChangedMods().Overlaps(twins)
+            && Layout.Current == Layout.View.LoadOrder;
+        var revertedSaid = Say();
+        History.Undo();
+        await Wait(menu, 0.3);
+        var dropBack = Order().SequenceEqual(dropped);
+        History.Undo();
+        History.Undo();
+        await Wait(menu, 0.3);
+        Check("... redo, then Revert all: the launch's order back, the copies' turn too, still in Load Order; no move or \"was\" line left, the twins "
+            + "not under Show: Changed; one undo brings the drop back, two more the start", redoneDrop && reverted && dropBack && NothingMoved(start) && Steps() == steps,
+            $"redone {redoneDrop}; reverted: {revertedSaid}; undone {dropBack}, then {Say()}");
         Click(toggle);
         await Wait(menu, 0.5);
     }

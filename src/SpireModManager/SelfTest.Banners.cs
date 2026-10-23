@@ -285,6 +285,7 @@ static partial class SelfTest
 
         var badge = screen.GetNodeOrNull<Control>("SpireModManagerLoadOrderToggle/WarningBadge");
         Check("no order problem, no '!' on Load Order", badge is not { Visible: true });
+        var orderWas = LoadOrder.Mods(Rows());
         LoadOrder.Move(dependent, LoadOrder.Mods(Rows()).IndexOf(lib), Rows());
         CategoryList.Redraw(content);
         await Wait(menu, 0.3);
@@ -297,6 +298,14 @@ static partial class SelfTest
         CategoryList.Redraw(content);
         await Wait(menu, 0.3);
         Check("fixed: the '!' goes", screen.GetNodeOrNull<Control>("SpireModManagerLoadOrderToggle/WarningBadge") is not { Visible: true });
+        // The order as it was: the fix leaves the library moved, and the tests after it start with nothing moved since
+        // launch (a Revert all's undo, from either view, brings a move back with the rest).
+        for (var i = 0; i < orderWas.Count; i++)
+            LoadOrder.Move(orderWas[i], i, Rows());
+        CategoryList.Redraw(content);
+        await Wait(menu, 0.3);
+        Check("... put back: the order as before the move, no move since launch", LoadOrder.Mods(Rows()).SequenceEqual(orderWas) && !LoadOrder.OrderChanged,
+            string.Join(", ", HistoryBar.Moves().Select(m => $"{m.Mod.manifest?.id} {m.Before}→{m.After}")));
 
         // The banner every run can raise: Test Addon on needs a mod that isn't installed, so with it off the banner goes,
         // and its tick brings the banner back (TestBannersKeepRows, the managers banner's checks without Better Mod Menu).
@@ -975,8 +984,8 @@ static partial class SelfTest
     // under the rows gives the short fixture list room to scroll; it goes after. bannerRow: the row whose tick raises the
     // banner called name: Test Addon's (the main list banner, in every run) or Better Mod Menu's (the managers banner,
     // where it's installed); what: that banner in the checks' names. Starts and ends with that row's mod off. Showing the
-    // page again enters it anew (History.Enter: Revert all's state then, no undo steps), so the page's opening state and
-    // both undo histories are kept first and put back after: the tests after it undo and Revert all as they would have.
+    // page again enters it anew (History.Enter: no undo steps), so both undo histories are kept first and put back after:
+    // the tests after it undo as they would have.
     static async Task TestBannersKeepRows(Node menu, NModdingScreen screen, Control content, NModMenuRow bannerRow, string name, string what)
     {
         var border = screen.GetNode<Control>("ModsBorder");
@@ -1159,11 +1168,11 @@ static partial class SelfTest
                 Tick(false);
             ListFilter.Choose(content, ListFilter.Choice.All); // a redraw, which shrinks the rows' container again, then the top
             await Wait(menu, 0.3);
-            var enteredAnew = History.Entered != history.Entered;
+            var enteredAnew = History.Steps(History.Track.List) != history.Past[History.Track.List].Count;
             History.TestPutBack(history);
             static string Said(IEnumerable<History.ModEntry> mods) => string.Join(", ", mods.Select(m => m.Id + (m.Enabled ? "" : " (off)")));
-            Check($"{what} keeping the rows in place: the saved list and Changes left as found, the page's opening state and both undo histories put back",
-                History.CurrentMods().SequenceEqual(listWas) && HistoryBar.Describe().SequenceEqual(changesWas) && History.Entered == history.Entered
+            Check($"{what} keeping the rows in place: the saved list and Changes left as found, both undo histories put back",
+                History.CurrentMods().SequenceEqual(listWas) && HistoryBar.Describe().SequenceEqual(changesWas)
                 && History.Steps(History.Track.List) == history.Past[History.Track.List].Count && History.Steps(History.Track.Order) == history.Past[History.Track.Order].Count,
                 $"entered anew by showing the page again {enteredAnew}; list {Said(History.CurrentMods())}, was {Said(listWas)}; "
                 + $"changes {string.Join(" | ", HistoryBar.Describe())}, were {string.Join(" | ", changesWas)}");

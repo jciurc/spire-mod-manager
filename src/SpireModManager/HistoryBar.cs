@@ -10,7 +10,7 @@ namespace SpireModManager;
 // - "Mods enabled 23 (+1 -3)" and "Changes 5  ↕2": mods on, and turned on or off since launch; then everything else
 //   changed (installs, edits, profiles) and the load-order moves. Hovering shows a summary; clicking, the full list in
 //   the right panel, where a mod's name opens it (with Back to the list).
-// - Undo, Redo (their shortcuts underneath), Revert all.
+// - Undo, Redo (their shortcuts underneath), Revert all (everything back to launch: History.RevertMods).
 // The same place in the panel lists the active profile's unsaved changes ("Unsaved •" on the profile bar); one list
 // at a time.
 static class HistoryBar
@@ -82,7 +82,7 @@ static class HistoryBar
         {
             undo.Disabled = !History.CanUndo;
             redo.Disabled = !History.CanRedo;
-            revert.Disabled = History.AtEntered;
+            revert.Disabled = History.AtLaunch;
             var (on, off, moved) = Counts();
             // On after a relaunch, new mods and this one included, a mod installed twice once: the profile bar's count.
             var enabled = Profiles.OnCount();
@@ -113,7 +113,7 @@ static class HistoryBar
             MenuPanel.Close();
             Selection.Show(content);
         }
-        // Revert all goes back to how things were when the page opened (the game may reuse the screen).
+        // Undo starts afresh with each visit to the page (the game may reuse the screen).
         History.Enter();
         screen.VisibilityChanged += () =>
         {

@@ -1,6 +1,8 @@
+using System.Text.Json.Nodes;
 using Godot;
 using MegaCrit.Sts2.Core.Localization;
 using MegaCrit.Sts2.Core.Localization.Fonts;
+using MegaCrit.Sts2.Core.Modding;
 using MegaCrit.Sts2.Core.Nodes;
 using MegaCrit.Sts2.Core.Nodes.CommonUi;
 using MegaCrit.Sts2.Core.Nodes.GodotExtensions;
@@ -9,7 +11,7 @@ using MegaCrit.Sts2.Core.Saves;
 
 namespace SpireModManager;
 
-// The self-test's checks of our data: undo and redo, missing resources, the store's safety, each language's fonts.
+// The self-test's checks of our data: undo, redo and Revert all, missing resources, the store's safety, each language's fonts.
 static partial class SelfTest
 {
     // Untick a mod through its real tickbox, review, undo/redo; undo a rename; revert all, and undo that.
@@ -89,16 +91,16 @@ static partial class SelfTest
         Check("Ctrl+F focuses search", screen.GetNode<Control>("ModsBorder/SpireModManagerSearch").HasFocus());
         screen.GetNode<Control>("ModsBorder/SpireModManagerSearch").ReleaseFocus();
 
-        var beforeRevert = History.CurrentMods();
+        var (beforeRevert, dataBefore) = (History.CurrentMods(), Store.EditsJson());
         History.RevertMods();
         await Wait(menu, 0.3);
-        Check("Revert all restores the state from when the page opened", History.Entered?.Mods.SequenceEqual(History.CurrentMods()) == true
-            && History.AtEntered && HistoryBar.Counts() is (0, 0, _) && On(),
-            $"mods {History.Entered?.Mods.SequenceEqual(History.CurrentMods())}, at {History.AtEntered}, counts {HistoryBar.Counts()}, on {On()}");
-        Press("UndoButton"); // the list view's history: on/off comes back; the order has its own history
+        Check("Revert all restores the state at launch", History.Loaded?.Mods.SequenceEqual(History.CurrentMods()) == true
+            && History.AtLaunch && HistoryBar.Counts() is (0, 0, 0) && On(),
+            $"mods {History.Loaded?.Mods.SequenceEqual(History.CurrentMods())}, at {History.AtLaunch}, counts {HistoryBar.Counts()}, on {On()}");
+        Press("UndoButton"); // one step for the lot: the order and our data come back with on/off
         await Wait(menu, 0.3);
-        Check("Revert all can be undone", beforeRevert.Select(m => (m.Id, m.Source, m.Enabled)).ToHashSet()
-            .SetEquals(History.CurrentMods().Select(m => (m.Id, m.Source, m.Enabled))), string.Join(", ", History.CurrentMods()));
+        Check("Revert all can be undone", beforeRevert.SequenceEqual(History.CurrentMods()) && Store.EditsJson() == dataBefore,
+            string.Join(", ", History.CurrentMods()));
         // Undo leaves the panel as it was; the Changes text opens the full list, and closes it again. While it's
         // open, a tickbox click doesn't take the panel away.
         var info = screen.GetNode("%ModInfoContainer");
@@ -148,9 +150,11 @@ static partial class SelfTest
         Check("clicking Changes again closes it", !HistoryBar.ListOpen(info));
         History.Enter(); // as when the page opens again
         await Wait(menu, 0.2);
-        Check("on (re)entering the page, Undo and Revert all agree: nothing to undo", !History.CanUndo && History.AtEntered
-            && screen.FindChild("UndoButton", true, false) is BaseButton { Disabled: true } && screen.FindChild("RevertAllButton", true, false) is BaseButton { Disabled: true });
-        await TestTwinOrder(menu, screen, content); // on the page just entered: its Revert all touches only that test's moves
+        Check("on (re)entering the page: nothing to undo, and Revert all still there for the changes since launch (it goes back to launch, not to the "
+            + "page's opening)", !History.CanUndo && HistoryBar.Describe().Count > 0 && !History.AtLaunch
+            && screen.FindChild("UndoButton", true, false) is BaseButton { Disabled: true } && screen.FindChild("RevertAllButton", true, false) is BaseButton { Disabled: false },
+            string.Join(" | ", HistoryBar.Describe()));
+        await TestTwinOrder(menu, screen, content); // on the page just entered: undo there covers only that test's moves
 
         // Separate histories: an order change made in Load Order isn't undone from the list view.
         Click(screen.GetNode<NButton>("SpireModManagerLoadOrderToggle"));
@@ -196,6 +200,259 @@ static partial class SelfTest
             Profiles.Rename(renamed, was);
             Check("renamed back, no renamed line", !HistoryBar.Describe().Any(l => l.Contains("Renamed in test")), string.Join(" | ", HistoryBar.Describe()));
         }
+    }
+
+    // Revert all (Jordan, 23 Oct): everything Changes counts back to its launch value, so Changes reads 0. From what this
+    // run has changed since launch, then after each kind of change on its own: tickboxes; moves in Load Order (the view
+    // stays); a copy's tick (the copy that loaded at launch loads again); a mod's alias, tags, note and category; a
+    // profile switch; undo and redo in between, a Load Order move among them. Each time Changes reads nothing, every box,
+    // the saved list (the load order), the copies' turn and our data (ticks, details, profiles, the active one and its
+    // Unsaved) are as at launch, the button greys, and one Ctrl+Z, from the view it was pressed in, brings back what was
+    // there before it (from the main list the move too); Ctrl+Y reverts again. A mod installed mid-session stays: the
+    // closest state is it off, its new entry last (no other mod moves), Changes listing only that it's installed. The
+    // run's state and both undo histories are put back after.
+    static async Task TestRevertAll(Node menu, NModdingScreen screen, Control content)
+    {
+        if (History.Loaded == null || Layout.Current != Layout.View.Categories || screen.FindChild("RevertAllButton", true, false) is not BaseButton revert)
+        {
+            Check("Revert all: a launch state, on the main list, with its button", false, $"{Layout.Current}");
+            return;
+        }
+        var (kept, found) = (History.TestKeep(), History.TestNow());
+        var bar = screen.GetNode<RichTextLabel>(HistoryBar.ChangesName);
+        var unsaved = screen.GetNode("ModsBorder/SpireModManagerProfileBar").FindChild("Unsaved", true, false) as Control;
+        var toggle = screen.GetNode<NButton>("SpireModManagerLoadOrderToggle");
+        List<NModMenuRow> Rows() => content.GetChildren().OfType<NModMenuRow>().ToList();
+        NModMenuRow? Row(string id, string? copy = null) => Rows().FirstOrDefault(r => r.Mod is { } m && m.manifest?.id == id && (copy == null || Copies.CopyOf(m) == copy));
+        async Task Flip(NModMenuRow row)
+        {
+            var box = row.GetNode<NTickbox>("Tickbox");
+            box.IsTicked = !box.IsTicked;
+            box.EmitSignal(NTickbox.SignalName.Toggled, box); // the game's own toggle handler writes the list
+            await Wait(menu, 0.3);
+        }
+        async Task Ctrl(Key key)
+        {
+            Input.ParseInputEvent(new InputEventKey { Keycode = key, CtrlPressed = true, Pressed = true });
+            await Wait(menu, 0.3);
+        }
+        async Task View(Layout.View view)
+        {
+            if (Layout.Current != view)
+                Click(toggle);
+            await Wait(menu, 0.4);
+        }
+        // In Load Order: the first mod after ours to the end, which moves every mod after it up one.
+        void MoveOne()
+        {
+            if (LoadOrder.Mods(Rows()) is { Count: > 2 } mods && mods.FirstOrDefault(m => m.manifest?.id != ModEntry.ModId) is { } mover)
+                LoadOrder.Move(mover, mods.Count - 1, Rows());
+            CategoryList.Redraw(content);
+        }
+        static string Said(IEnumerable<History.ModEntry> mods) => string.Join(", ", mods.Select(m => m.Id + (m.Enabled ? "" : " (off)")));
+        static bool Same(History.Snapshot a, History.Snapshot b) => a.Store == b.Store && a.Mods.SequenceEqual(b.Mods) && LoadOrder.SameCopyOrder(a.CopyOrder, b.CopyOrder);
+        // What isn't as Revert all leaves it (none: all of it is). A copy installed since: off, with Changes' line that it's
+        // installed (its one line), and an entry made for it after the launch's list.
+        List<string> Unlike()
+        {
+            var unlike = new List<string>();
+            if (History.Loaded is not { } launch)
+                return ["no launch state"];
+            var arrived = Dependencies.EachCopy(Installed.Mods).ToList();
+            var described = HistoryBar.Describe();
+            if (HistoryBar.Counts() != (0, 0, 0) || described.Count != arrived.Count || arrived.Any(m => !described.Any(l => l.StartsWith($"Installed: {m.manifest?.name} "))))
+                unlike.Add($"Changes {HistoryBar.Counts()}: {string.Join(" | ", described)}");
+            if (!System.Text.RegularExpressions.Regex.IsMatch(bar.GetParsedText(), $@"\(\+0 -0\)\nChanges {arrived.Count}  ↕0$"))
+                unlike.Add($"the bar reads \"{bar.GetParsedText()}\"");
+            var (off, ticks) = (Dependencies.SavedOff(launch.Mods), Store.TicksIn(launch.Store));
+            foreach (var mod in Dependencies.EachCopy(ModManager.Mods.Union(Installed.Mods)))
+                if (Copies.Ticked(mod) != (!arrived.Contains(mod) && Copies.TickedIn(mod, off, ticks)))
+                    unlike.Add($"{Copies.SwitchKey(mod)} {(Copies.Ticked(mod) ? "on" : "off")}");
+            foreach (var row in Rows().Where(r => r.Mod is { } m && r.GetNode<NTickbox>("Tickbox").IsTicked != Copies.Ticked(m)))
+                unlike.Add($"{row.Mod?.manifest?.id}'s tickbox");
+            var list = History.CurrentMods();
+            if (!list.Take(launch.Mods.Count).SequenceEqual(launch.Mods)
+                || list.Skip(launch.Mods.Count).Any(e => e.Enabled || !arrived.Any(m => m.manifest?.id == e.Id && m.modSource == e.Source)))
+                unlike.Add($"the list {Said(list)}, at launch {Said(launch.Mods)}");
+            if (HistoryBar.Moves().Count > 0 || !LoadOrder.SameCopyOrder(LoadOrder.CopyOrderNow(), launch.CopyOrder))
+                unlike.Add("the order");
+            if (Store.EditsJson() != launch.Store)
+                unlike.Add("our data");
+            if (Store.Data.ActiveProfile != History.LaunchProfile || unsaved?.Visible != Profiles.Edited
+                || Profiles.Edited != (JsonNode.Parse(launch.Store)?["profiles"] as JsonArray ?? []).Any(p => (string?)p?["name"] == History.LaunchProfile && p?["edited"] != null))
+                unlike.Add($"the profile {Store.Data.ActiveProfile} (unsaved {Profiles.Edited}, shown {unsaved?.Visible}), at launch {History.LaunchProfile}");
+            if (!revert.Disabled || !History.AtLaunch)
+                unlike.Add("Revert all not greyed");
+            return unlike;
+        }
+        // Revert all pressed after a change: what isn't as at launch then, and whether Ctrl+Z brings back the state before
+        // it (in the view it was pressed in) and Ctrl+Y reverts again.
+        async Task Reverts(string what, bool redo = true)
+        {
+            var before = History.TestNow();
+            var (enabled, view) = (!revert.Disabled, Layout.Current);
+            Click(revert);
+            await Wait(menu, 0.3);
+            var unlike = Unlike();
+            var stayed = Layout.Current == view;
+            await Ctrl(Key.Z);
+            var undone = Same(History.TestNow(), before);
+            var undoneSaid = undone ? "" : $"; undone: {Said(History.CurrentMods())}, our data {(Store.EditsJson() == before.Store ? "as before" : "not as before")}";
+            var again = true;
+            if (redo)
+            {
+                await Ctrl(Key.Y);
+                again = Unlike().Count == 0;
+            }
+            var reads = Installed.Mods.Count > 0 ? "Changes lists only the mod installed" : "Changes reads 0";
+            var stays = view == Layout.View.LoadOrder ? ", still in Load Order" : "";
+            Check($"Revert all after {what}: {reads}, every box, the load order and our data as at launch, the button greyed{stays}; one Ctrl+Z brings "
+                + $"back what was there before it{(redo ? ", Ctrl+Y reverts again" : "")}", enabled && unlike.Count == 0 && stayed && undone && again,
+                $"enabled before {enabled}; {string.Join("; ", unlike)}; view {Layout.Current}; undone {undone}{undoneSaid}; again {again}");
+        }
+
+        try
+        {
+            // 1. Everything this run changed since launch, and left.
+            await Reverts("this run's changes", redo: false);
+            Click(revert); // the scenarios below start from launch
+            await Wait(menu, 0.3);
+
+            // 2. Tickboxes.
+            if (Row("SmmTestUi") is { } ui && Row("SmmTestFixes") is { } fixes)
+            {
+                await Flip(ui);
+                await Flip(fixes);
+                await Reverts("tickboxes");
+            }
+            else
+                Results.Add("SKIP Revert all after tickboxes: needs Test UI and Test Fixes");
+
+            // 3. Moves in Load Order.
+            await View(Layout.View.LoadOrder);
+            MoveOne();
+            MoveOne();
+            await Wait(menu, 0.3);
+            Check("Revert all's Load Order moves made", HistoryBar.Moves().Count > 0, Said(History.CurrentMods()));
+            await Reverts("moves in Load Order");
+            await View(Layout.View.Categories);
+
+            // 4. A copy's tick: the copy the game loaded at launch loads again.
+            if (Row(TwinId, "l:SmmTestTwinA") is { } twinA)
+            {
+                var loaded = ModManager.Mods.FirstOrDefault(m => m.manifest?.id == TwinId && m.state == ModLoadState.Loaded) is { } was ? Copies.CopyOf(was) : null;
+                await Flip(twinA);
+                var flipped = LoadingCopy(TwinId);
+                await Reverts("a copy's tick");
+                Check("... and the copy that loaded at launch loads again", loaded == null || LoadingCopy(TwinId) == loaded,
+                    $"loaded {loaded}, after the tick {flipped}, now {LoadingCopy(TwinId)}");
+            }
+            else
+                TwinsMissing("Revert all after a copy's tick");
+
+            // 5. A mod's alias, tags, note and category.
+            if (Row("SmmTestUi")?.Mod is { } edited && Copies.KeyOf(edited) is { } key)
+            {
+                var category = Store.Data.Categories.FirstOrDefault(c => c.Name != Store.InfoFor(key)?.Category)?.Name;
+                Store.EditMod(key, info => info.Alias = "Reverted alias");
+                Store.EditMod(key, info => info.Tags = [.. info.Tags ?? [], "reverttag"]);
+                Store.EditMod(key, info => info.Notes = "A note to revert");
+                Store.EditMod(key, info => info.Category = category);
+                CategoryList.Redraw(content);
+                await Wait(menu, 0.3);
+                Check("Revert all's edits made: Changes names the alias, tags, note and category", HistoryBar.Describe().Any(l => l.Contains("Reverted alias")
+                    && l.Contains("tags") && l.Contains("note") && (category == null || l.Contains("category"))), string.Join(" | ", HistoryBar.Describe()));
+                await Reverts("edits to a mod's alias, tags, note and category");
+            }
+
+            // 6. A profile switch.
+            if (Store.Data.Profiles.FirstOrDefault(p => p.Name != Store.Data.ActiveProfile) is { } other)
+            {
+                Profiles.SwitchTo(other, screen);
+                await Wait(menu, 0.3);
+                Check("Revert all's profile switch made", HistoryBar.Describe().FirstOrDefault()?.StartsWith("Switched from") == true, string.Join(" | ", HistoryBar.Describe()));
+                await Reverts("a profile switch");
+            }
+            else
+                Results.Add("SKIP Revert all after a profile switch: only one profile");
+
+            // 7. Undo and redo in between, a move in Load Order among them: from the main list, one Ctrl+Z brings the move
+            // back with the rest.
+            if (Row("SmmTestUi") is { } first && Row("SmmTestFixes") is { } second && Copies.KeyOf(first.Mod) is { } firstKey)
+            {
+                await Flip(first);
+                await View(Layout.View.LoadOrder);
+                MoveOne();
+                await Ctrl(Key.Z);
+                await Ctrl(Key.Y);
+                await View(Layout.View.Categories);
+                await Flip(second);
+                await Ctrl(Key.Z);
+                await Ctrl(Key.Y);
+                await Ctrl(Key.Z);
+                Store.EditMod(firstKey, info => info.Alias = "Mixed alias");
+                await Wait(menu, 0.3);
+                Check("Revert all's mixed changes made: a box, a move and an alias", HistoryBar.Counts() is var (on, off, moves) && on + off >= 1 && moves >= 1
+                    && HistoryBar.Describe().Any(l => l.Contains("Mixed alias")), $"{HistoryBar.Counts()}: {string.Join(" | ", HistoryBar.Describe())}");
+                await Reverts("undo and redo in between, a Load Order move among them");
+            }
+
+            // 8. A mod installed mid-session (made up, the way the game announces one), and a box: the mod stays, off.
+            var fresh = new Mod
+            {
+                path = "", modSource = ModSource.ModsDirectory, state = ModLoadState.AddedAtRuntime,
+                manifest = new ModManifest { id = "SmmRevertFresh", name = "Revert Fresh" },
+            };
+            var rowsBefore = Rows();
+            GameInstalls(fresh);
+            await Wait(menu, 0.4);
+            NModalContainer.Instance?.Clear();
+            try
+            {
+                var arrivedOn = Copies.Ticked(fresh) && !revert.Disabled;
+                if (Row("SmmTestUi") is { } box)
+                    await Flip(box);
+                await Reverts("a mod installed mid-session (the closest state: it stays, off)", redo: false);
+                Click(revert);
+                await Wait(menu, 0.3);
+                var entries = SaveManager.Instance.SettingsSave.ModSettings?.ModList ?? [];
+                Check("... the mod installed mid-session: on as it came, then off after Revert all, its new entry last, so no other mod moved; Changes lists "
+                    + "only that it's installed", arrivedOn && entries.Count > 0 && entries[^1] is { Id: "SmmRevertFresh", IsEnabled: false }
+                    && HistoryBar.Describe() is [var line] && line.StartsWith("Installed: Revert Fresh"),
+                    $"on as it came {arrivedOn}; last entry {(entries.Count > 0 ? $"{entries[^1].Id} {entries[^1].IsEnabled}" : "none")}; "
+                    + string.Join(" | ", HistoryBar.Describe()));
+            }
+            finally
+            {
+                if (Rows().Except(rowsBefore).FirstOrDefault(r => r.Mod == fresh) is { } freshRow)
+                {
+                    content.RemoveChild(freshRow);
+                    freshRow.QueueFree();
+                }
+                GameForgets(fresh);
+                SaveManager.Instance.SettingsSave.ModSettings?.ModList.RemoveAll(e => e.Id == "SmmRevertFresh");
+                History.Quietly(data =>
+                {
+                    foreach (var profile in data.Profiles)
+                    {
+                        profile.Mods.RemoveAll(m => m.Id == "SmmRevertFresh");
+                        profile.Edited?.RemoveAll(m => m.Id == "SmmRevertFresh");
+                    }
+                });
+            }
+        }
+        finally
+        {
+            if (Layout.Current != Layout.View.Categories)
+                Click(toggle);
+            History.TestRestore(found);
+            History.TestPutBack(kept);
+            CategoryList.Redraw(content);
+            await Wait(menu, 0.3);
+        }
+        Check("Revert all's checks: the run's state and both undo histories put back", Same(History.TestNow(), found)
+            && History.Steps(History.Track.List) == kept.Past[History.Track.List].Count && History.Steps(History.Track.Order) == kept.Past[History.Track.Order].Count,
+            Said(History.CurrentMods()));
     }
 
     // Missing game resources: everything this run used loaded (bar the self-test's own made-up paths, under
