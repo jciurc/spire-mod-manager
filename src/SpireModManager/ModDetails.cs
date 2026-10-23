@@ -75,7 +75,7 @@ static class ModDetails
         // The name, with the version in grey beside it (fitted in FitTitle once the panel is placed).
         var title = container.GetNode<MegaRichTextLabel>("ModTitle");
         title.BbcodeEnabled = true;
-        container.GetNode<MegaRichTextLabel>("ModDescription").Text = Describe(mod);
+        ShowDescription(container, mod);
 
         // "<id> (<Workshop id>)" linking to its Workshop page, or "<id> (Local)", then its status (fitted: FitSource).
         var source = container.GetNodeOrNull<Control>(SourceName) ?? AddSource(container);
@@ -157,9 +157,8 @@ static class ModDetails
         link.SetMeta(FullMeta, shown != id ? id : "");
     }
 
-    // The title's pointer, the links' underline and the description's table gaps: ours in our views (the title is a link
-    // to its row; no gaps, for the game's box: GameText.TableGaps), the game's in Vanilla View, as it left them before we
-    // first changed them.
+    // The title's pointer and the links' underline: ours in our views (the title is a link to its row), the game's in
+    // Vanilla View, as it left them before we first changed them. (The description's table gaps follow its text: GameText.)
     public static void Looks(NModInfoContainer container, bool game)
     {
         var title = container.GetNode<Control>("ModTitle");
@@ -168,16 +167,6 @@ static class ModDetails
         title.MouseFilter = game ? (Control.MouseFilterEnum)was[0].AsInt32() : Control.MouseFilterEnum.Stop;
         title.MouseDefaultCursorShape = game ? (Control.CursorShape)was[1].AsInt32() : Control.CursorShape.PointingHand;
         description.MetaUnderlined = game && was[2].AsBool();
-        for (var i = 0; i < GameText.TableGaps.Length; i++)
-        {
-            var (gap, gameGap) = (GameText.TableGaps[i], was[3 + i]); // the scene's own setting, or none (the theme's)
-            int? wanted = !game ? 0 : gameGap.VariantType == Variant.Type.Int ? gameGap.AsInt32() : null;
-            // Set only when it changes: any change lays the text out again.
-            if (wanted is { } value && (!description.HasThemeConstantOverride(gap) || description.GetThemeConstant(gap) != value))
-                description.AddThemeConstantOverride(gap, value);
-            else if (wanted == null && description.HasThemeConstantOverride(gap))
-                description.RemoveThemeConstantOverride(gap);
-        }
     }
 
     const string GameLooksMeta = "spire_mod_manager_game_looks";
@@ -188,10 +177,7 @@ static class ModDetails
         if (!container.HasMeta(GameLooksMeta))
         {
             var (title, description) = (container.GetNode<Control>("ModTitle"), container.GetNode<RichTextLabel>("ModDescription"));
-            var looks = new Godot.Collections.Array { (int)title.MouseFilter, (int)title.MouseDefaultCursorShape, description.MetaUnderlined };
-            foreach (var gap in GameText.TableGaps)
-                looks.Add(description.HasThemeConstantOverride(gap) ? description.GetThemeConstant(gap) : default(Variant));
-            container.SetMeta(GameLooksMeta, looks);
+            container.SetMeta(GameLooksMeta, new Godot.Collections.Array { (int)title.MouseFilter, (int)title.MouseDefaultCursorShape, description.MetaUnderlined });
         }
         return container.GetMeta(GameLooksMeta).AsGodotArray();
     }
@@ -233,6 +219,14 @@ static class ModDetails
         var image = container.GetNode<TextureRect>("ModImage");
         image.MouseFilter = Control.MouseFilterEnum.Pass;
         Hover.Watch(image, "SpireModManagerPictureCard", () => null, picture: () => Store.Data.VanillaView ? null : image.Texture);
+    }
+
+    // The panel's text for mod, its tables' gaps set for it at once (GameText.Fit): PlaceFields measures it before it draws.
+    static void ShowDescription(NModInfoContainer container, Mod mod)
+    {
+        var description = container.GetNode<MegaRichTextLabel>("ModDescription");
+        description.Text = Describe(mod);
+        GameText.Fit(description);
     }
 
     // Anything wrong, the description, more facts (size, published, subscribers, Workshop tags, other keywords), then
@@ -847,7 +841,7 @@ static class ModDetails
             // full Fill would commit and reload the fields while focus moves on to the next one.
             if (CategoryList.Selected is { } shown && Copies.Key(shown) == ModId())
             {
-                container.GetNode<MegaRichTextLabel>("ModDescription").Text = Describe(shown);
+                ShowDescription(container, shown);
                 Callable.From(() => PlaceFields(container)).CallDeferred(); // once the text is laid out
             }
         }

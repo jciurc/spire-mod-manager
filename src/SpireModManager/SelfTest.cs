@@ -3976,6 +3976,27 @@ static partial class SelfTest
         }
         else
             Results.Add("SKIP a game load error in the panel: the fixture row has no mod");
+        // A label's tables keep its gaps (its own, the theme's) but while its text has the game's box: a mod's own [table]
+        // keeps them, and a label from a game error's text to another's gets them back (GameText.Watch).
+        var tabled = new RichTextLabel { BbcodeEnabled = true, FitContent = true, CustomMinimumSize = new Vector2(400, 0), Text = "[table=2][cell]A[/cell][cell]B[/cell][/table]" };
+        tabled.AddThemeConstantOverride("table_h_separation", 7);
+        screen.AddChild(tabled);
+        string TableGaps() => $"{tabled.GetThemeConstant("table_h_separation")}/{tabled.GetThemeConstant("table_v_separation")}"
+            + (tabled.HasThemeConstantOverride("table_v_separation") ? " set" : "");
+        var (gapsBefore, ownTable) = (TableGaps(), tabled.Text);
+        GameText.Watch(tabled);
+        await Wait(menu, 0.1);
+        var gapsOwn = TableGaps();
+        tabled.Text = GameText.Box("Error");
+        await Wait(menu, 0.1);
+        var (gapsBoxed, tabledBox) = (TableGaps(), BoxesWrong(tabled, 1));
+        tabled.Text = ownTable;
+        await Wait(menu, 0.1);
+        var gapsBack = TableGaps();
+        tabled.QueueFree();
+        Check("a label's tables keep its own gaps but while its text has the game's box (none then, the box drawn): a mod's own [table] keeps them, "
+            + "and from a game error's text to another's they come back", gapsOwn == gapsBefore && gapsBoxed == "0/0 set" && tabledBox == null && gapsBack == gapsBefore,
+            $"{gapsBefore}, watched {gapsOwn}; with a box {gapsBoxed} ({tabledBox}); then {gapsBack}");
         // The game marks every Workshop mod outside its author's branches before it knows which are off (a dev run has
         // no Steam, so these are made up): a mod that's off loses that error and keeps its others, one on keeps it, and
         // the game's message still shows, marked as the game's, in the mod's card and panel.
@@ -4948,25 +4969,40 @@ static partial class SelfTest
             links.EmitSignal(Control.SignalName.GuiInput, new InputEventMouseButton { ButtonIndex = MouseButton.Left, Pressed = false, ShiftPressed = shift, Position = new Vector2(x, 8) });
         }
         // The mouse in over "Additional keywords:" (from the tags), then onto a keyword: its card, as if it came in there.
-        var (cardEarly, cardOnWord) = (true, false);
+        // Back onto those words, it goes, as off the label; and one the mouse leaves for them before it shows never comes.
+        var (cardEarly, cardOnWord, cardKept, cardLate) = (true, false, true, true);
         if (links != null)
         {
             var onWord = new Vector2(RowTitles.Measure(links.GetThemeFont("font"), before, links.GetThemeFontSize("font_size")) + 4, links.Size.Y / 2);
-            Hover.TestMouse = () => links.GetGlobalTransform() * new Vector2(2, onWord.Y);
+            var onTitle = new Vector2(2, onWord.Y);
+            void MoveTo(Vector2 at)
+            {
+                Hover.TestMouse = () => links.GetGlobalTransform() * at;
+                links.EmitSignal(Control.SignalName.GuiInput, new InputEventMouseMotion { Position = at });
+            }
+            Hover.TestMouse = () => links.GetGlobalTransform() * onTitle;
             links.EmitSignal(Control.SignalName.MouseEntered);
             await WaitReal(menu, Hover.Delay + 0.2);
             cardEarly = screen.HasNode("SpireModManagerTagCard");
-            Hover.TestMouse = () => links.GetGlobalTransform() * onWord;
-            links.EmitSignal(Control.SignalName.GuiInput, new InputEventMouseMotion { Position = onWord });
+            MoveTo(onWord);
             await WaitReal(menu, Hover.Delay + 0.2);
             cardOnWord = screen.HasNode("SpireModManagerTagCard");
+            MoveTo(onTitle);
+            await WaitReal(menu, Hover.Grace + 0.3); // gone, and the grace after it over
+            cardKept = screen.HasNode("SpireModManagerTagCard");
+            MoveTo(onWord);
+            await WaitReal(menu, 0.1);
+            MoveTo(onTitle);
+            await WaitReal(menu, Hover.Delay + 0.2);
+            cardLate = screen.HasNode("SpireModManagerTagCard");
             Hover.TestMouse = () => new Vector2(5, 5);
             links.EmitSignal(Control.SignalName.MouseExited);
             await WaitReal(menu, Hover.Grace + 0.1);
             Hover.TestMouse = null;
         }
-        Check("a row's keywords: the mouse in over \"Additional keywords:\", then onto a keyword, brings up the keyword's card", !cardEarly && cardOnWord,
-            $"a card over the words before them: {cardEarly}, then on a keyword: {cardOnWord}");
+        Check("a row's keywords: the mouse in over \"Additional keywords:\", then onto a keyword, brings up the keyword's card; back onto "
+            + "\"Additional keywords:\", it goes, and one the mouse leaves for them before it shows never comes", !cardEarly && cardOnWord && !cardKept && !cardLate,
+            $"a card over the words before them: {cardEarly}, then on a keyword: {cardOnWord}, back on those words: {cardKept}, left early: {cardLate}");
         ClickWord(-1, false);
         await Wait(menu, 0.3);
         var clickedTitle = box.Text;
