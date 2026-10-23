@@ -605,7 +605,7 @@ static partial class SelfTest
     // reading (P5; letters straight after a number, N10), the game's own reading, a Mod's reading kept, the order the
     // game reads local copies in (FirstRead, against Godot's own sort on real folders), the guard for a mod that needs a
     // minimum version (N4), and the fallback where the launch couldn't swap a copy in (P7), each with such a mod
-    // installed while the game runs too.
+    // installed while the game runs too; and a copy with two manifests of different versions (NewestOf).
     static void TestCopyRule(string outDir)
     {
         var beta = Compat.WorkshopBeatsOlderLocal;
@@ -727,6 +727,49 @@ static partial class SelfTest
         Check("the rule, ... such a mod installed while the game runs (in the game's own list): the page counts it, in a redraw and out, as the next launch "
             + "does: B loads (A Unreadable)", outside == ("B", "B", "A Unreadable") && inside == outside && nextLaunch == "B",
             $"page {outside}, in a redraw {inside}; the next launch {nextLaunch}");
+
+        // One copy with two manifests of the id at launch (a Workshop item with one in two of its folders), 1.0.0 and 2.0.0,
+        // beside another item at 1.5.0, all ticked, in either order in the list: the page and the launch both read the
+        // copy's higher manifest, so its item loads, the launch loading that manifest and setting the other aside; and the
+        // page, reading the list as the launch's swap left it, still names it. An update while the game runs that lowers the
+        // version (a Mod added after the one found at launch) decides by its own, the lower.
+        string PageOf(IEnumerable<Mod> mods)
+        {
+            var listed = mods.ToList();
+            GameMods().AddRange(listed);
+            Copies.TestRecount();
+            try
+            {
+                return Shown(Copies.Next(listed[0].manifest?.id ?? "", [], Ticks.All).Loads);
+            }
+            finally
+            {
+                foreach (var made in listed)
+                    GameMods().Remove(made);
+                Copies.TestRecount();
+            }
+        }
+        var twoManifests = new List<string>();
+        var twoRead = true;
+        foreach (var higherFirst in new[] { false, true })
+        {
+            x = Id();
+            var (older, newer, other) = (Made(x, "W1a", item: 1, version: "1.0.0"), Made(x, "W1b", item: 1, version: "2.0.0"), W(x, 2, "1.5.0"));
+            List<Mod> list = higherFirst ? [us, newer, other, older] : [us, older, other, newer];
+            var page = PageOf(list.Skip(1));
+            var plan = SameIdLoad.Run(list, () => Ticks.All, m => m == us, log: false).Plan.GetValueOrDefault(x);
+            var after = PageOf(list.Skip(1));
+            twoRead &= page == "1" && plan?.Loads == newer && newer.state == ModLoadState.None && older.state == ModLoadState.DisabledDuplicate && after == "1";
+            twoManifests.Add($"{(higherFirst ? "higher" : "lower")} first: page {page}, launch {Shown(plan?.Loads)} {plan?.Loads?.manifest?.version} "
+                + $"(the other {older.state}), after it {after}");
+        }
+        x = Id();
+        var rolledBack = PageOf([Made(x, "W1", ModLoadState.Loaded, 1, "2.0.0"), Made(x, "W2", ModLoadState.DisabledDuplicate, 2, "1.5.0"),
+            Made(x, "W1", ModLoadState.AddedAtRuntime, 1, "1.0.0")]);
+        twoManifests.Add($"updated to a lower version while the game runs: {rolledBack}");
+        Check("the rule, one copy with two manifests of the id at launch (1.0.0, 2.0.0) beside another copy (1.5.0), in either order: the page and the launch "
+            + "read its higher manifest, the launch loads that one and sets the other aside, and after its swap the page still names the copy; an update "
+            + "while the game runs decides by its own version", twoRead && rolledBack == "2", string.Join("; ", twoManifests));
 
         // P7: the launch couldn't swap B in (its dependency after the id's first slot, a mod after us needing the id): the
         // next launch does the same while nothing changes the choice; a higher copy ticked, or the mod needing it off, does.
@@ -1036,8 +1079,8 @@ static partial class SelfTest
         }
         {
             // One Workshop item with two manifests of the id (one copy, w:5) beside another item at the same version: the
-            // older item, the copy installed first by age; its first manifest swapped into the id's first slot, its second
-            // set aside too (the game would fail it).
+            // older item, the copy installed first by age; its first manifest (both the same version) swapped into the id's
+            // first slot, its second set aside too (the game would fail it).
             var (w6, w5a, w5b) = (Made(X, "W6", item: 6), Made(X, "W5a", item: 5), Made(X, "W5b", item: 5));
             List<Mod> list = [us, w6, w5a, w5b];
             var (ok, plan) = PlanOf(list);
@@ -1232,7 +1275,8 @@ static partial class SelfTest
     // - profiles: one naming a missing copy, applied, writes its copies off whole (P9); switched to with its ticked copy
     //   missing, then that copy back, as it has it and still Saved (P8); saving with a copy missing keeps the others' off
     //   (P8); an old profile's fill leaves out copies new this session (N2), and with its copy missing as one joins, the
-    //   installed ones as well, as Join left our data (Saved, Discard keeping the higher loading); an inactive profile saved
+    //   installed ones as well, as Join leaves an entry that had them off (Saved, Discard keeping the higher loading),
+    //   whether Join took them out of our data too or our data's pick was another copy; an inactive profile saved
     //   before a higher copy came loads that copy when switched to (P18, pinned);
     // - a tick with the switch off and the ticked copy missing: that copy off when it's back (N6).
     static void TestCopiesData(string outDir)
@@ -1478,6 +1522,44 @@ static partial class SelfTest
             OffOf(oldJoin, J).Count == 0 && oldJoinPage == ("B", "B,C") && oldJoinEntry.CopiesOff is [] && oldJoinUnsaved == null && oldJoinDiscard == "l:B",
             $"{Say(oldJoin, J)}; page {oldJoinPage}; profile off [{string.Join(",", oldJoinEntry.CopiesOff ?? ["null"])}], unsaved {oldJoinUnsaved ?? "none"}, "
             + $"Discard loads {oldJoinDiscard}");
+        // The same with our data's pick another copy than the profile's (B: picked after the profile was saved with A), so
+        // Join takes nothing out of our data (B is on there). The profile's fill still leaves B on: Join goes by each
+        // profile entry's own copies off, not our data's, and an entry filled in before the join (B off) loses B the same
+        // way. So switched to, B keeps loading, not the lower C, and as the active profile it's Saved (it ticks what our
+        // data ticks while A is missing).
+        const string H = "SmmSameIdOldOther";
+        var oldOther = new StoreData
+        {
+            CopyPicks = [$"{H}|l:B"], Copies = RecordOf(H, "l:A", "l:B"),
+            Profiles = [new Profile { Name = "Filled", Mods = [new ProfileMod(H, ModSource.ModsDirectory, true, CopiesOff: ["l:B"])] }],
+        };
+        Mod[] OldOtherCopies() => [Made(H, "B", ModLoadState.Loaded, version: "1.2.0"), Made(H, "C")];
+        Reconciled(oldOther, OldOtherCopies());
+        var oldOtherPage = Page(oldOther, OldOtherCopies());
+        var oldOtherFilled = oldOther.Profiles.Single().Mods.Single().CopiesOff;
+        var oldOtherProfile = new Profile { Name = "Old", Mods = [new ProfileMod(H, ModSource.ModsDirectory, true, "l:A")] };
+        Copies.TestJoined(H, "l:C", true);
+        try
+        {
+            WithCopies(oldOther, H, OldOtherCopies(), () => Profiles.TestHold(oldOtherProfile));
+        }
+        finally
+        {
+            Copies.TestJoined(H, "l:C", false);
+        }
+        var oldOtherEntry = oldOtherProfile.Mods.Single();
+        var oldOtherUnsaved = Unsaved(oldOther, oldOtherEntry, OldOtherCopies());
+        var oldOtherApplied = WithCopies(oldOther, H, OldOtherCopies(), () =>
+        {
+            Profiles.TestApply([oldOtherEntry]);
+            return LoadingCopy(H);
+        });
+        Check("... the same with our data's pick another copy, so Join takes nothing out of our data: the profile's fill still leaves the other recorded "
+            + "copy on, as Join leaves a profile entry that had it off, so switched to, the higher keeps loading, and as the active profile it's Saved",
+            OffOf(oldOther, H) is ["A"] && oldOtherPage == ("B", "B,C") && oldOtherFilled is [] && oldOtherEntry.CopiesOff is [] && oldOtherUnsaved == null
+            && oldOtherApplied == "l:B",
+            $"{Say(oldOther, H)}; page {oldOtherPage}; the entry filled before [{string.Join(",", oldOtherFilled ?? ["null"])}]; profile off "
+            + $"[{string.Join(",", oldOtherEntry.CopiesOff ?? ["null"])}], unsaved {oldOtherUnsaved ?? "none"}, switched to loads {oldOtherApplied}");
         // An inactive profile saved before a higher copy arrived has never seen it: it reads it ticked, and switched to, the
         // higher copy loads (P18, pinned).
         const string P = "SmmSameIdLater";

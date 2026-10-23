@@ -158,9 +158,11 @@ static class Profiles
     // A 0.1.4 entry's copies off, read as Copies.LegacyOff reads our data and then left as this session's joins left it
     // (Copies.Join): every recorded copy but the one it names, whether that's installed or not (one missing: the read rule
     // ticks the others until it's back), less the copies new to the record this session (they read ticked in our data).
-    // Where one joined while every installed copy the record had was off here (the one named missing), those too, as the
-    // join took them out of our data: else the profile reads them off beside the new copy, so it's Unsaved at once, and
-    // applied it lets a lower new copy take over.
+    // Where one joined while every installed copy the record had was off here (the one named missing), those too: Join
+    // takes them out of every profile entry that has them all off, by the entry's own copies off and not our data's (its
+    // step 2), so this entry ends as it would have if it had been filled in before the join. Else the profile reads them
+    // off beside the new copy: Unsaved at once where our data has them ticked, and applied it lets a lower new copy take
+    // over.
     static List<string> Held(string id, ModSource source, List<string> copies, string copy)
     {
         var off = copies.Where(c => c != copy && !Copies.JoinedThisSession(id, c)).ToList();

@@ -192,14 +192,15 @@ static class SameIdLoad
         return (true, "", plan, (self, first));
     }
 
-    // Spire Mod Manager's step at launch, as the page takes it (Copies.Next's step 4): of the copies left to load (one per
-    // copy, its first Mod: two manifests of one Workshop item are one copy), the ticked ones of the first ticked copy's
-    // source (nothing is chosen across sources), and of those Copies.Best. Null when none is ticked: the game's own
-    // choice then. strict: a mod still to load needs the id with a minimum version.
+    // Spire Mod Manager's step at launch, as the page takes it (Copies.Next's step 4): of the copies left to load (one Mod
+    // per copy, its newest manifest as the page reads it, Copies.NewestOf: two manifests of one Workshop item are one
+    // copy, and the one whose version counts is the one that loads), the ticked ones of the first ticked copy's source
+    // (nothing is chosen across sources), and of those Copies.Best. Null when none is ticked: the game's own choice then.
+    // strict: a mod still to load needs the id with a minimum version.
     public static (Mod Mod, Copies.Won How)? Choose(IReadOnlyList<Mod> todo, Func<Mod, bool> ticked, Func<IEnumerable<string>, IEnumerable<string>> tieOrder,
         bool strict = false)
     {
-        var copies = todo.DistinctBy(Copies.CopyOf).ToList();
+        var copies = todo.GroupBy(Copies.CopyOf).Select(copy => Copies.NewestOf([.. copy])).ToList();
         if (copies.FirstOrDefault(ticked) is not { } first)
             return null;
         return Copies.Best([.. copies.Where(m => m.modSource == first.modSource && ticked(m))], Copies.Version, tieOrder,

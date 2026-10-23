@@ -289,8 +289,8 @@ static class Copies
     public static Outcome Next(string id) => Lookups.Current?.Next(id) ?? Next(id, Dependencies.SavedOff(), Ticks.Now);
 
     // The same, read against given lists, as the next launch goes:
-    // 1. the installed copies of the id, one Mod per copy (its first; versions from its newest manifest, Newest), in the
-    //    game's list order; none whose switch is on: nothing loads;
+    // 1. the installed copies of the id, one Mod per copy (its first; versions from its newest manifest, NewestOf, as the
+    //    launch reads them), in the game's list order; none whose switch is on: nothing loads;
     // 2. the game's rule, on switches, not ticks (it can't see copies_off), with its own reading of versions
     //    (ModManager.RemoveDisabledMods): stable takes out every Workshop copy beside a local one; the beta compares each
     //    Workshop copy with the first local copy it read (FirstRead), taking out the local one where the Workshop version
@@ -406,10 +406,38 @@ static class Copies
 
     static string[] Folders(string path) => path.Split(['/', '\\'], StringSplitOptions.RemoveEmptyEntries);
 
-    // A copy's last Mod in the game's list: an update while the game runs adds one with the new manifest after the one
-    // found at launch, which keeps the old version (the copy is still told by its first, CopyOf).
+    // A copy's newest manifest (NewestOf) of its Mods in the game's list (the copy is still told by its first, CopyOf).
     static Mod Newest(Mod copy) => copy.manifest?.id is { } id && ById().TryGetValue(id, out var all)
-        ? all.LastOrDefault(m => CopyOf(m) == CopyOf(copy)) ?? copy : copy;
+        && all.Where(m => CopyOf(m) == CopyOf(copy)).ToList() is { Count: > 0 } mods ? NewestOf(mods) : copy;
+
+    // Of one copy's Mods, the one its versions are read from, and so the one that loads of it: the last read while the
+    // game runs (an update adds a Mod with the new manifest after the one found at launch, which keeps the old version,
+    // and the next launch reads the new one); else, for a copy with two manifests of the id at launch (two in one folder,
+    // or a Workshop item with one in two of its folders), the highest version, one the game can read first among equals.
+    // Not by their order in the list: the game's sort can put them either way round, and the launch moves the one that
+    // loads to the id's first slot. Shared by the page (Next) and the launch (SameIdLoad.Choose), so both read a copy the
+    // same.
+    public static Mod NewestOf(IReadOnlyList<Mod> mods)
+    {
+        if (mods.LastOrDefault(m => m.state == ModLoadState.AddedAtRuntime) is { } updated)
+            return updated;
+        var newest = mods[0];
+        foreach (var mod in mods.Skip(1))
+            if (Newer(mod, newest))
+                newest = mod;
+        return newest;
+    }
+
+    // Whether a manifest's version reads higher than another's, or the same and the game can read it where it can't read
+    // the other's.
+    static bool Newer(Mod mod, Mod than)
+    {
+        var (a, b) = (Version(mod), Version(than));
+        if (a == null || b == null)
+            return a != null;
+        var by = a.CompareTo(b);
+        return by > 0 || by == 0 && GameVersion(mod) != null && GameVersion(than) == null;
+    }
 
     // For a ticked copy that won't load after a relaunch while another copy of its id will: that copy, and why (Next).
     // Null for any other.
