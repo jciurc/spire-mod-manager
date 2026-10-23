@@ -707,9 +707,9 @@ static partial class SelfTest
         var description = screen.GetNode<NModInfoContainer>("%ModInfoContainer").GetNode<RichTextLabel>("ModDescription");
         var shown = description.GetParsedText();
         var modifiedRow = shown.Split('\n').FirstOrDefault(l => l.StartsWith(Menus.Text("SPIRE_MOD_MANAGER.MODIFIED_CONTENT") + ": ")) ?? "";
-        var fit = ModifiedFit(description, modifiedRow, own.Areas, $" ({Draft(Template("SPIRE_MOD_MANAGER.GAME_CODE_COUNT"), ("count", $"{own.Code}"))})");
+        var fit = ModifiedFit(description, modifiedRow, own.Areas);
         Check("our own patches: the game's code we change, by class (modding screen among them), in our info panel's Modified content: the most "
-            + "whole areas that fit on its line, and how many places", own.Code > 0 && own.Files == 0 && own.CodeSubjects.Contains("modding screen")
+            + "whole areas that fit on its line, with no count of places after them", own.Code > 0 && own.Files == 0 && own.CodeSubjects.Contains("modding screen")
             && fit is { Whole: > 0, Most: true, OneLine: true }, $"{own.Code}: {string.Join(", ", own.CodeSubjects)}; {fit} | {shown.Replace("\n", " / ")}");
         await Capture(screen, outDir, "17c-game-changes");
     }
@@ -717,11 +717,13 @@ static partial class SelfTest
     // The info panel's Modified content (Jordan, 22 Oct), on a made-up mod with both kinds: a pack with EnderLilis's
     // files and, as its code, our own patches. GameChanges keeps what it found (each file with its area, each game method
     // with how it's patched). The row: right under Other keywords, one line, the most areas that fit whole, then how many
-    // more and both counts, subtle; search still finds the areas cut from it. Its card: Jordan's words with the count,
-    // the files' sentence, the areas, the click hint. A click: the dialog (the mod's name, the note, the areas, the files
-    // and the code by area with their counts, how each place is patched), scrolled when long; Close and Esc close it. A
-    // fixture mod with nothing found: "No information found", subtle, a card saying what that means, and its dialog says
-    // so. Screenshots 17d (the row), 17e (its card), 17f (the dialog), 17g (nothing found).
+    // more, and no counts (Jordan, 23 Oct: "We don't need brackets count anymore"); search still finds the areas cut from
+    // it. Its card: Jordan's words with both counts in one sentence, the areas, the click hint. A click: the dialog (the
+    // mod's name, the note, the areas, the files and the code by area with their counts, how each place is patched),
+    // scrolled when long; Close and Esc close it. The same mod with files only, our own mod with code only, and each kind
+    // of card with one place or file, and not loaded. A fixture mod with nothing found: "No information found", subtle, a
+    // card saying what that means, and its dialog says so. Screenshots 17d (the row), 17e (its card), 17e2 (files only),
+    // 17e3 (code only), 17f (the dialog), 17g (nothing found).
     static async Task TestModifiedContent(Node menu, NModdingScreen screen, Control content, string outDir)
     {
         const string id = "SmmBothTest", name = "Both Kinds Test";
@@ -785,17 +787,15 @@ static partial class SelfTest
             var at = Array.FindIndex(facts, l => l.StartsWith(term + ": "));
             var shown = at >= 0 ? facts[at] : "";
             var areas = changes.Areas;
-            var counts = $" ({Draft(Template("SPIRE_MOD_MANAGER.MODIFIED_COUNTS"), ("files", Draft(Template("SPIRE_MOD_MANAGER.GAME_FILES_COUNT"), ("count", $"{changes.Files}"))),
-                ("places", Draft(Template("SPIRE_MOD_MANAGER.GAME_CODE_COUNT"), ("count", $"{changes.Code}"))))})";
             // The Regent's area, with its five kinds of files, is too long for the line on its own: as many of them as fit.
-            var fit = ModifiedFit(description, shown, areas, counts);
+            var fit = ModifiedFit(description, shown, areas);
             Check("modified content: right under Other keywords, one line: the most that fit (whole areas, or of the first's what), then how many more, "
-                + "and both counts (see 17d)", at > 0 && facts[at - 1].StartsWith(Menus.Text("SPIRE_MOD_MANAGER.OTHER_KEYWORDS") + ": ")
+                + "and no counts (see 17d)", at > 0 && facts[at - 1].StartsWith(Menus.Text("SPIRE_MOD_MANAGER.OTHER_KEYWORDS") + ": ")
                 && (fit.Whole is > 0 and var whole && whole < areas.Count || fit.Items > 0) && fit.Most && fit.OneLine,
                 $"\"{shown}\" ({fit}, {areas.Count} areas); before: \"{(at > 0 ? facts[at - 1] : "")}\"");
             var bbcode = description.Text.Split('\n').FirstOrDefault(l => l.Contains($"[url={ModifiedContent.Meta}]")) ?? "";
-            Check("modified content: the whole row is the link for its card and click, its counts subtle, and it's no longer in two rows",
-                bbcode.StartsWith($"[url={ModifiedContent.Meta}][gold]{term}[/gold]: ") && bbcode.EndsWith($"[color=#fff6e299]{counts.Trim()}[/color][/url]")
+            Check("modified content: the whole row is the link for its card and click, the areas and nothing after them, and it's no longer in two rows",
+                shown.Length > term.Length && bbcode == $"[url={ModifiedContent.Meta}][gold]{term}[/gold]: {shown[(term.Length + 2)..]}[/url]"
                 && !parsed.Contains("Changes game code") && !parsed.Contains("Replaces game files"), bbcode);
             var cut = areas[^1];
             Check("modified content: search still finds the mod by an area the row leaves out", !shown.Contains(cut) && SpireModManager.Search.Matches(mod, cut), cut);
@@ -819,11 +819,10 @@ static partial class SelfTest
             var card = await Card("17e-modified-content-card");
             var hint = Menus.Text("SPIRE_MOD_MANAGER.MODIFIED_CLICK_TIP");
             var cardLines = card.Split('\n');
-            var cardShows = cardLines.Length == 6 ? Enumerable.Range(1, areas.Count).FirstOrDefault(n => cardLines[3] == AreasListed(areas, n)) : 0;
-            Check("modified content's card: Jordan's words with the count, the files' sentence, the areas (more than the row, then how many more), the click hint (see 17e)",
-                cardLines is [var code, var replaced, " ", _, "", var cardHint]
-                && code == Draft(Template("SPIRE_MOD_MANAGER.MODIFIED_CODE_TIP"), ("count", $"{changes.Code}"))
-                && replaced == Draft(Template("SPIRE_MOD_MANAGER.MODIFIED_FILES_ALSO_TIP"), ("count", $"{changes.Files}"))
+            var cardShows = cardLines.Length == 5 ? Enumerable.Range(1, areas.Count).FirstOrDefault(n => cardLines[2] == AreasListed(areas, n)) : 0;
+            Check("modified content's card: Jordan's words with both counts in one sentence (the places, then the files), the areas (more than the row, "
+                + "then how many more), the click hint (see 17e)",
+                cardLines is [var both, " ", _, "", var cardHint] && both == Draft(Template("SPIRE_MOD_MANAGER.MODIFIED_BOTH_TIP"), ("places", PlacesCounted(changes.Code)), ("files", FilesCounted(changes.Files)))
                 && cardShows > fit.Whole && cardShows > 1 && cardHint == hint, $"{cardShows} areas: {card.ReplaceLineEndings(" / ")}");
 
             // A click: the dialog.
@@ -877,6 +876,54 @@ static partial class SelfTest
             Check("modified content's dialog: Close closes it; so does Esc, staying on the page", closed && reopened && Dialog() == null && screen.IsVisibleInTree(),
                 $"closed {closed}, reopened {reopened}, open after Esc {Dialog() != null}");
 
+            // Files only: the same mod without our code lent to it.
+            GameChanges.TestAssemblies = m => m == mod ? [] : null;
+            info.Fill(mod);
+            await Wait(menu, 0.4);
+            var filesOnly = GameChanges.For(mod);
+            var filesRow = description.GetParsedText().Split('\n').FirstOrDefault(l => l.StartsWith(term + ": ")) ?? "";
+            var filesFit = ModifiedFit(description, filesRow, filesOnly.Areas);
+            rowAt = RowPoint(description, filesRow);
+            var filesCard = (await Card("17e2-modified-content-files-card")).Split('\n');
+            Check("modified content, files only: the row its files' areas and no counts; its card Jordan's words for the files, the areas, the click hint (see 17e2)",
+                filesOnly is { Code: 0, Files: > 1 } && (filesFit.Whole > 0 || filesFit.Items > 0) && filesFit.Most && filesCard is [var filesSaid, " ", _, "", var filesHint]
+                && filesSaid == Draft(Template("SPIRE_MOD_MANAGER.MODIFIED_FILES_TIP"), ("count", $"{filesOnly.Files}")) && filesHint == hint,
+                $"\"{filesRow}\" ({filesFit}); card: {string.Join(" / ", filesCard)}");
+            GameChanges.TestAssemblies = m => m == mod ? [typeof(ModEntry).Assembly] : null;
+
+            // Code only: our own mod's patches.
+            if (content.GetChildren().OfType<NModMenuRow>().FirstOrDefault(r => r.Mod == ours) is { } ourRow)
+            {
+                CategoryList.Select(screen, ourRow);
+                await PanelFor(menu, screen, ourRow);
+                await Wait(menu, 0.3);
+                var codeOnly = GameChanges.For(ours);
+                var codeRow = description.GetParsedText().Split('\n').FirstOrDefault(l => l.StartsWith(term + ": ")) ?? "";
+                rowAt = RowPoint(description, codeRow);
+                var codeCard = (await Card("17e3-modified-content-code-card")).Split('\n');
+                Check("modified content, code only (our own mod): its card Jordan's words with the places, the areas, the click hint (see 17e3)",
+                    codeOnly is { Code: > 1, Files: 0 } && codeCard is [var codeSaid, " ", _, "", var codeHint]
+                    && codeSaid == Draft(Template("SPIRE_MOD_MANAGER.MODIFIED_CODE_TIP"), ("places", PlacesCounted(codeOnly.Code))) && codeHint == hint,
+                    $"\"{codeRow}\"; card: {string.Join(" / ", codeCard)}");
+            }
+            else
+                Results.Add("SKIP modified content, code only: our row isn't there");
+
+            // One place or one file, and a mod not loaded: the card's words from Tip itself.
+            var onePlace = new GameChanges.Place("NMerchantRoom", "_Ready", "merchant room", GameChanges.Kinds.After);
+            (string Path, string Area) oneFile = ("images/ui/hands/multiplayer_hand_regent_rock.png", "The Regent (hands)");
+            string[] TipLines(GameChanges.Changes some, ModLoadState state) =>
+                ModifiedContent.Tip(new Mod { path = "", state = state, manifest = new ModManifest { id = "SmmTipTest" } }, some).Split('\n');
+            var (onePlaceTip, bothTip) = (TipLines(new([], [onePlace]), ModLoadState.Loaded), TipLines(new([oneFile], [onePlace]), ModLoadState.Loaded));
+            var (oneFileTip, noneTip) = (TipLines(new([oneFile], []), ModLoadState.Disabled), TipLines(new([], []), ModLoadState.Disabled));
+            var (place, file, notLoaded) = (PlacesCounted(1), FilesCounted(1), Menus.Text("SPIRE_MOD_MANAGER.MODIFIED_NOT_LOADED"));
+            Check("modified content's card with one place or file: \"1 place\" and \"1 file\" in Jordan's sentences; a mod not loaded: its contents show only then",
+                onePlaceTip[0] == Draft(Template("SPIRE_MOD_MANAGER.MODIFIED_CODE_TIP"), ("places", place))
+                && bothTip[0] == Draft(Template("SPIRE_MOD_MANAGER.MODIFIED_BOTH_TIP"), ("places", place), ("files", file))
+                && oneFileTip[0] == Menus.Text("SPIRE_MOD_MANAGER.MODIFIED_FILES_TIP_ONE") && oneFileTip[1].Contains(notLoaded)
+                && noneTip[0] == Menus.Text("SPIRE_MOD_MANAGER.MODIFIED_NONE_TIP") && noneTip[1].Contains(notLoaded),
+                string.Join(" | ", new[] { onePlaceTip, bothTip, oneFileTip, noneTip }.Select(t => string.Join(" / ", t))));
+
             // Nothing found: a fixture mod with no pack and no code.
             if (content.GetChildren().OfType<NModMenuRow>().FirstOrDefault(r => r.Mod?.manifest?.id == "SmmTestUi") is { Mod: { } plain } plainRow)
             {
@@ -922,6 +969,13 @@ static partial class SelfTest
         }
     }
 
+    // "30 places" or "1 place", "16 files" or "1 file", in the strings' words.
+    static string PlacesCounted(int count) => count == 1 ? Menus.Text("SPIRE_MOD_MANAGER.GAME_CODE_COUNT_ONE")
+        : Draft(Template("SPIRE_MOD_MANAGER.GAME_CODE_COUNT"), ("count", $"{count}"));
+
+    static string FilesCounted(int count) => count == 1 ? Menus.Text("SPIRE_MOD_MANAGER.GAME_FILES_COUNT_ONE")
+        : Draft(Template("SPIRE_MOD_MANAGER.GAME_FILES_COUNT"), ("count", $"{count}"));
+
     // The first `count` areas, then how many more, in the strings' words.
     static string AreasListed(IReadOnlyList<string> areas, int count, string? first = null)
     {
@@ -934,11 +988,11 @@ static partial class SelfTest
         };
     }
 
-    // How the panel's Modified content row (shown: its line of the panel's text; counts: " (...)" after the areas) lists
+    // How the panel's Modified content row (shown: its line of the panel's text, the areas and nothing after them) lists
     // the areas: the whole ones it shows, or (Whole 0) how many of the first's what ("The Regent (energy orb, hands, …)").
     // Most: one more (area, or what) would run past the line (the label's room less a scrollbar's, there or not), shaped
     // in the panel's font. OneLine: its first and last letters on one line, no wider than the label's room.
-    static (int Whole, int Items, bool Most, bool OneLine) ModifiedFit(RichTextLabel description, string shown, IReadOnlyList<string> areas, string counts)
+    static (int Whole, int Items, bool Most, bool OneLine) ModifiedFit(RichTextLabel description, string shown, IReadOnlyList<string> areas)
     {
         var term = Menus.Text("SPIRE_MOD_MANAGER.MODIFIED_CONTENT");
         var (font, size) = (description.GetThemeFont("normal_font"), description.GetThemeFontSize("normal_font_size"));
@@ -953,7 +1007,7 @@ static partial class SelfTest
         var start = shown.Length > 0 ? description.GetParsedText().IndexOf(shown, StringComparison.Ordinal) : -1;
         var at = start >= 0 ? description.GetCharacterLine(start) : -1;
         var oneLine = at >= 0 && description.GetCharacterLine(start + shown.Length - 1) == at && description.GetLineWidth(at) <= room;
-        string Row(int count, string? first = null) => $"{term}: {AreasListed(areas, count, first)}{counts}";
+        string Row(int count, string? first = null) => $"{term}: {AreasListed(areas, count, first)}";
         var whole = Enumerable.Range(1, areas.Count).FirstOrDefault(n => shown == Row(n));
         if (whole > 0)
             return (whole, 0, whole == areas.Count || Width(Row(whole + 1)) > lineRoom, oneLine);
