@@ -1007,7 +1007,8 @@ static partial class SelfTest
     // the ticked rows and #disabled the others, any case; #installed every row, #missing and #uninstalled none; each the
     // rows it means (HiddenTagsAsMeant); a tag of the player's named like each finds its mod too. Then what each means, on
     // made-up mods in a made-up saved list: A needs C (off) and D (after A), B needs a mod that isn't installed and the
-    // game failed it, D has a game error, E is off but loaded, with a tag of its own named "Enabled".
+    // game failed it, D has a game error, E is off but loaded, with a tag of its own named "Enabled"; and each name
+    // without its "#".
     // Every hidden tag, in HiddenTags' order (the info panel's Other keywords lists them in it).
     static readonly string[] HiddenTagNames = ["#enabled", "#disabled", "#workshop", "#local", "#installed", "#uninstalled", "#missing", "#loaded", "#notloaded",
         "#pending", "#new", "#changed", "#moved", "#edited", "#renamed", "#note", "#uncategorized", "#unmet", "#needed", "#order", "#duplicate", "#clash", "#aside",
@@ -1089,18 +1090,42 @@ static partial class SelfTest
         {
             (string Query, string Finds)[] cases =
             [
-                ("#enabled", "yynyy"), ("#disabled", "nnyny"), ("enabled", "nnnny"), ("#workshop", "nynnn"), ("#local", "ynyyy"), ("#installed", "yyyyy"),
+                ("#enabled", "yynyy"), ("#disabled", "nnyny"), ("#workshop", "nynnn"), ("#local", "ynyyy"), ("#installed", "yyyyy"),
                 ("#missing", "nnnnn"), ("#loaded", "ynnyy"), ("#notloaded", "nyynn"), ("#pending", "nnnny"), ("#unmet", "yynnn"), ("#needed", "nnynn"),
                 ("#order", "ynnnn"), ("#failed", "nynnn"), ("#gameerror", "nnnyn"), ("#error", "yyynn"), ("#warning", "nnnyn"), ("#problem", "yyyyn"),
                 ("#renamed", "ynnnn"), ("#note", "nynnn"), ("#notes", "nynnn"), ("#uncategorized", "yynyy"), ("#edited", "yyyyy"), ("#duplicate OR #sameid OR #clash OR #aside OR #managers", "nnnnn"),
                 ("#enabled -#local", "nynnn"), ("#problem #local", "ynyyn"), ("(#unmet OR #needed) -#failed", "ynynn"),
             ];
-            List<string> wrong;
+            // Each name alone (Jordan, 23 Oct: "allow keywords to be searched without leading hashtag"), with AND, OR, NOT
+            // and "-" too; only the whole name, as a whole tag: "load" isn't #loaded, nor "enable" #enabled (E's own tag
+            // has the word).
+            (string Query, string Finds)[] bare =
+            [
+                ("enabled", "yynyy"), ("Disabled", "nnyny"), ("workshop", "nynnn"), ("unmet", "yynnn"), ("enabled -local", "nynnn"), ("problem local", "ynyyn"),
+                ("(unmet OR needed) -failed", "ynynn"), ("unmet | gameerror", "yynyn"), ("NOT workshop", "ynyyy"), ("loaded AND #local", "ynnyy"),
+                ("load", "nnnnn"), ("notload", "nnnnn"), ("enable", "nnnny"), ("work", "nnnnn"),
+            ];
+            List<string> Wrong((string Query, string Finds)[] table) => [.. table.Select(c => (c.Query, c.Finds, Found: string.Concat(made.Select(m => Search.Matches(m, c.Query) ? "y" : "n"))))
+                .Where(c => c.Found != c.Finds).Select(c => $"{c.Query}: {c.Found}, not {c.Finds}")];
+            List<string> wrong, wrongBare, unlike;
             using (Lookups.Begin(made, [], saved, Ticks.All))
-                wrong = [.. cases.Select(c => (c.Query, c.Finds, Found: string.Concat(made.Select(m => Search.Matches(m, c.Query) ? "y" : "n"))))
-                    .Where(c => c.Found != c.Finds).Select(c => $"{c.Query}: {c.Found}, not {c.Finds}")];
+                (wrong, wrongBare, unlike) = (Wrong(cases), Wrong(bare), [.. HiddenTagNames.Where(t => made.Any(m => Search.Matches(m, t[1..]) != Search.Matches(m, t)))]);
             Check("hidden tags mean what they say: state, problems (#error, #warning, #problem gather them), our details (#notes still finds what #note does); "
-                + "only after #; a tag of the player's named like one finds its mods too", wrong.Count == 0, string.Join(" | ", wrong));
+                + "a tag of the player's named like one finds its mods too", wrong.Count == 0, string.Join(" | ", wrong));
+            Check($"hidden tags without \"#\": each name alone finds what #name finds ({HiddenTagNames.Length} names), with AND, OR, NOT and \"-\" too; "
+                + "a word that only starts a name finds none of its mods", unlike.Count == 0 && wrongBare.Count == 0,
+                $"unlike #name: {string.Join(", ", unlike)}; {string.Join(" | ", wrongBare)}");
+            // A word that is a name and in a mod's text finds both (as a word that is a tag and in a description does), and
+            // the bare word brings the main list's line for a profile's mods that aren't installed, as #missing does.
+            var says = new Mod
+            {
+                path = "", modSource = ModSource.ModsDirectory, state = ModLoadState.Loaded,
+                manifest = new ModManifest { id = "SmmHiddenSays", name = "Hidden Test Says", description = "Finds Workshop items for you." },
+            };
+            var union = $"{Search.Matches(says, "workshop")}/{Search.Matches(says, "#workshop")}/{Search.Matches(made[1], "workshop")}/{Search.Matches(made[1], "\"Workshop\"")}";
+            var wants = $"{Search.Wants("missing", "missing", "uninstalled")}/{Search.Wants("Missing mods", "missing")}/{Search.Wants("-missing", "missing")}/{Search.Wants("missingno", "missing")}";
+            Check("a word that is a hidden tag's name finds the mods that say it and the ones the tag finds; the word \"missing\" asks for the missing mods' line, "
+                + "not left out or as part of a word", union == "True/False/True/False" && wants == "True/True/False/False", $"{union}; wants {wants}");
         }
         finally
         {
@@ -1379,14 +1404,15 @@ static partial class SelfTest
             string Said(Mod of, string search) => Search.FoundIn(of, search) is { } fields ? $"[{string.Join(", ", fields)}]" : "not found";
             string[] searches = ["careful", "@\"someone careful\"", "contrast", "#cards", "#visuals", "#workshop", "kit", "\"Art Kit\"", "card art",
                 "found in test", "SmmFoundInTest", "careful #cards", "careful -zzz", "-zzz", "NOT #local", "zzz OR careful", "(zzz | #utility) slider",
-                "careful -contrast", "zzz"];
+                "careful -contrast", "zzz", "workshop", "workshop kit", "loaded -local"];
             var seen = string.Join(" | ", searches.Select(s => $"{s}: {Said(mod, s)}"));
             string[] meant = ["careful: [Author]", "@\"someone careful\": [Author]", "contrast: [Description, Note]", "#cards: [WorkshopTags]",
                 "#visuals: [Tags]", "#workshop: [Keywords]", "kit: [Alias]", "\"Art Kit\": [Alias]", "card art: [Description, WorkshopTags, Alias]",
                 "found in test: [Name, Id]", "SmmFoundInTest: [Id]", "careful #cards: [Author, WorkshopTags]", "careful -zzz: [Author]", "-zzz: []",
-                "NOT #local: []", "zzz OR careful: [Author]", "(zzz | #utility) slider: [WorkshopTags, Note]", "careful -contrast: not found", "zzz: not found"];
-            Check("Found in: each term's own fields, in the panel's order (a hidden tag as other keywords); a -term or NOT names none; nothing when "
-                + "the search leaves the mod out", seen == string.Join(" | ", meant), seen);
+                "NOT #local: []", "zzz OR careful: [Author]", "(zzz | #utility) slider: [WorkshopTags, Note]", "careful -contrast: not found", "zzz: not found",
+                "workshop: [Keywords]", "workshop kit: [Keywords, Alias]", "loaded -local: [Keywords]"];
+            Check("Found in: each term's own fields, in the panel's order (a hidden tag as other keywords, with its \"#\" or without); a -term or NOT names "
+                + "none; nothing when the search leaves the mod out", seen == string.Join(" | ", meant), seen);
             // What it changes in the game: our own mod's code (the debug info label manager), which nothing else of it says.
             if (Dependencies.Find(ModEntry.ModId) is { } ours && GameChanges.Words(ours).Contains("debug", StringComparison.OrdinalIgnoreCase))
                 Check("Found in: what a mod changes in the game is its modified content", Said(ours, "debug") == "[Modified]", Said(ours, "debug"));
@@ -1402,7 +1428,8 @@ static partial class SelfTest
         // The same mods as Matches finds, every row: Found in only shows where the row is a match.
         var rows = content.GetChildren().OfType<NModMenuRow>().Select(r => r.Mod).OfType<Mod>().ToList();
         string[] queries = ["lib", "test fixes", "the manager", "co-op", "#Library", "#local", "@symphony", "#Gameplay lib", "test framework", "zzz",
-            "-#local", "NOT test", "#enabled OR #problem", "(lib | fixes) -#gameplay", "\"Test\"", "framework testlib", "#workshop", "manager -zzz"];
+            "-#local", "NOT test", "#enabled OR #problem", "(lib | fixes) -#gameplay", "\"Test\"", "framework testlib", "#workshop", "manager -zzz",
+            "enabled", "duplicate -disabled", "unmet OR needed", "test notloaded"];
         var differ = rows.SelectMany(m => queries.Where(q => (Search.FoundIn(m, q) != null) != Search.Matches(m, q)).Select(q => $"{m.manifest?.id} \"{q}\"")).ToList();
         Check($"Found in finds the mods Matches finds ({rows.Count} rows, {queries.Length} searches)", rows.Count > 0 && differ.Count == 0, string.Join(", ", differ.Take(8)));
 
