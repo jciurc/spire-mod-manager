@@ -241,12 +241,15 @@ static class SameIdLoad
     // Our data's ticks as saved (manager.json's copies_off and copies), read from the file into InitTicks: loading our
     // data does work of its own that waits for the main menu (Store.Load). A file from before copies_off reads through
     // its copy_picks (Copies.LegacyOff), as the page reads it. With them, the copies each id had at the last launch
-    // (LaunchGuard's records), for ties. No file: nothing off; an unreadable file counts as nothing off, logged.
+    // (LaunchGuard's records), for ties. No file: nothing off; an unreadable file or record counts as nothing off,
+    // logged. The records are read inside the try too: outside it, a throw would end Apply and leave the game's own
+    // choice, where nothing off still applies the rule.
     static Ticks ReadTicks()
     {
-        var before = LaunchGuard.CopiesBefore(Store.Dir);
+        Dictionary<string, HashSet<string>>? before = null;
         try
         {
+            before = LaunchGuard.CopiesBefore(Store.Dir);
             var file = Store.FilePath;
             if (!File.Exists(file))
                 return InitTicks = new Ticks(null, null, before);
@@ -257,7 +260,7 @@ static class SameIdLoad
         }
         catch (Exception e)
         {
-            Log.Warn($"[{ModEntry.ModId}] Same ID: our data unreadable: {e.Message}; every copy counts as enabled this launch");
+            Log.Warn($"[{ModEntry.ModId}] Same ID: our data or launch records unreadable: {e.Message}; every copy counts as enabled this launch");
             return InitTicks = new Ticks(null, null, before);
         }
     }

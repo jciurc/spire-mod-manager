@@ -2007,8 +2007,11 @@ static partial class SelfTest
             string Named(Mod mod) => (mod.manifest?.name ?? id) + Copies.Which(mod);
             var wasOn = Copies.Ticked(loadsMod);
             var offWere = CopiesOff();
-            // Which loads with both ticked: the higher version, the first in our record on a tie (Copies.Best).
-            var both = Copies.Best([loadsMod, otherMod], Copies.Version, c => Copies.TieOrder(c, Store.Data.Copies?.GetValueOrDefault(id), null)).Mod;
+            // Which loads with both ticked, for the fixture's twins written out rather than worked out by the rule under
+            // test: Test Twin Beta (1.1.0, the copy loading now) over Test Twin (1.0.0), as the higher version. Other twins
+            // (a --workshop --twins run) have versions not known here, so for them it's the rule's answer (Copies.Best).
+            var both = id == TwinId ? "l:SmmTestTwinB"
+                : Copies.CopyOf(Copies.Best([loadsMod, otherMod], Copies.Version, c => Copies.TieOrder(c, Store.Data.Copies?.GetValueOrDefault(id), null)).Mod);
             Check("two copies of one mod: a box each on our page, the loading copy's ticked as it's on, the other's not (copies_off)",
                 Ticked(loading) == wasOn && !Ticked(otherRow) && !Copies.Ticked(otherMod) && offWere.Contains(Copies.SwitchKey(otherMod)) && CopiesBroken() == null,
                 $"boxes {Ticked(loading)}/{Ticked(otherRow)}, on {wasOn}, off {string.Join(", ", offWere)}; {CopiesBroken()}");
@@ -2021,12 +2024,12 @@ static partial class SelfTest
             var changed = HistoryBar.ChangedMods();
             Check("two copies of one mod: ticking the other copy ticks it beside the first, one undo step; Changes names only it, +1; the saved list's "
                 + "entries all on; Show: Changed lists only that row; the higher version loads (pending only if that's another copy)",
-                Ticked(otherRow) && Ticked(loading) == wasOn && Copies.Ticked(otherMod) && Copies.Ticked(loadsMod) == wasOn && LoadingCopy(id) == Copies.CopyOf(both)
+                Ticked(otherRow) && Ticked(loading) == wasOn && Copies.Ticked(otherMod) && Copies.Ticked(loadsMod) == wasOn && LoadingCopy(id) == both
                 && !CopiesOff().Contains(Copies.SwitchKey(otherMod)) && list.Where(e => e.Id == id && e.Source == source).All(e => e.IsEnabled)
                 && History.Steps(History.Track.List) == steps + 1 && lines.Contains($"Enabled: {Named(otherMod)}") && !lines.Any(l => l.Contains(Named(loadsMod)))
                 && onNow - onBefore == 1 && offNow == offBefore && changed.Contains(otherMod) && !changed.Contains(loadsMod)
-                && ModEntry.HasPendingChanges() == (both == otherMod || LoadOrder.OrderChanged) && CopiesBroken() == null,
-                $"boxes {Ticked(loading)}/{Ticked(otherRow)}, loads {LoadingCopy(id)} (both ticked: {Copies.CopyOf(both)}), steps {steps} -> "
+                && ModEntry.HasPendingChanges() == (both != loads || LoadOrder.OrderChanged) && CopiesBroken() == null,
+                $"boxes {Ticked(loading)}/{Ticked(otherRow)}, loads {LoadingCopy(id)} (expected {both}), steps {steps} -> "
                 + $"{History.Steps(History.Track.List)}, counts +{onNow - onBefore} -{offNow - offBefore}, pending {ModEntry.HasPendingChanges()}; "
                 + $"{string.Join(" | ", lines)}; {CopiesBroken()}");
             History.Undo();

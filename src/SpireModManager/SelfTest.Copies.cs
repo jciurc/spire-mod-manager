@@ -602,10 +602,10 @@ static partial class SelfTest
     // The rule on made-up copies: each case of the design's table, through the page's Copies.Next and the launch's
     // SameIdLoad.Run on the same copies (the game's local-vs-Workshop rule played first, GameRule), on this branch's rule
     // (the beta's or stable's): both name the same copy, and the losing ticked copies get their reasons. Then the version
-    // reading (PENDING JORDAN, P5; letters straight after a number, N10), the game's own reading, a Mod's reading kept, the
-    // order the game reads local copies in (FirstRead, against Godot's own sort on real folders), the guard for a mod
-    // that needs a minimum version (N4), and the fallback where the launch couldn't swap a copy in (P7), each with such a
-    // mod installed while the game runs too.
+    // reading (P5; letters straight after a number, N10), the game's own reading, a Mod's reading kept, the order the
+    // game reads local copies in (FirstRead, against Godot's own sort on real folders), the guard for a mod that needs a
+    // minimum version (N4), and the fallback where the launch couldn't swap a copy in (P7), each with such a mod
+    // installed while the game runs too.
     static void TestCopyRule(string outDir)
     {
         var beta = Compat.WorkshopBeatsOlderLocal;
@@ -775,7 +775,7 @@ static partial class SelfTest
         var unread = none.Where(v => Copies.Version(Made("SmmRuleVersion", "A", version: v)) != null).ToList();
         if (Copies.Version(new Mod { path = "", manifest = new ModManifest { id = "SmmRuleVersion" } }) != null)
             unread.Add("no version");
-        Check("the version reading (PENDING JORDAN, P5): \"1.2\" is 1.2.0, a leading v dropped, metadata ignored, more numbers above, a prerelease after a "
+        Check("the version reading (P5): \"1.2\" is 1.2.0, a leading v dropped, metadata ignored, more numbers above, a prerelease after a "
             + "separator or straight after a number (\"1.0b\" below 1.0), a number past int's range read; none where no number leads",
             read.All(r => r.EndsWith(": ok")) && unread.Count == 0, $"{string.Join("; ", read)}; read where none should be: {string.Join(", ", unread)}");
         // Every version the game reads, ordered exactly as the game orders them.
@@ -827,10 +827,10 @@ static partial class SelfTest
             order.SequenceEqual(godot) && nested.path == "C:/SmmSameIdTest/Alpha", $"ours {string.Join(", ", order)}; Godot's {string.Join(", ", godot)}; nested {nested.path}");
     }
 
-    // A tie when the copy holding the id's entry is gone for a launch (PENDING JORDAN, P4; the design's risk 3): our record
-    // hands its front to the next copy installed, the one that loads meanwhile, so that copy ranks first among equal
-    // versions from then on, and the old holder back at the same version switches nothing. Made-up copies, our data tried
-    // on a copy (Reconcile); without the move, the old holder would load again.
+    // A tie when the copy holding the id's entry is gone for a launch (P4; the design's risk 3): our record hands its
+    // front to the next copy installed, the one that loads meanwhile, so that copy ranks first among equal versions from
+    // then on, and the old holder back at the same version switches nothing. Made-up copies, our data tried on a copy
+    // (Reconcile); without the move, the old holder would load again.
     static void TestSameIdTie()
     {
         const string id = "SmmSameIdTie";
@@ -3000,15 +3000,16 @@ static partial class SelfTest
     // The one rule on the page (Copies.Next), so no two views can disagree: the fixture twins in each state that decides
     // differently, every view naming the copy Next loads and giving the others its reason. The views: Next itself, the
     // statuses, the copy lines (the other copy and the reason), the Duplicate chips' tips, the same-ID banner's card, the
-    // relaunch check, Changes (a switch of which copy loads with no box changed) and pending (the main menu's dot). Each
-    // state made quietly, as a launch would have had the boxes (nothing changed since launch but which copy loads), then
-    // put back. The states: both ticked (B, the higher version); A alone (A, after a relaunch); equal versions (A, the copy
-    // installed first, our record's first, whatever the game's list order: PENDING JORDAN, P4); A's version unreadable
-    // (B: P5); A's "1.2", read leniently above B's 1.1.0 but not by the game, while Test Twin User needs 1.1.0 or newer (B:
-    // the N4 guard; without it A); the self-check finding the choice not taken (the game's own choice, B, every line
-    // saying so); the launch unable to swap B in, A loaded instead (A, both lines naming the dependency: P7). Screenshots:
-    // the panel of the copy that won't load, with the higher version loading; the banner's card; a tie; an unreadable
-    // version; the blocked copy.
+    // relaunch check, Changes (a switch of which copy loads with no box changed), pending (the main menu's dot) and the
+    // row strips (Test Twin User's line naming the copy it needs that loads, #aside on the copy that won't). Each state
+    // made quietly, as a launch would have had the boxes (nothing changed since launch but which copy loads), then put
+    // back. The states: both ticked (B, the higher version); A alone (A, after a relaunch); equal versions (A, the copy
+    // installed first, our record's first, whatever the game's list order: P4); A's version unreadable (B: P5); A's
+    // "1.2", read leniently above B's 1.1.0 but not by the game, while Test Twin User needs 1.1.0 or newer (B: the N4
+    // guard; without it A); the self-check finding the choice not taken (the game's own choice, B, every line saying so);
+    // the launch unable to swap B in, A loaded instead (A, both lines naming the dependency: P7). Screenshots: the panel
+    // of the copy that won't load, with the higher version loading; the banner's card; a tie; an unreadable version; the
+    // blocked copy.
     static async Task TestCopyOutcome(Node menu, NModdingScreen screen, Control content, string outDir)
     {
         List<NModMenuRow> Rows() => content.GetChildren().OfType<NModMenuRow>().ToList();
@@ -3055,6 +3056,7 @@ static partial class SelfTest
                 manifest.version = version;
         }
         string Named(Mod mod) => Copies.Named(mod);
+        var user = Dependencies.Find("SmmTestTwinUser"); // needs the id: its row strip names the copy that loads
         // What every view says now, against what the rule should give: loads, the copy that loads; losing, a ticked copy
         // that won't, and its line; loadsLine, the line of the copy that loads (null: none to check); switched, whether
         // which copy loads changed since launch with no box changed (Changes and pending say so). shot: the panel of the
@@ -3109,6 +3111,15 @@ static partial class SelfTest
             }
             Want(changes.Contains(switchLine) == switched, $"Changes: {string.Join(" | ", changes)}");
             Want(ModEntry.HasPendingChanges() == (switched || LoadOrder.OrderChanged), $"pending {ModEntry.HasPendingChanges()} (moved since launch {LoadOrder.OrderChanged})");
+            // The row strip: Test Twin User's line names the copy of the id it needs that loads (its name alone, then a word
+            // where there's a problem), and only the copy that won't load has the #aside keyword.
+            var note = (user == null ? null : RowOf(user))?.GetNodeOrNull<RichTextLabel>("SpireModManagerStrip/Needs")?.GetParsedText();
+            var needs = $"{Menus.Text("SPIRE_MOD_MANAGER.NEEDS_LABEL")}: {loads.manifest?.name}";
+            var words = new[] { "SPIRE_MOD_MANAGER.DEP_MISSING", "SPIRE_MOD_MANAGER.DEP_OFF", "SPIRE_MOD_MANAGER.DEP_AFTER" }.Select(Menus.Text);
+            Want(user == null || note == needs || words.Any(w => note == $"{needs} {w}"),
+                $"Test Twin User's row strip \"{note ?? "none"}\"");
+            Want(new[] { a, b }.All(m => RowStrip.Keywords(m).Contains("aside") == (m == losing)),
+                $"the row strips' keywords {string.Join(" / ", new[] { a, b }.Select(m => string.Join(",", RowStrip.Keywords(m))))}");
             if (shot != null && shownRow != null)
                 await Capture(screen, outDir, shot);
             Check($"the one rule on the page, {name}: every view names {Named(loads)} as the copy that loads"
@@ -3120,7 +3131,7 @@ static partial class SelfTest
         var (versionWas, aState, bState) = (a.manifest?.version, a.state, b.state);
         var planWas = SameIdLoad.Plan.GetValueOrDefault(TwinId);
         var dep = Dependencies.Find("SmmTestLib") is { } lib ? Named(lib) : "SmmTestLib";
-        var needed = Dependencies.Find("SmmTestTwinUser") is { } user && Copies.Ticked(user);
+        var needed = user != null && Copies.Ticked(user);
         try
         {
             OffQuietly();
@@ -3130,7 +3141,7 @@ static partial class SelfTest
             await State("A alone ticked", a, null, null, Draft(LoadsAfter, ("other", Named(b))), true);
             OffQuietly();
             SetA(b.manifest?.version);
-            await State("equal versions (PENDING JORDAN, P4): the copy installed first, our record's first", a, b,
+            await State("equal versions (P4): the copy installed first, our record's first", a, b,
                 Draft(CopyLoses, ("other", Named(a)), ("why", WhyFirst)), Draft(LoadsAfter, ("other", Named(b))), true, "20b-rule-tie");
             // The game's list the other way round: a tie still goes by our record, not by it.
             var mods = GameMods();
@@ -3142,7 +3153,7 @@ static partial class SelfTest
             Copies.TestRecount();
             Check("... equal versions with the game's list the other way round: the same copy, our record's first", reversed == "l:SmmTestTwinA", reversed ?? "none");
             SetA("abc");
-            await State("A's version unreadable (PENDING JORDAN, P5)", b, a, Draft(CopyLoses, ("other", Named(b)), ("why", WhyUnreadable)),
+            await State("A's version unreadable (P5)", b, a, Draft(CopyLoses, ("other", Named(b)), ("why", WhyUnreadable)),
                 Draft(LoadsAlso, ("other", Named(a))), false, "20d-rule-unreadable");
             SetA("1.2");
             if (needed)

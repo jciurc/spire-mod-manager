@@ -352,8 +352,8 @@ static class LaunchGuard
     static readonly Regex Markup = new(@"\[/?[a-z_]+(?:[ =][^\]]*)?\]");
 
     // The working setup's mod list back (order and on/off), mods installed since then off (a mod the list doesn't name
-    // loads), ours always on; then a relaunch through the relaunch check (owner: the main menu), which catches a mod
-    // left on that now needs one installed since (its dialog offers the fix).
+    // loads), ours always on (Written says why); then a relaunch through the relaunch check (owner: the main menu),
+    // which catches a mod left on that now needs one installed since (its dialog offers the fix).
     public static void Restore(IReadOnlyList<Entry> working, Node owner)
     {
         WriteList(working);
@@ -375,7 +375,10 @@ static class LaunchGuard
 
     // The mod list a Restore writes: the working setup's, in its order and on or off (copies of one id and source share
     // a switch: on if one of them was), ours first (LoadOrder.OursFirst); mods installed since then off (a mod the list
-    // doesn't name loads); ours always on, and Mod Doctor as it is now (it's there to look at the failure).
+    // doesn't name loads); Mod Doctor as it is now (it's there to look at the failure). Every copy of ours on, whatever
+    // the player had: the restored launch needs us running, as our Init is what loads the copies that worked (the ticks
+    // WriteOff puts back) and what notices if it fails again. All of them, so one still loads if the copy that ran was
+    // removed since, though on the beta that can make a higher Workshop copy of ours run in place of a local one.
     public static List<SettingsSaveMod> Written(IReadOnlyList<Entry> working)
     {
         var off = Dependencies.SavedOff();

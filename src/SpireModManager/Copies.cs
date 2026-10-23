@@ -155,10 +155,10 @@ static class Copies
         copies.ThenBy(c => c.StartsWith("w:") ? 0 : 1).ThenBy(c => c.StartsWith("w:") && ulong.TryParse(c[2..], out var item) ? item : ulong.MaxValue)
             .ThenBy(c => c, StringComparer.Ordinal);
 
-    // The copies in the order a tie between them goes by (PENDING JORDAN, P4: "the copy installed first"): their place in
-    // our record's list for the id; a copy the record doesn't have after those it has, the ones the last launch had
-    // first (before), then by age, as a first split orders them. Pure: the page passes our record, the launch the one read
-    // at Init, so the two agree.
+    // The copies in the order a tie between them goes by (P4: "the copy installed first"): their place in our record's
+    // list for the id; a copy the record doesn't have after those it has, the ones the last launch had first (before),
+    // then by age, as a first split orders them. Pure: the page passes our record, the launch the one read at Init, so
+    // the two agree.
     public static IEnumerable<string> TieOrder(IEnumerable<string> copies, IReadOnlyList<string>? recorded, IReadOnlySet<string>? before)
     {
         int At(string copy)
@@ -175,9 +175,9 @@ static class Copies
     // none, one it can't read, or one that throws (a number past int's range throws out of TryFromString).
     public static SemanticVersion? GameVersion(Mod mod) => VersionsOf(mod).Game;
 
-    // A copy's version as our choice between copies of one source reads it (Next's step 4, PENDING JORDAN, P5): as the
-    // game reads it where it can, so every such version is ordered as the game orders it, else leniently (Ver.Lenient).
-    // Null where no number leads.
+    // A copy's version as our choice between copies of one source reads it (Next's step 4, P5): as the game reads it
+    // where it can, so every such version is ordered as the game orders it, else leniently (Ver.Lenient). Null where no
+    // number leads.
     public static Ver? Version(Mod mod) => VersionsOf(mod).Ours;
 
     // Both readings of a manifest's version, kept per Mod (an update mid-session adds a Mod with its new manifest), read
@@ -805,10 +805,10 @@ internal sealed class Ver : IComparable<Ver>
     public static Ver Of(SemanticVersion version) => new([.. new[] { version.Major, version.Minor, version.Patch }.Select(n => n.ToString(CultureInfo.InvariantCulture))],
         version.Prerelease ?? []);
 
-    // A version the game can't read, read leniently (PENDING JORDAN, P5): trimmed, a leading "v" dropped, then the
-    // leading run of numbers with dots between ("1.2" is 1.2.0, "1.1.0.1" above 1.1.0); what follows, after at most one
-    // separator, is a prerelease, split at anything that isn't a letter or a digit ("0.4.1.beta" is 0.4.1-beta,
-    // "1.2.25(beta)" 1.2.25-beta, "1.0b" 1.0.0-b, below 1.0); "+metadata" ignored. Null where no number leads ("abc").
+    // A version the game can't read, read leniently (P5): trimmed, a leading "v" dropped, then the leading run of
+    // numbers with dots between ("1.2" is 1.2.0, "1.1.0.1" above 1.1.0); what follows, after at most one separator, is a
+    // prerelease, split at anything that isn't a letter or a digit ("0.4.1.beta" is 0.4.1-beta, "1.2.25(beta)"
+    // 1.2.25-beta, "1.0b" 1.0.0-b, below 1.0); "+metadata" ignored. Null where no number leads ("abc").
     public static Ver? Lenient(string? text)
     {
         var s = text?.Trim() ?? "";

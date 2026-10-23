@@ -394,7 +394,7 @@ static partial class SelfTest
             $"section {string.Join(", ", section.Select(Shown))}; sorting before it {string.Join(", ", sortsBefore)}");
         CategoryList.ScrollTo(content, ourRows[0]); // our rows in view for the screenshot
         await Wait(menu, 0.2);
-        await Capture(screen, outDir, "2n-self-twice-first");
+        await Capture(screen, outDir, "2q-self-twice-first");
         // A click on one copy's box unticks that one alone (its source's entries off), one undo step; the other still loads,
         // so no red banner. Its lines: the copy running says it's the only one left on, the other that it's off.
         bool SourceOn(ModSource source) => SaveManager.Instance.SettingsSave.ModSettings?.ModList.Where(e => e.Id == ModEntry.ModId && e.Source == source)
