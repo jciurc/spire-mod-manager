@@ -1003,7 +1003,13 @@ static partial class SelfTest
             description.EmitSignal(RichTextLabel.SignalName.MetaClicked, ModifiedContent.Meta);
             await WaitUntil(menu, () => Dialog()?.FindChild("Scroll", true, false) is Control { CustomMinimumSize.Y: > 0 });
             await Wait(menu, 0.2);
-            var title = (Dialog()?.FindChild("Title", true, false) as Label)?.Text ?? "";
+            var titleText = Dialog()?.FindChild("Title", true, false) as RichTextLabel;
+            var title = titleText?.GetParsedText() ?? "";
+            // The mod's name in gold, the rest of the title cream (Jordan, 23 Oct).
+            Check("modified content's dialog: the mod's name in its title in gold, the rest cream",
+                titleText?.Text.Contains($"[color=#{Modal.Gold.ToHtml(false)}]{name.Replace("[", "[lb]")}[/color]") == true
+                && titleText.GetThemeColor("default_color") == Modal.Cream,
+                titleText?.Text ?? "no title");
             var list = Dialog()?.FindChild("List", true, false) as RichTextLabel;
             var listText = list?.GetParsedText() ?? "";
             var note = (Dialog()?.FindChild("Note", true, false) as RichTextLabel)?.GetParsedText() ?? "";
