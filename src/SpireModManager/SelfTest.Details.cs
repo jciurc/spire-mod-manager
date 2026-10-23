@@ -87,11 +87,11 @@ static partial class SelfTest
         Check("then one undo puts the framework back on, as the fixture has it", Copies.Ticked(lib) && tickbox.IsTicked);
     }
 
-    // A made-up mod with very long everything (name, id, author, version, description, alias, many tags, notes, category),
-    // shown in the list and the panel (screenshot 16-long-details). The panel's title stays on one line with its
-    // version and the source line keeps its status, both cut with ".." (the whole text a second over them); so are the
-    // row's author, a long tag and the category's header; the row keeps its author and its height, what doesn't fit as
-    // "and N more..". A redraw fits no row title again, its cut one
+    // A made-up mod with very long everything (name, id, author, version, description, alias, many tags, notes), and a
+    // category with a very long name, shown in the list and the panel (screenshot 16-long-details). The panel's title
+    // stays on one line with its version and the source line keeps its status, both cut with ".." (the whole text a
+    // second over them); so are the row's author, a long tag and the category's header; the row keeps its author and its
+    // height, what doesn't fit as "and N more..". A redraw fits no row title again, its cut one
     // and an aliased one included, in Vanilla View and in our main list. It's removed again afterwards.
     static async Task TestLongDetails(Node menu, NModdingScreen screen, Control content, string outDir)
     {
@@ -113,11 +113,10 @@ static partial class SelfTest
         GameInstalls(mod);
         await Wait(menu, 0.4);
         NModalContainer.Instance?.Clear();
-        Store.Data.Categories.Add(new Category { Name = category });
+        Store.Data.Categories.Add(new Category { Name = category }); // empty: in it, the mod's row would show the name on a button
         Store.EditMod(id, info =>
         {
-            info.Category = category;
-            info.Alias = "My favourite enormous content pack that I keep meaning to rename to something shorter";
+            info.Alias ="My favourite enormous content pack that I keep meaning to rename to something shorter";
             info.Notes = Text(120);
             info.Tags = ["content", "big", "really-long-tag-name-for-testing", "favourites", "co-op", "needs-checking-after-every-update", "deluxe",
                 "cards", "relics", "events", "potions", "late-game"];
@@ -188,7 +187,8 @@ static partial class SelfTest
             var lineEnd = row.GetGlobalRect().End.X + strip.OffsetRight;
             Check("long details: many tags: the author still shows, inside the line", longAuthor is { Visible: true } && longAuthor.GetGlobalRect().End.X <= lineEnd + 1
                 && strip.GetGlobalRect().End.X <= lineEnd + 1, $"author {longAuthor?.GetGlobalRect()}, line {strip.GetGlobalRect()}, ends at {lineEnd}");
-            var folded = strip.GetChildren().OfType<PanelContainer>().Where(c => !c.Visible).Select(c => c.GetChildOrNull<Label>(0)?.Text ?? "").ToList();
+            var folded = strip.GetChildren().OfType<PanelContainer>().Where(c => !c.Visible)
+                .Select(c => c.GetChildOrNull<Label>(0) is { } chipLabel ? Menus.WholeText(chipLabel) : "").ToList(); // a long tag's whole text, not its cut one
             var rowWords = RowStrip.Keywords(mod);
             var more = strip.GetNodeOrNull<Label>(RowStrip.MoreName);
             var moreCard = more == null ? "" : (await SizedHoverCard(menu, more, "SpireModManagerTagCard", () => Capture(screen, outDir, "16b-more-card"))).Text;
