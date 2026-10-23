@@ -239,6 +239,7 @@ static partial class SelfTest
             await Step(() => TestNotes(menu, screen, content, outDir));
             await Step(() => TestPendingNotes(menu, screen, content));
             await Step(() => TestPendingLine(menu, screen, content));
+            await Step(() => TestMenuButtonPendingCard(menu, screen, content, outDir));
             await Step(() => TestSearch(menu, screen, content, outDir));
             await Step(() => TestBranchTags());
             await Step(() => TestDescriptionSearch());
@@ -248,6 +249,7 @@ static partial class SelfTest
             await Step(() => TestRedrawCost(menu, screen, content));
             await Step(() => TestManyMods(menu, screen, content));
             await Step(() => TestNewMod(menu, screen, content, outDir));
+            await Step(() => TestWorkshopTitles(menu, screen, content, outDir));
             await Step(() => TestLoadOrder(menu, screen, content, outDir));
             await Step(() => TestLoadOrderFind(menu, screen, content, outDir));
             await Step(() => TestListBanner(menu, screen, content, outDir));

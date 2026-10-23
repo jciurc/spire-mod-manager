@@ -2955,6 +2955,13 @@ static partial class SelfTest
 
         // As the page has them: A off (copies_off), its title the game's grey for a copy set aside. Then both ticked.
         var greyOff = !Ticked(rowA) && Title(rowA) == MegaCrit.Sts2.Core.Helpers.StsColors.gray && a.state == ModLoadState.DisabledDuplicate;
+        // Their Duplicate chips with one copy ticked (no clash): the plain one's muted tan, not the Local chip's grey beside it.
+        var plainChips = new[] { a, b }.Select(m => Tags.For(m)).ToList();
+        Check("same ID, one copy ticked: both Duplicate chips in the plain one's muted tan, apart from the Local chip's grey beside them and the clash's yellow",
+            plainChips.All(chips => chips.FirstOrDefault(c => c.Text == DuplicateChip) is { } duplicate && duplicate.Color == Tags.Duplicate
+                && duplicate.Color != Tags.SameIdClash && chips.FirstOrDefault(c => c.Text == Menus.Text("SPIRE_MOD_MANAGER.TAG_LOCAL")) is { } local
+                && local.Color != duplicate.Color),
+            string.Join(" / ", plainChips.Select(chips => string.Join(", ", chips.Select(c => $"{c.Text} {c.Color.ToHtml(false)}")))));
         var offWere = CopiesOff();
         // The copy lines' colour: every one in the Duplicate chip's warning yellow (Jordan: "ALL duplicate messages"): A off
         // beside B (B has none then), and both ticked, B (the copy that loads) too.

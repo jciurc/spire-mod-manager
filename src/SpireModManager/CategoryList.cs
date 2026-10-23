@@ -589,11 +589,14 @@ static class CategoryList
             // The scene's Kreon, or the game's font for its language (ModEntry.Font).
             titleLabel.AddThemeFontOverride("font", ModEntry.Font("res://themes/kreon_bold_shared.tres"));
             header.GetNode<Label>("Count").AddThemeFontOverride("font", ModEntry.Font("res://themes/kreon_regular_shared.tres"));
+            // The bar as wide as a row's highlight, its edges in line with a highlighted row's (Jordan, 23 Oct).
+            var background = header.GetNode<ColorRect>("Background");
+            (background.OffsetLeft, background.OffsetRight) = Store.Data.VanillaView ? (0, 0) : (RowTitles.LookInset.X, RowTitles.LookInset.Z);
             if (muted)
             {
                 // Not a category the player made: cream instead of gold, fainter background.
                 titleLabel.AddThemeColorOverride("font_color", new Color(1, 0.964706f, 0.886275f, 0.7f));
-                header.GetNode<ColorRect>("Background").Color = new Color(0.0756f, 0.12084f, 0.18f, 0.3f);
+                background.Color = new Color(0.0756f, 0.12084f, 0.18f, 0.3f);
             }
             // The count right after the name, as it shows: a long one is cut short of the header's buttons.
             var count = header.GetNode<Label>("Count");
@@ -640,7 +643,6 @@ static class CategoryList
             }
             Show(collapsed);
 
-            var background = header.GetNode<ColorRect>("Background");
             var baseColor = background.Color;
             header.MouseEntered += () => background.Color = baseColor.Lightened(0.15f);
             header.MouseExited += () => background.Color = baseColor;

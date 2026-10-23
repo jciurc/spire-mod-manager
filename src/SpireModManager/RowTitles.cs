@@ -6,8 +6,8 @@ using MegaCrit.Sts2.addons.mega_text;
 namespace SpireModManager;
 
 // Row titles in our views: the alias with the original name small and dim beside it, cut with ".." to fit, a notepad
-// before it when the mod has notes, gold for mods turned on or off since launch, and white for a ticked copy the game
-// greyed. Vanilla View: the game's.
+// before it when the mod has notes, gold for mods turned on or off since launch, white for a ticked copy the game
+// greyed, and soft blue for Workshop mods. Vanilla View: the game's.
 static class RowTitles
 {
     const int OriginalNameSize = 16;
@@ -293,9 +293,13 @@ static class RowTitles
     // Our views: a mod turned on since launch gets a bright gold title, one turned off a dim one. Otherwise the game's
     // colour from launch, but white for a ticked copy of a mod installed more than once that the game greyed (set aside
     // as a duplicate, off, or installed since): it's on, though only one copy of its id loads. The game's red (failed)
-    // and purple (not tried) stay: they're what the launch did.
+    // and purple (not tried) stay: they're what the launch did. A Workshop mod's white is a soft blue, and its grey that
+    // blue as dim as the game's grey, so Workshop mods stand out a little from local ones (Sourced).
     public static readonly Color ChangedTitle = new(1f, 0.82f, 0.45f); // turned on: bright gold
     public static readonly Color ChangedOffTitle = new(0.72f, 0.6f, 0.42f, 0.8f); // turned off: a dim, dusky gold
+    // A soft steel blue (#bfd4f2): a shade deeper than the panel's mod links (ModDetails.ModLinkHex), far from the bright
+    // external-link blue, so it reads as a name rather than a link
+    public static readonly Color WorkshopTitle = new(0.75f, 0.83f, 0.95f);
     static readonly StringName TitleColorMeta = "spire_mod_manager_title_color";
 
     public static void MarkChanged(IEnumerable<NModMenuRow> rows, bool vanilla)
@@ -314,11 +318,14 @@ static class RowTitles
             }
             var ticked = Copies.Ticked(mod);
             title.Modulate = launch is { } then && Copies.TickedIn(mod, then.Off, then.Ticks) != ticked ? (ticked ? ChangedTitle : ChangedOffTitle)
-                : ticked && mod.state is ModLoadState.Disabled or ModLoadState.DisabledDuplicate or ModLoadState.AddedAtRuntime
-                    && Copies.Others(mod).Count > 0 ? Colors.White
-                : (Color)title.GetMeta(TitleColorMeta);
+                : Sourced(mod, ticked && mod.state is ModLoadState.Disabled or ModLoadState.DisabledDuplicate or ModLoadState.AddedAtRuntime
+                    && Copies.Others(mod).Count > 0 ? Colors.White : (Color)title.GetMeta(TitleColorMeta));
         }
     }
+
+    // A Workshop mod's white or grey title in WorkshopTitle, the grey as dim; anything else as it is.
+    static Color Sourced(Mod mod, Color color) =>
+        mod.modSource == ModSource.SteamWorkshop && (color == Colors.White || color == MegaCrit.Sts2.Core.Helpers.StsColors.gray) ? color * WorkshopTitle : color;
 
     // The row's highlight in our views: one rounded shape for every state, a little wider than the game's; a faint tint
     // under the mouse, a brighter one with an even gold rim for the mod in the info panel. Vanilla View: the game's.
