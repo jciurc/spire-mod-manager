@@ -130,14 +130,15 @@ What changed in each Workshop release, for players. Each version's first line is
   mod's hover card closes when its row scrolls out of view under the mouse, and a row scrolled out of the list no
   longer counts as hovered.
 - Fixes: deleting the active profile, or making a new category from one mod's menu, is one undo step; Escape and F3
-  close the missing mods list; an unfinished `#"quoted tag` no longer hides every mod; clicking a category header
-  while searching no longer folds it out of sight; leaving Load Order mid-drag no longer drops the mod at the top; a
-  mod installed while the main menu is open shows the main menu's restart note and dot at once, instead of after
-  your next change; Load Order's search box keeps its width as you type, instead of narrowing once a search finds
-  something; text cut short to fit, such as a long name on its row, no longer splits an emoji or an accented letter;
-  a long category name, as an imported profile can bring, is cut with ".." on its mods' category buttons and in the
-  info panel's category picker instead of squeezing the row or running past the panel; and the external-link mark after the info panel's Workshop link, and after Open translations folder, sits on the
-  text's line when another mod adds fonts to the game (it sat a little low).
+  close the missing mods list; an unfinished `#"quoted tag` no longer hides every mod; clicking a category header while
+  searching no longer folds it out of sight; leaving Load Order mid-drag no longer drops the mod at the top; a mod
+  installed while the main menu is open shows the main menu's restart note and dot at once, instead of after your next
+  change; Load Order's search box keeps its width as you type, instead of narrowing once a search finds something; text
+  cut short to fit, such as a long name on its row, no longer splits an emoji or an accented letter; a long category
+  name, as an imported profile can bring, is cut with ".." on its mods' category buttons and in the info panel's
+  category picker instead of squeezing the row or running past the panel; and the external-link mark after the info
+  panel's Workshop link, and after Open translations folder, sits on the text's line when another mod adds fonts to the
+  game (it sat a little low).
 - For other mods: Spire Mod Manager has an API (version 1), so mods built on it can use its menus, banners and mod
   cards, and show the alias, note, tags and category you've given a mod.
 
