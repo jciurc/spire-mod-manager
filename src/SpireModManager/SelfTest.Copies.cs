@@ -1992,7 +1992,7 @@ static partial class SelfTest
             + "says it enables a second copy, over both it isn't greyed; the view switch's tip says how the game's page treats them; no copy_picks in our file",
             Loads() == "l:SmmTestTwinB" && Ticked(rowB) && !Ticked(rowA) && ModDetails.Status(b).Contains("Enabled") && ModDetails.Status(a).Contains("Disabled")
             && ModDetails.Problems(a).Count == 0 && boxTip == Draft(CopyOnTip, ("other", Named(b)), ("loads", Named(b)))
-            && Hover.TipOf(rowB.GetNode<Control>("Tickbox")) == "" && ModDetails.CopyLine(a, links: false)?.Text == $"{Named(b)} is the enabled copy"
+            && Hover.TipOf(rowB.GetNode<Control>("Tickbox")) == "" && ModDetails.CopyLine(a, links: false)?.Text == Draft(OtherEnabled, ("other", Named(b)))
             && enableAll.Tip == Draft(BulkEnablesTip, ("mods", a.manifest?.name ?? ""))
             && toggleTip.Contains("\nIn vanilla, mods ") && toggleTip.Contains("These will use the Spire Mod Manager configuration as a fallback.")
             && !bothDone && NoPicksOnDisk() && offAtStart.Contains(keyA) && FileCopiesOff().Contains(keyA) && CopiesBroken() == null,
@@ -2799,7 +2799,7 @@ static partial class SelfTest
     // Whether a popup has a new copy's words (NewModPopupPatch), whichever mods they name: each text's longest run
     // between its values.
     static bool NewCopyWords(string popup) => new[] { "SPIRE_MOD_MANAGER.NEW_COPY_ON_BODY", "SPIRE_MOD_MANAGER.NEW_COPIES_ON_BODY",
-            "SPIRE_MOD_MANAGER.NEW_COPY_OFF_BODY", "SPIRE_MOD_MANAGER.NEW_SELF_COPY_BODY" }
+            "SPIRE_MOD_MANAGER.NEW_COPY_OFF_BODY" }
         .Select(key => Template(key).Split('{', '}').Where((_, i) => i % 2 == 0).MaxBy(s => s.Length) ?? "")
         .Any(words => words.Length > 0 && popup.Contains(words));
 

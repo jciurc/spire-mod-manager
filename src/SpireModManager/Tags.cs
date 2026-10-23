@@ -48,9 +48,9 @@ static class Tags
         if (IsLocal(mod))
             chips.Add(new Chip(Menus.Text("SPIRE_MOD_MANAGER.TAG_LOCAL"), Local, Tip: Menus.Text("SPIRE_MOD_MANAGER.TAG_LOCAL_TIP")));
         // Duplicate: another copy of this mod id installed (Copies). Yellow on every copy ticked while another is (only one
-        // of them loads), the one that loads too: they all share the problem. Grey otherwise, and always for this mod's
-        // copies (a backup copy of it on is as it should be: Copies.Clashes). Its tip names the others (while yellow, the
-        // ticked ones, and the copy that loads); a click lists every mod installed more than once.
+        // of them loads), the one that loads too: they all share the problem, this mod's copies as any mod's
+        // (Copies.Clashes). Grey otherwise. Its tip names the others (while yellow, the ticked ones, and the copy that
+        // loads); a click lists every mod installed more than once.
         if (manifest.id is { } id && Copies.Others(mod) is { Count: > 0 } others)
         {
             var clash = Copies.Clashes(mod);

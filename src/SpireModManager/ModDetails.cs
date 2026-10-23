@@ -528,12 +528,11 @@ static class ModDetails
     }
 
     // Won't load (same ID): ticked while another copy of its id loads after a relaunch (Copies.Loses), before a launch
-    // too, not a relaunch away: orange, as nothing else says it won't load, but grey for a copy of this mod (kept on as a
-    // backup on purpose). First, as it tells the next launch: a copy the game failed as a duplicate this launch says it
-    // too (the game's error shows under From the game). Failed to load: ticked, and the game failed it. Pending
-    // relaunch: whether it loads changes at the relaunch. Else Enabled or Disabled, by its box, except that a copy that
-    // loads unticked (through a switch it shares, or in place of a copy the launch couldn't swap in: Copies.Next) is
-    // Enabled, as it loads.
+    // too, not a relaunch away: orange, as nothing else says it won't load, for a copy of this mod as for any. First, as
+    // it tells the next launch: a copy the game failed as a duplicate this launch says it too (the game's error shows
+    // under From the game). Failed to load: ticked, and the game failed it. Pending relaunch: whether it loads changes at
+    // the relaunch. Else Enabled or Disabled, by its box, except that a copy that loads unticked (through a switch it
+    // shares, or in place of a copy the launch couldn't swap in: Copies.Next) is Enabled, as it loads.
     // Pending relaunch, as the status says it: what loads after a relaunch isn't what loaded, for a copy neither set aside
     // as another loads nor failed (those statuses come first). #pending finds these.
     public static bool PendingRelaunch(Mod mod) => !Copies.Loses(mod) && !(Copies.Ticked(mod) && mod.state == ModLoadState.Failed)
@@ -542,7 +541,7 @@ static class ModDetails
     static (string Text, string Color) StatusParts(Mod mod)
     {
         var ticked = Copies.Ticked(mod);
-        var (key, color) = Copies.Loses(mod) ? ("SPIRE_MOD_MANAGER.STATUS_WONT_LOAD", mod.manifest?.id == ModEntry.ModId ? Disabled : Pending)
+        var (key, color) = Copies.Loses(mod) ? ("SPIRE_MOD_MANAGER.STATUS_WONT_LOAD", Pending)
             : ticked && mod.state == ModLoadState.Failed ? ("SPIRE_MOD_MANAGER.STATUS_FAILED", Problem)
             : PendingRelaunch(mod) ? ("SPIRE_MOD_MANAGER.STATUS_PENDING", Pending)
             : ticked || Copies.Loads(mod) ? ("SPIRE_MOD_MANAGER.STATUS_ENABLED", Enabled)
@@ -572,7 +571,9 @@ static class ModDetails
     //   ticked or not (it isn't "the one that loads" when it failed);
     // - ticked with another copy ticked too: this one is the copy that loads;
     // - off while another copy is on: the copy that loads (dim).
-    // This mod's copies (SelfLine) can be ticked together on purpose (a backup): no clash, their own colours.
+    // This mod's copies get the same lines, the clash's yellow too (Jordan, 23 Oct). Which of them loads is the game's own
+    // pick (Copies.Next's step 3: we load before we could choose), so between sources the game's reason comes with it,
+    // and between copies from one source no reason does (Why.Other: the plain line).
     public static (string Text, string Color)? CopyLine(Mod mod, bool links) =>
         CopySays(mod, links) is var (text, color) ? (text, Copies.Clashes(mod) ? Clash : color) : null;
 
@@ -588,8 +589,6 @@ static class ModDetails
         string Line(string key, Mod other) => Menus.Format(key, ("other", Other(other)));
         // The dependency the launch couldn't load the blocked copy without (SameIdLoad's plan), as its row names it.
         string Dep() => SameIdLoad.Plan.GetValueOrDefault(id)?.Late is { } late ? Dependencies.Find(late) is { } found ? Other(found) : Escape(late) : "";
-        if (id == ModEntry.ModId)
-            return SelfLine(mod, others, Other);
         if (SameIdLoad.Unchosen(id))
             return (Escape(Menus.Text("SPIRE_MOD_MANAGER.COPY_NOT_APPLIED")), Pending);
         if (Copies.LosesTo(mod) is { } lost)
@@ -616,37 +615,6 @@ static class ModDetails
                 // The one of them that loads (a copy that's off loads only through a switch it shares: then another).
                 : (Line("SPIRE_MOD_MANAGER.COPY_OTHER_ENABLED", Copies.Loading(id) is { } loads && others.Contains(loads) && Copies.Ticked(loads) ? loads : enabled), Disabled);
         return null;
-    }
-
-    // This mod installed more than once: which copy runs now, and whether another is on as a backup in case it's removed
-    // (each copy has its box, like any other) or loads after a relaunch instead. Which loads is the game's choice
-    // (SameIdLoad leaves ours to it), told apart only between a local copy and a Workshop one (the reason with it, as for
-    // any copy): of copies from one source, the game takes the first in its own order, so no switch is foretold. The copy
-    // running, with another ticked as its backup, needs no line (the other's says it). Null while none of them is ticked
-    // (the red banner says so) or none runs.
-    static (string Text, string Color)? SelfLine(Mod mod, IReadOnlyList<Mod> others, Func<Mod, string> other)
-    {
-        // The switch lines' {why} only where one is known.
-        string Line(string key, Mod named, string? why = null) => Menus.Format(key, ("other", other(named)), ("why", why ?? "")).TrimEnd();
-        string? WhyLoses(Mod copy) => Copies.LosesTo(copy) is { } lost ? Why(lost.Why) : null;
-        var ticked = Copies.Ticked(mod);
-        var tickedOthers = others.Where(Copies.Ticked).ToList();
-        if (!ticked && tickedOthers.Count == 0)
-            return null;
-        var loads = Copies.Loading(ModEntry.ModId);
-        if (mod.state == ModLoadState.Loaded)
-        {
-            if (loads != null && others.Contains(loads) && (!ticked || loads.modSource != mod.modSource))
-                return (Line("SPIRE_MOD_MANAGER.COPY_SELF_RUNS_SWITCH", loads, WhyLoses(mod)), Pending);
-            return tickedOthers.Count > 0 ? null : (Line("SPIRE_MOD_MANAGER.COPY_SELF_RUNS_OTHER_OFF", others[0]), Pending);
-        }
-        if (others.FirstOrDefault(o => o.state == ModLoadState.Loaded) is not { } running)
-            return null;
-        if (!ticked)
-            return (Line("SPIRE_MOD_MANAGER.COPY_SELF_OFF", running), Pending);
-        if (loads != null && Copies.CopyOf(loads) == Copies.CopyOf(mod) && (!Copies.Ticked(running) || running.modSource != mod.modSource))
-            return (Line("SPIRE_MOD_MANAGER.COPY_SELF_BACKUP_SWITCH", running, WhyLoses(running)), Pending);
-        return (Line("SPIRE_MOD_MANAGER.COPY_SELF_BACKUP", running), Disabled);
     }
 
     // Why a ticked copy doesn't load as another of its id does (Copies.LosesTo), in a sentence; null where none says it

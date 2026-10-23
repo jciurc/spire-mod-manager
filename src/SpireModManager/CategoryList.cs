@@ -143,12 +143,12 @@ static class CategoryList
 
     // On our views, the tip on the tickbox of a copy of a mod installed more than once (and on Load Order's Enable or
     // Disable for it): a copy that's off while another is on, which of them would load with this one on too
-    // (Copies.LoadingIf, the rule's: of two copies from one source, the higher version). Null otherwise: a copy that's on
-    // says what it does in the info panel (ModDetails.CopyLine), and so do this mod's copies, whose boxes are like any
-    // other's. Nothing is turned off by enabling a copy (Dependencies.Write).
+    // (Copies.LoadingIf, the rule's: of two copies from one source, the higher version; of this mod's, the game's own
+    // pick). Null otherwise: a copy that's on says what it does in the info panel (ModDetails.CopyLine). Nothing is
+    // turned off by enabling a copy (Dependencies.Write).
     public static string? CopyTip(Mod mod)
     {
-        if (Store.Data.VanillaView || mod.manifest?.id is not { } id || id == ModEntry.ModId || Copies.Others(mod) is not { Count: > 0 } others)
+        if (Store.Data.VanillaView || mod.manifest?.id is not { } id || Copies.Others(mod) is not { Count: > 0 } others)
             return null;
         if (Copies.Ticked(mod) || others.FirstOrDefault(Copies.Ticked) is not { } ticked)
             return null;
@@ -869,13 +869,13 @@ static class CategoryList
     }
 
     // Where turning these mods on leaves two or more copies of an id ticked, one of them turned on by it (copies outside
-    // these rows count): a tip naming those mods (without which copy), as only one copy of each loads. Null for none,
-    // and for this mod (a backup copy of it on is as it should be: Copies.Clashes).
+    // these rows count): a tip naming those mods (without which copy), as only one copy of each loads, this mod too. Null
+    // for none.
     static string? EnablesCopiesTip(List<Mod> mods)
     {
         var enabling = mods.Select(Copies.SwitchKey).ToHashSet();
         var named = new List<string>();
-        foreach (var turned in mods.Where(m => m.manifest?.id is { } id && id != ModEntry.ModId && Copies.Others(m).Count > 0 && !Copies.Ticked(m))
+        foreach (var turned in mods.Where(m => m.manifest?.id != null && Copies.Others(m).Count > 0 && !Copies.Ticked(m))
             .DistinctBy(m => m.manifest?.id))
         {
             var ticked = Dependencies.EachCopy(Copies.Others(turned).Prepend(turned)).Count(c => enabling.Contains(Copies.SwitchKey(c)) || Copies.Ticked(c));

@@ -322,8 +322,8 @@ static class ModToggledPatch
                 History.Record(); // a tickbox change, one step (Track only saves when the active profile changed)
             }
             // Every row's box as its view reads it: in Vanilla View the game's tickbox sets every entry of the mod's id
-            // and source, so another copy (a second Workshop item) switched too; on our views a copy of this mod locked
-            // on (CopyTickPatch keeps it on) is ticked again.
+            // and source, so another copy (a second Workshop item) switched too; on our views so did this mod's other
+            // copies from that source, which share one box (CopyTickPatch).
             Profiles.RefreshTickboxes(__instance);
             var content = __instance.GetNode<Control>("%ModsScrollContainer/Mask/Content");
             RowTitles.MarkChanged(content.GetChildren().OfType<NModMenuRow>(), Store.Data.VanillaView);
@@ -599,23 +599,20 @@ static class NewModPopupPatch
             var arrived = Installed.Mods.Append(mod).Distinct().Where(m => !Announced.Contains(Copies.SwitchKey(m))).ToList();
             var keys = arrived.Select(Copies.SwitchKey).ToHashSet();
             // A new copy is one Installed took as new (an update of either copy isn't: it keeps the new-mods text), beside a
-            // copy of its id from before these, of either source (two copies that came together are a new mod). Its tick
-            // and the ticks of the copies it joins are settled by now, so the copy named as loading is the rule's
-            // (Copies.Next): Installed and Copies.Arrived took the arrival first (they listen from Init, the game only from
-            // the main menu).
+            // copy of its id from before these, of either source (two copies that came together are a new mod), a copy of
+            // this mod as any. Its tick and the ticks of the copies it joins are settled by now, so the copy named as
+            // loading is the rule's (Copies.Next): Installed and Copies.Arrived took the arrival first (they listen from
+            // Init, the game only from the main menu).
             var copies = arrived.Where(m => Installed.Mods.Contains(m) && Copies.Others(m).Any(t => !keys.Contains(Copies.SwitchKey(t)))).ToList();
-            var ours = copies.Where(m => m.manifest?.id == ModEntry.ModId && Copies.Ticked(m)).ToList();
-            var on = copies.Where(m => m.manifest?.id != ModEntry.ModId && Copies.Ticked(m) && Copies.Others(m).Any(Copies.Ticked)).ToList();
+            var on = copies.Where(m => Copies.Ticked(m) && Copies.Others(m).Any(Copies.Ticked)).ToList();
             var off = copies.Where(m => !Copies.Ticked(m)).ToList();
             string Names(IEnumerable<Mod> mods) => string.Join(", ", mods.Select(Copies.Named));
             string Loading(Mod copy) => Copies.Named(copy.manifest?.id is { } id && Copies.Loading(id) is { } loads ? loads : copy);
             // The new mods first (a copy enabled alone among them), then each kind of new copy, a blank line between.
             var parts = new List<LocString>();
-            var told = ours.Count + on.Count + off.Count;
+            var told = on.Count + off.Count;
             if (told == 0 || arrived.Count > told)
                 parts.Add(new LocString("settings_ui", "SPIRE_MOD_MANAGER.NEW_MOD_BODY"));
-            if (ours.Count > 0)
-                parts.Add(Body("SPIRE_MOD_MANAGER.NEW_SELF_COPY_BODY", ("loads", Loading(ours[0]))));
             if (on.Count == 1)
                 parts.Add(Body("SPIRE_MOD_MANAGER.NEW_COPY_ON_BODY", ("mods", Copies.Named(on[0])), ("loads", Loading(on[0]))));
             else if (on.Count > 1)
