@@ -1637,8 +1637,8 @@ static partial class SelfTest
         Check("... the notice names the switch, by Workshop item: \"(switched copy: 1 → 2)\"", texts.Contains("(switched copy: 1 → 2)"), texts);
     }
 
-    // A message the game puts on a copy we set aside (made up here: a Steam branch error on the fixture's copy not
-    // picked) goes from its errors, so the MODDED label stays clear, to its info panel, marked as the game's; the late
+    // A message the game puts on a copy we set aside (made up here: a Steam branch error on the fixture's copy set
+    // aside) goes from its errors, so the MODDED label stays clear, to its info panel, marked as the game's; the late
     // pass before the label (BranchErrorsLatePatch) covers it.
     static void TestSameIdErrors()
     {
