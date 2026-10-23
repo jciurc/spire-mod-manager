@@ -763,6 +763,9 @@ static partial class SelfTest
                 if (texts == null && NModalContainer.Instance?.OpenModal is Node popup)
                 {
                     texts = string.Join(" | ", PopupTexts());
+                    Check("a failed start: the repair of the game's rebuilt mod list in memory ran as the error showed, with the list as the game read it "
+                        + "and before the first main menu", LaunchGuard.RepairedBeforeMenu && LaunchGuard.ReadList != null && !SameIdLoad.Settled,
+                        $"repaired {LaunchGuard.RepairedBeforeMenu}, list read {LaunchGuard.ReadList != null}, settled {SameIdLoad.Settled}");
                     if (!texts.Contains("The game couldn't start"))
                     {
                         Check("a failed start: our dialog in place of the game's", false, texts);
