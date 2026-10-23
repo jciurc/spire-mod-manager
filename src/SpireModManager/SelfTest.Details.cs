@@ -964,9 +964,13 @@ static partial class SelfTest
                 && (fit.Whole is > 0 and var whole && whole < areas.Count || fit.Items > 0) && fit.Most && fit.OneLine,
                 $"\"{shown}\" ({fit}, {areas.Count} areas); before: \"{(at > 0 ? facts[at - 1] : "")}\"; after: \"{(at >= 0 && at + 1 < facts.Length ? facts[at + 1] : "")}\"");
             var bbcode = description.Text.Split('\n').FirstOrDefault(l => l.Contains($"[url={ModifiedContent.Meta}]")) ?? "";
-            Check("modified content: the whole row is the link for its card and click, the areas and nothing after them, and it's no longer in two rows",
-                shown.Length > term.Length && bbcode == $"[url={ModifiedContent.Meta}][gold]{term}[/gold]: {shown[(term.Length + 2)..]}[/url]"
-                && !parsed.Contains("Changes game code") && !parsed.Contains("Replaces game files"), bbcode);
+            // Jordan: "and 4 more.." subtle, the areas in the text's colour.
+            var more = areas.Count - (fit.Whole > 0 ? fit.Whole : 1);
+            var tail = Draft(Template(more == 1 ? "SPIRE_MOD_MANAGER.MODIFIED_MORE_ONE" : "SPIRE_MOD_MANAGER.MODIFIED_MORE"), ("areas", ""), ("count", $"{more}"));
+            Check("modified content: the whole row is the link for its card and click, the areas, then \"and N more..\" in the subtle colour, and it's no "
+                + "longer in two rows", shown.Length > term.Length + tail.Length && tail.EndsWith(Menus.CutMark) && shown.EndsWith(tail)
+                && bbcode == $"[url={ModifiedContent.Meta}][gold]{term}[/gold]: {shown[(term.Length + 2)..^tail.Length]}[color=#fff6e299]{tail}[/color][/url]"
+                && !parsed.Contains("Changes game code") && !parsed.Contains("Replaces game files"), $"{bbcode} (tail \"{tail}\")");
             var cut = areas[^1];
             Check("modified content: search still finds the mod by an area the row leaves out", !shown.Contains(cut) && SpireModManager.Search.Matches(mod, cut), cut);
             await Capture(screen, outDir, "17d-modified-content");
@@ -1200,11 +1204,11 @@ static partial class SelfTest
             var (onePlaceTip, bothTip) = (TipLines(new([], [onePlace]), ModLoadState.Loaded), TipLines(new([oneFile], [onePlace]), ModLoadState.Loaded));
             var (oneFileTip, noneTip) = (TipLines(new([oneFile], []), ModLoadState.Disabled), TipLines(new([], []), ModLoadState.Disabled));
             var (place, file, notLoaded) = (PlacesCounted(1), FilesCounted(1), Menus.Text("SPIRE_MOD_MANAGER.MODIFIED_NOT_LOADED"));
-            Check("modified content's card with one place or file: \"1 place\" and \"1 file\" in Jordan's sentences; a mod not loaded: its contents show only then",
-                onePlaceTip[0] == Draft(Template("SPIRE_MOD_MANAGER.MODIFIED_CODE_TIP"), ("places", place))
+            Check("modified content's card with one place or file: \"1 place\" and \"1 file\" in Jordan's sentences; a mod not loaded: its contents show only "
+                + "then, after a gap", onePlaceTip[0] == Draft(Template("SPIRE_MOD_MANAGER.MODIFIED_CODE_TIP"), ("places", place))
                 && bothTip[0] == Draft(Template("SPIRE_MOD_MANAGER.MODIFIED_BOTH_TIP"), ("places", place), ("files", file))
-                && oneFileTip[0] == Menus.Text("SPIRE_MOD_MANAGER.MODIFIED_FILES_TIP_ONE") && oneFileTip[1].Contains(notLoaded)
-                && noneTip[0] == Menus.Text("SPIRE_MOD_MANAGER.MODIFIED_NONE_TIP") && noneTip[1].Contains(notLoaded),
+                && oneFileTip[0] == Menus.Text("SPIRE_MOD_MANAGER.MODIFIED_FILES_TIP_ONE") && oneFileTip[1] == ModDetails.CardGap && oneFileTip[2].Contains(notLoaded)
+                && noneTip[0] == Menus.Text("SPIRE_MOD_MANAGER.MODIFIED_NONE_TIP") && noneTip[1] == ModDetails.CardGap && noneTip[2].Contains(notLoaded),
                 string.Join(" | ", new[] { onePlaceTip, bothTip, oneFileTip, noneTip }.Select(t => string.Join(" / ", t))));
 
             // Nothing found: a fixture mod with no pack and no code.
@@ -1220,7 +1224,7 @@ static partial class SelfTest
                 var noneCard = await Card("17g-modified-content-none");
                 var expected = new List<string> { Menus.Text("SPIRE_MOD_MANAGER.MODIFIED_NONE_TIP") };
                 if (plain.state != ModLoadState.Loaded)
-                    expected.Add(Menus.Text("SPIRE_MOD_MANAGER.MODIFIED_NOT_LOADED"));
+                    expected.AddRange([" ", Menus.Text("SPIRE_MOD_MANAGER.MODIFIED_NOT_LOADED")]); // after the cards' gap
                 description.EmitSignal(RichTextLabel.SignalName.MetaClicked, ModifiedContent.Meta);
                 await Wait(menu, 0.2);
                 var noneList = (Dialog()?.FindChild("List", true, false) as RichTextLabel)?.GetParsedText() ?? "";

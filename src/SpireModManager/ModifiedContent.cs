@@ -44,7 +44,23 @@ static class ModifiedContent
         var (font, size, room) = (text.GetThemeFont("normal_font"), text.GetThemeFontSize("normal_font_size"), ModDetails.LineRoom(text));
         // Not laid out yet (no width): all of them, as there's no line to fit yet.
         var listed = AreasCut(changes.Areas, areas => room <= 0 || Width($"{term}: {areas}", font, size) <= room);
-        return $"[url={Meta}][gold]{Escape(term)}[/gold]: {Escape(listed)}[/url]";
+        return $"[url={Meta}][gold]{Escape(term)}[/gold]: {Quieted(listed, changes.Areas.Count)}[/url]";
+    }
+
+    // The row's "and 4 more.." in the subtle colour, the areas in the text's (Jordan), wherever a language puts it around
+    // the areas: the words the strings add, found by formatting them with a mark for the areas.
+    static string Quieted(string listed, int areas)
+    {
+        for (var more = 1; more < areas; more++)
+        {
+            var shaped = more == 1 ? Menus.Format("SPIRE_MOD_MANAGER.MODIFIED_MORE_ONE", ("areas", "\u0001"))
+                : Menus.Format("SPIRE_MOD_MANAGER.MODIFIED_MORE", ("areas", "\u0001"), ("count", Menus.Number(more)));
+            if (shaped.Split('\u0001') is [var before, var after] && listed.Length >= before.Length + after.Length
+                && listed.StartsWith(before, StringComparison.Ordinal) && listed.EndsWith(after, StringComparison.Ordinal))
+                return $"{Subtle(before)}{Escape(listed[before.Length..^after.Length])}{Subtle(after)}";
+        }
+        return Escape(listed);
+        static string Subtle(string part) => part.Length == 0 ? "" : $"[color={Quiet}]{Escape(part)}[/color]";
     }
 
     public static string FilesCount(int count) => count == 1 ? Menus.Text("SPIRE_MOD_MANAGER.GAME_FILES_COUNT_ONE")
@@ -127,8 +143,8 @@ static class ModifiedContent
             _ => Menus.Text("SPIRE_MOD_MANAGER.MODIFIED_NONE_TIP"),
         };
         var lines = new List<string> { Escape(said) };
-        if (mod.state != ModLoadState.Loaded)
-            lines.Add($"[color={Quiet}]{Escape(Menus.Text("SPIRE_MOD_MANAGER.MODIFIED_NOT_LOADED"))}[/color]");
+        if (mod.state != ModLoadState.Loaded) // a part of its own, after a gap (Jordan)
+            lines.AddRange([ModDetails.CardGap, $"[color={Quiet}]{Escape(Menus.Text("SPIRE_MOD_MANAGER.MODIFIED_NOT_LOADED"))}[/color]"]);
         if (changes.Any)
             lines.AddRange([ModDetails.CardGap, $"[color={CardGoldHex}]{Escape(AreasCut(changes.Areas, areas => areas.Length <= TipAreas))}[/color]"]);
         return $"{string.Join("\n", lines)}\n\n{Tags.Hint(Menus.Text("SPIRE_MOD_MANAGER.MODIFIED_CLICK_TIP"))}";
