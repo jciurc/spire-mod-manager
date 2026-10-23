@@ -1168,9 +1168,33 @@ static partial class SelfTest
                 + "come loads there (swapped), not the copy that's off, set aside; the plan names the blocked one",
                 ok && plan.GetValueOrDefault(X) is { Why: SameIdLoad.Reason.DependencyAfterSlot, Swapped: true, Blocked: "l:L1", Late: "SmmSameIdD" } entry
                 && entry.Loads == l2 && list[1] == l2 && w2.state == Aside && l1.state == Aside && w1.state == Aside
-                && okMirror && planMirror.GetValueOrDefault(X) is { Why: SameIdLoad.Reason.DependencyAfterSlot, Blocked: "w:93" } mirrored
+                && okMirror && planMirror.GetValueOrDefault(X) is { Swapped: true } mirrored
+                && (Compat.WorkshopBeatsOlderLocal ? mirrored is { Why: SameIdLoad.Reason.DependencyAfterSlot, Blocked: "w:93", Late: "SmmSameIdD" }
+                    : mirrored is { Why: SameIdLoad.Reason.None, Blocked: null }) // stable: its rule takes MW out of the ticked copies, so M2, no block
                 && mirrored.Loads == m2 && mirror[1] == m2 && m1.state == Aside && mw.state == Aside,
                 $"{Say(plan, w1, w2, l1, l2)} || {Say(planMirror, m1, m2, mw)}");
+        }
+        {
+            // The fallback goes the same way whether or not some copy is off: every copy ticked (W0 0.5 first, W1 3.0 needing D
+            // after the slot, W2 2.0), a mod needing the id: W2, the best that fits, swapped into the first slot, not the
+            // game's own choice W0. And past a pick that's blocked too: W0 off, W1 (3.0) and W2 (2.0) both needing D, W3
+            // (1.0) not: W3.
+            var (w0, w1, w2) = (Made(X, "W0", None, 160, "0.5.0"), Made(X, "W1", None, 161, "3.0.0", "SmmSameIdD"), Made(X, "W2", None, 162, "2.0.0"));
+            List<Mod> all = [us, w0, Made("SmmSameIdNeeder", "M", needs: [X]), Made("SmmSameIdD", "D"), w1, w2];
+            var (okAll, planAll) = PlanOf(all, record: ["w:160", "w:161", "w:162"]);
+            var (v0, v1, v2, v3) = (Made(X, "V0", None, 170, "0.5.0"), Made(X, "V1", None, 171, "3.0.0", "SmmSameIdD"), Made(X, "V2", None, 172, "2.0.0", "SmmSameIdD"),
+                Made(X, "V3", None, 173, "1.0.0"));
+            List<Mod> past = [us, v0, Made("SmmSameIdNeeder", "M", needs: [X]), Made("SmmSameIdD", "D"), v1, v2, v3];
+            var (okPast, planPast) = PlanOf(past, off: OffKeys("w:170"), record: ["w:170", "w:171", "w:172", "w:173"]);
+            Check("... a blocked pick's fallback: the best other ticked copy that fits, whether or not a copy is off (W2, not W0), and past one blocked too (V3)",
+                okAll && planAll.GetValueOrDefault(X) is { Why: SameIdLoad.Reason.DependencyAfterSlot, Blocked: "w:161", Swapped: true } a && a.Loads == w2 && all[1] == w2
+                && w0.state == Aside && w1.state == Aside
+                && okPast && planPast.GetValueOrDefault(X) is { Why: SameIdLoad.Reason.DependencyAfterSlot, Blocked: "w:171", Swapped: true } p && p.Loads == v3 && past[1] == v3
+                && v0.state == Aside && v1.state == Aside && v2.state == Aside,
+                $"{Say(planAll, w0, w1, w2)} || {Say(planPast, v0, v1, v2, v3)}");
+            // Each plan keeps the id's copies in the order before the swap: the next launch's, for the page.
+            Check("... the plan keeps the copies' order from before the swap (the next launch's)", planAll.GetValueOrDefault(X)?.Order is ["w:160", "w:161", "w:162"],
+                string.Join(",", planAll.GetValueOrDefault(X)?.Order ?? []));
         }
         {
             // A copy brought back loads with the game's manifest messages, which its rule cleared when it beat the copy: an
@@ -3395,7 +3419,8 @@ static partial class SelfTest
                     + $"a plan {planWas != null}");
             else
             {
-                SameIdLoad.TestPlan(TwinId, planWas with { Why = SameIdLoad.Reason.DependencyAfterSlot, Blocked = "l:SmmTestTwinB", Late = "SmmTestLib" });
+                SameIdLoad.TestPlan(TwinId, planWas with { Why = SameIdLoad.Reason.DependencyAfterSlot, Blocked = "l:SmmTestTwinB", Late = "SmmTestLib", Loads = a,
+                    SetAside = [b], Swapped = false });
                 (a.state, b.state) = (ModLoadState.Loaded, ModLoadState.DisabledDuplicate);
                 await State("the copy the launch couldn't swap in (P7): the game's choice, which loaded", a, b,
                     Draft(CopyBlocked, ("other", Named(a)), ("dep", dep)), Draft(LoadsBlocked, ("other", Named(b)), ("dep", dep)), false, "20e-rule-blocked");

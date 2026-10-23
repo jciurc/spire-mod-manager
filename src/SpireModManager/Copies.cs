@@ -307,6 +307,10 @@ static class Copies
     public static Outcome Next(string id, HashSet<(string?, ModSource)> gameOff, Ticks ticks)
     {
         var copies = (ById().TryGetValue(id, out var all) ? all : All.Where(m => m.manifest?.id == id)).DistinctBy(CopyOf).ToList();
+        // In the order the next launch has them: this launch's before Apply swapped any (its sort orders by id, so a swap
+        // doesn't carry over); a copy installed since after them.
+        if (SameIdLoad.Plan.GetValueOrDefault(id)?.Order is { Count: > 0 } order)
+            copies = [.. copies.OrderBy(m => order.TakeWhile(c => c != CopyOf(m)).Count())]; // one not in it: last
         var on = copies.Where(m => !gameOff.Contains((id, m.modSource))).ToList();
         if (on.Count == 0)
             return Outcome.None;
@@ -351,11 +355,19 @@ static class Copies
                 var best = Best(candidates, m => Version(Newest(m)), tied => TieOrder(tied, ticks.TieList(id), ticks.BeforeOf(id)),
                     strict ? m => GameVersion(Newest(m)) : null).Mod;
                 loads = best;
-                // Blocked: what this launch loaded instead (the next launch does the same: a ticked copy still to load
-                // that could take the slot, else the game's own choice), while it's still ticked; else the game's own.
-                if (Blocked(id, best, gameOff))
-                    (blocked, loads) = (best, SameIdLoad.Plan.GetValueOrDefault(id)?.Loads is { } instead
-                        && on.FirstOrDefault(m => CopyOf(m) == CopyOf(instead)) is { } same && IsTicked(same) ? same : GameChoice());
+                // Blocked: what the next launch loads instead, worked out as it does (SameIdLoad.Fallback) over the copies
+                // it has still to load (the game's rule leaves them), by the ticks now: the first that fits is at the
+                // id's first slot (the plan's To: nothing else moved), or what it needs loads before it; none: the game's
+                // own choice, the first of them.
+                if (Blocked(id, best, gameOff) && SameIdLoad.Plan.GetValueOrDefault(id) is { } plan)
+                {
+                    var list = ModManager.Mods.ToList();
+                    bool Fits(Mod m) => CopyOf(m) == CopyOf(gameLeft[0])
+                        || (m.manifest?.dependencies ?? []).All(d => list.FindIndex(x => x.manifest?.id == d.id) < plan.To);
+                    var newest = gameLeft.Select(Newest).ToList();
+                    (blocked, loads) = (best, SameIdLoad.Fallback(newest, Newest(best), IsTicked, Fits, tied => TieOrder(tied, ticks.TieList(id), ticks.BeforeOf(id)), strict)
+                        is { } instead && gameLeft.FirstOrDefault(m => CopyOf(m) == CopyOf(instead)) is { } same ? same : gameLeft[0]);
+                }
             }
         }
         // 5. Why each ticked copy that doesn't load doesn't.
