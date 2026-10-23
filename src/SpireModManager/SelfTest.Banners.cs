@@ -483,7 +483,7 @@ static partial class SelfTest
             && new[] { LoadOrder.ManagersName, LoadOrder.WarningName }.Select(n => border.GetNodeOrNull<Control>(n)).OfType<Control>()
                 .All(other => !other.Visible || other.GetGlobalRect().Position.Y >= banner.GetGlobalRect().End.Y);
         Check("this mod unticked: a red banner, first under the search box, says it and this page go at the relaunch, with Go to (no Show: one mod) and Enable now",
-            !Copies.Ticked(self) && first && text == "Spire Mod Manager (this mod) will be disabled on relaunch, and this menu will no longer be accessible until enabled again."
+            !Copies.Ticked(self) && first && text == "Spire Mod Manager (this mod) will be disabled on relaunch, and this menu will no longer be accessible until enabled again"
             && Banner()?.FindChild("GoToSelfButton", true, false) is Button && Banner()?.FindChild("EnableSelfButton", true, false) is Button enableButton
             && Hover.TipOf(enableButton) == "Keep Spire Mod Manager (this mod) enabled" && Profiles.OnCount() == on - 1
             && Banner()?.FindChild("GoToSelfButton", true, false) is Button goToButton && goToButton.Text == GoToProblem
@@ -542,7 +542,7 @@ static partial class SelfTest
             await Tick(tickbox, true);
         var text = (Banner()?.FindChild("ManagersWarning", true, false) as Label)?.Text ?? "";
         Check("Better Mod Menu ticked: the managers banner at once, under the search box, above the list", Bmm.Ticked && Placed()
-            && text == "Multiple mod managers are currently enabled, and may cause unexpected behavior.", $"\"{text}\"; {Where()}");
+            && text == "Multiple mod managers are currently enabled, and may cause unexpected behavior", $"\"{text}\"; {Where()}");
         Check("the managers banner is yellow: a warning, not an error", Yellow(BannerFill(Banner())), $"fill {BannerFill(Banner())}");
         var goToTip = TipOf(Banner()?.FindChild("GoToManagersButton", true, false));
         Check("the managers banner's Go to tip is the other banner's: \"Open the next affected mod\"", goToTip == GoToProblemTip, goToTip ?? "no Go to");

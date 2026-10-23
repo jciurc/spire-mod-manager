@@ -23,7 +23,7 @@ static partial class SelfTest
     static async Task TestGamePage(NMainMenu menu, string outDir)
     {
         Results.Add($"INFO left out: {string.Join(", ", ModEntry.FailedPatches)}");
-        const string text = "Spire Mod Manager is incompatible with this game version, or may require an update.";
+        const string text = "Spire Mod Manager is incompatible with this game version, or may require an update";
         if (ModEntry.FailedPatches.Contains(nameof(ModdingScreenPatch)))
         {
             var note = menu.GetNodeOrNull<Label>("SpireModManagerMenuButton/PendingNote");

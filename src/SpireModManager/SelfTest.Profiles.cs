@@ -596,7 +596,7 @@ static partial class SelfTest
             Check("the imported profile keeps each missing Workshop mod's item and the list's name for it, and the banner counts the three",
                 importedName != startName && imported?.Mods.Any(m => m.Id == HereId && m.Copy == $"w:{Here}" && m.Name == "Sub Here" && m.Enabled) == true
                 && imported.Mods.Any(m => m.Id == LocalId && m.Copy == null && m.Enabled) && Banner() is { Visible: true }
-                && BannerText() == "This profile contains 3 mods that aren't installed.", $"{importedName}: {BannerText()}");
+                && BannerText() == "This profile contains 3 mods that aren't installed", $"{importedName}: {BannerText()}");
             await Capture(screen, outDir, "2l-missing-banner");
 
             // Show: the list, as it was when it opened.
@@ -616,7 +616,7 @@ static partial class SelfTest
             CategoryList.Redraw(content);
             await Wait(menu, 0.3);
             Check("the mod arriving: the list says it's installed, and the banner counts the two left",
-                RowText(HereId).Contains("Installed: loads after a relaunch") && BannerText() == "This profile contains 2 mods that aren't installed.",
+                RowText(HereId).Contains("Installed: loads after a relaunch") && BannerText() == "This profile contains 2 mods that aren't installed",
                 $"{RowText(HereId)} | {BannerText()}");
             Modal.Close(MissingMods.Name);
             await Wait(menu, 0.2);
