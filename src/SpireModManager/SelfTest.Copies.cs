@@ -721,6 +721,29 @@ static partial class SelfTest
             + (beta ? ": both sources left, the local one first as the launch has it, so C" : ""),
             Case([W(x, 101, "1.5.0"), L(x, "A", "3.0.0"), L(x, "B", "1.0.0"), L(x, "C", "1.2.0")], off: ["l:A"], record: ["l:A", "l:B", "l:C", "w:101"]),
             "C", beta ? "101 Other, B Other" : "101 Local, B Higher");
+        // The page reads the copies in the next launch's order (the plan's Order), not this session's, which Apply's swap
+        // changed (the beta: L2 swapped ahead of W2 across sources). Every copy ticked: W2 beats L1 (read first), W1 loses
+        // to it, and of W2 and L2 left the first decides the source: W2, as the next launch has it too.
+        if (beta)
+        {
+            x = Id();
+            var (pw2, pl2, pl1, pw1) = (W(x, 102, "3.0.0"), L(x, "L2", "1.5.0"), L(x, "L1", "2.0.0"), W(x, 101, "1.0.0"));
+            SameIdLoad.TestPlan(x, new SameIdLoad.Entry(pl2, [pw2], true, 2, 1, SameIdLoad.Reason.None, 0, Order: ["w:102", "l:L2", "l:L1", "w:101"]));
+            string page;
+            try
+            {
+                page = PageOf([pl2, pw2, pl1, pw1]);
+            }
+            finally
+            {
+                SameIdLoad.TestPlan(x, null);
+            }
+            var (lw2, ll2, ll1, lw1) = (W(x, 102, "3.0.0"), L(x, "L2", "1.5.0"), L(x, "L1", "2.0.0"), W(x, 101, "1.0.0"));
+            GameRule([lw2, ll2, ll1, lw1], []);
+            var launched = SameIdLoad.Run(new List<Mod> { us, lw2, ll2, ll1, lw1 }, () => Ticks.All, m => m == us, log: false).Plan.GetValueOrDefault(x)?.Loads;
+            Check("the rule, ... the page in the next launch's order (the plan's), not this session's swapped one: W2, as the launch", page == "102" && launched == lw2,
+                $"page {page}, launch {Shown(launched)}");
+        }
         // An id the launch couldn't choose for (its self-check: not taken): the game's own choice, the copy that loaded this
         // session only where the next launch can load it again. Here the Workshop copy loaded, and the local copy, higher,
         // beats it next launch.
@@ -1195,6 +1218,27 @@ static partial class SelfTest
             // Each plan keeps the id's copies in the order before the swap: the next launch's, for the page.
             Check("... the plan keeps the copies' order from before the swap (the next launch's)", planAll.GetValueOrDefault(X)?.Order is ["w:160", "w:161", "w:162"],
                 string.Join(",", planAll.GetValueOrDefault(X)?.Order ?? []));
+        }
+        {
+            // The blocked pick's fallback is the rule over the other ticked copies, so a copy that's off decides nothing
+            // there either. (a) L1 off (1.0, read first) lost to W1 (2.0) at the game's rule; the rule over the ticked copies
+            // picks L2 (2.5), blocked by E: without L2, L3 (2.2) beats W1, so L3, not W1. (b) W2 off (3.0) and W1 (2.5, needs E)
+            // beat L1 (2.0) at the game's rule; W1 is blocked: without it, L1, brought back, not W2. On stable (b)'s rule over
+            // the ticked copies picks L1 straight away.
+            var (aw1, al2, al3, al1) = (Made(X, "W1", None, 191, "2.0.0"), Made(X, "L2", None, version: "2.5.0", needs: ["SmmSameIdE"]), Made(X, "L3", None, version: "2.2.0"),
+                Made(X, "L1", Aside, version: "1.0.0"));
+            List<Mod> listA = [us, aw1, al2, al3, Made("SmmSameIdNeeder", "M", needs: [X]), Made("SmmSameIdE", "E"), al1];
+            var (okA, planA) = PlanOf(listA, off: OffKeys("l:L1"), record: ["l:L1", "l:L2", "l:L3", "w:191"]);
+            var (bw2, bw1, bl1) = (Made(X, "W2", None, 182, "3.0.0"), Made(X, "W1", None, 181, "2.5.0", "SmmSameIdE"), Made(X, "L1", Aside, version: "2.0.0"));
+            List<Mod> listB = [us, bw2, bw1, Made("SmmSameIdNeeder", "M", needs: [X]), Made("SmmSameIdE", "E"), bl1];
+            var (okB, planB) = PlanOf(listB, off: OffKeys("w:182"), record: ["w:181", "w:182"]);
+            Check("... the blocked pick's fallback is the rule over the other ticked copies: a copy that's off decides nothing (L3, not W1), and a ticked copy "
+                + "it beat comes back (L1, not W2, which is off)",
+                okA && planA.GetValueOrDefault(X) is { Why: SameIdLoad.Reason.DependencyAfterSlot, Blocked: "l:L2" } pa && pa.Loads == al3 && listA[1] == al3
+                && aw1.state == Aside && al2.state == Aside
+                && okB && planB.GetValueOrDefault(X) is { } pb && pb.Loads == bl1 && listB[1] == bl1 && bl1.state == None && bw2.state == Aside && bw1.state == Aside
+                && (Compat.WorkshopBeatsOlderLocal ? pb is { Why: SameIdLoad.Reason.DependencyAfterSlot, Blocked: "w:181" } : pb.Why == SameIdLoad.Reason.None),
+                $"{Say(planA, aw1, al2, al3, al1)} || {Say(planB, bw2, bw1, bl1)}");
         }
         {
             // A copy brought back loads with the game's manifest messages, which its rule cleared when it beat the copy: an
@@ -3389,15 +3433,17 @@ static partial class SelfTest
             SetA(b.manifest?.version);
             await State("equal versions (P4): the copy installed first, our record's first", a, b,
                 Draft(CopyLoses, ("other", Named(a)), ("why", WhyFirst)), Draft(LoadsAfter, ("other", Named(b))), true, "20b-rule-tie");
-            // The game's list the other way round: a tie still goes by our record, not by it.
-            var mods = GameMods();
-            var (atA, atB) = (mods.IndexOf(a), mods.IndexOf(b));
-            (mods[atA], mods[atB]) = (b, a);
+            // The next launch's order the other way round (the plan's Order, which the page reads the copies in): a tie still
+            // goes by our record, not by it.
+            var orderWas = SameIdLoad.Plan.GetValueOrDefault(TwinId);
+            if (orderWas != null)
+                SameIdLoad.TestPlan(TwinId, orderWas with { Order = ["l:SmmTestTwinB", "l:SmmTestTwinA"] });
             Copies.TestRecount();
             var reversed = LoadingCopy(TwinId);
-            (mods[atA], mods[atB]) = (a, b);
+            SameIdLoad.TestPlan(TwinId, orderWas);
             Copies.TestRecount();
-            Check("... equal versions with the game's list the other way round: the same copy, our record's first", reversed == "l:SmmTestTwinA", reversed ?? "none");
+            Check("... equal versions with the next launch's order the other way round: the same copy, our record's first", orderWas != null && reversed == "l:SmmTestTwinA",
+                $"{reversed ?? "none"}; a plan {orderWas != null}");
             SetA("abc");
             await State("A's version unreadable (P5)", b, a, Draft(CopyLoses, ("other", Named(b)), ("why", WhyUnreadable)),
                 Draft(LoadsAlso, ("other", Named(a))), false, "20d-rule-unreadable");

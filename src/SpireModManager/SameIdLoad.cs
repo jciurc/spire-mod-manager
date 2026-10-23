@@ -4,6 +4,7 @@ using System.Runtime.CompilerServices;
 using System.Runtime.InteropServices;
 using System.Text.Json;
 using Godot;
+using MegaCrit.Sts2.Core.Debug;
 using MegaCrit.Sts2.Core.Localization;
 using MegaCrit.Sts2.Core.Logging;
 using MegaCrit.Sts2.Core.Modding;
@@ -167,6 +168,16 @@ static class SameIdLoad
             // A dependency of a copy that loads at or after the id's first slot (it would load before what it needs).
             string? Late(Mod m) => (m.manifest?.dependencies ?? []).Select(d => d.id).FirstOrDefault(dep =>
                 list.FindIndex(x => x.manifest?.id == dep) is var at && at >= s1);
+            // A copy the game's rule set aside brought back: the game's loop tries it in turn, as any mod still to load,
+            // with its manifest's messages again (the rule cleared them, and it loads).
+            void Revive(Mod m)
+            {
+                m.state = ModLoadState.None;
+                m.errors = ManifestMessages(m, log);
+                if (log && m.modSource == ModSource.SteamWorkshop)
+                    Log.Info($"[{ModEntry.ModId}] Same ID: {Copies.CopyOf(m)} brought back is a Workshop copy: a Steam branch message the game "
+                        + "had for it, if any, went with its rule's clearing, and can't be read again without Steam");
+            }
             // Through the list's array: the indexer would bump its version, and the game's foreach would throw.
             void SwapInto(int from)
             {
@@ -185,12 +196,14 @@ static class SameIdLoad
                     && m.manifest?.dependencies?.Any(d => d.id == id) == true))
                 {
                     // Another copy instead, the rest set aside as ever, so the game doesn't fail them as duplicates of it:
-                    // of the other ticked copies still to come, Choose's pick that can take the slot (Fallback), so a copy
-                    // that's off doesn't load in a ticked one's place; else the game's own choice (it needs no swap). The
-                    // page works out the same (Copies.Next, with Blocked and Late): the next launch does it again while
-                    // nothing changes the choice.
-                    bool Fits(Mod m) => todo.First(p => p.Mod == m) is var at && (at.At == s1 || Late(m) == null && s1 > self && at.At > self);
-                    var instead = Fallback([.. todo.Select(p => p.Mod)], picked.Mod, Ticked, Fits, TieOrder, strict) is { } other ? todo.First(p => p.Mod == other) : todo[0];
+                    // the copy the rule would load were the copies that are off, the blocked one and any that can't take
+                    // the slot not installed (Fallback; brought back where the game's rule set it aside), so a copy that's
+                    // off doesn't load in a ticked one's place; none: the game's own choice (it needs no swap). The page
+                    // works out the same (Copies.Next, with Blocked and Late): the next launch does it again while nothing
+                    // changes the choice.
+                    bool Fits(Mod m) => list.IndexOf(m) is var at && at > self && s1 > self && Late(m) == null;
+                    var instead = Fallback([.. both.Where(p => Ticked(p.Mod)).Select(p => p.Mod)], picked.Mod, Copies.GameVersion, Fits, TieOrder, strict) is { } other
+                        ? both.First(p => p.Mod == other) : todo[0];
                     var insteadSwapped = false;
                     if (instead.At != s1)
                     {
@@ -200,6 +213,8 @@ static class SameIdLoad
                     var others = todo.Where(p => p.Mod != instead.Mod).Select(p => p.Mod).ToList();
                     foreach (var mod in others)
                         SetAside(mod, aside, log);
+                    if (instead.Mod.state == aside)
+                        Revive(instead.Mod);
                     Skipped($"{Copies.CopyOf(picked.Mod)} needs {late}, which loads after slot {s1}; {Copies.CopyOf(instead.Mod)} loads"
                         + (instead.Mod == todo[0].Mod ? " (the game's choice)" : ", the next ticked"));
                     plan[id] = new Entry(instead.Mod, others, insteadSwapped, sp, s1, Reason.DependencyAfterSlot, watch.Elapsed.TotalMilliseconds,
@@ -212,13 +227,7 @@ static class SameIdLoad
                 SetAside(mod, aside, log);
             var revived = picked.Mod.state == aside;
             if (revived)
-            {
-                picked.Mod.state = ModLoadState.None; // the game's loop tries it in turn, as any mod still to load
-                picked.Mod.errors = ManifestMessages(picked.Mod, log); // the rule cleared them, and it loads
-                if (log && picked.Mod.modSource == ModSource.SteamWorkshop)
-                    Log.Info($"[{ModEntry.ModId}] Same ID: {Copies.CopyOf(picked.Mod)} brought back is a Workshop copy: a Steam branch message the game "
-                        + "had for it, if any, went with its rule's clearing, and can't be read again without Steam");
-            }
+                Revive(picked.Mod);
             var ms = watch.Elapsed.TotalMilliseconds;
             plan[id] = new Entry(picked.Mod, setAside, swapped, sp, s1, Reason.None, ms, Order: order);
             string Copy(Mod m) => $"{Copies.CopyOf(m)} ({m.manifest?.version})";
@@ -237,16 +246,22 @@ static class SameIdLoad
         return (true, "", plan, (self, first));
     }
 
-    // Where the copy chosen can't take the id's first slot while a mod still to load needs the id: of the other ticked
-    // copies still to load (in the list's order), Choose's pick where it fits (at the slot, or what it needs loads before
-    // it), else its next pick, and so on; none: null, the game's own choice (the first still to load). The launch's (Run)
-    // and the page's (Copies.Next), so they can't differ.
-    public static Mod? Fallback(IReadOnlyList<Mod> todo, Mod blocked, Func<Mod, bool> ticked, Func<Mod, bool> fits,
+    // Where the copy chosen can't take the id's first slot while a mod still to load needs the id: the copy the rule would
+    // load were the copies that are off, the blocked one and any that can't take the slot not installed. Of the ticked
+    // copies (the launch's order: those still to load, then those the game's rule set aside), without the blocked one, the
+    // game's local-vs-Workshop rule (Copies.GameRule) and Choose's pick of what it leaves; where that one doesn't fit (what
+    // it needs loads at or after the slot), again without it. None: null, the game's own choice (the first still to load).
+    // One Mod per copy (its newest manifest, as Choose reads them). The launch's (Run) and the page's (Copies.Next), so
+    // they can't differ.
+    public static Mod? Fallback(IReadOnlyList<Mod> ticked, Mod blocked, Func<Mod, SemanticVersion?> gameVersion, Func<Mod, bool> fits,
         Func<IEnumerable<string>, IEnumerable<string>> tieOrder, bool strict)
     {
-        var pool = todo.Where(m => Copies.CopyOf(m) != Copies.CopyOf(blocked) && ticked(m)).ToList();
-        while (pool.Count > 0 && Choose(pool, ticked, tieOrder, strict) is { } pick)
+        var pool = ticked.Where(m => Copies.CopyOf(m) != Copies.CopyOf(blocked)).GroupBy(Copies.CopyOf).Select(copy => Copies.NewestOf([.. copy])).ToList();
+        while (pool.Count > 0)
         {
+            var beaten = Copies.GameRule(pool, gameVersion);
+            if (Choose([.. pool.Where(m => !beaten.ContainsKey(m))], _ => true, tieOrder, strict) is not { } pick)
+                return null;
             if (fits(pick.Mod))
                 return pick.Mod;
             pool.RemoveAll(m => Copies.CopyOf(m) == Copies.CopyOf(pick.Mod));

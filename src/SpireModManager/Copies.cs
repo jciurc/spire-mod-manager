@@ -355,18 +355,20 @@ static class Copies
                 var best = Best(candidates, m => Version(Newest(m)), tied => TieOrder(tied, ticks.TieList(id), ticks.BeforeOf(id)),
                     strict ? m => GameVersion(Newest(m)) : null).Mod;
                 loads = best;
-                // Blocked: what the next launch loads instead, worked out as it does (SameIdLoad.Fallback) over the copies
-                // it has still to load (the game's rule leaves them), by the ticks now: the first that fits is at the
-                // id's first slot (the plan's To: nothing else moved), or what it needs loads before it; none: the game's
-                // own choice, the first of them.
+                // Blocked: what the next launch loads instead, worked out as it does (SameIdLoad.Fallback) over the ticked
+                // copies in its order (those the game's rule leaves, then those it beats), by the ticks now. A copy fits
+                // where none of what it needs loads at or after the id's first slot (the plan's To: nothing else moved):
+                // a dependency whose every installed copy is switched off goes after every mod still to load, so it
+                // doesn't. None: the game's own choice, the first the rule leaves.
                 if (Blocked(id, best, gameOff) && SameIdLoad.Plan.GetValueOrDefault(id) is { } plan)
                 {
                     var list = ModManager.Mods.ToList();
-                    bool Fits(Mod m) => CopyOf(m) == CopyOf(gameLeft[0])
-                        || (m.manifest?.dependencies ?? []).All(d => list.FindIndex(x => x.manifest?.id == d.id) < plan.To);
-                    var newest = gameLeft.Select(Newest).ToList();
-                    (blocked, loads) = (best, SameIdLoad.Fallback(newest, Newest(best), IsTicked, Fits, tied => TieOrder(tied, ticks.TieList(id), ticks.BeforeOf(id)), strict)
-                        is { } instead && gameLeft.FirstOrDefault(m => CopyOf(m) == CopyOf(instead)) is { } same ? same : gameLeft[0]);
+                    bool Late(string dep) => All.Where(m => m.manifest?.id == dep).ToList() is { Count: > 0 } installed
+                        && installed.All(m => gameOff.Contains((dep, m.modSource))) || list.FindIndex(m => m.manifest?.id == dep) >= plan.To;
+                    bool Fits(Mod m) => !(m.manifest?.dependencies ?? []).Any(d => Late(d.id));
+                    var tickedNow = on.Where(IsTicked).OrderBy(m => gameLeft.Contains(m) ? 0 : 1).Select(Newest).ToList();
+                    (blocked, loads) = (best, SameIdLoad.Fallback(tickedNow, Newest(best), GameVersion, Fits, tied => TieOrder(tied, ticks.TieList(id), ticks.BeforeOf(id)), strict)
+                        is { } instead && on.FirstOrDefault(m => CopyOf(m) == CopyOf(instead)) is { } same ? same : gameLeft[0]);
                 }
             }
         }
