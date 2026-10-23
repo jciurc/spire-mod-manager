@@ -223,7 +223,7 @@ static partial class SelfTest
                         return seen;
                     }
                     var hotTitle = other.GetNode<Control>("SpireModManagerTitleHover");
-                    var apiTrigger = new Label { Name = "SmmPictureCardTrigger", Text = "card", Position = new Vector2(300, 300), Size = new Vector2(200, 30) };
+                    var apiTrigger = new Control { Name = "SmmPictureCardTrigger", Position = new Vector2(300, 300), Size = new Vector2(200, 30) }; // draws nothing
                     screen.AddChild(apiTrigger);
                     SharedCards.Watch(apiTrigger, fixesId);
                     var lent = Lend(256, 144);
@@ -241,14 +241,14 @@ static partial class SelfTest
                         var wrong = new List<string>();
                         foreach (var (size, inCard, inShared, shot) in new (Vector2I, Vector2I, Vector2I, string?)[]
                         {
-                            (new(1280, 400), new(380, 119), new(420, 131), null), // wide: as wide as the card's text
+                            (new(1280, 400), new(380, 119), new(420, 131), "17b6-card-wide-picture"), // wide: as wide as the card's text
                             (new(300, 900), new(48, 144), new(48, 144), null), // tall: as tall as the thumbnail
                             (new(64, 40), new(64, 40), new(64, 40), "17b5-card-small-picture"), // small: as it is
                         })
                         {
                             lent.ResourcePath = "";
                             lent = Lend(size.X, size.Y);
-                            foreach (var (trigger, name, want, whose) in new[] { (hotTitle, "SpireModManagerNotesCard", inCard, "row"), ((Control)apiTrigger, SharedCards.CardName, inShared, "API") })
+                            foreach (var (trigger, name, want, whose) in new[] { (hotTitle, "SpireModManagerNotesCard", inCard, "row"), (apiTrigger, SharedCards.CardName, inShared, "API") })
                             {
                                 var (text, first, _) = await Drawn(trigger, name, whose == "row" ? shot : null);
                                 if (!text.StartsWith($"[img width={want.X} height={want.Y}]res://{fixesId}/mod_image.png[/img]\n")
