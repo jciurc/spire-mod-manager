@@ -22,7 +22,7 @@ static class ModDetails
     const string FolderMeta = "spire_mod_manager_folder";
     const string WorkshopMeta = "spire_mod_manager_workshop";
     const string FieldsName = "SpireModManagerYours";
-    public const string OthersName = "SpireModManagerOthersParked"; // "2 more from other mods: see the vanilla Modding page"
+    public const string OthersName = "SpireModManagerOthersParked"; // "2 more from other mods: see the vanilla modding page"
     const string LinkName = "SpireModManagerLink", SourceName = "SpireModManagerSource";
     public const string HeadName = "SpireModManagerHead";
     const string WiredMeta = "spire_mod_manager_wired";

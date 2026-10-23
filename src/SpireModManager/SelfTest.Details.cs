@@ -1045,7 +1045,7 @@ static partial class SelfTest
         where = await Refill();
         var parkedLine = info.GetNodeOrNull<Label>(ModDetails.OthersName);
         Check("another mod's panel with no room for it: out of sight, a line under the details says so, our fields right under it", OutOfSight()
-            && parkedLine is { Visible: true } && parkedLine.Text == "1 more from other mods: see the vanilla Modding page"
+            && parkedLine is { Visible: true } && parkedLine.Text == "1 more from other mods: see the vanilla modding page"
             && Math.Abs(parkedLine.OffsetTop - details.OffsetBottom - ModDetails.FieldsGap) < 1
             && Math.Abs(yours.OffsetTop - parkedLine.OffsetBottom - ModDetails.FieldsGap) < 1, $"{where}; line \"{parkedLine?.Text}\" shown {parkedLine?.Visible}");
         var inVanilla = "";

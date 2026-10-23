@@ -3,7 +3,7 @@
 
 # Spire Mod Manager
 
-A mod manager for Slay the Spire 2 that expands the game's Modding page.
+A mod manager for Slay the Spire 2 that expands the game's modding page.
 Organize your mods into categories, tag them, add notes, and easily swap or share mod configurations.
 
 By symphony ([@jciurc](https://github.com/jciurc) on GitHub) with Claude Code Opus 5.5
@@ -54,7 +54,7 @@ Subscribe to it on the [Steam Workshop](https://steamcommunity.com/sharedfiles/f
   Steam. It checks first for mods that won't load and offers to fix them.
 - **Workshop details in the info panel:** dates, size, subscribers, tags, supported branches and a link to the
   mod's change notes, with problems shown first in red.
-- **Vanilla Modding page:** the game's own Modding page, unchanged, one click away from the link by the title.
+- **Vanilla modding page:** the game's own modding page, unchanged, one click away from the link by the title.
 
 **Better Mod Menu:** both can be on at once, and they're tested together. On first run Spire Mod Manager copies
 Better Mod Menu's groups, aliases, notes and profiles (its own file is never changed). A warning says when more
@@ -67,13 +67,13 @@ Categories, aliases, notes, tags and profiles are saved in one file per Steam ac
 backups in the `backups` folder next to it. It isn't in Steam Cloud, so it doesn't follow you to another PC or a Steam Deck. Which
 mods are on, and their load order, stay where the game keeps them.
 
-To uninstall, unsubscribe on the Workshop. The game's own Modding page keeps working, with your mods as you
+To uninstall, unsubscribe on the Workshop. The game's own modding page keeps working, with your mods as you
 last set them. Delete the data folder above if you want everything gone.
 
 ## Known limits
 
 - Slay the Spire 2 is in Early Access, and a game update can break parts of the mod until a fix is out. If it
-  breaks the page itself, you get the game's own Modding page, with a line saying the mod needs an update.
+  breaks the page itself, you get the game's own modding page, with a line saying the mod needs an update.
 - Only Better Mod Menu has been tested alongside it. Use one mod manager at a time otherwise.
 - Relaunch Game is tested on Windows only. Mouse and keyboard only; no controller support yet.
 - Its own text is English only for now. Translations are welcome: see [TRANSLATING.md](TRANSLATING.md).

@@ -33,7 +33,7 @@ static class Prewarm
         }
         catch (Exception e)
         {
-            Log.Warn($"[{ModEntry.ModId}] Could not start shaping the Modding page's text ahead (it's shaped when the page opens): {e.Message}");
+            Log.Warn($"[{ModEntry.ModId}] Could not start shaping the modding page's text ahead (it's shaped when the page opens): {e.Message}");
         }
     }
 
@@ -82,7 +82,7 @@ static class Prewarm
             catch (Exception e)
             {
                 tree.ProcessFrame -= Step;
-                Log.Warn($"[{ModEntry.ModId}] Could not shape the Modding page's text ahead (it's shaped when the page opens): {e.Message}");
+                Log.Warn($"[{ModEntry.ModId}] Could not shape the modding page's text ahead (it's shaped when the page opens): {e.Message}");
             }
         }
         tree.CreateTimer(StartDelay).Timeout += () =>

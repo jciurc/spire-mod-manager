@@ -122,7 +122,7 @@ static class CategoryList
 
     public const int PageLinkSize = 18;
 
-    // Its words for the page now shown: "Go to vanilla Modding page" on ours, "Go to Spire Mod Manager page" on the
+    // Its words for the page now shown: "Go to vanilla modding page" on ours, "Go to Spire Mod Manager page" on the
     // game's. On ours, while a mod is installed twice from one source, its card says how that page's tickbox treats
     // the copies; on the game's, no card (Jordan).
     static void PageLinkText(LinkButton? link)
