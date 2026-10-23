@@ -82,7 +82,7 @@ static class MissingMods
     static bool IsInstalled(Profiles.MissingMod mod) => ModManager.Mods.Any(m => m.manifest?.id == mod.Id && m.modSource == mod.Source);
 
     // One mod: its name (a link to its Workshop page, with the external-link mark), then what can be done or what's
-    // happening: Subscribe; Subscribing… or its download's progress; installed; why it failed (and Subscribe again).
+    // happening: Subscribe; Subscribing.. or its download's progress; installed; why it failed (and Subscribe again).
     static Control Row(Profiles.MissingMod mod)
     {
         var row = new HBoxContainer { Name = mod.Id, SizeFlagsHorizontal = Control.SizeFlags.ExpandFill };

@@ -89,8 +89,8 @@ static partial class SelfTest
 
     // A made-up mod with very long everything (name, id, author, version, description, alias, many tags, notes),
     // shown in the list and the panel (screenshot 16-long-details). The panel's title stays on one line with its
-    // version and the source line keeps its status, both cut with "…" (the whole text a second over them); the
-    // row keeps its author and its height, what doesn't fit as "and N more...". A redraw fits no row title again, its cut one
+    // version and the source line keeps its status, both cut with ".." (the whole text a second over them); the
+    // row keeps its author and its height, what doesn't fit as "and N more..". A redraw fits no row title again, its cut one
     // and an aliased one included, in Vanilla View and in our main list. It's removed again afterwards.
     static async Task TestLongDetails(Node menu, NModdingScreen screen, Control content, string outDir)
     {
@@ -131,15 +131,15 @@ static partial class SelfTest
             var titleText = title.GetParsedText();
             var titleSize = title.GetThemeFontSize("normal_font_size");
             Check("long details: the panel shows the made-up mod (see 16-long-details)", titleText.StartsWith("The Extraordinarily"));
-            Check("long details: the panel's title on one line at 24 or more, the name cut with \"…\", the version showing",
-                title.GetLineCount() == 1 && titleSize >= 24 && titleText.Contains('…') && titleText.Contains("12.345")
+            Check("long details: the panel's title on one line at 24 or more, the name cut with \"..\", the version showing",
+                title.GetLineCount() == 1 && titleSize >= 24 && titleText.Contains("..  12.345") && !titleText.Contains("...")
                 && title.GetContentWidth() <= title.Size.X + 1 && panel.GetGlobalRect().Encloses(title.GetGlobalRect()),
                 $"{title.GetLineCount()} lines at {titleSize}, {title.GetContentWidth()} of {title.Size.X}: {titleText}");
             var source = panel.GetNode<Control>("SpireModManagerSource");
             var link = source.GetNode<LinkButton>("SpireModManagerLink");
             var status = (Label)source.FindChild("Status", true, false);
-            Check("long details: the source line stops short of the thumbnail, the id cut with \"…\", the dot and status showing",
-                link.Text.StartsWith("SmmVeryLong") && link.Text.Contains('…') && link.Text.EndsWith("(Local)") && status.Text.Length > 0
+            Check("long details: the source line stops short of the thumbnail, the id cut with \"..\", the dot and status showing",
+                link.Text.StartsWith("SmmVeryLong") && link.Text.EndsWith(".. (Local)") && !link.Text.Contains("...") && status.Text.Length > 0
                 && status.GetGlobalRect().End.X <= title.GetGlobalRect().End.X + 2 && panel.GetGlobalRect().Encloses(status.GetGlobalRect()),
                 $"\"{link.Text}\" · {status.Text}: status {status.GetGlobalRect()}, title {title.GetGlobalRect()}");
             // A second over the cut title or id: the whole of it, in a plain tooltip.
@@ -163,7 +163,7 @@ static partial class SelfTest
             var longTag = row.GetNodeOrNull("SpireModManagerStrip")?.GetChildren().OfType<PanelContainer>().Select(c => c.GetChildOrNull<Label>(0)).FirstOrDefault(l => l?.Text.StartsWith("really-long") == true);
             Check("long details: the row's author and a long tag are cut with an ellipsis", longAuthor is { ClipText: true, TextOverrunBehavior: TextServer.OverrunBehavior.TrimEllipsis } && longTag is { ClipText: true });
             // Many tags: the line ends short of the row's buttons, with the author in it, the row its usual height. Tags
-            // first, then keywords: what doesn't fit is "and N more..." (here every keyword too), whose card has those tags
+            // first, then keywords: what doesn't fit is "and N more.." (here every keyword too), whose card has those tags
             // as pills, "Additional keywords:" and those keywords, then the click hint (16b-more-card).
             var strip = row.GetNode<Control>("SpireModManagerStrip");
             var lineEnd = row.GetGlobalRect().End.X + strip.OffsetRight;
@@ -173,14 +173,14 @@ static partial class SelfTest
             var rowWords = RowStrip.Keywords(mod);
             var more = strip.GetNodeOrNull<Label>(RowStrip.MoreName);
             var moreCard = more == null ? "" : (await SizedHoverCard(menu, more, "SpireModManagerTagCard", () => Capture(screen, outDir, "16b-more-card"))).Text;
-            Check("long details: what doesn't fit is \"and N more...\" (tags first), its card those tags as pills, then \"Additional keywords:\" and those "
+            Check("long details: what doesn't fit is \"and N more..\" (tags first), its card those tags as pills, then \"Additional keywords:\" and those "
                 + "keywords, then the click hint; the row its usual height", more is { Visible: true } && folded.Count > 0 && rowWords.Count > 0 && folded.Last() == "late-game"
-                && more.Text == MoreTags(folded.Count + rowWords.Count) && strip.GetNodeOrNull<Control>(RowStrip.KeywordsName) is { Visible: false }
+                && more.Text == MoreTags(folded.Count + rowWords.Count) && more.Text.EndsWith(" more..") && strip.GetNodeOrNull<Control>(RowStrip.KeywordsName) is { Visible: false }
                 && moreCard.Split('\n') is [var pills, " ", var cardWords, "", var cardHint] && folded.All(t => pills.Contains($"\u00a0{t}\u00a0"))
                 && cardWords == RowStrip.KeywordsLine(rowWords) && cardHint == Menus.Text("SPIRE_MOD_MANAGER.MORE_TAGS_CLICK")
                 && row.Size.Y == RowTitles.RowHeight, $"\"{more?.Text}\", {folded.Count} tags and {rowWords.Count} keywords folded, height {row.Size.Y}, "
                 + $"card: {moreCard.ReplaceLineEndings(" / ")}");
-            // Every other row: all its tags and keywords where they fit, no "and N more..."; otherwise its count is what's left out.
+            // Every other row: all its tags and keywords where they fit, no "and N more.."; otherwise its count is what's left out.
             var lines = content.GetChildren().OfType<NModMenuRow>().Where(r => r != row && r.Visible && r.HasNode("SpireModManagerStrip")).Select(r =>
             {
                 var line = r.GetNode("SpireModManagerStrip");
@@ -190,9 +190,9 @@ static partial class SelfTest
                 return (Fits: hidden == 0 && shown == string.Join(", ", all), Right: fine && (line.GetNodeOrNull<Label>(RowStrip.MoreName) is { } rest
                     ? rest.Text == MoreTags(hidden + all.Count - (shown.Length > 0 ? shown.Split(", ").Length : 0)) : hidden == 0 && shown == string.Join(", ", all)), Id: r.Mod?.manifest?.id);
             }).ToList();
-            Check("rows with room show every tag and keyword and no \"and N more...\"; the others count what's left out", lines.Any(l => l.Fits) && lines.All(l => l.Right),
+            Check("rows with room show every tag and keyword and no \"and N more..\"; the others count what's left out", lines.Any(l => l.Fits) && lines.All(l => l.Right),
                 string.Join(", ", lines.Where(l => !l.Right).Select(l => l.Id)));
-            // A click on "and N more...", through the viewport as a player's (headless too, the row hovered first): it goes on
+            // A click on "and N more..", through the viewport as a player's (headless too, the row hovered first): it goes on
             // to the row, which it selects, so the info panel shows all of them.
             if (content.GetChildren().OfType<NModMenuRow>().FirstOrDefault(r => r != row && r.Mod != null) is { } elsewhere)
                 CategoryList.Select(screen, elsewhere);
@@ -203,7 +203,7 @@ static partial class SelfTest
                 row.GetViewport().PushInput(new InputEventMouseButton { ButtonIndex = MouseButton.Left, Pressed = pressed, Position = moreAt, GlobalPosition = moreAt }, true);
             await Wait(menu, 0.3);
             row.EmitSignal(Control.SignalName.MouseExited);
-            Check("long details: a click on \"and N more...\" selects the mod, as a click on the row does", more != null && CategoryList.Selected == mod && RowState.Selected(row),
+            Check("long details: a click on \"and N more..\" selects the mod, as a click on the row does", more != null && CategoryList.Selected == mod && RowState.Selected(row),
                 $"selected {CategoryList.Selected?.manifest?.id}");
             if (CategoryList.Selected != mod)
                 CategoryList.Select(screen, row);
@@ -287,7 +287,7 @@ static partial class SelfTest
                 Check("Vanilla View: a panel our page filled before the game's looks were recorded gets the game's underline back",
                     freshSay == "scene True, ours False, vanilla True", freshSay);
             }
-            // Our main list: the same for a title with an alias (the alias, the name beside it) or cut with "…" (the long
+            // Our main list: the same for a title with an alias (the alias, the name beside it) or cut with ".." (the long
             // one). Apply put the plain name back while the auto-size was off and Fit set the whole text again, so the
             // label fitted itself once more on every redraw: its own fitting, which TestFitting doesn't see, so a title
             // whose text or size changes during the redraw counts too (read before the titles are fitted, deferred, and
@@ -335,7 +335,7 @@ static partial class SelfTest
         await Wait(menu, 0.3);
     }
 
-    // A long description in the info panel (Jordan, 22 Oct): three lines at most, cut at a word with "…", the tags it
+    // A long description in the info panel (Jordan, 22 Oct): three lines at most, cut at a word with "..", the tags it
     // leaves open closed there (the facts after it keep their own look), the whole of it in a card over those lines; a
     // short one as it is, with no card; the game's panel in Vanilla View untouched. Then the fade at an edge the panel's
     // text runs on past (a made-up Workshop mod with ninety Workshop tags, after its description, so it scrolls): below at
@@ -370,9 +370,10 @@ static partial class SelfTest
             var end = start < 0 ? -1 : parsed.IndexOf(PanelDescription.End, start + 1);
             var shown = end > start ? parsed[(start + 1)..end] : "";
             var (first, last) = end > start ? (label.GetCharacterLine(start), label.GetCharacterLine(end)) : (-1, -1);
-            Check("a long description: three lines in the panel, cut at a word with \"…\", the rest of the panel's text after it",
-                last - first + 1 == PanelDescription.Lines && shown.EndsWith('…') && shown.Length > 100 && plain.StartsWith(shown[..^1])
-                && shown.Length - 1 < plain.Length && plain[shown.Length - 1] == ' ' && shown[^2] != ' ' && parsed[(end + 1)..].StartsWith("\n\n"),
+            var kept = shown.EndsWith("..") && !shown.EndsWith("...") ? shown[..^2] : ""; // before the two periods; none without them
+            Check("a long description: three lines in the panel, cut at a word with \"..\", the rest of the panel's text after it",
+                last - first + 1 == PanelDescription.Lines && kept.Length > 100 && plain.StartsWith(kept) && !" .,;:".Contains(kept[^1])
+                && plain[kept.Length..].TrimStart('.', ',', ';', ':').StartsWith(' ') && parsed[(end + 1)..].StartsWith("\n\n"),
                 $"lines {first}..{last}: \"{shown}\"");
             var bbcode = label.Text;
             var cut = bbcode.IndexOf(PanelDescription.Start) is var from and >= 0 && bbcode.IndexOf(PanelDescription.End, from + 1) is var to and > 0 ? bbcode[from..to] : "";
@@ -677,6 +678,14 @@ static partial class SelfTest
             GameChanges.Class(nested.FirstOrDefault(t => t.Name.StartsWith("<TestGameChanges>d__"))), GameChanges.Class(nested.FirstOrDefault(t => t.Name == "<>c"))];
         Check("the game's classes as words: modding screen, character (no \"Model\"), mod menu row, model db; a compiler-made one by the class it's in",
             classes.SequenceEqual(["modding screen", "character", "mod menu row", "model db", "self test", "self test"]), string.Join(" | ", classes));
+        // Cut short with two periods (Jordan, 23 Oct): a character's area keeps the whole kinds that fit, then ", ..";
+        // another area is cut at a letter, then "..".
+        var kindsCut = Draft(Template("SPIRE_MOD_MANAGER.MODIFIED_MORE_ONE"), ("areas", "The Regent (energy orb, ..)"));
+        var letterCut = Draft(Template("SPIRE_MOD_MANAGER.MODIFIED_MORE_ONE"), ("areas", "merchant room.."));
+        var (byKinds, byLetters) = (ModifiedContent.AreasCut(["The Regent (energy orb, hands, character select)", "combat"], s => s.Length <= kindsCut.Length),
+            ModifiedContent.AreasCut(["merchant room interface", "combat"], s => s.Length <= letterCut.Length));
+        Check("an area cut short: a character's kinds that fit, then \", ..\"; another area at a letter, then \"..\"",
+            byKinds == kindsCut && byLetters == letterCut, $"{byKinds} | {byLetters}");
 
         // A pack of a made-up mod: one of the game's files (the Regent's rock hand), one of its own, one of the engine's.
         var folder = Path.Combine(outDir, "game-changes-mod");
@@ -989,7 +998,7 @@ static partial class SelfTest
     }
 
     // How the panel's Modified content row (shown: its line of the panel's text, the areas and nothing after them) lists
-    // the areas: the whole ones it shows, or (Whole 0) how many of the first's what ("The Regent (energy orb, hands, …)").
+    // the areas: the whole ones it shows, or (Whole 0) how many of the first's what ("The Regent (energy orb, hands, ..)").
     // Most: one more (area, or what) would run past the line (the label's room less a scrollbar's, there or not), shaped
     // in the panel's font. OneLine: its first and last letters on one line, no wider than the label's room.
     static (int Whole, int Items, bool Most, bool OneLine) ModifiedFit(RichTextLabel description, string shown, IReadOnlyList<string> areas)
@@ -1015,7 +1024,7 @@ static partial class SelfTest
         if (open <= 0)
             return (0, 0, false, oneLine);
         var (subject, whats) = (areas[0][..open], areas[0][(open + 2)..^1].Split(", "));
-        string Cut(int kept) => Row(1, $"{subject} ({string.Join(", ", whats.Take(kept))}, …)");
+        string Cut(int kept) => Row(1, $"{subject} ({string.Join(", ", whats.Take(kept))}, ..)");
         var items = Enumerable.Range(1, whats.Length - 1).FirstOrDefault(k => shown == Cut(k));
         return (0, items, items > 0 && Width(Row(1)) > lineRoom && (items == whats.Length - 1 || Width(Cut(items + 1)) > lineRoom), oneLine);
     }

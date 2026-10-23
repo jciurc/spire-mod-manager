@@ -412,7 +412,7 @@ static partial class SelfTest
 
     // The main menu button is the game's own text button, a copy of its Settings button: the same class, font, size and
     // outline (no picture), with the game's notification dot on its label. It reads the active profile and the profile
-    // bar's count, as wide as its words, whole on screen. A long name is cut with "…", one mod reads "1 mod", and a
+    // bar's count, as wide as its words, whole on screen. A long name is cut with "..", one mod reads "1 mod", and a
     // saved position off the screen still puts it all on screen.
     static void TestMenuButtonLook(NMainMenu menu)
     {
@@ -444,7 +444,7 @@ static partial class SelfTest
             return;
         var (font, size) = (label.GetThemeFont("font"), label.GetThemeFontSize("font_size"));
         var cut = MenuButton.Text("A profile with a really quite long name", 3, font, size);
-        Check("main menu button: a long profile name cut with \"…\", one mod, thousands", cut.StartsWith("A profile") && cut.EndsWith("… (3 mods)")
+        Check("main menu button: a long profile name cut with \"..\", one mod, thousands", cut.StartsWith("A profile") && cut.EndsWith(".. (3 mods)")
             && MenuButton.Text("Default", 1, font, size) == "Default (1 mod)"
             && MenuButton.Text("Default", 1234, font, size) == "Default (1,234 mods)",
             $"{cut} | {MenuButton.Text("Default", 1, font, size)}");

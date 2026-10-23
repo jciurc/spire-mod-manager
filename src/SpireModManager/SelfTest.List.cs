@@ -1163,7 +1163,7 @@ static partial class SelfTest
         ClickChip("SmmTestLib", "Library", false);
         await Wait(menu, 0.3);
         Check("clicking the tag that is the whole search clears it", box.Text == "" && Visible().SequenceEqual(all), $"{box.Text}: {Visible().Count} shown");
-        // A row's keywords after its tags, all of them where they fit (no "and N more..."): faint, no "#", after "Additional
+        // A row's keywords after its tags, all of them where they fit (no "and N more.."): faint, no "#", after "Additional
         // keywords:"; a click on one searches #name, a Shift-click adds another, one on the words before them is the row's
         // (16c-row-keywords).
         var fits = content.GetChildren().OfType<NModMenuRow>().FirstOrDefault(r => r.Visible && !r.HasNode($"SpireModManagerStrip/{RowStrip.MoreName}")
@@ -1803,7 +1803,7 @@ static partial class SelfTest
             var back = rows.Select(LineOf).ToList();
             Check("300 made-up rows, on again: each line shows what it first did (the notes made again in place)", back.SequenceEqual(first), Differ(back, first));
             Check("300 made-up rows: no line holds an empty note", rows.All(r => r.GetNodeOrNull<RichTextLabel>("SpireModManagerStrip/Needs") is not { Text.Length: 0 }));
-            // Narrower lines: keywords that don't fit after every tag are "and N more...", whose card has those keywords
+            // Narrower lines: keywords that don't fit after every tag are "and N more..", whose card has those keywords
             // and no tags; the rows keep their height.
             box.Size = new Vector2(900, 0);
             await Wait(menu, 0.3);
@@ -1815,7 +1815,7 @@ static partial class SelfTest
             using (Lookups.Begin(mods, [], saved, Picks.None))
                 narrowWords = narrow == null ? [] : RowStrip.Keywords(narrow.Mod);
             var narrowShown = narrow?.GetNodeOrNull<Label>($"SpireModManagerStrip/{RowStrip.KeywordsName}") is { Visible: true } shownWords ? shownWords.Text[RowStrip.KeywordsLine([]).Length..].Split(", ").Length : 0;
-            Check("300 made-up rows, narrower: keywords that don't fit after the tags are \"and N more...\", its card those keywords and no tags",
+            Check("300 made-up rows, narrower: keywords that don't fit after the tags are \"and N more..\", its card those keywords and no tags",
                 narrow != null && narrowCard.Split('\n') is [var foldedWords, "", var hint] && foldedWords == RowStrip.KeywordsLine(narrowWords.Skip(narrowShown))
                 && hint == Menus.Text("SPIRE_MOD_MANAGER.MORE_TAGS_CLICK") && rows.All(r => r.Size.Y == RowTitles.RowHeight), $"{narrow?.Mod?.manifest?.id}: {narrowCard.ReplaceLineEndings(" / ")}");
             box.Size = new Vector2(1600, 0);

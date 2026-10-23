@@ -419,7 +419,7 @@ static partial class SelfTest
             TwinsMissing("API mods, a copy's details");
         var described = ModDetails.Described("[blue]Frost[/blue] [sine]waves[/sine] [b]" + string.Join(" ", Enumerable.Repeat("bold words", 40)), 60);
         Check("API cards: a description's game tags are drawn as the game's (colours; moving ones as their text), and what a cut leaves open is closed",
-            described.StartsWith("[color=#87ceeb]Frost[/color] waves [b]bold") && described.EndsWith("…[/b]") && !described.Contains("sine"), described);
+            described.StartsWith("[color=#87ceeb]Frost[/color] waves [b]bold") && described.EndsWith("..[/b]") && !described.Contains("sine"), described);
 
         var ours = ModCards.Text(ModEntry.ModId) ?? "";
         var ourAlias = Store.InfoFor(ModEntry.ModId)?.Alias;

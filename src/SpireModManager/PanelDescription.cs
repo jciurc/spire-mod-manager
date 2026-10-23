@@ -3,7 +3,7 @@ using Godot;
 
 namespace SpireModManager;
 
-// A mod's own description in the info panel (our views): at most Lines lines, cut at a word with "…" where it runs
+// A mod's own description in the info panel (our views): at most Lines lines, cut at a word with ".." where it runs
 // longer, and the whole of it in a card over those lines (Jordan: "the info panel has precious real estate"). A
 // description that fits shows as it is. Vanilla View is the game's panel, untouched.
 static class PanelDescription
@@ -30,7 +30,7 @@ static class PanelDescription
     static readonly Dictionary<(string Text, ulong Font, int Size, float Room), string> Cuts = [];
 
     // The description as the panel shows it in label: as it is when it fits in Lines lines at the label's width, else
-    // the most of it that does, cut at a word with "…", between Start and End; the whole of it noted for the card.
+    // the most of it that does, cut at a word with "..", between Start and End; the whole of it noted for the card.
     public static string Shown(RichTextLabel label, string description)
     {
         var room = ModDetails.LineRoom(label);

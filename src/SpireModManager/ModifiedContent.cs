@@ -56,7 +56,7 @@ static class ModifiedContent
     // The areas that fit (fits: with what goes around them), most first and whole, then "and N more". Adding an area
     // only makes the line longer, until the last takes away the "and 1 more": all of them are tried first. When not even
     // the first fits, a character's (with its list of what) shows as many of what as fit, whole ("The Regent (energy
-    // orb, hands, …)"); any other is cut short with "…".
+    // orb, hands, ..)"); any other is cut short with "..".
     public static string AreasCut(IReadOnlyList<string> areas, Func<string, bool> fits)
     {
         if (areas.Count == 0)
@@ -79,9 +79,9 @@ static class ModifiedContent
                 if (Listed(areas, 1, ItemsCut(subject, whats, kept)) is var cut && fits(cut))
                     return cut;
         var first = areas[0];
-        while (first.Length > 1 && !fits(Listed(areas, 1, first + "…")))
+        while (first.Length > 1 && !fits(Listed(areas, 1, Menus.CutShort(first))))
             first = first[..^1].TrimEnd();
-        return Listed(areas, 1, first + "…");
+        return Listed(areas, 1, Menus.CutShort(first));
     }
 
     // A character's area as its name and what of theirs ("The Regent", ["energy orb", "hands"]); null for another.
@@ -89,8 +89,8 @@ static class ModifiedContent
         area.EndsWith(')') && area.IndexOf(" (", StringComparison.Ordinal) is var open and > 0
             ? (area[..open], area[(open + 2)..^1].Split(", ")) : null;
 
-    // The first `kept` of them, and "…" for the rest: "The Regent (energy orb, hands, …)".
-    public static string ItemsCut(string subject, string[] whats, int kept) => $"{subject} ({string.Join(", ", whats.Take(kept))}, …)";
+    // The first `kept` of them, and ".." for the rest: "The Regent (energy orb, hands, ..)".
+    public static string ItemsCut(string subject, string[] whats, int kept) => $"{subject} ({string.Join(", ", whats.Take(kept))}, {Menus.CutMark})";
 
     // The first `shown` areas (the first as given), then how many more.
     static string Listed(IReadOnlyList<string> areas, int shown, string first)
