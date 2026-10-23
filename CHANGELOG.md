@@ -28,11 +28,11 @@ What changed in each Workshop release, for players. Each version's first line is
   bracket closes at the end), and the box takes 200 characters, up from 60.
 - Hidden tags find mods by state, in English in every language: `#enabled`, `#disabled`, `#workshop`, `#local`,
   `#installed`, `#loaded`, `#notloaded`, `#pending`, `#new`, `#changed`, `#moved`, `#edited`, `#renamed`, `#note`,
-  `#duplicate` and `#uncategorized`, and for problems `#unmet`, `#needed`, `#order`, `#clash`, `#aside`, `#managers`,
+  `#duplicate`, `#aside` and `#uncategorized`, and for problems `#unmet`, `#needed`, `#order`, `#clash`, `#managers`,
   `#failed` and `#gameerror`, with `#error`, `#warning` and `#problem` gathering them. A tag of yours with the same
   name finds its mods too. `#missing` (or `#uninstalled`) shows a line counting the profile's mods that aren't
   installed, with "See list" to list them. The info panel lists the hidden tags that find its mod under "Other
-  keywords", and each row shows them after its tags as "Additional keywords: enabled, installed, ...", leaving out
+  keywords", and each row shows them after its tags as "Additional keywords: enabled, installed", leaving out
   what its tags already say. Click one to search for it, or Shift-click to add it to the search.
 - On the warning banners, the old Show, which opens the next affected mod, is now Go to, and it steps through the
   banner's mods in the order the list shows them, from the mod in the info panel down. A new Show lists just the
@@ -53,9 +53,9 @@ What changed in each Workshop release, for players. Each version's first line is
   tag and finishes editing, a Shift-click adds it and keeps the list open, and Ctrl+Z takes back a picked one. Save
   and Cancel sit at the right end of the Tags line.
 - A mod's info panel says what it changes in the game itself, on one line: "Modified content: The Regent (energy
-  orb), merchant room and 4 more (12 files, 30 places)", the parts of the game it touches, most first, then how many
-  of the game's files it replaces and how many places in the game's code it changes. Hovering it says what those
-  mean and names every part, and a click opens the details: the files it replaces, with their paths, and the places
+  orb), merchant room and 4 more (12 files, 30 places)", the parts of the game it touches, then how many of the
+  game's files it replaces and how many places in the game's code it changes. Hovering it says what those mean and
+  names the parts, and a click opens the details: the files it replaces, with their paths, and the places
   in the code it changes, each marked before, after, rewritten or wrapped. Changes to the game's code show only while
   the mod is loaded, and where nothing is found the line reads "Modified content: No information found". Search finds
   a mod by these too, so "regent" lists the mods that change the Regent.
@@ -63,13 +63,12 @@ What changed in each Workshop release, for players. Each version's first line is
   of it; text with more to scroll fades at that edge; and Compatibility no longer adds "Workshop branches", as a mod
   marked for one branch has its Stable or Beta tag.
 - On a mod's row, tags and keywords that don't fit end the line as "and 3 more...", whose card shows the rest, with
-  "Click to view in info panel" (the "+3" chip is gone). Rows keep their height. The row's hover card starts with the
-  mod's picture, where it has one, and while you search it says where the search found the mod ("Found in: author,
-  tags"). A gap follows its warnings, your alias, tags and note sit together, and the note follows "Note:" on the
-  same line.
+  "Click to view in info panel" (the "+3" chip is gone). The row's hover card starts with the mod's picture, where it
+  has one, and while you search it says where the search found the mod ("Found in: author, tags"). A gap follows its
+  warnings, your alias, tags and note sit together, and the note follows "Note:" on the same line.
 - A mod's notes are its Note now: the info panel's field, the cards, the pencil's "Edit alias, tags and note" and the
   bulk edit's "Edit note for selected mods". An exported list's column is Note, and import reads Note or Notes, so
-  older lists and Better Mod Menu's still import.
+  the notes in older lists and Better Mod Menu's still come in.
 - Counts: the filters read All (20), Enabled (15), Disabled (4) and Changed (3), after the search, and keep their
   width as the numbers change. The profile bar's "Unsaved (14) •" says how many changes aren't saved (each
   profile's mod count is in the profile list). While a relaunch is pending, the main menu's note counts the mods
@@ -92,10 +91,11 @@ What changed in each Workshop release, for players. Each version's first line is
   longer counts as hovered.
 - Fixes: deleting the active profile, or making a new category from one mod's menu, is one undo step; Escape and F3
   close the missing mods list; an unfinished `#"quoted tag` no longer hides every mod; clicking a category header
-  while searching no longer folds it out of sight; leaving Load Order mid-drag no longer drops the mod at the top;
-  Load Order's search box keeps its width as you type, instead of narrowing once a search finds something; and the
-  external-link mark after the info panel's Workshop link, and after Open translations folder, sits on the text's
-  line when another mod adds fonts to the game (it sat a little low).
+  while searching no longer folds it out of sight; leaving Load Order mid-drag no longer drops the mod at the top; a
+  mod installed while the main menu is open shows the main menu's restart note and dot at once, instead of after
+  your next change; Load Order's search box keeps its width as you type, instead of narrowing once a search finds
+  something; and the external-link mark after the info panel's Workshop link, and after Open translations folder,
+  sits on the text's line when another mod adds fonts to the game (it sat a little low).
 - For other mods: Spire Mod Manager has an API (version 1), so mods built on it can use its menus, banners and mod
   cards, and show the alias, note, tags and category you've given a mod.
 
