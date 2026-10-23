@@ -613,7 +613,7 @@ static class CategoryList
             {
                 var button = Menus.SmallButton(item.Label, item.OnSelect ?? (() => { }), item.Disabled);
                 button.SizeFlagsVertical = Control.SizeFlags.ShrinkCenter;
-                Hover.Tip(button, item.Tip); // Disable all where this mod is among them: it stays on
+                Hover.Tip(button, item.Tip, markup: item.TipMarkup); // Disable all where this mod is among them: it stays on
                 actions.AddChild(button);
             }
             actions.Alignment = BoxContainer.AlignmentMode.End;
@@ -694,7 +694,17 @@ static class CategoryList
         List<NModMenuRow>? placed = null;
         return Store.Data.LoadOrderView
             ? row => LoadOrder.Actions(content, row, () => Redraw(content), compact: true, placed ??= content.GetChildren().OfType<NModMenuRow>().ToList())
-            : row => [new MenuItem(CategoryName(Copies.KeyOf(row.Mod)), () => ShowRowMenu(content, row), Tip: Menus.Text("SPIRE_MOD_MANAGER.CATEGORY_TIP"))];
+            : row => [CategoryButton(content, row)];
+    }
+
+    // A row's category button: a long name cut with ".." to RowStrip.CategoryMax, its card then starting with the whole
+    // name (as a long tag's does).
+    static MenuItem CategoryButton(Control content, NModMenuRow row)
+    {
+        var (name, tip) = (CategoryName(Copies.KeyOf(row.Mod)), Menus.Text("SPIRE_MOD_MANAGER.CATEGORY_TIP"));
+        var shown = Menus.SmallText(name, RowStrip.CategoryMax);
+        return shown == name ? new MenuItem(name, () => ShowRowMenu(content, row), Tip: tip)
+            : new MenuItem(shown, () => ShowRowMenu(content, row), Tip: $"[b]{Hover.Escape(name)}[/b]\n{Hover.Escape(tip)}", TipMarkup: true);
     }
 
     // The main list's pencil, past the tickbox at the row's far right: the mod's menu. None in Load Order.
