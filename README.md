@@ -43,7 +43,7 @@ Subscribe to it on the [Steam Workshop](https://steamcommunity.com/sharedfiles/f
   `(#gameplay OR #library) #enabled`. Tags that aren't chips find mods by state: `#enabled`, `#disabled`,
   `#workshop`, `#pending`, `#changed`, `#error`, `#warning` and more, and a warning banner's Show puts its own in the
   search box. Punctuation counts as spaces; `"text in quotes"` matches exactly, case too. Ctrl+F jumps to the search
-  box.
+  box, and a mod's card says where the search found it.
 - **Select several mods** with Ctrl-click, Shift-click or Ctrl+A, then set their category, tags or note, or turn
   them all on or off, from their right-click menu, the bar above the list or any of their tickboxes on the main
   list. The bar counts them; click the count, press Esc or Ctrl+D to let go. Selecting is a step in undo and redo
@@ -52,8 +52,9 @@ Subscribe to it on the [Steam Workshop](https://steamcommunity.com/sharedfiles/f
   Ctrl+Y undo and redo; Revert all puts things back the way they were when you opened the page.
 - **Relaunch Game:** restarts in place, in the same window mode, so changes apply without going back through
   Steam. It checks first for mods that won't load and offers to fix them.
-- **Workshop details in the info panel:** dates, size, subscribers, tags, supported branches and a link to the
-  mod's change notes, with problems shown first in red.
+- **The info panel:** what a mod changes in the game itself (the game files it replaces and the code it changes,
+  with a click for the whole list), and for a Workshop mod its dates, size, subscribers, tags and a link to its
+  change notes, with problems shown first in red.
 - **Vanilla modding page:** the game's own modding page, unchanged, one click away from the link by the title.
 
 **Better Mod Menu:** both can be on at once, and they're tested together. On first run Spire Mod Manager copies
