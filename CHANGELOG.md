@@ -10,7 +10,7 @@ What changed in each Workshop release, for players. Each version's first line is
 - Mods that share the same ID (duplicate) will only load one copy, with an explanation of which and why
 - search supports OR, NOT and brackets, e.g. (#gameplay OR #library) #enabled
 - hidden tags to help filter specific content was added. #enabled, #workshop, #pending, #changed, #error and #warning
-- hidden tags are listed in the info panel (Other keywords) and on each row (Additional keywords); click one to search for it
+- additional keywords are generated based on a mod's status to help narrow searches even more
 - while searching, a mod's hover card says where the search found it, e.g. "Found in: author, tags"
 - warning banner show button now filters to the list of affected mods, the previous show functionality moved to "Go to" button
 - Vanilla menu button was moved to the top of the page and now has a simple link style
@@ -30,15 +30,13 @@ What changed in each Workshop release, for players. Each version's first line is
   lowercase, only between tags, authors, quotes or brackets, so `#warning or #error` works and `rock and stone` is
   still three words. A search without them finds what it did before, an unfinished one never fails (a missing
   bracket closes at the end), and the box takes 200 characters, up from 60.
-- Hidden tags find mods by state, in English in every language: `#enabled`, `#disabled`, `#workshop`, `#local`,
+- Keywords find mods by state, in English in every language: `#enabled`, `#disabled`, `#workshop`, `#local`,
   `#installed`, `#loaded`, `#notloaded`, `#pending`, `#new`, `#changed`, `#moved`, `#edited`, `#renamed`, `#note`,
   `#duplicate`, `#aside` and `#uncategorized`, and for problems `#unmet`, `#needed`, `#order`, `#clash`, `#managers`,
   `#failed` and `#gameerror`, with `#error`, `#warning` and `#problem` gathering them. A tag of yours with the same
   name finds its mods too. `#missing` (or `#uninstalled`) shows a line counting the profile's mods that aren't
-  installed, with "See list" to list them. The info panel lists the hidden tags that find its mod under "Other
-  keywords", and each row shows them after its tags as "Additional keywords: enabled, loaded", leaving out what
-  the row already says (its tags, "installed", and on the main list the "uncategorized" of its heading). Click one
-  to search for it, or Shift-click to add it to the search.
+  installed, with "See list" to list them. The info panel lists the keywords that find its mod under "Other
+  keywords". Click one to search for it, or Shift-click to add it to the search.
 - On the warning banners, the old Show, which opens the next affected mod, is now Go to, and it steps through the
   banner's mods in the order the list shows them, from the mod in the info panel down. A new Show lists just the
   banner's mods by putting its search in the box (`#unmet OR #needed`, `#clash`, `#managers`, `#order`); press it
@@ -67,7 +65,7 @@ What changed in each Workshop release, for players. Each version's first line is
 - The info panel keeps more in view: a long description shows three lines, ending in "..", and hovering them shows all
   of it; text with more to scroll fades at that edge; and Compatibility no longer adds "Workshop branches", as a mod
   marked for one branch has its Stable or Beta tag.
-- On a mod's row, tags and keywords that don't fit end the line as "and 3 more..", whose card shows the rest, with
+- On a mod's row, tags that don't fit end the line as "and 3 more..", whose card shows the rest, with
   "Click to view in info panel" (the "+3" chip is gone). The row's hover card starts with the mod's picture, where it
   has one, and while you search it says where the search found the mod ("Found in: author, tags"). A gap follows its
   warnings, your alias, tags and note sit together, and the note follows "Note:" on the same line.
