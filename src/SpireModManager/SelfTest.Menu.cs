@@ -1671,6 +1671,47 @@ static partial class SelfTest
         }
         Check("Mod Doctor's file: read where it writes now, else where it wrote before its move; the new place first",
             seen.SequenceEqual(["new SmmNewPlace", "old SmmOldPlace", "both SmmNewPlace"]), string.Join(" | ", seen));
+
+        // Its record of the mods it turned off (mod_data/ModDoctor/<platform>/<account id>/turned-off.json): a turn-off at or
+        // after a failed launch's start counts (our notice about that launch stays out: its note says it), one before it
+        // doesn't, nor a file of another version, nor none. Its times carry their offset: one written in UTC compares as
+        // the same moment.
+        var account = MegaCrit.Sts2.Core.Saves.UserDataPathProvider.GetAccountScopedBasePath(null).Replace("user://", "");
+        var record = Path.Combine(top, "mod_data", ModDoctor.ModId, account, "turned-off.json");
+        var turnedOff = DateTimeOffset.Now.AddMinutes(-5);
+        void Record(int version, DateTimeOffset at)
+        {
+            Directory.CreateDirectory(Path.GetDirectoryName(record) ?? top);
+            File.WriteAllText(record, new System.Text.Json.Nodes.JsonObject
+            {
+                ["version"] = version,
+                ["mods"] = new System.Text.Json.Nodes.JsonArray(new System.Text.Json.Nodes.JsonObject
+                {
+                    ["id"] = "SmmTurnedOff", ["name"] = "Turned Off", ["at"] = at.ToString("o"), ["reason"] = "Threw", ["sources"] = new System.Text.Json.Nodes.JsonArray("ModsDirectory"),
+                }),
+            }.ToJsonString());
+        }
+        ModDoctor.TestFolder = top;
+        var said = new List<string>();
+        try
+        {
+            said.Add($"none {ModDoctor.TurnedOffSince(DateTime.Now.AddHours(-1))}");
+            Record(1, turnedOff);
+            said.Add($"after {ModDoctor.TurnedOffSince(turnedOff.LocalDateTime.AddMinutes(-1))}");
+            said.Add($"before {ModDoctor.TurnedOffSince(turnedOff.LocalDateTime.AddMinutes(1))}");
+            Record(1, turnedOff.ToUniversalTime());
+            said.Add($"utc {ModDoctor.TurnedOffSince(turnedOff.LocalDateTime.AddMinutes(-1))}");
+            Record(2, turnedOff);
+            said.Add($"v2 {ModDoctor.TurnedOffSince(turnedOff.LocalDateTime.AddMinutes(-1))}");
+        }
+        finally
+        {
+            File.Delete(record);
+            ModDoctor.TestFolder = null;
+        }
+        Check("Mod Doctor's record of the mods it turned off: one turned off after a failed launch's start counts (our notice about it stays out), one before "
+            + "doesn't, nor another version or none; a time in UTC the same moment",
+            said.SequenceEqual(["none False", "after True", "before False", "utc True", "v2 False"]), string.Join(" | ", said));
     }
 
     // The first-run import reads Better Mod Menu's file as it does: comments and trailing commas, its old format (just

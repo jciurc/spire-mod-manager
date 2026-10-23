@@ -148,7 +148,11 @@ static class LaunchGuard
         try
         {
             var changes = Reached(Dir, _planned with { At = DateTime.Now }, _failed, _working);
-            if (changes.Count > 0 && _working is { } working) // Reached has changes only with a working setup
+            // Mod Doctor turned off the mod that broke the last launch and restarted (from the game's dialog, its start fix):
+            // its note at this menu says so, with a way to turn the mod back on, so ours would only say it again beside it.
+            if (changes.Count > 0 && _failed is { } failed && ModDoctor.TurnedOffSince(failed.At))
+                Log.Info($"[{ModEntry.ModId}] Mod Doctor turned a mod off after the last launch failed, and its note says so: no notice of ours about that launch");
+            else if (changes.Count > 0 && _working is { } working) // Reached has changes only with a working setup
                 Notice = (working, changes);
         }
         catch (Exception e)
