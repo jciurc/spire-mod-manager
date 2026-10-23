@@ -394,18 +394,18 @@ static partial class SelfTest
         var keywordsLabel = Menus.Text("SPIRE_MOD_MANAGER.OTHER_KEYWORDS");
         var facts = description.Split('\n');
         var keywordsAt = Array.FindIndex(facts, l => l.StartsWith(keywordsLabel + ": "));
-        var keywords = $"{keywordsLabel}: {string.Join(", ", HiddenTagNames.Where(t => Search.Matches(ours.Mod, t)))}";
-        Check("Other keywords right after Size: the hidden tags that find the mod as #name, in their order (this mod: #enabled, #local, #installed, #loaded... "
-            + "#renamed, #note)", keywordsAt > 0 && facts[keywordsAt - 1].StartsWith(Menus.Text("SPIRE_MOD_MANAGER.SIZE") + ": ") && facts[keywordsAt] == keywords
-            && keywords.StartsWith($"{keywordsLabel}: #enabled, #local, #installed, #loaded, ") && keywords.Contains("#renamed, #note") && !keywords.Contains("#notes"),
-            $"{(keywordsAt < 0 ? "no row" : facts[keywordsAt])}; wanted {keywords}");
+        var keywords = $"{keywordsLabel}: {string.Join(", ", HiddenTagNames.Where(t => Search.Matches(ours.Mod, t)).Select(t => t.TrimStart('#')))}";
+        Check("Other keywords right after Size: the hidden tags that find the mod, bare names with no \"#\", in their order (this mod: enabled, local, installed, "
+            + "loaded... renamed, note)", keywordsAt > 0 && facts[keywordsAt - 1].StartsWith(Menus.Text("SPIRE_MOD_MANAGER.SIZE") + ": ") && facts[keywordsAt] == keywords
+            && keywords.StartsWith($"{keywordsLabel}: enabled, local, installed, loaded, ") && keywords.Contains("renamed, note") && !keywords.Contains('#')
+            && !keywords.Split(", ").Contains("notes"), $"{(keywordsAt < 0 ? "no row" : facts[keywordsAt])}; wanted {keywords}");
         var panelText = panel.GetNode<RichTextLabel>("ModDescription");
         var marked = panelText.Text.Split('\n');
         var keywordsRow = marked.FirstOrDefault(l => l.Contains(keywordsLabel)) ?? "";
         var sizeTerm = $"[gold]{Menus.Text("SPIRE_MOD_MANAGER.SIZE")}[/gold]: ";
         var sizeRow = marked.FirstOrDefault(l => l.StartsWith(sizeTerm)) ?? "";
-        Check("Other keywords look like the other facts: the term in gold, as Size's, the keywords in the panel text's colour (none of their own), each #name a link",
-            sizeRow.Length > 0 && !sizeRow.Contains("[color=") && keywordsRow.StartsWith($"[gold]{keywordsLabel}[/gold]: [url=htag:enabled]#enabled[/url], ")
+        Check("Other keywords look like the other facts: the term in gold, as Size's, the keywords in the panel text's colour (none of their own), each name a link",
+            sizeRow.Length > 0 && !sizeRow.Contains("[color=") && keywordsRow.StartsWith($"[gold]{keywordsLabel}[/gold]: [url=htag:enabled]enabled[/url], ")
             && !keywordsRow.Contains("[color=") && keywordsRow.EndsWith("[/url]"), $"{keywordsRow} (Size's: {sizeRow})");
         var searchBox = screen.GetNode<LineEdit>("ModsBorder/SpireModManagerSearch");
         panelText.EmitSignal(RichTextLabel.SignalName.MetaClicked, "htag:enabled");

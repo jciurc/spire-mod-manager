@@ -279,10 +279,10 @@ static class ModDetails
         if (workshop?.Tags.Count > 0)
             Fact("SPIRE_MOD_MANAGER.WORKSHOP_TAGS", string.Join(", ", workshop.Tags.Select(t => $"[url=wtag:{t}]{Escape(t)}[/url]"))); // click: search for it
         // The hidden tags that find it (Jordan: "so that way they're at least visible"), a fact like the others, links as
-        // the Workshop tags are; each with its "#", as a search has it.
+        // the Workshop tags are; bare names (Jordan: no "#"), though a click searches #name.
         var keywords = HiddenTags.Of(mod);
         if (keywords.Count > 0)
-            Fact("SPIRE_MOD_MANAGER.OTHER_KEYWORDS", string.Join(", ", keywords.Select(k => $"[url=htag:{k}]#{k}[/url]")));
+            Fact("SPIRE_MOD_MANAGER.OTHER_KEYWORDS", string.Join(", ", keywords.Select(k => $"[url=htag:{k}]{k}[/url]")));
         // What it changes in the game itself, right under them (Jordan: "with no gap"), for every mod.
         text.Append(modified).Append("\n\n");
 
