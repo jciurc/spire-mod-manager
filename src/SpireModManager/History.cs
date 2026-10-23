@@ -172,7 +172,12 @@ static class History
     // Nothing for Revert all to do: the mod list, its order and what Changes counts in our data (Store.Counted) as it
     // leaves them. A Save, a category added or moved, the main menu button moved: still nothing.
     public static bool AtLaunch => _reverted is { } target && Take() is var now && Store.Counted(now.Store) == Store.Counted(target.Store)
-        && SameStates(now, target) && SameOrder(now, target);
+        && SameStates(now, target) && SameOrder(Launched(now), Launched(target));
+
+    // The entries launch had, as Changes counts moves (an entry made since, for a mod installed since, moves nobody:
+    // LoadOrder.MovedSince), so a drag of such a mod after Revert all leaves the button greyed, as Changes reads the same.
+    static Snapshot Launched(Snapshot snapshot) => Loaded is { } launch && launch.Mods.Select(m => (m.Id, m.Source)).ToHashSet() is var had
+        ? snapshot with { Mods = [.. snapshot.Mods.Where(m => had.Contains((m.Id, m.Source)))] } : snapshot;
 
     // For a view switch, which changes the history the buttons act on.
     public static void NotifyChanged() => Changed?.Invoke();

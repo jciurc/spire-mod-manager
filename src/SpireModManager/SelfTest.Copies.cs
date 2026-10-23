@@ -3452,10 +3452,16 @@ static partial class SelfTest
         // Side by side: the second dropped above the first.
         var sideBySide = Order().IndexOf(second) == Order().IndexOf(first) + 1 && NothingMoved(start);
         var startSaid = Say();
+        bool? RevertGreyed() => (screen.FindChild("RevertAllButton", true, false) as BaseButton)?.Disabled;
+        var greyedBefore = RevertGreyed();
         LoadOrder.Move(second, Order().IndexOf(first), Rows());
         CategoryList.Redraw(content);
         await Wait(menu, 0.3);
         var swapped = Order();
+        // The swap is no change for Changes, so Revert all stays as it was: greyed where Changes read 0 (the order alone
+        // differs from what the last Revert all left).
+        Check("... and Revert all as it was (greyed where Changes read 0): the swap is no change", greyedBefore != null && RevertGreyed() == greyedBefore,
+            $"greyed before {greyedBefore}, after {RevertGreyed()}");
         Check("two copies side by side in Load Order: a drop of the second above the first swaps their rows in one undo step, the saved list the same; no move "
             + "for Changes or Show: Changed, no \"was\" line, nothing pending (a relaunch loads the same)",
             sideBySide && swapped.IndexOf(second) == swapped.IndexOf(first) - 1 && History.CurrentMods().SequenceEqual(list) && Steps() == steps + 1

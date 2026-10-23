@@ -319,7 +319,9 @@ static class RowTitles
                 continue;
             }
             var ticked = Copies.Ticked(mod);
-            title.Modulate = launch is { } then && Copies.TickedIn(mod, then.Off, then.Ticks, then.Since) != ticked ? (ticked ? ChangedTitle : ChangedOffTitle)
+            // A copy installed since reads off at launch, as Changes has it (arriving on is turned on, then off no change).
+            title.Modulate = launch is { } then && (!then.Since.Contains(Copies.SwitchKey(mod)) && Copies.TickedIn(mod, then.Off, then.Ticks, then.Since)) != ticked
+                ? (ticked ? ChangedTitle : ChangedOffTitle)
                 : Sourced(mod, ticked && mod.state is ModLoadState.Disabled or ModLoadState.DisabledDuplicate or ModLoadState.AddedAtRuntime
                     && Copies.Others(mod).Count > 0 ? Colors.White : (Color)title.GetMeta(TitleColorMeta));
         }
