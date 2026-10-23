@@ -462,9 +462,9 @@ static partial class SelfTest
         Check($"... between sources, which of its copies loads is the game's rule, with the reason ({sourceCase})", sourceLine == sourceExpected,
             $"{sourceLine ?? "none"} (expected {sourceExpected})");
         var ourChips = new[] { self, copy }.Select(m => Tags.For(m).FirstOrDefault(c => c.Text == DuplicateChip)).ToList();
-        Check("... no same-ID banner or yellow Duplicate chip for this mod: both on is as it should be",
+        Check("... no same-ID banner or yellow Duplicate chip for this mod (the plain tan one): both on is as it should be",
             !Copies.Clashing().Any(m => m.manifest?.id == ModEntry.ModId) && border.GetNodeOrNull<Control>(LoadOrder.SameIdName) == null
-            && ourChips.All(c => c != null && c.Color != Tags.SameIdClash), string.Join(" / ", ourChips.Select(c => $"{c?.Color} {c?.Tip}")));
+            && ourChips.All(c => c != null && c.Color == Tags.Duplicate), string.Join(" / ", ourChips.Select(c => $"{c?.Color} {c?.Tip}")));
         if (border.FindChild(PageBar.Name, true, false)?.FindChildren("*", "Button", true, false).OfType<Button>().FirstOrDefault(b => b.Text == "Disable all") is { } disableAll)
         {
             disableAll.EmitSignal(BaseButton.SignalName.Pressed);
