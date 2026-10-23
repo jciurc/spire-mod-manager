@@ -335,7 +335,7 @@ static class ModDetails
         var id = mod.manifest?.id ?? "";
         var info = Store.InfoFor(mod);
         var lines = new List<string>();
-        if (Picture(mod) is { } picture)
+        if (Picture(mod, CardWidth) is { } picture)
             lines.Add(picture);
         if (title != null)
             lines.Add($"[b]{Escape(title)}[/b]");
@@ -387,7 +387,7 @@ static class ModDetails
         var id = mod.manifest?.id ?? "";
         var info = Store.InfoFor(mod);
         var lines = new List<string>();
-        if (Picture(mod) is { } picture)
+        if (Picture(mod, SharedCards.Width) is { } picture)
             lines.Add(picture);
         var version = mod.manifest?.version is { Length: > 0 } v ? $"  [color=#fff6e280]{Escape(v)}[/color]" : "";
         lines.Add($"[b][font_size=20]{Escape(mod.manifest?.name is { Length: > 0 } name ? name : id)}[/font_size][/b]{version}");
@@ -413,9 +413,21 @@ static class ModDetails
         return string.Join("\n", lines);
     }
 
-    // The mod's picture at the top of a card, from where the game's Modding page finds it; null without one.
-    static string? Picture(Mod mod) => mod.manifest?.id is { Length: > 0 } id && $"res://{id}/mod_image.png" is var picture && ResourceLoader.Exists(picture)
-        ? $"[img width=200]{picture}[/img]" : null;
+    // The width of a row's card (and a note's mod links' card): its text, and a picture at its top, are no wider.
+    public const float CardWidth = 380;
+
+    // The mod's picture at the top of a card, from where the game's Modding page finds it; null without one. Sized as
+    // Content Options' card had it: never scaled up, no wider than the card's text (width), no taller than the panel's
+    // thumbnail, keeping its shape. Loaded as the card opens (Godot keeps it, so once), for its size.
+    static string? Picture(Mod mod, float width)
+    {
+        var path = $"res://{mod.manifest?.id}/mod_image.png";
+        if (mod.manifest?.id is not { Length: > 0 } || !ResourceLoader.Exists(path) || ModEntry.Load<Texture2D>(path) is not { } picture)
+            return null;
+        var size = picture.GetSize();
+        var scale = Math.Min(1, Math.Min(width / size.X, ThumbHeight / size.Y));
+        return $"[img width={Mathf.RoundToInt(size.X * scale)} height={Mathf.RoundToInt(size.Y * scale)}]{path}[/img]";
+    }
 
     // The cards' one gap between their parts: a line as tall as the text's (its line break, outside the small size, is at
     // the card's size, and Godot makes the line as tall as that).
@@ -488,7 +500,7 @@ static class ModDetails
             at = max;
         if (text.LastIndexOf('[', at - 1) is var open && open > text.LastIndexOf(']', at - 1))
             at = open;
-        return Menus.CutShort(text[..at]);
+        return Menus.CutShort(text[..at], markup: true);
     }
 
     // Text cut after 200 characters (some authors write a paragraph where their name goes).

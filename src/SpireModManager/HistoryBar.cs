@@ -52,12 +52,9 @@ static class HistoryBar
             var column = new VBoxContainer { SizeFlagsVertical = Control.SizeFlags.ShrinkCenter, MouseFilter = Control.MouseFilterEnum.Ignore };
             column.AddThemeConstantOverride("separation", 0);
             column.AddChild(button);
-            // Clipped (with "…" if it must be), so its column is as wide as the button, not as the hint (FitHint).
-            var hint = new Label
-            {
-                Name = "Keys", Text = keys == null ? " " : Menus.Text(keys), HorizontalAlignment = HorizontalAlignment.Center,
-                MouseFilter = Control.MouseFilterEnum.Ignore, ClipText = true, TextOverrunBehavior = TextServer.OverrunBehavior.TrimEllipsis,
-            };
+            // Cut to fit (with ".." if it must be), so its column is as wide as the button, not as the hint (FitHint).
+            var hint = new Label { Name = "Keys", HorizontalAlignment = HorizontalAlignment.Center, MouseFilter = Control.MouseFilterEnum.Ignore };
+            Menus.CutToFit(hint, keys == null ? " " : Menus.Text(keys));
             Style(hint, 13, new Color(Cream, 0.5f));
             column.AddChild(hint);
             bar.AddChild(column);
@@ -656,7 +653,7 @@ static class HistoryBar
         var font = hint.GetThemeFont("font");
         var size = hint.GetThemeFontSize("font_size");
         hint.CustomMinimumSize = new Vector2(0, hint.GetMinimumSize().Y);
-        while (size > HintSmallest && font.GetStringSize(hint.Text, fontSize: size).X > room)
+        while (size > HintSmallest && font.GetStringSize(Menus.WholeText(hint), fontSize: size).X > room)
             size--;
         hint.AddThemeFontSizeOverride("font_size", size);
     }

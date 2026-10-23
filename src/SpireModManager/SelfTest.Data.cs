@@ -516,7 +516,7 @@ static partial class SelfTest
                 {
                     var size = hint.GetThemeFontSize("font_size");
                     var whole = hint.GetThemeFont("font").GetStringSize(hint.Text, fontSize: size).X;
-                    var width = Math.Min(whole, hint.Size.X); // the text as drawn, not its box: cut with "…" to the box if it must be
+                    var width = Math.Min(whole, hint.Size.X); // the text as drawn, not its box: cut with ".." to the box if it must be
                     var middle = hint.GetGlobalRect().GetCenter().X;
                     var own = button.GetCombinedMinimumSize().X; // the button's width by its own text
                     var fitted = whole <= own - 2 * HistoryBar.HintInset + 0.5f || size <= HistoryBar.HintSmallest;

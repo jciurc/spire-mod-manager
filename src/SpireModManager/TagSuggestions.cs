@@ -180,7 +180,8 @@ sealed class TagSuggestions
             Name = $"Tag{index}", MouseFilter = Control.MouseFilterEnum.Stop, MouseDefaultCursorShape = Control.CursorShape.PointingHand,
         };
         row.SetMeta(TagMeta, tag);
-        var label = new Label { Text = tag, ClipText = true, TextOverrunBehavior = TextServer.OverrunBehavior.TrimEllipsis, MouseFilter = Control.MouseFilterEnum.Ignore };
+        var label = new Label { MouseFilter = Control.MouseFilterEnum.Ignore };
+        Menus.CutToFit(label, tag);
         label.AddThemeFontOverride("font", ModEntry.Font("res://themes/kreon_regular_shared.tres"));
         label.AddThemeFontSizeOverride("font_size", 18);
         label.AddThemeColorOverride("font_color", Cream);

@@ -140,7 +140,7 @@ static class RowTitles
             string? Card(bool full) => row.Mod is { } shown
                 ? ModDetails.Card(shown, full, watched.GetMeta(FullMeta, "").AsString() is { Length: > 0 } title ? title : null,
                     row.GetParent() is Control list ? CategoryList.Filter(list) : null) : null;
-            Hover.Watch(hot, NotesCard, () => Card(false), full: () => Card(true));
+            Hover.Watch(hot, NotesCard, () => Card(false), width: ModDetails.CardWidth, full: () => Card(true));
         }
         // Over the main title only (the alias), not the original name beside it.
         (hot.Position, hot.Size, hot.Visible) = (new Vector2(title.Position.X, top), new Vector2(mainWidth, lineHeight), true);

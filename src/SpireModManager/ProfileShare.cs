@@ -587,7 +587,7 @@ static class ProfileShare
     // The import preview's area: the preview's 250 px and room for a two-line message above it.
     const float PreviewArea = 310;
 
-    // A line saying what just happened or what's wrong. reserved: it always takes its one line, cut with "…" (the share
+    // A line saying what just happened or what's wrong. reserved: it always takes its one line, cut with ".." (the share
     // dialog's, right above its buttons), so a message coming and going moves nothing.
     const string ReservedMeta = "spire_mod_manager_reserved";
 
@@ -598,11 +598,11 @@ static class ProfileShare
         status.AddThemeFontSizeOverride("font_size", 17);
         if (reserved)
         {
-            (status.AutowrapMode, status.ClipText, status.TextOverrunBehavior) = (TextServer.AutowrapMode.Off, true, TextServer.OverrunBehavior.TrimEllipsis);
+            status.AutowrapMode = TextServer.AutowrapMode.Off;
             status.SetMeta(ReservedMeta, true);
             status.Visible = true;
             status.Modulate = Colors.Transparent; // its line kept, nothing shown
-            status.Text = " ";
+            Menus.CutToFit(status, " ");
         }
         return status;
     }
@@ -612,7 +612,8 @@ static class ProfileShare
         status.AddThemeColorOverride("font_color", error ? ErrorColor : new Color(Cream, 0.7f));
         if (status.HasMeta(ReservedMeta))
         {
-            (status.Text, status.Modulate) = text.Length > 0 ? (text, Colors.White) : (" ", Colors.Transparent);
+            Menus.CutToFit(status, text.Length > 0 ? text : " ");
+            status.Modulate = text.Length > 0 ? Colors.White : Colors.Transparent;
             return;
         }
         status.Text = text;

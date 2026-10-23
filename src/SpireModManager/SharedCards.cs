@@ -10,7 +10,7 @@ static class SharedCards
 {
     public const string CardName = "SpireModManagerSharedCard";
     const string ModIdMeta = "spire_mod_manager_card_mod";
-    const float Width = 420;
+    public const float Width = 420;
 
     public static string? Text(string modId, bool full = false) =>
         ModEntry.CopyOf(modId) is { } mod ? ModDetails.SharedCard(mod, full, StandIns.TryGetValue(modId, out var standIn) ? standIn : null) : null; // (a tuple: none is null, not an empty one)
