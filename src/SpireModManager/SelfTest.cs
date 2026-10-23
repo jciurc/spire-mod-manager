@@ -241,6 +241,7 @@ static partial class SelfTest
             await Step(() => TestBranchTags());
             await Step(() => TestDescriptionSearch());
             await Step(() => TestSearchGrammar());
+            await Step(() => TestFoundIn(menu, screen, content, outDir));
             await Step(() => TestHiddenTags(content));
             await Step(() => TestRedrawCost(menu, screen, content));
             await Step(() => TestManyMods(menu, screen, content));
@@ -254,9 +255,11 @@ static partial class SelfTest
             await Step(() => TestListFilters(menu, screen, content, outDir));
             await Step(() => TestRelaunchCheck(menu, screen, content, outDir));
             await Step(() => TestLongDetails(menu, screen, content, outDir));
+            await Step(() => TestDescriptionCut(menu, screen, content, outDir));
             await Step(() => TestWorkshopHead(menu, screen, outDir));
             await Step(() => TestOtherModPanel(menu, screen, content, outDir));
             await Step(() => TestGameChanges(menu, screen, content, outDir));
+            await Step(() => TestModifiedContent(menu, screen, content, outDir));
             await Step(() => TestBulkEdit(menu, screen, content, outDir));
             await Step(() => TestPicks(menu, screen, content, outDir));
             await Step(() => TestCopies(menu, screen, content, outDir));
@@ -330,6 +333,7 @@ static partial class SelfTest
             RelaunchCheck.Close();
             ProfileShare.Close();
             MissingMods.Close();
+            ModifiedContent.Close();
             MenuButton.CancelMove();
             NModalContainer.Instance?.Clear();
             if (_page is not { } page || !GodotObject.IsInstanceValid(page) || !page.IsInsideTree())
@@ -929,7 +933,7 @@ static partial class SelfTest
     // The words of the duplicate copies, word for word as settings_ui.json has them: drafts until Jordan's copy pass, so
     // here once for every check that reads them (an edit there is one edit here). Draft fills in their values.
     const string SelfLockedTip = "Spire Mod Manager is installed more than once, so its copies stay enabled. If one is removed, another still loads. "
-        + "To turn Spire Mod Manager off, disable them all on the vanilla Modding page.";
+        + "To turn Spire Mod Manager off, disable them all on the vanilla modding page.";
     const string SelfLockedOtherOffTip = "Spire Mod Manager stays enabled. {other} is disabled, so Spire Mod Manager won't load if this copy is removed. Enable it too.";
     const string SameIdText = "{count} mods with the same ID are enabled. Only one copy will be loaded.";
     const string BannerLoads = "{mod}: loads", BannerWontLoad = "{mod}: won't load";

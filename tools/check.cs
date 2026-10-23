@@ -10,6 +10,8 @@
 //   dead text, or a use this script can't see.
 // - Game resources: no code loads one with ResourceLoader.Load or GD.Load; ModEntry.Load and Font do.
 // - Descriptions: no code sets the engine's TooltipText; Hover.Tip shows our card.
+// - Player text: "modding page" in lowercase mid-sentence, in our strings, the README, TRANSLATING.md, the Workshop
+//   description and the issue forms.
 // - Fixtures: the JSON under tools/fixtures parses, and each test mod's manifest has id, name and version.
 // - Translation tooling: tools/loc.cs's SmartFormat package and the self-test's ToolParser are the same version.
 // - Both game branches: the members only the public-beta has go through Compat.
@@ -145,6 +147,25 @@ foreach (var (path, source) in sources.Where(s => !IsSelfTest(s.Key)))
             native.Add($"{Name(path)}:{i + 1}");
 }
 Check("descriptions use Hover.Tip, not the engine's TooltipText", native.Count == 0, List(native));
+
+// Player text: Jordan's "modding page", lowercase (22 Oct), wherever players read our words about the game's page. Only
+// mid-sentence, after a word, as a sentence may still start with it. workshop.json's copy of the description counts
+// too: it's what the next upload sends if prepare.cs isn't run again. The game's own words ("Modding", "Mod Settings")
+// and past release notes (CHANGELOG.md) stay as they are.
+var capitalPage = new Regex(@"(?<=[\p{L}\d'’,]\s)Modding page");
+var playerText = Files("localization", "*.json").Concat(Files(Path.Combine(".github", "ISSUE_TEMPLATE"), "*.yml"))
+    .Concat(new[] { "README.md", "TRANSLATING.md", Path.Combine("workshop", "description.bbcode"), Path.Combine("workshop", "workshop.json") }
+        .Select(file => Path.Combine(root, file)).Where(File.Exists));
+var capitalised = new List<string>();
+foreach (var path in playerText)
+{
+    var lines = File.ReadAllText(path).Split('\n');
+    for (var i = 0; i < lines.Length; i++)
+        if (capitalPage.IsMatch(lines[i]))
+            capitalised.Add($"{Name(path)}:{i + 1}");
+}
+Check("players read \"modding page\" in lowercase (our strings, README, TRANSLATING, the Workshop description, the issue forms)",
+    capitalised.Count == 0, List(capitalised));
 
 // Both game branches: the members only the public-beta has (Mod.workshopId, NModInfoContainer.Clear) go through
 // Compat, by name. Builds compile against the installed branch, so a direct use builds on the beta and then fails on

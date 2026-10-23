@@ -9,9 +9,10 @@ using System.Text.RegularExpressions;
 namespace SpireModManager;
 
 // The info panel in our views, top to bottom: the head beside the thumbnail (name and version, id and Workshop link,
-// status, author, last update, compatibility); anything wrong; the description; size, published, subscribers, Workshop
-// tags and other keywords (the hidden tags); dependencies both ways; the player's Alias, Category, Tags and Note; Open
-// Folder.
+// status, author, last update, compatibility); anything wrong; the description (three lines at most: PanelDescription);
+// size, published, subscribers, Workshop tags, other keywords (the hidden tags) and modified content (ModifiedContent);
+// dependencies both ways; the player's Alias, Category, Tags and Note; Open Folder. Text scrolled past an edge fades
+// there (ScrollFade).
 // Vanilla View: the panel exactly as the game makes it.
 static class ModDetails
 {
@@ -21,7 +22,7 @@ static class ModDetails
     const string FolderMeta = "spire_mod_manager_folder";
     const string WorkshopMeta = "spire_mod_manager_workshop";
     const string FieldsName = "SpireModManagerYours";
-    public const string OthersName = "SpireModManagerOthersParked"; // "2 more from other mods: see the vanilla Modding page"
+    public const string OthersName = "SpireModManagerOthersParked"; // "2 more from other mods: see the vanilla modding page"
     const string LinkName = "SpireModManagerLink", SourceName = "SpireModManagerSource";
     public const string HeadName = "SpireModManagerHead";
     const string WiredMeta = "spire_mod_manager_wired";
@@ -45,6 +46,10 @@ static class ModDetails
 
     // The panel's own fields, one set per panel.
     static readonly Dictionary<ulong, List<ModField>> Fields = [];
+
+    // What the mod each panel shows changes in the game, as its Modified content row has it: its card and its dialog
+    // show the same, without working it out again.
+    static readonly Dictionary<ulong, (Mod Mod, GameChanges.Changes Changes)> ShownChanges = [];
 
 #if DEVTOOLS
     // Self-test: the copy the panel was last filled for (its key), or "" for none.
@@ -183,12 +188,14 @@ static class ModDetails
     }
 
     // Clicks and hovers, connected once per panel: the title or a dependency's name scrolls to its row, a Workshop tag or
-    // another keyword searches, and hovering a name shows its card.
+    // another keyword searches, Modified content opens its details, and hovering a name shows its card.
     static void Wire(NModInfoContainer container)
     {
         if (container.HasMeta(WiredMeta))
             return;
         container.SetMeta(WiredMeta, true);
+        var id = container.GetInstanceId();
+        container.TreeExiting += () => ShownChanges.Remove(id);
         GameLooks(container); // first: WatchLinks takes the links' underline off, and Vanilla View puts back the game's
         Control? Content() => container.GetParent()?.GetNodeOrNull<Control>("%ModsScrollContainer/Mask/Content");
         var title = container.GetNode<Control>("ModTitle");
@@ -210,11 +217,17 @@ static class ModDetails
                 CategoryList.Reveal(content, target[4..], flash: false, focus: true);
             else if (meta.AsString() is { } tag && Searches(tag))
                 Search.ByTag(container, tag[5..], Input.IsKeyPressed(Key.Shift)); // #tag, the mods with it
+            else if (meta.AsString() == ModifiedContent.Meta && ShownChanges.TryGetValue(id, out var shown))
+                ModifiedContent.Show(container, shown.Mod, shown.Changes);
         };
         Hover.WatchLinks(description, "SpireModManagerTagCard",
             meta => Searches(meta) ? Tags.Hint(Menus.Text("SPIRE_MOD_MANAGER.SEARCH_CLICK_TIP")) : null, width: 320);
+        Hover.WatchLinks(description, ModifiedContent.CardName, meta => meta == ModifiedContent.Meta && !Store.Data.VanillaView
+            && ShownChanges.TryGetValue(id, out var shown) ? ModifiedContent.Tip(shown.Mod, shown.Changes) : null, width: ModifiedContent.CardWidth);
         CategoryList.WatchNames(description, Content); // hovering a name: its row lit (if in view), then its card
         GameText.Watch(description); // the game's words in their box (GameBlock)
+        PanelDescription.Watch(description); // a long description cut short: the whole of it in a card
+        ScrollFade.Watch(description); // more text out of sight above or below: a fade at that edge
         // Hovering the thumbnail: the whole picture (our views).
         var image = container.GetNode<TextureRect>("ModImage");
         image.MouseFilter = Control.MouseFilterEnum.Pass;
@@ -225,13 +238,21 @@ static class ModDetails
     static void ShowDescription(NModInfoContainer container, Mod mod)
     {
         var description = container.GetNode<MegaRichTextLabel>("ModDescription");
-        description.Text = Describe(mod);
+        var changes = GameChanges.For(mod);
+        ShownChanges[container.GetInstanceId()] = (mod, changes);
+        var own = mod.manifest?.description is { Length: > 0 } words ? PanelDescription.Shown(description, words) : null;
+        description.Text = Describe(mod, ModifiedContent.Row(changes, description), own);
         GameText.Fit(description);
     }
 
-    // Anything wrong, the description, more facts (size, published, subscribers, Workshop tags, other keywords), then
-    // dependencies.
-    static string Describe(Mod mod)
+    // The width a line of the label's text has: its box less its margins, and less a scrollbar's room whether one shows
+    // or not, so text fitted to it doesn't wrap when one comes.
+    public static float LineRoom(RichTextLabel text) =>
+        text.Size.X - text.GetThemeStylebox("normal").GetMinimumSize().X - text.GetVScrollBar().GetCombinedMinimumSize().X - 2;
+
+    // Anything wrong, the mod's description (own: as the panel shows it, null for none), more facts (size, published,
+    // subscribers, Workshop tags, other keywords, modified content: its row as given), then dependencies.
+    static string Describe(Mod mod, string modified, string? own)
     {
         var text = new System.Text.StringBuilder();
         void Fact(string key, string value) => text.Append($"[gold]{Menus.Text(key)}[/gold]: {value}\n");
@@ -246,7 +267,7 @@ static class ModDetails
         text.Append(game);
         if (problems.Count > 0 || game.Length > 0 || copy != null)
             text.Append('\n');
-        text.Append(mod.manifest?.description is { Length: > 0 } description ? description : Faint("SPIRE_MOD_MANAGER.NO_DESCRIPTION")).Append("\n\n");
+        text.Append(own ?? Faint("SPIRE_MOD_MANAGER.NO_DESCRIPTION")).Append("\n\n");
 
         var workshop = WorkshopInfo.For(mod);
         var bytes = workshop?.Size is > 0 and var size ? size : FolderSize(mod.path);
@@ -263,8 +284,8 @@ static class ModDetails
         var keywords = HiddenTags.Of(mod);
         if (keywords.Count > 0)
             text.Append($"[color={Fainter}]{Menus.Text("SPIRE_MOD_MANAGER.OTHER_KEYWORDS")}: {string.Join(", ", keywords.Select(k => $"[url=htag:{k}]#{k}[/url]"))}[/color]\n");
-        if (bytes > 0 || workshop != null || keywords.Count > 0)
-            text.Append('\n');
+        // What it changes in the game itself, right under them (Jordan: "with no gap"), for every mod.
+        text.Append(modified).Append("\n\n");
 
         // What it needs, and what needs it.
         string Links(IEnumerable<string> ids) => string.Join(", ", ids.Select(d =>
@@ -276,23 +297,6 @@ static class ModDetails
             Fact("SPIRE_MOD_MANAGER.DEPENDENCIES", Links(needs));
         if (neededBy.Count > 0)
             Fact("SPIRE_MOD_MANAGER.NEEDED_BY", Links(neededBy));
-
-        // What it changes in the game itself: the game's files it replaces and the game's code it patches (GameChanges).
-        var changes = GameChanges.For(mod);
-        string Changed(IReadOnlyList<string> subjects, int count, string many, string one)
-        {
-            const int Shown = 5;
-            var listed = string.Join(", ", subjects.Take(Shown).Select(Escape));
-            if (subjects.Count > Shown)
-                listed += ", " + Menus.Format("SPIRE_MOD_MANAGER.BANNER_CARD_MORE", ("count", Menus.Number(subjects.Count - Shown)));
-            return $"{listed} [color={Quiet}]({(count == 1 ? Menus.Text(one) : Menus.Format(many, ("count", Menus.Number(count))))})[/color]";
-        }
-        if (changes.Any && (needs.Count > 0 || neededBy.Count > 0))
-            text.Append('\n');
-        if (changes.Files > 0)
-            Fact("SPIRE_MOD_MANAGER.GAME_FILES", Changed(changes.FileSubjects, changes.Files, "SPIRE_MOD_MANAGER.GAME_FILES_COUNT", "SPIRE_MOD_MANAGER.GAME_FILES_COUNT_ONE"));
-        if (changes.Code > 0)
-            Fact("SPIRE_MOD_MANAGER.GAME_CODE", Changed(changes.CodeSubjects, changes.Code, "SPIRE_MOD_MANAGER.GAME_CODE_COUNT", "SPIRE_MOD_MANAGER.GAME_CODE_COUNT_ONE"));
         return text.ToString().TrimEnd();
     }
 
@@ -322,10 +326,10 @@ static class ModDetails
         return $"[color={(age.TotalHours < 48 ? Enabled : Disabled)}]({text})[/color]";
     }
 
-    // A row's hover card: the mod's picture, id and state, anything wrong, author, last update, and the player's alias,
-    // tags and note. title: the whole name, under the picture, when the row's is cut short. full: nothing cut short (held
-    // with Alt).
-    public static string Card(Mod mod, bool full = false, string? title = null)
+    // A row's hover card: the mod's picture, id and state, where the list's search found it, anything wrong, author, last
+    // update, and the player's alias, tags and note. title: the whole name, under the picture, when the row's is cut
+    // short. full: nothing cut short (held with Alt). search: the list's search, if any.
+    public static string Card(Mod mod, bool full = false, string? title = null, string? search = null)
     {
         string Cut(string text, int max) => full || text.Length <= max ? text : text[..max].TrimEnd() + "…";
         var id = mod.manifest?.id ?? "";
@@ -336,6 +340,9 @@ static class ModDetails
         if (title != null)
             lines.Add($"[b]{Escape(title)}[/b]");
         lines.Add($"[b]{Escape(id)}[/b]  {Bullet}  {Status(mod)}");
+        // Jordan: "when a search is applied, add explanation in hover card that says "Found in: a, b, c"".
+        if (search is { Length: > 0 } && Search.FoundIn(mod, search) is { Count: > 0 } fields)
+            lines.Add($"[color={Quiet}]{Escape(Menus.Format("SPIRE_MOD_MANAGER.FOUND_IN", ("fields", string.Join(", ", fields.Select(FieldName)))))}[/color]");
         AddWarnings(lines, mod);
         lines.Add(CardFact("SPIRE_MOD_MANAGER.AUTHOR", mod.manifest?.author is { Length: > 0 } author ? Escape(Cut(author, 80)) : Faint("SPIRE_MOD_MANAGER.UNKNOWN")));
         if (WorkshopInfo.For(mod) is { } workshop)
@@ -352,6 +359,22 @@ static class ModDetails
             lines.AddRange([CardGap, .. yours]);
         return string.Join("\n", lines);
     }
+
+    // A field in Found in, in the words the panel names it by, as they read in a list ("author, Workshop tags, note").
+    static string FieldName(Search.Field field) => Menus.Text(field switch
+    {
+        Search.Field.Name => "SPIRE_MOD_MANAGER.FIELD_NAME",
+        Search.Field.Id => "SPIRE_MOD_MANAGER.FIELD_ID",
+        Search.Field.Author => "SPIRE_MOD_MANAGER.FIELD_AUTHOR",
+        Search.Field.Description => "SPIRE_MOD_MANAGER.FIELD_DESCRIPTION",
+        Search.Field.WorkshopTags => "SPIRE_MOD_MANAGER.WORKSHOP_TAGS",
+        Search.Field.Keywords => "SPIRE_MOD_MANAGER.FIELD_KEYWORDS",
+        Search.Field.Modified => "SPIRE_MOD_MANAGER.FIELD_MODIFIED",
+        Search.Field.Alias => "SPIRE_MOD_MANAGER.FIELD_ALIAS",
+        Search.Field.Category => "SPIRE_MOD_MANAGER.FIELD_CATEGORY",
+        Search.Field.Tags => "SPIRE_MOD_MANAGER.FIELD_TAGS",
+        _ => "SPIRE_MOD_MANAGER.FIELD_NOTES",
+    });
 
     // The card other mods show for a mod (the API's ModCards): what the row's card says, with Jordan's list for it on
     // top: the mod's picture, its name as it gives it (never the player's alias: the caller's row shows that), its
@@ -429,12 +452,18 @@ static class ModDetails
         ["purple"] = "ee82ee", ["red"] = "ff5555",
     };
 
+    // A mod's description in the info panel (the game's label, which knows the game's tags too), cut to about max
+    // characters at a space or a line break, never inside a [tag], with every tag it leaves open closed at its end.
+    public static string Shortened(string description, int max) => Closed(CutMarkup(description, max, lines: true), game: true);
+
     // Each tag Godot's rich text draws that's still open at the end, closed there (innermost first). As in Godot, a
     // closer closes the innermost open tag only when it names it; any other is drawn as text, and closes nothing.
-    static string Closed(string bbcode)
+    // game: the game's tags too ([gold], [sine]...), for its own labels.
+    static string Closed(string bbcode, bool game = false)
     {
         var open = new List<string>();
-        foreach (Match tag in OpeningOrClosing.Matches(bbcode))
+        var tags = game ? OpeningOrClosing.Matches(bbcode).Concat(GameMarkup.Matches(bbcode)).OrderBy(m => m.Index) : OpeningOrClosing.Matches(bbcode).AsEnumerable();
+        foreach (var tag in tags)
         {
             var name = tag.Groups[2].Value;
             if (tag.Groups[1].Length == 0)
@@ -448,12 +477,13 @@ static class ModDetails
     // A tag as Godot reads one: its name, then ], = or a space (so "[right-click]" is text, not [right]).
     static readonly Regex OpeningOrClosing = new(@"\[(/?)(b|i|u|s|code|center|left|right|fill|indent|url|hint|font|font_size|color|bgcolor|fgcolor|outline_size|outline_color|table|cell|ul|ol|lang|p|wave|tornado|shake|fade|rainbow|pulse|img|dropcap|opentype_features)(?=[\]=\s])[^\]]*\]");
 
-    // Rich text cut to about max characters at a space, never inside a [tag] (Closed closes what it leaves open).
-    static string CutMarkup(string text, int max)
+    // Rich text cut to about max characters at a space (lines: or a line break), never inside a [tag] (Closed closes what
+    // it leaves open).
+    static string CutMarkup(string text, int max, bool lines = false)
     {
         if (text.Length <= max)
             return text;
-        var at = text.LastIndexOf(' ', max);
+        var at = lines ? text.LastIndexOfAny([' ', '\n'], max) : text.LastIndexOf(' ', max);
         if (at <= 0)
             at = max;
         if (text.LastIndexOf('[', at - 1) is var open && open > text.LastIndexOf(']', at - 1))
@@ -658,7 +688,8 @@ static class ModDetails
     // A text standing in for a value that isn't there ("unknown", "No description"), subtle.
     static string Faint(string key) => $"[color={Quiet}]{Escape(Menus.Text(key))}[/color]";
 
-    // "0.110.1 or newer (this game: 0.111.0, beta)", plus the Workshop's supported branches, each once.
+    // "0.110.1 or newer (this game: 0.111.0, beta)". The Workshop's branches aren't listed (Jordan: "it's redundant to
+    // compatibility and tags"): a mod marked for one branch has its Stable or Beta tag.
     static string Compatibility(Mod mod)
     {
         var text = mod.manifest?.minGameVersion is { Length: > 0 } minimum
@@ -669,18 +700,7 @@ static class ModDetails
         var current = string.Join(", ", new[] { game, branch }.Where(s => !string.IsNullOrEmpty(s)));
         if (current.Length > 0)
             text += $" [color=#fff6e299]({Menus.Format("SPIRE_MOD_MANAGER.THIS_GAME", ("version", current))})[/color]";
-        if (WorkshopInfo.For(mod)?.Branches is { Count: > 0 } branches)
-            text += "; " + Menus.Format("SPIRE_MOD_MANAGER.BRANCHES", ("branches", string.Join(", ", branches.Select(Range).Distinct())));
         return text;
-
-        // A supported range; an empty end is open.
-        static string Range((string Min, string Max) b) => (Branch(b.Min), Branch(b.Max)) switch
-        {
-            var (min, max) when min == max => min,
-            ("", var max) => Menus.Format("SPIRE_MOD_MANAGER.BRANCH_UP_TO", ("branch", max)),
-            (var min, "") => Menus.Format("SPIRE_MOD_MANAGER.BRANCH_FROM", ("branch", min)),
-            var (min, max) => $"{min}–{max}",
-        };
     }
 
     // The game's branch names in player words: "public" is the stable game; every beta reads "beta".

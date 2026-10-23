@@ -107,6 +107,10 @@ static class Tags
         return texts;
     }
 
+    // Whether a #tag finds the mod through its Workshop tags (Searchable's: not one named like an automatic chip).
+    public static bool FromWorkshop(Mod mod, string tag) => WorkshopInfo.For(mod)?.Tags is { Count: > 0 } workshop
+        && workshop.Contains(tag, StringComparer.OrdinalIgnoreCase) && !Automatic().Contains(tag, StringComparer.OrdinalIgnoreCase);
+
     // The automatic chips' names, in the game's language and in English.
     static IEnumerable<string> Automatic() =>
         new[]

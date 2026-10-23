@@ -519,9 +519,6 @@ static partial class SelfTest
             $"{left.Modulate.A:0.##}, {right.Modulate.A:0.##}");
     }
 
-    // The main menu button card's last line: the key that opens the page, unless the patch that reads it didn't apply.
-    static string ManagerKeyLine => ModEntry.FailedPatches.Contains(nameof(ShortcutsPatch)) ? "" : "\n" + OS.GetKeycodeString(ShortcutsPatch.ManagerKey);
-
     // The main menu button's card for a profile (as written: the key and right-click in bold), with the key that opens the
     // page, or without one. shown: as the card shows it, without the bold's tags.
     static string MenuCard(string profile, bool shown = false)
@@ -1407,6 +1404,9 @@ static partial class SelfTest
                     item != null && itemSize == 20 && mark is { } at && at.Position.X >= itemText + 2 && at.Position.X <= itemText + 7 && at.Size == new Vector2(14, 14)
                     && at.End.X <= item.Size.X + 0.5f && labels.Where(l => l.IsInGroup(LinkMark.Group)).SequenceEqual([item]),
                     $"mark {mark} after text {itemText:0.#}, label {item?.Size}; marked: {string.Join(", ", labels.Where(l => l.IsInGroup(LinkMark.Group)).Select(l => l.Text))}");
+                if (item != null)
+                    Results.Add($"INFO Open translations folder's mark: {mark} in its {item.Size} label, the text's baseline "
+                        + $"{LinkMark.Baseline(item, item.Text, item.GetThemeFont("font"), itemSize):0.##} (the font's ascent {item.GetThemeFont("font").GetAscent(itemSize):0.##})");
                 var drawn = item == null ? null : await MarkDrawn(menu, item);
                 Check("Open translations folder's mark: drawn in the label's colour", item != null && drawn == item.GetThemeColor("font_color"),
                     $"drawn {drawn?.ToString() ?? "nothing"}, label {item?.GetThemeColor("font_color")}");
@@ -1481,6 +1481,11 @@ static partial class SelfTest
         }
     }
 
+    // A key's text in our packed English, as written (placeholders and all), whatever the game's language is now.
+    static string EnglishText(string key) =>
+        JsonSerializer.Deserialize<Dictionary<string, string>>(Godot.FileAccess.GetFileAsString($"res://{ModEntry.ModId}/localization/eng/settings_ui.json"))
+            ?.GetValueOrDefault(key) ?? "";
+
     // Drop-in translations (Translations) in German, which has no packed translation, so our text is all English there
     // until now: a file in the translations folder, read as the game switches language (its own switch, as in its
     // settings, without the menu rebuild). Its text shows, in the game's table and on the main menu button's menu, and its
@@ -1489,11 +1494,6 @@ static partial class SelfTest
     // Back in English, English. A file that isn't JSON, isn't an object or is over 1 MB changes nothing and throws
     // nothing. One saved as deu.json.txt (a browser's "Save as", the .txt hidden) is read. The file is removed and the
     // language set back afterwards.
-    // A key's text in our packed English, as written (placeholders and all), whatever the game's language is now.
-    static string EnglishText(string key) =>
-        JsonSerializer.Deserialize<Dictionary<string, string>>(Godot.FileAccess.GetFileAsString($"res://{ModEntry.ModId}/localization/eng/settings_ui.json"))
-            ?.GetValueOrDefault(key) ?? "";
-
     static async Task TestTranslations(NMainMenu menu)
     {
         // The tool reads texts as the game does only with the game's parser: when the game ships another version, update

@@ -2,8 +2,9 @@ using Godot;
 
 namespace SpireModManager;
 
-// Our dialogs' frame (RelaunchCheck, ProfileShare, MissingMods): a dimming layer that takes the page's clicks, with a
-// centred panel. One open at a time; Esc and F3 close it (ShortcutsPatch.CloseOurs), and so does its owner leaving.
+// Our dialogs' frame (RelaunchCheck, ProfileShare, MissingMods, ModifiedContent): a dimming layer that takes the page's
+// clicks, with a centred panel. One open at a time; Esc and F3 close it (ShortcutsPatch.CloseOurs), and so does its owner
+// leaving.
 static class Modal
 {
     public static readonly Color Cream = new(1, 0.964706f, 0.886275f);
@@ -49,10 +50,14 @@ static class Modal
         return column;
     }
 
-    // The dialog's title, for the top of its column.
-    public static Label Title(string key)
+    // The dialog's title, for the top of its column; with values, its text filled in with them (a name in it wraps).
+    public static Label Title(string key, params (string Name, string Value)[] values)
     {
-        var title = new Label { Name = "Title", Text = Menus.Text(key) };
+        var title = new Label
+        {
+            Name = "Title", Text = values.Length > 0 ? Menus.Format(key, values) : Menus.Text(key),
+            AutowrapMode = values.Length > 0 ? TextServer.AutowrapMode.WordSmart : TextServer.AutowrapMode.Off,
+        };
         title.AddThemeFontOverride("font", ModEntry.Font("res://themes/kreon_bold_shared.tres"));
         title.AddThemeFontSizeOverride("font_size", 26);
         title.AddThemeColorOverride("font_color", Cream);

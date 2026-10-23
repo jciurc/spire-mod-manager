@@ -244,8 +244,8 @@ static class Layout
     // A line of text's ascent and height as it's shaped, from the fonts its letters use. A font's own GetAscent and
     // GetHeight take every fallback too, and a mod that adds one to the game's shared Kreon (for its own script) makes
     // them taller by an amount that grows with the size, so the title and the smaller link moved apart (Jordan's game,
-    // 22 Oct: the link 7 px low at 1440p).
-    static (float Ascent, float Height) Line(string text, Font font, int size)
+    // 22 Oct: the link 7 px low at 1440p). The external-link mark sits on a link's text by it too (LinkMark).
+    public static (float Ascent, float Height) Line(string text, Font font, int size)
     {
         var line = new TextLine();
         line.AddString(text, font, size);
@@ -577,6 +577,9 @@ static class Layout
         (control.OffsetLeft, control.OffsetTop, control.OffsetRight, control.OffsetBottom) = (box.X, box.Y, box.Z, box.W);
     }
 
+    // Our views' panels (the list's and the info panel's): plain and dark, the page showing through.
+    public static readonly Color PanelColor = new(0.03f, 0.05f, 0.08f, 0.55f);
+
     static void PanelStyle(Control panel)
     {
         if (!panel.HasMeta(StyleMeta))
@@ -586,7 +589,7 @@ static class Layout
             panel.AddThemeStyleboxOverride("panel", (StyleBox)panel.GetMeta(StyleMeta));
             return;
         }
-        var plain = new StyleBoxFlat { BgColor = new Color(0.03f, 0.05f, 0.08f, 0.55f) };
+        var plain = new StyleBoxFlat { BgColor = PanelColor };
         plain.SetCornerRadiusAll(6);
         panel.AddThemeStyleboxOverride("panel", plain);
     }
