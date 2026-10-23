@@ -631,7 +631,6 @@ static class CategoryList
             header.Name = category == null ? "Uncategorized" : $"Category {category.Name}";
             header.SetMeta(CategoryMeta, category?.Name ?? "");
             var titleLabel = header.GetNode<Label>("Title");
-            titleLabel.Text = title;
             // Our (smaller-text) views: a shorter header.
             header.CustomMinimumSize = new Vector2(0, 36);
             titleLabel.AddThemeFontSizeOverride("font_size", 18);
@@ -645,12 +644,13 @@ static class CategoryList
                 titleLabel.AddThemeColorOverride("font_color", new Color(1, 0.964706f, 0.886275f, 0.7f));
                 header.GetNode<ColorRect>("Background").Color = new Color(0.0756f, 0.12084f, 0.18f, 0.3f);
             }
-            // The count right after the name.
+            // The count right after the name, as it shows: a long one is cut short of the header's buttons.
             var count = header.GetNode<Label>("Count");
             count.Text = Menus.Number(filtering ? members.Count(Matches) : members.Count);
             count.HorizontalAlignment = HorizontalAlignment.Left;
             count.AnchorLeft = 0;
-            count.OffsetLeft = titleLabel.OffsetLeft + titleLabel.GetThemeFont("font").GetStringSize(title, fontSize: 18).X + 10;
+            Menus.CutToFit(titleLabel, title, () => count.OffsetLeft = titleLabel.OffsetLeft
+                + titleLabel.GetThemeFont("font").GetStringSize(titleLabel.Text, fontSize: 18).X + 10);
             // The header menu's actions inline, right-aligned: the category's own (not for Uncategorized), then
             // Enable all / Disable all at the far right, over the rows' tickboxes.
             var shown = members.Where(Matches).ToList();
@@ -1040,7 +1040,7 @@ static class CategoryList
         header.AddChild(arrow);
         var title = new Label
         {
-            Name = "Title", VerticalAlignment = VerticalAlignment.Center, TextOverrunBehavior = TextServer.OverrunBehavior.TrimEllipsis,
+            Name = "Title", VerticalAlignment = VerticalAlignment.Center,
             MouseFilter = Control.MouseFilterEnum.Ignore, AnchorRight = 1, AnchorBottom = 1, OffsetLeft = 52, OffsetRight = -90,
         };
         title.AddThemeFontOverride("font", ModEntry.Font("res://themes/kreon_bold_shared.tres"));

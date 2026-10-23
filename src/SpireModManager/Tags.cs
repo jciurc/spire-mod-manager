@@ -211,7 +211,7 @@ static class Tags
         {
             MouseFilter = Control.MouseFilterEnum.Pass, SizeFlagsVertical = Control.SizeFlags.ShrinkCenter, Theme = Look(font, chip.Color, chip.Custom),
         };
-        // A long tag is cut with "…"; its card then starts with the whole tag. Made when it shows: a tag of the player's
+        // A long tag is cut with ".."; its card then starts with the whole tag. Made when it shows: a tag of the player's
         // says how many mods have it, which an edit on another row changes without remaking this one.
         var cut = RowTitles.Measure(font, chip.Text, 12) > ChipMax;
         string Card()
@@ -235,7 +235,10 @@ static class Tags
         }
         var label = new Label { Text = chip.Text, MouseFilter = Control.MouseFilterEnum.Ignore };
         if (cut)
-            (label.ClipText, label.TextOverrunBehavior, label.CustomMinimumSize) = (true, TextServer.OverrunBehavior.TrimEllipsis, new Vector2(ChipMax, 0));
+        {
+            label.CustomMinimumSize = new Vector2(ChipMax, 0);
+            Menus.CutToFit(label, chip.Text);
+        }
         box.AddChild(label);
         return box;
     }
@@ -249,7 +252,7 @@ static class Tags
         return Menus.Format(count == 1 ? "SPIRE_MOD_MANAGER.TAG_CUSTOM_COUNT_TIP_ONE" : "SPIRE_MOD_MANAGER.TAG_CUSTOM_COUNT_TIP", ("count", Menus.Number(count)));
     }
 
-    // A chip in a card's text (the tags a row's "and 3 more..." stands for): its words in its colour on its box's tint,
+    // A chip in a card's text (the tags a row's "and 3 more.." stands for): its words in its colour on its box's tint,
     // smaller than the card's text, as the chip is beside the row's.
     public static string Pill(Chip chip) =>
         $"[font_size=14][bgcolor=#{new Color(chip.Color, chip.Custom ? 0.1f : 0.2f).ToHtml()}][color=#{chip.Color.ToHtml(false)}]"

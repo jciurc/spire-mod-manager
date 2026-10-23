@@ -87,15 +87,17 @@ static partial class SelfTest
         Check("then one undo puts the framework back on, as the fixture has it", Copies.Ticked(lib) && tickbox.IsTicked);
     }
 
-    // A made-up mod with very long everything (name, id, author, version, description, alias, many tags, notes),
+    // A made-up mod with very long everything (name, id, author, version, description, alias, many tags, notes, category),
     // shown in the list and the panel (screenshot 16-long-details). The panel's title stays on one line with its
-    // version and the source line keeps its status, both cut with ".." (the whole text a second over them); the
-    // row keeps its author and its height, what doesn't fit as "and N more..". A redraw fits no row title again, its cut one
+    // version and the source line keeps its status, both cut with ".." (the whole text a second over them); so are the
+    // row's author, a long tag and the category's header; the row keeps its author and its height, what doesn't fit as
+    // "and N more..". A redraw fits no row title again, its cut one
     // and an aliased one included, in Vanilla View and in our main list. It's removed again afterwards.
     static async Task TestLongDetails(Node menu, NModdingScreen screen, Control content, string outDir)
     {
         const string id = "SmmVeryLongModIdentifierThatGoesOnAndOnForTheSakeOfTesting";
         const string name = "The Extraordinarily Long-Named Compendium of Every Card, Relic, Potion and Event Ever Imagined (Deluxe Edition)";
+        const string category = "Everything I Subscribed To One Evening And Still Mean To Sort Into Better Categories Some Other Day";
         var words = "lorem ipsum dolor sit amet consectetur adipiscing elit sed do eiusmod tempor incididunt ut labore et dolore magna aliqua".Split(' ');
         string Text(int count) => string.Join(' ', Enumerable.Range(0, count).Select(i => words[i % words.Length]));
         var mod = new Mod
@@ -111,8 +113,10 @@ static partial class SelfTest
         GameInstalls(mod);
         await Wait(menu, 0.4);
         NModalContainer.Instance?.Clear();
+        Store.Data.Categories.Add(new Category { Name = category });
         Store.EditMod(id, info =>
         {
+            info.Category = category;
             info.Alias = "My favourite enormous content pack that I keep meaning to rename to something shorter";
             info.Notes = Text(120);
             info.Tags = ["content", "big", "really-long-tag-name-for-testing", "favourites", "co-op", "needs-checking-after-every-update", "deluxe",
@@ -161,7 +165,22 @@ static partial class SelfTest
 
             var longAuthor = row.GetNodeOrNull<Label>("SpireModManagerStrip/Author");
             var longTag = row.GetNodeOrNull("SpireModManagerStrip")?.GetChildren().OfType<PanelContainer>().Select(c => c.GetChildOrNull<Label>(0)).FirstOrDefault(l => l?.Text.StartsWith("really-long") == true);
-            Check("long details: the row's author and a long tag are cut with an ellipsis", longAuthor is { ClipText: true, TextOverrunBehavior: TextServer.OverrunBehavior.TrimEllipsis } && longTag is { ClipText: true });
+            // Cut with two periods (Menus.CutToFit), never Godot's "…": the author, a long tag and the long category's name in
+            // its header, the mod count right after the name as cut, short of the header's buttons. The author's whole name
+            // a second over it.
+            var wholeAuthor = longAuthor == null ? "" : await Tooltip(longAuthor, "SpireModManagerFullText", Hover.SlowDelay + 0.2);
+            var (authorCut, tagCut) = (CutWrong(longAuthor), CutWrong(longTag));
+            Check("long details: the row's author and a long tag are cut with \"..\" to their width, Godot cutting nothing more; the whole author a second over it",
+                authorCut == null && tagCut == null && wholeAuthor == mod.manifest?.author, $"author: {authorCut ?? "cut right"}; tag: {tagCut ?? "cut right"}; over it: {wholeAuthor}");
+            var header = Header(content, category);
+            var (categoryTitle, count, buttons) = (header?.GetNodeOrNull<Label>("Title"), header?.GetNodeOrNull<Label>("Count"), header?.GetNodeOrNull<Control>("Actions"));
+            var titleCut = CutWrong(categoryTitle);
+            var nameEnd = categoryTitle == null ? 0 : categoryTitle.GlobalPosition.X + ShapedWidth(categoryTitle, categoryTitle.Text);
+            var (countFrom, countTo) = count == null ? (0f, 0f) : (count.GlobalPosition.X, count.GlobalPosition.X + ShapedWidth(count, count.Text));
+            Check("long details: a long category name is cut with \"..\" in its header too, its mod count just after it, short of the header's buttons",
+                titleCut == null && count is { Visible: true } && buttons != null && countFrom >= nameEnd && countFrom - nameEnd <= 12
+                && countTo <= buttons.GetGlobalRect().Position.X, $"{titleCut ?? "cut right"}; the name to {nameEnd:0.#}, the count {countFrom:0.#}..{countTo:0.#}, "
+                + $"the buttons from {buttons?.GetGlobalRect().Position.X:0.#}");
             // Many tags: the line ends short of the row's buttons, with the author in it, the row its usual height. Tags
             // first, then keywords: what doesn't fit is "and N more.." (here every keyword too), whose card has those tags
             // as pills, "Additional keywords:" and those keywords, then the click hint (16b-more-card).
@@ -327,12 +346,37 @@ static partial class SelfTest
         else
             Results.Add("FAIL long details: no row for the made-up mod");
         GameForgets(mod);
+        if (Categories.Find(category) is { } made)
+            Categories.Delete(made);
         Store.EditMod(id, info => (info.Alias, info.Notes, info.Tags, info.Category) = (null, null, null, null));
         SaveManager.Instance.SettingsSave.ModSettings?.ModList.RemoveAll(e => e.Id == id);
         History.Record();
         CategoryList.Redraw(content);
         Compat.Clear(screen.GetNode<NModInfoContainer>("%ModInfoContainer"));
         await Wait(menu, 0.3);
+    }
+
+    // A text's width as a label draws it: shaped as Godot shapes one line (a TextLine), in the label's font at its size.
+    static float ShapedWidth(Label label, string text)
+    {
+        var line = new TextLine();
+        line.AddString(text, label.GetThemeFont("font"), label.GetThemeFontSize("font_size"));
+        return line.GetLineWidth();
+    }
+
+    // Null if label is cut to its width with two periods (Menus.CutToFit) and Godot cuts nothing more: it shows the start
+    // of its whole text and then "..", which fits inside its box where the whole text doesn't, and Godot's own cut (its
+    // "…") is off. Otherwise what's wrong.
+    static string? CutWrong(Label? label)
+    {
+        if (label == null)
+            return "no label";
+        var (shown, whole) = (label.Text, Menus.WholeText(label));
+        var room = label.Size.X - label.GetThemeStylebox("normal").GetMinimumSize().X;
+        var (drawn, wide) = (ShapedWidth(label, shown), ShapedWidth(label, whole));
+        return shown != whole && shown.EndsWith(Menus.CutMark) && !shown.EndsWith("...") && whole.StartsWith(shown[..^Menus.CutMark.Length])
+            && drawn <= room + 0.5f && wide > room && label.TextOverrunBehavior == TextServer.OverrunBehavior.NoTrimming
+            ? null : $"\"{shown}\" of \"{whole}\": {drawn:0.#} px in {room:0.#} (whole {wide:0.#}), {label.TextOverrunBehavior}";
     }
 
     // First what any cut drops before its "..". Then a long description in the info panel (Jordan, 22 Oct): three lines
