@@ -32,9 +32,10 @@ Ease of use is the heart of the mod, not just its utility.
   Workshop link sets that copy alone. A newly installed mod joins the active profile, enabled.
   With no profiles yet, an ordinary one named "Default" is made from the current list.
 - The mod managers (this one, Better Mod Menu) are never turned on or off by a profile.
-- Spire Mod Manager installed more than once: our page keeps every copy of it ticked (its boxes locked, with our
-  padlock), so removing the copy that runs still leaves one that loads. The vanilla page keeps the game's boxes, the
-  way to turn it off.
+- Spire Mod Manager is first in whichever category it's in. Its copies have a box each, like any other mod's (its
+  copies from one source share one). Disable all leaves it on; its own box, a selection that has it and the bulk menu
+  can turn it off. With every copy of it off, a red banner says so and Relaunch asks first, both with Enable now for
+  the copy running.
 - Our own data is one JSON file per Steam account, written atomically, with 10 backups.
 
 ## Load order

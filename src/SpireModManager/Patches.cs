@@ -600,8 +600,9 @@ static class NewModPopupPatch
             var keys = arrived.Select(Copies.SwitchKey).ToHashSet();
             // A new copy is one Installed took as new (an update of either copy isn't: it keeps the new-mods text), beside a
             // copy of its id from before these, of either source (two copies that came together are a new mod). Its tick
-            // and its id's pick are settled by now: Installed and Copies.Arrived took the arrival first (they listen from
-            // Init, the game only from the main menu).
+            // and the ticks of the copies it joins are settled by now, so the copy named as loading is the rule's
+            // (Copies.Next): Installed and Copies.Arrived took the arrival first (they listen from Init, the game only from
+            // the main menu).
             var copies = arrived.Where(m => Installed.Mods.Contains(m) && Copies.Others(m).Any(t => !keys.Contains(Copies.SwitchKey(t)))).ToList();
             var ours = copies.Where(m => m.manifest?.id == ModEntry.ModId && Copies.Ticked(m)).ToList();
             var on = copies.Where(m => m.manifest?.id != ModEntry.ModId && Copies.Ticked(m) && Copies.Others(m).Any(Copies.Ticked)).ToList();
@@ -715,12 +716,12 @@ static class GroupTickPatch
 }
 
 // On our views, the tickbox of a mod installed more than once switches that copy alone (which of the ticked ones loads
-// is the rule's: Copies.Next). This mod stays on: its box is locked (CategoryList.CopyBoxes), and the controller's
-// hotkey, which toggles a locked box too, is put back. One undo step: the game's check runs as after its own toggle, and
-// ModToggledPatch records it once. The game's own toggle would switch every copy of the id and source (Vanilla View
-// still does). After GroupTickPatch (a tick on several picked rows is that one's: then __runOriginal is false) and still
-// ahead of Better Mod Menu's. Falls back to the game's toggle on error, and in a session that can't save our data for a
-// copy sharing its switch with another (which of those are ticked is ours): the game's toggle switches them together.
+// is the rule's: Copies.Next); a copy of this mod switches its source's copies, which share one box. One undo step: the
+// game's check runs as after its own toggle, and ModToggledPatch records it once. The game's own toggle would switch
+// every copy of the id and source (Vanilla View still does). After GroupTickPatch (a tick on several picked rows is
+// that one's: then __runOriginal is false) and still ahead of Better Mod Menu's. Falls back to the game's toggle on
+// error, and in a session that can't save our data for a copy sharing its switch with another (which of those are
+// ticked is ours, except for this mod's): the game's toggle switches them together.
 [HarmonyPatch(typeof(NModMenuRow), "OnTickboxToggled")]
 static class CopyTickPatch
 {
@@ -729,17 +730,11 @@ static class CopyTickPatch
     {
         try
         {
-            if (!__runOriginal || Store.Data.VanillaView || __instance.Mod is not { manifest.id: not null } mod
+            if (!__runOriginal || Store.Data.VanillaView || __instance.Mod is not { manifest.id: { } id } mod
                 || Copies.Others(mod).Count == 0 || CategoryList.ScreenOf(__instance) is not { } screen || HistoryBar.Screen != screen)
                 return true;
-            if (Store.ReadOnly && !Copies.Locked(mod) && Copies.Twins(mod).Count > 0)
+            if (Store.ReadOnly && Copies.Twins(mod).Count > 0 && id != ModEntry.ModId)
                 return true;
-            // A copy of this mod locked on (its padlock) is put back: Dependencies.Write no longer keeps it on itself.
-            if (CategoryList.LockedOn(mod) && !tickbox.IsTicked)
-            {
-                Profiles.RefreshTickboxes(screen);
-                return false;
-            }
             Dependencies.Write([(mod, tickbox.IsTicked)]);
             Profiles.RefreshTickboxes(screen);
             screen.OnModEnabledOrDisabled();

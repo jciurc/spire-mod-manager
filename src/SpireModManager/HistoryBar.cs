@@ -538,9 +538,9 @@ static class HistoryBar
     // boxes changed (changed: ModChanges for it), e.g. a copy updated to a higher version: the copy that loaded then, and
     // the one now. Then is the copy the game loaded, else the launch's lists' (launch: History.Loaded): those lists read
     // with today's manifests name the copy a Workshop update made the winner since (Copies.Newest), so the switch to it
-    // went unlisted. Not this mod (the game
-    // decides which of its copies loads), nor an id the launch couldn't choose for (SameIdLoad.Unchosen): the game's own
-    // choice loads then and now.
+    // went unlisted. Now is the one rule's (Copies.Next), as every view has it. Not this mod (the game decides which of
+    // its copies loads), nor an id the launch couldn't choose for (SameIdLoad.Unchosen): the game's own choice loads then
+    // and now.
     static List<(Mod From, Mod To)> CopySwitches(History.Snapshot launch, List<(Mod Mod, bool Enabled)> changed)
     {
         var (thenOff, thenTicks) = (Dependencies.SavedOff(launch.Mods), Store.TicksIn(launch.Store));

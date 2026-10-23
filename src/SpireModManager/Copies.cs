@@ -429,9 +429,14 @@ static class Copies
         return LoadingIn(id, off.Where(o => o != (id, mod.modSource)).ToHashSet(), ticks.Ticking(mod, off.Contains((id, mod.modSource))));
     }
 
-    // A copy of this mod where it's installed more than once: its box is locked on our views (CategoryList.CopyBoxes), so
-    // removing the copy that runs still leaves one that loads. Installed once, its box works as any other.
-    public static bool Locked(Mod mod) => mod.manifest?.id == ModEntry.ModId && Others(mod).Count > 0;
+    // Every installed copy of this mod unticked (one copy or more): the next launch runs without it, so the red banner
+    // says so (LoadOrder) and Relaunch asks first (RelaunchCheck).
+    public static bool OursOff() => Dependencies.EachCopy(All).Where(m => m.manifest?.id == ModEntry.ModId).ToList() is { Count: > 0 } ours && !ours.Any(Ticked);
+
+    // The copy of this mod that runs (the one the game loaded), else its first installed: what "Enable now" turns on, so
+    // the next launch runs the copy running now, whatever the game's rule would make of every source.
+    public static Mod? Running() => All.FirstOrDefault(m => m.manifest?.id == ModEntry.ModId && m.state == ModLoadState.Loaded)
+        ?? All.FirstOrDefault(m => m.manifest?.id == ModEntry.ModId);
 
     // Whether this copy is ticked while another copy of its id is too, so one of them won't load: the yellow chip. Never
     // this mod's copies (a backup copy of ours on is as it should be).
