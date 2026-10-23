@@ -5,18 +5,18 @@ using MegaCrit.Sts2.Core.Nodes.Screens.ModdingScreen;
 namespace SpireModManager;
 
 // The line along the bottom of each mod row in our views: its tags, its other keywords (the hidden tags that find it),
-// "and 3 more..." for what doesn't fit, what it needs (red when a dependency is missing, off or loads after it) and its
+// "and 3 more.." for what doesn't fit, what it needs (red when a dependency is missing, off or loads after it) and its
 // author; the row's action buttons sit on the right. The row keeps its height: nothing opens out.
 static class RowStrip
 {
     const string StripName = "SpireModManagerStrip";
     public const string ActionsName = "SpireModManagerActions", OrderActionsName = "SpireModManagerOrderActions"; // main list, Load Order
     public const string MoreName = "SpireModManagerMoreTags"; // "and 3 more..."
-    public const string KeywordsName = "SpireModManagerKeywords"; // "Additional keywords: enabled, installed"
+    public const string KeywordsName = "SpireModManagerKeywords"; // "Additional keywords: enabled, loaded"
     static readonly StringName StripMeta = "spire_mod_manager_strip";
     static readonly StringName SaysMeta = "spire_mod_manager_says"; // on a strip or buttons: what they show and where, to know when to change them
     static readonly StringName ShowsMeta = "spire_mod_manager_shows"; // on a strip: its tags, keywords and author, to know when to remake it
-    static readonly StringName ShownMeta = "spire_mod_manager_tags_shown"; // on a strip: how many tags and keywords show (the rest are "and N more...")
+    static readonly StringName ShownMeta = "spire_mod_manager_tags_shown"; // on a strip: how many tags and keywords show (the rest are "and N more..")
 
     // What Apply and Fold ask each row for, in the types Godot takes, made once: a text passed as one is converted anew
     // each time (a native call), on every row of every redraw.
@@ -24,14 +24,14 @@ static class RowStrip
         EdgePath = EdgeName, NeedsPath = NeedsName, AuthorPath = AuthorName, SpacerPath = SpacerName, MorePath = MoreName,
         KeywordsPath = KeywordsName;
     static readonly StringName Separation = "separation", NormalFont = "normal_font", NormalFontSize = "normal_font_size";
-    static readonly StringName Faint = "SpireModManagerFaint"; // the keywords' and "and 3 more..."'s look (Look)
+    static readonly StringName Faint = "SpireModManagerFaint"; // the keywords' and "and 3 more.."'s look (Look)
     const float Height = 20;
     const float TitleGap = 4; // more room between the title and the line under it
     const float RightMargin = 84; // from the row's right edge: clear of the (smaller, moved) tickbox and the pencil
     const float LoadOrderMargin = 20; // Load Order has no tickbox
     const float ActionsGap = 12;
     const float AuthorMax = 200; // px
-    const int LabelSize = 13; // the author's, the keywords' and "and 3 more..."'s text
+    const int LabelSize = 13; // the author's, the keywords' and "and 3 more.."'s text
     static readonly Color NoteColor = new(0.937f, 0.784f, 0.318f, 0.75f), AuthorColor = new(1, 0.964706f, 0.886275f, 0.45f);
     public const string FaintHex = "#fff6e280"; // the keywords: as the info panel's Other keywords (ModDetails.Fainter)
 
@@ -144,7 +144,7 @@ static class RowStrip
             row.AddChild(strip);
             Lap("added");
 
-            // Too many tags and keywords for the line: the last ones are "and N more..." (Fold). Worked out once the
+            // Too many tags and keywords for the line: the last ones are "and N more.." (Fold). Worked out once the
             // chips are laid out, and again whenever the line changes width.
             if (chips.Count + keywords.Count > 0)
             {
@@ -162,12 +162,15 @@ static class RowStrip
     public static string Shows(IEnumerable<Tags.Chip> chips, string author, IEnumerable<string>? keywords = null) =>
         $"{string.Join("|", chips.Select(c => $"{c.Text}/{c.Color}/{c.Custom}/{c.Tip}/{c.Search}"))}|{author}|{string.Join(",", keywords ?? [])}";
 
-    // A row's keywords: the hidden tags that find its mod (HiddenTags.Of, in their order), but those a tag on the line
-    // already says (Local, New, Duplicate): "Additional keywords" are the ones the tags don't show. Asked inside the
-    // redraw's Lookups, so what they ask about the whole list is worked out once for every row.
-    public static List<string> Keywords(Mod? mod) => mod == null ? [] : [.. HiddenTags.Of(mod).Where(k => !TagShown.Contains(k))];
+    // A row's keywords: the hidden tags that find its mod (HiddenTags.Of, in their order), but those the row already
+    // says: a tag on its line (Local, New, Duplicate), every row's "installed", and on the main list the heading it's
+    // under ("uncategorized"; Load Order has no headings, so there it's kept). "Additional keywords" are the ones the
+    // row doesn't show. Asked inside the redraw's Lookups, so what they ask about the whole list is worked out once
+    // for every row.
+    public static List<string> Keywords(Mod? mod) => mod == null ? [] : [.. HiddenTags.Of(mod).Where(k => !RowSays.Contains(k)
+        && (Store.Data.LoadOrderView || !k.Equals("uncategorized", StringComparison.OrdinalIgnoreCase)))];
 
-    static readonly HashSet<string> TagShown = new(StringComparer.OrdinalIgnoreCase) { "local", "new", "duplicate" };
+    static readonly HashSet<string> RowSays = new(StringComparer.OrdinalIgnoreCase) { "local", "new", "duplicate", "installed" };
 
     // "Additional keywords:" and the keywords after it, plain and faint (no pill, no "#"), comma-separated: a click on
     // one searches #name, Shift-click adds it, as a tag's click does, and its card says so, as the info panel's
@@ -207,7 +210,7 @@ static class RowStrip
         return links;
     }
 
-    // "Additional keywords: enabled, installed": the line's, and the "and 3 more..." card's.
+    // "Additional keywords: enabled, loaded": the line's, and the "and 3 more..." card's.
     public static string KeywordsLine(IEnumerable<string> keywords) => $"{Menus.Text("SPIRE_MOD_MANAGER.ADDITIONAL_KEYWORDS")}: {string.Join(", ", keywords)}";
 
     // The keyword at x on the label, null before the first: each from its start to the next one's (a comma goes with the
@@ -226,7 +229,7 @@ static class RowStrip
 
     static readonly StringName FontName = "font", FontSize = "font_size";
 
-    // "and 3 more...": what didn't fit on the line. Hovering it, a card with those tags (pills in their colours) and
+    // "and 3 more..": what didn't fit on the line. Hovering it, a card with those tags (pills in their colours) and
     // keywords, and the click hint; only those, so the card is what the count counts. A click goes on to the row,
     // which it selects, so the info panel shows them all.
     static Label More(IReadOnlyList<Tags.Chip> tags, IReadOnlyList<string> keywords)
@@ -275,7 +278,7 @@ static class RowStrip
     }
 
     // The line's look, one Theme on every line (made again when the font changes with the game's language): its gap,
-    // the note's text, the author's, and the keywords' and "and 3 more..."'s (fainter, the Faint variation of a label).
+    // the note's text, the author's, and the keywords' and "and 3 more.."'s (fainter, the Faint variation of a label).
     // The tags have their own (Tags.Look), which their text takes first.
     static (Font Font, Theme Theme)? _look;
 
@@ -332,7 +335,7 @@ static class RowStrip
         var part = text.Length > 0 ? Note(text) : Spacer();
         strip.AddChild(part);
         if (author != null)
-            strip.MoveChild(part, author.GetIndex()); // before the author, after the tags, keywords and "and N more..."
+            strip.MoveChild(part, author.GetIndex()); // before the author, after the tags, keywords and "and N more.."
         return true;
     }
 
@@ -357,7 +360,7 @@ static class RowStrip
     }
 
     // Shows as many tags and keywords as fit beside the author and the needs (up to half the line), tags first, whole
-    // ones only; the rest are "and N more..." at their end.
+    // ones only; the rest are "and N more.." at their end.
     static void Fold(NModMenuRow row, HBoxContainer strip, IReadOnlyList<Tags.Chip> chips, IReadOnlyList<string> keywords)
     {
         if (!GodotObject.IsInstanceValid(row) || !GodotObject.IsInstanceValid(strip) || !strip.IsInsideTree())

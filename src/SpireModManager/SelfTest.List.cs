@@ -1163,7 +1163,7 @@ static partial class SelfTest
         ClickChip("SmmTestLib", "Library", false);
         await Wait(menu, 0.3);
         Check("clicking the tag that is the whole search clears it", box.Text == "" && Visible().SequenceEqual(all), $"{box.Text}: {Visible().Count} shown");
-        // A row's keywords after its tags, all of them where they fit (no "and N more..."): faint, no "#", after "Additional
+        // A row's keywords after its tags, all of them where they fit (no "and N more.."): faint, no "#", after "Additional
         // keywords:"; a click on one searches #name, a Shift-click adds another, one on the words before them is the row's
         // (16c-row-keywords).
         var fits = content.GetChildren().OfType<NModMenuRow>().FirstOrDefault(r => r.Visible && !r.HasNode($"SpireModManagerStrip/{RowStrip.MoreName}")
@@ -1227,6 +1227,22 @@ static partial class SelfTest
             + "one on \"Additional keywords:\" none", fits != null && links?.Text == RowStrip.KeywordsLine(RowStrip.Keywords(fits.Mod)) && !links.Text.Contains('#')
             && links.Text.StartsWith($"{AdditionalKeywords}: ") && links.GetThemeColor("font_color") == Color.FromHtml(RowStrip.FaintHex) && clickedTitle == ""
             && clickedWord == $"#{linked[1]}" && box.Text == $"#{linked[1]} #{linked[0]}", $"{fits?.Mod?.manifest?.id}: {links?.Text}; \"{clickedTitle}\", \"{clickedWord}\", then \"{box.Text}\"");
+        // What the row already says isn't repeated: every row's "installed", and on the main list the heading's
+        // "uncategorized". Load Order has no headings, so there it stays.
+        await Shown("");
+        var plainRow = content.GetChildren().OfType<NModMenuRow>().FirstOrDefault(r => r.Visible && r.Mod is { } m && HiddenTags.Of(m).Contains("uncategorized"));
+        var plainShown = plainRow?.GetNodeOrNull<Label>($"SpireModManagerStrip/{RowStrip.KeywordsName}")?.Text is { } plainText && plainText.StartsWith(before)
+            ? plainText[before.Length..].Split(", ") : [];
+        var mainWords = plainRow?.Mod is { } mainMod ? RowStrip.Keywords(mainMod) : [];
+        var wasOrder = Store.Data.LoadOrderView;
+        Store.Data.LoadOrderView = true;
+        var orderWords = plainRow?.Mod is { } orderMod ? RowStrip.Keywords(orderMod) : [];
+        Store.Data.LoadOrderView = wasOrder;
+        Check("a row's keywords leave out what the row already says: \"installed\" (every row's) and, under its heading, \"uncategorized\"; Load Order, "
+            + "with no headings, keeps that one", plainRow?.Mod is { } said && HiddenTags.Of(said).Contains("installed") && mainWords.Count > 0
+            && !mainWords.Contains("installed") && !mainWords.Contains("uncategorized") && !plainShown.Contains("installed") && !plainShown.Contains("uncategorized")
+            && orderWords.Contains("uncategorized") && !orderWords.Contains("installed"),
+            $"{plainRow?.Mod?.manifest?.id}: main [{string.Join(", ", mainWords)}], shown [{string.Join(", ", plainShown)}], Load Order [{string.Join(", ", orderWords)}]");
         // Authors: from the info panel's author (the row's is plain text); Shift on a tag adds it after a space.
         await Shown("");
         var rowAuthor = content.GetChildren().OfType<NModMenuRow>().FirstOrDefault(r => r.Mod?.manifest?.id == "SmmTestFixes")?.GetNodeOrNull<Label>("SpireModManagerStrip/Author");
@@ -1787,7 +1803,7 @@ static partial class SelfTest
             var back = rows.Select(LineOf).ToList();
             Check("300 made-up rows, on again: each line shows what it first did (the notes made again in place)", back.SequenceEqual(first), Differ(back, first));
             Check("300 made-up rows: no line holds an empty note", rows.All(r => r.GetNodeOrNull<RichTextLabel>("SpireModManagerStrip/Needs") is not { Text.Length: 0 }));
-            // Narrower lines: keywords that don't fit after every tag are "and N more...", whose card has those keywords
+            // Narrower lines: keywords that don't fit after every tag are "and N more..", whose card has those keywords
             // and no tags; the rows keep their height.
             box.Size = new Vector2(900, 0);
             await Wait(menu, 0.3);
@@ -1799,7 +1815,7 @@ static partial class SelfTest
             using (Lookups.Begin(mods, [], saved, Ticks.All))
                 narrowWords = narrow == null ? [] : RowStrip.Keywords(narrow.Mod);
             var narrowShown = narrow?.GetNodeOrNull<Label>($"SpireModManagerStrip/{RowStrip.KeywordsName}") is { Visible: true } shownWords ? shownWords.Text[RowStrip.KeywordsLine([]).Length..].Split(", ").Length : 0;
-            Check("300 made-up rows, narrower: keywords that don't fit after the tags are \"and N more...\", its card those keywords and no tags",
+            Check("300 made-up rows, narrower: keywords that don't fit after the tags are \"and N more..\", its card those keywords and no tags",
                 narrow != null && narrowCard.Split('\n') is [var foldedWords, "", var hint] && foldedWords == RowStrip.KeywordsLine(narrowWords.Skip(narrowShown))
                 && hint == Menus.Text("SPIRE_MOD_MANAGER.MORE_TAGS_CLICK") && rows.All(r => r.Size.Y == RowTitles.RowHeight), $"{narrow?.Mod?.manifest?.id}: {narrowCard.ReplaceLineEndings(" / ")}");
             box.Size = new Vector2(1600, 0);

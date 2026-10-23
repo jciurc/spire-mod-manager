@@ -5,7 +5,7 @@ using MegaCrit.Sts2.addons.mega_text;
 
 namespace SpireModManager;
 
-// Row titles in our views: the alias with the original name small and dim beside it, cut with "…" to fit, a notepad
+// Row titles in our views: the alias with the original name small and dim beside it, cut with ".." to fit, a notepad
 // before it when the mod has notes, gold for mods turned on or off since launch, and white for a ticked copy the game
 // greyed. Vanilla View: the game's.
 static class RowTitles
@@ -242,7 +242,7 @@ static class RowTitles
             title.SetMeta(FittedMeta, text);
     }
 
-    // The text as it fits in width at this size: whole, or cut short with "…" (empty when not even that fits).
+    // The text as it fits in width at this size: whole, or cut short with ".." (empty when not even that fits).
     // Row titles, and the info panel's title and source line.
     public static string Cut(Font font, string full, int size, float width)
     {
@@ -250,9 +250,9 @@ static class RowTitles
         if (Width(full) <= width)
             return full;
         var length = full.Length;
-        while (length > 0 && Width(full[..length].TrimEnd() + "…") > width)
+        while (length > 0 && Width(Menus.CutShort(full[..length])) > width)
             length--;
-        return length > 0 ? full[..length].TrimEnd() + "…" : "";
+        return length > 0 ? Menus.CutShort(full[..length]) : "";
     }
 
     // Text widths per font and size, measured once (shaping is slow, and the font's own cache is too small for a long

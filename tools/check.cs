@@ -167,6 +167,19 @@ foreach (var path in playerText)
 Check("players read \"modding page\" in lowercase (our strings, README, TRANSLATING, the Workshop description, the issue forms)",
     capitalised.Count == 0, List(capitalised));
 
+// Player text: no ellipses (Jordan, 23 Oct). Where our text is cut or runs on, it ends with two periods ("and 5 more..",
+// the code's Menus.CutMark), never "…" or "...".
+var ellipsis = new Regex(@"…|\.\.\.");
+var ellipses = new List<string>();
+foreach (var path in Files("localization", "*.json"))
+{
+    var lines = File.ReadAllText(path).Split('\n');
+    for (var i = 0; i < lines.Length; i++)
+        if (ellipsis.IsMatch(lines[i]))
+            ellipses.Add($"{Name(path)}:{i + 1}");
+}
+Check("our strings have no \"…\" or \"...\": cut or running-on text ends with two periods (\"and 5 more..\")", ellipses.Count == 0, List(ellipses));
+
 // Both game branches: the members only the public-beta has (Mod.workshopId, NModInfoContainer.Clear) go through
 // Compat, by name. Builds compile against the installed branch, so a direct use builds on the beta and then fails on
 // stable, where the method using it throws as it's first called. Comment lines don't count. Also the beta's == operator
