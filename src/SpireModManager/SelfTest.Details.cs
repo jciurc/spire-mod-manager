@@ -886,8 +886,8 @@ static partial class SelfTest
     // swapped places), one line, the most areas that fit whole, then how many more, and no counts (Jordan, 23 Oct: "We
     // don't need brackets count anymore"); search still finds the areas cut from it. Its card: Jordan's words with both
     // counts in one sentence, the areas, the click hint. A click: the dialog (the mod's name, the note, the areas in
-    // columns, then the list: the files and the code by area with their counts, how each place is patched), scrolled
-    // when long; Close and Esc close it. A made-up mod with more areas than three columns hold: they scroll sideways. The
+    // columns, then the list: the files by area, what the patch words mean, the code by area, with their counts and how
+    // each place is patched, in colour), scrolled when long; Close and Esc close it. A made-up mod with more areas than three columns hold: they scroll sideways. The
     // same mod with files only, our own mod with code only, and each kind of card with one place or file, and not loaded.
     // A fixture mod with nothing found: "No information found", subtle, a card saying what that means, and its dialog
     // says so. Screenshots 17d (the row), 17e (its card), 17e2 (files only), 17e3 (code only), 17f (the dialog), 17f3 and
@@ -1013,12 +1013,21 @@ static partial class SelfTest
             var codeLines = Expected(changes.Places.GroupBy(p => p.Area), ModifiedContent.PlacesCount, p => $"{p.Class}.{p.Method}  ({ModifiedContent.KindWords(p.Kinds)})");
             var readyLine = $"        NModdingScreen._Ready  ({Menus.Text("SPIRE_MOD_MANAGER.PATCH_BEFORE")}, {Menus.Text("SPIRE_MOD_MANAGER.PATCH_AFTER")}, {Menus.Text("SPIRE_MOD_MANAGER.PATCH_WRAPPED")})";
             Check("modified content's dialog: the mod's name, the note, then the list: the files by area with counts and paths, the code by area with counts, "
-                + "Class.Method and how, what those words mean (see 17f)",
+                + "Class.Method and how (see 17f)",
                 title == Draft(Template("SPIRE_MOD_MANAGER.MODIFIED_TITLE"), ("name", name)) && note == Menus.Text("SPIRE_MOD_MANAGER.MODIFIED_NOTE")
                 && filesAt == 0 && lines.Skip(filesAt + 1).Take(fileLines.Count).SequenceEqual(fileLines)
                 && codeAt > filesAt && lines.Skip(codeAt + 1).Take(codeLines.Count).SequenceEqual(codeLines) && lines.Contains(readyLine)
-                && lines[^1] == Menus.Text("SPIRE_MOD_MANAGER.PATCH_KINDS"),
+                && lines[^1] == codeLines[^1],
                 $"\"{title}\" / \"{note}\" / {listText.ReplaceLineEndings(" / ")[..Math.Min(1200, listText.Length)]}");
+            // What those words mean (Jordan, 23 Oct): right over the code's heading, a small gap between, after the areas
+            // and the files (a blank line after their last path); with code only (our own mod), first in the list.
+            var legendAt = lines.IndexOf(Menus.Text("SPIRE_MOD_MANAGER.PATCH_KINDS"));
+            var codeOnlyList = ModifiedContent.Details(ours, GameChanges.For(ours)).Split('\n');
+            Check("modified content's dialog: what the patch words mean right over \"Game code changed\", after the files; first in a list with code only (see 17f2)",
+                legendAt == fileLines.Count + 2 && lines[legendAt - 1] == "" && lines[legendAt + 1] == " " && codeAt == legendAt + 2
+                && codeOnlyList.Length > 3 && codeOnlyList[0] == ModifiedContent.Legend() && codeOnlyList[1] == ModDetails.CardGap
+                && codeOnlyList[2].StartsWith($"[color=#efc851]{Menus.Text("SPIRE_MOD_MANAGER.GAME_CODE")}[/color]"),
+                $"legend at line {legendAt}, code at {codeAt}, {fileLines.Count} file lines; code only: {string.Join(" / ", codeOnlyList.Take(3))}");
             // The ways a place is patched, each word in its colour (Jordan, 23 Oct: before blue, after green, rewritten
             // orange, wrapped soft red; ours: the changes summary's blue, green and soft red, a Pending status's orange),
             // in the list and in the legend's terms, the words as they were: our page's _Ready here (before, after and
@@ -1057,9 +1066,9 @@ static partial class SelfTest
                 && Dialog()?.FindChild("Column", true, false) is Control column && column.GetViewportRect().Encloses(column.GetGlobalRect()),
                 $"list {list?.GetContentHeight()}, scroll {scroll?.Size}, bar {scroll?.GetVScrollBar().Visible}");
             await Capture(Dialog() ?? screen, outDir, "17f-modified-content-dialog");
-            if (scroll != null && list != null && codeAt > 0)
+            if (scroll != null && list != null && legendAt > 0)
             {
-                scroll.ScrollVertical = (int)list.GetParagraphOffset(codeAt); // down to the code: Class.Method and how
+                scroll.ScrollVertical = (int)list.GetParagraphOffset(legendAt); // down to the legend, then the code: Class.Method and how, in colour
                 await Wait(menu, 0.1);
                 await Capture(Dialog() ?? screen, outDir, "17f2-modified-content-dialog-code");
             }

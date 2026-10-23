@@ -223,8 +223,8 @@ static class ModifiedContent
         return [.. areas.Chunk(rows).Select(column => column.ToList())];
     }
 
-    // The dialog's list, under its areas: the game's files replaced, by area, each path; the game's code changed, by
-    // area, each method with how it's patched, and what those words mean. Each heading with its count. A mod not
+    // The dialog's list, under its areas: the game's files replaced, by area, each path; what the patch words mean, then
+    // the game's code changed, by area, each method with how it's patched. Each heading with its count. A mod not
     // loaded: that its contents show only while it is. Empty with none of those.
     public static string Details(Mod mod, GameChanges.Changes changes)
     {
@@ -242,13 +242,15 @@ static class ModifiedContent
         }
         if (changes.Code > 0)
         {
-            lines.AddRange([.. Gap(), Heading("SPIRE_MOD_MANAGER.GAME_CODE", PlacesCount(changes.Code))]);
+            // What the words mean, right over the code they're about (Jordan, 23 Oct: "move the before/after legend to
+            // above the Game code changed section, but after areas section"), after the files when there are some, a
+            // small gap under it.
+            lines.AddRange([.. Gap(), Legend(), ModDetails.CardGap, Heading("SPIRE_MOD_MANAGER.GAME_CODE", PlacesCount(changes.Code))]);
             foreach (var area in changes.Places.GroupBy(p => p.Area))
             {
                 lines.Add(Group(area.Key, PlacesCount(area.Count())));
                 lines.AddRange(area.Select(p => $"{Item}{Escape($"{p.Class}.{p.Method}")}  [color={Quiet}]({KindsColoured(p.Kinds)})[/color]"));
             }
-            lines.AddRange(["", Legend()]);
         }
         if (mod.state != ModLoadState.Loaded)
             lines.AddRange([.. Gap(), $"[color={Quiet}]{Escape(Menus.Text("SPIRE_MOD_MANAGER.MODIFIED_NOT_LOADED"))}[/color]"]);
