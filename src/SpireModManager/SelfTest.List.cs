@@ -492,7 +492,8 @@ static partial class SelfTest
         await Wait(menu, 0.3);
         Check("panel saves notes, trimmed", Store.InfoFor("SmmTestFixes")?.Notes == "Typed in the panel" && notes.Text == "Typed in the panel", notes.Text);
         var keywordsAfter = panel.GetNode<RichTextLabel>("ModDescription").Text;
-        Check("Other keywords follow a save in the panel: #note once it has a note", !keywordsBefore.Contains("#note") && keywordsAfter.Contains("#note"),
+        Check("Other keywords follow a save in the panel: note once it has a note", !keywordsBefore.Contains("[url=htag:note]note[/url]")
+            && keywordsAfter.Contains("[url=htag:note]note[/url]"),
             $"before \"{keywordsBefore[Math.Max(0, keywordsBefore.Length - 160)..]}\", after \"{keywordsAfter[Math.Max(0, keywordsAfter.Length - 160)..]}\"");
         Check("panel saves tags, repeats dropped; at rest they're pills", Store.InfoFor("SmmTestFixes")?.Tags?.SequenceEqual(["co-op", "Favorites"]) == true
             && yours.GetNode<Control>("Tags/CustomTags") is { Visible: true } && yours.GetNode("Tags/CustomTags/Pills").GetChildCount() == 2,
