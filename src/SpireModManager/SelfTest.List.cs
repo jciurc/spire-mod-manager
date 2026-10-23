@@ -1390,10 +1390,10 @@ static partial class SelfTest
             Check("Found in: each term's own fields, in the panel's order (a hidden tag as other keywords); a -term or NOT names none; nothing when "
                 + "the search leaves the mod out", seen == string.Join(" | ", meant), seen);
             // What it changes in the game: our own mod's code (the debug info label manager), which nothing else of it says.
-            // With a hidden tag too (ours is local): modified content first, as the panel now shows it over Other keywords.
+            // With a hidden tag too (ours is loaded): modified content first, as the panel now shows it over Other keywords.
             if (Dependencies.Find(ModEntry.ModId) is { } ours && GameChanges.Words(ours).Contains("debug", StringComparison.OrdinalIgnoreCase))
                 Check("Found in: what a mod changes in the game is its modified content; with a hidden tag, before other keywords, in the panel's order",
-                    Said(ours, "debug") == "[Modified]" && Said(ours, "debug #local") == "[Modified, Keywords]", $"{Said(ours, "debug")} | {Said(ours, "debug #local")}");
+                    Said(ours, "debug") == "[Modified]" && Said(ours, "debug #loaded") == "[Modified, Keywords]", $"{Said(ours, "debug")} | {Said(ours, "debug #loaded")}");
             else
                 Results.Add("SKIP Found in modified content: our own mod's changes don't name the debug info label manager here");
         }

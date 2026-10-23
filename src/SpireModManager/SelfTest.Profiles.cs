@@ -391,8 +391,9 @@ static partial class SelfTest
 
     // The main menu button's card with a relaunch pending, as it shows on the main menu (Jordan, 23 Oct: "show default
     // mod information on the top, and changes information on the bottom"): its own words first, then the changes. Test
-    // Fixes, which nothing needs, turned off on the page; the page closed for the card and opened again (the game reuses
-    // it), then Test Fixes back on. Screenshot 1h.
+    // Fixes, which nothing needs, flipped on the page; the page closed for the card and opened again (the game reuses
+    // it), then Test Fixes back as it was, and the page's opening state and undo histories put back (opening it again
+    // entered it anew), so the tests after this undo and Revert all as they would have. Screenshot 1i.
     static async Task TestMenuButtonPendingCard(NMainMenu menu, NModdingScreen screen, Control content, string outDir)
     {
         NTickbox? Fixes() => content.GetChildren().OfType<NModMenuRow>().FirstOrDefault(r => r.Mod?.manifest?.id == "SmmTestFixes")?.GetNodeOrNull<NTickbox>("Tickbox");
@@ -406,6 +407,7 @@ static partial class SelfTest
             box.IsTicked = !box.IsTicked;
             box.EmitSignal(NTickbox.SignalName.Toggled, box);
         }
+        var (history, listWas) = (History.TestKeep(), History.CurrentMods());
         Flip(fixes);
         // Its line in the changes: "Enabled: 1" or "Disabled: 1", whichever the flip made.
         var flipped = Draft(Template(fixes.IsTicked ? "SPIRE_MOD_MANAGER.SUMMARY_ON" : "SPIRE_MOD_MANAGER.SUMMARY_OFF"), ("count", ""));
@@ -416,9 +418,9 @@ static partial class SelfTest
             await Wait(menu, 0.5);
             var pending = ModEntry.HasPendingChanges() && button.IsVisibleInTree();
             var own = MenuCard(Profiles.Active?.Name ?? "", shown: true);
-            var (card, _) = await SizedHoverCard(menu, button, Hover.TipName, () => Capture(menu, outDir, "1h-menu-button-pending-card"), Hover.SlowDelay + 0.2);
+            var (card, _) = await SizedHoverCard(menu, button, Hover.TipName, () => Capture(menu, outDir, "1i-menu-button-pending-card"), Hover.SlowDelay + 0.2);
             var changesAt = card.IndexOf(Menus.Text("SPIRE_MOD_MANAGER.CHANGES_TITLE"), StringComparison.Ordinal);
-            Check("main menu button with a relaunch pending, its card as it shows: its own words on top as without one, the changes at the bottom (see 1h)",
+            Check("main menu button with a relaunch pending, its card as it shows: its own words on top as without one, the changes at the bottom (see 1i)",
                 pending && card.StartsWith(own) && changesAt > own.Length && card.IndexOf(flipped, StringComparison.Ordinal) > changesAt, card.ReplaceLineEndings(" / "));
         }
         finally
@@ -433,6 +435,12 @@ static partial class SelfTest
                 Flip(back);
                 await Wait(menu, 0.3);
             }
+            History.TestPutBack(history);
+            Check("the main menu button's card shown with a change pending: the list as it was, the page's opening state and undo histories put back",
+                History.CurrentMods().SequenceEqual(listWas) && History.Entered == history.Entered
+                && History.Steps(History.Track.List) == history.Past[History.Track.List].Count && History.Steps(History.Track.Order) == history.Past[History.Track.Order].Count,
+                $"list as it was {History.CurrentMods().SequenceEqual(listWas)}, opening state {History.Entered == history.Entered}, "
+                + $"steps {History.Steps(History.Track.List)}/{History.Steps(History.Track.Order)}, were {history.Past[History.Track.List].Count}/{history.Past[History.Track.Order].Count}");
         }
     }
 
