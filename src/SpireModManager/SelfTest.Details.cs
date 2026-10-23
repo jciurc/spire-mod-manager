@@ -1129,11 +1129,14 @@ static partial class SelfTest
             // Tall areas: a made-up mod's 15, the first five characters' with a long list of what (three lines or more
             // each, all in the first column), and a list longer than the most it takes (560). The list is shorter than
             // that by what the areas take, so the dialog, which would be taller than the screen, stays on it with its
-            // title and Close. Screenshot 17f5.
+            // title and Close. On a player's 1080 tall screen (Modal.TestScreen; a headless run's is taller). Screenshot
+            // 17f5.
             string[] tall = [.. new[] { "The Ironclad", "The Silent", "The Regent", "The Necrobinder", "The Defect" }
                     .Select(who => $"{who} (hands, character select, top panel, energy orb, map marker, run history)"),
                 "merchant room", "rest site", "map screen", "card library", "relic collection", "potion lab", "combat", "card reward", "event room", "treasure room"];
             var tallChanges = new GameChanges.Changes([], [.. tall.SelectMany((area, i) => Enumerable.Range(0, 4).Select(n => new GameChanges.Place($"NThing{i}", $"Method{n}", area, GameChanges.Kinds.After)))]);
+            var tallScreen = new Rect2(0, 0, 1920, 1080);
+            Modal.TestScreen = tallScreen.Size;
             ModifiedContent.Show(info, new Mod { path = "", state = ModLoadState.Loaded, manifest = new ModManifest { id = "SmmTallAreas", name = "Tall Areas Test" } }, tallChanges);
             await WaitUntil(menu, () => Dialog()?.FindChild("Scroll", true, false) is Control { CustomMinimumSize.Y: > 0 });
             await Wait(menu, 0.3);
@@ -1142,11 +1145,11 @@ static partial class SelfTest
             var (tallList, tallScroll) = (Dialog()?.FindChild("List", true, false) as RichTextLabel, Dialog()?.FindChild("Scroll", true, false) as ScrollContainer);
             var (tallColumn, tallTitle, tallClose) = (Dialog()?.FindChild("Column", true, false) as Control, Dialog()?.FindChild("Title", true, false) as Control,
                 Dialog()?.FindChild("CloseModifiedButton", true, false) as Control);
-            var tallScreen = tallColumn?.GetViewportRect() ?? default;
             // As tall as it would be with the list at its most.
             var uncapped = tallColumn?.GetParent() is Control tallPanel && tallScroll != null ? tallPanel.Size.Y - tallScroll.Size.Y + 560 : 0;
             await Capture(Dialog() ?? screen, outDir, "17f5-modified-content-tall-areas");
             ModifiedContent.Close();
+            Modal.TestScreen = null;
             Check("modified content's dialog, tall areas: the list shorter by what they take, so the dialog stays on screen, its title and Close in view, "
                 + "the list scrolling (see 17f5)",
                 tallLines is [>= 3, >= 3, >= 3, >= 3, >= 3] && tallShown.Columns.Select(c => c.Count).SequenceEqual([5, 5, 5])
@@ -1242,6 +1245,7 @@ static partial class SelfTest
         {
             GameChanges.TestAssemblies = null;
             Hover.TestMouse = null;
+            Modal.TestScreen = null;
             ModifiedContent.Close();
             GameForgets(mod);
             SaveManager.Instance.SettingsSave.ModSettings?.ModList.RemoveAll(e => e.Id == id);

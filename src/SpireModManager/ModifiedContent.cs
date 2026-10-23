@@ -155,16 +155,16 @@ static class ModifiedContent
         // Nothing found in a loaded mod: the areas say so, and there's no list under them.
         var scroll = new ScrollContainer { Name = "Scroll", HorizontalScrollMode = ScrollContainer.ScrollMode.Disabled, Visible = details.Length > 0 };
         scroll.AddChild(inside);
-        // As tall as the list once it's laid out, up to ListMost and the room the rest of the dialog leaves on screen;
-        // then it scrolls. The areas over it wrap (a character's over a few lines), so without that a mod with several
-        // characters' would push the dialog past the screen, its title and Close cut off. Again whenever the list or the
-        // rest changes height.
+        // As tall as the list once it's laid out, up to ListMost and the room the rest of the dialog leaves on the screen
+        // it's centred in (Modal's); then it scrolls. The areas over it wrap (a character's over a few lines), so without
+        // that a mod with several characters' would push the dialog past the screen, its title and Close cut off. Again
+        // whenever the list or the rest changes height.
         void Fit()
         {
-            if (!GodotObject.IsInstanceValid(scroll) || column.GetParent() is not Control panel)
+            if (!GodotObject.IsInstanceValid(scroll) || column.GetParent() is not Control panel || panel.GetParent() is not Control screen)
                 return;
             var rest = panel.GetCombinedMinimumSize().Y - scroll.GetCombinedMinimumSize().Y;
-            var room = Math.Max(ListLeast, Math.Min(ListMost, panel.GetViewportRect().Size.Y - 2 * ScreenEdge - rest));
+            var room = Math.Max(ListLeast, Math.Min(ListMost, screen.Size.Y - 2 * ScreenEdge - rest));
             scroll.CustomMinimumSize = new Vector2(0, Math.Min(room, list.GetCombinedMinimumSize().Y));
         }
         list.MinimumSizeChanged += Fit;

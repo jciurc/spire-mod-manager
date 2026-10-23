@@ -15,6 +15,12 @@ static class Modal
     // Each open dialog's owner and its leave handler.
     static readonly Dictionary<string, (Node Owner, Callable Gone)> _owners = [];
 
+#if DEVTOOLS
+    // Self-test: the screen a dialog is centred in, in place of the viewport's (a headless run's is square, 1920 tall,
+    // so a dialog's fit to a player's 1080 can't be seen there); null: the viewport's.
+    public static Vector2? TestScreen { get; set; }
+#endif
+
     // Opens a dialog and returns the column to fill, or null if there's nowhere to show it.
     public static VBoxContainer? Open(Node owner, string name, float width, int separation)
     {
@@ -31,6 +37,9 @@ static class Modal
 
         // Dim everything behind, and take its clicks.
         var size = owner.GetViewport().GetVisibleRect().Size; // anchors don't size controls right under a CanvasLayer here
+#if DEVTOOLS
+        size = TestScreen ?? size;
+#endif
         layer.AddChild(new ColorRect { Color = new Color(0, 0, 0, 0.6f), MouseFilter = Control.MouseFilterEnum.Stop, Size = size });
         var center = new CenterContainer { MouseFilter = Control.MouseFilterEnum.Ignore, Size = size };
         layer.AddChild(center);
