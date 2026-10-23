@@ -1019,6 +1019,24 @@ static partial class SelfTest
                 && codeAt > filesAt && lines.Skip(codeAt + 1).Take(codeLines.Count).SequenceEqual(codeLines) && lines.Contains(readyLine)
                 && lines[^1] == Menus.Text("SPIRE_MOD_MANAGER.PATCH_KINDS"),
                 $"\"{title}\" / \"{note}\" / {listText.ReplaceLineEndings(" / ")[..Math.Min(1200, listText.Length)]}");
+            // The ways a place is patched, each word in its colour (Jordan, 23 Oct: before blue, after green, rewritten
+            // orange, wrapped soft red; ours: the changes summary's blue, green and soft red, a Pending status's orange),
+            // in the list and in the legend's terms, the words as they were: our page's _Ready here (before, after and
+            // wrapped), and a made-up place patched all four ways.
+            string Coloured(string word, string hex) => $"[color={hex}]{word}[/color]";
+            var (before, after, rewritten, wrapped) = (Coloured(Menus.Text("SPIRE_MOD_MANAGER.PATCH_BEFORE"), "#8ec5ff"), Coloured(Menus.Text("SPIRE_MOD_MANAGER.PATCH_AFTER"), "#a6e3a1"),
+                Coloured(Menus.Text("SPIRE_MOD_MANAGER.PATCH_REWRITTEN"), "#f5b56b"), Coloured(Menus.Text("SPIRE_MOD_MANAGER.PATCH_WRAPPED"), "#f2a3a3"));
+            var listCode = list?.Text ?? "";
+            var everyWay = ModifiedContent.Details(mod, new([], [new GameChanges.Place("NThing", "_Ready", "combat",
+                GameChanges.Kinds.Before | GameChanges.Kinds.After | GameChanges.Kinds.Rewritten | GameChanges.Kinds.Wrapped)]));
+            var legend = "[color=#fff6e299]" + Menus.Text("SPIRE_MOD_MANAGER.PATCH_KINDS").Replace("Before:", Coloured("Before", "#8ec5ff") + ":")
+                .Replace("After:", Coloured("After", "#a6e3a1") + ":").Replace("Rewritten:", Coloured("Rewritten", "#f5b56b") + ":")
+                .Replace("Wrapped:", Coloured("Wrapped", "#f2a3a3") + ":") + "[/color]";
+            Check("modified content's dialog: before in blue, after in green, rewritten in orange, wrapped in soft red, in the list and the legend's terms (see 17f2)",
+                listCode.Split('\n').Contains($"        NModdingScreen._Ready  [color=#fff6e299]({before}, {after}, {wrapped})[/color]")
+                && everyWay.Contains($"NThing._Ready  [color=#fff6e299]({before}, {after}, {rewritten}, {wrapped})[/color]")
+                && legend.Split("[color=#").Length == 6 && ModifiedContent.Legend() == legend && listCode.Split('\n').Contains(legend),
+                $"{listCode.Split('\n').FirstOrDefault(l => l.Contains("NModdingScreen._Ready"))} | {everyWay.Split('\n').FirstOrDefault(l => l.Contains("NThing"))} | {ModifiedContent.Legend()}");
             // The areas, between the note and the list (Jordan, 23 Oct): one to a line in columns filled top to bottom,
             // three side by side across the dialog; 11 here, so no sideways scroll.
             var shownAreas = AreasShown(Dialog());

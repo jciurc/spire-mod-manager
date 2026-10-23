@@ -1,5 +1,6 @@
 using Godot;
 using MegaCrit.Sts2.Core.Modding;
+using System.Text.RegularExpressions;
 
 namespace SpireModManager;
 
@@ -245,9 +246,9 @@ static class ModifiedContent
             foreach (var area in changes.Places.GroupBy(p => p.Area))
             {
                 lines.Add(Group(area.Key, PlacesCount(area.Count())));
-                lines.AddRange(area.Select(p => $"{Item}{Escape($"{p.Class}.{p.Method}")}  [color={Quiet}]({Escape(KindWords(p.Kinds))})[/color]"));
+                lines.AddRange(area.Select(p => $"{Item}{Escape($"{p.Class}.{p.Method}")}  [color={Quiet}]({KindsColoured(p.Kinds)})[/color]"));
             }
-            lines.AddRange(["", $"[color={Quiet}]{Escape(Menus.Text("SPIRE_MOD_MANAGER.PATCH_KINDS"))}[/color]"]);
+            lines.AddRange(["", Legend()]);
         }
         if (mod.state != ModLoadState.Loaded)
             lines.AddRange([.. Gap(), $"[color={Quiet}]{Escape(Menus.Text("SPIRE_MOD_MANAGER.MODIFIED_NOT_LOADED"))}[/color]"]);
@@ -262,12 +263,38 @@ static class ModifiedContent
 
     static string Group(string area, string count) => $"{GroupIndent}[b]{Escape(area)}[/b]  {Bullet}  [color={Quiet}]{Escape(count)}[/color]";
 
+    // The ways a place is patched, in their order, each with its word and its colour (Jordan, 23 Oct: "before = blue,
+    // after = green, rewritten = orange, wrapped = soft red", in colours we already use): the changes summary's blue (a
+    // move), green (turned on) and soft red (turned off) from HistoryBar, and the orange of a Pending relaunch status
+    // (ModDetails). Not a link's blue nor a problem's red: nothing here is clicked, or wrong.
+    public const string BeforeHex = "#8ec5ff", AfterHex = "#a6e3a1", RewrittenHex = "#f5b56b", WrappedHex = "#f2a3a3";
+
+    static readonly (GameChanges.Kinds Kind, string Key, string Hex)[] KindLooks =
+    [
+        (GameChanges.Kinds.Before, "SPIRE_MOD_MANAGER.PATCH_BEFORE", BeforeHex), (GameChanges.Kinds.After, "SPIRE_MOD_MANAGER.PATCH_AFTER", AfterHex),
+        (GameChanges.Kinds.Rewritten, "SPIRE_MOD_MANAGER.PATCH_REWRITTEN", RewrittenHex), (GameChanges.Kinds.Wrapped, "SPIRE_MOD_MANAGER.PATCH_WRAPPED", WrappedHex),
+    ];
+
     // How a place is patched, in plain words: "before, after".
-    public static string KindWords(GameChanges.Kinds kinds) => string.Join(", ", new[]
+    public static string KindWords(GameChanges.Kinds kinds) => string.Join(", ", KindLooks.Where(k => kinds.HasFlag(k.Kind)).Select(k => Menus.Text(k.Key)));
+
+    // The same as the dialog's list shows it (BBCode), each word in its colour: "[color=#8ec5ff]before[/color], ...".
+    public static string KindsColoured(GameChanges.Kinds kinds) =>
+        string.Join(", ", KindLooks.Where(k => kinds.HasFlag(k.Kind)).Select(k => $"[color={k.Hex}]{Escape(Menus.Text(k.Key))}[/color]"));
+
+    // What the words mean (PATCH_KINDS, dim), each kind's name in its colour where the text names it as a term, the word
+    // with a colon after it ("Before: runs before ..."), in any case. A translation that names them otherwise keeps the
+    // dim text alone.
+    public static string Legend()
     {
-        (GameChanges.Kinds.Before, "SPIRE_MOD_MANAGER.PATCH_BEFORE"), (GameChanges.Kinds.After, "SPIRE_MOD_MANAGER.PATCH_AFTER"),
-        (GameChanges.Kinds.Rewritten, "SPIRE_MOD_MANAGER.PATCH_REWRITTEN"), (GameChanges.Kinds.Wrapped, "SPIRE_MOD_MANAGER.PATCH_WRAPPED"),
-    }.Where(k => kinds.HasFlag(k.Item1)).Select(k => Menus.Text(k.Item2)));
+        var words = KindLooks.Select(k => (Word: Escape(Menus.Text(k.Key)), k.Hex)).Where(k => k.Word.Length > 0).ToList();
+        var legend = Escape(Menus.Text("SPIRE_MOD_MANAGER.PATCH_KINDS"));
+        if (words.Count > 0)
+            legend = Regex.Replace(legend, $@"(?<![\p{{L}}\p{{N}}])({string.Join("|", words.Select(k => Regex.Escape(k.Word)))})(?=\s*[:：])",
+                m => words.FirstOrDefault(k => string.Equals(k.Word, m.Value, StringComparison.OrdinalIgnoreCase)) is { Hex: { } hex } ? $"[color={hex}]{m.Value}[/color]" : m.Value,
+                RegexOptions.IgnoreCase | RegexOptions.CultureInvariant);
+        return $"[color={Quiet}]{legend}[/color]";
+    }
 
     static RichTextLabel Text(string name, string bbcode, int size)
     {
