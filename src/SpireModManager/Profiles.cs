@@ -690,7 +690,7 @@ static class Profiles
         else if (System.Text.RegularExpressions.Regex.Match(name, $@"^{ProfileShare.FilePrefix}(.*?)-?\d{{14}}$") is { Success: true } ours)
             name = ours.Groups[1].Value.Trim();
         if (name.Length > 40) // the name box's limit
-            name = name[..40].Trim();
+            name = Menus.Prefix(name, 40).Trim();
         if (name.Length == 0)
             name = Menus.Text("SPIRE_MOD_MANAGER.IMPORTED_PROFILE");
         return Store.Data.Profiles.Any(p => p.Name == name) ? CopyName(name) : name;

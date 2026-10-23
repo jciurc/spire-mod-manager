@@ -79,8 +79,9 @@ static class ModifiedContent
                 if (Listed(areas, 1, ItemsCut(subject, whats, kept)) is var cut && fits(cut))
                     return cut;
         var first = areas[0];
-        while (first.Length > 1 && !fits(Listed(areas, 1, Menus.CutShort(first))))
-            first = first[..^1].TrimEnd();
+        // A text element at a time (Menus.Prefix), down to one.
+        while (System.Globalization.StringInfo.GetNextTextElementLength(first) < first.Length && !fits(Listed(areas, 1, Menus.CutShort(first))))
+            first = Menus.Prefix(first, first.Length - 1).TrimEnd();
         return Listed(areas, 1, Menus.CutShort(first));
     }
 

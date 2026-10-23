@@ -117,7 +117,7 @@ static class RowTitles
             var space = Width(" ", Layout.RowTitleSize);
             const int gap = 2;
             var left = room - mainWidth - gap * space;
-            var original = left > Width("……", OriginalNameSize) ? Cut(font, name, OriginalNameSize, left) : "";
+            var original = left > Width(Menus.CutMark, OriginalNameSize) ? Cut(font, name, OriginalNameSize, left) : "";
             if (original.Length > 0)
             {
                 text += new string(' ', gap) + $"[color=#fff6e280][font_size={OriginalNameSize}]{Escape(original)}[/font_size][/color]";
@@ -242,27 +242,49 @@ static class RowTitles
             title.SetMeta(FittedMeta, text);
     }
 
-    // The text as it fits in width at this size: whole, or cut short with ".." (empty when not even that fits).
-    // Row titles, and the info panel's title and source line.
+    // The text as it fits in width at this size: whole, or cut short with ".." (empty when not even that fits), cut
+    // between text elements only (Menus.Prefix says why). Row titles, labels cut to fit, and the info panel's title and
+    // source line.
     public static string Cut(Font font, string full, int size, float width)
     {
         float Width(string text) => Measure(font, text, size);
         if (Width(full) <= width)
             return full;
-        var length = full.Length;
-        while (length > 0 && Width(Menus.CutShort(full[..length])) > width)
-            length--;
-        return length > 0 ? Menus.CutShort(full[..length]) : "";
+        // Every cut ends with the mark, so nothing fits where it doesn't. A label at its 1 px minimum, before it's laid
+        // out, would otherwise measure every start of its text, each a width kept for nothing.
+        if (Width(Menus.CutMark) > width)
+            return "";
+        // By halves: a longer start is never narrower (what CutShort drops at its end only keeps it as wide), but for a
+        // font's kerning, which can leave the cut found a little short of the longest. It always fits.
+        var starts = System.Globalization.StringInfo.ParseCombiningCharacters(full); // where each text element starts
+        var (fits, over) = (0, starts.Length); // the first `fits` elements fit (with the mark); the first `over` don't
+        while (over - fits > 1)
+        {
+            var mid = (fits + over) / 2;
+            if (Width(Menus.CutShort(full[..starts[mid]])) <= width)
+                fits = mid;
+            else
+                over = mid;
+        }
+        return fits > 0 ? Menus.CutShort(full[..starts[fits]]) : "";
     }
 
     // Text widths per font and size, measured once (shaping is slow, and the font's own cache is too small for a long
     // list); cleared now and then, as cut texts add many. Titles, and the line under them (tags, notes, authors).
     static readonly Dictionary<(Font Font, int Size, string Text), float> Widths = [];
 
+#if DEVTOOLS
+    // Self-test: how many widths Measure has shaped (not found kept).
+    public static int TestMeasured { get; set; }
+#endif
+
     public static float Measure(Font font, string text, int size)
     {
         if (Widths.TryGetValue((font, size, text), out var width))
             return width;
+#if DEVTOOLS
+        TestMeasured++;
+#endif
         if (Widths.Count >= 10000)
             Widths.Clear();
         return Widths[(font, size, text)] = font.GetStringSize(text, fontSize: size).X;
