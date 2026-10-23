@@ -713,6 +713,28 @@ static partial class SelfTest
         Row("L1 not ticked (3.0, read first), L2 ticked (1.0), W1 ticked (1.5)" + (beta ? ": without L1, W1 beats L2" : ""),
             Case([L(x, "L1", "3.0.0"), L(x, "L2", "1.0.0"), W(x, 101, "1.5.0")], off: ["l:L1"], record: ["l:L1", "l:L2", "w:101"]),
             beta ? "101" : "L2", beta ? "L2 Higher" : "101 Local");
+        // The rule over the ticked copies leaves both sources (the beta: W beats B, C is left): the first ticked copy's source
+        // decides, in the launch's order, the copies the game's rule leaves (still to load) before those it beat, whatever
+        // the session's list order (W first here).
+        x = Id();
+        Row("W ticked (1.5, first in the list), A not ticked (3.0, read first), B ticked (1.0), C ticked (1.2)"
+            + (beta ? ": both sources left, the local one first as the launch has it, so C" : ""),
+            Case([W(x, 101, "1.5.0"), L(x, "A", "3.0.0"), L(x, "B", "1.0.0"), L(x, "C", "1.2.0")], off: ["l:A"], record: ["l:A", "l:B", "l:C", "w:101"]),
+            "C", beta ? "101 Other, B Other" : "101 Local, B Higher");
+        // An id the launch couldn't choose for (its self-check: not taken): the game's own choice, the copy that loaded this
+        // session only where the next launch can load it again. Here the Workshop copy loaded, and the local copy, higher,
+        // beats it next launch.
+        x = Id();
+        SameIdLoad.TestResult(x, SameIdLoad.Result.NotTaken);
+        try
+        {
+            Row("an id the launch couldn't choose for, its Workshop copy (1.0) loaded this session, the local copy (2.0) on: the local copy, which beats it next launch",
+                Case([Made(x, "W101", ModLoadState.Loaded, item: 101, version: "1.0.0"), L(x, "L", "2.0.0")], launch: false), "L", beta ? "101 Higher" : "101 Local");
+        }
+        finally
+        {
+            SameIdLoad.TestResult(x, null);
+        }
         if (beta)
         {
             // At the launch, as the game leaves them (sorted, its rule played: W1 and L set aside after the mods still to
@@ -732,8 +754,8 @@ static partial class SelfTest
                 $"plan {(run == null ? "none" : $"{Shown(run.Loads)}, swapped {run.Swapped}")}; list {string.Join(", ", launch.Select(m => $"{Shown(m)} {m.state}"))}");
             // The launch record (the last working setup Restore goes back to): of the Workshop copies, none of which loads,
             // the ticked W1, not W2 (off, first in the list since the swap), so a Restore can't turn W2 back on.
-            var recorded = SameIdLoad.LoadsAtLaunch(launch, plan, ticks).GetValueOrDefault((x, ModSource.SteamWorkshop));
-            Check("the rule, ... the launch record's Workshop copy: the ticked W1, not W2 (off)", recorded == "w:101", recorded ?? "none");
+            var recorded = SameIdLoad.LoadsAtLaunch(launch, plan).GetValueOrDefault((x, ModSource.SteamWorkshop));
+            Check("the rule, ... the launch record's Workshop copy: W1, the one Apply didn't set aside, not W2 (off)", recorded == "w:101", recorded ?? "none");
         }
         x = Id();
         Row("two local copies and a newer Workshop one, all ticked" + (beta ? ": the game takes out the first local copy read; the first ticked left decides the source" : ""),
@@ -1126,6 +1148,29 @@ static partial class SelfTest
             Check("... none of the copies left ticked, none set aside to bring back: the game's own choice (the first) loads, no swap, the rest set aside",
                 ok && plan.GetValueOrDefault(X) is { Swapped: false, Why: SameIdLoad.Reason.None } entry && entry.Loads == w2 && w2.state == None && w3.state == Aside,
                 Say(plan, w1, w2, w3));
+        }
+        {
+            // The rule over the ticked copies picks a copy the game's rule set aside that can't take the first slot (its
+            // dependency D after it) while a mod still to load needs the id: the next ticked copy still to come loads
+            // there, not the game's own choice, W2, which is off; the plan says what was blocked by what.
+            var (w1, w2, l1, l2) = (Made(X, "W1", Aside, 91, "1.0.0"), Made(X, "W2", None, 92, "3.0.0"), Made(X, "L1", Aside, version: "2.0.0", needs: ["SmmSameIdD"]),
+                Made(X, "L2", None, version: "1.5.0"));
+            var (needer, dep) = (Made("SmmSameIdNeeder", "M", needs: [X]), Made("SmmSameIdD", "D"));
+            List<Mod> list = [us, w2, l2, needer, dep, l1, w1];
+            var (ok, plan) = PlanOf(list, off: OffKeys("w:92"), record: ["w:91", "w:92"]);
+            // The mirror: a local copy that's off read first (3.0), and the Workshop copy the rule over the ticked ones picks
+            // blocked: the ticked local copy still to come loads, not the one that's off.
+            var (m1, m2, mw) = (Made(X, "M1", None, version: "3.0.0"), Made(X, "M2", None, version: "1.0.0"), Made(X, "MW", Aside, 93, "1.5.0", needs: ["SmmSameIdD"]));
+            var (needer2, dep2) = (Made("SmmSameIdNeeder", "M", needs: [X]), Made("SmmSameIdD", "D"));
+            List<Mod> mirror = [us, m1, m2, needer2, dep2, mw];
+            var (okMirror, planMirror) = PlanOf(mirror, off: OffKeys("l:M1"), record: ["l:M1", "l:M2", "w:93"]);
+            Check("... the rule over the ticked copies picks a copy that can't take the first slot while a mod needs the id: the next ticked copy still to "
+                + "come loads there (swapped), not the copy that's off, set aside; the plan names the blocked one",
+                ok && plan.GetValueOrDefault(X) is { Why: SameIdLoad.Reason.DependencyAfterSlot, Swapped: true, Blocked: "l:L1", Late: "SmmSameIdD" } entry
+                && entry.Loads == l2 && list[1] == l2 && w2.state == Aside && l1.state == Aside && w1.state == Aside
+                && okMirror && planMirror.GetValueOrDefault(X) is { Why: SameIdLoad.Reason.DependencyAfterSlot, Blocked: "w:93" } mirrored
+                && mirrored.Loads == m2 && mirror[1] == m2 && m1.state == Aside && mw.state == Aside,
+                $"{Say(plan, w1, w2, l1, l2)} || {Say(planMirror, m1, m2, mw)}");
         }
         {
             // A copy brought back loads with the game's manifest messages, which its rule cleared when it beat the copy: an

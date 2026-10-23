@@ -296,7 +296,8 @@ static class Copies
     //    Workshop copy with the first local copy it read (FirstRead), taking out the local one where the Workshop version
     //    is higher, else the Workshop one (a tie, or an unknown version);
     // 3. this mod, or an id the launch couldn't choose for (SameIdLoad.Unchosen): the game's own choice, the copy that
-    //    loaded this session if its switch is on (the launch may have brought it back), else the first left;
+    //    loaded this session if the next launch can load it again (the rule leaves it, or the launch brought it back),
+    //    else the first left;
     // 4. else of the ticked copies left, those of the first one's source (nothing is chosen across sources), and of
     //    those Best; with a copy on that isn't ticked (on through a ticked twin's switch), step 2 again over the ticked
     //    copies alone first (the launch brings back the copy it picks); none ticked at all: the game's own choice, the
@@ -316,9 +317,11 @@ static class Copies
         var gameLeft = on.Where(m => !beaten.ContainsKey(m)).ToList();
         var left = gameLeft;
         bool IsTicked(Mod m) => OwnTick(m, ticks);
-        // The copy that loaded this session where it's on (one the launch brought back too: the rule beat it), else the
-        // first the game's rule leaves.
-        Mod GameChoice() => on.FirstOrDefault(m => m.state == ModLoadState.Loaded) ?? gameLeft[0];
+        // The copy that loaded this session where the next launch can load it again: one the game's rule leaves, or one
+        // this launch brought back (its plan's: never this mod, nor where the canary failed); else the first the rule
+        // leaves.
+        Mod GameChoice() => on.FirstOrDefault(m => m.state == ModLoadState.Loaded && (gameLeft.Contains(m)
+            || id != ModEntry.ModId && SameIdLoad.Plan.GetValueOrDefault(id)?.Loads is { } revived && CopyOf(revived) == CopyOf(m))) ?? gameLeft[0];
         Mod loads;
         Mod? blocked = null;
         List<Mod> candidates = [];
@@ -335,7 +338,9 @@ static class Copies
             if (on.Where(IsTicked).ToList() is { Count: > 0 } tickedOn && tickedOn.Count < on.Count)
             {
                 beaten = GameRule(tickedOn, m => GameVersion(Newest(m)));
-                left = [.. tickedOn.Where(m => !beaten.ContainsKey(m))];
+                // In the launch's order (SameIdLoad.Run): the copies the game's rule leaves first (still to load), then
+                // those it beat (its sort put them after every mod still to load), as the first one's source decides.
+                left = [.. tickedOn.Where(m => !beaten.ContainsKey(m)).OrderBy(m => gameLeft.Contains(m) ? 0 : 1)];
             }
             if (left.Where(IsTicked).ToList() is not [var firstTicked, ..] ticked)
                 loads = left[0];
@@ -346,8 +351,11 @@ static class Copies
                 var best = Best(candidates, m => Version(Newest(m)), tied => TieOrder(tied, ticks.TieList(id), ticks.BeforeOf(id)),
                     strict ? m => GameVersion(Newest(m)) : null).Mod;
                 loads = best;
+                // Blocked: what this launch loaded instead (the next launch does the same: a ticked copy still to load
+                // that could take the slot, else the game's own choice), while it's still ticked; else the game's own.
                 if (Blocked(id, best, gameOff))
-                    (blocked, loads) = (best, GameChoice());
+                    (blocked, loads) = (best, SameIdLoad.Plan.GetValueOrDefault(id)?.Loads is { } instead
+                        && on.FirstOrDefault(m => CopyOf(m) == CopyOf(instead)) is { } same && IsTicked(same) ? same : GameChoice());
             }
         }
         // 5. Why each ticked copy that doesn't load doesn't.
