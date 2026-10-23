@@ -133,15 +133,22 @@ static class SameIdLoad
                     watch.Elapsed.TotalMilliseconds);
                 continue;
             }
-            // One copy (or none) still to come: nothing to choose. The game's local-vs-Workshop rule set the others aside,
-            // which the page foresees (Copies.Next's step 2), so it's no surprise.
-            if (todo.Count < 2)
+            // None of the copies still to come ticked, while the game's local-vs-Workshop rule set ticked ones aside: a copy
+            // that's off beat them, its switch on through a ticked twin's (the beta: W2 off at 3.0 beats L at 2.0, and W1
+            // at 1.0 loses to L). The rule again over the ticked ones alone (Copies.GameRule, as Copies.Next's step 4 has
+            // it), and the copy it leaves brought back (the game only marks the copies it beats, and its sort put them
+            // after every mod still to load); it takes the first slot below, so mods that need the id find it.
+            var back = todo.Count > 0 && !todo.Any(p => Ticked(p.Mod))
+                ? copies.Where(p => p.At > self && p.Mod.state == aside && Ticked(p.Mod)).ToList() : [];
+            // One copy (or none) still to come, none to bring back: nothing to choose. The game's local-vs-Workshop rule set
+            // the others aside, which the page foresees (Copies.Next's step 2), so it's no surprise.
+            if (todo.Count < 2 && back.Count == 0)
                 continue;
 
             // The copy chosen (Choose), else, none of them ticked, the game's own choice: the copy it would load before
             // failing the rest.
-            var choice = Chosen(todo.Select(p => p.Mod));
-            var picked = choice is { } chosen ? todo.First(p => p.Mod == chosen.Mod) : todo[0];
+            var choice = back.Count > 0 ? Chosen(Unbeaten(back.Select(p => p.Mod))) : Chosen(todo.Select(p => p.Mod));
+            var picked = choice is { } chosen ? todo.Concat(back).First(p => p.Mod == chosen.Mod) : todo[0];
             var (s1, sp) = (todo[0].At, picked.At);
             var swapped = false;
             // The game finds a dependency at the id's first copy in the list, so the chosen copy goes there, if what it
@@ -175,6 +182,9 @@ static class SameIdLoad
             var setAside = todo.Where(p => p.Mod != picked.Mod).Select(p => p.Mod).ToList();
             foreach (var mod in setAside)
                 SetAside(mod, aside, log);
+            var revived = picked.Mod.state == aside;
+            if (revived)
+                picked.Mod.state = ModLoadState.None; // the game's loop tries it in turn, as any mod still to load
             var ms = watch.Elapsed.TotalMilliseconds;
             plan[id] = new Entry(picked.Mod, setAside, swapped, sp, s1, Reason.None, ms);
             string Copy(Mod m) => $"{Copies.CopyOf(m)} ({m.manifest?.version})";
@@ -186,10 +196,20 @@ static class SameIdLoad
                     Copies.Won.Readable => $"{id} loads {Copy(picked.Mod)}; {string.Join(", ", unread)} have a version that can't be read",
                     _ => $"{id} loads {Copy(picked.Mod)}, the highest version of the enabled copies",
                 })
-                + $" ({picked.Mod.path}); set aside {string.Join(", ", setAside.Select(Copy))} as a duplicate, so the game doesn't fail it"
+                + $" ({picked.Mod.path})" + (revived ? ", brought back from the game's local-vs-Workshop rule, which a disabled copy won" : "")
+                + $"; set aside {string.Join(", ", setAside.Select(Copy))} as a duplicate, so the game doesn't fail it"
                 + (swapped ? $"; moved it from slot {sp} to {s1} so mods needing {id} find it" : "") + $" ({ms:0.0} ms)");
         }
         return (true, "", plan, (self, first));
+    }
+
+    // Of copies the game's rule set aside, those it leaves when it's played over them alone (one Mod per copy, as Choose
+    // reads them): what Run brings back from where a copy that's off beat them.
+    static IEnumerable<Mod> Unbeaten(IEnumerable<Mod> copies)
+    {
+        var read = copies.GroupBy(Copies.CopyOf).Select(copy => Copies.NewestOf([.. copy])).ToList();
+        var beaten = Copies.GameRule(read, Copies.GameVersion);
+        return read.Where(m => !beaten.ContainsKey(m));
     }
 
     // Spire Mod Manager's step at launch, as the page takes it (Copies.Next's step 4): of the copies left to load (one Mod

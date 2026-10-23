@@ -698,9 +698,28 @@ static partial class SelfTest
         Row("a local copy, a lower Workshop item and a higher one, all ticked" + (beta ? " (the lower one lost to the local copy, which doesn't load: no reason)" : ""),
             Case([L(x, "L", "2.0.0"), W(x, 101, "1.0.0"), W(x, 102, "3.0.0")]), beta ? "102" : "L", beta ? "101 Other, L Higher" : "101 Local, 102 Local");
         x = Id();
-        Row("W1 ticked (1.0), W2 not (3.0), L ticked (2.0)" + (beta ? ": W2 loads though it's not ticked (it shares W1's switch and beats L)" : ""),
+        // A copy that's off never loads nor stops another from loading (Jordan, 23 Oct): on the beta the game's rule lets W2
+        // beat L through W1's switch, so the launch brings L back (the rule over the ticked copies alone).
+        Row("W1 ticked (1.0), W2 not (3.0), L ticked (2.0)" + (beta ? ": W2 off doesn't count, so L, as the rule goes without it (W2 shares W1's switch and beats L)" : ""),
             Case([W(x, 101, "1.0.0"), W(x, 102, "3.0.0"), L(x, "L", "2.0.0")], off: ["w:102"], record: ["w:101", "w:102", "l:L"]),
-            beta ? "102" : "L", beta ? "101 Other, L Higher" : "101 Local");
+            "L", beta ? "101 Higher" : "101 Local");
+        if (beta)
+        {
+            // At the launch, as the game leaves them (sorted, its rule played: W1 and L set aside after the mods still to
+            // load): L brought back into W2's slot, so mods that need the id find it there, W2 set aside, W1 left aside.
+            x = Id();
+            var (w1, w2, l, needer) = (W(x, 101, "1.0.0"), W(x, 102, "3.0.0"), L(x, "L", "2.0.0"), Made("SmmRuleNeedsBack", "NeedsBack"));
+            if (needer.manifest is { } neederManifest)
+                neederManifest.dependencies = [new ModDependency(x, null)];
+            GameRule([w1, w2, l], []);
+            var launch = new List<Mod> { us, w2, needer, w1, l };
+            var run = SameIdLoad.Run(launch, () => new Ticks([$"{x}|w:102"], new Dictionary<string, List<string>> { [x] = ["w:101", "w:102", "l:L"] }),
+                m => m == us, log: false).Plan.GetValueOrDefault(x);
+            Check("the rule, ... at the launch: L brought back into W2's slot (before the mod that needs the id), W2 and W1 set aside",
+                run?.Loads == l && l.state == ModLoadState.None && launch[1] == l && launch[^1] == w2 && w2.state == ModLoadState.DisabledDuplicate
+                && w1.state == ModLoadState.DisabledDuplicate && run.Swapped,
+                $"plan {(run == null ? "none" : $"{Shown(run.Loads)}, swapped {run.Swapped}")}; list {string.Join(", ", launch.Select(m => $"{Shown(m)} {m.state}"))}");
+        }
         x = Id();
         Row("two local copies and a newer Workshop one, all ticked" + (beta ? ": the game takes out the first local copy read; the first ticked left decides the source" : ""),
             Case([L(x, "L1", "1.0.0"), L(x, "L2", "1.5.0"), W(x, 101, "2.0.0")]), "L2", beta ? "101 Other, L1 Other" : "101 Local, L1 Higher");
@@ -3277,12 +3296,13 @@ static partial class SelfTest
             + $"changes {string.Join(" | ", TwinChanges())}; edited {Profiles.Edited}; {CopiesBroken() ?? "kept"}");
     }
 
-    // The beta's edge where a copy loads unticked (P7, P17): W1 ticked (1.0.0), W2 not (3.0.0) but on W1's switch, and a
-    // local copy L ticked (2.0.0). The game sees W2 on through the switch they share: W2 beats L, W1 loses to L, and only
-    // W2 is left, so W2 loads. Made-up copies of a made-up id, as a launch had them (W2 loaded, W1 and L set aside): W2
-    // reads Enabled, its line naming W1 and L; L says W2 loads instead, the higher version; W1 that W2 loads instead,
-    // with no reason (it lost to L, which doesn't load); the same-ID banner shows (W1 and L ticked). Stable has no such
-    // edge (every Workshop copy beside a local one is out): a SKIP there.
+    // The beta's edge where a copy that's off would load (P7, P17): W1 ticked (1.0.0), W2 not (3.0.0) but on W1's switch,
+    // and a local copy L ticked (2.0.0). The game sees W2 on through the switch they share: W2 beats L, W1 loses to L,
+    // and only W2 is left. A copy that's off doesn't count (Jordan, 23 Oct), so the launch brings L back: the rule as it
+    // goes without W2. Made-up copies of a made-up id, as such a launch has them (L loaded, W1 and W2 set aside): L the
+    // copy that loads, naming W1; W1 that L loads instead, the higher version, and Duplicate - Won't load; W2 that L is the
+    // enabled copy; the same-ID banner shows (W1 and L ticked). Then as a launch before this had them (W2 loaded): L loads
+    // after a relaunch in W2's place. Stable has no such edge (every Workshop copy beside a local one is out): a SKIP there.
     static async Task TestCopyUnticked(Node menu, NModdingScreen screen, Control content)
     {
         if (!Compat.WorkshopBeatsOlderLocal)
@@ -3292,8 +3312,8 @@ static partial class SelfTest
         }
         const string id = "SmmUnticked";
         var w1 = Made(id, "W101", ModLoadState.DisabledDuplicate, item: 101, version: "1.0.0");
-        var w2 = Made(id, "W102", ModLoadState.Loaded, item: 102, version: "3.0.0");
-        var l = Made(id, "SmmUntickedL", ModLoadState.DisabledDuplicate, version: "2.0.0");
+        var w2 = Made(id, "W102", ModLoadState.DisabledDuplicate, item: 102, version: "3.0.0");
+        var l = Made(id, "SmmUntickedL", ModLoadState.Loaded, version: "2.0.0");
         GameMods().AddRange([w1, w2, l]);
         Copies.TestRecount();
         History.Quietly(data =>
@@ -3307,17 +3327,24 @@ static partial class SelfTest
             await Wait(menu, 0.3);
             string? Line(Mod mod) => ModDetails.CopyLine(mod, false)?.Text;
             var banner = screen.GetNode<Control>("ModsBorder").GetNodeOrNull<Control>(LoadOrder.SameIdName);
-            Check("a copy that loads unticked (the beta: W1 ticked 1.0.0, W2 not, 3.0.0, on W1's switch, L ticked 2.0.0): W2 loads and reads Enabled, its line "
-                + "naming the enabled copy it shares the switch with and the local copy it beat; L: W2 loads instead, the higher version; W1: W2 loads instead, "
-                + "no reason; the same-ID banner",
-                LoadingCopy(id) == "w:102" && !Copies.Ticked(w2) && Copies.Ticked(w1) && Copies.Ticked(l)
-                && ModDetails.Status(w2).Contains(Menus.Text("SPIRE_MOD_MANAGER.STATUS_ENABLED"))
-                && Line(w2) == Draft(LoadsUnticked, ("other", Copies.Named(w1)), ("local", Copies.Named(l)))
-                && ModDetails.Status(l).Contains(StatusWontLoad) && Line(l) == Draft(CopyLoses, ("other", Copies.Named(w2)), ("why", WhyHigher))
-                && ModDetails.Status(w1).Contains(StatusWontLoad) && Line(w1) == Draft(CopyLosesPlain, ("other", Copies.Named(w2)))
+            Check("a copy that's off doesn't count (the beta: W1 ticked 1.0.0, W2 not, 3.0.0, on W1's switch, L ticked 2.0.0): L loads, as the rule goes "
+                + "without W2, naming W1; W1: L loads instead, the higher version, Duplicate - Won't load; W2: L is the enabled copy; the same-ID banner",
+                LoadingCopy(id) == "l:SmmUntickedL" && !Copies.Ticked(w2) && Copies.Ticked(w1) && Copies.Ticked(l)
+                && Line(l) == Draft(LoadsAlso, ("other", Copies.Named(w1)))
+                && ModDetails.Status(w1).Contains(StatusWontLoad) && Line(w1) == Draft(CopyLoses, ("other", Copies.Named(l)), ("why", WhyHigher))
+                && Line(w2) == Draft(OtherEnabled, ("other", Copies.Named(l)))
                 && (!Layout.Wide || banner != null),
                 $"loads {LoadingCopy(id)}; ticked W1 {Copies.Ticked(w1)} W2 {Copies.Ticked(w2)} L {Copies.Ticked(l)}; statuses {ModDetails.Status(w1)} / "
                 + $"{ModDetails.Status(w2)} / {ModDetails.Status(l)}; lines {Line(w1)} | {Line(w2)} | {Line(l)}; banner {banner != null}");
+            // The first session after an update to this: the launch before it loaded W2. L loads after a relaunch, in its place.
+            (w2.state, l.state) = (ModLoadState.Loaded, ModLoadState.DisabledDuplicate);
+            Copies.TestRecount();
+            CategoryList.RefreshStrips(content);
+            await Wait(menu, 0.2);
+            Check("... with W2 loaded at launch (a launch before this): L loads after a relaunch, in W2's place; W1 still loses to L",
+                LoadingCopy(id) == "l:SmmUntickedL" && Line(l) == Draft(LoadsAfter, ("other", Copies.Named(w2)))
+                && Line(w1) == Draft(CopyLoses, ("other", Copies.Named(l)), ("why", WhyHigher)),
+                $"loads {LoadingCopy(id)}; lines {Line(w1)} | {Line(w2)} | {Line(l)}");
         }
         finally
         {

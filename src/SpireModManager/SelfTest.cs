@@ -950,8 +950,6 @@ static partial class SelfTest
     const string WhyUnreadable = "This copy's version can't be read, so a copy with a readable version is prioritized.";
     const string CopyBlocked = "{other} loads instead: this copy needs {dep}, which loads after {other}";
     const string LoadsBlocked = "{other} can't load in this copy's place: it needs {dep}, which loads after this copy";
-    const string LoadsUnticked = "This copy loads though it's disabled: it shares the game's switch with {other}, which is enabled, and the game prioritizes "
-        + "it over {local} as the higher version";
     const string LoadsAlso = "{other} is also enabled - this copy is the one that loads";
     const string LoadsAfter = "Loads on relaunch, in place of {other}";
     const string FailedOther = "{other} is also installed. To load that copy instead, enable it and disable this one.";

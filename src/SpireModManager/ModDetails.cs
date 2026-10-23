@@ -563,8 +563,6 @@ static class ModDetails
     // - ticked while another copy loads after a relaunch: that one, and why (the status says it won't load); the copy the
     //   launch couldn't swap in (Why.Blocked) names the dependency that loads after the copy loading instead;
     // - loading in the place of a copy the launch couldn't swap in, ticked or not: which copy, and why;
-    // - loading though unticked, through the switch it shares with a ticked copy (the beta's local-vs-Workshop rule
-    //   taking out the copies ticked): so, naming both;
     // - ticked, not loaded now, and loading after a relaunch in place of the copy loaded now: so;
     // - ticked and failed for its own reasons: how to load another copy instead (after the red), another copy ticked or
     //   not (it isn't "the one that loads" when it failed);
@@ -599,9 +597,6 @@ static class ModDetails
             if (Copies.Next(id).Losing.FirstOrDefault(p => p.Value == Copies.Why.Blocked).Key is { } blocked
                 && others.FirstOrDefault(o => Copies.CopyOf(o) == blocked) is { } swap)
                 return Menus.Format("SPIRE_MOD_MANAGER.COPY_LOADS_BLOCKED", ("other", Other(swap)), ("dep", Dep()));
-            if (!ticked && Copies.Twins(mod).FirstOrDefault(Copies.Ticked) is { } sharing
-                && others.Where(o => o.modSource == ModSource.ModsDirectory && Copies.Ticked(o)).ToList() is { Count: > 0 } locals)
-                return Menus.Format("SPIRE_MOD_MANAGER.COPY_LOADS_UNTICKED", ("other", Other(sharing)), ("local", Other(Copies.FirstRead(locals))));
         }
         if (ticked && mod.state is not (ModLoadState.Loaded or ModLoadState.Failed) && Copies.Loads(mod)
             && others.FirstOrDefault(o => o.state == ModLoadState.Loaded) is { } loaded)

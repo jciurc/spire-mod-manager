@@ -197,7 +197,6 @@
   "SPIRE_MOD_MANAGER.COPY_WHY_UNREADABLE": "This copy's version can't be read, so a copy with a readable version is prioritized.",
   "SPIRE_MOD_MANAGER.COPY_BLOCKED": "{other} loads instead: this copy needs {dep}, which loads after {other}",
   "SPIRE_MOD_MANAGER.COPY_LOADS_BLOCKED": "{other} can't load in this copy's place: it needs {dep}, which loads after this copy",
-  "SPIRE_MOD_MANAGER.COPY_LOADS_UNTICKED": "This copy loads though it's disabled: it shares the game's switch with {other}, which is enabled, and the game prioritizes it over {local} as the higher version",
   "SPIRE_MOD_MANAGER.COPY_LOADS_ALSO": "{other} is also enabled - this copy is the one that loads",
   "SPIRE_MOD_MANAGER.COPY_FAILED_OTHER": "{other} is also installed. To load that copy instead, enable it and disable this one.",
   "SPIRE_MOD_MANAGER.COPY_NOT_APPLIED": "Spire Mod Manager couldn't choose which copy was loaded. If the game is on a different version, Spire Mod Manager may need to be updated.",

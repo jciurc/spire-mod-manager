@@ -298,9 +298,10 @@ static class Copies
     // 3. this mod, or an id the launch couldn't choose for (SameIdLoad.Unchosen): the game's own choice, the copy that
     //    loaded this session if it's left, else the first;
     // 4. else of the ticked copies left, those of the first one's source (nothing is chosen across sources), and of
-    //    those Best; none ticked: the game's own choice, the first left. Where the launch couldn't swap that copy in
-    //    (SameIdLoad's plan: Blocked) and nothing changed since (the load order, a mod that needs the id still on), the
-    //    next launch does the same: the game's own choice;
+    //    those Best; none ticked left while some are on, the same over what step 2 leaves of the ticked ones alone (the
+    //    launch brings that copy back); none ticked at all: the game's own choice, the first left. Where the launch
+    //    couldn't swap that copy in (SameIdLoad's plan: Blocked) and nothing changed since (the load order, a mod that
+    //    needs the id still on), the next launch does the same: the game's own choice;
     // 5. every ticked copy that doesn't load, and why (Why).
     public static Outcome Next(string id, HashSet<(string?, ModSource)> gameOff, Ticks ticks)
     {
@@ -311,41 +312,40 @@ static class Copies
         if (copies.Count == 1)
             return new Outcome(on[0], Outcome.None.Losing);
         // 2. Each copy the game takes out, with the copy it lost to and why.
-        var beaten = new Dictionary<Mod, (Mod By, Why Why)>();
-        var locals = on.Where(m => m.modSource == ModSource.ModsDirectory).ToList();
-        if (locals.Count > 0 && on.Any(m => m.modSource == ModSource.SteamWorkshop))
-        {
-            var first = FirstRead(locals);
-            var local = GameVersion(Newest(first));
-            foreach (var workshop in on.Where(m => m.modSource == ModSource.SteamWorkshop))
-            {
-                var by = Compat.WorkshopBeatsOlderLocal && local != null && GameVersion(Newest(workshop)) is { } version ? version.CompareTo(local) : 0;
-                if (by > 0)
-                    beaten.TryAdd(first, (workshop, Why.Higher));
-                else
-                    beaten[workshop] = (first, by < 0 ? Why.Higher : Why.Local);
-            }
-        }
-        var left = on.Where(m => !beaten.ContainsKey(m)).ToList();
+        var beaten = GameRule(on, m => GameVersion(Newest(m)));
+        var gameLeft = on.Where(m => !beaten.ContainsKey(m)).ToList();
+        var left = gameLeft;
         bool IsTicked(Mod m) => OwnTick(m, ticks);
-        Mod GameChoice() => left.FirstOrDefault(m => m.state == ModLoadState.Loaded) ?? left[0];
+        Mod GameChoice() => gameLeft.FirstOrDefault(m => m.state == ModLoadState.Loaded) ?? gameLeft[0];
         Mod loads;
         Mod? blocked = null;
         List<Mod> candidates = [];
         var strict = false;
         if (id == ModEntry.ModId || SameIdLoad.Unchosen(id))
             loads = GameChoice();
-        else if (left.Where(IsTicked).ToList() is not [var firstTicked, ..] ticked)
-            loads = left[0];
         else
         {
-            candidates = [.. ticked.Where(m => m.modSource == firstTicked.modSource)];
-            strict = NeedsReadable(id, gameOff);
-            var best = Best(candidates, m => Version(Newest(m)), tied => TieOrder(tied, ticks.TieList(id), ticks.BeforeOf(id)),
-                strict ? m => GameVersion(Newest(m)) : null).Mod;
-            loads = best;
-            if (Blocked(id, best, gameOff))
-                (blocked, loads) = (best, GameChoice());
+            // None ticked left while some are on: the rule took out every ticked copy for one that's off, its switch on
+            // through a ticked twin's (the beta: W2 off at 3.0 beats L at 2.0, and W1 at 1.0 loses to L). The launch loads
+            // the ticked copy the rule leaves without the copies that are off (SameIdLoad.Run brings it back), so a copy
+            // that's off never loads nor stops another from loading (Jordan, 23 Oct): the rule again over the ticked ones.
+            if (!left.Any(IsTicked) && on.Where(IsTicked).ToList() is { Count: > 0 } tickedOn)
+            {
+                beaten = GameRule(tickedOn, m => GameVersion(Newest(m)));
+                left = [.. tickedOn.Where(m => !beaten.ContainsKey(m))];
+            }
+            if (left.Where(IsTicked).ToList() is not [var firstTicked, ..] ticked)
+                loads = left[0];
+            else
+            {
+                candidates = [.. ticked.Where(m => m.modSource == firstTicked.modSource)];
+                strict = NeedsReadable(id, gameOff);
+                var best = Best(candidates, m => Version(Newest(m)), tied => TieOrder(tied, ticks.TieList(id), ticks.BeforeOf(id)),
+                    strict ? m => GameVersion(Newest(m)) : null).Mod;
+                loads = best;
+                if (Blocked(id, best, gameOff))
+                    (blocked, loads) = (best, GameChoice());
+            }
         }
         // 5. Why each ticked copy that doesn't load doesn't.
         var losing = new Dictionary<string, Why>();
@@ -355,6 +355,29 @@ static class Copies
                 : blocked == null && candidates.Contains(copy) && candidates.Contains(loads) ? SameSource(copy, loads, strict)
                 : Why.Other;
         return new Outcome(loads, losing);
+    }
+
+    // The game's local-vs-Workshop rule (ModManager.RemoveDisabledMods) over copies of one id whose switches are on: each
+    // copy it takes out, with the copy it lost to and why. Stable takes out every Workshop copy beside a local one; the
+    // beta compares each Workshop copy with the first local copy it read (FirstRead), taking out the local one where the
+    // Workshop version is higher, else the Workshop one (a tie, or an unknown version). version: as the game reads it.
+    public static Dictionary<Mod, (Mod By, Why Why)> GameRule(IReadOnlyList<Mod> on, Func<Mod, SemanticVersion?> version)
+    {
+        var beaten = new Dictionary<Mod, (Mod By, Why Why)>();
+        var locals = on.Where(m => m.modSource == ModSource.ModsDirectory).ToList();
+        if (locals.Count == 0 || !on.Any(m => m.modSource == ModSource.SteamWorkshop))
+            return beaten;
+        var first = FirstRead(locals);
+        var local = version(first);
+        foreach (var workshop in on.Where(m => m.modSource == ModSource.SteamWorkshop))
+        {
+            var by = Compat.WorkshopBeatsOlderLocal && local != null && version(workshop) is { } higher ? higher.CompareTo(local) : 0;
+            if (by > 0)
+                beaten.TryAdd(first, (workshop, Why.Higher));
+            else
+                beaten[workshop] = (first, by < 0 ? Why.Higher : Why.Local);
+        }
+        return beaten;
     }
 
     // Why a copy the game's rule took out (step 2) doesn't load: a Workshop copy beside a local copy that loads (Local, or
