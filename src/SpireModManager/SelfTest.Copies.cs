@@ -703,6 +703,16 @@ static partial class SelfTest
         Row("W1 ticked (1.0), W2 not (3.0), L ticked (2.0)" + (beta ? ": W2 off doesn't count, so L, as the rule goes without it (W2 shares W1's switch and beats L)" : ""),
             Case([W(x, 101, "1.0.0"), W(x, 102, "3.0.0"), L(x, "L", "2.0.0")], off: ["w:102"], record: ["w:101", "w:102", "l:L"]),
             "L", beta ? "101 Higher" : "101 Local");
+        // With a ticked copy left by the game's rule, a copy that's off still mustn't decide which one: the rule over the
+        // ticked copies alone, here too.
+        x = Id();
+        Row("W1 ticked (1.0), W2 not (3.0), L1 ticked (2.0, read first), L2 ticked (1.5)" + (beta ? ": without W2, L1 is left beside L2, and the higher loads" : ""),
+            Case([W(x, 101, "1.0.0"), W(x, 102, "3.0.0"), L(x, "L1", "2.0.0"), L(x, "L2", "1.5.0")], off: ["w:102"], record: ["w:101", "w:102", "l:L1", "l:L2"]),
+            "L1", beta ? "101 Higher, L2 Higher" : "101 Local, L2 Higher");
+        x = Id();
+        Row("L1 not ticked (3.0, read first), L2 ticked (1.0), W1 ticked (1.5)" + (beta ? ": without L1, W1 beats L2" : ""),
+            Case([L(x, "L1", "3.0.0"), L(x, "L2", "1.0.0"), W(x, 101, "1.5.0")], off: ["l:L1"], record: ["l:L1", "l:L2", "w:101"]),
+            beta ? "101" : "L2", beta ? "L2 Higher" : "101 Local");
         if (beta)
         {
             // At the launch, as the game leaves them (sorted, its rule played: W1 and L set aside after the mods still to
@@ -712,13 +722,18 @@ static partial class SelfTest
             if (needer.manifest is { } neederManifest)
                 neederManifest.dependencies = [new ModDependency(x, null)];
             GameRule([w1, w2, l], []);
-            var launch = new List<Mod> { us, w2, needer, w1, l };
-            var run = SameIdLoad.Run(launch, () => new Ticks([$"{x}|w:102"], new Dictionary<string, List<string>> { [x] = ["w:101", "w:102", "l:L"] }),
-                m => m == us, log: false).Plan.GetValueOrDefault(x);
+            var launch = new List<Mod> { us, w2, needer, l, w1 }; // its sort: the copies it beat last, in its read order (local first)
+            var ticks = new Ticks([$"{x}|w:102"], new Dictionary<string, List<string>> { [x] = ["w:101", "w:102", "l:L"] });
+            var plan = SameIdLoad.Run(launch, () => ticks, m => m == us, log: false).Plan;
+            var run = plan.GetValueOrDefault(x);
             Check("the rule, ... at the launch: L brought back into W2's slot (before the mod that needs the id), W2 and W1 set aside",
-                run?.Loads == l && l.state == ModLoadState.None && launch[1] == l && launch[^1] == w2 && w2.state == ModLoadState.DisabledDuplicate
+                run?.Loads == l && l.state == ModLoadState.None && launch[1] == l && launch[3] == w2 && w2.state == ModLoadState.DisabledDuplicate
                 && w1.state == ModLoadState.DisabledDuplicate && run.Swapped,
                 $"plan {(run == null ? "none" : $"{Shown(run.Loads)}, swapped {run.Swapped}")}; list {string.Join(", ", launch.Select(m => $"{Shown(m)} {m.state}"))}");
+            // The launch record (the last working setup Restore goes back to): of the Workshop copies, none of which loads,
+            // the ticked W1, not W2 (off, first in the list since the swap), so a Restore can't turn W2 back on.
+            var recorded = SameIdLoad.LoadsAtLaunch(launch, plan, ticks).GetValueOrDefault((x, ModSource.SteamWorkshop));
+            Check("the rule, ... the launch record's Workshop copy: the ticked W1, not W2 (off)", recorded == "w:101", recorded ?? "none");
         }
         x = Id();
         Row("two local copies and a newer Workshop one, all ticked" + (beta ? ": the game takes out the first local copy read; the first ticked left decides the source" : ""),
@@ -927,7 +942,9 @@ static partial class SelfTest
     // after the id's first slot (no swap; with a mod after us needing the id, the game's own choice, the rest set aside,
     // the plan saying which copy was blocked by what; one not installed: swapped), the canary (not a List<Mod>, not us
     // first, not the game's own list), three copies, two Workshop copies and a local one, a local and a Workshop copy
-    // only, our own second copy, none of the copies left ticked (the game's choice), one Workshop item with two manifests,
+    // only, our own second copy, none of the copies left ticked (the ticked ones the game's rule set aside: the rule again
+    // over them, the copy it leaves brought back; none to bring back: the game's choice), a copy brought back with the
+    // game's manifest messages and in its own slot (the self-check: taken), one Workshop item with two manifests,
     // a file from before copies_off (its legacy pick alone ticked; missing, the others), a set-aside copy's messages kept
     // for its panel; then the self-check's verdicts (Judge) on what the game made of a plan. Which copy wins by version
     // and tie is TestCopyRule's.
@@ -1088,13 +1105,65 @@ static partial class SelfTest
                 $"{Say(plan, local, workshop)} || {Say(planOurs, us2)}; read {reads} times");
         }
         {
-            // None of the copies left to load ticked (the one ticked set aside by the game's rule): the game's own choice,
-            // the first, no swap, the rest set aside so the game doesn't fail them as duplicates.
+            // None of the copies left to load ticked, the ticked ones set aside by the game's rule: the rule again over the
+            // ticked copies alone (a tie at 1.0.0 takes out W1), so L, brought back into the id's first slot, the copies
+            // still to come set aside (Jordan, 23 Oct: a copy that's off never loads).
             var (w1, w2, w3, local) = (Made(X, "W1", Aside, 51), Made(X, "W2", None, 52), Made(X, "W3", None, 53), Made(X, "L", Aside));
-            var (ok, plan) = Plan([us, w1, w2, w3, local], off: OffKeys("w:52", "w:53"), record: ["w:51", "w:52", "w:53"]);
-            Check("... none of the copies left to load ticked: the game's own choice (the first) loads, no swap, the rest set aside",
+            List<Mod> list = [us, w1, w2, w3, local];
+            var (ok, plan) = PlanOf(list, off: OffKeys("w:52", "w:53"), record: ["w:51", "w:52", "w:53"]);
+            Check("... none of the copies left to load ticked, ticked ones the game's rule set aside: the rule again over the ticked copies, L brought back "
+                + "into the id's first slot, the copies still to come set aside",
+                ok && plan.GetValueOrDefault(X) is { Swapped: true, Why: SameIdLoad.Reason.None, From: 4, To: 2 } entry && entry.Loads == local
+                && local.state == None && list[2] == local && list[4] == w2 && w2.state == Aside && w3.state == Aside && w1.state == Aside
+                && entry.SetAside.SequenceEqual([w2, w3]),
+                Say(plan, w1, w2, w3, local));
+        }
+        {
+            // None ticked among the copies after us, and none the rule set aside (the ticked one's switch off: Disabled):
+            // the game's own choice, the first, no swap, the rest set aside so the game doesn't fail them as duplicates.
+            var (w1, w2, w3) = (Made(X, "W1", ModLoadState.Disabled, 51), Made(X, "W2", None, 52), Made(X, "W3", None, 53));
+            var (ok, plan) = Plan([us, w2, w3, w1], off: OffKeys("w:52", "w:53"), record: ["w:51", "w:52", "w:53"]);
+            Check("... none of the copies left ticked, none set aside to bring back: the game's own choice (the first) loads, no swap, the rest set aside",
                 ok && plan.GetValueOrDefault(X) is { Swapped: false, Why: SameIdLoad.Reason.None } entry && entry.Loads == w2 && w2.state == None && w3.state == Aside,
                 Say(plan, w1, w2, w3));
+        }
+        {
+            // A copy brought back loads with the game's manifest messages, which its rule cleared when it beat the copy: an
+            // old-style dependency list's MIGRATION_REQUIRED, read again from the copy's own manifest (another JSON file in
+            // its folder passed over).
+            var dir = Path.Combine(Path.GetTempPath(), "SmmSameIdRevive");
+            Directory.CreateDirectory(dir);
+            try
+            {
+                File.WriteAllText(Path.Combine(dir, "notes.json"), "[1, 2]");
+                File.WriteAllText(Path.Combine(dir, "mod.json"), $$"""{"id": "{{X}}", "name": "{{X}}", "version": "2.0.0", "dependencies": ["SmmSameIdNone"]}""");
+                var (w1, w2, local) = (Made(X, "W1", Aside, 71), Made(X, "W2", None, 72, "3.0.0"), Made(X, "L", Aside, version: "2.0.0"));
+                local.path = dir.Replace('\\', '/');
+                local.errors = []; // as the game's rule left it: cleared
+                var (ok, plan) = Plan([us, w2, local, w1], off: OffKeys("w:72"), record: ["w:71", "w:72"]);
+                Check("... a copy brought back gets the game's manifest messages again (an old-style dependency list's), which the rule cleared",
+                    ok && plan.GetValueOrDefault(X)?.Loads == local && local.state == None && local.errors?.Any(e => e.LocEntryKey == "MOD_ERROR.MIGRATION_REQUIRED") == true,
+                    $"{Say(plan, w1, w2, local)}; errors {string.Join(",", local.errors?.Select(e => e.LocEntryKey) ?? [])}");
+            }
+            finally
+            {
+                Directory.Delete(dir, recursive: true);
+            }
+        }
+        {
+            // A copy brought back that can't take the first slot (a dependency of it later in the list) while no mod still to
+            // load needs the id: it loads from its own slot, and the self-check takes that as planned (no mod looked for the
+            // id at its first slot; one that did and missed it would fail Misses).
+            var (w1, w2, dep, local) = (Made(X, "W1", Aside, 81), Made(X, "W2", None, 82, "3.0.0"), Made("SmmSameIdDep", "D"),
+                Made(X, "L", Aside, version: "2.0.0", needs: ["SmmSameIdDep"]));
+            List<Mod> list = [us, w2, dep, local, w1];
+            var (ok, plan) = PlanOf(list, off: OffKeys("w:82"), record: ["w:81", "w:82"]);
+            var entry = plan.GetValueOrDefault(X);
+            (local.state, dep.state) = (ModLoadState.Loaded, ModLoadState.Loaded); // as the game's loop leaves them
+            var verdict = entry == null ? (SameIdLoad.Result?)null : SameIdLoad.Judge(X, entry, list, 0);
+            Check("... a copy brought back that stays in its own slot (its dependency later in the list, no mod needing the id): it loads there, and the "
+                + "self-check says taken", ok && entry is { Swapped: false, Why: SameIdLoad.Reason.None } && entry.Loads == local && list[3] == local
+                && w2.state == Aside && verdict == SameIdLoad.Result.Taken, $"{Say(plan, w1, w2, local)}; self-check {verdict}");
         }
         {
             // One Workshop item with two manifests of the id (one copy, w:5) beside another item at the same version: the

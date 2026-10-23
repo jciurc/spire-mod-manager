@@ -296,12 +296,12 @@ static class Copies
     //    Workshop copy with the first local copy it read (FirstRead), taking out the local one where the Workshop version
     //    is higher, else the Workshop one (a tie, or an unknown version);
     // 3. this mod, or an id the launch couldn't choose for (SameIdLoad.Unchosen): the game's own choice, the copy that
-    //    loaded this session if it's left, else the first;
+    //    loaded this session if its switch is on (the launch may have brought it back), else the first left;
     // 4. else of the ticked copies left, those of the first one's source (nothing is chosen across sources), and of
-    //    those Best; none ticked left while some are on, the same over what step 2 leaves of the ticked ones alone (the
-    //    launch brings that copy back); none ticked at all: the game's own choice, the first left. Where the launch
-    //    couldn't swap that copy in (SameIdLoad's plan: Blocked) and nothing changed since (the load order, a mod that
-    //    needs the id still on), the next launch does the same: the game's own choice;
+    //    those Best; with a copy on that isn't ticked (on through a ticked twin's switch), step 2 again over the ticked
+    //    copies alone first (the launch brings back the copy it picks); none ticked at all: the game's own choice, the
+    //    first left. Where the launch couldn't swap that copy in (SameIdLoad's plan: Blocked) and nothing changed since
+    //    (the load order, a mod that needs the id still on), the next launch does the same: the game's own choice;
     // 5. every ticked copy that doesn't load, and why (Why).
     public static Outcome Next(string id, HashSet<(string?, ModSource)> gameOff, Ticks ticks)
     {
@@ -316,7 +316,9 @@ static class Copies
         var gameLeft = on.Where(m => !beaten.ContainsKey(m)).ToList();
         var left = gameLeft;
         bool IsTicked(Mod m) => OwnTick(m, ticks);
-        Mod GameChoice() => gameLeft.FirstOrDefault(m => m.state == ModLoadState.Loaded) ?? gameLeft[0];
+        // The copy that loaded this session where it's on (one the launch brought back too: the rule beat it), else the
+        // first the game's rule leaves.
+        Mod GameChoice() => on.FirstOrDefault(m => m.state == ModLoadState.Loaded) ?? gameLeft[0];
         Mod loads;
         Mod? blocked = null;
         List<Mod> candidates = [];
@@ -325,11 +327,12 @@ static class Copies
             loads = GameChoice();
         else
         {
-            // None ticked left while some are on: the rule took out every ticked copy for one that's off, its switch on
-            // through a ticked twin's (the beta: W2 off at 3.0 beats L at 2.0, and W1 at 1.0 loses to L). The launch loads
-            // the ticked copy the rule leaves without the copies that are off (SameIdLoad.Run brings it back), so a copy
-            // that's off never loads nor stops another from loading (Jordan, 23 Oct): the rule again over the ticked ones.
-            if (!left.Any(IsTicked) && on.Where(IsTicked).ToList() is { Count: > 0 } tickedOn)
+            // A copy that's off takes part in the rule while its switch is on through a ticked twin's: on the beta it can
+            // beat a ticked copy (W2 off at 3.0 beats L at 2.0, which beats W1 at 1.0, so only W2 is left), or decide which
+            // ticked copy is left. So with any such copy, the rule again over the ticked copies alone, as the launch has it
+            // (SameIdLoad.Run brings back the copy it picks): a copy that's off never loads nor stops another from loading
+            // (Jordan, 23 Oct). On stable it changes nothing (every Workshop copy beside a local one is out either way).
+            if (on.Where(IsTicked).ToList() is { Count: > 0 } tickedOn && tickedOn.Count < on.Count)
             {
                 beaten = GameRule(tickedOn, m => GameVersion(Newest(m)));
                 left = [.. tickedOn.Where(m => !beaten.ContainsKey(m))];

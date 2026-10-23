@@ -3,6 +3,8 @@ using System.Reflection;
 using System.Runtime.CompilerServices;
 using System.Runtime.InteropServices;
 using System.Text.Json;
+using Godot;
+using MegaCrit.Sts2.Core.Localization;
 using MegaCrit.Sts2.Core.Logging;
 using MegaCrit.Sts2.Core.Modding;
 using MegaCrit.Sts2.Core.Saves;
@@ -133,22 +135,27 @@ static class SameIdLoad
                     watch.Elapsed.TotalMilliseconds);
                 continue;
             }
-            // None of the copies still to come ticked, while the game's local-vs-Workshop rule set ticked ones aside: a copy
-            // that's off beat them, its switch on through a ticked twin's (the beta: W2 off at 3.0 beats L at 2.0, and W1
-            // at 1.0 loses to L). The rule again over the ticked ones alone (Copies.GameRule, as Copies.Next's step 4 has
-            // it), and the copy it leaves brought back (the game only marks the copies it beats, and its sort put them
-            // after every mod still to load); it takes the first slot below, so mods that need the id find it.
-            var back = todo.Count > 0 && !todo.Any(p => Ticked(p.Mod))
-                ? copies.Where(p => p.At > self && p.Mod.state == aside && Ticked(p.Mod)).ToList() : [];
-            // One copy (or none) still to come, none to bring back: nothing to choose. The game's local-vs-Workshop rule set
-            // the others aside, which the page foresees (Copies.Next's step 2), so it's no surprise.
-            if (todo.Count < 2 && back.Count == 0)
+            if (todo.Count == 0)
                 continue;
+            // A copy that's off takes part in the game's local-vs-Workshop rule while its switch is on through a ticked
+            // twin's: on the beta it can beat a ticked copy (W2 off at 3.0 beats L at 2.0, which beats W1 at 1.0, so only
+            // W2 is left) or decide which one is left. So with any such copy among those still to come and those the rule
+            // set aside (after us: the game only marks the copies it beats, and its sort put them after every mod still
+            // to load), the rule again over the ticked ones alone (Copies.GameRule, as Copies.Next's step 4 has it), and
+            // the copy Choose picks of what it leaves loads: brought back where the rule set it aside, into the first slot
+            // below, so mods that need the id find it. A copy that's off never loads nor stops another (Jordan, 23 Oct).
+            var both = todo.Concat(copies.Where(p => p.At > self && p.Mod.state == aside)).ToList();
+            var ticked = both.Where(p => Ticked(p.Mod)).ToList();
+            var rerun = ticked.Count > 0 && ticked.Count < both.Count;
 
             // The copy chosen (Choose), else, none of them ticked, the game's own choice: the copy it would load before
             // failing the rest.
-            var choice = back.Count > 0 ? Chosen(Unbeaten(back.Select(p => p.Mod))) : Chosen(todo.Select(p => p.Mod));
-            var picked = choice is { } chosen ? todo.Concat(back).First(p => p.Mod == chosen.Mod) : todo[0];
+            var choice = rerun ? Chosen(Unbeaten(ticked.Select(p => p.Mod))) : Chosen(todo.Select(p => p.Mod));
+            var picked = choice is { } chosen ? both.First(p => p.Mod == chosen.Mod) : todo[0];
+            // One copy still to come, the one that loads: nothing to do. The game's local-vs-Workshop rule set the others
+            // aside, which the page foresees (Copies.Next's step 2), so it's no surprise.
+            if (todo.Count < 2 && picked.Mod.state != aside)
+                continue;
             var (s1, sp) = (todo[0].At, picked.At);
             var swapped = false;
             // The game finds a dependency at the id's first copy in the list, so the chosen copy goes there, if what it
@@ -184,7 +191,10 @@ static class SameIdLoad
                 SetAside(mod, aside, log);
             var revived = picked.Mod.state == aside;
             if (revived)
+            {
                 picked.Mod.state = ModLoadState.None; // the game's loop tries it in turn, as any mod still to load
+                picked.Mod.errors = ManifestMessages(picked.Mod, log); // the rule cleared them, and it loads
+            }
             var ms = watch.Elapsed.TotalMilliseconds;
             plan[id] = new Entry(picked.Mod, setAside, swapped, sp, s1, Reason.None, ms);
             string Copy(Mod m) => $"{Copies.CopyOf(m)} ({m.manifest?.version})";
@@ -201,6 +211,40 @@ static class SameIdLoad
                 + (swapped ? $"; moved it from slot {sp} to {s1} so mods needing {id} find it" : "") + $" ({ms:0.0} ms)");
         }
         return (true, "", plan, (self, first));
+    }
+
+    // A copy's own manifest messages, read again for a copy Run brings back: the game gives a mod its manifest's
+    // (ModManifest.ReadFromStream: an old-style dependency list's MIGRATION_REQUIRED), and its local-vs-Workshop rule
+    // clears them on a copy it beats, so the copy loads with what the game would show for it. The manifest in its folder
+    // with its id and version; none found, or a read that fails: none, logged. (A Workshop copy's Steam branch message
+    // can't be read again without Steam: the game asked Steam for it before we load.)
+    static List<LocString>? ManifestMessages(Mod mod, bool log)
+    {
+        try
+        {
+            var dir = mod.path is { Length: > 0 } path ? ProjectSettings.GlobalizePath(path) : "";
+            foreach (var file in Directory.Exists(dir) ? Directory.EnumerateFiles(dir, "*.json") : [])
+            {
+                try
+                {
+                    using var stream = File.OpenRead(file);
+                    if (ModManifest.ReadFromStream(stream, out var errors) is { } manifest && manifest.id == mod.manifest?.id && manifest.version == mod.manifest?.version)
+                        return errors is { Count: > 0 } ? errors : null;
+                }
+                catch (Exception)
+                {
+                    // not a manifest of ours to read (another JSON file in the folder): the next
+                }
+            }
+            if (log)
+                Log.Warn($"[{ModEntry.ModId}] Same ID: no manifest of {Copies.CopyOf(mod)} found again in {dir}, so it loads without the game's manifest messages");
+        }
+        catch (Exception e)
+        {
+            if (log)
+                Log.Warn($"[{ModEntry.ModId}] Same ID: couldn't read {Copies.CopyOf(mod)}'s manifest again, so it loads without the game's manifest messages: {e.Message}");
+        }
+        return null;
     }
 
     // Of copies the game's rule set aside, those it leaves when it's played over them alone (one Mod per copy, as Choose
@@ -292,8 +336,11 @@ static class SameIdLoad
 
     // For each id and source installed more than once (ours aside), the copy this launch loads, for the launch record
     // (LaunchGuard.Begin, which can't load our data yet): Apply's, else the first copy still to load or loaded (one the
-    // game's rule left), else the game's own first.
-    public static Dictionary<(string Id, ModSource Source), string> LoadsAtLaunch(IReadOnlyList<Mod> mods)
+    // game's rule left), else the first ticked, else the game's own first.
+    public static Dictionary<(string Id, ModSource Source), string> LoadsAtLaunch(IReadOnlyList<Mod> mods) => LoadsAtLaunch(mods, _plan, InitTicks);
+
+    // The same on a given plan and ticks (the self-test's made-up ones).
+    public static Dictionary<(string Id, ModSource Source), string> LoadsAtLaunch(IReadOnlyList<Mod> mods, IReadOnlyDictionary<string, Entry> plan, Ticks? ticks)
     {
         var loads = new Dictionary<(string, ModSource), string>();
         foreach (var group in mods.Where(m => m.manifest?.id is { } id && id != ModEntry.ModId).GroupBy(m => (Id: m.manifest?.id ?? "", m.modSource)))
@@ -301,8 +348,12 @@ static class SameIdLoad
             var copies = group.ToList();
             if (copies.Select(Copies.CopyOf).Distinct().Count() < 2)
                 continue;
-            loads[group.Key] = _plan.GetValueOrDefault(group.Key.Id)?.Loads is { } planned && planned.modSource == group.Key.modSource ? Copies.CopyOf(planned)
+            // Of a source no copy of which loads (the plan's copy is of the other, which the rule left, or Run brought back):
+            // the first ticked by the launch's ticks, not the list's first, which can be a copy that's off Run set aside.
+            loads[group.Key] = plan.GetValueOrDefault(group.Key.Id)?.Loads is { } planned && planned.modSource == group.Key.modSource ? Copies.CopyOf(planned)
                 : copies.FirstOrDefault(m => m.state is ModLoadState.None or ModLoadState.Loaded) is { } going ? Copies.CopyOf(going)
+                : ticks != null && copies.FirstOrDefault(m => ticks.Ticked(group.Key.Id, Copies.CopyOf(m), copies.Select(Copies.CopyOf))) is { } ticked
+                    ? Copies.CopyOf(ticked)
                 : Copies.CopyOf(copies[0]);
         }
         return loads;
@@ -422,8 +473,13 @@ static class SameIdLoad
         var after = mods.Skip(self + 1).Where(m => m.manifest?.id == id);
         if (entry.Loads is { state: ModLoadState.Failed } failed && !HasError(failed, DuplicateKey))
             return Result.PickedFailed;
+        // The id's first entry, where mods that need it look: the copy picked, where the plan put it there or it was there;
+        // a copy left in its own slot (a dependency of it later in the list, and no mod still to load needing the id) only
+        // has to be the first of the id that loads, as no mod looked (a mod that did and missed it fails Misses).
+        var first = entry.Swapped || entry.From == entry.To ? copies.FirstOrDefault()
+            : copies.FirstOrDefault(m => m.state is not (ModLoadState.DisabledDuplicate or ModLoadState.Disabled));
         if (entry.Loads is { state: ModLoadState.Loaded } picked && entry.SetAside.All(m => m.state == ModLoadState.DisabledDuplicate)
-            && !after.Any(m => HasError(m, DuplicateKey)) && copies.FirstOrDefault() == picked && !mods.Any(m => Misses(m, id)))
+            && !after.Any(m => HasError(m, DuplicateKey)) && first == picked && !mods.Any(m => Misses(m, id)))
             return Result.Taken;
         Log.Warn($"[{ModEntry.ModId}] Same ID: {id}: the copy chosen wasn't taken as planned: "
             + string.Join("; ", copies.Select(m => $"{Copies.CopyOf(m)} {m.state}" + (m.errors is { Count: > 0 } e ? $" ({string.Join(", ", e.Select(x => x.LocEntryKey))})" : ""))));
