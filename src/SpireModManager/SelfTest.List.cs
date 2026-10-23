@@ -1378,6 +1378,108 @@ static partial class SelfTest
         Check("clearing restores the list", cleared.Count > 0);
     }
 
+    // Found in (Jordan: "when a search is applied, add explanation in hover card that says "Found in: a, b, c""): the
+    // fields a search found a mod in, on made-up details: each of its terms' own, a hidden tag as other keywords, a -term
+    // or NOT naming none, nothing for a search that leaves the mod out; what it changes in the game as modified content
+    // (our own mod's). Found for the same mods as Matches finds, every row and many searches. Then on a row's card while
+    // the box holds a search: right after its id and state, subtle, in the panel's words; none with the box empty; worked
+    // out as the card opens, never in a redraw, and how long that takes (screenshot 10d-found-in).
+    static async Task TestFoundIn(Node menu, NModdingScreen screen, Control content, string outDir)
+    {
+        const string id = "SmmFoundInTest";
+        const ulong item = 4401;
+        var mod = new Mod
+        {
+            path = "", modSource = ModSource.SteamWorkshop, state = ModLoadState.Loaded,
+            manifest = new ModManifest { id = id, name = "Found In Test", author = "Someone Careful", description = "Recolors card art with more contrast." },
+        };
+        Compat.SetWorkshopId(mod, item);
+        WorkshopInfo.TestSet(item, new WorkshopInfo.Details(DateTime.Now, DateTime.Now, ["Cards", "Utility"], [], 0, null));
+        Store.EditMod(id, info => (info.Alias, info.Notes, info.Tags) = ("Art Kit", "Keep for the contrast slider", ["visuals"]));
+        try
+        {
+            string Said(Mod of, string search) => Search.FoundIn(of, search) is { } fields ? $"[{string.Join(", ", fields)}]" : "not found";
+            string[] searches = ["careful", "@\"someone careful\"", "contrast", "#cards", "#visuals", "#workshop", "kit", "\"Art Kit\"", "card art",
+                "found in test", "SmmFoundInTest", "careful #cards", "careful -zzz", "-zzz", "NOT #local", "zzz OR careful", "(zzz | #utility) slider",
+                "careful -contrast", "zzz"];
+            var seen = string.Join(" | ", searches.Select(s => $"{s}: {Said(mod, s)}"));
+            string[] meant = ["careful: [Author]", "@\"someone careful\": [Author]", "contrast: [Description, Note]", "#cards: [WorkshopTags]",
+                "#visuals: [Tags]", "#workshop: [Keywords]", "kit: [Alias]", "\"Art Kit\": [Alias]", "card art: [Description, WorkshopTags, Alias]",
+                "found in test: [Name, Id]", "SmmFoundInTest: [Id]", "careful #cards: [Author, WorkshopTags]", "careful -zzz: [Author]", "-zzz: []",
+                "NOT #local: []", "zzz OR careful: [Author]", "(zzz | #utility) slider: [WorkshopTags, Note]", "careful -contrast: not found", "zzz: not found"];
+            Check("Found in: each term's own fields, in the panel's order (a hidden tag as other keywords); a -term or NOT names none; nothing when "
+                + "the search leaves the mod out", seen == string.Join(" | ", meant), seen);
+            // What it changes in the game: our own mod's code (the debug info label manager), which nothing else of it says.
+            if (Dependencies.Find(ModEntry.ModId) is { } ours && GameChanges.Words(ours).Contains("debug", StringComparison.OrdinalIgnoreCase))
+                Check("Found in: what a mod changes in the game is its modified content", Said(ours, "debug") == "[Modified]", Said(ours, "debug"));
+            else
+                Results.Add("SKIP Found in modified content: our own mod's changes don't name the debug info label manager here");
+        }
+        finally
+        {
+            Store.EditMod(id, info => (info.Alias, info.Notes, info.Tags) = (null, null, null));
+            WorkshopInfo.TestSet(item, null);
+        }
+
+        // The same mods as Matches finds, every row: Found in only shows where the row is a match.
+        var rows = content.GetChildren().OfType<NModMenuRow>().Select(r => r.Mod).OfType<Mod>().ToList();
+        string[] queries = ["lib", "test fixes", "the manager", "co-op", "#Library", "#local", "@symphony", "#Gameplay lib", "test framework", "zzz",
+            "-#local", "NOT test", "#enabled OR #problem", "(lib | fixes) -#gameplay", "\"Test\"", "framework testlib", "#workshop", "manager -zzz"];
+        var differ = rows.SelectMany(m => queries.Where(q => (Search.FoundIn(m, q) != null) != Search.Matches(m, q)).Select(q => $"{m.manifest?.id} \"{q}\"")).ToList();
+        Check($"Found in finds the mods Matches finds ({rows.Count} rows, {queries.Length} searches)", rows.Count > 0 && differ.Count == 0, string.Join(", ", differ.Take(8)));
+
+        // How long a card's Found in takes: every row, every search, one at a time as a card asks.
+        var watch = System.Diagnostics.Stopwatch.StartNew();
+        foreach (var m in rows)
+            foreach (var q in queries)
+                Search.FoundIn(m, q);
+        var each = watch.Elapsed.TotalMilliseconds / Math.Max(1, rows.Count * queries.Length);
+        var slowest = rows.SelectMany(m => queries.Select(q => (m, q))).Max(p =>
+        {
+            var one = System.Diagnostics.Stopwatch.StartNew();
+            Search.FoundIn(p.m, p.q);
+            return one.Elapsed.TotalMilliseconds;
+        });
+        Results.Add($"INFO Found in: {each:0.000} ms a card on average, {slowest:0.00} ms at most ({rows.Count} rows x {queries.Length} searches)");
+        Check("Found in stays quick as a card opens (under 5 ms each here)", slowest < 5, $"{each:0.000} ms on average, {slowest:0.00} ms at most");
+
+        // On a row's card: Test Fixes by its author and its own tag.
+        var box = screen.GetNode<LineEdit>("ModsBorder/SpireModManagerSearch");
+        void Type(string text)
+        {
+            box.Text = text;
+            box.EmitSignal(LineEdit.SignalName.TextChanged, text);
+        }
+        const string search = "favorites symphony";
+        Type(search);
+        await Wait(menu, 0.3);
+        if (content.GetChildren().OfType<NModMenuRow>().FirstOrDefault(r => r.Visible && r.Mod?.manifest?.id == "SmmTestFixes") is not { Mod: { } fixes } row)
+        {
+            Results.Add($"FAIL Found in on a row's card: no row for Test Fixes while searching \"{search}\"");
+            Type("");
+            return;
+        }
+        Search.TestFoundIn = 0;
+        CategoryList.Apply(content); // redraws with the search on: no row works out its fields
+        CategoryList.Redraw(content);
+        await Wait(menu, 0.3);
+        var inRedraw = Search.TestFoundIn;
+        var hot = row.GetNode<Control>("SpireModManagerTitleHover");
+        var card = (await SizedHoverCard(menu, hot, "SpireModManagerNotesCard", () => Capture(screen, outDir, "10d-found-in"))).Text.Split('\n');
+        var opened = Search.TestFoundIn;
+        var bbcode = ModDetails.Card(fixes, search: search).Split('\n');
+        var foundIn = Menus.Format("SPIRE_MOD_MANAGER.FOUND_IN", ("fields", $"{Menus.Text("SPIRE_MOD_MANAGER.FIELD_AUTHOR")}, {Menus.Text("SPIRE_MOD_MANAGER.FIELD_TAGS")}"));
+        Check("Found in on a row's card while the box holds a search: right after its id and state, subtle (\"Found in: author, tags\")",
+            card.Length > 2 && card[0].StartsWith("SmmTestFixes") && card[1] == foundIn && card[1] == "Found in: author, tags"
+            && bbcode.Length > 1 && bbcode[1] == $"[color=#fff6e299]{foundIn}[/color]", string.Join(" | ", card));
+        Check("Found in is worked out as the card opens, never in a redraw", inRedraw == 0 && opened > 0, $"{inRedraw} in two redraws, {opened} for the card");
+        Type("");
+        await Wait(menu, 0.3);
+        var plain = (await HoverCard(menu, hot, "SpireModManagerNotesCard")).Split('\n');
+        Check("no Found in on a row's card with the box empty", plain.Length > 1 && plain[0].StartsWith("SmmTestFixes")
+            && !plain.Any(l => l.StartsWith(Menus.Format("SPIRE_MOD_MANAGER.FOUND_IN", ("fields", "")))), string.Join(" | ", plain));
+    }
+
     // A redraw answers its questions once (Lookups) instead of once per row: the answers must be the same as asked
     // one at a time outside a redraw, for every mod shown. Then how long a redraw and a search keystroke take here
     // (about 50 mods): reported, with a generous bound. TestManyMods and the --real tour time longer lists.

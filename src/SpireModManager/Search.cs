@@ -284,18 +284,137 @@ static class Search
 
     static Haystack HaystackOf(Mod mod)
     {
-        var info = Store.InfoFor(mod);
-        string?[] fields = [mod.manifest?.name, mod.manifest?.id, mod.manifest?.author, info?.Alias, info?.Notes, info?.Category,
-            .. Tags.For(mod).Select(c => c.Text), .. WorkshopInfo.For(mod)?.Tags ?? []];
+        string?[] fields = [.. Fields(mod).Select(f => f.Text)];
         var folded = fields.OfType<string>().Select(f => Fold(f, "")).ToList();
-        // As the panel shows it: its markup's pairs taken out ("[gold]Art[/gold]" is "Art", not "gold"), a picture's
-        // path with its tag, and [lb] and [rb] as the brackets they show.
-        var description = mod.manifest?.description is { Length: > 0 } text
-            ? ModDetails.WithoutTags(Picture.Replace(text, "")).Replace("[lb]", "[").Replace("[rb]", "]") : "";
+        var description = Described(mod);
         // What it changes in the game ("The Regent (energy orb)", "creature"), searched as its description is.
         var words = (description + " " + GameChanges.Words(mod)).Trim();
         return new Haystack(string.Join('\n', fields.Append(description)), string.Join('\n', folded), [.. folded.Select(Squeeze)],
             Fold(words, ""), Fold(words, " "));
+    }
+
+    // What a search looks in, as Found in names it, in the order the info panel shows them: Keywords are the hidden tags
+    // (its Other keywords), Modified what it changes in the game (its Modified content).
+    public enum Field { Name, Id, Author, Description, WorkshopTags, Keywords, Modified, Alias, Category, Tags, Note }
+
+    // The short fields a search looks in, each with the field it is: the name, id and author, the player's alias, note
+    // and category, the tags' chips (the player's too) and the Workshop tags.
+    static IEnumerable<(Field Field, string? Text)> Fields(Mod mod)
+    {
+        var info = Store.InfoFor(mod);
+        yield return (Field.Name, mod.manifest?.name);
+        yield return (Field.Id, mod.manifest?.id);
+        yield return (Field.Author, mod.manifest?.author);
+        yield return (Field.Alias, info?.Alias);
+        yield return (Field.Note, info?.Notes);
+        yield return (Field.Category, info?.Category);
+        foreach (var chip in Tags.For(mod))
+            yield return (Field.Tags, chip.Text);
+        foreach (var tag in WorkshopInfo.For(mod)?.Tags ?? [])
+            yield return (Field.WorkshopTags, tag);
+    }
+
+    // The description as the panel shows it: its markup's pairs taken out ("[gold]Art[/gold]" is "Art", not "gold"), a
+    // picture's path with its tag, and [lb] and [rb] as the brackets they show.
+    static string Described(Mod mod) => mod.manifest?.description is { Length: > 0 } text
+        ? ModDetails.WithoutTags(Picture.Replace(text, "")).Replace("[lb]", "[").Replace("[rb]", "]") : "";
+
+#if DEVTOOLS
+    // Self-test: how many times FoundIn has worked fields out (a redraw must never).
+    public static int TestFoundIn { get; set; }
+#endif
+
+    // The fields a search finds the mod in, in the panel's order, for the row's card (Found in): what each of its terms
+    // that finds the mod matched, as Matches matches it, a hidden tag as Keywords; a term that leaves mods out (a "-" or
+    // NOT) names none. Null when the search doesn't find the mod. Field by field, when the card opens: apart from
+    // Matches, which a redraw asks of every row.
+    public static List<Field>? FoundIn(Mod? mod, string filter)
+    {
+#if DEVTOOLS
+        TestFoundIn++;
+#endif
+        if (mod?.manifest is not { } manifest || Parse(filter).Root is not { } root)
+            return null;
+        var shorts = Fields(mod).Where(f => f.Text != null).Select(f => (f.Field, Raw: f.Text ?? "", Folded: Fold(f.Text ?? "", ""))).ToList();
+        var squeezed = shorts.Select(f => Squeeze(f.Folded)).ToList();
+        var description = Described(mod);
+        var changes = GameChanges.Words(mod);
+        (string Folded, string Spaced) Long(string text) => (Fold(text, ""), Fold(text, " "));
+        var (described, changed, both) = (Long(description), Long(changes), Long((description + " " + changes).Trim()));
+        static bool Starts((string Folded, string Spaced) text, Term term) => StartsWord(text.Folded, term.Spaced)
+            || StartsWord(text.Spaced, term.Spaced) || StartsWord(text.Folded, term.Joined);
+        IReadOnlyList<string>? tags = null;
+        // A tag the mod has: its chip's (or, chip or not, Stable, Beta and Duplicate), a Workshop tag's, or both.
+        void Tagged(string value, HashSet<Field> found)
+        {
+            if (!(tags ??= Tags.Searchable(mod)).Contains(value, StringComparer.OrdinalIgnoreCase))
+                return;
+            var workshop = Tags.FromWorkshop(mod, value);
+            if (!workshop || Tags.For(mod).Any(c => string.Equals(c.Text, value, StringComparison.OrdinalIgnoreCase)))
+                found.Add(Field.Tags);
+            if (workshop)
+                found.Add(Field.WorkshopTags);
+        }
+        HashSet<Field> In(Term term)
+        {
+            var found = new HashSet<Field>();
+            switch (term.Kind)
+            {
+                case "#":
+                    if (term.Hidden?.Invoke(mod) == true)
+                        found.Add(Field.Keywords);
+                    Tagged(term.Value, found);
+                    break;
+                case "@":
+                    if (string.Equals(manifest.author, term.Value, StringComparison.OrdinalIgnoreCase))
+                        found.Add(Field.Author);
+                    break;
+                case Exact:
+                    found.UnionWith(shorts.Where(f => f.Raw.Contains(term.Value, StringComparison.Ordinal)).Select(f => f.Field));
+                    if (description.Contains(term.Value, StringComparison.Ordinal))
+                        found.Add(Field.Description);
+                    break;
+                default:
+                    for (var i = 0; i < shorts.Count; i++)
+                        if (shorts[i].Folded.Contains(term.Spaced, StringComparison.OrdinalIgnoreCase) || squeezed[i].Contains(term.Joined, StringComparison.OrdinalIgnoreCase))
+                            found.Add(shorts[i].Field);
+                    var (inDescription, inChanges) = (Starts(described, term), Starts(changed, term));
+                    // Only across the two (the description's last word, then the first of what it changes): both.
+                    if (!inDescription && !inChanges && Starts(both, term))
+                        (inDescription, inChanges) = (description.Length > 0, changes.Length > 0);
+                    if (inDescription)
+                        found.Add(Field.Description);
+                    if (inChanges)
+                        found.Add(Field.Modified);
+                    Tagged(term.Spaced, found);
+                    break;
+            }
+            return found;
+        }
+        HashSet<Field>? Matched(Clause clause)
+        {
+            switch (clause)
+            {
+                case Term term:
+                    return In(term) is { Count: > 0 } found ? found : null;
+                case Words words:
+                    var each = words.Each.Select(In).ToList();
+                    var all = each.All(f => f.Count > 0) ? each.SelectMany(f => f).ToHashSet() : [];
+                    all.UnionWith(shorts.Where((_, i) => squeezed[i].Contains(words.Squeezed, StringComparison.OrdinalIgnoreCase)).Select(f => f.Field));
+                    return all.Count > 0 ? all : null;
+                case Not not:
+                    return Matched(not.Of) == null ? [] : null;
+                case AnyOf any:
+                    var hits = any.Of.Select(Matched).OfType<HashSet<Field>>().ToList();
+                    return hits.Count > 0 ? hits.SelectMany(f => f).ToHashSet() : null;
+                case AllOf every:
+                    var parts = every.Of.Select(Matched).ToList();
+                    return parts.All(p => p != null) ? parts.SelectMany(p => p ?? []).ToHashSet() : null;
+                default:
+                    return null;
+            }
+        }
+        return Matched(root) is { } fields ? [.. fields.Order()] : null;
     }
 
     static readonly Regex Picture = new(@"\[img[^\]]*\].*?\[/img\]", RegexOptions.Singleline | RegexOptions.IgnoreCase);

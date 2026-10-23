@@ -317,10 +317,10 @@ static class ModDetails
         return $"[color={(age.TotalHours < 48 ? Enabled : Disabled)}]({text})[/color]";
     }
 
-    // A row's hover card: the mod's picture, id and state, anything wrong, author, last update, and the player's alias,
-    // tags and note. title: the whole name, under the picture, when the row's is cut short. full: nothing cut short (held
-    // with Alt).
-    public static string Card(Mod mod, bool full = false, string? title = null)
+    // A row's hover card: the mod's picture, id and state, where the list's search found it, anything wrong, author, last
+    // update, and the player's alias, tags and note. title: the whole name, under the picture, when the row's is cut
+    // short. full: nothing cut short (held with Alt). search: the list's search, if any.
+    public static string Card(Mod mod, bool full = false, string? title = null, string? search = null)
     {
         string Cut(string text, int max) => full || text.Length <= max ? text : text[..max].TrimEnd() + "…";
         var id = mod.manifest?.id ?? "";
@@ -331,6 +331,9 @@ static class ModDetails
         if (title != null)
             lines.Add($"[b]{Escape(title)}[/b]");
         lines.Add($"[b]{Escape(id)}[/b]  {Bullet}  {Status(mod)}");
+        // Jordan: "when a search is applied, add explanation in hover card that says "Found in: a, b, c"".
+        if (search is { Length: > 0 } && Search.FoundIn(mod, search) is { Count: > 0 } fields)
+            lines.Add($"[color={Quiet}]{Escape(Menus.Format("SPIRE_MOD_MANAGER.FOUND_IN", ("fields", string.Join(", ", fields.Select(FieldName)))))}[/color]");
         AddWarnings(lines, mod);
         lines.Add(CardFact("SPIRE_MOD_MANAGER.AUTHOR", mod.manifest?.author is { Length: > 0 } author ? Escape(Cut(author, 80)) : Faint("SPIRE_MOD_MANAGER.UNKNOWN")));
         if (WorkshopInfo.For(mod) is { } workshop)
@@ -347,6 +350,22 @@ static class ModDetails
             lines.AddRange([CardGap, .. yours]);
         return string.Join("\n", lines);
     }
+
+    // A field in Found in, in the words the panel names it by, as they read in a list ("author, Workshop tags, note").
+    static string FieldName(Search.Field field) => Menus.Text(field switch
+    {
+        Search.Field.Name => "SPIRE_MOD_MANAGER.FIELD_NAME",
+        Search.Field.Id => "SPIRE_MOD_MANAGER.FIELD_ID",
+        Search.Field.Author => "SPIRE_MOD_MANAGER.FIELD_AUTHOR",
+        Search.Field.Description => "SPIRE_MOD_MANAGER.FIELD_DESCRIPTION",
+        Search.Field.WorkshopTags => "SPIRE_MOD_MANAGER.WORKSHOP_TAGS",
+        Search.Field.Keywords => "SPIRE_MOD_MANAGER.FIELD_KEYWORDS",
+        Search.Field.Modified => "SPIRE_MOD_MANAGER.FIELD_MODIFIED",
+        Search.Field.Alias => "SPIRE_MOD_MANAGER.FIELD_ALIAS",
+        Search.Field.Category => "SPIRE_MOD_MANAGER.FIELD_CATEGORY",
+        Search.Field.Tags => "SPIRE_MOD_MANAGER.FIELD_TAGS",
+        _ => "SPIRE_MOD_MANAGER.FIELD_NOTES",
+    });
 
     // The card other mods show for a mod (the API's ModCards): what the row's card says, with Jordan's list for it on
     // top: the mod's picture, its name as it gives it (never the player's alias: the caller's row shows that), its

@@ -241,6 +241,7 @@ static partial class SelfTest
             await Step(() => TestBranchTags());
             await Step(() => TestDescriptionSearch());
             await Step(() => TestSearchGrammar());
+            await Step(() => TestFoundIn(menu, screen, content, outDir));
             await Step(() => TestHiddenTags(content));
             await Step(() => TestRedrawCost(menu, screen, content));
             await Step(() => TestManyMods(menu, screen, content));
