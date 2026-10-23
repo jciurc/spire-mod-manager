@@ -329,15 +329,15 @@ static partial class SelfTest
             && File.ReadAllText(Manager(nullsDir)) == nulls, tidied.Unreadable ?? "");
         var allNull = Store.LoadFrom(Folder("all-null", "{\"categories\":null,\"mods\":null,\"profiles\":null}"), now);
         Check("a file whose lists are null: empty ones", allNull.Data is { Categories.Count: 0, Mods.Count: 0, Profiles.Count: 0 });
-        // copies_off by hand: nulls, keys naming no copy, ours, repeats and the pick (which always counts as on) dropped,
-        // sorted; copies not installed kept (as picks are never pruned); the file untouched. Empty stays empty (none off),
-        // and none stays none (a file from before it: only the pick on).
+        // copies_off by hand: nulls, keys naming no copy, ours and repeats dropped, sorted; copies not installed kept (a copy
+        // missing for a launch keeps its tick); a legacy pick has no say once copies_off is there; the file untouched.
+        // Empty stays empty (none off), and none stays none (a file from before it: read through its picks).
         const string offs = "{\"copy_picks\":[\"SmmX|l:B\"],\"copies_off\":[null,\"bad\",\"SmmX|l:C\",\"SmmX|l:A\",\"SmmX|l:A\",\"SmmX|l:B\",\"SpireModManager|l:Other\"]}";
         var offsDir = Folder("copies-off", offs);
         var offsRead = Store.LoadFrom(offsDir, now);
         var (emptyOff, noOff) = (Store.LoadFrom(Folder("copies-off-empty", "{\"copies_off\":[]}"), now), Store.LoadFrom(Folder("copies-off-none", "{}"), now));
-        Check("copies_off in a hand-edited file: nulls, keys naming no copy, ours, repeats and the pick dropped, sorted, the file untouched; empty stays empty, "
-            + "none stays none", offsRead.Data?.CopiesOff is ["SmmX|l:A", "SmmX|l:C"] && File.ReadAllText(Manager(offsDir)) == offs
+        Check("copies_off in a hand-edited file: nulls, keys naming no copy, ours and repeats dropped (a legacy pick in it kept), sorted, the file "
+            + "untouched; empty stays empty, none stays none", offsRead.Data?.CopiesOff is ["SmmX|l:A", "SmmX|l:B", "SmmX|l:C"] && File.ReadAllText(Manager(offsDir)) == offs
             && emptyOff.Data?.CopiesOff is [] && noOff.Data is { CopiesOff: null },
             $"{string.Join(", ", offsRead.Data?.CopiesOff ?? [])}; empty {emptyOff.Data?.CopiesOff?.Count}, none {noOff.Data?.CopiesOff?.Count}");
         // The copies record by hand: an id's null list (Copies.Key would throw on every row) or one left empty goes, nulls
@@ -516,7 +516,7 @@ static partial class SelfTest
                 {
                     var size = hint.GetThemeFontSize("font_size");
                     var whole = hint.GetThemeFont("font").GetStringSize(hint.Text, fontSize: size).X;
-                    var width = Math.Min(whole, hint.Size.X); // the text as drawn, not its box: cut with "…" to the box if it must be
+                    var width = Math.Min(whole, hint.Size.X); // the text as drawn, not its box: cut with ".." to the box if it must be
                     var middle = hint.GetGlobalRect().GetCenter().X;
                     var own = button.GetCombinedMinimumSize().X; // the button's width by its own text
                     var fitted = whole <= own - 2 * HistoryBar.HintInset + 0.5f || size <= HistoryBar.HintSmallest;

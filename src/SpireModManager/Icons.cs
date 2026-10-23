@@ -11,7 +11,7 @@ static class Icons
 
     // Our gold padlock, an arched shackle over a body (16 by 19 px), added to holder about a point of it: at, a fraction
     // of its size each way, then moved by offset px. It marks what of ours stays as it is: our rows' grip in Load Order
-    // (they stay first), and our copies' tickboxes locked on (CategoryList.CopyBoxes). Only drawn: the mouse goes through.
+    // (they stay first). Only drawn: the mouse goes through.
     public static void AddPadlock(Control holder, Vector2 at, Vector2 offset = default)
     {
         void Part(Rect2 rect, StyleBox look)

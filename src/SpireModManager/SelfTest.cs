@@ -142,10 +142,12 @@ static partial class SelfTest
             await Step(() => TestLaunchGuard(menu, outDir));
             await Step(() => TestCrashOffer(menu, outDir));
             await Step(() => TestSameIdCanary()); // which copy of a mod installed twice loads (SameIdLoad)
+            await Step(() => TestCopyRule(outDir)); // the rule every view and the launch share (Copies.Next), on made-up copies
+            await Step(() => TestSameIdTie());
             await Step(() => TestSameIdPlan());
-            await Step(() => TestSameIdPick());
+            await Step(() => TestSameIdLaunch());
             await Step(() => TestSameIdSettle());
-            await Step(() => TestCopiesOff());
+            await Step(() => TestCopiesData(outDir));
             await Step(() => TestSameIdErrors());
             await Step(() => TestSameIdLaunchGuard(menu, outDir));
             await Step(() => TestTranslationsFolder(menu));
@@ -256,6 +258,7 @@ static partial class SelfTest
             await Step(() => TestRelaunchCheck(menu, screen, content, outDir));
             await Step(() => TestLongDetails(menu, screen, content, outDir));
             await Step(() => TestDescriptionCut(menu, screen, content, outDir));
+            await Step(() => TestCutWhole(content));
             await Step(() => TestWorkshopHead(menu, screen, outDir));
             await Step(() => TestOtherModPanel(menu, screen, content, outDir));
             await Step(() => TestGameChanges(menu, screen, content, outDir));
@@ -265,6 +268,8 @@ static partial class SelfTest
             await Step(() => TestCopies(menu, screen, content, outDir));
             await Step(() => TestSameIdCopies(menu, screen, content, outDir));
             await Step(() => TestSameIdBothOn(menu, screen, content, outDir)); // both copies ticked: which loads, and the words for it
+            await Step(() => TestCopyOutcome(menu, screen, content, outDir)); // every view from the one rule, in each state it decides
+            await Step(() => TestCopyUnticked(menu, screen, content));
             await Step(() => TestTagSuggestions(menu, screen, content, outDir));
             await Step(() => TestTagPills(menu, screen, content, outDir));
             await Step(() => TestHistory(menu, screen, content, outDir));
@@ -650,17 +655,17 @@ static partial class SelfTest
             var missing = parts.Where(p => screen.GetNodeOrNull(p) == null).ToList();
             Check("first run: the page opens with all our parts", missing.Count == 0, "missing " + string.Join(", ", missing));
             Check($"first run: rows ({rows.Count}) match mods ({ModManager.Mods.Count})", rows.Count == ModManager.Mods.Count);
-            // The launch that brings picks (no data yet, so no pick): the game's own choice loads, the copy sorted first,
-            // the other set aside (no duplicate error); that one becomes the pick, so nothing is pending for them.
+            // A first run (no data yet, so nothing off): both copies ticked, and the higher version (B, sorted second)
+            // loads, swapped into the id's first slot, the other set aside (no duplicate error); nothing pending for them.
             var twins = ModManager.Mods.Where(m => m.manifest?.id == TwinId).ToList();
             if (twins.FirstOrDefault(m => Copies.CopyOf(m) == "l:SmmTestTwinA") is { } a && twins.FirstOrDefault(m => Copies.CopyOf(m) == "l:SmmTestTwinB") is { } b)
-                Check("first run: a mod installed twice, no pick saved yet: the game's own choice (the copy sorted first) loads, the other set aside with no "
-                    + "duplicate error; that one picked, nothing pending for them",
-                    SameIdLoad.Plan.GetValueOrDefault(TwinId) is { HadPick: false, Swapped: false } plan && plan.Loads == a && a.state == ModLoadState.Loaded
-                    && b.state == ModLoadState.DisabledDuplicate && !ModManager.Mods.Any(m => m.errors?.Any(e => e.LocEntryKey == "MOD_ERROR.DUPLICATE_ID") == true)
-                    && Store.Data.CopyPicks?.Contains($"{TwinId}|l:SmmTestTwinA") == true && Copies.Ticked(a) && !Copies.Ticked(b)
-                    && Store.Data.CopiesOff?.Contains($"{TwinId}|l:SmmTestTwinB") == true, // a first run reads as data from before copies_off: the pick alone on
-                    $"A {a.state}, B {b.state}; picks {string.Join(", ", Store.Data.CopyPicks ?? [])}; plan {SameIdLoad.Plan.GetValueOrDefault(TwinId)}");
+                Check("first run: a mod installed twice, no data yet: both copies ticked, the higher version loads (swapped into the id's first slot), the "
+                    + "other set aside with no duplicate error; no copy_picks, nothing off, nothing pending for them",
+                    SameIdLoad.Plan.GetValueOrDefault(TwinId) is { Swapped: true } plan && plan.Loads == b && b.state == ModLoadState.Loaded
+                    && a.state == ModLoadState.DisabledDuplicate && !ModManager.Mods.Any(m => m.errors?.Any(e => e.LocEntryKey == "MOD_ERROR.DUPLICATE_ID") == true)
+                    && Store.Data.CopyPicks == null && Copies.Ticked(a) && Copies.Ticked(b) && Copies.Loads(b) && !Copies.Loads(a)
+                    && Store.Data.CopiesOff?.Any(k => Copies.IdOf(k) == TwinId) == false,
+                    $"A {a.state}, B {b.state}; off {string.Join(", ", Store.Data.CopiesOff ?? [])}; plan {SameIdLoad.Plan.GetValueOrDefault(TwinId)}");
             else
                 TwinsMissing("first run: a mod installed twice");
 
@@ -882,9 +887,13 @@ static partial class SelfTest
             Results.Add($"SKIP {what}: the fixture twins aren't installed");
     }
 
-    // The fixture's two copies of one mod id (SmmTestTwinA 1.0.0, SmmTestTwinB 1.1.0 needing Test Framework, the picked
-    // one) and Test Twin User, which needs 1.1.0 or newer. dev.cs lists the id after the framework, so A sorts first.
+    // The fixture's two copies of one mod id (SmmTestTwinA 1.0.0, SmmTestTwinB 1.1.0 needing Test Framework, the higher
+    // version and the fixture's legacy pick, so the one that loads) and Test Twin User, which needs 1.1.0 or newer. dev.cs
+    // lists the id after the framework, so A sorts first.
     const string TwinId = "SmmTestTwin";
+
+    // The copy of an id that loads after a relaunch (Copies.Next); null for none.
+    static string? LoadingCopy(string id) => Copies.Loading(id) is { } loads ? Copies.CopyOf(loads) : null;
 
     // A made-up mod for SameIdLoad's plan, in a folder of its own: its copy "l:<folder>", or "w:<item>" with an item.
     static Mod Made(string id, string folder, ModLoadState state = ModLoadState.None, ulong? item = null, string version = "1.0.0", params string[] needs)
@@ -906,20 +915,17 @@ static partial class SelfTest
     static List<string> FileCopiesOff() =>
         [.. (JsonNode.Parse(File.ReadAllText(Store.FilePath))?["copies_off"] as JsonArray ?? []).Select(k => (string?)k).OfType<string>()];
 
-    // What every id and source installed more than once keeps, whatever was done to its copies: its pick installed and
-    // never off, its switch on exactly while a copy of it is ticked, and then exactly one copy of the id loading. Null
-    // when every one keeps it, else what broke first.
+    // What every id and source installed more than once keeps, whatever was done to its copies: no copy_picks in our data
+    // (read once, never written again), its switch on exactly while a copy of it is ticked, and then exactly one copy of
+    // the id loading. Null when every one keeps it, else what broke first.
     static string? CopiesBroken()
     {
-        var (off, gameOff) = (CopiesOff(), Dependencies.SavedOff());
+        var gameOff = Dependencies.SavedOff();
         var installed = Dependencies.EachCopy(ModManager.Mods.Union(Installed.Mods)).ToList();
+        if (Store.Data.CopyPicks != null)
+            return $"copy_picks still in our data: {string.Join(", ", Store.Data.CopyPicks)}";
         foreach (var (id, source, copies) in Copies.TwinGroups())
         {
-            var pick = Store.Data.CopyPicks?.Select(Copies.Parse).FirstOrDefault(p => p is { } k && k.Id == id && k.Source == source) is { } stored ? stored.Copy : null;
-            if (pick == null || !copies.Contains(pick))
-                return $"{id}/{source}: the pick {pick ?? "none"} isn't one of its copies ({string.Join(", ", copies)})";
-            if (off.Contains($"{id}|{pick}"))
-                return $"{id}/{source}: the pick {pick} is in copies_off";
             var on = !gameOff.Contains((id, source));
             var ticked = installed.Where(m => m.manifest?.id == id && m.modSource == source && Copies.Ticked(m)).Select(Copies.CopyOf).ToList();
             if (on != ticked.Count > 0)
@@ -932,23 +938,33 @@ static partial class SelfTest
 
     // The words of the duplicate copies, word for word as settings_ui.json has them: drafts until Jordan's copy pass, so
     // here once for every check that reads them (an edit there is one edit here). Draft fills in their values.
-    const string SelfLockedTip = "Spire Mod Manager is installed more than once, so its copies stay enabled. If one is removed, another still loads. "
-        + "To turn Spire Mod Manager off, disable them all on the vanilla modding page.";
-    const string SelfLockedOtherOffTip = "Spire Mod Manager stays enabled. {other} is disabled, so Spire Mod Manager won't load if this copy is removed. Enable it too.";
     const string SameIdText = "{count} mods with the same ID are enabled. Only one copy will be loaded.";
     const string BannerLoads = "{mod}: loads", BannerWontLoad = "{mod}: won't load";
     const string RelaunchLoses = "{other} loads instead";
     const string CopySwitchLine = "{mod}: {to} loads instead of {from}";
     const string ClashTip = "Another copy of this mod is enabled: {others}. Only {loads} loads.";
     const string StatusWontLoad = "Duplicate - Won't load";
-    const string CopyLoses = "{other} loads instead. {why} Disable one to choose.";
-    const string WhyLocal = "The game prioritizes a local copy.", WhyHigher = "The game prioritizes a higher version.", WhySource = "Only one copy from the same source loads.";
-    const string LoadsAlso = "{other} is also enabled - this copy is the one that loads.";
+    const string CopyLoses = "{other} loads instead. {why} Disable one to choose.", CopyLosesPlain = "{other} loads instead. Disable one to choose.";
+    const string WhyLocal = "The game prioritizes a local copy.", WhyHigher = "The game prioritizes a higher version.";
+    const string WhyFirst = "With no higher version, the copy installed first is prioritized.";
+    const string WhyUnreadable = "This copy's version can't be read, so a copy with a readable version is prioritized.";
+    const string CopyBlocked = "{other} loads instead: this copy needs {dep}, which loads after {other}";
+    const string LoadsBlocked = "{other} can't load in this copy's place: it needs {dep}, which loads after this copy";
+    const string LoadsUnticked = "This copy loads though it's disabled: it shares the game's switch with {other}, which is enabled, and the game prioritizes "
+        + "it over {local} as the higher version";
+    const string LoadsAlso = "{other} is also enabled - this copy is the one that loads";
+    const string LoadsAfter = "Loads on relaunch, in place of {other}";
     const string FailedOther = "{other} is also installed. To load that copy instead, enable it and disable this one.";
-    const string SelfRuns = "This copy is running. {other} stays enabled too, in case this one is removed.";
-    const string SelfBackup = "{other} is running. This copy stays enabled, in case that one is removed.";
-    const string NewCopyOff = "A new copy of {mods} was installed and is disabled.";
-    const string NewSelfCopy = "A new copy of Spire Mod Manager (this mod) was installed. Its copies stay enabled, and only {loads} loads.";
+    const string NotApplied = "Spire Mod Manager couldn't choose which copy was loaded. If the game is on a different version, Spire Mod Manager may need to be updated.";
+    const string SelfBackup = "{other} is running. This copy is enabled too, in case that one is removed.";
+    const string SelfCopyOff = "{other} is running. This copy is disabled, so Spire Mod Manager won't load if that one is removed.";
+    const string SelfRunsOtherOff = "This copy is running. {other} is disabled, so Spire Mod Manager won't load if this one is removed.";
+    const string SelfRunsSwitch = "This copy is running. After a relaunch, {other} loads instead. {why}";
+    const string SelfBackupSwitch = "{other} is running. After a relaunch, this copy loads instead. {why}";
+    const string RelaunchSelfOff = "Spire Mod Manager (this mod) will be disabled on relaunch. To use it again, enable it on the vanilla modding page, "
+        + "and it will load after the next restart.";
+    const string NewCopyOff = "A new copy of {mods} was installed and is disabled";
+    const string NewSelfCopy = "A new copy of Spire Mod Manager (this mod) was installed and enabled. {loads} will be loaded.";
 
     // The banners' Go to and Show the same way: drafts until the copy pass, word for word as settings_ui.json has them.
     const string GoToProblem = "Go to", GoToProblemTip = "Open the next affected mod";
@@ -966,7 +982,6 @@ static partial class SelfTest
     static string DuplicateChip => Menus.Text("SPIRE_MOD_MANAGER.TAG_SAME_ID");
     static string CustomTagTip => Template("SPIRE_MOD_MANAGER.TAG_CUSTOM_COUNT_TIP");
     static string CustomTagTipOne => Menus.Text("SPIRE_MOD_MANAGER.TAG_CUSTOM_COUNT_TIP_ONE");
-    static string AdditionalKeywords => Menus.Text("SPIRE_MOD_MANAGER.ADDITIONAL_KEYWORDS");
     static string MoreTags(int count) => count == 1 ? Menus.Text("SPIRE_MOD_MANAGER.MORE_TAGS_ONE") : Draft(Template("SPIRE_MOD_MANAGER.MORE_TAGS"), ("count", $"{count}"));
 
     // A text with its {values} still in it, for Draft (Menus.Text formats it, and these need their values).
@@ -1236,8 +1251,8 @@ static partial class SelfTest
     }
 
     // What a row's pencil, buttons and line show, part by part in order: the pencil and buttons with their tips, then
-    // the line's tags, keywords and "and N more..", note and author, and whether the author ends the line. A spacer or an empty
-    // note shows nothing, so isn't listed: two rows that show the same things read the same, however they were made.
+    // the line's tags and "and N more..", note and author, and whether the author ends the line. A spacer or an empty note
+    // shows nothing, so isn't listed: two rows that show the same things read the same, however they were made.
     static string LineOf(NModMenuRow row)
     {
         var parts = new List<string>();
@@ -1253,7 +1268,7 @@ static partial class SelfTest
                 {
                     PanelContainer tag => $"tag {tag.GetChildOrNull<Label>(0)?.Text}",
                     RichTextLabel { Text.Length: > 0 } note => $"note {note.GetParsedText()}",
-                    Label words when words.Name.ToString() is RowStrip.KeywordsName or RowStrip.MoreName => $"{words.Name} {words.Text}",
+                    Label more when more.Name.ToString() == RowStrip.MoreName => $"{more.Name} {more.Text}",
                     Label author => $"author {author.Text}{(Math.Abs(author.GetGlobalRect().End.X - line.GetGlobalRect().End.X) < 1 ? " at the end" : "")}",
                     _ => "",
                 });
@@ -1262,7 +1277,7 @@ static partial class SelfTest
 
     // RowStrip's timed parts (RowStrip.Costs), in the order a row makes them: "title 1.2 ms, pencil 30.5 ms, ...".
     static string Parts(IReadOnlyDictionary<string, double> costs) => string.Join(", ",
-        new[] { "title", "pencil", "buttons", "keywords", "tags", "needs", "author", "added", "rest" }.Select(part => $"{part} {costs.GetValueOrDefault(part):0.0}"))
+        new[] { "title", "pencil", "buttons", "tags", "needs", "author", "added", "rest" }.Select(part => $"{part} {costs.GetValueOrDefault(part):0.0}"))
         + " ms";
 
     // Where the hover card `name` that hovering `target` brings up sits on screen (null if none), the mouse put back after.

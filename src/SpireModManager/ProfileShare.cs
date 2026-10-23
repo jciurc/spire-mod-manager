@@ -182,9 +182,18 @@ static class ProfileCsv
         return mods.Count == 0 ? Problem(Menus.Text("SPIRE_MOD_MANAGER.IMPORT_NO_MODS")) : new Result(mods, null);
     }
 
-    // At most `most` characters as Godot counts them (code points, as its boxes' MaxLength does), never half of one.
-    static string Cut(string value, int most) =>
-        value.EnumerateRunes().Count() <= most ? value : string.Concat(value.EnumerateRunes().Take(most).Select(r => r.ToString())).TrimEnd();
+    // At most `most` characters as Godot counts them (code points, as its boxes' MaxLength does), in whole text elements
+    // (Menus.Prefix): never part of an emoji joined with ZWJ, or a letter without its accents.
+    static string Cut(string value, int most)
+    {
+        if (value.EnumerateRunes().Count() <= most)
+            return value;
+        var (end, count) = (0, 0);
+        var elements = System.Globalization.StringInfo.GetTextElementEnumerator(value);
+        while (elements.MoveNext() && (count += elements.GetTextElement().EnumerateRunes().Count()) <= most)
+            end += elements.GetTextElement().Length;
+        return value[..end].TrimEnd();
+    }
 
     // A category or alias on one line, as our boxes make them: line breaks and tabs in a quoted cell become spaces.
     static string OneLine(string value) => string.Join(" ", value.Split(['\r', '\n', '\t'], StringSplitOptions.RemoveEmptyEntries | StringSplitOptions.TrimEntries));
@@ -432,9 +441,7 @@ static class ProfileShare
             lines.Add("  •  " + Menus.Format("SPIRE_MOD_MANAGER.IMPORT_NEW_CATEGORIES", ("count", Menus.Number(extras.NewCategories.Count))));
         if (extras.Details > 0)
             lines.Add("  •  " + Menus.Format("SPIRE_MOD_MANAGER.IMPORT_DETAILS", ("count", Menus.Number(extras.Details))));
-        // Another copy loading with no box changed, in Changes' words.
-        lines.AddRange(plan.Switched.Select(s => "  •  " + Escape(HistoryBar.CopySwitch(s.From, s.To).Plain)));
-        if (plan.On == 0 && plan.Off == 0 && plan.Switched.Count == 0 && extras.Sorted.Count == 0 && extras.Details == 0)
+        if (plan.On == 0 && plan.Off == 0 && extras.Sorted.Count == 0 && extras.Details == 0)
             lines.Add("  •  " + Menus.Text("SPIRE_MOD_MANAGER.IMPORT_NO_CHANGE"));
         if (plan.BothCopies.Count > 0)
         {
@@ -587,7 +594,7 @@ static class ProfileShare
     // The import preview's area: the preview's 250 px and room for a two-line message above it.
     const float PreviewArea = 310;
 
-    // A line saying what just happened or what's wrong. reserved: it always takes its one line, cut with "…" (the share
+    // A line saying what just happened or what's wrong. reserved: it always takes its one line, cut with ".." (the share
     // dialog's, right above its buttons), so a message coming and going moves nothing.
     const string ReservedMeta = "spire_mod_manager_reserved";
 
@@ -598,11 +605,11 @@ static class ProfileShare
         status.AddThemeFontSizeOverride("font_size", 17);
         if (reserved)
         {
-            (status.AutowrapMode, status.ClipText, status.TextOverrunBehavior) = (TextServer.AutowrapMode.Off, true, TextServer.OverrunBehavior.TrimEllipsis);
+            status.AutowrapMode = TextServer.AutowrapMode.Off;
             status.SetMeta(ReservedMeta, true);
             status.Visible = true;
             status.Modulate = Colors.Transparent; // its line kept, nothing shown
-            status.Text = " ";
+            Menus.CutToFit(status, " ");
         }
         return status;
     }
@@ -612,7 +619,8 @@ static class ProfileShare
         status.AddThemeColorOverride("font_color", error ? ErrorColor : new Color(Cream, 0.7f));
         if (status.HasMeta(ReservedMeta))
         {
-            (status.Text, status.Modulate) = text.Length > 0 ? (text, Colors.White) : (" ", Colors.Transparent);
+            Menus.CutToFit(status, text.Length > 0 ? text : " ");
+            status.Modulate = text.Length > 0 ? Colors.White : Colors.Transparent;
             return;
         }
         status.Text = text;

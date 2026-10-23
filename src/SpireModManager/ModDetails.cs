@@ -32,7 +32,6 @@ static class ModDetails
     const string GoldHex = "#efc851", LinkHex = "#99ccff";
     public const string ModLinkHex = "#cfe3ff"; // a mod's name, or its author, that a click acts on: light blue
     const string Quiet = "#fff6e299"; // no value to show (an unknown author, no description): subtle, so it doesn't read as one
-    const string Fainter = "#fff6e280"; // Other keywords: half the panel text's alpha, below the facts without reading as one
     const string Bullet = "[color=#fff6e280]•[/color]"; // between facts on one line: dim
     const int VersionSize = 20;
     const int HeadSize = 16; // the head's text
@@ -279,11 +278,11 @@ static class ModDetails
             Fact("SPIRE_MOD_MANAGER.SUBSCRIBERS", Menus.Number(subscribers));
         if (workshop?.Tags.Count > 0)
             Fact("SPIRE_MOD_MANAGER.WORKSHOP_TAGS", string.Join(", ", workshop.Tags.Select(t => $"[url=wtag:{t}]{Escape(t)}[/url]"))); // click: search for it
-        // The hidden tags that find it (Jordan: "so that way they're at least visible"), links as the Workshop tags are,
-        // the whole line fainter.
+        // The hidden tags that find it (Jordan: "so that way they're at least visible"), a fact like the others, links as
+        // the Workshop tags are; bare names (Jordan: no "#"), though a click searches #name.
         var keywords = HiddenTags.Of(mod);
         if (keywords.Count > 0)
-            text.Append($"[color={Fainter}]{Menus.Text("SPIRE_MOD_MANAGER.OTHER_KEYWORDS")}: {string.Join(", ", keywords.Select(k => $"[url=htag:{k}]#{k}[/url]"))}[/color]\n");
+            Fact("SPIRE_MOD_MANAGER.OTHER_KEYWORDS", string.Join(", ", keywords.Select(k => $"[url=htag:{k}]{k}[/url]")));
         // What it changes in the game itself, right under them (Jordan: "with no gap"), for every mod.
         text.Append(modified).Append("\n\n");
 
@@ -331,11 +330,11 @@ static class ModDetails
     // short. full: nothing cut short (held with Alt). search: the list's search, if any.
     public static string Card(Mod mod, bool full = false, string? title = null, string? search = null)
     {
-        string Cut(string text, int max) => full || text.Length <= max ? text : Menus.CutShort(text[..max]);
+        string Cut(string text, int max) => full || text.Length <= max ? text : Menus.CutShort(Menus.Prefix(text, max));
         var id = mod.manifest?.id ?? "";
         var info = Store.InfoFor(mod);
         var lines = new List<string>();
-        if (Picture(mod) is { } picture)
+        if (Picture(mod, CardWidth) is { } picture)
             lines.Add(picture);
         if (title != null)
             lines.Add($"[b]{Escape(title)}[/b]");
@@ -383,11 +382,11 @@ static class ModDetails
     // standIn: a self-test's details in place of the player's (SharedCards.StandIn).
     public static string SharedCard(Mod mod, bool full = false, (string? Alias, string? Notes, List<string> Tags, string? Category)? standIn = null)
     {
-        string Cut(string text, int max) => full || text.Length <= max ? text : Menus.CutShort(text[..max]);
+        string Cut(string text, int max) => full || text.Length <= max ? text : Menus.CutShort(Menus.Prefix(text, max));
         var id = mod.manifest?.id ?? "";
         var info = Store.InfoFor(mod);
         var lines = new List<string>();
-        if (Picture(mod) is { } picture)
+        if (Picture(mod, SharedCards.Width) is { } picture)
             lines.Add(picture);
         var version = mod.manifest?.version is { Length: > 0 } v ? $"  [color=#fff6e280]{Escape(v)}[/color]" : "";
         lines.Add($"[b][font_size=20]{Escape(mod.manifest?.name is { Length: > 0 } name ? name : id)}[/font_size][/b]{version}");
@@ -413,9 +412,21 @@ static class ModDetails
         return string.Join("\n", lines);
     }
 
-    // The mod's picture at the top of a card, from where the game's Modding page finds it; null without one.
-    static string? Picture(Mod mod) => mod.manifest?.id is { Length: > 0 } id && $"res://{id}/mod_image.png" is var picture && ResourceLoader.Exists(picture)
-        ? $"[img width=200]{picture}[/img]" : null;
+    // The width of a row's card (and a note's mod links' card): its text, and a picture at its top, are no wider.
+    public const float CardWidth = 380;
+
+    // The mod's picture at the top of a card, from where the game's Modding page finds it; null without one. Sized as
+    // Content Options' card had it: never scaled up, no wider than the card's text (width), no taller than the panel's
+    // thumbnail, keeping its shape. Loaded as the card opens (Godot keeps it, so once), for its size.
+    static string? Picture(Mod mod, float width)
+    {
+        var path = $"res://{mod.manifest?.id}/mod_image.png";
+        if (mod.manifest?.id is not { Length: > 0 } || !ResourceLoader.Exists(path) || ModEntry.Load<Texture2D>(path) is not { } picture)
+            return null;
+        var size = picture.GetSize();
+        var scale = Math.Min(1, Math.Min(width / size.X, ThumbHeight / size.Y));
+        return $"[img width={Mathf.RoundToInt(size.X * scale)} height={Mathf.RoundToInt(size.Y * scale)}]{path}[/img]";
+    }
 
     // The cards' one gap between their parts: a line as tall as the text's (its line break, outside the small size, is at
     // the card's size, and Godot makes the line as tall as that).
@@ -478,21 +489,20 @@ static class ModDetails
     static readonly Regex OpeningOrClosing = new(@"\[(/?)(b|i|u|s|code|center|left|right|fill|indent|url|hint|font|font_size|color|bgcolor|fgcolor|outline_size|outline_color|table|cell|ul|ol|lang|p|wave|tornado|shake|fade|rainbow|pulse|img|dropcap|opentype_features)(?=[\]=\s])[^\]]*\]");
 
     // Rich text cut to about max characters at a space (lines: or a line break), never inside a [tag] (Closed closes what
-    // it leaves open).
+    // it leaves open) or a text element (Menus.Prefix).
     static string CutMarkup(string text, int max, bool lines = false)
     {
         if (text.Length <= max)
             return text;
         var at = lines ? text.LastIndexOfAny([' ', '\n'], max) : text.LastIndexOf(' ', max);
-        if (at <= 0)
-            at = max;
-        if (text.LastIndexOf('[', at - 1) is var open && open > text.LastIndexOf(']', at - 1))
+        at = Menus.Prefix(text, at > 0 ? at : max).Length;
+        if (at > 0 && text.LastIndexOf('[', at - 1) is var open && open > text.LastIndexOf(']', at - 1))
             at = open;
-        return Menus.CutShort(text[..at]);
+        return Menus.CutShort(text[..at], markup: true);
     }
 
     // Text cut after 200 characters (some authors write a paragraph where their name goes).
-    public static string Short(string text) => text.Length <= 200 ? text : Menus.CutShort(text[..200]);
+    public static string Short(string text) => text.Length <= 200 ? text : Menus.CutShort(Menus.Prefix(text, 200));
 
     // The date in the game's language, in its run history's pattern ("12. Oktober 2026"); English if that's missing
     // or unusable.
@@ -521,7 +531,9 @@ static class ModDetails
     // too, not a relaunch away: orange, as nothing else says it won't load, but grey for a copy of this mod (kept on as a
     // backup on purpose). First, as it tells the next launch: a copy the game failed as a duplicate this launch says it
     // too (the game's error shows under From the game). Failed to load: ticked, and the game failed it. Pending
-    // relaunch: whether it loads changes at the relaunch. Else Enabled or Disabled, by its box.
+    // relaunch: whether it loads changes at the relaunch. Else Enabled or Disabled, by its box, except that a copy that
+    // loads unticked (through a switch it shares, or in place of a copy the launch couldn't swap in: Copies.Next) is
+    // Enabled, as it loads.
     // Pending relaunch, as the status says it: what loads after a relaunch isn't what loaded, for a copy neither set aside
     // as another loads nor failed (those statuses come first). #pending finds these.
     public static bool PendingRelaunch(Mod mod) => !Copies.Loses(mod) && !(Copies.Ticked(mod) && mod.state == ModLoadState.Failed)
@@ -533,7 +545,7 @@ static class ModDetails
         var (key, color) = Copies.Loses(mod) ? ("SPIRE_MOD_MANAGER.STATUS_WONT_LOAD", mod.manifest?.id == ModEntry.ModId ? Disabled : Pending)
             : ticked && mod.state == ModLoadState.Failed ? ("SPIRE_MOD_MANAGER.STATUS_FAILED", Problem)
             : PendingRelaunch(mod) ? ("SPIRE_MOD_MANAGER.STATUS_PENDING", Pending)
-            : ticked ? ("SPIRE_MOD_MANAGER.STATUS_ENABLED", Enabled)
+            : ticked || Copies.Loads(mod) ? ("SPIRE_MOD_MANAGER.STATUS_ENABLED", Enabled)
             : ("SPIRE_MOD_MANAGER.STATUS_DISABLED", Disabled);
         return (Menus.Text(key), color);
     }
@@ -546,15 +558,21 @@ static class ModDetails
     // For a mod installed more than once, a line about its copies (BBCode, another copy's name a link to its row where
     // links, plain where not), with its colour; null for none. While another copy is ticked too, every ticked copy's
     // line is in the Duplicate chip's warning yellow, whatever it says, the copy that loads included (Jordan: "they all
-    // own the same problem equally"); a copy that's off isn't in the clash, and keeps its colour. The first that holds:
-    // - the pick couldn't be applied this launch (SameIdLoad's self-check or canary): it says so (orange), on every copy;
-    // - ticked while another copy loads after a relaunch: that one, and why (orange; the status says it won't load);
+    // own the same problem equally"); a copy that's off isn't in the clash, and keeps its colour. Every line reads the one
+    // rule (Copies.Next, through LosesTo, Loads and Loading), so it can't disagree with the status, the banner or the
+    // launch. The first that holds:
+    // - the choice couldn't be applied this launch (SameIdLoad's self-check or canary): it says so (orange), on every copy;
+    // - ticked while another copy loads after a relaunch: that one, and why (orange; the status says it won't load); the
+    //   copy the launch couldn't swap in (Why.Blocked) names the dependency that loads after the copy loading instead;
+    // - loading in the place of a copy the launch couldn't swap in, ticked or not: which copy, and why (orange);
+    // - loading though unticked, through the switch it shares with a ticked copy (the beta's local-vs-Workshop rule
+    //   taking out the copies ticked): so, naming both (orange);
     // - ticked, not loaded now, and loading after a relaunch in place of the copy loaded now: so (orange);
     // - ticked and failed for its own reasons: how to load another copy instead (dim, after the red), another copy
     //   ticked or not (it isn't "the one that loads" when it failed);
     // - ticked with another copy ticked too: this one is the copy that loads;
     // - off while another copy is on: the copy that loads (dim).
-    // This mod's copies (SelfLine) stay ticked together on purpose: no clash, their own colours.
+    // This mod's copies (SelfLine) can be ticked together on purpose (a backup): no clash, their own colours.
     public static (string Text, string Color)? CopyLine(Mod mod, bool links) =>
         CopySays(mod, links) is var (text, color) ? (text, Copies.Clashes(mod) ? Clash : color) : null;
 
@@ -568,14 +586,26 @@ static class ModDetails
             return links ? $"[url=mod:{Copies.LinkKey(other)}][color={ModLinkHex}]{name}[/color][/url]" : name;
         }
         string Line(string key, Mod other) => Menus.Format(key, ("other", Other(other)));
+        // The dependency the launch couldn't load the blocked copy without (SameIdLoad's plan), as its row names it.
+        string Dep() => SameIdLoad.Plan.GetValueOrDefault(id)?.Late is { } late ? Dependencies.Find(late) is { } found ? Other(found) : Escape(late) : "";
         if (id == ModEntry.ModId)
             return SelfLine(mod, others, Other);
         if (SameIdLoad.Unchosen(id))
             return (Escape(Menus.Text("SPIRE_MOD_MANAGER.COPY_NOT_APPLIED")), Pending);
         if (Copies.LosesTo(mod) is { } lost)
-            return (Why(lost.Why) is { } why ? Menus.Format("SPIRE_MOD_MANAGER.COPY_LOSES", ("other", Other(lost.Loads)), ("why", why))
+            return (lost.Why == Copies.Why.Blocked ? Menus.Format("SPIRE_MOD_MANAGER.COPY_BLOCKED", ("other", Other(lost.Loads)), ("dep", Dep()))
+                : Why(lost.Why) is { } why ? Menus.Format("SPIRE_MOD_MANAGER.COPY_LOSES", ("other", Other(lost.Loads)), ("why", why))
                 : Line("SPIRE_MOD_MANAGER.COPY_LOSES_PLAIN", lost.Loads), Pending);
         var ticked = Copies.Ticked(mod);
+        if (Copies.Loads(mod))
+        {
+            if (Copies.Next(id).Losing.FirstOrDefault(p => p.Value == Copies.Why.Blocked).Key is { } blocked
+                && others.FirstOrDefault(o => Copies.CopyOf(o) == blocked) is { } swap)
+                return (Menus.Format("SPIRE_MOD_MANAGER.COPY_LOADS_BLOCKED", ("other", Other(swap)), ("dep", Dep())), Pending);
+            if (!ticked && Copies.Twins(mod).FirstOrDefault(Copies.Ticked) is { } sharing
+                && others.Where(o => o.modSource == ModSource.ModsDirectory && Copies.Ticked(o)).ToList() is { Count: > 0 } locals)
+                return (Menus.Format("SPIRE_MOD_MANAGER.COPY_LOADS_UNTICKED", ("other", Other(sharing)), ("local", Other(Copies.FirstRead(locals)))), Pending);
+        }
         if (ticked && mod.state is not (ModLoadState.Loaded or ModLoadState.Failed) && Copies.Loads(mod)
             && others.FirstOrDefault(o => o.state == ModLoadState.Loaded) is { } loaded)
             return (Line("SPIRE_MOD_MANAGER.COPY_LOADS_AFTER", loaded), Pending);
@@ -588,11 +618,12 @@ static class ModDetails
         return null;
     }
 
-    // This mod installed more than once: which copy runs now, and whether another stays on as a backup in case it's
-    // removed (the boxes are locked on: Copies.Locked) or loads after a relaunch instead. Which loads is the game's choice
-    // (SameIdLoad leaves ours to it), told apart only between a local copy and a Workshop one: of copies from one source,
-    // the game takes the first in its own order, so no switch is foretold. Null while none of them is ticked (the red
-    // banner says so) or none runs.
+    // This mod installed more than once: which copy runs now, and whether another is on as a backup in case it's removed
+    // (each copy has its box, like any other) or loads after a relaunch instead. Which loads is the game's choice
+    // (SameIdLoad leaves ours to it), told apart only between a local copy and a Workshop one (the reason with it, as for
+    // any copy): of copies from one source, the game takes the first in its own order, so no switch is foretold. The copy
+    // running, with another ticked as its backup, needs no line (the other's says it). Null while none of them is ticked
+    // (the red banner says so) or none runs.
     static (string Text, string Color)? SelfLine(Mod mod, IReadOnlyList<Mod> others, Func<Mod, string> other)
     {
         // The switch lines' {why} only where one is known.
@@ -607,8 +638,7 @@ static class ModDetails
         {
             if (loads != null && others.Contains(loads) && (!ticked || loads.modSource != mod.modSource))
                 return (Line("SPIRE_MOD_MANAGER.COPY_SELF_RUNS_SWITCH", loads, WhyLoses(mod)), Pending);
-            return tickedOthers.Count > 0 ? (Line("SPIRE_MOD_MANAGER.COPY_SELF_RUNS", tickedOthers[0]), Disabled)
-                : (Line("SPIRE_MOD_MANAGER.COPY_SELF_RUNS_OTHER_OFF", others[0]), Pending);
+            return tickedOthers.Count > 0 ? null : (Line("SPIRE_MOD_MANAGER.COPY_SELF_RUNS_OTHER_OFF", others[0]), Pending);
         }
         if (others.FirstOrDefault(o => o.state == ModLoadState.Loaded) is not { } running)
             return null;
@@ -619,12 +649,14 @@ static class ModDetails
         return (Line("SPIRE_MOD_MANAGER.COPY_SELF_BACKUP", running), Disabled);
     }
 
-    // Why a ticked copy doesn't load as another of its id does (Copies.LosesTo), in a sentence; null where none says it.
-    static string? Why(Copies.LoseReason why) => why switch
+    // Why a ticked copy doesn't load as another of its id does (Copies.LosesTo), in a sentence; null where none says it
+    // (Other; and Blocked, which has a line of its own as it names the dependency).
+    static string? Why(Copies.Why why) => why switch
     {
-        Copies.LoseReason.LocalCopy => Escape(Menus.Text("SPIRE_MOD_MANAGER.COPY_WHY_LOCAL")),
-        Copies.LoseReason.HigherVersion => Escape(Menus.Text("SPIRE_MOD_MANAGER.COPY_WHY_HIGHER")),
-        Copies.LoseReason.EnabledLast => Escape(Menus.Text("SPIRE_MOD_MANAGER.COPY_WHY_SOURCE")),
+        Copies.Why.Local => Escape(Menus.Text("SPIRE_MOD_MANAGER.COPY_WHY_LOCAL")),
+        Copies.Why.Higher => Escape(Menus.Text("SPIRE_MOD_MANAGER.COPY_WHY_HIGHER")),
+        Copies.Why.First => Escape(Menus.Text("SPIRE_MOD_MANAGER.COPY_WHY_FIRST")),
+        Copies.Why.Unreadable => Escape(Menus.Text("SPIRE_MOD_MANAGER.COPY_WHY_UNREADABLE")),
         _ => null,
     };
 
