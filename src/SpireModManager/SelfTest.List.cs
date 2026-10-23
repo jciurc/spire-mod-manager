@@ -388,15 +388,17 @@ static partial class SelfTest
         var headText = panel.GetNodeOrNull<RichTextLabel>("SpireModManagerHead")?.GetParsedText() ?? "";
         Check("the head: author and compatibility; the details: description, then size", headText.Contains("Author: symphony") && headText.Contains("Compatibility:")
             && !description.StartsWith("Enabled") && description.Contains("Size:") && !description.Contains("Compatibility"), $"{headText} / {description[..Math.Min(60, description.Length)]}");
-        // Other keywords: where Workshop tags would be (a local mod has none: right after Size), the hidden tags that find the
-        // mod as #name, in their order; the term in gold and the keywords in the panel text's colour, as the other facts; a
-        // click on one searches it as a Workshop tag's does, a second clears it; none in the game's panel (Vanilla View).
+        // Other keywords: right under Modified content, which a local mod (no Workshop tags) has right after Size (Jordan,
+        // 23 Oct: the two swapped places), the hidden tags that find the mod as #name, in their order; the term in gold and
+        // the keywords in the panel text's colour, as the other facts; a click on one searches it as a Workshop tag's does,
+        // a second clears it; none in the game's panel (Vanilla View).
         var keywordsLabel = Menus.Text("SPIRE_MOD_MANAGER.OTHER_KEYWORDS");
         var facts = description.Split('\n');
         var keywordsAt = Array.FindIndex(facts, l => l.StartsWith(keywordsLabel + ": "));
         var keywords = $"{keywordsLabel}: {string.Join(", ", HiddenTagNames.Where(t => Search.Matches(ours.Mod, t)).Select(t => t.TrimStart('#')))}";
-        Check("Other keywords right after Size: the hidden tags that find the mod, bare names with no \"#\", in their order (this mod: enabled, local, installed, "
-            + "loaded... renamed, note)", keywordsAt > 0 && facts[keywordsAt - 1].StartsWith(Menus.Text("SPIRE_MOD_MANAGER.SIZE") + ": ") && facts[keywordsAt] == keywords
+        Check("Size, then Modified content, then Other keywords: the hidden tags that find the mod, bare names with no \"#\", in their order (this mod: enabled, "
+            + "local, installed, loaded... renamed, note)", keywordsAt > 1 && facts[keywordsAt - 2].StartsWith(Menus.Text("SPIRE_MOD_MANAGER.SIZE") + ": ")
+            && facts[keywordsAt - 1].StartsWith(Menus.Text("SPIRE_MOD_MANAGER.MODIFIED_CONTENT") + ": ") && facts[keywordsAt] == keywords
             && keywords.StartsWith($"{keywordsLabel}: enabled, local, installed, loaded, ") && keywords.Contains("renamed, note") && !keywords.Contains('#')
             && !keywords.Split(", ").Contains("notes"), $"{(keywordsAt < 0 ? "no row" : facts[keywordsAt])}; wanted {keywords}");
         var panelText = panel.GetNode<RichTextLabel>("ModDescription");
@@ -1388,8 +1390,10 @@ static partial class SelfTest
             Check("Found in: each term's own fields, in the panel's order (a hidden tag as other keywords); a -term or NOT names none; nothing when "
                 + "the search leaves the mod out", seen == string.Join(" | ", meant), seen);
             // What it changes in the game: our own mod's code (the debug info label manager), which nothing else of it says.
+            // With a hidden tag too (ours is local): modified content first, as the panel now shows it over Other keywords.
             if (Dependencies.Find(ModEntry.ModId) is { } ours && GameChanges.Words(ours).Contains("debug", StringComparison.OrdinalIgnoreCase))
-                Check("Found in: what a mod changes in the game is its modified content", Said(ours, "debug") == "[Modified]", Said(ours, "debug"));
+                Check("Found in: what a mod changes in the game is its modified content; with a hidden tag, before other keywords, in the panel's order",
+                    Said(ours, "debug") == "[Modified]" && Said(ours, "debug #local") == "[Modified, Keywords]", $"{Said(ours, "debug")} | {Said(ours, "debug #local")}");
             else
                 Results.Add("SKIP Found in modified content: our own mod's changes don't name the debug info label manager here");
         }

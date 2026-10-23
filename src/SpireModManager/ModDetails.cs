@@ -10,7 +10,7 @@ namespace SpireModManager;
 
 // The info panel in our views, top to bottom: the head beside the thumbnail (name and version, id and Workshop link,
 // status, author, last update, compatibility); anything wrong; the description (three lines at most: PanelDescription);
-// size, published, subscribers, Workshop tags, other keywords (the hidden tags) and modified content (ModifiedContent);
+// size, published, subscribers, Workshop tags, modified content (ModifiedContent) and other keywords (the hidden tags);
 // dependencies both ways; the player's Alias, Category, Tags and Note; Open Folder. Text scrolled past an edge fades
 // there (ScrollFade).
 // Vanilla View: the panel exactly as the game makes it.
@@ -250,7 +250,7 @@ static class ModDetails
         text.Size.X - text.GetThemeStylebox("normal").GetMinimumSize().X - text.GetVScrollBar().GetCombinedMinimumSize().X - 2;
 
     // Anything wrong, the mod's description (own: as the panel shows it, null for none), more facts (size, published,
-    // subscribers, Workshop tags, other keywords, modified content: its row as given), then dependencies.
+    // subscribers, Workshop tags, modified content: its row as given, other keywords), then dependencies.
     static string Describe(Mod mod, string modified, string? own)
     {
         var text = new System.Text.StringBuilder();
@@ -278,13 +278,15 @@ static class ModDetails
             Fact("SPIRE_MOD_MANAGER.SUBSCRIBERS", Menus.Number(subscribers));
         if (workshop?.Tags.Count > 0)
             Fact("SPIRE_MOD_MANAGER.WORKSHOP_TAGS", string.Join(", ", workshop.Tags.Select(t => $"[url=wtag:{t}]{Escape(t)}[/url]"))); // click: search for it
+        // What it changes in the game itself, right under them, for every mod; then Other keywords (Jordan, 23 Oct: "swap
+        // other keywords and modified content positions"), with no gap between them.
+        text.Append(modified).Append('\n');
         // The hidden tags that find it (Jordan: "so that way they're at least visible"), a fact like the others, links as
         // the Workshop tags are; bare names (Jordan: no "#"), though a click searches #name.
         var keywords = HiddenTags.Of(mod);
         if (keywords.Count > 0)
             Fact("SPIRE_MOD_MANAGER.OTHER_KEYWORDS", string.Join(", ", keywords.Select(k => $"[url=htag:{k}]{k}[/url]")));
-        // What it changes in the game itself, right under them (Jordan: "with no gap"), for every mod.
-        text.Append(modified).Append("\n\n");
+        text.Append('\n');
 
         // What it needs, and what needs it.
         string Links(IEnumerable<string> ids) => string.Join(", ", ids.Select(d =>
@@ -367,8 +369,8 @@ static class ModDetails
         Search.Field.Author => "SPIRE_MOD_MANAGER.FIELD_AUTHOR",
         Search.Field.Description => "SPIRE_MOD_MANAGER.FIELD_DESCRIPTION",
         Search.Field.WorkshopTags => "SPIRE_MOD_MANAGER.WORKSHOP_TAGS",
-        Search.Field.Keywords => "SPIRE_MOD_MANAGER.FIELD_KEYWORDS",
         Search.Field.Modified => "SPIRE_MOD_MANAGER.FIELD_MODIFIED",
+        Search.Field.Keywords => "SPIRE_MOD_MANAGER.FIELD_KEYWORDS",
         Search.Field.Alias => "SPIRE_MOD_MANAGER.FIELD_ALIAS",
         Search.Field.Category => "SPIRE_MOD_MANAGER.FIELD_CATEGORY",
         Search.Field.Tags => "SPIRE_MOD_MANAGER.FIELD_TAGS",

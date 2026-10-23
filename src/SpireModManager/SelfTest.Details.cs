@@ -612,8 +612,8 @@ static partial class SelfTest
 
     // A Workshop mod's head (made-up details; the sandbox has no Steam): Author, Updated (how long ago, and a link
     // to its change notes on the Workshop), Compatibility (its Workshop branches not listed). "Ago" in hours under a day,
-    // singular for one. Dates and numbers in the game's language. Its Other keywords after its Workshop tags, then
-    // Modified content (screenshot 8b).
+    // singular for one. Dates and numbers in the game's language. Its Modified content after its Workshop tags, then
+    // Other keywords (screenshot 8b).
     static async Task TestWorkshopHead(Node menu, NModdingScreen screen, string outDir)
     {
         var mod = new Mod
@@ -762,10 +762,10 @@ static partial class SelfTest
         var facts = english.Split('\n');
         var tagsAt = Array.IndexOf(facts, $"{Menus.Text("SPIRE_MOD_MANAGER.WORKSHOP_TAGS")}: QoL, Utility");
         var otherTerm = $"{Menus.Text("SPIRE_MOD_MANAGER.OTHER_KEYWORDS")}: ";
-        Check("a Workshop mod: Other keywords right after its Workshop tags, workshop among them (no \"#\"), then Modified content (see 8b-other-keywords)",
-            tagsAt >= 0 && tagsAt + 2 < facts.Length && facts[tagsAt + 1].StartsWith(otherTerm) && !facts[tagsAt + 1].Contains('#')
-            && facts[tagsAt + 1][otherTerm.Length..].Split(", ").Contains("workshop")
-            && facts[tagsAt + 2].StartsWith($"{Menus.Text("SPIRE_MOD_MANAGER.MODIFIED_CONTENT")}: "), english);
+        Check("a Workshop mod: Modified content right after its Workshop tags, then Other keywords, workshop among them (no \"#\"), no gap between (see 8b-other-keywords)",
+            tagsAt >= 0 && tagsAt + 2 < facts.Length && facts[tagsAt + 1].StartsWith($"{Menus.Text("SPIRE_MOD_MANAGER.MODIFIED_CONTENT")}: ")
+            && facts[tagsAt + 2].StartsWith(otherTerm) && !facts[tagsAt + 2].Contains('#')
+            && facts[tagsAt + 2][otherTerm.Length..].Split(", ").Contains("workshop"), english);
         await Capture(screen, outDir, "8b-other-keywords");
         var language = LocManager.Instance.Language;
         try
@@ -874,9 +874,9 @@ static partial class SelfTest
 
     // The info panel's Modified content (Jordan, 22 Oct), on a made-up mod with both kinds: a pack with EnderLilis's
     // files and, as its code, our own patches. GameChanges keeps what it found (each file with its area, each game method
-    // with how it's patched). The row: right under Other keywords, one line, the most areas that fit whole, then how many
-    // more, and no counts (Jordan, 23 Oct: "We don't need brackets count anymore"); search still finds the areas cut from
-    // it. Its card: Jordan's words with both counts in one sentence, the areas, the click hint. A click: the dialog (the
+    // with how it's patched). The row: right after Size with Other keywords right under it (Jordan, 23 Oct: the two
+    // swapped places), one line, the most areas that fit whole, then how many more, and no counts (Jordan, 23 Oct: "We
+    // don't need brackets count anymore"); search still finds the areas cut from it. Its card: Jordan's words with both counts in one sentence, the areas, the click hint. A click: the dialog (the
     // mod's name, the note, the areas, the files and the code by area with their counts, how each place is patched),
     // scrolled when long; Close and Esc close it. The same mod with files only, our own mod with code only, and each kind
     // of card with one place or file, and not loaded. A fixture mod with nothing found: "No information found", subtle, a
@@ -947,10 +947,11 @@ static partial class SelfTest
             var areas = changes.Areas;
             // The Regent's area, with its five kinds of files, is too long for the line on its own: as many of them as fit.
             var fit = ModifiedFit(description, shown, areas);
-            Check("modified content: right under Other keywords, one line: the most that fit (whole areas, or of the first's what), then how many more, "
-                + "and no counts (see 17d)", at > 0 && facts[at - 1].StartsWith(Menus.Text("SPIRE_MOD_MANAGER.OTHER_KEYWORDS") + ": ")
+            Check("modified content: right after Size (a local mod), Other keywords right under it, one line: the most that fit (whole areas, or of the "
+                + "first's what), then how many more, and no counts (see 17d)", at > 0 && at + 1 < facts.Length
+                && facts[at - 1].StartsWith(Menus.Text("SPIRE_MOD_MANAGER.SIZE") + ": ") && facts[at + 1].StartsWith(Menus.Text("SPIRE_MOD_MANAGER.OTHER_KEYWORDS") + ": ")
                 && (fit.Whole is > 0 and var whole && whole < areas.Count || fit.Items > 0) && fit.Most && fit.OneLine,
-                $"\"{shown}\" ({fit}, {areas.Count} areas); before: \"{(at > 0 ? facts[at - 1] : "")}\"");
+                $"\"{shown}\" ({fit}, {areas.Count} areas); before: \"{(at > 0 ? facts[at - 1] : "")}\"; after: \"{(at >= 0 && at + 1 < facts.Length ? facts[at + 1] : "")}\"");
             var bbcode = description.Text.Split('\n').FirstOrDefault(l => l.Contains($"[url={ModifiedContent.Meta}]")) ?? "";
             Check("modified content: the whole row is the link for its card and click, the areas and nothing after them, and it's no longer in two rows",
                 shown.Length > term.Length && bbcode == $"[url={ModifiedContent.Meta}][gold]{term}[/gold]: {shown[(term.Length + 2)..]}[/url]"
@@ -1100,9 +1101,10 @@ static partial class SelfTest
                 await Wait(menu, 0.2);
                 var noneList = (Dialog()?.FindChild("List", true, false) as RichTextLabel)?.GetParsedText() ?? "";
                 ModifiedContent.Close();
-                Check("modified content with nothing found: \"No information found\", subtle, right under Other keywords; its card says what that means; "
+                Check("modified content with nothing found: \"No information found\", subtle, right over Other keywords; its card says what that means; "
                     + "its dialog says so, no lists (see 17g)",
-                    !GameChanges.For(plain).Any && noneAt > 0 && noneParsed[noneAt] == $"{term}: {none}" && noneParsed[noneAt - 1].StartsWith(Menus.Text("SPIRE_MOD_MANAGER.OTHER_KEYWORDS") + ": ")
+                    !GameChanges.For(plain).Any && noneAt > 0 && noneAt + 1 < noneParsed.Length && noneParsed[noneAt] == $"{term}: {none}"
+                    && noneParsed[noneAt + 1].StartsWith(Menus.Text("SPIRE_MOD_MANAGER.OTHER_KEYWORDS") + ": ")
                     && description.Text.Contains($"[url={ModifiedContent.Meta}][gold]{term}[/gold]: [color=#fff6e299]{none}[/color][/url]")
                     && noneCard == string.Join("\n", expected) + "\n\n" + hint && noneList.Split('\n').Take(2).SequenceEqual([Menus.Text("SPIRE_MOD_MANAGER.MODIFIED_AREAS"), none])
                     && !noneList.Contains(Menus.Text("SPIRE_MOD_MANAGER.GAME_FILES")) && !noneList.Contains(Menus.Text("SPIRE_MOD_MANAGER.GAME_CODE")),

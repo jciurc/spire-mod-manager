@@ -293,9 +293,9 @@ static class Search
             Fold(words, ""), Fold(words, " "));
     }
 
-    // What a search looks in, as Found in names it, in the order the info panel shows them: Keywords are the hidden tags
-    // (its Other keywords), Modified what it changes in the game (its Modified content).
-    public enum Field { Name, Id, Author, Description, WorkshopTags, Keywords, Modified, Alias, Category, Tags, Note }
+    // What a search looks in, as Found in names it, in the order the info panel shows them: Modified what it changes in
+    // the game (its Modified content), Keywords the hidden tags (its Other keywords).
+    public enum Field { Name, Id, Author, Description, WorkshopTags, Modified, Keywords, Alias, Category, Tags, Note }
 
     // The short fields a search looks in, each with the field it is: the name, id and author, the player's alias, note
     // and category, the tags' chips (the player's too) and the Workshop tags.
