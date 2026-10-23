@@ -502,6 +502,31 @@ static partial class SelfTest
                 && at.End.X <= link.Size.X + 0.5f && at.Position.Y >= 0 && at.End.Y <= link.Size.Y + 0.5f
                 && link.IsInGroup(LinkMark.Group) && link.GetSignalConnectionList(CanvasItem.SignalName.Draw).Count > 0,
                 $"mark {mark} after text {linkText:0.#}, link {link.Size}");
+            // On the link's text (Jordan, 22 Oct: "source external icon needs to move up 3-4px to line up with url"): its
+            // foot on the baseline the link draws its text on, from the text as it's shaped, and kept there when a mod adds a
+            // taller fallback to the game's font (as TestPageLinkBaseline does), which the font's own ascent grows by and the
+            // link's letters don't use (8c-link-mark; 8d-link-mark-fallback with that fallback).
+            var linkFont = link.GetThemeFont("font");
+            var shaped = Layout.Line(link.Text, linkFont, linkSize).Ascent;
+            var oldY = MathF.Round(linkFont.GetAscent(linkSize)) - LinkMark.Size(linkSize); // where the font's own ascent put it
+            await Capture(screen, outDir, "8c-link-mark");
+            var fallbacks = new Godot.Collections.Array<Font>(linkFont.Fallbacks);
+            var (tallMark, tallOldY) = ((Rect2?)null, 0f);
+            try
+            {
+                linkFont.Fallbacks = new Godot.Collections.Array<Font>(fallbacks) { new FontVariation { BaseFont = ThemeDB.FallbackFont, SpacingTop = 24, SpacingBottom = 12 } };
+                (tallMark, tallOldY) = (LinkMark.Rect(link), MathF.Round(linkFont.GetAscent(linkSize)) - LinkMark.Size(linkSize));
+                await Capture(screen, outDir, "8d-link-mark-fallback");
+            }
+            finally
+            {
+                linkFont.Fallbacks = fallbacks;
+            }
+            Results.Add($"INFO the Workshop link's mark: top at {mark?.Position.Y} on the text's shaped baseline {shaped:0.##}; the font's own ascent "
+                + $"({linkFont.GetAscent(linkSize):0.##}) put it at {oldY}, and with the taller fallback at {tallOldY}");
+            Check("the Workshop link's mark: its foot on the text's baseline as shaped, kept there when a mod adds a taller fallback to the game's font",
+                mark is { } onText && onText.End.Y == MathF.Round(shaped) && tallMark == mark && tallOldY > oldY + 1,
+                $"mark {mark}, baseline {shaped:0.##}; with the fallback {tallMark} (the font's ascent: {oldY} -> {tallOldY})");
             // The mark as drawn: the link's colour with the mouse off it, then (a mouse motion through the viewport; none
             // headless) its hover colour while the mouse is on it, and its own again once it leaves.
             var (normal, lit) = (link.GetThemeColor("font_color"), link.GetThemeColor("font_hover_color"));

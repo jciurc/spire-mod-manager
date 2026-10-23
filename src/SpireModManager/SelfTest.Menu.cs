@@ -1407,6 +1407,9 @@ static partial class SelfTest
                     item != null && itemSize == 20 && mark is { } at && at.Position.X >= itemText + 2 && at.Position.X <= itemText + 7 && at.Size == new Vector2(14, 14)
                     && at.End.X <= item.Size.X + 0.5f && labels.Where(l => l.IsInGroup(LinkMark.Group)).SequenceEqual([item]),
                     $"mark {mark} after text {itemText:0.#}, label {item?.Size}; marked: {string.Join(", ", labels.Where(l => l.IsInGroup(LinkMark.Group)).Select(l => l.Text))}");
+                if (item != null)
+                    Results.Add($"INFO Open translations folder's mark: {mark} in its {item.Size} label, the text's baseline "
+                        + $"{LinkMark.Baseline(item, item.Text, item.GetThemeFont("font"), itemSize):0.##} (the font's ascent {item.GetThemeFont("font").GetAscent(itemSize):0.##})");
                 var drawn = item == null ? null : await MarkDrawn(menu, item);
                 Check("Open translations folder's mark: drawn in the label's colour", item != null && drawn == item.GetThemeColor("font_color"),
                     $"drawn {drawn?.ToString() ?? "nothing"}, label {item?.GetThemeColor("font_color")}");
