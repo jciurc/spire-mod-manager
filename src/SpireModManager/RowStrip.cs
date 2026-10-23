@@ -12,7 +12,7 @@ static class RowStrip
     const string StripName = "SpireModManagerStrip";
     public const string ActionsName = "SpireModManagerActions", OrderActionsName = "SpireModManagerOrderActions"; // main list, Load Order
     public const string MoreName = "SpireModManagerMoreTags"; // "and 3 more..."
-    public const string KeywordsName = "SpireModManagerKeywords"; // "Additional keywords: enabled, installed"
+    public const string KeywordsName = "SpireModManagerKeywords"; // "Additional keywords: enabled, loaded"
     static readonly StringName StripMeta = "spire_mod_manager_strip";
     static readonly StringName SaysMeta = "spire_mod_manager_says"; // on a strip or buttons: what they show and where, to know when to change them
     static readonly StringName ShowsMeta = "spire_mod_manager_shows"; // on a strip: its tags, keywords and author, to know when to remake it
@@ -162,12 +162,15 @@ static class RowStrip
     public static string Shows(IEnumerable<Tags.Chip> chips, string author, IEnumerable<string>? keywords = null) =>
         $"{string.Join("|", chips.Select(c => $"{c.Text}/{c.Color}/{c.Custom}/{c.Tip}/{c.Search}"))}|{author}|{string.Join(",", keywords ?? [])}";
 
-    // A row's keywords: the hidden tags that find its mod (HiddenTags.Of, in their order), but those a tag on the line
-    // already says (Local, New, Duplicate): "Additional keywords" are the ones the tags don't show. Asked inside the
-    // redraw's Lookups, so what they ask about the whole list is worked out once for every row.
-    public static List<string> Keywords(Mod? mod) => mod == null ? [] : [.. HiddenTags.Of(mod).Where(k => !TagShown.Contains(k))];
+    // A row's keywords: the hidden tags that find its mod (HiddenTags.Of, in their order), but those the row already
+    // says: a tag on its line (Local, New, Duplicate), every row's "installed", and on the main list the heading it's
+    // under ("uncategorized"; Load Order has no headings, so there it's kept). "Additional keywords" are the ones the
+    // row doesn't show. Asked inside the redraw's Lookups, so what they ask about the whole list is worked out once
+    // for every row.
+    public static List<string> Keywords(Mod? mod) => mod == null ? [] : [.. HiddenTags.Of(mod).Where(k => !RowSays.Contains(k)
+        && (Store.Data.LoadOrderView || !k.Equals("uncategorized", StringComparison.OrdinalIgnoreCase)))];
 
-    static readonly HashSet<string> TagShown = new(StringComparer.OrdinalIgnoreCase) { "local", "new", "duplicate" };
+    static readonly HashSet<string> RowSays = new(StringComparer.OrdinalIgnoreCase) { "local", "new", "duplicate", "installed" };
 
     // "Additional keywords:" and the keywords after it, plain and faint (no pill, no "#"), comma-separated: a click on
     // one searches #name, Shift-click adds it, as a tag's click does, and its card says so, as the info panel's
@@ -207,7 +210,7 @@ static class RowStrip
         return links;
     }
 
-    // "Additional keywords: enabled, installed": the line's, and the "and 3 more..." card's.
+    // "Additional keywords: enabled, loaded": the line's, and the "and 3 more..." card's.
     public static string KeywordsLine(IEnumerable<string> keywords) => $"{Menus.Text("SPIRE_MOD_MANAGER.ADDITIONAL_KEYWORDS")}: {string.Join(", ", keywords)}";
 
     // The keyword at x on the label, null before the first: each from its start to the next one's (a comma goes with the

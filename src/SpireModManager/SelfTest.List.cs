@@ -1227,6 +1227,22 @@ static partial class SelfTest
             + "one on \"Additional keywords:\" none", fits != null && links?.Text == RowStrip.KeywordsLine(RowStrip.Keywords(fits.Mod)) && !links.Text.Contains('#')
             && links.Text.StartsWith($"{AdditionalKeywords}: ") && links.GetThemeColor("font_color") == Color.FromHtml(RowStrip.FaintHex) && clickedTitle == ""
             && clickedWord == $"#{linked[1]}" && box.Text == $"#{linked[1]} #{linked[0]}", $"{fits?.Mod?.manifest?.id}: {links?.Text}; \"{clickedTitle}\", \"{clickedWord}\", then \"{box.Text}\"");
+        // What the row already says isn't repeated: every row's "installed", and on the main list the heading's
+        // "uncategorized". Load Order has no headings, so there it stays.
+        await Shown("");
+        var plainRow = content.GetChildren().OfType<NModMenuRow>().FirstOrDefault(r => r.Visible && r.Mod is { } m && HiddenTags.Of(m).Contains("uncategorized"));
+        var plainShown = plainRow?.GetNodeOrNull<Label>($"SpireModManagerStrip/{RowStrip.KeywordsName}")?.Text is { } plainText && plainText.StartsWith(before)
+            ? plainText[before.Length..].Split(", ") : [];
+        var mainWords = plainRow?.Mod is { } mainMod ? RowStrip.Keywords(mainMod) : [];
+        var wasOrder = Store.Data.LoadOrderView;
+        Store.Data.LoadOrderView = true;
+        var orderWords = plainRow?.Mod is { } orderMod ? RowStrip.Keywords(orderMod) : [];
+        Store.Data.LoadOrderView = wasOrder;
+        Check("a row's keywords leave out what the row already says: \"installed\" (every row's) and, under its heading, \"uncategorized\"; Load Order, "
+            + "with no headings, keeps that one", plainRow?.Mod is { } said && HiddenTags.Of(said).Contains("installed") && mainWords.Count > 0
+            && !mainWords.Contains("installed") && !mainWords.Contains("uncategorized") && !plainShown.Contains("installed") && !plainShown.Contains("uncategorized")
+            && orderWords.Contains("uncategorized") && !orderWords.Contains("installed"),
+            $"{plainRow?.Mod?.manifest?.id}: main [{string.Join(", ", mainWords)}], shown [{string.Join(", ", plainShown)}], Load Order [{string.Join(", ", orderWords)}]");
         // Authors: from the info panel's author (the row's is plain text); Shift on a tag adds it after a space.
         await Shown("");
         var rowAuthor = content.GetChildren().OfType<NModMenuRow>().FirstOrDefault(r => r.Mod?.manifest?.id == "SmmTestFixes")?.GetNodeOrNull<Label>("SpireModManagerStrip/Author");
