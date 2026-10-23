@@ -113,9 +113,10 @@ static partial class SelfTest
         GameInstalls(mod);
         await Wait(menu, 0.4);
         NModalContainer.Instance?.Clear();
-        Store.Data.Categories.Add(new Category { Name = category }); // empty: in it, the mod's row would show the name on a button
+        Store.Data.Categories.Add(new Category { Name = category }); // longer than the rename box allows: an imported one can be
         Store.EditMod(id, info =>
         {
+            info.Category = category;
             info.Alias = "My favourite enormous content pack that I keep meaning to rename to something shorter";
             info.Notes = Text(120);
             info.Tags = ["content", "big", "really-long-tag-name-for-testing", "favourites", "co-op", "needs-checking-after-every-update", "deluxe",
@@ -161,6 +162,16 @@ static partial class SelfTest
             var wholeId = await Tooltip(link, "SpireModManagerFullText", Hover.SlowDelay + 0.2);
             Check("long details: a second over the cut title or id shows the whole of it", wholeTitle.StartsWith(name) && wholeTitle.EndsWith("12.345.6789-beta.12+build.98765")
                 && wholeId == id, $"{wholeTitle} / {wholeId}");
+            // The panel's category picker: the long name cut with ".." before its arrow to the picker's width, inside the
+            // panel (whole, it pushed the fields past the panel's edge); the whole name a second over it.
+            var picker = panel.GetNode<Button>("SpireModManagerYours/Category/Picker");
+            var pickerRoom = picker.Size.X - picker.GetThemeStylebox("normal").GetMinimumSize().X;
+            var pickerDrawn = picker.GetThemeFont("font").GetStringSize(picker.Text, fontSize: picker.GetThemeFontSize("font_size")).X;
+            var wholePicker = await Tooltip(picker, "SpireModManagerFullText", Hover.SlowDelay + 0.2);
+            Check("long details: the panel's category picker cuts the long name with \"..\" before its arrow, inside the panel; the whole name a second over it",
+                picker.Text.EndsWith("..  ▾") && !picker.Text.Contains("...") && category.StartsWith(picker.Text[..^"..  ▾".Length]) && pickerDrawn <= pickerRoom + 0.5f
+                && panel.GetGlobalRect().Encloses(picker.GetGlobalRect()) && wholePicker == category,
+                $"\"{picker.Text}\": {pickerDrawn:0.#} px in {pickerRoom:0.#}, picker {picker.GetGlobalRect()}, panel {panel.GetGlobalRect()}; over it: {wholePicker}");
 
             var longAuthor = row.GetNodeOrNull<Label>("SpireModManagerStrip/Author");
             var longTag = row.GetNodeOrNull("SpireModManagerStrip")?.GetChildren().OfType<PanelContainer>().Select(c => c.GetChildOrNull<Label>(0)).FirstOrDefault(l => l?.Text.StartsWith("really-long") == true);
@@ -187,6 +198,20 @@ static partial class SelfTest
             var lineEnd = row.GetGlobalRect().End.X + strip.OffsetRight;
             Check("long details: many tags: the author still shows, inside the line", longAuthor is { Visible: true } && longAuthor.GetGlobalRect().End.X <= lineEnd + 1
                 && strip.GetGlobalRect().End.X <= lineEnd + 1, $"author {longAuthor?.GetGlobalRect()}, line {strip.GetGlobalRect()}, ends at {lineEnd}");
+            // The row's category button: the long name cut with "..", the button no wider than RowStrip.CategoryMax (whole,
+            // it took most of the row), so the line keeps at least half the row and ends short of it. Its card starts with
+            // the whole name, then what it does (16c-category-card).
+            var categoryButton = row.GetNodeOrNull(RowStrip.ActionsName)?.GetChildOrNull<Button>(0);
+            var buttonCard = categoryButton == null ? ""
+                : (await SizedHoverCard(menu, categoryButton, Hover.TipName, () => Capture(screen, outDir, "16c-category-card"))).Text;
+            var (buttonText, buttonRect) = (categoryButton?.Text ?? "", categoryButton?.GetGlobalRect() ?? new Rect2());
+            var lineWidth = row.Size.X - strip.OffsetLeft + strip.OffsetRight;
+            Check("long details: a long category's name on its row's button is cut with \"..\" to at most RowStrip.CategoryMax, the line keeping the rest; its card the whole name, then what it does",
+                buttonText.EndsWith(Menus.CutMark) && !buttonText.EndsWith("...") && category.StartsWith(buttonText[..^Menus.CutMark.Length])
+                && buttonRect.Size.X <= RowStrip.CategoryMax + 0.5f && lineEnd <= buttonRect.Position.X && lineWidth >= row.Size.X / 2
+                && buttonCard.Split('\n') is [var cardName, var cardTip] && cardName == category && cardTip == Menus.Text("SPIRE_MOD_MANAGER.CATEGORY_TIP"),
+                $"\"{buttonText}\" {buttonRect.Size.X:0.#} px (at most {RowStrip.CategoryMax}), the line {lineWidth:0.#} of the row's {row.Size.X:0.#}, "
+                + $"ending at {lineEnd:0.#}, the button from {buttonRect.Position.X:0.#}; card: {buttonCard.ReplaceLineEndings(" / ")}");
             var folded = strip.GetChildren().OfType<PanelContainer>().Where(c => !c.Visible)
                 .Select(c => c.GetChildOrNull<Label>(0) is { } chipLabel ? Menus.WholeText(chipLabel) : "").ToList(); // a long tag's whole text, not its cut one
             var more = strip.GetNodeOrNull<Label>(RowStrip.MoreName);

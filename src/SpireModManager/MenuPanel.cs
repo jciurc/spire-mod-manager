@@ -420,7 +420,7 @@ static class MenuPanel
             line.AddChild(dim);
         }
         if (item.Tip is { Length: > 0 } tip)
-            Hover.Tip(row, tip); // a dimmed row's too: it says why
+            Hover.Tip(row, tip, markup: item.TipMarkup); // a dimmed row's too: it says why
         if (item.Disabled)
             return row;
 
