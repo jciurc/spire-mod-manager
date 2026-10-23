@@ -3,6 +3,7 @@ using MegaCrit.Sts2.Core.Localization;
 using MegaCrit.Sts2.Core.Modding;
 using MegaCrit.Sts2.Core.Nodes.CommonUi;
 using MegaCrit.Sts2.Core.Nodes.GodotExtensions;
+using MegaCrit.Sts2.Core.Nodes.Screens.MainMenu;
 using MegaCrit.Sts2.Core.Nodes.Screens.ModdingScreen;
 using MegaCrit.Sts2.Core.Saves;
 
@@ -342,10 +343,12 @@ static partial class SelfTest
                 }
                 static string Said(int count) => count == 1 ? "1 mod change will be applied after a restart" : $"{Menus.Number(count)} mod changes will be applied after a restart";
                 var (count, noteText, card) = (Count(), Note(), Hover.TipOf(menuButton));
-                Check("main menu button, a relaunch pending: its note counts the mods turned on, off and moved (\"1 mod change\", \"2 mod changes\"); its card starts with the changes, a faint line, then its own words",
-                    count >= 1 && noteText == Said(count)
-                    && card.StartsWith($"[b]{Menus.Text("SPIRE_MOD_MANAGER.CHANGES_TITLE")}[/b]") && card.Contains($"\n{MenuButton.Divider}\n")
-                    && card.EndsWith(MenuButton.Tip(Profiles.Active?.Name ?? "")) && !card.Contains(Menus.Text("SPIRE_MOD_MANAGER.CHANGES_CLICK")),
+                var own = MenuButton.Tip(Profiles.Active?.Name ?? "");
+                var changesTitle = $"[b]{Menus.Text("SPIRE_MOD_MANAGER.CHANGES_TITLE")}[/b]";
+                Check("main menu button, a relaunch pending: its note counts the mods turned on, off and moved (\"1 mod change\", \"2 mod changes\"); its card starts with its own words, "
+                    + "then a faint line and the changes at the bottom",
+                    count >= 1 && noteText == Said(count) && card.StartsWith($"{own}\n{MenuButton.Divider}\n{changesTitle}")
+                    && card == $"{own}\n{MenuButton.Divider}\n{HistoryBar.Summary(cta: false)}" && !card.Contains(Menus.Text("SPIRE_MOD_MANAGER.CHANGES_CLICK")),
                     $"\"{noteText}\" ({count}); card \"{card}\"");
                 // One change more or less (Test Fixes, which nothing needs, flipped and back): the note follows, in its own form.
                 if (content.GetChildren().OfType<NModMenuRow>().FirstOrDefault(r => r.Mod?.manifest?.id == "SmmTestFixes")?.GetNode<NTickbox>("Tickbox") is { } fixes)
@@ -384,6 +387,53 @@ static partial class SelfTest
             ours == "Mod changes will be applied after a restart" && game != ours && onList == ours && (shown == null || shown == ours)
             && inLoadOrder == ours && inVanilla == game && line.Text == ours,
             $"\"{onList}\" / shown \"{shown}\" / \"{inLoadOrder}\" / \"{inVanilla}\" / \"{line.Text}\"");
+    }
+
+    // The main menu button's card with a relaunch pending, as it shows on the main menu (Jordan, 23 Oct: "show default
+    // mod information on the top, and changes information on the bottom"): its own words first, then the changes. Test
+    // Fixes, which nothing needs, turned off on the page; the page closed for the card and opened again (the game reuses
+    // it), then Test Fixes back on. Screenshot 1h.
+    static async Task TestMenuButtonPendingCard(NMainMenu menu, NModdingScreen screen, Control content, string outDir)
+    {
+        NTickbox? Fixes() => content.GetChildren().OfType<NModMenuRow>().FirstOrDefault(r => r.Mod?.manifest?.id == "SmmTestFixes")?.GetNodeOrNull<NTickbox>("Tickbox");
+        if (menu.GetNodeOrNull<Control>("SpireModManagerMenuButton") is not { } button || Fixes() is not { } fixes)
+        {
+            Results.Add("SKIP the main menu button's card with a relaunch pending: no button, or the test mods not installed");
+            return;
+        }
+        static void Flip(NTickbox box)
+        {
+            box.IsTicked = !box.IsTicked;
+            box.EmitSignal(NTickbox.SignalName.Toggled, box);
+        }
+        Flip(fixes);
+        // Its line in the changes: "Enabled: 1" or "Disabled: 1", whichever the flip made.
+        var flipped = Draft(Template(fixes.IsTicked ? "SPIRE_MOD_MANAGER.SUMMARY_ON" : "SPIRE_MOD_MANAGER.SUMMARY_OFF"), ("count", ""));
+        await Wait(menu, 0.3);
+        try
+        {
+            menu.SubmenuStack.Pop();
+            await Wait(menu, 0.5);
+            var pending = ModEntry.HasPendingChanges() && button.IsVisibleInTree();
+            var own = MenuCard(Profiles.Active?.Name ?? "", shown: true);
+            var (card, _) = await SizedHoverCard(menu, button, Hover.TipName, () => Capture(menu, outDir, "1h-menu-button-pending-card"), Hover.SlowDelay + 0.2);
+            var changesAt = card.IndexOf(Menus.Text("SPIRE_MOD_MANAGER.CHANGES_TITLE"), StringComparison.Ordinal);
+            Check("main menu button with a relaunch pending, its card as it shows: its own words on top as without one, the changes at the bottom (see 1h)",
+                pending && card.StartsWith(own) && changesAt > own.Length && card.IndexOf(flipped, StringComparison.Ordinal) > changesAt, card.ReplaceLineEndings(" / "));
+        }
+        finally
+        {
+            if (!screen.IsVisibleInTree())
+            {
+                menu.SubmenuStack.PushSubmenuType<NModdingScreen>();
+                await Wait(menu, 1);
+            }
+            if (Fixes() is { } back)
+            {
+                Flip(back);
+                await Wait(menu, 0.3);
+            }
+        }
     }
 
     // Unsaved edits: a tickbox change leaves the saved profile alone and shows Unsaved; the edit survives
