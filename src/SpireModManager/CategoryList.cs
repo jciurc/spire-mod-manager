@@ -352,7 +352,7 @@ static class CategoryList
         };
         Hover.WatchLinks(label, "SpireModManagerNotesCard",
             meta => meta.StartsWith("mod:") && Linked(meta[4..]) is { } mod ? ModDetails.Card(mod) : null,
-            full: meta => meta.StartsWith("mod:") && Linked(meta[4..]) is { } mod ? ModDetails.Card(mod, full: true) : null);
+            width: ModDetails.CardWidth, full: meta => meta.StartsWith("mod:") && Linked(meta[4..]) is { } mod ? ModDetails.Card(mod, full: true) : null);
     }
 
     // The mod a link names: a copy by its key ("<id>|<copy>"), or a mod by its id (Dependencies.Find's copy).
