@@ -389,7 +389,7 @@ static class ModDetails
         var lines = new List<string>();
         if (Picture(mod, SharedCards.Width) is { } picture)
             lines.Add(picture);
-        var version =mod.manifest?.version is { Length: > 0 } v ? $"  [color=#fff6e280]{Escape(v)}[/color]" : "";
+        var version = mod.manifest?.version is { Length: > 0 } v ? $"  [color=#fff6e280]{Escape(v)}[/color]" : "";
         lines.Add($"[b][font_size=20]{Escape(mod.manifest?.name is { Length: > 0 } name ? name : id)}[/font_size][/b]{version}");
         lines.Add($"{Escape(id)}  {Bullet}  {Status(mod)}");
         AddWarnings(lines, mod);

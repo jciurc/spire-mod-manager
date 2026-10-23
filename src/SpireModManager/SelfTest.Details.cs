@@ -116,7 +116,7 @@ static partial class SelfTest
         Store.Data.Categories.Add(new Category { Name = category }); // empty: in it, the mod's row would show the name on a button
         Store.EditMod(id, info =>
         {
-            info.Alias ="My favourite enormous content pack that I keep meaning to rename to something shorter";
+            info.Alias = "My favourite enormous content pack that I keep meaning to rename to something shorter";
             info.Notes = Text(120);
             info.Tags = ["content", "big", "really-long-tag-name-for-testing", "favourites", "co-op", "needs-checking-after-every-update", "deluxe",
                 "cards", "relics", "events", "potions", "late-game"];
@@ -399,7 +399,7 @@ static partial class SelfTest
         Check("rich text cut after a full stop or ! inside closing tags: the mark goes, the tags stay, then \"..\"",
             italic == "[i]A short sentence[/i].." && nested == "[b][i]It works[/i][/b]..", $"{italic} | {nested}");
 
-        var words =("Every card in the game gets a fresh coat of paint: brighter colours, sharper edges and a little more contrast on the "
+        var words = ("Every card in the game gets a fresh coat of paint: brighter colours, sharper edges and a little more contrast on the "
             + "busiest scenes, so that each picture reads at a glance").Split(' ');
         string Text(int from, int count) => string.Join(' ', Enumerable.Range(from, count).Select(i => words[i % words.Length]));
         // The game's gold and an italic running on past the cut: both closed where it's cut.

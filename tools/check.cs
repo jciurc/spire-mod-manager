@@ -183,9 +183,10 @@ foreach (var path in Files("localization", "*.json"))
 Check("our strings have no \"…\" or \"...\": cut or running-on text ends with two periods (\"and 5 more..\")", ellipses.Count == 0, List(ellipses));
 
 // The same for labels cut to their width: Menus.CutToFit ends them with two periods. Godot's own cut (TrimEllipsis,
-// TrimWordEllipsis) draws "…", in code or in our scenes (text_overrun_behavior 3 or 4). Comment lines don't count.
-var godotCut = new Regex(@"\bTrim(Word)?Ellipsis\b");
-var sceneCut = new Regex(@"^\s*\w*text_overrun_behavior = [34]\s*$");
+// TrimWordEllipsis, and their Force forms) draws "…", in code or in our scenes (text_overrun_behavior 3 to 6).
+// Comment lines don't count.
+var godotCut = new Regex(@"\bTrim(Word)?Ellipsis(Force)?\b");
+var sceneCut = new Regex(@"^\s*\w*text_overrun_behavior = [3-6]\s*$");
 var godotCuts = new List<string>();
 foreach (var (path, source) in sources)
 {
