@@ -325,14 +325,16 @@ static partial class SelfTest
     // once (no relaunch). The fixture has it installed but off; with --bmm it's on and loaded, so the banner is there from
     // the start. It ends as it started.
     // This mod among the others: the counts count it. Installed twice (a made-up Workshop copy beside this one), its
-    // copies are boxes like any other's (Jordan): no padlock and no tip, first in their category whatever the names; a
-    // click on one unticks its source alone, one undo step; the panel says which copy runs (the one running needs no line
-    // while the other is its backup) and, between sources, why the other loads after a relaunch (P10); no same-ID
-    // warning. Disable all keeps both on; a selection that has it turns it off (the page bar's Disable selected, a picked
-    // row's box, the bulk menu). Every copy off: the red banner, whose Enable now turns on the copy running alone (P16),
-    // and Relaunch asks first, with the same Enable now; Cancel undoes it. A Disable all that covers it says it stays on;
-    // and installed once and unticked on its own row, the red banner above everything says it (and this page) goes at the
-    // relaunch, with Go to (its row) and Enable now. Enable now, and undo, take the banner away.
+    // copies are boxes like any other's (Jordan), first in their category whatever the names, and get any copies' words
+    // (Jordan, 23 Oct): the new copy's popup; both ticked, the copy lines, statuses and Duplicate chips of a clash, the
+    // same-ID banner counting them, #clash, and Relaunch asking first; a click on one unticks its source alone, one undo
+    // step, with the lines and the tip of a copy off beside one on; between sources, the game's rule and its reason
+    // (P10); from one source, the game's pick with no reason. Disable all keeps both on; a selection that has it turns it
+    // off (the page bar's Disable selected, a picked row's box, the bulk menu). Every copy off: the red banner, whose
+    // Enable now turns on the copy running alone (P16), and Relaunch asks first, with the same Enable now; Cancel undoes
+    // it. A Disable all that covers it says it stays on; and installed once and unticked on its own row, the red banner
+    // above everything says it (and this page) goes at the relaunch, with Go to (its row) and Enable now. Enable now, and
+    // undo, take the banner away.
     static async Task TestSelfIncluded(Node menu, NModdingScreen screen, Control content, string outDir)
     {
         if (Layout.Current != Layout.View.Categories || content.GetChildren().OfType<NModMenuRow>().FirstOrDefault(r => r.Mod?.manifest?.id == ModEntry.ModId)
@@ -354,7 +356,7 @@ static partial class SelfTest
             && Profiles.OnCount() == on && ProfileCountShown() && Summary().StartsWith($"Mods enabled {Menus.Number(on)} "),
             $"{on} on: profile {Profiles.OnCount()}, summary \"{Summary().Split('\n')[0]}\"");
         // Installed twice (a Workshop copy beside this local one): both on, as the game loads one, the newer, and the
-        // counts name it once (#96: they counted each copy).
+        // counts name it once (#96: they counted each copy). The popup is any new copy's.
         var copy = new Mod
         {
             path = "", modSource = ModSource.SteamWorkshop, state = ModLoadState.AddedAtRuntime,
@@ -370,18 +372,19 @@ static partial class SelfTest
         NModalContainer.Instance?.Clear();
         CategoryList.Redraw(content);
         await Wait(menu, 0.2);
-        Check("installed twice: both copies on, every count names it once; the new copy's popup says it's enabled, and which loads", Copies.Ticked(copy)
-            && Profiles.OnCount() == on && ProfileCountShown() && Summary().StartsWith($"Mods enabled {Menus.Number(on)} ")
-            && popup.Contains(Draft(NewSelfCopy, ("loads", Named(self)))),
+        Check("installed twice: both copies on, every count names it once; the new copy's popup is any copy's, saying it's enabled and which loads",
+            Copies.Ticked(copy) && Profiles.OnCount() == on && ProfileCountShown() && Summary().StartsWith($"Mods enabled {Menus.Number(on)} ")
+            && popup.Contains(Draft(NewCopyOn, ("mods", Named(copy)), ("loads", Named(self)))),
             $"copy on {Copies.Ticked(copy)}; {on} on before: profile {Profiles.OnCount()}, summary \"{Summary().Split('\n')[0]}\"; {popup}");
-        // Boxes like any other's: enabled, no tip (the panel says what each copy does), no padlock (the one there was).
+        // Boxes like any other's: enabled, no padlock (the one there was); ticked, so no tip (the panel says what each does).
         var ourRows = content.GetChildren().OfType<NModMenuRow>().Where(r => r.Mod?.manifest?.id == ModEntry.ModId).ToList();
         static NTickbox Tickbox(NModMenuRow r) => r.GetNode<NTickbox>("Tickbox");
-        string Box(NModMenuRow r) => $"{Copies.KeyOf(r.Mod)} ticked {Tickbox(r).IsTicked}, enabled {Tickbox(r).IsEnabled}, tip \"{Hover.TipOf(Tickbox(r))}\", "
+        static string Tip(NModMenuRow r) => Hover.TipOf(Tickbox(r));
+        string Box(NModMenuRow r) => $"{Copies.KeyOf(r.Mod)} ticked {Tickbox(r).IsTicked}, enabled {Tickbox(r).IsEnabled}, tip \"{Tip(r)}\", "
             + $"padlock {r.GetNodeOrNull("SpireModManagerSelfLock") != null}";
-        bool Plain(NModMenuRow r) => Tickbox(r).IsEnabled && Hover.TipOf(Tickbox(r)) == "" && r.GetNodeOrNull("SpireModManagerSelfLock") == null;
-        Check("installed twice: no padlock, a box each like any other's (enabled, no tip), both ticked",
-            ourRows.Count == 2 && ourRows.All(r => Plain(r) && Tickbox(r).IsTicked), string.Join(" | ", ourRows.Select(Box)));
+        bool Plain(NModMenuRow r) => Tickbox(r).IsEnabled && r.GetNodeOrNull("SpireModManagerSelfLock") == null;
+        Check("installed twice: no padlock, a box each like any other's (enabled; ticked, so no tip), both ticked",
+            ourRows.Count == 2 && ourRows.All(r => Plain(r) && Tickbox(r).IsTicked && Tip(r) == ""), string.Join(" | ", ourRows.Select(Box)));
         // First in its category, whatever the names: here a row whose name sorts before it comes after it.
         var nodes = content.GetChildren().OfType<Control>().ToList();
         var headerAt = nodes.Take(nodes.IndexOf(row)).ToList().FindLastIndex(n => n.IsInGroup("SpireModManagerCategoryHeader"));
@@ -395,8 +398,51 @@ static partial class SelfTest
         CategoryList.ScrollTo(content, ourRows[0]); // our rows in view for the screenshot
         await Wait(menu, 0.2);
         await Capture(screen, outDir, "2q-self-twice-first");
+        // Both ticked: a clash, as any mod's copies are (Jordan, 23 Oct). Which loads is the game's rule between sources,
+        // this local copy here (on the beta as the higher version, on stable as the local copy), and the lines say so with
+        // its reason; every ticked copy's line and Duplicate chip is in the clash's yellow, the copy that won't load reads
+        // Duplicate - Won't load in orange, the same-ID banner counts both and its card says which loads, and #clash finds
+        // both. No line of its own.
+        var clashHex = $"#{Tags.SameIdClash.ToHtml(false)}";
+        var why = Compat.WorkshopBeatsOlderLocal ? WhyHigher : WhyLocal;
+        var (selfLine, copyLine) = (ModDetails.CopyLine(self, false), ModDetails.CopyLine(copy, false));
+        var ourChips = new[] { self, copy }.Select(m => Tags.For(m).FirstOrDefault(c => c.Text == DuplicateChip)).ToList();
+        var sameId = border.GetNodeOrNull<Control>(LoadOrder.SameIdName);
+        var clashing = Copies.Clashing();
+        // The banner's words and fill read before its card opens: a redraw can free the banner.
+        var (sameIdText, sameIdYellow) = ((sameId?.FindChild("SameIdWarning", true, false) as Label)?.Text, Yellow(BannerFill(sameId)));
+        var sameIdCard = await BannerCard(menu, screen, sameId);
+        var findsClash = HiddenTags.Find("clash") is { } clashTag && clashTag(self) && clashTag(copy);
+        Check("... both ticked, a clash like any copies': the lines any copies get (this one loads, the other loads instead, with the game's reason), both "
+            + "in the clash's yellow, the other Duplicate - Won't load in orange; both Duplicate chips yellow, naming the other and the copy that loads; the "
+            + "same-ID banner counting both, its card saying which loads; #clash finding both",
+            selfLine?.Text == Draft(LoadsAlso, ("other", Named(copy))) && selfLine?.Color == clashHex
+            && copyLine?.Text == Draft(CopyLoses, ("other", Named(self)), ("why", why)) && copyLine?.Color == clashHex
+            && ModDetails.Status(copy) == $"[color=#f5b56b]{StatusWontLoad}[/color]" && !ModDetails.Status(self).Contains(StatusWontLoad)
+            && ourChips[0] is { } selfChip && selfChip.Color == Tags.SameIdClash && selfChip.Tip == Draft(ClashTip, ("others", Named(copy)), ("loads", Named(self)))
+            && ourChips[1] is { } copyChip && copyChip.Color == Tags.SameIdClash && copyChip.Tip == Draft(ClashTip, ("others", Named(self)), ("loads", Named(self)))
+            && clashing.Contains(self) && clashing.Contains(copy) && sameIdText == Draft(SameIdText, ("count", Menus.Number(clashing.Count)))
+            && sameIdYellow && sameIdCard.Contains(Draft(BannerLoads, ("mod", Named(self))))
+            && sameIdCard.Contains(Draft(BannerWontLoad, ("mod", Named(copy)))) && findsClash,
+            $"lines {selfLine} / {copyLine}; status {ModDetails.Status(self)} / {ModDetails.Status(copy)}; chips {string.Join(" / ", ourChips.Select(c => $"{c?.Color} {c?.Tip}"))}; "
+            + $"clashing {clashing.Count}, banner {sameIdText ?? "none"} ({string.Join(" | ", sameIdCard)}); #clash {findsClash}");
+        // The screenshot: the copy that won't load selected, its line in the clash's yellow, the chips and the banner above.
+        // Then the row selected before, so the tests after start where they did.
+        var selectedWas = CategoryList.Selected;
+        if (ourRows.FirstOrDefault(r => r.Mod == copy) is { } shownRow)
+        {
+            CategoryList.Select(content, shownRow);
+            await PanelFor(menu, screen, shownRow);
+            CategoryList.ScrollTo(content, ourRows[0]);
+            await Wait(menu, 0.2);
+            await Capture(screen, outDir, "2r-self-twice-clash");
+            if (content.GetChildren().OfType<NModMenuRow>().FirstOrDefault(r => r.Mod == selectedWas) is { } wasRow)
+                CategoryList.Select(content, wasRow);
+            await Wait(menu, 0.2);
+        }
         // A click on one copy's box unticks that one alone (its source's entries off), one undo step; the other still loads,
-        // so no red banner. Its lines: the copy running says it's the only one left on, the other that it's off.
+        // so no red banner, and no clash. Its lines and tip are any copy's beside one that's on: the copy running has no
+        // line, the other names the enabled copy, and its box which copy would load with it on too.
         bool SourceOn(ModSource source) => SaveManager.Instance.SettingsSave.ModSettings?.ModList.Where(e => e.Id == ModEntry.ModId && e.Source == source)
             .All(e => e.IsEnabled) ?? true;
         if (ourRows.FirstOrDefault(r => r.Mod == copy) is { } copyRow)
@@ -406,65 +452,74 @@ static partial class SelfTest
             Tickbox(copyRow).EmitSignal(NTickbox.SignalName.Toggled, Tickbox(copyRow));
             await Wait(menu, 0.3);
             var offLines = (Running: ModDetails.CopyLine(self, false)?.Text, Other: ModDetails.CopyLine(copy, false)?.Text);
+            var offTips = (Running: Tip(row), Other: Tip(copyRow));
             var alone = !Copies.Ticked(copy) && Copies.Ticked(self) && !SourceOn(ModSource.SteamWorkshop) && SourceOn(ModSource.ModsDirectory)
-                && History.Steps(History.Track.List) == steps + 1 && Banner() == null && ourRows.All(Plain);
+                && History.Steps(History.Track.List) == steps + 1 && Banner() == null && ourRows.All(Plain)
+                && !Copies.Clashing().Any(m => m.manifest?.id == ModEntry.ModId);
             var aloneSay = $"{string.Join(" | ", ourRows.Select(Box))}; steps +{History.Steps(History.Track.List) - steps}; banner {Banner() != null}; "
-                + $"lines {offLines.Running} / {offLines.Other}";
+                + $"lines {offLines.Running ?? "none"} / {offLines.Other}";
             History.Undo();
             await Wait(menu, 0.3);
-            Check("... a click on one copy's box unticks it alone (its source's entries off), one undo step, no red banner (the other loads); the copy "
-                + "running says Spire Mod Manager won't load if it's removed, the other that it's off; no tip on either; undone, both ticked",
-                alone && offLines == (Draft(SelfRunsOtherOff, ("other", Named(copy))), Draft(SelfCopyOff, ("other", Named(self))))
+            Check("... a click on one copy's box unticks it alone (its source's entries off), one undo step, no red banner (the other loads), no clash; "
+                + "the lines and tip of any copy off beside one on: the copy running none, the other naming the enabled copy, its box which copy would load "
+                + "with it on too; undone, both ticked",
+                alone && offLines == (null, Draft(OtherEnabled, ("other", Named(self))))
+                && offTips == ("", Draft(CopyOnTip, ("other", Named(self)), ("loads", Named(self))))
                 && Copies.Ticked(copy) && Copies.Ticked(self) && Tickbox(copyRow).IsTicked, $"{aloneSay}; then {string.Join(" | ", ourRows.Select(Box))}");
         }
         else
             Check("... a click on the Workshop copy's box: its row", false, string.Join(" | ", ourRows.Select(Box)));
-        var lines = (Running: ModDetails.CopyLine(self, false)?.Text, Other: ModDetails.CopyLine(copy, false)?.Text);
-        Check("... both ticked: the copy running has no copy line (the other's says it), the other says which copy runs and that it's enabled too, as a backup",
-            lines == (null, Draft(SelfBackup, ("other", Named(self)))), $"{lines.Running ?? "none"} / {lines.Other}");
-        // The backup copy failed by the game as a duplicate (made up: two copies of ours from one source, the second fails):
-        // grey "Duplicate - Won't load" all the same, not a red "Failed to load" (it's on as a backup, and won't load).
-        var (stateWas, errorsWas, backupStatus) = (copy.state, copy.errors, ModDetails.Status(copy));
+        // The copy that won't load failed by the game as a duplicate (made up: two copies of ours from one source, the
+        // second fails): "Duplicate - Won't load" all the same, not a red "Failed to load".
+        var (stateWas, errorsWas, losingStatus) = (copy.state, copy.errors, ModDetails.Status(copy));
         copy.state = ModLoadState.Failed;
         copy.errors = [new LocString("main_menu_ui", "MOD_ERROR.DUPLICATE_ID")];
         var failedStatus = ModDetails.Status(copy);
         (copy.state, copy.errors) = (stateWas, errorsWas);
-        Check("... the backup copy failed by the game as a duplicate (made up): grey Duplicate - Won't load as before, not a red Failed to load",
-            backupStatus.Contains(StatusWontLoad) && failedStatus == backupStatus, $"{backupStatus} / failed {failedStatus}");
-        // Between sources the game's rule says which of ours loads, and why (P10): on the beta the Workshop copy made
-        // higher loads after a relaunch, the copy running saying so, as the higher version; on stable a local copy always
-        // wins, so with the Workshop copy running (made up), this one says it loads after a relaunch, as the local copy.
-        var (versionWas, selfState) = (copy.manifest?.version, self.state);
-        string? sourceLine;
-        string sourceExpected;
+        Check("... the copy that won't load failed by the game as a duplicate (made up): Duplicate - Won't load as before, not a red Failed to load",
+            losingStatus.Contains(StatusWontLoad) && failedStatus == losingStatus, $"{losingStatus} / failed {failedStatus}");
+        // Between sources the game's rule says which of ours loads, and why (P10), in the lines any copies get: on the beta
+        // the Workshop copy made higher loads after a relaunch, this one losing to it as the higher version; on stable a
+        // local copy always wins, so with the Workshop copy running (made up), this one loads after a relaunch and the
+        // Workshop copy loses to it as the local copy. From one source (the made-up copy made local), the game's pick, the
+        // copy running, with no reason: the game goes by its own read order, so neither "installed first" nor "a higher
+        // version" is ours to say.
+        var (versionWas, selfState, sourceWas) = (copy.manifest?.version, self.state, copy.modSource);
+        (string? Self, string? Copy) sourceLines, sameLines;
+        (string Self, string Copy) sourceExpected, sameExpected;
         try
         {
             if (Compat.WorkshopBeatsOlderLocal)
             {
                 if (copy.manifest is { } higher)
                     higher.version = "9.0.0";
-                (sourceLine, sourceExpected) = (ModDetails.CopyLine(self, false)?.Text, Draft(SelfRunsSwitch, ("other", Named(copy)), ("why", WhyHigher)));
+                sourceExpected = (Draft(CopyLoses, ("other", Named(copy)), ("why", WhyHigher)), Draft(LoadsAfter, ("other", Named(self))));
             }
             else
             {
                 (self.state, copy.state) = (ModLoadState.None, ModLoadState.Loaded);
-                (sourceLine, sourceExpected) = (ModDetails.CopyLine(self, false)?.Text, Draft(SelfBackupSwitch, ("other", Named(copy)), ("why", WhyLocal)));
+                sourceExpected = (Draft(LoadsAfter, ("other", Named(copy))), Draft(CopyLoses, ("other", Named(self)), ("why", WhyLocal)));
             }
+            sourceLines = (ModDetails.CopyLine(self, false)?.Text, ModDetails.CopyLine(copy, false)?.Text);
+            if (copy.manifest is { } same)
+                same.version = versionWas;
+            (self.state, copy.state, copy.modSource) = (selfState, stateWas, ModSource.ModsDirectory);
+            sameLines = (ModDetails.CopyLine(self, false)?.Text, ModDetails.CopyLine(copy, false)?.Text);
+            // Named while both are local: two local copies are told apart by their folders.
+            sameExpected = (Draft(LoadsAlso, ("other", Named(copy))), Draft(CopyLosesPlain, ("other", Named(self))));
         }
         finally
         {
             if (copy.manifest is { } manifest)
                 manifest.version = versionWas;
-            (self.state, copy.state) = (selfState, stateWas);
+            (self.state, copy.state, copy.modSource) = (selfState, stateWas, sourceWas);
         }
-        var sourceCase = Compat.WorkshopBeatsOlderLocal ? "the beta: the Workshop copy, made higher, loads after a relaunch, the copy running saying so"
+        var sourceCase = Compat.WorkshopBeatsOlderLocal ? "the beta: the Workshop copy, made higher, loads after a relaunch in place of the copy running"
             : "stable: this local copy loads after a relaunch, the Workshop copy made the one running";
-        Check($"... between sources, which of its copies loads is the game's rule, with the reason ({sourceCase})", sourceLine == sourceExpected,
-            $"{sourceLine ?? "none"} (expected {sourceExpected})");
-        var ourChips = new[] { self, copy }.Select(m => Tags.For(m).FirstOrDefault(c => c.Text == DuplicateChip)).ToList();
-        Check("... no same-ID banner or yellow Duplicate chip for this mod (the plain tan one): both on is as it should be",
-            !Copies.Clashing().Any(m => m.manifest?.id == ModEntry.ModId) && border.GetNodeOrNull<Control>(LoadOrder.SameIdName) == null
-            && ourChips.All(c => c != null && c.Color == Tags.Duplicate), string.Join(" / ", ourChips.Select(c => $"{c?.Color} {c?.Tip}")));
+        Check($"... between sources, which of its copies loads is the game's rule, with its reason, in the lines any copies get ({sourceCase})",
+            sourceLines == sourceExpected, $"{sourceLines} (expected {sourceExpected})");
+        Check("... two copies of it from one source (the made-up copy made local): the copy running loads, the game's pick, and the other's line gives no "
+            + "reason (neither the copy installed first nor a higher version)", sameLines == sameExpected, $"{sameLines} (expected {sameExpected})");
         if (border.FindChild(PageBar.Name, true, false)?.FindChildren("*", "Button", true, false).OfType<Button>().FirstOrDefault(b => b.Text == "Disable all") is { } disableAll)
         {
             disableAll.EmitSignal(BaseButton.SignalName.Pressed);
@@ -550,8 +605,9 @@ static partial class SelfTest
 
         // Relaunch with every copy of it off asks first (ModEntry.TestRelaunch counts a relaunch instead of one): the
         // dialog says it goes on relaunch and how to get it back, with Enable now (its tip) and Relaunch anyway; Enable
-        // now turns on the copy running alone and leaves "ready"; Cancel undoes it. With this mod on again (the two
-        // unticks undone), Relaunch relaunches at once.
+        // now turns on the copy running alone and leaves "ready"; Cancel undoes it. With both copies on again (the two
+        // unticks undone), Relaunch asks too, as for any mod's copies both on: it names the copy that won't load, and
+        // nothing about this mod going. With one copy on, Relaunch relaunches at once.
         Node? Dialog() => menu.GetTree().Root.GetNodeOrNull(RelaunchCheck.Name);
         string Body() => (Dialog()?.FindChild("Body", true, false) as RichTextLabel)?.GetParsedText() ?? "";
         void Press(string name) => Dialog()?.FindChild(name, true, false)?.EmitSignal(BaseButton.SignalName.Pressed);
@@ -574,17 +630,37 @@ static partial class SelfTest
             History.Undo(); // the second untick
             History.Undo(); // the first
             await Wait(menu, 0.3);
-            RelaunchCheck.Relaunch(screen);
-            await Wait(menu, 0.3);
-            var atOnce = relaunches == 1 && Dialog() == null && Copies.Ticked(self) && Copies.Ticked(copy);
-            var atOnceSay = $"on {Copies.Ticked(self)}/{Copies.Ticked(copy)}, off {Copies.OursOff()}, dialog \"{(Dialog() == null ? "none" : Body())}\"";
             Check("... Relaunch with every copy of it off asks first: the dialog says it goes on relaunch and how to get it back, with Enable now "
-                + "(its tip) and Relaunch anyway; Enable now turns on the copy running alone and leaves \"ready\"; Cancel undoes it; with it on, Relaunch at once",
+                + "(its tip) and Relaunch anyway; Enable now turns on the copy running alone and leaves \"ready\"; Cancel undoes it",
                 asked && askedBody == RelaunchSelfOff && askedButtons == "CancelRelaunchButton \"Cancel\", EnableSelfButton \"Enable now\", RelaunchNowButton \"Relaunch anyway\""
                 && enableTip == "Keep Spire Mod Manager (this mod) enabled" && readyOn && readyBody == Menus.Text("SPIRE_MOD_MANAGER.RELAUNCH_CHECK_OK")
-                && readyButtons == "CancelRelaunchButton \"Cancel\", RelaunchNowButton \"Relaunch Game\"" && cancelled && atOnce,
+                && readyButtons == "CancelRelaunchButton \"Cancel\", RelaunchNowButton \"Relaunch Game\"" && cancelled,
                 $"asked {asked}: \"{askedBody}\" [{askedButtons}], tip \"{enableTip}\"; Enable now: on {readyOn}, \"{readyBody}\" [{readyButtons}]; "
-                + $"cancelled {cancelled}; at once {atOnce} ({relaunches} relaunches; {atOnceSay})");
+                + $"cancelled {cancelled}");
+            RelaunchCheck.Relaunch(screen);
+            await Wait(menu, 0.3);
+            var (bothAsked, bothBody, bothButtons) = (Dialog() != null && relaunches == 0 && Copies.Ticked(self) && Copies.Ticked(copy), Body(), Buttons());
+            Press("CancelRelaunchButton");
+            await Wait(menu, 0.3);
+            var oneOn = false;
+            if (ourRows.FirstOrDefault(r => r.Mod == copy) is { } offRow)
+            {
+                Tickbox(offRow).IsTicked = false;
+                Tickbox(offRow).EmitSignal(NTickbox.SignalName.Toggled, Tickbox(offRow));
+                await Wait(menu, 0.3);
+                oneOn = Copies.Ticked(self) && !Copies.Ticked(copy);
+                RelaunchCheck.Relaunch(screen);
+                await Wait(menu, 0.3);
+                History.Undo(); // the Workshop copy on again
+                await Wait(menu, 0.3);
+            }
+            var atOnce = oneOn && relaunches == 1 && Dialog() == null && Copies.Ticked(self) && Copies.Ticked(copy);
+            var atOnceSay = $"one on {oneOn}, now on {Copies.Ticked(self)}/{Copies.Ticked(copy)}, dialog \"{(Dialog() == null ? "none" : Body())}\"";
+            Check("... Relaunch with both copies of it on asks too, as for any mod's copies: it names the copy that won't load and the one loading instead, "
+                + "nothing about this mod going, and no Enable now; with one copy on, Relaunch at once",
+                bothAsked && bothBody.Contains($"{Named(copy)}  {Draft(RelaunchLoses, ("other", Named(self)))}") && !bothBody.Contains(RelaunchSelfOff)
+                && !bothButtons.Contains("EnableSelfButton") && bothButtons.EndsWith("RelaunchNowButton \"Relaunch anyway\"") && atOnce,
+                $"asked {bothAsked}: \"{bothBody}\" [{bothButtons}]; at once {atOnce} ({relaunches} relaunches; {atOnceSay})");
         }
         finally
         {
