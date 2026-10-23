@@ -46,6 +46,9 @@ Ease of use is the heart of the mod, not just its utility.
   copies from one source share one). Disable all leaves it on; its own box, a selection that has it and the bulk menu
   can turn it off. With every copy of it off, a red banner says so and Relaunch asks first, both with Enable now for
   the copy running.
+- Its copies get the same messages as any mod's, and the same clash warnings with two of them ticked. Which of them
+  loads is the game's own choice, as it loads before it could choose: between sources the game's rule, with its
+  reason; between copies from one source, with none.
 - Our own data is one JSON file per Steam account, written atomically, with 10 backups.
 
 ## Load order

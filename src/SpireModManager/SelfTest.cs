@@ -957,15 +957,10 @@ static partial class SelfTest
     const string LoadsAfter = "Loads on relaunch, in place of {other}";
     const string FailedOther = "{other} is also installed. To load that copy instead, enable it and disable this one.";
     const string NotApplied = "Spire Mod Manager couldn't choose which copy was loaded. If the game is on a different version, Spire Mod Manager may need to be updated.";
-    const string SelfBackup = "{other} is running. This copy is enabled too, in case that one is removed.";
-    const string SelfCopyOff = "{other} is running. This copy is disabled, so Spire Mod Manager won't load if that one is removed.";
-    const string SelfRunsOtherOff = "This copy is running. {other} is disabled, so Spire Mod Manager won't load if this one is removed.";
-    const string SelfRunsSwitch = "This copy is running. After a relaunch, {other} loads instead. {why}";
-    const string SelfBackupSwitch = "{other} is running. After a relaunch, this copy loads instead. {why}";
+    const string OtherEnabled = "{other} is the enabled copy";
     const string RelaunchSelfOff = "Spire Mod Manager (this mod) will be disabled on relaunch. To use it again, enable it on the vanilla modding page, "
         + "and it will load after the next restart.";
     const string NewCopyOff = "A new copy of {mods} was installed and is disabled";
-    const string NewSelfCopy = "A new copy of Spire Mod Manager (this mod) was installed and enabled. {loads} will be loaded.";
 
     // The banners' Go to and Show the same way: drafts until the copy pass, word for word as settings_ui.json has them.
     const string GoToProblem = "Go to", GoToProblemTip = "Open the next affected mod";
