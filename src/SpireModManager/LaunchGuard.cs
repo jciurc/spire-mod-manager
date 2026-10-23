@@ -68,6 +68,11 @@ static class LaunchGuard
     // (Copies.TieOrder, and a first split's order). Null before Begin.
     public static IReadOnlyDictionary<string, HashSet<string>>? Before { get; private set; }
 
+#if DEVTOOLS
+    // Self-test: as if the last launch's records named these copies.
+    public static void TestBefore(IReadOnlyDictionary<string, HashSet<string>>? before) => Before = before;
+#endif
+
     // The same read from a folder's records (SameIdLoad reads them at Init, before Begin): entries from before every
     // entry named its copy say nothing.
     public static Dictionary<string, HashSet<string>> CopiesBefore(string dir)

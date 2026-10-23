@@ -24,11 +24,11 @@ Ease of use is the heart of the mod, not just its utility.
 - The game's `mod_list` is the truth for what's on and the load order. Edits go to it at once and take effect
   on relaunch; nothing of ours can disagree with the game's tickboxes.
 - One exception, because the game has one switch for them: copies of a mod installed twice from one source (two
-  Workshop items). Which of them are ticked is ours (`copies_off`), and which of the ticked ones loads is our pick
-  (`copy_picks`: a copy turned on becomes it), applied in our Init, before the game tries the copies. Our page has a
+  Workshop items). Which of them are ticked is ours (`copies_off`). Which of the ticked ones loads is worked out at
+  every launch, never stored: the game's local-vs-Workshop rule on its switches, then of one source the highest ticked
+  version (the copy installed first on a tie), applied in our Init, before the game tries the copies. Our page has a
   tickbox per copy, and two copies of an id can both be ticked (only one loads). The game's page keeps its one switch.
-- Profiles key mods by id and source, like `mod_list` (plus, for copies from one source, which are ticked and which
-  loads). A shared list's rows set a mod installed once by its id; where its id is installed more than once, a row with a
+- Profiles key mods by id and source, like `mod_list` (plus, for copies from one source, which are ticked). A shared list's rows set a mod installed once by its id; where its id is installed more than once, a row with a
   Workshop link sets that copy alone. A newly installed mod joins the active profile, enabled.
   With no profiles yet, an ordinary one named "Default" is made from the current list.
 - The mod managers (this one, Better Mod Menu) are never turned on or off by a profile.
@@ -40,7 +40,7 @@ Ease of use is the heart of the mod, not just its utility.
 ## Load order
 
 - One global order, in its own view. Disabled mods are greyed out but can still be moved.
-- Spire Mod Manager always loads first, pinned at the top: its Init has to run before any copy it picks for.
+- Spire Mod Manager always loads first, pinned at the top: its Init has to run before any copy it chooses for.
 - Fix now moves dependencies ahead of what needs them, otherwise keeping the order (the game's own rule).
 - Auto sort: libraries, then gameplay mods, then the rest, then the same dependency sweep; the player's order
   holds within each tier.

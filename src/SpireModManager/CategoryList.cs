@@ -879,10 +879,9 @@ static class CategoryList
     }
 
     // Enable all / Disable all for some rows (a category's, or the page's), as one undo step; each greyed out
-    // when there's nothing for it to do. This mod stays on. Enable selected / Disable selected for the picked mods.
-    // Each box of these rows, a copy of a mod installed more than once too (Dependencies.Write: where copies share a
-    // switch, the pick stays if it's on), so Enable all ticks every one; turning on a second copy of a mod says so (only
-    // one copy of each loads).
+    // when there's nothing for it to do. Disable all leaves this mod on. Enable selected / Disable selected for the
+    // picked mods. Each box of these rows, a copy of a mod installed more than once too (Dependencies.Write), so Enable
+    // all ticks every one; turning on a second copy of a mod says so (only one copy of each loads).
     public static List<MenuItem> OnOffItems(Control content, IEnumerable<NModMenuRow> members, bool selected = false)
     {
         var mods = members.Select(r => r.Mod).OfType<Mod>().ToList();

@@ -1397,11 +1397,89 @@ static partial class SelfTest
         Check("... an inactive profile saved before a higher copy came, switched to: it has never seen that copy, so it's ticked, and it loads",
             laterLoads == "l:C", $"loads {laterLoads}");
 
+        // N3: a second copy subscribed with the game closed, the same version: neither is in our record yet, so the copy
+        // the last launch had (the launch record names every entry's copy) ranks first, at Init and in the first split, and
+        // keeps loading; with no record of it, the older item would.
+        const string N = "SmmSameIdFirst";
+        var beforeWas = LaunchGuard.Before;
+        string firstAtInit, firstOrder, firstPage, olderAtInit;
+        var firstSplit = new StoreData();
+        try
+        {
+            var before = new Dictionary<string, HashSet<string>> { [N] = ["w:900"] };
+            LaunchGuard.TestBefore(before);
+            var plan = SameIdLoad.Run(new List<Mod> { us, Made(N, "W100", item: 100), Made(N, "W900", item: 900) }, () => new Ticks(null, null, before),
+                m => m == us, log: false).Plan.GetValueOrDefault(N);
+            firstAtInit = plan?.Loads is { } loads ? Copies.CopyOf(loads) : "none";
+            Reconciled(firstSplit, Made(N, "W100", item: 100), Made(N, "W900", item: 900));
+            firstOrder = string.Join(",", firstSplit.Copies?.GetValueOrDefault(N) ?? []);
+            firstPage = Page(firstSplit, Made(N, "W100", item: 100), Made(N, "W900", item: 900)).Loads;
+            var older = SameIdLoad.Run(new List<Mod> { us, Made(N, "W100", item: 100), Made(N, "W900", item: 900) }, () => new Ticks(null, null),
+                m => m == us, log: false).Plan.GetValueOrDefault(N);
+            olderAtInit = older?.Loads is { } olderLoads ? Copies.CopyOf(olderLoads) : "none";
+        }
+        finally
+        {
+            LaunchGuard.TestBefore(beforeWas);
+        }
+        Check("... a second copy at the same version subscribed with the game closed: the copy the last launch had loads at Init and is first in the "
+            + "first split, so it keeps loading (with no launch record, the older item would)",
+            firstAtInit == "w:900" && firstOrder == "w:900,w:100" && firstPage == "900" && olderAtInit == "w:100",
+            $"Init {firstAtInit}, record {firstOrder}, page {firstPage}; with no record {olderAtInit}");
+        // N10: a session that can't save our data goes by our file's record for ties (a holder moved here isn't saved).
+        string? tieSaving, tieReadOnly;
+        var twinRecord = Store.Data.Copies?.GetValueOrDefault(TwinId);
+        if (twinRecord is { Count: > 1 } && SameIdLoad.InitTicks?.Record?.GetValueOrDefault(TwinId) is { } fileRecord)
+        {
+            var swapped = twinRecord.AsEnumerable().Reverse().ToList();
+            if (Store.Data.Copies is { } dataCopies)
+                dataCopies[TwinId] = swapped;
+            try
+            {
+                tieSaving = string.Join(",", Ticks.Now.TieList(TwinId) ?? []);
+                Store.TestReadOnly(true);
+                tieReadOnly = string.Join(",", Ticks.Now.TieList(TwinId) ?? []);
+            }
+            finally
+            {
+                Store.TestReadOnly(false);
+                if (Store.Data.Copies is { } copies)
+                    copies[TwinId] = twinRecord;
+            }
+            Check("... a session that can't save our data: ties go by our file's record, which the next launch reads; one that can, by our data's",
+                tieSaving == string.Join(",", swapped) && tieReadOnly == string.Join(",", fileRecord), $"saving {tieSaving}, read-only {tieReadOnly}, file {string.Join(",", fileRecord)}");
+        }
+        else
+            TwinsMissing("copies, ties in a read-only session");
+        var settings = SaveManager.Instance.SettingsSave.ModSettings;
+        // P11: the tip on a Workshop copy whose switch is off names what a click on it loads: the click turns it on alone
+        // (Write), so the other Workshop copy, ticked by its key, doesn't count.
+        const string K = "SmmSameIdTip";
+        var tip = new StoreData { CopiesOff = [$"{K}|w:301"], Copies = RecordOf(K, "l:L", "w:301", "w:302") };
+        var (tipLoads, clickLoads) = WithCopies(tip, K, [Made(K, "L", version: "1.0.0"), Made(K, "W301", item: 301, version: "2.0.0"), Made(K, "W302", item: 302, version: "3.0.0")], () =>
+        {
+            settings?.ModList.Add(new SettingsSaveMod { Id = K, Source = ModSource.SteamWorkshop, IsEnabled = false });
+            try
+            {
+                var w301 = ModManager.Mods.FirstOrDefault(m => m.manifest?.id == K && Copies.CopyOf(m) == "w:301");
+                var ifTicked = w301 == null ? null : Copies.LoadingIf(w301);
+                if (w301 != null)
+                    Dependencies.Write([(w301, true)]);
+                return (ifTicked == null ? "none" : Copies.Shown(Copies.CopyOf(ifTicked)), LoadingCopy(K) is { } now ? Copies.Shown(now) : "none");
+            }
+            finally
+            {
+                settings?.ModList.RemoveAll(e => e.Id == K);
+                SaveManager.Instance.SaveSettings();
+            }
+        });
+        Check("... the tip on a Workshop copy with its switch off names what a click on it loads (it comes on alone, the other Workshop copy off)",
+            tipLoads == clickLoads && tipLoads == (Compat.WorkshopBeatsOlderLocal ? "301" : "L"), $"tip {tipLoads}, after the click {clickLoads}");
+
         // N6: the switch off, its ticked copy (A) missing, the other ticked on: A goes off too, so back it doesn't load
         // beside it.
         const string O = "SmmSameIdSwitch";
         var switchOff = new StoreData { CopiesOff = [$"{O}|l:B"], Copies = RecordOf(O, "l:A", "l:B") };
-        var settings = SaveManager.Instance.SettingsSave.ModSettings;
         var (offAfter, backLoads) = WithCopies(switchOff, O, [Made(O, "B")], () =>
         {
             settings?.ModList.Add(new SettingsSaveMod { Id = O, Source = ModSource.ModsDirectory, IsEnabled = false });
