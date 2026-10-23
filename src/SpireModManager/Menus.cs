@@ -110,6 +110,20 @@ static class Menus
         return text[..end];
     }
 
+    // The longest start of text at most `length` long (in UTF-16 units, as string.Length counts) that ends between two
+    // text elements, what reads as one character: an emoji (two units), one joined from several with ZWJ, a letter and
+    // its accents. Every cut by characters goes through here: Godot drops half a surrogate pair from a text it's handed,
+    // and draws a stray character in its place.
+    public static string Prefix(string text, int length)
+    {
+        if (text.Length <= length)
+            return text;
+        var end = 0;
+        while (System.Globalization.StringInfo.GetNextTextElementLength(text, end) is var next && end + next <= length)
+            end += next;
+        return text[..end];
+    }
+
     // A one-line label showing text, cut short with CutMark where it's wider than the label, again whenever the label's
     // width or looks change. Every label of ours that cuts its text does it this way: Godot's own cut (TrimEllipsis) draws
     // "…", and its EllipsisChar takes one character, not CutMark's two. fitted: run after each fit (to place something

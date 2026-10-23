@@ -603,7 +603,7 @@ static class LaunchGuard
         var words = Whitespace.Replace(string.Join(" | ", popup.FindChildren("*", "", true, false)
             .Select(n => n switch { RichTextLabel rich => rich.GetParsedText(), Label label => label.Text, _ => "" })
             .Where(t => t.Length > 0)), " ");
-        return words.Length <= 300 ? words : words[..300] + "…";
+        return words.Length <= 300 ? words : Menus.Prefix(words, 300) + "…";
     }
 
     // The offer in the game's popup, our mark on it. Another mod's popup would keep ours out (the container takes one at

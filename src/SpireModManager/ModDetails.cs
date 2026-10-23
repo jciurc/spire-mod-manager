@@ -331,7 +331,7 @@ static class ModDetails
     // short. full: nothing cut short (held with Alt). search: the list's search, if any.
     public static string Card(Mod mod, bool full = false, string? title = null, string? search = null)
     {
-        string Cut(string text, int max) => full || text.Length <= max ? text : Menus.CutShort(text[..max]);
+        string Cut(string text, int max) => full || text.Length <= max ? text : Menus.CutShort(Menus.Prefix(text, max));
         var id = mod.manifest?.id ?? "";
         var info = Store.InfoFor(mod);
         var lines = new List<string>();
@@ -383,7 +383,7 @@ static class ModDetails
     // standIn: a self-test's details in place of the player's (SharedCards.StandIn).
     public static string SharedCard(Mod mod, bool full = false, (string? Alias, string? Notes, List<string> Tags, string? Category)? standIn = null)
     {
-        string Cut(string text, int max) => full || text.Length <= max ? text : Menus.CutShort(text[..max]);
+        string Cut(string text, int max) => full || text.Length <= max ? text : Menus.CutShort(Menus.Prefix(text, max));
         var id = mod.manifest?.id ?? "";
         var info = Store.InfoFor(mod);
         var lines = new List<string>();
@@ -490,21 +490,20 @@ static class ModDetails
     static readonly Regex OpeningOrClosing = new(@"\[(/?)(b|i|u|s|code|center|left|right|fill|indent|url|hint|font|font_size|color|bgcolor|fgcolor|outline_size|outline_color|table|cell|ul|ol|lang|p|wave|tornado|shake|fade|rainbow|pulse|img|dropcap|opentype_features)(?=[\]=\s])[^\]]*\]");
 
     // Rich text cut to about max characters at a space (lines: or a line break), never inside a [tag] (Closed closes what
-    // it leaves open).
+    // it leaves open) or a text element (Menus.Prefix).
     static string CutMarkup(string text, int max, bool lines = false)
     {
         if (text.Length <= max)
             return text;
         var at = lines ? text.LastIndexOfAny([' ', '\n'], max) : text.LastIndexOf(' ', max);
-        if (at <= 0)
-            at = max;
-        if (text.LastIndexOf('[', at - 1) is var open && open > text.LastIndexOf(']', at - 1))
+        at = Menus.Prefix(text, at > 0 ? at : max).Length;
+        if (at > 0 && text.LastIndexOf('[', at - 1) is var open && open > text.LastIndexOf(']', at - 1))
             at = open;
         return Menus.CutShort(text[..at], markup: true);
     }
 
     // Text cut after 200 characters (some authors write a paragraph where their name goes).
-    public static string Short(string text) => text.Length <= 200 ? text : Menus.CutShort(text[..200]);
+    public static string Short(string text) => text.Length <= 200 ? text : Menus.CutShort(Menus.Prefix(text, 200));
 
     // The date in the game's language, in its run history's pattern ("12. Oktober 2026"); English if that's missing
     // or unusable.

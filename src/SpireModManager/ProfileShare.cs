@@ -182,9 +182,18 @@ static class ProfileCsv
         return mods.Count == 0 ? Problem(Menus.Text("SPIRE_MOD_MANAGER.IMPORT_NO_MODS")) : new Result(mods, null);
     }
 
-    // At most `most` characters as Godot counts them (code points, as its boxes' MaxLength does), never half of one.
-    static string Cut(string value, int most) =>
-        value.EnumerateRunes().Count() <= most ? value : string.Concat(value.EnumerateRunes().Take(most).Select(r => r.ToString())).TrimEnd();
+    // At most `most` characters as Godot counts them (code points, as its boxes' MaxLength does), in whole text elements
+    // (Menus.Prefix): never part of an emoji joined with ZWJ, or a letter without its accents.
+    static string Cut(string value, int most)
+    {
+        if (value.EnumerateRunes().Count() <= most)
+            return value;
+        var (end, count) = (0, 0);
+        var elements = System.Globalization.StringInfo.GetTextElementEnumerator(value);
+        while (elements.MoveNext() && (count += elements.GetTextElement().EnumerateRunes().Count()) <= most)
+            end += elements.GetTextElement().Length;
+        return value[..end].TrimEnd();
+    }
 
     // A category or alias on one line, as our boxes make them: line breaks and tabs in a quoted cell become spaces.
     static string OneLine(string value) => string.Join(" ", value.Split(['\r', '\n', '\t'], StringSplitOptions.RemoveEmptyEntries | StringSplitOptions.TrimEntries));

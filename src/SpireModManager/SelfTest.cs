@@ -256,6 +256,7 @@ static partial class SelfTest
             await Step(() => TestRelaunchCheck(menu, screen, content, outDir));
             await Step(() => TestLongDetails(menu, screen, content, outDir));
             await Step(() => TestDescriptionCut(menu, screen, content, outDir));
+            await Step(() => TestCutWhole(content));
             await Step(() => TestWorkshopHead(menu, screen, outDir));
             await Step(() => TestOtherModPanel(menu, screen, content, outDir));
             await Step(() => TestGameChanges(menu, screen, content, outDir));
