@@ -1865,7 +1865,7 @@ static partial class SelfTest
         var actions = LoadOrder.Actions(content, ours, () => { });
         Check("same ID, Load Order: our row pinned first, a lock for its grip saying why, its moves greyed",
             !handle.GetChildren().OfType<ColorRect>().Any() && handle.GetChildren().OfType<Panel>().Count() == 2
-            && Hover.TipOf(handle) == "Spire Mod Manager always loads first, so it can configure the rest of the list properly"
+            && Hover.TipOf(handle) == "Spire Mod Manager always loads first to accurately configure the startup"
             && actions.Where(a => a.Label is not ("Disable" or "Enable")).All(a => a.Disabled),
             $"{string.Join(", ", actions.Select(a => $"{a.Label}{(a.Disabled ? " (greyed)" : "")}"))}; tip {Hover.TipOf(handle)}");
         var from = handle.GetGlobalRect().GetCenter();

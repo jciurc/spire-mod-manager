@@ -1003,7 +1003,13 @@ static partial class SelfTest
             description.EmitSignal(RichTextLabel.SignalName.MetaClicked, ModifiedContent.Meta);
             await WaitUntil(menu, () => Dialog()?.FindChild("Scroll", true, false) is Control { CustomMinimumSize.Y: > 0 });
             await Wait(menu, 0.2);
-            var title = (Dialog()?.FindChild("Title", true, false) as Label)?.Text ?? "";
+            var titleText = Dialog()?.FindChild("Title", true, false) as RichTextLabel;
+            var title = titleText?.GetParsedText() ?? "";
+            // The mod's name in gold, the rest of the title cream (Jordan, 23 Oct).
+            Check("modified content's dialog: the mod's name in its title in gold, the rest cream",
+                titleText?.Text.Contains($"[color=#{Modal.Gold.ToHtml(false)}]{name.Replace("[", "[lb]")}[/color]") == true
+                && titleText.GetThemeColor("default_color") == Modal.Cream,
+                titleText?.Text ?? "no title");
             var list = Dialog()?.FindChild("List", true, false) as RichTextLabel;
             var listText = list?.GetParsedText() ?? "";
             var note = (Dialog()?.FindChild("Note", true, false) as RichTextLabel)?.GetParsedText() ?? "";
@@ -1048,10 +1054,14 @@ static partial class SelfTest
             var listCode = list?.Text ?? "";
             var everyWay = ModifiedContent.Details(mod, new([], [new GameChanges.Place("NThing", "_Ready", "combat",
                 GameChanges.Kinds.Before | GameChanges.Kinds.After | GameChanges.Kinds.Rewritten | GameChanges.Kinds.Wrapped)]));
-            var legend = "[color=#fff6e299]" + Menus.Text("SPIRE_MOD_MANAGER.PATCH_KINDS").Replace("Before:", Coloured("Before", "#8ec5ff") + ":")
-                .Replace("After:", Coloured("After", "#a6e3a1") + ":").Replace("Rewritten:", Coloured("Rewritten", "#f5b56b") + ":")
-                .Replace("Wrapped:", Coloured("Wrapped", "#f2a3a3") + ":") + "[/color]";
-            Check("modified content's dialog: before in blue, after in green, rewritten in orange, wrapped in soft red, in the list and the legend's terms (see 17f2)",
+            // The legend's terms: each kind's word as the list has it, capitalised, with a colon ("Final:" for wrapped, Jordan's
+            // word since 23 Oct).
+            static string Capitalised(string word) => word.Length == 0 ? word : char.ToUpperInvariant(word[0]) + word[1..];
+            (string Key, string Hex)[] kinds = [("SPIRE_MOD_MANAGER.PATCH_BEFORE", "#8ec5ff"), ("SPIRE_MOD_MANAGER.PATCH_AFTER", "#a6e3a1"),
+                ("SPIRE_MOD_MANAGER.PATCH_REWRITTEN", "#f5b56b"), ("SPIRE_MOD_MANAGER.PATCH_WRAPPED", "#f2a3a3")];
+            var legend = "[color=#fff6e299]" + kinds.Aggregate(Menus.Text("SPIRE_MOD_MANAGER.PATCH_KINDS"),
+                (text, kind) => Capitalised(Menus.Text(kind.Key)) is var term ? text.Replace(term + ":", Coloured(term, kind.Hex) + ":") : text) + "[/color]";
+            Check("modified content's dialog: before in blue, after in green, rewritten in orange, final (wrapped) in soft red, in the list and the legend's terms (see 17f2)",
                 listCode.Split('\n').Contains($"        NModdingScreen._Ready  [color=#fff6e299]({before}, {after}, {wrapped})[/color]")
                 && everyWay.Contains($"NThing._Ready  [color=#fff6e299]({before}, {after}, {rewritten}, {wrapped})[/color]")
                 && legend.Split("[color=#").Length == 6 && ModifiedContent.Legend() == legend && listCode.Split('\n').Contains(legend),

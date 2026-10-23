@@ -159,7 +159,7 @@ static class ModifiedContent
         var name = mod.manifest?.name is { Length: > 0 } named ? named : mod.manifest?.id ?? "";
         if (Modal.Open(owner, Name, DialogWidth, 12) is not { } column)
             return;
-        column.AddChild(Modal.Title("SPIRE_MOD_MANAGER.MODIFIED_TITLE", ("name", name)));
+        column.AddChild(Modal.Title("SPIRE_MOD_MANAGER.MODIFIED_TITLE", ("name", name), Modal.Gold));
         column.AddChild(Text("Note", $"[color={Quiet}]{Escape(Menus.Text("SPIRE_MOD_MANAGER.MODIFIED_NOTE"))}[/color]", 16));
         column.AddChild(Areas(changes));
         var details = Details(mod, changes);
