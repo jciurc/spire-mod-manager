@@ -397,46 +397,51 @@ static class LaunchGuard
     // failure).
     public static List<string> Disableable(IReadOnlyList<string> suspects) => [.. suspects.Where(id => !Ours(id)).Distinct()];
 
-    static bool _repairedAtCrash;
+    static bool _repairTried;
 
-    // Whether RepairAtCrash ran this session (the self-test's failed start reads it).
-    public static bool RepairedAtCrash => _repairedAtCrash;
+    // Whether RepairBeforeMenu got to the list in memory this session (before the first main menu, with the list as the
+    // game read it): the self-test's failed start reads it.
+    public static bool RepairedBeforeMenu { get; private set; }
 
-    // The game's mod list in memory at a failed start is the one it rebuilt: every copy of an id has the id's first
-    // entry's switch (it matches by id), and only the first main menu puts each source's own back (SameIdLoad.Settle).
-    // Saved from the crash dialog as it is (Disable suspects; the window's close, through the game's NGame.Quit; another
-    // mod's answer), it would turn another mod off, or load another copy of it. So once, as the startup error shows, the
-    // same repair in memory, nothing saved: every save from then on writes the switches the game read.
-    public static void RepairAtCrash()
+    // Before the first main menu the game's mod list in memory is the one it rebuilt: every copy of an id has the id's
+    // first entry's switch (it matches by id), and only the first main menu puts each source's own back and saves it
+    // (SameIdLoad.Settle). Saved before that as it is (at a failed start, Disable suspects or another mod's answer; at
+    // any time, the window's close, through the game's NGame.Quit), it would turn another mod off, or load another copy
+    // of it. So once, as a startup error shows or the game quits before the menu, the same repair in memory, nothing
+    // saved: every save from then on writes the switches the game read. Not earlier: the menu's Settle saves only a list
+    // that still needs it.
+    public static void RepairBeforeMenu()
     {
-        if (_repairedAtCrash)
+        if (_repairTried)
             return;
-        _repairedAtCrash = true;
-        if (RepairAtCrash(SaveManager.Instance.SettingsSave.ModSettings, ReadList, SameIdLoad.Settled))
-            Log.Info($"[{ModEntry.ModId}] After the failed start: put each source's own switch back in the game's mod list in memory, as the first main menu "
+        _repairTried = true;
+        var settings = SaveManager.Instance.SettingsSave.ModSettings;
+        RepairedBeforeMenu = !SameIdLoad.Settled && settings != null && ReadList != null;
+        if (RepairBeforeMenu(settings, ReadList, SameIdLoad.Settled))
+            Log.Info($"[{ModEntry.ModId}] Before the first main menu: put each source's own switch back in the game's mod list in memory, as the menu "
                 + "would, so a save from here keeps every other mod as it was");
     }
 
     // The repair on given lists (the self-test's made-up ones): none after the first main menu (Settle did it), nor
     // without the list as the game read it. True if anything changed.
-    public static bool RepairAtCrash(ModSettings? settings, IReadOnlyList<(string Id, ModSource Source, bool On)>? read, bool settled)
+    public static bool RepairBeforeMenu(ModSettings? settings, IReadOnlyList<(string Id, ModSource Source, bool On)>? read, bool settled)
     {
         if (settled || settings == null)
             return false;
         if (read == null)
         {
-            Log.Warn($"[{ModEntry.ModId}] After the failed start: no list as the game read it, so the mod list in memory stays as the game rebuilt it");
+            Log.Warn($"[{ModEntry.ModId}] Before the first main menu: no list as the game read it, so the mod list in memory stays as the game rebuilt it");
             return false;
         }
         return SameIdLoad.SettleList(settings.ModList, read);
     }
 
-    // This launch's mod list as it is (repaired: RepairAtCrash), the suspects off (every copy and source of each; one the
-    // list doesn't name gets an entry, or it would load), saved.
+    // This launch's mod list as it is (repaired: RepairBeforeMenu), the suspects off (every copy and source of each; one
+    // the list doesn't name gets an entry, or it would load), saved.
     static void WriteWithout(IReadOnlyList<string> suspects)
     {
         var ids = Disableable(suspects).ToHashSet();
-        RepairAtCrash(); // done as the error showed; here too, should that prefix not have run
+        RepairBeforeMenu(); // done as the error showed; here too, should that prefix not have run
         var settings = SaveManager.Instance.SettingsSave.ModSettings ??= new ModSettings();
         foreach (var entry in settings.ModList.Where(e => ids.Contains(e.Id)))
             entry.IsEnabled = false;
