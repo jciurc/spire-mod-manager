@@ -29,6 +29,11 @@ static partial class SelfTest
         await Wait(menu, 0.3);
         var text = (screen.FindChild("OrderProblems", true, false) as Label)?.Text ?? "";
         Check("main list: a needed mod that is off gets a banner", text.Contains("require a mod that is disabled"), text);
+        // Test Addon on as well, its dependency not installed: both kinds at once, each a statement of its own.
+        if (WontLoad() != null)
+            Check("main list banner: both kinds of problem, a dot between them and no full stops",
+                text.Split("  ·  ") is [var off, var missing] && off.Contains("require a mod that is disabled") && missing.Contains("a mod that isn't installed")
+                && !text.Contains('.'), text);
         var warning = screen.FindChild(LoadOrder.WarningName, true, false);
         var goToTip = TipOf(warning?.FindChild("GoToProblemButton", true, false));
         var showTip = TipOf(warning?.FindChild("FilterProblemButton", true, false));
