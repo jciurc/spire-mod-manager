@@ -180,10 +180,12 @@ static class RowStrip
             Name = KeywordsName, Text = KeywordsLine(keywords), ThemeTypeVariation = Faint, VerticalAlignment = VerticalAlignment.Center,
             MouseFilter = Control.MouseFilterEnum.Pass,
         };
-        Hover.Watch(links, "SpireModManagerTagCard", () => KeywordAt(links, (links.GetGlobalTransform().AffineInverse() * Hover.Mouse(links)).X) != null
-            ? Tags.Hint(Menus.Text("SPIRE_MOD_MANAGER.SEARCH_CLICK_TIP")) : null, width: 320);
-        // The card is decided once, where the mouse came in: one coming from the tags comes in over the words before the
-        // keywords, and has none. So moving onto a keyword from there starts its card, as if the mouse came in on it.
+        // The card is for the keywords alone: off them, onto the words before them, it goes (or never comes once its delay
+        // is over), as off the label.
+        Hover.Watch(links, "SpireModManagerTagCard", () => Tags.Hint(Menus.Text("SPIRE_MOD_MANAGER.SEARCH_CLICK_TIP")), width: 320,
+            on: () => KeywordAt(links, (links.GetGlobalTransform().AffineInverse() * Hover.Mouse(links)).X) != null);
+        // It's started where the mouse comes in, and one coming from the tags comes in over those words: so moving onto a
+        // keyword from them starts it, as if the mouse came in there.
         string? under = null;
         links.MouseExited += () => under = null;
         links.GuiInput += e =>

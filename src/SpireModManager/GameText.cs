@@ -24,10 +24,11 @@ static class GameText
     // A cell's colour of #00000000 means the theme's: this one is as clear, and its own.
     const string Clear = "#ffffff00";
 
-    // The theme's gaps around a table's cells, none in a label with our boxes (Watch). A box whose words wrap fills the
-    // label's width, and the gap took its table past the edge: the line break after it wrapped onto a line of its own, an
-    // empty line under the box. Below the cell, the gap put the words off its middle.
-    public static readonly StringName[] TableGaps = ["table_h_separation", "table_v_separation"];
+    // The theme's gaps around a table's cells, none in a label while its text has our boxes (Watch), and the label's own
+    // again once it hasn't, so a mod's own tables keep theirs. A box whose words wrap fills the label's width, and the gap
+    // took its table past the edge: the line break after it wrapped onto a line of its own, an empty line under the box.
+    // Below the cell, the gap put the words off its middle.
+    static readonly StringName[] TableGaps = ["table_h_separation", "table_v_separation"];
 
     // Over the box: the source's name ("Notice from the game", "From the game").
     public static string Caption(string text, bool centred = false) =>
@@ -66,25 +67,27 @@ static class GameText
     }
 
     // What Watch draws in a label: a canvas item of its own, behind the label's text, and each box's line, table and box.
+    // Gaps: the label's own table gaps from before it was watched (null: the theme's); Gapless: they're off now.
     sealed class Drawing
     {
         public Rid Item;
         public readonly List<(int Line, Rect2 Table, Rect2 Box, bool Dim)> Boxes = [];
+        public int?[] Gaps = [];
+        public bool Gapless;
     }
 
     static readonly ConditionalWeakTable<RichTextLabel, Drawing> Watched = [];
 
     // The boxes in label's text, drawn behind its words each time the label draws (its text, size or scroll changed), so
-    // they keep to its layout; its tables without the theme's gaps (TableGaps). Once per label; a label with no box in
-    // its text draws none.
+    // they keep to its layout; its tables without the theme's gaps while it has any (TableGaps). Once per label; a label
+    // with no box in its text draws none.
     public static void Watch(RichTextLabel label)
     {
         if (Watched.TryGetValue(label, out _))
             return;
-        foreach (var gap in TableGaps)
-            label.AddThemeConstantOverride(gap, 0);
-        var drawing = new Drawing();
+        var drawing = new Drawing { Gaps = [.. TableGaps.Select(gap => label.HasThemeConstantOverride(gap) ? label.GetThemeConstant(gap) : (int?)null)] };
         Watched.Add(label, drawing);
+        Fit(label, drawing, label.GetParsedText()); // a card's text is in it already
         label.Draw += () => Draw(label, drawing);
         label.TreeExiting += () =>
         {
@@ -94,12 +97,44 @@ static class GameText
         };
     }
 
+    // The label's table gaps for its text now, as Watch sets them when the label next draws: for what measures the text
+    // before then (the info panel places its fields under it).
+    public static void Fit(RichTextLabel label)
+    {
+        if (Watched.TryGetValue(label, out var drawing))
+            Fit(label, drawing, label.GetParsedText());
+    }
+
+    // None while the text has a box, the label's own otherwise. True if they changed: the text is laid out again.
+    static bool Fit(RichTextLabel label, Drawing drawing, string text)
+    {
+        var boxed = text.IndexOfAny(Marks) >= 0;
+        if (boxed == drawing.Gapless)
+            return false;
+        drawing.Gapless = boxed;
+        for (var i = 0; i < TableGaps.Length; i++)
+        {
+            if ((boxed ? 0 : drawing.Gaps[i]) is { } gap)
+                label.AddThemeConstantOverride(TableGaps[i], gap);
+            else
+                label.RemoveThemeConstantOverride(TableGaps[i]);
+        }
+        return true;
+    }
+
     static void Draw(RichTextLabel label, Drawing drawing)
     {
         drawing.Boxes.Clear();
         if (drawing.Item.IsValid)
             RenderingServer.CanvasItemClear(drawing.Item);
         var text = label.GetParsedText();
+        // Its text gained or lost its boxes since (the game's popup sets its own text): laid out again with the gaps for
+        // it, and drawn again, asked for after this draw (one asked for while the label draws is dropped).
+        if (Fit(label, drawing, text))
+        {
+            label.CallDeferred(CanvasItem.MethodName.QueueRedraw);
+            return;
+        }
         if (text.IndexOfAny(Marks) < 0)
             return;
         if (!drawing.Item.IsValid)
