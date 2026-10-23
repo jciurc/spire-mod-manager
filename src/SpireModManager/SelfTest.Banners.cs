@@ -549,8 +549,8 @@ static partial class SelfTest
             $"all off {allOff}, running alone {runningAlone}; now {Copies.Ticked(self)}/{Copies.Ticked(copy)}, banner {Banner() != null}");
 
         // Relaunch with every copy of it off asks first (ModEntry.TestRelaunch counts a relaunch instead of one): the
-        // dialog says it goes at the next launch and how to get it back, with Enable now (its tip) and Relaunch anyway;
-        // Enable now turns on the copy running alone and leaves "ready"; Cancel undoes it. With this mod on again (the two
+        // dialog says it goes on relaunch and how to get it back, with Enable now (its tip) and Relaunch anyway; Enable
+        // now turns on the copy running alone and leaves "ready"; Cancel undoes it. With this mod on again (the two
         // unticks undone), Relaunch relaunches at once.
         Node? Dialog() => menu.GetTree().Root.GetNodeOrNull(RelaunchCheck.Name);
         string Body() => (Dialog()?.FindChild("Body", true, false) as RichTextLabel)?.GetParsedText() ?? "";
@@ -578,7 +578,7 @@ static partial class SelfTest
             await Wait(menu, 0.3);
             var atOnce = relaunches == 1 && Dialog() == null && Copies.Ticked(self) && Copies.Ticked(copy);
             var atOnceSay = $"on {Copies.Ticked(self)}/{Copies.Ticked(copy)}, off {Copies.OursOff()}, dialog \"{(Dialog() == null ? "none" : Body())}\"";
-            Check("... Relaunch with every copy of it off asks first: the dialog says it goes at the next launch and how to get it back, with Enable now "
+            Check("... Relaunch with every copy of it off asks first: the dialog says it goes on relaunch and how to get it back, with Enable now "
                 + "(its tip) and Relaunch anyway; Enable now turns on the copy running alone and leaves \"ready\"; Cancel undoes it; with it on, Relaunch at once",
                 asked && askedBody == RelaunchSelfOff && askedButtons == "CancelRelaunchButton \"Cancel\", EnableSelfButton \"Enable now\", RelaunchNowButton \"Relaunch anyway\""
                 && enableTip == "Keep Spire Mod Manager (this mod) enabled" && readyOn && readyBody == Menus.Text("SPIRE_MOD_MANAGER.RELAUNCH_CHECK_OK")
