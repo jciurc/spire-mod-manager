@@ -32,7 +32,6 @@ static class ModDetails
     const string GoldHex = "#efc851", LinkHex = "#99ccff";
     public const string ModLinkHex = "#cfe3ff"; // a mod's name, or its author, that a click acts on: light blue
     const string Quiet = "#fff6e299"; // no value to show (an unknown author, no description): subtle, so it doesn't read as one
-    const string Fainter = "#fff6e280"; // Other keywords: half the panel text's alpha, below the facts without reading as one
     const string Bullet = "[color=#fff6e280]•[/color]"; // between facts on one line: dim
     const int VersionSize = 20;
     const int HeadSize = 16; // the head's text
@@ -279,11 +278,11 @@ static class ModDetails
             Fact("SPIRE_MOD_MANAGER.SUBSCRIBERS", Menus.Number(subscribers));
         if (workshop?.Tags.Count > 0)
             Fact("SPIRE_MOD_MANAGER.WORKSHOP_TAGS", string.Join(", ", workshop.Tags.Select(t => $"[url=wtag:{t}]{Escape(t)}[/url]"))); // click: search for it
-        // The hidden tags that find it (Jordan: "so that way they're at least visible"), links as the Workshop tags are,
-        // the whole line fainter.
+        // The hidden tags that find it (Jordan: "so that way they're at least visible"), a fact like the others, links as
+        // the Workshop tags are; bare names (Jordan: no "#"), though a click searches #name.
         var keywords = HiddenTags.Of(mod);
         if (keywords.Count > 0)
-            text.Append($"[color={Fainter}]{Menus.Text("SPIRE_MOD_MANAGER.OTHER_KEYWORDS")}: {string.Join(", ", keywords.Select(k => $"[url=htag:{k}]#{k}[/url]"))}[/color]\n");
+            Fact("SPIRE_MOD_MANAGER.OTHER_KEYWORDS", string.Join(", ", keywords.Select(k => $"[url=htag:{k}]{k}[/url]")));
         // What it changes in the game itself, right under them (Jordan: "with no gap"), for every mod.
         text.Append(modified).Append("\n\n");
 

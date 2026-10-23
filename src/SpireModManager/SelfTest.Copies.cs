@@ -3194,14 +3194,14 @@ static partial class SelfTest
             Want(changes.Contains(switchLine) == switched, $"Changes: {string.Join(" | ", changes)}");
             Want(ModEntry.HasPendingChanges() == (switched || LoadOrder.OrderChanged), $"pending {ModEntry.HasPendingChanges()} (moved since launch {LoadOrder.OrderChanged})");
             // The row strip: Test Twin User's line names the copy of the id it needs that loads (its name alone, then a word
-            // where there's a problem), and only the copy that won't load has the #aside keyword.
+            // where there's a problem), and only the copy that won't load has the aside keyword (the info panel's Other keywords).
             var note = (user == null ? null : RowOf(user))?.GetNodeOrNull<RichTextLabel>("SpireModManagerStrip/Needs")?.GetParsedText();
             var needs = $"{Menus.Text("SPIRE_MOD_MANAGER.NEEDS_LABEL")}: {loads.manifest?.name}";
             var words = new[] { "SPIRE_MOD_MANAGER.DEP_MISSING", "SPIRE_MOD_MANAGER.DEP_OFF", "SPIRE_MOD_MANAGER.DEP_AFTER" }.Select(Menus.Text);
             Want(user == null || note == needs || words.Any(w => note == $"{needs} {w}"),
                 $"Test Twin User's row strip \"{note ?? "none"}\"");
-            Want(new[] { a, b }.All(m => RowStrip.Keywords(m).Contains("aside") == (m == losing)),
-                $"the row strips' keywords {string.Join(" / ", new[] { a, b }.Select(m => string.Join(",", RowStrip.Keywords(m))))}");
+            Want(new[] { a, b }.All(m => HiddenTags.Of(m).Contains("aside") == (m == losing)),
+                $"the copies' keywords {string.Join(" / ", new[] { a, b }.Select(m => string.Join(",", HiddenTags.Of(m))))}");
             if (shot != null && shownRow != null)
                 await Capture(screen, outDir, shot);
             Check($"the one rule on the page, {name}: every view names {Named(loads)} as the copy that loads"

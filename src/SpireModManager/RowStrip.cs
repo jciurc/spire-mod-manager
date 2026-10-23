@@ -4,41 +4,38 @@ using MegaCrit.Sts2.Core.Nodes.Screens.ModdingScreen;
 
 namespace SpireModManager;
 
-// The line along the bottom of each mod row in our views: its tags, its other keywords (the hidden tags that find it),
-// "and 3 more.." for what doesn't fit, what it needs (red when a dependency is missing, off or loads after it) and its
-// author; the row's action buttons sit on the right. The row keeps its height: nothing opens out.
+// The line along the bottom of each mod row in our views: its tags, "and 3 more.." for those that don't fit, what it
+// needs (red when a dependency is missing, off or loads after it) and its author; the row's action buttons sit on the
+// right. The row keeps its height: nothing opens out. (A mod's other keywords are in the info panel only.)
 static class RowStrip
 {
     const string StripName = "SpireModManagerStrip";
     public const string ActionsName = "SpireModManagerActions", OrderActionsName = "SpireModManagerOrderActions"; // main list, Load Order
     public const string MoreName = "SpireModManagerMoreTags"; // "and 3 more.."
-    public const string KeywordsName = "SpireModManagerKeywords"; // "Additional keywords: enabled, loaded"
     static readonly StringName StripMeta = "spire_mod_manager_strip";
     static readonly StringName SaysMeta = "spire_mod_manager_says"; // on a strip or buttons: what they show and where, to know when to change them
-    static readonly StringName ShowsMeta = "spire_mod_manager_shows"; // on a strip: its tags, keywords and author, to know when to remake it
-    static readonly StringName ShownMeta = "spire_mod_manager_tags_shown"; // on a strip: how many tags and keywords show (the rest are "and N more..")
+    static readonly StringName ShowsMeta = "spire_mod_manager_shows"; // on a strip: its tags and author, to know when to remake it
+    static readonly StringName ShownMeta = "spire_mod_manager_tags_shown"; // on a strip: how many tags show (the rest are "and N more..")
 
     // What Apply and Fold ask each row for, in the types Godot takes, made once: a text passed as one is converted anew
     // each time (a native call), on every row of every redraw.
     static readonly NodePath TitlePath = "Title", StripPath = StripName, ActionsPath = ActionsName, OrderActionsPath = OrderActionsName,
-        EdgePath = EdgeName, NeedsPath = NeedsName, AuthorPath = AuthorName, SpacerPath = SpacerName, MorePath = MoreName,
-        KeywordsPath = KeywordsName;
+        EdgePath = EdgeName, NeedsPath = NeedsName, AuthorPath = AuthorName, SpacerPath = SpacerName, MorePath = MoreName;
     static readonly StringName Separation = "separation", NormalFont = "normal_font", NormalFontSize = "normal_font_size";
-    static readonly StringName Faint = "SpireModManagerFaint"; // the keywords' and "and 3 more.."'s look (Look)
+    static readonly StringName Faint = "SpireModManagerFaint"; // "and 3 more.."'s look (Look)
     const float Height = 20;
     const float TitleGap = 4; // more room between the title and the line under it
     const float RightMargin = 84; // from the row's right edge: clear of the (smaller, moved) tickbox and the pencil
     const float LoadOrderMargin = 20; // Load Order has no tickbox
     const float ActionsGap = 12;
     const float AuthorMax = 200; // px
-    const int LabelSize = 13; // the author's, the keywords' and "and 3 more.."'s text
+    const int LabelSize = 13; // the author's and "and 3 more.."'s text
     static readonly Color NoteColor = new(0.937f, 0.784f, 0.318f, 0.75f), AuthorColor = new(1, 0.964706f, 0.886275f, 0.45f);
-    public const string FaintHex = "#fff6e280"; // the keywords: as the info panel's Other keywords (ModDetails.Fainter)
+    const string FaintHex = "#fff6e280"; // "and 3 more..": fainter than the author
 
     // edge: a quiet button at the row's far right, past the tickbox (the main list's pencil), or none.
     public static void Apply(IList<NModMenuRow> rows, Func<NModMenuRow, IEnumerable<MenuItem>> actions, Func<NModMenuRow, MenuItem>? edge = null)
     {
-        using var lookups = Lookups.Begin(); // the redraw's (each row's keywords ask about the whole list), or one for these rows
         var order = LoadOrder.Mods(rows).Select((m, i) => (m, i)).DistinctBy(p => p.m).ToDictionary(p => p.m, p => p.i);
         // Each view keeps its own buttons and hides the other's, so a switch between the main list and Load Order
         // doesn't make every row's again.
@@ -72,14 +69,12 @@ static class RowStrip
             title.OffsetRight = clear;
             Lap("buttons");
 
-            // The line is remade only when its tags, keywords or author change (remaking every row's on each keystroke was
-            // most of a redraw's time); otherwise it's updated in place.
+            // The line is remade only when its tags or author change (remaking every row's on each keystroke was most of
+            // a redraw's time); otherwise it's updated in place.
             var chips = Tags.For(row.Mod);
-            var keywords = Keywords(row.Mod);
-            Lap("keywords");
             var text = string.Join("    ", new[] { RequiredFor(row.Mod), Needs(row.Mod, order, Store.Data.LoadOrderView) }.Where(s => s.Length > 0));
             var author = ModDetails.Short(row.Mod?.manifest?.author ?? "");
-            var shows = Shows(chips, author, keywords);
+            var shows = Shows(chips, author);
             var says = $"{shows}|{Store.Data.LoadOrderView}|{title.OffsetLeft}|{clear}|{text}";
             var kept = row.GetNodeOrNull<HBoxContainer>(StripPath);
             if (kept?.GetMeta(SaysMeta, "").AsString() == says)
@@ -94,8 +89,8 @@ static class RowStrip
             {
                 kept.SetMeta(SaysMeta, says);
                 (kept.OffsetLeft, kept.OffsetRight, kept.Visible) = (title.OffsetLeft, clear, true);
-                if (SetNote(kept, text) && chips.Count + keywords.Count > 0) // folded again for the note's new width (a new width of the line refolds by itself)
-                    Callable.From(() => Fold(row, kept, chips, keywords)).CallDeferred();
+                if (SetNote(kept, text) && chips.Count > 0) // the tags fold again for the note's new width (a new width of the line refolds by itself)
+                    Callable.From(() => Fold(row, kept, chips)).CallDeferred();
                 Lap("rest");
                 continue;
             }
@@ -116,8 +111,6 @@ static class RowStrip
 
             foreach (var chip in chips)
                 strip.AddChild(Tags.Make(chip, add => Search.ByChip(row, chip, add)));
-            if (keywords.Count > 0)
-                strip.AddChild(Links(row, keywords));
             Lap("tags");
 
             if (text.Length > 0)
@@ -144,11 +137,11 @@ static class RowStrip
             row.AddChild(strip);
             Lap("added");
 
-            // Too many tags and keywords for the line: the last ones are "and N more.." (Fold). Worked out once the
-            // chips are laid out, and again whenever the line changes width.
-            if (chips.Count + keywords.Count > 0)
+            // Too many tags for the line: the last ones are "and N more.." (Fold). Worked out once the chips are laid
+            // out, and again whenever the line changes width.
+            if (chips.Count > 0)
             {
-                void Refold() => Fold(row, strip, chips, keywords);
+                void Refold() => Fold(row, strip, chips);
                 strip.Resized += Refold;
                 Callable.From(Refold).CallDeferred();
             }
@@ -156,104 +149,28 @@ static class RowStrip
         }
     }
 
-    // What a line's tags, author and keywords show, to know when the line must be made again: each tag's words, colour,
-    // kind, card and search (a tag keeps its card and its click's search: the Duplicate tag's card names the other
-    // copies), the author, and the keywords.
-    public static string Shows(IEnumerable<Tags.Chip> chips, string author, IEnumerable<string>? keywords = null) =>
-        $"{string.Join("|", chips.Select(c => $"{c.Text}/{c.Color}/{c.Custom}/{c.Tip}/{c.Search}"))}|{author}|{string.Join(",", keywords ?? [])}";
+    // What a line's tags and author show, to know when the line must be made again: each tag's words, colour, kind,
+    // card and search (a tag keeps its card and its click's search: the Duplicate tag's card names the other copies), and
+    // the author.
+    public static string Shows(IEnumerable<Tags.Chip> chips, string author) =>
+        $"{string.Join("|", chips.Select(c => $"{c.Text}/{c.Color}/{c.Custom}/{c.Tip}/{c.Search}"))}|{author}";
 
-    // A row's keywords: the hidden tags that find its mod (HiddenTags.Of, in their order), but those the row already
-    // says: a tag on its line (Local, New, Duplicate), every row's "installed", and on the main list the heading it's
-    // under ("uncategorized"; Load Order has no headings, so there it's kept). "Additional keywords" are the ones the
-    // row doesn't show. Asked inside the redraw's Lookups, so what they ask about the whole list is worked out once
-    // for every row.
-    public static List<string> Keywords(Mod? mod) => mod == null ? [] : [.. HiddenTags.Of(mod).Where(k => !RowSays.Contains(k)
-        && (Store.Data.LoadOrderView || !k.Equals("uncategorized", StringComparison.OrdinalIgnoreCase)))];
-
-    static readonly HashSet<string> RowSays = new(StringComparer.OrdinalIgnoreCase) { "local", "new", "duplicate", "installed" };
-
-    // "Additional keywords:" and the keywords after it, plain and faint (no pill, no "#"), comma-separated: a click on
-    // one searches #name, Shift-click adds it, as a tag's click does, and its card says so, as the info panel's
-    // keywords' do; a click on the words before them is the row's. One label for it all (a node each, on every row, cost
-    // too much): a click, and the pointing hand, find the keyword by where the mouse is (KeywordAt).
-    static Label Links(NModMenuRow row, IReadOnlyList<string> keywords)
-    {
-        var links = new Label
-        {
-            Name = KeywordsName, Text = KeywordsLine(keywords), ThemeTypeVariation = Faint, VerticalAlignment = VerticalAlignment.Center,
-            MouseFilter = Control.MouseFilterEnum.Pass,
-        };
-        // The card is for the keywords alone: off them, onto the words before them, it goes (or never comes once its delay
-        // is over), as off the label.
-        Hover.Watch(links, "SpireModManagerTagCard", () => Tags.Hint(Menus.Text("SPIRE_MOD_MANAGER.SEARCH_CLICK_TIP")), width: 320,
-            on: () => KeywordAt(links, (links.GetGlobalTransform().AffineInverse() * Hover.Mouse(links)).X) != null);
-        // It's started where the mouse comes in, and one coming from the tags comes in over those words: so moving onto a
-        // keyword from them starts it, as if the mouse came in there.
-        string? under = null;
-        links.MouseExited += () => under = null;
-        links.GuiInput += e =>
-        {
-            if (e is InputEventMouseMotion moved) // the row's own (Load Order's drag) over the words before them
-            {
-                var at = KeywordAt(links, moved.Position.X);
-                links.MouseDefaultCursorShape = at == null ? row.MouseDefaultCursorShape : Control.CursorShape.PointingHand;
-                if (under == null && at != null)
-                    links.EmitSignal(Control.SignalName.MouseEntered);
-                under = at;
-            }
-            if (e is not InputEventMouseButton { ButtonIndex: MouseButton.Left } button || KeywordAt(links, button.Position.X) is not { } keyword)
-                return;
-            links.AcceptEvent(); // not the row's click (or drag) too
-            if (!button.Pressed)
-                Search.ByTag(row, keyword, button.ShiftPressed);
-        };
-        return links;
-    }
-
-    // "Additional keywords: enabled, loaded": the line's, and the "and 3 more.." card's.
-    public static string KeywordsLine(IEnumerable<string> keywords) => $"{Menus.Text("SPIRE_MOD_MANAGER.ADDITIONAL_KEYWORDS")}: {string.Join(", ", keywords)}";
-
-    // The keyword at x on the label, null before the first: each from its start to the next one's (a comma goes with the
-    // word before it).
-    static string? KeywordAt(Label links, float x)
-    {
-        var (font, size, at) = (links.GetThemeFont(FontName), links.GetThemeFontSize(FontSize), KeywordsLine([]));
-        if (!links.Text.StartsWith(at) || x < RowTitles.Measure(font, at, size))
-            return null;
-        var shown = links.Text[at.Length..].Split(", ", StringSplitOptions.RemoveEmptyEntries);
-        for (var i = 0; i < shown.Length - 1; i++)
-            if (x < RowTitles.Measure(font, at += shown[i] + ", ", size))
-                return shown[i];
-        return shown.LastOrDefault();
-    }
-
-    static readonly StringName FontName = "font", FontSize = "font_size";
-
-    // "and 3 more..": what didn't fit on the line. Hovering it, a card with those tags (pills in their colours) and
-    // keywords, and the click hint; only those, so the card is what the count counts. A click goes on to the row,
-    // which it selects, so the info panel shows them all.
-    static Label More(IReadOnlyList<Tags.Chip> tags, IReadOnlyList<string> keywords)
+    // "and 3 more..": the tags that didn't fit on the line. Hovering it, a card with those tags (pills in their colours)
+    // and the click hint; only those, so the card is what the count counts. A click goes on to the row, which it
+    // selects, so the info panel shows them all.
+    static Label More(IReadOnlyList<Tags.Chip> tags)
     {
         var more = new Label
         {
-            Name = MoreName, Text = MoreText(tags.Count + keywords.Count), ThemeTypeVariation = Faint, VerticalAlignment = VerticalAlignment.Center,
+            Name = MoreName, Text = MoreText(tags.Count), ThemeTypeVariation = Faint, VerticalAlignment = VerticalAlignment.Center,
             MouseFilter = Control.MouseFilterEnum.Pass, MouseDefaultCursorShape = Control.CursorShape.PointingHand,
         };
-        Hover.Watch(more, "SpireModManagerTagCard", () => MoreCard(tags, keywords), width: 320);
+        Hover.Watch(more, "SpireModManagerTagCard", () => MoreCard(tags), width: 320);
         return more;
     }
 
-    static string MoreCard(IReadOnlyList<Tags.Chip> tags, IReadOnlyList<string> keywords)
-    {
-        var lines = new List<string>();
-        if (tags.Count > 0)
-            lines.Add(string.Join("  ", tags.Select(Tags.Pill)));
-        if (tags.Count > 0 && keywords.Count > 0)
-            lines.Add(ModDetails.CardGap); // the pills' tint clear of the words under them
-        if (keywords.Count > 0)
-            lines.Add($"[color={FaintHex}]{Hover.Escape(KeywordsLine(keywords))}[/color]");
-        return $"{string.Join("\n", lines)}\n\n{Tags.Hint(Menus.Text("SPIRE_MOD_MANAGER.MORE_TAGS_CLICK"))}";
-    }
+    static string MoreCard(IReadOnlyList<Tags.Chip> tags) =>
+        $"{string.Join("  ", tags.Select(Tags.Pill))}\n\n{Tags.Hint(Menus.Text("SPIRE_MOD_MANAGER.MORE_TAGS_CLICK"))}";
 
     static string MoreText(int count) =>
         Menus.Format(count == 1 ? "SPIRE_MOD_MANAGER.MORE_TAGS_ONE" : "SPIRE_MOD_MANAGER.MORE_TAGS", ("count", Menus.Number(count)));
@@ -278,7 +195,7 @@ static class RowStrip
     }
 
     // The line's look, one Theme on every line (made again when the font changes with the game's language): its gap,
-    // the note's text, the author's, and the keywords' and "and 3 more.."'s (fainter, the Faint variation of a label).
+    // the note's text, the author's, and "and 3 more.."'s (fainter, the Faint variation of a label).
     // The tags have their own (Tags.Look), which their text takes first.
     static (Font Font, Theme Theme)? _look;
 
@@ -335,7 +252,7 @@ static class RowStrip
         var part = text.Length > 0 ? Note(text) : Spacer();
         strip.AddChild(part);
         if (author != null)
-            strip.MoveChild(part, author.GetIndex()); // before the author, after the tags, keywords and "and N more.."
+            strip.MoveChild(part, author.GetIndex()); // before the author, after the tags and "and N more.."
         return true;
     }
 
@@ -359,9 +276,9 @@ static class RowStrip
 #endif
     }
 
-    // Shows as many tags and keywords as fit beside the author and the needs (up to half the line), tags first, whole
-    // ones only; the rest are "and N more.." at their end.
-    static void Fold(NModMenuRow row, HBoxContainer strip, IReadOnlyList<Tags.Chip> chips, IReadOnlyList<string> keywords)
+    // Shows as many tags as fit beside the author and the needs (up to half the line), whole ones only; the rest are
+    // "and N more.." after them.
+    static void Fold(NModMenuRow row, HBoxContainer strip, IReadOnlyList<Tags.Chip> chips)
     {
         if (!GodotObject.IsInstanceValid(row) || !GodotObject.IsInstanceValid(strip) || !strip.IsInsideTree())
             return;
@@ -370,20 +287,15 @@ static class RowStrip
         var needs = strip.GetNodeOrNull<RichTextLabel>(NeedsPath) is { } note && note.GetParsedText() is { Length: > 0 } said
             ? RowTitles.Measure(note.GetThemeFont(NormalFont), said, note.GetThemeFontSize(NormalFontSize)) : 0;
         var kept = Math.Min(needs, room / 2) + (strip.GetNodeOrNull<Control>(AuthorPath) is { } author ? gap + author.GetCombinedMinimumSize().X : 0);
-        // Each tag with the gap after it (the chips come first on the line, in order), then the keywords: the first
-        // with "Additional keywords:" before it, each after a comma, and the gap after the last.
+        // Each tag with the gap after it (the chips come first on the line, in order).
         var tags = strip.GetChildren().OfType<Control>().Take(chips.Count).ToList();
-        var links = strip.GetNodeOrNull<Label>(KeywordsPath);
-        var (font, size, title) = (Look().Font, LabelSize, KeywordsLine([]));
-        var tagWidths = tags.Select(t => t.GetCombinedMinimumSize().X + gap).ToList();
-        float Width(int count) => tagWidths.Take(count).Sum() + (count <= tags.Count || links == null ? 0
-            : RowTitles.Measure(font, title + string.Join(", ", keywords.Take(count - tags.Count)), size) + gap);
-        var all = tags.Count + (links != null ? keywords.Count : 0);
-        var count = all;
-        if (kept + Width(all) > room)
+        var widths = tags.Select(t => t.GetCombinedMinimumSize().X + gap).ToList();
+        var count = widths.Count;
+        if (kept + widths.Sum() > room)
         {
+            var font = Look().Font;
             count--;
-            while (count > 0 && kept + Width(count) + RowTitles.Measure(font, MoreText(all - count), size) + gap > room)
+            while (count > 0 && kept + widths.Take(count).Sum() + RowTitles.Measure(font, MoreText(widths.Count - count), LabelSize) + gap > room)
                 count--;
         }
         if (strip.HasMeta(ShownMeta) && (int)strip.GetMeta(ShownMeta) == count)
@@ -391,15 +303,12 @@ static class RowStrip
         strip.SetMeta(ShownMeta, count);
         for (var i = 0; i < tags.Count; i++)
             tags[i].Visible = i < count;
-        var words = Math.Max(0, count - tags.Count);
-        if (links != null)
-            (links.Visible, links.Text) = (words > 0, title + string.Join(", ", keywords.Take(words)));
         Drop(strip, MorePath);
-        if (count == all)
+        if (count == tags.Count)
             return;
-        var more = More([.. chips.Skip(count)], [.. keywords.Skip(words)]);
+        var more = More([.. chips.Skip(count)]);
         strip.AddChild(more);
-        strip.MoveChild(more, (links ?? tags.LastOrDefault())?.GetIndex() + 1 ?? 0); // after the tags and keywords, before the note
+        strip.MoveChild(more, tags.Count); // after the tags, before the note
     }
 
     const string EdgeName = "SpireModManagerEdit";

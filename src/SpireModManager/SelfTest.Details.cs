@@ -180,37 +180,33 @@ static partial class SelfTest
                 titleCut == null && count is { Visible: true } && buttons != null && countFrom >= nameEnd && countFrom - nameEnd <= 12
                 && countTo <= buttons.GetGlobalRect().Position.X, $"{titleCut ?? "cut right"}; the name to {nameEnd:0.#}, the count {countFrom:0.#}..{countTo:0.#}, "
                 + $"the buttons from {buttons?.GetGlobalRect().Position.X:0.#}");
-            // Many tags: the line ends short of the row's buttons, with the author in it, the row its usual height. Tags
-            // first, then keywords: what doesn't fit is "and N more.." (here every keyword too), whose card has those tags
-            // as pills, "Additional keywords:" and those keywords, then the click hint (16b-more-card).
+            // Many tags: the line ends short of the row's buttons, with the author in it, the row its usual height. The tags
+            // that don't fit are "and N more..", whose card has those tags as pills, then the click hint: no keywords, which
+            // are in the info panel only (16b-more-card).
             var strip = row.GetNode<Control>("SpireModManagerStrip");
             var lineEnd = row.GetGlobalRect().End.X + strip.OffsetRight;
             Check("long details: many tags: the author still shows, inside the line", longAuthor is { Visible: true } && longAuthor.GetGlobalRect().End.X <= lineEnd + 1
                 && strip.GetGlobalRect().End.X <= lineEnd + 1, $"author {longAuthor?.GetGlobalRect()}, line {strip.GetGlobalRect()}, ends at {lineEnd}");
             var folded = strip.GetChildren().OfType<PanelContainer>().Where(c => !c.Visible)
                 .Select(c => c.GetChildOrNull<Label>(0) is { } chipLabel ? Menus.WholeText(chipLabel) : "").ToList(); // a long tag's whole text, not its cut one
-            var rowWords = RowStrip.Keywords(mod);
             var more = strip.GetNodeOrNull<Label>(RowStrip.MoreName);
             var moreCard = more == null ? "" : (await SizedHoverCard(menu, more, "SpireModManagerTagCard", () => Capture(screen, outDir, "16b-more-card"))).Text;
-            Check("long details: what doesn't fit is \"and N more..\" (tags first), its card those tags as pills, then \"Additional keywords:\" and those "
-                + "keywords, then the click hint; the row its usual height", more is { Visible: true } && folded.Count > 0 && rowWords.Count > 0 && folded.Last() == "late-game"
-                && more.Text == MoreTags(folded.Count + rowWords.Count) && more.Text.EndsWith(" more..") && strip.GetNodeOrNull<Control>(RowStrip.KeywordsName) is { Visible: false }
-                && moreCard.Split('\n') is [var pills, " ", var cardWords, "", var cardHint] && folded.All(t => pills.Contains($"\u00a0{t}\u00a0"))
-                && cardWords == RowStrip.KeywordsLine(rowWords) && cardHint == Menus.Text("SPIRE_MOD_MANAGER.MORE_TAGS_CLICK")
-                && row.Size.Y == RowTitles.RowHeight, $"\"{more?.Text}\", {folded.Count} tags and {rowWords.Count} keywords folded, height {row.Size.Y}, "
-                + $"card: {moreCard.ReplaceLineEndings(" / ")}");
-            // Every other row: all its tags and keywords where they fit, no "and N more.."; otherwise its count is what's left out.
+            Check("long details: the tags that don't fit are \"and N more..\", its card those tags as pills, then the click hint, no keywords; the row its "
+                + "usual height", more is { Visible: true } && folded.Count > 0 && folded.Last() == "late-game" && more.Text == MoreTags(folded.Count)
+                && more.Text.EndsWith(" more..") && moreCard.Split('\n') is [var pills, "", var cardHint] && folded.All(t => pills.Contains($"\u00a0{t}\u00a0"))
+                && cardHint == Menus.Text("SPIRE_MOD_MANAGER.MORE_TAGS_CLICK") && row.Size.Y == RowTitles.RowHeight,
+                $"\"{more?.Text}\", {folded.Count} tags folded, height {row.Size.Y}, card: {moreCard.ReplaceLineEndings(" / ")}");
+            // Every other row: all its tags where they fit, no "and N more.."; otherwise its count is the tags left out. No
+            // row has keywords: the line's only words are "and N more.." and the author (the note is rich text).
             var lines = content.GetChildren().OfType<NModMenuRow>().Where(r => r != row && r.Visible && r.HasNode("SpireModManagerStrip")).Select(r =>
             {
                 var line = r.GetNode("SpireModManagerStrip");
-                var (hidden, all) = (line.GetChildren().OfType<PanelContainer>().Count(c => !c.Visible), RowStrip.Keywords(r.Mod));
-                var shown = line.GetNodeOrNull<Label>(RowStrip.KeywordsName) is { Visible: true } on ? on.Text[RowStrip.KeywordsLine([]).Length..] : "";
-                var fine = all.Count == 0 || string.Join(", ", all).StartsWith(shown);
-                return (Fits: hidden == 0 && shown == string.Join(", ", all), Right: fine && (line.GetNodeOrNull<Label>(RowStrip.MoreName) is { } rest
-                    ? rest.Text == MoreTags(hidden + all.Count - (shown.Length > 0 ? shown.Split(", ").Length : 0)) : hidden == 0 && shown == string.Join(", ", all)), Id: r.Mod?.manifest?.id);
+                var (hidden, rest) = (line.GetChildren().OfType<PanelContainer>().Count(c => !c.Visible), line.GetNodeOrNull<Label>(RowStrip.MoreName));
+                var words = line.GetChildren().OfType<Label>().All(l => l == rest || l.Name.ToString() == "Author");
+                return (Fits: hidden == 0 && rest == null, Right: words && (rest != null ? rest.Text == MoreTags(hidden) : hidden == 0), Id: r.Mod?.manifest?.id);
             }).ToList();
-            Check("rows with room show every tag and keyword and no \"and N more..\"; the others count what's left out", lines.Any(l => l.Fits) && lines.All(l => l.Right),
-                string.Join(", ", lines.Where(l => !l.Right).Select(l => l.Id)));
+            Check("rows with room show every tag and no \"and N more..\"; the others count the tags left out; no row shows keywords",
+                lines.Any(l => l.Fits) && lines.All(l => l.Right), string.Join(", ", lines.Where(l => !l.Right).Select(l => l.Id)));
             // A click on "and N more..", through the viewport as a player's (headless too, the row hovered first): it goes on
             // to the row, which it selects, so the info panel shows all of them.
             if (content.GetChildren().OfType<NModMenuRow>().FirstOrDefault(r => r != row && r.Mod != null) is { } elsewhere)
@@ -740,9 +736,11 @@ static partial class SelfTest
             && english.Contains("Size: 1.5 MB") && english.Contains("Subscribers: 1,234") && Profiles.ShortDate(new DateTime(2026, 10, 11)) == "Oct 11", english);
         var facts = english.Split('\n');
         var tagsAt = Array.IndexOf(facts, $"{Menus.Text("SPIRE_MOD_MANAGER.WORKSHOP_TAGS")}: QoL, Utility");
-        Check("a Workshop mod: Other keywords right after its Workshop tags, #workshop among them, then Modified content (see 8b-other-keywords)",
-            tagsAt >= 0 && tagsAt + 2 < facts.Length && facts[tagsAt + 1].StartsWith($"{Menus.Text("SPIRE_MOD_MANAGER.OTHER_KEYWORDS")}: #")
-            && facts[tagsAt + 1].Contains("#workshop") && facts[tagsAt + 2].StartsWith($"{Menus.Text("SPIRE_MOD_MANAGER.MODIFIED_CONTENT")}: "), english);
+        var otherTerm = $"{Menus.Text("SPIRE_MOD_MANAGER.OTHER_KEYWORDS")}: ";
+        Check("a Workshop mod: Other keywords right after its Workshop tags, workshop among them (no \"#\"), then Modified content (see 8b-other-keywords)",
+            tagsAt >= 0 && tagsAt + 2 < facts.Length && facts[tagsAt + 1].StartsWith(otherTerm) && !facts[tagsAt + 1].Contains('#')
+            && facts[tagsAt + 1][otherTerm.Length..].Split(", ").Contains("workshop")
+            && facts[tagsAt + 2].StartsWith($"{Menus.Text("SPIRE_MOD_MANAGER.MODIFIED_CONTENT")}: "), english);
         await Capture(screen, outDir, "8b-other-keywords");
         var language = LocManager.Instance.Language;
         try
