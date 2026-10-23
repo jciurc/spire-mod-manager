@@ -22,7 +22,43 @@ What changed in each Workshop release, for players. Each version's first line is
 - fixed dropdowns from clipping long lists; content now wraps to additional columns if overflowing
 - other mods can now use Spire Mod Manager's menus, banners and mod cards (API version 1)
 
-- (Duplicate copies: to be written after the duplicate copies rework.)
+- A mod installed more than once (a Workshop item and a local copy, or two from one source) has a box per copy, and
+  each box turns just that copy on or off: enabling one no longer disables the others, so disable the copies you don't
+  want. With two or more enabled, only one loads. Between a local copy and a Workshop one, the game's own rule
+  decides: the local copy on stable, and on the beta the higher version, else the local copy. Copies from one source
+  share one switch in the game, so Spire Mod Manager decides between them: the higher version, and with the same
+  version, the one installed first. The page says which. A copy that won't load reads "Duplicate - Won't load" (it was
+  "Not loaded (same ID)"), and its info panel names the copy that loads instead and why: "The game prioritizes a local
+  copy.", "The game prioritizes a higher version.", "With no higher version, the copy installed first is prioritized."
+  or "This copy's version can't be read, so a copy with a readable version is prioritized." The copy that loads says
+  so too, and the box of a disabled copy, beside an enabled one, says which copy would load if you enabled it as well.
+- The Same ID tag is now Duplicate. While copies of a mod are enabled together, the tag's card names the copy that
+  loads, and the tag and the info panel's line about the copies are yellow on every enabled copy, the one that loads
+  too. The yellow banner reads "2 mods with the same ID are enabled. Only one copy will be loaded." Its card says
+  which copy loads and which won't, and "Before you relaunch" lists each enabled copy that won't load, with the copy
+  that loads instead. Enable all, which now enables every copy, says when it would enable more than one copy of a mod,
+  and an enabled copy's name is no longer greyed out.
+- A newly installed copy of a mod you have now arrives enabled, as a new mod does (disabled only where your copies of
+  it from the same source all are), and the rules above decide which copy loads: a newer copy from the same source
+  takes over by itself, and so does a copy that an update makes the higher version. Installed while the game runs, the
+  New Mod Added popup says whether the new copy is enabled and, beside another enabled copy, which copy will be
+  loaded, then "For consistency, please disable the copies you don't want loaded." A change of which copy loads with
+  no box changed shows in Changes, as one copy loading instead of another, and counts in the main menu's restart note.
+- Profiles keep each copy's box, and a profile you switch to counts a copy it hasn't seen as enabled. Importing a
+  list, a row with a Workshop link sets only that copy of a mod you have more than once, leaving a copy installed by
+  hand as it is, and where the list would leave your Workshop copy and the one installed by hand both enabled, the
+  preview names them under "You currently have a manual installation of one of the listed mods. Both copies will
+  remain installed, but only one should be enabled to prevent a clash." Updating from 0.1.4 loses nothing: each copy
+  keeps its category, alias, note and tags, and the copies enabled before are the ones enabled now, in every profile
+  too, so the same copy loads.
+- With Spire Mod Manager disabled (every copy of it, where it's installed more than once), the red banner shows and
+  Relaunch now asks first: "Spire Mod Manager (this mod) will be disabled on relaunch. To use it again, enable it on
+  the vanilla modding page, and it will load after the next restart." The dialog's Enable now, like the banner's,
+  turns the copy that's running back on. Installed more than once, its copies come first in their category and have
+  boxes you can untick (two from one source share one), and which of them loads is left to the game. They aren't a
+  clash, so their Duplicate tag stays grey and no yellow banner shows, and the info panel says which copy is running
+  and whether another is enabled in case that one is removed. Disable all, the page's or a category's, still leaves
+  every copy of it on, but a selection that includes it now turns it off with the rest.
 - Search: OR (or `|`) finds either side, NOT leaves a term out as "-" does, and brackets group terms:
   `(#gameplay OR #library) #enabled`. A space or AND means both, and OR is read first, so `#a OR #b #c` is
   `(#a OR #b) #c`. In capitals, OR, AND and NOT are always operators (put them in quotes to search for the word); in
@@ -47,7 +83,8 @@ What changed in each Workshop release, for players. Each version's first line is
   vanilla modding page", a link right of the page's title, opens the game's page, and "Go to Spire Mod Manager page",
   in the same spot there, comes back. The info panel's line about other mods' parts that don't fit points there too
   ("2 more from other mods: see the vanilla modding page"). Mods are listed alphabetically by alias or name within
-  each category. The main menu button's card says F3 opens the page and right-click has more options.
+  each category, with Spire Mod Manager first in its own. The main menu button's card says F3 opens the page and
+  right-click has more options.
 - Editing a mod's tags, each finished tag shows as a pill while you type. Backspace or Delete next to a pill removes
   the whole tag (Ctrl+Z puts it back), and holding the key stops at a tag instead of running on through it. A comma
   finishes a tag, pasting a list adds each as a tag (skipping repeats), Copy and Cut take whole tags, and a
@@ -96,8 +133,9 @@ What changed in each Workshop release, for players. Each version's first line is
   while searching no longer folds it out of sight; leaving Load Order mid-drag no longer drops the mod at the top; a
   mod installed while the main menu is open shows the main menu's restart note and dot at once, instead of after
   your next change; Load Order's search box keeps its width as you type, instead of narrowing once a search finds
-  something; and the external-link mark after the info panel's Workshop link, and after Open translations folder,
-  sits on the text's line when another mod adds fonts to the game (it sat a little low).
+  something; text cut short to fit, such as a long name on its row, no longer splits an emoji or an accented letter;
+  and the external-link mark after the info panel's Workshop link, and after Open translations folder, sits on the
+  text's line when another mod adds fonts to the game (it sat a little low).
 - For other mods: Spire Mod Manager has an API (version 1), so mods built on it can use its menus, banners and mod
   cards, and show the alias, note, tags and category you've given a mod.
 
