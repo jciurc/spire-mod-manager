@@ -336,8 +336,9 @@ static partial class SelfTest
     }
 
     // A Workshop mod's head (made-up details; the sandbox has no Steam): Author, Updated (how long ago, and a link
-    // to its change notes on the Workshop), Compatibility. "Ago" in hours under a day, singular for one. Dates and
-    // numbers in the game's language. Its Other keywords after its Workshop tags (screenshot 8b).
+    // to its change notes on the Workshop), Compatibility (its Workshop branches not listed). "Ago" in hours under a day,
+    // singular for one. Dates and numbers in the game's language. Its Other keywords after its Workshop tags, then
+    // Modified content (screenshot 8b).
     static async Task TestWorkshopHead(Node menu, NModdingScreen screen, string outDir)
     {
         var mod = new Mod
@@ -347,7 +348,8 @@ static partial class SelfTest
         };
         Compat.SetWorkshopId(mod, 42);
         Installed.Detected(mod); // so the panel can find it by id
-        WorkshopInfo.TestSet(42, new WorkshopInfo.Details(DateTime.Now.AddDays(-30), DateTime.Now.AddDays(-4), ["QoL", "Utility"], [], 1_572_864, 1234)); // 1.5 MB
+        WorkshopInfo.TestSet(42, new WorkshopInfo.Details(DateTime.Now.AddDays(-30), DateTime.Now.AddDays(-4), ["QoL", "Utility"], [("public", "public-beta")],
+            1_572_864, 1234)); // 1.5 MB
         var info = screen.GetNode<NModInfoContainer>("%ModInfoContainer");
         info.Fill(mod);
         await Wait(menu, 0.3);
@@ -355,6 +357,11 @@ static partial class SelfTest
         var text = head?.GetParsedText() ?? "";
         Check("a Workshop mod's head: Author, Updated (4 days ago • Changelog), Compatibility", text.IndexOf("Author") < text.IndexOf("Updated")
             && text.IndexOf("Updated") < text.IndexOf("Compatibility") && text.Contains("(4 days ago)  •\u00a0\u00a0Changelog") && head?.Text.Contains("[url=patchnotes]") == true, text);
+        // Marked for branches on the Workshop: no "Workshop branches" after its Compatibility (Jordan, 22 Oct: "it's redundant
+        // to compatibility and tags").
+        var compatibility = text.Split('\n').FirstOrDefault(l => l.StartsWith(Menus.Text("SPIRE_MOD_MANAGER.COMPATIBILITY") + ": ")) ?? "";
+        Check("a Workshop mod marked for branches: its Compatibility ends with this game's version, the branches not listed",
+            compatibility.EndsWith(")") && !compatibility.Contains(';') && !text.Contains("Workshop branches"), text);
         var link = info.FindChild("SpireModManagerLink", true, false) as LinkButton;
         Check("the source line: id (SteamID n)", link?.Text == "SmmWorkshopTest (SteamID 42)", link?.Text ?? "");
 
@@ -454,8 +461,9 @@ static partial class SelfTest
             && english.Contains("Size: 1.5 MB") && english.Contains("Subscribers: 1,234") && Profiles.ShortDate(new DateTime(2026, 10, 11)) == "Oct 11", english);
         var facts = english.Split('\n');
         var tagsAt = Array.IndexOf(facts, $"{Menus.Text("SPIRE_MOD_MANAGER.WORKSHOP_TAGS")}: QoL, Utility");
-        Check("a Workshop mod: Other keywords right after its Workshop tags, #workshop among them (see 8b-other-keywords)", tagsAt >= 0 && tagsAt + 1 < facts.Length
-            && facts[tagsAt + 1].StartsWith($"{Menus.Text("SPIRE_MOD_MANAGER.OTHER_KEYWORDS")}: #") && facts[tagsAt + 1].Contains("#workshop"), english);
+        Check("a Workshop mod: Other keywords right after its Workshop tags, #workshop among them, then Modified content (see 8b-other-keywords)",
+            tagsAt >= 0 && tagsAt + 2 < facts.Length && facts[tagsAt + 1].StartsWith($"{Menus.Text("SPIRE_MOD_MANAGER.OTHER_KEYWORDS")}: #")
+            && facts[tagsAt + 1].Contains("#workshop") && facts[tagsAt + 2].StartsWith($"{Menus.Text("SPIRE_MOD_MANAGER.MODIFIED_CONTENT")}: "), english);
         await Capture(screen, outDir, "8b-other-keywords");
         var language = LocManager.Instance.Language;
         try
@@ -489,21 +497,23 @@ static partial class SelfTest
     // character and what they are; a pack written here, read as the game's packs are, with one of the game's files in
     // it, in a made-up mod's folder: that file counted, the mod's own and the engine's not, and found by searching
     // "regent". The code: our own patches, by the game's classes, in our info panel. Screenshot 17c.
+    // EnderLilis's pack entries at the game's paths (and one of the engine's), as its pack has them.
+    static readonly string[] Lilis =
+    [
+        "animations/character_select/regent/characterselect_regent.png.import", "images/packed/character_select/char_select_regent.png.import",
+        "images/packed/sprite_fonts/regent_energy_icon.png.import", "images/packed/sprite_fonts/star_icon.png.import",
+        "images/ui/combat/energy_counters/regent/regent_orb_layer_1.png.import", "images/ui/combat/energy_counters/regent/regent_orb_layer_2.png.import",
+        "images/ui/combat/energy_counters/regent/regent_orb_layer_3.png.import", "images/ui/combat/energy_counters/regent/regent_orb_layer_5.png.import",
+        "images/ui/combat/energy_star.png.import", "images/ui/combat/energy_star_layer_2.png.import", "images/ui/combat/energy_star_layer_3.png.import",
+        "images/ui/hands/multiplayer_hand_regent_paper.png.import", "images/ui/hands/multiplayer_hand_regent_point.png.import",
+        "images/ui/hands/multiplayer_hand_regent_rock.png.import", "images/ui/hands/multiplayer_hand_regent_scissors.png.import",
+        "images/ui/top_panel/character_icon_regent.png.import", ".godot/imported/char_select_regent.png-0123.ctex",
+    ];
+
     static async Task TestGameChanges(Node menu, NModdingScreen screen, Control content, string outDir)
     {
         (string, string)[] characters = [("ironclad", "The Ironclad"), ("regent", "The Regent")];
-        string[] lilis =
-        [
-            "animations/character_select/regent/characterselect_regent.png.import", "images/packed/character_select/char_select_regent.png.import",
-            "images/packed/sprite_fonts/regent_energy_icon.png.import", "images/packed/sprite_fonts/star_icon.png.import",
-            "images/ui/combat/energy_counters/regent/regent_orb_layer_1.png.import", "images/ui/combat/energy_counters/regent/regent_orb_layer_2.png.import",
-            "images/ui/combat/energy_counters/regent/regent_orb_layer_3.png.import", "images/ui/combat/energy_counters/regent/regent_orb_layer_5.png.import",
-            "images/ui/combat/energy_star.png.import", "images/ui/combat/energy_star_layer_2.png.import", "images/ui/combat/energy_star_layer_3.png.import",
-            "images/ui/hands/multiplayer_hand_regent_paper.png.import", "images/ui/hands/multiplayer_hand_regent_point.png.import",
-            "images/ui/hands/multiplayer_hand_regent_rock.png.import", "images/ui/hands/multiplayer_hand_regent_scissors.png.import",
-            "images/ui/top_panel/character_icon_regent.png.import", ".godot/imported/char_select_regent.png-0123.ctex",
-        ];
-        var assets = lilis.Select(GameChanges.Asset).OfType<string>().Distinct().ToList();
+        var assets = Lilis.Select(GameChanges.Asset).OfType<string>().Distinct().ToList();
         var subjects = GameChanges.FileSubjects(assets, characters);
         Check("a mod's files at the game's paths: counted once each (not the engine's), told by character and what they are, most first",
             assets.Count == 16 && subjects.SequenceEqual(["The Regent (energy orb, hands, character select, sprite fonts, top panel)", "combat", "sprite fonts"]),
@@ -542,12 +552,275 @@ static partial class SelfTest
         CategoryList.Select(screen, row);
         await PanelFor(menu, screen, row);
         await Wait(menu, 0.4);
-        var shown = screen.GetNode<NModInfoContainer>("%ModInfoContainer").GetNode<RichTextLabel>("ModDescription").GetParsedText();
-        Check("our own patches: the game's code we change, by class (modding screen among them), in our info panel with how many places",
-            own.Code > 0 && own.Files == 0 && own.CodeSubjects.Contains("modding screen") && shown.Contains("Changes game code: ")
-            && shown.Contains($"({own.Code} places)") && !shown.Contains("Replaces game files"),
-            $"{own.Code}: {string.Join(", ", own.CodeSubjects)} | {shown.Replace("\n", " / ")}");
+        var description = screen.GetNode<NModInfoContainer>("%ModInfoContainer").GetNode<RichTextLabel>("ModDescription");
+        var shown = description.GetParsedText();
+        var modifiedRow = shown.Split('\n').FirstOrDefault(l => l.StartsWith(Menus.Text("SPIRE_MOD_MANAGER.MODIFIED_CONTENT") + ": ")) ?? "";
+        var fit = ModifiedFit(description, modifiedRow, own.Areas, $" ({Draft(Template("SPIRE_MOD_MANAGER.GAME_CODE_COUNT"), ("count", $"{own.Code}"))})");
+        Check("our own patches: the game's code we change, by class (modding screen among them), in our info panel's Modified content: the most "
+            + "whole areas that fit on its line, and how many places", own.Code > 0 && own.Files == 0 && own.CodeSubjects.Contains("modding screen")
+            && fit is { Whole: > 0, Most: true, OneLine: true }, $"{own.Code}: {string.Join(", ", own.CodeSubjects)}; {fit} | {shown.Replace("\n", " / ")}");
         await Capture(screen, outDir, "17c-game-changes");
+    }
+
+    // The info panel's Modified content (Jordan, 22 Oct), on a made-up mod with both kinds: a pack with EnderLilis's
+    // files and, as its code, our own patches. GameChanges keeps what it found (each file with its area, each game method
+    // with how it's patched). The row: right under Other keywords, one line, the most areas that fit whole, then how many
+    // more and both counts, subtle; search still finds the areas cut from it. Its card: Jordan's words with the count,
+    // the files' sentence, the areas, the click hint. A click: the dialog (the mod's name, the note, the areas, the files
+    // and the code by area with their counts, how each place is patched), scrolled when long; Close and Esc close it. A
+    // fixture mod with nothing found: "No information found", subtle, a card saying what that means, and its dialog says
+    // so. Screenshots 17d (the row), 17e (its card), 17f (the dialog), 17g (nothing found).
+    static async Task TestModifiedContent(Node menu, NModdingScreen screen, Control content, string outDir)
+    {
+        const string id = "SmmBothTest", name = "Both Kinds Test";
+        var folder = Path.Combine(outDir, "modified-content-mod");
+        Directory.CreateDirectory(folder);
+        WritePack(Path.Combine(folder, $"{id}.pck"), [.. Lilis, $"{id}/thing.png.import"]);
+        var mod = new Mod
+        {
+            path = folder, modSource = ModSource.ModsDirectory, state = ModLoadState.Loaded,
+            manifest = new ModManifest { id = id, name = name, author = "Spire Mod Manager tests", version = "1.0.0",
+                description = "A made-up mod that replaces some of the game's files and changes its code." },
+        };
+        var ours = ModManager.Mods.FirstOrDefault(m => m.manifest?.id == ModEntry.ModId && m.state == ModLoadState.Loaded);
+        var info = screen.GetNode<NModInfoContainer>("%ModInfoContainer");
+        var description = info.GetNode<RichTextLabel>("ModDescription");
+        var term = Menus.Text("SPIRE_MOD_MANAGER.MODIFIED_CONTENT");
+        Node? Dialog() => menu.GetTree().Root.GetNodeOrNull(ModifiedContent.Name);
+        GameChanges.TestAssemblies = m => m == mod ? [typeof(ModEntry).Assembly] : null;
+        try
+        {
+            GameInstalls(mod);
+            await Wait(menu, 0.4);
+            NModalContainer.Instance?.Clear();
+            CategoryList.Apply(content);
+            await Wait(menu, 0.3);
+            if (content.GetChildren().OfType<NModMenuRow>().FirstOrDefault(r => r.Mod == mod) is not { } row || ours == null)
+            {
+                Results.Add("FAIL modified content: no row for the made-up mod, or none for ours");
+                return;
+            }
+            var changes = GameChanges.For(mod);
+
+            // What GameChanges keeps: each of the game's files the pack has, with its area (FileSubjects' words, in their
+            // order, each area's by path); each game method with how it's patched, the same as our own mod's.
+            var characters = MegaCrit.Sts2.Core.Models.ModelDb.AllCharacters.Select(c => (c.Id.Entry.ToLowerInvariant(), c.Title.GetFormattedText())).ToList();
+            var paths = changes.ReplacedFiles.Select(f => f.Path).ToList();
+            var assets = Lilis.Select(GameChanges.Asset).OfType<string>().ToHashSet();
+            var files = changes.ReplacedFiles;
+            var together = files.Where((f, i) => i == 0 || f.Area != files[i - 1].Area).Count() == changes.FileSubjects.Count; // each area's files in one run
+            var byPath = files.GroupBy(f => f.Area).All(g => g.Select(f => f.Path).SequenceEqual(g.Select(f => f.Path).Order(StringComparer.Ordinal)));
+            Check("modified content: GameChanges keeps each of the game's files a pack replaces, with its area, by area and then path (not the mod's own)",
+                changes.Files > 1 && paths.All(assets.Contains) && !paths.Contains($"{id}/thing.png") && together && byPath
+                && changes.FileSubjects.SequenceEqual(GameChanges.FileSubjects(paths, characters)),
+                string.Join(" | ", files.Select(f => $"{f.Area}: {f.Path}")));
+            GameChanges.Place? PlaceOf(string type, string method) => changes.Places.FirstOrDefault(p => p.Class == type && p.Method == method);
+            var ready = PlaceOf(nameof(NModdingScreen), nameof(NModdingScreen._Ready));
+            var fill = PlaceOf(nameof(NModInfoContainer), nameof(NModInfoContainer.Fill));
+            var readyKinds = GameChanges.Kinds.Before | GameChanges.Kinds.After | GameChanges.Kinds.Wrapped;
+            Check("modified content: and each game method its code patches, as Class.Method in its area, with how (our page's _Ready: before, after and wrapped)",
+                changes.Code == changes.Places.Count && changes.Places.SequenceEqual(GameChanges.For(ours).Places)
+                && ready is { Area: "modding screen" } && ready.Kinds == readyKinds && fill?.Kinds == GameChanges.Kinds.After
+                && changes.Places.Select(p => p.Area).Distinct().SequenceEqual(changes.CodeSubjects),
+                $"{changes.Code} places; _Ready {ready}, Fill {fill}");
+
+            CategoryList.Select(screen, row);
+            CategoryList.Reveal(content, id, flash: false);
+            await PanelFor(menu, screen, row);
+            await Wait(menu, 0.4);
+            var parsed = description.GetParsedText();
+            var facts = parsed.Split('\n');
+            var at = Array.FindIndex(facts, l => l.StartsWith(term + ": "));
+            var shown = at >= 0 ? facts[at] : "";
+            var areas = changes.Areas;
+            var counts = $" ({Draft(Template("SPIRE_MOD_MANAGER.MODIFIED_COUNTS"), ("files", Draft(Template("SPIRE_MOD_MANAGER.GAME_FILES_COUNT"), ("count", $"{changes.Files}"))),
+                ("places", Draft(Template("SPIRE_MOD_MANAGER.GAME_CODE_COUNT"), ("count", $"{changes.Code}"))))})";
+            // The Regent's area, with its five kinds of files, is too long for the line on its own: as many of them as fit.
+            var fit = ModifiedFit(description, shown, areas, counts);
+            Check("modified content: right under Other keywords, one line: the most that fit (whole areas, or of the first's what), then how many more, "
+                + "and both counts (see 17d)", at > 0 && facts[at - 1].StartsWith(Menus.Text("SPIRE_MOD_MANAGER.OTHER_KEYWORDS") + ": ")
+                && (fit.Whole is > 0 and var whole && whole < areas.Count || fit.Items > 0) && fit.Most && fit.OneLine,
+                $"\"{shown}\" ({fit}, {areas.Count} areas); before: \"{(at > 0 ? facts[at - 1] : "")}\"");
+            var bbcode = description.Text.Split('\n').FirstOrDefault(l => l.Contains($"[url={ModifiedContent.Meta}]")) ?? "";
+            Check("modified content: the whole row is the link for its card and click, its counts subtle, and it's no longer in two rows",
+                bbcode.StartsWith($"[url={ModifiedContent.Meta}][gold]{term}[/gold]: ") && bbcode.EndsWith($"[color=#fff6e299]{counts.Trim()}[/color][/url]")
+                && !parsed.Contains("Changes game code") && !parsed.Contains("Replaces game files"), bbcode);
+            var cut = areas[^1];
+            Check("modified content: search still finds the mod by an area the row leaves out", !shown.Contains(cut) && SpireModManager.Search.Matches(mod, cut), cut);
+            await Capture(screen, outDir, "17d-modified-content");
+
+            // Its card, with the mouse on the row.
+            var rowAt = RowPoint(description, shown);
+            async Task<string> Card(string shot)
+            {
+                Hover.TestMouse = () => rowAt;
+                description.EmitSignal(RichTextLabel.SignalName.MetaHoverStarted, ModifiedContent.Meta);
+                await WaitReal(menu, Hover.Delay + 0.2);
+                await Capture(screen, outDir, shot);
+                var text = screen.GetNodeOrNull(ModifiedContent.CardName)?.FindChildren("*", "RichTextLabel", true, false).OfType<RichTextLabel>().FirstOrDefault()?.GetParsedText() ?? "";
+                Hover.TestMouse = () => new Vector2(5, 5);
+                description.EmitSignal(RichTextLabel.SignalName.MetaHoverEnded, ModifiedContent.Meta);
+                await WaitReal(menu, 0.1);
+                Hover.TestMouse = null;
+                return text;
+            }
+            var card = await Card("17e-modified-content-card");
+            var hint = Menus.Text("SPIRE_MOD_MANAGER.MODIFIED_CLICK_TIP");
+            var cardLines = card.Split('\n');
+            var cardShows = cardLines.Length == 6 ? Enumerable.Range(1, areas.Count).FirstOrDefault(n => cardLines[3] == AreasListed(areas, n)) : 0;
+            Check("modified content's card: Jordan's words with the count, the files' sentence, the areas (more than the row, then how many more), the click hint (see 17e)",
+                cardLines is [var code, var replaced, " ", _, "", var cardHint]
+                && code == Draft(Template("SPIRE_MOD_MANAGER.MODIFIED_CODE_TIP"), ("count", $"{changes.Code}"))
+                && replaced == Draft(Template("SPIRE_MOD_MANAGER.MODIFIED_FILES_ALSO_TIP"), ("count", $"{changes.Files}"))
+                && cardShows > fit.Whole && cardShows > 1 && cardHint == hint, $"{cardShows} areas: {card.ReplaceLineEndings(" / ")}");
+
+            // A click: the dialog.
+            description.EmitSignal(RichTextLabel.SignalName.MetaClicked, ModifiedContent.Meta);
+            await WaitUntil(menu, () => Dialog()?.FindChild("Scroll", true, false) is Control { CustomMinimumSize.Y: > 0 });
+            await Wait(menu, 0.2);
+            var title = (Dialog()?.FindChild("Title", true, false) as Label)?.Text ?? "";
+            var list = Dialog()?.FindChild("List", true, false) as RichTextLabel;
+            var listText = list?.GetParsedText() ?? "";
+            var note = (Dialog()?.FindChild("Note", true, false) as RichTextLabel)?.GetParsedText() ?? "";
+            var lines = listText.Split('\n').ToList();
+            int LineOf(string text, int from = 0) => lines.FindIndex(from, l => l == text);
+            var filesAt = LineOf($"{Menus.Text("SPIRE_MOD_MANAGER.GAME_FILES")}  •  {Draft(Template("SPIRE_MOD_MANAGER.GAME_FILES_COUNT"), ("count", $"{changes.Files}"))}");
+            var codeAt = LineOf($"{Menus.Text("SPIRE_MOD_MANAGER.GAME_CODE")}  •  {Draft(Template("SPIRE_MOD_MANAGER.GAME_CODE_COUNT"), ("count", $"{changes.Code}"))}");
+            // Each area's heading with its count, then its paths (or Class.Method and how), in order.
+            List<string> Expected<T>(IEnumerable<IGrouping<string, T>> groups, Func<int, string> count, Func<T, string> item) =>
+                [.. groups.SelectMany(g => new[] { $"    {g.Key}  •  {count(g.Count())}" }.Concat(g.Select(i => "        " + item(i))))];
+            var fileLines = Expected(changes.ReplacedFiles.GroupBy(f => f.Area), ModifiedContent.FilesCount, f => f.Path);
+            var codeLines = Expected(changes.Places.GroupBy(p => p.Area), ModifiedContent.PlacesCount, p => $"{p.Class}.{p.Method}  ({ModifiedContent.KindWords(p.Kinds)})");
+            var readyLine = $"        NModdingScreen._Ready  ({Menus.Text("SPIRE_MOD_MANAGER.PATCH_BEFORE")}, {Menus.Text("SPIRE_MOD_MANAGER.PATCH_AFTER")}, {Menus.Text("SPIRE_MOD_MANAGER.PATCH_WRAPPED")})";
+            Check("modified content's dialog: the mod's name, the note, every area, the files by area with counts and paths, the code by area with counts, "
+                + "Class.Method and how, what those words mean (see 17f)",
+                title == Draft(Template("SPIRE_MOD_MANAGER.MODIFIED_TITLE"), ("name", name)) && note == Menus.Text("SPIRE_MOD_MANAGER.MODIFIED_NOTE")
+                && lines.Count > 2 && lines[0] == Menus.Text("SPIRE_MOD_MANAGER.MODIFIED_AREAS") && lines[1] == string.Join(", ", areas)
+                && filesAt > 1 && lines.Skip(filesAt + 1).Take(fileLines.Count).SequenceEqual(fileLines)
+                && codeAt > filesAt && lines.Skip(codeAt + 1).Take(codeLines.Count).SequenceEqual(codeLines) && lines.Contains(readyLine)
+                && lines[^1] == Menus.Text("SPIRE_MOD_MANAGER.PATCH_KINDS"),
+                $"\"{title}\" / \"{note}\" / {listText.ReplaceLineEndings(" / ")[..Math.Min(1200, listText.Length)]}");
+            var scroll = Dialog()?.FindChild("Scroll", true, false) as ScrollContainer;
+            Check("modified content's dialog: a long list scrolls, the dialog on screen", list != null && scroll != null
+                && list.GetContentHeight() > scroll.Size.Y + 20 && scroll.GetVScrollBar().Visible && scroll.Size.Y <= 560
+                && Dialog()?.FindChild("Column", true, false) is Control column && column.GetViewportRect().Encloses(column.GetGlobalRect()),
+                $"list {list?.GetContentHeight()}, scroll {scroll?.Size}, bar {scroll?.GetVScrollBar().Visible}");
+            await Capture(Dialog() ?? screen, outDir, "17f-modified-content-dialog");
+            if (scroll != null && list != null && codeAt > 0)
+            {
+                scroll.ScrollVertical = (int)list.GetParagraphOffset(codeAt); // down to the code: Class.Method and how
+                await Wait(menu, 0.1);
+                await Capture(Dialog() ?? screen, outDir, "17f2-modified-content-dialog-code");
+            }
+            Dialog()?.FindChild("CloseModifiedButton", true, false)?.EmitSignal(BaseButton.SignalName.Pressed);
+            await Wait(menu, 0.2);
+            var closed = Dialog() == null;
+            description.EmitSignal(RichTextLabel.SignalName.MetaClicked, ModifiedContent.Meta);
+            await Wait(menu, 0.2);
+            var reopened = Dialog() != null;
+            Input.ParseInputEvent(new InputEventKey { Keycode = Key.Escape, Pressed = true });
+            await Wait(menu, 0.2);
+            Input.ParseInputEvent(new InputEventKey { Keycode = Key.Escape, Pressed = false });
+            await Wait(menu, 0.2);
+            Check("modified content's dialog: Close closes it; so does Esc, staying on the page", closed && reopened && Dialog() == null && screen.IsVisibleInTree(),
+                $"closed {closed}, reopened {reopened}, open after Esc {Dialog() != null}");
+
+            // Nothing found: a fixture mod with no pack and no code.
+            if (content.GetChildren().OfType<NModMenuRow>().FirstOrDefault(r => r.Mod?.manifest?.id == "SmmTestUi") is { Mod: { } plain } plainRow)
+            {
+                CategoryList.Select(screen, plainRow);
+                await PanelFor(menu, screen, plainRow);
+                await Wait(menu, 0.3);
+                var none = Menus.Text("SPIRE_MOD_MANAGER.MODIFIED_NONE");
+                var noneParsed = description.GetParsedText().Split('\n');
+                var noneAt = Array.FindIndex(noneParsed, l => l.StartsWith(term + ": "));
+                rowAt = RowPoint(description, noneAt < 0 ? "" : noneParsed[noneAt]);
+                var noneCard = await Card("17g-modified-content-none");
+                var expected = new List<string> { Menus.Text("SPIRE_MOD_MANAGER.MODIFIED_NONE_TIP") };
+                if (plain.state != ModLoadState.Loaded)
+                    expected.Add(Menus.Text("SPIRE_MOD_MANAGER.MODIFIED_NOT_LOADED"));
+                description.EmitSignal(RichTextLabel.SignalName.MetaClicked, ModifiedContent.Meta);
+                await Wait(menu, 0.2);
+                var noneList = (Dialog()?.FindChild("List", true, false) as RichTextLabel)?.GetParsedText() ?? "";
+                ModifiedContent.Close();
+                Check("modified content with nothing found: \"No information found\", subtle, right under Other keywords; its card says what that means; "
+                    + "its dialog says so, no lists (see 17g)",
+                    !GameChanges.For(plain).Any && noneAt > 0 && noneParsed[noneAt] == $"{term}: {none}" && noneParsed[noneAt - 1].StartsWith(Menus.Text("SPIRE_MOD_MANAGER.OTHER_KEYWORDS") + ": ")
+                    && description.Text.Contains($"[url={ModifiedContent.Meta}][gold]{term}[/gold]: [color=#fff6e299]{none}[/color][/url]")
+                    && noneCard == string.Join("\n", expected) + "\n\n" + hint && noneList.Split('\n').Take(2).SequenceEqual([Menus.Text("SPIRE_MOD_MANAGER.MODIFIED_AREAS"), none])
+                    && !noneList.Contains(Menus.Text("SPIRE_MOD_MANAGER.GAME_FILES")) && !noneList.Contains(Menus.Text("SPIRE_MOD_MANAGER.GAME_CODE")),
+                    $"\"{(noneAt >= 0 ? noneParsed[noneAt] : "no row")}\"; card \"{noneCard.ReplaceLineEndings(" / ")}\"; dialog \"{noneList.ReplaceLineEndings(" / ")}\"");
+            }
+            else
+                Results.Add("SKIP modified content with nothing found: test mods not installed");
+            content.RemoveChild(row);
+            row.QueueFree();
+        }
+        finally
+        {
+            GameChanges.TestAssemblies = null;
+            Hover.TestMouse = null;
+            ModifiedContent.Close();
+            GameForgets(mod);
+            SaveManager.Instance.SettingsSave.ModSettings?.ModList.RemoveAll(e => e.Id == id);
+            History.Record();
+            CategoryList.Redraw(content);
+            Compat.Clear(info);
+            await Wait(menu, 0.3);
+        }
+    }
+
+    // The first `count` areas, then how many more, in the strings' words.
+    static string AreasListed(IReadOnlyList<string> areas, int count, string? first = null)
+    {
+        var listed = string.Join(", ", areas.Skip(1).Take(count - 1).Prepend(first ?? areas[0]));
+        return (areas.Count - count) switch
+        {
+            0 => listed,
+            1 => Draft(Template("SPIRE_MOD_MANAGER.MODIFIED_MORE_ONE"), ("areas", listed)),
+            var more => Draft(Template("SPIRE_MOD_MANAGER.MODIFIED_MORE"), ("areas", listed), ("count", $"{more}")),
+        };
+    }
+
+    // How the panel's Modified content row (shown: its line of the panel's text; counts: " (...)" after the areas) lists
+    // the areas: the whole ones it shows, or (Whole 0) how many of the first's what ("The Regent (energy orb, hands, …)").
+    // Most: one more (area, or what) would run past the line (the label's room less a scrollbar's, there or not), shaped
+    // in the panel's font. OneLine: its first and last letters on one line, no wider than the label's room.
+    static (int Whole, int Items, bool Most, bool OneLine) ModifiedFit(RichTextLabel description, string shown, IReadOnlyList<string> areas, string counts)
+    {
+        var term = Menus.Text("SPIRE_MOD_MANAGER.MODIFIED_CONTENT");
+        var (font, size) = (description.GetThemeFont("normal_font"), description.GetThemeFontSize("normal_font_size"));
+        float Width(string text)
+        {
+            using var line = new TextLine();
+            line.AddString(text, font, size);
+            return line.GetLineWidth();
+        }
+        var room = description.Size.X - description.GetThemeStylebox("normal").GetMinimumSize().X;
+        var lineRoom = room - description.GetVScrollBar().GetCombinedMinimumSize().X - 2;
+        var start = shown.Length > 0 ? description.GetParsedText().IndexOf(shown, StringComparison.Ordinal) : -1;
+        var at = start >= 0 ? description.GetCharacterLine(start) : -1;
+        var oneLine = at >= 0 && description.GetCharacterLine(start + shown.Length - 1) == at && description.GetLineWidth(at) <= room;
+        string Row(int count, string? first = null) => $"{term}: {AreasListed(areas, count, first)}{counts}";
+        var whole = Enumerable.Range(1, areas.Count).FirstOrDefault(n => shown == Row(n));
+        if (whole > 0)
+            return (whole, 0, whole == areas.Count || Width(Row(whole + 1)) > lineRoom, oneLine);
+        var open = areas.Count > 0 ? areas[0].IndexOf(" (", StringComparison.Ordinal) : -1;
+        if (open <= 0)
+            return (0, 0, false, oneLine);
+        var (subject, whats) = (areas[0][..open], areas[0][(open + 2)..^1].Split(", "));
+        string Cut(int kept) => Row(1, $"{subject} ({string.Join(", ", whats.Take(kept))}, …)");
+        var items = Enumerable.Range(1, whats.Length - 1).FirstOrDefault(k => shown == Cut(k));
+        return (0, items, items > 0 && Width(Row(1)) > lineRoom && (items == whats.Length - 1 || Width(Cut(items + 1)) > lineRoom), oneLine);
+    }
+
+    // A point on a row of the panel's text (its line, near its start), for a card's mouse.
+    static Vector2 RowPoint(RichTextLabel description, string row)
+    {
+        var start = row.Length > 0 ? description.GetParsedText().IndexOf(row, StringComparison.Ordinal) : -1;
+        var line = start >= 0 ? description.GetCharacterLine(start) : -1;
+        return description.GetGlobalRect().Position
+            + new Vector2(120, line >= 0 ? description.GetLineOffset(line) + description.GetLineHeight(line) / 2 - (float)description.GetVScrollBar().Value : 0);
     }
 
     // A Godot pack (format v3, as GameChanges reads one) listing these paths, each with no content.

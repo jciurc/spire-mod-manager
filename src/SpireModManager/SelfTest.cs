@@ -257,6 +257,7 @@ static partial class SelfTest
             await Step(() => TestWorkshopHead(menu, screen, outDir));
             await Step(() => TestOtherModPanel(menu, screen, content, outDir));
             await Step(() => TestGameChanges(menu, screen, content, outDir));
+            await Step(() => TestModifiedContent(menu, screen, content, outDir));
             await Step(() => TestBulkEdit(menu, screen, content, outDir));
             await Step(() => TestPicks(menu, screen, content, outDir));
             await Step(() => TestCopies(menu, screen, content, outDir));
@@ -330,6 +331,7 @@ static partial class SelfTest
             RelaunchCheck.Close();
             ProfileShare.Close();
             MissingMods.Close();
+            ModifiedContent.Close();
             MenuButton.CancelMove();
             NModalContainer.Instance?.Clear();
             if (_page is not { } page || !GodotObject.IsInstanceValid(page) || !page.IsInsideTree())

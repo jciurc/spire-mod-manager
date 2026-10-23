@@ -467,10 +467,11 @@ static class ShortcutsPatch
     }
 
     // Our open menu or dialog, or the main menu button's move mode: true if there was one (it's closed now).
-    static bool CloseOurs() => MenuPanel.Close() || RelaunchCheck.Cancel() || ProfileShare.Close() || MissingMods.Close() || MenuButton.CancelMove();
+    static bool CloseOurs() => MenuPanel.Close() || RelaunchCheck.Cancel() || ProfileShare.Close() || MissingMods.Close() || ModifiedContent.Close()
+        || MenuButton.CancelMove();
 
     // One of our dialogs is open: the page's Ctrl keys wait (they'd change the list under it).
-    static bool DialogOpen => RelaunchCheck.IsOpen || ProfileShare.IsOpen || MissingMods.IsOpen;
+    static bool DialogOpen => RelaunchCheck.IsOpen || ProfileShare.IsOpen || MissingMods.IsOpen || ModifiedContent.IsOpen;
 
     // F3 on the main menu opens our page, as the main menu button does; on the Modding page it goes back, as the page's
     // Back button does, each with its sound. Anything of ours that's open closes first instead, as with Escape. Elsewhere it's left to the

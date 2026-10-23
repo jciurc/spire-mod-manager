@@ -11,23 +11,39 @@ using MegaCrit.Sts2.Core.Models;
 
 namespace SpireModManager;
 
-// What a mod changes in the game itself, for the info panel and search (Jordan: a mod that turned the Regent into another
-// character was hard to track down). Two kinds:
+// What a mod changes in the game itself, for the info panel's Modified content, its details dialog (ChangesDialog) and
+// search (Jordan: a mod that turned the Regent into another character was hard to track down). Two kinds:
 // - the game's files its pack replaces: a file at the same path as one in the game's own pack (a skin, an energy orb, a
-//   card frame), told by the character it's for and what it is (Files);
+//   card frame), told by the character it's for and what it is (ReplacedFiles);
 // - the game's code its Harmony patches change: the game's methods with a patch from one of its assemblies, told by
-//   their class (Code).
+//   their class, with how each is patched (Places).
 // Packs are read only as far as their directory, once each (by path, size and time); the patches again when they change.
 static class GameChanges
 {
-    public record Changes(int Files, IReadOnlyList<string> FileSubjects, int Code, IReadOnlyList<string> CodeSubjects)
+    // How a mod's patches change a game method (Harmony's prefix, postfix, transpiler and finalizer).
+    [Flags]
+    public enum Kinds { Before = 1, After = 2, Rewritten = 4, Wrapped = 8 }
+
+    // A game method a mod patches: its class and name as the code has them ("NMerchantRoom", "_Ready"), its area in
+    // words ("merchant room") and how.
+    public record Place(string Class, string Method, string Area, Kinds Kinds);
+
+    // Everything found, kept so the dialog shows it without working it out again: each file with its area, and each
+    // place, both most first by area.
+    public record Changes(IReadOnlyList<(string Path, string Area)> ReplacedFiles, IReadOnlyList<Place> Places)
     {
+        public int Files => ReplacedFiles.Count;
+        public int Code => Places.Count;
+        public IReadOnlyList<string> FileSubjects { get; } = [.. ReplacedFiles.Select(f => f.Area).Distinct()];
+        public IReadOnlyList<string> CodeSubjects { get; } = [.. Places.Select(p => p.Area).Distinct()];
+        // Every area, the files' first (each once): what Modified content lists.
+        public IReadOnlyList<string> Areas { get; } = [.. ReplacedFiles.Select(f => f.Area).Concat(Places.Select(p => p.Area)).Distinct()];
         // Their words, for search (Search: matched at the start of a word): "regent" finds the mods that change the Regent.
         public string Words => string.Join(' ', FileSubjects.Concat(CodeSubjects));
         public bool Any => Files > 0 || Code > 0;
     }
 
-    static readonly Changes None = new(0, [], 0, []);
+    static readonly Changes None = new([], []);
     static readonly HashSet<string> Warned = []; // once a mod each
 
     // Search's words for a mod's changes, kept for the session and made again when the language changes: a keystroke
@@ -52,8 +68,8 @@ static class GameChanges
         try
         {
             var files = ReplacedFiles(mod);
-            var (code, codeSubjects) = PatchedCode(mod);
-            return files.Count == 0 && code == 0 ? None : new Changes(files.Count, FileSubjects(files, Characters()), code, codeSubjects);
+            var places = PatchedCode(mod);
+            return files.Count == 0 && places.Count == 0 ? None : new Changes(FileAreas(files, Characters()), places);
         }
         catch (Exception e)
         {
@@ -127,34 +143,39 @@ static class GameChanges
 
     // What the files are, most first: each character's ("The Regent (character select, energy orb)"), then the rest by
     // what they are ("hands", "top panel", "game text").
-    public static List<string> FileSubjects(IEnumerable<string> assets, IReadOnlyList<(string Id, string Name)> characters)
+    public static List<string> FileSubjects(IEnumerable<string> assets, IReadOnlyList<(string Id, string Name)> characters) =>
+        [.. FileAreas(assets, characters).Select(f => f.Area).Distinct()];
+
+    // Each file with the area it's in (FileSubjects' words), in their order, each area's files by path.
+    static List<(string Path, string Area)> FileAreas(IEnumerable<string> assets, IReadOnlyList<(string Id, string Name)> characters)
     {
-        var byCharacter = new Dictionary<string, List<string>>();
-        var rest = new List<string>();
+        var told = new List<(string Path, string? Character, string What)>();
         foreach (var asset in assets)
         {
             var folders = asset.Split('/')[..^1];
             var words = asset.ToLowerInvariant().Split('/', '_', '.', '-');
             if (asset.StartsWith("localization/"))
             {
-                rest.Add("game text");
+                told.Add((asset, null, "game text"));
                 continue;
             }
             var character = characters.FirstOrDefault(c => words.Contains(c.Id));
             if (character.Id == null)
             {
-                rest.Add(What(folders.LastOrDefault() ?? asset));
+                told.Add((asset, null, What(folders.LastOrDefault() ?? asset)));
                 continue;
             }
             // Its folder (".../energy_counters/regent/orb.png") or the file named for it (".../card_frames/regent_icon.png").
             var at = Array.FindIndex(folders, f => f.Equals(character.Id, StringComparison.OrdinalIgnoreCase));
-            var what = What(at > 0 ? folders[at - 1] : folders.LastOrDefault() ?? asset);
-            if (!byCharacter.TryGetValue(character.Name, out var list))
-                byCharacter[character.Name] = list = [];
-            list.Add(what);
+            told.Add((asset, character.Name, What(at > 0 ? folders[at - 1] : folders.LastOrDefault() ?? asset)));
         }
         static IEnumerable<string> Most(IEnumerable<string> things) => things.GroupBy(t => t).OrderByDescending(g => g.Count()).Select(g => g.Key);
-        return [.. byCharacter.OrderByDescending(p => p.Value.Count).Select(p => $"{p.Key} ({string.Join(", ", Most(p.Value))})"), .. Most(rest)];
+        static IEnumerable<(string, string)> ByPath(IEnumerable<string> paths, string area) => paths.Order(StringComparer.Ordinal).Select(p => (p, area));
+        var characterFiles = told.Where(f => f.Character != null).GroupBy(f => f.Character).OrderByDescending(g => g.Count())
+            .SelectMany(g => ByPath(g.Select(f => f.Path), $"{g.Key} ({string.Join(", ", Most(g.Select(f => f.What)))})"));
+        var rest = told.Where(f => f.Character == null).GroupBy(f => f.What).OrderByDescending(g => g.Count())
+            .SelectMany(g => ByPath(g.Select(f => f.Path), g.Key));
+        return [.. characterFiles, .. rest];
     }
 
     // A folder as words: the game's few with a plainer name, else its name spaced ("top_panel": "top panel").
@@ -172,32 +193,67 @@ static class GameChanges
 
     // ---- The game's code
 
-    // Each loaded mod's assemblies' patches on the game's methods, worked out at most once a frame: a page's mods share
-    // one look, and a patch added or taken off since (on a method already patched too) is in the next.
-    static (ulong Frame, Dictionary<Assembly, List<MethodBase>> ByAssembly)? _patches;
+    // Each loaded mod's assemblies' patches on the game's methods, and how, worked out at most once a frame: a page's
+    // mods share one look, and a patch added or taken off since (on a method already patched too) is in the next.
+    static (ulong Frame, Dictionary<Assembly, Dictionary<MethodBase, Kinds>> ByAssembly)? _patches;
 
-    static (int, IReadOnlyList<string>) PatchedCode(Mod mod)
+#if DEVTOOLS
+    // Self-test: a made-up mod's assemblies, for its code (null: the game's own, as for every other mod).
+    public static Func<Mod, IEnumerable<Assembly>?>? TestAssemblies { get; set; }
+#endif
+
+    // The game's methods the mod's patches change, most first by area, each area's by class and name.
+    static List<Place> PatchedCode(Mod mod)
     {
         var frame = Engine.GetProcessFrames();
         if (_patches is not { } known || known.Frame != frame)
         {
             var patched = Harmony.GetAllPatchedMethods().ToList();
             var game = typeof(ModelDb).Assembly;
-            var byAssembly = new Dictionary<Assembly, List<MethodBase>>();
+            var byAssembly = new Dictionary<Assembly, Dictionary<MethodBase, Kinds>>();
             foreach (var method in patched.Where(m => m.DeclaringType?.Assembly == game))
                 if (Harmony.GetPatchInfo(method) is { } info)
-                    foreach (var owner in info.Prefixes.Concat(info.Postfixes).Concat(info.Transpilers).Concat(info.Finalizers)
-                        .Select(p => p.PatchMethod?.DeclaringType?.Assembly).OfType<Assembly>().Distinct())
-                    {
-                        if (!byAssembly.TryGetValue(owner, out var list))
-                            byAssembly[owner] = list = [];
-                        list.Add(method);
-                    }
+                    foreach (var (patches, kind) in new[] { (info.Prefixes, Kinds.Before), (info.Postfixes, Kinds.After), (info.Transpilers, Kinds.Rewritten), (info.Finalizers, Kinds.Wrapped) })
+                        foreach (var owner in patches.Select(p => p.PatchMethod?.DeclaringType?.Assembly).OfType<Assembly>().Distinct())
+                        {
+                            if (!byAssembly.TryGetValue(owner, out var methods))
+                                byAssembly[owner] = methods = [];
+                            methods[method] = methods.GetValueOrDefault(method) | kind;
+                        }
             _patches = known = (frame, byAssembly);
         }
-        var methods = Compat.Assemblies(mod).SelectMany(a => known.ByAssembly.GetValueOrDefault(a) ?? []).Distinct().ToList();
-        return (methods.Count, [.. methods.Select(m => Class(m.DeclaringType)).GroupBy(c => c).OrderByDescending(g => g.Count()).Select(g => g.Key)]);
+        var assemblies = Compat.Assemblies(mod);
+#if DEVTOOLS
+        assemblies = TestAssemblies?.Invoke(mod) ?? assemblies;
+#endif
+        // A method two of its assemblies patch is one place, patched both ways.
+        var found = new Dictionary<MethodBase, Kinds>();
+        foreach (var (method, how) in assemblies.SelectMany(a => known.ByAssembly.GetValueOrDefault(a) ?? []))
+            found[method] = found.GetValueOrDefault(method) | how;
+        return [.. found.Select(p => PlaceOf(p.Key, p.Value)).GroupBy(p => p.Area).OrderByDescending(g => g.Count())
+            .SelectMany(g => g.OrderBy(p => p.Class, StringComparer.Ordinal).ThenBy(p => p.Method, StringComparer.Ordinal))];
     }
+
+    // A game method as its code names it: its class ("NMerchantRoom") and name ("_Ready"). One the compiler made (an
+    // async method's "<OnPlay>d__42.MoveNext", a lambda's "<>c.<Setup>b__3_0") is told by the class it's in and the
+    // method it's from ("OnPlay", "Setup"); a constructor is "ctor".
+    static Place PlaceOf(MethodBase method, Kinds kinds)
+    {
+        var type = method.DeclaringType;
+        var name = method.Name;
+        while (type is { DeclaringType: { } outer } && (type.Name.StartsWith('<') || type.IsDefined(typeof(CompilerGeneratedAttribute), false)))
+        {
+            name = From(type.Name) ?? name;
+            type = outer;
+        }
+        var typeName = type?.Name ?? "";
+        if (typeName.IndexOf('`') is var tick and >= 0)
+            typeName = typeName[..tick];
+        return new Place(typeName, (From(name) ?? name).TrimStart('.'), Class(method.DeclaringType), kinds);
+    }
+
+    // The method a compiler-made name is from: "OnPlay" for "<OnPlay>d__42"; null for one that names none ("<>c").
+    static string? From(string compiled) => compiled.StartsWith('<') && compiled.IndexOf('>') is var end and > 1 ? compiled[1..end] : null;
 
     // A game class as words: "NMerchantRoom" is "merchant room", "RelicModel" is "relic", "NCreature" is "creature". One
     // the compiler made (an async method's "<OnPlay>d__42", a lambda's "<>c": a patch on their body lands there) is told
