@@ -360,7 +360,8 @@ Check($"tools/loc.cs and the self-test name the same SmartFormat ({package})", p
     $"loc.cs has {(package.Length > 0 ? package : "none")}, SelfTest.ToolParser {(tested.Length > 0 ? tested : "none")}");
 
 // The Workshop build: players get no self-test. SpireModManager.csproj leaves out every SelfTest*.cs there, so a new
-// file of it never ships, and only files named so hold it (the self-test's partial class anywhere else would ship).
+// file of it never ships, and only files named so in the project folder hold it (the self-test's partial class
+// anywhere else, a subfolder included, would ship).
 var project = XDocument.Load(Path.Combine(root, "src", "SpireModManager", "SpireModManager.csproj"));
 var workshopRemoves = project.Descendants("ItemGroup")
     .Where(itemGroup => Regex.Replace((string?)itemGroup.Attribute("Condition") ?? "", @"\s", "") == "'$(SpireModManagerWorkshop)'=='true'")
@@ -370,7 +371,7 @@ var selfTestElsewhere = sources.Where(s => !IsSelfTest(s.Key) && Regex.IsMatch(C
 Check("the Workshop build leaves out the self-test (SpireModManager.csproj removes SelfTest*.cs; only those files hold it)",
     workshopRemoves.Contains("SelfTest*.cs") && selfTestElsewhere.Count == 0,
     !workshopRemoves.Contains("SelfTest*.cs") ? "add <Compile Remove=\"SelfTest*.cs\" /> to the ItemGroup for '$(SpireModManagerWorkshop)' == 'true'"
-        : $"name these SelfTest.<area>.cs: {List(selfTestElsewhere)}");
+        : $"move these to src/SpireModManager/SelfTest.<area>.cs: {List(selfTestElsewhere)}");
 
 // Tracked files: nothing big (game files and builds never go in) and no tokens. Only the file and line of
 // a token are printed, never the token.
@@ -427,8 +428,11 @@ IEnumerable<string> Files(string dir, string pattern)
 
 string Name(string path) => Path.GetRelativePath(root, path).Replace('\\', '/');
 
-// The in-game self-test's files: SelfTest.cs and its partial files, as the csproj's Workshop build names them.
-static bool IsSelfTest(string path) => Path.GetFileName(path).StartsWith("SelfTest", StringComparison.Ordinal) && path.EndsWith(".cs");
+// The in-game self-test's files: SelfTest.cs and its partial files, as the csproj's Workshop build names them. Its
+// SelfTest*.cs doesn't reach subfolders, so neither does this.
+bool IsSelfTest(string path) => Path.GetFileName(path).StartsWith("SelfTest", StringComparison.Ordinal) && path.EndsWith(".cs")
+    && string.Equals(Path.GetDirectoryName(Path.GetFullPath(path)), Path.GetFullPath(Path.Combine(root, "src", "SpireModManager")),
+        StringComparison.OrdinalIgnoreCase);
 
 static string List(IEnumerable<string> items) => string.Join(", ", items);
 
