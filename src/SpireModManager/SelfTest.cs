@@ -966,7 +966,6 @@ static partial class SelfTest
     static string DuplicateChip => Menus.Text("SPIRE_MOD_MANAGER.TAG_SAME_ID");
     static string CustomTagTip => Template("SPIRE_MOD_MANAGER.TAG_CUSTOM_COUNT_TIP");
     static string CustomTagTipOne => Menus.Text("SPIRE_MOD_MANAGER.TAG_CUSTOM_COUNT_TIP_ONE");
-    static string AdditionalKeywords => Menus.Text("SPIRE_MOD_MANAGER.ADDITIONAL_KEYWORDS");
     static string MoreTags(int count) => count == 1 ? Menus.Text("SPIRE_MOD_MANAGER.MORE_TAGS_ONE") : Draft(Template("SPIRE_MOD_MANAGER.MORE_TAGS"), ("count", $"{count}"));
 
     // A text with its {values} still in it, for Draft (Menus.Text formats it, and these need their values).
@@ -1236,8 +1235,8 @@ static partial class SelfTest
     }
 
     // What a row's pencil, buttons and line show, part by part in order: the pencil and buttons with their tips, then
-    // the line's tags, keywords and "and N more..", note and author, and whether the author ends the line. A spacer or an empty
-    // note shows nothing, so isn't listed: two rows that show the same things read the same, however they were made.
+    // the line's tags and "and N more..", note and author, and whether the author ends the line. A spacer or an empty note
+    // shows nothing, so isn't listed: two rows that show the same things read the same, however they were made.
     static string LineOf(NModMenuRow row)
     {
         var parts = new List<string>();
@@ -1253,7 +1252,7 @@ static partial class SelfTest
                 {
                     PanelContainer tag => $"tag {tag.GetChildOrNull<Label>(0)?.Text}",
                     RichTextLabel { Text.Length: > 0 } note => $"note {note.GetParsedText()}",
-                    Label words when words.Name.ToString() is RowStrip.KeywordsName or RowStrip.MoreName => $"{words.Name} {words.Text}",
+                    Label more when more.Name.ToString() == RowStrip.MoreName => $"{more.Name} {more.Text}",
                     Label author => $"author {author.Text}{(Math.Abs(author.GetGlobalRect().End.X - line.GetGlobalRect().End.X) < 1 ? " at the end" : "")}",
                     _ => "",
                 });
@@ -1262,7 +1261,7 @@ static partial class SelfTest
 
     // RowStrip's timed parts (RowStrip.Costs), in the order a row makes them: "title 1.2 ms, pencil 30.5 ms, ...".
     static string Parts(IReadOnlyDictionary<string, double> costs) => string.Join(", ",
-        new[] { "title", "pencil", "buttons", "keywords", "tags", "needs", "author", "added", "rest" }.Select(part => $"{part} {costs.GetValueOrDefault(part):0.0}"))
+        new[] { "title", "pencil", "buttons", "tags", "needs", "author", "added", "rest" }.Select(part => $"{part} {costs.GetValueOrDefault(part):0.0}"))
         + " ms";
 
     // Where the hover card `name` that hovering `target` brings up sits on screen (null if none), the mouse put back after.

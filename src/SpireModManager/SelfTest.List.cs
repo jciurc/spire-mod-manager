@@ -389,8 +389,8 @@ static partial class SelfTest
         Check("the head: author and compatibility; the details: description, then size", headText.Contains("Author: symphony") && headText.Contains("Compatibility:")
             && !description.StartsWith("Enabled") && description.Contains("Size:") && !description.Contains("Compatibility"), $"{headText} / {description[..Math.Min(60, description.Length)]}");
         // Other keywords: where Workshop tags would be (a local mod has none: right after Size), the hidden tags that find the
-        // mod as #name, in their order; the whole row at about half the panel text's alpha, links too; a click on one
-        // searches it as a Workshop tag's does, a second clears it; none in the game's panel (Vanilla View).
+        // mod as #name, in their order; the term in gold and the keywords in the panel text's colour, as the other facts; a
+        // click on one searches it as a Workshop tag's does, a second clears it; none in the game's panel (Vanilla View).
         var keywordsLabel = Menus.Text("SPIRE_MOD_MANAGER.OTHER_KEYWORDS");
         var facts = description.Split('\n');
         var keywordsAt = Array.FindIndex(facts, l => l.StartsWith(keywordsLabel + ": "));
@@ -400,12 +400,13 @@ static partial class SelfTest
             && keywords.StartsWith($"{keywordsLabel}: #enabled, #local, #installed, #loaded, ") && keywords.Contains("#renamed, #note") && !keywords.Contains("#notes"),
             $"{(keywordsAt < 0 ? "no row" : facts[keywordsAt])}; wanted {keywords}");
         var panelText = panel.GetNode<RichTextLabel>("ModDescription");
-        var keywordsRow = panelText.Text.Split('\n').FirstOrDefault(l => l.Contains(keywordsLabel)) ?? "";
-        var faint = keywordsRow.StartsWith("[color=#") ? keywordsRow[7..keywordsRow.IndexOf(']')] : "";
-        var (alpha, textAlpha) = (Color.HtmlIsValid(faint) ? Color.FromHtml(faint).A : 0, panelText.GetThemeColor("default_color").A);
-        Check("Other keywords fainter than the facts: the whole row, label and links, at about half the panel text's alpha (no gold, no colour of their own)",
-            keywordsRow.EndsWith("[/color]") && keywordsRow.Split("[color=").Length == 2 && !keywordsRow.Contains("[gold]") && Math.Abs(alpha - textAlpha / 2) < 0.08f
-            && keywordsRow.Contains("[url=htag:enabled]#enabled[/url], "), $"{keywordsRow} (alpha {alpha:0.00}, the panel text's {textAlpha:0.00})");
+        var marked = panelText.Text.Split('\n');
+        var keywordsRow = marked.FirstOrDefault(l => l.Contains(keywordsLabel)) ?? "";
+        var sizeTerm = $"[gold]{Menus.Text("SPIRE_MOD_MANAGER.SIZE")}[/gold]: ";
+        var sizeRow = marked.FirstOrDefault(l => l.StartsWith(sizeTerm)) ?? "";
+        Check("Other keywords look like the other facts: the term in gold, as Size's, the keywords in the panel text's colour (none of their own), each #name a link",
+            sizeRow.Length > 0 && !sizeRow.Contains("[color=") && keywordsRow.StartsWith($"[gold]{keywordsLabel}[/gold]: [url=htag:enabled]#enabled[/url], ")
+            && !keywordsRow.Contains("[color=") && keywordsRow.EndsWith("[/url]"), $"{keywordsRow} (Size's: {sizeRow})");
         var searchBox = screen.GetNode<LineEdit>("ModsBorder/SpireModManagerSearch");
         panelText.EmitSignal(RichTextLabel.SignalName.MetaClicked, "htag:enabled");
         var searched = searchBox.Text;
@@ -1203,86 +1204,6 @@ static partial class SelfTest
         ClickChip("SmmTestLib", "Library", false);
         await Wait(menu, 0.3);
         Check("clicking the tag that is the whole search clears it", box.Text == "" && Visible().SequenceEqual(all), $"{box.Text}: {Visible().Count} shown");
-        // A row's keywords after its tags, all of them where they fit (no "and N more.."): faint, no "#", after "Additional
-        // keywords:"; a click on one searches #name, a Shift-click adds another, one on the words before them is the row's
-        // (16c-row-keywords).
-        var fits = content.GetChildren().OfType<NModMenuRow>().FirstOrDefault(r => r.Visible && !r.HasNode($"SpireModManagerStrip/{RowStrip.MoreName}")
-            && r.GetNodeOrNull<Label>($"SpireModManagerStrip/{RowStrip.KeywordsName}")?.Text.Contains(", ") == true);
-        var links = fits?.GetNode<Label>($"SpireModManagerStrip/{RowStrip.KeywordsName}");
-        var before = RowStrip.KeywordsLine([]);
-        var linked = links?.Text[before.Length..].Split(", ") ?? [];
-        if (fits != null)
-            await Capture(screen, outDir, "16c-row-keywords");
-        void ClickWord(int i, bool shift)
-        {
-            if (links == null)
-                return;
-            var x = i < 0 ? 2 : RowTitles.Measure(links.GetThemeFont("font"), before + string.Join(", ", linked.Take(i)) + (i > 0 ? ", " : ""), links.GetThemeFontSize("font_size")) + 2;
-            links.EmitSignal(Control.SignalName.GuiInput, new InputEventMouseButton { ButtonIndex = MouseButton.Left, Pressed = false, ShiftPressed = shift, Position = new Vector2(x, 8) });
-        }
-        // The mouse in over "Additional keywords:" (from the tags), then onto a keyword: its card, as if it came in there.
-        // Back onto those words, it goes, as off the label; and one the mouse leaves for them before it shows never comes.
-        var (cardEarly, cardOnWord, cardKept, cardLate) = (true, false, true, true);
-        if (links != null)
-        {
-            var onWord = new Vector2(RowTitles.Measure(links.GetThemeFont("font"), before, links.GetThemeFontSize("font_size")) + 4, links.Size.Y / 2);
-            var onTitle = new Vector2(2, onWord.Y);
-            void MoveTo(Vector2 at)
-            {
-                Hover.TestMouse = () => links.GetGlobalTransform() * at;
-                links.EmitSignal(Control.SignalName.GuiInput, new InputEventMouseMotion { Position = at });
-            }
-            Hover.TestMouse = () => links.GetGlobalTransform() * onTitle;
-            links.EmitSignal(Control.SignalName.MouseEntered);
-            await WaitReal(menu, Hover.Delay + 0.2);
-            cardEarly = screen.HasNode("SpireModManagerTagCard");
-            MoveTo(onWord);
-            await WaitReal(menu, Hover.Delay + 0.2);
-            cardOnWord = screen.HasNode("SpireModManagerTagCard");
-            MoveTo(onTitle);
-            await WaitReal(menu, Hover.Grace + 0.3); // gone, and the grace after it over
-            cardKept = screen.HasNode("SpireModManagerTagCard");
-            MoveTo(onWord);
-            await WaitReal(menu, 0.1);
-            MoveTo(onTitle);
-            await WaitReal(menu, Hover.Delay + 0.2);
-            cardLate = screen.HasNode("SpireModManagerTagCard");
-            Hover.TestMouse = () => new Vector2(5, 5);
-            links.EmitSignal(Control.SignalName.MouseExited);
-            await WaitReal(menu, Hover.Grace + 0.1);
-            Hover.TestMouse = null;
-        }
-        Check("a row's keywords: the mouse in over \"Additional keywords:\", then onto a keyword, brings up the keyword's card; back onto "
-            + "\"Additional keywords:\", it goes, and one the mouse leaves for them before it shows never comes", !cardEarly && cardOnWord && !cardKept && !cardLate,
-            $"a card over the words before them: {cardEarly}, then on a keyword: {cardOnWord}, back on those words: {cardKept}, left early: {cardLate}");
-        ClickWord(-1, false);
-        await Wait(menu, 0.3);
-        var clickedTitle = box.Text;
-        ClickWord(1, false);
-        await Wait(menu, 0.3);
-        var clickedWord = box.Text;
-        ClickWord(0, true);
-        await Wait(menu, 0.3);
-        Check("a row's keywords: all shown where they fit, faint, no \"#\", after \"Additional keywords:\"; a click on one searches #name, Shift-click adds another, "
-            + "one on \"Additional keywords:\" none", fits != null && links?.Text == RowStrip.KeywordsLine(RowStrip.Keywords(fits.Mod)) && !links.Text.Contains('#')
-            && links.Text.StartsWith($"{AdditionalKeywords}: ") && links.GetThemeColor("font_color") == Color.FromHtml(RowStrip.FaintHex) && clickedTitle == ""
-            && clickedWord == $"#{linked[1]}" && box.Text == $"#{linked[1]} #{linked[0]}", $"{fits?.Mod?.manifest?.id}: {links?.Text}; \"{clickedTitle}\", \"{clickedWord}\", then \"{box.Text}\"");
-        // What the row already says isn't repeated: every row's "installed", and on the main list the heading's
-        // "uncategorized". Load Order has no headings, so there it stays.
-        await Shown("");
-        var plainRow = content.GetChildren().OfType<NModMenuRow>().FirstOrDefault(r => r.Visible && r.Mod is { } m && HiddenTags.Of(m).Contains("uncategorized"));
-        var plainShown = plainRow?.GetNodeOrNull<Label>($"SpireModManagerStrip/{RowStrip.KeywordsName}")?.Text is { } plainText && plainText.StartsWith(before)
-            ? plainText[before.Length..].Split(", ") : [];
-        var mainWords = plainRow?.Mod is { } mainMod ? RowStrip.Keywords(mainMod) : [];
-        var wasOrder = Store.Data.LoadOrderView;
-        Store.Data.LoadOrderView = true;
-        var orderWords = plainRow?.Mod is { } orderMod ? RowStrip.Keywords(orderMod) : [];
-        Store.Data.LoadOrderView = wasOrder;
-        Check("a row's keywords leave out what the row already says: \"installed\" (every row's) and, under its heading, \"uncategorized\"; Load Order, "
-            + "with no headings, keeps that one", plainRow?.Mod is { } said && HiddenTags.Of(said).Contains("installed") && mainWords.Count > 0
-            && !mainWords.Contains("installed") && !mainWords.Contains("uncategorized") && !plainShown.Contains("installed") && !plainShown.Contains("uncategorized")
-            && orderWords.Contains("uncategorized") && !orderWords.Contains("installed"),
-            $"{plainRow?.Mod?.manifest?.id}: main [{string.Join(", ", mainWords)}], shown [{string.Join(", ", plainShown)}], Load Order [{string.Join(", ", orderWords)}]");
         // Authors: from the info panel's author (the row's is plain text); Shift on a tag adds it after a space.
         await Shown("");
         var rowAuthor = content.GetChildren().OfType<NModMenuRow>().FirstOrDefault(r => r.Mod?.manifest?.id == "SmmTestFixes")?.GetNodeOrNull<Label>("SpireModManagerStrip/Author");
@@ -1700,8 +1621,8 @@ static partial class SelfTest
     // its title (tags, note, author), its buttons and its pencil made from nothing, as a new page makes them (after a
     // run the main menu is made again, and the page with it: #46), timed part by part (with the titles' styling before
     // them, and how often fonts were asked for and looked up), and redrawn with nothing to change. Then what the lines
-    // show, against what the mods say: their tags, notes and authors, the author at the
-    // line's end, the pencil and the category button with their tips. Each part of a line styled exactly as its old
+    // show, against what the mods say: their tags, notes and authors (no keywords: those are the info panel's), the
+    // author at the line's end, the pencil and the category button with their tips. Each part of a line styled exactly as its old
     // per-node overrides styled it (UnlikeOverrides), at the old sizes. Everything turned off (some notes go: no mod on
     // needs those libraries) and on again: the lines changed in place show what lines made afresh do, and then what
     // they first did; no line holds an empty note.
@@ -1714,7 +1635,7 @@ static partial class SelfTest
         }
         var box = new VBoxContainer { Name = "SpireModManagerManyRows", MouseFilter = Control.MouseFilterEnum.Ignore };
         screen.AddChild(box);
-        // Wide enough that no line folds its tags or keywords (what folds is the long-details test's, and a narrower box's below).
+        // Wide enough that no line folds its tags (what folds is the long-details test's).
         (box.Position, box.Size) = (new Vector2(-3000, 0), new Vector2(1600, 0));
         try
         {
@@ -1751,7 +1672,6 @@ static partial class SelfTest
                             $"pencil ✎ ({Menus.Text("SPIRE_MOD_MANAGER.EDIT_TIP")})",
                             $"button {CategoryList.CategoryName(Copies.KeyOf(row.Mod))} ({Menus.Text("SPIRE_MOD_MANAGER.CATEGORY_TIP")})",
                         }.Concat(Tags.For(row.Mod).Select(c => $"tag {c.Text}"))
-                            .Append(RowStrip.Keywords(row.Mod) is { Count: > 0 } words ? $"{RowStrip.KeywordsName} {RowStrip.KeywordsLine(words)}" : "")
                             .Append(says.Length > 0 ? $"note {System.Text.RegularExpressions.Regex.Replace(says, @"\[[^\]]+\]", "")}" : "")
                             .Append(by.Length > 0 ? $"author {by} at the end" : "").Where(p => p.Length > 0));
                     })];
@@ -1785,7 +1705,7 @@ static partial class SelfTest
             await Wait(menu, 0.3);
 
             var first = rows.Select(LineOf).ToList();
-            Check("300 made-up rows: each line shows its tags, note and author (at the line's end), with the pencil and the category button and their tips",
+            Check("300 made-up rows: each line shows its tags, note and author (at the line's end) and no keywords, with the pencil and the category button and their tips",
                 first.SequenceEqual(Expected(saved)), Differ(first, Expected(saved)));
             var sample = rows[10]; // a library: three tags, "Required for", an author
             var line = sample.GetNodeOrNull<Control>("SpireModManagerStrip");
@@ -1843,23 +1763,6 @@ static partial class SelfTest
             var back = rows.Select(LineOf).ToList();
             Check("300 made-up rows, on again: each line shows what it first did (the notes made again in place)", back.SequenceEqual(first), Differ(back, first));
             Check("300 made-up rows: no line holds an empty note", rows.All(r => r.GetNodeOrNull<RichTextLabel>("SpireModManagerStrip/Needs") is not { Text.Length: 0 }));
-            // Narrower lines: keywords that don't fit after every tag are "and N more..", whose card has those keywords
-            // and no tags; the rows keep their height.
-            box.Size = new Vector2(900, 0);
-            await Wait(menu, 0.3);
-            var narrow = rows.FirstOrDefault(r => r.GetNodeOrNull($"SpireModManagerStrip/{RowStrip.MoreName}") != null
-                && r.GetNode("SpireModManagerStrip").GetChildren().OfType<PanelContainer>().All(c => c.Visible));
-            var narrowCard = narrow?.GetNode<Control>($"SpireModManagerStrip/{RowStrip.MoreName}") is { } narrowMore
-                ? (await SizedHoverCard(menu, narrowMore, "SpireModManagerTagCard")).Text : "";
-            List<string> narrowWords;
-            using (Lookups.Begin(mods, [], saved, Picks.None))
-                narrowWords = narrow == null ? [] : RowStrip.Keywords(narrow.Mod);
-            var narrowShown = narrow?.GetNodeOrNull<Label>($"SpireModManagerStrip/{RowStrip.KeywordsName}") is { Visible: true } shownWords ? shownWords.Text[RowStrip.KeywordsLine([]).Length..].Split(", ").Length : 0;
-            Check("300 made-up rows, narrower: keywords that don't fit after the tags are \"and N more..\", its card those keywords and no tags",
-                narrow != null && narrowCard.Split('\n') is [var foldedWords, "", var hint] && foldedWords == RowStrip.KeywordsLine(narrowWords.Skip(narrowShown))
-                && hint == Menus.Text("SPIRE_MOD_MANAGER.MORE_TAGS_CLICK") && rows.All(r => r.Size.Y == RowTitles.RowHeight), $"{narrow?.Mod?.manifest?.id}: {narrowCard.ReplaceLineEndings(" / ")}");
-            box.Size = new Vector2(1600, 0);
-            await Wait(menu, 0.3);
 
             // A row's buttons kept through a redraw (the same words and states) run that redraw's actions: an action holds
             // what its redraw knew (Load Order's rows). And a line is made again when a tag's card or search changes, its
