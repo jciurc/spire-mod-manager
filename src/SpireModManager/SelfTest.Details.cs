@@ -338,10 +338,10 @@ static partial class SelfTest
     // A long description in the info panel (Jordan, 22 Oct): three lines at most, cut at a word with "…", the tags it
     // leaves open closed there (the facts after it keep their own look), the whole of it in a card over those lines; a
     // short one as it is, with no card; the game's panel in Vanilla View untouched. Then the fade at an edge the panel's
-    // text runs on past (a made-up mod needing sixty mods that aren't installed, so it scrolls): below at the top, both
-    // midway, above at the end, none once it all fits and back after; in the panel's colour, over the text and not its
-    // scrollbar, drawn rather than a control. Screenshots 16d-description-cut, 16e-description-card, 16f-fade-bottom,
-    // 16g-fade-both, 16h-fade-top.
+    // text runs on past (a made-up Workshop mod with ninety Workshop tags, after its description, so it scrolls): below at
+    // the top, both midway, above at the end, none once it all fits and back after; in the panel's colour, over the text
+    // and not its scrollbar, drawn rather than a control. Screenshots 16d-description-cut, 16e-description-card,
+    // 16f-fade-bottom, 16g-fade-both, 16h-fade-top.
     static async Task TestDescriptionCut(Node menu, NModdingScreen screen, Control content, string outDir)
     {
         var words = ("Every card in the game gets a fresh coat of paint: brighter colours, sharper edges and a little more contrast on the "
@@ -352,13 +352,12 @@ static partial class SelfTest
         var plain = ModDetails.WithoutTags(description);
         var mod = new Mod
         {
-            path = "", modSource = ModSource.ModsDirectory, state = ModLoadState.Loaded,
-            manifest = new ModManifest
-            {
-                id = "SmmLongDescriptionTest", name = "Long Description Test", author = "Someone Careful", description = description,
-                dependencies = [.. Enumerable.Range(1, 60).Select(i => new ModDependency($"SmmFadeTestNeeds{i:00}"))],
-            },
+            path = "", modSource = ModSource.SteamWorkshop, state = ModLoadState.Loaded,
+            manifest = new ModManifest { id = "SmmLongDescriptionTest", name = "Long Description Test", author = "Someone Careful", description = description },
         };
+        const ulong item = 4402;
+        Compat.SetWorkshopId(mod, item);
+        WorkshopInfo.TestSet(item, new WorkshopInfo.Details(DateTime.Now, DateTime.Now, [.. Enumerable.Range(1, 90).Select(i => $"Fade test tag {i:00}")], [], 0, null));
         var info = screen.GetNode<NModInfoContainer>("%ModInfoContainer");
         var label = info.GetNode<RichTextLabel>("ModDescription");
         var bar = label.GetVScrollBar();
@@ -380,7 +379,7 @@ static partial class SelfTest
             int Count(string text, string tag) => text.Split(tag).Length - 1;
             Check("a long description cut: the tags it leaves open closed there (the game's gold, an italic), the facts after it as they were",
                 Count(cut, "[gold]") == 1 && Count(cut, "[/gold]") == 1 && Count(cut, "[i]") == 1 && Count(cut, "[/i]") == 1
-                && bbcode.Contains($"[gold]{Menus.Text("SPIRE_MOD_MANAGER.DEPENDENCIES")}[/gold]: "), cut);
+                && bbcode.Contains($"[gold]{Menus.Text("SPIRE_MOD_MANAGER.WORKSHOP_TAGS")}[/gold]: "), cut);
             await Capture(screen, outDir, "16d-description-cut");
 
             // The card: over the three lines, where the label has them; the whole description in it.
@@ -394,7 +393,7 @@ static partial class SelfTest
                 && Math.Abs(hover.Position.Y + hover.Size.Y - (lineTop + label.GetLineOffset(last) + label.GetLineHeight(last))) < 1 && card == plain,
                 $"{placed}; card: {card}");
 
-            // The fade: the text runs on below (sixty mods it needs), so there at the top.
+            // The fade: the text runs on below (its Workshop tags), so there at the top.
             var panelFill = (info.GetThemeStylebox("panel") as StyleBoxFlat)?.BgColor ?? Colors.White;
             bar.Value = 0;
             await Wait(menu, 0.2);
@@ -456,6 +455,7 @@ static partial class SelfTest
         }
         finally
         {
+            WorkshopInfo.TestSet(item, null);
             Compat.Clear(info);
         }
     }
