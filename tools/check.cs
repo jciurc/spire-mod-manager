@@ -12,6 +12,8 @@
 // - Descriptions: no code sets the engine's TooltipText; Hover.Tip shows our card.
 // - Player text: "modding page" in lowercase mid-sentence, in our strings, the README, TRANSLATING.md, the Workshop
 //   description and the issue forms.
+// - Cut text: our strings have no "…" or "...", and no label is cut with Godot's "…" (TrimEllipsis); Menus.CutToFit
+//   cuts with two periods.
 // - Fixtures: the JSON under tools/fixtures parses, and each test mod's manifest has id, name and version.
 // - Translation tooling: tools/loc.cs's SmartFormat package and the self-test's ToolParser are the same version.
 // - Both game branches: the members only the public-beta has go through Compat.
@@ -179,6 +181,28 @@ foreach (var path in Files("localization", "*.json"))
             ellipses.Add($"{Name(path)}:{i + 1}");
 }
 Check("our strings have no \"…\" or \"...\": cut or running-on text ends with two periods (\"and 5 more..\")", ellipses.Count == 0, List(ellipses));
+
+// The same for labels cut to their width: Menus.CutToFit ends them with two periods. Godot's own cut (TrimEllipsis,
+// TrimWordEllipsis, and their Force forms) draws "…", in code or in our scenes (text_overrun_behavior 3 to 6).
+// Comment lines don't count.
+var godotCut = new Regex(@"\bTrim(Word)?Ellipsis(Force)?\b");
+var sceneCut = new Regex(@"^\s*\w*text_overrun_behavior = [3-6]\s*$");
+var godotCuts = new List<string>();
+foreach (var (path, source) in sources)
+{
+    var lines = source.Split('\n');
+    for (var i = 0; i < lines.Length; i++)
+        if (godotCut.IsMatch(lines[i]) && !lines[i].TrimStart().StartsWith("//"))
+            godotCuts.Add($"{Name(path)}:{i + 1}");
+}
+foreach (var path in Files("scenes", "*.tscn"))
+{
+    var lines = File.ReadAllText(path).Split('\n');
+    for (var i = 0; i < lines.Length; i++)
+        if (sceneCut.IsMatch(lines[i]))
+            godotCuts.Add($"{Name(path)}:{i + 1}");
+}
+Check("labels are cut with Menus.CutToFit (\"..\"), not Godot's TrimEllipsis, which draws \"…\"", godotCuts.Count == 0, List(godotCuts));
 
 // Both game branches: the members only the public-beta has (Mod.workshopId, NModInfoContainer.Clear) go through
 // Compat, by name. Builds compile against the installed branch, so a direct use builds on the beta and then fails on

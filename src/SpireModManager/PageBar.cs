@@ -112,12 +112,8 @@ static class PageBar
         if (categories.Count > 0)
             return;
         // The hint, in the bar's quiet style, lined up with "Installed mods" (Layout stacks it below the bar).
-        var hint = new Label
-        {
-            Name = HintName, VerticalAlignment = VerticalAlignment.Center, MouseFilter = Control.MouseFilterEnum.Ignore,
-            ClipText = true, TextOverrunBehavior = TextServer.OverrunBehavior.TrimEllipsis,
-            Text = Menus.Text("SPIRE_MOD_MANAGER.NO_CATEGORIES_HINT"),
-        };
+        var hint = new Label { Name = HintName, VerticalAlignment = VerticalAlignment.Center, MouseFilter = Control.MouseFilterEnum.Ignore };
+        Menus.CutToFit(hint, Menus.Text("SPIRE_MOD_MANAGER.NO_CATEGORIES_HINT"));
         Quiet(hint);
         border.AddChild(hint);
         hint.SetAnchorsPreset(Control.LayoutPreset.TopWide);

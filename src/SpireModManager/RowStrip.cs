@@ -11,7 +11,7 @@ static class RowStrip
 {
     const string StripName = "SpireModManagerStrip";
     public const string ActionsName = "SpireModManagerActions", OrderActionsName = "SpireModManagerOrderActions"; // main list, Load Order
-    public const string MoreName = "SpireModManagerMoreTags"; // "and 3 more..."
+    public const string MoreName = "SpireModManagerMoreTags"; // "and 3 more.."
     public const string KeywordsName = "SpireModManagerKeywords"; // "Additional keywords: enabled, loaded"
     static readonly StringName StripMeta = "spire_mod_manager_strip";
     static readonly StringName SaysMeta = "spire_mod_manager_says"; // on a strip or buttons: what they show and where, to know when to change them
@@ -130,11 +130,11 @@ static class RowStrip
             {
                 // Who made it, quietly. (Searching by author is in the info panel.)
                 var by = new Label { Name = AuthorName, Text = author, VerticalAlignment = VerticalAlignment.Center, MouseFilter = Control.MouseFilterEnum.Ignore };
-                // A long one is cut with "…"; the whole name after a second over it.
+                // A long one is cut with ".."; the whole name after a second over it.
                 if (RowTitles.Measure(look.Font, author, LabelSize) > AuthorMax)
                 {
-                    (by.ClipText, by.TextOverrunBehavior, by.CustomMinimumSize, by.MouseFilter) =
-                        (true, TextServer.OverrunBehavior.TrimEllipsis, new Vector2(AuthorMax, 0), Control.MouseFilterEnum.Pass);
+                    (by.CustomMinimumSize, by.MouseFilter) = (new Vector2(AuthorMax, 0), Control.MouseFilterEnum.Pass);
+                    Menus.CutToFit(by, author);
                     Hover.Watch(by, "SpireModManagerFullText", () => author.Replace("[", "[lb]"), Hover.Timing.Slow);
                 }
                 strip.AddChild(by);
@@ -210,7 +210,7 @@ static class RowStrip
         return links;
     }
 
-    // "Additional keywords: enabled, loaded": the line's, and the "and 3 more..." card's.
+    // "Additional keywords: enabled, loaded": the line's, and the "and 3 more.." card's.
     public static string KeywordsLine(IEnumerable<string> keywords) => $"{Menus.Text("SPIRE_MOD_MANAGER.ADDITIONAL_KEYWORDS")}: {string.Join(", ", keywords)}";
 
     // The keyword at x on the label, null before the first: each from its start to the next one's (a comma goes with the

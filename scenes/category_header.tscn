@@ -50,7 +50,6 @@ theme_override_constants/outline_size = 8
 theme_override_fonts/font = ExtResource("2_bold")
 theme_override_font_sizes/font_size = 28
 vertical_alignment = 1
-text_overrun_behavior = 3
 
 [node name="Count" type="Label" parent="."]
 layout_mode = 1

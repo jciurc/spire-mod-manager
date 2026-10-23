@@ -1,4 +1,5 @@
 using System.Runtime.CompilerServices;
+using System.Text.RegularExpressions;
 using Godot;
 using MegaCrit.Sts2.Core.Localization;
 using MegaCrit.Sts2.Core.Nodes.CommonUi;
@@ -86,8 +87,61 @@ static class Menus
     public const string CutMark = "..";
 
     // Text cut short, with CutMark after it. The spaces and punctuation it was cut after go first, so it never reads as
-    // three dots or ",..".
-    public static string CutShort(string text) => text.TrimEnd().TrimEnd('.', ',', ';', ':').TrimEnd() + CutMark;
+    // three dots, "!.." or ",..". markup: rich text, where they can sit before the closing tags at its end ("word.[/i]"):
+    // they go, and the tags stay ("word[/i]..").
+    public static string CutShort(string text, bool markup = false)
+    {
+        var (kept, closers) = (WithoutCutEnd(text), "");
+        while (markup && ClosingTagAtEnd.Match(kept) is { Success: true } closer)
+            (kept, closers) = (WithoutCutEnd(kept[..closer.Index]), closer.Value + closers);
+        return kept + closers + CutMark;
+    }
+
+    // What ends a statement or a part of one, which a cut drops: . ! ? … , ; : and the full-width forms Chinese and
+    // Japanese write.
+    static readonly char[] CutDrops = ['.', '!', '?', '…', ',', ';', ':', '。', '！', '？', '，', '、', '；', '：', '．'];
+    static readonly Regex ClosingTagAtEnd = new(@"\[/[^\[\]]*\]$", RegexOptions.RightToLeft);
+
+    static string WithoutCutEnd(string text)
+    {
+        var end = text.Length;
+        while (end > 0 && (char.IsWhiteSpace(text[end - 1]) || CutDrops.Contains(text[end - 1])))
+            end--;
+        return text[..end];
+    }
+
+    // A one-line label showing text, cut short with CutMark where it's wider than the label, again whenever the label's
+    // width or looks change. Every label of ours that cuts its text does it this way: Godot's own cut (TrimEllipsis) draws
+    // "…", and its EllipsisChar takes one character, not CutMark's two. fitted: run after each fit (to place something
+    // after the text), until the next call.
+    public static void CutToFit(Label label, string text, Action? fitted = null)
+    {
+        if (!Fitting.TryGetValue(label, out _))
+        {
+            (label.ClipText, label.TextOverrunBehavior) = (true, TextServer.OverrunBehavior.NoTrimming);
+            label.Resized += () => Fit(label);
+            label.ThemeChanged += () => Callable.From(() => Fit(label)).CallDeferred(); // once the label has its new looks
+        }
+        Fitting.AddOrUpdate(label, new CutText(text, fitted));
+        Fit(label);
+    }
+
+    // The text CutToFit last gave label, before any cut (else what it shows).
+    public static string WholeText(Label label) => Fitting.TryGetValue(label, out var cut) ? cut.Whole : label.Text;
+
+    sealed record CutText(string Whole, Action? Fitted);
+    static readonly ConditionalWeakTable<Label, CutText> Fitting = new();
+
+    // Measured as the label draws it: in its font, at its size, inside its box's margins. Until it's laid out (no width
+    // yet), the whole text.
+    static void Fit(Label label)
+    {
+        if (!GodotObject.IsInstanceValid(label) || !Fitting.TryGetValue(label, out var cut))
+            return;
+        var room = label.Size.X - label.GetThemeStylebox("normal").GetMinimumSize().X;
+        label.Text = room > 0 ? RowTitles.Cut(label.GetThemeFont("font"), cut.Whole, label.GetThemeFontSize("font_size"), room) : cut.Whole;
+        cut.Fitted?.Invoke();
+    }
 
     // Shared looks, made once (every row has a few of these buttons).
     static readonly (string State, StyleBox Box)[] SmallBoxes =

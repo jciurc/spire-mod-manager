@@ -201,28 +201,68 @@ static partial class SelfTest
                 // while it has its error, so the box comes after a picture (each counted as the label counts it).
                 if (erring.manifest?.id is { } fixesId && ours.Mod is { } plain)
                 {
-                    var art = Image.CreateEmpty(256, 144, false, Image.Format.Rgba8);
-                    art.Fill(new Color(0.18f, 0.3f, 0.45f));
-                    art.FillRect(new Rect2I(24, 24, 208, 96), new Color(0.85f, 0.62f, 0.32f));
-                    var lent = ImageTexture.CreateFromImage(art);
-                    lent.TakeOverPath($"res://{fixesId}/mod_image.png");
+                    // A w x h picture lent to Test Fixes: a block on a frame, to see its edges.
+                    ImageTexture Lend(int w, int h)
+                    {
+                        var art = Image.CreateEmpty(w, h, false, Image.Format.Rgba8);
+                        art.Fill(new Color(0.18f, 0.3f, 0.45f));
+                        art.FillRect(new Rect2I(w / 10, h / 6, w - w / 5, h - h / 3), new Color(0.85f, 0.62f, 0.32f));
+                        var made = ImageTexture.CreateFromImage(art);
+                        made.TakeOverPath($"res://{fixesId}/mod_image.png");
+                        return made;
+                    }
+                    // A card as drawn: its text, its first line's size (the picture's) and whether the game's box after it is right.
+                    async Task<(string Text, Vector2 First, string? Box)> Drawn(Control trigger, string name, string? shot = null)
+                    {
+                        await HoverOver(trigger, Hover.Delay + 0.2);
+                        if (shot != null)
+                            await Capture(screen, outDir, shot);
+                        var label = CardLabel(screen, name);
+                        var seen = label == null ? ("", Vector2.Zero, "no card") : (label.Text, new Vector2(label.GetLineWidth(0), label.GetLineHeight(0)), BoxesWrong(label, 1));
+                        await Leave(trigger, Hover.Grace + 0.1);
+                        return seen;
+                    }
+                    var hotTitle = other.GetNode<Control>("SpireModManagerTitleHover");
+                    var apiTrigger = new Control { Name = "SmmPictureCardTrigger", Position = new Vector2(300, 300), Size = new Vector2(200, 30) }; // draws nothing
+                    screen.AddChild(apiTrigger);
+                    SharedCards.Watch(apiTrigger, fixesId);
+                    var lent = Lend(256, 144);
                     try
                     {
-                        var hotTitle = other.GetNode<Control>("SpireModManagerTitleHover");
-                        await HoverOver(hotTitle, Hover.Delay + 0.2);
-                        await Capture(screen, outDir, "17b3-card-thumbnail");
-                        var pictureCard = CardLabel(screen, "SpireModManagerNotesCard");
-                        var (shownCard, boxAfterPicture) = (pictureCard?.Text ?? "", pictureCard == null ? "no card" : BoxesWrong(pictureCard, 1));
-                        await Leave(hotTitle, Hover.Grace + 0.1);
-                        var picture = $"[img width=200]res://{fixesId}/mod_image.png[/img]\n";
+                        var (shownCard, _, boxAfterPicture) = await Drawn(hotTitle, "SpireModManagerNotesCard", "17b3-card-thumbnail");
+                        var (sharedCard, _, _) = await Drawn(apiTrigger, SharedCards.CardName, "17b4-api-card-thumbnail");
+                        var picture = $"[img width=256 height=144]res://{fixesId}/mod_image.png[/img]\n";
                         Check("a row's card shows the mod's picture at its top when it has one, as the API's card does; none without one",
-                            shownCard.StartsWith($"{picture}[b]{fixesId}[/b]") && ModDetails.SharedCard(erring).StartsWith(picture) && !ModDetails.Card(plain).Contains("[img"),
-                            shownCard.Split('\n')[0]);
+                            shownCard.StartsWith($"{picture}[b]{fixesId}[/b]") && sharedCard.StartsWith(picture) && !ModDetails.Card(plain).Contains("[img"),
+                            $"{shownCard.Split('\n')[0]} / {sharedCard.Split('\n')[0]}");
                         Check("the game's box after the mod's picture in a card: drawn on its own line, as without one", boxAfterPicture == null, boxAfterPicture ?? "");
+                        // Sized as Content Options' card had it: never scaled up, no wider than the card's text (the row's
+                        // 380, the API's 420), no taller than the panel's thumbnail (144), keeping its shape. Drawn so too.
+                        var wrong = new List<string>();
+                        foreach (var (size, inCard, inShared, shot) in new (Vector2I, Vector2I, Vector2I, string?)[]
+                        {
+                            (new(1280, 400), new(380, 119), new(420, 131), "17b6-card-wide-picture"), // wide: as wide as the card's text
+                            (new(300, 900), new(48, 144), new(48, 144), null), // tall: as tall as the thumbnail
+                            (new(64, 40), new(64, 40), new(64, 40), "17b5-card-small-picture"), // small: as it is
+                        })
+                        {
+                            lent.ResourcePath = "";
+                            lent = Lend(size.X, size.Y);
+                            foreach (var (trigger, name, want, whose) in new[] { (hotTitle, "SpireModManagerNotesCard", inCard, "row"), (apiTrigger, SharedCards.CardName, inShared, "API") })
+                            {
+                                var (text, first, _) = await Drawn(trigger, name, whose == "row" ? shot : null);
+                                if (!text.StartsWith($"[img width={want.X} height={want.Y}]res://{fixesId}/mod_image.png[/img]\n")
+                                    || Math.Abs(first.X - want.X) > 1 || Math.Abs(first.Y - want.Y) > 2)
+                                    wrong.Add($"{size.X}x{size.Y} in the {whose} card: {text.Split('\n')[0]}, drawn {first.X:0.#}x{first.Y:0.#}");
+                            }
+                        }
+                        Check("a card's picture: a wide one as wide as the card's text, a tall one 144 px high, a small one not scaled up; in the row's card "
+                            + "and the API's, drawn at that size", wrong.Count == 0, string.Join("; ", wrong));
                     }
                     finally
                     {
                         lent.ResourcePath = "";
+                        apiTrigger.QueueFree();
                     }
                 }
             }
