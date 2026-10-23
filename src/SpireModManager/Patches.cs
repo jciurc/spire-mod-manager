@@ -113,6 +113,26 @@ static class BranchErrorsLatePatch
     }
 }
 
+// The game couldn't start: first, the mod list in memory repaired (LaunchGuard.RepairAtCrash), whoever's dialog shows.
+// Void, so it runs even where another mod's prefix takes over the dialog (Harmony skips a later prefix that returns bool
+// then).
+[HarmonyPatch(typeof(NGame), "GameStartupError")]
+static class StartupErrorRepairPatch
+{
+    [HarmonyPriority(Priority.First)]
+    static void Prefix()
+    {
+        try
+        {
+            LaunchGuard.RepairAtCrash();
+        }
+        catch (Exception e)
+        {
+            Log.Error($"[{ModEntry.ModId}] Could not repair the mod list in memory after the failed start: {e}");
+        }
+    }
+}
+
 // The game couldn't start (a mod failed in its startup): instead of its dialog with only Quit, ours offers the mods of
 // the last launch that worked, when this launch changed any (LaunchGuard.AskAfterCrash). Nothing to offer, or ours
 // failing: the game's own dialog. After other mods' prefixes (Mod Doctor's writes its findings first).

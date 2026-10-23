@@ -1114,6 +1114,30 @@ static partial class SelfTest
     // relaunch). Quit and the relaunch are caught here, and the saved list is put back.
     static async Task TestCrashOffer(NMainMenu menu, string outDir)
     {
+        // At a failed start the list in memory is the game's rebuilt one: a mod kept with its local copy on and its
+        // Workshop copy off reads both on (the id's first entry's switch), and Disable suspects, or the window's close,
+        // would save that. Repaired as the error shows: each source's own switch back, the rest as it was; nothing after
+        // the first main menu (Settle did it), nor without the list as the game read it.
+        static SettingsSaveMod Saved(string id, ModSource source, bool on) => new() { Id = id, Source = source, IsEnabled = on };
+        const string kept = "SmmCrashKept";
+        ModSettings Rebuilt() => new() { ModList = [Saved(ModEntry.ModId, ModSource.ModsDirectory, true), Saved(kept, ModSource.ModsDirectory, true),
+            Saved(kept, ModSource.SteamWorkshop, true), Saved("SmmCrashOther", ModSource.ModsDirectory, false)] };
+        List<(string, ModSource, bool)> asRead = [(ModEntry.ModId, ModSource.ModsDirectory, true), (kept, ModSource.ModsDirectory, true),
+            (kept, ModSource.SteamWorkshop, false), ("SmmCrashOther", ModSource.ModsDirectory, false)];
+        var (repaired, settled, unread) = (Rebuilt(), Rebuilt(), Rebuilt());
+        var changed = LaunchGuard.RepairAtCrash(repaired, asRead, settled: false);
+        static string Switches(ModSettings s) => string.Join(", ", s.ModList.Select(e => $"{e.Id}/{e.Source}={e.IsEnabled}"));
+        Check("after a failed start: the game's rebuilt list in memory repaired before anything saves it (a Workshop copy kept off reads off again, the rest "
+            + "as it was); not after the first main menu, nor without the list as the game read it",
+            changed && Switches(repaired) == $"{ModEntry.ModId}/ModsDirectory=True, {kept}/ModsDirectory=True, {kept}/SteamWorkshop=False, SmmCrashOther/ModsDirectory=False"
+            && !LaunchGuard.RepairAtCrash(settled, asRead, settled: true) && Switches(settled) == Switches(Rebuilt())
+            && !LaunchGuard.RepairAtCrash(unread, null, settled: false) && Switches(unread) == Switches(Rebuilt()),
+            $"repaired: {Switches(repaired)}; settled: {Switches(settled)}; unread: {Switches(unread)}");
+        // This launch reached the menu, so the patch's own call changes nothing in the game's list.
+        var menuList = Switches(SaveManager.Instance.SettingsSave.ModSettings ?? new ModSettings());
+        LaunchGuard.RepairAtCrash();
+        Check("... at the main menu, the startup error's repair leaves the game's list alone",
+            Switches(SaveManager.Instance.SettingsSave.ModSettings ?? new ModSettings()) == menuList, menuList);
         var now = DateTime.Now;
         static LaunchGuard.Entry Mod(string id, bool on, string? version = "1.0") => new(id, ModSource.ModsDirectory, on, version);
         LaunchGuard.Setup Setup(List<LaunchGuard.Entry> mods, string game = "0.111.0 (abc)") => new(now, mods, game);
