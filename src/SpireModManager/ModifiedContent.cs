@@ -4,9 +4,9 @@ using MegaCrit.Sts2.Core.Modding;
 namespace SpireModManager;
 
 // What a mod changes in the game itself (GameChanges) in the info panel, our views only. One row, Modified content, on
-// one line and always there (Jordan: "the info panel has precious real estate"): the areas that fit, then how many more,
-// and the counts. Its card says what the counts mean and lists every area; a click opens the details, a dialog with the
-// areas, the game's files replaced and the game's code changed.
+// one line and always there (Jordan: "the info panel has precious real estate"): the areas that fit, then how many more.
+// Its card counts the places and files and lists every area; a click opens the details, a dialog with the areas, the
+// game's files replaced and the game's code changed.
 static class ModifiedContent
 {
     public const string Meta = "changes"; // the row's link in the panel's text
@@ -25,27 +25,19 @@ static class ModifiedContent
     public static bool Close() => Modal.Close(Name);
 
     // The row for the panel's text (its label: the room it has, its font): "Modified content: The Regent (energy orb),
-    // merchant room and 4 more (12 files, 30 places)", the areas that fit whole, most first, the counts subtle. With none
-    // found, "No information found", subtle. All of it the link for the card and the click.
+    // merchant room and 4 more", the areas that fit whole, most first. The counts are in its card (Jordan: "We don't need
+    // brackets count anymore"). With none found, "No information found", subtle. All of it the link for the card and the
+    // click.
     public static string Row(GameChanges.Changes changes, RichTextLabel text)
     {
         var term = Menus.Text("SPIRE_MOD_MANAGER.MODIFIED_CONTENT");
         if (!changes.Any)
             return $"[url={Meta}][gold]{Escape(term)}[/gold]: [color={Quiet}]{Escape(Menus.Text("SPIRE_MOD_MANAGER.MODIFIED_NONE"))}[/color][/url]";
-        var counts = $"({Counts(changes)})";
         var (font, size, room) = (text.GetThemeFont("normal_font"), text.GetThemeFontSize("normal_font_size"), ModDetails.LineRoom(text));
         // Not laid out yet (no width): all of them, as there's no line to fit yet.
-        var listed = AreasCut(changes.Areas, areas => room <= 0 || Width($"{term}: {areas} {counts}", font, size) <= room);
-        return $"[url={Meta}][gold]{Escape(term)}[/gold]: {Escape(listed)} [color={Quiet}]{Escape(counts)}[/color][/url]";
+        var listed = AreasCut(changes.Areas, areas => room <= 0 || Width($"{term}: {areas}", font, size) <= room);
+        return $"[url={Meta}][gold]{Escape(term)}[/gold]: {Escape(listed)}[/url]";
     }
-
-    // "12 files, 30 places", or the one there is.
-    static string Counts(GameChanges.Changes changes) => (changes.Files, changes.Code) switch
-    {
-        ( > 0, > 0) => Menus.Format("SPIRE_MOD_MANAGER.MODIFIED_COUNTS", ("files", FilesCount(changes.Files)), ("places", PlacesCount(changes.Code))),
-        ( > 0, _) => FilesCount(changes.Files),
-        _ => PlacesCount(changes.Code),
-    };
 
     public static string FilesCount(int count) => count == 1 ? Menus.Text("SPIRE_MOD_MANAGER.GAME_FILES_COUNT_ONE")
         : Menus.Format("SPIRE_MOD_MANAGER.GAME_FILES_COUNT", ("count", Menus.Number(count)));
@@ -64,7 +56,7 @@ static class ModifiedContent
     // The areas that fit (fits: with what goes around them), most first and whole, then "and N more". Adding an area
     // only makes the line longer, until the last takes away the "and 1 more": all of them are tried first. When not even
     // the first fits, a character's (with its list of what) shows as many of what as fit, whole ("The Regent (energy
-    // orb, hands, …)"); any other is cut short with "…".
+    // orb, hands, ..)"); any other is cut short with "..".
     public static string AreasCut(IReadOnlyList<string> areas, Func<string, bool> fits)
     {
         if (areas.Count == 0)
@@ -87,9 +79,9 @@ static class ModifiedContent
                 if (Listed(areas, 1, ItemsCut(subject, whats, kept)) is var cut && fits(cut))
                     return cut;
         var first = areas[0];
-        while (first.Length > 1 && !fits(Listed(areas, 1, first + "…")))
+        while (first.Length > 1 && !fits(Listed(areas, 1, Menus.CutShort(first))))
             first = first[..^1].TrimEnd();
-        return Listed(areas, 1, first + "…");
+        return Listed(areas, 1, Menus.CutShort(first));
     }
 
     // A character's area as its name and what of theirs ("The Regent", ["energy orb", "hands"]); null for another.
@@ -97,8 +89,8 @@ static class ModifiedContent
         area.EndsWith(')') && area.IndexOf(" (", StringComparison.Ordinal) is var open and > 0
             ? (area[..open], area[(open + 2)..^1].Split(", ")) : null;
 
-    // The first `kept` of them, and "…" for the rest: "The Regent (energy orb, hands, …)".
-    public static string ItemsCut(string subject, string[] whats, int kept) => $"{subject} ({string.Join(", ", whats.Take(kept))}, …)";
+    // The first `kept` of them, and ".." for the rest: "The Regent (energy orb, hands, ..)".
+    public static string ItemsCut(string subject, string[] whats, int kept) => $"{subject} ({string.Join(", ", whats.Take(kept))}, {Menus.CutMark})";
 
     // The first `shown` areas (the first as given), then how many more.
     static string Listed(IReadOnlyList<string> areas, int shown, string first)
@@ -112,26 +104,20 @@ static class ModifiedContent
         };
     }
 
-    // The row's card: what the counts mean (Jordan's words for the code; for files, ours), a line saying a mod's code
-    // shows only while it's loaded, every area (cut when there are very many), then the click hint. With none found,
-    // what that means.
+    // The row's card: what the mod changes, in Jordan's words, with the places and files counted (code and files: one
+    // sentence with both), a line saying a mod's contents show only while it's loaded, every area (cut when there are
+    // very many), then the click hint. With none found, what that means.
     public static string Tip(Mod mod, GameChanges.Changes changes)
     {
-        var said = new List<string>();
-        if (changes.Code > 0)
-            said.Add(changes.Code == 1 ? Menus.Text("SPIRE_MOD_MANAGER.MODIFIED_CODE_TIP_ONE")
-                : Menus.Format("SPIRE_MOD_MANAGER.MODIFIED_CODE_TIP", ("count", Menus.Number(changes.Code))));
-        if (changes.Files > 0)
-            said.Add((changes.Code > 0, changes.Files == 1) switch
-            {
-                (true, true) => Menus.Text("SPIRE_MOD_MANAGER.MODIFIED_FILES_ALSO_TIP_ONE"),
-                (true, false) => Menus.Format("SPIRE_MOD_MANAGER.MODIFIED_FILES_ALSO_TIP", ("count", Menus.Number(changes.Files))),
-                (false, true) => Menus.Text("SPIRE_MOD_MANAGER.MODIFIED_FILES_TIP_ONE"),
-                (false, false) => Menus.Format("SPIRE_MOD_MANAGER.MODIFIED_FILES_TIP", ("count", Menus.Number(changes.Files))),
-            });
-        if (!changes.Any)
-            said.Add(Menus.Text("SPIRE_MOD_MANAGER.MODIFIED_NONE_TIP"));
-        var lines = said.Select(Escape).ToList();
+        var said = (changes.Code, changes.Files) switch
+        {
+            ( > 0, > 0) => Menus.Format("SPIRE_MOD_MANAGER.MODIFIED_BOTH_TIP", ("places", PlacesCount(changes.Code)), ("files", FilesCount(changes.Files))),
+            ( > 0, _) => Menus.Format("SPIRE_MOD_MANAGER.MODIFIED_CODE_TIP", ("places", PlacesCount(changes.Code))),
+            (_, 1) => Menus.Text("SPIRE_MOD_MANAGER.MODIFIED_FILES_TIP_ONE"),
+            (_, > 1) => Menus.Format("SPIRE_MOD_MANAGER.MODIFIED_FILES_TIP", ("count", Menus.Number(changes.Files))),
+            _ => Menus.Text("SPIRE_MOD_MANAGER.MODIFIED_NONE_TIP"),
+        };
+        var lines = new List<string> { Escape(said) };
         if (mod.state != ModLoadState.Loaded)
             lines.Add($"[color={Quiet}]{Escape(Menus.Text("SPIRE_MOD_MANAGER.MODIFIED_NOT_LOADED"))}[/color]");
         if (changes.Any)
@@ -139,7 +125,7 @@ static class ModifiedContent
         return $"{string.Join("\n", lines)}\n\n{Tags.Hint(Menus.Text("SPIRE_MOD_MANAGER.MODIFIED_CLICK_TIP"))}";
     }
 
-    // The details, over the page (Modal, as the import preview is): the mod's name, that this is what it declares, then
+    // The details, over the page (Modal, as the import preview is): the mod's name, where the list comes from, then
     // the list (Details), scrolled when it's long, and Close. owner: the panel; the dialog goes with it.
     public static void Show(Node owner, Mod mod, GameChanges.Changes changes)
     {
@@ -173,7 +159,7 @@ static class ModifiedContent
 
     // The dialog's list: every area; the game's files replaced, by area, each path; the game's code changed, by area,
     // each method with how it's patched, and what those words mean. Each heading with its count. With nothing found,
-    // that; a mod not loaded, that its code shows only while it is.
+    // that; a mod not loaded, that its contents show only while it is.
     public static string Details(Mod mod, GameChanges.Changes changes)
     {
         var lines = new List<string>

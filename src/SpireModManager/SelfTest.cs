@@ -615,7 +615,7 @@ static partial class SelfTest
         var stand = new Control();
         var line = ModEntry.ShowNeedsUpdate(stand);
         Check("the needs-update line: its text, once, above the game's list and info panel",
-            line.Text == "Spire Mod Manager is incompatible with this game version, or may require an update." && ModEntry.ShowNeedsUpdate(stand) == line
+            line.Text == "Spire Mod Manager is incompatible with this game version, or may require an update" && ModEntry.ShowNeedsUpdate(stand) == line
             && stand.GetChildCount() == 1 && line.Position.Y + line.Size.Y <= 83, $"{line.Text} at {line.Position}, {line.Size}");
         stand.Free();
     }
@@ -1236,7 +1236,7 @@ static partial class SelfTest
     }
 
     // What a row's pencil, buttons and line show, part by part in order: the pencil and buttons with their tips, then
-    // the line's tags, keywords and "and N more...", note and author, and whether the author ends the line. A spacer or an empty
+    // the line's tags, keywords and "and N more..", note and author, and whether the author ends the line. A spacer or an empty
     // note shows nothing, so isn't listed: two rows that show the same things read the same, however they were made.
     static string LineOf(NModMenuRow row)
     {
