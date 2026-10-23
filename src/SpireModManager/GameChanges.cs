@@ -11,7 +11,7 @@ using MegaCrit.Sts2.Core.Models;
 
 namespace SpireModManager;
 
-// What a mod changes in the game itself, for the info panel's Modified content, its details dialog (ChangesDialog) and
+// What a mod changes in the game itself, for the info panel's Modified content, its details dialog (ModifiedContent.Show) and
 // search (Jordan: a mod that turned the Regent into another character was hard to track down). Two kinds:
 // - the game's files its pack replaces: a file at the same path as one in the game's own pack (a skin, an energy orb, a
 //   card frame), told by the character it's for and what it is (ReplacedFiles);
