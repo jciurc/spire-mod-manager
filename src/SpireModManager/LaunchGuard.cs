@@ -586,7 +586,7 @@ static class LaunchGuard
             }
             message = Whitespace.Replace(plain ? Markup.Replace(message, "") : message, " ").Trim();
             var notice = Our(plain, "SPIRE_MOD_MANAGER.CRASH_GAME_NOTICE");
-            return plain ? $"{notice}:\n{message}\n\n" : $"{GameText.Caption(notice, centred: true)}\n{GameText.Box(message, centred: true)}\n";
+            return plain ? $"{notice}:\n{message}\n\n" : $"{GameText.Caption(notice, centred: true)}\n{GameText.Box(message, centred: true)}\n\n";
         }
         catch (Exception e)
         {
@@ -623,6 +623,8 @@ static class LaunchGuard
         modals.Clear();
         Menus.Mark(popup);
         Links(popup, Rest(offer.Changes), MoreSuspectsCard(suspects));
+        if (popup.GetNodeOrNull<RichTextLabel>("VerticalPopup/Description") is { } words)
+            GameText.Watch(words); // the game's message in its box
         modals.Add(popup);
         if (modals.OpenModal != popup)
             throw new InvalidOperationException("the game's popup container didn't take ours");

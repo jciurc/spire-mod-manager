@@ -42,8 +42,7 @@
     <DebugType>none</DebugType>
   </PropertyGroup>
   <ItemGroup Condition="'$(SpireModManagerWorkshop)' == 'true'">
-    <Compile Remove="SelfTest.cs" />
-    <Compile Remove="SelfTest.Api.cs" />
+    <Compile Remove="SelfTest*.cs" />
   </ItemGroup>
 
   <ItemGroup>

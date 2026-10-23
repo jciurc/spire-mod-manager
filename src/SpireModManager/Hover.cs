@@ -59,12 +59,14 @@ static class Hover
     // (default: below right of the mouse, off the trigger, or the other way where there's no room: Show's around). full:
     // the whole text, when the card's is cut short (Alt shows it). fit: the card only as wide as its text (up to width),
     // for a few words. area: what the default place keeps off, when more than the trigger (a note of its own beside it).
+    // on: whether the mouse is on what the card is for, when that's only part of the trigger (a row's keywords, not the
+    // words before them): the rest of it is as off it, so the card goes there, or never comes.
     public static void Watch(Control trigger, string name, Func<string?> card, Timing timing = Timing.Normal, float width = 380,
         Func<Texture2D?>? picture = null, Func<(Vector2 At, bool Right, bool Above)>? place = null, Func<string?>? full = null, bool fit = false,
-        Func<Rect2>? area = null)
+        Func<Rect2>? area = null, Func<bool>? on = null)
     {
         bool Over() => GodotObject.IsInstanceValid(trigger) && trigger.IsVisibleInTree() && Allowed(trigger)
-            && Under(trigger, Mouse(trigger));
+            && Under(trigger, Mouse(trigger)) && (on?.Invoke() ?? true);
         var token = 0;
         trigger.MouseEntered += () =>
         {
@@ -268,6 +270,7 @@ static class Hover
             }
             else
                 text.CustomMinimumSize = new Vector2(width, 0);
+            GameText.Watch(text); // the game's words in their box, if the text has any
             panel.AddChild(text);
         }
         layer.AddChild(panel);

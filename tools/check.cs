@@ -10,6 +10,8 @@
 //   dead text, or a use this script can't see.
 // - Game resources: no code loads one with ResourceLoader.Load or GD.Load; ModEntry.Load and Font do.
 // - Descriptions: no code sets the engine's TooltipText; Hover.Tip shows our card.
+// - Player text: "modding page" in lowercase mid-sentence, in our strings, the README, TRANSLATING.md, the Workshop
+//   description and the issue forms.
 // - Fixtures: the JSON under tools/fixtures parses, and each test mod's manifest has id, name and version.
 // - Translation tooling: tools/loc.cs's SmartFormat package and the self-test's ToolParser are the same version.
 // - Both game branches: the members only the public-beta has go through Compat.
@@ -17,6 +19,7 @@
 // - The API (src/SpireModManager/Api, docs/dev/API.md): it's the only public code; its files keep the shapes that can
 //   grow without breaking a mod built against them; the shipped surface only grows; ApiInfo.Version follows the
 //   snapshot and VERSIONS.md; the assembly version stays 1.0.0.0; every member is named in the API self-test.
+// - The Workshop build: SpireModManager.csproj leaves out every SelfTest*.cs, and only those files hold the self-test.
 // - Tracked files: none over 1 MB, none holding what looks like a GitHub token.
 // Prints PASS, FAIL and WARN lines (as annotations on GitHub); exit code 1 on any FAIL.
 using System.Diagnostics;
@@ -24,6 +27,7 @@ using System.Runtime.CompilerServices;
 using System.Text;
 using System.Text.Json;
 using System.Text.RegularExpressions;
+using System.Xml.Linq;
 
 const string Prefix = "SPIRE_MOD_MANAGER.";
 var root = Path.GetDirectoryName(ScriptDir()) ?? ".";
@@ -132,10 +136,10 @@ foreach (var (path, source) in sources)
 }
 Check("game resources load through ModEntry.Load or ModEntry.Font", direct.Count == 0, List(direct));
 
-// Descriptions: our hover card (Hover.Tip), never the engine's tooltip, which looks unlike ours. The self-test only
-// reads it, so it doesn't count; nor do comment lines.
+// Descriptions: our hover card (Hover.Tip), never the engine's tooltip, which looks unlike ours. The self-test
+// (SelfTest*.cs) only reads it, so it doesn't count; nor do comment lines.
 var native = new List<string>();
-foreach (var (path, source) in sources.Where(s => Path.GetFileName(s.Key) != "SelfTest.cs"))
+foreach (var (path, source) in sources.Where(s => !IsSelfTest(s.Key)))
 {
     var lines = source.Split('\n');
     for (var i = 0; i < lines.Length; i++)
@@ -143,6 +147,25 @@ foreach (var (path, source) in sources.Where(s => Path.GetFileName(s.Key) != "Se
             native.Add($"{Name(path)}:{i + 1}");
 }
 Check("descriptions use Hover.Tip, not the engine's TooltipText", native.Count == 0, List(native));
+
+// Player text: Jordan's "modding page", lowercase (22 Oct), wherever players read our words about the game's page. Only
+// mid-sentence, after a word, as a sentence may still start with it. workshop.json's copy of the description counts
+// too: it's what the next upload sends if prepare.cs isn't run again. The game's own words ("Modding", "Mod Settings")
+// and past release notes (CHANGELOG.md) stay as they are.
+var capitalPage = new Regex(@"(?<=[\p{L}\d'’,]\s)Modding page");
+var playerText = Files("localization", "*.json").Concat(Files(Path.Combine(".github", "ISSUE_TEMPLATE"), "*.yml"))
+    .Concat(new[] { "README.md", "TRANSLATING.md", Path.Combine("workshop", "description.bbcode"), Path.Combine("workshop", "workshop.json") }
+        .Select(file => Path.Combine(root, file)).Where(File.Exists));
+var capitalised = new List<string>();
+foreach (var path in playerText)
+{
+    var lines = File.ReadAllText(path).Split('\n');
+    for (var i = 0; i < lines.Length; i++)
+        if (capitalPage.IsMatch(lines[i]))
+            capitalised.Add($"{Name(path)}:{i + 1}");
+}
+Check("players read \"modding page\" in lowercase (our strings, README, TRANSLATING, the Workshop description, the issue forms)",
+    capitalised.Count == 0, List(capitalised));
 
 // Both game branches: the members only the public-beta has (Mod.workshopId, NModInfoContainer.Clear) go through
 // Compat, by name. Builds compile against the installed branch, so a direct use builds on the beta and then fails on
@@ -350,13 +373,26 @@ foreach (var line in shipped.Concat(unshipped))
 Check("every API member is named in the API self-test's code (SelfTest.Api.cs)", shipped.Count + unshipped.Count > 0 && untested.Count == 0 && unread.Count == 0,
     List(untested.Distinct().Concat(unread.Select(l => $"can't read: {l}")).ToList()));
 // Translation tooling: tools/loc.cs judges texts with the game's parser, and the self-test checks the game still ships
-// that version, so both name the same one.
+// that version, so both name the same one. ToolParser is read from the file that holds it (SelfTest.cs).
 var package = Regex.Match(File.ReadAllText(Path.Combine(root, "tools", "loc.cs")), @"^#:package SmartFormat@(\S+)", RegexOptions.Multiline)
     .Groups[1].Value;
-var tested = Regex.Match(File.ReadAllText(Path.Combine(root, "src", "SpireModManager", "SelfTest.cs")), @"const string ToolParser = ""([^""]+)""")
-    .Groups[1].Value;
+var tested = sources.Values.Select(s => Regex.Match(s, @"const string ToolParser = ""([^""]+)""")).FirstOrDefault(m => m.Success)?.Groups[1].Value ?? "";
 Check($"tools/loc.cs and the self-test name the same SmartFormat ({package})", package.Length > 0 && package == tested,
     $"loc.cs has {(package.Length > 0 ? package : "none")}, SelfTest.ToolParser {(tested.Length > 0 ? tested : "none")}");
+
+// The Workshop build: players get no self-test. SpireModManager.csproj leaves out every SelfTest*.cs there, so a new
+// file of it never ships, and only files named so in the project folder hold it (the self-test's partial class
+// anywhere else, a subfolder included, would ship).
+var project = XDocument.Load(Path.Combine(root, "src", "SpireModManager", "SpireModManager.csproj"));
+var workshopRemoves = project.Descendants("ItemGroup")
+    .Where(itemGroup => Regex.Replace((string?)itemGroup.Attribute("Condition") ?? "", @"\s", "") == "'$(SpireModManagerWorkshop)'=='true'")
+    .SelectMany(itemGroup => itemGroup.Elements("Compile")).Select(compile => (string?)compile.Attribute("Remove")).ToList();
+var selfTestElsewhere = sources.Where(s => !IsSelfTest(s.Key) && Regex.IsMatch(CodeOnly(s.Value), @"\bpartial\s+class\s+SelfTest\b"))
+    .Select(s => Name(s.Key)).ToList();
+Check("the Workshop build leaves out the self-test (SpireModManager.csproj removes SelfTest*.cs; only those files hold it)",
+    workshopRemoves.Contains("SelfTest*.cs") && selfTestElsewhere.Count == 0,
+    !workshopRemoves.Contains("SelfTest*.cs") ? "add <Compile Remove=\"SelfTest*.cs\" /> to the ItemGroup for '$(SpireModManagerWorkshop)' == 'true'"
+        : $"move these to src/SpireModManager/SelfTest.<area>.cs: {List(selfTestElsewhere)}");
 
 // Tracked files: nothing big (game files and builds never go in) and no tokens. Only the file and line of
 // a token are printed, never the token.
@@ -412,6 +448,12 @@ IEnumerable<string> Files(string dir, string pattern)
 }
 
 string Name(string path) => Path.GetRelativePath(root, path).Replace('\\', '/');
+
+// The in-game self-test's files: SelfTest.cs and its partial files, as the csproj's Workshop build names them. Its
+// SelfTest*.cs doesn't reach subfolders, so neither does this.
+bool IsSelfTest(string path) => Path.GetFileName(path).StartsWith("SelfTest", StringComparison.Ordinal) && path.EndsWith(".cs")
+    && string.Equals(Path.GetDirectoryName(Path.GetFullPath(path)), Path.GetFullPath(Path.Combine(root, "src", "SpireModManager")),
+        StringComparison.OrdinalIgnoreCase);
 
 static string List(IEnumerable<string> items) => string.Join(", ", items);
 

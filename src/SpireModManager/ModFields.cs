@@ -44,7 +44,7 @@ sealed class ModField
 
         var term = new HBoxContainer { Name = "Term", MouseFilter = Control.MouseFilterEnum.Ignore, CustomMinimumSize = new Vector2(0, 26) };
         term.AddThemeConstantOverride("separation", 6);
-        // The term explains the field in our hover card; the box itself only ever invites ("Add notes").
+        // The term explains the field in our hover card; the box itself only ever invites ("Add note").
         var label = new Label
         {
             Name = "Label", Text = Menus.Text(LocKey("TERM")), SizeFlagsHorizontal = Control.SizeFlags.ShrinkBegin, VerticalAlignment = VerticalAlignment.Center,
@@ -365,7 +365,7 @@ sealed class ModField
 
     string LocKey(string part) => $"SPIRE_MOD_MANAGER.{_kind.ToString().ToUpperInvariant()}_{part}";
 
-    // The call to action ("Add notes"), at rest and while editing alike (what the field is for is the term's tooltip).
+    // The call to action ("Add note"), at rest and while editing alike (what the field is for is the term's tooltip).
     // Several mods with differing notes: the warning beside the term, counting the mods whose notes typing overwrites.
     void Hint()
     {

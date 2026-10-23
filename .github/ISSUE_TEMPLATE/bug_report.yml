@@ -9,7 +9,7 @@ body:
     id: game
     attributes:
       label: Game version and branch
-      description: Shown in the top-right corner of the Modding page, and the branch (stable or public-beta). The mod needs v0.107.1 or newer.
+      description: Shown in the top-right corner of the modding page, and the branch (stable or public-beta). The mod needs v0.107.1 or newer.
       placeholder: v0.107.1, stable
     validations:
       required: true
@@ -17,7 +17,7 @@ body:
     id: mod
     attributes:
       label: Spire Mod Manager version
-      description: Select Spire Mod Manager on the Modding page; its version is next to the name in the info panel.
+      description: Select Spire Mod Manager on the modding page; its version is next to the name in the info panel.
       placeholder: 0.1.0
   - type: textarea
     id: what

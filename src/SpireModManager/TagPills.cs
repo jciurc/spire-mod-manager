@@ -4,18 +4,23 @@ using MegaCrit.Sts2.Core.Logging;
 namespace SpireModManager;
 
 // The tags box while it's edited (ModField): each finished tag, one with a comma after it, drawn as a pill like its
-// chip at rest and in its colour, the commas faint, the word being typed plain. The box stays one LineEdit holding
-// "A, B, word", so typing, the caret, selection, undo, the IME and saving are Godot's and ModField's as before. The
-// pills and the text are drawn in the box's Draw signal, which runs right after LineEdit's own drawing, from the same
-// text shaped the same way, so they sit where it put its text, caret and scroll; its own glyphs are transparent
-// meanwhile (its selected ones, the caret, the IME's underline and the placeholder stay its own). The keys that know
-// about tags (Use): Backspace and Delete take a whole pill, Copy and Cut keep to whole tags, Paste and a typed comma
-// (a full-width one too) make pills, and a double-click selects the whole tag.
+// chip at rest and in its colour, its text a little smaller than the box's, the commas invisible (there for copy and
+// paste), the word being typed plain. The box stays one LineEdit holding "A, B, word", so typing, the caret,
+// selection, undo, the IME and saving are Godot's and ModField's as before. The pills and the text are drawn in the
+// box's Draw signal, which runs right after LineEdit's own drawing, from the same text shaped the same way, so they
+// sit where it put its text, caret and scroll (a pill the caret or a selection is at is drawn at the box's size, as
+// the box lays those out); its own glyphs are transparent meanwhile (its selected ones, the caret, the IME's
+// underline and the placeholder stay its own). The keys that know about tags (Use): Backspace and Delete take a
+// whole pill, Copy and Cut keep to whole tags, Paste and a typed comma (a full-width one too) make pills, and a
+// double-click selects the whole tag.
 static class TagPills
 {
     // px of a pill either side of its tag: ", " leaves about 8 between tags at 18, and its comma sits at the left of that
     public const float PadLeft = 3, PadRight = 1;
-    const float Faint = 0.3f; // the commas' alpha
+    // Jordan, 22 Oct: a pill's text "1-2pts smaller" (px) than the box's, and the commas invisible: "we only need it
+    // there for copy paste to work".
+    public const int Smaller = 2;
+    const float CommaAlpha = 0;
     static readonly StringName CopyAction = "ui_copy", CutAction = "ui_cut", PasteAction = "ui_paste", BackAction = "ui_text_backspace",
         BackWordAction = "ui_text_backspace_word", DeleteAction = "ui_text_delete", DeleteWordAction = "ui_text_delete_word";
 
@@ -36,19 +41,19 @@ static class TagPills
 
 #if DEVTOOLS
     // Self-test: what the box drew last (nothing out of focus): its pills left to right, each tag with its rect in the
-    // box, and its text in runs of one colour (not the selected part: LineEdit draws that).
+    // box, and its text in runs of one colour and font size (not the selected part: LineEdit draws that).
     const string PillsMeta = "SpireModManagerTagPills", InkMeta = "SpireModManagerTagInk";
 
     public static List<(string Tag, Rect2 Rect)> TestPills(LineEdit box) => box.HasMeta(PillsMeta)
         ? box.GetMeta(PillsMeta).AsGodotArray().Chunk(2).Select(p => (p[0].AsString(), p[1].AsRect2())).ToList() : [];
 
-    public static List<(string Text, Color Color)> TestInk(LineEdit box) => box.HasMeta(InkMeta)
-        ? box.GetMeta(InkMeta).AsGodotArray().Chunk(2).Select(p => (p[0].AsString(), p[1].AsColor())).ToList() : [];
+    public static List<(string Text, Color Color, int Size)> TestInk(LineEdit box) => box.HasMeta(InkMeta)
+        ? box.GetMeta(InkMeta).AsGodotArray().Chunk(3).Select(p => (p[0].AsString(), p[1].AsColor(), p[2].AsInt32())).ToList() : [];
 
-    static void Record(LineEdit box, List<(string Tag, Rect2 Rect)> pills, List<(string Text, Color Color)> ink)
+    static void Record(LineEdit box, List<(string Tag, Rect2 Rect)> pills, List<(string Text, Color Color, int Size)> ink)
     {
         box.SetMeta(PillsMeta, new Godot.Collections.Array(pills.SelectMany(p => new Variant[] { p.Tag, p.Rect })));
-        box.SetMeta(InkMeta, new Godot.Collections.Array(ink.SelectMany(r => new Variant[] { r.Text, r.Color })));
+        box.SetMeta(InkMeta, new Godot.Collections.Array(ink.SelectMany(r => new Variant[] { r.Text, r.Color, r.Size })));
     }
 
     // Self-test: the clipboard Copy, Cut and Paste use while it's set (a headless run has none, and a windowed run's is
@@ -107,7 +112,7 @@ static class TagPills
     {
 #if DEVTOOLS
         var pills = new List<(string Tag, Rect2 Rect)>();
-        var inked = new List<(string Text, Color Color)>();
+        var inked = new List<(string Text, Color Color, int Size)>();
 #endif
         var text = box.Text;
         var ime = box.HasImeText() ? DisplayServer.ImeGetText() : "";
@@ -124,9 +129,10 @@ static class TagPills
         var line = text[..split] + ime + text[split..];
         var imeColumns = Columns(ime);
         int InLine(int column) => column >= caret ? column + imeColumns : column;
+        var size = box.GetThemeFontSize("font_size");
         shaper.Clear();
         shaper.Direction = Direction(box);
-        shaper.AddString(line, box.GetThemeFont("font"), box.GetThemeFontSize("font_size"), box.Language);
+        shaper.AddString(line, box.GetThemeFont("font"), size, box.Language);
         var server = TextServerManager.GetPrimaryInterface();
         var rid = shaper.GetRid();
         // Where LineEdit puts the line (line_edit.cpp, NOTIFICATION_DRAW, left-aligned, its whole pixels kept): by its
@@ -140,13 +146,29 @@ static class TagPills
         var x0 = left + box.GetScrollOffset();
         var band = new Rect2(left - PadLeft, 0, right - left + PadLeft + PadRight, box.Size.Y); // the text's, and a pill's padding (in the margins)
 
+        // A pill's text a little smaller (Smaller), centred on where the box lays its tag out, on its baseline, the fill
+        // around it as at the box's size. The box puts its caret and selection by its own layout, so a pill the caret
+        // is in or at, or a selection touches, is drawn at the box's size meanwhile (clicking into a pill opens it,
+        // leaving it shrinks it back), and so is a tag the line lays out in pieces (mixed directions).
+        var scale = (size - Smaller) / (float)size;
+        var (from, to) = Selected(box);
+        var shrunk = new List<(int From, int To, float Slot, float At)>(); // line columns; the tag's x in the box's layout, and drawn
         foreach (var (start, end, finished) in Segments(text))
         {
             if (!finished)
                 continue;
-            foreach (var span in server.ShapedTextGetSelection(rid, InLine(Column(text, start)), InLine(Column(text, end))))
+            var (first, last) = (Column(text, start), Column(text, end));
+            var spans = server.ShapedTextGetSelection(rid, InLine(first), InLine(last));
+            var open = spans.Length != 1 || (first <= to && last >= from) || (first <= caret && last >= caret);
+            foreach (var span in spans)
             {
-                var rect = new Rect2(x0 + span.X, top, span.Y - span.X, height).GrowIndividual(PadLeft, 0, PadRight, 0).Intersection(band);
+                var (x, width) = (x0 + span.X, span.Y - span.X);
+                if (!open)
+                {
+                    shrunk.Add((InLine(first), InLine(last), x, x + width * (1 - scale) / 2));
+                    (x, width) = (shrunk[^1].At, width * scale);
+                }
+                var rect = new Rect2(x, top, width, height).GrowIndividual(PadLeft, 0, PadRight, 0).Intersection(band);
                 if (!rect.HasArea())
                     continue;
                 box.DrawStyleBox(Tags.PillBox, rect);
@@ -156,13 +178,12 @@ static class TagPills
             }
         }
 
-        // The glyphs as LineEdit draws them (only those wholly inside the band), unless it's drawing its own just now
-        // (the switch to transparent waits for the frame's end).
+        // The glyphs as LineEdit draws them (only those wholly inside the band), a shrunk pill's scaled about its
+        // tag's middle, unless it's drawing its own just now (the switch to transparent waits for the frame's end).
         if (box.GetThemeColor("font_color").A == 0)
         {
             var inks = Inks(text, ink);
             Color[] lineInks = [.. inks[..caret], .. Enumerable.Repeat(ink, imeColumns), .. inks[caret..]];
-            var (from, to) = box.HasSelection() ? (box.GetSelectionFromColumn(), box.GetSelectionToColumn()) : (0, 0);
             var canvas = box.GetCanvasItem();
             var at = new Vector2(x0, top + (float)server.ShapedTextGetAscent(rid));
 #if DEVTOOLS
@@ -174,26 +195,31 @@ static class TagPills
                 var advance = glyph["advance"].AsSingle();
                 var tint = start >= 0 && start < lineInks.Length ? lineInks[start] : ink;
                 var selected = to > from && start >= from && end <= to; // LineEdit draws those, in its selected colour
+                var pill = shrunk.FindIndex(p => start >= p.From && start < p.To);
+                var k = pill < 0 ? 1 : scale;
+                var x = at.X;
                 for (var i = 0; i < repeat; i++)
                 {
-                    if (!selected && MathF.Ceiling(at.X) >= left && at.X + advance <= right)
+                    x = pill < 0 ? at.X : shrunk[pill].At + (at.X - shrunk[pill].Slot) * scale;
+                    if (!selected && MathF.Ceiling(x) >= left && x + advance * k <= right)
                     {
-                        DrawGlyph(server, canvas, glyph, at, tint);
+                        DrawGlyph(server, canvas, glyph, new Vector2(x, at.Y), tint, k);
 #if DEVTOOLS
+                        var px = pill < 0 ? size : size - Smaller;
                         if (end > inkedUpTo)
                         {
                             var piece = line[Index(line, Math.Max(start, inkedUpTo))..Index(line, end)];
-                            if (inked.Count > 0 && inked[^1].Color == tint)
-                                inked[^1] = (inked[^1].Text + piece, tint);
+                            if (inked.Count > 0 && inked[^1].Color == tint && inked[^1].Size == px)
+                                inked[^1] = (inked[^1].Text + piece, tint, px);
                             else
-                                inked.Add((piece, tint));
+                                inked.Add((piece, tint, px));
                             inkedUpTo = end;
                         }
 #endif
                     }
                     at.X += advance;
                 }
-                if (at.X >= right)
+                if (x >= right) // left to right, shrunk or not: none after it fits
                     break;
             }
         }
@@ -202,11 +228,11 @@ static class TagPills
 #endif
     }
 
-    // One glyph: from its font, or as a box with its code where no font has it.
-    static void DrawGlyph(TextServer server, Rid canvas, Godot.Collections.Dictionary glyph, Vector2 at, Color color)
+    // One glyph at scale times its size: from its font, or as a box with its code where no font has it.
+    static void DrawGlyph(TextServer server, Rid canvas, Godot.Collections.Dictionary glyph, Vector2 at, Color color, float scale)
     {
-        var (font, size, index) = (glyph["font_rid"].AsRid(), glyph["font_size"].AsInt64(), glyph["index"].AsInt64());
-        at += glyph["offset"].AsVector2();
+        var (font, size, index) = (glyph["font_rid"].AsRid(), (long)MathF.Round(glyph["font_size"].AsInt64() * scale), glyph["index"].AsInt64());
+        at += glyph["offset"].AsVector2() * scale;
         if (font.IsValid)
             server.FontDrawGlyph(font, canvas, size, at, index, color);
         else if ((glyph["flags"].AsInt64() & (long)(TextServer.GraphemeFlag.Virtual | TextServer.GraphemeFlag.EmbeddedObject)) == 0)
@@ -221,11 +247,11 @@ static class TagPills
         : (TextServer.Direction)box.TextDirection;
 
     // The colour of each column of the text, as the glyphs count them: a finished tag's in the tag colour, the word
-    // being typed in ink, the rest (each comma and the spaces about it) faint.
+    // being typed in ink, the rest (each comma and the spaces about it) invisible.
     static Color[] Inks(string text, Color ink)
     {
         var inks = new Color[Columns(text)];
-        Array.Fill(inks, new Color(ink, Faint));
+        Array.Fill(inks, new Color(ink, CommaAlpha));
         foreach (var (start, end, finished) in Segments(text))
         {
             var from = Column(text, start);

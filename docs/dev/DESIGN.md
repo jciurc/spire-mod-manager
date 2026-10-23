@@ -20,7 +20,7 @@ Ease of use is the heart of the mod, not just its utility.
 
 ## The game's data comes first
 
-- The vanilla Modding page keeps working untouched, one click away (the link by our page's title).
+- The vanilla modding page keeps working untouched, one click away (the link by our page's title).
 - The game's `mod_list` is the truth for what's on and the load order. Edits go to it at once and take effect
   on relaunch; nothing of ours can disagree with the game's tickboxes.
 - One exception, because the game has one switch for them: copies of a mod installed twice from one source (two
@@ -66,6 +66,6 @@ Ease of use is the heart of the mod, not just its utility.
 - Open source under MIT. Bugs go to GitHub issues; Workshop comments get read too.
 - The main menu button is the game's own text button ("Default (12 mods)"), with no picture; its right-click
   menu is headed "Spire Mod Manager v<version>".
-- F3 (the game uses it only as a debug key in its trailer mode) opens the Modding page from the main menu and goes back from it (anything of ours
+- F3 (the game uses it only as a debug key in its trailer mode) opens the modding page from the main menu and goes back from it (anything of ours
   that's open closes first, as with Escape); nothing on other screens or while typing. One constant for now.
 - Left to other mods: multiplayer host sync, forced A-Z ordering, a grid view.

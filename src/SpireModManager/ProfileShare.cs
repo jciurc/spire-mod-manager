@@ -7,10 +7,11 @@ using MegaCrit.Sts2.Core.Nodes.Screens.ModdingScreen;
 namespace SpireModManager;
 
 // A mod list as CSV, in Better Mod Menu's column order: Mod Id, Name, Version, Enabled (TRUE/FALSE), then the optional
-// Category, Workshop Id (the id only, as Steam may move an item's page), Alias and Notes. Writing follows RFC 4180,
+// Category, Workshop Id (the id only, as Steam may move an item's page), Alias and Note. Writing follows RFC 4180,
 // with a ' before values a spreadsheet would run as a formula. Reading is forgiving: a BOM, CRLF or LF, a ; or tab
 // separator, columns by header in any order. Only Mod Id and Enabled are needed, and a blank or missing Enabled means
-// enabled. Category (Better Mod Menu's Group, where "Unassigned" is none), Alias and Notes are read when there.
+// enabled. Category (Better Mod Menu's Group, where "Unassigned" is none), Alias and Note (Notes in Better Mod Menu's
+// lists and our older ones) are read when there.
 static class ProfileCsv
 {
     // What a shared list holds besides id, name, version and Enabled: the category by default, the rest off. Disabled:
@@ -20,7 +21,7 @@ static class ProfileCsv
     public static string[] Header(Options options) =>
     [
         "Mod Id", "Name", "Version", "Enabled", .. options.Category ? ["Category"] : Array.Empty<string>(), "Workshop Id",
-        .. options.Alias ? ["Alias"] : Array.Empty<string>(), .. options.Notes ? ["Notes"] : Array.Empty<string>(),
+        .. options.Alias ? ["Alias"] : Array.Empty<string>(), .. options.Notes ? ["Note"] : Array.Empty<string>(),
     ];
 
     // One mod to write. WorkshopId: "" for a mod that isn't from the Workshop.
@@ -157,7 +158,7 @@ static class ProfileCsv
         var header = records[0].Select(h => h.Trim()).ToList();
         int Column(params string[] names) => header.FindIndex(h => names.Any(n => string.Equals(h, n, StringComparison.OrdinalIgnoreCase)));
         var (id, enabled, name, link) = (Column("Mod Id", "Id", "ModId"), Column("Enabled"), Column("Name"), Column("Workshop Id", "Workshop Link", "WorkshopId"));
-        var (category, alias, notes) = (Column("Category", "Group"), Column("Alias"), Column("Notes"));
+        var (category, alias, notes) = (Column("Category", "Group"), Column("Alias"), Column("Note", "Notes"));
         if (id < 0)
             return Problem(Menus.Text("SPIRE_MOD_MANAGER.IMPORT_NO_ID"));
         if (enabled < 0)

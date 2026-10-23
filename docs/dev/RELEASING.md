@@ -23,7 +23,7 @@ are in [workshop/README.md](../../workshop/README.md).
 6. **Build** in a worktree checked out at the tag: `dotnet run build.cs --dist`, then
    `dotnet run tools/dev.cs smoke`. Zip `dist/SpireModManager/` into the main checkout's `dist/` (gitignored,
    e.g. `dist/SpireModManager-X.Y.Z.zip`), outside the temporary worktree, and keep it for rollback.
-7. **By hand, once:** install those dist files into the real game and open the Modding page. The smoke run stops
+7. **By hand, once:** install those dist files into the real game and open the modding page. The smoke run stops
    at the main menu, because opening the page needs the self-test. `smoke --stable` runs the same on the stable
    branch's copy.
 8. **Upload:** [workshop/README.md](../../workshop/README.md), "Each upload".

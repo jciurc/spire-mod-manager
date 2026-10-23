@@ -121,8 +121,8 @@ approves the run. Copilot reviews each pull request; resolve or answer its comme
 - `src/SpireModManager/`: the mod. `ModEntry.cs` is the entry point and `Patches.cs` holds the Harmony
   patches into the game. Each view or feature has its own file: `CategoryList.cs` (the main list),
   `LoadOrder.cs`, `ModDetails.cs` (the info panel), `Profiles.cs` and `ProfileBar.cs`, `Search.cs`,
-  `History.cs` (undo and redo) and so on. `Store.cs` saves `manager.json`. `SelfTest.cs` is the in-game
-  self-test, which does nothing unless `tools/dev.cs` asks for it.
+  `History.cs` (undo and redo) and so on. `Store.cs` saves `manager.json`. `SelfTest.cs` and its partial files
+  (`SelfTest.*.cs`, one per area) are the in-game self-test, which does nothing unless `tools/dev.cs` asks for it.
 - `localization/`: player text, one folder per language. `scenes/` (and `images/`, if any): packed into the `.pck`.
 - `tools/`: the dev scripts (`dev.cs`, `check.cs`, `pck.cs`, `shot.cs`) and the self-test fixtures.
 - `workshop/`: the Steam Workshop listing and upload steps.
