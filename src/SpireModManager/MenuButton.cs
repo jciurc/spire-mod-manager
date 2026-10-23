@@ -10,7 +10,7 @@ namespace SpireModManager;
 // hover and carets) naming the active profile and how many mods are on. It always opens our view of the Modding page,
 // as F3 on the main menu does. Lower-left, or wherever the player moved it (right-click > Move button), with the game's
 // notification dot and a "15 mod changes will be applied after a restart" note while a relaunch is pending, its card
-// then starting with the page's summary of the changes. Its right-click menu also opens the translations folder and
+// then ending with the page's summary of the changes. Its right-click menu also opens the translations folder and
 // relaunches the game.
 static class MenuButton
 {
@@ -73,7 +73,7 @@ static class MenuButton
         void Retext()
         {
             note.Text = outdated ? Menus.Text("SPIRE_MOD_MANAGER.NEEDS_UPDATE") : PendingText();
-            // What it opens, and the profile in gold, under what a relaunch would apply while one is pending; a second's
+            // What it opens, and the profile in gold, over what a relaunch would apply while one is pending; a second's
             // wait, as the mouse crosses it for the game's buttons. Its card keeps off the note too, while that shows.
             Hover.Tip(button, Card(Profiles.Active?.Name ?? "", ModEntry.HasPendingChanges()), Hover.Timing.Late, markup: true,
                 area: () => note.Visible ? button.GetGlobalRect().Merge(note.GetGlobalRect()) : button.GetGlobalRect());
@@ -191,12 +191,13 @@ static class MenuButton
         };
     }
 
-    // Its card while a relaunch is pending: the page's summary of the changes (without "Click for the full list"), a
-    // faint line, then its own text. Without one, its own text alone.
+    // Its card while a relaunch is pending: its own text first, as it always reads (Jordan: "show default mod information
+    // on the top"), a faint line, then the page's summary of the changes (without "Click for the full list"). Without
+    // one, its own text alone.
     public const string Divider = "[hr color=#fff6e233 height=1 width=100%]";
 
     public static string Card(string profile, bool pending) => pending && HistoryBar.Summary(cta: false) is { Length: > 0 } changes
-        ? $"{changes}\n{Divider}\n{Tip(profile)}" : Tip(profile);
+        ? $"{Tip(profile)}\n{Divider}\n{changes}" : Tip(profile);
 
     // Its card's text (BBCode) for a profile, in Jordan's words: what it is, the key that opens the page and the
     // right-click menu, then the profile. Without the key if the patch that reads it didn't apply.

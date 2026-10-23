@@ -1,5 +1,6 @@
 using Godot;
 using MegaCrit.Sts2.Core.Modding;
+using System.Text.RegularExpressions;
 
 namespace SpireModManager;
 
@@ -16,8 +17,15 @@ static class ModifiedContent
     const string GoldHex = "#efc851", CardGoldHex = "#e8cf7a", Quiet = "#fff6e299";
     const string Bullet = "[color=#fff6e280]•[/color]";
     const int TipAreas = 320; // the card's list of areas: about this many characters at most, then "and N more"
-    const float ListMost = 560; // the dialog's list: this tall at most, then it scrolls
+    const float DialogWidth = 820; // the areas' columns are fitted to it
+    // The dialog's list: this tall at most, and short enough that the dialog keeps ScreenEdge from the screen's top and
+    // bottom, though never shorter than ListLeast; then it scrolls.
+    const float ListMost = 560, ListLeast = 120, ScreenEdge = 40;
     const int BodySize = 17;
+    // The dialog's areas: this many columns side by side across it, each at most AreaRows tall; more columns follow to
+    // the right, scrolled sideways.
+    const int AreaColumns = 3, AreaRows = 5;
+    const int ColumnGap = 24;
 
     public static bool IsOpen => Modal.IsOpen(Name);
 
@@ -36,7 +44,23 @@ static class ModifiedContent
         var (font, size, room) = (text.GetThemeFont("normal_font"), text.GetThemeFontSize("normal_font_size"), ModDetails.LineRoom(text));
         // Not laid out yet (no width): all of them, as there's no line to fit yet.
         var listed = AreasCut(changes.Areas, areas => room <= 0 || Width($"{term}: {areas}", font, size) <= room);
-        return $"[url={Meta}][gold]{Escape(term)}[/gold]: {Escape(listed)}[/url]";
+        return $"[url={Meta}][gold]{Escape(term)}[/gold]: {Quieted(listed, changes.Areas.Count)}[/url]";
+    }
+
+    // The row's "and 4 more.." in the subtle colour, the areas in the text's (Jordan), wherever a language puts it around
+    // the areas: the words the strings add, found by formatting them with a mark for the areas.
+    static string Quieted(string listed, int areas)
+    {
+        for (var more = 1; more < areas; more++)
+        {
+            var shaped = more == 1 ? Menus.Format("SPIRE_MOD_MANAGER.MODIFIED_MORE_ONE", ("areas", "\u0001"))
+                : Menus.Format("SPIRE_MOD_MANAGER.MODIFIED_MORE", ("areas", "\u0001"), ("count", Menus.Number(more)));
+            if (shaped.Split('\u0001') is [var before, var after] && listed.Length >= before.Length + after.Length
+                && listed.StartsWith(before, StringComparison.Ordinal) && listed.EndsWith(after, StringComparison.Ordinal))
+                return $"{Subtle(before)}{Escape(listed[before.Length..^after.Length])}{Subtle(after)}";
+        }
+        return Escape(listed);
+        static string Subtle(string part) => part.Length == 0 ? "" : $"[color={Quiet}]{Escape(part)}[/color]";
     }
 
     public static string FilesCount(int count) => count == 1 ? Menus.Text("SPIRE_MOD_MANAGER.GAME_FILES_COUNT_ONE")
@@ -119,36 +143,48 @@ static class ModifiedContent
             _ => Menus.Text("SPIRE_MOD_MANAGER.MODIFIED_NONE_TIP"),
         };
         var lines = new List<string> { Escape(said) };
-        if (mod.state != ModLoadState.Loaded)
-            lines.Add($"[color={Quiet}]{Escape(Menus.Text("SPIRE_MOD_MANAGER.MODIFIED_NOT_LOADED"))}[/color]");
+        if (mod.state != ModLoadState.Loaded) // a part of its own, after a gap (Jordan)
+            lines.AddRange([ModDetails.CardGap, $"[color={Quiet}]{Escape(Menus.Text("SPIRE_MOD_MANAGER.MODIFIED_NOT_LOADED"))}[/color]"]);
         if (changes.Any)
             lines.AddRange([ModDetails.CardGap, $"[color={CardGoldHex}]{Escape(AreasCut(changes.Areas, areas => areas.Length <= TipAreas))}[/color]"]);
         return $"{string.Join("\n", lines)}\n\n{Tags.Hint(Menus.Text("SPIRE_MOD_MANAGER.MODIFIED_CLICK_TIP"))}";
     }
 
-    // The details, over the page (Modal, as the import preview is): the mod's name, where the list comes from, then
-    // the list (Details), scrolled when it's long, and Close. owner: the panel; the dialog goes with it.
+    // The details, over the page (Modal, as the import preview is): the mod's name, where the list comes from, the
+    // areas (Areas), then the list (Details), scrolled when it's long, and Close. owner: the panel; the dialog goes
+    // with it.
     public static void Show(Node owner, Mod mod, GameChanges.Changes changes)
     {
         Hover.Hide(); // the row's card: the dialog covers what it's about
         var name = mod.manifest?.name is { Length: > 0 } named ? named : mod.manifest?.id ?? "";
-        if (Modal.Open(owner, Name, 820, 12) is not { } column)
+        if (Modal.Open(owner, Name, DialogWidth, 12) is not { } column)
             return;
         column.AddChild(Modal.Title("SPIRE_MOD_MANAGER.MODIFIED_TITLE", ("name", name)));
         column.AddChild(Text("Note", $"[color={Quiet}]{Escape(Menus.Text("SPIRE_MOD_MANAGER.MODIFIED_NOTE"))}[/color]", 16));
-        var list = Text("List", Details(mod, changes), BodySize);
+        column.AddChild(Areas(changes));
+        var details = Details(mod, changes);
+        var list = Text("List", details, BodySize);
         list.MouseFilter = Control.MouseFilterEnum.Pass; // the wheel goes on to the scroll
         var inside = new MarginContainer { Name = "Inside", SizeFlagsHorizontal = Control.SizeFlags.ExpandFill, MouseFilter = Control.MouseFilterEnum.Pass };
         inside.AddThemeConstantOverride("margin_right", 16); // the words clear of the scrollbar
         inside.AddChild(list);
-        var scroll = new ScrollContainer { Name = "Scroll", HorizontalScrollMode = ScrollContainer.ScrollMode.Disabled };
+        // Nothing found in a loaded mod: the areas say so, and there's no list under them.
+        var scroll = new ScrollContainer { Name = "Scroll", HorizontalScrollMode = ScrollContainer.ScrollMode.Disabled, Visible = details.Length > 0 };
         scroll.AddChild(inside);
-        // As tall as the list once it's laid out, up to ListMost; then it scrolls.
-        list.MinimumSizeChanged += () =>
+        // As tall as the list once it's laid out, up to ListMost and the room the rest of the dialog leaves on the screen
+        // it's centred in (Modal's); then it scrolls. The areas over it wrap (a character's over a few lines), so without
+        // that a mod with several characters' would push the dialog past the screen, its title and Close cut off. Again
+        // whenever the list or the rest changes height.
+        void Fit()
         {
-            if (GodotObject.IsInstanceValid(scroll))
-                scroll.CustomMinimumSize = new Vector2(0, Math.Min(ListMost, list.GetCombinedMinimumSize().Y));
-        };
+            if (!GodotObject.IsInstanceValid(scroll) || column.GetParent() is not Control panel || panel.GetParent() is not Control screen)
+                return;
+            var rest = panel.GetCombinedMinimumSize().Y - scroll.GetCombinedMinimumSize().Y;
+            var room = Math.Max(ListLeast, Math.Min(ListMost, screen.Size.Y - 2 * ScreenEdge - rest));
+            scroll.CustomMinimumSize = new Vector2(0, Math.Min(room, list.GetCombinedMinimumSize().Y));
+        }
+        list.MinimumSizeChanged += Fit;
+        column.MinimumSizeChanged += Fit;
         column.AddChild(scroll);
         var buttons = new HBoxContainer { Name = "Buttons", Alignment = BoxContainer.AlignmentMode.End };
         var close = Menus.SmallButton(Menus.Text("SPIRE_MOD_MANAGER.CLOSE"), () => Close(), name: "CloseModifiedButton");
@@ -158,19 +194,73 @@ static class ModifiedContent
         column.AddChild(buttons);
     }
 
-    // The dialog's list: every area; the game's files replaced, by area, each path; the game's code changed, by area,
-    // each method with how it's patched, and what those words mean. Each heading with its count. With nothing found,
-    // that; a mod not loaded, that its contents show only while it is.
+    public const string AreasName = "Areas", AreasScrollName = "AreasScroll"; // the dialog's areas, and their sideways scroll
+
+    // The dialog's areas under their heading (Jordan, 23 Oct: "list the areas vertically (maybe 3 columns in a
+    // container that scrolls horizontally?) to save space"): one to a line, in columns filled top to bottom (Columns),
+    // three side by side across the dialog; with more than three columns hold, the rest follow to the right, scrolled
+    // sideways. A long one (a character's, with what of theirs) wraps in its column: this is where an area shows whole.
+    // With none found, that.
+    static Control Areas(GameChanges.Changes changes)
+    {
+        var box = new VBoxContainer { Name = AreasName };
+        box.AddThemeConstantOverride("separation", 2);
+        box.AddChild(Text("AreasHeading", Heading("SPIRE_MOD_MANAGER.MODIFIED_AREAS", null), BodySize));
+        if (!changes.Any)
+        {
+            box.AddChild(Text("NoAreas", $"[color={Quiet}]{Escape(Menus.Text("SPIRE_MOD_MANAGER.MODIFIED_NONE"))}[/color]", BodySize));
+            return box;
+        }
+        // Three columns and their gaps as wide as the dialog's column, so a fourth starts just out of view.
+        var width = MathF.Floor((DialogWidth - 2 * Modal.Side - (AreaColumns - 1) * ColumnGap) / AreaColumns);
+        var columns = new HBoxContainer { Name = "Columns" };
+        columns.AddThemeConstantOverride("separation", ColumnGap);
+        var at = 0;
+        foreach (var (areas, i) in Columns(changes.Areas).Select((areas, i) => (areas, i)))
+        {
+            var one = new VBoxContainer { Name = $"AreaColumn{i}", CustomMinimumSize = new Vector2(width, 0) };
+            one.AddThemeConstantOverride("separation", 4); // a little more between areas than between a long one's lines
+            foreach (var area in areas)
+                one.AddChild(Text($"Area{at++}", Escape(area), BodySize));
+            columns.AddChild(one);
+        }
+        // The wheel over the columns goes on to their scroll, which moves them sideways when there are more than three.
+        foreach (var part in columns.GetChildren().OfType<Control>().Prepend(columns))
+            part.MouseFilter = Control.MouseFilterEnum.Pass;
+        var sideways = columns.GetChildCount() > AreaColumns;
+        var scroll = new ScrollContainer
+        {
+            Name = AreasScrollName, VerticalScrollMode = ScrollContainer.ScrollMode.Disabled,
+            HorizontalScrollMode = sideways ? ScrollContainer.ScrollMode.Auto : ScrollContainer.ScrollMode.Disabled,
+        };
+        // The game's scrollbar is drawn over what it scrolls, so the last line keeps clear of it, as the list's words do.
+        var inside = new MarginContainer { Name = "Inside", MouseFilter = Control.MouseFilterEnum.Pass };
+        inside.AddThemeConstantOverride("margin_bottom", sideways ? 16 : 0);
+        inside.AddChild(columns);
+        scroll.AddChild(inside);
+        box.AddChild(scroll);
+        return box;
+    }
+
+    // The areas in columns, filled top to bottom: as few to a column as three columns need (two areas side by side on
+    // one line, seven in three columns of 3, 3 and 1), at most AreaRows; past three columns of those, more columns.
+    public static List<List<string>> Columns(IReadOnlyList<string> areas)
+    {
+        var rows = Math.Clamp((areas.Count + AreaColumns - 1) / AreaColumns, 1, AreaRows);
+        return [.. areas.Chunk(rows).Select(column => column.ToList())];
+    }
+
+    // The dialog's list, under its areas: the game's files replaced, by area, each path; what the patch words mean, then
+    // the game's code changed, by area, each method with how it's patched. Each heading with its count. A mod not
+    // loaded: that its contents show only while it is. Empty with none of those.
     public static string Details(Mod mod, GameChanges.Changes changes)
     {
-        var lines = new List<string>
-        {
-            Heading("SPIRE_MOD_MANAGER.MODIFIED_AREAS", null),
-            changes.Any ? Escape(string.Join(", ", changes.Areas)) : $"[color={Quiet}]{Escape(Menus.Text("SPIRE_MOD_MANAGER.MODIFIED_NONE"))}[/color]",
-        };
+        var lines = new List<string>();
+        // A blank line between parts.
+        string[] Gap() => lines.Count > 0 ? [""] : [];
         if (changes.Files > 0)
         {
-            lines.AddRange(["", Heading("SPIRE_MOD_MANAGER.GAME_FILES", FilesCount(changes.Files))]);
+            lines.Add(Heading("SPIRE_MOD_MANAGER.GAME_FILES", FilesCount(changes.Files)));
             foreach (var area in changes.ReplacedFiles.GroupBy(f => f.Area))
             {
                 lines.Add(Group(area.Key, FilesCount(area.Count())));
@@ -179,33 +269,64 @@ static class ModifiedContent
         }
         if (changes.Code > 0)
         {
-            lines.AddRange(["", Heading("SPIRE_MOD_MANAGER.GAME_CODE", PlacesCount(changes.Code))]);
+            // What the words mean, right over the code they're about (Jordan, 23 Oct: "move the before/after legend to
+            // above the Game code changed section, but after areas section"), after the files when there are some, a
+            // small gap under it (SmallGap), so it reads with the code rather than on its own.
+            lines.AddRange([.. Gap(), $"{Legend()}\n{SmallGap}{Heading("SPIRE_MOD_MANAGER.GAME_CODE", PlacesCount(changes.Code))}"]);
             foreach (var area in changes.Places.GroupBy(p => p.Area))
             {
                 lines.Add(Group(area.Key, PlacesCount(area.Count())));
-                lines.AddRange(area.Select(p => $"{Item}{Escape($"{p.Class}.{p.Method}")}  [color={Quiet}]({Escape(KindWords(p.Kinds))})[/color]"));
+                lines.AddRange(area.Select(p => $"{Item}{Escape($"{p.Class}.{p.Method}")}  [color={Quiet}]({KindsColoured(p.Kinds)})[/color]"));
             }
-            lines.AddRange(["", $"[color={Quiet}]{Escape(Menus.Text("SPIRE_MOD_MANAGER.PATCH_KINDS"))}[/color]"]);
         }
         if (mod.state != ModLoadState.Loaded)
-            lines.AddRange(["", $"[color={Quiet}]{Escape(Menus.Text("SPIRE_MOD_MANAGER.MODIFIED_NOT_LOADED"))}[/color]"]);
+            lines.AddRange([.. Gap(), $"[color={Quiet}]{Escape(Menus.Text("SPIRE_MOD_MANAGER.MODIFIED_NOT_LOADED"))}[/color]"]);
         return string.Join("\n", lines);
     }
 
     const string Item = "        "; // a path or a method, under its area
     const string GroupIndent = "    ";
+    // A line a few pixels tall. A line is as tall as its tallest letter, its line break included, so the break is
+    // small too (a small space alone, as ModDetails.CardGap, still made a line as tall as the text's here).
+    const string SmallGap = "[font_size=6] \n[/font_size]";
 
     static string Heading(string key, string? count) =>
         $"[color={GoldHex}]{Escape(Menus.Text(key))}[/color]" + (count is { } shown ? $"  {Bullet}  [color={Quiet}]{Escape(shown)}[/color]" : "");
 
     static string Group(string area, string count) => $"{GroupIndent}[b]{Escape(area)}[/b]  {Bullet}  [color={Quiet}]{Escape(count)}[/color]";
 
+    // The ways a place is patched, in their order, each with its word and its colour (Jordan, 23 Oct: "before = blue,
+    // after = green, rewritten = orange, wrapped = soft red", in colours we already use): the changes summary's blue (a
+    // move), green (turned on) and soft red (turned off) from HistoryBar, and the orange of a Pending relaunch status
+    // (ModDetails). Not a link's blue nor a problem's red: nothing here is clicked, or wrong.
+    const string BeforeHex = "#8ec5ff", AfterHex = "#a6e3a1", RewrittenHex = "#f5b56b", WrappedHex = "#f2a3a3";
+
+    static readonly (GameChanges.Kinds Kind, string Key, string Hex)[] KindLooks =
+    [
+        (GameChanges.Kinds.Before, "SPIRE_MOD_MANAGER.PATCH_BEFORE", BeforeHex), (GameChanges.Kinds.After, "SPIRE_MOD_MANAGER.PATCH_AFTER", AfterHex),
+        (GameChanges.Kinds.Rewritten, "SPIRE_MOD_MANAGER.PATCH_REWRITTEN", RewrittenHex), (GameChanges.Kinds.Wrapped, "SPIRE_MOD_MANAGER.PATCH_WRAPPED", WrappedHex),
+    ];
+
     // How a place is patched, in plain words: "before, after".
-    public static string KindWords(GameChanges.Kinds kinds) => string.Join(", ", new[]
+    public static string KindWords(GameChanges.Kinds kinds) => string.Join(", ", KindLooks.Where(k => kinds.HasFlag(k.Kind)).Select(k => Menus.Text(k.Key)));
+
+    // The same as the dialog's list shows it (BBCode), each word in its colour: "[color=#8ec5ff]before[/color], ...".
+    public static string KindsColoured(GameChanges.Kinds kinds) =>
+        string.Join(", ", KindLooks.Where(k => kinds.HasFlag(k.Kind)).Select(k => $"[color={k.Hex}]{Escape(Menus.Text(k.Key))}[/color]"));
+
+    // What the words mean (PATCH_KINDS, dim), each kind's name in its colour where the text names it as a term, the word
+    // with a colon after it ("Before: runs before ..."), in any case. A translation that names them otherwise keeps the
+    // dim text alone.
+    public static string Legend()
     {
-        (GameChanges.Kinds.Before, "SPIRE_MOD_MANAGER.PATCH_BEFORE"), (GameChanges.Kinds.After, "SPIRE_MOD_MANAGER.PATCH_AFTER"),
-        (GameChanges.Kinds.Rewritten, "SPIRE_MOD_MANAGER.PATCH_REWRITTEN"), (GameChanges.Kinds.Wrapped, "SPIRE_MOD_MANAGER.PATCH_WRAPPED"),
-    }.Where(k => kinds.HasFlag(k.Item1)).Select(k => Menus.Text(k.Item2)));
+        var words = KindLooks.Select(k => (Word: Escape(Menus.Text(k.Key)), k.Hex)).Where(k => k.Word.Length > 0).ToList();
+        var legend = Escape(Menus.Text("SPIRE_MOD_MANAGER.PATCH_KINDS"));
+        if (words.Count > 0)
+            legend = Regex.Replace(legend, $@"(?<![\p{{L}}\p{{N}}])({string.Join("|", words.Select(k => Regex.Escape(k.Word)))})(?=\s*[:：])",
+                m => words.FirstOrDefault(k => string.Equals(k.Word, m.Value, StringComparison.OrdinalIgnoreCase)) is { Hex: { } hex } ? $"[color={hex}]{m.Value}[/color]" : m.Value,
+                RegexOptions.IgnoreCase | RegexOptions.CultureInvariant);
+        return $"[color={Quiet}]{legend}[/color]";
+    }
 
     static RichTextLabel Text(string name, string bbcode, int size)
     {

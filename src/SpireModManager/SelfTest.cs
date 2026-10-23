@@ -239,6 +239,7 @@ static partial class SelfTest
             await Step(() => TestNotes(menu, screen, content, outDir));
             await Step(() => TestPendingNotes(menu, screen, content));
             await Step(() => TestPendingLine(menu, screen, content));
+            await Step(() => TestMenuButtonPendingCard(menu, screen, content, outDir));
             await Step(() => TestSearch(menu, screen, content, outDir));
             await Step(() => TestBranchTags());
             await Step(() => TestDescriptionSearch());
