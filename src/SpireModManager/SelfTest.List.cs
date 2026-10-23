@@ -2383,6 +2383,13 @@ static partial class SelfTest
             && Rows().All(r => r.Modulate == Colors.White));
         Check("the selection survives the switch, its category opened", selected?.Mod?.manifest?.id == "SmmTestFixes"
             && selected.Visible && !Store.Data.UncategorizedCollapsed);
+        // Jordan (23 Oct): the category bar's edges in line with a highlighted row's, left and right.
+        var bar = content.GetChildren().OfType<Control>().FirstOrDefault(c => c.IsInGroup("SpireModManagerCategoryHeader") && c.Visible)?.GetNodeOrNull<Control>("Background");
+        var lit = selected?.GetNodeOrNull<Control>("SelectionHighlight");
+        var (barRect, litRect) = (bar?.GetGlobalRect() ?? default, lit?.GetGlobalRect() ?? default);
+        Check("category bars line up with a highlighted row, left and right edges", bar != null && lit is { Modulate.A: > 0.5f }
+            && Math.Abs(barRect.Position.X - litRect.Position.X) < 0.5f && Math.Abs(barRect.End.X - litRect.End.X) < 0.5f,
+            $"bar {barRect.Position.X:0.#}-{barRect.End.X:0.#}, highlight {litRect.Position.X:0.#}-{litRect.End.X:0.#}");
     }
 
     // Fixture mods: SmmTestContent and SmmTestUi need SmmTestLib; SmmTestAddon needs SmmTestMissing, which never is there.
