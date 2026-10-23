@@ -2868,8 +2868,8 @@ static partial class SelfTest
         // As the page has them: A off (copies_off), its title the game's grey for a copy set aside. Then both ticked.
         var greyOff = !Ticked(rowA) && Title(rowA) == MegaCrit.Sts2.Core.Helpers.StsColors.gray && a.state == ModLoadState.DisabledDuplicate;
         var offWere = CopiesOff();
-        // The copy lines' colour: A off beside B isn't in a clash (its own dim colour, B none); both ticked, each in the
-        // Duplicate chip's warning yellow, B (the copy that loads) too.
+        // The copy lines' colour: every one in the Duplicate chip's warning yellow (Jordan: "ALL duplicate messages"): A off
+        // beside B (B has none then), and both ticked, B (the copy that loads) too.
         var clash = $"#{Tags.SameIdClash.ToHtml(false)}";
         var (offColor, onAlone) = (ModDetails.CopyLine(a, false)?.Color, ModDetails.CopyLine(b, false));
         BothTickedQuietly(true);
@@ -2880,8 +2880,8 @@ static partial class SelfTest
         var steps = History.Steps(History.Track.List);
         var chips = new[] { a, b }.Select(m => Tags.For(m).FirstOrDefault(c => c.Text == DuplicateChip)).ToList();
         var lineColors = (A: ModDetails.CopyLine(a, false)?.Color, B: ModDetails.CopyLine(b, false)?.Color);
-        Check("same ID, the copy lines: A off beside B in its own colour (not the clash's), B none; both ticked, each in the Duplicate chip's warning yellow, "
-            + "the copy that loads too", offColor != null && offColor != clash && onAlone == null && lineColors == (clash, clash),
+        Check("same ID, the copy lines all in the Duplicate chip's warning yellow: A off beside B, B none then; both ticked, each, the copy that loads too",
+            offColor == clash && onAlone == null && lineColors == (clash, clash),
             $"off {offColor}, B alone {onAlone}; both {lineColors.A} / {lineColors.B} (yellow {clash})");
         var bannerText = (SameId()?.FindChild("SameIdWarning", true, false) as Label)?.Text;
         var card = await BannerCard(menu, screen, SameId());
