@@ -11,8 +11,9 @@ namespace SpireModManager;
 // or tags, or start a word of its description, or the whole query without spaces be in one of the short fields. The
 // punctuation of sentences counts as spaces, in the search and in the mod's text ("dont" finds "Don't", "spire-mod"
 // finds "Spire Mod"); other symbols are part of a word ("C#"). "#tag" matches a whole tag (or a hidden one: "#enabled",
-// "#problem", HiddenTags), "@author" the author, and "text in quotes" that exact text, spaces, symbols and case too. A
-// "-" or NOT before any of them, or before a group in brackets, leaves out the mods that match it ("#stable -#beta");
+// "#problem", HiddenTags), and so does a word that is the tag's whole name ("enabled"), beside the mods with the word;
+// "@author" the author, and "text in quotes" that exact text, spaces, symbols and case too. A "-" or NOT before any
+// of them, or before a group in brackets, leaves out the mods that match it ("#stable -#beta");
 // OR or "|" between two finds either. Brackets go first, then NOT, then OR, then the space (or AND) between terms:
 // "#a OR #b #c" is "(#a OR #b) #c". Clicking a tag or author searches for it, Shift-click adds or removes it.
 static class Search
@@ -36,8 +37,10 @@ static class Search
             "#" => term.Hidden?.Invoke(mod) == true || (tags ??= Tags.Searchable(mod)).Contains(term.Value, StringComparer.OrdinalIgnoreCase),
             "@" => string.Equals(manifest.author, term.Value, StringComparison.OrdinalIgnoreCase),
             Exact => Text().Raw.Contains(term.Value, StringComparison.Ordinal),
-            // A word that is a whole tag finds it too: "stable" finds what #stable finds, though no chip shows it.
-            _ => Found(Text(), term.Spaced, term.Joined) || (tags ??= Tags.Searchable(mod)).Contains(term.Spaced, StringComparer.OrdinalIgnoreCase),
+            // A word that is a whole tag finds it too: "stable" finds what #stable finds, though no chip shows it, and
+            // "enabled" what #enabled does.
+            _ => Found(Text(), term.Spaced, term.Joined) || term.Hidden?.Invoke(mod) == true
+                || (tags ??= Tags.Searchable(mod)).Contains(term.Spaced, StringComparer.OrdinalIgnoreCase),
         };
         bool Test(Clause clause) => clause switch
         {
@@ -78,13 +81,15 @@ static class Search
     // Whether a search says anything: "-", "!!!", "()", OR or a lone quote alone count as an empty box.
     public static bool HasTerms(string filter) => Parse(filter).Root != null;
 
-    // Whether a search looks for one of these tags (any case; not where it leaves the tag out): the main list's line
-    // for #missing and #uninstalled, which no row matches.
+    // Whether a search looks for one of these tags, as #tag or the word alone (any case; not where it leaves the tag
+    // out): the main list's line for #missing and #uninstalled, which no row matches.
     public static bool Wants(string filter, params string[] tags)
     {
         bool In(Clause? clause, bool left) => clause switch
         {
             Term { Kind: "#" } term => !left && tags.Contains(term.Value, StringComparer.OrdinalIgnoreCase),
+            Term { Kind: "" } word => !left && tags.Contains(word.Spaced, StringComparer.OrdinalIgnoreCase),
+            Words words => words.Each.Any(w => In(w, left)),
             Not not => In(not.Of, !left),
             AnyOf any => any.Of.Any(c => In(c, left)),
             AllOf all => all.Of.Any(c => In(c, left)),
@@ -99,7 +104,7 @@ static class Search
     abstract record Clause;
 
     // One term: a tag ("#"), an author ("@"), exact text (Exact), or a word as typed (""; Spaced and Joined: its pieces
-    // with a space between and with none). Hidden: what a hidden tag of a tag's name finds.
+    // with a space between and with none). Hidden: what a hidden tag of a tag's or word's name finds.
     sealed record Term(string Kind, string Value, string Spaced = "", string Joined = "", Func<Mod, bool>? Hidden = null) : Clause;
 
     // A group's plain words, each to be found (or Squeezed, all of them without spaces, in one field).
@@ -260,7 +265,7 @@ static class Search
                     "OR" => new Lexed(Piece.Or, word),
                     "AND" => new Lexed(Piece.And, word),
                     "NOT" => new Lexed(Piece.Not, word),
-                    _ => new Lexed(Piece.Term, word, new Term("", word, spaced, spaced.Replace(" ", ""))),
+                    _ => new Lexed(Piece.Term, word, new Term("", word, spaced, spaced.Replace(" ", ""), HiddenTags.Find(spaced))),
                 });
             }
         }
@@ -386,6 +391,8 @@ static class Search
                         found.Add(Field.Description);
                     if (inChanges)
                         found.Add(Field.Modified);
+                    if (term.Hidden?.Invoke(mod) == true)
+                        found.Add(Field.Keywords);
                     Tagged(term.Spaced, found);
                     break;
             }

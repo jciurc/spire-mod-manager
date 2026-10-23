@@ -1992,7 +1992,7 @@ static partial class SelfTest
             + "says it enables a second copy, over both it isn't greyed; the view switch's tip says how the game's page treats them; no copy_picks in our file",
             Loads() == "l:SmmTestTwinB" && Ticked(rowB) && !Ticked(rowA) && ModDetails.Status(b).Contains("Enabled") && ModDetails.Status(a).Contains("Disabled")
             && ModDetails.Problems(a).Count == 0 && boxTip == Draft(CopyOnTip, ("other", Named(b)), ("loads", Named(b)))
-            && Hover.TipOf(rowB.GetNode<Control>("Tickbox")) == "" && ModDetails.CopyLine(a, links: false)?.Text == $"{Named(b)} is the enabled copy"
+            && Hover.TipOf(rowB.GetNode<Control>("Tickbox")) == "" && ModDetails.CopyLine(a, links: false)?.Text == Draft(OtherEnabled, ("other", Named(b)))
             && enableAll.Tip == Draft(BulkEnablesTip, ("mods", a.manifest?.name ?? ""))
             && toggleTip.Contains("\nIn vanilla, mods ") && toggleTip.Contains("These will use the Spire Mod Manager configuration as a fallback.")
             && !bothDone && NoPicksOnDisk() && offAtStart.Contains(keyA) && FileCopiesOff().Contains(keyA) && CopiesBroken() == null,
@@ -2799,7 +2799,7 @@ static partial class SelfTest
     // Whether a popup has a new copy's words (NewModPopupPatch), whichever mods they name: each text's longest run
     // between its values.
     static bool NewCopyWords(string popup) => new[] { "SPIRE_MOD_MANAGER.NEW_COPY_ON_BODY", "SPIRE_MOD_MANAGER.NEW_COPIES_ON_BODY",
-            "SPIRE_MOD_MANAGER.NEW_COPY_OFF_BODY", "SPIRE_MOD_MANAGER.NEW_SELF_COPY_BODY" }
+            "SPIRE_MOD_MANAGER.NEW_COPY_OFF_BODY" }
         .Select(key => Template(key).Split('{', '}').Where((_, i) => i % 2 == 0).MaxBy(s => s.Length) ?? "")
         .Any(words => words.Length > 0 && popup.Contains(words));
 
@@ -2867,9 +2867,16 @@ static partial class SelfTest
 
         // As the page has them: A off (copies_off), its title the game's grey for a copy set aside. Then both ticked.
         var greyOff = !Ticked(rowA) && Title(rowA) == MegaCrit.Sts2.Core.Helpers.StsColors.gray && a.state == ModLoadState.DisabledDuplicate;
+        // Their Duplicate chips with one copy ticked (no clash): the plain one's muted tan, not the Local chip's grey beside it.
+        var plainChips = new[] { a, b }.Select(m => Tags.For(m)).ToList();
+        Check("same ID, one copy ticked: both Duplicate chips in the plain one's muted tan, apart from the Local chip's grey beside them and the clash's yellow",
+            plainChips.All(chips => chips.FirstOrDefault(c => c.Text == DuplicateChip) is { } duplicate && duplicate.Color == Tags.Duplicate
+                && duplicate.Color != Tags.SameIdClash && chips.FirstOrDefault(c => c.Text == Menus.Text("SPIRE_MOD_MANAGER.TAG_LOCAL")) is { } local
+                && local.Color != duplicate.Color),
+            string.Join(" / ", plainChips.Select(chips => string.Join(", ", chips.Select(c => $"{c.Text} {c.Color.ToHtml(false)}")))));
         var offWere = CopiesOff();
-        // The copy lines' colour: A off beside B isn't in a clash (its own dim colour, B none); both ticked, each in the
-        // Duplicate chip's warning yellow, B (the copy that loads) too.
+        // The copy lines' colour: every one in the Duplicate chip's warning yellow (Jordan: "ALL duplicate messages"): A off
+        // beside B (B has none then), and both ticked, B (the copy that loads) too.
         var clash = $"#{Tags.SameIdClash.ToHtml(false)}";
         var (offColor, onAlone) = (ModDetails.CopyLine(a, false)?.Color, ModDetails.CopyLine(b, false));
         BothTickedQuietly(true);
@@ -2880,8 +2887,8 @@ static partial class SelfTest
         var steps = History.Steps(History.Track.List);
         var chips = new[] { a, b }.Select(m => Tags.For(m).FirstOrDefault(c => c.Text == DuplicateChip)).ToList();
         var lineColors = (A: ModDetails.CopyLine(a, false)?.Color, B: ModDetails.CopyLine(b, false)?.Color);
-        Check("same ID, the copy lines: A off beside B in its own colour (not the clash's), B none; both ticked, each in the Duplicate chip's warning yellow, "
-            + "the copy that loads too", offColor != null && offColor != clash && onAlone == null && lineColors == (clash, clash),
+        Check("same ID, the copy lines all in the Duplicate chip's warning yellow: A off beside B, B none then; both ticked, each, the copy that loads too",
+            offColor == clash && onAlone == null && lineColors == (clash, clash),
             $"off {offColor}, B alone {onAlone}; both {lineColors.A} / {lineColors.B} (yellow {clash})");
         var bannerText = (SameId()?.FindChild("SameIdWarning", true, false) as Label)?.Text;
         var card = await BannerCard(menu, screen, SameId());

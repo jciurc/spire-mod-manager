@@ -419,7 +419,7 @@ static class LoadOrder
             SelfBanner(content, border, search, redraw);
         if (Layout.Wide && Bmm.BothTicked && !Store.Data.ManagersWarningDismissed)
             ManagersBanner(content, border, search, redraw);
-        // Two or more copies of one mod id ticked (only one of them loads; this mod's aside, Copies.Clashing), on our
+        // Two or more copies of one mod id ticked (only one of them loads; this mod's too, Copies.Clashing), on our
         // views, unless dismissed for this set. A dismissal is forgotten once no copies clash, so the problem coming back
         // shows it again (as Dismiss's tip says).
         var clashing = Copies.Clashing();
