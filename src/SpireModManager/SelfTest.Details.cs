@@ -366,8 +366,8 @@ static partial class SelfTest
             info.Fill(mod);
             await Wait(menu, 0.5);
             var parsed = label.GetParsedText();
-            var start = parsed.IndexOf(PanelDescription.Mark);
-            var end = start < 0 ? -1 : parsed.IndexOf(PanelDescription.Mark, start + 1);
+            var start = parsed.IndexOf(PanelDescription.Start);
+            var end = start < 0 ? -1 : parsed.IndexOf(PanelDescription.End, start + 1);
             var shown = end > start ? parsed[(start + 1)..end] : "";
             var (first, last) = end > start ? (label.GetCharacterLine(start), label.GetCharacterLine(end)) : (-1, -1);
             Check("a long description: three lines in the panel, cut at a word with \"…\", the rest of the panel's text after it",
@@ -375,7 +375,7 @@ static partial class SelfTest
                 && shown.Length - 1 < plain.Length && plain[shown.Length - 1] == ' ' && shown[^2] != ' ' && parsed[(end + 1)..].StartsWith("\n\n"),
                 $"lines {first}..{last}: \"{shown}\"");
             var bbcode = label.Text;
-            var cut = bbcode.IndexOf(PanelDescription.Mark) is var from and >= 0 && bbcode.IndexOf(PanelDescription.Mark, from + 1) is var to and > 0 ? bbcode[from..to] : "";
+            var cut = bbcode.IndexOf(PanelDescription.Start) is var from and >= 0 && bbcode.IndexOf(PanelDescription.End, from + 1) is var to and > 0 ? bbcode[from..to] : "";
             int Count(string text, string tag) => text.Split(tag).Length - 1;
             Check("a long description cut: the tags it leaves open closed there (the game's gold, an italic), the facts after it as they were",
                 Count(cut, "[gold]") == 1 && Count(cut, "[/gold]") == 1 && Count(cut, "[i]") == 1 && Count(cut, "[/i]") == 1
@@ -433,8 +433,9 @@ static partial class SelfTest
             {
                 info.Fill(fixes);
                 await Wait(menu, 0.3);
-                Check("a short description shows as it is, with no card over it", label.Text.Contains(own) && !label.Text.Contains(PanelDescription.Mark)
-                    && hover is { Visible: false } && PanelDescription.TestPlaced(label) == null, label.Text.Split('\n').FirstOrDefault() ?? "");
+                Check("a short description shows as it is, with no card over it", label.Text.Contains(own) && !label.Text.Contains(PanelDescription.Start)
+                    && !label.Text.Contains(PanelDescription.End) && hover is { Visible: false } && PanelDescription.TestPlaced(label) == null,
+                    label.Text.Split('\n').FirstOrDefault() ?? "");
             }
             else
                 Results.Add("SKIP a short description as it is: Test Fixes has none");
@@ -450,7 +451,8 @@ static partial class SelfTest
             Click(screen.GetNode<BaseButton>("SpireModManagerViewToggle"));
             await Wait(menu, 0.5);
             Check("Vanilla View: the game's own panel shows the description whole, uncut; no card over it, no fade",
-                game.Contains(Text(102, 20)) && !game.Contains(PanelDescription.Mark) && gameHover == false && gameFade is (false, false, _),
+                game.Contains(Text(102, 20)) && !game.Contains(PanelDescription.Start) && !game.Contains(PanelDescription.End) && gameHover == false
+                && gameFade is (false, false, _),
                 $"card area shown {gameHover}, fade {gameFade}: {game[..Math.Min(80, game.Length)]}");
         }
         finally

@@ -16,10 +16,12 @@ static class PanelDescription
     const int CardMost = 1500; // the card's text: about this many characters, the rest with Alt
     static readonly StringName FullMeta = "spire_mod_manager_full_description"; // on the label: the whole of a cut one, else ""
 
-    // Before and after a cut description in the panel's text, so its lines can be found as the label lays them out:
-    // the zero-width no-break space, which shows nothing, takes no room and lets no line break beside it (as GameText's
-    // marks, though not one of them).
-    public const char Mark = '﻿';
+    // Before and after a cut description in the panel's text, so its lines can be found as the label laid them out:
+    // characters that show nothing and take no room (as GameText's marks, though not one of them). After it, the
+    // zero-width no-break space, so no line breaks beside it; before it, the invisible plus, since text handed to Godot
+    // loses a zero-width no-break space it starts with (read as a byte order mark), and a description can start the
+    // panel's text.
+    public const char Start = (char)0x2064, End = (char)0xFEFF;
 
     static readonly string[] Fonts = ["normal_font", "bold_font", "italics_font", "bold_italics_font", "mono_font"];
     static readonly string[] Sizes = ["normal_font_size", "bold_font_size", "italics_font_size", "bold_italics_font_size", "mono_font_size"];
@@ -28,7 +30,7 @@ static class PanelDescription
     static readonly Dictionary<(string Text, ulong Font, int Size, float Room), string> Cuts = [];
 
     // The description as the panel shows it in label: as it is when it fits in Lines lines at the label's width, else
-    // the most of it that does, cut at a word with "…", between Marks; the whole of it noted for the card.
+    // the most of it that does, cut at a word with "…", between Start and End; the whole of it noted for the card.
     public static string Shown(RichTextLabel label, string description)
     {
         var room = ModDetails.LineRoom(label);
@@ -61,7 +63,7 @@ static class PanelDescription
             else
                 over = mid;
         }
-        return $"{Mark}{ModDetails.Shortened(description, Math.Max(1, fits))}{Mark}";
+        return $"{Start}{ModDetails.Shortened(description, Math.Max(1, fits))}{End}";
     }
 
     // The label that measures (one per panel, never shown): the description label's fonts, sizes and line spacing, and
@@ -113,14 +115,14 @@ static class PanelDescription
         label.Draw += () => Place(label, area);
     }
 
-    // From the line of the first Mark to the line of the second, as wide as the lines, where the label's scroll has them
-    // now; none without them (a description that fits, the game's own text in Vanilla View).
+    // From the line of Start to the line of End, as wide as the lines, where the label's scroll has them now; none
+    // without them (a description that fits, the game's own text in Vanilla View).
     static void Place(RichTextLabel label, Area area)
     {
         Rect2? at = null;
         var text = label.GetParsedText();
-        var start = Store.Data.VanillaView ? -1 : text.IndexOf(Mark);
-        var end = start < 0 ? -1 : text.IndexOf(Mark, start + 1);
+        var start = Store.Data.VanillaView ? -1 : text.IndexOf(Start);
+        var end = start < 0 ? -1 : text.IndexOf(End, start + 1);
         if (end > start && label.GetCharacterLine(start) is >= 0 and var first && label.GetCharacterLine(end) is var last && last >= first)
         {
             var style = label.GetThemeStylebox("normal");
