@@ -85,7 +85,7 @@ static class HiddenTags
     static bool GameError(Mod mod) => Copies.Ticked(mod) && mod.errors is { Count: > 0 };
 
     // This mod with no copy of it ticked: the page goes at the relaunch.
-    static bool SelfOff(Mod mod) => mod.manifest?.id == ModEntry.ModId && !Copies.Ticked(mod) && !Copies.Others(mod).Any(Copies.Ticked);
+    static bool SelfOff(Mod mod) => mod.manifest?.id == ModEntry.ModId && Copies.OursOff();
 
     // Each copy that moved since launch (HistoryBar.Moves, which lists a copy once however many times the game does).
     static HashSet<Mod> Moved(IReadOnlyList<Mod> mods)

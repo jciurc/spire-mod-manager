@@ -9,6 +9,7 @@
     "BetterModMenu": { "category": "Tools" },
     "SmmTestAddon": { "category": "Content" }
   },
+  "copies": { "SmmTestTwin": ["l:SmmTestTwinA", "l:SmmTestTwinB"] },
   "copy_picks": ["SmmTestTwin|l:SmmTestTwinB"],
   "profiles": [
     {

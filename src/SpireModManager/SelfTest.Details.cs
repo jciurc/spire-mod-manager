@@ -514,6 +514,77 @@ static partial class SelfTest
         }
     }
 
+    // Text cut short never ends inside what reads as one character (Content Options' review): half an emoji's surrogate
+    // pair (Godot drops it, then draws and measures a stray character), part of an emoji joined with ZWJ, or a letter
+    // without its accent. Cut to a width (titles, labels) at every width, and by characters in each place that does. First,
+    // a cut with no room for even "..": a label at its 1 px minimum before it's laid out measured every start of its text.
+    static void TestCutWhole(Control content)
+    {
+        if (content.GetChildren().OfType<NModMenuRow>().FirstOrDefault()?.GetNodeOrNull<Control>("Title") is not { } title)
+        {
+            Results.Add("SKIP cuts between characters: no row on the page");
+            return;
+        }
+        var font = title.GetThemeFont("normal_font");
+        const int size = Layout.RowTitleSize;
+        // As each code unit, so half a surrogate pair shows in the results.
+        static string Units(string text) => string.Concat(text.Select(c => c < 128 ? c.ToString() : $"\\u{(int)c:X4}"));
+        RowTitles.TestMeasured = 0;
+        var none = RowTitles.Cut(font, "A name no other check measures, cut to a label's 1 px", size, 1);
+        Check("a cut with no room for even \"..\" (a label at its 1 px minimum): nothing, measuring the whole text and the \"..\" only",
+            none == "" && RowTitles.TestMeasured <= 2, $"\"{none}\", {RowTitles.TestMeasured} widths measured");
+
+        (string Piece, string What)[] pieces = [("\U0001F525", "an emoji"), ("\U0001F468\u200D\U0001F469\u200D\U0001F467", "a ZWJ emoji"), ("e\u0301", "an accent")];
+        var name = $"Fire{pieces[0].Piece}Family{pieces[1].Piece}Caf{pieces[2].Piece}Club";
+        int After(string piece) => name.IndexOf(piece, StringComparison.Ordinal) + piece.Length;
+        var inside = pieces.SelectMany(p => Enumerable.Range(After(p.Piece) - p.Piece.Length + 1, p.Piece.Length - 1)).ToHashSet();
+        var cuts = new HashSet<string>();
+        for (var width = 0f; width < RowTitles.Measure(font, name, size); width += 0.5f)
+            cuts.Add(RowTitles.Cut(font, name, size, width));
+        var split = cuts.Where(c => c.Length > 0 && (!c.EndsWith(Menus.CutMark) || !name.StartsWith(c[..^Menus.CutMark.Length], StringComparison.Ordinal)
+            || inside.Contains(c.Length - Menus.CutMark.Length))).ToList();
+        Check("a title cut to any width ends between characters: never inside an emoji, a ZWJ emoji or a letter and its accent, each kept whole once it fits",
+            split.Count == 0 && pieces.All(p => cuts.Contains(name[..After(p.Piece)] + Menus.CutMark)), string.Join(" | ", (split.Count > 0 ? split : [.. cuts]).Select(Units)));
+
+        // Cut by characters: each text has the piece where the count runs out, after letters one short of it, so only the
+        // letters are kept (counted in code points, an emoji of one fits whole).
+        var broken = new List<string>();
+        foreach (var (piece, what) in pieces)
+        {
+            static string Letters(char letter, int count) => new(letter, count - 1);
+            string At(char letter, int count) => Letters(letter, count) + piece + " and after";
+            static string Line(string card, char letter) => card.Split('\n').FirstOrDefault(l => l.Contains(new string(letter, 10))) ?? "";
+            void Expect(string where, string shown, bool ok)
+            {
+                if (!ok)
+                    broken.Add($"{where}, {what}: {Units(shown[Math.Max(0, shown.Length - 24)..])}");
+            }
+            var mod = new Mod
+            {
+                path = "", modSource = ModSource.ModsDirectory, state = ModLoadState.Loaded,
+                manifest = new ModManifest { id = "SmmCutWholeTest", name = "Cut Whole Test", author = At('a', 80), description = At('b', 240) },
+            };
+            var (card, shared) = (ModDetails.Card(mod), ModDetails.SharedCard(mod, standIn: (null, At('c', 300), [], null)));
+            Expect("a row's card's author", Line(card, 'a'), Line(card, 'a').Contains(Letters('a', 80) + Menus.CutMark));
+            Expect("the API card's author", Line(shared, 'a'), Line(shared, 'a').Contains(Letters('a', 80) + Menus.CutMark));
+            Expect("the API card's description", Line(shared, 'b'), Line(shared, 'b').Contains(Letters('b', 240) + Menus.CutMark));
+            Expect("the API card's note", Line(shared, 'c'), Line(shared, 'c').Contains(Letters('c', 300) + Menus.CutMark));
+            var author = ModDetails.Short(At('d', 200));
+            Expect("a long author", author, author == Letters('d', 200) + Menus.CutMark);
+            var description = ModDetails.Shortened(At('f', 100), 100);
+            Expect("the panel's description", description, description == Letters('f', 100) + Menus.CutMark);
+            var areaCut = Draft(Template("SPIRE_MOD_MANAGER.MODIFIED_MORE_ONE"), ("areas", Letters('g', 20) + Menus.CutMark));
+            var area = ModifiedContent.AreasCut([At('g', 20), "combat"], s => s.Length <= areaCut.Length + 1); // room for half a pair
+            Expect("an area", area, area == areaCut);
+            var alias = ProfileCsv.Read($"Mod Id,Enabled,Alias\nSmmA,TRUE,{At('h', 80)}\n").Mods.FirstOrDefault()?.Alias ?? "";
+            Expect("an import's alias", alias, alias == Letters('h', 80) + (piece.EnumerateRunes().Count() == 1 ? piece : ""));
+            var profile = Profiles.ImportName($"C:/lists/{At('k', 40)}.csv");
+            Expect("an imported profile's name", profile, profile == Letters('k', 40));
+        }
+        Check("a cut by characters never ends inside an emoji, a ZWJ emoji or a letter and its accent: the cards' author, description and note, a long "
+            + "author, the panel's description, an area, an import's alias, an imported profile's name", broken.Count == 0, string.Join(" | ", broken));
+    }
+
     // A Workshop mod's head (made-up details; the sandbox has no Steam): Author, Updated (how long ago, and a link
     // to its change notes on the Workshop), Compatibility (its Workshop branches not listed). "Ago" in hours under a day,
     // singular for one. Dates and numbers in the game's language. Its Other keywords after its Workshop tags, then

@@ -5,8 +5,9 @@ using MegaCrit.Sts2.Core.Nodes.Screens.ModdingScreen;
 namespace SpireModManager;
 
 // The check before Relaunch Game: enabled mods that won't load (a mod they need is off or missing, or another copy of
-// one loads in its place). With none it relaunches at once; otherwise a dialog lists them, with fixes, Relaunch anyway
-// and Cancel. Cancel (first, at the left) undoes the fixes made in the dialog.
+// one loads in its place), and this mod off (every copy of it: the next launch runs without it). With neither it
+// relaunches at once; otherwise a dialog says so, with fixes (Enable now for this mod), Relaunch anyway and Cancel.
+// Cancel (first, at the left) undoes the fixes made in the dialog.
 static class RelaunchCheck
 {
     public const string Name = "SpireModManagerRelaunchCheck";
@@ -19,7 +20,7 @@ static class RelaunchCheck
     // owner: the page asking (the Modding screen or the main menu); the dialog closes when it goes.
     public static void Relaunch(Node owner)
     {
-        if (Problems().Count == 0)
+        if (Problems().Count == 0 && !Copies.OursOff())
             ModEntry.Relaunch();
         else
             Show(owner);
@@ -28,7 +29,8 @@ static class RelaunchCheck
     // Every copy that loads after a relaunch with a dependency that's off or missing, each with the info panel's reason;
     // then each copy that's ticked while another copy of its id loads instead (only one copy of an id loads; copies from
     // one source too), naming that one, unless the same-ID banner was dismissed for them. A copy that won't load has no
-    // dependency problems, so none is listed twice. This mod's copies are left out (Copies.Clashing): they stay on together.
+    // dependency problems, so none is listed twice. This mod's copies are left out (Copies.Clashing): a backup copy of it on
+    // is as it should be.
     static List<(Mod Mod, string Why)> Problems()
     {
         var problems = Dependencies.EachCopy(ModManager.Mods.Union(Installed.Mods))
@@ -58,17 +60,20 @@ static class RelaunchCheck
             column.RemoveChild(child);
             child.QueueFree();
         }
-        var problems = Problems();
+        var (problems, oursOff) = (Problems(), Copies.OursOff());
         column.AddChild(Modal.Title("SPIRE_MOD_MANAGER.RELAUNCH_CHECK_TITLE")); // the same once all is well
 
         var body = new RichTextLabel { Name = "Body", BbcodeEnabled = true, FitContent = true, ScrollActive = false, MouseFilter = Control.MouseFilterEnum.Ignore };
         Hover.Fonts(body, 18);
         string Escape(string text) => text.Replace("[", "[lb]");
-        // Each mod as its row names it, its reasons one sentence each.
-        body.Text = problems.Count == 0
-            ? Menus.Text("SPIRE_MOD_MANAGER.RELAUNCH_CHECK_OK")
-            : Menus.Text("SPIRE_MOD_MANAGER.RELAUNCH_CHECK_INTRO") + "\n" + string.Join("\n", problems.GroupBy(p => p.Mod).Select(g =>
-                $"  •  [b]{Escape(Copies.Named(g.Key))}[/b]  [color={ProblemHex}]{Escape(string.Join(". ", g.Select(p => p.Why)))}[/color]"));
+        // This mod off first, then each mod as its row names it, its reasons one sentence each.
+        var parts = new List<string>();
+        if (oursOff)
+            parts.Add(Escape(Menus.Text("SPIRE_MOD_MANAGER.RELAUNCH_SELF_OFF")));
+        if (problems.Count > 0)
+            parts.Add(Menus.Text("SPIRE_MOD_MANAGER.RELAUNCH_CHECK_INTRO") + "\n" + string.Join("\n", problems.GroupBy(p => p.Mod).Select(g =>
+                $"  •  [b]{Escape(Copies.Named(g.Key))}[/b]  [color={ProblemHex}]{Escape(string.Join(". ", g.Select(p => p.Why)))}[/color]")));
+        body.Text = parts.Count == 0 ? Menus.Text("SPIRE_MOD_MANAGER.RELAUNCH_CHECK_OK") : string.Join("\n\n", parts);
         column.AddChild(body);
 
         // The Modding page, open or hidden behind the main menu: a fix ticks its boxes and its redraw records it. Before
@@ -91,24 +96,30 @@ static class RelaunchCheck
         }
         var buttons = new HBoxContainer { Name = "Buttons" };
         buttons.AddThemeConstantOverride("separation", 8);
-        void Add(string key, Action action, string name)
+        void Add(string key, Action action, string name, string? tip = null)
         {
             var button = Menus.SmallButton(Menus.Text(key), action, name: name);
             button.AddThemeFontSizeOverride("font_size", 18);
             button.CustomMinimumSize = new Vector2(0, 34);
+            Hover.Tip(button, tip);
             buttons.AddChild(button);
         }
         // Cancel at the left, then the fixes and Relaunch at the right.
         Add("SPIRE_MOD_MANAGER.CANCEL", () => Cancel(), "CancelRelaunchButton");
         buttons.AddChild(new Control { SizeFlagsHorizontal = Control.SizeFlags.ExpandFill, MouseFilter = Control.MouseFilterEnum.Ignore });
+        // This mod's copy that runs, alone, as the red banner's Enable now: the next launch is this one.
+        var running = oursOff ? Copies.Running() : null;
+        if (running != null)
+            Add("SPIRE_MOD_MANAGER.ENABLE_SELF", () => Fix([running], true), "EnableSelfButton", Menus.Text("SPIRE_MOD_MANAGER.ENABLE_SELF_TIP"));
         var needed = Dependencies.NeededOff(ModManager.Mods.Union(Installed.Mods));
         if (needed.Count > 0)
             Add("SPIRE_MOD_MANAGER.ENABLE_NEEDED", () => Fix(needed, true), "EnableNeededButton");
         if (problems.Count > 0)
             Add("SPIRE_MOD_MANAGER.DISABLE_BROKEN", () => Fix(problems.Select(p => p.Mod).Distinct(), false), "DisableBrokenButton");
-        if (needed.Count > 0 || problems.Count > 0) // a gap between the fixes and Relaunch
+        var asks = problems.Count > 0 || oursOff;
+        if (needed.Count > 0 || asks) // a gap between the fixes and Relaunch
             buttons.AddChild(new Control { CustomMinimumSize = new Vector2(24, 0), MouseFilter = Control.MouseFilterEnum.Ignore });
-        Add(problems.Count > 0 ? "SPIRE_MOD_MANAGER.RELAUNCH_ANYWAY" : "SPIRE_MOD_MANAGER.RELAUNCH_BUTTON", () => ModEntry.Relaunch(), "RelaunchNowButton");
+        Add(asks ? "SPIRE_MOD_MANAGER.RELAUNCH_ANYWAY" : "SPIRE_MOD_MANAGER.RELAUNCH_BUTTON", () => ModEntry.Relaunch(), "RelaunchNowButton");
         column.AddChild(buttons);
     }
 
