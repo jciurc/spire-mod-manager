@@ -17,7 +17,7 @@ static class ModifiedContent
     const string GoldHex = "#efc851", CardGoldHex = "#e8cf7a", Quiet = "#fff6e299";
     const string Bullet = "[color=#fff6e280]•[/color]";
     const int TipAreas = 320; // the card's list of areas: about this many characters at most, then "and N more"
-    const float DialogWidth = 820;
+    const float DialogWidth = 820; // the areas' columns are fitted to it
     const float ListMost = 560; // the dialog's list: this tall at most, then it scrolls
     const int BodySize = 17;
     // The dialog's areas: this many columns side by side across it, each at most AreaRows tall; more columns follow to
@@ -133,7 +133,8 @@ static class ModifiedContent
     }
 
     // The details, over the page (Modal, as the import preview is): the mod's name, where the list comes from, the
-    // areas (Areas), then the list (Details), scrolled when it's long, and Close. owner: the panel; the dialog goes with it.
+    // areas (Areas), then the list (Details), scrolled when it's long, and Close. owner: the panel; the dialog goes
+    // with it.
     public static void Show(Node owner, Mod mod, GameChanges.Changes changes)
     {
         Hover.Hide(); // the row's card: the dialog covers what it's about
@@ -259,8 +260,8 @@ static class ModifiedContent
 
     const string Item = "        "; // a path or a method, under its area
     const string GroupIndent = "    ";
-    // A line a few pixels tall. A line is as tall as its tallest letter, its line break included, so the break is small too
-    // (a small space alone, as ModDetails.CardGap, still makes a line as tall as the text's).
+    // A line a few pixels tall. A line is as tall as its tallest letter, its line break included, so the break is
+    // small too (a small space alone, as ModDetails.CardGap, still made a line as tall as the text's here).
     const string SmallGap = "[font_size=6] \n[/font_size]";
 
     static string Heading(string key, string? count) =>
@@ -272,7 +273,7 @@ static class ModifiedContent
     // after = green, rewritten = orange, wrapped = soft red", in colours we already use): the changes summary's blue (a
     // move), green (turned on) and soft red (turned off) from HistoryBar, and the orange of a Pending relaunch status
     // (ModDetails). Not a link's blue nor a problem's red: nothing here is clicked, or wrong.
-    public const string BeforeHex = "#8ec5ff", AfterHex = "#a6e3a1", RewrittenHex = "#f5b56b", WrappedHex = "#f2a3a3";
+    const string BeforeHex = "#8ec5ff", AfterHex = "#a6e3a1", RewrittenHex = "#f5b56b", WrappedHex = "#f2a3a3";
 
     static readonly (GameChanges.Kinds Kind, string Key, string Hex)[] KindLooks =
     [

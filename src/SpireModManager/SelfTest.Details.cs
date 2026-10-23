@@ -887,11 +887,12 @@ static partial class SelfTest
     // don't need brackets count anymore"); search still finds the areas cut from it. Its card: Jordan's words with both
     // counts in one sentence, the areas, the click hint. A click: the dialog (the mod's name, the note, the areas in
     // columns, then the list: the files by area, what the patch words mean, the code by area, with their counts and how
-    // each place is patched, in colour), scrolled when long; Close and Esc close it. A made-up mod with more areas than three columns hold: they scroll sideways. The
-    // same mod with files only, our own mod with code only, and each kind of card with one place or file, and not loaded.
-    // A fixture mod with nothing found: "No information found", subtle, a card saying what that means, and its dialog
-    // says so. Screenshots 17d (the row), 17e (its card), 17e2 (files only), 17e3 (code only), 17f (the dialog), 17f3 and
-    // 17f4 (many areas), 17g (nothing found).
+    // each place is patched, in colour), scrolled when long; Close and Esc close it. A made-up mod with more areas than
+    // three columns hold: they scroll sideways. The same mod with files only, our own mod with code only, and each kind
+    // of card with one place or file, and not loaded. A fixture mod with nothing found: "No information found", subtle,
+    // a card saying what that means, and its dialog says so. Screenshots 17d (the row), 17e (its card), 17e2 (files
+    // only), 17e3 (code only), 17f (the dialog), 17f2 (scrolled to the legend and the code), 17f3 and 17f4 (many
+    // areas), 17g (nothing found).
     static async Task TestModifiedContent(Node menu, NModdingScreen screen, Control content, string outDir)
     {
         const string id = "SmmBothTest", name = "Both Kinds Test";
