@@ -822,6 +822,131 @@ static partial class SelfTest
         }
     }
 
+    // Row titles by where the mod is from (Jordan, 23 Oct: "workshop ones will stand out a little"), on rows the game makes
+    // for made-up mods: a Workshop and a local one it loaded, and one of each it left off. A Workshop title soft blue where
+    // a local one is white, and that blue as dim as the game's grey where it greyed one, on the main list and in Load
+    // Order; in Vanilla View the game's own colours. Then the two Workshop ones on the page's own list beside the
+    // fixture's local rows (screenshot 10e; 10f the plain Duplicate chips beside the others), and a search for state
+    // without "#" there (10g).
+    static async Task TestWorkshopTitles(Node menu, NModdingScreen screen, Control content, string outDir)
+    {
+        static Mod Made(string id, string name, ModSource source, ModLoadState state) => new()
+        {
+            path = "", modSource = source, state = state,
+            manifest = new ModManifest { id = id, name = name, author = "Someone Careful" },
+        };
+        Mod[] made = [Made("SmmTitleCloud", "Test Cloud Saves", ModSource.SteamWorkshop, ModLoadState.Loaded),
+            Made("SmmTitleDark", "Test Dark Mode", ModSource.SteamWorkshop, ModLoadState.Disabled),
+            Made("SmmTitleLocal", "Title Test Local", ModSource.ModsDirectory, ModLoadState.Loaded),
+            Made("SmmTitleLocalOff", "Title Test Local Off", ModSource.ModsDirectory, ModLoadState.Disabled)];
+        Compat.SetWorkshopId(made[0], 4800);
+        Compat.SetWorkshopId(made[1], 4801);
+        var gray = MegaCrit.Sts2.Core.Helpers.StsColors.gray;
+        Color[] meant = [RowTitles.WorkshopTitle, RowTitles.WorkshopTitle * gray, Colors.White, gray];
+        static Color Title(NModMenuRow row) => row.GetNode<Control>("Title").Modulate;
+        static string Say(IEnumerable<NModMenuRow?> rows) => string.Join(", ", rows.Select(r => r == null ? "no row" : $"{r.Mod?.manifest?.name} #{Title(r).ToHtml()}"));
+        var box = new VBoxContainer { Name = "SpireModManagerTitleRows", MouseFilter = Control.MouseFilterEnum.Ignore };
+        screen.AddChild(box);
+        (box.Position, box.Size) = (new Vector2(-3000, 0), new Vector2(1000, 0));
+        var listed = new List<NModMenuRow>(); // the Workshop ones' rows on the page's own list
+        var searchBox = screen.GetNode<LineEdit>("ModsBorder/SpireModManagerSearch");
+        void Type(string text)
+        {
+            searchBox.Text = text;
+            searchBox.EmitSignal(LineEdit.SignalName.TextChanged, text);
+        }
+        try
+        {
+            // The game's own rows, from its factory (found by name: a game update may change it).
+            var create = typeof(NModMenuRow).GetMethod("Create", [typeof(NModdingScreen), typeof(Mod)]);
+            var rows = made.Select(m => create?.Invoke(null, [screen, m]) as NModMenuRow).OfType<NModMenuRow>().ToList();
+            foreach (var row in rows)
+                box.AddChild(row);
+            if (rows.Count != made.Length)
+            {
+                Results.Add($"SKIP Workshop titles: the game made {rows.Count} of {made.Length} rows");
+                return;
+            }
+            Results.Add($"INFO row titles: the text's own colour #{rows[0].GetNode<RichTextLabel>("Title").GetThemeColor("default_color").ToHtml()}, "
+                + $"so a Workshop title shows #{RowTitles.WorkshopTitle.ToHtml(false)}, dim #{(RowTitles.WorkshopTitle * gray).ToHtml(false)}");
+            bool AsMeant() => rows.Select(Title).SequenceEqual(meant);
+            RowTitles.Apply(rows, vanilla: false);
+            var (mainList, mainSaid) = (AsMeant(), Say(rows));
+            Click(screen.GetNode<NButton>("SpireModManagerLoadOrderToggle"));
+            await Wait(menu, 0.5);
+            var inLoadOrder = Layout.Current == Layout.View.LoadOrder;
+            RowTitles.Apply(rows, vanilla: false); // as Load Order's redraw styles its rows
+            var (loadOrder, loadSaid) = (inLoadOrder && AsMeant(), Say(rows));
+            Click(screen.GetNode<NButton>("SpireModManagerLoadOrderToggle"));
+            await Wait(menu, 0.5);
+            var vanillaSaid = "Better Mod Menu's page";
+            var vanilla = Bmm.Present || await WithVanillaView(screen, menu, () =>
+            {
+                RowTitles.Apply(rows, vanilla: true);
+                vanillaSaid = Say(rows);
+                return rows.Select(Title).SequenceEqual([Colors.White, gray, Colors.White, gray]);
+            });
+            RowTitles.Apply(rows, vanilla: false);
+            Check("row titles: a Workshop mod's soft blue where a local one's is white, as dim as the game's grey where it greyed it, on the main list and "
+                + "in Load Order; in Vanilla View the game's own colours", mainList && loadOrder && vanilla,
+                $"main list {mainSaid}; Load Order ({inLoadOrder}) {loadSaid}; Vanilla View {vanillaSaid}; meant {string.Join(", ", meant.Select(c => $"#{c.ToHtml()}"))}");
+
+            // On the page's own list: the game's handler for a mod that arrives, for the two Workshop ones.
+            var detected = typeof(NModdingScreen).GetMethod("OnNewModDetected", System.Reflection.BindingFlags.NonPublic | System.Reflection.BindingFlags.Instance);
+            var before = content.GetChildren().OfType<NModMenuRow>().ToList();
+            foreach (var mod in made[..2])
+                detected?.Invoke(screen, [mod]);
+            await Wait(menu, 0.4);
+            listed.AddRange(content.GetChildren().OfType<NModMenuRow>().Except(before));
+            NModMenuRow? Listed(string id) => content.GetChildren().OfType<NModMenuRow>().FirstOrDefault(r => r.Mod?.manifest?.id == id);
+            var real = new[] { "SmmTitleCloud", "SmmTitleDark", "SmmTestFixes", "SmmTestRetired" }.Select(Listed).ToList();
+            Check("row titles on the page's own list: the Workshop rows soft blue (dim where the game greyed it) beside the local rows' white and grey",
+                listed.Count == 2 && real.All(r => r != null) && real.OfType<NModMenuRow>().Select(Title).SequenceEqual(meant), Say(real));
+            // Test Dark Mode's box as a mod off at launch has it (made up mid-session, it's on): the shot shows that row.
+            if (Listed("SmmTestFixes") is { } fixes)
+                CategoryList.ScrollTo(content, fixes);
+            if (Listed("SmmTitleDark")?.GetNode<NTickbox>("Tickbox") is { } darkBox)
+                darkBox.IsTicked = false;
+            await Wait(menu, 0.6);
+            await Capture(screen, outDir, "10e-workshop-titles");
+            if (Listed("SmmTitleDark")?.GetNode<NTickbox>("Tickbox") is { } darkBack)
+                darkBack.IsTicked = true;
+            if (content.GetChildren().OfType<NModMenuRow>().FirstOrDefault(r => r.Mod?.manifest?.id == TwinId) is { } twin)
+            {
+                CategoryList.ScrollTo(content, twin);
+                await Wait(menu, 0.6);
+                await Capture(screen, outDir, "10f-duplicate-chip");
+            }
+
+            // "enabled -workshop": the rows "#enabled -#workshop" shows, the enabled local mods.
+            List<NModMenuRow> Shown() => [.. content.GetChildren().OfType<NModMenuRow>().Where(r => r.Visible)];
+            Type("enabled -workshop");
+            await Wait(menu, 0.3);
+            var bare = Shown();
+            await Capture(screen, outDir, "10g-search-without-hash");
+            Type("#enabled -#workshop");
+            await Wait(menu, 0.3);
+            var hashed = Shown();
+            Check("searching \"enabled -workshop\" on the list shows what \"#enabled -#workshop\" does: the enabled local mods, no Workshop one",
+                bare.Count > 0 && bare.SequenceEqual(hashed) && bare.All(r => r.Mod is { } m && Copies.Ticked(m) && m.modSource != ModSource.SteamWorkshop)
+                && !bare.Any(listed.Contains) && Listed("SmmTestFixes") is { } shownFixes && bare.Contains(shownFixes),
+                $"{string.Join(", ", bare.Select(r => r.Mod?.manifest?.id))} vs {string.Join(", ", hashed.Select(r => r.Mod?.manifest?.id))}");
+        }
+        finally
+        {
+            Type("");
+            foreach (var row in listed)
+            {
+                content.RemoveChild(row);
+                row.QueueFree();
+            }
+            if (listed.Count > 0)
+                CategoryList.Redraw(content);
+            screen.RemoveChild(box);
+            box.QueueFree();
+        }
+    }
+
     // A mod's description is searched too (Jordan: "contrast" didn't find Art Roller, whose description says it): its
     // words, the whole query without spaces, and quoted text; not as a tag. A mod with no description still searches.
     static void TestDescriptionSearch()
@@ -1009,7 +1134,8 @@ static partial class SelfTest
     // the ticked rows and #disabled the others, any case; #installed every row, #missing and #uninstalled none; each the
     // rows it means (HiddenTagsAsMeant); a tag of the player's named like each finds its mod too. Then what each means, on
     // made-up mods in a made-up saved list: A needs C (off) and D (after A), B needs a mod that isn't installed and the
-    // game failed it, D has a game error, E is off but loaded, with a tag of its own named "Enabled".
+    // game failed it, D has a game error, E is off but loaded, with a tag of its own named "Enabled"; and each name
+    // without its "#".
     // Every hidden tag, in HiddenTags' order (the info panel's Other keywords lists them in it).
     static readonly string[] HiddenTagNames = ["#enabled", "#disabled", "#workshop", "#local", "#installed", "#uninstalled", "#missing", "#loaded", "#notloaded",
         "#pending", "#new", "#changed", "#moved", "#edited", "#renamed", "#note", "#uncategorized", "#unmet", "#needed", "#order", "#duplicate", "#clash", "#aside",
@@ -1091,18 +1217,42 @@ static partial class SelfTest
         {
             (string Query, string Finds)[] cases =
             [
-                ("#enabled", "yynyy"), ("#disabled", "nnyny"), ("enabled", "nnnny"), ("#workshop", "nynnn"), ("#local", "ynyyy"), ("#installed", "yyyyy"),
+                ("#enabled", "yynyy"), ("#disabled", "nnyny"), ("#workshop", "nynnn"), ("#local", "ynyyy"), ("#installed", "yyyyy"),
                 ("#missing", "nnnnn"), ("#loaded", "ynnyy"), ("#notloaded", "nyynn"), ("#pending", "nnnny"), ("#unmet", "yynnn"), ("#needed", "nnynn"),
                 ("#order", "ynnnn"), ("#failed", "nynnn"), ("#gameerror", "nnnyn"), ("#error", "yyynn"), ("#warning", "nnnyn"), ("#problem", "yyyyn"),
                 ("#renamed", "ynnnn"), ("#note", "nynnn"), ("#notes", "nynnn"), ("#uncategorized", "yynyy"), ("#edited", "yyyyy"), ("#duplicate OR #sameid OR #clash OR #aside OR #managers", "nnnnn"),
                 ("#enabled -#local", "nynnn"), ("#problem #local", "ynyyn"), ("(#unmet OR #needed) -#failed", "ynynn"),
             ];
-            List<string> wrong;
+            // Each name alone (Jordan, 23 Oct: "allow keywords to be searched without leading hashtag"), with AND, OR, NOT
+            // and "-" too; only the whole name, as a whole tag: "load" isn't #loaded, nor "enable" #enabled (E's own tag
+            // has the word).
+            (string Query, string Finds)[] bare =
+            [
+                ("enabled", "yynyy"), ("Disabled", "nnyny"), ("workshop", "nynnn"), ("unmet", "yynnn"), ("enabled -local", "nynnn"), ("problem local", "ynyyn"),
+                ("(unmet OR needed) -failed", "ynynn"), ("unmet | gameerror", "yynyn"), ("NOT workshop", "ynyyy"), ("loaded AND #local", "ynnyy"),
+                ("load", "nnnnn"), ("notload", "nnnnn"), ("enable", "nnnny"), ("work", "nnnnn"),
+            ];
+            List<string> Wrong((string Query, string Finds)[] table) => [.. table.Select(c => (c.Query, c.Finds, Found: string.Concat(made.Select(m => Search.Matches(m, c.Query) ? "y" : "n"))))
+                .Where(c => c.Found != c.Finds).Select(c => $"{c.Query}: {c.Found}, not {c.Finds}")];
+            List<string> wrong, wrongBare, unlike;
             using (Lookups.Begin(made, [], saved, Ticks.All))
-                wrong = [.. cases.Select(c => (c.Query, c.Finds, Found: string.Concat(made.Select(m => Search.Matches(m, c.Query) ? "y" : "n"))))
-                    .Where(c => c.Found != c.Finds).Select(c => $"{c.Query}: {c.Found}, not {c.Finds}")];
+                (wrong, wrongBare, unlike) = (Wrong(cases), Wrong(bare), [.. HiddenTagNames.Where(t => made.Any(m => Search.Matches(m, t[1..]) != Search.Matches(m, t)))]);
             Check("hidden tags mean what they say: state, problems (#error, #warning, #problem gather them), our details (#notes still finds what #note does); "
-                + "only after #; a tag of the player's named like one finds its mods too", wrong.Count == 0, string.Join(" | ", wrong));
+                + "a tag of the player's named like one finds its mods too", wrong.Count == 0, string.Join(" | ", wrong));
+            Check($"hidden tags without \"#\": each name alone finds what #name finds ({HiddenTagNames.Length} names), with AND, OR, NOT and \"-\" too; "
+                + "a word that only starts a name finds none of its mods", unlike.Count == 0 && wrongBare.Count == 0,
+                $"unlike #name: {string.Join(", ", unlike)}; {string.Join(" | ", wrongBare)}");
+            // A word that is a name and in a mod's text finds both (as a word that is a tag and in a description does), and
+            // the bare word brings the main list's line for a profile's mods that aren't installed, as #missing does.
+            var says = new Mod
+            {
+                path = "", modSource = ModSource.ModsDirectory, state = ModLoadState.Loaded,
+                manifest = new ModManifest { id = "SmmHiddenSays", name = "Hidden Test Says", description = "Finds Workshop items for you." },
+            };
+            var union = $"{Search.Matches(says, "workshop")}/{Search.Matches(says, "#workshop")}/{Search.Matches(made[1], "workshop")}/{Search.Matches(made[1], "\"Workshop\"")}";
+            var wants = $"{Search.Wants("missing", "missing", "uninstalled")}/{Search.Wants("Missing mods", "missing")}/{Search.Wants("-missing", "missing")}/{Search.Wants("missingno", "missing")}";
+            Check("a word that is a hidden tag's name finds the mods that say it and the ones the tag finds; the word \"missing\" asks for the missing mods' line, "
+                + "not left out or as part of a word", union == "True/False/True/False" && wants == "True/True/False/False", $"{union}; wants {wants}");
         }
         finally
         {
@@ -1381,14 +1531,15 @@ static partial class SelfTest
             string Said(Mod of, string search) => Search.FoundIn(of, search) is { } fields ? $"[{string.Join(", ", fields)}]" : "not found";
             string[] searches = ["careful", "@\"someone careful\"", "contrast", "#cards", "#visuals", "#workshop", "kit", "\"Art Kit\"", "card art",
                 "found in test", "SmmFoundInTest", "careful #cards", "careful -zzz", "-zzz", "NOT #local", "zzz OR careful", "(zzz | #utility) slider",
-                "careful -contrast", "zzz"];
+                "careful -contrast", "zzz", "workshop", "workshop kit", "loaded -local"];
             var seen = string.Join(" | ", searches.Select(s => $"{s}: {Said(mod, s)}"));
             string[] meant = ["careful: [Author]", "@\"someone careful\": [Author]", "contrast: [Description, Note]", "#cards: [WorkshopTags]",
                 "#visuals: [Tags]", "#workshop: [Keywords]", "kit: [Alias]", "\"Art Kit\": [Alias]", "card art: [Description, WorkshopTags, Alias]",
                 "found in test: [Name, Id]", "SmmFoundInTest: [Id]", "careful #cards: [Author, WorkshopTags]", "careful -zzz: [Author]", "-zzz: []",
-                "NOT #local: []", "zzz OR careful: [Author]", "(zzz | #utility) slider: [WorkshopTags, Note]", "careful -contrast: not found", "zzz: not found"];
-            Check("Found in: each term's own fields, in the panel's order (a hidden tag as other keywords); a -term or NOT names none; nothing when "
-                + "the search leaves the mod out", seen == string.Join(" | ", meant), seen);
+                "NOT #local: []", "zzz OR careful: [Author]", "(zzz | #utility) slider: [WorkshopTags, Note]", "careful -contrast: not found", "zzz: not found",
+                "workshop: [Keywords]", "workshop kit: [Keywords, Alias]", "loaded -local: [Keywords]"];
+            Check("Found in: each term's own fields, in the panel's order (a hidden tag as other keywords, with its \"#\" or without); a -term or NOT names "
+                + "none; nothing when the search leaves the mod out", seen == string.Join(" | ", meant), seen);
             // What it changes in the game: our own mod's code (the debug info label manager), which nothing else of it says.
             // With a hidden tag too (ours is loaded): modified content first, as the panel now shows it over Other keywords.
             if (Dependencies.Find(ModEntry.ModId) is { } ours && GameChanges.Words(ours).Contains("debug", StringComparison.OrdinalIgnoreCase))
@@ -1406,7 +1557,8 @@ static partial class SelfTest
         // The same mods as Matches finds, every row: Found in only shows where the row is a match.
         var rows = content.GetChildren().OfType<NModMenuRow>().Select(r => r.Mod).OfType<Mod>().ToList();
         string[] queries = ["lib", "test fixes", "the manager", "co-op", "#Library", "#local", "@symphony", "#Gameplay lib", "test framework", "zzz",
-            "-#local", "NOT test", "#enabled OR #problem", "(lib | fixes) -#gameplay", "\"Test\"", "framework testlib", "#workshop", "manager -zzz"];
+            "-#local", "NOT test", "#enabled OR #problem", "(lib | fixes) -#gameplay", "\"Test\"", "framework testlib", "#workshop", "manager -zzz",
+            "enabled", "duplicate -disabled", "unmet OR needed", "test notloaded"];
         var differ = rows.SelectMany(m => queries.Where(q => (Search.FoundIn(m, q) != null) != Search.Matches(m, q)).Select(q => $"{m.manifest?.id} \"{q}\"")).ToList();
         Check($"Found in finds the mods Matches finds ({rows.Count} rows, {queries.Length} searches)", rows.Count > 0 && differ.Count == 0, string.Join(", ", differ.Take(8)));
 
@@ -2235,6 +2387,13 @@ static partial class SelfTest
             && Rows().All(r => r.Modulate == Colors.White));
         Check("the selection survives the switch, its category opened", selected?.Mod?.manifest?.id == "SmmTestFixes"
             && selected.Visible && !Store.Data.UncategorizedCollapsed);
+        // Jordan (23 Oct): the category bar's edges in line with a highlighted row's, left and right.
+        var bar = content.GetChildren().OfType<Control>().FirstOrDefault(c => c.IsInGroup("SpireModManagerCategoryHeader") && c.Visible)?.GetNodeOrNull<Control>("Background");
+        var lit = selected?.GetNodeOrNull<Control>("SelectionHighlight");
+        var (barRect, litRect) = (bar?.GetGlobalRect() ?? default, lit?.GetGlobalRect() ?? default);
+        Check("category bars line up with a highlighted row, left and right edges", bar != null && lit is { Modulate.A: > 0.5f }
+            && Math.Abs(barRect.Position.X - litRect.Position.X) < 0.5f && Math.Abs(barRect.End.X - litRect.End.X) < 0.5f,
+            $"bar {barRect.Position.X:0.#}-{barRect.End.X:0.#}, highlight {litRect.Position.X:0.#}-{litRect.End.X:0.#}");
     }
 
     // Fixture mods: SmmTestContent and SmmTestUi need SmmTestLib; SmmTestAddon needs SmmTestMissing, which never is there.
