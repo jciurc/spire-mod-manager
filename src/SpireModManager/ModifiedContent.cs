@@ -18,7 +18,9 @@ static class ModifiedContent
     const string Bullet = "[color=#fff6e280]•[/color]";
     const int TipAreas = 320; // the card's list of areas: about this many characters at most, then "and N more"
     const float DialogWidth = 820; // the areas' columns are fitted to it
-    const float ListMost = 560; // the dialog's list: this tall at most, then it scrolls
+    // The dialog's list: this tall at most, and short enough that the dialog keeps ScreenEdge from the screen's top and
+    // bottom, though never shorter than ListLeast; then it scrolls.
+    const float ListMost = 560, ListLeast = 120, ScreenEdge = 40;
     const int BodySize = 17;
     // The dialog's areas: this many columns side by side across it, each at most AreaRows tall; more columns follow to
     // the right, scrolled sideways.
@@ -153,12 +155,20 @@ static class ModifiedContent
         // Nothing found in a loaded mod: the areas say so, and there's no list under them.
         var scroll = new ScrollContainer { Name = "Scroll", HorizontalScrollMode = ScrollContainer.ScrollMode.Disabled, Visible = details.Length > 0 };
         scroll.AddChild(inside);
-        // As tall as the list once it's laid out, up to ListMost; then it scrolls.
-        list.MinimumSizeChanged += () =>
+        // As tall as the list once it's laid out, up to ListMost and the room the rest of the dialog leaves on screen;
+        // then it scrolls. The areas over it wrap (a character's over a few lines), so without that a mod with several
+        // characters' would push the dialog past the screen, its title and Close cut off. Again whenever the list or the
+        // rest changes height.
+        void Fit()
         {
-            if (GodotObject.IsInstanceValid(scroll))
-                scroll.CustomMinimumSize = new Vector2(0, Math.Min(ListMost, list.GetCombinedMinimumSize().Y));
-        };
+            if (!GodotObject.IsInstanceValid(scroll) || column.GetParent() is not Control panel)
+                return;
+            var rest = panel.GetCombinedMinimumSize().Y - scroll.GetCombinedMinimumSize().Y;
+            var room = Math.Max(ListLeast, Math.Min(ListMost, panel.GetViewportRect().Size.Y - 2 * ScreenEdge - rest));
+            scroll.CustomMinimumSize = new Vector2(0, Math.Min(room, list.GetCombinedMinimumSize().Y));
+        }
+        list.MinimumSizeChanged += Fit;
+        column.MinimumSizeChanged += Fit;
         column.AddChild(scroll);
         var buttons = new HBoxContainer { Name = "Buttons", Alignment = BoxContainer.AlignmentMode.End };
         var close = Menus.SmallButton(Menus.Text("SPIRE_MOD_MANAGER.CLOSE"), () => Close(), name: "CloseModifiedButton");
