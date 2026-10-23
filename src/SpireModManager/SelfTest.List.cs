@@ -820,6 +820,131 @@ static partial class SelfTest
         }
     }
 
+    // Row titles by where the mod is from (Jordan, 23 Oct: "workshop ones will stand out a little"), on rows the game makes
+    // for made-up mods: a Workshop and a local one it loaded, and one of each it left off. A Workshop title soft blue where
+    // a local one is white, and that blue as dim as the game's grey where it greyed one, on the main list and in Load
+    // Order; in Vanilla View the game's own colours. Then the two Workshop ones on the page's own list beside the
+    // fixture's local rows (screenshot 10e; 10f the plain Duplicate chips beside the others), and a search for state
+    // without "#" there (10g).
+    static async Task TestWorkshopTitles(Node menu, NModdingScreen screen, Control content, string outDir)
+    {
+        static Mod Made(string id, string name, ModSource source, ModLoadState state) => new()
+        {
+            path = "", modSource = source, state = state,
+            manifest = new ModManifest { id = id, name = name, author = "Someone Careful" },
+        };
+        Mod[] made = [Made("SmmTitleCloud", "Test Cloud Saves", ModSource.SteamWorkshop, ModLoadState.Loaded),
+            Made("SmmTitleDark", "Test Dark Mode", ModSource.SteamWorkshop, ModLoadState.Disabled),
+            Made("SmmTitleLocal", "Title Test Local", ModSource.ModsDirectory, ModLoadState.Loaded),
+            Made("SmmTitleLocalOff", "Title Test Local Off", ModSource.ModsDirectory, ModLoadState.Disabled)];
+        Compat.SetWorkshopId(made[0], 4800);
+        Compat.SetWorkshopId(made[1], 4801);
+        var gray = MegaCrit.Sts2.Core.Helpers.StsColors.gray;
+        Color[] meant = [RowTitles.WorkshopTitle, RowTitles.WorkshopTitle * gray, Colors.White, gray];
+        static Color Title(NModMenuRow row) => row.GetNode<Control>("Title").Modulate;
+        static string Say(IEnumerable<NModMenuRow?> rows) => string.Join(", ", rows.Select(r => r == null ? "no row" : $"{r.Mod?.manifest?.name} #{Title(r).ToHtml()}"));
+        var box = new VBoxContainer { Name = "SpireModManagerTitleRows", MouseFilter = Control.MouseFilterEnum.Ignore };
+        screen.AddChild(box);
+        (box.Position, box.Size) = (new Vector2(-3000, 0), new Vector2(1000, 0));
+        var listed = new List<NModMenuRow>(); // the Workshop ones' rows on the page's own list
+        var searchBox = screen.GetNode<LineEdit>("ModsBorder/SpireModManagerSearch");
+        void Type(string text)
+        {
+            searchBox.Text = text;
+            searchBox.EmitSignal(LineEdit.SignalName.TextChanged, text);
+        }
+        try
+        {
+            // The game's own rows, from its factory (found by name: a game update may change it).
+            var create = typeof(NModMenuRow).GetMethod("Create", [typeof(NModdingScreen), typeof(Mod)]);
+            var rows = made.Select(m => create?.Invoke(null, [screen, m]) as NModMenuRow).OfType<NModMenuRow>().ToList();
+            foreach (var row in rows)
+                box.AddChild(row);
+            if (rows.Count != made.Length)
+            {
+                Results.Add($"SKIP Workshop titles: the game made {rows.Count} of {made.Length} rows");
+                return;
+            }
+            Results.Add($"INFO row titles: the text's own colour #{rows[0].GetNode<RichTextLabel>("Title").GetThemeColor("default_color").ToHtml()}, "
+                + $"so a Workshop title shows #{RowTitles.WorkshopTitle.ToHtml(false)}, dim #{(RowTitles.WorkshopTitle * gray).ToHtml(false)}");
+            bool AsMeant() => rows.Select(Title).SequenceEqual(meant);
+            RowTitles.Apply(rows, vanilla: false);
+            var (mainList, mainSaid) = (AsMeant(), Say(rows));
+            Click(screen.GetNode<NButton>("SpireModManagerLoadOrderToggle"));
+            await Wait(menu, 0.5);
+            var inLoadOrder = Layout.Current == Layout.View.LoadOrder;
+            RowTitles.Apply(rows, vanilla: false); // as Load Order's redraw styles its rows
+            var (loadOrder, loadSaid) = (inLoadOrder && AsMeant(), Say(rows));
+            Click(screen.GetNode<NButton>("SpireModManagerLoadOrderToggle"));
+            await Wait(menu, 0.5);
+            var vanillaSaid = "Better Mod Menu's page";
+            var vanilla = Bmm.Present || await WithVanillaView(screen, menu, () =>
+            {
+                RowTitles.Apply(rows, vanilla: true);
+                vanillaSaid = Say(rows);
+                return rows.Select(Title).SequenceEqual([Colors.White, gray, Colors.White, gray]);
+            });
+            RowTitles.Apply(rows, vanilla: false);
+            Check("row titles: a Workshop mod's soft blue where a local one's is white, as dim as the game's grey where it greyed it, on the main list and "
+                + "in Load Order; in Vanilla View the game's own colours", mainList && loadOrder && vanilla,
+                $"main list {mainSaid}; Load Order ({inLoadOrder}) {loadSaid}; Vanilla View {vanillaSaid}; meant {string.Join(", ", meant.Select(c => $"#{c.ToHtml()}"))}");
+
+            // On the page's own list: the game's handler for a mod that arrives, for the two Workshop ones.
+            var detected = typeof(NModdingScreen).GetMethod("OnNewModDetected", System.Reflection.BindingFlags.NonPublic | System.Reflection.BindingFlags.Instance);
+            var before = content.GetChildren().OfType<NModMenuRow>().ToList();
+            foreach (var mod in made[..2])
+                detected?.Invoke(screen, [mod]);
+            await Wait(menu, 0.4);
+            listed.AddRange(content.GetChildren().OfType<NModMenuRow>().Except(before));
+            NModMenuRow? Listed(string id) => content.GetChildren().OfType<NModMenuRow>().FirstOrDefault(r => r.Mod?.manifest?.id == id);
+            var real = new[] { "SmmTitleCloud", "SmmTitleDark", "SmmTestFixes", "SmmTestRetired" }.Select(Listed).ToList();
+            Check("row titles on the page's own list: the Workshop rows soft blue (dim where the game greyed it) beside the local rows' white and grey",
+                listed.Count == 2 && real.All(r => r != null) && real.OfType<NModMenuRow>().Select(Title).SequenceEqual(meant), Say(real));
+            // Test Dark Mode's box as a mod off at launch has it (made up mid-session, it's on): the shot shows that row.
+            if (Listed("SmmTestFixes") is { } fixes)
+                CategoryList.ScrollTo(content, fixes);
+            if (Listed("SmmTitleDark")?.GetNode<NTickbox>("Tickbox") is { } darkBox)
+                darkBox.IsTicked = false;
+            await Wait(menu, 0.6);
+            await Capture(screen, outDir, "10e-workshop-titles");
+            if (Listed("SmmTitleDark")?.GetNode<NTickbox>("Tickbox") is { } darkBack)
+                darkBack.IsTicked = true;
+            if (content.GetChildren().OfType<NModMenuRow>().FirstOrDefault(r => r.Mod?.manifest?.id == TwinId) is { } twin)
+            {
+                CategoryList.ScrollTo(content, twin);
+                await Wait(menu, 0.6);
+                await Capture(screen, outDir, "10f-duplicate-chip");
+            }
+
+            // "enabled -workshop": the rows "#enabled -#workshop" shows, the enabled local mods.
+            List<NModMenuRow> Shown() => [.. content.GetChildren().OfType<NModMenuRow>().Where(r => r.Visible)];
+            Type("enabled -workshop");
+            await Wait(menu, 0.3);
+            var bare = Shown();
+            await Capture(screen, outDir, "10g-search-without-hash");
+            Type("#enabled -#workshop");
+            await Wait(menu, 0.3);
+            var hashed = Shown();
+            Check("searching \"enabled -workshop\" on the list shows what \"#enabled -#workshop\" does: the enabled local mods, no Workshop one",
+                bare.Count > 0 && bare.SequenceEqual(hashed) && bare.All(r => r.Mod is { } m && Copies.Ticked(m) && m.modSource != ModSource.SteamWorkshop)
+                && !bare.Any(listed.Contains) && Listed("SmmTestFixes") is { } shownFixes && bare.Contains(shownFixes),
+                $"{string.Join(", ", bare.Select(r => r.Mod?.manifest?.id))} vs {string.Join(", ", hashed.Select(r => r.Mod?.manifest?.id))}");
+        }
+        finally
+        {
+            Type("");
+            foreach (var row in listed)
+            {
+                content.RemoveChild(row);
+                row.QueueFree();
+            }
+            if (listed.Count > 0)
+                CategoryList.Redraw(content);
+            screen.RemoveChild(box);
+            box.QueueFree();
+        }
+    }
+
     // A mod's description is searched too (Jordan: "contrast" didn't find Art Roller, whose description says it): its
     // words, the whole query without spaces, and quoted text; not as a tag. A mod with no description still searches.
     static void TestDescriptionSearch()
