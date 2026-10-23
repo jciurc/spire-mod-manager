@@ -951,20 +951,20 @@ static partial class SelfTest
     const string StatusWontLoad = "Duplicate - Won't load";
     const string CopyLoses = "{other} loads instead. {why} Disable one to choose.", CopyLosesPlain = "{other} loads instead. Disable one to choose.";
     const string WhyLocal = "The game prioritizes a local copy.", WhyHigher = "The game prioritizes a higher version.";
-    const string WhyFirst = "With no higher version, the copy installed first is prioritized.";
-    const string WhyUnreadable = "This copy's version can't be read, so a copy with a readable version is prioritized.";
-    const string CopyBlocked = "{other} loads instead: this copy needs {dep}, which loads after {other}";
-    const string LoadsBlocked = "{other} can't load in this copy's place: it needs {dep}, which loads after this copy";
+    const string WhyFirst = "If no mod has a higher version, the copy installed first is prioritized.";
+    const string WhyUnreadable = "This copy's version can't be read. The first readable copy will be prioritized.";
+    const string CopyBlocked = "This copy would load before a required dependency. {other} is currently compatible and will be loaded instead.";
+    const string LoadsBlocked = "The copy {other} would load before a required dependency, so this copy will be loaded instead";
     const string LoadsUnticked = "This copy loads though it's disabled: it shares the game's switch with {other}, which is enabled, and the game prioritizes "
         + "it over {local} as the higher version";
-    const string LoadsAlso = "{other} is also enabled - this copy is the one that loads";
+    const string LoadsAlso = "{other} is also enabled - only this copy will be loaded";
     const string LoadsAfter = "Loads on relaunch, in place of {other}";
     const string FailedOther = "{other} is also installed. To load that copy instead, enable it and disable this one.";
     const string NotApplied = "Spire Mod Manager couldn't choose which copy was loaded. If the game is on a different version, Spire Mod Manager may need to be updated.";
     const string OtherEnabled = "{other} is the enabled copy";
     const string RelaunchSelfOff = "Spire Mod Manager (this mod) will be disabled on relaunch. To use it again, enable it on the vanilla modding page, "
         + "and it will load after the next restart.";
-    const string NewCopyOff = "A new copy of {mods} was installed and is disabled";
+    const string NewCopyOff = "A copy of {mods} was recently installed, and is disabled";
 
     // The banners' Go to and Show the same way: drafts until the copy pass, word for word as settings_ui.json has them.
     const string GoToProblem = "Go to", GoToProblemTip = "Open the next affected mod";

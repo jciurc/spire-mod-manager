@@ -75,6 +75,23 @@ static class Modal
         return title;
     }
 
+    // The same title with its one value picked out in a colour (the modified content dialog's mod name, in gold: Jordan,
+    // 23 Oct). A RichTextLabel, as a Label has one colour; the rest of the words Cream, as Title's.
+    public static RichTextLabel Title(string key, (string Name, string Value) value, Color color)
+    {
+        static string Escape(string text) => text.Replace("[", "[lb]");
+        var title = new RichTextLabel
+        {
+            Name = "Title", BbcodeEnabled = true, FitContent = true, ScrollActive = false, AutowrapMode = TextServer.AutowrapMode.WordSmart,
+            MouseFilter = Control.MouseFilterEnum.Ignore,
+            Text = Escape(Menus.Format(key, (value.Name, "\u0001"))).Replace("\u0001", $"[color=#{color.ToHtml(false)}]{Escape(value.Value)}[/color]"),
+        };
+        title.AddThemeFontOverride("normal_font", ModEntry.Font("res://themes/kreon_bold_shared.tres"));
+        title.AddThemeFontSizeOverride("normal_font_size", 26);
+        title.AddThemeColorOverride("default_color", Cream);
+        return title;
+    }
+
     public static bool IsOpen(string name) => Root()?.GetNodeOrNull(name) != null;
 
     // True when there was one to close.
