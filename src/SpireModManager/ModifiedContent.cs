@@ -199,8 +199,17 @@ static class ModifiedContent
         // The wheel over the columns goes on to their scroll, which moves them sideways when there are more than three.
         foreach (var part in columns.GetChildren().OfType<Control>().Prepend(columns))
             part.MouseFilter = Control.MouseFilterEnum.Pass;
-        var scroll = new ScrollContainer { Name = AreasScrollName, VerticalScrollMode = ScrollContainer.ScrollMode.Disabled };
-        scroll.AddChild(columns);
+        var sideways = columns.GetChildCount() > AreaColumns;
+        var scroll = new ScrollContainer
+        {
+            Name = AreasScrollName, VerticalScrollMode = ScrollContainer.ScrollMode.Disabled,
+            HorizontalScrollMode = sideways ? ScrollContainer.ScrollMode.Auto : ScrollContainer.ScrollMode.Disabled,
+        };
+        // The game's scrollbar is drawn over what it scrolls, so the last line keeps clear of it, as the list's words do.
+        var inside = new MarginContainer { Name = "Inside", MouseFilter = Control.MouseFilterEnum.Pass };
+        inside.AddThemeConstantOverride("margin_bottom", sideways ? 16 : 0);
+        inside.AddChild(columns);
+        scroll.AddChild(inside);
         box.AddChild(scroll);
         return box;
     }

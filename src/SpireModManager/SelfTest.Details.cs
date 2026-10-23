@@ -1071,7 +1071,9 @@ static partial class SelfTest
             var manyShown = AreasShown(Dialog());
             var manyOff = ColumnsMisplaced(manyShown);
             var sideways = manyShown.Scroll?.GetHScrollBar();
-            var barShown = sideways?.Visible ?? false;
+            // Shown, and under the columns' last lines, not over them (the game's scrollbars are drawn over what they scroll).
+            var barShown = sideways is { Visible: true } && manyShown.Rects.Count > 0 && manyShown.Rects.Max(r => r.End.Y) <= sideways.GetGlobalRect().Position.Y;
+            var barAt = $"bar {sideways?.Visible} at {sideways?.GetGlobalRect()}, columns end at {(manyShown.Rects.Count > 0 ? manyShown.Rects.Max(r => r.End.Y) : 0)}";
             await Capture(Dialog() ?? screen, outDir, "17f3-modified-content-many-areas");
             if (manyShown.Scroll is { } manyScroll && sideways != null)
             {
@@ -1084,11 +1086,11 @@ static partial class SelfTest
                 && scrolled.Rects[0].End.X <= view.Position.X + 0.5f;
             await Capture(Dialog() ?? screen, outDir, "17f4-modified-content-many-areas-scrolled");
             ModifiedContent.Close();
-            Check("modified content's dialog, 19 areas: five to a column, three columns in view and a fourth past the right edge, a sideways scroll that "
-                + "brings it into view (see 17f3, 17f4)",
+            Check("modified content's dialog, 19 areas: five to a column, three columns in view and a fourth past the right edge, a sideways scroll under "
+                + "them that brings it into view (see 17f3, 17f4)",
                 manyChanges.Areas.SequenceEqual(many) && manyShown.Columns.Select(c => c.Count).SequenceEqual([5, 5, 5, 4])
                 && manyShown.Columns.SelectMany(c => c).SequenceEqual(many) && manyOff == null && barShown && lastInView,
-                $"{string.Join(" | ", manyShown.Columns.Select(c => string.Join(", ", c)))}; {manyOff ?? "placed"}, bar {barShown}; scrolled to "
+                $"{string.Join(" | ", manyShown.Columns.Select(c => string.Join(", ", c)))}; {manyOff ?? "placed"}, {barAt}; scrolled to "
                 + $"{scrolled.Scroll?.ScrollHorizontal}: {string.Join(", ", scrolled.Rects)} in {view}");
 
             // Files only: the same mod without our code lent to it.
@@ -1246,7 +1248,7 @@ static partial class SelfTest
     {
         var box = dialog?.FindChild(ModifiedContent.AreasName, true, false);
         var scroll = box?.FindChild(ModifiedContent.AreasScrollName, false, false) as ScrollContainer;
-        var row = scroll?.GetNodeOrNull<Container>("Columns");
+        var row = scroll?.FindChild("Columns", true, false) as Container;
         var columns = row?.GetChildren().OfType<VBoxContainer>().ToList() ?? [];
         return new((box?.FindChild("AreasHeading", false, false) as RichTextLabel)?.GetParsedText() ?? "",
             [.. columns.Select(c => c.GetChildren().OfType<RichTextLabel>().Select(t => t.GetParsedText()).ToList())],
