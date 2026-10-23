@@ -612,8 +612,8 @@ static partial class SelfTest
 
     // A Workshop mod's head (made-up details; the sandbox has no Steam): Author, Updated (how long ago, and a link
     // to its change notes on the Workshop), Compatibility (its Workshop branches not listed). "Ago" in hours under a day,
-    // singular for one. Dates and numbers in the game's language. Its Other keywords after its Workshop tags, then
-    // Modified content (screenshot 8b).
+    // singular for one. Dates and numbers in the game's language. Its Modified content after its Workshop tags, then
+    // Other keywords (screenshot 8b).
     static async Task TestWorkshopHead(Node menu, NModdingScreen screen, string outDir)
     {
         var mod = new Mod
@@ -762,10 +762,10 @@ static partial class SelfTest
         var facts = english.Split('\n');
         var tagsAt = Array.IndexOf(facts, $"{Menus.Text("SPIRE_MOD_MANAGER.WORKSHOP_TAGS")}: QoL, Utility");
         var otherTerm = $"{Menus.Text("SPIRE_MOD_MANAGER.OTHER_KEYWORDS")}: ";
-        Check("a Workshop mod: Other keywords right after its Workshop tags, workshop among them (no \"#\"), then Modified content (see 8b-other-keywords)",
-            tagsAt >= 0 && tagsAt + 2 < facts.Length && facts[tagsAt + 1].StartsWith(otherTerm) && !facts[tagsAt + 1].Contains('#')
-            && facts[tagsAt + 1][otherTerm.Length..].Split(", ").Contains("workshop")
-            && facts[tagsAt + 2].StartsWith($"{Menus.Text("SPIRE_MOD_MANAGER.MODIFIED_CONTENT")}: "), english);
+        Check("a Workshop mod: Modified content right after its Workshop tags, then Other keywords, workshop among them (no \"#\"), no gap between (see 8b-other-keywords)",
+            tagsAt >= 0 && tagsAt + 2 < facts.Length && facts[tagsAt + 1].StartsWith($"{Menus.Text("SPIRE_MOD_MANAGER.MODIFIED_CONTENT")}: ")
+            && facts[tagsAt + 2].StartsWith(otherTerm) && !facts[tagsAt + 2].Contains('#')
+            && facts[tagsAt + 2][otherTerm.Length..].Split(", ").Contains("workshop"), english);
         await Capture(screen, outDir, "8b-other-keywords");
         var language = LocManager.Instance.Language;
         try
@@ -835,6 +835,14 @@ static partial class SelfTest
             ModifiedContent.AreasCut(["merchant room interface", "combat"], s => s.Length <= letterCut.Length));
         Check("an area cut short: a character's kinds that fit, then \", ..\"; another area at a letter, then \"..\"",
             byKinds == kindsCut && byLetters == letterCut, $"{byKinds} | {byLetters}");
+        // The dialog's areas in columns (Jordan, 23 Oct: "list the areas vertically (maybe 3 columns ...)"): filled top to
+        // bottom, as few to a column as three columns need, at most five; past three columns of five, more columns.
+        string Shape(int count) => string.Join(" + ", ModifiedContent.Columns([.. Enumerable.Range(1, count).Select(n => $"{n}")]).Select(c => string.Join(",", c)));
+        var shapes = new[] { 1, 2, 4, 7, 11, 15, 16, 19 }.Select(n => $"{n}: {Shape(n)}").ToList();
+        Check("the dialog's areas in columns: filled top to bottom, as few to a column as three columns need, at most five, then a fourth column and more",
+            shapes.SequenceEqual(["1: 1", "2: 1 + 2", "4: 1,2 + 3,4", "7: 1,2,3 + 4,5,6 + 7", "11: 1,2,3,4 + 5,6,7,8 + 9,10,11",
+                "15: 1,2,3,4,5 + 6,7,8,9,10 + 11,12,13,14,15", "16: 1,2,3,4,5 + 6,7,8,9,10 + 11,12,13,14,15 + 16",
+                "19: 1,2,3,4,5 + 6,7,8,9,10 + 11,12,13,14,15 + 16,17,18,19"]), string.Join(" | ", shapes));
 
         // A pack of a made-up mod: one of the game's files (the Regent's rock hand), one of its own, one of the engine's.
         var folder = Path.Combine(outDir, "game-changes-mod");
@@ -874,14 +882,17 @@ static partial class SelfTest
 
     // The info panel's Modified content (Jordan, 22 Oct), on a made-up mod with both kinds: a pack with EnderLilis's
     // files and, as its code, our own patches. GameChanges keeps what it found (each file with its area, each game method
-    // with how it's patched). The row: right under Other keywords, one line, the most areas that fit whole, then how many
-    // more, and no counts (Jordan, 23 Oct: "We don't need brackets count anymore"); search still finds the areas cut from
-    // it. Its card: Jordan's words with both counts in one sentence, the areas, the click hint. A click: the dialog (the
-    // mod's name, the note, the areas, the files and the code by area with their counts, how each place is patched),
-    // scrolled when long; Close and Esc close it. The same mod with files only, our own mod with code only, and each kind
-    // of card with one place or file, and not loaded. A fixture mod with nothing found: "No information found", subtle, a
-    // card saying what that means, and its dialog says so. Screenshots 17d (the row), 17e (its card), 17e2 (files only),
-    // 17e3 (code only), 17f (the dialog), 17g (nothing found).
+    // with how it's patched). The row: right after Size with Other keywords right under it (Jordan, 23 Oct: the two
+    // swapped places), one line, the most areas that fit whole, then how many more, and no counts (Jordan, 23 Oct: "We
+    // don't need brackets count anymore"); search still finds the areas cut from it. Its card: Jordan's words with both
+    // counts in one sentence, the areas, the click hint. A click: the dialog (the mod's name, the note, the areas in
+    // columns, then the list: the files by area, what the patch words mean, the code by area, with their counts and how
+    // each place is patched, in colour), scrolled when long; Close and Esc close it. A made-up mod with more areas than
+    // three columns hold: they scroll sideways. The same mod with files only, our own mod with code only, and each kind
+    // of card with one place or file, and not loaded. A fixture mod with nothing found: "No information found", subtle,
+    // a card saying what that means, and its dialog says so. Screenshots 17d (the row), 17e (its card), 17e2 (files
+    // only), 17e3 (code only), 17f (the dialog), 17f2 (scrolled to the legend and the code), 17f3 and 17f4 (many
+    // areas), 17g (nothing found).
     static async Task TestModifiedContent(Node menu, NModdingScreen screen, Control content, string outDir)
     {
         const string id = "SmmBothTest", name = "Both Kinds Test";
@@ -947,14 +958,19 @@ static partial class SelfTest
             var areas = changes.Areas;
             // The Regent's area, with its five kinds of files, is too long for the line on its own: as many of them as fit.
             var fit = ModifiedFit(description, shown, areas);
-            Check("modified content: right under Other keywords, one line: the most that fit (whole areas, or of the first's what), then how many more, "
-                + "and no counts (see 17d)", at > 0 && facts[at - 1].StartsWith(Menus.Text("SPIRE_MOD_MANAGER.OTHER_KEYWORDS") + ": ")
+            Check("modified content: right after Size (a local mod), Other keywords right under it, one line: the most that fit (whole areas, or of the "
+                + "first's what), then how many more, and no counts (see 17d)", at > 0 && at + 1 < facts.Length
+                && facts[at - 1].StartsWith(Menus.Text("SPIRE_MOD_MANAGER.SIZE") + ": ") && facts[at + 1].StartsWith(Menus.Text("SPIRE_MOD_MANAGER.OTHER_KEYWORDS") + ": ")
                 && (fit.Whole is > 0 and var whole && whole < areas.Count || fit.Items > 0) && fit.Most && fit.OneLine,
-                $"\"{shown}\" ({fit}, {areas.Count} areas); before: \"{(at > 0 ? facts[at - 1] : "")}\"");
+                $"\"{shown}\" ({fit}, {areas.Count} areas); before: \"{(at > 0 ? facts[at - 1] : "")}\"; after: \"{(at >= 0 && at + 1 < facts.Length ? facts[at + 1] : "")}\"");
             var bbcode = description.Text.Split('\n').FirstOrDefault(l => l.Contains($"[url={ModifiedContent.Meta}]")) ?? "";
-            Check("modified content: the whole row is the link for its card and click, the areas and nothing after them, and it's no longer in two rows",
-                shown.Length > term.Length && bbcode == $"[url={ModifiedContent.Meta}][gold]{term}[/gold]: {shown[(term.Length + 2)..]}[/url]"
-                && !parsed.Contains("Changes game code") && !parsed.Contains("Replaces game files"), bbcode);
+            // Jordan: "and 4 more.." subtle, the areas in the text's colour.
+            var more = areas.Count - (fit.Whole > 0 ? fit.Whole : 1);
+            var tail = Draft(Template(more == 1 ? "SPIRE_MOD_MANAGER.MODIFIED_MORE_ONE" : "SPIRE_MOD_MANAGER.MODIFIED_MORE"), ("areas", ""), ("count", $"{more}"));
+            Check("modified content: the whole row is the link for its card and click, the areas, then \"and N more..\" in the subtle colour, and it's no "
+                + "longer in two rows", shown.Length > term.Length + tail.Length && tail.EndsWith(Menus.CutMark) && shown.EndsWith(tail)
+                && bbcode == $"[url={ModifiedContent.Meta}][gold]{term}[/gold]: {shown[(term.Length + 2)..^tail.Length]}[color=#fff6e299]{tail}[/color][/url]"
+                && !parsed.Contains("Changes game code") && !parsed.Contains("Replaces game files"), $"{bbcode} (tail \"{tail}\")");
             var cut = areas[^1];
             Check("modified content: search still finds the mod by an area the row leaves out", !shown.Contains(cut) && SpireModManager.Search.Matches(mod, cut), cut);
             await Capture(screen, outDir, "17d-modified-content");
@@ -987,7 +1003,13 @@ static partial class SelfTest
             description.EmitSignal(RichTextLabel.SignalName.MetaClicked, ModifiedContent.Meta);
             await WaitUntil(menu, () => Dialog()?.FindChild("Scroll", true, false) is Control { CustomMinimumSize.Y: > 0 });
             await Wait(menu, 0.2);
-            var title = (Dialog()?.FindChild("Title", true, false) as Label)?.Text ?? "";
+            var titleText = Dialog()?.FindChild("Title", true, false) as RichTextLabel;
+            var title = titleText?.GetParsedText() ?? "";
+            // The mod's name in gold, the rest of the title cream (Jordan, 23 Oct).
+            Check("modified content's dialog: the mod's name in its title in gold, the rest cream",
+                titleText?.Text.Contains($"[color=#{Modal.Gold.ToHtml(false)}]{name.Replace("[", "[lb]")}[/color]") == true
+                && titleText.GetThemeColor("default_color") == Modal.Cream,
+                titleText?.Text ?? "no title");
             var list = Dialog()?.FindChild("List", true, false) as RichTextLabel;
             var listText = list?.GetParsedText() ?? "";
             var note = (Dialog()?.FindChild("Note", true, false) as RichTextLabel)?.GetParsedText() ?? "";
@@ -1001,23 +1023,72 @@ static partial class SelfTest
             var fileLines = Expected(changes.ReplacedFiles.GroupBy(f => f.Area), ModifiedContent.FilesCount, f => f.Path);
             var codeLines = Expected(changes.Places.GroupBy(p => p.Area), ModifiedContent.PlacesCount, p => $"{p.Class}.{p.Method}  ({ModifiedContent.KindWords(p.Kinds)})");
             var readyLine = $"        NModdingScreen._Ready  ({Menus.Text("SPIRE_MOD_MANAGER.PATCH_BEFORE")}, {Menus.Text("SPIRE_MOD_MANAGER.PATCH_AFTER")}, {Menus.Text("SPIRE_MOD_MANAGER.PATCH_WRAPPED")})";
-            Check("modified content's dialog: the mod's name, the note, every area, the files by area with counts and paths, the code by area with counts, "
-                + "Class.Method and how, what those words mean (see 17f)",
+            Check("modified content's dialog: the mod's name, the note, then the list: the files by area with counts and paths, the code by area with counts, "
+                + "Class.Method and how (see 17f)",
                 title == Draft(Template("SPIRE_MOD_MANAGER.MODIFIED_TITLE"), ("name", name)) && note == Menus.Text("SPIRE_MOD_MANAGER.MODIFIED_NOTE")
-                && lines.Count > 2 && lines[0] == Menus.Text("SPIRE_MOD_MANAGER.MODIFIED_AREAS") && lines[1] == string.Join(", ", areas)
-                && filesAt > 1 && lines.Skip(filesAt + 1).Take(fileLines.Count).SequenceEqual(fileLines)
+                && filesAt == 0 && lines.Skip(filesAt + 1).Take(fileLines.Count).SequenceEqual(fileLines)
                 && codeAt > filesAt && lines.Skip(codeAt + 1).Take(codeLines.Count).SequenceEqual(codeLines) && lines.Contains(readyLine)
-                && lines[^1] == Menus.Text("SPIRE_MOD_MANAGER.PATCH_KINDS"),
+                && lines[^1] == codeLines[^1],
                 $"\"{title}\" / \"{note}\" / {listText.ReplaceLineEndings(" / ")[..Math.Min(1200, listText.Length)]}");
+            // What those words mean (Jordan, 23 Oct): right over the code's heading, a small gap between (smaller than the
+            // blank line over it), after the areas and the files (a blank line after their last path); with code only (our
+            // own mod), first in the list.
+            var legendAt = lines.IndexOf(Menus.Text("SPIRE_MOD_MANAGER.PATCH_KINDS"));
+            var codeOnlyList = ModifiedContent.Details(ours, GameChanges.For(ours)).Split('\n');
+            var (blankOver, gapUnder) = list != null && legendAt > 0 && codeAt > legendAt
+                ? (list.GetParagraphOffset(legendAt) - list.GetParagraphOffset(legendAt - 1), list.GetParagraphOffset(codeAt) - list.GetParagraphOffset(legendAt + 1)) : (0f, 0f);
+            Check("modified content's dialog: what the patch words mean right over \"Game code changed\", a small gap between, after the files; first in a list "
+                + "with code only (see 17f2)",
+                legendAt == fileLines.Count + 2 && lines[legendAt - 1] == "" && lines[legendAt + 1] == " " && codeAt == legendAt + 2
+                && gapUnder > 0 && gapUnder <= blankOver * 0.6f
+                && codeOnlyList.Length > 3 && codeOnlyList[0] == ModifiedContent.Legend() && codeOnlyList[2].Contains($"[color=#efc851]{Menus.Text("SPIRE_MOD_MANAGER.GAME_CODE")}[/color]"),
+                $"legend at line {legendAt}, code at {codeAt}, {fileLines.Count} file lines; gap under it {gapUnder}, blank line over it {blankOver}; "
+                + $"code only: {string.Join(" / ", codeOnlyList.Take(3))}");
+            // The ways a place is patched, each word in its colour (Jordan, 23 Oct: before blue, after green, rewritten
+            // orange, wrapped soft red; ours: the changes summary's blue, green and soft red, a Pending status's orange),
+            // in the list and in the legend's terms, the words as they were: our page's _Ready here (before, after and
+            // wrapped), and a made-up place patched all four ways.
+            string Coloured(string word, string hex) => $"[color={hex}]{word}[/color]";
+            var (before, after, rewritten, wrapped) = (Coloured(Menus.Text("SPIRE_MOD_MANAGER.PATCH_BEFORE"), "#8ec5ff"), Coloured(Menus.Text("SPIRE_MOD_MANAGER.PATCH_AFTER"), "#a6e3a1"),
+                Coloured(Menus.Text("SPIRE_MOD_MANAGER.PATCH_REWRITTEN"), "#f5b56b"), Coloured(Menus.Text("SPIRE_MOD_MANAGER.PATCH_WRAPPED"), "#f2a3a3"));
+            var listCode = list?.Text ?? "";
+            var everyWay = ModifiedContent.Details(mod, new([], [new GameChanges.Place("NThing", "_Ready", "combat",
+                GameChanges.Kinds.Before | GameChanges.Kinds.After | GameChanges.Kinds.Rewritten | GameChanges.Kinds.Wrapped)]));
+            // The legend's terms: each kind's word as the list has it, capitalised, with a colon ("Final:" for wrapped, Jordan's
+            // word since 23 Oct).
+            static string Capitalised(string word) => word.Length == 0 ? word : char.ToUpperInvariant(word[0]) + word[1..];
+            (string Key, string Hex)[] kinds = [("SPIRE_MOD_MANAGER.PATCH_BEFORE", "#8ec5ff"), ("SPIRE_MOD_MANAGER.PATCH_AFTER", "#a6e3a1"),
+                ("SPIRE_MOD_MANAGER.PATCH_REWRITTEN", "#f5b56b"), ("SPIRE_MOD_MANAGER.PATCH_WRAPPED", "#f2a3a3")];
+            var legend = "[color=#fff6e299]" + kinds.Aggregate(Menus.Text("SPIRE_MOD_MANAGER.PATCH_KINDS"),
+                (text, kind) => Capitalised(Menus.Text(kind.Key)) is var term ? text.Replace(term + ":", Coloured(term, kind.Hex) + ":") : text) + "[/color]";
+            Check("modified content's dialog: before in blue, after in green, rewritten in orange, final (wrapped) in soft red, in the list and the legend's terms (see 17f2)",
+                listCode.Split('\n').Contains($"        NModdingScreen._Ready  [color=#fff6e299]({before}, {after}, {wrapped})[/color]")
+                && everyWay.Contains($"NThing._Ready  [color=#fff6e299]({before}, {after}, {rewritten}, {wrapped})[/color]")
+                && legend.Split("[color=#").Length == 6 && ModifiedContent.Legend() == legend && listCode.Split('\n').Contains(legend),
+                $"{listCode.Split('\n').FirstOrDefault(l => l.Contains("NModdingScreen._Ready"))} | {everyWay.Split('\n').FirstOrDefault(l => l.Contains("NThing"))} | {ModifiedContent.Legend()}");
+            // The areas, between the note and the list (Jordan, 23 Oct): one to a line in columns filled top to bottom,
+            // three side by side across the dialog; 11 here, so no sideways scroll.
+            var shownAreas = AreasShown(Dialog());
+            var columnsOff = ColumnsMisplaced(shownAreas);
+            Check("modified content's dialog: the areas between the note and the list, one to a line in three columns filled top to bottom "
+                + $"({string.Join(", ", ModifiedContent.Columns(areas).Select(c => c.Count))} of {areas.Count}), side by side across the dialog, "
+                + "no sideways scroll (see 17f)",
+                areas.Count is > 6 and <= 15 && shownAreas.Heading == Menus.Text("SPIRE_MOD_MANAGER.MODIFIED_AREAS")
+                && shownAreas.Columns.SelectMany(c => c).SequenceEqual(areas) && shownAreas.Columns.Count == 3
+                && shownAreas.Columns.Select(c => c.Count).SequenceEqual(ModifiedContent.Columns(areas).Select(c => c.Count))
+                && columnsOff == null && shownAreas.Scroll?.GetHScrollBar().Visible == false && !lines.Contains(Menus.Text("SPIRE_MOD_MANAGER.MODIFIED_AREAS"))
+                && Dialog()?.FindChild("Note", true, false) is Control noteBox && shownAreas.Scroll is { } areasScroll && list != null
+                && noteBox.GetGlobalRect().End.Y <= areasScroll.GetGlobalRect().Position.Y && areasScroll.GetGlobalRect().End.Y <= list.GetGlobalRect().Position.Y,
+                $"{string.Join(" | ", shownAreas.Columns.Select(c => string.Join(", ", c)))}; {columnsOff ?? "placed"}, bar {shownAreas.Scroll?.GetHScrollBar().Visible}");
             var scroll = Dialog()?.FindChild("Scroll", true, false) as ScrollContainer;
             Check("modified content's dialog: a long list scrolls, the dialog on screen", list != null && scroll != null
                 && list.GetContentHeight() > scroll.Size.Y + 20 && scroll.GetVScrollBar().Visible && scroll.Size.Y <= 560
                 && Dialog()?.FindChild("Column", true, false) is Control column && column.GetViewportRect().Encloses(column.GetGlobalRect()),
                 $"list {list?.GetContentHeight()}, scroll {scroll?.Size}, bar {scroll?.GetVScrollBar().Visible}");
             await Capture(Dialog() ?? screen, outDir, "17f-modified-content-dialog");
-            if (scroll != null && list != null && codeAt > 0)
+            if (scroll != null && list != null && legendAt > 0)
             {
-                scroll.ScrollVertical = (int)list.GetParagraphOffset(codeAt); // down to the code: Class.Method and how
+                scroll.ScrollVertical = (int)list.GetParagraphOffset(legendAt); // down to the legend, then the code: Class.Method and how, in colour
                 await Wait(menu, 0.1);
                 await Capture(Dialog() ?? screen, outDir, "17f2-modified-content-dialog-code");
             }
@@ -1033,6 +1104,74 @@ static partial class SelfTest
             await Wait(menu, 0.2);
             Check("modified content's dialog: Close closes it; so does Esc, staying on the page", closed && reopened && Dialog() == null && screen.IsVisibleInTree(),
                 $"closed {closed}, reopened {reopened}, open after Esc {Dialog() != null}");
+
+            // Many areas: a made-up mod's 19, one place each (a character's among them, which wraps in its column). Five to
+            // a column: three columns in view and a fourth past the dialog's right edge, there once scrolled sideways.
+            // Screenshots 17f3 (as it opens) and 17f4 (scrolled to the end).
+            string[] many = ["merchant room", "rest site", "map screen", "card library", "relic collection", "potion lab", "combat", "card reward",
+                "event room", "treasure room", "The Ironclad (hands, character select, top panel)", "timeline", "settings", "run history", "compendium",
+                "top bar", "deck view", "multiplayer lobby", "card art"];
+            var manyChanges = new GameChanges.Changes([], [.. many.Select((area, i) => new GameChanges.Place($"NThing{i}", "_Ready", area, GameChanges.Kinds.After))]);
+            ModifiedContent.Show(info, new Mod { path = "", state = ModLoadState.Loaded, manifest = new ModManifest { id = "SmmManyAreas", name = "Many Areas Test" } }, manyChanges);
+            await WaitUntil(menu, () => Dialog()?.FindChild("Scroll", true, false) is Control { CustomMinimumSize.Y: > 0 });
+            await Wait(menu, 0.2);
+            var manyShown = AreasShown(Dialog());
+            var manyOff = ColumnsMisplaced(manyShown);
+            var sideways = manyShown.Scroll?.GetHScrollBar();
+            // Shown, and under the columns' last lines, not over them (the game's scrollbars are drawn over what they scroll).
+            var barShown = sideways is { Visible: true } && manyShown.Rects.Count > 0 && manyShown.Rects.Max(r => r.End.Y) <= sideways.GetGlobalRect().Position.Y;
+            var barAt = $"bar {sideways?.Visible} at {sideways?.GetGlobalRect()}, columns end at {(manyShown.Rects.Count > 0 ? manyShown.Rects.Max(r => r.End.Y) : 0)}";
+            await Capture(Dialog() ?? screen, outDir, "17f3-modified-content-many-areas");
+            if (manyShown.Scroll is { } manyScroll && sideways != null)
+            {
+                manyScroll.ScrollHorizontal = (int)Math.Ceiling(sideways.MaxValue);
+                await Wait(menu, 0.1);
+            }
+            var scrolled = AreasShown(Dialog());
+            var view = scrolled.Scroll?.GetGlobalRect() ?? default;
+            var lastInView = scrolled.Rects is { Count: > 3 } && scrolled.Rects[^1].Position.X >= view.Position.X - 0.5f && scrolled.Rects[^1].End.X <= view.End.X + 0.5f
+                && scrolled.Rects[0].End.X <= view.Position.X + 0.5f;
+            await Capture(Dialog() ?? screen, outDir, "17f4-modified-content-many-areas-scrolled");
+            ModifiedContent.Close();
+            Check("modified content's dialog, 19 areas: five to a column, three columns in view and a fourth past the right edge, a sideways scroll under "
+                + "them that brings it into view (see 17f3, 17f4)",
+                manyChanges.Areas.SequenceEqual(many) && manyShown.Columns.Select(c => c.Count).SequenceEqual([5, 5, 5, 4])
+                && manyShown.Columns.SelectMany(c => c).SequenceEqual(many) && manyOff == null && barShown && lastInView,
+                $"{string.Join(" | ", manyShown.Columns.Select(c => string.Join(", ", c)))}; {manyOff ?? "placed"}, {barAt}; scrolled to "
+                + $"{scrolled.Scroll?.ScrollHorizontal}: {string.Join(", ", scrolled.Rects)} in {view}");
+
+            // Tall areas: a made-up mod's 15, the first five characters' with a long list of what (three lines or more
+            // each, all in the first column), and a list longer than the most it takes (560). The list is shorter than
+            // that by what the areas take, so the dialog, which would be taller than the screen, stays on it with its
+            // title and Close. On a player's 1080 tall screen (Modal.TestScreen; a headless run's is taller). Screenshot
+            // 17f5.
+            string[] tall = [.. new[] { "The Ironclad", "The Silent", "The Regent", "The Necrobinder", "The Defect" }
+                    .Select(who => $"{who} (hands, character select, top panel, energy orb, map marker, run history)"),
+                "merchant room", "rest site", "map screen", "card library", "relic collection", "potion lab", "combat", "card reward", "event room", "treasure room"];
+            var tallChanges = new GameChanges.Changes([], [.. tall.SelectMany((area, i) => Enumerable.Range(0, 4).Select(n => new GameChanges.Place($"NThing{i}", $"Method{n}", area, GameChanges.Kinds.After)))]);
+            var tallScreen = new Rect2(0, 0, 1920, 1080);
+            Modal.TestScreen = tallScreen.Size;
+            ModifiedContent.Show(info, new Mod { path = "", state = ModLoadState.Loaded, manifest = new ModManifest { id = "SmmTallAreas", name = "Tall Areas Test" } }, tallChanges);
+            await WaitUntil(menu, () => Dialog()?.FindChild("Scroll", true, false) is Control { CustomMinimumSize.Y: > 0 });
+            await Wait(menu, 0.3);
+            var tallShown = AreasShown(Dialog());
+            var tallLines = tallShown.Scroll?.FindChild("AreaColumn0", true, false)?.GetChildren().OfType<RichTextLabel>().Select(t => t.GetLineCount()).ToList() ?? [];
+            var (tallList, tallScroll) = (Dialog()?.FindChild("List", true, false) as RichTextLabel, Dialog()?.FindChild("Scroll", true, false) as ScrollContainer);
+            var (tallColumn, tallTitle, tallClose) = (Dialog()?.FindChild("Column", true, false) as Control, Dialog()?.FindChild("Title", true, false) as Control,
+                Dialog()?.FindChild("CloseModifiedButton", true, false) as Control);
+            // As tall as it would be with the list at its most.
+            var uncapped = tallColumn?.GetParent() is Control tallPanel && tallScroll != null ? tallPanel.Size.Y - tallScroll.Size.Y + 560 : 0;
+            await Capture(Dialog() ?? screen, outDir, "17f5-modified-content-tall-areas");
+            ModifiedContent.Close();
+            Modal.TestScreen = null;
+            Check("modified content's dialog, tall areas: the list shorter by what they take, so the dialog stays on screen, its title and Close in view, "
+                + "the list scrolling (see 17f5)",
+                tallLines is [>= 3, >= 3, >= 3, >= 3, >= 3] && tallShown.Columns.Select(c => c.Count).SequenceEqual([5, 5, 5])
+                && tallList != null && tallScroll != null && tallList.GetContentHeight() > 560 && tallScroll.Size.Y < 560 && tallScroll.GetVScrollBar().Visible
+                && uncapped > tallScreen.Size.Y && tallColumn != null && tallScreen.Encloses(tallColumn.GetGlobalRect())
+                && tallTitle != null && tallScreen.Encloses(tallTitle.GetGlobalRect()) && tallClose != null && tallScreen.Encloses(tallClose.GetGlobalRect()),
+                $"first column's lines {string.Join(", ", tallLines)}; list {tallList?.GetContentHeight()}, scroll {tallScroll?.Size}; dialog {tallColumn?.GetGlobalRect()} "
+                + $"({uncapped} with the list at its most), Close {tallClose?.GetGlobalRect()}, in {tallScreen}");
 
             // Files only: the same mod without our code lent to it.
             GameChanges.TestAssemblies = m => m == mod ? [] : null;
@@ -1075,11 +1214,11 @@ static partial class SelfTest
             var (onePlaceTip, bothTip) = (TipLines(new([], [onePlace]), ModLoadState.Loaded), TipLines(new([oneFile], [onePlace]), ModLoadState.Loaded));
             var (oneFileTip, noneTip) = (TipLines(new([oneFile], []), ModLoadState.Disabled), TipLines(new([], []), ModLoadState.Disabled));
             var (place, file, notLoaded) = (PlacesCounted(1), FilesCounted(1), Menus.Text("SPIRE_MOD_MANAGER.MODIFIED_NOT_LOADED"));
-            Check("modified content's card with one place or file: \"1 place\" and \"1 file\" in Jordan's sentences; a mod not loaded: its contents show only then",
-                onePlaceTip[0] == Draft(Template("SPIRE_MOD_MANAGER.MODIFIED_CODE_TIP"), ("places", place))
+            Check("modified content's card with one place or file: \"1 place\" and \"1 file\" in Jordan's sentences; a mod not loaded: its contents show only "
+                + "then, after a gap", onePlaceTip[0] == Draft(Template("SPIRE_MOD_MANAGER.MODIFIED_CODE_TIP"), ("places", place))
                 && bothTip[0] == Draft(Template("SPIRE_MOD_MANAGER.MODIFIED_BOTH_TIP"), ("places", place), ("files", file))
-                && oneFileTip[0] == Menus.Text("SPIRE_MOD_MANAGER.MODIFIED_FILES_TIP_ONE") && oneFileTip[1].Contains(notLoaded)
-                && noneTip[0] == Menus.Text("SPIRE_MOD_MANAGER.MODIFIED_NONE_TIP") && noneTip[1].Contains(notLoaded),
+                && oneFileTip[0] == Menus.Text("SPIRE_MOD_MANAGER.MODIFIED_FILES_TIP_ONE") && oneFileTip[1] == ModDetails.CardGap && oneFileTip[2].Contains(notLoaded)
+                && noneTip[0] == Menus.Text("SPIRE_MOD_MANAGER.MODIFIED_NONE_TIP") && noneTip[1] == ModDetails.CardGap && noneTip[2].Contains(notLoaded),
                 string.Join(" | ", new[] { onePlaceTip, bothTip, oneFileTip, noneTip }.Select(t => string.Join(" / ", t))));
 
             // Nothing found: a fixture mod with no pack and no code.
@@ -1095,18 +1234,21 @@ static partial class SelfTest
                 var noneCard = await Card("17g-modified-content-none");
                 var expected = new List<string> { Menus.Text("SPIRE_MOD_MANAGER.MODIFIED_NONE_TIP") };
                 if (plain.state != ModLoadState.Loaded)
-                    expected.Add(Menus.Text("SPIRE_MOD_MANAGER.MODIFIED_NOT_LOADED"));
+                    expected.AddRange([" ", Menus.Text("SPIRE_MOD_MANAGER.MODIFIED_NOT_LOADED")]); // after the cards' gap
                 description.EmitSignal(RichTextLabel.SignalName.MetaClicked, ModifiedContent.Meta);
                 await Wait(menu, 0.2);
                 var noneList = (Dialog()?.FindChild("List", true, false) as RichTextLabel)?.GetParsedText() ?? "";
+                var noneAreas = AreasShown(Dialog());
+                var noneSaid = (Dialog()?.FindChild("NoAreas", true, false) as RichTextLabel)?.GetParsedText() ?? "";
                 ModifiedContent.Close();
-                Check("modified content with nothing found: \"No information found\", subtle, right under Other keywords; its card says what that means; "
+                Check("modified content with nothing found: \"No information found\", subtle, right over Other keywords; its card says what that means; "
                     + "its dialog says so, no lists (see 17g)",
-                    !GameChanges.For(plain).Any && noneAt > 0 && noneParsed[noneAt] == $"{term}: {none}" && noneParsed[noneAt - 1].StartsWith(Menus.Text("SPIRE_MOD_MANAGER.OTHER_KEYWORDS") + ": ")
+                    !GameChanges.For(plain).Any && noneAt > 0 && noneAt + 1 < noneParsed.Length && noneParsed[noneAt] == $"{term}: {none}"
+                    && noneParsed[noneAt + 1].StartsWith(Menus.Text("SPIRE_MOD_MANAGER.OTHER_KEYWORDS") + ": ")
                     && description.Text.Contains($"[url={ModifiedContent.Meta}][gold]{term}[/gold]: [color=#fff6e299]{none}[/color][/url]")
-                    && noneCard == string.Join("\n", expected) + "\n\n" + hint && noneList.Split('\n').Take(2).SequenceEqual([Menus.Text("SPIRE_MOD_MANAGER.MODIFIED_AREAS"), none])
-                    && !noneList.Contains(Menus.Text("SPIRE_MOD_MANAGER.GAME_FILES")) && !noneList.Contains(Menus.Text("SPIRE_MOD_MANAGER.GAME_CODE")),
-                    $"\"{(noneAt >= 0 ? noneParsed[noneAt] : "no row")}\"; card \"{noneCard.ReplaceLineEndings(" / ")}\"; dialog \"{noneList.ReplaceLineEndings(" / ")}\"");
+                    && noneCard == string.Join("\n", expected) + "\n\n" + hint && noneAreas.Heading == Menus.Text("SPIRE_MOD_MANAGER.MODIFIED_AREAS") && noneSaid == none
+                    && noneAreas.Scroll == null && !noneList.Contains(Menus.Text("SPIRE_MOD_MANAGER.GAME_FILES")) && !noneList.Contains(Menus.Text("SPIRE_MOD_MANAGER.GAME_CODE")),
+                    $"\"{(noneAt >= 0 ? noneParsed[noneAt] : "no row")}\"; card \"{noneCard.ReplaceLineEndings(" / ")}\"; dialog \"{noneAreas.Heading} / {noneSaid} / {noneList.ReplaceLineEndings(" / ")}\"");
             }
             else
                 Results.Add("SKIP modified content with nothing found: test mods not installed");
@@ -1117,6 +1259,7 @@ static partial class SelfTest
         {
             GameChanges.TestAssemblies = null;
             Hover.TestMouse = null;
+            Modal.TestScreen = null;
             ModifiedContent.Close();
             GameForgets(mod);
             SaveManager.Instance.SettingsSave.ModSettings?.ModList.RemoveAll(e => e.Id == id);
@@ -1176,6 +1319,41 @@ static partial class SelfTest
         string Cut(int kept) => Row(1, $"{subject} ({string.Join(", ", whats.Take(kept))}, ..)");
         var items = Enumerable.Range(1, whats.Length - 1).FirstOrDefault(k => shown == Cut(k));
         return (0, items, items > 0 && Width(Row(1)) > lineRoom && (items == whats.Length - 1 || Width(Cut(items + 1)) > lineRoom), oneLine);
+    }
+
+    // The Modified content dialog's areas as it shows them: the heading, each column's areas top to bottom, where each
+    // column is, the gap between columns, and their sideways scroll (null with none found).
+    record AreasView(string Heading, List<List<string>> Columns, List<Rect2> Rects, int Gap, ScrollContainer? Scroll);
+
+    static AreasView AreasShown(Node? dialog)
+    {
+        var box = dialog?.FindChild(ModifiedContent.AreasName, true, false);
+        var scroll = box?.FindChild(ModifiedContent.AreasScrollName, false, false) as ScrollContainer;
+        var row = scroll?.FindChild("Columns", true, false) as Container;
+        var columns = row?.GetChildren().OfType<VBoxContainer>().ToList() ?? [];
+        return new((box?.FindChild("AreasHeading", false, false) as RichTextLabel)?.GetParsedText() ?? "",
+            [.. columns.Select(c => c.GetChildren().OfType<RichTextLabel>().Select(t => t.GetParsedText()).ToList())],
+            [.. columns.Select(c => c.GetGlobalRect())], row?.GetThemeConstant("separation") ?? 0, scroll);
+    }
+
+    // Null if the dialog's area columns, not scrolled, are where they should be: tops level, side by side the gap apart
+    // from the scroll's left edge, each a third of its width less the gaps (so three fill it), the first three in view
+    // and any more past its right edge. Otherwise where they are.
+    static string? ColumnsMisplaced(AreasView shown)
+    {
+        if (shown.Scroll is not { } scroll || shown.Rects.Count == 0)
+            return "no columns";
+        var view = scroll.GetGlobalRect();
+        var width = MathF.Floor((view.Size.X - 2 * shown.Gap) / 3);
+        var x = view.Position.X;
+        for (var i = 0; i < shown.Rects.Count; i++, x += width + shown.Gap)
+        {
+            var rect = shown.Rects[i];
+            if (Math.Abs(rect.Position.X - x) > 0.5f || Math.Abs(rect.Size.X - width) > 0.5f || Math.Abs(rect.Position.Y - shown.Rects[0].Position.Y) > 0.5f
+                || (rect.End.X <= view.End.X + 0.5f) != (i < 3) || scroll.ScrollHorizontal != 0)
+                return $"column {i + 1} at {rect}, wanted at x {x:0.#}, {width:0.#} wide, in {view} scrolled {scroll.ScrollHorizontal}";
+        }
+        return null;
     }
 
     // A point on a row of the panel's text (its line, near its start), for a card's mouse.

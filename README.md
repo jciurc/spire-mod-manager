@@ -41,8 +41,8 @@ Subscribe to it on the [Steam Workshop](https://steamcommunity.com/sharedfiles/f
   automatic ones and Workshop tags) and `@author` narrow it down, and a `-` before a term leaves out what it matches: `#stable -#beta` lists the mods marked for the
   stable branch only, and Disable all turns them off. `OR` (or `|`) finds either side and brackets group terms:
   `(#gameplay OR #library) #enabled`. Tags that aren't chips find mods by state: `#enabled`, `#disabled`,
-  `#workshop`, `#pending`, `#changed`, `#error`, `#warning` and more, and a warning banner's Show puts its own in the
-  search box. Punctuation counts as spaces; `"text in quotes"` matches exactly, case too. Ctrl+F jumps to the search
+  `#workshop`, `#pending`, `#changed`, `#error`, `#warning` and more, with or without the `#` (`enabled -workshop`),
+  and a warning banner's Show puts its own in the search box. Punctuation counts as spaces; `"text in quotes"` matches exactly, case too. Ctrl+F jumps to the search
   box, and a mod's card says where the search found it.
 - **Select several mods** with Ctrl-click, Shift-click or Ctrl+A, then set their category, tags or note, or turn
   them all on or off, from their right-click menu, the bar above the list or any of their tickboxes on the main
