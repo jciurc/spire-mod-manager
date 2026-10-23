@@ -202,15 +202,18 @@ static partial class SelfTest
         }
     }
 
-    // Revert all (Jordan, 23 Oct): everything Changes counts back to its launch value, so Changes reads 0. From what this
-    // run has changed since launch, then after each kind of change on its own: tickboxes; moves in Load Order (the view
-    // stays); a copy's tick (the copy that loaded at launch loads again); a mod's alias, tags, note and category; a
-    // profile switch; undo and redo in between, a Load Order move among them. Each time Changes reads nothing, every box,
-    // the saved list (the load order), the copies' turn and our data (ticks, details, profiles, the active one and its
-    // Unsaved) are as at launch, the button greys, and one Ctrl+Z, from the view it was pressed in, brings back what was
-    // there before it (from the main list the move too); Ctrl+Y reverts again. A mod installed mid-session stays: the
-    // closest state is it off, its new entry last (no other mod moves), Changes listing only that it's installed. The
-    // run's state and both undo histories are put back after.
+    // Revert all (Jordan, 23 Oct): everything Changes counts back to its launch value, so Changes reads 0, and nothing
+    // else. From what this run has changed since launch, then after each kind of change on its own: tickboxes; moves in
+    // Load Order (the view stays); a copy's tick (the copy that loaded at launch loads again); a mod's alias, tags, note
+    // and category; a profile switch; undo and redo in between, a Load Order move among them. Each time Changes reads
+    // nothing, every box, the saved list (the load order), the copies' turn and what Changes counts in our data (ticks,
+    // details, the profiles' names, the active one and its Unsaved) are as at launch, the button greys, and one Ctrl+Z,
+    // from the view it was pressed in, brings back what was there before it (from the main list the move too); Ctrl+Y
+    // reverts again. What Changes doesn't count stays: a Save (the profile keeps the list saved, so reads Unsaved); the
+    // main menu button moved (no step, and the button stays greyed); a category deleted with a mod in it comes back, as
+    // the mod's category does. A mod installed mid-session stays: the closest state is it off, its new entry last (no
+    // other mod moves), Changes listing only that it's installed. The run's state, both undo histories and what Revert all
+    // left are put back after.
     static async Task TestRevertAll(Node menu, NModdingScreen screen, Control content)
     {
         if (History.Loaded == null || Layout.Current != Layout.View.Categories || screen.FindChild("RevertAllButton", true, false) is not BaseButton revert)
@@ -251,8 +254,12 @@ static partial class SelfTest
         }
         static string Said(IEnumerable<History.ModEntry> mods) => string.Join(", ", mods.Select(m => m.Id + (m.Enabled ? "" : " (off)")));
         static bool Same(History.Snapshot a, History.Snapshot b) => a.Store == b.Store && a.Mods.SequenceEqual(b.Mods) && LoadOrder.SameCopyOrder(a.CopyOrder, b.CopyOrder);
+        // The active profile's entry in saved edits, by its name at launch.
+        static JsonNode? LaunchProfileIn(string json) =>
+            (JsonNode.Parse(json)?["profiles"] as JsonArray ?? []).FirstOrDefault(p => (string?)p?["name"] == History.LaunchProfile);
         // What isn't as Revert all leaves it (none: all of it is). A copy installed since: off, with Changes' line that it's
-        // installed (its one line), and an entry made for it after the launch's list.
+        // installed (its one line), and an entry made for it after the launch's list. Our data: what Changes counts there
+        // as at launch (Store.Counted); a profile's saved list is kept, so its Unsaved is as at launch where that list is.
         List<string> Unlike()
         {
             var unlike = new List<string>();
@@ -264,9 +271,10 @@ static partial class SelfTest
                 unlike.Add($"Changes {HistoryBar.Counts()}: {string.Join(" | ", described)}");
             if (!System.Text.RegularExpressions.Regex.IsMatch(bar.GetParsedText(), $@"\(\+0 -0\)\nChanges {arrived.Count}  ↕0$"))
                 unlike.Add($"the bar reads \"{bar.GetParsedText()}\"");
-            var (off, ticks) = (Dependencies.SavedOff(launch.Mods), Store.TicksIn(launch.Store));
+            // Launch's ticks read among the copies installed then, as Changes reads them.
+            var (off, ticks, since) = (Dependencies.SavedOff(launch.Mods), Store.TicksIn(launch.Store), Copies.SinceLaunch());
             foreach (var mod in Dependencies.EachCopy(ModManager.Mods.Union(Installed.Mods)))
-                if (Copies.Ticked(mod) != (!arrived.Contains(mod) && Copies.TickedIn(mod, off, ticks)))
+                if (Copies.Ticked(mod) != (!arrived.Contains(mod) && Copies.TickedIn(mod, off, ticks, since)))
                     unlike.Add($"{Copies.SwitchKey(mod)} {(Copies.Ticked(mod) ? "on" : "off")}");
             foreach (var row in Rows().Where(r => r.Mod is { } m && r.GetNode<NTickbox>("Tickbox").IsTicked != Copies.Ticked(m)))
                 unlike.Add($"{row.Mod?.manifest?.id}'s tickbox");
@@ -276,10 +284,11 @@ static partial class SelfTest
                 unlike.Add($"the list {Said(list)}, at launch {Said(launch.Mods)}");
             if (HistoryBar.Moves().Count > 0 || !LoadOrder.SameCopyOrder(LoadOrder.CopyOrderNow(), launch.CopyOrder))
                 unlike.Add("the order");
-            if (Store.EditsJson() != launch.Store)
-                unlike.Add("our data");
+            if (Store.Counted(Store.EditsJson()) != Store.Counted(launch.Store))
+                unlike.Add("what Changes counts in our data");
+            var (profileThen, profileNow) = (LaunchProfileIn(launch.Store), LaunchProfileIn(Store.EditsJson()));
             if (Store.Data.ActiveProfile != History.LaunchProfile || unsaved?.Visible != Profiles.Edited
-                || Profiles.Edited != (JsonNode.Parse(launch.Store)?["profiles"] as JsonArray ?? []).Any(p => (string?)p?["name"] == History.LaunchProfile && p?["edited"] != null))
+                || JsonNode.DeepEquals(profileThen?["mods"], profileNow?["mods"]) && Profiles.Edited != (profileThen?["edited"] != null))
                 unlike.Add($"the profile {Store.Data.ActiveProfile} (unsaved {Profiles.Edited}, shown {unsaved?.Visible}), at launch {History.LaunchProfile}");
             if (!revert.Disabled || !History.AtLaunch)
                 unlike.Add("Revert all not greyed");
@@ -306,7 +315,7 @@ static partial class SelfTest
             }
             var reads = Installed.Mods.Count > 0 ? "Changes lists only the mod installed" : "Changes reads 0";
             var stays = view == Layout.View.LoadOrder ? ", still in Load Order" : "";
-            Check($"Revert all after {what}: {reads}, every box, the load order and our data as at launch, the button greyed{stays}; one Ctrl+Z brings "
+            Check($"Revert all after {what}: {reads}, every box, the load order and what Changes counts in our data as at launch, the button greyed{stays}; one Ctrl+Z brings "
                 + $"back what was there before it{(redo ? ", Ctrl+Y reverts again" : "")}", enabled && unlike.Count == 0 && stayed && undone && again,
                 $"enabled before {enabled}; {string.Join("; ", unlike)}; view {Layout.Current}; undone {undone}{undoneSaid}; again {again}");
         }
@@ -397,7 +406,122 @@ static partial class SelfTest
                 await Reverts("undo and redo in between, a Load Order move among them");
             }
 
-            // 8. A mod installed mid-session (made up, the way the game announces one), and a box: the mod stays, off.
+            // 8. A box, then a Save: Revert all puts the box back and leaves the profile's saved list as it is (Changes
+            // never listed the Save), so the profile reads Unsaved. Undone, and the Save and the box too.
+            if (Row("SmmTestUi") is { } saving && Profiles.Active != null)
+            {
+                string? SavedList() => LaunchProfileIn(Store.EditsJson())?["mods"]?.ToJsonString();
+                var launchList = History.Loaded is { } loaded ? LaunchProfileIn(loaded.Store)?["mods"]?.ToJsonString() : null;
+                var (start, editedWas) = (History.TestNow(), Profiles.Edited);
+                await Flip(saving);
+                Profiles.Save();
+                await Wait(menu, 0.3);
+                var (savedList, before) = (SavedList(), History.TestNow());
+                var live = !revert.Disabled;
+                Click(revert);
+                await Wait(menu, 0.3);
+                var unlike = Unlike();
+                var holds = SavedList() == savedList && Profiles.Edited && unsaved?.Visible == true;
+                var holdsSaid = $"saved {(SavedList() == savedList ? "as saved" : SavedList() == launchList ? "as at launch" : SavedList())}, unsaved {Profiles.Edited}";
+                await Ctrl(Key.Z);
+                var undone = Same(History.TestNow(), before);
+                await Ctrl(Key.Z); // the Save
+                await Ctrl(Key.Z); // the box
+                Check("Revert all after a box and a Save: the box back as at launch and Changes reads 0, the profile still holding the list saved, so Unsaved; "
+                    + "one Ctrl+Z brings back what was there before it", live && savedList != launchList && holds && unlike.Count == 0 && undone
+                    && Same(History.TestNow(), start) && Profiles.Edited == editedWas,
+                    $"live before {live}; {holdsSaid}; {string.Join("; ", unlike)}; undone {undone}, then as at the start {Same(History.TestNow(), start)}");
+            }
+            else
+                Results.Add("SKIP Revert all after a Save: needs Test UI and a profile");
+
+            // 9. The main menu button moved (a layout choice: view state, not an undo step): Changes reads 0 and Revert all
+            // stays greyed; run anyway (as its press would), the button stays where it was put.
+            var placedWas = Store.Data.MenuButtonAt;
+            try
+            {
+                var (steps, at) = (History.Steps(History.Track.List), new ScreenPoint(321, 123));
+                Store.Data.MenuButtonAt = at;
+                Store.Save(); // as a move on the main menu saves it
+                History.NotifyChanged(); // the bar worked out again
+                await Wait(menu, 0.3);
+                var greyed = HistoryBar.Describe().All(l => l.StartsWith("Installed: ")) && revert.Disabled && History.Steps(History.Track.List) == steps;
+                var greyedSaid = $"changes {string.Join(" | ", HistoryBar.Describe())}, greyed {revert.Disabled}, steps +{History.Steps(History.Track.List) - steps}";
+                History.RevertMods();
+                await Wait(menu, 0.3);
+                Check("Revert all after the main menu button moved: no undo step, Changes reads 0 and the button stays greyed; run anyway, it leaves the "
+                    + "main menu button where it was put", greyed && Store.Data.MenuButtonAt == at, $"{greyedSaid}; at {Store.Data.MenuButtonAt}");
+            }
+            finally
+            {
+                Store.Data.MenuButtonAt = placedWas;
+                Store.SaveViewState();
+            }
+
+            // 10. A category deleted with a mod in it (both made up as at launch, quietly: the category after one there then
+            // and now, the mod one with no details of ours), and another category added: Changes lists the mod's category,
+            // and Revert all puts the mod back in it, so the category comes back too, at its place then; the one added stays
+            // (Changes doesn't count it). Undone, the category is gone again, then the delete and the add; then the made-up
+            // category and the mod's entry go everywhere.
+            const string CategoryName = "Revert All Test";
+            var launchData = History.Loaded is { } atLaunch ? JsonNode.Parse(atLaunch.Store) : null;
+            var launchCategories = (launchData?["categories"] as JsonArray ?? []).Select(c => (string?)c?["name"]).ToHashSet();
+            var anchor = Store.Data.Categories.FirstOrDefault(c => launchCategories.Contains(c.Name))?.Name;
+            if (Rows().Select(r => r.Mod).FirstOrDefault(m => m != null && m.manifest?.id is not (null or ModEntry.ModId or "SmmTestUi")
+                && Copies.Key(m) is var k && launchData?["mods"]?[k] == null && Store.InfoFor(k) == null) is { } placed && Copies.KeyOf(placed) is { } placedKey)
+            {
+                try
+                {
+                    History.Quietly(data =>
+                    {
+                        data.Categories.Insert(data.Categories.FindIndex(c => c.Name == anchor) + 1, new Category { Name = CategoryName });
+                        data.Mods[placedKey] = new ModInfo { Category = CategoryName };
+                    });
+                    CategoryList.Redraw(content);
+                    await Wait(menu, 0.3);
+                    var place = Store.Data.Categories.FindIndex(c => c.Name == CategoryName);
+                    var added = Categories.Add().Name; // Changes doesn't count it: it stays
+                    if (Categories.Find(CategoryName) is { } category)
+                        Categories.Delete(category);
+                    CategoryList.Redraw(content);
+                    await Wait(menu, 0.3);
+                    var listed = HistoryBar.Describe().Any(l => l.StartsWith($"Edited: {placed.manifest?.name}") && l.Contains("category"))
+                        && Categories.Find(CategoryName) == null;
+                    var before = History.TestNow();
+                    Click(revert);
+                    await Wait(menu, 0.3);
+                    var unlike = Unlike();
+                    // The row under the category's header again: the last header above it is the category's.
+                    var nodes = content.GetChildren().OfType<Control>().ToList();
+                    var row = Rows().FirstOrDefault(r => r.Mod == placed);
+                    var header = row == null ? null : nodes.Take(nodes.IndexOf(row)).LastOrDefault(n => n.IsInGroup("SpireModManagerCategoryHeader"));
+                    var back = Store.Data.Categories.FindIndex(c => c.Name == CategoryName) == place && Store.InfoFor(placedKey)?.Category == CategoryName
+                        && header != null && header == Header(content, CategoryName) && Categories.Find(added) != null;
+                    var backSaid = $"at {Store.Data.Categories.FindIndex(c => c.Name == CategoryName)} (was {place}) of "
+                        + $"{string.Join(", ", Store.Data.Categories.Select(c => c.Name))}; its category {Store.InfoFor(placedKey)?.Category ?? "none"}, under {header?.Name}";
+                    await Ctrl(Key.Z);
+                    var undone = Same(History.TestNow(), before) && Categories.Find(CategoryName) == null;
+                    await Ctrl(Key.Z); // the delete
+                    await Ctrl(Key.Z); // the category added
+                    Check("Revert all after a category was deleted with a mod in it, and another added: Changes reads 0, the mod back in it, and so the category "
+                        + "back at its place then, the row under it; the one added stays; one Ctrl+Z deletes it again", listed && unlike.Count == 0 && back && undone
+                        && Categories.Find(added) == null, $"listed {listed}; {string.Join("; ", unlike)}; {backSaid} ({added} added); undone {undone}");
+                }
+                finally
+                {
+                    History.Quietly(data =>
+                    {
+                        data.Categories.RemoveAll(c => c.Name == CategoryName);
+                        data.Mods.Remove(placedKey);
+                    });
+                    CategoryList.Redraw(content);
+                    await Wait(menu, 0.3);
+                }
+            }
+            else
+                Results.Add("SKIP Revert all after a category was deleted with a mod in it: no mod without details of ours at launch");
+
+            // 11. A mod installed mid-session (made up, the way the game announces one), and a box: the mod stays, off.
             var fresh = new Mod
             {
                 path = "", modSource = ModSource.ModsDirectory, state = ModLoadState.AddedAtRuntime,
@@ -450,9 +574,9 @@ static partial class SelfTest
             CategoryList.Redraw(content);
             await Wait(menu, 0.3);
         }
-        Check("Revert all's checks: the run's state and both undo histories put back", Same(History.TestNow(), found)
-            && History.Steps(History.Track.List) == kept.Past[History.Track.List].Count && History.Steps(History.Track.Order) == kept.Past[History.Track.Order].Count,
-            Said(History.CurrentMods()));
+        Check("Revert all's checks: the run's state, both undo histories and what Revert all left (its button's state) put back", Same(History.TestNow(), found)
+            && History.Steps(History.Track.List) == kept.Past[History.Track.List].Count && History.Steps(History.Track.Order) == kept.Past[History.Track.Order].Count
+            && ReferenceEquals(History.TestKeep().Reverted, kept.Reverted), $"{Said(History.CurrentMods())}; left by Revert all {(History.TestKeep().Reverted == null ? "none" : "a state")}");
     }
 
     // Missing game resources: everything this run used loaded (bar the self-test's own made-up paths, under

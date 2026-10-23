@@ -5,9 +5,9 @@ namespace SpireModManager;
 
 // Undo and redo, kept separately for the mod list and our data (List) and for the load order (Order): Load Order
 // steps through Order, the other views through List, so undoing an order change never flips a tickbox. The first
-// snapshot is the session's start (Loaded): what Changes compares with, and what Revert all puts back, the order too
-// (Jordan, 23 Oct). A change to the picked mods (Selection) is a step too, in time with the edits, as in an image
-// editor: undoing it only picks them again, leaving the mod list and our data alone.
+// snapshot is the session's start (Loaded): what Changes compares with, and what Revert all puts back of what it counts,
+// the order too (Jordan, 23 Oct). A change to the picked mods (Selection) is a step too, in time with the edits, as in an
+// image editor: undoing it only picks them again, leaving the mod list and our data alone.
 static class History
 {
     public enum Track { List, Order }
@@ -169,8 +169,10 @@ static class History
                     steps[i] = whole with { State = Patched(whole.State) };
     }
 
-    // Nothing for Revert all to do: the mod list, its order and our data as it leaves them.
-    public static bool AtLaunch => _reverted is { } target && Take() is var now && now.Store == target.Store && SameStates(now, target) && SameOrder(now, target);
+    // Nothing for Revert all to do: the mod list, its order and what Changes counts in our data (Store.Counted) as it
+    // leaves them. A Save, a category added or moved, the main menu button moved: still nothing.
+    public static bool AtLaunch => _reverted is { } target && Take() is var now && Store.Counted(now.Store) == Store.Counted(target.Store)
+        && SameStates(now, target) && SameOrder(now, target);
 
     // For a view switch, which changes the history the buttons act on.
     public static void NotifyChanged() => Changed?.Invoke();
@@ -202,11 +204,12 @@ static class History
     public static int Steps(Track track) => Past[track].Count;
     public static Change? Newest(Track track) => Past[track].LastOrDefault();
 
-    // Self-test: both histories, for a test that shows the page again (which starts them anew) to put back after, so the
-    // tests after it undo as they would have.
-    public sealed record Kept(IReadOnlyDictionary<Track, List<Change>> Past, IReadOnlyDictionary<Track, List<Change>> Future);
+    // Self-test: both histories, and the state Revert all left, for a test that shows the page again (which starts the
+    // histories anew) or runs Revert all to put back after, so the tests after it undo and grey the button as they would
+    // have.
+    public sealed record Kept(IReadOnlyDictionary<Track, List<Change>> Past, IReadOnlyDictionary<Track, List<Change>> Future, Snapshot? Reverted);
 
-    public static Kept TestKeep() => new(Past.ToDictionary(p => p.Key, p => p.Value.ToList()), Future.ToDictionary(f => f.Key, f => f.Value.ToList()));
+    public static Kept TestKeep() => new(Past.ToDictionary(p => p.Key, p => p.Value.ToList()), Future.ToDictionary(f => f.Key, f => f.Value.ToList()), _reverted);
 
     public static void TestPutBack(Kept kept)
     {
@@ -217,6 +220,7 @@ static class History
             Future[track].Clear();
             Future[track].AddRange(kept.Future[track]);
         }
+        _reverted = kept.Reverted;
         if (_current != null)
             _current = Take();
         Changed?.Invoke();
@@ -294,12 +298,14 @@ static class History
         Changed?.Invoke();
     }
 
-    // Everything Changes counts back to its launch value (Loaded), so Changes reads 0 (Jordan, 23 Oct): the mod list as it
-    // was, every switch and its place in the order; which copy took which of an id's entries (the copy order); and our
-    // data, so each copy's tick, each mod's details, the profiles and the active one. The copies then load as at launch,
-    // their rule reading the same switches, ticks and record (Copies.Next). A mod installed since stays installed: put off
-    // as it was then (it didn't load), any entry made for it last, so no other mod moves; Changes still lists it. The
-    // active profile then follows the tickboxes. One step, in both histories (Whole): one Ctrl+Z takes it back.
+    // Everything Changes counts back to its launch value (Loaded), so Changes reads 0 (Jordan, 23 Oct), and nothing else:
+    // the mod list as it was, every switch and its place in the order; which copy took which of an id's entries (the copy
+    // order); and what Changes counts in our data (Store.RestoreCounted): each copy's tick, each mod's details, the
+    // profiles by name and the active one. A profile's saved list, the categories and their order, the main menu
+    // button's place stay as they are. The copies then load as at launch, their rule reading the same switches, ticks and
+    // record (Copies.Next). A mod installed since stays installed: put off as it was then (it didn't load, PutOff), so no
+    // other mod moves; Changes still lists it. The active profile then follows the tickboxes. One step, in both histories
+    // (Whole): one Ctrl+Z takes it back.
     public static void RevertMods()
     {
         if (Loaded is not { } launch || _current == null)
@@ -308,9 +314,10 @@ static class History
         _restoring = true; // one undo step for the lot, recorded below
         try
         {
-            Restore(launch);
-            if (ArrivedTicked() is { Count: > 0 } arrived)
-                Dependencies.Write([.. arrived.Select(m => (m, false))]);
+            Apply(launch.Mods);
+            LoadOrder.RestoreCopyOrder(launch.CopyOrder);
+            Store.RestoreCounted(launch.Store);
+            PutOff(ArrivedTicked());
             Profiles.Track();
         }
         finally
@@ -334,6 +341,40 @@ static class History
     // of one found at launch: its copies of one source share one box, so the running copy would go off with it.
     static List<Mod> ArrivedTicked() => [.. Dependencies.EachCopy(Installed.Mods).Where(m => Copies.Ticked(m)
         && (m.manifest?.id != SpireModManager.ModEntry.ModId || Copies.Twins(m).All(Installed.Mods.Contains)))];
+
+    // Those copies off, as at launch. One on the switch of copies found at launch: into copies_off, the switch left on,
+    // and each launch copy there ticked as it was then (read among the copies installed then), so the copy that loaded
+    // loads again. Dependencies.Write would read the launch copies' ticks with it among them: a copy back with its stored
+    // tick (one our record knows) reads them off, so the switch would go off and nothing load. The rest through Write: a
+    // copy on a switch of its own gets its entry off (one made for it if none). So does every copy in a session that
+    // can't save our data (copies_off stays as the file has it): the next launch reads the file, and for a known copy
+    // back the switch off is the closest it can come (one line, the launch copy off, against two with it ticked).
+    static void PutOff(List<Mod> arrived)
+    {
+        var since = Copies.SinceLaunch();
+        var (gameOff, ticks) = (Dependencies.SavedOff(), Ticks.Now); // launch's, just put back
+        var off = (Store.Data.CopiesOff ?? Copies.LegacyOff(Store.Data.CopyPicks, Store.Data.Copies)).ToHashSet();
+        var rest = new List<Mod>();
+        foreach (var mod in arrived)
+        {
+            var launched = Copies.Twins(mod).Where(t => !since.Contains(Copies.SwitchKey(t))).ToList();
+            if (launched.Count == 0 || Store.ReadOnly)
+            {
+                rest.Add(mod);
+                continue;
+            }
+            off.Add(Copies.SwitchKey(mod));
+            foreach (var copy in launched.Where(c => Copies.TickedIn(c, gameOff, ticks, since)))
+                off.Remove(Copies.SwitchKey(copy));
+        }
+        if (rest.Count < arrived.Count && Store.TidyOff(off) is { } copiesOff && !copiesOff.SequenceEqual(Store.Data.CopiesOff ?? []))
+        {
+            Store.Data.CopiesOff = copiesOff; // a new list: Ticks reads it again only then
+            Store.SaveViewState();
+        }
+        if (rest.Count > 0)
+            Dependencies.Write([.. rest.Select(m => (m, false))]);
+    }
 
     // A snapshot's whole state: the game's list exactly as it was, entries and order, its copy order, and our data.
     static void Restore(Snapshot target)

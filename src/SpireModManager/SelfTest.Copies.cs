@@ -2796,6 +2796,68 @@ static partial class SelfTest
             + "profile's tick, nothing unsaved (as when it's back before a launch)", keptTick, againSay);
         Check("... an unticked copy missing at launch, back mid-session: still unticked (it's known: its key stays), not loading though higher, nothing "
             + "pending, the active profile still Saved", stayedOff, offSay);
+
+        // The other way round (the check's case): the copy missing at launch ticked, the one there not (in copies_off), so
+        // that one read ticked and loaded (the read rule). Back mid-session with its stored tick, the copy missing reads
+        // the one there off: Changes counts that one off (its launch tick read among the copies installed then) and the
+        // copy back on. Revert all puts the copy back off and leaves the one there ticked (into copies_off the one, out
+        // the other), its switch on: it loads again, and Changes lists only that the copy is installed.
+        const string Known = "SmmSameIdKnownBack";
+        var (knownThere, knownBack) = (Made(Known, "Known1", ModLoadState.Loaded), Made(Known, "Known2", ModLoadState.AddedAtRuntime));
+        GameMods().Add(knownThere);
+        Copies.TestRecount();
+        History.Quietly(data =>
+        {
+            (data.Copies ??= [])[Known] = ["l:Known1", "l:Known2"];
+            data.CopiesOff = Store.TidyOff([.. data.CopiesOff ?? [], $"{Known}|l:Known1"]);
+            if (data.Profiles.FirstOrDefault(p => p.Name == data.ActiveProfile) is { } active)
+                foreach (var list in new[] { active.Mods, active.Edited })
+                    list?.Add(new ProfileMod(Known, ModSource.ModsDirectory, true, CopiesOff: ["l:Known1"]));
+        });
+        Profiles.Track();
+        var knownLoaded = Copies.Ticked(knownThere) && LoadingCopy(Known) == "l:Known1";
+        NewModPopupPatch.TestReset();
+        NModalContainer.Instance?.Clear();
+        GameInstalls(knownBack);
+        await Wait(menu, 0.4);
+        NModalContainer.Instance?.Clear();
+        Profiles.Track();
+        List<string> KnownLines() => [.. HistoryBar.Describe().Where(l => l.Contains(Known))];
+        var knownCame = Copies.Ticked(knownBack) && !Copies.Ticked(knownThere) && KnownLines().Contains($"Disabled: {Known} (Known1)")
+            && KnownLines().Contains($"Enabled: {Known} (Known2)");
+        var knownCameSay = $"ticked {Copies.Ticked(knownThere)}/{Copies.Ticked(knownBack)}, loads {LoadingCopy(Known)}; {string.Join(" | ", KnownLines())}";
+        History.RevertMods();
+        await Wait(menu, 0.3);
+        var knownReverted = Copies.Ticked(knownThere) && !Copies.Ticked(knownBack) && LoadingCopy(Known) == "l:Known1"
+            && !Dependencies.SavedOff().Contains((Known, ModSource.ModsDirectory)) && CopiesOff().Contains($"{Known}|l:Known2") && !CopiesOff().Contains($"{Known}|l:Known1")
+            && KnownLines() is [var knownLine] && knownLine.StartsWith($"Installed: {Known} ") && History.AtLaunch;
+        var knownRevertedSay = $"ticked {Copies.Ticked(knownThere)}/{Copies.Ticked(knownBack)}, loads {LoadingCopy(Known) ?? "none"}, switch on "
+            + $"{!Dependencies.SavedOff().Contains((Known, ModSource.ModsDirectory))}, off {string.Join(",", CopiesOff().Where(k => k.StartsWith(Known)))}; "
+            + $"{string.Join(" | ", KnownLines())}; at launch {History.AtLaunch}";
+        History.Undo(); // the revert
+        await Wait(menu, 0.3);
+        Uninstall(knownBack);
+        GameMods().Remove(knownThere);
+        Copies.TestRecount();
+        SaveManager.Instance.SettingsSave.ModSettings?.ModList.RemoveAll(e => e.Id == Known);
+        History.Quietly(data =>
+        {
+            data.Copies?.Remove(Known);
+            foreach (var key in data.Mods.Keys.Where(k => Copies.IdOf(k) == Known).ToList())
+                data.Mods.Remove(key);
+            data.CopiesOff = data.CopiesOff?.Where(k => Copies.IdOf(k) != Known).ToList();
+            foreach (var profile in data.Profiles)
+            {
+                profile.Mods.RemoveAll(m => m.Id == Known);
+                profile.Edited?.RemoveAll(m => m.Id == Known);
+            }
+        });
+        Profiles.Track();
+        CategoryList.Redraw(content);
+        await Wait(menu, 0.3);
+        Check("... a ticked copy missing at launch (the one there loading, unticked), back mid-session with its tick: Changes counts the one there off and "
+            + "it on; Revert all puts it off and the one there ticked, its switch on, so that one loads again, and Changes lists only the install",
+            knownLoaded && knownCame && knownReverted, $"loaded at the start {knownLoaded}; came: {knownCameSay}; reverted: {knownRevertedSay}");
         Check("... as it started: B loading, A off (copies_off as the page opened with, in our file too), nothing changed since the page opened for the twins",
             Loads() == "l:SmmTestTwinB" && Ticked(rowB) && !Ticked(rowA) && SwitchOn() && !Profiles.Edited && OffAsAtStart() && CopiesBroken() == null, Say());
     }

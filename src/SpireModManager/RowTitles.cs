@@ -300,8 +300,10 @@ static class RowTitles
 
     public static void MarkChanged(IEnumerable<NModMenuRow> rows, bool vanilla)
     {
-        // Each copy against launch as Changes reads it (HistoryBar.ModChanges): its own box, copies_off included.
-        var launch = History.Loaded is { } loaded ? (Off: Dependencies.SavedOff(loaded.Mods), Ticks: Store.TicksIn(loaded.Store)) : default((HashSet<(string?, ModSource)> Off, Ticks Ticks)?);
+        // Each copy against launch as Changes reads it (HistoryBar.ModChanges): its own box, copies_off included, then
+        // among the copies installed then.
+        var launch = History.Loaded is { } loaded ? (Off: Dependencies.SavedOff(loaded.Mods), Ticks: Store.TicksIn(loaded.Store), Since: Copies.SinceLaunch())
+            : default((HashSet<(string?, ModSource)> Off, Ticks Ticks, HashSet<string> Since)?);
         foreach (var row in rows)
         {
             var title = row.GetNode<Control>(TitlePath);
@@ -313,7 +315,7 @@ static class RowTitles
                 continue;
             }
             var ticked = Copies.Ticked(mod);
-            title.Modulate = launch is { } then && Copies.TickedIn(mod, then.Off, then.Ticks) != ticked ? (ticked ? ChangedTitle : ChangedOffTitle)
+            title.Modulate = launch is { } then && Copies.TickedIn(mod, then.Off, then.Ticks, then.Since) != ticked ? (ticked ? ChangedTitle : ChangedOffTitle)
                 : ticked && mod.state is ModLoadState.Disabled or ModLoadState.DisabledDuplicate or ModLoadState.AddedAtRuntime
                     && Copies.Others(mod).Count > 0 ? Colors.White
                 : (Color)title.GetMeta(TitleColorMeta);

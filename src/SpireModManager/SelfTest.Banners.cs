@@ -410,7 +410,7 @@ static partial class SelfTest
             .All(e => e.IsEnabled) ?? true;
         if (ourRows.FirstOrDefault(r => r.Mod == copy) is { } copyRow)
         {
-            var steps = History.Steps(History.Track.List);
+            var (steps, movesWere) = (History.Steps(History.Track.List), HistoryBar.Moves().Count);
             Tickbox(copyRow).IsTicked = false;
             Tickbox(copyRow).EmitSignal(NTickbox.SignalName.Toggled, Tickbox(copyRow));
             await Wait(menu, 0.3);
@@ -419,12 +419,20 @@ static partial class SelfTest
                 && History.Steps(History.Track.List) == steps + 1 && Banner() == null && ourRows.All(Plain);
             var aloneSay = $"{string.Join(" | ", ourRows.Select(Box))}; steps +{History.Steps(History.Track.List) - steps}; banner {Banner() != null}; "
                 + $"lines {offLines.Running} / {offLines.Other}";
+            // The entry made to turn it off (the game had none for a copy installed while it runs) goes with ours at the top.
+            var entries = SaveManager.Instance.SettingsSave.ModSettings?.ModList ?? [];
+            var oursLead = entries.TakeWhile(e => e.Id == ModEntry.ModId).Count() == entries.Count(e => e.Id == ModEntry.ModId)
+                && entries.Any(e => e is { Id: ModEntry.ModId, Source: ModSource.SteamWorkshop, IsEnabled: false });
+            var (movesNow, entriesSaid) = (HistoryBar.Moves().Count, string.Join(", ", entries.Select(e => $"{e.Id}/{e.Source}{(e.IsEnabled ? "" : " (off)")}")));
             History.Undo();
             await Wait(menu, 0.3);
             Check("... a click on one copy's box unticks it alone (its source's entries off), one undo step, no red banner (the other loads); the copy "
                 + "running says Spire Mod Manager won't load if it's removed, the other that it's off; no tip on either; undone, both ticked",
                 alone && offLines == (Draft(SelfRunsOtherOff, ("other", Named(copy))), Draft(SelfCopyOff, ("other", Named(self))))
                 && Copies.Ticked(copy) && Copies.Ticked(self) && Tickbox(copyRow).IsTicked, $"{aloneSay}; then {string.Join(" | ", ourRows.Select(Box))}");
+            Check("... the entry made to turn it off goes with ours at the top, not last (the game sorts a mod by its id's last entry: this mod would load "
+                + "last next launch), and no other mod moves for Changes", oursLead && movesNow == movesWere,
+                $"entries {entriesSaid}; moves {movesWere} -> {movesNow}");
         }
         else
             Check("... a click on the Workshop copy's box: its row", false, string.Join(" | ", ourRows.Select(Box)));

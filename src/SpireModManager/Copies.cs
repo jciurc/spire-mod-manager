@@ -235,17 +235,22 @@ static class Copies
     // id and source's switch on, and its own tick (OwnTick). Inside a redraw, Lookups answers.
     public static bool Ticked(Mod mod) => Lookups.Current?.Ticked(mod) ?? SwitchOn(mod) && OwnTick(mod, Ticks.Now);
 
-    // The same, read against given lists (launch's, a snapshot's, or now's).
-    public static bool TickedIn(Mod mod, HashSet<(string?, ModSource)> gameOff, Ticks ticks) =>
-        !gameOff.Contains((mod.manifest?.id, mod.modSource)) && OwnTick(mod, ticks);
+    // The same, read against given lists (launch's, a snapshot's, or now's). without: copies (SwitchKey) read as not
+    // installed, for launch's ticks read among the copies installed then (SinceLaunch).
+    public static bool TickedIn(Mod mod, HashSet<(string?, ModSource)> gameOff, Ticks ticks, IReadOnlySet<string>? without = null) =>
+        !gameOff.Contains((mod.manifest?.id, mod.modSource)) && OwnTick(mod, ticks, without);
+
+    // The copies installed since launch (SwitchKey). Launch's ticks are read without them: one known to our record that's
+    // back with its stored tick reads its twins off (Ticks.Ticked), though at launch, missing, it didn't, and those loaded.
+    public static HashSet<string> SinceLaunch() => [.. Installed.Mods.Select(SwitchKey)];
 
     // Its id and source's switch as the game reads it (any entry off turns it off), without listing every entry.
     static bool SwitchOn(Mod mod) => !(SaveManager.Instance.SettingsSave.ModSettings?.IsModDisabled(mod) ?? false);
 
     // Its own tick, ignoring the switch (Ticks.Ticked over the other copies of its switch installed): what "Enable needed"
-    // brings back where a needed id is all off (Dependencies.Preference).
-    public static bool OwnTick(Mod mod, Ticks ticks) => mod.manifest?.id is not { } id || !ticks.Off.Contains(SwitchKey(mod))
-        || ticks.Ticked(id, CopyOf(mod), Twins(mod).Select(CopyOf));
+    // brings back where a needed id is all off (Dependencies.Preference). without: as TickedIn.
+    public static bool OwnTick(Mod mod, Ticks ticks, IReadOnlySet<string>? without = null) => mod.manifest?.id is not { } id || !ticks.Off.Contains(SwitchKey(mod))
+        || ticks.Ticked(id, CopyOf(mod), Twins(mod).Where(t => without?.Contains(SwitchKey(t)) != true).Select(CopyOf));
 
     // Whether this copy is the one of its id that loads after a relaunch (Loading); for an id installed once, its switch.
     // It implies the switch is on, and nearly always that it's ticked (the edges where an unticked copy loads are in
