@@ -244,8 +244,8 @@ static class ModifiedContent
         {
             // What the words mean, right over the code they're about (Jordan, 23 Oct: "move the before/after legend to
             // above the Game code changed section, but after areas section"), after the files when there are some, a
-            // small gap under it.
-            lines.AddRange([.. Gap(), Legend(), ModDetails.CardGap, Heading("SPIRE_MOD_MANAGER.GAME_CODE", PlacesCount(changes.Code))]);
+            // small gap under it (SmallGap), so it reads with the code rather than on its own.
+            lines.AddRange([.. Gap(), $"{Legend()}\n{SmallGap}{Heading("SPIRE_MOD_MANAGER.GAME_CODE", PlacesCount(changes.Code))}"]);
             foreach (var area in changes.Places.GroupBy(p => p.Area))
             {
                 lines.Add(Group(area.Key, PlacesCount(area.Count())));
@@ -259,6 +259,9 @@ static class ModifiedContent
 
     const string Item = "        "; // a path or a method, under its area
     const string GroupIndent = "    ";
+    // A line a few pixels tall. A line is as tall as its tallest letter, its line break included, so the break is small too
+    // (a small space alone, as ModDetails.CardGap, still makes a line as tall as the text's).
+    const string SmallGap = "[font_size=6] \n[/font_size]";
 
     static string Heading(string key, string? count) =>
         $"[color={GoldHex}]{Escape(Menus.Text(key))}[/color]" + (count is { } shown ? $"  {Bullet}  [color={Quiet}]{Escape(shown)}[/color]" : "");

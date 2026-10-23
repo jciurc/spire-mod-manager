@@ -1019,15 +1019,20 @@ static partial class SelfTest
                 && codeAt > filesAt && lines.Skip(codeAt + 1).Take(codeLines.Count).SequenceEqual(codeLines) && lines.Contains(readyLine)
                 && lines[^1] == codeLines[^1],
                 $"\"{title}\" / \"{note}\" / {listText.ReplaceLineEndings(" / ")[..Math.Min(1200, listText.Length)]}");
-            // What those words mean (Jordan, 23 Oct): right over the code's heading, a small gap between, after the areas
-            // and the files (a blank line after their last path); with code only (our own mod), first in the list.
+            // What those words mean (Jordan, 23 Oct): right over the code's heading, a small gap between (smaller than the
+            // blank line over it), after the areas and the files (a blank line after their last path); with code only (our
+            // own mod), first in the list.
             var legendAt = lines.IndexOf(Menus.Text("SPIRE_MOD_MANAGER.PATCH_KINDS"));
             var codeOnlyList = ModifiedContent.Details(ours, GameChanges.For(ours)).Split('\n');
-            Check("modified content's dialog: what the patch words mean right over \"Game code changed\", after the files; first in a list with code only (see 17f2)",
+            var (blankOver, gapUnder) = list != null && legendAt > 0 && codeAt > legendAt
+                ? (list.GetParagraphOffset(legendAt) - list.GetParagraphOffset(legendAt - 1), list.GetParagraphOffset(codeAt) - list.GetParagraphOffset(legendAt + 1)) : (0f, 0f);
+            Check("modified content's dialog: what the patch words mean right over \"Game code changed\", a small gap between, after the files; first in a list "
+                + "with code only (see 17f2)",
                 legendAt == fileLines.Count + 2 && lines[legendAt - 1] == "" && lines[legendAt + 1] == " " && codeAt == legendAt + 2
-                && codeOnlyList.Length > 3 && codeOnlyList[0] == ModifiedContent.Legend() && codeOnlyList[1] == ModDetails.CardGap
-                && codeOnlyList[2].StartsWith($"[color=#efc851]{Menus.Text("SPIRE_MOD_MANAGER.GAME_CODE")}[/color]"),
-                $"legend at line {legendAt}, code at {codeAt}, {fileLines.Count} file lines; code only: {string.Join(" / ", codeOnlyList.Take(3))}");
+                && gapUnder > 0 && gapUnder <= blankOver * 0.6f
+                && codeOnlyList.Length > 3 && codeOnlyList[0] == ModifiedContent.Legend() && codeOnlyList[2].Contains($"[color=#efc851]{Menus.Text("SPIRE_MOD_MANAGER.GAME_CODE")}[/color]"),
+                $"legend at line {legendAt}, code at {codeAt}, {fileLines.Count} file lines; gap under it {gapUnder}, blank line over it {blankOver}; "
+                + $"code only: {string.Join(" / ", codeOnlyList.Take(3))}");
             // The ways a place is patched, each word in its colour (Jordan, 23 Oct: before blue, after green, rewritten
             // orange, wrapped soft red; ours: the changes summary's blue, green and soft red, a Pending status's orange),
             // in the list and in the legend's terms, the words as they were: our page's _Ready here (before, after and
