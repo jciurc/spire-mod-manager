@@ -58,16 +58,16 @@ What changed in each Workshop release, for players. Each version's first line is
   tag and finishes editing, a Shift-click adds it and keeps the list open, and Ctrl+Z takes back a picked one. Save
   and Cancel sit at the right end of the Tags line.
 - A mod's info panel says what it changes in the game itself, on one line: "Modified content: The Regent (energy
-  orb), merchant room and 4 more (12 files, 30 places)", the parts of the game it touches, then how many of the
-  game's files it replaces and how many places in the game's code it changes. Hovering it says what those mean and
-  names the parts, and a click opens the details: the files it replaces, with their paths, and the places
-  in the code it changes, each marked before, after, rewritten or wrapped. Changes to the game's code show only while
+  orb), merchant room and 4 more", the parts of the game it touches. Hovering it says how many places in the game's
+  code it changes and how many of the game's files it replaces, and names the parts, and a click opens the details:
+  the files it replaces, with their paths, and the places in the code it changes, each marked before, after,
+  rewritten or wrapped. Changes to the game's code show only while
   the mod is loaded, and where nothing is found the line reads "Modified content: No information found". Search finds
   a mod by these too, so "regent" lists the mods that change the Regent.
-- The info panel keeps more in view: a long description shows three lines, ending in "…", and hovering them shows all
+- The info panel keeps more in view: a long description shows three lines, ending in "..", and hovering them shows all
   of it; text with more to scroll fades at that edge; and Compatibility no longer adds "Workshop branches", as a mod
   marked for one branch has its Stable or Beta tag.
-- On a mod's row, tags and keywords that don't fit end the line as "and 3 more...", whose card shows the rest, with
+- On a mod's row, tags and keywords that don't fit end the line as "and 3 more..", whose card shows the rest, with
   "Click to view in info panel" (the "+3" chip is gone). The row's hover card starts with the mod's picture, where it
   has one, and while you search it says where the search found the mod ("Found in: author, tags"). A gap follows its
   warnings, your alias, tags and note sit together, and the note follows "Note:" on the same line.
