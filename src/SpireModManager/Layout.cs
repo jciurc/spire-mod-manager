@@ -577,6 +577,9 @@ static class Layout
         (control.OffsetLeft, control.OffsetTop, control.OffsetRight, control.OffsetBottom) = (box.X, box.Y, box.Z, box.W);
     }
 
+    // Our views' panels (the list's and the info panel's): plain and dark, the page showing through.
+    public static readonly Color PanelColor = new(0.03f, 0.05f, 0.08f, 0.55f);
+
     static void PanelStyle(Control panel)
     {
         if (!panel.HasMeta(StyleMeta))
@@ -586,7 +589,7 @@ static class Layout
             panel.AddThemeStyleboxOverride("panel", (StyleBox)panel.GetMeta(StyleMeta));
             return;
         }
-        var plain = new StyleBoxFlat { BgColor = new Color(0.03f, 0.05f, 0.08f, 0.55f) };
+        var plain = new StyleBoxFlat { BgColor = PanelColor };
         plain.SetCornerRadiusAll(6);
         panel.AddThemeStyleboxOverride("panel", plain);
     }

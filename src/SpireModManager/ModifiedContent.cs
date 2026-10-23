@@ -33,7 +33,7 @@ static class ModifiedContent
         if (!changes.Any)
             return $"[url={Meta}][gold]{Escape(term)}[/gold]: [color={Quiet}]{Escape(Menus.Text("SPIRE_MOD_MANAGER.MODIFIED_NONE"))}[/color][/url]";
         var counts = $"({Counts(changes)})";
-        var (font, size, room) = (text.GetThemeFont("normal_font"), text.GetThemeFontSize("normal_font_size"), LineRoom(text));
+        var (font, size, room) = (text.GetThemeFont("normal_font"), text.GetThemeFontSize("normal_font_size"), ModDetails.LineRoom(text));
         // Not laid out yet (no width): all of them, as there's no line to fit yet.
         var listed = AreasCut(changes.Areas, areas => room <= 0 || Width($"{term}: {areas} {counts}", font, size) <= room);
         return $"[url={Meta}][gold]{Escape(term)}[/gold]: {Escape(listed)} [color={Quiet}]{Escape(counts)}[/color][/url]";
@@ -52,11 +52,6 @@ static class ModifiedContent
 
     public static string PlacesCount(int count) => count == 1 ? Menus.Text("SPIRE_MOD_MANAGER.GAME_CODE_COUNT_ONE")
         : Menus.Format("SPIRE_MOD_MANAGER.GAME_CODE_COUNT", ("count", Menus.Number(count)));
-
-    // The width a line of the label's text has: its box less its margins, and less a scrollbar's room whether one shows
-    // or not, so a row cut to fit doesn't wrap when one comes.
-    static float LineRoom(RichTextLabel text) =>
-        text.Size.X - text.GetThemeStylebox("normal").GetMinimumSize().X - text.GetVScrollBar().GetCombinedMinimumSize().X - 2;
 
     // A line's width as it's shaped (as Layout measures its page link), from the fonts its letters use.
     static float Width(string text, Font font, int size)

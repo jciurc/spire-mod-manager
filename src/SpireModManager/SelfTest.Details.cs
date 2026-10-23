@@ -335,6 +335,131 @@ static partial class SelfTest
         await Wait(menu, 0.3);
     }
 
+    // A long description in the info panel (Jordan, 22 Oct): three lines at most, cut at a word with "…", the tags it
+    // leaves open closed there (the facts after it keep their own look), the whole of it in a card over those lines; a
+    // short one as it is, with no card; the game's panel in Vanilla View untouched. Then the fade at an edge the panel's
+    // text runs on past (a made-up mod needing sixty mods that aren't installed, so it scrolls): below at the top, both
+    // midway, above at the end, none once it all fits and back after; in the panel's colour, over the text and not its
+    // scrollbar, drawn rather than a control. Screenshots 16d-description-cut, 16e-description-card, 16f-fade-bottom,
+    // 16g-fade-both, 16h-fade-top.
+    static async Task TestDescriptionCut(Node menu, NModdingScreen screen, Control content, string outDir)
+    {
+        var words = ("Every card in the game gets a fresh coat of paint: brighter colours, sharper edges and a little more contrast on the "
+            + "busiest scenes, so that each picture reads at a glance").Split(' ');
+        string Text(int from, int count) => string.Join(' ', Enumerable.Range(from, count).Select(i => words[i % words.Length]));
+        // The game's gold and an italic running on past the cut: both closed where it's cut.
+        var description = $"[gold]{Text(0, 12)}[/gold] {Text(12, 30)} [i]{Text(42, 60)}[/i] {Text(102, 20)}";
+        var plain = ModDetails.WithoutTags(description);
+        var mod = new Mod
+        {
+            path = "", modSource = ModSource.ModsDirectory, state = ModLoadState.Loaded,
+            manifest = new ModManifest
+            {
+                id = "SmmLongDescriptionTest", name = "Long Description Test", author = "Someone Careful", description = description,
+                dependencies = [.. Enumerable.Range(1, 60).Select(i => new ModDependency($"SmmFadeTestNeeds{i:00}"))],
+            },
+        };
+        var info = screen.GetNode<NModInfoContainer>("%ModInfoContainer");
+        var label = info.GetNode<RichTextLabel>("ModDescription");
+        var bar = label.GetVScrollBar();
+        try
+        {
+            info.Fill(mod);
+            await Wait(menu, 0.5);
+            var parsed = label.GetParsedText();
+            var start = parsed.IndexOf(PanelDescription.Mark);
+            var end = start < 0 ? -1 : parsed.IndexOf(PanelDescription.Mark, start + 1);
+            var shown = end > start ? parsed[(start + 1)..end] : "";
+            var (first, last) = end > start ? (label.GetCharacterLine(start), label.GetCharacterLine(end)) : (-1, -1);
+            Check("a long description: three lines in the panel, cut at a word with \"…\", the rest of the panel's text after it",
+                last - first + 1 == PanelDescription.Lines && shown.EndsWith('…') && shown.Length > 100 && plain.StartsWith(shown[..^1])
+                && shown.Length - 1 < plain.Length && plain[shown.Length - 1] == ' ' && shown[^2] != ' ' && parsed[(end + 1)..].StartsWith("\n\n"),
+                $"lines {first}..{last}: \"{shown}\"");
+            var bbcode = label.Text;
+            var cut = bbcode.IndexOf(PanelDescription.Mark) is var from and >= 0 && bbcode.IndexOf(PanelDescription.Mark, from + 1) is var to and > 0 ? bbcode[from..to] : "";
+            int Count(string text, string tag) => text.Split(tag).Length - 1;
+            Check("a long description cut: the tags it leaves open closed there (the game's gold, an italic), the facts after it as they were",
+                Count(cut, "[gold]") == 1 && Count(cut, "[/gold]") == 1 && Count(cut, "[i]") == 1 && Count(cut, "[/i]") == 1
+                && bbcode.Contains($"[gold]{Menus.Text("SPIRE_MOD_MANAGER.DEPENDENCIES")}[/gold]: "), cut);
+            await Capture(screen, outDir, "16d-description-cut");
+
+            // The card: over the three lines, where the label has them; the whole description in it.
+            var hover = label.GetNodeOrNull<Control>(PanelDescription.HoverName);
+            var lineTop = label.GetThemeStylebox("normal").GetOffset().Y - (float)bar.Value;
+            var placed = hover == null ? "no card area" : $"{hover.Position.Y:0.#}..{hover.Position.Y + hover.Size.Y:0.#} for lines at "
+                + $"{lineTop + label.GetLineOffset(first):0.#}..{lineTop + label.GetLineOffset(last) + label.GetLineHeight(last):0.#}";
+            var card = hover == null ? "" : (await SizedHoverCard(menu, hover, PanelDescription.CardName, () => Capture(screen, outDir, "16e-description-card"))).Text;
+            Check("a long description cut: the whole of it in a card over its three lines (the rest of the panel's text not its trigger)",
+                hover is { Visible: true, MouseFilter: Control.MouseFilterEnum.Pass } && Math.Abs(hover.Position.Y - (lineTop + label.GetLineOffset(first))) < 1
+                && Math.Abs(hover.Position.Y + hover.Size.Y - (lineTop + label.GetLineOffset(last) + label.GetLineHeight(last))) < 1 && card == plain,
+                $"{placed}; card: {card}");
+
+            // The fade: the text runs on below (sixty mods it needs), so there at the top.
+            var panelFill = (info.GetThemeStylebox("panel") as StyleBoxFlat)?.BgColor ?? Colors.White;
+            bar.Value = 0;
+            await Wait(menu, 0.2);
+            var atTop = ScrollFade.TestDrawn(label);
+            await Capture(screen, outDir, "16f-fade-bottom");
+            bar.Value = (bar.MaxValue - bar.Page) / 2;
+            await Wait(menu, 0.2);
+            var midway = ScrollFade.TestDrawn(label);
+            await Capture(screen, outDir, "16g-fade-both");
+            bar.Value = bar.MaxValue;
+            await Wait(menu, 0.2);
+            var atEnd = ScrollFade.TestDrawn(label);
+            await Capture(screen, outDir, "16h-fade-top");
+            var room = label.Size.X - bar.Size.X;
+            Check("the panel's text scrolled: a fade below while there's more below, at both edges midway, above at the end",
+                bar.Visible && atTop is (false, true, _) && midway is (true, true, _) && atEnd is (true, false, var endRoom)
+                && Math.Abs(endRoom.Size.X - room) < 0.5f && Math.Abs(endRoom.Size.Y - label.Size.Y) < 0.5f,
+                $"scrollbar {bar.Visible} ({bar.MaxValue:0} tall, {bar.Page:0} shown): top {atTop}, midway {midway}, end {atEnd}; the text's room {room:0.#}");
+            Check("the fade in the panel's colour, deepening to the edge, over the text and not its scrollbar; drawn, so it takes no clicks",
+                ScrollFade.Shade(0) is var edge && edge.R == panelFill.R && edge.G == panelFill.G && edge.B == panelFill.B && edge.A > 0.5f && ScrollFade.Shade(1).A == 0
+                && atEnd is { Room.End.X: var right } && right <= bar.Position.X + 0.5f && label.GetChildren().OfType<Control>().All(c => c == hover),
+                $"edge {ScrollFade.Shade(0)}, the panel {panelFill}; fade to {atEnd?.Room.End.X:0.#}, scrollbar from {bar.Position.X:0.#}; "
+                + $"the label's controls: {string.Join(", ", label.GetChildren().OfType<Control>().Select(c => c.Name))}");
+            // It follows the panel's size: room for it all, none; back to its size, a fade again.
+            var (top, bottom) = (label.OffsetTop, label.OffsetBottom);
+            label.OffsetBottom = top + label.GetContentHeight() + 20;
+            await Wait(menu, 0.2);
+            var fits = ScrollFade.TestDrawn(label);
+            label.OffsetBottom = bottom;
+            await Wait(menu, 0.2);
+            var again = ScrollFade.TestDrawn(label);
+            Check("the fade follows the panel's size: none while all its text fits, back once it doesn't",
+                fits is (false, false, _) && again is { } back && (back.Above || back.Below), $"fits {fits}, then {again}");
+
+            // A short description: as it is, no card.
+            if (Dependencies.Find("SmmTestFixes") is { manifest.description: { Length: > 0 } own } fixes)
+            {
+                info.Fill(fixes);
+                await Wait(menu, 0.3);
+                Check("a short description shows as it is, with no card over it", label.Text.Contains(own) && !label.Text.Contains(PanelDescription.Mark)
+                    && hover is { Visible: false } && PanelDescription.TestPlaced(label) == null, label.Text.Split('\n').FirstOrDefault() ?? "");
+            }
+            else
+                Results.Add("SKIP a short description as it is: Test Fixes has none");
+
+            // Vanilla View: the game's panel, its own text for the mod, whole; no card, no fade.
+            info.Fill(mod);
+            await Wait(menu, 0.3);
+            Click(screen.GetNode<BaseButton>("SpireModManagerViewToggle"));
+            await Wait(menu, 0.5);
+            info.Fill(mod); // the game's own fill there
+            await Wait(menu, 0.3);
+            var (game, gameHover, gameFade) = (label.Text, hover?.Visible, ScrollFade.TestDrawn(label));
+            Click(screen.GetNode<BaseButton>("SpireModManagerViewToggle"));
+            await Wait(menu, 0.5);
+            Check("Vanilla View: the game's own panel shows the description whole, uncut; no card over it, no fade",
+                game.Contains(Text(102, 20)) && !game.Contains(PanelDescription.Mark) && gameHover == false && gameFade is (false, false, _),
+                $"card area shown {gameHover}, fade {gameFade}: {game[..Math.Min(80, game.Length)]}");
+        }
+        finally
+        {
+            Compat.Clear(info);
+        }
+    }
+
     // A Workshop mod's head (made-up details; the sandbox has no Steam): Author, Updated (how long ago, and a link
     // to its change notes on the Workshop), Compatibility (its Workshop branches not listed). "Ago" in hours under a day,
     // singular for one. Dates and numbers in the game's language. Its Other keywords after its Workshop tags, then

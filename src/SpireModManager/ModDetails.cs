@@ -9,9 +9,10 @@ using System.Text.RegularExpressions;
 namespace SpireModManager;
 
 // The info panel in our views, top to bottom: the head beside the thumbnail (name and version, id and Workshop link,
-// status, author, last update, compatibility); anything wrong; the description; size, published, subscribers, Workshop
-// tags, other keywords (the hidden tags) and modified content (ModifiedContent); dependencies both ways; the player's
-// Alias, Category, Tags and Note; Open Folder.
+// status, author, last update, compatibility); anything wrong; the description (three lines at most: PanelDescription);
+// size, published, subscribers, Workshop tags, other keywords (the hidden tags) and modified content (ModifiedContent);
+// dependencies both ways; the player's Alias, Category, Tags and Note; Open Folder. Text scrolled past an edge fades
+// there (ScrollFade).
 // Vanilla View: the panel exactly as the game makes it.
 static class ModDetails
 {
@@ -225,6 +226,8 @@ static class ModDetails
             && ShownChanges.TryGetValue(id, out var shown) ? ModifiedContent.Tip(shown.Mod, shown.Changes) : null, width: ModifiedContent.CardWidth);
         CategoryList.WatchNames(description, Content); // hovering a name: its row lit (if in view), then its card
         GameText.Watch(description); // the game's words in their box (GameBlock)
+        PanelDescription.Watch(description); // a long description cut short: the whole of it in a card
+        ScrollFade.Watch(description); // more text out of sight above or below: a fade at that edge
         // Hovering the thumbnail: the whole picture (our views).
         var image = container.GetNode<TextureRect>("ModImage");
         image.MouseFilter = Control.MouseFilterEnum.Pass;
@@ -237,13 +240,19 @@ static class ModDetails
         var description = container.GetNode<MegaRichTextLabel>("ModDescription");
         var changes = GameChanges.For(mod);
         ShownChanges[container.GetInstanceId()] = (mod, changes);
-        description.Text = Describe(mod, ModifiedContent.Row(changes, description));
+        var own = mod.manifest?.description is { Length: > 0 } words ? PanelDescription.Shown(description, words) : null;
+        description.Text = Describe(mod, ModifiedContent.Row(changes, description), own);
         GameText.Fit(description);
     }
 
-    // Anything wrong, the description, more facts (size, published, subscribers, Workshop tags, other keywords, modified
-    // content: its row as given), then dependencies.
-    static string Describe(Mod mod, string modified)
+    // The width a line of the label's text has: its box less its margins, and less a scrollbar's room whether one shows
+    // or not, so text fitted to it doesn't wrap when one comes.
+    public static float LineRoom(RichTextLabel text) =>
+        text.Size.X - text.GetThemeStylebox("normal").GetMinimumSize().X - text.GetVScrollBar().GetCombinedMinimumSize().X - 2;
+
+    // Anything wrong, the mod's description (own: as the panel shows it, null for none), more facts (size, published,
+    // subscribers, Workshop tags, other keywords, modified content: its row as given), then dependencies.
+    static string Describe(Mod mod, string modified, string? own)
     {
         var text = new System.Text.StringBuilder();
         void Fact(string key, string value) => text.Append($"[gold]{Menus.Text(key)}[/gold]: {value}\n");
@@ -258,7 +267,7 @@ static class ModDetails
         text.Append(game);
         if (problems.Count > 0 || game.Length > 0 || copy != null)
             text.Append('\n');
-        text.Append(mod.manifest?.description is { Length: > 0 } description ? description : Faint("SPIRE_MOD_MANAGER.NO_DESCRIPTION")).Append("\n\n");
+        text.Append(own ?? Faint("SPIRE_MOD_MANAGER.NO_DESCRIPTION")).Append("\n\n");
 
         var workshop = WorkshopInfo.For(mod);
         var bytes = workshop?.Size is > 0 and var size ? size : FolderSize(mod.path);
@@ -443,12 +452,18 @@ static class ModDetails
         ["purple"] = "ee82ee", ["red"] = "ff5555",
     };
 
+    // A mod's description in the info panel (the game's label, which knows the game's tags too), cut to about max
+    // characters at a space or a line break, never inside a [tag], with every tag it leaves open closed at its end.
+    public static string Shortened(string description, int max) => Closed(CutMarkup(description, max, lines: true), game: true);
+
     // Each tag Godot's rich text draws that's still open at the end, closed there (innermost first). As in Godot, a
     // closer closes the innermost open tag only when it names it; any other is drawn as text, and closes nothing.
-    static string Closed(string bbcode)
+    // game: the game's tags too ([gold], [sine]...), for its own labels.
+    static string Closed(string bbcode, bool game = false)
     {
         var open = new List<string>();
-        foreach (Match tag in OpeningOrClosing.Matches(bbcode))
+        var tags = game ? OpeningOrClosing.Matches(bbcode).Concat(GameMarkup.Matches(bbcode)).OrderBy(m => m.Index) : OpeningOrClosing.Matches(bbcode).AsEnumerable();
+        foreach (var tag in tags)
         {
             var name = tag.Groups[2].Value;
             if (tag.Groups[1].Length == 0)
@@ -462,12 +477,13 @@ static class ModDetails
     // A tag as Godot reads one: its name, then ], = or a space (so "[right-click]" is text, not [right]).
     static readonly Regex OpeningOrClosing = new(@"\[(/?)(b|i|u|s|code|center|left|right|fill|indent|url|hint|font|font_size|color|bgcolor|fgcolor|outline_size|outline_color|table|cell|ul|ol|lang|p|wave|tornado|shake|fade|rainbow|pulse|img|dropcap|opentype_features)(?=[\]=\s])[^\]]*\]");
 
-    // Rich text cut to about max characters at a space, never inside a [tag] (Closed closes what it leaves open).
-    static string CutMarkup(string text, int max)
+    // Rich text cut to about max characters at a space (lines: or a line break), never inside a [tag] (Closed closes what
+    // it leaves open).
+    static string CutMarkup(string text, int max, bool lines = false)
     {
         if (text.Length <= max)
             return text;
-        var at = text.LastIndexOf(' ', max);
+        var at = lines ? text.LastIndexOfAny([' ', '\n'], max) : text.LastIndexOf(' ', max);
         if (at <= 0)
             at = max;
         if (text.LastIndexOf('[', at - 1) is var open && open > text.LastIndexOf(']', at - 1))
