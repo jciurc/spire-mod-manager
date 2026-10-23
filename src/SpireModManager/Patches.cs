@@ -703,7 +703,7 @@ static class GroupTickPatch
                 || CategoryList.ScreenOf(__instance) is not { } screen || HistoryBar.Screen != screen)
                 return true;
             ListFilter.KeepCopies(Selection.Mods.Select(m => m.manifest?.id));
-            Dependencies.Set(Selection.Mods, tickbox.IsTicked, screen, pick: tickbox.IsTicked ? __instance.Mod : null);
+            Dependencies.Set(Selection.Mods, tickbox.IsTicked, screen);
             CategoryList.Redraw(screen.GetNode<Control>("%ModsScrollContainer/Mask/Content"), keep: true);
             return false;
         }
@@ -715,10 +715,9 @@ static class GroupTickPatch
     }
 }
 
-// On our views, the tickbox of a mod installed more than once switches that copy alone. Ticked, it becomes the copy that
-// loads among its source's copies (the pick); unticked, the pick moves to another ticked copy of that source. This mod
-// stays on: its box is locked (CategoryList.CopyBoxes), and the controller's hotkey, which toggles a locked box too, is
-// put back (Dependencies.Write keeps it on). One undo step: the game's check runs as after its own toggle, and
+// On our views, the tickbox of a mod installed more than once switches that copy alone (which of the ticked ones loads
+// is the rule's: Copies.Next). This mod stays on: its box is locked (CategoryList.CopyBoxes), and the controller's
+// hotkey, which toggles a locked box too, is put back. One undo step: the game's check runs as after its own toggle, and
 // ModToggledPatch records it once. The game's own toggle would switch every copy of the id and source (Vanilla View
 // still does). After GroupTickPatch (a tick on several picked rows is that one's: then __runOriginal is false) and still
 // ahead of Better Mod Menu's. Falls back to the game's toggle on error, and in a session that can't save our data for a
@@ -736,7 +735,13 @@ static class CopyTickPatch
                 return true;
             if (Store.ReadOnly && !Copies.Locked(mod) && Copies.Twins(mod).Count > 0)
                 return true;
-            Dependencies.Write([(mod, tickbox.IsTicked)], pick: tickbox.IsTicked ? [mod] : null);
+            // A copy of this mod locked on (its padlock) is put back: Dependencies.Write no longer keeps it on itself.
+            if (CategoryList.LockedOn(mod) && !tickbox.IsTicked)
+            {
+                Profiles.RefreshTickboxes(screen);
+                return false;
+            }
+            Dependencies.Write([(mod, tickbox.IsTicked)]);
             Profiles.RefreshTickboxes(screen);
             screen.OnModEnabledOrDisabled();
             return false;

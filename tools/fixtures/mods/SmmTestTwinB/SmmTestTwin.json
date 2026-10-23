@@ -2,7 +2,7 @@
   "id": "SmmTestTwin",
   "name": "Test Twin Beta",
   "author": "Spire Mod Manager tests",
-  "description": "Empty mod for dev-sandbox tests: one of two copies of one mod id (SmmTestTwinA is the other), the newer one, picked in the fixture data, so the copy that sorts second loads.",
+  "description": "Empty mod for dev-sandbox tests: one of two copies of one mod id (SmmTestTwinA is the other), the newer one, so the copy that loads (the fixture data's legacy pick too), though it sorts second.",
   "version": "1.1.0",
   "has_pck": false,
   "has_dll": false,

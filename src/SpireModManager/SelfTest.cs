@@ -142,10 +142,11 @@ static partial class SelfTest
             await Step(() => TestLaunchGuard(menu, outDir));
             await Step(() => TestCrashOffer(menu, outDir));
             await Step(() => TestSameIdCanary()); // which copy of a mod installed twice loads (SameIdLoad)
+            await Step(() => TestCopyRule(outDir)); // the rule every view and the launch share (Copies.Next), on made-up copies
             await Step(() => TestSameIdPlan());
-            await Step(() => TestSameIdPick());
+            await Step(() => TestSameIdLaunch());
             await Step(() => TestSameIdSettle());
-            await Step(() => TestCopiesOff());
+            await Step(() => TestCopiesData(outDir));
             await Step(() => TestSameIdErrors());
             await Step(() => TestSameIdLaunchGuard(menu, outDir));
             await Step(() => TestTranslationsFolder(menu));
@@ -650,17 +651,17 @@ static partial class SelfTest
             var missing = parts.Where(p => screen.GetNodeOrNull(p) == null).ToList();
             Check("first run: the page opens with all our parts", missing.Count == 0, "missing " + string.Join(", ", missing));
             Check($"first run: rows ({rows.Count}) match mods ({ModManager.Mods.Count})", rows.Count == ModManager.Mods.Count);
-            // The launch that brings picks (no data yet, so no pick): the game's own choice loads, the copy sorted first,
-            // the other set aside (no duplicate error); that one becomes the pick, so nothing is pending for them.
+            // A first run (no data yet, so nothing off): both copies ticked, and the higher version (B, sorted second)
+            // loads, swapped into the id's first slot, the other set aside (no duplicate error); nothing pending for them.
             var twins = ModManager.Mods.Where(m => m.manifest?.id == TwinId).ToList();
             if (twins.FirstOrDefault(m => Copies.CopyOf(m) == "l:SmmTestTwinA") is { } a && twins.FirstOrDefault(m => Copies.CopyOf(m) == "l:SmmTestTwinB") is { } b)
-                Check("first run: a mod installed twice, no pick saved yet: the game's own choice (the copy sorted first) loads, the other set aside with no "
-                    + "duplicate error; that one picked, nothing pending for them",
-                    SameIdLoad.Plan.GetValueOrDefault(TwinId) is { HadPick: false, Swapped: false } plan && plan.Loads == a && a.state == ModLoadState.Loaded
-                    && b.state == ModLoadState.DisabledDuplicate && !ModManager.Mods.Any(m => m.errors?.Any(e => e.LocEntryKey == "MOD_ERROR.DUPLICATE_ID") == true)
-                    && Store.Data.CopyPicks?.Contains($"{TwinId}|l:SmmTestTwinA") == true && Copies.Ticked(a) && !Copies.Ticked(b)
-                    && Store.Data.CopiesOff?.Contains($"{TwinId}|l:SmmTestTwinB") == true, // a first run reads as data from before copies_off: the pick alone on
-                    $"A {a.state}, B {b.state}; picks {string.Join(", ", Store.Data.CopyPicks ?? [])}; plan {SameIdLoad.Plan.GetValueOrDefault(TwinId)}");
+                Check("first run: a mod installed twice, no data yet: both copies ticked, the higher version loads (swapped into the id's first slot), the "
+                    + "other set aside with no duplicate error; no copy_picks, nothing off, nothing pending for them",
+                    SameIdLoad.Plan.GetValueOrDefault(TwinId) is { Swapped: true } plan && plan.Loads == b && b.state == ModLoadState.Loaded
+                    && a.state == ModLoadState.DisabledDuplicate && !ModManager.Mods.Any(m => m.errors?.Any(e => e.LocEntryKey == "MOD_ERROR.DUPLICATE_ID") == true)
+                    && Store.Data.CopyPicks == null && Copies.Ticked(a) && Copies.Ticked(b) && Copies.Loads(b) && !Copies.Loads(a)
+                    && Store.Data.CopiesOff?.Any(k => Copies.IdOf(k) == TwinId) == false,
+                    $"A {a.state}, B {b.state}; off {string.Join(", ", Store.Data.CopiesOff ?? [])}; plan {SameIdLoad.Plan.GetValueOrDefault(TwinId)}");
             else
                 TwinsMissing("first run: a mod installed twice");
 
@@ -882,9 +883,13 @@ static partial class SelfTest
             Results.Add($"SKIP {what}: the fixture twins aren't installed");
     }
 
-    // The fixture's two copies of one mod id (SmmTestTwinA 1.0.0, SmmTestTwinB 1.1.0 needing Test Framework, the picked
-    // one) and Test Twin User, which needs 1.1.0 or newer. dev.cs lists the id after the framework, so A sorts first.
+    // The fixture's two copies of one mod id (SmmTestTwinA 1.0.0, SmmTestTwinB 1.1.0 needing Test Framework, the higher
+    // version and the fixture's legacy pick, so the one that loads) and Test Twin User, which needs 1.1.0 or newer. dev.cs
+    // lists the id after the framework, so A sorts first.
     const string TwinId = "SmmTestTwin";
+
+    // The copy of an id that loads after a relaunch (Copies.Next); null for none.
+    static string? LoadingCopy(string id) => Copies.Loading(id) is { } loads ? Copies.CopyOf(loads) : null;
 
     // A made-up mod for SameIdLoad's plan, in a folder of its own: its copy "l:<folder>", or "w:<item>" with an item.
     static Mod Made(string id, string folder, ModLoadState state = ModLoadState.None, ulong? item = null, string version = "1.0.0", params string[] needs)
@@ -906,20 +911,17 @@ static partial class SelfTest
     static List<string> FileCopiesOff() =>
         [.. (JsonNode.Parse(File.ReadAllText(Store.FilePath))?["copies_off"] as JsonArray ?? []).Select(k => (string?)k).OfType<string>()];
 
-    // What every id and source installed more than once keeps, whatever was done to its copies: its pick installed and
-    // never off, its switch on exactly while a copy of it is ticked, and then exactly one copy of the id loading. Null
-    // when every one keeps it, else what broke first.
+    // What every id and source installed more than once keeps, whatever was done to its copies: no copy_picks in our data
+    // (read once, never written again), its switch on exactly while a copy of it is ticked, and then exactly one copy of
+    // the id loading. Null when every one keeps it, else what broke first.
     static string? CopiesBroken()
     {
-        var (off, gameOff) = (CopiesOff(), Dependencies.SavedOff());
+        var gameOff = Dependencies.SavedOff();
         var installed = Dependencies.EachCopy(ModManager.Mods.Union(Installed.Mods)).ToList();
+        if (Store.Data.CopyPicks != null)
+            return $"copy_picks still in our data: {string.Join(", ", Store.Data.CopyPicks)}";
         foreach (var (id, source, copies) in Copies.TwinGroups())
         {
-            var pick = Store.Data.CopyPicks?.Select(Copies.Parse).FirstOrDefault(p => p is { } k && k.Id == id && k.Source == source) is { } stored ? stored.Copy : null;
-            if (pick == null || !copies.Contains(pick))
-                return $"{id}/{source}: the pick {pick ?? "none"} isn't one of its copies ({string.Join(", ", copies)})";
-            if (off.Contains($"{id}|{pick}"))
-                return $"{id}/{source}: the pick {pick} is in copies_off";
             var on = !gameOff.Contains((id, source));
             var ticked = installed.Where(m => m.manifest?.id == id && m.modSource == source && Copies.Ticked(m)).Select(Copies.CopyOf).ToList();
             if (on != ticked.Count > 0)
@@ -942,7 +944,7 @@ static partial class SelfTest
     const string ClashTip = "Another copy of this mod is enabled: {others}. Only {loads} loads.";
     const string StatusWontLoad = "Duplicate - Won't load";
     const string CopyLoses = "{other} loads instead. {why} Disable one to choose.";
-    const string WhyLocal = "The game prioritizes a local copy.", WhyHigher = "The game prioritizes a higher version.", WhySource = "Only one copy from the same source loads.";
+    const string WhyLocal = "The game prioritizes a local copy.", WhyHigher = "The game prioritizes a higher version.";
     const string LoadsAlso = "{other} is also enabled - this copy is the one that loads.";
     const string FailedOther = "{other} is also installed. To load that copy instead, enable it and disable this one.";
     const string SelfRuns = "This copy is running. {other} stays enabled too, in case this one is removed.";

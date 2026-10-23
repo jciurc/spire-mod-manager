@@ -620,11 +620,10 @@ static class ModDetails
     }
 
     // Why a ticked copy doesn't load as another of its id does (Copies.LosesTo), in a sentence; null where none says it.
-    static string? Why(Copies.LoseReason why) => why switch
+    static string? Why(Copies.Why why) => why switch
     {
-        Copies.LoseReason.LocalCopy => Escape(Menus.Text("SPIRE_MOD_MANAGER.COPY_WHY_LOCAL")),
-        Copies.LoseReason.HigherVersion => Escape(Menus.Text("SPIRE_MOD_MANAGER.COPY_WHY_HIGHER")),
-        Copies.LoseReason.EnabledLast => Escape(Menus.Text("SPIRE_MOD_MANAGER.COPY_WHY_SOURCE")),
+        Copies.Why.Local => Escape(Menus.Text("SPIRE_MOD_MANAGER.COPY_WHY_LOCAL")),
+        Copies.Why.Higher => Escape(Menus.Text("SPIRE_MOD_MANAGER.COPY_WHY_HIGHER")),
         _ => null,
     };
 

@@ -1,3 +1,4 @@
+using System.Globalization;
 using System.Runtime.CompilerServices;
 using Godot;
 using MegaCrit.Sts2.Core.Debug;
@@ -15,16 +16,14 @@ namespace SpireModManager;
 // first time it's seen (StoreData.Copies lists them, the holder first). A mod installed once has no record and its data
 // stays under its id, so files without copies never change. The game's own list can't tell same-source copies apart
 // (it keeps id, source and on/off, one switch for them): which of them are ticked is ours (StoreData.CopiesOff: those
-// off while the switch is on), and which of the ticked ones loads is our pick (StoreData.CopyPicks, applied by
-// SameIdLoad), which a copy ticked on becomes. So a copy's box (Ticked) and whether it loads after a relaunch (Loads) are two
-// things: two copies of an id ticked, only one loads.
+// off while the switch is on). Which copy loads is worked out from what's installed, the switches, the ticks and the
+// versions every time (Next), never stored: the game's local-vs-Workshop rule on its switches, then of one source the
+// highest ticked version, applied by SameIdLoad at launch. So a copy's box (Ticked) and whether it loads after a
+// relaunch (Loads) are two things: two copies of an id ticked, only one loads.
 static class Copies
 {
     // Every mod the game found, and those installed this session.
     static IEnumerable<Mod> All => ModManager.Mods.Union(Installed.Mods);
-
-    // Copies alone on their switch: a mod installed once from that source (not this mod's), one each.
-    public static IEnumerable<Mod> Alone() => All.Where(m => m.manifest?.id is { } id && id != ModEntry.ModId && Twins(m).Count == 0).DistinctBy(SwitchKey);
 
     // Worked out once per copy (a Workshop id read by reflection on the beta, a folder name).
     static readonly ConditionalWeakTable<Mod, string> Names = new();
@@ -33,33 +32,22 @@ static class Copies
         : (m.modSource == ModSource.SteamWorkshop ? "ws:" : "l:")
             + (Path.GetFileName(m.path?.TrimEnd('/', '\\') ?? "") is { Length: > 0 } folder ? folder : m.modSource.ToString()));
 
-    // The key a copy's pick is saved under (StoreData.CopyPicks): "<id>|<copy>", the same whichever copy holds the id's
+    // The key a copy's tick is saved under (StoreData.CopiesOff): "<id>|<copy>", the same whichever copy holds the id's
     // entry (Key changes with the holder).
     public static string SwitchKey(Mod mod) => $"{mod.manifest?.id}|{CopyOf(mod)}";
 
-    // The id, copy and source a saved pick names ("w:" and "ws:" copies are the Workshop's, "l:" ones local); null for
-    // a key that names none.
+    // The source a copy is from: "w:" and "ws:" copies are the Workshop's, "l:" ones local; null for a name that's neither.
+    public static ModSource? SourceOf(string copy) => copy.StartsWith("w:") || copy.StartsWith("ws:") ? ModSource.SteamWorkshop
+        : copy.StartsWith("l:") ? ModSource.ModsDirectory : null;
+
+    // The id, copy and source a copies_off key (or a legacy pick) names; null for a key that names none.
     public static (string Id, string Copy, ModSource Source)? Parse(string? key)
     {
         var bar = key?.IndexOf('|') ?? -1;
         if (key == null || bar <= 0)
             return null;
         var copy = key[(bar + 1)..];
-        ModSource? source = copy.StartsWith("w:") || copy.StartsWith("ws:") ? ModSource.SteamWorkshop
-            : copy.StartsWith("l:") ? ModSource.ModsDirectory : null;
-        return source is { } from && copy.Length > copy.IndexOf(':') + 1 ? (key[..bar], copy, from) : null;
-    }
-
-    // The saved picks with these made the copies that load, each in place of its id and source's pick (tidied).
-    public static List<string>? WithPicks(IEnumerable<string>? stored, IEnumerable<string> picked)
-    {
-        var made = new List<(string Id, string Copy, ModSource Source)>();
-        foreach (var key in picked)
-            if (Parse(key) is { } pick)
-                made.Add(pick);
-        var replaced = made.Select(p => (p.Id, p.Source)).ToHashSet();
-        return Store.TidyPicks((stored ?? []).Where(key => Parse(key) is not { } kept || !replaced.Contains((kept.Id, kept.Source)))
-            .Concat(made.Select(p => $"{p.Id}|{p.Copy}")));
+        return SourceOf(copy) is { } from && copy.Length > copy.IndexOf(':') + 1 ? (key[..bar], copy, from) : null;
     }
 
     // A copy as the player knows it: its Workshop item id, or its folder.
@@ -101,7 +89,7 @@ static class Copies
         ? [.. copies.Where(m => m != mod && CopyOf(m) != CopyOf(mod))] : [];
 
     // The other copies from the same source (two Workshop items of one mod): the game's list has one switch for them, and
-    // only the picked one loads.
+    // which of the ticked ones loads is ours (Next).
     public static IReadOnlyList<Mod> Twins(Mod mod) => Others(mod) is { Count: > 0 } others ? [.. others.Where(m => m.modSource == mod.modSource)] : [];
 
     // Whether any id is installed more than once from one source (most players have none).
@@ -139,106 +127,135 @@ static class Copies
         return _byId;
     }
 
-    // The copy of an id and source that loads (its CopyOf), where it's installed more than once from that source: the
-    // pick when it names one of them; else the one the game loaded; else the first in our record (StoreData.Copies)
-    // that copies_off doesn't have, else the record's first; else the first as Reconcile orders them. Null for an id
-    // and source installed once, or not at all.
-    public static string? Picked(string id, ModSource source) => Picked(id, source, Picks.Now);
+    // The copies of an id from one source our record has (StoreData.Copies), installed or not, where it has two or more:
+    // the group a profile's copies off and Restore's are written for, so a group with copies missing still counts. Never
+    // ours: its copies of one source share one box. Null for none.
+    public static List<string>? RecordGroup(string id, ModSource source, IReadOnlyDictionary<string, List<string>>? record) =>
+        id != ModEntry.ModId && record?.GetValueOrDefault(id)?.Where(c => SourceOf(c) == source).ToList() is { Count: > 1 } copies ? copies : null;
 
-    public static string? Picked(string id, ModSource source, Picks picks)
-    {
-        if (!ById().TryGetValue(id, out var all))
-            return null;
-        var group = all.Where(m => m.modSource == source).ToList();
-        var copies = group.Select(CopyOf).Distinct().ToList();
-        if (copies.Count < 2)
-            return null;
-        if (picks.Stored(id, source) is { } stored && copies.Contains(stored))
-            return stored;
-        if (group.FirstOrDefault(m => m.state == ModLoadState.Loaded) is { } loaded)
-            return CopyOf(loaded);
-        if (picks.Record?.GetValueOrDefault(id)?.Where(copies.Contains).ToList() is { Count: > 0 } recorded)
-            return recorded.FirstOrDefault(c => picks.Off?.Contains($"{id}|{c}") != true) ?? recorded[0];
-        return Ordered(copies, Launched()).First();
-    }
-
-    // Where an id and source's stored pick names a copy our record has that isn't installed, two or more others from that
-    // source being: that copy (Pick), and the one loading in its place meanwhile (Copy, Picked's choice). The pick stays
-    // the player's until they pick another, in our data and in every profile (Chosen), so it loads again once it's back;
-    // the stand-in reads ticked, and is never off in our data or the active profile (Reconcile, Profiles.HoldCopies), so
-    // SameIdLoad's no-pick choice lands on it at every launch meanwhile, whatever new copy arrives. A profile switched to
-    // makes a missing copy it names the pick again only where its stand-in is the copy that no-pick choice takes
-    // (NoPickChoice, in Profiles.KeepNamed), so that stays true. Null for none.
-    public static (string Pick, string Copy)? StandIn(string id, ModSource source, Picks picks) =>
-        picks.Stored(id, source) is { } stored && picks.Record?.GetValueOrDefault(id)?.Contains(stored) == true
-            && Picked(id, source, picks) is { } copy && copy != stored ? (stored, copy) : null;
-
-    // The copy SameIdLoad's no-pick choice takes for an id and source at the next launch, as copies_off stands: our
-    // record's first copy installed from that source that isn't off. Null when every recorded one is off (the game's order
-    // decides then).
-    public static string? NoPickChoice(string id, ModSource source, Picks picks)
-    {
-        if (!ById().TryGetValue(id, out var all))
-            return null;
-        var copies = all.Where(m => m.modSource == source).Select(CopyOf).ToHashSet();
-        return picks.Record?.GetValueOrDefault(id)?.FirstOrDefault(c => copies.Contains(c) && picks.Off?.Contains($"{id}|{c}") != true);
-    }
-
-    // Every copy standing in for a pick that's missing, by its key (SwitchKey).
-    public static HashSet<string> StandIns(Picks picks) =>
-        [.. TwinGroups().Select(g => StandIn(g.Id, g.Source, picks) is { } s ? $"{g.Id}|{s.Copy}" : null).OfType<string>()];
-
-    // The pick as the player chose it, as a profile saves it: Picked, but the stored pick itself while a copy stands in
-    // for it.
-    public static string? Chosen(string id, ModSource source) => StandIn(id, source, Picks.Now)?.Pick ?? Picked(id, source);
+    public static List<string>? RecordGroup(string id, ModSource source) => RecordGroup(id, source, Store.Data.Copies);
 
     // Copies the game found at launch, before those installed since: they keep the id they had.
     static HashSet<string> Launched() =>
         ModManager.Mods.Where(m => m.state != ModLoadState.AddedAtRuntime).Except(Installed.Mods).Select(CopyOf).ToHashSet();
 
-    // A copy found at launch first, then a Workshop copy before a local one, the oldest item first (fixed, so a version
-    // bump never moves it).
-    static IEnumerable<string> Ordered(IEnumerable<string> copies, HashSet<string> launched) =>
-        copies.OrderBy(c => launched.Contains(c) ? 0 : 1).ThenBy(c => c.StartsWith("w:") ? 0 : 1)
-            .ThenBy(c => c.StartsWith("w:") && ulong.TryParse(c[2..], out var item) ? item : ulong.MaxValue).ThenBy(c => c, StringComparer.Ordinal);
-
-    // Of these copies, the first as Ordered puts them; null for none.
-    public static Mod? FirstInOrder(IEnumerable<Mod> copies)
+    // How a first split orders a record, and copies new to it join (Join): a copy the last launch had first
+    // (LaunchGuard.Before), then one found at this launch, then those installed since in the order they came, then by
+    // age (ByAge).
+    static IEnumerable<string> Ordered(string id, IEnumerable<string> copies, HashSet<string> launched)
     {
-        var list = copies.ToList();
-        return Ordered(list.Select(CopyOf), Launched()).FirstOrDefault() is { } first ? list.FirstOrDefault(m => CopyOf(m) == first) : null;
+        var before = LaunchGuard.Before?.GetValueOrDefault(id);
+        var came = Installed.Mods.Select(CopyOf).ToList();
+        return ByAge(copies.OrderBy(c => before?.Contains(c) == true ? 0 : 1).ThenBy(c => launched.Contains(c) ? 0 : 1)
+            .ThenBy(c => came.IndexOf(c) is var at && at >= 0 ? at : int.MaxValue));
     }
 
-    // This copy's own box: whether the player has it on, as our views show it (Vanilla View shows the game's switch).
-    // Its id and source's switch is on in the game's list and, where copies share that switch, copies_off doesn't have
-    // it or it's the pick (the pick always counts as on; a snapshot from before copies_off: only the pick). This mod
-    // goes by its switch alone. Inside a redraw, Lookups answers.
-    public static bool Ticked(Mod mod) => Lookups.Current?.Ticked(mod) ?? SwitchOn(mod) && OwnTick(mod, Picks.Now);
+    // A Workshop copy before a local one, the oldest item first, then by name: fixed, so a version bump never moves it.
+    static IOrderedEnumerable<string> ByAge(IOrderedEnumerable<string> copies) =>
+        copies.ThenBy(c => c.StartsWith("w:") ? 0 : 1).ThenBy(c => c.StartsWith("w:") && ulong.TryParse(c[2..], out var item) ? item : ulong.MaxValue)
+            .ThenBy(c => c, StringComparer.Ordinal);
+
+    // The copies in the order a tie between them goes by (PENDING JORDAN, P4: "the copy installed first"): their place in
+    // our record's list for the id; a copy the record doesn't have after those it has, the ones the last launch had
+    // first (before), then by age, as a first split orders them. Pure: the page passes our record, the launch the one read
+    // at Init, so the two agree.
+    public static IEnumerable<string> TieOrder(IEnumerable<string> copies, IReadOnlyList<string>? recorded, IReadOnlySet<string>? before)
+    {
+        int At(string copy)
+        {
+            for (var i = 0; i < (recorded?.Count ?? 0); i++)
+                if (recorded?[i] == copy)
+                    return i;
+            return int.MaxValue;
+        }
+        return ByAge(copies.OrderBy(At).ThenBy(c => before?.Contains(c) == true ? 0 : 1));
+    }
+
+    // A copy's version as the game reads it (SemanticVersion), for its own local-vs-Workshop rule (Next's step 2): null for
+    // none, one it can't read, or one that throws (a number past int's range throws out of TryFromString).
+    public static SemanticVersion? GameVersion(Mod mod) => VersionsOf(mod).Game;
+
+    // A copy's version as our choice between copies of one source reads it (Next's step 4, PENDING JORDAN, P5): as the
+    // game reads it where it can, so every such version is ordered as the game orders it, else leniently (Ver.Lenient).
+    // Null where no number leads.
+    public static Ver? Version(Mod mod) => VersionsOf(mod).Ours;
+
+    // Both readings of a manifest's version, kept per Mod (an update mid-session adds a Mod with its new manifest), read
+    // again where the version was changed in place (the self-test does).
+    static readonly ConditionalWeakTable<Mod, Versions> Read = new();
+
+    sealed record Versions(string? Text, SemanticVersion? Game, Ver? Ours);
+
+    static Versions VersionsOf(Mod mod)
+    {
+        var text = mod.manifest?.version;
+        if (Read.TryGetValue(mod, out var read) && read.Text == text)
+            return read;
+        var game = Ver.Game(text);
+        var made = new Versions(text, game, game != null ? Ver.Of(game) : Ver.Lenient(text));
+        Read.AddOrUpdate(mod, made);
+#if DEVTOOLS
+        TestReads++;
+#endif
+        return made;
+    }
+
+    // How Best's copy won: the highest version; the first by TieOrder among equal versions (or none readable); or the
+    // only copy whose version reads.
+    public enum Won { Higher, First, Readable }
+
+    // Of the ticked copies of one source the game left to load (a Mod each), the one Spire Mod Manager loads (PENDING
+    // JORDAN, P4 and P5): of those whose version reads, the highest, the first by tieOrder among equals; none reads: the
+    // first by tieOrder. gameVersion, given where a mod that loads needs the id with a minimum version: a copy the game
+    // can't read ranks below every one it can, or that mod would fail with the game's DEPENDENCY_VERSION_INVALID. Shared
+    // by the page (Next) and the launch (SameIdLoad.Choose).
+    public static (Mod Mod, Won How) Best(IReadOnlyList<Mod> candidates, Func<Mod, Ver?> version, Func<IEnumerable<string>, IEnumerable<string>> tieOrder,
+        Func<Mod, SemanticVersion?>? gameVersion = null)
+    {
+        var pool = gameVersion != null && candidates.Any(c => gameVersion(c) != null) ? [.. candidates.Where(c => gameVersion(c) != null)] : candidates.ToList();
+        var read = new List<(Mod Mod, Ver Ver)>();
+        foreach (var candidate in pool)
+            if (version(candidate) is { } ver)
+                read.Add((candidate, ver));
+        var top = pool;
+        if (read.Count > 0)
+        {
+            var high = read.Aggregate((a, b) => b.Ver.CompareTo(a.Ver) > 0 ? b : a).Ver;
+            top = [.. read.Where(p => p.Ver.CompareTo(high) == 0).Select(p => p.Mod)];
+        }
+        var first = tieOrder(top.Select(CopyOf)).First();
+        var won = top.First(m => CopyOf(m) == first);
+        var rest = candidates.Where(c => c != won).ToList();
+        var how = rest.Count > 0 && rest.All(c => !pool.Contains(c) || version(c) == null) && read.Count > 0 ? Won.Readable
+            : top.Count > 1 || read.Count == 0 ? Won.First : Won.Higher;
+        return (won, how);
+    }
+
+    // This copy's own box: whether the player has it on, as our views show it (Vanilla View shows the game's switch): its
+    // id and source's switch on, and its own tick (OwnTick). Inside a redraw, Lookups answers.
+    public static bool Ticked(Mod mod) => Lookups.Current?.Ticked(mod) ?? SwitchOn(mod) && OwnTick(mod, Ticks.Now);
 
     // The same, read against given lists (launch's, a snapshot's, or now's).
-    public static bool TickedIn(Mod mod, HashSet<(string?, ModSource)> gameOff, Picks picks) =>
-        !gameOff.Contains((mod.manifest?.id, mod.modSource)) && OwnTick(mod, picks);
+    public static bool TickedIn(Mod mod, HashSet<(string?, ModSource)> gameOff, Ticks ticks) =>
+        !gameOff.Contains((mod.manifest?.id, mod.modSource)) && OwnTick(mod, ticks);
 
     // Its id and source's switch as the game reads it (any entry off turns it off), without listing every entry.
     static bool SwitchOn(Mod mod) => !(SaveManager.Instance.SettingsSave.ModSettings?.IsModDisabled(mod) ?? false);
 
-    // With its switch on: copies_off doesn't have it, or it's picked (copies_off first: the pick takes longer to work out).
-    static bool OwnTick(Mod mod, Picks picks) => picks.Off is { } off && !off.Contains(SwitchKey(mod)) || IsPicked(mod, picks);
-
-    // Whether this copy is its id and source's pick where copies share that switch; any other mod counts as picked
-    // (this mod's copies too: the game sorts them out).
-    public static bool IsPicked(Mod mod, Picks picks) => mod.manifest?.id is not { } id || id == ModEntry.ModId
-        || Twins(mod).Count == 0 || picks.Picked(id, mod.modSource) == CopyOf(mod);
+    // Its own tick, ignoring the switch (Ticks.Ticked over the other copies of its switch installed): what "Enable needed"
+    // brings back where a needed id is all off (Dependencies.Preference).
+    public static bool OwnTick(Mod mod, Ticks ticks) => mod.manifest?.id is not { } id || !ticks.Off.Contains(SwitchKey(mod))
+        || ticks.Ticked(id, CopyOf(mod), Twins(mod).Select(CopyOf));
 
     // Whether this copy is the one of its id that loads after a relaunch (Loading); for an id installed once, its switch.
-    // It implies the switch is on, and nearly always that it's ticked (LoseReason.Other is the exception). Inside a
-    // redraw, Lookups answers.
+    // It implies the switch is on, and nearly always that it's ticked (the edges where an unticked copy loads are in
+    // Next). Inside a redraw, Lookups answers.
     public static bool Loads(Mod mod) => Lookups.Current?.Loads(mod)
-        ?? (Others(mod).Count == 0 ? SwitchOn(mod) : LoadsIn(mod, Dependencies.SavedOff(), Picks.Now));
+        ?? (Others(mod).Count == 0 ? SwitchOn(mod) : LoadsIn(mod, Dependencies.SavedOff(), Ticks.Now));
 
     // The same, read against given lists.
-    public static bool LoadsIn(Mod mod, HashSet<(string?, ModSource)> gameOff, Picks picks) =>
-        LoadsWith(mod, gameOff, id => LoadingIn(id, gameOff, picks));
+    public static bool LoadsIn(Mod mod, HashSet<(string?, ModSource)> gameOff, Ticks ticks) =>
+        LoadsWith(mod, gameOff, id => LoadingIn(id, gameOff, ticks));
 
     // The same, given how to find the copy of an id that loads (Lookups keeps each id's for the redraw).
     public static bool LoadsWith(Mod mod, HashSet<(string?, ModSource)> gameOff, Func<string, Mod?> loading) =>
@@ -246,84 +263,178 @@ static class Copies
             : !gameOff.Contains((mod.manifest?.id, mod.modSource));
 
     // The copy of an id that loads after a relaunch, or null when none does. Inside a redraw, Lookups answers.
-    public static Mod? Loading(string id) => Lookups.Current is { } now ? now.Loading(id) : LoadingIn(id, Dependencies.SavedOff(), Picks.Now);
+    public static Mod? Loading(string id) => Next(id).Loads;
 
-    // The same, read against given lists, as the next launch goes. The game's rule first, on switches, not ticks (it can't
-    // see copies_off): ModManager.RemoveDisabledMods compares each Workshop copy that's on with the first local copy on
-    // it read, keeping the higher version on the beta (the local copy on a tie or an unreadable version) and the local
-    // copy on stable. Then SameIdLoad.Apply's choice among what's left: the pick, else the first copy not in copies_off,
-    // else the first. Two local copies and a Workshop one are approximated: which local copy the game read first can't
-    // be known after its sort, so the local pick stands for it. This mod: the game's own choice (Apply leaves it out).
-    public static Mod? LoadingIn(string id, HashSet<(string?, ModSource)> gameOff, Picks picks)
+    // The same, read against given lists.
+    public static Mod? LoadingIn(string id, HashSet<(string?, ModSource)> gameOff, Ticks ticks) => Next(id, gameOff, ticks).Loads;
+
+    // Why a ticked copy doesn't load (Next's step 5): the game took it out for a local copy that loads (Local: stable, or
+    // a tie or an unknown version on the beta); it lost to a higher version that loads (Higher: the game's rule between
+    // sources, or ours within one); within one source, to the copy that loads on a tie, or with no version read (First);
+    // its version can't be read and the loading copy's can (Unreadable); it's the copy the launch couldn't swap in
+    // (Blocked: the game's choice loads in its place); or none of these says it (Other: the copy it lost to isn't the one
+    // that loads, the copy that loads isn't ticked, the other source of two local copies and a newer Workshop one, a
+    // copy of this mod from the same source, or an id the launch couldn't choose for).
+    public enum Why { Local, Higher, First, Unreadable, Blocked, Other }
+
+    // What the next launch loads of an id (Next): Loads, or null for none; Losing: every ticked copy that won't load
+    // (CopyOf), and why.
+    public sealed record Outcome(Mod? Loads, IReadOnlyDictionary<string, Why> Losing)
+    {
+        public static readonly Outcome None = new(null, new Dictionary<string, Why>());
+    }
+
+    // The one rule every view reads, worked out each time from what's installed, the switches, the ticks and the
+    // versions (nothing about which copy loads is stored). Inside a redraw, Lookups answers.
+    public static Outcome Next(string id) => Lookups.Current?.Next(id) ?? Next(id, Dependencies.SavedOff(), Ticks.Now);
+
+    // The same, read against given lists, as the next launch goes:
+    // 1. the installed copies of the id, one Mod per copy (its first; versions from its newest manifest, Newest), in the
+    //    game's list order; none whose switch is on: nothing loads;
+    // 2. the game's rule, on switches, not ticks (it can't see copies_off), with its own reading of versions
+    //    (ModManager.RemoveDisabledMods): stable takes out every Workshop copy beside a local one; the beta compares each
+    //    Workshop copy with the first local copy it read (FirstRead), taking out the local one where the Workshop version
+    //    is higher, else the Workshop one (a tie, or an unknown version);
+    // 3. this mod, or an id the launch couldn't choose for (SameIdLoad.Unchosen): the game's own choice, the copy that
+    //    loaded this session if it's left, else the first;
+    // 4. else of the ticked copies left, those of the first one's source (nothing is chosen across sources), and of
+    //    those Best; none ticked: the game's own choice, the first left. Where the launch couldn't swap that copy in
+    //    (SameIdLoad's plan: Blocked) and nothing changed since (the load order, a mod that needs the id still on), the
+    //    next launch does the same: the game's own choice;
+    // 5. every ticked copy that doesn't load, and why (Why).
+    public static Outcome Next(string id, HashSet<(string?, ModSource)> gameOff, Ticks ticks)
     {
         var copies = (ById().TryGetValue(id, out var all) ? all : All.Where(m => m.manifest?.id == id)).DistinctBy(CopyOf).ToList();
         var on = copies.Where(m => !gameOff.Contains((id, m.modSource))).ToList();
         if (on.Count == 0)
-            return null;
+            return Outcome.None;
+        if (copies.Count == 1)
+            return new Outcome(on[0], Outcome.None.Losing);
+        // 2. Each copy the game takes out, with the copy it lost to and why.
+        var beaten = new Dictionary<Mod, (Mod By, Why Why)>();
         var locals = on.Where(m => m.modSource == ModSource.ModsDirectory).ToList();
-        var workshop = on.Where(m => m.modSource == ModSource.SteamWorkshop).ToList();
-        var left = on;
-        if (locals.Count > 0 && workshop.Count > 0)
-            left = locals.Count > 1 ? locals : workshop.Where(w => Beats(w, locals[0])).ToList() is { Count: > 0 } won ? won : locals;
-        if (left.Count == 1 || id == ModEntry.ModId)
-            return left[0];
-        var pick = picks.Picked(id, left[0].modSource);
-        return left.FirstOrDefault(m => CopyOf(m) == pick) ?? left.FirstOrDefault(m => picks.Off?.Contains(SwitchKey(m)) != true) ?? left[0];
+        if (locals.Count > 0 && on.Any(m => m.modSource == ModSource.SteamWorkshop))
+        {
+            var first = FirstRead(locals);
+            var local = GameVersion(Newest(first));
+            foreach (var workshop in on.Where(m => m.modSource == ModSource.SteamWorkshop))
+            {
+                var by = Compat.WorkshopBeatsOlderLocal && local != null && GameVersion(Newest(workshop)) is { } version ? version.CompareTo(local) : 0;
+                if (by > 0)
+                    beaten.TryAdd(first, (workshop, Why.Higher));
+                else
+                    beaten[workshop] = (first, by < 0 ? Why.Higher : Why.Local);
+            }
+        }
+        var left = on.Where(m => !beaten.ContainsKey(m)).ToList();
+        bool IsTicked(Mod m) => OwnTick(m, ticks);
+        Mod GameChoice() => left.FirstOrDefault(m => m.state == ModLoadState.Loaded) ?? left[0];
+        Mod loads;
+        Mod? blocked = null;
+        List<Mod> candidates = [];
+        var strict = false;
+        if (id == ModEntry.ModId || SameIdLoad.Unchosen(id))
+            loads = GameChoice();
+        else if (left.Where(IsTicked).ToList() is not [var firstTicked, ..] ticked)
+            loads = left[0];
+        else
+        {
+            candidates = [.. ticked.Where(m => m.modSource == firstTicked.modSource)];
+            strict = NeedsReadable(id, gameOff);
+            var best = Best(candidates, m => Version(Newest(m)), tied => TieOrder(tied, ticks.TieList(id), ticks.BeforeOf(id)),
+                strict ? m => GameVersion(Newest(m)) : null).Mod;
+            loads = best;
+            if (Blocked(id, best, gameOff))
+                (blocked, loads) = (best, GameChoice());
+        }
+        // 5. Why each ticked copy that doesn't load doesn't.
+        var losing = new Dictionary<string, Why>();
+        foreach (var copy in on.Where(IsTicked).Where(m => CopyOf(m) != CopyOf(loads)))
+            losing[CopyOf(copy)] = beaten.TryGetValue(copy, out var lost) ? GameReason(copy, lost.By, lost.Why, loads)
+                : copy == blocked ? Why.Blocked
+                : blocked == null && candidates.Contains(copy) && candidates.Contains(loads) ? SameSource(copy, loads, strict)
+                : Why.Other;
+        return new Outcome(loads, losing);
     }
 
-    // Whether the game keeps this Workshop copy over this local one, both on: the beta keeps the higher version (a
-    // pre-release sorts lower), a tie or an unreadable one going to the local copy; stable always keeps the local copy.
-    // Each copy's newest manifest, as the next launch reads it (Newest).
-    static bool Beats(Mod workshop, Mod local) => Compat.WorkshopBeatsOlderLocal
-        && SemanticVersion.TryFromString(Newest(workshop).manifest?.version ?? "", out var w)
-        && SemanticVersion.TryFromString(Newest(local).manifest?.version ?? "", out var l) && w != null && l != null && w.CompareTo(l) > 0;
+    // Why a copy the game's rule took out (step 2) doesn't load: a Workshop copy beside a local copy that loads (Local, or
+    // Higher where that's the local copy it lost to as the higher version); a local copy beside a Workshop copy that
+    // loads (every Workshop copy left beat it: Higher); else Other.
+    static Why GameReason(Mod copy, Mod by, Why why, Mod loads) =>
+        copy.modSource == ModSource.SteamWorkshop
+            ? loads.modSource != ModSource.ModsDirectory ? Why.Other : why == Why.Higher ? (CopyOf(by) == CopyOf(loads) ? Why.Higher : Why.Other) : Why.Local
+            : loads.modSource == ModSource.SteamWorkshop ? Why.Higher : Why.Other;
+
+    // Why a ticked copy of one source lost to the one that loads there (Best): its version can't be read (or not by the
+    // game, where a mod that loads needs the id with a minimum version) and the loading copy's can; a lower version; else
+    // a tie (equal versions, or none read).
+    static Why SameSource(Mod copy, Mod loads, bool strict)
+    {
+        if (strict && GameVersion(Newest(loads)) != null && GameVersion(Newest(copy)) == null)
+            return Why.Unreadable;
+        var (lost, won) = (Version(Newest(copy)), Version(Newest(loads)));
+        return lost == null ? (won == null ? Why.First : Why.Unreadable) : won != null && lost.CompareTo(won) < 0 ? Why.Higher : Why.First;
+    }
+
+    // Whether a mod that needs the id with a minimum version is on (by its switch: that's what the launch has, and asking
+    // whether it loads could come back here): then Best ranks a copy the game can't read below one it can.
+    static bool NeedsReadable(string id, HashSet<(string?, ModSource)> gameOff) => Dependencies.NeededBy(id).Any(m => m.manifest?.id != id
+        && !gameOff.Contains((m.manifest?.id, m.modSource)) && m.manifest?.dependencies?.Any(d => d.id == id && d.minVersion != null) == true);
+
+    // Whether the launch couldn't swap this copy in (SameIdLoad's plan: a dependency of it loads after the id's first
+    // slot while a mod after us needs the id) and the next launch can't either: the load order unchanged, and a mod that
+    // needs the id still on (by its switch, as the launch tests it). Anything else that changes Best's choice (another
+    // copy ticked, a higher version arrived) is predicted as normal.
+    static bool Blocked(string id, Mod best, HashSet<(string?, ModSource)> gameOff) =>
+        SameIdLoad.Plan.GetValueOrDefault(id) is { Blocked: { } copy } && CopyOf(best) == copy
+        && Dependencies.NeededBy(id).Any(m => m.manifest?.id != id && !gameOff.Contains((m.manifest?.id, m.modSource))) && !LoadOrder.OrderChanged;
+
+    // The local copy the game reads first, which its local-vs-Workshop rule compares Workshop copies with: it reads its
+    // mods folder depth first, a folder's files before its subfolders, each list in Godot's DirAccess order (ordinal, so
+    // capitals before small letters: the self-test pins it). The page can't see that order in the game's list (its sort
+    // moved it), so it's rebuilt from each copy's folder, name by name, a folder before what's inside it.
+    public static Mod FirstRead(IReadOnlyList<Mod> locals) => locals.OrderBy(m => m.path ?? "", ReadOrder).First();
+
+    static readonly Comparer<string> ReadOrder = Comparer<string>.Create((a, b) =>
+    {
+        var (x, y) = (Folders(a), Folders(b));
+        for (var i = 0; i < Math.Min(x.Length, y.Length); i++)
+            if (string.CompareOrdinal(x[i], y[i]) is var by && by != 0)
+                return by;
+        return x.Length.CompareTo(y.Length);
+    });
+
+    static string[] Folders(string path) => path.Split(['/', '\\'], StringSplitOptions.RemoveEmptyEntries);
 
     // A copy's last Mod in the game's list: an update while the game runs adds one with the new manifest after the one
     // found at launch, which keeps the old version (the copy is still told by its first, CopyOf).
     static Mod Newest(Mod copy) => copy.manifest?.id is { } id && ById().TryGetValue(id, out var all)
         ? all.LastOrDefault(m => CopyOf(m) == CopyOf(copy)) ?? copy : copy;
 
-    // Why a ticked copy doesn't load (LosesTo): the game keeps the local copy (stable, or a tie or an unreadable version
-    // on the beta), or the higher version (the beta); of copies sharing a switch that the game's rule left, our pick loads
-    // (EnabledLast: a copy ticked on becomes the pick); Other: none of these says it, e.g. a Workshop copy that isn't ticked
-    // loads, as its switch is shared with one that is and it beats the local copy (the game sees switches only).
-    public enum LoseReason { LocalCopy, HigherVersion, EnabledLast, Other }
-
-    // For a ticked copy that won't load after a relaunch while another copy of its id will: that copy, and why. Null for
-    // any other.
-    public static (Mod Loads, LoseReason Why)? LosesTo(Mod mod)
-    {
-        if (mod.manifest?.id is not { } id || Others(mod).Count == 0 || !Ticked(mod) || Loads(mod) || Loading(id) is not { } loads)
-            return null;
-        var why = !Ticked(loads) ? LoseReason.Other
-            : loads.modSource == mod.modSource && id == ModEntry.ModId ? LoseReason.Other
-            : loads.modSource == mod.modSource && CopyOf(loads) == Picked(id, mod.modSource) ? LoseReason.EnabledLast
-            // Not the pick of its source: the game's rule between sources set the pick aside (a newer Workshop copy loads).
-            : loads.modSource == ModSource.SteamWorkshop ? LoseReason.HigherVersion
-            // A newer Workshop copy losing to a local one: two local copies, so which one the game compares isn't known.
-            : Beats(mod, loads) ? LoseReason.Other : LoseReason.LocalCopy;
-        return (loads, why);
-    }
+    // For a ticked copy that won't load after a relaunch while another copy of its id will: that copy, and why (Next).
+    // Null for any other.
+    public static (Mod Loads, Why Why)? LosesTo(Mod mod) => mod.manifest?.id is { } id && Others(mod).Count > 0 && Next(id) is { Loads: { } loads } next
+        && next.Losing.TryGetValue(CopyOf(mod), out var why) ? (loads, why) : null;
 
     // Whether this copy is ticked but won't load, another copy of its id loading instead: the one "won't load (same ID)".
     public static bool Loses(Mod mod) => LosesTo(mod) != null;
 
-    // The copy of its id that would load if this copy were ticked too, as a click on its box does (it's then its id and
-    // source's pick, and its switch on): for the tip on a copy that's off.
+    // The copy of its id that would load if this copy were ticked too, as a click on its box does (Dependencies.Write: its
+    // switch on, and where that was off, this copy on alone): for the tip on a copy that's off.
     public static Mod? LoadingIf(Mod mod)
     {
         if (mod.manifest?.id is not { } id)
             return null;
-        var (off, picks) = Lookups.Current is { } now ? (now.Off, now.Picks) : (Dependencies.SavedOff(), Picks.Now);
-        return LoadingIn(id, off.Where(o => o != (id, mod.modSource)).ToHashSet(), picks.Ticking(mod));
+        var (off, ticks) = Lookups.Current is { } now ? (now.Off, now.Ticks) : (Dependencies.SavedOff(), Ticks.Now);
+        return LoadingIn(id, off.Where(o => o != (id, mod.modSource)).ToHashSet(), ticks.Ticking(mod, off.Contains((id, mod.modSource))));
     }
 
-    // A copy of this mod where it's installed more than once: it stays ticked on our views (Write keeps it on), so
+    // A copy of this mod where it's installed more than once: its box is locked on our views (CategoryList.CopyBoxes), so
     // removing the copy that runs still leaves one that loads. Installed once, its box works as any other.
     public static bool Locked(Mod mod) => mod.manifest?.id == ModEntry.ModId && Others(mod).Count > 0;
 
     // Whether this copy is ticked while another copy of its id is too, so one of them won't load: the yellow chip. Never
-    // this mod's copies, which stay ticked together (Locked).
+    // this mod's copies (a backup copy of ours on is as it should be).
     public static bool Clashes(Mod mod) => mod.manifest?.id is { } id && id != ModEntry.ModId && Ticked(mod) && Others(mod).Any(Ticked);
 
     // The ticked copies where two or more copies of one id are ticked (only one of them loads), copies sharing a switch
@@ -344,17 +455,20 @@ static class Copies
         : $" ({(Compat.WorkshopId(mod) is { } item ? item.ToString()
             : mod.modSource == ModSource.ModsDirectory && Twins(mod).Count > 0 ? Shown(CopyOf(mod)) : Menus.Text("SPIRE_MOD_MANAGER.SOURCE_LOCAL"))})";
 
-    // Brings the record in line with the copies installed, gives each id and source installed more than once a pick
-    // when it has none, or one naming a copy our record never had (Picked: the copy the game loaded, so nothing changes
-    // until the player picks another), and tidies copies_off: a file from before it (or a first run) gets the reading it
-    // had, only the pick on (LegacyOff), so nothing looks different on the update; a pick in it comes out, so a switch
-    // that's on always has a copy ticked; so does a copy now alone on its switch (its twins uninstalled since), as Write
-    // drops one clicked, so another copy arriving later doesn't find it off and take over (its pick stays as it was), and
-    // so does the copy standing in for a pick that's missing (StandIn). At the first main menu, before the undo baseline
-    // (so it's neither an undo step nor a change since launch). True if it changed.
+    // Brings the record in line with the copies installed and tidies copies_off. First a file from before copies_off (a
+    // 0.1.4 one, or a first run) gets the reading Init made of it, from its picks and the record as read (LegacyOff), so
+    // nothing looks different on the update; then copy_picks goes, never written again. Each copy new to the record joins
+    // it (Join). The holder gone: its data moves to its own key, the next installed copy's to the plain id. At the first
+    // main menu, before the undo baseline (so it's neither an undo step nor a change since launch). True if it changed.
     public static bool Reconcile(StoreData data)
     {
         var changed = false;
+        if (data.CopiesOff == null || data.CopyPicks != null)
+        {
+            data.CopiesOff ??= LegacyOff(data.CopyPicks, data.Copies);
+            data.CopyPicks = null;
+            changed = true;
+        }
         var launched = Launched();
         foreach (var group in All.Where(m => m.manifest?.id != null).GroupBy(m => m.manifest?.id ?? ""))
         {
@@ -366,18 +480,20 @@ static class Copies
                 if (installed.Count < 2)
                     continue;
                 // First split: the plain entry stays with the first copy as Ordered puts them.
-                data.Copies[id] = copies = [.. Ordered(installed, launched)];
-                foreach (var copy in copies.Skip(1))
+                foreach (var copy in Ordered(id, installed, launched))
+                    Join(data, id, copy, installed);
+                foreach (var copy in data.Copies[id].Skip(1))
                     Seed(data, id, copy);
                 changed = true;
                 continue;
             }
-            foreach (var copy in installed.Where(c => !copies.Contains(c)))
+            foreach (var copy in Ordered(id, installed.Where(c => !copies.Contains(c)), launched).ToList())
             {
-                copies.Add(copy);
+                Join(data, id, copy, installed);
                 Seed(data, id, copy);
                 changed = true;
             }
+            copies = data.Copies[id];
             // The holder gone: its data moves to its own key, the next installed copy's to the plain id. Nothing is lost.
             if (copies[0] is var holder && !installed.Contains(holder) && copies.FirstOrDefault(installed.Contains) is { } next)
             {
@@ -390,23 +506,7 @@ static class Copies
                 changed = true;
             }
         }
-        // A stored pick naming a copy in our record stays while that copy is missing and two or more others are installed
-        // (Picked goes by the copy loaded meanwhile), so it and every profile's copy keep the player's choice.
-        var picks = new Picks(data.CopyPicks, data.Copies, data.CopiesOff);
-        var seeded = TwinGroups().Where(g => picks.Stored(g.Id, g.Source) is not { } stored || data.Copies?.GetValueOrDefault(g.Id)?.Contains(stored) != true)
-            .Select(g => Picked(g.Id, g.Source, picks) is { } copy ? $"{g.Id}|{copy}" : null).OfType<string>().ToList();
-        if (seeded.Count > 0)
-        {
-            data.CopyPicks = WithPicks(data.CopyPicks, seeded);
-            changed = true;
-        }
-        // A copy alone on its switch (its twin gone) can't be off, nor one standing in for a pick that's missing (it reads
-        // ticked already). A stored pick naming the copy since removed stays (a Steam item missing for one launch keeps its
-        // choice, Store.TidyPicks), so that copy loads again once it's back, at a launch or mid-session (KeepThere leaves
-        // it); a twin new to our record doesn't take over, installed with the game closed (SameIdLoad's no-pick choice
-        // prefers a copy the record has that isn't off: the stand-in) or mid-session (KeepThere).
-        var on = Alone().Select(SwitchKey).Concat(StandIns(picks)).ToHashSet();
-        var off = Store.TidyOff((data.CopiesOff ?? LegacyOff(data)).Where(k => !on.Contains(k)), data.CopyPicks) ?? [];
+        var off = Store.TidyOff(data.CopiesOff) ?? [];
         if (data.CopiesOff is not { } was || !off.SequenceEqual(was))
         {
             data.CopiesOff = off;
@@ -415,18 +515,47 @@ static class Copies
         return changed;
     }
 
-    // copies_off as data from before it reads (only the pick on): every copy of each id and source installed more than
-    // once but its pick, sorted.
-    public static List<string> LegacyOff(StoreData data)
+    // A copy new to our record joins it (Reconcile, at the first menu and as a copy arrives mid-session):
+    // 1. its own key leaves copies_off (a stale one, from a hand edit: a copy new to the record reads ticked, whatever its
+    //    key says);
+    // 2. where the copies of its switch that the record knows and that are installed are all in copies_off (the read rule
+    //    has them all ticked: Ticks.Ticked), they leave it, so the new copy can't end their implied ticks and a lower one
+    //    never takes over. The same for each profile entry of its id and source that has them all off (Mods and Edited),
+    //    so a profile switched to or discarded later doesn't bring the takeover back;
+    // 3. it joins the record, last (TieOrder ranks it after the copies the record had).
+    static void Join(StoreData data, string id, string copy, IReadOnlyCollection<string> installed)
     {
-        var picks = new Picks(data.CopyPicks, data.Copies);
+        var source = SourceOf(copy);
+        var known = data.Copies?.GetValueOrDefault(id) ?? [];
+        var lit = installed.Where(c => c != copy && SourceOf(c) == source && known.Contains(c)).Distinct().ToList();
+        var off = (data.CopiesOff ?? []).ToHashSet();
+        off.Remove($"{id}|{copy}");
+        if (lit.Count > 0 && lit.All(c => off.Contains($"{id}|{c}")))
+            off.ExceptWith(lit.Select(c => $"{id}|{c}"));
+        data.CopiesOff = [.. off.Order(StringComparer.Ordinal)];
+        if (lit.Count > 0 && source is { } from)
+            foreach (var profile in data.Profiles)
+                foreach (var list in new[] { profile.Mods, profile.Edited })
+                    for (var i = 0; i < (list?.Count ?? 0); i++)
+                        if (list?[i] is { CopiesOff: { } held } entry && entry.Id == id && entry.Source == from && lit.All(held.Contains))
+                            list[i] = entry with { CopiesOff = [.. held.Except(lit)] };
+        (data.Copies ??= [])[id] = [.. known, copy];
+    }
+
+    // copies_off as a file from before it reads (0.1.4, where only the pick counts as on), from its data alone: for each
+    // pick (the first of each id and source) our record has, every other copy of that id and source in the record goes
+    // off, installed or not. So with the pick missing, the read rule ticks the others until it's back, and it then loads
+    // alone again. A group with no pick, or a pick the record doesn't have, puts nothing off. Sorted. Init, Reconcile and
+    // Restore's PatchOff read a legacy file through this, as HoldCopies reads a 0.1.4 profile.
+    public static List<string> LegacyOff(IEnumerable<string>? picks, IReadOnlyDictionary<string, List<string>>? record)
+    {
         var off = new List<string>();
-        foreach (var (id, source, copies) in TwinGroups())
-        {
-            var pick = picks.Picked(id, source);
-            off.AddRange(copies.Where(c => c != pick).Select(c => $"{id}|{c}"));
-        }
-        return [.. off.Order(StringComparer.Ordinal)];
+        var seen = new HashSet<(string, ModSource)>();
+        foreach (var key in picks ?? [])
+            if (Parse(key) is { } pick && seen.Add((pick.Id, pick.Source)) && pick.Id != ModEntry.ModId
+                && record?.GetValueOrDefault(pick.Id) is { } copies && copies.Contains(pick.Copy))
+                off.AddRange(copies.Where(c => c != pick.Copy && SourceOf(c) == pick.Source).Select(c => $"{pick.Id}|{c}"));
+        return [.. off.Distinct().Order(StringComparer.Ordinal)];
     }
 
     // A copy's own entry, from the plain one, unless it has one already (or the plain id has none).
@@ -456,8 +585,10 @@ static class Copies
         _started = true;
         try
         {
+            var had = Record(Store.Data);
             if (Reconcile(Store.Data))
                 Store.Save();
+            NoteJoined(had, Store.Data);
         }
         catch (Exception e)
         {
@@ -473,12 +604,29 @@ static class Copies
 
     public static bool IsNewToRecord(Mod mod) => NewToRecord.Contains(SwitchKey(mod));
 
-    // A copy installed mid-session: worked out on our data as it is now, then written as it is into every undo
-    // snapshot (History.Quietly), so the new copy's entry is the same in each: no change since launch, no undo step.
-    // It arrives as the game has it, ticked where its switch is on (an entry copies_off kept for it from before it was
-    // uninstalled goes), and its id and source's pick stays the copy that was there (it never takes over; enabling it
-    // does), unless the pick saved names it, a copy our record has (uninstalled and back): that's the player's, kept.
-    // Before Profiles' handler (Start runs before Profiles.Prepare), which asks IsNewToRecord.
+    // The copies (SwitchKey) that joined our record this session, at the first menu or since: a 0.1.4 profile's copies off
+    // leave them out (Profiles.HoldCopies), as they read ticked in our data.
+    static readonly HashSet<string> Joined = [];
+
+    public static bool JoinedThisSession(string id, string copy) => Joined.Contains($"{id}|{copy}");
+
+    static Dictionary<string, HashSet<string>> Record(StoreData data) => data.Copies?.ToDictionary(p => p.Key, p => p.Value.ToHashSet()) ?? [];
+
+    static void NoteJoined(Dictionary<string, HashSet<string>> had, StoreData data)
+    {
+        foreach (var (id, copies) in data.Copies ?? [])
+            foreach (var copy in copies.Where(c => had.GetValueOrDefault(id)?.Contains(c) != true))
+                Joined.Add($"{id}|{copy}");
+    }
+
+    // A copy installed mid-session, worked out on a copy of our data (Reconcile, whose join is the one wanted), then
+    // written into our data and every undo snapshot (History.Quietly): the record as Reconcile made it, the new copy's
+    // seeded entry, and the join repeated on each by its own copies_off and profiles, so the new copy's tick is the same
+    // in each: no change since launch, no undo step. It arrives as the game has it, ticked where its switch is on, and
+    // the copies the record knows keep their ticks (Join); a copy the record knows (uninstalled and back, or missing at
+    // launch) comes back with its stored tick, as it would with the game closed, so nothing changes for it. Which copy
+    // loads is then the rule's, a new one by version too. Before Profiles' handler (Start runs before Profiles.Prepare),
+    // which asks IsNewToRecord.
     static void Arrived()
     {
         try
@@ -489,29 +637,27 @@ static class Copies
             if (come?.manifest?.id != null && !known)
                 NewToRecord.Add(SwitchKey(come));
             var now = Store.Clone(Store.Data);
-            var changed = Reconcile(now);
-            if (come != null && KeepThere(now, come, known))
-                changed = true;
-            // Not for an update of a copy installed this session (the game keeps its earlier Mod): it's ticked or not
-            // as the player left it.
-            var cleared = come != null && !All.Any(m => m != come && SwitchKey(m) == SwitchKey(come)) ? SwitchKey(come) : null;
-            now.CopiesOff = Store.TidyOff(now.CopiesOff?.Where(k => k != cleared), now.CopyPicks);
-            if (now.CopiesOff is { } off && (Store.Data.CopiesOff is not { } was || !off.SequenceEqual(was)))
-                changed = true;
-            if (!changed || now.Copies is not { } record)
+            if (!Reconcile(now) || now.Copies is not { } record)
                 return;
+            var had = Record(Store.Data);
             var added = now.Mods.Where(p => !Store.Data.Mods.ContainsKey(p.Key)).Select(p => (p.Key, p.Value)).ToList();
-            var seeded = (now.CopyPicks ?? []).Except(Store.Data.CopyPicks ?? []).ToList();
+            var installed = All.Where(m => m.manifest?.id != null).GroupBy(m => m.manifest?.id ?? "").ToDictionary(g => g.Key, g => g.Select(CopyOf).Distinct().ToList());
             History.Quietly(data =>
             {
-                data.Copies = record.ToDictionary(p => p.Key, p => p.Value.ToList());
+                data.CopiesOff ??= LegacyOff(data.CopyPicks, data.Copies);
+                data.CopyPicks = null;
+                foreach (var (id, copies) in record)
+                {
+                    var was = data.Copies?.GetValueOrDefault(id) ?? [];
+                    foreach (var copy in copies.Where(c => !was.Contains(c)))
+                        Join(data, id, copy, installed.GetValueOrDefault(id) ?? []);
+                }
+                data.Copies = record.ToDictionary(p => p.Key, p => p.Value.ToList()); // Reconcile's order, the holder moved too
                 foreach (var (key, info) in added)
                     data.Mods[key] = Clone(info);
-                if (seeded.Count > 0)
-                    data.CopyPicks = WithPicks(data.CopyPicks, seeded);
-                // The new copy ticked and no pick off, as in now (data from before copies_off as Reconcile reads it).
-                data.CopiesOff = Store.TidyOff((data.CopiesOff ?? LegacyOff(data)).Where(k => k != cleared), data.CopyPicks);
+                data.CopiesOff = Store.TidyOff(data.CopiesOff);
             });
+            NoteJoined(had, Store.Data);
         }
         catch (Exception e)
         {
@@ -519,87 +665,211 @@ static class Copies
         }
     }
 
-    // Where the pick of its id and source names the copy just installed (a pick saved for a copy our record never had:
-    // picks are never pruned; or the record's order, where both came this session), the pick goes to the copy that loads
-    // without it, in Picked's order (the one loaded, else the record's first): the new copy arrives ticked but not
-    // picked, so the copy that was loading still does. Not for a pick saved for a copy the record had (known: one
-    // uninstalled and back, or missing at a launch): that's the player's, so it loads after a relaunch, as when it's back
-    // before a launch. Not for an update of a copy installed this session (the game keeps its earlier Mod): a pick of that
-    // one is the player's. True if it changed.
-    static bool KeepThere(StoreData data, Mod come, bool known)
-    {
-        if (come.manifest?.id is not { } id || id == ModEntry.ModId || All.Any(m => m != come && SwitchKey(m) == SwitchKey(come)))
-            return false;
-        var copy = CopyOf(come);
-        var picks = new Picks(data.CopyPicks, data.Copies, data.CopiesOff);
-        if (picks.Picked(id, come.modSource) != copy || known && picks.Stored(id, come.modSource) == copy)
-            return false;
-        var without = new Picks(data.CopyPicks?.Where(k => k != SwitchKey(come)),
-            data.Copies?.ToDictionary(p => p.Key, p => p.Value.Where(c => c != copy).ToList()), data.CopiesOff);
-        if (without.Picked(id, come.modSource) is not { } there || there == copy)
-            return false;
-        data.CopyPicks = WithPicks(data.CopyPicks, [$"{id}|{there}"]);
-        return true;
-    }
-
 #if DEVTOOLS
     // Self-test: the copies worked out again after made-up mods were put in the game's list or taken out (as many of
     // each leave the count the table is kept by as it was).
     public static void TestRecount() => _byId = null;
+
+    // Self-test: how many times a manifest's version was read (each Mod's is read once, then kept).
+    public static int TestReads { get; private set; }
+
+    // Self-test: a copy as if it joined our record this session (Joined), or not.
+    public static void TestJoined(string id, string copy, bool joined)
+    {
+        if (joined)
+            Joined.Add($"{id}|{copy}");
+        else
+            Joined.Remove($"{id}|{copy}");
+    }
 #endif
 }
 
-// Which copy loads for each id and source installed more than once (StoreData.CopyPicks), and which copies are off while
-// their switch is on (StoreData.CopiesOff), read once for many asks: our data as it is now, or a snapshot of it
-// (Store.PicksIn). Record: the copies record it came with (StoreData.Copies), for Copies.Picked's fallback.
-internal sealed class Picks
+// Which copies are ticked where copies share a switch: those off while their switch is on (StoreData.CopiesOff, keys
+// "<id>|<copy>"), read with our record of each id's copies (StoreData.Copies) and the copies each id had at the last
+// launch (LaunchGuard.Before), for ties. Our data as it is now, a snapshot of it (Store.TicksIn), a profile's (Of), or
+// our file at Init (SameIdLoad).
+internal sealed class Ticks
 {
-    readonly Dictionary<(string Id, ModSource Source), string> _stored = [];
+    public IReadOnlySet<string> Off { get; }
 
     public IReadOnlyDictionary<string, List<string>>? Record { get; }
 
-    // The copies off while their switch is on (Copies.SwitchKey); null: data from before copies_off, where only the pick
-    // counts as on.
-    public IReadOnlySet<string>? Off { get; }
+    readonly IReadOnlyDictionary<string, HashSet<string>>? _before;
+    readonly IReadOnlyDictionary<string, List<string>>? _tieRecord;
 
-    public Picks(IEnumerable<string>? stored, IReadOnlyDictionary<string, List<string>>? record, IEnumerable<string>? off = null)
+    // tieRecord: the record ties go by where it isn't this one (a session that can't save: the file's, which the next
+    // launch reads).
+    public Ticks(IEnumerable<string>? off, IReadOnlyDictionary<string, List<string>>? record, IReadOnlyDictionary<string, HashSet<string>>? before = null,
+        IReadOnlyDictionary<string, List<string>>? tieRecord = null)
     {
-        foreach (var key in stored ?? [])
-            if (Copies.Parse(key) is { } pick)
-                _stored.TryAdd((pick.Id, pick.Source), pick.Copy);
+        Off = off?.ToHashSet() ?? [];
         Record = record;
-        Off = off?.ToHashSet();
+        _before = before;
+        _tieRecord = tieRecord;
     }
 
-    public static readonly Picks None = new(null, null);
+    // Nothing off: every copy ticked by its switch.
+    public static readonly Ticks All = new(null, null);
 
     // Ours now; none without loading our data when no mod is installed twice from one source (most players, and Init).
-    public static Picks Now => Copies.AnyTwins ? Of(Store.Data) : None;
+    public static Ticks Now => Copies.AnyTwins ? Of(Store.Data) : All;
 
-    // Read again only when the data, its picks or its copies off were replaced (every writer puts in a new list).
-    static (StoreData Data, List<string>? Stored, Dictionary<string, List<string>>? Record, List<string>? Off, Picks Picks)? _now;
+    // Read again only when the data, its copies off or its record were replaced (every writer puts in a new list).
+    static (StoreData Data, List<string>? Off, List<string>? Picks, Dictionary<string, List<string>>? Record, bool ReadOnly, Ticks Ticks)? _now;
 
-    static Picks Of(StoreData data)
+    static Ticks Of(StoreData data)
     {
-        if (_now is { } now && now.Data == data && now.Stored == data.CopyPicks && now.Record == data.Copies && now.Off == data.CopiesOff)
-            return now.Picks;
-        var picks = new Picks(data.CopyPicks, data.Copies, data.CopiesOff);
-        _now = (data, data.CopyPicks, data.Copies, data.CopiesOff, picks);
-        return picks;
+        if (_now is { } now && now.Data == data && now.Off == data.CopiesOff && now.Picks == data.CopyPicks && now.Record == data.Copies && now.ReadOnly == Store.ReadOnly)
+            return now.Ticks;
+        // A session that can't save our data: the next launch reads ties by the file's record (a holder moved here isn't
+        // saved).
+        var ticks = new Ticks(data.CopiesOff ?? Copies.LegacyOff(data.CopyPicks, data.Copies), data.Copies, LaunchGuard.Before,
+            Store.ReadOnly ? SameIdLoad.InitTicks?.Record : null);
+        _now = (data, data.CopiesOff, data.CopyPicks, data.Copies, Store.ReadOnly, ticks);
+        return ticks;
     }
 
-    // These as a tick on this copy would leave them (Copies.LoadingIf): it's its id and source's pick, and not off.
-    public Picks Ticking(Mod mod)
+    // A profile's entries as ticks (their CopiesOff), with our record: what loads as the profile has it (Profiles.ShareRows).
+    public static Ticks Of(IEnumerable<ProfileMod> entries) =>
+        new(entries.SelectMany(e => (e.CopiesOff ?? []).Select(c => $"{e.Id}|{c}")), Store.Data.Copies, LaunchGuard.Before);
+
+    // Whether a copy of an id is ticked with its switch on, given the other copies of its switch installed: unless its key
+    // is off, our record knows it, and some other installed copy of its switch the record knows isn't off. So an off key
+    // counts only for a known copy (one new to the record reads ticked, whatever a stale key says), and only while an
+    // installed known copy of its switch is ticked by its own key: where every one of them is off (the ticked ones are
+    // missing), they all read ticked, the read rule, so what's installed loads. A copy alone on its switch reads ticked.
+    // This mod goes by its switch alone.
+    public bool Ticked(string id, string copy, IEnumerable<string> installed)
+    {
+        if (id == ModEntry.ModId || !Off.Contains($"{id}|{copy}") || Record?.GetValueOrDefault(id) is not { } known || !known.Contains(copy))
+            return true;
+        return !installed.Any(c => c != copy && known.Contains(c) && !Off.Contains($"{id}|{c}"));
+    }
+
+    // The record's list ties for an id go by (Copies.TieOrder), and the copies of it the last launch had.
+    public IReadOnlyList<string>? TieList(string id) => _tieRecord?.GetValueOrDefault(id) ?? Record?.GetValueOrDefault(id);
+
+    public IReadOnlySet<string>? BeforeOf(string id) => _before?.GetValueOrDefault(id);
+
+    // These as a tick on this copy would leave them (Copies.LoadingIf, as Dependencies.Write does): its key out of Off,
+    // and where its switch is off, every other copy of that switch in (it comes on alone), our record's missing ones too.
+    public Ticks Ticking(Mod mod, bool switchOff)
     {
         if (mod.manifest?.id is not { } id)
             return this;
-        var key = Copies.SwitchKey(mod);
-        return new Picks(_stored.Where(p => p.Key != (id, mod.modSource)).Select(p => $"{p.Key.Id}|{p.Value}").Append(key), Record,
-            Off?.Where(k => k != key));
+        var (copy, key) = (Copies.CopyOf(mod), Copies.SwitchKey(mod));
+        var off = Off.Where(k => k != key);
+        if (switchOff && id != ModEntry.ModId)
+            off = off.Concat(Copies.Twins(mod).Select(Copies.CopyOf).Concat(Copies.RecordGroup(id, mod.modSource, Record) ?? [])
+                .Where(c => c != copy).Select(c => $"{id}|{c}"));
+        return new Ticks(off, Record, _before, _tieRecord);
+    }
+}
+
+// A version as Copies.Version reads it for the choice between copies of one source: its numbers (digits, leading zeros
+// dropped; as many as it has, a missing one counting as 0) and its prerelease parts (none: a release). Ordered as the
+// game's SemanticVersion orders versions, a number by value whatever its size.
+internal sealed class Ver : IComparable<Ver>
+{
+    public IReadOnlyList<string> Numbers { get; }
+
+    public IReadOnlyList<string> Pre { get; }
+
+    Ver(IEnumerable<string> numbers, IEnumerable<string> pre)
+    {
+        Numbers = [.. numbers.Select(n => n.TrimStart('0') is { Length: > 0 } digits ? digits : "0")];
+        Pre = [.. pre];
     }
 
-    // The copy saved for an id and source, whether it's installed or not.
-    public string? Stored(string id, ModSource source) => _stored.GetValueOrDefault((id, source));
+    // The game's reading, inside our own try: a number past int's range throws out of TryFromString.
+    public static SemanticVersion? Game(string? text)
+    {
+        if (text == null)
+            return null;
+        try
+        {
+            return SemanticVersion.TryFromString(text, out var version) ? version : null;
+        }
+        catch (Exception)
+        {
+            return null;
+        }
+    }
 
-    public string? Picked(string id, ModSource source) => Copies.Picked(id, source, this);
+    public static Ver Of(SemanticVersion version) => new([.. new[] { version.Major, version.Minor, version.Patch }.Select(n => n.ToString(CultureInfo.InvariantCulture))],
+        version.Prerelease ?? []);
+
+    // A version the game can't read, read leniently (PENDING JORDAN, P5): trimmed, a leading "v" dropped, then the
+    // leading run of numbers with dots between ("1.2" is 1.2.0, "1.1.0.1" above 1.1.0); what follows, after at most one
+    // separator, is a prerelease, split at anything that isn't a letter or a digit ("0.4.1.beta" is 0.4.1-beta,
+    // "1.2.25(beta)" 1.2.25-beta, "1.0b" 1.0.0-b, below 1.0); "+metadata" ignored. Null where no number leads ("abc").
+    public static Ver? Lenient(string? text)
+    {
+        var s = text?.Trim() ?? "";
+        if (s.StartsWith('v') || s.StartsWith('V'))
+            s = s[1..];
+        var (at, numbers) = (0, new List<string>());
+        while (true)
+        {
+            var start = at;
+            while (at < s.Length && char.IsAsciiDigit(s[at]))
+                at++;
+            if (at == start)
+                break;
+            numbers.Add(s[start..at]);
+            if (at + 1 < s.Length && s[at] == '.' && char.IsAsciiDigit(s[at + 1]))
+                at++;
+            else
+                break;
+        }
+        if (numbers.Count == 0)
+            return null;
+        var rest = s[at..];
+        if (rest.IndexOf('+') is var plus and >= 0)
+            rest = rest[..plus];
+        if (rest.Length > 0 && !char.IsLetterOrDigit(rest[0]))
+            rest = rest[1..];
+        var (pre, part) = (new List<string>(), new System.Text.StringBuilder());
+        foreach (var c in rest.Append(' '))
+            if (char.IsLetterOrDigit(c))
+                part.Append(c);
+            else if (part.Length > 0)
+            {
+                pre.Add(part.ToString());
+                part.Clear();
+            }
+        return new Ver(numbers, pre);
+    }
+
+    public int CompareTo(Ver? other)
+    {
+        if (other == null)
+            return 1;
+        for (var i = 0; i < Math.Max(Numbers.Count, other.Numbers.Count); i++)
+            if (Number(i < Numbers.Count ? Numbers[i] : "0", i < other.Numbers.Count ? other.Numbers[i] : "0") is var by && by != 0)
+                return by;
+        // A release above its prereleases; then part by part, as SemanticVersion: two numbers by value, two words
+        // ordinally, a number below a word; with every shared part equal, more parts above.
+        if (Pre.Count == 0 || other.Pre.Count == 0)
+            return (Pre.Count == 0 ? 1 : 0) - (other.Pre.Count == 0 ? 1 : 0);
+        for (var i = 0; i < Math.Min(Pre.Count, other.Pre.Count); i++)
+        {
+            var (a, b) = (Pre[i], other.Pre[i]);
+            if (a == b)
+                continue;
+            return (int.TryParse(a, out var x), int.TryParse(b, out var y)) switch
+            {
+                (false, false) => Math.Sign(string.CompareOrdinal(a, b)),
+                (true, false) => -1,
+                (false, true) => 1,
+                _ => x.CompareTo(y),
+            };
+        }
+        return Pre.Count.CompareTo(other.Pre.Count);
+    }
+
+    // Two numbers as digits, by value: the longer is larger, else digit by digit.
+    static int Number(string a, string b) => a.Length != b.Length ? a.Length.CompareTo(b.Length) : Math.Sign(string.CompareOrdinal(a, b));
+
+    public override string ToString() => string.Join(".", Numbers) + (Pre.Count > 0 ? "-" + string.Join(".", Pre) : "");
 }

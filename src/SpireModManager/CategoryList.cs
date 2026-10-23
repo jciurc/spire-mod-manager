@@ -890,7 +890,8 @@ static class CategoryList
         {
             if (ScreenOf(content) is not { } screen)
                 return;
-            Dependencies.Set(mods, on, screen);
+            // Disable all leaves this mod on (Dependencies.Write no longer keeps it on).
+            Dependencies.Set(on || selected ? mods : mods.Where(m => m.manifest?.id != ModEntry.ModId), on, screen);
             Redraw(content);
         }
         return

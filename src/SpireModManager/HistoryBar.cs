@@ -458,17 +458,14 @@ static class HistoryBar
     }
 
     // The active profile's unsaved changes, one line each, by name: "+ Name" turned on, "- Name" turned off (a plain
-    // hyphen, in Changes' colours), "~ " and Changes' words for another copy loading with no box changed. links: each
-    // name opens the mod (the panel's list; the card has none).
+    // hyphen, in Changes' colours). links: each name opens the mod (the panel's list; the card has none).
     public static List<string> UnsavedLines(bool links)
     {
-        var (on, off, switched) = Profiles.UnsavedChanges();
+        var (on, off) = Profiles.UnsavedChanges();
         string Line(string sign, string color, (string Id, string Name) mod) =>
             $"[color={color}]{sign} {(links ? Link(mod.Id, mod.Name) : Escape(mod.Name))}[/color]";
         return on.OrderBy(m => m.Name).Select(m => Line("+", Added, m))
-            .Concat(off.OrderBy(m => m.Name).Select(m => Line("-", Removed, m)))
-            .Concat(switched.OrderBy(s => Name(s.To))
-                .Select(s => $"[color={Edited}]~ {(links ? CopySwitch(s.From, s.To).Rich : Escape(CopySwitch(s.From, s.To).Plain))}[/color]")).ToList();
+            .Concat(off.OrderBy(m => m.Name).Select(m => Line("-", Removed, m))).ToList();
     }
 
     // The active profile's unsaved changes, titled with its name. It follows the tickboxes while open: after Save
@@ -521,39 +518,39 @@ static class HistoryBar
 
     static string Name(Mod mod) => mod.manifest?.name ?? mod.manifest?.id ?? "";
 
-    // Installed copies whose own box differs from a snapshot's (its list, picks and copies off against now's, each read
+    // Installed copies whose own box differs from a snapshot's (its list and copies off against now's, each read
     // against the copies installed today; no entry = on).
     static List<(Mod Mod, bool Enabled)> ModChanges(History.Snapshot before)
     {
-        var (thenOff, thenPicks) = (Dependencies.SavedOff(before.Mods), Store.PicksIn(before.Store));
-        var (nowOff, nowPicks) = (Dependencies.SavedOff(), Picks.Now);
+        var (thenOff, thenTicks) = (Dependencies.SavedOff(before.Mods), Store.TicksIn(before.Store));
+        var (nowOff, nowTicks) = (Dependencies.SavedOff(), Ticks.Now);
         // A mod installed since launch wasn't loaded then: off, though the saved list (which had no entry for it) reads
         // on. So arriving on counts as turned on, and turning it off again is no change.
         var arrived = Installed.Mods.Select(Copies.SwitchKey).ToHashSet();
         return Dependencies.EachCopy(ModManager.Mods)
-            .Select(m => (Mod: m, Then: !arrived.Contains(Copies.SwitchKey(m)) && Copies.TickedIn(m, thenOff, thenPicks), Now: Copies.TickedIn(m, nowOff, nowPicks)))
+            .Select(m => (Mod: m, Then: !arrived.Contains(Copies.SwitchKey(m)) && Copies.TickedIn(m, thenOff, thenTicks), Now: Copies.TickedIn(m, nowOff, nowTicks)))
             .Where(p => p.Then != p.Now)
             .Select(p => (p.Mod, p.Now))
             .ToList();
     }
 
     // Mods installed more than once whose copy that loads after a relaunch is another than at launch while none of their
-    // boxes changed (changed: ModChanges for it), e.g. a copy unticked and ticked again (a copy ticked on becomes the one
-    // that loads), or a profile naming another copy: the copy that loaded then, and the one now. Then is the copy the game
-    // loaded, else the launch's lists' (launch: History.Loaded): those lists read with today's manifests name the copy a
-    // Workshop update made the winner since (Copies.Newest), so the switch to it went unlisted. Not this mod (the game
-    // decides which of its copies loads), nor an id whose pick a relaunch can't apply (SameIdLoad.Stuck): the game loaded
-    // another copy than the pick, and the next launch would too.
+    // boxes changed (changed: ModChanges for it), e.g. a copy updated to a higher version: the copy that loaded then, and
+    // the one now. Then is the copy the game loaded, else the launch's lists' (launch: History.Loaded): those lists read
+    // with today's manifests name the copy a Workshop update made the winner since (Copies.Newest), so the switch to it
+    // went unlisted. Not this mod (the game
+    // decides which of its copies loads), nor an id the launch couldn't choose for (SameIdLoad.Unchosen): the game's own
+    // choice loads then and now.
     static List<(Mod From, Mod To)> CopySwitches(History.Snapshot launch, List<(Mod Mod, bool Enabled)> changed)
     {
-        var (thenOff, thenPicks) = (Dependencies.SavedOff(launch.Mods), Store.PicksIn(launch.Store));
-        var (nowOff, nowPicks) = (Dependencies.SavedOff(), Picks.Now);
+        var (thenOff, thenTicks) = (Dependencies.SavedOff(launch.Mods), Store.TicksIn(launch.Store));
+        var (nowOff, nowTicks) = (Dependencies.SavedOff(), Ticks.Now);
         var ticked = changed.Select(c => c.Mod.manifest?.id).ToHashSet();
-        Mod? Then(string id) => ModManager.Mods.FirstOrDefault(m => m.manifest?.id == id && m.state == ModLoadState.Loaded) ?? Copies.LoadingIn(id, thenOff, thenPicks);
+        Mod? Then(string id) => ModManager.Mods.FirstOrDefault(m => m.manifest?.id == id && m.state == ModLoadState.Loaded) ?? Copies.LoadingIn(id, thenOff, thenTicks);
         var switches = new List<(Mod, Mod)>();
         foreach (var id in Dependencies.EachCopy(ModManager.Mods).Where(m => Copies.Others(m).Count > 0).Select(m => m.manifest?.id).OfType<string>().Distinct())
-            if (id != ModEntry.ModId && !ticked.Contains(id) && !SameIdLoad.Stuck(id) && Then(id) is { } from
-                && Copies.LoadingIn(id, nowOff, nowPicks) is { } to && Copies.CopyOf(from) != Copies.CopyOf(to))
+            if (id != ModEntry.ModId && !ticked.Contains(id) && !SameIdLoad.Unchosen(id) && Then(id) is { } from
+                && Copies.LoadingIn(id, nowOff, nowTicks) is { } to && Copies.CopyOf(from) != Copies.CopyOf(to))
                 switches.Add((from, to));
         return switches;
     }

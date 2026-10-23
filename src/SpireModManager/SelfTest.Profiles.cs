@@ -421,7 +421,7 @@ static partial class SelfTest
             && bar.FindChild("Unsaved", true, false) is Control { Visible: true } && bar.FindChild("SaveProfileButton", true, false) != null,
             $"edited {Profiles.Edited}, saved on {SavedOn()}, was on {wasOn}, now on {On()}, unsaved {(bar.FindChild("Unsaved", true, false) as Control)?.Visible}, save {bar.FindChild("SaveProfileButton", true, false) != null}");
         Check("edited: Save, Save as new, Discard beside Unsaved", Shown("UnsavedButtons") == "SaveProfileButton,SaveAsNewButton,DiscardButton", Shown("UnsavedButtons"));
-        var (unsavedOn, unsavedOff, _) = Profiles.UnsavedChanges();
+        var (unsavedOn, unsavedOff) = Profiles.UnsavedChanges();
         Check("Unsaved says how many changes: Unsaved (1) • for one tickbox", unsavedOn.Count + unsavedOff.Count == 1
             && bar.FindChild("Unsaved", true, false) is Label { Text: "Unsaved (1) •" }, (bar.FindChild("Unsaved", true, false) as Label)?.Text ?? "none");
         await Capture(screen, outDir, "3b-unsaved-profile");
