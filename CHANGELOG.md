@@ -135,7 +135,8 @@ What changed in each Workshop release, for players. Each version's first line is
   mod installed while the main menu is open shows the main menu's restart note and dot at once, instead of after
   your next change; Load Order's search box keeps its width as you type, instead of narrowing once a search finds
   something; text cut short to fit, such as a long name on its row, no longer splits an emoji or an accented letter;
-  and the external-link mark after the info panel's Workshop link, and after Open translations folder, sits on the
+  a long category name, as an imported profile can bring, is cut with ".." on its mods' category buttons and in the
+  info panel's category picker instead of squeezing the row or running past the panel; and the external-link mark after the info panel's Workshop link, and after Open translations folder, sits on the
   text's line when another mod adds fonts to the game (it sat a little low).
 - For other mods: Spire Mod Manager has an API (version 1), so mods built on it can use its menus, banners and mod
   cards, and show the alias, note, tags and category you've given a mod.
