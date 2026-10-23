@@ -10,11 +10,15 @@ What changed in each Workshop release, for players. Each version's first line is
 - Mods that share the same ID (duplicate) will only load one copy, with an explanation of which and why
 - search supports OR, NOT and brackets, e.g. (#gameplay OR #library) #enabled
 - hidden tags to help filter specific content was added. #enabled, #workshop, #pending, #changed, #error and #warning
+- hidden tags are listed in the info panel (Other keywords) and on each row (Additional keywords); click one to search for it
+- while searching, a mod's hover card says where the search found it, e.g. "Found in: author, tags"
 - warning banner show button now filters to the list of affected mods, the previous show functionality moved to "Go to" button
 - Vanilla menu button was moved to the top of the page and now has a simple link style
 - mods are sorted alphabetically within each category 
 - tags show as their styled pills within the input while editing them; they can be deleted using backspace
-- the info panel now explains mods that affect base game content, such as a character reskin
+- the info panel now explains mods that affect base game content, such as a character reskin; click it for the details
+- long mod descriptions in the info panel show 3 lines; hover them to read the rest
+- "Notes" is now "Note"; exported lists use a Note column, and older lists still import their notes
 - filter buttons, unsaved profile indicator, and restart message in the main menu, now all show the count of their respective mods
 - fixed dropdowns from clipping long lists; content now wraps to additional columns if overflowing
 - other mods can now use Spire Mod Manager's menus, banners and mod cards (API version 1)
