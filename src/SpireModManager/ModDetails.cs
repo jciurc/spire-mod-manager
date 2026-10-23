@@ -488,7 +488,7 @@ static class ModDetails
             at = max;
         if (text.LastIndexOf('[', at - 1) is var open && open > text.LastIndexOf(']', at - 1))
             at = open;
-        return Menus.CutShort(text[..at]);
+        return Menus.CutShort(text[..at], markup: true);
     }
 
     // Text cut after 200 characters (some authors write a paragraph where their name goes).

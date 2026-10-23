@@ -1,4 +1,5 @@
 using System.Runtime.CompilerServices;
+using System.Text.RegularExpressions;
 using Godot;
 using MegaCrit.Sts2.Core.Localization;
 using MegaCrit.Sts2.Core.Nodes.CommonUi;
@@ -86,8 +87,28 @@ static class Menus
     public const string CutMark = "..";
 
     // Text cut short, with CutMark after it. The spaces and punctuation it was cut after go first, so it never reads as
-    // three dots or ",..".
-    public static string CutShort(string text) => text.TrimEnd().TrimEnd('.', ',', ';', ':').TrimEnd() + CutMark;
+    // three dots, "!.." or ",..". markup: rich text, where they can sit before the closing tags at its end ("word.[/i]"):
+    // they go, and the tags stay ("word[/i]..").
+    public static string CutShort(string text, bool markup = false)
+    {
+        var (kept, closers) = (WithoutCutEnd(text), "");
+        while (markup && ClosingTagAtEnd.Match(kept) is { Success: true } closer)
+            (kept, closers) = (WithoutCutEnd(kept[..closer.Index]), closer.Value + closers);
+        return kept + closers + CutMark;
+    }
+
+    // What ends a statement or a part of one, which a cut drops: . ! ? … , ; : and the full-width forms Chinese and
+    // Japanese write.
+    static readonly char[] CutDrops = ['.', '!', '?', '…', ',', ';', ':', '。', '！', '？', '，', '、', '；', '：', '．'];
+    static readonly Regex ClosingTagAtEnd = new(@"\[/[^\[\]]*\]$", RegexOptions.RightToLeft);
+
+    static string WithoutCutEnd(string text)
+    {
+        var end = text.Length;
+        while (end > 0 && (char.IsWhiteSpace(text[end - 1]) || CutDrops.Contains(text[end - 1])))
+            end--;
+        return text[..end];
+    }
 
     // Shared looks, made once (every row has a few of these buttons).
     static readonly (string State, StyleBox Box)[] SmallBoxes =

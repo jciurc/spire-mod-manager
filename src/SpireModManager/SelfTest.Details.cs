@@ -335,16 +335,27 @@ static partial class SelfTest
         await Wait(menu, 0.3);
     }
 
-    // A long description in the info panel (Jordan, 22 Oct): three lines at most, cut at a word with "..", the tags it
-    // leaves open closed there (the facts after it keep their own look), the whole of it in a card over those lines; a
-    // short one as it is, with no card; the game's panel in Vanilla View untouched. Then the fade at an edge the panel's
-    // text runs on past (a made-up Workshop mod with ninety Workshop tags, after its description, so it scrolls): below at
-    // the top, both midway, above at the end, none once it all fits and back after; in the panel's colour, over the text
-    // and not its scrollbar, drawn rather than a control. Screenshots 16d-description-cut, 16e-description-card,
-    // 16f-fade-bottom, 16g-fade-both, 16h-fade-top.
+    // First what any cut drops before its "..". Then a long description in the info panel (Jordan, 22 Oct): three lines
+    // at most, cut at a word with "..", the tags it leaves open closed there (the facts after it keep their own look), the
+    // whole of it in a card over those lines; a short one as it is, with no card; the game's panel in Vanilla View
+    // untouched. Then the fade at an edge the panel's text runs on past (a made-up Workshop mod with ninety Workshop tags,
+    // after its description, so it scrolls): below at the top, both midway, above at the end, none once it all fits and
+    // back after; in the panel's colour, over the text and not its scrollbar, drawn rather than a control. Screenshots
+    // 16d-description-cut, 16e-description-card, 16f-fade-bottom, 16g-fade-both, 16h-fade-top.
     static async Task TestDescriptionCut(Node menu, NModdingScreen screen, Control content, string outDir)
     {
-        var words = ("Every card in the game gets a fresh coat of paint: brighter colours, sharper edges and a little more contrast on the "
+        // Text cut short: a "!", "?" or "…" it was cut after goes before the two periods, as a full stop or a comma does,
+        // and so do the full-width marks. In rich text, so does one before the closing tags at its end: "word.[/i]" ends
+        // "word[/i]..", never "word.[/i].." (drawn "word...").
+        var cuts = new[] { "Wait!", "Really?", "And so…", "Done!? ", "Fine. ,", "完了。", "终于！" }.Select(t => Menus.CutShort(t)).ToList();
+        Check("cut text: the !, ?, … or full-width mark it was cut after goes before \"..\", as a full stop or comma does",
+            cuts.SequenceEqual(["Wait..", "Really..", "And so..", "Done..", "Fine..", "完了..", "终于.."]), string.Join(" | ", cuts));
+        var italic = ModDetails.Described("[i]A short sentence.[/i] And then a great many more words after it", 24);
+        var nested = ModDetails.Shortened("[b][i]It works!  [/i][/b] And then a great many more words after it", 25);
+        Check("rich text cut after a full stop or ! inside closing tags: the mark goes, the tags stay, then \"..\"",
+            italic == "[i]A short sentence[/i].." && nested == "[b][i]It works[/i][/b]..", $"{italic} | {nested}");
+
+        var words =("Every card in the game gets a fresh coat of paint: brighter colours, sharper edges and a little more contrast on the "
             + "busiest scenes, so that each picture reads at a glance").Split(' ');
         string Text(int from, int count) => string.Join(' ', Enumerable.Range(from, count).Select(i => words[i % words.Length]));
         // The game's gold and an italic running on past the cut: both closed where it's cut.
