@@ -56,7 +56,8 @@ static class Dependencies
     public static int Preference(Mod mod, Func<Mod, bool> loads, Func<Mod, bool> ticked, Ticks ticks) =>
         loads(mod) ? 4 : ticked(mod) ? 3 : Copies.Twins(mod).Count > 0 && Copies.OwnTick(mod, ticks) ? 2 : mod.state == ModLoadState.Loaded ? 1 : 0;
 
-    // The mods in the game's list that name this id as a dependency (whether they're on or not).
+    // The mods in the game's list that name this id as a dependency (whether they're on or not), those installed while the
+    // game runs too: the game reads them into its list.
     public static IEnumerable<Mod> NeededBy(string? id) => id != null && Lookups.Current is { } now ? now.NeededBy(id)
         : ModManager.Mods.Where(m => Of(m).Contains(id));
 

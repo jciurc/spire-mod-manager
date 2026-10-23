@@ -604,7 +604,8 @@ static partial class SelfTest
     // (the beta's or stable's): both name the same copy, and the losing ticked copies get their reasons. Then the version
     // reading (PENDING JORDAN, P5; letters straight after a number, N10), the game's own reading, a Mod's reading kept, the
     // order the game reads local copies in (FirstRead, against Godot's own sort on real folders), the guard for a mod
-    // that needs a minimum version (N4), and the fallback where the launch couldn't swap a copy in (P7).
+    // that needs a minimum version (N4), and the fallback where the launch couldn't swap a copy in (P7), each with such a
+    // mod installed while the game runs too.
     static void TestCopyRule(string outDir)
     {
         var beta = Compat.WorkshopBeatsOlderLocal;
@@ -615,9 +616,10 @@ static partial class SelfTest
         // What loads of these copies (one id), on the page and at a launch, and why each ticked copy that doesn't load
         // doesn't: off, copies (CopyOf) in copies_off; record, our record of them, in its order; switchOff, sources whose
         // switch is off; extra, mods after them in the list (dependents), extraOff: whether their switches are off; launch:
-        // false where the page alone is asked (its Launch then the page's).
+        // false where the page alone is asked (its Launch then the page's); redraw: the page asked inside a redraw, which
+        // reads who needs whom from its own table (Lookups).
         (string Page, string Launch, string Why) Case(Mod[] copies, string[]? off = null, string[]? record = null, ModSource[]? switchOff = null,
-            Mod[]? extra = null, bool extraOff = false, bool launch = true)
+            Mod[]? extra = null, bool extraOff = false, bool launch = true, bool redraw = false)
         {
             var id = copies[0].manifest?.id ?? "";
             var gameOff = (switchOff ?? []).Select(s => ((string?)id, s))
@@ -629,7 +631,8 @@ static partial class SelfTest
             Copies.Outcome page;
             try
             {
-                page = Copies.Next(id, gameOff, Ticks());
+                using (redraw ? Lookups.Begin() : null)
+                    page = Copies.Next(id, gameOff, Ticks());
             }
             finally
             {
@@ -710,6 +713,20 @@ static partial class SelfTest
             Case([L(x, "A", "1.3"), L(x, "B", "1.2.0")], extra: [needs]), "B", "A Unreadable");
         x = Id();
         Row("... with no such mod: the higher", Case([L(x, "A", "1.3"), L(x, "B", "1.2.0")]), "A", "B Higher");
+        // Such a mod installed while the game runs: the game reads it into its own list (ModManager.Mods, at AddedAtRuntime;
+        // its OnSteamWorkshopItemInstalled, on both branches), so who needs the id on the page (Dependencies.NeededBy, and a
+        // redraw's Lookups) has it, as the next launch has it as a mod after us still to load.
+        x = Id();
+        var arrived = Made("SmmRuleArrived", "Arrived", ModLoadState.AddedAtRuntime);
+        if (arrived.manifest is { } arrivedManifest)
+            arrivedManifest.dependencies = [new ModDependency(x, "1.0.0")];
+        Mod[] Lenient() => [L(x, "A", "1.3"), L(x, "B", "1.2.0")];
+        var (outside, inside) = (Case(Lenient(), extra: [arrived], launch: false), Case(Lenient(), extra: [arrived], launch: false, redraw: true));
+        arrived.state = ModLoadState.None; // the next launch
+        var nextLaunch = Case(Lenient(), extra: [arrived]).Launch;
+        Check("the rule, ... such a mod installed while the game runs (in the game's own list): the page counts it, in a redraw and out, as the next launch "
+            + "does: B loads (A Unreadable)", outside == ("B", "B", "A Unreadable") && inside == outside && nextLaunch == "B",
+            $"page {outside}, in a redraw {inside}; the next launch {nextLaunch}");
 
         // P7: the launch couldn't swap B in (its dependency after the id's first slot, a mod after us needing the id): the
         // next launch does the same while nothing changes the choice; a higher copy ticked, or the mod needing it off, does.
@@ -723,6 +740,11 @@ static partial class SelfTest
                 Case(Two(), extra: [user], launch: false), "A", "B Blocked");
             Row("... a higher copy ticked since: that one, as normal", Case([.. Two(), L(x, "C", "1.2.0")], extra: [user], launch: false), "C", "A Higher, B Higher");
             Row("... the mod that needs the id off since: as normal", Case(Two(), extra: [user], extraOff: true, launch: false), "B", "A Higher");
+            // Another mod that needs it installed while the game runs, in the game's own list: the next launch blocks again.
+            var arrivedUser = Made("SmmRuleArrivedUser", "ArrivedUser", ModLoadState.AddedAtRuntime, needs: [x]);
+            var (inRedraw, outOfOne) = (Case(Two(), extra: [arrivedUser], launch: false, redraw: true), Case(Two(), extra: [arrivedUser], launch: false));
+            Check("the rule, ... the mod that needed it gone, another needing it installed while the game runs: the game's choice again, in a redraw and out: "
+                + "A loads (B Blocked)", inRedraw == ("A", "A", "B Blocked") && outOfOne == inRedraw, $"in a redraw {inRedraw}, out of one {outOfOne}");
         }
         finally
         {
@@ -1209,8 +1231,9 @@ static partial class SelfTest
     //   known ones leave it, and back, every copy ticked (risk 16); copies new at once join in age order (TieOrder);
     // - profiles: one naming a missing copy, applied, writes its copies off whole (P9); switched to with its ticked copy
     //   missing, then that copy back, as it has it and still Saved (P8); saving with a copy missing keeps the others' off
-    //   (P8); an old profile's fill leaves out copies new this session (N2); an inactive profile saved before a higher copy
-    //   came loads that copy when switched to (P18, pinned);
+    //   (P8); an old profile's fill leaves out copies new this session (N2), and with its copy missing as one joins, the
+    //   installed ones as well, as Join left our data (Saved, Discard keeping the higher loading); an inactive profile saved
+    //   before a higher copy came loads that copy when switched to (P18, pinned);
     // - a tick with the switch off and the ticked copy missing: that copy off when it's back (N6).
     static void TestCopiesData(string outDir)
     {
@@ -1410,13 +1433,13 @@ static partial class SelfTest
         Check("... saving while the ticked copy is missing (the other installed alone): the profile keeps the other off", saved is { Enabled: true, CopiesOff: ["l:B"] },
             $"{saved} [{string.Join(",", saved?.CopiesOff ?? [])}]");
         // A profile from before copies had a box each (0.1.4: Copy, no CopiesOff): every recorded copy but its copy off,
-        // missing or not, leaving out a copy new to the record this session (it reads ticked in our data).
+        // missing (C) or not (B), leaving out a copy new to the record this session (D: it reads ticked in our data).
         const string R = "SmmSameIdOld";
         var oldProfile = new Profile { Name = "Old", Mods = [new ProfileMod(R, ModSource.ModsDirectory, true, "l:A")] };
         Copies.TestJoined(R, "l:D", true);
         try
         {
-            WithCopies(new StoreData { CopiesOff = [], Copies = RecordOf(R, "l:A", "l:B", "l:C", "l:D") }, R, [Made(R, "B"), Made(R, "D")],
+            WithCopies(new StoreData { CopiesOff = [], Copies = RecordOf(R, "l:A", "l:B", "l:C", "l:D") }, R, [Made(R, "A"), Made(R, "B"), Made(R, "D")],
                 () => Profiles.TestHold(oldProfile));
         }
         finally
@@ -1425,6 +1448,36 @@ static partial class SelfTest
         }
         Check("... a 0.1.4 profile (its copy, no copies off): every recorded copy but its own off, missing or not, but not one new to the record this session",
             oldProfile.Mods.Single() is { Copy: "l:A", CopiesOff: ["l:B", "l:C"] }, string.Join(",", oldProfile.Mods.Single().CopiesOff ?? ["null"]));
+        // The same with its copy (A) missing at the update and a new lower copy (C) joining at that launch: Join took B,
+        // which the read rule had ticked, out of our data's copies_off, so B and C are ticked and B loads. The profile's fill
+        // leaves B on too, so the active profile is Saved, and Discard (or a switch back) keeps B loading, not C.
+        const string J = "SmmSameIdOldJoin";
+        var oldJoin = new StoreData { CopyPicks = [$"{J}|l:A"], Copies = RecordOf(J, "l:A", "l:B") };
+        Mod[] OldJoinCopies() => [Made(J, "B", ModLoadState.Loaded, version: "1.2.0"), Made(J, "C")];
+        Reconciled(oldJoin, OldJoinCopies());
+        var oldJoinPage = Page(oldJoin, OldJoinCopies());
+        var oldJoinProfile = new Profile { Name = "Old", Mods = [new ProfileMod(J, ModSource.ModsDirectory, true, "l:A")] };
+        Copies.TestJoined(J, "l:C", true);
+        try
+        {
+            WithCopies(oldJoin, J, OldJoinCopies(), () => Profiles.TestHold(oldJoinProfile));
+        }
+        finally
+        {
+            Copies.TestJoined(J, "l:C", false);
+        }
+        var oldJoinEntry = oldJoinProfile.Mods.Single();
+        var oldJoinUnsaved = Unsaved(oldJoin, oldJoinEntry, OldJoinCopies());
+        var oldJoinDiscard = WithCopies(oldJoin, J, OldJoinCopies(), () =>
+        {
+            Profiles.TestApply([oldJoinEntry]);
+            return LoadingCopy(J);
+        });
+        Check("... a 0.1.4 profile whose copy is missing at the update, a new lower copy joining then: the other recorded copy stays on in the profile, as in "
+            + "our data (both ticked, the higher loading), so the active profile is Saved, and Discard keeps it loading",
+            OffOf(oldJoin, J).Count == 0 && oldJoinPage == ("B", "B,C") && oldJoinEntry.CopiesOff is [] && oldJoinUnsaved == null && oldJoinDiscard == "l:B",
+            $"{Say(oldJoin, J)}; page {oldJoinPage}; profile off [{string.Join(",", oldJoinEntry.CopiesOff ?? ["null"])}], unsaved {oldJoinUnsaved ?? "none"}, "
+            + $"Discard loads {oldJoinDiscard}");
         // An inactive profile saved before a higher copy arrived has never seen it: it reads it ticked, and switched to, the
         // higher copy loads (P18, pinned).
         const string P = "SmmSameIdLater";

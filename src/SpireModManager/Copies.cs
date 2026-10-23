@@ -526,7 +526,8 @@ static class Copies
     // 2. where the copies of its switch that the record knows and that are installed are all in copies_off (the read rule
     //    has them all ticked: Ticks.Ticked), they leave it, so the new copy can't end their implied ticks and a lower one
     //    never takes over. The same for each profile entry of its id and source that has them all off (Mods and Edited),
-    //    so a profile switched to or discarded later doesn't bring the takeover back;
+    //    so a profile switched to or discarded later doesn't bring the takeover back; a 0.1.4 entry, with none off yet,
+    //    gets the same when it's filled in (Profiles.HoldCopies);
     // 3. it joins the record, last (TieOrder ranks it after the copies the record had).
     static void Join(StoreData data, string id, string copy, IReadOnlyCollection<string> installed)
     {

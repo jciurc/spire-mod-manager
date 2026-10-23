@@ -139,11 +139,9 @@ static class Profiles
 
     // Gives a profile's entries from before copies had a box each (CopiesOff null), for a group of copies our record has
     // (Copies.RecordGroup, installed or not), their copies off as they read then, as TakeIn does for a mod it has never
-    // seen: an entry naming its copy (0.1.4's) every recorded copy but that one off, whether it's installed or not (one
-    // missing: the read rule ticks the others until it's back, as Copies.LegacyOff reads our data), leaving out copies new
-    // to the record this session (they read ticked in our data, so the active profile isn't Unsaved over them); one naming
-    // none (Better Mod Menu's) the copies off now. From then on a tick on another copy is a change to the profile, as for
-    // any mod. At launch, before the undo history starts, and before a profile is applied. True if any changed.
+    // seen: an entry naming its copy (0.1.4's) as our data reads after this session's joins (Held); one naming none
+    // (Better Mod Menu's) the copies off now. From then on a tick on another copy is a change to the profile, as for any
+    // mod. At launch, before the undo history starts, and before a profile is applied. True if any changed.
     static bool HoldCopies(Profile profile)
     {
         var changed = false;
@@ -151,12 +149,26 @@ static class Profiles
             for (var i = 0; i < (list?.Count ?? 0); i++)
                 if (list?[i] is { CopiesOff: null } entry && !Manager(entry.Id) && Copies.RecordGroup(entry.Id, entry.Source) is { } copies)
                 {
-                    list[i] = entry with { CopiesOff = entry.Copy is { } copy
-                        ? [.. copies.Where(c => c != copy && !Copies.JoinedThisSession(entry.Id, c)).Order(StringComparer.Ordinal)]
-                        : OffNow(entry.Id, copies) };
+                    list[i] = entry with { CopiesOff = entry.Copy is { } copy ? Held(entry.Id, entry.Source, copies, copy) : OffNow(entry.Id, copies) };
                     changed = true;
                 }
         return changed;
+    }
+
+    // A 0.1.4 entry's copies off, read as Copies.LegacyOff reads our data and then left as this session's joins left it
+    // (Copies.Join): every recorded copy but the one it names, whether that's installed or not (one missing: the read rule
+    // ticks the others until it's back), less the copies new to the record this session (they read ticked in our data).
+    // Where one joined while every installed copy the record had was off here (the one named missing), those too, as the
+    // join took them out of our data: else the profile reads them off beside the new copy, so it's Unsaved at once, and
+    // applied it lets a lower new copy take over.
+    static List<string> Held(string id, ModSource source, List<string> copies, string copy)
+    {
+        var off = copies.Where(c => c != copy && !Copies.JoinedThisSession(id, c)).ToList();
+        var had = AllMods().Where(m => m.manifest?.id == id && m.modSource == source).Select(Copies.CopyOf)
+            .Where(c => copies.Contains(c) && !Copies.JoinedThisSession(id, c)).Distinct().ToList();
+        if (copies.Any(c => Copies.JoinedThisSession(id, c)) && had.Count > 0 && had.All(off.Contains))
+            off.RemoveAll(had.Contains);
+        return [.. off.Order(StringComparer.Ordinal)];
     }
 
 #if DEVTOOLS

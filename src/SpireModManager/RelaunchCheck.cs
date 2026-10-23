@@ -29,7 +29,8 @@ static class RelaunchCheck
     // Every copy that loads after a relaunch with a dependency that's off or missing, each with the info panel's reason;
     // then each copy that's ticked while another copy of its id loads instead (only one copy of an id loads; copies from
     // one source too), naming that one, unless the same-ID banner was dismissed for them. A copy that won't load has no
-    // dependency problems, so none is listed twice. This mod's copies are left out (Copies.Clashing): they stay on together.
+    // dependency problems, so none is listed twice. This mod's copies are left out (Copies.Clashing): a backup copy of it on
+    // is as it should be.
     static List<(Mod Mod, string Why)> Problems()
     {
         var problems = Dependencies.EachCopy(ModManager.Mods.Union(Installed.Mods))

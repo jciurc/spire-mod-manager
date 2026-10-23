@@ -56,7 +56,8 @@ sealed class Lookups : IDisposable
             if (mod.manifest?.id is { } id && (!_byId.TryGetValue(id, out var kept)
                     || Dependencies.Preference(mod, Loads, Ticked, _ticks) > Dependencies.Preference(kept, Loads, Ticked, _ticks)))
                 _byId[id] = mod;
-        // Who needs whom, from the game's list only; a mod naming one twice counts once.
+        // Who needs whom, from the game's list (a mod installed while the game runs is in it too: the game reads it in); a
+        // mod naming one twice counts once.
         foreach (var mod in mods)
             foreach (var id in DependenciesOf(mod, Dependencies.Read).Distinct()) // kept for the redraw's own asks
             {
