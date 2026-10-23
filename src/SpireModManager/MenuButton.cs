@@ -16,7 +16,7 @@ static class MenuButton
 {
     const string Name = "SpireModManagerMenuButton";
     static readonly Color Coral = new(0.96f, 0.62f, 0.47f);
-    // A long profile name is cut to this width with "…" (at the button's font size).
+    // A long profile name is cut to this width with ".." (at the button's font size).
     const float NameWidth = 360;
     // Room either side of the text inside the button; the hover carets sit in it (the game puts them out to 54 from the
     // text), so wherever the button is kept on screen, they are too.

@@ -82,6 +82,13 @@ static class Menus
     // A count in the game's language: "1,234" in English, "1.234" in German (no separator under 1,000).
     public static string Number<T>(T count) where T : IFormattable => count.ToString("N0", Culture);
 
+    // The mark where our text is cut short or runs on (Jordan, 23 Oct: "Let's use two periods"), as "and 5 more.." ends.
+    public const string CutMark = "..";
+
+    // Text cut short, with CutMark after it. The spaces and punctuation it was cut after go first, so it never reads as
+    // three dots or ",..".
+    public static string CutShort(string text) => text.TrimEnd().TrimEnd('.', ',', ';', ':').TrimEnd() + CutMark;
+
     // Shared looks, made once (every row has a few of these buttons).
     static readonly (string State, StyleBox Box)[] SmallBoxes =
     [

@@ -126,7 +126,7 @@ static class ModDetails
         folder.Visible = Directory.Exists(mod.path);
     }
 
-    // The name and its version (smaller, grey) on one line: a long name shrinks to TitleMinSize, then is cut with "…"
+    // The name and its version (smaller, grey) on one line: a long name shrinks to TitleMinSize, then is cut with ".."
     // so the version shows. Cut short: the whole text as a tooltip.
     static void FitTitle(MegaRichTextLabel title, string name, string? version)
     {
@@ -146,7 +146,7 @@ static class ModDetails
         title.SetMeta(FullMeta, shownName != name || shownNumber != number ? name + (number.Length > 0 ? gap + number : "") : "");
     }
 
-    // "<id> (<where>)" then the status, within width: a long id is cut with "…" (the whole id as a tooltip). A link to
+    // "<id> (<where>)" then the status, within width: a long id is cut with ".." (the whole id as a tooltip). A link to
     // the Workshop page has the external-link mark after it (LinkMark).
     static void FitSource(Control source, string id, string where, float width)
     {
@@ -331,7 +331,7 @@ static class ModDetails
     // short. full: nothing cut short (held with Alt). search: the list's search, if any.
     public static string Card(Mod mod, bool full = false, string? title = null, string? search = null)
     {
-        string Cut(string text, int max) => full || text.Length <= max ? text : text[..max].TrimEnd() + "…";
+        string Cut(string text, int max) => full || text.Length <= max ? text : Menus.CutShort(text[..max]);
         var id = mod.manifest?.id ?? "";
         var info = Store.InfoFor(mod);
         var lines = new List<string>();
@@ -383,7 +383,7 @@ static class ModDetails
     // standIn: a self-test's details in place of the player's (SharedCards.StandIn).
     public static string SharedCard(Mod mod, bool full = false, (string? Alias, string? Notes, List<string> Tags, string? Category)? standIn = null)
     {
-        string Cut(string text, int max) => full || text.Length <= max ? text : text[..max].TrimEnd() + "…";
+        string Cut(string text, int max) => full || text.Length <= max ? text : Menus.CutShort(text[..max]);
         var id = mod.manifest?.id ?? "";
         var info = Store.InfoFor(mod);
         var lines = new List<string>();
@@ -488,11 +488,11 @@ static class ModDetails
             at = max;
         if (text.LastIndexOf('[', at - 1) is var open && open > text.LastIndexOf(']', at - 1))
             at = open;
-        return text[..at].TrimEnd() + "…";
+        return Menus.CutShort(text[..at]);
     }
 
     // Text cut after 200 characters (some authors write a paragraph where their name goes).
-    public static string Short(string text) => text.Length <= 200 ? text : text[..200].TrimEnd() + "…";
+    public static string Short(string text) => text.Length <= 200 ? text : Menus.CutShort(text[..200]);
 
     // The date in the game's language, in its run history's pattern ("12. Oktober 2026"); English if that's missing
     // or unusable.

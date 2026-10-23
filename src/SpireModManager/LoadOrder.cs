@@ -459,7 +459,8 @@ static class LoadOrder
         var needOff = broken.Count(b => b.Needs.Any(d => d.Dep != null));
         var needMissing = broken.Count(b => b.Needs.Any(d => d.Dep == null));
         string Part(string key, int count) => Menus.Format(count == 1 ? key + "_ONE" : key, ("count", Menus.Number(count)));
-        var text = string.Join(" ", new[]
+        // Each a statement of its own, with no full stop (Jordan's rule), so a dot between the two when both show.
+        var text = string.Join("  ·  ", new[]
         {
             needOff > 0 ? Part("SPIRE_MOD_MANAGER.LIST_PROBLEMS_OFF", needOff) : null,
             needMissing > 0 ? Part("SPIRE_MOD_MANAGER.LIST_PROBLEMS_MISSING", needMissing) : null,

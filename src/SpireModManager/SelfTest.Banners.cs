@@ -29,6 +29,11 @@ static partial class SelfTest
         await Wait(menu, 0.3);
         var text = (screen.FindChild("OrderProblems", true, false) as Label)?.Text ?? "";
         Check("main list: a needed mod that is off gets a banner", text.Contains("require a mod that is disabled"), text);
+        // Test Addon on as well, its dependency not installed: both kinds at once, each a statement of its own.
+        if (WontLoad() != null)
+            Check("main list banner: both kinds of problem, a dot between them and no full stops",
+                text.Split("  ·  ") is [var off, var missing] && off.Contains("require a mod that is disabled") && missing.Contains("a mod that isn't installed")
+                && !text.Contains('.'), text);
         var warning = screen.FindChild(LoadOrder.WarningName, true, false);
         var goToTip = TipOf(warning?.FindChild("GoToProblemButton", true, false));
         var showTip = TipOf(warning?.FindChild("FilterProblemButton", true, false));
@@ -483,7 +488,7 @@ static partial class SelfTest
             && new[] { LoadOrder.ManagersName, LoadOrder.WarningName }.Select(n => border.GetNodeOrNull<Control>(n)).OfType<Control>()
                 .All(other => !other.Visible || other.GetGlobalRect().Position.Y >= banner.GetGlobalRect().End.Y);
         Check("this mod unticked: a red banner, first under the search box, says it and this page go at the relaunch, with Go to (no Show: one mod) and Enable now",
-            !Copies.Ticked(self) && first && text == "Spire Mod Manager (this mod) will be disabled on relaunch, and this menu will no longer be accessible until enabled again."
+            !Copies.Ticked(self) && first && text == "Spire Mod Manager (this mod) will be disabled on relaunch, and this menu will no longer be accessible until enabled again"
             && Banner()?.FindChild("GoToSelfButton", true, false) is Button && Banner()?.FindChild("EnableSelfButton", true, false) is Button enableButton
             && Hover.TipOf(enableButton) == "Keep Spire Mod Manager (this mod) enabled" && Profiles.OnCount() == on - 1
             && Banner()?.FindChild("GoToSelfButton", true, false) is Button goToButton && goToButton.Text == GoToProblem
@@ -542,7 +547,7 @@ static partial class SelfTest
             await Tick(tickbox, true);
         var text = (Banner()?.FindChild("ManagersWarning", true, false) as Label)?.Text ?? "";
         Check("Better Mod Menu ticked: the managers banner at once, under the search box, above the list", Bmm.Ticked && Placed()
-            && text == "Multiple mod managers are currently enabled, and may cause unexpected behavior.", $"\"{text}\"; {Where()}");
+            && text == "Multiple mod managers are currently enabled, and may cause unexpected behavior", $"\"{text}\"; {Where()}");
         Check("the managers banner is yellow: a warning, not an error", Yellow(BannerFill(Banner())), $"fill {BannerFill(Banner())}");
         var goToTip = TipOf(Banner()?.FindChild("GoToManagersButton", true, false));
         Check("the managers banner's Go to tip is the other banner's: \"Open the next affected mod\"", goToTip == GoToProblemTip, goToTip ?? "no Go to");
