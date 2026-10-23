@@ -60,13 +60,13 @@ static partial class SelfTest
         }
         Check("mods the active profile had never seen joined it at launch, on", ids.All(id => profile.Mods.Any(m => m.Id == id && m.Enabled)),
             string.Join(", ", profile.Mods.Select(m => $"{m.Id}={(m.Enabled ? "on" : "off")}")));
-        // The fixture twins too, copy by copy, as the launch reads our file from before copies had a box each: the picked
-        // one (B) on, the other off beside it.
+        // The fixture twins too, copy by copy, as the launch reads our file from before copies had a box each: its legacy
+        // pick (B) on, the other off beside it, no copy named.
         if (Copies.TwinGroups().Any(g => g.Id == TwinId))
-            Check("... the twins copy by copy: the picked one on, the other off beside it, as the launch has them",
-                profile.Mods.FirstOrDefault(m => m.Id == TwinId && m.Source == ModSource.ModsDirectory) is { Enabled: true, Copy: "l:SmmTestTwinB", CopiesOff: ["l:SmmTestTwinA"] },
+            Check("... the twins copy by copy: the legacy pick on, the other off beside it, as the launch has them",
+                profile.Mods.FirstOrDefault(m => m.Id == TwinId && m.Source == ModSource.ModsDirectory) is { Enabled: true, Copy: null, CopiesOff: ["l:SmmTestTwinA"] },
                 string.Join(", ", profile.Mods.Where(m => m.Id == TwinId).Select(m => $"{m.Source} {m.Enabled} {m.Copy} off [{string.Join(",", m.CopiesOff ?? [])}]")));
-        var (on, off, _) = Profiles.UnsavedChanges();
+        var (on, off) = Profiles.UnsavedChanges();
         Check("quietly: no unsaved edit, and already so in the launch state", !Profiles.Edited && ids.All(id => OnInSnapshot(History.Loaded, id)),
             $"edited {Profiles.Edited} (+{string.Join(", +", on.Select(m => m.Name))} -{string.Join(", -", off.Select(m => m.Name))}), in the launch state {ids.Count(id => OnInSnapshot(History.Loaded, id))} of {ids.Length}");
     }
@@ -981,7 +981,7 @@ static partial class SelfTest
                 .Select(c => (c.Query, c.Finds, Found: string.Concat(designed.Select(m => Search.Matches(m, c.Query) ? "y" : "n"))))
                 .Where(c => c.Found != c.Finds).Select(c => $"{c.Query}: {c.Found}, not {c.Finds}")];
             List<string> wrongTable, wrongBesides, wrongPrecedence, wrongKeywords, wrongForgiving;
-            using (Lookups.Begin(designed, [], saved, Picks.None))
+            using (Lookups.Begin(designed, [], saved, Ticks.All))
                 (wrongTable, wrongBesides, wrongPrecedence, wrongKeywords, wrongForgiving) = (Wrong(table), Wrong(besides), Wrong(precedence), Wrong(keywords), Wrong(forgiving));
             Check($"search grammar: the design's examples, row by row ({table.Length}), and the tags they're made of alone", wrongTable.Count + wrongBesides.Count == 0,
                 string.Join(" | ", wrongTable.Concat(wrongBesides)));
@@ -1094,7 +1094,7 @@ static partial class SelfTest
                 ("#enabled -#local", "nynnn"), ("#problem #local", "ynyyn"), ("(#unmet OR #needed) -#failed", "ynynn"),
             ];
             List<string> wrong;
-            using (Lookups.Begin(made, [], saved, Picks.None))
+            using (Lookups.Begin(made, [], saved, Ticks.All))
                 wrong = [.. cases.Select(c => (c.Query, c.Finds, Found: string.Concat(made.Select(m => Search.Matches(m, c.Query) ? "y" : "n"))))
                     .Where(c => c.Found != c.Finds).Select(c => $"{c.Query}: {c.Found}, not {c.Finds}")];
             Check("hidden tags mean what they say: state, problems (#error, #warning, #problem gather them), our details (#notes still finds what #note does); "
@@ -1648,7 +1648,7 @@ static partial class SelfTest
             return ms;
         }
         var wrong = new List<string>();
-        using (Lookups.Begin(mods, [], saved, Picks.None))
+        using (Lookups.Begin(mods, [], saved, Ticks.All))
         {
             var built = Lap();
             var notes = mods.ToDictionary(m => m, m => (Tags: Tags.For(m), Required: RowStrip.RequiredFor(m), Needs: RowStrip.Needs(m, order, loadOrder: false)));
@@ -1734,12 +1734,12 @@ static partial class SelfTest
             }
             void Build(List<SettingsSaveMod> list)
             {
-                using (Lookups.Begin(mods, [], list, Picks.None))
+                using (Lookups.Begin(mods, [], list, Ticks.All))
                     RowStrip.Apply(rows, CategoryList.StripActions(content), CategoryList.EdgeAction(content));
             }
             List<string> Expected(List<SettingsSaveMod> list)
             {
-                using (Lookups.Begin(mods, [], list, Picks.None))
+                using (Lookups.Begin(mods, [], list, Ticks.All))
                 {
                     var order = LoadOrder.Mods(rows).Select((m, i) => (m, i)).DistinctBy(p => p.m).ToDictionary(p => p.m, p => p.i);
                     return [.. rows.Select(row =>
@@ -1852,7 +1852,7 @@ static partial class SelfTest
             var narrowCard = narrow?.GetNode<Control>($"SpireModManagerStrip/{RowStrip.MoreName}") is { } narrowMore
                 ? (await SizedHoverCard(menu, narrowMore, "SpireModManagerTagCard")).Text : "";
             List<string> narrowWords;
-            using (Lookups.Begin(mods, [], saved, Picks.None))
+            using (Lookups.Begin(mods, [], saved, Ticks.All))
                 narrowWords = narrow == null ? [] : RowStrip.Keywords(narrow.Mod);
             var narrowShown = narrow?.GetNodeOrNull<Label>($"SpireModManagerStrip/{RowStrip.KeywordsName}") is { Visible: true } shownWords ? shownWords.Text[RowStrip.KeywordsLine([]).Length..].Split(", ").Length : 0;
             Check("300 made-up rows, narrower: keywords that don't fit after the tags are \"and N more..\", its card those keywords and no tags",
@@ -1865,7 +1865,7 @@ static partial class SelfTest
             // what its redraw knew (Load Order's rows). And a line is made again when a tag's card or search changes, its
             // words, colour and kind the same (the Duplicate tag's card names the other copies).
             var ran = "";
-            using (Lookups.Begin(mods, [], saved, Picks.None))
+            using (Lookups.Begin(mods, [], saved, Ticks.All))
             {
                 RowStrip.Apply([rows[0]], _ => [new MenuItem("Probe", () => ran = "first")]);
                 RowStrip.Apply([rows[0]], _ => [new MenuItem("Probe", () => ran = "second")]);
@@ -1982,10 +1982,11 @@ static partial class SelfTest
     // fixture twins, SmmTestTwinA and B). The saved list keeps one entry per copy through a move and back (it grew by one
     // with every save), Changes and the main menu agree nothing moved, and the page's line follows the menu's rule. On our
     // main list (where a tick is its own undo step: Load Order's undo steps through the order) each copy has its own box,
-    // the picked one's ticked, the other off (copies_off): a click on the other's makes that copy the one that loads, the
-    // first staying ticked, as one undo step, Changes naming only it, the saved list's entries all on (one switch for
-    // both); undo puts the pick back. Turning the mod off and on sets every one of its entries (the game reads any entry
-    // off as off), the pick and copies_off kept.
+    // the one loading ticked, the other off (copies_off): a click on the other's ticks it beside the first, as one undo
+    // step, Changes naming only it, the saved list's entries all on (one switch for both), and the higher version loads
+    // (the fixture's: the one loading already, so nothing pending); undo puts it back. Turning the mod off and on sets
+    // every one of its entries (the game reads any entry off as off), copies_off kept. Both off, Enable needed from a mod
+    // that needs the id brings back the copy that was ticked, not the other.
     static async Task TestTwinCopies(Node menu, NModdingScreen screen, Control content)
     {
         List<NModMenuRow> Rows() => content.GetChildren().OfType<NModMenuRow>().ToList();
@@ -2040,48 +2041,63 @@ static partial class SelfTest
         Click(toggle); // to the main list
         await Wait(menu, 0.5);
         var twinRows = Rows().Where(r => r.Mod != null && twins.Contains(r.Mod)).ToList();
-        if (twinRows.Count == 2 && Copies.Picked(id, source) is { } pick && twinRows.FirstOrDefault(r => r.Mod is { } m && Copies.CopyOf(m) == pick) is { Mod: { } pickedMod } picked
-            && twinRows.FirstOrDefault(r => r != picked) is { Mod: { } otherMod } unpicked)
+        if (twinRows.Count == 2 && LoadingCopy(id) is { } loads && twinRows.FirstOrDefault(r => r.Mod is { } m && Copies.CopyOf(m) == loads) is { Mod: { } loadsMod } loading
+            && twinRows.FirstOrDefault(r => r != loading) is { Mod: { } otherMod } otherRow)
         {
             string Named(Mod mod) => (mod.manifest?.name ?? id) + Copies.Which(mod);
-            var wasOn = Copies.Ticked(pickedMod);
+            var wasOn = Copies.Ticked(loadsMod);
             var offWere = CopiesOff();
-            Check("two copies of one mod: a box each on our page, the picked copy's ticked as it's on, the other's not (copies_off)",
-                Ticked(picked) == wasOn && !Ticked(unpicked) && !Copies.Ticked(otherMod) && offWere.Contains(Copies.SwitchKey(otherMod)) && CopiesBroken() == null,
-                $"boxes {Ticked(picked)}/{Ticked(unpicked)}, on {wasOn}, off {string.Join(", ", offWere)}; {CopiesBroken()}");
+            // Which loads with both ticked, for the fixture's twins written out rather than worked out by the rule under
+            // test: Test Twin Beta (1.1.0, the copy loading now) over Test Twin (1.0.0), as the higher version. Other twins
+            // (a --workshop --twins run) have versions not known here, so for them it's the rule's answer (Copies.Best).
+            var both = id == TwinId ? "l:SmmTestTwinB"
+                : Copies.CopyOf(Copies.Best([loadsMod, otherMod], Copies.Version, c => Copies.TieOrder(c, Store.Data.Copies?.GetValueOrDefault(id), null)).Mod);
+            Check("two copies of one mod: a box each on our page, the loading copy's ticked as it's on, the other's not (copies_off)",
+                Ticked(loading) == wasOn && !Ticked(otherRow) && !Copies.Ticked(otherMod) && offWere.Contains(Copies.SwitchKey(otherMod)) && CopiesBroken() == null,
+                $"boxes {Ticked(loading)}/{Ticked(otherRow)}, on {wasOn}, off {string.Join(", ", offWere)}; {CopiesBroken()}");
             var steps = History.Steps(History.Track.List);
             var (onBefore, offBefore, _) = HistoryBar.Counts();
-            Toggle(unpicked);
+            Toggle(otherRow);
             await Wait(menu, 0.3);
             var lines = HistoryBar.Describe();
             var (onNow, offNow, _) = HistoryBar.Counts();
             var changed = HistoryBar.ChangedMods();
-            Check("two copies of one mod: ticking the other copy makes it the one that loads, the first staying ticked, one undo step; Changes names only it, "
-                + "+1; the saved list's entries all on; Show: Changed lists only that row; pending",
-                Ticked(unpicked) && Ticked(picked) == wasOn && Copies.Ticked(otherMod) && Copies.Ticked(pickedMod) == wasOn
-                && Copies.Picked(id, source) == Copies.CopyOf(otherMod) && Store.Data.CopyPicks?.Contains(Copies.SwitchKey(otherMod)) == true
+            Check("two copies of one mod: ticking the other copy ticks it beside the first, one undo step; Changes names only it, +1; the saved list's "
+                + "entries all on; Show: Changed lists only that row; the higher version loads (pending only if that's another copy)",
+                Ticked(otherRow) && Ticked(loading) == wasOn && Copies.Ticked(otherMod) && Copies.Ticked(loadsMod) == wasOn && LoadingCopy(id) == both
                 && !CopiesOff().Contains(Copies.SwitchKey(otherMod)) && list.Where(e => e.Id == id && e.Source == source).All(e => e.IsEnabled)
-                && History.Steps(History.Track.List) == steps + 1 && lines.Contains($"Enabled: {Named(otherMod)}") && !lines.Any(l => l.Contains(Named(pickedMod)))
-                && onNow - onBefore == 1 && offNow == offBefore && changed.Contains(otherMod) && !changed.Contains(pickedMod) && ModEntry.HasPendingChanges()
-                && CopiesBroken() == null,
-                $"boxes {Ticked(picked)}/{Ticked(unpicked)}, pick {Copies.Picked(id, source)}, steps {steps} -> {History.Steps(History.Track.List)}, "
-                + $"counts +{onNow - onBefore} -{offNow - offBefore}; {string.Join(" | ", lines)}; {CopiesBroken()}");
+                && History.Steps(History.Track.List) == steps + 1 && lines.Contains($"Enabled: {Named(otherMod)}") && !lines.Any(l => l.Contains(Named(loadsMod)))
+                && onNow - onBefore == 1 && offNow == offBefore && changed.Contains(otherMod) && !changed.Contains(loadsMod)
+                && ModEntry.HasPendingChanges() == (both != loads || LoadOrder.OrderChanged) && CopiesBroken() == null,
+                $"boxes {Ticked(loading)}/{Ticked(otherRow)}, loads {LoadingCopy(id)} (expected {both}), steps {steps} -> "
+                + $"{History.Steps(History.Track.List)}, counts +{onNow - onBefore} -{offNow - offBefore}, pending {ModEntry.HasPendingChanges()}; "
+                + $"{string.Join(" | ", lines)}; {CopiesBroken()}");
             History.Undo();
             await Wait(menu, 0.3);
-            Check("two copies of one mod: undo puts the pick back, boxes, copies_off and Changes too", Ticked(picked) == wasOn && !Ticked(unpicked)
-                && Copies.Picked(id, source) == pick && CopiesOff().SequenceEqual(offWere) && !HistoryBar.Describe().Any(l => l.Contains(Named(otherMod))),
-                $"boxes {Ticked(picked)}/{Ticked(unpicked)}, pick {Copies.Picked(id, source)}; {string.Join(" | ", HistoryBar.Describe())}");
-            // The picked copy the only one ticked: off, the switch goes off (the pick and copies_off kept); on, it comes on
-            // alone, the pick still.
-            Dependencies.Set([pickedMod], false, screen);
+            Check("two copies of one mod: undo puts it back, boxes, copies_off and Changes too", Ticked(loading) == wasOn && !Ticked(otherRow)
+                && LoadingCopy(id) == loads && CopiesOff().SequenceEqual(offWere) && !HistoryBar.Describe().Any(l => l.Contains(Named(otherMod))),
+                $"boxes {Ticked(loading)}/{Ticked(otherRow)}, loads {LoadingCopy(id)}; {string.Join(" | ", HistoryBar.Describe())}");
+            // The loading copy the only one ticked: off, the switch goes off (copies_off kept); on, it comes on alone.
+            Dependencies.Set([loadsMod], false, screen);
             var offAll = list.Where(e => e.Id == id && e.Source == source).All(e => !e.IsEnabled) && CopiesOff().SequenceEqual(offWere);
-            Dependencies.Set([pickedMod], true, screen);
-            var onAll = list.Where(e => e.Id == id && e.Source == source).All(e => e.IsEnabled) && Copies.Picked(id, source) == pick && CopiesOff().SequenceEqual(offWere);
-            Check("two copies of one mod: turning the picked copy off and on sets every one of the mod's entries, the pick and copies_off kept",
+            Dependencies.Set([loadsMod], true, screen);
+            var onAll = list.Where(e => e.Id == id && e.Source == source).All(e => e.IsEnabled) && LoadingCopy(id) == loads && CopiesOff().SequenceEqual(offWere);
+            Check("two copies of one mod: turning the loading copy off and on sets every one of the mod's entries, copies_off kept",
                 offAll && onAll && CopiesBroken() == null, $"off {offAll}, on {onAll}; {string.Join(", ", CopiesOff())}; {CopiesBroken()}");
+            // The other copy alone ticked, then off too (the switch off): the copy Enable needed turns on for a mod that needs
+            // the id (Dependencies.Find) is the one that was ticked (its own tick), not the one the game loaded. Put back:
+            // the loading copy on alone.
+            Dependencies.Set([otherMod], true, screen);
+            Dependencies.Set([loadsMod], false, screen);
+            Dependencies.Set([otherMod], false, screen);
+            var needed = Dependencies.Find(id);
+            Dependencies.Set([loadsMod], true, screen);
+            Check("two copies of one mod: both off, the other copy ticked last: the copy Enable needed turns on is that one, not the one loaded",
+                needed == otherMod && LoadingCopy(id) == loads && CopiesOff().SequenceEqual(offWere) && CopiesBroken() == null,
+                $"needed {Copies.KeyOf(needed)}; loads {LoadingCopy(id)}, off {string.Join(", ", CopiesOff())}; {CopiesBroken()}");
         }
         else
-            Check($"two copies of one mod: a box per copy (rows {twinRows.Count}), one of them picked ({Copies.Picked(id, source)})", false);
+            Check($"two copies of one mod: a box per copy (rows {twinRows.Count}), one of them loading ({LoadingCopy(id)})", false);
         var restore = list.Where(e => e.Id == id && e.Source == source).ToList();
         for (var i = 0; i < restore.Count && i < on.Count; i++)
             restore[i].IsEnabled = on[i];
@@ -2922,21 +2938,22 @@ static partial class SelfTest
         var wereOff = Rows().Where(r => r.Visible).Select(r => r.Mod).OfType<Mod>().ToList();
         if (wereOff.Count > 0)
         {
-            // A copy of a mod installed twice among them (the fixture twins' copy not picked) comes on beside the other,
-            // which stays on: nothing turns another copy off. Turned on, it's the copy that loads (the copy enabled last).
+            // A copy of a mod installed twice among them (the fixture twins' copy that doesn't load) comes on beside the
+            // other, which stays on: nothing turns another copy off. Which of them loads is then the higher version's (the
+            // fixture's: the one loading already).
             var others = Rows().Select(r => r.Mod).OfType<Mod>().Except(wereOff).ToDictionary(m => m, On);
             var twin = wereOff.FirstOrDefault(m => Copies.Twins(m).Count > 0);
-            var (pickWas, offWas) = (twin?.manifest?.id is { } twinId ? Copies.Picked(twinId, twin.modSource) : null, CopiesOff());
+            var (loadsWas, offWas) = (twin?.manifest?.id is { } twinId ? LoadingCopy(twinId) : null, CopiesOff());
             await Press("EnableAllButton");
-            Check("Show: Disabled, Enable all: just the mods shown, which then go; no other copy turns off (a copy turned on is the one that loads)",
+            Check("Show: Disabled, Enable all: just the mods shown, which then go; no other copy turns off (the one loading still loads, the higher version)",
                 wereOff.All(On) && others.All(p => On(p.Key) == p.Value) && Shown().Count == 0 && Scope() == "All disabled (0)"
-                && (twin?.manifest?.id is not { } turnedId || Copies.Picked(turnedId, twin.modSource) == Copies.CopyOf(twin) && ModEntry.HasPendingChanges()),
-                $"{Say()}; copy {Copies.KeyOf(twin)}, picked {(twin?.manifest?.id is { } shownId ? Copies.Picked(shownId, twin.modSource) : null)}");
+                && (twin?.manifest?.id is not { } turnedId || turnedId != TwinId || LoadingCopy(turnedId) == loadsWas && Copies.Ticked(twin)),
+                $"{Say()}; copy {Copies.KeyOf(twin)}, loads {(twin?.manifest?.id is { } shownId ? LoadingCopy(shownId) : null)} (was {loadsWas})");
             History.Undo();
             await Wait(menu, 0.3);
-            Check("undone: disabled and shown again (a copy's pick and copies_off back)", wereOff.All(Off)
+            Check("undone: disabled and shown again (a copy's copies_off back)", wereOff.All(Off)
                 && Shown().SequenceEqual(Ids(Rows().Where(r => r.Mod is { } m && wereOff.Contains(m)))) && CopiesOff().SequenceEqual(offWas)
-                && (twin?.manifest?.id is not { } backId || Copies.Picked(backId, twin.modSource) == pickWas), Say());
+                && (twin?.manifest?.id is not { } backId || LoadingCopy(backId) == loadsWas), Say());
         }
         else
             Results.Add("SKIP list filters, Enable all: no disabled mod");

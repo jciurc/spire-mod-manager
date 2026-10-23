@@ -146,8 +146,8 @@ static class LoadOrder
 
     // These copies whose place changed since a saved list (and the copy order it had): (copy, place then, now), 1-based
     // among them as Load Order numbers its rows, in load order now. Copies of one id and source that have only traded
-    // their key's places are no move: the list the game reads is the same there, and which of them loads is the pick,
-    // not the row, so a relaunch would change nothing (an undo or a drag back can leave them so).
+    // their key's places are no move: the list the game reads is the same there, and which of them loads goes by the
+    // copies (Copies.Next), not the rows, so a relaunch would change nothing (an undo or a drag back can leave them so).
     public static List<(Mod Mod, int Before, int After)> MovedSince(IEnumerable<(string? Id, ModSource Source)> saved,
         IReadOnlyDictionary<(string?, ModSource), IReadOnlyList<string>> copyOrder, IEnumerable<Mod> mods)
     {
@@ -310,8 +310,7 @@ static class LoadOrder
         if (compact || row.Mod is not { } it)
             return moves;
         // No tickboxes in this view: on and off live here. The game's own handler does the work (CopyTickPatch for a
-        // copy of a mod installed more than once: that copy alone, as its tip says). The hidden box still toggles, so
-        // this mod's copy locked on (CategoryList.LockedOn) has its Disable greyed here.
+        // copy of a mod installed more than once: that copy alone, as its tip says).
         var on = Copies.Ticked(it);
         moves.Insert(0, new MenuItem(Menus.Text(on ? "SPIRE_MOD_MANAGER.DISABLE_MOD" : "SPIRE_MOD_MANAGER.ENABLE_MOD"), () =>
         {
@@ -319,7 +318,7 @@ static class LoadOrder
             tickbox.IsTicked = !on;
             tickbox.EmitSignal(NTickbox.SignalName.Toggled, tickbox);
             redraw();
-        }, Disabled: CategoryList.LockedOn(it), Tip: CategoryList.CopyTip(it)));
+        }, Tip: CategoryList.CopyTip(it)));
         return moves;
     }
 
@@ -416,9 +415,8 @@ static class LoadOrder
         // change. A dismissal is forgotten once the two aren't both ticked.
         Bmm.ForgetDismissedWarning();
         // This mod unticked: every copy of it, where it's installed more than once (one ticked still loads).
-        var ours = Dependencies.EachCopy(ModManager.Mods.Union(Installed.Mods)).Where(m => m.manifest?.id == ModEntry.ModId).ToList();
-        if (Layout.Wide && ours.Count > 0 && !ours.Any(Copies.Ticked))
-            SelfBanner(content, border, search, ours, redraw);
+        if (Layout.Wide && Copies.OursOff())
+            SelfBanner(content, border, search, redraw);
         if (Layout.Wide && Bmm.BothTicked && !Store.Data.ManagersWarningDismissed)
             ManagersBanner(content, border, search, redraw);
         // Two or more copies of one mod id ticked (only one of them loads; this mod's aside, Copies.Clashing), on our
@@ -504,19 +502,21 @@ static class LoadOrder
             .OrderBy(b => b.Needs.All(d => d.Dep == null)) // stable: each group keeps its order
             .ToList();
 
-    // This mod unticked (ours: every copy of it): the page goes with it at the relaunch, so a red banner says so, with
-    // Go to (the copy running; no Show for one mod) and Enable now (every copy, so one still loads if another is
-    // removed). Ticking it again (or undo) takes the banner away.
-    static void SelfBanner(Control content, Control border, Control? search, List<Mod> ours, Action redraw)
+    // This mod unticked (every copy of it: Copies.OursOff): the page goes with it at the relaunch, so a red banner says
+    // so, with Go to (the copy running; no Show for one mod) and Enable now. Enable now turns on the copy running alone
+    // (its source's box), so the next launch runs it: with every source on, the game's rule could load another copy of
+    // ours on the beta. Ticking it again (or undo) takes the banner away.
+    static void SelfBanner(Control content, Control border, Control? search, Action redraw)
     {
-        var running = ours.FirstOrDefault(m => m.state == ModLoadState.Loaded) ?? ours[0];
+        if (Copies.Running() is not { } running)
+            return;
         var goTo = Menus.SmallButton(Menus.Text("SPIRE_MOD_MANAGER.GO_TO_PROBLEM"), () => GoTo(content, running), name: "GoToSelfButton");
         Hover.Tip(goTo, Menus.Text("SPIRE_MOD_MANAGER.SHOW_SELF_TIP"));
         var enable = Menus.SmallButton(Menus.Text("SPIRE_MOD_MANAGER.ENABLE_SELF"), () =>
         {
             if (CategoryList.ScreenOf(content) is not { } screen)
                 return;
-            Dependencies.Set(ours, true, screen);
+            Dependencies.Set([running], true, screen);
             redraw();
         }, name: "EnableSelfButton");
         Hover.Tip(enable, Menus.Text("SPIRE_MOD_MANAGER.ENABLE_SELF_TIP"));

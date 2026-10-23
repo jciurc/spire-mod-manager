@@ -421,7 +421,7 @@ static partial class SelfTest
             && bar.FindChild("Unsaved", true, false) is Control { Visible: true } && bar.FindChild("SaveProfileButton", true, false) != null,
             $"edited {Profiles.Edited}, saved on {SavedOn()}, was on {wasOn}, now on {On()}, unsaved {(bar.FindChild("Unsaved", true, false) as Control)?.Visible}, save {bar.FindChild("SaveProfileButton", true, false) != null}");
         Check("edited: Save, Save as new, Discard beside Unsaved", Shown("UnsavedButtons") == "SaveProfileButton,SaveAsNewButton,DiscardButton", Shown("UnsavedButtons"));
-        var (unsavedOn, unsavedOff, _) = Profiles.UnsavedChanges();
+        var (unsavedOn, unsavedOff) = Profiles.UnsavedChanges();
         Check("Unsaved says how many changes: Unsaved (1) • for one tickbox", unsavedOn.Count + unsavedOff.Count == 1
             && bar.FindChild("Unsaved", true, false) is Label { Text: "Unsaved (1) •" }, (bar.FindChild("Unsaved", true, false) as Label)?.Text ?? "none");
         await Capture(screen, outDir, "3b-unsaved-profile");
@@ -820,6 +820,27 @@ static partial class SelfTest
         Check("CSV: the columns follow the tick boxes (the note's is Note)", ProfileCsv.Header(new()).SequenceEqual(["Mod Id", "Name", "Version", "Enabled", "Category", "Workshop Id"])
             && ProfileCsv.Header(new(Category: false, Alias: true, Notes: true)).SequenceEqual(["Mod Id", "Name", "Version", "Enabled", "Workshop Id", "Alias", "Note"]),
             string.Join(",", ProfileCsv.Header(new(Category: false, Alias: true, Notes: true))));
+
+        // Of copies from one source, the list puts first the one that loads as the profile has them (P13), so a reader that
+        // takes the first row on gets that copy: a profile with Test Twin alone ticked, then one with Test Twin Beta alone.
+        // Our data has one answer and the game's list order another, so one of the two would differ from each.
+        var twins = ModManager.Mods.Where(m => m.manifest?.id == TwinId).ToList();
+        if (twins.FirstOrDefault(m => Copies.CopyOf(m) == "l:SmmTestTwinA") is not { } twinA || twins.FirstOrDefault(m => Copies.CopyOf(m) == "l:SmmTestTwinB") is not { } twinB)
+            TwinsMissing("sharing, the copy that loads under the profile's ticks first");
+        else
+        {
+            string First(string off)
+            {
+                var only = new Profile { Name = "SmmShareTwins", Mods = [new ProfileMod(TwinId, ModSource.ModsDirectory, true, CopiesOff: [off])] };
+                var rows = ProfileCsv.Records(ProfileCsv.Write(Profiles.ShareRows(only), new(Disabled: true))).Skip(1).Where(r => r[0] == TwinId).ToList();
+                return string.Join(", ", rows.Select(r => $"{r[1]} {r[3]}"));
+            }
+            var (aFirst, bFirst) = (First("l:SmmTestTwinB"), First("l:SmmTestTwinA"));
+            var (nameA, nameB) = (twinA.manifest?.name, twinB.manifest?.name);
+            Check("sharing: of copies from one source, the exported list puts first the copy that loads under the profile's ticks, not our data's or the "
+                + "game's list order (P13): Test Twin with it alone ticked, Test Twin Beta with that one alone",
+                aFirst == $"{nameA} TRUE, {nameB} FALSE" && bFirst == $"{nameB} TRUE, {nameA} FALSE", $"Test Twin alone: {aFirst}; Test Twin Beta alone: {bFirst}");
+        }
 
         // Share profile, from the profile list: at first the active profile's enabled mods in load
         // order with their category, no alias or notes; the tick boxes add the mods that are off, aliases and notes, or

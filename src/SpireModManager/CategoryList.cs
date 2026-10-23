@@ -142,49 +142,32 @@ static class CategoryList
     }
 
     // On our views, the tip on the tickbox of a copy of a mod installed more than once (and on Load Order's Enable or
-    // Disable for it): this mod's copy locked on says why, and how to turn it off, or with another copy of ours off (the
-    // vanilla page unticks one), that this one is then the only one that loads, so to enable that too; one of ours that's
-    // off, why to enable it too; any other copy that's off while another is on, which of them would load with both on (a
-    // tick makes this one its source's pick, so of two copies from one source, this one). Null otherwise: a copy that's
-    // on says what it does in the info panel (ModDetails.CopyLine). Nothing is turned off by enabling a copy
-    // (Dependencies.Write).
+    // Disable for it): a copy that's off while another is on, which of them would load with this one on too
+    // (Copies.LoadingIf, the rule's: of two copies from one source, the higher version). Null otherwise: a copy that's on
+    // says what it does in the info panel (ModDetails.CopyLine), and so do this mod's copies, whose boxes are like any
+    // other's. Nothing is turned off by enabling a copy (Dependencies.Write).
     public static string? CopyTip(Mod mod)
     {
-        if (Store.Data.VanillaView || mod.manifest?.id is not { } id || Copies.Others(mod) is not { Count: > 0 } others)
+        if (Store.Data.VanillaView || mod.manifest?.id is not { } id || id == ModEntry.ModId || Copies.Others(mod) is not { Count: > 0 } others)
             return null;
-        if (LockedOn(mod))
-            return !others.Any(Copies.Ticked) && others.FirstOrDefault() is { } off // with three, one other ticked still loads
-                ? Menus.Format("SPIRE_MOD_MANAGER.SELF_COPY_LOCKED_OTHER_OFF_TIP", ("other", Copies.Named(off)))
-                : Menus.Text("SPIRE_MOD_MANAGER.SELF_COPY_LOCKED_TIP");
         if (Copies.Ticked(mod) || others.FirstOrDefault(Copies.Ticked) is not { } ticked)
             return null;
-        if (id == ModEntry.ModId)
-            return Menus.Text("SPIRE_MOD_MANAGER.SELF_COPY_OFF_TIP");
         // The copy that loads now among the others (a copy that's off can load only through a switch it shares: then
         // another that's on).
         var loading = Copies.Loading(id) is { } now && others.Contains(now) && Copies.Ticked(now) ? now : ticked;
         return Menus.Format("SPIRE_MOD_MANAGER.COPY_ON_TIP", ("other", Copies.Named(loading)), ("loads", Copies.Named(Copies.LoadingIf(mod) ?? mod)));
     }
 
-    // This mod's copy, installed more than once and ticked: its box can't be unticked on our views (Copies.Locked), so
-    // removing the copy that runs still leaves one that loads. The vanilla page keeps the game's boxes, the way to turn it
-    // off.
-    public static bool LockedOn(Mod mod) => Copies.Locked(mod) && Copies.Ticked(mod);
-
-    const string SelfLockName = "SpireModManagerSelfLock";
     // Made once: asked of every row on every redraw and tick (a text passed as one is converted anew each time).
-    static readonly NodePath TickboxPath = "Tickbox", SelfLockPath = SelfLockName;
+    static readonly NodePath TickboxPath = "Tickbox";
     static readonly StringName CopyBoxMeta = "spire_mod_manager_copy_box"; // on rows whose box CopyBoxes has set
 
-    // Each row's tickbox where its id is installed more than once, on our main list: its tip (CopyTip), and this mod's
-    // copies locked on while ticked (LockedOn): disabled (no click, focus or sound; the tip still shows), white again
-    // (the game greys a disabled box, which would read as off), our padlock on its corner. The padlock is the row's, not
-    // the box's: the box is drawn smaller about its centre (RowTitles), and its grey would tint a child. Vanilla View
-    // keeps the game's boxes; Load Order hides them (on and off are in its row menu, OrderingOnly). After
-    // LoadOrder.Undecorate, which enables every box, and after every tick (RefreshStrips): a tick changes the tips.
+    // Each row's tickbox where its id is installed more than once, on our main list: its tip (CopyTip). Vanilla View keeps
+    // the game's boxes, so their tips go; Load Order hides them (on and off are in its row menu, OrderingOnly). After
+    // every tick too (RefreshStrips): a tick changes the tips.
     static void CopyBoxes(IEnumerable<NModMenuRow> rows)
     {
-        var (vanilla, loadOrder) = (Store.Data.VanillaView, Store.Data.LoadOrderView);
+        var vanilla = Store.Data.VanillaView;
         foreach (var row in rows)
         {
             if (row.Mod is not { } mod)
@@ -193,39 +176,8 @@ static class CategoryList
             if (!copy && !row.HasMeta(CopyBoxMeta))
                 continue; // most rows: a mod installed once, its box never set here
             row.SetMeta(CopyBoxMeta, true);
-            var tickbox = row.GetNode<NTickbox>(TickboxPath);
-            Hover.Tip(tickbox, copy ? CopyTip(mod) : null);
-            var padlock = row.GetNodeOrNull<Control>(SelfLockPath);
-            if (!copy || loadOrder || !LockedOn(mod))
-            {
-                if (padlock is not { Visible: true })
-                    continue; // not locked (every row but ours)
-                padlock.Visible = false;
-                if (!loadOrder)
-                    tickbox.SetEnabled(true);
-                continue;
-            }
-            tickbox.SetEnabled(false);
-            tickbox.Modulate = Colors.White;
-            if (padlock == null)
-            {
-                padlock = new Control { Name = SelfLockName, MouseFilter = Control.MouseFilterEnum.Ignore };
-                row.AddChild(padlock);
-                Icons.AddPadlock(padlock, Vector2.Zero, new Vector2(-4, -5)); // a little inside the corner
-                var (box, shown) = (tickbox, padlock);
-                box.ItemRectChanged += () => PlaceLock(shown, box); // it follows the box (RowTitles scales a new row's later)
-            }
-            PlaceLock(padlock, tickbox);
-            padlock.Visible = true;
+            Hover.Tip(row.GetNode<NTickbox>(TickboxPath), copy ? CopyTip(mod) : null);
         }
-    }
-
-    // On the box's lower-right corner as drawn: scaled about its pivot (RowTitles sets both, and moves it a little in our
-    // views), whatever they are when the padlock is placed.
-    static void PlaceLock(Control padlock, Control box)
-    {
-        if (GodotObject.IsInstanceValid(padlock) && GodotObject.IsInstanceValid(box))
-            padlock.Position = box.Position + box.PivotOffset + (box.Size - box.PivotOffset) * box.Scale;
     }
 
     static void Label(Control? button, string key)
@@ -568,7 +520,6 @@ static class CategoryList
             void RedrawAll() => Redraw(content);
             LoadOrder.Apply(content, rows, RedrawAll);
             RowStrip.Apply(rows, StripActions(content), EdgeAction(content));
-            CopyBoxes(rows); // no padlock over its hidden boxes
             return;
         }
         LoadOrder.Undecorate(rows);
@@ -716,9 +667,11 @@ static class CategoryList
         }
 
         // Each category's rows by the name they show (an alias, else the mod's name), as the game's language sorts
-        // them, any case; two of one name keep the game's order. Each row's category read once.
+        // them, any case; two of one name keep the game's order. This mod first in whichever category it's in, whatever
+        // its name (Jordan), its copies by name among themselves. Each row's category read once.
         var names = StringComparer.Create(Menus.Culture, ignoreCase: true);
-        var byCategory = rows.OrderBy(r => Store.InfoFor(r.Mod)?.Alias ?? r.Mod?.manifest?.name ?? r.Mod?.manifest?.id ?? "", names).ToLookup(CategoryOf);
+        var byCategory = rows.OrderBy(r => r.Mod?.manifest?.id == ModEntry.ModId ? 0 : 1)
+            .ThenBy(r => Store.InfoFor(r.Mod)?.Alias ?? r.Mod?.manifest?.name ?? r.Mod?.manifest?.id ?? "", names).ToLookup(CategoryOf);
         foreach (var category in categories)
             AddSection(category.Name, byCategory[category.Name].ToList(),
                 category.Collapsed, c => category.Collapsed = c, category);
@@ -753,8 +706,8 @@ static class CategoryList
     public static string CategoryName(string? modId) =>
         Store.InfoFor(modId)?.Category is { } name && Categories.Find(name) != null ? name : Menus.Text("SPIRE_MOD_MANAGER.UNCATEGORIZED");
 
-    // After a tickbox change: the rows' dependency notes ("(off)", "Required for") and the copies' boxes (their tips,
-    // ours locked or not) follow at once, without a full redraw. (Their title colours: RowTitles.MarkChanged.)
+    // After a tickbox change: the rows' dependency notes ("(off)", "Required for") and the copies' boxes (their tips)
+    // follow at once, without a full redraw. (Their title colours: RowTitles.MarkChanged.)
     public static void RefreshStrips(Control content)
     {
         using var lookups = Lookups.Begin();
@@ -879,18 +832,20 @@ static class CategoryList
     }
 
     // Enable all / Disable all for some rows (a category's, or the page's), as one undo step; each greyed out
-    // when there's nothing for it to do. This mod stays on. Enable selected / Disable selected for the picked mods.
-    // Each box of these rows, a copy of a mod installed more than once too (Dependencies.Write: where copies share a
-    // switch, the pick stays if it's on), so Enable all ticks every one; turning on a second copy of a mod says so (only
-    // one copy of each loads).
+    // when there's nothing for it to do. Disable all leaves this mod on, every copy of it, and says so where it's among
+    // them (Jordan: its own box, a selection that has it and the bulk menu can turn it off, Disable all can't). Enable
+    // selected / Disable selected for the picked mods, this one too. Each box of these rows, a copy of a mod installed
+    // more than once too (Dependencies.Write), so Enable all ticks every one; turning on a second copy of a mod says so
+    // (only one copy of each loads).
     public static List<MenuItem> OnOffItems(Control content, IEnumerable<NModMenuRow> members, bool selected = false)
     {
         var mods = members.Select(r => r.Mod).OfType<Mod>().ToList();
+        bool Kept(Mod mod) => !selected && mod.manifest?.id == ModEntry.ModId;
         void Set(bool on)
         {
             if (ScreenOf(content) is not { } screen)
                 return;
-            Dependencies.Set(mods, on, screen);
+            Dependencies.Set(on ? mods : mods.Where(m => !Kept(m)), on, screen);
             Redraw(content);
         }
         return
@@ -898,15 +853,14 @@ static class CategoryList
             new(Menus.Text(selected ? "SPIRE_MOD_MANAGER.ENABLE_SELECTED" : "SPIRE_MOD_MANAGER.ENABLE_ALL"), () => Set(true),
                 Disabled: mods.All(Copies.Ticked), Tip: EnablesCopiesTip(mods)),
             new(Menus.Text(selected ? "SPIRE_MOD_MANAGER.DISABLE_SELECTED" : "SPIRE_MOD_MANAGER.DISABLE_ALL"), () => Set(false),
-                Disabled: mods.All(m => !Copies.Ticked(m) || m.manifest?.id == ModEntry.ModId),
-                // Where this mod is among them, it says it stays on.
-                Tip: mods.Any(m => m.manifest?.id == ModEntry.ModId) ? Menus.Text("SPIRE_MOD_MANAGER.DISABLE_ALL_KEEPS_SELF") : null),
+                Disabled: mods.All(m => !Copies.Ticked(m) || Kept(m)),
+                Tip: mods.Any(Kept) ? Menus.Text("SPIRE_MOD_MANAGER.DISABLE_ALL_KEEPS_SELF") : null),
         ];
     }
 
     // Where turning these mods on leaves two or more copies of an id ticked, one of them turned on by it (copies outside
     // these rows count): a tip naming those mods (without which copy), as only one copy of each loads. Null for none,
-    // and for this mod (its copies stay on together).
+    // and for this mod (a backup copy of it on is as it should be: Copies.Clashes).
     static string? EnablesCopiesTip(List<Mod> mods)
     {
         var enabling = mods.Select(Copies.SwitchKey).ToHashSet();

@@ -324,10 +324,15 @@ static partial class SelfTest
     // ticked. It comes and goes with its tickbox at
     // once (no relaunch). The fixture has it installed but off; with --bmm it's on and loaded, so the banner is there from
     // the start. It ends as it started.
-    // This mod among the others: the counts count it; installed twice, its boxes are locked on (a click puts one back),
-    // the panel says which copy runs, and there's no same-ID warning for it; a Disable all that covers it says it stays
-    // on; and installed once and unticked on its own row, a red banner above everything says it (and this page) goes at
-    // the relaunch, with Go to (its row) and Enable now. Enable now, and undo, take the banner away.
+    // This mod among the others: the counts count it. Installed twice (a made-up Workshop copy beside this one), its
+    // copies are boxes like any other's (Jordan): no padlock and no tip, first in their category whatever the names; a
+    // click on one unticks its source alone, one undo step; the panel says which copy runs (the one running needs no line
+    // while the other is its backup) and, between sources, why the other loads after a relaunch (P10); no same-ID
+    // warning. Disable all keeps both on; a selection that has it turns it off (the page bar's Disable selected, a picked
+    // row's box, the bulk menu). Every copy off: the red banner, whose Enable now turns on the copy running alone (P16),
+    // and Relaunch asks first, with the same Enable now; Cancel undoes it. A Disable all that covers it says it stays on;
+    // and installed once and unticked on its own row, the red banner above everything says it (and this page) goes at the
+    // relaunch, with Go to (its row) and Enable now. Enable now, and undo, take the banner away.
     static async Task TestSelfIncluded(Node menu, NModdingScreen screen, Control content, string outDir)
     {
         if (Layout.Current != Layout.View.Categories || content.GetChildren().OfType<NModMenuRow>().FirstOrDefault(r => r.Mod?.manifest?.id == ModEntry.ModId)
@@ -365,48 +370,60 @@ static partial class SelfTest
         NModalContainer.Instance?.Clear();
         CategoryList.Redraw(content);
         await Wait(menu, 0.2);
-        Check("installed twice: both copies on, every count names it once; the new copy's popup says both stay enabled, and which loads", Copies.Ticked(copy)
+        Check("installed twice: both copies on, every count names it once; the new copy's popup says it's enabled, and which loads", Copies.Ticked(copy)
             && Profiles.OnCount() == on && ProfileCountShown() && Summary().StartsWith($"Mods enabled {Menus.Number(on)} ")
             && popup.Contains(Draft(NewSelfCopy, ("loads", Named(self)))),
             $"copy on {Copies.Ticked(copy)}; {on} on before: profile {Profiles.OnCount()}, summary \"{Summary().Split('\n')[0]}\"; {popup}");
-        // Its boxes locked on our page while it's installed twice (removing the copy that runs still leaves one that loads):
-        // each disabled, white again, our padlock on it, its tip saying why and how to turn it off; unticking either (a click,
-        // or the controller's hotkey, which ignores a disabled box) puts it back: every entry of ours on, no undo step, no
-        // red banner. The panel says which copy runs and that the other stays on; no same-ID banner or yellow chip (both on
-        // is as it should be). Disable all keeps both on.
+        // Boxes like any other's: enabled, no tip (the panel says what each copy does), no padlock (the one there was).
         var ourRows = content.GetChildren().OfType<NModMenuRow>().Where(r => r.Mod?.manifest?.id == ModEntry.ModId).ToList();
-        string Box(NModMenuRow r) => r.GetNode<NTickbox>("Tickbox") is var box
-            ? $"{Copies.KeyOf(r.Mod)} ticked {box.IsTicked}, enabled {box.IsEnabled}, {box.Modulate}, padlock {r.GetNodeOrNull<Control>("SpireModManagerSelfLock")?.Visible}, "
-                + $"tip {Hover.TipOf(box)}" : "";
-        bool Locked(NModMenuRow r) => r.GetNode<NTickbox>("Tickbox") is { IsTicked: true, IsEnabled: false } box && box.Modulate == Colors.White
-            && Hover.TipOf(box) == SelfLockedTip && r.GetNodeOrNull<Control>("SpireModManagerSelfLock") is { Visible: true };
-        // The padlock on each box's corner, the same on both rows (it follows the box: a new row's is scaled after it's locked).
-        var lockPlaces = ourRows.Select(r => r.GetNodeOrNull<Control>("SpireModManagerSelfLock") is { } padlock
-            ? (padlock.Position - r.GetNode<Control>("Tickbox").Position).Round() : new Vector2(-1, -1)).Distinct().ToList();
-        var locked = ourRows.Count == 2 && ourRows.All(Locked) && lockPlaces.Count == 1 && lockPlaces[0] != new Vector2(-1, -1);
-        var lockedSay = string.Join(" | ", ourRows.Select(Box)) + $"; padlocks at {string.Join(", ", lockPlaces)} from their boxes";
-        if (ourRows.FirstOrDefault() is { } shownRow)
-            CategoryList.ScrollTo(content, shownRow); // our rows in view for the screenshot
+        static NTickbox Tickbox(NModMenuRow r) => r.GetNode<NTickbox>("Tickbox");
+        string Box(NModMenuRow r) => $"{Copies.KeyOf(r.Mod)} ticked {Tickbox(r).IsTicked}, enabled {Tickbox(r).IsEnabled}, tip \"{Hover.TipOf(Tickbox(r))}\", "
+            + $"padlock {r.GetNodeOrNull("SpireModManagerSelfLock") != null}";
+        bool Plain(NModMenuRow r) => Tickbox(r).IsEnabled && Hover.TipOf(Tickbox(r)) == "" && r.GetNodeOrNull("SpireModManagerSelfLock") == null;
+        Check("installed twice: no padlock, a box each like any other's (enabled, no tip), both ticked",
+            ourRows.Count == 2 && ourRows.All(r => Plain(r) && Tickbox(r).IsTicked), string.Join(" | ", ourRows.Select(Box)));
+        // First in its category, whatever the names: here a row whose name sorts before it comes after it.
+        var nodes = content.GetChildren().OfType<Control>().ToList();
+        var headerAt = nodes.Take(nodes.IndexOf(row)).ToList().FindLastIndex(n => n.IsInGroup("SpireModManagerCategoryHeader"));
+        var section = nodes.Skip(headerAt + 1).TakeWhile(n => n is NModMenuRow).OfType<NModMenuRow>().ToList();
+        var names = StringComparer.Create(Menus.Culture, ignoreCase: true);
+        string Shown(NModMenuRow r) => Store.InfoFor(r.Mod)?.Alias ?? r.Mod?.manifest?.name ?? r.Mod?.manifest?.id ?? "";
+        var sortsBefore = section.Skip(ourRows.Count).Where(r => names.Compare(Shown(r), Shown(row)) < 0).Select(Shown).ToList();
+        Check("this mod first in its category whatever the names: both copies of it, then the rest by name (one before it by name here)",
+            headerAt >= 0 && section.Take(ourRows.Count).All(r => r.Mod?.manifest?.id == ModEntry.ModId) && sortsBefore.Count > 0,
+            $"section {string.Join(", ", section.Select(Shown))}; sorting before it {string.Join(", ", sortsBefore)}");
+        CategoryList.ScrollTo(content, ourRows[0]); // our rows in view for the screenshot
         await Wait(menu, 0.2);
-        await Capture(screen, outDir, "2n-self-twice-locked");
-        var stepsTwice = History.Steps(History.Track.List);
-        var keptOn = new List<bool>();
-        foreach (var ourRow in ourRows)
+        await Capture(screen, outDir, "2q-self-twice-first");
+        // A click on one copy's box unticks that one alone (its source's entries off), one undo step; the other still loads,
+        // so no red banner. Its lines: the copy running says it's the only one left on, the other that it's off.
+        bool SourceOn(ModSource source) => SaveManager.Instance.SettingsSave.ModSettings?.ModList.Where(e => e.Id == ModEntry.ModId && e.Source == source)
+            .All(e => e.IsEnabled) ?? true;
+        if (ourRows.FirstOrDefault(r => r.Mod == copy) is { } copyRow)
         {
-            var box = ourRow.GetNode<NTickbox>("Tickbox");
-            box.IsTicked = false;
-            box.EmitSignal(NTickbox.SignalName.Toggled, box);
+            var steps = History.Steps(History.Track.List);
+            Tickbox(copyRow).IsTicked = false;
+            Tickbox(copyRow).EmitSignal(NTickbox.SignalName.Toggled, Tickbox(copyRow));
             await Wait(menu, 0.3);
-            keptOn.Add(box.IsTicked && (SaveManager.Instance.SettingsSave.ModSettings?.ModList.Where(e => e.Id == ModEntry.ModId).All(e => e.IsEnabled) ?? false)
-                && History.Steps(History.Track.List) == stepsTwice && Banner() == null && ourRows.All(Locked));
+            var offLines = (Running: ModDetails.CopyLine(self, false)?.Text, Other: ModDetails.CopyLine(copy, false)?.Text);
+            var alone = !Copies.Ticked(copy) && Copies.Ticked(self) && !SourceOn(ModSource.SteamWorkshop) && SourceOn(ModSource.ModsDirectory)
+                && History.Steps(History.Track.List) == steps + 1 && Banner() == null && ourRows.All(Plain);
+            var aloneSay = $"{string.Join(" | ", ourRows.Select(Box))}; steps +{History.Steps(History.Track.List) - steps}; banner {Banner() != null}; "
+                + $"lines {offLines.Running} / {offLines.Other}";
+            History.Undo();
+            await Wait(menu, 0.3);
+            Check("... a click on one copy's box unticks it alone (its source's entries off), one undo step, no red banner (the other loads); the copy "
+                + "running says Spire Mod Manager won't load if it's removed, the other that it's off; no tip on either; undone, both ticked",
+                alone && offLines == (Draft(SelfRunsOtherOff, ("other", Named(copy))), Draft(SelfCopyOff, ("other", Named(self))))
+                && Copies.Ticked(copy) && Copies.Ticked(self) && Tickbox(copyRow).IsTicked, $"{aloneSay}; then {string.Join(" | ", ourRows.Select(Box))}");
         }
-        Check("installed twice: both boxes locked on our page (disabled, white, our padlock, the tip saying why); unticking either puts it back: every entry "
-            + "of ours on, no undo step, no red banner", locked && keptOn.Count == 2 && keptOn.All(k => k), $"{lockedSay}; kept on {string.Join(", ", keptOn)}");
+        else
+            Check("... a click on the Workshop copy's box: its row", false, string.Join(" | ", ourRows.Select(Box)));
         var lines = (Running: ModDetails.CopyLine(self, false)?.Text, Other: ModDetails.CopyLine(copy, false)?.Text);
-        Check("... the copy running says the other stays enabled, in case it's removed; the other says which copy runs",
-            lines == (Draft(SelfRuns, ("other", Named(copy))), Draft(SelfBackup, ("other", Named(self)))), $"{lines.Running} / {lines.Other}");
+        Check("... both ticked: the copy running has no copy line (the other's says it), the other says which copy runs and that it's enabled too, as a backup",
+            lines == (null, Draft(SelfBackup, ("other", Named(self)))), $"{lines.Running ?? "none"} / {lines.Other}");
         // The backup copy failed by the game as a duplicate (made up: two copies of ours from one source, the second fails):
-        // grey "Duplicate - Won't load" all the same, not a red "Failed to load" (it's kept on by design, and won't load).
+        // grey "Duplicate - Won't load" all the same, not a red "Failed to load" (it's on as a backup, and won't load).
         var (stateWas, errorsWas, backupStatus) = (copy.state, copy.errors, ModDetails.Status(copy));
         copy.state = ModLoadState.Failed;
         copy.errors = [new LocString("main_menu_ui", "MOD_ERROR.DUPLICATE_ID")];
@@ -414,28 +431,36 @@ static partial class SelfTest
         (copy.state, copy.errors) = (stateWas, errorsWas);
         Check("... the backup copy failed by the game as a duplicate (made up): grey Duplicate - Won't load as before, not a red Failed to load",
             backupStatus.Contains(StatusWontLoad) && failedStatus == backupStatus, $"{backupStatus} / failed {failedStatus}");
-        // The other copy unticked (as the vanilla page does: the game's switch for it): this one's locked box says Spire Mod
-        // Manager won't load if this copy is removed, and to enable the other too, not that the other still loads. Put back.
-        var settings = SaveManager.Instance.SettingsSave.ModSettings;
-        var copyEntries = settings?.ModList.Where(e => e.Id == ModEntry.ModId && e.Source == ModSource.SteamWorkshop).ToList() ?? [];
-        if (copyEntries.Count == 0 && settings != null)
+        // Between sources the game's rule says which of ours loads, and why (P10): on the beta the Workshop copy made
+        // higher loads after a relaunch, the copy running saying so, as the higher version; on stable a local copy always
+        // wins, so with the Workshop copy running (made up), this one says it loads after a relaunch, as the local copy.
+        var (versionWas, selfState) = (copy.manifest?.version, self.state);
+        string? sourceLine;
+        string sourceExpected;
+        try
         {
-            copyEntries.Add(new SettingsSaveMod { Id = ModEntry.ModId, Source = ModSource.SteamWorkshop });
-            settings.ModList.Add(copyEntries[0]);
+            if (Compat.WorkshopBeatsOlderLocal)
+            {
+                if (copy.manifest is { } higher)
+                    higher.version = "9.0.0";
+                (sourceLine, sourceExpected) = (ModDetails.CopyLine(self, false)?.Text, Draft(SelfRunsSwitch, ("other", Named(copy)), ("why", WhyHigher)));
+            }
+            else
+            {
+                (self.state, copy.state) = (ModLoadState.None, ModLoadState.Loaded);
+                (sourceLine, sourceExpected) = (ModDetails.CopyLine(self, false)?.Text, Draft(SelfBackupSwitch, ("other", Named(copy)), ("why", WhyLocal)));
+            }
         }
-        foreach (var entry in copyEntries)
-            entry.IsEnabled = false;
-        CategoryList.Redraw(content);
-        await Wait(menu, 0.2);
-        var otherOffTip = Draft(SelfLockedOtherOffTip, ("other", Named(copy)));
-        var (offTip, offBox, copyTicked) = (CategoryList.CopyTip(self), Hover.TipOf(row.GetNode<NTickbox>("Tickbox")), Copies.Ticked(copy));
-        foreach (var entry in copyEntries)
-            entry.IsEnabled = true;
-        CategoryList.Redraw(content);
-        await Wait(menu, 0.2);
-        Check("... the other copy unticked (as the vanilla page does): this one's locked box says Spire Mod Manager won't load if this copy is removed, to "
-            + "enable the other too; ticked again, the lock's own tip", !copyTicked && offTip == otherOffTip && offBox == otherOffTip && ourRows.All(Locked),
-            $"other ticked {copyTicked}; tip {offTip}; box {offBox}; then {string.Join(" | ", ourRows.Select(Box))}");
+        finally
+        {
+            if (copy.manifest is { } manifest)
+                manifest.version = versionWas;
+            (self.state, copy.state) = (selfState, stateWas);
+        }
+        var sourceCase = Compat.WorkshopBeatsOlderLocal ? "the beta: the Workshop copy, made higher, loads after a relaunch, the copy running saying so"
+            : "stable: this local copy loads after a relaunch, the Workshop copy made the one running";
+        Check($"... between sources, which of its copies loads is the game's rule, with the reason ({sourceCase})", sourceLine == sourceExpected,
+            $"{sourceLine ?? "none"} (expected {sourceExpected})");
         var ourChips = new[] { self, copy }.Select(m => Tags.For(m).FirstOrDefault(c => c.Text == DuplicateChip)).ToList();
         Check("... no same-ID banner or yellow Duplicate chip for this mod: both on is as it should be",
             !Copies.Clashing().Any(m => m.manifest?.id == ModEntry.ModId) && border.GetNodeOrNull<Control>(LoadOrder.SameIdName) == null
@@ -444,24 +469,146 @@ static partial class SelfTest
         {
             disableAll.EmitSignal(BaseButton.SignalName.Pressed);
             await Wait(menu, 0.3);
-            var bothStay = Copies.Ticked(self) && Copies.Ticked(copy) && ourRows.All(Locked);
+            var bothStay = Copies.Ticked(self) && Copies.Ticked(copy) && ourRows.All(r => Tickbox(r).IsTicked);
             History.Undo();
             await Wait(menu, 0.3);
             Check("... Disable all keeps both on (undone)", bothStay && Copies.Ticked(self) && Copies.Ticked(copy), string.Join(" | ", ourRows.Select(Box)));
         }
         else
             Check("... Disable all keeps both on: the page bar's Disable all", false);
-        // Gone again, its row too (the game made one as it announced it; a later search would find it).
-        if (content.GetChildren().OfType<NModMenuRow>().FirstOrDefault(r => r.Mod == copy) is { } copyRow)
+
+        // A selection that has this mod turns it off with the rest (Jordan): the page bar's Disable selected, a picked row's
+        // box, the bulk menu's Disable selected; each undone. This local copy and a mod installed once, picked.
+        if (content.GetChildren().OfType<NModMenuRow>().FirstOrDefault(r => r.Visible && r.Mod is { manifest.id: { } id } m && id != ModEntry.ModId
+            && id != Bmm.ModId && Copies.Others(m).Count == 0 && Copies.Ticked(m)) is { Mod: { } other } otherRow)
         {
-            content.RemoveChild(copyRow);
-            copyRow.QueueFree();
+            bool BothOff() => !Copies.Ticked(self) && !Copies.Ticked(other) && Copies.Ticked(copy);
+            Selection.Clear(content, record: false);
+            Selection.Add(content, [row, otherRow]);
+            await Wait(menu, 0.2);
+            var said = new List<string>();
+            var disableSelected = border.FindChild(PageBar.Name, true, false)?.FindChildren("*", "Button", true, false).OfType<Button>()
+                .FirstOrDefault(b => b.Text == "Disable selected");
+            disableSelected?.EmitSignal(BaseButton.SignalName.Pressed);
+            await Wait(menu, 0.3);
+            said.Add($"page bar {BothOff()}");
+            History.Undo();
+            await Wait(menu, 0.3);
+            Tickbox(otherRow).IsTicked = false;
+            Tickbox(otherRow).EmitSignal(NTickbox.SignalName.Toggled, Tickbox(otherRow));
+            await Wait(menu, 0.3);
+            said.Add($"picked box {BothOff()}");
+            History.Undo();
+            await Wait(menu, 0.3);
+            if (CategoryList.ShowBulkMenu(content) is { } bulk)
+            {
+                await Wait(menu, 0.2);
+                MenuPanel.Press(bulk, "Disable selected");
+                await Wait(menu, 0.3);
+            }
+            MenuPanel.Close();
+            said.Add($"bulk menu {BothOff()}");
+            History.Undo();
+            await Wait(menu, 0.3);
+            Selection.Clear(content, record: false);
+            await Wait(menu, 0.2);
+            Check("... a selection that has this mod turns it off with the rest: the page bar's Disable selected, a picked row's box, the bulk menu's "
+                + "(each undone)", disableSelected != null && said.All(s => s.EndsWith(" True")) && Copies.Ticked(self) && Copies.Ticked(other) && Copies.Ticked(copy),
+                $"{string.Join(", ", said)}; button {disableSelected != null}; now {Copies.Ticked(self)}/{Copies.Ticked(other)}/{Copies.Ticked(copy)}");
+        }
+        else
+            Results.Add("SKIP a selection that has this mod: no other mod on, installed once");
+
+        // Every copy of it off (a click on each box): the red banner, and its Enable now turns on the copy running alone,
+        // not every copy (P16: on the beta the game's rule could load the other); undone, every copy off again. The
+        // fixture's mod that can't load turned off first (one undo step under the others), so this mod off is the
+        // relaunch check's only reason below.
+        var addon = WontLoad();
+        if (addon != null)
+        {
+            Dependencies.Set([addon], false, screen);
+            CategoryList.Redraw(content);
+            await Wait(menu, 0.3);
+        }
+        foreach (var ourRow in ourRows)
+        {
+            Tickbox(ourRow).IsTicked = false;
+            Tickbox(ourRow).EmitSignal(NTickbox.SignalName.Toggled, Tickbox(ourRow));
+            await Wait(menu, 0.3);
+        }
+        var allOff = !Copies.Ticked(self) && !Copies.Ticked(copy) && Copies.OursOff() && Banner() is { Visible: true }
+            && (Banner()?.FindChild("SelfOff", true, false) as Label)?.Text == Menus.Text("SPIRE_MOD_MANAGER.SELF_OFF");
+        await Capture(screen, outDir, "2o-self-twice-off-banner");
+        Banner()?.FindChild("EnableSelfButton", true, false)?.EmitSignal(BaseButton.SignalName.Pressed);
+        await Wait(menu, 0.3);
+        var runningAlone = Copies.Ticked(self) && !Copies.Ticked(copy) && Banner() == null;
+        History.Undo();
+        await Wait(menu, 0.3);
+        Check("... every copy of it off: the red banner; its Enable now turns on the copy running alone (not the other); undone, every copy off again",
+            allOff && runningAlone && !Copies.Ticked(self) && !Copies.Ticked(copy) && Banner() != null,
+            $"all off {allOff}, running alone {runningAlone}; now {Copies.Ticked(self)}/{Copies.Ticked(copy)}, banner {Banner() != null}");
+
+        // Relaunch with every copy of it off asks first (ModEntry.TestRelaunch counts a relaunch instead of one): the
+        // dialog says it goes on relaunch and how to get it back, with Enable now (its tip) and Relaunch anyway; Enable
+        // now turns on the copy running alone and leaves "ready"; Cancel undoes it. With this mod on again (the two
+        // unticks undone), Relaunch relaunches at once.
+        Node? Dialog() => menu.GetTree().Root.GetNodeOrNull(RelaunchCheck.Name);
+        string Body() => (Dialog()?.FindChild("Body", true, false) as RichTextLabel)?.GetParsedText() ?? "";
+        void Press(string name) => Dialog()?.FindChild(name, true, false)?.EmitSignal(BaseButton.SignalName.Pressed);
+        string Buttons() => string.Join(", ", (Dialog()?.FindChild("Buttons", true, false) as Control)?.GetChildren().OfType<Button>()
+            .Select(b => $"{b.Name} \"{b.Text}\"") ?? []);
+        var relaunches = 0;
+        ModEntry.TestRelaunch = _ => relaunches++;
+        try
+        {
+            RelaunchCheck.Relaunch(screen);
+            await Wait(menu, 0.3);
+            var (asked, askedBody, askedButtons, enableTip) = (Dialog() != null && relaunches == 0, Body(), Buttons(), TipOf(Dialog()?.FindChild("EnableSelfButton", true, false)));
+            await Capture(screen, outDir, "2p-self-off-relaunch");
+            Press("EnableSelfButton");
+            await Wait(menu, 0.3);
+            var (readyBody, readyButtons, readyOn) = (Body(), Buttons(), Copies.Ticked(self) && !Copies.Ticked(copy));
+            Press("CancelRelaunchButton");
+            await Wait(menu, 0.3);
+            var cancelled = Dialog() == null && !Copies.Ticked(self) && !Copies.Ticked(copy) && relaunches == 0;
+            History.Undo(); // the second untick
+            History.Undo(); // the first
+            await Wait(menu, 0.3);
+            RelaunchCheck.Relaunch(screen);
+            await Wait(menu, 0.3);
+            var atOnce = relaunches == 1 && Dialog() == null && Copies.Ticked(self) && Copies.Ticked(copy);
+            var atOnceSay = $"on {Copies.Ticked(self)}/{Copies.Ticked(copy)}, off {Copies.OursOff()}, dialog \"{(Dialog() == null ? "none" : Body())}\"";
+            Check("... Relaunch with every copy of it off asks first: the dialog says it goes on relaunch and how to get it back, with Enable now "
+                + "(its tip) and Relaunch anyway; Enable now turns on the copy running alone and leaves \"ready\"; Cancel undoes it; with it on, Relaunch at once",
+                asked && askedBody == RelaunchSelfOff && askedButtons == "CancelRelaunchButton \"Cancel\", EnableSelfButton \"Enable now\", RelaunchNowButton \"Relaunch anyway\""
+                && enableTip == "Keep Spire Mod Manager (this mod) enabled" && readyOn && readyBody == Menus.Text("SPIRE_MOD_MANAGER.RELAUNCH_CHECK_OK")
+                && readyButtons == "CancelRelaunchButton \"Cancel\", RelaunchNowButton \"Relaunch Game\"" && cancelled && atOnce,
+                $"asked {asked}: \"{askedBody}\" [{askedButtons}], tip \"{enableTip}\"; Enable now: on {readyOn}, \"{readyBody}\" [{readyButtons}]; "
+                + $"cancelled {cancelled}; at once {atOnce} ({relaunches} relaunches; {atOnceSay})");
+        }
+        finally
+        {
+            ModEntry.TestRelaunch = null;
+            RelaunchCheck.Close();
+        }
+        if (addon != null)
+        {
+            History.Undo(); // the fixture's mod that can't load, on again
+            await Wait(menu, 0.3);
+        }
+        // Gone again, its row too (the game made one as it announced it; a later search would find it).
+        if (content.GetChildren().OfType<NModMenuRow>().FirstOrDefault(r => r.Mod == copy) is { } madeRow)
+        {
+            content.RemoveChild(madeRow);
+            madeRow.QueueFree();
         }
         GameForgets(copy);
         SaveManager.Instance.SettingsSave.ModSettings?.ModList.RemoveAll(e => e.Id == ModEntry.ModId && e.Source == ModSource.SteamWorkshop);
         Profiles.Track();
         CategoryList.Redraw(content);
         await Wait(menu, 0.2);
+        Check("... put back: installed once, on, the fixture's mod that can't load as it was", Copies.Others(self).Count == 0 && Copies.Ticked(self)
+            && (addon == null || Copies.Ticked(addon)), $"others {Copies.Others(self).Count}, on {Copies.Ticked(self)}, addon on {addon != null && Copies.Ticked(addon)}");
 
         // Disable all, where this mod is among the rows it covers: the page bar's and its category's say it stays on.
         var pageDisable = border.FindChild(PageBar.Name, true, false)?.FindChildren("*", "Button", true, false).OfType<Button>()
@@ -640,19 +787,19 @@ static partial class SelfTest
             && Rows().Count(r => SpireModManager.Search.Matches(r.Mod, "#managers")) == 2, $"{string.Join(" | ", asMeant.Wrong)}; found {asMeant.Found}");
 
         // Go to while a search leaves its row out (main list and Load Order): the search clears, box and list, and the
-        // row shows as above. On the main list its category is closed again too.
+        // row shows as above. On the main list its category is closed again too. Go to steps from the row selected, so
+        // from this mod's (first in its category, and in Load Order): the next manager is Better Mod Menu.
         async Task ShowThroughSearch(string view)
         {
+            if (Row(ModEntry.ModId) is { } ours)
+            {
+                CategoryList.Select(screen, ours);
+                await PanelFor(menu, screen, ours);
+            }
             const string query = "SmmTest"; // the test mods, not Better Mod Menu
             searchBox.Text = query;
             searchBox.EmitSignal(LineEdit.SignalName.TextChanged, query);
             await Wait(menu, 0.3);
-            if (Rows().FirstOrDefault(r => r != row && r.Visible) is { } match)
-            {
-                CategoryList.Select(screen, match);
-                await PanelFor(menu, screen, match);
-            }
-            await Wait(menu, 0.2);
             var left = !row.Visible && !SpireModManager.Search.Matches(bmm, query);
             var old = row.GetChildren().OfType<ColorRect>().ToList(); // an earlier glow may still be fading
             Banner()?.FindChild("GoToManagersButton", true, false)?.EmitSignal(BaseButton.SignalName.Pressed);

@@ -692,7 +692,10 @@ void PrepareSandbox(bool resetData)
 }
 
 // --twins: the last given copy of each id picked to load (copied in as a local folder: l:workshop-<item>), in the
-// sandbox's manager.json (none: nothing to pick in).
+// sandbox's manager.json (none: nothing to pick in), as a file from before copies_off has it: the pick (copy_picks),
+// and our record of the id's copies in the order given ("copies"), which the pick is read with, every other copy off
+// (Copies.LegacyOff). Without the record no copy would be off, and the higher version would load, picked or not. A file
+// with copies_off already (--crash keeps --crash-prepare's data) has the other copies put in it instead.
 void PickTwins(string data)
 {
     var file = Path.Combine(data, "manager.json");
@@ -701,6 +704,17 @@ void PickTwins(string data)
     var keys = (manager["copy_picks"] as JsonArray ?? []).Select(p => (string?)p).OfType<string>()
         .Where(key => !picked.Any(p => key.StartsWith(p.Id + "|"))).Concat(picked.Select(p => $"{p.Id}|l:workshop-{p.Item}")).Order(StringComparer.Ordinal);
     manager["copy_picks"] = new JsonArray([.. keys.Select(k => (JsonNode?)JsonValue.Create(k))]);
+    if (manager["copies"] is not JsonObject record)
+        manager["copies"] = record = new JsonObject();
+    List<string> CopiesOf(string id) => [.. workshopManifests.Where(m => Id(m.Manifest) == id).Select(m => $"l:workshop-{m.Item}").Distinct()];
+    foreach (var (id, _) in picked)
+        record[id] = new JsonArray([.. CopiesOf(id).Select(c => (JsonNode?)JsonValue.Create(c))]);
+    if (manager["copies_off"] is JsonArray off)
+    {
+        var kept = off.Select(k => (string?)k).OfType<string>().Where(k => !picked.Any(p => k.StartsWith(p.Id + "|")))
+            .Concat(picked.SelectMany(p => CopiesOf(p.Id).Where(c => c != $"l:workshop-{p.Item}").Select(c => $"{p.Id}|{c}"))).Order(StringComparer.Ordinal);
+        manager["copies_off"] = new JsonArray([.. kept.Select(k => (JsonNode?)JsonValue.Create(k))]);
+    }
     File.WriteAllText(file, manager.ToJsonString(new() { WriteIndented = true }));
 }
 

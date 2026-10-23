@@ -441,9 +441,7 @@ static class ProfileShare
             lines.Add("  •  " + Menus.Format("SPIRE_MOD_MANAGER.IMPORT_NEW_CATEGORIES", ("count", Menus.Number(extras.NewCategories.Count))));
         if (extras.Details > 0)
             lines.Add("  •  " + Menus.Format("SPIRE_MOD_MANAGER.IMPORT_DETAILS", ("count", Menus.Number(extras.Details))));
-        // Another copy loading with no box changed, in Changes' words.
-        lines.AddRange(plan.Switched.Select(s => "  •  " + Escape(HistoryBar.CopySwitch(s.From, s.To).Plain)));
-        if (plan.On == 0 && plan.Off == 0 && plan.Switched.Count == 0 && extras.Sorted.Count == 0 && extras.Details == 0)
+        if (plan.On == 0 && plan.Off == 0 && extras.Sorted.Count == 0 && extras.Details == 0)
             lines.Add("  •  " + Menus.Text("SPIRE_MOD_MANAGER.IMPORT_NO_CHANGE"));
         if (plan.BothCopies.Count > 0)
         {

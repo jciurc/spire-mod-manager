@@ -12,9 +12,9 @@ sealed class Lookups : IDisposable
     public static Lookups? Current { get; private set; }
 
     readonly HashSet<(string? Id, ModSource Source)> _off;
-    readonly Picks _picks;
+    readonly Ticks _ticks;
     readonly Dictionary<string, Mod> _byId = [];
-    readonly Dictionary<string, Mod?> _loading = [];
+    readonly Dictionary<string, Copies.Outcome> _next = [];
     readonly Dictionary<string, List<Mod>> _neededBy = [];
     readonly Dictionary<Mod, IReadOnlyList<Tags.Chip>> _chips = [];
     readonly Dictionary<Mod, IReadOnlyList<string>> _dependencies = [];
@@ -27,17 +27,17 @@ sealed class Lookups : IDisposable
 
     // From the game's lists as they are now.
     public static Lookups Begin() =>
-        Begin(ModManager.Mods, Installed.Mods, SaveManager.Instance.SettingsSave.ModSettings?.ModList ?? [], Picks.Now);
+        Begin(ModManager.Mods, Installed.Mods, SaveManager.Instance.SettingsSave.ModSettings?.ModList ?? [], Ticks.Now);
 
     // From given lists (the self-test's made-up mods); inside another redraw, that one's answers serve.
-    public static Lookups Begin(IReadOnlyList<Mod> mods, IReadOnlyList<Mod> installed, IEnumerable<SettingsSaveMod> saved, Picks picks)
+    public static Lookups Begin(IReadOnlyList<Mod> mods, IReadOnlyList<Mod> installed, IEnumerable<SettingsSaveMod> saved, Ticks ticks)
     {
         if (Current is { } outer)
         {
             outer._depth++;
             return outer;
         }
-        return Current = new Lookups(mods, installed, saved, picks);
+        return Current = new Lookups(mods, installed, saved, ticks);
     }
 
     public void Dispose()
@@ -46,17 +46,18 @@ sealed class Lookups : IDisposable
             Current = null;
     }
 
-    Lookups(IReadOnlyList<Mod> mods, IReadOnlyList<Mod> installed, IEnumerable<SettingsSaveMod> saved, Picks picks)
+    Lookups(IReadOnlyList<Mod> mods, IReadOnlyList<Mod> installed, IEnumerable<SettingsSaveMod> saved, Ticks ticks)
     {
         (_mods, _off) = (mods, Dependencies.SavedOff(saved));
-        _picks = picks;
+        _ticks = ticks;
         // The copy Dependencies.Find picks for an id: the first it prefers most (Dependencies.Preference), read against
         // these lists (Current isn't this one yet).
         foreach (var mod in mods.Concat(installed))
             if (mod.manifest?.id is { } id && (!_byId.TryGetValue(id, out var kept)
-                    || Dependencies.Preference(mod, Loads, Ticked, _picks) > Dependencies.Preference(kept, Loads, Ticked, _picks)))
+                    || Dependencies.Preference(mod, Loads, Ticked, _ticks) > Dependencies.Preference(kept, Loads, Ticked, _ticks)))
                 _byId[id] = mod;
-        // Who needs whom, from the game's list only; a mod naming one twice counts once.
+        // Who needs whom, from the game's list (a mod installed while the game runs is in it too: the game reads it in); a
+        // mod naming one twice counts once.
         foreach (var mod in mods)
             foreach (var id in DependenciesOf(mod, Dependencies.Read).Distinct()) // kept for the redraw's own asks
             {
@@ -68,18 +69,20 @@ sealed class Lookups : IDisposable
             }
     }
 
-    // A copy's box and whether it loads after a relaunch (Copies.Ticked, Copies.Loads), and the copy of an id that loads
-    // (worked out once per id).
-    public bool Ticked(Mod mod) => Copies.TickedIn(mod, _off, _picks);
+    // A copy's box and whether it loads after a relaunch (Copies.Ticked, Copies.Loads), and what loads of an id
+    // (Copies.Next, worked out once per id: every view reads it, so none can disagree).
+    public bool Ticked(Mod mod) => Copies.TickedIn(mod, _off, _ticks);
 
     public bool Loads(Mod mod) => Copies.LoadsWith(mod, _off, Loading);
 
-    public Mod? Loading(string id) => Kept(_loading, id, i => Copies.LoadingIn(i, _off, _picks));
+    public Mod? Loading(string id) => Next(id).Loads;
+
+    public Copies.Outcome Next(string id) => Kept(_next, id, i => Copies.Next(i, _off, _ticks));
 
     // The lists it answers from (Copies.LoadingIf tries a tick on them).
     public HashSet<(string? Id, ModSource Source)> Off => _off;
 
-    public Picks Picks => _picks;
+    public Ticks Ticks => _ticks;
 
     public Mod? Find(string id) => _byId.GetValueOrDefault(id);
 
