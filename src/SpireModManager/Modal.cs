@@ -9,6 +9,8 @@ static class Modal
 {
     public static readonly Color Cream = new(1, 0.964706f, 0.886275f);
     public static readonly Color Gold = new(0.937f, 0.784f, 0.318f);
+    // The panel's margin either side of the column: the column is the dialog's width less two of these.
+    public const int Side = 26;
 
     // Each open dialog's owner and its leave handler.
     static readonly Dictionary<string, (Node Owner, Callable Gone)> _owners = [];
@@ -37,7 +39,7 @@ static class Modal
         var style = new StyleBoxFlat
         {
             BgColor = new Color(0.05f, 0.08f, 0.12f, 0.98f), BorderColor = new Color(Gold, 0.5f),
-            ContentMarginLeft = 26, ContentMarginRight = 26, ContentMarginTop = 20, ContentMarginBottom = 20,
+            ContentMarginLeft = Side, ContentMarginRight = Side, ContentMarginTop = 20, ContentMarginBottom = 20,
             ShadowColor = new Color(0, 0, 0, 0.4f), ShadowSize = 10,
         };
         style.SetBorderWidthAll(1);

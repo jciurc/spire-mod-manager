@@ -16,8 +16,13 @@ static class ModifiedContent
     const string GoldHex = "#efc851", CardGoldHex = "#e8cf7a", Quiet = "#fff6e299";
     const string Bullet = "[color=#fff6e280]•[/color]";
     const int TipAreas = 320; // the card's list of areas: about this many characters at most, then "and N more"
+    const float DialogWidth = 820;
     const float ListMost = 560; // the dialog's list: this tall at most, then it scrolls
     const int BodySize = 17;
+    // The dialog's areas: this many columns side by side across it, each at most AreaRows tall; more columns follow to
+    // the right, scrolled sideways.
+    const int AreaColumns = 3, AreaRows = 5;
+    const int ColumnGap = 24;
 
     public static bool IsOpen => Modal.IsOpen(Name);
 
@@ -126,22 +131,25 @@ static class ModifiedContent
         return $"{string.Join("\n", lines)}\n\n{Tags.Hint(Menus.Text("SPIRE_MOD_MANAGER.MODIFIED_CLICK_TIP"))}";
     }
 
-    // The details, over the page (Modal, as the import preview is): the mod's name, where the list comes from, then
-    // the list (Details), scrolled when it's long, and Close. owner: the panel; the dialog goes with it.
+    // The details, over the page (Modal, as the import preview is): the mod's name, where the list comes from, the
+    // areas (Areas), then the list (Details), scrolled when it's long, and Close. owner: the panel; the dialog goes with it.
     public static void Show(Node owner, Mod mod, GameChanges.Changes changes)
     {
         Hover.Hide(); // the row's card: the dialog covers what it's about
         var name = mod.manifest?.name is { Length: > 0 } named ? named : mod.manifest?.id ?? "";
-        if (Modal.Open(owner, Name, 820, 12) is not { } column)
+        if (Modal.Open(owner, Name, DialogWidth, 12) is not { } column)
             return;
         column.AddChild(Modal.Title("SPIRE_MOD_MANAGER.MODIFIED_TITLE", ("name", name)));
         column.AddChild(Text("Note", $"[color={Quiet}]{Escape(Menus.Text("SPIRE_MOD_MANAGER.MODIFIED_NOTE"))}[/color]", 16));
-        var list = Text("List", Details(mod, changes), BodySize);
+        column.AddChild(Areas(changes));
+        var details = Details(mod, changes);
+        var list = Text("List", details, BodySize);
         list.MouseFilter = Control.MouseFilterEnum.Pass; // the wheel goes on to the scroll
         var inside = new MarginContainer { Name = "Inside", SizeFlagsHorizontal = Control.SizeFlags.ExpandFill, MouseFilter = Control.MouseFilterEnum.Pass };
         inside.AddThemeConstantOverride("margin_right", 16); // the words clear of the scrollbar
         inside.AddChild(list);
-        var scroll = new ScrollContainer { Name = "Scroll", HorizontalScrollMode = ScrollContainer.ScrollMode.Disabled };
+        // Nothing found in a loaded mod: the areas say so, and there's no list under them.
+        var scroll = new ScrollContainer { Name = "Scroll", HorizontalScrollMode = ScrollContainer.ScrollMode.Disabled, Visible = details.Length > 0 };
         scroll.AddChild(inside);
         // As tall as the list once it's laid out, up to ListMost; then it scrolls.
         list.MinimumSizeChanged += () =>
@@ -158,19 +166,64 @@ static class ModifiedContent
         column.AddChild(buttons);
     }
 
-    // The dialog's list: every area; the game's files replaced, by area, each path; the game's code changed, by area,
-    // each method with how it's patched, and what those words mean. Each heading with its count. With nothing found,
-    // that; a mod not loaded, that its contents show only while it is.
+    public const string AreasName = "Areas", AreasScrollName = "AreasScroll"; // the dialog's areas, and their sideways scroll
+
+    // The dialog's areas under their heading (Jordan, 23 Oct: "list the areas vertically (maybe 3 columns in a
+    // container that scrolls horizontally?) to save space"): one to a line, in columns filled top to bottom (Columns),
+    // three side by side across the dialog; with more than three columns hold, the rest follow to the right, scrolled
+    // sideways. A long one (a character's, with what of theirs) wraps in its column: this is where an area shows whole.
+    // With none found, that.
+    static Control Areas(GameChanges.Changes changes)
+    {
+        var box = new VBoxContainer { Name = AreasName };
+        box.AddThemeConstantOverride("separation", 2);
+        box.AddChild(Text("AreasHeading", Heading("SPIRE_MOD_MANAGER.MODIFIED_AREAS", null), BodySize));
+        if (!changes.Any)
+        {
+            box.AddChild(Text("NoAreas", $"[color={Quiet}]{Escape(Menus.Text("SPIRE_MOD_MANAGER.MODIFIED_NONE"))}[/color]", BodySize));
+            return box;
+        }
+        // Three columns and their gaps as wide as the dialog's column, so a fourth starts just out of view.
+        var width = MathF.Floor((DialogWidth - 2 * Modal.Side - (AreaColumns - 1) * ColumnGap) / AreaColumns);
+        var columns = new HBoxContainer { Name = "Columns" };
+        columns.AddThemeConstantOverride("separation", ColumnGap);
+        var at = 0;
+        foreach (var (areas, i) in Columns(changes.Areas).Select((areas, i) => (areas, i)))
+        {
+            var one = new VBoxContainer { Name = $"AreaColumn{i}", CustomMinimumSize = new Vector2(width, 0) };
+            one.AddThemeConstantOverride("separation", 4); // a little more between areas than between a long one's lines
+            foreach (var area in areas)
+                one.AddChild(Text($"Area{at++}", Escape(area), BodySize));
+            columns.AddChild(one);
+        }
+        // The wheel over the columns goes on to their scroll, which moves them sideways when there are more than three.
+        foreach (var part in columns.GetChildren().OfType<Control>().Prepend(columns))
+            part.MouseFilter = Control.MouseFilterEnum.Pass;
+        var scroll = new ScrollContainer { Name = AreasScrollName, VerticalScrollMode = ScrollContainer.ScrollMode.Disabled };
+        scroll.AddChild(columns);
+        box.AddChild(scroll);
+        return box;
+    }
+
+    // The areas in columns, filled top to bottom: as few to a column as three columns need (two areas side by side on
+    // one line, seven in three columns of 3, 3 and 1), at most AreaRows; past three columns of those, more columns.
+    public static List<List<string>> Columns(IReadOnlyList<string> areas)
+    {
+        var rows = Math.Clamp((areas.Count + AreaColumns - 1) / AreaColumns, 1, AreaRows);
+        return [.. areas.Chunk(rows).Select(column => column.ToList())];
+    }
+
+    // The dialog's list, under its areas: the game's files replaced, by area, each path; the game's code changed, by
+    // area, each method with how it's patched, and what those words mean. Each heading with its count. A mod not
+    // loaded: that its contents show only while it is. Empty with none of those.
     public static string Details(Mod mod, GameChanges.Changes changes)
     {
-        var lines = new List<string>
-        {
-            Heading("SPIRE_MOD_MANAGER.MODIFIED_AREAS", null),
-            changes.Any ? Escape(string.Join(", ", changes.Areas)) : $"[color={Quiet}]{Escape(Menus.Text("SPIRE_MOD_MANAGER.MODIFIED_NONE"))}[/color]",
-        };
+        var lines = new List<string>();
+        // A blank line between parts.
+        string[] Gap() => lines.Count > 0 ? [""] : [];
         if (changes.Files > 0)
         {
-            lines.AddRange(["", Heading("SPIRE_MOD_MANAGER.GAME_FILES", FilesCount(changes.Files))]);
+            lines.Add(Heading("SPIRE_MOD_MANAGER.GAME_FILES", FilesCount(changes.Files)));
             foreach (var area in changes.ReplacedFiles.GroupBy(f => f.Area))
             {
                 lines.Add(Group(area.Key, FilesCount(area.Count())));
@@ -179,7 +232,7 @@ static class ModifiedContent
         }
         if (changes.Code > 0)
         {
-            lines.AddRange(["", Heading("SPIRE_MOD_MANAGER.GAME_CODE", PlacesCount(changes.Code))]);
+            lines.AddRange([.. Gap(), Heading("SPIRE_MOD_MANAGER.GAME_CODE", PlacesCount(changes.Code))]);
             foreach (var area in changes.Places.GroupBy(p => p.Area))
             {
                 lines.Add(Group(area.Key, PlacesCount(area.Count())));
@@ -188,7 +241,7 @@ static class ModifiedContent
             lines.AddRange(["", $"[color={Quiet}]{Escape(Menus.Text("SPIRE_MOD_MANAGER.PATCH_KINDS"))}[/color]"]);
         }
         if (mod.state != ModLoadState.Loaded)
-            lines.AddRange(["", $"[color={Quiet}]{Escape(Menus.Text("SPIRE_MOD_MANAGER.MODIFIED_NOT_LOADED"))}[/color]"]);
+            lines.AddRange([.. Gap(), $"[color={Quiet}]{Escape(Menus.Text("SPIRE_MOD_MANAGER.MODIFIED_NOT_LOADED"))}[/color]"]);
         return string.Join("\n", lines);
     }
 
