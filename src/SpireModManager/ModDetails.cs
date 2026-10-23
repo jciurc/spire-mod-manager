@@ -117,7 +117,7 @@ static class ModDetails
         foreach (var field in Fields.GetValueOrDefault(container.GetInstanceId(), []))
             field.Load();
         if (yours.GetNodeOrNull<Button>("Category/Picker") is { } picker)
-            picker.Text = CategoryList.CategoryName(key) + "  ▾";
+            Menus.CutToFit(picker, CategoryList.CategoryName(key), "  ▾");
         Callable.From(() => PlaceFields(container)).CallDeferred();
 
         var folder = container.GetNodeOrNull<Control>("OpenFolderButton") ?? AddButton(container, "OpenFolderButton",
@@ -913,7 +913,8 @@ static class ModDetails
         return box;
     }
 
-    // "Category" and the mod's category as a picker: the same list as its right-click menu.
+    // "Category" and the mod's category as a picker: the same list as its right-click menu. A long name is cut with ".."
+    // to the panel's width (Fill), the whole of it a second over it.
     static Control CategoryPicker(NModInfoContainer container, Func<Control?> content, Func<string?> modId)
     {
         var line = new VBoxContainer { Name = "Category" };
@@ -937,6 +938,7 @@ static class ModDetails
             if (content() is { } list && modId() is { } id)
                 Menus.Show(container, CategoryList.CategoryItems(list, id), from: MenuPanel.Around(picker, 2), toggleKey: "panel-category");
         };
+        Hover.Watch(picker, "SpireModManagerFullText", () => Menus.CutFrom(picker) is { } whole ? Escape(whole) : null, Hover.Timing.Slow);
         line.AddChild(picker);
         return line;
     }

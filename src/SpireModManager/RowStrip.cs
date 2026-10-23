@@ -29,6 +29,9 @@ static class RowStrip
     const float LoadOrderMargin = 20; // Load Order has no tickbox
     const float ActionsGap = 12;
     const float AuthorMax = 200; // px
+    // px, a row's category button at most (CategoryList.StripActions): about a quarter of the row, so the line under the
+    // title keeps most of it for the tags, the note and the author (a long name's button took two thirds of the row)
+    public const float CategoryMax = 240;
     const int LabelSize = 13; // the author's and "and 3 more.."'s text
     static readonly Color NoteColor = new(0.937f, 0.784f, 0.318f, 0.75f), AuthorColor = new(1, 0.964706f, 0.886275f, 0.45f);
     const string FaintHex = "#fff6e280"; // "and 3 more..": fainter than the author

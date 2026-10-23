@@ -9,10 +9,11 @@ namespace SpireModManager;
 
 // A menu entry, or a heading when it has no action. Detail: dim text on the right; Radio: one of several choices;
 // Badge: a mark after the label; Tip: a hover card (inline buttons); Flat: drawn as plain text; External: it opens
-// something outside the game, with the external-link mark after the label (menus).
+// something outside the game, with the external-link mark after the label (menus); TipMarkup: Tip is BBCode, the
+// player's words in it escaped.
 record MenuItem(string Label, Action? OnSelect, bool Checked = false, bool Disabled = false, string? Detail = null,
     bool Radio = false, (string Text, Color Color)? Badge = null, string? Tip = null, bool Flat = false, bool External = false,
-    Texture2D? Icon = null)
+    Texture2D? Icon = null, bool TipMarkup = false)
 {
     public static MenuItem Heading(string label) => new(label, null);
 }
@@ -131,29 +132,58 @@ static class Menus
     public static void CutToFit(Label label, string text, Action? fitted = null)
     {
         if (!Fitting.TryGetValue(label, out _))
-        {
             (label.ClipText, label.TextOverrunBehavior) = (true, TextServer.OverrunBehavior.NoTrimming);
-            label.Resized += () => Fit(label);
-            label.ThemeChanged += () => Callable.From(() => Fit(label)).CallDeferred(); // once the label has its new looks
+        Watch(label, new CutText(text, "", fitted));
+    }
+
+    // The same for a button's text (the info panel's category picker), end after it whether cut or not ("  ▾"). Its
+    // width no longer follows its text: a long one would push it past what holds it.
+    public static void CutToFit(Button button, string text, string end = "")
+    {
+        if (!Fitting.TryGetValue(button, out _))
+            (button.ClipText, button.TextOverrunBehavior) = (true, TextServer.OverrunBehavior.NoTrimming);
+        Watch(button, new CutText(text, end, null));
+    }
+
+    // Fitted now, and again whenever its width or looks change.
+    static void Watch(Control control, CutText cut)
+    {
+        if (!Fitting.TryGetValue(control, out _))
+        {
+            control.Resized += () => Fit(control);
+            control.ThemeChanged += () => Callable.From(() => Fit(control)).CallDeferred(); // once it has its new looks
         }
-        Fitting.AddOrUpdate(label, new CutText(text, fitted));
-        Fit(label);
+        Fitting.AddOrUpdate(control, cut);
+        Fit(control);
     }
 
     // The text CutToFit last gave label, before any cut (else what it shows).
     public static string WholeText(Label label) => Fitting.TryGetValue(label, out var cut) ? cut.Whole : label.Text;
 
-    sealed record CutText(string Whole, Action? Fitted);
-    static readonly ConditionalWeakTable<Label, CutText> Fitting = new();
+    // The text CutToFit last gave control while it shows less of it (its card's words), else null.
+    public static string? CutFrom(Control control) => Fitting.TryGetValue(control, out var cut) && cut.Short ? cut.Whole : null;
 
-    // Measured as the label draws it: in its font, at its size, inside its box's margins. Until it's laid out (no width
-    // yet), the whole text.
-    static void Fit(Label label)
+    sealed record CutText(string Whole, string End, Action? Fitted)
     {
-        if (!GodotObject.IsInstanceValid(label) || !Fitting.TryGetValue(label, out var cut))
+        public bool Short { get; set; } // cut, as last fitted
+    }
+
+    static readonly ConditionalWeakTable<Control, CutText> Fitting = new();
+
+    // Measured as the label or button draws it: in its font, at its size, inside its box's margins. Until it's laid out
+    // (no width yet), the whole text.
+    static void Fit(Control control)
+    {
+        if (!GodotObject.IsInstanceValid(control) || !Fitting.TryGetValue(control, out var cut))
             return;
-        var room = label.Size.X - label.GetThemeStylebox("normal").GetMinimumSize().X;
-        label.Text = room > 0 ? RowTitles.Cut(label.GetThemeFont("font"), cut.Whole, label.GetThemeFontSize("font_size"), room) : cut.Whole;
+        var (font, size) = (control.GetThemeFont("font"), control.GetThemeFontSize("font_size"));
+        var room = control.Size.X - control.GetThemeStylebox("normal").GetMinimumSize().X - (cut.End.Length > 0 ? RowTitles.Measure(font, cut.End, size) : 0);
+        var shown = room > 0 ? RowTitles.Cut(font, cut.Whole, size, room) : cut.Whole;
+        cut.Short = shown != cut.Whole;
+        if (control is Button button)
+            button.Text = shown + cut.End;
+        else if (control is Label label)
+            label.Text = shown + cut.End;
         cut.Fitted?.Invoke();
     }
 
@@ -165,6 +195,8 @@ static class Menus
         ("pressed", Box(new Color(0.12f, 0.2f, 0.28f), Gold)),
         ("disabled", Box(new Color(0.0756f, 0.12084f, 0.18f, 0.35f), new Color(Gold, 0.1f))),
     ];
+    static readonly float SmallSides = SmallBoxes.Max(b => b.Box.GetMinimumSize().X); // a small button's box, left and right of its text
+    const int SmallSize = 16;
     static readonly StyleBoxEmpty FlatBox = new() { ContentMarginLeft = 4, ContentMarginRight = 4 };
     // ChoiceButton's chosen one: gold, a shade brighter under the mouse (the same size as the others).
     static readonly (string State, StyleBox Box)[] ChosenBoxes =
@@ -203,7 +235,7 @@ static class Menus
                 theme.SetColor(name, "Button", color);
             return theme;
         }
-        var small = Make(SmallBoxes, 16, ("font_color", Cream), ("font_hover_color", Colors.White), ("font_disabled_color", new Color(Cream, 0.3f)));
+        var small = Make(SmallBoxes, SmallSize, ("font_color", Cream), ("font_hover_color", Colors.White), ("font_disabled_color", new Color(Cream, 0.3f)));
         // Flat: no box, the text bigger and dimmer, gold under the mouse; disabled as a small one.
         var flat = Make(new[] { "normal", "hover", "pressed", "disabled" }.Select(state => (state, (StyleBox)FlatBox)), 18,
             ("font_color", new Color(Cream, 0.6f)), ("font_hover_color", Gold), ("font_pressed_color", Gold), ("font_disabled_color", new Color(Cream, 0.3f)));
@@ -224,6 +256,10 @@ static class Menus
         button.Pressed += onPressed;
         return button;
     }
+
+    // text cut with CutMark where a SmallButton showing it would be wider than `most`, its box included (a row's category).
+    public static string SmallText(string text, float most) =>
+        RowTitles.Cut(ModEntry.Font("res://themes/kreon_regular_shared.tres"), text, SmallSize, most - SmallSides);
 
     // One of a few side-by-side choices (the page bar's Show:): the chosen one lit gold, and it still presses.
     public static Button ChoiceButton(string text, bool chosen, Action onPressed, string? name = null)
@@ -255,7 +291,7 @@ static class Menus
                 var does = new StrongBox<Action?>(action);
                 var button = SmallButton(item.Label, () => does.Value?.Invoke(), item.Disabled);
                 Pressing.Add(button, does);
-                Hover.Tip(button, item.Tip);
+                Hover.Tip(button, item.Tip, markup: item.TipMarkup);
                 if (item.Flat)
                     Flatten(button);
                 button.SizeFlagsVertical = Control.SizeFlags.ShrinkCenter;
@@ -281,7 +317,7 @@ static class Menus
         foreach (var (button, item) in buttons.Zip(wanted))
         {
             (button.Text, button.Disabled) = (item.Label, item.Disabled);
-            Hover.Tip(button, item.Tip);
+            Hover.Tip(button, item.Tip, markup: item.TipMarkup);
         }
         return true;
     }
