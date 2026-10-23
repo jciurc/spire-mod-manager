@@ -688,9 +688,8 @@ static class NewModTogglePatch
 
 // The tickbox of one of several picked rows on the main list sets them all to the state it took, as one undo step,
 // their rows kept under a Show: choice. In place of the game's toggle for that row; other rows' tickboxes, and Load
-// Order's, switch only their own mod. This mod stays on, and where two copies of one mod from one source are turned on
-// together, the clicked row's copy becomes the one that loads (Dependencies.Set). Falls back to the game's toggle on
-// error.
+// Order's, switch only their own mod. Where two copies of one mod from one source are turned on together, which of them
+// loads is the rule's (Copies.Next), whichever row was clicked. Falls back to the game's toggle on error.
 [HarmonyPatch(typeof(NModMenuRow), "OnTickboxToggled")]
 static class GroupTickPatch
 {
