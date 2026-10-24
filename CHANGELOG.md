@@ -10,7 +10,7 @@ What changed in each Workshop release, for players. Each version's first line is
 - Mods that share the same ID (duplicate) will only load one copy, with an explanation of which and why
 - search supports OR, NOT and brackets, e.g. (#gameplay OR #library) #enabled
 - additional keywords are generated based on a mod's status to help narrow searches even more
-- while searching, a mod's hover card says where the search found it, e.g. "Found in: author, tags"
+- while searching, a mod's hover card says where the search found it, e.g. "Search term found in: author, tags"
 - warning banner show button now filters to the list of affected mods, the previous show functionality moved to "Go to" button
 - Vanilla menu button was moved to the top of the page and now has a simple link style
 - mods are sorted alphabetically within each category 
@@ -28,23 +28,27 @@ What changed in each Workshop release, for players. Each version's first line is
   local copy on stable, and on the beta the higher version, else the local copy. Copies from one source share one switch
   in the game, so Spire Mod Manager decides between them: the higher version, and with the same version (or none that
   can be read), the one installed first. The page says which. A copy that won't load reads "Duplicate - Won't load" (it
-  was "Not loaded (same ID)"), and its info panel names the copy that loads instead and why: "The game prioritizes a
-  local copy.", "The game prioritizes a higher version.", "With no higher version, the copy installed first is
-  prioritized." or "This copy's version can't be read, so a copy with a readable version is prioritized." The copy that
-  loads says so too, and the box of a disabled copy, beside an enabled one, says which copy would load if you enabled it
-  as well.
-- The Same ID tag is now Duplicate. While copies of a mod are enabled together, the tag's card names the copy that
-  loads, and the tag and the info panel's line about the copies are yellow on every enabled copy, the one that loads
-  too. The yellow banner reads "2 mods with the same ID are enabled. Only one copy will be loaded." Its card says which
-  copy loads and which won't, and "Before you relaunch" lists each enabled copy that won't load, with the copy that
-  loads instead. Enable all, which now enables every copy, says when it would enable more than one copy of a mod. An
-  enabled copy's name is no longer greyed out.
+  was "Not loaded (same ID)"), and its info panel names the copy that will be used and why: "Touhou Fairies (Local)
+  will be used due to the game prioritizing local copies - disable copies you don't want to use", or due to "its higher
+  version", "the same version and an earlier install date" or "this copy's version being unreadable". The copy that
+  loads says "Touhou Fairies (3813186417) is also enabled - only this copy will be loaded", and the box of a disabled
+  copy, beside an enabled one, says which copy would load if you enabled it as well.
+- The Same ID tag is now Duplicate, in a muted tan. While copies of a mod are enabled together, it turns the warning
+  yellow on every enabled copy, the one that loads too, as does the info panel's line about the copies, and its card
+  lists the other enabled copies, one to a line, and the one that will be used. The yellow banner reads "2 mods with
+  the same ID are enabled - only one copy of each will be loaded". Its card groups the enabled copies by ID, each with
+  its version and source, the one that loads first: "TouhouFairies:", then "Touhou Fairies 0.1.1 (Local) - Active" and
+  "Touhou Fairies 0.1.0 (3813186417) - Ignored". "Before you relaunch" lists them the same way, under "Some mods with
+  duplicate IDs are enabled, and won't be loaded", and its Disable unused mods turns off the Ignored copies. Enable
+  all, which now enables every copy, says when it would enable more than one copy of a mod. An enabled copy's name is
+  no longer greyed out.
 - A newly installed copy of a mod you have now arrives enabled, as a new mod does (disabled only where your copies of it
   from the same source all are), and the rules above decide which copy loads: of copies from one source, a higher
   version takes over by itself, whether it was just installed or an update made it higher. Installed while the game
   runs, the New Mod Added popup says whether the new copy is enabled and, beside another enabled copy, which copy will
-  be loaded, then "For consistency, please disable the copies you don't want loaded." A change of which copy loads with
-  no box changed shows in Changes, as one copy loading instead of another, and counts in the main menu's restart note.
+  be loaded: "A copy of Touhou Fairies was recently installed and is enabled. Only Touhou Fairies (Local) will be
+  loaded. Disable copies you don't want to use." A change of which copy loads with no box changed shows in Changes, as
+  one copy loading instead of another, and counts in the main menu's restart note.
 - Profiles keep each copy's box, and a profile you switch to counts a copy it hasn't seen as enabled where it has that
   mod enabled. Importing a list, a row with a Workshop link sets only that copy of a mod you have more than once,
   leaving a copy installed by hand as it is, and where the list would leave your Workshop copy and the one installed by
@@ -56,10 +60,10 @@ What changed in each Workshop release, for players. Each version's first line is
   Relaunch now asks first: "Spire Mod Manager (this mod) will be disabled on relaunch. To use it again, enable it on the
   vanilla modding page, and it will load after the next restart." The dialog's Enable now, like the banner's, turns the
   copy that's running back on. Installed more than once, its copies come first in their category; as before, their boxes
-  can be unticked (two from one source share one) and which of them loads is left to the game. They aren't a clash, so
-  their Duplicate tag stays grey and no yellow banner shows, and the info panel says which copy is running and whether
-  another is enabled in case that one is removed. Disable all, the page's or a category's, still leaves every copy of it
-  on, but a selection that includes it now turns it off with the rest.
+  can be unticked (two from one source share one) and which of them loads is left to the game. Two of them enabled
+  clash like any mod's copies: the yellow Duplicate tag, the yellow banner and the same lines in the info panel.
+  Disable all, the page's or a category's, still leaves every copy of it on, but a selection that includes it now
+  turns it off with the rest.
 - Search: OR (or `|`) finds either side, NOT leaves a term out as "-" does, and brackets group terms:
   `(#gameplay OR #library) #enabled`. A space or AND means both, and OR is read first, so `#a OR #b #c` is
   `(#a OR #b) #c`. In capitals, OR, AND and NOT are always operators (put them in quotes to search for the word); in
@@ -70,7 +74,8 @@ What changed in each Workshop release, for players. Each version's first line is
   `#installed`, `#loaded`, `#notloaded`, `#pending`, `#new`, `#changed`, `#moved`, `#edited`, `#renamed`, `#note`,
   `#duplicate`, `#aside` and `#uncategorized`, and for problems `#unmet`, `#needed`, `#order`, `#clash`, `#managers`,
   `#failed` and `#gameerror`, with `#error`, `#warning` and `#problem` gathering them. A tag of yours with the same
-  name finds its mods too. `#missing` (or `#uninstalled`) shows a line counting the profile's mods that aren't
+  name finds its mods too. They work without the `#` as well (`enabled -workshop`), as a whole word: `load` doesn't
+  find every loaded mod. `#missing` (or `#uninstalled`) shows a line counting the profile's mods that aren't
   installed, with "See list" to list them. The info panel lists the keywords that find its mod under "Other
   keywords". Click one to search for it, or Shift-click to add it to the search.
 - On the warning banners, the old Show, which opens the next affected mod, is now Go to, and it steps through the
@@ -92,20 +97,21 @@ What changed in each Workshop release, for players. Each version's first line is
   double-click selects one. The suggestions have a heading, "Tags in use; Shift-click to add multiple": a click adds a
   tag and finishes editing, a Shift-click adds it and keeps the list open, and Ctrl+Z takes back a picked one. Save
   and Cancel sit at the right end of the Tags line.
-- A mod's info panel says what it changes in the game itself, on one line: "Modified content: The Regent (energy
-  orb), merchant room and 4 more", the parts of the game it touches. Hovering it says how many places in the game's
-  code it changes and how many of the game's files it replaces, and names the parts, and a click opens the details:
-  the files it replaces, with their paths, and the places in the code it changes, each marked before, after,
-  rewritten or wrapped. Changes to the game's code show only while
-  the mod is loaded, and where nothing is found the line reads "Modified content: No information found". Search finds
-  a mod by these too, so "regent" lists the mods that change the Regent.
+- A mod's info panel says what it changes in the game itself, on one line before Other keywords: "Modified content:
+  The Regent (energy orb), merchant room and 4 more..", the parts of the game it touches. Hovering it says how many
+  places in the game's code it changes and how many of the game's files it replaces, and names the parts, and a click
+  opens "Expected content from" the mod: its affected elements, in columns, the files it replaces, with their paths,
+  and the places in the code it changes, each marked before, after, rewrite or final in its own colour, with a legend
+  saying what each means. Changes to the game's code show only while the mod is loaded, and where nothing is found
+  the line reads "Modified content: No information found". Search finds a mod by these too, so "regent" lists the
+  mods that change the Regent.
 - The info panel keeps more in view: a long description shows three lines, ending in "..", and hovering them shows all
   of it; text with more to scroll fades at that edge; and Compatibility no longer adds "Workshop branches", as a mod
   marked for one branch has its Stable or Beta tag.
 - On a mod's row, tags that don't fit end the line as "and 3 more..", whose card shows the rest, with
   "Click to view in info panel" (the "+3" chip is gone). The row's hover card starts with the mod's picture, where it
-  has one, and while you search it says where the search found the mod ("Found in: author, tags"). A gap follows its
-  warnings, your alias, tags and note sit together, and the note follows "Note:" on the same line.
+  has one, and while you search it ends with where the search found the mod ("Search term found in: author, tags"). A
+  gap follows its warnings, your alias, tags and note sit together, and the note follows "Note:" on the same line.
 - A mod's notes are its Note now: the info panel's field, the cards, the pencil's "Edit alias, tags and note" and the
   bulk edit's "Edit note for selected mods". An exported list's column is Note, and import reads Note or Notes, so
   the notes in older lists and Better Mod Menu's still come in.
@@ -113,7 +119,7 @@ What changed in each Workshop release, for players. Each version's first line is
   width as the numbers change. The profile bar's "Unsaved (14) •" says how many changes aren't saved (each
   profile's mod count is in the profile list). While a relaunch is pending, the main menu's note counts the mods
   turned on, off or moved ("15 mod changes will be applied after a restart", or "1 mod change will be applied after a
-  restart"), and the main menu button's card starts with a summary of those changes.
+  restart"), and the main menu button's card ends with a summary of those changes.
 - Menus taller than the screen go into columns, scrolling if there are more than fit across, instead of running off
   it. Menu items show their tips, such as Disable all in the category that holds Spire Mod Manager: "Spire Mod
   Manager (this mod) will remain enabled".
@@ -123,6 +129,8 @@ What changed in each Workshop release, for players. Each version's first line is
 - Import and export: the import preview reads "3 mods sorted into categories" ("1 mod sorted into categories" for
   one), and the dialog keeps its size as an error comes and goes. Import profile now comes before Export profile in
   the profile list and its right-click menu, and an exported list no longer ends with a line break.
+- A Workshop mod's title on its row is a soft blue (dimmer while disabled), a local mod's stays white, and the
+  category bars line up with a selected row's box; the vanilla modding page keeps the game's colours.
 - Our links no longer underline: their colour and the pointing hand mark them, the info panel's source link included,
   while the vanilla modding page keeps the game's look. The game's own words, in the info panel, the hover cards and
   the dialog when the game can't start, sit in a box with an even border and rounded corners, no longer cut off at
@@ -138,7 +146,11 @@ What changed in each Workshop release, for players. Each version's first line is
   name, as an imported profile can bring, is cut with ".." on its mods' category buttons and in the info panel's
   category picker instead of squeezing the row or running past the panel; and the external-link mark after the info
   panel's Workshop link, and after Open translations folder, sits on the text's line when another mod adds fonts to the
-  game (it sat a little low).
+  game (it sat a little low). A mod with its local copy enabled and its Workshop copy disabled no longer comes back
+  with both enabled, or both disabled, after Disable suspect mods on the dialog when the game can't start, or after
+  closing the game before it reaches the main menu.
+- With Mod Doctor: when it turns off the mod that stopped a launch and restarts the game, the main menu no longer also
+  shows Spire Mod Manager's notice about that launch.
 - For other mods: Spire Mod Manager has an API (version 1), so mods built on it can use its menus, banners and mod
   cards, and show the alias, note, tags and category you've given a mod.
 
