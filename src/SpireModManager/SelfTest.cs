@@ -141,6 +141,7 @@ static partial class SelfTest
             await Step(() => TestMenuButtonRelaunch(menu, outDir)); // before the Modding page opens: the check's fixes without it
             await Step(() => TestLaunchGuard(menu, outDir));
             await Step(() => TestCrashOffer(menu, outDir));
+            await Step(() => TestCrashCulprit(menu, outDir)); // who stopped the start (Culprits), on real failures (SelfTest.Crash.cs)
             await Step(() => TestSameIdCanary()); // which copy of a mod installed twice loads (SameIdLoad)
             await Step(() => TestCopyRule(outDir)); // the rule every view and the launch share (Copies.Next), on made-up copies
             await Step(() => TestSameIdTie());

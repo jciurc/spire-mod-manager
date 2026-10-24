@@ -305,6 +305,7 @@
   "SPIRE_MOD_MANAGER.CRASH_DISABLE_SUSPECTS": "Disable suspect mods and restart",
   "SPIRE_MOD_MANAGER.CRASH_GAME_CHANGED": "The game itself was updated since then, so the old setup may still not launch",
   "SPIRE_MOD_MANAGER.CRASH_SUSPECTS": "Mod Doctor suspects: {mods}",
+  "SPIRE_MOD_MANAGER.NAME_AND_ID": "{name} ({id})",
   "SPIRE_MOD_MANAGER.DATA_TITLE": "Error reading your saved data",
   "SPIRE_MOD_MANAGER.DATA_RECOVERED": "The file with your categories, profiles and notes couldn't be read.\n\nBackup from {date} was loaded instead.\n\nThe unreadable file can be found in the [url=folder]Spire Mod Manager's data folder[/url] as:\n\"{file}\"",
   "SPIRE_MOD_MANAGER.DATA_FROM_BMM": "The file with your categories, profiles and notes couldn't be read.\n\nNo backup was found, so your groups, notes and profiles were imported again from Better Mod Menu.\n\nThe unreadable file can be found in the [url=folder]Spire Mod Manager's data folder[/url] as:\n\"{file}\"",

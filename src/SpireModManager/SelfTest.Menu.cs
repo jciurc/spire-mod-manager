@@ -1696,12 +1696,12 @@ static partial class SelfTest
         try
         {
             Write(files[0], "SmmNewPlace");
-            seen.Add($"new {string.Join(",", await ModDoctor.Suspects(menu))}");
+            seen.Add($"new {string.Join(",", (await ModDoctor.WaitForFindings(menu)).Suspects)}");
             File.Delete(files[0]);
             Write(files[1], "SmmOldPlace");
-            seen.Add($"old {string.Join(",", await ModDoctor.Suspects(menu))}");
+            seen.Add($"old {string.Join(",", (await ModDoctor.WaitForFindings(menu)).Suspects)}");
             Write(files[0], "SmmNewPlace");
-            seen.Add($"both {string.Join(",", await ModDoctor.Suspects(menu))}");
+            seen.Add($"both {string.Join(",", (await ModDoctor.WaitForFindings(menu)).Suspects)}");
         }
         finally
         {

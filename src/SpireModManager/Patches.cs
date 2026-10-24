@@ -2,6 +2,7 @@ using Godot;
 using HarmonyLib;
 using MegaCrit.Sts2.Core.Audio;
 using MegaCrit.Sts2.Core.Commands;
+using MegaCrit.Sts2.Core.Helpers;
 using MegaCrit.Sts2.Core.Logging;
 using MegaCrit.Sts2.Core.Modding;
 using MegaCrit.Sts2.Core.Localization;
@@ -110,6 +111,22 @@ static class BranchErrorsLatePatch
         {
             Log.Error($"[{ModEntry.ModId}] Could not drop the Steam branch error of mods that are off before the main menu's warning: {e}");
         }
+    }
+}
+
+// The exception that ends the game's start, as it leaves OneTimeInitialization.ExecuteEssential (the game's text, the
+// models, their ids: where mods' code runs at startup), kept for Culprits. A void finalizer: Harmony rethrows the
+// exception as it was, so its stack stays whole for the game's log and Mod Doctor. First, so it sees the exception as
+// thrown: a finalizer that returns an Exception stores it in the shared __exception, and one after it sees the
+// replacement, or null when it was swallowed. Culprits.Caught has its own try.
+[HarmonyPatch(typeof(OneTimeInitialization), nameof(OneTimeInitialization.ExecuteEssential))]
+static class StartupFailurePatch
+{
+    [HarmonyPriority(Priority.First)]
+    static void Finalizer(Exception? __exception)
+    {
+        if (__exception != null)
+            Culprits.Caught(__exception, nameof(OneTimeInitialization.ExecuteEssential));
     }
 }
 

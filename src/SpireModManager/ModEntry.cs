@@ -89,6 +89,14 @@ internal static class ModEntry
         }
         try
         {
+            Culprits.Watch();
+        }
+        catch (Exception e)
+        {
+            Log.Error($"[{ModId}] Could not watch for a failed start outside the game's startup step, so one there won't name a mod: {e}");
+        }
+        try
+        {
             Installed.Watch();
         }
         catch (Exception e)

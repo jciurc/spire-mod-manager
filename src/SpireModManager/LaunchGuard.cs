@@ -340,7 +340,7 @@ static class LaunchGuard
 
     // One of our texts, filled in: through the game's text, or (plain) in English from our own file without markup, for
     // where the game's text couldn't load. Names and versions go in as given (Lines escapes them for the game's markup).
-    static string Our(bool plain, string key, params (string Name, string Value)[] values)
+    public static string Our(bool plain, string key, params (string Name, string Value)[] values)
     {
         if (!plain)
             return values.Length == 0 ? Menus.Text(key) : Menus.Format(key, values);
@@ -582,7 +582,7 @@ static class LaunchGuard
         try
         {
             var styled = await ErrorInit(game);
-            suspects = await ModDoctor.Suspects(game);
+            suspects = [.. (await ModDoctor.WaitForFindings(game)).Suspects];
             answer = styled ? await AskStyled(offer, suspects) : await AskPlain(game, offer, suspects);
         }
         catch (Exception e)
