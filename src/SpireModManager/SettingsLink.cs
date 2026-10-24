@@ -173,7 +173,7 @@ static class SettingsLink
         }
         finally
         {
-            // Gone (none now, as when its library forgot it after the panel filled): no button. Didn't open: greyed.
+            // Gone (none now, as when its library forgot it after the panel filled), or didn't open: greyed, its tip saying which.
             if (Found.GetValueOrDefault(key) == null || Failed.Contains(key))
                 ModDetails.PlaceSettings(container, mod);
         }
@@ -195,7 +195,8 @@ static class SettingsLink
             Log.Warn($"[{ModEntry.ModId}] Couldn't open {mod.manifest?.id}'s settings ({target?.Library.ToString() ?? "none"}): {why}");
     }
 
-    // Where nothing turned out to be there to open (RitsuLib's mod-not-found, page-not-found): no button, an Info line.
+    // Where nothing turned out to be there to open (RitsuLib's mod-not-found, page-not-found): greyed as for a mod with none,
+    // an Info line.
     static void Gone(Mod mod, string why)
     {
         Found[CopyKey(mod)] = null;
