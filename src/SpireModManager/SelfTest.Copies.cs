@@ -3950,11 +3950,15 @@ static partial class SelfTest
             + $"off {string.Join(",", CopiesOff())}, pending {ModEntry.HasPendingChanges()}; status A {ModDetails.Status(a)}, B {ModDetails.Status(b)}; "
             + $"lines A {ModDetails.CopyLine(a, false)?.Text}, B {ModDetails.CopyLine(b, false)?.Text}; changes {string.Join(" | ", TwinChanges())}; "
             + $"titles A {Title(rowA)} B {Title(rowB)}; {CopiesBroken() ?? "kept"}";
-        async Task<string> RelaunchBody()
+        // The relaunch check's body, read then cancelled; shot: a screenshot of it first.
+        async Task<string> RelaunchBody(string? shot = null)
         {
             RelaunchCheck.Show(screen);
             await Wait(menu, 0.3);
-            var body = (menu.GetTree().Root.GetNodeOrNull(RelaunchCheck.Name)?.FindChild("Body", true, false) as RichTextLabel)?.GetParsedText() ?? "";
+            var dialog = menu.GetTree().Root.GetNodeOrNull(RelaunchCheck.Name);
+            var body = (dialog?.FindChild("Body", true, false) as RichTextLabel)?.GetParsedText() ?? "";
+            if (shot != null)
+                await Capture(dialog ?? screen, outDir, shot);
             RelaunchCheck.Cancel();
             await Wait(menu, 0.3);
             return body;
@@ -4010,8 +4014,9 @@ static partial class SelfTest
             + $"expected {string.Join(" | ", TwinsGrouped())}); find {Copies.KeyOf(Dependencies.Find(TwinId))}; edited {Profiles.Edited}");
         await Capture(screen, outDir, "19b-same-id-both-on");
 
-        // The relaunch check: both under the ID, A Ignored. The banner's Dismiss takes them out of there too.
-        var body = await RelaunchBody();
+        // The relaunch check: both under the ID, A Ignored, with Disable unused mods (screenshot 19b2-relaunch-copies). The
+        // banner's Dismiss takes them out of there too.
+        var body = await RelaunchBody("19b2-relaunch-copies");
         (SameId()?.FindChild("DismissSameIdButton", true, false) as BaseButton)?.EmitSignal(BaseButton.SignalName.Pressed);
         await Wait(menu, 0.3);
         var bannerGone = SameId() == null;
