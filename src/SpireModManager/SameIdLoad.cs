@@ -93,23 +93,26 @@ static class SameIdLoad
     // Whether this launch's list lined up with the game's mods at the first main menu (LaunchAnchors); null before.
     public static bool? LinedUp { get; private set; }
 
-    // The anchors for the list in memory now: by where the game put each mod (LaunchAnchors); before the game has rebuilt
-    // the list (it can quit while it loads), or where it doesn't line up, by which sources the next launch sorts
-    // (LoadOrder.Anchors), the second with a warning.
-    public static IReadOnlyList<bool> AnchorsNow(List<SettingsSaveMod> list)
+    // The anchors for the list in memory now: by where the game put each mod (LaunchAnchors). Null before the game has
+    // rebuilt the list (it can quit while it loads), or where it doesn't line up: then SettleList places the copies it took
+    // out by which sources the next launch sorts (LoadOrder.Anchors), read after Repair, as the rebuild gives every copy
+    // of an id its first entry's switch (the copy that's off would read as on). The second with a warning, unless no
+    // mod's entries are apart (nothing moves).
+    public static IReadOnlyList<bool>? AnchorsNow(List<SettingsSaveMod> list)
     {
         if (ModManager.State != ModManagerState.Initialized)
-            return LoadOrder.Anchors(list);
+            return null;
         if (LaunchAnchors(ModManager.Mods, [.. list.Select(e => (e.Id, e.Source))], Sorted) is { } anchors)
         {
             LinedUp = true;
             return anchors;
         }
         LinedUp = false;
-        Log.Warn($"[{ModEntry.ModId}] Load order: " + (Sorted == null ? "where the game put each mod this launch wasn't read"
-            : "the game's mod list at the main menu doesn't line up with its mods (another mod changed it?)")
-            + ", so the copies it took out are placed by which sources the next launch sorts");
-        return LoadOrder.Anchors(list);
+        if (Apart([.. list.Select(e => e.Id)]).Count > 0)
+            Log.Warn($"[{ModEntry.ModId}] Load order: " + (Sorted == null ? "where the game put each mod this launch wasn't read"
+                : "the game's mod list at the main menu doesn't line up with its mods (another mod changed it?)")
+                + ", so the copies it took out are placed by which sources the next launch sorts");
+        return null;
     }
 
     // The plan's ids to heal, each with what its copy waits for (Entry.Late); this launch's, or a given one's (the
@@ -122,23 +125,40 @@ static class SameIdLoad
     // Settle's heal: each id whose copy this launch blocked, or brought back in its own place behind what it waits for
     // (late: the id, and that mod), its run moved right after that mod's whole run, where the game's sort would have put
     // the copy had it taken part. The next launch then ranks the id after it, and the copy can take the id's first slot.
-    // Only an id ranked before what it waits for moves, and one whose mod waits too moves after that one does. The ids
-    // moved.
-    public static List<string> Heal(List<SettingsSaveMod> list, IReadOnlyDictionary<string, string> late)
+    // Only an id ranked before what it waits for moves, and one whose mod waits too moves after that one does. The mods it
+    // passed that need it (needs: the ids an id's copies list; directly or through another of them) go right after it, in
+    // their order, or the page would warn of an order we made. The healed ids.
+    public static List<string> Heal(List<SettingsSaveMod> list, IReadOnlyDictionary<string, string> late, Func<string, IEnumerable<string>>? needs = null)
     {
         var moved = new List<string>();
         var done = new HashSet<string>();
         void Place(string id)
         {
-            if (!done.Add(id) || !late.TryGetValue(id, out var after))
+            // (A manifest that names its own id waits for nothing: moved after itself, it went to the top.)
+            if (!done.Add(id) || !late.TryGetValue(id, out var after) || after == id)
                 return;
             Place(after);
             var (last, to) = (list.FindLastIndex(e => e.Id == id), list.FindLastIndex(e => e.Id == after));
             if (last < 0 || last > to)
                 return;
+            var from = list.FindIndex(e => e.Id == id);
             var run = list.Where(e => e.Id == id).ToList();
             list.RemoveAll(e => e.Id == id);
-            list.InsertRange(list.FindLastIndex(e => e.Id == after) + 1, run);
+            var at = list.FindLastIndex(e => e.Id == after) + 1;
+            // Those it passed (now from..at) that need it, or need one of them: until none more.
+            var passed = list.Skip(from).Take(at - from).Select(e => e.Id).Where(p => p != after).Distinct().ToList();
+            var following = new HashSet<string> { id };
+            for (var more = needs != null; more;)
+            {
+                more = false;
+                foreach (var p in passed)
+                    if (!following.Contains(p) && needs?.Invoke(p).Any(following.Contains) == true)
+                        more = following.Add(p);
+            }
+            following.Remove(id);
+            var behind = list.Where(e => following.Contains(e.Id)).ToList();
+            list.RemoveAll(e => following.Contains(e.Id));
+            list.InsertRange(list.FindLastIndex(e => e.Id == after) + 1, [.. run, .. behind]);
             moved.Add(id);
         }
         foreach (var id in late.Keys)
@@ -556,10 +576,19 @@ static class SameIdLoad
             return;
         _settled = true;
         var read = LaunchGuard.ReadList;
-        if (SaveManager.Instance.SettingsSave.ModSettings is { } settings && SettleSaves(settings.ModList, read, AnchorsNow(settings.ModList), Heals()))
-            SaveManager.Instance.SaveSettings(); // once, only when something changed or the rebuild isn't saved yet
+        if (SaveManager.Instance.SettingsSave.ModSettings is { } settings)
+        {
+            var saves = SettleSaves(settings.ModList, read, AnchorsNow(settings.ModList), Heals());
+            ListSettled = true; // before the save, which SaveOrderPatch then sees
+            if (saves)
+                SaveManager.Instance.SaveSettings(); // once, only when something changed or the rebuild isn't saved yet
+        }
         Check(ModManager.Mods);
     }
+
+    // Settle put the game's list in order (repaired first): from then on SaveOrderPatch keeps it so. Not after a Settle that
+    // threw: the list is the raw rebuild then, whose switches would place the copies it took out wrongly.
+    public static bool ListSettled { get; private set; }
 
     // Settle's changes to a saved list (SettleList), and whether it's to be saved: it isn't the list the launch read, by
     // its order (Reordered, in the order rule's form) or a switch. Neither the rule's moves nor Repair's alone are a
@@ -609,7 +638,7 @@ static class SameIdLoad
     {
         var apart = Apart([.. list.Select(e => e.Id)]);
         var moved = apart.Count > 0 && LoadOrder.Normalize(list, anchors ?? LoadOrder.Anchors(list));
-        var healed = heal == null ? [] : Heal(list, heal);
+        var healed = heal == null || heal.Count == 0 ? [] : Heal(list, heal, NeedsOf(ModManager.Mods));
         var named = moved && read != null ? apart.Intersect(Apart([.. read.Select(e => e.Id)])).ToList() : [];
         if (named.Count > 0 || healed.Count > 0)
             Log.Info($"[{ModEntry.ModId}] Load order: " + string.Join("; ", new[]
@@ -619,6 +648,14 @@ static class SameIdLoad
                 healed.Count > 0 ? $"moved {string.Join(", ", healed.Select(id => $"{id} after {heal?.GetValueOrDefault(id)}"))}, which its copy waits for, "
                     + "so that copy can load next launch" : null,
             }.OfType<string>()));
+    }
+
+    // What each id's copies need (Heal's needs), from the game's mods.
+    static Func<string, IEnumerable<string>> NeedsOf(IEnumerable<Mod> mods)
+    {
+        var needs = mods.Where(m => m.manifest?.id != null).GroupBy(m => m.manifest?.id ?? "")
+            .ToDictionary(g => g.Key, g => g.SelectMany(Dependencies.Read).ToHashSet());
+        return id => needs.TryGetValue(id, out var of) ? of : [];
     }
 
     // The ids whose entries aren't one run.

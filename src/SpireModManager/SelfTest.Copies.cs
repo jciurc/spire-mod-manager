@@ -1399,7 +1399,8 @@ static partial class SelfTest
                     var page = After(next.Sorted, next.Plan, off, ticks, saved);
                     var ranked = Ranked(saved);
                     held &= Shown(next.Loads) == (launch == 1 ? "101" : "L") && (launch > 1 || next.Plan is { Blocked: "l:L" }) && page.Loads == "L"
-                        && ranked.IndexOf(dep) < ranked.IndexOf(x) && (!both || ranked.IndexOf(x) == ranked.IndexOf(dep) + 1 && ranked.IndexOf(z) > ranked.IndexOf(x));
+                        && ranked.IndexOf(dep) < ranked.IndexOf(x) && (!both || ranked.IndexOf(x) == ranked.IndexOf(dep) + 1 && ranked.IndexOf(z) > ranked.IndexOf(x))
+                        && ranked.IndexOf($"{x}User") > ranked.IndexOf(x); // the mod needing it went with it (review C2: no order warning of ours)
                     // Restore from this launch's record.
                     var working = LaunchGuard.Recorded(next.Sorted, next.Split, off, SameIdLoad.LoadsAtLaunch(next.Sorted, next.Plans));
                     var installed = Read();
@@ -1426,7 +1427,7 @@ static partial class SelfTest
                 }
                 Check("the rule, ... the heal, the beta: a copy blocked by a dependency after the slot, which the game's rule had set aside: the fallback (W101) "
                     + "at the first launch, then the id moved right after the dependency" + (both ? "'s entries (from both sources, the Workshop one off), before the mod after it" : "")
-                    + ", so L at every launch after; the page after each names L", held, string.Join(" | ", launches));
+                    + ", the mod needing the id with it, so L at every launch after; the page after each names L", held, string.Join(" | ", launches));
                 Check($"the rule, ... the heal{(both ? " (the dependency from both sources)" : "")}: Restore from each launch's record, then a launch over the list "
                     + "it writes, with the ticks it puts back: the same copy and the same mods loading in the same order", restoresHeld, string.Join(" | ", launches));
             }
@@ -2939,11 +2940,14 @@ static partial class SelfTest
         List<SettingsSaveMod> after = [E(x), E(u), E(d), E(x)];
         LoadOrder.Normalize(after, [true, true, true, true]);
         var afterMoved = SameIdLoad.Heal(after, new Dictionary<string, string> { [x] = d });
-        Check("the order rule's heal: the blocked mod right after the whole run of what its copy waits for (installed from both sources, a mod after it), in "
-            + "the order they wait for each other; not one ranked after it already",
-            healAt == (8, 5) && Say(healed) == "us,U,D,Dw-,Xw,X,Xw,Z" && Say(unhealed) == "us,Xw,X,Xw,U,D,Dw-,Z" && Say(chain) == "A,F,D,X" && chainMoved.SequenceEqual([d, x])
-            && Say(after) == "U,D,X,X" && afterMoved.Count == 0, $"healed {Say(healed)}; without {Say(unhealed)}; chain {Say(chain)} ({string.Join(",", chainMoved)}); "
-            + $"after already {Say(after)} ({string.Join(",", afterMoved)}); split {healAt}");
+        List<SettingsSaveMod> itself = [E(a), E(x), E(u)]; // a manifest that lists its own id (review G5: it went to the top)
+        var itselfMoved = SameIdLoad.Heal(itself, new Dictionary<string, string> { [x] = x });
+        Check("the order rule's heal: the blocked mod right after the whole run of what its copy waits for (installed from both sources, a mod after it), the mods it passed that need it right after it, in "
+            + "the order they wait for each other; not one ranked after it already, nor one that names itself",
+            healAt == (8, 5) && Say(healed) == "us,D,Dw-,Xw,X,Xw,U,Z" && Say(unhealed) == "us,Xw,X,Xw,U,D,Dw-,Z" && Say(chain) == "A,F,D,X" && chainMoved.SequenceEqual([d, x])
+            && Say(after) == "U,D,X,X" && afterMoved.Count == 0 && Say(itself) == "A,X,U" && itselfMoved.Count == 0,
+            $"healed {Say(healed)}; without {Say(unhealed)}; chain {Say(chain)} ({string.Join(",", chainMoved)}); "
+            + $"after already {Say(after)} ({string.Join(",", afterMoved)}); itself {Say(itself)}; split {healAt}");
 
         // Settle's save (SettleSaves): the first launch after updating (D's Workshop copy, set aside, listed last as the old
         // rebuild saved it): the rule's move isn't SettleList's change, but the list then differs from the one read, so it's
@@ -2975,6 +2979,17 @@ static partial class SelfTest
         var repaired = LaunchGuard.RepairBeforeMenu(before, Read(RebuildOf([E(d, W)])), settled: false, asideAnchors);
         Check("the order rule before the first main menu (a failed start, a quit): the list in memory in the form, the move alone not a repair to say",
             !repaired && Say(before.ModList) == "us,D,Dw,X,U", $"repaired {repaired}; {Say(before.ModList)}");
+        // The fallback (no anchors: the list didn't line up, or where the sort ended wasn't read), as Settle runs it: by
+        // source, read after Repair. The rebuild gives the copy that's off its id's first entry's switch, so read before
+        // Repair it counts as on, the game's rule then takes out the copy that loaded, and the mod went to the end
+        // (the review of 241d7b2, G1/C3). Beta: local 1.0 on, Workshop 2.0 off; stable: the Workshop copy on, the local off.
+        List<SettingsSaveMod> fallbackRead = beta ? [E(ModEntry.ModId), E(d), E(d, W, false), E(x), E(u)] : [E(ModEntry.ModId), E(d, W), E(d, L, false), E(x), E(u)];
+        var fallbackFirst = fallbackRead[1];
+        List<SettingsSaveMod> fallback = [E(ModEntry.ModId), E(d, fallbackFirst.Source), E(x), E(u), E(d, beta ? W : L)]; // all on, the taken-out copy last
+        With([DL("1.0.0"), DW("2.0.0"), Made(x, "X"), Made(u, "U")], () => SameIdLoad.SettleList(fallback, Read(fallbackRead)));
+        var fallbackMeant = beta ? "us,D,Dw-,X,U" : "us,Dw,D-,X,U";
+        Check("the order rule's fallback (no anchors), as Settle runs it: by source after Repair, so the copy that's off doesn't read as on and the mod "
+            + "keeps its place (not the end)", Say(fallback) == fallbackMeant, $"{Say(fallback)}, meant {fallbackMeant}");
 
         // The launch record (Recorded): in the form Settle saves, without the heal (what loaded); it round-trips.
         var (record, settledHeal) = (LaunchGuard.Recorded(healMods, healAt, [], new Dictionary<(string, ModSource), string>()), Settled(healMods, healAt));

@@ -154,10 +154,10 @@ static class QuitRepairPatch
     }
 }
 
-// Every save of the game's settings once the first main menu has settled the mod list (SameIdLoad.Settled), the game's
-// own and other mods' too: the list in the order rule's form first (LoadOrder.NormalizeBySource), so a list another mod
-// or the game's own page left with a mod's entries apart keeps each mod's place next launch (the game ranks a mod by its
-// last entry). Ours are in that form already, so nothing moves for them. After a failure, left out.
+// Every save of the game's settings once the first main menu has settled the mod list (SameIdLoad.ListSettled), the
+// game's own and other mods' too: the list in the order rule's form first (LoadOrder.NormalizeBySource), so a list
+// another mod or the game's own page left with a mod's entries apart keeps each mod's place next launch (the game ranks
+// a mod by its last entry). Ours are in that form already, so nothing moves for them. After a failure, left out.
 [HarmonyPatch(typeof(SettingsSaveManager), nameof(SettingsSaveManager.SaveSettings))]
 static class SaveOrderPatch
 {
@@ -165,7 +165,7 @@ static class SaveOrderPatch
 
     static void Prefix(SettingsSaveManager __instance)
     {
-        if (_failed || !SameIdLoad.Settled)
+        if (_failed || !SameIdLoad.ListSettled)
             return;
         try
         {
