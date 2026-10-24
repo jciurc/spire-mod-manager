@@ -226,14 +226,16 @@ static class Dependencies
 
     // The order with each dependency that loads moved just ahead of what needs it, otherwise unchanged (the game's own
     // stable topological sort).
-    public static List<Mod> Fixed(IReadOnlyList<Mod> given)
+    public static List<Mod> Fixed(IReadOnlyList<Mod> given) =>
+        Fixed(given, m => Copies.Loads(m) ? Of(m).Select(Find).OfType<Mod>().Where(Copies.Loads) : []);
+
+    // The same, given what each mod waits for (NextOrder: the game's own reading of the manifests).
+    public static List<Mod> Fixed(IReadOnlyList<Mod> given, Func<Mod, IEnumerable<Mod>> waitsFor)
     {
         var order = given.Distinct().ToList(); // a mod listed twice counts once
         var position = order.Select((m, i) => (m, i)).ToDictionary(p => p.m, p => p.i);
-        // Each loading mod's loading dependencies in the list, worked out once.
-        var needs = order.ToDictionary(m => m, m => Copies.Loads(m)
-            ? Of(m).Select(Find).OfType<Mod>().Where(d => Copies.Loads(d) && position.ContainsKey(d) && d != m).Distinct().ToList()
-            : []);
+        // What each mod waits for in the list, worked out once.
+        var needs = order.ToDictionary(m => m, m => waitsFor(m).Where(d => position.ContainsKey(d) && d != m).Distinct().ToList());
         var waitingOn = order.ToDictionary(m => m, m => needs[m].Count);
         var dependents = order.ToDictionary(m => m, _ => new List<Mod>());
         foreach (var m in order)
@@ -256,4 +258,44 @@ static class Dependencies
         result.AddRange(order.Where(m => !placed.Contains(m)));
         return result;
     }
+
+    // The mods the next launch sorts (ModManager.SortModList), in its order: those it leaves to load (switch on, not taken
+    // out by its local-vs-Workshop rule, Copies.GameRule), each by its id's last entry in the saved list (an id the list
+    // doesn't have after the rest), then each moved after what it needs (Fixed, by the manifests: it sorts before anything
+    // loads), a mod waiting for the first of each id it needs in the order the game reads them (Copies.InReadOrder), not
+    // this session's. Those it takes out come after all of these. saved: the game's list as it saves it, the one in
+    // memory (Settle saves the rebuild at the main menu). One Mod per manifest the next launch reads (NextRead). A mod
+    // uninstalled since still counts: the game's list keeps it, and nothing here tells it apart.
+    public static List<Mod> NextOrder(HashSet<(string?, ModSource)> gameOff, IReadOnlyList<SettingsSaveMod> saved)
+    {
+#if DEVTOOLS
+        TestNextOrders++;
+#endif
+        var last = new Dictionary<string, int>();
+        for (var i = 0; i < saved.Count; i++)
+            last[saved[i].Id] = i;
+        var on = NextRead(ModManager.Mods.Union(Installed.Mods).Where(m => m.manifest?.id is { } id && !gameOff.Contains((id, m.modSource))));
+        var beaten = on.GroupBy(m => m.manifest?.id).SelectMany(g => Copies.GameRule([.. g], Copies.GameVersion).Keys).ToHashSet();
+        var left = on.Where(m => !beaten.Contains(m)).OrderBy(m => last.TryGetValue(m.manifest?.id ?? "", out var at) ? at : int.MaxValue).ToList();
+        var first = new Dictionary<string, Mod>();
+        foreach (var mod in Copies.InReadOrder(left))
+            first.TryAdd(mod.manifest?.id ?? "", mod);
+        return Fixed(left, m => Read(m).Select(id => id != null && first.TryGetValue(id, out var dep) ? dep : null).OfType<Mod>());
+    }
+
+    // Of these, in their order, one Mod per manifest, as the next launch reads them: the game makes one per manifest file,
+    // so a folder with two of an id has two; where an update was read at a path while the game runs (AddedAtRuntime, after
+    // the Mods found there at launch), its last stands for them, so a Workshop item read then with two manifests of the id
+    // counts once until the next launch (a limit, DESIGN.md).
+    public static List<Mod> NextRead(IEnumerable<Mod> mods)
+    {
+        var all = mods.ToList();
+        var updates = all.Where(m => m.state == ModLoadState.AddedAtRuntime).GroupBy(m => (m.manifest?.id, m.path)).ToDictionary(g => g.Key, g => g.Last());
+        return [.. all.Where(m => updates.GetValueOrDefault((m.manifest?.id, m.path)) is not { } update || update == m)];
+    }
+
+#if DEVTOOLS
+    // Self-test: how many times the next launch's order was worked out (a card's Found in: once at most).
+    public static int TestNextOrders { get; private set; }
+#endif
 }

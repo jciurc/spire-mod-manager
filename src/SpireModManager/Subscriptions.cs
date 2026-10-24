@@ -43,6 +43,17 @@ static class Subscriptions
     // Whether the game has a mod from this item (installed at launch or since).
     static bool Installed(ulong item) => ModManager.Mods.Any(m => Compat.WorkshopId(m) == item);
 
+    // The items Steam has as subscribed, in its order: the order the game reads their mods in (ModManager.ReadSteamMods).
+    // Null without Steam.
+    public static List<ulong>? Listed()
+    {
+        if (!SteamInitializer.Initialized)
+            return null;
+        var items = new PublishedFileId_t[SteamUGC.GetNumSubscribedItems()];
+        var count = SteamUGC.GetSubscribedItems(items, (uint)items.Length);
+        return [.. items.Take((int)count).Select(i => i.m_PublishedFileId)];
+    }
+
     // Subscribes to each item not installed or on its way already. Never throws: a failure shows on the item.
     public static void Subscribe(IEnumerable<ulong> items)
     {

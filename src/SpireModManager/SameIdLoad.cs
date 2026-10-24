@@ -3,6 +3,9 @@ using System.Reflection;
 using System.Runtime.CompilerServices;
 using System.Runtime.InteropServices;
 using System.Text.Json;
+using Godot;
+using MegaCrit.Sts2.Core.Debug;
+using MegaCrit.Sts2.Core.Localization;
 using MegaCrit.Sts2.Core.Logging;
 using MegaCrit.Sts2.Core.Modding;
 using MegaCrit.Sts2.Core.Saves;
@@ -13,22 +16,28 @@ namespace SpireModManager;
 // list has one switch for both, and the game would load the first and fail the rest with MOD_ERROR.DUPLICATE_ID. Our
 // Init runs inside the game's load loop, and every mod after us is still to be tried (TryLoadMod skips a mod whose state
 // isn't None, and sets Loaded only after the mod's initializers ran). So Apply chooses, of the copies the game left to
-// load, the one our page says loads (Choose, Copies.Next's step 4: of the ticked copies of one source, the highest
-// version), sets every other copy still to come to DisabledDuplicate, the game's own state for its duplicates, and swaps
-// the chosen copy into the id's first slot, where mods that need the id look for it. Settle, at the first main menu,
-// repairs what the game's rebuilt list coupled by id, keeps our entries first (so we load before every copy next
-// launch) and checks the choice was taken. Anything unexpected: no flip, a warning, and the game's own behaviour.
+// load and the ticked ones its rule set aside (brought back where a copy that's off beat them, or in a blocked copy's
+// place), the one our page says loads (Choose, Copies.Next's step 4: the game's rule over the ticked copies, then of one
+// source the highest version; where that copy can't take the id's first slot, Fallback), sets every other copy still to
+// come to DisabledDuplicate, the game's own state for its duplicates, and swaps the chosen copy into the id's first slot,
+// where mods that need the id look for it. Settle, at the first main menu, repairs what the game's rebuilt list coupled
+// by id, keeps our entries first (so we load before every copy next launch) and checks the choice was taken. Anything
+// unexpected: no flip, a warning, and the game's own behaviour.
 static class SameIdLoad
 {
     // Why the copy chosen doesn't load this launch: a copy of the id sorted before us (the game decided it already), or a
-    // dependency of it loads after the id's first slot while a mod after us needs the id (the game's own choice loads).
+    // dependency of it that's on loads at or after the id's first slot while a mod after us needs the id (another ticked
+    // copy that can take the slot loads, Fallback; none, the first copy left by the tie order that can, else the first).
     public enum Reason { None, DecidedBeforeUs, DependencyAfterSlot }
 
     // What Apply did for one id installed more than once. Loads: the copy that loads, or that the game tries; SetAside:
     // the copies Apply set aside; Swapped: the copy that loads moved from slot From to To (the id's first); Why: why the
-    // copy chosen doesn't load this launch; Blocked and Late: for DependencyAfterSlot, the copy chosen (CopyOf) and the
-    // dependency of it that loads after the slot, for the page to say the next launch does the same (Copies.Next).
-    public record Entry(Mod? Loads, IReadOnlyList<Mod> SetAside, bool Swapped, int From, int To, Reason Why, double Ms, string? Blocked = null, string? Late = null);
+    // copy chosen doesn't load this launch; Blocked and Late: for DependencyAfterSlot, the copy chosen (CopyOf) and what
+    // it needs that loads after the slot (the page works out the next launch's own, Copies.Next); Order: the id's copies
+    // (CopyOf) in the list's order before Apply swapped any, which the page takes as the next launch's (its sort ranks
+    // them by id alike, so our swap doesn't carry over) and reads the copies in.
+    public record Entry(Mod? Loads, IReadOnlyList<Mod> SetAside, bool Swapped, int From, int To, Reason Why, double Ms, string? Blocked = null, string? Late = null,
+        IReadOnlyList<string>? Order = null);
 
     // The self-check's verdict on an id: Taken (loaded as planned), PickedFailed (the chosen copy failed for its own
     // reasons), NotApplied (Apply left it, Entry.Why), NotTaken (anything else: the game didn't do what Apply relies on).
@@ -96,6 +105,7 @@ static class SameIdLoad
             var watch = Stopwatch.StartNew();
             var id = group.Key;
             var copies = group.ToList();
+            var order = copies.Select(p => Copies.CopyOf(p.Mod)).Distinct().ToList();
             var todo = copies.Where(p => p.At > self && p.Mod.state == ModLoadState.None).ToList();
             // The tick by Ticks' rule over the list's own copies of each source (a self-test's list is made up, so not
             // Copies.Twins), ties by the record read; a mod after us still to load that needs the id with a minimum
@@ -130,53 +140,114 @@ static class SameIdLoad
                 if (decided)
                     Skipped($"already decided: it sorted before us, at {early.At}, and we load at {self}; applies next launch");
                 plan[id] = new Entry(loaded, [.. todo.Select(p => p.Mod)], false, early.At, early.At, decided ? Reason.DecidedBeforeUs : Reason.None,
-                    watch.Elapsed.TotalMilliseconds);
+                    watch.Elapsed.TotalMilliseconds, Order: order);
                 continue;
             }
-            // One copy (or none) still to come: nothing to choose. The game's local-vs-Workshop rule set the others aside,
-            // which the page foresees (Copies.Next's step 2), so it's no surprise.
-            if (todo.Count < 2)
+            if (todo.Count == 0)
                 continue;
+            // A copy that's off takes part in the game's local-vs-Workshop rule while its switch is on through a ticked
+            // twin's: on the beta it can beat a ticked copy (W2 off at 3.0 beats L at 2.0, which beats W1 at 1.0, so only
+            // W2 is left) or decide which one is left. So with any such copy among those still to come and those the rule
+            // set aside (after us: the game only marks the copies it beats, and its sort put them after every mod still
+            // to load), the rule again over the ticked ones alone (Copies.GameRule, as Copies.Next's step 4 has it), and
+            // the copy Choose picks of what it leaves loads: brought back where the rule set it aside, into the first slot
+            // below, so mods that need the id find it. A copy that's off never beats a ticked one, and loads only where no
+            // ticked copy can (Jordan, 23 Oct).
+            var both = todo.Concat(copies.Where(p => p.At > self && p.Mod.state == aside)).ToList();
+            var ticked = both.Where(p => Ticked(p.Mod)).ToList();
+            var rerun = ticked.Count > 0 && ticked.Count < both.Count;
 
             // The copy chosen (Choose), else, none of them ticked, the game's own choice: the copy it would load before
             // failing the rest.
-            var choice = Chosen(todo.Select(p => p.Mod));
-            var picked = choice is { } chosen ? todo.First(p => p.Mod == chosen.Mod) : todo[0];
+            var choice = rerun ? Chosen(Unbeaten(ticked.Select(p => p.Mod))) : Chosen(todo.Select(p => p.Mod));
+            var picked = choice is { } chosen ? both.First(p => p.Mod == chosen.Mod) : todo[0];
+            // One copy still to come, the one that loads: nothing to do. The game's local-vs-Workshop rule set the others
+            // aside, which the page foresees (Copies.Next's step 2), so it's no surprise.
+            if (todo.Count < 2 && picked.Mod.state != aside)
+                continue;
             var (s1, sp) = (todo[0].At, picked.At);
             var swapped = false;
             // The game finds a dependency at the id's first copy in the list, so the chosen copy goes there, if what it
             // needs loads before that slot.
-            if (sp != s1)
+            // Where the first copy of an id that loads (neither off nor set aside) is in the list; -1 for none.
+            int At(string dep) => list.FindIndex(x => x.manifest?.id == dep && x.state is not (ModLoadState.Disabled or ModLoadState.DisabledDuplicate));
+            IEnumerable<string> Needs(Mod m) => (m.manifest?.dependencies ?? []).Select(d => d.id);
+            // What stops the copy chosen taking the slot: something it needs that's on but loads at or after it (the copy
+            // would load before it). One that's off or isn't installed doesn't: the copy loads and fails, as a mod installed
+            // once does, and the page's dependency warnings say so.
+            string? Late(Mod m) => Needs(m).FirstOrDefault(dep => At(dep) >= s1);
+            // A copy the game's rule set aside brought back: the game's loop tries it in turn, as any mod still to load,
+            // with its manifest's messages again (the rule cleared them, and it loads).
+            void Revive(Mod m)
             {
-                var late = (picked.Mod.manifest?.dependencies ?? []).Select(d => d.id).FirstOrDefault(dep =>
-                    list.FindIndex(m => m.manifest?.id == dep) is var at && at >= s1);
+                m.state = ModLoadState.None;
+                m.errors = ManifestMessages(m, log);
+                if (log && m.modSource == ModSource.SteamWorkshop)
+                    Log.Info($"[{ModEntry.ModId}] Same ID: {Copies.CopyOf(m)} brought back is a Workshop copy: a Steam branch message the game "
+                        + "had for it, if any, went with its rule's clearing, and can't be read again without Steam");
+            }
+            // Through the list's array: the indexer would bump its version, and the game's foreach would throw.
+            void SwapInto(int from)
+            {
+                var span = CollectionsMarshal.AsSpan(list);
+                (span[s1], span[from]) = (span[from], span[s1]);
+            }
+            // The copy chosen is tested at the slot too, as the page tests it (Copies.Next): one there can be late only
+            // through a dependency cycle (the game sorts a copy after what it waits for), where the game's cycle check, by
+            // id, fails every copy of the id anyway.
+            var late = Late(picked.Mod);
+            if (sp != s1 || late != null)
+            {
                 if (late == null && s1 > self && sp > self)
                 {
-                    // Through the list's array: the indexer would bump its version, and the game's foreach would throw.
-                    var span = CollectionsMarshal.AsSpan(list);
-                    (span[s1], span[sp]) = (span[sp], span[s1]);
+                    SwapInto(sp);
                     swapped = true;
                 }
                 else if (list.Skip(self + 1).Any(m => m.state == ModLoadState.None && m.manifest?.id != id
                     && m.manifest?.dependencies?.Any(d => d.id == id) == true))
                 {
-                    // The game's own choice instead (it needs no swap), the rest set aside as ever, so the game doesn't fail
-                    // them as duplicates of it. The page reads Blocked and Late: the next launch does the same while
-                    // nothing changes the choice.
-                    var others = todo.Where(p => p.Mod != todo[0].Mod).Select(p => p.Mod).ToList();
+                    // Another copy instead, the rest set aside as ever, so the game doesn't fail them as duplicates of it:
+                    // the copy the rule would load were the copies that are off, the blocked one and any that can't take
+                    // the slot not installed (Fallback; brought back where the game's rule set it aside), so a copy that's
+                    // off doesn't load in a ticked one's place; none: of the copies still to load other than the blocked
+                    // one, by the tie order (the game's sort can put them either way round), the first that can take the
+                    // slot, else the first; none but the blocked copy's (a Workshop item with two manifests): its first.
+                    // The page works out the same from the next launch's order (Copies.Next).
+                    // Whether a copy can take the slot: everything it needs installed, on and loading before it, and the
+                    // minimum versions of the id that mods still to load need met (as the game reads its version).
+                    var mins = Copies.Mins(id, list.Skip(self + 1).Where(m => m.state == ModLoadState.None));
+                    bool Fits(Mod m) => list.IndexOf(m) is var at && at > self && s1 > self && Needs(m).All(dep => At(dep) is var to && to >= 0 && to < s1)
+                        && Copies.Meets(m, mins);
+                    var fallback = Fallback([.. both.Where(p => Ticked(p.Mod)).Select(p => p.Mod)], picked.Mod, m => m.state == ModLoadState.None, Copies.GameVersion,
+                        Fits, TieOrder, strict);
+                    var rest = Copies.ByTie(todo.Where(p => Copies.CopyOf(p.Mod) != Copies.CopyOf(picked.Mod)), p => p.Mod, TieOrder);
+                    var instead = fallback != null ? both.First(p => p.Mod == fallback) : rest.Where(p => Fits(p.Mod)).Concat(rest).Concat(todo).First();
+                    var insteadSwapped = false;
+                    if (instead.At != s1)
+                    {
+                        SwapInto(instead.At);
+                        insteadSwapped = true;
+                    }
+                    var others = todo.Where(p => p.Mod != instead.Mod).Select(p => p.Mod).ToList();
                     foreach (var mod in others)
                         SetAside(mod, aside, log);
-                    Skipped($"{Copies.CopyOf(picked.Mod)} needs {late}, which loads after slot {s1}; the game's choice, {Copies.CopyOf(todo[0].Mod)}, loads");
-                    plan[id] = new Entry(todo[0].Mod, others, false, sp, s1, Reason.DependencyAfterSlot, watch.Elapsed.TotalMilliseconds,
-                        Copies.CopyOf(picked.Mod), late);
+                    if (instead.Mod.state == aside)
+                        Revive(instead.Mod);
+                    Skipped($"{Copies.CopyOf(picked.Mod)} needs {late}, which loads after slot {s1}; {Copies.CopyOf(instead.Mod)} loads"
+                        + (fallback != null ? ", the next ticked" : Fits(instead.Mod) ? ", the first left that can take the slot" : ", the first left"));
+                    plan[id] = new Entry(instead.Mod, others, insteadSwapped, sp, s1, Reason.DependencyAfterSlot, watch.Elapsed.TotalMilliseconds,
+                        Copies.CopyOf(picked.Mod), late, order);
                     continue;
                 }
             }
             var setAside = todo.Where(p => p.Mod != picked.Mod).Select(p => p.Mod).ToList();
             foreach (var mod in setAside)
                 SetAside(mod, aside, log);
+            var revived = picked.Mod.state == aside;
+            if (revived)
+                Revive(picked.Mod);
             var ms = watch.Elapsed.TotalMilliseconds;
-            plan[id] = new Entry(picked.Mod, setAside, swapped, sp, s1, Reason.None, ms);
+            plan[id] = new Entry(picked.Mod, setAside, swapped, sp, s1, Reason.None, ms, Order: order);
             string Copy(Mod m) => $"{Copies.CopyOf(m)} ({m.manifest?.version})";
             var unread = setAside.Where(m => Copies.Version(m) == null || strict && Copies.GameVersion(m) == null).Select(Copies.CopyOf).Distinct();
             Say((choice?.How switch
@@ -186,10 +257,79 @@ static class SameIdLoad
                     Copies.Won.Readable => $"{id} loads {Copy(picked.Mod)}; {string.Join(", ", unread)} have a version that can't be read",
                     _ => $"{id} loads {Copy(picked.Mod)}, the highest version of the enabled copies",
                 })
-                + $" ({picked.Mod.path}); set aside {string.Join(", ", setAside.Select(Copy))} as a duplicate, so the game doesn't fail it"
+                + $" ({picked.Mod.path})" + (revived ? ", brought back from the game's local-vs-Workshop rule, which a disabled copy won" : "")
+                + $"; set aside {string.Join(", ", setAside.Select(Copy))} as a duplicate, so the game doesn't fail it"
                 + (swapped ? $"; moved it from slot {sp} to {s1} so mods needing {id} find it" : "") + $" ({ms:0.0} ms)");
         }
         return (true, "", plan, (self, first));
+    }
+
+    // Where the copy chosen can't take the id's first slot while a mod still to load needs the id: the copy the rule would
+    // load were the copies that are off, the blocked one and any that can't take the slot not installed. Of the ticked
+    // copies (those still to load, left, then those the game's rule set aside, each by the tie order: the game's sort can
+    // put copies of one id either way round), without the blocked one, the game's local-vs-Workshop rule
+    // (Copies.GameRule) and Choose's pick of what it leaves; where that one doesn't fit (something it needs isn't
+    // installed, on and loading before the slot, or a minimum version a mod needs isn't met), again without it. None: null
+    // (the caller takes the first copy left that fits, else the first). One Mod per copy (its newest manifest, as Choose
+    // reads them). The launch's (Run) and the page's (Copies.Next), so they can't differ.
+    public static Mod? Fallback(IReadOnlyList<Mod> ticked, Mod blocked, Func<Mod, bool> left, Func<Mod, SemanticVersion?> gameVersion, Func<Mod, bool> fits,
+        Func<IEnumerable<string>, IEnumerable<string>> tieOrder, bool strict)
+    {
+        var pool = Copies.ByTie(ticked.Where(m => Copies.CopyOf(m) != Copies.CopyOf(blocked)).GroupBy(Copies.CopyOf).Select(copy => Copies.NewestOf([.. copy])), m => m, tieOrder)
+            .OrderBy(m => left(m) ? 0 : 1).ToList();
+        while (pool.Count > 0)
+        {
+            var beaten = Copies.GameRule(pool, gameVersion);
+            if (Choose([.. pool.Where(m => !beaten.ContainsKey(m))], _ => true, tieOrder, strict) is not { } pick)
+                return null;
+            if (fits(pick.Mod))
+                return pick.Mod;
+            pool.RemoveAll(m => Copies.CopyOf(m) == Copies.CopyOf(pick.Mod));
+        }
+        return null;
+    }
+
+    // A copy's own manifest messages, read again for a copy Run brings back: the game gives a mod its manifest's
+    // (ModManifest.ReadFromStream: an old-style dependency list's MIGRATION_REQUIRED), and its local-vs-Workshop rule
+    // clears them on a copy it beats, so the copy loads with what the game would show for it. The manifest in its folder
+    // with its id and version; none found, or a read that fails: none, logged. (A Workshop copy's Steam branch message
+    // can't be read again without Steam: the game asked Steam for it before we load.)
+    static List<LocString>? ManifestMessages(Mod mod, bool log)
+    {
+        try
+        {
+            var dir = mod.path is { Length: > 0 } path ? ProjectSettings.GlobalizePath(path) : "";
+            foreach (var file in Directory.Exists(dir) ? Directory.EnumerateFiles(dir, "*.json") : [])
+            {
+                try
+                {
+                    using var stream = File.OpenRead(file);
+                    if (ModManifest.ReadFromStream(stream, out var errors) is { } manifest && manifest.id == mod.manifest?.id && manifest.version == mod.manifest?.version)
+                        return errors is { Count: > 0 } ? errors : null;
+                }
+                catch (Exception)
+                {
+                    // not a manifest of ours to read (another JSON file in the folder): the next
+                }
+            }
+            if (log)
+                Log.Warn($"[{ModEntry.ModId}] Same ID: no manifest of {Copies.CopyOf(mod)} found again in {dir}, so it loads without the game's manifest messages");
+        }
+        catch (Exception e)
+        {
+            if (log)
+                Log.Warn($"[{ModEntry.ModId}] Same ID: couldn't read {Copies.CopyOf(mod)}'s manifest again, so it loads without the game's manifest messages: {e.Message}");
+        }
+        return null;
+    }
+
+    // Of copies the game's rule set aside, those it leaves when it's played over them alone (one Mod per copy, as Choose
+    // reads them): what Run brings back from where a copy that's off beat them.
+    static IEnumerable<Mod> Unbeaten(IEnumerable<Mod> copies)
+    {
+        var read = copies.GroupBy(Copies.CopyOf).Select(copy => Copies.NewestOf([.. copy])).ToList();
+        var beaten = Copies.GameRule(read, Copies.GameVersion);
+        return read.Where(m => !beaten.ContainsKey(m));
     }
 
     // Spire Mod Manager's step at launch, as the page takes it (Copies.Next's step 4): of the copies left to load (one Mod
@@ -272,8 +412,11 @@ static class SameIdLoad
 
     // For each id and source installed more than once (ours aside), the copy this launch loads, for the launch record
     // (LaunchGuard.Begin, which can't load our data yet): Apply's, else the first copy still to load or loaded (one the
-    // game's rule left), else the game's own first.
-    public static Dictionary<(string Id, ModSource Source), string> LoadsAtLaunch(IReadOnlyList<Mod> mods)
+    // game's rule left), else the first Apply didn't set aside, else the game's own first.
+    public static Dictionary<(string Id, ModSource Source), string> LoadsAtLaunch(IReadOnlyList<Mod> mods) => LoadsAtLaunch(mods, _plan);
+
+    // The same on a given plan (the self-test's made-up one).
+    public static Dictionary<(string Id, ModSource Source), string> LoadsAtLaunch(IReadOnlyList<Mod> mods, IReadOnlyDictionary<string, Entry> plan)
     {
         var loads = new Dictionary<(string, ModSource), string>();
         foreach (var group in mods.Where(m => m.manifest?.id is { } id && id != ModEntry.ModId).GroupBy(m => (Id: m.manifest?.id ?? "", m.modSource)))
@@ -281,8 +424,12 @@ static class SameIdLoad
             var copies = group.ToList();
             if (copies.Select(Copies.CopyOf).Distinct().Count() < 2)
                 continue;
-            loads[group.Key] = _plan.GetValueOrDefault(group.Key.Id)?.Loads is { } planned && planned.modSource == group.Key.modSource ? Copies.CopyOf(planned)
+            // Of a source no copy of which loads (the plan's copy is of the other, which the rule left, or Run brought back):
+            // the first Apply didn't set aside, not the list's first, which can be a copy that's off Run set aside (and the
+            // swap put first); not by the ticks, or a tick moved within a source that doesn't load would read as a switch.
+            loads[group.Key] = plan.GetValueOrDefault(group.Key.Id)?.Loads is { } planned && planned.modSource == group.Key.modSource ? Copies.CopyOf(planned)
                 : copies.FirstOrDefault(m => m.state is ModLoadState.None or ModLoadState.Loaded) is { } going ? Copies.CopyOf(going)
+                : plan.GetValueOrDefault(group.Key.Id) is { } kept && copies.FirstOrDefault(m => !kept.SetAside.Contains(m)) is { } left ? Copies.CopyOf(left)
                 : Copies.CopyOf(copies[0]);
         }
         return loads;
@@ -305,10 +452,23 @@ static class SameIdLoad
         if (_settled)
             return;
         _settled = true;
-        if (SaveManager.Instance.SettingsSave.ModSettings is { } settings && SettleList(settings.ModList, LaunchGuard.ReadList))
-            SaveManager.Instance.SaveSettings(); // once, only when something changed
+        var read = LaunchGuard.ReadList;
+        if (SaveManager.Instance.SettingsSave.ModSettings is { } settings && SettleSaves(settings.ModList, read))
+            SaveManager.Instance.SaveSettings(); // once, only when something changed or the rebuild isn't saved yet
         Check(ModManager.Mods);
     }
+
+    // Settle's changes to a saved list (SettleList), and whether it's to be saved: something changed, or its order isn't
+    // the one the launch read (Reordered).
+    public static bool SettleSaves(List<SettingsSaveMod> list, IReadOnlyList<(string Id, ModSource Source, bool On)>? read) =>
+        SettleList(list, read) | Reordered(list, read);
+
+    // Whether a saved list has its ids in another order than the list the launch read (LaunchGuard.ReadList): the game's
+    // rebuild, in the order that loaded, which it saves later, if at all (leaving the settings screen, remapping a
+    // control, quitting; ours whenever we save the list). Settle saves it at once, so the next launch sorts by it, as the
+    // page foresees (Copies.Next), after a crash or a kill past the main menu too.
+    public static bool Reordered(IReadOnlyList<SettingsSaveMod> list, IReadOnlyList<(string Id, ModSource Source, bool On)>? read) =>
+        read != null && !list.Select(e => e.Id).SequenceEqual(read.Select(e => e.Id));
 
     // Settle's changes to a saved list (the game's, or the self-test's made-up one): the rebuild repaired, each id's
     // entries that are on first, ours at the top. True if anything changed.
@@ -402,8 +562,13 @@ static class SameIdLoad
         var after = mods.Skip(self + 1).Where(m => m.manifest?.id == id);
         if (entry.Loads is { state: ModLoadState.Failed } failed && !HasError(failed, DuplicateKey))
             return Result.PickedFailed;
+        // The id's first entry, where mods that need it look: the copy picked, where the plan put it there or it was there;
+        // a copy left in its own slot (a dependency of it later in the list, and no mod still to load needing the id) only
+        // has to be the first of the id that loads, as no mod looked (a mod that did and missed it fails Misses).
+        var first = entry.Swapped || entry.From == entry.To ? copies.FirstOrDefault()
+            : copies.FirstOrDefault(m => m.state is not (ModLoadState.DisabledDuplicate or ModLoadState.Disabled));
         if (entry.Loads is { state: ModLoadState.Loaded } picked && entry.SetAside.All(m => m.state == ModLoadState.DisabledDuplicate)
-            && !after.Any(m => HasError(m, DuplicateKey)) && copies.FirstOrDefault() == picked && !mods.Any(m => Misses(m, id)))
+            && !after.Any(m => HasError(m, DuplicateKey)) && first == picked && !mods.Any(m => Misses(m, id)))
             return Result.Taken;
         Log.Warn($"[{ModEntry.ModId}] Same ID: {id}: the copy chosen wasn't taken as planned: "
             + string.Join("; ", copies.Select(m => $"{Copies.CopyOf(m)} {m.state}" + (m.errors is { Count: > 0 } e ? $" ({string.Join(", ", e.Select(x => x.LocEntryKey))})" : ""))));

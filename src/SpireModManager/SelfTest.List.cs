@@ -1511,9 +1511,10 @@ static partial class SelfTest
     // Found in (Jordan: "when a search is applied, add explanation in hover card that says "Found in: a, b, c""): the
     // fields a search found a mod in, on made-up details: each of its terms' own, a hidden tag as other keywords, a -term
     // or NOT naming none, nothing for a search that leaves the mod out; what it changes in the game as modified content
-    // (our own mod's). Found for the same mods as Matches finds, every row and many searches. Then on a row's card while
-    // the box holds a search: right after its id and state, subtle, in the panel's words; none with the box empty; worked
-    // out as the card opens, never in a redraw, and how long that takes (screenshot 10d-found-in).
+    // (our own mod's). Found for the same mods as Matches finds, every row and many searches; on a twin, the next launch's
+    // order worked out once at most for a search. Then on a row's card while the box holds a search: right after its id and
+    // state, subtle, in the panel's words; none with the box empty; worked out as the card opens, never in a redraw, and
+    // how long that takes (screenshot 10d-found-in).
     static async Task TestFoundIn(Node menu, NModdingScreen screen, Control content, string outDir)
     {
         const string id = "SmmFoundInTest";
@@ -1562,18 +1563,37 @@ static partial class SelfTest
         var differ = rows.SelectMany(m => queries.Where(q => (Search.FoundIn(m, q) != null) != Search.Matches(m, q)).Select(q => $"{m.manifest?.id} \"{q}\"")).ToList();
         Check($"Found in finds the mods Matches finds ({rows.Count} rows, {queries.Length} searches)", rows.Count > 0 && differ.Count == 0, string.Join(", ", differ.Take(8)));
 
+        // A twin's card: the next launch's order (where its copy's slot falls) worked out once at most for a search, however
+        // many hidden tags it asks (Found in's Lookups).
+        var twins = rows.Where(m => m.manifest?.id == TwinId).ToList();
+        var orders = twins.SelectMany(m => queries.Select(q =>
+        {
+            var before = Dependencies.TestNextOrders;
+            Search.FoundIn(m, q);
+            return Dependencies.TestNextOrders - before;
+        })).ToList();
+        if (orders.Sum() == 0)
+            Results.Add($"SKIP Found in on a twin: no search on its {twins.Count} rows works out the next launch's order");
+        else
+            Check("Found in on a twin works out the next launch's order once at most for a search", orders.Max() <= 1,
+                $"{orders.Max()} times for one search, {orders.Sum()} in all");
+
         // How long a card's Found in takes: every row, every search, one at a time as a card asks.
         var watch = System.Diagnostics.Stopwatch.StartNew();
         foreach (var m in rows)
             foreach (var q in queries)
                 Search.FoundIn(m, q);
         var each = watch.Elapsed.TotalMilliseconds / Math.Max(1, rows.Count * queries.Length);
-        var slowest = rows.SelectMany(m => queries.Select(q => (m, q))).Max(p =>
+        // One the runtime collected garbage during is timed again (up to twice): the pause (15 ms with Better Mod Menu on)
+        // isn't Found in's.
+        double Timed(Mod m, string q, int again = 2)
         {
+            var collected = GC.CollectionCount(0);
             var one = System.Diagnostics.Stopwatch.StartNew();
-            Search.FoundIn(p.m, p.q);
-            return one.Elapsed.TotalMilliseconds;
-        });
+            Search.FoundIn(m, q);
+            return GC.CollectionCount(0) == collected || again == 0 ? one.Elapsed.TotalMilliseconds : Timed(m, q, again - 1);
+        }
+        var slowest = rows.SelectMany(m => queries.Select(q => (m, q))).Max(p => Timed(p.m, p.q));
         Results.Add($"INFO Found in: {each:0.000} ms a card on average, {slowest:0.00} ms at most ({rows.Count} rows x {queries.Length} searches)");
         Check("Found in stays quick as a card opens (under 5 ms each here)", slowest < 5, $"{each:0.000} ms on average, {slowest:0.00} ms at most");
 
