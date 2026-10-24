@@ -96,6 +96,17 @@ Ease of use is the heart of the mod, not just its utility.
   reason; between copies from one source, with none.
 - Our own data is one JSON file per Steam account, written atomically, with 10 backups.
 
+## Other mods' settings
+
+- The info panel's Settings button opens a mod's own settings page where a library keeps one for it (RitsuLib's
+  overlay, BaseLib's submenu), found by reflection (`SettingsLink.cs`); no button where there's none. Its own
+  RitsuLib page wins over its BaseLib page, which wins over a RitsuLib page only matched by id; RitsuLib's mirrors of
+  other libraries' pages never count. Only for the copy that loaded this session.
+- A page that didn't open stays greyed for the session, with a tip pointing at the game's log (one warning there).
+- Our page under another screen is covered, not closed (`PageVisits`): undo, the changes list, the Show: choice and
+  Load Order stay as they were, unless the game's mod list changed meanwhile, which the page then reads again.
+- An API hook for a mod's own settings page waits for API v2 (v1 shipped with 0.2.0).
+
 ## Load order
 
 - One global order, in its own view. Disabled mods are greyed out but can still be moved.

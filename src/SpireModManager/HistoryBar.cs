@@ -115,16 +115,26 @@ static class HistoryBar
         }
         // Revert all goes back to how things were when the page opened (the game may reuse the screen).
         History.Enter();
+        // Back from a screen that covered it (a mod's settings, PageVisits): still the same visit, so the changes stay
+        // to undo, unless the mod list changed meanwhile.
         screen.VisibilityChanged += () =>
         {
             if (screen.IsVisibleInTree())
             {
-                History.Enter();
+                if (!PageVisits.Returning(screen))
+                    History.Enter();
                 Update();
             }
-            else
+            else if (!PageVisits.Hidden(screen))
                 HideBack(info); // leaving the page
         };
+        void Reread()
+        {
+            History.Enter();
+            Restored();
+            Update();
+        }
+        PageVisits.Changed += Reread;
         History.Changed += Update;
         History.Restored += Restored;
         History.Repicked += Repicked;
@@ -135,6 +145,7 @@ static class HistoryBar
         {
             if (Screen == screen)
                 Screen = null;
+            PageVisits.Changed -= Reread;
             History.Changed -= Update;
             History.Restored -= Restored;
             History.Repicked -= Repicked;
