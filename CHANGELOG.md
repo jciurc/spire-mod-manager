@@ -33,6 +33,13 @@ What changed in each Workshop release, for players. Each version's first line is
   version", "the same version and an earlier install date" or "this copy's version being unreadable". The copy that
   loads says "Touhou Fairies (3813186417) is also enabled - only this copy will be loaded", and the box of a disabled
   copy, beside an enabled one, says which copy would load if you enabled it as well.
+- Only the enabled copies count: a disabled copy never loads in place of an enabled one, including on the beta, where
+  the game's one switch for a mod's Workshop copies would otherwise let a disabled copy win. Where the copy that would
+  load needs a mod that loads after it, while another enabled mod needs that copy, another enabled copy that can load
+  in time loads instead, if there is one, chosen by the same rules. Its info panel says so: "This copy would load
+  before a required dependency. Touhou Fairies (Local) is currently compatible and will be loaded instead." A copy
+  whose required mod is disabled or not installed still loads, and the usual warnings say what it needs, as for a mod
+  installed once.
 - The Same ID tag is now Duplicate, in a muted tan. While copies of a mod are enabled together, it turns the warning
   yellow on every enabled copy, the one that loads too, as does the info panel's line about the copies, and its card
   lists the other enabled copies, one to a line, and the one that will be used. The yellow banner reads "2 mods with
