@@ -263,6 +263,7 @@ static partial class SelfTest
             await Step(() => TestCutWhole(content));
             await Step(() => TestWorkshopHead(menu, screen, outDir));
             await Step(() => TestOtherModPanel(menu, screen, content, outDir));
+            await Step(() => TestSettingsButton(menu, screen, content, outDir));
             await Step(() => TestGameChanges(menu, screen, content, outDir));
             await Step(() => TestModifiedContent(menu, screen, content, outDir));
             await Step(() => TestBulkEdit(menu, screen, content, outDir));
