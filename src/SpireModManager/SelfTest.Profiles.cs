@@ -70,7 +70,7 @@ static partial class SelfTest
             new InputEventMouseButton { ButtonIndex = MouseButton.Right, Pressed = true, Position = outside, GlobalPosition = outside });
         await Wait(menu, 0.2);
         // The forwarded press needs its release, as a real right-click has.
-        Input.ParseInputEvent(new InputEventMouseButton { ButtonIndex = MouseButton.Right, Pressed = false, Position = outside, GlobalPosition = outside });
+        MouseButtonAt(menu, MouseButton.Right, false, outside);
         await Wait(menu, 0.1);
         Check("a press outside closes the menu", !MenuPanel.IsOpen);
         var picked = MenuPanel.Show(content, () => [new MenuItem("One", () => { })], toggleKey: "test");

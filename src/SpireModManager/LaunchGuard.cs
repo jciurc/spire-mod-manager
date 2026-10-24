@@ -478,22 +478,34 @@ static class LaunchGuard
     // doesn't name loads); Mod Doctor as it is now (it's there to look at the failure; as the game read it, before the
     // first main menu). Every mod turned off after a failed start off, ours and Mod Doctor's (TurnedOff.OffIds): Restore
     // must not turn a culprit back on, or the start fails again and offers Restore once more; Mod Doctor too, when an
-    // entry of ours names it. Every copy of ours on, whatever the player had: the restored launch needs us running, as
-    // our Init is what loads the copies that worked (the ticks WriteOff puts back) and what notices if it fails again. All
-    // of them, so one still loads if the copy that ran was removed since, though on the beta that can make a higher
-    // Workshop copy of ours run in place of a local one.
-    public static List<SettingsSaveMod> Written(IReadOnlyList<Entry> working)
+    // entry of ours names it. Mod Doctor's count only where the list has Mod Doctor on: its note says why only while it
+    // runs. Every copy of ours on, whatever the player had: the restored launch needs us running, as our Init is what
+    // loads the copies that worked (the ticks WriteOff puts back) and what notices if it fails again. All of them, so one
+    // still loads if the copy that ran was removed since, though on the beta that can make a higher Workshop copy of ours
+    // run in place of a local one.
+    public static List<SettingsSaveMod> Written(IReadOnlyList<Entry> working) => Writing(working).Entries;
+
+    // The list a Restore writes, and the mods it keeps off
+    static (List<SettingsSaveMod> Entries, HashSet<string> Kept) Writing(IReadOnlyList<Entry> working)
     {
-        var (off, read, kept) = (Dependencies.SavedOff(), SameIdLoad.Settled ? null : _read, TurnedOff.OffIds());
+        var (off, read, ours) = (Dependencies.SavedOff(), SameIdLoad.Settled ? null : _read, TurnedOff.OffIds(doctor: false));
         var switches = working.GroupBy(m => (m.Id, m.Source)).ToDictionary(g => g.Key, g => g.Any(m => m.Enabled));
-        bool On(string id, ModSource source, bool then) => id == ModEntry.ModId || !kept.Contains(id)
-            && (id == ModDoctor.ModId ? read != null ? Culprits.OnAsRead(id, source, read) : !off.Contains((id, source)) : then);
-        var entries = working.Select(m => new SettingsSaveMod { Id = m.Id, Source = m.Source, IsEnabled = On(m.Id, m.Source, switches[(m.Id, m.Source)]) }).ToList();
-        foreach (var m in ModManager.Mods.Union(Installed.Mods))
-            if (m.manifest?.id is { } id && !working.Any(w => w.Id == id && w.Source == m.modSource))
-                entries.Add(new SettingsSaveMod(m) { IsEnabled = On(id, m.modSource, false) });
-        LoadOrder.OursFirst(entries);
-        return entries;
+        List<SettingsSaveMod> With(HashSet<string> kept)
+        {
+            bool On(string id, ModSource source, bool then) => id == ModEntry.ModId || !kept.Contains(id)
+                && (id == ModDoctor.ModId ? read != null ? Culprits.OnAsRead(id, source, read) : !off.Contains((id, source)) : then);
+            var entries = working.Select(m => new SettingsSaveMod { Id = m.Id, Source = m.Source, IsEnabled = On(m.Id, m.Source, switches[(m.Id, m.Source)]) }).ToList();
+            foreach (var m in ModManager.Mods.Union(Installed.Mods))
+                if (m.manifest?.id is { } id && !working.Any(w => w.Id == id && w.Source == m.modSource))
+                    entries.Add(new SettingsSaveMod(m) { IsEnabled = On(id, m.modSource, false) });
+            LoadOrder.OursFirst(entries);
+            return entries;
+        }
+        var entries = With(ours);
+        if (!ModDoctor.On(entries))
+            return (entries, ours);
+        var kept = TurnedOff.OffIds();
+        return (With(kept), kept);
     }
 
     // The mods Mod Doctor suspects that the third answer turns off: not ours, nor Mod Doctor (it's there to look at the
@@ -519,15 +531,13 @@ static class LaunchGuard
             return;
         _repairTried = true;
         var settings = SaveManager.Instance.SettingsSave.ModSettings;
-        RepairedBeforeMenu = !SameIdLoad.Settled && settings != null && ReadList != null;
-        if (RepairBeforeMenu(settings, ReadList, SameIdLoad.Settled))
-            Log.Info($"[{ModEntry.ModId}] Before the first main menu: put each source's own switch back in the game's mod list in memory, as the menu "
-                + "would, so a save from here keeps every other mod as it was");
+        var changed = RepairBeforeMenu(settings, ReadList, SameIdLoad.Settled);
+        RepairedBeforeMenu = !SameIdLoad.Settled && settings != null && (ReadList != null || changed);
     }
 
     // The repair on given lists (the self-test's made-up ones): none after the first main menu (Settle did it), nor
     // without the list as the game read it; then the entries the game's list dropped of mods we keep off
-    // (TurnedOff.KeepOff). True if anything changed.
+    // (TurnedOff.KeepOff). Each logged. True if anything changed.
     public static bool RepairBeforeMenu(ModSettings? settings, IReadOnlyList<(string Id, ModSource Source, bool On)>? read, bool settled)
     {
         if (settled || settings == null)
@@ -535,6 +545,9 @@ static class LaunchGuard
         if (read == null)
             Log.Warn($"[{ModEntry.ModId}] Before the first main menu: no list as the game read it, so the mod list in memory stays as the game rebuilt it");
         var repaired = read != null && SameIdLoad.SettleList(settings.ModList, read);
+        if (repaired)
+            Log.Info($"[{ModEntry.ModId}] Before the first main menu: put each source's own switch back in the game's mod list in memory, as the menu "
+                + "would, so a save from here keeps every other mod as it was");
         return TurnedOff.KeepOff(settings.ModList) | repaired;
     }
 
@@ -820,13 +833,13 @@ static class LaunchGuard
         && a.ToHashSet().SetEquals(b);
 
     // The offer from a launch's record and the working setup: none without either, or with only updates since. A mod
-    // turned off after a failed start (turnedOff; null: ours and Mod Doctor's now) being off isn't a change: Restore keeps
-    // it off, and an offer of nothing else would loop.
+    // turned off after a failed start (turnedOff; null: the ones Restore keeps off, ours and Mod Doctor's now) being off
+    // isn't a change: Restore keeps it off, and an offer of nothing else would loop.
     public static Offer? CrashOffer(Setup? planned, Setup? working, IReadOnlySet<string>? turnedOff = null)
     {
         if (planned == null || working == null)
             return null;
-        var kept = turnedOff ?? TurnedOff.OffIds();
+        var kept = turnedOff ?? Writing(working.Mods).Kept;
         var changes = Changes(planned.Mods, working.Mods).Where(c => !(c.Kind == Kind.Disabled && kept.Contains(c.Id))).ToList();
         if (!changes.Any(c => c.Kind != Kind.Updated))
             return null;
@@ -845,6 +858,9 @@ static class LaunchGuard
 
     // Self-test: the takeover throwing before it hands the game its task (StartupErrorPatch's try), once past its undo
     public static bool TestTakeoverThrows;
+
+    // Self-test: the reading of this launch's failed start, for the crash modes' checks
+    public static Culprits.Reading? TestReading { get; private set; }
 #endif
 
     // The dialog's answers. TurnOff: the culprit, and the mods that need it; AllOff: every mod but ours and Mod Doctor.
@@ -1058,6 +1074,9 @@ static class LaunchGuard
             fault = await Culprits.Failure(game);
             var mods = Culprits.Context.Live();
             reading = fault == null ? null : Culprits.ByFrame(fault.Chain, _planned, _working, mods);
+#if DEVTOOLS
+            TestReading = reading;
+#endif
             culprit = Culprits.Rank(reading, findings, _planned, _working, AsRead(), TurnedOff.Recorded(), mods, weighed);
             if (culprit != null && !CanTurnOff)
             {

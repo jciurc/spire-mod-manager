@@ -22,7 +22,8 @@
 //                                     --crash-notice, after --crash-culprit: its data and mod list kept, the main
 //                                      menu's notice of Test Fixes turned off, and Turn back on pressed
 //                                     --crash-rebuild, after --crash-prepare: one that fails to start by a patch class's
-//                                      failed rebuild, the last working launch on another game; the patching mod named
+//                                      failed rebuild (Test UI's, applied by Test Framework), the last working launch
+//                                      on another game; Test UI named, as the record of the call alone says
 //                                     --stable, with any of them: the stable branch's game, in its own dev copy
 //   dotnet run tools/dev.cs launch    build, open the sandboxed game to try by hand (--first-run,
 //                                     --first-run-bmm and --workshop as for test); returns when you close it;
@@ -461,25 +462,26 @@ if (crash && File.Exists(results) && (workshopMods.Count == 0 || File.ReadAllTex
     }
     File.AppendAllLines(results, [line]);
 }
-// The culprit runs: what the next launch reads, with the game gone. Test Fixes' switches in settings.save and its entry
-// in our record: off and recorded after a turn-off (--crash-culprit, --crash-rebuild), as they were where the save
-// couldn't be written (--read-only-settings, and the file writable again), on and its entry gone after Turn back on
-// (--crash-notice).
+// The culprit runs: what the next launch reads, with the game gone. The culprit's switches in settings.save and its
+// entry in our record (Test Fixes; Test UI for --crash-rebuild): off and recorded after a turn-off (--crash-culprit,
+// --crash-rebuild), as they were where the save couldn't be written (--read-only-settings, and the file writable
+// again), on and its entry gone after Turn back on (--crash-notice).
 if ((crashCulprit || crashRebuild || crashNotice) && File.Exists(results))
 {
     string line;
+    var (culpritId, culpritName) = crashRebuild ? ("SmmTestUi", "Test UI") : ("SmmTestFixes", "Test Fixes");
     try
     {
         var fixes = JsonNode.Parse(File.ReadAllText(settingsSave))?["mod_settings"]?["mod_list"]?.AsArray()
-            .Where(entry => (string?)entry?["id"] == "SmmTestFixes").Select(entry => (bool?)entry?["is_enabled"] ?? true).ToList() ?? [];
+            .Where(entry => (string?)entry?["id"] == culpritId).Select(entry => (bool?)entry?["is_enabled"] ?? true).ToList() ?? [];
         var record = File.Exists(turnedOff) ? JsonNode.Parse(File.ReadAllText(turnedOff))?["mods"]?.AsArray()
-            .FirstOrDefault(entry => (string?)entry?["id"] == "SmmTestFixes") : null;
+            .FirstOrDefault(entry => (string?)entry?["id"] == culpritId) : null;
         var why = (string?)record?["why"];
         var (ok, said) = crashNotice ? (fixes.Count > 0 && fixes.All(on => on) && record == null, "on again and its entry gone, after Turn back on")
             : readOnlySettings ? (fixes.All(on => on) && record == null && !File.GetAttributes(settingsSave).HasFlag(FileAttributes.ReadOnly),
                 "as it was, nothing recorded, the file writable again, after a turn-off that couldn't be saved")
             : (fixes.Count > 0 && fixes.All(on => !on) && why == (crashRebuild ? "RebuildLast" : "Code"), $"off and recorded ({(crashRebuild ? "RebuildLast" : "Code")}), after its turn-off");
-        line = $"{(ok ? "PASS" : "FAIL")} a failed start, on disk with the game gone: Test Fixes {said} (is_enabled {string.Join(",", fixes)}, recorded {why ?? "no"})";
+        line = $"{(ok ? "PASS" : "FAIL")} a failed start, on disk with the game gone: {culpritName} {said} (is_enabled {string.Join(",", fixes)}, recorded {why ?? "no"})";
     }
     catch (Exception e)
     {

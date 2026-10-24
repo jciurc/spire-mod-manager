@@ -279,16 +279,29 @@ static partial class SelfTest
                 new[] { unsubscribed, unlisted }.All(t => t is { Error: "", List: "l-,w-", Disk: "l-,w-", Back: "l+,w+" } && Both(t.Entry)),
                 $"unsubscribed {unsubscribed}; not listed {unlisted}");
 
-            // The next launch: the game's list rebuilt without the Workshop entry (it lists only the copies it found), then
-            // its repair (RepairBeforeMenu; the first main menu's Settle does the same) puts the entry back, off, so a save
-            // keeps it and the copy stays off once it's back. Not for an entry whose mod is on again.
-            Swap(S(ModEntry.ModId, L, true), S("SmmTestFixes", L, false));
-            var rebuiltRead = Read(ours, ("SmmTestFixes", L, false), ("SmmTestFixes", W, false));
-            var keptOff = (LaunchGuard.RepairBeforeMenu(settings, rebuiltRead, false), Of("SmmTestFixes"));
+            // The next launch: the game's list rebuilt without the Workshop entry (it lists only the copies it found). Its
+            // repair puts the entry back, off, right after the mod's own (its place in the load order kept), so a save keeps
+            // it and the copy stays off once it's back: before the first main menu (RepairBeforeMenu), with the list as the
+            // game read it or without; at the first main menu (Settle), without it, and with ours moved first in the same
+            // call. Not for an entry whose mod is on again, nor one whose mod is gone (Test Gone, its local copy scanned).
+            TurnedOff.Add([OffEntry("SmmTestGone")]);
+            SettingsSaveMod[] Rebuilt() => [S(ModEntry.ModId, L, true), S("SmmTestFixes", L, false), S("SmmTestUi", L, true)];
+            static string Order(IEnumerable<SettingsSaveMod> list) => string.Join(",", list.Select(e => e.Source == W ? $"{e.Id}/w" : e.Id));
+            var rebuiltRead = Read(ours, ("SmmTestFixes", L, false), ("SmmTestFixes", W, false), ("SmmTestUi", L, true));
+            Swap(Rebuilt());
+            var keptOff = (LaunchGuard.RepairBeforeMenu(settings, rebuiltRead, false), Of("SmmTestFixes"), Order(settings.ModList));
+            Swap(Rebuilt());
+            var unread = (LaunchGuard.RepairBeforeMenu(settings, null, false), Order(settings.ModList));
+            List<SettingsSaveMod> menuList = [.. Rebuilt()], moved = [S("SmmTestFixes", L, false), S(ModEntry.ModId, L, true), S("SmmTestUi", L, true)];
+            var (atMenu, movedToo) = ((SameIdLoad.Settle(menuList, null), Order(menuList)), (SameIdLoad.Settle(moved, rebuiltRead), Order(moved)));
             Swap(S(ModEntry.ModId, L, true), S("SmmTestFixes", L, true));
             var onAgain = (TurnedOff.KeepOff(settings.ModList), Of("SmmTestFixes"));
-            Check("a turned-off mod's Workshop entry the game's rebuilt list dropped is put back, off, at the next launch's repair, so it stays off once the "
-                + "copy is back; not once the mod is on again", keptOff == (true, "l-,w-") && onAgain == (false, "l+"), $"repaired {keptOff}; on again {onAgain}");
+            var after = $"{ModEntry.ModId},SmmTestFixes,SmmTestFixes/w,SmmTestUi";
+            Check("a turned-off mod's Workshop entry the game's rebuilt list dropped is put back, off, right after its own, at the next launch's repair (before "
+                + "the first main menu with the list as read and without it, at the first main menu without it and with ours moved first), so it stays off "
+                + "once the copy is back; not once the mod is on again, nor for a mod gone",
+                keptOff == (true, "l-,w-", after) && unread == (true, after) && atMenu == (true, after) && movedToo == (true, after) && onAgain == (false, "l+"),
+                $"repaired {keptOff}; without the list as read {unread}; at the menu {atMenu}; ours moved too {movedToo}; on again {onAgain}");
         }
 
         // Disable suspects writes entries too (why Suspect). Turn off all mods: every mod on, one with no entry as read too
@@ -369,34 +382,49 @@ static partial class SelfTest
         TurnedOff.Add([OffEntry("SmmTestUi", Culprits.Why.DoctorThrew, DateTimeOffset.Now.AddMinutes(-2)) with { Rebuild = true }]);
         TurnedOff.Add([OffEntry("SmmTestFixes", Culprits.Why.RebuildLast) with { Rebuild = true }]);
         var rebuilds = Recorded("SmmTestUi")?.SameErrorAfter;
-        // A failed rebuild, then the same signature from a failure that isn't one: marked (only both rebuilds are let off)
+        // A failed rebuild, then the same signature from a failure that isn't one, and the other way round: marked (only
+        // both rebuilds are let off)
         FreshRecord();
         TurnedOff.Add([OffEntry("SmmTestUi", Culprits.Why.RebuildLast, DateTimeOffset.Now.AddMinutes(-2)) with { Rebuild = true }]);
         TurnedOff.Add([OffEntry("SmmTestFixes")]);
         var oneRebuild = Recorded("SmmTestUi")?.SameErrorAfter;
+        FreshRecord();
+        TurnedOff.Add([OffEntry("SmmTestUi", Culprits.Why.Code, DateTimeOffset.Now.AddMinutes(-2))]);
+        TurnedOff.Add([OffEntry("SmmTestFixes", Culprits.Why.RebuildLast) with { Rebuild = true }]);
+        var rebuildAfter = Recorded("SmmTestUi")?.SameErrorAfter;
         Check("a mod turned off again: one entry, the first switch kept for a source it had, the new one and its copies joined; the start failing the same "
             + "way after a turn-off marks that entry, but not one failed rebuild after another (by the failures' flag, Mod Doctor's pick then ours); a "
-            + "rebuild then a failure that isn't one, marked",
+            + "rebuild then a failure that isn't one, or the other way round, marked",
             merged is [{ Source: L, On: true, Copies: ["l:SmmTestFixes", "l:SmmTestFixesFixed"] }, { Source: W, On: true }] && again == (true, false) && rebuilds == false
-            && oneRebuild == true,
+            && oneRebuild == true && rebuildAfter == true,
             $"{string.Join("; ", merged.Select(s => $"{s.Source} {s.On} {string.Join("+", s.Copies)}"))}; Test UI again {again}; after a rebuild {rebuilds}; "
-            + $"after a rebuild, not one {oneRebuild}");
+            + $"after a rebuild, not one {oneRebuild}; a rebuild after one that isn't {rebuildAfter}");
 
         // Turn back on: exactly the switches recorded on, installed now or not. Of a mod recorded with its local copy off and
         // its Workshop one on, both installed, the Workshop switch alone; with no Workshop entry in the list, no entry
-        // added. With the Workshop one not installed now (no source recorded on has a copy), every installed copy too.
+        // added. With the Workshop one not installed now (no source recorded on has a copy): unsubscribed (Steam up, its
+        // source scanned), every installed copy too; not listed without Steam, the Workshop switch alone (the local copy
+        // kept off would load in its place).
         static TurnedOff.Entry Was() => OffEntry("SmmTestFixes") with { Switches = [new(L, false, ["l:SmmTestFixes"]), new(W, true, ["w:1"])] };
         List<(string, ModSource)> installedBoth = [("SmmTestFixes", L), ("SmmTestFixes", W)], installedLocal = [("SmmTestFixes", L)];
         var both = new List<SettingsSaveMod> { S("SmmTestFixes", L, false), S("SmmTestFixes", W, false) };
         TurnedOff.SwitchOn(both, [Was()], installedBoth);
         var gone = new List<SettingsSaveMod> { S("SmmTestFixes", L, false) };
         TurnedOff.SwitchOn(gone, [Was()], installedBoth);
-        var notInstalled = new List<SettingsSaveMod> { S("SmmTestFixes", L, false), S("SmmTestFixes", W, false) };
-        TurnedOff.SwitchOn(notInstalled, [Was()], installedLocal);
+        string NotInstalled(bool steam)
+        {
+            TurnedOff.TestSteam = steam;
+            var list = new List<SettingsSaveMod> { S("SmmTestFixes", L, false), S("SmmTestFixes", W, false) };
+            TurnedOff.SwitchOn(list, [Was()], installedLocal);
+            TurnedOff.TestSteam = null;
+            return Switched(list, "SmmTestFixes");
+        }
+        var (unsubscribedOn, hiddenOn) = (NotInstalled(steam: true), NotInstalled(steam: false));
         Check("Turn back on turns on exactly the switches recorded on (the Workshop copy alone, installed now or not), adding no entry where the list has "
-            + "none; with no copy installed now of a source recorded on, every installed copy too",
-            Switched(both, "SmmTestFixes") == "l-,w+" && Switched(gone, "SmmTestFixes") == "l-" && gone.Count == 1 && Switched(notInstalled, "SmmTestFixes") == "l+,w+",
-            $"{Switched(both, "SmmTestFixes")}; {Switched(gone, "SmmTestFixes")} ({gone.Count}); not installed {Switched(notInstalled, "SmmTestFixes")}");
+            + "none; with no copy installed now of a source recorded on, every installed copy too where that source was scanned (unsubscribed), the "
+            + "recorded switch alone where it wasn't (not listed without Steam)",
+            Switched(both, "SmmTestFixes") == "l-,w+" && Switched(gone, "SmmTestFixes") == "l-" && gone.Count == 1 && unsubscribedOn == "l+,w+" && hiddenOn == "l-,w+",
+            $"{Switched(both, "SmmTestFixes")}; {Switched(gone, "SmmTestFixes")} ({gone.Count}); unsubscribed {unsubscribedOn}; not listed without Steam {hiddenOn}");
 
         // A launch whose record can't be written (launch-pending.json a folder) still has its folder for a turn-off's
         // record (Dir is set first), and no planned setup, so its main menu clears nothing
@@ -823,6 +851,23 @@ static partial class SelfTest
             noneWords.Contains("Couldn't turn SmmTestGoneWorkshop back on: there's no installed copy to turn on") && TurnedOff.Has("SmmTestGoneWorkshop")
             && !TurnedOff.Has("SmmTestFixes") && On("SmmTestFixes"), $"{noneWords}; {string.Join(", ", TurnedOff.Entries.Select(e => e.Id))}; Test Fixes on {On("SmmTestFixes")}");
 
+        // The same mod with its entry in the list, off, as the repair keeps it without Steam: that entry on, its record gone,
+        // nothing said
+        settings.ModList.Add(new SettingsSaveMod { Id = "SmmTestGoneWorkshop", Source = ModSource.SteamWorkshop, IsEnabled = false });
+        Recorded(OffEntry("SmmTestGoneWorkshop", at: at) with { Switches = [new(ModSource.SteamWorkshop, true, ["w:3700000009"])] });
+        TurnedOff.TestSteam = false;
+        TurnedOff.ShowNotice(menu);
+        await Wait(menu, 0.5);
+        PressOurs("YesButton");
+        await Wait(menu, 0.5);
+        var listedWords = ShownWords();
+        NModalContainer.Instance?.Clear();
+        TurnedOff.TestSteam = null;
+        var listedOn = settings.ModList.Any(e => e.Id == "SmmTestGoneWorkshop" && e.IsEnabled);
+        settings.ModList.RemoveAll(e => e.Id == "SmmTestGoneWorkshop");
+        Check("Turn back on of a mod with no copy installed but its entry in the list (kept off without Steam): that entry on, its record gone, nothing said",
+            listedOn && !TurnedOff.Has("SmmTestGoneWorkshop") && !listedWords.Contains("Couldn't turn"), $"{listedWords}; on {listedOn}; entry {TurnedOff.Has("SmmTestGoneWorkshop")}");
+
         // A popup that can't be made marks nothing shown, so the next main menu tries again
         Recorded(OffEntry("SmmTestFixes", at: at));
         TurnedOff.TestNoPopup = true;
@@ -932,6 +977,18 @@ static partial class SelfTest
         Profiles.TestApply([.. uiProfile, new ProfileMod(ModDoctor.ModId, ModSource.ModsDirectory, false)]);
         var profileDoctorOff = Copies.Ticked(ui);
         UiOn(false);
+        // Mod Doctor unticked this session, off in the list now: Restore brings it back off, and a profile that doesn't
+        // name it leaves it off, so neither keeps its record's mod off (its note won't run to say why). The same offer
+        // with it on: none.
+        var doctorIn = new LaunchGuard.Entry(ModDoctor.ModId, ModSource.ModsDirectory, true, "1.0.0");
+        LaunchGuard.Offer? OfferWithDoctor() => LaunchGuard.CrashOffer(uiOff with { Mods = [.. uiOff.Mods, doctorIn] }, uiWas with { Mods = [.. uiWas.Mods, doctorIn] });
+        var offerDoctorOn = OfferWithDoctor();
+        settings.ModList.Add(new SettingsSaveMod { Id = ModDoctor.ModId, Source = ModSource.ModsDirectory, IsEnabled = false });
+        var (restoredUnticked, offerUnticked) = (OnIn(LaunchGuard.Written(working), "SmmTestUi"), OfferWithDoctor());
+        Profiles.TestApply(uiProfile);
+        var profileUnticked = Copies.Ticked(ui);
+        settings.ModList.RemoveAll(e => e.Id == ModDoctor.ModId);
+        UiOn(false);
         ModDoctor.TestLoaded = false;
         var offerNotRunning = LaunchGuard.CrashOffer(uiOff, uiWas);
         Profiles.TestApply(uiProfile);
@@ -940,6 +997,10 @@ static partial class SelfTest
         ModDoctor.TestLoaded = true;
         TurnedOff.Add([OffEntry(ModDoctor.ModId)]);
         var naming = LaunchGuard.Written(working);
+        // An entry of ours naming Mod Doctor holds it off, so a profile that doesn't name it doesn't count its record either
+        Profiles.TestApply(uiProfile);
+        var profileNaming = Copies.Ticked(ui);
+        UiOn(false);
         (ModDoctor.TestFolder, ModDoctor.TestLoaded) = (null, null);
         UiOn(true);
         Check("Restore writes a mod turned off after a failed start off, ours (Test Fixes) and Mod Doctor's (Test UI) while Mod Doctor runs and the mod is "
@@ -953,6 +1014,11 @@ static partial class SelfTest
             offerRunning == null && !profileRunning && offerNotRunning != null && profileNotRunning && profileDoctorOff,
             $"offer: running {offerRunning != null}, not {offerNotRunning != null}; the profile's Test UI on: running {profileRunning}, not {profileNotRunning}, "
             + $"with Mod Doctor off {profileDoctorOff}");
+        Check("Mod Doctor's record doesn't keep Test UI off where Mod Doctor won't run: off in the list now, Restore writes Test UI on, the restore offer is "
+            + "made (none with Mod Doctor on) and a profile that doesn't name Mod Doctor turns Test UI on; so does such a profile while an entry of ours names Mod Doctor",
+            restoredUnticked && offerUnticked != null && offerDoctorOn == null && profileUnticked && profileNaming,
+            $"Restore's Test UI on {restoredUnticked}; offer {offerUnticked != null} (Mod Doctor on: {offerDoctorOn != null}); the profile's Test UI on {profileUnticked}, "
+            + $"with our entry for Mod Doctor {profileNaming}");
 
         // An offer whose only change is a turned-off mod off: none (Restore keeps it off, so it would loop)
         var planned = new LaunchGuard.Setup(now, [new("SmmTestFixes", ModSource.ModsDirectory, false, "0.1.0"), new("SmmTestUi", ModSource.ModsDirectory, true, "1.0.0")], CulpritGame);
@@ -1138,6 +1204,17 @@ static partial class SelfTest
             await Wait(menu, 0.3);
             Check("the turned-off banner's Dismiss drops the entry, the mod staying off; a mod turned on by its own tickbox drops out at the next redraw",
                 dismissed == (true, true, true) && !TurnedOff.Has("SmmTestFixes") && Banner() == null, $"dismissed {dismissed}; after its tickbox {TurnedOff.Has("SmmTestFixes")}");
+            // Its Turn back on of a mod with no copy installed and no entry in the list: said, the entry and the banner kept
+            TurnedOff.Add([OffEntry("SmmTestGoneWorkshop", at: DateTimeOffset.Now.AddMinutes(-30)) with { Switches = [new(ModSource.SteamWorkshop, true, ["w:3700000009"])] }]);
+            CategoryList.Redraw(content);
+            await Wait(menu, 0.3);
+            BannerPress("TurnBackOnButton");
+            await Wait(menu, 0.5);
+            var noneWords = ShownWords();
+            NModalContainer.Instance?.Clear();
+            Check("the turned-off banner's Turn back on of a mod with no copy installed says there's none to turn on, and its entry and the banner stay",
+                noneWords.Contains("Couldn't turn SmmTestGoneWorkshop back on: there's no installed copy to turn on") && TurnedOff.Has("SmmTestGoneWorkshop") && Banner() != null,
+                $"{noneWords}; entry {TurnedOff.Has("SmmTestGoneWorkshop")}, banner {Banner() != null}");
         }
         finally
         {

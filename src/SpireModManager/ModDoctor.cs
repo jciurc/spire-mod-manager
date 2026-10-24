@@ -52,7 +52,7 @@ static class ModDoctor
     {
 #if DEVTOOLS
         if (TestSuspects is { } made)
-            return new Findings([.. made], null, null);
+            return WithoutUs(new Findings([.. made], null, null));
 #endif
         try
         {
@@ -64,7 +64,7 @@ static class ModDoctor
                     case null when !loaded:
                         return Findings.None; // no file for this process: Mod Doctor isn't there
                     case { Ready: true } found:
-                        return found.Findings;
+                        return WithoutUs(found.Findings);
                 }
                 await node.ToSignal(node.GetTree(), SceneTree.SignalName.ProcessFrame);
             }
@@ -76,6 +76,24 @@ static class ModDoctor
         }
         return Findings.None;
     }
+
+    // What it found without Spire Mod Manager, as its pick or a suspect: it can name us where the step that failed isn't
+    // patched (our StartupFailurePatch is on the startup's ExecuteEssential), and our own reading of the failure decides
+    // about us. Its words go with its pick. Logged.
+    static Findings WithoutUs(Findings found)
+    {
+        var (picked, suspected) = (found.Culprit?.Id == ModEntry.ModId, found.Suspects.Contains(ModEntry.ModId));
+        if (!picked && !suspected)
+            return found;
+        var named = string.Join(" and ", new[] { picked ? "as the mod to turn off" : null, suspected ? "among its suspects" : null }.OfType<string>());
+        MegaCrit.Sts2.Core.Logging.Log.Info($"[{ModEntry.ModId}] Mod Doctor named Spire Mod Manager {named}, which our dialog leaves out: our own reading "
+            + "of the failure decides about us");
+        return new Findings([.. found.Suspects.Where(id => id != ModEntry.ModId)], picked ? null : found.Culprit, picked ? null : found.Explanation);
+    }
+
+    // Whether Mod Doctor loads with a mod list: an entry of it on, or none (a mod with no entry loads)
+    public static bool On(IEnumerable<SettingsSaveMod> list) => list.Where(e => e.Id == ModId).ToList() is var entries
+        && (entries.Count == 0 || entries.Any(e => e.IsEnabled));
 
     static bool Loaded()
     {

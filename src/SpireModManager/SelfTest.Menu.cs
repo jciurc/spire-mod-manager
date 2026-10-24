@@ -692,9 +692,9 @@ static partial class SelfTest
         void Mouse(Vector2 at) => fake = at;
         async Task Click(MouseButton which, Vector2 at)
         {
-            Input.ParseInputEvent(new InputEventMouseButton { ButtonIndex = which, Pressed = true, Position = at, GlobalPosition = at });
+            MouseButtonAt(menu, which, true, at);
             await Wait(menu, 0.1);
-            Input.ParseInputEvent(new InputEventMouseButton { ButtonIndex = which, Pressed = false, Position = at, GlobalPosition = at });
+            MouseButtonAt(menu, which, false, at);
             await Wait(menu, 0.2);
         }
         async Task<Node?> OpenMenu()
@@ -840,9 +840,9 @@ static partial class SelfTest
         if (top != null)
         {
             var at = top.GetGlobalRect().GetCenter();
-            Input.ParseInputEvent(new InputEventMouseButton { ButtonIndex = MouseButton.Left, Pressed = true, Position = at, GlobalPosition = at });
+            MouseButtonAt(menu, MouseButton.Left, true, at);
             await Wait(menu, 0.1);
-            Input.ParseInputEvent(new InputEventMouseButton { ButtonIndex = MouseButton.Left, Pressed = false, Position = at, GlobalPosition = at });
+            MouseButtonAt(menu, MouseButton.Left, false, at);
             await Wait(menu, 0.2);
         }
         Check("a click on the header does nothing: the menu stays open", top != null && MenuPanel.Current == popup
@@ -1117,9 +1117,10 @@ static partial class SelfTest
         // Before the first main menu the list in memory is the game's rebuilt one: a mod kept with its local copy on and
         // its Workshop copy off reads both on (the id's first entry's switch), and Disable suspects, or the window's close,
         // would save that. Repaired as a startup error shows or the game quits first: each source's own switch back, the
-        // rest as it was; nothing after the first main menu (Settle did it), nor without the list as the game read it. The
-        // last two on a list the repair would change (ours not first, an id's entry that's off before one that's on), so
-        // each check fails if its guard goes.
+        // rest as it was; nothing after the first main menu (Settle did it), nor without the list as the game read it, but
+        // for the entry of a mod we keep off that the list dropped (a Workshop one not listed without Steam), put back off.
+        // The last two on a list the repair would change (ours not first, an id's entry that's off before one that's on), so
+        // each check fails if its guard goes. Our record a file of the test's: empty, then with that one standing entry.
         static SettingsSaveMod Saved(string id, ModSource source, bool on) => new() { Id = id, Source = source, IsEnabled = on };
         const string kept = "SmmCrashKept";
         ModSettings Rebuilt() => new() { ModList = [Saved(ModEntry.ModId, ModSource.ModsDirectory, true), Saved(kept, ModSource.ModsDirectory, true),
@@ -1129,14 +1130,30 @@ static partial class SelfTest
         List<(string, ModSource, bool)> asRead = [(ModEntry.ModId, ModSource.ModsDirectory, true), (kept, ModSource.ModsDirectory, true),
             (kept, ModSource.SteamWorkshop, false), ("SmmCrashOther", ModSource.ModsDirectory, false)];
         var (repaired, settled, unread) = (Rebuilt(), Disordered(), Disordered());
-        var changed = LaunchGuard.RepairBeforeMenu(repaired, asRead, settled: false);
+        var record = Path.Combine(outDir, "crash-offer-repair", TurnedOff.FileName);
+        if (File.Exists(record))
+            File.Delete(record);
+        bool changed, settledChanged, unreadChanged;
+        try
+        {
+            TurnedOff.TestFile = record;
+            changed = LaunchGuard.RepairBeforeMenu(repaired, asRead, settled: false);
+            settledChanged = LaunchGuard.RepairBeforeMenu(settled, asRead, settled: true);
+            TurnedOff.TestSteam = false;
+            TurnedOff.Add([OffEntry("SmmCrashKeptOff") with { Switches = [new(ModSource.SteamWorkshop, true, [])] }]);
+            unreadChanged = LaunchGuard.RepairBeforeMenu(unread, null, settled: false);
+        }
+        finally
+        {
+            (TurnedOff.TestFile, TurnedOff.TestSteam) = (null, null);
+        }
         static string Switches(ModSettings s) => string.Join(", ", s.ModList.Select(e => $"{e.Id}/{e.Source}={e.IsEnabled}"));
         Check("before the first main menu: the game's rebuilt list in memory repaired before anything saves it (a Workshop copy kept off reads off again, "
-            + "the rest as it was); not after the first main menu, nor without the list as the game read it",
+            + "the rest as it was); not after the first main menu, nor without the list as the game read it, but for a turned-off mod's dropped entry, off",
             changed && Switches(repaired) == $"{ModEntry.ModId}/ModsDirectory=True, {kept}/ModsDirectory=True, {kept}/SteamWorkshop=False, SmmCrashOther/ModsDirectory=False"
             && SameIdLoad.SettleList(Disordered().ModList, asRead)
-            && !LaunchGuard.RepairBeforeMenu(settled, asRead, settled: true) && Switches(settled) == Switches(Disordered())
-            && !LaunchGuard.RepairBeforeMenu(unread, null, settled: false) && Switches(unread) == Switches(Disordered()),
+            && !settledChanged && Switches(settled) == Switches(Disordered())
+            && unreadChanged && Switches(unread) == Switches(Disordered()) + ", SmmCrashKeptOff/SteamWorkshop=False",
             $"repaired: {Switches(repaired)}; settled: {Switches(settled)}; unread: {Switches(unread)}");
         // This launch reached the menu (Settled), so the patches' own call leaves the game's list alone, though it holds an
         // id's entry that's off before one that's on (made up here, then taken out): the repair would reorder them.
@@ -1299,10 +1316,10 @@ static partial class SelfTest
             Check("the plain dialog after a failed start: Restore and restart writes the working list, then relaunches; the dialog goes",
                 asked.IsCompleted && relaunches == 2 && quits == 2 && !Copies.Ticked(fixes) && root.GetNodeOrNull(LaunchGuard.PlainDialogName) == null,
                 $"quits {quits}, relaunches {relaunches}, Test Fixes on {Copies.Ticked(fixes)}, dialog left {root.GetNodeOrNull(LaunchGuard.PlainDialogName) != null}");
-            // Mod Doctor's suspects (made up: Test UI, which this launch has on, among them, ours and Mod Doctor never
-            // turned off, and one not installed): three named, the rest under "more", whose card names them; a third button
-            // as a quiet link under the game's two, which turns them off and restarts, the rest of this launch's list as it was. Escape
-            // stays the game's Quit.
+            // Mod Doctor's suspects (made up: Test UI, which this launch has on, among them, ours left out as we read them
+            // (our own reading decides about us), Mod Doctor never turned off, and one not installed): three named, the rest
+            // under "more", whose card names them; a third button as a quiet link under the game's two, which turns them off
+            // and restarts, the rest of this launch's list as it was. Escape stays the game's Quit.
             LaunchGuard.TestNoLanguage = false;
             ModDoctor.TestSuspects = [ModEntry.ModId, ModDoctor.ModId, "SmmTestUi", "SmmTestFixes", "SmmTestLib", "SmmTestNotThere"];
             void ListAsItWas()
@@ -1330,13 +1347,15 @@ static partial class SelfTest
                 && link.GetThemeColor("font_color") is { R: > 0.9f, G: > 0.6f and < 0.8f, B: < 0.5f } && link.GetThemeColor("font_hover_color") != link.GetThemeColor("font_color")
                 && art.GetNodeOrNull<Control>(Menus.MarkName) is { } mark && mark.GetGlobalRect().Position.Y >= link.GetGlobalRect().End.Y; // our mark under it, clear of it
             var suspectTexts = string.Join(" | ", PopupTexts());
+            var suspectsLine = System.Text.RegularExpressions.Regex.Match(suspectTexts, @"Mod Doctor suspects: [^|\n]*").Value;
             await Capture(menu, outDir, "1h-crash-dialog-suspects");
             var suspectsCard = popup?.GetNodeOrNull<RichTextLabel>("VerticalPopup/Description") is { } description
                 ? await LinkCard(description, "spire-mod-manager-more-suspects") : "";
-            Check("the dialog with Mod Doctor's suspects: three named, the rest counted as a link whose card names them; a third button, "
+            Check("the dialog with Mod Doctor's suspects, ours left out: three named, the rest counted as a link whose card names them; a third button, "
                 + "\"Disable suspect mods and restart\", a quiet orange link under Quit and Restore and restart, centred",
-                third is LinkButton { Visible: true, Text: "Disable suspect mods and restart" } && between && suspectTexts.Contains("3 more")
-                && suspectsCard.Contains("Test Fixes") && suspectsCard.Contains("SmmTestNotThere") && !suspectsCard.Contains("Test UI"),
+                third is LinkButton { Visible: true, Text: "Disable suspect mods and restart" } && between && suspectsLine.Contains("Test UI")
+                && suspectsLine.Contains("Test Fixes") && suspectsLine.Contains("2 more") && !suspectsLine.Contains("Spire Mod Manager")
+                && suspectsCard.Contains("Test Framework") && suspectsCard.Contains("SmmTestNotThere") && !suspectsCard.Contains("Test Fixes"),
                 $"third {third != null}, between {between}; {suspectTexts}; card: {suspectsCard}");
             Input.ParseInputEvent(new InputEventKey { Keycode = Key.Escape, Pressed = true });
             await Wait(menu, 0.1);

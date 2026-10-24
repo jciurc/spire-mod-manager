@@ -726,10 +726,10 @@ static partial class SelfTest
     // the game's own (TestOwner: no mod to name), with Test Retired on besides (dev.cs), so this launch differs from that
     // setup: Restore and restart. --crash-culprit: Hornet's shape from Test Fixes' stand-in (a patch Harmony refuses), so
     // ours names it: Turn off Test Fixes and restart; with --read-only-settings settings.save can't be written, so the
-    // dialog comes again saying so, with Quit alone. --crash-rebuild: a patch class of Test Fixes' stand-in failing its
-    // rebuild of a method Test Content's stand-in transpiles, the last working launch on another game (dev.cs): the
-    // patching mod, most likely. --crash with --workshop (crash-real): the Workshop mods fail the start themselves, and
-    // whichever offer the dialog makes is taken and said.
+    // dialog comes again saying so, with Quit alone. --crash-rebuild: a patch class of Test UI's stand-in, applied by Test
+    // Framework's, failing its rebuild of a method Test Content's stand-in transpiles, the last working launch on another
+    // game (dev.cs): Test UI, most likely, by the record of the call alone. --crash with --workshop (crash-real): the
+    // Workshop mods fail the start themselves, and whichever offer the dialog makes is taken and said.
     public static void EarlyStart()
     {
         var crashMode = System.Environment.GetEnvironmentVariable("SPIRE_MOD_MANAGER_SELFTEST_MODE");
@@ -754,7 +754,8 @@ static partial class SelfTest
                     break;
                 case "crash-rebuild":
                     Culprits.TestOwner = type => CulpritOwners.GetValueOrDefault(type);
-                    new HarmonyLib.Harmony(ContentId).Patch(RunMethod, transpiler: By(typeof(ContentPatch), nameof(ContentPatch.Marked)));
+                    new HarmonyLib.Harmony(ContentId).Patch(HarmonyLib.AccessTools.Method(typeof(GameLike), nameof(GameLike.Prepare)),
+                        transpiler: By(typeof(ContentPatch), nameof(ContentPatch.Marked)));
                     FailStart(nameof(RebuildFailure));
                     break;
             }
@@ -870,20 +871,26 @@ static partial class SelfTest
         {
             case "crash-culprit":
             case "crash-rebuild":
+                // --crash-rebuild's mod is Test UI, whose class Test Framework applied: only the record of the call says whose it was
                 var rebuild = mode == "crash-rebuild";
-                Check($"a failed start ({(rebuild ? "a failed rebuild" : "Hornet's shape")}): our dialog names Test Fixes, the game's message first, with "
-                    + "\"Turn off Test Fixes and restart\"", first.Contains("Notice from the game") && offered == "Turn off Test Fixes and restart"
-                    && first.Contains(rebuild ? "Test Fixes most likely stopped the game from starting. The error came while its changes to a part of the game were being put in place"
-                        : "Test Fixes stopped the game from starting. The error came from its code."), $"{first}; offered {offered}");
+                var (offId, offName) = rebuild ? ("SmmTestUi", "Test UI") : ("SmmTestFixes", "Test Fixes");
+                var turned = TurnedOff.Entries.FirstOrDefault(e => e.Id == offId);
+                var notes = LaunchGuard.TestReading?.Notes ?? [];
+                Check($"a failed start ({(rebuild ? "a library's failed rebuild of a dependent's patch class" : "Hornet's shape")}): our dialog names {offName}, the "
+                    + $"game's message first, with \"Turn off {offName} and restart\"; whose patch it was, as recorded",
+                    first.Contains("Notice from the game") && offered == $"Turn off {offName} and restart"
+                    && first.Contains(rebuild ? $"{offName} most likely stopped the game from starting. The error came while its changes to a part of the game were being put in place"
+                        : $"{offName} stopped the game from starting. The error came from its code.") && notes.Any(n => n.Contains("as recorded")),
+                    $"{first}; offered {offered}; {string.Join("; ", notes)}");
                 // Test Twin, two copies from one source, keeps the switch the game read for it
                 var twin = LaunchGuard.ReadList?.Where(e => e.Id == "SmmTestTwin").Select(e => (e.Source, e.On)).Distinct().ToList() ?? [];
-                Check("a failed start: the turn-off saves Test Fixes off (every switch of it), every other mod's switches as the game read them (Test Twin's), "
+                Check($"a failed start: the turn-off saves {offName} off (every switch of it), every other mod's switches as the game read them (Test Twin's), "
                     + $"its record ({(rebuild ? "RebuildLast, a rebuild" : "Code, not a rebuild")}, the switch it had with its copy), then one plain relaunch; this "
                     + "launch's record gone",
-                    AllOff("SmmTestFixes") && twin.All(t => list.Where(e => e.Id == "SmmTestTwin" && e.Source == t.Source).All(e => e.IsEnabled == t.On))
-                    && entry is { Switches: [{ On: true, Copies: ["l:SmmTestFixes"] }] } && entry.Why == (rebuild ? Culprits.Why.RebuildLast : Culprits.Why.Code)
-                    && entry.Rebuild == rebuild
-                    && relaunches == 1 && quits == 0 && !pending, $"Test Fixes {Switched(list, "SmmTestFixes")}, Test Twin {Switched(list, "SmmTestTwin")}; {entry}; "
+                    AllOff(offId) && twin.All(t => list.Where(e => e.Id == "SmmTestTwin" && e.Source == t.Source).All(e => e.IsEnabled == t.On))
+                    && turned is { Switches: [{ On: true, Copies: [var copy] }] } && copy == $"l:{offId}" && turned.Why == (rebuild ? Culprits.Why.RebuildLast : Culprits.Why.Code)
+                    && turned.Rebuild == rebuild
+                    && relaunches == 1 && quits == 0 && !pending, $"{offName} {Switched(list, offId)}, Test Twin {Switched(list, "SmmTestTwin")}; {turned}; "
                     + $"relaunches {relaunches}, quits {quits}, record left {pending}");
                 break;
             case "crash-culprit-read-only":
@@ -918,9 +925,10 @@ static partial class SelfTest
     // --crash-culprit: Test Fixes' stand-in asking Harmony for a patch it refuses (an inherited method), as Hornet's did
     static void CulpritFailure() => Fixes.Install(typeof(InheritingCard));
 
-    // --crash-rebuild: Test Fixes' stand-in applying a patch class whose transpiler breaks the method's build, after Test
-    // Content's stand-in transpiled it at Init (EarlyStart)
-    static void RebuildFailure() => Fixes.Apply(typeof(FixesBadRun));
+    // --crash-rebuild: Test Framework's stand-in applying Test UI's patch class, which finds its target itself, whose
+    // transpiler breaks the method's build, after Test Content's stand-in transpiled it at Init (EarlyStart). Without the
+    // record of the call, the reading would take Test Framework's own class on that method (LibBadPrepare) for it.
+    static void RebuildFailure() => Lib.Apply(typeof(UiFindsTarget));
 
     // --crash-prepare: the main menu reached, so the last working setup is saved (and this launch's record gone).
     static async Task RunCrashPrepare(NMainMenu menu, string outDir)
@@ -1248,25 +1256,42 @@ static partial class SelfTest
     // A link's press (the page link at the top).
     static void Click(BaseButton button) => button.EmitSignal(BaseButton.SignalName.Pressed);
 
-    // The mouse put at a point inside the viewport (sent in the window's terms, as the game's input reads a motion) before
-    // the crash tests' many popups, where it was, for TestMouseKept. Headless only: with a window it's the player's.
+    // A point in the viewport as the game's input takes a mouse event's: in the window's terms (headless, the root's scale
+    // isn't 1, so one sent in the viewport's lands 30 times as far out)
+    static Vector2 InWindow(Node node, Vector2 at) => node.GetTree().Root.GetFinalTransform() * at;
+
+    // A mouse button pressed or let go at a point in the viewport, through the game's input
+    static void MouseButtonAt(Node node, MouseButton which, bool pressed, Vector2 at)
+    {
+        var sent = InWindow(node, at);
+        Input.ParseInputEvent(new InputEventMouseButton { ButtonIndex = which, Pressed = pressed, Position = sent, GlobalPosition = sent });
+    }
+
+    // The mouse put at a point inside the viewport before the crash tests' many popups, where it was, for TestMouseKept.
+    // Headless only: with a window it's the player's.
     static async Task<Vector2?> MouseInView(Node node)
     {
         if (DisplayServer.GetName() != "headless")
             return null;
-        var at = node.GetTree().Root.GetFinalTransform() * new Vector2(5, 5);
+        var at = InWindow(node, new Vector2(5, 5));
         Input.ParseInputEvent(new InputEventMouseMotion { Position = at, GlobalPosition = at });
         await node.ToSignal(node.GetTree(), SceneTree.SignalName.ProcessFrame); // taken in
         return node.GetViewport().GetMousePosition();
     }
 
     // After the crash tests' popups the mouse is where it was put, inside the viewport, where a menu can open at it: the
-    // game's re-send at each popup no longer moves it (HeadlessMousePatch)
+    // game's re-send at each popup no longer moves it (HeadlessMousePatch). With a window the game's method runs: the
+    // prefix, as Harmony calls it, lets it.
     static void TestMouseKept(Node node, Vector2? before)
     {
         if (before is not { } put)
         {
-            Results.Add("SKIP the mouse across the crash tests' popups: with a window it's the player's");
+            var prefix = HarmonyLib.AccessTools.Method(typeof(HeadlessMousePatch), "Prefix");
+            var applied = HarmonyLib.Harmony.GetPatchInfo(HarmonyLib.AccessTools.Method(typeof(NControllerManager), "OnScreenContextChanged"))?.Prefixes
+                .Any(p => p.PatchMethod.DeclaringType == typeof(HeadlessMousePatch)) == true;
+            var runs = NControllerManager.Instance is { } manager && prefix?.Invoke(null, [manager]) is true;
+            Check("with a window the game's mouse re-send at each popup runs: the dev run's headless prefix is in place and lets it", applied && runs,
+                $"applied {applied}, lets it run {runs}");
             return;
         }
         var (at, view) = (node.GetViewport().GetMousePosition(), node.GetViewport().GetVisibleRect());
@@ -1627,20 +1652,27 @@ static partial class SelfTest
 
 // Dev runs: the game puts the mouse back at its position at each popup's opening and closing (NControllerManager), through
 // the window's scale, which in a headless run sends it 30 times further each time: a run's many popups took it past what
-// a float holds, and a menu opened at it with it. Headless has no player's mouse (nor a controller) to put back, so the
-// method is skipped there; a window run keeps it.
+// a float holds, and a menu opened at it with it. Headless has no player's mouse to put back, so that re-send is skipped
+// there; the method's other branch, its refocus for a controller or keyboard-only play, and a window run keep it.
 [HarmonyLib.HarmonyPatch(typeof(NControllerManager), "OnScreenContextChanged")]
 static class HeadlessMousePatch
 {
-    static bool Prefix()
+    static bool Prepare() => ModEntry.IsDevRun;
+
+    static bool Prefix(NControllerManager __instance)
     {
         try
         {
-            return DisplayServer.GetName() != "headless";
+            return DisplayServer.GetName() != "headless" || Directional(__instance);
         }
         catch (Exception)
         {
             return true;
         }
     }
+
+    // Whether the method refocuses rather than re-sends the mouse: the beta's IsUsingDirectionalNavigation, stable's
+    // IsUsingController
+    static bool Directional(NControllerManager manager) => (HarmonyLib.AccessTools.Property(typeof(NControllerManager), "IsUsingDirectionalNavigation")
+        ?? HarmonyLib.AccessTools.Property(typeof(NControllerManager), "IsUsingController"))?.GetValue(manager) is true;
 }

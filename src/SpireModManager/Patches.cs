@@ -174,9 +174,11 @@ static class PatchingFailurePatch
         Patch(AccessTools.Constructor(typeof(PatchClassProcessor), [typeof(Harmony), typeof(Type)]), nameof(ByClass));
     }
 
-    // Harmony.Patch's patch methods, by kind (2.4's fields; one a later Harmony renames is left out)
+    // Harmony.Patch's patch methods, by kind, and the method it patches (2.4's fields; one a later Harmony renames is
+    // left out)
     static readonly string[] Kinds = ["prefix", "postfix", "transpiler", "finalizer", "innerprefix", "innerpostfix"];
     static List<AccessTools.FieldRef<PatchProcessor, HarmonyMethod>>? _patches;
+    static AccessTools.FieldRef<PatchProcessor, MethodBase>? _original;
     static AccessTools.FieldRef<PatchClassProcessor, Type>? _class;
 
     static void Direct(PatchProcessor __instance, Exception? __exception)
@@ -186,7 +188,8 @@ static class PatchingFailurePatch
         try
         {
             _patches ??= [.. Kinds.Select(Field<PatchProcessor, HarmonyMethod>).OfType<AccessTools.FieldRef<PatchProcessor, HarmonyMethod>>()];
-            Culprits.Attempted(__exception, null, _patches.Select(field => field(__instance)?.method));
+            _original ??= Field<PatchProcessor, MethodBase>("original");
+            Culprits.Attempted(__exception, null, _patches.Select(field => field(__instance)?.method), _original is { } original ? original(__instance) : null);
         }
         catch (Exception)
         {

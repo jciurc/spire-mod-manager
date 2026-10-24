@@ -306,10 +306,15 @@ static class SameIdLoad
         if (_settled)
             return;
         _settled = true;
-        if (SaveManager.Instance.SettingsSave.ModSettings is { } settings && (SettleList(settings.ModList, LaunchGuard.ReadList) | TurnedOff.KeepOff(settings.ModList)))
+        if (SaveManager.Instance.SettingsSave.ModSettings is { } settings && Settle(settings.ModList, LaunchGuard.ReadList))
             SaveManager.Instance.SaveSettings(); // once, only when something changed
         Check(ModManager.Mods);
     }
+
+    // Settle's changes to a saved list and the list as the game read it (the game's, or the self-test's made-up ones):
+    // SettleList's, then the entries the game's list dropped of mods we keep off. True if anything changed.
+    public static bool Settle(List<SettingsSaveMod> list, IReadOnlyList<(string Id, ModSource Source, bool On)>? read) =>
+        SettleList(list, read) | TurnedOff.KeepOff(list);
 
     // Settle's changes to a saved list (the game's, or the self-test's made-up one): the rebuild repaired, each id's
     // entries that are on first, ours at the top. True if anything changed.

@@ -732,10 +732,11 @@ static class Profiles
         }
     }
 
-    // Whether Mod Doctor runs after an apply, as far as the profile says: no entry of ours holds it off, and the profile
-    // has it on or has no entry for it (it stays as it is: running, as its turn-offs count only then)
+    // Whether Mod Doctor runs after an apply, as its turn-offs count only then: no entry of ours holds it off, and the
+    // profile has it on, or has no entry for it and it's on in the list now (it stays as it is)
     static bool KeepsDoctor(List<ProfileMod> mods, HashSet<string> ours) => !ours.Contains(ModDoctor.ModId)
-        && mods.Where(m => m.Id == ModDoctor.ModId).ToList() is var doctor && (doctor.Count == 0 || doctor.Any(m => m.Enabled));
+        && mods.Where(m => m.Id == ModDoctor.ModId).ToList() is var doctor
+        && (doctor.Count > 0 ? doctor.Any(m => m.Enabled) : ModDoctor.On(SaveManager.Instance.SettingsSave.ModSettings?.ModList ?? []));
 
     // Mod managers: this one and Better Mod Menu. A profile never turns them on or off, and they aren't counted or listed
     // as its changes.
