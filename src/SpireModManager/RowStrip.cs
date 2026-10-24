@@ -4,30 +4,37 @@ using MegaCrit.Sts2.Core.Nodes.Screens.ModdingScreen;
 
 namespace SpireModManager;
 
-// The line along the bottom of each mod row in our views: its tags (extra ones fold into "+N"), what it needs (red
-// when a dependency is missing, off or loads after it) and its author; the row's action buttons sit on the right.
+// The line along the bottom of each mod row in our views: its tags, "and 3 more" for those that don't fit, what it
+// needs (red when a dependency is missing, off or loads after it) and its author; the row's action buttons sit on the
+// right. The row keeps its height: nothing opens out. (A mod's other keywords are in the info panel only.)
 static class RowStrip
 {
     const string StripName = "SpireModManagerStrip";
     public const string ActionsName = "SpireModManagerActions", OrderActionsName = "SpireModManagerOrderActions"; // main list, Load Order
-    public const string MoreName = "SpireModManagerMoreTags"; // the "+N" chip
+    public const string MoreName = "SpireModManagerMoreTags"; // "and 3 more"
     static readonly StringName StripMeta = "spire_mod_manager_strip";
     static readonly StringName SaysMeta = "spire_mod_manager_says"; // on a strip or buttons: what they show and where, to know when to change them
     static readonly StringName ShowsMeta = "spire_mod_manager_shows"; // on a strip: its tags and author, to know when to remake it
-    static readonly StringName ShownMeta = "spire_mod_manager_tags_shown"; // on a strip: how many tags show (the rest fold into "+N")
+    static readonly StringName ShownMeta = "spire_mod_manager_tags_shown"; // on a strip: how many tags show (the rest are "and N more")
 
     // What Apply and Fold ask each row for, in the types Godot takes, made once: a text passed as one is converted anew
     // each time (a native call), on every row of every redraw.
     static readonly NodePath TitlePath = "Title", StripPath = StripName, ActionsPath = ActionsName, OrderActionsPath = OrderActionsName,
         EdgePath = EdgeName, NeedsPath = NeedsName, AuthorPath = AuthorName, SpacerPath = SpacerName, MorePath = MoreName;
     static readonly StringName Separation = "separation", NormalFont = "normal_font", NormalFontSize = "normal_font_size";
+    static readonly StringName Faint = "SpireModManagerFaint"; // "and 3 more"'s look (Look)
     const float Height = 20;
     const float TitleGap = 4; // more room between the title and the line under it
     const float RightMargin = 84; // from the row's right edge: clear of the (smaller, moved) tickbox and the pencil
     const float LoadOrderMargin = 20; // Load Order has no tickbox
     const float ActionsGap = 12;
     const float AuthorMax = 200; // px
+    // px, a row's category button at most (CategoryList.StripActions): about a quarter of the row, so the line under the
+    // title keeps most of it for the tags, the note and the author (a long name's button took two thirds of the row)
+    public const float CategoryMax = 240;
+    const int LabelSize = 13; // the author's and "and 3 more"'s text
     static readonly Color NoteColor = new(0.937f, 0.784f, 0.318f, 0.75f), AuthorColor = new(1, 0.964706f, 0.886275f, 0.45f);
+    const string FaintHex = "#fff6e280"; // "and 3 more": fainter than the author
 
     // edge: a quiet button at the row's far right, past the tickbox (the main list's pencil), or none.
     public static void Apply(IList<NModMenuRow> rows, Func<NModMenuRow, IEnumerable<MenuItem>> actions, Func<NModMenuRow, MenuItem>? edge = null)
@@ -119,11 +126,11 @@ static class RowStrip
             {
                 // Who made it, quietly. (Searching by author is in the info panel.)
                 var by = new Label { Name = AuthorName, Text = author, VerticalAlignment = VerticalAlignment.Center, MouseFilter = Control.MouseFilterEnum.Ignore };
-                // A long one is cut with "…"; the whole name after a second over it.
-                if (RowTitles.Measure(look.Font, author, 13) > AuthorMax)
+                // A long one is cut with ".."; the whole name after a second over it.
+                if (RowTitles.Measure(look.Font, author, LabelSize) > AuthorMax)
                 {
-                    (by.ClipText, by.TextOverrunBehavior, by.CustomMinimumSize, by.MouseFilter) =
-                        (true, TextServer.OverrunBehavior.TrimEllipsis, new Vector2(AuthorMax, 0), Control.MouseFilterEnum.Pass);
+                    (by.CustomMinimumSize, by.MouseFilter) = (new Vector2(AuthorMax, 0), Control.MouseFilterEnum.Pass);
+                    Menus.CutToFit(by, author);
                     Hover.Watch(by, "SpireModManagerFullText", () => author.Replace("[", "[lb]"), Hover.Timing.Slow);
                 }
                 strip.AddChild(by);
@@ -133,7 +140,7 @@ static class RowStrip
             row.AddChild(strip);
             Lap("added");
 
-            // Too many tags for the line: the last ones fold into "+N" (Fold). Worked out once the chips are laid
+            // Too many tags for the line: the last ones are "and N more" (Fold). Worked out once the chips are laid
             // out, and again whenever the line changes width.
             if (chips.Count > 0)
             {
@@ -146,10 +153,30 @@ static class RowStrip
     }
 
     // What a line's tags and author show, to know when the line must be made again: each tag's words, colour, kind,
-    // card and search (a tag keeps its card and its click's search: the Same ID tag's card names the other copies), and
+    // card and search (a tag keeps its card and its click's search: the Duplicate tag's card names the other copies), and
     // the author.
     public static string Shows(IEnumerable<Tags.Chip> chips, string author) =>
         $"{string.Join("|", chips.Select(c => $"{c.Text}/{c.Color}/{c.Custom}/{c.Tip}/{c.Search}"))}|{author}";
+
+    // "and 3 more": the tags that didn't fit on the line. Hovering it, a card with those tags (pills in their colours)
+    // and the click hint; only those, so the card is what the count counts. A click goes on to the row, which it
+    // selects, so the info panel shows them all.
+    static Label More(IReadOnlyList<Tags.Chip> tags)
+    {
+        var more = new Label
+        {
+            Name = MoreName, Text = MoreText(tags.Count), ThemeTypeVariation = Faint, VerticalAlignment = VerticalAlignment.Center,
+            MouseFilter = Control.MouseFilterEnum.Pass, MouseDefaultCursorShape = Control.CursorShape.PointingHand,
+        };
+        Hover.Watch(more, "SpireModManagerTagCard", () => MoreCard(tags), width: 320);
+        return more;
+    }
+
+    static string MoreCard(IReadOnlyList<Tags.Chip> tags) =>
+        $"{string.Join("  ", tags.Select(Tags.Pill))}\n\n{Tags.Hint(Menus.Text("SPIRE_MOD_MANAGER.MORE_TAGS_CLICK"))}";
+
+    static string MoreText(int count) =>
+        Menus.Format(count == 1 ? "SPIRE_MOD_MANAGER.MORE_TAGS_ONE" : "SPIRE_MOD_MANAGER.MORE_TAGS", ("count", Menus.Number(count)));
 
     // A row's buttons for these items: the ones it has, given them (Menus.Refill), or new ones, placed (margin: from
     // the row's right edge) before they join the row. path: their name's, to find them by.
@@ -171,7 +198,8 @@ static class RowStrip
     }
 
     // The line's look, one Theme on every line (made again when the font changes with the game's language): its gap,
-    // the note's text and the author's. The tags have their own (Tags.Look), which their text takes first.
+    // the note's text, the author's, and "and 3 more"'s (fainter, the Faint variation of a label).
+    // The tags have their own (Tags.Look), which their text takes first.
     static (Font Font, Theme Theme)? _look;
 
     static (Font Font, Theme Theme) Look()
@@ -185,8 +213,10 @@ static class RowStrip
         theme.SetFontSize("normal_font_size", "RichTextLabel", 13);
         theme.SetColor("default_color", "RichTextLabel", NoteColor);
         theme.SetFont("font", "Label", font);
-        theme.SetFontSize("font_size", "Label", 13);
+        theme.SetFontSize("font_size", "Label", LabelSize);
         theme.SetColor("font_color", "Label", AuthorColor);
+        theme.SetTypeVariation(Faint, "Label");
+        theme.SetColor("font_color", Faint, Color.FromHtml(FaintHex));
         _look = (font, theme);
         return (font, theme);
     }
@@ -225,7 +255,7 @@ static class RowStrip
         var part = text.Length > 0 ? Note(text) : Spacer();
         strip.AddChild(part);
         if (author != null)
-            strip.MoveChild(part, author.GetIndex()); // before the author, after the tags and "+N"
+            strip.MoveChild(part, author.GetIndex()); // before the author, after the tags and "and N more"
         return true;
     }
 
@@ -249,7 +279,8 @@ static class RowStrip
 #endif
     }
 
-    // Shows as many tags as fit beside the author and the needs (up to half the line); the rest fold into "+N".
+    // Shows as many tags as fit beside the author and the needs (up to half the line), whole ones only; the rest are
+    // "and N more" after them.
     static void Fold(NModMenuRow row, HBoxContainer strip, IReadOnlyList<Tags.Chip> chips)
     {
         if (!GodotObject.IsInstanceValid(row) || !GodotObject.IsInstanceValid(strip) || !strip.IsInsideTree())
@@ -265,8 +296,9 @@ static class RowStrip
         var count = widths.Count;
         if (kept + widths.Sum() > room)
         {
+            var font = Look().Font;
             count--;
-            while (count > 0 && kept + widths.Take(count).Sum() + Tags.MoreWidth(widths.Count - count) + gap > room)
+            while (count > 0 && kept + widths.Take(count).Sum() + RowTitles.Measure(font, MoreText(widths.Count - count), LabelSize) + gap > room)
                 count--;
         }
         if (strip.HasMeta(ShownMeta) && (int)strip.GetMeta(ShownMeta) == count)
@@ -277,8 +309,7 @@ static class RowStrip
         Drop(strip, MorePath);
         if (count == tags.Count)
             return;
-        var more = Tags.More(chips.Skip(count).ToList());
-        more.Name = MoreName;
+        var more = More([.. chips.Skip(count)]);
         strip.AddChild(more);
         strip.MoveChild(more, tags.Count); // after the tags, before the note
     }
@@ -348,13 +379,14 @@ static class RowStrip
     }
 
     // "Needs: BaseLib, RitsuLib", each dependency green when fine, red with why when missing, off or loading after this
-    // mod ("before"/"after" in Load Order). A disabled mod's line only shows whether each dependency is on.
+    // mod ("before"/"after" in Load Order). The line of a mod that won't load (off, or another copy of it loads) only
+    // shows whether each dependency loads (any copy of it).
     public static string Needs(Mod? mod, IReadOnlyDictionary<Mod, int> order, bool loadOrder)
     {
         var deps = Dependencies.Of(mod);
         if (mod == null || deps.Count == 0)
             return "";
-        var on = Dependencies.IsOn(mod);
+        var on = Copies.Loads(mod);
         var parts = deps.Select(id =>
         {
             var name = Escape(Dependencies.Find(id)?.manifest?.name ?? id);
@@ -367,8 +399,8 @@ static class RowStrip
                 Dependencies.Problem.Off => (Menus.Text("SPIRE_MOD_MANAGER.DEP_OFF"), ProblemHex),
                 Dependencies.Problem.LoadsBefore => (Menus.Text("SPIRE_MOD_MANAGER.DEP_AFTER"), ProblemHex),
                 _ when loadOrder && on => (Menus.Text("SPIRE_MOD_MANAGER.DEP_BEFORE"), FineHex),
-                // A mod that's off: no problems to report yet, but each dependency still shows whether it's on.
-                _ => (null, Dependencies.Find(id) is { } dep && Dependencies.IsOn(dep) ? FineHex : ProblemHex),
+                // A mod that won't load: no problems to report yet, but each dependency still shows whether it loads.
+                _ => (null, Dependencies.Find(id) is { } dep && Copies.Loads(dep) ? FineHex : ProblemHex),
             };
             if (word != null)
                 return $"[color={NameHex}]{name}[/color] [color={color}]{word}[/color]";
@@ -377,16 +409,16 @@ static class RowStrip
         return $"{Menus.Text("SPIRE_MOD_MANAGER.NEEDS_LABEL")}: {string.Join(", ", parts)}";
     }
 
-    // "Required for 3 mods": how many mods that are on need this one; red when this one is off.
+    // "Required for 3 mods": how many mods that load need this one; red when no copy of it loads.
     public static string RequiredFor(Mod? mod)
     {
         if (mod?.manifest?.id is not { } id)
             return "";
-        var count = Dependencies.NeededBy(id).Count(m => m != mod && Dependencies.IsOn(m));
+        var count = Dependencies.NeededBy(id).Count(m => m != mod && Copies.Loads(m));
         if (count == 0)
             return "";
         var text = Menus.Format(count == 1 ? "SPIRE_MOD_MANAGER.REQUIRED_FOR_ONE" : "SPIRE_MOD_MANAGER.REQUIRED_FOR", ("count", Menus.Number(count)));
-        return $"[color={(Dependencies.IsOn(mod) ? RequiredHex : ProblemHex)}]{text}[/color]";
+        return $"[color={(Copies.Loading(id) != null ? RequiredHex : ProblemHex)}]{text}[/color]";
     }
 
     const string FineHex = "#9fdc9f", ProblemHex = "#ff8070", NameHex = "#fff6e2", RequiredHex = "#e8cf7a";

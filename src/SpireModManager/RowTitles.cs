@@ -5,8 +5,9 @@ using MegaCrit.Sts2.addons.mega_text;
 
 namespace SpireModManager;
 
-// Row titles in our views: the alias with the original name small and dim beside it, cut with "…" to fit, a notepad
-// before it when the mod has notes, and gold for mods turned on or off since launch. Vanilla View: the game's.
+// Row titles in our views: the alias with the original name small and dim beside it, cut with ".." to fit, a notepad
+// before it when the mod has notes, gold for mods turned on or off since launch, white for a ticked copy the game
+// greyed, and soft blue for Workshop mods. Vanilla View: the game's.
 static class RowTitles
 {
     const int OriginalNameSize = 16;
@@ -116,7 +117,7 @@ static class RowTitles
             var space = Width(" ", Layout.RowTitleSize);
             const int gap = 2;
             var left = room - mainWidth - gap * space;
-            var original = left > Width("……", OriginalNameSize) ? Cut(font, name, OriginalNameSize, left) : "";
+            var original = left > Width(Menus.CutMark, OriginalNameSize) ? Cut(font, name, OriginalNameSize, left) : "";
             if (original.Length > 0)
             {
                 text += new string(' ', gap) + $"[color=#fff6e280][font_size={OriginalNameSize}]{Escape(original)}[/font_size][/color]";
@@ -133,11 +134,13 @@ static class RowTitles
         {
             hot = new Control { Name = HotName, MouseFilter = Control.MouseFilterEnum.Pass };
             row.AddChild(hot);
-            // Cut short: the card starts with the whole title. (Alt: the card with nothing cut.)
+            // Cut short: the card starts with the whole title (under the mod's picture). (Alt: the card with nothing cut.)
+            // While the list is searched, where the search found it.
             var watched = hot;
             string? Card(bool full) => row.Mod is { } shown
-                ? (watched.GetMeta(FullMeta, "").AsString() is { Length: > 0 } title ? $"[b]{Escape(title)}[/b]\n" : "") + ModDetails.Card(shown, full) : null;
-            Hover.Watch(hot, NotesCard, () => Card(false), full: () => Card(true));
+                ? ModDetails.Card(shown, full, watched.GetMeta(FullMeta, "").AsString() is { Length: > 0 } title ? title : null,
+                    row.GetParent() is Control list ? CategoryList.Filter(list) : null) : null;
+            Hover.Watch(hot, NotesCard, () => Card(false), width: ModDetails.CardWidth, full: () => Card(true));
         }
         // Over the main title only (the alias), not the original name beside it.
         (hot.Position, hot.Size, hot.Visible) = (new Vector2(title.Position.X, top), new Vector2(mainWidth, lineHeight), true);
@@ -239,53 +242,90 @@ static class RowTitles
             title.SetMeta(FittedMeta, text);
     }
 
-    // The text as it fits in width at this size: whole, or cut short with "…" (empty when not even that fits).
-    // Row titles, and the info panel's title and source line.
+    // The text as it fits in width at this size: whole, or cut short with ".." (empty when not even that fits), cut
+    // between text elements only (Menus.Prefix says why). Row titles, labels cut to fit, and the info panel's title and
+    // source line.
     public static string Cut(Font font, string full, int size, float width)
     {
         float Width(string text) => Measure(font, text, size);
         if (Width(full) <= width)
             return full;
-        var length = full.Length;
-        while (length > 0 && Width(full[..length].TrimEnd() + "…") > width)
-            length--;
-        return length > 0 ? full[..length].TrimEnd() + "…" : "";
+        // Every cut ends with the mark, so nothing fits where it doesn't. A label at its 1 px minimum, before it's laid
+        // out, would otherwise measure every start of its text, each a width kept for nothing.
+        if (Width(Menus.CutMark) > width)
+            return "";
+        // By halves: a longer start is never narrower (what CutShort drops at its end only keeps it as wide), but for a
+        // font's kerning, which can leave the cut found a little short of the longest. It always fits.
+        var starts = System.Globalization.StringInfo.ParseCombiningCharacters(full); // where each text element starts
+        var (fits, over) = (0, starts.Length); // the first `fits` elements fit (with the mark); the first `over` don't
+        while (over - fits > 1)
+        {
+            var mid = (fits + over) / 2;
+            if (Width(Menus.CutShort(full[..starts[mid]])) <= width)
+                fits = mid;
+            else
+                over = mid;
+        }
+        return fits > 0 ? Menus.CutShort(full[..starts[fits]]) : "";
     }
 
     // Text widths per font and size, measured once (shaping is slow, and the font's own cache is too small for a long
     // list); cleared now and then, as cut texts add many. Titles, and the line under them (tags, notes, authors).
     static readonly Dictionary<(Font Font, int Size, string Text), float> Widths = [];
 
+#if DEVTOOLS
+    // Self-test: how many widths Measure has shaped (not found kept).
+    public static int TestMeasured { get; set; }
+#endif
+
     public static float Measure(Font font, string text, int size)
     {
         if (Widths.TryGetValue((font, size, text), out var width))
             return width;
+#if DEVTOOLS
+        TestMeasured++;
+#endif
         if (Widths.Count >= 10000)
             Widths.Clear();
         return Widths[(font, size, text)] = font.GetStringSize(text, fontSize: size).X;
     }
 
-    // Our views: a mod turned on since launch gets a bright gold title, one turned off a dim one; otherwise the game's
-    // colour.
+    // Our views: a mod turned on since launch gets a bright gold title, one turned off a dim one. Otherwise the game's
+    // colour from launch, but white for a ticked copy of a mod installed more than once that the game greyed (set aside
+    // as a duplicate, off, or installed since): it's on, though only one copy of its id loads. The game's red (failed)
+    // and purple (not tried) stay: they're what the launch did. A Workshop mod's white is a soft blue, and its grey that
+    // blue as dim as the game's grey, so Workshop mods stand out a little from local ones (Sourced).
     public static readonly Color ChangedTitle = new(1f, 0.82f, 0.45f); // turned on: bright gold
     public static readonly Color ChangedOffTitle = new(0.72f, 0.6f, 0.42f, 0.8f); // turned off: a dim, dusky gold
+    // A soft steel blue (#bfd4f2): a shade deeper than the panel's mod links (ModDetails.ModLinkHex), far from the bright
+    // external-link blue, so it reads as a name rather than a link
+    public static readonly Color WorkshopTitle = new(0.75f, 0.83f, 0.95f);
     static readonly StringName TitleColorMeta = "spire_mod_manager_title_color";
 
     public static void MarkChanged(IEnumerable<NModMenuRow> rows, bool vanilla)
     {
-        // Each copy against launch as Changes reads it (HistoryBar.ModChanges): a switch to another copy marks both.
-        var launch = History.Loaded is { } loaded ? (Off: Dependencies.SavedOff(loaded.Mods), Picks: Store.PicksIn(loaded.Store)) : default((HashSet<(string?, ModSource)> Off, Picks Picks)?);
+        // Each copy against launch as Changes reads it (HistoryBar.ModChanges): its own box, copies_off included.
+        var launch = History.Loaded is { } loaded ? (Off: Dependencies.SavedOff(loaded.Mods), Ticks: Store.TicksIn(loaded.Store)) : default((HashSet<(string?, ModSource)> Off, Ticks Ticks)?);
         foreach (var row in rows)
         {
             var title = row.GetNode<Control>(TitlePath);
             if (!title.HasMeta(TitleColorMeta))
                 title.SetMeta(TitleColorMeta, title.Modulate);
-            var changed = !vanilla && launch is { } then && row.Mod is { manifest.id: not null } mod
-                && Dependencies.OnIn(mod, then.Off, then.Picks) != Dependencies.IsOn(mod);
-            title.Modulate = !changed ? (Color)title.GetMeta(TitleColorMeta)
-                : row.Mod is { } turned && Dependencies.IsOn(turned) ? ChangedTitle : ChangedOffTitle;
+            if (vanilla || row.Mod is not { manifest.id: not null } mod)
+            {
+                title.Modulate = (Color)title.GetMeta(TitleColorMeta);
+                continue;
+            }
+            var ticked = Copies.Ticked(mod);
+            title.Modulate = launch is { } then && Copies.TickedIn(mod, then.Off, then.Ticks) != ticked ? (ticked ? ChangedTitle : ChangedOffTitle)
+                : Sourced(mod, ticked && mod.state is ModLoadState.Disabled or ModLoadState.DisabledDuplicate or ModLoadState.AddedAtRuntime
+                    && Copies.Others(mod).Count > 0 ? Colors.White : (Color)title.GetMeta(TitleColorMeta));
         }
     }
+
+    // A Workshop mod's white or grey title in WorkshopTitle, the grey as dim; anything else as it is.
+    static Color Sourced(Mod mod, Color color) =>
+        mod.modSource == ModSource.SteamWorkshop && (color == Colors.White || color == MegaCrit.Sts2.Core.Helpers.StsColors.gray) ? color * WorkshopTitle : color;
 
     // The row's highlight in our views: one rounded shape for every state, a little wider than the game's; a faint tint
     // under the mouse, a brighter one with an even gold rim for the mod in the info panel. Vanilla View: the game's.

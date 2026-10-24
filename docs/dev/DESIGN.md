@@ -20,21 +20,86 @@ Ease of use is the heart of the mod, not just its utility.
 
 ## The game's data comes first
 
-- The vanilla Modding page keeps working untouched, one click away (Vanilla List).
+- The vanilla modding page keeps working untouched, one click away (the link by our page's title).
 - The game's `mod_list` is the truth for what's on and the load order. Edits go to it at once and take effect
   on relaunch; nothing of ours can disagree with the game's tickboxes.
-- One exception, because the game has one switch for them: which copy loads of a mod installed twice from one
-  source (two Workshop items). That's our pick (`copy_picks`), applied in our Init, before the game tries the
-  copies; our page has a tickbox per copy, one copy of an id on. The game's page keeps its one switch.
-- Profiles key mods by id and source, like `mod_list` (plus the picked copy). A newly installed mod joins the active profile, enabled.
+- One exception, because the game has one switch for them: copies of a mod installed twice from one source (two
+  Workshop items). Which of them are ticked is ours (`copies_off`). Which copy loads is worked out at every launch,
+  never stored, and only the ticked copies count: a copy that's off never beats a ticked one, and loads only where no
+  ticked copy can (on through a ticked twin's switch, it still takes part in the game's sort, so it can hold the id's
+  first slot where the ticked copy can't take it). First the game's local-vs-Workshop rule over the ticked copies (where the game's own
+  rule, which sees only the switches, set aside the copy this leaves, the launch brings it back), then of one source
+  the highest ticked version (the copy installed first on a tie). Where that copy can't take
+  the id's first slot (something it needs that's on sorts after the slot) while a mod still to load needs the id, the
+  copy the same rule picks without it, and without any other copy that can't take the slot (one needing a mod that's
+  missing, off or after the slot, or below a minimum version a mod still to load needs), loads instead; none: the first
+  copy left that can, else the first, both by the tie order (the game's sort can put copies of one id either way
+  round). A dependency that's off or missing never stops the copy chosen: it loads and fails, and the dependency
+  warnings say so, as for a mod installed once. It all runs in our Init, before the game tries the copies. Our page
+  works out where the slot falls from the next launch's order: the game sorts by the saved list it rebuilt from the
+  order that loaded (saved at the main menu), ranking an id by its last entry, then puts what a mod needs first (the
+  first copy of it the game reads). Our page has a tickbox per copy, and two copies of an id can both be ticked (only
+  one loads). The game's page keeps its one switch.
+- Where the page and the launch can still differ, or older data reads differently (all rare):
+  - Data from the dev builds before this, whose pick was missing: the copy standing in for it stays ticked, so once
+    the pick is back both are ticked and the higher version loads, where those builds loaded the pick. A stand-in
+    can't be told from a copy ticked by hand.
+  - A session that can't save our data ties by the file's record order, as the next launch does. But a copy new to
+    the record that ties with the one there, installed with the game closed, goes by the copy the last launch had on
+    the page, and by the items' age at the next launch, whose launch record names both.
+  - With two local copies and a Workshop one, the game's rule can leave copies of both sources. Our choice goes by the
+    source of the first ticked copy in the order of the id's copies this launch had before its swap (the copies the
+    rule leaves first, then those it beat), which the page takes as the next launch's. The game's sort ties copies of
+    one id and doesn't keep their order, so anything that changes the sort around them (a mod installed, removed,
+    switched on or off, or moved) can reorder them, and the page can then be wrong for one launch. A blocked copy's
+    fallback goes by the tie order within each of the two, on the page and at the launch, so it isn't affected.
+  - Whether the next launch can put a copy in the id's first slot: the page reads the saved list as it is now. We save
+    the game's rebuild at the main menu (the game itself later, if at all: leaving its settings screen, remapping a
+    control, quitting); after a session that ends before that (a crash at launch), the next launch reads the list from
+    before and sorts as this launch did, so a copy blocked this launch can be blocked again while the page named it.
+    Ids the list doesn't have yet tie in the game's sort, which the page takes in the game's list order. The game reads
+    Workshop items in Steam's order, which the page has from launch: one subscribed since comes after the others there,
+    wherever Steam puts it. A mod uninstalled since still counts, as the game's list keeps it.
+  - A copy in a dependency cycle, or waiting on one, can make the game fail every copy of the id (its cycle check goes
+    by id), whatever the page and the launch choose.
+  - An id the launch couldn't choose for (the canary failed, or the self-check found the choice not taken): the page
+    names the copy that loaded, where the next launch can load it again (else the first copy the game's rule leaves).
+    An order change since (a mod it needs moved after the id) can make the next launch load another.
+  - A Workshop item with two manifests of one id in one folder, read while the game runs (installed or updated), counts once until
+    the next launch. That launch reads both and so checks whether the copy can take the id's first slot, where the page
+    doesn't, so the page can name a copy that launch blocks.
+  - On the beta, the page compares a Workshop copy with the local copy's newest manifest, where the game compares it
+    with the first it read. They differ only where a local folder has two manifests of the id whose versions read
+    differently.
+  - Where no ticked copy can take a blocked copy's place, each other copy counts by its newest manifest. A Workshop item
+    with manifests of the id in two folders whose newest needs a mod after the slot is then put in the slot and fails,
+    though its older manifest could have loaded there. Two manifests of one copy at the same version go by the list
+    order, which the page takes from the next launch's predicted order and the launch from its own, so the two can
+    differ when the game's sort puts them the other way round.
+- A copy that needs a mod installed from both sources is blocked at every launch, and so is one that needs a mod that
+  waits on such a mod. Here the page and the launch agree. The game's rebuild lists that mod's copy it took out (off,
+  or set aside by its local-vs-Workshop rule) after all the rest, and it ranks an id by its last entry, so the mod
+  sorts after the slot each time. The blocked copy's line says why. A Load Order move clears it for one launch at most,
+  and the menu dot then shows after that launch, as the page names the copy that loads instead. Keeping such a mod
+  where it loaded in the order is planned separately.
+- Profiles key mods by id and source, like `mod_list` (plus, for copies from one source, which are ticked). A shared
+  list's rows set a mod installed once by its id; where its id is installed more than once, a row with a Workshop
+  link sets that copy alone. A newly installed mod joins the active profile, enabled.
   With no profiles yet, an ordinary one named "Default" is made from the current list.
 - The mod managers (this one, Better Mod Menu) are never turned on or off by a profile.
+- Spire Mod Manager is first in whichever category it's in. Its copies have a box each, like any other mod's (its
+  copies from one source share one). Disable all leaves it on; its own box, a selection that has it and the bulk menu
+  can turn it off. With every copy of it off, a red banner says so and Relaunch asks first, both with Enable now for
+  the copy running.
+- Its copies get the same messages as any mod's, and the same clash warnings with two of them ticked. Which of them
+  loads is the game's own choice, as it loads before it could choose: between sources the game's rule, with its
+  reason; between copies from one source, with none.
 - Our own data is one JSON file per Steam account, written atomically, with 10 backups.
 
 ## Load order
 
 - One global order, in its own view. Disabled mods are greyed out but can still be moved.
-- Spire Mod Manager always loads first, pinned at the top: its Init has to run before any copy it picks for.
+- Spire Mod Manager always loads first, pinned at the top: its Init has to run before any copy it chooses for.
 - Fix now moves dependencies ahead of what needs them, otherwise keeping the order (the game's own rule).
 - Auto sort: libraries, then gameplay mods, then the rest, then the same dependency sweep; the player's order
   holds within each tier.
@@ -60,6 +125,6 @@ Ease of use is the heart of the mod, not just its utility.
 - Open source under MIT. Bugs go to GitHub issues; Workshop comments get read too.
 - The main menu button is the game's own text button ("Default (12 mods)"), with no picture; its right-click
   menu is headed "Spire Mod Manager v<version>".
-- F3 (the game uses it only as a debug key in its trailer mode) opens the Modding page from the main menu and goes back from it (anything of ours
+- F3 (the game uses it only as a debug key in its trailer mode) opens the modding page from the main menu and goes back from it (anything of ours
   that's open closes first, as with Escape); nothing on other screens or while typing. One constant for now.
 - Left to other mods: multiplayer host sync, forced A-Z ordering, a grid view.

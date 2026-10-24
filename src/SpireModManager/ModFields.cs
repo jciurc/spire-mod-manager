@@ -5,7 +5,8 @@ namespace SpireModManager;
 // One of the player's own fields for a mod (alias, notes, tags), the same in the info panel and a right-click menu.
 // For several mods (the bulk menu), tags edit the ones all share and notes replace all (a warning counts the notes
 // overwritten). At rest: the value (tags as pills) or a call to action. Editing: a box with ✕; Enter saves (Ctrl+Enter
-// in notes), Escape or Cancel restores, clicking away saves. Tags also show the automatic ones, and suggestions.
+// in notes), Escape or Cancel restores, clicking away saves. Tags also show the automatic ones, suggestions, and pills
+// while typing (TagPills).
 sealed class ModField
 {
     public enum Kind { Alias, Notes, Tags }
@@ -43,7 +44,7 @@ sealed class ModField
 
         var term = new HBoxContainer { Name = "Term", MouseFilter = Control.MouseFilterEnum.Ignore, CustomMinimumSize = new Vector2(0, 26) };
         term.AddThemeConstantOverride("separation", 6);
-        // The term explains the field in our hover card; the box itself only ever invites ("Add notes").
+        // The term explains the field in our hover card; the box itself only ever invites ("Add note").
         var label = new Label
         {
             Name = "Label", Text = Menus.Text(LocKey("TERM")), SizeFlagsHorizontal = Control.SizeFlags.ShrinkBegin, VerticalAlignment = VerticalAlignment.Center,
@@ -65,14 +66,13 @@ sealed class ModField
             var mixed = _mixed = new Label
             {
                 Name = "Mixed", VerticalAlignment = VerticalAlignment.Center, MouseFilter = Control.MouseFilterEnum.Pass, Visible = false,
-                SizeFlagsHorizontal = Control.SizeFlags.ExpandFill, SizeFlagsStretchRatio = 100, ClipText = true,
-                TextOverrunBehavior = TextServer.OverrunBehavior.TrimEllipsis,
+                SizeFlagsHorizontal = Control.SizeFlags.ExpandFill, SizeFlagsStretchRatio = 100,
             };
             Style(mixed, "res://themes/kreon_regular_shared.tres", 15, Warning);
             term.AddChild(mixed);
             // Cut short (Save and Cancel take the line's end while editing): the whole of it in the plain tooltip.
-            Hover.Watch(mixed, "SpireModManagerFullText", () => mixed.GetThemeFont("font").GetStringSize(mixed.Text, fontSize: 15).X > mixed.Size.X
-                ? Hover.Escape(mixed.Text) : null, Hover.Timing.Slow);
+            Hover.Watch(mixed, "SpireModManagerFullText", () => Menus.WholeText(mixed) is var whole && whole != mixed.Text
+                ? Hover.Escape(whole) : null, Hover.Timing.Slow);
         }
         if (kind == Kind.Tags)
         {
@@ -80,8 +80,9 @@ sealed class ModField
             (_system.SizeFlagsHorizontal, _system.SizeFlagsVertical) = (Control.SizeFlags.ExpandFill, Control.SizeFlags.ShrinkCenter);
             term.AddChild(_system);
         }
-        else // the term is only as wide as its word (its tooltip with it); the rest of the line pushes Save and Cancel right
-            term.AddChild(new Control { Name = "Space", SizeFlagsHorizontal = Control.SizeFlags.ExpandFill, MouseFilter = Control.MouseFilterEnum.Ignore });
+        // The term is only as wide as its word (its tooltip with it); the rest of the line pushes Save and Cancel right,
+        // with the automatic tags or without them (none, or hidden while editing).
+        term.AddChild(new Control { Name = "Space", SizeFlagsHorizontal = Control.SizeFlags.ExpandFill, MouseFilter = Control.MouseFilterEnum.Ignore });
         _buttons = Menus.InlineButtons([
             new(Menus.Text("SPIRE_MOD_MANAGER.SAVE"), () => _box?.ReleaseFocus()), // leaving the box saves
             new(Menus.Text("SPIRE_MOD_MANAGER.CANCEL"), Cancel),
@@ -117,7 +118,10 @@ sealed class ModField
         _box.MouseDefaultCursorShape = Control.CursorShape.Ibeam;
         root.AddChild(_box);
         if (kind == Kind.Tags && _box is LineEdit tagsBox)
+        {
             _suggestions = new TagSuggestions(tagsBox);
+            TagPills.Attach(tagsBox);
+        }
 
         // Notes has no built-in clear button: a small ✕ in its top-right corner while editing.
         Button? clear = null;
@@ -168,8 +172,9 @@ sealed class ModField
         };
         _box.GuiInput += e =>
         {
-            // The suggestions' keys first: arrows, Escape closing the list, Enter taking a tag rather than saving.
-            if (_suggestions?.Use(e) == true)
+            // The suggestions' keys first: arrows, Escape closing the list, Enter taking a tag rather than saving. Then the
+            // pills': Backspace and Delete on a whole pill, Copy, Cut and Paste, a comma, a double-click.
+            if (_suggestions?.Use(e) == true || (_kind == Kind.Tags && _box is LineEdit tags && TagPills.Use(tags, e)))
             {
                 _box.AcceptEvent();
                 return;
@@ -359,7 +364,7 @@ sealed class ModField
 
     string LocKey(string part) => $"SPIRE_MOD_MANAGER.{_kind.ToString().ToUpperInvariant()}_{part}";
 
-    // The call to action ("Add notes"), at rest and while editing alike (what the field is for is the term's tooltip).
+    // The call to action ("Add note"), at rest and while editing alike (what the field is for is the term's tooltip).
     // Several mods with differing notes: the warning beside the term, counting the mods whose notes typing overwrites.
     void Hint()
     {
@@ -372,8 +377,8 @@ sealed class ModField
             return;
         var withNotes = NotesDiffer ? _modIds().Count(id => Store.InfoFor(id)?.Notes is { Length: > 0 }) : 0;
         _mixed.Visible = withNotes > 0;
-        _mixed.Text = withNotes == 1 ? Menus.Text("SPIRE_MOD_MANAGER.NOTES_BULK_MIXED_ONE")
-            : Menus.Format("SPIRE_MOD_MANAGER.NOTES_BULK_MIXED", ("count", Menus.Number(withNotes)));
+        Menus.CutToFit(_mixed, withNotes == 1 ? Menus.Text("SPIRE_MOD_MANAGER.NOTES_BULK_MIXED_ONE")
+            : Menus.Format("SPIRE_MOD_MANAGER.NOTES_BULK_MIXED", ("count", Menus.Number(withNotes))));
     }
 
     // The bulk menu's card (its i and both terms): how tags and notes work for several mods.

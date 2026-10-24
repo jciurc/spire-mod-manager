@@ -1,0 +1,76 @@
+#nullable enable
+SpireModManager.Api.ApiInfo
+SpireModManager.Api.BannerKind
+SpireModManager.Api.BannerKind.Problem = 0 -> SpireModManager.Api.BannerKind
+SpireModManager.Api.BannerKind.Warning = 1 -> SpireModManager.Api.BannerKind
+SpireModManager.Api.BannerOptions
+SpireModManager.Api.BannerOptions.BannerOptions() -> void
+SpireModManager.Api.BannerOptions.Kind.get -> SpireModManager.Api.BannerKind
+SpireModManager.Api.BannerOptions.Kind.init -> void
+SpireModManager.Api.BannerOptions.Name.get -> string?
+SpireModManager.Api.BannerOptions.Name.init -> void
+SpireModManager.Api.BannerOptions.OnDismiss.get -> System.Action?
+SpireModManager.Api.BannerOptions.OnDismiss.init -> void
+SpireModManager.Api.BannerOptions.Text.get -> string!
+SpireModManager.Api.BannerOptions.Text.init -> void
+SpireModManager.Api.Banners
+SpireModManager.Api.Fonts
+SpireModManager.Api.GameResources
+SpireModManager.Api.MenuEntry
+SpireModManager.Api.MenuEntry.Disabled.get -> bool
+SpireModManager.Api.MenuEntry.Disabled.init -> void
+SpireModManager.Api.MenuEntry.Icon.get -> Godot.Texture2D?
+SpireModManager.Api.MenuEntry.Icon.init -> void
+SpireModManager.Api.MenuEntry.Label.get -> string!
+SpireModManager.Api.MenuEntry.Label.init -> void
+SpireModManager.Api.MenuEntry.MenuEntry() -> void
+SpireModManager.Api.MenuEntry.OnSelect.get -> System.Action?
+SpireModManager.Api.MenuEntry.OnSelect.init -> void
+SpireModManager.Api.MenuOptions
+SpireModManager.Api.MenuOptions.From.get -> Godot.Rect2?
+SpireModManager.Api.MenuOptions.From.init -> void
+SpireModManager.Api.MenuOptions.MenuOptions() -> void
+SpireModManager.Api.ModCards
+SpireModManager.Api.ModNotes
+SpireModManager.Api.ModNotes.Alias.get -> string?
+SpireModManager.Api.ModNotes.Alias.init -> void
+SpireModManager.Api.ModNotes.Category.get -> string?
+SpireModManager.Api.ModNotes.Category.init -> void
+SpireModManager.Api.ModNotes.ModNotes() -> void
+SpireModManager.Api.ModNotes.Notes.get -> string?
+SpireModManager.Api.ModNotes.Notes.init -> void
+SpireModManager.Api.ModNotes.Tags.get -> System.Collections.Generic.IReadOnlyList<string!>!
+SpireModManager.Api.ModNotes.Tags.init -> void
+SpireModManager.Api.Mods
+SpireModManager.Api.Palette
+SpireModManager.Api.PopupMenus
+static readonly SpireModManager.Api.ApiInfo.Version -> int
+static SpireModManager.Api.Banners.Create(SpireModManager.Api.BannerOptions! options) -> Godot.Control!
+static SpireModManager.Api.Fonts.Bold() -> Godot.Font!
+static SpireModManager.Api.Fonts.Regular() -> Godot.Font!
+static SpireModManager.Api.Fonts.Style(Godot.Control! control, bool bold, int size, Godot.Color color) -> void
+static SpireModManager.Api.GameResources.Load<T>(string! path) -> T?
+static SpireModManager.Api.MenuEntry.Divider() -> SpireModManager.Api.MenuEntry!
+static SpireModManager.Api.MenuEntry.Heading(string! label) -> SpireModManager.Api.MenuEntry!
+static SpireModManager.Api.ModCards.Text(string! modId) -> string?
+static SpireModManager.Api.ModCards.Show(Godot.Control! trigger) -> bool
+static SpireModManager.Api.ModCards.Close() -> bool
+static SpireModManager.Api.ModCards.Watch(Godot.Control! trigger, string! modId) -> void
+static SpireModManager.Api.ModCards.WatchLinks(Godot.RichTextLabel! label, System.Func<string!, string?>! modIdForLink) -> void
+static SpireModManager.Api.Mods.Details(string! modId) -> SpireModManager.Api.ModNotes!
+static SpireModManager.Api.Mods.TestDetails(string! modId, SpireModManager.Api.ModNotes? notes) -> void
+static SpireModManager.Api.Mods.Version(string! modId) -> string?
+static SpireModManager.Api.Palette.Cream.get -> Godot.Color
+static SpireModManager.Api.Palette.DeepNavy.get -> Godot.Color
+static SpireModManager.Api.Palette.Gold.get -> Godot.Color
+static SpireModManager.Api.Palette.Navy.get -> Godot.Color
+static SpireModManager.Api.Palette.Problem.get -> Godot.Color
+static SpireModManager.Api.Palette.Warning.get -> Godot.Color
+static SpireModManager.Api.PopupMenus.Close() -> bool
+static SpireModManager.Api.PopupMenus.Current.get -> Godot.Node?
+static SpireModManager.Api.PopupMenus.Headings(Godot.Node! menu) -> System.Collections.Generic.IReadOnlyList<string!>!
+static SpireModManager.Api.PopupMenus.IsOpen.get -> bool
+static SpireModManager.Api.PopupMenus.Press(Godot.Node! menu, string! label) -> bool
+static SpireModManager.Api.PopupMenus.Rows(Godot.Node! menu) -> System.Collections.Generic.IReadOnlyList<(string! Label, bool Disabled)>!
+static SpireModManager.Api.PopupMenus.Show(Godot.Node! owner, System.Collections.Generic.IReadOnlyList<SpireModManager.Api.MenuEntry!>! entries) -> Godot.Node?
+static SpireModManager.Api.PopupMenus.Show(Godot.Node! owner, System.Collections.Generic.IReadOnlyList<SpireModManager.Api.MenuEntry!>! entries, SpireModManager.Api.MenuOptions! options) -> Godot.Node?

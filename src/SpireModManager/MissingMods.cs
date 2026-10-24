@@ -14,6 +14,11 @@ static class MissingMods
     static readonly Color Cream = new(1, 0.964706f, 0.886275f), Gold = new(0.937f, 0.784f, 0.318f), Dim = new(1, 0.964706f, 0.886275f, 0.55f);
     static readonly Color Failed = new(1, 0.5f, 0.44f), Done = new(0.6f, 0.86f, 0.55f);
 
+    public static bool IsOpen => Modal.IsOpen(Name);
+
+    // True when there was one to close.
+    public static bool Close() => Modal.Close(Name);
+
     public static void Show(NModdingScreen screen)
     {
         var listed = Profiles.Missing();
@@ -41,7 +46,7 @@ static class MissingMods
         var all = Menus.SmallButton("", () => Subscriptions.Subscribe(Ready(listed)), name: "SubscribeAllButton");
         Hover.Tip(all, Menus.Text("SPIRE_MOD_MANAGER.SUBSCRIBE_TIP"));
         buttons.AddChild(all);
-        buttons.AddChild(Menus.SmallButton(Menus.Text("SPIRE_MOD_MANAGER.CLOSE"), () => Modal.Close(Name), name: "CloseMissingButton"));
+        buttons.AddChild(Menus.SmallButton(Menus.Text("SPIRE_MOD_MANAGER.CLOSE"), () => Close(), name: "CloseMissingButton"));
         column.AddChild(buttons);
 
         void Fill()
@@ -77,7 +82,7 @@ static class MissingMods
     static bool IsInstalled(Profiles.MissingMod mod) => ModManager.Mods.Any(m => m.manifest?.id == mod.Id && m.modSource == mod.Source);
 
     // One mod: its name (a link to its Workshop page, with the external-link mark), then what can be done or what's
-    // happening: Subscribe; Subscribing… or its download's progress; installed; why it failed (and Subscribe again).
+    // happening: Subscribe; Subscribing.. or its download's progress; installed; why it failed (and Subscribe again).
     static Control Row(Profiles.MissingMod mod)
     {
         var row = new HBoxContainer { Name = mod.Id, SizeFlagsHorizontal = Control.SizeFlags.ExpandFill };
@@ -92,6 +97,7 @@ static class MissingMods
         var shown = Hover.Escape(mod.Name);
         name.Text = mod.Item is { } item
             ? $"[url={ProfileCsv.WorkshopLink(item)}][color={ModDetails.ModLinkHex}]{shown}{LinkMark.Tag(18, ModDetails.ModLinkHex)}[/color][/url]" : shown;
+        name.MetaUnderlined = false; // our links: their colour and the pointing hand
         name.MetaClicked += meta =>
         {
             if (meta.AsString() is var link && ProfileCsv.IsWorkshopLink(link))

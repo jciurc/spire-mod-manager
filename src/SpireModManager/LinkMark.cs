@@ -72,7 +72,28 @@ static class LinkMark
         var fontSize = control.GetThemeFontSize("font_size");
         var text = control is LinkButton link ? link.Text : (control as Label)?.Text ?? "";
         var size = Size(fontSize);
-        return new Rect2(MathF.Round(font.GetStringSize(text + Gap, fontSize: fontSize).X), MathF.Round(font.GetAscent(fontSize)) - size, size, size);
+        return new Rect2(MathF.Round(font.GetStringSize(text + Gap, fontSize: fontSize).X), MathF.Round(Baseline(control, text, font, fontSize)) - size, size, size);
+    }
+
+    // How far below the control's top it draws its text's baseline, from the text's ascent and height as they're shaped
+    // (Layout.Line), not the font's own, which count every fallback: a mod that adds a taller one to the game's shared
+    // Kreon put the mark low (Jordan, 22 Oct: "source external icon needs to move up 3-4px to line up with url"). A
+    // LinkButton draws its text at its top; a Label places its line in its box by its vertical alignment, as Godot's
+    // Label does (the room left, halved and cut to whole pixels for Center).
+    public static float Baseline(Control control, string text, Font font, int fontSize)
+    {
+        var (ascent, height) = Layout.Line(text, font, fontSize);
+        if (control is not Label label)
+            return ascent;
+        var style = label.GetThemeStylebox("normal");
+        var room = label.Size.Y - style.GetMinimumSize().Y - height;
+        var offset = label.VerticalAlignment switch
+        {
+            VerticalAlignment.Center => (int)(room / 2),
+            VerticalAlignment.Bottom => room,
+            _ => 0,
+        };
+        return style.GetMargin(Side.Top) + offset + ascent;
     }
 
     // The colour the control draws its text in now: a LinkButton's for its state, picked as LinkButton picks it; a
