@@ -37,10 +37,11 @@ static class ModDoctor
 
 #if DEVTOOLS
     // Self-test: the suspects Mod Doctor would name, without it; or a folder to read its file from instead of the game's
-    // user folder (the real game's too); or a Mod Doctor copy counted as loaded, and so installed
+    // user folder (the real game's too); or Mod Doctor counted as loaded (true) or not (false) whatever the sandbox has
+    // (null: as it is)
     public static List<string>? TestSuspects;
     public static string? TestFolder;
-    public static bool TestLoaded;
+    public static bool? TestLoaded;
 #endif
 
     // What it found, once it has written it. With no file for this process the wait ends at once unless a Mod Doctor copy
@@ -79,19 +80,10 @@ static class ModDoctor
     static bool Loaded()
     {
 #if DEVTOOLS
-        if (TestLoaded)
-            return true;
+        if (TestLoaded is { } loaded)
+            return loaded;
 #endif
         return ModManager.Mods.Any(m => m.manifest?.id == ModId && m.state == ModLoadState.Loaded);
-    }
-
-    static bool IsInstalled()
-    {
-#if DEVTOOLS
-        if (TestLoaded)
-            return true;
-#endif
-        return ModManager.Mods.Union(Installed.Mods).Any(m => m.manifest?.id == ModId);
     }
 
     // Whether Mod Doctor turned a mod off at or after a time: from a failed start's dialog it turns off the mod that broke
@@ -113,13 +105,13 @@ static class ModDoctor
 
     // The mods it turned off that are still its to keep off, by id, for Restore and profiles: by its own rule
     // (StartupFix.Notes), a mod installed with no copy on in the game's list (list: as read; null, as it is now), and only
-    // while Mod Doctor is installed (its record stays behind it). None without its record, or for one this doesn't
-    // understand.
+    // while Mod Doctor is loaded, when that rule runs and its note shows (its record stays behind it otherwise, with
+    // nothing to say why a mod stays off). None without its record, or for one this doesn't understand.
     public static List<string> TurnedOffIds(IReadOnlyList<(string Id, ModSource Source, bool On)>? list)
     {
         try
         {
-            if (!IsInstalled())
+            if (!Loaded())
                 return [];
             list ??= SaveManager.Instance.SettingsSave.ModSettings?.ModList.Select(e => (e.Id, e.Source, e.IsEnabled)).ToList();
             var copies = ModManager.Mods.Union(Installed.Mods).Select(m => (Id: m.manifest?.id, m.modSource)).Where(c => c.Id is { Length: > 0 }).ToList();

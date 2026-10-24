@@ -770,7 +770,9 @@ static partial class SelfTest
         var started = DateTime.Now;
         var dialogs = new List<string>(); // each dialog's words as shown, in order
         string? offered = null; // the first dialog's right button
-        Node? answered = null;
+        (bool Fits, int Size, int Button)? fit = null; // how the first dialog holds its words
+        Node? answered = null, showing = null;
+        var shownAt = DateTime.Now;
         void Finish()
         {
             tree.ProcessFrame -= Watch;
@@ -787,9 +789,14 @@ static partial class SelfTest
         {
             try
             {
-                // Each of our popups once, its right button pressed (the second, after a write that failed, has Quit alone)
+                // Each of our popups once, its right button pressed half a second in, once it's laid out and its text sized as a
+                // player sees it (the second, after a write that failed, has Quit alone)
                 if (NModalContainer.Instance?.OpenModal is Node popup && popup != answered && GodotObject.IsInstanceValid(popup))
                 {
+                    if (popup != showing)
+                        (showing, shownAt) = (popup, DateTime.Now);
+                    if (DateTime.Now - shownAt < TimeSpan.FromSeconds(0.5))
+                        return;
                     answered = popup;
                     dialogs.Add(ShownWords());
                     if (dialogs.Count == 1)
@@ -804,6 +811,7 @@ static partial class SelfTest
                             return;
                         }
                         offered = popup.GetNodeOrNull("VerticalPopup/YesButton")?.FindChild("Label", true, false) is Label { } yes ? yes.Text : null;
+                        fit = PopupFit();
                         if (crashMode == "crash-real")
                             Results.Add($"INFO a failed start: our dialog offered \"{offered}\"");
                     }
@@ -821,7 +829,7 @@ static partial class SelfTest
                 }
                 if (relaunches + quits > 0)
                 {
-                    Answered(crashMode, dialogs, offered, quits, relaunches);
+                    Answered(crashMode, dialogs, offered, fit, quits, relaunches);
                     Finish();
                 }
                 else if (DateTime.Now - started > TimeSpan.FromSeconds(90))
@@ -844,14 +852,18 @@ static partial class SelfTest
         HarmonyLib.AccessTools.Method(typeof(MegaCrit.Sts2.Core.Helpers.OneTimeInitialization), "ExecuteEssential"),
         prefix: new HarmonyLib.HarmonyMethod(typeof(SelfTest), prefix));
 
-    // What a failed start's answer did, by mode, once the dialog is answered (the relaunch or the quit caught)
-    static void Answered(string mode, List<string> dialogs, string? offered, int quits, int relaunches)
+    // What a failed start's answer did, by mode, once the dialog is answered (the relaunch or the quit caught); and for
+    // --crash, --crash-culprit and --crash-rebuild, how its text fit the dialog at a real failed start
+    static void Answered(string mode, List<string> dialogs, string? offered, (bool Fits, int Size, int Button)? fit, int quits, int relaunches)
     {
         var first = dialogs.FirstOrDefault() ?? "no dialog";
         var pending = LaunchGuard.Dir is { } dir && File.Exists(Path.Combine(dir, LaunchGuard.PendingFile));
         var list = SaveManager.Instance.SettingsSave.ModSettings?.ModList ?? [];
         bool AllOff(string id) => list.Any(e => e.Id == id) && list.Where(e => e.Id == id).All(e => !e.IsEnabled);
         var entry = TurnedOff.Entries.FirstOrDefault(e => e.Id == "SmmTestFixes");
+        if (mode is "crash" or "crash-culprit" or "crash-rebuild")
+            Check($"a failed start: our dialog's text fits it, at a size that can be read ({ReadableText} or more)", fit is { Fits: true, Size: >= ReadableText },
+                $"{fit?.ToString() ?? "not measured"}");
         switch (mode)
         {
             case "crash-culprit":
@@ -864,9 +876,11 @@ static partial class SelfTest
                 // Test Twin, two copies from one source, keeps the switch the game read for it
                 var twin = LaunchGuard.ReadList?.Where(e => e.Id == "SmmTestTwin").Select(e => (e.Source, e.On)).Distinct().ToList() ?? [];
                 Check("a failed start: the turn-off saves Test Fixes off (every switch of it), every other mod's switches as the game read them (Test Twin's), "
-                    + $"its record ({(rebuild ? "RebuildLast" : "Code")}, the switch it had with its copy), then one plain relaunch; this launch's record gone",
+                    + $"its record ({(rebuild ? "RebuildLast, a rebuild" : "Code, not a rebuild")}, the switch it had with its copy), then one plain relaunch; this "
+                    + "launch's record gone",
                     AllOff("SmmTestFixes") && twin.All(t => list.Where(e => e.Id == "SmmTestTwin" && e.Source == t.Source).All(e => e.IsEnabled == t.On))
                     && entry is { Switches: [{ On: true, Copies: ["l:SmmTestFixes"] }] } && entry.Why == (rebuild ? Culprits.Why.RebuildLast : Culprits.Why.Code)
+                    && entry.Rebuild == rebuild
                     && relaunches == 1 && quits == 0 && !pending, $"Test Fixes {Switched(list, "SmmTestFixes")}, Test Twin {Switched(list, "SmmTestTwin")}; {entry}; "
                     + $"relaunches {relaunches}, quits {quits}, record left {pending}");
                 break;
@@ -1231,6 +1245,20 @@ static partial class SelfTest
 
     // A link's press (the page link at the top).
     static void Click(BaseButton button) => button.EmitSignal(BaseButton.SignalName.Pressed);
+
+    // The mouse at a fixed point inside the viewport, for a check that opens a menu at it. In a headless run the game
+    // moves it at each popup's opening and closing (NControllerManager, through the window's scale): 30 times further
+    // each time, so a run's many popups take it past what a float holds, and a menu opened at it with it. Nothing with a
+    // window (scale 1), where the mouse is the player's and a move would hover what's under it.
+    static async Task MouseInView(Node node)
+    {
+        var root = node.GetTree().Root;
+        if (root.GetFinalTransform().Scale.IsEqualApprox(Vector2.One))
+            return;
+        var at = root.GetFinalTransform() * new Vector2(5, 5); // in the window's terms, as the game moves it; nowhere near a trigger
+        Input.ParseInputEvent(new InputEventMouseMotion { Position = at, GlobalPosition = at });
+        await node.ToSignal(node.GetTree(), SceneTree.SignalName.ProcessFrame); // taken in
+    }
 
     // A real mouse click at the control's centre, through the game's input like a player's: catches anything
     // drawn over it or eating the click. Returns the control under the mouse, for the report.

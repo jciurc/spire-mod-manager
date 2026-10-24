@@ -1538,6 +1538,7 @@ static partial class SelfTest
             return;
         }
         Selection.Clear(content);
+        await MouseInView(menu);
         if (CategoryList.ShowHeaderMenu(content, null, Uncategorized()) is { } headerMenu)
             MenuPanel.Press(headerMenu, "Select all");
         await Wait(menu, 0.2);

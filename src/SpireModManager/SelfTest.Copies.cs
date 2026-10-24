@@ -83,6 +83,7 @@ static partial class SelfTest
             .Select(c => $"{c.Name} to {c.GetGlobalRect().End.X:0}").ToList() ?? ["no bar"];
         Check("picked: the page bar fits the list's width", past.Count == 0, $"{string.Join(", ", past)}; the list ends at {listEnd:0}");
         await Capture(screen, outDir, "18d-picked-bar");
+        await MouseInView(menu);
         var bulk = CategoryList.ShowBulkMenu(content);
         await Wait(menu, 0.3);
         var bulkLabels = bulk == null ? [] : MenuPanel.Labels(bulk);

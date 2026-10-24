@@ -539,9 +539,9 @@ static class LaunchGuard
         return SameIdLoad.SettleList(settings.ModList, read);
     }
 
-    // What a turn-off turns off: each mod with why (a dependent: the culprit it needs), and the failure's error and
-    // signature for their record
-    public record Off(IReadOnlyList<(string Id, Culprits.Why Why, string? Needs)> Mods, string Error, string Signature);
+    // What a turn-off turns off: each mod with why (a dependent: the culprit it needs), and the failure's error, signature
+    // and whether it was a failed rebuild, for their record
+    public record Off(IReadOnlyList<(string Id, Culprits.Why Why, string? Needs)> Mods, string Error, string Signature, bool Rebuild = false);
 
     // A write that failed: the dialog's line for it, and the mods it names
     public record Failed(string Key, IReadOnlyList<string> Ids);
@@ -552,15 +552,15 @@ static class LaunchGuard
     // The culprit's turn-off: its mods with its why, and the mods that need one of them (Needs, naming the one). Ours
     // alone for ours: the mods that need us stay as they are, so turning us back on brings them all back.
     public static Off OffOf(Culprits.Culprit culprit, Culprits.Context mods) => culprit.Why == Culprits.Why.Self
-        ? new([(ModEntry.ModId, culprit.Why, null)], culprit.Error, culprit.Signature)
+        ? new([(ModEntry.ModId, culprit.Why, null)], culprit.Error, culprit.Signature, culprit.Rebuild)
         : new([.. culprit.Ids.Select(id => (id, culprit.Why, (string?)null)),
             .. culprit.Needing.Select(id => (id, Culprits.Why.Needs, (string?)(culprit.Ids.FirstOrDefault(c => mods.Requires(id, c)) ?? culprit.Ids[0])))],
-            culprit.Error, culprit.Signature);
+            culprit.Error, culprit.Signature, culprit.Rebuild);
 
     // Turn off all mods, from the third failed start in a row: every installed mod but ours and Mod Doctor (it's there to
     // look at the failure), as one group
-    public static Off AllOff(string error, string signature) => new([.. ModManager.Mods.Union(Installed.Mods).Select(m => m.manifest?.id)
-        .OfType<string>().Where(id => id.Length > 0 && !Ours(id)).Distinct().Select(id => (id, Culprits.Why.All, (string?)null))], error, signature);
+    public static Off AllOff(string error, string signature, bool rebuild) => new([.. ModManager.Mods.Union(Installed.Mods).Select(m => m.manifest?.id)
+        .OfType<string>().Where(id => id.Length > 0 && !Ours(id)).Distinct().Select(id => (id, Culprits.Why.All, (string?)null))], error, signature, rebuild);
 
     // The turn-off of the dialog's answer: the repair as the error showed (here too, should that prefix not have run),
     // then on the game's list in memory, the list as it read it, and whether the first main menu settled it
@@ -595,7 +595,7 @@ static class LaunchGuard
         var asWas = State(settings.ModList);
         var at = DateTimeOffset.Now;
         var entries = mods.Where(m => m.Id != ModEntry.ModId).Select(m => Recorded(m, at, off, installed, asRead)).ToList();
-        SwitchOff(settings.ModList, mods.Select(m => m.Id).ToHashSet(), installed);
+        SwitchOff(settings.ModList, mods.Select(m => m.Id).ToHashSet(), installed, asRead);
         try
         {
             SaveChecked(settings.ModList, asWas);
@@ -642,30 +642,37 @@ static class LaunchGuard
         }
     }
 
-    // A mod's record: the copy that ran (else one on as read), its name and version, why, and each source of its
-    // installed copies, on as read, with its copies (Turn back on reads the switch, didn't stick the copies). Only a
-    // culprit's has the failure's error and signature: a dependent's start didn't fail that way.
+    // A mod's record: the copy that ran (else one on as read), its name and version, why, and each switch the turn-off
+    // changes: each source of its installed copies, on as read, with its copies (Turn back on reads the switch, didn't
+    // stick the copies), and each other source on as read (SwitchOff turns it off too). Only a culprit's has the failure's
+    // error, signature and rebuild flag: a dependent's start didn't fail that way.
     static TurnedOff.Entry Recorded((string Id, Culprits.Why Why, string? Needs) mod, DateTimeOffset at, Off off, List<Mod> installed,
         IReadOnlyList<(string Id, ModSource Source, bool On)> asRead)
     {
         var copies = installed.Where(m => m.manifest?.id == mod.Id).ToList();
         var ran = copies.FirstOrDefault(m => m.state == ModLoadState.Loaded) ?? copies.FirstOrDefault(m => Culprits.OnAsRead(mod.Id, m.modSource, asRead));
         var culprit = mod.Why != Culprits.Why.Needs;
+        var elsewhere = asRead.Where(e => e.Id == mod.Id && !copies.Any(m => m.modSource == e.Source)).Select(e => e.Source).Distinct()
+            .Where(source => Culprits.OnAsRead(mod.Id, source, asRead)).Select(source => new Culprits.Switch(source, true, []));
         return new TurnedOff.Entry(at, mod.Id, ran?.manifest?.name, ran?.manifest?.version, ran == null ? null : Copies.CopyOf(ran), mod.Why, mod.Needs,
             culprit ? off.Error : null, culprit ? off.Signature : null,
-            [.. copies.GroupBy(m => m.modSource).Select(g => new Culprits.Switch(g.Key, Culprits.OnAsRead(mod.Id, g.Key, asRead), [.. g.Select(Copies.CopyOf).Distinct()]))]);
+            [.. copies.GroupBy(m => m.modSource).Select(g => new Culprits.Switch(g.Key, Culprits.OnAsRead(mod.Id, g.Key, asRead), [.. g.Select(Copies.CopyOf).Distinct()])),
+                .. elsewhere], Rebuild: culprit && off.Rebuild);
     }
 
-    // Every saved entry of each id off, of each source with an installed copy (one of a source with none can't load, and
-    // Turn back on, which goes by the installed sources, couldn't put it back); an installed copy with no entry gets one,
-    // off, or it would load
-    static void SwitchOff(List<SettingsSaveMod> list, IReadOnlySet<string> ids, IReadOnlyList<Mod> installed)
+    // Every saved entry of each id off, installed or not (a Workshop copy unsubscribed since, or not listed without Steam,
+    // loads once it's back), and an entry, off, for each of its copies with none: an installed one would load, and one
+    // the game read that its rebuilt list dropped (it lists only the copies it found) would load once it's back
+    static void SwitchOff(List<SettingsSaveMod> list, IReadOnlySet<string> ids, IReadOnlyList<Mod> installed, IReadOnlyList<(string Id, ModSource Source, bool On)> asRead)
     {
-        foreach (var entry in list.Where(e => ids.Contains(e.Id) && installed.Any(m => m.manifest?.id == e.Id && m.modSource == e.Source)))
+        foreach (var entry in list.Where(e => ids.Contains(e.Id)))
             entry.IsEnabled = false;
         foreach (var m in installed)
             if (m.manifest?.id is { } id && ids.Contains(id) && !list.Any(e => e.Id == id && e.Source == m.modSource))
                 list.Add(new SettingsSaveMod(m) { IsEnabled = false });
+        foreach (var (id, source) in asRead.Where(e => ids.Contains(e.Id)).Select(e => (e.Id, e.Source)).Distinct().ToList())
+            if (!list.Any(e => e.Id == id && e.Source == source))
+                list.Add(new SettingsSaveMod { Id = id, Source = source, IsEnabled = false });
     }
 
     // A mod list's entries with their switches, to put back as they were
@@ -845,9 +852,9 @@ static class LaunchGuard
     public enum Answer { Quit, TurnOff, Restore, DisableSuspects, AllOff }
 
     // A failed start's offer: the last working setup back (Offer), and the mod that stopped it (Culprit), with this
-    // launch's setups (the Restore link's rule, the updated line's date) and the failure's error and signature (for the
-    // record of Disable suspects and Turn off all mods)
-    public record Crash(Offer? Offer, Culprits.Culprit? Culprit, Setup? Planned, Setup? Working, string Error = "", string Signature = "");
+    // launch's setups (the Restore link's rule, the updated line's date) and the failure's error, signature and rebuild
+    // flag (for the record of Disable suspects and Turn off all mods)
+    public record Crash(Offer? Offer, Culprits.Culprit? Culprit, Setup? Planned, Setup? Working, string Error = "", string Signature = "", bool Rebuild = false);
 
     // The game's own line as its startup error starts: ours skips the method that writes it, and bug reports search for it
     const string GamesLine = "Encountered error on game startup! Attempting to show error dialog";
@@ -1020,9 +1027,9 @@ static class LaunchGuard
             case Answer.TurnOff when crash.Culprit is { } culprit:
                 return TurnOff(OffOf(culprit, Culprits.Context.Live()));
             case Answer.DisableSuspects:
-                return TurnOff(new Off([.. Disableable(suspects).Select(id => (id, Culprits.Why.Suspect, (string?)null))], crash.Error, crash.Signature));
+                return TurnOff(new Off([.. Disableable(suspects).Select(id => (id, Culprits.Why.Suspect, (string?)null))], crash.Error, crash.Signature, crash.Rebuild));
             case Answer.AllOff:
-                return TurnOff(AllOff(crash.Error, crash.Signature));
+                return TurnOff(AllOff(crash.Error, crash.Signature, crash.Rebuild));
             default:
                 throw new InvalidOperationException($"nothing to write for {answer}");
         }
@@ -1063,7 +1070,7 @@ static class LaunchGuard
         {
             Log.Error($"[{ModEntry.ModId}] Could not work out which mod stopped the start, so none is named: {e}");
         }
-        var crash = new Crash(offer, culprit, _planned, _working, reading?.Error ?? "", reading?.Signature ?? "");
+        var crash = new Crash(offer, culprit, _planned, _working, reading?.Error ?? "", reading?.Signature ?? "", reading?.Rebuild == true);
         Log.Info($"[{ModEntry.ModId}] The failed start: {(fault == null ? "its error wasn't kept" : $"{reading?.Error} (kept at {fault.Where})")}; "
             + string.Join("; ", (reading?.Notes ?? []).Concat(weighed)) + $"; {Offered(crash)}");
         return crash;

@@ -23,11 +23,13 @@ static class TurnedOff
 
     // One mod turned off. At: when, with its offset (one answer's entries share it, which makes them a group). Copy: the
     // copy that ran. Needs: for a dependent turned off with a culprit, that culprit. Switches: each source of its
-    // installed copies then, on as the game read it, with its copies. MenuSince: a main menu came since (it's no longer
-    // part of a streak). Shown: its notice showed. SameErrorAfter: the start failed the same way after it.
+    // installed copies then, on as the game read it, with its copies, and each other source whose entry the turn-off
+    // switched off (none installed: unsubscribed, or not listed without Steam). MenuSince: a main menu came since (it's
+    // no longer part of a streak). Shown: its notice showed. SameErrorAfter: the start failed the same way after it.
+    // Rebuild: its failure was a failed rebuild of a patched method.
     public record Entry(DateTimeOffset At, string Id, string? Name, string? Version, string? Copy, Culprits.Why Why, string? Needs,
         string? Error, string? Signature, IReadOnlyList<Culprits.Switch> Switches, bool MenuSince = false, bool Shown = false,
-        bool SameErrorAfter = false);
+        bool SameErrorAfter = false, bool Rebuild = false);
 
     record Saved(int Version, List<Entry>? Mods);
 
@@ -118,17 +120,16 @@ static class TurnedOff
     // A turn-off's entries, written only after its save worked. An entry there for the same mod (another copy of it
     // turned off since) takes the new one's details, and keeps each source's switch it recorded first (the one Turn back
     // on needs), gaining the new sources and copies. An entry of this streak whose failure had the same signature gets
-    // SameErrorAfter (most likely not the cause), but not between two failed rebuilds: their signature is the rebuilt
-    // method's and Harmony's error is the same for any bad build, so two patching mods' failures read alike. Throws if the
-    // file can't be written, and nothing changes then.
+    // SameErrorAfter (most likely not the cause), but not between two failed rebuilds, whatever rule picked each mod:
+    // their signature is the rebuilt method's and Harmony's error is the same for any bad build, so two patching mods'
+    // failures read alike. Throws if the file can't be written, and nothing changes then.
     public static void Add(IReadOnlyList<Entry> added)
     {
         var entries = Entries.ToList();
-        static bool Rebuild(Culprits.Why why) => why is Culprits.Why.Rebuild or Culprits.Why.RebuildLast;
         if (added.FirstOrDefault(e => e.Signature is { Length: > 0 }) is { Signature: { } signature } culprit)
             for (var i = 0; i < entries.Count; i++)
                 if (!entries[i].MenuSince && entries[i].Signature == signature && !added.Any(a => a.Id == entries[i].Id)
-                    && !(Rebuild(entries[i].Why) && Rebuild(culprit.Why)))
+                    && !(entries[i].Rebuild && culprit.Rebuild))
                     entries[i] = entries[i] with { SameErrorAfter = true };
         foreach (var entry in added)
         {
@@ -371,7 +372,7 @@ static class TurnedOff
         {
             var settings = SaveManager.Instance.SettingsSave.ModSettings ?? throw new InvalidOperationException("the game has no mod settings");
             var asWas = LaunchGuard.State(settings.ModList);
-            SwitchOn(settings.ModList, entries, Installs());
+            SwitchOn(settings.ModList, entries);
             LaunchGuard.SaveChecked(settings.ModList, asWas);
             Log.Info($"[{ModEntry.ModId}] Turned back on after a failed start: {string.Join(", ", entries.Select(e => e.Id))}");
         }
@@ -395,21 +396,15 @@ static class TurnedOff
         return true;
     }
 
-    // The switches Turn back on sets, on a given list (the self-test's made-up ones) and installed copies. Each entry's
-    // recorded sources that were on, every saved entry of that id and source; where none of those has a copy installed
-    // now (unsubscribed since, say), every installed copy's source. No entry is added: a copy with no entry loads anyway.
-    // The game's switches only: Dependencies.Write would tick every copy of a source, and an unticked twin would lose its
-    // tick (copies_off was kept while the switch was off, so the same copies come back).
-    public static void SwitchOn(List<SettingsSaveMod> list, IEnumerable<Entry> entries, IReadOnlyCollection<(string Id, ModSource Source)> installed)
+    // The switches Turn back on sets, on a given list (the self-test's made-up ones): exactly the ones each entry recorded
+    // on, installed now or not, every saved entry of that id and source. No entry is added: a copy with no entry loads
+    // anyway. The game's switches only: Dependencies.Write would tick every copy of a source, and an unticked twin would
+    // lose its tick (copies_off was kept while the switch was off, so the same copies come back).
+    public static void SwitchOn(List<SettingsSaveMod> list, IEnumerable<Entry> entries)
     {
         foreach (var entry in entries)
-        {
-            var sources = entry.Switches.Where(s => s.On && installed.Contains((entry.Id, s.Source))).Select(s => s.Source).ToList();
-            if (sources.Count == 0)
-                sources = [.. installed.Where(c => c.Id == entry.Id).Select(c => c.Source).Distinct()];
-            foreach (var saved in list.Where(e => e.Id == entry.Id && sources.Contains(e.Source)))
+            foreach (var saved in list.Where(e => e.Id == entry.Id && entry.Switches.Any(s => s.On && s.Source == e.Source)))
                 saved.IsEnabled = true;
-        }
     }
 
     // A Turn back on whose save failed, said in the game's popup with its Ok. From the notice's button, a frame first: the

@@ -3083,6 +3083,7 @@ static partial class SelfTest
             await Wait(menu, 0.3);
             var pairRows = Rows().Where(r => InPair(r.Mod)).ToList();
             Selection.Add(content, pairRows);
+            await MouseInView(menu);
             if (pairRows.All(r => r.Visible) && CategoryList.ShowBulkMenu(content) is { } bulk
                 && bulk.FindChild("Tags", true, false)?.GetNodeOrNull<LineEdit>("Box") is { } tags)
             {

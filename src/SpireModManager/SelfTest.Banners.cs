@@ -555,6 +555,7 @@ static partial class SelfTest
             said.Add($"picked box {BothOff()}");
             History.Undo();
             await Wait(menu, 0.3);
+            await MouseInView(menu);
             if (CategoryList.ShowBulkMenu(content) is { } bulk)
             {
                 await Wait(menu, 0.2);

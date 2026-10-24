@@ -84,6 +84,7 @@ static partial class SelfTest
         ];
         try
         {
+            await MouseInView(menu);
             var shown = PopupMenus.Show(owner, Entries());
             await Wait(menu, 0.1);
             Check("API menus: Show opens one; IsOpen and Current agree; the screen's hotkeys are blocked", shown != null && PopupMenus.IsOpen

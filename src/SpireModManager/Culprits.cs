@@ -6,6 +6,7 @@ using Godot;
 using HarmonyLib;
 using MegaCrit.Sts2.Core.Logging;
 using MegaCrit.Sts2.Core.Modding;
+using MegaCrit.Sts2.Core.Models;
 using MegaCrit.Sts2.Core.Nodes;
 
 namespace SpireModManager;
@@ -50,12 +51,12 @@ static class Culprits
 
     // What ByFrame read in a failure: its pick, or none and the shortlist the check that applied left (or the frames':
     // several patchers, a library); NoPatcher, a Harmony failure with no mod frame under Harmony's (Mod Doctor's map by
-    // namespace may know the mod). Named: every mod the failure names, for ranking's updated mods. Signature and Error,
-    // for the turn-off's record; Notes, for the log.
+    // namespace may know the mod). Named: every mod the failure names, for ranking's updated mods. Signature, Error and
+    // Rebuild (Harmony's build of a patched method failed), for the turn-off's record; Notes, for the log.
     public record Reading(Pick? Pick, Check Check, IReadOnlyList<string> Shortlist, bool NoPatcher, IReadOnlySet<string> Named,
-        string Signature, string Error, IReadOnlyList<string> Notes)
+        string Signature, string Error, bool Rebuild, IReadOnlyList<string> Notes)
     {
-        public static readonly Reading None = new(null, Check.None, [], false, new HashSet<string>(), "", "", []);
+        public static readonly Reading None = new(null, Check.None, [], false, new HashSet<string>(), "", "", false, []);
     }
 
     // A turn-off on record (TurnedOff's entries, as ranking reads them): when (one answer's entries share it), the mod,
@@ -68,9 +69,10 @@ static class Culprits
     // Doctor's pick is its one mod, so Mod Doctor's box (DoctorText, its explanation) shows. Updates: its mods' updates
     // since the last working launch. Needing: the mods that need it, on as read (turned off with it; for ours, named and
     // left alone). DidntStick: a turn-off of it came undone. Streak: this failed start's place in a row of them.
+    // Signature, Error and Rebuild: the failure's, for the record.
     public record Culprit(Why Why, bool Checked, IReadOnlyList<string> Ids, bool DoctorAgrees, string? DoctorText,
         string? Library, string? Other, string? ContentId, string? Step, IReadOnlyList<LaunchGuard.Change> Updates,
-        IReadOnlyList<string> Needing, bool DidntStick, int Streak, string Signature, string Error);
+        IReadOnlyList<string> Needing, bool DidntStick, int Streak, string Signature, string Error, bool Rebuild = false);
 
 #if DEVTOOLS
     // Self-test: a type's mod, asked first for each frame's type (and the types it's nested in) and each patch method's:
@@ -82,6 +84,9 @@ static class Culprits
 
     // Self-test: the mods whose types can't all load, in place of each mod assembly's GetTypes
     public static Func<IEnumerable<string>>? TestTypesBroken;
+
+    // Self-test: a type's content id and the type ModelDb holds under it, in place of ModelDb's (the stand-ins aren't models)
+    public static Func<Type, (string Id, Type? Type)?>? TestHeld;
 
     // Self-test: the failure kept, set or cleared; and the fallback keeping any exception, not only one from the startup
     public static Fault? TestFault { get => _fault; set => _fault = value; }
@@ -460,6 +465,7 @@ static class Culprits
         public readonly List<string> Notes = [];
         public Check Check;
         public bool NoPatcher;
+        public bool Rebuild; // Harmony's build of a patched method failed
         public MethodBase? Rebuilt; // a failed rebuild's original, as Harmony's message names it
 
         // Changed, on the same game
@@ -497,7 +503,7 @@ static class Culprits
             scan.Notes.Add($"picked {string.Join(", ", pick.Ids)} ({pick.Why}{(pick.Checked ? ", our check" : "")})");
         scan.Named.UnionWith(scan.Shortlist);
         scan.Named.UnionWith(pick?.Ids ?? []);
-        return new Reading(pick, scan.Check, [.. scan.Shortlist], scan.NoPatcher, scan.Named, Signature(scan), Error(scan), scan.Notes);
+        return new Reading(pick, scan.Check, [.. scan.Shortlist], scan.NoPatcher, scan.Named, Signature(scan), Error(scan), scan.Rebuild, scan.Notes);
     }
 
     // A pick, or ours when it names us
@@ -559,6 +565,7 @@ static class Culprits
 
     const string DuplicateModel = "MegaCrit.Sts2.Core.Models.Exceptions.DuplicateModelException";
     static readonly Regex Duplicate = new(@"ModelDb already contains ID (?<id>.+?) mapped to type (?<a>.+?), but you are trying to map it to type (?<b>.+?)\. ");
+    static readonly Regex DuplicateOne = new(@"^Trying to create a duplicate canonical model of type (?<b>.+?)\. Don't call constructors");
 
     // Shape B: two mods' content under one id (the game's DuplicateModelException, from the second mod's model: which is
     // second is load order, not cause). The one of the two new or changed since the last working launch, on any game (the
@@ -566,26 +573,57 @@ static class Culprits
     static Pick? Clash(Scan scan)
     {
         if (scan.Links.Select(l => l.Link.Error).FirstOrDefault(e => e.GetType().FullName == DuplicateModel) is not { } clash
-            || Duplicate.Match(clash.Message) is not { Success: true } match)
+            || Clashing(clash.Message, scan) is not { } pair)
             return null;
-        var (first, second) = (ModOfTypeNamed(match.Groups["a"].Value, scan), ModOfTypeNamed(match.Groups["b"].Value, scan));
+        var (first, second) = (ModOfType(pair.First, scan.Mods.Owners), ModOfType(pair.Second, scan.Mods.Owners));
         if (first is not { Length: > 0 } a || second is not { Length: > 0 } b || a == b)
             return null;
         scan.Check = Check.Clash;
         scan.List([a, b]);
         return new[] { a, b }.Where(scan.ChangedIds.Contains).ToList() is [var changed]
-            ? PickOf(Why.Clash, changed) with { Other = changed == a ? b : a, ContentId = match.Groups["id"].Value } : null;
+            ? PickOf(Why.Clash, changed) with { Other = changed == a ? b : a, ContentId = pair.Id } : null;
     }
 
-    // The mod of a type the game names by its full name, looked for in each mod's assemblies (ours too)
-    static string? ModOfTypeNamed(string name, Scan scan)
+    // The clash's two types and their id. The beta's message names all three. Stable's names the second type alone: its
+    // model checks the id (the category and the type's name), so the first is the one ModelDb holds under that id, and
+    // that being the same type is one type made twice. Null when they aren't found.
+    static (Type First, Type Second, string Id)? Clashing(string message, Scan scan)
+    {
+        if (Duplicate.Match(message) is { Success: true } both)
+            return TypeNamed(both.Groups["a"].Value, scan) is { } a && TypeNamed(both.Groups["b"].Value, scan) is { } b ? (a, b, both.Groups["id"].Value) : null;
+        if (DuplicateOne.Match(message) is not { Success: true } one || TypeNamed(one.Groups["b"].Value, scan) is not { } second
+            || Held(second) is not { Type: { } first } held || first == second)
+            return null;
+        return (first, second, held.Id);
+    }
+
+    // A model type's content id, and the type of the model ModelDb holds under it; null if ModelDb can't say (not a model)
+    static (string Id, Type? Type)? Held(Type type)
+    {
+#if DEVTOOLS
+        if (TestHeld is { } test)
+            return test(type);
+#endif
+        try
+        {
+            var id = ModelDb.GetId(type);
+            return (id.ToString(), ModelDb.GetByIdOrNull<AbstractModel>(id)?.GetType());
+        }
+        catch (Exception)
+        {
+            return null;
+        }
+    }
+
+    // A type the game names by its full name, looked for in each mod's assemblies (ours too)
+    static Type? TypeNamed(string name, Scan scan)
     {
         foreach (var (assembly, _) in scan.Mods.Owners.Owned())
         {
             try
             {
                 if (assembly.GetType(name, false) is { } type)
-                    return ModOfType(type, scan.Mods.Owners);
+                    return type;
             }
             catch (Exception)
             {
@@ -617,8 +655,8 @@ static class Culprits
 
     // Shape C: a Harmony patch that failed, Harmony's patching on any exception's frames (a wrapper's too: a direct
     // Harmony.Patch has no wrapper of Harmony's, and a transpiler's own throw tops its frames). Its own checks of a patch
-    // call (an inherited method, a target it can't find) involve no other patch: the mod whose call it was, a library too.
-    // A failed rebuild of the replacement can involve the method's earlier patches (Rebuild).
+    // call (an inherited method, a target it can't find) involve no other patch: the mod whose patch it was (Refused). A
+    // failed rebuild of the replacement can involve the method's earlier patches (Rebuild).
     static Pick? HarmonyFailure(Scan scan)
     {
         if (!scan.Links.Any(l => l.Frames.Any(Patching)))
@@ -627,14 +665,49 @@ static class Culprits
         var patcher = Patcher(scan);
         scan.NoPatcher = patcher == null;
         scan.Notes.Add($"a Harmony patch failed, the patching mod {patcher ?? "not found under Harmony's frames"}");
-        var rebuild = scan.Links.Any(l => l.Link.Error is InvalidProgramException || l.Frames.Any(f => IsHarmonyFrame(f, "PatchFunctions", "UpdateWrapper")));
-        if (rebuild)
+        scan.Rebuild = scan.Links.Any(l => l.Link.Error is InvalidProgramException || l.Frames.Any(f => IsHarmonyFrame(f, "PatchFunctions", "UpdateWrapper")));
+        if (scan.Rebuild)
             return Rebuild(scan, patcher);
-        if (patcher == null)
-            return null;
-        scan.List([patcher]);
-        return PickOf(Why.Code, patcher);
+        var refused = Refused(scan, patcher);
+        scan.List(new[] { refused ?? patcher }.OfType<string>());
+        return refused == null ? null : PickOf(Why.Code, refused);
     }
+
+    // Whose patch Harmony refused: the patching mod's. A library also applies its dependents' patches, so for one, as for
+    // a rebuild (Applying), it's whose patch it was: the patch class Harmony found no target for (Undefined), else by the
+    // original Harmony's message names or the declared method its refusal of an inherited one points to (Applied); none
+    // when that doesn't show, as for its direct Harmony.Patch, whose patch method could be anyone's.
+    static string? Refused(Scan scan, string? patcher)
+    {
+        if (patcher == null || patcher == ModEntry.ModId || !scan.Mods.IsLibrary(patcher))
+            return patcher;
+        if (Undefined(scan) is { } owner)
+        {
+            scan.Notes.Add($"the patching mod {patcher} is a library: Harmony found no target for {owner}'s patch class");
+            return owner;
+        }
+        return Applying(scan, patcher, Originals(scan) is { Count: > 0 } named ? named : Declared(scan));
+    }
+
+    const string NoTarget = "Undefined target method for patch method ";
+
+    // The mod of the patch class Harmony found no target for ("Undefined target method for patch method " and the patch
+    // method's FullDescription), by that method among the mods' own; null when none, or several mods', match
+    static string? Undefined(Scan scan)
+    {
+        if (scan.Links.Select(l => l.Link.Error).OfType<ArgumentException>().FirstOrDefault(e => e.Message.StartsWith(NoTarget, StringComparison.Ordinal)) is not { } failed)
+            return null;
+        return ModMethods(failed.Message[NoTarget.Length..], scan).Select(m => ModOfType(m.DeclaringType, scan.Mods.Owners)).Distinct().ToList()
+            is [{ Length: > 0 } one] ? one : null;
+    }
+
+    static readonly Regex DeclaredIn = new(@"Patch the declared method (?<method>.+) instead\.$");
+
+    // The method Harmony's refusal of an inherited one points to ("Patch the declared method .. instead"), found as a
+    // failure's original is (MethodsNamed); null when it isn't that refusal
+    static List<MethodBase>? Declared(Scan scan) =>
+        scan.Links.Select(l => l.Link.Error).OfType<ArgumentException>().Select(e => DeclaredIn.Match(e.Message)).FirstOrDefault(m => m.Success) is { } refusal
+            ? MethodsNamed(refusal.Groups["method"].Value, scan) : null;
 
     // The mod whose patch call failed: the mod frames under Harmony's (after its last), walked, in the innermost exception
     // that has some, else the one wrapping it (PatchAll's HarmonyException around Harmony's own)
@@ -659,7 +732,7 @@ static class Culprits
     {
         if (TranspilerThrew(scan) is { } threw)
             return PickOf(Why.Code, threw);
-        var originals = Rebuilt(scan);
+        var originals = Originals(scan);
         scan.Rebuilt = originals?.FirstOrDefault();
         var step = scan.Rebuilt is { } named ? StepOf(named) : null;
         scan.Notes.Add(originals == null ? "a failed rebuild by a direct Harmony.Patch (no original named)"
@@ -695,20 +768,33 @@ static class Culprits
     }
 
     // The one of a library and the running mods that need it with a patch class on these methods that Harmony didn't save
-    // (it saves a class's patches only after their build worked), by the classes' [HarmonyPatch] attributes; null when
-    // none or several have one
+    // (it saves a class's patches only after their build worked), by the classes' attributes. None when none or several
+    // have one; when the one's classes there may never have been tried (a Prepare can say no, and PatchAll leaves out a
+    // [HarmonyPatchCategory] class), as such a class never stands alone; and when a patch class of any of these mods
+    // names its target in a way this can't read, as it could be the one.
     static string? Applied(string library, IReadOnlyList<MethodBase> originals, Scan scan)
     {
         var mods = scan.Mods.Users(library).Append(library).ToHashSet();
         var saved = originals.SelectMany(PatchesOn).Select(p => (p.Module, p.MetadataToken)).ToHashSet();
-        var owners = new HashSet<string>();
+        var (owners, tried) = (new HashSet<string>(), new HashSet<string>());
         foreach (var (assembly, id) in scan.Mods.Owners.Owned())
             if (!assembly.IsDynamic && Holds(id, mods))
                 foreach (var type in AccessTools.GetTypesFromAssembly(assembly))
-                    if (PatchesFor(type, originals) is { Count: > 0 } patches && !patches.Any(p => saved.Contains((p.Module, p.MetadataToken)))
-                        && ModOfType(type, scan.Mods.Owners) is { } owner && mods.Contains(owner))
-                        owners.Add(owner);
-        return owners.Count == 1 ? owners.First() : null;
+                {
+                    if (ModOfType(type, scan.Mods.Owners) is not { } owner || !mods.Contains(owner) || PatchClassOf(type, originals) is not { } patches)
+                        continue;
+                    if (patches.Unread)
+                    {
+                        scan.Notes.Add($"{owner} has a patch class whose target can't be read ({type.FullName}), which could be the one");
+                        return null;
+                    }
+                    if (patches.On.Count == 0 || patches.On.Any(p => saved.Contains((p.Module, p.MetadataToken))))
+                        continue;
+                    owners.Add(owner);
+                    if (!patches.MaySkip)
+                        tried.Add(owner);
+                }
+        return owners.Count == 1 && tried.Count == 1 ? owners.First() : null;
     }
 
     // Whether an assembly of this mod can hold a type of these mods: its own (the self-test maps its stand-ins by type)
@@ -721,49 +807,78 @@ static class Culprits
         return mods.Contains(owner);
     }
 
-    // A patch class's methods whose [HarmonyPatch] attributes (the class's with each method's) name one of these methods.
-    // Harmony's attributes are looked for first without making them: every type of the mods is asked.
-    static List<MethodInfo> PatchesFor(Type type, IReadOnlyList<MethodBase> originals)
+    // A patch class as Applied reads it: its patch methods on the methods asked about; Unread, a target named in a way
+    // this can't read (TargetMethod or TargetMethods, [HarmonyPatchAll], attributes naming no method, or ones that can't
+    // be read at all); MaySkip, Harmony may never have tried it (a Prepare, a category)
+    record PatchClass(List<MethodInfo> On, bool Unread, bool MaySkip);
+
+    // The kinds of patch method Harmony applies to the original (a reverse patch patches a copy), by name or attribute
+    static readonly string[] PatchKinds = ["Prefix", "Postfix", "Transpiler", "Finalizer", "InnerPrefix", "InnerPostfix"];
+
+    // A type as a patch class: one with Harmony's attributes on it or on a method (else null), its patch methods told as
+    // Harmony tells them. Harmony's attributes are looked for first without making them: every type of the mods is asked.
+    static PatchClass? PatchClassOf(Type type, IReadOnlyList<MethodBase> originals)
     {
         try
         {
-            var outer = HasHarmony(type) ? HarmonyMethodExtensions.GetMergedFromType(type) : null;
-            return [.. AccessTools.GetDeclaredMethods(type).Where(method => (outer != null || HasHarmony(method))
-                && Target(outer ?? new HarmonyMethod(), method) is { } target && originals.Contains(target))];
+            var methods = AccessTools.GetDeclaredMethods(type);
+            if (!HasHarmony(type) && !methods.Any(HasHarmony))
+                return null;
+            var outer = HarmonyMethodExtensions.GetMergedFromType(type);
+            var (on, unread) = (new List<MethodInfo>(), Marked(type, "PatchAll") || methods.Any(m => Kind(m, "TargetMethod") || Kind(m, "TargetMethods")));
+            foreach (var method in methods.Where(m => PatchKinds.Any(kind => Kind(m, kind))))
+            {
+                var (read, target) = Target(outer, method);
+                unread |= !read;
+                if (target != null && originals.Contains(target))
+                    on.Add(method);
+            }
+            return new(on, unread, methods.Any(m => Kind(m, "Prepare")) || outer.category is { Length: > 0 });
         }
         catch (Exception)
         {
-            return []; // attributes that can't be read
+            return new([], true, false);
         }
     }
 
     static bool HasHarmony(MemberInfo member) => member.GetCustomAttributesData().Any(a => a.AttributeType.Namespace == "HarmonyLib");
 
-    // The method a patch method's attributes name, found as Harmony finds the kinds a patch class names (a method, a
-    // property's getter or setter, a constructor, an async method's or an iterator's state machine); null for none, or
-    // one that can't be read
-    static MethodBase? Target(HarmonyMethod outer, MethodInfo method)
+    static bool Marked(MemberInfo member, string kind) => member.GetCustomAttributesData().Any(a => a.AttributeType.FullName == "HarmonyLib.Harmony" + kind);
+
+    // A method of a kind Harmony looks for in a patch class: by its name or its attribute ([HarmonyPrefix], [HarmonyPrepare])
+    static bool Kind(MethodInfo method, string kind) => method.Name == kind || Marked(method, kind);
+
+    // The method a patch method's attributes name, found as Harmony finds it (a method, a property's getter or setter, an
+    // indexer's, a constructor, an async method's or an iterator's state machine); null where the one named isn't there.
+    // Not read where they name none (TargetMethod's class), name a kind this doesn't find, or can't be read.
+    static (bool Read, MethodBase? Target) Target(HarmonyMethod outer, MethodInfo method)
     {
         try
         {
             var patch = outer.Merge(HarmonyMethodExtensions.GetMergedFromMethod(method));
             if (patch.declaringType is not { } type)
-                return null;
-            var named = patch.methodName is { Length: > 0 } name && patch.methodType is null or MethodType.Normal or MethodType.Async or MethodType.Enumerator
-                ? AccessTools.DeclaredMethod(type, name, patch.argumentTypes) : null;
+                return (false, null);
+            var normal = patch.methodType is null or MethodType.Normal or MethodType.Async or MethodType.Enumerator;
+            if (normal && patch.methodName is not { Length: > 0 })
+                return (false, null);
+            var named = normal && patch.methodName is { } name ? AccessTools.DeclaredMethod(type, name, patch.argumentTypes) : null;
             return patch.methodType switch
             {
-                MethodType.Getter => patch.methodName is { } getter ? AccessTools.DeclaredPropertyGetter(type, getter) : null,
-                MethodType.Setter => patch.methodName is { } setter ? AccessTools.DeclaredPropertySetter(type, setter) : null,
-                MethodType.Constructor => AccessTools.DeclaredConstructor(type, patch.argumentTypes),
-                MethodType.Async => named == null ? null : AccessTools.AsyncMoveNext(named),
-                MethodType.Enumerator => named == null ? null : AccessTools.EnumeratorMoveNext(named),
-                _ => named,
+                MethodType.Getter => (true, patch.methodName is { Length: > 0 } getter ? AccessTools.DeclaredPropertyGetter(type, getter)
+                    : AccessTools.DeclaredIndexerGetter(type, patch.argumentTypes)),
+                MethodType.Setter => (true, patch.methodName is { Length: > 0 } setter ? AccessTools.DeclaredPropertySetter(type, setter)
+                    : AccessTools.DeclaredIndexerSetter(type, patch.argumentTypes)),
+                MethodType.Constructor => (true, AccessTools.DeclaredConstructor(type, patch.argumentTypes)),
+                MethodType.StaticConstructor => (true, AccessTools.GetDeclaredConstructors(type).FirstOrDefault(c => c.IsStatic)),
+                MethodType.Async => (true, named == null ? null : AccessTools.AsyncMoveNext(named)),
+                MethodType.Enumerator => (true, named == null ? null : AccessTools.EnumeratorMoveNext(named)),
+                null or MethodType.Normal => (true, named),
+                _ => (false, null),
             };
         }
         catch (Exception)
         {
-            return null;
+            return (false, null);
         }
     }
 
@@ -780,27 +895,40 @@ static class Culprits
 
     const string PatchingIn = "Patching exception in method ";
 
-    // The original a patch class's failure names (Harmony's "Patching exception in method " and its FullDescription:
-    // namespace and name, no declaring type, so a state machine's MoveNext reads "Ns.<OnPlay>d__5"), found by the
-    // candidates' own: the methods Harmony patched, else every method and constructor of the mods' assemblies (a first
-    // patch), several that match together. Null: no message names one (a direct Harmony.Patch call). None: "null" (a
-    // target Harmony didn't find), or one not found.
-    static List<MethodBase>? Rebuilt(Scan scan)
+    // The original a patch class's failure names (Harmony's "Patching exception in method " and its FullDescription),
+    // found by MethodsNamed. Null: no message names one (a direct Harmony.Patch call). None: "null" (a target Harmony
+    // didn't find), or one not found.
+    static List<MethodBase>? Originals(Scan scan)
     {
         if (scan.Links.Select(l => l.Link.Error).OfType<HarmonyException>().FirstOrDefault(e => e.Message.StartsWith(PatchingIn, StringComparison.Ordinal)) is not { } failed)
             return null;
         var described = failed.Message[PatchingIn.Length..];
-        if (described == "null")
-            return [];
+        return described == "null" ? [] : MethodsNamed(described, scan);
+    }
+
+    // The methods Harmony's FullDescription of one names (namespace and name, no declaring type, so a state machine's
+    // MoveNext reads "Ns.<OnPlay>d__5"), found by the candidates' own: the methods Harmony patched, else every method and
+    // constructor of the mods' assemblies (a first patch), several that match together
+    static List<MethodBase> MethodsNamed(string described, Scan scan) =>
+        Patched().Where(m => Matches(m, described)).ToList() is { Count: > 0 } patched ? patched : ModMethods(described, scan);
+
+    // The same among the mods' assemblies alone
+    static List<MethodBase> ModMethods(string described, Scan scan)
+    {
+        const BindingFlags Every = BindingFlags.Public | BindingFlags.NonPublic | BindingFlags.Instance | BindingFlags.Static | BindingFlags.DeclaredOnly;
+        var name = NameIn(described);
+        return [.. scan.Mods.Owners.Owned().Where(o => !o.Assembly.IsDynamic).SelectMany(o => AccessTools.GetTypesFromAssembly(o.Assembly))
+            .SelectMany(t => t.GetMember(name, MemberTypes.Method | MemberTypes.Constructor, Every).OfType<MethodBase>()).Where(m => Matches(m, described))];
+    }
+
+    static bool Matches(MethodBase method, string described) => method.Name == NameIn(described) && Described(method) == described;
+
+    // The method's name in its FullDescription: after the declaring type's "::", before its parameters
+    static string NameIn(string described)
+    {
         var paren = described.IndexOf('(');
         var start = paren < 0 ? -1 : described.LastIndexOf("::", paren, StringComparison.Ordinal);
-        var name = paren < 0 ? described : start >= 0 ? described[(start + 2)..paren] : described[(described.LastIndexOf(' ', paren) + 1)..paren];
-        bool Matches(MethodBase method) => method.Name == name && Described(method) == described;
-        if (Patched().Where(Matches).ToList() is { Count: > 0 } patched)
-            return patched;
-        const BindingFlags Every = BindingFlags.Public | BindingFlags.NonPublic | BindingFlags.Instance | BindingFlags.Static | BindingFlags.DeclaredOnly;
-        return [.. scan.Mods.Owners.Owned().Where(o => !o.Assembly.IsDynamic).SelectMany(o => AccessTools.GetTypesFromAssembly(o.Assembly))
-            .SelectMany(t => t.GetMember(name, MemberTypes.Method | MemberTypes.Constructor, Every).OfType<MethodBase>()).Where(Matches)];
+        return paren < 0 ? described : start >= 0 ? described[(start + 2)..paren] : described[(described.LastIndexOf(' ', paren) + 1)..paren];
     }
 
     static string Described(MethodBase method)
@@ -1075,7 +1203,7 @@ static class Culprits
         var updates = planned == null || working == null ? []
             : LaunchGuard.Changes(planned.Mods, working.Mods).Where(c => c.Kind == LaunchGuard.Kind.Updated && ids.Contains(c.Id)).ToList();
         return new Culprit(pick.Why, pick.Checked, ids, agrees, agrees ? doctor?.Explanation : null, pick.Library, pick.Other, pick.ContentId,
-            pick.Step, updates, Needing(ids, read, mods), DidntStick(ids, read, turnedOff, mods), Streak(turnedOff), ours.Signature, ours.Error);
+            pick.Step, updates, Needing(ids, read, mods), DidntStick(ids, read, turnedOff, mods), Streak(turnedOff), ours.Signature, ours.Error, ours.Rebuild);
     }
 
     static string Described(Pick? pick) => pick == null ? "none" : $"{string.Join(", ", pick.Ids)} ({pick.Why})";
