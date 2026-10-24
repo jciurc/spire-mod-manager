@@ -30,9 +30,9 @@ What changed in each Workshop release, for players. Each version's first line is
   can be read), the one installed first. The page says which. A copy that won't load reads "Duplicate - Won't load" (it
   was "Not loaded (same ID)"), and its info panel names the copy that will be used and why: "Touhou Fairies (Local)
   will be used due to the game prioritizing local copies - disable copies you don't want to use", or due to "its higher
-  version", "the same version and an earlier install date" or "this copy's version being unreadable". The copy that
-  loads says "Touhou Fairies (3813186417) is also enabled - only this copy will be loaded", and the box of a disabled
-  copy, beside an enabled one, says which copy would load if you enabled it as well.
+  version", "matching version numbers and an earlier install date" or "this copy's version being unreadable". The
+  copy that loads says "Touhou Fairies (3813186417) is also enabled - only this copy will be loaded", and the box of a
+  disabled copy, beside an enabled one, says which copy would load if you enabled it as well.
 - Only the enabled copies count: a disabled copy never loads in place of an enabled one, including on the beta, where
   the game's one switch for a mod's Workshop copies would otherwise let a disabled copy win. Where the copy that would
   load needs a mod that loads after it, while another enabled mod needs that copy, another enabled copy that can load
@@ -42,13 +42,13 @@ What changed in each Workshop release, for players. Each version's first line is
   installed once.
 - The Same ID tag is now Duplicate, in a muted tan. While copies of a mod are enabled together, it turns the warning
   yellow on every enabled copy, the one that loads too, as does the info panel's line about the copies, and its card
-  lists the other enabled copies, one to a line, and the one that will be used. The yellow banner reads "2 mods with
-  the same ID are enabled - only one copy of each will be loaded". Its card groups the enabled copies by ID, each with
-  its version and source, the one that loads first: "TouhouFairies:", then "Touhou Fairies 0.1.1 (Local) - Active" and
-  "Touhou Fairies 0.1.0 (3813186417) - Ignored". "Before you relaunch" lists them the same way, under "Some mods with
-  duplicate IDs are enabled, and won't be loaded", and its Disable unused mods turns off the Ignored copies. Enable
-  all, which now enables every copy, says when it would enable more than one copy of a mod. An enabled copy's name is
-  no longer greyed out.
+  lists the other enabled copies, one to a line, and the one that will be used. The yellow banner reads "2 copies of
+  mods sharing an ID are enabled - only one copy of each will be loaded". Its card groups the enabled copies by ID, each
+  with its version and source, the one that loads first: "TouhouFairies:", then "Touhou Fairies 0.1.1 (Local) - Active"
+  and "Touhou Fairies 0.1.0 (3813186417) - Ignored". "Before you relaunch" lists them the same way, under "Some mods
+  with duplicate IDs are enabled - only the Active copy of each will be loaded", and its Disable unused mods turns off
+  the Ignored copies. Enable all, which now enables every copy, says when it would enable more than one copy of a mod.
+  An enabled copy's name is no longer greyed out.
 - A newly installed copy of a mod you have now arrives enabled, as a new mod does (disabled only where your copies of it
   from the same source all are), and the rules above decide which copy loads: of copies from one source, a higher
   version takes over by itself, whether it was just installed or an update made it higher. Installed while the game
