@@ -533,8 +533,9 @@ static class ModDetails
     // too, not a relaunch away: orange, as nothing else says it won't load, for a copy of this mod as for any. First, as
     // it tells the next launch: a copy the game failed as a duplicate this launch says it too (the game's error shows
     // under From the game). Failed to load: ticked, and the game failed it. Pending relaunch: whether it loads changes at
-    // the relaunch. Else Enabled or Disabled, by its box, except that a copy that loads unticked (through a switch it
-    // shares, or in place of a copy the launch couldn't swap in: Copies.Next) is Enabled, as it loads.
+    // the relaunch. Else Enabled or Disabled, by its box, except that a copy that loads unticked (the game's own choice,
+    // for an id the launch couldn't choose for, or where no ticked copy can take a blocked one's place: Copies.Next) is
+    // Enabled, as it loads.
     // Pending relaunch, as the status says it: what loads after a relaunch isn't what loaded, for a copy neither set aside
     // as another loads nor failed (those statuses come first). #pending finds these.
     public static bool PendingRelaunch(Mod mod) => !Copies.Loses(mod) && !(Copies.Ticked(mod) && mod.state == ModLoadState.Failed)

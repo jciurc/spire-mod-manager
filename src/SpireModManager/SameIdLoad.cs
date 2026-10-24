@@ -16,15 +16,18 @@ namespace SpireModManager;
 // list has one switch for both, and the game would load the first and fail the rest with MOD_ERROR.DUPLICATE_ID. Our
 // Init runs inside the game's load loop, and every mod after us is still to be tried (TryLoadMod skips a mod whose state
 // isn't None, and sets Loaded only after the mod's initializers ran). So Apply chooses, of the copies the game left to
-// load, the one our page says loads (Choose, Copies.Next's step 4: of the ticked copies of one source, the highest
-// version), sets every other copy still to come to DisabledDuplicate, the game's own state for its duplicates, and swaps
-// the chosen copy into the id's first slot, where mods that need the id look for it. Settle, at the first main menu,
-// repairs what the game's rebuilt list coupled by id, keeps our entries first (so we load before every copy next
-// launch) and checks the choice was taken. Anything unexpected: no flip, a warning, and the game's own behaviour.
+// load and the ticked ones its rule set aside (brought back where a copy that's off beat them), the one our page says
+// loads (Choose, Copies.Next's step 4: the game's rule over the ticked copies, then of one source the highest version;
+// where that copy can't take the id's first slot, Fallback), sets every other copy still to come to DisabledDuplicate,
+// the game's own state for its duplicates, and swaps the chosen copy into the id's first slot, where mods that need the
+// id look for it. Settle, at the first main menu, repairs what the game's rebuilt list coupled by id, keeps our entries
+// first (so we load before every copy next launch) and checks the choice was taken. Anything unexpected: no flip, a
+// warning, and the game's own behaviour.
 static class SameIdLoad
 {
     // Why the copy chosen doesn't load this launch: a copy of the id sorted before us (the game decided it already), or a
-    // dependency of it loads after the id's first slot while a mod after us needs the id (the game's own choice loads).
+    // dependency of it loads after the id's first slot while a mod after us needs the id (another ticked copy that can
+    // take the slot loads, Fallback; none, the game's own choice).
     public enum Reason { None, DecidedBeforeUs, DependencyAfterSlot }
 
     // What Apply did for one id installed more than once. Loads: the copy that loads, or that the game tries; SetAside:

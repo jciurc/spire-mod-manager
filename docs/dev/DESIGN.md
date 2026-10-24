@@ -24,10 +24,15 @@ Ease of use is the heart of the mod, not just its utility.
 - The game's `mod_list` is the truth for what's on and the load order. Edits go to it at once and take effect
   on relaunch; nothing of ours can disagree with the game's tickboxes.
 - One exception, because the game has one switch for them: copies of a mod installed twice from one source (two
-  Workshop items). Which of them are ticked is ours (`copies_off`). Which of the ticked ones loads is worked out at
-  every launch, never stored: the game's local-vs-Workshop rule on its switches, then of one source the highest ticked
-  version (the copy installed first on a tie), applied in our Init, before the game tries the copies. Our page has a
-  tickbox per copy, and two copies of an id can both be ticked (only one loads). The game's page keeps its one switch.
+  Workshop items). Which of them are ticked is ours (`copies_off`). Which copy loads is worked out at every launch,
+  never stored, and only the ticked copies count: a copy that's off never loads, nor stops another from loading.
+  First the game's local-vs-Workshop rule over the ticked copies (where the game's own rule, which sees only the
+  switches, set aside the copy this leaves, the launch brings it back), then of one source the highest ticked version
+  (the copy installed first on a tie). Where that copy can't take the id's first slot (something it needs loads after
+  the slot) while another mod needs the id, the copy the same rule picks without it, and without any other copy that
+  can't take the slot, loads instead; none: the game's own choice. It all runs in our Init, before the game tries the
+  copies. Our page has a tickbox per copy, and two copies of an id can both be ticked (only one loads). The game's page
+  keeps its one switch.
 - Where the page and the launch can still differ, or older data reads differently (all rare):
   - Data from the dev builds before this, whose pick was missing: the copy standing in for it stays ticked, so once
     the pick is back both are ticked and the higher version loads, where those builds loaded the pick. A stand-in
@@ -36,7 +41,14 @@ Ease of use is the heart of the mod, not just its utility.
     the record that ties with the one there, installed with the game closed, goes by the copy the last launch had on
     the page, and by the items' age at the next launch, whose launch record names both.
   - With two local copies and a Workshop one, the game's rule can leave copies of both sources. Our choice goes by the
-    source of the first ticked copy in the game's list, an order that isn't stable across launches.
+    source of the first ticked copy in the order the last launch recorded (the copies the rule leaves first, then those
+    it beat). Mods installed or removed between launches can reorder copies of one id, and the page can then be wrong
+    for one launch.
+  - A copy the launch couldn't put in the id's first slot: the page assumes the next launch sorts the mods as this one
+    did. The game saves the order it loaded in and ranks an id by its last entry, here the blocked copy's, after its
+    dependency. So after a launch that blocked a copy whose dependency was just installed, the next launch can sort
+    that dependency first and load the blocked copy while the page named the fallback: one relaunch, and the outcome
+    is the better one.
 - Profiles key mods by id and source, like `mod_list` (plus, for copies from one source, which are ticked). A shared
   list's rows set a mod installed once by its id; where its id is installed more than once, a row with a Workshop
   link sets that copy alone. A newly installed mod joins the active profile, enabled.

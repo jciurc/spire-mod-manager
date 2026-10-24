@@ -605,7 +605,9 @@ static partial class SelfTest
     // reading (P5; letters straight after a number, N10), the game's own reading, a Mod's reading kept, the order the
     // game reads local copies in (FirstRead, against Godot's own sort on real folders), the guard for a mod that needs a
     // minimum version (N4), and the fallback where the launch couldn't swap a copy in (P7), each with such a mod
-    // installed while the game runs too; and a copy with two manifests of different versions (NewestOf).
+    // installed while the game runs too; a copy with two manifests of different versions (NewestOf); and the page after a
+    // launch that blocked a copy, naming the launch's fallback (a dependency switched off since, a Workshop item with two
+    // manifests, and on the beta a ticked copy the game's rule beat through a copy that's off).
     static void TestCopyRule(string outDir)
     {
         var beta = Compat.WorkshopBeatsOlderLocal;
@@ -723,7 +725,9 @@ static partial class SelfTest
             "C", beta ? "101 Other, B Other" : "101 Local, B Higher");
         // The page reads the copies in the next launch's order (the plan's Order), not this session's, which Apply's swap
         // changed (the beta: L2 swapped ahead of W2 across sources). Every copy ticked: W2 beats L1 (read first), W1 loses
-        // to it, and of W2 and L2 left the first decides the source: W2, as the next launch has it too.
+        // to it, and of W2 and L2 left the first decides the source: W2, as the next launch has it too. The launch: the
+        // game's rule in its read order (the mods folder first, L1 before L2), then Run over the list as its sort leaves
+        // it (L1 and W1, set aside, after W2 and L2), which loads W2 and sets L2 aside.
         if (beta)
         {
             x = Id();
@@ -739,10 +743,15 @@ static partial class SelfTest
                 SameIdLoad.TestPlan(x, null);
             }
             var (lw2, ll2, ll1, lw1) = (W(x, 102, "3.0.0"), L(x, "L2", "1.5.0"), L(x, "L1", "2.0.0"), W(x, 101, "1.0.0"));
-            GameRule([lw2, ll2, ll1, lw1], []);
-            var launched = SameIdLoad.Run(new List<Mod> { us, lw2, ll2, ll1, lw1 }, () => Ticks.All, m => m == us, log: false).Plan.GetValueOrDefault(x)?.Loads;
-            Check("the rule, ... the page in the next launch's order (the plan's), not this session's swapped one: W2, as the launch", page == "102" && launched == lw2,
-                $"page {page}, launch {Shown(launched)}");
+            GameRule([ll1, ll2, lw2, lw1], []);
+            var ruled = (ll1.state, ll2.state, lw2.state, lw1.state);
+            var launched = SameIdLoad.Run(new List<Mod> { us, lw2, ll2, ll1, lw1 }, () => Ticks.All, m => m == us, log: false).Plan.GetValueOrDefault(x);
+            Check("the rule, ... the page in the next launch's order (the plan's), not this session's swapped one: W2, as the launch, where the game's rule "
+                + "leaves W2 and L2 (L1 and W1 set aside) and Run sets L2 aside",
+                page == "102" && launched is { SetAside: [var dup] } && launched.Loads == lw2 && dup == ll2
+                && ruled == (ModLoadState.DisabledDuplicate, ModLoadState.None, ModLoadState.None, ModLoadState.DisabledDuplicate),
+                $"page {page}, launch {Shown(launched?.Loads)}, set aside {string.Join(",", launched?.SetAside.Select(Shown) ?? [])}; "
+                + $"the game's rule left L1 {ruled.Item1}, L2 {ruled.Item2}, W2 {ruled.Item3}, W1 {ruled.Item4}");
         }
         // An id the launch couldn't choose for (its self-check: not taken): the game's own choice, the copy that loaded this
         // session only where the next launch can load it again. Here the Workshop copy loaded, and the local copy, higher,
@@ -858,20 +867,111 @@ static partial class SelfTest
         try
         {
             Mod[] Two() => [L(x, "A", "1.0.0"), L(x, "B", "1.1.0")];
-            Row("the copy chosen blocked at launch (its dependency after the id's first slot), on the page: the game's choice, the first",
+            Row("the copy chosen blocked at launch (its dependency after the id's first slot), on the page: the fallback, A",
                 Case(Two(), extra: [user], launch: false), "A", "B Blocked");
             Row("... a higher copy ticked since: that one, as normal", Case([.. Two(), L(x, "C", "1.2.0")], extra: [user], launch: false), "C", "A Higher, B Higher");
             Row("... the mod that needs the id off since: as normal", Case(Two(), extra: [user], extraOff: true, launch: false), "B", "A Higher");
             // Another mod that needs it installed while the game runs, in the game's own list: the next launch blocks again.
             var arrivedUser = Made("SmmRuleArrivedUser", "ArrivedUser", ModLoadState.AddedAtRuntime, needs: [x]);
             var (inRedraw, outOfOne) = (Case(Two(), extra: [arrivedUser], launch: false, redraw: true), Case(Two(), extra: [arrivedUser], launch: false));
-            Check("the rule, ... the mod that needed it gone, another needing it installed while the game runs: the game's choice again, in a redraw and out: "
+            Check("the rule, ... the mod that needed it gone, another needing it installed while the game runs: the fallback again, in a redraw and out: "
                 + "A loads (B Blocked)", inRedraw == ("A", "A", "B Blocked") && outOfOne == inRedraw, $"in a redraw {inRedraw}, out of one {outOfOne}");
         }
         finally
         {
             SameIdLoad.TestPlan(x, null);
         }
+
+        // The page after a launch that blocked the copy chosen, worked out as that launch did (SameIdLoad.Fallback): the
+        // launch is Run on a made-up list (Launch); the session is that list as the launch left it, its swap made, in the
+        // game's list, with the launch's plan, To moved to the id's first slot there; then the page by the switches (off)
+        // and ticks now. What the page names, and why each ticked copy that doesn't load doesn't.
+        SameIdLoad.Entry? Launch(string id, List<Mod> list, Ticks? ticks = null) =>
+            SameIdLoad.Run(list, () => ticks ?? Ticks.All, m => m == us, log: false).Plan.GetValueOrDefault(id);
+        (string Loads, string Why) After(List<Mod> launched, SameIdLoad.Entry? plan, HashSet<(string?, ModSource)> off, Ticks ticks)
+        {
+            if (plan == null)
+                return ("no plan", "");
+            var first = launched[plan.To];
+            var id = first.manifest?.id ?? "";
+            var session = launched.Where(m => m != us).ToList();
+            try
+            {
+                GameMods().AddRange(session);
+                Copies.TestRecount();
+                SameIdLoad.TestPlan(id, plan with { To = GameMods().IndexOf(first) });
+                var page = Copies.Next(id, off, ticks);
+                return (Shown(page.Loads), string.Join(", ", page.Losing.Select(p => $"{Copies.Shown(p.Key)} {p.Value}").Order(StringComparer.Ordinal)));
+            }
+            finally
+            {
+                SameIdLoad.TestPlan(id, null);
+                foreach (var made in session)
+                    GameMods().Remove(made);
+                Copies.TestRecount();
+            }
+        }
+        // A copy that fit at the launch, needing a mod switched off since: off, that mod goes after every mod still to
+        // load, so the copy can't take the slot next launch either, and the page names the next one, as that launch loads.
+        // A 1.0, C 2.0 needing D, B 3.0 needing E (off), a mod needing the id. The launch: B blocked by E, C fits (D loads
+        // before the slot), so C. Then D off: A, on the page and at the next launch. Fails on 237b64b: its page's Fits went
+        // by D's place this session (before the slot) alone, so C fit and the page named C, which the next launch sets
+        // aside.
+        x = Id();
+        {
+            var (dep, late) = ($"{x}D", $"{x}E");
+            Mod[] Three() => [L(x, "A", "1.0.0"), Made(x, "C", version: "2.0.0", needs: [dep]), Made(x, "B", version: "3.0.0", needs: [late])];
+            var thisLaunch = Three();
+            List<Mod> atLaunch = [us, Made(dep, "D"), .. thisLaunch, Made($"{x}User", "User", needs: [x]), Made(late, "E", ModLoadState.Disabled)];
+            var plan = Launch(x, atLaunch);
+            var page = After(atLaunch, plan, [(dep, ModSource.ModsDirectory), (late, ModSource.ModsDirectory)], Ticks.All);
+            var nextCopies = Three();
+            var next = Launch(x, [us, .. nextCopies, Made($"{x}User", "User", needs: [x]), Made(dep, "D", ModLoadState.Disabled), Made(late, "E", ModLoadState.Disabled)]);
+            Check("the rule, ... after such a launch, the copy that fit there needing a mod switched off since (it goes after every mod still to load): the "
+                + "next copy that fits, on the page and at the next launch: A (B Blocked, C Other)",
+                plan?.Loads == thisLaunch[1] && page == ("A", "B Blocked, C Other") && next?.Loads == nextCopies[0],
+                $"this launch {Shown(plan?.Loads)}; the page {page.Loads} ({page.Why}); the next launch {Shown(next?.Loads)}");
+        }
+        // A Workshop item with two manifests of the id, the one at the slot needing nothing, the newer one a mod that loads
+        // after the slot: item 1 with A1 1.0 and A2 2.0 needing D, B 3.0 needing D, C 1.5, a mod needing the id, D new
+        // (sorted after the slot). The launch reads item 1 by A2 (NewestOf), which can't take the slot: B blocked, then not
+        // A, so C. The page the same. Fails on 237b64b: its page's Fits let any copy of the one at the slot fit, A2 too,
+        // so the page named A, which the launch set aside.
+        x = Id();
+        {
+            var dep = $"{x}D";
+            var c = W(x, 3, "1.5.0");
+            List<Mod> atLaunch = [us, Made(x, "W1a", item: 1, version: "1.0.0"), c, Made($"{x}User", "User", needs: [x]), Made(dep, "D"),
+                Made(x, "W1b", item: 1, version: "2.0.0", needs: [dep]), Made(x, "W2", item: 2, version: "3.0.0", needs: [dep])];
+            var plan = Launch(x, atLaunch);
+            var page = After(atLaunch, plan, [], Ticks.All);
+            Check("the rule, ... a Workshop item with two manifests, the one at the slot needing nothing, the newer one a mod after the slot: the item "
+                + "read by the newer one, so the next copy, C, at the launch and on the page (1 Other, 2 Blocked)",
+                plan is { Why: SameIdLoad.Reason.DependencyAfterSlot, Blocked: "w:2" } && plan.Loads == c && page == ("3", "1 Other, 2 Blocked"),
+                $"launch {Shown(plan?.Loads)}, blocked {plan?.Blocked ?? "none"}; the page {page.Loads} ({page.Why})");
+        }
+        // The beta: a ticked copy the game's rule beat through a copy that's off comes back as the fallback. W2 off (3.0) on
+        // W1's switch, W1 (2.5) needing E after the slot, L1 (2.0), a mod needing the id. The game's rule sets L1 aside (W2
+        // beats it); the rule over the ticked copies picks W1, blocked; without it, L1, brought back, at the launch and on
+        // the page. Fails on 237b64b: its page's pool was the ticked copies the game's rule left, W1 alone, empty without
+        // W1, so the page named the game's own choice, W2, which is off. Stable takes out both Workshop copies (L1 at once).
+        if (beta)
+        {
+            x = Id();
+            var late = $"{x}E";
+            var (w2, w1, l1) = (W(x, 182, "3.0.0"), Made(x, "W181", item: 181, version: "2.5.0", needs: [late]), L(x, "L1", "2.0.0"));
+            GameRule([l1, w2, w1], []);
+            List<Mod> atLaunch = [us, w2, Made(late, "E"), w1, Made($"{x}User", "User", needs: [x]), l1]; // its sort: L1, set aside, last
+            var ticks = new Ticks([$"{x}|w:182"], new Dictionary<string, List<string>> { [x] = ["w:181", "w:182"] });
+            var plan = Launch(x, atLaunch, ticks);
+            var page = After(atLaunch, plan, [], ticks);
+            Check("the rule, ... the beta: W1 blocked, past W2, off, which beat L1 at the game's rule: L1 brought back, at the launch and on the page (181 Blocked)",
+                plan is { Why: SameIdLoad.Reason.DependencyAfterSlot, Blocked: "w:181" } && plan.Loads == l1 && page == ("L1", "181 Blocked"),
+                $"launch {Shown(plan?.Loads)}, blocked {plan?.Blocked ?? "none"}; the page {page.Loads} ({page.Why})");
+        }
+        else
+            Results.Add("SKIP the rule, a blocked copy's fallback past a copy that's off: only the beta's rule lets one beat a ticked copy (stable takes out "
+                + "every Workshop copy beside a local one)");
 
         // The version reading: as the game reads it where it can, else leniently.
         static int Compare(string a, string b) => Math.Sign((Copies.Version(Made("SmmRuleVersion", "A", version: a)) ?? throw new InvalidOperationException($"{a} unread"))
@@ -984,15 +1084,16 @@ static partial class SelfTest
     // SameIdLoad's plan on made-up lists, as the game's loop has them while our Init runs (us at the first slot still to
     // load): the copy chosen first (no swap), later (swapped through the list's array: the game's loop carries on), a copy
     // decided before us, the game's local-vs-Workshop rule leaving one copy (nothing to do), a dependency of the chosen copy
-    // after the id's first slot (no swap; with a mod after us needing the id, the game's own choice, the rest set aside,
-    // the plan saying which copy was blocked by what; one not installed: swapped), the canary (not a List<Mod>, not us
-    // first, not the game's own list), three copies, two Workshop copies and a local one, a local and a Workshop copy
-    // only, our own second copy, none of the copies left ticked (the ticked ones the game's rule set aside: the rule again
-    // over them, the copy it leaves brought back; none to bring back: the game's choice), a copy brought back with the
-    // game's manifest messages and in its own slot (the self-check: taken), one Workshop item with two manifests,
-    // a file from before copies_off (its legacy pick alone ticked; missing, the others), a set-aside copy's messages kept
-    // for its panel; then the self-check's verdicts (Judge) on what the game made of a plan. Which copy wins by version
-    // and tie is TestCopyRule's.
+    // after the id's first slot (no swap; with a mod after us needing the id, the fallback: the best other ticked copy
+    // that can take the slot, the one there too only where what it needs loads before it, none: the game's own choice;
+    // the rest set aside, the plan saying which copy was blocked by what; one not installed: swapped), the canary (not a
+    // List<Mod>, not us first, not the game's own list), three copies, two Workshop copies and a local one, a local and a
+    // Workshop copy only, our own second copy, none of the copies left ticked (the ticked ones the game's rule set aside:
+    // the rule again over them, the copy it leaves brought back; none to bring back: the game's choice), a copy brought
+    // back with the game's manifest messages and in its own slot (the self-check: taken), one Workshop item with two
+    // manifests, a file from before copies_off (its legacy pick alone ticked; missing, the others), a set-aside copy's
+    // messages kept for its panel; then the self-check's verdicts (Judge) on what the game made of a plan. Which copy wins
+    // by version and tie is TestCopyRule's.
     static void TestSameIdPlan()
     {
         const string X = "SmmSameIdX";
@@ -1101,9 +1202,9 @@ static partial class SelfTest
             var (a3, b3, user3) = (Made(X, "A"), Made(X, "B", version: "1.1.0", needs: ["SmmSameIdNotInstalled"]), Made("SmmSameIdUser", "U", needs: [X]));
             List<Mod> gone = [us, a3, b3, user3];
             var (okGone, planGone) = PlanOf(gone);
-            Check("... the copy chosen needing a mod after the id's first slot: no swap, the flip alone; with a mod after us needing the id, the game's own "
-                + "choice (the first) loads, the other set aside (no duplicate failure), the plan naming the copy blocked and its dependency; needing a mod "
-                + "not installed: swapped all the same",
+            Check("... the copy chosen needing a mod after the id's first slot: no swap, the flip alone; with a mod after us needing the id, the other "
+                + "copy (the fallback, at the slot) loads, the one chosen set aside (no duplicate failure), the plan naming the copy blocked and its "
+                + "dependency; needing a mod not installed: swapped all the same",
                 ok && plan.GetValueOrDefault(X) is { Swapped: false, Why: SameIdLoad.Reason.None } entry && entry.Loads == b && a.state == Aside && b.state == None
                 && okUser && planUser.GetValueOrDefault(X) is { Why: SameIdLoad.Reason.DependencyAfterSlot, Swapped: false, Blocked: "l:B", Late: "SmmSameIdDep" } user1
                 && user1.Loads == a2 && user1.SetAside.SequenceEqual([b2]) && a2.state == None && b2.state == Aside && blocked[1] == a2
@@ -1239,6 +1340,19 @@ static partial class SelfTest
                 && okB && planB.GetValueOrDefault(X) is { } pb && pb.Loads == bl1 && listB[1] == bl1 && bl1.state == None && bw2.state == Aside && bw1.state == Aside
                 && (Compat.WorkshopBeatsOlderLocal ? pb is { Why: SameIdLoad.Reason.DependencyAfterSlot, Blocked: "w:181" } : pb.Why == SameIdLoad.Reason.None),
                 $"{Say(planA, aw1, al2, al3, al1)} || {Say(planB, bw2, bw1, bl1)}");
+        }
+        {
+            // The copy at the id's first slot can't stay there when what it needs loads after it: C (2.0) at the slot needs
+            // D, which is off (after every mod still to load); B (3.0), chosen, is blocked by E. The fallback passes over C
+            // to A, swapped in, C set aside, so C doesn't load to fail for D. Fails on 237b64b: its Run's Fits let the copy
+            // at the slot fit whatever it needs, so C loaded there and failed MISSING_DEPENDENCY.
+            var (c, a, b) = (Made(X, "C", version: "2.0.0", needs: ["SmmSameIdD"]), Made(X, "A"), Made(X, "B", version: "3.0.0", needs: ["SmmSameIdE"]));
+            List<Mod> list = [us, c, a, Made("SmmSameIdE", "E"), b, Made("SmmSameIdNeeder", "M", needs: [X]), Made("SmmSameIdD", "D", ModLoadState.Disabled)];
+            var (ok, plan) = PlanOf(list);
+            Check("... the copy at the id's first slot needing a mod that's off, the copy chosen blocked: the fallback passes over it, A swapped in, C set aside",
+                ok && plan.GetValueOrDefault(X) is { Why: SameIdLoad.Reason.DependencyAfterSlot, Blocked: "l:B", Late: "SmmSameIdE", Swapped: true, To: 1 } entry
+                && entry.Loads == a && list[1] == a && list[2] == c && a.state == None && c.state == Aside && b.state == Aside && entry.SetAside.SequenceEqual([c, b]),
+                Say(plan, c, a, b));
         }
         {
             // A copy brought back loads with the game's manifest messages, which its rule cleared when it beat the copy: an
@@ -3459,7 +3573,7 @@ static partial class SelfTest
             await State("the self-check finding the choice not taken: the game's own choice", b, a, NotApplied, NotApplied, false);
             SameIdLoad.TestResult(TwinId, null);
             // The launch couldn't swap B in (its dependency after the id's first slot, a mod after us needing the id), so A,
-            // the game's choice, loaded: while nothing changes, the next launch does the same.
+            // the fallback, loaded: while nothing changes, the next launch does the same.
             if (!needed || LoadOrder.OrderChanged || planWas == null)
                 Results.Add($"SKIP the one rule on the page, the copy the launch couldn't swap in: Test Twin User on {needed}, moved since launch {LoadOrder.OrderChanged}, "
                     + $"a plan {planWas != null}");
@@ -3468,7 +3582,7 @@ static partial class SelfTest
                 SameIdLoad.TestPlan(TwinId, planWas with { Why = SameIdLoad.Reason.DependencyAfterSlot, Blocked = "l:SmmTestTwinB", Late = "SmmTestLib", Loads = a,
                     SetAside = [b], Swapped = false });
                 (a.state, b.state) = (ModLoadState.Loaded, ModLoadState.DisabledDuplicate);
-                await State("the copy the launch couldn't swap in (P7): the game's choice, which loaded", a, b,
+                await State("the copy the launch couldn't swap in (P7): the fallback, which loaded", a, b,
                     Draft(CopyBlocked, ("other", Named(a)), ("dep", dep)), Draft(LoadsBlocked, ("other", Named(b)), ("dep", dep)), false, "20e-rule-blocked");
             }
         }
@@ -3499,7 +3613,7 @@ static partial class SelfTest
     {
         if (!Compat.WorkshopBeatsOlderLocal)
         {
-            Results.Add("SKIP a copy that loads unticked: only the beta's rule has it (stable takes out every Workshop copy beside a local one)");
+            Results.Add("SKIP a copy that's off doesn't count: only the beta's rule has the edge (stable takes out every Workshop copy beside a local one)");
             return;
         }
         const string id = "SmmUnticked";

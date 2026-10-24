@@ -17,9 +17,11 @@ namespace SpireModManager;
 // stays under its id, so files without copies never change. The game's own list can't tell same-source copies apart
 // (it keeps id, source and on/off, one switch for them): which of them are ticked is ours (StoreData.CopiesOff: those
 // off while the switch is on). Which copy loads is worked out from what's installed, the switches, the ticks and the
-// versions every time (Next), never stored: the game's local-vs-Workshop rule on its switches, then of one source the
-// highest ticked version, applied by SameIdLoad at launch. So a copy's box (Ticked) and whether it loads after a
-// relaunch (Loads) are two things: two copies of an id ticked, only one loads.
+// versions every time (Next), never stored, and only the ticked copies count (a copy that's off never loads nor stops
+// another from loading): the game's local-vs-Workshop rule over them, then of one source the highest ticked version;
+// where that copy can't take the id's first slot, what the same rule loads without it (SameIdLoad.Fallback). Applied by
+// SameIdLoad at launch. So a copy's box (Ticked) and whether it loads after a relaunch (Loads) are two things: two copies
+// of an id ticked, only one loads.
 static class Copies
 {
     // Every mod the game found, and those installed this session.
@@ -248,8 +250,9 @@ static class Copies
         || ticks.Ticked(id, CopyOf(mod), Twins(mod).Select(CopyOf));
 
     // Whether this copy is the one of its id that loads after a relaunch (Loading); for an id installed once, its switch.
-    // It implies the switch is on, and nearly always that it's ticked (the edges where an unticked copy loads are in
-    // Next). Inside a redraw, Lookups answers.
+    // It implies the switch is on, and nearly always that it's ticked (an unticked copy loads only as the game's own
+    // choice, in Next: for an id the launch couldn't choose for, or where no ticked copy can take a blocked one's place).
+    // Inside a redraw, Lookups answers.
     public static bool Loads(Mod mod) => Lookups.Current?.Loads(mod)
         ?? (Others(mod).Count == 0 ? SwitchOn(mod) : LoadsIn(mod, Dependencies.SavedOff(), Ticks.Now));
 
@@ -272,9 +275,10 @@ static class Copies
     // a tie or an unknown version on the beta); it lost to a higher version that loads (Higher: the game's rule between
     // sources, or ours within one); within one source, to the copy that loads on a tie, or with no version read (First);
     // its version can't be read and the loading copy's can (Unreadable); it's the copy the launch couldn't swap in
-    // (Blocked: the game's choice loads in its place); or none of these says it (Other: the copy it lost to isn't the one
-    // that loads, the copy that loads isn't ticked, the other source of two local copies and a newer Workshop one, a
-    // copy of this mod from the same source, or an id the launch couldn't choose for).
+    // (Blocked: SameIdLoad.Fallback's pick loads in its place); or none of these says it (Other: the copy it lost to isn't
+    // the one that loads, the copy that loads isn't ticked, the other source of two local copies and a newer Workshop
+    // one, a copy of this mod from the same source, a ticked copy the fallback passed over, or an id the launch couldn't
+    // choose for).
     public enum Why { Local, Higher, First, Unreadable, Blocked, Other }
 
     // What the next launch loads of an id (Next): Loads, or null for none; Losing: every ticked copy that won't load
@@ -302,7 +306,8 @@ static class Copies
     //    those Best; with a copy on that isn't ticked (on through a ticked twin's switch), step 2 again over the ticked
     //    copies alone first (the launch brings back the copy it picks); none ticked at all: the game's own choice, the
     //    first left. Where the launch couldn't swap that copy in (SameIdLoad's plan: Blocked) and nothing changed since
-    //    (the load order, a mod that needs the id still on), the next launch does the same: the game's own choice;
+    //    (the load order, a mod that needs the id still on), the next launch does the same: SameIdLoad.Fallback's pick
+    //    of the other ticked copies, none: the game's own choice, the first left (Blocked has the limit);
     // 5. every ticked copy that doesn't load, and why (Why).
     public static Outcome Next(string id, HashSet<(string?, ModSource)> gameOff, Ticks ticks)
     {
@@ -432,7 +437,11 @@ static class Copies
     // Whether the launch couldn't swap this copy in (SameIdLoad's plan: a dependency of it loads after the id's first
     // slot while a mod after us needs the id) and the next launch can't either: the load order unchanged, and a mod that
     // needs the id still on (by its switch, as the launch tests it). Anything else that changes Best's choice (another
-    // copy ticked, a higher version arrived) is predicted as normal.
+    // copy ticked, a higher version arrived) is predicted as normal. The limit: this, and which copy fits the slot in its
+    // place (Next), assume the next launch sorts as this one did. The game saves the order it loaded in and ranks an id
+    // by its last entry, here the blocked copy's, after its dependency; so after a launch that blocked a copy whose
+    // dependency was just installed, the next launch can sort that dependency first and load the blocked copy while the
+    // page named the fallback: one relaunch, and the outcome is the better one.
     static bool Blocked(string id, Mod best, HashSet<(string?, ModSource)> gameOff) =>
         SameIdLoad.Plan.GetValueOrDefault(id) is { Blocked: { } copy } && CopyOf(best) == copy
         && Dependencies.NeededBy(id).Any(m => m.manifest?.id != id && !gameOff.Contains((m.manifest?.id, m.modSource))) && !LoadOrder.OrderChanged;
