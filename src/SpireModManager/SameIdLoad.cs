@@ -16,13 +16,13 @@ namespace SpireModManager;
 // list has one switch for both, and the game would load the first and fail the rest with MOD_ERROR.DUPLICATE_ID. Our
 // Init runs inside the game's load loop, and every mod after us is still to be tried (TryLoadMod skips a mod whose state
 // isn't None, and sets Loaded only after the mod's initializers ran). So Apply chooses, of the copies the game left to
-// load and the ticked ones its rule set aside (brought back where a copy that's off beat them), the one our page says
-// loads (Choose, Copies.Next's step 4: the game's rule over the ticked copies, then of one source the highest version;
-// where that copy can't take the id's first slot, Fallback), sets every other copy still to come to DisabledDuplicate,
-// the game's own state for its duplicates, and swaps the chosen copy into the id's first slot, where mods that need the
-// id look for it. Settle, at the first main menu, repairs what the game's rebuilt list coupled by id, keeps our entries
-// first (so we load before every copy next launch) and checks the choice was taken. Anything unexpected: no flip, a
-// warning, and the game's own behaviour.
+// load and the ticked ones its rule set aside (brought back where a copy that's off beat them, or in a blocked copy's
+// place), the one our page says loads (Choose, Copies.Next's step 4: the game's rule over the ticked copies, then of one
+// source the highest version; where that copy can't take the id's first slot, Fallback), sets every other copy still to
+// come to DisabledDuplicate, the game's own state for its duplicates, and swaps the chosen copy into the id's first slot,
+// where mods that need the id look for it. Settle, at the first main menu, repairs what the game's rebuilt list coupled
+// by id, keeps our entries first (so we load before every copy next launch) and checks the choice was taken. Anything
+// unexpected: no flip, a warning, and the game's own behaviour.
 static class SameIdLoad
 {
     // Why the copy chosen doesn't load this launch: a copy of the id sorted before us (the game decided it already), or a
@@ -32,10 +32,10 @@ static class SameIdLoad
 
     // What Apply did for one id installed more than once. Loads: the copy that loads, or that the game tries; SetAside:
     // the copies Apply set aside; Swapped: the copy that loads moved from slot From to To (the id's first); Why: why the
-    // copy chosen doesn't load this launch; Blocked and Late: for DependencyAfterSlot, the copy chosen (CopyOf) and the
-    // dependency of it that loads after the slot, for the page to say the next launch does the same (Copies.Next); Order:
-    // the id's copies (CopyOf) in the list's order before Apply swapped any, as the next launch's sort has them again
-    // (it orders by id, so our swap doesn't carry over): the page reads the copies in it.
+    // copy chosen doesn't load this launch; Blocked and Late: for DependencyAfterSlot, the copy chosen (CopyOf) and what
+    // it needs that loads after the slot (the page works out the next launch's own, Copies.Next); Order: the id's copies
+    // (CopyOf) in the list's order before Apply swapped any, which the page takes as the next launch's (its sort ranks
+    // them by id alike, so our swap doesn't carry over) and reads the copies in.
     public record Entry(Mod? Loads, IReadOnlyList<Mod> SetAside, bool Swapped, int From, int To, Reason Why, double Ms, string? Blocked = null, string? Late = null,
         IReadOnlyList<string>? Order = null);
 
@@ -187,9 +187,12 @@ static class SameIdLoad
                 var span = CollectionsMarshal.AsSpan(list);
                 (span[s1], span[from]) = (span[from], span[s1]);
             }
-            if (sp != s1)
+            // The copy chosen is tested at the slot too: one there needs something after it only where that's off, which
+            // leaves it nothing to wait for, so whether the sort tied it there or another copy is chance (the page can't
+            // tell, Copies.Next).
+            var late = Late(picked.Mod);
+            if (sp != s1 || late != null)
             {
-                var late = Late(picked.Mod);
                 if (late == null && s1 > self && sp > self)
                 {
                     SwapInto(sp);
@@ -202,8 +205,7 @@ static class SameIdLoad
                     // the copy the rule would load were the copies that are off, the blocked one and any that can't take
                     // the slot not installed (Fallback; brought back where the game's rule set it aside), so a copy that's
                     // off doesn't load in a ticked one's place; none: the game's own choice (it needs no swap). The page
-                    // works out the same (Copies.Next, with Blocked and Late): the next launch does it again while nothing
-                    // changes the choice.
+                    // works out the same from the next launch's order (Copies.Next).
                     bool Fits(Mod m) => list.IndexOf(m) is var at && at > self && s1 > self && Late(m) == null;
                     var instead = Fallback([.. both.Where(p => Ticked(p.Mod)).Select(p => p.Mod)], picked.Mod, Copies.GameVersion, Fits, TieOrder, strict) is { } other
                         ? both.First(p => p.Mod == other) : todo[0];

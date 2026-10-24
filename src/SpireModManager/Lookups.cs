@@ -12,6 +12,7 @@ sealed class Lookups : IDisposable
     public static Lookups? Current { get; private set; }
 
     readonly HashSet<(string? Id, ModSource Source)> _off;
+    readonly IReadOnlyList<SettingsSaveMod> _saved;
     readonly Ticks _ticks;
     readonly Dictionary<string, Mod> _byId = [];
     readonly Dictionary<string, Copies.Outcome> _next = [];
@@ -48,7 +49,8 @@ sealed class Lookups : IDisposable
 
     Lookups(IReadOnlyList<Mod> mods, IReadOnlyList<Mod> installed, IEnumerable<SettingsSaveMod> saved, Ticks ticks)
     {
-        (_mods, _off) = (mods, Dependencies.SavedOff(saved));
+        (_mods, _saved) = (mods, saved as IReadOnlyList<SettingsSaveMod> ?? [.. saved]);
+        _off = Dependencies.SavedOff(_saved);
         _ticks = ticks;
         // The copy Dependencies.Find picks for an id: the first it prefers most (Dependencies.Preference), read against
         // these lists (Current isn't this one yet).
@@ -77,7 +79,7 @@ sealed class Lookups : IDisposable
 
     public Mod? Loading(string id) => Next(id).Loads;
 
-    public Copies.Outcome Next(string id) => Kept(_next, id, i => Copies.Next(i, _off, _ticks));
+    public Copies.Outcome Next(string id) => Kept(_next, id, i => Copies.Next(i, _off, _ticks, _saved));
 
     // The lists it answers from (Copies.LoadingIf tries a tick on them).
     public HashSet<(string? Id, ModSource Source)> Off => _off;

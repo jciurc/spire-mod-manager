@@ -16,12 +16,13 @@ namespace SpireModManager;
 // first time it's seen (StoreData.Copies lists them, the holder first). A mod installed once has no record and its data
 // stays under its id, so files without copies never change. The game's own list can't tell same-source copies apart
 // (it keeps id, source and on/off, one switch for them): which of them are ticked is ours (StoreData.CopiesOff: those
-// off while the switch is on). Which copy loads is worked out from what's installed, the switches, the ticks and the
-// versions every time (Next), never stored, and only the ticked copies count (a copy that's off never loads nor stops
-// another from loading): the game's local-vs-Workshop rule over them, then of one source the highest ticked version;
-// where that copy can't take the id's first slot, what the same rule loads without it (SameIdLoad.Fallback). Applied by
-// SameIdLoad at launch. So a copy's box (Ticked) and whether it loads after a relaunch (Loads) are two things: two copies
-// of an id ticked, only one loads.
+// off while the switch is on). Which copy loads is worked out from what's installed, the switches, the ticks, the
+// versions and the saved order every time (Next), never stored, and only the ticked copies count (a copy that's off never
+// stops a ticked one from loading, and loads only as the game's own choice, where no ticked copy can): the game's
+// local-vs-Workshop rule over them, then of one source the highest ticked version; where the next launch can't put that
+// copy in the id's first slot, what the same rule loads without it (SameIdLoad.Fallback). Applied by SameIdLoad at
+// launch. So a copy's box (Ticked) and whether it loads after a relaunch (Loads) are two things: two copies of an id
+// ticked, only one loads.
 static class Copies
 {
     // Every mod the game found, and those installed this session.
@@ -274,16 +275,16 @@ static class Copies
     // Why a ticked copy doesn't load (Next's step 5): the game took it out for a local copy that loads (Local: stable, or
     // a tie or an unknown version on the beta); it lost to a higher version that loads (Higher: the game's rule between
     // sources, or ours within one); within one source, to the copy that loads on a tie, or with no version read (First);
-    // its version can't be read and the loading copy's can (Unreadable); it's the copy the launch couldn't swap in
-    // (Blocked: SameIdLoad.Fallback's pick loads in its place); or none of these says it (Other: the copy it lost to isn't
-    // the one that loads, the copy that loads isn't ticked, the other source of two local copies and a newer Workshop
-    // one, a copy of this mod from the same source, a ticked copy the fallback passed over, or an id the launch couldn't
-    // choose for).
+    // its version can't be read and the loading copy's can (Unreadable); the next launch can't swap it in (Blocked:
+    // SameIdLoad.Fallback's pick loads in its place, none: the game's own choice); or none of these says it (Other: the
+    // copy it lost to isn't the one that loads, the copy that loads isn't ticked, the other source of two local copies
+    // and a newer Workshop one, a copy of this mod from the same source, a ticked copy the fallback passed over, or an id
+    // the launch couldn't choose for).
     public enum Why { Local, Higher, First, Unreadable, Blocked, Other }
 
     // What the next launch loads of an id (Next): Loads, or null for none; Losing: every ticked copy that won't load
-    // (CopyOf), and why.
-    public sealed record Outcome(Mod? Loads, IReadOnlyDictionary<string, Why> Losing)
+    // (CopyOf), and why; Late: for the copy Blocked, what it needs that the next launch doesn't load before the slot.
+    public sealed record Outcome(Mod? Loads, IReadOnlyDictionary<string, Why> Losing, string? Late = null)
     {
         public static readonly Outcome None = new(null, new Dictionary<string, Why>());
     }
@@ -305,11 +306,12 @@ static class Copies
     // 4. else of the ticked copies left, those of the first one's source (nothing is chosen across sources), and of
     //    those Best; with a copy on that isn't ticked (on through a ticked twin's switch), step 2 again over the ticked
     //    copies alone first (the launch brings back the copy it picks); none ticked at all: the game's own choice, the
-    //    first left. Where the launch couldn't swap that copy in (SameIdLoad's plan: Blocked) and nothing changed since
-    //    (the load order, a mod that needs the id still on), the next launch does the same: SameIdLoad.Fallback's pick
-    //    of the other ticked copies, none: the game's own choice, the first left (Blocked has the limit);
+    //    first left. Where the next launch can't put that copy in the id's first slot (Blocked: something it needs
+    //    doesn't load before the slot in that launch's order, LateIn) while a mod that needs the id is on,
+    //    SameIdLoad.Fallback's pick of the other ticked copies, none: the game's own choice, the first left;
     // 5. every ticked copy that doesn't load, and why (Why).
-    public static Outcome Next(string id, HashSet<(string?, ModSource)> gameOff, Ticks ticks)
+    // saved: the list the next launch sorts by (Dependencies.NextOrder), else the game's in memory.
+    public static Outcome Next(string id, HashSet<(string?, ModSource)> gameOff, Ticks ticks, IReadOnlyList<SettingsSaveMod>? saved = null)
     {
         var copies = (ById().TryGetValue(id, out var all) ? all : All.Where(m => m.manifest?.id == id)).DistinctBy(CopyOf).ToList();
         // In the order the next launch has them: this launch's before Apply swapped any (its sort orders by id, so a swap
@@ -333,6 +335,7 @@ static class Copies
             || id != ModEntry.ModId && SameIdLoad.Plan.GetValueOrDefault(id)?.Loads is { } revived && CopyOf(revived) == CopyOf(m))) ?? gameLeft[0];
         Mod loads;
         Mod? blocked = null;
+        string? late = null;
         List<Mod> candidates = [];
         var strict = false;
         if (id == ModEntry.ModId || SameIdLoad.Unchosen(id))
@@ -361,18 +364,14 @@ static class Copies
                     strict ? m => GameVersion(Newest(m)) : null).Mod;
                 loads = best;
                 // Blocked: what the next launch loads instead, worked out as it does (SameIdLoad.Fallback) over the ticked
-                // copies in its order (those the game's rule leaves, then those it beats), by the ticks now. A copy fits
-                // where none of what it needs loads at or after the id's first slot (the plan's To: nothing else moved):
-                // a dependency whose every installed copy is switched off goes after every mod still to load, so it
-                // doesn't. None: the game's own choice, the first the rule leaves.
-                if (Blocked(id, best, gameOff) && SameIdLoad.Plan.GetValueOrDefault(id) is { } plan)
+                // copies in its order (those the game's rule leaves, then those it beats), by the ticks now; a copy fits
+                // where nothing it needs is late. None: the game's own choice, the first the rule leaves.
+                if (Needed(id, gameOff) && Dependencies.Read(Newest(best)).Count > 0
+                    && LateIn(id, gameOff, saved ?? SaveManager.Instance.SettingsSave.ModSettings?.ModList ?? []) is var lateOf && lateOf(Newest(best)) is { } dep)
                 {
-                    var list = ModManager.Mods.ToList();
-                    bool Late(string dep) => All.Where(m => m.manifest?.id == dep).ToList() is { Count: > 0 } installed
-                        && installed.All(m => gameOff.Contains((dep, m.modSource))) || list.FindIndex(m => m.manifest?.id == dep) >= plan.To;
-                    bool Fits(Mod m) => !(m.manifest?.dependencies ?? []).Any(d => Late(d.id));
                     var tickedNow = on.Where(IsTicked).OrderBy(m => gameLeft.Contains(m) ? 0 : 1).Select(Newest).ToList();
-                    (blocked, loads) = (best, SameIdLoad.Fallback(tickedNow, Newest(best), GameVersion, Fits, tied => TieOrder(tied, ticks.TieList(id), ticks.BeforeOf(id)), strict)
+                    (blocked, late, loads) = (best, dep, SameIdLoad.Fallback(tickedNow, Newest(best), GameVersion, m => lateOf(m) == null,
+                        tied => TieOrder(tied, ticks.TieList(id), ticks.BeforeOf(id)), strict)
                         is { } instead && on.FirstOrDefault(m => CopyOf(m) == CopyOf(instead)) is { } same ? same : gameLeft[0]);
                 }
             }
@@ -384,7 +383,7 @@ static class Copies
                 : copy == blocked ? Why.Blocked
                 : blocked == null && candidates.Contains(copy) && candidates.Contains(loads) ? SameSource(copy, loads, strict)
                 : Why.Other;
-        return new Outcome(loads, losing);
+        return new Outcome(loads, losing, late);
     }
 
     // The game's local-vs-Workshop rule (ModManager.RemoveDisabledMods) over copies of one id whose switches are on: each
@@ -434,17 +433,23 @@ static class Copies
     static bool NeedsReadable(string id, HashSet<(string?, ModSource)> gameOff) => Dependencies.NeededBy(id).Any(m => m.manifest?.id != id
         && !gameOff.Contains((m.manifest?.id, m.modSource)) && m.manifest?.dependencies?.Any(d => d.id == id && d.minVersion != null) == true);
 
-    // Whether the launch couldn't swap this copy in (SameIdLoad's plan: a dependency of it loads after the id's first
-    // slot while a mod after us needs the id) and the next launch can't either: the load order unchanged, and a mod that
-    // needs the id still on (by its switch, as the launch tests it). Anything else that changes Best's choice (another
-    // copy ticked, a higher version arrived) is predicted as normal. The limit: this, and which copy fits the slot in its
-    // place (Next), assume the next launch sorts as this one did. The game saves the order it loaded in and ranks an id
-    // by its last entry, here the blocked copy's, after its dependency; so after a launch that blocked a copy whose
-    // dependency was just installed, the next launch can sort that dependency first and load the blocked copy while the
-    // page named the fallback: one relaunch, and the outcome is the better one.
-    static bool Blocked(string id, Mod best, HashSet<(string?, ModSource)> gameOff) =>
-        SameIdLoad.Plan.GetValueOrDefault(id) is { Blocked: { } copy } && CopyOf(best) == copy
-        && Dependencies.NeededBy(id).Any(m => m.manifest?.id != id && !gameOff.Contains((m.manifest?.id, m.modSource))) && !LoadOrder.OrderChanged;
+    // Whether a mod that needs the id is on (by its switch, as the launch tests it): then a copy that can't take the id's
+    // first slot doesn't load (Blocked).
+    static bool Needed(string id, HashSet<(string?, ModSource)> gameOff) =>
+        Dependencies.NeededBy(id).Any(m => m.manifest?.id != id && !gameOff.Contains((m.manifest?.id, m.modSource)));
+
+    // For a copy of the id, the first thing it needs that the next launch doesn't load before the id's first slot, so
+    // SameIdLoad.Run can't put the copy there: installed, but sorting after the slot in that launch's order
+    // (Dependencies.NextOrder: the game ranks an id by its last saved entry, so a launch that blocked a copy ranks the id
+    // after what the copy needs, which then usually sorts first), or not loading (switched off, or taken out by the
+    // game's rule: after every mod still to load). One that isn't installed doesn't count, as at the launch. Null for
+    // none. The limits are in DESIGN.md (a session that ends without saving the game's list; ties).
+    static Func<Mod, string?> LateIn(string id, HashSet<(string?, ModSource)> gameOff, IReadOnlyList<SettingsSaveMod> saved)
+    {
+        var before = Dependencies.NextOrder(gameOff, saved).Select(m => m.manifest?.id).TakeWhile(each => each != id).ToHashSet();
+        var installed = All.Select(m => m.manifest?.id).ToHashSet();
+        return m => Dependencies.Read(m).FirstOrDefault(dep => installed.Contains(dep) && !before.Contains(dep));
+    }
 
     // The local copy the game reads first, which its local-vs-Workshop rule compares Workshop copies with: it reads its
     // mods folder depth first, a folder's files before its subfolders, each list in Godot's DirAccess order (ordinal, so

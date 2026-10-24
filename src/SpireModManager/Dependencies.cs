@@ -222,14 +222,16 @@ static class Dependencies
 
     // The order with each dependency that loads moved just ahead of what needs it, otherwise unchanged (the game's own
     // stable topological sort).
-    public static List<Mod> Fixed(IReadOnlyList<Mod> given)
+    public static List<Mod> Fixed(IReadOnlyList<Mod> given) =>
+        Fixed(given, m => Copies.Loads(m) ? Of(m).Select(Find).OfType<Mod>().Where(Copies.Loads) : []);
+
+    // The same, given what each mod waits for (NextOrder: the game's own reading of the manifests).
+    public static List<Mod> Fixed(IReadOnlyList<Mod> given, Func<Mod, IEnumerable<Mod>> waitsFor)
     {
         var order = given.Distinct().ToList(); // a mod listed twice counts once
         var position = order.Select((m, i) => (m, i)).ToDictionary(p => p.m, p => p.i);
-        // Each loading mod's loading dependencies in the list, worked out once.
-        var needs = order.ToDictionary(m => m, m => Copies.Loads(m)
-            ? Of(m).Select(Find).OfType<Mod>().Where(d => Copies.Loads(d) && position.ContainsKey(d) && d != m).Distinct().ToList()
-            : []);
+        // What each mod waits for in the list, worked out once.
+        var needs = order.ToDictionary(m => m, m => waitsFor(m).Where(d => position.ContainsKey(d) && d != m).Distinct().ToList());
         var waitingOn = order.ToDictionary(m => m, m => needs[m].Count);
         var dependents = order.ToDictionary(m => m, _ => new List<Mod>());
         foreach (var m in order)
@@ -251,5 +253,26 @@ static class Dependencies
         var placed = result.ToHashSet();
         result.AddRange(order.Where(m => !placed.Contains(m)));
         return result;
+    }
+
+    // The mods the next launch sorts (ModManager.SortModList), in its order: those it leaves to load (switch on, not taken
+    // out by its local-vs-Workshop rule, Copies.GameRule), each by its id's last entry in the saved list (an id the list
+    // doesn't have after the rest), then each moved after what it needs (Fixed, by the manifests: it sorts before anything
+    // loads). Those it takes out come after all of these. saved: the game's list as it saves it on quitting, the one in
+    // memory. One Mod per manifest: an update read while the game runs stands in for the one found at launch.
+    public static List<Mod> NextOrder(HashSet<(string?, ModSource)> gameOff, IReadOnlyList<SettingsSaveMod> saved)
+    {
+        var last = new Dictionary<string, int>();
+        for (var i = 0; i < saved.Count; i++)
+            last[saved[i].Id] = i;
+        var on = ModManager.Mods.Union(Installed.Mods).Where(m => m.manifest?.id is { } id && !gameOff.Contains((id, m.modSource)))
+            .GroupBy(m => (m.manifest?.id, m.path)).Select(g => g.Last()).ToList();
+        var beaten = on.GroupBy(m => m.manifest?.id).SelectMany(g => Copies.GameRule([.. g], Copies.GameVersion).Keys).ToHashSet();
+        var left = on.Where(m => !beaten.Contains(m)).OrderBy(m => last.TryGetValue(m.manifest?.id ?? "", out var at) ? at : int.MaxValue).ToList();
+        // A mod waits for the first of each id it needs, as the game finds them.
+        var first = new Dictionary<string, Mod>();
+        foreach (var mod in left)
+            first.TryAdd(mod.manifest?.id ?? "", mod);
+        return Fixed(left, m => Read(m).Select(id => id != null && first.TryGetValue(id, out var dep) ? dep : null).OfType<Mod>());
     }
 }

@@ -564,8 +564,8 @@ static class ModDetails
     // can't disagree with the status, the banner or the launch. The first that holds:
     // - the choice couldn't be applied this launch (SameIdLoad's self-check or canary): it says so, on every copy;
     // - ticked while another copy loads after a relaunch: that one, and why (the status says it won't load); the copy the
-    //   launch couldn't swap in (Why.Blocked) names the dependency that loads after the copy loading instead;
-    // - loading in the place of a copy the launch couldn't swap in, ticked or not: which copy, and why;
+    //   next launch can't swap in (Why.Blocked) names what it needs that loads after the copy loading instead;
+    // - loading in the place of a copy the next launch can't swap in, ticked or not: which copy, and why;
     // - ticked, not loaded now, and loading after a relaunch in place of the copy loaded now: so;
     // - ticked and failed for its own reasons: how to load another copy instead (after the red), another copy ticked or
     //   not (it isn't "the one that loads" when it failed);
@@ -586,8 +586,8 @@ static class ModDetails
             return links ? $"[url=mod:{Copies.LinkKey(other)}][color={ModLinkHex}]{name}[/color][/url]" : name;
         }
         string Line(string key, Mod other) => Menus.Format(key, ("other", Other(other)));
-        // The dependency the launch couldn't load the blocked copy without (SameIdLoad's plan), as its row names it.
-        string Dep() => SameIdLoad.Plan.GetValueOrDefault(id)?.Late is { } late ? Dependencies.Find(late) is { } found ? Other(found) : Escape(late) : "";
+        // What the blocked copy needs that the next launch doesn't load before the slot (Copies.Next), as its row names it.
+        string Dep() => Copies.Next(id).Late is { } late ? Dependencies.Find(late) is { } found ? Other(found) : Escape(late) : "";
         if (SameIdLoad.Unchosen(id))
             return Escape(Menus.Text("SPIRE_MOD_MANAGER.COPY_NOT_APPLIED"));
         if (Copies.LosesTo(mod) is { } lost)
@@ -608,7 +608,8 @@ static class ModDetails
             return Line("SPIRE_MOD_MANAGER.COPY_FAILED_OTHER", others.FirstOrDefault(Copies.Ticked) ?? others[0]);
         if (others.FirstOrDefault(Copies.Ticked) is { } enabled)
             return ticked ? Line("SPIRE_MOD_MANAGER.COPY_LOADS_ALSO", enabled)
-                // The one of them that loads (a copy that's off loads only through a switch it shares: then another).
+                // The one of them that loads where it's ticked, else the first ticked (an unticked copy loads only as the
+                // game's own choice).
                 : Line("SPIRE_MOD_MANAGER.COPY_OTHER_ENABLED", Copies.Loading(id) is { } loads && others.Contains(loads) && Copies.Ticked(loads) ? loads : enabled);
         return null;
     }
