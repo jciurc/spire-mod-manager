@@ -1030,20 +1030,26 @@ static partial class SelfTest
                 && codeAt > filesAt && lines.Skip(codeAt + 1).Take(codeLines.Count).SequenceEqual(codeLines) && lines.Contains(readyLine)
                 && lines[^1] == codeLines[^1],
                 $"\"{title}\" / \"{note}\" / {listText.ReplaceLineEndings(" / ")[..Math.Min(1200, listText.Length)]}");
-            // What those words mean (Jordan, 23 Oct): right over the code's heading, a small gap between (smaller than the
-            // blank line over it), after the areas and the files (a blank line after their last path); with code only (our
-            // own mod), first in the list.
-            var legendAt = lines.IndexOf(Menus.Text("SPIRE_MOD_MANAGER.PATCH_KINDS"));
+            // What those words mean (Jordan, 23 Oct): what the list shows, then a line per kind (five lines), right over the
+            // code's heading with a small gap between (smaller than the blank line over the legend), after the areas and the
+            // files (a blank line after their last path); with code only (our own mod), first in the list.
+            var kindLines = Menus.Text("SPIRE_MOD_MANAGER.PATCH_KINDS").Split('\n');
+            var legendAt = lines.IndexOf(Menus.Text("SPIRE_MOD_MANAGER.PATCH_KINDS_INTRO"));
+            var legendEnd = legendAt + kindLines.Length; // its last line
+            var legendLines = ModifiedContent.Legend().Split('\n');
             var codeOnlyList = ModifiedContent.Details(ours, GameChanges.For(ours)).Split('\n');
-            var (blankOver, gapUnder) = list != null && legendAt > 0 && codeAt > legendAt
-                ? (list.GetParagraphOffset(legendAt) - list.GetParagraphOffset(legendAt - 1), list.GetParagraphOffset(codeAt) - list.GetParagraphOffset(legendAt + 1)) : (0f, 0f);
-            Check("modified content's dialog: what the patch words mean right over \"Game code changed\", a small gap between, after the files; first in a list "
-                + "with code only (see 17f2)",
-                legendAt == fileLines.Count + 2 && lines[legendAt - 1] == "" && lines[legendAt + 1] == " " && codeAt == legendAt + 2
+            var (blankOver, gapUnder) = list != null && legendAt > 0 && codeAt > legendEnd + 1
+                ? (list.GetParagraphOffset(legendAt) - list.GetParagraphOffset(legendAt - 1), list.GetParagraphOffset(codeAt) - list.GetParagraphOffset(legendEnd + 1)) : (0f, 0f);
+            Check("modified content's dialog: what the patch words mean (what the list shows, then a line per kind) right over \"Game code changed\", a small "
+                + "gap between, after the files; first in a list with code only (see 17f2)",
+                kindLines.Length == 4 && legendAt == fileLines.Count + 2 && lines[legendAt - 1] == ""
+                && lines.Skip(legendAt + 1).Take(kindLines.Length).SequenceEqual(kindLines) && codeAt == legendEnd + 2 && lines[legendEnd + 1] == " "
                 && gapUnder > 0 && gapUnder <= blankOver * 0.6f
-                && codeOnlyList.Length > 3 && codeOnlyList[0] == ModifiedContent.Legend() && codeOnlyList[2].Contains($"[color=#efc851]{Menus.Text("SPIRE_MOD_MANAGER.GAME_CODE")}[/color]"),
-                $"legend at line {legendAt}, code at {codeAt}, {fileLines.Count} file lines; gap under it {gapUnder}, blank line over it {blankOver}; "
-                + $"code only: {string.Join(" / ", codeOnlyList.Take(3))}");
+                && legendLines.Length == 1 + kindLines.Length && codeOnlyList.Length > legendLines.Length + 2
+                && codeOnlyList.Take(legendLines.Length).SequenceEqual(legendLines)
+                && codeOnlyList[legendLines.Length + 1].Contains($"[color=#efc851]{Menus.Text("SPIRE_MOD_MANAGER.GAME_CODE")}[/color]"),
+                $"legend at line {legendAt} to {legendEnd} ({kindLines.Length} kinds), code at {codeAt}, {fileLines.Count} file lines; gap under it {gapUnder}, "
+                + $"blank line over it {blankOver}; code only: {string.Join(" / ", codeOnlyList.Take(legendLines.Length + 2))}");
             // The ways a place is patched, each word in its colour (Jordan, 23 Oct: before blue, after green, rewritten
             // orange, wrapped soft red; ours: the changes summary's blue, green and soft red, a Pending status's orange),
             // in the list and in the legend's terms, the words as they were: our page's _Ready here (before, after and
@@ -1055,17 +1061,24 @@ static partial class SelfTest
             var everyWay = ModifiedContent.Details(mod, new([], [new GameChanges.Place("NThing", "_Ready", "combat",
                 GameChanges.Kinds.Before | GameChanges.Kinds.After | GameChanges.Kinds.Rewritten | GameChanges.Kinds.Wrapped)]));
             // The legend's terms: each kind's word as the list has it, capitalised, with a colon ("Final:" for wrapped, Jordan's
-            // word since 23 Oct).
+            // word since 23 Oct), in the kinds' dim lines; over them what the list shows, in the text's colour (no colour of its
+            // own).
             static string Capitalised(string word) => word.Length == 0 ? word : char.ToUpperInvariant(word[0]) + word[1..];
             (string Key, string Hex)[] kinds = [("SPIRE_MOD_MANAGER.PATCH_BEFORE", "#8ec5ff"), ("SPIRE_MOD_MANAGER.PATCH_AFTER", "#a6e3a1"),
                 ("SPIRE_MOD_MANAGER.PATCH_REWRITTEN", "#f5b56b"), ("SPIRE_MOD_MANAGER.PATCH_WRAPPED", "#f2a3a3")];
-            var legend = "[color=#fff6e299]" + kinds.Aggregate(Menus.Text("SPIRE_MOD_MANAGER.PATCH_KINDS"),
+            var intro = Menus.Text("SPIRE_MOD_MANAGER.PATCH_KINDS_INTRO");
+            var legend = $"{intro}\n[color=#fff6e299]" + kinds.Aggregate(Menus.Text("SPIRE_MOD_MANAGER.PATCH_KINDS"),
                 (text, kind) => Capitalised(Menus.Text(kind.Key)) is var term ? text.Replace(term + ":", Coloured(term, kind.Hex) + ":") : text) + "[/color]";
-            Check("modified content's dialog: before in blue, after in green, rewritten in orange, final (wrapped) in soft red, in the list and the legend's terms (see 17f2)",
-                listCode.Split('\n').Contains($"        NModdingScreen._Ready  [color=#fff6e299]({before}, {after}, {wrapped})[/color]")
+            var listLines = listCode.Split('\n').ToList();
+            var legendIn = listLines.IndexOf(intro);
+            Check("modified content's dialog: before in blue, after in green, rewrite in orange, final (wrapped) in soft red, in the list and the legend's terms; "
+                + "the legend's first line, what the list shows, in the text's colour (see 17f2)",
+                listLines.Contains($"        NModdingScreen._Ready  [color=#fff6e299]({before}, {after}, {wrapped})[/color]")
                 && everyWay.Contains($"NThing._Ready  [color=#fff6e299]({before}, {after}, {rewritten}, {wrapped})[/color]")
-                && legend.Split("[color=#").Length == 6 && ModifiedContent.Legend() == legend && listCode.Split('\n').Contains(legend),
-                $"{listCode.Split('\n').FirstOrDefault(l => l.Contains("NModdingScreen._Ready"))} | {everyWay.Split('\n').FirstOrDefault(l => l.Contains("NThing"))} | {ModifiedContent.Legend()}");
+                && legend.Split("[color=#").Length == 6 && ModifiedContent.Legend() == legend && legendLines[0] == intro
+                && legendIn > 0 && listLines.Skip(legendIn).Take(legendLines.Length).SequenceEqual(legend.Split('\n')),
+                $"{listLines.FirstOrDefault(l => l.Contains("NModdingScreen._Ready"))} | {everyWay.Split('\n').FirstOrDefault(l => l.Contains("NThing"))} | "
+                + $"{ModifiedContent.Legend().ReplaceLineEndings(" / ")} (in the list at line {legendIn})");
             // The areas, between the note and the list (Jordan, 23 Oct): one to a line in columns filled top to bottom,
             // three side by side across the dialog; 11 here, so no sideways scroll.
             var shownAreas = AreasShown(Dialog());

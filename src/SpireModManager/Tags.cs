@@ -57,9 +57,9 @@ static class Tags
         if (manifest.id is { } id && Copies.Others(mod) is { Count: > 0 } others)
         {
             var clash = Copies.Clashes(mod);
-            string Names(IEnumerable<Mod> copies) => string.Join(", ", copies.DistinctBy(Copies.CopyOf).Select(Copies.Named));
-            var tip = clash
-                ? Menus.Format("SPIRE_MOD_MANAGER.TAG_SAME_ID_CLASH_TIP", ("others", Names(others.Where(Copies.Ticked))), ("loads", Copies.Named(Copies.Loading(id) ?? mod)))
+            string Names(IEnumerable<Mod> copies, string between = ", ") => string.Join(between, copies.DistinctBy(Copies.CopyOf).Select(Copies.Named));
+            var tip = clash // the enabled copies one to a line, under the tip's first line (Jordan, 23 Oct)
+                ? Menus.Format("SPIRE_MOD_MANAGER.TAG_SAME_ID_CLASH_TIP", ("others", Names(others.Where(Copies.Ticked), "\n")), ("loads", Copies.Named(Copies.Loading(id) ?? mod)))
                 : Menus.Format("SPIRE_MOD_MANAGER.TAG_SAME_ID_TIP", ("others", Names(others)));
             chips.Add(new Chip(Menus.Text("SPIRE_MOD_MANAGER.TAG_SAME_ID"), clash ? SameIdClash : Duplicate, Tip: tip));
         }

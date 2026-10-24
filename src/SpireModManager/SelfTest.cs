@@ -272,6 +272,7 @@ static partial class SelfTest
             await Step(() => TestSameIdBothOn(menu, screen, content, outDir)); // both copies ticked: which loads, and the words for it
             await Step(() => TestCopyOutcome(menu, screen, content, outDir)); // every view from the one rule, in each state it decides
             await Step(() => TestCopyUnticked(menu, screen, content));
+            await Step(() => TestCopyGroups(menu));
             await Step(() => TestTagSuggestions(menu, screen, content, outDir));
             await Step(() => TestTagPills(menu, screen, content, outDir));
             await Step(() => TestHistory(menu, screen, content, outDir));
@@ -943,23 +944,24 @@ static partial class SelfTest
 
     // The words of the duplicate copies, word for word as settings_ui.json has them: drafts until Jordan's copy pass, so
     // here once for every check that reads them (an edit there is one edit here). Draft fills in their values.
-    const string SameIdText = "{count} mods with the same ID are enabled. Only one copy will be loaded.";
-    const string BannerLoads = "{mod}: loads", BannerWontLoad = "{mod}: won't load";
-    const string RelaunchLoses = "{other} loads instead";
+    const string SameIdText = "{count} mods with the same ID are enabled - only one copy of each will be loaded";
+    const string CopyGroup = "{id}:", CopyLineText = "{mod} {version} ({source}) - {state}", CopyActive = "Active", CopyIgnored = "Ignored";
+    const string RelaunchCopiesIntro = "Some mods with duplicate IDs are enabled, and won't be loaded";
     const string CopySwitchLine = "{mod}: {to} loads instead of {from}";
-    const string ClashTip = "Another copy of this mod is enabled: {others}. Only {loads} loads.";
+    const string ClashTip = "Other copies of this mod are enabled\n{others}\n\n{loads} will be used, determined by version number and date of install - other copies will be ignored";
     const string StatusWontLoad = "Duplicate - Won't load";
-    const string CopyLoses = "{other} loads instead. {why} Disable one to choose.", CopyLosesPlain = "{other} loads instead. Disable one to choose.";
-    const string WhyLocal = "The game prioritizes a local copy.", WhyHigher = "The game prioritizes a higher version.";
-    const string WhyFirst = "If no mod has a higher version, the copy installed first is prioritized.";
-    const string WhyUnreadable = "This copy's version can't be read. The first readable copy will be prioritized.";
+    const string CopyLoses = "{other} will be used due to {why} - disable copies you don't want to use";
+    const string CopyLosesPlain = "{other} will be used, determined by version number and date of install - disable copies you don't want to use";
+    const string WhyLocal = "the game prioritizing local copies", WhyHigher = "its higher version";
+    const string WhyFirst = "the same version and an earlier install date";
+    const string WhyUnreadable = "this copy's version being unreadable";
     const string CopyBlocked = "This copy would load before a required dependency. {other} is currently compatible and will be loaded instead.";
     const string LoadsBlocked = "The copy {other} would load before a required dependency, so this copy will be loaded instead";
     const string LoadsUnticked = "This copy loads though it's disabled: it shares the game's switch with {other}, which is enabled, and the game prioritizes "
         + "it over {local} as the higher version";
     const string LoadsAlso = "{other} is also enabled - only this copy will be loaded";
     const string LoadsAfter = "Loads on relaunch, in place of {other}";
-    const string FailedOther = "{other} is also installed. To load that copy instead, enable it and disable this one.";
+    const string FailedOther = "This mod shares an ID with {other}";
     const string NotApplied = "Spire Mod Manager couldn't choose which copy was loaded. If the game is on a different version, Spire Mod Manager may need to be updated.";
     const string OtherEnabled = "{other} is the enabled copy";
     const string RelaunchSelfOff = "Spire Mod Manager (this mod) will be disabled on relaunch. To use it again, enable it on the vanilla modding page, "
@@ -989,6 +991,31 @@ static partial class SelfTest
 
     static string Draft(string text, params (string Name, string Value)[] values) =>
         values.Aggregate(text, (filled, value) => filled.Replace($"{{{value.Name}}}", value.Value));
+
+    // The duplicates grouped by ID (ModDetails.CopyGroups) as the same-ID banner's card and the Relaunch check read (no
+    // markup). Grouped: what an ID's group should read, its line, then a line per copy in the order given (the one that
+    // loads first): its name (alias, else name), its manifest's version, which copy (Local, the Workshop item, a local
+    // twin's folder), and Active for the one that loads, else Ignored. GroupIn: what an ID's group reads in lines, up to
+    // the next ID (none there: empty). RelaunchCopies: the Relaunch check's lines after the duplicates' intro (none
+    // without it).
+    static List<string> Grouped(string id, params (Mod Mod, bool Active)[] copies) => [Draft(CopyGroup, ("id", id)), .. copies.Select(c => GroupLine(c.Mod, c.Active))];
+
+    static string GroupLine(Mod mod, bool active)
+    {
+        var version = mod.manifest?.version ?? "";
+        // No version: the line reads without it, and without the gap it'd leave.
+        var line = version.Length > 0 ? CopyLineText : CopyLineText.Replace("{version} ", "");
+        return "  •  " + Draft(line, ("mod", Store.InfoFor(mod)?.Alias ?? mod.manifest?.name ?? mod.manifest?.id ?? ""), ("version", version),
+            ("source", Copies.Source(mod)), ("state", active ? CopyActive : CopyIgnored));
+    }
+
+    static List<string> GroupIn(IEnumerable<string> lines, string id)
+    {
+        var from = lines.SkipWhile(l => l != Draft(CopyGroup, ("id", id))).ToList();
+        return from.Count == 0 ? [] : [from[0], .. from.Skip(1).TakeWhile(l => l.StartsWith("  •  ", StringComparison.Ordinal))];
+    }
+
+    static List<string> RelaunchCopies(string body) => [.. body.Split('\n').SkipWhile(l => l != RelaunchCopiesIntro).Skip(1)];
 
     static async Task<bool> WithVanillaView(NModdingScreen screen, Node menu, Func<bool> check)
     {
