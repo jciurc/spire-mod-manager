@@ -2952,6 +2952,15 @@ static partial class SelfTest
             $"healed {Say(healed)}; without {Say(unhealed)}; chain {Say(chain)} ({string.Join(",", chainMoved)}); "
             + $"after already {Say(after)} ({string.Join(",", afterMoved)}); itself {Say(itself)}; split {healAt}");
 
+        // Fix now and Auto sort (LoadOrder.Fixed) on a mod installed twice whose rows are apart: its rows together, the rest
+        // in their order (review C5: no row failed without the gathering).
+        Mod[] apartMods = [Made(a, "A"), Made(x, "X1"), Made(u, "U"), Made(x, "X2")];
+        var gathered = With(apartMods, () => LoadOrder.Fixed([.. apartMods]));
+        var (x1At, x2At) = (gathered.IndexOf(apartMods[1]), gathered.IndexOf(apartMods[3]));
+        Check("the order rule, Fix now and Auto sort: a mod's rows apart are gathered, the others in their order",
+            Math.Abs(x1At - x2At) == 1 && gathered.IndexOf(apartMods[0]) < gathered.IndexOf(apartMods[2]) && gathered.Count == 4,
+            string.Join(",", gathered.Select(Copies.CopyOf)));
+
         // Settle's save (SettleSaves): the first launch after updating (D's Workshop copy, set aside, listed last as the old
         // rebuild saved it): the rule's move isn't SettleList's change, but the list then differs from the one read, so it's
         // saved, once; a launch whose list was in the form already: nothing to save, its copy set aside or off (the rebuild
@@ -5380,6 +5389,33 @@ static partial class SelfTest
             }
             else
                 Results.Add("SKIP a mod from both sources in Load Order, Move up: right under ours");
+            // Move down past the whole of the mod below, Move to top (under ours) and Move to bottom: both rows each time, in
+            // their order (review C5: only Move up had a row).
+            async Task<List<Mod>> Menu(string key)
+            {
+                var menuFrom = Steps();
+                LoadOrder.Actions(content, Rows().First(r => r.Mod == loads), () => CategoryList.Redraw(content))
+                    .FirstOrDefault(a => a.Label == Menus.Text(key))?.OnSelect?.Invoke();
+                await Wait(menu, 0.3);
+                var moved = Order();
+                await Back(menuFrom);
+                return moved;
+            }
+            List<Mod> With(int at)
+            {
+                var others = start.Where(m => !dual.Contains(m)).ToList();
+                others.InsertRange(Math.Clamp(at, 0, others.Count), start.Where(dual.Contains));
+                return others;
+            }
+            var lastDual = start.FindLastIndex(dual.Contains);
+            var rest = start.Where(m => !dual.Contains(m)).ToList();
+            var downMeant = lastDual < start.Count - 1 && start[lastDual + 1] is var next
+                ? With(rest.FindLastIndex(m => m.manifest?.id == next.manifest?.id) + 1) : start;
+            var (down, toTop, toBottom) = (await Menu("SPIRE_MOD_MANAGER.MOVE_DOWN"), await Menu("SPIRE_MOD_MANAGER.MOVE_TO_TOP"), await Menu("SPIRE_MOD_MANAGER.MOVE_TO_BOTTOM"));
+            var (topMeant, bottomMeant) = (first > pinned ? With(pinned) : start, lastDual < start.Count - 1 ? With(rest.Count) : start);
+            Check("... Move down steps past the whole of the mod below, Move to top goes under ours, Move to bottom to the end: both rows each time, in their "
+                + "order; undone", down.SequenceEqual(downMeant) && toTop.SequenceEqual(topMeant) && toBottom.SequenceEqual(bottomMeant) && Order().SequenceEqual(start),
+                $"down {Said(down)} (meant {Said(downMeant)}); top {Said(toTop)} (meant {Said(topMeant)}); bottom {Said(toBottom)} (meant {Said(bottomMeant)}); undone {Said()}");
 
             // A drop between the twins' rows goes past them, from the last row that's a mod installed once.
             if (Order().LastOrDefault(m => m.manifest?.id is { } id && id != DualId && id != TwinId && id != ModEntry.ModId) is { } mover

@@ -351,7 +351,7 @@ static class LoadOrder
     // ended before the order is saved, so what the save redraws reads the new order. Fixed moves only the copies that
     // load, so a mod installed more than once is then gathered at its copy that loads (none: its first row), its rows in
     // the order given.
-    static List<Mod> Fixed(List<Mod> mods, List<Mod>? given = null)
+    public static List<Mod> Fixed(List<Mod> mods, List<Mod>? given = null)
     {
         using var lookups = Lookups.Begin();
         var sorted = Dependencies.Fixed(mods);
@@ -978,7 +978,8 @@ static class LoadOrder
 
     // Writes a whole new order: installed mods as given (ours first, OursFirst), then the other entries (mods that aren't
     // installed, a second entry of one that is) each right after its id's (Add: at the end, one of a source not installed
-    // of a mod that is would rank the mod last), in the order rule's form (NormalizeBySource; the moves keep it already).
+    // of a mod that is would rank the mod last), in the order rule's form (NormalizeBySource: the moves keep it for the
+    // mods they move, and this gathers any other mod whose entries are apart, which the game's save would do anyway).
     static void Save(List<Mod> mods)
     {
         if (SaveManager.Instance.SettingsSave.ModSettings is not { } settings)
