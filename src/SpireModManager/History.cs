@@ -174,10 +174,12 @@ static class History
     public static bool AtLaunch => _reverted is { } target && Take() is var now && Store.Counted(now.Store) == Store.Counted(target.Store)
         && SameStates(now, target) && SameOrder(Launched(now), Launched(target));
 
-    // The entries launch had, as Changes counts moves (an entry made since, for a mod installed since, moves nobody:
-    // LoadOrder.MovedSince), so a drag of such a mod after Revert all leaves the button greyed, as Changes reads the same.
-    static Snapshot Launched(Snapshot snapshot) => Loaded is { } launch && launch.Mods.Select(m => (m.Id, m.Source)).ToHashSet() is var had
-        ? snapshot with { Mods = [.. snapshot.Mods.Where(m => had.Contains((m.Id, m.Source)))] } : snapshot;
+    // The entries launch had, and their copy order, as Changes counts moves (an entry made since, for a mod installed
+    // since, moves nobody: LoadOrder.MovedSince; nor does a turn of its copies), so a drag of such a mod after Revert all
+    // leaves the button greyed, as Changes reads the same.
+    static Snapshot Launched(Snapshot snapshot) => Loaded is { } launch && launch.Mods.Select(m => ((string?)m.Id, m.Source)).ToHashSet() is var had
+        ? snapshot with { Mods = [.. snapshot.Mods.Where(m => had.Contains((m.Id, m.Source)))], CopyOrder = snapshot.CopyOrder.Where(p => had.Contains(p.Key)).ToDictionary() }
+        : snapshot;
 
     // For a view switch, which changes the history the buttons act on.
     public static void NotifyChanged() => Changed?.Invoke();

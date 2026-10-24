@@ -527,6 +527,7 @@ static partial class SelfTest
                 path = "", modSource = ModSource.ModsDirectory, state = ModLoadState.AddedAtRuntime,
                 manifest = new ModManifest { id = "SmmRevertFresh", name = "Revert Fresh" },
             };
+            var freshTwin = Made("SmmRevertFresh", "SmmRevertFreshTwin", ModLoadState.AddedAtRuntime);
             var rowsBefore = Rows();
             GameInstalls(fresh);
             await Wait(menu, 0.4);
@@ -545,14 +546,37 @@ static partial class SelfTest
                     && HistoryBar.Describe() is [var line] && line.StartsWith("Installed: Revert Fresh"),
                     $"on as it came {arrivedOn}; last entry {(entries.Count > 0 ? $"{entries[^1].Id} {entries[^1].IsEnabled}" : "none")}; "
                     + string.Join(" | ", HistoryBar.Describe()));
+
+                // A second copy of it, then the two copies' order turned after Revert all (a drag in Load Order): Changes'
+                // moves leave out an id installed since, and so does the button (the copy order of the mods launch had).
+                GameInstalls(freshTwin);
+                await Wait(menu, 0.4);
+                NModalContainer.Instance?.Clear();
+                Click(revert);
+                await Wait(menu, 0.3);
+                var reverted = History.TestNow();
+                var twinKey = ((string?)"SmmRevertFresh", ModSource.ModsDirectory);
+                var pair = new[] { fresh, freshTwin }.Select(Copies.CopyOf).ToList();
+                foreach (var turn in new[] { pair, [pair[1], pair[0]] })
+                {
+                    LoadOrder.RestoreCopyOrder(new Dictionary<(string?, ModSource), IReadOnlyList<string>>(LoadOrder.CopyOrderNow()) { [twinKey] = turn });
+                    if (!LoadOrder.SameCopyOrder(LoadOrder.CopyOrderNow(), reverted.CopyOrder))
+                        break;
+                }
+                var turned = !LoadOrder.SameCopyOrder(LoadOrder.CopyOrderNow(), reverted.CopyOrder);
+                Check("... with a second copy of it, their copy order turned after Revert all: no move in Changes, and the button stays greyed",
+                    turned && HistoryBar.Moves().Count == 0 && History.AtLaunch,
+                    $"turned {turned} ({string.Join(",", LoadOrder.CopyOrderNow().GetValueOrDefault(twinKey) ?? [])}); moves {HistoryBar.Moves().Count}; "
+                    + $"at launch {History.AtLaunch}");
             }
             finally
             {
-                if (Rows().Except(rowsBefore).FirstOrDefault(r => r.Mod == fresh) is { } freshRow)
+                foreach (var freshRow in Rows().Except(rowsBefore).Where(r => r.Mod == fresh || r.Mod == freshTwin).ToList())
                 {
                     content.RemoveChild(freshRow);
                     freshRow.QueueFree();
                 }
+                GameForgets(freshTwin);
                 GameForgets(fresh);
                 SaveManager.Instance.SettingsSave.ModSettings?.ModList.RemoveAll(e => e.Id == "SmmRevertFresh");
                 History.Quietly(data =>
