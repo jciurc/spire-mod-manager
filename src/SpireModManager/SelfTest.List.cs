@@ -1568,12 +1568,16 @@ static partial class SelfTest
             foreach (var q in queries)
                 Search.FoundIn(m, q);
         var each = watch.Elapsed.TotalMilliseconds / Math.Max(1, rows.Count * queries.Length);
-        var slowest = rows.SelectMany(m => queries.Select(q => (m, q))).Max(p =>
+        // One the runtime collected garbage during is timed again (up to twice): the pause (15 ms with Better Mod Menu on)
+        // isn't Found in's.
+        double Timed(Mod m, string q, int again = 2)
         {
+            var collected = GC.CollectionCount(0);
             var one = System.Diagnostics.Stopwatch.StartNew();
-            Search.FoundIn(p.m, p.q);
-            return one.Elapsed.TotalMilliseconds;
-        });
+            Search.FoundIn(m, q);
+            return GC.CollectionCount(0) == collected || again == 0 ? one.Elapsed.TotalMilliseconds : Timed(m, q, again - 1);
+        }
+        var slowest = rows.SelectMany(m => queries.Select(q => (m, q))).Max(p => Timed(p.m, p.q));
         Results.Add($"INFO Found in: {each:0.000} ms a card on average, {slowest:0.00} ms at most ({rows.Count} rows x {queries.Length} searches)");
         Check("Found in stays quick as a card opens (under 5 ms each here)", slowest < 5, $"{each:0.000} ms on average, {slowest:0.00} ms at most");
 
