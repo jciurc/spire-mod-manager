@@ -292,7 +292,8 @@ static class SameIdLoad
 
     // Where Fallback finds none: of the id's other copies, ticked or not, by the tie order, the first that fits, else the
     // first; null for none but the blocked copy's. One Mod per copy, its newest manifest (the one that loads of it), so a
-    // copy whose older manifest fits but not its newest doesn't. The launch's (Run) and the page's (Copies.Next).
+    // copy whose older manifest fits but not its newest isn't taken for fitting. The launch's (Run) and the page's
+    // (Copies.Next).
     public static Mod? FirstLeft(IEnumerable<Mod> mods, Mod blocked, Func<Mod, bool> fits, Func<IEnumerable<string>, IEnumerable<string>> tieOrder)
     {
         var left = Copies.ByTie(mods.Where(m => Copies.CopyOf(m) != Copies.CopyOf(blocked)).GroupBy(Copies.CopyOf).Select(copy => Copies.NewestOf([.. copy])),

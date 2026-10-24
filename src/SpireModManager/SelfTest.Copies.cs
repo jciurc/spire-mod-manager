@@ -1783,8 +1783,8 @@ static partial class SelfTest
     // decided before us, the game's local-vs-Workshop rule leaving one copy (nothing to do), a dependency of the chosen copy
     // that's on after the id's first slot (no swap; with a mod after us needing the id, the fallback: the best other
     // ticked copy that can take the slot, the one there too only where what it needs loads before it, not one needing a
-    // mod that isn't installed nor one below a minimum version a mod needs; none: the first copy left by the tie order that
-    // can, each by its newest manifest, else the first; the rest set aside, the plan saying which copy was blocked by
+    // mod that isn't installed nor one below a minimum version a mod needs; none: of the copies left, each by its newest
+    // manifest, the first by the tie order that can, else the first; the rest set aside, the plan saying which copy was blocked by
     // what; one off or not installed: swapped, or left at the slot; at the slot with no mod needing the id: left there),
     // the canary (not a List<Mod>, not us first, not the game's own list), three copies, two Workshop copies and a local
     // one, a local and a Workshop copy only, our own second copy, none of the copies left ticked (the ticked ones the

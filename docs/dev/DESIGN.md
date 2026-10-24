@@ -71,6 +71,11 @@ Ease of use is the heart of the mod, not just its utility.
   - On the beta, the page compares a Workshop copy with the local copy's newest manifest, where the game compares it
     with the first it read. They differ only where a local folder has two manifests of the id whose versions read
     differently.
+  - Where no ticked copy can take a blocked copy's place, each other copy counts by its newest manifest. A Workshop item
+    with manifests of the id in two folders whose newest needs a mod after the slot is then put in the slot and fails,
+    though its older manifest could have loaded there. Two manifests of one copy at the same version go by the list
+    order, which the page takes from the next launch's predicted order and the launch from its own, so the two can
+    differ when the game's sort puts them the other way round.
 - A copy that needs a mod installed from both sources is blocked at every launch, and so is one that needs a mod that
   waits on such a mod. Here the page and the launch agree. The game's rebuild lists that mod's copy it took out (off,
   or set aside by its local-vs-Workshop rule) after all the rest, and it ranks an id by its last entry, so the mod
