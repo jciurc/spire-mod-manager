@@ -779,7 +779,7 @@ static partial class SelfTest
         Row("a local copy, a lower Workshop item and a higher one, all ticked" + (beta ? " (the lower one lost to the local copy, which doesn't load: no reason)" : ""),
             Case([L(x, "L", "2.0.0"), W(x, 101, "1.0.0"), W(x, 102, "3.0.0")]), beta ? "102" : "L", beta ? "101 Other, L Higher" : "101 Local, 102 Local");
         x = Id();
-        // A copy that's off never loads nor stops another from loading (Jordan, 23 Oct): on the beta the game's rule lets W2
+        // A copy that's off never beats a ticked one (Jordan, 23 Oct): on the beta the game's rule lets W2
         // beat L through W1's switch, so the launch brings L back (the rule over the ticked copies alone).
         Row("W1 ticked (1.0), W2 not (3.0), L ticked (2.0)" + (beta ? ": W2 off doesn't count, so L, as the rule goes without it (W2 shares W1's switch and beats L)" : ""),
             Case([W(x, 101, "1.0.0"), W(x, 102, "3.0.0"), L(x, "L", "2.0.0")], off: ["w:102"], record: ["w:101", "w:102", "l:L"]),

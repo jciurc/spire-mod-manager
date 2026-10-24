@@ -358,8 +358,8 @@ static class Copies
             // A copy that's off takes part in the rule while its switch is on through a ticked twin's: on the beta it can
             // beat a ticked copy (W2 off at 3.0 beats L at 2.0, which beats W1 at 1.0, so only W2 is left), or decide which
             // ticked copy is left. So with any such copy, the rule again over the ticked copies alone, as the launch has it
-            // (SameIdLoad.Run brings back the copy it picks): a copy that's off never loads nor stops another from loading
-            // (Jordan, 23 Oct). On stable it changes nothing (every Workshop copy beside a local one is out either way).
+            // (SameIdLoad.Run brings back the copy it picks): a copy that's off never beats a ticked one, and loads only
+            // where no ticked copy can (Jordan, 23 Oct). On stable it changes nothing (every Workshop copy beside a local one is out either way).
             if (on.Where(IsTicked).ToList() is { Count: > 0 } tickedOn && tickedOn.Count < on.Count)
             {
                 beaten = GameRule(tickedOn, m => GameVersion(Newest(m)));

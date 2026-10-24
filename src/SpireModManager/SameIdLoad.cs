@@ -151,7 +151,8 @@ static class SameIdLoad
             // set aside (after us: the game only marks the copies it beats, and its sort put them after every mod still
             // to load), the rule again over the ticked ones alone (Copies.GameRule, as Copies.Next's step 4 has it), and
             // the copy Choose picks of what it leaves loads: brought back where the rule set it aside, into the first slot
-            // below, so mods that need the id find it. A copy that's off never loads nor stops another (Jordan, 23 Oct).
+            // below, so mods that need the id find it. A copy that's off never beats a ticked one, and loads only where no
+            // ticked copy can (Jordan, 23 Oct).
             var both = todo.Concat(copies.Where(p => p.At > self && p.Mod.state == aside)).ToList();
             var ticked = both.Where(p => Ticked(p.Mod)).ToList();
             var rerun = ticked.Count > 0 && ticked.Count < both.Count;

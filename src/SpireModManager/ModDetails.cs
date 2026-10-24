@@ -630,12 +630,10 @@ static class ModDetails
             return links ? $"[url=mod:{Copies.LinkKey(other)}][color={ModLinkHex}]{name}[/color][/url]" : name;
         }
         string Line(string key, Mod other) => Menus.Format(key, ("other", Other(other)));
-        // What the blocked copy needs that the next launch doesn't load before the slot (Copies.Next), as its row names it.
-        string Dep() => Copies.Next(id).Late is { } late ? Dependencies.Find(late) is { } found ? Other(found) : Escape(late) : "";
         if (SameIdLoad.Unchosen(id))
             return Escape(Menus.Text("SPIRE_MOD_MANAGER.COPY_NOT_APPLIED"));
         if (Copies.LosesTo(mod) is { } lost)
-            return lost.Why == Copies.Why.Blocked ? Menus.Format("SPIRE_MOD_MANAGER.COPY_BLOCKED", ("other", Other(lost.Loads)), ("dep", Dep()))
+            return lost.Why == Copies.Why.Blocked ? Line("SPIRE_MOD_MANAGER.COPY_BLOCKED", lost.Loads)
                 : Why(lost.Why) is { } why ? Menus.Format("SPIRE_MOD_MANAGER.COPY_LOSES", ("other", Other(lost.Loads)), ("why", why))
                 : Line("SPIRE_MOD_MANAGER.COPY_LOSES_PLAIN", lost.Loads);
         var ticked = Copies.Ticked(mod);
@@ -643,7 +641,7 @@ static class ModDetails
         {
             if (Copies.Next(id).Losing.FirstOrDefault(p => p.Value == Copies.Why.Blocked).Key is { } blocked
                 && others.FirstOrDefault(o => Copies.CopyOf(o) == blocked) is { } swap)
-                return Menus.Format("SPIRE_MOD_MANAGER.COPY_LOADS_BLOCKED", ("other", Other(swap)), ("dep", Dep()));
+                return Line("SPIRE_MOD_MANAGER.COPY_LOADS_BLOCKED", swap);
         }
         if (ticked && mod.state is not (ModLoadState.Loaded or ModLoadState.Failed) && Copies.Loads(mod)
             && others.FirstOrDefault(o => o.state == ModLoadState.Loaded) is { } loaded)
