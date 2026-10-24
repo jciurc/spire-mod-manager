@@ -968,7 +968,7 @@ static partial class SelfTest
             var more = areas.Count - (fit.Whole > 0 ? fit.Whole : 1);
             var tail = Draft(Template(more == 1 ? "SPIRE_MOD_MANAGER.MODIFIED_MORE_ONE" : "SPIRE_MOD_MANAGER.MODIFIED_MORE"), ("areas", ""), ("count", $"{more}"));
             Check("modified content: the whole row is the link for its card and click, the areas, then \"and N more\" in the subtle colour, and it's no "
-                + "longer in two rows", shown.Length > term.Length + tail.Length && tail.EndsWith(Menus.CutMark) && shown.EndsWith(tail)
+                + "longer in two rows", shown.Length > term.Length + tail.Length && !tail.EndsWith(Menus.CutMark) && shown.EndsWith(tail)
                 && bbcode == $"[url={ModifiedContent.Meta}][gold]{term}[/gold]: {shown[(term.Length + 2)..^tail.Length]}[color=#fff6e299]{tail}[/color][/url]"
                 && !parsed.Contains("Changes game code") && !parsed.Contains("Replaces game files"), $"{bbcode} (tail \"{tail}\")");
             var cut = areas[^1];
@@ -1156,13 +1156,13 @@ static partial class SelfTest
                 + $"{scrolled.Scroll?.ScrollHorizontal}: {string.Join(", ", scrolled.Rects)} in {view}");
 
             // Tall areas: a made-up mod's 15, the first five characters' with a long list of what (three lines or more
-            // each, all in the first column), and a list longer than the most it takes (560). The list is shorter than
-            // that by what the areas take, so the dialog, which would be taller than the screen, stays on it with its
-            // title and Close. On a player's 1080 tall screen (Modal.TestScreen; a headless run's is taller). Screenshot
-            // 17f5.
+            // each, all in the last column, as they sort after the rest), and a list longer than the most it takes (560).
+            // The list is shorter than that by what the areas take, so the dialog, which would be taller than the screen,
+            // stays on it with its title and Close. On a player's 1080 tall screen (Modal.TestScreen; a headless run's is
+            // taller). Screenshot 17f5.
             string[] tall = [.. new[] { "The Ironclad", "The Silent", "The Regent", "The Necrobinder", "The Defect" }
                     .Select(who => $"{who} (hands, character select, top panel, energy orb, map marker, run history)"),
-                "merchant room", "rest site", "map screen", "card library", "relic collection", "potion lab", "combat", "card reward", "event room", "treasure room"];
+                "merchant room", "rest site", "map screen", "card library", "relic collection", "potion lab", "combat", "card reward", "event room", "shop"];
             var tallChanges = new GameChanges.Changes([], [.. tall.SelectMany((area, i) => Enumerable.Range(0, 4).Select(n => new GameChanges.Place($"NThing{i}", $"Method{n}", area, GameChanges.Kinds.After)))]);
             var tallScreen = new Rect2(0, 0, 1920, 1080);
             Modal.TestScreen = tallScreen.Size;
@@ -1170,7 +1170,7 @@ static partial class SelfTest
             await WaitUntil(menu, () => Dialog()?.FindChild("Scroll", true, false) is Control { CustomMinimumSize.Y: > 0 });
             await Wait(menu, 0.3);
             var tallShown = AreasShown(Dialog());
-            var tallLines = tallShown.Scroll?.FindChild("AreaColumn0", true, false)?.GetChildren().OfType<RichTextLabel>().Select(t => t.GetLineCount()).ToList() ?? [];
+            var tallLines = tallShown.Scroll?.FindChild("AreaColumn2", true, false)?.GetChildren().OfType<RichTextLabel>().Select(t => t.GetLineCount()).ToList() ?? [];
             var (tallList, tallScroll) = (Dialog()?.FindChild("List", true, false) as RichTextLabel, Dialog()?.FindChild("Scroll", true, false) as ScrollContainer);
             var (tallColumn, tallTitle, tallClose) = (Dialog()?.FindChild("Column", true, false) as Control, Dialog()?.FindChild("Title", true, false) as Control,
                 Dialog()?.FindChild("CloseModifiedButton", true, false) as Control);
@@ -1185,7 +1185,7 @@ static partial class SelfTest
                 && tallList != null && tallScroll != null && tallList.GetContentHeight() > 560 && tallScroll.Size.Y < 560 && tallScroll.GetVScrollBar().Visible
                 && uncapped > tallScreen.Size.Y && tallColumn != null && tallScreen.Encloses(tallColumn.GetGlobalRect())
                 && tallTitle != null && tallScreen.Encloses(tallTitle.GetGlobalRect()) && tallClose != null && tallScreen.Encloses(tallClose.GetGlobalRect()),
-                $"first column's lines {string.Join(", ", tallLines)}; list {tallList?.GetContentHeight()}, scroll {tallScroll?.Size}; dialog {tallColumn?.GetGlobalRect()} "
+                $"last column's lines {string.Join(", ", tallLines)}; list {tallList?.GetContentHeight()}, scroll {tallScroll?.Size}; dialog {tallColumn?.GetGlobalRect()} "
                 + $"({uncapped} with the list at its most), Close {tallClose?.GetGlobalRect()}, in {tallScreen}");
 
             // Files only: the same mod without our code lent to it.
