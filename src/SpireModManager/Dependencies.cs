@@ -158,12 +158,16 @@ static class Dependencies
             var copies = all.Where(m => m.manifest?.id == id && m.modSource == source).ToList();
             var on = copies.Where(Final).ToList();
             var wasOff = gameOff.Contains((id, source));
-            // No entry is on already (a mod installed while the game runs has none yet): one is made to turn it off.
+            // No entry is on already (a mod installed while the game runs has none yet): one is made to turn it off. One of
+            // ours goes with ours at the top: the game sorts a mod by its id's last entry, so at the end it would load this
+            // mod last next launch, after copies it has to choose between (LoadOrder.OursFirst).
             if (!entries.TryGetValue((id, source), out var list) && on.Count == 0)
             {
                 var entry = new SettingsSaveMod { Id = id, Source = source };
                 settings.ModList.Add(entry);
                 entries[(id, source)] = list = [entry];
+                if (id == ModEntry.ModId)
+                    LoadOrder.OursFirst(settings.ModList);
             }
             foreach (var entry in list ?? [])
                 entry.IsEnabled = on.Count > 0;

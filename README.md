@@ -49,7 +49,8 @@ Subscribe to it on the [Steam Workshop](https://steamcommunity.com/sharedfiles/f
   list. The bar counts them; click the count, press Esc or Ctrl+D to let go. Selecting is a step in undo and redo
   too.
 - **Changes, undo and redo:** the bar at the bottom counts what changed since the game started. Ctrl+Z and
-  Ctrl+Y undo and redo; Revert all puts things back the way they were when you opened the page.
+  Ctrl+Y undo and redo; Revert all puts back everything the bar counts, load order included, the way it was
+  when the game started (a mod installed since stays installed, turned off).
 - **Relaunch Game:** restarts in place, in the same window mode, so changes apply without going back through
   Steam. It checks first for mods that won't load and offers to fix them.
 - **The info panel:** what a mod changes in the game itself (the game files it replaces and the code it changes,

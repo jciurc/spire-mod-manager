@@ -148,11 +148,16 @@ static class LoadOrder
     // among them as Load Order numbers its rows, in load order now. Copies of one id and source that have only traded
     // their key's places are no move: the list the game reads is the same there, and which of them loads goes by the
     // copies (Copies.Next), not the rows, so a relaunch would change nothing (an undo or a drag back can leave them so).
+    // Ranked among the copies both lists place (Load Order's numbers, bar a mod installed since that has an entry): an
+    // entry made since for one (ours go at the top) moves no other copy, as the game reads their order the same.
     public static List<(Mod Mod, int Before, int After)> MovedSince(IEnumerable<(string? Id, ModSource Source)> saved,
         IReadOnlyDictionary<(string?, ModSource), IReadOnlyList<string>> copyOrder, IEnumerable<Mod> mods)
     {
         var wanted = mods.ToList();
-        var (before, after) = (Ranks(Places(saved, wanted, copyOrder)), Ranks(Places(wanted)));
+        var (then, now) = (Places(saved, wanted, copyOrder), Places(wanted));
+        static Dictionary<Mod, int> Both(Dictionary<Mod, int> places, Dictionary<Mod, int> also) =>
+            places.Where(p => also.ContainsKey(p.Key)).ToDictionary(p => p.Key, p => p.Value);
+        var (before, after) = (Ranks(Both(then, now)), Ranks(Both(now, then)));
         var traded = wanted.GroupBy(m => (m.manifest?.id, m.modSource))
             .Where(g => g.Select(Copies.CopyOf).Distinct().Count() > 1
                 && g.Where(before.ContainsKey).Select(m => before[m]).ToHashSet().SetEquals(g.Where(after.ContainsKey).Select(m => after[m])))

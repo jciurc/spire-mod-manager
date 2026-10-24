@@ -285,6 +285,7 @@ static partial class SelfTest
 
         var badge = screen.GetNodeOrNull<Control>("SpireModManagerLoadOrderToggle/WarningBadge");
         Check("no order problem, no '!' on Load Order", badge is not { Visible: true });
+        var orderWas = LoadOrder.Mods(Rows());
         LoadOrder.Move(dependent, LoadOrder.Mods(Rows()).IndexOf(lib), Rows());
         CategoryList.Redraw(content);
         await Wait(menu, 0.3);
@@ -297,6 +298,14 @@ static partial class SelfTest
         CategoryList.Redraw(content);
         await Wait(menu, 0.3);
         Check("fixed: the '!' goes", screen.GetNodeOrNull<Control>("SpireModManagerLoadOrderToggle/WarningBadge") is not { Visible: true });
+        // The order as it was: the fix leaves the library moved, and the tests after it start with nothing moved since
+        // launch (a Revert all's undo, from either view, brings a move back with the rest).
+        for (var i = 0; i < orderWas.Count; i++)
+            LoadOrder.Move(orderWas[i], i, Rows());
+        CategoryList.Redraw(content);
+        await Wait(menu, 0.3);
+        Check("... put back: the order as before the move, no move since launch", LoadOrder.Mods(Rows()).SequenceEqual(orderWas) && !LoadOrder.OrderChanged,
+            string.Join(", ", HistoryBar.Moves().Select(m => $"{m.Mod.manifest?.id} {m.Before}→{m.After}")));
 
         // The banner every run can raise: Test Addon on needs a mod that isn't installed, so with it off the banner goes,
         // and its tick brings the banner back (TestBannersKeepRows, the managers banner's checks without Better Mod Menu).
@@ -447,7 +456,7 @@ static partial class SelfTest
             .All(e => e.IsEnabled) ?? true;
         if (ourRows.FirstOrDefault(r => r.Mod == copy) is { } copyRow)
         {
-            var steps = History.Steps(History.Track.List);
+            var (steps, movesWere) = (History.Steps(History.Track.List), HistoryBar.Moves().Count);
             Tickbox(copyRow).IsTicked = false;
             Tickbox(copyRow).EmitSignal(NTickbox.SignalName.Toggled, Tickbox(copyRow));
             await Wait(menu, 0.3);
@@ -458,6 +467,11 @@ static partial class SelfTest
                 && !Copies.Clashing().Any(m => m.manifest?.id == ModEntry.ModId);
             var aloneSay = $"{string.Join(" | ", ourRows.Select(Box))}; steps +{History.Steps(History.Track.List) - steps}; banner {Banner() != null}; "
                 + $"lines {offLines.Running ?? "none"} / {offLines.Other}";
+            // The entry made to turn it off (the game had none for a copy installed while it runs) goes with ours at the top.
+            var entries = SaveManager.Instance.SettingsSave.ModSettings?.ModList ?? [];
+            var oursLead = entries.TakeWhile(e => e.Id == ModEntry.ModId).Count() == entries.Count(e => e.Id == ModEntry.ModId)
+                && entries.Any(e => e is { Id: ModEntry.ModId, Source: ModSource.SteamWorkshop, IsEnabled: false });
+            var (movesNow, entriesSaid) = (HistoryBar.Moves().Count, string.Join(", ", entries.Select(e => $"{e.Id}/{e.Source}{(e.IsEnabled ? "" : " (off)")}")));
             History.Undo();
             await Wait(menu, 0.3);
             Check("... a click on one copy's box unticks it alone (its source's entries off), one undo step, no red banner (the other loads), no clash; "
@@ -466,6 +480,9 @@ static partial class SelfTest
                 alone && offLines == (null, Draft(OtherEnabled, ("other", Named(self))))
                 && offTips == ("", Draft(CopyOnTip, ("other", Named(self)), ("loads", Named(self))))
                 && Copies.Ticked(copy) && Copies.Ticked(self) && Tickbox(copyRow).IsTicked, $"{aloneSay}; then {string.Join(" | ", ourRows.Select(Box))}");
+            Check("... the entry made to turn it off goes with ours at the top, not last (the game sorts a mod by its id's last entry: this mod would load "
+                + "last next launch), and no other mod moves for Changes", oursLead && movesNow == movesWere,
+                $"entries {entriesSaid}; moves {movesWere} -> {movesNow}");
         }
         else
             Check("... a click on the Workshop copy's box: its row", false, string.Join(" | ", ourRows.Select(Box)));
@@ -1064,8 +1081,8 @@ static partial class SelfTest
     // under the rows gives the short fixture list room to scroll; it goes after. bannerRow: the row whose tick raises the
     // banner called name: Test Addon's (the main list banner, in every run) or Better Mod Menu's (the managers banner,
     // where it's installed); what: that banner in the checks' names. Starts and ends with that row's mod off. Showing the
-    // page again enters it anew (History.Enter: Revert all's state then, no undo steps), so the page's opening state and
-    // both undo histories are kept first and put back after: the tests after it undo and Revert all as they would have.
+    // page again enters it anew (History.Enter: no undo steps), so both undo histories are kept first and put back after:
+    // the tests after it undo as they would have.
     static async Task TestBannersKeepRows(Node menu, NModdingScreen screen, Control content, NModMenuRow bannerRow, string name, string what)
     {
         var border = screen.GetNode<Control>("ModsBorder");
@@ -1248,11 +1265,11 @@ static partial class SelfTest
                 Tick(false);
             ListFilter.Choose(content, ListFilter.Choice.All); // a redraw, which shrinks the rows' container again, then the top
             await Wait(menu, 0.3);
-            var enteredAnew = History.Entered != history.Entered;
+            var enteredAnew = History.Steps(History.Track.List) != history.Past[History.Track.List].Count;
             History.TestPutBack(history);
             static string Said(IEnumerable<History.ModEntry> mods) => string.Join(", ", mods.Select(m => m.Id + (m.Enabled ? "" : " (off)")));
-            Check($"{what} keeping the rows in place: the saved list and Changes left as found, the page's opening state and both undo histories put back",
-                History.CurrentMods().SequenceEqual(listWas) && HistoryBar.Describe().SequenceEqual(changesWas) && History.Entered == history.Entered
+            Check($"{what} keeping the rows in place: the saved list and Changes left as found, both undo histories put back",
+                History.CurrentMods().SequenceEqual(listWas) && HistoryBar.Describe().SequenceEqual(changesWas)
                 && History.Steps(History.Track.List) == history.Past[History.Track.List].Count && History.Steps(History.Track.Order) == history.Past[History.Track.Order].Count,
                 $"entered anew by showing the page again {enteredAnew}; list {Said(History.CurrentMods())}, was {Said(listWas)}; "
                 + $"changes {string.Join(" | ", HistoryBar.Describe())}, were {string.Join(" | ", changesWas)}");
