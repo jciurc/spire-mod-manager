@@ -20,7 +20,8 @@ static partial class SelfTest
     // Which page a mod's button opens (made-up mods, then ours): its own RitsuLib page, then its BaseLib page, then a
     // RitsuLib page only matched by id; pages RitsuLib wouldn't list, or mirrors, never. Then on the panel: its place and
     // tip, BaseLib's submenu over our page and back with the page as it was (or read again where the mod list changed),
-    // RitsuLib's overlay with the page's keys waiting, a page that didn't open (greyed), one that's gone (no button).
+    // RitsuLib's overlay with the page's keys waiting, a page that didn't open (greyed), one that's gone, and a mod with
+    // none (greyed, saying so: the button always shows).
     static async Task TestSettingsButton(Node menu, NModdingScreen screen, Control content, string outDir)
     {
         NModMenuRow? Row(string id) => content.GetChildren().OfType<NModMenuRow>().FirstOrDefault(r => r.Mod?.manifest?.id == id);
@@ -92,15 +93,20 @@ static partial class SelfTest
             BaseRegistry.Clear();
             SettingsLink.TestReset();
 
-            // On the panel: ours, with a BaseLib page.
-            BaseRegistry.Register(ModEntry.ModId, new BaseConfig(ModEntry.ModId));
+            // On the panel: ours, with no page first (greyed, saying so), then a BaseLib page.
             CategoryList.Select(screen, selfRow);
             await PanelFor(menu, screen, selfRow);
             await Wait(menu, 0.3);
             Control? Button() => info.GetNodeOrNull<Control>(ModDetails.SettingsName);
+            var none = Button() is { } noneButton ? (await SizedHoverCard(menu, noneButton, Hover.TipName, () => Capture(screen, outDir, "17a2-settings-none"))).Text : "";
+            Check("Settings: a mod with none: the button greyed, its tip saying none were found", NoSettings(Button()) && none == NoneTip,
+                $"shown {Button()?.Visible}, greyed {Greyed(Button())}, tip {(Button() is { } noneTipped ? Hover.TipOf(noneTipped) : "no button")}, card \"{none}\"");
+            BaseRegistry.Register(ModEntry.ModId, new BaseConfig(ModEntry.ModId));
+            info.Fill(self);
+            await Wait(menu, 0.3);
             var folder = info.GetNode<Control>("OpenFolderButton");
             var button = Button();
-            Check("Settings: the button right of Open Folder, its tip naming the library", button is { Visible: true } && folder.Visible
+            Check("Settings: the button right of Open Folder, its tip naming the library", button is { Visible: true } && !Greyed(button) && folder.Visible
                 && button.OffsetLeft == folder.OffsetRight + 12 && !button.GetGlobalRect().Intersects(folder.GetGlobalRect())
                 && Hover.TipOf(button) == "Change this mod's settings (BaseLib)",
                 $"button {button?.Visible} at {button?.OffsetLeft}, folder {folder.Visible} to {folder.OffsetRight}; tip {(button == null ? "" : Hover.TipOf(button))}");
@@ -153,12 +159,12 @@ static partial class SelfTest
             else
                 Results.Add("SKIP Settings: the mod list changed under it: no fixture mod");
 
-            // Gone since the panel filled (its library forgot it): a press takes the button away, and nothing opens.
+            // Gone since the panel filled (its library forgot it): a press greys it as for a mod with none, and nothing opens.
             BaseRegistry.Clear();
             Press();
             await Wait(menu, 0.3);
-            Check("Settings: a page gone since the panel filled: a press takes the button away", Button() is not { Visible: true }
-                && stack.Peek() == screen, $"shown {Button()?.Visible}, on top {stack.Peek()?.GetType().Name}");
+            Check("Settings: a page gone since the panel filled: a press greys the button, saying none were found", NoSettings(Button())
+                && stack.Peek() == screen, $"greyed {Greyed(Button())}, on top {stack.Peek()?.GetType().Name}");
 
             // RitsuLib's own page for ours: its overlay over our page, which stays shown but takes no keys.
             RitsuRegistry.Register(new RitsuPage { ModId = ModEntry.ModId, Id = "main", SourceAssembly = ours });
@@ -191,12 +197,12 @@ static partial class SelfTest
                     $"entered anew {changed}");
             }
 
-            // Didn't open: greyed, its tip pointing at the log, for the session. Gone: no button.
+            // Didn't open: greyed, its tip pointing at the log, for the session. Gone: greyed as for a mod with none.
             Navigator.Clear();
             Navigator.Answer = "exception";
             Press();
             await Wait(menu, 0.3);
-            var greyed = Button() is NClickableControl clickable ? !clickable.IsEnabled : Button() is BaseButton { Disabled: true };
+            var greyed = Greyed(Button());
             Check("Settings: a page that didn't open: the button greyed, its tip saying the log has why", Button() is { Visible: true } failed
                 && greyed && Hover.TipOf(failed) == "This mod's settings didn't open. The game's log says why." && SettingsLink.FailedFor(self),
                 $"greyed {greyed}, tip {(Button() is { } t ? Hover.TipOf(t) : "no button")}");
@@ -206,7 +212,8 @@ static partial class SelfTest
             Navigator.Answer = "page-not-found";
             Press();
             await Wait(menu, 0.3);
-            Check("Settings: a page RitsuLib no longer has: no button", Button() is not { Visible: true }, $"shown {Button()?.Visible}");
+            Check("Settings: a page RitsuLib no longer has: greyed, saying none were found", NoSettings(Button()),
+                $"greyed {Greyed(Button())}, tip {(Button() is { } goneTipped ? Hover.TipOf(goneTipped) : "no button")}");
         }
         finally
         {
@@ -221,8 +228,15 @@ static partial class SelfTest
             info.Fill(shownBefore ?? self);
             await Wait(menu, 0.3);
         }
-        Check("Settings: none with no library there", Shown(info) is not { Visible: true } && History.CurrentMods().SequenceEqual(listWas),
-            $"shown {Shown(info)?.Visible}, list as at the start {History.CurrentMods().SequenceEqual(listWas)}");
+        Check("Settings: with no library there, greyed, saying none were found", NoSettings(Shown(info)) && History.CurrentMods().SequenceEqual(listWas),
+            $"greyed {Greyed(Shown(info))}, list as at the start {History.CurrentMods().SequenceEqual(listWas)}");
         static Control? Shown(Control info) => info.GetNodeOrNull<Control>(ModDetails.SettingsName);
     }
+
+    const string NoneTip = "No settings were found for this mod";
+
+    static bool Greyed(Control? button) => button is NClickableControl clickable ? !clickable.IsEnabled : button is BaseButton { Disabled: true };
+
+    // Shown, greyed, its tip saying none were found (Jordan, 24 Oct: the button always shows).
+    static bool NoSettings(Control? button) => button is { Visible: true } && Greyed(button) && Hover.TipOf(button) == NoneTip;
 }
