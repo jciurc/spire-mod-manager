@@ -698,17 +698,26 @@ static class Profiles
     // group of copies our record has (Copies.RecordGroup) its copies off as the profile has them, whole, copies not
     // installed included: so a profile naming a copy that's missing reads, and once it's back loads, as the profile has
     // it, as our data does (Ticks' read rule). The mod managers stay as they are, and so does a mod the profile has never
-    // seen.
+    // seen. A mod turned off after a failed start stays off while its entry stands, as Restore keeps it (TurnedOff.OffIds):
+    // switching profiles, Discard and an import never name it, and its banner says why it's off.
     static void Apply(List<ProfileMod> mods, NModdingScreen? screen)
     {
-        var wants = Index(mods);
+        var (wants, kept) = (Index(mods), TurnedOff.OffIds());
         _applying = true;
         try
         {
             var wanted = new List<(Mod, bool)>();
+            var held = new HashSet<string>();
             foreach (var copy in AllMods())
                 if (copy.manifest?.id is { } id && !Manager(id) && wants.GetValueOrDefault((id, copy.modSource)) is { } entry)
-                    wanted.Add((copy, CopyOn(copy, entry)));
+                {
+                    var on = CopyOn(copy, entry);
+                    if (on && kept.Contains(id))
+                        held.Add(id);
+                    wanted.Add((copy, on && !kept.Contains(id)));
+                }
+            if (held.Count > 0)
+                Log.Info($"[{ModEntry.ModId}] Left off though the profile has them on (turned off after a failed start): {string.Join(", ", held)}");
             var offs = wants.Values.Where(e => !Manager(e.Id) && e.CopiesOff != null && Copies.RecordGroup(e.Id, e.Source) != null)
                 .ToDictionary(e => (e.Id, e.Source), e => e.CopiesOff ?? []);
             Dependencies.Write(wanted, offs);

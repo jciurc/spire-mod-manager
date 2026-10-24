@@ -15,6 +15,14 @@
 //                                      Menu's data to import
 //                                     --crash-prepare, then --crash: a launch that saves the last working setup,
 //                                      then one that fails to start (made up) with Test Retired on, our dialog answered
+//                                     --crash-culprit, after --crash-prepare: one that fails to start by Test Fixes'
+//                                      code (Hornet's shape); our dialog names it, and Turn off and restart is pressed
+//                                     --read-only-settings, with --crash-culprit: settings.save read-only, so the
+//                                      turn-off can't be saved and the dialog says so
+//                                     --crash-notice, after --crash-culprit: its data and mod list kept, the main
+//                                      menu's notice of Test Fixes turned off, and Turn back on pressed
+//                                     --crash-rebuild, after --crash-prepare: one that fails to start by a patch class's
+//                                      failed rebuild, the last working launch on another game; the patching mod named
 //                                     --stable, with any of them: the stable branch's game, in its own dev copy
 //   dotnet run tools/dev.cs launch    build, open the sandboxed game to try by hand (--first-run,
 //                                     --first-run-bmm and --workshop as for test); returns when you close it;
@@ -64,6 +72,12 @@ var bmmData = args.Contains("--first-run-bmm"); // its fixture data in the sandb
 var firstRun = bmmData || args.Contains("--first-run"); // no manager.json of ours
 var crashPrepare = args.Contains("--crash-prepare"); // reach the main menu only, so the last working setup is saved
 var crash = args.Contains("--crash"); // then: our data kept, Test Retired on, a made-up failed start and our dialog answered
+var crashCulprit = args.Contains("--crash-culprit"); // then: a failed start our dialog names a mod for, its turn-off pressed
+var readOnlySettings = args.Contains("--read-only-settings"); // with it: settings.save read-only for the run
+var crashNotice = args.Contains("--crash-notice"); // after --crash-culprit: the notice at the main menu, Turn back on pressed
+var crashRebuild = args.Contains("--crash-rebuild"); // then: a failed rebuild, the last working launch on another game
+var failing = crash || crashCulprit || crashRebuild; // a launch that fails to start, its dialog answered
+var keepsData = failing || crashNotice; // --crash-prepare's data kept (its last working setup)
 var workshopAt = Array.IndexOf(args, "--workshop"); // the Workshop item ids follow it, comma-separated
 var workshopItems = workshopAt < 0 ? [] : (args.ElementAtOrDefault(workshopAt + 1) ?? "")
     .Split(',', StringSplitOptions.RemoveEmptyEntries | StringSplitOptions.TrimEntries).Distinct().ToArray();
@@ -75,15 +89,18 @@ var sizeAt = Array.IndexOf(args, "--size");
 var windowSize = (X: 1920, Y: 1080);
 
 if (mode is not ("test" or "launch" or "smoke"))
-    return Fail("usage: dotnet run tools/dev.cs [test [--window [--size WxH]] [--bmm[-after]] [--bmm-local] [--real|--first-run|--first-run-bmm|--crash-prepare|--crash]|launch [--first-run|--first-run-bmm] [--keep-saves]|smoke [--bmm]] [--workshop <id>[,<id>...] [--twins]] [--stable] [--no-wait]");
+    return Fail("usage: dotnet run tools/dev.cs [test [--window [--size WxH]] [--bmm[-after]] [--bmm-local] [--real|--first-run|--first-run-bmm|--crash-prepare|--crash|--crash-culprit [--read-only-settings]|--crash-notice|--crash-rebuild]|launch [--first-run|--first-run-bmm] [--keep-saves]|smoke [--bmm]] [--workshop <id>[,<id>...] [--twins]] [--stable] [--no-wait]");
 if (real && firstRun)
     return Fail("--real brings your own data, so it can't be a first run");
-if (crashPrepare && crash)
-    return Fail("--crash-prepare and --crash are two runs, in that order: dotnet run tools/dev.cs test --crash-prepare, then test --crash");
-if ((crashPrepare || crash) && (mode != "test" || real || firstRun))
-    return Fail("--crash-prepare and --crash are test runs with the fixture mods and the data the first one leaves: not launch, smoke, --real or a first run");
-if (crashPrepare && workshopAt >= 0)
-    return Fail("--crash-prepare saves the setup that works, the fixture mods alone: --workshop goes with --crash, for mods that fail the start");
+if (new[] { crashPrepare, crash, crashCulprit, crashNotice, crashRebuild }.Count(on => on) > 1)
+    return Fail("--crash-prepare, --crash, --crash-culprit, --crash-notice and --crash-rebuild are runs of their own, each after --crash-prepare "
+        + "(--crash-notice after --crash-culprit): dotnet run tools/dev.cs test --crash-prepare, then test --crash-culprit, then test --crash-notice");
+if ((crashPrepare || keepsData) && (mode != "test" || real || firstRun))
+    return Fail("--crash-prepare and the runs after it are test runs with the fixture mods and the data the first one leaves: not launch, smoke, --real or a first run");
+if (workshopAt >= 0 && (crashPrepare || crashCulprit || crashNotice || crashRebuild))
+    return Fail("--crash-prepare saves the setup that works, the fixture mods alone, and the culprit runs fail by the fixtures' own code: --workshop goes with --crash, for mods that fail the start");
+if (readOnlySettings && !crashCulprit)
+    return Fail("--read-only-settings goes with --crash-culprit: dotnet run tools/dev.cs test --crash-culprit --read-only-settings, after test --crash-prepare");
 // --workshop: every item has to be there, or the run would test without it and look like a pass. So it takes
 // one list: a second --workshop, --workshop=..., or ids after a space would be dropped without a word.
 if (args.Count(a => a.StartsWith("--workshop")) != (workshopAt < 0 ? 0 : 1))
@@ -92,7 +109,8 @@ if (args.Count(a => a.StartsWith("--workshop")) != (workshopAt < 0 ? 0 : 1))
 // plain suite, and its pass would read as that option's.
 string[] known = ["--bmm", "--bmm-after", "--bmm-local", "--workshop", "--twins", "--stable", "--no-wait", .. mode switch
 {
-    "test" => new[] { "--window", "--size", "--real", "--first-run", "--first-run-bmm", "--crash-prepare", "--crash" },
+    "test" => new[] { "--window", "--size", "--real", "--first-run", "--first-run-bmm", "--crash-prepare", "--crash", "--crash-culprit", "--read-only-settings",
+        "--crash-notice", "--crash-rebuild" },
     "launch" => ["--first-run", "--first-run-bmm", "--keep-saves"],
     _ => [],
 }];
@@ -214,7 +232,24 @@ if (LinkDevCopy() is { } noCopy)
 if (WaitForOtherDevCopies() is { } stillBusy)
     return Fail(stillBusy);
 SyncMods();
-PrepareSandbox((mode is "test" or "smoke" || firstRun) && !crash); // --crash keeps --crash-prepare's last working setup
+PrepareSandbox((mode is "test" or "smoke" || firstRun) && !keepsData); // the runs after --crash-prepare keep its last working setup
+var dataDir = Path.Combine(sandbox, "mod_data", ModId);
+var turnedOff = Path.Combine(dataDir, "turned-off.json"); // our record of the mods a failed start's dialog turned off
+var settingsSave = Path.Combine(sandbox, "settings.save");
+if (keepsData && !File.Exists(Path.Combine(dataDir, "last-working.json")))
+    return Fail("no last working setup in the sandbox: run dotnet run tools/dev.cs test --crash-prepare first");
+if (crashNotice && !File.Exists(turnedOff))
+    return Fail("no mod turned off in the sandbox: run dotnet run tools/dev.cs test --crash-culprit first (after test --crash-prepare)");
+if (failing && File.Exists(turnedOff))
+    File.Delete(turnedOff); // an earlier --crash-culprit's: this failed start would find its mod turned off already
+if (crashRebuild && JsonNode.Parse(File.ReadAllText(Path.Combine(dataDir, "last-working.json"))) is JsonObject lastWorking)
+{
+    // The last working launch on another game: a failed rebuild has nothing else to go on, so the patching mod is offered
+    lastWorking["game"] = "0.0.0 (dev.cs --crash-rebuild)";
+    File.WriteAllText(Path.Combine(dataDir, "last-working.json"), lastWorking.ToJsonString(new() { WriteIndented = true }));
+}
+if (readOnlySettings)
+    File.SetAttributes(settingsSave, File.GetAttributes(settingsSave) | FileAttributes.ReadOnly);
 // Saves start empty every run (the guidelines' sts2-mods add-on): progress, runs and history in the sandbox, so no other
 // mod's ids and no half-played run are left from an earlier run, in any repo. launch --keep-saves keeps them, to try
 // something across launches by hand. Nothing is backed up: only dev runs write there.
@@ -366,9 +401,10 @@ Directory.CreateDirectory(outDir);
 start.Environment["SPIRE_MOD_MANAGER_SELFTEST"] = outDir;
 if (real)
     start.Environment["SPIRE_MOD_MANAGER_SELFTEST_MODE"] = "real";
-else if (crashPrepare || crash)
+else if (crashPrepare || keepsData)
     // --crash with --workshop: the start fails by those mods (crash-real), not by our made-up throw.
-    start.Environment["SPIRE_MOD_MANAGER_SELFTEST_MODE"] = !crash ? "crash-prepare" : workshopMods.Count > 0 ? "crash-real" : "crash";
+    start.Environment["SPIRE_MOD_MANAGER_SELFTEST_MODE"] = crashPrepare ? "crash-prepare" : crashNotice ? "crash-notice" : crashRebuild ? "crash-rebuild"
+        : crashCulprit ? (readOnlySettings ? "crash-culprit-read-only" : "crash-culprit") : workshopMods.Count > 0 ? "crash-real" : "crash";
 else if (firstRun)
     start.Environment["SPIRE_MOD_MANAGER_SELFTEST_MODE"] = bmmData ? "first-run-bmm" : "first-run";
 // The game echoes its whole log to stdout; we read the log file instead.
@@ -402,10 +438,14 @@ if (!game.HasExited)
     game.WaitForExit();
 }
 
+if (readOnlySettings)
+    File.SetAttributes(settingsSave, File.GetAttributes(settingsSave) & ~FileAttributes.ReadOnly); // as it was before the run
+
 var results = Path.Combine(outDir, "results.txt");
 // --crash: the relaunch after Restore reads the mod list from settings.save, and the self-test saw it only in memory.
-// So here, with the game gone: Test Retired (on for this launch) off again on disk.
-if (crash && File.Exists(results))
+// So here, with the game gone: Test Retired (on for this launch) off again on disk. With --workshop, only when the
+// dialog offered Restore (the self-test says which it pressed).
+if (crash && File.Exists(results) && (workshopMods.Count == 0 || File.ReadAllText(results).Contains("our dialog offered \"Restore and restart\"")))
 {
     string line;
     try
@@ -418,6 +458,32 @@ if (crash && File.Exists(results))
     catch (Exception e)
     {
         line = $"FAIL a failed start: settings.save couldn't be read after the run: {e.Message}";
+    }
+    File.AppendAllLines(results, [line]);
+}
+// The culprit runs: what the next launch reads, with the game gone. Test Fixes' switches in settings.save and its entry
+// in our record: off and recorded after a turn-off (--crash-culprit, --crash-rebuild), as they were where the save
+// couldn't be written (--read-only-settings, and the file writable again), on and its entry gone after Turn back on
+// (--crash-notice).
+if ((crashCulprit || crashRebuild || crashNotice) && File.Exists(results))
+{
+    string line;
+    try
+    {
+        var fixes = JsonNode.Parse(File.ReadAllText(settingsSave))?["mod_settings"]?["mod_list"]?.AsArray()
+            .Where(entry => (string?)entry?["id"] == "SmmTestFixes").Select(entry => (bool?)entry?["is_enabled"] ?? true).ToList() ?? [];
+        var record = File.Exists(turnedOff) ? JsonNode.Parse(File.ReadAllText(turnedOff))?["mods"]?.AsArray()
+            .FirstOrDefault(entry => (string?)entry?["id"] == "SmmTestFixes") : null;
+        var why = (string?)record?["why"];
+        var (ok, said) = crashNotice ? (fixes.Count > 0 && fixes.All(on => on) && record == null, "on again and its entry gone, after Turn back on")
+            : readOnlySettings ? (fixes.All(on => on) && record == null && !File.GetAttributes(settingsSave).HasFlag(FileAttributes.ReadOnly),
+                "as it was, nothing recorded, the file writable again, after a turn-off that couldn't be saved")
+            : (fixes.Count > 0 && fixes.All(on => !on) && why == (crashRebuild ? "RebuildLast" : "Code"), $"off and recorded ({(crashRebuild ? "RebuildLast" : "Code")}), after its turn-off");
+        line = $"{(ok ? "PASS" : "FAIL")} a failed start, on disk with the game gone: Test Fixes {said} (is_enabled {string.Join(",", fixes)}, recorded {why ?? "no"})";
+    }
+    catch (Exception e)
+    {
+        line = $"FAIL a failed start: settings.save or our record couldn't be read after the run: {e.Message}";
     }
     File.AppendAllLines(results, [line]);
 }
@@ -610,6 +676,8 @@ void PrepareSandbox(bool resetData)
 {
     Directory.CreateDirectory(sandbox);
     var settingsPath = Path.Combine(sandbox, "settings.save");
+    if (File.Exists(settingsPath)) // writable again where a --read-only-settings run stopped before it could do it
+        File.SetAttributes(settingsPath, File.GetAttributes(settingsPath) & ~FileAttributes.ReadOnly);
     var settings = File.Exists(settingsPath) ? JsonNode.Parse(File.ReadAllText(settingsPath))?.AsObject() ?? [] : [];
     var mods = settings["mod_settings"] as JsonObject ?? [];
     mods["mods_enabled"] = true;
@@ -645,7 +713,8 @@ void PrepareSandbox(bool resetData)
     if (real)
         foreach (var id in ManifestIds(Path.Combine(DevDir, "mods")).Where(id => id is not (ModId or "BetterModMenu" or "BetterModMenuFork") && !workshopMods.Contains(id)))
             list.Add((JsonNode)new JsonObject { ["id"] = id, ["is_enabled"] = false, ["source"] = "mods_directory" });
-    mods["mod_list"] = list;
+    if (!crashNotice) // the list --crash-culprit's turn-off saved, Test Fixes off in it
+        mods["mod_list"] = list;
     settings["mod_settings"] = mods;
     settings["seen_ea_disclaimer"] = true; // the one-time Early Access popup would cover every screenshot
     settings["volume_master"] = 0.0;      // silent, so dev runs don't play over your own game

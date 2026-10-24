@@ -45,8 +45,8 @@ static class MainMenuPatch
 #endif
 
             MenuButton.Add(__instance);
-            // After the game's own popups: the notice about an unreadable saved file, then the one about a last
-            // launch that stopped before the main menu.
+            // After the game's own popups: the notice about an unreadable saved file, the one about a last launch that
+            // stopped before the main menu, then the one about mods turned off after a failed start
             var menu = __instance;
             menu.GetTree().CreateTimer(1.5).Timeout += () =>
             {
@@ -54,6 +54,7 @@ static class MainMenuPatch
                     return;
                 Store.ShowNotice();
                 LaunchGuard.ShowNotice(menu);
+                TurnedOff.ShowNotice(menu);
             };
 
 #if DEVTOOLS
@@ -69,7 +70,8 @@ static class MainMenuPatch
 
 // Clears the launch record (LaunchGuard) once the main menu is reached, then settles the copies of mods installed
 // twice (SameIdLoad.Settle: the game's rebuilt list repaired, our entries first, the self-check), before our data loads
-// and the undo history starts. A prefix, so a throw in the menu's own _Ready can't skip it.
+// and the undo history starts; then marks the mods turned off after a failed start as seen at a menu, reading the
+// repaired list (TurnedOff.MenuReached). A prefix, so a throw in the menu's own _Ready can't skip it.
 [HarmonyPatch(typeof(NMainMenu), nameof(NMainMenu._Ready))]
 static class MenuReachedPatch
 {
@@ -92,7 +94,19 @@ static class MenuReachedPatch
         {
             Log.Warn($"[{ModEntry.ModId}] Could not settle the mods installed twice after launch (the saved list stays as the game wrote it): {e}");
         }
+        try
+        {
+            if (!_marked)
+                TurnedOff.MenuReached();
+            _marked = true;
+        }
+        catch (Exception e)
+        {
+            Log.Warn($"[{ModEntry.ModId}] Could not mark the mods turned off after a failed start as seen at a main menu: {e}");
+        }
     }
+
+    static bool _marked; // the first main menu of the session only: one comes back after every run
 }
 
 // The main menu's MODDED warning (and the line in a run) reads every mod's errors: the Steam branch errors of mods that
@@ -170,27 +184,34 @@ static class QuitRepairPatch
     }
 }
 
-// The game couldn't start (a mod failed in its startup): instead of its dialog with only Quit, ours offers the mods of
-// the last launch that worked, when this launch changed any (LaunchGuard.AskAfterCrash). Nothing to offer, or ours
-// failing: the game's own dialog. After other mods' prefixes (Mod Doctor's writes its findings first).
+// The game couldn't start (a mod failed in its startup): instead of its dialog with only Quit, ours
+// (LaunchGuard.AskAfterCrash): Turn off and restart for the mod that stopped it, the mods of the last launch that
+// worked back, or both. Always taken over: what to offer is known only once Mod Doctor's findings and the failure
+// are in, a frame or two later. Nothing to offer, or ours failing: the game's own dialog. After other mods' prefixes (Mod
+// Doctor's writes its findings first); a mod's prefix that takes over the dialog skips this one.
 [HarmonyPatch(typeof(NGame), "GameStartupError")]
 static class StartupErrorPatch
 {
     static bool _games; // the game's own dialog from here on
+
+#if DEVTOOLS
+    // Self-test: whether the game's own dialog was given way to (from then on this prefix lets it through)
+    public static bool GaveWay => _games;
+#endif
 
     [HarmonyPriority(Priority.Low)]
     static bool Prefix(NGame __instance, ref Task __result)
     {
         try
         {
-            if (_games || LaunchGuard.CrashOffer() is not { } offer)
+            if (_games)
                 return true;
-            __result = LaunchGuard.AskAfterCrash(__instance, offer);
+            __result = LaunchGuard.AskAfterCrash(__instance);
             return false;
         }
         catch (Exception e)
         {
-            Log.Error($"[{ModEntry.ModId}] Could not look at the last working launch after the failed start: {e}");
+            Log.Error($"[{ModEntry.ModId}] Could not offer anything after the failed start, so the game's dialog shows: {e}");
             return true;
         }
     }

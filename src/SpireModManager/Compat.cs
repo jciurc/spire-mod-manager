@@ -3,6 +3,7 @@ using System.Runtime.CompilerServices;
 using Godot;
 using HarmonyLib;
 using MegaCrit.Sts2.Core.Helpers;
+using MegaCrit.Sts2.Core.Logging;
 using MegaCrit.Sts2.Core.Modding;
 using MegaCrit.Sts2.Core.Nodes.Screens.ModdingScreen;
 
@@ -20,6 +21,11 @@ static class Compat
 
     // The game's event for a fire-and-forget task's fault, a failed start's among them (Culprits.Watch)
     public static readonly EventInfo? UnobservedFault = typeof(TaskHelper).GetEvent("UnobservedFault");
+
+    // The game's log as it's written, for the failure a settings save only logs (LaunchGuard.SaveChecked). Both branches
+    // have it today; by name, and only with the handler it takes now, so a change to it leaves the saves unchecked
+    public static readonly EventInfo? LogCallback = typeof(Log).GetEvent("LogCallback") is { EventHandlerType: var handler } found
+        && handler == typeof(Action<LogLevel, string, int>) ? found : null;
 
     // Stable: each mod's Workshop id from its folder, worked out once.
     static readonly ConditionalWeakTable<Mod, StrongBox<ulong?>> FromFolder = new();

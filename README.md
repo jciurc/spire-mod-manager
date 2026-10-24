@@ -52,6 +52,8 @@ Subscribe to it on the [Steam Workshop](https://steamcommunity.com/sharedfiles/f
   Ctrl+Y undo and redo; Revert all puts things back the way they were when you opened the page.
 - **Relaunch Game:** restarts in place, in the same window mode, so changes apply without going back through
   Steam. It checks first for mods that won't load and offers to fix them.
+- **When a mod stops the game from starting:** the crash dialog names it and offers to turn it off and restart,
+  or to restore the last setup that worked. The next main menu says what was turned off, with Turn back on.
 - **The info panel:** what a mod changes in the game itself (the game files it replaces and the code it changes,
   with a click for the whole list), and for a Workshop mod its dates, size, subscribers, tags and a link to its
   change notes, with problems shown first in red.
