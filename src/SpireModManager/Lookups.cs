@@ -17,7 +17,7 @@ sealed class Lookups : IDisposable
     Dictionary<string, Mod>? _byId;
     readonly Dictionary<string, Copies.Outcome> _next = [];
     readonly Dictionary<string, List<Mod>> _orders = [];
-    readonly Dictionary<string, List<Mod>> _neededBy = [];
+    Dictionary<string, List<Mod>>? _neededBy;
     readonly Dictionary<Mod, IReadOnlyList<Tags.Chip>> _chips = [];
     readonly Dictionary<Mod, IReadOnlyList<string>> _dependencies = [];
     readonly Dictionary<Mod, Search.Haystack> _haystacks = [];
@@ -53,17 +53,6 @@ sealed class Lookups : IDisposable
         (_mods, _installed, _saved) = (mods, installed, saved as IReadOnlyList<SettingsSaveMod> ?? [.. saved]);
         _off = Dependencies.SavedOff(_saved);
         _ticks = ticks;
-        // Who needs whom, from the game's list (a mod installed while the game runs is in it too: the game reads it in); a
-        // mod naming one twice counts once.
-        foreach (var mod in mods)
-            foreach (var id in DependenciesOf(mod, Dependencies.Read).Distinct()) // kept for the redraw's own asks
-            {
-                if (id == null)
-                    continue; // a manifest entry without an id: Dependencies works those out the slow way
-                if (!_neededBy.TryGetValue(id, out var needing))
-                    _neededBy[id] = needing = [];
-                needing.Add(mod);
-            }
     }
 
     // A copy's box and whether it loads after a relaunch (Copies.Ticked, Copies.Loads), and what loads of an id
@@ -104,7 +93,25 @@ sealed class Lookups : IDisposable
         return _byId.GetValueOrDefault(id);
     }
 
-    public IReadOnlyList<Mod> NeededBy(string id) => _neededBy.TryGetValue(id, out var needing) ? needing : [];
+    // Who needs whom, from the game's list (a mod installed while the game runs is in it too: the game reads it in),
+    // made on the first ask, as Find's table is; a mod naming one twice counts once.
+    public IReadOnlyList<Mod> NeededBy(string id)
+    {
+        if (_neededBy == null)
+        {
+            _neededBy = [];
+            foreach (var mod in _mods)
+                foreach (var each in DependenciesOf(mod, Dependencies.Read).Distinct()) // kept for the redraw's own asks
+                {
+                    if (each == null)
+                        continue; // a manifest entry without an id: Dependencies works those out the slow way
+                    if (!_neededBy.TryGetValue(each, out var needing))
+                        _neededBy[each] = needing = [];
+                    needing.Add(mod);
+                }
+        }
+        return _neededBy.TryGetValue(id, out var them) ? them : [];
+    }
 
     // Per mod or per key: worked out on first use in this redraw, then kept.
     public IReadOnlyList<Tags.Chip> Chips(Mod mod, Func<Mod, IReadOnlyList<Tags.Chip>> make) => Kept(_chips, mod, make);

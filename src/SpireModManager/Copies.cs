@@ -310,9 +310,9 @@ static class Copies
     //    (ModManager.RemoveDisabledMods): stable takes out every Workshop copy beside a local one; the beta compares each
     //    Workshop copy with the first local copy it read (FirstRead), taking out the local one where the Workshop version
     //    is higher, else the Workshop one (a tie, or an unknown version);
-    // 3. this mod: the game's own choice, the copy that loaded this session if the rule leaves it, else the first left; an
-    //    id the launch couldn't choose for (SameIdLoad.Unchosen): the game's own choice, the first of its copies in the
-    //    next launch's order (Dependencies.NextOrder);
+    // 3. this mod, or an id the launch couldn't choose for (SameIdLoad.Unchosen): the game's own choice, the copy that
+    //    loaded this session if the next launch can load it again (the rule leaves it, or the launch brought it back),
+    //    else the first left;
     // 4. else of the ticked copies left, those of the first one's source (nothing is chosen across sources), and of
     //    those Best; with a copy on that isn't ticked (on through a ticked twin's switch), step 2 again over the ticked
     //    copies alone first (the launch brings back the copy it picks); none ticked at all: the game's own choice, the
@@ -340,6 +340,11 @@ static class Copies
         var gameLeft = on.Where(m => !beaten.ContainsKey(m)).ToList();
         var left = gameLeft;
         bool IsTicked(Mod m) => OwnTick(m, ticks);
+        // The copy that loaded this session where the next launch can load it again: one the game's rule leaves, or one
+        // this launch brought back (its plan's: never this mod, nor where the canary failed); else the first the rule
+        // leaves.
+        Mod GameChoice() => on.FirstOrDefault(m => m.state == ModLoadState.Loaded && (gameLeft.Contains(m)
+            || id != ModEntry.ModId && SameIdLoad.Plan.GetValueOrDefault(id)?.Loads is { } revived && CopyOf(revived) == CopyOf(m))) ?? gameLeft[0];
         var list = saved ?? SaveManager.Instance.SettingsSave.ModSettings?.ModList ?? [];
         List<Mod>? next = null;
         List<Mod> Order() => next ??= NextOrderOf(gameOff, list);
@@ -348,10 +353,8 @@ static class Copies
         string? late = null;
         List<Mod> candidates = [];
         var strict = false;
-        if (id == ModEntry.ModId)
-            loads = on.FirstOrDefault(m => m.state == ModLoadState.Loaded && gameLeft.Contains(m)) ?? gameLeft[0];
-        else if (SameIdLoad.Unchosen(id))
-            loads = Order().FirstOrDefault(m => m.manifest?.id == id) is { } first && on.FirstOrDefault(m => CopyOf(m) == CopyOf(first)) is { } copy ? copy : gameLeft[0];
+        if (id == ModEntry.ModId || SameIdLoad.Unchosen(id))
+            loads = GameChoice();
         else
         {
             // A copy that's off takes part in the rule while its switch is on through a ticked twin's: on the beta it can
@@ -384,9 +387,10 @@ static class Copies
                 // copies in its order (those the game's rule leaves, then those it beats), by the ticks now; none fits: of
                 // the id's other copies in that launch's order, by the tie order, the first that fits, else the first.
                 // Only where the launch looks (Run's todo): two or more Mods of the id left by the game's rule (a copy with
-                // manifests in two folders counts twice), or the copy chosen one it set aside.
+                // two manifests counts twice, as the next launch reads them: Dependencies.NextRead), or the copy chosen one
+                // it set aside.
                 var looks = gameLeft.Count > 1 || !gameLeft.Contains(best);
-                if (Dependencies.Read(Newest(best)).Count > 0 && (looks || (all ?? []).Where(m => CopyOf(m) == CopyOf(best)).Select(m => m.path).Distinct().Count() > 1)
+                if (Dependencies.Read(Newest(best)).Count > 0 && (looks || Dependencies.NextRead((all ?? []).Where(m => CopyOf(m) == CopyOf(best))).Count > 1)
                     && Needing().Count > 0 && SlotIn(id, Order(), Mins(id, Needing())) is var slot && (looks || slot.Order.Count > 1) && slot.Late(Newest(best)) is { } dep)
                 {
                     var tickedNow = on.Where(IsTicked).Select(Newest).ToList();
@@ -453,7 +457,7 @@ static class Copies
     // The mods that need the id that the next launch has still to load when it comes to the id, as SameIdLoad.Run asks
     // (one that needs it with a minimum version: Best ranks a copy the game can't read below one it can, and a copy below
     // it can't take a blocked one's place; any: a copy that can't take the id's first slot doesn't load): switch on, not
-    // taken out by the game's rule, the newest manifest at each path (as Dependencies.NextOrder keeps them); of an id
+    // taken out by the game's rule, the manifests as the next launch reads them (Dependencies.NextRead); of an id
     // installed more than once, its Mods in that launch's order where its first slot there comes after this one's, else
     // only the copy that loads (Run has set the others aside by then, and brought that one back where the game's rule set
     // it aside). The order is worked out only where such a mod is installed more than once.
@@ -464,8 +468,8 @@ static class Copies
         if (!on.Any(m => Others(m).Count > 0))
         {
             var paths = on.Select(m => (m.manifest?.id, m.path)).ToHashSet();
-            var newest = All.Where(m => paths.Contains((m.manifest?.id, m.path))).GroupBy(m => (m.manifest?.id, m.path)).Select(g => g.Last()).ToHashSet();
-            return [.. on.Where(newest.Contains)];
+            var read = Dependencies.NextRead(All.Where(m => paths.Contains((m.manifest?.id, m.path)))).ToHashSet();
+            return [.. on.Where(read.Contains)];
         }
         var next = order();
         int First(string? of) => next.FindIndex(m => m.manifest?.id == of);

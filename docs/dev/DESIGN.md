@@ -37,11 +37,8 @@ Ease of use is the heart of the mod, not just its utility.
   warnings say so, as for a mod installed once. It all runs in our Init, before the game tries the copies. Our page
   works out where the slot falls from the next launch's order: the game sorts by the saved list it rebuilt from the
   order that loaded (saved at the main menu), ranking an id by its last entry, then puts what a mod needs first (the
-  first copy of it the game reads). The rebuild lists the mods it took out (off, or set aside by its local-vs-Workshop
-  rule) after all the rest, so at the main menu we move each of those entries to just after its id's others: the id
-  ranks where what loaded of it sorted, and a copy blocked by a dependency installed from both sources loads from the
-  next launch on. Our page has a tickbox per copy, and two copies of an id can both be ticked (only one loads). The
-  game's page keeps its one switch.
+  first copy of it the game reads). Our page has a tickbox per copy, and two copies of an id can both be ticked (only
+  one loads). The game's page keeps its one switch.
 - Where the page and the launch can still differ, or older data reads differently (all rare):
   - Data from the dev builds before this, whose pick was missing: the copy standing in for it stays ticked, so once
     the pick is back both are ticked and the higher version loads, where those builds loaded the pick. A stand-in
@@ -59,11 +56,16 @@ Ease of use is the heart of the mod, not just its utility.
     the game's rebuild at the main menu (the game itself later, if at all: leaving its settings screen, remapping a
     control, quitting); after a session that ends before that (a crash at launch), the next launch reads the list from
     before and sorts as this launch did, so a copy blocked this launch can be blocked again while the page named it.
-    Ids the list doesn't have yet tie in the game's sort, which the page takes in the game's list order. The game reads Workshop items in Steam's order, which the page has from
-    launch: one subscribed since comes after the others there, wherever Steam puts it. A mod uninstalled since still
-    counts, as the game's list keeps it.
+    Ids the list doesn't have yet tie in the game's sort, which the page takes in the game's list order. The game reads
+    Workshop items in Steam's order, which the page has from launch: one subscribed since comes after the others there,
+    wherever Steam puts it. A mod uninstalled since still counts, as the game's list keeps it.
   - A copy in a dependency cycle, or waiting on one, can make the game fail every copy of the id (its cycle check goes
     by id), whatever the page and the launch choose.
+  - A copy that needs a mod installed from both sources stays blocked at every launch. The game's rebuild lists that
+    mod's copy it took out (off, or set aside by its local-vs-Workshop rule) after all the rest, and it ranks an id by
+    its last entry, so the mod sorts after the slot each time. The page and the launch agree on the copy that loads
+    instead, and the blocked copy's line says why. Keeping such a mod where it loaded in the order is planned
+    separately.
 - Profiles key mods by id and source, like `mod_list` (plus, for copies from one source, which are ticked). A shared
   list's rows set a mod installed once by its id; where its id is installed more than once, a row with a Workshop
   link sets that copy alone. A newly installed mod joins the active profile, enabled.
