@@ -366,6 +366,12 @@ static class LoadOrder
                 gathered.Add(mod);
             else if (at[id] == mod)
                 gathered.AddRange(block);
+        // A copy chosen that the next launch can't swap in (Copies.Next's Late: something it needs ranks after the id): its
+        // rows right after that mod's, the mods they pass that need it with them, as Settle's heal does at a launch (review
+        // C4: a drag above what it needs switched the copy silently, and Fix now moved nothing).
+        foreach (var id in blocks.Keys)
+            if (Copies.Next(id).Late is { } late)
+                SameIdLoad.MoveAfter(gathered, m => m.manifest?.id, id, late, other => gathered.Where(m => m.manifest?.id == other).SelectMany(Dependencies.Of));
         return gathered;
     }
 

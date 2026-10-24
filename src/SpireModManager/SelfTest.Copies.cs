@@ -1420,16 +1420,19 @@ static partial class SelfTest
                     }
                     var restoredTicks = new Ticks(baseOff.Where(k => Copies.Parse(k) is not { } key || !back.Groups.Contains((key.Id, key.Source))).Concat(back.Off), record);
                     var again = Launched(x, Read(), restored, off, restoredTicks);
+                    // And the launch after that, over what it saved (review C1: the heal brought back the copy that crashed).
+                    var twice = Launched(x, Read(), again.Saved, off, restoredTicks);
                     static string Loading(List<Mod> sorted) => string.Join(",", sorted.Where(m => m.state == ModLoadState.None).Select(m => m.manifest?.id + Copies.CopyOf(m)));
-                    restoresHeld &= Shown(again.Loads) == Shown(next.Loads) && Loading(again.Sorted) == Loading(next.Sorted);
+                    restoresHeld &= Shown(again.Loads) == Shown(next.Loads) && Loading(again.Sorted) == Loading(next.Sorted)
+                        && Shown(twice.Loads) == Shown(next.Loads) && Loading(twice.Sorted) == Loading(next.Sorted);
                     launches.Add($"launch {launch}: {Shown(next.Loads)} (blocked {next.Plan?.Blocked ?? "none"}); saved {Said(saved, x)}; the page {page.Loads} ({page.Why}); "
-                        + $"restored: {Said(restored.Where(e => e.Id.StartsWith(x) || e.Id == ModEntry.ModId), x)}, loads {Shown(again.Loads)} ({Loading(again.Sorted)} against {Loading(next.Sorted)})");
+                        + $"restored: {Said(restored.Where(e => e.Id.StartsWith(x) || e.Id == ModEntry.ModId), x)}, loads {Shown(again.Loads)} ({Loading(again.Sorted)} against {Loading(next.Sorted)}), then {Shown(twice.Loads)}");
                 }
                 Check("the rule, ... the heal, the beta: a copy blocked by a dependency after the slot, which the game's rule had set aside: the fallback (W101) "
                     + "at the first launch, then the id moved right after the dependency" + (both ? "'s entries (from both sources, the Workshop one off), before the mod after it" : "")
                     + ", the mod needing the id with it, so L at every launch after; the page after each names L", held, string.Join(" | ", launches));
                 Check($"the rule, ... the heal{(both ? " (the dependency from both sources)" : "")}: Restore from each launch's record, then a launch over the list "
-                    + "it writes, with the ticks it puts back: the same copy and the same mods loading in the same order", restoresHeld, string.Join(" | ", launches));
+                    + "it writes, with the ticks it puts back: the same copy and the same mods loading in the same order, at the launch after that too (not the copy healed in)", restoresHeld, string.Join(" | ", launches));
             }
         else
             Results.Add("SKIP the rule, ... the heal of a copy the game's rule set aside: only the beta's rule takes out a local copy for a higher Workshop one");
@@ -2966,6 +2969,11 @@ static partial class SelfTest
         var firstSaves = Saves([E(ModEntry.ModId), E(d), E(x), E(u), E(d, W)], out var firstList, out var firstChanged);
         var steadySaves = Saves([E(ModEntry.ModId), E(d), E(d, W), E(x), E(u)], out var steadyList, out _);
         var offSaves = Saves([E(ModEntry.ModId), E(d), E(d, W, false), E(x), E(u)], out var offList, out _);
+        // No list read (review C9): the rule's move is then a reason to save; a list in the form already saves nothing.
+        var (noReadMoved, noReadSteady) = (RebuildOf([E(d, W)]), new List<SettingsSaveMod> { E(ModEntry.ModId), E(d), E(d, W), E(x), E(u) });
+        var (noReadSaves, noReadSteadySaves) = (SameIdLoad.SettleSaves(noReadMoved, null, asideAnchors), SameIdLoad.SettleSaves(noReadSteady, null, asideAnchors));
+        Check("the order rule, Settle's save with no list read: the rule's move saved, a list in the form not",
+            noReadSaves && Say(noReadMoved) == "us,D,Dw,X,U" && !noReadSteadySaves, $"moved {noReadSaves} {Say(noReadMoved)}; in the form {noReadSteadySaves}");
         List<SettingsSaveMod> notFirst = [E(a), E(ModEntry.ModId)];
         var notFirstSaves = SameIdLoad.SettleSaves(notFirst, Read(notFirst), [true, true]);
         Check("the order rule, Settle's save: the first launch after updating (the copy set aside listed last) saved for its order, the rule's move not "
@@ -5286,7 +5294,7 @@ static partial class SelfTest
     // the saved list too; a drag of the row that's off to the top, under ours, moves both in their order, one step, and
     // undo puts them back; Move up on the row that loads steps past the whole of the mod above (the twins, where they're
     // there); a mod dropped between the twins' rows goes past them; the red line for the twin that doesn't load moved
-    // above what the one that loads needs, and Fix now keeping the twins together after it; a tick or untick of
+    // above what the one that loads needs, and Fix now putting the twins back after it; a tick or untick of
     // either copy moves no row and makes no step of the order's; an entry made for a copy installed while the game runs,
     // right after its mod's (LoadOrder.Add, as NewModTogglePatch makes it), moves no other row in Changes. All put back.
     static async Task TestDualOrder(Node menu, NModdingScreen screen, Control content, string outDir)
@@ -5391,7 +5399,8 @@ static partial class SelfTest
 
             // The twin that doesn't load moved above Test Framework, which the one that loads needs: the red line (MoveBreaks
             // goes by the block's copy that loads), both rows moved. There the one that loads can't take the id's first slot,
-            // so the other loads instead (nothing for Fix now to move), and Fix now keeps the twins together.
+            // so the other loads instead; Fix now moves the twins back after it (the move Settle's heal makes at a launch,
+            // review C4), and the chosen one loads again.
             var breaks = !Copies.Loads(twinOff) && LoadOrder.MoveBreaks(twinOff, Order().IndexOf(lib), Rows());
             var fixFrom = Steps();
             LoadOrder.Move(twinOff, Order().IndexOf(lib), Rows());
@@ -5401,13 +5410,14 @@ static partial class SelfTest
             LoadOrder.FixOrder(Rows());
             CategoryList.Redraw(content);
             await Wait(menu, 0.3);
-            var fixedOrder = Order();
+            var (fixedOrder, fixedLoads) = (Order(), Copies.Loads(twinLoads) && !Copies.Loads(twinOff));
             await Back(fixFrom);
             Check("... the twin that doesn't load moved above what the one that loads needs: the red line, both rows moved, the other twin loading there; "
-                + "Fix now keeps the twins together; undone",
+                + "Fix now puts the twins back after the framework, together, and the chosen one loads; undone",
                 breaks && misplaced.IndexOf(lib) > misplaced.IndexOf(twinLoads) && Side(misplaced, twinOff, twinLoads) && fallback
-                && Side(fixedOrder, twinOff, twinLoads) && Order().SequenceEqual(start),
-                $"red line {breaks}; moved {Said(misplaced)}, the other loading {fallback}; fixed {Said(fixedOrder)}; undone {Said()}");
+                && fixedOrder.IndexOf(lib) < fixedOrder.IndexOf(twinOff) && fixedOrder.IndexOf(lib) < fixedOrder.IndexOf(twinLoads) && Side(fixedOrder, twinOff, twinLoads)
+                && fixedLoads && Order().SequenceEqual(start),
+                $"red line {breaks}; moved {Said(misplaced)}, the other loading {fallback}; fixed {Said(fixedOrder)}, the chosen loading {fixedLoads}; undone {Said()}");
 
             // A tick or untick of either copy (Dependencies.Write, which ends by putting the list in the order rule's form):
             // no row moves, no step of the order's, nothing in Changes' moves; put back as at the start.

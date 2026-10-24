@@ -254,9 +254,18 @@ static class LaunchGuard
                 changes.Add(new Change(Kind.Switched, mod.Id, was.Copy, mod.Copy)); // Restore can undo it
             else if (mod.Enabled && was.Version != null && mod.Version != null && mod.Version != was.Version)
                 changes.Add(new Change(Kind.Updated, mod.Id, was.Version, mod.Version));
-        var both = tried.Where(m => m.Enabled && !Ours(m.Id) && then.TryGetValue((m.Id, m.Source), out var w) && w.Enabled)
-            .Select(m => (m.Id, m.Source)).Distinct().ToList();
-        if (!both.SequenceEqual(working.Where(m => both.Contains((m.Id, m.Source))).Select(m => (m.Id, m.Source)).Distinct()))
+        // The ids enabled in both, as the game ranks them (by each one's last entry), both in the order rule's form: an
+        // update that flips which source the beta sorts, or a record from before this version, isn't an order Restore
+        // could change (review C6: it compared by id and source).
+        var both = tried.Where(m => m.Enabled && !Ours(m.Id) && then.TryGetValue((m.Id, m.Source), out var w) && w.Enabled).Select(m => m.Id).ToHashSet();
+        static IEnumerable<string> RankedIds(IReadOnlyList<Entry> mods, HashSet<string> ids)
+        {
+            var last = new Dictionary<string, int>();
+            for (var i = 0; i < mods.Count; i++)
+                last[mods[i].Id] = i;
+            return last.Where(p => ids.Contains(p.Key)).OrderBy(p => p.Value).Select(p => p.Key);
+        }
+        if (!RankedIds(BySource(tried), both).SequenceEqual(RankedIds(BySource(working), both)))
             changes.Add(new Change(Kind.Order, ""));
         return changes;
     }

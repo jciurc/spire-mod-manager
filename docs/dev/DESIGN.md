@@ -140,9 +140,9 @@ Ease of use is the heart of the mod, not just its utility.
     rewrite after it is put in the rule's form as the game saves it.
   - A mod with every copy off loses its place at each launch: the game sorts it after all the rest, and the rule
     leaves a mod with no copy loading at its first entry there.
-  - A drag of a mod above a mod that one of its copies needs, where that copy doesn't load but takes part in the
-    game's sort (a copy that's off beside a ticked one of the same source), holds for one launch: the game sorts that
-    copy after what it needs, and the mod ranks there from the next main menu on.
+  - A copy set aside in the game's sort (by our Init, or the game's second copy of one source) isn't an anchor, so a
+    drag of its mod above what that copy needs holds. Ticking that copy later costs one launch: it's blocked there (the
+    copy ticked before loads), and the heal moves the mod after what it needs for the launch after.
   - Restore from a launch record kept before this version puts the copies taken out beside the copy that launch put
     in the mod's first slot. On the beta, with two copies of one source either side of the game's rule, that's one
     launch off.

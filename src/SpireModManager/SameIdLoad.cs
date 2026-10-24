@@ -78,8 +78,10 @@ static class SameIdLoad
 
     // The order rule's anchors at the first main menu (LoadOrder.Normalize), by where the game put each mod this launch:
     // an entry of a mod it sorted (before the tail sorted has) is one; one it took out, one read while the game runs
-    // (AddedAtRuntime) and one past the count Apply read are not. Null where nothing was read, or the list doesn't line up
-    // with the mods up to that count (another mod changed it).
+    // (AddedAtRuntime), one past the count Apply read, and a sorted copy set aside (DisabledDuplicate: by our Init, or the
+    // game's own second copy of one source) are not, so a drag of the mod sticks where the copy that loads is (review G3:
+    // a twin that doesn't load, sorted after what it needs, held the mod there). Null where nothing was read, or the list
+    // doesn't line up with the mods up to that count (another mod changed it).
     public static bool[]? LaunchAnchors(IReadOnlyList<Mod> mods, IReadOnlyList<(string Id, ModSource Source)> list, (int Count, int Tail)? sorted)
     {
         if (sorted is not { } at || list.Count < at.Count || mods.Count < at.Count)
@@ -87,8 +89,11 @@ static class SameIdLoad
         for (var i = 0; i < at.Count; i++)
             if ((mods[i].manifest?.id ?? "") != (list[i].Id ?? "") || mods[i].modSource != list[i].Source)
                 return null;
-        return [.. list.Select((_, i) => i < at.Tail && mods[i].state != ModLoadState.AddedAtRuntime)];
+        return [.. list.Select((_, i) => i < at.Tail && mods[i].state != ModLoadState.AddedAtRuntime && mods[i].state != Duplicate)];
     }
+
+    // The game's state for a copy set aside (DisabledDuplicate; null on a game without it).
+    static readonly ModLoadState? Duplicate = Enum.TryParse<ModLoadState>("DisabledDuplicate", out var state) ? state : null;
 
     // Whether this launch's list lined up with the game's mods at the first main menu (LaunchAnchors); null before.
     public static bool? LinedUp { get; private set; }
@@ -138,32 +143,41 @@ static class SameIdLoad
             if (!done.Add(id) || !late.TryGetValue(id, out var after) || after == id)
                 return;
             Place(after);
-            var (last, to) = (list.FindLastIndex(e => e.Id == id), list.FindLastIndex(e => e.Id == after));
-            if (last < 0 || last > to)
-                return;
-            var from = list.FindIndex(e => e.Id == id);
-            var run = list.Where(e => e.Id == id).ToList();
-            list.RemoveAll(e => e.Id == id);
-            var at = list.FindLastIndex(e => e.Id == after) + 1;
-            // Those it passed (now from..at) that need it, or need one of them: until none more.
-            var passed = list.Skip(from).Take(at - from).Select(e => e.Id).Where(p => p != after).Distinct().ToList();
-            var following = new HashSet<string> { id };
-            for (var more = needs != null; more;)
-            {
-                more = false;
-                foreach (var p in passed)
-                    if (!following.Contains(p) && needs?.Invoke(p).Any(following.Contains) == true)
-                        more = following.Add(p);
-            }
-            following.Remove(id);
-            var behind = list.Where(e => following.Contains(e.Id)).ToList();
-            list.RemoveAll(e => following.Contains(e.Id));
-            list.InsertRange(list.FindLastIndex(e => e.Id == after) + 1, [.. run, .. behind]);
-            moved.Add(id);
+            if (MoveAfter(list, e => e.Id, id, after, needs))
+                moved.Add(id);
         }
         foreach (var id in late.Keys)
             Place(id);
         return moved;
+    }
+
+    // One id's run right after another's whole run (Heal's move; Load Order's Fix now makes it on the page's order too),
+    // where it ranks before it now; the ones it passed that need it (directly or through another of them) right after it,
+    // in their order. True if moved.
+    public static bool MoveAfter<T>(List<T> list, Func<T, string?> idOf, string id, string after, Func<string, IEnumerable<string>>? needs)
+    {
+        var (last, to) = (list.FindLastIndex(e => idOf(e) == id), list.FindLastIndex(e => idOf(e) == after));
+        if (last < 0 || last > to)
+            return false;
+        var from = list.FindIndex(e => idOf(e) == id);
+        var run = list.Where(e => idOf(e) == id).ToList();
+        list.RemoveAll(e => idOf(e) == id);
+        var at = list.FindLastIndex(e => idOf(e) == after) + 1;
+        // Those it passed (now from..at) that need it, or need one of them: until none more.
+        var passed = list.Skip(from).Take(at - from).Select(idOf).OfType<string>().Where(p => p != after).Distinct().ToList();
+        var following = new HashSet<string> { id };
+        for (var more = needs != null; more;)
+        {
+            more = false;
+            foreach (var p in passed)
+                if (!following.Contains(p) && needs?.Invoke(p).Any(following.Contains) == true)
+                    more = following.Add(p);
+        }
+        following.Remove(id);
+        var behind = list.Where(e => idOf(e) is { } other && following.Contains(other)).ToList();
+        list.RemoveAll(e => idOf(e) is { } other && following.Contains(other));
+        list.InsertRange(list.FindLastIndex(e => idOf(e) == after) + 1, [.. run, .. behind]);
+        return true;
     }
 
     // First thing in ModEntry.Init, in a try there: a renamed game member throws at the call. Only memory changes, plus
@@ -555,6 +569,12 @@ static class SameIdLoad
                 : plan.GetValueOrDefault(group.Key.Id) is { } kept && copies.FirstOrDefault(m => !kept.SetAside.Contains(m)) is { } left ? Copies.CopyOf(left)
                 : Copies.CopyOf(copies[0]);
         }
+        // A copy the launch blocked, the only one of its source, while a copy of the other source loads: none of its source
+        // loads ("" names none), so the record has it off, and Restore keeps loading the copy that worked rather than
+        // the one healed in since (review C1: it loaded, crashed, and Restore brought it back every other launch).
+        foreach (var (id, entry) in plan)
+            if (entry.Blocked is { } blocked && Copies.SourceOf(blocked) is { } source && entry.Loads is { } other && other.modSource != source)
+                loads.TryAdd((id, source), "");
         return loads;
     }
 
@@ -593,12 +613,16 @@ static class SameIdLoad
     // Settle's changes to a saved list (SettleList), and whether it's to be saved: it isn't the list the launch read, by
     // its order (Reordered, in the order rule's form) or a switch. Neither the rule's moves nor Repair's alone are a
     // reason: a launch whose list was in that form gets it back, its copies' switches as read, so it saves nothing (a mod
-    // with a source off, which the rebuild turns on, included). With no list read, SettleList's changes.
+    // with a source off, which the rebuild turns on, included). With no list read, SettleList's changes or any move
+    // (review C9: the first launch after updating didn't save the rule's form then).
     public static bool SettleSaves(List<SettingsSaveMod> list, IReadOnlyList<(string Id, ModSource Source, bool On)>? read, IReadOnlyList<bool>? anchors = null,
         IReadOnlyDictionary<string, string>? heal = null)
     {
+        List<string> given = [.. list.Select(e => e.Id)];
         var changed = SettleList(list, read, anchors, heal);
-        return read == null ? changed : Reordered(list, read) || !list.Select(e => (e.Id, e.Source, e.IsEnabled)).SequenceEqual(read);
+        if (read == null)
+            return changed || !list.Select(e => e.Id).SequenceEqual(given);
+        return Reordered(list, read) || !list.Select(e => (e.Id, e.Source, e.IsEnabled)).SequenceEqual(read);
     }
 
     // Whether a saved list has its ids in another order than the list the launch read (LaunchGuard.ReadList): the game's

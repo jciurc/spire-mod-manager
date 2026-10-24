@@ -963,6 +963,13 @@ static partial class SelfTest
         Check("launch changes: none for the same setup, nor for a disabled mod that moved",
             LaunchGuard.Changes(working, working).Count == 0 && LaunchGuard.Changes(offMoved, working).Count == 0,
             Kinds(LaunchGuard.Changes(offMoved, working)));
+        // A mod from both sources, both on, its two entries the other way round (an update that flips which source the beta
+        // sorts, or a record from before the order rule): every mod ranks the same, so no order change (review C6).
+        static LaunchGuard.Entry Workshop(string id) => new(id, ModSource.SteamWorkshop, true, "1.0");
+        List<LaunchGuard.Entry> sourcesThen = [Mod(ModEntry.ModId), Mod("SmmTestLib"), Mod("SmmTestContent"), Workshop("SmmTestContent"), Mod("SmmTestUi")],
+            sourcesNow = [Mod(ModEntry.ModId), Mod("SmmTestLib"), Workshop("SmmTestContent"), Mod("SmmTestContent"), Mod("SmmTestUi")];
+        Check("launch changes: none for a mod from both sources whose two entries swapped places (every mod ranks the same)",
+            LaunchGuard.Changes(sourcesNow, sourcesThen).Count == 0, Kinds(LaunchGuard.Changes(sourcesNow, sourcesThen)));
 
         var dir = Path.Combine(outDir, "launch-guard");
         if (Directory.Exists(dir))
