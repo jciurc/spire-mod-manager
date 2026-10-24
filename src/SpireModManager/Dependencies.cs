@@ -264,6 +264,9 @@ static class Dependencies
     // uninstalled since still counts: the game's list keeps it, and nothing here tells it apart.
     public static List<Mod> NextOrder(HashSet<(string?, ModSource)> gameOff, IReadOnlyList<SettingsSaveMod> saved)
     {
+#if DEVTOOLS
+        TestNextOrders++;
+#endif
         var last = new Dictionary<string, int>();
         for (var i = 0; i < saved.Count; i++)
             last[saved[i].Id] = i;
@@ -276,13 +279,19 @@ static class Dependencies
         return Fixed(left, m => Read(m).Select(id => id != null && first.TryGetValue(id, out var dep) ? dep : null).OfType<Mod>());
     }
 
-    // Of these, in their order, the Mods the next launch reads, one per manifest: the game makes one per manifest file, so
-    // a folder with two of an id has two; where an update was read at a path while the game runs (AddedAtRuntime, after
-    // the Mods found there at launch), its last stands for them.
+    // Of these, in their order, one Mod per manifest, as the next launch reads them: the game makes one per manifest file,
+    // so a folder with two of an id has two; where an update was read at a path while the game runs (AddedAtRuntime, after
+    // the Mods found there at launch), its last stands for them, so a Workshop item read then with two manifests of the id
+    // counts once until the next launch (a limit, DESIGN.md).
     public static List<Mod> NextRead(IEnumerable<Mod> mods)
     {
         var all = mods.ToList();
         var updates = all.Where(m => m.state == ModLoadState.AddedAtRuntime).GroupBy(m => (m.manifest?.id, m.path)).ToDictionary(g => g.Key, g => g.Last());
         return [.. all.Where(m => updates.GetValueOrDefault((m.manifest?.id, m.path)) is not { } update || update == m)];
     }
+
+#if DEVTOOLS
+    // Self-test: how many times the next launch's order was worked out (a card's Found in: once at most).
+    public static int TestNextOrders { get; private set; }
+#endif
 }

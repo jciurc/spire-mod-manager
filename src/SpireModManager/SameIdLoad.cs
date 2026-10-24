@@ -452,10 +452,15 @@ static class SameIdLoad
             return;
         _settled = true;
         var read = LaunchGuard.ReadList;
-        if (SaveManager.Instance.SettingsSave.ModSettings is { } settings && (SettleList(settings.ModList, read) | Reordered(settings.ModList, read)))
+        if (SaveManager.Instance.SettingsSave.ModSettings is { } settings && SettleSaves(settings.ModList, read))
             SaveManager.Instance.SaveSettings(); // once, only when something changed or the rebuild isn't saved yet
         Check(ModManager.Mods);
     }
+
+    // Settle's changes to a saved list (SettleList), and whether it's to be saved: something changed, or its order isn't
+    // the one the launch read (Reordered).
+    public static bool SettleSaves(List<SettingsSaveMod> list, IReadOnlyList<(string Id, ModSource Source, bool On)>? read) =>
+        SettleList(list, read) | Reordered(list, read);
 
     // Whether a saved list has its ids in another order than the list the launch read (LaunchGuard.ReadList): the game's
     // rebuild, in the order that loaded, which it saves later, if at all (leaving the settings screen, remapping a

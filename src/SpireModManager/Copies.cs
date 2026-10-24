@@ -309,7 +309,8 @@ static class Copies
     // 2. the game's rule, on switches, not ticks (it can't see copies_off), with its own reading of versions
     //    (ModManager.RemoveDisabledMods): stable takes out every Workshop copy beside a local one; the beta compares each
     //    Workshop copy with the first local copy it read (FirstRead), taking out the local one where the Workshop version
-    //    is higher, else the Workshop one (a tie, or an unknown version);
+    //    is higher, else the Workshop one (a tie, or an unknown version); here the local copy's version is its newest
+    //    manifest's, where the game takes the first manifest it read (a limit, DESIGN.md);
     // 3. this mod, or an id the launch couldn't choose for (SameIdLoad.Unchosen): the game's own choice, the copy that
     //    loaded this session if the next launch can load it again (the rule leaves it, or the launch brought it back),
     //    else the first left;
@@ -345,9 +346,6 @@ static class Copies
         // leaves.
         Mod GameChoice() => on.FirstOrDefault(m => m.state == ModLoadState.Loaded && (gameLeft.Contains(m)
             || id != ModEntry.ModId && SameIdLoad.Plan.GetValueOrDefault(id)?.Loads is { } revived && CopyOf(revived) == CopyOf(m))) ?? gameLeft[0];
-        var list = saved ?? SaveManager.Instance.SettingsSave.ModSettings?.ModList ?? [];
-        List<Mod>? next = null;
-        List<Mod> Order() => next ??= NextOrderOf(gameOff, list);
         Mod loads;
         Mod? blocked = null;
         string? late = null;
@@ -374,6 +372,9 @@ static class Copies
             else
             {
                 candidates = [.. ticked.Where(m => m.modSource == firstTicked.modSource)];
+                var list = saved ?? SaveManager.Instance.SettingsSave.ModSettings?.ModList ?? [];
+                List<Mod>? next = null;
+                List<Mod> Order() => next ??= NextOrderOf(gameOff, list);
                 IEnumerable<string> TieOrdered(IEnumerable<string> tied) => TieOrder(tied, ticks.TieList(id), ticks.BeforeOf(id));
                 // The mods the next launch has still to load that need the id, worked out only where asked: with two or
                 // more candidates (one needing a minimum version: Best ranks a copy the game can't read below one it can),

@@ -656,8 +656,8 @@ static partial class SelfTest
     // Test Framework off; then none that fits (the tie order), a fallback below a minimum version (at it, a needer off, a
     // version the game can't read), the fallback's copies still to load first, a needer the next launch brings back from
     // the game's rule, on the beta a copy's two manifests in two folders and a fallback with both sources left, a copy's
-    // two manifests in one folder, who needs a minimum version, a needer's update (installed once, and twice), and a
-    // fallback where a mod needs a minimum version the game can't read.
+    // two manifests in one folder (and a needer's), who needs a minimum version, a needer's update (installed once, and
+    // twice), and a fallback where a mod needs a minimum version the game can't read.
     static void TestCopyRule(string outDir)
     {
         var beta = Compat.WorkshopBeatsOlderLocal;
@@ -863,6 +863,25 @@ static partial class SelfTest
         {
             SameIdLoad.TestResult(x, null);
         }
+        // The limit (DESIGN.md): an id the launch couldn't choose for, the page names the copy that loaded, C (2.0, needing
+        // D), though the saved list has D after the id since, so the next launch's sort puts A first and A loads.
+        x = Id();
+        SameIdLoad.TestResult(x, SameIdLoad.Result.NotTaken);
+        try
+        {
+            var dep = $"{x}D";
+            List<SettingsSaveMod> saved = [Entry(x), Entry(x), Entry(dep)];
+            var page = Case([Made(x, "C", ModLoadState.Loaded, version: "2.0.0", needs: [dep]), L(x, "A", "1.0.0")], extra: [Made(dep, "D")], saved: saved, launch: false);
+            List<Mod> readOrder = [L(x, "A", "1.0.0"), Made(x, "C", version: "2.0.0", needs: [dep]), Made(dep, "D")];
+            GameRule(readOrder, []);
+            var game = SortModList(readOrder, saved).FirstOrDefault(m => m.manifest?.id == x);
+            Check("the rule, ... the limit: an id the launch couldn't choose for, D listed after it since: the page names the copy that loaded, C (A Other), "
+                + "where the game's sort puts A first", page is ("C", "C", "A Other", null) && Shown(game) == "A", $"the page {page}; the game's sort {Shown(game)}");
+        }
+        finally
+        {
+            SameIdLoad.TestResult(x, null);
+        }
         if (beta)
         {
             // At the launch, as the game leaves them (sorted, its rule played: W1 and L set aside after the mods still to
@@ -884,6 +903,24 @@ static partial class SelfTest
             // the ticked W1, not W2 (off, first in the list since the swap), so a Restore can't turn W2 back on.
             var recorded = SameIdLoad.LoadsAtLaunch(launch, plan).GetValueOrDefault((x, ModSource.SteamWorkshop));
             Check("the rule, ... the launch record's Workshop copy: W1, the one Apply didn't set aside, not W2 (off)", recorded == "w:101", recorded ?? "none");
+            // An id the launch couldn't choose for whose copy it brought back: L 2.0 loaded, brought back from the game's rule,
+            // which leaves W2 3.0 (not ticked, on through W1's switch), though the self-check found the plan not taken. The
+            // game's own choice is still L, the copy that loaded, not W2, the first the rule leaves.
+            x = Id();
+            SameIdLoad.TestResult(x, SameIdLoad.Result.NotTaken);
+            try
+            {
+                var (back, low, beats) = (Made(x, "L", ModLoadState.Loaded, version: "2.0.0"), Made(x, "W101", ModLoadState.DisabledDuplicate, item: 101),
+                    Made(x, "W102", ModLoadState.DisabledDuplicate, item: 102, version: "3.0.0"));
+                SameIdLoad.TestPlan(x, new SameIdLoad.Entry(back, [beats, low], true, 2, 1, SameIdLoad.Reason.None, 0, Order: ["w:102", "l:L", "w:101"]));
+                Row("an id the launch couldn't choose for, its copy brought back from the game's rule (L 2.0; W2 3.0, not ticked, left by the rule): L, the "
+                    + "copy that loaded", Case([back, low, beats], off: ["w:102"], record: ["l:L", "w:101", "w:102"], launch: false), "L", "101 Higher");
+            }
+            finally
+            {
+                SameIdLoad.TestPlan(x, null);
+                SameIdLoad.TestResult(x, null);
+            }
         }
         x = Id();
         Row("two local copies and a newer Workshop one, all ticked" + (beta ? ": the game takes out the first local copy read; the first ticked left decides the source" : ""),
@@ -1037,8 +1074,8 @@ static partial class SelfTest
         }
         // The saved list as the game rebuilds it from a launch's list, in the order that loaded (Settle saves it; a mod
         // installed since has no entry yet), with the switches now.
-        static List<SettingsSaveMod> Rebuilt(IEnumerable<Mod> launched, HashSet<(string?, ModSource)> off) => [.. launched.Where(m => m.state != ModLoadState.AddedAtRuntime)
-            .Select(m => new SettingsSaveMod(m) { IsEnabled = !off.Contains((m.manifest?.id, m.modSource)) })];
+        static List<SettingsSaveMod> Rebuilt(IEnumerable<Mod> launched, HashSet<(string?, ModSource)> off) =>
+            [.. launched.Where(m => m.state != ModLoadState.AddedAtRuntime).Select(m => new SettingsSaveMod(m) { IsEnabled = !off.Contains((m.manifest?.id, m.modSource)) })];
         // The next launch, made up as the game makes it: fresh mods in the order it reads them (read, ours among them), the
         // switches off Disabled and its local-vs-Workshop rule played (GameRule), sorted from the saved list (SortModList),
         // then Run on that: the copy of the id that loads, the plan, the made-up ids the sort has before the id's first slot,
@@ -1451,7 +1488,8 @@ static partial class SelfTest
         {
             var late = $"{x}E";
             Row("a blocked copy's fallback: the copies still to load before one the game's rule set aside, L3",
-                Case([Made(x, "L1", version: "3.0.0", needs: [late]), L(x, "L2", "1.0.0"), L(x, "L3", "1.5.0"), W(x, 601, "2.0.0")], record: ["w:601", "l:L1", "l:L2", "l:L3"], extra: [Made($"{x}User", "User", needs: [x]), Made(late, "E")],
+                Case([Made(x, "L1", version: "3.0.0", needs: [late]), L(x, "L2", "1.0.0"), L(x, "L3", "1.5.0"), W(x, 601, "2.0.0")], record: ["w:601", "l:L1", "l:L2", "l:L3"],
+                    extra: [Made($"{x}User", "User", needs: [x]), Made(late, "E")],
                     saved: [Entry(x), Entry(x), Entry(x), Entry(x, ModSource.SteamWorkshop), Entry($"{x}User"), Entry(late)]),
                 "L3", beta ? "601 Other, L1 Blocked, L2 Other" : "601 Local, L1 Blocked, L2 Other");
         }
@@ -1568,6 +1606,16 @@ static partial class SelfTest
                 + "page does: W, brought back", Case([L(x, "L", "1.0.0"), Made(x, "L", version: "2.0.0", needs: [dep]), W(x, 701, "0.5.0")],
                     extra: [Made($"{x}User", "User", needs: [x]), Made(dep, "D")],
                     saved: [Entry(x), Entry(x), Entry(x, ModSource.SteamWorkshop), Entry($"{x}User"), Entry(dep)]), "701", "L Blocked");
+        }
+        // ... and a mod needing the id with two manifests in one folder (U, installed once: U1 needing it, U2 2.0 not), both
+        // of which the next launch reads: it counts, so C (2.0, needing D, listed after the id) is blocked and A loads, on the
+        // page and at the launch. Fails with Needers' paths folded to their last Mod (8ff2e3d's): C.
+        x = Id();
+        {
+            var dep = $"{x}D";
+            Row("a mod needing the id with two manifests in one folder, one of them needing it: counted, so the blocked copy's fallback",
+                Case([L(x, "A", "1.0.0"), Made(x, "C", version: "2.0.0", needs: [dep])], extra: [Made($"{x}U", "U", needs: [x]), Made($"{x}U", "U", version: "2.0.0"),
+                    Made(dep, "D")], saved: [Entry(x), Entry(x), Entry($"{x}U"), Entry(dep)]), "A", "C Blocked");
         }
         // The fallback's pick by the game's reading of versions wherever a mod still to load needs the id with a minimum
         // version, as Run has it, though the game can't read that minimum ("1.2": the mod fails whatever loads): L with two
@@ -2240,9 +2288,12 @@ static partial class SelfTest
         List<(string, ModSource, bool)> readList = [(ModEntry.ModId, ModSource.ModsDirectory, true), ("SmmSameIdA", ModSource.ModsDirectory, true),
             ("SmmSameIdB", ModSource.ModsDirectory, true)];
         List<SettingsSaveMod> Rebuild(params string[] ids) => [.. ids.Select(id => E(id, ModSource.ModsDirectory, true))];
-        Check("... the rebuilt list in another order than the launch read: saved for that alone (Reordered); in the same order, or with none read: not",
+        Check("... the rebuilt list in another order than the launch read: saved for that alone (Reordered, and Settle's verdict with nothing else to "
+            + "change); in the same order, or with none read: not",
             SameIdLoad.Reordered(Rebuild(ModEntry.ModId, "SmmSameIdB", "SmmSameIdA"), readList) && !SameIdLoad.Reordered(Rebuild(ModEntry.ModId, "SmmSameIdA", "SmmSameIdB"), readList)
-            && !SameIdLoad.Reordered(Rebuild("SmmSameIdB", "SmmSameIdA"), null));
+            && !SameIdLoad.Reordered(Rebuild("SmmSameIdB", "SmmSameIdA"), null)
+            && SameIdLoad.SettleSaves(Rebuild(ModEntry.ModId, "SmmSameIdB", "SmmSameIdA"), readList)
+            && !SameIdLoad.SettleSaves(Rebuild(ModEntry.ModId, "SmmSameIdA", "SmmSameIdB"), readList));
         // A copy new this launch (its source not in the list the game read): it keeps what the rebuild gave it (the
         // id's first entry's, as the game does without us), and nothing else changes.
         List<SettingsSaveMod> withNew = [E(ModEntry.ModId, ModSource.ModsDirectory, true), E(X, ModSource.ModsDirectory, false), E(X, ModSource.SteamWorkshop, false)];

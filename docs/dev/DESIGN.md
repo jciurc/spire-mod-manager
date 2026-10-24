@@ -61,11 +61,20 @@ Ease of use is the heart of the mod, not just its utility.
     wherever Steam puts it. A mod uninstalled since still counts, as the game's list keeps it.
   - A copy in a dependency cycle, or waiting on one, can make the game fail every copy of the id (its cycle check goes
     by id), whatever the page and the launch choose.
-  - A copy that needs a mod installed from both sources stays blocked at every launch. The game's rebuild lists that
-    mod's copy it took out (off, or set aside by its local-vs-Workshop rule) after all the rest, and it ranks an id by
-    its last entry, so the mod sorts after the slot each time. The page and the launch agree on the copy that loads
-    instead, and the blocked copy's line says why. Keeping such a mod where it loaded in the order is planned
-    separately.
+  - An id the launch couldn't choose for (the canary failed, or the self-check found the choice not taken): the page
+    names the copy that loaded. An order change since (a mod it needs moved after the id) can make the next launch load
+    another.
+  - A Workshop item with two manifests of one id, read while the game runs (installed or updated), counts once until
+    the next launch. That launch reads both and so checks whether the copy can take the id's first slot, where the page
+    doesn't, so the page can name a copy that launch blocks.
+  - On the beta, the page compares a Workshop copy with the local copy's newest manifest, where the game compares it
+    with the first it read. They differ only where a local folder has two manifests of the id at different versions.
+- A copy that needs a mod installed from both sources is blocked at every launch, and so is one that needs a mod that
+  waits on such a mod. Here the page and the launch agree. The game's rebuild lists that mod's copy it took out (off,
+  or set aside by its local-vs-Workshop rule) after all the rest, and it ranks an id by its last entry, so the mod
+  sorts after the slot each time. The blocked copy's line says why. A Load Order move clears it for one launch at most,
+  and the menu dot then shows after that launch, as the page names the copy that loads instead. Keeping such a mod
+  where it loaded in the order is planned separately.
 - Profiles key mods by id and source, like `mod_list` (plus, for copies from one source, which are ticked). A shared
   list's rows set a mod installed once by its id; where its id is installed more than once, a row with a Workshop
   link sets that copy alone. A newly installed mod joins the active profile, enabled.
