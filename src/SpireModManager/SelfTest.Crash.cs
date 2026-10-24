@@ -1009,7 +1009,8 @@ static partial class SelfTest
         var (noTarget, notStatic) = (Thrown(() => Fixes.Apply(typeof(FixesNoTarget))), Thrown(() => Ui.Apply(typeof(UiNotStatic))));
         var throwSite = OriginalOf(new System.Diagnostics.StackTrace(refusal, false).GetFrame(0)?.GetMethod());
         var replacement = new Harmony(FixesId).Patch(RunMethod, prefix: By(typeof(FixesPatch), nameof(FixesPatch.Prefix)));
-        static bool CalledBy(Culprits.PatchAttempt? attempt, Type caller) => attempt?.Callers?.Any(f => f.GetMethod()?.DeclaringType == caller) == true;
+        // A replacement's frame as its original (an earlier check patched Fixes.Install, and Harmony's replacement stays)
+        static bool CalledBy(Culprits.PatchAttempt? attempt, Type caller) => attempt?.Callers?.Any(f => OriginalOf(f.GetMethod())?.DeclaringType == caller) == true;
         Check("the record of a failed patch call: void finalizers first in line on Harmony's patch call, a patch class's and its constructor; a refused "
             + "call's exception Harmony's own, with Harmony.Patch's patch methods and its original (a failed build's too), not a build, and the stack that "
             + "called it; a failed build's, a build with no transpiler's throw; PatchAll's with its class, refused in its Patch or as the class is read; a "
@@ -1024,7 +1025,9 @@ static partial class SelfTest
             $"finalizers {string.Join(", ", finalizers.Select(f => f?.ToString() ?? "none"))}; {refusal.GetType().Name} from {throwSite?.DeclaringType?.Name}.{throwSite?.Name}: "
             + $"{Attempt(refusal)?.Methods.FirstOrDefault()?.Name} on {Attempt(refusal)?.Original?.ReflectedType?.Name}.{Attempt(refusal)?.Original?.Name}; failed build on "
             + $"{Attempt(bad)?.Original?.Name}; no target {noTarget.GetType().Name} {Attempt(noTarget)?.Class?.Name}; not static {notStatic.GetType().Name} "
-            + $"{Attempt(notStatic)?.Class?.Name}; replacement {replacement != null}");
+            + $"{Attempt(notStatic)?.Class?.Name}; replacement {replacement != null}; refusal built {Attempt(refusal)?.Built}, transpiler {Attempt(refusal)?.Transpiler?.Count}, "
+            + $"called by Test Fixes {CalledBy(Attempt(refusal), typeof(Fixes))}; failed build built {Attempt(bad)?.Built}, transpiler {Attempt(bad)?.Transpiler?.Count}, "
+            + $"called by Test Fixes {CalledBy(Attempt(bad), typeof(Fixes))}");
         return Task.CompletedTask;
     }
 

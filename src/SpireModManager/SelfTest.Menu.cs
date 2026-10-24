@@ -843,8 +843,8 @@ static partial class SelfTest
         {
             var at = top.GetGlobalRect().GetCenter();
             MouseButtonAt(menu, MouseButton.Left, true, at);
+            await Wait(menu, 0.1); // the game's input takes its events in at the next frame
             (landed, mouse) = (Landed(menu, at), menu.GetViewport().GetMousePosition());
-            await Wait(menu, 0.1);
             MouseButtonAt(menu, MouseButton.Left, false, at);
             await Wait(menu, 0.2);
         }

@@ -1268,7 +1268,7 @@ static partial class SelfTest
     }
 
     // Headless, whether the mouse is where a MouseButtonAt sent it, in the viewport's terms (it reads the game's input,
-    // which a button's event sets). With a window it's the player's: true.
+    // which a button's event sets once it's taken in, at the next frame). With a window it's the player's: true.
     static bool Landed(Node node, Vector2 at) => DisplayServer.GetName() != "headless" || node.GetViewport().GetMousePosition().DistanceTo(at) < 1;
 
     static readonly Vector2 MousePut = new(5, 5);
