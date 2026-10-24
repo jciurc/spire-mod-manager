@@ -171,8 +171,12 @@ static class SettingsLink
         {
             Fail(mod, target, e is TargetInvocationException { InnerException: { } inner } ? inner.Message : e.Message);
         }
-        if (Found.GetValueOrDefault(key) == null || Failed.Contains(key))
-            ModDetails.PlaceSettings(container, mod); // gone (no button) or greyed
+        finally
+        {
+            // Gone (none now, as when its library forgot it after the panel filled): no button. Didn't open: greyed.
+            if (Found.GetValueOrDefault(key) == null || Failed.Contains(key))
+                ModDetails.PlaceSettings(container, mod);
+        }
     }
 
     // The screen the panel is on (our Modding page).

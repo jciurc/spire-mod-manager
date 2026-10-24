@@ -153,8 +153,14 @@ static partial class SelfTest
             else
                 Results.Add("SKIP Settings: the mod list changed under it: no fixture mod");
 
-            // RitsuLib's own page for ours: its overlay over our page, which stays shown but takes no keys.
+            // Gone since the panel filled (its library forgot it): a press takes the button away, and nothing opens.
             BaseRegistry.Clear();
+            Press();
+            await Wait(menu, 0.3);
+            Check("Settings: a page gone since the panel filled: a press takes the button away", Button() is not { Visible: true }
+                && stack.Peek() == screen, $"shown {Button()?.Visible}, on top {stack.Peek()?.GetType().Name}");
+
+            // RitsuLib's own page for ours: its overlay over our page, which stays shown but takes no keys.
             RitsuRegistry.Register(new RitsuPage { ModId = ModEntry.ModId, Id = "main", SourceAssembly = ours });
             info.Fill(self);
             await Wait(menu, 0.3);
