@@ -144,11 +144,12 @@ static partial class SelfTest
             await Step(() => TestMenuButtonMove(menu, outDir));
             await Step(() => TestBetterModMenuImport(outDir));
             await Step(() => TestMenuButtonRelaunch(menu, outDir)); // before the Modding page opens: the check's fixes without it
+            var mouseAt = await MouseInView(menu); // before the most popups in a row
             await Step(() => TestLaunchGuard(menu, outDir));
             await Step(() => TestCrashOffer(menu, outDir));
             await Step(() => TestCrashCulprit(menu, outDir)); // who stopped the start (Culprits), on real failures (SelfTest.Crash.cs)
             await Step(() => TestCrashTurnOff(menu, outDir)); // what its answers write, and the notice after (SelfTest.TurnOff.cs)
-            await Step(() => TestMouseInView(menu)); // after the most popups in a row
+            await Step(() => TestMouseKept(menu, mouseAt));
             await Step(() => TestSameIdCanary()); // which copy of a mod installed twice loads (SameIdLoad)
             await Step(() => TestCopyRule(outDir)); // the rule every view and the launch share (Copies.Next), on made-up copies
             await Step(() => TestSameIdTie());
@@ -1247,18 +1248,30 @@ static partial class SelfTest
     // A link's press (the page link at the top).
     static void Click(BaseButton button) => button.EmitSignal(BaseButton.SignalName.Pressed);
 
-    // The mouse where a menu can open at it after the crash tests' many popups: finite and inside the viewport
-    // (HeadlessMousePatch). In a window run it's the player's, anywhere.
-    static void TestMouseInView(Node node)
+    // The mouse put at a point inside the viewport (sent in the window's terms, as the game's input reads a motion) before
+    // the crash tests' many popups, where it was, for TestMouseKept. Headless only: with a window it's the player's.
+    static async Task<Vector2?> MouseInView(Node node)
     {
         if (DisplayServer.GetName() != "headless")
+            return null;
+        var at = node.GetTree().Root.GetFinalTransform() * new Vector2(5, 5);
+        Input.ParseInputEvent(new InputEventMouseMotion { Position = at, GlobalPosition = at });
+        await node.ToSignal(node.GetTree(), SceneTree.SignalName.ProcessFrame); // taken in
+        return node.GetViewport().GetMousePosition();
+    }
+
+    // After the crash tests' popups the mouse is where it was put, inside the viewport, where a menu can open at it: the
+    // game's re-send at each popup no longer moves it (HeadlessMousePatch)
+    static void TestMouseKept(Node node, Vector2? before)
+    {
+        if (before is not { } put)
         {
-            Results.Add("SKIP the mouse after the crash tests' popups: with a window it's the player's");
+            Results.Add("SKIP the mouse across the crash tests' popups: with a window it's the player's");
             return;
         }
         var (at, view) = (node.GetViewport().GetMousePosition(), node.GetViewport().GetVisibleRect());
-        Check("the mouse after the crash tests' popups is where a menu can open at it: finite, inside the viewport",
-            float.IsFinite(at.X) && float.IsFinite(at.Y) && view.HasPoint(at), $"{at} in {view}");
+        Check("the mouse across the crash tests' popups stays where it was put, finite and inside the viewport",
+            float.IsFinite(at.X) && float.IsFinite(at.Y) && view.HasPoint(at) && at.DistanceTo(put) < 1, $"put at {put}, now {at} in {view}");
     }
 
     // A real mouse click at the control's centre, through the game's input like a player's: catches anything
