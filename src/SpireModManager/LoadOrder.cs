@@ -145,15 +145,18 @@ static class LoadOrder
         MovedSince(_loadedOrder ?? [], NoCopyOrder, mods).ToDictionary(m => m.Mod, m => m.Before);
 
     // These copies whose place changed since a saved list (and the copy order it had): (copy, place then, now), 1-based
-    // among them as Load Order numbers its rows, in load order now. Copies of one id and source that have only traded
-    // their key's places are no move: the list the game reads is the same there, and which of them loads goes by the
-    // copies (Copies.Next), not the rows, so a relaunch would change nothing (an undo or a drag back can leave them so).
+    // among them as Load Order numbers its rows, in load order now; ranked among the copies placed in both, so an entry
+    // made since (Add puts one beside its mod's, mid-list) moves no other. Copies of one id that have only traded their
+    // id's places are no move: the game ranks them by the id alike, and which of them loads goes by the copies
+    // (Copies.Next), not the rows, so a relaunch would change nothing (an undo, a drop among a mod's own rows, or a drag
+    // back can leave them so).
     public static List<(Mod Mod, int Before, int After)> MovedSince(IEnumerable<(string? Id, ModSource Source)> saved,
         IReadOnlyDictionary<(string?, ModSource), IReadOnlyList<string>> copyOrder, IEnumerable<Mod> mods)
     {
         var wanted = mods.ToList();
-        var (before, after) = (Ranks(Places(saved, wanted, copyOrder)), Ranks(Places(wanted)));
-        var traded = wanted.GroupBy(m => (m.manifest?.id, m.modSource))
+        var (then, now) = (Places(saved, wanted, copyOrder), Places(wanted));
+        var (before, after) = (Ranks(then.Where(p => now.ContainsKey(p.Key)).ToDictionary()), Ranks(now.Where(p => then.ContainsKey(p.Key)).ToDictionary()));
+        var traded = wanted.GroupBy(m => m.manifest?.id)
             .Where(g => g.Select(Copies.CopyOf).Distinct().Count() > 1
                 && g.Where(before.ContainsKey).Select(m => before[m]).ToHashSet().SetEquals(g.Where(after.ContainsKey).Select(m => after[m])))
             .SelectMany(g => g).ToHashSet();
@@ -796,13 +799,89 @@ static class LoadOrder
         return true;
     }
 
+    // The order rule (DESIGN.md, Load order): each id's entries in one unbroken run, in the order they had, where its last
+    // anchor is (an entry of a copy the game sorts; an id with none, where its first entry is), so the id ranks where
+    // that anchor ranks. The game ranks an id by its last entry, and its rebuild lists the copies it took out (off, or set
+    // aside by its local-vs-Workshop rule) after all the rest: without this, a mod installed from both sources would rank
+    // last at every launch. anchors[i]: entry i is one (Anchors, SameIdLoad.LaunchAnchors). True if moved.
+    public static bool Normalize(List<SettingsSaveMod> list, IReadOnlyList<bool> anchors)
+    {
+        if (Normalized([.. list.Select(e => e.Id)], anchors) is not { } order)
+            return false;
+        var was = list.ToList();
+        list.Clear();
+        list.AddRange(order.Select(i => was[i]));
+        return true;
+    }
+
+    // The same as an order of indices (null: nothing moves), for the launch record's entries too (LaunchGuard.Begin). Two
+    // passes: each id's place (its last anchor, else its first entry), then each id's run there.
+    public static int[]? Normalized(IReadOnlyList<string> ids, IReadOnlyList<bool> anchors)
+    {
+        var runs = new Dictionary<string, List<int>>();
+        var place = new Dictionary<string, int>();
+        for (var i = 0; i < ids.Count; i++)
+        {
+            (runs.TryGetValue(ids[i], out var run) ? run : runs[ids[i]] = []).Add(i);
+            if (anchors[i] || !place.ContainsKey(ids[i]))
+                place[ids[i]] = i;
+        }
+        var order = new int[ids.Count];
+        var (n, moved) = (0, false);
+        for (var i = 0; i < ids.Count; i++)
+            if (place[ids[i]] == i)
+                foreach (var k in runs[ids[i]])
+                {
+                    moved |= k != n;
+                    order[n++] = k;
+                }
+        return moved ? order : null;
+    }
+
+    // Whether every id's entries are one run already: then the rule moves nothing, whatever the anchors.
+    public static bool Contiguous(IReadOnlyList<string> ids)
+    {
+        var ended = new HashSet<string>();
+        for (var i = 1; i < ids.Count; i++)
+        {
+            if (ids[i] == ids[i - 1])
+                continue;
+            ended.Add(ids[i - 1]);
+            if (ended.Contains(ids[i]))
+                return false;
+        }
+        return true;
+    }
+
+    // The session's anchors: each entry whose source has a copy the next launch sorts (installed, this session's
+    // arrivals too, its switch on in this list, not taken out by the game's local-vs-Workshop rule:
+    // Dependencies.NextSorted). They need no ticks and no order, so they hold before the main menu too.
+    public static bool[] Anchors(IReadOnlyList<SettingsSaveMod> list)
+    {
+        var sorted = Dependencies.NextSorted(Dependencies.SavedOff(list)).Select(m => (m.manifest?.id, m.modSource)).ToHashSet();
+        return [.. list.Select(e => sorted.Contains((e.Id, e.Source)))];
+    }
+
+    // The rule by the session's anchors, worked out only where some id's entries aren't one run (after the first main
+    // menu, a list another mod or the game's own page wrote). True if moved.
+    public static bool NormalizeBySource(List<SettingsSaveMod> list) => !Contiguous([.. list.Select(e => e.Id)]) && Normalize(list, Anchors(list));
+
+    // A new entry, its id's rank kept: right after the id's last entry (appended, it would rank the id last, though the
+    // game sorts a copy with no entry at its id's rank); one the list doesn't have, at the end.
+    public static void Add(List<SettingsSaveMod> list, SettingsSaveMod entry)
+    {
+        var last = list.FindLastIndex(e => e.Id == entry.Id);
+        list.Insert(last < 0 ? list.Count : last + 1, entry);
+    }
+
     // How many rows of ours lead the list (one per installed copy): pinned there.
     static int Pinned(IList<NModMenuRow> rows) => rows.TakeWhile(r => r.Mod?.manifest?.id == ModEntry.ModId).Count();
 
     static bool Ours(NModMenuRow row) => row.Mod?.manifest?.id == ModEntry.ModId;
 
-    // Writes a whole new order: installed mods as given (ours first, OursFirst), then entries for mods that aren't
-    // installed.
+    // Writes a whole new order: installed mods as given (ours first, OursFirst), then the other entries (mods that aren't
+    // installed, a second entry of one that is) each right after its id's (Add: at the end, one of a source not installed
+    // of a mod that is would rank the mod last), in the order rule's form (NormalizeBySource; the moves keep it already).
     static void Save(List<Mod> mods)
     {
         if (SaveManager.Instance.SettingsSave.ModSettings is not { } settings)
@@ -824,9 +903,12 @@ static class LoadOrder
             : known.TryGetValue((m.manifest?.id, m.modSource), out var twin) ? new SettingsSaveMod(m) { IsEnabled = twin.IsEnabled }
             : new SettingsSaveMod(m)).ToList();
         var kept = entries.ToHashSet();
-        entries.AddRange(list.Where(e => !kept.Contains(e)));
+        var others = list.Where(e => !kept.Contains(e)).ToList();
         list.Clear();
         list.AddRange(entries);
+        foreach (var entry in others)
+            Add(list, entry);
+        NormalizeBySource(list);
         OursFirst(list);
         // Which copy took which of its key's entries, for Places to read them back so.
         foreach (var group in mods.GroupBy(m => (m.manifest?.id, m.modSource)))

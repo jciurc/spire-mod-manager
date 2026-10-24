@@ -21,8 +21,9 @@ namespace SpireModManager;
 // source the highest version; where that copy can't take the id's first slot, Fallback), sets every other copy still to
 // come to DisabledDuplicate, the game's own state for its duplicates, and swaps the chosen copy into the id's first slot,
 // where mods that need the id look for it. Settle, at the first main menu, repairs what the game's rebuilt list coupled
-// by id, keeps our entries first (so we load before every copy next launch) and checks the choice was taken. Anything
-// unexpected: no flip, a warning, and the game's own behaviour.
+// by id, puts it in the order rule's form (LoadOrder.Normalize, then Heal), keeps our entries first (so we load before
+// every copy next launch) and checks the choice was taken. Anything unexpected: no flip, a warning, and the game's own
+// behaviour.
 static class SameIdLoad
 {
     // Why the copy chosen doesn't load this launch: a copy of the id sorted before us (the game decided it already), or a
@@ -33,7 +34,9 @@ static class SameIdLoad
     // What Apply did for one id installed more than once. Loads: the copy that loads, or that the game tries; SetAside:
     // the copies Apply set aside; Swapped: the copy that loads moved from slot From to To (the id's first); Why: why the
     // copy chosen doesn't load this launch; Blocked and Late: for DependencyAfterSlot, the copy chosen (CopyOf) and what
-    // it needs that loads after the slot (the page works out the next launch's own, Copies.Next); Order: the id's copies
+    // it needs that loads after the slot (the page works out the next launch's own, Copies.Next); Late too where the copy
+    // chosen, brought back from the game's rule, loads in its own place behind what it waits for (no mod still to load
+    // needs the id, so no swap): both for Settle's heal (Heal); Order: the id's copies
     // (CopyOf) in the list's order before Apply swapped any, which the page takes as the next launch's (its sort ranks
     // them by id alike, so our swap doesn't carry over) and reads the copies in.
     public record Entry(Mod? Loads, IReadOnlyList<Mod> SetAside, bool Swapped, int From, int To, Reason Why, double Ms, string? Blocked = null, string? Late = null,
@@ -56,6 +59,93 @@ static class SameIdLoad
     // Where our Init found itself among the mods, and the first still to load there (the canary's look).
     public static (int At, string? Id) Self { get; private set; } = (-1, null);
 
+    // Where the game's sort ended this launch, read at Apply before Run changes any state (SortedOf); null: not read.
+    public static (int Count, int Tail)? Sorted { get; private set; }
+
+    // Of the game's list as its load loop has it: the list's length, and where the mods it took out start (after the
+    // last mod it sorted: None, Loaded or Failed; it lists those it took out, off or set aside by its local-vs-Workshop
+    // rule, after all the rest, and its rebuild keeps that order). Null where one it took out comes before that: not
+    // the game's sorted-then-taken-out.
+    public static (int Count, int Tail)? SortedOf(IReadOnlyList<Mod> mods)
+    {
+        static bool Sorts(Mod m) => m.state is ModLoadState.None or ModLoadState.Loaded or ModLoadState.Failed;
+        var tail = 0;
+        for (var i = 0; i < mods.Count; i++)
+            if (Sorts(mods[i]))
+                tail = i + 1;
+        return mods.Take(tail).All(m => Sorts(m) || m.state == ModLoadState.AddedAtRuntime) ? (mods.Count, tail) : null;
+    }
+
+    // The order rule's anchors at the first main menu (LoadOrder.Normalize), by where the game put each mod this launch:
+    // an entry of a mod it sorted (before the tail sorted has) is one; one it took out, one read while the game runs
+    // (AddedAtRuntime) and one past the count Apply read are not. Null where nothing was read, or the list doesn't line up
+    // with the mods up to that count (another mod changed it).
+    public static bool[]? LaunchAnchors(IReadOnlyList<Mod> mods, IReadOnlyList<(string Id, ModSource Source)> list, (int Count, int Tail)? sorted)
+    {
+        if (sorted is not { } at || list.Count < at.Count || mods.Count < at.Count)
+            return null;
+        for (var i = 0; i < at.Count; i++)
+            if ((mods[i].manifest?.id ?? "") != (list[i].Id ?? "") || mods[i].modSource != list[i].Source)
+                return null;
+        return [.. list.Select((_, i) => i < at.Tail && mods[i].state != ModLoadState.AddedAtRuntime)];
+    }
+
+    // Whether this launch's list lined up with the game's mods at the first main menu (LaunchAnchors); null before.
+    public static bool? LinedUp { get; private set; }
+
+    // The anchors for the list in memory now: by where the game put each mod (LaunchAnchors); before the game has rebuilt
+    // the list (it can quit while it loads), or where it doesn't line up, by which sources the next launch sorts
+    // (LoadOrder.Anchors), the second with a warning.
+    public static IReadOnlyList<bool> AnchorsNow(List<SettingsSaveMod> list)
+    {
+        if (ModManager.State != ModManagerState.Initialized)
+            return LoadOrder.Anchors(list);
+        if (LaunchAnchors(ModManager.Mods, [.. list.Select(e => (e.Id, e.Source))], Sorted) is { } anchors)
+        {
+            LinedUp = true;
+            return anchors;
+        }
+        LinedUp = false;
+        Log.Warn($"[{ModEntry.ModId}] Load order: " + (Sorted == null ? "where the game put each mod this launch wasn't read"
+            : "the game's mod list at the main menu doesn't line up with its mods (another mod changed it?)")
+            + ", so the copies it took out are placed by which sources the next launch sorts");
+        return LoadOrder.Anchors(list);
+    }
+
+    // The plan's ids to heal, each with what its copy waits for (Entry.Late); this launch's, or a given one's (the
+    // self-test's).
+    public static Dictionary<string, string> Heals() => Heals(_plan);
+
+    public static Dictionary<string, string> Heals(IReadOnlyDictionary<string, Entry> plan) =>
+        plan.Where(p => p.Value.Late != null).ToDictionary(p => p.Key, p => p.Value.Late ?? "");
+
+    // Settle's heal: each id whose copy this launch blocked, or brought back in its own place behind what it waits for
+    // (late: the id, and that mod), its run moved right after that mod's whole run, where the game's sort would have put
+    // the copy had it taken part. The next launch then ranks the id after it, and the copy can take the id's first slot.
+    // Only an id ranked before what it waits for moves, and one whose mod waits too moves after that one does. The ids
+    // moved.
+    public static List<string> Heal(List<SettingsSaveMod> list, IReadOnlyDictionary<string, string> late)
+    {
+        var moved = new List<string>();
+        var done = new HashSet<string>();
+        void Place(string id)
+        {
+            if (!done.Add(id) || !late.TryGetValue(id, out var after))
+                return;
+            Place(after);
+            var (last, to) = (list.FindLastIndex(e => e.Id == id), list.FindLastIndex(e => e.Id == after));
+            if (last < 0 || last > to)
+                return;
+            var run = list.Where(e => e.Id == id).ToList();
+            list.RemoveAll(e => e.Id == id);
+            list.InsertRange(list.FindLastIndex(e => e.Id == after) + 1, run);
+            moved.Add(id);
+        }
+        foreach (var id in late.Keys)
+            Place(id);
+        return moved;
+    }
+
     // First thing in ModEntry.Init, in a try there: a renamed game member throws at the call. Only memory changes, plus
     // one read of our file; any mismatch with how the game loads mods means no flip and a warning.
     [MethodImpl(MethodImplOptions.NoInlining)]
@@ -64,6 +154,7 @@ static class SameIdLoad
         try
         {
             var mods = ModManager.Mods;
+            Sorted = SortedOf(mods);
             var (canary, why, plan, self) = Run(mods, ReadTicks, IsUs, live: IsLive(mods));
             (Canary, _plan, Self) = (canary, plan, self);
             if (!canary)
@@ -248,7 +339,7 @@ static class SameIdLoad
             if (revived)
                 Revive(picked.Mod);
             var ms = watch.Elapsed.TotalMilliseconds;
-            plan[id] = new Entry(picked.Mod, setAside, swapped, sp, s1, Reason.None, ms, Order: order);
+            plan[id] = new Entry(picked.Mod, setAside, swapped, sp, s1, Reason.None, ms, Late: revived && !swapped ? late : null, Order: order);
             string Copy(Mod m) => $"{Copies.CopyOf(m)} ({m.manifest?.version})";
             var unread = setAside.Where(m => Copies.Version(m) == null || strict && Copies.GameVersion(m) == null).Select(Copies.CopyOf).Distinct();
             Say((choice?.How switch
@@ -465,15 +556,21 @@ static class SameIdLoad
             return;
         _settled = true;
         var read = LaunchGuard.ReadList;
-        if (SaveManager.Instance.SettingsSave.ModSettings is { } settings && SettleSaves(settings.ModList, read))
+        if (SaveManager.Instance.SettingsSave.ModSettings is { } settings && SettleSaves(settings.ModList, read, AnchorsNow(settings.ModList), Heals()))
             SaveManager.Instance.SaveSettings(); // once, only when something changed or the rebuild isn't saved yet
         Check(ModManager.Mods);
     }
 
-    // Settle's changes to a saved list (SettleList), and whether it's to be saved: something changed, or its order isn't
-    // the one the launch read (Reordered).
-    public static bool SettleSaves(List<SettingsSaveMod> list, IReadOnlyList<(string Id, ModSource Source, bool On)>? read) =>
-        SettleList(list, read) | Reordered(list, read);
+    // Settle's changes to a saved list (SettleList), and whether it's to be saved: it isn't the list the launch read, by
+    // its order (Reordered, in the order rule's form) or a switch. Neither the rule's moves nor Repair's alone are a
+    // reason: a launch whose list was in that form gets it back, its copies' switches as read, so it saves nothing (a mod
+    // with a source off, which the rebuild turns on, included). With no list read, SettleList's changes.
+    public static bool SettleSaves(List<SettingsSaveMod> list, IReadOnlyList<(string Id, ModSource Source, bool On)>? read, IReadOnlyList<bool>? anchors = null,
+        IReadOnlyDictionary<string, string>? heal = null)
+    {
+        var changed = SettleList(list, read, anchors, heal);
+        return read == null ? changed : Reordered(list, read) || !list.Select(e => (e.Id, e.Source, e.IsEnabled)).SequenceEqual(read);
+    }
 
     // Whether a saved list has its ids in another order than the list the launch read (LaunchGuard.ReadList): the game's
     // rebuild, in the order that loaded, which it saves later, if at all (leaving the settings screen, remapping a
@@ -482,11 +579,16 @@ static class SameIdLoad
     public static bool Reordered(IReadOnlyList<SettingsSaveMod> list, IReadOnlyList<(string Id, ModSource Source, bool On)>? read) =>
         read != null && !list.Select(e => e.Id).SequenceEqual(read.Select(e => e.Id));
 
-    // Settle's changes to a saved list (the game's, or the self-test's made-up one): the rebuild repaired, each id's
-    // entries that are on first, ours at the top. True if anything changed.
-    public static bool SettleList(List<SettingsSaveMod> list, IReadOnlyList<(string Id, ModSource Source, bool On)>? read)
+    // Settle's changes to a saved list (the game's, or the self-test's made-up one): the rebuild repaired, in the order
+    // rule's form (anchors: where the game put each entry, LaunchAnchors; null: by which sources the next launch sorts)
+    // and healed (heal: Heals), each id's entries that are on first, ours at the top. True if a switch was put back or
+    // entries moved within an id or to the top; the rule's and the heal's moves alone aren't counted (Settle's save is
+    // for an order the launch didn't read, SettleSaves).
+    public static bool SettleList(List<SettingsSaveMod> list, IReadOnlyList<(string Id, ModSource Source, bool On)>? read, IReadOnlyList<bool>? anchors = null,
+        IReadOnlyDictionary<string, string>? heal = null)
     {
         var changed = Repair(list, read);
+        Normal(list, read, anchors, heal);
         changed |= OnFirst(list);
         var at = list.FindIndex(e => e.Id == ModEntry.ModId);
         if (LoadOrder.OursFirst(list))
@@ -498,6 +600,36 @@ static class SameIdLoad
     }
 
     static string Ordinal(int n) => n + (n % 100 is 11 or 12 or 13 ? "th" : (n % 10) switch { 1 => "st", 2 => "nd", 3 => "rd", _ => "th" });
+
+    // The list in the order rule's form (LoadOrder.Normalize), then healed (Heal), with one line naming the mods it put
+    // elsewhere than the list the launch read had them: those the read list had apart (the first launch after updating,
+    // or a list another mod wrote), and those healed. Nothing said where the read list was in that form already.
+    static void Normal(List<SettingsSaveMod> list, IReadOnlyList<(string Id, ModSource Source, bool On)>? read, IReadOnlyList<bool>? anchors,
+        IReadOnlyDictionary<string, string>? heal)
+    {
+        var apart = Apart([.. list.Select(e => e.Id)]);
+        var moved = apart.Count > 0 && LoadOrder.Normalize(list, anchors ?? LoadOrder.Anchors(list));
+        var healed = heal == null ? [] : Heal(list, heal);
+        var named = moved && read != null ? apart.Intersect(Apart([.. read.Select(e => e.Id)])).ToList() : [];
+        if (named.Count > 0 || healed.Count > 0)
+            Log.Info($"[{ModEntry.ModId}] Load order: " + string.Join("; ", new[]
+            {
+                named.Count > 0 ? $"kept each mod's entries together where the game ranks it (it lists the copies it took out, off or set aside by its "
+                    + $"local-vs-Workshop rule, after all the rest), for {string.Join(", ", named)}: each keeps its place next launch" : null,
+                healed.Count > 0 ? $"moved {string.Join(", ", healed.Select(id => $"{id} after {heal?.GetValueOrDefault(id)}"))}, which its copy waits for, "
+                    + "so that copy can load next launch" : null,
+            }.OfType<string>()));
+    }
+
+    // The ids whose entries aren't one run.
+    static HashSet<string> Apart(IReadOnlyList<string> ids)
+    {
+        var (seen, apart) = (new HashSet<string>(), new HashSet<string>());
+        for (var i = 0; i < ids.Count; i++)
+            if ((i == 0 || ids[i] != ids[i - 1]) && !seen.Add(ids[i]))
+                apart.Add(ids[i]);
+        return apart;
+    }
 
     // The game's rebuilt list gives every copy of an id the first entry's on/off (it matches by id only): each id whose
     // entries at launch (read: the list as the game read it, LaunchGuard.ReadList) had two or more sources gets each

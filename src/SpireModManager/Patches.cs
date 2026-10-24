@@ -14,6 +14,7 @@ using MegaCrit.Sts2.Core.Nodes.Screens.ModdingScreen;
 using MegaCrit.Sts2.Core.Nodes.Screens.ScreenContext;
 using MegaCrit.Sts2.Core.Nodes.Screens.Settings;
 using MegaCrit.Sts2.Core.Saves;
+using MegaCrit.Sts2.Core.Saves.Managers;
 
 namespace SpireModManager;
 
@@ -149,6 +150,33 @@ static class QuitRepairPatch
         catch (Exception e)
         {
             Log.Error($"[{ModEntry.ModId}] Could not repair the mod list in memory before the game's quit: {e}");
+        }
+    }
+}
+
+// Every save of the game's settings once the first main menu has settled the mod list (SameIdLoad.Settled), the game's
+// own and other mods' too: the list in the order rule's form first (LoadOrder.NormalizeBySource), so a list another mod
+// or the game's own page left with a mod's entries apart keeps each mod's place next launch (the game ranks a mod by its
+// last entry). Ours are in that form already, so nothing moves for them. After a failure, left out.
+[HarmonyPatch(typeof(SettingsSaveManager), nameof(SettingsSaveManager.SaveSettings))]
+static class SaveOrderPatch
+{
+    static bool _failed;
+
+    static void Prefix(SettingsSaveManager __instance)
+    {
+        if (_failed || !SameIdLoad.Settled)
+            return;
+        try
+        {
+            if (__instance.Settings?.ModSettings?.ModList is { } list && LoadOrder.NormalizeBySource(list))
+                Log.Info($"[{ModEntry.ModId}] Load order: put a mod's entries back together before the game saved its settings (another mod or the game's own "
+                    + "page had them apart), so each keeps its place next launch");
+        }
+        catch (Exception e)
+        {
+            _failed = true;
+            Log.Error($"[{ModEntry.ModId}] Could not put the mod list in order before a save of the game's settings, so it's saved as it is from now on: {e}");
         }
     }
 }
@@ -703,7 +731,7 @@ static class NewModPopupPatch
 }
 
 // Adds a saved entry for a mod installed this session before its tickbox toggles: the game only updates existing
-// entries, so unticking one did nothing.
+// entries, so unticking one did nothing. Right after its id's entries (LoadOrder.Add), where the game sorts it.
 [HarmonyPatch(typeof(NModMenuRow), "OnTickboxToggled")]
 static class NewModTogglePatch
 {
@@ -715,7 +743,7 @@ static class NewModTogglePatch
                 return;
             var settings = SaveManager.Instance.SettingsSave.ModSettings ??= new ModSettings();
             if (!settings.ModList.Any(e => e.Id == id && e.Source == mod.modSource))
-                settings.ModList.Add(new SettingsSaveMod(mod) { IsEnabled = true });
+                LoadOrder.Add(settings.ModList, new SettingsSaveMod(mod) { IsEnabled = true });
         }
         catch (Exception e)
         {
