@@ -12,15 +12,17 @@ sealed class Lookups : IDisposable
     public static Lookups? Current { get; private set; }
 
     readonly HashSet<(string? Id, ModSource Source)> _off;
+    readonly IReadOnlyList<SettingsSaveMod> _saved;
     readonly Ticks _ticks;
-    readonly Dictionary<string, Mod> _byId = [];
+    Dictionary<string, Mod>? _byId;
     readonly Dictionary<string, Copies.Outcome> _next = [];
-    readonly Dictionary<string, List<Mod>> _neededBy = [];
+    readonly Dictionary<string, List<Mod>> _orders = [];
+    Dictionary<string, List<Mod>>? _neededBy;
     readonly Dictionary<Mod, IReadOnlyList<Tags.Chip>> _chips = [];
     readonly Dictionary<Mod, IReadOnlyList<string>> _dependencies = [];
     readonly Dictionary<Mod, Search.Haystack> _haystacks = [];
     readonly Dictionary<string, string> _texts = [];
-    readonly IReadOnlyList<Mod> _mods;
+    readonly IReadOnlyList<Mod> _mods, _installed;
     readonly Dictionary<string, HashSet<Mod>> _wholes = [];
     HashSet<Mod>? _changed;
     int _depth = 1; // redraws started inside this one (one redraw can start another): the outermost ends it
@@ -48,25 +50,9 @@ sealed class Lookups : IDisposable
 
     Lookups(IReadOnlyList<Mod> mods, IReadOnlyList<Mod> installed, IEnumerable<SettingsSaveMod> saved, Ticks ticks)
     {
-        (_mods, _off) = (mods, Dependencies.SavedOff(saved));
+        (_mods, _installed, _saved) = (mods, installed, saved as IReadOnlyList<SettingsSaveMod> ?? [.. saved]);
+        _off = Dependencies.SavedOff(_saved);
         _ticks = ticks;
-        // The copy Dependencies.Find picks for an id: the first it prefers most (Dependencies.Preference), read against
-        // these lists (Current isn't this one yet).
-        foreach (var mod in mods.Concat(installed))
-            if (mod.manifest?.id is { } id && (!_byId.TryGetValue(id, out var kept)
-                    || Dependencies.Preference(mod, Loads, Ticked, _ticks) > Dependencies.Preference(kept, Loads, Ticked, _ticks)))
-                _byId[id] = mod;
-        // Who needs whom, from the game's list (a mod installed while the game runs is in it too: the game reads it in); a
-        // mod naming one twice counts once.
-        foreach (var mod in mods)
-            foreach (var id in DependenciesOf(mod, Dependencies.Read).Distinct()) // kept for the redraw's own asks
-            {
-                if (id == null)
-                    continue; // a manifest entry without an id: Dependencies works those out the slow way
-                if (!_neededBy.TryGetValue(id, out var needing))
-                    _neededBy[id] = needing = [];
-                needing.Add(mod);
-            }
     }
 
     // A copy's box and whether it loads after a relaunch (Copies.Ticked, Copies.Loads), and what loads of an id
@@ -77,16 +63,55 @@ sealed class Lookups : IDisposable
 
     public Mod? Loading(string id) => Next(id).Loads;
 
-    public Copies.Outcome Next(string id) => Kept(_next, id, i => Copies.Next(i, _off, _ticks));
+    public Copies.Outcome Next(string id) => Kept(_next, id, i => Copies.Next(i, _off, _ticks, _saved));
+
+    // The next launch's order (Dependencies.NextOrder) for the redraw's saved list and a set of switches off (its own, or
+    // with a tick tried on it: Copies.LoadingIf), worked out once each; null for another saved list.
+    public List<Mod>? NextOrder(HashSet<(string? Id, ModSource Source)> off, IReadOnlyList<SettingsSaveMod> saved) => saved != _saved ? null
+        : Kept(_orders, string.Join("\n", off.Select(o => $"{o.Id}|{o.Source}").Order(StringComparer.Ordinal)), _ => Dependencies.NextOrder(off, saved));
 
     // The lists it answers from (Copies.LoadingIf tries a tick on them).
     public HashSet<(string? Id, ModSource Source)> Off => _off;
 
     public Ticks Ticks => _ticks;
 
-    public Mod? Find(string id) => _byId.GetValueOrDefault(id);
+    public IReadOnlyList<SettingsSaveMod> Saved => _saved;
 
-    public IReadOnlyList<Mod> NeededBy(string id) => _neededBy.TryGetValue(id, out var needing) ? needing : [];
+    // The copy Dependencies.Find picks for an id: the first it prefers most (Dependencies.Preference), read against these
+    // lists on the first ask rather than at Begin, so what it asks of Copies.Next finds this redraw's answers (the next
+    // launch's order, worked out once).
+    public Mod? Find(string id)
+    {
+        if (_byId == null)
+        {
+            _byId = [];
+            foreach (var mod in _mods.Concat(_installed))
+                if (mod.manifest?.id is { } each && (!_byId.TryGetValue(each, out var kept)
+                        || Dependencies.Preference(mod, Loads, Ticked, _ticks) > Dependencies.Preference(kept, Loads, Ticked, _ticks)))
+                    _byId[each] = mod;
+        }
+        return _byId.GetValueOrDefault(id);
+    }
+
+    // Who needs whom, from the game's list (a mod installed while the game runs is in it too: the game reads it in),
+    // made on the first ask, as Find's table is; a mod naming one twice counts once.
+    public IReadOnlyList<Mod> NeededBy(string id)
+    {
+        if (_neededBy == null)
+        {
+            _neededBy = [];
+            foreach (var mod in _mods)
+                foreach (var each in DependenciesOf(mod, Dependencies.Read).Distinct()) // kept for the redraw's own asks
+                {
+                    if (each == null)
+                        continue; // a manifest entry without an id: Dependencies works those out the slow way
+                    if (!_neededBy.TryGetValue(each, out var needing))
+                        _neededBy[each] = needing = [];
+                    needing.Add(mod);
+                }
+        }
+        return _neededBy.TryGetValue(id, out var them) ? them : [];
+    }
 
     // Per mod or per key: worked out on first use in this redraw, then kept.
     public IReadOnlyList<Tags.Chip> Chips(Mod mod, Func<Mod, IReadOnlyList<Tags.Chip>> make) => Kept(_chips, mod, make);
