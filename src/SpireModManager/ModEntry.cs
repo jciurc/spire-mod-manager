@@ -81,6 +81,14 @@ internal static class ModEntry
         }
         try
         {
+            Copies.ReadItems();
+        }
+        catch (Exception e)
+        {
+            Log.Warn($"[{ModId}] Could not read the order of the Workshop items from Steam, so the page takes them by item id: {e.Message}");
+        }
+        try
+        {
             LaunchGuard.Begin();
         }
         catch (Exception e)
@@ -375,8 +383,9 @@ internal static class ModEntry
     // something: the vanilla Modding screen's pending-changes test per copy, by which copy of an id loads (Copies.Loads:
     // ticking a second copy that won't load changes nothing), plus the load order and mods installed since launch that
     // would load. A copy set aside counts too (Loads knows whether it loads next time); one that failed doesn't, as in
-    // the game's test. An id the launch couldn't choose for, or couldn't swap its copy in for, reads as the game's own
-    // choice (Copies.Next), so only a change to what that loads is pending.
+    // the game's test. An id the launch couldn't choose for reads as the game's own choice, and one whose copy the next
+    // launch can't put in the id's first slot as the copy that loads in its place (Copies.Next), so only a change to what
+    // that loads is pending.
     public static bool HasPendingChanges()
     {
         if (LoadOrder.OrderChanged)

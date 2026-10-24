@@ -26,15 +26,18 @@ Ease of use is the heart of the mod, not just its utility.
 - One exception, because the game has one switch for them: copies of a mod installed twice from one source (two
   Workshop items). Which of them are ticked is ours (`copies_off`). Which copy loads is worked out at every launch,
   never stored, and only the ticked copies count: a copy that's off never stops a ticked one from loading, and loads
-  only as the game's own choice, where no ticked copy can. First the game's local-vs-Workshop rule over the ticked
-  copies (where the game's own rule, which sees only the switches, set aside the copy this leaves, the launch brings it
-  back), then of one source the highest ticked version (the copy installed first on a tie). Where that copy can't take
-  the id's first slot (something it needs loads after the slot, or is off) while another mod needs the id, the copy the
-  same rule picks without it, and without any other copy that can't take the slot, loads instead; none: the game's own
-  choice. It all runs in our Init, before the game tries the copies. Our page works out where the slot falls from the
-  next launch's order: the game sorts by the saved list it rebuilt from the order that loaded, ranking an id by its
-  last entry, then puts what a mod needs first. Our page has a tickbox per copy, and two copies of an id can both be
-  ticked (only one loads). The game's page keeps its one switch.
+  only where no ticked copy can. First the game's local-vs-Workshop rule over the ticked copies (where the game's own
+  rule, which sees only the switches, set aside the copy this leaves, the launch brings it back), then of one source
+  the highest ticked version (the copy installed first on a tie). Where that copy can't take
+  the id's first slot (something it needs that's on sorts after the slot) while a mod still to load needs the id, the
+  copy the same rule picks without it, and without any other copy that can't take the slot (one needing a mod that's
+  missing, off or after the slot), loads instead; none: the first copy left that can, else the first. A dependency
+  that's off or missing never stops the copy chosen: it loads and fails, and the dependency warnings say so, as for a
+  mod installed once. It all runs in our Init, before the game tries the copies. Our page works out where the slot
+  falls from the next launch's order: the game sorts by the saved list it rebuilt from the order that loaded (saved at
+  the main menu), ranking an id by its last entry, then puts what a mod needs first (the first copy of it the game
+  reads). Our page has a tickbox per copy, and two copies of an id can both be ticked (only one loads). The game's page
+  keeps its one switch.
 - Where the page and the launch can still differ, or older data reads differently (all rare):
   - Data from the dev builds before this, whose pick was missing: the copy standing in for it stays ticked, so once
     the pick is back both are ticked and the higher version loads, where those builds loaded the pick. A stand-in
@@ -47,10 +50,15 @@ Ease of use is the heart of the mod, not just its utility.
     rule leaves first, then those it beat), which the page takes as the next launch's. The game's sort ties copies of
     one id and doesn't keep their order, so anything that changes the sort around them (a mod installed, removed,
     switched on or off, or moved) can reorder them, and the page can then be wrong for one launch.
-  - Whether the next launch can put a copy in the id's first slot: the page reads the saved list as it is now, which
-    the game writes when it quits. After a session that ends without saving it (a crash), the next launch reads the
-    list from before and sorts as this launch did, so a copy blocked this launch can be blocked again while the page
-    named it. Ids the list doesn't have yet tie in the game's sort, which the page takes in the game's list order.
+  - Whether the next launch can put a copy in the id's first slot: the page reads the saved list as it is now. We save
+    the game's rebuild at the main menu (the game itself only when it quits); after a session that ends before that (a
+    crash at launch), the next launch reads the list from before and sorts as this launch did, so a copy blocked this
+    launch can be blocked again while the page named it. Ids the list doesn't have yet tie in the game's sort, which
+    the page takes in the game's list order. The game reads Workshop items in Steam's order, which the page has from
+    launch: one subscribed since comes after the others there, wherever Steam puts it. A mod uninstalled since still
+    counts, as the game's list keeps it.
+  - A copy in a dependency cycle, or waiting on one, can make the game fail every copy of the id (its cycle check goes
+    by id), whatever the page and the launch choose.
 - Profiles key mods by id and source, like `mod_list` (plus, for copies from one source, which are ticked). A shared
   list's rows set a mod installed once by its id; where its id is installed more than once, a row with a Workshop
   link sets that copy alone. A newly installed mod joins the active profile, enabled.

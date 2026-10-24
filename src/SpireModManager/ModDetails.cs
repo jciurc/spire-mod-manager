@@ -533,9 +533,9 @@ static class ModDetails
     // too, not a relaunch away: orange, as nothing else says it won't load, for a copy of this mod as for any. First, as
     // it tells the next launch: a copy the game failed as a duplicate this launch says it too (the game's error shows
     // under From the game). Failed to load: ticked, and the game failed it. Pending relaunch: whether it loads changes at
-    // the relaunch. Else Enabled or Disabled, by its box, except that a copy that loads unticked (the game's own choice,
-    // for an id the launch couldn't choose for, or where no ticked copy can take a blocked one's place: Copies.Next) is
-    // Enabled, as it loads.
+    // the relaunch. Else Enabled or Disabled, by its box, except that a copy that loads unticked (the game's own choice
+    // for an id the launch couldn't choose for, or the first copy that can take a blocked one's place where no ticked one
+    // can: Copies.Next) is Enabled, as it loads.
     // Pending relaunch, as the status says it: what loads after a relaunch isn't what loaded, for a copy neither set aside
     // as another loads nor failed (those statuses come first). #pending finds these.
     public static bool PendingRelaunch(Mod mod) => !Copies.Loses(mod) && !(Copies.Ticked(mod) && mod.state == ModLoadState.Failed)
@@ -608,8 +608,8 @@ static class ModDetails
             return Line("SPIRE_MOD_MANAGER.COPY_FAILED_OTHER", others.FirstOrDefault(Copies.Ticked) ?? others[0]);
         if (others.FirstOrDefault(Copies.Ticked) is { } enabled)
             return ticked ? Line("SPIRE_MOD_MANAGER.COPY_LOADS_ALSO", enabled)
-                // The one of them that loads where it's ticked, else the first ticked (an unticked copy loads only as the
-                // game's own choice).
+                // The one of them that loads where it's ticked, else the first ticked (an unticked copy loads only where
+                // no ticked one can).
                 : Line("SPIRE_MOD_MANAGER.COPY_OTHER_ENABLED", Copies.Loading(id) is { } loads && others.Contains(loads) && Copies.Ticked(loads) ? loads : enabled);
         return null;
     }

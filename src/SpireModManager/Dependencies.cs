@@ -258,8 +258,11 @@ static class Dependencies
     // The mods the next launch sorts (ModManager.SortModList), in its order: those it leaves to load (switch on, not taken
     // out by its local-vs-Workshop rule, Copies.GameRule), each by its id's last entry in the saved list (an id the list
     // doesn't have after the rest), then each moved after what it needs (Fixed, by the manifests: it sorts before anything
-    // loads). Those it takes out come after all of these. saved: the game's list as it saves it on quitting, the one in
-    // memory. One Mod per manifest: an update read while the game runs stands in for the one found at launch.
+    // loads), a mod waiting for the first of each id it needs in the order the game reads them (Copies.InReadOrder), not
+    // this session's. Those it takes out come after all of these. saved: the game's list as it saves it, the one in
+    // memory (Settle saves the rebuild at the main menu). One Mod per manifest: an update read while the game runs stands
+    // in for the one found at launch. A mod uninstalled since still counts: the game's list keeps it, and nothing here
+    // tells it apart.
     public static List<Mod> NextOrder(HashSet<(string?, ModSource)> gameOff, IReadOnlyList<SettingsSaveMod> saved)
     {
         var last = new Dictionary<string, int>();
@@ -269,9 +272,8 @@ static class Dependencies
             .GroupBy(m => (m.manifest?.id, m.path)).Select(g => g.Last()).ToList();
         var beaten = on.GroupBy(m => m.manifest?.id).SelectMany(g => Copies.GameRule([.. g], Copies.GameVersion).Keys).ToHashSet();
         var left = on.Where(m => !beaten.Contains(m)).OrderBy(m => last.TryGetValue(m.manifest?.id ?? "", out var at) ? at : int.MaxValue).ToList();
-        // A mod waits for the first of each id it needs, as the game finds them.
         var first = new Dictionary<string, Mod>();
-        foreach (var mod in left)
+        foreach (var mod in Copies.InReadOrder(left))
             first.TryAdd(mod.manifest?.id ?? "", mod);
         return Fixed(left, m => Read(m).Select(id => id != null && first.TryGetValue(id, out var dep) ? dep : null).OfType<Mod>());
     }
