@@ -763,10 +763,10 @@ static partial class SelfTest
         var countsNew = HistoryBar.Counts();
         Check("a mod installed now joins the active profile as off, so its being on is an unsaved edit; it counts as turned on (+1)",
             Profiles.Active?.Mods.Any(m => m.Id == "SmmFreshMod" && !m.Enabled) == true && Profiles.Edited
-            && Profiles.UnsavedChanges().On.Any(m => m.Name == "Fresh Mod") && OnInSnapshot(History.Entered, "SmmFreshMod", enabled: false)
+            && Profiles.UnsavedChanges().On.Any(m => m.Name == "Fresh Mod") && OnInSnapshot(History.Loaded, "SmmFreshMod", enabled: false)
             && countsNew.On == countsBefore.On + 1 && countsNew.Off == countsBefore.Off,
             $"saved off {Profiles.Active?.Mods.Any(m => m.Id == "SmmFreshMod" && !m.Enabled)}, edited {wasEdited} -> {Profiles.Edited}, "
-            + $"off in Revert all's state {OnInSnapshot(History.Entered, "SmmFreshMod", enabled: false)}, counts {countsBefore} -> {countsNew}");
+            + $"off in the launch state {OnInSnapshot(History.Loaded, "SmmFreshMod", enabled: false)}, counts {countsBefore} -> {countsNew}");
         Check("a mod installed now gets a New tag, first", Tags.For(fresh).FirstOrDefault()?.Text == "New");
         var asMeant = HiddenTagsAsMeant(content);
         Check("a mod installed now: hidden tags on the list as it is (it #new, #changed and #pending), each finding the rows it means",
@@ -2409,6 +2409,7 @@ static partial class SelfTest
             Results.Add("SKIP dependencies: test mods not installed");
             return;
         }
+        var orderWas = LoadOrder.Mods(Rows());
         Check("dependency note names what it needs", Note("SmmTestContent").Contains("Test Framework"), Note("SmmTestContent"));
         if (WontLoad() != null)
             Check("missing dependency is called out", Note("SmmTestAddon").Contains(Missing + " (not installed)"), Note("SmmTestAddon"));
@@ -2614,6 +2615,15 @@ static partial class SelfTest
             Check("hover shows links to each mod that needs it, and they go on leaving", shown == Dependencies.NeededBy("SmmTestLib").Count() && shown == 3
                 && !content.GetParent().GetChildren().Any(c => c.IsInGroup("SpireModManagerLinks")), $"{shown} shown");
         }
+
+        // The start's order back (Fix order left the framework and Test Content moved): the tests after this one start with
+        // nothing moved since launch, as a Revert all's undo brings a move back with the rest.
+        for (var i = 0; i < orderWas.Count; i++)
+            LoadOrder.Move(orderWas[i], i, Rows());
+        CategoryList.Redraw(content);
+        await Wait(menu, 0.3);
+        Check("dependencies put back: the order from the start, nothing moved since launch", LoadOrder.Mods(Rows()).SequenceEqual(orderWas) && !LoadOrder.OrderChanged,
+            string.Join(", ", HistoryBar.Moves().Select(m => $"{m.Mod.manifest?.id} {m.Before}→{m.After}")));
     }
 
     // The bar under the search box: Enable all / Disable all for the page (or the search's matches),

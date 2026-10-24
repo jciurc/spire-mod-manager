@@ -276,6 +276,7 @@ static partial class SelfTest
             await Step(() => TestTagSuggestions(menu, screen, content, outDir));
             await Step(() => TestTagPills(menu, screen, content, outDir));
             await Step(() => TestHistory(menu, screen, content, outDir));
+            await Step(() => TestRevertAll(menu, screen, content));
             await Step(() => TestFallbacks(screen));
 
             // Leaving from Load Order: the page comes back on the main list.
