@@ -47,7 +47,7 @@ static class ModifiedContent
         return $"[url={Meta}][gold]{Escape(term)}[/gold]: {Quieted(listed, changes.Areas.Count)}[/url]";
     }
 
-    // The row's "and 4 more.." in the subtle colour, the areas in the text's (Jordan), wherever a language puts it around
+    // The row's "and 4 more" in the subtle colour, the areas in the text's (Jordan), wherever a language puts it around
     // the areas: the words the strings add, found by formatting them with a mark for the areas.
     static string Quieted(string listed, int areas)
     {
@@ -216,7 +216,7 @@ static class ModifiedContent
         var columns = new HBoxContainer { Name = "Columns" };
         columns.AddThemeConstantOverride("separation", ColumnGap);
         var at = 0;
-        foreach (var (areas, i) in Columns(changes.Areas).Select((areas, i) => (areas, i)))
+        foreach (var (areas, i) in Columns(Alphabetical(changes.Areas)).Select((areas, i) => (areas, i)))
         {
             var one = new VBoxContainer { Name = $"AreaColumn{i}", CustomMinimumSize = new Vector2(width, 0) };
             one.AddThemeConstantOverride("separation", 4); // a little more between areas than between a long one's lines
@@ -241,6 +241,10 @@ static class ModifiedContent
         box.AddChild(scroll);
         return box;
     }
+
+    // The dialog's areas in alphabetical order, in the game's language (Jordan, 24 Oct); the info panel's line keeps the
+    // order they were found in.
+    public static List<string> Alphabetical(IEnumerable<string> areas) => [.. areas.Order(StringComparer.Create(Menus.Culture, ignoreCase: true))];
 
     // The areas in columns, filled top to bottom: as few to a column as three columns need (two areas side by side on
     // one line, seven in three columns of 3, 3 and 1), at most AreaRows; past three columns of those, more columns.

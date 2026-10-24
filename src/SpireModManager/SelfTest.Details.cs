@@ -91,7 +91,7 @@ static partial class SelfTest
     // category with a very long name, shown in the list and the panel (screenshot 16-long-details). The panel's title
     // stays on one line with its version and the source line keeps its status, both cut with ".." (the whole text a
     // second over them); so are the row's author, a long tag and the category's header; the row keeps its author and its
-    // height, what doesn't fit as "and N more..". A redraw fits no row title again, its cut one
+    // height, what doesn't fit as "and N more". A redraw fits no row title again, its cut one
     // and an aliased one included, in Vanilla View and in our main list. It's removed again afterwards.
     static async Task TestLongDetails(Node menu, NModdingScreen screen, Control content, string outDir)
     {
@@ -192,7 +192,7 @@ static partial class SelfTest
                 && countTo <= buttons.GetGlobalRect().Position.X, $"{titleCut ?? "cut right"}; the name to {nameEnd:0.#}, the count {countFrom:0.#}..{countTo:0.#}, "
                 + $"the buttons from {buttons?.GetGlobalRect().Position.X:0.#}");
             // Many tags: the line ends short of the row's buttons, with the author in it, the row its usual height. The tags
-            // that don't fit are "and N more..", whose card has those tags as pills, then the click hint: no keywords, which
+            // that don't fit are "and N more", whose card has those tags as pills, then the click hint: no keywords, which
             // are in the info panel only (16b-more-card).
             var strip = row.GetNode<Control>("SpireModManagerStrip");
             var lineEnd = row.GetGlobalRect().End.X + strip.OffsetRight;
@@ -216,13 +216,13 @@ static partial class SelfTest
                 .Select(c => c.GetChildOrNull<Label>(0) is { } chipLabel ? Menus.WholeText(chipLabel) : "").ToList(); // a long tag's whole text, not its cut one
             var more = strip.GetNodeOrNull<Label>(RowStrip.MoreName);
             var moreCard = more == null ? "" : (await SizedHoverCard(menu, more, "SpireModManagerTagCard", () => Capture(screen, outDir, "16b-more-card"))).Text;
-            Check("long details: the tags that don't fit are \"and N more..\", its card those tags as pills, then the click hint, no keywords; the row its "
+            Check("long details: the tags that don't fit are \"and N more\", its card those tags as pills, then the click hint, no keywords; the row its "
                 + "usual height", more is { Visible: true } && folded.Count > 0 && folded.Last() == "late-game" && more.Text == MoreTags(folded.Count)
-                && more.Text.EndsWith(" more..") && moreCard.Split('\n') is [var pills, "", var cardHint] && folded.All(t => pills.Contains($"\u00a0{t}\u00a0"))
+                && more.Text.EndsWith(" more") && moreCard.Split('\n') is [var pills, "", var cardHint] && folded.All(t => pills.Contains($"\u00a0{t}\u00a0"))
                 && cardHint == Menus.Text("SPIRE_MOD_MANAGER.MORE_TAGS_CLICK") && row.Size.Y == RowTitles.RowHeight,
                 $"\"{more?.Text}\", {folded.Count} tags folded, height {row.Size.Y}, card: {moreCard.ReplaceLineEndings(" / ")}");
-            // Every other row: all its tags where they fit, no "and N more.."; otherwise its count is the tags left out. No
-            // row has keywords: the line's only words are "and N more.." and the author (the note is rich text).
+            // Every other row: all its tags where they fit, no "and N more"; otherwise its count is the tags left out. No
+            // row has keywords: the line's only words are "and N more" and the author (the note is rich text).
             var lines = content.GetChildren().OfType<NModMenuRow>().Where(r => r != row && r.Visible && r.HasNode("SpireModManagerStrip")).Select(r =>
             {
                 var line = r.GetNode("SpireModManagerStrip");
@@ -230,9 +230,9 @@ static partial class SelfTest
                 var words = line.GetChildren().OfType<Label>().All(l => l == rest || l.Name.ToString() == "Author");
                 return (Fits: hidden == 0 && rest == null, Right: words && (rest != null ? rest.Text == MoreTags(hidden) : hidden == 0), Id: r.Mod?.manifest?.id);
             }).ToList();
-            Check("rows with room show every tag and no \"and N more..\"; the others count the tags left out; no row shows keywords",
+            Check("rows with room show every tag and no \"and N more\"; the others count the tags left out; no row shows keywords",
                 lines.Any(l => l.Fits) && lines.All(l => l.Right), string.Join(", ", lines.Where(l => !l.Right).Select(l => l.Id)));
-            // A click on "and N more..", through the viewport as a player's (headless too, the row hovered first): it goes on
+            // A click on "and N more", through the viewport as a player's (headless too, the row hovered first): it goes on
             // to the row, which it selects, so the info panel shows all of them.
             if (content.GetChildren().OfType<NModMenuRow>().FirstOrDefault(r => r != row && r.Mod != null) is { } elsewhere)
                 CategoryList.Select(screen, elsewhere);
@@ -243,7 +243,7 @@ static partial class SelfTest
                 row.GetViewport().PushInput(new InputEventMouseButton { ButtonIndex = MouseButton.Left, Pressed = pressed, Position = moreAt, GlobalPosition = moreAt }, true);
             await Wait(menu, 0.3);
             row.EmitSignal(Control.SignalName.MouseExited);
-            Check("long details: a click on \"and N more..\" selects the mod, as a click on the row does", more != null && CategoryList.Selected == mod && RowState.Selected(row),
+            Check("long details: a click on \"and N more\" selects the mod, as a click on the row does", more != null && CategoryList.Selected == mod && RowState.Selected(row),
                 $"selected {CategoryList.Selected?.manifest?.id}");
             if (CategoryList.Selected != mod)
                 CategoryList.Select(screen, row);
@@ -964,10 +964,10 @@ static partial class SelfTest
                 && (fit.Whole is > 0 and var whole && whole < areas.Count || fit.Items > 0) && fit.Most && fit.OneLine,
                 $"\"{shown}\" ({fit}, {areas.Count} areas); before: \"{(at > 0 ? facts[at - 1] : "")}\"; after: \"{(at >= 0 && at + 1 < facts.Length ? facts[at + 1] : "")}\"");
             var bbcode = description.Text.Split('\n').FirstOrDefault(l => l.Contains($"[url={ModifiedContent.Meta}]")) ?? "";
-            // Jordan: "and 4 more.." subtle, the areas in the text's colour.
+            // Jordan: "and 4 more" subtle, the areas in the text's colour.
             var more = areas.Count - (fit.Whole > 0 ? fit.Whole : 1);
             var tail = Draft(Template(more == 1 ? "SPIRE_MOD_MANAGER.MODIFIED_MORE_ONE" : "SPIRE_MOD_MANAGER.MODIFIED_MORE"), ("areas", ""), ("count", $"{more}"));
-            Check("modified content: the whole row is the link for its card and click, the areas, then \"and N more..\" in the subtle colour, and it's no "
+            Check("modified content: the whole row is the link for its card and click, the areas, then \"and N more\" in the subtle colour, and it's no "
                 + "longer in two rows", shown.Length > term.Length + tail.Length && tail.EndsWith(Menus.CutMark) && shown.EndsWith(tail)
                 && bbcode == $"[url={ModifiedContent.Meta}][gold]{term}[/gold]: {shown[(term.Length + 2)..^tail.Length]}[color=#fff6e299]{tail}[/color][/url]"
                 && !parsed.Contains("Changes game code") && !parsed.Contains("Replaces game files"), $"{bbcode} (tail \"{tail}\")");
@@ -1087,7 +1087,7 @@ static partial class SelfTest
                 + $"({string.Join(", ", ModifiedContent.Columns(areas).Select(c => c.Count))} of {areas.Count}), side by side across the dialog, "
                 + "no sideways scroll (see 17f)",
                 areas.Count is > 6 and <= 15 && shownAreas.Heading == Menus.Text("SPIRE_MOD_MANAGER.MODIFIED_AREAS")
-                && shownAreas.Columns.SelectMany(c => c).SequenceEqual(areas) && shownAreas.Columns.Count == 3
+                && shownAreas.Columns.SelectMany(c => c).SequenceEqual(ModifiedContent.Alphabetical(areas)) && shownAreas.Columns.Count == 3
                 && shownAreas.Columns.Select(c => c.Count).SequenceEqual(ModifiedContent.Columns(areas).Select(c => c.Count))
                 && columnsOff == null && shownAreas.Scroll?.GetHScrollBar().Visible == false && !lines.Contains(Menus.Text("SPIRE_MOD_MANAGER.MODIFIED_AREAS"))
                 && Dialog()?.FindChild("Note", true, false) is Control noteBox && shownAreas.Scroll is { } areasScroll && list != null
@@ -1146,10 +1146,12 @@ static partial class SelfTest
                 && scrolled.Rects[0].End.X <= view.Position.X + 0.5f;
             await Capture(Dialog() ?? screen, outDir, "17f4-modified-content-many-areas-scrolled");
             ModifiedContent.Close();
-            Check("modified content's dialog, 19 areas: five to a column, three columns in view and a fourth past the right edge, a sideways scroll under "
+            Check("modified content's dialog, 19 areas: alphabetical, top to bottom then left to right, five to a column, three columns in view and a "
+                + "fourth past the right edge, a sideways scroll under "
                 + "them that brings it into view (see 17f3, 17f4)",
                 manyChanges.Areas.SequenceEqual(many) && manyShown.Columns.Select(c => c.Count).SequenceEqual([5, 5, 5, 4])
-                && manyShown.Columns.SelectMany(c => c).SequenceEqual(many) && manyOff == null && barShown && lastInView,
+                && manyShown.Columns.SelectMany(c => c).SequenceEqual(ModifiedContent.Alphabetical(many))
+                && manyShown.Columns[0] is ["card art", "card library", "card reward", "combat", "compendium"] && manyOff == null && barShown && lastInView,
                 $"{string.Join(" | ", manyShown.Columns.Select(c => string.Join(", ", c)))}; {manyOff ?? "placed"}, {barAt}; scrolled to "
                 + $"{scrolled.Scroll?.ScrollHorizontal}: {string.Join(", ", scrolled.Rects)} in {view}");
 
