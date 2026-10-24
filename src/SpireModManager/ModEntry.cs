@@ -390,6 +390,7 @@ internal static class ModEntry
     {
         if (LoadOrder.OrderChanged)
             return true;
+        using var lookups = Lookups.Begin(); // the next launch's order worked out once (its own lists below are fresh)
         var (off, ticks) = (Dependencies.SavedOff(), Ticks.Now);
         if (Installed.Mods.Any(m => Copies.LoadsIn(m, off, ticks)))
             return true;

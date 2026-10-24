@@ -17,9 +17,11 @@ static class RelaunchCheck
 
     static History.Point? _mark; // the history as the dialog opened (History.Mark): Cancel undoes back to it
 
-    // owner: the page asking (the Modding screen or the main menu); the dialog closes when it goes.
+    // owner: the page asking (the Modding screen or the main menu); the dialog closes when it goes. One set of answers
+    // for the check and the dialog it opens (Lookups).
     public static void Relaunch(Node owner)
     {
+        using var lookups = Lookups.Begin();
         if (Problems().Count == 0 && !Copies.OursOff())
             ModEntry.Relaunch();
         else
@@ -51,9 +53,11 @@ static class RelaunchCheck
             Fill(owner, column);
     }
 
-    // The dialog's contents for the current state (again after each fix).
+    // The dialog's contents for the current state (again after each fix, which comes after the fix's write: its answers
+    // are fresh).
     static void Fill(Node owner, VBoxContainer column)
     {
+        using var lookups = Lookups.Begin();
         foreach (var child in column.GetChildren())
         {
             column.RemoveChild(child);
