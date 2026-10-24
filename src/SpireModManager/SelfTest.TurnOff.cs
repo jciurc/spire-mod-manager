@@ -262,21 +262,23 @@ static partial class SelfTest
         else
         {
             List<(string, ModSource)> local = [("SmmTestFixes", L)];
-            (string Error, string List, string Disk, TurnedOff.Entry? Entry, string Back) Uninstalled(params SettingsSaveMod[] list)
+            static string Order(IEnumerable<SettingsSaveMod> list) => string.Join(",", list.Select(e => e.Source == W ? $"{e.Id}/w" : e.Id));
+            (string Error, string List, string Disk, TurnedOff.Entry? Entry, string Back, string Order) Uninstalled(params SettingsSaveMod[] list)
             {
                 FreshRecord();
                 Swap(list);
                 var failed = LaunchGuard.TurnOff(settings, Read(ours, ("SmmTestFixes", L, true), ("SmmTestFixes", W, true)), false, fixes);
                 var (entry, after) = (Recorded("SmmTestFixes"), settings.ModList.Select(e => S(e.Id, e.Source, e.IsEnabled)).ToList());
                 TurnedOff.SwitchOn(after, entry == null ? [] : [entry], local);
-                return (failed?.Key ?? "", Of("SmmTestFixes"), SwitchedOnDisk("SmmTestFixes"), entry, Switched(after, "SmmTestFixes"));
+                return (failed?.Key ?? "", Of("SmmTestFixes"), SwitchedOnDisk("SmmTestFixes"), entry, Switched(after, "SmmTestFixes"), Order(settings.ModList));
             }
             var unsubscribed = Uninstalled(S(ModEntry.ModId, L, true), S("SmmTestFixes", L, true), S("SmmTestFixes", W, true));
-            var unlisted = Uninstalled(S(ModEntry.ModId, L, true), S("SmmTestFixes", L, true));
+            var unlisted = Uninstalled(S(ModEntry.ModId, L, true), S("SmmTestFixes", L, true), S("SmmTestUi", L, true));
             static bool Both(TurnedOff.Entry? entry) => entry is { Switches: [{ Source: L, On: true }, { Source: W, On: true, Copies: [] }] };
             Check("a turn-off also turns off a source of the mod with no copy installed that was on (a Workshop item unsubscribed, one not listed without "
-                + "Steam), in memory and in settings.save, and records its switch; Turn back on puts both back",
-                new[] { unsubscribed, unlisted }.All(t => t is { Error: "", List: "l-,w-", Disk: "l-,w-", Back: "l+,w+" } && Both(t.Entry)),
+                + "Steam, its entry added right after the mod's own), in memory and in settings.save, and records its switch; Turn back on puts both back",
+                new[] { unsubscribed, unlisted }.All(t => t is { Error: "", List: "l-,w-", Disk: "l-,w-", Back: "l+,w+" } && Both(t.Entry))
+                && unlisted.Order == $"{ModEntry.ModId},SmmTestFixes,SmmTestFixes/w,SmmTestUi",
                 $"unsubscribed {unsubscribed}; not listed {unlisted}");
 
             // The next launch: the game's list rebuilt without the Workshop entry (it lists only the copies it found). Its
@@ -286,7 +288,6 @@ static partial class SelfTest
             // call. Not for an entry whose mod is on again, nor one whose mod is gone (Test Gone, its local copy scanned).
             TurnedOff.Add([OffEntry("SmmTestGone")]);
             SettingsSaveMod[] Rebuilt() => [S(ModEntry.ModId, L, true), S("SmmTestFixes", L, false), S("SmmTestUi", L, true)];
-            static string Order(IEnumerable<SettingsSaveMod> list) => string.Join(",", list.Select(e => e.Source == W ? $"{e.Id}/w" : e.Id));
             var rebuiltRead = Read(ours, ("SmmTestFixes", L, false), ("SmmTestFixes", W, false), ("SmmTestUi", L, true));
             Swap(Rebuilt());
             var keptOff = (LaunchGuard.RepairBeforeMenu(settings, rebuiltRead, false), Of("SmmTestFixes"), Order(settings.ModList));
@@ -837,36 +838,60 @@ static partial class SelfTest
             failedWords.Contains("Couldn't turn Test Fixes back on") && failedKept == (true, false)
             && TurnedOff.Entries is [{ Id: "SmmTestFixes", Shown: true }] && !On("SmmTestFixes"), $"{failedWords}; {failedKept}; {string.Join(", ", TurnedOff.Entries)}");
 
-        // A mod with no copy installed now (a Workshop one, not listed without Steam): nothing to turn on, so said, and the
-        // entry stays; the other mod in the same notice turned on, its entry gone
+        // A mod with no copy installed now (a Workshop one, unsubscribed with Steam up): nothing to turn on, so said, and the
+        // entry stays; the other mod in the same notice turned on, its entry gone. With Steam down, said why (its Workshop
+        // copies aren't listed then).
+        async Task<string> TurnBackOnWords(bool steam, params TurnedOff.Entry[] entries)
+        {
+            Recorded(entries);
+            TurnedOff.TestSteam = steam;
+            TurnedOff.ShowNotice(menu);
+            await Wait(menu, 0.5);
+            PressOurs("YesButton");
+            await Wait(menu, 0.5);
+            var shown = ShownWords();
+            NModalContainer.Instance?.Clear();
+            TurnedOff.TestSteam = null;
+            return shown;
+        }
+        var goneWorkshop = OffEntry("SmmTestGoneWorkshop", at: at) with { Switches = [new(ModSource.SteamWorkshop, true, ["w:3700000009"])] };
         Off("SmmTestFixes");
-        Recorded(OffEntry("SmmTestFixes", at: at), OffEntry("SmmTestGoneWorkshop", at: at) with { Switches = [new(ModSource.SteamWorkshop, true, ["w:3700000009"])] });
-        TurnedOff.ShowNotice(menu);
-        await Wait(menu, 0.5);
-        PressOurs("YesButton");
-        await Wait(menu, 0.5);
-        var noneWords = ShownWords();
-        NModalContainer.Instance?.Clear();
-        Check("Turn back on of a mod with no copy installed says there's none to turn on, and its entry stays; the other one is turned on, its entry gone",
-            noneWords.Contains("Couldn't turn SmmTestGoneWorkshop back on: there's no installed copy to turn on") && TurnedOff.Has("SmmTestGoneWorkshop")
-            && !TurnedOff.Has("SmmTestFixes") && On("SmmTestFixes"), $"{noneWords}; {string.Join(", ", TurnedOff.Entries.Select(e => e.Id))}; Test Fixes on {On("SmmTestFixes")}");
+        var noneWords = await TurnBackOnWords(true, OffEntry("SmmTestFixes", at: at), goneWorkshop);
+        var noneKept = (TurnedOff.Has("SmmTestGoneWorkshop"), TurnedOff.Has("SmmTestFixes"), On("SmmTestFixes"));
+        var offlineWords = await TurnBackOnWords(false, goneWorkshop);
+        Check("Turn back on of a mod with no copy installed says there's none to turn on, and its entry stays; the other one is turned on, its entry gone; "
+            + "with Steam down it says Workshop mods are listed only while Steam runs, the entry kept",
+            noneWords.Contains("Couldn't turn SmmTestGoneWorkshop back on: there's no installed copy to turn on") && noneKept == (true, false, true)
+            && offlineWords.Contains("Couldn't turn SmmTestGoneWorkshop back on: Workshop mods are only listed while Steam is running") && TurnedOff.Has("SmmTestGoneWorkshop"),
+            $"{noneWords}; kept, Test Fixes kept, on {noneKept}; offline: {offlineWords}");
 
-        // The same mod with its entry in the list, off, as the repair keeps it without Steam: that entry on, its record gone,
-        // nothing said
+        // The same mod with its entry in the list, off, as the repair keeps it without Steam: that entry on, nothing said, and
+        // its record kept until the copy is listed and on (it may have been unsubscribed meanwhile), as the switch is only of
+        // a source this launch didn't scan
         settings.ModList.Add(new SettingsSaveMod { Id = "SmmTestGoneWorkshop", Source = ModSource.SteamWorkshop, IsEnabled = false });
-        Recorded(OffEntry("SmmTestGoneWorkshop", at: at) with { Switches = [new(ModSource.SteamWorkshop, true, ["w:3700000009"])] });
-        TurnedOff.TestSteam = false;
-        TurnedOff.ShowNotice(menu);
-        await Wait(menu, 0.5);
-        PressOurs("YesButton");
-        await Wait(menu, 0.5);
-        var listedWords = ShownWords();
-        NModalContainer.Instance?.Clear();
-        TurnedOff.TestSteam = null;
+        var listedWords = await TurnBackOnWords(false, goneWorkshop);
         var listedOn = settings.ModList.Any(e => e.Id == "SmmTestGoneWorkshop" && e.IsEnabled);
         settings.ModList.RemoveAll(e => e.Id == "SmmTestGoneWorkshop");
-        Check("Turn back on of a mod with no copy installed but its entry in the list (kept off without Steam): that entry on, its record gone, nothing said",
-            listedOn && !TurnedOff.Has("SmmTestGoneWorkshop") && !listedWords.Contains("Couldn't turn"), $"{listedWords}; on {listedOn}; entry {TurnedOff.Has("SmmTestGoneWorkshop")}");
+        Check("Turn back on of a mod with no copy installed but its entry in the list (kept off without Steam): that entry on, nothing said, its record kept "
+            + "(the switch only of a source this launch didn't scan)",
+            listedOn && TurnedOff.Has("SmmTestGoneWorkshop") && !listedWords.Contains("Couldn't turn"), $"{listedWords}; on {listedOn}; entry {TurnedOff.Has("SmmTestGoneWorkshop")}");
+
+        // Its local copy (on when it ran) deleted and its Workshop one (kept off) not listed without Steam: the list's entries
+        // for them (KeepOff's) count for nothing, as the local source was scanned and the Workshop one was off. Said why, the
+        // entry kept and nothing turned on; with Steam up, said there's none to turn on.
+        var goneLocal = OffEntry("SmmTestGoneWorkshop", at: at) with
+        {
+            Switches = [new(ModSource.ModsDirectory, true, ["l:SmmTestGoneWorkshop"]), new(ModSource.SteamWorkshop, false, ["w:3700000009"])],
+        };
+        settings.ModList.AddRange([new SettingsSaveMod { Id = "SmmTestGoneWorkshop", Source = ModSource.ModsDirectory, IsEnabled = false },
+            new SettingsSaveMod { Id = "SmmTestGoneWorkshop", Source = ModSource.SteamWorkshop, IsEnabled = false }]);
+        var (localOffline, localOnline) = (await TurnBackOnWords(false, goneLocal), await TurnBackOnWords(true, goneLocal));
+        var localOn = settings.ModList.Any(e => e.Id == "SmmTestGoneWorkshop" && e.IsEnabled);
+        settings.ModList.RemoveAll(e => e.Id == "SmmTestGoneWorkshop");
+        Check("Turn back on of a mod whose local copy (on) is gone and whose Workshop one (off) isn't listed without Steam: said why, its entry kept, nothing "
+            + "turned on; with Steam up, said there's none to turn on",
+            localOffline.Contains("Workshop mods are only listed while Steam is running") && localOnline.Contains("there's no installed copy to turn on")
+            && TurnedOff.Has("SmmTestGoneWorkshop") && !localOn, $"offline: {localOffline}; online: {localOnline}; on {localOn}");
 
         // A popup that can't be made marks nothing shown, so the next main menu tries again
         Recorded(OffEntry("SmmTestFixes", at: at));
@@ -1204,12 +1229,15 @@ static partial class SelfTest
             await Wait(menu, 0.3);
             Check("the turned-off banner's Dismiss drops the entry, the mod staying off; a mod turned on by its own tickbox drops out at the next redraw",
                 dismissed == (true, true, true) && !TurnedOff.Has("SmmTestFixes") && Banner() == null, $"dismissed {dismissed}; after its tickbox {TurnedOff.Has("SmmTestFixes")}");
-            // Its Turn back on of a mod with no copy installed and no entry in the list: said, the entry and the banner kept
+            // Its Turn back on of a mod with no copy installed and no entry in the list (Steam up): said, the entry and the
+            // banner kept
             TurnedOff.Add([OffEntry("SmmTestGoneWorkshop", at: DateTimeOffset.Now.AddMinutes(-30)) with { Switches = [new(ModSource.SteamWorkshop, true, ["w:3700000009"])] }]);
             CategoryList.Redraw(content);
             await Wait(menu, 0.3);
+            TurnedOff.TestSteam = true;
             BannerPress("TurnBackOnButton");
             await Wait(menu, 0.5);
+            TurnedOff.TestSteam = null;
             var noneWords = ShownWords();
             NModalContainer.Instance?.Clear();
             Check("the turned-off banner's Turn back on of a mod with no copy installed says there's none to turn on, and its entry and the banner stay",
@@ -1218,7 +1246,7 @@ static partial class SelfTest
         }
         finally
         {
-            TurnedOff.TestFile = null;
+            (TurnedOff.TestFile, TurnedOff.TestSteam) = (null, null);
             if (!Copies.Ticked(fixes))
                 Dependencies.Set([fixes], true, screen);
             CategoryList.Redraw(content);

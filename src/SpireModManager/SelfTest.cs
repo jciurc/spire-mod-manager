@@ -1267,13 +1267,19 @@ static partial class SelfTest
         Input.ParseInputEvent(new InputEventMouseButton { ButtonIndex = which, Pressed = pressed, Position = sent, GlobalPosition = sent });
     }
 
+    // Headless, whether the mouse is where a MouseButtonAt sent it, in the viewport's terms (it reads the game's input,
+    // which a button's event sets). With a window it's the player's: true.
+    static bool Landed(Node node, Vector2 at) => DisplayServer.GetName() != "headless" || node.GetViewport().GetMousePosition().DistanceTo(at) < 1;
+
+    static readonly Vector2 MousePut = new(5, 5);
+
     // The mouse put at a point inside the viewport before the crash tests' many popups, where it was, for TestMouseKept.
     // Headless only: with a window it's the player's.
     static async Task<Vector2?> MouseInView(Node node)
     {
         if (DisplayServer.GetName() != "headless")
             return null;
-        var at = InWindow(node, new Vector2(5, 5));
+        var at = InWindow(node, MousePut);
         Input.ParseInputEvent(new InputEventMouseMotion { Position = at, GlobalPosition = at });
         await node.ToSignal(node.GetTree(), SceneTree.SignalName.ProcessFrame); // taken in
         return node.GetViewport().GetMousePosition();
@@ -1284,19 +1290,51 @@ static partial class SelfTest
     // prefix, as Harmony calls it, lets it.
     static void TestMouseKept(Node node, Vector2? before)
     {
+        var prefix = HarmonyLib.AccessTools.Method(typeof(HeadlessMousePatch), "Prefix");
+        bool Runs() => NControllerManager.Instance is { } manager && prefix?.Invoke(null, [manager]) is true;
         if (before is not { } put)
         {
-            var prefix = HarmonyLib.AccessTools.Method(typeof(HeadlessMousePatch), "Prefix");
             var applied = HarmonyLib.Harmony.GetPatchInfo(HarmonyLib.AccessTools.Method(typeof(NControllerManager), "OnScreenContextChanged"))?.Prefixes
                 .Any(p => p.PatchMethod.DeclaringType == typeof(HeadlessMousePatch)) == true;
-            var runs = NControllerManager.Instance is { } manager && prefix?.Invoke(null, [manager]) is true;
+            var runs = Runs();
             Check("with a window the game's mouse re-send at each popup runs: the dev run's headless prefix is in place and lets it", applied && runs,
                 $"applied {applied}, lets it run {runs}");
             return;
         }
         var (at, view) = (node.GetViewport().GetMousePosition(), node.GetViewport().GetVisibleRect());
-        Check("the mouse across the crash tests' popups stays where it was put, finite and inside the viewport",
-            float.IsFinite(at.X) && float.IsFinite(at.Y) && view.HasPoint(at) && at.DistanceTo(put) < 1, $"put at {put}, now {at} in {view}");
+        Check("the mouse across the crash tests' popups stays where it was put (at 5,5 in the viewport), finite and inside it",
+            float.IsFinite(at.X) && float.IsFinite(at.Y) && view.HasPoint(at) && at.DistanceTo(put) < 1 && put.DistanceTo(MousePut) < 1, $"put at {put}, now {at} in {view}");
+
+        // Headless too, in controller or keyboard-only play (the beta's InputType; stable's IsUsingController) the game's
+        // method runs (its refocus), and in mouse play it's skipped: set through the property's own setter, which does
+        // nothing else, the prefix asked each time, and put back
+        var runsIn = new List<string>();
+        if (NControllerManager.Instance is { } controls)
+        {
+            var (inputType, controller) = (HarmonyLib.AccessTools.Property(typeof(NControllerManager), "InputType"),
+                HarmonyLib.AccessTools.Property(typeof(NControllerManager), "IsUsingController"));
+            if ((inputType ?? controller) is { } property)
+            {
+                var was = property.GetValue(controls);
+                try
+                {
+                    object[] modes = inputType != null ? [.. new[] { "Controller", "KeyboardOnlyMode", "MouseAndKeyboard" }.Select(m => Enum.Parse(inputType.PropertyType, m))]
+                        : [true, false];
+                    foreach (var mode in modes)
+                    {
+                        property.SetValue(controls, mode);
+                        runsIn.Add($"{mode} {(Runs() ? "runs" : "skipped")}");
+                    }
+                }
+                finally
+                {
+                    property.SetValue(controls, was);
+                }
+            }
+        }
+        Check("headless, the game's mouse re-send runs in controller or keyboard-only play and is skipped in mouse play (the prefix's directional branch)",
+            runsIn.SequenceEqual(["Controller runs", "KeyboardOnlyMode runs", "MouseAndKeyboard skipped"]) || runsIn.SequenceEqual(["True runs", "False skipped"]),
+            string.Join(", ", runsIn.DefaultIfEmpty("no controller manager or input property")));
     }
 
     // A real mouse click at the control's centre, through the game's input like a player's: catches anything

@@ -196,8 +196,8 @@ static class TurnedOff
     // it saves): an entry, off, for each switch an entry of ours recorded whose source has none in the list. The game's
     // rebuilt list holds only the copies it found, so a Workshop item unsubscribed, or not listed without Steam, loses
     // its entry at the next save and loads once it's back. Not for an entry the first main menu drops (its mod on again
-    // or gone). Each goes right after the mod's own entry, where it has one: the game orders a mod by its last entry, so
-    // one at the end would move it. True if any was added.
+    // or gone). Each goes right after the mod's own entry, where it has one (LaunchGuard.InsertAfterOwn). True if any was
+    // added.
     public static bool KeepOff(List<SettingsSaveMod> list)
     {
         if (Entries.Count == 0)
@@ -207,11 +207,7 @@ static class TurnedOff
         foreach (var entry in Entries.Where(e => !On(e.Id, installed, switches) && !Gone(e, installed)))
             foreach (var source in entry.Switches.Select(s => s.Source).Distinct().Where(source => !list.Any(e => e.Id == entry.Id && e.Source == source)).ToList())
             {
-                var off = new SettingsSaveMod { Id = entry.Id, Source = source, IsEnabled = false };
-                if (list.FindLastIndex(e => e.Id == entry.Id) is var at and >= 0)
-                    list.Insert(at + 1, off);
-                else
-                    list.Add(off);
+                LaunchGuard.InsertAfterOwn(list, new SettingsSaveMod { Id = entry.Id, Source = source, IsEnabled = false });
                 added.Add($"({entry.Id}, {source})");
             }
         if (added.Count > 0)
@@ -250,6 +246,9 @@ static class TurnedOff
         installed.Any(c => c.Id == id && Culprits.OnAsRead(id, c.Source, list));
 
     static bool Scanned(ModSource source) => source != ModSource.SteamWorkshop || Steam();
+
+    // Every source scanned this launch: only the Workshop's can go unlisted (without Steam)
+    static bool AllScanned() => Scanned(ModSource.SteamWorkshop);
 
     static bool Steam()
     {
@@ -395,27 +394,32 @@ static class TurnedOff
 
     // Turn back on (the popup's, the banner's): each entry's sources that were on, on again (SwitchOn), saved and checked;
     // then the change recorded (the main menu button's dot and its note follow, and on the page it's an undo step), and
-    // the entries gone. No restart: it applies at the next relaunch, through the relaunch check, as any change. A save
-    // that fails leaves the entries, and says so; so does a mod with nothing to turn on: no copy installed now, and no
-    // entry in the list for a source it had on (KeepOff keeps one for a Workshop copy not listed without Steam). True if
-    // every one was turned on.
+    // the entries gone, but one whose switches turned on are all of sources this launch didn't scan (a Workshop copy not
+    // listed without Steam: kept until it's on, or gone). No restart: it applies at the next relaunch, through the
+    // relaunch check, as any change. A save that fails leaves the entries, and says so; so does a mod with nothing to
+    // turn on: no copy installed now, and no entry in the list for a source it had on that this launch didn't scan (KeepOff
+    // keeps one for a Workshop copy not listed without Steam; a scanned source with no copy is gone), with why where Steam
+    // isn't running (its Workshop copies aren't listed then). True if every one was turned on.
     public static async Task<bool> TurnBackOn(IReadOnlyList<Entry> entries, NModdingScreen? screen)
     {
         var (installed, list) = (Installs(), SaveManager.Instance.SettingsSave.ModSettings?.ModList ?? []);
         bool Nothing(Entry entry) => !installed.Any(c => c.Id == entry.Id)
-            && !list.Any(e => e.Id == entry.Id && entry.Switches.Any(s => s.On && s.Source == e.Source));
+            && !list.Any(e => e.Id == entry.Id && !Scanned(e.Source) && entry.Switches.Any(s => s.On && s.Source == e.Source));
         var (some, none) = (entries.Where(e => !Nothing(e)).ToList(), entries.Where(Nothing).ToList());
         if (none.Count > 0)
             Log.Info($"[{ModEntry.ModId}] Not turned back on, with no copy installed now nor an entry in the list: {string.Join(", ", none.Select(e => e.Id))}");
+        var waiting = new List<Entry>();
         if (some.Count > 0)
         {
             try
             {
                 var settings = SaveManager.Instance.SettingsSave.ModSettings ?? throw new InvalidOperationException("the game has no mod settings");
                 var asWas = LaunchGuard.State(settings.ModList);
-                SwitchOn(settings.ModList, some, installed);
+                var switched = SwitchOn(settings.ModList, some, installed);
                 LaunchGuard.SaveChecked(settings.ModList, asWas);
-                Log.Info($"[{ModEntry.ModId}] Turned back on after a failed start: {string.Join(", ", some.Select(e => e.Id))}");
+                waiting = [.. some.Where(e => switched.Where(s => s.Id == e.Id).ToList() is { Count: > 0 } own && own.All(s => !Scanned(s.Source)))];
+                Log.Info($"[{ModEntry.ModId}] Turned back on after a failed start: {string.Join(", ", some.Select(e => e.Id))}"
+                    + (waiting.Count == 0 ? "" : $"; kept as turned off until Steam lists them: {string.Join(", ", waiting.Select(e => e.Id))}"));
             }
             catch (Exception e)
             {
@@ -433,30 +437,36 @@ static class TurnedOff
                 Profiles.Track();
                 History.Record(); // Track only records when the active profile changed
             }
-            Remove([.. some.Select(e => e.Id)]);
+            Remove([.. some.Except(waiting).Select(e => e.Id)]);
         }
         if (none.Count > 0)
-            await Told(none, "SPIRE_MOD_MANAGER.TURNED_OFF_ON_NONE");
+            await Told(none, AllScanned() ? "SPIRE_MOD_MANAGER.TURNED_OFF_ON_NONE" : "SPIRE_MOD_MANAGER.TURNED_OFF_ON_NO_STEAM");
         return none.Count == 0;
     }
 
     // The switches Turn back on sets, on a given list and installed copies (the self-test's made-up ones): the ones each
     // entry recorded on, installed now or not, every saved entry of that id and source; and when none of those sources
-    // has a copy installed now (a Workshop item unsubscribed since), every installed copy's, but only where each of them
-    // was scanned this launch: without Steam the game doesn't list a Workshop copy, and a local one kept off would load
-    // in its place. No entry is added: a copy with no entry loads anyway. The game's switches only: Dependencies.Write
-    // would tick every copy of a source, and an unticked twin would lose its tick (copies_off was kept while the switch
-    // was off, so the same copies come back).
-    public static void SwitchOn(List<SettingsSaveMod> list, IEnumerable<Entry> entries, IReadOnlyList<(string Id, ModSource Source)> installed)
+    // has a copy installed now (a Workshop item unsubscribed since, a local folder deleted), every installed copy's, but
+    // only where every source was scanned this launch: without Steam the game doesn't list a Workshop copy, which may be
+    // the one to turn on, and a local one kept off would load in its place. No entry is added: a copy with no entry loads
+    // anyway. The game's switches only: Dependencies.Write would tick every copy of a source, and an unticked twin would
+    // lose its tick (copies_off was kept while the switch was off, so the same copies come back). Returns the entries
+    // turned on, by id and source.
+    public static List<(string Id, ModSource Source)> SwitchOn(List<SettingsSaveMod> list, IEnumerable<Entry> entries, IReadOnlyList<(string Id, ModSource Source)> installed)
     {
+        var switched = new List<(string Id, ModSource Source)>();
         foreach (var entry in entries)
         {
             var sources = entry.Switches.Where(s => s.On).Select(s => s.Source).ToHashSet();
-            if (!installed.Any(c => c.Id == entry.Id && sources.Contains(c.Source)) && sources.All(Scanned))
+            if (!installed.Any(c => c.Id == entry.Id && sources.Contains(c.Source)) && AllScanned())
                 sources.UnionWith(installed.Where(c => c.Id == entry.Id).Select(c => c.Source));
             foreach (var saved in list.Where(e => e.Id == entry.Id && sources.Contains(e.Source)))
+            {
                 saved.IsEnabled = true;
+                switched.Add((saved.Id, saved.Source));
+            }
         }
+        return switched;
     }
 
     // A Turn back on that failed (its save, or a mod with no copy installed: key), said in the game's popup with its Ok.

@@ -514,8 +514,9 @@ static class LaunchGuard
 
     static bool _repairTried;
 
-    // Whether RepairBeforeMenu got to the list in memory this session (before the first main menu, with the list as the
-    // game read it): the self-test's failed start reads it.
+    // Whether RepairBeforeMenu got to the list in memory this session with the list as the game read it, before the first
+    // main menu (each source's own switch put back; KeepOff's entries alone don't count): the self-test's failed start
+    // reads it.
     public static bool RepairedBeforeMenu { get; private set; }
 
     // Before the first main menu the game's mod list in memory is the one it rebuilt: every copy of an id has the id's
@@ -531,8 +532,8 @@ static class LaunchGuard
             return;
         _repairTried = true;
         var settings = SaveManager.Instance.SettingsSave.ModSettings;
-        var changed = RepairBeforeMenu(settings, ReadList, SameIdLoad.Settled);
-        RepairedBeforeMenu = !SameIdLoad.Settled && settings != null && (ReadList != null || changed);
+        RepairBeforeMenu(settings, ReadList, SameIdLoad.Settled);
+        RepairedBeforeMenu = !SameIdLoad.Settled && settings != null && ReadList != null;
     }
 
     // The repair on given lists (the self-test's made-up ones): none after the first main menu (Settle did it), nor
@@ -674,17 +675,28 @@ static class LaunchGuard
 
     // Every saved entry of each id off, installed or not (a Workshop copy unsubscribed since, or not listed without Steam,
     // loads once it's back), and an entry, off, for each of its copies with none: an installed one would load, and one
-    // the game read that its rebuilt list dropped (it lists only the copies it found) would load once it's back
+    // the game read that its rebuilt list dropped (it lists only the copies it found) would load once it's back. Each added
+    // right after the mod's own entries (InsertAfterOwn).
     static void SwitchOff(List<SettingsSaveMod> list, IReadOnlySet<string> ids, IReadOnlyList<Mod> installed, IReadOnlyList<(string Id, ModSource Source, bool On)> asRead)
     {
         foreach (var entry in list.Where(e => ids.Contains(e.Id)))
             entry.IsEnabled = false;
         foreach (var m in installed)
             if (m.manifest?.id is { } id && ids.Contains(id) && !list.Any(e => e.Id == id && e.Source == m.modSource))
-                list.Add(new SettingsSaveMod(m) { IsEnabled = false });
+                InsertAfterOwn(list, new SettingsSaveMod(m) { IsEnabled = false });
         foreach (var (id, source) in asRead.Where(e => ids.Contains(e.Id)).Select(e => (e.Id, e.Source)).Distinct().ToList())
             if (!list.Any(e => e.Id == id && e.Source == source))
-                list.Add(new SettingsSaveMod { Id = id, Source = source, IsEnabled = false });
+                InsertAfterOwn(list, new SettingsSaveMod { Id = id, Source = source, IsEnabled = false });
+    }
+
+    // An entry added right after its mod's last one, else at the end: the game orders a mod by its last entry, so one at
+    // the end would move it
+    public static void InsertAfterOwn(List<SettingsSaveMod> list, SettingsSaveMod entry)
+    {
+        if (list.FindLastIndex(e => e.Id == entry.Id) is var at and >= 0)
+            list.Insert(at + 1, entry);
+        else
+            list.Add(entry);
     }
 
     // A mod list's entries with their switches, to put back as they were

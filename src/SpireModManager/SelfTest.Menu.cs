@@ -835,19 +835,22 @@ static partial class SelfTest
             && top.FindChildren("*", "ColorRect", true, false).Count == 1 && items.Count > 1 && Label(items[1]) == manage
             && parts.All(c => c.MouseFilter == Control.MouseFilterEnum.Ignore && c.FocusMode == Control.FocusModeEnum.None),
             $"{string.Join(" | ", MenuPanel.Headings(popup))}; version {version}");
-        // A real click on it, through the viewport (and the menu's Catcher): the menu stays open, nothing runs.
+        // A real click on it, through the viewport (and the menu's Catcher), landing where it was sent: the menu stays open,
+        // nothing runs.
         var placed = Store.Data.MenuButtonAt;
+        var (landed, mouse) = (false, Vector2.Zero);
         if (top != null)
         {
             var at = top.GetGlobalRect().GetCenter();
             MouseButtonAt(menu, MouseButton.Left, true, at);
+            (landed, mouse) = (Landed(menu, at), menu.GetViewport().GetMousePosition());
             await Wait(menu, 0.1);
             MouseButtonAt(menu, MouseButton.Left, false, at);
             await Wait(menu, 0.2);
         }
-        Check("a click on the header does nothing: the menu stays open", top != null && MenuPanel.Current == popup
+        Check("a click on the header, landing on it, does nothing: the menu stays open", top != null && landed && MenuPanel.Current == popup
             && !menu.SubmenuStack.SubmenusOpen && !menu.HasNode(MenuButton.MoveLayerName) && Store.Data.MenuButtonAt == placed
-            && menu.GetTree().Root.GetNodeOrNull(RelaunchCheck.Name) == null);
+            && menu.GetTree().Root.GetNodeOrNull(RelaunchCheck.Name) == null, $"sent to {top?.GetGlobalRect().GetCenter()}, the mouse at {mouse}");
 
         // The divider: the one entry between Open translations folder and Relaunch game, a line under the first and above
         // the second.

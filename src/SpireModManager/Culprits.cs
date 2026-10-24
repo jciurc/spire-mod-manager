@@ -78,8 +78,12 @@ static class Culprits
 
     // What a failed patch call was applying, as PatchingFailurePatch writes it on the exception (Exception.Data, under
     // AttemptKey): PatchAll's patch class (its patch methods are the class's own), or Harmony.Patch's patch methods and
-    // the method it was patching (Original)
-    public record PatchAttempt(Type? Class, IReadOnlyList<MethodInfo> Methods, MethodBase? Original = null);
+    // the method it was patching (Original). And what its frames said then, while they were whole (a plain throw on the
+    // way starts them again): Built, it failed in Harmony's build of the replacement; Transpiler, a transpiler's own throw
+    // there, the frames it ran before Harmony's (its mod's, and a helper it called); Callers, the stack that called
+    // Harmony (the patching mod's frames).
+    public record PatchAttempt(Type? Class, IReadOnlyList<MethodInfo> Methods, MethodBase? Original = null, bool Built = false,
+        IReadOnlyList<StackFrame>? Transpiler = null, IReadOnlyList<StackFrame>? Callers = null);
 
     public const string AttemptKey = ModEntry.ModId + ".PatchAttempt";
 
@@ -126,14 +130,20 @@ static class Culprits
     }
 
     // From PatchingFailurePatch's finalizers: what a failed patch call was applying, on its exception, the first record
-    // only (one Harmony throws again as it is keeps the inner call's, the nearer one). Never throws, and the exception
-    // stays as it is: ByFrame reads its frames without the record.
+    // only (one Harmony throws again as it is keeps the inner call's, the nearer one), with what its frames say now and
+    // the stack above. Never throws, and the exception stays as it is: ByFrame reads its frames without the record.
     public static void Attempted(Exception error, Type? patchClass, IEnumerable<MethodInfo?> methods, MethodBase? original = null)
     {
         try
         {
-            if (!error.Data.Contains(AttemptKey))
-                error.Data[AttemptKey] = new PatchAttempt(patchClass, [.. methods.OfType<MethodInfo>().Distinct()], original);
+            if (error.Data.Contains(AttemptKey))
+                return;
+            var chain = Chain(error);
+            var built = chain.Any(l => l.Frames.Any(f => Built(MethodOf(f))));
+            var transpiler = chain.Any(l => l.Frames.Any(f => IsHarmonyMethod(MethodOf(f), "CodeTranspiler", "GetResult")))
+                ? chain[0].Frames.TakeWhile(f => !Building(MethodOf(f))).ToList() : null;
+            error.Data[AttemptKey] = new PatchAttempt(patchClass, [.. methods.OfType<MethodInfo>().Distinct()], original, built, transpiler,
+                new StackTrace(false).GetFrames());
         }
         catch (Exception)
         {
@@ -441,6 +451,8 @@ static class Culprits
         return new Frame(WhoseIs(method), null, method, null);
     }
 
+    static List<Frame> Read(IEnumerable<StackFrame> frames, OwnerMap owners) => [.. frames.Select(f => Resolve(f, owners)).OfType<Frame>()];
+
     static MethodBase? OriginalOf(MethodInfo replacement)
     {
         try
@@ -486,7 +498,7 @@ static class Culprits
     sealed class Scan(IReadOnlyList<Link> chain, LaunchGuard.Setup? planned, LaunchGuard.Setup? working, Context mods)
     {
         public readonly Context Mods = mods;
-        public readonly List<(Link Link, List<Frame> Frames)> Links = [.. chain.Select(l => (l, l.Frames.Select(f => Resolve(f, mods.Owners)).OfType<Frame>().ToList()))];
+        public readonly List<(Link Link, List<Frame> Frames)> Links = [.. chain.Select(l => (l, Read(l.Frames, mods.Owners)))];
         public readonly HashSet<string> ChangedIds = Changed(planned, working);
         public readonly bool Same = SameGame(planned, working);
         public readonly HashSet<string> Named = [];
@@ -495,7 +507,7 @@ static class Culprits
         public Check Check;
         public bool NoPatcher;
         public bool Rebuild; // Harmony's build of a patched method failed
-        public MethodBase? Rebuilt; // a failed rebuild's original, as Harmony's message names it or the call recorded
+        public MethodBase? Rebuilt; // a failed rebuild's original, as the call recorded it or Harmony's message names it
 
         // Changed, on the same game
         public bool Moved(string id) => Same && ChangedIds.Contains(id);
@@ -662,10 +674,14 @@ static class Culprits
         return null;
     }
 
-    // Whether a frame is a method of a Harmony type (or of a type nested in it); any of its methods with none named
-    static bool IsHarmonyFrame(Frame frame, string type, string? method = null) =>
-        frame.Method is { DeclaringType: { } declared } found && Outermost(declared).FullName == "HarmonyLib." + type
-        && (method == null || found.Name == method);
+    // Whether a method is a Harmony type's (or a type's nested in it); any of its methods with none named
+    static bool IsHarmonyMethod(MethodBase? method, string type, string? name = null) =>
+        method is { DeclaringType: { } declared } && Outermost(declared).FullName == "HarmonyLib." + type && (name == null || method.Name == name);
+
+    static bool IsHarmonyFrame(Frame frame, string type, string? method = null) => IsHarmonyMethod(frame.Method, type, method);
+
+    // A frame's method as Harmony's own read: a replacement (PatchingFailurePatch's of Harmony's methods) as its original
+    static MethodBase? MethodOf(StackFrame frame) => frame.GetMethod() is MethodInfo info && OriginalOf(info) is { } original ? original : frame.GetMethod();
 
     static Type Outermost(Type type)
     {
@@ -679,8 +695,12 @@ static class Culprits
         || IsHarmonyFrame(frame, "PatchFunctions", "UpdateWrapper");
 
     // Harmony building a replacement: where a transpiler's own throw ends its frames
-    static bool Building(Frame frame) => new[] { "CodeTranspiler", "MethodCopier", "MethodBodyReader", "MethodCreator", "MethodCreatorTools", "PatchFunctions" }
-        .Any(type => IsHarmonyFrame(frame, type));
+    static bool Building(MethodBase? method) => new[] { "CodeTranspiler", "MethodCopier", "MethodBodyReader", "MethodCreator", "MethodCreatorTools", "PatchFunctions" }
+        .Any(type => IsHarmonyMethod(method, type));
+
+    // A failure in the build itself: its UpdateWrapper, or the creator, the body's reader or the transpilers under it
+    static bool Built(MethodBase? method) => IsHarmonyMethod(method, "PatchFunctions", "UpdateWrapper")
+        || new[] { "MethodCreator", "MethodBodyReader", "CodeTranspiler" }.Any(type => IsHarmonyMethod(method, type));
 
     // Shape C: a Harmony patch that failed, Harmony's patching on any exception's frames (a wrapper's too: a direct
     // Harmony.Patch has no wrapper of Harmony's, and a transpiler's own throw tops its frames), or the record of a
@@ -689,28 +709,41 @@ static class Culprits
     // applying is that record (Attempted: a dependent's where a framework applies them for it); without one, the
     // frames' patching mod (Patcher). Harmony's own checks of a patch call (an inherited method, a target it can't find,
     // a Prepare or TargetMethod that threw) involve no other patch: that mod. A failed rebuild of the replacement can
-    // involve the method's earlier patches (Rebuild).
+    // involve the method's earlier patches (Rebuild). Where the record's exception no longer reaches Harmony's patching
+    // (its frames started again), what the record said of them stands for them (whole): whether it was a build, a
+    // transpiler's own throw, the patching mod.
     static Pick? HarmonyFailure(Scan scan)
     {
-        var attempt = Attempted(scan);
-        if (attempt == null && !scan.Links.Any(l => l.Frames.Any(Patching)))
+        var found = Attempted(scan);
+        if (found == null && !scan.Links.Any(l => l.Frames.Any(Patching)))
             return null;
         scan.Check = Check.Harmony;
-        var (owners, patcher) = (attempt == null ? null : Owners(attempt, scan), Patcher(scan));
+        var attempt = found?.Attempt;
+        var whole = found is { Frames: var frames } && !frames.Any(Patching) ? attempt : null;
+        if (whole != null)
+            scan.Notes.Add("Harmony's frames started again on the way (a plain throw), so read as recorded");
+        var (owners, patcher) = (attempt == null ? null : Owners(attempt, scan), Patcher(scan, whole));
         scan.NoPatcher = owners == null && patcher == null;
         scan.Notes.Add(owners != null ? $"a Harmony patch failed applying {string.Join(" and ", owners)}'s patches, as recorded"
             : $"a Harmony patch failed with no record of whose patches, so by its frames: the patching mod {patcher ?? "not found under Harmony's frames"}");
-        scan.Rebuild = scan.Links.Any(l => l.Link.Error is InvalidProgramException || l.Frames.Any(f => IsHarmonyFrame(f, "PatchFunctions", "UpdateWrapper")));
+        scan.Rebuild = scan.Links.Any(l => l.Link.Error is InvalidProgramException || l.Frames.Any(f => IsHarmonyFrame(f, "PatchFunctions", "UpdateWrapper")))
+            || whole is { Built: true };
         if (scan.Rebuild)
-            return Rebuild(scan, owners, patcher, attempt?.Original);
+            return Rebuild(scan, owners, patcher, attempt?.Original, whole);
         var refused = owners == null ? patcher : owners is [var one] ? one : null;
         scan.List(owners ?? new[] { patcher }.OfType<string>());
         return refused == null ? null : PickOf(Why.Code, refused);
     }
 
     // The record of what a failed patch call was applying, on the innermost exception that has one (a call inside
-    // another's TargetMethod or Prepare: the inner one, which failed)
-    static PatchAttempt? Attempted(Scan scan) => scan.Links.Select(l => AttemptOn(l.Link.Error)).OfType<PatchAttempt>().FirstOrDefault();
+    // another's TargetMethod or Prepare: the inner one, which failed), with that exception's frames
+    static (PatchAttempt Attempt, List<Frame> Frames)? Attempted(Scan scan)
+    {
+        foreach (var (link, frames) in scan.Links)
+            if (AttemptOn(link.Error) is { } attempt)
+                return (attempt, frames);
+        return null;
+    }
 
     // The mods whose patches that was: its patch class's and its patch methods' (the owner map's). Null with none a mod's.
     static List<string>? Owners(PatchAttempt attempt, Scan scan)
@@ -733,10 +766,14 @@ static class Culprits
     }
 
     // The mod whose patch call failed: the mod frames under Harmony's (after its last), walked, in the innermost exception
-    // that has some, else the one wrapping it (PatchAll's HarmonyException around Harmony's own)
-    static string? Patcher(Scan scan)
+    // that has some, else the one wrapping it (PatchAll's HarmonyException around Harmony's own), else in the stack the
+    // record kept (whole: its exception's frames started again)
+    static string? Patcher(Scan scan, PatchAttempt? whole)
     {
-        foreach (var (_, frames) in scan.Links)
+        List<List<Frame>> lists = [.. scan.Links.Select(l => l.Frames)];
+        if (whole?.Callers is { } callers)
+            lists.Add(Read(callers, scan.Mods.Owners));
+        foreach (var frames in lists)
         {
             var last = frames.FindLastIndex(f => f.Whose == Whose.Runtime && f.Method?.DeclaringType is { } type && IsHarmony(type.Assembly));
             if (last >= 0 && ModsIn(frames.Skip(last + 1)) is { Count: > 0 } mods)
@@ -747,22 +784,23 @@ static class Culprits
 
     // A failed rebuild. Harmony saves a method's patches only after their build worked, and its state starts empty each
     // launch, so every saved patch built this launch on this game: the failed build is one that worked plus the new
-    // patches being applied, the recorded owners' (else Applying's guess). The method is the one Harmony's message names
-    // (PatchAll), else the one recorded (a direct Harmony.Patch). In order: a transpiler's own throw names its mod; a
-    // mod's method that can't compile on its first patch names its mod; the one of the new patches' mod and the method's
-    // saved patches' owners changed on the same game; else the new patches' mod, most likely (without them the method
-    // built), but not a library's on a method of a mod that needs it (BaseLib's postfix on each mod's act): that mod's
-    // code is half the build, so both are the shortlist. None when whose patches they were doesn't show.
-    static Pick? Rebuild(Scan scan, IReadOnlyList<string>? owners, string? patcher, MethodBase? recorded)
+    // patches being applied, the recorded owners' (else Applying's guess). The method is the one recorded (a direct
+    // Harmony.Patch's, exact), else the one Harmony's message names (PatchAll; inside a patch class's TargetMethod it
+    // names that). In order: a transpiler's own throw names its mod; a mod's method that can't compile on its first patch
+    // names its mod; the one of the new patches' mod and the method's saved patches' owners changed on the same game;
+    // else the new patches' mod, most likely (without them the method built), but not a library's on another mod's
+    // method (BaseLib's postfix on each mod's act, whether that mod needs it or not), nor a mod's on a method of one that
+    // needs it: that mod's code is half the build, so both are the shortlist. None when whose patches they were doesn't
+    // show.
+    static Pick? Rebuild(Scan scan, IReadOnlyList<string>? owners, string? patcher, MethodBase? recorded, PatchAttempt? whole)
     {
-        if (TranspilerThrew(scan) is { } threw)
+        if (TranspilerThrew(scan, whole) is { } threw)
             return PickOf(Why.Code, threw);
-        var named = Originals(scan);
-        var originals = named ?? (recorded == null ? null : [recorded]);
+        List<MethodBase>? originals = recorded != null ? [recorded] : Originals(scan);
         scan.Rebuilt = originals?.FirstOrDefault();
         var step = scan.Rebuilt is { } rebuilt ? StepOf(rebuilt) : null;
         scan.Notes.Add(originals == null ? "a failed rebuild by a direct Harmony.Patch (no original named or recorded)"
-            : $"a failed rebuild of {(originals.Count == 0 ? "a method not found" : string.Join(", ", originals.Select(StepOf).Distinct()))}{(named == null ? ", as recorded" : "")}");
+            : $"a failed rebuild of {(originals.Count == 0 ? "a method not found" : string.Join(", ", originals.Select(StepOf).Distinct()))}{(recorded != null ? ", as recorded" : "")}");
         foreach (var original in originals ?? [])
             if (ModOfType(original.DeclaringType, scan.Mods.Owners) is { Length: > 0 } of && PatchesOn(original).Count == 0 && CantCompile(original))
             {
@@ -771,18 +809,19 @@ static class Culprits
                 return PickOf(Why.Stale, of, step: step);
             }
         var applying = owners == null ? Applying(scan, patcher, originals) : owners is [var one] ? one : null;
-        var users = applying == null ? [] : (originals ?? []).Select(o => ModOfType(o.DeclaringType, scan.Mods.Owners)).OfType<string>()
-            .Where(id => id.Length > 0 && id != applying && scan.Mods.Requires(id, applying)).Distinct().ToList();
-        var shortlist = (owners ?? new[] { applying ?? patcher }.OfType<string>()).Concat(users)
+        var library = applying != null && scan.Mods.IsLibrary(applying);
+        var others = applying == null ? [] : (originals ?? []).Select(o => ModOfType(o.DeclaringType, scan.Mods.Owners)).OfType<string>()
+            .Where(id => id.Length > 0 && id != applying && (library || scan.Mods.Requires(id, applying))).Distinct().ToList();
+        var shortlist = (owners ?? new[] { applying ?? patcher }.OfType<string>()).Concat(others)
             .Concat((originals ?? []).SelectMany(o => Patchers(o, scan, ours: false))).Distinct().ToList();
         scan.List(shortlist);
         if (applying == null)
             return null; // the one change is the new patches' mod's, and it's unknown
         if (shortlist.Where(scan.Moved).ToList() is [var changed])
             return PickOf(Why.Rebuild, changed, step: step);
-        if (users.Count > 0)
+        if (others.Count > 0)
         {
-            scan.Notes.Add($"{applying}'s patch on a method of {string.Join(", ", users)}, which needs it: no pick");
+            scan.Notes.Add($"{applying}'s patch on a method of {string.Join(", ", others)}, " + (library ? $"{applying} a library: no pick" : "which needs it: no pick"));
             return null;
         }
         return PickOf(Why.RebuildLast, applying, step: step); // turning it off (with its dependents) gives the method the build that worked
@@ -901,12 +940,16 @@ static class Culprits
 
     // A transpiler's own throw (eager, inside reflection's TargetInvocationException; an iterator's, where its output is
     // read): the innermost exception's mod frames before Harmony's build frames, walked (a library helper it called gives
-    // its mod). Harmony's helpers above it (CodeMatcher) are the runtime's.
-    static string? TranspilerThrew(Scan scan)
+    // its mod), or the record's (whole: its exception's frames started again). Harmony's helpers above it (CodeMatcher)
+    // are the runtime's.
+    static string? TranspilerThrew(Scan scan, PatchAttempt? whole)
     {
-        if (!scan.Links.Any(l => l.Frames.Any(f => IsHarmonyFrame(f, "CodeTranspiler", "GetResult"))))
+        IEnumerable<Frame>? frames = scan.Links.Any(l => l.Frames.Any(f => IsHarmonyFrame(f, "CodeTranspiler", "GetResult")))
+            ? scan.Links[0].Frames.TakeWhile(f => !Building(f.Method))
+            : whole?.Transpiler is { } recorded ? Read(recorded, scan.Mods.Owners) : null;
+        if (frames == null)
             return null;
-        var mods = ModsIn(scan.Links[0].Frames.TakeWhile(f => !Building(f)));
+        var mods = ModsIn(frames);
         return mods.Count > 0 ? Walk(mods, scan) : null;
     }
 

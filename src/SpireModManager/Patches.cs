@@ -150,8 +150,8 @@ static class StartupFailurePatch
 // run again there builds with the processor's new patches) or PatchClassProcessor.Patch (PatchAll, a class at a time:
 // its Prepare, TargetMethod and Cleanup too), and the class's own checks of its patch methods (one that isn't static)
 // through that processor's constructor. A void finalizer on each, first in line, reads the processor's fields (field
-// refs made at the first failure) and never throws: Harmony rethrows the exception as it was, and a call that works
-// only passes null. ModEntry.Init applies it before our other patches, so it's in place before any other mod patches
+// refs made at the first failure), and what the exception's frames say while they're still whole (Culprits.Attempted),
+// and never throws: Harmony rethrows the exception as it was, and a call that works only passes null. ModEntry.Init applies it before our other patches, so it's in place before any other mod patches
 // (we load first); no class attribute, so its loop leaves it out.
 static class PatchingFailurePatch
 {

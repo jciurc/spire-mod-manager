@@ -52,7 +52,8 @@ Ease of use is the heart of the mod, not just its utility.
 - Our own data is one JSON file per Steam account, written atomically, with 10 backups.
 - A start that fails gets our dialog in place of the game's (its message first, in its box). It names the mod that
   stopped it, from the error's frames, Harmony's failures (the mod whose patch Harmony was applying, recorded as the
-  call fails, so a framework only for its own patch when Harmony's call was recorded) and Mod Doctor's pick (never
+  call fails, so a framework only for its own patch when Harmony's call was recorded, and for one on another mod's code
+  whose build fails only when it alone changed) and Mod Doctor's pick (never
   Spire Mod Manager itself, which its own reading decides), our own checks first, with "most likely"
   where the evidence is weaker; it offers to turn that mod off (every switch of it, and the mods that need it) and
   restart, or to restore the last working setup when that can help. Nothing else changes: every other mod keeps the switches the game read. A turn-off counts only once

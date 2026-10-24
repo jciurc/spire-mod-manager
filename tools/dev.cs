@@ -24,6 +24,8 @@
 //                                     --crash-rebuild, after --crash-prepare: one that fails to start by a patch class's
 //                                      failed rebuild (Test UI's, applied by Test Framework), the last working launch
 //                                      on another game; Test UI named, as the record of the call alone says
+//                                     (each run after --crash-prepare refuses one that wasn't this worktree's, or
+//                                      whose setup another run has written over since)
 //                                     --stable, with any of them: the stable branch's game, in its own dev copy
 //   dotnet run tools/dev.cs launch    build, open the sandboxed game to try by hand (--first-run,
 //                                     --first-run-bmm and --workshop as for test); returns when you close it;
@@ -237,8 +239,18 @@ PrepareSandbox((mode is "test" or "smoke" || firstRun) && !keepsData); // the ru
 var dataDir = Path.Combine(sandbox, "mod_data", ModId);
 var turnedOff = Path.Combine(dataDir, "turned-off.json"); // our record of the mods a failed start's dialog turned off
 var settingsSave = Path.Combine(sandbox, "settings.save");
-if (keepsData && !File.Exists(Path.Combine(dataDir, "last-working.json")))
+var lastWorkingPath = Path.Combine(dataDir, "last-working.json");
+if (keepsData && !File.Exists(lastWorkingPath))
     return Fail("no last working setup in the sandbox: run dotnet run tools/dev.cs test --crash-prepare first");
+// The runs after --crash-prepare go on the data it left, and another run can slip in between (the lock is a run's, and
+// every dev runner shares the sandbox): another worktree's --crash-prepare, or a run whose main menu wrote its own last
+// working setup. So --crash-prepare leaves a token beside it (this worktree, its commit, the game, the time, and
+// last-working.json's write time), each run after it stamps it again as it ends, and each refuses to run on one that
+// isn't this worktree's or that the file has moved on from.
+var tokenPath = Path.Combine(dataDir, "dev-crash-prepare.json");
+if (keepsData && NotOurPrepare() is { } notOurs)
+    return Fail($"the sandbox's last working setup isn't this worktree's --crash-prepare's: {notOurs}. Run dotnet run tools/dev.cs test --crash-prepare"
+        + $"{(stable ? " --stable" : "")}{(crashNotice ? ", then test --crash-culprit," : "")} right before this run");
 if (crashNotice && !File.Exists(turnedOff))
     return Fail("no mod turned off in the sandbox: run dotnet run tools/dev.cs test --crash-culprit first (after test --crash-prepare)");
 if (failing && File.Exists(turnedOff))
@@ -383,6 +395,54 @@ DateTime? CommitTime()
     }
 }
 
+// The checked-out commit, short, or null without git.
+string? Commit()
+{
+    try
+    {
+        var git = Process.Start(new ProcessStartInfo("git", ["-C", root, "rev-parse", "--short", "HEAD"]) { RedirectStandardOutput = true });
+        var commit = git?.StandardOutput.ReadToEnd().Trim();
+        git?.WaitForExit();
+        return commit is { Length: > 0 } ? commit : null;
+    }
+    catch (System.ComponentModel.Win32Exception)
+    {
+        return null;
+    }
+}
+
+string GameName() => stable ? "stable" : "beta";
+
+string Written(string file) => File.GetLastWriteTimeUtc(file).ToString("o");
+
+// The token of this worktree's --crash-prepare (and each run after it), beside the last working setup it left.
+void StampPrepare() => File.WriteAllText(tokenPath, new JsonObject
+{
+    ["worktree"] = root, ["commit"] = Commit(), ["game"] = GameName(), ["time"] = DateTime.Now.ToString("o"), ["lastWorking"] = Written(lastWorkingPath),
+}.ToJsonString(new() { WriteIndented = true }));
+
+// Why the sandbox's last working setup isn't from this worktree's --crash-prepare, by its token; null when it is.
+string? NotOurPrepare()
+{
+    JsonObject? token;
+    try
+    {
+        token = File.Exists(tokenPath) ? JsonNode.Parse(File.ReadAllText(tokenPath)) as JsonObject : null;
+    }
+    catch (Exception e) when (e is IOException or System.Text.Json.JsonException)
+    {
+        token = null;
+    }
+    if (token == null)
+        return "there's no token of a --crash-prepare run beside it";
+    var (worktree, commit, game, time) = ((string?)token["worktree"] ?? "", (string?)token["commit"] ?? "an unknown commit", (string?)token["game"], (string?)token["time"]);
+    if (worktree.Length == 0 || !string.Equals(FullDir(worktree), FullDir(root), StringComparison.OrdinalIgnoreCase))
+        return $"its --crash-prepare ran in {worktree} at {commit} ({time})";
+    if (game != GameName())
+        return $"its --crash-prepare ran on the {game} game ({time})";
+    return (string?)token["lastWorking"] == Written(lastWorkingPath) ? null : $"another run wrote last-working.json after this worktree's last crash run ({time})";
+}
+
 // The dev log so far, read while the game may still be writing it.
 List<string> LogLines()
 {
@@ -441,6 +501,8 @@ if (!game.HasExited)
 
 if (readOnlySettings)
     File.SetAttributes(settingsSave, File.GetAttributes(settingsSave) & ~FileAttributes.ReadOnly); // as it was before the run
+if ((crashPrepare || keepsData) && File.Exists(lastWorkingPath))
+    StampPrepare();
 
 var results = Path.Combine(outDir, "results.txt");
 // --crash: the relaunch after Restore reads the mod list from settings.save, and the self-test saw it only in memory.
