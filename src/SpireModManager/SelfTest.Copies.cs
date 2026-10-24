@@ -667,11 +667,12 @@ static partial class SelfTest
     // (its dependency then first, or off, or waiting on one installed since, or moved; one installed from both sources,
     // blocked at every launch), no other ticked copy that fits, the game's rule leaving one copy, who counts as needing
     // the id, which copy of an id a mod waits for, a fallback needing a mod that isn't installed, the fixture's twins with
-    // Test Framework off; then none that fits (the tie order), a fallback below a minimum version (at it, a needer off, a
-    // version the game can't read), the fallback's copies still to load first, a needer the next launch brings back from
-    // the game's rule, on the beta a copy's two manifests in two folders and a fallback with both sources left, a copy's
-    // two manifests in one folder (and a needer's), who needs a minimum version, a needer's update (installed once, and
-    // twice), and a fallback where a mod needs a minimum version the game can't read.
+    // Test Framework off; then none that fits (the tie order, a copy with two manifests by its newer), a fallback below
+    // a minimum version (at it, a needer off, a version the game can't read), the fallback's copies still to load first,
+    // a needer the next launch brings back from the game's rule, on the beta a copy's two manifests in two folders and a
+    // fallback with both sources left, a copy's two manifests in one folder (and a needer's), who needs a minimum
+    // version, a needer's update (installed once, and twice), and a fallback where a mod needs a minimum version the game
+    // can't read.
     static void TestCopyRule(string outDir)
     {
         var beta = Compat.WorkshopBeatsOlderLocal;
@@ -1471,6 +1472,30 @@ static partial class SelfTest
                 $"the page {page.Loads} ({page.Why}), blocked by {page.Late ?? "nothing"}, before the slot {string.Join(",", page.Before.Order())}; the next launch "
                 + $"{Shown(next.Loads)}, before the slot {string.Join(",", next.Before.Order())}");
         }
+        // ... each of the others by its newest manifest, the one that loads of it (NewestOf, as the fallback reads the ticked
+        // ones): C 3.0 ticked, blocked by D, X (two manifests in one folder: X1 1.0 needing nothing, X2 2.0 needing E) and Y
+        // 1.5 not ticked, our record X first, D and E listed after the id, a mod needing the id. X2 can't take the slot, so
+        // Y, on the page and at the launch; with X2 needing nothing, X, the launch loading X2. Both fail on c42b5a8: its page
+        // and Run went by each manifest, so X by X1, which Run loaded.
+        x = Id();
+        {
+            var (dep, late) = ($"{x}D", $"{x}E");
+            Row("a blocked copy with no other ticked copy, another with two manifests in one folder, the newer needing a mod after the slot: that copy by its "
+                + "newer, so the next by the tie order that can", Case([L(x, "X", "1.0.0"), Made(x, "X", version: "2.0.0", needs: [late]), L(x, "Y", "1.5.0"),
+                    Made(x, "C", version: "3.0.0", needs: [dep])], off: ["l:X", "l:Y"], record: ["l:X", "l:Y", "l:C"],
+                    extra: [Made($"{x}User", "User", needs: [x]), Made(dep, "D"), Made(late, "E")],
+                    saved: [Entry(x), Entry(x), Entry(x), Entry(x), Entry($"{x}User"), Entry(dep), Entry(late)]), "Y", "C Blocked");
+        }
+        x = Id();
+        {
+            var dep = $"{x}D";
+            var (older, newer) = (L(x, "X", "1.0.0"), L(x, "X", "2.0.0"));
+            var got = Case([older, newer, L(x, "Y", "1.5.0"), Made(x, "C", version: "3.0.0", needs: [dep])], off: ["l:X", "l:Y"], record: ["l:X", "l:Y", "l:C"],
+                extra: [Made($"{x}User", "User", needs: [x]), Made(dep, "D")], saved: [Entry(x), Entry(x), Entry(x), Entry(x), Entry($"{x}User"), Entry(dep)]);
+            Check("the rule, ... the same with the newer needing nothing: X, the launch loading the newer (C Blocked)",
+                got is ("X", "X", "C Blocked", _) && newer.state == ModLoadState.None && older.state == ModLoadState.DisabledDuplicate,
+                $"page {got.Page}, launch {got.Launch} (1.0 {older.state}, 2.0 {newer.state}); losing {got.Why}");
+        }
         // Nor can a copy below a minimum version of the id that a mod still to load needs (as the game reads it: that mod
         // would fail), nor one whose version the game can't read. C 3.0 blocked by D (listed after the id), B 2.0 ticked, A
         // 2.5.0 not, our record B first, a mod needing the id at 2.5.0 or newer and one needing 3.0.0, off: A (at the
@@ -1758,16 +1783,16 @@ static partial class SelfTest
     // decided before us, the game's local-vs-Workshop rule leaving one copy (nothing to do), a dependency of the chosen copy
     // that's on after the id's first slot (no swap; with a mod after us needing the id, the fallback: the best other
     // ticked copy that can take the slot, the one there too only where what it needs loads before it, not one needing a
-    // mod that isn't installed nor one below a minimum version a mod needs; none: the first copy left by the tie order that
-    // can, else the first; the rest set aside, the plan saying which copy was blocked by what; one off or not installed:
-    // swapped, or left at the slot; at the slot with no mod needing the id: left there), the canary (not a List<Mod>, not
-    // us first, not the game's own list), three copies, two Workshop copies and a local one, a local and a Workshop copy
-    // only, our own second copy, none of the copies left ticked (the ticked ones the game's rule set aside: the rule again
-    // over them, the copy it leaves brought back; none to bring back: the game's choice), a copy brought back with the
-    // game's manifest messages and in its own slot (the self-check: taken), one Workshop item with two manifests, a file
-    // from before copies_off (its legacy pick alone ticked; missing, the others), a set-aside copy's messages kept for its
-    // panel; then the self-check's verdicts (Judge) on what the game made of a plan. Which copy wins by version and tie is
-    // TestCopyRule's.
+    // mod that isn't installed nor one below a minimum version a mod needs; none: of the copies left, each by its newest
+    // manifest, the first by the tie order that can, else the first; the rest set aside, the plan saying which copy was blocked by
+    // what; one off or not installed: swapped, or left at the slot; at the slot with no mod needing the id: left there),
+    // the canary (not a List<Mod>, not us first, not the game's own list), three copies, two Workshop copies and a local
+    // one, a local and a Workshop copy only, our own second copy, none of the copies left ticked (the ticked ones the
+    // game's rule set aside: the rule again over them, the copy it leaves brought back; none to bring back: the game's
+    // choice), a copy brought back with the game's manifest messages and in its own slot (the self-check: taken), one
+    // Workshop item with two manifests, a file from before copies_off (its legacy pick alone ticked; missing, the
+    // others), a set-aside copy's messages kept for its panel; then the self-check's verdicts (Judge) on what the game
+    // made of a plan. Which copy wins by version and tie is TestCopyRule's.
     static void TestSameIdPlan()
     {
         const string X = "SmmSameIdX";
@@ -2099,6 +2124,27 @@ static partial class SelfTest
                 && none[1] == b2 && c2.state == Aside && a2.state == Aside
                 && okOne && planOne.GetValueOrDefault(X) is { Blocked: "w:5", Swapped: false } own && own.Loads == w5a && w5b.state == Aside,
                 $"{Say(plan, b, a, c)} || {Say(planNone, b2, a2, c2)} || {Say(planOne, w5a, w5b)}");
+        }
+        {
+            // ... each other copy by its newest manifest, the one that loads of it (as Choose and Fallback read them): C (3.0)
+            // ticked, blocked by D; X, with two manifests in one folder (X1 1.0 at the slot, needing nothing, and X2 2.0
+            // needing D), and Y (1.5), neither ticked, our record X first. X2 can't take the slot: Y, swapped in, X1 and X2
+            // set aside. With X2 needing nothing: X2, swapped in past X1, which is set aside. Both fail on c42b5a8: its Run
+            // went by each manifest, so X1, at the slot.
+            var (x1, x2, y, c) = (Made(X, "X"), Made(X, "X", version: "2.0.0", needs: ["SmmSameIdD"]), Made(X, "Y", version: "1.5.0"),
+                Made(X, "C", version: "3.0.0", needs: ["SmmSameIdD"]));
+            List<Mod> list = [us, x1, x2, y, Made("SmmSameIdNeeder", "M", needs: [X]), Made("SmmSameIdD", "D"), c];
+            var (ok, plan) = PlanOf(list, off: OffKeys("l:X", "l:Y"), record: ["l:X", "l:Y", "l:C"]);
+            var (n1, n2, ny, nc) = (Made(X, "X"), Made(X, "X", version: "2.0.0"), Made(X, "Y", version: "1.5.0"), Made(X, "C", version: "3.0.0", needs: ["SmmSameIdD"]));
+            List<Mod> fits = [us, n1, n2, ny, Made("SmmSameIdNeeder", "M", needs: [X]), Made("SmmSameIdD", "D"), nc];
+            var (okFits, planFits) = PlanOf(fits, off: OffKeys("l:X", "l:Y"), record: ["l:X", "l:Y", "l:C"]);
+            Check("... a blocked pick with no other ticked copy that can take the slot, another copy with two manifests: that copy by its newer, so Y "
+                + "where the newer can't (swapped in, both of X's set aside); where it can, the newer, swapped in past the older",
+                ok && plan.GetValueOrDefault(X) is { Why: SameIdLoad.Reason.DependencyAfterSlot, Blocked: "l:C", Swapped: true } entry && entry.Loads == y && list[1] == y
+                && x1.state == Aside && x2.state == Aside && c.state == Aside
+                && okFits && planFits.GetValueOrDefault(X) is { Why: SameIdLoad.Reason.DependencyAfterSlot, Blocked: "l:C", Swapped: true } newer && newer.Loads == n2
+                && fits[1] == n2 && n1.state == Aside && ny.state == Aside && nc.state == Aside,
+                $"{Say(plan, x1, x2, y, c)} || {Say(planFits, n1, n2, ny, nc)}");
         }
         {
             // The copy chosen at the slot needing a mod that's on after it (as a dependency cycle leaves them) while no mod

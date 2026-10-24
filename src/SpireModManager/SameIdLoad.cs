@@ -210,9 +210,10 @@ static class SameIdLoad
                     // the copy the rule would load were the copies that are off, the blocked one and any that can't take
                     // the slot not installed (Fallback; brought back where the game's rule set it aside), so a copy that's
                     // off doesn't load in a ticked one's place; none: of the copies still to load other than the blocked
-                    // one, by the tie order (the game's sort can put them either way round), the first that can take the
-                    // slot, else the first; none but the blocked copy's (a Workshop item with two manifests): its first.
-                    // The page works out the same from the next launch's order (Copies.Next).
+                    // one, each by its newest manifest, by the tie order (the game's sort can put them either way round),
+                    // the first that can take the slot, else the first (FirstLeft); none but the blocked copy's (a
+                    // Workshop item with two manifests): its first. The page works out the same from the next launch's
+                    // order (Copies.Next).
                     // Whether a copy can take the slot: everything it needs installed, on and loading before it, and the
                     // minimum versions of the id that mods still to load need met (as the game reads its version).
                     var mins = Copies.Mins(id, list.Skip(self + 1).Where(m => m.state == ModLoadState.None));
@@ -220,8 +221,8 @@ static class SameIdLoad
                         && Copies.Meets(m, mins);
                     var fallback = Fallback([.. both.Where(p => Ticked(p.Mod)).Select(p => p.Mod)], picked.Mod, m => m.state == ModLoadState.None, Copies.GameVersion,
                         Fits, TieOrder, strict);
-                    var rest = Copies.ByTie(todo.Where(p => Copies.CopyOf(p.Mod) != Copies.CopyOf(picked.Mod)), p => p.Mod, TieOrder);
-                    var instead = fallback != null ? both.First(p => p.Mod == fallback) : rest.Where(p => Fits(p.Mod)).Concat(rest).Concat(todo).First();
+                    var left = fallback ?? FirstLeft(todo.Select(p => p.Mod), picked.Mod, Fits, TieOrder) ?? todo[0].Mod;
+                    var instead = both.First(p => p.Mod == left);
                     var insteadSwapped = false;
                     if (instead.At != s1)
                     {
@@ -270,8 +271,8 @@ static class SameIdLoad
     // put copies of one id either way round), without the blocked one, the game's local-vs-Workshop rule
     // (Copies.GameRule) and Choose's pick of what it leaves; where that one doesn't fit (something it needs isn't
     // installed, on and loading before the slot, or a minimum version a mod needs isn't met), again without it. None: null
-    // (the caller takes the first copy left that fits, else the first). One Mod per copy (its newest manifest, as Choose
-    // reads them). The launch's (Run) and the page's (Copies.Next), so they can't differ.
+    // (the caller takes FirstLeft). One Mod per copy (its newest manifest, as Choose reads them). The launch's (Run) and
+    // the page's (Copies.Next), so they can't differ.
     public static Mod? Fallback(IReadOnlyList<Mod> ticked, Mod blocked, Func<Mod, bool> left, Func<Mod, SemanticVersion?> gameVersion, Func<Mod, bool> fits,
         Func<IEnumerable<string>, IEnumerable<string>> tieOrder, bool strict)
     {
@@ -287,6 +288,17 @@ static class SameIdLoad
             pool.RemoveAll(m => Copies.CopyOf(m) == Copies.CopyOf(pick.Mod));
         }
         return null;
+    }
+
+    // Where Fallback finds none: of the id's other copies, ticked or not, by the tie order, the first that fits, else the
+    // first; null for none but the blocked copy's. One Mod per copy, its newest manifest (the one that loads of it), so a
+    // copy whose older manifest fits but not its newest isn't taken for fitting. The launch's (Run) and the page's
+    // (Copies.Next).
+    public static Mod? FirstLeft(IEnumerable<Mod> mods, Mod blocked, Func<Mod, bool> fits, Func<IEnumerable<string>, IEnumerable<string>> tieOrder)
+    {
+        var left = Copies.ByTie(mods.Where(m => Copies.CopyOf(m) != Copies.CopyOf(blocked)).GroupBy(Copies.CopyOf).Select(copy => Copies.NewestOf([.. copy])),
+            m => m, tieOrder);
+        return left.FirstOrDefault(fits) ?? left.FirstOrDefault();
     }
 
     // A copy's own manifest messages, read again for a copy Run brings back: the game gives a mod its manifest's
