@@ -957,8 +957,6 @@ static partial class SelfTest
     const string WhyUnreadable = "this copy's version being unreadable";
     const string CopyBlocked = "This copy would load before a required dependency. {other} is currently compatible and will be loaded instead.";
     const string LoadsBlocked = "The copy {other} would load before a required dependency, so this copy will be loaded instead";
-    const string LoadsUnticked = "This copy loads though it's disabled: it shares the game's switch with {other}, which is enabled, and the game prioritizes "
-        + "it over {local} as the higher version";
     const string LoadsAlso = "{other} is also enabled - only this copy will be loaded";
     const string LoadsAfter = "Loads on relaunch, in place of {other}";
     const string FailedOther = "This mod shares an ID with {other}";

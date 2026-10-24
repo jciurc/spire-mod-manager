@@ -534,8 +534,9 @@ static class ModDetails
     // too, not a relaunch away: orange, as nothing else says it won't load, for a copy of this mod as for any. First, as
     // it tells the next launch: a copy the game failed as a duplicate this launch says it too (the game's error shows
     // under From the game). Failed to load: ticked, and the game failed it. Pending relaunch: whether it loads changes at
-    // the relaunch. Else Enabled or Disabled, by its box, except that a copy that loads unticked (through a switch it
-    // shares, or in place of a copy the launch couldn't swap in: Copies.Next) is Enabled, as it loads.
+    // the relaunch. Else Enabled or Disabled, by its box, except that a copy that loads unticked (the game's own choice
+    // for an id the launch couldn't choose for, or the first copy that can take a blocked one's place where no ticked one
+    // can: Copies.Next) is Enabled, as it loads.
     // Pending relaunch, as the status says it: what loads after a relaunch isn't what loaded, for a copy neither set aside
     // as another loads nor failed (those statuses come first). #pending finds these.
     public static bool PendingRelaunch(Mod mod) => !Copies.Loses(mod) && !(Copies.Ticked(mod) && mod.state == ModLoadState.Failed)
@@ -564,10 +565,8 @@ static class ModDetails
     // can't disagree with the status, the banner or the launch. The first that holds:
     // - the choice couldn't be applied this launch (SameIdLoad's self-check or canary): it says so, on every copy;
     // - ticked while another copy loads after a relaunch: that one, and why (the status says it won't load); the copy the
-    //   launch couldn't swap in (Why.Blocked) names the dependency that loads after the copy loading instead;
-    // - loading in the place of a copy the launch couldn't swap in, ticked or not: which copy, and why;
-    // - loading though unticked, through the switch it shares with a ticked copy (the beta's local-vs-Workshop rule
-    //   taking out the copies ticked): so, naming both;
+    //   next launch can't swap in (Why.Blocked) names what it needs that loads after the copy loading instead;
+    // - loading in the place of a copy the next launch can't swap in, ticked or not: which copy, and why;
     // - ticked, not loaded now, and loading after a relaunch in place of the copy loaded now: so;
     // - ticked and failed for its own reasons: how to load another copy instead (after the red), another copy ticked or
     //   not (it isn't "the one that loads" when it failed);
@@ -631,12 +630,10 @@ static class ModDetails
             return links ? $"[url=mod:{Copies.LinkKey(other)}][color={ModLinkHex}]{name}[/color][/url]" : name;
         }
         string Line(string key, Mod other) => Menus.Format(key, ("other", Other(other)));
-        // The dependency the launch couldn't load the blocked copy without (SameIdLoad's plan), as its row names it.
-        string Dep() => SameIdLoad.Plan.GetValueOrDefault(id)?.Late is { } late ? Dependencies.Find(late) is { } found ? Other(found) : Escape(late) : "";
         if (SameIdLoad.Unchosen(id))
             return Escape(Menus.Text("SPIRE_MOD_MANAGER.COPY_NOT_APPLIED"));
         if (Copies.LosesTo(mod) is { } lost)
-            return lost.Why == Copies.Why.Blocked ? Menus.Format("SPIRE_MOD_MANAGER.COPY_BLOCKED", ("other", Other(lost.Loads)), ("dep", Dep()))
+            return lost.Why == Copies.Why.Blocked ? Line("SPIRE_MOD_MANAGER.COPY_BLOCKED", lost.Loads)
                 : Why(lost.Why) is { } why ? Menus.Format("SPIRE_MOD_MANAGER.COPY_LOSES", ("other", Other(lost.Loads)), ("why", why))
                 : Line("SPIRE_MOD_MANAGER.COPY_LOSES_PLAIN", lost.Loads);
         var ticked = Copies.Ticked(mod);
@@ -644,10 +641,7 @@ static class ModDetails
         {
             if (Copies.Next(id).Losing.FirstOrDefault(p => p.Value == Copies.Why.Blocked).Key is { } blocked
                 && others.FirstOrDefault(o => Copies.CopyOf(o) == blocked) is { } swap)
-                return Menus.Format("SPIRE_MOD_MANAGER.COPY_LOADS_BLOCKED", ("other", Other(swap)), ("dep", Dep()));
-            if (!ticked && Copies.Twins(mod).FirstOrDefault(Copies.Ticked) is { } sharing
-                && others.Where(o => o.modSource == ModSource.ModsDirectory && Copies.Ticked(o)).ToList() is { Count: > 0 } locals)
-                return Menus.Format("SPIRE_MOD_MANAGER.COPY_LOADS_UNTICKED", ("other", Other(sharing)), ("local", Other(Copies.FirstRead(locals))));
+                return Line("SPIRE_MOD_MANAGER.COPY_LOADS_BLOCKED", swap);
         }
         if (ticked && mod.state is not (ModLoadState.Loaded or ModLoadState.Failed) && Copies.Loads(mod)
             && others.FirstOrDefault(o => o.state == ModLoadState.Loaded) is { } loaded)
@@ -656,7 +650,8 @@ static class ModDetails
             return Line("SPIRE_MOD_MANAGER.COPY_FAILED_OTHER", others.FirstOrDefault(Copies.Ticked) ?? others[0]);
         if (others.FirstOrDefault(Copies.Ticked) is { } enabled)
             return ticked ? Line("SPIRE_MOD_MANAGER.COPY_LOADS_ALSO", enabled)
-                // The one of them that loads (a copy that's off loads only through a switch it shares: then another).
+                // The one of them that loads where it's ticked, else the first ticked (an unticked copy loads only where
+                // no ticked one can).
                 : Line("SPIRE_MOD_MANAGER.COPY_OTHER_ENABLED", Copies.Loading(id) is { } loads && others.Contains(loads) && Copies.Ticked(loads) ? loads : enabled);
         return null;
     }

@@ -19,9 +19,11 @@ static class RelaunchCheck
 
     static History.Point? _mark; // the history as the dialog opened (History.Mark): Cancel undoes back to it
 
-    // owner: the page asking (the Modding screen or the main menu); the dialog closes when it goes.
+    // owner: the page asking (the Modding screen or the main menu); the dialog closes when it goes. One set of answers
+    // for the check and the dialog it opens (Lookups).
     public static void Relaunch(Node owner)
     {
+        using var lookups = Lookups.Begin();
         if (Problems().Count == 0 && Clashing().Count == 0 && !Copies.OursOff())
             ModEntry.Relaunch();
         else
@@ -51,9 +53,11 @@ static class RelaunchCheck
             Fill(owner, column);
     }
 
-    // The dialog's contents for the current state (again after each fix).
+    // The dialog's contents for the current state (again after each fix, which comes after the fix's write: its answers
+    // are fresh).
     static void Fill(Node owner, VBoxContainer column)
     {
+        using var lookups = Lookups.Begin();
         foreach (var child in column.GetChildren())
         {
             column.RemoveChild(child);
@@ -75,10 +79,7 @@ static class RelaunchCheck
                 $"  •  [b]{Escape(Copies.Named(g.Key))}[/b]  [color={ProblemHex}]{Escape(string.Join(". ", g.Select(p => p.Why)))}[/color]")));
         // Duplicates, as the same-ID banner's card has them (Jordan, 23 Oct): grouped by ID, each copy Active or Ignored.
         if (clashing.Count > 0)
-        {
-            using var lookups = Lookups.Begin();
             parts.Add(Escape(Menus.Text("SPIRE_MOD_MANAGER.RELAUNCH_COPIES_INTRO")) + "\n" + string.Join("\n", ModDetails.CopyGroups(clashing, CopiesShown)));
-        }
         body.Text = parts.Count == 0 ? Menus.Text("SPIRE_MOD_MANAGER.RELAUNCH_CHECK_OK") : string.Join("\n\n", parts);
         column.AddChild(body);
 

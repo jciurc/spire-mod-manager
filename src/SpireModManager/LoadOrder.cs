@@ -281,7 +281,15 @@ static class LoadOrder
     }
 
     // Moves each needed mod just ahead of what needs it, keeping everything else in place.
-    public static void FixOrder(IList<NModMenuRow> rows) => Save(Dependencies.Fixed(Mods(rows)));
+    public static void FixOrder(IList<NModMenuRow> rows) => Save(Fixed(Mods(rows)));
+
+    // Dependencies.Fixed with one set of answers (Lookups: it asks which copy of each mod and its dependencies loads),
+    // ended before the order is saved, so what the save redraws reads the new order.
+    static List<Mod> Fixed(List<Mod> mods)
+    {
+        using var lookups = Lookups.Begin();
+        return Dependencies.Fixed(mods);
+    }
 
     // Disable (or Enable), then top, up, down, bottom (greyed where they can't move it; ours, pinned first, never move,
     // and nothing moves above them). compact: the inline moves only; placed: the rows in place, when the caller already
@@ -771,7 +779,7 @@ static class LoadOrder
             neededBy[mod.manifest?.id ?? ""].Any(m => m != mod) ? 0
             : mod.manifest?.affectsGameplay ?? true ? 1
             : 2;
-        Save(Dependencies.Fixed(mods.OrderBy(Tier).ToList())); // OrderBy is stable: same-tier mods keep their order
+        Save(Fixed(mods.OrderBy(Tier).ToList())); // OrderBy is stable: same-tier mods keep their order
     }
 
     // Our entries (one per installed copy) at the top of a saved list, everything else in its order: the game sorts a
