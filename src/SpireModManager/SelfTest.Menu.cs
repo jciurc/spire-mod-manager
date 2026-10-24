@@ -1228,10 +1228,11 @@ static partial class SelfTest
         // game's text, and in English from its file. Not empty: the game has one.
         var gamesMessage = LaunchGuard.GamesMessage(plain: false).Trim();
         var gamesMessagePlain = LaunchGuard.GamesMessage(plain: true).Trim();
-        // Styled: "Notice from the game" centred, then the message alone in an outlined, faintly filled box (a one-cell
-        // table), our text after. Plain (no markup): the same words over the message.
+        // Styled: "Notice from the game" centred, then the message alone in an outlined, faintly filled box (the middle cell
+        // of three, centred), our text after. Plain (no markup): the same words over the message.
         var boxed = System.Text.RegularExpressions.Regex.Match(gamesMessage, @"^\[center\]\[color=#[0-9a-f]{6}\]Notice from the game\[/color\]\[/center\]\n"
-            + @"\[table=1\]\[cell expand=1 border=#[0-9a-f]{8} bg=#[0-9a-f]{8} padding=[0-9,]+\]\[center\]\p{Cf}(?<message>.+)\[/center\]\[/cell\]\[/table\]$");
+            + @"\[table=3\]\[cell [^\]]+\]\[table=1\].*?\[/table\]\[/cell\]\[cell expand=1 border=#[0-9a-f]{8} bg=#[0-9a-f]{8} padding=[0-9,]+\]\[center\]\p{Cf}"
+            + @"(?<message>.+)\[/center\]\[/cell\]\[cell [^\]]+\]\[table=1\].*?\[/table\]\[/cell\]\[/table\]$");
         Check("the game's own message for a failed start, as the dialogs show it: under \"Notice from the game\" (centred), alone in its outlined box; "
             + "plain, under the same words; its markup read by the game's auto-size",
             boxed.Success && GameReads(gamesMessage) && boxed.Groups["message"].Value.Length > 30 && !boxed.Groups["message"].Value.Contains("Notice from the game")

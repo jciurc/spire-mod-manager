@@ -118,13 +118,17 @@ static class TurnedOff
     // A turn-off's entries, written only after its save worked. An entry there for the same mod (another copy of it
     // turned off since) takes the new one's details, and keeps each source's switch it recorded first (the one Turn back
     // on needs), gaining the new sources and copies. An entry of this streak whose failure had the same signature gets
-    // SameErrorAfter (most likely not the cause). Throws if the file can't be written, and nothing changes then.
+    // SameErrorAfter (most likely not the cause), but not between two failed rebuilds: their signature is the rebuilt
+    // method's and Harmony's error is the same for any bad build, so two patching mods' failures read alike. Throws if the
+    // file can't be written, and nothing changes then.
     public static void Add(IReadOnlyList<Entry> added)
     {
         var entries = Entries.ToList();
-        if (added.FirstOrDefault(e => e.Signature is { Length: > 0 })?.Signature is { } signature)
+        static bool Rebuild(Culprits.Why why) => why is Culprits.Why.Rebuild or Culprits.Why.RebuildLast;
+        if (added.FirstOrDefault(e => e.Signature is { Length: > 0 }) is { Signature: { } signature } culprit)
             for (var i = 0; i < entries.Count; i++)
-                if (!entries[i].MenuSince && entries[i].Signature == signature && !added.Any(a => a.Id == entries[i].Id))
+                if (!entries[i].MenuSince && entries[i].Signature == signature && !added.Any(a => a.Id == entries[i].Id)
+                    && !(Rebuild(entries[i].Why) && Rebuild(culprit.Why)))
                     entries[i] = entries[i] with { SameErrorAfter = true };
         foreach (var entry in added)
         {
@@ -148,8 +152,9 @@ static class TurnedOff
     // An entry of ours for this mod: its needs lines say so
     public static bool Has(string? id) => id != null && Entries.Any(e => e.Id == id);
 
-    // Every mod turned off after a failed start, that Restore and profiles keep off: ours, and Mod Doctor's
-    public static HashSet<string> OffIds() => [.. Entries.Select(e => e.Id), .. ModDoctor.TurnedOffIds()];
+    // Every mod turned off after a failed start, that Restore and profiles keep off: ours, and Mod Doctor's that are still
+    // off in the game's list as read (LaunchGuard.AsRead)
+    public static HashSet<string> OffIds() => [.. Entries.Select(e => e.Id), .. ModDoctor.TurnedOffIds(LaunchGuard.AsRead())];
 
     // The entries as ranking reads them (Culprits.Rank: didn't stick, the streak)
     public static List<Culprits.Recorded> Recorded() => [.. Entries.Select(e => new Culprits.Recorded(e.At, e.Id, e.Switches, e.MenuSince))];
@@ -224,7 +229,7 @@ static class TurnedOff
     }
 
     // From MainMenuPatch's timer: the entries not shown yet, once, after any other popup (trying again each second while
-    // one is up). Marked shown as it opens, in memory first: the main menu comes back after every run.
+    // one is up)
     public static void ShowNotice(Node menu)
     {
         try
@@ -236,7 +241,6 @@ static class TurnedOff
                 menu.GetTree().CreateTimer(1).Timeout += () => ShowNotice(menu);
                 return;
             }
-            Keep([.. Entries.Select(e => fresh.Contains(e) ? e with { Shown = true } : e)], "that its notice showed");
             _ = Ask(fresh);
         }
         catch (Exception e)
@@ -245,19 +249,30 @@ static class TurnedOff
         }
     }
 
+#if DEVTOOLS
+    // Self-test: as if the game's popup couldn't be made for the notice
+    public static bool TestNoPopup;
+#endif
+
     // The notice in the game's popup, our mark on it: Keep off on the left, Turn back on on the right. Enter presses Turn
     // back on: the game binds its confirm to the right button and its cancel (Escape) to the left, and swapping them
     // would put Escape on Turn back on. An entry whose error came back after it first, with a link to turn it alone back on.
+    // The entries are marked shown once the popup is up, in memory first: the main menu comes back after every run.
     static async Task Ask(List<Entry> entries)
     {
         try
         {
+#if DEVTOOLS
+            if (TestNoPopup)
+                throw new InvalidOperationException("the self-test's popup that can't be made");
+#endif
             if (NGenericPopup.Create() is not { } popup || NModalContainer.Instance is not { } modals)
                 throw new InvalidOperationException("the game's popup can't be made");
             var (title, body, cards) = Notice(entries, plain: false);
             Menus.Mark(popup);
             LaunchGuard.Links(popup, cards);
             modals.Add(popup);
+            Keep([.. Entries.Select(e => entries.Contains(e) ? e with { Shown = true } : e)], "that its notice showed");
             var again = entries.FirstOrDefault(e => e.SameErrorAfter);
             var alone = new TaskCompletionSource();
             if (again != null)

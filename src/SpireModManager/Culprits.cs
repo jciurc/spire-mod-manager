@@ -184,12 +184,14 @@ static class Culprits
     // Which mod each loaded assembly is, by the assembly itself, never by its name alone (a loader and its runtime can
     // share a name's start, and a mod can load a second copy of another's): the mods' own lists (Mod.assemblies, whatever
     // the mod's state: one that failed after patching still has code running), else the folder its file is in, else its
-    // name among the mods' DLL files. One that two mods' ids claim is no mod's, and so are Harmony's and MonoMod's.
+    // name among the DLL files of the mods that ran. One that two mods' ids claim is no mod's, and so are Harmony's and
+    // MonoMod's.
     public sealed class OwnerMap
     {
         readonly Dictionary<Assembly, string?> _known = [];
         readonly Dictionary<Assembly, HashSet<string>> _listed = [];
         readonly List<(string Dir, string Id)> _folders;
+        readonly HashSet<string> _ran;
         readonly string[] _outside;
         Dictionary<string, HashSet<string>>? _dlls;
 
@@ -202,6 +204,7 @@ static class Culprits
             // Longest first, for mods in folders nested in another's
             _folders = [.. withIds.Where(m => m.path is { Length: > 0 }).Select(m => (Dir(m.path), m.manifest?.id ?? "")).Distinct()
                 .OrderByDescending(f => f.Item1.Length)];
+            _ran = [.. withIds.Where(RanThisLaunch).Select(m => m.manifest?.id ?? "")];
             // The game's own folder (sts2.dll's) and the runtime's: a mod that bundles a DLL the game has isn't handed the game's
             _outside = [.. new[] { typeof(ModManager).Assembly, typeof(object).Assembly }.Select(LocationOf).Where(l => l.Length > 0)
                 .Select(l => Dir(Path.GetDirectoryName(l) ?? l))];
@@ -232,14 +235,15 @@ static class Culprits
             return ByName(assembly.GetName().Name + ".dll", location, Dlls(), _outside);
         }
 
-        // Each DLL file name under the mods' folders, with the ids whose folders have one (a file in a nested mod's folder is
-        // that mod's alone), listed once, when the first assembly needs it
+        // Each DLL file name under the folders of the mods that ran this launch, with the ids whose folders have one (a file
+        // in a nested mod's folder is that mod's alone), listed once, when the first assembly needs it. A mod that's off
+        // loads nothing from its folder, so its files name no one.
         Dictionary<string, HashSet<string>> Dlls()
         {
             if (_dlls != null)
                 return _dlls;
             _dlls = [];
-            foreach (var (dir, id) in _folders)
+            foreach (var (dir, id) in _folders.Where(f => _ran.Contains(f.Id)))
             {
                 try
                 {
@@ -256,7 +260,7 @@ static class Culprits
         }
 
         // The rule for an assembly loaded from bytes (no file) or from outside its mod's folder: the one id whose folders have
-        // a DLL of its name. None under the game's folder or the runtime's.
+        // a DLL of its name (Dlls: of the mods that ran). None under the game's folder or the runtime's.
         public static string? ByName(string name, string? location, IReadOnlyDictionary<string, HashSet<string>> dlls, IReadOnlyList<string> outside) =>
             location is { Length: > 0 } file && outside.Any(dir => Under(file, dir)) ? null
             : dlls.TryGetValue(name.ToLowerInvariant(), out var ids) && ids.Count == 1 ? ids.First() : null;
@@ -297,8 +301,11 @@ static class Culprits
         && (name is "0Harmony" or "HarmonySharedState" || name.StartsWith("MonoMod", StringComparison.Ordinal));
 
     // One installed copy as the rules read it: its id, source and which copy (Copies.CopyOf), and whether its code ran this
-    // launch (loaded, or failed after its assemblies loaded)
+    // launch (RanThisLaunch)
     public record Copy(string Id, ModSource Source, string Key, bool Ran);
+
+    // Whether a mod's code ran this launch: loaded, or failed after its assemblies loaded
+    static bool RanThisLaunch(Mod mod) => mod.state == ModLoadState.Loaded || mod.state == ModLoadState.Failed && Compat.Assemblies(mod).Any();
 
     // What the rules read about the mods: whose each loaded assembly is, the installed copies, and what each id needs (its
     // manifests, and the mods its assemblies reference: a mod can build on a library without declaring it)
@@ -336,8 +343,7 @@ static class Culprits
         {
             var owners = new OwnerMap(ModManager.Mods);
             var installed = ModManager.Mods.Union(Installed.Mods).Where(m => m.manifest?.id is { Length: > 0 }).ToList();
-            var copies = installed.Select(m => new Copy(m.manifest?.id ?? "", m.modSource, SpireModManager.Copies.CopyOf(m),
-                m.state == ModLoadState.Loaded || m.state == ModLoadState.Failed && Compat.Assemblies(m).Any())).ToList();
+            var copies = installed.Select(m => new Copy(m.manifest?.id ?? "", m.modSource, SpireModManager.Copies.CopyOf(m), RanThisLaunch(m))).ToList();
             var manifests = installed.Select(m => (m.manifest?.id ?? "", (IEnumerable<string>)Dependencies.Read(m)));
             return new Context(owners, copies, NeedsOf(manifests, owners.Owned()));
         }
@@ -644,11 +650,11 @@ static class Culprits
     }
 
     // A failed rebuild. Harmony saves a method's patches only after their build worked, and its state starts empty each
-    // launch, so every saved patch built this launch on this game: the failed build is one that worked plus the patching
-    // mod's new patches. In order: a transpiler's own throw names its mod; a mod's method that can't compile on its first
-    // patch names its mod; the one of the patching mod and the method's saved patches' owners changed on the same game;
-    // else the patching mod, most likely (without its patches the method built). A library others need stays a shortlist on
-    // the same game when its patch class failed (a framework applying its dependents' classes wrote none of them).
+    // launch, so every saved patch built this launch on this game: the failed build is one that worked plus the new
+    // patches of the mod applying them (Applying). In order: a transpiler's own throw names its mod; a mod's method that
+    // can't compile on its first patch names its mod; the one of that mod and the method's saved patches' owners changed
+    // on the same game; else that mod, most likely (without its patches the method built). None when whose patches they
+    // were doesn't show.
     static Pick? Rebuild(Scan scan, string? patcher)
     {
         if (TranspilerThrew(scan) is { } threw)
@@ -665,17 +671,100 @@ static class Culprits
                 scan.List([of]);
                 return PickOf(Why.Stale, of, step: step);
             }
-        var shortlist = (patcher == null ? [] : new[] { patcher }).Concat((originals ?? []).SelectMany(o => Patchers(o, scan, ours: false))).Distinct().ToList();
+        var applying = Applying(scan, patcher, originals);
+        var shortlist = new[] { applying ?? patcher }.OfType<string>().Concat((originals ?? []).SelectMany(o => Patchers(o, scan, ours: false))).Distinct().ToList();
         scan.List(shortlist);
-        if (patcher == null)
-            return null; // the one change is the patching mod's, and it's unknown
+        if (applying == null)
+            return null; // the one change is the new patches' mod's, and it's unknown
         if (shortlist.Where(scan.Moved).ToList() is [var changed])
             return PickOf(Why.Rebuild, changed, step: step);
-        // Its own call (a direct Harmony.Patch names no class of another's), or nothing else to go on (another game, no
-        // working launch): turning it off with its dependents gives the method the build that worked
-        if (patcher == ModEntry.ModId || originals == null || !scan.Mods.IsLibrary(patcher) || !scan.Same)
-            return PickOf(Why.RebuildLast, patcher, step: step);
-        return null;
+        return PickOf(Why.RebuildLast, applying, step: step); // turning it off (with its dependents) gives the method the build that worked
+    }
+
+    // Whose new patches the failed build had: the patching mod's. A library (a running mod needs it) also applies its
+    // dependents' patch classes, and wrote none of them, so for one it's whichever of it and its dependents has a patch
+    // class on the rebuilt method that Harmony didn't save (Applied); none when that doesn't show, as for its direct
+    // Harmony.Patch, which names no method. A framework is never turned off for a dependent's patch.
+    static string? Applying(Scan scan, string? patcher, IReadOnlyList<MethodBase>? originals)
+    {
+        if (patcher == null || patcher == ModEntry.ModId || !scan.Mods.IsLibrary(patcher))
+            return patcher;
+        var applied = originals is { Count: > 0 } ? Applied(patcher, originals, scan) : null;
+        scan.Notes.Add($"the patching mod {patcher} is a library: " + (applied == null ? "whose patch it applied doesn't show" : $"the patch it applied is {applied}'s"));
+        return applied;
+    }
+
+    // The one of a library and the running mods that need it with a patch class on these methods that Harmony didn't save
+    // (it saves a class's patches only after their build worked), by the classes' [HarmonyPatch] attributes; null when
+    // none or several have one
+    static string? Applied(string library, IReadOnlyList<MethodBase> originals, Scan scan)
+    {
+        var mods = scan.Mods.Users(library).Append(library).ToHashSet();
+        var saved = originals.SelectMany(PatchesOn).Select(p => (p.Module, p.MetadataToken)).ToHashSet();
+        var owners = new HashSet<string>();
+        foreach (var (assembly, id) in scan.Mods.Owners.Owned())
+            if (!assembly.IsDynamic && Holds(id, mods))
+                foreach (var type in AccessTools.GetTypesFromAssembly(assembly))
+                    if (PatchesFor(type, originals) is { Count: > 0 } patches && !patches.Any(p => saved.Contains((p.Module, p.MetadataToken)))
+                        && ModOfType(type, scan.Mods.Owners) is { } owner && mods.Contains(owner))
+                        owners.Add(owner);
+        return owners.Count == 1 ? owners.First() : null;
+    }
+
+    // Whether an assembly of this mod can hold a type of these mods: its own (the self-test maps its stand-ins by type)
+    static bool Holds(string owner, IReadOnlySet<string> mods)
+    {
+#if DEVTOOLS
+        if (TestOwner != null)
+            return true;
+#endif
+        return mods.Contains(owner);
+    }
+
+    // A patch class's methods whose [HarmonyPatch] attributes (the class's with each method's) name one of these methods.
+    // Harmony's attributes are looked for first without making them: every type of the mods is asked.
+    static List<MethodInfo> PatchesFor(Type type, IReadOnlyList<MethodBase> originals)
+    {
+        try
+        {
+            var outer = HasHarmony(type) ? HarmonyMethodExtensions.GetMergedFromType(type) : null;
+            return [.. AccessTools.GetDeclaredMethods(type).Where(method => (outer != null || HasHarmony(method))
+                && Target(outer ?? new HarmonyMethod(), method) is { } target && originals.Contains(target))];
+        }
+        catch (Exception)
+        {
+            return []; // attributes that can't be read
+        }
+    }
+
+    static bool HasHarmony(MemberInfo member) => member.GetCustomAttributesData().Any(a => a.AttributeType.Namespace == "HarmonyLib");
+
+    // The method a patch method's attributes name, found as Harmony finds the kinds a patch class names (a method, a
+    // property's getter or setter, a constructor, an async method's or an iterator's state machine); null for none, or
+    // one that can't be read
+    static MethodBase? Target(HarmonyMethod outer, MethodInfo method)
+    {
+        try
+        {
+            var patch = outer.Merge(HarmonyMethodExtensions.GetMergedFromMethod(method));
+            if (patch.declaringType is not { } type)
+                return null;
+            var named = patch.methodName is { Length: > 0 } name && patch.methodType is null or MethodType.Normal or MethodType.Async or MethodType.Enumerator
+                ? AccessTools.DeclaredMethod(type, name, patch.argumentTypes) : null;
+            return patch.methodType switch
+            {
+                MethodType.Getter => patch.methodName is { } getter ? AccessTools.DeclaredPropertyGetter(type, getter) : null,
+                MethodType.Setter => patch.methodName is { } setter ? AccessTools.DeclaredPropertySetter(type, setter) : null,
+                MethodType.Constructor => AccessTools.DeclaredConstructor(type, patch.argumentTypes),
+                MethodType.Async => named == null ? null : AccessTools.AsyncMoveNext(named),
+                MethodType.Enumerator => named == null ? null : AccessTools.EnumeratorMoveNext(named),
+                _ => named,
+            };
+        }
+        catch (Exception)
+        {
+            return null;
+        }
     }
 
     // A transpiler's own throw (eager, inside reflection's TargetInvocationException; an iterator's, where its output is

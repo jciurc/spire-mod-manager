@@ -315,20 +315,20 @@ static class LaunchGuard
 
     static string Name(string id) => Escaped(PlainName(id));
 
-    // The changes as the popups list them, a line each, the last ones counted in one line if there are many. Plain: for
-    // where the game's text couldn't load, in English from our own file and without markup (Our).
-    static List<string> Lines(IReadOnlyList<Change> changes, bool plain = false)
+    // The changes as the popups list them, a line each, the last ones counted in one line if there are more than most.
+    // Plain: for where the game's text couldn't load, in English from our own file and without markup (Our).
+    static List<string> Lines(IReadOnlyList<Change> changes, bool plain = false, int most = LinesShown)
     {
-        var shown = changes.Count > LinesShown ? LinesShown - 1 : LinesShown;
+        var shown = changes.Count > most ? most - 1 : most;
         var lines = changes.Take(shown).Select(c => Line(c, plain)).ToList();
-        if (changes.Count > LinesShown)
+        if (changes.Count > most)
             lines.Add("  •  " + More(plain, MoreChanges, changes.Count - shown));
         return lines;
     }
 
     // The changes the list counts in its last line rather than lists: the card over that line.
-    static string Rest(IReadOnlyList<Change> changes) =>
-        changes.Count > LinesShown ? string.Join("\n", changes.Skip(LinesShown - 1).Select(c => Line(c, plain: false))) : "";
+    static string Rest(IReadOnlyList<Change> changes, int most = LinesShown) =>
+        changes.Count > most ? string.Join("\n", changes.Skip(most - 1).Select(c => Line(c, plain: false))) : "";
 
     // "{count} more", for the changes, Mod Doctor's suspects or the mods a dialog doesn't list: a link whose card names
     // them, in the game's popup (Links); plain text in the plain dialog, which can't show a card
@@ -353,11 +353,45 @@ static class LaunchGuard
     }
 
     // The game's popup's text, as given after its own setup: it takes one loc entry, and ours is put together from several
-    // whole ones
+    // whole ones. Its auto-size measures the text as one paragraph, without the room our boxes take (GameText), so the
+    // size it picks can run the text past the label: it's made smaller until it fits as laid out (FitBody).
     public static void SetBody(NGenericPopup popup, string body)
     {
-        if (popup.GetNodeOrNull<MegaRichTextLabel>("VerticalPopup/Description") is { } words)
-            words.SetTextAutoSize(body);
+        if (popup.GetNodeOrNull<MegaRichTextLabel>("VerticalPopup/Description") is not { } words)
+            return;
+        words.SetTextAutoSize(body);
+        try
+        {
+            FitBody(words);
+        }
+        catch (Exception e)
+        {
+            Log.Warn($"[{ModEntry.ModId}] Could not fit a popup's text to it, so it may run past its edge: {e.Message}");
+        }
+    }
+
+    // The smallest size the right button's words are meant for: a mod's name in them is cut to fit at it (FittedYes)
+    public const int SmallestButtonText = 14;
+
+    static readonly StringName[] TextSizes = ["normal_font_size", "bold_font_size", "bold_italics_font_size", "italics_font_size", "mono_font_size"];
+
+    // The text at the largest size, from the auto-size's own down, at which it fits the label as laid out now (its boxes'
+    // gaps as they'll be drawn), made the auto-size's largest too: its own pass comes later (deferred) and keeps to it
+    static void FitBody(MegaRichTextLabel words)
+    {
+        if (words.Size.Y <= 0)
+            return; // not laid out: nothing to measure against
+        GameText.Fit(words);
+        void Sized(int size)
+        {
+            foreach (var name in TextSizes)
+                words.AddThemeFontSizeOverride(name, size);
+        }
+        var fits = words.MaxFontSize;
+        Sized(fits);
+        while (words.GetContentHeight() > words.Size.Y && fits > words.MinFontSize)
+            Sized(--fits);
+        words.MaxFontSize = fits;
     }
 
     // One change as the popups list it.
@@ -622,10 +656,12 @@ static class LaunchGuard
             [.. copies.GroupBy(m => m.modSource).Select(g => new Culprits.Switch(g.Key, Culprits.OnAsRead(mod.Id, g.Key, asRead), [.. g.Select(Copies.CopyOf).Distinct()]))]);
     }
 
-    // Every saved entry of each id off, every source; an installed copy with no entry gets one, off, or it would load
-    static void SwitchOff(List<SettingsSaveMod> list, IReadOnlySet<string> ids, IEnumerable<Mod> installed)
+    // Every saved entry of each id off, of each source with an installed copy (one of a source with none can't load, and
+    // Turn back on, which goes by the installed sources, couldn't put it back); an installed copy with no entry gets one,
+    // off, or it would load
+    static void SwitchOff(List<SettingsSaveMod> list, IReadOnlySet<string> ids, IReadOnlyList<Mod> installed)
     {
-        foreach (var entry in list.Where(e => ids.Contains(e.Id)))
+        foreach (var entry in list.Where(e => ids.Contains(e.Id) && installed.Any(m => m.manifest?.id == e.Id && m.modSource == e.Source)))
             entry.IsEnabled = false;
         foreach (var m in installed)
             if (m.manifest?.id is { } id && ids.Contains(id) && !list.Any(e => e.Id == id && e.Source == m.modSource))
@@ -801,7 +837,7 @@ static class LaunchGuard
     // Self-test: as if the game's text couldn't load, for the plain dialog.
     public static bool TestNoLanguage;
 
-    // Self-test: the takeover throwing before it hands the game its task (StartupErrorPatch's try)
+    // Self-test: the takeover throwing before it hands the game its task (StartupErrorPatch's try), once past its undo
     public static bool TestTakeoverThrows;
 #endif
 
@@ -820,14 +856,32 @@ static class LaunchGuard
     // the checks after it) first takes back what that menu recorded.
     public static Task AskAfterCrash(NGame game)
     {
+        if (_reached)
+            UndoMenuReached();
 #if DEVTOOLS
         if (TestTakeoverThrows)
             throw new InvalidOperationException("the self-test's takeover that throws");
 #endif
-        if (_reached)
-            UndoMenuReached();
         return AskAfterCrash(game, null);
     }
+
+#if DEVTOOLS
+    // Self-test: the takeover (call) as a start that failed after its first main menu in another folder, whose last
+    // working setup from before this launch is working; this launch's put back after
+    public static void TestTakeover(string dir, Setup? working, Action call)
+    {
+        var kept = (Dir, _working, _reached);
+        (Dir, _working, _reached) = (dir, working, true);
+        try
+        {
+            call();
+        }
+        finally
+        {
+            (Dir, _working, _reached) = kept;
+        }
+    }
+#endif
 
     // After a start that failed past its first main menu: the last working setup as it was before this launch (none if
     // there was none), so the next launch doesn't compare against a launch that failed, and the turned-off entries' marks
@@ -1024,7 +1078,7 @@ static class LaunchGuard
 
     // The switches as the game read them before the first main menu (the list in memory is its rebuilt one then), the
     // list as it is after it
-    static IReadOnlyList<(string Id, ModSource Source, bool On)>? AsRead() =>
+    public static IReadOnlyList<(string Id, ModSource Source, bool On)>? AsRead() =>
         SameIdLoad.Settled ? SaveManager.Instance.SettingsSave.ModSettings?.ModList.Select(Key).ToList() : _read;
 
     // A turn-off can keep every other mod as the game read it: after the first main menu, or with that list
@@ -1069,9 +1123,9 @@ static class LaunchGuard
     }
 
     // The dialog's list: the changes, whether the game changed since, and the first few of Mod Doctor's suspects.
-    static List<string> CrashLines(Offer offer, IReadOnlyList<string> suspects, bool plain)
+    static List<string> CrashLines(Offer offer, IReadOnlyList<string> suspects, bool plain, int most = LinesShown)
     {
-        var lines = Lines(offer.Changes, plain);
+        var lines = Lines(offer.Changes, plain, most);
         if (offer.GameChanged)
             lines.Add("\n" + Our(plain, "SPIRE_MOD_MANAGER.CRASH_GAME_CHANGED"));
         if (suspects.Count > 0)
@@ -1137,10 +1191,11 @@ static class LaunchGuard
     // What the dialog says, after the game's message. With no culprit, the restore offer: what changed, Restore, and Mod
     // Doctor's suspects with Disable suspects as the link. With one: our line for it by why (none for Mod Doctor's pick
     // with its own words), Mod Doctor's box under it when it names the same mod, the turn-off (the mods that need it go
-    // too; ours names them and leaves them), the mods this streak turned off already and the streak, and the restore
-    // beside it when Restore can help (RestoreHelps); its link is Restore, else from the third failed start in a row Turn
-    // off all mods. A turn-off that didn't stick says so, and offers Restore if it applies, else Quit alone. After a
-    // failed write, what went wrong first, then the culprit's line (or the offer's text), with Quit alone.
+    // too; ours names them and leaves them), the mods this streak turned off already, and the restore beside it when
+    // Restore can help (RestoreHelps, the first few changes listed), its link; else from the third failed start in a row
+    // the streak, with Turn off all mods as the link. A turn-off that didn't stick says so, and offers Restore if it
+    // applies, else Quit alone. After a failed write, what went wrong first, then the culprit's line (or the offer's
+    // text), with Quit alone.
     public static Shown Plan(Crash crash, IReadOnlyList<string> suspects, Failed? failed, bool plain)
     {
         var cards = new Dictionary<string, string>();
@@ -1184,21 +1239,25 @@ static class LaunchGuard
         }
         if (culprit.Why == Culprits.Why.Self)
         {
+            parts.Add(Our(plain, "SPIRE_MOD_MANAGER.CRASH_TURN_OFF_SELF_BODY"));
             if (culprit.Needing.Count > 0)
                 parts.Add(Our(plain, "SPIRE_MOD_MANAGER.CRASH_SELF_NEEDED", ("mods", Names(culprit.Needing, plain, MoreNeeding, cards))));
             return Done(new Button("SPIRE_MOD_MANAGER.CRASH_TURN_OFF_SELF", Answer.TurnOff));
         }
-        parts.Add(ids.Count == 1 ? Our(plain, "SPIRE_MOD_MANAGER.CRASH_TURN_OFF_BODY", ("mod", mod)) : Our(plain, "SPIRE_MOD_MANAGER.CRASH_TURN_OFF_BODY_MANY"));
+        var turnOff = ids.Count == 1 ? Our(plain, "SPIRE_MOD_MANAGER.CRASH_TURN_OFF_BODY", ("mod", mod)) : Our(plain, "SPIRE_MOD_MANAGER.CRASH_TURN_OFF_BODY_MANY");
+        // The turn-offs in one paragraph: this one, the mods that go with it, the ones this streak made already
+        if (culprit.Needing.Count > 0)
+            turnOff += " " + Our(plain, "SPIRE_MOD_MANAGER.CRASH_TURN_OFF_NEEDS", ("mods", Names(culprit.Needing, plain, MoreNeeding, cards)));
+        if (TurnedOff.Entries.Where(e => !e.MenuSince && !ids.Contains(e.Id)).Select(e => TurnedOff.Name(e, plain)).Distinct().ToList() is { Count: > 0 } already)
+            turnOff += " " + Our(plain, "SPIRE_MOD_MANAGER.CRASH_ALREADY_OFF", ("mods", Listed(already, plain, MoreOff, cards)));
+        parts.Add(turnOff);
         if (box != null && doctors)
             parts.Add(box);
-        if (culprit.Needing.Count > 0)
-            parts.Add(Our(plain, "SPIRE_MOD_MANAGER.CRASH_TURN_OFF_NEEDS", ("mods", Names(culprit.Needing, plain, MoreNeeding, cards))));
-        if (TurnedOff.Entries.Where(e => !e.MenuSince && !ids.Contains(e.Id)).Select(e => TurnedOff.Name(e, plain)).Distinct().ToList() is { Count: > 0 } already)
-            parts.Add(Our(plain, "SPIRE_MOD_MANAGER.CRASH_ALREADY_OFF", ("mods", Listed(already, plain, MoreOff, cards))));
-        var streak = culprit.Streak >= StreakForAllOff;
+        // The streak's words go with its link, Turn off all mods, which Restore takes the place of
+        var restore = RestoreHelps(crash);
+        var streak = culprit.Streak >= StreakForAllOff && !restore;
         if (streak)
             parts.Add(Our(plain, "SPIRE_MOD_MANAGER.CRASH_STREAK", ("count", Count(plain, culprit.Streak))));
-        var restore = RestoreHelps(crash);
         if (restore && crash.Offer is { } beside)
             parts.Add(RestoreOr(beside, plain, cards));
         var yes = ids.Count == 1 ? new Button("SPIRE_MOD_MANAGER.CRASH_TURN_OFF", Answer.TurnOff, Mod: Culprits.Named(ids[0], plain))
@@ -1279,11 +1338,14 @@ static class LaunchGuard
         return string.Join("\n", lines);
     }
 
+    const int LinesBeside = 2; // beside a culprit, the second offer: its first change, the rest counted
+
     // Restore beside a culprit: the date, what changed since (and whether the game did)
     static string RestoreOr(Offer offer, bool plain, Dictionary<string, string> cards)
     {
-        cards[MoreChanges] = Rest(offer.Changes);
-        return Our(plain, "SPIRE_MOD_MANAGER.CRASH_RESTORE_OR", ("date", Date(offer.Working, plain)), ("changes", string.Join("\n", CrashLines(offer, [], plain))));
+        cards[MoreChanges] = Rest(offer.Changes, LinesBeside);
+        return Our(plain, "SPIRE_MOD_MANAGER.CRASH_RESTORE_OR", ("date", Date(offer.Working, plain)),
+            ("changes", string.Join("\n", CrashLines(offer, [], plain, LinesBeside))));
     }
 
     // Mod Doctor's own words, set apart as its: its name over them, in a box like the game's message (plain: under its
@@ -1330,27 +1392,47 @@ static class LaunchGuard
             LinkButton(popup, Said(link, plain: false), () => linked.TrySetResult(link.Answer));
         var title = new LocString("settings_ui", "SPIRE_MOD_MANAGER.CRASH_TITLE");
         var quit = new LocString("main_menu_ui", "QUIT");
+        var yes = shown.Yes is { Mod: { } mod } named ? FittedYes(popup, named, mod) : shown.Yes;
         // The title stands in for the text, which SetBody puts in after
-        var confirmed = shown.Yes is { } yes ? popup.WaitForConfirmation(title, title, quit, Loc(yes)) : popup.WaitForConfirmation(title, title, null, quit);
+        var confirmed = yes != null ? popup.WaitForConfirmation(title, title, quit, Loc(yes)) : popup.WaitForConfirmation(title, title, null, quit);
         SetBody(popup, shown.Body);
-        if (shown.Yes is { Mod: { } mod } named)
-            FitName(popup, named, mod);
         if (await Task.WhenAny(confirmed, linked.Task) == linked.Task)
             return linked.Task.Result;
         return await confirmed && shown.Yes is { } chosen ? chosen.Answer : Answer.Quit;
     }
 
-    // The right button's words with the mod's name cut short where they're wider than its label at the label's largest
-    // size (it would shrink them instead); the whole name is in the text
-    static void FitName(NGenericPopup popup, Button button, string mod)
+    // The right button naming a mod: its words on as many lines as its label holds (on the game's one line even a short
+    // name shrinks them past reading), the name cut short where they still don't fit at SmallestButtonText; the whole
+    // name is in the text
+    static Button FittedYes(NGenericPopup popup, Button button, string mod)
     {
-        if (popup.GetNodeOrNull<NPopupYesNoButton>("VerticalPopup/YesButton") is not { } yes || yes.GetNodeOrNull<MegaLabel>("%Label") is not { Size.X: > 0 } label)
-            return;
-        var (font, size, room) = (label.GetThemeFont("font"), label.MaxFontSize, label.Size.X);
-        if (RowTitles.Measure(font, Said(button, plain: false), size) <= room)
-            return;
-        var rest = RowTitles.Measure(font, Said(button with { Mod = "" }, plain: false), size);
-        yes.SetText(Said(button with { Mod = RowTitles.Cut(font, mod, size, room - rest) }, plain: false));
+        if (popup.GetNodeOrNull<NPopupYesNoButton>("VerticalPopup/YesButton")?.GetNodeOrNull<MegaLabel>("%Label") is not { } label)
+            return button;
+        label.AutowrapMode = TextServer.AutowrapMode.WordSmart;
+        // As tall as its least, centred where it is: the label reaches past the button's art above and below, which a line
+        // alone keeps inside
+        if (label.Size.Y > label.CustomMinimumSize.Y && label.CustomMinimumSize.Y > 0)
+        {
+            var spare = (label.Size.Y - label.CustomMinimumSize.Y) / 2;
+            (label.OffsetTop, label.OffsetBottom) = (label.OffsetTop + spare, label.OffsetBottom - spare);
+        }
+        var (font, room) = (label.GetThemeFont("font"), label.Size is { X: > 0, Y: > 0 } size ? size : label.CustomMinimumSize);
+        bool Fits(string name) => font.GetMultilineStringSize(Said(button with { Mod = name }, plain: false), HorizontalAlignment.Center, room.X, SmallestButtonText)
+            is var words && words.X <= room.X && words.Y <= room.Y;
+        if (Fits(mod))
+            return button;
+        // The longest start of the name that fits, by halves (a longer start is never smaller)
+        var starts = StringInfo.ParseCombiningCharacters(mod);
+        var (fits, over) = (0, starts.Length);
+        while (over - fits > 1)
+        {
+            var mid = (fits + over) / 2;
+            if (Fits(Menus.CutShort(mod[..starts[mid]])))
+                fits = mid;
+            else
+                over = mid;
+        }
+        return button with { Mod = Menus.CutShort(mod[..starts[fits]]) };
     }
 
     // The suspects the line counts rather than names: the card over its "more".

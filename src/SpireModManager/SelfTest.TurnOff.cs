@@ -31,11 +31,26 @@ static partial class SelfTest
 
     static string TurnOffDir(string outDir) => Path.Combine(outDir, "turn-off");
 
-    // One part: a fresh record file of the test's, and every hook, popup and the game's mod list put back after it
+    static bool IsFinite(Vector2 point) => float.IsFinite(point.X) && float.IsFinite(point.Y);
+
+    // One part: a fresh record file of the test's, and after it every hook, popup, the game's mod list, both undo
+    // histories, the active profile's unsaved edit and this launch's record put back, though it threw midway (Turn back on
+    // and a tickbox record the lists a part makes up, and its pressed answers delete the record)
     static async Task TurnOffPart(Func<Task> test, string outDir, [CallerArgumentExpression(nameof(test))] string name = "")
     {
         var settings = SaveManager.Instance.SettingsSave.ModSettings;
         var listWas = settings?.ModList.Select(e => new SettingsSaveMod { Id = e.Id, Source = e.Source, IsEnabled = e.IsEnabled }).ToList();
+        var history = History.TestKeep();
+        var profile = Profiles.Active;
+        var (edit, editedAt) = (profile?.Edited, profile?.EditedAt);
+        var pending = Path.Combine(LaunchGuard.Dir ?? OS.GetUserDataDir(), LaunchGuard.PendingFile);
+        var pendingWas = File.Exists(pending) ? File.ReadAllBytes(pending) : null;
+        // The game moves the mouse to where it is again at each popup's opening and closing (NControllerManager, through the
+        // window's scale): in a headless run 30 times further each time, so the parts' many popups can take it past what a
+        // float holds (NaN), and a menu opened at the mouse after with it. So it's put back where it moved: never with a
+        // window, whose scale is 1, where a move would hover what's under it.
+        var root = ((SceneTree)Engine.GetMainLoop()).Root;
+        var mouse = root.GetMousePosition();
         var dir = TurnOffDir(outDir);
         Emptied(dir);
         TurnedOff.TestFile = Path.Combine(dir, TurnedOff.FileName);
@@ -53,7 +68,7 @@ static partial class SelfTest
         {
             (ModEntry.TestQuit, ModEntry.TestRelaunch) = (null, null);
             (LaunchGuard.TestNoLanguage, LaunchGuard.TestSaveFails, LaunchGuard.TestTakeoverThrows) = (false, null, false);
-            (ModDoctor.TestSuspects, ModDoctor.TestFolder, TurnedOff.TestSteam) = (null, null, null);
+            (ModDoctor.TestSuspects, ModDoctor.TestFolder, ModDoctor.TestLoaded, TurnedOff.TestSteam, TurnedOff.TestNoPopup) = (null, null, false, null, false);
             NModalContainer.Instance?.Clear();
             ((SceneTree)Engine.GetMainLoop()).Root.GetNodeOrNull(LaunchGuard.PlainDialogName)?.QueueFree();
             if (NGame.Instance is { } game && transitionWas is { } visible)
@@ -65,6 +80,23 @@ static partial class SelfTest
                 settings.ModList.Clear();
                 settings.ModList.AddRange(listWas);
                 SaveManager.Instance.SaveSettings();
+            }
+            if (profile != null)
+            {
+                (profile.Edited, profile.EditedAt) = (edit, editedAt);
+                Store.SaveViewState();
+            }
+            History.TestPutBack(history);
+            if (pendingWas != null)
+                File.WriteAllBytes(pending, pendingWas);
+            else
+                File.Delete(pending);
+            await root.ToSignal(root.GetTree(), SceneTree.SignalName.ProcessFrame); // after the moves the popups' closing makes
+            if (root.GetMousePosition() != mouse && IsFinite(mouse))
+            {
+                var at = root.GetFinalTransform() * mouse; // in the window's terms, as the game moves it
+                Input.ParseInputEvent(new InputEventMouseMotion { Position = at, GlobalPosition = at });
+                await root.ToSignal(root.GetTree(), SceneTree.SignalName.ProcessFrame); // taken in before the next part
             }
         }
     }
@@ -213,6 +245,20 @@ static partial class SelfTest
         Check("a culprit with no entry as the game read it (new since): turned off with an entry of its own, off; its record says it was on",
             fresh == null && Of("SmmTestFixes") == "l-" && Recorded("SmmTestFixes") is { Switches: [{ On: true }] }, $"{fresh?.Key} {Of("SmmTestFixes")}; {Recorded("SmmTestFixes")}");
 
+        // A source of the culprit with no copy installed (a Workshop item unsubscribed since, its entry still on): left as it
+        // is. It can't load, and Turn back on, which goes by the installed sources, couldn't put it back.
+        if (ModManager.Mods.Union(Installed.Mods).Any(m => m.manifest?.id == "SmmTestFixes" && m.modSource == W))
+            Results.Add("SKIP a turn-off of a mod with a source not installed: Test Fixes is installed from the Workshop too");
+        else
+        {
+            FreshRecord();
+            Swap(S(ModEntry.ModId, L, true), S("SmmTestFixes", L, true), S("SmmTestFixes", W, true));
+            var uninstalled = LaunchGuard.TurnOff(settings, Read(ours, ("SmmTestFixes", L, true), ("SmmTestFixes", W, true)), false, fixes);
+            Check("a turn-off leaves a source of the mod with no copy installed as it is (its Workshop entry on), the installed one off and recorded alone",
+                uninstalled == null && Of("SmmTestFixes") == "l-,w+" && Recorded("SmmTestFixes") is { Switches: [{ Source: L }] },
+                $"{uninstalled?.Key} {Of("SmmTestFixes")}; {Recorded("SmmTestFixes")}");
+        }
+
         // Disable suspects writes entries too (why Suspect). Turn off all mods: every mod on, one with no entry as read too
         // (Test Content), never ours; one already off (Test UI, as read before the menu and as the list is after it) is
         // neither turned off again nor recorded.
@@ -284,10 +330,16 @@ static partial class SelfTest
         FreshRecord();
         TurnedOff.Add([OffEntry("SmmTestUi", at: DateTimeOffset.Now.AddMinutes(-2))]);
         TurnedOff.Add([OffEntry("SmmTestFixes")]);
+        var again = (Recorded("SmmTestUi")?.SameErrorAfter, Recorded("SmmTestFixes")?.SameErrorAfter);
+        // Not between two failed rebuilds: any bad build of a method reads the same
+        FreshRecord();
+        TurnedOff.Add([OffEntry("SmmTestUi", Culprits.Why.RebuildLast, DateTimeOffset.Now.AddMinutes(-2))]);
+        TurnedOff.Add([OffEntry("SmmTestFixes", Culprits.Why.RebuildLast)]);
+        var rebuilds = Recorded("SmmTestUi")?.SameErrorAfter;
         Check("a mod turned off again: one entry, the first switch kept for a source it had, the new one and its copies joined; the start failing the same "
-            + "way after a turn-off marks that entry", merged is [{ Source: L, On: true, Copies: ["l:SmmTestFixes", "l:SmmTestFixesFixed"] }, { Source: W, On: true }]
-            && Recorded("SmmTestUi")?.SameErrorAfter == true && Recorded("SmmTestFixes")?.SameErrorAfter == false,
-            $"{string.Join("; ", merged.Select(s => $"{s.Source} {s.On} {string.Join("+", s.Copies)}"))}; Test UI again {Recorded("SmmTestUi")?.SameErrorAfter}");
+            + "way after a turn-off marks that entry, but not one failed rebuild after another",
+            merged is [{ Source: L, On: true, Copies: ["l:SmmTestFixes", "l:SmmTestFixesFixed"] }, { Source: W, On: true }] && again == (true, false) && rebuilds == false,
+            $"{string.Join("; ", merged.Select(s => $"{s.Source} {s.On} {string.Join("+", s.Copies)}"))}; Test UI again {again}; after a rebuild {rebuilds}");
 
         // Turn back on: of a mod recorded with its local copy off and its Workshop one on, the Workshop switch alone; with
         // the Workshop copy gone since, the local one, and no entry added for the Workshop
@@ -393,7 +445,8 @@ static partial class SelfTest
         Check("the dialog for a library (the mods that need it named, turned off too), ours (how to get it back, the mods that need us, no link), a turn-off "
             + "that didn't stick (said; Quit alone, or Restore where it applies) and the streak (the mods turned off already, Turn off all mods)",
             library.Body.Contains("The mods that need it are turned off too: Test Content, Test UI.")
-            && self.Body.Contains("The error came from Spire Mod Manager itself") && self.Body.Contains("These mods need it and won't load until it's on again: Test Fixes.")
+            && self.Body.Contains("The error came from Spire Mod Manager itself.\n\nIt can turn itself off and restart the game. To use it again, enable it on the vanilla modding page.")
+            && self.Body.Contains("These mods need it and won't load until it's on again: Test Fixes.")
             && Said(self) == "Turn off Spire Mod Manager and restart | no link"
             && stuck.Body.Contains("turned off Test Fixes after the last failed start, but the same copy loaded again") && Said(stuck) == "Quit alone | no link"
             && Said(stuckRestore) == "Restore and restart | no link" && streak.Body.Contains("Turned off after the last failed start: Test UI, Test Content.")
@@ -421,15 +474,18 @@ static partial class SelfTest
             + "beside one new since, every one of a group, and a last working launch that doesn't say its game counts as a change",
             helps.SequenceEqual([false, true, false, false, true, false, true, false]), string.Join(", ", helps));
 
-        // A failed write: what went wrong first (the mods named), then the culprit's line, with Quit alone; a Restore that
-        // couldn't save, then the offer's text
+        // A failed write: what went wrong first (the mods named), then the culprit's line, with Quit alone; ours, its line
+        // without the turn-off it couldn't make; a Restore that couldn't save, then the offer's text
         var failed = Plain(Crash(Blamed(Culprits.Why.Code, "SmmTestFixes")), failed: new("SPIRE_MOD_MANAGER.CRASH_SAVE_FAILED", ["SmmTestFixes"]));
+        var selfFailed = Plain(Crash(Blamed(Culprits.Why.Self, ModEntry.ModId)), failed: new("SPIRE_MOD_MANAGER.CRASH_SAVE_FAILED", [ModEntry.ModId]));
         var unrestored = Plain(Crash(null, otherNew), failed: new("SPIRE_MOD_MANAGER.CRASH_RESTORE_FAILED", []));
-        Check("after a failed write the dialog says what went wrong first, then the culprit's line (or the offer's text), with Quit alone and no link",
+        Check("after a failed write the dialog says what went wrong first, then the culprit's line (or the offer's text), with Quit alone and no link; ours, "
+            + "only that the error was its own",
             At(failed, "couldn't turn off Test Fixes: the game couldn't save its settings") is >= 0 and var said && At(failed, "Test Fixes stopped the game") > said
             && !failed.Body.Contains("Spire Mod Manager can turn off") && Said(failed) == "Quit alone | no link"
+            && selfFailed.Body.EndsWith("The error came from Spire Mod Manager itself.") && !selfFailed.Body.Contains("turn itself off") && Said(selfFailed) == "Quit alone | no link"
             && unrestored.Body.Contains("couldn't restore the last working setup") && Said(unrestored) == "Quit alone | no link",
-            $"{failed.Body} {Said(failed)} || {unrestored.Body} {Said(unrestored)}");
+            $"{failed.Body} {Said(failed)} || {selfFailed.Body} {Said(selfFailed)} || {unrestored.Body} {Said(unrestored)}");
 
         // In the game's popup, pressed
         var (quits, relaunches) = (0, 0);
@@ -448,28 +504,31 @@ static partial class SelfTest
         CheckMark("the crash culprit's dialog", popup);
         await Capture(menu, outDir, "1i-crash-culprit");
         var noLink = popup?.FindChild(LaunchGuard.LinkName, true, false) == null;
+        var fit = PopupFit();
         PressOurs("YesButton");
         await Wait(menu, 0.3);
         var entry = TurnedOff.Entries.FirstOrDefault(e => e.Id == "SmmTestFixes");
-        Check("the crash culprit's popup: the game's message, Test Fixes named, Quit and \"Turn off Test Fixes and restart\", no link; pressed, every switch "
-            + "of Test Fixes off, its record (Code, its switch with its copy), one plain relaunch, this launch's record gone",
+        Check("the crash culprit's popup: the game's message, Test Fixes named, Quit and \"Turn off Test Fixes and restart\", no link, its text and the button's "
+            + "fitting at a readable size; pressed, every switch of Test Fixes off, its record (Code, its switch with its copy), one plain relaunch, this "
+            + "launch's record gone",
             pressed.IsCompleted && words.Contains("Notice from the game") && words.Contains("Test Fixes stopped the game from starting") && words.Contains("Quit")
-            && words.Contains("Turn off Test Fixes and restart") && noLink && AllOff("SmmTestFixes") && relaunches == 1 && quits == 0
+            && words.Contains("Turn off Test Fixes and restart") && noLink && fit is { Fits: true, Size: >= ReadableText, Button: >= LaunchGuard.SmallestButtonText }
+            && AllOff("SmmTestFixes") && relaunches == 1 && quits == 0
             && entry is { Why: Culprits.Why.Code, Switches: [{ On: true, Copies: ["l:SmmTestFixes"] }] } && (DateTimeOffset.Now - entry.At).TotalMinutes < 1
-            && !File.Exists(pendingPath), $"{words}; relaunches {relaunches}, quits {quits}; {entry}; record left {File.Exists(pendingPath)}");
+            && !File.Exists(pendingPath), $"{words}; {fit}; relaunches {relaunches}, quits {quits}; {entry}; record left {File.Exists(pendingPath)}");
         ListBack();
 
         // Beside the restore: the link, which restores the working list with a mod turned off after a failed start kept
         // off (Test UI here, on in that list)
         TurnedOff.Add([OffEntry("SmmTestUi", at: DateTimeOffset.Now.AddMinutes(-3))]);
         (pressed, words) = await Show(Crash(Blamed(Culprits.Why.Code, "SmmTestFixes"), otherNew));
-        var link = (NModalContainer.Instance?.OpenModal as Node)?.FindChild(LaunchGuard.LinkName, true, false) as LinkButton;
+        var link = ((NModalContainer.Instance?.OpenModal as Node)?.FindChild(LaunchGuard.LinkName, true, false) as LinkButton)?.Text; // the press frees it
         PressLink();
         await Wait(menu, 0.3);
         Check("beside the restore, the turn-off is the button and \"Restore and restart\" the link; the link writes the working list (Test Fixes off there), "
             + "a mod turned off after a failed start kept off (Test UI, on there), then relaunches",
-            pressed.IsCompleted && words.Contains("Or restore the setup of the last working launch") && link?.Text == "Restore and restart" && relaunches == 2
-            && AllOff("SmmTestFixes") && AllOff("SmmTestUi"), $"{words}; link {link?.Text}; relaunches {relaunches}");
+            pressed.IsCompleted && words.Contains("Or restore the setup of the last working launch") && link == "Restore and restart" && relaunches == 2
+            && AllOff("SmmTestFixes") && AllOff("SmmTestUi"), $"{words}; link {link}; relaunches {relaunches}");
         ListBack();
 
         // The rules' own whys in the record: a failed rebuild's patching mod (RebuildLast), a probe group (both, one time),
@@ -531,17 +590,19 @@ static partial class SelfTest
         var asked = LaunchGuard.AskAfterCrash(game, Crash(Blamed(Culprits.Why.Code, "SmmTestFixes") with { DoctorAgrees = true, DoctorText = doctorWords }, otherNew));
         await Wait(menu, 0.5);
         var plainDialog = menu.GetTree().Root.GetNodeOrNull<ConfirmationDialog>(LaunchGuard.PlainDialogName);
-        var plainSays = plainDialog == null ? "no dialog" : $"{plainDialog.DialogText} | {plainDialog.OkButtonText} | {plainDialog.CancelButtonText} | "
+        var plainButtons = (Ok: plainDialog?.OkButtonText, Cancel: plainDialog?.CancelButtonText); // read before the answer frees it
+        var plainSays = plainDialog == null ? "no dialog" : $"{plainDialog.DialogText} | {plainButtons.Ok} | {plainButtons.Cancel} | "
             + string.Join(", ", plainDialog.FindChildren("*", "Button", true, false).OfType<Button>().Select(b => b.Text));
         plainDialog?.EmitSignal(AcceptDialog.SignalName.Canceled);
         await Wait(menu, 0.3);
         LaunchGuard.TestNoLanguage = false;
         Check("the plain dialog: the turn-off as OK, Quit as Cancel, Restore as a third button, Mod Doctor's words under \"From Mod Doctor:\"; Quit quits",
-            asked.IsCompleted && quits == 1 && plainDialog is { OkButtonText: "Turn off Test Fixes and restart", CancelButtonText: "Quit" }
+            asked.IsCompleted && quits == 1 && plainButtons == ("Turn off Test Fixes and restart", "Quit")
             && plainSays.Contains("Restore and restart") && plainSays.Contains("From Mod Doctor:\n" + doctorWords), plainSays);
 
-        // At its longest: a library and the mods that need it, three already off, the streak, a restore with five changes, and
-        // Mod Doctor's words: the popup's text still fits, both boxes drawn
+        // At its longest: a library and the mods that need it, three already off, the streak, a restore with five changes
+        // (one listed beside the culprit, the rest counted), and Mod Doctor's words: the popup's text still fits, at a size
+        // that can be read, both boxes drawn
         TurnedOff.Add([OffEntry("SmmTestMadeUpA", at: DateTimeOffset.Now.AddMinutes(-20)), OffEntry("SmmTestMadeUpB", at: DateTimeOffset.Now.AddMinutes(-15)),
             OffEntry("SmmTestMadeUpC", at: DateTimeOffset.Now.AddMinutes(-10))]);
         var five = Offer([.. Enumerable.Range(1, 5).Select(i => (LaunchGuard.Kind.New, $"SmmTestMadeUp{i}"))]);
@@ -549,12 +610,28 @@ static partial class SelfTest
         await Capture(menu, outDir, "1j-crash-culprit-longest");
         var text = (NModalContainer.Instance?.OpenModal as Node)?.GetNodeOrNull<RichTextLabel>("VerticalPopup/Description");
         var boxes = text == null ? "no text" : BoxesWrong(text, 2);
+        var (longest, tall) = (PopupFit(), text == null ? "" : $"{text.GetContentHeight()} tall in {text.Size}"); // the press frees it
         PressOurs("NoButton");
         await Wait(menu, 0.3);
         FreshRecord();
-        Check("the crash culprit's dialog at its longest (a library and its dependents, three already off, the streak, a restore with five changes, Mod "
-            + "Doctor's words): the text fits the popup, both boxes drawn", asked.IsCompleted && boxes == null && text != null && text.GetContentHeight() <= text.Size.Y + 1
-            && words.Contains("Turned off after the last failed start") && words.Contains("From Mod Doctor"), $"{boxes}; {text?.GetContentHeight()} tall in {text?.Size}; {words}");
+        Check($"the crash culprit's dialog at its longest (a library and its dependents, three already off, the streak, a restore with five changes, Mod "
+            + $"Doctor's words): the text fits the popup at a size that can be read ({ReadableText} or more), both boxes drawn",
+            asked.IsCompleted && boxes == null && longest is { Fits: true, Size: >= ReadableText }
+            && words.Contains("Turned off after the last failed start") && words.Contains("From Mod Doctor") && words.Contains("SmmTestMadeUp1 (new)")
+            && !words.Contains("SmmTestMadeUp2 (new)") && words.Contains("4 more"), $"{boxes}; {longest}, {tall}; {words}");
+        Results.Add($"INFO the crash culprit's dialog at its longest: its text at {longest.Size}");
+
+        // A name too long for the button: cut there, so its words wrap and stay readable; the whole name in the text
+        const string LongId = "SmmTestAModWhoseNameRunsOnAndOnPastTheButton";
+        (asked, words) = await Show(Crash(Blamed(Culprits.Why.Code, LongId)));
+        var cut = ((NModalContainer.Instance?.OpenModal as Node)?.GetNodeOrNull("VerticalPopup/YesButton")?.FindChild("Label", true, false) as Label)?.Text ?? "";
+        var cutFit = PopupFit();
+        PressOurs("NoButton");
+        await Wait(menu, 0.3);
+        Check($"a mod's name too long for the button is cut there, the words wrapped at {LaunchGuard.SmallestButtonText} or more; the whole name in the text",
+            asked.IsCompleted && cut.StartsWith("Turn off SmmTestAMod") && cut.EndsWith(Menus.CutMark + " and restart") && cutFit.Button >= LaunchGuard.SmallestButtonText
+            && words.Contains(LongId + " stopped the game"), $"\"{cut}\" {cutFit}; {words}");
+        var quitsBefore = quits;
 
         // A write that fails shows the dialog once more, saying so, with Quit alone: a turn-off whose save fails, a Restore
         // whose save fails; nothing relaunched
@@ -574,8 +651,20 @@ static partial class SelfTest
         var unrestoredSaid = await FailedAgain(Crash(null, otherNew));
         Check("a write that fails shows the dialog again, saying so, with Quit alone: a turn-off whose save fails, a Restore whose save fails; nothing "
             + "relaunched, and Quit quits", unsaved.Contains("couldn't turn off Test Fixes") && unsaved.Contains("no button visible: True") && unsaved.Contains("answered True")
-            && unrestoredSaid.Contains("couldn't restore the last working setup") && unrestoredSaid.Contains("answered True") && relaunches == 8 && quits == 4 && !AllOff("SmmTestFixes"),
-            $"{unsaved} || {unrestoredSaid}; relaunches {relaunches}, quits {quits}");
+            && unrestoredSaid.Contains("couldn't restore the last working setup") && unrestoredSaid.Contains("answered True") && relaunches == 8 && quits - quitsBefore == 2
+            && !AllOff("SmmTestFixes"), $"{unsaved} || {unrestoredSaid}; relaunches {relaunches}, quits {quits - quitsBefore}");
+    }
+
+    const int ReadableText = 12; // the size the popup's text keeps to at its longest: smaller can't be read at 1080p
+
+    // How the popup open now holds its words: whether its text fits its box, the size the text settled at, and the right
+    // button's
+    static (bool Fits, int Size, int Button) PopupFit()
+    {
+        var popup = NModalContainer.Instance?.OpenModal as Node;
+        var text = popup?.GetNodeOrNull<RichTextLabel>("VerticalPopup/Description");
+        var yes = popup?.GetNodeOrNull("VerticalPopup/YesButton")?.FindChild("Label", true, false) as Label;
+        return (text != null && text.GetContentHeight() <= text.Size.Y + 1, text?.GetThemeFontSize("normal_font_size") ?? 0, yes?.GetThemeFontSize("font_size") ?? 0);
     }
 
     // The notice at the next main menu: its words by why (as Notice has them in plain English), then the popup: Turn back
@@ -656,6 +745,15 @@ static partial class SelfTest
             failedWords.Contains("Couldn't turn Test Fixes back on") && failedKept == (true, false)
             && TurnedOff.Entries is [{ Id: "SmmTestFixes", Shown: true }] && !On("SmmTestFixes"), $"{failedWords}; {failedKept}; {string.Join(", ", TurnedOff.Entries)}");
 
+        // A popup that can't be made marks nothing shown, so the next main menu tries again
+        Recorded(OffEntry("SmmTestFixes", at: at));
+        TurnedOff.TestNoPopup = true;
+        TurnedOff.ShowNotice(menu);
+        await Wait(menu, 0.2);
+        TurnedOff.TestNoPopup = false;
+        var unshown = (NModalContainer.Instance?.OpenModal == null, TurnedOff.Entries is [{ Shown: false }]);
+        Check("a notice whose popup can't be made marks nothing shown, so the next main menu tries again", unshown == (true, true), $"{unshown}");
+
         // With its file read-only, the mark goes into memory, so the notice shows once a session (the main menu comes back after
         // every run). Without it in memory, every menu would show it again.
         Recorded(OffEntry("SmmTestFixes", at: at));
@@ -704,8 +802,9 @@ static partial class SelfTest
             offline == "SmmTestFixes seen, SmmTestGoneWorkshop seen" && online == "SmmTestFixes", $"without Steam: {offline}; with it: {online}");
     }
 
-    // Restore and profiles keep a mod turned off after a failed start off: ours, Mod Doctor's, and Mod Doctor itself when an
-    // entry of ours names it; a restore offer whose only change is such a mod off is none; the needs lines say so
+    // Restore and profiles keep a mod turned off after a failed start off: ours, Mod Doctor's (by its rule: while it's
+    // installed and the mod is still off), and Mod Doctor itself when an entry of ours names it; a restore offer whose only
+    // change is such a mod off is none; the needs lines say so
     static Task TestTurnedOffKept(string outDir)
     {
         if (SaveManager.Instance.SettingsSave.ModSettings is not { } settings || Dependencies.Find("SmmTestFixes") is not { } fixes
@@ -719,20 +818,31 @@ static partial class SelfTest
         bool OnIn(List<SettingsSaveMod> list, string id) => list.Where(e => e.Id == id).Any(e => e.IsEnabled);
         TurnedOff.Add([OffEntry("SmmTestFixes")]);
         var ours = LaunchGuard.Written(working);
+        // Mod Doctor's record of Test UI: not without Mod Doctor installed, nor once Test UI is on again; with it installed
+        // and Test UI off, kept off
         var top = Path.Combine(TurnOffDir(outDir), "mod-doctor");
         var account = UserDataPathProvider.GetAccountScopedBasePath(null).Replace("user://", "");
         var record = Path.Combine(top, "mod_data", ModDoctor.ModId, account, "turned-off.json");
         Directory.CreateDirectory(Path.GetDirectoryName(record) ?? top);
         File.WriteAllText(record, new JsonObject { ["version"] = 1, ["mods"] = new JsonArray(new JsonObject { ["id"] = "SmmTestUi", ["at"] = DateTimeOffset.Now.ToString("o") }) }.ToJsonString());
         ModDoctor.TestFolder = top;
+        var noDoctor = LaunchGuard.Written(working);
+        ModDoctor.TestLoaded = true;
+        var uiOn = LaunchGuard.Written(working);
+        foreach (var e in settings.ModList.Where(e => e.Id == "SmmTestUi"))
+            e.IsEnabled = false;
         var doctors = LaunchGuard.Written(working);
         TurnedOff.Add([OffEntry(ModDoctor.ModId)]);
         var naming = LaunchGuard.Written(working);
-        ModDoctor.TestFolder = null;
-        Check("Restore writes a mod turned off after a failed start off, ours (Test Fixes) and Mod Doctor's (Test UI); and Mod Doctor itself off when an entry "
-            + "of ours names it, though Restore keeps it as it is otherwise",
-            !OnIn(ours, "SmmTestFixes") && OnIn(ours, "SmmTestUi") && OnIn(ours, ModDoctor.ModId) && !OnIn(doctors, "SmmTestUi") && !OnIn(naming, ModDoctor.ModId),
-            $"ours: Fixes {OnIn(ours, "SmmTestFixes")}, UI {OnIn(ours, "SmmTestUi")}; Mod Doctor's: UI {OnIn(doctors, "SmmTestUi")}; naming it: {OnIn(naming, ModDoctor.ModId)}");
+        (ModDoctor.TestFolder, ModDoctor.TestLoaded) = (null, false);
+        foreach (var e in settings.ModList.Where(e => e.Id == "SmmTestUi"))
+            e.IsEnabled = true;
+        Check("Restore writes a mod turned off after a failed start off, ours (Test Fixes) and Mod Doctor's (Test UI) while Mod Doctor is installed and the mod "
+            + "still off, not without it nor once on again; and Mod Doctor itself off when an entry of ours names it, though Restore keeps it as it is otherwise",
+            !OnIn(ours, "SmmTestFixes") && OnIn(ours, "SmmTestUi") && OnIn(ours, ModDoctor.ModId) && OnIn(noDoctor, "SmmTestUi") && OnIn(uiOn, "SmmTestUi")
+            && !OnIn(doctors, "SmmTestUi") && !OnIn(naming, ModDoctor.ModId),
+            $"ours: Fixes {OnIn(ours, "SmmTestFixes")}, UI {OnIn(ours, "SmmTestUi")}; Mod Doctor's: without it {OnIn(noDoctor, "SmmTestUi")}, on again "
+            + $"{OnIn(uiOn, "SmmTestUi")}, off {OnIn(doctors, "SmmTestUi")}; naming it: {OnIn(naming, ModDoctor.ModId)}");
 
         // An offer whose only change is a turned-off mod off: none (Restore keeps it off, so it would loop)
         var now = DateTime.Now;
@@ -777,31 +887,52 @@ static partial class SelfTest
     // game's own line logged once; the takeover in its try; and the repair prefixes first in line, void
     static async Task TestCrashTakeover(NMainMenu menu, string outDir)
     {
-        // The last working setup as it was before the launch (none if none), and the menu's marks on the turned-off mods
-        // (not the ones from before)
+        // The takeover as the game's startup error calls it, after a first main menu, in a folder of the test's as that
+        // launch's own (made to throw once past its undo, so no dialog comes): the last working setup as it was before the
+        // launch (none if none), and the menu's marks on the turned-off mods (not the ones from before)
+        if (NGame.Instance is not { } game)
+        {
+            Results.Add("SKIP the takeover's steps: no game");
+            return;
+        }
         var dir = Path.Combine(TurnOffDir(outDir), "undo");
         Directory.CreateDirectory(dir);
         var was = Launched(CulpritGame) with { At = DateTime.Now.AddHours(-2) };
-        LaunchGuard.PutWorking(dir, was);
-        LaunchGuard.Reached(dir, Launched(CulpritGame), null, null); // this launch's menu saves it as the last working one
-        LaunchGuard.PutWorking(dir, was);
-        var back = LaunchGuard.Read(Path.Combine(dir, LaunchGuard.WorkingFile))?.At == was.At;
-        LaunchGuard.PutWorking(dir, null);
-        var none = !File.Exists(Path.Combine(dir, LaunchGuard.WorkingFile));
+        void Takeover(LaunchGuard.Setup? before)
+        {
+            LaunchGuard.PutWorking(dir, before);
+            LaunchGuard.Reached(dir, Launched(CulpritGame), null, null); // this launch's menu saves it as the last working one
+            LaunchGuard.TestTakeoverThrows = true;
+            try
+            {
+                LaunchGuard.TestTakeover(dir, before, () => LaunchGuard.AskAfterCrash(game));
+            }
+            catch (InvalidOperationException)
+            {
+                // the self-test's throw, past the undo
+            }
+            finally
+            {
+                LaunchGuard.TestTakeoverThrows = false;
+            }
+        }
         if (SaveManager.Instance.SettingsSave.ModSettings is { } settings)
             foreach (var e in settings.ModList.Where(e => e.Id is "SmmTestFixes" or "SmmTestUi"))
                 e.IsEnabled = false; // still off at the menu, so it keeps their entries
         TurnedOff.Add([OffEntry("SmmTestFixes"), OffEntry("SmmTestUi", at: DateTimeOffset.Now.AddMinutes(-3), menu: true)]);
         TurnedOff.MenuReached();
         var marked = TurnedOff.Entries.All(e => e.MenuSince);
-        TurnedOff.UndoMenuMarks();
+        Takeover(was);
+        var back = LaunchGuard.Read(Path.Combine(dir, LaunchGuard.WorkingFile))?.At == was.At;
         var undone = string.Join(", ", TurnedOff.Entries.Select(e => $"{e.Id} {e.MenuSince}"));
-        Check("a start that fails after its first main menu takes back what that menu recorded: the last working setup as it was (none if there was none), "
-            + "and the menu's marks on the turned-off mods, not the ones from before", back && none && marked && undone == "SmmTestFixes False, SmmTestUi True",
+        Takeover(null);
+        var none = !File.Exists(Path.Combine(dir, LaunchGuard.WorkingFile));
+        Check("a start that fails after its first main menu: the takeover takes back what that menu recorded, the last working setup as it was (none if there "
+            + "was none), and the menu's marks on the turned-off mods, not the ones from before", back && none && marked && undone == "SmmTestFixes False, SmmTestUi True",
             $"back {back}, none {none}, marked {marked}, undone {undone}");
 
         // The game's own line as ours takes over, once (the game's method, which writes it, is skipped)
-        if (NGame.Instance is { } game && Compat.LogCallback != null)
+        if (Compat.LogCallback != null)
         {
             var lines = 0;
             Action<LogLevel, string, int> count = (_, text, _) => lines += text.Contains("Encountered error on game startup! Attempting to show error dialog") ? 1 : 0;
@@ -815,27 +946,29 @@ static partial class SelfTest
             Check("our dialog logs the game's own line as it takes over, once", asked.IsCompleted && lines == 1, $"{lines} times, answered {asked.IsCompleted}");
         }
         else
-            Results.Add("SKIP the game's own line as ours takes over: no game, or no log callback");
+            Results.Add("SKIP the game's own line as ours takes over: no log callback");
 
         // The takeover in its try: ours throwing before it returns its task lets the game's own dialog through, logged.
-        // Called as Harmony calls it; with the throw taken out it would start our dialog for real.
+        // Called as Harmony calls it (its undo in the test's folder); with the throw taken out it would start our dialog
+        // for real.
         if (StartupErrorPatch.GaveWay)
             Results.Add("SKIP the takeover's try: the game's own dialog was given way to already this session");
-        else if (NGame.Instance is { } game2 && AccessTools.Method(typeof(StartupErrorPatch), "Prefix") is { } prefix && Compat.LogCallback != null)
+        else if (AccessTools.Method(typeof(StartupErrorPatch), "Prefix") is { } prefix && Compat.LogCallback != null)
         {
             var errors = 0;
             Action<LogLevel, string, int> count = (level, text, _) => errors += level == LogLevel.Error && text.Contains("Could not offer anything after the failed start") ? 1 : 0;
             Compat.LogCallback.AddEventHandler(null, count);
             LaunchGuard.TestTakeoverThrows = true;
-            object?[] args = [game2, null];
-            var through = prefix.Invoke(null, args) is true;
+            object?[] args = [game, null];
+            var through = false;
+            LaunchGuard.TestTakeover(dir, was, () => through = prefix.Invoke(null, args) is true);
             LaunchGuard.TestTakeoverThrows = false;
             Compat.LogCallback.RemoveEventHandler(null, count);
             Check("the takeover in its try: ours throwing before it returns its task lets the game's own dialog through, and says so in the log",
                 through && errors == 1 && NModalContainer.Instance?.OpenModal == null, $"through {through}, logged {errors}");
         }
         else
-            Results.Add("SKIP the takeover's try: no game, no prefix, or no log callback");
+            Results.Add("SKIP the takeover's try: no prefix, or no log callback");
 
         // The repair before any save: void prefixes first in line on the game's startup error and on its quit (one that
         // returned bool would be skipped where another mod's prefix takes over the dialog)

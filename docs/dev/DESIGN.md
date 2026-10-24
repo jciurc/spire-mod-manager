@@ -52,10 +52,11 @@ Ease of use is the heart of the mod, not just its utility.
 - Our own data is one JSON file per Steam account, written atomically, with 10 backups.
 - A start that fails gets our dialog in place of the game's (its message first, in its box). It names the mod that
   stopped it, from the error's frames, Harmony's failures and Mod Doctor's pick, our own checks first, with "most
-  likely" where the evidence is weaker; it offers to turn that mod off (every switch of it, and the mods that need
-  it) and restart, or to restore the last working setup when that can help. Nothing else changes: every other mod
-  keeps the switches the game read. A turn-off counts only once the save is checked and it's recorded
-  (`turned-off.json`), and Restore and profiles keep the mod off until it's turned back on.
+  likely" where the evidence is weaker, and never a framework for a patch of a mod that needs it; it offers to turn
+  that mod off (every switch of it, and the mods that need it) and restart, or to restore the last working setup when
+  that can help. Nothing else changes: every other mod keeps the switches the game read. A turn-off counts only once
+  the save is checked and it's recorded (`turned-off.json`), and Restore and profiles keep the mod off until it's
+  turned back on.
 
 ## Load order
 

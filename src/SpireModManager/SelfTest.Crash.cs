@@ -29,8 +29,8 @@ static partial class SelfTest
         [typeof(SelfTest)] = "", [typeof(GameLike)] = "",
         [typeof(Fixes)] = "SmmTestFixes", [typeof(FixesPatch)] = "SmmTestFixes", [typeof(FixesBadRun)] = "SmmTestFixes", [typeof(FixesGoodRun)] = "SmmTestFixes",
         [typeof(FixesNoTarget)] = "SmmTestFixes", [typeof(FixesBadAsync)] = "SmmTestFixes", [typeof(FixesBrokenTranspiler)] = "SmmTestFixes",
-        [typeof(Lib)] = "SmmTestLib", [typeof(LibPatch)] = "SmmTestLib",
-        [typeof(Ui)] = "SmmTestUi", [typeof(UiPatch)] = "SmmTestUi", [typeof(UiBadBoom)] = "SmmTestUi",
+        [typeof(Lib)] = "SmmTestLib", [typeof(LibPatch)] = "SmmTestLib", [typeof(LibBadPrepare)] = "SmmTestLib",
+        [typeof(Ui)] = "SmmTestUi", [typeof(UiPatch)] = "SmmTestUi", [typeof(UiBadBoom)] = "SmmTestUi", [typeof(UiBadFinish)] = "SmmTestUi",
         [typeof(Content)] = "SmmTestContent", [typeof(ContentPatch)] = "SmmTestContent",
         [typeof(Ours)] = ModEntry.ModId, [typeof(OurPatch)] = ModEntry.ModId, [typeof(Doctor)] = ModDoctor.ModId,
         // Hornet's shape names another mod's type in Harmony's message (Skadi's card base, Downfall's): never blamed
@@ -86,6 +86,10 @@ static partial class SelfTest
         [MethodImpl(MethodImplOptions.NoInlining)]
         public static void Apply(Type patches) => new Harmony(LibId).CreateClassProcessor(patches).Patch();
 
+        // A direct Harmony.Patch, as a framework applies a patch method it's handed (RitsuLib's ModPatcher)
+        [MethodImpl(MethodImplOptions.NoInlining)]
+        public static void Patch(MethodBase original, HarmonyMethod transpiler) => new Harmony(LibId).Patch(original, transpiler: transpiler);
+
         // A framework reading every mod's types: what its read throws (a type load), thrown from its code
         [MethodImpl(MethodImplOptions.NoInlining)]
         public static void Throw(Exception error) => throw error;
@@ -105,6 +109,10 @@ static partial class SelfTest
 
         [MethodImpl(MethodImplOptions.NoInlining)]
         public static void Apply(Type patches) => new Harmony(UiId).CreateClassProcessor(patches).Patch();
+
+        // Its patch handed to Test Framework to apply, from its own code
+        [MethodImpl(MethodImplOptions.NoInlining)]
+        public static void PatchThroughLib(MethodBase original, HarmonyMethod transpiler) => Lib.Patch(original, transpiler);
     }
 
     // Test Content's code: its model throws what it's given (the game's clash, from its constructor)
@@ -156,6 +164,13 @@ static partial class SelfTest
             await Task.Yield();
             return RunReturns;
         }
+
+        // Each the target of one mod's patch class alone, so whose class a library applied shows
+        [MethodImpl(MethodImplOptions.NoInlining)]
+        public static int Prepare() => RunReturns;
+
+        [MethodImpl(MethodImplOptions.NoInlining)]
+        public static int Finish() => RunReturns;
     }
 
     class BaseCard
@@ -196,6 +211,8 @@ static partial class SelfTest
         public static bool Through() => true; // a prefix that lets the original run
 
         public static void Postfix() { }
+
+        public static IEnumerable<CodeInstruction> Bad(IEnumerable<CodeInstruction> code) => Popped(code);
     }
 
     static class ContentPatch
@@ -291,6 +308,19 @@ static partial class SelfTest
     static class UiBadBoom
     {
         [HarmonyPatch(typeof(Fixes), nameof(Fixes.Boom)), HarmonyTranspiler]
+        static IEnumerable<CodeInstruction> Bad(IEnumerable<CodeInstruction> code) => Popped(code);
+    }
+
+    // Test UI's and Test Framework's patch classes, which Test Framework applies
+    static class UiBadFinish
+    {
+        [HarmonyPatch(typeof(GameLike), nameof(GameLike.Finish)), HarmonyTranspiler]
+        static IEnumerable<CodeInstruction> Bad(IEnumerable<CodeInstruction> code) => Popped(code);
+    }
+
+    static class LibBadPrepare
+    {
+        [HarmonyPatch(typeof(GameLike), nameof(GameLike.Prepare)), HarmonyTranspiler]
         static IEnumerable<CodeInstruction> Bad(IEnumerable<CodeInstruction> code) => Popped(code);
     }
 
@@ -425,8 +455,11 @@ static partial class SelfTest
             Results.Add("SKIP the crash culprit's owner map by folder: no fixture folders, or no file of our own");
             return Task.CompletedTask;
         }
+        // Test Retired is off in dev runs: a mod that didn't run
+        var retiredDir = Dependencies.Find("SmmTestRetired") is { path: { Length: > 0 } retired, state: not ModLoadState.Loaded } ? retired : null;
         string[] files = [Path.Combine(fixesDir, "compat", "SmmTestCompat.dll"), Path.Combine(uiDir, "compat", "SmmTestCompat.dll"),
-            Path.Combine(twins[0], "compat", "SmmTestTwinCompat.dll"), Path.Combine(twins[1], "compat", "SmmTestTwinCompat.dll")];
+            Path.Combine(twins[0], "compat", "SmmTestTwinCompat.dll"), Path.Combine(twins[1], "compat", "SmmTestTwinCompat.dll"),
+            .. retiredDir == null ? [] : new[] { Path.Combine(retiredDir, "compat", "SmmTestCompat.dll") }];
         static void Put(string from, string file)
         {
             Directory.CreateDirectory(Path.GetDirectoryName(file) ?? ".");
@@ -458,16 +491,26 @@ static partial class SelfTest
             // Its needs come from every assembly the map gives it, not only the ones it registered (here: none): it references sts2,
             // made out to be Test Framework's
             var needs = Culprits.NeedsOf([("SmmTestFixes", [])], [(compat, alone ?? ""), (typeof(ModManager).Assembly, "SmmTestLib")]);
+            // The same file under the folder of a mod that's off takes nothing from it: that mod loads nothing
+            string? offToo = null;
+            if (retiredDir != null)
+            {
+                Put(ours, files[4]);
+                offToo = new Culprits.OwnerMap(ModManager.Mods).Of(compat);
+            }
+            else
+                Results.Add("SKIP the crash culprit's owner map beside a mod that's off: Test Retired ran this launch");
             Put(ours, files[1]);
             var shared = new Culprits.OwnerMap(ModManager.Mods).Of(compat);
             Put(ours, files[2]);
             Put(ours, files[3]);
             twinContext = new AssemblyLoadContext("SmmTestTwinCompat", isCollectible: true);
             var twin = new Culprits.OwnerMap(ModManager.Mods).Of(twinContext.LoadFromAssemblyPath(files[2]));
-            Check("the crash culprit's owner map by folder: a DLL a mod loads itself from its own folder is that mod's, ours stays ours by assembly though "
-                + "the names match, Harmony's is no mod's; the same file under two mods' folders, none; under one mod's two copies' folders, that mod",
-                alone == "SmmTestFixes" && self == ModEntry.ModId && harmony == null && shared == null && twin == "SmmTestTwin",
-                $"alone {alone}, ours {self}, Harmony {harmony}, shared {shared}, twin {twin}");
+            Check("the crash culprit's owner map by folder: a DLL a mod loads itself from its own folder is that mod's, also beside the same file in a mod's "
+                + "folder that's off; ours stays ours by assembly though the names match, Harmony's is no mod's; the same file under two running mods' "
+                + "folders, none; under one mod's two copies' folders, that mod",
+                alone == "SmmTestFixes" && (retiredDir == null || offToo == "SmmTestFixes") && self == ModEntry.ModId && harmony == null && shared == null && twin == "SmmTestTwin",
+                $"alone {alone}, beside an off mod's {offToo}, ours {self}, Harmony {harmony}, shared {shared}, twin {twin}");
             Check("the crash culprit's needs: read from an assembly the map gives a mod by its folder alone (a loader mod registers only its loader)",
                 needs.GetValueOrDefault("SmmTestFixes")?.Contains("SmmTestLib") == true, string.Join(", ", needs.GetValueOrDefault("SmmTestFixes") ?? new HashSet<string>()));
         }
@@ -702,10 +745,18 @@ static partial class SelfTest
             types == "SmmTestContent Types" && PickIn(none) == "SmmTestUi Types" && none.Check == Culprits.Check.Types && several == "SmmTestUi Types",
             $"{types} | {PickIn(none)} | {several}");
         // Shape B: two mods' content under one id. The one new since the last working launch; neither, no pick and both on
-        // the shortlist; one mod's type twice, the frames.
+        // the shortlist; one mod's type twice, the frames. The stable game's exception names one type made twice, never a
+        // clash of two: its frames.
         if (typeof(ModManager).Assembly.GetType("MegaCrit.Sts2.Core.Models.Exceptions.DuplicateModelException") is not { } duplicate)
         {
             Results.Add("SKIP the crash culprit, a content clash: this game has no DuplicateModelException");
+            return Task.CompletedTask;
+        }
+        if (duplicate.GetConstructor([typeof(string)]) == null)
+        {
+            var once = duplicate.GetConstructor([typeof(Type)]) is { } byType
+                ? PickIn(ReadOf(Thrown(() => Content.Throw((Exception)byType.Invoke([typeof(BaseCard)]))), game, same)) : "no constructor of a type";
+            Check("the crash culprit, the stable game's duplicate model (one type made twice): no clash, the frames (the mod that threw)", once == "SmmTestContent Code", once);
             return Task.CompletedTask;
         }
         Exception Clash(Type first, Type second) => (Exception?)Activator.CreateInstance(duplicate,
@@ -783,14 +834,24 @@ static partial class SelfTest
             rebuild.SequenceEqual(["SmmTestFixes RebuildLast", "SmmTestFixes RebuildLast", "SmmTestContent Rebuild", "SmmTestFixes RebuildLast"])
             && byCall == "SmmTestFixes RebuildLast" && signature == $"{typeof(GameLike).FullName}.{nameof(GameLike.Run)}",
             $"{string.Join(" | ", rebuild)}; direct {byCall}; signature at {signature}");
-        // A library's patch class failing (a framework applying its dependents' classes wrote none of them): on the same game a
-        // shortlist with the saved transpiler's mod; with the game changed, nothing else to go on, the library with its
-        // dependents, most likely
-        var library = new[] { ReadOf(Thrown(() => Lib.Apply(typeof(FixesBadRun))), game, same), ReadOf(Thrown(() => Lib.Apply(typeof(FixesBadRun))), otherGame, same) };
-        Check("the crash culprit, a library's failed rebuild: on the same game no pick, the library and the saved transpiler's mod on the shortlist; "
-            + "with the game changed, the library",
-            PickIn(library[0]) == "none (SmmTestLib+SmmTestContent)" && library[0].Check == Culprits.Check.Harmony && PickIn(library[1]) == "SmmTestLib RebuildLast",
-            string.Join(" | ", library.Select(PickIn)));
+        // A library's failed rebuild. A framework applies its dependents' patches too and wrote none of them, so it's the pick
+        // only for a patch class of its own on the method (one Harmony didn't save), and a dependent for one of the
+        // dependent's. A class of neither (Test Fixes', which doesn't need it): no pick on any game, the library and the saved
+        // transpiler's mod on the shortlist. Its direct Harmony.Patch names no method: no pick, unless the dependent's own
+        // call is in the frames.
+        string ByLibrary(Action patch, LaunchGuard.Setup planned) => PickIn(ReadOf(Thrown(patch), planned, same));
+        string[] library =
+        [
+            ByLibrary(() => Lib.Apply(typeof(FixesBadRun)), game), ByLibrary(() => Lib.Apply(typeof(FixesBadRun)), otherGame),
+            ByLibrary(() => Lib.Apply(typeof(LibBadPrepare)), game), ByLibrary(() => Lib.Apply(typeof(LibBadPrepare)), otherGame),
+            ByLibrary(() => Lib.Apply(typeof(UiBadFinish)), otherGame), ByLibrary(() => Lib.Patch(RunMethod, By(typeof(UiPatch), nameof(UiPatch.Bad))), otherGame),
+            ByLibrary(() => Ui.PatchThroughLib(RunMethod, By(typeof(UiPatch), nameof(UiPatch.Bad))), otherGame),
+        ];
+        Check("the crash culprit, a library's failed rebuild: another mod's patch class, no pick on any game, the library and the saved transpiler's mod on "
+            + "the shortlist; its own class, the library; a dependent's class, the dependent; a dependent's patch by its direct Harmony.Patch, no pick, or the "
+            + "dependent where its own call is in the frames",
+            library.SequenceEqual(["none (SmmTestLib+SmmTestContent)", "none (SmmTestLib+SmmTestContent)", "SmmTestLib RebuildLast", "SmmTestLib RebuildLast",
+                "SmmTestUi RebuildLast", "none (SmmTestLib)", "SmmTestUi RebuildLast"]), string.Join(" | ", library));
         UnpatchCulpritChecks();
 
         // A transpiler's own throw names its mod, by its frame, eager (inside reflection's TargetInvocationException) or an
