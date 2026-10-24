@@ -314,9 +314,10 @@ static class ModifiedContent
     public static string KindsColoured(GameChanges.Kinds kinds) =>
         string.Join(", ", KindLooks.Where(k => kinds.HasFlag(k.Kind)).Select(k => $"[color={k.Hex}]{Escape(Menus.Text(k.Key))}[/color]"));
 
-    // What the words mean (PATCH_KINDS, dim), each kind's name in its colour where the text names it as a term, the word
-    // with a colon after it ("Before: runs before ..."), in any case. A translation that names them otherwise keeps the
-    // dim text alone.
+    // What the words mean: what the list shows (PATCH_KINDS_INTRO, in the text's colour), then each kind (PATCH_KINDS,
+    // dim, one to a line: Jordan, 23 Oct), each kind's name in its colour where the text names it as a term, the word with
+    // a colon after it ("Before: runs before ..."), in any case. A translation that names them otherwise keeps the dim
+    // text alone.
     public static string Legend()
     {
         var words = KindLooks.Select(k => (Word: Escape(Menus.Text(k.Key)), k.Hex)).Where(k => k.Word.Length > 0).ToList();
@@ -325,7 +326,7 @@ static class ModifiedContent
             legend = Regex.Replace(legend, $@"(?<![\p{{L}}\p{{N}}])({string.Join("|", words.Select(k => Regex.Escape(k.Word)))})(?=\s*[:：])",
                 m => words.FirstOrDefault(k => string.Equals(k.Word, m.Value, StringComparison.OrdinalIgnoreCase)) is { Hex: { } hex } ? $"[color={hex}]{m.Value}[/color]" : m.Value,
                 RegexOptions.IgnoreCase | RegexOptions.CultureInvariant);
-        return $"[color={Quiet}]{legend}[/color]";
+        return $"{Escape(Menus.Text("SPIRE_MOD_MANAGER.PATCH_KINDS_INTRO"))}\n[color={Quiet}]{legend}[/color]";
     }
 
     static RichTextLabel Text(string name, string bbcode, int size)
