@@ -289,15 +289,15 @@ static partial class SelfTest
         var card = await BannerCard(menu, screen, SameId());
         // The card's markup: Active in green, Ignored subtle, the copy that loads first whatever order they come in.
         var groups = ModDetails.CopyGroups([copy, local]);
-        Check("both copies on: a yellow banner (\"2 mods with the same ID are enabled - only one copy of each will be loaded\"), its card grouping them "
+        Check("both copies on: a yellow banner (\"2 copies of mods sharing an ID are enabled - only one copy of each will be loaded\"), its card grouping them "
             + "under the ID, each with its version and which copy: the local one Active (the same version), then the Workshop one Ignored; Active green, "
             + "Ignored subtle; a Duplicate chip on each naming the other and the copy that loads",
             bothOn && bannerText == Draft(SameIdText, ("count", "2")) && Yellow(BannerFill(SameId()))
             && GroupIn(card, id).SequenceEqual(Grouped(id, (local, true), (copy, false)))
             && groups is [_, var activeLine, var ignoredLine] && activeLine.EndsWith($"[color=#a6e3a1]{CopyActive}[/color]")
             && ignoredLine.EndsWith($"[color=#fff6e299]{CopyIgnored}[/color]")
-            && chips.Count == 2 && chips[0].Tip == Draft(ClashTip, ("others", Named(copy)), ("loads", Named(local)))
-            && chips[1].Tip == Draft(ClashTip, ("others", Named(local)), ("loads", Named(local))),
+            && chips.Count == 2 && chips[0].Tip == Draft(ClashTipOne, ("others", Named(copy)), ("loads", Named(local)))
+            && chips[1].Tip == Draft(ClashTipOne, ("others", Named(local)), ("loads", Named(local))),
             $"on {bothOn}; banner {bannerText ?? "none"} ({string.Join(" | ", card)}; expected {string.Join(" | ", Grouped(id, (local, true), (copy, false)))}; "
             + $"markup {string.Join(" | ", groups)}); chips {string.Join(" / ", chips.Select(c => c.Tip))}");
         void Press(string name) => (SameId()?.FindChild(name, true, false) as BaseButton)?.EmitSignal(BaseButton.SignalName.Pressed);
@@ -466,7 +466,7 @@ static partial class SelfTest
         Check("... the banner, the chips and the relaunch check name the copy that loads; the relaunch check groups both under the ID (it Active, the "
             + "other Ignored), neither among the mods that can't load, with Disable unused mods",
             (SameId()?.FindChild("SameIdWarning", true, false) as Label)?.Text == Draft(SameIdText, ("count", "2"))
-            && newerChips[0] == Draft(ClashTip, ("others", Named(copy)), ("loads", Named(winner))) && newerChips[1] == Draft(ClashTip, ("others", Named(local)), ("loads", Named(winner)))
+            && newerChips[0] == Draft(ClashTipOne, ("others", Named(copy)), ("loads", Named(winner))) && newerChips[1] == Draft(ClashTipOne, ("others", Named(local)), ("loads", Named(winner)))
             && GroupIn(RelaunchCopies(relaunchBody), id).SequenceEqual(Grouped(id, (winner, true), (loser, false)))
             && !relaunchBody.Contains($"{Named(loser)}  ") && !relaunchBody.Contains($"{Named(winner)}  ")
             && unusedButton,
@@ -4052,8 +4052,8 @@ static partial class SelfTest
             && ModDetails.Status(a).Contains(StatusWontLoad) && ModDetails.Status(b).Contains("Enabled")
             && ModDetails.CopyLine(a, false)?.Text == Draft(CopyLoses, ("other", Named(b)), ("why", WhyHigher))
             && ModDetails.CopyLine(b, false)?.Text == Draft(LoadsAlso, ("other", Named(a)))
-            && chips[0] is { } chipA && chipA.Color == Tags.SameIdClash && chipA.Tip == Draft(ClashTip, ("others", Named(b)), ("loads", Named(b)))
-            && chips[1] is { } chipB && chipB.Color == Tags.SameIdClash && chipB.Tip == Draft(ClashTip, ("others", Named(a)), ("loads", Named(b)))
+            && chips[0] is { } chipA && chipA.Color == Tags.SameIdClash && chipA.Tip == Draft(ClashTipOne, ("others", Named(b)), ("loads", Named(b)))
+            && chips[1] is { } chipB && chipB.Color == Tags.SameIdClash && chipB.Tip == Draft(ClashTipOne, ("others", Named(a)), ("loads", Named(b)))
             && (!Layout.Wide || bannerText == Draft(SameIdText, ("count", "2")) && GroupIn(card, TwinId).SequenceEqual(TwinsGrouped()))
             && Dependencies.Find(TwinId) == b && History.Steps(History.Track.List) == steps && CopiesBroken() == null,
             $"grey before {greyOff}; {Say()}; chips {string.Join(" / ", chips.Select(c => $"{c?.Color} {c?.Tip}"))}; banner {bannerText} ({string.Join(" | ", card)}; "
@@ -4372,7 +4372,7 @@ static partial class SelfTest
                 Want(GroupIn(body.Split('\n'), TwinId).Count == 0, $"the relaunch check lists the twins as duplicates: {body}");
             if (clash)
             {
-                Want(chips[0] == Draft(ClashTip, ("others", Named(b)), ("loads", Named(loads))) && chips[1] == Draft(ClashTip, ("others", Named(a)), ("loads", Named(loads))),
+                Want(chips[0] == Draft(ClashTipOne, ("others", Named(b)), ("loads", Named(loads))) && chips[1] == Draft(ClashTipOne, ("others", Named(a)), ("loads", Named(loads))),
                     $"the chips \"{string.Join("\" / \"", chips)}\"");
                 if (Layout.Wide)
                     Want(GroupIn(card, TwinId).SequenceEqual(Grouped(TwinId, (loads, true), (other, false))),
