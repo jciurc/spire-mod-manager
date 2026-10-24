@@ -2,7 +2,7 @@
   "id": "SmmTestDual",
   "name": "Test Dual",
   "author": "Spire Mod Manager tests",
-  "description": "Empty mod for dev-sandbox tests: the local copy of a mod installed from both sources (its Workshop copy, 2.0.0, is in tools/fixtures/mods_STEAMTEST). tools/dev.cs lists both, this one on and the Workshop one off, so the game takes the Workshop copy out and its rebuild lists that copy after all the rest.",
+  "description": "Empty mod for dev-sandbox tests, installed from both sources: tools/dev.cs puts its other copy (2.0.0, tools/fixtures/mods_STEAMTEST) in the dev copy's mods_STEAMTEST and lists both, this one first and on, that one off.",
   "version": "1.0.0",
   "has_pck": false,
   "has_dll": false,

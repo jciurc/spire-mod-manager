@@ -3078,10 +3078,12 @@ static partial class SelfTest
         await Press("ShowChangedButton");
         var lines = HistoryBar.Describe();
         // Each line's mod: the one whose name it holds, the longest if several ("Better Mod Menu (local fix)" holds
-        // "Better Mod Menu" too). Lines naming no mod (a switched profile, profiles) name none.
+        // "Better Mod Menu" too), every one of that name (the fixture's mod from both sources: its Workshop copy, read from
+        // mods_STEAMTEST, has no item id, so both read "Test Dual (Local)"). Lines naming no mod (a switched profile,
+        // profiles) name none.
         var mods = Rows().Select(r => r.Mod).OfType<Mod>().ToList();
-        var named = lines.Select(l => mods.Where(m => m.manifest?.name is { Length: > 0 } name && l.Contains(name)).MaxBy(m => m.manifest?.name?.Length))
-            .OfType<Mod>().ToHashSet();
+        var named = lines.SelectMany(l => mods.Where(m => m.manifest?.name is { Length: > 0 } name && l.Contains(name)).GroupBy(m => m.manifest?.name?.Length ?? 0)
+            .MaxBy(g => g.Key) ?? Enumerable.Empty<Mod>()).ToHashSet();
         var changed = Where(named.Contains);
         Check("Show: Changed: the mods Changes names, counted, Changed lit", Shown().SequenceEqual(changed) && changed.Contains("SmmTestUi")
             && Scope() == $"Changed since launch ({changed.Count})" && Choices() == "All Enabled Disabled Changed*", $"{Say()}; Changes: {string.Join(" | ", lines)}");

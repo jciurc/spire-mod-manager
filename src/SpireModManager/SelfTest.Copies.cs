@@ -376,8 +376,9 @@ static partial class SelfTest
         Click(toggle);
         await Wait(menu, 0.5);
         var sameIdSearch = Search.TermFor("#", DuplicateChip);
-        // The other mods installed once (the fixture's own twins have the chip too).
-        var others = content.GetChildren().OfType<NModMenuRow>().Select(r => r.Mod).OfType<Mod>().Where(m => m.manifest?.id is { } other && other != id && other != TwinId).ToList();
+        // The other mods installed once (the fixture's own twins and its mod from both sources have the chip too).
+        var others = content.GetChildren().OfType<NModMenuRow>().Select(r => r.Mod).OfType<Mod>()
+            .Where(m => m.manifest?.id is { } other && other != id && other != TwinId && other != DualId).ToList();
         Check("the banner shows in Load Order too; the chip's search finds both copies and no other mod", inLoadOrder
             && Search.Matches(local, sameIdSearch) && Search.Matches(copy, sameIdSearch) && !others.Any(m => Search.Matches(m, sameIdSearch)),
             $"Load Order {inLoadOrder}; others found {string.Join(", ", others.Where(m => Search.Matches(m, sameIdSearch)).Select(m => m.manifest?.id))}");
@@ -5270,7 +5271,7 @@ static partial class SelfTest
     // the saved list too; a drag of the row that's off to the top, under ours, moves both in their order, one step, and
     // undo puts them back; Move up on the row that loads steps past the whole of the mod above (the twins, where they're
     // there); a mod dropped between the twins' rows goes past them; the red line for the twin that doesn't load moved
-    // above what the one that loads needs, and Fix now then gathers the twins at the one that loads; a tick or untick of
+    // above what the one that loads needs, and Fix now keeping the twins together after it; a tick or untick of
     // either copy moves no row and makes no step of the order's; an entry made for a copy installed while the game runs,
     // right after its mod's (LoadOrder.Add, as NewModTogglePatch makes it), moves no other row in Changes. All put back.
     static async Task TestDualOrder(Node menu, NModdingScreen screen, Control content, string outDir)
@@ -5374,24 +5375,24 @@ static partial class SelfTest
                 Results.Add("SKIP a mod from both sources in Load Order, a drop between the twins: no mod installed once below them");
 
             // The twin that doesn't load moved above Test Framework, which the one that loads needs: the red line (MoveBreaks
-            // goes by the block's copy that loads); Fix now then puts the framework first and the twins together at the one
-            // that loads.
+            // goes by the block's copy that loads), both rows moved. There the one that loads can't take the id's first slot,
+            // so the other loads instead (nothing for Fix now to move), and Fix now keeps the twins together.
             var breaks = !Copies.Loads(twinOff) && LoadOrder.MoveBreaks(twinOff, Order().IndexOf(lib), Rows());
             var fixFrom = Steps();
             LoadOrder.Move(twinOff, Order().IndexOf(lib), Rows());
             CategoryList.Redraw(content);
             await Wait(menu, 0.3);
-            var misplaced = Order();
+            var (misplaced, fallback) = (Order(), Copies.Loads(twinOff) && !Copies.Loads(twinLoads));
             LoadOrder.FixOrder(Rows());
             CategoryList.Redraw(content);
             await Wait(menu, 0.3);
             var fixedOrder = Order();
             await Back(fixFrom);
-            Check("... the twin that doesn't load moved above what the one that loads needs: the red line, both rows moved; Fix now puts the framework "
-                + "first and the twins together; undone",
-                breaks && misplaced.IndexOf(lib) > misplaced.IndexOf(twinLoads) && Side(misplaced, twinOff, twinLoads) && fixedOrder.IndexOf(lib) < fixedOrder.IndexOf(twinOff)
-                && fixedOrder.IndexOf(lib) < fixedOrder.IndexOf(twinLoads) && Side(fixedOrder, twinOff, twinLoads) && Order().SequenceEqual(start),
-                $"red line {breaks}; moved {Said(misplaced)}; fixed {Said(fixedOrder)}; undone {Said()}");
+            Check("... the twin that doesn't load moved above what the one that loads needs: the red line, both rows moved, the other twin loading there; "
+                + "Fix now keeps the twins together; undone",
+                breaks && misplaced.IndexOf(lib) > misplaced.IndexOf(twinLoads) && Side(misplaced, twinOff, twinLoads) && fallback
+                && Side(fixedOrder, twinOff, twinLoads) && Order().SequenceEqual(start),
+                $"red line {breaks}; moved {Said(misplaced)}, the other loading {fallback}; fixed {Said(fixedOrder)}; undone {Said()}");
 
             // A tick or untick of either copy (Dependencies.Write, which ends by putting the list in the order rule's form):
             // no row moves, no step of the order's, nothing in Changes' moves; put back as at the start.
@@ -5400,7 +5401,8 @@ static partial class SelfTest
             {
                 Dependencies.Set([mod], on, screen);
                 await Wait(menu, 0.2);
-                switched.Add($"{Short(mod)} {(on ? "on" : "off")}: " + (Order().SequenceEqual(start) && Saved() && HistoryBar.Moves().Count == startMoves ? "kept" : Said()));
+                var now = LoadOrder.Mods(Rows()); // the saved list's order (a switch needn't redraw the rows)
+                switched.Add($"{Short(mod)} {(on ? "on" : "off")}: " + (now.SequenceEqual(start) && Saved() && HistoryBar.Moves().Count == startMoves ? "kept" : Said(now)));
             }
             Check("... a tick or untick of either copy moves no row, makes no step of the order's, nothing moved for Changes",
                 switched.All(s => s.EndsWith(": kept")) && Steps() == orderSteps && Copies.Loads(loads), string.Join(" | ", switched));
