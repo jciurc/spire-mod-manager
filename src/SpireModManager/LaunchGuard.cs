@@ -526,17 +526,16 @@ static class LaunchGuard
     }
 
     // The repair on given lists (the self-test's made-up ones): none after the first main menu (Settle did it), nor
-    // without the list as the game read it. True if anything changed.
+    // without the list as the game read it; then the entries the game's list dropped of mods we keep off
+    // (TurnedOff.KeepOff). True if anything changed.
     public static bool RepairBeforeMenu(ModSettings? settings, IReadOnlyList<(string Id, ModSource Source, bool On)>? read, bool settled)
     {
         if (settled || settings == null)
             return false;
         if (read == null)
-        {
             Log.Warn($"[{ModEntry.ModId}] Before the first main menu: no list as the game read it, so the mod list in memory stays as the game rebuilt it");
-            return false;
-        }
-        return SameIdLoad.SettleList(settings.ModList, read);
+        var repaired = read != null && SameIdLoad.SettleList(settings.ModList, read);
+        return TurnedOff.KeepOff(settings.ModList) | repaired;
     }
 
     // What a turn-off turns off: each mod with why (a dependent: the culprit it needs), and the failure's error, signature

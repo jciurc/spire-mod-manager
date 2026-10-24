@@ -7,6 +7,7 @@ using Godot;
 using HarmonyLib;
 using MegaCrit.Sts2.Core.Helpers;
 using MegaCrit.Sts2.Core.Modding;
+using MegaCrit.Sts2.Core.Models;
 using MegaCrit.Sts2.Core.Nodes.Screens.MainMenu;
 
 namespace SpireModManager;
@@ -33,7 +34,7 @@ static partial class SelfTest
         [typeof(Lib)] = "SmmTestLib", [typeof(LibPatch)] = "SmmTestLib", [typeof(LibBadPrepare)] = "SmmTestLib", [typeof(LibNoTarget)] = "SmmTestLib",
         [typeof(LibIdleClose)] = "SmmTestLib", [typeof(LibLaterOpen)] = "SmmTestLib",
         [typeof(Ui)] = "SmmTestUi", [typeof(UiPatch)] = "SmmTestUi", [typeof(UiBadBoom)] = "SmmTestUi", [typeof(UiBadFinish)] = "SmmTestUi",
-        [typeof(UiNoTarget)] = "SmmTestUi",
+        [typeof(UiNoTarget)] = "SmmTestUi", [typeof(UiFindsTarget)] = "SmmTestUi", [typeof(UiNotStatic)] = "SmmTestUi",
         [typeof(Content)] = "SmmTestContent", [typeof(ContentPatch)] = "SmmTestContent",
         [typeof(Ours)] = ModEntry.ModId, [typeof(OurPatch)] = ModEntry.ModId, [typeof(Doctor)] = ModDoctor.ModId,
         // Hornet's shape names another mod's type in Harmony's message (Skadi's card base, Downfall's): never blamed
@@ -266,6 +267,8 @@ static partial class SelfTest
     {
         public static void Prefix() { }
 
+        public static IEnumerable<CodeInstruction> Bad(IEnumerable<CodeInstruction> code) => Popped(code);
+
         public static IEnumerable<CodeInstruction> Eager(IEnumerable<CodeInstruction> code) => ThrowsAgain(ref _eager, code);
 
         public static IEnumerable<CodeInstruction> Lazy(IEnumerable<CodeInstruction> code)
@@ -376,8 +379,7 @@ static partial class SelfTest
         static IEnumerable<CodeInstruction> Bad(IEnumerable<CodeInstruction> code) => Popped(code);
     }
 
-    // A patch class that finds its target itself (TargetMethod), which the rules can't read: Test UI's only where a check
-    // maps it so, as beside it no library's rebuild names a class
+    // Test UI's patch class that finds its target itself (TargetMethod), which the patch classes' attributes don't name
     static class UiFindsTarget
     {
         [HarmonyTargetMethod]
@@ -385,6 +387,13 @@ static partial class SelfTest
 
         [HarmonyTranspiler]
         static IEnumerable<CodeInstruction> Bad(IEnumerable<CodeInstruction> code) => Popped(code);
+    }
+
+    // Test UI's patch class whose patch method isn't static: Harmony refuses it as it reads the class, before its Patch
+    sealed class UiNotStatic
+    {
+        [HarmonyPatch(typeof(GameLike), nameof(GameLike.Close)), HarmonyPrefix]
+        void Before() { }
     }
 
     static MethodInfo RunMethod => AccessTools.Method(typeof(GameLike), nameof(GameLike.Run));
@@ -431,8 +440,27 @@ static partial class SelfTest
         };
     }
 
+    // The same with Test Addon, which ran and needs Test Fixes (Hornet's add-on's shape)
+    static Culprits.Context AddonMods()
+    {
+        var mods = CrashMods(false, new Culprits.Copy("SmmTestAddon", ModSource.ModsDirectory, "l:SmmTestAddon", true));
+        return mods with { Needs = new Dictionary<string, IReadOnlySet<string>>(mods.Needs) { ["SmmTestAddon"] = new HashSet<string> { "SmmTestFixes" } } };
+    }
+
     static Culprits.Reading ReadOf(Exception error, LaunchGuard.Setup? planned, LaunchGuard.Setup? working, Culprits.Context? mods = null) =>
         Culprits.ByFrame(Culprits.Chain(error), planned, working, mods ?? CrashMods());
+
+    // A method a frame gives, as its original where it's a replacement (Harmony's own patch methods are patched: the record)
+    static MethodBase? OriginalOf(MethodBase? method) => method is MethodInfo info ? Harmony.GetOriginalMethod(info) ?? info : method;
+
+    // An exception without the record of what its patch call was applying, in it and every exception inside it, as a
+    // patch call with no record leaves it (Harmony not patched, or a mod's own copy of it)
+    static Exception Stripped(Exception error)
+    {
+        foreach (var link in Culprits.Chain(error))
+            link.Error.Data.Remove(Culprits.AttemptKey);
+        return error;
+    }
 
     // A reading in a line: its pick and why, or none and its shortlist
     static string PickIn(Culprits.Reading reading) => reading.Pick is { } pick
@@ -607,7 +635,7 @@ static partial class SelfTest
         var hornet = Thrown(() => Fixes.Install(typeof(InheritingCard)));
         var otherCard = Thrown(() => Fixes.Install(typeof(OtherInheritingCard)));
         var (read, readOther) = (ReadOf(hornet, game, same), ReadOf(otherCard, game, same));
-        var first = new System.Diagnostics.StackTrace(hornet, false).GetFrame(0)?.GetMethod()?.DeclaringType?.FullName;
+        var first = OriginalOf(new System.Diagnostics.StackTrace(hornet, false).GetFrame(0)?.GetMethod())?.DeclaringType?.FullName;
         var (signature, otherSignature) = (read.Signature.Split('|'), readOther.Signature.Split('|'));
         Check("the crash culprit, Hornet's shape: Harmony's refusal (its frame first) names the mod whose call it was, checked; not the mod whose type its "
             + "message names, nor on any list; another mod's type there changes nothing in the signature but its message",
@@ -617,19 +645,33 @@ static partial class SelfTest
             && signature[2] == otherSignature[2] && signature[3] == otherSignature[3],
             $"first frame {first}; {hornet.GetType().Name}; {PickIn(read)} (checked {read.Pick?.Checked}), named {string.Join(", ", read.Named)}; "
             + $"other {PickIn(readOther)}; signatures {read.Signature} | {readOther.Signature}");
-        // Harmony refusing a library's call: whose patch it was. The class it found no target for says (a dependent's, the
-        // library's own); a direct Harmony.Patch of an inherited method (Hornet's shape) can't show whose patch method it
-        // was, the library's or one handed to it, so no pick, the library on the shortlist.
+        // Hornet's shape by a mod with an add-on (a running mod that needs it), the mod or the add-on changed: the mod, whose
+        // own patch it was, as recorded on the exception
+        var addon = AddonMods();
+        LaunchGuard.Setup WithAddon(string version, params (string Id, string Version)[] versions) =>
+            Launched(CulpritGame, versions) with { Mods = [.. Launched(CulpritGame, versions).Mods, new LaunchGuard.Entry("SmmTestAddon", ModSource.ModsDirectory, true, version)] };
+        string[] withAddon =
+        [
+            PickIn(ReadOf(hornet, WithAddon("1.0", ("SmmTestFixes", "0.2")), WithAddon("1.0"), addon)), PickIn(ReadOf(hornet, WithAddon("1.1"), WithAddon("1.0"), addon)),
+        ];
+        Check("the crash culprit, Hornet's shape by a mod that has an add-on (a running mod needs it), it or the add-on changed: the mod, checked (its own "
+            + "patch, as recorded)", withAddon.SequenceEqual(["SmmTestFixes Code", "SmmTestFixes Code"]) && ReadOf(hornet, game, same, addon).Pick?.Checked == true,
+            string.Join(" | ", withAddon));
+        // Harmony refusing a library's call: whose patch it was, as recorded. A dependent's class (no target; a patch method
+        // that isn't static, refused as Harmony reads the class), the dependent; its own, the library; its direct
+        // Harmony.Patch of an inherited method (Hornet's shape), its own patch the library, a dependent's handed to it the
+        // dependent.
         static MethodBase Inherited() => typeof(InheritingCard).GetMethod(nameof(BaseCard.Act)) ?? throw new MissingMethodException(nameof(InheritingCard), "Act");
         string[] refused =
         [
-            PickIn(ReadOf(Thrown(() => Lib.Apply(typeof(UiNoTarget))), contentUp, same)), PickIn(ReadOf(Thrown(() => Lib.Apply(typeof(LibNoTarget))), contentUp, same)),
-            PickIn(ReadOf(Thrown(() => Lib.Install(typeof(InheritingCard))), contentUp, same)),
+            PickIn(ReadOf(Thrown(() => Lib.Apply(typeof(UiNoTarget))), contentUp, same)), PickIn(ReadOf(Thrown(() => Lib.Apply(typeof(UiNotStatic))), contentUp, same)),
+            PickIn(ReadOf(Thrown(() => Lib.Apply(typeof(LibNoTarget))), contentUp, same)), PickIn(ReadOf(Thrown(() => Lib.Install(typeof(InheritingCard))), contentUp, same)),
             PickIn(ReadOf(Thrown(() => Lib.Patch(Inherited(), By(typeof(UiPatch), nameof(UiPatch.Bad)))), contentUp, same)),
         ];
-        Check("the crash culprit, Harmony refusing a library's call, a mod that needs it changed: a dependent's class with no target, the dependent; its "
-            + "own, the library; a direct Harmony.Patch of an inherited method, its own patch (Hornet's shape) or a dependent's, no pick and the library on the shortlist",
-            refused.SequenceEqual(["SmmTestUi Code", "SmmTestLib Code", "none (SmmTestLib)", "none (SmmTestLib)"]), string.Join(" | ", refused));
+        Check("the crash culprit, Harmony refusing a library's call, a mod that needs it changed: a dependent's class (no target, a patch method that isn't "
+            + "static), the dependent; its own, the library; a direct Harmony.Patch of an inherited method, its own patch (Hornet's shape) the library, a "
+            + "dependent's the dependent",
+            refused.SequenceEqual(["SmmTestUi Code", "SmmTestUi Code", "SmmTestLib Code", "SmmTestLib Code", "SmmTestUi Code"]), string.Join(" | ", refused));
 
         // The library rule (Test Framework, needed by Test Content and Test UI)
         string[] libraryRule =
@@ -818,6 +860,13 @@ static partial class SelfTest
             + "several, the one changed (on any game: each is broken)",
             types == "SmmTestContent Types" && PickIn(none) == "SmmTestUi Types" && none.Check == Culprits.Check.Types && several == "SmmTestUi Types",
             $"{types} | {PickIn(none)} | {several}");
+        // The id lookup stable's clash goes by, ModelDb's own (no stand-in): a model's type gives its id and that type; a type
+        // that isn't a model, none (ModelDb's throw caught)
+        Culprits.TestHeld = null;
+        var card = ModelDb.AllCards.FirstOrDefault();
+        var (held, notModel) = (card == null ? null : Culprits.TestHeldOf(card.GetType()), Culprits.TestHeldOf(typeof(BaseCard)));
+        Check("the crash culprit's id lookup (stable's clash): a game model's type gives its id and that type; a type that isn't a model, none",
+            card != null && held == (card.Id.ToString(), card.GetType()) && notModel == null, $"{card?.GetType().Name}: {held}; not a model: {notModel}");
         // Shape B: two mods' content under one id. The one new since the last working launch; neither, no pick and both on
         // the shortlist; one mod's two types, or one type made twice, the frames. The beta's exception names both types;
         // stable's the second alone, the first then the one ModelDb holds under its id (TestHeld: the stand-ins aren't models).
@@ -884,6 +933,33 @@ static partial class SelfTest
         new Harmony(UiId).Patch(RunMethod, prefix: By(typeof(UiPatch), nameof(UiPatch.Prefix)));
         Check("Harmony runs a method's saved transpilers again at every build: another mod's prefix runs it once more", once == 1 && _counted == 2,
             $"after its own patch {once}, after the prefix {_counted}");
+        UnpatchCulpritChecks();
+
+        // H4, the record (PatchingFailurePatch): void finalizers, first in line, on Harmony's patch call, a patch class's and
+        // the class's constructor. A refused call's exception is Harmony's own (its message, its throw at Harmony's patch
+        // call), with what the call was applying: Harmony.Patch's patch methods; PatchAll's class, its refusal in its Patch
+        // or as the class is read. A call that works returns its replacement, as without it.
+        static PatchInfoView? Finalizer(MethodBase? method) => method == null ? null : Harmony.GetPatchInfo(method)?.Finalizers
+            .Where(p => p.PatchMethod.DeclaringType == typeof(PatchingFailurePatch)).Select(p => new PatchInfoView(p.priority, p.PatchMethod.ReturnType)).FirstOrDefault();
+        MethodBase?[] hooked = [AccessTools.Method(typeof(PatchProcessor), nameof(PatchProcessor.Patch)), AccessTools.Method(typeof(PatchClassProcessor), nameof(PatchClassProcessor.Patch)),
+            AccessTools.Constructor(typeof(PatchClassProcessor), [typeof(Harmony), typeof(Type)])];
+        var finalizers = hooked.Select(Finalizer).ToList();
+        static Culprits.PatchAttempt? Attempt(Exception error) => error.Data[Culprits.AttemptKey] as Culprits.PatchAttempt;
+        var refusal = Thrown(() => Fixes.Install(typeof(InheritingCard)));
+        var (noTarget, notStatic) = (Thrown(() => Fixes.Apply(typeof(FixesNoTarget))), Thrown(() => Ui.Apply(typeof(UiNotStatic))));
+        var throwSite = OriginalOf(new System.Diagnostics.StackTrace(refusal, false).GetFrame(0)?.GetMethod());
+        var replacement = new Harmony(FixesId).Patch(RunMethod, prefix: By(typeof(FixesPatch), nameof(FixesPatch.Prefix)));
+        Check("the record of a failed patch call: void finalizers first in line on Harmony's patch call, a patch class's and its constructor; a refused "
+            + "call's exception Harmony's own, with Harmony.Patch's patch methods; PatchAll's with its class, refused in its Patch or as the class is read; "
+            + "a call that works returns its replacement",
+            finalizers.All(f => f is { Priority: Priority.First } && f.Returns == typeof(void))
+            && refusal is ArgumentException { InnerException: null } && refusal.Message.StartsWith("You can only patch implemented methods/constructors. Patch the declared method")
+            && throwSite == hooked[0] && Attempt(refusal) is { Class: null, Methods: [var prefix] } && prefix == AccessTools.Method(typeof(FixesPatch), nameof(FixesPatch.Prefix))
+            && noTarget is HarmonyException && Attempt(noTarget)?.Class == typeof(FixesNoTarget) && notStatic is ArgumentException && Attempt(notStatic)?.Class == typeof(UiNotStatic)
+            && replacement != null && GameLike.Run() == RunReturns,
+            $"finalizers {string.Join(", ", finalizers.Select(f => f?.ToString() ?? "none"))}; {refusal.GetType().Name} from {throwSite?.DeclaringType?.Name}.{throwSite?.Name}: "
+            + $"{Attempt(refusal)?.Methods.FirstOrDefault()?.Name}; no target {noTarget.GetType().Name} {Attempt(noTarget)?.Class?.Name}; not static {notStatic.GetType().Name} "
+            + $"{Attempt(notStatic)?.Class?.Name}; replacement {replacement != null}");
         return Task.CompletedTask;
     }
 
@@ -917,34 +993,53 @@ static partial class SelfTest
             ReadOf(Thrown(() => Fixes.Apply(typeof(FixesNoTarget))), game, same).Rebuild);
         Check("the crash culprit's reading says a failed rebuild was one, by PatchAll or a direct Harmony.Patch; Harmony's refusals aren't", flags == (true, true, false, false),
             $"{flags}");
-        // A library's failed rebuild. A framework applies its dependents' patches too and wrote none of them, so it's the pick
-        // only for a patch class of its own on the method (one Harmony didn't save), and a dependent for one of the
-        // dependent's. A class of neither (Test Fixes', which doesn't need it): no pick on any game, the library and the saved
-        // transpiler's mod on the shortlist. Its direct Harmony.Patch names no method: no pick, unless the dependent's own
-        // call is in the frames.
+        // A library's failed rebuild: whose patches it was applying, as recorded, on any game. Another mod's class (Test Fixes',
+        // which doesn't need it), that mod, the saved transpiler's mod on the shortlist; its own class, the library; a
+        // dependent's class, the dependent. By its direct Harmony.Patch the same: its own patch method, the library; a
+        // dependent's handed to it, the dependent, from the library's call or the dependent's own through it.
         string ByLibrary(Action patch, LaunchGuard.Setup planned) => PickIn(ReadOf(Thrown(patch), planned, same));
         string[] library =
         [
             ByLibrary(() => Lib.Apply(typeof(FixesBadRun)), game), ByLibrary(() => Lib.Apply(typeof(FixesBadRun)), otherGame),
             ByLibrary(() => Lib.Apply(typeof(LibBadPrepare)), game), ByLibrary(() => Lib.Apply(typeof(LibBadPrepare)), otherGame),
-            ByLibrary(() => Lib.Apply(typeof(UiBadFinish)), otherGame), ByLibrary(() => Lib.Patch(RunMethod, By(typeof(UiPatch), nameof(UiPatch.Bad))), otherGame),
+            ByLibrary(() => Lib.Apply(typeof(UiBadFinish)), otherGame), ByLibrary(() => Lib.Patch(RunMethod, By(typeof(LibPatch), nameof(LibPatch.Bad))), otherGame),
+            ByLibrary(() => Lib.Patch(RunMethod, By(typeof(UiPatch), nameof(UiPatch.Bad))), otherGame),
             ByLibrary(() => Ui.PatchThroughLib(RunMethod, By(typeof(UiPatch), nameof(UiPatch.Bad))), otherGame),
         ];
-        Check("the crash culprit, a library's failed rebuild: another mod's patch class, no pick on any game, the library and the saved transpiler's mod on "
-            + "the shortlist; its own class, the library; a dependent's class, the dependent; a dependent's patch by its direct Harmony.Patch, no pick, or the "
-            + "dependent where its own call is in the frames",
-            library.SequenceEqual(["none (SmmTestLib+SmmTestContent)", "none (SmmTestLib+SmmTestContent)", "SmmTestLib RebuildLast", "SmmTestLib RebuildLast",
-                "SmmTestUi RebuildLast", "none (SmmTestLib)", "SmmTestUi RebuildLast"]), string.Join(" | ", library));
-        // Where whose class it was can't be told: Test Fixes' class on a method whose only other unsaved class is the
-        // library's, which Harmony may never have tried (its Prepare turns it down; in a category PatchAll leaves out); and
-        // the library's unapplied class beside a dependent's class that finds its target itself, which can't be read
-        string[] untold = [ByLibrary(() => Lib.Apply(typeof(FixesBadClose)), game), ByLibrary(() => Lib.Apply(typeof(FixesBadOpen)), game)];
-        Culprits.TestOwner = type => type == typeof(UiFindsTarget) ? "SmmTestUi" : CulpritOwners.GetValueOrDefault(type);
-        var unread = ByLibrary(() => Lib.Apply(typeof(UiFindsTarget)), game);
-        Culprits.TestOwner = type => CulpritOwners.GetValueOrDefault(type);
-        Check("the crash culprit, a library's failed rebuild whose patch can't be told: its only other unsaved class one its Prepare turns down or in a "
-            + "category, no pick; the library's unapplied class beside a dependent's class that finds its target itself (TargetMethod), no pick",
-            untold.SequenceEqual(["none (SmmTestLib)", "none (SmmTestLib)"]) && unread == "none (SmmTestLib)", $"{string.Join(" | ", untold)} | {unread}");
+        var shortlisted = ReadOf(Thrown(() => Lib.Apply(typeof(FixesBadRun))), game, same).Shortlist;
+        Check("the crash culprit, a library's failed rebuild, whose patches as recorded on any game: another mod's class, that mod (the saved transpiler's "
+            + "mod on the shortlist); its own class, the library; a dependent's class, the dependent; by its direct Harmony.Patch, its own patch method the "
+            + "library, a dependent's the dependent (from the library's call or the dependent's own)",
+            library.SequenceEqual(["SmmTestFixes RebuildLast", "SmmTestFixes RebuildLast", "SmmTestLib RebuildLast", "SmmTestLib RebuildLast", "SmmTestUi RebuildLast",
+                "SmmTestLib RebuildLast", "SmmTestUi RebuildLast", "SmmTestUi RebuildLast"]) && shortlisted.SequenceEqual(["SmmTestFixes", "SmmTestContent"]),
+            $"{string.Join(" | ", library)}; shortlist {string.Join(", ", shortlisted)}");
+        // What the patch classes' attributes couldn't tell, the record does: Test Fixes' class on a method whose only other
+        // unsaved class is the library's, which Harmony may never have tried (its Prepare turns it down; in a category
+        // PatchAll leaves out); a dependent's class that finds its target itself (TargetMethod)
+        string[] told = [ByLibrary(() => Lib.Apply(typeof(FixesBadClose)), game), ByLibrary(() => Lib.Apply(typeof(FixesBadOpen)), game),
+            ByLibrary(() => Lib.Apply(typeof(UiFindsTarget)), game)];
+        Check("the crash culprit, a library's failed rebuild its patch classes' attributes can't tell (beside a class its Prepare turns down or in a "
+            + "category, a dependent's class that finds its target itself): whose class it was, as recorded",
+            told.SequenceEqual(["SmmTestFixes RebuildLast", "SmmTestFixes RebuildLast", "SmmTestUi RebuildLast"]), string.Join(" | ", told));
+
+        // With no record on the exception (Harmony not patched, or a mod's own copy of it), the frames and the patch
+        // classes, as before it, and the log says so: Hornet's shape by a mod with an add-on, the mod by its frame (its own
+        // call, library or not); a library's PatchAll of a dependent's class, the dependent by the class's attributes; of a
+        // class of neither or one beside a class Harmony may never have tried, and its direct Harmony.Patch, no pick
+        string Bare(Action patch, LaunchGuard.Setup planned, Culprits.Context? mods = null) => PickIn(ReadOf(Stripped(Thrown(patch)), planned, same, mods));
+        string[] bare =
+        [
+            Bare(() => Fixes.Install(typeof(InheritingCard)), game, AddonMods()), Bare(() => Lib.Apply(typeof(UiBadFinish)), otherGame),
+            Bare(() => Lib.Apply(typeof(FixesBadRun)), game), Bare(() => Lib.Apply(typeof(FixesBadClose)), game),
+            Bare(() => Lib.Patch(RunMethod, By(typeof(UiPatch), nameof(UiPatch.Bad))), otherGame),
+        ];
+        var (recordedNote, bareNote) = (ReadOf(Thrown(() => Lib.Apply(typeof(UiBadFinish))), game, same).Notes, ReadOf(Stripped(Thrown(() => Lib.Apply(typeof(UiBadFinish)))), game, same).Notes);
+        Check("the crash culprit with no record of whose patches (taken off): Hornet's shape by a mod with an add-on, the mod by its frame; a library's "
+            + "PatchAll of a dependent's class, the dependent by its attributes; of another mod's class or beside one Harmony may never have tried, and its "
+            + "direct Harmony.Patch, no pick; the log says which decided",
+            bare.SequenceEqual(["SmmTestFixes Code", "SmmTestUi RebuildLast", "none (SmmTestLib+SmmTestContent)", "none (SmmTestLib)", "none (SmmTestLib)"])
+            && recordedNote.Any(n => n.Contains("as recorded")) && bareNote.Any(n => n.Contains("no record")),
+            $"{string.Join(" | ", bare)}; recorded: {string.Join("; ", recordedNote)}; without: {string.Join("; ", bareNote)}");
         UnpatchCulpritChecks();
 
         // A transpiler's own throw names its mod, by its frame, eager (inside reflection's TargetInvocationException) or an
@@ -1120,10 +1215,14 @@ static partial class SelfTest
         Culprits.Recorded Entry(bool menu, string copy = "l:SmmTestFixes", DateTimeOffset? when = null) =>
             new(when ?? at, "SmmTestFixes", [new Culprits.Switch(ModSource.ModsDirectory, true, [copy])], menu);
         List<(string, ModSource, bool)> read = [("SmmTestFixes", ModSource.ModsDirectory, true)];
+        // A switch turned off with no copy installed then (a Workshop item unsubscribed): any copy of that source that ran
+        var subscribed = mods with { Installs = [.. mods.Installs, new Culprits.Copy("SmmTestFixes", ModSource.SteamWorkshop, "w:1", true)] };
+        Culprits.Recorded Unsubscribed() => new(at, "SmmTestFixes", [new Culprits.Switch(ModSource.SteamWorkshop, true, [])], false);
         bool[] stuck =
         [
             Culprits.DidntStick(["SmmTestFixes"], read, [Entry(false)], mods), Culprits.DidntStick(["SmmTestFixes"], read, [Entry(false, "l:SmmTestFixesOther")], mods),
-            Culprits.DidntStick(["SmmTestFixes"], read, [Entry(true)], mods),
+            Culprits.DidntStick(["SmmTestFixes"], read, [Entry(true)], mods), Culprits.DidntStick(["SmmTestFixes"], read, [Unsubscribed()], subscribed),
+            Culprits.DidntStick(["SmmTestFixes"], read, [Unsubscribed()], mods),
         ];
         var streak = Culprits.Streak([Entry(false), Entry(false), Entry(false, when: at.AddMinutes(-3)), Entry(true, when: at.AddMinutes(-9))]);
         var dependents = mods with
@@ -1133,9 +1232,9 @@ static partial class SelfTest
         };
         var needing = Culprits.Needing(["SmmTestFixes"], [("SmmTestFixes", ModSource.ModsDirectory, true), ("SmmTestNeedsFixes", ModSource.ModsDirectory, true)], dependents);
         Check("the crash culprit's ranking: a turn-off with no main menu since whose copy ran again didn't stick, not when another copy ran or a menu came; "
-            + "the streak counts the turn-offs since a menu, and this one; the mods needing a culprit, one that failed this launch and one with no entry in "
-            + "the list read; nothing, no culprit",
-            stuck.SequenceEqual([true, false, false]) && streak == 3 && needing.Order().SequenceEqual(["SmmTestNeedsFixes", "SmmTestNewNeedsFixes"])
+            + "one of a source with no copy then, when a copy of it ran; the streak counts the turn-offs since a menu, and this one; the mods needing a "
+            + "culprit, one that failed this launch and one with no entry in the list read; nothing, no culprit",
+            stuck.SequenceEqual([true, false, false, true, false]) && streak == 3 && needing.Order().SequenceEqual(["SmmTestNeedsFixes", "SmmTestNewNeedsFixes"])
             && Ranked(Found(null), null) == null,
             $"stuck {string.Join(", ", stuck)}; streak {streak}; needing {string.Join(", ", needing)}");
         // Names: with the id where another mod's name holds the name ("大黄蜂" beside "Hornet / 大黄蜂")

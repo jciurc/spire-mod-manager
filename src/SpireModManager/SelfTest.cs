@@ -148,6 +148,7 @@ static partial class SelfTest
             await Step(() => TestCrashOffer(menu, outDir));
             await Step(() => TestCrashCulprit(menu, outDir)); // who stopped the start (Culprits), on real failures (SelfTest.Crash.cs)
             await Step(() => TestCrashTurnOff(menu, outDir)); // what its answers write, and the notice after (SelfTest.TurnOff.cs)
+            await Step(() => TestMouseInView(menu)); // after the most popups in a row
             await Step(() => TestSameIdCanary()); // which copy of a mod installed twice loads (SameIdLoad)
             await Step(() => TestCopyRule(outDir)); // the rule every view and the launch share (Copies.Next), on made-up copies
             await Step(() => TestSameIdTie());
@@ -1246,18 +1247,18 @@ static partial class SelfTest
     // A link's press (the page link at the top).
     static void Click(BaseButton button) => button.EmitSignal(BaseButton.SignalName.Pressed);
 
-    // The mouse at a fixed point inside the viewport, for a check that opens a menu at it. In a headless run the game
-    // moves it at each popup's opening and closing (NControllerManager, through the window's scale): 30 times further
-    // each time, so a run's many popups take it past what a float holds, and a menu opened at it with it. Nothing with a
-    // window (scale 1), where the mouse is the player's and a move would hover what's under it.
-    static async Task MouseInView(Node node)
+    // The mouse where a menu can open at it after the crash tests' many popups: finite and inside the viewport
+    // (HeadlessMousePatch). In a window run it's the player's, anywhere.
+    static void TestMouseInView(Node node)
     {
-        var root = node.GetTree().Root;
-        if (root.GetFinalTransform().Scale.IsEqualApprox(Vector2.One))
+        if (DisplayServer.GetName() != "headless")
+        {
+            Results.Add("SKIP the mouse after the crash tests' popups: with a window it's the player's");
             return;
-        var at = root.GetFinalTransform() * new Vector2(5, 5); // in the window's terms, as the game moves it; nowhere near a trigger
-        Input.ParseInputEvent(new InputEventMouseMotion { Position = at, GlobalPosition = at });
-        await node.ToSignal(node.GetTree(), SceneTree.SignalName.ProcessFrame); // taken in
+        }
+        var (at, view) = (node.GetViewport().GetMousePosition(), node.GetViewport().GetVisibleRect());
+        Check("the mouse after the crash tests' popups is where a menu can open at it: finite, inside the viewport",
+            float.IsFinite(at.X) && float.IsFinite(at.Y) && view.HasPoint(at), $"{at} in {view}");
     }
 
     // A real mouse click at the control's centre, through the game's input like a player's: catches anything
@@ -1608,5 +1609,25 @@ static partial class SelfTest
         dump.AppendLine();
         foreach (var child in node.GetChildren())
             DumpTree(child, depth + 1, dump);
+    }
+}
+
+// Dev runs: the game puts the mouse back at its position at each popup's opening and closing (NControllerManager), through
+// the window's scale, which in a headless run sends it 30 times further each time: a run's many popups took it past what
+// a float holds, and a menu opened at it with it. Headless has no player's mouse (nor a controller) to put back, so the
+// method is skipped there; a window run keeps it.
+[HarmonyLib.HarmonyPatch(typeof(NControllerManager), "OnScreenContextChanged")]
+static class HeadlessMousePatch
+{
+    static bool Prefix()
+    {
+        try
+        {
+            return DisplayServer.GetName() != "headless";
+        }
+        catch (Exception)
+        {
+            return true;
+        }
     }
 }

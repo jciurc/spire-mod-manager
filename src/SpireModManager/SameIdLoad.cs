@@ -299,13 +299,14 @@ static class SameIdLoad
     public static bool CanaryFailed { get; private set; }
 
     // Once, at the first main menu (MenuReachedPatch, after LaunchGuard.MenuReached): before our data loads and the undo
-    // history starts, so nothing here is a change since launch or an undo step.
+    // history starts, so nothing here is a change since launch or an undo step. The mods we keep off after a failed start
+    // get back the entries the game's list dropped (TurnedOff.KeepOff), so the save keeps them.
     public static void Settle()
     {
         if (_settled)
             return;
         _settled = true;
-        if (SaveManager.Instance.SettingsSave.ModSettings is { } settings && SettleList(settings.ModList, LaunchGuard.ReadList))
+        if (SaveManager.Instance.SettingsSave.ModSettings is { } settings && (SettleList(settings.ModList, LaunchGuard.ReadList) | TurnedOff.KeepOff(settings.ModList)))
             SaveManager.Instance.SaveSettings(); // once, only when something changed
         Check(ModManager.Mods);
     }

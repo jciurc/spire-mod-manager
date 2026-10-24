@@ -699,10 +699,12 @@ static class Profiles
     // installed included: so a profile naming a copy that's missing reads, and once it's back loads, as the profile has
     // it, as our data does (Ticks' read rule). The mod managers stay as they are, and so does a mod the profile has never
     // seen. A mod turned off after a failed start stays off while its entry stands, as Restore keeps it (TurnedOff.OffIds):
-    // switching profiles, Discard and an import never name it, and its banner says why it's off.
+    // switching profiles, Discard and an import never name it, and its banner says why it's off. Mod Doctor's turn-offs
+    // count only where the profile keeps Mod Doctor on (KeepsDoctor): its note says why only while it runs.
     static void Apply(List<ProfileMod> mods, NModdingScreen? screen)
     {
-        var (wants, kept) = (Index(mods), TurnedOff.OffIds());
+        var ours = TurnedOff.OffIds(doctor: false);
+        var (wants, kept) = (Index(mods), KeepsDoctor(mods, ours) ? TurnedOff.OffIds() : ours);
         _applying = true;
         try
         {
@@ -729,6 +731,11 @@ static class Profiles
             _applying = false;
         }
     }
+
+    // Whether Mod Doctor runs after an apply, as far as the profile says: no entry of ours holds it off, and the profile
+    // has it on or has no entry for it (it stays as it is: running, as its turn-offs count only then)
+    static bool KeepsDoctor(List<ProfileMod> mods, HashSet<string> ours) => !ours.Contains(ModDoctor.ModId)
+        && mods.Where(m => m.Id == ModDoctor.ModId).ToList() is var doctor && (doctor.Count == 0 || doctor.Any(m => m.Enabled));
 
     // Mod managers: this one and Better Mod Menu. A profile never turns them on or off, and they aren't counted or listed
     // as its changes.

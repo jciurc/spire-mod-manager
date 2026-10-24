@@ -78,7 +78,6 @@ static partial class SelfTest
         var listTop = scroll.OffsetTop;
         var row = content.GetChildren().OfType<NModMenuRow>().FirstOrDefault(r => r.Visible && r.Mod?.manifest?.id != null);
         var modId = row?.Mod?.manifest?.id;
-        await MouseInView(menu);
         if (row == null || modId == null || CategoryList.ShowRowMenu(content, row) is not { } rowMenu)
         {
             Results.Add("FAIL no data: no mod's menu to make a category from");
@@ -652,7 +651,6 @@ static partial class SelfTest
         await Wait(menu, 0.7); // our view's redraw
         Check("F3 on the main menu opens our view of the page, as the button does, after Vanilla View", OnOurView(), Where());
 
-        await MouseInView(menu);
         MenuPanel.Show(screen.GetNode<Control>("%ModsScrollContainer/Mask/Content"), () => [new MenuItem("One", () => { })]);
         await Wait(menu, 0.1);
         var pageMenu = MenuPanel.IsOpen;

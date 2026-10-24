@@ -23,7 +23,6 @@ static partial class SelfTest
             return;
         }
 
-        await MouseInView(menu);
         var rowMenu = CategoryList.ShowRowMenu(content, row);
         await Wait(menu, 0.5);
         var rowItems = rowMenu == null ? [] : MenuPanel.Labels(rowMenu);
@@ -166,7 +165,6 @@ static partial class SelfTest
         Check("moved up: header order follows", order.IndexOf("Category Renamed") < order.IndexOf($"Category {Store.Data.Categories.Last().Name}"));
         Check("mod row sits under its header", content.GetChildren().IndexOf(row) == order.IndexOf("Category Renamed") + 1);
         List<NModMenuRow> Members() => content.GetChildren().OfType<NModMenuRow>().Where(r => Store.InfoFor(r.Mod?.manifest?.id)?.Category == category.Name).ToList();
-        await MouseInView(menu);
         var headerMenu = CategoryList.ShowHeaderMenu(content, category, Members());
         await Wait(menu, 0.5);
         await Capture(screen, outDir, "6-header-menu");

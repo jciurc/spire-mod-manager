@@ -153,9 +153,9 @@ static class TurnedOff
     // An entry of ours for this mod: its needs lines say so
     public static bool Has(string? id) => id != null && Entries.Any(e => e.Id == id);
 
-    // Every mod turned off after a failed start, that Restore and profiles keep off: ours, and Mod Doctor's that are still
-    // off in the game's list as read (LaunchGuard.AsRead)
-    public static HashSet<string> OffIds() => [.. Entries.Select(e => e.Id), .. ModDoctor.TurnedOffIds(LaunchGuard.AsRead())];
+    // Every mod turned off after a failed start, that Restore and profiles keep off: ours, and (doctor) Mod Doctor's that
+    // are still off in the game's list as read (LaunchGuard.AsRead)
+    public static HashSet<string> OffIds(bool doctor = true) => [.. Entries.Select(e => e.Id), .. doctor ? ModDoctor.TurnedOffIds(LaunchGuard.AsRead()) : []];
 
     // The entries as ranking reads them (Culprits.Rank: didn't stick, the streak)
     public static List<Culprits.Recorded> Recorded() => [.. Entries.Select(e => new Culprits.Recorded(e.At, e.Id, e.Switches, e.MenuSince))];
@@ -176,7 +176,7 @@ static class TurnedOff
         {
             if (On(entry.Id, installed, list))
                 Log.Info($"[{ModEntry.ModId}] {entry.Id} is on again, so it's no longer listed as turned off after a failed start");
-            else if (!installed.Any(c => c.Id == entry.Id) && entry.Switches.All(s => Scanned(s.Source)))
+            else if (Gone(entry, installed))
                 Log.Info($"[{ModEntry.ModId}] {entry.Id} is no longer installed, so it's no longer listed as turned off after a failed start");
             else
             {
@@ -186,6 +186,32 @@ static class TurnedOff
             }
         }
         Keep(kept, "which mods a main menu came after");
+    }
+
+    // No copy of the mod installed, where each of its sources was scanned this launch
+    static bool Gone(Entry entry, List<(string Id, ModSource Source)> installed) =>
+        !installed.Any(c => c.Id == entry.Id) && entry.Switches.All(s => Scanned(s.Source));
+
+    // At each launch's repair of the game's list in memory (LaunchGuard.RepairBeforeMenu, and SameIdLoad.Settle before
+    // it saves): an entry, off, for each switch an entry of ours recorded whose source has none in the list. The game's
+    // rebuilt list holds only the copies it found, so a Workshop item unsubscribed, or not listed without Steam, loses
+    // its entry at the next save and loads once it's back. Not for an entry the first main menu drops (its mod on again
+    // or gone). True if any was added.
+    public static bool KeepOff(List<SettingsSaveMod> list)
+    {
+        if (Entries.Count == 0)
+            return false;
+        var (installed, switches) = (Installs(), list.Select(e => (e.Id, e.Source, e.IsEnabled)).ToList());
+        var added = new List<string>();
+        foreach (var entry in Entries.Where(e => !On(e.Id, installed, switches) && !Gone(e, installed)))
+            foreach (var source in entry.Switches.Select(s => s.Source).Distinct().Where(source => !list.Any(e => e.Id == entry.Id && e.Source == source)).ToList())
+            {
+                list.Add(new SettingsSaveMod { Id = entry.Id, Source = source, IsEnabled = false });
+                added.Add($"({entry.Id}, {source})");
+            }
+        if (added.Count > 0)
+            Log.Info($"[{ModEntry.ModId}] Kept off after a failed start, though the game's list had no entry for them: {string.Join(", ", added)}");
+        return added.Count > 0;
     }
 
     // A start that failed after its first main menu (the checks after it): the marks that menu set taken back, so they
@@ -365,51 +391,67 @@ static class TurnedOff
     // Turn back on (the popup's, the banner's): each entry's sources that were on, on again (SwitchOn), saved and checked;
     // then the change recorded (the main menu button's dot and its note follow, and on the page it's an undo step), and
     // the entries gone. No restart: it applies at the next relaunch, through the relaunch check, as any change. A save
-    // that fails leaves the entries, and says so. True if turned on.
+    // that fails leaves the entries, and says so; so does a mod with no copy installed now (nothing to turn on: a
+    // Workshop one not listed without Steam). True if every one was turned on.
     public static async Task<bool> TurnBackOn(IReadOnlyList<Entry> entries, NModdingScreen? screen)
     {
-        try
+        var installed = Installs();
+        var (some, none) = (entries.Where(e => installed.Any(c => c.Id == e.Id)).ToList(), entries.Where(e => !installed.Any(c => c.Id == e.Id)).ToList());
+        if (none.Count > 0)
+            Log.Info($"[{ModEntry.ModId}] Not turned back on, with no copy installed now: {string.Join(", ", none.Select(e => e.Id))}");
+        if (some.Count > 0)
         {
-            var settings = SaveManager.Instance.SettingsSave.ModSettings ?? throw new InvalidOperationException("the game has no mod settings");
-            var asWas = LaunchGuard.State(settings.ModList);
-            SwitchOn(settings.ModList, entries);
-            LaunchGuard.SaveChecked(settings.ModList, asWas);
-            Log.Info($"[{ModEntry.ModId}] Turned back on after a failed start: {string.Join(", ", entries.Select(e => e.Id))}");
+            try
+            {
+                var settings = SaveManager.Instance.SettingsSave.ModSettings ?? throw new InvalidOperationException("the game has no mod settings");
+                var asWas = LaunchGuard.State(settings.ModList);
+                SwitchOn(settings.ModList, some, installed);
+                LaunchGuard.SaveChecked(settings.ModList, asWas);
+                Log.Info($"[{ModEntry.ModId}] Turned back on after a failed start: {string.Join(", ", some.Select(e => e.Id))}");
+            }
+            catch (Exception e)
+            {
+                Log.Error($"[{ModEntry.ModId}] Could not turn {string.Join(", ", some.Select(e => e.Id))} back on: {e.Message}");
+                await Told(some, "SPIRE_MOD_MANAGER.TURNED_OFF_ON_FAILED");
+                return false;
+            }
+            if (screen != null && GodotObject.IsInstanceValid(screen))
+            {
+                Profiles.RefreshTickboxes(screen);
+                CategoryList.Redraw(screen.GetNode<Control>("%ModsScrollContainer/Mask/Content")); // one undoable change
+            }
+            else
+            {
+                Profiles.Track();
+                History.Record(); // Track only records when the active profile changed
+            }
+            Remove([.. some.Select(e => e.Id)]);
         }
-        catch (Exception e)
-        {
-            Log.Error($"[{ModEntry.ModId}] Could not turn {string.Join(", ", entries.Select(e => e.Id))} back on: {e.Message}");
-            await Told(entries);
-            return false;
-        }
-        if (screen != null && GodotObject.IsInstanceValid(screen))
-        {
-            Profiles.RefreshTickboxes(screen);
-            CategoryList.Redraw(screen.GetNode<Control>("%ModsScrollContainer/Mask/Content")); // one undoable change
-        }
-        else
-        {
-            Profiles.Track();
-            History.Record(); // Track only records when the active profile changed
-        }
-        Remove([.. entries.Select(e => e.Id)]);
-        return true;
+        if (none.Count > 0)
+            await Told(none, "SPIRE_MOD_MANAGER.TURNED_OFF_ON_NONE");
+        return none.Count == 0;
     }
 
-    // The switches Turn back on sets, on a given list (the self-test's made-up ones): exactly the ones each entry recorded
-    // on, installed now or not, every saved entry of that id and source. No entry is added: a copy with no entry loads
-    // anyway. The game's switches only: Dependencies.Write would tick every copy of a source, and an unticked twin would
-    // lose its tick (copies_off was kept while the switch was off, so the same copies come back).
-    public static void SwitchOn(List<SettingsSaveMod> list, IEnumerable<Entry> entries)
+    // The switches Turn back on sets, on a given list and installed copies (the self-test's made-up ones): the ones each
+    // entry recorded on, installed now or not, every saved entry of that id and source; and when none of those sources
+    // has a copy installed now (a Workshop item unsubscribed since), every installed copy's. No entry is added: a copy
+    // with no entry loads anyway. The game's switches only: Dependencies.Write would tick every copy of a source, and an
+    // unticked twin would lose its tick (copies_off was kept while the switch was off, so the same copies come back).
+    public static void SwitchOn(List<SettingsSaveMod> list, IEnumerable<Entry> entries, IReadOnlyList<(string Id, ModSource Source)> installed)
     {
         foreach (var entry in entries)
-            foreach (var saved in list.Where(e => e.Id == entry.Id && entry.Switches.Any(s => s.On && s.Source == e.Source)))
+        {
+            var sources = entry.Switches.Where(s => s.On).Select(s => s.Source).ToHashSet();
+            if (!installed.Any(c => c.Id == entry.Id && sources.Contains(c.Source)))
+                sources.UnionWith(installed.Where(c => c.Id == entry.Id).Select(c => c.Source));
+            foreach (var saved in list.Where(e => e.Id == entry.Id && sources.Contains(e.Source)))
                 saved.IsEnabled = true;
+        }
     }
 
-    // A Turn back on whose save failed, said in the game's popup with its Ok. From the notice's button, a frame first: the
-    // notice's own close clears the popups after its handler.
-    static async Task Told(IReadOnlyList<Entry> entries)
+    // A Turn back on that failed (its save, or a mod with no copy installed: key), said in the game's popup with its Ok.
+    // From the notice's button, a frame first: the notice's own close clears the popups after its handler.
+    static async Task Told(IReadOnlyList<Entry> entries, string key)
     {
         try
         {
@@ -422,7 +464,7 @@ static class TurnedOff
             modals.Add(popup);
             var titled = new LocString("settings_ui", entries.Count == 1 ? "SPIRE_MOD_MANAGER.TURNED_OFF_TITLE" : "SPIRE_MOD_MANAGER.TURNED_OFF_TITLE_MANY");
             var told = popup.WaitForConfirmation(titled, titled, null, new LocString("main_menu_ui", "GENERIC_POPUP.ok"));
-            LaunchGuard.SetBody(popup, Menus.Format("SPIRE_MOD_MANAGER.TURNED_OFF_ON_FAILED", ("mod", string.Join(", ", entries.Select(e => Name(e, plain: false))))));
+            LaunchGuard.SetBody(popup, Menus.Format(key, ("mod", string.Join(", ", entries.Select(e => Name(e, plain: false))))));
             await told;
         }
         catch (Exception e)

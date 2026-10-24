@@ -353,6 +353,7 @@
   "SPIRE_MOD_MANAGER.TURNED_OFF_SAME_ERROR": "The same error came back after [gold]{mod}[/gold] was turned off, so it most likely wasn't the cause.",
   "SPIRE_MOD_MANAGER.TURNED_OFF_ON_ONE": "Turn {mod} back on",
   "SPIRE_MOD_MANAGER.TURNED_OFF_ON_FAILED": "Couldn't turn [gold]{mod}[/gold] back on: the game couldn't save its settings. Check that settings.save in the game's user folder isn't read-only.",
+  "SPIRE_MOD_MANAGER.TURNED_OFF_ON_NONE": "Couldn't turn [gold]{mod}[/gold] back on: there's no installed copy to turn on. Workshop mods are only listed while Steam is running.",
   "SPIRE_MOD_MANAGER.TURNED_OFF_KEEP": "Keep off",
   "SPIRE_MOD_MANAGER.TURNED_OFF_ON": "Turn back on",
   "SPIRE_MOD_MANAGER.TURNED_OFF_BANNER": "{mod} was turned off after a failed start",

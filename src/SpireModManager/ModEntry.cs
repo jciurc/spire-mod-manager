@@ -112,6 +112,7 @@ internal static class ModEntry
             Log.Error($"[{ModId}] Could not drop the Steam branch error of mods that are off, so the main menu may show it: {e}");
         }
         var harmony = new Harmony(ModId);
+        PatchingFailurePatch.Apply(harmony); // before any other mod patches: whose patch a failed patch call was applying
 #if DEVTOOLS
         // Dev runs can leave some out, as if a game update broke them, to see what players would get
         // (SPIRE_MOD_MANAGER_SKIP_PATCHES=ModInfoFillPatch,RowLookPatch).

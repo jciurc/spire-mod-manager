@@ -1,3 +1,4 @@
+using System.Reflection;
 using Godot;
 using HarmonyLib;
 using MegaCrit.Sts2.Core.Audio;
@@ -141,6 +142,83 @@ static class StartupFailurePatch
     {
         if (__exception != null)
             Culprits.Caught(__exception, nameof(OneTimeInitialization.ExecuteEssential));
+    }
+}
+
+// Whose patches Harmony was applying when a patch call failed, written on its exception for Culprits (Attempted). Every
+// refusal of Harmony's and every failed build passes through PatchProcessor.Patch (Harmony.Patch; a saved transpiler
+// run again there builds with the processor's new patches) or PatchClassProcessor.Patch (PatchAll, a class at a time:
+// its Prepare, TargetMethod and Cleanup too), and the class's own checks of its patch methods (one that isn't static)
+// through that processor's constructor. A void finalizer on each, first in line, reads the processor's fields (field
+// refs made at the first failure) and never throws: Harmony rethrows the exception as it was, and a call that works
+// only passes null. ModEntry.Init applies it before our other patches, so it's in place before any other mod patches
+// (we load first); no class attribute, so its loop leaves it out.
+static class PatchingFailurePatch
+{
+    public static void Apply(Harmony harmony)
+    {
+        void Patch(MethodBase? original, string finalizer)
+        {
+            try
+            {
+                harmony.Patch(original, finalizer: new HarmonyMethod(typeof(PatchingFailurePatch), finalizer) { priority = Priority.First });
+            }
+            catch (Exception e)
+            {
+                Log.Error($"[{ModEntry.ModId}] Could not patch Harmony's {original?.DeclaringType?.Name}.{original?.Name}, so a failed start there can't say "
+                    + $"whose patch it was, and the error's frames decide: {e}");
+            }
+        }
+        Patch(AccessTools.Method(typeof(PatchProcessor), nameof(PatchProcessor.Patch)), nameof(Direct));
+        Patch(AccessTools.Method(typeof(PatchClassProcessor), nameof(PatchClassProcessor.Patch)), nameof(ByClass));
+        Patch(AccessTools.Constructor(typeof(PatchClassProcessor), [typeof(Harmony), typeof(Type)]), nameof(ByClass));
+    }
+
+    // Harmony.Patch's patch methods, by kind (2.4's fields; one a later Harmony renames is left out)
+    static readonly string[] Kinds = ["prefix", "postfix", "transpiler", "finalizer", "innerprefix", "innerpostfix"];
+    static List<AccessTools.FieldRef<PatchProcessor, HarmonyMethod>>? _patches;
+    static AccessTools.FieldRef<PatchClassProcessor, Type>? _class;
+
+    static void Direct(PatchProcessor __instance, Exception? __exception)
+    {
+        if (__exception == null)
+            return;
+        try
+        {
+            _patches ??= [.. Kinds.Select(Field<PatchProcessor, HarmonyMethod>).OfType<AccessTools.FieldRef<PatchProcessor, HarmonyMethod>>()];
+            Culprits.Attempted(__exception, null, _patches.Select(field => field(__instance)?.method));
+        }
+        catch (Exception)
+        {
+            // no record: the frames decide
+        }
+    }
+
+    static void ByClass(PatchClassProcessor __instance, Exception? __exception)
+    {
+        if (__exception == null)
+            return;
+        try
+        {
+            _class ??= Field<PatchClassProcessor, Type>("containerType");
+            Culprits.Attempted(__exception, _class is { } field ? field(__instance) : null, []);
+        }
+        catch (Exception)
+        {
+            // no record: the frames decide
+        }
+    }
+
+    static AccessTools.FieldRef<T, F>? Field<T, F>(string name)
+    {
+        try
+        {
+            return AccessTools.FieldRefAccess<T, F>(name);
+        }
+        catch (Exception)
+        {
+            return null;
+        }
     }
 }
 
