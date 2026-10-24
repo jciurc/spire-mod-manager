@@ -1603,9 +1603,10 @@ static partial class SelfTest
         var opened = Search.TestFoundIn;
         var bbcode = ModDetails.Card(fixes, search: search).Split('\n');
         var foundIn = Menus.Format("SPIRE_MOD_MANAGER.FOUND_IN", ("fields", $"{Menus.Text("SPIRE_MOD_MANAGER.FIELD_AUTHOR")}, {Menus.Text("SPIRE_MOD_MANAGER.FIELD_TAGS")}"));
-        Check("Found in on a row's card while the box holds a search: right after its id and state, subtle (\"Found in: author, tags\")",
-            card.Length > 2 && card[0].StartsWith("SmmTestFixes") && card[1] == foundIn && card[1] == "Found in: author, tags"
-            && bbcode.Length > 1 && bbcode[1] == $"[color=#fff6e299]{foundIn}[/color]", string.Join(" | ", card));
+        Check("Found in on a row's card while the box holds a search: at the bottom after a gap, subtle (\"Search term found in: author, tags\")",
+            card.Length > 2 && card[0].StartsWith("SmmTestFixes") && card[^1] == foundIn && card[^1] == "Search term found in: author, tags"
+            && card[^2] == " " && bbcode.Length > 2 && bbcode[^1] == $"[color=#fff6e299]{foundIn}[/color]" && bbcode[^2] == ModDetails.CardGap,
+            string.Join(" | ", card));
         Check("Found in is worked out as the card opens, never in a redraw", inRedraw == 0 && opened > 0, $"{inRedraw} in two redraws, {opened} for the card");
         Type("");
         await Wait(menu, 0.3);
