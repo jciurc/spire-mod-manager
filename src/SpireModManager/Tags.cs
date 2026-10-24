@@ -23,6 +23,9 @@ static class Tags
     // Copies of an id ticked together: the same-ID banner's warning yellow, light enough for text (the banner's own fill
     // is too dark to read on a card). The copy lines say it in this too (ModDetails.CopyLine); the self-test reads it.
     public static readonly Color SameIdClash = new(0.95f, 0.78f, 0.35f);
+    // Duplicate while it isn't a clash: a muted tan, neutral beside the other chips and well apart from the clash's yellow
+    // and Gameplay's orange. The self-test reads it.
+    public static readonly Color Duplicate = new(0.76f, 0.65f, 0.53f);
     public static readonly Color CustomColor = new(0.75f, 0.9f, 0.8f);
 
     // Workshop tag words that mark a mod as cosmetic (lower case, whole words): art and sound, as its card says. The
@@ -48,17 +51,17 @@ static class Tags
         if (IsLocal(mod))
             chips.Add(new Chip(Menus.Text("SPIRE_MOD_MANAGER.TAG_LOCAL"), Local, Tip: Menus.Text("SPIRE_MOD_MANAGER.TAG_LOCAL_TIP")));
         // Duplicate: another copy of this mod id installed (Copies). Yellow on every copy ticked while another is (only one
-        // of them loads), the one that loads too: they all share the problem. Grey otherwise, and always for this mod's
-        // copies (a backup copy of it on is as it should be: Copies.Clashes). Its tip names the others (while yellow, the
-        // ticked ones, and the copy that loads); a click lists every mod installed more than once.
+        // of them loads), the one that loads too: they all share the problem, this mod's copies as any mod's
+        // (Copies.Clashes). Tan otherwise. Its tip names the others (while yellow, the ticked ones, and the copy that
+        // loads); a click lists every mod installed more than once.
         if (manifest.id is { } id && Copies.Others(mod) is { Count: > 0 } others)
         {
             var clash = Copies.Clashes(mod);
-            string Names(IEnumerable<Mod> copies) => string.Join(", ", copies.DistinctBy(Copies.CopyOf).Select(Copies.Named));
-            var tip = clash
-                ? Menus.Format("SPIRE_MOD_MANAGER.TAG_SAME_ID_CLASH_TIP", ("others", Names(others.Where(Copies.Ticked))), ("loads", Copies.Named(Copies.Loading(id) ?? mod)))
+            string Names(IEnumerable<Mod> copies, string between = ", ") => string.Join(between, copies.DistinctBy(Copies.CopyOf).Select(Copies.Named));
+            var tip = clash // the enabled copies one to a line, under the tip's first line (Jordan, 23 Oct)
+                ? Menus.Format("SPIRE_MOD_MANAGER.TAG_SAME_ID_CLASH_TIP", ("others", Names(others.Where(Copies.Ticked), "\n")), ("loads", Copies.Named(Copies.Loading(id) ?? mod)))
                 : Menus.Format("SPIRE_MOD_MANAGER.TAG_SAME_ID_TIP", ("others", Names(others)));
-            chips.Add(new Chip(Menus.Text("SPIRE_MOD_MANAGER.TAG_SAME_ID"), clash ? SameIdClash : Local, Tip: tip));
+            chips.Add(new Chip(Menus.Text("SPIRE_MOD_MANAGER.TAG_SAME_ID"), clash ? SameIdClash : Duplicate, Tip: tip));
         }
         // A branch only when the mod is marked for one of the two (most are for both, and #stable, #beta find them anyway).
         // A click searches for what the chip means: marked for this branch and not the other.

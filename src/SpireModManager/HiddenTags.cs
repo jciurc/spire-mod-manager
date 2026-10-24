@@ -5,9 +5,10 @@ namespace SpireModManager;
 // Tags a search finds without a chip: a mod's state (#enabled, #loaded, #pending...), what changed since launch (#changed,
 // #moved, #edited), our details (#renamed, #note, #uncategorized) and what's wrong with it (#unmet, #needed, #order,
 // #clash, #managers, #failed, #gameerror; #error, #warning and #problem gather them). English words in any language, as
-// #stable is, and only after a "#": "enabled" alone is a word. A tag of the player's with the same name finds its mods
-// too (Search.Matches). What needs the whole list is worked out once per redraw (Lookups). The info panel lists those that
-// find its mod, in this order, as Other keywords (Of).
+// #stable is, with or without the "#": "enabled" finds what #enabled does, and the mods that say the word too. Only the
+// whole name: a word's start would match as the name is typed ("load" #loaded, "not" #notloaded and #note). A tag of the
+// player's with the same name finds its mods too (Search.Matches). What needs the whole list is worked out once per
+// redraw (Lookups). The info panel lists those that find its mod, in this order, as Other keywords (Of).
 static class HiddenTags
 {
     static readonly OrderedDictionary<string, Func<Mod, bool>> Finds = new(StringComparer.OrdinalIgnoreCase)

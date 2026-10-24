@@ -9,9 +9,17 @@ static class Modal
 {
     public static readonly Color Cream = new(1, 0.964706f, 0.886275f);
     public static readonly Color Gold = new(0.937f, 0.784f, 0.318f);
+    // The panel's margin either side of the column: the column is the dialog's width less two of these.
+    public const int Side = 26;
 
     // Each open dialog's owner and its leave handler.
     static readonly Dictionary<string, (Node Owner, Callable Gone)> _owners = [];
+
+#if DEVTOOLS
+    // Self-test: the screen a dialog is centred in, in place of the viewport's (a headless run's is square, 1920 tall,
+    // so a dialog's fit to a player's 1080 can't be seen there); null: the viewport's.
+    public static Vector2? TestScreen { get; set; }
+#endif
 
     // Opens a dialog and returns the column to fill, or null if there's nowhere to show it.
     public static VBoxContainer? Open(Node owner, string name, float width, int separation)
@@ -29,6 +37,9 @@ static class Modal
 
         // Dim everything behind, and take its clicks.
         var size = owner.GetViewport().GetVisibleRect().Size; // anchors don't size controls right under a CanvasLayer here
+#if DEVTOOLS
+        size = TestScreen ?? size;
+#endif
         layer.AddChild(new ColorRect { Color = new Color(0, 0, 0, 0.6f), MouseFilter = Control.MouseFilterEnum.Stop, Size = size });
         var center = new CenterContainer { MouseFilter = Control.MouseFilterEnum.Ignore, Size = size };
         layer.AddChild(center);
@@ -37,7 +48,7 @@ static class Modal
         var style = new StyleBoxFlat
         {
             BgColor = new Color(0.05f, 0.08f, 0.12f, 0.98f), BorderColor = new Color(Gold, 0.5f),
-            ContentMarginLeft = 26, ContentMarginRight = 26, ContentMarginTop = 20, ContentMarginBottom = 20,
+            ContentMarginLeft = Side, ContentMarginRight = Side, ContentMarginTop = 20, ContentMarginBottom = 20,
             ShadowColor = new Color(0, 0, 0, 0.4f), ShadowSize = 10,
         };
         style.SetBorderWidthAll(1);
@@ -61,6 +72,23 @@ static class Modal
         title.AddThemeFontOverride("font", ModEntry.Font("res://themes/kreon_bold_shared.tres"));
         title.AddThemeFontSizeOverride("font_size", 26);
         title.AddThemeColorOverride("font_color", Cream);
+        return title;
+    }
+
+    // The same title with its one value picked out in a colour (the modified content dialog's mod name, in gold: Jordan,
+    // 23 Oct). A RichTextLabel, as a Label has one colour; the rest of the words Cream, as Title's.
+    public static RichTextLabel Title(string key, (string Name, string Value) value, Color color)
+    {
+        static string Escape(string text) => text.Replace("[", "[lb]");
+        var title = new RichTextLabel
+        {
+            Name = "Title", BbcodeEnabled = true, FitContent = true, ScrollActive = false, AutowrapMode = TextServer.AutowrapMode.WordSmart,
+            MouseFilter = Control.MouseFilterEnum.Ignore,
+            Text = Escape(Menus.Format(key, (value.Name, "\u0001"))).Replace("\u0001", $"[color=#{color.ToHtml(false)}]{Escape(value.Value)}[/color]"),
+        };
+        title.AddThemeFontOverride("normal_font", ModEntry.Font("res://themes/kreon_bold_shared.tres"));
+        title.AddThemeFontSizeOverride("normal_font_size", 26);
+        title.AddThemeColorOverride("default_color", Cream);
         return title;
     }
 

@@ -287,13 +287,19 @@ static partial class SelfTest
         var bannerText = (SameId()?.FindChild("SameIdWarning", true, false) as Label)?.Text;
         var chips = Tags.For(local).Concat(Tags.For(copy)).Where(c => c.Text == DuplicateChip).ToList();
         var card = await BannerCard(menu, screen, SameId());
-        Check("both copies on: a yellow banner (\"2 mods with the same ID are enabled. Only one copy will be loaded.\"), its card saying which loads (the local "
-            + "copy: the same version); a Duplicate chip on each naming the other and the copy that loads",
+        // The card's markup: Active in green, Ignored subtle, the copy that loads first whatever order they come in.
+        var groups = ModDetails.CopyGroups([copy, local]);
+        Check("both copies on: a yellow banner (\"2 mods with the same ID are enabled - only one copy of each will be loaded\"), its card grouping them "
+            + "under the ID, each with its version and which copy: the local one Active (the same version), then the Workshop one Ignored; Active green, "
+            + "Ignored subtle; a Duplicate chip on each naming the other and the copy that loads",
             bothOn && bannerText == Draft(SameIdText, ("count", "2")) && Yellow(BannerFill(SameId()))
-            && card.Contains(Draft(BannerLoads, ("mod", Named(local)))) && card.Contains(Draft(BannerWontLoad, ("mod", Named(copy))))
+            && GroupIn(card, id).SequenceEqual(Grouped(id, (local, true), (copy, false)))
+            && groups is [_, var activeLine, var ignoredLine] && activeLine.EndsWith($"[color=#a6e3a1]{CopyActive}[/color]")
+            && ignoredLine.EndsWith($"[color=#fff6e299]{CopyIgnored}[/color]")
             && chips.Count == 2 && chips[0].Tip == Draft(ClashTip, ("others", Named(copy)), ("loads", Named(local)))
             && chips[1].Tip == Draft(ClashTip, ("others", Named(local)), ("loads", Named(local))),
-            $"on {bothOn}; banner {bannerText ?? "none"} ({string.Join(" | ", card)}); chips {string.Join(" / ", chips.Select(c => c.Tip))}");
+            $"on {bothOn}; banner {bannerText ?? "none"} ({string.Join(" | ", card)}; expected {string.Join(" | ", Grouped(id, (local, true), (copy, false)))}; "
+            + $"markup {string.Join(" | ", groups)}); chips {string.Join(" / ", chips.Select(c => c.Tip))}");
         void Press(string name) => (SameId()?.FindChild(name, true, false) as BaseButton)?.EmitSignal(BaseButton.SignalName.Pressed);
         Press("GoToSameIdButton");
         await Wait(menu, 0.3);
@@ -450,14 +456,22 @@ static partial class SelfTest
         var newerChips = new[] { local, copy }.Select(m => Tags.For(m).FirstOrDefault(c => c.Text == DuplicateChip)?.Tip).ToList();
         RelaunchCheck.Show(screen);
         await Wait(menu, 0.3);
-        var relaunchBody = (menu.GetTree().Root.GetNodeOrNull(RelaunchCheck.Name)?.FindChild("Body", true, false) as RichTextLabel)?.GetParsedText() ?? "";
+        var relaunch = menu.GetTree().Root.GetNodeOrNull(RelaunchCheck.Name);
+        var relaunchBody = (relaunch?.FindChild("Body", true, false) as RichTextLabel)?.GetParsedText() ?? "";
+        var (unusedButton, brokenButton) = (relaunch?.FindChild("DisableUnusedButton", true, false) != null, relaunch?.FindChild("DisableBrokenButton", true, false) != null);
         RelaunchCheck.Cancel();
         await Wait(menu, 0.3);
-        Check("... the banner, the chips and the relaunch check name the copy that loads",
+        // The relaunch check: the copies grouped under the ID, not among the mods that can't load (a line of their own
+        // there, "<name>  <why>"), with Disable unused mods; Disable mods that can't load only with those (Test Addon's).
+        Check("... the banner, the chips and the relaunch check name the copy that loads; the relaunch check groups both under the ID (it Active, the "
+            + "other Ignored), neither among the mods that can't load, with Disable unused mods",
             (SameId()?.FindChild("SameIdWarning", true, false) as Label)?.Text == Draft(SameIdText, ("count", "2"))
             && newerChips[0] == Draft(ClashTip, ("others", Named(copy)), ("loads", Named(winner))) && newerChips[1] == Draft(ClashTip, ("others", Named(local)), ("loads", Named(winner)))
-            && relaunchBody.Contains($"{Named(loser)}  {Draft(RelaunchLoses, ("other", Named(winner)))}"),
-            $"chips {string.Join(" / ", newerChips)}; {relaunchBody}");
+            && GroupIn(RelaunchCopies(relaunchBody), id).SequenceEqual(Grouped(id, (winner, true), (loser, false)))
+            && !relaunchBody.Contains($"{Named(loser)}  ") && !relaunchBody.Contains($"{Named(winner)}  ")
+            && unusedButton,
+            $"chips {string.Join(" / ", newerChips)}; buttons: unused {unusedButton}, broken {brokenButton}; {relaunchBody} (expected "
+            + $"{string.Join(" | ", Grouped(id, (winner, true), (loser, false)))})");
         Dependencies.Set([copy], false, screen);
         CategoryList.Redraw(content);
         await Wait(menu, 0.3);
@@ -1865,7 +1879,7 @@ static partial class SelfTest
         var actions = LoadOrder.Actions(content, ours, () => { });
         Check("same ID, Load Order: our row pinned first, a lock for its grip saying why, its moves greyed",
             !handle.GetChildren().OfType<ColorRect>().Any() && handle.GetChildren().OfType<Panel>().Count() == 2
-            && Hover.TipOf(handle) == "Spire Mod Manager always loads first, so it can configure the rest of the list properly"
+            && Hover.TipOf(handle) == "Spire Mod Manager always loads first to accurately configure the startup"
             && actions.Where(a => a.Label is not ("Disable" or "Enable")).All(a => a.Disabled),
             $"{string.Join(", ", actions.Select(a => $"{a.Label}{(a.Disabled ? " (greyed)" : "")}"))}; tip {Hover.TipOf(handle)}");
         var from = handle.GetGlobalRect().GetCenter();
@@ -1992,7 +2006,7 @@ static partial class SelfTest
             + "says it enables a second copy, over both it isn't greyed; the view switch's tip says how the game's page treats them; no copy_picks in our file",
             Loads() == "l:SmmTestTwinB" && Ticked(rowB) && !Ticked(rowA) && ModDetails.Status(b).Contains("Enabled") && ModDetails.Status(a).Contains("Disabled")
             && ModDetails.Problems(a).Count == 0 && boxTip == Draft(CopyOnTip, ("other", Named(b)), ("loads", Named(b)))
-            && Hover.TipOf(rowB.GetNode<Control>("Tickbox")) == "" && ModDetails.CopyLine(a, links: false)?.Text == $"{Named(b)} is the enabled copy"
+            && Hover.TipOf(rowB.GetNode<Control>("Tickbox")) == "" && ModDetails.CopyLine(a, links: false)?.Text == Draft(OtherEnabled, ("other", Named(b)))
             && enableAll.Tip == Draft(BulkEnablesTip, ("mods", a.manifest?.name ?? ""))
             && toggleTip.Contains("\nIn vanilla, mods ") && toggleTip.Contains("These will use the Spire Mod Manager configuration as a fallback.")
             && !bothDone && NoPicksOnDisk() && offAtStart.Contains(keyA) && FileCopiesOff().Contains(keyA) && CopiesBroken() == null,
@@ -2313,7 +2327,8 @@ static partial class SelfTest
         }
 
         // The relaunch check with both copies ticked, the one that loads (B) given a need it can't meet: its problem, and
-        // the other copy losing to it (only one copy of an id loads).
+        // both copies grouped under the ID, A Ignored (only one copy of an id loads), with Disable unused mods. Its Disable
+        // mods that can't load turns off B, not A, which is no such mod (Cancel takes it back).
         await Tick(rowA, true);
         var needsWere = b.manifest?.dependencies;
         if (b.manifest is { } manifest)
@@ -2322,11 +2337,21 @@ static partial class SelfTest
         {
             RelaunchCheck.Show(screen);
             await Wait(menu, 0.3);
-            var body = (menu.GetTree().Root.GetNodeOrNull(RelaunchCheck.Name)?.FindChild("Body", true, false) as RichTextLabel)?.GetParsedText() ?? "";
+            var relaunch = menu.GetTree().Root.GetNodeOrNull(RelaunchCheck.Name);
+            var body = (relaunch?.FindChild("Body", true, false) as RichTextLabel)?.GetParsedText() ?? "";
+            var unusedButton = relaunch?.FindChild("DisableUnusedButton", true, false) != null;
+            relaunch?.FindChild("DisableBrokenButton", true, false)?.EmitSignal(BaseButton.SignalName.Pressed);
+            await Wait(menu, 0.3);
+            var brokenOff = !Copies.Ticked(b) && Copies.Ticked(a);
             RelaunchCheck.Cancel();
             await Wait(menu, 0.3);
-            Check("... the relaunch check sees the loading copy's problem, by its copy's name, and the other copy losing to it",
-                body.Split('\n').Any(l => l.Contains($"{Named(b)}  ") && l.Contains(Missing)) && body.Contains($"{Named(a)}  {Draft(RelaunchLoses, ("other", Named(b)))}"), body);
+            var grouped = Grouped(TwinId, (b, true), (a, false));
+            Check("... the relaunch check sees the loading copy's problem, by its copy's name, and groups both copies under the ID (B Active, A Ignored), "
+                + "A not among the mods that can't load, with Disable unused mods; its Disable mods that can't load turns off B, not A; Cancel takes it back",
+                body.Split('\n').Any(l => l.Contains($"{Named(b)}  ") && l.Contains(Missing)) && !body.Contains($"{Named(a)}  ")
+                && GroupIn(RelaunchCopies(body), TwinId).SequenceEqual(grouped) && unusedButton && brokenOff && Copies.Ticked(a) && Copies.Ticked(b),
+                $"Disable mods that can't load: B off, A on {brokenOff}; now A {Copies.Ticked(a)}, B {Copies.Ticked(b)}; Disable unused mods {unusedButton}; "
+                + $"{body} (expected {string.Join(" | ", grouped)})");
         }
         finally
         {
@@ -2799,7 +2824,7 @@ static partial class SelfTest
     // Whether a popup has a new copy's words (NewModPopupPatch), whichever mods they name: each text's longest run
     // between its values.
     static bool NewCopyWords(string popup) => new[] { "SPIRE_MOD_MANAGER.NEW_COPY_ON_BODY", "SPIRE_MOD_MANAGER.NEW_COPIES_ON_BODY",
-            "SPIRE_MOD_MANAGER.NEW_COPY_OFF_BODY", "SPIRE_MOD_MANAGER.NEW_SELF_COPY_BODY" }
+            "SPIRE_MOD_MANAGER.NEW_COPY_OFF_BODY" }
         .Select(key => Template(key).Split('{', '}').Where((_, i) => i % 2 == 0).MaxBy(s => s.Length) ?? "")
         .Any(words => words.Length > 0 && popup.Contains(words));
 
@@ -2863,13 +2888,23 @@ static partial class SelfTest
             await Wait(menu, 0.3);
             return body;
         }
-        var loses = $"{Named(a)}  {Draft(RelaunchLoses, ("other", Named(b)))}";
+        // Both ticked, as the same-ID banner's card and the relaunch check group them: B (the copy that loads) Active, then
+        // A Ignored. Listed: the relaunch check's duplicates have them so.
+        List<string> TwinsGrouped() => Grouped(TwinId, (b, true), (a, false));
+        bool Listed(string text) => GroupIn(RelaunchCopies(text), TwinId).SequenceEqual(TwinsGrouped());
 
         // As the page has them: A off (copies_off), its title the game's grey for a copy set aside. Then both ticked.
         var greyOff = !Ticked(rowA) && Title(rowA) == MegaCrit.Sts2.Core.Helpers.StsColors.gray && a.state == ModLoadState.DisabledDuplicate;
+        // Their Duplicate chips with one copy ticked (no clash): the plain one's muted tan, not the Local chip's grey beside it.
+        var plainChips = new[] { a, b }.Select(m => Tags.For(m)).ToList();
+        Check("same ID, one copy ticked: both Duplicate chips in the plain one's muted tan, apart from the Local chip's grey beside them and the clash's yellow",
+            plainChips.All(chips => chips.FirstOrDefault(c => c.Text == DuplicateChip) is { } duplicate && duplicate.Color == Tags.Duplicate
+                && duplicate.Color != Tags.SameIdClash && chips.FirstOrDefault(c => c.Text == Menus.Text("SPIRE_MOD_MANAGER.TAG_LOCAL")) is { } local
+                && local.Color != duplicate.Color),
+            string.Join(" / ", plainChips.Select(chips => string.Join(", ", chips.Select(c => $"{c.Text} {c.Color.ToHtml(false)}")))));
         var offWere = CopiesOff();
-        // The copy lines' colour: A off beside B isn't in a clash (its own dim colour, B none); both ticked, each in the
-        // Duplicate chip's warning yellow, B (the copy that loads) too.
+        // The copy lines' colour: every one in the Duplicate chip's warning yellow (Jordan: "ALL duplicate messages"): A off
+        // beside B (B has none then), and both ticked, B (the copy that loads) too.
         var clash = $"#{Tags.SameIdClash.ToHtml(false)}";
         var (offColor, onAlone) = (ModDetails.CopyLine(a, false)?.Color, ModDetails.CopyLine(b, false));
         BothTickedQuietly(true);
@@ -2880,14 +2915,15 @@ static partial class SelfTest
         var steps = History.Steps(History.Track.List);
         var chips = new[] { a, b }.Select(m => Tags.For(m).FirstOrDefault(c => c.Text == DuplicateChip)).ToList();
         var lineColors = (A: ModDetails.CopyLine(a, false)?.Color, B: ModDetails.CopyLine(b, false)?.Color);
-        Check("same ID, the copy lines: A off beside B in its own colour (not the clash's), B none; both ticked, each in the Duplicate chip's warning yellow, "
-            + "the copy that loads too", offColor != null && offColor != clash && onAlone == null && lineColors == (clash, clash),
+        Check("same ID, the copy lines all in the Duplicate chip's warning yellow: A off beside B, B none then; both ticked, each, the copy that loads too",
+            offColor == clash && onAlone == null && lineColors == (clash, clash),
             $"off {offColor}, B alone {onAlone}; both {lineColors.A} / {lineColors.B} (yellow {clash})");
         var bannerText = (SameId()?.FindChild("SameIdWarning", true, false) as Label)?.Text;
         var card = await BannerCard(menu, screen, SameId());
         Check("same ID, both copies ticked at launch: B (the higher version) loads and A won't, no duplicate error, nothing pending or changed; A's title "
             + "white, not the game's grey for a copy set aside; A reads Won't load, B loading in its place (the game prioritizes a higher version); both Duplicate chips yellow (B's, "
-            + "the copy that loads, too), naming the copy that loads; the banner and its card say which loads; Find takes the copy that loads",
+            + "the copy that loads, too), naming the copy that loads; the banner, and its card grouping them under the ID (B Active, then A Ignored); Find "
+            + "takes the copy that loads",
             greyOff && Ticked(rowA) && Ticked(rowB) && Loads() == "l:SmmTestTwinB" && Copies.Loads(b) && !Copies.Loads(a) && SwitchOn() && !bothOff.Contains(keyA)
             && b.state == ModLoadState.Loaded && a.state == ModLoadState.DisabledDuplicate
             && !ModManager.Mods.Any(m => m.errors?.Any(e => e.LocEntryKey == "MOD_ERROR.DUPLICATE_ID") == true)
@@ -2897,26 +2933,30 @@ static partial class SelfTest
             && ModDetails.CopyLine(b, false)?.Text == Draft(LoadsAlso, ("other", Named(a)))
             && chips[0] is { } chipA && chipA.Color == Tags.SameIdClash && chipA.Tip == Draft(ClashTip, ("others", Named(b)), ("loads", Named(b)))
             && chips[1] is { } chipB && chipB.Color == Tags.SameIdClash && chipB.Tip == Draft(ClashTip, ("others", Named(a)), ("loads", Named(b)))
-            && (!Layout.Wide || bannerText == Draft(SameIdText, ("count", "2")) && card.Contains(Draft(BannerLoads, ("mod", Named(b))))
-                && card.Contains(Draft(BannerWontLoad, ("mod", Named(a)))))
+            && (!Layout.Wide || bannerText == Draft(SameIdText, ("count", "2")) && GroupIn(card, TwinId).SequenceEqual(TwinsGrouped()))
             && Dependencies.Find(TwinId) == b && History.Steps(History.Track.List) == steps && CopiesBroken() == null,
-            $"grey before {greyOff}; {Say()}; chips {string.Join(" / ", chips.Select(c => $"{c?.Color} {c?.Tip}"))}; banner {bannerText} ({string.Join(" | ", card)}); "
-            + $"find {Copies.KeyOf(Dependencies.Find(TwinId))}; edited {Profiles.Edited}");
+            $"grey before {greyOff}; {Say()}; chips {string.Join(" / ", chips.Select(c => $"{c?.Color} {c?.Tip}"))}; banner {bannerText} ({string.Join(" | ", card)}; "
+            + $"expected {string.Join(" | ", TwinsGrouped())}); find {Copies.KeyOf(Dependencies.Find(TwinId))}; edited {Profiles.Edited}");
         await Capture(screen, outDir, "19b-same-id-both-on");
 
-        // The relaunch check: A, under the copy that loads in its place. The banner's Dismiss takes it out of there too.
+        // The relaunch check: both under the ID, A Ignored. The banner's Dismiss takes them out of there too.
         var body = await RelaunchBody();
         (SameId()?.FindChild("DismissSameIdButton", true, false) as BaseButton)?.EmitSignal(BaseButton.SignalName.Pressed);
         await Wait(menu, 0.3);
-        var dismissed = SameId() == null && !(await RelaunchBody()).Contains(loses);
+        var bannerGone = SameId() == null;
+        var afterDismiss = await RelaunchBody();
+        var dismissed = bannerGone && !afterDismiss.Contains(RelaunchCopiesIntro) && GroupIn(afterDismiss.Split('\n'), TwinId).Count == 0;
         Store.Data.SameIdDismissed = null;
         Store.SaveViewState();
         CategoryList.Redraw(content);
         await Wait(menu, 0.3);
-        Check("... the relaunch check lists the ticked copy that won't load, naming the one that loads; after the banner's Dismiss, neither",
-            body.Contains(loses) && dismissed && (SameId() != null || !Layout.Wide), $"dismissed {dismissed}; {body}");
+        Check("... the relaunch check groups the ticked copies under the ID, B (the one that loads) Active, then A Ignored; after the banner's Dismiss, "
+            + "no duplicates there",
+            Listed(body) && dismissed && (SameId() != null || !Layout.Wide),
+            $"dismissed {dismissed} (banner gone {bannerGone}: {afterDismiss}); {body} (expected {string.Join(" | ", TwinsGrouped())})");
 
-        // A need of A that can't be met: no problem of its (it won't load), in its panel or the relaunch check.
+        // A need of A that can't be met: no problem of its (it won't load), in its panel or the relaunch check, where it's
+        // only Ignored under the ID (no line of its own among the mods that can't load, "<name>  <why>").
         var needsWere = a.manifest?.dependencies;
         if (a.manifest is { } manifest)
             manifest.dependencies = [new ModDependency(Missing)];
@@ -2925,8 +2965,8 @@ static partial class SelfTest
             var problems = ModDetails.DependencyProblems(a);
             var withNeed = await RelaunchBody();
             var line = withNeed.Split('\n').FirstOrDefault(l => l.Contains($"{Named(a)}  "))?.Trim();
-            Check("... a need of the ticked copy that won't load is no problem: none in its panel, its line in the relaunch check the copy that loads alone",
-                problems.Count == 0 && line == $"•  {loses}", $"problems {string.Join(" | ", problems)}; line {line}");
+            Check("... a need of the ticked copy that won't load is no problem: none in its panel, none in the relaunch check, where it's only Ignored under the ID",
+                problems.Count == 0 && line == null && Listed(withNeed), $"problems {string.Join(" | ", problems)}; line {line ?? "none"}; {withNeed}");
         }
         finally
         {
@@ -3179,17 +3219,18 @@ static partial class SelfTest
             {
                 Want(ModDetails.Status(losing).Contains(StatusWontLoad), $"the other's status {ModDetails.Status(losing)}");
                 Want(Line(losing) == losingLine, $"the other's line \"{Line(losing)}\"");
-                Want(body.Contains($"{Named(losing)}  {Draft(RelaunchLoses, ("other", Named(loads)))}"), $"the relaunch check: {body}");
+                Want(GroupIn(RelaunchCopies(body), TwinId).SequenceEqual(Grouped(TwinId, (loads, true), (losing, false))),
+                    $"the relaunch check: {body} (expected {string.Join(" | ", Grouped(TwinId, (loads, true), (losing, false)))})");
             }
             else
-                Want(!body.Contains(Draft(RelaunchLoses, ("other", Named(loads)))), $"the relaunch check names a copy that won't load: {body}");
+                Want(GroupIn(body.Split('\n'), TwinId).Count == 0, $"the relaunch check lists the twins as duplicates: {body}");
             if (clash)
             {
                 Want(chips[0] == Draft(ClashTip, ("others", Named(b)), ("loads", Named(loads))) && chips[1] == Draft(ClashTip, ("others", Named(a)), ("loads", Named(loads))),
                     $"the chips \"{string.Join("\" / \"", chips)}\"");
                 if (Layout.Wide)
-                    Want(card.Contains(Draft(BannerLoads, ("mod", Named(loads)))) && card.Contains(Draft(BannerWontLoad, ("mod", Named(other)))),
-                        $"the banner's card: {string.Join(" | ", card)}");
+                    Want(GroupIn(card, TwinId).SequenceEqual(Grouped(TwinId, (loads, true), (other, false))),
+                        $"the banner's card: {string.Join(" | ", card)} (expected {string.Join(" | ", Grouped(TwinId, (loads, true), (other, false)))})");
             }
             Want(changes.Contains(switchLine) == switched, $"Changes: {string.Join(" | ", changes)}");
             Want(ModEntry.HasPendingChanges() == (switched || LoadOrder.OrderChanged), $"pending {ModEntry.HasPendingChanges()} (moved since launch {LoadOrder.OrderChanged})");
@@ -3283,6 +3324,48 @@ static partial class SelfTest
     // reads Enabled, its line naming W1 and L; L says W2 loads instead, the higher version; W1 that W2 loads instead,
     // with no reason (it lost to L, which doesn't load); the same-ID banner shows (W1 and L ticked). Stable has no such
     // edge (every Workshop copy beside a local one is out): a SKIP there.
+    // The grouped copies (ModDetails.CopyGroups), as the same-ID banner's card and the Relaunch check show them (Jordan, 23
+    // Oct): two ids installed twice each, their Workshop copies in one item (one copy per id, so none is dropped as a
+    // duplicate of the other id's), each id's line, the copy that loads first, Active in green and Ignored subtle after
+    // the dim bullet, a blank line between ids; capped by whole ids, then how many copies more. And the Duplicate pill's
+    // clash tip with two other copies enabled: one to a line.
+    static async Task TestCopyGroups(Node menu)
+    {
+        const string a = "SmmGroupA", b = "SmmGroupB", c = "SmmGroupC";
+        var (la, wa, lb, wb) = (Made(a, "GA", version: "0.1.1"), Made(a, "W1111111", item: 1111111, version: "0.1.0"),
+            Made(b, "GB", version: "0.1.1"), Made(b, "W1111111", item: 1111111, version: "0.1.0"));
+        var (c1, c2, cw) = (Made(c, "GC1", version: "1.0.0"), Made(c, "GC2", version: "2.0.0"), Made(c, "W2222222", item: 2222222, version: "1.5.0"));
+        List<Mod> made = [la, wa, lb, wb, c1, c2, cw];
+        GameMods().AddRange(made);
+        Copies.TestRecount();
+        try
+        {
+            await Wait(menu, 0.1);
+            const string bullet = "  [color=#fff6e280]•[/color]  ";
+            string Line(Mod m, bool active) => bullet + Draft(CopyLineText, ("mod", m.manifest?.name ?? ""), ("version", m.manifest?.version ?? ""), ("source", Copies.Source(m)),
+                ("state", active ? $"[color=#a6e3a1]{CopyActive}[/color]" : $"[color=#fff6e299]{CopyIgnored}[/color]"));
+            List<string> expected = [Draft(CopyGroup, ("id", a)), Line(la, true), Line(wa, false), "", Draft(CopyGroup, ("id", b)), Line(lb, true), Line(wb, false)];
+            var grouped = ModDetails.CopyGroups([wa, la, wb, lb]);
+            var capped = ModDetails.CopyGroups([la, wa, lb, wb], max: 4);
+            var more = $"[color=#fff6e299]{Draft(Template("SPIRE_MOD_MANAGER.BANNER_CARD_MORE"), ("count", "2"))}[/color]";
+            Check("the grouped copies: two ids, their Workshop copies in one item each listed under its own id (\"1111111\"), the local copy Active first, "
+                + "a blank line between ids; capped at whole ids with how many copies more",
+                grouped.SequenceEqual(expected) && capped.SequenceEqual([.. expected.Take(3), more]),
+                $"{string.Join(" | ", grouped)} || capped: {string.Join(" | ", capped)}");
+            // The clash tip on one of three copies, all enabled: the two others one to a line.
+            var tip = Tags.For(c1).FirstOrDefault(chip => chip.Text == DuplicateChip)?.Tip;
+            var others = string.Join("\n", new[] { c2, cw }.Select(Copies.Named));
+            Check("the Duplicate pill's clash tip with two other copies enabled: one to a line",
+                tip == Draft(ClashTip, ("others", others), ("loads", Copies.Named(Copies.Loading(c) ?? c1))), (tip ?? "none").ReplaceLineEndings(" / "));
+        }
+        finally
+        {
+            foreach (var mod in made)
+                GameMods().Remove(mod);
+            Copies.TestRecount();
+        }
+    }
+
     static async Task TestCopyUnticked(Node menu, NModdingScreen screen, Control content)
     {
         if (!Compat.WorkshopBeatsOlderLocal)
