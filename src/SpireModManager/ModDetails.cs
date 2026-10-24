@@ -1,5 +1,6 @@
 using Godot;
 using MegaCrit.Sts2.Core.Modding;
+using MegaCrit.Sts2.Core.Nodes.GodotExtensions;
 using MegaCrit.Sts2.Core.Platform;
 using MegaCrit.Sts2.Core.Nodes.Screens.ModdingScreen;
 using MegaCrit.Sts2.addons.mega_text;
@@ -123,6 +124,40 @@ static class ModDetails
         var folder = container.GetNodeOrNull<Control>("OpenFolderButton") ?? AddButton(container, "OpenFolderButton",
             "SPIRE_MOD_MANAGER.OPEN_FOLDER", 20, () => OS.ShellOpen(Meta(container, FolderMeta)));
         folder.Visible = Directory.Exists(mod.path);
+        PlaceSettings(container, mod);
+    }
+
+    // The Settings button (SettingsLink, Jordan 24 Oct): right of Open Folder, or in its place when that one is hidden.
+    // Only for a mod with a settings page a library keeps for it; greyed, with its tip, after a press that didn't open it.
+    public const string SettingsName = "SpireModManagerSettingsButton";
+    static readonly Dictionary<ulong, Mod> SettingsMods = []; // the mod each panel's button opens
+
+    public static void PlaceSettings(NModInfoContainer container, Mod mod)
+    {
+        var button = container.GetNodeOrNull<Control>(SettingsName);
+        if (SettingsLink.For(mod) is not { } target)
+        {
+            if (button != null)
+                button.Visible = false;
+            return;
+        }
+        var panel = container.GetInstanceId();
+        SettingsMods[panel] = mod;
+        button ??= AddButton(container, SettingsName, "SPIRE_MOD_MANAGER.SETTINGS", 20, () =>
+        {
+            if (SettingsMods.TryGetValue(panel, out var shown))
+                SettingsLink.Open(container, shown);
+        });
+        var x = container.GetNodeOrNull<Control>("OpenFolderButton") is { Visible: true } ? 212 : 20;
+        (button.OffsetLeft, button.OffsetRight) = (x, x + 180);
+        button.Visible = true;
+        var failed = SettingsLink.FailedFor(mod);
+        if (button is NClickableControl clickable)
+            clickable.SetEnabled(!failed);
+        else if (button is BaseButton plain)
+            plain.Disabled = failed;
+        Hover.Tip(button, failed ? Menus.Text("SPIRE_MOD_MANAGER.SETTINGS_FAILED_TIP")
+            : Menus.Format("SPIRE_MOD_MANAGER.SETTINGS_TIP", ("library", target.Library.ToString())));
     }
 
     // The name and its version (smaller, grey) on one line: a long name shrinks to TitleMinSize, then is cut with ".."
@@ -795,7 +830,7 @@ static class ModDetails
     public static void HideButtons(Node container)
     {
         CommitEdits(container);
-        foreach (var name in new[] { "OpenFolderButton", SourceName, HeadName, FieldsName, OthersName })
+        foreach (var name in new[] { "OpenFolderButton", SettingsName, SourceName, HeadName, FieldsName, OthersName })
             if (container.GetNodeOrNull<Control>(name) is { } control)
                 control.Visible = false;
     }
@@ -803,8 +838,8 @@ static class ModDetails
     // After an undo or revert: the fields show the old state, so they must not be saved over the restored one.
     public static void Forget(Node container) => container.SetMeta(ModIdMeta, "");
 
-    // Saves whatever is being typed in the panel's fields (before it shows another mod).
-    static void CommitEdits(Node container)
+    // Saves whatever is being typed in the panel's fields (before it shows another mod, or another screen covers it).
+    public static void CommitEdits(Node container)
     {
         foreach (var field in Fields.GetValueOrDefault(container.GetInstanceId(), []))
             field.Commit();

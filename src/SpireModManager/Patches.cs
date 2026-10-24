@@ -428,6 +428,19 @@ static class SetupCheckPatch
     static bool Check() => !_building;
 }
 
+// A screen pushed over our page (a mod's settings): its hide then is a cover, not a close (PageVisits).
+[HarmonyPatch(typeof(NSubmenuStack), nameof(NSubmenuStack.Push))]
+static class SubmenuPushPatch
+{
+    static void Prefix() => PageVisits.Pushing = true;
+
+    static Exception? Finalizer(Exception? __exception)
+    {
+        PageVisits.Pushing = false;
+        return __exception;
+    }
+}
+
 // A mod subscribed while the page is open: once the game adds its row, a redraw puts it in its category (keep: not
 // the player's change, so rows kept under the Show: choice stay).
 [HarmonyPatch(typeof(NModdingScreen), "OnNewModDetected")]
@@ -570,14 +583,15 @@ static class ShortcutsPatch
     static bool Typing() => ((SceneTree)Engine.GetMainLoop()).Root.GuiGetFocusOwner() is LineEdit { Editable: true } or TextEdit { Editable: true };
 
     static bool LetGo() => HistoryBar.Screen is { } screen && GodotObject.IsInstanceValid(screen) && screen.IsVisibleInTree()
-        && Selection.Clear(screen.GetNode<Control>("%ModsScrollContainer/Mask/Content"));
+        && PageVisits.OnTop(screen) && Selection.Clear(screen.GetNode<Control>("%ModsScrollContainer/Mask/Content"));
 
     // Ctrl+D on our page with mods picked: an open menu closes (the bulk menu edits the picks it opened with), then
     // they're let go of.
     static bool Deselect()
     {
         if (Store.Data.VanillaView || DialogOpen || Selection.Mods.Count == 0
-            || HistoryBar.Screen is not { } screen || !GodotObject.IsInstanceValid(screen) || !screen.IsVisibleInTree())
+            || HistoryBar.Screen is not { } screen || !GodotObject.IsInstanceValid(screen) || !screen.IsVisibleInTree()
+            || !PageVisits.OnTop(screen))
             return false;
         MenuPanel.Close();
         return LetGo();
@@ -589,7 +603,7 @@ static class ShortcutsPatch
         {
             if (inputEvent is not InputEventKey { Pressed: true, Echo: false, CtrlPressed: true } key
                 || HistoryBar.Screen is not { } screen || !GodotObject.IsInstanceValid(screen) || !screen.IsVisibleInTree()
-                || Store.Data.VanillaView || DialogOpen)
+                || !PageVisits.OnTop(screen) || Store.Data.VanillaView || DialogOpen)
                 return;
             // These change the picks or what they show, so an open menu (the bulk menu edits the picks it opened with)
             // closes first.

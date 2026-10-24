@@ -266,6 +266,7 @@ static partial class SelfTest
             await Step(() => TestCutWhole(content));
             await Step(() => TestWorkshopHead(menu, screen, outDir));
             await Step(() => TestOtherModPanel(menu, screen, content, outDir));
+            await Step(() => TestSettingsButton(menu, screen, content, outDir));
             await Step(() => TestGameChanges(menu, screen, content, outDir));
             await Step(() => TestModifiedContent(menu, screen, content, outDir));
             await Step(() => TestBulkEdit(menu, screen, content, outDir));
@@ -961,16 +962,17 @@ static partial class SelfTest
 
     // The words of the duplicate copies, word for word as settings_ui.json has them: drafts until Jordan's copy pass, so
     // here once for every check that reads them (an edit there is one edit here). Draft fills in their values.
-    const string SameIdText = "{count} mods with the same ID are enabled - only one copy of each will be loaded";
+    const string SameIdText = "{count} copies of mods sharing an ID are enabled - only one copy of each will be loaded";
     const string CopyGroup = "{id}:", CopyLineText = "{mod} {version} ({source}) - {state}", CopyActive = "Active", CopyIgnored = "Ignored";
-    const string RelaunchCopiesIntro = "Some mods with duplicate IDs are enabled, and won't be loaded";
+    const string RelaunchCopiesIntro = "Some mods with duplicate IDs are enabled - only the Active copy of each will be loaded";
     const string CopySwitchLine = "{mod}: {to} loads instead of {from}";
-    const string ClashTip = "Other copies of this mod are enabled\n{others}\n\n{loads} will be used, determined by version number and date of install - other copies will be ignored";
+    const string ClashTip = "Other copies of this mod are enabled\n{others}\n\n{loads} will be used - other copies will be ignored";
+    const string ClashTipOne = "Another copy of this mod is enabled\n{others}\n\n{loads} will be used - other copies will be ignored";
     const string StatusWontLoad = "Duplicate - Won't load";
     const string CopyLoses = "{other} will be used due to {why} - disable copies you don't want to use";
-    const string CopyLosesPlain = "{other} will be used, determined by version number and date of install - disable copies you don't want to use";
+    const string CopyLosesPlain = "{other} will be used instead - disable copies you don't want to use";
     const string WhyLocal = "the game prioritizing local copies", WhyHigher = "its higher version";
-    const string WhyFirst = "the same version and an earlier install date";
+    const string WhyFirst = "matching version numbers and an earlier install date";
     const string WhyUnreadable = "this copy's version being unreadable";
     const string CopyBlocked = "This copy would load before a required dependency. {other} is currently compatible and will be loaded instead.";
     const string LoadsBlocked = "The copy {other} would load before a required dependency, so this copy will be loaded instead";
