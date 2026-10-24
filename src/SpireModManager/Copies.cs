@@ -628,16 +628,25 @@ static class Copies
 
     // A copy as rows name it: its alias, else its name, else its id, saying which copy where another is installed
     // ("Test Twin (SmmTestTwinA)"). For every message about copies.
-    public static string Named(Mod mod) => (Store.InfoFor(mod)?.Alias ?? mod.manifest?.name ?? mod.manifest?.id ?? "") + Which(mod);
+    public static string Named(Mod mod) => Title(mod) + Which(mod);
+
+    // A mod's name as its row shows it, without which copy: the player's alias, else its name.
+    public static string Title(Mod mod) => Store.InfoFor(mod)?.Alias ?? mod.manifest?.name ?? mod.manifest?.id ?? "";
+
+    // A copy's version as its newest manifest gives it (the one that loads of it); empty for none.
+    public static string VersionOf(Mod mod) => Newest(mod).manifest?.version ?? "";
 
     // Which copies clash, as one string: a dismissed banner stays away for this set, and shows again for another.
     public static string Signature(IEnumerable<Mod> clashing) => string.Join(",", clashing.Select(SwitchKey).Order(StringComparer.Ordinal));
 
     // " (Local)" or " (<Workshop item id>)" after a mod's name, where another copy of it is installed (a local copy
     // beside another local one: its folder); else nothing.
-    public static string Which(Mod mod) => Others(mod).Count == 0 ? ""
-        : $" ({(Compat.WorkshopId(mod) is { } item ? item.ToString()
-            : mod.modSource == ModSource.ModsDirectory && Twins(mod).Count > 0 ? Shown(CopyOf(mod)) : Menus.Text("SPIRE_MOD_MANAGER.SOURCE_LOCAL"))})";
+    public static string Which(Mod mod) => Others(mod).Count == 0 ? "" : $" ({Source(mod)})";
+
+    // Which copy, as Which words it in its brackets: the Workshop item's id, a local copy's folder beside another local
+    // one, else "Local".
+    public static string Source(Mod mod) => Compat.WorkshopId(mod) is { } item ? item.ToString()
+        : mod.modSource == ModSource.ModsDirectory && Twins(mod).Count > 0 ? Shown(CopyOf(mod)) : Menus.Text("SPIRE_MOD_MANAGER.SOURCE_LOCAL");
 
     // Brings the record in line with the copies installed and tidies copies_off. First a file from before copies_off (a
     // 0.1.4 one, or a first run) gets the reading Init made of it, from its picks and the record as read (LegacyOff), so

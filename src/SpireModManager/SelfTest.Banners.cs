@@ -401,8 +401,8 @@ static partial class SelfTest
         // Both ticked: a clash, as any mod's copies are (Jordan, 23 Oct). Which loads is the game's rule between sources,
         // this local copy here (on the beta as the higher version, on stable as the local copy), and the lines say so with
         // its reason; every ticked copy's line and Duplicate chip is in the clash's yellow, the copy that won't load reads
-        // Duplicate - Won't load in orange, the same-ID banner counts both and its card says which loads, and #clash finds
-        // both. No line of its own.
+        // Duplicate - Won't load in orange, the same-ID banner counts both and its card groups them under the ID (this one
+        // Active, then the other Ignored), and #clash finds both. No line of its own.
         var clashHex = $"#{Tags.SameIdClash.ToHtml(false)}";
         var why = Compat.WorkshopBeatsOlderLocal ? WhyHigher : WhyLocal;
         var (selfLine, copyLine) = (ModDetails.CopyLine(self, false), ModDetails.CopyLine(copy, false));
@@ -415,17 +415,17 @@ static partial class SelfTest
         var findsClash = HiddenTags.Find("clash") is { } clashTag && clashTag(self) && clashTag(copy);
         Check("... both ticked, a clash like any copies': the lines any copies get (this one loads, the other loads instead, with the game's reason), both "
             + "in the clash's yellow, the other Duplicate - Won't load in orange; both Duplicate chips yellow, naming the other and the copy that loads; the "
-            + "same-ID banner counting both, its card saying which loads; #clash finding both",
+            + "same-ID banner counting both, its card grouping them under the ID, this one Active, then the other Ignored; #clash finding both",
             selfLine?.Text == Draft(LoadsAlso, ("other", Named(copy))) && selfLine?.Color == clashHex
             && copyLine?.Text == Draft(CopyLoses, ("other", Named(self)), ("why", why)) && copyLine?.Color == clashHex
             && ModDetails.Status(copy) == $"[color=#f5b56b]{StatusWontLoad}[/color]" && !ModDetails.Status(self).Contains(StatusWontLoad)
             && ourChips[0] is { } selfChip && selfChip.Color == Tags.SameIdClash && selfChip.Tip == Draft(ClashTip, ("others", Named(copy)), ("loads", Named(self)))
             && ourChips[1] is { } copyChip && copyChip.Color == Tags.SameIdClash && copyChip.Tip == Draft(ClashTip, ("others", Named(self)), ("loads", Named(self)))
             && clashing.Contains(self) && clashing.Contains(copy) && sameIdText == Draft(SameIdText, ("count", Menus.Number(clashing.Count)))
-            && sameIdYellow && sameIdCard.Contains(Draft(BannerLoads, ("mod", Named(self))))
-            && sameIdCard.Contains(Draft(BannerWontLoad, ("mod", Named(copy)))) && findsClash,
+            && sameIdYellow && GroupIn(sameIdCard, ModEntry.ModId).SequenceEqual(Grouped(ModEntry.ModId, (self, true), (copy, false))) && findsClash,
             $"lines {selfLine} / {copyLine}; status {ModDetails.Status(self)} / {ModDetails.Status(copy)}; chips {string.Join(" / ", ourChips.Select(c => $"{c?.Color} {c?.Tip}"))}; "
-            + $"clashing {clashing.Count}, banner {sameIdText ?? "none"} ({string.Join(" | ", sameIdCard)}); #clash {findsClash}");
+            + $"clashing {clashing.Count}, banner {sameIdText ?? "none"} ({string.Join(" | ", sameIdCard)}; expected "
+            + $"{string.Join(" | ", Grouped(ModEntry.ModId, (self, true), (copy, false)))}); #clash {findsClash}");
         // The screenshot: the copy that won't load selected, its line in the clash's yellow, the chips and the banner above.
         // Then the row selected before, so the tests after start where they did.
         var selectedWas = CategoryList.Selected;
@@ -606,8 +606,9 @@ static partial class SelfTest
         // Relaunch with every copy of it off asks first (ModEntry.TestRelaunch counts a relaunch instead of one): the
         // dialog says it goes on relaunch and how to get it back, with Enable now (its tip) and Relaunch anyway; Enable
         // now turns on the copy running alone and leaves "ready"; Cancel undoes it. With both copies on again (the two
-        // unticks undone), Relaunch asks too, as for any mod's copies both on: it names the copy that won't load, and
-        // nothing about this mod going. With one copy on, Relaunch relaunches at once.
+        // unticks undone), Relaunch asks too, as for any mod's copies both on: both grouped under the ID, the copy that
+        // won't load Ignored, nothing about this mod going, and Disable unused mods turns that copy off. With one copy on,
+        // Relaunch relaunches at once.
         Node? Dialog() => menu.GetTree().Root.GetNodeOrNull(RelaunchCheck.Name);
         string Body() => (Dialog()?.FindChild("Body", true, false) as RichTextLabel)?.GetParsedText() ?? "";
         void Press(string name) => Dialog()?.FindChild(name, true, false)?.EmitSignal(BaseButton.SignalName.Pressed);
@@ -640,8 +641,14 @@ static partial class SelfTest
             RelaunchCheck.Relaunch(screen);
             await Wait(menu, 0.3);
             var (bothAsked, bothBody, bothButtons) = (Dialog() != null && relaunches == 0 && Copies.Ticked(self) && Copies.Ticked(copy), Body(), Buttons());
+            // Its Disable unused mods: the copy that won't load off, this one kept, so nothing is left ("ready"); Cancel
+            // takes it back.
+            Press("DisableUnusedButton");
+            await Wait(menu, 0.3);
+            var (unusedOff, unusedBody, unusedButtons) = (Copies.Ticked(self) && !Copies.Ticked(copy), Body(), Buttons());
             Press("CancelRelaunchButton");
             await Wait(menu, 0.3);
+            var bothBack = Dialog() == null && Copies.Ticked(self) && Copies.Ticked(copy) && relaunches == 0;
             var oneOn = false;
             if (ourRows.FirstOrDefault(r => r.Mod == copy) is { } offRow)
             {
@@ -656,11 +663,17 @@ static partial class SelfTest
             }
             var atOnce = oneOn && relaunches == 1 && Dialog() == null && Copies.Ticked(self) && Copies.Ticked(copy);
             var atOnceSay = $"one on {oneOn}, now on {Copies.Ticked(self)}/{Copies.Ticked(copy)}, dialog \"{(Dialog() == null ? "none" : Body())}\"";
-            Check("... Relaunch with both copies of it on asks too, as for any mod's copies: it names the copy that won't load and the one loading instead, "
-                + "nothing about this mod going, and no Enable now; with one copy on, Relaunch at once",
-                bothAsked && bothBody.Contains($"{Named(copy)}  {Draft(RelaunchLoses, ("other", Named(self)))}") && !bothBody.Contains(RelaunchSelfOff)
-                && !bothButtons.Contains("EnableSelfButton") && bothButtons.EndsWith("RelaunchNowButton \"Relaunch anyway\"") && atOnce,
-                $"asked {bothAsked}: \"{bothBody}\" [{bothButtons}]; at once {atOnce} ({relaunches} relaunches; {atOnceSay})");
+            var bothExpected = RelaunchCopiesIntro + "\n" + string.Join("\n", Grouped(ModEntry.ModId, (self, true), (copy, false)));
+            Check("... Relaunch with both copies of it on asks too, as for any mod's copies: the duplicates alone, grouped under the ID (this one Active, "
+                + "then the other Ignored), nothing about this mod going; Disable unused mods, no Enable now or Disable mods that can't load; with one copy "
+                + "on, Relaunch at once",
+                bothAsked && bothBody == bothExpected
+                && bothButtons == "CancelRelaunchButton \"Cancel\", DisableUnusedButton \"Disable unused mods\", RelaunchNowButton \"Relaunch anyway\"" && atOnce,
+                $"asked {bothAsked}: \"{bothBody}\" (expected \"{bothExpected}\") [{bothButtons}]; at once {atOnce} ({relaunches} relaunches; {atOnceSay})");
+            Check("... its Disable unused mods turns off the copy that won't load, not this one, and leaves \"ready\"; Cancel undoes it",
+                unusedOff && unusedBody == Menus.Text("SPIRE_MOD_MANAGER.RELAUNCH_CHECK_OK")
+                && unusedButtons == "CancelRelaunchButton \"Cancel\", RelaunchNowButton \"Relaunch Game\"" && bothBack,
+                $"off {unusedOff}: \"{unusedBody}\" [{unusedButtons}]; back {bothBack}, now on {Copies.Ticked(self)}/{Copies.Ticked(copy)}");
         }
         finally
         {

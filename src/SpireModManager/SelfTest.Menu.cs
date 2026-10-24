@@ -1114,6 +1114,46 @@ static partial class SelfTest
     // relaunch). Quit and the relaunch are caught here, and the saved list is put back.
     static async Task TestCrashOffer(NMainMenu menu, string outDir)
     {
+        // Before the first main menu the list in memory is the game's rebuilt one: a mod kept with its local copy on and
+        // its Workshop copy off reads both on (the id's first entry's switch), and Disable suspects, or the window's close,
+        // would save that. Repaired as a startup error shows or the game quits first: each source's own switch back, the
+        // rest as it was; nothing after the first main menu (Settle did it), nor without the list as the game read it. The
+        // last two on a list the repair would change (ours not first, an id's entry that's off before one that's on), so
+        // each check fails if its guard goes.
+        static SettingsSaveMod Saved(string id, ModSource source, bool on) => new() { Id = id, Source = source, IsEnabled = on };
+        const string kept = "SmmCrashKept";
+        ModSettings Rebuilt() => new() { ModList = [Saved(ModEntry.ModId, ModSource.ModsDirectory, true), Saved(kept, ModSource.ModsDirectory, true),
+            Saved(kept, ModSource.SteamWorkshop, true), Saved("SmmCrashOther", ModSource.ModsDirectory, false)] };
+        ModSettings Disordered() => new() { ModList = [Saved(kept, ModSource.SteamWorkshop, false), Saved(kept, ModSource.ModsDirectory, true),
+            Saved(ModEntry.ModId, ModSource.ModsDirectory, true)] };
+        List<(string, ModSource, bool)> asRead = [(ModEntry.ModId, ModSource.ModsDirectory, true), (kept, ModSource.ModsDirectory, true),
+            (kept, ModSource.SteamWorkshop, false), ("SmmCrashOther", ModSource.ModsDirectory, false)];
+        var (repaired, settled, unread) = (Rebuilt(), Disordered(), Disordered());
+        var changed = LaunchGuard.RepairBeforeMenu(repaired, asRead, settled: false);
+        static string Switches(ModSettings s) => string.Join(", ", s.ModList.Select(e => $"{e.Id}/{e.Source}={e.IsEnabled}"));
+        Check("before the first main menu: the game's rebuilt list in memory repaired before anything saves it (a Workshop copy kept off reads off again, "
+            + "the rest as it was); not after the first main menu, nor without the list as the game read it",
+            changed && Switches(repaired) == $"{ModEntry.ModId}/ModsDirectory=True, {kept}/ModsDirectory=True, {kept}/SteamWorkshop=False, SmmCrashOther/ModsDirectory=False"
+            && SameIdLoad.SettleList(Disordered().ModList, asRead)
+            && !LaunchGuard.RepairBeforeMenu(settled, asRead, settled: true) && Switches(settled) == Switches(Disordered())
+            && !LaunchGuard.RepairBeforeMenu(unread, null, settled: false) && Switches(unread) == Switches(Disordered()),
+            $"repaired: {Switches(repaired)}; settled: {Switches(settled)}; unread: {Switches(unread)}");
+        // This launch reached the menu (Settled), so the patches' own call leaves the game's list alone, though it holds an
+        // id's entry that's off before one that's on (made up here, then taken out): the repair would reorder them.
+        var live = SaveManager.Instance.SettingsSave.ModSettings ?? new ModSettings();
+        var pair = new[] { Saved("SmmCrashMenu", ModSource.ModsDirectory, false), Saved("SmmCrashMenu", ModSource.SteamWorkshop, true) };
+        live.ModList.AddRange(pair);
+        try
+        {
+            var menuList = Switches(live);
+            LaunchGuard.RepairBeforeMenu();
+            Check("... at the main menu, the repair before it leaves the game's list alone", SameIdLoad.Settled && Switches(live) == menuList,
+                $"settled {SameIdLoad.Settled}; {Switches(live)}");
+        }
+        finally
+        {
+            live.ModList.RemoveAll(e => e.Id == "SmmCrashMenu");
+        }
         var now = DateTime.Now;
         static LaunchGuard.Entry Mod(string id, bool on, string? version = "1.0") => new(id, ModSource.ModsDirectory, on, version);
         LaunchGuard.Setup Setup(List<LaunchGuard.Entry> mods, string game = "0.111.0 (abc)") => new(now, mods, game);
@@ -1671,6 +1711,47 @@ static partial class SelfTest
         }
         Check("Mod Doctor's file: read where it writes now, else where it wrote before its move; the new place first",
             seen.SequenceEqual(["new SmmNewPlace", "old SmmOldPlace", "both SmmNewPlace"]), string.Join(" | ", seen));
+
+        // Its record of the mods it turned off (mod_data/ModDoctor/<platform>/<account id>/turned-off.json): a turn-off at or
+        // after a failed launch's start counts (our notice about that launch stays out: its note says it), one before it
+        // doesn't, nor a file of another version, nor none. Its times carry their offset: one written in UTC compares as
+        // the same moment.
+        var account = MegaCrit.Sts2.Core.Saves.UserDataPathProvider.GetAccountScopedBasePath(null).Replace("user://", "");
+        var record = Path.Combine(top, "mod_data", ModDoctor.ModId, account, "turned-off.json");
+        var turnedOff = DateTimeOffset.Now.AddMinutes(-5);
+        void Record(int version, DateTimeOffset at)
+        {
+            Directory.CreateDirectory(Path.GetDirectoryName(record) ?? top);
+            File.WriteAllText(record, new System.Text.Json.Nodes.JsonObject
+            {
+                ["version"] = version,
+                ["mods"] = new System.Text.Json.Nodes.JsonArray(new System.Text.Json.Nodes.JsonObject
+                {
+                    ["id"] = "SmmTurnedOff", ["name"] = "Turned Off", ["at"] = at.ToString("o"), ["reason"] = "Threw", ["sources"] = new System.Text.Json.Nodes.JsonArray("ModsDirectory"),
+                }),
+            }.ToJsonString());
+        }
+        ModDoctor.TestFolder = top;
+        var said = new List<string>();
+        try
+        {
+            said.Add($"none {ModDoctor.TurnedOffSince(DateTime.Now.AddHours(-1))}");
+            Record(1, turnedOff);
+            said.Add($"after {ModDoctor.TurnedOffSince(turnedOff.LocalDateTime.AddMinutes(-1))}");
+            said.Add($"before {ModDoctor.TurnedOffSince(turnedOff.LocalDateTime.AddMinutes(1))}");
+            Record(1, turnedOff.ToUniversalTime());
+            said.Add($"utc {ModDoctor.TurnedOffSince(turnedOff.LocalDateTime.AddMinutes(-1))}");
+            Record(2, turnedOff);
+            said.Add($"v2 {ModDoctor.TurnedOffSince(turnedOff.LocalDateTime.AddMinutes(-1))}");
+        }
+        finally
+        {
+            File.Delete(record);
+            ModDoctor.TestFolder = null;
+        }
+        Check("Mod Doctor's record of the mods it turned off: one turned off after a failed launch's start counts (our notice about it stays out), one before "
+            + "doesn't, nor another version or none; a time in UTC the same moment",
+            said.SequenceEqual(["none False", "after True", "before False", "utc True", "v2 False"]), string.Join(" | ", said));
     }
 
     // The first-run import reads Better Mod Menu's file as it does: comments and trailing commas, its old format (just

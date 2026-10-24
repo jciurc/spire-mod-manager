@@ -1,6 +1,8 @@
 using System.Diagnostics;
+using System.Globalization;
 using System.Text.Json.Nodes;
 using Godot;
+using MegaCrit.Sts2.Core.Saves;
 
 namespace SpireModManager;
 
@@ -48,6 +50,33 @@ static class ModDoctor
             MegaCrit.Sts2.Core.Logging.Log.Warn($"[{ModEntry.ModId}] Could not read Mod Doctor's findings: {e.Message}");
         }
         return [];
+    }
+
+    // Whether Mod Doctor turned a mod off at or after a time: from a failed start's dialog it turns off the mod that broke
+    // it and restarts, and its note at the next main menu says so, with a way to turn it back on. Its record is the
+    // account's turned-off.json (mod_data/ModDoctor/<platform>/<account id>/, as the game names the account's folder:
+    // {"version": 1, "mods": [{"id", "at", ...}]}, "at" an ISO 8601 time with its offset). False without it, or for one
+    // this doesn't understand.
+    public static bool TurnedOffSince(DateTime since)
+    {
+        try
+        {
+            var top = OS.GetUserDataDir();
+#if DEVTOOLS
+            top = TestFolder ?? top;
+#endif
+            var account = UserDataPathProvider.GetAccountScopedBasePath(null).Replace("user://", "");
+            var file = Path.Combine(top, "mod_data", ModId, account, "turned-off.json");
+            if (!File.Exists(file) || JsonNode.Parse(File.ReadAllText(file)) is not JsonObject json || (int?)json["version"] != 1 || json["mods"] is not JsonArray mods)
+                return false;
+            var from = new DateTimeOffset(since);
+            return mods.OfType<JsonObject>().Any(m => DateTimeOffset.TryParse((string?)m["at"], CultureInfo.InvariantCulture, DateTimeStyles.None, out var at) && at >= from);
+        }
+        catch (Exception e)
+        {
+            MegaCrit.Sts2.Core.Logging.Log.Warn($"[{ModEntry.ModId}] Could not read Mod Doctor's record of the mods it turned off: {e.Message}");
+            return false;
+        }
     }
 
     // This process's file: Ready once the failure is in it ("fatal" set), with its suspects. Null for none, another

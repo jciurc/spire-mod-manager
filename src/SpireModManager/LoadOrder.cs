@@ -600,12 +600,13 @@ static class LoadOrder
             () => SameIdCard(clashing), [goTo, ShowButton(content, "#clash", "FilterSameIdButton"), dismiss], SameIdName, "SameIdWarning", WarningColor);
     }
 
-    // Copies of one id ticked together: a line per copy, whether it loads after a relaunch.
+    // Copies of one id ticked together, grouped by id: each copy with its version and source, Active (the one that loads
+    // after a relaunch) or Ignored (ModDetails.CopyGroups).
     static string? SameIdCard(List<Mod> clashing)
     {
         using var lookups = Lookups.Begin();
-        return BannerCard("SPIRE_MOD_MANAGER.BANNER_SAME_ID_TITLE", clashing.Select(m => Menus.Format(Copies.Loads(m)
-            ? "SPIRE_MOD_MANAGER.BANNER_COPY_LOADS" : "SPIRE_MOD_MANAGER.BANNER_COPY_WONT_LOAD", ("mod", Copies.Named(m)))).ToList());
+        return clashing.Count == 0 ? null
+            : $"[b]{Escape(Menus.Text("SPIRE_MOD_MANAGER.BANNER_SAME_ID_TITLE"))}[/b]\n{string.Join("\n", ModDetails.CopyGroups(clashing, CardLines))}";
     }
 
     // The banners' cards, worked out when one opens. Main list: each enabled mod that won't load, with what it needs.

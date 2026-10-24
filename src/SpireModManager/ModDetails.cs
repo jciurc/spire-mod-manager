@@ -327,9 +327,9 @@ static class ModDetails
         return $"[color={(age.TotalHours < 48 ? Enabled : Disabled)}]({text})[/color]";
     }
 
-    // A row's hover card: the mod's picture, id and state, where the list's search found it, anything wrong, author, last
-    // update, and the player's alias, tags and note. title: the whole name, under the picture, when the row's is cut
-    // short. full: nothing cut short (held with Alt). search: the list's search, if any.
+    // A row's hover card: the mod's picture, id and state, anything wrong, author, last update, the player's alias, tags
+    // and note, and last, after a gap, where the list's search found it. title: the whole name, under the picture, when
+    // the row's is cut short. full: nothing cut short (held with Alt). search: the list's search, if any.
     public static string Card(Mod mod, bool full = false, string? title = null, string? search = null)
     {
         string Cut(string text, int max) => full || text.Length <= max ? text : Menus.CutShort(Menus.Prefix(text, max));
@@ -341,9 +341,6 @@ static class ModDetails
         if (title != null)
             lines.Add($"[b]{Escape(title)}[/b]");
         lines.Add($"[b]{Escape(id)}[/b]  {Bullet}  {Status(mod)}");
-        // Jordan: "when a search is applied, add explanation in hover card that says "Found in: a, b, c"".
-        if (search is { Length: > 0 } && Search.FoundIn(mod, search) is { Count: > 0 } fields)
-            lines.Add($"[color={Quiet}]{Escape(Menus.Format("SPIRE_MOD_MANAGER.FOUND_IN", ("fields", string.Join(", ", fields.Select(FieldName)))))}[/color]");
         AddWarnings(lines, mod);
         lines.Add(CardFact("SPIRE_MOD_MANAGER.AUTHOR", mod.manifest?.author is { Length: > 0 } author ? Escape(Cut(author, 80)) : Faint("SPIRE_MOD_MANAGER.UNKNOWN")));
         if (WorkshopInfo.For(mod) is { } workshop)
@@ -358,6 +355,10 @@ static class ModDetails
             yours.Add(CardFact("SPIRE_MOD_MANAGER.NOTES_TERM", Escape(Cut(notes, 300))));
         if (yours.Count > 0)
             lines.AddRange([CardGap, .. yours]);
+        // Where the list's search found it, at the bottom after a gap (Jordan: "when a search is applied, add explanation
+        // in hover card that says "Found in: a, b, c""; 23 Oct: at the bottom, "Search term found in:").
+        if (search is { Length: > 0 } && Search.FoundIn(mod, search) is { Count: > 0 } fields)
+            lines.AddRange([CardGap, $"[color={Quiet}]{Escape(Menus.Format("SPIRE_MOD_MANAGER.FOUND_IN", ("fields", string.Join(", ", fields.Select(FieldName)))))}[/color]"]);
         return string.Join("\n", lines);
     }
 
@@ -575,6 +576,49 @@ static class ModDetails
     // pick (Copies.Next's step 3: we load before we could choose), so between sources the game's reason comes with it,
     // and between copies from one source no reason does (Why.Other: the plain line).
     public static (string Text, string Color)? CopyLine(Mod mod, bool links) => CopySays(mod, links) is { } text ? (text, Clash) : null;
+
+    // Copies of mods installed more than once, grouped by ID (Jordan, 23 Oct): the ID, then each copy given, the one that
+    // loads after a relaunch first ("Touhou Fairies A 0.1.1 (Local) - Active", Active in green; the rest Ignored,
+    // subtle), a blank line between IDs. For the same-ID banner's card and the Relaunch check. max: lines at most, whole
+    // IDs only, then how many copies more (the first ID always shows).
+    public static List<string> CopyGroups(IEnumerable<Mod> copies, int max = int.MaxValue)
+    {
+        // One line per copy within each id (two ids in one Workshop item or folder are two copies, each in its own id),
+        // and the copy that loads always among them, ticked or not (where the launch couldn't choose, it can load though
+        // it's off).
+        var groups = copies.GroupBy(m => m.manifest?.id ?? "").Select(g => (Id: g.Key, Copies: (Copies.Loading(g.Key) is { } loads && g.All(m => Copies.CopyOf(m) != Copies.CopyOf(loads))
+            ? g.Append(loads) : g).DistinctBy(Copies.CopyOf).ToList())).ToList();
+        var lines = new List<string>();
+        var shown = 0;
+        foreach (var (id, group) in groups)
+        {
+            var block = new List<string>();
+            if (lines.Count > 0)
+                block.Add("");
+            block.Add(Escape(Menus.Format("SPIRE_MOD_MANAGER.COPY_GROUP", ("id", id))));
+            foreach (var copy in group.OrderBy(m => Copies.Loads(m) ? 0 : 1))
+            {
+                var state = Copies.Loads(copy) ? $"[color={Enabled}]{Escape(Menus.Text("SPIRE_MOD_MANAGER.COPY_ACTIVE"))}[/color]"
+                    : $"[color={Quiet}]{Escape(Menus.Text("SPIRE_MOD_MANAGER.COPY_IGNORED"))}[/color]";
+                // The state's colour goes in after the escaping; a copy with no version reads without it and the space beside
+                // it (only that: the name keeps its own spaces).
+                var version = Copies.VersionOf(copy);
+                var line = Menus.Format("SPIRE_MOD_MANAGER.COPY_LINE", ("mod", Copies.Title(copy)), ("version", version.Length > 0 ? version : "\u0002"),
+                    ("source", Copies.Source(copy)), ("state", "\u0001"));
+                if (version.Length == 0)
+                    line = line.Replace(" \u0002", "").Replace("\u0002 ", "").Replace("\u0002", "");
+                block.Add($"  {Bullet}  {Escape(line).Replace("\u0001", state)}");
+            }
+            if (lines.Count > 0 && lines.Count + block.Count > max)
+                break;
+            lines.AddRange(block);
+            shown += block.Count(l => l.StartsWith($"  {Bullet}", StringComparison.Ordinal));
+        }
+        var total = groups.Sum(g => g.Copies.Count);
+        if (shown < total)
+            lines.Add($"[color={Quiet}]{Escape(Menus.Format("SPIRE_MOD_MANAGER.BANNER_CARD_MORE", ("count", Menus.Number(total - shown))))}[/color]");
+        return lines;
+    }
 
     static string? CopySays(Mod mod, bool links)
     {
