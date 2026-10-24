@@ -8,7 +8,7 @@ Organize your mods into categories, tag them, add notes, and easily swap or shar
 
 By symphony ([@jciurc](https://github.com/jciurc) on GitHub) with Claude Code Opus 5.5
 
-<img width="1280" height="720" alt="spire-mod-manager-main-list-view" src="https://github.com/user-attachments/assets/662f27f6-f81e-42c6-b530-1a4e6b64d9a3" />
+<img width="1280" height="720" alt="Spire Mod Manager's main list" src="docs/images/main-list.jpg" />
 
 ## Install
 
