@@ -104,7 +104,7 @@ static partial class SelfTest
                 && button.OffsetLeft == folder.OffsetRight + 12 && !button.GetGlobalRect().Intersects(folder.GetGlobalRect())
                 && Hover.TipOf(button) == "Change this mod's settings (BaseLib)",
                 $"button {button?.Visible} at {button?.OffsetLeft}, folder {folder.Visible} to {folder.OffsetRight}; tip {(button == null ? "" : Hover.TipOf(button))}");
-            await Capture(screen, outDir, "17b-settings-button");
+            await Capture(screen, outDir, "17a-settings-button");
             void Press()
             {
                 if (Button() is NButton pressed)
