@@ -3,7 +3,7 @@
 What changed in each Workshop release, for players. Each version's first line is its Workshop change note
 (`changeNote` in `workshop/workshop.json`), word for word.
 
-## 0.2.0 (2026-10-22)
+## 0.2.0 (2026-10-24)
 
 0.2.0:
 - mods that share the same ID can now be edited independently
