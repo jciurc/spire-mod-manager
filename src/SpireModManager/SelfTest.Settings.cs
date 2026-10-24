@@ -1,4 +1,5 @@
 using Godot;
+using MegaCrit.Sts2.Core.Helpers;
 using MegaCrit.Sts2.Core.Modding;
 using MegaCrit.Sts2.Core.Nodes.CommonUi;
 using MegaCrit.Sts2.Core.Nodes.GodotExtensions;
@@ -235,7 +236,8 @@ static partial class SelfTest
 
     const string NoneTip = "No settings were found for this mod";
 
-    static bool Greyed(Control? button) => button is NClickableControl clickable ? !clickable.IsEnabled : button is BaseButton { Disabled: true };
+    static bool Greyed(Control? button) => button is NClickableControl clickable ? !clickable.IsEnabled && clickable.Modulate == StsColors.gray
+        : button is BaseButton { Disabled: true };
 
     // Shown, greyed, its tip saying none were found (Jordan, 24 Oct: the button always shows).
     static bool NoSettings(Control? button) => button is { Visible: true } && Greyed(button) && Hover.TipOf(button) == NoneTip;

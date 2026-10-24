@@ -1,4 +1,5 @@
 using Godot;
+using MegaCrit.Sts2.Core.Helpers;
 using MegaCrit.Sts2.Core.Modding;
 using MegaCrit.Sts2.Core.Nodes.GodotExtensions;
 using MegaCrit.Sts2.Core.Platform;
@@ -150,7 +151,10 @@ static class ModDetails
         var failed = SettingsLink.FailedFor(mod);
         var enabled = target != null && !failed;
         if (button is NClickableControl clickable)
+        {
             clickable.SetEnabled(enabled);
+            clickable.Modulate = enabled ? Colors.White : StsColors.gray; // greyed as the game's own disabled buttons
+        }
         else if (button is BaseButton plain)
             plain.Disabled = !enabled;
         Hover.Tip(button, target == null ? Menus.Text("SPIRE_MOD_MANAGER.NO_SETTINGS_TIP")
