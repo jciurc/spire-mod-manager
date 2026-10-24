@@ -327,9 +327,9 @@ static class ModDetails
         return $"[color={(age.TotalHours < 48 ? Enabled : Disabled)}]({text})[/color]";
     }
 
-    // A row's hover card: the mod's picture, id and state, where the list's search found it, anything wrong, author, last
-    // update, and the player's alias, tags and note. title: the whole name, under the picture, when the row's is cut
-    // short. full: nothing cut short (held with Alt). search: the list's search, if any.
+    // A row's hover card: the mod's picture, id and state, anything wrong, author, last update, the player's alias, tags
+    // and note, and last, after a gap, where the list's search found it. title: the whole name, under the picture, when
+    // the row's is cut short. full: nothing cut short (held with Alt). search: the list's search, if any.
     public static string Card(Mod mod, bool full = false, string? title = null, string? search = null)
     {
         string Cut(string text, int max) => full || text.Length <= max ? text : Menus.CutShort(Menus.Prefix(text, max));
@@ -341,9 +341,6 @@ static class ModDetails
         if (title != null)
             lines.Add($"[b]{Escape(title)}[/b]");
         lines.Add($"[b]{Escape(id)}[/b]  {Bullet}  {Status(mod)}");
-        // Jordan: "when a search is applied, add explanation in hover card that says "Found in: a, b, c"".
-        if (search is { Length: > 0 } && Search.FoundIn(mod, search) is { Count: > 0 } fields)
-            lines.Add($"[color={Quiet}]{Escape(Menus.Format("SPIRE_MOD_MANAGER.FOUND_IN", ("fields", string.Join(", ", fields.Select(FieldName)))))}[/color]");
         AddWarnings(lines, mod);
         lines.Add(CardFact("SPIRE_MOD_MANAGER.AUTHOR", mod.manifest?.author is { Length: > 0 } author ? Escape(Cut(author, 80)) : Faint("SPIRE_MOD_MANAGER.UNKNOWN")));
         if (WorkshopInfo.For(mod) is { } workshop)
@@ -358,6 +355,10 @@ static class ModDetails
             yours.Add(CardFact("SPIRE_MOD_MANAGER.NOTES_TERM", Escape(Cut(notes, 300))));
         if (yours.Count > 0)
             lines.AddRange([CardGap, .. yours]);
+        // Where the list's search found it, at the bottom after a gap (Jordan: "when a search is applied, add explanation
+        // in hover card that says "Found in: a, b, c""; 23 Oct: at the bottom, "Search term found in:").
+        if (search is { Length: > 0 } && Search.FoundIn(mod, search) is { Count: > 0 } fields)
+            lines.AddRange([CardGap, $"[color={Quiet}]{Escape(Menus.Format("SPIRE_MOD_MANAGER.FOUND_IN", ("fields", string.Join(", ", fields.Select(FieldName)))))}[/color]"]);
         return string.Join("\n", lines);
     }
 

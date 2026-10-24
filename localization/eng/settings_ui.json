@@ -166,7 +166,7 @@
   "SPIRE_MOD_MANAGER.FIELD_NOTES": "note",
   "SPIRE_MOD_MANAGER.FIELD_TAGS": "tags",
   "SPIRE_MOD_MANAGER.FIELD_ALIAS_NOW": "alias \"{alias}\"",
-  "SPIRE_MOD_MANAGER.FOUND_IN": "Found in: {fields}",
+  "SPIRE_MOD_MANAGER.FOUND_IN": "Search term found in: {fields}",
   "SPIRE_MOD_MANAGER.FIELD_NAME": "name",
   "SPIRE_MOD_MANAGER.FIELD_ID": "ID",
   "SPIRE_MOD_MANAGER.FIELD_AUTHOR": "author",
