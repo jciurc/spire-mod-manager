@@ -436,10 +436,10 @@ static partial class SelfTest
                 await Wait(menu, 0.3);
             }
             History.TestPutBack(history);
-            Check("the main menu button's card shown with a change pending: the list as it was, the page's opening state and undo histories put back",
-                History.CurrentMods().SequenceEqual(listWas) && History.Entered == history.Entered
+            Check("the main menu button's card shown with a change pending: the list as it was, what Revert all left and undo histories put back",
+                History.CurrentMods().SequenceEqual(listWas) && History.TestKeep().Reverted == history.Reverted
                 && History.Steps(History.Track.List) == history.Past[History.Track.List].Count && History.Steps(History.Track.Order) == history.Past[History.Track.Order].Count,
-                $"list as it was {History.CurrentMods().SequenceEqual(listWas)}, opening state {History.Entered == history.Entered}, "
+                $"list as it was {History.CurrentMods().SequenceEqual(listWas)}, what Revert all left {History.TestKeep().Reverted == history.Reverted}, "
                 + $"steps {History.Steps(History.Track.List)}/{History.Steps(History.Track.Order)}, were {history.Past[History.Track.List].Count}/{history.Past[History.Track.Order].Count}");
         }
     }
@@ -1034,8 +1034,11 @@ static partial class SelfTest
             && Preview().Contains("Creates the profile Imported profile:") && Preview().Contains("Mods enabled ") && !Preview().Contains("Not installed"), Preview());
         Press("CreateProfileButton");
         await Wait(menu, 0.3);
+        // The fixture's mod from both sources aside: its Workshop copy, read from mods_STEAMTEST, has no item id, so the
+        // list's row for it has no link to set it apart from the local copy (a real Workshop item has one).
+        static IEnumerable<string> Linked(IEnumerable<string> states) => states.Where(s => !s.StartsWith(DualId + "/"));
         Check("Create profile: a new profile with the list's states, active, and the dialog closed", Dialog() == null && Profiles.Active?.Name == "Imported profile"
-            && Store.Data.Profiles.Count == profiles + 1 && !Profiles.Edited && ModListState().SequenceEqual(startStates),
+            && Store.Data.Profiles.Count == profiles + 1 && !Profiles.Edited && Linked(ModListState()).SequenceEqual(Linked(startStates)),
             $"{Profiles.Active?.Name}: {string.Join(", ", startStates.Except(ModListState()))}");
         History.Undo();
         await Wait(menu, 0.3);

@@ -34,7 +34,8 @@
 //                                     loads; fails if our mod didn't start or logged errors
 //
 // The dev copy (sts2-dev on the game's drive, STS2_DEV_DIR; sts2-dev-stable for --stable) is hard links to the
-// installed game plus its own mods\ folder, re-linked after a Steam update of its branch. --force-steam off keeps the
+// installed game plus its own mods\ folder (and, during a run, the fixtures' Workshop copies in its mods_STEAMTEST,
+// which the game reads as Workshop items), re-linked after a Steam update of its branch. --force-steam off keeps the
 // game's data in %APPDATA%\SlayTheSpire2\default\1\, apart from real saves, and --log-file writes out\dev.log. test
 // resets the sandbox to tools/fixtures and prints out/selftest/results.txt; exit code 1 on any FAIL.
 using System.Diagnostics;
@@ -212,25 +213,12 @@ if (keepsData && NotOurPrepare(crashNotice ? "culprit" : "prepared") is { } notO
 if (crashNotice && !File.Exists(turnedOff))
     return Fail("no mod turned off in the sandbox: run dotnet run tools/dev.cs test --crash-culprit first (after test --crash-prepare)");
 // Mod Doctor's runs put a fixture mod (MdTestCopy) in a dev copy's mods_STEAMTEST, which the game reads as Workshop items,
-// and take it out again after every run; one killed outright can leave it behind, a second copy our runs don't expect.
-// Only that fixture goes, and only while we hold the lock (no other run is using the dev copy).
+// and take it out again after every run, as ours do with theirs (SmmTestDual's Workshop copy, tools/fixtures/mods_STEAMTEST);
+// one killed outright can leave it behind, a copy the next run doesn't expect. Only those fixtures go, and only while we
+// hold the lock (no other run is using the dev copy).
 var steamTest = Path.Combine(DevDir, "mods_STEAMTEST");
-if (Directory.Exists(steamTest))
-    foreach (var leftover in Directory.EnumerateFileSystemEntries(steamTest, "MdTestCopy*"))
-    {
-        try
-        {
-            if (Directory.Exists(leftover))
-                Directory.Delete(leftover, recursive: true);
-            else
-                File.Delete(leftover);
-            Console.WriteLine($"removed Mod Doctor's leftover fixture {leftover}");
-        }
-        catch (Exception e) when (e is IOException or UnauthorizedAccessException)
-        {
-            Console.WriteLine($"(couldn't remove Mod Doctor's leftover fixture {leftover}: {e.Message})");
-        }
-    }
+var steamTestFixtures = Path.Combine(root, "tools", "fixtures", "mods_STEAMTEST");
+RemoveSteamTest(["MdTestCopy*", .. Directory.Exists(steamTestFixtures) ? Directory.GetDirectories(steamTestFixtures).Select(Path.GetFileName).OfType<string>() : []], "leftover ");
 
 if (smoke)
 {
@@ -308,6 +296,7 @@ if (mode == "launch")
             said = true;
         }
     }
+    RemoveOurSteamTest();
     return 0;
 }
 
@@ -338,6 +327,7 @@ if (smoke)
         released.Kill();
         released.WaitForExit();
     }
+    RemoveOurSteamTest();
     var lines = LogLines();
     // Ours: a warning or error tagged [SpireModManager], an [ERROR] naming our id or name (not the fixture mods',
     // whose author is "Spire Mod Manager tests"), and a Godot "ERROR:" naming our code, on its own line or in the
@@ -379,6 +369,36 @@ if (smoke)
     return checks.Any(c => c.StartsWith("FAIL")) ? 1 : 0;
 
     static string Result(string name, bool ok, string detail = "") => $"{(ok ? "PASS" : "FAIL")} {name}{(ok || detail.Length == 0 ? "" : $": {detail}")}";
+}
+
+// The fixtures in the dev copy's mods_STEAMTEST whose names match these, gone (from the run before, or ours after the
+// game exits: the copy is shared with other mods' dev runs, which don't expect them).
+void RemoveSteamTest(IEnumerable<string> patterns, string what = "")
+{
+    if (!Directory.Exists(steamTest))
+        return;
+    foreach (var leftover in patterns.SelectMany(pattern => Directory.EnumerateFileSystemEntries(steamTest, pattern)).Distinct().ToList())
+    {
+        try
+        {
+            if (Directory.Exists(leftover))
+                Directory.Delete(leftover, recursive: true);
+            else
+                File.Delete(leftover);
+            Console.WriteLine($"removed the {what}fixture {leftover}");
+        }
+        catch (Exception e) when (e is IOException or UnauthorizedAccessException)
+        {
+            Console.WriteLine($"(couldn't remove the {what}fixture {leftover}: {e.Message})");
+        }
+    }
+}
+
+// Ours, after the game has exited.
+void RemoveOurSteamTest()
+{
+    if (!real && Directory.Exists(steamTestFixtures))
+        RemoveSteamTest(Directory.GetDirectories(steamTestFixtures).Select(Path.GetFileName).OfType<string>());
 }
 
 // When the checked-out commit was made (UTC), or null without git.
@@ -515,6 +535,7 @@ if (!game.HasExited)
     game.WaitForExit();
     killed = true;
 }
+RemoveOurSteamTest();
 
 if (readOnlySettings)
     File.SetAttributes(settingsSave, File.GetAttributes(settingsSave) & ~FileAttributes.ReadOnly); // as it was before the run
@@ -720,6 +741,14 @@ void SyncMods()
             Directory.CreateDirectory(Path.GetDirectoryName(target) ?? mods);
             File.Copy(file, target);
         }
+        // And the Workshop copies of fixture mods (SmmTestDual's), in the dev copy's mods_STEAMTEST, which the game reads
+        // as Workshop items, so every run has a mod installed from both sources. Taken out after the game exits.
+        foreach (var file in Directory.Exists(steamTestFixtures) ? Directory.EnumerateFiles(steamTestFixtures, "*", SearchOption.AllDirectories) : [])
+        {
+            var target = Path.Combine(steamTest, Path.GetRelativePath(steamTestFixtures, file));
+            Directory.CreateDirectory(Path.GetDirectoryName(target) ?? steamTest);
+            File.Copy(file, target, overwrite: true);
+        }
     }
     // --workshop: the given items, copied rather than linked, so nothing a mod writes over its own files
     // reaches Steam's copy. The folder above is emptied every run, so they're gone from a run without them.
@@ -790,6 +819,12 @@ void PrepareSandbox(bool resetData)
     if (!real)
         foreach (var id in new[] { "SmmTestLib", "SmmTestTwin" })
             list.Add((JsonNode)new JsonObject { ["id"] = id, ["is_enabled"] = true, ["source"] = "mods_directory" });
+    // The fixture's mod from both sources (SmmTestDual): its local copy on, its Workshop copy (mods_STEAMTEST) off, listed
+    // side by side, so the game takes the Workshop copy out and its rebuild lists it after all the rest; the main menu
+    // keeps them together (the order rule), as the self-test checks.
+    if (!real)
+        foreach (var (from, on) in new[] { ("mods_directory", true), ("steam_workshop", false) })
+            list.Add((JsonNode)new JsonObject { ["id"] = "SmmTestDual", ["is_enabled"] = on, ["source"] = from });
     // --workshop: the items' mods on, after ours, in the order given (--twins: an entry per copy). An entry above for the
     // same id (Better Mod Menu's, when its Workshop item is given) gives way.
     foreach (var id in workshopMods)

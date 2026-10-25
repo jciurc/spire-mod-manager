@@ -37,9 +37,9 @@ Ease of use is the heart of the mod, not just its utility.
   round). A dependency that's off or missing never stops the copy chosen: it loads and fails, and the dependency
   warnings say so, as for a mod installed once. It all runs in our Init, before the game tries the copies. Our page
   works out where the slot falls from the next launch's order: the game sorts by the saved list it rebuilt from the
-  order that loaded (saved at the main menu), ranking an id by its last entry, then puts what a mod needs first (the
-  first copy of it the game reads). Our page has a tickbox per copy, and two copies of an id can both be ticked (only
-  one loads). The game's page keeps its one switch.
+  order that loaded (saved at the main menu, in the order rule's form: Load order), ranking an id by its last entry,
+  then puts what a mod needs first (the first copy of it the game reads). Our page has a tickbox per copy, and two
+  copies of an id can both be ticked (only one loads). The game's page keeps its one switch.
 - Where the page and the launch can still differ, or older data reads differently (all rare):
   - Data from the dev builds before this, whose pick was missing: the copy standing in for it stays ticked, so once
     the pick is back both are ticked and the higher version loads, where those builds loaded the pick. A stand-in
@@ -54,9 +54,10 @@ Ease of use is the heart of the mod, not just its utility.
     switched on or off, or moved) can reorder them, and the page can then be wrong for one launch. A blocked copy's
     fallback goes by the tie order within each of the two, on the page and at the launch, so it isn't affected.
   - Whether the next launch can put a copy in the id's first slot: the page reads the saved list as it is now. We save
-    the game's rebuild at the main menu (the game itself later, if at all: leaving its settings screen, remapping a
-    control, quitting); after a session that ends before that (a crash at launch), the next launch reads the list from
-    before and sorts as this launch did, so a copy blocked this launch can be blocked again while the page named it.
+    the game's rebuild at the main menu, in the order rule's form (the game itself later, if at all: leaving its
+    settings screen, remapping a control, quitting); after a session that ends before that (a crash at launch), the
+    next launch reads the list from before and sorts as this launch did, so a copy blocked this launch can be blocked
+    again while the page named it.
     Ids the list doesn't have yet tie in the game's sort, which the page takes in the game's list order. The game reads
     Workshop items in Steam's order, which the page has from launch: one subscribed since comes after the others there,
     wherever Steam puts it. A mod uninstalled since still counts, as the game's list keeps it.
@@ -76,12 +77,9 @@ Ease of use is the heart of the mod, not just its utility.
     though its older manifest could have loaded there. Two manifests of one copy at the same version go by the list
     order, which the page takes from the next launch's predicted order and the launch from its own, so the two can
     differ when the game's sort puts them the other way round.
-- A copy that needs a mod installed from both sources is blocked at every launch, and so is one that needs a mod that
-  waits on such a mod. Here the page and the launch agree. The game's rebuild lists that mod's copy it took out (off,
-  or set aside by its local-vs-Workshop rule) after all the rest, and it ranks an id by its last entry, so the mod
-  sorts after the slot each time. The blocked copy's line says why. A Load Order move clears it for one launch at most,
-  and the menu dot then shows after that launch, as the page names the copy that loads instead. Keeping such a mod
-  where it loaded in the order is planned separately.
+  - A copy whose entries sit with another source's before what it needs (two Workshop copies, off, beside a local copy
+    that loads; one of them ticked later) is blocked at the next launch, and loads at the launch after, once the mod
+    ranks where that copy sorted. The page names the copy loading instead meanwhile.
 - Profiles key mods by id and source, like `mod_list` (plus, for copies from one source, which are ticked). A shared
   list's rows set a mod installed once by its id; where its id is installed more than once, a row with a Workshop
   link sets that copy alone. A newly installed mod joins the active profile, enabled.
@@ -118,11 +116,45 @@ Ease of use is the heart of the mod, not just its utility.
 
 ## Load order
 
-- One global order, in its own view. Disabled mods are greyed out but can still be moved.
+- One global order, in its own view. Disabled mods are greyed out but can still be moved (the game's sort puts a mod
+  with no copy on after all the rest, so such a move lasts until the next launch).
 - Spire Mod Manager always loads first, pinned at the top: its Init has to run before any copy it chooses for.
 - Fix now moves dependencies ahead of what needs them, otherwise keeping the order (the game's own rule).
 - Auto sort: libraries, then gameplay mods, then the rest, then the same dependency sweep; the player's order
   holds within each tier.
+- A mod installed more than once is one place in the order: the game ranks every copy of an id by the id's last saved
+  entry. Its rows sit together and move together (a drag of any of them, the menu's moves past another mod's whole
+  block, a selection), a drop among its own rows orders only its copies, and a drop never splits another mod's rows.
+  Fix now and Auto sort gather a mod's rows at its copy that loads. A copy installed while the game runs shows at the
+  end of its mod's rows, where its entry goes and the game sorts it.
+- The order rule: every write of the saved list keeps each mod's entries in one run, in their order, where its last
+  anchor is, an entry of a copy the game sorts (a mod with none: where its first entry is), so the mod ranks there
+  (`LoadOrder.Normalize`). The game's rebuild lists the copies it took out before sorting (off, or set aside by its
+  local-vs-Workshop rule) after all the rest, so without it a mod with such a copy would rank last at every launch. At
+  the main menu the anchors are where the game put each mod this launch (`SameIdLoad.LaunchAnchors`; where the list
+  doesn't line up with the game's mods, by source, with a warning); in every other write, which sources the next launch
+  sorts (`LoadOrder.Anchors`). Our writers keep it (the main menu, every write in the session, the launch record,
+  Restore's list), and from the first main menu on, a prefix on the game's own settings save keeps it for every other
+  writer. A new entry for a mod the list has goes right after its entries (`LoadOrder.Add`). The main menu saves the
+  list only where it differs from the one the launch read, so a launch that keeps the order saves nothing.
+- At the main menu, a mod whose copy this launch blocked (it needs a mod that loads after the id's first slot), or
+  brought back in its own place behind such a mod, goes right after that mod's entries, where the game's sort would
+  have put the copy, so it can take the slot at the next launch (`SameIdLoad.Heal`; a mod whose own copy waits too
+  moves first). The launch record keeps the order that loaded, without it, so Restore brings back that launch.
+- Where the order can still be off (all rare):
+  - The first launch after updating to this version sorts by the list from before, where a mod with a copy taken out
+    ranks last. Its main menu keeps the mod's entries together where it loaded, so it keeps that place from then on,
+    and one drag puts it anywhere.
+  - A list another mod rewrote before the main menu loads that way, and the mod keeps the place it loaded at. A
+    rewrite after it is put in the rule's form as the game saves it.
+  - A mod with every copy off loses its place at each launch: the game sorts it after all the rest, and the rule
+    leaves a mod with no copy loading at its first entry there.
+  - A copy set aside in the game's sort (by our Init, or the game's second copy of one source) isn't an anchor, so a
+    drag of its mod above what that copy needs holds. Ticking that copy later costs one launch: it's blocked there (the
+    copy ticked before loads), and the heal moves the mod after what it needs for the launch after.
+  - Restore from a launch record kept before this version puts the copies taken out beside the copy that launch put
+    in the mod's first slot. On the beta, with two copies of one source either side of the game's rule, that's one
+    launch off.
 
 ## Code
 

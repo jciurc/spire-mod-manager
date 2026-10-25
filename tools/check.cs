@@ -73,8 +73,8 @@ Rule[] rules =
     // Counts: Part(key, n) uses key + "_ONE" for one (the problems banner on the main list).
     new("LoadOrder.cs", ["string Part(string key, int count) => Menus.Format(count == 1 ? key + \"_ONE\" : key"],
         source => Calls(source, "Part", "_ONE")),
-    // Load Order moves: Item(key, to) uses key + "_SHORT" on the compact inline buttons.
-    new("LoadOrder.cs", ["MenuItem Item(string key, int to) => new(Menus.Text(key + (compact ? \"_SHORT\" : \"\"))"],
+    // Load Order moves: Item(key, gap, can) uses key + "_SHORT" on the compact inline buttons.
+    new("LoadOrder.cs", ["MenuItem Item(string key, int gap, bool can) => new(Menus.Text(key + (compact ? \"_SHORT\" : \"\"))"],
         source => Calls(source, "Item", "_SHORT")),
     // Category header moves: "SPIRE_MOD_MANAGER.X" + suffix, "_SHORT" on the compact inline buttons.
     new("CategoryList.cs", ["var suffix = compact ? \"_SHORT\" : \"\";"],

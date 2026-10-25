@@ -10,7 +10,7 @@ namespace SpireModManager;
 // - "Mods enabled 23 (+1 -3)" and "Changes 5  ↕2": mods on, and turned on or off since launch; then everything else
 //   changed (installs, edits, profiles) and the load-order moves. Hovering shows a summary; clicking, the full list in
 //   the right panel, where a mod's name opens it (with Back to the list).
-// - Undo, Redo (their shortcuts underneath), Revert all.
+// - Undo, Redo (their shortcuts underneath), Revert all (everything Changes counts back to launch: History.RevertMods).
 // The same place in the panel lists the active profile's unsaved changes ("Unsaved •" on the profile bar); one list
 // at a time.
 static class HistoryBar
@@ -82,14 +82,16 @@ static class HistoryBar
         {
             undo.Disabled = !History.CanUndo;
             redo.Disabled = !History.CanRedo;
-            revert.Disabled = History.AtEntered;
             var (on, off, moved) = Counts();
+            var other = OtherChanges();
+            // Greyed with nothing for it to do: Changes reads 0, or reads what Revert all left (History.AtLaunch).
+            revert.Disabled = on + off + moved + other == 0 || History.AtLaunch;
             // On after a relaunch, new mods and this one included, a mod installed twice once: the profile bar's count.
             var enabled = Profiles.OnCount();
             // The words and the count's place in them come from the loc table ("Mods enabled {count}"); the +, -
             // and ↕ counts stay after them in every language.
             changes.Text = $"{Menus.Format("SPIRE_MOD_MANAGER.MODS_ENABLED", ("count", Menus.Number(enabled)))} ([color={Added}]+{Menus.Number(on)}[/color] [color={Removed}]-{Menus.Number(off)}[/color])\n"
-                + $"{Menus.Format("SPIRE_MOD_MANAGER.CHANGES", ("count", $"[color={Edited}]{Menus.Number(OtherChanges())}[/color]"))}  [color={Moved}]↕{Menus.Number(moved)}[/color]";
+                + $"{Menus.Format("SPIRE_MOD_MANAGER.CHANGES", ("count", $"[color={Edited}]{Menus.Number(other)}[/color]"))}  [color={Moved}]↕{Menus.Number(moved)}[/color]";
             FitChanges(changes);
             if (info.GetNodeOrNull<Control>(ViewName) is { Visible: true } view)
                 FillList(view);
@@ -113,7 +115,7 @@ static class HistoryBar
             MenuPanel.Close();
             Selection.Show(content);
         }
-        // Revert all goes back to how things were when the page opened (the game may reuse the screen).
+        // Undo starts afresh with each visit to the page (the game may reuse the screen).
         History.Enter();
         // Back from a screen that covered it (a mod's settings, PageVisits): still the same visit, so the changes stay
         // to undo, unless the mod list changed meanwhile.
@@ -526,17 +528,18 @@ static class HistoryBar
 
     static string Name(Mod mod) => mod.manifest?.name ?? mod.manifest?.id ?? "";
 
-    // Installed copies whose own box differs from a snapshot's (its list and copies off against now's, each read
-    // against the copies installed today; no entry = on).
+    // Installed copies whose own box differs from a snapshot's (its list and copies off against now's; no entry = on),
+    // then read among the copies installed then, now among those installed now.
     static List<(Mod Mod, bool Enabled)> ModChanges(History.Snapshot before)
     {
         var (thenOff, thenTicks) = (Dependencies.SavedOff(before.Mods), Store.TicksIn(before.Store));
         var (nowOff, nowTicks) = (Dependencies.SavedOff(), Ticks.Now);
         // A mod installed since launch wasn't loaded then: off, though the saved list (which had no entry for it) reads
-        // on. So arriving on counts as turned on, and turning it off again is no change.
-        var arrived = Installed.Mods.Select(Copies.SwitchKey).ToHashSet();
+        // on. So arriving on counts as turned on, and turning it off again is no change. Nor was it among its twins: a
+        // copy back with its stored tick unticks the one that loaded (Copies.SinceLaunch), which was ticked then.
+        var arrived = Copies.SinceLaunch();
         return Dependencies.EachCopy(ModManager.Mods)
-            .Select(m => (Mod: m, Then: !arrived.Contains(Copies.SwitchKey(m)) && Copies.TickedIn(m, thenOff, thenTicks), Now: Copies.TickedIn(m, nowOff, nowTicks)))
+            .Select(m => (Mod: m, Then: !arrived.Contains(Copies.SwitchKey(m)) && Copies.TickedIn(m, thenOff, thenTicks, arrived), Now: Copies.TickedIn(m, nowOff, nowTicks)))
             .Where(p => p.Then != p.Now)
             .Select(p => (p.Mod, p.Now))
             .ToList();
