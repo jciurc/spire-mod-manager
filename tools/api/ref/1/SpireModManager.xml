@@ -1,0 +1,182 @@
+<?xml version="1.0"?>
+<doc>
+    <assembly>
+        <name>SpireModManager</name>
+    </assembly>
+    <members>
+        <member name="T:SpireModManager.Api.ApiInfo">
+            <summary>What this copy of Spire Mod Manager offers.</summary>
+        </member>
+        <member name="F:SpireModManager.Api.ApiInfo.Version">
+            <summary>The API's version: 1 in the first release that has it, one more in each release that adds to it; never lowered. A field, read at run time.</summary>
+        </member>
+        <member name="T:SpireModManager.Api.BannerKind">
+            <summary>A banner's colour (values fixed; new kinds only added).</summary>
+        </member>
+        <member name="F:SpireModManager.Api.BannerKind.Problem">
+            <summary>Something is wrong: SMM's red.</summary>
+        </member>
+        <member name="F:SpireModManager.Api.BannerKind.Warning">
+            <summary>Worth knowing: SMM's amber.</summary>
+        </member>
+        <member name="T:SpireModManager.Api.BannerOptions">
+            <summary>What a banner says and offers; every property is optional.</summary>
+        </member>
+        <member name="P:SpireModManager.Api.BannerOptions.Text">
+            <summary>The banner's text (plain, shown as it is); it wraps to the width the banner is given.</summary>
+        </member>
+        <member name="P:SpireModManager.Api.BannerOptions.Kind">
+            <summary>Its colour.</summary>
+        </member>
+        <member name="P:SpireModManager.Api.BannerOptions.OnDismiss">
+            <summary>Adds SMM's Dismiss button: a press hides the banner (Visible = false), then calls this. Remembering it, and showing the banner again, are yours.</summary>
+        </member>
+        <member name="P:SpireModManager.Api.BannerOptions.Name">
+            <summary>The banner's node name; carry your mod id.</summary>
+        </member>
+        <member name="T:SpireModManager.Api.Banners">
+            <summary>SMM's banners as a strip for you to place (SMM's own stacking on the Modding page stays SMM's).</summary>
+        </member>
+        <member name="M:SpireModManager.Api.Banners.Create(SpireModManager.Api.BannerOptions)">
+            <summary>A banner, not yet in the tree. Its text wraps at the width it's given, and it grows to fit: in a container it fills the width the container gives it (in an HBoxContainer, give it SizeFlags.ExpandFill); under a plain Control, give it a width with anchors or Size, and watch its MinimumSizeChanged for its height. If it can't be made, a plain panel with the text comes back.</summary>
+        </member>
+        <member name="T:SpireModManager.Api.Fonts">
+            <summary>The game's fonts as SMM uses them: Kreon, or the game's own font in languages it draws in another (Chinese, Japanese, Korean, Thai, Russian, Polish).</summary>
+        </member>
+        <member name="M:SpireModManager.Api.Fonts.Regular">
+            <summary>Kreon regular, or the language's font. Shared and cached: never edit it; ask again after a language change. Kreon before localization loads.</summary>
+        </member>
+        <member name="M:SpireModManager.Api.Fonts.Bold">
+            <summary>Kreon bold, or the language's regular font (as the game's own labels do).</summary>
+        </member>
+        <member name="M:SpireModManager.Api.Fonts.Style(Godot.Control,System.Boolean,System.Int32,Godot.Color)">
+            <summary>A Label's or Button's font, size and colour, as overrides.</summary>
+        </member>
+        <member name="T:SpireModManager.Api.GameResources">
+            <summary>Game resources that never throw.</summary>
+        </member>
+        <member name="M:SpireModManager.Api.GameResources.Load``1(System.String)">
+            <summary>The resource at a res:// path (the game's or your pck's), or null if it's missing or isn't a T; each missing path is logged once and not tried again.</summary>
+        </member>
+        <member name="T:SpireModManager.Api.ModCards">
+            <summary>SMM's card for a mod, as the Modding page's rows show on hover, for your own controls: its picture, name, version, state and problems, author, description, and the player's category, tags and notes.</summary>
+        </member>
+        <member name="M:SpireModManager.Api.ModCards.Watch(Godot.Control,System.String)">
+            <summary>Shows modId's card while the pointer rests on trigger, with SMM's hover timing (Alt shows it in full), one card at a time across mods. Its loaded copy, else its first installed; built when it opens. Nothing shows for a mod that isn't installed. A second call for the same trigger replaces the mod. A trigger that ignores the mouse (a Label, by default) is set to pass it on (MouseFilter.Pass), so it can be hovered.</summary>
+        </member>
+        <member name="M:SpireModManager.Api.ModCards.WatchLinks(Godot.RichTextLabel,System.Func{System.String,System.String})">
+            <summary>Shows the card of the mod a link names while the pointer rests on that link: modIdForLink gets a link's meta (its [url=...] value) and gives the mod's id, or null for no card. For [url=mod:id] links: meta =&gt; meta.StartsWith("mod:") ? meta[4..] : null. A second call for the same label replaces the mapping. The label's look is left as it is; a mapping that throws shows no card, and is logged once.</summary>
+        </member>
+        <member name="M:SpireModManager.Api.ModCards.Text(System.String)">
+            <summary>The card's BBCode as it would show now (not in full); null if the mod isn't installed. For self-tests.</summary>
+        </member>
+        <member name="M:SpireModManager.Api.ModCards.Show(Godot.Control)">
+            <summary>For self-tests: opens the card a Watch set on trigger at once, as a hover would, wherever the real mouse is (below the trigger). It stays up until Close, or until the trigger leaves the tree or is hidden. False if there's no Watch on trigger, or its mod isn't installed.</summary>
+        </member>
+        <member name="M:SpireModManager.Api.ModCards.Close">
+            <summary>For self-tests: closes the open card (SMM's cards are one at a time, across mods); true if one was open.</summary>
+        </member>
+        <member name="T:SpireModManager.Api.Mods">
+            <summary>The mods the game knows about.</summary>
+        </member>
+        <member name="M:SpireModManager.Api.Mods.Version(System.String)">
+            <summary>The version in a mod's manifest ("0.1.0"): its loaded copy's, else (still loading, or off) its first installed copy's; null if it isn't installed.</summary>
+        </member>
+        <member name="M:SpireModManager.Api.Mods.Details(System.String)">
+            <summary>What the player keeps about a mod (its loaded copy's entry, else its first installed copy's; the id's when it isn't installed); never null: empty when there's nothing. Read it when you draw; it changes as the player edits.</summary>
+        </member>
+        <member name="M:SpireModManager.Api.Mods.TestDetails(System.String,SpireModManager.Api.ModNotes)">
+            <summary>For self-tests: while notes is set, Details(modId) and the mod's card (ModCards) read it in place of what the player keeps (trimmed, blanks as none, tags once each; the card shows its category, tags and notes, never the alias). Null clears it. Nothing is saved, and SMM's own page and search keep the player's; it's gone when the game closes.</summary>
+        </member>
+        <member name="T:SpireModManager.Api.ModNotes">
+            <summary>What the player keeps about a mod in SMM.</summary>
+        </member>
+        <member name="P:SpireModManager.Api.ModNotes.Alias">
+            <summary>The name the player gave it, or null.</summary>
+        </member>
+        <member name="P:SpireModManager.Api.ModNotes.Notes">
+            <summary>The player's notes, or null.</summary>
+        </member>
+        <member name="P:SpireModManager.Api.ModNotes.Tags">
+            <summary>The player's own tags, in their order (the automatic ones, like Local or Library, aren't here).</summary>
+        </member>
+        <member name="P:SpireModManager.Api.ModNotes.Category">
+            <summary>The player's category for it, or null (Uncategorized).</summary>
+        </member>
+        <member name="T:SpireModManager.Api.Palette">
+            <summary>SMM's colours, for every mod. A value may be tuned later; what each one is for never changes.</summary>
+        </member>
+        <member name="P:SpireModManager.Api.Palette.Cream">
+            <summary>Text: cream (1, 0.965, 0.886).</summary>
+        </member>
+        <member name="P:SpireModManager.Api.Palette.Gold">
+            <summary>Headings, chosen things, borders (0.937, 0.784, 0.318).</summary>
+        </member>
+        <member name="P:SpireModManager.Api.Palette.Navy">
+            <summary>Menus, small buttons, text outlines: navy (0.076, 0.121, 0.18).</summary>
+        </member>
+        <member name="P:SpireModManager.Api.Palette.DeepNavy">
+            <summary>Dialogs and hover cards: a deeper navy (0.05, 0.08, 0.12).</summary>
+        </member>
+        <member name="P:SpireModManager.Api.Palette.Warning">
+            <summary>A warning banner (0.6, 0.44, 0.06, 0.9).</summary>
+        </member>
+        <member name="P:SpireModManager.Api.Palette.Problem">
+            <summary>A problem banner (0.45, 0.1, 0.1, 0.6).</summary>
+        </member>
+        <member name="T:SpireModManager.Api.MenuEntry">
+            <summary>One menu row; a heading or a divider only through Heading and Divider.</summary>
+        </member>
+        <member name="P:SpireModManager.Api.MenuEntry.Label">
+            <summary>The row's words.</summary>
+        </member>
+        <member name="P:SpireModManager.Api.MenuEntry.OnSelect">
+            <summary>What a click does; the menu closes first. Null: the row is dimmed and does nothing.</summary>
+        </member>
+        <member name="P:SpireModManager.Api.MenuEntry.Disabled">
+            <summary>Dimmed and not clickable.</summary>
+        </member>
+        <member name="P:SpireModManager.Api.MenuEntry.Icon">
+            <summary>A picture before the words (a character's portrait, say), drawn 26x36 keeping its shape, and faded with the row when it's dimmed; null for none.</summary>
+        </member>
+        <member name="M:SpireModManager.Api.MenuEntry.Heading(System.String)">
+            <summary>A gold heading over a line (your mod's name and version, for example).</summary>
+        </member>
+        <member name="M:SpireModManager.Api.MenuEntry.Divider">
+            <summary>Just the line.</summary>
+        </member>
+        <member name="T:SpireModManager.Api.MenuOptions">
+            <summary>Where a menu opens; every property is optional.</summary>
+        </member>
+        <member name="P:SpireModManager.Api.MenuOptions.From">
+            <summary>What it opens off (a button's rect: it drops below it, or above where there's no room). Null: at the mouse.</summary>
+        </member>
+        <member name="T:SpireModManager.Api.PopupMenus">
+            <summary>SMM's pop-up menus: an overlay on its own layer, not an engine popup. One open at a time across mods. A press outside or Esc closes it; the screen's hotkeys are off and the keyboard is the menu's while it's open. It closes on its own when its owner leaves the tree or stops being visible. One taller than the screen goes into columns side by side, scrolling up and down past what fits across.</summary>
+        </member>
+        <member name="M:SpireModManager.Api.PopupMenus.Show(Godot.Node,System.Collections.Generic.IReadOnlyList{SpireModManager.Api.MenuEntry})">
+            <summary>Opens a menu at the mouse (closing any open one, whichever mod's); returns it, or null if there's nowhere to show it. SMM owns it.</summary>
+        </member>
+        <member name="M:SpireModManager.Api.PopupMenus.Show(Godot.Node,System.Collections.Generic.IReadOnlyList{SpireModManager.Api.MenuEntry},SpireModManager.Api.MenuOptions)">
+            <summary>The same, opening where the options say.</summary>
+        </member>
+        <member name="P:SpireModManager.Api.PopupMenus.IsOpen">
+            <summary>True while a menu is open, any mod's.</summary>
+        </member>
+        <member name="P:SpireModManager.Api.PopupMenus.Current">
+            <summary>The open menu, any mod's, or null.</summary>
+        </member>
+        <member name="M:SpireModManager.Api.PopupMenus.Close">
+            <summary>Closes the open menu, whichever mod's; true if one was open.</summary>
+        </member>
+        <member name="M:SpireModManager.Api.PopupMenus.Rows(Godot.Node)">
+            <summary>A menu's rows in order, with whether each is dimmed (for self-tests; every build). Headings are left out.</summary>
+        </member>
+        <member name="M:SpireModManager.Api.PopupMenus.Headings(Godot.Node)">
+            <summary>A menu's headings in order (for self-tests).</summary>
+        </member>
+        <member name="M:SpireModManager.Api.PopupMenus.Press(Godot.Node,System.String)">
+            <summary>Clicks a row by its label, as a left click would; false if there's no such row, or it's dimmed.</summary>
+        </member>
+    </members>
+</doc>
