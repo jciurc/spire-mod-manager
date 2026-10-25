@@ -99,10 +99,19 @@ static class History
         Changed?.Invoke();
     }
 
+#if DEVTOOLS
+    // Self-test: how many times the page was entered, to tell a fresh visit from a return to the same one (the Settings
+    // button's covered page).
+    public static int TestEnters { get; private set; }
+
+#endif
     // The Modding page opened: where undo starts. The active profile is first brought in line with the tickboxes, as part
     // of the current state.
     public static void Enter()
     {
+#if DEVTOOLS
+        TestEnters++;
+#endif
         _restoring = true;
         try
         {

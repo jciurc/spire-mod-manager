@@ -131,7 +131,7 @@ static partial class SelfTest
             }
             Tick();
             await Wait(menu, 0.3);
-            var (changes, entered) = (HistoryBar.Describe(), History.Entered);
+            var (changes, entered) = (HistoryBar.Describe(), History.TestEnters);
             Press();
             await Wait(menu, 0.3);
             Check("Settings: BaseLib's submenu over our page, on this mod", stack.Peek() is NProfileScreen && !screen.Visible
@@ -141,9 +141,9 @@ static partial class SelfTest
             await Wait(menu, 0.3);
             var undoable = fixture == null || History.CanUndo;
             Check("Settings: back from BaseLib's submenu, the page as it was: the same visit (the change still to undo), the same mod shown",
-                screen.Visible && History.Entered == entered && undoable && HistoryBar.Describe().SequenceEqual(changes)
+                screen.Visible && History.TestEnters == entered && undoable && HistoryBar.Describe().SequenceEqual(changes)
                 && CategoryList.Selected == self && Button() is { Visible: true },
-                $"shown {screen.Visible}, entered anew {History.Entered != entered}, can undo {History.CanUndo}, changes {string.Join(" | ", HistoryBar.Describe())}, "
+                $"shown {screen.Visible}, entered anew {History.TestEnters != entered}, can undo {History.CanUndo}, changes {string.Join(" | ", HistoryBar.Describe())}, "
                 + $"were {string.Join(" | ", changes)}; shown {CategoryList.Selected?.manifest?.id}");
             if (fixture != null)
             {
@@ -154,8 +154,8 @@ static partial class SelfTest
                 stack.Pop();
                 await Wait(menu, 0.3);
                 Check("Settings: back from a screen that changed the mod list, the page reads it again (a fresh visit)",
-                    screen.Visible && History.Entered != entered && !History.CanUndo && History.CurrentMods().SequenceEqual(listWas),
-                    $"entered anew {History.Entered != entered}, can undo {History.CanUndo}, list as at the start {History.CurrentMods().SequenceEqual(listWas)}");
+                    screen.Visible && History.TestEnters != entered && !History.CanUndo && History.CurrentMods().SequenceEqual(listWas),
+                    $"entered anew {History.TestEnters != entered}, can undo {History.CanUndo}, list as at the start {History.CurrentMods().SequenceEqual(listWas)}");
             }
             else
                 Results.Add("SKIP Settings: the mod list changed under it: no fixture mod");
@@ -173,7 +173,7 @@ static partial class SelfTest
             await Wait(menu, 0.3);
             Check("Settings: RitsuLib's page, its tip naming it", Button() is { Visible: true } b && Hover.TipOf(b) == "Change this mod's settings (RitsuLib)",
                 Button() is { } tipped ? Hover.TipOf(tipped) : "no button");
-            entered = History.Entered;
+            entered = History.TestEnters;
             Press();
             await Wait(menu, 0.3);
             Check("Settings: RitsuLib's overlay opened on its page, our page under it taking no keys",
@@ -181,8 +181,8 @@ static partial class SelfTest
                 $"asked {Navigator.Asked}, shown {screen.IsVisibleInTree()}, on top {PageVisits.OnTop(screen)}");
             Navigator.OverlayOpen = false;
             await Wait(menu, 0.3);
-            Check("Settings: the overlay closed, our page takes keys again, the same visit", PageVisits.OnTop(screen) && History.Entered == entered,
-                $"on top {PageVisits.OnTop(screen)}, entered anew {History.Entered != entered}");
+            Check("Settings: the overlay closed, our page takes keys again, the same visit", PageVisits.OnTop(screen) && History.TestEnters == entered,
+                $"on top {PageVisits.OnTop(screen)}, entered anew {History.TestEnters != entered}");
             if (fixture != null)
             {
                 Press();
@@ -191,7 +191,7 @@ static partial class SelfTest
                 await Wait(menu, 0.1);
                 Navigator.OverlayOpen = false;
                 await Wait(menu, 0.3);
-                var changed = History.Entered != entered;
+                var changed = History.TestEnters != entered;
                 Tick(); // as it was
                 await Wait(menu, 0.3);
                 Check("Settings: the overlay closed after the mod list changed under it: the page reads it again", changed,
