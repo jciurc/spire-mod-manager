@@ -1482,9 +1482,16 @@ static partial class SelfTest
             void CountNoStep() => noStepFrames++;
             menu.GetTree().ProcessFrame += CountNoStep;
             ModDoctor.TestLoaded = true;
-            var noStep = await Found(Json(null, step: null, suspects: []));
-            ModDoctor.TestLoaded = null;
-            menu.GetTree().ProcessFrame -= CountNoStep;
+            ModDoctor.Findings noStep;
+            try
+            {
+                noStep = await Found(Json(null, step: null, suspects: []));
+            }
+            finally // a throw in Found leaves neither for later rows (round 5's review)
+            {
+                ModDoctor.TestLoaded = null;
+                menu.GetTree().ProcessFrame -= CountNoStep;
+            }
             var unpatched = new Culprits.Reading(null, Culprits.Check.Harmony, [], true, new HashSet<string>(), "", "", false, []);
             var oursRanked = Culprits.Rank(unpatched, ours, Launched(CulpritGame), Launched(CulpritGame), null, [], CrashMods());
             Check("Mod Doctor's findings: its pick of Spire Mod Manager left out with its words, and us from its suspects, so our own reading decides about us; "

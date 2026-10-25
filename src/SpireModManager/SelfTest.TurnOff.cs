@@ -274,12 +274,15 @@ static partial class SelfTest
             }
             var unsubscribed = Uninstalled(S(ModEntry.ModId, L, true), S("SmmTestFixes", L, true), S("SmmTestFixes", W, true));
             var unlisted = Uninstalled(S(ModEntry.ModId, L, true), S("SmmTestFixes", L, true), S("SmmTestUi", L, true));
+            // The installed local copy with no entry of its own (only the Workshop one listed): added right after the mod's
+            // entry, not at the end (round 5's review: reverting that insert to an append survived every row)
+            var localUnlisted = Uninstalled(S(ModEntry.ModId, L, true), S("SmmTestFixes", W, true), S("SmmTestUi", L, true));
             static bool Both(TurnedOff.Entry? entry) => entry is { Switches: [{ Source: L, On: true }, { Source: W, On: true, Copies: [] }] };
             Check("a turn-off also turns off a source of the mod with no copy installed that was on (a Workshop item unsubscribed, one not listed without "
                 + "Steam, its entry added right after the mod's own), in memory and in settings.save, and records its switch; Turn back on puts both back",
                 new[] { unsubscribed, unlisted }.All(t => t is { Error: "", List: "l-,w-", Disk: "l-,w-", Back: "l+,w+" } && Both(t.Entry))
-                && unlisted.Order == $"{ModEntry.ModId},SmmTestFixes,SmmTestFixes/w,SmmTestUi",
-                $"unsubscribed {unsubscribed}; not listed {unlisted}");
+                && unlisted.Order == $"{ModEntry.ModId},SmmTestFixes,SmmTestFixes/w,SmmTestUi" && localUnlisted.Order == $"{ModEntry.ModId},SmmTestFixes/w,SmmTestFixes,SmmTestUi",
+                $"unsubscribed {unsubscribed}; not listed {unlisted}; local copy unlisted {localUnlisted.Order}");
 
             // The next launch: the game's list rebuilt without the Workshop entry (it lists only the copies it found). Its
             // repair puts the entry back, off, right after the mod's own (its place in the load order kept), so a save keeps

@@ -192,6 +192,25 @@ if (held != null)
 // build and link). A second guard after the lock, for a dev copy started by hand.
 if (WaitForOtherDevCopies() is { } busy)
     return Fail(busy);
+// The runs after --crash-prepare go on the data it left, and another run can slip in between (the lock is a run's, and
+// every dev runner shares the sandbox): another worktree's --crash-prepare, or a run whose main menu wrote its own last
+// working setup, mod list or turned-off record. So --crash-prepare leaves a token beside it (this worktree, its commit,
+// the game, the stage, and the write times of last-working.json, settings.save and turned-off.json); --crash-culprit
+// stamps it again for --crash-notice alone, and every other crash run takes it away. Each refuses a token that isn't
+// this worktree's at this commit, of the stage it follows, or that the files moved on from: checked here, before the
+// build and before anything writes the sandbox (round 5's review: a refused run had already rewritten the mod list).
+var dataDir = Path.Combine(sandbox, "mod_data", ModId);
+var turnedOff = Path.Combine(dataDir, "turned-off.json"); // our record of the mods a failed start's dialog turned off
+var settingsSave = Path.Combine(sandbox, "settings.save");
+var lastWorkingPath = Path.Combine(dataDir, "last-working.json");
+var tokenPath = Path.Combine(dataDir, "dev-crash-prepare.json");
+if (keepsData && !File.Exists(lastWorkingPath))
+    return Fail("no last working setup in the sandbox: run dotnet run tools/dev.cs test --crash-prepare first");
+if (keepsData && NotOurPrepare(crashNotice ? "culprit" : "prepared") is { } notOurs)
+    return Fail($"the sandbox's data isn't what this worktree's {(crashNotice ? "--crash-culprit" : "--crash-prepare")} left: {notOurs}. Run dotnet run tools/dev.cs "
+        + $"test --crash-prepare{(stable ? " --stable" : "")}{(crashNotice ? ", then test --crash-culprit," : "")} right before this run");
+if (crashNotice && !File.Exists(turnedOff))
+    return Fail("no mod turned off in the sandbox: run dotnet run tools/dev.cs test --crash-culprit first (after test --crash-prepare)");
 // Mod Doctor's runs put a fixture mod (MdTestCopy) in a dev copy's mods_STEAMTEST, which the game reads as Workshop items,
 // and take it out again after every run; one killed outright can leave it behind, a second copy our runs don't expect.
 // Only that fixture goes, and only while we hold the lock (no other run is using the dev copy).
@@ -236,23 +255,6 @@ if (WaitForOtherDevCopies() is { } stillBusy)
     return Fail(stillBusy);
 SyncMods();
 PrepareSandbox((mode is "test" or "smoke" || firstRun) && !keepsData); // the runs after --crash-prepare keep its last working setup
-var dataDir = Path.Combine(sandbox, "mod_data", ModId);
-var turnedOff = Path.Combine(dataDir, "turned-off.json"); // our record of the mods a failed start's dialog turned off
-var settingsSave = Path.Combine(sandbox, "settings.save");
-var lastWorkingPath = Path.Combine(dataDir, "last-working.json");
-if (keepsData && !File.Exists(lastWorkingPath))
-    return Fail("no last working setup in the sandbox: run dotnet run tools/dev.cs test --crash-prepare first");
-// The runs after --crash-prepare go on the data it left, and another run can slip in between (the lock is a run's, and
-// every dev runner shares the sandbox): another worktree's --crash-prepare, or a run whose main menu wrote its own last
-// working setup. So --crash-prepare leaves a token beside it (this worktree, its commit, the game, the time, and
-// last-working.json's write time), each run after it stamps it again as it ends, and each refuses to run on one that
-// isn't this worktree's or that the file has moved on from.
-var tokenPath = Path.Combine(dataDir, "dev-crash-prepare.json");
-if (keepsData && NotOurPrepare() is { } notOurs)
-    return Fail($"the sandbox's last working setup isn't this worktree's --crash-prepare's: {notOurs}. Run dotnet run tools/dev.cs test --crash-prepare"
-        + $"{(stable ? " --stable" : "")}{(crashNotice ? ", then test --crash-culprit," : "")} right before this run");
-if (crashNotice && !File.Exists(turnedOff))
-    return Fail("no mod turned off in the sandbox: run dotnet run tools/dev.cs test --crash-culprit first (after test --crash-prepare)");
 if (failing && File.Exists(turnedOff))
     File.Delete(turnedOff); // an earlier --crash-culprit's: this failed start would find its mod turned off already
 if (crashRebuild && JsonNode.Parse(File.ReadAllText(Path.Combine(dataDir, "last-working.json"))) is JsonObject lastWorking)
@@ -415,14 +417,19 @@ string GameName() => stable ? "stable" : "beta";
 
 string Written(string file) => File.GetLastWriteTimeUtc(file).ToString("o");
 
-// The token of this worktree's --crash-prepare (and each run after it), beside the last working setup it left.
-void StampPrepare() => File.WriteAllText(tokenPath, new JsonObject
+// A file's write time for the token ("none" for no file: turned-off.json before --crash-culprit).
+string WrittenOr(string file) => File.Exists(file) ? Written(file) : "none";
+
+// The token of this worktree's --crash-prepare (stage "prepared") or of its --crash-culprit after it ("culprit"), beside
+// the data they left.
+void StampPrepare(string stage) => File.WriteAllText(tokenPath, new JsonObject
 {
-    ["worktree"] = root, ["commit"] = Commit(), ["game"] = GameName(), ["time"] = DateTime.Now.ToString("o"), ["lastWorking"] = Written(lastWorkingPath),
+    ["worktree"] = root, ["commit"] = Commit(), ["game"] = GameName(), ["stage"] = stage, ["time"] = DateTime.Now.ToString("o"),
+    ["lastWorking"] = Written(lastWorkingPath), ["settings"] = WrittenOr(settingsSave), ["turnedOff"] = WrittenOr(turnedOff),
 }.ToJsonString(new() { WriteIndented = true }));
 
-// Why the sandbox's last working setup isn't from this worktree's --crash-prepare, by its token; null when it is.
-string? NotOurPrepare()
+// Why the sandbox's data isn't what this worktree's run of that stage left, by its token; null when it is.
+string? NotOurPrepare(string stage)
 {
     JsonObject? token;
     try
@@ -438,9 +445,17 @@ string? NotOurPrepare()
     var (worktree, commit, game, time) = ((string?)token["worktree"] ?? "", (string?)token["commit"] ?? "an unknown commit", (string?)token["game"], (string?)token["time"]);
     if (worktree.Length == 0 || !string.Equals(FullDir(worktree), FullDir(root), StringComparison.OrdinalIgnoreCase))
         return $"its --crash-prepare ran in {worktree} at {commit} ({time})";
+    if (commit != Commit())
+        return $"its --crash-prepare ran at {commit}, not at this run's {Commit()} ({time})";
     if (game != GameName())
         return $"its --crash-prepare ran on the {game} game ({time})";
-    return (string?)token["lastWorking"] == Written(lastWorkingPath) ? null : $"another run wrote last-working.json after this worktree's last crash run ({time})";
+    if ((string?)token["stage"] is var was && was != stage)
+        return $"it's {(was == "culprit" ? "a --crash-culprit run's" : was == "prepared" ? "a --crash-prepare run's" : "of no stage")}, and this run follows "
+            + $"{(stage == "culprit" ? "--crash-culprit" : "--crash-prepare")} ({time})";
+    foreach (var (key, file) in new[] { ("lastWorking", lastWorkingPath), ("settings", settingsSave), ("turnedOff", turnedOff) })
+        if ((string?)token[key] != WrittenOr(file))
+            return $"another run wrote {Path.GetFileName(file)} after this worktree's last crash run ({time})";
+    return null;
 }
 
 // The dev log so far, read while the game may still be writing it.
@@ -490,6 +505,7 @@ while (!game.WaitForExit(100) && DateTime.Now < deadline)
     if (previousForeground != IntPtr.Zero)
         SetForegroundWindow(previousForeground);
 }
+var killed = false;
 if (!game.HasExited)
 {
     // Where it got to: the newest of the self-test's files (a suite that's only slow ends late, one that's stuck early).
@@ -497,14 +513,23 @@ if (!game.HasExited)
     Console.WriteLine($"game still running after {TimeoutSeconds}s, killing it" + (last == null ? "" : $" (last written: {last.Name}, {(DateTime.UtcNow - last.LastWriteTimeUtc).TotalSeconds:0} s before)"));
     game.Kill();
     game.WaitForExit();
+    killed = true;
 }
 
 if (readOnlySettings)
     File.SetAttributes(settingsSave, File.GetAttributes(settingsSave) & ~FileAttributes.ReadOnly); // as it was before the run
-if ((crashPrepare || keepsData) && File.Exists(lastWorkingPath))
-    StampPrepare();
-
 var results = Path.Combine(outDir, "results.txt");
+// The token: stamped by --crash-prepare and --crash-culprit only when the game ended on its own with every check passed,
+// for the stage after it; any other crash run, and a killed or failed one, takes it away, so nothing runs on its data.
+if (crashPrepare || keepsData)
+{
+    var lines = File.Exists(results) ? File.ReadAllLines(results) : [];
+    var passed = !killed && lines.Any(l => l.StartsWith("PASS")) && !lines.Any(l => l.StartsWith("FAIL"));
+    if (passed && File.Exists(lastWorkingPath) && (crashPrepare || crashCulprit))
+        StampPrepare(crashPrepare ? "prepared" : "culprit");
+    else if (File.Exists(tokenPath))
+        File.Delete(tokenPath);
+}
 // --crash: the relaunch after Restore reads the mod list from settings.save, and the self-test saw it only in memory.
 // So here, with the game gone: Test Retired (on for this launch) off again on disk. With --workshop, only when the
 // dialog offered Restore (the self-test says which it pressed).
