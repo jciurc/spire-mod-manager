@@ -1322,7 +1322,7 @@ static class LaunchGuard
                     ("id", plain ? culprit.ContentId ?? "" : Escaped(culprit.ContentId ?? "")));
             case Culprits.Why.Rebuild:
                 return Of("SPIRE_MOD_MANAGER.CRASH_CULPRIT_REBUILD");
-            case Culprits.Why.RebuildLast:
+            case Culprits.Why.RebuildLast or Culprits.Why.DoctorLikely: // Mod Doctor's pick our rule declined to blame on a failed rebuild: its box under it
                 return Of("SPIRE_MOD_MANAGER.CRASH_CULPRIT_REBUILD_LAST");
             case Culprits.Why.Stale when culprit.Ids.Count > 1:
                 return Our(plain, "SPIRE_MOD_MANAGER.CRASH_CULPRIT_STALE_MANY", ("mods", Bullets(culprit.Ids, plain, cards)));

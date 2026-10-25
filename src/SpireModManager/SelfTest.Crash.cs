@@ -1311,6 +1311,16 @@ static partial class SelfTest
             shortlists.SequenceEqual(["none", "SmmTestUi DoctorThrew", "none", "SmmTestFixes DoctorThrew", "SmmTestFixes DoctorUpdated", "SmmTestContent DoctorThrew",
                 "none", "SmmTestContent DoctorUpdated", "SmmTestFixes DoctorThrew", "SmmTestFixes DoctorThrew"])
             && offList.Any(l => l.Contains("SmmTestUi") && l.Contains("shortlist")), $"{string.Join(" | ", shortlists)}; {string.Join("; ", offList)}");
+        // A library's failed rebuild on another mod's code, which our rule declines to pick (Unsure): Mod Doctor's "threw" for
+        // it (its first mod frame under Harmony's is the library's own call) offered only as most likely; for the other
+        // mod on the shortlist, as it stands (round 5's review, finding 2).
+        var unsureLog = new List<string>();
+        Culprits.Reading Unsure() => Found(null, Culprits.Check.Harmony, ["SmmTestLib", "SmmTestContent"]) with { Unsure = new HashSet<string> { "SmmTestLib" } };
+        string[] unsure = [Of(Ranked(Unsure(), Md("SmmTestLib"), log: unsureLog)), Of(Ranked(Unsure(), Md("SmmTestContent")))];
+        Check("the crash culprit's ranking: Mod Doctor's \"threw\" for a library our rule declined to blame, only as most likely; for the other mod on "
+            + "the shortlist, as it stands; the log says why",
+            unsure.SequenceEqual(["SmmTestLib DoctorLikely", "SmmTestContent DoctorThrew"]) && unsureLog.Any(l => l.Contains("most likely")),
+            $"{string.Join(" | ", unsure)}; {string.Join("; ", unsureLog)}");
         // Agreeing: ours offered, Mod Doctor's box with it. Mod Doctor's thrower above our frame picks, its other reasons below
         // them and above the updated mods.
         var agreed = Ranked(Found(OurPick(Culprits.Why.RebuildLast, "SmmTestFixes")), Md("SmmTestFixes"));

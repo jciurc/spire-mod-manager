@@ -23,7 +23,7 @@ static class Culprits
     // turn-off's own (a culprit's dependents, Mod Doctor's suspects, every mod).
     public enum Why
     {
-        Code, Patch, LibraryUser, Types, Clash, Rebuild, RebuildLast, Stale, Self, DoctorThrew, DoctorUpdated, DoctorAdded,
+        Code, Patch, LibraryUser, Types, Clash, Rebuild, RebuildLast, Stale, Self, DoctorThrew, DoctorUpdated, DoctorAdded, DoctorLikely,
         Updated, UpdatedMany, Needs, Suspect, All,
     }
 
@@ -54,9 +54,11 @@ static class Culprits
     // several patchers, a library); NoPatcher, a Harmony failure with no record of whose patches and no mod frame under
     // Harmony's (Mod Doctor's map by namespace may know the mod). Named: every mod the failure names, for ranking's
     // updated mods. Signature, Error and Rebuild (Harmony's build of a patched method failed), for the turn-off's record;
-    // Notes, for the log.
+    // Notes, for the log. Unsure: the mods a rule of ours declined to pick with confidence (a library, or a mod a patched
+    // method's owner needs, applying patches on another mod's code), which Mod Doctor's pick of then only names as
+    // "most likely" (DoctorLikely).
     public record Reading(Pick? Pick, Check Check, IReadOnlyList<string> Shortlist, bool NoPatcher, IReadOnlySet<string> Named,
-        string Signature, string Error, bool Rebuild, IReadOnlyList<string> Notes)
+        string Signature, string Error, bool Rebuild, IReadOnlyList<string> Notes, IReadOnlySet<string>? Unsure = null)
     {
         public static readonly Reading None = new(null, Check.None, [], false, new HashSet<string>(), "", "", false, []);
     }
@@ -504,6 +506,7 @@ static class Culprits
         public readonly HashSet<string> Named = [];
         public readonly List<string> Shortlist = [];
         public readonly List<string> Notes = [];
+        public readonly HashSet<string> Unsure = []; // Reading.Unsure
         public Check Check;
         public bool NoPatcher;
         public bool Rebuild; // Harmony's build of a patched method failed
@@ -544,7 +547,7 @@ static class Culprits
             scan.Notes.Add($"picked {string.Join(", ", pick.Ids)} ({pick.Why}{(pick.Checked ? ", our check" : "")})");
         scan.Named.UnionWith(scan.Shortlist);
         scan.Named.UnionWith(pick?.Ids ?? []);
-        return new Reading(pick, scan.Check, [.. scan.Shortlist], scan.NoPatcher, scan.Named, Signature(scan), Error(scan), scan.Rebuild, scan.Notes);
+        return new Reading(pick, scan.Check, [.. scan.Shortlist], scan.NoPatcher, scan.Named, Signature(scan), Error(scan), scan.Rebuild, scan.Notes, scan.Unsure);
     }
 
     // A pick, or ours when it names us
@@ -822,6 +825,7 @@ static class Culprits
         if (others.Count > 0)
         {
             scan.Notes.Add($"{applying}'s patch on a method of {string.Join(", ", others)}, " + (library ? $"{applying} a library: no pick" : "which needs it: no pick"));
+            scan.Unsure.Add(applying);
             return null;
         }
         return PickOf(Why.RebuildLast, applying, step: step); // turning it off (with its dependents) gives the method the build that worked
@@ -1251,7 +1255,12 @@ static class Culprits
         var stands = md != null && (ours.Pick != null || ours.Check == Check.None || ours.NoPatcher || ours.Shortlist.Contains(md.Id));
         if (md != null && !stands)
             log?.Add($"Mod Doctor named {md.Id}, which isn't on the shortlist our {ours.Check} check left ({string.Join(", ", ours.Shortlist)}), so it isn't offered");
-        var doctors = stands && md != null ? DoctorsPick(md) : null;
+        // Mod Doctor's "threw" for a mod our rule declined to blame with confidence: only "most likely" (round 5's review:
+        // its first mod frame under Harmony's is the library's own call, so it named the library with the confident words)
+        var unsure = md != null && ours.Unsure?.Contains(md.Id) == true;
+        if (unsure && md is { Reason: ModDoctor.Reason.Threw })
+            log?.Add($"Mod Doctor named {md.Id} (threw), which our check declined to pick with confidence: offered as most likely");
+        var doctors = stands && md != null ? DoctorsPick(md, unsure) : null;
         var pick = ours.Pick is { Checked: true } ? ours.Pick
             : doctors is { Why: Why.DoctorThrew } ? doctors
             : ours.Pick ?? doctors ?? UpdatedPick(ours, planned, working, turnedOff);
@@ -1280,8 +1289,9 @@ static class Culprits
         return null;
     }
 
-    static Pick DoctorsPick(ModDoctor.Pick md) => new(md.Reason switch
+    static Pick DoctorsPick(ModDoctor.Pick md, bool unsure) => new(md.Reason switch
     {
+        ModDoctor.Reason.Threw when unsure => Why.DoctorLikely,
         ModDoctor.Reason.Threw => Why.DoctorThrew,
         ModDoctor.Reason.Added => Why.DoctorAdded,
         _ => Why.DoctorUpdated,
