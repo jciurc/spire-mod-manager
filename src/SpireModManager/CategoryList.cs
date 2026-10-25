@@ -71,9 +71,11 @@ static class CategoryList
         shownVanilla = Store.Data.VanillaView; // laid out below
         // The page bar's Show: choice stays; rows it kept for a change made last time go by it again (ListFilter).
         ListFilter.Release();
+        // Back from a screen that covered it (a mod's settings, PageVisits): as it was left (HistoryBar rereads a changed
+        // mod list).
         screen.VisibilityChanged += () =>
         {
-            if (!screen.IsVisibleInTree())
+            if (!screen.IsVisibleInTree() || PageVisits.Returning(screen))
                 return;
             var released = ListFilter.Release();
             if (Store.Data.LoadOrderView)

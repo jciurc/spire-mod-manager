@@ -84,7 +84,7 @@ static class Menus
     // A count in the game's language: "1,234" in English, "1.234" in German (no separator under 1,000).
     public static string Number<T>(T count) where T : IFormattable => count.ToString("N0", Culture);
 
-    // The mark where our text is cut short or runs on (Jordan, 23 Oct: "Let's use two periods"), as "and 5 more.." ends.
+    // The mark where our text is cut short (Jordan, 23 Oct: "Let's use two periods"). Not after "and 5 more" (24 Oct).
     public const string CutMark = "..";
 
     // Text cut short, with CutMark after it. The spaces and punctuation it was cut after go first, so it never reads as

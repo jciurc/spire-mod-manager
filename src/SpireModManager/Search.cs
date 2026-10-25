@@ -332,7 +332,7 @@ static class Search
     // The fields a search finds the mod in, in the panel's order, for the row's card (Found in): what each of its terms
     // that finds the mod matched, as Matches matches it, a hidden tag as Keywords; a term that leaves mods out (a "-" or
     // NOT) names none. Null when the search doesn't find the mod. Field by field, when the card opens: apart from
-    // Matches, which a redraw asks of every row.
+    // Matches, which a redraw asks of every row. Its hidden tags share one set of answers (Lookups), as a redraw's do.
     public static List<Field>? FoundIn(Mod? mod, string filter)
     {
 #if DEVTOOLS
@@ -340,6 +340,7 @@ static class Search
 #endif
         if (mod?.manifest is not { } manifest || Parse(filter).Root is not { } root)
             return null;
+        using var lookups = Lookups.Begin();
         var shorts = Fields(mod).Where(f => f.Text != null).Select(f => (f.Field, Raw: f.Text ?? "", Folded: Fold(f.Text ?? "", ""))).ToList();
         var squeezed = shorts.Select(f => Squeeze(f.Folded)).ToList();
         var description = Described(mod);

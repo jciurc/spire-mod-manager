@@ -419,8 +419,8 @@ static partial class SelfTest
             selfLine?.Text == Draft(LoadsAlso, ("other", Named(copy))) && selfLine?.Color == clashHex
             && copyLine?.Text == Draft(CopyLoses, ("other", Named(self)), ("why", why)) && copyLine?.Color == clashHex
             && ModDetails.Status(copy) == $"[color=#f5b56b]{StatusWontLoad}[/color]" && !ModDetails.Status(self).Contains(StatusWontLoad)
-            && ourChips[0] is { } selfChip && selfChip.Color == Tags.SameIdClash && selfChip.Tip == Draft(ClashTip, ("others", Named(copy)), ("loads", Named(self)))
-            && ourChips[1] is { } copyChip && copyChip.Color == Tags.SameIdClash && copyChip.Tip == Draft(ClashTip, ("others", Named(self)), ("loads", Named(self)))
+            && ourChips[0] is { } selfChip && selfChip.Color == Tags.SameIdClash && selfChip.Tip == Draft(ClashTipOne, ("others", Named(copy)), ("loads", Named(self)))
+            && ourChips[1] is { } copyChip && copyChip.Color == Tags.SameIdClash && copyChip.Tip == Draft(ClashTipOne, ("others", Named(self)), ("loads", Named(self)))
             && clashing.Contains(self) && clashing.Contains(copy) && sameIdText == Draft(SameIdText, ("count", Menus.Number(clashing.Count)))
             && sameIdYellow && GroupIn(sameIdCard, ModEntry.ModId).SequenceEqual(Grouped(ModEntry.ModId, (self, true), (copy, false))) && findsClash,
             $"lines {selfLine} / {copyLine}; status {ModDetails.Status(self)} / {ModDetails.Status(copy)}; chips {string.Join(" / ", ourChips.Select(c => $"{c?.Color} {c?.Tip}"))}; "

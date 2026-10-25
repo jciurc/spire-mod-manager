@@ -1,5 +1,7 @@
 using Godot;
+using MegaCrit.Sts2.Core.Helpers;
 using MegaCrit.Sts2.Core.Modding;
+using MegaCrit.Sts2.Core.Nodes.GodotExtensions;
 using MegaCrit.Sts2.Core.Platform;
 using MegaCrit.Sts2.Core.Nodes.Screens.ModdingScreen;
 using MegaCrit.Sts2.addons.mega_text;
@@ -123,6 +125,41 @@ static class ModDetails
         var folder = container.GetNodeOrNull<Control>("OpenFolderButton") ?? AddButton(container, "OpenFolderButton",
             "SPIRE_MOD_MANAGER.OPEN_FOLDER", 20, () => OS.ShellOpen(Meta(container, FolderMeta)));
         folder.Visible = Directory.Exists(mod.path);
+        PlaceSettings(container, mod);
+    }
+
+    // The Settings button (SettingsLink, Jordan 24 Oct): right of Open Folder, or in its place when that one is hidden.
+    // Opens the page a library keeps for the mod. Greyed with a tip that says why for a mod with none (Jordan, 24 Oct: the
+    // button always shows), and after a press that didn't open its page.
+    public const string SettingsName = "SpireModManagerSettingsButton";
+    static readonly Dictionary<ulong, Mod> SettingsMods = []; // the mod each panel's button opens
+
+    public static void PlaceSettings(NModInfoContainer container, Mod mod)
+    {
+        var button = container.GetNodeOrNull<Control>(SettingsName);
+        var target = SettingsLink.For(mod);
+        var panel = container.GetInstanceId();
+        SettingsMods[panel] = mod;
+        button ??= AddButton(container, SettingsName, "SPIRE_MOD_MANAGER.SETTINGS", 20, () =>
+        {
+            if (SettingsMods.TryGetValue(panel, out var shown))
+                SettingsLink.Open(container, shown);
+        });
+        var x = container.GetNodeOrNull<Control>("OpenFolderButton") is { Visible: true } ? 212 : 20;
+        (button.OffsetLeft, button.OffsetRight) = (x, x + 180);
+        button.Visible = true;
+        var failed = SettingsLink.FailedFor(mod);
+        var enabled = target != null && !failed;
+        if (button is NClickableControl clickable)
+        {
+            clickable.SetEnabled(enabled);
+            clickable.Modulate = enabled ? Colors.White : StsColors.gray; // greyed as the game's own disabled buttons
+        }
+        else if (button is BaseButton plain)
+            plain.Disabled = !enabled;
+        Hover.Tip(button, target == null ? Menus.Text("SPIRE_MOD_MANAGER.NO_SETTINGS_TIP")
+            : failed ? Menus.Text("SPIRE_MOD_MANAGER.SETTINGS_FAILED_TIP")
+            : Menus.Format("SPIRE_MOD_MANAGER.SETTINGS_TIP", ("library", target.Library.ToString())));
     }
 
     // The name and its version (smaller, grey) on one line: a long name shrinks to TitleMinSize, then is cut with ".."
@@ -534,8 +571,9 @@ static class ModDetails
     // too, not a relaunch away: orange, as nothing else says it won't load, for a copy of this mod as for any. First, as
     // it tells the next launch: a copy the game failed as a duplicate this launch says it too (the game's error shows
     // under From the game). Failed to load: ticked, and the game failed it. Pending relaunch: whether it loads changes at
-    // the relaunch. Else Enabled or Disabled, by its box, except that a copy that loads unticked (through a switch it
-    // shares, or in place of a copy the launch couldn't swap in: Copies.Next) is Enabled, as it loads.
+    // the relaunch. Else Enabled or Disabled, by its box, except that a copy that loads unticked (the game's own choice
+    // for an id the launch couldn't choose for, or the first copy that can take a blocked one's place where no ticked one
+    // can: Copies.Next) is Enabled, as it loads.
     // Pending relaunch, as the status says it: what loads after a relaunch isn't what loaded, for a copy neither set aside
     // as another loads nor failed (those statuses come first). #pending finds these.
     public static bool PendingRelaunch(Mod mod) => !Copies.Loses(mod) && !(Copies.Ticked(mod) && mod.state == ModLoadState.Failed)
@@ -564,10 +602,8 @@ static class ModDetails
     // can't disagree with the status, the banner or the launch. The first that holds:
     // - the choice couldn't be applied this launch (SameIdLoad's self-check or canary): it says so, on every copy;
     // - ticked while another copy loads after a relaunch: that one, and why (the status says it won't load); the copy the
-    //   launch couldn't swap in (Why.Blocked) names the dependency that loads after the copy loading instead;
-    // - loading in the place of a copy the launch couldn't swap in, ticked or not: which copy, and why;
-    // - loading though unticked, through the switch it shares with a ticked copy (the beta's local-vs-Workshop rule
-    //   taking out the copies ticked): so, naming both;
+    //   next launch can't swap in (Why.Blocked) names what it needs that loads after the copy loading instead;
+    // - loading in the place of a copy the next launch can't swap in, ticked or not: which copy, and why;
     // - ticked, not loaded now, and loading after a relaunch in place of the copy loaded now: so;
     // - ticked and failed for its own reasons: how to load another copy instead (after the red), another copy ticked or
     //   not (it isn't "the one that loads" when it failed);
@@ -631,12 +667,10 @@ static class ModDetails
             return links ? $"[url=mod:{Copies.LinkKey(other)}][color={ModLinkHex}]{name}[/color][/url]" : name;
         }
         string Line(string key, Mod other) => Menus.Format(key, ("other", Other(other)));
-        // The dependency the launch couldn't load the blocked copy without (SameIdLoad's plan), as its row names it.
-        string Dep() => SameIdLoad.Plan.GetValueOrDefault(id)?.Late is { } late ? Dependencies.Find(late) is { } found ? Other(found) : Escape(late) : "";
         if (SameIdLoad.Unchosen(id))
             return Escape(Menus.Text("SPIRE_MOD_MANAGER.COPY_NOT_APPLIED"));
         if (Copies.LosesTo(mod) is { } lost)
-            return lost.Why == Copies.Why.Blocked ? Menus.Format("SPIRE_MOD_MANAGER.COPY_BLOCKED", ("other", Other(lost.Loads)), ("dep", Dep()))
+            return lost.Why == Copies.Why.Blocked ? Line("SPIRE_MOD_MANAGER.COPY_BLOCKED", lost.Loads)
                 : Why(lost.Why) is { } why ? Menus.Format("SPIRE_MOD_MANAGER.COPY_LOSES", ("other", Other(lost.Loads)), ("why", why))
                 : Line("SPIRE_MOD_MANAGER.COPY_LOSES_PLAIN", lost.Loads);
         var ticked = Copies.Ticked(mod);
@@ -644,10 +678,7 @@ static class ModDetails
         {
             if (Copies.Next(id).Losing.FirstOrDefault(p => p.Value == Copies.Why.Blocked).Key is { } blocked
                 && others.FirstOrDefault(o => Copies.CopyOf(o) == blocked) is { } swap)
-                return Menus.Format("SPIRE_MOD_MANAGER.COPY_LOADS_BLOCKED", ("other", Other(swap)), ("dep", Dep()));
-            if (!ticked && Copies.Twins(mod).FirstOrDefault(Copies.Ticked) is { } sharing
-                && others.Where(o => o.modSource == ModSource.ModsDirectory && Copies.Ticked(o)).ToList() is { Count: > 0 } locals)
-                return Menus.Format("SPIRE_MOD_MANAGER.COPY_LOADS_UNTICKED", ("other", Other(sharing)), ("local", Other(Copies.FirstRead(locals))));
+                return Line("SPIRE_MOD_MANAGER.COPY_LOADS_BLOCKED", swap);
         }
         if (ticked && mod.state is not (ModLoadState.Loaded or ModLoadState.Failed) && Copies.Loads(mod)
             && others.FirstOrDefault(o => o.state == ModLoadState.Loaded) is { } loaded)
@@ -656,7 +687,8 @@ static class ModDetails
             return Line("SPIRE_MOD_MANAGER.COPY_FAILED_OTHER", others.FirstOrDefault(Copies.Ticked) ?? others[0]);
         if (others.FirstOrDefault(Copies.Ticked) is { } enabled)
             return ticked ? Line("SPIRE_MOD_MANAGER.COPY_LOADS_ALSO", enabled)
-                // The one of them that loads (a copy that's off loads only through a switch it shares: then another).
+                // The one of them that loads where it's ticked, else the first ticked (an unticked copy loads only where
+                // no ticked one can).
                 : Line("SPIRE_MOD_MANAGER.COPY_OTHER_ENABLED", Copies.Loading(id) is { } loads && others.Contains(loads) && Copies.Ticked(loads) ? loads : enabled);
         return null;
     }
@@ -802,7 +834,7 @@ static class ModDetails
     public static void HideButtons(Node container)
     {
         CommitEdits(container);
-        foreach (var name in new[] { "OpenFolderButton", SourceName, HeadName, FieldsName, OthersName })
+        foreach (var name in new[] { "OpenFolderButton", SettingsName, SourceName, HeadName, FieldsName, OthersName })
             if (container.GetNodeOrNull<Control>(name) is { } control)
                 control.Visible = false;
     }
@@ -810,8 +842,8 @@ static class ModDetails
     // After an undo or revert: the fields show the old state, so they must not be saved over the restored one.
     public static void Forget(Node container) => container.SetMeta(ModIdMeta, "");
 
-    // Saves whatever is being typed in the panel's fields (before it shows another mod).
-    static void CommitEdits(Node container)
+    // Saves whatever is being typed in the panel's fields (before it shows another mod, or another screen covers it).
+    public static void CommitEdits(Node container)
     {
         foreach (var field in Fields.GetValueOrDefault(container.GetInstanceId(), []))
             field.Commit();
