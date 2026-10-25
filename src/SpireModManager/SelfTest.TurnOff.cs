@@ -875,6 +875,18 @@ static partial class SelfTest
         Check("Turn back on of a mod with no copy installed but its entry in the list (kept off without Steam): that entry on, nothing said, its record kept "
             + "(the switch only of a source this launch didn't scan)",
             listedOn && TurnedOff.Has("SmmTestGoneWorkshop") && !listedWords.Contains("Couldn't turn"), $"{listedWords}; on {listedOn}; entry {TurnedOff.Has("SmmTestGoneWorkshop")}");
+        // The next launch, still without Steam: the game's rebuilt list has no entry for that copy (it isn't listed), and
+        // KeepOff puts it back on, not off, so it loads once Steam lists it; Restore, profiles and the banner don't keep it
+        // off meanwhile (review of round 5: it came back off and the mod stayed off).
+        TurnedOff.TestSteam = false;
+        List<SettingsSaveMod> nextLaunch = [.. settings.ModList];
+        var keptOn = TurnedOff.KeepOff(nextLaunch) && nextLaunch.Any(e => e.Id == "SmmTestGoneWorkshop" && e.Source == ModSource.SteamWorkshop && e.IsEnabled)
+            && !nextLaunch.Any(e => e.Id == "SmmTestGoneWorkshop" && !e.IsEnabled);
+        var (offForRestore, offOnBanner) = (TurnedOff.OffIds().Contains("SmmTestGoneWorkshop"), TurnedOff.StillOff().Any(e => e.Id == "SmmTestGoneWorkshop"));
+        TurnedOff.TestSteam = null;
+        Check("... the next launch, still without Steam: its entry, which the game's list dropped, put back on (not off); Restore, profiles and the banner "
+            + "leave it out", keptOn && !offForRestore && !offOnBanner && TurnedOff.Has("SmmTestGoneWorkshop"),
+            $"put back on {keptOn}; kept off by Restore {offForRestore}; on the banner {offOnBanner}; record {TurnedOff.Has("SmmTestGoneWorkshop")}");
 
         // Its local copy (on when it ran) deleted and its Workshop one (kept off) not listed without Steam: the list's entries
         // for them (KeepOff's) count for nothing, as the local source was scanned and the Workshop one was off. Said why, the

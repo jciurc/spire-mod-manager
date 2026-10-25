@@ -26,10 +26,15 @@ static class TurnedOff
     // installed copies then, on as the game read it, with its copies, and each other source whose entry the turn-off
     // switched off (none installed: unsubscribed, or not listed without Steam). MenuSince: a main menu came since (it's
     // no longer part of a streak). Shown: its notice showed. SameErrorAfter: the start failed the same way after it.
-    // Rebuild: its failure was a failed rebuild of a patched method.
+    // Rebuild: its failure was a failed rebuild of a patched method. TurnedOn: the sources Turn back on switched on that
+    // the launch didn't scan (a Workshop copy not listed without Steam): turned back on, kept only until it's on or gone,
+    // so KeepOff keeps those entries on, and Restore, profiles and the banner leave it out.
     public record Entry(DateTimeOffset At, string Id, string? Name, string? Version, string? Copy, Culprits.Why Why, string? Needs,
         string? Error, string? Signature, IReadOnlyList<Culprits.Switch> Switches, bool MenuSince = false, bool Shown = false,
-        bool SameErrorAfter = false, bool Rebuild = false);
+        bool SameErrorAfter = false, bool Rebuild = false, IReadOnlyList<ModSource>? TurnedOn = null);
+
+    // Turned back on by the player, waiting for Steam to list its copy (TurnedOn): no longer one we keep off.
+    static bool Waiting(Entry entry) => entry.TurnedOn is { Count: > 0 };
 
     record Saved(int Version, List<Entry>? Mods);
 
@@ -155,7 +160,8 @@ static class TurnedOff
 
     // Every mod turned off after a failed start, that Restore and profiles keep off: ours, and (doctor) Mod Doctor's that
     // are still off in the game's list as read (LaunchGuard.AsRead)
-    public static HashSet<string> OffIds(bool doctor = true) => [.. Entries.Select(e => e.Id), .. doctor ? ModDoctor.TurnedOffIds(LaunchGuard.AsRead()) : []];
+    public static HashSet<string> OffIds(bool doctor = true) =>
+        [.. Entries.Where(e => !Waiting(e)).Select(e => e.Id), .. doctor ? ModDoctor.TurnedOffIds(LaunchGuard.AsRead()) : []];
 
     // The entries as ranking reads them (Culprits.Rank: didn't stick, the streak)
     public static List<Culprits.Recorded> Recorded() => [.. Entries.Select(e => new Culprits.Recorded(e.At, e.Id, e.Switches, e.MenuSince))];
@@ -207,8 +213,11 @@ static class TurnedOff
         foreach (var entry in Entries.Where(e => !On(e.Id, installed, switches) && !Gone(e, installed)))
             foreach (var source in entry.Switches.Select(s => s.Source).Distinct().Where(source => !list.Any(e => e.Id == entry.Id && e.Source == source)).ToList())
             {
-                LaunchGuard.InsertAfterOwn(list, new SettingsSaveMod { Id = entry.Id, Source = source, IsEnabled = false });
-                added.Add($"({entry.Id}, {source})");
+                // One the player turned back on while its copy wasn't listed: on, so it loads once Steam lists it (review
+                // of round 5: added off, the mod stayed off).
+                var on = entry.TurnedOn?.Contains(source) == true;
+                LaunchGuard.InsertAfterOwn(list, new SettingsSaveMod { Id = entry.Id, Source = source, IsEnabled = on });
+                added.Add($"({entry.Id}, {source}{(on ? ", on: turned back on" : "")})");
             }
         if (added.Count > 0)
             Log.Info($"[{ModEntry.ModId}] Kept off after a failed start, though the game's list had no entry for them: {string.Join(", ", added)}");
@@ -235,7 +244,7 @@ static class TurnedOff
         var off = Entries.Where(e => !On(e.Id, installed, list)).ToList();
         if (off.Count != Entries.Count)
             Keep(off, "the mods on again");
-        return off;
+        return [.. off.Where(e => !Waiting(e))]; // turned back on, waiting for Steam: not off
     }
 
     static List<(string Id, ModSource Source)> Installs() => [.. ModManager.Mods.Union(Installed.Mods).Select(m => (Id: m.manifest?.id ?? "", m.modSource))
@@ -418,6 +427,9 @@ static class TurnedOff
                 var switched = SwitchOn(settings.ModList, some, installed);
                 LaunchGuard.SaveChecked(settings.ModList, asWas);
                 waiting = [.. some.Where(e => switched.Where(s => s.Id == e.Id).ToList() is { Count: > 0 } own && own.All(s => !Scanned(s.Source)))];
+                if (waiting.Count > 0) // marked turned back on, with the sources switched on, so the next launch keeps them on
+                    Keep([.. Entries.Select(e => waiting.Any(w => w.Id == e.Id && w.At == e.At)
+                        ? e with { TurnedOn = [.. switched.Where(s => s.Id == e.Id).Select(s => s.Source).Distinct()] } : e)], "the mods turned back on");
                 Log.Info($"[{ModEntry.ModId}] Turned back on after a failed start: {string.Join(", ", some.Select(e => e.Id))}"
                     + (waiting.Count == 0 ? "" : $"; kept as turned off until Steam lists them: {string.Join(", ", waiting.Select(e => e.Id))}"));
             }
