@@ -707,23 +707,11 @@ static class ModDetails
 
     // The game's load errors for the mod, as its own panel shows them: its words, with the tags it marks parts with
     // ("Mod [red]{id}[/red] only supports..."). Shown apart from ours, under "From the game" (GameBlock).
-    public static List<string> GameErrors(Mod mod) => [.. (mod.errors ?? []).Select(Worded)];
-
-    // A game error as our views say it: the game's words, but ours for a dependency's minimum version the game can't
-    // read (Jordan, 25 Oct: "which couldn't be read" for its "that cannot be parsed"), filled from the game's own
-    // values. Only in our views: the vanilla modding page keeps the game's words.
-    static string Worded(LocString error)
-    {
-        if (error.LocEntryKey != "MOD_ERROR.DEPENDENCY_MIN_VERSION_INVALID")
-            return error.GetFormattedText();
-        string Value(string name) => Escape(error.Variables.TryGetValue(name, out var value) ? value?.ToString() ?? "" : "");
-        return Menus.Format("SPIRE_MOD_MANAGER.ERROR_MIN_VERSION_INVALID", ("id", Value("id")), ("dependency", Value("dependency")),
-            ("minVersion", Value("minVersion")));
-    }
+    public static List<string> GameErrors(Mod mod) => [.. (mod.errors ?? []).Select(e => e.GetFormattedText())];
 
     // The game's messages we took off a mod that's off (BranchErrors), as plain text: not a problem (the mod doesn't
     // load), but nothing of the game's is hidden. Shown apart from ours, fainter (GameBlock).
-    public static List<string> GameNotes(Mod mod) => [.. BranchErrors.Dropped(mod).Select(e => WithoutTags(Worded(e)))];
+    public static List<string> GameNotes(Mod mod) => [.. BranchErrors.Dropped(mod).Select(e => WithoutTags(e.GetFormattedText()))];
 
     // The game's words about the mod, set apart from ours (GameText): its load errors under "From the game", in its red
     // as its own panel has them; then the messages taken off a mod that's off, under their own caption, fainter. effects:

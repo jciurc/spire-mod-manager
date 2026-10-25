@@ -214,7 +214,6 @@
   "SPIRE_MOD_MANAGER.COPY_FAILED_OTHER": "This mod shares an ID with {other}",
   "SPIRE_MOD_MANAGER.COPY_NOT_APPLIED": "Spire Mod Manager couldn't choose which copy was loaded. If the game is on a different version, Spire Mod Manager may need to be updated.",
   "SPIRE_MOD_MANAGER.GAME_CAPTION": "Error while loading",
-  "SPIRE_MOD_MANAGER.ERROR_MIN_VERSION_INVALID": "Mod {id} depends on mod {dependency} with min version {minVersion}, which couldn't be read",
   "SPIRE_MOD_MANAGER.OTHERS_PARKED": "{count} more from other mods: see the vanilla modding page",
   "SPIRE_MOD_MANAGER.GAME_CAPTION_OFF": "Error while loading - Can be ignored if disabled",
   "SPIRE_MOD_MANAGER.NEEDS_LABEL": "Needs",

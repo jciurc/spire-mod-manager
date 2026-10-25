@@ -350,17 +350,6 @@ static partial class SelfTest
         }
         else
             Results.Add("SKIP main list banner, a mod that failed to load: Test Fixes not installed, or off");
-        // The game's error for a dependency's minimum version it can't read, in our words (Jordan, 25 Oct), from its own
-        // values; any other of its errors in its own.
-        var unreadable = new MegaCrit.Sts2.Core.Localization.LocString("main_menu_ui", "MOD_ERROR.DEPENDENCY_MIN_VERSION_INVALID");
-        unreadable.Add("id", "SmmTestFixes");
-        unreadable.Add("dependency", "SmmTestLib");
-        unreadable.Add("minVersion", "0.1.5.0");
-        var other = new MegaCrit.Sts2.Core.Localization.LocString("main_menu_ui", "MOD_ERROR.DUPLICATE_ID");
-        var worded = ModDetails.GameErrors(new Mod { path = "", errors = [unreadable, other] });
-        Check("the game's unreadable minimum version error in our words (\"..., which couldn't be read\"); its others in its own",
-            worded is [var mine, var its] && mine == "Mod SmmTestFixes depends on mod SmmTestLib with min version 0.1.5.0, which couldn't be read"
-            && its == other.GetFormattedText(), string.Join(" | ", worded));
 
         // The banner every run can raise: Test Addon on needs a mod that isn't installed, so with it off the banner goes,
         // and its tick brings the banner back (TestBannersKeepRows, the managers banner's checks without Better Mod Menu).
