@@ -163,17 +163,20 @@ static class LoadOrder
         MovedSince(_loadedOrder ?? [], NoCopyOrder, mods).ToDictionary(m => m.Mod, m => m.Before);
 
     // These copies whose place changed since a saved list (and the copy order it had): (copy, place then, now), 1-based
-    // among them as Load Order numbers its rows, in load order now; ranked among the copies placed in both, so an entry
-    // made since (Add puts one beside its mod's, mid-list) moves no other. Copies of one id that have only traded their
-    // id's places are no move: the game ranks them by the id alike, and which of them loads goes by the copies
-    // (Copies.Next), not the rows, so a relaunch would change nothing (an undo, a drop among a mod's own rows, or a drag
-    // back can leave them so).
+    // among them as Load Order numbers its rows, in load order now. Copies of one id that have only traded their id's
+    // places are no move: the game ranks them by the id alike, and which of them loads goes by the copies (Copies.Next),
+    // not the rows, so a relaunch would change nothing (an undo, a drop among a mod's own rows, or a drag back can leave
+    // them so). Ranked among the copies both lists place (Load Order's numbers, bar a mod installed since that has an
+    // entry): an entry made since for one (Add puts one beside its mod's, ours go at the top) moves no other copy, as the
+    // game reads their order the same.
     public static List<(Mod Mod, int Before, int After)> MovedSince(IEnumerable<(string? Id, ModSource Source)> saved,
         IReadOnlyDictionary<(string?, ModSource), IReadOnlyList<string>> copyOrder, IEnumerable<Mod> mods)
     {
         var wanted = mods.ToList();
         var (then, now) = (Places(saved, wanted, copyOrder), Places(wanted));
-        var (before, after) = (Ranks(then.Where(p => now.ContainsKey(p.Key)).ToDictionary()), Ranks(now.Where(p => then.ContainsKey(p.Key)).ToDictionary()));
+        static Dictionary<Mod, int> Both(Dictionary<Mod, int> places, Dictionary<Mod, int> also) =>
+            places.Where(p => also.ContainsKey(p.Key)).ToDictionary(p => p.Key, p => p.Value);
+        var (before, after) = (Ranks(Both(then, now)), Ranks(Both(now, then)));
         var traded = wanted.GroupBy(m => m.manifest?.id)
             .Where(g => g.Select(Copies.CopyOf).Distinct().Count() > 1
                 && g.Where(before.ContainsKey).Select(m => before[m]).ToHashSet().SetEquals(g.Where(after.ContainsKey).Select(m => after[m])))

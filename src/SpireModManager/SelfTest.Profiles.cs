@@ -436,10 +436,10 @@ static partial class SelfTest
                 await Wait(menu, 0.3);
             }
             History.TestPutBack(history);
-            Check("the main menu button's card shown with a change pending: the list as it was, the page's opening state and undo histories put back",
-                History.CurrentMods().SequenceEqual(listWas) && History.Entered == history.Entered
+            Check("the main menu button's card shown with a change pending: the list as it was, what Revert all left and undo histories put back",
+                History.CurrentMods().SequenceEqual(listWas) && History.TestKeep().Reverted == history.Reverted
                 && History.Steps(History.Track.List) == history.Past[History.Track.List].Count && History.Steps(History.Track.Order) == history.Past[History.Track.Order].Count,
-                $"list as it was {History.CurrentMods().SequenceEqual(listWas)}, opening state {History.Entered == history.Entered}, "
+                $"list as it was {History.CurrentMods().SequenceEqual(listWas)}, what Revert all left {History.TestKeep().Reverted == history.Reverted}, "
                 + $"steps {History.Steps(History.Track.List)}/{History.Steps(History.Track.Order)}, were {history.Past[History.Track.List].Count}/{history.Past[History.Track.Order].Count}");
         }
     }
