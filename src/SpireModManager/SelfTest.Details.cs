@@ -612,8 +612,8 @@ static partial class SelfTest
 
     // A Workshop mod's head (made-up details; the sandbox has no Steam): Author, Updated (how long ago, and a link
     // to its change notes on the Workshop), Compatibility (its Workshop branches not listed). "Ago" in hours under a day,
-    // singular for one. Dates and numbers in the game's language. Its Modified content after its Workshop tags, then
-    // Other keywords (screenshot 8b).
+    // singular for one. Dates and numbers in the game's language. Its Modified content right after Subscribers, then its
+    // Workshop tags (Jordan, 25 Oct), then Other keywords (screenshot 8b).
     static async Task TestWorkshopHead(Node menu, NModdingScreen screen, string outDir)
     {
         var mod = new Mod
@@ -762,10 +762,12 @@ static partial class SelfTest
         var facts = english.Split('\n');
         var tagsAt = Array.IndexOf(facts, $"{Menus.Text("SPIRE_MOD_MANAGER.WORKSHOP_TAGS")}: QoL, Utility");
         var otherTerm = $"{Menus.Text("SPIRE_MOD_MANAGER.OTHER_KEYWORDS")}: ";
-        Check("a Workshop mod: Modified content right after its Workshop tags, then Other keywords, workshop among them (no \"#\"), no gap between (see 8b-other-keywords)",
-            tagsAt >= 0 && tagsAt + 2 < facts.Length && facts[tagsAt + 1].StartsWith($"{Menus.Text("SPIRE_MOD_MANAGER.MODIFIED_CONTENT")}: ")
-            && facts[tagsAt + 2].StartsWith(otherTerm) && !facts[tagsAt + 2].Contains('#')
-            && facts[tagsAt + 2][otherTerm.Length..].Split(", ").Contains("workshop"), english);
+        Check("a Workshop mod: Modified content right after Subscribers, then its Workshop tags, then Other keywords, workshop among them (no \"#\"), "
+            + "no gap between (see 8b-other-keywords)",
+            tagsAt >= 2 && tagsAt + 1 < facts.Length && facts[tagsAt - 2].StartsWith($"{Menus.Text("SPIRE_MOD_MANAGER.SUBSCRIBERS")}: ")
+            && facts[tagsAt - 1].StartsWith($"{Menus.Text("SPIRE_MOD_MANAGER.MODIFIED_CONTENT")}: ")
+            && facts[tagsAt + 1].StartsWith(otherTerm) && !facts[tagsAt + 1].Contains('#')
+            && facts[tagsAt + 1][otherTerm.Length..].Split(", ").Contains("workshop"), english);
         await Capture(screen, outDir, "8b-other-keywords");
         var language = LocManager.Instance.Language;
         try
