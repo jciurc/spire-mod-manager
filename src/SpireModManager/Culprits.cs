@@ -141,7 +141,10 @@ static class Culprits
             if (error.Data.Contains(AttemptKey))
                 return;
             var chain = Chain(error);
-            var built = chain.Any(l => l.Frames.Any(f => Built(MethodOf(f))));
+            // The same test as the frames' own (HarmonyFailure): a creator, body reader or transpiler frame alone isn't a
+            // build (a reverse patch, a TargetMethod reading IL), and every real one sits under UpdateWrapper (round 5's
+            // review, finding 4)
+            var built = chain.Any(l => l.Error is InvalidProgramException || l.Frames.Any(f => IsHarmonyMethod(MethodOf(f), "PatchFunctions", "UpdateWrapper")));
             var transpiler = chain.Any(l => l.Frames.Any(f => IsHarmonyMethod(MethodOf(f), "CodeTranspiler", "GetResult")))
                 ? chain[0].Frames.TakeWhile(f => !Building(MethodOf(f))).ToList() : null;
             error.Data[AttemptKey] = new PatchAttempt(patchClass, [.. methods.OfType<MethodInfo>().Distinct()], original, built, transpiler,
@@ -701,10 +704,6 @@ static class Culprits
     static bool Building(MethodBase? method) => new[] { "CodeTranspiler", "MethodCopier", "MethodBodyReader", "MethodCreator", "MethodCreatorTools", "PatchFunctions" }
         .Any(type => IsHarmonyMethod(method, type));
 
-    // A failure in the build itself: its UpdateWrapper, or the creator, the body's reader or the transpilers under it
-    static bool Built(MethodBase? method) => IsHarmonyMethod(method, "PatchFunctions", "UpdateWrapper")
-        || new[] { "MethodCreator", "MethodBodyReader", "CodeTranspiler" }.Any(type => IsHarmonyMethod(method, type));
-
     // Shape C: a Harmony patch that failed, Harmony's patching on any exception's frames (a wrapper's too: a direct
     // Harmony.Patch has no wrapper of Harmony's, and a transpiler's own throw tops its frames), or the record of a
     // failed patch call on any exception (its frames can be gone: another mod's finalizer that returns an exception on
@@ -712,9 +711,9 @@ static class Culprits
     // applying is that record (Attempted: a dependent's where a framework applies them for it); without one, the
     // frames' patching mod (Patcher). Harmony's own checks of a patch call (an inherited method, a target it can't find,
     // a Prepare or TargetMethod that threw) involve no other patch: that mod. A failed rebuild of the replacement can
-    // involve the method's earlier patches (Rebuild). Where the record's exception no longer reaches Harmony's patching
-    // (its frames started again), what the record said of them stands for them (whole): whether it was a build, a
-    // transpiler's own throw, the patching mod.
+    // involve the method's earlier patches (Rebuild). What the record said of the frames while they were whole stands
+    // beside what they say now (whole): whether it was a build, a transpiler's own throw, the patching mod; it matters
+    // where they started again on the way (all of them, or from a replacement of Harmony's own Patch).
     static Pick? HarmonyFailure(Scan scan)
     {
         var found = Attempted(scan);
@@ -722,8 +721,10 @@ static class Culprits
             return null;
         scan.Check = Check.Harmony;
         var attempt = found?.Attempt;
-        var whole = found is { Frames: var frames } && !frames.Any(Patching) ? attempt : null;
-        if (whole != null)
+        // The record whenever there is one (round 5's review, finding 3: a reset at PatchProcessor.Patch's own replacement
+        // keeps a patching frame, which hid it); with whole frames it says what they say
+        var whole = attempt;
+        if (found is { Frames: var frames } && !frames.Any(Patching))
             scan.Notes.Add("Harmony's frames started again on the way (a plain throw), so read as recorded");
         var (owners, patcher) = (attempt == null ? null : Owners(attempt, scan), Patcher(scan, whole));
         scan.NoPatcher = owners == null && patcher == null;

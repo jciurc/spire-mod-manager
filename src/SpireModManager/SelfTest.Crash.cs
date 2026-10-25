@@ -463,6 +463,9 @@ static partial class SelfTest
         return new InvalidOperationException("the stand-in threw nothing");
     }
 
+    // Another mod's finalizer on Harmony's PatchProcessor.Patch that returns the exception: its replacement throws it anew
+    static Exception? ReturnsAtPatch(Exception? __exception) => __exception;
+
     // A launch of the fixtures, each at 1.0 but the versions given, on a game ("": one that doesn't say)
     static LaunchGuard.Setup Launched(string game, params (string Id, string Version)[] versions) => new(DateTime.Now,
         [.. CulpritIds.Select(id => new LaunchGuard.Entry(id, ModSource.ModsDirectory, true,
@@ -1089,6 +1092,27 @@ static partial class SelfTest
             && rethrown.SequenceEqual(["SmmTestFixes Code", "SmmTestFixes RebuildLast", "SmmTestUi RebuildLast", "SmmTestFixes Code", "SmmTestFixes Code"])
             && unbound.Rebuild && unbound.Notes.Any(n => n.Contains("started again")) && !unownedRead.NoPatcher,
             $"first frames {string.Join(", ", reset)}; {string.Join(" | ", rethrown)}; {unboundAgain.GetType().Name}, rebuild {unbound.Rebuild} ({string.Join("; ", unbound.Notes)})");
+        // The frames started again at Harmony's own patch call (another mod's finalizer on PatchProcessor.Patch that returns
+        // the exception: its replacement throws it anew, so a patching frame is left on top): the record still decides, the
+        // failed build the prefix's mod's, as above (round 5's review, finding 3: read as a refusal, the library's)
+        var harmonyPatch = AccessTools.Method(typeof(PatchProcessor), nameof(PatchProcessor.Patch));
+        var resetter = new Harmony("SmmTest.ResetAtPatch");
+        Exception atPatch;
+        try
+        {
+            resetter.Patch(harmonyPatch, finalizer: new HarmonyMethod(typeof(SelfTest), nameof(ReturnsAtPatch)));
+            atPatch = Thrown(() => Lib.Patch(RunMethod, null, prefix: By(typeof(UiPatch), nameof(UiPatch.Unbound))));
+        }
+        finally
+        {
+            resetter.UnpatchAll(resetter.Id);
+        }
+        var atPatchTop = OriginalOf(new System.Diagnostics.StackTrace(atPatch, false).GetFrame(0)?.GetMethod());
+        var atPatchRead = ReadOf(atPatch, game, same);
+        Check("the crash culprit with the frames started again at Harmony's own patch call (a finalizer there returning the exception): the record still "
+            + "decides, a failed build the prefix's mod's",
+            atPatchTop == harmonyPatch && PickIn(atPatchRead) == "SmmTestUi RebuildLast" && atPatchRead.Rebuild,
+            $"top {atPatchTop?.DeclaringType?.Name}.{atPatchTop?.Name}; {PickIn(atPatchRead)}, rebuild {atPatchRead.Rebuild} ({string.Join("; ", atPatchRead.Notes)})");
         // A library's failed rebuild: whose patches it was applying, as recorded, on any game. Another mod's class (Test Fixes',
         // which doesn't need it), that mod, the saved transpiler's mod on the shortlist; its own class, the library; a
         // dependent's class, the dependent. By its direct Harmony.Patch the same: its own patch method, the library; a
