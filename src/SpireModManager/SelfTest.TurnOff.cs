@@ -471,7 +471,7 @@ static partial class SelfTest
         var code = Plain(Crash(Blamed(Culprits.Why.Code, "SmmTestFixes")));
         Check("the crash culprit's dialog: the game's message first, then that Test Fixes stopped the start (its code), that it can be turned off; "
             + "\"Turn off Test Fixes and restart\" and Quit, no link",
-            code.Body.StartsWith(LaunchGuard.GamesMessage(plain: true)) && code.Body.Contains("Test Fixes stopped the game from starting. The error came from its code.")
+            code.Body.StartsWith(LaunchGuard.GamesMessage(plain: true)) && code.Body.Contains("An error while loading Test Fixes has prevented the game from starting.")
             && code.Body.Contains("Spire Mod Manager can turn off Test Fixes and restart the game.") && Said(code) == "Turn off Test Fixes and restart | no link",
             $"{code.Body} || {Said(code)}");
         // Each rule's own line
@@ -506,7 +506,7 @@ static partial class SelfTest
         int At(LaunchGuard.Shown shown, string text) => shown.Body.IndexOf(text, StringComparison.Ordinal);
         Check("Mod Doctor's box (\"From Mod Doctor:\" over its words as written): under our line when it names the same mod, after the turn-off line for its "
             + "own pick (no line of ours then); no suspects line beside a culprit",
-            At(agreed, "stopped the game") is >= 0 and var line && At(agreed, "From Mod Doctor:\n" + doctorWords) > line
+            At(agreed, "has prevented the game from starting") is >= 0 and var line && At(agreed, "From Mod Doctor:\n" + doctorWords) > line
             && At(agreed, "Spire Mod Manager can turn off") > At(agreed, "From Mod Doctor:") && !agreed.Body.Contains("Mod Doctor suspects")
             && At(doctors, "Spire Mod Manager can turn off") is >= 0 and var off && At(doctors, "From Mod Doctor:") > off && !doctors.Body.Contains("Mod Doctor found that"),
             $"{agreed.Body} || {doctors.Body}");
@@ -559,7 +559,7 @@ static partial class SelfTest
         var unrestored = Plain(Crash(null, otherNew), failed: new("SPIRE_MOD_MANAGER.CRASH_RESTORE_FAILED", []));
         Check("after a failed write the dialog says what went wrong first, then the culprit's line (or the offer's text), with Quit alone and no link; ours, "
             + "only that the error was its own",
-            At(failed, "couldn't turn off Test Fixes: the game couldn't save its settings") is >= 0 and var said && At(failed, "Test Fixes stopped the game") > said
+            At(failed, "couldn't turn off Test Fixes: the game couldn't save its settings") is >= 0 and var said && At(failed, "An error while loading Test Fixes") > said
             && !failed.Body.Contains("Spire Mod Manager can turn off") && Said(failed) == "Quit alone | no link"
             && selfFailed.Body.EndsWith("The error came from Spire Mod Manager itself.") && !selfFailed.Body.Contains("turn itself off") && Said(selfFailed) == "Quit alone | no link"
             && unrestored.Body.Contains("couldn't restore the last working setup") && Said(unrestored) == "Quit alone | no link",
@@ -589,7 +589,7 @@ static partial class SelfTest
         Check("the crash culprit's popup: the game's message, Test Fixes named, Quit and \"Turn off Test Fixes and restart\", no link, its text and the button's "
             + "fitting at a readable size; pressed, every switch of Test Fixes off, its record (Code, its switch with its copy), one plain relaunch, this "
             + "launch's record gone",
-            pressed.IsCompleted && words.Contains("Notice from the game") && words.Contains("Test Fixes stopped the game from starting") && words.Contains("Quit")
+            pressed.IsCompleted && words.Contains("Notice from the game") && words.Contains("An error while loading Test Fixes has prevented the game from starting") && words.Contains("Quit")
             && words.Contains("Turn off Test Fixes and restart") && noLink && fit is { Fits: true, Size: >= ReadableText, Button: >= LaunchGuard.SmallestButtonText }
             && AllOff("SmmTestFixes") && relaunches == 1 && quits == 0
             && entry is { Why: Culprits.Why.Code, Switches: [{ On: true, Copies: ["l:SmmTestFixes"] }] } && (DateTimeOffset.Now - entry.At).TotalMinutes < 1
@@ -726,7 +726,7 @@ static partial class SelfTest
         await Wait(menu, 0.3);
         Check($"a mod's name too long for the button is cut there, the words wrapped at {LaunchGuard.SmallestButtonText} or more; the whole name in the text",
             asked.IsCompleted && cut.StartsWith("Turn off SmmTestAMod") && cut.EndsWith(Menus.CutMark + " and restart") && cutFit.Button >= LaunchGuard.SmallestButtonText
-            && words.Contains(LongId + " stopped the game"), $"\"{cut}\" {cutFit}; {words}");
+            && words.Contains("An error while loading " + LongId), $"\"{cut}\" {cutFit}; {words}");
         var quitsBefore = quits;
 
         // A write that fails shows the dialog once more, saying so, with Quit alone: a turn-off whose save fails, a Restore
