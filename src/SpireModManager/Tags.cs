@@ -164,7 +164,9 @@ static class Tags
 
     static string Escape(string text) => text.Replace("[", "[lb]");
 
-    static bool IsCosmetic(Mod mod) => IsCosmetic(WorkshopInfo.For(mod)?.Tags);
+    // Its Workshop tags say art or sound, or its pack replaces some of the game's (GameChanges.ReplacesArt: a local reskin
+    // has no tags, and a Workshop one's tags may not say it).
+    static bool IsCosmetic(Mod mod) => IsCosmetic(WorkshopInfo.For(mod)?.Tags) || GameChanges.ReplacesArt(mod);
 
     public static bool IsCosmetic(IEnumerable<string>? workshopTags) =>
         workshopTags?.SelectMany(t => t.ToLowerInvariant().Split([' ', '&', '/', '-', ','], StringSplitOptions.RemoveEmptyEntries))
