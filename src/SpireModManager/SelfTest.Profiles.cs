@@ -1034,8 +1034,11 @@ static partial class SelfTest
             && Preview().Contains("Creates the profile Imported profile:") && Preview().Contains("Mods enabled ") && !Preview().Contains("Not installed"), Preview());
         Press("CreateProfileButton");
         await Wait(menu, 0.3);
+        // The fixture's mod from both sources aside: its Workshop copy, read from mods_STEAMTEST, has no item id, so the
+        // list's row for it has no link to set it apart from the local copy (a real Workshop item has one).
+        static IEnumerable<string> Linked(IEnumerable<string> states) => states.Where(s => !s.StartsWith(DualId + "/"));
         Check("Create profile: a new profile with the list's states, active, and the dialog closed", Dialog() == null && Profiles.Active?.Name == "Imported profile"
-            && Store.Data.Profiles.Count == profiles + 1 && !Profiles.Edited && ModListState().SequenceEqual(startStates),
+            && Store.Data.Profiles.Count == profiles + 1 && !Profiles.Edited && Linked(ModListState()).SequenceEqual(Linked(startStates)),
             $"{Profiles.Active?.Name}: {string.Join(", ", startStates.Except(ModListState()))}");
         History.Undo();
         await Wait(menu, 0.3);

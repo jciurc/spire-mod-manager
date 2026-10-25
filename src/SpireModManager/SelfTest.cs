@@ -147,6 +147,8 @@ static partial class SelfTest
             await Step(() => TestSameIdPlan());
             await Step(() => TestSameIdLaunch());
             await Step(() => TestSameIdSettle());
+            await Step(() => TestDualSettled()); // the fixture's mod from both sources kept together at the main menu (the order rule)
+            await Step(() => TestOrderRule()); // the order rule every writer of the list keeps (LoadOrder.Normalize), on made-up lists
             await Step(() => TestCopiesData(outDir));
             await Step(() => TestSameIdErrors());
             await Step(() => TestSameIdLaunchGuard(menu, outDir));
@@ -252,6 +254,7 @@ static partial class SelfTest
             await Step(() => TestWorkshopTitles(menu, screen, content, outDir));
             await Step(() => TestLoadOrder(menu, screen, content, outDir));
             await Step(() => TestLoadOrderFind(menu, screen, content, outDir));
+            await Step(() => TestDualOrder(menu, screen, content, outDir)); // its rows together in Load Order, moving as one
             await Step(() => TestListBanner(menu, screen, content, outDir));
             await Step(() => TestManagersBanner(menu, screen, content, outDir));
             await Step(() => TestSelfIncluded(menu, screen, content, outDir));
@@ -899,6 +902,20 @@ static partial class SelfTest
     // version and the fixture's legacy pick, so the one that loads) and Test Twin User, which needs 1.1.0 or newer. dev.cs
     // lists the id after the framework, so A sorts first.
     const string TwinId = "SmmTestTwin";
+
+    // The fixture's mod installed from both sources: SmmTestDual 1.0.0 in the mods folder, on, and 2.0.0 in the dev
+    // copy's mods_STEAMTEST (tools/fixtures/mods_STEAMTEST), which the game reads as a Workshop item, off. dev.cs lists
+    // them side by side, local first.
+    const string DualId = "SmmTestDual";
+
+    static void DualMissing(string what)
+    {
+        if (Dependencies.Find("SmmTestTwinUser") != null)
+            Check($"{what}: the fixture's mod from both sources installed, locally and as a Workshop item (mods_STEAMTEST)", false,
+                string.Join(", ", ModManager.Mods.Where(m => m.manifest?.id == DualId).Select(Copies.CopyOf)));
+        else
+            Results.Add($"SKIP {what}: the fixtures aren't installed");
+    }
 
     // The copy of an id that loads after a relaunch (Copies.Next); null for none.
     static string? LoadingCopy(string id) => Copies.Loading(id) is { } loads ? Copies.CopyOf(loads) : null;

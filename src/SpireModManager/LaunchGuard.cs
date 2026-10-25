@@ -88,7 +88,9 @@ static class LaunchGuard
     // In ModEntry.Init right after SameIdLoad.Apply, inside a try there too (a renamed game member throws at the call,
     // before this try). The mods in load order, each on or off by its own entry (the game's rebuilt list copies the first
     // copy's state), each naming its copy; a mod installed twice from one source an entry per copy, on for the copy this
-    // launch loads (after Apply's swap, the first of them) and off for the rest, ticked or not.
+    // launch loads (after Apply's swap, the first of them) and off for the rest, ticked or not. In the order rule's form,
+    // by where the game put each mod (SameIdLoad.LaunchAnchors; LoadOrder.Normalize), as Settle saves the list but
+    // without its heal: what loaded, so Restore brings back the launch that worked.
     public static void Begin()
     {
         try
@@ -105,10 +107,7 @@ static class LaunchGuard
                 loads = []; // the record as before copies were told apart: each copy by its id and source's switch
                 Log.Warn($"[{ModEntry.ModId}] Could not tell which copy of a mod installed twice this launch loads, so the launch record doesn't say: {e.Message}");
             }
-            var planned = new Setup(DateTime.Now, mods.Select(m => m.manifest is { id: { } id } manifest
-                ? new Entry(id, m.modSource, !off.Contains((id, m.modSource)) && (!loads.TryGetValue((id, m.modSource), out var copy) || copy == Copies.CopyOf(m)),
-                    manifest.version, Copies.CopyOf(m))
-                : null).OfType<Entry>().ToList(), GameNow());
+            var planned = new Setup(DateTime.Now, Recorded(mods, SameIdLoad.Sorted, off, loads), GameNow());
             var dir = Store.Dir;
             Before = CopiesBefore(dir);
             // The mod list as the game read it: after the mods load, it puts its own in place (sorted by dependencies).
@@ -120,6 +119,38 @@ static class LaunchGuard
         {
             Log.Error($"[{ModEntry.ModId}] Could not record this launch, so a launch that stops before the main menu won't be noticed: {e}");
         }
+    }
+
+    // This launch's entries for these mods (Begin's; the self-test's made-up ones), sorted: where the game's sort ended
+    // (SameIdLoad.Sorted); off: the switches off; loads: the copy of each id and source installed twice that loads
+    // (SameIdLoad.LoadsAtLaunch). Where sorted wasn't read, the rule by which sources the next launch sorts (BySource).
+    public static List<Entry> Recorded(IReadOnlyList<Mod> mods, (int Count, int Tail)? sorted, HashSet<(string?, ModSource)> off,
+        IReadOnlyDictionary<(string Id, ModSource Source), string> loads)
+    {
+        var anchors = SameIdLoad.LaunchAnchors(mods, [.. mods.Select(m => (m.manifest?.id ?? "", m.modSource))], sorted);
+        var (entries, at) = (new List<Entry>(), new List<bool>());
+        for (var i = 0; i < mods.Count; i++)
+            if (mods[i] is { manifest: { id: { } id } manifest } m)
+            {
+                entries.Add(new Entry(id, m.modSource, !off.Contains((id, m.modSource)) && (!loads.TryGetValue((id, m.modSource), out var copy) || copy == Copies.CopyOf(m)),
+                    manifest.version, Copies.CopyOf(m)));
+                at.Add(anchors?[i] ?? false);
+            }
+        if (anchors == null)
+            return BySource(entries);
+        return LoadOrder.Normalized([.. entries.Select(e => e.Id)], at) is { } order ? [.. order.Select(i => entries[i])] : entries;
+    }
+
+    // A record's mods in the order rule's form by which sources the next launch sorts (LoadOrder.Anchors; each id and
+    // source on if any of its entries is, as Written has them): one kept before this version lists the copies its launch
+    // took out last.
+    public static List<Entry> BySource(IReadOnlyList<Entry> mods)
+    {
+        if (LoadOrder.Contiguous([.. mods.Select(m => m.Id)]))
+            return [.. mods];
+        var on = mods.GroupBy(m => (m.Id, m.Source)).ToDictionary(g => g.Key, g => g.Any(m => m.Enabled));
+        var list = mods.Select(m => new SettingsSaveMod { Id = m.Id, Source = m.Source, IsEnabled = on[(m.Id, m.Source)] }).ToList();
+        return LoadOrder.Normalized([.. mods.Select(m => m.Id)], LoadOrder.Anchors(list)) is { } order ? [.. order.Select(i => mods[i])] : [.. mods];
     }
 
     // Reads the last launch's record and working setup from a folder (ours, or a self-test's), then writes this
@@ -184,7 +215,8 @@ static class LaunchGuard
         }
         if (failed == null || working == null)
             return [];
-        if (failed.Mods.SequenceEqual(saved.Mods))
+        // Both in the order rule's form: a record kept before this version lists its launch's taken-out copies last.
+        if (BySource(failed.Mods).SequenceEqual(BySource(saved.Mods)))
         {
             Log.Info($"[{ModEntry.ModId}] This launch loaded the same mods as the one that stopped, and reached the main menu: no notice");
             return [];
@@ -222,9 +254,18 @@ static class LaunchGuard
                 changes.Add(new Change(Kind.Switched, mod.Id, was.Copy, mod.Copy)); // Restore can undo it
             else if (mod.Enabled && was.Version != null && mod.Version != null && mod.Version != was.Version)
                 changes.Add(new Change(Kind.Updated, mod.Id, was.Version, mod.Version));
-        var both = tried.Where(m => m.Enabled && !Ours(m.Id) && then.TryGetValue((m.Id, m.Source), out var w) && w.Enabled)
-            .Select(m => (m.Id, m.Source)).Distinct().ToList();
-        if (!both.SequenceEqual(working.Where(m => both.Contains((m.Id, m.Source))).Select(m => (m.Id, m.Source)).Distinct()))
+        // The ids enabled in both, as the game ranks them (by each one's last entry), both in the order rule's form: an
+        // update that flips which source the beta sorts, or a record from before this version, isn't an order Restore
+        // could change (review C6: it compared by id and source).
+        var both = tried.Where(m => m.Enabled && !Ours(m.Id) && then.TryGetValue((m.Id, m.Source), out var w) && w.Enabled).Select(m => m.Id).ToHashSet();
+        static IEnumerable<string> RankedIds(IReadOnlyList<Entry> mods, HashSet<string> ids)
+        {
+            var last = new Dictionary<string, int>();
+            for (var i = 0; i < mods.Count; i++)
+                last[mods[i].Id] = i;
+            return last.Where(p => ids.Contains(p.Key)).OrderBy(p => p.Value).Select(p => p.Key);
+        }
+        if (!RankedIds(BySource(tried), both).SequenceEqual(RankedIds(BySource(working), both)))
             changes.Add(new Change(Kind.Order, ""));
         return changes;
     }
@@ -378,11 +419,13 @@ static class LaunchGuard
     }
 
     // The mod list a Restore writes: the working setup's, in its order and on or off (copies of one id and source share
-    // a switch: on if one of them was), ours first (LoadOrder.OursFirst); mods installed since then off (a mod the list
-    // doesn't name loads); Mod Doctor as it is now (it's there to look at the failure). Every copy of ours on, whatever
-    // the player had: the restored launch needs us running, as our Init is what loads the copies that worked (the ticks
-    // WriteOff puts back) and what notices if it fails again. All of them, so one still loads if the copy that ran was
-    // removed since, though on the beta that can make a higher Workshop copy of ours run in place of a local one.
+    // a switch: on if one of them was), in the order rule's form by those switches (a record kept before this version
+    // lists the copies its launch took out last), ours first (LoadOrder.OursFirst); mods installed since then off (a mod
+    // the list doesn't name loads), each right after its id's entries (LoadOrder.Add); Mod Doctor as it is now (it's
+    // there to look at the failure). Every copy of ours on, whatever the player had: the restored launch needs us
+    // running, as our Init is what loads the copies that worked (the ticks WriteOff puts back) and what notices if it
+    // fails again. All of them, so one still loads if the copy that ran was removed since, though on the beta that can
+    // make a higher Workshop copy of ours run in place of a local one.
     public static List<SettingsSaveMod> Written(IReadOnlyList<Entry> working)
     {
         var off = Dependencies.SavedOff();
@@ -390,9 +433,10 @@ static class LaunchGuard
         bool On(string id, ModSource source, bool then) =>
             id == ModEntry.ModId || (id == ModDoctor.ModId ? !off.Contains((id, source)) : then);
         var entries = working.Select(m => new SettingsSaveMod { Id = m.Id, Source = m.Source, IsEnabled = On(m.Id, m.Source, switches[(m.Id, m.Source)]) }).ToList();
+        LoadOrder.NormalizeBySource(entries);
         foreach (var m in ModManager.Mods.Union(Installed.Mods))
             if (m.manifest?.id is { } id && !working.Any(w => w.Id == id && w.Source == m.modSource))
-                entries.Add(new SettingsSaveMod(m) { IsEnabled = On(id, m.modSource, false) });
+                LoadOrder.Add(entries, new SettingsSaveMod(m) { IsEnabled = On(id, m.modSource, false) });
         LoadOrder.OursFirst(entries);
         return entries;
     }
@@ -421,14 +465,17 @@ static class LaunchGuard
         _repairTried = true;
         var settings = SaveManager.Instance.SettingsSave.ModSettings;
         RepairedBeforeMenu = !SameIdLoad.Settled && settings != null && ReadList != null;
-        if (RepairBeforeMenu(settings, ReadList, SameIdLoad.Settled))
+        if (RepairBeforeMenu(settings, ReadList, SameIdLoad.Settled, settings == null || SameIdLoad.Settled ? null : SameIdLoad.AnchorsNow(settings.ModList),
+            SameIdLoad.Heals()))
             Log.Info($"[{ModEntry.ModId}] Before the first main menu: put each source's own switch back in the game's mod list in memory, as the menu "
                 + "would, so a save from here keeps every other mod as it was");
     }
 
     // The repair on given lists (the self-test's made-up ones): none after the first main menu (Settle did it), nor
-    // without the list as the game read it. True if anything changed.
-    public static bool RepairBeforeMenu(ModSettings? settings, IReadOnlyList<(string Id, ModSource Source, bool On)>? read, bool settled)
+    // without the list as the game read it; the order rule's form as Settle has it (anchors, heal: SameIdLoad.SettleList),
+    // which isn't counted. True if a switch changed (or SettleList's other reasons).
+    public static bool RepairBeforeMenu(ModSettings? settings, IReadOnlyList<(string Id, ModSource Source, bool On)>? read, bool settled,
+        IReadOnlyList<bool>? anchors = null, IReadOnlyDictionary<string, string>? heal = null)
     {
         if (settled || settings == null)
             return false;
@@ -437,11 +484,11 @@ static class LaunchGuard
             Log.Warn($"[{ModEntry.ModId}] Before the first main menu: no list as the game read it, so the mod list in memory stays as the game rebuilt it");
             return false;
         }
-        return SameIdLoad.SettleList(settings.ModList, read);
+        return SameIdLoad.SettleList(settings.ModList, read, anchors, heal);
     }
 
     // This launch's mod list as it is (repaired: RepairBeforeMenu), the suspects off (every copy and source of each; one
-    // the list doesn't name gets an entry, or it would load), saved.
+    // the list doesn't name gets an entry, or it would load, right after its id's: LoadOrder.Add), saved.
     static void WriteWithout(IReadOnlyList<string> suspects)
     {
         var ids = Disableable(suspects).ToHashSet();
@@ -451,7 +498,7 @@ static class LaunchGuard
             entry.IsEnabled = false;
         foreach (var m in ModManager.Mods.Union(Installed.Mods))
             if (m.manifest?.id is { } id && ids.Contains(id) && !settings.ModList.Any(e => e.Id == id && e.Source == m.modSource))
-                settings.ModList.Add(new SettingsSaveMod(m) { IsEnabled = false });
+                LoadOrder.Add(settings.ModList, new SettingsSaveMod(m) { IsEnabled = false });
         SaveManager.Instance.SaveSettings();
         Log.Info($"[{ModEntry.ModId}] Turned off the mods Mod Doctor suspects: {string.Join(", ", ids)}");
     }
@@ -542,11 +589,21 @@ static class LaunchGuard
 
     static (string, ModSource, bool) Key(SettingsSaveMod entry) => (entry.Id, entry.Source, entry.IsEnabled);
 
-    // Whether two mod lists have a launch load the same: the same mods on, in the same order (the game's tie-break
-    // after dependencies), and every mod on or off alike (a mod a list doesn't name loads). Off mods' order doesn't count.
+    // Whether two mod lists have a launch load the same, as the game reads them: every mod on or off alike (a mod a list
+    // doesn't name loads), and the mods that have an entry on in the same order (the game's tie-break after
+    // dependencies), each ranked by its id's last entry. An entry that's off counts only as its id's last.
     public static bool SameLoad(IReadOnlyList<(string Id, ModSource Source, bool On)> a, IReadOnlyList<(string Id, ModSource Source, bool On)> b) =>
-        a.Where(e => e.On).Select(e => (e.Id, e.Source)).SequenceEqual(b.Where(e => e.On).Select(e => (e.Id, e.Source)))
-        && a.ToHashSet().SetEquals(b);
+        a.ToHashSet().SetEquals(b) && Ranked(a).SequenceEqual(Ranked(b));
+
+    // The ids with an entry on, each where its last entry is, in that order.
+    static IEnumerable<string> Ranked(IReadOnlyList<(string Id, ModSource Source, bool On)> list)
+    {
+        var last = new Dictionary<string, int>();
+        for (var i = 0; i < list.Count; i++)
+            last[list[i].Id] = i;
+        var on = list.Where(e => e.On).Select(e => e.Id).ToHashSet();
+        return last.Where(p => on.Contains(p.Key)).OrderBy(p => p.Value).Select(p => p.Key);
+    }
 
     // The offer from a launch's record and the working setup: none without either, or with only updates since.
     public static Offer? CrashOffer(Setup? planned, Setup? working)

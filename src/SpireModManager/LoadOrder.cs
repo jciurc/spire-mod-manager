@@ -50,7 +50,25 @@ static class LoadOrder
     static IEnumerable<(string? Id, ModSource Source)> Order() =>
         SaveManager.Instance.SettingsSave.ModSettings?.ModList.Select(m => ((string?)m.Id, m.Source)) ?? [];
 
-    static int IndexOf(Mod? mod, Dictionary<Mod, int> places) => mod != null && places.TryGetValue(mod, out var i) ? i : int.MaxValue;
+    // The order the rows show and moves act on, one key for both (a drop lands where it shows): each copy at its place
+    // in the saved list (Places); a copy with no entry yet (installed while the game runs) right after its id's last
+    // entry, where its entry goes (Add) and the game sorts it; else last. That place stays out of Places, so Changes'
+    // moves since launch don't count it.
+    static List<T> Ordered<T>(IEnumerable<T> items, Func<T, Mod?> modOf)
+    {
+        var list = items.ToList();
+        var places = Places(list.Select(modOf).OfType<Mod>());
+        var last = new Dictionary<string, int>();
+        var i = 0;
+        foreach (var (id, _) in Order())
+        {
+            if (id != null)
+                last[id] = i;
+            i++;
+        }
+        return [.. list.OrderBy(item => modOf(item) is not { } mod ? (int.MaxValue, 0) : places.TryGetValue(mod, out var at) ? (at, 0)
+            : last.TryGetValue(mod.manifest?.id ?? "", out var after) ? (after, 1) : (int.MaxValue, 0))];
+    }
 
     // Each installed copy's place in the saved list now, looked up once per sort.
     public static Dictionary<Mod, int> Places(IEnumerable<Mod> mods) => Places(Order(), mods, CopyOrder);
@@ -145,11 +163,12 @@ static class LoadOrder
         MovedSince(_loadedOrder ?? [], NoCopyOrder, mods).ToDictionary(m => m.Mod, m => m.Before);
 
     // These copies whose place changed since a saved list (and the copy order it had): (copy, place then, now), 1-based
-    // among them as Load Order numbers its rows, in load order now. Copies of one id and source that have only traded
-    // their key's places are no move: the list the game reads is the same there, and which of them loads goes by the
-    // copies (Copies.Next), not the rows, so a relaunch would change nothing (an undo or a drag back can leave them so).
-    // Ranked among the copies both lists place (Load Order's numbers, bar a mod installed since that has an entry): an
-    // entry made since for one (ours go at the top) moves no other copy, as the game reads their order the same.
+    // among them as Load Order numbers its rows, in load order now. Copies of one id that have only traded their id's
+    // places are no move: the game ranks them by the id alike, and which of them loads goes by the copies (Copies.Next),
+    // not the rows, so a relaunch would change nothing (an undo, a drop among a mod's own rows, or a drag back can leave
+    // them so). Ranked among the copies both lists place (Load Order's numbers, bar a mod installed since that has an
+    // entry): an entry made since for one (Add puts one beside its mod's, ours go at the top) moves no other copy, as the
+    // game reads their order the same.
     public static List<(Mod Mod, int Before, int After)> MovedSince(IEnumerable<(string? Id, ModSource Source)> saved,
         IReadOnlyDictionary<(string?, ModSource), IReadOnlyList<string>> copyOrder, IEnumerable<Mod> mods)
     {
@@ -158,7 +177,7 @@ static class LoadOrder
         static Dictionary<Mod, int> Both(Dictionary<Mod, int> places, Dictionary<Mod, int> also) =>
             places.Where(p => also.ContainsKey(p.Key)).ToDictionary(p => p.Key, p => p.Value);
         var (before, after) = (Ranks(Both(then, now)), Ranks(Both(now, then)));
-        var traded = wanted.GroupBy(m => (m.manifest?.id, m.modSource))
+        var traded = wanted.GroupBy(m => m.manifest?.id)
             .Where(g => g.Select(Copies.CopyOf).Distinct().Count() > 1
                 && g.Where(before.ContainsKey).Select(m => before[m]).ToHashSet().SetEquals(g.Where(after.ContainsKey).Select(m => after[m])))
             .SelectMany(g => g).ToHashSet();
@@ -196,8 +215,7 @@ static class LoadOrder
             };
         }
         var mods = rows.Select(r => r.Mod).OfType<Mod>().ToList();
-        var places = Places(mods);
-        var ordered = rows.OrderBy(r => IndexOf(r.Mod, places)).ToList();
+        var ordered = Ordered(rows, r => r.Mod);
         // Where each one was at launch, among the copies installed now (1-based).
         var launch = LaunchPlaces(mods);
         for (var i = 0; i < ordered.Count; i++)
@@ -251,74 +269,154 @@ static class LoadOrder
         return on ? Colors.White : new Color(1, 1, 1, OffAlpha);
     }
 
-    // Moves a mod to a new position among the rows (0 = loads first) and saves the game's settings.
-    public static void Move(Mod mod, int to, IList<NModMenuRow> rows)
+    // Moves a mod to a new position among the rows (0 = loads first: the index its row takes) and saves the game's
+    // settings. A mod installed more than once moves as one block, its rows in their order (Moved).
+    public static void Move(Mod mod, int to, IList<NModMenuRow> rows) => Save(Moved(Mods(rows), mod, to));
+
+    // The order with a mod's row put at an index (the one it takes), its other copies' rows with it: the game ranks every
+    // copy of an id by the id's last entry, so they load at one place whichever of them is dragged. An index among its own
+    // rows orders only its copies; one inside another mod's block goes past the whole of it, to its start going up and
+    // its end going down. Public for the self-test.
+    public static List<Mod> Moved(List<Mod> order, Mod mod, int to)
     {
-        var mods = Mods(rows);
-        mods.Remove(mod);
-        mods.Insert(Math.Clamp(to, 0, mods.Count), mod);
-        Save(mods);
+        var from = order.IndexOf(mod);
+        if (from < 0 || order.Count == 0)
+            return order;
+        to = Math.Clamp(to, 0, order.Count - 1);
+        var block = Block(order, mod);
+        if (to >= order.IndexOf(block[0]) && to <= order.IndexOf(block[^1]))
+        {
+            var copies = order.ToList();
+            copies.Remove(mod);
+            copies.Insert(to, mod);
+            return copies;
+        }
+        return Placed(order, block, to < from ? to : to + 1, up: to < from);
+    }
+
+    // A mod's rows in the order, all its copies (one block: in the order rule's form they're one run).
+    static List<Mod> Block(IReadOnlyList<Mod> order, Mod mod) => [.. order.Where(m => SameId(m, mod))];
+
+    static bool SameId(Mod a, Mod b) => a == b || a.manifest?.id is { } id && id == b.manifest?.id;
+
+    // The order with these rows taken out and put in, in their order, at a gap (an index among all the rows, before
+    // they're taken out), moved out of any other mod's block it falls inside: to the block's start going up, else its end.
+    public static List<Mod> Placed(List<Mod> order, IReadOnlyCollection<Mod> moving, int gap, bool up)
+    {
+        var picked = moving.ToHashSet();
+        gap = Math.Clamp(gap, 0, order.Count);
+        bool Inside(int g) => g > 0 && g < order.Count && !picked.Contains(order[g - 1]) && !picked.Contains(order[g]) && SameId(order[g - 1], order[g]);
+        while (Inside(gap))
+            gap += up ? -1 : 1;
+        var rest = order.Where(m => !picked.Contains(m)).ToList();
+        rest.InsertRange(Math.Clamp(order.Take(gap).Count(m => !picked.Contains(m)), 0, rest.Count), order.Where(picked.Contains));
+        return rest;
+    }
+
+    // A drop of a row at a gap (an index among all the rows, as Target gives): its block there (Placed), or, at a gap
+    // among its own rows, it alone among them; null where nothing moves.
+    public static List<Mod>? Dropped(Mod mod, int gap, List<Mod> order)
+    {
+        var from = order.IndexOf(mod);
+        if (from < 0 || gap == from || gap == from + 1)
+            return null;
+        var block = Block(order, mod);
+        var (first, last) = (order.IndexOf(block[0]), order.IndexOf(block[^1]));
+        return gap >= first && gap <= last + 1 ? Moved(order, mod, gap > from ? gap - 1 : gap) : Placed(order, block, gap, up: gap < first);
     }
 
     // The installed mods in saved order.
     public static List<Mod> Mods(IEnumerable<NModMenuRow> rows) => InOrder(rows.Select(r => r.Mod).OfType<Mod>());
 
-    // Mods in the saved list's order (those it doesn't have last).
-    public static List<Mod> InOrder(IEnumerable<Mod> given)
-    {
-        var mods = given.ToList();
-        var places = Places(mods);
-        return mods.OrderBy(m => IndexOf(m, places)).ToList();
-    }
+    // Mods in the saved list's order, as the rows show them (Ordered).
+    public static List<Mod> InOrder(IEnumerable<Mod> given) => Ordered(given, m => m);
 
-    // Whether putting mod at to breaks an order between two enabled mods involving it (old problems elsewhere don't
-    // block unrelated moves).
+    // Whether putting mod at to (Move) breaks an order between two enabled mods involving its block's copy that loads
+    // (the one dragged may be a copy that doesn't; old problems elsewhere don't block unrelated moves).
     public static bool MoveBreaks(Mod mod, int to, IList<NModMenuRow> rows)
     {
-        if (!Copies.Loads(mod))
-            return false;
-        int Involving(List<Mod> order) => Dependencies.OrderViolations(order).Count(v => v.Mod == mod || v.Needs == mod);
         var order = Mods(rows);
-        var before = Involving(order);
-        order.Remove(mod);
-        order.Insert(Math.Clamp(to, 0, order.Count), mod);
-        return Involving(order) > before;
+        return Breaks(mod, order, Moved(order, mod, to));
+    }
+
+    static bool Breaks(Mod mod, List<Mod> before, List<Mod> after)
+    {
+        if (Block(before, mod).FirstOrDefault(Copies.Loads) is not { } loading)
+            return false;
+        int Involving(List<Mod> order) => Dependencies.OrderViolations(order).Count(v => v.Mod == loading || v.Needs == loading);
+        return Involving(after) > Involving(before);
     }
 
     // Moves each needed mod just ahead of what needs it, keeping everything else in place.
     public static void FixOrder(IList<NModMenuRow> rows) => Save(Fixed(Mods(rows)));
 
     // Dependencies.Fixed with one set of answers (Lookups: it asks which copy of each mod and its dependencies loads),
-    // ended before the order is saved, so what the save redraws reads the new order.
-    static List<Mod> Fixed(List<Mod> mods)
+    // ended before the order is saved, so what the save redraws reads the new order. Fixed moves only the copies that
+    // load, so a mod installed more than once is then gathered at its copy that loads (none: its first row), its rows in
+    // the order given.
+    public static List<Mod> Fixed(List<Mod> mods, List<Mod>? given = null)
     {
         using var lookups = Lookups.Begin();
-        return Dependencies.Fixed(mods);
+        var sorted = Dependencies.Fixed(mods);
+        var blocks = (given ?? mods).Where(m => m.manifest?.id != null).GroupBy(m => m.manifest?.id ?? "").Where(g => g.Count() > 1)
+            .ToDictionary(g => g.Key, g => g.ToList());
+        if (blocks.Count == 0)
+            return sorted;
+        var at = blocks.ToDictionary(b => b.Key, b => sorted.Where(b.Value.Contains).FirstOrDefault(Copies.Loads) ?? sorted.First(b.Value.Contains));
+        var gathered = new List<Mod>();
+        foreach (var mod in sorted)
+            if (mod.manifest?.id is not { } id || !blocks.TryGetValue(id, out var block))
+                gathered.Add(mod);
+            else if (at[id] == mod)
+                gathered.AddRange(block);
+        // A copy chosen that the next launch can't swap in (Copies.Next's Late: something it needs ranks after the id): its
+        // rows right after that mod's, the mods they pass that need it with them, as Settle's heal does at a launch (review
+        // C4: a drag above what it needs switched the copy silently, and Fix now moved nothing).
+        foreach (var id in blocks.Keys)
+            if (Copies.Next(id).Late is { } late)
+                SameIdLoad.MoveAfter(gathered, m => m.manifest?.id, id, late, other => gathered.Where(m => m.manifest?.id == other).SelectMany(Dependencies.Of));
+        return gathered;
     }
 
     // Disable (or Enable), then top, up, down, bottom (greyed where they can't move it; ours, pinned first, never move,
-    // and nothing moves above them). compact: the inline moves only; placed: the rows in place, when the caller already
-    // has them.
+    // and nothing moves above them). A mod installed more than once moves as one block, up or down past the whole block
+    // of the mod beside it. compact: the inline moves only; placed: the rows in place, when the caller already has them.
     public static List<MenuItem> Actions(Control content, NModMenuRow row, Action redraw, bool compact = false, List<NModMenuRow>? placed = null)
     {
         var rows = placed ?? content.GetChildren().OfType<NModMenuRow>().ToList();
         var (at, pinned, ours) = (rows.IndexOf(row), Pinned(rows), Ours(row));
-        MenuItem Item(string key, int to) => new(Menus.Text(key + (compact ? "_SHORT" : "")), () =>
+        bool Beside(int a, int b) => rows[a].Mod is { } x && rows[b].Mod is { } y && SameId(x, y);
+        // The row's block, and the rows of the blocks above and below it.
+        var (first, last) = (at, at);
+        while (first > 0 && Beside(first - 1, first))
+            first--;
+        while (last >= 0 && last < rows.Count - 1 && Beside(last, last + 1))
+            last++;
+        var (above, below) = (first - 1, last + 1);
+        while (above > pinned && Beside(above - 1, above))
+            above--;
+        while (below < rows.Count - 1 && Beside(below, below + 1))
+            below++;
+        // gap: where the block goes, an index among all the rows.
+        MenuItem Item(string key, int gap, bool can) => new(Menus.Text(key + (compact ? "_SHORT" : "")), () =>
         {
             if (row.Mod is { } mod)
-                Move(mod, to, rows);
+            {
+                var order = Mods(rows);
+                Save(Placed(order, Block(order, mod), gap, up: gap <= first));
+            }
             redraw();
             // The buttons are kept through a move (Menus.Refill), and Godot checks what's under a still mouse only when it
             // moves: the button clicked would stay lit on its row, moved away, and the one now under the mouse not. Once the
             // rows are in their new places, the hover goes where the mouse is.
             Callable.From(() => content.GetViewport()?.UpdateMouseCursorState()).CallDeferred();
-        }, Disabled: ours || to < pinned || to >= rows.Count || to == at);
+        }, Disabled: ours || at < 0 || !can);
         var moves = new List<MenuItem>
         {
-            Item("SPIRE_MOD_MANAGER.MOVE_TO_TOP", pinned),
-            Item("SPIRE_MOD_MANAGER.MOVE_UP", at - 1),
-            Item("SPIRE_MOD_MANAGER.MOVE_DOWN", at + 1),
-            Item("SPIRE_MOD_MANAGER.MOVE_TO_BOTTOM", rows.Count - 1),
+            Item("SPIRE_MOD_MANAGER.MOVE_TO_TOP", pinned, first > pinned),
+            Item("SPIRE_MOD_MANAGER.MOVE_UP", above, above >= pinned),
+            Item("SPIRE_MOD_MANAGER.MOVE_DOWN", below + 1, below < rows.Count),
+            Item("SPIRE_MOD_MANAGER.MOVE_TO_BOTTOM", rows.Count, last < rows.Count - 1),
         };
         if (compact || row.Mod is not { } it)
             return moves;
@@ -784,7 +882,7 @@ static class LoadOrder
             neededBy[mod.manifest?.id ?? ""].Any(m => m != mod) ? 0
             : mod.manifest?.affectsGameplay ?? true ? 1
             : 2;
-        Save(Fixed(mods.OrderBy(Tier).ToList())); // OrderBy is stable: same-tier mods keep their order
+        Save(Fixed(mods.OrderBy(Tier).ToList(), mods)); // OrderBy is stable: same-tier mods keep their order
     }
 
     // Our entries (one per installed copy) at the top of a saved list, everything else in its order: the game sorts a
@@ -801,13 +899,90 @@ static class LoadOrder
         return true;
     }
 
+    // The order rule (DESIGN.md, Load order): each id's entries in one unbroken run, in the order they had, where its last
+    // anchor is (an entry of a copy the game sorts; an id with none, where its first entry is), so the id ranks where
+    // that anchor ranks. The game ranks an id by its last entry, and its rebuild lists the copies it took out (off, or set
+    // aside by its local-vs-Workshop rule) after all the rest: without this, a mod installed from both sources would rank
+    // last at every launch. anchors[i]: entry i is one (Anchors, SameIdLoad.LaunchAnchors). True if moved.
+    public static bool Normalize(List<SettingsSaveMod> list, IReadOnlyList<bool> anchors)
+    {
+        if (Normalized([.. list.Select(e => e.Id)], anchors) is not { } order)
+            return false;
+        var was = list.ToList();
+        list.Clear();
+        list.AddRange(order.Select(i => was[i]));
+        return true;
+    }
+
+    // The same as an order of indices (null: nothing moves), for the launch record's entries too (LaunchGuard.Begin). Two
+    // passes: each id's place (its last anchor, else its first entry), then each id's run there.
+    public static int[]? Normalized(IReadOnlyList<string> ids, IReadOnlyList<bool> anchors)
+    {
+        var runs = new Dictionary<string, List<int>>();
+        var place = new Dictionary<string, int>();
+        for (var i = 0; i < ids.Count; i++)
+        {
+            (runs.TryGetValue(ids[i], out var run) ? run : runs[ids[i]] = []).Add(i);
+            if (anchors[i] || !place.ContainsKey(ids[i]))
+                place[ids[i]] = i;
+        }
+        var order = new int[ids.Count];
+        var (n, moved) = (0, false);
+        for (var i = 0; i < ids.Count; i++)
+            if (place[ids[i]] == i)
+                foreach (var k in runs[ids[i]])
+                {
+                    moved |= k != n;
+                    order[n++] = k;
+                }
+        return moved ? order : null;
+    }
+
+    // Whether every id's entries are one run already: then the rule moves nothing, whatever the anchors.
+    public static bool Contiguous(IReadOnlyList<string> ids)
+    {
+        var ended = new HashSet<string>();
+        for (var i = 1; i < ids.Count; i++)
+        {
+            if (ids[i] == ids[i - 1])
+                continue;
+            ended.Add(ids[i - 1]);
+            if (ended.Contains(ids[i]))
+                return false;
+        }
+        return true;
+    }
+
+    // The session's anchors: each entry whose source has a copy the next launch sorts (installed, this session's
+    // arrivals too, its switch on in this list, not taken out by the game's local-vs-Workshop rule:
+    // Dependencies.NextSorted). They need no ticks and no order, so they hold before the main menu too.
+    public static bool[] Anchors(IReadOnlyList<SettingsSaveMod> list)
+    {
+        var sorted = Dependencies.NextSorted(Dependencies.SavedOff(list)).Select(m => (m.manifest?.id, m.modSource)).ToHashSet();
+        return [.. list.Select(e => sorted.Contains((e.Id, e.Source)))];
+    }
+
+    // The rule by the session's anchors, worked out only where some id's entries aren't one run (after the first main
+    // menu, a list another mod or the game's own page wrote). True if moved.
+    public static bool NormalizeBySource(List<SettingsSaveMod> list) => !Contiguous([.. list.Select(e => e.Id)]) && Normalize(list, Anchors(list));
+
+    // A new entry, its id's rank kept: right after the id's last entry (appended, it would rank the id last, though the
+    // game sorts a copy with no entry at its id's rank); one the list doesn't have, at the end.
+    public static void Add(List<SettingsSaveMod> list, SettingsSaveMod entry)
+    {
+        var last = list.FindLastIndex(e => e.Id == entry.Id);
+        list.Insert(last < 0 ? list.Count : last + 1, entry);
+    }
+
     // How many rows of ours lead the list (one per installed copy): pinned there.
     static int Pinned(IList<NModMenuRow> rows) => rows.TakeWhile(r => r.Mod?.manifest?.id == ModEntry.ModId).Count();
 
     static bool Ours(NModMenuRow row) => row.Mod?.manifest?.id == ModEntry.ModId;
 
-    // Writes a whole new order: installed mods as given (ours first, OursFirst), then entries for mods that aren't
-    // installed.
+    // Writes a whole new order: installed mods as given (ours first, OursFirst), then the other entries (mods that aren't
+    // installed, a second entry of one that is) each right after its id's (Add: at the end, one of a source not installed
+    // of a mod that is would rank the mod last), in the order rule's form (NormalizeBySource: the moves keep it for the
+    // mods they move, and this gathers any other mod whose entries are apart, which the game's save would do anyway).
     static void Save(List<Mod> mods)
     {
         if (SaveManager.Instance.SettingsSave.ModSettings is not { } settings)
@@ -829,9 +1004,12 @@ static class LoadOrder
             : known.TryGetValue((m.manifest?.id, m.modSource), out var twin) ? new SettingsSaveMod(m) { IsEnabled = twin.IsEnabled }
             : new SettingsSaveMod(m)).ToList();
         var kept = entries.ToHashSet();
-        entries.AddRange(list.Where(e => !kept.Contains(e)));
+        var others = list.Where(e => !kept.Contains(e)).ToList();
         list.Clear();
         list.AddRange(entries);
+        foreach (var entry in others)
+            Add(list, entry);
+        NormalizeBySource(list);
         OursFirst(list);
         // Which copy took which of its key's entries, for Places to read them back so.
         foreach (var group in mods.GroupBy(m => (m.manifest?.id, m.modSource)))
@@ -980,16 +1158,16 @@ static class LoadOrder
                     }
                     var rows = content.GetChildren().OfType<NModMenuRow>().ToList();
                     // Drops are allowed even where they break a dependency: the red line and the warning bar say so.
-                    // A multi-selection moves as one block.
-                    var gapAt = Target(content, rows, release.GlobalPosition.Y).Index;
+                    // A multi-selection moves as one block, and so does a mod installed more than once.
+                    var gapAt = Snapped(rows, Target(content, rows, release.GlobalPosition.Y), Moving(rows)).Index;
                     if (Selection.Several && Selection.Contains(row.Mod))
                     {
                         MoveGroup(Selection.Mods, gapAt, rows);
                         redraw();
                     }
-                    else if (Destination(gapAt, rows) is { } to && row.Mod is { } mod)
+                    else if (row.Mod is { } mod && Dropped(mod, gapAt, Mods(rows)) is { } dropped)
                     {
-                        Move(mod, to, rows);
+                        Save(dropped);
                         redraw();
                     }
                     break;
@@ -1028,36 +1206,48 @@ static class LoadOrder
             // The rows, and whether each mod is on, read once for the frame (outside a redraw each check walked the saved list).
             using var lookups = Lookups.Begin();
             var rows = content.GetChildren().OfType<NModMenuRow>().ToList();
-            var (gap, y) = Target(content, rows, mouseY);
+            var (gap, y) = Snapped(rows, Target(content, rows, mouseY), Moving(rows));
             // Kept inside the list's visible area (it clips), so the gap above the first row still shows.
             marker.GlobalPosition = new Vector2(content.GlobalPosition.X, Math.Clamp(y - 2, view.Position.Y, view.End.Y - 5));
             ShowLinks(content, row, strong: true, drop: (gap, marker.GlobalPosition.Y + 2), rows);
-            // Red where dropping would load it before something it needs (or after something needing it).
-            marker.SelfModulate = Destination(gap, rows) is { } at && row.Mod is { } moving
-                && MoveBreaks(moving, at, rows) ? Blocked : Gold;
+            // Red where dropping would load it (its copy that loads) before something it needs (or after something needing it).
+            var order = Mods(rows);
+            marker.SelfModulate = row.Mod is { } moving && Dropped(moving, gap, order) is { } dropped && Breaks(moving, order, dropped) ? Blocked : Gold;
         }
 
-        // The index the row would take after leaving its slot, or null for its own gap.
-        int? Destination(int gap, List<NModMenuRow> rows)
+        // What the drag moves: the picked mods (each with its other copies), else this row's mod's rows.
+        HashSet<Mod> Moving(List<NModMenuRow> rows)
         {
-            var from = rows.IndexOf(row);
-            return gap == from || gap == from + 1 ? null : gap > from ? gap - 1 : gap;
+            var order = rows.Select(r => r.Mod).OfType<Mod>().ToList();
+            return Selection.Several && Selection.Contains(row.Mod) ? [.. order.Where(m => Selection.Mods.Any(p => SameId(p, m)))]
+                : row.Mod is { } mod ? [.. Block(order, mod)] : [];
         }
     }
 
+    // A gap inside the block of a mod not being moved (two of its rows on either side) moved to that block's nearer edge:
+    // a drop never splits a mod's rows. Its y as Target gives one.
+    static (int Index, float Y) Snapped(List<NModMenuRow> rows, (int Index, float Y) target, HashSet<Mod> moving)
+    {
+        bool Inside(int g) => g > 0 && g < rows.Count && rows[g - 1].Mod is { } a && rows[g].Mod is { } b && !moving.Contains(a) && !moving.Contains(b) && SameId(a, b);
+        if (!Inside(target.Index))
+            return target;
+        var (up, down) = (target.Index, target.Index);
+        while (Inside(up))
+            up--;
+        while (Inside(down))
+            down++;
+        var gap = target.Index - up <= down - target.Index ? up : down;
+        return (gap, gap < rows.Count ? rows[gap].GetGlobalRect().Position.Y - 4 : rows[^1].GetGlobalRect().End.Y + 4);
+    }
 
-    // Moves a group to a gap (index among all rows, as Target gives), keeping their relative order.
+
+    // Moves a group to a gap (index among all rows, as Target gives), keeping their relative order; each with its other
+    // copies' rows (a mod installed more than once moves as one block), gathered there.
     public static void MoveGroup(IReadOnlyCollection<Mod> group, int gap, IList<NModMenuRow> rows)
     {
         var order = Mods(rows);
-        var picked = group.ToHashSet();
-        var moving = order.Where(picked.Contains).ToList();
-        var rest = order.Where(m => !picked.Contains(m)).ToList();
-        var shown = rows.Select(r => r.Mod).OfType<Mod>().ToList();
-        // Rest-of-list position: the unpicked rows above the gap.
-        var insertAt = shown.Take(gap).Count(m => !picked.Contains(m));
-        rest.InsertRange(Math.Clamp(insertAt, 0, rest.Count), moving);
-        Save(rest);
+        var moving = order.Where(m => group.Any(g => SameId(g, m))).ToList();
+        Save(Placed(order, moving, gap, up: moving.Count == 0 || gap <= order.IndexOf(moving[0])));
     }
 
     // Mods linked to this one by a dependency, either way, among the shown rows.

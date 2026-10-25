@@ -424,21 +424,22 @@ static class History
     static bool SameOrder(Snapshot a, Snapshot b) =>
         a.Mods.Select(m => (m.Id, m.Source)).SequenceEqual(b.Mods.Select(m => (m.Id, m.Source))) && LoadOrder.SameCopyOrder(a.CopyOrder, b.CopyOrder);
 
-    // On/off from the snapshot, order as it is now (entries the snapshot has and now lacks go last).
+    // On/off from the snapshot, order as it is now (entries the snapshot has and now lacks right after their id's:
+    // LoadOrder.Add).
     static void ApplyStates(IReadOnlyList<ModEntry> mods)
     {
         var states = mods.DistinctBy(m => (m.Id, m.Source)).ToDictionary(m => (m.Id, m.Source), m => m.Enabled);
         var now = CurrentMods();
         // An entry the snapshot didn't have was made since (a mod installed mid-session, ticked for the first time):
         // back then the game had no entry for it, which means on.
-        Apply(now.Select(m => m with { Enabled = !states.TryGetValue((m.Id, m.Source), out var on) || on })
-            .Concat(mods.Where(m => !now.Any(n => n.Id == m.Id && n.Source == m.Source))).ToList());
+        Apply(now.Select(m => m with { Enabled = !states.TryGetValue((m.Id, m.Source), out var on) || on }).ToList(),
+            mods.Where(m => !now.Any(n => n.Id == m.Id && n.Source == m.Source)));
     }
 
-    // Order from the snapshot, on/off as it is now (entries the snapshot doesn't have go last), ours first whatever the
-    // snapshot had (one from before we kept it so: LoadOrder.OursFirst). Entries of one id and source (two copies of a
-    // mod) take that key's places in the snapshot in turn, not all the first one, and the copies take them in the
-    // snapshot's copy order.
+    // Order from the snapshot, on/off as it is now (entries the snapshot doesn't have right after their id's), ours
+    // first whatever the snapshot had (one from before we kept it so: LoadOrder.OursFirst). Entries of one id and source
+    // (two copies of a mod) take that key's places in the snapshot in turn, not all the first one, and the copies take
+    // them in the snapshot's copy order.
     static void ApplyOrder(Snapshot target)
     {
         var mods = target.Mods;
@@ -450,15 +451,23 @@ static class History
                 places[(mods[i].Id, mods[i].Source)] = queue = new Queue<int>();
             queue.Enqueue(i);
         }
-        Apply(CurrentMods().Select(m => (Mod: m, At: places.TryGetValue((m.Id, m.Source), out var queue) && queue.TryDequeue(out var i) ? i : int.MaxValue))
-            .OrderBy(p => p.At).Select(p => p.Mod).OrderBy(m => m.Id == SpireModManager.ModEntry.ModId ? 0 : 1).ToList());
+        var placed = CurrentMods().Select(m => (Mod: m, At: places.TryGetValue((m.Id, m.Source), out var queue) && queue.TryDequeue(out var i) ? i : (int?)null)).ToList();
+        Apply([.. placed.Where(p => p.At != null).OrderBy(p => p.At).Select(p => p.Mod).OrderBy(m => m.Id == SpireModManager.ModEntry.ModId ? 0 : 1)],
+            placed.Where(p => p.At == null).Select(p => p.Mod));
     }
 
-    static void Apply(IReadOnlyList<ModEntry> mods)
+    // The game's list as given, entries added (LoadOrder.Add), in the order rule's form (LoadOrder.NormalizeBySource: a
+    // snapshot is in it already), saved.
+    static void Apply(IReadOnlyList<ModEntry> mods, IEnumerable<ModEntry>? added = null)
     {
         var settings = SaveManager.Instance.SettingsSave.ModSettings ??= new ModSettings();
         settings.ModList.Clear();
-        settings.ModList.AddRange(mods.Select(m => new SettingsSaveMod { Id = m.Id, Source = m.Source, IsEnabled = m.Enabled }));
+        settings.ModList.AddRange(mods.Select(Entry));
+        foreach (var mod in added ?? [])
+            LoadOrder.Add(settings.ModList, Entry(mod));
+        LoadOrder.NormalizeBySource(settings.ModList);
         SaveManager.Instance.SaveSettings();
     }
+
+    static SettingsSaveMod Entry(ModEntry mod) => new() { Id = mod.Id, Source = mod.Source, IsEnabled = mod.Enabled };
 }
