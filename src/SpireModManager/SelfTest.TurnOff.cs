@@ -471,7 +471,7 @@ static partial class SelfTest
         var code = Plain(Crash(Blamed(Culprits.Why.Code, "SmmTestFixes")));
         Check("the crash culprit's dialog: the game's message first, then that Test Fixes stopped the start (its code), that it can be turned off; "
             + "\"Turn off Test Fixes and restart\" and Quit, no link",
-            code.Body.StartsWith(LaunchGuard.GamesMessage(plain: true)) && code.Body.Contains("Test Fixes stopped the game from starting. The error came from its code.")
+            code.Body.StartsWith(LaunchGuard.GamesMessage(plain: true)) && code.Body.Contains("An error while loading Test Fixes has prevented the game from starting.")
             && code.Body.Contains("Spire Mod Manager can turn off Test Fixes and restart the game.") && Said(code) == "Turn off Test Fixes and restart | no link",
             $"{code.Body} || {Said(code)}");
         // Each rule's own line

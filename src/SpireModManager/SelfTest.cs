@@ -885,7 +885,7 @@ static partial class SelfTest
                     + $"game's message first, with \"Turn off {offName} and restart\"; whose patch it was, as recorded",
                     first.Contains("Notice from the game") && offered == $"Turn off {offName} and restart"
                     && first.Contains(rebuild ? $"{offName} most likely stopped the game from starting. The error came while its changes to a part of the game were being put in place"
-                        : $"{offName} stopped the game from starting. The error came from its code.") && notes.Any(n => n.Contains("as recorded")),
+                        : $"An error while loading {offName} has prevented the game from starting.") && notes.Any(n => n.Contains("as recorded")),
                     $"{first}; offered {offered}; {string.Join("; ", notes)}");
                 // Test Twin, two copies from one source, keeps the switch the game read for it
                 var twin = LaunchGuard.ReadList?.Where(e => e.Id == "SmmTestTwin").Select(e => (e.Source, e.On)).Distinct().ToList() ?? [];

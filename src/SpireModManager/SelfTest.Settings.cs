@@ -205,7 +205,7 @@ static partial class SelfTest
             await Wait(menu, 0.3);
             var greyed = Greyed(Button());
             Check("Settings: a page that didn't open: the button greyed, its tip saying the log has why", Button() is { Visible: true } failed
-                && greyed && Hover.TipOf(failed) == "This mod's settings didn't open. The game's log says why." && SettingsLink.FailedFor(self),
+                && greyed && Hover.TipOf(failed) == "Settings page couldn't be opened - see game log for more details" && SettingsLink.FailedFor(self),
                 $"greyed {greyed}, tip {(Button() is { } t ? Hover.TipOf(t) : "no button")}");
             SettingsLink.TestReset();
             info.Fill(self);
