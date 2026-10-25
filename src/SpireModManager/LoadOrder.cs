@@ -562,29 +562,34 @@ static class LoadOrder
         Layout.PlaceList(border);
     }
 
-    // Main list: enabled mods that won't load as things stand.
+    // Main list: enabled mods that won't load as things stand, and ones the game failed to load this session (Jordan, 25
+    // Oct: "we have no error banner when an enabled mod fails loading"; one that needs a mod that won't load is counted
+    // there, once).
     static void ListBanner(Control content, Control border, Control? search, List<Mod> mods, Action redraw)
     {
         var broken = Unloadable(mods);
-        if (broken.Count == 0)
+        var failed = FailedToLoad(mods, broken);
+        if (broken.Count == 0 && failed.Count == 0)
             return;
         var needOff = broken.Count(b => b.Needs.Any(d => d.Dep != null));
         var needMissing = broken.Count(b => b.Needs.Any(d => d.Dep == null));
         string Part(string key, int count) => Menus.Format(count == 1 ? key + "_ONE" : key, ("count", Menus.Number(count)));
-        // Each a statement of its own, with no full stop (Jordan's rule), so a dot between the two when both show.
+        // Each a statement of its own, with no full stop (Jordan's rule), so a dot between them when two or more show.
         var text = string.Join("  ·  ", new[]
         {
             needOff > 0 ? Part("SPIRE_MOD_MANAGER.LIST_PROBLEMS_OFF", needOff) : null,
             needMissing > 0 ? Part("SPIRE_MOD_MANAGER.LIST_PROBLEMS_MISSING", needMissing) : null,
+            failed.Count > 0 ? Part("SPIRE_MOD_MANAGER.LIST_PROBLEMS_FAILED", failed.Count) : null,
         }.OfType<string>());
 
-        // Go to steps through the mods that won't load and the disabled mods they need, as the rows show them (Next); Show
-        // finds the same mods.
-        var stops = broken.SelectMany(b => b.Needs.Select(d => d.Dep).OfType<Mod>().Prepend(b.Mod)).Distinct().ToList();
+        // Go to steps through the mods that won't load, the disabled mods they need and the ones that failed, as the rows
+        // show them (Next); Show finds the same mods.
+        var stops = broken.SelectMany(b => b.Needs.Select(d => d.Dep).OfType<Mod>().Prepend(b.Mod)).Concat(failed).Distinct().ToList();
         var goTo = Menus.SmallButton(Menus.Text("SPIRE_MOD_MANAGER.GO_TO_PROBLEM"),
             () => GoTo(content, Next(content, stops)), name: "GoToProblemButton");
         Hover.Tip(goTo, Menus.Text("SPIRE_MOD_MANAGER.GO_TO_PROBLEM_TIP"));
-        List<Control> buttons = [goTo, ShowButton(content, "#unmet OR #needed", "FilterProblemButton")];
+        List<Control> buttons = [goTo, ShowButton(content, failed.Count == 0 ? "#unmet OR #needed" : broken.Count == 0 ? "#failed" : "#unmet OR #needed OR #failed",
+            "FilterProblemButton")];
         var needed = Dependencies.NeededOff(mods);
         if (needed.Count > 0)
         {
@@ -615,6 +620,11 @@ static class LoadOrder
             .Where(b => b.Needs.Count > 0)
             .OrderBy(b => b.Needs.All(d => d.Dep == null)) // stable: each group keeps its order
             .ToList();
+
+    // Enabled mods the game failed to load this session (HiddenTags.Failed: its error is on their panel), but the ones
+    // already counted as needing a mod that won't load (broken: Unloadable's).
+    static List<Mod> FailedToLoad(IEnumerable<Mod> mods, IReadOnlyList<(Mod Mod, List<(string Id, Mod? Dep)> Needs)> broken) =>
+        [.. mods.Where(HiddenTags.Failed).Where(m => !broken.Any(b => b.Mod == m))];
 
     // This mod unticked (every copy of it: Copies.OursOff): the page goes with it at the relaunch, so a red banner says
     // so, with Go to (the copy running; no Show for one mod) and Enable now. Enable now turns on the copy running alone
@@ -753,8 +763,11 @@ static class LoadOrder
         string Need((string Id, Mod? Dep) need) => need.Dep is not { } dep ? Menus.Format("SPIRE_MOD_MANAGER.BANNER_NEEDS_MISSING", ("mod", need.Id))
             : TurnedOff.Has(need.Id) ? Menus.Format("SPIRE_MOD_MANAGER.BANNER_NEEDS_TURNED_OFF", ("mod", Shown(dep)))
             : Menus.Format("SPIRE_MOD_MANAGER.BANNER_NEEDS_OFF", ("mod", Shown(dep)));
-        return BannerCard("SPIRE_MOD_MANAGER.BANNER_CARD_TITLE", Unloadable(Mods(content.GetChildren().OfType<NModMenuRow>()))
-            .Select(b => Menus.Format("SPIRE_MOD_MANAGER.BANNER_NEEDS", ("mod", Shown(b.Mod)), ("needs", string.Join(", ", b.Needs.Select(Need))))).ToList());
+        var mods = Mods(content.GetChildren().OfType<NModMenuRow>());
+        var broken = Unloadable(mods);
+        return BannerCard("SPIRE_MOD_MANAGER.BANNER_CARD_TITLE", [.. broken
+            .Select(b => Menus.Format("SPIRE_MOD_MANAGER.BANNER_NEEDS", ("mod", Shown(b.Mod)), ("needs", string.Join(", ", b.Needs.Select(Need))))),
+            .. FailedToLoad(mods, broken).Select(m => Menus.Format("SPIRE_MOD_MANAGER.BANNER_FAILED", ("mod", Shown(m))))]);
     }
 
     // Load Order: each enabled mod placed before a mod it needs, in load order.
