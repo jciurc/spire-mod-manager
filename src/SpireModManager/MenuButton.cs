@@ -9,13 +9,14 @@ namespace SpireModManager;
 // The main menu's "Default (12 mods)" button: a smaller copy of the game's Settings text button (its font, colours,
 // hover and carets) naming the active profile and how many mods are on. It always opens our view of the Modding page,
 // as F3 on the main menu does. Lower-left, or wherever the player moved it (right-click > Move button), with the game's
-// notification dot and a "Relaunch to apply" note while a relaunch is pending. Its right-click menu also opens the
-// translations folder and relaunches the game.
+// notification dot and a "15 mod changes will be applied after a restart" note while a relaunch is pending, its card
+// then ending with the page's summary of the changes. Its right-click menu also opens the translations folder and
+// relaunches the game.
 static class MenuButton
 {
     const string Name = "SpireModManagerMenuButton";
     static readonly Color Coral = new(0.96f, 0.62f, 0.47f);
-    // A long profile name is cut to this width with "…" (at the button's font size).
+    // A long profile name is cut to this width with ".." (at the button's font size).
     const float NameWidth = 360;
     // Room either side of the text inside the button; the hover carets sit in it (the game puts them out to 54 from the
     // text), so wherever the button is kept on screen, they are too.
@@ -71,11 +72,10 @@ static class MenuButton
         // The text, and with it the button's width: its words and the margins. Kept in place (Place), and on screen.
         void Retext()
         {
-            // The page's own line while a relaunch is pending, word for word: one text, one less to translate.
-            note.Text = Menus.Text(outdated ? "SPIRE_MOD_MANAGER.NEEDS_UPDATE" : "SPIRE_MOD_MANAGER.PENDING_RESTART");
-            // What it opens, and the profile in gold; a second's wait, as the mouse crosses it for the game's buttons. Its
-            // card keeps off the note too, while that shows.
-            Hover.Tip(button, Tip(Profiles.Active?.Name ?? ""), Hover.Timing.Late, markup: true,
+            note.Text = outdated ? Menus.Text("SPIRE_MOD_MANAGER.NEEDS_UPDATE") : PendingText();
+            // What it opens, and the profile in gold, over what a relaunch would apply while one is pending; a second's
+            // wait, as the mouse crosses it for the game's buttons. Its card keeps off the note too, while that shows.
+            Hover.Tip(button, Card(Profiles.Active?.Name ?? "", ModEntry.HasPendingChanges()), Hover.Timing.Late, markup: true,
                 area: () => note.Visible ? button.GetGlobalRect().Merge(note.GetGlobalRect()) : button.GetGlobalRect());
             if (label == null)
                 ModEntry.SetText(button, Text(ModEntry.Font("res://themes/kreon_bold_shared.tres"), TextSize)); // the name cut as for ours; the fallback draws at its own size
@@ -108,8 +108,9 @@ static class MenuButton
             Retext();
             Refresh();
         }));
-        // A change made on the main menu itself (a fix in the relaunch check) can start or end a pending relaunch. Changes
-        // on a page over the menu are caught as it closes, above, but the text follows at once (it's hidden meanwhile).
+        // A change made on the main menu itself (a fix in the relaunch check), or a mod installed while it shows (it
+        // arrives on, wanting a relaunch), can start or end a pending relaunch. Changes on a page over the menu are caught
+        // as it closes, above, but the text follows at once (it's hidden meanwhile).
         void Changed()
         {
             Retext();
@@ -117,6 +118,7 @@ static class MenuButton
                 Refresh();
         }
         History.Changed += Changed;
+        Installed.Added += Changed;
         Profiles.Switched += Retext;
         // The language: its text and font. The game goes through its list of these as it calls them, so ours leaves it a
         // frame later, never during that.
@@ -129,6 +131,7 @@ static class MenuButton
         button.TreeExiting += () =>
         {
             History.Changed -= Changed;
+            Installed.Added -= Changed;
             Profiles.Switched -= Retext;
             Callable.From(() => LocManager.Instance.UnsubscribeToLocaleChange(language)).CallDeferred();
         };
@@ -173,17 +176,39 @@ static class MenuButton
         Menus.Format(on == 1 ? "SPIRE_MOD_MANAGER.MAIN_MENU_PROFILE_ONE" : "SPIRE_MOD_MANAGER.MAIN_MENU_PROFILE",
             ("name", RowTitles.Cut(font, name, size, NameWidth)), ("count", Menus.Number(on)));
 
-    // Its card's text (BBCode) for a profile: "View and manage installed mods. Currently using mod profile Default.",
-    // then the key that also opens the page on a line of its own, as the selection chip's card gives its keys. No key if
-    // the patch that reads it didn't apply.
-    public static string Tip(string profile)
+    // The pending note: how many changes the relaunch applies, "15 mod changes will be applied after a restart" (one:
+    // "1 mod change ..."): mods turned on, off and moved in the load order (Changes' counts; edits to our data, which take
+    // effect at once, aren't among them). With none of those (the game's own state wants one), the page's own line.
+    public static string PendingText()
     {
-        var tip = Menus.Format("SPIRE_MOD_MANAGER.MAIN_MENU_TIP", ("profile", Hover.Escape(profile)));
-        return ModEntry.FailedPatches.Contains(nameof(ShortcutsPatch)) ? tip : $"{tip}\n{OS.GetKeycodeString(ShortcutsPatch.ManagerKey)}";
+        var (on, off, moved) = HistoryBar.Counts();
+        var count = on + off + moved + HistoryBar.CopySwitchCount(); // a copy switched counts too: Changes lists it
+        return count switch
+        {
+            0 => Menus.Text("SPIRE_MOD_MANAGER.PENDING_RESTART"),
+            1 => Menus.Text("SPIRE_MOD_MANAGER.PENDING_RESTART_COUNT_ONE"),
+            _ => Menus.Format("SPIRE_MOD_MANAGER.PENDING_RESTART_COUNT", ("count", Menus.Number(count))),
+        };
     }
+
+    // Its card while a relaunch is pending: its own text first, as it always reads (Jordan: "show default mod information
+    // on the top"), a faint line, then the page's summary of the changes (without "Click for the full list"). Without
+    // one, its own text alone.
+    public const string Divider = "[hr color=#fff6e233 height=1 width=100%]";
+
+    public static string Card(string profile, bool pending) => pending && HistoryBar.Summary(cta: false) is { Length: > 0 } changes
+        ? $"{Tip(profile)}\n{Divider}\n{changes}" : Tip(profile);
+
+    // Its card's text (BBCode) for a profile, in Jordan's words: what it is, the key that opens the page and the
+    // right-click menu, then the profile. Without the key if the patch that reads it didn't apply.
+    public static string Tip(string profile) => ModEntry.FailedPatches.Contains(nameof(ShortcutsPatch))
+        ? Menus.Format("SPIRE_MOD_MANAGER.MAIN_MENU_TIP_NO_KEY", ("profile", Hover.Escape(profile)))
+        : Menus.Format("SPIRE_MOD_MANAGER.MAIN_MENU_TIP", ("profile", Hover.Escape(profile)), ("key", OS.GetKeycodeString(ShortcutsPatch.ManagerKey)));
 
     // A copy of the game's Settings button on the main menu, with our action (and none of the game's), its label for our
     // text, and a copy of the game's Timeline notification dot on that label, hidden; null if a game update moved them.
+    public static readonly Vector2 DotShift = new(10, 6);
+
     static Control? Native(NMainMenu menu, Action onPressed)
     {
         if (menu.GetNodeOrNull<NMainMenuTextButton>("MainMenuTextButtons/SettingsButton") is not { } settings
@@ -202,6 +227,9 @@ static class MenuButton
             dot.Name = "Dot";
             dot.Visible = false;
             label.AddChild(dot);
+            // A little left and up from where the game puts it on its own label, clear of our button's right caret.
+            (dot.OffsetLeft, dot.OffsetRight, dot.OffsetTop, dot.OffsetBottom) = (dot.OffsetLeft - DotShift.X, dot.OffsetRight - DotShift.X,
+                dot.OffsetTop - DotShift.Y, dot.OffsetBottom - DotShift.Y);
         }
         menu.AddChild(button);
         button.Released += _ => onPressed();

@@ -1,7 +1,10 @@
 using Godot;
+using MegaCrit.Sts2.Core.Audio;
+using MegaCrit.Sts2.Core.Commands;
 using MegaCrit.Sts2.Core.Localization;
 using MegaCrit.Sts2.Core.Logging;
 using MegaCrit.Sts2.Core.Modding;
+using MegaCrit.Sts2.Core.Nodes.CommonUi;
 using MegaCrit.Sts2.Core.Nodes.GodotExtensions;
 using MegaCrit.Sts2.Core.Nodes.Screens.ModdingScreen;
 
@@ -37,9 +40,10 @@ static class CategoryList
     {
         var content = screen.GetNode<Control>("%ModsScrollContainer/Mask/Content");
 
-        // Two view switches along the bottom (Layout places them): Vanilla and Load Order. Each turns the
-        // other off; pressing the lit one again goes back to categories, and its label says so.
-        Control? vanilla = null, loadOrder = null;
+        // The way to the other page (a link at the top, right of the title) and Load Order (a button along the bottom);
+        // Layout places them. Each turns the other off; Load Order's again goes back to categories, and its label says so.
+        LinkButton? vanilla = null;
+        Control? loadOrder = null;
         // Whether Vanilla View was laid out last, so the saved view is laid out if it changed while the page was closed.
         var shownVanilla = false;
         void Switch(bool toVanilla) => Show(toVanilla && !Store.Data.VanillaView, !toVanilla && !Store.Data.LoadOrderView);
@@ -51,8 +55,7 @@ static class CategoryList
             Selection.Clear(content, record: false);
             History.ForgetPicks();
             Store.Save();
-            Label(vanilla, data.VanillaView ? "SPIRE_MOD_MANAGER.CATEGORY_VIEW" : "SPIRE_MOD_MANAGER.VANILLA_VIEW");
-            VanillaTip(vanilla);
+            PageLinkText(vanilla);
             Label(loadOrder, data.LoadOrderView ? "SPIRE_MOD_MANAGER.BACK" : "SPIRE_MOD_MANAGER.LOAD_ORDER");
             Profiles.RefreshTickboxes(screen); // the boxes as this view reads them (copies of a mod installed twice)
             Apply(content);
@@ -80,41 +83,102 @@ static class CategoryList
             else if (released)
                 Apply(content);
         };
-        vanilla = ModEntry.AddButton(screen, "SPIRE_MOD_MANAGER.VANILLA_VIEW", new Vector2(200, 70), () => Switch(true));
-        vanilla.Name = "SpireModManagerViewToggle";
+        vanilla = PageLink(screen, () => Switch(true));
+        // Ours, in the bottom-left corner, in place of the game's back arrow (Layout): back to the main menu as that goes.
+        var mainMenu = ModEntry.AddButton(screen, "SPIRE_MOD_MANAGER.MAIN_MENU", new Vector2(200, 70), () => Layout.GoBack(screen, sound: false));
+        mainMenu.Name = Layout.MainMenuName;
         loadOrder = ModEntry.AddButton(screen, "SPIRE_MOD_MANAGER.LOAD_ORDER", new Vector2(200, 70), () => Switch(false));
         loadOrder.Name = "SpireModManagerLoadOrderToggle";
         // Labels for the saved view.
-        Label(vanilla, Store.Data.VanillaView ? "SPIRE_MOD_MANAGER.CATEGORY_VIEW" : "SPIRE_MOD_MANAGER.VANILLA_VIEW");
-        VanillaTip(vanilla);
+        PageLinkText(vanilla);
         Label(loadOrder, Store.Data.LoadOrderView ? "SPIRE_MOD_MANAGER.BACK" : "SPIRE_MOD_MANAGER.LOAD_ORDER");
 
         Profiles.RefreshTickboxes(screen); // the game ticked them its way (one switch for copies of one id and source)
         Apply(content);
     }
 
-    // What the view switch leads to: the game's own page (as Better Mod Menu shows it, with that loaded), or back to ours.
-    // While a mod is installed twice from one source, how that page's tickbox treats its copies, on a line of its own.
-    static void VanillaTip(Control? toggle)
+    // The way to the other page, as a plain link (Jordan: no button look) at the top, right of the page's title; like
+    // all our links, its colour and the pointing hand, never an underline.
+    static LinkButton PageLink(NModdingScreen screen, Action onPressed)
     {
-        if (toggle == null)
-            return;
-        var tip = Menus.Text(Store.Data.VanillaView ? "SPIRE_MOD_MANAGER.CATEGORY_VIEW_TIP" : "SPIRE_MOD_MANAGER.VANILLA_VIEW_TIP");
-        if (!Store.Data.VanillaView && Copies.TwinGroups() is { Count: > 0 } twins)
-            tip += "\n" + Menus.Format("SPIRE_MOD_MANAGER.VANILLA_VIEW_SAME_ID", ("mods", string.Join(", ", twins.Select(g => g.Id).Distinct()
-                .Select(id => Dependencies.Find(id) is { } mod ? Store.InfoFor(mod)?.Alias ?? mod.manifest?.name ?? id : id))));
-        Hover.Tip(toggle, tip);
+        var link = new LinkButton
+        {
+            Name = "SpireModManagerViewToggle", Underline = LinkButton.UnderlineMode.Never, FocusMode = Control.FocusModeEnum.None,
+            MouseDefaultCursorShape = Control.CursorShape.PointingHand,
+        };
+        link.AddThemeFontOverride("font", ModEntry.Font("res://themes/kreon_regular_shared.tres"));
+        link.AddThemeFontSizeOverride("font_size", PageLinkSize);
+        link.AddThemeColorOverride("font_color", new Color(ModDetails.ModLinkHex));
+        link.AddThemeColorOverride("font_hover_color", Colors.White);
+        link.AddThemeColorOverride("font_pressed_color", Colors.White);
+        link.Pressed += () =>
+        {
+            SfxCmd.Play(FmodSfx.uiClick);
+            onPressed();
+        };
+        screen.AddChild(link);
+        return link;
     }
 
-    // On our views, a copy of a mod installed twice that's off, while another copy of it is on: what enabling it turns
-    // off (its tickbox's tip, and Load Order's Enable). Null otherwise.
-    public static string? SwitchCopyTip(Mod mod) =>
-        !Store.Data.VanillaView && !Dependencies.IsOn(mod) && Dependencies.TurnedOffBy([mod], mod) is { Count: > 0 } off
-            ? Menus.Format("SPIRE_MOD_MANAGER.SWITCH_COPY_TIP", ("mods", Names(off))) : null;
+    public const int PageLinkSize = 18;
 
-    // Mods as rows name them, each saying which copy where another is installed: "Test Twin (SmmTestTwinA)".
-    static string Names(IEnumerable<Mod> mods) =>
-        string.Join(", ", mods.Select(m => (Store.InfoFor(m)?.Alias ?? m.manifest?.name ?? m.manifest?.id) + Copies.Which(m)));
+    // Its words for the page now shown: "Go to vanilla modding page" on ours, "Go to Spire Mod Manager page" on the
+    // game's. On ours, while a mod is installed twice from one source, its card says how that page's tickbox treats
+    // the copies; on the game's, no card (Jordan).
+    static void PageLinkText(LinkButton? link)
+    {
+        if (link == null)
+            return;
+        link.Text = Menus.Text(Store.Data.VanillaView ? "SPIRE_MOD_MANAGER.GO_TO_OURS" : "SPIRE_MOD_MANAGER.GO_TO_VANILLA");
+        string? tip = null;
+        if (!Store.Data.VanillaView)
+        {
+            tip = Menus.Text("SPIRE_MOD_MANAGER.VANILLA_VIEW_TIP");
+            if (Copies.TwinGroups() is { Count: > 0 } twins)
+                tip += "\n" + Menus.Format("SPIRE_MOD_MANAGER.VANILLA_VIEW_SAME_ID", ("mods", string.Join(", ", twins.Select(g => g.Id).Distinct()
+                    .Select(id => Dependencies.Find(id) is { } mod ? Store.InfoFor(mod)?.Alias ?? mod.manifest?.name ?? id : id))));
+        }
+        Hover.Tip(link, tip);
+    }
+
+    // On our views, the tip on the tickbox of a copy of a mod installed more than once (and on Load Order's Enable or
+    // Disable for it): a copy that's off while another is on, which of them would load with this one on too
+    // (Copies.LoadingIf, the rule's: of two copies from one source, the higher version; of this mod's, the game's own
+    // pick). Null otherwise: a copy that's on says what it does in the info panel (ModDetails.CopyLine). Nothing is
+    // turned off by enabling a copy (Dependencies.Write).
+    public static string? CopyTip(Mod mod)
+    {
+        if (Store.Data.VanillaView || mod.manifest?.id is not { } id || Copies.Others(mod) is not { Count: > 0 } others)
+            return null;
+        if (Copies.Ticked(mod) || others.FirstOrDefault(Copies.Ticked) is not { } ticked)
+            return null;
+        // The copy that loads now among the others (a copy that's off can load only through a switch it shares: then
+        // another that's on).
+        var loading = Copies.Loading(id) is { } now && others.Contains(now) && Copies.Ticked(now) ? now : ticked;
+        return Menus.Format("SPIRE_MOD_MANAGER.COPY_ON_TIP", ("other", Copies.Named(loading)), ("loads", Copies.Named(Copies.LoadingIf(mod) ?? mod)));
+    }
+
+    // Made once: asked of every row on every redraw and tick (a text passed as one is converted anew each time).
+    static readonly NodePath TickboxPath = "Tickbox";
+    static readonly StringName CopyBoxMeta = "spire_mod_manager_copy_box"; // on rows whose box CopyBoxes has set
+
+    // Each row's tickbox where its id is installed more than once, on our main list: its tip (CopyTip). Vanilla View keeps
+    // the game's boxes, so their tips go; Load Order hides them (on and off are in its row menu, OrderingOnly). After
+    // every tick too (RefreshStrips): a tick changes the tips.
+    static void CopyBoxes(IEnumerable<NModMenuRow> rows)
+    {
+        var vanilla = Store.Data.VanillaView;
+        foreach (var row in rows)
+        {
+            if (row.Mod is not { } mod)
+                continue;
+            var copy = !vanilla && Copies.Others(mod).Count > 0;
+            if (!copy && !row.HasMeta(CopyBoxMeta))
+                continue; // most rows: a mod installed once, its box never set here
+            row.SetMeta(CopyBoxMeta, true);
+            Hover.Tip(row.GetNode<NTickbox>(TickboxPath), copy ? CopyTip(mod) : null);
+        }
+    }
 
     static void Label(Control? button, string key)
     {
@@ -193,7 +257,7 @@ static class CategoryList
             return;
         ListFilter.Bring(row.Mod); // hidden until the next redraw (the search's clearing, or Expand's)
         var filter = Filter(content);
-        if (filter.Length > 0 && !Store.Data.LoadOrderView && !Search.Matches(row.Mod, filter)) // Load Order hides no row
+        if (filter.Length > 0 && !Store.Data.LoadOrderView && !ListFilter.Finds(row.Mod, filter)) // Load Order hides no row
             Search.Clear(content);
         Expand(content, row);
         ScrollSoon(content, row, flash, focus);
@@ -240,7 +304,7 @@ static class CategoryList
         };
         Hover.WatchLinks(label, "SpireModManagerNotesCard",
             meta => meta.StartsWith("mod:") && Linked(meta[4..]) is { } mod ? ModDetails.Card(mod) : null,
-            full: meta => meta.StartsWith("mod:") && Linked(meta[4..]) is { } mod ? ModDetails.Card(mod, full: true) : null);
+            width: ModDetails.CardWidth, full: meta => meta.StartsWith("mod:") && Linked(meta[4..]) is { } mod ? ModDetails.Card(mod, full: true) : null);
     }
 
     // The mod a link names: a copy by its key ("<id>|<copy>"), or a mod by its id (Dependencies.Find's copy).
@@ -261,7 +325,7 @@ static class CategoryList
         };
     }
 
-    // A short gold glow over a row (a banner's Show, the copy a switch to another one turned off).
+    // A short gold glow over a row (a banner's Show).
     public static void Flash(Control row)
     {
         var glow = new ColorRect { Color = new Color(0.937f, 0.784f, 0.318f, 0.35f), MouseFilter = Control.MouseFilterEnum.Ignore };
@@ -403,10 +467,6 @@ static class CategoryList
             .OrderBy(r => r.Mod is { } mod && order.TryGetValue(mod, out var i) ? i : int.MaxValue)
             .ToList();
         RowTitles.Apply(rows, Store.Data.VanillaView);
-        // A copy of a mod installed twice, off while another is on: what its tickbox turns off (Vanilla View: none).
-        foreach (var row in rows.Where(r => r.Mod is { } m && Copies.Others(m).Count > 0))
-            if (row.Mod is { } mod)
-                Hover.Tip(row.GetNode<Control>("Tickbox"), SwitchCopyTip(mod));
 
         // Right-click a row for its menu (category, alias, tags, notes; the bulk menu for picked mods; on/off and
         // moves in Load Order). Rows outlive Apply, so connect once.
@@ -444,14 +504,15 @@ static class CategoryList
         }
 
         // Search hides the rows that don't match and opens categories with matches; on the main list the Show: choice
-        // too (a row shows when it matches both).
+        // too (a row shows when it matches both). A row kept for an edit by hand counts as matching both (ListFilter).
         var filter = Filter(content);
         var searching = filter.Length > 0;
         var filtering = searching || ListFilter.Current != ListFilter.Choice.All;
+        ListFilter.Searching(filter);
         // Worked out for every row on first use, then looked up: a redraw asks about each row up to four times.
         HashSet<NModMenuRow>? matching = null;
         bool Matches(NModMenuRow row) =>
-            (matching ??= rows.Where(r => (!searching || Search.Matches(r.Mod, filter)) && ListFilter.Shows(r.Mod)).ToHashSet()).Contains(row);
+            (matching ??= rows.Where(r => ListFilter.Finds(r.Mod, filter) && ListFilter.Shows(r.Mod)).ToHashSet()).Contains(row);
 
         LoadOrder.UpdateToolbar(content, rows, () => Redraw(content));
         if (Store.Data.LoadOrderView)
@@ -468,6 +529,7 @@ static class CategoryList
             RowStrip.Hide(rows);
         else
             RowStrip.Apply(rows, StripActions(content), EdgeAction(content));
+        CopyBoxes(rows); // Vanilla View: the game's boxes again
 
         if (Store.Data.VanillaView)
         {
@@ -486,7 +548,7 @@ static class CategoryList
         var known = categories.Select(c => c.Name).ToHashSet();
         string? CategoryOf(NModMenuRow row) =>
             Store.InfoFor(row.Mod)?.Category is { } name && known.Contains(name) ? name : null;
-        if (ListFilter.Current != ListFilter.Choice.All)
+        if (filtering)
             ListFilter.Showed(rows.Where(Matches).Select(r => r.Mod)); // the rows a change to one mod keeps
 
         var index = 0;
@@ -497,6 +559,10 @@ static class CategoryList
             content.AddChild(node);
             content.MoveChild(node, index++);
         }
+        // A search for #missing or #uninstalled: the profile's mods that aren't installed have no rows, so a line at the
+        // list's top says how many, with a link to their list.
+        if (searching && Search.Wants(filter, "missing", "uninstalled") && Profiles.Missing() is { Count: > 0 } missing)
+            Add(MissingHint(content, missing.Count));
 
         void AddSection(string title, List<NModMenuRow> members, bool collapsed, Action<bool> setCollapsed, Category? category = null)
         {
@@ -516,7 +582,6 @@ static class CategoryList
             header.Name = category == null ? "Uncategorized" : $"Category {category.Name}";
             header.SetMeta(CategoryMeta, category?.Name ?? "");
             var titleLabel = header.GetNode<Label>("Title");
-            titleLabel.Text = title;
             // Our (smaller-text) views: a shorter header.
             header.CustomMinimumSize = new Vector2(0, 36);
             titleLabel.AddThemeFontSizeOverride("font_size", 18);
@@ -524,18 +589,22 @@ static class CategoryList
             // The scene's Kreon, or the game's font for its language (ModEntry.Font).
             titleLabel.AddThemeFontOverride("font", ModEntry.Font("res://themes/kreon_bold_shared.tres"));
             header.GetNode<Label>("Count").AddThemeFontOverride("font", ModEntry.Font("res://themes/kreon_regular_shared.tres"));
+            // The bar as wide as a row's highlight, its edges in line with a highlighted row's (Jordan, 23 Oct).
+            var background = header.GetNode<ColorRect>("Background");
+            (background.OffsetLeft, background.OffsetRight) = Store.Data.VanillaView ? (0, 0) : (RowTitles.LookInset.X, RowTitles.LookInset.Z);
             if (muted)
             {
                 // Not a category the player made: cream instead of gold, fainter background.
                 titleLabel.AddThemeColorOverride("font_color", new Color(1, 0.964706f, 0.886275f, 0.7f));
-                header.GetNode<ColorRect>("Background").Color = new Color(0.0756f, 0.12084f, 0.18f, 0.3f);
+                background.Color = new Color(0.0756f, 0.12084f, 0.18f, 0.3f);
             }
-            // The count right after the name.
+            // The count right after the name, as it shows: a long one is cut short of the header's buttons.
             var count = header.GetNode<Label>("Count");
             count.Text = Menus.Number(filtering ? members.Count(Matches) : members.Count);
             count.HorizontalAlignment = HorizontalAlignment.Left;
             count.AnchorLeft = 0;
-            count.OffsetLeft = titleLabel.OffsetLeft + titleLabel.GetThemeFont("font").GetStringSize(title, fontSize: 18).X + 10;
+            Menus.CutToFit(titleLabel, title, () => count.OffsetLeft = titleLabel.OffsetLeft
+                + titleLabel.GetThemeFont("font").GetStringSize(titleLabel.Text, fontSize: 18).X + 10);
             // The header menu's actions inline, right-aligned: the category's own (not for Uncategorized), then
             // Enable all / Disable all at the far right, over the rows' tickboxes.
             var shown = members.Where(Matches).ToList();
@@ -547,7 +616,7 @@ static class CategoryList
             {
                 var button = Menus.SmallButton(item.Label, item.OnSelect ?? (() => { }), item.Disabled);
                 button.SizeFlagsVertical = Control.SizeFlags.ShrinkCenter;
-                Hover.Tip(button, item.Tip); // Disable all where this mod is among them: it stays on
+                Hover.Tip(button, item.Tip, markup: item.TipMarkup); // Disable all where this mod is among them: it stays on
                 actions.AddChild(button);
             }
             actions.Alignment = BoxContainer.AlignmentMode.End;
@@ -574,7 +643,6 @@ static class CategoryList
             }
             Show(collapsed);
 
-            var background = header.GetNode<ColorRect>("Background");
             var baseColor = background.Color;
             header.MouseEntered += () => background.Color = baseColor.Lightened(0.15f);
             header.MouseExited += () => background.Color = baseColor;
@@ -588,17 +656,24 @@ static class CategoryList
                     return;
                 if (click.Pressed)
                     pressedAt = click.GlobalPosition;
-                else if (click.GlobalPosition.DistanceTo(pressedAt) < DragThreshold)
+                // Not while searching: every section shows open then (Show), so a fold would change out of sight.
+                else if (click.GlobalPosition.DistanceTo(pressedAt) < DragThreshold && !searching)
                 {
-                    collapsed = !collapsed;
-                    Show(collapsed);
-                    setCollapsed(collapsed);
-                    Store.Save();
+                    setCollapsed(!collapsed);
+                    Store.SaveViewState(); // view state: no undo step
+                    Apply(content); // the page bar's Expand all and Collapse all follow
+                    // The header made again under a still mouse is lit, as the one clicked was.
+                    Callable.From(() => content.GetViewport()?.UpdateMouseCursorState()).CallDeferred();
                 }
             };
         }
 
-        var byCategory = rows.ToLookup(CategoryOf); // each row's category read once, in list order
+        // Each category's rows by the name they show (an alias, else the mod's name), as the game's language sorts
+        // them, any case; two of one name keep the game's order. This mod first in whichever category it's in, whatever
+        // its name (Jordan), its copies by name among themselves. Each row's category read once.
+        var names = StringComparer.Create(Menus.Culture, ignoreCase: true);
+        var byCategory = rows.OrderBy(r => r.Mod?.manifest?.id == ModEntry.ModId ? 0 : 1)
+            .ThenBy(r => Store.InfoFor(r.Mod)?.Alias ?? r.Mod?.manifest?.name ?? r.Mod?.manifest?.id ?? "", names).ToLookup(CategoryOf);
         foreach (var category in categories)
             AddSection(category.Name, byCategory[category.Name].ToList(),
                 category.Collapsed, c => category.Collapsed = c, category);
@@ -621,7 +696,17 @@ static class CategoryList
         List<NModMenuRow>? placed = null;
         return Store.Data.LoadOrderView
             ? row => LoadOrder.Actions(content, row, () => Redraw(content), compact: true, placed ??= content.GetChildren().OfType<NModMenuRow>().ToList())
-            : row => [new MenuItem(CategoryName(Copies.KeyOf(row.Mod)), () => ShowRowMenu(content, row), Tip: Menus.Text("SPIRE_MOD_MANAGER.CATEGORY_TIP"))];
+            : row => [CategoryButton(content, row)];
+    }
+
+    // A row's category button: a long name cut with ".." to RowStrip.CategoryMax, its card then starting with the whole
+    // name (as a long tag's does).
+    static MenuItem CategoryButton(Control content, NModMenuRow row)
+    {
+        var (name, tip) = (CategoryName(Copies.KeyOf(row.Mod)), Menus.Text("SPIRE_MOD_MANAGER.CATEGORY_TIP"));
+        var shown = Menus.SmallText(name, RowStrip.CategoryMax);
+        return shown == name ? new MenuItem(name, () => ShowRowMenu(content, row), Tip: tip)
+            : new MenuItem(shown, () => ShowRowMenu(content, row), Tip: $"[b]{Hover.Escape(name)}[/b]\n{Hover.Escape(tip)}", TipMarkup: true);
     }
 
     // The main list's pencil, past the tickbox at the row's far right: the mod's menu. None in Load Order.
@@ -633,8 +718,8 @@ static class CategoryList
     public static string CategoryName(string? modId) =>
         Store.InfoFor(modId)?.Category is { } name && Categories.Find(name) != null ? name : Menus.Text("SPIRE_MOD_MANAGER.UNCATEGORIZED");
 
-    // After a tickbox change: the rows' dependency notes ("(off)", "Required for") follow at once, without a
-    // full redraw. (Their title colours: RowTitles.MarkChanged.)
+    // After a tickbox change: the rows' dependency notes ("(off)", "Required for") and the copies' boxes (their tips)
+    // follow at once, without a full redraw. (Their title colours: RowTitles.MarkChanged.)
     public static void RefreshStrips(Control content)
     {
         using var lookups = Lookups.Begin();
@@ -643,6 +728,8 @@ static class CategoryList
         if (Store.Data.VanillaView)
             return;
         RowStrip.Apply(rows, StripActions(content), EdgeAction(content));
+        if (!Store.Data.LoadOrderView)
+            CopyBoxes(rows);
     }
 
     // A mod's right-click menu: its category on the left, its alias, tags and notes on the right; its row stays under
@@ -681,20 +768,7 @@ static class CategoryList
             items.Add(new MenuItem(category.Name, () => Move(category.Name), Checked: category.Name == common, Radio: true));
         items.Add(new MenuItem(Menus.Text("SPIRE_MOD_MANAGER.UNCATEGORIZED"), () => Move(null), Checked: common == null, Radio: true));
         items.Add(MenuItem.Heading(""));
-        items.Add(new MenuItem(Menus.Text("SPIRE_MOD_MANAGER.NEW_CATEGORY"), () =>
-        {
-            Category? made = null;
-            Store.Batch(() =>
-            {
-                made = Categories.Add();
-                foreach (var id in ids)
-                    Categories.Assign(id, made.Name);
-            });
-            ListFilter.Keep(ids);
-            Edited(content);
-            if (made != null && BeginRename(content, made)?.GetParent() is Control header)
-                ScrollSoon(content, header, flash: false);
-        }));
+        items.Add(new MenuItem(Menus.Text("SPIRE_MOD_MANAGER.NEW_CATEGORY"), () => NewCategory(content, ids)));
         items.Add(MenuItem.Heading(""));
         // The picked rows themselves: a copy picked without its twin switches alone.
         items.AddRange(OnOffItems(content, content.GetChildren().OfType<NModMenuRow>().Where(r => Selection.Contains(r.Mod)), selected: true));
@@ -730,14 +804,7 @@ static class CategoryList
             items.Add(new MenuItem(category.Name, () => Move(category.Name), Checked: category.Name == current, Radio: true));
         items.Add(new MenuItem(Menus.Text("SPIRE_MOD_MANAGER.UNCATEGORIZED"), () => Move(null), Checked: current == null, Radio: true));
         items.Add(MenuItem.Heading(""));
-        items.Add(new MenuItem(Menus.Text("SPIRE_MOD_MANAGER.NEW_CATEGORY"), () =>
-        {
-            var category = Categories.Add();
-            Move(category.Name);
-            // Its name box, at the bottom of the categories: scrolled into view.
-            if (BeginRename(content, category)?.GetParent() is Control header)
-                ScrollSoon(content, header, flash: false);
-        }));
+        items.Add(new MenuItem(Menus.Text("SPIRE_MOD_MANAGER.NEW_CATEGORY"), () => NewCategory(content, [id])));
         return items;
 
         void Move(string? category)
@@ -746,6 +813,23 @@ static class CategoryList
             ListFilter.Keep(id);
             Edited(content);
         }
+    }
+
+    // New category, from a mod's menu or the bulk one: made with these mods in it as one undo step, their rows kept under
+    // a Show: choice (ListFilter.Keep), and its name box opened (at the bottom of the categories: scrolled into view).
+    static void NewCategory(Control content, List<string> ids)
+    {
+        Category? made = null;
+        Store.Batch(() =>
+        {
+            made = Categories.Add();
+            foreach (var id in ids)
+                Categories.Assign(id, made.Name);
+        });
+        ListFilter.Keep(ids);
+        Edited(content);
+        if (made != null && BeginRename(content, made)?.GetParent() is Control header)
+            ScrollSoon(content, header, flash: false);
     }
 
     // Enable all / Disable all / Select all (the mods shown under it: all of them, or the search's matches), then,
@@ -760,30 +844,47 @@ static class CategoryList
     }
 
     // Enable all / Disable all for some rows (a category's, or the page's), as one undo step; each greyed out
-    // when there's nothing for it to do. This mod stays on. Enable selected / Disable selected for the picked mods.
-    // A mod installed twice turns on one copy (Dependencies.Write: one already on, else the picked one), and counts as
-    // done when one of its copies is on; turning one on that turns off copies outside these rows says so.
+    // when there's nothing for it to do. Disable all leaves this mod on, every copy of it, and says so where it's among
+    // them (Jordan: its own box, a selection that has it and the bulk menu can turn it off, Disable all can't). Enable
+    // selected / Disable selected for the picked mods, this one too. Each box of these rows, a copy of a mod installed
+    // more than once too (Dependencies.Write), so Enable all ticks every one; turning on a second copy of a mod says so
+    // (only one copy of each loads).
     public static List<MenuItem> OnOffItems(Control content, IEnumerable<NModMenuRow> members, bool selected = false)
     {
         var mods = members.Select(r => r.Mod).OfType<Mod>().ToList();
+        bool Kept(Mod mod) => !selected && mod.manifest?.id == ModEntry.ModId;
         void Set(bool on)
         {
             if (ScreenOf(content) is not { } screen)
                 return;
-            Dependencies.Set(mods, on, screen);
+            Dependencies.Set(on ? mods : mods.Where(m => !Kept(m)), on, screen);
             Redraw(content);
         }
-        var offs = Dependencies.TurnedOffBy(mods);
         return
         [
             new(Menus.Text(selected ? "SPIRE_MOD_MANAGER.ENABLE_SELECTED" : "SPIRE_MOD_MANAGER.ENABLE_ALL"), () => Set(true),
-                Disabled: mods.All(m => Dependencies.IsOn(m) || Copies.Others(m).Any(Dependencies.IsOn)),
-                Tip: offs.Count > 0 ? Menus.Format("SPIRE_MOD_MANAGER.BULK_DISABLES_COPIES_TIP", ("mods", Names(offs))) : null),
+                Disabled: mods.All(Copies.Ticked), Tip: EnablesCopiesTip(mods)),
             new(Menus.Text(selected ? "SPIRE_MOD_MANAGER.DISABLE_SELECTED" : "SPIRE_MOD_MANAGER.DISABLE_ALL"), () => Set(false),
-                Disabled: mods.All(m => !Dependencies.IsOn(m) || m.manifest?.id == ModEntry.ModId),
-                // Where this mod is among them, it says it stays on.
-                Tip: mods.Any(m => m.manifest?.id == ModEntry.ModId) ? Menus.Text("SPIRE_MOD_MANAGER.DISABLE_ALL_KEEPS_SELF") : null),
+                Disabled: mods.All(m => !Copies.Ticked(m) || Kept(m)),
+                Tip: mods.Any(Kept) ? Menus.Text("SPIRE_MOD_MANAGER.DISABLE_ALL_KEEPS_SELF") : null),
         ];
+    }
+
+    // Where turning these mods on leaves two or more copies of an id ticked, one of them turned on by it (copies outside
+    // these rows count): a tip naming those mods (without which copy), as only one copy of each loads, this mod too. Null
+    // for none.
+    static string? EnablesCopiesTip(List<Mod> mods)
+    {
+        var enabling = mods.Select(Copies.SwitchKey).ToHashSet();
+        var named = new List<string>();
+        foreach (var turned in mods.Where(m => m.manifest?.id != null && Copies.Others(m).Count > 0 && !Copies.Ticked(m))
+            .DistinctBy(m => m.manifest?.id))
+        {
+            var ticked = Dependencies.EachCopy(Copies.Others(turned).Prepend(turned)).Count(c => enabling.Contains(Copies.SwitchKey(c)) || Copies.Ticked(c));
+            if (ticked > 1)
+                named.Add(Store.InfoFor(turned)?.Alias ?? turned.manifest?.name ?? turned.manifest?.id ?? "");
+        }
+        return named.Count == 0 ? null : Menus.Format("SPIRE_MOD_MANAGER.BULK_ENABLES_COPIES_TIP", ("mods", string.Join(", ", named.Distinct())));
     }
 
     // Rename, up, down, delete: the header's right-click menu, and its inline buttons (compact labels).
@@ -905,7 +1006,7 @@ static class CategoryList
         header.AddChild(arrow);
         var title = new Label
         {
-            Name = "Title", VerticalAlignment = VerticalAlignment.Center, TextOverrunBehavior = TextServer.OverrunBehavior.TrimEllipsis,
+            Name = "Title", VerticalAlignment = VerticalAlignment.Center,
             MouseFilter = Control.MouseFilterEnum.Ignore, AnchorRight = 1, AnchorBottom = 1, OffsetLeft = 52, OffsetRight = -90,
         };
         title.AddThemeFontOverride("font", ModEntry.Font("res://themes/kreon_bold_shared.tres"));
@@ -934,5 +1035,33 @@ static class CategoryList
         line.OffsetTop = -1;
         line.OffsetBottom = 1;
         return divider;
+    }
+
+    public const string MissingHintName = "SpireModManagerMissingHint";
+
+    // How many of the profile's mods aren't installed, in faint cream, its [url=missing] opening their list
+    // (MissingMods) in our links' colour (no underline; the pointing hand).
+    static Control MissingHint(Control content, int count)
+    {
+        var text = Menus.Format(count == 1 ? "SPIRE_MOD_MANAGER.MISSING_SEARCH_HINT_ONE" : "SPIRE_MOD_MANAGER.MISSING_SEARCH_HINT",
+            ("count", Menus.Number(count)));
+        var line = new RichTextLabel
+        {
+            Name = "Line", BbcodeEnabled = true, FitContent = true, ScrollActive = false, SelectionEnabled = false, MetaUnderlined = false,
+            MouseFilter = Control.MouseFilterEnum.Pass, // the wheel still scrolls the list
+            Text = text.Replace("[url=missing]", $"[url=missing][color={ModDetails.ModLinkHex}]").Replace("[/url]", "[/color][/url]"),
+        };
+        Hover.Fonts(line, 16);
+        line.AddThemeColorOverride("default_color", new Color(1, 0.964706f, 0.886275f, 0.75f));
+        line.MetaClicked += meta =>
+        {
+            if (meta.AsString() == "missing" && ScreenOf(content) is { } screen)
+                MissingMods.Show(screen);
+        };
+        var hint = new MarginContainer { Name = MissingHintName, MouseFilter = Control.MouseFilterEnum.Pass };
+        foreach (var (side, room) in new[] { ("margin_left", 16), ("margin_right", 16), ("margin_top", 8), ("margin_bottom", 8) })
+            hint.AddThemeConstantOverride(side, room);
+        hint.AddChild(line);
+        return hint;
     }
 }

@@ -2,11 +2,37 @@ using Godot;
 
 namespace SpireModManager;
 
-// Small icons drawn in code: a notepad page, an "i" in a ring and the external-link mark.
+// Small icons drawn in code: a notepad page, an "i" in a ring, the external-link mark and our padlock.
 static class Icons
 {
     static Texture2D? _notepad, _info;
     static readonly Dictionary<int, Texture2D> ExternalLinks = []; // by size
+    static readonly Color PadlockGold = new(0.937f, 0.784f, 0.318f, 0.8f);
+
+    // Our gold padlock, an arched shackle over a body (16 by 19 px), added to holder about a point of it: at, a fraction
+    // of its size each way, then moved by offset px. It marks what of ours stays as it is: our rows' grip in Load Order
+    // (they stay first). Only drawn: the mouse goes through.
+    public static void AddPadlock(Control holder, Vector2 at, Vector2 offset = default)
+    {
+        void Part(Rect2 rect, StyleBox look)
+        {
+            var part = new Panel
+            {
+                AnchorLeft = at.X, AnchorRight = at.X, AnchorTop = at.Y, AnchorBottom = at.Y, MouseFilter = Control.MouseFilterEnum.Ignore,
+                OffsetLeft = offset.X + rect.Position.X, OffsetRight = offset.X + rect.End.X,
+                OffsetTop = offset.Y + rect.Position.Y, OffsetBottom = offset.Y + rect.End.Y,
+            };
+            part.AddThemeStyleboxOverride("panel", look);
+            holder.AddChild(part);
+        }
+        var arch = new StyleBoxFlat { BgColor = Colors.Transparent, BorderColor = PadlockGold, DrawCenter = false };
+        (arch.BorderWidthLeft, arch.BorderWidthRight, arch.BorderWidthTop, arch.BorderWidthBottom) = (2, 2, 2, 0);
+        (arch.CornerRadiusTopLeft, arch.CornerRadiusTopRight) = (5, 5);
+        Part(new Rect2(-5, -10, 10, 10), arch);
+        var fill = new StyleBoxFlat { BgColor = PadlockGold };
+        fill.SetCornerRadiusAll(2);
+        Part(new Rect2(-8, -3, 16, 12), fill);
+    }
 
     // A 14x14 ring with an "i" in it: a dot, then a stem.
     public static Texture2D Info => _info ??= Draw(14, 14, (x, y, w, h) =>

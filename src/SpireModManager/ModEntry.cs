@@ -13,7 +13,7 @@ using MegaCrit.Sts2.addons.mega_text;
 namespace SpireModManager;
 
 [ModInitializer(nameof(Init))]
-public static class ModEntry
+internal static class ModEntry
 {
     public const string ModId = "SpireModManager";
 
@@ -81,6 +81,14 @@ public static class ModEntry
         }
         try
         {
+            Copies.ReadItems();
+        }
+        catch (Exception e)
+        {
+            Log.Warn($"[{ModId}] Could not read the order of the Workshop items from Steam, so the page takes them by item id: {e.Message}");
+        }
+        try
+        {
             LaunchGuard.Begin();
         }
         catch (Exception e)
@@ -138,8 +146,15 @@ public static class ModEntry
 
     // Our own version, from the manifest the game loaded ("0.1.0"; the loaded copy's, if a second one is installed);
     // null if it isn't found.
-    public static string? Version => ModManager.Mods.Where(m => m.manifest?.id == ModId)
-        .OrderByDescending(m => m.state == ModLoadState.Loaded).FirstOrDefault()?.manifest?.version;
+    public static string? Version => VersionOf(ModId);
+
+    // A mod's copy as the API speaks of it: the one loaded, else the first installed (one that arrived while the game
+    // runs too); null if none is.
+    public static Mod? CopyOf(string? id) => id == null ? null
+        : ModManager.Mods.Concat(SpireModManager.Installed.Mods).Where(m => m.manifest?.id == id).OrderByDescending(m => m.state == ModLoadState.Loaded).FirstOrDefault();
+
+    // That copy's version, from its manifest ("0.1.0"), or null.
+    public static string? VersionOf(string? id) => CopyOf(id)?.manifest?.version;
 
     static readonly HashSet<string> Missing = [];
 
@@ -149,16 +164,23 @@ public static class ModEntry
 #endif
 
     // A game resource we use (a scene, texture or font; ours too, as they use the game's), or null if a game update
-    // moved or broke it. Never throws; each missing one is logged once and not tried again.
+    // moved or broke it, or it isn't a T. Never throws; each missing one is logged once and not tried again; one of
+    // another type is logged once per type asked for (it's there: asked for as what it is, it loads).
     public static T? Load<T>(string path) where T : Resource
     {
         if (Missing.Contains(path))
             return null;
-        if (ResourceLoader.Load(path) is T resource)
+        var loaded = ResourceLoader.Load(path);
+        if (loaded is T resource)
             return resource;
-        NoteMissing(path);
+        if (loaded == null)
+            NoteMissing(path);
+        else if (OtherType.Add($"{path} as {typeof(T).Name}"))
+            Log.Warn($"[{ModId}] Game resource {path} is a {loaded.GetClass()}, not a {typeof(T).Name}, so it isn't used there (logged once)");
         return null;
     }
+
+    static readonly HashSet<string> OtherType = [];
 
     // One of the game's fonts, or Godot's own if it's gone. In languages the game draws in its own font (Chinese,
     // Japanese, Korean, Thai, Russian, Polish), Kreon gives way to that font as on the game's labels; only rich text's
@@ -358,21 +380,22 @@ public static class ModEntry
     }
 
     // True when the saved mod list differs from what this session loaded, i.e. a relaunch would change
-    // something: the vanilla Modding screen's pending-changes test per copy (the picked copy of a mod installed twice
-    // from one source), plus the load order and mods installed since launch that are on. A copy set aside or failed
-    // doesn't count, as in the game's test, nor an id whose pick a relaunch wouldn't apply (SameIdLoad.Unchosen).
+    // something: the vanilla Modding screen's pending-changes test per copy, by which copy of an id loads (Copies.Loads:
+    // ticking a second copy that won't load changes nothing), plus the load order and mods installed since launch that
+    // would load. A copy set aside counts too (Loads knows whether it loads next time); one that failed doesn't, as in
+    // the game's test. An id the launch couldn't choose for reads as the game's own choice, and one whose copy the next
+    // launch can't put in the id's first slot as the copy that loads in its place (Copies.Next), so only a change to what
+    // that loads is pending.
     public static bool HasPendingChanges()
     {
-        if (LoadOrder.OrderChanged || Installed.Mods.Any(Installed.On))
+        if (LoadOrder.OrderChanged)
             return true;
-        var (off, picks) = (Dependencies.SavedOff(), Picks.Now);
-        return ModManager.Mods.Any(mod =>
-        {
-            if (mod.state is not (ModLoadState.Disabled or ModLoadState.Loaded) || SameIdLoad.Unchosen(mod.manifest?.id))
-                return false;
-            var on = Dependencies.OnIn(mod, off, picks);
-            return (mod.state == ModLoadState.Disabled && on) || (mod.state == ModLoadState.Loaded && !on);
-        });
+        using var lookups = Lookups.Begin(); // the next launch's order worked out once (its own lists below are fresh)
+        var (off, ticks) = (Dependencies.SavedOff(), Ticks.Now);
+        if (Installed.Mods.Any(m => Copies.LoadsIn(m, off, ticks)))
+            return true;
+        return ModManager.Mods.Any(mod => mod.state is (ModLoadState.Disabled or ModLoadState.Loaded or ModLoadState.DisabledDuplicate)
+            && (mod.state == ModLoadState.Loaded) != Copies.LoadsIn(mod, off, ticks));
     }
 
     // Adds a button in the style of the vanilla Get Mods button, sized freely (the art is a 9-slice).

@@ -7,10 +7,11 @@ using MegaCrit.Sts2.Core.Nodes.Screens.ModdingScreen;
 namespace SpireModManager;
 
 // A mod list as CSV, in Better Mod Menu's column order: Mod Id, Name, Version, Enabled (TRUE/FALSE), then the optional
-// Category, Workshop Id (the id only, as Steam may move an item's page), Alias and Notes. Writing follows RFC 4180,
+// Category, Workshop Id (the id only, as Steam may move an item's page), Alias and Note. Writing follows RFC 4180,
 // with a ' before values a spreadsheet would run as a formula. Reading is forgiving: a BOM, CRLF or LF, a ; or tab
 // separator, columns by header in any order. Only Mod Id and Enabled are needed, and a blank or missing Enabled means
-// enabled. Category (Better Mod Menu's Group, where "Unassigned" is none), Alias and Notes are read when there.
+// enabled. Category (Better Mod Menu's Group, where "Unassigned" is none), Alias and Note (Notes in Better Mod Menu's
+// lists and our older ones) are read when there.
 static class ProfileCsv
 {
     // What a shared list holds besides id, name, version and Enabled: the category by default, the rest off. Disabled:
@@ -20,7 +21,7 @@ static class ProfileCsv
     public static string[] Header(Options options) =>
     [
         "Mod Id", "Name", "Version", "Enabled", .. options.Category ? ["Category"] : Array.Empty<string>(), "Workshop Id",
-        .. options.Alias ? ["Alias"] : Array.Empty<string>(), .. options.Notes ? ["Notes"] : Array.Empty<string>(),
+        .. options.Alias ? ["Alias"] : Array.Empty<string>(), .. options.Notes ? ["Note"] : Array.Empty<string>(),
     ];
 
     // One mod to write. WorkshopId: "" for a mod that isn't from the Workshop.
@@ -59,7 +60,7 @@ static class ProfileCsv
                 row.Id, row.Name, row.Version, row.Enabled ? "TRUE" : "FALSE", .. options.Category ? [row.Category] : Array.Empty<string>(),
                 row.WorkshopId, .. options.Alias ? [row.Alias] : Array.Empty<string>(), .. options.Notes ? [row.Notes] : Array.Empty<string>(),
             ]);
-        return text.ToString();
+        return text.ToString().TrimEnd('\r', '\n'); // no line break after the last row (a quoted value's own ends in '"')
     }
 
     static void Line(StringBuilder text, IReadOnlyList<string> values)
@@ -157,7 +158,7 @@ static class ProfileCsv
         var header = records[0].Select(h => h.Trim()).ToList();
         int Column(params string[] names) => header.FindIndex(h => names.Any(n => string.Equals(h, n, StringComparison.OrdinalIgnoreCase)));
         var (id, enabled, name, link) = (Column("Mod Id", "Id", "ModId"), Column("Enabled"), Column("Name"), Column("Workshop Id", "Workshop Link", "WorkshopId"));
-        var (category, alias, notes) = (Column("Category", "Group"), Column("Alias"), Column("Notes"));
+        var (category, alias, notes) = (Column("Category", "Group"), Column("Alias"), Column("Note", "Notes"));
         if (id < 0)
             return Problem(Menus.Text("SPIRE_MOD_MANAGER.IMPORT_NO_ID"));
         if (enabled < 0)
@@ -181,9 +182,18 @@ static class ProfileCsv
         return mods.Count == 0 ? Problem(Menus.Text("SPIRE_MOD_MANAGER.IMPORT_NO_MODS")) : new Result(mods, null);
     }
 
-    // At most `most` characters as Godot counts them (code points, as its boxes' MaxLength does), never half of one.
-    static string Cut(string value, int most) =>
-        value.EnumerateRunes().Count() <= most ? value : string.Concat(value.EnumerateRunes().Take(most).Select(r => r.ToString())).TrimEnd();
+    // At most `most` characters as Godot counts them (code points, as its boxes' MaxLength does), in whole text elements
+    // (Menus.Prefix): never part of an emoji joined with ZWJ, or a letter without its accents.
+    static string Cut(string value, int most)
+    {
+        if (value.EnumerateRunes().Count() <= most)
+            return value;
+        var (end, count) = (0, 0);
+        var elements = System.Globalization.StringInfo.GetTextElementEnumerator(value);
+        while (elements.MoveNext() && (count += elements.GetTextElement().EnumerateRunes().Count()) <= most)
+            end += elements.GetTextElement().Length;
+        return value[..end].TrimEnd();
+    }
 
     // A category or alias on one line, as our boxes make them: line breaks and tabs in a quoted cell become spaces.
     static string OneLine(string value) => string.Join(" ", value.Split(['\r', '\n', '\t'], StringSplitOptions.RemoveEmptyEntries | StringSplitOptions.TrimEntries));
@@ -266,7 +276,7 @@ static class ProfileShare
         row.AddChild(remember);
         column.AddChild(row);
         column.AddChild(box);
-        var status = Status();
+        var status = Status(reserved: true);
         column.AddChild(status);
 
         var buttons = Buttons();
@@ -306,17 +316,24 @@ static class ProfileShare
         box.CustomMinimumSize = new Vector2(0, 200); // shorter than Share's: the preview below gets the room
         box.PlaceholderText = Menus.Text("SPIRE_MOD_MANAGER.IMPORT_HINT");
         column.AddChild(box);
+        // The message (an error) and the preview share one area of a fixed height: a message takes its lines from the
+        // preview, so the dialog keeps its size (and place) as one comes and goes.
+        var area = new VBoxContainer { Name = "Below", CustomMinimumSize = new Vector2(0, PreviewArea), SizeFlagsVertical = Control.SizeFlags.ExpandFill };
+        area.AddThemeConstantOverride("separation", column.GetThemeConstant("separation"));
+        column.AddChild(area);
         var status = Status();
-        column.AddChild(status);
+        area.AddChild(status);
         var preview = Body("Preview");
-        (preview.FitContent, preview.ScrollActive, preview.CustomMinimumSize) = (false, true, new Vector2(0, 250));
+        (preview.FitContent, preview.ScrollActive, preview.CustomMinimumSize) = (false, true, new Vector2(0, 150));
+        preview.SizeFlagsVertical = Control.SizeFlags.ExpandFill;
         preview.MouseFilter = Control.MouseFilterEnum.Stop; // its links, and the wheel
+        preview.MetaUnderlined = false; // our links: their colour and the pointing hand
         preview.MetaClicked += meta =>
         {
             if (meta.AsString() is var link && ProfileCsv.IsWorkshopLink(link))
                 OS.ShellOpen(link);
         };
-        column.AddChild(preview);
+        area.AddChild(preview);
 
         // The file loaded and its text: the profile is named after the file while the text is still that.
         (string? file, string? loaded) = (null, null);
@@ -402,7 +419,10 @@ static class ProfileShare
         var lines = new List<string> { Menus.Format("SPIRE_MOD_MANAGER.IMPORT_NEW_NAME", ("name", $"[color={GoldHex}]{Escape(name)}[/color]")) };
         string Enabled(int count) => Menus.Format(count == 1 ? "SPIRE_MOD_MANAGER.IMPORT_ENABLED_COUNT_ONE" : "SPIRE_MOD_MANAGER.IMPORT_ENABLED_COUNT", ("count", Menus.Number(count)));
         string Disabled(int count) => Menus.Format(count == 1 ? "SPIRE_MOD_MANAGER.IMPORT_DISABLED_COUNT_ONE" : "SPIRE_MOD_MANAGER.IMPORT_DISABLED_COUNT", ("count", Menus.Number(count)));
-        var mods = listed.DistinctBy(m => (m.Id, m.WorkshopLink)).ToList(); // each copy listed once, as Changes counts them
+        // Each copy listed once, as Changes counts them: a Workshop item's rows as one, and each row with no link as its own
+        // (two copies of a mod installed by hand share an id and have no link).
+        var mods = listed.Where(m => m.WorkshopLink.Length > 0).DistinctBy(m => (m.Id, m.WorkshopLink))
+            .Concat(listed.Where(m => m.WorkshopLink.Length == 0)).ToList();
         var (enabled, disabled) = (mods.Count(m => m.Enabled), mods.Count(m => !m.Enabled));
         lines.Add("  •  " + (disabled > 0
             ? Menus.Format("SPIRE_MOD_MANAGER.IMPORT_CONTAINS_BOTH", ("enabled", Enabled(enabled)), ("disabled", Disabled(disabled)))
@@ -415,13 +435,20 @@ static class ProfileShare
             lines.Add("  •  " + Menus.Format("SPIRE_MOD_MANAGER.IMPORT_OFF", ("count", Menus.Number(plan.Off))));
         var extras = plan.Extras;
         if (extras.Sorted.Count > 0)
-            lines.Add("  •  " + Menus.Format("SPIRE_MOD_MANAGER.IMPORT_SORTED", ("count", Menus.Number(extras.Sorted.Count))));
+            lines.Add("  •  " + Menus.Format(extras.Sorted.Count == 1 ? "SPIRE_MOD_MANAGER.IMPORT_SORTED_ONE" : "SPIRE_MOD_MANAGER.IMPORT_SORTED",
+                ("count", Menus.Number(extras.Sorted.Count))));
         if (extras.NewCategories.Count > 0)
             lines.Add("  •  " + Menus.Format("SPIRE_MOD_MANAGER.IMPORT_NEW_CATEGORIES", ("count", Menus.Number(extras.NewCategories.Count))));
         if (extras.Details > 0)
             lines.Add("  •  " + Menus.Format("SPIRE_MOD_MANAGER.IMPORT_DETAILS", ("count", Menus.Number(extras.Details))));
         if (plan.On == 0 && plan.Off == 0 && extras.Sorted.Count == 0 && extras.Details == 0)
             lines.Add("  •  " + Menus.Text("SPIRE_MOD_MANAGER.IMPORT_NO_CHANGE"));
+        if (plan.BothCopies.Count > 0)
+        {
+            lines.Add("");
+            lines.Add(Menus.Text("SPIRE_MOD_MANAGER.IMPORT_BOTH_COPIES"));
+            lines.AddRange(plan.BothCopies.Select(m => $"  •  [b]{Escape(m.Name.Length > 0 ? m.Name : m.Id)}[/b]"));
+        }
         if (plan.Missing.Count > 0)
         {
             lines.Add("");
@@ -429,7 +456,7 @@ static class ProfileShare
             var off = Escape(Menus.Text("SPIRE_MOD_MANAGER.IMPORT_MISSING_OFF"));
             // The name itself opens its Workshop page, when the list gives one (with the external-link mark, in the
             // link); two copies of one mod say which item.
-            string Item(ProfileCsv.Entry m) => plan.Missing.Count(o => o.Id == m.Id) > 1 && m.WorkshopLink.Length > 0
+            string Item(ProfileCsv.Entry m) => m.WorkshopLink.Length > 0 && plan.Missing.Count(o => o.Id == m.Id) > 1
                 ? $" ({m.WorkshopLink[(m.WorkshopLink.LastIndexOf('=') + 1)..]})" : "";
             string Named(ProfileCsv.Entry m) => $"[b]{Escape((m.Name.Length > 0 ? m.Name : m.Id) + Item(m))}[/b]";
             lines.AddRange(plan.Missing.Select(m => "  •  "
@@ -564,19 +591,40 @@ static class ProfileShare
     }
 
     // One line under the box: a problem (red) or what happened (dim). Hidden when empty.
-    static Label Status()
+    // The import preview's area: the preview's 250 px and room for a two-line message above it.
+    const float PreviewArea = 310;
+
+    // A line saying what just happened or what's wrong. reserved: it always takes its one line, cut with ".." (the share
+    // dialog's, right above its buttons), so a message coming and going moves nothing.
+    const string ReservedMeta = "spire_mod_manager_reserved";
+
+    static Label Status(bool reserved = false)
     {
         var status = new Label { Name = "Status", Visible = false, AutowrapMode = TextServer.AutowrapMode.WordSmart };
         status.AddThemeFontOverride("font", ModEntry.Font("res://themes/kreon_regular_shared.tres"));
         status.AddThemeFontSizeOverride("font_size", 17);
+        if (reserved)
+        {
+            status.AutowrapMode = TextServer.AutowrapMode.Off;
+            status.SetMeta(ReservedMeta, true);
+            status.Visible = true;
+            status.Modulate = Colors.Transparent; // its line kept, nothing shown
+            Menus.CutToFit(status, " ");
+        }
         return status;
     }
 
     static void Say(Label status, string text, bool error)
     {
+        status.AddThemeColorOverride("font_color", error ? ErrorColor : new Color(Cream, 0.7f));
+        if (status.HasMeta(ReservedMeta))
+        {
+            Menus.CutToFit(status, text.Length > 0 ? text : " ");
+            status.Modulate = text.Length > 0 ? Colors.White : Colors.Transparent;
+            return;
+        }
         status.Text = text;
         status.Visible = text.Length > 0;
-        status.AddThemeColorOverride("font_color", error ? ErrorColor : new Color(Cream, 0.7f));
     }
 
     static HBoxContainer Buttons()

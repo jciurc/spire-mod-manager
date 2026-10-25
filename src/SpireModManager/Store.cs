@@ -16,17 +16,24 @@ namespace SpireModManager;
 // Categories, aliases, notes and tags belong to a mod id; a mod installed more than once (a Workshop item and a local
 // fix, two Workshop items) has an entry per copy, seeded from its id's (Copies). Profiles name each mod's source too,
 // like the game's own list.
-public class StoreData
+internal class StoreData
 {
     public int Version { get; set; } = 1;
     public List<Category> Categories { get; set; } = [];
     // By mod id, or "<id>|<copy>" for a copy that isn't the holder of its id's entry (Copies.Key).
     public Dictionary<string, ModInfo> Mods { get; set; } = [];
-    // The copies of each id installed more than once, the holder of the plain entry first (Copies); null: none yet.
+    // The copies of each id installed more than once, the holder of the plain entry first (Copies); null: none yet. Its
+    // order is the order ties between copies go by (Copies.TieOrder): the copy installed first, first.
     public Dictionary<string, List<string>>? Copies { get; set; }
-    // The copy that loads, for each id and source installed more than once, as "<id>|<copy>" (Copies.SwitchKey); the
-    // game's list has one switch for them. Sorted, so equal sets save alike; null: none.
+    // Read only, from a file from before copies_off (0.1.4): the copy that loaded, for each id and source installed more
+    // than once, as "<id>|<copy>" (Copies.SwitchKey). Copies.Reconcile reads it once into copies_off (Copies.LegacyOff)
+    // and drops it, so it's never written again (null isn't saved).
     public List<string>? CopyPicks { get; set; }
+    // The copies off while their id and source's switch is on, as "<id>|<copy>": copies from one source share the game's
+    // switch, so which of them are ticked is ours (Ticks). Never ours, sorted, never pruned of copies that aren't
+    // installed (a copy missing for a launch keeps its tick). Null: a file from before it, or saved by a version without
+    // it, read through CopyPicks (Copies.LegacyOff; Copies.Reconcile fills it in at the first main menu); empty: none off.
+    public List<string>? CopiesOff { get; set; }
     public List<Profile> Profiles { get; set; } = [];
     public string? ActiveProfile { get; set; }
     public bool VanillaView { get; set; }
@@ -43,15 +50,15 @@ public class StoreData
     public ShareChoice? ShareChoices { get; set; }
 }
 
-public record ShareChoice(bool Category, bool Disabled, bool Alias, bool Notes);
+internal record ShareChoice(bool Category, bool Disabled, bool Alias, bool Notes);
 
-public class Category
+internal class Category
 {
     public string Name { get; set; } = "";
     public bool Collapsed { get; set; }
 }
 
-public class ModInfo
+internal class ModInfo
 {
     public string? Category { get; set; }
     public string? Alias { get; set; }
@@ -59,7 +66,7 @@ public class ModInfo
     public List<string>? Tags { get; set; }
 }
 
-public class Profile
+internal class Profile
 {
     // Kept through renames and saves, new for a duplicate or import, so a profile renamed since launch isn't read as
     // one deleted and another added. Files from before it get one on load.
@@ -76,16 +83,20 @@ public class Profile
     public List<ModRef>? Disabled { get; set; }
 }
 
-// Copy: for a mod installed more than once from one source, the copy that loads (Copies.CopyOf); null keeps the pick
-// as it is (profiles from before it, Better Mod Menu's). Name: for a mod an imported list named that isn't installed,
-// the list's name for it, to show it by until it is (an installed mod goes by its own).
-public record ProfileMod(string Id, ModSource Source, bool Enabled, string? Copy = null, string? Name = null);
+// Copy (Copies.CopyOf): for an id and source that isn't installed, the Workshop item a shared list linked ("w:<item>",
+// to subscribe to: Profiles.Missing); on an entry from before copies had a box each (CopiesOff null), the copy it had on,
+// read once (Profiles.HoldCopies). Saved entries of installed mods have none. Name: for a mod an imported list named
+// that isn't installed, the list's name for it, to show it by until it is (an installed mod goes by its own).
+// CopiesOff: for a mod installed more than once from one source (our record's group), the copies off while the entry is
+// on (copy names), kept while it's off too; which of them loads is worked out from it (Copies.Next); null: an entry from
+// before copies had a box each (Profiles.HoldCopies fills it in).
+internal record ProfileMod(string Id, ModSource Source, bool Enabled, string? Copy = null, string? Name = null, List<string>? CopiesOff = null);
 
-public record ScreenPoint(float X, float Y);
+internal record ScreenPoint(float X, float Y);
 
-public record ModRef(string Id, ModSource? Source);
+internal record ModRef(string Id, ModSource? Source);
 
-public static class Store
+internal static class Store
 {
     const string FileName = "manager.json";
     const string BackupsFolder = "backups", BackupPattern = "manager.*.json", BrokenPattern = "manager.broken-*.json";
@@ -229,52 +240,66 @@ public static class Store
             if (string.IsNullOrEmpty(profile.Id) || !ids.Add(profile.Id)) // none (a hand-edited file), or another's
                 ids.Add(profile.Id = Profile.NewId());
             profile.Name ??= "";
-            profile.Mods = profile.Mods?.Where(m => m?.Id != null).ToList() ?? [];
-            profile.Edited = profile.Edited?.Where(m => m?.Id != null).ToList();
+            profile.Mods = profile.Mods?.Where(m => m?.Id != null).Select(TidyCopies).ToList() ?? [];
+            profile.Edited = profile.Edited?.Where(m => m?.Id != null).Select(TidyCopies).ToList();
             profile.Disabled = profile.Disabled?.Where(m => m?.Id != null).ToList();
         }
-        data.CopyPicks = TidyPicks(data.CopyPicks);
+        // The copies record with no null list or copy (Copies.Key reads it for every row), each copy once, the holder still
+        // first; an id left with none has no record.
+        data.Copies = data.Copies?.Select(p => (p.Key, List: p.Value?.OfType<string>().Distinct().ToList()))
+            .Where(p => p.List is { Count: > 0 }).ToDictionary(p => p.Key, p => p.List ?? []);
+        data.CopiesOff = TidyOff(data.CopiesOff);
         return data;
     }
 
-    // One pick per id and source (the first), none that names no copy, sorted; null for none. Never pruned of copies
-    // that aren't installed: a Steam item missing for one launch keeps its choice.
-    public static List<string>? TidyPicks(IEnumerable<string?>? picks)
+    // A profile's entry with no null among its copies off (a hand-edited file), each once.
+    static ProfileMod TidyCopies(ProfileMod mod) => mod.CopiesOff is { } off && (off.Any(c => c == null) || off.Distinct().Count() < off.Count)
+        ? mod with { CopiesOff = [.. off.OfType<string>().Distinct()] } : mod;
+
+    // Each copy off once, none that names no copy or names ours (its copies of one source share one box), sorted. Null
+    // stays null (read through the legacy picks), and empty stays empty: none off isn't the same as none read. Never
+    // pruned of copies that aren't installed: a copy missing for a launch keeps its tick.
+    public static List<string>? TidyOff(IEnumerable<string?>? off)
     {
-        var kept = new Dictionary<(string, ModSource), string>();
-        foreach (var key in picks ?? [])
-            if (Copies.Parse(key) is { } pick && key != null)
-                kept.TryAdd((pick.Id, pick.Source), key);
-        return kept.Count == 0 ? null : [.. kept.Values.Order(StringComparer.Ordinal)];
+        if (off == null)
+            return null;
+        return [.. off.OfType<string>().Where(key => Copies.Parse(key) is { } copy && copy.Id != ModEntry.ModId).Distinct().Order(StringComparer.Ordinal)];
     }
 
-    // The picks in a snapshot of our data (EditsJson), for reading launch and the page's opening against now; the last
-    // one asked is kept (the changes bar asks for the same snapshot on every change).
-    public static Picks PicksIn(string json)
+    // The ticks in a snapshot of our data (EditsJson): its copies off and record (a snapshot from before copies_off reads
+    // through its legacy picks, as our data does), for reading launch and the page's opening against now; the last one
+    // asked is kept (the changes bar asks for the same snapshot on every change).
+    public static Ticks TicksIn(string json)
     {
-        if (_picksIn is { } last && last.Json == json)
-            return last.Picks;
-        List<string>? stored = null;
+        if (_ticksIn is { } last && last.Json == json)
+            return last.Ticks;
+        List<string>? picks = null, off = null;
         Dictionary<string, List<string>>? record = null;
         try
         {
             using var doc = JsonDocument.Parse(json);
-            if (doc.RootElement.TryGetProperty("copy_picks", out var picks) && picks.ValueKind == JsonValueKind.Array)
-                stored = [.. picks.EnumerateArray().Where(p => p.ValueKind == JsonValueKind.String).Select(p => p.GetString() ?? "")];
-            if (doc.RootElement.TryGetProperty("copies", out var copies) && copies.ValueKind == JsonValueKind.Object)
-                record = copies.EnumerateObject().Where(p => p.Value.ValueKind == JsonValueKind.Array).ToDictionary(p => p.Name,
-                    p => p.Value.EnumerateArray().Where(c => c.ValueKind == JsonValueKind.String).Select(c => c.GetString() ?? "").ToList());
+            static List<string>? Strings(JsonElement root, string name) => root.TryGetProperty(name, out var array) && array.ValueKind == JsonValueKind.Array
+                ? [.. array.EnumerateArray().Where(p => p.ValueKind == JsonValueKind.String).Select(p => p.GetString() ?? "")] : null;
+            (picks, off, record) = (Strings(doc.RootElement, "copy_picks"), Strings(doc.RootElement, "copies_off"), RecordIn(doc.RootElement));
         }
         catch (JsonException e)
         {
-            Log.Warn($"[{ModEntry.ModId}] Could not read the copy picks in a snapshot of our data, so it reads as having none: {e.Message}");
+            Log.Warn($"[{ModEntry.ModId}] Could not read which copies are ticked in a snapshot of our data, so it reads as having none off: {e.Message}");
         }
-        var read = new Picks(stored, record);
-        _picksIn = (json, read);
+        var read = new Ticks(off ?? Copies.LegacyOff(picks, record), record, LaunchGuard.Before);
+        _ticksIn = (json, read);
         return read;
     }
 
-    static (string Json, Picks Picks)? _picksIn;
+    static (string Json, Ticks Ticks)? _ticksIn;
+
+    // The copies record (StoreData.Copies) in our data's JSON, read without loading it (a snapshot, or our file at Init);
+    // null for none. An id named twice (by hand): its first.
+    public static Dictionary<string, List<string>>? RecordIn(JsonElement root) =>
+        root.TryGetProperty("copies", out var copies) && copies.ValueKind == JsonValueKind.Object
+            ? copies.EnumerateObject().Where(p => p.Value.ValueKind == JsonValueKind.Array).DistinctBy(p => p.Name).ToDictionary(p => p.Name,
+                p => p.Value.EnumerateArray().Where(c => c.ValueKind == JsonValueKind.String).Select(c => c.GetString() ?? "").ToList())
+            : null;
 
     // The newest backup that reads, or a fresh start when none does.
     static (StoreData Data, (string Path, DateTime Saved)? From) NewestBackup(string dir)
@@ -370,6 +395,7 @@ public static class Store
         if (popup.FindChild("Description", true, false) is not RichTextLabel text)
             return;
         text.MouseFilter = Control.MouseFilterEnum.Stop; // the game's label lets clicks through
+        text.MetaUnderlined = false; // our links: their colour and the pointing hand
         text.MetaClicked += meta =>
         {
             if (meta.AsString() != "folder")
@@ -533,16 +559,15 @@ public static class Store
 
     // Changes manager.json on disk where our data isn't loaded (a failed start, before the main menu): the file backed
     // up first, the change made to its JSON, everything else in it kept as it is. A file that doesn't read is left
-    // alone. True if saved.
-    public static bool PatchFile(Action<JsonObject> change) => PatchFile(Dir, change);
-
-    public static bool PatchFile(string dir, Action<JsonObject> change)
+    // alone, and so is one the change has nothing to do to (it returns false). True if saved, or nothing to.
+    public static bool PatchFile(string dir, Func<JsonObject, bool> change)
     {
         var file = Path.Combine(dir, FileName);
         try
         {
             var json = File.Exists(file) ? JsonNode.Parse(File.ReadAllText(file)) as JsonObject ?? throw new JsonException("no data in the file") : [];
-            change(json);
+            if (!change(json))
+                return true;
             if (File.Exists(file))
                 BackUp(dir, file);
             Directory.CreateDirectory(dir);

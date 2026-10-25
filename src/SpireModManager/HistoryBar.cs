@@ -52,12 +52,9 @@ static class HistoryBar
             var column = new VBoxContainer { SizeFlagsVertical = Control.SizeFlags.ShrinkCenter, MouseFilter = Control.MouseFilterEnum.Ignore };
             column.AddThemeConstantOverride("separation", 0);
             column.AddChild(button);
-            // Clipped (with "…" if it must be), so its column is as wide as the button, not as the hint (FitHint).
-            var hint = new Label
-            {
-                Name = "Keys", Text = keys == null ? " " : Menus.Text(keys), HorizontalAlignment = HorizontalAlignment.Center,
-                MouseFilter = Control.MouseFilterEnum.Ignore, ClipText = true, TextOverrunBehavior = TextServer.OverrunBehavior.TrimEllipsis,
-            };
+            // Cut to fit (with ".." if it must be), so its column is as wide as the button, not as the hint (FitHint).
+            var hint = new Label { Name = "Keys", HorizontalAlignment = HorizontalAlignment.Center, MouseFilter = Control.MouseFilterEnum.Ignore };
+            Menus.CutToFit(hint, keys == null ? " " : Menus.Text(keys));
             Style(hint, 13, new Color(Cream, 0.5f));
             column.AddChild(hint);
             bar.AddChild(column);
@@ -147,11 +144,13 @@ static class HistoryBar
         Update();
     }
 
-    // The hover summary's text, with how to see the full list.
-    static string Summary()
+    // The hover summary's text, with how to see the full list (cta: on the page, where a click shows it).
+    public static string Summary() => Summary(cta: true);
+
+    public static string Summary(bool cta)
     {
         var lines = SummaryLines();
-        if (Layout.Current == Layout.View.Categories && Describe().Count > 0)
+        if (cta && Layout.Current == Layout.View.Categories && Describe().Count > 0)
             lines.Add($"\n[color={Dim}]{Menus.Text("SPIRE_MOD_MANAGER.CHANGES_CLICK")}[/color]");
         return string.Join("\n", lines);
     }
@@ -159,17 +158,20 @@ static class HistoryBar
     // Mods turned on, off, and moved in the load order, compared with launch.
     public static (int On, int Off, int Moved) Counts() => Counts(History.Loaded is { } loaded ? ModChanges(loaded) : []);
 
+    // Mods where another copy loads with no box changed (a profile naming the other copy), since launch.
+    public static int CopySwitchCount() => History.Loaded is { } loaded ? CopySwitches(loaded, ModChanges(loaded)).Count : 0;
+
     static (int On, int Off, int Moved) Counts(List<(Mod Mod, bool Enabled)> changed) =>
         (changed.Count(c => c.Enabled), changed.Count(c => !c.Enabled), Moves().Count);
 
-    // The second line's count: mods installed since launch, edited mods, profiles added, deleted or renamed, and
-    // a switched profile (moves are on the first line).
+    // The second line's count: mods installed since launch, edited mods, profiles added, deleted or renamed, a
+    // switched profile, and mods where another copy loads with no box changed (moves are on the first line).
     static int OtherChanges()
     {
         if (History.Loaded is not { } loaded)
             return 0;
         var (edited, profiles, renamed) = DataChanges(loaded.Store, Store.EditsJson());
-        return Installed.Mods.Count + edited.Count + profiles.Count + (Switch(renamed) != null ? 1 : 0);
+        return Installed.Mods.Count + edited.Count + profiles.Count + (Switch(renamed) != null ? 1 : 0) + CopySwitches(loaded, ModChanges(loaded)).Count;
     }
 
     // The summary's lines (BBCode): a switched profile, then each kind of change with its count.
@@ -182,6 +184,7 @@ static class HistoryBar
         if (Switch(renamed) is var (from, to))
             lines.Add(Menus.Format("SPIRE_MOD_MANAGER.CHANGE_SWITCH", ("from", $"[b]{Escape(from)}[/b]"), ("to", $"[b]{Escape(to)}[/b]")));
         var changed = ModChanges(loaded);
+        lines.AddRange(CopySwitches(loaded, changed).Select(s => Escape(CopySwitch(s.From, s.To).Plain)));
         var (on, off, moved) = Counts(changed);
         // Fewer than NameLimit mods turned on, off or installed: each by name under its count.
         var named = changed.Count + Installed.Mods.Count < NameLimit;
@@ -203,7 +206,7 @@ static class HistoryBar
         if (Installed.Mods.Count is var installed and > 0)
         {
             lines.Add($"[color={New}]{Menus.Format(installed == 1 ? "SPIRE_MOD_MANAGER.SUMMARY_INSTALLED_ONE" : "SPIRE_MOD_MANAGER.SUMMARY_INSTALLED", ("count", Menus.Number(installed)))}[/color]");
-            Names(Installed.Mods.Select(m => $"{Name(m)} ({Menus.Text(Installed.On(m) ? "SPIRE_MOD_MANAGER.STATUS_ENABLED" : "SPIRE_MOD_MANAGER.STATUS_DISABLED")})"));
+            Names(Installed.Mods.Select(m => $"{Name(m)} ({Menus.Text(Copies.Ticked(m) ? "SPIRE_MOD_MANAGER.STATUS_ENABLED" : "SPIRE_MOD_MANAGER.STATUS_DISABLED")})"));
         }
         if (moved > 0)
             lines.Add($"[color={Moved}]{Menus.Format("SPIRE_MOD_MANAGER.SUMMARY_ORDER", ("count", Menus.Number(moved)))}[/color]");
@@ -226,19 +229,25 @@ static class HistoryBar
     public static List<string> Describe() => Entries().Select(e => e.Plain).ToList();
 
     // The mods the full list names (Entries' sections, from the same rules): each one turned on or off, installed or
-    // moved, and each copy whose own details were edited (Copies.Key). What the main list
-    // shows under "Changed" (ListFilter).
+    // moved, each copy whose own details were edited (Copies.Key), and both copies where another loads with no box
+    // changed. What the main list shows under "Changed" (ListFilter).
     public static HashSet<Mod> ChangedMods()
     {
         if (History.Loaded is not { } loaded)
             return [];
-        var edited = DataChanges(loaded.Store, Store.EditsJson()).Edited.Select(e => e.Id).ToHashSet();
-        // Each copy turned on or off (a switch to another copy of a mod: both), or moved (each copy has its own place).
+        var edited = EditedKeys();
+        // Each copy turned on or off, switched to or from, or moved (each copy has its own place).
         static (string?, ModSource, string) Copy(Mod m) => (m.manifest?.id, m.modSource, Copies.CopyOf(m));
-        var switched = ModChanges(loaded).Select(c => Copy(c.Mod)).Concat(Moves().Select(m => Copy(m.Mod))).ToHashSet();
+        var changed = ModChanges(loaded);
+        var switched = changed.Select(c => Copy(c.Mod)).Concat(Moves().Select(m => Copy(m.Mod)))
+            .Concat(CopySwitches(loaded, changed).SelectMany(s => new[] { Copy(s.From), Copy(s.To) })).ToHashSet();
         return [.. ModManager.Mods.Where(m => switched.Contains(Copy(m))), .. Installed.Mods,
             .. ModManager.Mods.Union(Installed.Mods).Where(m => edited.Contains(Copies.Key(m)))]; // by key: one copy's own edits
     }
+
+    // Our data's keys (Copies.Key) of the copies whose own details were edited since launch.
+    public static HashSet<string> EditedKeys() =>
+        History.Loaded is { } loaded ? DataChanges(loaded.Store, Store.EditsJson()).Edited.Select(e => e.Id).ToHashSet() : [];
 
     record Entry(string Section, string Plain, string Rich);
 
@@ -253,7 +262,15 @@ static class HistoryBar
         if (Switch(renamed) is var (from, to))
             entries.Add(new Entry("", Menus.Format("SPIRE_MOD_MANAGER.CHANGE_SWITCH", ("from", from), ("to", to)),
                 Menus.Format("SPIRE_MOD_MANAGER.CHANGE_SWITCH", ("from", $"[b]{Escape(from)}[/b]"), ("to", $"[b]{Escape(to)}[/b]"))));
-        foreach (var (mod, enabled) in ModChanges(loaded).OrderBy(c => !c.Enabled).ThenBy(c => Name(c.Mod)))
+        var changed = ModChanges(loaded);
+        // Another copy loads with no box changed (ticked again in another order, a profile naming another copy): a line
+        // of its own, beside the profile's.
+        foreach (var (was, now) in CopySwitches(loaded, changed).OrderBy(s => Name(s.To)))
+        {
+            var (plain, rich) = CopySwitch(was, now);
+            entries.Add(new Entry("", plain, rich));
+        }
+        foreach (var (mod, enabled) in changed.OrderBy(c => !c.Enabled).ThenBy(c => Name(c.Mod)))
         {
             var key = enabled ? "SPIRE_MOD_MANAGER.CHANGE_ON" : "SPIRE_MOD_MANAGER.CHANGE_OFF";
             var name = Name(mod) + Copies.Which(mod); // a copy says which ("Enabled: LucanaMod (3809131080)")
@@ -261,8 +278,10 @@ static class HistoryBar
         }
         foreach (var mod in Installed.Mods.OrderBy(Name))
         {
-            // Under the name: whether it loads after a relaunch.
-            var state = Menus.Text(Installed.On(mod) ? "SPIRE_MOD_MANAGER.INSTALLED_ON" : "SPIRE_MOD_MANAGER.INSTALLED_OFF");
+            // Under the name: whether it's enabled and loads after a relaunch, or is enabled beside a copy that loads instead.
+            var ticked = Copies.Ticked(mod);
+            var state = Menus.Text(ticked && Copies.Loads(mod) ? "SPIRE_MOD_MANAGER.INSTALLED_ON"
+                : ticked && Copies.Loses(mod) ? "SPIRE_MOD_MANAGER.INSTALLED_WONT_LOAD" : "SPIRE_MOD_MANAGER.INSTALLED_OFF");
             entries.Add(new Entry("installed", Menus.Format("SPIRE_MOD_MANAGER.CHANGE_INSTALLED", ("mod", Name(mod)), ("state", state)),
                 $"{Link(Copies.LinkKey(mod), Name(mod))}\n        [color={Dim}][font_size=15]{Escape(state)}[/font_size][/color]")); // a new copy: itself, not the copy that holds the id
         }
@@ -496,21 +515,49 @@ static class HistoryBar
 
     static string Name(Mod mod) => mod.manifest?.name ?? mod.manifest?.id ?? "";
 
-    // Installed copies whose on/off differs from a snapshot's (its list and picks against now's, each read against the
-    // copies installed today; no entry = on). A switch to another copy of a mod is two: one on, one off.
+    // Installed copies whose own box differs from a snapshot's (its list and copies off against now's, each read
+    // against the copies installed today; no entry = on).
     static List<(Mod Mod, bool Enabled)> ModChanges(History.Snapshot before)
     {
-        var (thenOff, thenPicks) = (Dependencies.SavedOff(before.Mods), Store.PicksIn(before.Store));
-        var (nowOff, nowPicks) = (Dependencies.SavedOff(), Picks.Now);
+        var (thenOff, thenTicks) = (Dependencies.SavedOff(before.Mods), Store.TicksIn(before.Store));
+        var (nowOff, nowTicks) = (Dependencies.SavedOff(), Ticks.Now);
         // A mod installed since launch wasn't loaded then: off, though the saved list (which had no entry for it) reads
         // on. So arriving on counts as turned on, and turning it off again is no change.
         var arrived = Installed.Mods.Select(Copies.SwitchKey).ToHashSet();
         return Dependencies.EachCopy(ModManager.Mods)
-            .Select(m => (Mod: m, Then: !arrived.Contains(Copies.SwitchKey(m)) && Dependencies.OnIn(m, thenOff, thenPicks), Now: Dependencies.OnIn(m, nowOff, nowPicks)))
+            .Select(m => (Mod: m, Then: !arrived.Contains(Copies.SwitchKey(m)) && Copies.TickedIn(m, thenOff, thenTicks), Now: Copies.TickedIn(m, nowOff, nowTicks)))
             .Where(p => p.Then != p.Now)
             .Select(p => (p.Mod, p.Now))
             .ToList();
     }
+
+    // Mods installed more than once whose copy that loads after a relaunch is another than at launch while none of their
+    // boxes changed (changed: ModChanges for it), e.g. a copy updated to a higher version: the copy that loaded then, and
+    // the one now. Then is the copy the game loaded, else the launch's lists' (launch: History.Loaded): those lists read
+    // with today's manifests name the copy a Workshop update made the winner since (Copies.Newest), so the switch to it
+    // went unlisted. Now is the one rule's (Copies.Next), as every view has it. Not this mod (the game decides which of
+    // its copies loads), nor an id the launch couldn't choose for (SameIdLoad.Unchosen): the game's own choice loads then
+    // and now.
+    static List<(Mod From, Mod To)> CopySwitches(History.Snapshot launch, List<(Mod Mod, bool Enabled)> changed)
+    {
+        var (thenOff, thenTicks) = (Dependencies.SavedOff(launch.Mods), Store.TicksIn(launch.Store));
+        var (nowOff, nowTicks) = (Dependencies.SavedOff(), Ticks.Now);
+        var ticked = changed.Select(c => c.Mod.manifest?.id).ToHashSet();
+        Mod? Then(string id) => ModManager.Mods.FirstOrDefault(m => m.manifest?.id == id && m.state == ModLoadState.Loaded) ?? Copies.LoadingIn(id, thenOff, thenTicks);
+        var switches = new List<(Mod, Mod)>();
+        foreach (var id in Dependencies.EachCopy(ModManager.Mods).Where(m => Copies.Others(m).Count > 0).Select(m => m.manifest?.id).OfType<string>().Distinct())
+            if (id != ModEntry.ModId && !ticked.Contains(id) && !SameIdLoad.Unchosen(id) && Then(id) is { } from
+                && Copies.LoadingIn(id, nowOff, nowTicks) is { } to && Copies.CopyOf(from) != Copies.CopyOf(to))
+                switches.Add((from, to));
+        return switches;
+    }
+
+    // A switch to another copy of a mod with no box changed, as Changes words it ("Test Twin: Test Twin (SmmTestTwinA)
+    // loads instead of Test Twin Beta (SmmTestTwinB)"): plain, and rich with each copy's name opening it.
+    public static (string Plain, string Rich) CopySwitch(Mod from, Mod to) =>
+        (Menus.Format("SPIRE_MOD_MANAGER.CHANGE_COPY_SWITCH", ("mod", Name(to)), ("to", Copies.Named(to)), ("from", Copies.Named(from))),
+            Menus.Format("SPIRE_MOD_MANAGER.CHANGE_COPY_SWITCH", ("mod", Escape(Name(to))), ("to", Link(Copies.LinkKey(to), Copies.Named(to))),
+                ("from", Link(Copies.LinkKey(from), Copies.Named(from)))));
 
     // Installed copies whose place in the load order changed since launch: (copy, position then, now), 1-based among the
     // copies installed, as Load Order numbers its rows (two copies of one mod each their own place, LoadOrder.Places;
@@ -603,7 +650,7 @@ static class HistoryBar
         var font = hint.GetThemeFont("font");
         var size = hint.GetThemeFontSize("font_size");
         hint.CustomMinimumSize = new Vector2(0, hint.GetMinimumSize().Y);
-        while (size > HintSmallest && font.GetStringSize(hint.Text, fontSize: size).X > room)
+        while (size > HintSmallest && font.GetStringSize(Menus.WholeText(hint), fontSize: size).X > room)
             size--;
         hint.AddThemeFontSizeOverride("font_size", size);
     }

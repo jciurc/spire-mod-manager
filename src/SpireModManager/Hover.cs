@@ -37,6 +37,17 @@ static class Hover
     public static Vector2 Mouse(CanvasItem item) => item.GetGlobalMousePosition();
 #endif
 
+    // The mouse over control where it can be seen: inside it, and inside every ancestor that clips what it holds. In a
+    // scrolled list a row slid under its edge isn't hovered, so a card open for it goes once the list scrolls it away.
+    // (Content Options' cards in its scrolled table found this.)
+    public static bool Under(Control control, Vector2 mouse)
+    {
+        for (Node? at = control; at != null; at = at.GetParent())
+            if (at is Control shown && (shown == control || shown.ClipContents) && !shown.GetGlobalRect().HasPoint(mouse))
+                return false;
+        return true;
+    }
+
     static ulong _graceUntil;
     static Node? _shown; // the card showing (its layer), if any
 
@@ -53,7 +64,7 @@ static class Hover
         Func<Rect2>? area = null)
     {
         bool Over() => GodotObject.IsInstanceValid(trigger) && trigger.IsVisibleInTree() && Allowed(trigger)
-            && trigger.GetGlobalRect().HasPoint(Mouse(trigger));
+            && Under(trigger, Mouse(trigger));
         var token = 0;
         trigger.MouseEntered += () =>
         {
@@ -116,10 +127,11 @@ static class Hover
     // meta, or null for none.
     public static void WatchLinks(RichTextLabel label, string name, Func<string, string?> card, float width = 380, Func<string, string?>? full = null)
     {
+        label.MetaUnderlined = false; // our links: their colour and the pointing hand, never an underline
         string? current = null;
         var token = 0;
         bool Over(string meta) => current == meta && GodotObject.IsInstanceValid(label) && label.IsVisibleInTree() && Allowed(label)
-            && label.GetGlobalRect().HasPoint(Mouse(label));
+            && Under(label, Mouse(label));
         label.MetaHoverStarted += meta =>
         {
             var link = meta.AsString();
@@ -153,6 +165,18 @@ static class Hover
             node.GetTree().CreateTimer(timing is Timing.Slow or Timing.Late ? SlowDelay : Delay).Timeout += open;
     }
 
+    // A card for trigger now, as Watch would show it, wherever the mouse is (the API's ModCards.Show, for self-tests):
+    // below the trigger, up while it's in the tree and shown, until Hide. False if it has nowhere to go.
+    public static bool ShowNow(Control trigger, string name, string text, float width, string? full = null)
+    {
+        if (!GodotObject.IsInstanceValid(trigger) || !trigger.IsInsideTree() || Owner(trigger) is not { } owner)
+            return false;
+        var rect = trigger.GetGlobalRect();
+        Show(owner, name, text, new Vector2(rect.Position.X, rect.End.Y + 6), width: width, keep: () => GodotObject.IsInstanceValid(trigger) && trigger.IsVisibleInTree(),
+            timing: Timing.Instant, full: full, depth: LayerFor(trigger), around: rect);
+        return true;
+    }
+
     // Cards belong to the page they're on (they go with it), else to the window.
     static Node? Owner(Node node) => CategoryList.ScreenOf(node) ?? (Node?)node.GetTree()?.Root;
 
@@ -180,7 +204,7 @@ static class Hover
 
     // The text a card shows, without its tags: what its width is measured on.
     static string Unmarked(string bbcode) =>
-        Regex.Replace(bbcode, @"\[(/?[a-z_]+(=[^\]]*)?)\]", m => m.Value == "[lb]" ? "[" : m.Value == "[rb]" ? "]" : "");
+        Regex.Replace(bbcode, @"\[(/?[a-z_]+([= ][^\]]*)?)\]", m => m.Value == "[lb]" ? "[" : m.Value == "[rb]" ? "]" : "");
 
     // at: the card's top-left corner (or, with right/above, that corner), kept on screen. around: what it opens beside
     // (the trigger near the mouse, at the mouse's x; null: nothing, the card stays at `at`): at least Gap off it, and where
@@ -244,6 +268,7 @@ static class Hover
             }
             else
                 text.CustomMinimumSize = new Vector2(width, 0);
+            GameText.Watch(text); // the game's words in their box, if the text has any
             panel.AddChild(text);
         }
         layer.AddChild(panel);
@@ -318,6 +343,9 @@ static class Hover
 
     // Closes the card showing, if any.
     public static void Hide() => Close(_shown);
+
+    // The card showing now (its layer's name, as Watch or Show was given it), or null.
+    public static string? ShownName => _shown is { } shown && GodotObject.IsInstanceValid(shown) ? shown.Name.ToString() : null;
 
     static void Close(Node? layer)
     {

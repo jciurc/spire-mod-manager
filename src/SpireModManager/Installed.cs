@@ -40,8 +40,4 @@ static class Installed
     // Self-test: removes a made-up mod.
     public static void Forget(Mod mod) => _mods.Remove(mod);
 #endif
-
-    // Whether it loads after a relaunch: on unless the saved list says off, and the picked copy where it's another copy
-    // of a mod from its source.
-    public static bool On(Mod mod) => Dependencies.IsOn(mod);
 }

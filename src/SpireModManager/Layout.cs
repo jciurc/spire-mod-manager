@@ -1,7 +1,10 @@
 using Godot;
 using HarmonyLib;
+using MegaCrit.Sts2.Core.Audio;
+using MegaCrit.Sts2.Core.Commands;
 using MegaCrit.Sts2.Core.Localization;
 using MegaCrit.Sts2.Core.Logging;
+using MegaCrit.Sts2.Core.Nodes.CommonUi;
 using MegaCrit.Sts2.Core.Nodes.GodotExtensions;
 using MegaCrit.Sts2.Core.Nodes.Screens.ModdingScreen;
 using MegaCrit.Sts2.addons.mega_text;
@@ -30,13 +33,15 @@ static class Layout
     static HashSet<string>? _sceneParts;
 
     // Screen-space boxes (left, top, right, bottom) in the game's 1920x1080 layout.
-    // The panels sit midway between the page title and the bottom row of buttons.
-    static readonly Vector4 ListBox = new(175, 72, 1080, 984);
+    // The panels sit midway between the page title and the bottom row of buttons; the list from the page's left edge
+    // (the game's back arrow, which kept that margin, gives way to our Main Menu button in the bottom row).
+    static readonly Vector4 ListBox = new(CornerX, 72, 1080, 984);
     static readonly Vector4 InfoBox = new(1155, 72, 1900, 984); // clear of the list's scrollbar (list right + 6..54)
     static readonly Vector4 CentredListBox = new(400, 72, 1500, 984);
     public const float BottomRowY = 999; // top of the 70px-tall buttons along the bottom
     public const float CornerX = 18; // the lower-left corner button (here and on the main menu)
-    const float PageLeft = 175, TitleTop = 10, TitleBottom = 62;
+    const float PageLeft = CornerX, TitleTop = 10, TitleBottom = 62;
+    public const string MainMenuName = "SpireModManagerMainMenuButton";
     const float UndoDrop = 7; // the undo buttons themselves (not their hints) centred on the bottom row
 
     // Text sizes in our views (the game's in brackets): rows 20 (32), info title 32 (60), info text 18 (24).
@@ -75,6 +80,18 @@ static class Layout
         ViewFont(title, PageTitleSize);
         var titleText = new LocString("settings_ui", Wide ? "SPIRE_MOD_MANAGER.PAGE_TITLE" : "MODDING_SCREEN.INSTALLED_MODS_TITLE").GetFormattedText();
         title.SetTextAutoSize(titleText);
+
+        // The way to the other page: a link right of our page's title, on the main list and the game's page (not Load
+        // Order). In the same place on both, so the link just clicked is under the mouse to go back; on the game's page
+        // that band is clear (its title sits lower, with Make Mods and Get Mods beside it).
+        if (screen.GetNodeOrNull<LinkButton>("SpireModManagerViewToggle") is { } pageLink)
+        {
+            pageLink.Visible = view != View.LoadOrder;
+            var ours = new LocString("settings_ui", "SPIRE_MOD_MANAGER.PAGE_TITLE").GetFormattedText();
+            var titleWidth = title.GetThemeFont(NormalFont).GetStringSize(ours, HorizontalAlignment.Left, -1, PageTitleSize).X;
+            pageLink.Size = pageLink.GetCombinedMinimumSize();
+            pageLink.Position = new Vector2(PageLeft + titleWidth + 28, TitleBaseline(title, ours) - LinkBaseline(pageLink));
+        }
 
         // Load Order: its name centred over the list.
         var viewTitle = screen.GetNodeOrNull<Label>("SpireModManagerViewTitle") ?? AddViewTitle(screen);
@@ -133,13 +150,13 @@ static class Layout
 
         PlaceList(list);
 
-        // Bottom row: Vanilla List and Load Order from the lower-left corner on the main list (Spire Manager alone in
-        // Vanilla View, Return alone in Load Order); Changes, Undo/Redo/Revert and Relaunch on the right (main list).
-        var vanillaToggle = screen.GetNodeOrNull<Control>("SpireModManagerViewToggle");
+        // Bottom row: Main Menu and Load Order from the lower-left corner on the main list (Main Menu and Return in Load
+        // Order; the game's own back arrow in Vanilla View); Changes, Undo/Redo/Revert and Relaunch on the right (main list).
+        var mainMenu = screen.GetNodeOrNull<Control>(MainMenuName);
         var orderToggle = screen.GetNodeOrNull<Control>("SpireModManagerLoadOrderToggle");
         var leftEnd = PageLeft;
         var x = CornerX;
-        foreach (var (toggle, shown) in new[] { (vanillaToggle, view != View.LoadOrder), (orderToggle, view != View.Vanilla) })
+        foreach (var (toggle, shown) in new[] { (mainMenu, Wide), (orderToggle, Wide) })
         {
             if (toggle == null)
                 continue;
@@ -191,7 +208,7 @@ static class Layout
         pending.SetTextAutoSize(new LocString("settings_ui", Wide ? "SPIRE_MOD_MANAGER.PENDING_RESTART" : "MODDING_SCREEN.PENDING_CHANGES_WARNING").GetFormattedText());
         pending.Modulate = view == View.LoadOrder ? Colors.Transparent : Colors.White; // Visible: UpdateDot, below
         Watermark(screen);
-        BackLabel(screen);
+        GameBack(screen);
         UpdateDot(screen);
 
         // Better Mod Menu: hidden on our views; its own page in Vanilla View.
@@ -204,29 +221,65 @@ static class Layout
         }
     }
 
-    // "Main Menu" over the game's back arrow on our pages (it leaves the whole Modding page); not in Vanilla View.
-    static void BackLabel(Control screen)
+    // Where our page title's text sits on its line (the same on the game's page, whose title is elsewhere): its box's
+    // top, its text placed in the box by its vertical alignment, then its line's ascent. Worked out from our title's
+    // words shaped in its font (Line), not the label's laid-out text, so it holds before a frame is drawn and on either
+    // page.
+    static float TitleBaseline(RichTextLabel title, string text)
     {
-        if (!screen.HasNode("BackButton"))
-            return;
-        if (screen.GetNodeOrNull<Label>("SpireModManagerBackLabel") is not { } label)
+        var (ascent, height) = Line(text, title.GetThemeFont(NormalFont), PageTitleSize);
+        var room = TitleBottom - TitleTop - height;
+        var offset = title.VerticalAlignment switch
         {
-            label = new Label
-            {
-                Name = "SpireModManagerBackLabel", Text = Menus.Text("SPIRE_MOD_MANAGER.MAIN_MENU"),
-                HorizontalAlignment = HorizontalAlignment.Center, MouseFilter = Control.MouseFilterEnum.Ignore,
-            };
-            label.AddThemeFontOverride("font", ModEntry.Font("res://themes/kreon_bold_shared.tres"));
-            label.AddThemeFontSizeOverride("font_size", 18);
-            label.AddThemeColorOverride("font_color", new Color(1, 0.964706f, 0.886275f, 0.85f));
-            label.AddThemeColorOverride("font_outline_color", new Color(0.0756f, 0.12084f, 0.18f));
-            label.AddThemeConstantOverride("outline_size", 6);
-            screen.AddChild(label);
+            VerticalAlignment.Center => room / 2,
+            VerticalAlignment.Bottom => room,
+            _ => 0,
+        };
+        return TitleTop + title.GetThemeStylebox("normal").GetMargin(Side.Top) + offset + ascent;
+    }
+
+    // How far a link's baseline sits below its top: a LinkButton draws its text at its top, so its line's ascent.
+    static float LinkBaseline(LinkButton link) => Line(link.Text, link.GetThemeFont("font"), link.GetThemeFontSize("font_size")).Ascent;
+
+    // A line of text's ascent and height as it's shaped, from the fonts its letters use. A font's own GetAscent and
+    // GetHeight take every fallback too, and a mod that adds one to the game's shared Kreon (for its own script) makes
+    // them taller by an amount that grows with the size, so the title and the smaller link moved apart (Jordan's game,
+    // 22 Oct: the link 7 px low at 1440p). The external-link mark sits on a link's text by it too (LinkMark).
+    public static (float Ascent, float Height) Line(string text, Font font, int size)
+    {
+        var line = new TextLine();
+        line.AddString(text, font, size);
+        return (line.GetLineAscent(), line.GetSize().Y);
+    }
+
+    // The game's back arrow: on our pages our Main Menu button takes its place, and the arrow stays, unseen and taking
+    // no clicks, for what presses it (Escape, its hotkey; F3; our button). In Vanilla View it shows as the game has it.
+    // Its own tweens fade its parts, not itself, so its colour holds.
+    const string MouseMeta = "spire_mod_manager_mouse";
+
+    static void GameBack(Control screen)
+    {
+        if (screen.GetNodeOrNull<Control>("BackButton") is not { } back)
+            return;
+        back.Modulate = Wide ? Colors.Transparent : Colors.White;
+        foreach (var part in back.FindChildren("*", "Control", true, false).OfType<Control>().Prepend(back))
+        {
+            if (!part.HasMeta(MouseMeta))
+                part.SetMeta(MouseMeta, (int)part.MouseFilter);
+            part.MouseFilter = Wide ? Control.MouseFilterEnum.Ignore : (Control.MouseFilterEnum)(int)part.GetMeta(MouseMeta);
         }
-        label.Visible = Wide;
-        // Centred over the arrow's resting place (-40,726, 200x110), not its position: it slides in from off-screen.
-        label.Size = new Vector2(150, 24);
-        label.Position = new Vector2(0, 726 - 27);
+    }
+
+    // Back to the main menu, as the game's back arrow goes (our Main Menu button, F3); false if it can't now. sound: its
+    // press's sound, which ForceClick skips (our button plays its own).
+    public static bool GoBack(Control screen, bool sound = true)
+    {
+        if (screen.GetNodeOrNull<NBackButton>("BackButton") is not { IsEnabled: true } back)
+            return false;
+        if (sound)
+            SfxCmd.Play(FmodSfx.backButton);
+        back.ForceClick();
+        return true;
     }
 
     // The game's version and date in the top-right corner are dark grey, made for its brighter menu art; on
@@ -339,16 +392,12 @@ static class Layout
         }
     }
 
-    // Vanilla View: the game's notification dot on "Spire Manager" while a relaunch is pending.
-    // The page's "after a restart" line and the view toggle's dot, by the main menu button's rule (the game's own check
-    // looks only at mods it loaded): on every build, show and change, so a page rebuilt after a run agrees with the menu.
+    // The page's "after a restart" line, by the main menu button's rule (the game's own check looks only at mods it
+    // loaded): on every build, shown or not, so a page rebuilt after a run agrees with the menu.
     public static void UpdateDot(Node screen)
     {
-        var pending = ModEntry.HasPendingChanges();
         if (screen.GetNodeOrNull<Control>("%PendingChangesLabel") is { } line)
-            line.Visible = pending;
-        if (screen.GetNodeOrNull<Control>("SpireModManagerViewToggle/Dot") is { } dot)
-            dot.Visible = Current == View.Vanilla && pending;
+            line.Visible = ModEntry.HasPendingChanges();
     }
 
     // Places the info panel's parts: the head (title, source, facts) beside a large thumbnail, the description below,
@@ -528,6 +577,9 @@ static class Layout
         (control.OffsetLeft, control.OffsetTop, control.OffsetRight, control.OffsetBottom) = (box.X, box.Y, box.Z, box.W);
     }
 
+    // Our views' panels (the list's and the info panel's): plain and dark, the page showing through.
+    public static readonly Color PanelColor = new(0.03f, 0.05f, 0.08f, 0.55f);
+
     static void PanelStyle(Control panel)
     {
         if (!panel.HasMeta(StyleMeta))
@@ -537,7 +589,7 @@ static class Layout
             panel.AddThemeStyleboxOverride("panel", (StyleBox)panel.GetMeta(StyleMeta));
             return;
         }
-        var plain = new StyleBoxFlat { BgColor = new Color(0.03f, 0.05f, 0.08f, 0.55f) };
+        var plain = new StyleBoxFlat { BgColor = PanelColor };
         plain.SetCornerRadiusAll(6);
         panel.AddThemeStyleboxOverride("panel", plain);
     }
@@ -603,7 +655,7 @@ static class Layout
 
     static readonly StringName LastSetSize = "_lastSetSize", LastAdjustedSize = "_lastAdjustedSize", AdjustFontSize = "AdjustFontSize";
     // Made once, as every row title asks for both each redraw (a text passed as one is converted anew each time).
-    static readonly StringName NormalFontSize = "normal_font_size", BoldFontSize = "bold_font_size";
+    static readonly StringName NormalFontSize = "normal_font_size", BoldFontSize = "bold_font_size", NormalFont = "normal_font";
     static bool? _refits;
 
     // Whether Refit can fit a label (its members found, looked up once).

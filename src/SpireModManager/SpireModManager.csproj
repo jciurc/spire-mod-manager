@@ -8,7 +8,17 @@
     <LangVersion>latest</LangVersion>
     <ImplicitUsings>enable</ImplicitUsings>
     <CopyLocalLockFileAssemblies>false</CopyLocalLockFileAssemblies>
-    <GenerateDocumentationFile>false</GenerateDocumentationFile>
+    <!-- The API (src/SpireModManager/Api, the only public types): other mods bind to this assembly by name and this
+         version, and the game matches it strictly, so it stays 1.0.0.0 for good; the release's own version is the
+         InformationalVersion build.cs passes in. Every public member has a doc comment (CS1591 fails the build), and
+         the public surface is recorded in PublicAPI.Shipped.txt / PublicAPI.Unshipped.txt: adding, changing or
+         removing a public member without recording it fails the build too (docs/dev/API.md). -->
+    <AssemblyVersion>1.0.0.0</AssemblyVersion>
+    <GenerateDocumentationFile>true</GenerateDocumentationFile>
+    <!-- The reference assembly (the public surface, no code) beside the dll: build.cs hands it to dependents with its dist option. -->
+    <ProduceReferenceAssembly>true</ProduceReferenceAssembly>
+    <ProduceReferenceAssemblyInOutDir>true</ProduceReferenceAssemblyInOutDir>
+    <WarningsAsErrors>$(WarningsAsErrors);CS1591;RS0016;RS0017;RS0024;RS0025;RS0026;RS0027;RS0036;RS0037</WarningsAsErrors>
     <!-- build.cs and tools/dev.cs find the Steam library that has the game and pass it in. Building any
          other way (an IDE, a plain dotnet build) uses STS2_STEAMAPPS, else the first of Steam's default
          folder and the SteamLibrary folder Steam suggests at a drive's root that has the game: if yours is
@@ -32,7 +42,14 @@
     <DebugType>none</DebugType>
   </PropertyGroup>
   <ItemGroup Condition="'$(SpireModManagerWorkshop)' == 'true'">
-    <Compile Remove="SelfTest.cs" />
+    <Compile Remove="SelfTest*.cs" />
+  </ItemGroup>
+
+  <ItemGroup>
+    <!-- Build time only: checks the public surface against the PublicAPI files; nothing of it ships. -->
+    <PackageReference Include="Microsoft.CodeAnalysis.PublicApiAnalyzers" Version="3.3.4" PrivateAssets="all" />
+    <AdditionalFiles Include="PublicAPI.Shipped.txt" />
+    <AdditionalFiles Include="PublicAPI.Unshipped.txt" />
   </ItemGroup>
 
   <ItemGroup>

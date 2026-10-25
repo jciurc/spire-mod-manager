@@ -28,7 +28,7 @@ static class PageBar
         // Picked mods (two or more) first: then the bar acts on them.
         var picked = Selection.Several;
         var shown = picked ? rows.Where(r => Selection.Contains(r.Mod)).ToList()
-            : rows.Where(r => (filter.Length == 0 || Search.Matches(r.Mod, filter)) && ListFilter.Shows(r.Mod)).ToList();
+            : rows.Where(r => ListFilter.Finds(r.Mod, filter) && ListFilter.Shows(r.Mod)).ToList();
         var choice = ListFilter.Chosen;
         var categories = Store.Data.Categories;
         void Fold(bool collapsed)
@@ -62,7 +62,10 @@ static class PageBar
         bar.AddChild(Menus.InlineButtons(CategoryList.OnOffItems(content, shown, selected: picked), "OnOff"));
         bar.AddChild(new Control { SizeFlagsHorizontal = Control.SizeFlags.ExpandFill, MouseFilter = Control.MouseFilterEnum.Ignore });
 
-        // "Show:" and its choices, the chosen one lit; a little apart from the folding buttons after them.
+        // "Show:" and its choices, the chosen one lit, each with how many mods it's for (the search applies, as to the
+        // count before Enable all); a little apart from the folding buttons after them.
+        var searched = rows.Where(r => ListFilter.Finds(r.Mod, filter)).ToList();
+        var choices = new List<(Button Button, string Name)>();
         var show = new HBoxContainer { Name = "Show", MouseFilter = Control.MouseFilterEnum.Ignore, SizeFlagsVertical = Control.SizeFlags.ShrinkCenter };
         show.AddThemeConstantOverride("separation", 2);
         var label = new Label
@@ -81,10 +84,12 @@ static class PageBar
             (ListFilter.Choice.Changed, "SPIRE_MOD_MANAGER.SHOW_CHANGED", "SPIRE_MOD_MANAGER.SHOW_CHANGED_TIP", "ShowChangedButton"),
         })
         {
-            var button = Menus.ChoiceButton(Menus.Text(key), option == choice, () => ListFilter.Choose(content, option), name);
+            var count = searched.Count(r => ListFilter.Matches(r.Mod, option));
+            var button = Menus.ChoiceButton(Counted(Menus.Text(key), count), option == choice, () => ListFilter.Choose(content, option), name);
             Hover.Tip(button, Menus.Text(tip));
             button.SizeFlagsVertical = Control.SizeFlags.ShrinkCenter;
             show.AddChild(button);
+            choices.Add((button, Menus.Text(key)));
         }
         show.AddChild(new Control { CustomMinimumSize = new Vector2(6, 0), MouseFilter = Control.MouseFilterEnum.Ignore });
         bar.AddChild(show);
@@ -97,6 +102,9 @@ static class PageBar
                 button.Name = name;
 
         border.AddChild(bar);
+        // Measured in the tree, with the font the button draws with.
+        foreach (var (button, choiceName) in choices)
+            button.CustomMinimumSize = new Vector2(Roomy(button, choiceName), 0);
         bar.SetAnchorsPreset(Control.LayoutPreset.TopWide);
         var scroll = border.GetNode<Control>("ModsScrollContainer");
         (bar.OffsetLeft, bar.OffsetRight, bar.OffsetTop, bar.OffsetBottom) = (scroll.OffsetLeft + 12, scroll.OffsetRight - 16, 0, Height);
@@ -104,12 +112,8 @@ static class PageBar
         if (categories.Count > 0)
             return;
         // The hint, in the bar's quiet style, lined up with "Installed mods" (Layout stacks it below the bar).
-        var hint = new Label
-        {
-            Name = HintName, VerticalAlignment = VerticalAlignment.Center, MouseFilter = Control.MouseFilterEnum.Ignore,
-            ClipText = true, TextOverrunBehavior = TextServer.OverrunBehavior.TrimEllipsis,
-            Text = Menus.Text("SPIRE_MOD_MANAGER.NO_CATEGORIES_HINT"),
-        };
+        var hint = new Label { Name = HintName, VerticalAlignment = VerticalAlignment.Center, MouseFilter = Control.MouseFilterEnum.Ignore };
+        Menus.CutToFit(hint, Menus.Text("SPIRE_MOD_MANAGER.NO_CATEGORIES_HINT"));
         Quiet(hint);
         border.AddChild(hint);
         hint.SetAnchorsPreset(Control.LayoutPreset.TopWide);
@@ -151,6 +155,29 @@ static class PageBar
         };
         Hover.Tip(chip, $"{Menus.Text("SPIRE_MOD_MANAGER.CLEAR_SELECTION")}\n{Menus.Text("SPIRE_MOD_MANAGER.CLEAR_SELECTION_KEYS")}");
         return chip;
+    }
+
+    // "All (20)": a choice's name and its count.
+    static string Counted(string name, int count) => Menus.Format("SPIRE_MOD_MANAGER.SHOW_COUNT", ("name", name), ("count", Menus.Number(count)));
+
+    // A choice button's width for its name with the widest 3-digit count (digits needn't be the same width), so it
+    // keeps its size, and the bar its layout, as the count changes; its text centred in it.
+    // Three: four made the bar run past the list with a selection's chip and buttons in it (by ~27 px); 999 mods is room.
+    public const int RoomFor = 3;
+
+    // Measured once per name, font, size and margins: nine formatted texts per button on every redraw doubled the bar's
+    // share of one (10 ms to 20 ms with 249 mods).
+    static readonly Dictionary<(string Name, Rid Font, int Size, float Margins), float> Widths = [];
+
+    public static float Roomy(Button button, string name)
+    {
+        var (font, size) = (button.GetThemeFont("font"), button.GetThemeFontSize("font_size"));
+        var margins = button.GetThemeStylebox("normal").GetMinimumSize().X;
+        var key = (name, font.GetRid(), size, margins);
+        if (Widths.TryGetValue(key, out var width))
+            return width;
+        var widest = Enumerable.Range(1, 9).Max(digit => font.GetStringSize(Counted(name, int.Parse(new string((char)('0' + digit), RoomFor))), fontSize: size).X);
+        return Widths[key] = MathF.Ceiling(widest) + margins;
     }
 
     static readonly Color Cream = new(1, 0.964706f, 0.886275f);

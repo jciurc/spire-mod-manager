@@ -10,10 +10,18 @@
 //   dead text, or a use this script can't see.
 // - Game resources: no code loads one with ResourceLoader.Load or GD.Load; ModEntry.Load and Font do.
 // - Descriptions: no code sets the engine's TooltipText; Hover.Tip shows our card.
+// - Player text: "modding page" in lowercase mid-sentence, in our strings, the README, TRANSLATING.md, the Workshop
+//   description and the issue forms.
+// - Cut text: our strings have no "…" or "...", and no label is cut with Godot's "…" (TrimEllipsis); Menus.CutToFit
+//   cuts with two periods.
 // - Fixtures: the JSON under tools/fixtures parses, and each test mod's manifest has id, name and version.
 // - Translation tooling: tools/loc.cs's SmartFormat package and the self-test's ToolParser are the same version.
 // - Both game branches: the members only the public-beta has go through Compat.
 // - Null-forgiving: no `!` that tells the compiler a value isn't null, in src, tools, workshop or build.cs.
+// - The API (src/SpireModManager/Api, docs/dev/API.md): it's the only public code; its files keep the shapes that can
+//   grow without breaking a mod built against them; the shipped surface only grows; ApiInfo.Version follows the
+//   snapshot and VERSIONS.md; the assembly version stays 1.0.0.0; every member is named in the API self-test.
+// - The Workshop build: SpireModManager.csproj leaves out every SelfTest*.cs, and only those files hold the self-test.
 // - Tracked files: none over 1 MB, none holding what looks like a GitHub token.
 // Prints PASS, FAIL and WARN lines (as annotations on GitHub); exit code 1 on any FAIL.
 using System.Diagnostics;
@@ -21,6 +29,7 @@ using System.Runtime.CompilerServices;
 using System.Text;
 using System.Text.Json;
 using System.Text.RegularExpressions;
+using System.Xml.Linq;
 
 const string Prefix = "SPIRE_MOD_MANAGER.";
 var root = Path.GetDirectoryName(ScriptDir()) ?? ".";
@@ -124,15 +133,15 @@ foreach (var (path, source) in sources)
     var lines = source.Split('\n');
     for (var i = 0; i < lines.Length; i++)
         if (directLoad.IsMatch(lines[i]) && !lines[i].TrimStart().StartsWith("//")
-            && !(Path.GetFileName(path) == "ModEntry.cs" && lines[i].Contains("ResourceLoader.Load(path) is T resource"))) // the helper itself
+            && !(Path.GetFileName(path) == "ModEntry.cs" && lines[i].Contains("var loaded = ResourceLoader.Load(path);"))) // the helper itself
             direct.Add($"{Name(path)}:{i + 1}");
 }
 Check("game resources load through ModEntry.Load or ModEntry.Font", direct.Count == 0, List(direct));
 
-// Descriptions: our hover card (Hover.Tip), never the engine's tooltip, which looks unlike ours. The self-test only
-// reads it, so it doesn't count; nor do comment lines.
+// Descriptions: our hover card (Hover.Tip), never the engine's tooltip, which looks unlike ours. The self-test
+// (SelfTest*.cs) only reads it, so it doesn't count; nor do comment lines.
 var native = new List<string>();
-foreach (var (path, source) in sources.Where(s => Path.GetFileName(s.Key) != "SelfTest.cs"))
+foreach (var (path, source) in sources.Where(s => !IsSelfTest(s.Key)))
 {
     var lines = source.Split('\n');
     for (var i = 0; i < lines.Length; i++)
@@ -141,10 +150,66 @@ foreach (var (path, source) in sources.Where(s => Path.GetFileName(s.Key) != "Se
 }
 Check("descriptions use Hover.Tip, not the engine's TooltipText", native.Count == 0, List(native));
 
+// Player text: Jordan's "modding page", lowercase (22 Oct), wherever players read our words about the game's page. Only
+// mid-sentence, after a word, as a sentence may still start with it. workshop.json's copy of the description counts
+// too: it's what the next upload sends if prepare.cs isn't run again. The game's own words ("Modding", "Mod Settings")
+// and past release notes (CHANGELOG.md) stay as they are.
+var capitalPage = new Regex(@"(?<=[\p{L}\d'’,]\s)Modding page");
+var playerText = Files("localization", "*.json").Concat(Files(Path.Combine(".github", "ISSUE_TEMPLATE"), "*.yml"))
+    .Concat(new[] { "README.md", "TRANSLATING.md", Path.Combine("workshop", "description.bbcode"), Path.Combine("workshop", "workshop.json") }
+        .Select(file => Path.Combine(root, file)).Where(File.Exists));
+var capitalised = new List<string>();
+foreach (var path in playerText)
+{
+    var lines = File.ReadAllText(path).Split('\n');
+    for (var i = 0; i < lines.Length; i++)
+        if (capitalPage.IsMatch(lines[i]))
+            capitalised.Add($"{Name(path)}:{i + 1}");
+}
+Check("players read \"modding page\" in lowercase (our strings, README, TRANSLATING, the Workshop description, the issue forms)",
+    capitalised.Count == 0, List(capitalised));
+
+// Player text: no ellipses (Jordan, 23 Oct). Where our text is cut or runs on, it ends with two periods ("and 5 more..",
+// the code's Menus.CutMark), never "…" or "...".
+var ellipsis = new Regex(@"…|\.\.\.");
+var ellipses = new List<string>();
+foreach (var path in Files("localization", "*.json"))
+{
+    var lines = File.ReadAllText(path).Split('\n');
+    for (var i = 0; i < lines.Length; i++)
+        if (ellipsis.IsMatch(lines[i]))
+            ellipses.Add($"{Name(path)}:{i + 1}");
+}
+Check("our strings have no \"…\" or \"...\": cut or running-on text ends with two periods (\"and 5 more..\")", ellipses.Count == 0, List(ellipses));
+
+// The same for labels cut to their width: Menus.CutToFit ends them with two periods. Godot's own cut (TrimEllipsis,
+// TrimWordEllipsis, and their Force forms) draws "…", in code or in our scenes (text_overrun_behavior 3 to 6).
+// Comment lines don't count.
+var godotCut = new Regex(@"\bTrim(Word)?Ellipsis(Force)?\b");
+var sceneCut = new Regex(@"^\s*\w*text_overrun_behavior = [3-6]\s*$");
+var godotCuts = new List<string>();
+foreach (var (path, source) in sources)
+{
+    var lines = source.Split('\n');
+    for (var i = 0; i < lines.Length; i++)
+        if (godotCut.IsMatch(lines[i]) && !lines[i].TrimStart().StartsWith("//"))
+            godotCuts.Add($"{Name(path)}:{i + 1}");
+}
+foreach (var path in Files("scenes", "*.tscn"))
+{
+    var lines = File.ReadAllText(path).Split('\n');
+    for (var i = 0; i < lines.Length; i++)
+        if (sceneCut.IsMatch(lines[i]))
+            godotCuts.Add($"{Name(path)}:{i + 1}");
+}
+Check("labels are cut with Menus.CutToFit (\"..\"), not Godot's TrimEllipsis, which draws \"…\"", godotCuts.Count == 0, List(godotCuts));
+
 // Both game branches: the members only the public-beta has (Mod.workshopId, NModInfoContainer.Clear) go through
 // Compat, by name. Builds compile against the installed branch, so a direct use builds on the beta and then fails on
-// stable, where the method using it throws as it's first called. Comment lines don't count.
-var betaOnly = new Regex(@"\.workshopId\b|\bworkshopId\s*=|NModInfoContainer\.Clear\b|ModInfoContainer""\)\.Clear\(|\binfo\.Clear\(\)");
+// stable, where the method using it throws as it's first called. Comment lines don't count. Also the beta's == operator
+// on ModManifest: `manifest == null` compiles to it, and on stable the method using it can't run at all (a
+// MissingMethodException as it's first called: the info panel lost our fields); `is null` and `?.` need no operator.
+var betaOnly = new Regex(@"\.workshopId\b|\bworkshopId\s*=|\.assemblies\b|NModInfoContainer\.Clear\b|ModInfoContainer""\)\.Clear\(|\binfo\.Clear\(\)|\bmanifest\s*[!=]=");
 var branchy = new List<string>();
 foreach (var (path, source) in sources.Where(s => Path.GetFileName(s.Key) != "Compat.cs"))
 {
@@ -153,7 +218,7 @@ foreach (var (path, source) in sources.Where(s => Path.GetFileName(s.Key) != "Co
         if (betaOnly.IsMatch(lines[i]) && !lines[i].TrimStart().StartsWith("//"))
             branchy.Add($"{Name(path)}:{i + 1}");
 }
-Check("members only the beta has go through Compat (stable has no Mod.workshopId or NModInfoContainer.Clear)", branchy.Count == 0, List(branchy));
+Check("members only the beta has go through Compat (stable has no Mod.workshopId, Mod.assemblies, NModInfoContainer.Clear or ModManifest ==)", branchy.Count == 0, List(branchy));
 
 // Null-forgiving: Jordan's code style has no `!` after a value to say it isn't null (null!, x!.y, F()!). A null there
 // throws far from its cause; a check that narrows (a pattern, or a checked local) gives the code its own way out.
@@ -194,14 +259,177 @@ foreach (var file in Files(Path.Combine("tools", "fixtures"), "*.json"))
     Check($"{Name(file)}: manifest has id, name and version", absent.Count == 0, "missing " + List(absent));
 }
 
+// The API. Other mods compile against SpireModManager.dll's public surface and bind to it at run time, so it may only
+// grow (docs/dev/API.md). Build time already holds the line exactly (PublicApiAnalyzers: every public signature recorded
+// in src/SpireModManager/PublicAPI.*.txt); these are the rules it doesn't cover, and its safety net in CI.
+var apiDir = Path.Combine(root, "src", "SpireModManager", "Api");
+bool InApi(string path) => Path.GetFullPath(path).StartsWith(Path.GetFullPath(apiDir) + Path.DirectorySeparatorChar, StringComparison.OrdinalIgnoreCase);
+// 1. Only the API is public: no top-level public type anywhere else (files use file-scoped namespaces, so one starts at
+//    column 0).
+var outside = sources.Where(s => !InApi(s.Key)).SelectMany(s => s.Value.Split('\n').Select((line, i) => (s.Key, line, i)))
+    .Where(l => l.line.StartsWith("public ")).Select(l => $"{Name(l.Key)}:{l.i + 1}").ToList();
+Check("only the API is public: no top-level public type outside src/SpireModManager/Api", outside.Count == 0, List(outside));
+// 2. Its files keep the shapes that can grow without breaking a caller: no record, struct, interface, event, const
+//    (copied into the caller), required, protected, virtual or abstract; no #if; no game types (MegaCrit, used or
+//    named); classes sealed or static; no public instance field; no parameter defaults (copied into the caller too:
+//    overloads instead).
+var shapes = new List<string>();
+var banned = new Regex(@"(?<!@)\b(record|struct|interface|event|const|required|protected|virtual|abstract)\b");
+var constraint = new Regex(@"\bwhere\s+\w+\s*:[^{;=]*"); // where T : struct is a constraint, not a struct
+var openClass = new Regex(@"\bpublic\s+(?!static\b|sealed\b)(partial\s+)?class\b");
+// A field: public, not static, a type and a name, maybe a value, then ; (no braces: a property; no closing parenthesis
+// before the end: a method).
+var instanceField = new Regex(@"^\s*public\s+(?!static\b|const\b|class\b|sealed\b|enum\b|delegate\b|event\b)(?:(?:readonly|new|volatile)\s+)*([^=;{}]+?)\s*(=[^=>][^;]*)?;\s*$");
+var modifiers = new HashSet<string> { "public", "static", "readonly", "sealed", "new", "override", "extern", "unsafe", "partial", "async", "ref" };
+foreach (var (path, source) in sources.Where(s => InApi(s.Key)))
+{
+    var code = CodeOnly(source);
+    var lines = code.Split('\n');
+    for (var i = 0; i < lines.Length; i++)
+    {
+        var line = lines[i];
+        string? why = banned.Match(constraint.Replace(line, "")) is { Success: true } word ? word.Value : line.TrimStart().StartsWith("#if") ? "#if"
+            : line.Contains("MegaCrit.") ? "a game type" : openClass.IsMatch(line) ? "a class neither sealed nor static"
+            : instanceField.Match(line) is { Success: true } field && !field.Groups[1].Value.TrimEnd().EndsWith(')') ? "a public instance field" : null;
+        if (why != null)
+            shapes.Add($"{Name(path)}:{i + 1} ({why})");
+    }
+    // Each public member's parameter list, however it's laid out: the first ( outside a type's <...> that follows a
+    // name (one after a modifier is a tuple type), up to its matching ); any = in it that isn't ==, !=, <=, >= or =>.
+    foreach (Match declared in Regex.Matches(code, @"\bpublic\b"))
+    {
+        var angle = 0;
+        for (var at = declared.Index + "public".Length; at < code.Length; at++)
+        {
+            var c = code[at];
+            if (c == '<')
+                angle++;
+            else if (c == '>')
+                angle--;
+            else if (angle == 0 && c is ';' or '{' or '=')
+                break; // a field, a property or a type: no parameters
+            else if (angle == 0 && c == '(')
+            {
+                var (depth, close) = (0, at);
+                for (; close < code.Length; close++)
+                    if (code[close] == '(')
+                        depth++;
+                    else if (code[close] == ')' && --depth == 0)
+                        break;
+                var before = Regex.Match(code[..at], @"(\w+)\s*(?:<[^()]*>)?\s*$").Groups[1].Value; // a generic method's name too
+                if (before.Length == 0 || modifiers.Contains(before))
+                {
+                    at = close; // a tuple type: the parameters come after the name
+                    continue;
+                }
+                if (Regex.IsMatch(code[(at + 1)..close], @"(?<![=!<>])=(?![=>])"))
+                    shapes.Add($"{Name(path)}:{code[..at].Count(ch => ch == '\n') + 1} (a parameter default)");
+                break;
+            }
+        }
+    }
+}
+Check("the API's files keep its shapes (no const, record, struct, interface, event, #if, game types, open classes, public fields or parameter defaults)",
+    shapes.Count == 0, List(shapes));
+// 3. The shipped surface only grows: no member is ever taken out (PublicApiAnalyzers' way is a *REMOVED* line), and every
+//    line PublicAPI.Shipped.txt had at the latest release is still there. The latest by version, not the nearest: tags
+//    are on main's merges, which dev never has.
+var shippedPath = Path.Combine(root, "src", "SpireModManager", "PublicAPI.Shipped.txt");
+var unshippedPath = Path.Combine(root, "src", "SpireModManager", "PublicAPI.Unshipped.txt");
+static List<string> ApiLines(string text) => text.Replace("\r", "").Split('\n').Select(l => l.Trim()).Where(l => l.Length > 0 && !l.StartsWith('#')).ToList();
+string? Git(params string[] arguments)
+{
+    try
+    {
+        var info = new ProcessStartInfo("git", ["-C", root, .. arguments]) { RedirectStandardOutput = true, RedirectStandardError = true };
+        using var git = Process.Start(info);
+        var output = git?.StandardOutput.ReadToEnd();
+        git?.WaitForExit();
+        return git?.ExitCode == 0 ? output : null;
+    }
+    catch (System.ComponentModel.Win32Exception)
+    {
+        return null; // no git: nothing to compare with
+    }
+}
+var shipped = File.Exists(shippedPath) ? ApiLines(File.ReadAllText(shippedPath)) : [];
+var unshipped = File.Exists(unshippedPath) ? ApiLines(File.ReadAllText(unshippedPath)) : [];
+var removed = shipped.Concat(unshipped).Where(l => l.StartsWith("*REMOVED*")).ToList();
+Check("no API member is ever removed (no *REMOVED* line in the PublicAPI files: mark it [Obsolete] instead)", removed.Count == 0, List(removed));
+var lastTag = (Git("tag", "--list", "v*", "--sort=-v:refname") ?? "").Split('\n').Select(t => t.Trim()).FirstOrDefault(t => Regex.IsMatch(t, @"^v\d+\.\d+\.\d+$"));
+var atTag = lastTag != null ? Git("show", $"{lastTag}:src/SpireModManager/PublicAPI.Shipped.txt") : null; // none before the API shipped
+var dropped = atTag == null ? [] : ApiLines(atTag).Except(shipped).ToList();
+Check($"the shipped API only grows: every line of PublicAPI.Shipped.txt at {lastTag ?? "the last release"} is still there", dropped.Count == 0, List(dropped));
+// 4. ApiInfo.Version follows the snapshot: it's VERSIONS.md's last row; that row reads "unreleased", one more than the
+//    row before, exactly while PublicAPI.Unshipped.txt has lines (once they ship, the row names the release); it's a
+//    public static readonly int.
+var infoSource = sources.FirstOrDefault(s => InApi(s.Key) && Path.GetFileName(s.Key) == "ApiInfo.cs").Value ?? "";
+var versionField = Regex.Match(infoSource, @"public static readonly int Version = (\d+);");
+var versionsPath = Path.Combine(apiDir, "VERSIONS.md");
+var rows = File.Exists(versionsPath)
+    ? Regex.Matches(File.ReadAllText(versionsPath), @"^\|\s*(\d+)\s*\|\s*([^|]+?)\s*\|", RegexOptions.Multiline)
+        .Select(m => (Api: int.Parse(m.Groups[1].Value), Release: m.Groups[2].Value)).ToList()
+    : [];
+var unreleased = rows.Count > 0 && rows[^1].Release.Equals("unreleased", StringComparison.OrdinalIgnoreCase);
+var versionOk = versionField.Success && rows.Count > 0 && int.Parse(versionField.Groups[1].Value) == rows[^1].Api
+    && unreleased == unshipped.Count > 0 && (!unreleased || rows[^1].Api == (rows.Count > 1 ? rows[^2].Api + 1 : 1));
+Check("ApiInfo.Version is VERSIONS.md's last row, which reads \"unreleased\" (one more than the row before) exactly while PublicAPI.Unshipped.txt has lines",
+    versionOk, $"field {(versionField.Success ? versionField.Groups[1].Value : "missing")}, last row {(rows.Count > 0 ? $"{rows[^1].Api} {rows[^1].Release}" : "none")}, {unshipped.Count} unshipped");
+// A release (a pull request into main: RELEASING.md, step 3) has shipped the API in its prep (step 1): before the merge
+// and the tag, not at the build after them.
+if (Environment.GetEnvironmentVariable("GITHUB_BASE_REF") == "main")
+    Check("a release ships the API: PublicAPI.Unshipped.txt is empty and VERSIONS.md's last row names the release (RELEASING.md, step 1)",
+        unshipped.Count == 0 && !unreleased, $"{unshipped.Count} unshipped, last row {(rows.Count > 0 ? rows[^1].Release : "none")}");
+// 5. The assembly version stays 1.0.0.0: dependents bind to it, and the game matches it strictly.
+Check("the assembly version stays 1.0.0.0 (other mods bind to it)",
+    File.ReadAllText(Path.Combine(root, "src", "SpireModManager", "SpireModManager.csproj")).Contains("<AssemblyVersion>1.0.0.0</AssemblyVersion>"));
+// 6. Every API member has a test: SelfTest.Api.cs's code (not its comments or check names) names each type, each static
+//    member and enum value as Type.Member, and each instance member (an option's property) by name.
+var apiTest = CodeOnly(sources.FirstOrDefault(s => Path.GetFileName(s.Key) == "SelfTest.Api.cs").Value ?? "");
+var (untested, unread) = (new List<string>(), new List<string>());
+foreach (var line in shipped.Concat(unshipped))
+{
+    var isStatic = line.StartsWith("static ");
+    var declared = Regex.Replace(line, @"^(?:(?:static|readonly|const|abstract|virtual|override|sealed)\s+)*", "");
+    if (!declared.StartsWith("SpireModManager.Api."))
+    {
+        unread.Add(line);
+        continue;
+    }
+    // Its name: up to its parameters, its type (->) or its value (=); generic arguments and property accessors dropped.
+    var name = Regex.Split(declared["SpireModManager.Api.".Length..], @"\(| ->| =")[0];
+    while (Regex.IsMatch(name, "<[^<>]*>"))
+        name = Regex.Replace(name, "<[^<>]*>", "");
+    var parts = Regex.Replace(name, @"\.(get|init|set)$", "").Split('.');
+    var enumValue = Regex.IsMatch(declared, @" = -?\d+ -> ");
+    var needed = parts.Length == 1 || !declared.Contains('(') && !declared.Contains(" ->") && !declared.Contains(" =") ? parts[^1]
+        : isStatic || enumValue ? $"{parts[^2]}.{parts[^1]}" : parts[^1];
+    if (!Regex.IsMatch(apiTest, $@"(?<!\w){Regex.Escape(needed)}\b"))
+        untested.Add(needed);
+}
+Check("every API member is named in the API self-test's code (SelfTest.Api.cs)", shipped.Count + unshipped.Count > 0 && untested.Count == 0 && unread.Count == 0,
+    List(untested.Distinct().Concat(unread.Select(l => $"can't read: {l}")).ToList()));
 // Translation tooling: tools/loc.cs judges texts with the game's parser, and the self-test checks the game still ships
-// that version, so both name the same one.
+// that version, so both name the same one. ToolParser is read from the file that holds it (SelfTest.cs).
 var package = Regex.Match(File.ReadAllText(Path.Combine(root, "tools", "loc.cs")), @"^#:package SmartFormat@(\S+)", RegexOptions.Multiline)
     .Groups[1].Value;
-var tested = Regex.Match(File.ReadAllText(Path.Combine(root, "src", "SpireModManager", "SelfTest.cs")), @"const string ToolParser = ""([^""]+)""")
-    .Groups[1].Value;
+var tested = sources.Values.Select(s => Regex.Match(s, @"const string ToolParser = ""([^""]+)""")).FirstOrDefault(m => m.Success)?.Groups[1].Value ?? "";
 Check($"tools/loc.cs and the self-test name the same SmartFormat ({package})", package.Length > 0 && package == tested,
     $"loc.cs has {(package.Length > 0 ? package : "none")}, SelfTest.ToolParser {(tested.Length > 0 ? tested : "none")}");
+
+// The Workshop build: players get no self-test. SpireModManager.csproj leaves out every SelfTest*.cs there, so a new
+// file of it never ships, and only files named so in the project folder hold it (the self-test's partial class
+// anywhere else, a subfolder included, would ship).
+var project = XDocument.Load(Path.Combine(root, "src", "SpireModManager", "SpireModManager.csproj"));
+var workshopRemoves = project.Descendants("ItemGroup")
+    .Where(itemGroup => Regex.Replace((string?)itemGroup.Attribute("Condition") ?? "", @"\s", "") == "'$(SpireModManagerWorkshop)'=='true'")
+    .SelectMany(itemGroup => itemGroup.Elements("Compile")).Select(compile => (string?)compile.Attribute("Remove")).ToList();
+var selfTestElsewhere = sources.Where(s => !IsSelfTest(s.Key) && Regex.IsMatch(CodeOnly(s.Value), @"\bpartial\s+class\s+SelfTest\b"))
+    .Select(s => Name(s.Key)).ToList();
+Check("the Workshop build leaves out the self-test (SpireModManager.csproj removes SelfTest*.cs; only those files hold it)",
+    workshopRemoves.Contains("SelfTest*.cs") && selfTestElsewhere.Count == 0,
+    !workshopRemoves.Contains("SelfTest*.cs") ? "add <Compile Remove=\"SelfTest*.cs\" /> to the ItemGroup for '$(SpireModManagerWorkshop)' == 'true'"
+        : $"move these to src/SpireModManager/SelfTest.<area>.cs: {List(selfTestElsewhere)}");
 
 // Tracked files: nothing big (game files and builds never go in) and no tokens. Only the file and line of
 // a token are printed, never the token.
@@ -257,6 +485,12 @@ IEnumerable<string> Files(string dir, string pattern)
 }
 
 string Name(string path) => Path.GetRelativePath(root, path).Replace('\\', '/');
+
+// The in-game self-test's files: SelfTest.cs and its partial files, as the csproj's Workshop build names them. Its
+// SelfTest*.cs doesn't reach subfolders, so neither does this.
+bool IsSelfTest(string path) => Path.GetFileName(path).StartsWith("SelfTest", StringComparison.Ordinal) && path.EndsWith(".cs")
+    && string.Equals(Path.GetDirectoryName(Path.GetFullPath(path)), Path.GetFullPath(Path.Combine(root, "src", "SpireModManager")),
+        StringComparison.OrdinalIgnoreCase);
 
 static string List(IEnumerable<string> items) => string.Join(", ", items);
 

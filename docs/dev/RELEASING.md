@@ -7,6 +7,10 @@ are in [workshop/README.md](../../workshop/README.md).
    `build.cs`, and the version's section in [CHANGELOG.md](../../CHANGELOG.md), for players, from the merged
    pull requests. The section's first line is `workshop.json`'s `changeNote`, word for word. Doing both first
    keeps them in the tested tree (step 4) and in the tag. Release builds don't bump the version on their own.
+   If the API grew ([API.md](API.md): `src/SpireModManager/PublicAPI.Unshipped.txt` has lines), ship it in the
+   same pull request: move those lines to the end of `PublicAPI.Shipped.txt`, and write the version in the
+   "unreleased" row of `src/SpireModManager/Api/VERSIONS.md`. The release build (step 6) refuses an API left
+   unshipped.
 2. **Test that commit** with the full in-game suite: `dotnet run tools/dev.cs test` plain, `--bmm`,
    `--bmm-after`, `--first-run`, `--first-run-bmm --bmm`, and `--real`, then the same six with `--stable` added,
    on the stable branch's game. The Workshop build has no self-test, so the suite runs on that commit's dev
@@ -19,7 +23,7 @@ are in [workshop/README.md](../../workshop/README.md).
 6. **Build** in a worktree checked out at the tag: `dotnet run build.cs --dist`, then
    `dotnet run tools/dev.cs smoke`. Zip `dist/SpireModManager/` into the main checkout's `dist/` (gitignored,
    e.g. `dist/SpireModManager-X.Y.Z.zip`), outside the temporary worktree, and keep it for rollback.
-7. **By hand, once:** install those dist files into the real game and open the Modding page. The smoke run stops
+7. **By hand, once:** install those dist files into the real game and open the modding page. The smoke run stops
    at the main menu, because opening the page needs the self-test. `smoke --stable` runs the same on the stable
    branch's copy.
 8. **Upload:** [workshop/README.md](../../workshop/README.md), "Each upload".
@@ -27,7 +31,10 @@ are in [workshop/README.md](../../workshop/README.md).
    0.1.0: `0.1.1-dev.1`), or the game loads the Workshop copy instead. With both installed the game loads the
    newer by its `SemanticVersion` (major, minor and patch first, then the `-dev.N` part), and marks the other a
    duplicate. Raise the dev builds' default `version` in `build.cs` to match, in a pull request (after 0.1.1:
-   `0.1.2-dev.0`), so a plain local build isn't the one that loses.
+   `0.1.2-dev.0`), so a plain local build isn't the one that loses. If the release shipped a new API version,
+   commit its `dist/api/` files in the same pull request, under `tools/api/ref/<API version>/` (an old caller's
+   view of the API, for later checks), then copy them into the dependents that want the new members
+   (`lib/SpireModManager/` in each).
 
 ## Before each upload
 

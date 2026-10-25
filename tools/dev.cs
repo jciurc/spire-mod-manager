@@ -2,6 +2,9 @@
 //
 //   dotnet run tools/dev.cs test      build, reset the sandbox, run the in-game self-test headless
 //                                     --window: with a window, for screenshots, kept behind others
+//                                     --size WxH, with --window: that window size instead of 1920x1080, for
+//                                      screenshots (the mouse checks place the pointer in 1920x1080 units, so
+//                                      they fail at other sizes)
 //                                     --bmm / --bmm-after: with Better Mod Menu loaded before / after ours
 //                                     --bmm-local: its local-fix build (BmmRepo) instead of the installed one
 //                                     --workshop <id>[,<id>...]: those subscribed Workshop items too, after ours
@@ -43,7 +46,10 @@ var DevDir = stable ? StableDir : BetaDir;
 var WorkshopDir = Path.Combine(steamapps, "workshop", "content", "2868840");
 var BmmRepo = Env("STS2_BMM_REPO", @"C:\repos\gaming\slay the spire\bettermodmenu"); // Better Mod Menu's local-fix checkout (--bmm-local)
 const string ModId = "SpireModManager";
-const int TimeoutSeconds = 480; // the whole run, killed after this; the plain suite takes about 280 s (October 2026), more with --bmm
+// The whole run, killed after this. The full suite takes 110-125 s from the game's start, windowed too (October 2026),
+// and grows with every check: this leaves it room on a slower PC, and a hung game is killed within 5 minutes, so the
+// next run (any repo's) gets the game.
+const int TimeoutSeconds = 300;
 var root = Path.GetDirectoryName(ScriptDir()) ?? ".";
 var userData = Path.Combine(Environment.GetFolderPath(Environment.SpecialFolder.ApplicationData), "SlayTheSpire2");
 var sandbox = Path.Combine(userData, "default", "1");
@@ -53,7 +59,7 @@ var mode = args.FirstOrDefault() ?? "test";
 var smoke = mode == "smoke"; // the release build from dist/, not a fresh one
 var distDir = Path.Combine(root, "dist", ModId);
 var real = args.Contains("--real"); // your own mods (switched off) and a copy of your manager data
-var bmm = args.Any(a => a.StartsWith("--bmm")); // Better Mod Menu on (any --bmm option)
+var bmm = new[] { "--bmm", "--bmm-after", "--bmm-local" }.Any(args.Contains); // Better Mod Menu on
 var bmmData = args.Contains("--first-run-bmm"); // its fixture data in the sandbox, for our first-run import
 var firstRun = bmmData || args.Contains("--first-run"); // no manager.json of ours
 var crashPrepare = args.Contains("--crash-prepare"); // reach the main menu only, so the last working setup is saved
@@ -63,9 +69,13 @@ var workshopItems = workshopAt < 0 ? [] : (args.ElementAtOrDefault(workshopAt + 
     .Split(',', StringSplitOptions.RemoveEmptyEntries | StringSplitOptions.TrimEntries).Distinct().ToArray();
 var workshopMods = new List<string>(); // the mod ids in those items' manifests, in the order given
 var twins = args.Contains("--twins"); // two --workshop items of one mod id on purpose (the self-test's two-copies check)
+// --size WxH: test --window at another window size than 1920x1080 (a 2560x1440 screen draws layout and text at another
+// scale; screenshots then show it).
+var sizeAt = Array.IndexOf(args, "--size");
+var windowSize = (X: 1920, Y: 1080);
 
 if (mode is not ("test" or "launch" or "smoke"))
-    return Fail("usage: dotnet run tools/dev.cs [test [--window] [--bmm[-after]] [--bmm-local] [--real|--first-run|--first-run-bmm|--crash-prepare|--crash]|launch [--first-run|--first-run-bmm] [--keep-saves]|smoke [--bmm]] [--workshop <id>[,<id>...] [--twins]] [--stable] [--no-wait]");
+    return Fail("usage: dotnet run tools/dev.cs [test [--window [--size WxH]] [--bmm[-after]] [--bmm-local] [--real|--first-run|--first-run-bmm|--crash-prepare|--crash]|launch [--first-run|--first-run-bmm] [--keep-saves]|smoke [--bmm]] [--workshop <id>[,<id>...] [--twins]] [--stable] [--no-wait]");
 if (real && firstRun)
     return Fail("--real brings your own data, so it can't be a first run");
 if (crashPrepare && crash)
@@ -78,7 +88,26 @@ if (crashPrepare && workshopAt >= 0)
 // one list: a second --workshop, --workshop=..., or ids after a space would be dropped without a word.
 if (args.Count(a => a.StartsWith("--workshop")) != (workshopAt < 0 ? 0 : 1))
     return Fail("--workshop comes once, with its ids after a space, as in: --workshop 3747605109,3750485606");
-if (args.Where((a, i) => i > 0 && i != workshopAt + 1 && !a.StartsWith("--")).FirstOrDefault() is { } stray)
+// The options each mode takes, spelled exactly: any other is refused, or a typo (--stabel, --frist-run) would run the
+// plain suite, and its pass would read as that option's.
+string[] known = ["--bmm", "--bmm-after", "--bmm-local", "--workshop", "--twins", "--stable", "--no-wait", .. mode switch
+{
+    "test" => new[] { "--window", "--size", "--real", "--first-run", "--first-run-bmm", "--crash-prepare", "--crash" },
+    "launch" => ["--first-run", "--first-run-bmm", "--keep-saves"],
+    _ => [],
+}];
+if (args.Skip(1).FirstOrDefault(a => a.StartsWith("--") && !known.Contains(a)) is { } unknown)
+    return Fail($"\"{unknown}\" isn't an option of {mode}. It takes {string.Join(", ", known)}.");
+if (sizeAt >= 0)
+{
+    if (!args.Contains("--window"))
+        return Fail("--size goes with --window: a run with no window draws nothing to measure");
+    if (args.ElementAtOrDefault(sizeAt + 1)?.Split('x') is not [var w, var h] || !int.TryParse(w, out var width) || !int.TryParse(h, out var height)
+        || width < 800 || height < 600)
+        return Fail("--size needs a window size of at least 800x600, as in: --size 2560x1440");
+    windowSize = (width, height);
+}
+if (args.Where((a, i) => i > 0 && i != workshopAt + 1 && i != sizeAt + 1 && !a.StartsWith("--")).FirstOrDefault() is { } stray)
     return Fail($"\"{stray}\" isn't an option. Workshop ids go after --workshop, comma-separated with no spaces, as in: --workshop 3747605109,3750485606");
 if (workshopAt >= 0 && workshopItems.Length == 0)
     return Fail("--workshop needs Workshop item ids, comma-separated, as in: --workshop 3747605109,3750485606");
@@ -142,6 +171,26 @@ if (held != null)
 // build and link). A second guard after the lock, for a dev copy started by hand.
 if (WaitForOtherDevCopies() is { } busy)
     return Fail(busy);
+// Mod Doctor's runs put a fixture mod (MdTestCopy) in a dev copy's mods_STEAMTEST, which the game reads as Workshop items,
+// and take it out again after every run; one killed outright can leave it behind, a second copy our runs don't expect.
+// Only that fixture goes, and only while we hold the lock (no other run is using the dev copy).
+var steamTest = Path.Combine(DevDir, "mods_STEAMTEST");
+if (Directory.Exists(steamTest))
+    foreach (var leftover in Directory.EnumerateFileSystemEntries(steamTest, "MdTestCopy*"))
+    {
+        try
+        {
+            if (Directory.Exists(leftover))
+                Directory.Delete(leftover, recursive: true);
+            else
+                File.Delete(leftover);
+            Console.WriteLine($"removed Mod Doctor's leftover fixture {leftover}");
+        }
+        catch (Exception e) when (e is IOException or UnauthorizedAccessException)
+        {
+            Console.WriteLine($"(couldn't remove Mod Doctor's leftover fixture {leftover}: {e.Message})");
+        }
+    }
 
 if (smoke)
 {
@@ -150,7 +199,11 @@ if (smoke)
 }
 else
 {
-    var build = Process.Start("dotnet", ["run", Path.Combine(root, "build.cs"), "--no-install"]);
+    // Its own build may clear out/ while it holds the lock (build.cs refuses anyone else's while this run is going).
+    var buildStart = new ProcessStartInfo("dotnet", ["run", Path.Combine(root, "build.cs"), "--no-install"]);
+    buildStart.Environment["SPIRE_MOD_MANAGER_DEV_RUN"] = Environment.ProcessId.ToString();
+    if (Process.Start(buildStart) is not { } build)
+        return Fail("could not start the build");
     build.WaitForExit();
     if (build.ExitCode != 0)
         return Fail("build failed");
@@ -596,8 +649,8 @@ void PrepareSandbox(bool resetData)
     settings["mod_settings"] = mods;
     settings["seen_ea_disclaimer"] = true; // the one-time Early Access popup would cover every screenshot
     settings["volume_master"] = 0.0;      // silent, so dev runs don't play over your own game
-    settings["fullscreen"] = false;       // a 1920x1080 window, easy to tell apart and to move aside
-    settings["window_size"] = new JsonObject { ["X"] = 1920, ["Y"] = 1080 };
+    settings["fullscreen"] = false;       // a 1920x1080 window (or --size's), easy to tell apart and to move aside
+    settings["window_size"] = new JsonObject { ["X"] = windowSize.X, ["Y"] = windowSize.Y };
     File.WriteAllText(settingsPath, settings.ToJsonString(new() { WriteIndented = true }));
 
     var data = Path.Combine(sandbox, "mod_data", ModId);
@@ -639,7 +692,10 @@ void PrepareSandbox(bool resetData)
 }
 
 // --twins: the last given copy of each id picked to load (copied in as a local folder: l:workshop-<item>), in the
-// sandbox's manager.json (none: nothing to pick in).
+// sandbox's manager.json (none: nothing to pick in), as a file from before copies_off has it: the pick (copy_picks),
+// and our record of the id's copies in the order given ("copies"), which the pick is read with, every other copy off
+// (Copies.LegacyOff). Without the record no copy would be off, and the higher version would load, picked or not. A file
+// with copies_off already (--crash keeps --crash-prepare's data) has the other copies put in it instead.
 void PickTwins(string data)
 {
     var file = Path.Combine(data, "manager.json");
@@ -648,6 +704,17 @@ void PickTwins(string data)
     var keys = (manager["copy_picks"] as JsonArray ?? []).Select(p => (string?)p).OfType<string>()
         .Where(key => !picked.Any(p => key.StartsWith(p.Id + "|"))).Concat(picked.Select(p => $"{p.Id}|l:workshop-{p.Item}")).Order(StringComparer.Ordinal);
     manager["copy_picks"] = new JsonArray([.. keys.Select(k => (JsonNode?)JsonValue.Create(k))]);
+    if (manager["copies"] is not JsonObject record)
+        manager["copies"] = record = new JsonObject();
+    List<string> CopiesOf(string id) => [.. workshopManifests.Where(m => Id(m.Manifest) == id).Select(m => $"l:workshop-{m.Item}").Distinct()];
+    foreach (var (id, _) in picked)
+        record[id] = new JsonArray([.. CopiesOf(id).Select(c => (JsonNode?)JsonValue.Create(c))]);
+    if (manager["copies_off"] is JsonArray off)
+    {
+        var kept = off.Select(k => (string?)k).OfType<string>().Where(k => !picked.Any(p => k.StartsWith(p.Id + "|")))
+            .Concat(picked.SelectMany(p => CopiesOf(p.Id).Where(c => c != $"l:workshop-{p.Item}").Select(c => $"{p.Id}|{c}"))).Order(StringComparer.Ordinal);
+        manager["copies_off"] = new JsonArray([.. kept.Select(k => (JsonNode?)JsonValue.Create(k))]);
+    }
     File.WriteAllText(file, manager.ToJsonString(new() { WriteIndented = true }));
 }
 
@@ -771,6 +838,8 @@ static IDisposable? TakeDevRunLock(string what, bool noWait, out string? refused
         File.WriteAllText(holderFile, new JsonObject
         {
             ["repo"] = "spire-mod-manager", ["mode"] = what, ["pid"] = Environment.ProcessId, ["started"] = DateTime.UtcNow.ToString("yyyy-MM-ddTHH:mm:ssZ"),
+            // The checkout the run is from: build.cs won't clear its out/ (the run's build and results) meanwhile.
+            ["dir"] = Path.GetDirectoryName(ScriptDir()) ?? "",
         }.ToJsonString());
     }
     catch (Exception e) when (e is IOException or UnauthorizedAccessException)

@@ -1,7 +1,8 @@
 // Get the Workshop folder ready for an upload with Mega Crit's ModUploader, and check it. Nothing is uploaded.
 // Usage: dotnet run workshop/prepare.cs     (after dotnet run build.cs --dist; see workshop/README.md)
 // Fills content/ from dist/SpireModManager/, copies description.bbcode into workshop.json (the uploader reads the
-// description only from there), then checks and lists everything the upload will set.
+// description only from there) with its {version}, {id} and {author} filled in from the build's manifest, then checks
+// and lists everything the upload will set.
 using System.Buffers.Binary;
 using System.Runtime.CompilerServices;
 using System.Text;
@@ -24,7 +25,19 @@ var problems = new List<string>();
 var configPath = Path.Combine(workshop, "workshop.json");
 if (JsonNode.Parse(File.ReadAllText(configPath)) is not JsonObject config)
     return Fail("workshop.json: not a JSON object");
+// Its header (Version, ID, Author) from the build's manifest, as the mod the upload carries says them.
+var builtPath = Path.Combine(root, "dist", ModId, $"{ModId}.json");
+var built = File.Exists(builtPath) ? JsonNode.Parse(File.ReadAllText(builtPath)) as JsonObject : null;
 var description = File.ReadAllText(Path.Combine(workshop, "description.bbcode")).Replace("\r\n", "\n").Trim();
+foreach (var field in new[] { "version", "id", "author" })
+{
+    if (!description.Contains($"{{{field}}}"))
+        continue;
+    if (built == null || Text(built, field) is not { Length: > 0 } value)
+        problems.Add($"description.bbcode: {{{field}}} needs dist/{ModId}/{ModId}.json with its \"{field}\" (run dotnet run build.cs --dist first)");
+    else
+        description = description.Replace($"{{{field}}}", value);
+}
 var descriptionBytes = Encoding.UTF8.GetByteCount(description);
 if (descriptionBytes >= MaxDescription)
     problems.Add($"description.bbcode: {descriptionBytes:N0} bytes; Steam takes under {MaxDescription:N0}");
