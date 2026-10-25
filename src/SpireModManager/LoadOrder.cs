@@ -443,7 +443,7 @@ static class LoadOrder
     // tags: #unmet OR #needed, #clash, #managers, #order).
     public const string WarningName = "SpireModManagerOrderWarning", ManagersName = "SpireModManagerManagersWarning", AutoSortName = "AutoSortButton";
     public const string SameIdName = "SpireModManagerSameIdWarning", MissingName = "SpireModManagerMissingWarning";
-    public const string SelfName = "SpireModManagerSelfWarning";
+    public const string SelfName = "SpireModManagerSelfWarning", TurnedOffName = "SpireModManagerTurnedOffWarning";
     public const string AutoSortHintName = "AutoSortHint", BannerCardName = BannerBar.CardName;
     const string BadgeName = "WarningBadge";
     const int CardLines = 12; // a banner's card names at most this many mods, then says how many more
@@ -515,7 +515,7 @@ static class LoadOrder
         var orderText = Menus.Format(misordered == 1 ? "SPIRE_MOD_MANAGER.ORDER_PROBLEMS_ONE" : "SPIRE_MOD_MANAGER.ORDER_PROBLEMS", ("count", Menus.Number(misordered)));
         // The "!"'s card: the warning alone (the mods it's about are Load Order's own card).
         Badge(content, misordered > 0 && !on ? orderText : null);
-        foreach (var name in new[] { WarningName, ManagersName, SameIdName, MissingName, SelfName })
+        foreach (var name in new[] { WarningName, ManagersName, SameIdName, MissingName, TurnedOffName, SelfName })
             if (border.GetNodeOrNull<Control>(name) is { } old)
             {
                 Heights[old.GetMeta(HeightKeyMeta, name).AsString()] = old.OffsetBottom - old.OffsetTop;
@@ -544,6 +544,9 @@ static class LoadOrder
         // The active profile's mods that are on but not installed, unless dismissed for it (Profiles.MissingDismissed).
         if (Layout.Wide && !Profiles.MissingDismissed && Profiles.Missing() is { Count: > 0 } missing)
             MissingBanner(content, border, search, missing);
+        // Mods turned off after a failed start that are still off (TurnedOff: one on again by any means drops out)
+        if (Layout.Wide && TurnedOff.StillOff() is { Count: > 0 } turnedOff)
+            TurnedOffBanner(content, border, search, turnedOff);
         if (on && misordered > 0)
         {
             // Go to steps through the misordered mods as the rows show them: in load order here.
@@ -685,6 +688,37 @@ static class LoadOrder
             [show, disable, dismiss], MissingName, "MissingWarning", WarningColor);
     }
 
+    // Mods turned off after a failed start that are still off: a yellow banner naming them, with Go to stepping through
+    // their rows, Turn back on (all of them: TurnedOff.TurnBackOn) and Dismiss (the entries go, the mods stay off). Its
+    // card names each with when it was turned off.
+    static void TurnedOffBanner(Control content, Control border, Control? search, IReadOnlyList<TurnedOff.Entry> entries)
+    {
+        var ids = entries.Select(e => e.Id).ToHashSet();
+        var goTo = Menus.SmallButton(Menus.Text("SPIRE_MOD_MANAGER.GO_TO_PROBLEM"), () =>
+        {
+            if (Mods(content.GetChildren().OfType<NModMenuRow>()).Where(m => m.manifest?.id is { } id && ids.Contains(id)).ToList() is { Count: > 0 } off)
+                GoTo(content, Next(content, off));
+        }, name: "GoToTurnedOffButton");
+        Hover.Tip(goTo, Menus.Text("SPIRE_MOD_MANAGER.GO_TO_PROBLEM_TIP"));
+        var on = Menus.SmallButton(Menus.Text("SPIRE_MOD_MANAGER.TURNED_OFF_ON"), () =>
+        {
+            if (CategoryList.ScreenOf(content) is { } screen)
+                _ = TurnedOff.TurnBackOn(entries, screen);
+        }, name: "TurnBackOnButton");
+        Hover.Tip(on, Menus.Text("SPIRE_MOD_MANAGER.TURNED_OFF_ON_TIP"));
+        var dismiss = Menus.SmallButton(Menus.Text("SPIRE_MOD_MANAGER.DISMISS_MANAGERS"), () =>
+        {
+            TurnedOff.Remove(ids);
+            CategoryList.Apply(content); // no mod changed, so rows kept under a filter stay
+        }, name: "DismissTurnedOffButton");
+        Hover.Tip(dismiss, Menus.Text("SPIRE_MOD_MANAGER.TURNED_OFF_DISMISS_TIP"));
+        var text = entries.Count == 1 ? Menus.Format("SPIRE_MOD_MANAGER.TURNED_OFF_BANNER", ("mod", TurnedOff.Name(entries[0], plain: true)))
+            : Menus.Format("SPIRE_MOD_MANAGER.TURNED_OFF_BANNER_MANY", ("count", Menus.Number(entries.Count)));
+        Banner(border, search, text, () => BannerCard("SPIRE_MOD_MANAGER.TURNED_OFF_CARD_TITLE", [.. entries.Select(e => Menus.Format("SPIRE_MOD_MANAGER.TURNED_OFF_LINE",
+            ("mod", TurnedOff.Name(e, plain: false)), ("date", LaunchGuard.When(e.At.LocalDateTime))))], markup: true),
+            [goTo, on, dismiss], TurnedOffName, "TurnedOffWarning", WarningColor);
+    }
+
     // Copies of one mod id both ticked (only one loads), in Jordan's words: a yellow warning, Go to stepping through those
     // copies, Show finding them, Dismiss for this set (a new one shows it again). Its card lists them, saying which copy
     // each is and whether it's the one that loads.
@@ -716,9 +750,9 @@ static class LoadOrder
     static string? NeedsCard(Control content)
     {
         using var lookups = Lookups.Begin();
-        string Need((string Id, Mod? Dep) need) => need.Dep is { } dep
-            ? Menus.Format("SPIRE_MOD_MANAGER.BANNER_NEEDS_OFF", ("mod", Shown(dep)))
-            : Menus.Format("SPIRE_MOD_MANAGER.BANNER_NEEDS_MISSING", ("mod", need.Id));
+        string Need((string Id, Mod? Dep) need) => need.Dep is not { } dep ? Menus.Format("SPIRE_MOD_MANAGER.BANNER_NEEDS_MISSING", ("mod", need.Id))
+            : TurnedOff.Has(need.Id) ? Menus.Format("SPIRE_MOD_MANAGER.BANNER_NEEDS_TURNED_OFF", ("mod", Shown(dep)))
+            : Menus.Format("SPIRE_MOD_MANAGER.BANNER_NEEDS_OFF", ("mod", Shown(dep)));
         return BannerCard("SPIRE_MOD_MANAGER.BANNER_CARD_TITLE", Unloadable(Mods(content.GetChildren().OfType<NModMenuRow>()))
             .Select(b => Menus.Format("SPIRE_MOD_MANAGER.BANNER_NEEDS", ("mod", Shown(b.Mod)), ("needs", string.Join(", ", b.Needs.Select(Need))))).ToList());
     }
@@ -742,12 +776,13 @@ static class LoadOrder
         return BannerCard("SPIRE_MOD_MANAGER.BANNER_MANAGERS_TITLE", Bmm.TickedManagers().Select(Shown).ToList());
     }
 
-    // A title, then one mod a line (Capped, "and N more" dimmed); none for no lines.
-    static string? BannerCard(string title, List<string> lines)
+    // A title, then one mod a line (Capped, "and N more" dimmed); none for no lines. markup: the lines are rich text
+    // already, their names escaped.
+    static string? BannerCard(string title, List<string> lines, bool markup = false)
     {
         if (lines.Count == 0)
             return null;
-        var shown = Capped(lines).Select(Escape).ToList();
+        var shown = Capped(lines).Select(line => markup ? line : Escape(line)).ToList();
         if (lines.Count > CardLines)
             shown[^1] = $"[color=#fff6e280]{shown[^1]}[/color]";
         return $"[b]{Escape(Menus.Text(title))}[/b]\n{string.Join("\n", shown)}";

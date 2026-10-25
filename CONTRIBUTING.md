@@ -75,6 +75,15 @@ Commands:
     fails the start with a made-up error. Our dialog replaces the game's and is answered with Restore and
     restart (the relaunch is caught). For a real failure, add `--workshop` with the mods that cause it to
     `--crash`.
+  - `--crash-culprit`, after `--crash-prepare`: a start that fails by Test Fixes' code (a patch Harmony refuses).
+    Our dialog names it, and Turn off and restart is pressed: Test Fixes off in `settings.save`, recorded in
+    `turned-off.json`. With `--read-only-settings`, `settings.save` is read-only for the run, so the dialog comes
+    back saying the turn-off couldn't be saved. `--crash-notice`, after `--crash-culprit`: the next main menu's
+    notice of Test Fixes, and Turn back on pressed. `--crash-rebuild`, after `--crash-prepare`: Test UI's patch
+    class, applied by Test Framework, breaks the rebuild of a patched method, the last working launch on another game;
+    our dialog names Test UI, which only the record of Harmony's call can tell. Each run after `--crash-prepare`
+    refuses to run when the setup it left isn't this worktree's, or another run has written over it since (another
+    worktree's or session's run can come in between): run `--crash-prepare` again right before it.
   - `--real` (maintainer only): a read-only tour with your own mods (all switched off) and a copy of your data,
     in place of the test mods. Its output holds your own mod list, so it never goes into a pull request.
 - `dotnet run tools/dev.cs launch`: opens the sandboxed game to try things by hand (`--first-run`,

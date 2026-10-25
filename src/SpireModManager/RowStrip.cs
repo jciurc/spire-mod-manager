@@ -396,6 +396,7 @@ static class RowStrip
             var (word, color) = issue switch
             {
                 Dependencies.Problem.Missing => (Menus.Text("SPIRE_MOD_MANAGER.DEP_MISSING"), ProblemHex),
+                Dependencies.Problem.Off when TurnedOff.Has(id) => (Menus.Text("SPIRE_MOD_MANAGER.DEP_TURNED_OFF"), ProblemHex),
                 Dependencies.Problem.Off => (Menus.Text("SPIRE_MOD_MANAGER.DEP_OFF"), ProblemHex),
                 Dependencies.Problem.LoadsBefore => (Menus.Text("SPIRE_MOD_MANAGER.DEP_AFTER"), ProblemHex),
                 _ when loadOrder && on => (Menus.Text("SPIRE_MOD_MANAGER.DEP_BEFORE"), FineHex),

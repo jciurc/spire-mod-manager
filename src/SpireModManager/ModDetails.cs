@@ -743,14 +743,16 @@ static class ModDetails
 
     static readonly Regex PairedTag = new(@"\[([a-z_]+)(?:[ =][^\]]*)?\](.*?)\[/\1\]", RegexOptions.Singleline);
 
-    // An enabled mod's missing or disabled dependencies, a line for each kind ("Requires mods to be installed: A, B").
+    // An enabled mod's missing or disabled dependencies, a line for each kind ("Requires mods to be installed: A, B"); one
+    // turned off after a failed start says so (the relaunch check's lines too)
     public static List<string> DependencyProblems(Mod mod)
     {
         if (!Copies.Loads(mod))
             return [];
         var needs = Dependencies.Of(mod).Distinct().Select(id => (Id: id, Mod: Dependencies.Find(id))).ToList();
         var missing = needs.Where(d => d.Mod == null).Select(d => d.Id).ToList();
-        var off = needs.Where(d => d.Mod is { } found && !Copies.Loads(found)).Select(d => d.Mod?.manifest?.name ?? d.Id).ToList();
+        var off = needs.Where(d => d.Mod is { } found && !Copies.Loads(found))
+            .Select(d => (d.Mod?.manifest?.name ?? d.Id) + (TurnedOff.Has(d.Id) ? " " + Menus.Text("SPIRE_MOD_MANAGER.DEP_TURNED_OFF") : "")).ToList();
         var lines = new List<string>();
         if (missing.Count > 0)
             lines.Add(Menus.Format(missing.Count == 1 ? "SPIRE_MOD_MANAGER.PROBLEM_DEP_MISSING_ONE" : "SPIRE_MOD_MANAGER.PROBLEM_DEP_MISSING",

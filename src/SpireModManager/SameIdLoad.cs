@@ -589,7 +589,8 @@ static class SameIdLoad
     public static bool CanaryFailed { get; private set; }
 
     // Once, at the first main menu (MenuReachedPatch, after LaunchGuard.MenuReached): before our data loads and the undo
-    // history starts, so nothing here is a change since launch or an undo step.
+    // history starts, so nothing here is a change since launch or an undo step. The mods we keep off after a failed start
+    // get back the entries the game's list dropped (TurnedOff.KeepOff), so the save keeps them.
     public static void Settle()
     {
         if (_settled)
@@ -610,16 +611,23 @@ static class SameIdLoad
     // threw: the list is the raw rebuild then, whose switches would place the copies it took out wrongly.
     public static bool ListSettled { get; private set; }
 
-    // Settle's changes to a saved list (SettleList), and whether it's to be saved: it isn't the list the launch read, by
-    // its order (Reordered, in the order rule's form) or a switch. Neither the rule's moves nor Repair's alone are a
-    // reason: a launch whose list was in that form gets it back, its copies' switches as read, so it saves nothing (a mod
-    // with a source off, which the rebuild turns on, included). With no list read, SettleList's changes or any move
-    // (review C9: the first launch after updating didn't save the rule's form then).
+    // Settle's changes to a saved list and the list as the game read it (the game's, or the self-test's made-up ones):
+    // SettleList's (anchors, heal: the order rule's), then the entries the game's list dropped of mods we keep off
+    // (TurnedOff.KeepOff). True if anything changed.
+    public static bool Settle(List<SettingsSaveMod> list, IReadOnlyList<(string Id, ModSource Source, bool On)>? read, IReadOnlyList<bool>? anchors = null,
+        IReadOnlyDictionary<string, string>? heal = null) =>
+        SettleList(list, read, anchors, heal) | TurnedOff.KeepOff(list);
+
+    // Settle's changes (the four-argument Settle), and whether the list is to be saved: it isn't the list the launch read,
+    // by its order (Reordered, in the order rule's form) or a switch (KeepOff's entries included). Neither the rule's
+    // moves nor Repair's alone are a reason: a launch whose list was in that form gets it back, its copies' switches as
+    // read, so it saves nothing (a mod with a source off, which the rebuild turns on, included). With no list read,
+    // Settle's changes or any move (review C9: the first launch after updating didn't save the rule's form then).
     public static bool SettleSaves(List<SettingsSaveMod> list, IReadOnlyList<(string Id, ModSource Source, bool On)>? read, IReadOnlyList<bool>? anchors = null,
         IReadOnlyDictionary<string, string>? heal = null)
     {
         List<string> given = [.. list.Select(e => e.Id)];
-        var changed = SettleList(list, read, anchors, heal);
+        var changed = Settle(list, read, anchors, heal);
         if (read == null)
             return changed || !list.Select(e => e.Id).SequenceEqual(given);
         return Reordered(list, read) || !list.Select(e => (e.Id, e.Source, e.IsEnabled)).SequenceEqual(read);

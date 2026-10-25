@@ -2,19 +2,30 @@ using System.Reflection;
 using System.Runtime.CompilerServices;
 using Godot;
 using HarmonyLib;
+using MegaCrit.Sts2.Core.Helpers;
+using MegaCrit.Sts2.Core.Logging;
 using MegaCrit.Sts2.Core.Modding;
 using MegaCrit.Sts2.Core.Nodes.Screens.ModdingScreen;
 
 namespace SpireModManager;
 
 // Game members that only one branch has, reached by name so one build loads on both: the beta (v0.111) has
-// Mod.workshopId, Mod.assemblies and NModInfoContainer.Clear; stable (v0.107) has none of them (Mod.assembly, one).
+// Mod.workshopId, Mod.assemblies, NModInfoContainer.Clear and TaskHelper.UnobservedFault; stable (v0.107) has none of
+// them (Mod.assembly, one).
 static class Compat
 {
     static readonly FieldInfo? WorkshopIdField = AccessTools.Field(typeof(Mod), "workshopId");
     static readonly FieldInfo? AssembliesField = AccessTools.Field(typeof(Mod), "assemblies"), AssemblyField = AccessTools.Field(typeof(Mod), "assembly");
     public static readonly MethodInfo? InfoClear = AccessTools.Method(typeof(NModInfoContainer), "Clear");
     static readonly FieldInfo?[] InfoParts = new[] { "_title", "_description", "_image" }.Select(name => AccessTools.Field(typeof(NModInfoContainer), name)).ToArray();
+
+    // The game's event for a fire-and-forget task's fault, a failed start's among them (Culprits.Watch)
+    public static readonly EventInfo? UnobservedFault = typeof(TaskHelper).GetEvent("UnobservedFault");
+
+    // The game's log as it's written, for the failure a settings save only logs (LaunchGuard.SaveChecked). Both branches
+    // have it today; by name, and only with the handler it takes now, so a change to it leaves the saves unchecked
+    public static readonly EventInfo? LogCallback = typeof(Log).GetEvent("LogCallback") is { EventHandlerType: var handler } found
+        && handler == typeof(Action<LogLevel, string, int>) ? found : null;
 
     // Stable: each mod's Workshop id from its folder, worked out once.
     static readonly ConditionalWeakTable<Mod, StrongBox<ulong?>> FromFolder = new();

@@ -40,15 +40,12 @@ static class GameText
     // edge (the right side cut off, and the line break after it wrapped onto an empty line of its own). The padding holds
     // the room above and below the words.
     // centred: the words centred in the box (a centred label's alignment doesn't reach into a table's cell), for the
-    // game's popup, in one cell: its auto-size measures its text as one paragraph as wide as the label, as Godot lays out
-    // one cell's words, and words kept narrower would outgrow what it measured. Godot centres a cell's lines over its
-    // width and then shifts them by the left padding, so the padding all goes on the right. (Words that fill the popup's
-    // width still take that padding past its edge.)
+    // game's popup. Its auto-size measures the text as one paragraph as wide as the label, wider than a box's words, so the
+    // popup's text is fitted again as laid out (LaunchGuard.SetBody).
     public static string Box(string bbcode, bool dim = false, bool centred = false)
     {
         var words = (dim ? DimMark : Mark) + bbcode;
-        return centred ? $"[table=1][cell expand=1 border={Clear} bg={Clear} padding=0,10,{2 * Inset},10][center]{words}[/center][/cell][/table]"
-            : $"[table=3]{Side}[cell expand=1 border={Clear} bg={Clear} padding=0,10,0,10]{words}[/cell]{Side}[/table]";
+        return $"[table=3]{Side}[cell expand=1 border={Clear} bg={Clear} padding=0,10,0,10]{(centred ? $"[center]{words}[/center]" : words)}[/cell]{Side}[/table]";
     }
 
     // A cell at the box's side, Inset wide: a table of its own in it, one cell padded that much around a zero-width space
