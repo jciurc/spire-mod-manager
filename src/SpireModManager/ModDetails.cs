@@ -287,7 +287,7 @@ static class ModDetails
         text.Size.X - text.GetThemeStylebox("normal").GetMinimumSize().X - text.GetVScrollBar().GetCombinedMinimumSize().X - 2;
 
     // Anything wrong, the mod's description (own: as the panel shows it, null for none), more facts (size, published,
-    // subscribers, Workshop tags, modified content: its row as given, other keywords), then dependencies.
+    // subscribers, modified content: its row as given, Workshop tags, other keywords), then dependencies.
     static string Describe(Mod mod, string modified, string? own)
     {
         var text = new System.Text.StringBuilder();
@@ -313,11 +313,12 @@ static class ModDetails
             Fact("SPIRE_MOD_MANAGER.PUBLISHED", Date(workshop.Created));
         if (workshop?.Subscribers is { } subscribers)
             Fact("SPIRE_MOD_MANAGER.SUBSCRIBERS", Menus.Number(subscribers));
+        // What it changes in the game itself, right under them, for every mod; then the Workshop tags (Jordan, 25 Oct: "swap
+        // workshop tags and modified content positions"), then Other keywords (Jordan, 23 Oct: "swap other keywords and
+        // modified content positions"), with no gap between them.
+        text.Append(modified).Append('\n');
         if (workshop?.Tags.Count > 0)
             Fact("SPIRE_MOD_MANAGER.WORKSHOP_TAGS", string.Join(", ", workshop.Tags.Select(t => $"[url=wtag:{t}]{Escape(t)}[/url]"))); // click: search for it
-        // What it changes in the game itself, right under them, for every mod; then Other keywords (Jordan, 23 Oct: "swap
-        // other keywords and modified content positions"), with no gap between them.
-        text.Append(modified).Append('\n');
         // The hidden tags that find it (Jordan: "so that way they're at least visible"), a fact like the others, links as
         // the Workshop tags are; bare names (Jordan: no "#"), though a click searches #name.
         var keywords = HiddenTags.Of(mod);
