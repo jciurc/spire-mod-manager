@@ -105,10 +105,46 @@ static class GameChanges
 
     // ---- The game's files
 
-    // The game's own pack beside its executable, read once; empty if it's not there (a pack inside the executable).
-    static HashSet<string>? _gamePaths;
-    static HashSet<string> GamePaths() => _gamePaths ??= Path.Combine(Path.GetDirectoryName(OS.GetExecutablePath()) ?? "", "SlayTheSpire2.pck") is var pack
-        && File.Exists(pack) ? [.. PackPaths(pack)] : [];
+    // The game's own pack beside its executable, read once; empty if it's not there (a pack inside the executable). A
+    // caller while Warm's worker reads it waits for that read rather than starting another.
+    static Lazy<HashSet<string>>? _gamePaths;
+    static HashSet<string> GamePaths() => GamePack().Value;
+
+    static Lazy<HashSet<string>> GamePack()
+    {
+        var pack = Path.Combine(Path.GetDirectoryName(OS.GetExecutablePath()) ?? "", "SlayTheSpire2.pck");
+        return _gamePaths ??= new(() => File.Exists(pack) ? [.. PackPaths(pack)] : []);
+    }
+
+    // From the main menu on, the game's pack and each mod's are read on a worker, so the Cosmetic tag (ReplacesArt) is
+    // known before the page's text is shaped ahead (Prewarm) or the page opens. On the menu's thread the game's pack
+    // made a 157 ms frame there, 80 ms before (Copilot on #322). Only files are read off the main thread: the mods'
+    // list and the game's path are taken here. Never throws.
+    public static void Warm(IEnumerable<Mod> mods)
+    {
+        try
+        {
+            var list = mods.ToList();
+            var game = GamePack();
+            Task.Run(() =>
+            {
+                try
+                {
+                    _ = game.Value;
+                    foreach (var mod in list)
+                        ReplacesArt(mod);
+                }
+                catch (Exception e)
+                {
+                    Log.Warn($"[{ModEntry.ModId}] Could not read the mods' files ahead (they're read when the page asks): {e.Message}");
+                }
+            });
+        }
+        catch (Exception e)
+        {
+            Log.Warn($"[{ModEntry.ModId}] Could not start reading the mods' files ahead (they're read when the page asks): {e.Message}");
+        }
+    }
 
     // The assets a mod's packs have at the game's own paths ("images/ui/hands/hand_regent.png", from its .import).
     static List<string> ReplacedFiles(Mod mod)
