@@ -79,6 +79,30 @@ static class GameChanges
         }
     }
 
+    // Whether its pack replaces any of the game's art or sound (an image, a sound, a video, a font: Media), the Cosmetic
+    // tag's evidence beside its Workshop tags (Jordan, 25 Oct: a character reskin whose tags didn't say so). Definitive,
+    // where code changes to visuals are only inferred, so those don't count. Kept for the session per mod: every row asks
+    // at each redraw.
+    public static bool ReplacesArt(Mod mod) => Art.GetValue(mod, m => new StrongBox<bool>(ReadsAsArt(m))).Value;
+
+    static readonly ConditionalWeakTable<Mod, StrongBox<bool>> Art = new();
+    static readonly string[] Media = [".png", ".jpg", ".jpeg", ".webp", ".svg", ".ogg", ".wav", ".mp3", ".ogv", ".ttf", ".otf"];
+
+    // A game file that is art or sound, by its extension ("images/ui/top_panel/x.png"; not a scene or a script).
+    public static bool IsArt(string path) => Media.Any(ext => path.EndsWith(ext, StringComparison.OrdinalIgnoreCase));
+
+    static bool ReadsAsArt(Mod mod)
+    {
+        try
+        {
+            return ReplacedFiles(mod).Any(IsArt);
+        }
+        catch (Exception)
+        {
+            return false; // what it ships can't be read: For warns once, when its panel or search asks
+        }
+    }
+
     // ---- The game's files
 
     // The game's own pack beside its executable, read once; empty if it's not there (a pack inside the executable).

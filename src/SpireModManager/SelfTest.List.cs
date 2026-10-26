@@ -1335,6 +1335,13 @@ static partial class SelfTest
         Check("Cosmetic: the Workshop's Cosmetics and Audio categories and art or sound words; not QoL, tools or UI",
             Tags.IsCosmetic(["Cosmetics"]) && Tags.IsCosmetic(["Characters", "Audio"]) && Tags.IsCosmetic(["Sound Effects"]) && Tags.IsCosmetic(["Card Art"])
             && !Tags.IsCosmetic(["QoL", "Tools & APIs", "Utility"]) && !Tags.IsCosmetic(["UI"]) && !Tags.IsCosmetic([]) && !Tags.IsCosmetic(null));
+        // And a pack replacing the game's art or sound (Jordan, 25 Oct: a reskin whose tags didn't say so): images, sounds,
+        // videos and fonts count, scenes, scripts and data don't. The fixture mods replace none of the game's files.
+        string[] art = ["images/packed/character_select/char_select_ironclad.png", "sfx/hit.OGG", "fonts/kreon.ttf", "videos/intro.ogv"],
+            notArt = ["scenes/combat/creature.tscn", "scripts/x.gd", "localization/eng/cards.json"];
+        Check("Cosmetic from the game's files a pack replaces: art and sound (any case), not scenes, scripts or data; none for the fixture mods",
+            art.All(GameChanges.IsArt) && !notArt.Any(GameChanges.IsArt) && !Tags.For(Dependencies.Find("SmmTestLib")).Any(c => c.Text == "Cosmetic"),
+            $"art {string.Join(", ", art.Where(p => !GameChanges.IsArt(p)))}; not art {string.Join(", ", notArt.Where(GameChanges.IsArt))}");
         // Tags clicked on a row: "#Library" alone; Shift adds "#Gameplay" (both needed); "#Local" matches only the tag.
         List<string> Visible() => content.GetChildren().OfType<NModMenuRow>().Where(r => r.Visible).Select(r => r.Mod?.manifest?.id ?? "").ToList();
         void ClickChip(string modId, string tag, bool shift)
