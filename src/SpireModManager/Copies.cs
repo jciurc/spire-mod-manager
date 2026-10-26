@@ -324,9 +324,9 @@ static class Copies
     //    copies alone first (the launch brings back the copy it picks); none ticked at all: the game's own choice, the
     //    first left. Where the next launch can't put that copy in the id's first slot (Blocked: something it needs that's
     //    on sorts at or after the slot in that launch's order, Slot) while a mod that launch has still to load needs the
-    //    id (Needers), SameIdLoad.Fallback's pick of the other ticked copies, none: the first of the id's other copies in
-    //    that order, by the tie order, that fits, else the first; not where the launch doesn't look (one Mod of the id
-    //    left by the game's rule, the copy chosen);
+    //    id (Needers), SameIdLoad.Fallback's pick of the other ticked copies, none: of the id's other copies in that
+    //    order, each by its newest manifest, by the tie order, the first that fits, else the first (SameIdLoad.FirstLeft);
+    //    not where the launch doesn't look (one Mod of the id left by the game's rule, the copy chosen);
     // 5. every ticked copy that doesn't load, and why (Why).
     // saved: the list the next launch sorts by (Dependencies.NextOrder), else the game's in memory.
     public static Outcome Next(string id, HashSet<(string?, ModSource)> gameOff, Ticks ticks, IReadOnlyList<SettingsSaveMod>? saved = null)
@@ -391,7 +391,8 @@ static class Copies
                 loads = best;
                 // Blocked: what the next launch loads instead, worked out as it does (SameIdLoad.Fallback) over the ticked
                 // copies in its order (those the game's rule leaves, then those it beats), by the ticks now; none fits: of
-                // the id's other copies in that launch's order, by the tie order, the first that fits, else the first.
+                // the id's other copies in that launch's order, each by its newest manifest, by the tie order, the first
+                // that fits, else the first (SameIdLoad.FirstLeft).
                 // Only where the launch looks (Run's todo): two or more Mods of the id left by the game's rule (a copy with
                 // two manifests counts twice, as the next launch reads them: Dependencies.NextRead), or the copy chosen one
                 // it set aside.
@@ -400,9 +401,8 @@ static class Copies
                     && Needing().Count > 0 && SlotIn(id, Order(), Mins(id, Needing())) is var slot && (looks || slot.Order.Count > 1) && slot.Late(Newest(best)) is { } dep)
                 {
                     var tickedNow = on.Where(IsTicked).Select(Newest).ToList();
-                    var rest = ByTie(slot.Order.Where(m => CopyOf(m) != CopyOf(best)), m => m, TieOrdered);
                     if ((SameIdLoad.Fallback(tickedNow, Newest(best), m => gameLeft.Any(g => CopyOf(g) == CopyOf(m)), GameVersion, slot.Fits, TieOrdered,
-                        Needing().Any(m => NeedsMin(m, id))) ?? rest.Where(slot.Fits).Concat(rest).FirstOrDefault())
+                        Needing().Any(m => NeedsMin(m, id))) ?? SameIdLoad.FirstLeft(slot.Order, best, slot.Fits, TieOrdered))
                         is { } instead && on.FirstOrDefault(m => CopyOf(m) == CopyOf(instead)) is { } same)
                         (blocked, late, loads) = (best, dep, same);
                 }

@@ -47,7 +47,7 @@ static partial class SelfTest
             await RunReal(menu, outDir);
             return;
         }
-        if (mode is "crash" or "crash-real") // EarlyStart answers the dialog of a failed start: reaching the menu is the failure
+        if (mode is "crash" or "crash-real" or "crash-culprit" or "crash-culprit-read-only" or "crash-rebuild") // EarlyStart answers the dialog of a failed start: reaching the menu is the failure
         {
             Results.Add("FAIL a failed start: the game reached the main menu (nothing stopped its start)");
             File.WriteAllLines(Path.Combine(outDir, "results.txt"), [.. Results, .. Timing()]);
@@ -57,6 +57,11 @@ static partial class SelfTest
         if (mode == "crash-prepare")
         {
             await RunCrashPrepare(menu, outDir);
+            return;
+        }
+        if (mode == "crash-notice")
+        {
+            await RunCrashNotice(menu, outDir);
             return;
         }
         if (mode is "first-run" or "first-run-bmm")
@@ -139,14 +144,20 @@ static partial class SelfTest
             await Step(() => TestMenuButtonMove(menu, outDir));
             await Step(() => TestBetterModMenuImport(outDir));
             await Step(() => TestMenuButtonRelaunch(menu, outDir)); // before the Modding page opens: the check's fixes without it
+            var mouseAt = await MouseInView(menu); // before the most popups in a row
             await Step(() => TestLaunchGuard(menu, outDir));
             await Step(() => TestCrashOffer(menu, outDir));
+            await Step(() => TestCrashCulprit(menu, outDir)); // who stopped the start (Culprits), on real failures (SelfTest.Crash.cs)
+            await Step(() => TestCrashTurnOff(menu, outDir)); // what its answers write, and the notice after (SelfTest.TurnOff.cs)
+            await Step(() => TestMouseKept(menu, mouseAt));
             await Step(() => TestSameIdCanary()); // which copy of a mod installed twice loads (SameIdLoad)
             await Step(() => TestCopyRule(outDir)); // the rule every view and the launch share (Copies.Next), on made-up copies
             await Step(() => TestSameIdTie());
             await Step(() => TestSameIdPlan());
             await Step(() => TestSameIdLaunch());
             await Step(() => TestSameIdSettle());
+            await Step(() => TestDualSettled()); // the fixture's mod from both sources kept together at the main menu (the order rule)
+            await Step(() => TestOrderRule()); // the order rule every writer of the list keeps (LoadOrder.Normalize), on made-up lists
             await Step(() => TestCopiesData(outDir));
             await Step(() => TestSameIdErrors());
             await Step(() => TestSameIdLaunchGuard(menu, outDir));
@@ -252,8 +263,10 @@ static partial class SelfTest
             await Step(() => TestWorkshopTitles(menu, screen, content, outDir));
             await Step(() => TestLoadOrder(menu, screen, content, outDir));
             await Step(() => TestLoadOrderFind(menu, screen, content, outDir));
+            await Step(() => TestDualOrder(menu, screen, content, outDir)); // its rows together in Load Order, moving as one
             await Step(() => TestListBanner(menu, screen, content, outDir));
             await Step(() => TestManagersBanner(menu, screen, content, outDir));
+            await Step(() => TestTurnedOffBanner(menu, screen, content, outDir));
             await Step(() => TestSelfIncluded(menu, screen, content, outDir));
             await Step(() => TestPageBar(menu, screen, content, outDir));
             await Step(() => TestListFilters(menu, screen, content, outDir));
@@ -263,6 +276,7 @@ static partial class SelfTest
             await Step(() => TestCutWhole(content));
             await Step(() => TestWorkshopHead(menu, screen, outDir));
             await Step(() => TestOtherModPanel(menu, screen, content, outDir));
+            await Step(() => TestSettingsButton(menu, screen, content, outDir));
             await Step(() => TestGameChanges(menu, screen, content, outDir));
             await Step(() => TestModifiedContent(menu, screen, content, outDir));
             await Step(() => TestBulkEdit(menu, screen, content, outDir));
@@ -711,41 +725,62 @@ static partial class SelfTest
             ? null : $"words {words}, label {inner} (pivot {label.PivotOffset}), button {box}";
     }
 
-    // dev.cs --crash-prepare, then --crash: the second launch fails to start as a mod that stops every launch makes it
-    // (a made-up throw where the game's startup goes on after the mods load), and the dialog that replaces the game's is
-    // answered as a player would: Restore and restart. The first launch only reaches the main menu, so the last working
-    // setup is saved; the second has Test Retired on besides (dev.cs), so it differs. The relaunch is caught.
+    // dev.cs --crash-prepare, then a launch that fails to start as a mod that stops every launch makes it, its dialog
+    // answered as a player would (the relaunch and the quit caught). The first launch only reaches the main menu, so the
+    // last working setup is saved. --crash: a made-up throw where the game's startup goes on after the mods load, read as
+    // the game's own (TestOwner: no mod to name), with Test Retired on besides (dev.cs), so this launch differs from that
+    // setup: Restore and restart. --crash-culprit: Hornet's shape from Test Fixes' stand-in (a patch Harmony refuses), so
+    // ours names it: Turn off Test Fixes and restart; with --read-only-settings settings.save can't be written, so the
+    // dialog comes again saying so, with Quit alone. --crash-rebuild: a patch class of Test UI's stand-in, applied by Test
+    // Framework's, failing its rebuild of a method Test Content's stand-in transpiles, the last working launch on another
+    // game (dev.cs): Test UI, most likely, by the record of the call alone. --crash with --workshop (crash-real): the
+    // Workshop mods fail the start themselves, and whichever offer the dialog makes is taken and said.
     public static void EarlyStart()
     {
         var crashMode = System.Environment.GetEnvironmentVariable("SPIRE_MOD_MANAGER_SELFTEST_MODE");
-        if (crashMode is not ("crash" or "crash-real")
+        if (crashMode is not ("crash" or "crash-real" or "crash-culprit" or "crash-culprit-read-only" or "crash-rebuild")
             || System.Environment.GetEnvironmentVariable("SPIRE_MOD_MANAGER_SELFTEST") is not { Length: > 0 } outDir)
             return;
         // Until answered, the result is that it wasn't: the game may quit before the watcher below sees anything.
         var results = Path.Combine(outDir, "results.txt");
         Directory.CreateDirectory(outDir);
         File.WriteAllLines(results, ["FAIL a failed start: the game ended before our dialog was answered"]);
-        if (crashMode == "crash") // crash-real: the --workshop mods fail the start themselves
+        try
         {
-            try
+            switch (crashMode)
             {
-                new HarmonyLib.Harmony(ModEntry.ModId + ".SelfTestCrash").Patch(
-                    HarmonyLib.AccessTools.Method(typeof(MegaCrit.Sts2.Core.Helpers.OneTimeInitialization), "ExecuteEssential"),
-                    prefix: new HarmonyLib.HarmonyMethod(typeof(SelfTest), nameof(MadeUpFailure)));
+                case "crash":
+                    Culprits.TestOwner = type => type == typeof(SelfTest) ? "" : null; // nested types too: no mod's
+                    FailStart(nameof(MadeUpFailure));
+                    break;
+                case "crash-culprit" or "crash-culprit-read-only":
+                    Culprits.TestOwner = type => CulpritOwners.GetValueOrDefault(type);
+                    FailStart(nameof(CulpritFailure));
+                    break;
+                case "crash-rebuild":
+                    Culprits.TestOwner = type => CulpritOwners.GetValueOrDefault(type);
+                    new HarmonyLib.Harmony(ContentId).Patch(HarmonyLib.AccessTools.Method(typeof(GameLike), nameof(GameLike.Prepare)),
+                        transpiler: By(typeof(ContentPatch), nameof(ContentPatch.Marked)));
+                    FailStart(nameof(RebuildFailure));
+                    break;
             }
-            catch (Exception e)
-            {
-                Results.Add($"FAIL a failed start: the made-up failure couldn't be patched in: {e.Message}"); // Run writes these at the menu
-                File.WriteAllLines(results, Results);
-                return; // the game starts; Run, at the main menu, says so too
-            }
+        }
+        catch (Exception e)
+        {
+            Results.Add($"FAIL a failed start: the made-up failure couldn't be patched in: {e.Message}"); // Run writes these at the menu
+            File.WriteAllLines(results, Results);
+            return; // the game starts; Run, at the main menu, says so too
         }
         var (quits, relaunches) = (0, 0);
         ModEntry.TestQuit = () => quits++;
         ModEntry.TestRelaunch = plain => relaunches += plain ? 1 : 0; // a plain quit (the game's would save a half-started game)
         var tree = (SceneTree)Engine.GetMainLoop();
         var started = DateTime.Now;
-        string? texts = null;
+        var dialogs = new List<string>(); // each dialog's words as shown, in order
+        string? offered = null; // the first dialog's right button
+        (bool Fits, int Size, int Button)? fit = null; // how the first dialog holds its words
+        Node? answered = null, showing = null;
+        var shownAt = DateTime.Now;
         void Finish()
         {
             tree.ProcessFrame -= Watch;
@@ -762,43 +797,52 @@ static partial class SelfTest
         {
             try
             {
-                if (texts == null && NModalContainer.Instance?.OpenModal is Node popup)
+                // Each of our popups once, its right button pressed half a second in, once it's laid out and its text sized as a
+                // player sees it (the second, after a write that failed, has Quit alone)
+                if (NModalContainer.Instance?.OpenModal is Node popup && popup != answered && GodotObject.IsInstanceValid(popup))
                 {
-                    texts = string.Join(" | ", PopupTexts());
-                    Check("a failed start: the repair of the game's rebuilt mod list in memory ran as the error showed, with the list as the game read it "
-                        + "and before the first main menu", LaunchGuard.RepairedBeforeMenu && LaunchGuard.ReadList != null && !SameIdLoad.Settled,
-                        $"repaired {LaunchGuard.RepairedBeforeMenu}, list read {LaunchGuard.ReadList != null}, settled {SameIdLoad.Settled}");
-                    if (!texts.Contains("The game couldn't start"))
-                    {
-                        Check("a failed start: our dialog in place of the game's", false, texts);
-                        Finish();
+                    if (popup != showing)
+                        (showing, shownAt) = (popup, DateTime.Now);
+                    if (DateTime.Now - shownAt < TimeSpan.FromSeconds(0.5))
                         return;
+                    answered = popup;
+                    dialogs.Add(ShownWords());
+                    if (dialogs.Count == 1)
+                    {
+                        Check("a failed start: the repair of the game's rebuilt mod list in memory ran as the error showed, with the list as the game read it "
+                            + "and before the first main menu", LaunchGuard.RepairedBeforeMenu && LaunchGuard.ReadList != null && !SameIdLoad.Settled,
+                            $"repaired {LaunchGuard.RepairedBeforeMenu}, list read {LaunchGuard.ReadList != null}, settled {SameIdLoad.Settled}");
+                        if (!dialogs[0].Contains("The game couldn't start"))
+                        {
+                            Check("a failed start: our dialog in place of the game's", false, dialogs[0]);
+                            Finish();
+                            return;
+                        }
+                        offered = popup.GetNodeOrNull("VerticalPopup/YesButton")?.FindChild("Label", true, false) is Label { } yes ? yes.Text : null;
+                        fit = PopupFit();
+                        if (crashMode == "crash-real")
+                            Results.Add($"INFO a failed start: our dialog offered \"{offered}\"");
                     }
                     popup.GetNodeOrNull("VerticalPopup/YesButton")?.EmitSignal("Released", popup.GetNode("VerticalPopup/YesButton"));
                     return;
                 }
                 // Or the plain one, where a mod broke the game's text.
-                if (texts == null && tree.Root.GetNodeOrNull<ConfirmationDialog>(LaunchGuard.PlainDialogName) is { Visible: true } plain)
+                if (dialogs.Count == 0 && tree.Root.GetNodeOrNull<AcceptDialog>(LaunchGuard.PlainDialogName) is { Visible: true } plain)
                 {
-                    texts = $"{plain.Title} | {plain.DialogText} | {plain.OkButtonText} | {plain.CancelButtonText}";
+                    dialogs.Add($"{plain.Title} | {plain.DialogText} | {plain.OkButtonText}");
+                    offered = plain.OkButtonText;
                     Results.Add("INFO a failed start: the plain dialog (the game's text didn't load)");
                     plain.EmitSignal(AcceptDialog.SignalName.Confirmed);
                     return;
                 }
                 if (relaunches + quits > 0)
                 {
-                    var retired = SaveManager.Instance.SettingsSave.ModSettings?.ModList.Where(e => e.Id == "SmmTestRetired").Select(e => e.IsEnabled).ToList() ?? [];
-                    var pending = LaunchGuard.Dir is { } dir && File.Exists(Path.Combine(dir, LaunchGuard.PendingFile));
-                    Check("a failed start: our dialog in place of the game's, naming what changed since the last working launch",
-                        texts != null && texts.Contains("The game couldn't start") && texts.Contains("Test Retired") && texts.Contains("Restore and restart"), texts ?? "no dialog");
-                    Check("a failed start: Restore and restart writes the last working list (Test Retired off again), clears this launch's record, then relaunches",
-                        relaunches == 1 && quits == 0 && retired.Count > 0 && retired.All(on => !on) && !pending,
-                        $"relaunches {relaunches}, quits {quits}, Test Retired {string.Join(",", retired)}, record left {pending}");
+                    Answered(crashMode, dialogs, offered, fit, quits, relaunches);
                     Finish();
                 }
                 else if (DateTime.Now - started > TimeSpan.FromSeconds(90))
                 {
-                    Check("a failed start: our dialog, answered, within 90 s", false, $"dialog {texts ?? "none"}, relaunches {relaunches}, quits {quits}");
+                    Check("a failed start: our dialog, answered, within 90 s", false, $"dialogs {string.Join(" || ", dialogs)}, relaunches {relaunches}, quits {quits}");
                     Finish();
                 }
             }
@@ -811,7 +855,85 @@ static partial class SelfTest
         tree.ProcessFrame += Watch;
     }
 
-    static void MadeUpFailure() => throw new InvalidOperationException("Spire Mod Manager dev run (--crash): a made-up failed start");
+    // The failure each mode makes, a prefix on the game's startup step
+    static void FailStart(string prefix) => new HarmonyLib.Harmony(ModEntry.ModId + ".SelfTestCrash").Patch(
+        HarmonyLib.AccessTools.Method(typeof(MegaCrit.Sts2.Core.Helpers.OneTimeInitialization), "ExecuteEssential"),
+        prefix: new HarmonyLib.HarmonyMethod(typeof(SelfTest), prefix));
+
+    // What a failed start's answer did, by mode, once the dialog is answered (the relaunch or the quit caught); and for
+    // --crash, --crash-culprit and --crash-rebuild, how its text fit the dialog at a real failed start
+    static void Answered(string mode, List<string> dialogs, string? offered, (bool Fits, int Size, int Button)? fit, int quits, int relaunches)
+    {
+        var first = dialogs.FirstOrDefault() ?? "no dialog";
+        var pending = LaunchGuard.Dir is { } dir && File.Exists(Path.Combine(dir, LaunchGuard.PendingFile));
+        var list = SaveManager.Instance.SettingsSave.ModSettings?.ModList ?? [];
+        bool AllOff(string id) => list.Any(e => e.Id == id) && list.Where(e => e.Id == id).All(e => !e.IsEnabled);
+        var entry = TurnedOff.Entries.FirstOrDefault(e => e.Id == "SmmTestFixes");
+        if (mode is "crash" or "crash-culprit" or "crash-rebuild")
+            Check($"a failed start: our dialog's text fits it, at a size that can be read ({ReadableText} or more)", fit is { Fits: true, Size: >= ReadableText },
+                $"{fit?.ToString() ?? "not measured"}");
+        switch (mode)
+        {
+            case "crash-culprit":
+            case "crash-rebuild":
+                // --crash-rebuild's mod is Test UI, whose class Test Framework applied: only the record of the call says whose it was
+                var rebuild = mode == "crash-rebuild";
+                var (offId, offName) = rebuild ? ("SmmTestUi", "Test UI") : ("SmmTestFixes", "Test Fixes");
+                var turned = TurnedOff.Entries.FirstOrDefault(e => e.Id == offId);
+                var notes = LaunchGuard.TestReading?.Notes ?? [];
+                Check($"a failed start ({(rebuild ? "a library's failed rebuild of a dependent's patch class" : "Hornet's shape")}): our dialog names {offName}, the "
+                    + $"game's message first, with \"Turn off {offName} and restart\"; whose patch it was, as recorded",
+                    first.Contains("Notice from the game") && offered == $"Turn off {offName} and restart"
+                    && first.Contains(rebuild ? $"{offName} most likely stopped the game from starting. The error came while its changes to a part of the game were being put in place"
+                        : $"An error while loading {offName} has prevented the game from starting.") && notes.Any(n => n.Contains("as recorded")),
+                    $"{first}; offered {offered}; {string.Join("; ", notes)}");
+                // Test Twin, two copies from one source, keeps the switch the game read for it
+                var twin = LaunchGuard.ReadList?.Where(e => e.Id == "SmmTestTwin").Select(e => (e.Source, e.On)).Distinct().ToList() ?? [];
+                Check($"a failed start: the turn-off saves {offName} off (every switch of it), every other mod's switches as the game read them (Test Twin's), "
+                    + $"its record ({(rebuild ? "RebuildLast, a rebuild" : "Code, not a rebuild")}, the switch it had with its copy), then one plain relaunch; this "
+                    + "launch's record gone",
+                    AllOff(offId) && twin.All(t => list.Where(e => e.Id == "SmmTestTwin" && e.Source == t.Source).All(e => e.IsEnabled == t.On))
+                    && turned is { Switches: [{ On: true, Copies: [var copy] }] } && copy == $"l:{offId}" && turned.Why == (rebuild ? Culprits.Why.RebuildLast : Culprits.Why.Code)
+                    && turned.Rebuild == rebuild
+                    && relaunches == 1 && quits == 0 && !pending, $"{offName} {Switched(list, offId)}, Test Twin {Switched(list, "SmmTestTwin")}; {turned}; "
+                    + $"relaunches {relaunches}, quits {quits}, record left {pending}");
+                break;
+            case "crash-culprit-read-only":
+                var again = dialogs.ElementAtOrDefault(1) ?? "none";
+                Check("a failed start with settings.save read-only: the turn-off's save fails, so the dialog comes again saying so, with Quit alone; nothing "
+                    + "relaunched, nothing recorded, Test Fixes as it was", offered == "Turn off Test Fixes and restart" && again.Contains("couldn't turn off Test Fixes")
+                    && again.Contains("isn't read-only") && !again.Contains("Turn off Test Fixes and restart") && relaunches == 0 && quits == 1 && entry == null
+                    && !AllOff("SmmTestFixes"), $"{first} || {again}; relaunches {relaunches}, quits {quits}; {entry}; Test Fixes {Switched(list, "SmmTestFixes")}");
+                break;
+            case "crash-real" when offered != "Restore and restart":
+                Check("a failed start by Workshop mods: our dialog's turn-off writes and relaunches", first.Contains("The game couldn't start") && relaunches == 1 && !pending,
+                    $"offered {offered}; relaunches {relaunches}, quits {quits}, record left {pending}; turned off {string.Join(", ", TurnedOff.Entries.Select(e => $"{e.Id} ({e.Why})"))}");
+                break;
+            default:
+                var retired = list.Where(e => e.Id == "SmmTestRetired").Select(e => e.IsEnabled).ToList();
+                Check("a failed start: our dialog in place of the game's, naming what changed since the last working launch",
+                    first.Contains("The game couldn't start") && first.Contains("Test Retired") && offered == "Restore and restart", first);
+                Check("a failed start: Restore and restart writes the last working list (Test Retired off again), clears this launch's record, then relaunches",
+                    relaunches == 1 && quits == 0 && retired.Count > 0 && retired.All(on => !on) && !pending,
+                    $"relaunches {relaunches}, quits {quits}, Test Retired {string.Join(",", retired)}, record left {pending}");
+                break;
+        }
+    }
+
+    // --crash: thrown from a method of its own, never inlined, so a frame the rules read as the game's is always where it
+    // was thrown (the replacement of the game's step, which RitsuLib also patches, is then never the throw site)
+    static void MadeUpFailure() => MadeUpThrow();
+
+    [System.Runtime.CompilerServices.MethodImpl(System.Runtime.CompilerServices.MethodImplOptions.NoInlining)]
+    static void MadeUpThrow() => throw new InvalidOperationException("Spire Mod Manager dev run (--crash): a made-up failed start");
+
+    // --crash-culprit: Test Fixes' stand-in asking Harmony for a patch it refuses (an inherited method), as Hornet's did
+    static void CulpritFailure() => Fixes.Install(typeof(InheritingCard));
+
+    // --crash-rebuild: Test Framework's stand-in applying Test UI's patch class, which finds its target itself, whose
+    // transpiler breaks the method's build, after Test Content's stand-in transpiled it at Init (EarlyStart). Without the
+    // record of the call, the reading would take Test Framework's own class on that method (LibBadPrepare) for it.
+    static void RebuildFailure() => Lib.Apply(typeof(UiFindsTarget));
 
     // --crash-prepare: the main menu reached, so the last working setup is saved (and this launch's record gone).
     static async Task RunCrashPrepare(NMainMenu menu, string outDir)
@@ -822,6 +944,43 @@ static partial class SelfTest
             var dir = LaunchGuard.Dir ?? "";
             Check("--crash-prepare: the main menu reached, the last working setup saved",
                 File.Exists(Path.Combine(dir, LaunchGuard.WorkingFile)) && !File.Exists(Path.Combine(dir, LaunchGuard.PendingFile)), dir);
+        }
+        catch (Exception e)
+        {
+            Results.Add($"FAIL exception: {e}");
+        }
+        finally
+        {
+            File.WriteAllLines(Path.Combine(outDir, "results.txt"), [.. Results, .. Timing()]);
+            menu.GetTree().Quit();
+        }
+    }
+
+    // --crash-notice, after --crash-culprit (its data and mod list kept): Test Fixes, which that run turned off, is off,
+    // and its entry marked at this first main menu; the notice says so (MainMenuPatch's timer, 1.5 s in), and Turn back on
+    // turns it on again by the switch it had, adding no entry, and the entry goes. dev.cs reads settings.save after.
+    static async Task RunCrashNotice(NMainMenu menu, string outDir)
+    {
+        try
+        {
+            var entry = TurnedOff.Entries.FirstOrDefault(e => e.Id == "SmmTestFixes");
+            var list = SaveManager.Instance.SettingsSave.ModSettings?.ModList ?? [];
+            var fixesWere = Switched(list, "SmmTestFixes");
+            Check("--crash-notice: Test Fixes off, as --crash-culprit left it, its entry there and marked as seen at a main menu",
+                entry is { Why: Culprits.Why.Code, MenuSince: true } && fixesWere.Length > 0 && !fixesWere.Contains('+'), $"{entry}; Test Fixes {fixesWere}");
+            for (var i = 0; i < 60 && NModalContainer.Instance?.OpenModal == null; i++)
+                await WaitReal(menu, 0.1);
+            var words = ShownWords();
+            CheckMark("--crash-notice: the notice", NModalContainer.Instance?.OpenModal as Control);
+            await Capture(menu, outDir, "1k-turned-off-notice");
+            PressOurs("YesButton");
+            await Wait(menu, 0.5);
+            var fixes = Switched(list, "SmmTestFixes");
+            Check("--crash-notice: the notice says Test Fixes stopped the start, when, with Keep off and Turn back on",
+                entry != null && words.Contains("A mod was turned off") && words.Contains("Test Fixes stopped the game from starting on")
+                && words.Contains(LaunchGuard.When(entry.At.LocalDateTime)) && words.Contains("Keep off") && words.Contains("Turn back on"), words);
+            Check("--crash-notice: Turn back on turns Test Fixes on by the switch it had, adding no entry, and its entry goes",
+                fixes.Length == fixesWere.Length && !fixes.Contains('-') && !TurnedOff.Has("SmmTestFixes"), $"Test Fixes {fixesWere} then {fixes}; entry {TurnedOff.Has("SmmTestFixes")}");
         }
         catch (Exception e)
         {
@@ -899,6 +1058,20 @@ static partial class SelfTest
     // lists the id after the framework, so A sorts first.
     const string TwinId = "SmmTestTwin";
 
+    // The fixture's mod installed from both sources: SmmTestDual 1.0.0 in the mods folder, on, and 2.0.0 in the dev
+    // copy's mods_STEAMTEST (tools/fixtures/mods_STEAMTEST), which the game reads as a Workshop item, off. dev.cs lists
+    // them side by side, local first.
+    const string DualId = "SmmTestDual";
+
+    static void DualMissing(string what)
+    {
+        if (Dependencies.Find("SmmTestTwinUser") != null)
+            Check($"{what}: the fixture's mod from both sources installed, locally and as a Workshop item (mods_STEAMTEST)", false,
+                string.Join(", ", ModManager.Mods.Where(m => m.manifest?.id == DualId).Select(Copies.CopyOf)));
+        else
+            Results.Add($"SKIP {what}: the fixtures aren't installed");
+    }
+
     // The copy of an id that loads after a relaunch (Copies.Next); null for none.
     static string? LoadingCopy(string id) => Copies.Loading(id) is { } loads ? Copies.CopyOf(loads) : null;
 
@@ -945,16 +1118,17 @@ static partial class SelfTest
 
     // The words of the duplicate copies, word for word as settings_ui.json has them: drafts until Jordan's copy pass, so
     // here once for every check that reads them (an edit there is one edit here). Draft fills in their values.
-    const string SameIdText = "{count} mods with the same ID are enabled - only one copy of each will be loaded";
+    const string SameIdText = "{count} copies of mods sharing an ID are enabled - only one copy of each will be loaded";
     const string CopyGroup = "{id}:", CopyLineText = "{mod} {version} ({source}) - {state}", CopyActive = "Active", CopyIgnored = "Ignored";
-    const string RelaunchCopiesIntro = "Some mods with duplicate IDs are enabled, and won't be loaded";
+    const string RelaunchCopiesIntro = "Some mods with duplicate IDs are enabled - only the Active copy of each will be loaded";
     const string CopySwitchLine = "{mod}: {to} loads instead of {from}";
-    const string ClashTip = "Other copies of this mod are enabled\n{others}\n\n{loads} will be used, determined by version number and date of install - other copies will be ignored";
+    const string ClashTip = "Other copies of this mod are enabled\n{others}\n\n{loads} will be used - other copies will be ignored";
+    const string ClashTipOne = "Another copy of this mod is enabled\n{others}\n\n{loads} will be used - other copies will be ignored";
     const string StatusWontLoad = "Duplicate - Won't load";
     const string CopyLoses = "{other} will be used due to {why} - disable copies you don't want to use";
-    const string CopyLosesPlain = "{other} will be used, determined by version number and date of install - disable copies you don't want to use";
+    const string CopyLosesPlain = "{other} will be used instead - disable copies you don't want to use";
     const string WhyLocal = "the game prioritizing local copies", WhyHigher = "its higher version";
-    const string WhyFirst = "the same version and an earlier install date";
+    const string WhyFirst = "matching version numbers and an earlier install date";
     const string WhyUnreadable = "this copy's version being unreadable";
     const string CopyBlocked = "This copy would load before a required dependency. {other} is currently compatible and will be loaded instead.";
     const string LoadsBlocked = "The copy {other} would load before a required dependency, so this copy will be loaded instead";
@@ -1099,6 +1273,87 @@ static partial class SelfTest
 
     // A link's press (the page link at the top).
     static void Click(BaseButton button) => button.EmitSignal(BaseButton.SignalName.Pressed);
+
+    // A point in the viewport as the game's input takes a mouse event's: in the window's terms (headless, the root's scale
+    // isn't 1, so one sent in the viewport's lands 30 times as far out)
+    static Vector2 InWindow(Node node, Vector2 at) => node.GetTree().Root.GetFinalTransform() * at;
+
+    // A mouse button pressed or let go at a point in the viewport, through the game's input
+    static void MouseButtonAt(Node node, MouseButton which, bool pressed, Vector2 at)
+    {
+        var sent = InWindow(node, at);
+        Input.ParseInputEvent(new InputEventMouseButton { ButtonIndex = which, Pressed = pressed, Position = sent, GlobalPosition = sent });
+    }
+
+    // Headless, whether the mouse is where a MouseButtonAt sent it, in the viewport's terms (it reads the game's input,
+    // which a button's event sets once it's taken in, at the next frame). With a window it's the player's: true.
+    static bool Landed(Node node, Vector2 at) => DisplayServer.GetName() != "headless" || node.GetViewport().GetMousePosition().DistanceTo(at) < 1;
+
+    static readonly Vector2 MousePut = new(5, 5);
+
+    // The mouse put at a point inside the viewport before the crash tests' many popups, where it was, for TestMouseKept.
+    // Headless only: with a window it's the player's.
+    static async Task<Vector2?> MouseInView(Node node)
+    {
+        if (DisplayServer.GetName() != "headless")
+            return null;
+        var at = InWindow(node, MousePut);
+        Input.ParseInputEvent(new InputEventMouseMotion { Position = at, GlobalPosition = at });
+        await node.ToSignal(node.GetTree(), SceneTree.SignalName.ProcessFrame); // taken in
+        return node.GetViewport().GetMousePosition();
+    }
+
+    // After the crash tests' popups the mouse is where it was put, inside the viewport, where a menu can open at it: the
+    // game's re-send at each popup no longer moves it (HeadlessMousePatch). With a window the game's method runs: the
+    // prefix, as Harmony calls it, lets it.
+    static void TestMouseKept(Node node, Vector2? before)
+    {
+        var prefix = HarmonyLib.AccessTools.Method(typeof(HeadlessMousePatch), "Prefix");
+        bool Runs() => NControllerManager.Instance is { } manager && prefix?.Invoke(null, [manager]) is true;
+        if (before is not { } put)
+        {
+            var applied = HarmonyLib.Harmony.GetPatchInfo(HarmonyLib.AccessTools.Method(typeof(NControllerManager), "OnScreenContextChanged"))?.Prefixes
+                .Any(p => p.PatchMethod.DeclaringType == typeof(HeadlessMousePatch)) == true;
+            var runs = Runs();
+            Check("with a window the game's mouse re-send at each popup runs: the dev run's headless prefix is in place and lets it", applied && runs,
+                $"applied {applied}, lets it run {runs}");
+            return;
+        }
+        var (at, view) = (node.GetViewport().GetMousePosition(), node.GetViewport().GetVisibleRect());
+        Check("the mouse across the crash tests' popups stays where it was put (at 5,5 in the viewport), finite and inside it",
+            float.IsFinite(at.X) && float.IsFinite(at.Y) && view.HasPoint(at) && at.DistanceTo(put) < 1 && put.DistanceTo(MousePut) < 1, $"put at {put}, now {at} in {view}");
+
+        // Headless too, in controller or keyboard-only play (the beta's InputType; stable's IsUsingController) the game's
+        // method runs (its refocus), and in mouse play it's skipped: set through the property's own setter, which does
+        // nothing else, the prefix asked each time, and put back
+        var runsIn = new List<string>();
+        if (NControllerManager.Instance is { } controls)
+        {
+            var (inputType, controller) = (HarmonyLib.AccessTools.Property(typeof(NControllerManager), "InputType"),
+                HarmonyLib.AccessTools.Property(typeof(NControllerManager), "IsUsingController"));
+            if ((inputType ?? controller) is { } property)
+            {
+                var was = property.GetValue(controls);
+                try
+                {
+                    object[] modes = inputType != null ? [.. new[] { "Controller", "KeyboardOnlyMode", "MouseAndKeyboard" }.Select(m => Enum.Parse(inputType.PropertyType, m))]
+                        : [true, false];
+                    foreach (var mode in modes)
+                    {
+                        property.SetValue(controls, mode);
+                        runsIn.Add($"{mode} {(Runs() ? "runs" : "skipped")}");
+                    }
+                }
+                finally
+                {
+                    property.SetValue(controls, was);
+                }
+            }
+        }
+        Check("headless, the game's mouse re-send runs in controller or keyboard-only play and is skipped in mouse play (the prefix's directional branch)",
+            runsIn.SequenceEqual(["Controller runs", "KeyboardOnlyMode runs", "MouseAndKeyboard skipped"]) || runsIn.SequenceEqual(["True runs", "False skipped"]),
+            string.Join(", ", runsIn.DefaultIfEmpty("no controller manager or input property")));
+    }
 
     // A real mouse click at the control's centre, through the game's input like a player's: catches anything
     // drawn over it or eating the click. Returns the control under the mouse, for the report.
@@ -1449,4 +1704,31 @@ static partial class SelfTest
         foreach (var child in node.GetChildren())
             DumpTree(child, depth + 1, dump);
     }
+}
+
+// Dev runs: the game puts the mouse back at its position at each popup's opening and closing (NControllerManager), through
+// the window's scale, which in a headless run sends it 30 times further each time: a run's many popups took it past what
+// a float holds, and a menu opened at it with it. Headless has no player's mouse to put back, so that re-send is skipped
+// there; the method's other branch, its refocus for a controller or keyboard-only play, and a window run keep it.
+[HarmonyLib.HarmonyPatch(typeof(NControllerManager), "OnScreenContextChanged")]
+static class HeadlessMousePatch
+{
+    static bool Prepare() => ModEntry.IsDevRun;
+
+    static bool Prefix(NControllerManager __instance)
+    {
+        try
+        {
+            return DisplayServer.GetName() != "headless" || Directional(__instance);
+        }
+        catch (Exception)
+        {
+            return true;
+        }
+    }
+
+    // Whether the method refocuses rather than re-sends the mouse: the beta's IsUsingDirectionalNavigation, stable's
+    // IsUsingController
+    static bool Directional(NControllerManager manager) => (HarmonyLib.AccessTools.Property(typeof(NControllerManager), "IsUsingDirectionalNavigation")
+        ?? HarmonyLib.AccessTools.Property(typeof(NControllerManager), "IsUsingController"))?.GetValue(manager) is true;
 }

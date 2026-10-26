@@ -289,15 +289,15 @@ static partial class SelfTest
         var card = await BannerCard(menu, screen, SameId());
         // The card's markup: Active in green, Ignored subtle, the copy that loads first whatever order they come in.
         var groups = ModDetails.CopyGroups([copy, local]);
-        Check("both copies on: a yellow banner (\"2 mods with the same ID are enabled - only one copy of each will be loaded\"), its card grouping them "
+        Check("both copies on: a yellow banner (\"2 copies of mods sharing an ID are enabled - only one copy of each will be loaded\"), its card grouping them "
             + "under the ID, each with its version and which copy: the local one Active (the same version), then the Workshop one Ignored; Active green, "
             + "Ignored subtle; a Duplicate chip on each naming the other and the copy that loads",
             bothOn && bannerText == Draft(SameIdText, ("count", "2")) && Yellow(BannerFill(SameId()))
             && GroupIn(card, id).SequenceEqual(Grouped(id, (local, true), (copy, false)))
             && groups is [_, var activeLine, var ignoredLine] && activeLine.EndsWith($"[color=#a6e3a1]{CopyActive}[/color]")
             && ignoredLine.EndsWith($"[color=#fff6e299]{CopyIgnored}[/color]")
-            && chips.Count == 2 && chips[0].Tip == Draft(ClashTip, ("others", Named(copy)), ("loads", Named(local)))
-            && chips[1].Tip == Draft(ClashTip, ("others", Named(local)), ("loads", Named(local))),
+            && chips.Count == 2 && chips[0].Tip == Draft(ClashTipOne, ("others", Named(copy)), ("loads", Named(local)))
+            && chips[1].Tip == Draft(ClashTipOne, ("others", Named(local)), ("loads", Named(local))),
             $"on {bothOn}; banner {bannerText ?? "none"} ({string.Join(" | ", card)}; expected {string.Join(" | ", Grouped(id, (local, true), (copy, false)))}; "
             + $"markup {string.Join(" | ", groups)}); chips {string.Join(" / ", chips.Select(c => c.Tip))}");
         void Press(string name) => (SameId()?.FindChild(name, true, false) as BaseButton)?.EmitSignal(BaseButton.SignalName.Pressed);
@@ -376,8 +376,9 @@ static partial class SelfTest
         Click(toggle);
         await Wait(menu, 0.5);
         var sameIdSearch = Search.TermFor("#", DuplicateChip);
-        // The other mods installed once (the fixture's own twins have the chip too).
-        var others = content.GetChildren().OfType<NModMenuRow>().Select(r => r.Mod).OfType<Mod>().Where(m => m.manifest?.id is { } other && other != id && other != TwinId).ToList();
+        // The other mods installed once (the fixture's own twins and its mod from both sources have the chip too).
+        var others = content.GetChildren().OfType<NModMenuRow>().Select(r => r.Mod).OfType<Mod>()
+            .Where(m => m.manifest?.id is { } other && other != id && other != TwinId && other != DualId).ToList();
         Check("the banner shows in Load Order too; the chip's search finds both copies and no other mod", inLoadOrder
             && Search.Matches(local, sameIdSearch) && Search.Matches(copy, sameIdSearch) && !others.Any(m => Search.Matches(m, sameIdSearch)),
             $"Load Order {inLoadOrder}; others found {string.Join(", ", others.Where(m => Search.Matches(m, sameIdSearch)).Select(m => m.manifest?.id))}");
@@ -466,7 +467,7 @@ static partial class SelfTest
         Check("... the banner, the chips and the relaunch check name the copy that loads; the relaunch check groups both under the ID (it Active, the "
             + "other Ignored), neither among the mods that can't load, with Disable unused mods",
             (SameId()?.FindChild("SameIdWarning", true, false) as Label)?.Text == Draft(SameIdText, ("count", "2"))
-            && newerChips[0] == Draft(ClashTip, ("others", Named(copy)), ("loads", Named(winner))) && newerChips[1] == Draft(ClashTip, ("others", Named(local)), ("loads", Named(winner)))
+            && newerChips[0] == Draft(ClashTipOne, ("others", Named(copy)), ("loads", Named(winner))) && newerChips[1] == Draft(ClashTipOne, ("others", Named(local)), ("loads", Named(winner)))
             && GroupIn(RelaunchCopies(relaunchBody), id).SequenceEqual(Grouped(id, (winner, true), (loser, false)))
             && !relaunchBody.Contains($"{Named(loser)}  ") && !relaunchBody.Contains($"{Named(winner)}  ")
             && unusedButton,
@@ -667,11 +668,12 @@ static partial class SelfTest
     // (its dependency then first, or off, or waiting on one installed since, or moved; one installed from both sources,
     // blocked at every launch), no other ticked copy that fits, the game's rule leaving one copy, who counts as needing
     // the id, which copy of an id a mod waits for, a fallback needing a mod that isn't installed, the fixture's twins with
-    // Test Framework off; then none that fits (the tie order), a fallback below a minimum version (at it, a needer off, a
-    // version the game can't read), the fallback's copies still to load first, a needer the next launch brings back from
-    // the game's rule, on the beta a copy's two manifests in two folders and a fallback with both sources left, a copy's
-    // two manifests in one folder (and a needer's), who needs a minimum version, a needer's update (installed once, and
-    // twice), and a fallback where a mod needs a minimum version the game can't read.
+    // Test Framework off; then none that fits (the tie order, a copy with two manifests by its newer), a fallback below
+    // a minimum version (at it, a needer off, a version the game can't read), the fallback's copies still to load first,
+    // a needer the next launch brings back from the game's rule, on the beta a copy's two manifests in two folders and a
+    // fallback with both sources left, a copy's two manifests in one folder (and a needer's), who needs a minimum
+    // version, a needer's update (installed once, and twice), and a fallback where a mod needs a minimum version the game
+    // can't read.
     static void TestCopyRule(string outDir)
     {
         var beta = Compat.WorkshopBeatsOlderLocal;
@@ -1086,10 +1088,35 @@ static partial class SelfTest
                 SameIdLoad.TestPlan(id, null);
             }
         }
-        // The saved list as the game rebuilds it from a launch's list, in the order that loaded (Settle saves it; a mod
-        // installed since has no entry yet), with the switches now.
+        // The saved list as the game rebuilds it from a launch's list, in the order that loaded (a mod installed since has
+        // no entry yet), with the switches now: for a launch whose mods the order rule leaves as they are (Settled is the
+        // list Settle saves).
         static List<SettingsSaveMod> Rebuilt(IEnumerable<Mod> launched, HashSet<(string?, ModSource)> off) =>
             [.. launched.Where(m => m.state != ModLoadState.AddedAtRuntime).Select(m => new SettingsSaveMod(m) { IsEnabled = !off.Contains((m.manifest?.id, m.modSource)) })];
+        // The list the first main menu saves after a launch, as Settle makes it (the real SameIdLoad.SettleList): the game's
+        // rebuild of the launch's list (each entry its id's first switch in the list read, as the game copies them), by
+        // where its sort put each mod (split, read before Run: SortedOf; LaunchAnchors), healed by the launch's plan.
+        // The launch's mods in the game's list meanwhile (made-up ones: ours aside), as they're installed when Settle runs.
+        static List<SettingsSaveMod> Settled(List<Mod> launched, (int Count, int Tail)? split, List<SettingsSaveMod> read, IReadOnlyDictionary<string, SameIdLoad.Entry> plan)
+        {
+            var saved = launched.Where(m => m.state != ModLoadState.AddedAtRuntime)
+                .Select(m => new SettingsSaveMod(m) { IsEnabled = read.FirstOrDefault(e => e.Id == m.manifest?.id)?.IsEnabled ?? true }).ToList();
+            var installed = launched.Where(m => m.manifest?.id != ModEntry.ModId).ToList();
+            GameMods().AddRange(installed);
+            Copies.TestRecount();
+            try
+            {
+                SameIdLoad.SettleList(saved, [.. read.Select(e => (e.Id, e.Source, e.IsEnabled))], SameIdLoad.LaunchAnchors(launched, [.. saved.Select(e => (e.Id, e.Source))], split),
+                    SameIdLoad.Heals(plan));
+            }
+            finally
+            {
+                foreach (var made in installed)
+                    GameMods().Remove(made);
+                Copies.TestRecount();
+            }
+            return saved;
+        }
         // The next launch, made up as the game makes it: fresh mods in the order it reads them (read, ours among them), the
         // switches off Disabled and its local-vs-Workshop rule played (GameRule), sorted from the saved list (SortModList),
         // then Run on that: the copy of the id that loads, the plan, the made-up ids the sort has before the id's first slot,
@@ -1102,6 +1129,24 @@ static partial class SelfTest
             var plan = Launch(id, sorted, ticks);
             return (plan?.Loads ?? sorted.FirstOrDefault(m => m.manifest?.id == id && m.state == ModLoadState.None), plan, Before(sorted, id, inReadOrder), sorted);
         }
+        // A launch over the list it reads, then its main menu: NextLaunch's, its whole plan, and the list Settle saves.
+        (Mod? Loads, SameIdLoad.Entry? Plan, HashSet<string?> Before, List<Mod> Sorted, List<SettingsSaveMod> Saved, (int, int)? Split,
+            Dictionary<string, SameIdLoad.Entry> Plans) Launched(string id, List<Mod> inReadOrder, List<SettingsSaveMod> read, HashSet<(string?, ModSource)> off, Ticks? ticks = null)
+        {
+            GameRule(inReadOrder, off);
+            var sorted = SortModList(inReadOrder, read);
+            var split = SameIdLoad.SortedOf(sorted);
+            var plans = SameIdLoad.Run(sorted, () => ticks ?? Ticks.All, m => m == us, log: false).Plan;
+            var plan = plans.GetValueOrDefault(id);
+            return (plan?.Loads ?? sorted.FirstOrDefault(m => m.manifest?.id == id && m.state == ModLoadState.None), plan, Before(sorted, id, inReadOrder), sorted,
+                Settled(sorted, split, read, plans), split, plans);
+        }
+        // Each launch's saved list, as the row's lines show it: ids (ours "us"), "w" for a Workshop entry, "-" for one off.
+        static string Said(IEnumerable<SettingsSaveMod> list, string prefix) => string.Join(",", list.Select(e => (e.Id == ModEntry.ModId ? "us" : e.Id == prefix ? "X" : e.Id.Replace(prefix, ""))
+            + (e.Source == ModSource.SteamWorkshop ? "w" : "") + (e.IsEnabled ? "" : "-")));
+        // The ids in the order the game ranks them (by each one's last entry).
+        static List<string> Ranked(IReadOnlyList<SettingsSaveMod> list) =>
+            [.. list.Select((e, i) => (e.Id, At: i)).GroupBy(p => p.Id).OrderBy(g => g.Max(p => p.At)).Select(g => g.Key)];
         string Rule(SameIdLoad.Entry? plan, (string Loads, string Why, string? Late, HashSet<string?> Before) page,
             (Mod? Loads, SameIdLoad.Entry? Plan, HashSet<string?> Before, List<Mod> Sorted) next) =>
             $"this launch {Shown(plan?.Loads)}, blocked {plan?.Blocked ?? "none"}; the page {page.Loads} ({page.Why}), blocked by {page.Late ?? "nothing"}, before the "
@@ -1239,10 +1284,12 @@ static partial class SelfTest
                 plan is { Why: SameIdLoad.Reason.None } && plan.Loads == thisLaunch[0] && page is ("A", "C Blocked", _, _) && page.Late == dep
                 && Shown(next.Loads) == "A" && page.Before.SetEquals(next.Before), Rule(plan, page, next));
         }
-        // (d) The Load Order page moving the id after its dependency: D listed last (its Workshop copy off, which the game's
-        // rebuild lists after the rest), so C blocked at the launch and, unmoved, at the next one; the id's rows dragged
-        // below D's since: D first, so C. Fails on bed319a: its page went by this launch's order unless the Load Order page's
-        // history had a move (LoadOrder.OrderChanged, which a made-up list isn't), so A.
+        // (d) A copy blocked at the launch by a dependency whose Workshop copy is off, listed last (where the game's rebuild
+        // lists it): the fallback, A. The list Settle saves keeps D's entries together where D loaded, before the id, so the
+        // page names C; so it does where the id's rows were dragged below D's on the Load Order page: the next launch sorts
+        // D first, so C. The rebuild as it is, D's Workshop entry last, would block C again (A). Fails on bed319a: its page
+        // went by this launch's order unless the Load Order page's history had a move (LoadOrder.OrderChanged, which a
+        // made-up list isn't), so A.
         x = Id();
         {
             var dep = $"{x}D";
@@ -1250,22 +1297,27 @@ static partial class SelfTest
             Mod User() => Made($"{x}User", "User", needs: [x]);
             var thisLaunch = Two();
             List<Mod> atLaunch = [us, thisLaunch[0], User(), Made(dep, "D"), thisLaunch[1], Made(dep, "DW", ModLoadState.Disabled, item: 7)];
+            var split = SameIdLoad.SortedOf(atLaunch);
             var plan = Launch(x, atLaunch);
             HashSet<(string?, ModSource)> off = [(dep, ModSource.SteamWorkshop)];
             var unmoved = After(atLaunch, plan, off, Ticks.All);
+            List<SettingsSaveMod> wasRead = [Entry(ModEntry.ModId), Entry(x), Entry(x), Entry($"{x}User"), Entry(dep), Entry(dep, ModSource.SteamWorkshop, false)];
+            var settled = After(atLaunch, plan, off, Ticks.All, Settled(atLaunch, split, wasRead, plan == null ? [] : new Dictionary<string, SameIdLoad.Entry> { [x] = plan }));
             List<SettingsSaveMod> moved = [Entry(ModEntry.ModId), Entry($"{x}User"), Entry(dep), Entry(dep, ModSource.SteamWorkshop, false), Entry(x), Entry(x)];
             var page = After(atLaunch, plan, off, Ticks.All, moved);
             var next = NextLaunch(x, [.. Two(), Made(dep, "D"), us, User(), Made(dep, "DW", item: 7)], moved, off);
-            Check("the rule, ... (d) a copy blocked at the launch by a dependency listed last: the fallback, A, unmoved; the id moved below the dependency on "
-                + "the Load Order page: the next launch sorts the dependency first, so C (A Higher)",
-                plan is { Blocked: "l:C" } && unmoved is ("A", "C Blocked", _, _) && page is ("C", "A Higher", null, _) && Shown(next.Loads) == "C"
-                && page.Before.SetEquals(next.Before), $"unmoved, the page {unmoved.Loads} ({unmoved.Why}); {Rule(plan, page, next)}");
+            Check("the rule, ... (d) a copy blocked at the launch by a dependency listed last: the fallback, A; the list Settle saves, or the id moved below the "
+                + "dependency on the Load Order page: the next launch sorts the dependency first, so C (A Higher); the rebuild as it is: A again",
+                plan is { Blocked: "l:C" } && unmoved is ("A", "C Blocked", _, _) && settled is ("C", "A Higher", null, _) && page is ("C", "A Higher", null, _)
+                && Shown(next.Loads) == "C" && page.Before.SetEquals(next.Before),
+                $"the rebuild as it is, the page {unmoved.Loads} ({unmoved.Why}); settled {settled.Loads} ({settled.Why}); {Rule(plan, page, next)}");
         }
-        // (f) The limit (DESIGN.md): a copy blocked by a dependency installed from both sources, one copy of it off or set
-        // aside by the game's rule for the other (the local one, higher), stays blocked at every launch. The game's rebuild
-        // lists the mods it took out after every other and ranks an id by its last entry, so D ranks after the id each time.
-        // Three launches, each A, C blocked by D; the page after each names the same (the copy's line, COPY_BLOCKED, names D)
-        // and has what that launch has before the slot.
+        // (f) A copy blocked by a dependency installed from both sources, one copy of it off or set aside by the game's rule
+        // for the other (the local one, higher), from the list as the game's rebuild left it before the order rule (D's copy
+        // taken out last, so D ranks after the id: the first launch after updating, from the old steady state): blocked at
+        // that launch, A. Settle then keeps D's entries together where D loaded, before the id, so from the next launch D
+        // sorts first and C loads, launch after launch; the page after the first launch names C already. Before the order
+        // rule (#303's limit) C was blocked at every launch.
         foreach (var how in new[] { "off", "set aside" })
         {
             x = Id();
@@ -1281,18 +1333,256 @@ static partial class SelfTest
             HashSet<string?>? foreseen = null; // what the page after the last launch had before the slot
             for (var launch = 1; launch <= 3; launch++)
             {
-                var next = NextLaunch(x, Read(), saved, off);
-                saved = Rebuilt(next.Sorted, off);
+                var next = Launched(x, Read(), saved, off);
+                saved = next.Saved;
                 var page = After(next.Sorted, next.Plan, off, Ticks.All, saved);
-                held &= Shown(next.Loads) == "A" && next.Plan is { Blocked: "l:C" } && page is ("A", "C Blocked", _, _) && page.Late == dep
-                    && (foreseen == null || foreseen.SetEquals(next.Before));
+                held &= (launch == 1 ? Shown(next.Loads) == "A" && next.Plan is { Blocked: "l:C" } : Shown(next.Loads) == "C") && page is ("C", "A Higher", null, _)
+                    && (foreseen == null || foreseen.SetEquals(next.Before)) && Ranked(saved).IndexOf(dep) < Ranked(saved).IndexOf(x);
                 foreseen = page.Before;
                 launches.Add($"launch {launch}: {Shown(next.Loads)} (blocked {next.Plan?.Blocked ?? "none"}), before the slot {string.Join(",", next.Before.Order())}; "
-                    + $"saved {string.Join(",", saved.Select(e => $"{e.Id}/{e.Source}"))}; the page after it {page.Loads} ({page.Why}, by {page.Late ?? "nothing"}), "
-                    + $"before the slot {string.Join(",", page.Before.Order())}");
+                    + $"saved {Said(saved, x)}; the page after it {page.Loads} ({page.Why}, by {page.Late ?? "nothing"}), before the slot {string.Join(",", page.Before.Order())}");
             }
-            Check($"the rule, ... (f) the limit: a copy blocked by a dependency installed from both sources, its Workshop copy {how}: blocked at every launch, "
-                + "the fallback, A, on the page after each (C Blocked, by D)", held, string.Join(" | ", launches));
+            Check($"the rule, ... (f) a copy blocked by a dependency installed from both sources, its Workshop copy {how}, from the list as the game left it "
+                + "before the order rule: blocked at the first launch (A), then C at every launch, D kept before the id; the page after each names C",
+                held, string.Join(" | ", launches));
+        }
+        // A mod installed from both sources (its Workshop copy off) dragged above Y on the Load Order page: the drag moves
+        // all its rows, so it stays where it was dropped, launch after launch. One row moved alone (the drag before it moved
+        // every row), the entry left behind ranks the mod after Z, and the launch puts it there again (g2r3 game #3).
+        x = Id();
+        {
+            var (y, z) = ($"{x}Y", $"{x}Z");
+            List<Mod> Read() => [L(x, "D", "1.0.0"), Made(y, "Y"), Made(z, "Z"), us, W(x, 91, "1.0.0")];
+            HashSet<(string?, ModSource)> off = [(x, ModSource.SteamWorkshop)];
+            var (block, alone) = (new List<SettingsSaveMod> { Entry(ModEntry.ModId), Entry(x), Entry(x, ModSource.SteamWorkshop, false), Entry(y), Entry(z) },
+                new List<SettingsSaveMod> { Entry(ModEntry.ModId), Entry(x), Entry(y), Entry(z), Entry(x, ModSource.SteamWorkshop, false) });
+            var held = new List<string>();
+            for (var launch = 1; launch <= 2; launch++)
+            {
+                block = Launched(x, Read(), block, off).Saved;
+                held.Add(string.Join(",", Ranked(block)));
+            }
+            alone = Launched(x, Read(), alone, off).Saved;
+            List<string> dropped = [ModEntry.ModId, x, y, z];
+            Check("the rule, ... a mod from both sources dragged above another on the Load Order page: all its rows move, so it stays there, launch after "
+                + "launch; one row moved alone, the mod would go back after the entry left behind",
+                held.All(h => h == string.Join(",", dropped)) && Ranked(alone).SequenceEqual([ModEntry.ModId, y, z, x]),
+                $"its rows moved: {string.Join(" | ", held)}; one alone: {Said(alone, x)}");
+        }
+        // The heal (Settle's exception), the beta: L 2.0 needs D, W101 3.0 not ticked, W102 1.0 needs D, a mod needing the
+        // id, D listed after it. The game's rule leaves W101 (L and W102 set aside), the launch picks L, blocked by D, and
+        // nothing else ticked fits: W101. Settle moves the id right after D, where the game's sort would have put L, so the
+        // next launch sorts D first and L loads, launch after launch (g2r3 game #1). Without the heal, W101 at every launch.
+        // Then Restore from each launch's record (Begin's: no heal, what loaded) and the next launch over the list it writes,
+        // the ticks it puts back (OffOf): the same copy, the same order of mods that load.
+        // A2: the same with D from both sources (its Workshop copy off) and a mod after it, Z: the id lands right after D's
+        // entries, before Z.
+        if (beta)
+            foreach (var both in new[] { false, true })
+            {
+                x = Id();
+                var (dep, z) = ($"{x}D", $"{x}Z");
+                Mod User() => Made($"{x}User", "User", needs: [x]);
+                List<Mod> Read() => [Made(x, "L", version: "2.0.0", needs: [dep]), Made(dep, "D"), .. both ? [Made(z, "Z")] : Array.Empty<Mod>(), us, User(),
+                    W(x, 101, "3.0.0"), Made(x, "W102", item: 102, needs: [dep]), .. both ? [Made(dep, "DW", item: 103)] : Array.Empty<Mod>()];
+                HashSet<(string?, ModSource)> off = both ? [(dep, ModSource.SteamWorkshop)] : [];
+                var baseOff = new[] { $"{x}|w:101" };
+                var record = new Dictionary<string, List<string>> { [x] = ["l:L", "w:101", "w:102"] };
+                var ticks = new Ticks(baseOff, record);
+                List<SettingsSaveMod> saved = [Entry(ModEntry.ModId), Entry(x), Entry(x, ModSource.SteamWorkshop), Entry(x, ModSource.SteamWorkshop), Entry($"{x}User"),
+                    Entry(dep), .. both ? [Entry(dep, ModSource.SteamWorkshop, false), Entry(z)] : Array.Empty<SettingsSaveMod>()];
+                var (launches, held, restoresHeld) = (new List<string>(), true, true);
+                for (var launch = 1; launch <= 3; launch++)
+                {
+                    var next = Launched(x, Read(), saved, off, ticks);
+                    saved = next.Saved;
+                    var page = After(next.Sorted, next.Plan, off, ticks, saved);
+                    var ranked = Ranked(saved);
+                    held &= Shown(next.Loads) == (launch == 1 ? "101" : "L") && (launch > 1 || next.Plan is { Blocked: "l:L" }) && page.Loads == "L"
+                        && ranked.IndexOf(dep) < ranked.IndexOf(x) && (!both || ranked.IndexOf(x) == ranked.IndexOf(dep) + 1 && ranked.IndexOf(z) > ranked.IndexOf(x))
+                        && ranked.IndexOf($"{x}User") > ranked.IndexOf(x); // the mod needing it went with it (review C2: no order warning of ours)
+                    // Restore from this launch's record.
+                    var working = LaunchGuard.Recorded(next.Sorted, next.Split, off, SameIdLoad.LoadsAtLaunch(next.Sorted, next.Plans));
+                    var installed = Read();
+                    GameMods().AddRange(installed);
+                    Copies.TestRecount();
+                    List<SettingsSaveMod> restored;
+                    (HashSet<(string Id, ModSource Source)> Groups, List<string> Off) back;
+                    try
+                    {
+                        (restored, back) = (LaunchGuard.Written(working), LaunchGuard.OffOf(working, record));
+                    }
+                    finally
+                    {
+                        foreach (var made in installed)
+                            GameMods().Remove(made);
+                        Copies.TestRecount();
+                    }
+                    var restoredTicks = new Ticks(baseOff.Where(k => Copies.Parse(k) is not { } key || !back.Groups.Contains((key.Id, key.Source))).Concat(back.Off), record);
+                    var again = Launched(x, Read(), restored, off, restoredTicks);
+                    // And the launch after that, over what it saved (review C1: the heal brought back the copy that crashed).
+                    var twice = Launched(x, Read(), again.Saved, off, restoredTicks);
+                    static string Loading(List<Mod> sorted) => string.Join(",", sorted.Where(m => m.state == ModLoadState.None).Select(m => m.manifest?.id + Copies.CopyOf(m)));
+                    restoresHeld &= Shown(again.Loads) == Shown(next.Loads) && Loading(again.Sorted) == Loading(next.Sorted)
+                        && Shown(twice.Loads) == Shown(next.Loads) && Loading(twice.Sorted) == Loading(next.Sorted);
+                    launches.Add($"launch {launch}: {Shown(next.Loads)} (blocked {next.Plan?.Blocked ?? "none"}); saved {Said(saved, x)}; the page {page.Loads} ({page.Why}); "
+                        + $"restored: {Said(restored.Where(e => e.Id.StartsWith(x) || e.Id == ModEntry.ModId), x)}, loads {Shown(again.Loads)} ({Loading(again.Sorted)} against {Loading(next.Sorted)}), then {Shown(twice.Loads)}");
+                }
+                Check("the rule, ... the heal, the beta: a copy blocked by a dependency after the slot, which the game's rule had set aside: the fallback (W101) "
+                    + "at the first launch, then the id moved right after the dependency" + (both ? "'s entries (from both sources, the Workshop one off), before the mod after it" : "")
+                    + ", the mod needing the id with it, so L at every launch after; the page after each names L", held, string.Join(" | ", launches));
+                Check($"the rule, ... the heal{(both ? " (the dependency from both sources)" : "")}: Restore from each launch's record, then a launch over the list "
+                    + "it writes, with the ticks it puts back: the same copy and the same mods loading in the same order, at the launch after that too (not the copy healed in)", restoresHeld, string.Join(" | ", launches));
+            }
+        else
+            Results.Add("SKIP the rule, ... the heal of a copy the game's rule set aside: only the beta's rule takes out a local copy for a higher Workshop one");
+        // A dependency our Init brought back (the beta; g2r3 game #2): D 2.0 local and ticked, W1 1.0 ticked and W2 3.0 not
+        // ticked from the Workshop, so the game's rule leaves W2 alone and the launch brings the local copy back into W2's
+        // slot, W2 swapped out to the game's tail; X with A 1.0 and C 2.0 needing D, a mod needing X; a list ranking D before
+        // Y. The first launch blocks C (D sorts after the slot): A. Settle keeps D's entries where the copy brought back
+        // loaded (by where the game put each mod: by source the game's rule beats that copy, and D would go after Y), so D
+        // keeps its place, and C loads from the next launch on.
+        if (beta)
+        {
+            x = Id();
+            var (dep, y) = ($"{x}D", $"{x}Y");
+            Mod User() => Made($"{x}User", "User", needs: [x]);
+            List<Mod> Read() => [L(x, "A", "1.0.0"), Made(x, "C", version: "2.0.0", needs: [dep]), Made(dep, "D", version: "2.0.0"), Made(y, "Y"), us, User(),
+                W(dep, 21, "1.0.0"), W(dep, 22, "3.0.0")];
+            var ticks = new Ticks([$"{dep}|w:22"], new Dictionary<string, List<string>> { [dep] = ["l:D", "w:21", "w:22"] });
+            List<SettingsSaveMod> saved = [Entry(ModEntry.ModId), Entry(x), Entry(x), Entry($"{x}User"), Entry(dep, ModSource.SteamWorkshop), Entry(dep, ModSource.SteamWorkshop),
+                Entry(dep), Entry(y)];
+            var (launches, held) = (new List<string>(), true);
+            for (var launch = 1; launch <= 3; launch++)
+            {
+                var next = Launched(x, Read(), saved, [], ticks);
+                saved = next.Saved;
+                var ranked = Ranked(saved);
+                var depLoads = next.Plans.GetValueOrDefault(dep)?.Loads is { } loads ? Copies.CopyOf(loads) : "none";
+                held &= Shown(next.Loads) == (launch == 1 ? "A" : "C") && depLoads == "l:D" && ranked.IndexOf(dep) < ranked.IndexOf(x) && ranked.IndexOf(dep) < ranked.IndexOf(y);
+                launches.Add($"launch {launch}: {Shown(next.Loads)} (blocked {next.Plan?.Blocked ?? "none"}), D loads {depLoads}; saved {Said(saved, x)}");
+            }
+            Check("the rule, ... a dependency our Init brought back into the slot of a Workshop copy the game's rule left: its entries kept where it loaded, "
+                + "so it keeps its place (before Y) and a copy needing it loads from the second launch on (A, then C)", held, string.Join(" | ", launches));
+        }
+        // A2, the beta (game critique 1): L1 3.0 not ticked (read first), L2 1.0, W 2.0 needing D, a mod needing the id, D
+        // listed after it. The game's rule takes W out (L1 beats it), the launch picks W, blocked by D: L2, the next ticked.
+        // Settle gathers the id's entries (L2, L1 and W) and moves them right after D; a write of the session after
+        // (Dependencies.Write) moves nothing, though the next launch sorts the local copies and not W, so W loads from the
+        // next launch on. Before the order rule kept an id's entries together, that write put W's entry back with the local
+        // ones, before D, and W was blocked at every launch.
+        if (beta)
+        {
+            x = Id();
+            var dep = $"{x}D";
+            Mod User() => Made($"{x}User", "User", needs: [x]);
+            List<Mod> Read() => [L(x, "L1", "3.0.0"), L(x, "L2", "1.0.0"), Made(dep, "D"), us, User(), Made(x, "W61", item: 61, version: "2.0.0", needs: [dep])];
+            var ticks = new Ticks([$"{x}|l:L1"], new Dictionary<string, List<string>> { [x] = ["l:L1", "l:L2", "w:61"] });
+            var saved = new List<SettingsSaveMod> { Entry(ModEntry.ModId), Entry(x), Entry(x), Entry(x, ModSource.SteamWorkshop), Entry($"{x}User"), Entry(dep) };
+            var (launches, held) = (new List<string>(), true);
+            for (var launch = 1; launch <= 3; launch++)
+            {
+                var next = Launched(x, Read(), saved, [], ticks);
+                saved = next.Saved;
+                if (launch == 1)
+                {
+                    var before = Said(saved, x);
+                    SessionWrite(saved, Read(), User());
+                    held &= Said(saved, x) == before;
+                }
+                var ranked = Ranked(saved);
+                held &= Shown(next.Loads) == (launch == 1 ? "L2" : "61") && (launch > 1 || next.Plan is { Blocked: "w:61" }) && ranked.IndexOf(dep) < ranked.IndexOf(x);
+                launches.Add($"launch {launch}: {Shown(next.Loads)} (blocked {next.Plan?.Blocked ?? "none"}); saved {Said(saved, x)}");
+            }
+            Check("the rule, ... the heal, the beta: W blocked by D, set aside by the game's rule for a local copy that isn't ticked (L1, read first): L2 at the "
+                + "first launch, then, with a write of the session in between that moves nothing, W at every launch", held, string.Join(" | ", launches));
+        }
+        // A3, the beta (game critique 5): the copy chosen, L 2.0 needing D, set aside by the game's rule (W2 3.0, not ticked,
+        // left), brought back where it is (no mod needs the id, so no swap), so it loads in the game's tail, after D. The
+        // plan records D, and Settle moves the id right after it, so the next launch swaps L into the id's first slot there,
+        // as the page says. Without it the id stayed before D, and L loaded last at every launch.
+        if (beta)
+        {
+            x = Id();
+            var dep = $"{x}D";
+            List<Mod> Read() => [Made(x, "L", version: "2.0.0", needs: [dep]), Made(dep, "D"), us, W(x, 71, "1.0.0"), W(x, 72, "3.0.0")];
+            var ticks = new Ticks([$"{x}|w:72"], new Dictionary<string, List<string>> { [x] = ["l:L", "w:71", "w:72"] });
+            var saved = new List<SettingsSaveMod> { Entry(ModEntry.ModId), Entry(x), Entry(x, ModSource.SteamWorkshop), Entry(x, ModSource.SteamWorkshop), Entry(dep) };
+            var launch1 = Launched(x, Read(), saved, [], ticks);
+            var launch2 = Launched(x, Read(), launch1.Saved, [], ticks);
+            var ranked = Ranked(launch1.Saved);
+            Check("the rule, ... a copy brought back where it is behind what it waits for (no mod needs the id): its plan records that mod, Settle moves the id "
+                + "after it, and the next launch swaps the copy into the id's first slot",
+                launch1.Plan is { Swapped: false, Late: { } late } && late == dep && Shown(launch1.Loads) == "L" && ranked.IndexOf(dep) < ranked.IndexOf(x)
+                && launch2.Plan is { Swapped: true } && Shown(launch2.Loads) == "L",
+                $"first: {Shown(launch1.Loads)}, swapped {launch1.Plan?.Swapped}, late {launch1.Plan?.Late ?? "none"}, saved {Said(launch1.Saved, x)}; second: {Shown(launch2.Loads)}, swapped {launch2.Plan?.Swapped}");
+        }
+        // A local copy and two Workshop ones, every one on, the local one higher (both branches take out the Workshop copies):
+        // from the list as the game left it before the order rule (the Workshop entries last, so the mod loaded last, after
+        // Y), Settle keeps all three together where the local one loaded, and the mod stays there, launch after launch.
+        x = Id();
+        {
+            var y = $"{x}Y";
+            List<Mod> Read() => [L(x, "L", "3.0.0"), Made(y, "Y"), us, W(x, 31, "1.0.0"), W(x, 32, "2.0.0")];
+            var saved = new List<SettingsSaveMod> { Entry(ModEntry.ModId), Entry(x), Entry(y), Entry(x, ModSource.SteamWorkshop), Entry(x, ModSource.SteamWorkshop) };
+            var said = new List<string>();
+            for (var launch = 1; launch <= 3; launch++)
+            {
+                saved = Launched(x, Read(), saved, []).Saved;
+                said.Add(Said(saved, x));
+            }
+            Check("the rule, ... a local copy and two Workshop ones, the Workshop ones taken out: their entries beside the local one's, the mod's place kept, "
+                + "launch after launch", said.All(s => s == "us,Y,X,Xw,Xw"), string.Join(" | ", said));
+        }
+        // Game critique 6 (a limit): X installed locally and loading, before E, with two Workshop copies whose switch was
+        // off (W1 2.0 needing E, W2 1.5), so their entries sit with the local one's; W1 ticked since, a mod needing the id.
+        // The beta takes out the local copy for the Workshop ones; W1 can't take the id's first slot, before E, so the
+        // local copy is brought back there and W1 loads one launch later, once the id ranks after E. The page says so.
+        // Before the order rule the Workshop entries were last, and W1 loaded at once (at the end).
+        if (beta)
+        {
+            x = Id();
+            var e = $"{x}E";
+            Mod User() => Made($"{x}User", "User", needs: [x]);
+            List<Mod> Read() => [L(x, "L", "1.0.0"), Made(e, "E"), us, User(), Made(x, "W81", item: 81, version: "2.0.0", needs: [e]), W(x, 82, "1.5.0")];
+            var ticks = new Ticks([$"{x}|w:82"], new Dictionary<string, List<string>> { [x] = ["l:L", "w:81", "w:82"] });
+            var saved = new List<SettingsSaveMod> { Entry(ModEntry.ModId), Entry(x), Entry(x, ModSource.SteamWorkshop), Entry(x, ModSource.SteamWorkshop), Entry($"{x}User"), Entry(e) };
+            var page = Page(x, Read(), [], ticks, saved);
+            var launch1 = Launched(x, Read(), saved, [], ticks);
+            var launch2 = Launched(x, Read(), launch1.Saved, [], ticks);
+            Check("the rule, ... a Workshop copy ticked whose entries sit with a local copy's before what it needs (the beta): the local copy at the next "
+                + "launch, which the page names (81 Blocked), the Workshop copy one launch later",
+                page is ("L", "81 Blocked", _, _) && Shown(launch1.Loads) == "L" && launch1.Plan is { Blocked: "w:81" } && Shown(launch2.Loads) == "81",
+                $"the page {page.Loads} ({page.Why}); first {Shown(launch1.Loads)} (blocked {launch1.Plan?.Blocked ?? "none"}), saved {Said(launch1.Saved, x)}; second {Shown(launch2.Loads)}");
+        }
+        else
+            Results.Add("SKIP the rule, ... the order rule over launches where the game's rule takes out a local copy for a Workshop one (a dependency brought "
+                + "back, a copy brought back where it is, a Workshop copy blocked beside local ones, one ticked beside a local copy): only the beta's rule does");
+        // A write of the session between launches, as each writer ends (Dependencies.Write: this mod on again, with the
+        // made-up list in the game's settings for a moment, and the mods in its list).
+        void SessionWrite(List<SettingsSaveMod> list, List<Mod> installed, Mod mod)
+        {
+            var settings = SaveManager.Instance.SettingsSave.ModSettings ??= new ModSettings();
+            var kept = settings.ModList.ToList();
+            GameMods().AddRange(installed);
+            Copies.TestRecount();
+            try
+            {
+                settings.ModList.Clear();
+                settings.ModList.AddRange(list);
+                Dependencies.Write([(installed.First(m => m.manifest?.id == mod.manifest?.id), true)]);
+                list.Clear();
+                list.AddRange(settings.ModList);
+            }
+            finally
+            {
+                settings.ModList.Clear();
+                settings.ModList.AddRange(kept);
+                SaveManager.Instance.SaveSettings(); // the game's list as it was
+                foreach (var made in installed)
+                    GameMods().Remove(made);
+                Copies.TestRecount();
+            }
         }
         // (e) No other ticked copy can take the slot: the first of the id's copies in the next launch's order that can, not
         // in this launch's. A 1.0 not ticked, C 2.0 ticked needing D, which was off at the launch (C loaded, from the slot)
@@ -1470,6 +1760,30 @@ static partial class SelfTest
                 page is ("B", "C Blocked", _, _) && page.Late == dep && Shown(next.Loads) == "B" && page.Before.SetEquals(next.Before),
                 $"the page {page.Loads} ({page.Why}), blocked by {page.Late ?? "nothing"}, before the slot {string.Join(",", page.Before.Order())}; the next launch "
                 + $"{Shown(next.Loads)}, before the slot {string.Join(",", next.Before.Order())}");
+        }
+        // ... each of the others by its newest manifest, the one that loads of it (NewestOf, as the fallback reads the ticked
+        // ones): C 3.0 ticked, blocked by D, X (two manifests in one folder: X1 1.0 needing nothing, X2 2.0 needing E) and Y
+        // 1.5 not ticked, our record X first, D and E listed after the id, a mod needing the id. X2 can't take the slot, so
+        // Y, on the page and at the launch; with X2 needing nothing, X, the launch loading X2. Both fail on c42b5a8: its page
+        // and Run went by each manifest, so X by X1, which Run loaded.
+        x = Id();
+        {
+            var (dep, late) = ($"{x}D", $"{x}E");
+            Row("a blocked copy with no other ticked copy, another with two manifests in one folder, the newer needing a mod after the slot: that copy by its "
+                + "newer, so the next by the tie order that can", Case([L(x, "X", "1.0.0"), Made(x, "X", version: "2.0.0", needs: [late]), L(x, "Y", "1.5.0"),
+                    Made(x, "C", version: "3.0.0", needs: [dep])], off: ["l:X", "l:Y"], record: ["l:X", "l:Y", "l:C"],
+                    extra: [Made($"{x}User", "User", needs: [x]), Made(dep, "D"), Made(late, "E")],
+                    saved: [Entry(x), Entry(x), Entry(x), Entry(x), Entry($"{x}User"), Entry(dep), Entry(late)]), "Y", "C Blocked");
+        }
+        x = Id();
+        {
+            var dep = $"{x}D";
+            var (older, newer) = (L(x, "X", "1.0.0"), L(x, "X", "2.0.0"));
+            var got = Case([older, newer, L(x, "Y", "1.5.0"), Made(x, "C", version: "3.0.0", needs: [dep])], off: ["l:X", "l:Y"], record: ["l:X", "l:Y", "l:C"],
+                extra: [Made($"{x}User", "User", needs: [x]), Made(dep, "D")], saved: [Entry(x), Entry(x), Entry(x), Entry(x), Entry($"{x}User"), Entry(dep)]);
+            Check("the rule, ... the same with the newer needing nothing: X, the launch loading the newer (C Blocked)",
+                got is ("X", "X", "C Blocked", _) && newer.state == ModLoadState.None && older.state == ModLoadState.DisabledDuplicate,
+                $"page {got.Page}, launch {got.Launch} (1.0 {older.state}, 2.0 {newer.state}); losing {got.Why}");
         }
         // Nor can a copy below a minimum version of the id that a mod still to load needs (as the game reads it: that mod
         // would fail), nor one whose version the game can't read. C 3.0 blocked by D (listed after the id), B 2.0 ticked, A
@@ -1758,16 +2072,16 @@ static partial class SelfTest
     // decided before us, the game's local-vs-Workshop rule leaving one copy (nothing to do), a dependency of the chosen copy
     // that's on after the id's first slot (no swap; with a mod after us needing the id, the fallback: the best other
     // ticked copy that can take the slot, the one there too only where what it needs loads before it, not one needing a
-    // mod that isn't installed nor one below a minimum version a mod needs; none: the first copy left by the tie order that
-    // can, else the first; the rest set aside, the plan saying which copy was blocked by what; one off or not installed:
-    // swapped, or left at the slot; at the slot with no mod needing the id: left there), the canary (not a List<Mod>, not
-    // us first, not the game's own list), three copies, two Workshop copies and a local one, a local and a Workshop copy
-    // only, our own second copy, none of the copies left ticked (the ticked ones the game's rule set aside: the rule again
-    // over them, the copy it leaves brought back; none to bring back: the game's choice), a copy brought back with the
-    // game's manifest messages and in its own slot (the self-check: taken), one Workshop item with two manifests, a file
-    // from before copies_off (its legacy pick alone ticked; missing, the others), a set-aside copy's messages kept for its
-    // panel; then the self-check's verdicts (Judge) on what the game made of a plan. Which copy wins by version and tie is
-    // TestCopyRule's.
+    // mod that isn't installed nor one below a minimum version a mod needs; none: of the copies left, each by its newest
+    // manifest, the first by the tie order that can, else the first; the rest set aside, the plan saying which copy was blocked by
+    // what; one off or not installed: swapped, or left at the slot; at the slot with no mod needing the id: left there),
+    // the canary (not a List<Mod>, not us first, not the game's own list), three copies, two Workshop copies and a local
+    // one, a local and a Workshop copy only, our own second copy, none of the copies left ticked (the ticked ones the
+    // game's rule set aside: the rule again over them, the copy it leaves brought back; none to bring back: the game's
+    // choice), a copy brought back with the game's manifest messages and in its own slot (the self-check: taken), one
+    // Workshop item with two manifests, a file from before copies_off (its legacy pick alone ticked; missing, the
+    // others), a set-aside copy's messages kept for its panel; then the self-check's verdicts (Judge) on what the game
+    // made of a plan. Which copy wins by version and tie is TestCopyRule's.
     static void TestSameIdPlan()
     {
         const string X = "SmmSameIdX";
@@ -2101,6 +2415,27 @@ static partial class SelfTest
                 $"{Say(plan, b, a, c)} || {Say(planNone, b2, a2, c2)} || {Say(planOne, w5a, w5b)}");
         }
         {
+            // ... each other copy by its newest manifest, the one that loads of it (as Choose and Fallback read them): C (3.0)
+            // ticked, blocked by D; X, with two manifests in one folder (X1 1.0 at the slot, needing nothing, and X2 2.0
+            // needing D), and Y (1.5), neither ticked, our record X first. X2 can't take the slot: Y, swapped in, X1 and X2
+            // set aside. With X2 needing nothing: X2, swapped in past X1, which is set aside. Both fail on c42b5a8: its Run
+            // went by each manifest, so X1, at the slot.
+            var (x1, x2, y, c) = (Made(X, "X"), Made(X, "X", version: "2.0.0", needs: ["SmmSameIdD"]), Made(X, "Y", version: "1.5.0"),
+                Made(X, "C", version: "3.0.0", needs: ["SmmSameIdD"]));
+            List<Mod> list = [us, x1, x2, y, Made("SmmSameIdNeeder", "M", needs: [X]), Made("SmmSameIdD", "D"), c];
+            var (ok, plan) = PlanOf(list, off: OffKeys("l:X", "l:Y"), record: ["l:X", "l:Y", "l:C"]);
+            var (n1, n2, ny, nc) = (Made(X, "X"), Made(X, "X", version: "2.0.0"), Made(X, "Y", version: "1.5.0"), Made(X, "C", version: "3.0.0", needs: ["SmmSameIdD"]));
+            List<Mod> fits = [us, n1, n2, ny, Made("SmmSameIdNeeder", "M", needs: [X]), Made("SmmSameIdD", "D"), nc];
+            var (okFits, planFits) = PlanOf(fits, off: OffKeys("l:X", "l:Y"), record: ["l:X", "l:Y", "l:C"]);
+            Check("... a blocked pick with no other ticked copy that can take the slot, another copy with two manifests: that copy by its newer, so Y "
+                + "where the newer can't (swapped in, both of X's set aside); where it can, the newer, swapped in past the older",
+                ok && plan.GetValueOrDefault(X) is { Why: SameIdLoad.Reason.DependencyAfterSlot, Blocked: "l:C", Swapped: true } entry && entry.Loads == y && list[1] == y
+                && x1.state == Aside && x2.state == Aside && c.state == Aside
+                && okFits && planFits.GetValueOrDefault(X) is { Why: SameIdLoad.Reason.DependencyAfterSlot, Blocked: "l:C", Swapped: true } newer && newer.Loads == n2
+                && fits[1] == n2 && n1.state == Aside && ny.state == Aside && nc.state == Aside,
+                $"{Say(plan, x1, x2, y, c)} || {Say(planFits, n1, n2, ny, nc)}");
+        }
+        {
             // The copy chosen at the slot needing a mod that's on after it (as a dependency cycle leaves them) while no mod
             // still to load needs the id: it stays and loads there, the other set aside, no reason (nothing looks for the id
             // at its first slot).
@@ -2342,6 +2677,419 @@ static partial class SelfTest
             + $"{string.Join(", ", FileCopiesOff())}, copy_picks in the file {fileJson?.ContainsKey("copy_picks")}, version {Store.Data.Version}");
         if (loadedFirst)
             Results.Add("INFO same ID, settling: ours loaded first this launch, so Settle had nothing of ours to move");
+    }
+
+    // The fixture's mod from both sources this launch (DualId: its Workshop copy off, which the game's rebuild lists after
+    // all the rest). At the first main menu: the game's list lined up with its mods (SameIdLoad.LinedUp), the Workshop
+    // entry right after the local one in memory and in settings.save (Settle saved the list, its order not the one read),
+    // where the game's own list has it apart; no move since launch; the launch record (last-working.json) in that order,
+    // ours aside (it records them as they loaded); Restore's list from it loading as the saved list does
+    // (LaunchGuard.SameLoad: no crash offer for the order alone). Then the list left with the entries apart, as another
+    // mod might leave it: the game's own save puts them together first (SaveOrderPatch), in memory and on disk.
+    static void TestDualSettled()
+    {
+        var copies = ModManager.Mods.Where(m => m.manifest?.id == DualId).ToList();
+        if (copies.FirstOrDefault(m => m.modSource == ModSource.ModsDirectory) is not { } local || copies.FirstOrDefault(m => m.modSource == ModSource.SteamWorkshop) is not { } workshop)
+        {
+            DualMissing("a mod from both sources at the main menu");
+            return;
+        }
+        static string Said(IEnumerable<(string Id, ModSource Source, bool On)> list) =>
+            string.Join(", ", list.Select(e => e.Id + (e.Source == ModSource.SteamWorkshop ? "/w" : "") + (e.On ? "" : "-")));
+        static bool Together(List<(string Id, ModSource Source, bool On)> list) => list.FindIndex(e => e.Id == DualId && e.Source == ModSource.SteamWorkshop) is var w
+            && w > 0 && list[w - 1] is { Id: DualId, Source: ModSource.ModsDirectory, On: true } && !list[w].On && list.Count(e => e.Id == DualId) == 2;
+        static List<(string Id, ModSource Source, bool On)> Memory() =>
+            [.. (SaveManager.Instance.SettingsSave.ModSettings?.ModList ?? []).Select(e => (e.Id, e.Source, e.IsEnabled))];
+        // settings.save as the next launch reads it (none read: empty).
+        static List<(string Id, ModSource Source, bool On)> Disk()
+        {
+            try
+            {
+                var path = ProjectSettings.GlobalizePath(UserDataPathProvider.GetAccountScopedBasePath("settings.save"));
+                return [.. (JsonNode.Parse(File.ReadAllText(path))?["mod_settings"]?["mod_list"] as JsonArray ?? []).Select(e => ((string?)e?["id"] ?? "",
+                    (string?)e?["source"] == "steam_workshop" ? ModSource.SteamWorkshop : ModSource.ModsDirectory, (bool?)e?["is_enabled"] ?? true))];
+            }
+            catch (Exception e) when (e is IOException or UnauthorizedAccessException or System.Text.Json.JsonException)
+            {
+                Results.Add($"INFO a mod from both sources: settings.save unread: {e.Message}");
+                return [];
+            }
+        }
+        var (memory, disk, mods) = (Memory(), Disk(), ModManager.Mods.ToList());
+        var record = LaunchGuard.Read(Path.Combine(LaunchGuard.Dir ?? "", LaunchGuard.WorkingFile))?.Mods ?? [];
+        var keys = record.Select(m => (m.Id, m.Source)).ToHashSet();
+        List<(string Id, ModSource Source)> Others(IEnumerable<(string Id, ModSource Source)> list) => [.. list.Where(e => e.Id != ModEntry.ModId && keys.Contains(e))];
+        var restored = LaunchGuard.Written(record).Select(e => (e.Id, e.Source, e.IsEnabled)).ToList();
+        Check("a mod from both sources (the fixture's, its Workshop copy off): at the main menu the game's list lined up with its mods; the Workshop entry "
+            + "right after the local one in memory and in settings.save, where the game's own list has it after all the rest; no move since launch; the "
+            + "launch record in that order; Restore's list from it loading as the saved list does",
+            SameIdLoad.LinedUp == true && mods.IndexOf(workshop) > mods.IndexOf(local) + 1 && Together(memory) && Together(disk) && HistoryBar.Moves().Count == 0
+            && !LoadOrder.OrderChanged && record.Count > 0 && Others(record.Select(m => (m.Id, m.Source))).SequenceEqual(Others(memory.Select(e => (e.Id, e.Source))))
+            && LaunchGuard.SameLoad(restored, memory),
+            $"lined up {SameIdLoad.LinedUp}; the game's {string.Join(", ", mods.Select(m => m.manifest?.id + (m.modSource == ModSource.SteamWorkshop ? "/w" : "")))}; "
+            + $"memory {Said(memory)}; disk {Said(disk)}; record {Said(record.Select(m => (m.Id, m.Source, m.Enabled)))}; moves {HistoryBar.Moves().Count}; "
+            + $"same load as Restore's {LaunchGuard.SameLoad(restored, memory)}");
+        if (SaveManager.Instance.SettingsSave.ModSettings?.ModList is not { } list || list.FirstOrDefault(e => e.Id == DualId && e.Source == ModSource.SteamWorkshop) is not { } entry)
+            return;
+        list.Remove(entry);
+        list.Add(entry);
+        var apart = Memory();
+        SaveManager.Instance.SaveSettings();
+        Check("... the list left with its entries apart (another mod's write): the game's own save puts them together first, in memory and on disk",
+            !Together(apart) && Together(Memory()) && Together(Disk()) && Memory().SequenceEqual(memory), $"apart {Said(apart)}; then {Said(Memory())}; disk {Said(Disk())}");
+    }
+
+    // The order rule (LoadOrder.Normalize; DESIGN.md, Load order) on made-up lists: each id's entries in one run where its
+    // last anchor is, by source in the session (LoadOrder.Anchors, with made-up mods in the game's list for the row), by
+    // where the game put each mod at the first main menu (SameIdLoad.SortedOf, LaunchAnchors), the heal (Heal), new
+    // entries (LoadOrder.Add); then the writers and comparers that read it: Settle's save (SettleSaves), the repair before
+    // the menu, the launch record (Recorded), Restore's list (Written), the crash offer's comparison (SameLoad) and the
+    // notice after a failed launch (Reached); and its cost.
+    static void TestOrderRule()
+    {
+        var beta = Compat.WorkshopBeatsOlderLocal;
+        const ModSource L = ModSource.ModsDirectory, W = ModSource.SteamWorkshop;
+        const string d = "SmmOrderD", x = "SmmOrderX", u = "SmmOrderU", a = "SmmOrderA", f = "SmmOrderF", z = "SmmOrderZ";
+        static SettingsSaveMod E(string id, ModSource source = L, bool on = true) => new() { Id = id, Source = source, IsEnabled = on };
+        static string Say(IEnumerable<SettingsSaveMod> list) => string.Join(",", list.Select(e => (e.Id == ModEntry.ModId ? "us" : e.Id.Replace("SmmOrder", ""))
+            + (e.Source == W ? "w" : "") + (e.IsEnabled ? "" : "-")));
+        static List<(string, ModSource)> Keys(IEnumerable<Mod> mods) => [.. mods.Select(m => (m.manifest?.id ?? "", m.modSource))];
+        static List<(string, ModSource, bool)> Read(IEnumerable<SettingsSaveMod> list) => [.. list.Select(e => (e.Id, e.Source, e.IsEnabled))];
+        static List<SettingsSaveMod> Copy(IEnumerable<SettingsSaveMod> list) => [.. list.Select(e => E(e.Id, e.Source, e.IsEnabled))];
+        // While these made-up mods are in the game's list (installed: the session's anchors read them).
+        T With<T>(IEnumerable<Mod> mods, Func<T> row)
+        {
+            var made = mods.ToList();
+            GameMods().AddRange(made);
+            Copies.TestRecount();
+            try
+            {
+                return row();
+            }
+            finally
+            {
+                foreach (var mod in made)
+                    GameMods().Remove(mod);
+                Copies.TestRecount();
+            }
+        }
+        // The rule by source on a list: the list then, and whether a second pass moved anything.
+        (string After, bool Again) BySource(List<SettingsSaveMod> list, params Mod[] installed) => With(installed, () =>
+        {
+            LoadOrder.Normalize(list, LoadOrder.Anchors(list));
+            return (Say(list), LoadOrder.Normalize(list, LoadOrder.Anchors(list)));
+        });
+        Mod DL(string version = "1.0.0") => Made(d, "D", version: version);
+        Mod DW(string version = "1.0.0") => Made(d, "DW", item: 41, version: version);
+
+        // By source. A mod's Workshop copy off, its entry last, where the game's rebuild lists the copies it took out: right
+        // after the copy that loads (the mod keeps that copy's place next launch).
+        var offLast = BySource([E(ModEntry.ModId), E(d), E(x), E(u), E(d, W, false)], DL(), DW(), Made(x, "X"), Made(u, "U"));
+        Check("the order rule, a mod's Workshop copy off and its entry last (where the game's rebuild lists it): right after the copy that loads; a second "
+            + "pass moves nothing", offLast == ("us,D,Dw-,X,U", false), $"{offLast}");
+        // Both on, one set aside by the game's rule: the local copy higher (on both branches its Workshop copy is out), the
+        // Workshop one higher (the beta takes out the local one, stable the Workshop one), a tie or a version the game can't
+        // read (the local copy stays).
+        var (localHigher, workshopHigher) = (BySource([E(d), E(x), E(d, W)], DL("2.0.0"), DW("1.0.0"), Made(x, "X")),
+            BySource([E(d, W), E(x), E(d)], DL("1.0.0"), DW("2.0.0"), Made(x, "X")));
+        var (tie, unread) = (BySource([E(d), E(x), E(d, W)], DL(), DW(), Made(x, "X")), BySource([E(d), E(x), E(d, W)], DL(), DW("abc"), Made(x, "X")));
+        Check("the order rule, both copies on, one set aside by the game's rule: the local copy higher, its Workshop entry beside it; the Workshop copy "
+            + $"higher, {(beta ? "the local entry beside the Workshop one (the beta takes out the local copy)" : "the Workshop entry beside the local one (stable takes it out)")}; "
+            + "a tie, or a Workshop version the game can't read, beside the local one",
+            localHigher.After == "D,Dw,X" && workshopHigher.After == (beta ? "Dw,D,X" : "X,Dw,D") && tie.After == "D,Dw,X" && unread.After == "D,Dw,X"
+            && !localHigher.Again && !workshopHigher.Again, $"local higher {localHigher}; Workshop higher {workshopHigher}; tie {tie}; unread {unread}");
+        // A mod's entries before its last anchor go to it too (an id ranks by its last entry, so this changes no mod's
+        // rank): an off copy before the copy that loads, twins of one source the game's sort split by a dependency (one
+        // key: all anchors, so the run goes to the later one, where the game ranks the id), with a local copy that's off
+        // after them.
+        var offFirst = BySource([E(d, W, false), E(a), E(d)], DL(), DW(), Made(a, "A"));
+        Mod[] Twins(bool local) => [Made(x, "XW51", item: 51), Made(x, "XW52", item: 52), DL(), .. local ? [Made(x, "X")] : Array.Empty<Mod>()];
+        var (twins, twinsAndOff) = (BySource([E(x, W), E(d), E(x, W)], Twins(false)), BySource([E(x, W), E(d), E(x, W), E(x, L, false)], Twins(true)));
+        Check("the order rule, a mod's entries before its last anchor go to it as well, in their order: an off copy before the one that loads; twins split "
+            + "by a dependency, at the later one (where the game ranks the mod), with a local copy that's off after them",
+            offFirst.After == "A,Dw-,D" && twins.After == "D,Xw,Xw" && twinsAndOff.After == "D,Xw,Xw,X-", $"off first {offFirst}; twins {twins}; with one off {twinsAndOff}");
+        // No anchor: every copy off (the game's rebuild lists them in its read order, a local mod that's off between them),
+        // gathered at the first, so a tick later moves no other mod's row; a mod that isn't installed the same.
+        var allOff = BySource([E(d, L, false), E(f, L, false), E(d, W, false)], DL(), DW(), Made(f, "F"));
+        var gone = BySource([E(z), E(a), E(z, W)], Made(a, "A"));
+        // A leftover entry of a source that isn't installed, of a mod that is: beside the mod (at the end, it would rank it last).
+        var leftover = BySource([E(d), E(x), E(d, W)], DL(), Made(x, "X"));
+        Check("the order rule, a mod with no copy the next launch sorts (every copy off, or not installed) gathered at its first entry; a leftover entry of "
+            + "a source not installed beside the mod's copy that is",
+            allOff.After == "D-,Dw-,F-" && gone.After == "Z,Zw,A" && leftover.After == "D,Dw,X", $"all off {allOff}; not installed {gone}; leftover {leftover}");
+        // A new entry (LoadOrder.Add): right after its id's last entry; one for an id the list doesn't have, at the end.
+        List<SettingsSaveMod> added = [E(a), E(d), E(x)];
+        LoadOrder.Add(added, E(d, W));
+        var addedOne = Say(added);
+        LoadOrder.Add(added, E(z));
+        Check("the order rule, a new entry: right after its mod's entries (its rank kept); one for a mod the list doesn't have, at the end",
+            addedOne == "A,D,Dw,X" && Say(added) == "A,D,Dw,X,Z", $"{addedOne}; then {Say(added)}");
+        // The mutation pin for "nothing moved": a list already in the form gives null and false, whatever the anchors; one
+        // that isn't, not.
+        List<string> normal = [ModEntry.ModId, d, d, x, u], split = [ModEntry.ModId, d, x, d, u];
+        bool[] none = [false, false, false, false, false], every = [true, true, true, true, true];
+        Check("the order rule, a list already in its form: nothing moves, whatever the anchors; one with a mod's entries apart: they move",
+            LoadOrder.Normalized(normal, none) == null && LoadOrder.Normalized(normal, every) == null && LoadOrder.Contiguous(normal)
+            && !LoadOrder.Normalize([E(ModEntry.ModId), E(d), E(d, W), E(x), E(u)], every)
+            && LoadOrder.Normalized(split, every) is [0, 2, 1, 3, 4] && !LoadOrder.Contiguous(split),
+            $"normal: {LoadOrder.Normalized(normal, none) != null}/{LoadOrder.Normalized(normal, every) != null}; split: {string.Join(",", LoadOrder.Normalized(split, every) ?? [])}");
+        // Load Order's moves (Moved, Placed, Dropped): a mod installed more than once moves as one block, its rows in their
+        // order, whichever of them is moved; an index among its own rows orders only its copies; a move into another mod's
+        // rows goes past the whole of them (to their start going up, their end going down), and so does a drop; a drop at
+        // the row's own gap moves nothing.
+        var (ra, x1, x2, ru, rz) = (Made(a, "A"), Made(x, "X1"), Made(x, "X2", item: 2), Made(u, "U"), Made(z, "Z"));
+        List<Mod> rows = [ra, x1, x2, ru, rz];
+        string Rows(IEnumerable<Mod>? order) => order == null ? "none"
+            : string.Join(",", order.Select(m => m == x1 ? "X1" : m == x2 ? "X2" : (m.manifest?.id ?? "").Replace("SmmOrder", "")));
+        var moves = new[]
+        {
+            Rows(LoadOrder.Moved(rows, x2, 3)), Rows(LoadOrder.Moved(rows, x2, 1)), Rows(LoadOrder.Moved(rows, ru, 2)), Rows(LoadOrder.Moved(rows, ra, 1)),
+            Rows(LoadOrder.Dropped(rz, 2, rows)), Rows(LoadOrder.Dropped(x1, 4, rows)), Rows(LoadOrder.Dropped(x1, 3, rows)), Rows(LoadOrder.Dropped(x1, 1, rows)),
+            Rows(LoadOrder.Dropped(x1, 2, rows)), Rows(LoadOrder.Placed(rows, [ra, rz], 2, up: false)),
+        };
+        Check("the order rule in Load Order's moves: a mod's rows move as one block, whichever is moved; among its own rows only its copies' order; into "
+            + "another mod's rows past the whole of them, by a move or a drop; a drop at its own gap nothing; a selection gathered past them",
+            moves.SequenceEqual(["A,U,X1,X2,Z", "A,X2,X1,U,Z", "A,U,X1,X2,Z", "X1,X2,A,U,Z", "A,Z,X1,X2,U", "A,U,X1,X2,Z", "A,X2,X1,U,Z", "none", "none", "X1,X2,A,Z,U"]),
+            string.Join(" | ", moves));
+
+        // By where the game put each mod. Where its sort ended (SortedOf): after the last mod it sorted (None, Loaded or
+        // Failed), the rest taken out; one it took out before one it sorted isn't its sorted-then-taken-out (null); a mod
+        // read while the game runs (AddedAtRuntime) is in the tail, and never an anchor.
+        Mod[] AtApply() => [Made(ModEntry.ModId, "us"), Made(a, "A"), Made(d, "D"), Made(x, "X"), Made(d, "DW", ModLoadState.Disabled, item: 41)];
+        var atApply = AtApply();
+        var sorted = SameIdLoad.SortedOf(atApply);
+        var anchors = SameIdLoad.LaunchAnchors(atApply, Keys(atApply), sorted);
+        var mixed = SameIdLoad.SortedOf([Made(a, "A"), Made(d, "D", ModLoadState.Disabled), Made(x, "X")]);
+        var arrival = SameIdLoad.SortedOf([Made(a, "A"), Made(d, "D", ModLoadState.Disabled), Made(z, "Z", ModLoadState.AddedAtRuntime)]);
+        Mod[] withArrival = [Made(a, "A"), Made(z, "Z", ModLoadState.AddedAtRuntime), Made(x, "X"), Made(d, "D", ModLoadState.Disabled)];
+        var arrivalAnchors = SameIdLoad.LaunchAnchors(withArrival, Keys(withArrival), SameIdLoad.SortedOf(withArrival));
+        // The rebuild against the mods up to the count read: one entry out of place, a list shorter than that, or nothing
+        // read gives none (Settle then goes by source, with a warning); an entry past that count (read while the game ran,
+        // before its rebuild) isn't an anchor.
+        var swapped = Keys(atApply);
+        (swapped[1], swapped[2]) = (swapped[2], swapped[1]);
+        var longer = SameIdLoad.LaunchAnchors([.. atApply, Made(z, "Z", ModLoadState.AddedAtRuntime)], [.. Keys(atApply), (z, L)], sorted);
+        Check("the order rule at the first main menu: the mods the game sorted are anchors, the ones it took out after them are not, nor one read while it "
+            + "runs; one taken out before one sorted, a list that doesn't line up with the mods, a shorter one or none read: none (by source then)",
+            sorted == (5, 4) && anchors is [true, true, true, true, false] && mixed == null && arrival == (3, 1) && arrivalAnchors is [true, false, true, false]
+            && SameIdLoad.LaunchAnchors(atApply, swapped, sorted) == null && SameIdLoad.LaunchAnchors(atApply, Keys(atApply.Take(4)), sorted) == null
+            && SameIdLoad.LaunchAnchors(atApply, Keys(atApply), null) == null && longer is [true, true, true, true, false, false],
+            $"sorted {sorted}, anchors {string.Join(",", anchors ?? [])}; mixed {mixed}; arrival {arrival} ({string.Join(",", arrivalAnchors ?? [])}); longer {string.Join(",", longer ?? [])}");
+        // Settle on the rebuild (SettleList): a mod with a copy taken out, its entry beside the copy that sorted; the beta's
+        // mixed key (W2 3.0 sorted, the local copy 2.0 and W1 1.0 taken out) at the copy that sorted, after which the
+        // session's anchors (by source) move nothing; the copy our Init brought back into the id's first slot (S3), the one
+        // it swapped out after it; ours from two sources at the top, with nothing for OursFirst to move.
+        List<SettingsSaveMod> Rebuilt(IEnumerable<Mod> mods) => [.. mods.Select(m => E(m.manifest?.id ?? "", m.modSource, m.state != ModLoadState.Disabled))];
+        List<SettingsSaveMod> Settled(Mod[] mods, (int, int)? at, IReadOnlyDictionary<string, string>? heal = null, List<SettingsSaveMod>? list = null) => With(mods, () =>
+        {
+            var settled = list ?? Rebuilt(mods);
+            SameIdLoad.SettleList(settled, Read(settled), SameIdLoad.LaunchAnchors(mods, Keys(mods), at), heal);
+            return settled;
+        });
+        var main = Settled(atApply, sorted);
+        Mod[] Mixed() => [Made(ModEntry.ModId, "us"), Made(x, "XW2", item: 2, version: "3.0.0"), Made(u, "U", needs: [x]), Made(x, "X", ModLoadState.DisabledDuplicate, version: "2.0.0"),
+            Made(x, "XW1", ModLoadState.DisabledDuplicate, item: 1)];
+        var mixedMods = Mixed();
+        var mixedSettled = Settled(mixedMods, SameIdLoad.SortedOf(mixedMods));
+        var mixedAgain = With(mixedMods, () => LoadOrder.NormalizeBySource(mixedSettled) || LoadOrder.Normalize(mixedSettled, LoadOrder.Anchors(mixedSettled)));
+        // S3: at Apply W2 left by the game's rule (None) and the local copy set aside; Run brings it back into W2's slot.
+        Mod[] Back() => [Made(ModEntry.ModId, "us"), Made(x, "X"), Made(u, "U", needs: [x]), Made(x, "XW2", ModLoadState.DisabledDuplicate, item: 2)];
+        var backAt = SameIdLoad.SortedOf([Made(ModEntry.ModId, "us"), Made(x, "XW2", item: 2), Made(u, "U"), Made(x, "X", ModLoadState.DisabledDuplicate)]);
+        var back = Settled(Back(), backAt);
+        Mod[] Ours() => [Made(ModEntry.ModId, "us"), Made(a, "A"), Made(ModEntry.ModId, "usw", ModLoadState.DisabledDuplicate, item: 3)];
+        var ours = Rebuilt(Ours());
+        var oursMoved = SameIdLoad.SettleList(ours, Read(ours), SameIdLoad.LaunchAnchors(Ours(), Keys(Ours()), (3, 2)));
+        Check("the order rule at the first main menu, Settle: a copy taken out beside the one that sorted; the beta's mixed key at the copy that sorted, the "
+            + "session's anchors moving nothing after; a copy brought back into the first slot, the one swapped out after it; ours from two sources at the "
+            + "top, nothing for OursFirst to move",
+            Say(main) == "us,A,D,Dw-,X" && Say(mixedSettled) == "us,Xw,X,Xw,U" && !mixedAgain && Say(back) == "us,X,Xw,U" && Say(ours) == "us,usw,A" && !oursMoved,
+            $"main {Say(main)}; mixed {Say(mixedSettled)} (again {mixedAgain}); brought back {Say(back)}; ours {Say(ours)} (moved {oursMoved})");
+        // A mod with every copy off, a local mod that's off read between them (the game lists the copies it took out in its
+        // read order): Settle gathers them at the first, so a tick of either copy later (Dependencies.Write ends by putting
+        // the list in the form, by source) moves no other mod's entry, nor does the tick undone.
+        Mod[] AllOff() => [Made(ModEntry.ModId, "us"), Made(a, "A"), Made(d, "D", ModLoadState.Disabled), Made(f, "F", ModLoadState.Disabled),
+            Made(d, "DW", ModLoadState.Disabled, item: 41)];
+        var allOffMods = AllOff();
+        var offSettled = Settled(allOffMods, SameIdLoad.SortedOf(allOffMods));
+        var ticks = With(AllOff(), () =>
+        {
+            var list = Copy(offSettled);
+            var said = new List<string>();
+            foreach (var on in new[] { true, false })
+            {
+                list.First(e => e.Id == d && e.Source == L).IsEnabled = on;
+                said.Add($"{Say(list)} (moved {LoadOrder.NormalizeBySource(list)})");
+            }
+            return said;
+        });
+        Check("the order rule at the first main menu, Settle: a mod with every copy off gathered at its first entry, a mod off read between them after it; "
+            + "a tick of one copy then, and the tick undone, move nothing",
+            Say(offSettled) == "us,A,D-,Dw-,F-" && ticks.SequenceEqual(["us,A,D,Dw-,F- (moved False)", "us,A,D-,Dw-,F- (moved False)"]),
+            $"settled {Say(offSettled)}; {string.Join(" | ", ticks)}");
+        // The heal (Heal): the blocked id's run right after the whole run of what its copy waits for, D installed from both
+        // sources (its Workshop copy taken out) and a mod after it, Z: after D's run, not after D's last entry in the
+        // rebuild (the end: the mod would rank last) nor its last anchor (D's run split: D would rank after it); in the
+        // order they wait for each other (X after D, D after F: D first, or X ends up before D); not where the id already
+        // ranks after it (a twin the sort put after D).
+        Mod[] Heal() => [Made(ModEntry.ModId, "us"), Made(x, "XW101", item: 101, version: "3.0.0"), Made(u, "U", needs: [x]), DL(), Made(z, "Z"),
+            Made(x, "X", ModLoadState.DisabledDuplicate, version: "2.0.0", needs: [d]), Made(d, "DW", ModLoadState.Disabled, item: 41),
+            Made(x, "XW102", ModLoadState.DisabledDuplicate, item: 102, needs: [d])];
+        var healMods = Heal();
+        var healAt = SameIdLoad.SortedOf(healMods);
+        var healed = Settled(healMods, healAt, new Dictionary<string, string> { [x] = d });
+        var unhealed = Settled(healMods, healAt);
+        List<SettingsSaveMod> chain = [E(x), E(d), E(a), E(f)];
+        var chainMoved = SameIdLoad.Heal(chain, new Dictionary<string, string> { [x] = d, [d] = f });
+        List<SettingsSaveMod> after = [E(x), E(u), E(d), E(x)];
+        LoadOrder.Normalize(after, [true, true, true, true]);
+        var afterMoved = SameIdLoad.Heal(after, new Dictionary<string, string> { [x] = d });
+        List<SettingsSaveMod> itself = [E(a), E(x), E(u)]; // a manifest that lists its own id (review G5: it went to the top)
+        var itselfMoved = SameIdLoad.Heal(itself, new Dictionary<string, string> { [x] = x });
+        Check("the order rule's heal: the blocked mod right after the whole run of what its copy waits for (installed from both sources, a mod after it), the mods it passed that need it right after it, in "
+            + "the order they wait for each other; not one ranked after it already, nor one that names itself",
+            healAt == (8, 5) && Say(healed) == "us,D,Dw-,Xw,X,Xw,U,Z" && Say(unhealed) == "us,Xw,X,Xw,U,D,Dw-,Z" && Say(chain) == "A,F,D,X" && chainMoved.SequenceEqual([d, x])
+            && Say(after) == "U,D,X,X" && afterMoved.Count == 0 && Say(itself) == "A,X,U" && itselfMoved.Count == 0,
+            $"healed {Say(healed)}; without {Say(unhealed)}; chain {Say(chain)} ({string.Join(",", chainMoved)}); "
+            + $"after already {Say(after)} ({string.Join(",", afterMoved)}); itself {Say(itself)}; split {healAt}");
+
+        // Fix now and Auto sort (LoadOrder.Fixed) on a mod installed twice whose rows are apart: its rows together, the rest
+        // in their order (review C5: no row failed without the gathering).
+        Mod[] apartMods = [Made(a, "A"), Made(x, "X1"), Made(u, "U"), Made(x, "X2")];
+        var gathered = With(apartMods, () => LoadOrder.Fixed([.. apartMods]));
+        var (x1At, x2At) = (gathered.IndexOf(apartMods[1]), gathered.IndexOf(apartMods[3]));
+        Check("the order rule, Fix now and Auto sort: a mod's rows apart are gathered, the others in their order",
+            Math.Abs(x1At - x2At) == 1 && gathered.IndexOf(apartMods[0]) < gathered.IndexOf(apartMods[2]) && gathered.Count == 4,
+            string.Join(",", gathered.Select(Copies.CopyOf)));
+
+        // Settle's save (SettleSaves): the first launch after updating (D's Workshop copy, set aside, listed last as the old
+        // rebuild saved it): the rule's move isn't SettleList's change, but the list then differs from the one read, so it's
+        // saved, once; a launch whose list was in the form already: nothing to save, its copy set aside or off (the rebuild
+        // gives D's Workshop entry the local one's on, and Repair puts it back as read), and nothing to say; ours not first
+        // (an old reason): saved.
+        Mod[] Aside() => [Made(ModEntry.ModId, "us"), Made(d, "D"), Made(x, "X"), Made(u, "U"), Made(d, "DW", ModLoadState.DisabledDuplicate, item: 41)];
+        var asideAnchors = SameIdLoad.LaunchAnchors(Aside(), Keys(Aside()), (5, 4));
+        List<SettingsSaveMod> RebuildOf(List<SettingsSaveMod> read) => [E(ModEntry.ModId), E(d), E(x), E(u), E(d, W, read.First(e => e.Id == d).IsEnabled)];
+        bool Saves(List<SettingsSaveMod> read, out List<SettingsSaveMod> list, out bool changed)
+        {
+            list = RebuildOf(read);
+            changed = SameIdLoad.SettleList(Copy(list), Read(read), asideAnchors);
+            return SameIdLoad.SettleSaves(list, Read(read), asideAnchors);
+        }
+        var firstSaves = Saves([E(ModEntry.ModId), E(d), E(x), E(u), E(d, W)], out var firstList, out var firstChanged);
+        var steadySaves = Saves([E(ModEntry.ModId), E(d), E(d, W), E(x), E(u)], out var steadyList, out _);
+        var offSaves = Saves([E(ModEntry.ModId), E(d), E(d, W, false), E(x), E(u)], out var offList, out _);
+        // No list read (review C9): the rule's move is then a reason to save; a list in the form already saves nothing.
+        var (noReadMoved, noReadSteady) = (RebuildOf([E(d, W)]), new List<SettingsSaveMod> { E(ModEntry.ModId), E(d), E(d, W), E(x), E(u) });
+        var (noReadSaves, noReadSteadySaves) = (SameIdLoad.SettleSaves(noReadMoved, null, asideAnchors), SameIdLoad.SettleSaves(noReadSteady, null, asideAnchors));
+        Check("the order rule, Settle's save with no list read: the rule's move saved, a list in the form not",
+            noReadSaves && Say(noReadMoved) == "us,D,Dw,X,U" && !noReadSteadySaves, $"moved {noReadSaves} {Say(noReadMoved)}; in the form {noReadSteadySaves}");
+        List<SettingsSaveMod> notFirst = [E(a), E(ModEntry.ModId)];
+        var notFirstSaves = SameIdLoad.SettleSaves(notFirst, Read(notFirst), [true, true]);
+        Check("the order rule, Settle's save: the first launch after updating (the copy set aside listed last) saved for its order, the rule's move not "
+            + "counted as a change; a launch already in the form saves nothing, its copy set aside or off; ours not first saved, as before",
+            firstSaves && !firstChanged && Say(firstList) == "us,D,Dw,X,U" && !steadySaves && Say(steadyList) == "us,D,Dw,X,U" && !offSaves && Say(offList) == "us,D,Dw-,X,U"
+            && notFirstSaves && Say(notFirst) == "us,A",
+            $"first {firstSaves} (changed {firstChanged}) {Say(firstList)}; steady {steadySaves} {Say(steadyList)}; off {offSaves} {Say(offList)}; ours not first {notFirstSaves}");
+        // The repair before the menu, on made-up settings: the same form in memory, and the move alone isn't a change to say
+        // ("put each source's own switch back").
+        var before = new ModSettings { ModList = RebuildOf([E(d, W)]) };
+        var repaired = LaunchGuard.RepairBeforeMenu(before, Read(RebuildOf([E(d, W)])), settled: false, asideAnchors);
+        Check("the order rule before the first main menu (a failed start, a quit): the list in memory in the form, the move alone not a repair to say",
+            !repaired && Say(before.ModList) == "us,D,Dw,X,U", $"repaired {repaired}; {Say(before.ModList)}");
+        // The fallback (no anchors: the list didn't line up, or where the sort ended wasn't read), as Settle runs it: by
+        // source, read after Repair. The rebuild gives the copy that's off its id's first entry's switch, so read before
+        // Repair it counts as on, the game's rule then takes out the copy that loaded, and the mod went to the end
+        // (the review of 241d7b2, G1/C3). Beta: local 1.0 on, Workshop 2.0 off; stable: the Workshop copy on, the local off.
+        List<SettingsSaveMod> fallbackRead = beta ? [E(ModEntry.ModId), E(d), E(d, W, false), E(x), E(u)] : [E(ModEntry.ModId), E(d, W), E(d, L, false), E(x), E(u)];
+        var fallbackFirst = fallbackRead[1];
+        List<SettingsSaveMod> fallback = [E(ModEntry.ModId), E(d, fallbackFirst.Source), E(x), E(u), E(d, beta ? W : L)]; // all on, the taken-out copy last
+        With([DL("1.0.0"), DW("2.0.0"), Made(x, "X"), Made(u, "U")], () => SameIdLoad.SettleList(fallback, Read(fallbackRead)));
+        var fallbackMeant = beta ? "us,D,Dw-,X,U" : "us,Dw,D-,X,U";
+        Check("the order rule's fallback (no anchors), as Settle runs it: by source after Repair, so the copy that's off doesn't read as on and the mod "
+            + "keeps its place (not the end)", Say(fallback) == fallbackMeant, $"{Say(fallback)}, meant {fallbackMeant}");
+
+        // The launch record (Recorded): in the form Settle saves, without the heal (what loaded); it round-trips.
+        var (record, settledHeal) = (LaunchGuard.Recorded(healMods, healAt, [], new Dictionary<(string, ModSource), string>()), Settled(healMods, healAt));
+        var recordDir = Path.Combine(Path.GetTempPath(), $"SmmOrderRule-{System.Environment.ProcessId}");
+        LaunchGuard.Setup? readBack;
+        try
+        {
+            LaunchGuard.Begin(recordDir, new LaunchGuard.Setup(DateTime.Now, record));
+            readBack = LaunchGuard.Read(Path.Combine(recordDir, LaunchGuard.PendingFile));
+        }
+        finally
+        {
+            if (Directory.Exists(recordDir))
+                Directory.Delete(recordDir, recursive: true);
+        }
+        Check("the order rule, the launch record: in the form Settle saves, without its heal (the order that loaded), round-tripping",
+            record.Select(e => (e.Id, e.Source)).SequenceEqual(settledHeal.Select(e => (e.Id, e.Source))) && readBack?.Mods.SequenceEqual(record) == true,
+            $"record {string.Join(",", record.Select(e => e.Id.Replace("SmmOrder", "") + (e.Source == W ? "w" : "")))}; settled {Say(settledHeal)}; read back {readBack?.Mods.Count}");
+        // Restore's list (Written) and the crash offer's comparison (SameLoad, as the game ranks: by each id's last entry):
+        // Written of this version's record ranks every mod as Settle's list does, so a failed launch that read that list
+        // gets no offer for the order alone (g2r3 regress #1 B); a record from before this version (the copy set aside last)
+        // is put in the form too. The made-up mods in the game's list, and those installed (Written lists them, off).
+        Mod[] Session() => [DL(), DW(), Made(x, "X"), Made(u, "U")];
+        var working = LaunchGuard.Recorded(Aside(), (5, 4), [], new Dictionary<(string, ModSource), string>());
+        var old = new[] { 0, 1, 3, 4, 2 }.Select(i => working[i]).ToList(); // D's Workshop entry last
+        var settledList = RebuildOf([E(d, W)]);
+        SameIdLoad.SettleList(settledList, Read(settledList), asideAnchors);
+        var (fromNew, fromOld, offerOnOrder) = With(Session(), () =>
+        {
+            var extra = ModManager.Mods.Union(Installed.Mods).Where(m => m.manifest?.id is { } id && !working.Any(w => w.Id == id && w.Source == m.modSource))
+                .Select(m => (m.manifest?.id ?? "", m.modSource, false));
+            List<(string, ModSource, bool)> read = [.. Read(settledList), .. extra];
+            var now = DateTime.Now;
+            return (LaunchGuard.SameLoad(Read(LaunchGuard.Written(working)), read), LaunchGuard.SameLoad(Read(LaunchGuard.Written(old)), read),
+                LaunchGuard.CrashOffer(new LaunchGuard.Setup(now, working), new LaunchGuard.Setup(now, old), read));
+        });
+        Check("the order rule, Restore's list: this version's record ranks every mod as Settle's list does, and one from before it is put in the form too, "
+            + "so a failed launch that read Settle's list gets no offer for the order alone",
+            fromNew && fromOld && offerOnOrder == null, $"new {fromNew}, old {fromOld}, offer {offerOnOrder?.Changes.Count}");
+        // SameLoad by the game's ranking: an off entry that is its mod's last, moved past another mod, loads differently;
+        // moved within its mod's run, the same.
+        List<(string, ModSource, bool)> ranked = [(a, L, true), (d, L, true), (x, L, true), (d, W, false)], within = [(a, L, true), (d, L, true), (d, W, false), (x, L, true)];
+        Check("the order rule, the crash offer's comparison as the game ranks: an off entry its mod's last, past another mod: not the same load; within its "
+            + "mod's entries: the same",
+            !LaunchGuard.SameLoad(ranked, within) && LaunchGuard.SameLoad(within, [(a, L, true), (d, W, false), (d, L, true), (x, L, true)]));
+        // The notice after a failed launch (Reached): a launch that failed before this version (its record has D's Workshop
+        // entry last) and this one with the same mods, in the form: no notice. (A8)
+        var noticeDir = Path.Combine(Path.GetTempPath(), $"SmmOrderReached-{System.Environment.ProcessId}");
+        List<LaunchGuard.Change> notice;
+        try
+        {
+            Directory.CreateDirectory(noticeDir);
+            var failed = old.Select(e => e.Id == x ? e with { Enabled = true } : e).ToList();
+            var workedThen = old.Select(e => e.Id == x ? e with { Enabled = false } : e).ToList();
+            var now = DateTime.Now;
+            notice = With(Session(), () => LaunchGuard.Reached(noticeDir, new LaunchGuard.Setup(now, working), new LaunchGuard.Setup(now.AddMinutes(-2), failed),
+                new LaunchGuard.Setup(now.AddMinutes(-5), workedThen)));
+        }
+        finally
+        {
+            if (Directory.Exists(noticeDir))
+                Directory.Delete(noticeDir, recursive: true);
+        }
+        Check("the order rule, the notice after a failed launch: one recorded before this version (a copy set aside last) and this launch with the same "
+            + "mods in the form: no notice", notice.Count == 0, string.Join(", ", notice.Select(c => $"{c.Id} {c.Kind}")));
+
+        // The cost: the rule by source over 250 entries (200 mods, 50 of them from both sources, each Workshop copy's
+        // entry last) and a pass already in the form, a pass under 1 ms on average.
+        var many = Enumerable.Range(0, 200).Select(i => Made($"SmmOrderCost{i}", $"C{i}")).Concat(Enumerable.Range(0, 50).Select(i => Made($"SmmOrderCost{i}", $"CW{i}", item: (ulong)(1000 + i))))
+            .ToList();
+        var (firstMs, againMs) = With(many, () =>
+        {
+            List<SettingsSaveMod> list = [.. many.Take(200).Select(m => E(m.manifest?.id ?? "")), .. many.Skip(200).Select(m => E(m.manifest?.id ?? "", W, false))];
+            var watch = System.Diagnostics.Stopwatch.StartNew();
+            LoadOrder.NormalizeBySource(list);
+            var first = watch.Elapsed.TotalMilliseconds;
+            watch.Restart();
+            for (var i = 0; i < 20; i++)
+                LoadOrder.NormalizeBySource(list);
+            return (first, watch.Elapsed.TotalMilliseconds / 20);
+        });
+        Check("the order rule's cost: 250 entries put in the form by source in under 1 ms, a list already in it far less", firstMs < 1 && againMs < 0.2,
+            $"{firstMs:0.000} ms, then {againMs:0.0000} ms a pass");
     }
 
     // Our data for copies at the main menu (copies_off, StoreData.CopiesOff, and the record, StoreData.Copies), as saved:
@@ -2964,8 +3712,9 @@ static partial class SelfTest
         var moved = row.Mod?.manifest?.id;
         LoadOrder.Actions(content, row, () => CategoryList.Redraw(content)).FirstOrDefault(a => a.Label == "Move to top")?.OnSelect?.Invoke();
         await Wait(menu, 0.3);
-        Check("... a drag of our row moves nothing; another mod's Move to top lands right under ours (that very row, a copy of a mod installed twice too)",
-            undragged && Rows()[pinned] == row && Ids()[pinned] == moved && Ids()[0] == ModEntry.ModId, string.Join(", ", Ids()));
+        Check("... a drag of our row moves nothing; another mod's Move to top lands right under ours (that very row, a copy of a mod installed twice too, "
+            + "with its other copy's)", undragged && Rows().Skip(pinned).TakeWhile(r => r.Mod?.manifest?.id == moved).Contains(row) && Ids()[pinned] == moved
+            && Ids()[0] == ModEntry.ModId, string.Join(", ", Ids()));
         LoadOrder.Move(self, 3, Rows());
         var afterMove = Ids()[0];
         if (Rows()[pinned + 1].Mod is { } next)
@@ -4072,8 +4821,8 @@ static partial class SelfTest
             && ModDetails.Status(a).Contains(StatusWontLoad) && ModDetails.Status(b).Contains("Enabled")
             && ModDetails.CopyLine(a, false)?.Text == Draft(CopyLoses, ("other", Named(b)), ("why", WhyHigher))
             && ModDetails.CopyLine(b, false)?.Text == Draft(LoadsAlso, ("other", Named(a)))
-            && chips[0] is { } chipA && chipA.Color == Tags.SameIdClash && chipA.Tip == Draft(ClashTip, ("others", Named(b)), ("loads", Named(b)))
-            && chips[1] is { } chipB && chipB.Color == Tags.SameIdClash && chipB.Tip == Draft(ClashTip, ("others", Named(a)), ("loads", Named(b)))
+            && chips[0] is { } chipA && chipA.Color == Tags.SameIdClash && chipA.Tip == Draft(ClashTipOne, ("others", Named(b)), ("loads", Named(b)))
+            && chips[1] is { } chipB && chipB.Color == Tags.SameIdClash && chipB.Tip == Draft(ClashTipOne, ("others", Named(a)), ("loads", Named(b)))
             && (!Layout.Wide || bannerText == Draft(SameIdText, ("count", "2")) && GroupIn(card, TwinId).SequenceEqual(TwinsGrouped()))
             && Dependencies.Find(TwinId) == b && History.Steps(History.Track.List) == steps && CopiesBroken() == null,
             $"grey before {greyOff}; {Say()}; chips {string.Join(" / ", chips.Select(c => $"{c?.Color} {c?.Tip}"))}; banner {bannerText} ({string.Join(" | ", card)}; "
@@ -4392,7 +5141,7 @@ static partial class SelfTest
                 Want(GroupIn(body.Split('\n'), TwinId).Count == 0, $"the relaunch check lists the twins as duplicates: {body}");
             if (clash)
             {
-                Want(chips[0] == Draft(ClashTip, ("others", Named(b)), ("loads", Named(loads))) && chips[1] == Draft(ClashTip, ("others", Named(a)), ("loads", Named(loads))),
+                Want(chips[0] == Draft(ClashTipOne, ("others", Named(b)), ("loads", Named(loads))) && chips[1] == Draft(ClashTipOne, ("others", Named(a)), ("loads", Named(loads))),
                     $"the chips \"{string.Join("\" / \"", chips)}\"");
                 if (Layout.Wide)
                     Want(GroupIn(card, TwinId).SequenceEqual(Grouped(TwinId, (loads, true), (other, false))),
@@ -4616,15 +5365,222 @@ static partial class SelfTest
         }
     }
 
+    // The fixture's mod from both sources in Load Order (DualId), the fixture twins beside it: its two rows together, in
+    // the saved list too; a drag of the row that's off to the top, under ours, moves both in their order, one step, and
+    // undo puts them back; Move up on the row that loads steps past the whole of the mod above (the twins, where they're
+    // there); a mod dropped between the twins' rows goes past them; the red line for the twin that doesn't load moved
+    // above what the one that loads needs, and Fix now putting the twins back after it; a tick or untick of
+    // either copy moves no row and makes no step of the order's; an entry made for a copy installed while the game runs,
+    // right after its mod's (LoadOrder.Add, as NewModTogglePatch makes it), moves no other row in Changes. All put back.
+    static async Task TestDualOrder(Node menu, NModdingScreen screen, Control content, string outDir)
+    {
+        List<NModMenuRow> Rows() => content.GetChildren().OfType<NModMenuRow>().ToList();
+        List<Mod> Order() => Rows().Select(r => r.Mod).OfType<Mod>().ToList();
+        static string Short(Mod m) => m.manifest?.id is DualId or TwinId ? Copies.CopyOf(m) : (m.manifest?.id ?? "").Replace("SmmTest", "");
+        string Said(List<Mod>? order = null) => string.Join(", ", (order ?? Order()).Select(Short));
+        static bool Side(List<Mod> order, Mod a, Mod b) => order.Contains(a) && Math.Abs(order.IndexOf(a) - order.IndexOf(b)) == 1;
+        var toggle = screen.GetNode<NButton>("SpireModManagerLoadOrderToggle");
+        var wasLoadOrder = Store.Data.LoadOrderView;
+        if (!wasLoadOrder)
+        {
+            Click(toggle);
+            await Wait(menu, 0.5);
+        }
+        var dual = Order().Where(m => m.manifest?.id == DualId).ToList();
+        var twins = Order().Where(m => m.manifest?.id == TwinId && m.modSource == ModSource.ModsDirectory).ToList();
+        if (dual.Count != 2 || dual.FirstOrDefault(Copies.Loads) is not { } loads || dual.FirstOrDefault(m => m != loads) is not { } off || twins.Count != 2
+            || twins.FirstOrDefault(Copies.Loads) is not { } twinLoads || twins.FirstOrDefault(m => m != twinLoads) is not { } twinOff
+            || Order().FirstOrDefault(m => m.manifest?.id == "SmmTestLib") is not { } lib || SaveManager.Instance.SettingsSave.ModSettings?.ModList is not { } list)
+        {
+            if (dual.Count != 2)
+                DualMissing("a mod from both sources in Load Order");
+            else if (twins.Count != 2)
+                TwinsMissing("a mod from both sources in Load Order");
+            else
+                Check("a mod from both sources in Load Order: one copy loading, Test Framework, the game's list", false, Said());
+        }
+        else
+        {
+            var pinned = Order().TakeWhile(m => m.manifest?.id == ModEntry.ModId).Count();
+            var (start, startMoves, pending) = (Order(), HistoryBar.Moves().Count, ModEntry.HasPendingChanges());
+            int Steps() => History.Steps(History.Track.Order);
+            bool Saved() => list.FindIndex(e => e.Id == DualId && e.Source == ModSource.ModsDirectory) is var l and >= 0
+                && list.FindIndex(e => e.Id == DualId && e.Source == ModSource.SteamWorkshop) is var w and >= 0 && Math.Abs(l - w) == 1;
+            async Task Drag(Mod mod, float y)
+            {
+                var row = Rows().First(r => r.Mod == mod);
+                var from = row.GetNode<Control>("SpireModManagerHandle").GetGlobalRect().GetCenter();
+                var to = new Vector2(from.X, y);
+                row.EmitSignal(Control.SignalName.GuiInput, new InputEventMouseButton { ButtonIndex = MouseButton.Left, Pressed = true, GlobalPosition = from, Position = from });
+                row.EmitSignal(Control.SignalName.GuiInput, new InputEventMouseMotion { GlobalPosition = to, Position = to });
+                await Wait(menu, 0.3);
+                row.EmitSignal(Control.SignalName.GuiInput, new InputEventMouseButton { ButtonIndex = MouseButton.Left, Pressed = false, GlobalPosition = to, Position = to });
+                await Wait(menu, 0.5);
+            }
+            // Undo back to a step count (an undo per step the moves made: a move that changed nothing made none).
+            async Task Back(int to)
+            {
+                for (var i = 0; i < 5 && Steps() > to; i++)
+                    History.Undo();
+                await Wait(menu, 0.3);
+            }
+            CategoryList.ScrollToTop(content);
+            await Wait(menu, 0.2);
+            var steps = Steps();
+            await Drag(off, Rows()[pinned].GetGlobalRect().Position.Y + 4);
+            var dragged = Order();
+            var (draggedSaved, draggedSteps) = (Saved(), Steps());
+            await Capture(screen, outDir, "11d-load-order-copies");
+            await Back(steps);
+            Check("a mod from both sources in Load Order: its rows together, in the saved list too; a drag of the row that's off to the top moves both, in "
+                + "their order, one step; undo puts them back",
+                Side(start, loads, off) && dragged.Skip(pinned).Take(2).SequenceEqual(start.Where(dual.Contains)) && draggedSaved && draggedSteps == steps + 1
+                && Order().SequenceEqual(start), $"at the start {Said(start)}; dragged {Said(dragged)} (saved together {draggedSaved}, steps {steps} -> {draggedSteps}); undone {Said()}");
+
+            // Move up past the whole of the mod above (no move above ours, pinned).
+            var first = start.IndexOf(start.First(dual.Contains));
+            if (first > pinned)
+            {
+                var above = start.Where(m => m.manifest?.id == start[first - 1].manifest?.id).ToList();
+                var expected = start.Where(m => !dual.Contains(m)).ToList();
+                expected.InsertRange(expected.IndexOf(above[0]), start.Where(dual.Contains));
+                var upFrom = Steps();
+                LoadOrder.Actions(content, Rows().First(r => r.Mod == loads), () => CategoryList.Redraw(content))
+                    .FirstOrDefault(a => a.Label == Menus.Text("SPIRE_MOD_MANAGER.MOVE_UP"))?.OnSelect?.Invoke();
+                await Wait(menu, 0.3);
+                var upped = Order();
+                await Back(upFrom);
+                Check($"... Move up steps past the whole of the mod above ({above.Count} rows), both rows with it; undo puts them back",
+                    upped.SequenceEqual(expected) && Order().SequenceEqual(start), $"up {Said(upped)}; expected {Said(expected)}; undone {Said()}");
+            }
+            else
+                Results.Add("SKIP a mod from both sources in Load Order, Move up: right under ours");
+            // Move down past the whole of the mod below, Move to top (under ours) and Move to bottom: both rows each time, in
+            // their order (review C5: only Move up had a row).
+            async Task<List<Mod>> Menu(string key)
+            {
+                var menuFrom = Steps();
+                LoadOrder.Actions(content, Rows().First(r => r.Mod == loads), () => CategoryList.Redraw(content))
+                    .FirstOrDefault(a => a.Label == Menus.Text(key))?.OnSelect?.Invoke();
+                await Wait(menu, 0.3);
+                var moved = Order();
+                await Back(menuFrom);
+                return moved;
+            }
+            List<Mod> With(int at)
+            {
+                var others = start.Where(m => !dual.Contains(m)).ToList();
+                others.InsertRange(Math.Clamp(at, 0, others.Count), start.Where(dual.Contains));
+                return others;
+            }
+            var lastDual = start.FindLastIndex(dual.Contains);
+            var rest = start.Where(m => !dual.Contains(m)).ToList();
+            var downMeant = lastDual < start.Count - 1 && start[lastDual + 1] is var next
+                ? With(rest.FindLastIndex(m => m.manifest?.id == next.manifest?.id) + 1) : start;
+            var (down, toTop, toBottom) = (await Menu("SPIRE_MOD_MANAGER.MOVE_DOWN"), await Menu("SPIRE_MOD_MANAGER.MOVE_TO_TOP"), await Menu("SPIRE_MOD_MANAGER.MOVE_TO_BOTTOM"));
+            var (topMeant, bottomMeant) = (first > pinned ? With(pinned) : start, lastDual < start.Count - 1 ? With(rest.Count) : start);
+            Check("... Move down steps past the whole of the mod below, Move to top goes under ours, Move to bottom to the end: both rows each time, in their "
+                + "order; undone", down.SequenceEqual(downMeant) && toTop.SequenceEqual(topMeant) && toBottom.SequenceEqual(bottomMeant) && Order().SequenceEqual(start),
+                $"down {Said(down)} (meant {Said(downMeant)}); top {Said(toTop)} (meant {Said(topMeant)}); bottom {Said(toBottom)} (meant {Said(bottomMeant)}); undone {Said()}");
+
+            // A drop between the twins' rows goes past them, from the last row that's a mod installed once.
+            if (Order().LastOrDefault(m => m.manifest?.id is { } id && id != DualId && id != TwinId && id != ModEntry.ModId) is { } mover
+                && Order().IndexOf(mover) > Order().IndexOf(twins[1]))
+            {
+                var (top, bottom) = Order().IndexOf(twins[0]) < Order().IndexOf(twins[1]) ? (twins[0], twins[1]) : (twins[1], twins[0]);
+                var dropFrom = Steps();
+                await Drag(mover, Rows().First(r => r.Mod == top).GetGlobalRect().End.Y - 2);
+                var dropped = Order();
+                await Back(dropFrom);
+                Check("... a mod dropped between the twins' rows goes past them (a drop never splits a mod's rows); undo puts it back",
+                    Side(dropped, top, bottom) && dropped.IndexOf(mover) is var at && (at == dropped.IndexOf(top) - 1 || at == dropped.IndexOf(bottom) + 1)
+                    && !dropped.SequenceEqual(start) && Order().SequenceEqual(start), $"dropped {Said(dropped)}; undone {Said()}");
+            }
+            else
+                Results.Add("SKIP a mod from both sources in Load Order, a drop between the twins: no mod installed once below them");
+
+            // The twin that doesn't load moved above Test Framework, which the one that loads needs: the red line (MoveBreaks
+            // goes by the block's copy that loads), both rows moved. There the one that loads can't take the id's first slot,
+            // so the other loads instead; Fix now moves the twins back after it (the move Settle's heal makes at a launch,
+            // review C4), and the chosen one loads again.
+            var breaks = !Copies.Loads(twinOff) && LoadOrder.MoveBreaks(twinOff, Order().IndexOf(lib), Rows());
+            var fixFrom = Steps();
+            LoadOrder.Move(twinOff, Order().IndexOf(lib), Rows());
+            CategoryList.Redraw(content);
+            await Wait(menu, 0.3);
+            var (misplaced, fallback) = (Order(), Copies.Loads(twinOff) && !Copies.Loads(twinLoads));
+            LoadOrder.FixOrder(Rows());
+            CategoryList.Redraw(content);
+            await Wait(menu, 0.3);
+            var (fixedOrder, fixedLoads) = (Order(), Copies.Loads(twinLoads) && !Copies.Loads(twinOff));
+            await Back(fixFrom);
+            Check("... the twin that doesn't load moved above what the one that loads needs: the red line, both rows moved, the other twin loading there; "
+                + "Fix now puts the twins back after the framework, together, and the chosen one loads; undone",
+                breaks && misplaced.IndexOf(lib) > misplaced.IndexOf(twinLoads) && Side(misplaced, twinOff, twinLoads) && fallback
+                && fixedOrder.IndexOf(lib) < fixedOrder.IndexOf(twinOff) && fixedOrder.IndexOf(lib) < fixedOrder.IndexOf(twinLoads) && Side(fixedOrder, twinOff, twinLoads)
+                && fixedLoads && Order().SequenceEqual(start),
+                $"red line {breaks}; moved {Said(misplaced)}, the other loading {fallback}; fixed {Said(fixedOrder)}, the chosen loading {fixedLoads}; undone {Said()}");
+
+            // A tick or untick of either copy (Dependencies.Write, which ends by putting the list in the order rule's form):
+            // no row moves, no step of the order's, nothing in Changes' moves; put back as at the start.
+            var (orderSteps, switched) = (Steps(), new List<string>());
+            foreach (var (mod, on) in new[] { (off, true), (loads, false), (loads, true), (off, false) })
+            {
+                Dependencies.Set([mod], on, screen);
+                await Wait(menu, 0.2);
+                var now = LoadOrder.Mods(Rows()); // the saved list's order (a switch needn't redraw the rows)
+                switched.Add($"{Short(mod)} {(on ? "on" : "off")}: " + (now.SequenceEqual(start) && Saved() && HistoryBar.Moves().Count == startMoves ? "kept" : Said(now)));
+            }
+            Check("... a tick or untick of either copy moves no row, makes no step of the order's, nothing moved for Changes",
+                switched.All(s => s.EndsWith(": kept")) && Steps() == orderSteps && Copies.Loads(loads), string.Join(" | ", switched));
+
+            // A copy installed while the game runs (made up: a Workshop copy of Test Fixes, in the game's list for a moment):
+            // its entry right after its mod's, and its row there, no other row moved for Changes.
+            if (Order().FirstOrDefault(m => m.manifest?.id == "SmmTestFixes") is { } fixes)
+            {
+                var arrived = Made("SmmTestFixes", "FixesW", ModLoadState.AddedAtRuntime, item: 9301);
+                var entry = new SettingsSaveMod(arrived) { IsEnabled = true };
+                var movesBefore = HistoryBar.Moves().Count;
+                GameMods().Add(arrived);
+                Copies.TestRecount();
+                string said;
+                bool beside;
+                try
+                {
+                    LoadOrder.Add(list, entry);
+                    var shown = LoadOrder.InOrder([.. Order(), arrived]);
+                    beside = list.IndexOf(entry) == list.FindIndex(e => e.Id == "SmmTestFixes") + 1 && shown.IndexOf(arrived) == shown.IndexOf(fixes) + 1
+                        && HistoryBar.Moves().Count == movesBefore;
+                    said = $"entry {list.IndexOf(entry)} of {list.Count}; shown {Said(shown)}; moves {movesBefore} -> {HistoryBar.Moves().Count}";
+                }
+                finally
+                {
+                    list.Remove(entry);
+                    GameMods().Remove(arrived);
+                    Copies.TestRecount();
+                }
+                Check("... a copy installed while the game runs: its entry right after its mod's, its row there, no other row moved for Changes", beside, said);
+            }
+            Check("... all put back: the order as at the start, nothing moved or pending that wasn't", Order().SequenceEqual(start)
+                && HistoryBar.Moves().Count == startMoves && ModEntry.HasPendingChanges() == pending, $"{Said()}; moves {HistoryBar.Moves().Count}, pending {ModEntry.HasPendingChanges()}");
+        }
+        if (!wasLoadOrder)
+        {
+            Click(toggle);
+            await Wait(menu, 0.5);
+        }
+    }
+
     // The fixture twins (one id and source) in Load Order: which copy takes which of their entries is part of the order as
     // undo knows it. Side by side, a drop of the second above the first saves the same list: one undo step, and no move
     // for Changes (the game reads the same list; which copy loads goes by the copies, not their places), no "was" line, nothing pending; undo and
-    // redo swap them back and again. Split by another mod, a drop of the second above the first changes the list and the
-    // copies' turn at once: undo puts both back, so the rows, Changes and pending are as before the drop, and Revert all
-    // goes back to the launch's order the same way, then one undo brings the drop back. (The copies' turn once stayed
-    // behind: the rows came back swapped, and Changes, the pending line and the main menu's dot showed moves a relaunch
-    // wouldn't make.) Run on a page just entered, so its undo steps are only these; undone to the start, back on the main
-    // list at the end.
+    // redo swap them back and again. Another mod moved to between them goes past both (a mod's rows are never split: the
+    // game ranks every copy by the id's last entry), and a drag of the second above that mod takes the first with it, in
+    // their order: undo puts the rows back, and Changes and pending as before the drag, and Revert all goes back to the
+    // launch's order, the copies' turn too, then one undo brings the drag back. (The copies' turn once stayed behind: the
+    // rows came back swapped, and Changes, the pending line and the main menu's dot showed moves a relaunch wouldn't
+    // make.) Run on a page just entered, so its undo steps are only these; undone to the start, back on the main list at
+    // the end.
     static async Task TestTwinOrder(Node menu, NModdingScreen screen, Control content)
     {
         List<NModMenuRow> Rows() => content.GetChildren().OfType<NModMenuRow>().ToList();
@@ -4687,27 +5643,27 @@ static partial class SelfTest
         Check("... undo swaps them back, redo again, undo back (the copies' turn is in the step)", undone && redone && NothingMoved(start) && Steps() == steps,
             $"undone {undone} ({undoneSaid}), redone {redone}; now {Say()}");
 
-        // Split by Test Fixes, then the second dropped above the first: the list and the copies' turn in one step.
+        // Test Fixes moved to between them: past both. Then the second dragged above Test Fixes: both, in one step.
         var rest = LoadOrder.Mods(Rows());
         rest.Remove(fixes);
         LoadOrder.Move(fixes, rest.IndexOf(second), Rows());
         CategoryList.Redraw(content);
         await Wait(menu, 0.3);
-        var split = Order();
-        var (splitMoves, splitWas, splitPending, splitSteps, splitSaid) = (Moves(), Was(), ModEntry.HasPendingChanges(), Steps(), Say());
-        LoadOrder.Move(second, Order().IndexOf(first), Rows());
+        var between = Order();
+        var (betweenMoves, betweenWas, betweenPending, betweenSteps, betweenSaid) = (Moves(), Was(), ModEntry.HasPendingChanges(), Steps(), Say());
+        LoadOrder.Move(second, Order().IndexOf(fixes), Rows());
         CategoryList.Redraw(content);
         await Wait(menu, 0.3);
         var dropped = Order();
         var droppedSaid = Say();
         History.Undo();
         await Wait(menu, 0.3);
-        Check("two copies split by another mod: a drop of the second above the first is one step; undo puts the rows back, and Changes, the \"was\" lines "
-            + "and pending as before the drop (no move a relaunch wouldn't make)",
-            split.IndexOf(fixes) == split.IndexOf(first) + 1 && split.IndexOf(second) == split.IndexOf(fixes) + 1
-            && dropped.IndexOf(second) == dropped.IndexOf(first) - 1 && Order().SequenceEqual(split) && Moves() == splitMoves && Was() == splitWas
-            && ModEntry.HasPendingChanges() == splitPending && line.Visible == splitPending && Steps() == splitSteps,
-            $"split: {splitSaid}; dropped: {droppedSaid}; undone: {Say()}");
+        Check("two copies, another mod moved to between them: it goes past both, the copies side by side still; a drag of the second above that mod takes "
+            + "the first with it, in their order, one step; undo puts the rows back, and Changes, the \"was\" lines and pending as before the drag",
+            between.IndexOf(second) == between.IndexOf(first) + 1 && between.IndexOf(fixes) == between.IndexOf(first) - 1
+            && dropped.IndexOf(second) == dropped.IndexOf(first) + 1 && dropped.IndexOf(fixes) == dropped.IndexOf(second) + 1 && Order().SequenceEqual(between)
+            && Moves() == betweenMoves && Was() == betweenWas && ModEntry.HasPendingChanges() == betweenPending && line.Visible == betweenPending
+            && Steps() == betweenSteps, $"between: {betweenSaid}; dragged: {droppedSaid}; undone: {Say()}");
         History.Redo();
         await Wait(menu, 0.3);
         var redoneDrop = Order().SequenceEqual(dropped);

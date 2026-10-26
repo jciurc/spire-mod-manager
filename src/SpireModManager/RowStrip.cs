@@ -4,25 +4,25 @@ using MegaCrit.Sts2.Core.Nodes.Screens.ModdingScreen;
 
 namespace SpireModManager;
 
-// The line along the bottom of each mod row in our views: its tags, "and 3 more.." for those that don't fit, what it
+// The line along the bottom of each mod row in our views: its tags, "and 3 more" for those that don't fit, what it
 // needs (red when a dependency is missing, off or loads after it) and its author; the row's action buttons sit on the
 // right. The row keeps its height: nothing opens out. (A mod's other keywords are in the info panel only.)
 static class RowStrip
 {
     const string StripName = "SpireModManagerStrip";
     public const string ActionsName = "SpireModManagerActions", OrderActionsName = "SpireModManagerOrderActions"; // main list, Load Order
-    public const string MoreName = "SpireModManagerMoreTags"; // "and 3 more.."
+    public const string MoreName = "SpireModManagerMoreTags"; // "and 3 more"
     static readonly StringName StripMeta = "spire_mod_manager_strip";
     static readonly StringName SaysMeta = "spire_mod_manager_says"; // on a strip or buttons: what they show and where, to know when to change them
     static readonly StringName ShowsMeta = "spire_mod_manager_shows"; // on a strip: its tags and author, to know when to remake it
-    static readonly StringName ShownMeta = "spire_mod_manager_tags_shown"; // on a strip: how many tags show (the rest are "and N more..")
+    static readonly StringName ShownMeta = "spire_mod_manager_tags_shown"; // on a strip: how many tags show (the rest are "and N more")
 
     // What Apply and Fold ask each row for, in the types Godot takes, made once: a text passed as one is converted anew
     // each time (a native call), on every row of every redraw.
     static readonly NodePath TitlePath = "Title", StripPath = StripName, ActionsPath = ActionsName, OrderActionsPath = OrderActionsName,
         EdgePath = EdgeName, NeedsPath = NeedsName, AuthorPath = AuthorName, SpacerPath = SpacerName, MorePath = MoreName;
     static readonly StringName Separation = "separation", NormalFont = "normal_font", NormalFontSize = "normal_font_size";
-    static readonly StringName Faint = "SpireModManagerFaint"; // "and 3 more.."'s look (Look)
+    static readonly StringName Faint = "SpireModManagerFaint"; // "and 3 more"'s look (Look)
     const float Height = 20;
     const float TitleGap = 4; // more room between the title and the line under it
     const float RightMargin = 84; // from the row's right edge: clear of the (smaller, moved) tickbox and the pencil
@@ -32,9 +32,9 @@ static class RowStrip
     // px, a row's category button at most (CategoryList.StripActions): about a quarter of the row, so the line under the
     // title keeps most of it for the tags, the note and the author (a long name's button took two thirds of the row)
     public const float CategoryMax = 240;
-    const int LabelSize = 13; // the author's and "and 3 more.."'s text
+    const int LabelSize = 13; // the author's and "and 3 more"'s text
     static readonly Color NoteColor = new(0.937f, 0.784f, 0.318f, 0.75f), AuthorColor = new(1, 0.964706f, 0.886275f, 0.45f);
-    const string FaintHex = "#fff6e280"; // "and 3 more..": fainter than the author
+    const string FaintHex = "#fff6e280"; // "and 3 more": fainter than the author
 
     // edge: a quiet button at the row's far right, past the tickbox (the main list's pencil), or none.
     public static void Apply(IList<NModMenuRow> rows, Func<NModMenuRow, IEnumerable<MenuItem>> actions, Func<NModMenuRow, MenuItem>? edge = null)
@@ -140,7 +140,7 @@ static class RowStrip
             row.AddChild(strip);
             Lap("added");
 
-            // Too many tags for the line: the last ones are "and N more.." (Fold). Worked out once the chips are laid
+            // Too many tags for the line: the last ones are "and N more" (Fold). Worked out once the chips are laid
             // out, and again whenever the line changes width.
             if (chips.Count > 0)
             {
@@ -158,7 +158,7 @@ static class RowStrip
     public static string Shows(IEnumerable<Tags.Chip> chips, string author) =>
         $"{string.Join("|", chips.Select(c => $"{c.Text}/{c.Color}/{c.Custom}/{c.Tip}/{c.Search}"))}|{author}";
 
-    // "and 3 more..": the tags that didn't fit on the line. Hovering it, a card with those tags (pills in their colours)
+    // "and 3 more": the tags that didn't fit on the line. Hovering it, a card with those tags (pills in their colours)
     // and the click hint; only those, so the card is what the count counts. A click goes on to the row, which it
     // selects, so the info panel shows them all.
     static Label More(IReadOnlyList<Tags.Chip> tags)
@@ -198,7 +198,7 @@ static class RowStrip
     }
 
     // The line's look, one Theme on every line (made again when the font changes with the game's language): its gap,
-    // the note's text, the author's, and "and 3 more.."'s (fainter, the Faint variation of a label).
+    // the note's text, the author's, and "and 3 more"'s (fainter, the Faint variation of a label).
     // The tags have their own (Tags.Look), which their text takes first.
     static (Font Font, Theme Theme)? _look;
 
@@ -255,7 +255,7 @@ static class RowStrip
         var part = text.Length > 0 ? Note(text) : Spacer();
         strip.AddChild(part);
         if (author != null)
-            strip.MoveChild(part, author.GetIndex()); // before the author, after the tags and "and N more.."
+            strip.MoveChild(part, author.GetIndex()); // before the author, after the tags and "and N more"
         return true;
     }
 
@@ -280,7 +280,7 @@ static class RowStrip
     }
 
     // Shows as many tags as fit beside the author and the needs (up to half the line), whole ones only; the rest are
-    // "and N more.." after them.
+    // "and N more" after them.
     static void Fold(NModMenuRow row, HBoxContainer strip, IReadOnlyList<Tags.Chip> chips)
     {
         if (!GodotObject.IsInstanceValid(row) || !GodotObject.IsInstanceValid(strip) || !strip.IsInsideTree())
@@ -396,6 +396,7 @@ static class RowStrip
             var (word, color) = issue switch
             {
                 Dependencies.Problem.Missing => (Menus.Text("SPIRE_MOD_MANAGER.DEP_MISSING"), ProblemHex),
+                Dependencies.Problem.Off when TurnedOff.Has(id) => (Menus.Text("SPIRE_MOD_MANAGER.DEP_TURNED_OFF"), ProblemHex),
                 Dependencies.Problem.Off => (Menus.Text("SPIRE_MOD_MANAGER.DEP_OFF"), ProblemHex),
                 Dependencies.Problem.LoadsBefore => (Menus.Text("SPIRE_MOD_MANAGER.DEP_AFTER"), ProblemHex),
                 _ when loadOrder && on => (Menus.Text("SPIRE_MOD_MANAGER.DEP_BEFORE"), FineHex),

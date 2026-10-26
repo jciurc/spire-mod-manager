@@ -1,0 +1,11 @@
+{
+  "id": "SmmTestDual",
+  "name": "Test Dual",
+  "author": "Spire Mod Manager tests",
+  "description": "Empty mod for dev-sandbox tests, installed from both sources: tools/dev.cs puts this copy in the dev copy's mods_STEAMTEST, which the game reads as a Steam item, and lists it off, after its other copy (tools/fixtures/mods).",
+  "version": "2.0.0",
+  "has_pck": false,
+  "has_dll": false,
+  "affects_gameplay": true,
+  "dependencies": []
+}

@@ -7,4 +7,4 @@ holds members no release has carried yet.
 
 | API version | First release |
 | --- | --- |
-| 1 | unreleased |
+| 1 | 0.2.0 |

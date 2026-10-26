@@ -158,13 +158,14 @@ static class Dependencies
             var copies = all.Where(m => m.manifest?.id == id && m.modSource == source).ToList();
             var on = copies.Where(Final).ToList();
             var wasOff = gameOff.Contains((id, source));
-            // No entry is on already (a mod installed while the game runs has none yet): one is made to turn it off. One of
-            // ours goes with ours at the top: the game sorts a mod by its id's last entry, so at the end it would load this
-            // mod last next launch, after copies it has to choose between (LoadOrder.OursFirst).
+            // No entry is on already (a mod installed while the game runs has none yet): one is made to turn it off, right
+            // after its id's entries (LoadOrder.Add: appended, it would rank a mod listed from its other source last). One
+            // of ours goes with ours at the top: the game sorts a mod by its id's last entry, so at the end it would load
+            // this mod last next launch, after copies it has to choose between (LoadOrder.OursFirst).
             if (!entries.TryGetValue((id, source), out var list) && on.Count == 0)
             {
                 var entry = new SettingsSaveMod { Id = id, Source = source };
-                settings.ModList.Add(entry);
+                LoadOrder.Add(settings.ModList, entry);
                 entries[(id, source)] = list = [entry];
                 if (id == ModEntry.ModId)
                     LoadOrder.OursFirst(settings.ModList);
@@ -211,6 +212,7 @@ static class Dependencies
                 Store.SaveViewState(); // the caller records the change, both halves in one undo step
             }
         }
+        LoadOrder.NormalizeBySource(settings.ModList); // after the first main menu, in that form already: nothing moves
         SaveManager.Instance.SaveSettings();
     }
 
@@ -274,13 +276,20 @@ static class Dependencies
         var last = new Dictionary<string, int>();
         for (var i = 0; i < saved.Count; i++)
             last[saved[i].Id] = i;
-        var on = NextRead(ModManager.Mods.Union(Installed.Mods).Where(m => m.manifest?.id is { } id && !gameOff.Contains((id, m.modSource))));
-        var beaten = on.GroupBy(m => m.manifest?.id).SelectMany(g => Copies.GameRule([.. g], Copies.GameVersion).Keys).ToHashSet();
-        var left = on.Where(m => !beaten.Contains(m)).OrderBy(m => last.TryGetValue(m.manifest?.id ?? "", out var at) ? at : int.MaxValue).ToList();
+        var left = NextSorted(gameOff).OrderBy(m => last.TryGetValue(m.manifest?.id ?? "", out var at) ? at : int.MaxValue).ToList();
         var first = new Dictionary<string, Mod>();
         foreach (var mod in Copies.InReadOrder(left))
             first.TryAdd(mod.manifest?.id ?? "", mod);
         return Fixed(left, m => Read(m).Select(id => id != null && first.TryGetValue(id, out var dep) ? dep : null).OfType<Mod>());
+    }
+
+    // The mods the next launch sorts, in the game's list order: NextOrder's before its sort (also the order rule's
+    // anchors, LoadOrder.Anchors).
+    public static List<Mod> NextSorted(HashSet<(string?, ModSource)> gameOff)
+    {
+        var on = NextRead(ModManager.Mods.Union(Installed.Mods).Where(m => m.manifest?.id is { } id && !gameOff.Contains((id, m.modSource))));
+        var beaten = on.GroupBy(m => m.manifest?.id).SelectMany(g => Copies.GameRule([.. g], Copies.GameVersion).Keys).ToHashSet();
+        return [.. on.Where(m => !beaten.Contains(m))];
     }
 
     // Of these, in their order, one Mod per manifest, as the next launch reads them: the game makes one per manifest file,

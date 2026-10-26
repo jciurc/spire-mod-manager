@@ -1,7 +1,9 @@
+using System.Reflection;
 using Godot;
 using HarmonyLib;
 using MegaCrit.Sts2.Core.Audio;
 using MegaCrit.Sts2.Core.Commands;
+using MegaCrit.Sts2.Core.Helpers;
 using MegaCrit.Sts2.Core.Logging;
 using MegaCrit.Sts2.Core.Modding;
 using MegaCrit.Sts2.Core.Localization;
@@ -14,6 +16,7 @@ using MegaCrit.Sts2.Core.Nodes.Screens.ModdingScreen;
 using MegaCrit.Sts2.Core.Nodes.Screens.ScreenContext;
 using MegaCrit.Sts2.Core.Nodes.Screens.Settings;
 using MegaCrit.Sts2.Core.Saves;
+using MegaCrit.Sts2.Core.Saves.Managers;
 
 namespace SpireModManager;
 
@@ -38,14 +41,15 @@ static class MainMenuPatch
             History.Start();
             Bmm.ForgetDismissedWarning(); // the dismissed Better Mod Menu banner, if the two changed outside our page
             WorkshopInfo.Start(); // background Steam query; does nothing without Steam
+            GameChanges.Warm(ModManager.Mods.Concat(Installed.Mods)); // the mods' packs, on a worker (the Cosmetic tag)
             Prewarm.Start(__instance); // the Modding page's text, a little each frame from a second on
 #if DEVTOOLS
             ModEntry.MarkDevRun(__instance.GetTree());
 #endif
 
             MenuButton.Add(__instance);
-            // After the game's own popups: the notice about an unreadable saved file, then the one about a last
-            // launch that stopped before the main menu.
+            // After the game's own popups: the notice about an unreadable saved file, the one about a last launch that
+            // stopped before the main menu, then the one about mods turned off after a failed start
             var menu = __instance;
             menu.GetTree().CreateTimer(1.5).Timeout += () =>
             {
@@ -53,6 +57,7 @@ static class MainMenuPatch
                     return;
                 Store.ShowNotice();
                 LaunchGuard.ShowNotice(menu);
+                TurnedOff.ShowNotice(menu);
             };
 
 #if DEVTOOLS
@@ -68,7 +73,8 @@ static class MainMenuPatch
 
 // Clears the launch record (LaunchGuard) once the main menu is reached, then settles the copies of mods installed
 // twice (SameIdLoad.Settle: the game's rebuilt list repaired, our entries first, the self-check), before our data loads
-// and the undo history starts. A prefix, so a throw in the menu's own _Ready can't skip it.
+// and the undo history starts; then marks the mods turned off after a failed start as seen at a menu, reading the
+// repaired list (TurnedOff.MenuReached). A prefix, so a throw in the menu's own _Ready can't skip it.
 [HarmonyPatch(typeof(NMainMenu), nameof(NMainMenu._Ready))]
 static class MenuReachedPatch
 {
@@ -91,7 +97,19 @@ static class MenuReachedPatch
         {
             Log.Warn($"[{ModEntry.ModId}] Could not settle the mods installed twice after launch (the saved list stays as the game wrote it): {e}");
         }
+        try
+        {
+            if (!_marked)
+                TurnedOff.MenuReached();
+            _marked = true;
+        }
+        catch (Exception e)
+        {
+            Log.Warn($"[{ModEntry.ModId}] Could not mark the mods turned off after a failed start as seen at a main menu: {e}");
+        }
     }
+
+    static bool _marked; // the first main menu of the session only: one comes back after every run
 }
 
 // The main menu's MODDED warning (and the line in a run) reads every mod's errors: the Steam branch errors of mods that
@@ -109,6 +127,103 @@ static class BranchErrorsLatePatch
         catch (Exception e)
         {
             Log.Error($"[{ModEntry.ModId}] Could not drop the Steam branch error of mods that are off before the main menu's warning: {e}");
+        }
+    }
+}
+
+// The exception that ends the game's start, as it leaves OneTimeInitialization.ExecuteEssential (the game's text, the
+// models, their ids: where mods' code runs at startup), kept for Culprits. A void finalizer: Harmony rethrows the
+// exception as it was, so its stack stays whole for the game's log and Mod Doctor. First, so it sees the exception as
+// thrown: a finalizer that returns an Exception stores it in the shared __exception, and one after it sees the
+// replacement, or null when it was swallowed. Culprits.Caught has its own try.
+[HarmonyPatch(typeof(OneTimeInitialization), nameof(OneTimeInitialization.ExecuteEssential))]
+static class StartupFailurePatch
+{
+    [HarmonyPriority(Priority.First)]
+    static void Finalizer(Exception? __exception)
+    {
+        if (__exception != null)
+            Culprits.Caught(__exception, nameof(OneTimeInitialization.ExecuteEssential));
+    }
+}
+
+// Whose patches Harmony was applying when a patch call failed, written on its exception for Culprits (Attempted). Every
+// refusal of Harmony's and every failed build passes through PatchProcessor.Patch (Harmony.Patch; a saved transpiler
+// run again there builds with the processor's new patches) or PatchClassProcessor.Patch (PatchAll, a class at a time:
+// its Prepare, TargetMethod and Cleanup too), and the class's own checks of its patch methods (one that isn't static)
+// through that processor's constructor. A void finalizer on each, first in line, reads the processor's fields (field
+// refs made at the first failure), and what the exception's frames say while they're still whole (Culprits.Attempted),
+// and never throws: Harmony rethrows the exception as it was, and a call that works only passes null. ModEntry.Init
+// applies it before our other patches, so it's in place before any other mod patches (we load first); no class
+// attribute, so its loop leaves it out.
+static class PatchingFailurePatch
+{
+    public static void Apply(Harmony harmony)
+    {
+        void Patch(MethodBase? original, string finalizer)
+        {
+            try
+            {
+                harmony.Patch(original, finalizer: new HarmonyMethod(typeof(PatchingFailurePatch), finalizer) { priority = Priority.First });
+            }
+            catch (Exception e)
+            {
+                Log.Error($"[{ModEntry.ModId}] Could not patch Harmony's {original?.DeclaringType?.Name}.{original?.Name}, so a failed start there can't say "
+                    + $"whose patch it was, and the error's frames decide: {e}");
+            }
+        }
+        Patch(AccessTools.Method(typeof(PatchProcessor), nameof(PatchProcessor.Patch)), nameof(Direct));
+        Patch(AccessTools.Method(typeof(PatchClassProcessor), nameof(PatchClassProcessor.Patch)), nameof(ByClass));
+        Patch(AccessTools.Constructor(typeof(PatchClassProcessor), [typeof(Harmony), typeof(Type)]), nameof(ByClass));
+    }
+
+    // Harmony.Patch's patch methods, by kind, and the method it patches (2.4's fields; one a later Harmony renames is
+    // left out)
+    static readonly string[] Kinds = ["prefix", "postfix", "transpiler", "finalizer", "innerprefix", "innerpostfix"];
+    static List<AccessTools.FieldRef<PatchProcessor, HarmonyMethod>>? _patches;
+    static AccessTools.FieldRef<PatchProcessor, MethodBase>? _original;
+    static AccessTools.FieldRef<PatchClassProcessor, Type>? _class;
+
+    static void Direct(PatchProcessor __instance, Exception? __exception)
+    {
+        if (__exception == null)
+            return;
+        try
+        {
+            _patches ??= [.. Kinds.Select(Field<PatchProcessor, HarmonyMethod>).OfType<AccessTools.FieldRef<PatchProcessor, HarmonyMethod>>()];
+            _original ??= Field<PatchProcessor, MethodBase>("original");
+            Culprits.Attempted(__exception, null, _patches.Select(field => field(__instance)?.method), _original is { } original ? original(__instance) : null);
+        }
+        catch (Exception)
+        {
+            // no record: the frames decide
+        }
+    }
+
+    static void ByClass(PatchClassProcessor __instance, Exception? __exception)
+    {
+        if (__exception == null)
+            return;
+        try
+        {
+            _class ??= Field<PatchClassProcessor, Type>("containerType");
+            Culprits.Attempted(__exception, _class is { } field ? field(__instance) : null, []);
+        }
+        catch (Exception)
+        {
+            // no record: the frames decide
+        }
+    }
+
+    static AccessTools.FieldRef<T, F>? Field<T, F>(string name)
+    {
+        try
+        {
+            return AccessTools.FieldRefAccess<T, F>(name);
+        }
+        catch (Exception)
+        {
+            return null;
         }
     }
 }
@@ -153,27 +268,61 @@ static class QuitRepairPatch
     }
 }
 
-// The game couldn't start (a mod failed in its startup): instead of its dialog with only Quit, ours offers the mods of
-// the last launch that worked, when this launch changed any (LaunchGuard.AskAfterCrash). Nothing to offer, or ours
-// failing: the game's own dialog. After other mods' prefixes (Mod Doctor's writes its findings first).
+// Every save of the game's settings once the first main menu has settled the mod list (SameIdLoad.ListSettled), the
+// game's own and other mods' too: the list in the order rule's form first (LoadOrder.NormalizeBySource), so a list
+// another mod or the game's own page left with a mod's entries apart keeps each mod's place next launch (the game ranks
+// a mod by its last entry). Ours are in that form already, so nothing moves for them. After a failure, left out.
+[HarmonyPatch(typeof(SettingsSaveManager), nameof(SettingsSaveManager.SaveSettings))]
+static class SaveOrderPatch
+{
+    static bool _failed;
+
+    static void Prefix(SettingsSaveManager __instance)
+    {
+        if (_failed || !SameIdLoad.ListSettled)
+            return;
+        try
+        {
+            if (__instance.Settings?.ModSettings?.ModList is { } list && LoadOrder.NormalizeBySource(list))
+                Log.Info($"[{ModEntry.ModId}] Load order: put a mod's entries back together before the game saved its settings (another mod or the game's own "
+                    + "page had them apart), so each keeps its place next launch");
+        }
+        catch (Exception e)
+        {
+            _failed = true;
+            Log.Error($"[{ModEntry.ModId}] Could not put the mod list in order before a save of the game's settings, so it's saved as it is from now on: {e}");
+        }
+    }
+}
+
+// The game couldn't start (a mod failed in its startup): instead of its dialog with only Quit, ours
+// (LaunchGuard.AskAfterCrash): Turn off and restart for the mod that stopped it, the mods of the last launch that
+// worked back, or both. Always taken over: what to offer is known only once Mod Doctor's findings and the failure
+// are in, a frame or two later. Nothing to offer, or ours failing: the game's own dialog. After other mods' prefixes (Mod
+// Doctor's writes its findings first); a mod's prefix that takes over the dialog skips this one.
 [HarmonyPatch(typeof(NGame), "GameStartupError")]
 static class StartupErrorPatch
 {
     static bool _games; // the game's own dialog from here on
+
+#if DEVTOOLS
+    // Self-test: whether the game's own dialog was given way to (from then on this prefix lets it through)
+    public static bool GaveWay => _games;
+#endif
 
     [HarmonyPriority(Priority.Low)]
     static bool Prefix(NGame __instance, ref Task __result)
     {
         try
         {
-            if (_games || LaunchGuard.CrashOffer() is not { } offer)
+            if (_games)
                 return true;
-            __result = LaunchGuard.AskAfterCrash(__instance, offer);
+            __result = LaunchGuard.AskAfterCrash(__instance);
             return false;
         }
         catch (Exception e)
         {
-            Log.Error($"[{ModEntry.ModId}] Could not look at the last working launch after the failed start: {e}");
+            Log.Error($"[{ModEntry.ModId}] Could not offer anything after the failed start, so the game's dialog shows: {e}");
             return true;
         }
     }
@@ -400,6 +549,19 @@ static class SetupCheckPatch
     static bool Check() => !_building;
 }
 
+// A screen pushed over our page (a mod's settings): its hide then is a cover, not a close (PageVisits).
+[HarmonyPatch(typeof(NSubmenuStack), nameof(NSubmenuStack.Push))]
+static class SubmenuPushPatch
+{
+    static void Prefix() => PageVisits.Pushing = true;
+
+    static Exception? Finalizer(Exception? __exception)
+    {
+        PageVisits.Pushing = false;
+        return __exception;
+    }
+}
+
 // A mod subscribed while the page is open: once the game adds its row, a redraw puts it in its category (keep: not
 // the player's change, so rows kept under the Show: choice stay).
 [HarmonyPatch(typeof(NModdingScreen), "OnNewModDetected")]
@@ -542,14 +704,15 @@ static class ShortcutsPatch
     static bool Typing() => ((SceneTree)Engine.GetMainLoop()).Root.GuiGetFocusOwner() is LineEdit { Editable: true } or TextEdit { Editable: true };
 
     static bool LetGo() => HistoryBar.Screen is { } screen && GodotObject.IsInstanceValid(screen) && screen.IsVisibleInTree()
-        && Selection.Clear(screen.GetNode<Control>("%ModsScrollContainer/Mask/Content"));
+        && PageVisits.OnTop(screen) && Selection.Clear(screen.GetNode<Control>("%ModsScrollContainer/Mask/Content"));
 
     // Ctrl+D on our page with mods picked: an open menu closes (the bulk menu edits the picks it opened with), then
     // they're let go of.
     static bool Deselect()
     {
         if (Store.Data.VanillaView || DialogOpen || Selection.Mods.Count == 0
-            || HistoryBar.Screen is not { } screen || !GodotObject.IsInstanceValid(screen) || !screen.IsVisibleInTree())
+            || HistoryBar.Screen is not { } screen || !GodotObject.IsInstanceValid(screen) || !screen.IsVisibleInTree()
+            || !PageVisits.OnTop(screen))
             return false;
         MenuPanel.Close();
         return LetGo();
@@ -561,7 +724,7 @@ static class ShortcutsPatch
         {
             if (inputEvent is not InputEventKey { Pressed: true, Echo: false, CtrlPressed: true } key
                 || HistoryBar.Screen is not { } screen || !GodotObject.IsInstanceValid(screen) || !screen.IsVisibleInTree()
-                || Store.Data.VanillaView || DialogOpen)
+                || !PageVisits.OnTop(screen) || Store.Data.VanillaView || DialogOpen)
                 return;
             // These change the picks or what they show, so an open menu (the bulk menu edits the picks it opened with)
             // closes first.
@@ -703,7 +866,7 @@ static class NewModPopupPatch
 }
 
 // Adds a saved entry for a mod installed this session before its tickbox toggles: the game only updates existing
-// entries, so unticking one did nothing.
+// entries, so unticking one did nothing. Right after its id's entries (LoadOrder.Add), where the game sorts it.
 [HarmonyPatch(typeof(NModMenuRow), "OnTickboxToggled")]
 static class NewModTogglePatch
 {
@@ -715,7 +878,7 @@ static class NewModTogglePatch
                 return;
             var settings = SaveManager.Instance.SettingsSave.ModSettings ??= new ModSettings();
             if (!settings.ModList.Any(e => e.Id == id && e.Source == mod.modSource))
-                settings.ModList.Add(new SettingsSaveMod(mod) { IsEnabled = true });
+                LoadOrder.Add(settings.ModList, new SettingsSaveMod(mod) { IsEnabled = true });
         }
         catch (Exception e)
         {

@@ -1335,6 +1335,13 @@ static partial class SelfTest
         Check("Cosmetic: the Workshop's Cosmetics and Audio categories and art or sound words; not QoL, tools or UI",
             Tags.IsCosmetic(["Cosmetics"]) && Tags.IsCosmetic(["Characters", "Audio"]) && Tags.IsCosmetic(["Sound Effects"]) && Tags.IsCosmetic(["Card Art"])
             && !Tags.IsCosmetic(["QoL", "Tools & APIs", "Utility"]) && !Tags.IsCosmetic(["UI"]) && !Tags.IsCosmetic([]) && !Tags.IsCosmetic(null));
+        // And a pack replacing the game's art or sound (Jordan, 25 Oct: a reskin whose tags didn't say so): images, sounds,
+        // videos and fonts count, scenes, scripts and data don't. The fixture mods replace none of the game's files.
+        string[] art = ["images/packed/character_select/char_select_ironclad.png", "sfx/hit.OGG", "fonts/kreon.ttf", "videos/intro.ogv"],
+            notArt = ["scenes/combat/creature.tscn", "scripts/x.gd", "localization/eng/cards.json"];
+        Check("Cosmetic from the game's files a pack replaces: art and sound (any case), not scenes, scripts or data; none for the fixture mods",
+            art.All(GameChanges.IsArt) && !notArt.Any(GameChanges.IsArt) && !Tags.For(Dependencies.Find("SmmTestLib")).Any(c => c.Text == "Cosmetic"),
+            $"art {string.Join(", ", art.Where(p => !GameChanges.IsArt(p)))}; not art {string.Join(", ", notArt.Where(GameChanges.IsArt))}");
         // Tags clicked on a row: "#Library" alone; Shift adds "#Gameplay" (both needed); "#Local" matches only the tag.
         List<string> Visible() => content.GetChildren().OfType<NModMenuRow>().Where(r => r.Visible).Select(r => r.Mod?.manifest?.id ?? "").ToList();
         void ClickChip(string modId, string tag, bool shift)
@@ -2297,11 +2304,15 @@ static partial class SelfTest
             await Wait(menu, 0.5);
         }
 
-        // Drag the first row after ours by its handle to just below the third.
+        // Drag the first row after ours by its handle to just below the third (below the whole of the third's mod where it's
+        // installed more than once: a drop never splits a mod's rows).
         var first = Rows()[pinned];
         var handle = first.GetNode<Control>("SpireModManagerHandle");
         var from = handle.GetGlobalRect().GetCenter();
-        var to = new Vector2(from.X, Rows()[pinned + 2].GetGlobalRect().End.Y - 4);
+        var third = pinned + 2;
+        while (third + 1 < Rows().Count && Rows()[third + 1].Mod?.manifest?.id is { } next && next == Rows()[third].Mod?.manifest?.id)
+            third++;
+        var to = new Vector2(from.X, Rows()[third].GetGlobalRect().End.Y - 4);
         void Send(InputEvent e) => handle.GetParent().EmitSignal(Control.SignalName.GuiInput, e);
         Send(new InputEventMouseButton { ButtonIndex = MouseButton.Left, Pressed = true, GlobalPosition = from, Position = from });
         Send(new InputEventMouseMotion { GlobalPosition = to, Position = to });
@@ -2310,7 +2321,7 @@ static partial class SelfTest
         Send(new InputEventMouseButton { ButtonIndex = MouseButton.Left, Pressed = false, GlobalPosition = to, Position = to });
         await Wait(menu, 0.5);
         var dragged = Ids();
-        Check("drag moves the row below the third", dragged.IndexOf(first.Mod?.manifest?.id ?? "") == pinned + 2 && dragged.SequenceEqual(Saved()),
+        Check("drag moves the row below the third (and its mod's other rows)", dragged.IndexOf(first.Mod?.manifest?.id ?? "") == third && dragged.SequenceEqual(Saved()),
             string.Join(", ", dragged));
 
         // A press alone already shows the drag (dimmed list, drop line); releasing without moving changes nothing.
@@ -2359,11 +2370,12 @@ static partial class SelfTest
             hiddenDrags.All(d => d.EndsWith(": 0 lines, kept")), string.Join("; ", hiddenDrags));
 
         // Multi-select: pick the first and third rows after ours, drag the first's grip below the last row; both move,
-        // in their order.
+        // in their order, each with its other copies' rows (a mod installed more than once moves as one block).
         var all = Rows();
         Selection.Pick(content, all[pinned], toggle: false, range: false);
         Selection.Pick(content, all[pinned + 2], toggle: true, range: false);
-        var pickedIds = new[] { all[pinned], all[pinned + 2] }.Select(r => r.Mod?.manifest?.id ?? "").ToList();
+        var pickedMods = new[] { all[pinned], all[pinned + 2] }.Select(r => r.Mod?.manifest?.id ?? "").ToHashSet();
+        var pickedIds = all.Select(r => r.Mod?.manifest?.id ?? "").Where(pickedMods.Contains).ToList();
         Check("Ctrl-click picks a second row, both highlighted", Selection.Mods.Count == 2
             && Rows().Count(r => r.GetNodeOrNull<Control>("SpireModManagerPicked")?.Visible == true) == 2);
         var grip = all[pinned].GetNode<Control>("SpireModManagerHandle");
@@ -2375,7 +2387,8 @@ static partial class SelfTest
         await Capture(screen, outDir, "11b-multi-drag");
         grip.GetParent().EmitSignal(Control.SignalName.GuiInput, new InputEventMouseButton { ButtonIndex = MouseButton.Left, Pressed = false, GlobalPosition = bottom });
         await Wait(menu, 0.5);
-        Check("dragging a multi-selection moves the group, in order", Ids().TakeLast(2).SequenceEqual(pickedIds), string.Join(", ", Ids()));
+        Check("dragging a multi-selection moves the group, in order (each mod with all its rows)", Ids().TakeLast(pickedIds.Count).SequenceEqual(pickedIds),
+            string.Join(", ", Ids()));
         Selection.Clear(content);
 
         // Put the original order back: nothing pending again.
@@ -3082,10 +3095,12 @@ static partial class SelfTest
         await Press("ShowChangedButton");
         var lines = HistoryBar.Describe();
         // Each line's mod: the one whose name it holds, the longest if several ("Better Mod Menu (local fix)" holds
-        // "Better Mod Menu" too). Lines naming no mod (a switched profile, profiles) name none.
+        // "Better Mod Menu" too), every one of that name (the fixture's mod from both sources: its Workshop copy, read from
+        // mods_STEAMTEST, has no item id, so both read "Test Dual (Local)"). Lines naming no mod (a switched profile,
+        // profiles) name none.
         var mods = Rows().Select(r => r.Mod).OfType<Mod>().ToList();
-        var named = lines.Select(l => mods.Where(m => m.manifest?.name is { Length: > 0 } name && l.Contains(name)).MaxBy(m => m.manifest?.name?.Length))
-            .OfType<Mod>().ToHashSet();
+        var named = lines.SelectMany(l => mods.Where(m => m.manifest?.name is { Length: > 0 } name && l.Contains(name)).GroupBy(m => m.manifest?.name?.Length ?? 0)
+            .MaxBy(g => g.Key) ?? Enumerable.Empty<Mod>()).ToHashSet();
         var changed = Where(named.Contains);
         Check("Show: Changed: the mods Changes names, counted, Changed lit", Shown().SequenceEqual(changed) && changed.Contains("SmmTestUi")
             && Scope() == $"Changed since launch ({changed.Count})" && Choices() == "All Enabled Disabled Changed*", $"{Say()}; Changes: {string.Join(" | ", lines)}");

@@ -15,6 +15,17 @@
 //                                      Menu's data to import
 //                                     --crash-prepare, then --crash: a launch that saves the last working setup,
 //                                      then one that fails to start (made up) with Test Retired on, our dialog answered
+//                                     --crash-culprit, after --crash-prepare: one that fails to start by Test Fixes'
+//                                      code (Hornet's shape); our dialog names it, and Turn off and restart is pressed
+//                                     --read-only-settings, with --crash-culprit: settings.save read-only, so the
+//                                      turn-off can't be saved and the dialog says so
+//                                     --crash-notice, after --crash-culprit: its data and mod list kept, the main
+//                                      menu's notice of Test Fixes turned off, and Turn back on pressed
+//                                     --crash-rebuild, after --crash-prepare: one that fails to start by a patch class's
+//                                      failed rebuild (Test UI's, applied by Test Framework), the last working launch
+//                                      on another game; Test UI named, as the record of the call alone says
+//                                     (each run after --crash-prepare refuses one that wasn't this worktree's, or
+//                                      whose setup another run has written over since)
 //                                     --stable, with any of them: the stable branch's game, in its own dev copy
 //   dotnet run tools/dev.cs launch    build, open the sandboxed game to try by hand (--first-run,
 //                                     --first-run-bmm and --workshop as for test); returns when you close it;
@@ -23,7 +34,8 @@
 //                                     loads; fails if our mod didn't start or logged errors
 //
 // The dev copy (sts2-dev on the game's drive, STS2_DEV_DIR; sts2-dev-stable for --stable) is hard links to the
-// installed game plus its own mods\ folder, re-linked after a Steam update of its branch. --force-steam off keeps the
+// installed game plus its own mods\ folder (and, during a run, the fixtures' Workshop copies in its mods_STEAMTEST,
+// which the game reads as Workshop items), re-linked after a Steam update of its branch. --force-steam off keeps the
 // game's data in %APPDATA%\SlayTheSpire2\default\1\, apart from real saves, and --log-file writes out\dev.log. test
 // resets the sandbox to tools/fixtures and prints out/selftest/results.txt; exit code 1 on any FAIL.
 using System.Diagnostics;
@@ -64,6 +76,12 @@ var bmmData = args.Contains("--first-run-bmm"); // its fixture data in the sandb
 var firstRun = bmmData || args.Contains("--first-run"); // no manager.json of ours
 var crashPrepare = args.Contains("--crash-prepare"); // reach the main menu only, so the last working setup is saved
 var crash = args.Contains("--crash"); // then: our data kept, Test Retired on, a made-up failed start and our dialog answered
+var crashCulprit = args.Contains("--crash-culprit"); // then: a failed start our dialog names a mod for, its turn-off pressed
+var readOnlySettings = args.Contains("--read-only-settings"); // with it: settings.save read-only for the run
+var crashNotice = args.Contains("--crash-notice"); // after --crash-culprit: the notice at the main menu, Turn back on pressed
+var crashRebuild = args.Contains("--crash-rebuild"); // then: a failed rebuild, the last working launch on another game
+var failing = crash || crashCulprit || crashRebuild; // a launch that fails to start, its dialog answered
+var keepsData = failing || crashNotice; // --crash-prepare's data kept (its last working setup)
 var workshopAt = Array.IndexOf(args, "--workshop"); // the Workshop item ids follow it, comma-separated
 var workshopItems = workshopAt < 0 ? [] : (args.ElementAtOrDefault(workshopAt + 1) ?? "")
     .Split(',', StringSplitOptions.RemoveEmptyEntries | StringSplitOptions.TrimEntries).Distinct().ToArray();
@@ -75,15 +93,18 @@ var sizeAt = Array.IndexOf(args, "--size");
 var windowSize = (X: 1920, Y: 1080);
 
 if (mode is not ("test" or "launch" or "smoke"))
-    return Fail("usage: dotnet run tools/dev.cs [test [--window [--size WxH]] [--bmm[-after]] [--bmm-local] [--real|--first-run|--first-run-bmm|--crash-prepare|--crash]|launch [--first-run|--first-run-bmm] [--keep-saves]|smoke [--bmm]] [--workshop <id>[,<id>...] [--twins]] [--stable] [--no-wait]");
+    return Fail("usage: dotnet run tools/dev.cs [test [--window [--size WxH]] [--bmm[-after]] [--bmm-local] [--real|--first-run|--first-run-bmm|--crash-prepare|--crash|--crash-culprit [--read-only-settings]|--crash-notice|--crash-rebuild]|launch [--first-run|--first-run-bmm] [--keep-saves]|smoke [--bmm]] [--workshop <id>[,<id>...] [--twins]] [--stable] [--no-wait]");
 if (real && firstRun)
     return Fail("--real brings your own data, so it can't be a first run");
-if (crashPrepare && crash)
-    return Fail("--crash-prepare and --crash are two runs, in that order: dotnet run tools/dev.cs test --crash-prepare, then test --crash");
-if ((crashPrepare || crash) && (mode != "test" || real || firstRun))
-    return Fail("--crash-prepare and --crash are test runs with the fixture mods and the data the first one leaves: not launch, smoke, --real or a first run");
-if (crashPrepare && workshopAt >= 0)
-    return Fail("--crash-prepare saves the setup that works, the fixture mods alone: --workshop goes with --crash, for mods that fail the start");
+if (new[] { crashPrepare, crash, crashCulprit, crashNotice, crashRebuild }.Count(on => on) > 1)
+    return Fail("--crash-prepare, --crash, --crash-culprit, --crash-notice and --crash-rebuild are runs of their own, each after --crash-prepare "
+        + "(--crash-notice after --crash-culprit): dotnet run tools/dev.cs test --crash-prepare, then test --crash-culprit, then test --crash-notice");
+if ((crashPrepare || keepsData) && (mode != "test" || real || firstRun))
+    return Fail("--crash-prepare and the runs after it are test runs with the fixture mods and the data the first one leaves: not launch, smoke, --real or a first run");
+if (workshopAt >= 0 && (crashPrepare || crashCulprit || crashNotice || crashRebuild))
+    return Fail("--crash-prepare saves the setup that works, the fixture mods alone, and the culprit runs fail by the fixtures' own code: --workshop goes with --crash, for mods that fail the start");
+if (readOnlySettings && !crashCulprit)
+    return Fail("--read-only-settings goes with --crash-culprit: dotnet run tools/dev.cs test --crash-culprit --read-only-settings, after test --crash-prepare");
 // --workshop: every item has to be there, or the run would test without it and look like a pass. So it takes
 // one list: a second --workshop, --workshop=..., or ids after a space would be dropped without a word.
 if (args.Count(a => a.StartsWith("--workshop")) != (workshopAt < 0 ? 0 : 1))
@@ -92,7 +113,8 @@ if (args.Count(a => a.StartsWith("--workshop")) != (workshopAt < 0 ? 0 : 1))
 // plain suite, and its pass would read as that option's.
 string[] known = ["--bmm", "--bmm-after", "--bmm-local", "--workshop", "--twins", "--stable", "--no-wait", .. mode switch
 {
-    "test" => new[] { "--window", "--size", "--real", "--first-run", "--first-run-bmm", "--crash-prepare", "--crash" },
+    "test" => new[] { "--window", "--size", "--real", "--first-run", "--first-run-bmm", "--crash-prepare", "--crash", "--crash-culprit", "--read-only-settings",
+        "--crash-notice", "--crash-rebuild" },
     "launch" => ["--first-run", "--first-run-bmm", "--keep-saves"],
     _ => [],
 }];
@@ -171,26 +193,32 @@ if (held != null)
 // build and link). A second guard after the lock, for a dev copy started by hand.
 if (WaitForOtherDevCopies() is { } busy)
     return Fail(busy);
+// The runs after --crash-prepare go on the data it left, and another run can slip in between (the lock is a run's, and
+// every dev runner shares the sandbox): another worktree's --crash-prepare, or a run whose main menu wrote its own last
+// working setup, mod list or turned-off record. So --crash-prepare leaves a token beside it (this worktree, its commit,
+// the game, the stage, and the write times of last-working.json, settings.save and turned-off.json); --crash-culprit
+// stamps it again for --crash-notice alone, and every other crash run takes it away. Each refuses a token that isn't
+// this worktree's at this commit, of the stage it follows, or that the files moved on from: checked here, before the
+// build and before anything writes the sandbox (round 5's review: a refused run had already rewritten the mod list).
+var dataDir = Path.Combine(sandbox, "mod_data", ModId);
+var turnedOff = Path.Combine(dataDir, "turned-off.json"); // our record of the mods a failed start's dialog turned off
+var settingsSave = Path.Combine(sandbox, "settings.save");
+var lastWorkingPath = Path.Combine(dataDir, "last-working.json");
+var tokenPath = Path.Combine(dataDir, "dev-crash-prepare.json");
+if (keepsData && !File.Exists(lastWorkingPath))
+    return Fail("no last working setup in the sandbox: run dotnet run tools/dev.cs test --crash-prepare first");
+if (keepsData && NotOurPrepare(crashNotice ? "culprit" : "prepared") is { } notOurs)
+    return Fail($"the sandbox's data isn't what this worktree's {(crashNotice ? "--crash-culprit" : "--crash-prepare")} left: {notOurs}. Run dotnet run tools/dev.cs "
+        + $"test --crash-prepare{(stable ? " --stable" : "")}{(crashNotice ? ", then test --crash-culprit," : "")} right before this run");
+if (crashNotice && !File.Exists(turnedOff))
+    return Fail("no mod turned off in the sandbox: run dotnet run tools/dev.cs test --crash-culprit first (after test --crash-prepare)");
 // Mod Doctor's runs put a fixture mod (MdTestCopy) in a dev copy's mods_STEAMTEST, which the game reads as Workshop items,
-// and take it out again after every run; one killed outright can leave it behind, a second copy our runs don't expect.
-// Only that fixture goes, and only while we hold the lock (no other run is using the dev copy).
+// and take it out again after every run, as ours do with theirs (SmmTestDual's Workshop copy, tools/fixtures/mods_STEAMTEST);
+// one killed outright can leave it behind, a copy the next run doesn't expect. Only those fixtures go, and only while we
+// hold the lock (no other run is using the dev copy).
 var steamTest = Path.Combine(DevDir, "mods_STEAMTEST");
-if (Directory.Exists(steamTest))
-    foreach (var leftover in Directory.EnumerateFileSystemEntries(steamTest, "MdTestCopy*"))
-    {
-        try
-        {
-            if (Directory.Exists(leftover))
-                Directory.Delete(leftover, recursive: true);
-            else
-                File.Delete(leftover);
-            Console.WriteLine($"removed Mod Doctor's leftover fixture {leftover}");
-        }
-        catch (Exception e) when (e is IOException or UnauthorizedAccessException)
-        {
-            Console.WriteLine($"(couldn't remove Mod Doctor's leftover fixture {leftover}: {e.Message})");
-        }
-    }
+var steamTestFixtures = Path.Combine(root, "tools", "fixtures", "mods_STEAMTEST");
+RemoveSteamTest(["MdTestCopy*", .. Directory.Exists(steamTestFixtures) ? Directory.GetDirectories(steamTestFixtures).Select(Path.GetFileName).OfType<string>() : []], "leftover ");
 
 if (smoke)
 {
@@ -214,7 +242,17 @@ if (LinkDevCopy() is { } noCopy)
 if (WaitForOtherDevCopies() is { } stillBusy)
     return Fail(stillBusy);
 SyncMods();
-PrepareSandbox((mode is "test" or "smoke" || firstRun) && !crash); // --crash keeps --crash-prepare's last working setup
+PrepareSandbox((mode is "test" or "smoke" || firstRun) && !keepsData); // the runs after --crash-prepare keep its last working setup
+if (failing && File.Exists(turnedOff))
+    File.Delete(turnedOff); // an earlier --crash-culprit's: this failed start would find its mod turned off already
+if (crashRebuild && JsonNode.Parse(File.ReadAllText(Path.Combine(dataDir, "last-working.json"))) is JsonObject lastWorking)
+{
+    // The last working launch on another game: a failed rebuild has nothing else to go on, so the patching mod is offered
+    lastWorking["game"] = "0.0.0 (dev.cs --crash-rebuild)";
+    File.WriteAllText(Path.Combine(dataDir, "last-working.json"), lastWorking.ToJsonString(new() { WriteIndented = true }));
+}
+if (readOnlySettings)
+    File.SetAttributes(settingsSave, File.GetAttributes(settingsSave) | FileAttributes.ReadOnly);
 // Saves start empty every run (the guidelines' sts2-mods add-on): progress, runs and history in the sandbox, so no other
 // mod's ids and no half-played run are left from an earlier run, in any repo. launch --keep-saves keeps them, to try
 // something across launches by hand. Nothing is backed up: only dev runs write there.
@@ -258,6 +296,7 @@ if (mode == "launch")
             said = true;
         }
     }
+    RemoveOurSteamTest();
     return 0;
 }
 
@@ -288,6 +327,7 @@ if (smoke)
         released.Kill();
         released.WaitForExit();
     }
+    RemoveOurSteamTest();
     var lines = LogLines();
     // Ours: a warning or error tagged [SpireModManager], an [ERROR] naming our id or name (not the fixture mods',
     // whose author is "Spire Mod Manager tests"), and a Godot "ERROR:" naming our code, on its own line or in the
@@ -331,6 +371,36 @@ if (smoke)
     static string Result(string name, bool ok, string detail = "") => $"{(ok ? "PASS" : "FAIL")} {name}{(ok || detail.Length == 0 ? "" : $": {detail}")}";
 }
 
+// The fixtures in the dev copy's mods_STEAMTEST whose names match these, gone (from the run before, or ours after the
+// game exits: the copy is shared with other mods' dev runs, which don't expect them).
+void RemoveSteamTest(IEnumerable<string> patterns, string what = "")
+{
+    if (!Directory.Exists(steamTest))
+        return;
+    foreach (var leftover in patterns.SelectMany(pattern => Directory.EnumerateFileSystemEntries(steamTest, pattern)).Distinct().ToList())
+    {
+        try
+        {
+            if (Directory.Exists(leftover))
+                Directory.Delete(leftover, recursive: true);
+            else
+                File.Delete(leftover);
+            Console.WriteLine($"removed the {what}fixture {leftover}");
+        }
+        catch (Exception e) when (e is IOException or UnauthorizedAccessException)
+        {
+            Console.WriteLine($"(couldn't remove the {what}fixture {leftover}: {e.Message})");
+        }
+    }
+}
+
+// Ours, after the game has exited.
+void RemoveOurSteamTest()
+{
+    if (!real && Directory.Exists(steamTestFixtures))
+        RemoveSteamTest(Directory.GetDirectories(steamTestFixtures).Select(Path.GetFileName).OfType<string>());
+}
+
 // When the checked-out commit was made (UTC), or null without git.
 DateTime? CommitTime()
 {
@@ -345,6 +415,67 @@ DateTime? CommitTime()
     {
         return null;
     }
+}
+
+// The checked-out commit, short, or null without git.
+string? Commit()
+{
+    try
+    {
+        var git = Process.Start(new ProcessStartInfo("git", ["-C", root, "rev-parse", "--short", "HEAD"]) { RedirectStandardOutput = true });
+        var commit = git?.StandardOutput.ReadToEnd().Trim();
+        git?.WaitForExit();
+        return commit is { Length: > 0 } ? commit : null;
+    }
+    catch (System.ComponentModel.Win32Exception)
+    {
+        return null;
+    }
+}
+
+string GameName() => stable ? "stable" : "beta";
+
+string Written(string file) => File.GetLastWriteTimeUtc(file).ToString("o");
+
+// A file's write time for the token ("none" for no file: turned-off.json before --crash-culprit).
+string WrittenOr(string file) => File.Exists(file) ? Written(file) : "none";
+
+// The token of this worktree's --crash-prepare (stage "prepared") or of its --crash-culprit after it ("culprit"), beside
+// the data they left.
+void StampPrepare(string stage) => File.WriteAllText(tokenPath, new JsonObject
+{
+    ["worktree"] = root, ["commit"] = Commit(), ["game"] = GameName(), ["stage"] = stage, ["time"] = DateTime.Now.ToString("o"),
+    ["lastWorking"] = Written(lastWorkingPath), ["settings"] = WrittenOr(settingsSave), ["turnedOff"] = WrittenOr(turnedOff),
+}.ToJsonString(new() { WriteIndented = true }));
+
+// Why the sandbox's data isn't what this worktree's run of that stage left, by its token; null when it is.
+string? NotOurPrepare(string stage)
+{
+    JsonObject? token;
+    try
+    {
+        token = File.Exists(tokenPath) ? JsonNode.Parse(File.ReadAllText(tokenPath)) as JsonObject : null;
+    }
+    catch (Exception e) when (e is IOException or System.Text.Json.JsonException)
+    {
+        token = null;
+    }
+    if (token == null)
+        return "there's no token of a --crash-prepare run beside it";
+    var (worktree, commit, game, time) = ((string?)token["worktree"] ?? "", (string?)token["commit"] ?? "an unknown commit", (string?)token["game"], (string?)token["time"]);
+    if (worktree.Length == 0 || !string.Equals(FullDir(worktree), FullDir(root), StringComparison.OrdinalIgnoreCase))
+        return $"its --crash-prepare ran in {worktree} at {commit} ({time})";
+    if (commit != Commit())
+        return $"its --crash-prepare ran at {commit}, not at this run's {Commit()} ({time})";
+    if (game != GameName())
+        return $"its --crash-prepare ran on the {game} game ({time})";
+    if ((string?)token["stage"] is var was && was != stage)
+        return $"it's {(was == "culprit" ? "a --crash-culprit run's" : was == "prepared" ? "a --crash-prepare run's" : "of no stage")}, and this run follows "
+            + $"{(stage == "culprit" ? "--crash-culprit" : "--crash-prepare")} ({time})";
+    foreach (var (key, file) in new[] { ("lastWorking", lastWorkingPath), ("settings", settingsSave), ("turnedOff", turnedOff) })
+        if ((string?)token[key] != WrittenOr(file))
+            return $"another run wrote {Path.GetFileName(file)} after this worktree's last crash run ({time})";
+    return null;
 }
 
 // The dev log so far, read while the game may still be writing it.
@@ -366,9 +497,10 @@ Directory.CreateDirectory(outDir);
 start.Environment["SPIRE_MOD_MANAGER_SELFTEST"] = outDir;
 if (real)
     start.Environment["SPIRE_MOD_MANAGER_SELFTEST_MODE"] = "real";
-else if (crashPrepare || crash)
+else if (crashPrepare || keepsData)
     // --crash with --workshop: the start fails by those mods (crash-real), not by our made-up throw.
-    start.Environment["SPIRE_MOD_MANAGER_SELFTEST_MODE"] = !crash ? "crash-prepare" : workshopMods.Count > 0 ? "crash-real" : "crash";
+    start.Environment["SPIRE_MOD_MANAGER_SELFTEST_MODE"] = crashPrepare ? "crash-prepare" : crashNotice ? "crash-notice" : crashRebuild ? "crash-rebuild"
+        : crashCulprit ? (readOnlySettings ? "crash-culprit-read-only" : "crash-culprit") : workshopMods.Count > 0 ? "crash-real" : "crash";
 else if (firstRun)
     start.Environment["SPIRE_MOD_MANAGER_SELFTEST_MODE"] = bmmData ? "first-run-bmm" : "first-run";
 // The game echoes its whole log to stdout; we read the log file instead.
@@ -393,6 +525,7 @@ while (!game.WaitForExit(100) && DateTime.Now < deadline)
     if (previousForeground != IntPtr.Zero)
         SetForegroundWindow(previousForeground);
 }
+var killed = false;
 if (!game.HasExited)
 {
     // Where it got to: the newest of the self-test's files (a suite that's only slow ends late, one that's stuck early).
@@ -400,12 +533,28 @@ if (!game.HasExited)
     Console.WriteLine($"game still running after {TimeoutSeconds}s, killing it" + (last == null ? "" : $" (last written: {last.Name}, {(DateTime.UtcNow - last.LastWriteTimeUtc).TotalSeconds:0} s before)"));
     game.Kill();
     game.WaitForExit();
+    killed = true;
 }
+RemoveOurSteamTest();
 
+if (readOnlySettings)
+    File.SetAttributes(settingsSave, File.GetAttributes(settingsSave) & ~FileAttributes.ReadOnly); // as it was before the run
 var results = Path.Combine(outDir, "results.txt");
+// The token: stamped by --crash-prepare and --crash-culprit only when the game ended on its own with every check passed,
+// for the stage after it; any other crash run, and a killed or failed one, takes it away, so nothing runs on its data.
+if (crashPrepare || keepsData)
+{
+    var lines = File.Exists(results) ? File.ReadAllLines(results) : [];
+    var passed = !killed && lines.Any(l => l.StartsWith("PASS")) && !lines.Any(l => l.StartsWith("FAIL"));
+    if (passed && File.Exists(lastWorkingPath) && (crashPrepare || crashCulprit))
+        StampPrepare(crashPrepare ? "prepared" : "culprit");
+    else if (File.Exists(tokenPath))
+        File.Delete(tokenPath);
+}
 // --crash: the relaunch after Restore reads the mod list from settings.save, and the self-test saw it only in memory.
-// So here, with the game gone: Test Retired (on for this launch) off again on disk.
-if (crash && File.Exists(results))
+// So here, with the game gone: Test Retired (on for this launch) off again on disk. With --workshop, only when the
+// dialog offered Restore (the self-test says which it pressed).
+if (crash && File.Exists(results) && (workshopMods.Count == 0 || File.ReadAllText(results).Contains("our dialog offered \"Restore and restart\"")))
 {
     string line;
     try
@@ -418,6 +567,33 @@ if (crash && File.Exists(results))
     catch (Exception e)
     {
         line = $"FAIL a failed start: settings.save couldn't be read after the run: {e.Message}";
+    }
+    File.AppendAllLines(results, [line]);
+}
+// The culprit runs: what the next launch reads, with the game gone. The culprit's switches in settings.save and its
+// entry in our record (Test Fixes; Test UI for --crash-rebuild): off and recorded after a turn-off (--crash-culprit,
+// --crash-rebuild), as they were where the save couldn't be written (--read-only-settings, and the file writable
+// again), on and its entry gone after Turn back on (--crash-notice).
+if ((crashCulprit || crashRebuild || crashNotice) && File.Exists(results))
+{
+    string line;
+    var (culpritId, culpritName) = crashRebuild ? ("SmmTestUi", "Test UI") : ("SmmTestFixes", "Test Fixes");
+    try
+    {
+        var fixes = JsonNode.Parse(File.ReadAllText(settingsSave))?["mod_settings"]?["mod_list"]?.AsArray()
+            .Where(entry => (string?)entry?["id"] == culpritId).Select(entry => (bool?)entry?["is_enabled"] ?? true).ToList() ?? [];
+        var record = File.Exists(turnedOff) ? JsonNode.Parse(File.ReadAllText(turnedOff))?["mods"]?.AsArray()
+            .FirstOrDefault(entry => (string?)entry?["id"] == culpritId) : null;
+        var why = (string?)record?["why"];
+        var (ok, said) = crashNotice ? (fixes.Count > 0 && fixes.All(on => on) && record == null, "on again and its entry gone, after Turn back on")
+            : readOnlySettings ? (fixes.All(on => on) && record == null && !File.GetAttributes(settingsSave).HasFlag(FileAttributes.ReadOnly),
+                "as it was, nothing recorded, the file writable again, after a turn-off that couldn't be saved")
+            : (fixes.Count > 0 && fixes.All(on => !on) && why == (crashRebuild ? "RebuildLast" : "Code"), $"off and recorded ({(crashRebuild ? "RebuildLast" : "Code")}), after its turn-off");
+        line = $"{(ok ? "PASS" : "FAIL")} a failed start, on disk with the game gone: {culpritName} {said} (is_enabled {string.Join(",", fixes)}, recorded {why ?? "no"})";
+    }
+    catch (Exception e)
+    {
+        line = $"FAIL a failed start: settings.save or our record couldn't be read after the run: {e.Message}";
     }
     File.AppendAllLines(results, [line]);
 }
@@ -565,6 +741,14 @@ void SyncMods()
             Directory.CreateDirectory(Path.GetDirectoryName(target) ?? mods);
             File.Copy(file, target);
         }
+        // And the Workshop copies of fixture mods (SmmTestDual's), in the dev copy's mods_STEAMTEST, which the game reads
+        // as Workshop items, so every run has a mod installed from both sources. Taken out after the game exits.
+        foreach (var file in Directory.Exists(steamTestFixtures) ? Directory.EnumerateFiles(steamTestFixtures, "*", SearchOption.AllDirectories) : [])
+        {
+            var target = Path.Combine(steamTest, Path.GetRelativePath(steamTestFixtures, file));
+            Directory.CreateDirectory(Path.GetDirectoryName(target) ?? steamTest);
+            File.Copy(file, target, overwrite: true);
+        }
     }
     // --workshop: the given items, copied rather than linked, so nothing a mod writes over its own files
     // reaches Steam's copy. The folder above is emptied every run, so they're gone from a run without them.
@@ -610,6 +794,8 @@ void PrepareSandbox(bool resetData)
 {
     Directory.CreateDirectory(sandbox);
     var settingsPath = Path.Combine(sandbox, "settings.save");
+    if (File.Exists(settingsPath)) // writable again where a --read-only-settings run stopped before it could do it
+        File.SetAttributes(settingsPath, File.GetAttributes(settingsPath) & ~FileAttributes.ReadOnly);
     var settings = File.Exists(settingsPath) ? JsonNode.Parse(File.ReadAllText(settingsPath))?.AsObject() ?? [] : [];
     var mods = settings["mod_settings"] as JsonObject ?? [];
     mods["mods_enabled"] = true;
@@ -633,6 +819,12 @@ void PrepareSandbox(bool resetData)
     if (!real)
         foreach (var id in new[] { "SmmTestLib", "SmmTestTwin" })
             list.Add((JsonNode)new JsonObject { ["id"] = id, ["is_enabled"] = true, ["source"] = "mods_directory" });
+    // The fixture's mod from both sources (SmmTestDual): its local copy on, its Workshop copy (mods_STEAMTEST) off, listed
+    // side by side, so the game takes the Workshop copy out and its rebuild lists it after all the rest; the main menu
+    // keeps them together (the order rule), as the self-test checks.
+    if (!real)
+        foreach (var (from, on) in new[] { ("mods_directory", true), ("steam_workshop", false) })
+            list.Add((JsonNode)new JsonObject { ["id"] = "SmmTestDual", ["is_enabled"] = on, ["source"] = from });
     // --workshop: the items' mods on, after ours, in the order given (--twins: an entry per copy). An entry above for the
     // same id (Better Mod Menu's, when its Workshop item is given) gives way.
     foreach (var id in workshopMods)
@@ -645,7 +837,8 @@ void PrepareSandbox(bool resetData)
     if (real)
         foreach (var id in ManifestIds(Path.Combine(DevDir, "mods")).Where(id => id is not (ModId or "BetterModMenu" or "BetterModMenuFork") && !workshopMods.Contains(id)))
             list.Add((JsonNode)new JsonObject { ["id"] = id, ["is_enabled"] = false, ["source"] = "mods_directory" });
-    mods["mod_list"] = list;
+    if (!crashNotice) // the list --crash-culprit's turn-off saved, Test Fixes off in it
+        mods["mod_list"] = list;
     settings["mod_settings"] = mods;
     settings["seen_ea_disclaimer"] = true; // the one-time Early Access popup would cover every screenshot
     settings["volume_master"] = 0.0;      // silent, so dev runs don't play over your own game

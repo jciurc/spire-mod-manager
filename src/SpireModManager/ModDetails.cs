@@ -1,5 +1,7 @@
 using Godot;
+using MegaCrit.Sts2.Core.Helpers;
 using MegaCrit.Sts2.Core.Modding;
+using MegaCrit.Sts2.Core.Nodes.GodotExtensions;
 using MegaCrit.Sts2.Core.Platform;
 using MegaCrit.Sts2.Core.Nodes.Screens.ModdingScreen;
 using MegaCrit.Sts2.addons.mega_text;
@@ -123,6 +125,41 @@ static class ModDetails
         var folder = container.GetNodeOrNull<Control>("OpenFolderButton") ?? AddButton(container, "OpenFolderButton",
             "SPIRE_MOD_MANAGER.OPEN_FOLDER", 20, () => OS.ShellOpen(Meta(container, FolderMeta)));
         folder.Visible = Directory.Exists(mod.path);
+        PlaceSettings(container, mod);
+    }
+
+    // The Settings button (SettingsLink, Jordan 24 Oct): right of Open Folder, or in its place when that one is hidden.
+    // Opens the page a library keeps for the mod. Greyed with a tip that says why for a mod with none (Jordan, 24 Oct: the
+    // button always shows), and after a press that didn't open its page.
+    public const string SettingsName = "SpireModManagerSettingsButton";
+    static readonly Dictionary<ulong, Mod> SettingsMods = []; // the mod each panel's button opens
+
+    public static void PlaceSettings(NModInfoContainer container, Mod mod)
+    {
+        var button = container.GetNodeOrNull<Control>(SettingsName);
+        var target = SettingsLink.For(mod);
+        var panel = container.GetInstanceId();
+        SettingsMods[panel] = mod;
+        button ??= AddButton(container, SettingsName, "SPIRE_MOD_MANAGER.SETTINGS", 20, () =>
+        {
+            if (SettingsMods.TryGetValue(panel, out var shown))
+                SettingsLink.Open(container, shown);
+        });
+        var x = container.GetNodeOrNull<Control>("OpenFolderButton") is { Visible: true } ? 212 : 20;
+        (button.OffsetLeft, button.OffsetRight) = (x, x + 180);
+        button.Visible = true;
+        var failed = SettingsLink.FailedFor(mod);
+        var enabled = target != null && !failed;
+        if (button is NClickableControl clickable)
+        {
+            clickable.SetEnabled(enabled);
+            clickable.Modulate = enabled ? Colors.White : StsColors.gray; // greyed as the game's own disabled buttons
+        }
+        else if (button is BaseButton plain)
+            plain.Disabled = !enabled;
+        Hover.Tip(button, target == null ? Menus.Text("SPIRE_MOD_MANAGER.NO_SETTINGS_TIP")
+            : failed ? Menus.Text("SPIRE_MOD_MANAGER.SETTINGS_FAILED_TIP")
+            : Menus.Format("SPIRE_MOD_MANAGER.SETTINGS_TIP", ("library", target.Library.ToString())));
     }
 
     // The name and its version (smaller, grey) on one line: a long name shrinks to TitleMinSize, then is cut with ".."
@@ -250,7 +287,7 @@ static class ModDetails
         text.Size.X - text.GetThemeStylebox("normal").GetMinimumSize().X - text.GetVScrollBar().GetCombinedMinimumSize().X - 2;
 
     // Anything wrong, the mod's description (own: as the panel shows it, null for none), more facts (size, published,
-    // subscribers, Workshop tags, modified content: its row as given, other keywords), then dependencies.
+    // subscribers, modified content: its row as given, Workshop tags, other keywords), then dependencies.
     static string Describe(Mod mod, string modified, string? own)
     {
         var text = new System.Text.StringBuilder();
@@ -276,11 +313,12 @@ static class ModDetails
             Fact("SPIRE_MOD_MANAGER.PUBLISHED", Date(workshop.Created));
         if (workshop?.Subscribers is { } subscribers)
             Fact("SPIRE_MOD_MANAGER.SUBSCRIBERS", Menus.Number(subscribers));
+        // What it changes in the game itself, right under them, for every mod; then the Workshop tags (Jordan, 25 Oct: "swap
+        // workshop tags and modified content positions"), then Other keywords (Jordan, 23 Oct: "swap other keywords and
+        // modified content positions"), with no gap between them.
+        text.Append(modified).Append('\n');
         if (workshop?.Tags.Count > 0)
             Fact("SPIRE_MOD_MANAGER.WORKSHOP_TAGS", string.Join(", ", workshop.Tags.Select(t => $"[url=wtag:{t}]{Escape(t)}[/url]"))); // click: search for it
-        // What it changes in the game itself, right under them, for every mod; then Other keywords (Jordan, 23 Oct: "swap
-        // other keywords and modified content positions"), with no gap between them.
-        text.Append(modified).Append('\n');
         // The hidden tags that find it (Jordan: "so that way they're at least visible"), a fact like the others, links as
         // the Workshop tags are; bare names (Jordan: no "#"), though a click searches #name.
         var keywords = HiddenTags.Of(mod);
@@ -706,14 +744,16 @@ static class ModDetails
 
     static readonly Regex PairedTag = new(@"\[([a-z_]+)(?:[ =][^\]]*)?\](.*?)\[/\1\]", RegexOptions.Singleline);
 
-    // An enabled mod's missing or disabled dependencies, a line for each kind ("Requires mods to be installed: A, B").
+    // An enabled mod's missing or disabled dependencies, a line for each kind ("Requires mods to be installed: A, B"); one
+    // turned off after a failed start says so (the relaunch check's lines too)
     public static List<string> DependencyProblems(Mod mod)
     {
         if (!Copies.Loads(mod))
             return [];
         var needs = Dependencies.Of(mod).Distinct().Select(id => (Id: id, Mod: Dependencies.Find(id))).ToList();
         var missing = needs.Where(d => d.Mod == null).Select(d => d.Id).ToList();
-        var off = needs.Where(d => d.Mod is { } found && !Copies.Loads(found)).Select(d => d.Mod?.manifest?.name ?? d.Id).ToList();
+        var off = needs.Where(d => d.Mod is { } found && !Copies.Loads(found))
+            .Select(d => (d.Mod?.manifest?.name ?? d.Id) + (TurnedOff.Has(d.Id) ? " " + Menus.Text("SPIRE_MOD_MANAGER.DEP_TURNED_OFF") : "")).ToList();
         var lines = new List<string>();
         if (missing.Count > 0)
             lines.Add(Menus.Format(missing.Count == 1 ? "SPIRE_MOD_MANAGER.PROBLEM_DEP_MISSING_ONE" : "SPIRE_MOD_MANAGER.PROBLEM_DEP_MISSING",
@@ -795,7 +835,7 @@ static class ModDetails
     public static void HideButtons(Node container)
     {
         CommitEdits(container);
-        foreach (var name in new[] { "OpenFolderButton", SourceName, HeadName, FieldsName, OthersName })
+        foreach (var name in new[] { "OpenFolderButton", SettingsName, SourceName, HeadName, FieldsName, OthersName })
             if (container.GetNodeOrNull<Control>(name) is { } control)
                 control.Visible = false;
     }
@@ -803,8 +843,8 @@ static class ModDetails
     // After an undo or revert: the fields show the old state, so they must not be saved over the restored one.
     public static void Forget(Node container) => container.SetMeta(ModIdMeta, "");
 
-    // Saves whatever is being typed in the panel's fields (before it shows another mod).
-    static void CommitEdits(Node container)
+    // Saves whatever is being typed in the panel's fields (before it shows another mod, or another screen covers it).
+    public static void CommitEdits(Node container)
     {
         foreach (var field in Fields.GetValueOrDefault(container.GetInstanceId(), []))
             field.Commit();
