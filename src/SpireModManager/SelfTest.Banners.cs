@@ -307,6 +307,50 @@ static partial class SelfTest
         Check("... put back: the order as before the move, no move since launch", LoadOrder.Mods(Rows()).SequenceEqual(orderWas) && !LoadOrder.OrderChanged,
             string.Join(", ", HistoryBar.Moves().Select(m => $"{m.Mod.manifest?.id} {m.Before}→{m.After}")));
 
+        // An enabled mod the game failed to load (Test Fixes, needing nothing, marked failed for the row): the banner says
+        // so, its own part (Jordan, 25 Oct: "we have no error banner when an enabled mod fails loading"); its Show finds it
+        // (#failed), and its Go to stops at it.
+        if (Row("SmmTestFixes") is { Mod: { } failing } && Copies.Ticked(failing))
+        {
+            var stateWas = failing.state;
+            failing.state = ModLoadState.Failed;
+            try
+            {
+                CategoryList.Redraw(content);
+                await Wait(menu, 0.3);
+                var failedText = (screen.FindChild("OrderProblems", true, false) as Label)?.Text ?? "";
+                screen.FindChild(LoadOrder.WarningName, true, false)?.FindChild("FilterProblemButton", true, false)?.EmitSignal(BaseButton.SignalName.Pressed);
+                await Wait(menu, 0.3);
+                var (failedSearch, fixesShown) = (searchBox.Text, Row("SmmTestFixes")?.Visible == true);
+                screen.FindChild(LoadOrder.WarningName, true, false)?.FindChild("FilterProblemButton", true, false)?.EmitSignal(BaseButton.SignalName.Pressed);
+                await Wait(menu, 0.3);
+                if (Row(ModEntry.ModId) is { } before)
+                    CategoryList.Select(screen, before);
+                var stopsAt = new List<string>();
+                for (var i = 0; i < 8; i++)
+                {
+                    screen.FindChild(LoadOrder.WarningName, true, false)?.FindChild("GoToProblemButton", true, false)?.EmitSignal(BaseButton.SignalName.Pressed);
+                    await Wait(menu, 0.2);
+                    stopsAt.Add(CategoryList.Selected?.manifest?.id ?? "");
+                }
+                Check("main list banner: an enabled mod that failed to load has its own part, \"1 enabled mod failed to load\"; its Show finds it (#failed), "
+                    + "its Go to stops at it", failedText.Split("  ·  ").Contains("1 enabled mod failed to load") && failedSearch.Contains("#failed") && fixesShown
+                    && stopsAt.Contains("SmmTestFixes"), $"\"{failedText}\"; Show \"{failedSearch}\", shown {fixesShown}; Go to {string.Join(", ", stopsAt)}");
+            }
+            finally
+            {
+                failing.state = stateWas;
+                searchBox.Text = "";
+                searchBox.EmitSignal(LineEdit.SignalName.TextChanged, "");
+                CategoryList.Redraw(content);
+                await Wait(menu, 0.3);
+            }
+            var failedGone = (screen.FindChild("OrderProblems", true, false) as Label)?.Text ?? "";
+            Check("... loaded again: that part goes", !failedGone.Contains("failed to load"), failedGone);
+        }
+        else
+            Results.Add("SKIP main list banner, a mod that failed to load: Test Fixes not installed, or off");
+
         // The banner every run can raise: Test Addon on needs a mod that isn't installed, so with it off the banner goes,
         // and its tick brings the banner back (TestBannersKeepRows, the managers banner's checks without Better Mod Menu).
         // On again after, as it started.

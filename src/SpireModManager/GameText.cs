@@ -12,7 +12,7 @@ namespace SpireModManager;
 static class GameText
 {
     public const string Hex = "#f5b56b";
-    public const int Margin = 2, Border = 2, Radius = 2;
+    public const int Margin = 2, Border = 2, Radius = 4; // Jordan, 25 Oct: "increase game message radius to 4px"
     const int Inset = 16; // from the table's side to the words: the margin, the border and the room inside it
 
     // At the start of each box's words, a character that shows nothing and takes no room, one for each look: how Watch

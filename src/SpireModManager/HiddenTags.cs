@@ -80,7 +80,8 @@ static class HiddenTags
     // One of the two mod managers' ticked copies, while both are ticked: the banner's.
     static bool Managers(Mod mod) => mod.manifest?.id is ModEntry.ModId or Bmm.ModId && Bmm.BothTicked && Bmm.TickedManagers().Contains(mod);
 
-    static bool Failed(Mod mod) => Copies.Ticked(mod) && mod.state == ModLoadState.Failed;
+    // Ticked, and the game failed to load it this session (#failed, and the main list's red banner).
+    public static bool Failed(Mod mod) => Copies.Ticked(mod) && mod.state == ModLoadState.Failed;
 
     // On a disabled mod the game's errors are notes instead (BranchErrors), so it's ticked ones.
     static bool GameError(Mod mod) => Copies.Ticked(mod) && mod.errors is { Count: > 0 };
