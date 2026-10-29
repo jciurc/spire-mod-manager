@@ -397,9 +397,9 @@ static partial class SelfTest
         var keywordsAt = Array.FindIndex(facts, l => l.StartsWith(keywordsLabel + ": "));
         var keywords = $"{keywordsLabel}: {string.Join(", ", HiddenTagNames.Where(t => Search.Matches(ours.Mod, t)).Select(t => t.TrimStart('#')))}";
         Check("Size, then Modified content, then Other keywords: the hidden tags that find the mod, bare names with no \"#\", in their order (this mod: enabled, "
-            + "local, installed, loaded... renamed, note)", keywordsAt > 1 && facts[keywordsAt - 2].StartsWith(Menus.Text("SPIRE_MOD_MANAGER.SIZE") + ": ")
+            + "local, installed, stable, beta, loaded... renamed, note)", keywordsAt > 1 && facts[keywordsAt - 2].StartsWith(Menus.Text("SPIRE_MOD_MANAGER.SIZE") + ": ")
             && facts[keywordsAt - 1].StartsWith(Menus.Text("SPIRE_MOD_MANAGER.MODIFIED_CONTENT") + ": ") && facts[keywordsAt] == keywords
-            && keywords.StartsWith($"{keywordsLabel}: enabled, local, installed, loaded, ") && keywords.Contains("renamed, note") && !keywords.Contains('#')
+            && keywords.StartsWith($"{keywordsLabel}: enabled, local, installed, stable, beta, loaded, ") && keywords.Contains("renamed, note") && !keywords.Contains('#')
             && !keywords.Split(", ").Contains("notes"), $"{(keywordsAt < 0 ? "no row" : facts[keywordsAt])}; wanted {keywords}");
         var panelText = panel.GetNode<RichTextLabel>("ModDescription");
         var marked = panelText.Text.Split('\n');
@@ -1137,9 +1137,9 @@ static partial class SelfTest
     // game failed it, D has a game error, E is off but loaded, with a tag of its own named "Enabled"; and each name
     // without its "#".
     // Every hidden tag, in HiddenTags' order (the info panel's Other keywords lists them in it).
-    static readonly string[] HiddenTagNames = ["#enabled", "#disabled", "#workshop", "#local", "#installed", "#uninstalled", "#missing", "#loaded", "#notloaded",
-        "#pending", "#new", "#changed", "#moved", "#edited", "#renamed", "#note", "#uncategorized", "#unmet", "#needed", "#order", "#duplicate", "#clash", "#aside",
-        "#managers", "#failed", "#gameerror", "#error", "#warning", "#problem"];
+    static readonly string[] HiddenTagNames = ["#enabled", "#disabled", "#workshop", "#local", "#installed", "#stable", "#beta", "#uninstalled", "#missing",
+        "#loaded", "#notloaded", "#pending", "#new", "#changed", "#moved", "#edited", "#renamed", "#note", "#uncategorized", "#unmet", "#needed", "#order",
+        "#duplicate", "#clash", "#aside", "#managers", "#failed", "#gameerror", "#error", "#warning", "#problem"];
 
     static void TestHiddenTags(Control content)
     {

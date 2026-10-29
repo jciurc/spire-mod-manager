@@ -1364,9 +1364,9 @@ static partial class SelfTest
             box.EmitSignal(LineEdit.SignalName.TextChanged, "");
             await Wait(menu, 0.3);
             Check("an enabled stable-only mod on beta: a yellow banner, \"1 enabled mod is listed for stable only - on beta, it loads with an error and may not "
-                + "work\", its card naming it; #warning finds it, and Show (#enabled -#beta)",
+                + "work\", its card naming it (by its alias, if it has one); #warning finds it, and Show (#enabled -#beta)",
                 shown && said == "1 enabled mod is listed for stable only - on beta, it loads with an error and may not work" && Yellow(fill)
-                && card.Contains("Enabled mods for another branch") && card.Contains("Test Fixes") && found == (true, true, true, false) && show == "#enabled -#beta",
+                && card.Contains("Enabled mods for another branch") && card.Contains(Store.InfoFor(fixes)?.Alias ?? "Test Fixes") && found == (true, true, true, false) && show == "#enabled -#beta",
                 $"{shown} \"{said}\" {fill}; card {card}; found {found}; Show \"{show}\"");
             await On(PlatformBranch.Production, (true, false));
             var onStable = Banner() != null;
