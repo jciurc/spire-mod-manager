@@ -43,6 +43,8 @@ internal class StoreData
     public bool ManagersWarningDismissed { get; set; }
     // The same-id banner dismissed, for this set of copies on (Copies.Signature): another set shows it again.
     public string? SameIdDismissed { get; set; }
+    // The other-branch banner dismissed, for this set of mods on (Copies.Signature): another set shows it again.
+    public string? BranchDismissed { get; set; }
     // Where the player moved the main menu button (top-left, in the game's 1920x1080 frame); null: the corner.
     public ScreenPoint? MenuButtonAt { get; set; }
     public string? ImportedFrom { get; set; }
@@ -476,7 +478,7 @@ internal static class Store
         var copy = JsonSerializer.Deserialize<StoreData>(json, Json) ?? new StoreData();
         copy.VanillaView = copy.LoadOrderView = copy.UncategorizedCollapsed = copy.ManagersWarningDismissed = false;
         copy.ShareChoices = null;
-        copy.SameIdDismissed = null;
+        copy.SameIdDismissed = copy.BranchDismissed = null;
         copy.MenuButtonAt = null;
         foreach (var category in copy.Categories)
             category.Collapsed = false;
@@ -507,7 +509,7 @@ internal static class Store
         var now = Data;
         (restored.VanillaView, restored.LoadOrderView, restored.UncategorizedCollapsed, restored.ManagersWarningDismissed, restored.ShareChoices) =
             (now.VanillaView, now.LoadOrderView, now.UncategorizedCollapsed, now.ManagersWarningDismissed, now.ShareChoices);
-        (restored.SameIdDismissed, restored.MenuButtonAt) = (now.SameIdDismissed, now.MenuButtonAt);
+        (restored.SameIdDismissed, restored.BranchDismissed, restored.MenuButtonAt) = (now.SameIdDismissed, now.BranchDismissed, now.MenuButtonAt);
         foreach (var category in restored.Categories)
             category.Collapsed = now.Categories.FirstOrDefault(c => c.Name == category.Name)?.Collapsed ?? false;
         _data = restored;

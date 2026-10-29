@@ -5,6 +5,7 @@ using MegaCrit.Sts2.Core.Modding;
 using MegaCrit.Sts2.Core.Nodes.CommonUi;
 using MegaCrit.Sts2.Core.Nodes.GodotExtensions;
 using MegaCrit.Sts2.Core.Nodes.Screens.ModdingScreen;
+using MegaCrit.Sts2.Core.Platform;
 using MegaCrit.Sts2.Core.Saves;
 
 namespace SpireModManager;
@@ -1323,4 +1324,78 @@ static partial class SelfTest
     // Everything a banner says: its text, its buttons' words and their tips.
     static List<string> BannerWords(Node? banner) => banner?.FindChildren("*", "", true, false)
         .SelectMany(n => n switch { Label label => [label.Text], Button button => new[] { button.Text, Hover.TipOf(button) }, _ => [] }).ToList() ?? [];
+
+    // The other-branch banner (Jordan, 28 Oct): on beta (made up), an enabled mod marked for stable only: a yellow banner
+    // naming it, its card naming it, #warning and Show finding it; on stable, or for both branches, none. Dismiss: gone
+    // for this set, forgotten once no enabled mod is off its branch.
+    static async Task TestBranchBanner(Node menu, NModdingScreen screen, Control content, string outDir)
+    {
+        if (Dependencies.Find("SmmTestFixes") is not { } fixes || !Copies.Ticked(fixes))
+        {
+            Results.Add("SKIP the other-branch banner: no Test Fixes on");
+            return;
+        }
+        var border = screen.GetNode<Control>("ModsBorder");
+        var box = border.GetNode<LineEdit>("SpireModManagerSearch");
+        Control? Banner() => border.GetNodeOrNull<Control>(LoadOrder.BranchName);
+        string Said() => Banner()?.FindChild("BranchWarning", true, false) is Label { } label ? label.Text : "";
+        void BannerPress(string name) => (Banner()?.FindChild(name, true, false) as BaseButton)?.EmitSignal(BaseButton.SignalName.Pressed);
+        async Task On(PlatformBranch branch, (bool, bool)? marked)
+        {
+            if (marked is { } both)
+                Tags.TestBranches["SmmTestFixes"] = both;
+            else
+                Tags.TestBranches.Remove("SmmTestFixes");
+            Tags.TestBranch = branch;
+            CategoryList.Redraw(content);
+            await Wait(menu, 0.3);
+        }
+        var dismissedBefore = Store.Data.BranchDismissed;
+        try
+        {
+            await On(PlatformBranch.PublicBeta, (true, false));
+            var (shown, said, fill) = (Banner() is { Visible: true }, Said(), BannerFill(Banner()));
+            var card = string.Join(" | ", await BannerCard(menu, screen, Banner(), "2y-branch-banner", outDir));
+            var found = (Search.Matches(fixes, "#warning"), Search.Matches(fixes, "#\"stable only\""), Search.Matches(fixes, "#stable"), Search.Matches(fixes, "#beta"));
+            BannerPress("FilterBranchButton");
+            await Wait(menu, 0.3);
+            var show = box.Text;
+            box.Text = "";
+            box.EmitSignal(LineEdit.SignalName.TextChanged, "");
+            await Wait(menu, 0.3);
+            Check("an enabled stable-only mod on beta: a yellow banner, \"1 enabled mod is listed for stable only - on beta, it loads with an error and may not "
+                + "work\", its card naming it; #warning finds it, and Show (#enabled -#beta)",
+                shown && said == "1 enabled mod is listed for stable only - on beta, it loads with an error and may not work" && Yellow(fill)
+                && card.Contains("Enabled mods for another branch") && card.Contains("Test Fixes") && found == (true, true, true, false) && show == "#enabled -#beta",
+                $"{shown} \"{said}\" {fill}; card {card}; found {found}; Show \"{show}\"");
+            await On(PlatformBranch.Production, (true, false));
+            var onStable = Banner() != null;
+            await On(PlatformBranch.PublicBeta, (true, true));
+            var forBoth = Banner() != null;
+            await On(PlatformBranch.None, (false, true));
+            var elsewhere = Banner() != null;
+            Check("no other-branch banner for a stable-only mod on stable, a mod for both branches on beta, or on a branch that's neither",
+                !onStable && !forBoth && !elsewhere, $"on stable {onStable}, for both {forBoth}, elsewhere {elsewhere}");
+            await On(PlatformBranch.Production, (false, true));
+            var betaOnly = Said();
+            BannerPress("DismissBranchButton");
+            await Wait(menu, 0.3);
+            var gone = Banner() == null;
+            CategoryList.Redraw(content);
+            await Wait(menu, 0.3);
+            var stays = Banner() == null;
+            await On(PlatformBranch.Production, null);
+            var forgotten = Store.Data.BranchDismissed == null;
+            Check("a beta-only mod on stable: the banner says so; Dismiss: gone for this set, and stays gone; forgotten once no enabled mod is off its branch",
+                betaOnly == "1 enabled mod is listed for beta only - on stable, it loads with an error and may not work" && gone && stays && forgotten,
+                $"\"{betaOnly}\"; gone {gone}, stays {stays}, forgotten {forgotten}");
+        }
+        finally
+        {
+            Tags.TestBranches.Remove("SmmTestFixes");
+            Tags.TestBranch = null;
+            Store.Data.BranchDismissed = dismissedBefore;
+            CategoryList.Redraw(content);
+        }
+    }
 }

@@ -3,6 +3,7 @@ using MegaCrit.Sts2.Core.Modding;
 using MegaCrit.Sts2.Core.Nodes.CommonUi;
 using MegaCrit.Sts2.Core.Nodes.Screens.ModdingScreen;
 using MegaCrit.Sts2.Core.Saves;
+using MegaCrit.Sts2.Core.Platform;
 
 namespace SpireModManager;
 
@@ -444,6 +445,7 @@ static class LoadOrder
     public const string WarningName = "SpireModManagerOrderWarning", ManagersName = "SpireModManagerManagersWarning", AutoSortName = "AutoSortButton";
     public const string SameIdName = "SpireModManagerSameIdWarning", MissingName = "SpireModManagerMissingWarning";
     public const string SelfName = "SpireModManagerSelfWarning", TurnedOffName = "SpireModManagerTurnedOffWarning";
+    public const string BranchName = "SpireModManagerBranchWarning";
     public const string AutoSortHintName = "AutoSortHint", BannerCardName = BannerBar.CardName;
     const string BadgeName = "WarningBadge";
     const int CardLines = 12; // a banner's card names at most this many mods, then says how many more
@@ -515,7 +517,7 @@ static class LoadOrder
         var orderText = Menus.Format(misordered == 1 ? "SPIRE_MOD_MANAGER.ORDER_PROBLEMS_ONE" : "SPIRE_MOD_MANAGER.ORDER_PROBLEMS", ("count", Menus.Number(misordered)));
         // The "!"'s card: the warning alone (the mods it's about are Load Order's own card).
         Badge(content, misordered > 0 && !on ? orderText : null);
-        foreach (var name in new[] { WarningName, ManagersName, SameIdName, MissingName, TurnedOffName, SelfName })
+        foreach (var name in new[] { WarningName, ManagersName, SameIdName, MissingName, TurnedOffName, SelfName, BranchName })
             if (border.GetNodeOrNull<Control>(name) is { } old)
             {
                 Heights[old.GetMeta(HeightKeyMeta, name).AsString()] = old.OffsetBottom - old.OffsetTop;
@@ -547,6 +549,16 @@ static class LoadOrder
         // Mods turned off after a failed start that are still off (TurnedOff: one on again by any means drops out)
         if (Layout.Wide && TurnedOff.StillOff() is { Count: > 0 } turnedOff)
             TurnedOffBanner(content, border, search, turnedOff);
+        // Enabled mods marked only for the other branch (Tags.OffBranch), on our views, unless dismissed for this set; a
+        // dismissal is forgotten once there are none, as the same-id banner's is.
+        var offBranch = mods.Where(Tags.OffBranch).ToList();
+        if (offBranch.Count == 0 && Store.Data.BranchDismissed != null)
+        {
+            Store.Data.BranchDismissed = null;
+            Store.SaveViewState();
+        }
+        if (Layout.Wide && offBranch.Count > 0 && Store.Data.BranchDismissed != Copies.Signature(offBranch))
+            BranchBanner(content, border, search, offBranch);
         if (on && misordered > 0)
         {
             // Go to steps through the misordered mods as the rows show them: in load order here.
@@ -727,6 +739,30 @@ static class LoadOrder
         Banner(border, search, text, () => BannerCard("SPIRE_MOD_MANAGER.TURNED_OFF_CARD_TITLE", [.. entries.Select(e => Menus.Format("SPIRE_MOD_MANAGER.TURNED_OFF_LINE",
             ("mod", TurnedOff.Name(e, plain: false)), ("date", LaunchGuard.When(e.At.LocalDateTime))))], markup: true),
             [goTo, on, dismiss], TurnedOffName, "TurnedOffWarning", WarningColor);
+    }
+
+    // Enabled mods marked only for the other branch (Jordan, 28 Oct: "a warning banner when an incompatible mod for our
+    // branch is enabled"): a yellow warning, as the game still loads them, with an error. Go to steps through them, Show
+    // finds them (enabled, and not marked for this branch), Dismiss for this set (a new one shows it again). Its card
+    // names them.
+    static void BranchBanner(Control content, Control border, Control? search, List<Mod> mods)
+    {
+        var goTo = Menus.SmallButton(Menus.Text("SPIRE_MOD_MANAGER.GO_TO_PROBLEM"), () => GoTo(content, Next(content, mods)), name: "GoToBranchButton");
+        Hover.Tip(goTo, Menus.Text("SPIRE_MOD_MANAGER.GO_TO_PROBLEM_TIP"));
+        var dismiss = Menus.SmallButton(Menus.Text("SPIRE_MOD_MANAGER.DISMISS_MANAGERS"), () =>
+        {
+            Store.Data.BranchDismissed = Copies.Signature(mods);
+            Store.SaveViewState(); // view state: no undo step, not a change (Store.EditsJson)
+            CategoryList.Apply(content);
+        }, name: "DismissBranchButton");
+        Hover.Tip(dismiss, Menus.Text("SPIRE_MOD_MANAGER.DISMISS_MANAGERS_TIP"));
+        var stable = Tags.GameBranch() == PlatformBranch.Production;
+        var (here, other) = (Menus.Text(stable ? "SPIRE_MOD_MANAGER.BRANCH_STABLE" : "SPIRE_MOD_MANAGER.BRANCH_BETA"),
+            Menus.Text(stable ? "SPIRE_MOD_MANAGER.BRANCH_BETA" : "SPIRE_MOD_MANAGER.BRANCH_STABLE"));
+        var text = Menus.Format(mods.Count == 1 ? "SPIRE_MOD_MANAGER.BRANCH_WARNING_ONE" : "SPIRE_MOD_MANAGER.BRANCH_WARNING",
+            ("count", Menus.Number(mods.Count)), ("other", other), ("branch", here));
+        Banner(border, search, text, () => BannerCard("SPIRE_MOD_MANAGER.BANNER_BRANCH_TITLE", [.. mods.Select(Shown)]),
+            [goTo, ShowButton(content, stable ? "#enabled -#stable" : "#enabled -#beta", "FilterBranchButton"), dismiss], BranchName, "BranchWarning", WarningColor);
     }
 
     // Copies of one mod id both ticked (only one loads), in Jordan's words: a yellow warning, Go to stepping through those

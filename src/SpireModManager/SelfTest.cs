@@ -267,6 +267,7 @@ static partial class SelfTest
             await Step(() => TestListBanner(menu, screen, content, outDir));
             await Step(() => TestManagersBanner(menu, screen, content, outDir));
             await Step(() => TestTurnedOffBanner(menu, screen, content, outDir));
+            await Step(() => TestBranchBanner(menu, screen, content, outDir));
             await Step(() => TestSelfIncluded(menu, screen, content, outDir));
             await Step(() => TestPageBar(menu, screen, content, outDir));
             await Step(() => TestListFilters(menu, screen, content, outDir));
