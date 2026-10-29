@@ -149,7 +149,7 @@ static class LoadingNote
     {
         try
         {
-            return FontManager.GetSubstituteFont(Language(), FontType.Regular) ?? ResourceLoader.Load<Font>("res://themes/kreon_regular_shared.tres") ?? ThemeDB.FallbackFont;
+            return FontManager.GetSubstituteFont(Language(), FontType.Regular) ?? ModEntry.Load<Font>("res://themes/kreon_regular_shared.tres") ?? ThemeDB.FallbackFont;
         }
         catch (Exception)
         {
