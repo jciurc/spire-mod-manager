@@ -673,9 +673,7 @@ static class CategoryList
         // Each category's rows by the name they show (an alias, else the mod's name), as the game's language sorts
         // them, any case; two of one name keep the game's order. This mod first in whichever category it's in, whatever
         // its name (Jordan), its copies by name among themselves. Each row's category read once.
-        var names = StringComparer.Create(Menus.Culture, ignoreCase: true);
-        var byCategory = rows.OrderBy(r => r.Mod?.manifest?.id == ModEntry.ModId ? 0 : 1)
-            .ThenBy(r => Store.InfoFor(r.Mod)?.Alias ?? r.Mod?.manifest?.name ?? r.Mod?.manifest?.id ?? "", names).ToLookup(CategoryOf);
+        var byCategory = rows.OrderBy(SortsFirst).ThenBy(ShownName, Names()).ToLookup(CategoryOf);
         foreach (var category in categories)
             AddSection(category.Name, byCategory[category.Name].ToList(),
                 category.Collapsed, c => category.Collapsed = c, category);
@@ -740,10 +738,10 @@ static class CategoryList
     {
         if (Store.Data.VanillaView || Copies.KeyOf(row.Mod) is not { Length: > 0 } id)
             return null;
-        return MenuPanel.Show(content, () => CategoryItems(content, id), side: _ => ModField.Column(id, _ =>
+        return MenuPanel.Show(content, () => CategoryItems(content, id), side: _ => ModField.Column(id, kind =>
         {
             ListFilter.Keep(id);
-            Edited(content);
+            FieldsEdited(content, [id], kind == ModField.Kind.Alias);
         }));
     }
 
@@ -754,10 +752,10 @@ static class CategoryList
         var ids = Selection.Mods.Select(Copies.Key).Where(key => key.Length > 0).Distinct().ToList(); // a key per copy
         if (Store.Data.VanillaView || ids.Count == 0)
             return null;
-        return MenuPanel.Show(content, () => BulkItems(content, ids), side: _ => ModField.BulkColumn(ids, _ =>
+        return MenuPanel.Show(content, () => BulkItems(content, ids), side: _ => ModField.BulkColumn(ids, kind =>
         {
             ListFilter.Keep(ids);
-            Edited(content);
+            FieldsEdited(content, ids, kind == ModField.Kind.Alias);
         }));
     }
 
@@ -794,6 +792,76 @@ static class CategoryList
         Apply(content);
         if (ScreenOf(content) is { } screen)
             ModDetails.Refresh(screen);
+    }
+
+    // The same after mods' alias, tags or notes were saved (renamed: an alias), from a menu.
+    static void FieldsEdited(Control content, IReadOnlyCollection<string> ids, bool renamed)
+    {
+        FieldsSaved(content, ids, renamed);
+        if (ScreenOf(content) is { } screen)
+            ModDetails.Refresh(screen);
+    }
+
+    // After mods' alias, tags or notes were saved (renamed: an alias): only their rows are drawn again (title, notepad,
+    // line) where nothing else on the list can change: the main list with no search or Show: choice (no matches or
+    // counts), mods with no other copy (whose cards name them), each row still in its place by name; with an alias, the
+    // banner too (it names mods as the list does). Otherwise the whole list (Apply), which with 250 mods took most of a
+    // frame on every box left.
+    public static void FieldsSaved(Control content, IReadOnlyCollection<string> ids, bool renamed)
+    {
+        if (!RowsOnly(content, ids, renamed))
+            Apply(content);
+    }
+
+    static bool RowsOnly(Control content, IReadOnlyCollection<string> ids, bool renamed)
+    {
+        if (Store.Data.VanillaView || Store.Data.LoadOrderView || Filter(content).Length > 0 || ListFilter.Current != ListFilter.Choice.All)
+            return false;
+        using var lookups = Lookups.Begin();
+        var rows = content.GetChildren().OfType<NModMenuRow>().ToList();
+        var edited = rows.Where(r => Copies.KeyOf(r.Mod) is { } key && ids.Contains(key)).ToList();
+        var names = Names();
+        if (edited.Count == 0 || edited.Any(r => r.Mod is not { } mod || Copies.Others(mod).Count > 0 || !InPlace(content, r, names)))
+            return false;
+        RowTitles.Apply(edited, vanilla: false);
+        RowStrip.Apply(rows, StripActions(content), EdgeAction(content), only: edited);
+        if (renamed)
+            LoadOrder.UpdateToolbar(content, rows, () => Redraw(content));
+        return true;
+    }
+
+    // The order Apply puts a category's rows in: this mod first, then by the name they show (an alias, else the mod's
+    // name) as the game's language sorts them, any case; two of one name keep the game's order.
+    static int SortsFirst(NModMenuRow row) => row.Mod?.manifest?.id == ModEntry.ModId ? 0 : 1;
+    static string ShownName(NModMenuRow row) => Store.InfoFor(row.Mod)?.Alias ?? row.Mod?.manifest?.name ?? row.Mod?.manifest?.id ?? "";
+    static StringComparer Names() => StringComparer.Create(Menus.Culture, ignoreCase: true);
+
+    // Whether a row still sorts between the rows beside it (a header or the list's end: none on that side).
+    static bool InPlace(Control content, NModMenuRow row, StringComparer names)
+    {
+        var at = row.GetIndex();
+        return (at == 0 || content.GetChild(at - 1) is not NModMenuRow before || Sorted(before, row, names))
+            && (at + 1 >= content.GetChildCount() || content.GetChild(at + 1) is not NModMenuRow after || Sorted(row, after, names));
+    }
+
+    static bool Sorted(NModMenuRow first, NModMenuRow second, StringComparer names)
+    {
+        var by = SortsFirst(first).CompareTo(SortsFirst(second));
+        if (by == 0)
+            by = names.Compare(ShownName(first), ShownName(second));
+        return by < 0 || by == 0 && GameIndex(first) <= GameIndex(second);
+    }
+
+    static int GameIndex(NModMenuRow row)
+    {
+        var i = 0;
+        foreach (var mod in ModManager.Mods)
+        {
+            if (mod == row.Mod)
+                return i;
+            i++;
+        }
+        return int.MaxValue;
     }
 
     // The categories to put a mod in (its current one marked), Uncategorized, and a new one. A move keeps its row

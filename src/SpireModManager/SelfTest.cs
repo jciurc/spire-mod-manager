@@ -505,6 +505,23 @@ static partial class SelfTest
             search.EmitSignal(LineEdit.SignalName.TextChanged, "");
             await Wait(menu, 0.3);
 
+            // A note saved in the info panel on this list, to the end of the frame: on a mod with one copy, its note put
+            // back after.
+            if (content.GetChildren().OfType<NModMenuRow>().FirstOrDefault(r => r.Mod is { } mod && mod.manifest?.id != ModEntry.ModId
+                && Copies.Others(mod).Count == 0) is { } noted)
+            {
+                var had = Store.InfoFor(noted.Mod)?.Notes ?? "";
+                CategoryList.Select(screen, noted);
+                await PanelFor(menu, screen, noted);
+                await Wait(menu, 0.5);
+                var saves = await NoteSaves(menu, screen, "Timed note");
+                Results.Add($"INFO a note saved in the info panel: to the end of the frame {saves[2]:0.0} ms (fastest {saves[0]:0.0})");
+                var notes = screen.GetNode<TextEdit>("%ModInfoContainer/SpireModManagerYours/Notes/Box");
+                notes.Text = had;
+                notes.EmitSignal(Control.SignalName.FocusExited);
+                await Wait(menu, 0.3);
+            }
+
             // Save as new with real clicks (this is a copy of the player's data): first an edit (a tickbox),
             // then the button.
             var tick = content.GetChildren().OfType<NModMenuRow>().First(r => r.Mod?.manifest?.id != ModEntry.ModId).GetNode<Control>("Tickbox");

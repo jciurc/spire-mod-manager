@@ -49,7 +49,8 @@ static class History
     public static string? LaunchProfile { get; private set; }
 
 #if DEVTOOLS
-    // Self-test: the launch state swapped (a big list's, and back), and each Changed listener timed once by name.
+    // Self-test: the launch state swapped (a big list's, and back), and each Changed listener timed once, by the class
+    // it's in (its lambda's own is the compiler's).
     public static void TestLoaded(Snapshot? loaded) => (Loaded, _current) = (loaded, loaded ?? _current);
 
     public static Snapshot TestTake() => Take();
@@ -60,7 +61,10 @@ static class History
         {
             var watch = System.Diagnostics.Stopwatch.StartNew();
             listener.DynamicInvoke();
-            return ($"{listener.Method.DeclaringType?.Name}.{listener.Method.Name}", watch.Elapsed.TotalMilliseconds);
+            var type = listener.Method.DeclaringType;
+            while (type?.DeclaringType != null && type.Name.StartsWith('<'))
+                type = type.DeclaringType;
+            return (type?.Name ?? "", watch.Elapsed.TotalMilliseconds);
         }),
     ];
 #endif

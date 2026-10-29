@@ -36,14 +36,16 @@ static class RowStrip
     static readonly Color NoteColor = new(0.937f, 0.784f, 0.318f, 0.75f), AuthorColor = new(1, 0.964706f, 0.886275f, 0.45f);
     const string FaintHex = "#fff6e280"; // "and 3 more": fainter than the author
 
-    // edge: a quiet button at the row's far right, past the tickbox (the main list's pencil), or none.
-    public static void Apply(IList<NModMenuRow> rows, Func<NModMenuRow, IEnumerable<MenuItem>> actions, Func<NModMenuRow, MenuItem>? edge = null)
+    // edge: a quiet button at the row's far right, past the tickbox (the main list's pencil), or none. only: just these
+    // rows' (a field saved), the order still read from all.
+    public static void Apply(IList<NModMenuRow> rows, Func<NModMenuRow, IEnumerable<MenuItem>> actions, Func<NModMenuRow, MenuItem>? edge = null,
+        IList<NModMenuRow>? only = null)
     {
         var order = LoadOrder.Mods(rows).Select((m, i) => (m, i)).DistinctBy(p => p.m).ToDictionary(p => p.m, p => p.i);
         // Each view keeps its own buttons and hides the other's, so a switch between the main list and Load Order
         // doesn't make every row's again.
         var (name, path, other) = Store.Data.LoadOrderView ? (OrderActionsName, OrderActionsPath, ActionsPath) : (ActionsName, ActionsPath, OrderActionsPath);
-        foreach (var row in rows)
+        foreach (var row in only ?? rows)
         {
             Lap(null);
             var title = row.GetNode<Control>(TitlePath);
