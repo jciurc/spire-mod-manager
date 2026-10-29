@@ -289,7 +289,7 @@ static class ModifiedContent
     }
 
     // Nothing found: for a mod not loaded, that it shows only then, in place of "No information found" (Jordan, 28 Oct:
-    // "For disabled mods only ... 'Contents can only be identified while mod is loaded'").
+    // for disabled mods).
     public static string NoneFound(Mod mod) =>
         Menus.Text(mod.state != ModLoadState.Loaded ? "SPIRE_MOD_MANAGER.MODIFIED_NONE_NOT_LOADED" : "SPIRE_MOD_MANAGER.MODIFIED_NONE");
 
