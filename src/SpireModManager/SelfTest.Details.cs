@@ -1082,16 +1082,19 @@ static partial class SelfTest
                 $"{listLines.FirstOrDefault(l => l.Contains("NModdingScreen._Ready"))} | {everyWay.Split('\n').FirstOrDefault(l => l.Contains("NThing"))} | "
                 + $"{ModifiedContent.Legend().ReplaceLineEndings(" / ")} (in the list at line {legendIn})");
             // The areas, between the note and the list (Jordan, 23 Oct): one to a line in columns filled top to bottom,
-            // three side by side across the dialog; 11 here, so no sideways scroll.
+            // three side by side across the dialog, the rest to the right. Our own mod's areas grow as we patch more of the game
+            // (16 with the loading note: a fourth column, scrolled to); the column rule itself is checked on set lists below.
             var shownAreas = AreasShown(Dialog());
             var columnsOff = ColumnsMisplaced(shownAreas);
-            Check("modified content's dialog: the areas between the note and the list, one to a line in three columns filled top to bottom "
-                + $"({string.Join(", ", ModifiedContent.Columns(areas).Select(c => c.Count))} of {areas.Count}), side by side across the dialog, "
-                + "no sideways scroll (see 17f)",
-                areas.Count is > 6 and <= 15 && shownAreas.Heading == Menus.Text("SPIRE_MOD_MANAGER.MODIFIED_AREAS")
-                && shownAreas.Columns.SelectMany(c => c).SequenceEqual(ModifiedContent.Alphabetical(areas)) && shownAreas.Columns.Count == 3
-                && shownAreas.Columns.Select(c => c.Count).SequenceEqual(ModifiedContent.Columns(areas).Select(c => c.Count))
-                && columnsOff == null && shownAreas.Scroll?.GetHScrollBar().Visible == false && !lines.Contains(Menus.Text("SPIRE_MOD_MANAGER.MODIFIED_AREAS"))
+            var columns = ModifiedContent.Columns(areas);
+            Check("modified content's dialog: the areas between the note and the list, one to a line in columns filled top to bottom "
+                + $"({string.Join(", ", columns.Select(c => c.Count))} of {areas.Count}), three side by side across the dialog, "
+                + "no sideways scroll with three or fewer (see 17f)",
+                areas.Count > 6 && shownAreas.Heading == Menus.Text("SPIRE_MOD_MANAGER.MODIFIED_AREAS")
+                && shownAreas.Columns.SelectMany(c => c).SequenceEqual(ModifiedContent.Alphabetical(areas)) && shownAreas.Columns.Count == columns.Count
+                && shownAreas.Columns.Select(c => c.Count).SequenceEqual(columns.Select(c => c.Count))
+                && columnsOff == null && (columns.Count > 3 || shownAreas.Scroll?.GetHScrollBar().Visible == false)
+                && !lines.Contains(Menus.Text("SPIRE_MOD_MANAGER.MODIFIED_AREAS"))
                 && Dialog()?.FindChild("Note", true, false) is Control noteBox && shownAreas.Scroll is { } areasScroll && list != null
                 && noteBox.GetGlobalRect().End.Y <= areasScroll.GetGlobalRect().Position.Y && areasScroll.GetGlobalRect().End.Y <= list.GetGlobalRect().Position.Y,
                 $"{string.Join(" | ", shownAreas.Columns.Select(c => string.Join(", ", c)))}; {columnsOff ?? "placed"}, bar {shownAreas.Scroll?.GetHScrollBar().Visible}");
