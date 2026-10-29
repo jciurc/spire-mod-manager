@@ -477,15 +477,15 @@ static partial class SelfTest
         // Each rule's own line
         (Culprits.Culprit Culprit, string Says)[] lines =
         [
-            (Blamed(Culprits.Why.Patch, "SmmTestFixes"), "Test Fixes most likely stopped the game from starting. The error came from a part of the game it changes."),
-            (Blamed(Culprits.Why.LibraryUser, "SmmTestUi") with { Library = "SmmTestLib" }, "The error came from Test Framework, which it needs"),
+            (Blamed(Culprits.Why.Patch, "SmmTestFixes"), "An error in a part of the game that Test Fixes changes has most likely prevented the game from starting."),
+            (Blamed(Culprits.Why.LibraryUser, "SmmTestUi") with { Library = "SmmTestLib" }, "An error in Test Framework, which Test UI needs"),
             (Blamed(Culprits.Why.Types, "SmmTestFixes"), "Part of its code couldn't be loaded"),
-            (Blamed(Culprits.Why.Clash, "SmmTestUi") with { Other = "SmmTestContent", ContentId = "CARD.SMM_TEST" }, "the same ID as Test Content does (CARD.SMM_TEST)"),
-            (Blamed(Culprits.Why.Rebuild, "SmmTestFixes"), "it's the one of them that's new or updated"),
-            (Blamed(Culprits.Why.RebuildLast, "SmmTestFixes"), "The error came while its changes to a part of the game were being put in place, and that part was fine without them."),
-            (Blamed(Culprits.Why.Stale, "SmmTestFixes"), "Test Fixes stopped the game from starting. Part of its code can't run on this version of the game"),
-            (Blamed(Culprits.Why.Updated, "SmmTestFixes") with { Updates = [new(LaunchGuard.Kind.Updated, "SmmTestFixes", "0.1.0", "0.2.0")] }, "from 0.1.0 to 0.2.0. It most likely"),
-            (Blamed(Culprits.Why.DoctorThrew, "SmmTestFixes"), "Mod Doctor found that Test Fixes stopped the game from starting."),
+            (Blamed(Culprits.Why.Clash, "SmmTestUi") with { Other = "SmmTestContent", ContentId = "CARD.SMM_TEST" }, "An ID clash between Test UI and Test Content (CARD.SMM_TEST)"),
+            (Blamed(Culprits.Why.Rebuild, "SmmTestFixes"), "Test Fixes is the only one of those mods that's new or updated"),
+            (Blamed(Culprits.Why.RebuildLast, "SmmTestFixes"), "An error while applying Test Fixes's changes to a part of the game has most likely prevented the game from starting. That part worked fine without them."),
+            (Blamed(Culprits.Why.Stale, "SmmTestFixes"), "An error while loading Test Fixes has prevented the game from starting. Part of its code can't run on this version of the game"),
+            (Blamed(Culprits.Why.Updated, "SmmTestFixes") with { Updates = [new(LaunchGuard.Kind.Updated, "SmmTestFixes", "0.1.0", "0.2.0")] }, "from 0.1.0 to 0.2.0. It has most likely"),
+            (Blamed(Culprits.Why.DoctorThrew, "SmmTestFixes"), "Mod Doctor found that Test Fixes has prevented the game from starting."),
         ];
         var wrongLines = lines.Where(l => !Plain(Crash(l.Culprit)).Body.Contains(l.Says)).Select(l => $"{l.Culprit.Why}: {Plain(Crash(l.Culprit)).Body}").ToList();
         var group = Plain(Crash(Blamed(Culprits.Why.Stale, "SmmTestUi", "SmmTestContent")));
@@ -493,7 +493,7 @@ static partial class SelfTest
             { Updates = [new(LaunchGuard.Kind.Updated, "SmmTestUi", "1.0", "1.1"), new(LaunchGuard.Kind.Updated, "SmmTestContent", "1.0", "1.2")] }, Offer((LaunchGuard.Kind.New, "SmmTestRetired"))));
         Check("the crash culprit's dialog: a line for each rule; a probe group and several updated mods named a line each, with \"Turn off 2 mods and restart\" "
             + "(no Restore beside updated mods)",
-            wrongLines.Count == 0 && group.Body.Contains("These mods stopped the game from starting.") && group.Body.Contains("  •  Test UI\n  •  Test Content")
+            wrongLines.Count == 0 && group.Body.Contains("Errors while loading these mods have prevented the game from starting.") && group.Body.Contains("  •  Test UI\n  •  Test Content")
             && group.Body.Contains("Spire Mod Manager can turn them off") && Said(group) == "Turn off 2 mods and restart | no link"
             && updated.Body.Contains("Test UI (updated: 1.0 → 1.1)") && Said(updated) == "Turn off 2 mods and restart | no link",
             $"{string.Join(" || ", wrongLines)} || {group.Body} || {updated.Body} || {Said(updated)}");
