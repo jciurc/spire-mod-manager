@@ -741,10 +741,9 @@ static class LoadOrder
             [goTo, on, dismiss], TurnedOffName, "TurnedOffWarning", WarningColor);
     }
 
-    // Enabled mods marked only for the other branch (Jordan, 28 Oct: "a warning banner when an incompatible mod for our
-    // branch is enabled"): a yellow warning, as the game still loads them, with an error. Go to steps through them, Show
-    // finds them (enabled, and not marked for this branch), Dismiss for this set (a new one shows it again). Its card
-    // names them.
+    // Enabled mods marked only for the other branch (Jordan, 28 Oct): a yellow warning, as the game still loads
+    // them, with an error. Go to steps through them, Show finds them (enabled, and not marked for this branch),
+    // Dismiss for this set (a new one shows it again). Its card names them.
     static void BranchBanner(Control content, Control border, Control? search, List<Mod> mods)
     {
         var goTo = Menus.SmallButton(Menus.Text("SPIRE_MOD_MANAGER.GO_TO_PROBLEM"), () => GoTo(content, Next(content, mods)), name: "GoToBranchButton");
