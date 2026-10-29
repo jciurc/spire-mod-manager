@@ -128,6 +128,9 @@ internal static class Store
 
     // Self-test: a session that can't save our data, or one that can again.
     public static void TestReadOnly(bool readOnly) => _readOnly = readOnly;
+
+    // Self-test: our data swapped for another (a big list's, and back), unsaved.
+    public static void TestSet(StoreData data) => _data = data;
 #endif
 
     // The mod's data folder (known from Init on): manager.json, backups, drop-in translations and the launch record.

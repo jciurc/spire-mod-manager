@@ -1802,6 +1802,88 @@ static partial class SelfTest
         await TestManyRows(menu, screen, content, mods, saved);
     }
 
+    // A field saved with our data as big as a big list's (about 260 mods' details and four profiles of 260 mods each, as a
+    // player with 250 mods has): a note typed in the info panel and its box left, timed to the end of the frame, and the
+    // save's parts one by one. Our data and the launch state are put back after.
+    static async Task TestSaveCost(Node menu, NModdingScreen screen, Control content)
+    {
+        var panel = screen.GetNode<NModInfoContainer>("%ModInfoContainer");
+        if (content.GetChildren().OfType<NModMenuRow>().FirstOrDefault(r => r.Mod?.manifest?.id == "SmmTestFixes") is not { } row)
+        {
+            Results.Add("SKIP save cost: fixture mods missing");
+            return;
+        }
+        var (kept, loaded) = (Store.Clone(Store.Data), History.Loaded);
+        var big = Store.Clone(Store.Data);
+        for (var i = 0; i < 260; i++)
+            big.Mods[$"SmmBig{i:000}"] = new ModInfo
+            {
+                Category = big.Categories.ElementAtOrDefault(i % 4)?.Name, Alias = i % 9 == 0 ? $"Big {i}" : null,
+                Tags = i % 3 == 0 ? ["co-op", $"tag {i % 7}"] : null, Notes = i % 4 == 0 ? $"A note on made-up mod {i}, about as long as a real one." : null,
+            };
+        List<ProfileMod> list = [.. Enumerable.Range(0, 260).Select(i => new ProfileMod($"SmmBig{i:000}", ModSource.SteamWorkshop, i % 5 != 0))];
+        for (var p = 0; p < 4; p++)
+            big.Profiles.Add(new Profile { Name = $"Big profile {p}", Mods = [.. list] });
+        Store.TestSet(big);
+        History.TestLoaded(History.TestTake()); // launched with it: few changes since, as in a real session
+        try
+        {
+            CategoryList.Select(screen, row);
+            await PanelFor(menu, screen, row);
+            await Wait(menu, 0.5);
+            var notes = panel.GetNode<TextEdit>("SpireModManagerYours/Notes/Box");
+            var saves = new List<double>();
+            for (var i = 0; i < 5; i++)
+            {
+                notes.Text = $"Timed note {i}";
+                saves.Add(await FrameMs(menu, () => notes.EmitSignal(Control.SignalName.FocusExited)));
+            }
+            saves.Sort();
+            var saved = Store.InfoFor("SmmTestFixes")?.Notes;
+            var bytes = new FileInfo(Path.Combine(Store.Dir, "manager.json")).Length;
+
+            var n = 0;
+            void Edit() => Store.Data.Mods["SmmBig000"].Notes = $"Edited {n++}";
+            static double Ms(Action action)
+            {
+                CleanHeap();
+                var watch = System.Diagnostics.Stopwatch.StartNew();
+                for (var i = 0; i < 5; i++)
+                    action();
+                return watch.Elapsed.TotalMilliseconds / 5;
+            }
+            var writeMs = Ms(Store.SaveViewState);
+            var editsMs = Ms(() =>
+            {
+                Edit();
+                Store.EditsJson();
+            });
+            var takeMs = Ms(() =>
+            {
+                Edit();
+                History.TestTake();
+            });
+            var listeners = History.TestTimeChanged();
+            var applyMs = Ms(() => CategoryList.Apply(content));
+            var refreshMs = Ms(() => ModDetails.Refresh(screen));
+            Results.Add($"INFO a note saved in the info panel, our data as big as a big list's ({Store.Data.Mods.Count} mods' details, "
+                + $"{Store.Data.Profiles.Count} profiles, about {bytes / 1024} KB): to the end of the frame {saves[2]:0.0} ms (fastest {saves[0]:0.0}); "
+                + $"of it, the file written {writeMs:0.0} ms, the undo snapshot {takeMs:0.0} ms (its JSON {editsMs:0.0}), "
+                + $"the history's listeners {string.Join(", ", listeners.Select(l => $"{l.Name} {l.Ms:0.0}"))} ms, the list redrawn {applyMs:0.0} ms, "
+                + $"the panel refreshed (a menu's save) {refreshMs:0.0} ms");
+            Check("a note saved with a big store", saved == "Timed note 4", saved ?? "none");
+        }
+        finally
+        {
+            Store.TestSet(kept);
+            History.TestLoaded(loaded);
+            Store.SaveViewState();
+            History.Enter();
+            CategoryList.Redraw(content);
+        }
+        await Wait(menu, 0.3);
+    }
+
     // The same mods as rows of a page (out of sight to the left of this one), in our row style: each row's line under
     // its title (tags, note, author), its buttons and its pencil made from nothing, as a new page makes them (after a
     // run the main menu is made again, and the page with it: #46), timed part by part (with the titles' styling before

@@ -48,6 +48,23 @@ static class History
     public static Snapshot? Loaded { get; private set; }
     public static string? LaunchProfile { get; private set; }
 
+#if DEVTOOLS
+    // Self-test: the launch state swapped (a big list's, and back), and each Changed listener timed once by name.
+    public static void TestLoaded(Snapshot? loaded) => (Loaded, _current) = (loaded, loaded ?? _current);
+
+    public static Snapshot TestTake() => Take();
+
+    public static List<(string Name, double Ms)> TestTimeChanged() =>
+    [
+        .. (Changed?.GetInvocationList() ?? []).Select(listener =>
+        {
+            var watch = System.Diagnostics.Stopwatch.StartNew();
+            listener.DynamicInvoke();
+            return ($"{listener.Method.DeclaringType?.Name}.{listener.Method.Name}", watch.Elapsed.TotalMilliseconds);
+        }),
+    ];
+#endif
+
     public static Track CurrentTrack => Layout.Current == Layout.View.LoadOrder ? Track.Order : Track.List;
     public static bool CanUndo => Past[CurrentTrack].Count > 0;
     public static bool CanRedo => Future[CurrentTrack].Count > 0;
