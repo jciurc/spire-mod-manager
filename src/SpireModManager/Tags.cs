@@ -65,14 +65,14 @@ static class Tags
                 : Menus.Format("SPIRE_MOD_MANAGER.TAG_SAME_ID_TIP", ("others", Names(others)));
             chips.Add(new Chip(Menus.Text("SPIRE_MOD_MANAGER.TAG_SAME_ID"), clash ? SameIdClash : Duplicate, Tip: tip));
         }
-        // A branch only when the mod is marked for one of the two (most are for both, and #stable, #beta find them anyway).
-        // A click searches for what the chip means: marked for this branch and not the other.
+        // A branch only when the mod is marked for one of the two (most are for both: #stable and #beta, its Other
+        // keywords, find those too). A click searches for the chip itself: marked for this branch and not the other.
         var (stable, beta) = Branches(mod);
         var (stableName, betaName) = (Menus.Text("SPIRE_MOD_MANAGER.TAG_STABLE"), Menus.Text("SPIRE_MOD_MANAGER.TAG_BETA"));
         if (stable && !beta)
-            chips.Add(new Chip(stableName, Stable, Tip: Menus.Text("SPIRE_MOD_MANAGER.TAG_STABLE_TIP"), Search: $"{Term(stableName)} -{Term(betaName)}"));
+            chips.Add(new Chip(stableName, Stable, Tip: Menus.Text("SPIRE_MOD_MANAGER.TAG_STABLE_TIP"), Search: Term(stableName)));
         else if (beta && !stable)
-            chips.Add(new Chip(betaName, Beta, Tip: Menus.Text("SPIRE_MOD_MANAGER.TAG_BETA_TIP"), Search: $"{Term(betaName)} -{Term(stableName)}"));
+            chips.Add(new Chip(betaName, Beta, Tip: Menus.Text("SPIRE_MOD_MANAGER.TAG_BETA_TIP"), Search: Term(betaName)));
         if (Dependencies.NeededBy(manifest.id).Any(m => m != mod))
             chips.Add(new Chip(Menus.Text("SPIRE_MOD_MANAGER.TAG_LIBRARY"), Library, Tip: Menus.Text("SPIRE_MOD_MANAGER.TAG_LIBRARY_TIP")));
         if (manifest.affectsGameplay)
@@ -89,11 +89,11 @@ static class Tags
 
     public static bool IsLocal(Mod mod) => Compat.WorkshopId(mod) == null;
 
-    // What a #tag search finds on a mod: its chips' text, its Workshop tags (a click on one in the panel searches it; your
-    // own "Utility" and the Workshop's are one tag), and Stable and Beta for each branch it's marked for, chip or not (so
-    // "#stable -#beta" finds the mods marked for stable only), in the game's language and in English (a guide's "#stable"
-    // works in any language). A Workshop tag named like one of the automatic chips isn't that chip: "#library" is the
-    // mods others need, and a Workshop "Beta" doesn't hide a stable-only mod from its own Stable chip's search.
+    // What a #tag search finds on a mod: its chips' text (Stable only and Beta only also in English, so a guide's
+    // #"stable only" works in any language) and its Workshop tags (a click on one in the panel searches it; your own
+    // "Utility" and the Workshop's are one tag). #stable and #beta, for each branch it's marked for, are hidden tags
+    // (HiddenTags). A Workshop tag named like one of the automatic chips isn't that chip: "#library" is the mods others
+    // need, and a Workshop "Beta" doesn't make a stable-only mod one #beta finds.
     public static IReadOnlyList<string> Searchable(Mod mod)
     {
         var texts = For(mod).Select(c => c.Text).ToList();
@@ -102,11 +102,8 @@ static class Tags
             var automatic = Automatic().ToHashSet(StringComparer.OrdinalIgnoreCase);
             texts.AddRange(workshop.Where(t => !automatic.Contains(t)));
         }
-        var (stable, beta) = Branches(mod);
-        if (stable)
-            texts.AddRange([Menus.Text("SPIRE_MOD_MANAGER.TAG_STABLE"), "Stable"]);
-        if (beta)
-            texts.AddRange([Menus.Text("SPIRE_MOD_MANAGER.TAG_BETA"), "Beta"]);
+        if (Branches(mod) is var (stable, beta) && stable != beta)
+            texts.Add(stable ? "Stable only" : "Beta only");
         if (Copies.Others(mod).Count > 0)
             texts.Add("Duplicate");
         return texts;
@@ -122,13 +119,38 @@ static class Tags
         {
             "SPIRE_MOD_MANAGER.TAG_NEW", "SPIRE_MOD_MANAGER.TAG_LOCAL", "SPIRE_MOD_MANAGER.TAG_SAME_ID", "SPIRE_MOD_MANAGER.TAG_STABLE",
             "SPIRE_MOD_MANAGER.TAG_BETA", "SPIRE_MOD_MANAGER.TAG_LIBRARY", "SPIRE_MOD_MANAGER.TAG_GAMEPLAY", "SPIRE_MOD_MANAGER.TAG_COSMETIC",
-        }.Select(Menus.Text).Concat(["New", "Local", "Duplicate", "Stable", "Beta", "Library", "Gameplay", "Cosmetic"]);
+        }.Select(Menus.Text).Concat(["New", "Local", "Duplicate", "Stable only", "Beta only", "Stable", "Beta", "Library", "Gameplay", "Cosmetic"]);
 
     // The game's stable and beta branches a mod is marked for, by the game's own rule over the Workshop's supported
     // range (on another branch the game still loads it, with an error).
     // No range set, or no Workshop details (a local mod, or before they arrive), is every branch.
     public static (bool Stable, bool Beta) Branches(Mod mod) =>
+#if DEVTOOLS
+        mod.manifest?.id is { } testId && TestBranches.TryGetValue(testId, out var marked) ? marked :
+#endif
         WorkshopInfo.For(mod)?.Branches is { Count: > 0 } ranges ? Supports(ranges) : (true, true);
+
+#if DEVTOOLS
+    // Self-test: the branches an installed mod is marked for, by id.
+    public static readonly Dictionary<string, (bool, bool)> TestBranches = [];
+#endif
+
+    // Enabled and marked only for the other branch than the one the game is on (stable or beta; none on another): the
+    // other-branch banner's mods (LoadOrder), and #warning's.
+    public static bool OffBranch(Mod mod) => Copies.Ticked(mod) && GameBranch() switch
+    {
+        PlatformBranch.Production => !Branches(mod).Stable,
+        PlatformBranch.PublicBeta => !Branches(mod).Beta,
+        _ => false,
+    };
+
+#if DEVTOOLS
+    // Self-test: a branch to be on, for OffBranch.
+    public static PlatformBranch? TestBranch;
+    public static PlatformBranch GameBranch() => TestBranch ?? PlatformUtil.GetPlatformBranch();
+#else
+    public static PlatformBranch GameBranch() => PlatformUtil.GetPlatformBranch();
+#endif
 
     static bool _noBranchRule;
 

@@ -268,6 +268,7 @@ static partial class SelfTest
             await Step(() => TestListBanner(menu, screen, content, outDir));
             await Step(() => TestManagersBanner(menu, screen, content, outDir));
             await Step(() => TestTurnedOffBanner(menu, screen, content, outDir));
+            await Step(() => TestBranchBanner(menu, screen, content, outDir));
             await Step(() => TestSelfIncluded(menu, screen, content, outDir));
             await Step(() => TestPageBar(menu, screen, content, outDir));
             await Step(() => TestListFilters(menu, screen, content, outDir));
@@ -1041,7 +1042,7 @@ static partial class SelfTest
         bool GameError(Mod mod) => ticked.Contains(mod) && mod.errors is { Count: > 0 };
         bool SelfOff(Mod mod) => mod.manifest?.id == ModEntry.ModId && !mods.Any(m => m.manifest?.id == ModEntry.ModId && ticked.Contains(m));
         bool Error(Mod mod) => Unmet(mod) || Needed(mod) || Misordered(mod) || Failed(mod) || SelfOff(mod);
-        bool Warning(Mod mod) => clashing.Contains(mod) || managers.Contains(mod) || GameError(mod) || TurnedOffStill(mod);
+        bool Warning(Mod mod) => clashing.Contains(mod) || managers.Contains(mod) || GameError(mod) || Tags.OffBranch(mod) || TurnedOffStill(mod);
         (string Tag, Func<Mod, bool> Means)[] meant =
         [
             ("enabled", ticked.Contains), ("disabled", m => !ticked.Contains(m)), ("workshop", m => m.modSource == ModSource.SteamWorkshop),

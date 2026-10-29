@@ -397,9 +397,9 @@ static partial class SelfTest
         var keywordsAt = Array.FindIndex(facts, l => l.StartsWith(keywordsLabel + ": "));
         var keywords = $"{keywordsLabel}: {string.Join(", ", HiddenTagNames.Where(t => Search.Matches(ours.Mod, t)).Select(t => t.TrimStart('#')))}";
         Check("Size, then Modified content, then Other keywords: the hidden tags that find the mod, bare names with no \"#\", in their order (this mod: enabled, "
-            + "local, installed, loaded... renamed, note)", keywordsAt > 1 && facts[keywordsAt - 2].StartsWith(Menus.Text("SPIRE_MOD_MANAGER.SIZE") + ": ")
+            + "local, installed, stable, beta, loaded... renamed, note)", keywordsAt > 1 && facts[keywordsAt - 2].StartsWith(Menus.Text("SPIRE_MOD_MANAGER.SIZE") + ": ")
             && facts[keywordsAt - 1].StartsWith(Menus.Text("SPIRE_MOD_MANAGER.MODIFIED_CONTENT") + ": ") && facts[keywordsAt] == keywords
-            && keywords.StartsWith($"{keywordsLabel}: enabled, local, installed, loaded, ") && keywords.Contains("renamed, note") && !keywords.Contains('#')
+            && keywords.StartsWith($"{keywordsLabel}: enabled, local, installed, stable, beta, loaded, ") && keywords.Contains("renamed, note") && !keywords.Contains('#')
             && !keywords.Split(", ").Contains("notes"), $"{(keywordsAt < 0 ? "no row" : facts[keywordsAt])}; wanted {keywords}");
         var panelText = panel.GetNode<RichTextLabel>("ModDescription");
         var marked = panelText.Text.Split('\n');
@@ -1145,9 +1145,9 @@ static partial class SelfTest
     // game failed it, D has a game error, E is off but loaded, with a tag of its own named "Enabled"; and each name
     // without its "#".
     // Every hidden tag, in HiddenTags' order (the info panel's Other keywords lists them in it).
-    static readonly string[] HiddenTagNames = ["#enabled", "#disabled", "#workshop", "#local", "#installed", "#uninstalled", "#missing", "#loaded", "#notloaded",
-        "#pending", "#new", "#changed", "#moved", "#edited", "#renamed", "#note", "#uncategorized", "#unmet", "#needed", "#order", "#duplicate", "#clash", "#aside",
-        "#managers", "#failed", "#gameerror", "#error", "#warning", "#problem"];
+    static readonly string[] HiddenTagNames = ["#enabled", "#disabled", "#workshop", "#local", "#installed", "#stable", "#beta", "#uninstalled", "#missing",
+        "#loaded", "#notloaded", "#pending", "#new", "#changed", "#moved", "#edited", "#renamed", "#note", "#uncategorized", "#unmet", "#needed", "#order",
+        "#duplicate", "#clash", "#aside", "#managers", "#failed", "#gameerror", "#error", "#warning", "#problem"];
 
     static void TestHiddenTags(Control content)
     {
@@ -1272,16 +1272,17 @@ static partial class SelfTest
         }
     }
 
-    // Stable and Beta, by the game's own branch rule over a Workshop mod's supported range (made-up mods and details):
-    // a chip only on a mod marked for one branch, whose click searches for that ("#Stable -#Beta"); #stable and #beta
-    // (and the plain words) find every mod marked for a branch, "#stable -#beta" the ones for stable only. No range, or a
-    // local mod: both, no chip.
+    // Stable only and Beta only, by the game's own branch rule over a Workshop mod's supported range (made-up mods and
+    // details): a chip only on a mod marked for one branch, whose click searches for it (#"Stable only"); #stable and
+    // #beta (and the plain words), its Other keywords, find every mod marked for a branch, "#stable -#beta" the ones for
+    // stable only, as #"stable only" does. No range, or a local mod: both, no chip.
     static void TestBranchTags()
     {
-        string[] queries = ["#stable", "#beta", "#stable -#beta", "stable", "stable -beta", "table"];
+        string[] queries = ["#stable", "#beta", "#stable -#beta", "stable", "stable -beta", "table", "#\"stable only\"", "#\"beta only\""];
         (string Name, List<(string, string)> Ranges)[] cases =
             [("stable only", [("public", "public")]), ("beta and up", [("public-beta", "")]), ("both", [("public", "public-beta")]), ("no range", [])];
         var seen = new List<string>();
+        string Keywords(Mod mod) => string.Join(",", HiddenTags.Of(mod).Where(k => k is "stable" or "beta"));
         for (var i = 0; i < cases.Length; i++)
         {
             var mod = new Mod
@@ -1294,9 +1295,9 @@ static partial class SelfTest
             WorkshopInfo.TestSet(id, new WorkshopInfo.Details(DateTime.Now, DateTime.Now, [], cases[i].Ranges, 0, null));
             try
             {
-                var chips = string.Join("/", Tags.For(mod).Where(c => c.Text is "Stable" or "Beta").Select(c => $"{c.Text} ({c.Search})"));
+                var chips = string.Join("/", Tags.For(mod).Where(c => c.Text is "Stable only" or "Beta only").Select(c => $"{c.Text} ({c.Search})"));
                 var found = string.Concat(queries.Select(q => Search.Matches(mod, q) ? "y" : "n"));
-                seen.Add($"{cases[i].Name}: [{chips}] {found}");
+                seen.Add($"{cases[i].Name}: [{chips}] {found} {Keywords(mod)}");
             }
             finally
             {
@@ -1304,12 +1305,12 @@ static partial class SelfTest
             }
         }
         var local = Dependencies.Find("SmmTestFixes");
-        seen.Add($"local: [{string.Join("/", Tags.For(local).Where(c => c.Text is "Stable" or "Beta").Select(c => c.Text))}] "
-            + string.Concat(queries.Select(q => Search.Matches(local, q) ? "y" : "n")));
-        Check("Stable and Beta by the game's branch rule: a chip on one-branch mods that searches for it; #stable, #beta, #stable -#beta "
-            + "and the plain words find them; \"table\" only through a chip's text (as any chip)",
-            seen.SequenceEqual(["stable only: [Stable (#Stable -#Beta)] ynyyyy", "beta and up: [Beta (#Beta -#Stable)] nynnnn",
-                "both: [] yynynn", "no range: [] yynynn", "local: [] yynynn"]),
+        seen.Add($"local: [{string.Join("/", Tags.For(local).Where(c => c.Text is "Stable only" or "Beta only").Select(c => c.Text))}] "
+            + string.Concat(queries.Select(q => Search.Matches(local, q) ? "y" : "n")) + $" {Keywords(local!)}");
+        Check("Stable only and Beta only by the game's branch rule: a chip on one-branch mods that searches for it; #stable, #beta, #stable -#beta "
+            + "and the plain words find them, stable and beta among Other keywords; \"table\" only through a chip's text (as any chip)",
+            seen.SequenceEqual(["stable only: [Stable only (#\"Stable only\")] ynyyyyyn stable", "beta and up: [Beta only (#\"Beta only\")] nynnnnny beta",
+                "both: [] yynynnnn stable,beta", "no range: [] yynynnnn stable,beta", "local: [] yynynnnn stable,beta"]),
             string.Join(" | ", seen));
     }
 
@@ -1473,9 +1474,9 @@ static partial class SelfTest
         Check("click-to-search: a -#tag and \"exact text\" stay whole terms", whole.SequenceEqual(["-#Library mod #Gameplay", "\"two words\""]),
             string.Join(" | ", whole));
         string[] flipped = [After("-#Gameplay mod", () => Tag("Gameplay", true)), After("\"Don't", () => Tag("Local", true)),
-            After("", () => SpireModManager.Search.ByChip(content, new Tags.Chip("Stable", Colors.White, Search: "#Stable -#Beta"), false))];
+            After("", () => SpireModManager.Search.ByChip(content, new Tags.Chip("Stable only", Colors.White, Search: "#\"Stable only\""), false))];
         Check("click-to-search: Shift on a left-out tag puts it in, an open quote is closed first, a branch chip searches for what it means",
-            flipped.SequenceEqual(["mod #Gameplay", "\"Don't\" #Local", "#Stable -#Beta"]), string.Join(" | ", flipped));
+            flipped.SequenceEqual(["mod #Gameplay", "\"Don't\" #Local", "#\"Stable only\""]), string.Join(" | ", flipped));
         // Brackets, OR, "|" and AND are pieces of their own: a term taken out takes the OR (else AND) that joined it, so the
         // rest means what it did, and brackets left empty go; one added after an OR still being typed completes it.
         string[] operators = [After("#a OR #b #c", () => Tag("b", true)), After("(#a OR #b) #c", () => Tag("a", true)),
