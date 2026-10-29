@@ -38,7 +38,7 @@ static class HiddenTags
         ["clash"] = Clash,
         ["aside"] = Copies.Loses, // ticked, but another copy of its id loads
         ["managers"] = Managers,
-        ["failed"] = Failed,
+        ["failed"] = m => Failed(m) || TurnedOffStill(m), // failed to load, or turned off after a failed start
         ["gameerror"] = GameError,
         ["error"] = Error,
         ["warning"] = Warning,
@@ -64,8 +64,9 @@ static class HiddenTags
     // loads before what it needs), and mods the game failed, and this mod with no copy of it ticked.
     static bool Error(Mod mod) => Dependencies.Unmet(mod) || Needed(mod) || Misordered(mod) || Failed(mod) || SelfOff(mod);
 
-    // What the yellow ones point to (copies of one mod ticked together, both mod managers ticked), and the game's errors.
-    static bool Warning(Mod mod) => Clash(mod) || Managers(mod) || GameError(mod);
+    // What the yellow ones point to (copies of one mod ticked together, both mod managers ticked, mods turned off after a
+    // failed start), and the game's errors.
+    static bool Warning(Mod mod) => Clash(mod) || Managers(mod) || GameError(mod) || TurnedOffStill(mod);
 
     // Not loading after a relaunch, though a mod that loads needs it (Dependencies.NeededOff).
     static bool Needed(Mod mod) => !Copies.Loads(mod) && Whole("needed", mods => [.. Dependencies.NeededOff(mods)]).Contains(mod);
@@ -79,6 +80,14 @@ static class HiddenTags
 
     // One of the two mod managers' ticked copies, while both are ticked: the banner's.
     static bool Managers(Mod mod) => mod.manifest?.id is ModEntry.ModId or Bmm.ModId && Bmm.BothTicked && Bmm.TickedManagers().Contains(mod);
+
+    // Turned off after a failed start and still off (#failed, with the ones that failed to load): the yellow banner's
+    // (TurnedOff.StillOff).
+    static bool TurnedOffStill(Mod mod) => !Copies.Ticked(mod) && Whole("turnedoff", mods =>
+    {
+        var ids = TurnedOff.StillOff().Select(e => e.Id).ToHashSet();
+        return [.. mods.Where(m => m.manifest?.id is { } id && ids.Contains(id))];
+    }).Contains(mod);
 
     // Ticked, and the game failed to load it this session (#failed, and the main list's red banner).
     public static bool Failed(Mod mod) => Copies.Ticked(mod) && mod.state == ModLoadState.Failed;
