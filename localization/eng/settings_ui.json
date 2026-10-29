@@ -221,6 +221,7 @@
   "SPIRE_MOD_MANAGER.NEEDED_BY": "Required for",
   "SPIRE_MOD_MANAGER.MODIFIED_CONTENT": "Modified content",
   "SPIRE_MOD_MANAGER.MODIFIED_NONE": "No information found",
+  "SPIRE_MOD_MANAGER.MODIFIED_NONE_NOT_LOADED": "Contents can only be identified while mod is loaded",
   "SPIRE_MOD_MANAGER.MODIFIED_MORE": "{areas} and {count} more",
   "SPIRE_MOD_MANAGER.MODIFIED_MORE_ONE": "{areas} and 1 more",
   "SPIRE_MOD_MANAGER.MODIFIED_CODE_TIP": "This mod changes game code in {places}. Modifications relate to these areas of the game, and additional changes not listed here may still be present.",

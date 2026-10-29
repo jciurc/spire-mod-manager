@@ -280,7 +280,7 @@ static class ModDetails
         var changes = GameChanges.For(mod);
         ShownChanges[container.GetInstanceId()] = (mod, changes);
         var own = mod.manifest?.description is { Length: > 0 } words ? PanelDescription.Shown(description, words) : null;
-        description.Text = Describe(mod, ModifiedContent.Row(changes, description), own);
+        description.Text = Describe(mod, ModifiedContent.Row(mod, changes, description), own);
         GameText.Fit(description);
     }
 
