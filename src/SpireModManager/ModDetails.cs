@@ -13,8 +13,8 @@ namespace SpireModManager;
 // The info panel in our views, top to bottom: the head beside the thumbnail (name and version, id and Workshop link,
 // status, author, last update, compatibility); anything wrong; the description (three lines at most: PanelDescription);
 // size, published, subscribers, Workshop tags, modified content (ModifiedContent) and other keywords (the hidden tags);
-// dependencies both ways; the player's Alias, Category, Tags and Note; Open Folder. Text scrolled past an edge fades
-// there (ScrollFade).
+// dependencies both ways; the player's Alias, Category, Tags and Note; Open Folder. All under the head scrolls in one
+// box (PanelScroll), with a fade at an edge it runs on past (ScrollFade).
 // Vanilla View: the panel exactly as the game makes it.
 static class ModDetails
 {
@@ -73,7 +73,11 @@ static class ModDetails
         var id = mod.manifest?.id;
         var key = Copies.Key(mod); // this copy's: a mod installed twice has an entry per copy
         if (Meta(container, ModIdMeta) != key)
+        {
             HistoryBar.HideBack(container); // another mod: no way back to the changes list (the same one refilled keeps it)
+            if (PanelScroll.Box(container) is { } box)
+                box.ScrollVertical = 0; // and its details from the top
+        }
         container.SetMeta(ModIdMeta, key);
         container.SetMeta(FolderMeta, mod.path);
         container.SetMeta(WorkshopMeta, Compat.WorkshopId(mod)?.ToString() ?? ""); // this copy's (a local one can share its id)
@@ -114,7 +118,7 @@ static class ModDetails
         FitTitle(title, mod.manifest?.name ?? id ?? "", mod.manifest?.version);
         FitSource(source, id ?? "", where, title.Size.X);
 
-        var yours = container.GetNodeOrNull<Control>(FieldsName) ?? AddFields(container);
+        var yours = Yours(container) ?? AddFields(container);
         yours.Visible = id != null;
         foreach (var field in Fields.GetValueOrDefault(container.GetInstanceId(), []))
             field.Load();
@@ -203,7 +207,7 @@ static class ModDetails
     public static void Looks(NModInfoContainer container, bool game)
     {
         var title = container.GetNode<Control>("ModTitle");
-        var description = container.GetNode<RichTextLabel>("ModDescription");
+        var description = PanelScroll.Description(container);
         var was = GameLooks(container);
         title.MouseFilter = game ? (Control.MouseFilterEnum)was[0].AsInt32() : Control.MouseFilterEnum.Stop;
         title.MouseDefaultCursorShape = game ? (Control.CursorShape)was[1].AsInt32() : Control.CursorShape.PointingHand;
@@ -217,7 +221,7 @@ static class ModDetails
     {
         if (!container.HasMeta(GameLooksMeta))
         {
-            var (title, description) = (container.GetNode<Control>("ModTitle"), container.GetNode<RichTextLabel>("ModDescription"));
+            var (title, description) = (container.GetNode<Control>("ModTitle"), PanelScroll.Description(container));
             container.SetMeta(GameLooksMeta, new Godot.Collections.Array { (int)title.MouseFilter, (int)title.MouseDefaultCursorShape, description.MetaUnderlined });
         }
         return container.GetMeta(GameLooksMeta).AsGodotArray();
@@ -243,7 +247,7 @@ static class ModDetails
         // Cut short (FitTitle, our views): the whole name and version in a plain tooltip.
         Hover.Watch(title, "SpireModManagerFullText", () => !Store.Data.VanillaView && title.GetMeta(FullMeta, "").AsString() is { Length: > 0 } whole
             ? Escape(whole) : null, Hover.Timing.Slow);
-        var description = container.GetNode<RichTextLabel>("ModDescription");
+        var description = PanelScroll.Description(container);
         static bool Searches(string meta) => meta.StartsWith("wtag:") || meta.StartsWith("htag:"); // a Workshop tag, a hidden one
         description.MetaClicked += meta =>
         {
@@ -266,7 +270,6 @@ static class ModDetails
         CategoryList.WatchNames(description, Content); // hovering a name: its row lit (if in view), then its card
         GameText.Watch(description); // the game's words in their box (GameBlock)
         PanelDescription.Watch(description); // a long description cut short: the whole of it in a card
-        ScrollFade.Watch(description); // more text out of sight above or below: a fade at that edge
         // Hovering the thumbnail: the whole picture (our views).
         var image = container.GetNode<TextureRect>("ModImage");
         image.MouseFilter = Control.MouseFilterEnum.Pass;
@@ -276,7 +279,7 @@ static class ModDetails
     // The panel's text for mod, its tables' gaps set for it at once (GameText.Fit): PlaceFields measures it before it draws.
     static void ShowDescription(NModInfoContainer container, Mod mod)
     {
-        var description = container.GetNode<MegaRichTextLabel>("ModDescription");
+        var description = PanelScroll.Description(container);
         var changes = GameChanges.For(mod);
         ShownChanges[container.GetInstanceId()] = (mod, changes);
         var own = mod.manifest?.description is { Length: > 0 } words ? PanelDescription.Shown(description, words) : null;
@@ -858,10 +861,16 @@ static class ModDetails
     public static void HideButtons(Node container)
     {
         CommitEdits(container);
-        foreach (var name in new[] { "OpenFolderButton", SettingsName, SourceName, HeadName, FieldsName, OthersName })
+        foreach (var name in new[] { "OpenFolderButton", SettingsName, SourceName, HeadName })
             if (container.GetNodeOrNull<Control>(name) is { } control)
                 control.Visible = false;
+        foreach (var name in new[] { FieldsName, OthersName })
+            if (PanelScroll.Body(container)?.GetNodeOrNull<Control>(name) is { } control)
+                control.Visible = false;
     }
+
+    // The player's fields, in the panel's scrolling box: null before the panel first shows a mod in our views.
+    public static Control? Yours(Node container) => PanelScroll.Body(container)?.GetNodeOrNull<Control>(FieldsName);
 
     // After an undo or revert: the fields show the old state, so they must not be saved over the restored one.
     public static void Forget(Node container) => container.SetMeta(ModIdMeta, "");
@@ -948,9 +957,7 @@ static class ModDetails
     {
         var box = new VBoxContainer { Name = FieldsName };
         box.AddThemeConstantOverride("separation", 12);
-        container.AddChild(box);
-        box.AnchorRight = 1;
-        (box.OffsetLeft, box.OffsetRight) = (Inset, -Inset);
+        PanelScroll.Body(container)!.AddChild(box); // placed under the description: PlaceFields
 
         Control? Content() => container.GetParent()?.GetNodeOrNull<Control>("%ModsScrollContainer/Mask/Content");
         string? ModId() => Meta(container, ModIdMeta) is { Length: > 0 } id ? id : null;
@@ -1013,60 +1020,44 @@ static class ModDetails
         return line;
     }
 
-    // Places the player's fields right under the description, which shrinks to its text; other mods' panel parts go
-    // between while the description keeps a few lines, the rest out of sight (Layout.FitOthers). Our views only.
+    // Places the description at its text's height, other mods' panel parts (Layout.PlaceOthers) and the player's fields
+    // down the panel's scrolling box (PanelScroll). Our views only.
     public static void PlaceFields(Control container)
     {
-        if (!Layout.Wide || HistoryBar.ListOpen(container) || container.GetNodeOrNull<Control>(FieldsName) is not { } yours)
+        if (!Layout.Wide || HistoryBar.ListOpen(container) || PanelScroll.Box(container) is not { } box || Yours(container) is not { } yours)
         {
-            if (container.GetNodeOrNull<Control>(OthersName) is { } stale)
+            if (PanelScroll.Body(container)?.GetNodeOrNull<Control>(OthersName) is { } stale)
                 stale.Visible = false; // the changes list or the narrow layout: no line placed
             return;
         }
-        const float fewLines = 80;
-        var description = container.GetNode<RichTextLabel>("ModDescription");
-        var top = description.OffsetTop;
-        var height = yours.GetCombinedMinimumSize().Y;
-        var room = container.Size.Y - ButtonsFromBottom - height - FieldsGap - top;
+        var body = PanelScroll.Body(container)!;
+        var description = PanelScroll.Description(container);
         var text = description.GetContentHeight() + 6;
-        var others = Layout.FitOthers(container, room - Math.Min(text, fewLines));
-        room -= others.Sum(o => o.Size.Y + FieldsGap);
-        // Other mods' parts with no room are out of sight (Layout.Park): a line says how many, and where they are.
-        var parked = Layout.Parked(container);
-        var line = container.GetNodeOrNull<Label>(OthersName) ?? AddOthersLine(container);
-        line.Visible = parked > 0;
-        if (parked > 0)
+        PanelScroll.Place(box, description, 0, text);
+        var (y, left) = Layout.PlaceOthers(container, box, text + FieldsGap);
+        // Other mods' parts too tall for the box are out of sight (Layout.PlaceOthers): a line says how many, and where they are.
+        var line = body.GetNodeOrNull<Label>(OthersName) ?? AddOthersLine(body);
+        line.Visible = left > 0;
+        if (left > 0)
         {
-            line.Text = Menus.Format("SPIRE_MOD_MANAGER.OTHERS_PARKED", ("count", Menus.Number(parked)));
-            room -= line.GetCombinedMinimumSize().Y + FieldsGap;
+            line.Text = Menus.Format("SPIRE_MOD_MANAGER.OTHERS_PARKED", ("count", Menus.Number(left)));
+            var lineHeight = line.GetCombinedMinimumSize().Y;
+            PanelScroll.Place(box, line, y, lineHeight);
+            y += lineHeight + FieldsGap;
         }
-        var used = Math.Min(text, Math.Max(room, fewLines));
-        description.OffsetBottom = top + used;
-        var y = top + used + FieldsGap;
-        foreach (var other in others)
-        {
-            Layout.PlaceOther(other, y);
-            y += other.Size.Y + FieldsGap;
-        }
-        if (line.Visible)
-        {
-            (line.OffsetTop, line.OffsetBottom) = (y, y + line.GetCombinedMinimumSize().Y);
-            y = line.OffsetBottom + FieldsGap;
-        }
-        yours.OffsetTop = y;
-        yours.OffsetBottom = yours.OffsetTop + height;
+        var height = yours.GetCombinedMinimumSize().Y;
+        PanelScroll.Place(box, yours, y, height);
+        body.CustomMinimumSize = new Vector2(0, yours.Visible ? y + height : y - FieldsGap);
     }
 
     static string Escape(string text) => text.Replace("[", "[lb]");
 
-    // The line for other mods' parts out of sight, faint, across the panel at our left edge.
-    static Label AddOthersLine(Control container)
+    // The line for other mods' parts out of sight, faint, across the box.
+    static Label AddOthersLine(Control body)
     {
         var line = new Label { Name = OthersName, MouseFilter = Control.MouseFilterEnum.Ignore, Visible = false };
         Style(line, "res://themes/kreon_regular_shared.tres", 15, new Color(1, 0.964706f, 0.886275f, 0.6f));
-        container.AddChild(line);
-        line.SetAnchorsPreset(Control.LayoutPreset.TopWide);
-        (line.OffsetLeft, line.OffsetRight) = (Inset, -Inset);
+        body.AddChild(line);
         return line;
     }
 

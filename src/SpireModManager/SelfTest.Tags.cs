@@ -59,7 +59,7 @@ static partial class SelfTest
         CategoryList.Select(screen, ui);
         await PanelFor(menu, screen, ui);
         await Wait(menu, 0.5);
-        var box = screen.GetNode<LineEdit>("%ModInfoContainer/SpireModManagerYours/Tags/Box");
+        var box = ModDetails.Yours(screen.GetNode("%ModInfoContainer"))!.GetNode<LineEdit>("Tags/Box");
         box.GrabFocus();
         await Wait(menu, 0.3);
         Check("tag suggestions: focusing the tags box lists your tags, on the most mods first (a mod counts once), at most 6", Listed() == "Strategy, Co-op, Story-heavy, Fast, Must-have, Stable", Listed());
@@ -172,7 +172,7 @@ static partial class SelfTest
             CategoryList.Select(screen, ui);
             await PanelFor(menu, screen, ui);
             await Wait(menu, 0.5);
-            var box = screen.GetNode<LineEdit>("%ModInfoContainer/SpireModManagerYours/Tags/Box");
+            var box = ModDetails.Yours(screen.GetNode("%ModInfoContainer"))!.GetNode<LineEdit>("Tags/Box");
             box.GrabFocus();
             await Wait(menu, 0.2);
             if (!box.HasFocus() || !box.IsEditing())

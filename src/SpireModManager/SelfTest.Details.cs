@@ -164,7 +164,7 @@ static partial class SelfTest
                 && wholeId == id, $"{wholeTitle} / {wholeId}");
             // The panel's category picker: the long name cut with ".." before its arrow to the picker's width, inside the
             // panel (whole, it pushed the fields past the panel's edge); the whole name a second over it.
-            var picker = panel.GetNode<Button>("SpireModManagerYours/Category/Picker");
+            var picker = ModDetails.Yours(panel)!.GetNode<Button>("Category/Picker");
             var pickerRoom = picker.Size.X - picker.GetThemeStylebox("normal").GetMinimumSize().X;
             var pickerDrawn = picker.GetThemeFont("font").GetStringSize(picker.Text, fontSize: picker.GetThemeFontSize("font_size")).X;
             var wholePicker = await Tooltip(picker, "SpireModManagerFullText", Hover.SlowDelay + 0.2);
@@ -294,7 +294,7 @@ static partial class SelfTest
                 await Wait(menu, 0.3);
                 Layout.TestFitting = null;
                 var again = Sizes();
-                var description = panel.GetNode<RichTextLabel>("ModDescription");
+                var description = PanelScroll.Description(panel);
                 var underlined = description.MetaUnderlined;
                 Click(screen.GetNode<BaseButton>("SpireModManagerViewToggle"));
                 await Wait(menu, 0.5);
@@ -311,7 +311,7 @@ static partial class SelfTest
                 var freshSay = "no panel in the game's scene";
                 if (scene?.GetNodeOrNull<NModInfoContainer>("%ModInfoContainer") is { } fresh)
                 {
-                    var freshText = fresh.GetNode<RichTextLabel>("ModDescription");
+                    var freshText = PanelScroll.Description(fresh);
                     var sceneUnderline = freshText.MetaUnderlined;
                     fresh.GetParent()?.RemoveChild(fresh);
                     fresh.Visible = false;
@@ -435,7 +435,7 @@ static partial class SelfTest
         Compat.SetWorkshopId(mod, item);
         WorkshopInfo.TestSet(item, new WorkshopInfo.Details(DateTime.Now, DateTime.Now, [.. Enumerable.Range(1, 90).Select(i => $"Fade test tag {i:00}")], [], 0, null));
         var info = screen.GetNode<NModInfoContainer>("%ModInfoContainer");
-        var label = info.GetNode<RichTextLabel>("ModDescription");
+        var label = PanelScroll.Description(info);
         var bar = label.GetVScrollBar();
         try
         {
@@ -470,39 +470,60 @@ static partial class SelfTest
                 && Math.Abs(hover.Position.Y + hover.Size.Y - (lineTop + label.GetLineOffset(last) + label.GetLineHeight(last))) < 1 && card == plain,
                 $"{placed}; card: {card}");
 
-            // The fade: the text runs on below (its Workshop tags), so there at the top.
+            // The fade: the panel's box runs on below (its Workshop tags, our fields), so there at the top.
             var panelFill = (info.GetThemeStylebox("panel") as StyleBoxFlat)?.BgColor ?? Colors.White;
-            bar.Value = 0;
+            var box = PanelScroll.Box(info)!;
+            var scroll = box.GetVScrollBar();
+            scroll.Value = 0;
             await Wait(menu, 0.2);
-            var atTop = ScrollFade.TestDrawn(label);
+            var atTop = ScrollFade.TestDrawn(box);
             await Capture(screen, outDir, "16f-fade-bottom");
-            bar.Value = (bar.MaxValue - bar.Page) / 2;
+            scroll.Value = (scroll.MaxValue - scroll.Page) / 2;
             await Wait(menu, 0.2);
-            var midway = ScrollFade.TestDrawn(label);
+            var midway = ScrollFade.TestDrawn(box);
             await Capture(screen, outDir, "16g-fade-both");
-            bar.Value = bar.MaxValue;
+            scroll.Value = scroll.MaxValue;
             await Wait(menu, 0.2);
-            var atEnd = ScrollFade.TestDrawn(label);
+            var atEnd = ScrollFade.TestDrawn(box);
             await Capture(screen, outDir, "16h-fade-top");
-            var room = label.Size.X - bar.Size.X;
-            Check("the panel's text scrolled: a fade below while there's more below, at both edges midway, above at the end",
-                bar.Visible && atTop is (false, true, _) && midway is (true, true, _) && atEnd is (true, false, var endRoom)
-                && Math.Abs(endRoom.Size.X - room) < 0.5f && Math.Abs(endRoom.Size.Y - label.Size.Y) < 0.5f,
-                $"scrollbar {bar.Visible} ({bar.MaxValue:0} tall, {bar.Page:0} shown): top {atTop}, midway {midway}, end {atEnd}; the text's room {room:0.#}");
-            Check("the fade in the panel's colour, deepening to the edge, over the text and not its scrollbar; drawn, so it takes no clicks",
+            var room = box.Size.X - scroll.Size.X;
+            Check("the panel's box scrolled: a fade below while there's more below, at both edges midway, above at the end",
+                scroll.Visible && atTop is (false, true, _) && midway is (true, true, _) && atEnd is (true, false, var endRoom)
+                && Math.Abs(endRoom.Size.X - room) < 0.5f && Math.Abs(endRoom.Size.Y - box.Size.Y) < 0.5f,
+                $"scrollbar {scroll.Visible} ({scroll.MaxValue:0} tall, {scroll.Page:0} shown): top {atTop}, midway {midway}, end {atEnd}; the content's room {room:0.#}");
+            Check("the fade in the panel's colour, deepening to the edge, over the content and not its scrollbar; drawn, so it takes no clicks",
                 ScrollFade.Shade(0) is var edge && edge.R == panelFill.R && edge.G == panelFill.G && edge.B == panelFill.B && edge.A > 0.5f && ScrollFade.Shade(1).A == 0
-                && atEnd is { Room.End.X: var right } && right <= bar.Position.X + 0.5f && label.GetChildren().OfType<Control>().All(c => c == hover),
-                $"edge {ScrollFade.Shade(0)}, the panel {panelFill}; fade to {atEnd?.Room.End.X:0.#}, scrollbar from {bar.Position.X:0.#}; "
+                && atEnd is { Room.End.X: var right } && right <= scroll.Position.X + 0.5f && label.GetChildren().OfType<Control>().All(c => c == hover),
+                $"edge {ScrollFade.Shade(0)}, the panel {panelFill}; fade to {atEnd?.Room.End.X:0.#}, scrollbar from {scroll.Position.X:0.#}; "
                 + $"the label's controls: {string.Join(", ", label.GetChildren().OfType<Control>().Select(c => c.Name))}");
+            // Everything under the head in the one box: the description, then our fields, scrolling together.
+            var fields = ModDetails.Yours(info)!;
+            Check("the description and our fields scroll together in one box under the head, the fields after the text",
+                label.GetParent()?.GetParent() == box && fields.GetParent() == label.GetParent() && fields.Position.Y >= label.Position.Y + label.Size.Y
+                && !label.ScrollActive && box.FollowFocus, $"label in {label.GetParent()?.GetParent()?.Name}, fields in {fields.GetParent()?.GetParent()?.Name} at {fields.Position.Y:0}, text to {label.Position.Y + label.Size.Y:0}");
+            // A wheel over the text scrolls the box (the label doesn't take it).
+            scroll.Value = 0;
+            await Wait(menu, 0.1);
+            var over = label.GetGlobalRect().GetCenter() with { Y = box.GetGlobalRect().Position.Y + 40 };
+            var sent = InWindow(menu, over); // headless, the window is scaled
+            Input.ParseInputEvent(new InputEventMouseMotion { Position = sent, GlobalPosition = sent });
+            await Wait(menu, 0.1);
+            var hovered = menu.GetViewport().GuiGetHoveredControl();
+            foreach (var pressed in new[] { true, false })
+                Input.ParseInputEvent(new InputEventMouseButton { ButtonIndex = MouseButton.WheelDown, Pressed = pressed, Factor = 1, Position = sent, GlobalPosition = sent });
+            await Wait(menu, 0.2);
+            Check("a wheel over the panel's text scrolls the box", scroll.Value > 0,
+                $"scrolled to {scroll.Value:0} of {scroll.MaxValue - scroll.Page:0}; at {over} under the mouse: {hovered?.GetPath().ToString() ?? "nothing"} "
+                + $"({hovered?.MouseFilter}); the text {label.GetGlobalRect()} ({label.MouseFilter}), the box {box.GetGlobalRect()}");
             // It follows the panel's size: room for it all, none; back to its size, a fade again.
-            var (top, bottom) = (label.OffsetTop, label.OffsetBottom);
-            label.OffsetBottom = top + label.GetContentHeight() + 20;
+            var bottom = box.OffsetBottom;
+            box.OffsetBottom = box.OffsetTop + PanelScroll.Body(info)!.GetCombinedMinimumSize().Y + 20;
             await Wait(menu, 0.2);
-            var fits = ScrollFade.TestDrawn(label);
-            label.OffsetBottom = bottom;
+            var fits = ScrollFade.TestDrawn(box);
+            box.OffsetBottom = bottom;
             await Wait(menu, 0.2);
-            var again = ScrollFade.TestDrawn(label);
-            Check("the fade follows the panel's size: none while all its text fits, back once it doesn't",
+            var again = ScrollFade.TestDrawn(box);
+            Check("the fade follows the panel's size: none while all its content fits, back once it doesn't",
                 fits is (false, false, _) && again is { } back && (back.Above || back.Below), $"fits {fits}, then {again}");
 
             // A short description: as it is, no card.
@@ -524,13 +545,13 @@ static partial class SelfTest
             await Wait(menu, 0.5);
             info.Fill(mod); // the game's own fill there
             await Wait(menu, 0.3);
-            var (game, gameHover, gameFade) = (label.Text, hover?.Visible, ScrollFade.TestDrawn(label));
+            var (game, gameHover, gameFade, inScene) = (label.Text, hover?.Visible, PanelScroll.Box(info)?.IsVisibleInTree(), label.GetParent() == info && label.ScrollActive);
             Click(screen.GetNode<BaseButton>("SpireModManagerViewToggle"));
             await Wait(menu, 0.5);
             Check("Vanilla View: the game's own panel shows the description whole, uncut; no card over it, no fade",
                 game.Contains(Text(102, 20)) && !game.Contains(PanelDescription.Start) && !game.Contains(PanelDescription.End) && gameHover == false
-                && gameFade is (false, false, _),
-                $"card area shown {gameHover}, fade {gameFade}: {game[..Math.Min(80, game.Length)]}");
+                && gameFade == false && inScene,
+                $"card area shown {gameHover}, box shown {gameFade}, in the scene's place {inScene}: {game[..Math.Min(80, game.Length)]}");
         }
         finally
         {
@@ -756,7 +777,7 @@ static partial class SelfTest
 
         // Dates, sizes and counts follow the game's language: in English as they always read; in German, the game's
         // German date pattern and separators (our words stay English there, as we have no German text).
-        var english = info.GetNode<RichTextLabel>("ModDescription").GetParsedText();
+        var english = PanelScroll.Description(info).GetParsedText();
         Check("in English: October 11, 2026; Size: 1.5 MB; Subscribers: 1,234; the profile list's Oct 11", ModDetails.Date(new DateTime(2026, 10, 11)) == "October 11, 2026"
             && english.Contains("Size: 1.5 MB") && english.Contains("Subscribers: 1,234") && Profiles.ShortDate(new DateTime(2026, 10, 11)) == "Oct 11", english);
         var facts = english.Split('\n');
@@ -774,7 +795,7 @@ static partial class SelfTest
         {
             LocManager.Instance.SetLanguage("deu"); // the game's own switch, without the save or the menu rebuild
             info.Fill(mod);
-            var german = info.GetNode<RichTextLabel>("ModDescription").GetParsedText();
+            var german = PanelScroll.Description(info).GetParsedText();
             Check("with the game in German: 11. Oktober 2026; 1,5 MB; 1.234", ModDetails.Date(new DateTime(2026, 10, 11)) == "11. Oktober 2026"
                 && german.Contains("1,5 MB") && german.Contains("1.234"), $"{ModDetails.Date(new DateTime(2026, 10, 11))} / {german}");
             var longAgo = ModDetails.Ago(DateTime.Now.AddDays(-1234));
@@ -905,7 +926,7 @@ static partial class SelfTest
         CategoryList.Select(screen, row);
         await PanelFor(menu, screen, row);
         await Wait(menu, 0.4);
-        var description = screen.GetNode<NModInfoContainer>("%ModInfoContainer").GetNode<RichTextLabel>("ModDescription");
+        var description = PanelScroll.Description(screen.GetNode("%ModInfoContainer"));
         var shown = description.GetParsedText();
         var modifiedRow = shown.Split('\n').FirstOrDefault(l => l.StartsWith(Menus.Text("SPIRE_MOD_MANAGER.MODIFIED_CONTENT") + ": ")) ?? "";
         var fit = ModifiedFit(description, modifiedRow, own.Areas);
@@ -942,7 +963,7 @@ static partial class SelfTest
         };
         var ours = ModManager.Mods.FirstOrDefault(m => m.manifest?.id == ModEntry.ModId && m.state == ModLoadState.Loaded);
         var info = screen.GetNode<NModInfoContainer>("%ModInfoContainer");
-        var description = info.GetNode<RichTextLabel>("ModDescription");
+        var description = PanelScroll.Description(info);
         var term = Menus.Text("SPIRE_MOD_MANAGER.MODIFIED_CONTENT");
         Node? Dialog() => menu.GetTree().Root.GetNodeOrNull(ModifiedContent.Name);
         GameChanges.TestAssemblies = m => m == mod ? [typeof(ModEntry).Assembly] : null;
@@ -1465,7 +1486,8 @@ static partial class SelfTest
         var home = new Vector2(0, 318);
         var other = new PanelContainer { Name = "OtherModSettingsPanel", Position = home, CustomMinimumSize = new Vector2(560, 174) };
         info.AddChild(other);
-        var (details, yours) = (info.GetNode<Control>("ModDescription"), info.GetNode<Control>("SpireModManagerYours"));
+        Vector2 Tall() => new(560, PanelScroll.Box(info)!.Size.Y + 50); // taller than the panel's box: no room for it
+        var (details, yours) = (PanelScroll.Description(info), ModDetails.Yours(info)!);
         // shownByItsMod: what its mod sets in its own Fill postfix.
         async Task<string> Refill(bool? shownByItsMod = null)
         {
@@ -1486,10 +1508,10 @@ static partial class SelfTest
             && !panel.Intersects(text) && !panel.Intersects(fields) && panel.Position.Y >= text.End.Y && panel.End.Y <= fields.Position.Y, where);
         await Capture(screen, outDir, "17-other-mod-panel");
 
-        other.CustomMinimumSize = new Vector2(560, 600);
+        other.CustomMinimumSize = Tall();
         where = await Refill();
-        var parkedLine = info.GetNodeOrNull<Label>(ModDetails.OthersName);
-        Check("another mod's panel with no room for it: out of sight, a line under the details says so, our fields right under it", OutOfSight()
+        var parkedLine = PanelScroll.Body(info)?.GetNodeOrNull<Label>(ModDetails.OthersName);
+        Check("another mod's panel taller than the panel's box: out of sight, a line under the details says so, our fields right under it", OutOfSight()
             && parkedLine is { Visible: true } && parkedLine.Text == "1 more from other mods: see the vanilla modding page"
             && Math.Abs(parkedLine.OffsetTop - details.OffsetBottom - ModDetails.FieldsGap) < 1
             && Math.Abs(yours.OffsetTop - parkedLine.OffsetBottom - ModDetails.FieldsGap) < 1, $"{where}; line \"{parkedLine?.Text}\" shown {parkedLine?.Visible}");
@@ -1506,7 +1528,7 @@ static partial class SelfTest
         // hide holds. Its mod showing it again, with room: shown, in its place.
         foreach (var inFill in new[] { false, true })
         {
-            other.CustomMinimumSize = new Vector2(560, 600);
+            other.CustomMinimumSize = Tall();
             await Refill(shownByItsMod: true);
             if (inFill)
                 await Refill(shownByItsMod: false);
@@ -1540,7 +1562,7 @@ static partial class SelfTest
         Check("another mod's panel behind the changes list: out of sight and keyboard reach, shown as far as its mod can tell; its overlay too",
             HistoryBar.ListOpen(info) && other.Visible && Behind(other) && overlay.Visible && Behind(overlay), Seen());
         ModDetails.PlaceFields(info); // as a resize does while the list is open
-        Check("behind the changes list: no \"more from other mods\" line over it", info.GetNodeOrNull<Control>(ModDetails.OthersName) is not { Visible: true });
+        Check("behind the changes list: no \"more from other mods\" line over it", PanelScroll.Body(info)?.GetNodeOrNull<Control>(ModDetails.OthersName) is not { Visible: true });
         other.Visible = false; // its mod hides it
         HistoryBar.CloseList(info);
         await Wait(menu, 0.2);
