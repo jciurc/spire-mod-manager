@@ -1265,7 +1265,9 @@ static class Culprits
         var pick = ours.Pick is { Checked: true } ? ours.Pick
             : doctors is { Why: Why.DoctorThrew } ? doctors
             : ours.Pick ?? doctors ?? UpdatedPick(ours, planned, working, turnedOff);
-        log?.Add($"ours: {Described(ours.Pick)}; Mod Doctor's: {(md == null ? "none" : $"{md.Id} ({md.Reason})")}; offered: {Described(pick)}");
+        // Its suspects too: the dialog lists them where no mod is picked (a clash of two mods' content: it picks none)
+        var suspects = doctor?.Suspects is { Count: > 0 } named ? $", suspects {string.Join(", ", named)}" : "";
+        log?.Add($"ours: {Described(ours.Pick)}; Mod Doctor's: {(md == null ? "none" : $"{md.Id} ({md.Reason})")}{suspects}; offered: {Described(pick)}");
         if (pick == null)
             return null;
         var ids = pick.Ids;
