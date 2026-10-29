@@ -791,6 +791,39 @@ static partial class SelfTest
         {
             LocManager.Instance.SetLanguage(language);
         }
+
+        // Required items on its Workshop page that its manifest doesn't name (YuWanCard and RitsuLib): after its
+        // dependencies, marked (Jordan, 28 Oct: "RitsuLib (Requirement from workshop)"), an installed one a link to its
+        // row, one not installed a link to its Workshop page by its title; and on the installed one's panel, Required for.
+        var lib = new Mod
+        {
+            path = "", modSource = ModSource.SteamWorkshop, state = ModLoadState.AddedAtRuntime,
+            manifest = new ModManifest { id = "SmmWorkshopLib", name = "Workshop Lib", author = "Someone Careful" },
+        };
+        Compat.SetWorkshopId(lib, 43);
+        Installed.Detected(lib);
+        WorkshopInfo.TestSet(42, new WorkshopInfo.Details(DateTime.Now, DateTime.Now, [], [], 0, null) { Required = [43, 99001] });
+        WorkshopInfo.TestTitle(99001, "Missing Lib");
+        try
+        {
+            info.Fill(mod);
+            var needs = info.GetNode<RichTextLabel>("ModDescription");
+            var needsLine = needs.GetParsedText().Split('\n').FirstOrDefault(l => l.StartsWith(Menus.Text("SPIRE_MOD_MANAGER.DEPENDENCIES") + ": ")) ?? "";
+            Check("Workshop requirements: Dependencies: Workshop Lib (Requirement from workshop), Missing Lib (Requirement from workshop); the first "
+                + "a link to its row, the second to its Workshop page",
+                needsLine == "Dependencies: Workshop Lib (Requirement from workshop), Missing Lib (Requirement from workshop)"
+                && needs.Text.Contains("[url=mod:SmmWorkshopLib]") && needs.Text.Contains($"[url={ProfileCsv.WorkshopLink(99001)}]"), needsLine);
+            info.Fill(lib);
+            var forLine = info.GetNode<RichTextLabel>("ModDescription").GetParsedText().Split('\n')
+                .FirstOrDefault(l => l.StartsWith(Menus.Text("SPIRE_MOD_MANAGER.NEEDED_BY") + ": ")) ?? "";
+            Check("the required mod's panel: Required for: Workshop Test (Requirement from workshop)",
+                forLine == $"{Menus.Text("SPIRE_MOD_MANAGER.NEEDED_BY")}: Workshop Test (Requirement from workshop)", forLine);
+        }
+        finally
+        {
+            WorkshopInfo.TestTitle(99001, null);
+            Installed.Forget(lib);
+        }
         WorkshopInfo.TestSet(42, null);
         Installed.Forget(mod);
         Compat.Clear(info);
