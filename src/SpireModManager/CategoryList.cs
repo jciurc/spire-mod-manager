@@ -763,6 +763,24 @@ static class CategoryList
 
     static IReadOnlyList<MenuItem> BulkItems(Control content, List<string> ids)
     {
+        var items = BulkCategoryItems(content, ids);
+        items.Add(MenuItem.Heading(""));
+        // The picked rows themselves: a copy picked without its twin switches alone.
+        items.AddRange(OnOffItems(content, content.GetChildren().OfType<NModMenuRow>().Where(r => Selection.Contains(r.Mod)), selected: true));
+        return items;
+    }
+
+    // The info panel's category picker: the bulk menu's categories while the mod shown is one of two or more picked
+    // (Jordan, 28 Oct: "bulk selecting and choosing a category from the dropdown ... only moves one mod"), else its own.
+    public static IReadOnlyList<MenuItem> PanelCategoryItems(Control content, string id)
+    {
+        var ids = Selection.Mods.Select(Copies.Key).Where(key => key.Length > 0).Distinct().ToList();
+        return ids.Count > 1 && ids.Contains(id) ? BulkCategoryItems(content, ids) : CategoryItems(content, id);
+    }
+
+    // The picked mods' category (marked if shared), Uncategorized and a new one, each for all of them as one undo step.
+    static List<MenuItem> BulkCategoryItems(Control content, List<string> ids)
+    {
         var shared = ids.Select(id => Store.InfoFor(id)?.Category is { } name && Categories.Find(name) != null ? name : null).Distinct().ToList();
         var common = shared.Count == 1 ? shared[0] : "\n"; // not all the same: nothing marked
         var items = new List<MenuItem> { MenuItem.Heading(Menus.Text("SPIRE_MOD_MANAGER.CATEGORY")) };
@@ -771,9 +789,6 @@ static class CategoryList
         items.Add(new MenuItem(Menus.Text("SPIRE_MOD_MANAGER.UNCATEGORIZED"), () => Move(null), Checked: common == null, Radio: true));
         items.Add(MenuItem.Heading(""));
         items.Add(new MenuItem(Menus.Text("SPIRE_MOD_MANAGER.NEW_CATEGORY"), () => NewCategory(content, ids)));
-        items.Add(MenuItem.Heading(""));
-        // The picked rows themselves: a copy picked without its twin switches alone.
-        items.AddRange(OnOffItems(content, content.GetChildren().OfType<NModMenuRow>().Where(r => Selection.Contains(r.Mod)), selected: true));
         return items;
 
         void Move(string? category)

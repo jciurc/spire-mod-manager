@@ -983,7 +983,7 @@ static class ModDetails
         picker.Pressed += () =>
         {
             if (content() is { } list && modId() is { } id)
-                Menus.Show(container, CategoryList.CategoryItems(list, id), from: MenuPanel.Around(picker, 2), toggleKey: "panel-category");
+                Menus.Show(container, CategoryList.PanelCategoryItems(list, id), from: MenuPanel.Around(picker, 2), toggleKey: "panel-category");
         };
         Hover.Watch(picker, "SpireModManagerFullText", () => Menus.CutFrom(picker) is { } whole ? Escape(whole) : null, Hover.Timing.Slow);
         line.AddChild(picker);
