@@ -771,7 +771,7 @@ static class CategoryList
     }
 
     // The info panel's category picker: the bulk menu's categories while the mod shown is one of two or more picked
-    // (Jordan, 28 Oct: "bulk selecting and choosing a category from the dropdown ... only moves one mod"), else its own.
+    // (Jordan, 28 Oct: with several picked, it moved only one), else its own.
     public static IReadOnlyList<MenuItem> PanelCategoryItems(Control content, string id)
     {
         var ids = Selection.Mods.Select(Copies.Key).Where(key => key.Length > 0).Distinct().ToList();
