@@ -1813,7 +1813,7 @@ static partial class SelfTest
             Results.Add("SKIP save cost: fixture mods missing");
             return;
         }
-        var (kept, loaded) = (Store.Clone(Store.Data), History.Loaded);
+        var (kept, loaded, steps) = (Store.Clone(Store.Data), History.Loaded, History.TestKeep()); // undo steps too: the saves' hold the big data
         var big = Store.Clone(Store.Data);
         for (var i = 0; i < 260; i++)
             big.Mods[$"SmmBig{i:000}"] = new ModInfo
@@ -1842,19 +1842,24 @@ static partial class SelfTest
             $"{edits.Length} vs {Store.TestJson(roundTrip).Length} chars");
         (big.UncategorizedCollapsed, big.ManagersWarningDismissed, big.SameIdDismissed, big.ShareChoices, big.MenuButtonAt) = (false, false, null, null, null);
         big.Categories.ForEach(c => c.Collapsed = false);
-        History.TestLoaded(History.TestTake()); // launched with it: few changes since, as in a real session
+        History.TestLoaded(History.TestNow()); // launched with it: few changes since, as in a real session
         try
         {
             CategoryList.Select(screen, row);
             await PanelFor(menu, screen, row);
             await Wait(menu, 0.5);
-            var headers = Headers(content);
+            // From no note (its notepad gone), so the one shown after is the saves'.
+            var box = panel.GetNode<TextEdit>("SpireModManagerYours/Notes/Box");
+            box.Text = "";
+            await FrameMs(menu, () => box.EmitSignal(Control.SignalName.FocusExited));
+            bool Marked() => row.GetNodeOrNull<Control>("SpireModManagerEditedMark") is { Visible: true };
+            var (headers, unmarked) = (Headers(content), !Marked());
             var saves = await NoteSaves(menu, screen, "Timed note");
             var saved = Store.InfoFor("SmmTestFixes")?.Notes;
             // Its row alone drawn again: the categories' headers (made anew by a whole redraw) kept, its notepad shown.
             Check("a note saved: only its row drawn again (the headers kept, its notepad shown)",
-                Headers(content).SequenceEqual(headers) && row.GetNodeOrNull<Control>("SpireModManagerEditedMark") is { Visible: true },
-                $"headers {Headers(content).SequenceEqual(headers)}");
+                Headers(content).SequenceEqual(headers) && unmarked && Marked(),
+                $"headers kept {Headers(content).SequenceEqual(headers)}, no notepad first {unmarked}, then one {Marked()}");
             var bytes = new FileInfo(Path.Combine(Store.Dir, "manager.json")).Length;
 
             var n = 0;
@@ -1876,7 +1881,7 @@ static partial class SelfTest
             var takeMs = Ms(() =>
             {
                 Edit();
-                History.TestTake();
+                History.TestNow();
             });
             var listeners = History.TestTimeChanged();
             var rowMs = Ms(() => CategoryList.FieldsSaved(content, ["SmmTestFixes"], renamed: false));
@@ -1914,6 +1919,7 @@ static partial class SelfTest
         {
             Store.TestSet(kept);
             History.TestLoaded(loaded);
+            History.TestPutBack(steps);
             Store.SaveViewState();
             History.Enter();
             CategoryList.Redraw(content);

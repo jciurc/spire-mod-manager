@@ -53,8 +53,6 @@ static class History
     // it's in (its lambda's own is the compiler's).
     public static void TestLoaded(Snapshot? loaded) => (Loaded, _current) = (loaded, loaded ?? _current);
 
-    public static Snapshot TestTake() => Take();
-
     public static List<(string Name, double Ms)> TestTimeChanged() =>
     [
         .. (Changed?.GetInvocationList() ?? []).Select(listener =>
