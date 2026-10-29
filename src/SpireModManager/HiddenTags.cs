@@ -4,11 +4,11 @@ namespace SpireModManager;
 
 // Tags a search finds without a chip: a mod's state (#enabled, #loaded, #pending...), what changed since launch (#changed,
 // #moved, #edited), our details (#renamed, #note, #uncategorized) and what's wrong with it (#unmet, #needed, #order,
-// #clash, #managers, #failed, #gameerror; #error, #warning and #problem gather them). English words in any language, as
-// #stable is, with or without the "#": "enabled" finds what #enabled does, and the mods that say the word too. Only the
-// whole name: a word's start would match as the name is typed ("load" #loaded, "not" #notloaded and #note). A tag of the
-// player's with the same name finds its mods too (Search.Matches). What needs the whole list is worked out once per
-// redraw (Lookups). The info panel lists those that find its mod, in this order, as Other keywords (Of).
+// #clash, #managers, #turnedoff, #failed, #gameerror; #error, #warning and #problem gather them). English words in any
+// language, as #stable is, with or without the "#": "enabled" finds what #enabled does, and the mods that say the word
+// too. Only the whole name: a word's start would match as the name is typed ("load" #loaded, "not" #notloaded and
+// #note). A tag of the player's with the same name finds its mods too (Search.Matches). What needs the whole list is
+// worked out once per redraw (Lookups). The info panel lists those that find its mod, in this order, as Other keywords (Of).
 static class HiddenTags
 {
     static readonly OrderedDictionary<string, Func<Mod, bool>> Finds = new(StringComparer.OrdinalIgnoreCase)
@@ -64,8 +64,9 @@ static class HiddenTags
     // loads before what it needs), and mods the game failed, and this mod with no copy of it ticked.
     static bool Error(Mod mod) => Dependencies.Unmet(mod) || Needed(mod) || Misordered(mod) || Failed(mod) || SelfOff(mod);
 
-    // What the yellow ones point to (copies of one mod ticked together, both mod managers ticked), and the game's errors.
-    static bool Warning(Mod mod) => Clash(mod) || Managers(mod) || GameError(mod);
+    // What the yellow ones point to (copies of one mod ticked together, both mod managers ticked, mods turned off after a
+    // failed start), and the game's errors.
+    static bool Warning(Mod mod) => Clash(mod) || Managers(mod) || GameError(mod) || TurnedOffStill(mod);
 
     // Not loading after a relaunch, though a mod that loads needs it (Dependencies.NeededOff).
     static bool Needed(Mod mod) => !Copies.Loads(mod) && Whole("needed", mods => [.. Dependencies.NeededOff(mods)]).Contains(mod);
@@ -79,6 +80,13 @@ static class HiddenTags
 
     // One of the two mod managers' ticked copies, while both are ticked: the banner's.
     static bool Managers(Mod mod) => mod.manifest?.id is ModEntry.ModId or Bmm.ModId && Bmm.BothTicked && Bmm.TickedManagers().Contains(mod);
+
+    // Turned off after a failed start and still off: the yellow banner's (TurnedOff.StillOff).
+    static bool TurnedOffStill(Mod mod) => !Copies.Ticked(mod) && Whole("turnedoff", mods =>
+    {
+        var ids = TurnedOff.StillOff().Select(e => e.Id).ToHashSet();
+        return [.. mods.Where(m => m.manifest?.id is { } id && ids.Contains(id))];
+    }).Contains(mod);
 
     // Ticked, and the game failed to load it this session (#failed, and the main list's red banner).
     public static bool Failed(Mod mod) => Copies.Ticked(mod) && mod.state == ModLoadState.Failed;
