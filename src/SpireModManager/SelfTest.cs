@@ -884,7 +884,7 @@ static partial class SelfTest
                 Check($"a failed start ({(rebuild ? "a library's failed rebuild of a dependent's patch class" : "Hornet's shape")}): our dialog names {offName}, the "
                     + $"game's message first, with \"Turn off {offName} and restart\"; whose patch it was, as recorded",
                     first.Contains("Notice from the game") && offered == $"Turn off {offName} and restart"
-                    && first.Contains(rebuild ? $"{offName} most likely stopped the game from starting. The error came while its changes to a part of the game were being put in place"
+                    && first.Contains(rebuild ? $"An error while applying {offName}'s changes to a part of the game has most likely prevented the game from starting"
                         : $"An error while loading {offName} has prevented the game from starting.") && notes.Any(n => n.Contains("as recorded")),
                     $"{first}; offered {offered}; {string.Join("; ", notes)}");
                 // Test Twin, two copies from one source, keeps the switch the game read for it
