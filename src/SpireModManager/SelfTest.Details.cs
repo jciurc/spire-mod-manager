@@ -505,11 +505,12 @@ static partial class SelfTest
             scroll.Value = 0;
             await Wait(menu, 0.1);
             var over = label.GetGlobalRect().GetCenter() with { Y = box.GetGlobalRect().Position.Y + 40 };
-            Input.ParseInputEvent(new InputEventMouseMotion { Position = over, GlobalPosition = over });
+            var sent = InWindow(menu, over); // headless, the window is scaled
+            Input.ParseInputEvent(new InputEventMouseMotion { Position = sent, GlobalPosition = sent });
             await Wait(menu, 0.1);
             var hovered = menu.GetViewport().GuiGetHoveredControl();
             foreach (var pressed in new[] { true, false })
-                Input.ParseInputEvent(new InputEventMouseButton { ButtonIndex = MouseButton.WheelDown, Pressed = pressed, Factor = 1, Position = over, GlobalPosition = over });
+                Input.ParseInputEvent(new InputEventMouseButton { ButtonIndex = MouseButton.WheelDown, Pressed = pressed, Factor = 1, Position = sent, GlobalPosition = sent });
             await Wait(menu, 0.2);
             Check("a wheel over the panel's text scrolls the box", scroll.Value > 0,
                 $"scrolled to {scroll.Value:0} of {scroll.MaxValue - scroll.Page:0}; at {over} under the mouse: {hovered?.GetPath().ToString() ?? "nothing"} "
