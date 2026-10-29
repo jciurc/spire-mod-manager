@@ -1810,6 +1810,151 @@ static partial class SelfTest
         await TestManyRows(menu, screen, content, mods, saved);
     }
 
+    // A field saved with our data as big as a big list's (about 260 mods' details and four profiles of 260 mods each, as a
+    // player with 250 mods has): a note typed in the info panel and its box left, timed to the end of the frame, and the
+    // save's parts one by one. Our data and the launch state are put back after.
+    static async Task TestSaveCost(Node menu, NModdingScreen screen, Control content)
+    {
+        var panel = screen.GetNode<NModInfoContainer>("%ModInfoContainer");
+        if (content.GetChildren().OfType<NModMenuRow>().FirstOrDefault(r => r.Mod?.manifest?.id == "SmmTestFixes") is not { } row)
+        {
+            Results.Add("SKIP save cost: fixture mods missing");
+            return;
+        }
+        var (kept, loaded, steps) = (Store.Clone(Store.Data), History.Loaded, History.TestKeep()); // undo steps too: the saves' hold the big data
+        var big = Store.Clone(Store.Data);
+        for (var i = 0; i < 260; i++)
+            big.Mods[$"SmmBig{i:000}"] = new ModInfo
+            {
+                Category = big.Categories.ElementAtOrDefault(i % 4)?.Name, Alias = i % 9 == 0 ? $"Big {i}" : null,
+                Tags = i % 3 == 0 ? ["co-op", $"tag {i % 7}"] : null, Notes = i % 4 == 0 ? $"A note on made-up mod {i}, about as long as a real one." : null,
+            };
+        List<ProfileMod> list = [.. Enumerable.Range(0, 260).Select(i => new ProfileMod($"SmmBig{i:000}", ModSource.SteamWorkshop, i % 5 != 0))];
+        for (var p = 0; p < 4; p++)
+            big.Profiles.Add(new Profile { Name = $"Big profile {p}", Mods = [.. list] });
+        Store.TestSet(big);
+        // The undo snapshot, made from a shallow copy in one pass, is what the round trip it replaced made: the data
+        // without its view state (here all of it set), the data itself untouched.
+        (big.UncategorizedCollapsed, big.ManagersWarningDismissed, big.SameIdDismissed) = (true, true, "SmmBig000");
+        (big.ShareChoices, big.MenuButtonAt) = (new ShareChoice(true, true, false, true), new ScreenPoint(12.5f, 40));
+        if (big.Categories.FirstOrDefault() is { } folded)
+            folded.Collapsed = true;
+        var whole = Store.TestJson(big);
+        var roundTrip = Store.Clone(big);
+        roundTrip.VanillaView = roundTrip.LoadOrderView = roundTrip.UncategorizedCollapsed = roundTrip.ManagersWarningDismissed = false;
+        (roundTrip.ShareChoices, roundTrip.SameIdDismissed, roundTrip.MenuButtonAt) = (null, null, null);
+        roundTrip.Categories.ForEach(c => c.Collapsed = false);
+        var edits = Store.EditsJson();
+        Check("the undo snapshot in one pass: the same as the round trip it replaced, our data untouched",
+            edits == Store.TestJson(roundTrip) && Store.TestJson(big) == whole && big.Categories.FirstOrDefault()?.Collapsed != false,
+            $"{edits.Length} vs {Store.TestJson(roundTrip).Length} chars");
+        (big.UncategorizedCollapsed, big.ManagersWarningDismissed, big.SameIdDismissed, big.ShareChoices, big.MenuButtonAt) = (false, false, null, null, null);
+        big.Categories.ForEach(c => c.Collapsed = false);
+        History.TestLoaded(History.TestNow()); // launched with it: few changes since, as in a real session
+        try
+        {
+            CategoryList.Select(screen, row);
+            await PanelFor(menu, screen, row);
+            await Wait(menu, 0.5);
+            // From no note (its notepad gone), so the one shown after is the saves'.
+            var box = panel.GetNode<TextEdit>("SpireModManagerYours/Notes/Box");
+            box.Text = "";
+            await FrameMs(menu, () => box.EmitSignal(Control.SignalName.FocusExited));
+            bool Marked() => row.GetNodeOrNull<Control>("SpireModManagerEditedMark") is { Visible: true };
+            var (headers, unmarked) = (Headers(content), !Marked());
+            var saves = await NoteSaves(menu, screen, "Timed note");
+            var saved = Store.InfoFor("SmmTestFixes")?.Notes;
+            // Its row alone drawn again: the categories' headers (made anew by a whole redraw) kept, its notepad shown.
+            Check("a note saved: only its row drawn again (the headers kept, its notepad shown)",
+                Headers(content).SequenceEqual(headers) && unmarked && Marked(),
+                $"headers kept {Headers(content).SequenceEqual(headers)}, no notepad first {unmarked}, then one {Marked()}");
+            var bytes = new FileInfo(Path.Combine(Store.Dir, "manager.json")).Length;
+
+            var n = 0;
+            void Edit() => Store.Data.Mods["SmmBig000"].Notes = $"Edited {n++}";
+            static double Ms(Action action)
+            {
+                CleanHeap();
+                var watch = System.Diagnostics.Stopwatch.StartNew();
+                for (var i = 0; i < 5; i++)
+                    action();
+                return watch.Elapsed.TotalMilliseconds / 5;
+            }
+            var writeMs = Ms(Store.SaveViewState);
+            var editsMs = Ms(() =>
+            {
+                Edit();
+                Store.EditsJson();
+            });
+            var takeMs = Ms(() =>
+            {
+                Edit();
+                History.TestNow();
+            });
+            var listeners = History.TestTimeChanged();
+            var rowMs = Ms(() => CategoryList.FieldsSaved(content, ["SmmTestFixes"], renamed: false));
+            var applyMs = Ms(() => CategoryList.Apply(content));
+            var refreshMs = Ms(() => ModDetails.Refresh(screen));
+            Results.Add($"INFO a note saved in the info panel, our data as big as a big list's ({Store.Data.Mods.Count} mods' details, "
+                + $"{Store.Data.Profiles.Count} profiles, about {bytes / 1024} KB): to the end of the frame {saves[2]:0.0} ms (fastest {saves[0]:0.0}); "
+                + $"of it, the file written {writeMs:0.0} ms, the undo snapshot {takeMs:0.0} ms (its JSON {editsMs:0.0}), "
+                + $"the history's listeners {string.Join(", ", listeners.Select(l => $"{l.Name} {l.Ms:0.0}"))} ms, its row drawn again {rowMs:0.0} ms "
+                + $"(the whole list {applyMs:0.0} ms), the panel refreshed (a menu's save) {refreshMs:0.0} ms");
+            Check("a note saved with a big store", saved == "Timed note 4", saved ?? "none");
+
+            // An alias that moves the row among its category's: the whole list drawn again, the row in its new place; one
+            // that leaves it where it is: its row alone. Last (if it wasn't), still last, then first.
+            var category = CategoryList.CategoryName("SmmTestFixes");
+            string[] Order() => [.. content.GetChildren().OfType<NModMenuRow>()
+                .Where(r => r.Mod?.manifest?.id != ModEntry.ModId && CategoryList.CategoryName(Copies.KeyOf(r.Mod)) == category)
+                .Select(r => Store.InfoFor(r.Mod)?.Alias ?? r.Mod?.manifest?.name ?? "")];
+            var names = StringComparer.Create(Menus.Culture, ignoreCase: true);
+            var alias = panel.GetNode<LineEdit>("SpireModManagerYours/Alias/Box");
+            var renames = new List<(string Name, bool Moved, bool Redrawn, bool Sorted)>();
+            foreach (var name in new[] { "ZZZ Timed", "ZZZ Timed too", "AAA Timed" })
+            {
+                (headers, var at) = (Headers(content), row.GetIndex());
+                alias.Text = name;
+                await FrameMs(menu, () => alias.EmitSignal(Control.SignalName.FocusExited));
+                renames.Add((name, row.GetIndex() != at, !Headers(content).SequenceEqual(headers), Order().SequenceEqual(Order().Order(names))));
+            }
+            Check("an alias that moves its row: the whole list drawn again, the row sorted into its new place; one that doesn't: its row alone",
+                renames.All(r => r.Sorted && r.Moved == r.Redrawn) && !renames[1].Moved && renames[2].Moved,
+                string.Join(" | ", renames.Select(r => $"{r.Name}: {(r.Moved ? "moved" : "stayed")}, {(r.Redrawn ? "the list" : "its row")}, "
+                    + $"{(r.Sorted ? "sorted" : "not sorted")}")));
+        }
+        finally
+        {
+            Store.TestSet(kept);
+            History.TestLoaded(loaded);
+            History.TestPutBack(steps);
+            Store.SaveViewState();
+            History.Enter();
+            CategoryList.Redraw(content);
+            ModDetails.Refresh(screen);
+        }
+        await Wait(menu, 0.3);
+    }
+
+    // The category headers' nodes, which a whole redraw makes anew.
+    static List<ulong> Headers(Control content) =>
+        [.. content.GetChildren().Where(c => c.IsInGroup("SpireModManagerCategoryHeader")).Select(c => c.GetInstanceId())];
+
+    // A note typed in the info panel (its mod shown) and its box left, five times, each timed to the end of its frame: the
+    // times sorted (the middle one is the usual), the last note kept.
+    static async Task<List<double>> NoteSaves(Node menu, NModdingScreen screen, string note)
+    {
+        var notes = screen.GetNode<TextEdit>("%ModInfoContainer/SpireModManagerYours/Notes/Box");
+        var saves = new List<double>();
+        for (var i = 0; i < 5; i++)
+        {
+            notes.Text = $"{note} {i}";
+            saves.Add(await FrameMs(menu, () => notes.EmitSignal(Control.SignalName.FocusExited)));
+        }
+        saves.Sort();
+        return saves;
+    }
+
     // The same mods as rows of a page (out of sight to the left of this one), in our row style: each row's line under
     // its title (tags, note, author), its buttons and its pencil made from nothing, as a new page makes them (after a
     // run the main menu is made again, and the page with it: #46), timed part by part (with the titles' styling before

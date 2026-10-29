@@ -957,8 +957,8 @@ static class ModDetails
         void Saved(ModField.Kind kind)
         {
             ListFilter.Keep(ModId()); // its row stays under the list's Show: choice
-            if (Content() is { } content)
-                CategoryList.Apply(content); // rows: alias, tags, the notepad
+            if (Content() is { } content && ModId() is { } id)
+                CategoryList.FieldsSaved(content, [id], kind == ModField.Kind.Alias); // rows: alias, tags, the notepad
             // The description's Other keywords follow the edit (#renamed, #note, #edited, #changed): its text alone, as a
             // full Fill would commit and reload the fields while focus moves on to the next one.
             if (CategoryList.Selected is { } shown && Copies.Key(shown) == ModId())
