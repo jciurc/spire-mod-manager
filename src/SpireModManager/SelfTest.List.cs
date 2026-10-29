@@ -407,8 +407,12 @@ static partial class SelfTest
         var sizeTerm = $"[gold]{Menus.Text("SPIRE_MOD_MANAGER.SIZE")}[/gold]: ";
         var sizeRow = marked.FirstOrDefault(l => l.StartsWith(sizeTerm)) ?? "";
         Check("Other keywords look like the other facts: the term in gold, as Size's, the keywords in the panel text's colour (none of their own), each name a link",
-            sizeRow.Length > 0 && !sizeRow.Contains("[color=") && keywordsRow.StartsWith($"[gold]{keywordsLabel}[/gold]: [url=htag:enabled]enabled[/url], ")
+            sizeRow.Length > 0 && !sizeRow.Contains("[color=") && keywordsRow.StartsWith($"[url={ModDetails.KeywordsTipMeta}][gold]{keywordsLabel}[/gold][/url]: [url=htag:enabled]enabled[/url], ")
             && !keywordsRow.Contains("[color=") && keywordsRow.EndsWith("[/url]"), $"{keywordsRow} (Size's: {sizeRow})");
+        // The term's tip (Jordan, 28 Oct), from its link; none for the keywords' own links.
+        Check("Other keywords' term has a tip: what the keywords are", ModDetails.KeywordsTip(ModDetails.KeywordsTipMeta)
+            == "Searchable keywords added by Spire Mod Manager to help filter mods by their state" && ModDetails.KeywordsTip("htag:enabled") == null,
+            ModDetails.KeywordsTip(ModDetails.KeywordsTipMeta) ?? "none");
         var searchBox = screen.GetNode<LineEdit>("ModsBorder/SpireModManagerSearch");
         panelText.EmitSignal(RichTextLabel.SignalName.MetaClicked, "htag:enabled");
         var searched = searchBox.Text;
@@ -688,6 +692,10 @@ static partial class SelfTest
             Check("hover cards: near the right edge, a card opens left of the mouse", right == null, right ?? "");
             var corner = await ProbeAt(view - new Vector2(210, 50), up: true, left: true);
             Check("hover cards: in the bottom-right corner, a card opens above its trigger and left of the mouse", corner == null, corner ?? "");
+            // In the last 15% at the bottom and right, with room below and right: above and left all the same (Jordan, 28 Oct)
+            var zone = await ProbeAt(new Vector2(view.X * 0.87f - probe.Size.X / 2, view.Y * 0.87f - probe.Size.Y / 2), up: true, left: true);
+            Check("hover cards: in the screen's last 15% at the bottom and right, a card opens above its trigger and left of the mouse, though it fits below "
+                + "and right", zone == null, zone ?? "");
         }
         finally
         {

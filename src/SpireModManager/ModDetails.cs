@@ -255,7 +255,10 @@ static class ModDetails
                 Search.ByTag(container, tag[5..], Input.IsKeyPressed(Key.Shift)); // #tag, the mods with it
             else if (meta.AsString() == ModifiedContent.Meta && ShownChanges.TryGetValue(id, out var shown))
                 ModifiedContent.Show(container, shown.Mod, shown.Changes);
+            else if (meta.AsString() is { } page && page.StartsWith(ProfileCsv.WorkshopPage))
+                OS.ShellOpen(page); // a required Workshop item that isn't installed: its page
         };
+        Hover.WatchLinks(description, Hover.TipName, KeywordsTip, width: 320);
         Hover.WatchLinks(description, "SpireModManagerTagCard",
             meta => Searches(meta) ? Tags.Hint(Menus.Text("SPIRE_MOD_MANAGER.SEARCH_CLICK_TIP")) : null, width: 320);
         Hover.WatchLinks(description, ModifiedContent.CardName, meta => meta == ModifiedContent.Meta && !Store.Data.VanillaView
@@ -277,7 +280,7 @@ static class ModDetails
         var changes = GameChanges.For(mod);
         ShownChanges[container.GetInstanceId()] = (mod, changes);
         var own = mod.manifest?.description is { Length: > 0 } words ? PanelDescription.Shown(description, words) : null;
-        description.Text = Describe(mod, ModifiedContent.Row(changes, description), own);
+        description.Text = Describe(mod, ModifiedContent.Row(mod, changes, description), own);
         GameText.Fit(description);
     }
 
@@ -321,23 +324,43 @@ static class ModDetails
             Fact("SPIRE_MOD_MANAGER.WORKSHOP_TAGS", string.Join(", ", workshop.Tags.Select(t => $"[url=wtag:{t}]{Escape(t)}[/url]"))); // click: search for it
         // The hidden tags that find it (Jordan: "so that way they're at least visible"), a fact like the others, links as
         // the Workshop tags are; bare names (Jordan: no "#"), though a click searches #name.
+        // The term is a link too, for its tip (KeywordsTip; Jordan, 28 Oct), though a click does nothing.
         var keywords = HiddenTags.Of(mod);
         if (keywords.Count > 0)
-            Fact("SPIRE_MOD_MANAGER.OTHER_KEYWORDS", string.Join(", ", keywords.Select(k => $"[url=htag:{k}]{k}[/url]")));
+            text.Append($"[url={KeywordsTipMeta}][gold]{Menus.Text("SPIRE_MOD_MANAGER.OTHER_KEYWORDS")}[/gold][/url]: "
+                + string.Join(", ", keywords.Select(k => $"[url=htag:{k}]{k}[/url]")) + "\n");
         text.Append('\n');
 
-        // What it needs, and what needs it.
-        string Links(IEnumerable<string> ids) => string.Join(", ", ids.Select(d =>
-            $"[url=mod:{d}][color={ModLinkHex}]{Escape(Dependencies.Find(d)?.manifest?.name ?? d)}[/color][/url]"));
+        // What it needs, and what needs it: its manifest's dependencies, then what its Workshop page requires beyond them,
+        // marked (Jordan, 28 Oct: "RitsuLib (Requirement from workshop)"; the game doesn't check those). One not installed
+        // opens its Workshop page.
+        string Link(string d) => $"[url=mod:{d}][color={ModLinkHex}]{Escape(Dependencies.Find(d)?.manifest?.name ?? d)}[/color][/url]";
+        string FromWorkshop(string link) => Menus.Format("SPIRE_MOD_MANAGER.WORKSHOP_REQUIREMENT", ("mod", link));
         var needs = Dependencies.Of(mod);
-        var neededBy = ModManager.Mods.Where(m => m != mod && Dependencies.Of(m).Contains(mod.manifest?.id ?? ""))
+        var required = WorkshopRequired(mod).Where(r => r.Id == null || !needs.Contains(r.Id)).Select(r => FromWorkshop(r.Id is { } id ? Link(id)
+            : $"[url={ProfileCsv.WorkshopLink(r.Item)}][color={ModLinkHex}]{Escape(WorkshopInfo.Title(r.Item) ?? r.Item.ToString())}[/color][/url]")).ToList();
+        var ownId = mod.manifest?.id ?? "";
+        var neededBy = ModManager.Mods.Where(m => m != mod && Dependencies.Of(m).Contains(ownId))
             .Select(m => m.manifest?.id ?? "").Distinct().ToList();
-        if (needs.Count > 0)
-            Fact("SPIRE_MOD_MANAGER.DEPENDENCIES", Links(needs));
-        if (neededBy.Count > 0)
-            Fact("SPIRE_MOD_MANAGER.NEEDED_BY", Links(neededBy));
+        var requiredBy = ModManager.Mods.Union(Installed.Mods).Where(m => m != mod && m.manifest?.id is { } by && !neededBy.Contains(by)
+                && WorkshopRequired(m).Any(r => r.Id == ownId))
+            .Select(m => m.manifest?.id ?? "").Distinct().ToList();
+        if (needs.Count > 0 || required.Count > 0)
+            Fact("SPIRE_MOD_MANAGER.DEPENDENCIES", string.Join(", ", needs.Select(Link).Concat(required)));
+        if (neededBy.Count > 0 || requiredBy.Count > 0)
+            Fact("SPIRE_MOD_MANAGER.NEEDED_BY", string.Join(", ", neededBy.Select(Link).Concat(requiredBy.Select(id => FromWorkshop(Link(id))))));
         return text.ToString().TrimEnd();
     }
+
+    // The items its Workshop page requires, each with the id of the installed mod it is (null: not installed).
+    static List<(ulong Item, string? Id)> WorkshopRequired(Mod mod) =>
+        [.. (WorkshopInfo.For(mod)?.Required ?? []).Select(item => (item, ModManager.Mods.Union(Installed.Mods).FirstOrDefault(m => Compat.WorkshopId(m) == item)?.manifest?.id))];
+
+    // Other keywords' term: its tip says what they are.
+    public const string KeywordsTipMeta = "keywords";
+
+    public static string? KeywordsTip(string meta) => meta == KeywordsTipMeta && !Store.Data.VanillaView
+        ? Escape(Menus.Text("SPIRE_MOD_MANAGER.OTHER_KEYWORDS_TIP")) : null;
 
     // The head's facts: author (click: search for their mods), last update (and its change notes), game versions.
     static string HeadFacts(Mod mod)

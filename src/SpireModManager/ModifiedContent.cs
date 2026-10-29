@@ -34,13 +34,13 @@ static class ModifiedContent
 
     // The row for the panel's text (its label: the room it has, its font): "Modified content: The Regent (energy orb),
     // merchant room and 4 more", the areas that fit whole, most first. The counts are in its card (Jordan: "We don't need
-    // brackets count anymore"). With none found, "No information found", subtle. All of it the link for the card and the
-    // click.
-    public static string Row(GameChanges.Changes changes, RichTextLabel text)
+    // brackets count anymore"). With none found, "No information found", subtle (NoneFound). All of it the link for the
+    // card and the click.
+    public static string Row(Mod mod, GameChanges.Changes changes, RichTextLabel text)
     {
         var term = Menus.Text("SPIRE_MOD_MANAGER.MODIFIED_CONTENT");
         if (!changes.Any)
-            return $"[url={Meta}][gold]{Escape(term)}[/gold]: [color={Quiet}]{Escape(Menus.Text("SPIRE_MOD_MANAGER.MODIFIED_NONE"))}[/color][/url]";
+            return $"[url={Meta}][gold]{Escape(term)}[/gold]: [color={Quiet}]{Escape(NoneFound(mod))}[/color][/url]";
         var (font, size, room) = (text.GetThemeFont("normal_font"), text.GetThemeFontSize("normal_font_size"), ModDetails.LineRoom(text));
         // Not laid out yet (no width): all of them, as there's no line to fit yet.
         var listed = AreasCut(changes.Areas, areas => room <= 0 || Width($"{term}: {areas}", font, size) <= room);
@@ -143,7 +143,7 @@ static class ModifiedContent
             _ => Menus.Text("SPIRE_MOD_MANAGER.MODIFIED_NONE_TIP"),
         };
         var lines = new List<string> { Escape(said) };
-        if (mod.state != ModLoadState.Loaded) // a part of its own, after a gap (Jordan)
+        if (mod.state != ModLoadState.Loaded && changes.Any) // a part of its own, after a gap (Jordan); with none, the row says it
             lines.AddRange([ModDetails.CardGap, $"[color={Quiet}]{Escape(Menus.Text("SPIRE_MOD_MANAGER.MODIFIED_NOT_LOADED"))}[/color]"]);
         if (changes.Any)
             lines.AddRange([ModDetails.CardGap, $"[color={CardGoldHex}]{Escape(AreasCut(changes.Areas, areas => areas.Length <= TipAreas))}[/color]"]);
@@ -161,7 +161,7 @@ static class ModifiedContent
             return;
         column.AddChild(Modal.Title("SPIRE_MOD_MANAGER.MODIFIED_TITLE", ("name", name), Modal.Gold));
         column.AddChild(Text("Note", $"[color={Quiet}]{Escape(Menus.Text("SPIRE_MOD_MANAGER.MODIFIED_NOTE"))}[/color]", 16));
-        column.AddChild(Areas(changes));
+        column.AddChild(Areas(mod, changes));
         var details = Details(mod, changes);
         var list = Text("List", details, BodySize);
         list.MouseFilter = Control.MouseFilterEnum.Pass; // the wheel goes on to the scroll
@@ -200,15 +200,15 @@ static class ModifiedContent
     // container that scrolls horizontally?) to save space"): one to a line, in columns filled top to bottom (Columns),
     // three side by side across the dialog; with more than three columns hold, the rest follow to the right, scrolled
     // sideways. A long one (a character's, with what of theirs) wraps in its column: this is where an area shows whole.
-    // With none found, that.
-    static Control Areas(GameChanges.Changes changes)
+    // With none found, that (NoneFound).
+    static Control Areas(Mod mod, GameChanges.Changes changes)
     {
         var box = new VBoxContainer { Name = AreasName };
         box.AddThemeConstantOverride("separation", 2);
         box.AddChild(Text("AreasHeading", Heading("SPIRE_MOD_MANAGER.MODIFIED_AREAS", null), BodySize));
         if (!changes.Any)
         {
-            box.AddChild(Text("NoAreas", $"[color={Quiet}]{Escape(Menus.Text("SPIRE_MOD_MANAGER.MODIFIED_NONE"))}[/color]", BodySize));
+            box.AddChild(Text("NoAreas", $"[color={Quiet}]{Escape(NoneFound(mod))}[/color]", BodySize));
             return box;
         }
         // Three columns and their gaps as wide as the dialog's column, so a fourth starts just out of view.
@@ -283,10 +283,15 @@ static class ModifiedContent
                 lines.AddRange(area.Select(p => $"{Item}{Escape($"{p.Class}.{p.Method}")}  [color={Quiet}]({KindsColoured(p.Kinds)})[/color]"));
             }
         }
-        if (mod.state != ModLoadState.Loaded)
+        if (mod.state != ModLoadState.Loaded && changes.Any) // with none, the areas say it (NoneFound)
             lines.AddRange([.. Gap(), $"[color={Quiet}]{Escape(Menus.Text("SPIRE_MOD_MANAGER.MODIFIED_NOT_LOADED"))}[/color]"]);
         return string.Join("\n", lines);
     }
+
+    // Nothing found: for a mod not loaded, that it shows only then, in place of "No information found" (Jordan, 28 Oct:
+    // for disabled mods).
+    public static string NoneFound(Mod mod) =>
+        Menus.Text(mod.state != ModLoadState.Loaded ? "SPIRE_MOD_MANAGER.MODIFIED_NONE_NOT_LOADED" : "SPIRE_MOD_MANAGER.MODIFIED_NONE");
 
     const string Item = "        "; // a path or a method, under its area
     const string GroupIndent = "    ";

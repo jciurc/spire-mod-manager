@@ -791,6 +791,39 @@ static partial class SelfTest
         {
             LocManager.Instance.SetLanguage(language);
         }
+
+        // Required items on its Workshop page that its manifest doesn't name (YuWanCard and RitsuLib): after its
+        // dependencies, marked (Jordan, 28 Oct: "RitsuLib (Requirement from workshop)"), an installed one a link to its
+        // row, one not installed a link to its Workshop page by its title; and on the installed one's panel, Required for.
+        var lib = new Mod
+        {
+            path = "", modSource = ModSource.SteamWorkshop, state = ModLoadState.AddedAtRuntime,
+            manifest = new ModManifest { id = "SmmWorkshopLib", name = "Workshop Lib", author = "Someone Careful" },
+        };
+        Compat.SetWorkshopId(lib, 43);
+        Installed.Detected(lib);
+        WorkshopInfo.TestSet(42, new WorkshopInfo.Details(DateTime.Now, DateTime.Now, [], [], 0, null) { Required = [43, 99001] });
+        WorkshopInfo.TestTitle(99001, "Missing Lib");
+        try
+        {
+            info.Fill(mod);
+            var needs = info.GetNode<RichTextLabel>("ModDescription");
+            var needsLine = needs.GetParsedText().Split('\n').FirstOrDefault(l => l.StartsWith(Menus.Text("SPIRE_MOD_MANAGER.DEPENDENCIES") + ": ")) ?? "";
+            Check("Workshop requirements: Dependencies: Workshop Lib (Requirement from workshop), Missing Lib (Requirement from workshop); the first "
+                + "a link to its row, the second to its Workshop page",
+                needsLine == "Dependencies: Workshop Lib (Requirement from workshop), Missing Lib (Requirement from workshop)"
+                && needs.Text.Contains("[url=mod:SmmWorkshopLib]") && needs.Text.Contains($"[url={ProfileCsv.WorkshopLink(99001)}]"), needsLine);
+            info.Fill(lib);
+            var forLine = info.GetNode<RichTextLabel>("ModDescription").GetParsedText().Split('\n')
+                .FirstOrDefault(l => l.StartsWith(Menus.Text("SPIRE_MOD_MANAGER.NEEDED_BY") + ": ")) ?? "";
+            Check("the required mod's panel: Required for: Workshop Test (Requirement from workshop)",
+                forLine == $"{Menus.Text("SPIRE_MOD_MANAGER.NEEDED_BY")}: Workshop Test (Requirement from workshop)", forLine);
+        }
+        finally
+        {
+            WorkshopInfo.TestTitle(99001, null);
+            Installed.Forget(lib);
+        }
         WorkshopInfo.TestSet(42, null);
         Installed.Forget(mod);
         Compat.Clear(info);
@@ -1232,11 +1265,16 @@ static partial class SelfTest
             var (oneFileTip, noneTip) = (TipLines(new([oneFile], []), ModLoadState.Disabled), TipLines(new([], []), ModLoadState.Disabled));
             var (place, file, notLoaded) = (PlacesCounted(1), FilesCounted(1), Menus.Text("SPIRE_MOD_MANAGER.MODIFIED_NOT_LOADED"));
             Check("modified content's card with one place or file: \"1 place\" and \"1 file\" in Jordan's sentences; a mod not loaded: its contents show only "
-                + "then, after a gap", onePlaceTip[0] == Draft(Template("SPIRE_MOD_MANAGER.MODIFIED_CODE_TIP"), ("places", place))
+                + "then, after a gap, unless nothing was found (the row says it then)", onePlaceTip[0] == Draft(Template("SPIRE_MOD_MANAGER.MODIFIED_CODE_TIP"), ("places", place))
                 && bothTip[0] == Draft(Template("SPIRE_MOD_MANAGER.MODIFIED_BOTH_TIP"), ("places", place), ("files", file))
                 && oneFileTip[0] == Menus.Text("SPIRE_MOD_MANAGER.MODIFIED_FILES_TIP_ONE") && oneFileTip[1] == ModDetails.CardGap && oneFileTip[2].Contains(notLoaded)
-                && noneTip[0] == Menus.Text("SPIRE_MOD_MANAGER.MODIFIED_NONE_TIP") && noneTip[1] == ModDetails.CardGap && noneTip[2].Contains(notLoaded),
+                && noneTip[0] == Menus.Text("SPIRE_MOD_MANAGER.MODIFIED_NONE_TIP") && noneTip[1] == "" && !noneTip.Any(l => l.Contains(notLoaded)),
                 string.Join(" | ", new[] { onePlaceTip, bothTip, oneFileTip, noneTip }.Select(t => string.Join(" / ", t))));
+            // Nothing found, in the row and the dialog: for a mod not loaded, that it shows only then (Jordan, 28 Oct).
+            var (noneOff, noneOn) = (ModifiedContent.NoneFound(new Mod { path = "", state = ModLoadState.Disabled }),
+                ModifiedContent.NoneFound(new Mod { path = "", state = ModLoadState.Loaded }));
+            Check("nothing found: \"Contents can only be identified while mod is loaded\" for a mod not loaded, \"No information found\" for a loaded one",
+                noneOff == "Contents can only be identified while mod is loaded" && noneOn == "No information found", $"{noneOff} / {noneOn}");
 
             // Nothing found: a fixture mod with no pack and no code.
             if (content.GetChildren().OfType<NModMenuRow>().FirstOrDefault(r => r.Mod?.manifest?.id == "SmmTestUi") is { Mod: { } plain } plainRow)
@@ -1244,14 +1282,12 @@ static partial class SelfTest
                 CategoryList.Select(screen, plainRow);
                 await PanelFor(menu, screen, plainRow);
                 await Wait(menu, 0.3);
-                var none = Menus.Text("SPIRE_MOD_MANAGER.MODIFIED_NONE");
+                var none = ModifiedContent.NoneFound(plain); // "Contents can only be identified while mod is loaded" when it isn't
                 var noneParsed = description.GetParsedText().Split('\n');
                 var noneAt = Array.FindIndex(noneParsed, l => l.StartsWith(term + ": "));
                 rowAt = RowPoint(description, noneAt < 0 ? "" : noneParsed[noneAt]);
                 var noneCard = await Card("17g-modified-content-none");
-                var expected = new List<string> { Menus.Text("SPIRE_MOD_MANAGER.MODIFIED_NONE_TIP") };
-                if (plain.state != ModLoadState.Loaded)
-                    expected.AddRange([" ", Menus.Text("SPIRE_MOD_MANAGER.MODIFIED_NOT_LOADED")]); // after the cards' gap
+                var expected = new List<string> { Menus.Text("SPIRE_MOD_MANAGER.MODIFIED_NONE_TIP") }; // loaded or not: the row says which
                 description.EmitSignal(RichTextLabel.SignalName.MetaClicked, ModifiedContent.Meta);
                 await Wait(menu, 0.2);
                 var noneList = (Dialog()?.FindChild("List", true, false) as RichTextLabel)?.GetParsedText() ?? "";

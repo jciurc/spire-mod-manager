@@ -885,7 +885,7 @@ static partial class SelfTest
                 Check($"a failed start ({(rebuild ? "a library's failed rebuild of a dependent's patch class" : "Hornet's shape")}): our dialog names {offName}, the "
                     + $"game's message first, with \"Turn off {offName} and restart\"; whose patch it was, as recorded",
                     first.Contains("Notice from the game") && offered == $"Turn off {offName} and restart"
-                    && first.Contains(rebuild ? $"{offName} most likely stopped the game from starting. The error came while its changes to a part of the game were being put in place"
+                    && first.Contains(rebuild ? $"An error while applying {offName}'s changes to a part of the game has most likely prevented the game from starting"
                         : $"An error while loading {offName} has prevented the game from starting.") && notes.Any(n => n.Contains("as recorded")),
                     $"{first}; offered {offered}; {string.Join("; ", notes)}");
                 // Test Twin, two copies from one source, keeps the switch the game read for it
@@ -1000,8 +1000,8 @@ static partial class SelfTest
     // Each hidden tag against the list's rows, by what it means told from what the page shows or from where the search's
     // decisions say it comes from, not by HiddenTags' own rules: the row's box (#enabled), its chips (#local, #new,
     // #duplicate), its category as the list files it; a dependency missing or off by Dependencies.Check (#unmet), NeededOff,
-    // OrderViolations, Copies.Clashing and Loses, the managers both ticked, what changed since launch (ChangedMods, Moves,
-    // the edited keys). Wrong: each tag that finds other rows than it means, with them; Found: how many each finds.
+    // OrderViolations, Copies.Clashing and Loses, the managers both ticked, TurnedOff.StillOff, what changed since launch
+    // (ChangedMods, Moves, the edited keys). Wrong: each tag that finds other rows than it means, with them; Found: how many each finds.
     static (List<string> Wrong, string Found) HiddenTagsAsMeant(Control content)
     {
         var rows = content.GetChildren().OfType<NModMenuRow>().Where(r => r.Mod != null).ToList();
@@ -1017,12 +1017,14 @@ static partial class SelfTest
         bool Misordered(Mod mod) => Copies.Loads(mod) && misordered.Contains(mod);
         var clashing = Copies.Clashing().ToHashSet();
         var managers = Bmm.BothTicked ? Bmm.TickedManagers().ToHashSet() : [];
+        var stillOff = TurnedOff.StillOff().Select(e => e.Id).ToHashSet();
+        bool TurnedOffStill(Mod mod) => !ticked.Contains(mod) && mod.manifest?.id is { } id && stillOff.Contains(id);
         var (changed, moved, edited) = (HistoryBar.ChangedMods(), HistoryBar.Moves().Select(m => m.Mod).ToHashSet(), HistoryBar.EditedKeys());
         bool Failed(Mod mod) => ticked.Contains(mod) && mod.state == ModLoadState.Failed;
         bool GameError(Mod mod) => ticked.Contains(mod) && mod.errors is { Count: > 0 };
         bool SelfOff(Mod mod) => mod.manifest?.id == ModEntry.ModId && !mods.Any(m => m.manifest?.id == ModEntry.ModId && ticked.Contains(m));
         bool Error(Mod mod) => Unmet(mod) || Needed(mod) || Misordered(mod) || Failed(mod) || SelfOff(mod);
-        bool Warning(Mod mod) => clashing.Contains(mod) || managers.Contains(mod) || GameError(mod);
+        bool Warning(Mod mod) => clashing.Contains(mod) || managers.Contains(mod) || GameError(mod) || Tags.OffBranch(mod) || TurnedOffStill(mod);
         (string Tag, Func<Mod, bool> Means)[] meant =
         [
             ("enabled", ticked.Contains), ("disabled", m => !ticked.Contains(m)), ("workshop", m => m.modSource == ModSource.SteamWorkshop),
@@ -1033,7 +1035,7 @@ static partial class SelfTest
             ("renamed", m => Store.InfoFor(m)?.Alias is { Length: > 0 }), ("note", m => !string.IsNullOrWhiteSpace(Store.InfoFor(m)?.Notes)),
             ("uncategorized", m => CategoryList.CategoryName(Copies.KeyOf(m)) == Menus.Text("SPIRE_MOD_MANAGER.UNCATEGORIZED")),
             ("unmet", Unmet), ("needed", Needed), ("order", Misordered), ("duplicate", m => Chip(m, "SPIRE_MOD_MANAGER.TAG_SAME_ID")),
-            ("clash", clashing.Contains), ("aside", Copies.Loses), ("managers", managers.Contains), ("failed", Failed), ("gameerror", GameError),
+            ("clash", clashing.Contains), ("aside", Copies.Loses), ("managers", managers.Contains), ("failed", m => Failed(m) || TurnedOffStill(m)), ("gameerror", GameError),
             ("error", Error), ("warning", Warning), ("problem", m => Error(m) || Warning(m)),
         ];
         static string Key(Mod mod) => $"{mod.manifest?.id}/{mod.modSource}";
