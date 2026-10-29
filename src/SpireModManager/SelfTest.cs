@@ -76,6 +76,7 @@ static partial class SelfTest
             await Wait(menu, 3);
             await Step(() => TestText()); // our pack's text, whichever page shows
             await Step(() => TestFailSoft());
+            await Step(() => TestLoadingNote(menu, outDir));
             if (!ModEntry.OurPage)
             {
                 await Step(() => TestGamePage(menu, outDir)); // nothing more of ours to test
