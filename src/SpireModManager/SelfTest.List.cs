@@ -688,6 +688,10 @@ static partial class SelfTest
             Check("hover cards: near the right edge, a card opens left of the mouse", right == null, right ?? "");
             var corner = await ProbeAt(view - new Vector2(210, 50), up: true, left: true);
             Check("hover cards: in the bottom-right corner, a card opens above its trigger and left of the mouse", corner == null, corner ?? "");
+            // In the last 15% at the bottom and right, with room below and right: above and left all the same (Jordan, 28 Oct)
+            var zone = await ProbeAt(new Vector2(view.X * 0.87f - probe.Size.X / 2, view.Y * 0.87f - probe.Size.Y / 2), up: true, left: true);
+            Check("hover cards: in the screen's last 15% at the bottom and right, a card opens above its trigger and left of the mouse, though it fits below "
+                + "and right", zone == null, zone ?? "");
         }
         finally
         {
