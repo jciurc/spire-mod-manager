@@ -57,6 +57,8 @@
   "SPIRE_MOD_MANAGER.SHOW_CHANGED": "Changed",
   "SPIRE_MOD_MANAGER.SHOW_CHANGED_TIP": "Show mods changed since launch: enabled or disabled, installed, moved, or edited",
   "SPIRE_MOD_MANAGER.DISABLE_MOD": "Disable",
+  "SPIRE_MOD_MANAGER.LOADING_MODS": "Loading {count} mods",
+  "SPIRE_MOD_MANAGER.LOADING_MODS_ONE": "Loading 1 mod",
   "SPIRE_MOD_MANAGER.LIST_PROBLEMS_OFF": "{count} enabled mods require a mod that is disabled",
   "SPIRE_MOD_MANAGER.LIST_PROBLEMS_OFF_ONE": "1 enabled mod requires a mod that is disabled",
   "SPIRE_MOD_MANAGER.LIST_PROBLEMS_MISSING": "{count} enabled mods require a mod that isn't installed",
