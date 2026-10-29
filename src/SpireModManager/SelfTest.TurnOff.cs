@@ -1227,16 +1227,16 @@ static partial class SelfTest
             await TurnedOffNow();
             var (shown, said, fill) = (Banner() is { Visible: true }, Said(), BannerFill(Banner()));
             var card = string.Join(" | ", await BannerCard(menu, screen, Banner(), "2x-turned-off-banner", outDir));
-            // Its Show: "#turnedoff" in the box, which finds the mod (#warning too, the banner being yellow); pressed again,
-            // the box empty
+            // Its Show: "#failed #disabled" in the box, which finds the mod (#failed has the enabled mods that failed to
+            // load too; #warning finds it, the banner being yellow); pressed again, the box empty
             var searchBox = border.GetNode<LineEdit>("SpireModManagerSearch");
             BannerPress("FilterTurnedOffButton");
             await Wait(menu, 0.3);
-            var (showBox, tagged, warned) = (searchBox.Text, HiddenTags.Find("turnedoff")?.Invoke(fixes), HiddenTags.Find("warning")?.Invoke(fixes));
+            var (showBox, tagged, warned) = (searchBox.Text, HiddenTags.Find("failed")?.Invoke(fixes), HiddenTags.Find("warning")?.Invoke(fixes));
             BannerPress("FilterTurnedOffButton");
             await Wait(menu, 0.3);
-            Check("the turned-off banner's Show: \"#turnedoff\" in the box, which finds the mod, as #warning does; pressed again, the box empty",
-                showBox == "#turnedoff" && tagged == true && warned == true && searchBox.Text == "", $"\"{showBox}\" {tagged} {warned}; then \"{searchBox.Text}\"");
+            Check("the turned-off banner's Show: \"#failed #disabled\" in the box, #failed finding the mod, as #warning does; pressed again, the box empty",
+                showBox == "#failed #disabled" && tagged == true && warned == true && searchBox.Text == "", $"\"{showBox}\" {tagged} {warned}; then \"{searchBox.Text}\"");
             var steps = History.Steps(History.Track.List);
             BannerPress("TurnBackOnButton");
             await Wait(menu, 0.3);

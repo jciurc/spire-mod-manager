@@ -699,8 +699,9 @@ static class LoadOrder
     }
 
     // Mods turned off after a failed start that are still off: a yellow banner naming them, with Go to stepping through
-    // their rows, Show finding them (#turnedoff), Turn back on (all of them: TurnedOff.TurnBackOn) and Dismiss (the
-    // entries go, the mods stay off). Its card names each with when it was turned off.
+    // their rows, Show finding them (#failed #disabled: #failed has the enabled mods that failed to load too), Turn back
+    // on (all of them: TurnedOff.TurnBackOn) and Dismiss (the entries go, the mods stay off). Its card names each with
+    // when it was turned off.
     static void TurnedOffBanner(Control content, Control border, Control? search, IReadOnlyList<TurnedOff.Entry> entries)
     {
         var ids = entries.Select(e => e.Id).ToHashSet();
@@ -726,7 +727,7 @@ static class LoadOrder
             : Menus.Format("SPIRE_MOD_MANAGER.TURNED_OFF_BANNER_MANY", ("count", Menus.Number(entries.Count)));
         Banner(border, search, text, () => BannerCard("SPIRE_MOD_MANAGER.TURNED_OFF_CARD_TITLE", [.. entries.Select(e => Menus.Format("SPIRE_MOD_MANAGER.TURNED_OFF_LINE",
             ("mod", TurnedOff.Name(e, plain: false)), ("date", LaunchGuard.When(e.At.LocalDateTime))))], markup: true),
-            [goTo, ShowButton(content, "#turnedoff", "FilterTurnedOffButton"), on, dismiss], TurnedOffName, "TurnedOffWarning", WarningColor);
+            [goTo, ShowButton(content, "#failed #disabled", "FilterTurnedOffButton"), on, dismiss], TurnedOffName, "TurnedOffWarning", WarningColor);
     }
 
     // Copies of one mod id both ticked (only one loads), in Jordan's words: a yellow warning, Go to stepping through those

@@ -1034,7 +1034,7 @@ static partial class SelfTest
             ("renamed", m => Store.InfoFor(m)?.Alias is { Length: > 0 }), ("note", m => !string.IsNullOrWhiteSpace(Store.InfoFor(m)?.Notes)),
             ("uncategorized", m => CategoryList.CategoryName(Copies.KeyOf(m)) == Menus.Text("SPIRE_MOD_MANAGER.UNCATEGORIZED")),
             ("unmet", Unmet), ("needed", Needed), ("order", Misordered), ("duplicate", m => Chip(m, "SPIRE_MOD_MANAGER.TAG_SAME_ID")),
-            ("clash", clashing.Contains), ("aside", Copies.Loses), ("managers", managers.Contains), ("turnedoff", TurnedOffStill), ("failed", Failed), ("gameerror", GameError),
+            ("clash", clashing.Contains), ("aside", Copies.Loses), ("managers", managers.Contains), ("failed", m => Failed(m) || TurnedOffStill(m)), ("gameerror", GameError),
             ("error", Error), ("warning", Warning), ("problem", m => Error(m) || Warning(m)),
         ];
         static string Key(Mod mod) => $"{mod.manifest?.id}/{mod.modSource}";
