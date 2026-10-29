@@ -186,7 +186,7 @@
   "SPIRE_MOD_MANAGER.SETTINGS": "Settings",
   "SPIRE_MOD_MANAGER.SETTINGS_TIP": "Change this mod's settings ({library})",
   "SPIRE_MOD_MANAGER.SETTINGS_FAILED_TIP": "Settings page couldn't be opened - see game log for more details",
-  "SPIRE_MOD_MANAGER.NO_SETTINGS_TIP": "No settings were found for this mod",
+  "SPIRE_MOD_MANAGER.NO_SETTINGS_TIP": "No settings page found for this mod",
   "SPIRE_MOD_MANAGER.AUTHOR": "Author",
   "SPIRE_MOD_MANAGER.UNKNOWN": "unknown",
   "SPIRE_MOD_MANAGER.NO_DESCRIPTION": "No description",
