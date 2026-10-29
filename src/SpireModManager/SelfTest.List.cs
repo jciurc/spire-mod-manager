@@ -1825,6 +1825,23 @@ static partial class SelfTest
         for (var p = 0; p < 4; p++)
             big.Profiles.Add(new Profile { Name = $"Big profile {p}", Mods = [.. list] });
         Store.TestSet(big);
+        // The undo snapshot, made from a shallow copy in one pass, is what the round trip it replaced made: the data
+        // without its view state (here all of it set), the data itself untouched.
+        (big.UncategorizedCollapsed, big.ManagersWarningDismissed, big.SameIdDismissed) = (true, true, "SmmBig000");
+        (big.ShareChoices, big.MenuButtonAt) = (new ShareChoice(true, true, false, true), new ScreenPoint(12.5f, 40));
+        if (big.Categories.FirstOrDefault() is { } folded)
+            folded.Collapsed = true;
+        var whole = Store.TestJson(big);
+        var roundTrip = Store.Clone(big);
+        roundTrip.VanillaView = roundTrip.LoadOrderView = roundTrip.UncategorizedCollapsed = roundTrip.ManagersWarningDismissed = false;
+        (roundTrip.ShareChoices, roundTrip.SameIdDismissed, roundTrip.MenuButtonAt) = (null, null, null);
+        roundTrip.Categories.ForEach(c => c.Collapsed = false);
+        var edits = Store.EditsJson();
+        Check("the undo snapshot in one pass: the same as the round trip it replaced, our data untouched",
+            edits == Store.TestJson(roundTrip) && Store.TestJson(big) == whole && big.Categories.FirstOrDefault()?.Collapsed != false,
+            $"{edits.Length} vs {Store.TestJson(roundTrip).Length} chars");
+        (big.UncategorizedCollapsed, big.ManagersWarningDismissed, big.SameIdDismissed, big.ShareChoices, big.MenuButtonAt) = (false, false, null, null, null);
+        big.Categories.ForEach(c => c.Collapsed = false);
         History.TestLoaded(History.TestTake()); // launched with it: few changes since, as in a real session
         try
         {

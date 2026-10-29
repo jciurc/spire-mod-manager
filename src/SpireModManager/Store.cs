@@ -48,6 +48,9 @@ internal class StoreData
     public string? ImportedFrom { get; set; }
     // The share dialog's tick boxes, kept across launches while its Remember selection is ticked; null: the defaults.
     public ShareChoice? ShareChoices { get; set; }
+
+    // A copy that shares everything below the top level (Store.EditsJson clears its view state).
+    public StoreData Shallow() => (StoreData)MemberwiseClone();
 }
 
 internal record ShareChoice(bool Category, bool Disabled, bool Alias, bool Notes);
@@ -56,6 +59,8 @@ internal class Category
 {
     public string Name { get; set; } = "";
     public bool Collapsed { get; set; }
+
+    public Category Shallow() => (Category)MemberwiseClone();
 }
 
 internal class ModInfo
@@ -131,6 +136,9 @@ internal static class Store
 
     // Self-test: our data swapped for another (a big list's, and back), unsaved.
     public static void TestSet(StoreData data) => _data = data;
+
+    // Self-test: data as the file has it.
+    public static string TestJson(StoreData data) => JsonSerializer.Serialize(data, Json);
 #endif
 
     // The mod's data folder (known from Init on): manager.json, backups, drop-in translations and the launch record.
@@ -471,26 +479,25 @@ internal static class Store
 
     // Our data minus view state (views, collapsed categories, dismissed banners, the share dialog's kept tick boxes, the
     // main menu button's place: a layout choice, not a change to the mods): what undo compares and restores.
+    // Written straight from a shallow copy: one pass over the data, as cheap as checking it against the last one asked
+    // (asked several times per change: undo history, the changes bar, its list). The copy shares the data below the top
+    // level, so only what's replaced here is changed: nothing in our data is.
     public static string EditsJson()
     {
-        var json = JsonSerializer.Serialize(Data, Json);
-        if (_edits is { } last && last.Data == json)
-            return last.Edits;
-        var copy = JsonSerializer.Deserialize<StoreData>(json, Json) ?? new StoreData();
+        var data = Data;
+        var copy = data.Shallow();
         copy.VanillaView = copy.LoadOrderView = copy.UncategorizedCollapsed = copy.ManagersWarningDismissed = false;
         copy.ShareChoices = null;
         copy.SameIdDismissed = null;
         copy.MenuButtonAt = null;
-        foreach (var category in copy.Categories)
-            category.Collapsed = false;
-        var edits = JsonSerializer.Serialize(copy, Json);
-        _edits = (json, edits);
-        return edits;
+        copy.Categories = [.. data.Categories.Select(category =>
+        {
+            var open = category.Shallow();
+            open.Collapsed = false;
+            return open;
+        })];
+        return JsonSerializer.Serialize(copy, Json);
     }
-
-    // The last EditsJson and the data it was made from: asked several times per change (undo history, the changes bar,
-    // its list), it's only made again when the data has changed.
-    static (string Data, string Edits)? _edits;
 
     // A copy of our data to try a change on.
     public static StoreData Clone(StoreData data) => JsonSerializer.Deserialize<StoreData>(JsonSerializer.Serialize(data, Json), Json) ?? new StoreData();
