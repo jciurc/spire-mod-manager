@@ -18,6 +18,9 @@ static class HiddenTags
         ["workshop"] = m => m.modSource == ModSource.SteamWorkshop,
         ["local"] = Tags.IsLocal, // the Local chip's, in any language
         ["installed"] = _ => true, // every row is an installed copy
+        // The branches it's marked for (most mods: both). Its Stable only or Beta only chip says when it's one alone.
+        ["stable"] = m => Tags.Branches(m).Stable,
+        ["beta"] = m => Tags.Branches(m).Beta,
         // A profile's mods that aren't installed have no rows (the missing-mods dialog lists them).
         ["uninstalled"] = _ => false,
         ["missing"] = _ => false,
@@ -64,9 +67,9 @@ static class HiddenTags
     // loads before what it needs), and mods the game failed, and this mod with no copy of it ticked.
     static bool Error(Mod mod) => Dependencies.Unmet(mod) || Needed(mod) || Misordered(mod) || Failed(mod) || SelfOff(mod);
 
-    // What the yellow ones point to (copies of one mod ticked together, both mod managers ticked, mods turned off after a
-    // failed start), and the game's errors.
-    static bool Warning(Mod mod) => Clash(mod) || Managers(mod) || GameError(mod) || TurnedOffStill(mod);
+    // What the yellow ones point to (copies of one mod ticked together, both mod managers ticked, mods for the other
+    // branch, mods turned off after a failed start), and the game's errors.
+    static bool Warning(Mod mod) => Clash(mod) || Managers(mod) || GameError(mod) || Tags.OffBranch(mod) || TurnedOffStill(mod);
 
     // Not loading after a relaunch, though a mod that loads needs it (Dependencies.NeededOff).
     static bool Needed(Mod mod) => !Copies.Loads(mod) && Whole("needed", mods => [.. Dependencies.NeededOff(mods)]).Contains(mod);
