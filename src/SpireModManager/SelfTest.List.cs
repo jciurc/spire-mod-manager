@@ -1857,7 +1857,7 @@ static partial class SelfTest
             await PanelFor(menu, screen, row);
             await Wait(menu, 0.5);
             // From no note (its notepad gone), so the one shown after is the saves'.
-            var box = panel.GetNode<TextEdit>("SpireModManagerYours/Notes/Box");
+            var box = YoursIn(panel).GetNode<TextEdit>("Notes/Box");
             box.Text = "";
             await FrameMs(menu, () => box.EmitSignal(Control.SignalName.FocusExited));
             bool Marked() => row.GetNodeOrNull<Control>("SpireModManagerEditedMark") is { Visible: true };
@@ -1909,7 +1909,7 @@ static partial class SelfTest
                 .Where(r => r.Mod?.manifest?.id != ModEntry.ModId && CategoryList.CategoryName(Copies.KeyOf(r.Mod)) == category)
                 .Select(r => Store.InfoFor(r.Mod)?.Alias ?? r.Mod?.manifest?.name ?? "")];
             var names = StringComparer.Create(Menus.Culture, ignoreCase: true);
-            var alias = panel.GetNode<LineEdit>("SpireModManagerYours/Alias/Box");
+            var alias = YoursIn(panel).GetNode<LineEdit>("Alias/Box");
             var renames = new List<(string Name, bool Moved, bool Redrawn, bool Sorted)>();
             foreach (var name in new[] { "ZZZ Timed", "ZZZ Timed too", "AAA Timed" })
             {
@@ -1944,7 +1944,7 @@ static partial class SelfTest
     // times sorted (the middle one is the usual), the last note kept.
     static async Task<List<double>> NoteSaves(Node menu, NModdingScreen screen, string note)
     {
-        var notes = screen.GetNode<TextEdit>("%ModInfoContainer/SpireModManagerYours/Notes/Box");
+        var notes = YoursIn(screen.GetNode("%ModInfoContainer")).GetNode<TextEdit>("Notes/Box");
         var saves = new List<double>();
         for (var i = 0; i < 5; i++)
         {

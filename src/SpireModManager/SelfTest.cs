@@ -516,7 +516,7 @@ static partial class SelfTest
                 await Wait(menu, 0.5);
                 var saves = await NoteSaves(menu, screen, "Timed note");
                 Results.Add($"INFO a note saved in the info panel: to the end of the frame {saves[2]:0.0} ms (fastest {saves[0]:0.0})");
-                var notes = screen.GetNode<TextEdit>("%ModInfoContainer/SpireModManagerYours/Notes/Box");
+                var notes = YoursIn(screen.GetNode("%ModInfoContainer")).GetNode<TextEdit>("Notes/Box");
                 notes.Text = had;
                 notes.EmitSignal(Control.SignalName.FocusExited);
                 await Wait(menu, 0.3);

@@ -828,14 +828,14 @@ static partial class SelfTest
         try
         {
             info.Fill(mod);
-            var needs = info.GetNode<RichTextLabel>("ModDescription");
+            var needs = PanelScroll.Description(info);
             var needsLine = needs.GetParsedText().Split('\n').FirstOrDefault(l => l.StartsWith(Menus.Text("SPIRE_MOD_MANAGER.DEPENDENCIES") + ": ")) ?? "";
             Check("Workshop requirements: Dependencies: Workshop Lib (Requirement from workshop), Missing Lib (Requirement from workshop); the first "
                 + "a link to its row, the second to its Workshop page",
                 needsLine == "Dependencies: Workshop Lib (Requirement from workshop), Missing Lib (Requirement from workshop)"
                 && needs.Text.Contains("[url=mod:SmmWorkshopLib]") && needs.Text.Contains($"[url={ProfileCsv.WorkshopLink(99001)}]"), needsLine);
             info.Fill(lib);
-            var forLine = info.GetNode<RichTextLabel>("ModDescription").GetParsedText().Split('\n')
+            var forLine = PanelScroll.Description(info).GetParsedText().Split('\n')
                 .FirstOrDefault(l => l.StartsWith(Menus.Text("SPIRE_MOD_MANAGER.NEEDED_BY") + ": ")) ?? "";
             Check("the required mod's panel: Required for: Workshop Test (Requirement from workshop)",
                 forLine == $"{Menus.Text("SPIRE_MOD_MANAGER.NEEDED_BY")}: Workshop Test (Requirement from workshop)", forLine);
