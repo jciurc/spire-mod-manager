@@ -21,6 +21,9 @@ static class PanelScroll
     // What scrolls: the description, the line for other mods' parts left out, and our fields, placed by ModDetails.PlaceFields.
     public static Control? Body(Node info) => info.GetNodeOrNull<Control>($"{BoxName}/Body");
 
+    // The body, the box made first if the panel has none yet (our fields go in it before the panel is first placed).
+    public static Control MadeBody(Control info) => (Box(info) ?? Add(info)).GetNode<Control>("Body");
+
     // The width the content has: the box's, less a scrollbar's room whether one shows or not, so text doesn't wrap again
     // when one comes.
     public static float Width(ScrollContainer box) => box.Size.X - box.GetVScrollBar().GetCombinedMinimumSize().X - 4;

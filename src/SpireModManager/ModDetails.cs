@@ -957,7 +957,7 @@ static class ModDetails
     {
         var box = new VBoxContainer { Name = FieldsName };
         box.AddThemeConstantOverride("separation", 12);
-        PanelScroll.Body(container)!.AddChild(box); // placed under the description: PlaceFields
+        PanelScroll.MadeBody(container).AddChild(box); // placed under the description: PlaceFields
 
         Control? Content() => container.GetParent()?.GetNodeOrNull<Control>("%ModsScrollContainer/Mask/Content");
         string? ModId() => Meta(container, ModIdMeta) is { Length: > 0 } id ? id : null;
@@ -1024,13 +1024,13 @@ static class ModDetails
     // down the panel's scrolling box (PanelScroll). Our views only.
     public static void PlaceFields(Control container)
     {
-        if (!Layout.Wide || HistoryBar.ListOpen(container) || PanelScroll.Box(container) is not { } box || Yours(container) is not { } yours)
+        if (!Layout.Wide || HistoryBar.ListOpen(container) || PanelScroll.Box(container) is not { } box || Yours(container) is not { } yours
+            || PanelScroll.Body(container) is not { } body)
         {
             if (PanelScroll.Body(container)?.GetNodeOrNull<Control>(OthersName) is { } stale)
                 stale.Visible = false; // the changes list or the narrow layout: no line placed
             return;
         }
-        var body = PanelScroll.Body(container)!;
         var description = PanelScroll.Description(container);
         var text = description.GetContentHeight() + 6;
         PanelScroll.Place(box, description, 0, text);

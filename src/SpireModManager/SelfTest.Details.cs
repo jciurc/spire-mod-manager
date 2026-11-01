@@ -164,7 +164,7 @@ static partial class SelfTest
                 && wholeId == id, $"{wholeTitle} / {wholeId}");
             // The panel's category picker: the long name cut with ".." before its arrow to the picker's width, inside the
             // panel (whole, it pushed the fields past the panel's edge); the whole name a second over it.
-            var picker = ModDetails.Yours(panel)!.GetNode<Button>("Category/Picker");
+            var picker = YoursIn(panel).GetNode<Button>("Category/Picker");
             var pickerRoom = picker.Size.X - picker.GetThemeStylebox("normal").GetMinimumSize().X;
             var pickerDrawn = picker.GetThemeFont("font").GetStringSize(picker.Text, fontSize: picker.GetThemeFontSize("font_size")).X;
             var wholePicker = await Tooltip(picker, "SpireModManagerFullText", Hover.SlowDelay + 0.2);
@@ -472,7 +472,7 @@ static partial class SelfTest
 
             // The fade: the panel's box runs on below (its Workshop tags, our fields), so there at the top.
             var panelFill = (info.GetThemeStylebox("panel") as StyleBoxFlat)?.BgColor ?? Colors.White;
-            var box = PanelScroll.Box(info)!;
+            var box = BoxIn(info);
             var scroll = box.GetVScrollBar();
             scroll.Value = 0;
             await Wait(menu, 0.2);
@@ -497,7 +497,7 @@ static partial class SelfTest
                 $"edge {ScrollFade.Shade(0)}, the panel {panelFill}; fade to {atEnd?.Room.End.X:0.#}, scrollbar from {scroll.Position.X:0.#}; "
                 + $"the label's controls: {string.Join(", ", label.GetChildren().OfType<Control>().Select(c => c.Name))}");
             // Everything under the head in the one box: the description, then our fields, scrolling together.
-            var fields = ModDetails.Yours(info)!;
+            var fields = YoursIn(info);
             Check("the description and our fields scroll together in one box under the head, the fields after the text",
                 label.GetParent()?.GetParent() == box && fields.GetParent() == label.GetParent() && fields.Position.Y >= label.Position.Y + label.Size.Y
                 && !label.ScrollActive && box.FollowFocus, $"label in {label.GetParent()?.GetParent()?.Name}, fields in {fields.GetParent()?.GetParent()?.Name} at {fields.Position.Y:0}, text to {label.Position.Y + label.Size.Y:0}");
@@ -517,7 +517,7 @@ static partial class SelfTest
                 + $"({hovered?.MouseFilter}); the text {label.GetGlobalRect()} ({label.MouseFilter}), the box {box.GetGlobalRect()}");
             // It follows the panel's size: room for it all, none; back to its size, a fade again.
             var bottom = box.OffsetBottom;
-            box.OffsetBottom = box.OffsetTop + PanelScroll.Body(info)!.GetCombinedMinimumSize().Y + 20;
+            box.OffsetBottom = box.OffsetTop + BodyIn(info).GetCombinedMinimumSize().Y + 20;
             await Wait(menu, 0.2);
             var fits = ScrollFade.TestDrawn(box);
             box.OffsetBottom = bottom;
@@ -1486,8 +1486,8 @@ static partial class SelfTest
         var home = new Vector2(0, 318);
         var other = new PanelContainer { Name = "OtherModSettingsPanel", Position = home, CustomMinimumSize = new Vector2(560, 174) };
         info.AddChild(other);
-        Vector2 Tall() => new(560, PanelScroll.Box(info)!.Size.Y + 50); // taller than the panel's box: no room for it
-        var (details, yours) = (PanelScroll.Description(info), ModDetails.Yours(info)!);
+        Vector2 Tall() => new(560, BoxIn(info).Size.Y + 50); // taller than the panel's box: no room for it
+        var (details, yours) = (PanelScroll.Description(info), YoursIn(info));
         // shownByItsMod: what its mod sets in its own Fill postfix.
         async Task<string> Refill(bool? shownByItsMod = null)
         {
@@ -1712,4 +1712,9 @@ static partial class SelfTest
         Check("Esc lets go of the picked mods, staying on the page", Selection.Mods.Count == 0 && screen.IsVisibleInTree()
             && rows.All(r => r.GetNodeOrNull<Control>("SpireModManagerPicked") is not { Visible: true }));
     }
+
+    // The panel's scrolling box, its body and our fields in it, there or the test fails naming which.
+    static ScrollContainer BoxIn(Node info) => PanelScroll.Box(info) ?? throw new InvalidOperationException("no panel scroll box");
+    static Control BodyIn(Node info) => PanelScroll.Body(info) ?? throw new InvalidOperationException("no panel scroll body");
+    static Control YoursIn(Node info) => ModDetails.Yours(info) ?? throw new InvalidOperationException("no fields in the panel");
 }

@@ -372,7 +372,7 @@ static partial class SelfTest
         await Wait(menu, 0.5);
         Check("row state reads the game's: the selected row is selected, another not", RowState.Selected(ours) && !RowState.Selected(other));
         var description = PanelScroll.Description(panel).GetParsedText();
-        var yours = ModDetails.Yours(panel)!;
+        var yours = YoursIn(panel);
         LineEdit Line(string field) => yours.GetNode<LineEdit>($"{field}/Box");
         var notes = yours.GetNode<TextEdit>("Notes/Box");
         var titleText = panel.GetNode<RichTextLabel>("ModTitle").GetParsedText();
@@ -461,10 +461,10 @@ static partial class SelfTest
         Check("the thumbnail is 256 x 144 (the scene's minimum size lifted)", panel.GetNode<Control>("ModImage").Size == new Vector2(256, 144), $"{panel.GetNode<Control>("ModImage").Size}");
         Check("automatic tags beside the Tags term", yours.GetNodeOrNull<Control>("Tags/Term/SystemTags") is { Visible: true } system && system.GetChildCount() > 0);
         var image = panel.GetNode<TextureRect>("ModImage");
-        var description0 = PanelScroll.Box(panel)!.OffsetTop;
+        var description0 = BoxIn(panel).OffsetTop;
         image.Texture = ImageTexture.CreateFromImage(Image.CreateEmpty(16, 9, false, Image.Format.Rgba8));
         Layout.PlaceInfo(panel);
-        var withPicture = PanelScroll.Box(panel)!.OffsetTop;
+        var withPicture = BoxIn(panel).OffsetTop;
         image.Texture = ImageTexture.CreateFromImage(Image.CreateEmpty(10, 10, false, Image.Format.Rgba8));
         Layout.PlaceInfo(panel);
         Check("a square picture: full height, against the right edge", image.Size == new Vector2(ModDetails.ThumbHeight, ModDetails.ThumbHeight)
