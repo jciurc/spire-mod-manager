@@ -36,7 +36,7 @@ static class ProfileCsv
     // What Read found: the mods, or why there are none (the text to show).
     public record Result(List<Entry> Mods, string? Error);
 
-    const string WorkshopPage = "https://steamcommunity.com/sharedfiles/filedetails/?id=";
+    public const string WorkshopPage = "https://steamcommunity.com/sharedfiles/filedetails/?id=";
 
     public static string WorkshopLink(ulong id) => WorkshopPage + id;
 

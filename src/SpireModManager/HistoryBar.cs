@@ -603,11 +603,15 @@ static class HistoryBar
     static Compared? _compared;
     static bool _compareFailed;
 
+    // Before, as read last time: it's launch's, the same for every change.
+    static (string Json, JsonObject? Read)? _before;
+
     static Compared Compare(string before, string after)
     {
         try
         {
-            var a = JsonNode.Parse(before)?.AsObject();
+            var a = _before is { } kept && kept.Json == before ? kept.Read : JsonNode.Parse(before)?.AsObject();
+            _before = (before, a);
             var b = JsonNode.Parse(after)?.AsObject();
             var modsA = a?["mods"] as JsonObject ?? [];
             var modsB = b?["mods"] as JsonObject ?? [];

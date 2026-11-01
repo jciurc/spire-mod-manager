@@ -28,6 +28,7 @@ sealed class ModField
     readonly PanelContainer? _pillsBox; // the player's pills at rest, in the same box as the text
     readonly TagSuggestions? _suggestions; // tags only
     bool _cancelling;
+    IReadOnlyList<string> _editing = []; // the mods the box was opened for
 
     // modId: the mod being shown (it can change: the info panel). saved: after a value is stored.
     public ModField(Kind kind, Func<string?> modId, Action<Kind> saved) : this(kind, () => modId() is { Length: > 0 } id ? [id] : [], saved, bulk: false)
@@ -150,6 +151,7 @@ sealed class ModField
         Hint();
         _box.FocusEntered += () =>
         {
+            _editing = _modIds();
             Hint();
             _buttons.Visible = true;
             if (_box is LineEdit line)
@@ -240,9 +242,16 @@ sealed class ModField
 
     public bool Editing => _box.HasFocus();
 
-    // Shows the stored value for the mod (unless it's being edited).
+    // Shows the stored value for the mod (unless it's being edited). Another mod shown while the box is open ends the
+    // edit, its typing saved for the mod before (Commit, from the panel's Fill): left open, it saved over the new mod's
+    // value when it closed.
     public void Load()
     {
+        if (Editing && !_modIds().SequenceEqual(_editing))
+        {
+            _cancelling = true;
+            _box.ReleaseFocus();
+        }
         if (!Editing)
         {
             SetText(Stored());

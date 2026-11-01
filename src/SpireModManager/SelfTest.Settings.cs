@@ -234,7 +234,7 @@ static partial class SelfTest
         static Control? Shown(Control info) => info.GetNodeOrNull<Control>(ModDetails.SettingsName);
     }
 
-    const string NoneTip = "No settings were found for this mod";
+    const string NoneTip = "No settings page found for this mod";
 
     static bool Greyed(Control? button) => button is NClickableControl clickable ? !clickable.IsEnabled && clickable.Modulate == StsColors.gray
         : button is BaseButton { Disabled: true };

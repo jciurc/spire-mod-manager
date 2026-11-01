@@ -5,6 +5,9 @@
     <AssemblyName>SpireModManager</AssemblyName>
     <RootNamespace>SpireModManager</RootNamespace>
     <Nullable>enable</Nullable>
+    <!-- Nullable annotations go into the dll for the public API only: nothing reads them on our internals at run
+         time, and on every member they were about a twentieth of the Workshop dll. -->
+    <Features>$(Features);nullablePublicOnly</Features>
     <LangVersion>latest</LangVersion>
     <ImplicitUsings>enable</ImplicitUsings>
     <CopyLocalLockFileAssemblies>false</CopyLocalLockFileAssemblies>

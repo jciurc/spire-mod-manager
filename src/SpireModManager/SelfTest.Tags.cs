@@ -93,6 +93,24 @@ static partial class SelfTest
         await Wait(menu, 0.3);
         Check("tag suggestions: a click takes one and finishes: the box left, the list closed, the tags saved, tidied", TagSuggestions.Current == null && !box.HasFocus()
             && Store.InfoFor("SmmTestUi")?.Tags?.SequenceEqual(["Strategy", "Story-heavy", "Fast", "Co-op"]) == true, string.Join(", ", Store.InfoFor("SmmTestUi")?.Tags ?? []));
+        // Another mod picked while the box is open (its Go to, say): the typing saved for the mod it was typed for, the box
+        // closed showing the new mod's tags, and nothing of it saved over theirs when the focus goes (Jordan, 28 Oct)
+        var libId = lib.Mod?.manifest?.id ?? "";
+        var libTags = string.Join(", ", Store.InfoFor(libId)?.Tags ?? []);
+        box.GrabFocus();
+        await TypeIn(box, "Strategy, Story-heavy, Fast, Co-op, Carried");
+        CategoryList.Select(screen, lib);
+        await PanelFor(menu, screen, lib);
+        await Wait(menu, 0.3);
+        var (open, shownTags) = (box.HasFocus(), box.Text);
+        box.GrabFocus();
+        box.ReleaseFocus();
+        await Wait(menu, 0.2);
+        Check("a panel field open when another mod is picked: its typing saved for its own mod, the box closed with the new mod's value, which leaving it "
+            + "doesn't overwrite", !open && shownTags == libTags && string.Join(", ", Store.InfoFor(libId)?.Tags ?? []) == libTags
+            && Store.InfoFor("SmmTestUi")?.Tags?.Contains("Carried") == true, $"open {open}, \"{shownTags}\" for \"{libTags}\"; now {string.Join(", ", Store.InfoFor(libId)?.Tags ?? [])}; "
+            + $"ui {string.Join(", ", Store.InfoFor("SmmTestUi")?.Tags ?? [])}");
+        Store.EditMod("SmmTestUi", info => info.Tags = ["Strategy", "Story-heavy", "Fast", "Co-op"]);
 
         Selection.Clear(content);
         Selection.Add(content, [lib, other]);
