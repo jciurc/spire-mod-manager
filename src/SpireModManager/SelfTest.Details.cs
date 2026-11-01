@@ -1626,6 +1626,19 @@ static partial class SelfTest
         await Wait(menu, 0.3);
         Check("one undo puts them all back", picked.All(id => Store.InfoFor(id)?.Category == null));
         MenuPanel.Close();
+        // The info panel's category picker on one of them moves them all, as the bulk menu does (Jordan, 28 Oct: it moved
+        // only the one shown); on a mod not picked, only that one.
+        CategoryList.PanelCategoryItems(content, picked[0]).FirstOrDefault(i => i.Label == tool)?.OnSelect?.Invoke();
+        await Wait(menu, 0.3);
+        var allMoved = picked.All(id => Store.InfoFor(id)?.Category == tool);
+        History.Undo();
+        CategoryList.PanelCategoryItems(content, "SmmTestFixes").FirstOrDefault(i => i.Label == tool)?.OnSelect?.Invoke();
+        await Wait(menu, 0.3);
+        Check("the panel's category picker on a picked mod moves all the picked ones; on one not picked, only it",
+            allMoved && Store.InfoFor("SmmTestFixes")?.Category == tool && picked.All(id => Store.InfoFor(id)?.Category == null),
+            string.Join(", ", picked.Append("SmmTestFixes").Select(id => $"{id}: {Store.InfoFor(id)?.Category}")));
+        History.Undo();
+        await Wait(menu, 0.3);
 
         // Tags: one mod has its own; a tag added to all keeps it; taking the shared one off leaves it.
         Store.EditMod(picked[0], info => info.Tags = ["mine"]);
