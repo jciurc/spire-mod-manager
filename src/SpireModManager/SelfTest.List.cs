@@ -1304,9 +1304,9 @@ static partial class SelfTest
                 WorkshopInfo.TestSet(id, null);
             }
         }
-        var local = Dependencies.Find("SmmTestFixes");
-        seen.Add($"local: [{string.Join("/", Tags.For(local).Where(c => c.Text is "Stable only" or "Beta only").Select(c => c.Text))}] "
-            + string.Concat(queries.Select(q => Search.Matches(local, q) ? "y" : "n")) + $" {Keywords(local!)}");
+        if (Dependencies.Find("SmmTestFixes") is { } local) // without it, its entry missing fails the check
+            seen.Add($"local: [{string.Join("/", Tags.For(local).Where(c => c.Text is "Stable only" or "Beta only").Select(c => c.Text))}] "
+                + string.Concat(queries.Select(q => Search.Matches(local, q) ? "y" : "n")) + $" {Keywords(local)}");
         Check("Stable only and Beta only by the game's branch rule: a chip on one-branch mods that searches for it; #stable, #beta, #stable -#beta "
             + "and the plain words find them, stable and beta among Other keywords; \"table\" only through a chip's text (as any chip)",
             seen.SequenceEqual(["stable only: [Stable only (#\"Stable only\")] ynyyyyyn stable", "beta and up: [Beta only (#\"Beta only\")] nynnnnny beta",

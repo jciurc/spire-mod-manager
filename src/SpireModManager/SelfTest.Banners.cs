@@ -1374,8 +1374,10 @@ static partial class SelfTest
             var forBoth = Banner() != null;
             await On(PlatformBranch.None, (false, true));
             var elsewhere = Banner() != null;
-            Check("no other-branch banner for a stable-only mod on stable, a mod for both branches on beta, or on a branch that's neither",
-                !onStable && !forBoth && !elsewhere, $"on stable {onStable}, for both {forBoth}, elsewhere {elsewhere}");
+            await On(PlatformBranch.Production, (false, false));
+            var forNeither = Banner() != null;
+            Check("no other-branch banner for a stable-only mod on stable, a mod for both branches on beta, one for neither, or on a branch that's neither",
+                !onStable && !forBoth && !forNeither && !elsewhere, $"on stable {onStable}, for both {forBoth}, for neither {forNeither}, elsewhere {elsewhere}");
             await On(PlatformBranch.Production, (false, true));
             var betaOnly = Said();
             BannerPress("DismissBranchButton");

@@ -136,11 +136,12 @@ static class Tags
 #endif
 
     // Enabled and marked only for the other branch than the one the game is on (stable or beta; none on another): the
-    // other-branch banner's mods (LoadOrder), and #warning's.
+    // other-branch banner's mods (LoadOrder), and #warning's. One marked for neither isn't: the banner would call it the
+    // other branch's.
     public static bool OffBranch(Mod mod) => Copies.Ticked(mod) && GameBranch() switch
     {
-        PlatformBranch.Production => !Branches(mod).Stable,
-        PlatformBranch.PublicBeta => !Branches(mod).Beta,
+        PlatformBranch.Production => Branches(mod) is (false, true),
+        PlatformBranch.PublicBeta => Branches(mod) is (true, false),
         _ => false,
     };
 
