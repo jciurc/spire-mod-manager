@@ -113,7 +113,7 @@ static class Layout
 
         PlaceInfo(info);
         ViewFont(info.GetNode<MegaRichTextLabel>("ModTitle"), InfoTitleSize);
-        ViewFont(info.GetNode<MegaRichTextLabel>("ModDescription"), InfoTextSize);
+        ViewFont(PanelScroll.Description(info), InfoTextSize);
 
         var scroll = list.GetNode<Control>("ModsScrollContainer");
 
@@ -401,8 +401,9 @@ static class Layout
             line.Visible = ModEntry.HasPendingChanges();
     }
 
-    // Places the info panel's parts: the head (title, source, facts) beside a large thumbnail, the description below,
-    // other mods' parts, then the player's fields and Open Folder. The changes list's Back button pushes them down.
+    // Places the info panel's parts: the head (title, source, facts) beside a large thumbnail, the scrolling box below
+    // (the description, other mods' parts and the player's fields: PanelScroll), then Open Folder. The changes list's
+    // Back button pushes them down.
     public static void PlaceInfo(Control info)
     {
         const float top = 16;
@@ -426,14 +427,18 @@ static class Layout
             : new Vector2(thumbWidth, thumbHeight);
         Place(image, new Vector4(width - thumbRight - shown.X, top + drop, width - thumbRight, top + drop + shown.Y));
         // Better Mod Menu anchors the description to the panel's bottom on its page: the scene's anchor back first.
-        var description = info.GetNode<Control>("ModDescription");
+        var description = PanelScroll.Description(info);
         if (!description.HasMeta(AnchorMeta))
             description.SetMeta(AnchorMeta, description.AnchorBottom);
-        description.AnchorBottom = (float)description.GetMeta(AnchorMeta);
-        Place(description, new Vector4(inset, below, width - inset,
-            info.Size.Y - ModDetails.ButtonsFromBottom - ModDetails.FieldsGap));
-        if (!Wide)
+        if (Wide)
+            Place(PanelScroll.Enter(info), new Vector4(inset, below, width - inset,
+                info.Size.Y - ModDetails.ButtonsFromBottom - ModDetails.FieldsGap));
+        else
+        {
+            PanelScroll.Leave(info);
+            description.AnchorBottom = (float)description.GetMeta(AnchorMeta);
             PutOthersBack(info);
+        }
     }
 
     // Other mods' parts in the info panel (Undo And Restart adds one right where our fields are): not the game's own,
@@ -446,11 +451,13 @@ static class Layout
         : info.GetChildren().OfType<Control>().Where(c => c.Name.ToString() is var name && !scene.Contains(name)
             && !name.StartsWith("SpireModManager") && name != "OpenFolderButton" && !name.StartsWith("BetterModMenu"));
 
-    // Our views: the parts that fit in the room, in their mods' order; the rest go out of sight (Park). A part new this
-    // frame may not be laid out yet, so it waits a frame.
-    public static List<Control> FitOthers(Control info, float room)
+    // Our views: the parts in the panel's scrolling box from y in its content, in their mods' order, each shown while
+    // the box shows all of it and out of sight (Park) otherwise; they stay the panel's, so they follow its scroll by
+    // hand. One taller than the box is left out (out of sight too). A part new this frame may not be laid out yet, so
+    // it waits a frame. Returns where the content goes on after them, and how many were left out.
+    public static (float Y, int Left) PlaceOthers(Control info, ScrollContainer box, float y)
     {
-        var fitting = new List<Control>();
+        var left = 0;
         var frame = (long)Engine.GetProcessFrames();
         var settling = false;
         foreach (var part in OtherParts(info))
@@ -461,15 +468,24 @@ static class Layout
                 part.SetMeta(SeenMeta, frame);
             var settled = (long)part.GetMeta(SeenMeta) < frame;
             settling |= !settled;
-            var height = part.Size.Y + ModDetails.FieldsGap;
-            if (height <= room)
+            if (part.Size.Y > box.Size.Y)
             {
-                room -= height;
-                fitting.Add(part);
+                if (settled)
+                {
+                    left++;
+                    Park(part);
+                }
+                continue;
+            }
+            var shown = y - box.ScrollVertical;
+            if (shown >= 0 && shown + part.Size.Y <= box.Size.Y)
+            {
                 Unpark(part);
+                PlaceOther(part, box.Position.Y + shown);
             }
             else if (settled)
                 Park(part);
+            y += part.Size.Y + ModDetails.FieldsGap;
         }
         if (settling)
             info.GetTree().CreateTimer(0).Timeout += () =>
@@ -477,7 +493,7 @@ static class Layout
                 if (GodotObject.IsInstanceValid(info))
                     ModDetails.PlaceFields(info);
             };
-        return fitting;
+        return (y, left);
     }
 
     // At our left edge, y down the panel, its size as its mod made it (moved by its offsets, whatever its anchors).
@@ -488,11 +504,8 @@ static class Layout
             (part.OffsetLeft + dx, part.OffsetTop + dy, part.OffsetRight + dx, part.OffsetBottom + dy);
     }
 
-    // How many of other mods' parts are out of sight for lack of room (not the ones new this frame, still settling).
-    public static int Parked(Control info) => OtherParts(info).Count(p => p.HasMeta(ParkedMeta));
-
-    // Out of sight for lack of room: far above the panel and out of keyboard reach. Never hidden, so its mod's own
-    // Visible still holds when room comes back.
+    // Out of sight, scrolled away or with no room: far above the panel and out of keyboard reach. Never hidden, so its
+    // mod's own Visible still holds when it's in sight again.
     static void Park(Control part)
     {
         if (!part.HasMeta(ParkedMeta))

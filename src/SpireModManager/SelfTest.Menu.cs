@@ -332,7 +332,7 @@ static partial class SelfTest
         CategoryList.Select(screen, row);
         await PanelFor(menu, screen, row);
         await Wait(menu, 0.5);
-        var description = info.GetNode<Control>("ModDescription");
+        var description = PanelScroll.Description(info);
         Check("our views: the panel's title and description ours", info.GetNode<RichTextLabel>("ModTitle").Text.Contains("[font_size=")
             && description.AnchorBottom == 0 && description.GetGlobalRect().End.Y <= info.GetGlobalRect().End.Y + 1,
             $"anchor {description.AnchorBottom}, description {description.GetGlobalRect()}, panel {info.GetGlobalRect()}");

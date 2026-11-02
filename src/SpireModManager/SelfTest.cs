@@ -517,7 +517,7 @@ static partial class SelfTest
                 await Wait(menu, 0.5);
                 var saves = await NoteSaves(menu, screen, "Timed note");
                 Results.Add($"INFO a note saved in the info panel: to the end of the frame {saves[2]:0.0} ms (fastest {saves[0]:0.0})");
-                var notes = screen.GetNode<TextEdit>("%ModInfoContainer/SpireModManagerYours/Notes/Box");
+                var notes = YoursIn(screen.GetNode("%ModInfoContainer")).GetNode<TextEdit>("Notes/Box");
                 notes.Text = had;
                 notes.EmitSignal(Control.SignalName.FocusExited);
                 await Wait(menu, 0.3);
@@ -1657,12 +1657,12 @@ static partial class SelfTest
     static async Task<bool> PanelFor(Node menu, NModdingScreen screen, NModMenuRow? row, [System.Runtime.CompilerServices.CallerMemberName] string caller = "")
     {
         var panel = screen.GetNodeOrNull<Control>("%ModInfoContainer");
-        var description = panel?.GetNodeOrNull<RichTextLabel>("ModDescription");
+        var description = panel == null ? null : PanelScroll.Description(panel);
         var ready = await WaitUntil(menu, () => Store.Data.VanillaView || row?.Mod is not { } mod
-            || panel != null && ModDetails.ShownKey(panel) == Copies.Key(mod) && panel.HasNode("SpireModManagerYours") && description?.IsFinished() != false, caller: caller);
+            || panel != null && ModDetails.ShownKey(panel) == Copies.Key(mod) && ModDetails.Yours(panel) != null && description?.IsFinished() != false, caller: caller);
         if (!ready)
             Results.Add($"INFO {caller}: the panel didn't show {row?.Mod?.manifest?.id} in 3 s: view {Layout.Current}, vanilla {Store.Data.VanillaView}, "
-                + $"shown \"{(panel == null ? "no panel" : ModDetails.ShownKey(panel))}\", ours {panel?.HasNode("SpireModManagerYours")}, text done {description?.IsFinished()}, "
+                + $"shown \"{(panel == null ? "no panel" : ModDetails.ShownKey(panel))}\", ours {(panel == null ? null : ModDetails.Yours(panel)) != null}, text done {description?.IsFinished()}, "
                 + $"visible {screen.IsVisibleInTree()}");
         return ready;
     }

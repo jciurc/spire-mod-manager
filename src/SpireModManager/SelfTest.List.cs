@@ -153,7 +153,7 @@ static partial class SelfTest
                 CategoryList.Select(screen, other);
                 await PanelFor(menu, screen, other);
                 await Wait(menu, 0.5);
-                var descriptionLabel = panel.GetNode<RichTextLabel>("ModDescription");
+                var descriptionLabel = PanelScroll.Description(panel);
                 var (shown, raw) = (descriptionLabel.GetParsedText(), descriptionLabel.Text);
                 await Capture(screen, outDir, "17b-game-error-panel");
                 // Its row's card in the shots too: the game's box, then the gap before Author; with a note, the card's other
@@ -371,8 +371,8 @@ static partial class SelfTest
         await PanelFor(menu, screen, ours);
         await Wait(menu, 0.5);
         Check("row state reads the game's: the selected row is selected, another not", RowState.Selected(ours) && !RowState.Selected(other));
-        var description = panel.GetNode<RichTextLabel>("ModDescription").GetParsedText();
-        var yours = panel.GetNode<Control>("SpireModManagerYours");
+        var description = PanelScroll.Description(panel).GetParsedText();
+        var yours = YoursIn(panel);
         LineEdit Line(string field) => yours.GetNode<LineEdit>($"{field}/Box");
         var notes = yours.GetNode<TextEdit>("Notes/Box");
         var titleText = panel.GetNode<RichTextLabel>("ModTitle").GetParsedText();
@@ -401,7 +401,7 @@ static partial class SelfTest
             && facts[keywordsAt - 1].StartsWith(Menus.Text("SPIRE_MOD_MANAGER.MODIFIED_CONTENT") + ": ") && facts[keywordsAt] == keywords
             && keywords.StartsWith($"{keywordsLabel}: enabled, local, installed, stable, beta, loaded, ") && keywords.Contains("renamed, note") && !keywords.Contains('#')
             && !keywords.Split(", ").Contains("notes"), $"{(keywordsAt < 0 ? "no row" : facts[keywordsAt])}; wanted {keywords}");
-        var panelText = panel.GetNode<RichTextLabel>("ModDescription");
+        var panelText = PanelScroll.Description(panel);
         var marked = panelText.Text.Split('\n');
         var keywordsRow = marked.FirstOrDefault(l => l.Contains(keywordsLabel)) ?? "";
         var sizeTerm = $"[gold]{Menus.Text("SPIRE_MOD_MANAGER.SIZE")}[/gold]: ";
@@ -461,10 +461,10 @@ static partial class SelfTest
         Check("the thumbnail is 256 x 144 (the scene's minimum size lifted)", panel.GetNode<Control>("ModImage").Size == new Vector2(256, 144), $"{panel.GetNode<Control>("ModImage").Size}");
         Check("automatic tags beside the Tags term", yours.GetNodeOrNull<Control>("Tags/Term/SystemTags") is { Visible: true } system && system.GetChildCount() > 0);
         var image = panel.GetNode<TextureRect>("ModImage");
-        var description0 = panel.GetNode<Control>("ModDescription").OffsetTop;
+        var description0 = BoxIn(panel).OffsetTop;
         image.Texture = ImageTexture.CreateFromImage(Image.CreateEmpty(16, 9, false, Image.Format.Rgba8));
         Layout.PlaceInfo(panel);
-        var withPicture = panel.GetNode<Control>("ModDescription").OffsetTop;
+        var withPicture = BoxIn(panel).OffsetTop;
         image.Texture = ImageTexture.CreateFromImage(Image.CreateEmpty(10, 10, false, Image.Format.Rgba8));
         Layout.PlaceInfo(panel);
         Check("a square picture: full height, against the right edge", image.Size == new Vector2(ModDetails.ThumbHeight, ModDetails.ThumbHeight)
@@ -489,7 +489,7 @@ static partial class SelfTest
         CategoryList.Select(screen, other);
         await PanelFor(menu, screen, other);
         await Wait(menu, 0.5);
-        var keywordsBefore = panel.GetNode<RichTextLabel>("ModDescription").Text;
+        var keywordsBefore = PanelScroll.Description(panel).Text;
         notes.Text = "  Typed in the panel \n";
         notes.EmitSignal(Control.SignalName.FocusExited);
         var tags = Line("Tags");
@@ -497,7 +497,7 @@ static partial class SelfTest
         tags.EmitSignal(Control.SignalName.FocusExited);
         await Wait(menu, 0.3);
         Check("panel saves notes, trimmed", Store.InfoFor("SmmTestFixes")?.Notes == "Typed in the panel" && notes.Text == "Typed in the panel", notes.Text);
-        var keywordsAfter = panel.GetNode<RichTextLabel>("ModDescription").Text;
+        var keywordsAfter = PanelScroll.Description(panel).Text;
         Check("Other keywords follow a save in the panel: note once it has a note", !keywordsBefore.Contains("[url=htag:note]note[/url]")
             && keywordsAfter.Contains("[url=htag:note]note[/url]"),
             $"before \"{keywordsBefore[Math.Max(0, keywordsBefore.Length - 160)..]}\", after \"{keywordsAfter[Math.Max(0, keywordsAfter.Length - 160)..]}\"");
@@ -536,7 +536,7 @@ static partial class SelfTest
         await Capture(screen, outDir, "9-notes-editing");
 
         // Fields sit right under the details; Cancel puts the text back; the alias field shows on the row.
-        var details = panel.GetNode<Control>("ModDescription");
+        var details = PanelScroll.Description(panel);
         Check("the fields sit right below the details", Math.Abs(yours.OffsetTop - details.OffsetBottom - ModDetails.FieldsGap) < 1,
             $"{details.OffsetBottom} -> {yours.OffsetTop}..{yours.OffsetBottom}");
         notes.GrabFocus();
@@ -1858,7 +1858,7 @@ static partial class SelfTest
             await PanelFor(menu, screen, row);
             await Wait(menu, 0.5);
             // From no note (its notepad gone), so the one shown after is the saves'.
-            var box = panel.GetNode<TextEdit>("SpireModManagerYours/Notes/Box");
+            var box = YoursIn(panel).GetNode<TextEdit>("Notes/Box");
             box.Text = "";
             await FrameMs(menu, () => box.EmitSignal(Control.SignalName.FocusExited));
             bool Marked() => row.GetNodeOrNull<Control>("SpireModManagerEditedMark") is { Visible: true };
@@ -1910,7 +1910,7 @@ static partial class SelfTest
                 .Where(r => r.Mod?.manifest?.id != ModEntry.ModId && CategoryList.CategoryName(Copies.KeyOf(r.Mod)) == category)
                 .Select(r => Store.InfoFor(r.Mod)?.Alias ?? r.Mod?.manifest?.name ?? "")];
             var names = StringComparer.Create(Menus.Culture, ignoreCase: true);
-            var alias = panel.GetNode<LineEdit>("SpireModManagerYours/Alias/Box");
+            var alias = YoursIn(panel).GetNode<LineEdit>("Alias/Box");
             var renames = new List<(string Name, bool Moved, bool Redrawn, bool Sorted)>();
             foreach (var name in new[] { "ZZZ Timed", "ZZZ Timed too", "AAA Timed" })
             {
@@ -1945,7 +1945,7 @@ static partial class SelfTest
     // times sorted (the middle one is the usual), the last note kept.
     static async Task<List<double>> NoteSaves(Node menu, NModdingScreen screen, string note)
     {
-        var notes = screen.GetNode<TextEdit>("%ModInfoContainer/SpireModManagerYours/Notes/Box");
+        var notes = YoursIn(screen.GetNode("%ModInfoContainer")).GetNode<TextEdit>("Notes/Box");
         var saves = new List<double>();
         for (var i = 0; i < 5; i++)
         {
@@ -2611,7 +2611,7 @@ static partial class SelfTest
             await PanelFor(menu, screen, libSelected);
         }
         await Wait(menu, 0.3);
-        var facts = panel.GetNode<RichTextLabel>("ModDescription").Text;
+        var facts = PanelScroll.Description(panel).Text;
         Check("panel: required for, Open Folder", facts.Contains("Required for")
             && facts.Contains("Test Content") && facts.Contains("Test UI") && panel.GetNode<Control>("OpenFolderButton").Visible, facts);
 
@@ -2928,7 +2928,7 @@ static partial class SelfTest
                 CategoryList.ScrollTo(content, uiRow);
                 await Wait(menu, 1.5);
             }
-            var description = screen.GetNode<RichTextLabel>("%ModInfoContainer/ModDescription");
+            var description = PanelScroll.Description(screen.GetNode("%ModInfoContainer"));
             var look = uiRow.GetNode<Panel>("SelectionHighlight");
             var before = look.Modulate;
             description.EmitSignal(RichTextLabel.SignalName.MetaHoverStarted, "mod:SmmTestUi");
@@ -3366,7 +3366,7 @@ static partial class SelfTest
             CategoryList.Select(screen, panelRow);
             await PanelFor(menu, screen, panelRow);
             await Wait(menu, 0.3);
-            var description = screen.GetNode<RichTextLabel>("%ModInfoContainer/ModDescription");
+            var description = PanelScroll.Description(screen.GetNode("%ModInfoContainer"));
             string Filter() => content.HasMeta(CategoryList.FilterMeta) ? (string)content.GetMeta(CategoryList.FilterMeta) : "";
             string Said() => $"box \"{box.Text}\", filter \"{Filter()}\", shown {linkedRow.Visible}";
             const string misses = "SmmTestLib", finds = "SmmTest";
