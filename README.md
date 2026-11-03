@@ -50,11 +50,11 @@ Subscribe to it on the [Steam Workshop](https://steamcommunity.com/sharedfiles/f
   too.
 - **Changes, undo and redo:** the bar at the bottom counts what changed since the game started. Ctrl+Z and
   Ctrl+Y undo and redo; Revert all puts back everything the bar counts, load order included, the way it was
-  when the game started (a mod installed since stays installed, turned off).
+  when the game started (a mod installed since stays installed, disabled).
 - **Relaunch Game:** restarts in place, in the same window mode, so changes apply without going back through
   Steam. It checks first for mods that won't load and offers to fix them.
-- **When a mod stops the game from starting:** the crash dialog names it and offers to turn it off and restart,
-  or to restore the last setup that worked. The next main menu says what was turned off, with Turn back on.
+- **When a mod stops the game from starting:** the crash dialog names it and offers to disable it and restart,
+  or to restore the last setup that worked. The next main menu says what was disabled, with Reenable.
 - **The info panel:** what a mod changes in the game itself (the game files it replaces and the code it changes,
   with a click for the whole list), and for a Workshop mod its dates, size, subscribers, tags and a link to its
   change notes, with problems shown first in red.
