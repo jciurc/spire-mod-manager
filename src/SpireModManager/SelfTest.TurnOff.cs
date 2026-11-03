@@ -838,7 +838,7 @@ static partial class SelfTest
         PressOurs("NoButton");
         await Wait(menu, 0.3);
         Check("Turn back on whose save fails says so, and the entry stays; Keep off keeps the entry, shown, the mod off",
-            failedWords.Contains("Couldn't turn Test Fixes back on") && failedKept == (true, false)
+            failedWords.Contains("Couldn't reenable Test Fixes") && failedKept == (true, false)
             && TurnedOff.Entries is [{ Id: "SmmTestFixes", Shown: true }] && !On("SmmTestFixes"), $"{failedWords}; {failedKept}; {string.Join(", ", TurnedOff.Entries)}");
 
         // A mod with no copy installed now (a Workshop one, unsubscribed with Steam up): nothing to turn on, so said, and the
@@ -865,7 +865,7 @@ static partial class SelfTest
         Check("Turn back on of a mod with no copy installed says there's none to turn on, and its entry stays; the other one is turned on, its entry gone; "
             + "with Steam down it says Workshop mods are listed only while Steam runs, the entry kept",
             noneWords.Contains("Couldn't reenable SmmTestGoneWorkshop: there's no installed copy to enable") && noneKept == (true, false, true)
-            && offlineWords.Contains("Couldn't turn SmmTestGoneWorkshop back on: Workshop mods are only listed while Steam is running") && TurnedOff.Has("SmmTestGoneWorkshop"),
+            && offlineWords.Contains("Couldn't reenable SmmTestGoneWorkshop: Workshop mods are only listed while Steam is running") && TurnedOff.Has("SmmTestGoneWorkshop"),
             $"{noneWords}; kept, Test Fixes kept, on {noneKept}; offline: {offlineWords}");
 
         // The same mod with its entry in the list, off, as the repair keeps it without Steam: that entry on, nothing said, and
@@ -877,7 +877,7 @@ static partial class SelfTest
         settings.ModList.RemoveAll(e => e.Id == "SmmTestGoneWorkshop");
         Check("Turn back on of a mod with no copy installed but its entry in the list (kept off without Steam): that entry on, nothing said, its record kept "
             + "(the switch only of a source this launch didn't scan)",
-            listedOn && TurnedOff.Has("SmmTestGoneWorkshop") && !listedWords.Contains("Couldn't turn"), $"{listedWords}; on {listedOn}; entry {TurnedOff.Has("SmmTestGoneWorkshop")}");
+            listedOn && TurnedOff.Has("SmmTestGoneWorkshop") && !listedWords.Contains("Couldn't reenable"), $"{listedWords}; on {listedOn}; entry {TurnedOff.Has("SmmTestGoneWorkshop")}");
         // The next launch, still without Steam: the game's rebuilt list has no entry for that copy (it isn't listed), and
         // KeepOff puts it back on, not off, so it loads once Steam lists it; Restore, profiles and the banner don't keep it
         // off meanwhile (review of round 5: it came back off and the mod stayed off).
@@ -946,7 +946,7 @@ static partial class SelfTest
         await Wait(menu, 0.3);
         Check("an entry whose error came back after it goes first, with its line and \"Turn Test Fixes back on\", which turns it alone on",
             againWords.Contains("Mods were disabled") && againText.StartsWith("The same error came back after Test Fixes was disabled, so it most likely wasn't the cause.")
-            && againLink == "Turn Test Fixes back on" && On("SmmTestFixes") && !On("SmmTestUi") && !TurnedOff.Has("SmmTestFixes") && TurnedOff.Has("SmmTestUi"),
+            && againLink == "Reenable Test Fixes" && On("SmmTestFixes") && !On("SmmTestUi") && !TurnedOff.Has("SmmTestFixes") && TurnedOff.Has("SmmTestUi"),
             $"{againText}; link {againLink}; {string.Join(", ", TurnedOff.Entries.Select(e => e.Id))}");
 
         // The first main menu, after the list is settled: every entry marked; one whose mod is on again goes; one whose mod
