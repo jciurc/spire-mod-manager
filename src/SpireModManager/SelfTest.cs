@@ -901,8 +901,8 @@ static partial class SelfTest
                 var turned = TurnedOff.Entries.FirstOrDefault(e => e.Id == offId);
                 var notes = LaunchGuard.TestReading?.Notes ?? [];
                 Check($"a failed start ({(rebuild ? "a library's failed rebuild of a dependent's patch class" : "Hornet's shape")}): our dialog names {offName}, the "
-                    + $"game's message first, with \"Turn off {offName} and restart\"; whose patch it was, as recorded",
-                    first.Contains("Notice from the game") && offered == $"Turn off {offName} and restart"
+                    + $"game's message first, with \"Disable {offName} and restart\"; whose patch it was, as recorded",
+                    first.Contains("Notice from the game") && offered == $"Disable {offName} and restart"
                     && first.Contains(rebuild ? $"An error while applying {offName}'s changes to a part of the game has most likely prevented the game from starting"
                         : $"An error while loading {offName} has prevented the game from starting.") && notes.Any(n => n.Contains("as recorded")),
                     $"{first}; offered {offered}; {string.Join("; ", notes)}");
@@ -920,8 +920,8 @@ static partial class SelfTest
             case "crash-culprit-read-only":
                 var again = dialogs.ElementAtOrDefault(1) ?? "none";
                 Check("a failed start with settings.save read-only: the turn-off's save fails, so the dialog comes again saying so, with Quit alone; nothing "
-                    + "relaunched, nothing recorded, Test Fixes as it was", offered == "Turn off Test Fixes and restart" && again.Contains("couldn't turn off Test Fixes")
-                    && again.Contains("isn't read-only") && !again.Contains("Turn off Test Fixes and restart") && relaunches == 0 && quits == 1 && entry == null
+                    + "relaunched, nothing recorded, Test Fixes as it was", offered == "Disable Test Fixes and restart" && again.Contains("couldn't disable Test Fixes")
+                    && again.Contains("isn't read-only") && !again.Contains("Disable Test Fixes and restart") && relaunches == 0 && quits == 1 && entry == null
                     && !AllOff("SmmTestFixes"), $"{first} || {again}; relaunches {relaunches}, quits {quits}; {entry}; Test Fixes {Switched(list, "SmmTestFixes")}");
                 break;
             case "crash-real" when offered != "Restore and restart":
@@ -996,8 +996,8 @@ static partial class SelfTest
             await Wait(menu, 0.5);
             var fixes = Switched(list, "SmmTestFixes");
             Check("--crash-notice: the notice says Test Fixes stopped the start, when, with Keep off and Turn back on",
-                entry != null && words.Contains("A mod was turned off") && words.Contains("Test Fixes stopped the game from starting on")
-                && words.Contains(LaunchGuard.When(entry.At.LocalDateTime)) && words.Contains("Keep off") && words.Contains("Turn back on"), words);
+                entry != null && words.Contains("A mod was disabled") && words.Contains("Test Fixes stopped the game from starting on")
+                && words.Contains(LaunchGuard.When(entry.At.LocalDateTime)) && words.Contains("Keep disabled") && words.Contains("Reenable"), words);
             Check("--crash-notice: Turn back on turns Test Fixes on by the switch it had, adding no entry, and its entry goes",
                 fixes.Length == fixesWere.Length && !fixes.Contains('-') && !TurnedOff.Has("SmmTestFixes"), $"Test Fixes {fixesWere} then {fixes}; entry {TurnedOff.Has("SmmTestFixes")}");
         }

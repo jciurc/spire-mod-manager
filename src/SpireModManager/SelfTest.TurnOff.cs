@@ -470,9 +470,9 @@ static partial class SelfTest
             + (shown.Link is { } link ? LaunchGuard.Said(link, plain: true) : "no link");
         var code = Plain(Crash(Blamed(Culprits.Why.Code, "SmmTestFixes")));
         Check("the crash culprit's dialog: the game's message first, then that Test Fixes stopped the start (its code), that it can be turned off; "
-            + "\"Turn off Test Fixes and restart\" and Quit, no link",
+            + "\"Disable Test Fixes and restart\" and Quit, no link",
             code.Body.StartsWith(LaunchGuard.GamesMessage(plain: true)) && code.Body.Contains("An error while loading Test Fixes has prevented the game from starting.")
-            && code.Body.Contains("Spire Mod Manager can turn off Test Fixes and restart the game.") && Said(code) == "Turn off Test Fixes and restart | no link",
+            && code.Body.Contains("Spire Mod Manager can disable Test Fixes and restart the game.") && Said(code) == "Disable Test Fixes and restart | no link",
             $"{code.Body} || {Said(code)}");
         // Each rule's own line
         (Culprits.Culprit Culprit, string Says)[] lines =
@@ -482,8 +482,8 @@ static partial class SelfTest
             (Blamed(Culprits.Why.Types, "SmmTestFixes"), "Part of its code couldn't be loaded"),
             (Blamed(Culprits.Why.Clash, "SmmTestUi") with { Other = "SmmTestContent", ContentId = "CARD.SMM_TEST" }, "An ID clash between Test UI and Test Content (CARD.SMM_TEST)"),
             (Blamed(Culprits.Why.Rebuild, "SmmTestFixes"), "Test Fixes is the only one of those mods that's new or updated"),
-            (Blamed(Culprits.Why.RebuildLast, "SmmTestFixes"), "An error while applying Test Fixes's changes to a part of the game has most likely prevented the game from starting. That part worked fine without them."),
-            (Blamed(Culprits.Why.Stale, "SmmTestFixes"), "An error while loading Test Fixes has prevented the game from starting. Part of its code can't run on this version of the game"),
+            (Blamed(Culprits.Why.RebuildLast, "SmmTestFixes"), "An error while applying Test Fixes's changes to a part of the game has most likely prevented the game from starting."),
+            (Blamed(Culprits.Why.Stale, "SmmTestFixes"), "An error while loading Test Fixes has prevented the game from starting, most likely due to a recent update of the game."),
             (Blamed(Culprits.Why.Updated, "SmmTestFixes") with { Updates = [new(LaunchGuard.Kind.Updated, "SmmTestFixes", "0.1.0", "0.2.0")] }, "from 0.1.0 to 0.2.0. It has most likely"),
             (Blamed(Culprits.Why.DoctorThrew, "SmmTestFixes"), "Mod Doctor found that Test Fixes has prevented the game from starting."),
         ];
@@ -491,11 +491,11 @@ static partial class SelfTest
         var group = Plain(Crash(Blamed(Culprits.Why.Stale, "SmmTestUi", "SmmTestContent")));
         var updated = Plain(Crash(Blamed(Culprits.Why.UpdatedMany, "SmmTestUi", "SmmTestContent") with
             { Updates = [new(LaunchGuard.Kind.Updated, "SmmTestUi", "1.0", "1.1"), new(LaunchGuard.Kind.Updated, "SmmTestContent", "1.0", "1.2")] }, Offer((LaunchGuard.Kind.New, "SmmTestRetired"))));
-        Check("the crash culprit's dialog: a line for each rule; a probe group and several updated mods named a line each, with \"Turn off 2 mods and restart\" "
+        Check("the crash culprit's dialog: a line for each rule; a probe group and several updated mods named a line each, with \"Disable 2 mods and restart\" "
             + "(no Restore beside updated mods)",
-            wrongLines.Count == 0 && group.Body.Contains("Errors while loading these mods have prevented the game from starting.") && group.Body.Contains("  •  Test UI\n  •  Test Content")
-            && group.Body.Contains("Spire Mod Manager can turn them off") && Said(group) == "Turn off 2 mods and restart | no link"
-            && updated.Body.Contains("Test UI (updated: 1.0 → 1.1)") && Said(updated) == "Turn off 2 mods and restart | no link",
+            wrongLines.Count == 0 && group.Body.Contains("Errors while loading these mods have prevented the game from starting, and may be due to a recent game update:") && group.Body.Contains("  •  Test UI\n  •  Test Content")
+            && group.Body.Contains("Spire Mod Manager can disable them") && Said(group) == "Disable 2 mods and restart | no link"
+            && updated.Body.Contains("Test UI (updated: 1.0 → 1.1)") && Said(updated) == "Disable 2 mods and restart | no link",
             $"{string.Join(" || ", wrongLines)} || {group.Body} || {updated.Body} || {Said(updated)}");
 
         // Mod Doctor's box: under our line when it names the same mod; after the turn-off line for its own pick, which then has
@@ -507,8 +507,8 @@ static partial class SelfTest
         Check("Mod Doctor's box (\"From Mod Doctor:\" over its words as written): under our line when it names the same mod, after the turn-off line for its "
             + "own pick (no line of ours then); no suspects line beside a culprit",
             At(agreed, "has prevented the game from starting") is >= 0 and var line && At(agreed, "From Mod Doctor:\n" + doctorWords) > line
-            && At(agreed, "Spire Mod Manager can turn off") > At(agreed, "From Mod Doctor:") && !agreed.Body.Contains("Mod Doctor suspects")
-            && At(doctors, "Spire Mod Manager can turn off") is >= 0 and var off && At(doctors, "From Mod Doctor:") > off && !doctors.Body.Contains("Mod Doctor found that"),
+            && At(agreed, "Spire Mod Manager can disable") > At(agreed, "From Mod Doctor:") && !agreed.Body.Contains("Mod Doctor suspects")
+            && At(doctors, "Spire Mod Manager can disable") is >= 0 and var off && At(doctors, "From Mod Doctor:") > off && !doctors.Body.Contains("Mod Doctor found that"),
             $"{agreed.Body} || {doctors.Body}");
 
         // A library with the mods that need it; ours, with the mods that need us (left as they are), no link; a turn-off that
@@ -522,13 +522,13 @@ static partial class SelfTest
         FreshRecord();
         Check("the dialog for a library (the mods that need it named, turned off too), ours (how to get it back, the mods that need us, no link), a turn-off "
             + "that didn't stick (said; Quit alone, or Restore where it applies) and the streak (the mods turned off already, Turn off all mods)",
-            library.Body.Contains("The mods that need it are turned off too: Test Content, Test UI.")
-            && self.Body.Contains("The error came from Spire Mod Manager itself.\n\nIt can turn itself off and restart the game. To use it again, enable it on the vanilla modding page.")
-            && self.Body.Contains("These mods need it and won't load until it's on again: Test Fixes.")
-            && Said(self) == "Turn off Spire Mod Manager and restart | no link"
-            && stuck.Body.Contains("turned off Test Fixes after the last failed start, but the same copy loaded again") && Said(stuck) == "Quit alone | no link"
-            && Said(stuckRestore) == "Restore and restart | no link" && streak.Body.Contains("Turned off after the last failed start: Test UI, Test Content.")
-            && streak.Body.Contains("The game failed to start 3 times in a row.") && Said(streak) == "Turn off Test Fixes and restart | Turn off all mods and restart",
+            library.Body.Contains("The mods that need it are disabled too: Test Content, Test UI.")
+            && self.Body.Contains("The error came from Spire Mod Manager itself.\n\nIt can disable itself and restart the game. To use it again, enable it on the vanilla modding page.")
+            && self.Body.Contains("These mods need it and won't load until it's enabled again: Test Fixes.")
+            && Said(self) == "Disable Spire Mod Manager and restart | no link"
+            && stuck.Body.Contains("disabled Test Fixes after the last failed start, but the same copy loaded again") && Said(stuck) == "Quit alone | no link"
+            && Said(stuckRestore) == "Restore and restart | no link" && streak.Body.Contains("Disabled after the last failed start: Test UI, Test Content.")
+            && streak.Body.Contains("The game failed to start 3 times in a row.") && Said(streak) == "Disable Test Fixes and restart | Disable all mods and restart",
             $"{library.Body} || {self.Body} {Said(self)} || {stuck.Body} {Said(stuck)} | {Said(stuckRestore)} || {streak.Body} {Said(streak)}");
 
         // The Restore link's rule. The culprit updated, another mod new: none. Unchanged, another new: the link. Ours: none.
@@ -559,9 +559,9 @@ static partial class SelfTest
         var unrestored = Plain(Crash(null, otherNew), failed: new("SPIRE_MOD_MANAGER.CRASH_RESTORE_FAILED", []));
         Check("after a failed write the dialog says what went wrong first, then the culprit's line (or the offer's text), with Quit alone and no link; ours, "
             + "only that the error was its own",
-            At(failed, "couldn't turn off Test Fixes: the game couldn't save its settings") is >= 0 and var said && At(failed, "An error while loading Test Fixes") > said
-            && !failed.Body.Contains("Spire Mod Manager can turn off") && Said(failed) == "Quit alone | no link"
-            && selfFailed.Body.EndsWith("The error came from Spire Mod Manager itself.") && !selfFailed.Body.Contains("turn itself off") && Said(selfFailed) == "Quit alone | no link"
+            At(failed, "couldn't disable Test Fixes: the game couldn't save its settings") is >= 0 and var said && At(failed, "An error while loading Test Fixes") > said
+            && !failed.Body.Contains("Spire Mod Manager can disable") && Said(failed) == "Quit alone | no link"
+            && selfFailed.Body.EndsWith("The error came from Spire Mod Manager itself.") && !selfFailed.Body.Contains("disable itself") && Said(selfFailed) == "Quit alone | no link"
             && unrestored.Body.Contains("couldn't restore the last working setup") && Said(unrestored) == "Quit alone | no link",
             $"{failed.Body} {Said(failed)} || {selfFailed.Body} {Said(selfFailed)} || {unrestored.Body} {Said(unrestored)}");
 
@@ -586,11 +586,11 @@ static partial class SelfTest
         PressOurs("YesButton");
         await Wait(menu, 0.3);
         var entry = TurnedOff.Entries.FirstOrDefault(e => e.Id == "SmmTestFixes");
-        Check("the crash culprit's popup: the game's message, Test Fixes named, Quit and \"Turn off Test Fixes and restart\", no link, its text and the button's "
+        Check("the crash culprit's popup: the game's message, Test Fixes named, Quit and \"Disable Test Fixes and restart\", no link, its text and the button's "
             + "fitting at a readable size; pressed, every switch of Test Fixes off, its record (Code, its switch with its copy), one plain relaunch, this "
             + "launch's record gone",
             pressed.IsCompleted && words.Contains("Notice from the game") && words.Contains("An error while loading Test Fixes has prevented the game from starting") && words.Contains("Quit")
-            && words.Contains("Turn off Test Fixes and restart") && noLink && fit is { Fits: true, Size: >= ReadableText, Button: >= LaunchGuard.SmallestButtonText }
+            && words.Contains("Disable Test Fixes and restart") && noLink && fit is { Fits: true, Size: >= ReadableText, Button: >= LaunchGuard.SmallestButtonText }
             && AllOff("SmmTestFixes") && relaunches == 1 && quits == 0
             && entry is { Why: Culprits.Why.Code, Switches: [{ On: true, Copies: ["l:SmmTestFixes"] }] } && (DateTimeOffset.Now - entry.At).TotalMinutes < 1
             && !File.Exists(pendingPath), $"{words}; {fit}; relaunches {relaunches}, quits {quits}; {entry}; record left {File.Exists(pendingPath)}");
@@ -676,7 +676,7 @@ static partial class SelfTest
         await Wait(menu, 0.3);
         LaunchGuard.TestNoLanguage = false;
         Check("the plain dialog: the turn-off as OK, Quit as Cancel, Restore as a third button, Mod Doctor's words under \"From Mod Doctor:\"; Quit quits",
-            asked.IsCompleted && quits == 1 && plainButtons == ("Turn off Test Fixes and restart", "Quit")
+            asked.IsCompleted && quits == 1 && plainButtons == ("Disable Test Fixes and restart", "Quit")
             && plainSays.Contains("Restore and restart") && plainSays.Contains("From Mod Doctor:\n" + doctorWords), plainSays);
 
         // At its longest: a library and the mods that need it, three already off, a restore with five changes (one listed
@@ -706,14 +706,14 @@ static partial class SelfTest
         Check($"the crash culprit's dialog at its longest (a library and its dependents, three already off, a restore with five changes, Mod Doctor's "
             + $"words; the streak's words give way to the restore): the text fits the popup at a size that can be read ({ReadableText} or more), both boxes drawn",
             longest is { Boxes: null, Fit: { Fits: true, Size: >= ReadableText }, Link: "Restore and restart", Answered: true }
-            && longest.Words.Contains("Turned off after the last failed start") && longest.Words.Contains("From Mod Doctor") && longest.Words.Contains("SmmTestMadeUp1 (new)")
+            && longest.Words.Contains("Disabled after the last failed start") && longest.Words.Contains("From Mod Doctor") && longest.Words.Contains("SmmTestMadeUp1 (new)")
             && !longest.Words.Contains("SmmTestMadeUp2 (new)") && longest.Words.Contains("4 more") && !longest.Words.Contains("failed to start 3 times"),
             $"{longest.Boxes}; {longest.Fit}, {longest.Tall}; {longest.Words}");
         var streaked = await Densest(null, "1l-crash-culprit-streak");
         Check($"the crash culprit's dialog at its densest with no restore (a library and its dependents, three already off, Mod Doctor's words, the streak "
             + $"with its link, Turn off all mods): the text fits the popup at a size that can be read ({ReadableText} or more), both boxes drawn",
-            streaked is { Boxes: null, Fit: { Fits: true, Size: >= ReadableText }, Link: "Turn off all mods and restart", Answered: true }
-            && streaked.Words.Contains("failed to start 3 times") && streaked.Words.Contains("Turned off after the last failed start") && streaked.Words.Contains("From Mod Doctor"),
+            streaked is { Boxes: null, Fit: { Fits: true, Size: >= ReadableText }, Link: "Disable all mods and restart", Answered: true }
+            && streaked.Words.Contains("failed to start 3 times") && streaked.Words.Contains("Disabled after the last failed start") && streaked.Words.Contains("From Mod Doctor"),
             $"{streaked.Boxes}; {streaked.Fit}, {streaked.Tall}; {streaked.Words}");
         Results.Add($"INFO the crash culprit's dialog at its longest: its text at {longest.Fit.Size}; at its densest with no restore, at {streaked.Fit.Size}");
 
@@ -725,7 +725,7 @@ static partial class SelfTest
         PressOurs("NoButton");
         await Wait(menu, 0.3);
         Check($"a mod's name too long for the button is cut there, the words wrapped at {LaunchGuard.SmallestButtonText} or more; the whole name in the text",
-            asked.IsCompleted && cut.StartsWith("Turn off SmmTestAMod") && cut.EndsWith(Menus.CutMark + " and restart") && cutFit.Button >= LaunchGuard.SmallestButtonText
+            asked.IsCompleted && cut.StartsWith("Disable SmmTestAMod") && cut.EndsWith(Menus.CutMark + " and restart") && cutFit.Button >= LaunchGuard.SmallestButtonText
             && words.Contains("An error while loading " + LongId), $"\"{cut}\" {cutFit}; {words}");
         var quitsBefore = quits;
 
@@ -746,7 +746,7 @@ static partial class SelfTest
         var unsaved = await FailedAgain(Crash(Blamed(Culprits.Why.Code, "SmmTestFixes")));
         var unrestoredSaid = await FailedAgain(Crash(null, otherNew));
         Check("a write that fails shows the dialog again, saying so, with Quit alone: a turn-off whose save fails, a Restore whose save fails; nothing "
-            + "relaunched, and Quit quits", unsaved.Contains("couldn't turn off Test Fixes") && unsaved.Contains("no button visible: True") && unsaved.Contains("answered True")
+            + "relaunched, and Quit quits", unsaved.Contains("couldn't disable Test Fixes") && unsaved.Contains("no button visible: True") && unsaved.Contains("answered True")
             && unrestoredSaid.Contains("couldn't restore the last working setup") && unrestoredSaid.Contains("answered True") && relaunches == 8 && quits - quitsBefore == 2
             && !AllOff("SmmTestFixes"), $"{unsaved} || {unrestoredSaid}; relaunches {relaunches}, quits {quits - quitsBefore}");
     }
@@ -798,11 +798,11 @@ static partial class SelfTest
         var withDependent = Body(OffEntry("SmmTestLib", at: at), OffEntry("SmmTestUi", Culprits.Why.Needs, at, needs: "SmmTestLib"));
         var updatedSince = Body(OffEntry("SmmTestFixes", at: at) with { Version = "0.0.1" });
         Check("the notice's words by why: \"stopped\" for its own code and code that can't run on this game; \"most likely\" for a patch, an update, a failed "
-            + "rebuild; Mod Doctor's suspicion for Disable suspects; a group, a line each, claiming nothing; the date; the mods turned off with it; an update since",
+            + "rebuild; Mod Doctor's suspicion for Disable suspects; a group, a line each, claiming nothing; the date; the mods disabled with it; an update since",
             bodies[0].StartsWith($"Test Fixes stopped the game from starting on {date}") && bodies[1].StartsWith("Test Fixes stopped")
-            && bodies[2..5].All(b => b.StartsWith("Test Fixes most likely stopped")) && bodies[5].Contains("Mod Doctor suspected it")
-            && bodies[6].StartsWith("Spire Mod Manager turned these mods off") && bodies[6].Contains($"  •  Test Fixes ({date})") && !bodies[6].Contains("stopped")
-            && withDependent.Contains("The mods that need it were turned off with it: Test UI.") && updatedSince.Contains("It has been updated since (0.0.1 → 0.1.0)"),
+            && bodies[2..5].All(b => b.StartsWith("Test Fixes most likely stopped")) && bodies[5].StartsWith("Mod Doctor suspects Test Fixes of crashing the game")
+            && bodies[6].StartsWith("These mods were disabled automatically by Spire Mod Manager") && bodies[6].Contains($"  •  Test Fixes ({date})") && !bodies[6].Contains("stopped")
+            && withDependent.Contains("The mods that need it were disabled with it: Test UI.") && updatedSince.Contains("It has been updated since (0.0.1 → 0.1.0)"),
             string.Join(" || ", bodies.Append(withDependent).Append(updatedSince)));
 
         // The popup: its words and our mark; Turn back on turns Test Fixes on again, the entry gone
@@ -815,9 +815,9 @@ static partial class SelfTest
         var shownFirst = TurnedOff.Entries.All(e => e.Shown);
         PressOurs("YesButton");
         await Wait(menu, 0.3);
-        Check("the notice: \"A mod was turned off\", Test Fixes and when, Keep off and Turn back on, marked shown as it opened; Turn back on turns Test Fixes "
-            + "on again and its entry goes", words.Contains("A mod was turned off") && words.Contains("Test Fixes stopped the game from starting on")
-            && words.Contains(date) && words.Contains("Keep off") && words.Contains("Turn back on") && shownFirst && On("SmmTestFixes") && !TurnedOff.Has("SmmTestFixes"),
+        Check("the notice: \"A mod was disabled\", Test Fixes and when, Keep off and Turn back on, marked shown as it opened; Turn back on turns Test Fixes "
+            + "on again and its entry goes", words.Contains("A mod was disabled") && words.Contains("Test Fixes stopped the game from starting on")
+            && words.Contains(date) && words.Contains("Keep disabled") && words.Contains("Reenable") && shownFirst && On("SmmTestFixes") && !TurnedOff.Has("SmmTestFixes"),
             $"{words}; shown {shownFirst}, on {On("SmmTestFixes")}, entry {TurnedOff.Has("SmmTestFixes")}");
 
         // Its save failing: said in a popup of its own, the entry kept. Keep off: the entry kept, shown.
@@ -838,7 +838,7 @@ static partial class SelfTest
         PressOurs("NoButton");
         await Wait(menu, 0.3);
         Check("Turn back on whose save fails says so, and the entry stays; Keep off keeps the entry, shown, the mod off",
-            failedWords.Contains("Couldn't turn Test Fixes back on") && failedKept == (true, false)
+            failedWords.Contains("Couldn't reenable Test Fixes") && failedKept == (true, false)
             && TurnedOff.Entries is [{ Id: "SmmTestFixes", Shown: true }] && !On("SmmTestFixes"), $"{failedWords}; {failedKept}; {string.Join(", ", TurnedOff.Entries)}");
 
         // A mod with no copy installed now (a Workshop one, unsubscribed with Steam up): nothing to turn on, so said, and the
@@ -864,8 +864,8 @@ static partial class SelfTest
         var offlineWords = await TurnBackOnWords(false, goneWorkshop);
         Check("Turn back on of a mod with no copy installed says there's none to turn on, and its entry stays; the other one is turned on, its entry gone; "
             + "with Steam down it says Workshop mods are listed only while Steam runs, the entry kept",
-            noneWords.Contains("Couldn't turn SmmTestGoneWorkshop back on: there's no installed copy to turn on") && noneKept == (true, false, true)
-            && offlineWords.Contains("Couldn't turn SmmTestGoneWorkshop back on: Workshop mods are only listed while Steam is running") && TurnedOff.Has("SmmTestGoneWorkshop"),
+            noneWords.Contains("Couldn't reenable SmmTestGoneWorkshop: there's no installed copy to enable") && noneKept == (true, false, true)
+            && offlineWords.Contains("Couldn't reenable SmmTestGoneWorkshop: Workshop mods are only listed while Steam is running") && TurnedOff.Has("SmmTestGoneWorkshop"),
             $"{noneWords}; kept, Test Fixes kept, on {noneKept}; offline: {offlineWords}");
 
         // The same mod with its entry in the list, off, as the repair keeps it without Steam: that entry on, nothing said, and
@@ -877,7 +877,7 @@ static partial class SelfTest
         settings.ModList.RemoveAll(e => e.Id == "SmmTestGoneWorkshop");
         Check("Turn back on of a mod with no copy installed but its entry in the list (kept off without Steam): that entry on, nothing said, its record kept "
             + "(the switch only of a source this launch didn't scan)",
-            listedOn && TurnedOff.Has("SmmTestGoneWorkshop") && !listedWords.Contains("Couldn't turn"), $"{listedWords}; on {listedOn}; entry {TurnedOff.Has("SmmTestGoneWorkshop")}");
+            listedOn && TurnedOff.Has("SmmTestGoneWorkshop") && !listedWords.Contains("Couldn't reenable"), $"{listedWords}; on {listedOn}; entry {TurnedOff.Has("SmmTestGoneWorkshop")}");
         // The next launch, still without Steam: the game's rebuilt list has no entry for that copy (it isn't listed), and
         // KeepOff puts it back on, not off, so it loads once Steam lists it; Restore, profiles and the banner don't keep it
         // off meanwhile (review of round 5: it came back off and the mod stayed off).
@@ -905,7 +905,7 @@ static partial class SelfTest
         settings.ModList.RemoveAll(e => e.Id == "SmmTestGoneWorkshop");
         Check("Turn back on of a mod whose local copy (on) is gone and whose Workshop one (off) isn't listed without Steam: said why, its entry kept, nothing "
             + "turned on; with Steam up, said there's none to turn on",
-            localOffline.Contains("Workshop mods are only listed while Steam is running") && localOnline.Contains("there's no installed copy to turn on")
+            localOffline.Contains("Workshop mods are only listed while Steam is running") && localOnline.Contains("there's no installed copy to enable")
             && TurnedOff.Has("SmmTestGoneWorkshop") && !localOn, $"offline: {localOffline}; online: {localOnline}; on {localOn}");
 
         // A popup that can't be made marks nothing shown, so the next main menu tries again
@@ -945,8 +945,8 @@ static partial class SelfTest
         PressLink();
         await Wait(menu, 0.3);
         Check("an entry whose error came back after it goes first, with its line and \"Turn Test Fixes back on\", which turns it alone on",
-            againWords.Contains("Mods were turned off") && againText.StartsWith("The same error came back after Test Fixes was turned off, so it most likely wasn't the cause.")
-            && againLink == "Turn Test Fixes back on" && On("SmmTestFixes") && !On("SmmTestUi") && !TurnedOff.Has("SmmTestFixes") && TurnedOff.Has("SmmTestUi"),
+            againWords.Contains("Mods were disabled") && againText.StartsWith("The same error came back after Test Fixes was disabled, so it most likely wasn't the cause.")
+            && againLink == "Reenable Test Fixes" && On("SmmTestFixes") && !On("SmmTestUi") && !TurnedOff.Has("SmmTestFixes") && TurnedOff.Has("SmmTestUi"),
             $"{againText}; link {againLink}; {string.Join(", ", TurnedOff.Entries.Select(e => e.Id))}");
 
         // The first main menu, after the list is settled: every entry marked; one whose mod is on again goes; one whose mod
@@ -1091,7 +1091,7 @@ static partial class SelfTest
             var problems = string.Join(" | ", ModDetails.DependencyProblems(ui));
             Dependencies.Write([(library, true)]);
             Check("a mod that needs one turned off after a failed start says so in its needs line and its problems (the relaunch check's lines)",
-                needs.Contains("(turned off after a failed start)") && problems.Contains("Test Framework (turned off after a failed start)"), $"{needs} | {problems}");
+                needs.Contains("(disabled after a failed start)") && problems.Contains("Test Framework (disabled after a failed start)"), $"{needs} | {problems}");
         }
         else
             Results.Add("SKIP the needs lines of a mod turned off: no Test Framework");
@@ -1240,9 +1240,9 @@ static partial class SelfTest
             var steps = History.Steps(History.Track.List);
             BannerPress("TurnBackOnButton");
             await Wait(menu, 0.3);
-            Check("the turned-off banner: yellow, \"Test Fixes was turned off after a failed start\", its card naming it with when; Turn back on turns it on (one "
-                + "more undo step) and the banner goes", shown && said == "Test Fixes was turned off after a failed start" && Yellow(fill)
-                && card.Contains("Turned off after a failed start") && card.Contains("Test Fixes (") && Copies.Ticked(fixes) && !TurnedOff.Has("SmmTestFixes")
+            Check("the turned-off banner: yellow, \"Test Fixes was disabled after a failed start\", its card naming it with when; Turn back on turns it on (one "
+                + "more undo step) and the banner goes", shown && said == "Test Fixes was disabled after a failed start" && Yellow(fill)
+                && card.Contains("Disabled after a failed start") && card.Contains("Test Fixes (") && Copies.Ticked(fixes) && !TurnedOff.Has("SmmTestFixes")
                 && Banner() == null && History.Steps(History.Track.List) == steps + 1, $"{shown} \"{said}\" {fill}; card {card}; on {Copies.Ticked(fixes)}, banner {Banner() != null}");
             await TurnedOffNow();
             BannerPress("DismissTurnedOffButton");
@@ -1266,7 +1266,7 @@ static partial class SelfTest
             var noneWords = ShownWords();
             NModalContainer.Instance?.Clear();
             Check("the turned-off banner's Turn back on of a mod with no copy installed says there's none to turn on, and its entry and the banner stay",
-                noneWords.Contains("Couldn't turn SmmTestGoneWorkshop back on: there's no installed copy to turn on") && TurnedOff.Has("SmmTestGoneWorkshop") && Banner() != null,
+                noneWords.Contains("Couldn't reenable SmmTestGoneWorkshop: there's no installed copy to enable") && TurnedOff.Has("SmmTestGoneWorkshop") && Banner() != null,
                 $"{noneWords}; entry {TurnedOff.Has("SmmTestGoneWorkshop")}, banner {Banner() != null}");
         }
         finally
