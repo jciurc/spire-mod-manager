@@ -4,8 +4,8 @@ using MegaCrit.Sts2.Core.Nodes.Screens.ModdingScreen;
 
 namespace SpireModManager;
 
-// The profile bar above the mod list: on the left the profile picker (each profile's mod count is in its list), Share,
-// Import, and "Unsaved (3) •" with Save, Save as new and Discard; on the right New, Duplicate, Rename and Delete.
+// The profile bar above the mod list: on the left Import, the profile picker (each profile's mod count is in its list),
+// and "Unsaved (3) •" with Save, Save as new and Discard; on the right New, Duplicate, Rename and Delete.
 // Naming opens a name box in the picker's place, which refuses empty or taken names.
 static class ProfileBar
 {
@@ -34,6 +34,12 @@ static class ProfileBar
         var row = new HBoxContainer { MouseFilter = Control.MouseFilterEnum.Ignore };
         row.AddThemeConstantOverride("separation", 8);
         bar.AddChild(row);
+
+        // Import first, where it's seen: the profile menus' Import profile, a click away (they keep it too)
+        var import = Menus.SmallButton(Menus.Text("SPIRE_MOD_MANAGER.IMPORT"), () => ProfileShare.ShowImport(screen), name: "ImportButton");
+        import.SizeFlagsVertical = Control.SizeFlags.ShrinkCenter;
+        Hover.Tip(import, Menus.Text("SPIRE_MOD_MANAGER.IMPORT_PROFILE"));
+        row.AddChild(import);
 
         var caption = new Label { Text = Menus.Text("SPIRE_MOD_MANAGER.PROFILE"), VerticalAlignment = VerticalAlignment.Center };
         Style(caption, "res://themes/kreon_regular_shared.tres", 17, new Color(Cream, 0.7f));

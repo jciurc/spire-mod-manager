@@ -451,6 +451,7 @@
   "SPIRE_MOD_MANAGER.SAVED_AS": "Saved as {file}",
   "SPIRE_MOD_MANAGER.SAVE_FAILED": "Couldn't save the file: {error}",
   "SPIRE_MOD_MANAGER.LOAD_FAILED": "Couldn't read the file: {error}",
+  "SPIRE_MOD_MANAGER.IMPORT": "Import",
   "SPIRE_MOD_MANAGER.IMPORT_PROFILE": "Import profile",
   "SPIRE_MOD_MANAGER.IMPORT_BODY": "Load or paste a mod list to create a new profile. Configurations from Better Mod Menu, or other mods that use a similar CSV structure, may also be imported.",
   "SPIRE_MOD_MANAGER.IMPORT_HINT": "Paste mod list here",
