@@ -50,17 +50,25 @@ static class CategoryList
         void Show(bool toVanilla, bool toLoadOrder)
         {
             var data = Store.Data;
+            var track = History.CurrentTrack;
             (data.VanillaView, data.LoadOrderView, shownVanilla) = (toVanilla, toLoadOrder, toVanilla);
             // A picked set belongs to the view it was picked in: let go of it, and of its undo steps.
             Selection.Clear(content, record: false);
-            History.ForgetPicks();
-            Store.Save();
+            Costs.Lap("switch: picks let go");
+            History.ForgetPicks(track);
+            Costs.Lap("switch: undo picks forgotten");
+            Store.SaveViewState(); // views aren't undone: nothing to record
+            Costs.Lap("switch: saved");
             PageLinkText(vanilla);
             Label(loadOrder, data.LoadOrderView ? "SPIRE_MOD_MANAGER.BACK" : "SPIRE_MOD_MANAGER.LOAD_ORDER");
+            Costs.Lap("switch: labels");
             Profiles.RefreshTickboxes(screen); // the boxes as this view reads them (copies of a mod installed twice)
+            Costs.Lap("switch: tickboxes");
             Apply(content);
             Layout.Apply(screen);
+            Costs.Lap("switch: layout");
             RestoreSelection(screen, content);
+            Costs.Lap("switch: selection");
         }
         // Load Order is a side trip: the page always opens on the main list (Vanilla View, a preference, stays).
         if (Store.Data.LoadOrderView)
@@ -96,6 +104,7 @@ static class CategoryList
         Label(loadOrder, Store.Data.LoadOrderView ? "SPIRE_MOD_MANAGER.BACK" : "SPIRE_MOD_MANAGER.LOAD_ORDER");
 
         Profiles.RefreshTickboxes(screen); // the game ticked them its way (one switch for copies of one id and source)
+        Costs.Lap("open: the page made");
         Apply(content);
     }
 
@@ -462,13 +471,16 @@ static class CategoryList
             Bmm.RemoveGroups(content);
             Bmm.Show(screen, false);
         }
+        Costs.Lap("redraw: spacing, old headers, Better Mod Menu's");
 
         // Vanilla order is the game's mod order, which is how the screen first added the rows.
         var order = ModManager.Mods.Select((mod, i) => (mod, i)).ToDictionary(p => p.mod, p => p.i);
         var rows = content.GetChildren().OfType<NModMenuRow>()
             .OrderBy(r => r.Mod is { } mod && order.TryGetValue(mod, out var i) ? i : int.MaxValue)
             .ToList();
+        Costs.Lap("redraw: rows in game order");
         RowTitles.Apply(rows, Store.Data.VanillaView);
+        Costs.Lap("redraw: titles");
 
         // Right-click a row for its menu (category, alias, tags, notes; the bulk menu for picked mods; on/off and
         // moves in Load Order). Rows outlive Apply, so connect once.
@@ -516,22 +528,27 @@ static class CategoryList
         bool Matches(NModMenuRow row) =>
             (matching ??= rows.Where(r => ListFilter.Finds(r.Mod, filter) && ListFilter.Shows(r.Mod)).ToHashSet()).Contains(row);
 
+        Costs.Lap("redraw: row menus, filter");
         LoadOrder.UpdateToolbar(content, rows, () => Redraw(content));
+        Costs.Lap("redraw: toolbar");
         if (Store.Data.LoadOrderView)
         {
             void RedrawAll() => Redraw(content);
             LoadOrder.Apply(content, rows, RedrawAll);
+            Costs.Lap("redraw: load order rows");
             RowStrip.Apply(rows, StripActions(content), EdgeAction(content));
             return;
         }
         LoadOrder.Undecorate(rows);
         LoadOrder.Reset(content); // no Load Order lines or dimming outside it
+        Costs.Lap("redraw: load order undone");
 
         if (Store.Data.VanillaView)
             RowStrip.Hide(rows);
         else
             RowStrip.Apply(rows, StripActions(content), EdgeAction(content));
         CopyBoxes(rows); // Vanilla View: the game's boxes again
+        Costs.Lap("redraw: strips hidden, copy boxes");
 
         if (Store.Data.VanillaView)
         {
@@ -540,9 +557,12 @@ static class CategoryList
                 content.MoveChild(rows[i], i);
                 rows[i].Visible = true; // every row, as the game's page shows them (no search box there; with Better Mod Menu its page decides)
             }
+            Costs.Lap("redraw: vanilla rows moved");
             RowTitles.FitVanilla(rows);
+            Costs.Lap("redraw: vanilla titles fitted");
             if (screen != null)
                 Bmm.Refresh(screen);
+            Costs.Lap("redraw: Better Mod Menu refreshed");
             return;
         }
 
@@ -633,8 +653,10 @@ static class CategoryList
             if (!HeaderWidths.TryGetValue(widthKey, out var actionsWidth))
                 HeaderWidths[widthKey] = actionsWidth = actions.GetCombinedMinimumSize().X;
             titleLabel.OffsetRight = -16 - actionsWidth - 30;
+            Costs.Lap("redraw: headers made");
             foreach (var row in members)
                 content.MoveChild(row, index++);
+            Costs.Lap("redraw: rows moved");
 
             void Show(bool isCollapsed)
             {
@@ -668,12 +690,14 @@ static class CategoryList
                     Callable.From(() => content.GetViewport()?.UpdateMouseCursorState()).CallDeferred();
                 }
             };
+            Costs.Lap("redraw: rows shown, header hooked up");
         }
 
         // Each category's rows by the name they show (an alias, else the mod's name), as the game's language sorts
         // them, any case; two of one name keep the game's order. This mod first in whichever category it's in, whatever
         // its name (Jordan), its copies by name among themselves. Each row's category read once.
         var byCategory = rows.OrderBy(SortsFirst).ThenBy(ShownName, Names()).ToLookup(CategoryOf);
+        Costs.Lap("redraw: rows sorted by name");
         foreach (var category in categories)
             AddSection(category.Name, byCategory[category.Name].ToList(),
                 category.Collapsed, c => category.Collapsed = c, category);

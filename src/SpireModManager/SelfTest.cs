@@ -260,6 +260,7 @@ static partial class SelfTest
             await Step(() => TestHiddenTags(content));
             await Step(() => TestRedrawCost(menu, screen, content));
             await Step(() => TestManyMods(menu, screen, content));
+            await Step(() => TestSwitchWork(menu, screen));
             await Step(() => TestSaveCost(menu, screen, content));
             await Step(() => TestNewMod(menu, screen, content, outDir));
             await Step(() => TestWorkshopTitles(menu, screen, content, outDir));
@@ -401,16 +402,17 @@ static partial class SelfTest
             CheckPatches();
             // The first open, timed to the end of its first frame, once the page's text has been shaped ahead (Prewarm).
             await WaitUntil(menu, () => Prewarm.Done, timeout: 10);
-            RowStrip.Costs.Clear();
-            RowStrip.Timing = true; // the rows' lines, buttons and pencils, part by part (#46)
+            Costs.On = true; // the redraw's parts and the rows' lines, buttons and pencils, part by part (#46)
             var opening = System.Diagnostics.Stopwatch.StartNew();
             var screen = menu.SubmenuStack.PushSubmenuType<NModdingScreen>();
             var built = opening.Elapsed.TotalMilliseconds;
-            RowStrip.Timing = false;
+            Costs.On = false;
+            var builtParts = Costs.Parts.ToDictionary();
             await menu.ToSignal(menu.GetTree().CreateTimer(0), SceneTreeTimer.SignalName.Timeout);
             Results.Add($"INFO first open: built in {built:0} ms, drawn by {opening.Elapsed.TotalMilliseconds:0} ms; text shaped ahead: "
                 + $"{Prewarm.Shaped.Count}{(Prewarm.Done ? "" : " (not finished)")}, its slowest frame {Prewarm.SlowestMs:0} ms");
-            Results.Add($"INFO of the build, the rows' lines, buttons and pencils {RowStrip.Costs.Values.Sum():0} ms: {Parts(RowStrip.Costs)}");
+            Results.Add($"INFO of the build, the rows' lines, buttons and pencils {builtParts.Where(p => p.Key.StartsWith("strip ")).Sum(p => p.Value):0} ms; "
+                + $"part by part: {Parts(builtParts)}");
             await WaitReal(menu, 2); // the first open settled (its pictures, deferred layout) before the redraws are timed
             var content = screen.GetNode<Control>("%ModsScrollContainer/Mask/Content");
             var rows = content.GetChildren().OfType<NModMenuRow>().ToList();
@@ -562,17 +564,29 @@ static partial class SelfTest
         await Wait(menu, 0.5);
         var idle = new List<double>();
         var times = new Dictionary<string, List<double>>();
+        // Each switch's timed parts (Costs): the first time, then the later ones added up. The first round makes what
+        // the page makes once (a view's buttons, Load Order's grips, titles fitted for a new box).
+        var parts = new Dictionary<(string, bool Later), Dictionary<string, double>>();
+        var measured = 0; // row titles the game's auto-size measured after the first round (Layout.Fit remembers their sizes)
         async Task Switch(string name, string toggle)
         {
             if (!times.TryGetValue(name, out var list))
                 times[name] = list = [];
+            var measuredWas = Layout.TestMeasured;
             list.Add(await FrameMs(menu, () =>
             {
+                Costs.On = true;
                 if (screen.GetNode(toggle) is BaseButton link)
                     Click(link);
                 else
                     Click(screen.GetNode<NButton>(toggle));
             }));
+            Costs.On = false;
+            if (list.Count > 1)
+                measured += Layout.TestMeasured - measuredWas;
+            var sum = parts.TryGetValue((name, list.Count > 1), out var had) ? had : parts[(name, list.Count > 1)] = [];
+            foreach (var (part, ms) in Costs.Parts)
+                sum[part] = sum.GetValueOrDefault(part) + ms;
             await Wait(menu, 0.3);
         }
         for (var round = 0; round < 3; round++)
@@ -586,6 +600,18 @@ static partial class SelfTest
         static double Middle(List<double> ms) => ms.Order().ElementAt(ms.Count / 2);
         Results.Add($"INFO view switches (to the end of the frame; an idle frame {Middle(idle):0.0} ms): "
             + string.Join(", ", times.Select(t => $"{t.Key} {Middle(t.Value):0.0} ms")));
+        // Generous bounds: on a list of some 250 mods each took 90-135 ms before titles' sizes were remembered, 70-120 after.
+        Check("view switches: none takes over 250 ms (the middle of three)", times.Values.All(t => Middle(t) < 250),
+            string.Join(", ", times.Select(t => $"{t.Key} {Middle(t.Value):0.0}")));
+        Check("view switches: after the first round, no row title is measured again (its fitted size remembered)", measured == 0, $"{measured} measured");
+        // Part by part; what no part counts is the frame's layout, drawing and other deferred work.
+        string Uncounted(double ms, Dictionary<string, double> costs, int count) => $"uncounted (layout, drawing) {ms - costs.Values.Sum() / count:0.0} ms";
+        foreach (var (name, list) in times)
+        {
+            var later = list.Skip(1).ToList();
+            Results.Add($"INFO {name}, the first time {list[0]:0.0} ms: {Parts(parts[(name, false)])}, {Uncounted(list[0], parts[(name, false)], 1)}; "
+                + $"later {later.Average():0.0} ms on average: {Parts(parts[(name, true)], later.Count)}, {Uncounted(later.Average(), parts[(name, true)], later.Count)}");
+        }
     }
 
     // How long something takes through to the end of the frame it happens in: its own work, then what it leaves
@@ -1578,9 +1604,10 @@ static partial class SelfTest
         return string.Join(" | ", parts.Where(p => p.Length > 0));
     }
 
-    // RowStrip's timed parts (RowStrip.Costs), in the order a row makes them: "title 1.2 ms, pencil 30.5 ms, ...".
-    static string Parts(IReadOnlyDictionary<string, double> costs) => string.Join(", ",
-        new[] { "title", "pencil", "buttons", "tags", "needs", "author", "added", "rest" }.Select(part => $"{part} {costs.GetValueOrDefault(part):0.0}"))
+    // Timed parts (Costs), the costliest first, those under 0.05 ms left out: "strip pencil 30.5, titles fitted 1.2 ms".
+    // divide: the parts of that many timings added up, as one's.
+    static string Parts(IReadOnlyDictionary<string, double> costs, int divide = 1) => string.Join(", ",
+        costs.Select(p => (p.Key, Ms: p.Value / divide)).Where(p => p.Ms >= 0.05).OrderByDescending(p => p.Ms).Select(p => $"{p.Key} {p.Ms:0.0}"))
         + " ms";
 
     // Where the hover card `name` that hovering `target` brings up sits on screen (null if none), the mouse put back after.

@@ -110,12 +110,13 @@ static class History
         Changed?.Invoke();
     }
 
-    // The view switched: picks belong to the view they were made in (it lets go of them), so their steps go too.
-    public static void ForgetPicks()
+    // The view switched (from one whose undo followed `was`): picks belong to the view they were made in (it lets go of
+    // them), so their steps go too. Told only if that changed what undo does: steps went, or it follows the other track.
+    public static void ForgetPicks(Track was)
     {
-        foreach (var steps in Past.Values.Concat(Future.Values))
-            steps.RemoveAll(step => step is Picks);
-        Changed?.Invoke();
+        var forgot = Past.Values.Concat(Future.Values).Sum(steps => steps.RemoveAll(step => step is Picks));
+        if (forgot > 0 || CurrentTrack != was)
+            Changed?.Invoke();
     }
 
 #if DEVTOOLS
