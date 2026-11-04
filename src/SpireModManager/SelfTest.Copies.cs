@@ -154,6 +154,30 @@ static partial class SelfTest
         await Keys(Key.Z);
         Check("Ctrl+Z after Ctrl+D picks them again", Picked(three) && Tinted() == 3, Say());
 
+        // The row under the mouse: Space picks it or lets it go, as Ctrl-click does; Enter opens it in the info panel, as a
+        // click does, letting go of the picks (Ctrl+Z picks them again)
+        async Task Plain(Key key)
+        {
+            foreach (var pressed in new[] { true, false })
+            {
+                Input.ParseInputEvent(new InputEventKey { Keycode = key, Pressed = pressed });
+                await Wait(menu, 0.15);
+            }
+        }
+        var hovered = rows.Skip(3).FirstOrDefault(r => r.Visible);
+        hovered?.EmitSignal(Control.SignalName.MouseEntered);
+        await Wait(menu, 0.1);
+        await Plain(Key.Space);
+        var spaceAdds = hovered != null && Picked([.. three, hovered]);
+        await Plain(Key.Space);
+        var spaceDrops = Picked(three);
+        await Plain(Key.Enter);
+        Check("Space on the row under the mouse picks it, again lets it go; Enter opens it in the panel and lets go of the picks",
+            spaceAdds && spaceDrops && Selection.Mods.Count == 0 && hovered != null && CategoryList.Selected == hovered.Mod && screen.IsVisibleInTree(),
+            $"{Say()}; added {spaceAdds}, dropped {spaceDrops}, shown {CategoryList.Selected?.manifest?.id}");
+        hovered?.EmitSignal(Control.SignalName.MouseExited);
+        await Keys(Key.Z);
+
         // A view switch lets go, and the picks' steps go with it. In Load Order, picks are steps of its own history, and
         // the Undo button takes them back as Ctrl+Z does.
         var toggle = screen.GetNode<NButton>("SpireModManagerLoadOrderToggle");
