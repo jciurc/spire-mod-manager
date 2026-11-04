@@ -14,7 +14,7 @@ What changed in each Workshop release, for players. Each version's first line is
 - the info panel lists requirements from a mod's Workshop page under Dependencies
 - a warning banner shows when enabled mods are listed for the other Steam branch only; their tags now read "Stable only" or "Beta only"
 - the "mods were disabled after a failed start" banner has a Show button
-- if mods take over 15 seconds to load, a "Loading {count} mods" line shows before the logo
+- added loading indicator if it takes longer than 15 seconds to start the game
 - hover cards near the bottom or right edge of the screen open above or to the left
 - choosing a category in the info panel with several mods selected moves all of them
 - saving an alias, tags or notes is faster with large mod lists
