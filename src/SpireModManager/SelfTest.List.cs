@@ -1651,6 +1651,29 @@ static partial class SelfTest
             && !plain.Any(l => l.StartsWith(Menus.Format("SPIRE_MOD_MANAGER.FOUND_IN", ("fields", "")))), string.Join(" | ", plain));
     }
 
+    // A view switch done before is done again without the work it did once: no row title measured again by the game's
+    // auto-size (Layout.Fit remembers the size it fitted for each text and box). The trips' times: TimeSwitches, on a
+    // real list.
+    static async Task TestSwitchWork(Node menu, NModdingScreen screen)
+    {
+        async Task Trip()
+        {
+            foreach (var toggle in new[] { "SpireModManagerLoadOrderToggle", "SpireModManagerLoadOrderToggle", "SpireModManagerViewToggle", "SpireModManagerViewToggle" })
+            {
+                if (screen.GetNode(toggle) is BaseButton link)
+                    Click(link);
+                else
+                    Click(screen.GetNode<NButton>(toggle));
+                await Wait(menu, 0.3);
+            }
+        }
+        await Trip();
+        var measured = Layout.TestMeasured;
+        await Trip();
+        Check("view switches: to Load Order, Vanilla List and back a second time, no row title is measured again (its fitted size remembered)",
+            Layout.TestMeasured == measured && Layout.Current == Layout.View.Categories, $"{Layout.TestMeasured - measured} measured, now {Layout.Current}");
+    }
+
     // A redraw answers its questions once (Lookups) instead of once per row: the answers must be the same as asked
     // one at a time outside a redraw, for every mod shown. Then how long a redraw and a search keystroke take here
     // (about 50 mods): reported, with a generous bound. TestManyMods and the --real tour time longer lists.
@@ -2020,25 +2043,24 @@ static partial class SelfTest
                 .Select(p => $"{p.First} -- wanted: {p.Second}").FirstOrDefault() ?? (shown.Count == wanted.Count ? "" : $"{shown.Count} rows, wanted {wanted.Count}");
 
             var (titlesMs, madeMs, fontAsks, fontLookups) = (0.0, 0.0, 0, 0);
-            RowStrip.Costs.Clear();
             var frameMs = await FrameMs(menu, () =>
             {
                 var watch = System.Diagnostics.Stopwatch.StartNew();
                 RowTitles.Apply(rows, vanilla: false); // our row style first, as a redraw does (titles fitted at the frame's end)
                 titlesMs = watch.Elapsed.TotalMilliseconds;
-                RowStrip.Timing = true;
+                Costs.On = true;
                 (fontAsks, fontLookups) = (ModEntry.FontAsks, ModEntry.FontLookups);
                 watch.Restart();
                 Build(saved);
                 madeMs = watch.Elapsed.TotalMilliseconds;
                 (fontAsks, fontLookups) = (ModEntry.FontAsks - fontAsks, ModEntry.FontLookups - fontLookups);
-                RowStrip.Timing = false;
+                Costs.On = false;
             });
             CleanHeap();
             var again = System.Diagnostics.Stopwatch.StartNew();
             Build(saved);
             var keptMs = again.Elapsed.TotalMilliseconds;
-            Results.Add($"INFO 300 made-up rows: lines, buttons and pencils made from nothing {madeMs:0} ms ({Parts(RowStrip.Costs)}), "
+            Results.Add($"INFO 300 made-up rows: lines, buttons and pencils made from nothing {madeMs:0} ms ({Parts(Costs.Parts)}), "
                 + $"to the end of that frame {frameMs:0} ms; redrawn with nothing to change {keptMs:0.0} ms; their titles styled first {titlesMs:0} ms; "
                 + $"fonts asked for {fontAsks} times while the lines were made, looked up {fontLookups}");
             await Wait(menu, 0.3);
